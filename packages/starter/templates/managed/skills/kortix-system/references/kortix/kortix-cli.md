@@ -330,7 +330,7 @@ the same state.
 
 | Command | Effect |
 | --- | --- |
-| `kortix triggers ls` | List triggers + runtime state (`last_fired_at`). |
+| `kortix triggers ls [--type cron\|webhook\|event\|monitor] [--connector <slug>] [--json]` | List triggers + runtime state (`last_fired_at`). `--type` keeps one kind; `--type event` groups the rows by app. `--connector` keeps the app events on one connector. The filters combine, and `--json` respects them. |
 | `kortix triggers info <slug>` | Show one trigger in full. |
 | `kortix triggers fire <slug>` | Manually fire a trigger now. |
 | `kortix triggers enable <slug>` | Set `enabled = true`. |

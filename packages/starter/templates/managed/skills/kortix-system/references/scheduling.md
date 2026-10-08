@@ -201,6 +201,18 @@ minutes), a plain `sleep` in the run is fine.
 Kortix creates the subscription for you. You wire no webhook, secret, or
 signature. Use a webhook trigger only for a system with no app connector.
 
+### See every event trigger
+
+- `kortix triggers ls --type event` lists only app events, grouped by app
+  (`github (2)`, `gmail (1)`), with each status word.
+- `kortix triggers ls --connector <slug>` keeps the app events on one
+  connector (profile). `--type` and `--connector` combine. `--json` returns
+  the filtered list. `--type` also takes `cron`, `webhook` and `monitor`.
+- Web: **Triggers** has the filter `All · Schedules · App events · Webhooks`
+  with counts, kept in the URL as `?type=event`. **App events** groups the
+  rows by app and lists every app with events below them. A connector's
+  detail window has a **Triggers** tab with the app events on it.
+
 ### Autonomous setup recipe
 
 Terms: an **app** is the service (`github`). A **connector** is a profile,
@@ -218,6 +230,8 @@ Run these in order. Each step prints what the next step needs.
    `No connector yet` line.
 2. **No connector?** `kortix connectors add <slug> --provider composio --app <app> --apply`.
    It commits the connector to `kortix.yaml` on main and syncs it.
+   Use the slug `triggers events --apps` suggests when it prints `add as <slug>`
+   (for example `slack` → `slack-events`: `slack` is the built-in Slack channel).
 3. **Not connected?** `kortix connectors connect <slug> --owner project`.
    Give the link to the person and ask them to open it. Use the shared
    (`project`) account. Never use a member's private account: event

@@ -112,6 +112,22 @@ An event trigger runs an agent when an app event happens: a pull request opens, 
 
 The trigger is live as soon as its badge reads **Live**. The other badges are **Activating**, **Needs connection**, and **Error**. They match the `pending`, `needs_connection`, and `error` statuses below.
 
+### See every app event trigger
+
+In the web app, open **Triggers** and choose **App events**. The filter row reads **All**, **Schedules**, **App events**, and **Webhooks**, each with a count. The choice is kept in the address as `?type=event`, so you can link to it. The rows are grouped by app. Below them, **Apps with events** lists every app that can start an agent, the apps your project already uses first. Choose one to open the new trigger form on that app.
+
+A connector's window has a **Triggers** tab with the app events on that connector. The tab appears only for an app that has events.
+
+With the CLI:
+
+```bash
+kortix triggers ls --type event                 # every app event trigger, grouped by app
+kortix triggers ls --connector github-work      # the app events on one connector
+kortix triggers ls --type event --json          # the same list as JSON
+```
+
+`--type` also takes `cron`, `webhook`, and `monitor`. `--connector` and `--type` combine.
+
 ### Set up with the CLI
 
 An agent or a person runs these steps in order. Each step prints what the next step needs.
