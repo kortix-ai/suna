@@ -161,11 +161,11 @@ beforeEach(() => {
 
 // Every delivery converges the box before the prompt goes out: a box whose
 // boot-time gateway URL, secrets or model catalog went stale would otherwise
-// run the prompt against them. A channel follow-up also enables its own
-// OpenCode runtime features in the same sync.
+// run the prompt against them. A caller's opencodeEnv override rides the
+// same sync.
 describe('continueSession runtime env', () => {
   test.each([
-    ['a channel follow-up with an opencodeEnv override', { KORTIX_CONNECTORS_MCP_ENABLED: '1' }],
+    ['a follow-up with an opencodeEnv override', { KORTIX_MODEL: 'kortix/test-model' }],
     ['an ordinary prompt', undefined],
   ])('%s syncs the box after readiness and before the prompt', async (_label, opencodeEnv) => {
     expect(

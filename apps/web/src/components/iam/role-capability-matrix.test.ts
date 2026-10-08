@@ -173,8 +173,26 @@ function seededRolePermissions(): Map<string, string[]> {
   return out;
 }
 
+/**
+ * Grants a later migration copies from an Apps leaf with INSERT ... SELECT
+ * (20261006180000000: every role holding project.app.read / .write also gets
+ * project.backend.read / .write). The parser above reads only literal rows, so
+ * the fixture applies the same copy rule.
+ */
+const MIRRORED: Record<string, string> = {
+  'project.app.read': 'project.backend.read',
+  'project.app.write': 'project.backend.write',
+};
+const withMirrored = (actions: readonly string[]): string[] => [
+  ...actions,
+  ...actions.flatMap((a) => (MIRRORED[a] ? [MIRRORED[a]] : [])),
+];
+
 const SEEDED_ROLES = new Map(
-  [...seededRolePermissions()].map(([key, actions]) => [key, expandRetired(actions)]),
+  [...seededRolePermissions()].map(([key, actions]) => [
+    key,
+    [...new Set(withMirrored(expandRetired(actions)))],
+  ]),
 );
 const roleActions = (key: string, scope: CapabilityScope) => {
   const actions = SEEDED_ROLES.get(`${key}:${scope}`);
@@ -201,7 +219,7 @@ function sorted(set: Iterable<string>): string[] {
 
 describe('the area table covers the catalog', () => {
   test('the seeded catalog is the shape the matrix expects (drift alarm)', () => {
-    expect(PROJECT_LEAVES.length).toBe(48);
+    expect(PROJECT_LEAVES.length).toBe(50);
     expect(ACCOUNT_LEAVES.length).toBe(29);
     // The retired spellings must not come back: `project.cr.*` collapsed into
     // `project.gitops.*` (the same capability named twice), and `trigger.*` was
@@ -268,14 +286,14 @@ describe('foldSelection → expandFold is lossless', () => {
     const fold = foldSelection('project', CATALOG, new Set());
     expect([...expandFold(fold)]).toEqual([]);
     expect(fold.selectedCount).toBe(0);
-    expect(fold.totalCount).toBe(48);
+    expect(fold.totalCount).toBe(50);
   });
 
   test('a full project role round-trips', () => {
     const selected = new Set(PROJECT_LEAVES);
     const fold = foldSelection('project', CATALOG, selected);
     expect(sorted(expandFold(fold))).toEqual(sorted(selected));
-    expect(fold.selectedCount).toBe(48);
+    expect(fold.selectedCount).toBe(50);
     expect(fold.areas.every((a) => a.view.state !== 'partial' && a.edit.state !== 'partial')).toBe(
       true,
     );

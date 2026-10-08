@@ -284,7 +284,7 @@ export interface KortixArtifactLayerOpts {
    * and runs install-shims.sh to wire each *.ts (excluding lib/) as a
    * /usr/local/bin/<name> shim — that's how `slack` lands on PATH for the
    * agent to invoke from inside the sandbox. (The Connector moved into the
-   * `kortix` CLI as `kortix connectors` / `kortix connectors mcp`.)
+   * `kortix` CLI as `kortix connectors`.)
    */
   slackCliPath: string;
   /**
@@ -677,7 +677,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
       'RUN bash /tmp/kortix-opencode-warmup migration && rm -f /tmp/kortix-opencode-warmup',
     ] : []),
     '',
-    // Bun runtime for the agent CLIs (slack, …) + `kortix connectors mcp`.
+    // Bun runtime for the agent CLIs (slack, …).
     // Download one versioned release artifact and verify its checksum before
     // extracting it. The public installer script is not part of the trust path.
     'RUN case "$(uname -m)" in \\',

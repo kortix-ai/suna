@@ -235,7 +235,6 @@ the alternative.
 | `update`, `uninstall`, `self-host` | Change the machine that runs the CLI. | None. |
 | `tui`, `t`, `connect`, `attach`, `sessions connect|shell|forward` | Need an interactive terminal. | `start_session`, `send_message`, `read_session`, `run_command`. |
 | `chat` and `sessions chat` without `--prompt` | Open an interactive chat. | `start_session`, `send_message`, or add `--prompt "<text>"`. |
-| `connectors mcp` | Starts a stdio MCP server. | `list_connectors`, `call_connector`. |
 
 The audit records a CLI command with the same credential as every other call
 on the connection (`credential_kind: "oauth_app"`). It cannot tell the `kortix`

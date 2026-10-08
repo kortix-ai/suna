@@ -5,6 +5,34 @@ import { flow } from "../core/flow";
 import { createDatabaseSession } from '../fixtures/database-project';
 import { subscribe } from '../fixtures/billing';
 import { enableEnterpriseDemo } from '../fixtures/enterprise-demo';
+import { log } from '../core/log';
+import type { FlowContext } from '../core/types';
+
+/**
+ * Run a flow that inserts `active` sandbox rows for its session-bound tokens,
+ * then delete them. Release tests run against the staging DB, and no reaper
+ * reads a row without an `external_id` (box-queries.ts), so a leaked row stays
+ * `active` forever and keeps its session out of the stuck-session sweep.
+ */
+function deletingSandboxRows(body: (ctx: FlowContext, track: (accountId: string) => void) => Promise<void>) {
+  return async (ctx: FlowContext) => {
+    const accounts: string[] = [];
+    try {
+      await body(ctx, (accountId) => accounts.push(accountId));
+    } finally {
+      if (accounts.length > 0) {
+        const { Client: PgClient } = await import('pg');
+        const databaseUrl = ctx.env.databaseUrl!;
+        const db = new PgClient({ connectionString: databaseUrl,
+          ssl: /localhost|127\.0\.0\.1/.test(databaseUrl) ? false : { rejectUnauthorized: false } });
+        await db.connect()
+          .then(() => db.query('DELETE FROM kortix.session_sandboxes WHERE account_id = ANY($1::uuid[]) AND external_id IS NULL', [accounts]))
+          .catch((error) => log.warn(`teardown sandbox rows of ${accounts.join(',')} failed: ${(error as Error)?.message ?? error}`))
+          .finally(() => db.end().catch(() => {}));
+      }
+    }
+  };
+}
 
 flow(
   "SEC-POOL-1",
@@ -574,10 +602,11 @@ flow('SEC-POOL-6', {
     'POST /v1/llm/chat/completions',
     'DELETE /v1/accounts/:accountId/secret-resources/:secretId',
   ],
-}, async (ctx) => {
+}, deletingSandboxRows(async (ctx, track) => {
   const { Client: PgClient } = await import('pg');
   const { randomUUID } = await import('node:crypto');
   const team = await ctx.fixtures.team();
+  track(team.id);
   const project = await team.project({ seed: true, allowAllSecrets: true });
   const member = await team.addMember('member');
   await team.grantProjectRole(project.id, member.userId!, 'user');
@@ -681,7 +710,7 @@ flow('SEC-POOL-6', {
       (await asMember.del('/v1/accounts/:accountId/secret-resources/:secretId', { params: { accountId: team.id, secretId } })).status(200);
     }
   });
-});
+}));
 
 flow('SEC-POOL-3', {
   domain: 'secrets', requires: ['database'],
@@ -692,9 +721,10 @@ flow('SEC-POOL-3', {
     'PUT /v1/projects/:projectId/sessions/:sessionId/provider-secret-pools/:providerId',
     'POST /v1/llm/chat/completions',
   ],
-}, async (ctx) => {
+}, deletingSandboxRows(async (ctx, track) => {
   const { Client: PgClient } = await import('pg');
   const team = await ctx.fixtures.team();
+  track(team.id);
   const project = await team.project({ seed: true, allowAllSecrets: true });
   const owner = ctx.client.as(ctx.P.OWNER);
   const first = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: team.id, userId: ctx.P.OWNER.userId! });
@@ -736,14 +766,15 @@ flow('SEC-POOL-3', {
     });
     result.status(400).body().has('$.error.code', 'provider_not_connected');
   });
-});
+}));
 
 flow('SEC-9', {
   domain: 'secrets', requires: ['database'],
   routes: ['POST /v1/accounts/tokens', 'POST /v1/projects/:projectId/secrets', 'GET /v1/projects/:projectId/secrets'],
-}, async (ctx) => {
+}, deletingSandboxRows(async (ctx, track) => {
   const { Client: PgClient } = await import('pg');
   const team = await ctx.fixtures.team();
+  track(team.id);
   const project = await team.project({ seed: true, allowAllSecrets: true });
   const owner = ctx.client.as(ctx.P.OWNER);
   // A plain project manager launches the session: the run's OWNER is a platform
@@ -838,7 +869,7 @@ flow('SEC-9', {
     (await reader.post('/v1/projects/:projectId/secrets', { name: 'AGENT_READER_KEY', value: 'x' }, { params })).status(403);
     if (await stored('AGENT_READER_KEY')) throw new Error('an agent without secret write stored a row');
   });
-});
+}));
 
 flow(
   "SEC-1",
@@ -1573,10 +1604,11 @@ flow('SEC-AUD-1', {
     'POST /v1/connectors/call',
     'POST /v1/accounts/tokens',
   ],
-}, async (ctx) => {
+}, deletingSandboxRows(async (ctx, track) => {
   const { createServer } = await import('node:http');
   const { Client: PgClient } = await import('pg');
   const team = await ctx.fixtures.team();
+  track(team.id);
   const project = await team.project({ seed: true, allowAllSecrets: true, allowAllConnectors: true });
   // The value's person, and a manager outside its audience: same role, so
   // only the audience separates what the two can use.
@@ -1708,7 +1740,7 @@ flow('SEC-AUD-1', {
     upstream.close();
     await db.end();
   }
-});
+}));
 
 /** A session of `userId` plus a session-bound token whose row names
  *  `serviceAccountId` — the credential an agent's sandbox runs with. */
@@ -1755,10 +1787,11 @@ flow('SEC-AUD-2', {
     'PUT /v1/projects/:projectId/sessions/:sessionId/sharing',
     'POST /v1/projects/:projectId/sessions/:sessionId/public-shares',
   ],
-}, async (ctx) => {
+}, deletingSandboxRows(async (ctx, track) => {
   const { createServer } = await import('node:http');
   const { Client: PgClient } = await import('pg');
   const team = await ctx.fixtures.team();
+  track(team.id);
   const project = await team.project({ seed: true, allowAllSecrets: true, allowAllConnectors: true });
   const holder = await team.addMember('member');
   await team.grantProjectRole(project.id, holder.userId!, 'manager');
@@ -1872,7 +1905,7 @@ flow('SEC-AUD-2', {
     upstream.close();
     await db.end();
   }
-});
+}));
 
 // ── SEC-AUD-3 — a secret link keeps the value to the person who asked ────
 flow('SEC-AUD-3', {

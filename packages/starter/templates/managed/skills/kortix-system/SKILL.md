@@ -1,6 +1,6 @@
 ---
 name: kortix-system
-description: "Canonical reference for Kortix projects, Apps, the CLI, sessions, sandboxes, change requests, triggers, connectors, secrets, system skills, and the two session harnesses, pi and OpenCode. Covers `kortix.yaml` versions 1 and 2, serverless App deployments, harness configuration (`harnesses/pi/`, `harnesses/opencode/`), session identity, credential boundaries, and the complete pi and OpenCode references. Load when the user asks how Kortix works, what Kortix can do, how to deploy an App, how an agent discovers platform instructions, how to customize or configure this project's agents (create or fix an agent, subagent, skill, tool, plugin, extension, pi package, command, MCP server, model or permission rule; edit `opencode.jsonc`), how to edit `kortix.yaml`, how to use the `kortix` CLI, how to land work through a change request, or how to schedule and automate work."
+description: "Canonical reference for Kortix projects, Apps, Kortix Backends (Convex) and internal business apps, the CLI, sessions, sandboxes, change requests, triggers, connectors, secrets, system skills, and the two session harnesses, pi and OpenCode. Covers `kortix.yaml` versions 1 and 2, serverless App deployments, harness configuration (`harnesses/pi/`, `harnesses/opencode/`), session identity, credential boundaries, and the complete pi and OpenCode references. Load when the user asks how Kortix works, what Kortix can do, how to deploy an App, how an agent discovers platform instructions, how to customize or configure this project's agents (create or fix an agent, subagent, skill, tool, plugin, extension, pi package, command, MCP server, model or permission rule; edit `opencode.jsonc`), how to edit `kortix.yaml`, how to use the `kortix` CLI, how to land work through a change request, or how to schedule and automate work."
 ---
 
 <skill name="kortix-system">
@@ -9,7 +9,8 @@ description: "Canonical reference for Kortix projects, Apps, the CLI, sessions, 
 The `kortix` CLI is the live source of truth for how Kortix works. The Kortix
 **system skills** — `kortix-system`, `kortix-apps`, `kortix-connectors`,
 `kortix-memory`, `kortix-harness-refinement`, `kortix-slack`,
-`kortix-computer`, `kortix-marketplace` — are
+`kortix-computer`, `kortix-marketplace`, `kortix-backends`,
+`kortix-internal-apps` — are
 served fresh by the CLI,
 so their instructions always match the platform version you're running on (no
 re-install, no image re-bake):
@@ -175,6 +176,8 @@ Load this skill when the user asks any of:
 - "How does an agent retrieve the current Kortix system instructions?"
 - "How do I customize the sandbox image?"
 - "How do I deploy a website, Dockerfile, or OCI image?" / "How do Kortix Apps work?"
+- "I need a database / a backend / an API for my app" / "Build an internal
+  tool or app the team logs in to" (route through `<backends>`)
 - "How do I create an agent, a subagent or a reusable skill?"
 - "How do I register an MCP server?"
 - "How do I tighten permissions for the build agent?"
@@ -215,7 +218,7 @@ Kortix cloud state — not just files in the repo. Examples:
 | "check back on this later / keep checking until it's done" | `kortix remind "…" --in 24h --every 1h` · `kortix reminders ls|pause|resume|rm` |
 | "show open change requests" | `kortix cr ls` |
 | "who am I? what project is this?" | `kortix whoami`, `kortix projects info` |
-| "turn on / off a feature flag (Apps, Teams, Meta Agent, …)" | `kortix projects features` · `kortix projects features enable <flag>` |
+| "turn on / off a feature flag (Reminders, Meta Agent, …)" | `kortix projects features` · `kortix projects features enable <flag>`. Apps and Backends are Kortix-managed: listed as `on kortix` only while on; only Kortix changes them. |
 | "rename the project / change its icon or default branch" | `kortix projects set --name … --icon … --branch …` |
 | "which models can this project use? set the default model" | `kortix models ls` · `kortix models default <model>` · `models enable|disable <id>` |
 | "change the default agent / an agent's scope or config" | `kortix agents default <name>` · `kortix agents scope <agent> [--secrets …] [--connectors …] [--apps …]` · `kortix agents config <agent>` |
@@ -339,8 +342,8 @@ context, and the result is `exit_code`, `stdout` (`json` for `--json` output), `
 sessions, sandbox files and connectors. The tool refuses `--host`, `hosts`,
 `login`, `logout`, `init`, `ship`, `update`, `uninstall`, `self-host`, `tui`,
 `connect`, `chat` without `--prompt`, `token`, `env pull|push`, `apps deploy`
-(a local directory: use `run_command` in a session sandbox) and
-`connectors mcp`, with the reason and the alternative. `read_skill` with
+(a local directory: use `run_command` in a session sandbox), with the reason
+and the alternative. `read_skill` with
 `project_id` lists the project's own skills.
 </mcp-client>
 
@@ -359,8 +362,8 @@ deployment is immutable. A failed deployment never replaces the active version.
   monthly compute budget (default 5 USD). 24/7 on the default machine costs
   about 73 USD a month, so an always-on App needs `--budget`.
 
-Apps is experimental and off by default. Enable **Apps** for the selected
-project under Project Settings → Experimental before using the CLI or SDK. The
+Apps is off by default and enabled per project by Kortix (it is not listed in
+Project Settings → Feature flags; the user contacts Kortix). The
 CLI labels Apps as experimental. App operations remain gated by the selected
 project feature.
 
@@ -395,6 +398,39 @@ Load the `kortix-apps` system skill before you deploy or operate an App.
 fields, every lifecycle command, run modes and budget, ignore rules, secrets,
 cold starts, rollback, retention, limits, and failure handling.
 </apps>
+
+<backends>
+A **Kortix backend** is a full backend for the project: a database, server
+functions, realtime queries, file storage, schedules and search, powered by
+self-hosted Convex, with built-in Kortix sign-in (functions know the signed-in
+member). One machine per backend, up to 3 per project and 10 per account. The Convex code usually
+lives in the project repo (`backends/<name>/`) and ships with
+`kortix backends deploy <name> --dir backends/<name>`. Experimental, off by
+default (feature flag `backends`).
+
+**Check the flag first:** `kortix backends list` exits `0` only when Backends
+is on in this project. When it is on, load `kortix-backends` before you create
+or change a backend or write Convex code, and `kortix-internal-apps` when the
+user wants a complete app (backend + UI + sign-in) built, deployed and
+verified. When it is off, do not load either skill and do not stop: build with
+the project's own storage and code, and tell the user once that Kortix can
+enable Backends.
+
+**Build a product: which skill owns it.** Check the flags first:
+`kortix projects info --json` → `experimental.apps` and
+`experimental.backends`.
+
+| The user wants | Load | Runs on |
+| --- | --- | --- |
+| A website or UI with no stored data | `kortix-apps` | An App |
+| An app with data, login or realtime | `kortix-internal-apps` (+ `kortix-backends`, `kortix-apps`) | A backend (one always-on machine, billed like a sandbox) + an App |
+| A database or API only | `kortix-backends` | A backend |
+| A call to an external system from an App or a backend | `kortix-connectors` | The connector gateway |
+| Agent work on a schedule or an event | `<scheduling>` here, `references/scheduling.md` | A session per run |
+
+When `apps` or `backends` is off, the rows that need it fall back to the
+project's own web-app skills (`webapp`, `web-publishing-and-deployments`).
+</backends>
 
 <marketplace>
 The **Kortix Marketplace** is the project skill library and the normal way to
@@ -781,6 +817,7 @@ project.model.read  project.model.write
 project.gitops.read  project.gitops.push  project.gitops.merge
 project.secret.read  project.secret.write
 project.connector.read  project.connector.write  project.connector.connections.manage   # channels (Slack/meet/email) send + connect are gated here
+project.backend.read  project.backend.write
 project.review.read  project.review.submit  project.review.act
 ```
 
@@ -803,11 +840,10 @@ to see the full enum.
 <reference path="references/kortix/credentials-and-setup-links.md">
   How to get a credential — an API key, or an app connected. A value you
   already have (the human gave it in chat) is stored directly with
-  `set_secret` / `kortix secrets set`; a value you lack is requested with a
+  `kortix secrets set`; a value you lack is requested with a
   short-lived **setup link** instead of punting the human to the dashboard. Covers
   the two link kinds (secret intake / Composio connect), how to mint each
-  (the `request_secret` + `connect` MCP tools, or the `kortix secrets request` /
-  `kortix connectors connect` CLI), what the human sees
+  (`kortix secrets request` / `kortix connectors connect`), what the human sees
   (web modal vs Slack link), how to verify it
   landed, and the security model. Load this whenever you hit "I need an API key /
   I need this app connected" — it is the canonical, autonomous flow.

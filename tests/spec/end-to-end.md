@@ -1024,7 +1024,7 @@ account exits non-zero with the manage-connections reason (the API's `403`).
 
 `CONN-31` `GET /connectors/projects/:id/connectors` needs `project.connector.read`; `secretIdentifier` is shown only with `project.secret.read`. A reader without `project.connector.write` → sync 403. A connector writer without `project.secret.write` → `secret-binding` 403. `{secret_identifier:null}` clears the binding, and the connector then lists as `needs_auth` with `credentialSource: none`.
 `CONN-32` `POST /connectors/projects/:id/call`: `{}` → 400 `connector and action are required`; an unknown slug → 404 `connector_not_found`. A `block` rule → 403 `policy_block` with no upstream request, and the action leaves `GET …/catalog`. A `require_approval` rule → 202 `{status:pending_approval, execution_id, retryable:false, approval_url:/approve/…, approval_instructions}`. Project rules on fully-qualified paths beat a connector `always_run`. `default_mode: risk` holds an unmatched write and runs an unmatched read; a connector `always_run` beats the risk default; `allow_all` runs a write.
-`CONN-33` The real `kortix connectors ls|discover|show|call` (split and dotted forms) and `call --attach` (a Graph `fileAttachment`, byte for byte) run with a PAT and `KORTIX_PROJECT_ID`. `--attach` on an action with no attachments array exits non-zero before any request. The stdio `connectors mcp` runs discover → describe → call. Upstream steps run on local only.
+`CONN-33` The real `kortix connectors ls|discover|show|call` (split and dotted forms) and `call --attach` (a Graph `fileAttachment`, byte for byte) run with a PAT and `KORTIX_PROJECT_ID`. `--attach` on an action with no attachments array exits non-zero before any request. Upstream steps run on local only.
 `CONN-34` Project policies: GET on a fresh project → `{policies:[], defaultMode:"allow_all", errors:[]}`. PUT rejects an unknown action or a missing match with 400 naming `policy #N`. NONMEMBER → 403. A PUT reads back in order, and its sync writes `connector_project_policies` and `connector_project_settings.default_mode`.
 `CONN-35` With an OpenAPI spec committed to the repository, `auth-discovery` → `detected` bearer. A create with no `auth` applies it (config `auth.type: bearer`, response `authDiscovery`). `auth:{type:"none"}` returns no `authDiscovery`, and config stays `none`.
 
@@ -1153,9 +1153,12 @@ deployment pointer. The provider remains an implementation detail.
 `APP-1` App CRUD — `GET/POST /projects/:projectId/apps` and
 `GET/PATCH/DELETE /projects/:projectId/apps/:appId`. Apps is a per-project
 feature flag, off by default: a member of a flag-off project gets
-`403 {code:'feature_disabled', feature:'apps'}` on every apps route; the flow
-first clears any override left by a reused local fixture, then enables the flag
-via `PATCH /projects/:projectId/features` and proceeds. A
+`403 {code:'feature_disabled', feature:'apps'}` on every apps route. Apps is
+internal-only: the owner's `PATCH /projects/:projectId/features` with
+`apps: true` answers `403 {code:'feature_operator_only'}`. The flow clears any
+override left by a reused local fixture and enables the flag as the run-scoped
+platform operator through `PUT /admin/api/projects/:id/features`; the owner's
+project read then lists `apps` with `enabled: true, operator_only: true`. A
 project writer creates a unique lower-case slug and machine policy; list/get
 return the stable public URL and active deployment pointer; every App carries
 `estimated_monthly_usd` (its machine 24/7 at list compute rates, `73.48` for
@@ -1167,6 +1170,8 @@ otherwise; a create without `monthly_budget_usd` gets a derived budget: the
 App is always on, `5` on demand; a derived budget follows later machine and
 run-mode patches, a budget a person sent never moves; patch updates mutable policy; delete is soft and removes the App
 from subsequent reads.
+A new App lists no backends (`backends: []`); patch sets the list by name,
+deduplicated, and get reads it back; an invalid backend name → 400.
 Invalid slugs → 400; `NONMEMBER` → 403.
 
 `APP-2` Artifact and deployment boundaries —
@@ -1528,6 +1533,72 @@ a trigger run. Every denial is `403 {code, action}` (spec §4).
 ## 33. Retired routes
 
 `RET-1` Every route the API retired answers `410` with `{ error, code: "ENDPOINT_RETIRED" }` for any caller, anonymous included, and runs no handler: the legacy router LLM and search routes, the `/billing/account/*` deletion mirror (use `/account/*`), `POST /billing/deduct` · `deduct-usage` · `sync-seat-quantity` · `create-checkout-session` · `confirm-checkout-session` · `schedule-downgrade`, `GET /generation`, `POST /prewarm`, and `/projects/suna-migration/*`. The table is `RETIRED_ROUTES` in `apps/api/src/routes/retired.ts`.
+
+---
+
+## 34. Kortix Backends
+
+A project owns up to 3 backends, an account up to 10. Each backend is a self-hosted Convex instance
+in its own always-on Platinum machine (1 vCPU, 1 GB, 10 GB). `backends` is an
+experimental per-project flag, off by default, available only where Platinum is
+configured. Routes: `GET/POST /projects/:projectId/backends`,
+`GET/DELETE /projects/:projectId/backends/:backendId`,
+`GET /projects/:projectId/backends/:backendId/credentials`,
+`PATCH /projects/:projectId/backends/:backendId` (resize),
+`POST /projects/:projectId/backends/:backendId/token`,
+`GET /projects/:projectId/backends/:backendId/backups`,
+`POST /projects/:projectId/backends/:backendId/{snapshots,restore}`,
+`DELETE /projects/:projectId/backends/:backendId/snapshots/:snapshotId`, and the
+public issuer routes `GET /backends/:backendId/.well-known/openid-configuration`
+and `GET /backends/:backendId/jwks.json`.
+
+`BKD-1` Gated surface. Flag off: list, create, get, credentials, delete, resize,
+token, backups, snapshot, snapshot delete, restore, rotate-admin-key and logs answer `403 {code:'feature_disabled', feature:'backends'}`. The owner's
+`PATCH /projects/:projectId/features` with `backends` true, false or null
+answers `403 {code:'feature_operator_only', feature:'backends'}`, and the
+owner's `PUT /admin/api/projects/:id/features` answers 403. The platform
+operator's `PUT /admin/api/projects/:id/features` with `backends: true` answers
+200. Where Platinum
+is configured the flag resolves on: list answers 200 with a `backends` array, and
+an invalid name answers 400 before any machine is requested. Where it is not, the
+flag resolves off and every route keeps the same 403. A `NONMEMBER` gets 403/404
+and an `ANON` caller gets 401. The issuer routes need no credential: an
+unknown backend answers 404 and a malformed id 400. The caps under concurrency,
+`Cache-Control: no-store` on credentials and token, `convex_version`, the stored
+issuer, the issuer discovery and key set (verified against a minted token), and
+the issuer move are asserted by the
+DB suites `apps/api/src/backends/*.integration.test.ts`. The same suites drive
+the maintenance sweep against a fake Platinum and a fake Convex: an interrupted
+provision resumes on its Idempotency-Key and reaches `running`, one interrupted
+3 times turns `error`, an interrupted resize is recovered with
+`last_operation_error`, the health probe records `health` and starts a stopped
+machine, restores a tombstoned one from backup, and turns a missing one `error`
+after 3 probes; admin-key rotation seals the key Convex accepts and answers
+`409 backend_busy` during another operation; a backup or snapshot restore of a
+rotated backend rotates again, so the rotated-away key never returns; an agent
+session's token names the agent's service account (`kind: "agent"`, no role,
+no groups), never its launcher; the App gate's `/_kortix/backend-token`
+re-checks a `public` App's cookie viewer (`401` once access is gone) and
+answers `403 feature_disabled` with Backends off; the logs route strips color codes
+and rejects `lines` outside 1–1000. Snapshots: a manual snapshot carries `kind:
+"manual"` and no expiry, and the 11th answers `409 snapshot_limit` with nothing
+deleted; snapshot, restore, snapshot delete and backend delete answer `409
+backend_busy` during a resize (backend delete stays allowed in `recovering`);
+two concurrent snapshots produce one; a restore answers only after Platinum
+reports `running` again, and one Platinum ends `stopped` answers `502
+restore_unhealthy` with the machine started again; a resize takes a `resize`
+snapshot kept 24 h outside the limit, and every snapshot older than the
+applied resize answers `409 snapshot_predates_resize`; the maintenance sweep
+takes a daily `automatic` snapshot kept 7 days, deletes an expired `resize`
+snapshot and an expired `automatic` one only when a newer one exists, and
+never a manual one; `GET …/backups` returns each snapshot's `kind` and
+`expires_at` and the `snapshot_schedule`; `DELETE …/snapshots/:snapshotId`
+answers 204, then 404 `snapshot_not_found`. Not asserted locally:
+create (`202 provisioning`), a duplicate name (`409 backend_name_taken`), the
+`backend.credentials.read` audit row, and delete. They
+need a Platinum machine and are verified on a deployed environment.
+
+---
 
 ## Browser-agent pilot (opt-in)
 

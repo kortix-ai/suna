@@ -135,9 +135,11 @@ that Kortix serves: no machine, nothing to start or stop. A server App
 demand, and stops at its monthly budget. An authorized request wakes a stopped
 server App.
 
-The selected project must enable **Apps** under Project Settings →
-Experimental. The top-level CLI help and every `kortix apps` command stay dark
-when no selected project has the feature enabled.
+Apps is internal-only: Kortix enables it per project on request, and only
+Kortix can change it. When it is on, `kortix projects features` lists
+`apps on kortix` and `kortix projects info --json` has `experimental.apps: true`.
+When it is off, every `kortix apps` command answers `feature_disabled`
+("Contact Kortix to enable it.").
 
 | Command | Effect |
 | --- | --- |
@@ -200,9 +202,8 @@ has no sandbox presence at all.
 
 > **Have the value? Set it. Lack it? Request it.** When the human already gave
 > you the value, store it now: `printf '%s' "$V" | kortix secrets set NAME=-`
-> (or the `set_secret` tool) — no link. When you lack it, run
-> `kortix secrets request APOLLO_API_KEY` (or the `request_secret` tool on the
-> `kortix-connectors` MCP), surface the returned URL, end your turn, and when they
+> — no link. When you lack it, run
+> `kortix secrets request APOLLO_API_KEY`, surface the returned URL, end your turn, and when they
 > say "done" confirm with `kortix secrets ls`. See the
 > **credentials-and-setup-links** reference.
 
@@ -212,9 +213,8 @@ A connector defines actions against an external system. **A connector is not
 an account** — one connector (e.g. Gmail) can hold several accounts, each
 SHARED with the whole project or PRIVATE to one member. Calls run
 **server-side** through the connector gateway, so no third-party credential
-enters the sandbox. The same gateway is available through the
-`kortix-connectors` **MCP**, this **CLI**, and the `@kortix/sdk` **TypeScript
-package**. JSON output.
+enters the sandbox. The same gateway is available through this **CLI** and the
+`@kortix/sdk` **TypeScript package**. JSON output.
 
 | Command | Effect |
 | --- | --- |
@@ -231,16 +231,12 @@ package**. JSON output.
 | `kortix connectors upload <file> --connector <slug>` | Stage one file; prints `ref` (`{"$kortix_attachment":"<id>"}`) to place in args — an attachments[] element or a base64 field such as `contentBytes`. |
 | `kortix connectors add <slug> --provider composio --app <toolkit> --apply` | Add a managed SaaS connector now, commit it to `kortix.yaml` on main, and sync it. |
 | `kortix connectors rm <slug> --apply` | Remove a connector from `kortix.yaml` on main and sync it. |
-| `kortix connectors connect <slug> [--owner me\|project]` | Mint the provider's raw authorization URL for the connector's default account (`me`, the default, is yours; `project` is the shared one). It cannot name a new account: add one with the MCP `connect` tool and its `label`. |
-| `kortix connectors mcp` | Run the `kortix-connectors` stdio MCP server. |
+| `kortix connectors connect <slug> [--owner me\|project]` | Mint the provider's raw authorization URL for the connector's default account (`me`, the default, is yours; `project` is the shared one). |
+| `kortix connectors connect <slug> --label "<name>" [--owner me\|project]` | Add a NEW account (a second Gmail): mint a Kortix link where the human confirms the name and who can use it. |
 
 > Use Composio for every new managed SaaS connector. Pipedream is retained only
 > for rollback compatibility with existing declarations. Do not select it unless
 > the human explicitly approves the `--allow-legacy-pipedream` fallback.
-
-> Inside a session, the `kortix-connectors` MCP tools can expose the same
-> list/discover/show/accounts/call loop. Use the CLI when those tools are
-> absent.
 
 > **Choosing the account:** one account → just call. Several, and the human
 > named one → `--account <label>`. Several, and it is unclear which → ASK,

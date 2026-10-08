@@ -9,6 +9,7 @@ import { flow } from '../core/flow';
 import { waitFor } from '../core/poll';
 import { type CliResult, CliSandbox, throwIfCliInfraFailure } from '../fixtures/cli';
 import { AgentPrincipalsWorld } from '../fixtures/agent-principals';
+import { setFeatureAsOperator } from '../fixtures/feature-flags';
 
 function parseCliJson<T>(result: CliResult, action: string): T {
   throwIfCliInfraFailure(result, action);
@@ -1808,72 +1809,6 @@ flow(
           }
           if (called.data.logId === restLogId)
             throw new Error('REST and CLI calls unexpectedly reused one provider log id');
-        } finally {
-          cli.dispose();
-        }
-      },
-    );
-
-    await ctx.step(
-      'real agent MCP schema defaults managed apps to Composio and exposes finalization',
-      async () => {
-        const cli = new CliSandbox('composio-mcp');
-        const request = `${JSON.stringify({
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'tools/list',
-          params: {},
-        })}\n`;
-        try {
-          const result = await cli.run(['connectors', 'mcp'], {
-            env: {
-              KORTIX_TOKEN: cliPat,
-              KORTIX_PROJECT_ID: p.id,
-              KORTIX_API_URL: ctx.env.apiUrl,
-            },
-            stdin: request,
-          });
-          throwIfCliInfraFailure(result, 'kortix connectors mcp tools/list');
-          if (result.exitCode !== 0) {
-            throw new Error(`MCP tools/list failed: ${result.all.slice(0, 2_000)}`);
-          }
-          const response = JSON.parse(result.stdout.trim()) as {
-            result?: {
-              tools?: Array<{
-                name?: string;
-                description?: string;
-                inputSchema?: any;
-              }>;
-            };
-          };
-          const tools = response.result?.tools ?? [];
-          const add = tools.find((tool) => tool.name === 'add_connector');
-          const connect = tools.find((tool) => tool.name === 'connect');
-          const finalize = tools.find((tool) => tool.name === 'finalize_connection');
-          if (add?.inputSchema?.properties?.provider?.enum?.[0] !== 'composio') {
-            throw new Error(
-              `agent MCP did not default provider enum to Composio: ${JSON.stringify(add)}`,
-            );
-          }
-          if (!String(add.description).includes('Composio is the default managed provider')) {
-            throw new Error(
-              `agent MCP omitted the Composio default instruction: ${JSON.stringify(add)}`,
-            );
-          }
-          if (!add?.inputSchema?.properties?.allow_legacy_pipedream) {
-            throw new Error('agent MCP omitted the explicit legacy Pipedream guard');
-          }
-          if (!String(connect?.description).includes('Composio')) {
-            throw new Error(`agent MCP connect tool omitted Composio: ${JSON.stringify(connect)}`);
-          }
-          if (
-            !finalize?.inputSchema?.properties?.connection_id ||
-            !finalize?.inputSchema?.properties?.request_id
-          ) {
-            throw new Error(
-              `agent MCP omitted provider authorization finalization: ${JSON.stringify(finalize)}`,
-            );
-          }
         } finally {
           cli.dispose();
         }
@@ -4572,26 +4507,6 @@ flow(
         if (refused.exitCode === 0 || !refused.all.includes('does not accept attachments')) throw new Error(`expected the attachments refusal: ${refused.all}`);
         if (received.length !== before) throw new Error('a refused call reached the upstream');
       });
-
-      if (onLocal) {
-        await ctx.step('the stdio `connectors mcp` server runs discover → describe → call against the same API', async () => {
-          const stdin = `${[
-            { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } },
-            { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'discover', arguments: { query: 'ping warehouse' } } },
-            { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'describe', arguments: { tool: `${slug}.ping` } } },
-            { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'call', arguments: { connector: slug, action: 'ping', args: { q: 'mcp' } } } },
-          ].map((line) => JSON.stringify(line)).join('\n')}\n`;
-          const result = await run(['mcp'], stdin);
-          throwIfCliInfraFailure(result, 'kortix connectors mcp');
-          if (result.exitCode !== 0) throw new Error(`MCP exited ${result.exitCode}: ${result.all.slice(0, 2_000)}`);
-          const byId = new Map<number, any>(result.stdout.trim().split('\n').map((line) => JSON.parse(line)).map((m: any) => [m.id, m]));
-          const text = (id: number) => JSON.parse(byId.get(id)?.result?.content?.[0]?.text ?? 'null');
-          if (byId.get(1)?.result?.serverInfo?.name !== 'kortix-connectors') throw new Error(`initialize: ${JSON.stringify(byId.get(1))}`);
-          if (text(2)?.matches?.[0]?.tool !== `${slug}.ping`) throw new Error(`discover: ${JSON.stringify(text(2))}`);
-          if (text(3)?.tool !== `${slug}.ping` || text(3)?.risk !== 'read') throw new Error(`describe: ${JSON.stringify(text(3))}`);
-          if (byId.get(4)?.result?.isError !== false || text(4)?.data?.url !== '/ping?q=mcp') throw new Error(`call: ${JSON.stringify(byId.get(4))}`);
-        });
-      }
     } finally {
       upstream.close();
       cli.dispose();
@@ -5084,7 +4999,7 @@ flow(
     timeoutMs: 180_000,
     routes: [
       'POST /v1/connectors/projects/:projectId/call',
-      'PATCH /v1/projects/:projectId/features',
+      'PUT /v1/admin/api/projects/:id/features',
       'POST /v1/projects/:projectId/apps',
       'PATCH /v1/projects/:projectId/apps/:appId/access',
       'POST /v1/projects/:projectId/apps/:appId/access-session',
@@ -5211,8 +5126,7 @@ flow(
       });
 
       await ctx.step('an App viewer token (api scope) acts as the viewer: their private account and the shared one', async () => {
-        (await owner.patch('/v1/projects/:projectId/features', { feature: 'apps', enabled: true },
-          { params: projectParams })).status(200);
+        await setFeatureAsOperator(ctx, project.id, 'apps', true);
         const created = await owner.post('/v1/projects/:projectId/apps',
           { slug: `ident-${stamp}`, name: 'ke2e connector identities' }, { params: projectParams });
         created.status(201);
