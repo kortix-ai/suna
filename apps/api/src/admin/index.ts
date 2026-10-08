@@ -1645,7 +1645,7 @@ async function bootModesView(): Promise<Record<string, unknown>> {
     policy,
     orgs: ids.map((id) => ({ accountId: id, name: names.get(id) ?? null, ...policy.orgs[id] })),
     env: {
-      bootArtifacts: config.KORTIX_BOOT_ARTIFACTS ?? null,
+      bootArtifacts: config.KORTIX_BOOT_ARTIFACTS || null,
       volumeOff: store.envVolumeOff(),
       driveSync: driveSyncEnabled(),
     },
