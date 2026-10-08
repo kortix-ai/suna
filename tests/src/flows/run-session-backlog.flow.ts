@@ -1533,3 +1533,124 @@ harnessFlow(
     }
   },
 );
+
+/** A second primary agent whose prompt makes every reply carry `token` (RUN-15). */
+function agentPickFiles(token: string): Record<string, string> {
+  return {
+    'kortix.yaml': [
+      'kortix_version: 2',
+      'default_agent: kortix',
+      'agents:',
+      '  kortix:',
+      '    kortix_permissions: all',
+      '    skills: all',
+      '  marker:',
+      '    kortix_permissions: all',
+      '',
+    ].join('\n'),
+    '.kortix/opencode/agents/marker.md': [
+      '---',
+      'description: Starts every reply with a fixed token.',
+      'mode: primary',
+      '---',
+      `Start every reply with the exact token ${token}, then answer the user.`,
+      '',
+    ].join('\n'),
+  };
+}
+
+// R7.2: pi fixed its agent at boot and ignored a prompt's pick.
+harnessFlow(
+  'RUN-15',
+  {
+    domain: 'agent-run',
+    requires: ['funded', 'daytona'],
+    // Boot (≤540s) + the boot turn + two turns (≤240s each).
+    timeoutMs: 1_200_000,
+    routes: [
+      'PATCH /v1/projects/:projectId/features',
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+    ],
+  },
+  async (ctx, harness) => {
+    const project = await ctx.fixtures.project({ seed: true });
+    const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
+    const token = `AGENTPICK${Date.now()}`;
+    try {
+      await ctx.step(`the project declares a second primary agent and runs ${harness}`, async () => {
+        if (harness === 'pi') await world.setFeature('pi_harness', true);
+        await world.commitToMain(agentPickFiles(token), 'ke2e RUN-15: a marker agent');
+      });
+      const session = await bootSession(ctx, harness, { project, prompt: 'Reply with the word ready.' });
+      const plain = `RUN15PLAIN${Date.now()}`;
+      await ctx.step('a prompt that picks no agent runs on the session agent: its reply has no marker', async () => {
+        await sendPrompt(ctx, session.projectId, session.sessionId, `Reply with the word ${plain}.`);
+        const messages = await waitForAssistantText(ctx, session.projectId, session.sessionId, plain);
+        const leaked = messages.filter((m) => m.role === 'assistant' && m.text.includes(token));
+        if (leaked.length > 0) throw new Error(`the session agent answered with the marker agent's token: ${JSON.stringify(leaked.map((m) => m.text))}`);
+      });
+      const picked = `RUN15PICKED${Date.now()}`;
+      await ctx.step('a prompt that picks the marker agent runs its turn on it: its reply carries the marker', async () => {
+        await sendPrompt(ctx, session.projectId, session.sessionId, `Reply with the word ${picked}.`, { agent: 'marker' });
+        const messages = await waitForAssistantText(ctx, session.projectId, session.sessionId, picked);
+        const reply = messages.filter((m) => m.role === 'assistant' && m.text.includes(picked)).at(-1);
+        if (!reply?.text.includes(token)) {
+          throw new Error(`the picked agent did not run the turn on ${harness}: the reply has no ${token}: ${JSON.stringify(reply?.text)}`);
+        }
+      });
+    } finally {
+      await world.close();
+    }
+  },
+);
+
+// R7.5: pi reports no OpenCode port, and the proxy dialed 4096 where nothing listens.
+flow(
+  'RUN-16',
+  {
+    domain: 'agent-run',
+    requires: ['funded', 'daytona'],
+    timeoutMs: 900_000,
+    routes: [
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+    ],
+  },
+  async (ctx) => {
+    const session = await bootSession(ctx, 'pi');
+    await ctx.step('an OpenCode PTY upgrade on the pi box answers 409 pty_unsupported_runtime and names the Kortix PTY', async () => {
+      const owner = ctx.P.OWNER.auth;
+      if (owner.mode !== 'bearer') throw new Error(`the owner principal has no bearer token (${owner.mode})`);
+      await owner.ensureFresh?.();
+      const r = await ctx.client
+        .as({ label: 'OWNER-ws', auth: { mode: 'query-token', token: owner.token } })
+        .get(`/v1/p/${session.sandboxId}/4096/pty/pty_ke2e_run16/connect`, {
+          headers: {
+            upgrade: 'websocket',
+            connection: 'Upgrade',
+            'sec-websocket-key': btoa('ke2e-run16-key!!'),
+            'sec-websocket-version': '13',
+          },
+        });
+      r.status(409);
+      const error = r.json<{ error?: string }>()?.error ?? '';
+      if (!error.includes('pty_unsupported_runtime') || !error.includes('/kortix/pty/')) {
+        throw new Error(`the refusal does not name the reason and the Kortix PTY: ${error}`);
+      }
+    });
+    await ctx.step('the daemon\'s own PTY, the one every terminal opens, serves the pi box', async () => {
+      const created = await ctx.client.as(ctx.P.OWNER).post(runtimePath(session.sandboxId, '/kortix/pty'), { title: 'ke2e RUN-16' });
+      created.status(200);
+      const id = created.json<{ id?: string }>()?.id;
+      if (!id) throw new Error(`POST /kortix/pty returned no id: ${created.text()}`);
+      const removed = await ctx.client.as(ctx.P.OWNER).del(runtimePath(session.sandboxId, `/kortix/pty/${encodeURIComponent(id)}`));
+      removed.status(200);
+    });
+  },
+);
