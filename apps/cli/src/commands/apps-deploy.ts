@@ -428,6 +428,8 @@ export async function provisionDeployApp(
         ? { monthly_budget_usd: manifestBlock.monthly_budget_usd }
         : {}),
       ...flagSettings,
+      // The backends the App may mint viewer tokens for; the manifest's list replaces the App's.
+      ...(manifestBlock?.backends !== undefined ? { backends: manifestBlock.backends } : {}),
     };
     return existing
       ? apps.update(existing.app_id, settings)

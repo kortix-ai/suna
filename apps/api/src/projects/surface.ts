@@ -45,6 +45,15 @@ export {
   commitManifest,
 } from './lib/triggers';
 
+// Project access, the route app and the secret envelope (consumed by ../backends).
+export { assertProjectCapability, loadProjectForUser } from './lib/access';
+export { projectsApp } from './lib/app';
+export { decryptProjectSecret, encryptProjectSecret } from './secrets/envelope';
+export { currentInstanceId } from './instance-scope';
+
+// Nested `projects.metadata` writes (consumed by ../feature-flags/write).
+export { metadataClearSubtreeKey, metadataMergeSubtree } from './lib/metadata-merge';
+
 // App-event subscriptions (consumed by connector sync/connect and account
 // deletion). Loaded on first call: their import chain reaches back into
 // connectors/, which imports this file, and an eager re-export closes that cycle

@@ -129,6 +129,17 @@ describe('ExperimentalTabView', () => {
     expect(out).toMatch(/role="switch"[^>]*disabled/);
   });
 
+  test('an operator_only flag shows "Managed by Kortix" and a disabled, checked switch even for a manager', () => {
+    const managed: FeatureFlagView = { ...experimentalFeature, key: 'backends', name: 'Backends', enabled: true, overridden: true, operator_only: true };
+    const out = renderToStaticMarkup(<ExperimentalTabView features={[managed]} canManage />);
+    expect(out).toContain('Managed by Kortix');
+    expect(out).not.toContain('Overridden for this project');
+    expect(out).toMatch(/role="switch"[^>]*aria-checked="true"[^>]*disabled|role="switch"[^>]*disabled[^>]*aria-checked="true"/);
+    // An ordinary flag beside it stays writable.
+    const mixed = renderToStaticMarkup(<ExperimentalTabView features={[betaFeature]} canManage />);
+    expect(mixed).not.toMatch(/role="switch"[^>]*disabled/);
+  });
+
   test('canManage false disables every switch, even with no pending key', () => {
     const out = renderToStaticMarkup(
       <ExperimentalTabView features={[betaFeature]} canManage={false} />,
