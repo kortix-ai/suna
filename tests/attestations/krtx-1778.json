@@ -1,0 +1,17 @@
+{
+  "source_hash": "dca5a8be3663549df9ab729849dc1852a7d8f062772f7728d1f75865e25b2fca",
+  "diff_files": [
+    "apps/web/src/app/[locale]/(system)/debug/file-preview/harness.tsx",
+    "apps/web/src/features/file-viewer/file-preview-modal.test.tsx",
+    "apps/web/src/features/file-viewer/file-preview-modal.tsx"
+  ],
+  "diff_hash": "13ea992b1bd1b7689d73e4dace3fab72558816b4f34131439812c95a3eb683c2",
+  "head": "8aaa9249fd9a9bc83abfc2bdf2451a47323e29c8",
+  "passed": false,
+  "lanes": {
+    "core": "fail",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "fail"
+  },
+  "at": "2026-10-08T11:01:08.590Z"
+}
