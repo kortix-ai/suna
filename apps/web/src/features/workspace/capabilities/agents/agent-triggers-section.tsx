@@ -44,7 +44,14 @@ import {
   type ProjectTrigger,
 } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
-import { PlusIcon, PulseIcon, TimerIcon, WebhooksLogoIcon, type Icon } from '@phosphor-icons/react';
+import {
+  LightningIcon,
+  PlusIcon,
+  PulseIcon,
+  TimerIcon,
+  WebhooksLogoIcon,
+  type Icon,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo, useState } from 'react';
 
@@ -52,6 +59,7 @@ const KIND_ICON: Record<ProjectTrigger['type'], Icon> = {
   cron: TimerIcon,
   webhook: WebhooksLogoIcon,
   monitor: PulseIcon,
+  event: LightningIcon,
 };
 
 /**

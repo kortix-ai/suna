@@ -426,26 +426,35 @@ remedy is one click, surfaced by the transcript's connect button.
 | --- | --- |
 | `list()` · `set(policies)` | the project's policies · replace the set |
 
-#### `p.triggers` — cron and webhook automations
+#### `p.triggers` — cron, webhook, monitor and event automations
 
-A trigger starts an agent action on a schedule or an inbound webhook. See
+A trigger starts an agent action on a schedule, an inbound webhook, a monitored command, or an app event on a connector. See
 [Triggers](/docs/connect/triggers) for session strategy and payload
 templating.
 
 | method | what |
 | --- | --- |
 | `list()` | all triggers |
+| `eventTypes({ connector })` | the app events a connector can trigger on (`{ provider, app, event_types }`); 404 for an unknown connector, 409 `event_source_unavailable` when its provider has no event source |
 | `create(input)` | create one |
 | `update(triggerId, input)` | edit a trigger |
 | `remove(triggerId)` | delete a trigger |
 | `fire(triggerId)` | run it now |
 | `setActivation(paused)` | pause or resume every trigger on the project |
 
-`create(input)` takes `{ name, type: 'cron' | 'webhook' | 'monitor', prompt_template,
+`create(input)` takes `{ name, type: 'cron' | 'webhook' | 'monitor' | 'event', prompt_template,
 slug?, agent?, model?, enabled?, session_mode?, session_id?, cron?, run_at?,
-timezone?, secret_env?, session_access? }`. `name` and `prompt_template` are required.
+timezone?, secret_env?, connector?, event?, event_config?, session_access? }`. `name` and `prompt_template` are required.
 `cron`/`run_at` are mutually exclusive (`type: 'cron'`); `secret_env` (the
 webhook HMAC secret) applies to `type: 'webhook'`.
+
+An `event` trigger needs `connector` (a connector slug) and `event` (a type id
+from `eventTypes`). `event_config` is shaped by that type's `config_schema`.
+Each listed trigger carries `event: { connector, type, config, provider, app,
+status: 'active' | 'needs_connection' | 'error' | 'pending', error,
+last_event_at } | null`. Prompt templates read the event as
+`{{ event.data.<field> }}` plus `event.id`, `event.type`, `event.app`,
+`event.connector`, and `event.occurred_at`.
 
 `session_access` controls who can open sessions the trigger creates. It is
 `{ mode: 'private' | 'members' | 'project', memberIds: string[], groupIds:

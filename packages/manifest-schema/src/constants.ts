@@ -89,7 +89,13 @@ export function reservedEnvNameReason(name: string): string | null {
   return null;
 }
 
-export const TRIGGER_TYPES = ['cron', 'webhook', 'monitor'] as const;
+export const TRIGGER_TYPES = ['cron', 'webhook', 'monitor', 'event'] as const;
+
+/** Cron/webhook/monitor-only keys: hard-rejected on a `type: event` trigger. */
+export const EVENT_FORBIDDEN_KEYS = [
+  'cron', 'schedule', 'run_at', 'runAt', 'timezone', 'secret_env', 'secretEnv',
+  'run', 'mode', 'interval', 'expect_event_within',
+] as const;
 
 /**
  * A `type: monitor` trigger's shape. `poll` runs `run` every `interval` and

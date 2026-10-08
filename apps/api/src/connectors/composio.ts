@@ -45,6 +45,9 @@ export interface ComposioRuntime {
           logo?: string | null;
           description?: string | null;
           categories?: Array<{ slug: string; name: string }>;
+          /** `@composio/core` camel-cases the API's `triggers_count`; the raw key survives the meta spread. */
+          triggersCount?: number;
+          triggers_count?: number;
         };
       }>
     >;
@@ -52,6 +55,27 @@ export interface ComposioRuntime {
   /** Read one connected account. Only the non-secret `displayName` is used. */
   connectedAccounts?: {
     get(id: string): Promise<{ state?: { val?: Record<string, unknown> } | null } | null | undefined>;
+  };
+  /** App-event trigger instances and their catalog (`@composio/core` `Triggers`). */
+  triggers?: {
+    listTypes(query?: { cursor?: string; limit?: number | null; toolkits?: string[] | null }): Promise<{
+      items: Array<{
+        slug: string;
+        name: string;
+        description: string;
+        type?: string;
+        toolkit: { slug: string; name: string; logo?: string };
+        payload: Record<string, unknown>;
+        config: Record<string, unknown>;
+      }>;
+      nextCursor?: string | null;
+    }>;
+    create(
+      userId: string,
+      slug: string,
+      body?: { connectedAccountId?: string; triggerConfig?: Record<string, unknown> },
+    ): Promise<{ triggerId: string }>;
+    delete(triggerId: string): Promise<{ triggerId: string }>;
   };
 }
 

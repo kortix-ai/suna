@@ -1,4 +1,5 @@
 /** Actions on one connector connection: rename, credential, revoke, activate, default, connect. */
+import { reconcileEventSubscriptionsFromCatalog } from '../trigger-events/subscriptions';
 import { createRoute, z } from '@hono/zod-openapi';
 import {
   RenameConnectionInputSchema,
@@ -403,6 +404,8 @@ export function registerConnectionActionsRoutes(): void {
             .set({ status: operation === 'revoke' ? 'revoked' : 'active', updatedAt: new Date() })
             .where(eq(connectorConnections.connectionId, connectionId));
         }
+        // The default shared account may have changed: activate or park pending event triggers.
+        await reconcileEventSubscriptionsFromCatalog(projectId, loaded.row.accountId);
         return c.json({ ok: true });
       },
     );
