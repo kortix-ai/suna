@@ -1,10 +1,15 @@
 /**
- * memory: a 1:1 port of Anthropic's `memory_20250818` tool, rooted at the
- * project's `memory/` folder. Every harness runs this one module, under the
- * name and arguments the project template's tool had: six commands (view /
- * create / str_replace / insert / delete / rename) and the return strings the
- * model is trained to read. A refused command is a returned string, not a
- * thrown error, as in the reference backend.
+ * memory: the Kortix memory tool. Kortix maintains this file. A project lists
+ * it in kortix.yaml as `memory: kortix:memory`. `kortix tools eject memory`
+ * copies it to `tools/memory.ts` for the project to own and change; the copy
+ * runs unchanged on every harness. The web UI renders a call from its
+ * arguments (`command`, `path`); a changed copy must keep them.
+ *
+ * A 1:1 port of Anthropic's `memory_20250818` tool, rooted at the project's
+ * `memory/` folder: six commands (view / create / str_replace / insert /
+ * delete / rename) and the return strings the model is trained to read. A
+ * refused command is a returned string, not a thrown error, as in the
+ * reference backend.
  *
  * Every write is an ordinary file change under `memory/`, so memory edits
  * reach `main` through the normal change-request flow.
@@ -20,7 +25,11 @@
 import { randomUUID } from 'node:crypto'
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
-import type { KortixTool } from './tool'
+
+/** What a call receives (the project tool contract): `directory` is the project checkout. */
+interface ToolContext {
+  directory: string
+}
 
 /** Repo-relative root every memory path must live under. */
 const MEMORY_PREFIX = 'memory'
@@ -384,7 +393,7 @@ async function run(args: Record<string, any>, dir: string): Promise<string> {
   }
 }
 
-export const memory: KortixTool = {
+export default {
   description:
     'Persistent project memory — read, write, and curate the project brain in `memory/`. ' +
     'This is the canonical way to work with memory; use it instead of the generic read/edit/write tools for anything under `memory/`. ' +
@@ -412,5 +421,6 @@ export const memory: KortixTool = {
     },
     required: ['command'],
   },
-  execute: (args, { directory }) => run(args, directory).catch((err) => `Error: ${err?.message ?? String(err)}`),
+  execute: (args: Record<string, any>, { directory }: ToolContext): Promise<string> =>
+    run(args, directory).catch((err) => `Error: ${err?.message ?? String(err)}`),
 }

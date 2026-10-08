@@ -1260,10 +1260,75 @@
             "additionalProperties": false
           },
           "tools": {
-            "type": "object",
-            "description": "Project tools: tool name → repo-relative path of the module that implements it. Each module default-exports { description, parameters (JSON Schema), execute(args, context) }. Every harness loads them.",
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Tools: tool name → repo-relative path of the module that implements it, or `kortix:<name>` for a Kortix tool. Each module default-exports { description, parameters (JSON Schema), execute(args, context) }. Every harness loads them. With a `tools` key, sessions get only the Kortix tools it lists; without one, they get all five.",
             "propertyNames": {
               "pattern": "^[a-z][a-z0-9_]{0,63}$"
+            },
+            "properties": {
+              "web_search": {
+                "anyOf": [
+                  {
+                    "const": "kortix:web_search",
+                    "description": "The Kortix web_search tool, maintained by Kortix."
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^(?!-)(?!(?:.*/)?\\.\\.?(?:/|$))(?:[\\w .-]+/)*[\\w .-]+\\.[cm]?[jt]s$"
+                  }
+                ]
+              },
+              "image_search": {
+                "anyOf": [
+                  {
+                    "const": "kortix:image_search",
+                    "description": "The Kortix image_search tool, maintained by Kortix."
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^(?!-)(?!(?:.*/)?\\.\\.?(?:/|$))(?:[\\w .-]+/)*[\\w .-]+\\.[cm]?[jt]s$"
+                  }
+                ]
+              },
+              "scrape_webpage": {
+                "anyOf": [
+                  {
+                    "const": "kortix:scrape_webpage",
+                    "description": "The Kortix scrape_webpage tool, maintained by Kortix."
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^(?!-)(?!(?:.*/)?\\.\\.?(?:/|$))(?:[\\w .-]+/)*[\\w .-]+\\.[cm]?[jt]s$"
+                  }
+                ]
+              },
+              "memory": {
+                "anyOf": [
+                  {
+                    "const": "kortix:memory",
+                    "description": "The Kortix memory tool, maintained by Kortix."
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^(?!-)(?!(?:.*/)?\\.\\.?(?:/|$))(?:[\\w .-]+/)*[\\w .-]+\\.[cm]?[jt]s$"
+                  }
+                ]
+              },
+              "show": {
+                "anyOf": [
+                  {
+                    "const": "kortix:show",
+                    "description": "The Kortix show tool, maintained by Kortix."
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^(?!-)(?!(?:.*/)?\\.\\.?(?:/|$))(?:[\\w .-]+/)*[\\w .-]+\\.[cm]?[jt]s$"
+                  }
+                ]
+              }
             },
             "additionalProperties": {
               "type": "string",
@@ -3067,10 +3132,75 @@
             "additionalProperties": false
           },
           "tools": {
-            "type": "object",
-            "description": "Project tools: tool name → repo-relative path of the module that implements it. Each module default-exports { description, parameters (JSON Schema), execute(args, context) }. Every harness loads them.",
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Tools: tool name → repo-relative path of the module that implements it, or `kortix:<name>` for a Kortix tool. Each module default-exports { description, parameters (JSON Schema), execute(args, context) }. Every harness loads them. With a `tools` key, sessions get only the Kortix tools it lists; without one, they get all five.",
             "propertyNames": {
               "pattern": "^[a-z][a-z0-9_]{0,63}$"
+            },
+            "properties": {
+              "web_search": {
+                "anyOf": [
+                  {
+                    "const": "kortix:web_search",
+                    "description": "The Kortix web_search tool, maintained by Kortix."
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^(?!-)(?!(?:.*/)?\\.\\.?(?:/|$))(?:[\\w .-]+/)*[\\w .-]+\\.[cm]?[jt]s$"
+                  }
+                ]
+              },
+              "image_search": {
+                "anyOf": [
+                  {
+                    "const": "kortix:image_search",
+                    "description": "The Kortix image_search tool, maintained by Kortix."
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^(?!-)(?!(?:.*/)?\\.\\.?(?:/|$))(?:[\\w .-]+/)*[\\w .-]+\\.[cm]?[jt]s$"
+                  }
+                ]
+              },
+              "scrape_webpage": {
+                "anyOf": [
+                  {
+                    "const": "kortix:scrape_webpage",
+                    "description": "The Kortix scrape_webpage tool, maintained by Kortix."
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^(?!-)(?!(?:.*/)?\\.\\.?(?:/|$))(?:[\\w .-]+/)*[\\w .-]+\\.[cm]?[jt]s$"
+                  }
+                ]
+              },
+              "memory": {
+                "anyOf": [
+                  {
+                    "const": "kortix:memory",
+                    "description": "The Kortix memory tool, maintained by Kortix."
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^(?!-)(?!(?:.*/)?\\.\\.?(?:/|$))(?:[\\w .-]+/)*[\\w .-]+\\.[cm]?[jt]s$"
+                  }
+                ]
+              },
+              "show": {
+                "anyOf": [
+                  {
+                    "const": "kortix:show",
+                    "description": "The Kortix show tool, maintained by Kortix."
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^(?!-)(?!(?:.*/)?\\.\\.?(?:/|$))(?:[\\w .-]+/)*[\\w .-]+\\.[cm]?[jt]s$"
+                  }
+                ]
+              }
             },
             "additionalProperties": {
               "type": "string",

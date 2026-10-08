@@ -477,8 +477,9 @@ export async function buildOpencodeConfigContent(
     }
   }
   const out: Record<string, unknown> = { ...base }
-  // The daemon's tool host reads the project's tools (tool-bridge.ts); OpenCode's schema has no such key.
+  // The daemon's tool host reads the tool keys (tool-bridge.ts); OpenCode's schema has neither.
   delete out.project_tools
+  delete out.kortix_tools
 
   // Instruction files the platform contributes. Appended, never clobbering
   // what the project's own config declares.

@@ -414,7 +414,27 @@ export const HARNESS_TOOL_NAMES = [
   'plan_exit',
 ] as const;
 /**
- * The Kortix tools every session has on every harness (apps/kortix-sandbox-agent-server
- * `src/services/tools/`). A project tool with the same name replaces one.
+ * The Kortix tools (apps/kortix-sandbox-agent-server `src/services/tools/kortix/`).
+ * A project lists one in `tools:` as `<name>: kortix:<name>`, or replaces it
+ * with its own module under the same name.
  */
 export const KORTIX_TOOL_NAMES = ['web_search', 'image_search', 'scrape_webpage', 'memory', 'show'] as const;
+/** A `tools:` value that keeps a Kortix tool: `kortix:<name>`. */
+export const KORTIX_TOOL_PREFIX = 'kortix:';
+
+/** The name a `kortix:<name>` value refers to, or null for any other value. */
+export function kortixToolRef(value: unknown): string | null {
+  return typeof value === 'string' && value.startsWith(KORTIX_TOOL_PREFIX) ? value.slice(KORTIX_TOOL_PREFIX.length) : null;
+}
+
+/**
+ * The Kortix tools a project's sessions get. With no `tools` key (`undefined`):
+ * all of them, so a project that never lists them keeps them. With a `tools`
+ * key, even an empty one: only the ones it lists, as `kortix:<name>` or as a
+ * module that replaces the tool.
+ */
+export function selectedKortixTools(tools: unknown): string[] {
+  if (tools === undefined) return [...KORTIX_TOOL_NAMES];
+  const listed = tools && typeof tools === 'object' && !Array.isArray(tools) ? tools : {};
+  return KORTIX_TOOL_NAMES.filter((name) => Object.hasOwn(listed, name));
+}

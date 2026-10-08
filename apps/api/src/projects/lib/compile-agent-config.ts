@@ -44,6 +44,8 @@ import {
   manifestCandidatePaths,
   manifestFormatForPath,
   HARNESS_TOOL_NAMES,
+  KORTIX_TOOL_NAMES,
+  kortixToolRef,
   parseManifestText,
   resolveAgentTools,
   safeToolFile,
@@ -263,28 +265,32 @@ export function compileAgentConfig(
   const defaultModel = defaultAgent?.model;
   const runnableDefault = defaultAgent && !defaultAgent.disable && defaultAgent.mode !== 'subagent';
 
-  const projectTools = compileProjectTools(v2.tools);
   return {
     ...(defaultModel ? { model: defaultModel } : {}),
     ...(runnableDefault ? { default_agent: defaultAgentName } : {}),
     agent,
-    ...(projectTools ? { project_tools: projectTools } : {}),
+    ...compileTools(v2.tools),
   };
 }
 
 /**
- * Top-level `tools`: the valid name → module entries; `validateManifest`
- * reports the rest. A harness tool's name never compiles: two tools with one
- * name break the model request.
+ * Top-level `tools`. `project_tools`: the valid name → module entries;
+ * `validateManifest` reports the rest. A harness tool's name never compiles:
+ * two tools with one name break the model request. `kortix_tools`: the names
+ * listed as `kortix:<name>`, only when the manifest has a `tools` key (even
+ * an empty one); without it the daemon loads every Kortix tool.
  */
-function compileProjectTools(tools: unknown): Record<string, string> | undefined {
-  if (!tools || typeof tools !== 'object' || Array.isArray(tools)) return undefined;
-  const entries = Object.entries(tools).flatMap(([name, file]) => {
+function compileTools(tools: unknown): Pick<CompiledAgents, 'project_tools' | 'kortix_tools'> {
+  const map = tools && typeof tools === 'object' && !Array.isArray(tools) ? (tools as Record<string, unknown>) : {};
+  const entries = Object.entries(map).flatMap(([name, file]) => {
     const path = safeToolFile(file);
     const reserved = (HARNESS_TOOL_NAMES as readonly string[]).includes(name) || name.startsWith('pty_');
     return TOOL_NAME_RE.test(name) && !reserved && path ? [[name, path] as const] : [];
   });
-  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+  return {
+    ...(entries.length > 0 ? { project_tools: Object.fromEntries(entries) } : {}),
+    ...(tools !== undefined ? { kortix_tools: KORTIX_TOOL_NAMES.filter((name) => kortixToolRef(map[name]) === name) } : {}),
+  };
 }
 
 /** Compile one selected v2 agent for a restricted session environment. */
@@ -323,11 +329,10 @@ export function compileSelectedAgentConfig(
     const md = suppliedAgentMarkdown(manifest, agentName, agentMdFiles);
     compiledAgent = compileAgentBlock(agentName, block, md.path, md.content);
   }
-  const projectTools = compileProjectTools(v2.tools);
   return {
     ...(compiledAgent.model ? { model: compiledAgent.model } : {}),
     agent: { [agentName]: compiledAgent },
-    ...(projectTools ? { project_tools: projectTools } : {}),
+    ...compileTools(v2.tools),
   };
 }
 

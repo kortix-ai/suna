@@ -37,12 +37,14 @@ import {
   HARNESS_TOOL_NAMES,
   HEX_COLOR_RE_V2,
   KORTIX_TOOL_NAMES,
+  kortixToolRef,
   PI_PACKAGE_NAME_RE,
   PI_PACKAGE_NPM_RE,
   PI_PACKAGE_PATH_RE,
   PERMISSION_ACTION_ONLY_KEYS_V2,
   PERMISSION_ACTIONS_V2,
   SLUG_RE,
+  selectedKortixTools,
   TOOL_NAME_RE,
   V2_RUNTIME_VALUES,
   WORKSPACE_MODES_V2,
@@ -974,25 +976,47 @@ function isFiniteNumber(value: unknown): value is number {
 
 /**
  * Top-level `tools:` — the project's tools, by name: tool name → repo-relative
- * path of the module that implements it. The folder is the author's choice.
+ * path of the module that implements it (the folder is the author's choice),
+ * or `kortix:<name>` for a Kortix tool under its own name. A Kortix tool name
+ * with a module path replaces the Kortix tool. A `tools` key also selects the
+ * Kortix tools: only the ones it lists load (`selectedKortixTools`).
  */
 export function validateToolsV2(value: unknown, path: string, issues: ManifestIssue[]): void {
-  if (value === undefined || value === null) return;
-  if (!isTable(value)) {
-    issues.push({ path, message: 'tools must map tool names to module paths (e.g. `lookup_order: tools/lookup_order.ts`).', severity: 'error' });
+  if (value === undefined) return;
+  if (value !== null && !isTable(value)) {
+    issues.push({ path, message: 'tools must map tool names to module paths or `kortix:<name>` (e.g. `lookup_order: tools/lookup_order.ts`, `web_search: kortix:web_search`).', severity: 'error' });
     return;
   }
-  for (const [name, file] of Object.entries(value)) {
+  for (const [name, file] of Object.entries(value ?? {})) {
     const where = `${path}.${name}`;
     if (!TOOL_NAME_RE.test(name)) {
       issues.push({ path: where, message: 'a tool name is snake_case: a lower-case letter, then letters, digits or `_` (64 characters at most).', severity: 'error' });
     } else if ((HARNESS_TOOL_NAMES as readonly string[]).includes(name) || name.startsWith('pty_')) {
       issues.push({ path: where, message: `"${name}" is a harness tool; pick another name.`, severity: 'error' });
     }
-    if (!safeToolFile(file)) {
-      issues.push({ path: where, message: 'must be a repo-relative path to a .ts or .js module (e.g. `tools/lookup_order.ts`).', severity: 'error' });
+    const ref = kortixToolRef(file);
+    if (ref === null ? !safeToolFile(file) : ref !== name || !isKortixTool(name)) {
+      issues.push({ path: where, message: toolValueMessage(name), severity: 'error' });
     }
   }
+  if (selectedKortixTools(value).length === 0) {
+    issues.push({
+      path,
+      message: `Sessions of this project get no Kortix tool (${KORTIX_TOOL_NAMES.join(', ')}). Add \`<name>: kortix:<name>\` to keep one.`,
+      severity: 'warning',
+    });
+  }
+}
+
+function isKortixTool(name: string): boolean {
+  return (KORTIX_TOOL_NAMES as readonly string[]).includes(name);
+}
+
+/** The values `tools.<name>` allows. */
+function toolValueMessage(name: string): string {
+  const module = `a repo-relative path to a .ts or .js module (e.g. \`tools/${name}.ts\`)`;
+  if (isKortixTool(name)) return `must be \`kortix:${name}\` (the Kortix tool) or ${module} that replaces it.`;
+  return `must be ${module}. \`kortix:<name>\` names a Kortix tool under its own name: ${KORTIX_TOOL_NAMES.map((tool) => `\`${tool}: kortix:${tool}\``).join(', ')}.`;
 }
 
 /** `agents.<name>.tools` — see `AgentToolsV2`. */
@@ -1014,12 +1038,13 @@ function validateAgentToolsV2(value: unknown, where: string, issues: ManifestIss
 
 /**
  * A tool name in an agent's `tools` that no harness, Kortix or project tool
- * has. Probably a typo: an excluded typo leaves the real tool on. A warning,
- * not an error: a harness may have tools this list does not know.
+ * has. Probably a typo: an excluded typo leaves the real tool on. Also a
+ * Kortix tool the project's `tools` does not list, so no session loads it.
+ * A warning, not an error: a harness may have tools this list does not know.
  */
 export function warnUnknownAgentTools(agents: unknown, tools: unknown, issues: ManifestIssue[]): void {
   if (!isTable(agents)) return;
-  const known = new Set<string>(['*', ...HARNESS_TOOL_NAMES, ...KORTIX_TOOL_NAMES, ...(isTable(tools) ? Object.keys(tools) : [])]);
+  const known = new Set<string>(['*', ...HARNESS_TOOL_NAMES, ...selectedKortixTools(tools), ...(isTable(tools) ? Object.keys(tools) : [])]);
   for (const [agent, block] of Object.entries(agents)) {
     if (!isTable(block)) continue;
     const value = block.tools;
@@ -1034,7 +1059,9 @@ export function warnUnknownAgentTools(agents: unknown, tools: unknown, issues: M
       if (typeof name !== 'string' || known.has(name) || name.startsWith('pty_')) continue;
       issues.push({
         path: `agents.${agent}.tools`,
-        message: `"${name}" is not a harness, Kortix or project tool (declare project tools under the top-level \`tools\`).`,
+        message: isKortixTool(name)
+          ? `"${name}" is a Kortix tool this project does not load: add \`${name}: kortix:${name}\` under the top-level \`tools\`, or remove it here.`
+          : `"${name}" is not a harness, Kortix or project tool (declare project tools under the top-level \`tools\`).`,
         severity: 'warning',
       });
     }

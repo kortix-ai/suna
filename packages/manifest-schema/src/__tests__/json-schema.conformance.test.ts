@@ -1021,6 +1021,31 @@ connectors:
     input: 'kortix_version: 3\ndefault_agent: w\nagents:\n  w:\n    prompt: [bad]\n',
   },
   {
+    name: 'v2: tools mixes kortix:<name> and module paths',
+    format: 'yaml',
+    valid: true,
+    input:
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\ntools:\n  web_search: kortix:web_search\n  memory: tools/memory.ts\n  lookup_order: tools/lookup_order.ts\n',
+  },
+  {
+    name: 'v2: a tools key with every line deleted (null) is accepted',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\ntools:\n',
+  },
+  {
+    name: 'v2: kortix:<name> under another Kortix tool name rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\ntools:\n  web_search: kortix:image_search\n',
+  },
+  {
+    name: 'v2: kortix:<name> for a name that is no Kortix tool rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\ntools:\n  web_serch: kortix:web_serch\n',
+  },
+  {
     name: 'v2: Kortix Apps map is accepted',
     format: 'yaml',
     valid: true,
