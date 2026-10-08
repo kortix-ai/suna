@@ -45,6 +45,28 @@ export function bindProjectAccessResources(projectId: string) {
         P.rollbackApp(projectId, ...a),
     },
 
+    backends: {
+      list: () => P.listBackends(projectId),
+      create: (input: Parameters<typeof P.createBackend>[1]) => P.createBackend(projectId, input),
+      get: (backendId: string) => P.getBackend(projectId, backendId),
+      waitUntilRunning: (backendId: string, options?: P.WaitForBackendOptions) =>
+        P.waitForBackend(projectId, backendId, options),
+      resize: (backendId: string, size: P.ProjectBackendSize) => P.resizeBackend(projectId, backendId, size),
+      waitForOperation: (backendId: string, options?: P.WaitForBackendOperationOptions) =>
+        P.waitForBackendOperation(projectId, backendId, options),
+      backups: (backendId: string) => P.getBackendBackups(projectId, backendId),
+      snapshot: (backendId: string) => P.createBackendSnapshot(projectId, backendId),
+      restore: (backendId: string, snapshotId: string) =>
+        P.restoreBackendSnapshot(projectId, backendId, snapshotId),
+      deleteSnapshot: (backendId: string, snapshotId: string) =>
+        P.deleteBackendSnapshot(projectId, backendId, snapshotId),
+      credentials: (backendId: string) => P.getBackendCredentials(projectId, backendId),
+      token: (backendId: string) => P.getBackendToken(projectId, backendId),
+      rotateAdminKey: (backendId: string) => P.rotateBackendAdminKey(projectId, backendId),
+      logs: (backendId: string, options?: P.GetBackendLogsOptions) => P.getBackendLogs(projectId, backendId, options),
+      remove: (backendId: string) => P.deleteBackend(projectId, backendId),
+    },
+
     /** Project-scoped CLI PATs (auto-minted at session-create as `KORTIX_TOKEN`; can also be minted by hand). */
   };
 }

@@ -84,7 +84,7 @@ The API decides which OpenCode config a session runs. A session ALWAYS runs the 
 `CFG-9` Turn-start convergence, API half. The API assigns ONE desired release per session, and every route that states it states the same value. The session's own sandbox token → a descriptor with `release_id` R and `source_commit` C. Two sessions of the same project, on the same base ref, with the same agent and the same repository access receive the identical R, C and `config_tree_id`; a session on a different base ref receives that ref's release. A commit on the base branch moves the value for every session of that ref in one step: the next descriptor request names the new tip as `source_commit` and a new `release_id`, and a request on an unchanged tip repeats R (CFG-2). `GET .../sessions/:sessionId/config` resolves the desired release through the same code path, reports the same `base_ref` the release was built from, and writes nothing while doing it — no ledger row, no agent re-point (CFG-4). That agreement is what makes the turn-start memo safe: the gate compares the release the API last saw a box running against this value, so a prompt on a box whose running release differs converges before the turn runs, and a box already on it costs the turn no call. The reported half — `release.desired_release_id` equal to R, and `stale = running_release_id !== desired_release_id` — needs a daemon with `config.release.v1`; no test profile runs one, so `GET /config` there carries `stale: null` and no `release` block (CFG-6), and the gate's own decision table is proved by `apps/api/src/projects/lib/__tests__/turn-start-convergence.test.ts`.
 `CFG-10` Degenerate clones, API half. The descriptor is decided without ever reading the session's checkout. A session whose sandbox has no clone, one whose `/workspace` is empty, and one whose clone came from a different repository each → 200 with the SAME `release_id`, `source_commit`, `config_dir`, `config_tree_id`, and `files` as a healthy session of the same project and base ref, and each downloads the same archive bytes. No route accepts a workspace report: `GET /kortix/config/workspace` does not exist, and a descriptor request carrying a body that describes a checkout is ignored (CFG-1).
 
-`CFG-11` Turn-start convergence, box half — the only config-release contract that needs a booted sandbox with a `config.release.v1` daemon (`requires: funded, daytona, stripe`; the local profile self-skips it). The contract is now "a paid-tier account runs a managed model against the current release": as its first step, alongside the `PATCH /features` opt-in, the flow entitles its own account the real way (`tests/src/fixtures/billing.ts`'s `subscribe` — inline checkout, a Stripe test-mode PaymentIntent confirm, then `waitForCredits` polling `/v1/billing/account-state` until the grant lands, because the monthly credit grant is the async `invoice.paid` webhook, not the subscribe call itself), the same fixture the BILL flows already use. Preview wires real Stripe test credentials for exactly this (`tests/src/core/preview-stack.ts`). Skipping this step is not an option: the box's session runs a managed model, and a free-tier account 400s `plan_upgrade_required` on every turn before it ever reaches OpenCode — read as a stale config answer by an earlier run of this flow (2026-09-26/27, preview runs 36279090948 and 36287293649, neither of which touched config releases). It runs once per harness: `CFG-11` on OpenCode, `CFG-11-pi` on the same project with its `pi_harness` flag on, and each run proves the harness through the daemon's `/kortix/health`. A session boots on a proven release and opens a runtime conversation. A commit on the base branch then puts the box behind. A prompt sent the way `kortix sessions chat` sends it — `POST /session/:id/message` with `{parts:[{type:"text",text}]}`, no `Idempotency-Key`, no wire `messageID` — answers `200` with a real message (an `info` and a `parts` array, never `{status:"duplicate",deduplicated:true}`); the transcript then holds BOTH the user row for that text and an assistant row, and the assistant's answer carries the marker that exists only in the NEW release. `GET .../sessions/:sessionId/config` then reports `running_release_id === desired_release_id`, `proven: true`, and a release different from the one the box was behind on. The SAME sentence sent a second time is a SECOND turn: `200` with a message again, and one more user row in the transcript — never a deduplicated short-circuit, because a prompt body with no caller-supplied identity is a hash of its words and two deliberate sends of one sentence are not one submission (DEF-FLAGON-1, measured on a real box 2026-09-25). A skill committed to the base branch then reaches the running session: once the box serves the new release, the runtime's `GET /skill` through the session proxy lists it. On pi the same commit also adds a skill to pi's own config dir (`.kortix/pi/skills/`), which the release carries at the same path, and pi lists it too. Then `opencode.json` on the base branch is broken. On OpenCode the session reports a `fallback_reason` and a `failed_release_id` it is not running. On pi the same commit is a working config, because pi does not read OpenCode's files: the box moves to it with `proven: true` and no `fallback_reason`. Restoring the config tree exactly — which restores the release the box is ALREADY running, because a release is content-addressed — clears both fields with NO further push (DEF-FLAGON-2).
+`CFG-11` Turn-start convergence, box half — the only config-release contract that needs a booted sandbox with a `config.release.v1` daemon (`requires: funded, daytona, stripe`; the local profile self-skips it). The contract is now "a paid-tier account runs a managed model against the current release": as its first step, alongside the `PATCH /features` opt-in, the flow entitles its own account the real way (`tests/src/fixtures/billing.ts`'s `subscribe` — inline checkout, a Stripe test-mode PaymentIntent confirm, then `waitForCredits` polling `/v1/billing/account-state` until the grant lands, because the monthly credit grant is the async `invoice.paid` webhook, not the subscribe call itself), the same fixture the BILL flows already use. Preview wires real Stripe test credentials for exactly this (`tests/src/core/preview-stack.ts`). Skipping this step is not an option: the box's session runs a managed model, and a free-tier account 400s `plan_upgrade_required` on every turn before it ever reaches OpenCode — read as a stale config answer by an earlier run of this flow (2026-09-26/27, preview runs 36279090948 and 36287293649, neither of which touched config releases). It runs once per harness: `CFG-11` on OpenCode, `CFG-11-pi` on the same project with its `pi_harness` flag on, and each run proves the harness through the daemon's `/kortix/health`. A session boots on a proven release and opens a runtime conversation. A commit on the base branch then puts the box behind. A prompt sent the way `kortix sessions chat` sends it — `POST /session/:id/message` with `{parts:[{type:"text",text}]}`, no `Idempotency-Key`, no wire `messageID` — answers `200` with a real message (an `info` and a `parts` array, never `{status:"duplicate",deduplicated:true}`); the transcript then holds BOTH the user row for that text and an assistant row, and the assistant's answer carries the marker that exists only in the NEW release. `GET .../sessions/:sessionId/config` then reports `running_release_id === desired_release_id`, `proven: true`, and a release different from the one the box was behind on. The SAME sentence sent a second time is a SECOND turn: `200` with a message again, and one more user row in the transcript — never a deduplicated short-circuit, because a prompt body with no caller-supplied identity is a hash of its words and two deliberate sends of one sentence are not one submission (DEF-FLAGON-1, measured on a real box 2026-09-25). A skill committed to the base branch then reaches the running session: once the box serves the new release, the runtime's `GET /skill` through the session proxy lists it. On pi the same commit also adds a skill to pi's own config dir (`.kortix/pi/skills/`), which the release carries at the same path, and pi lists it too. On pi a base-branch commit then adds a root `AGENTS.md` with one directive, and a second commit changes it: the first key keeps a deliberately stale value and a second key, never asked before, holds a new marker. Once the box serves each release, the daemon health reports `harness.details.agentsMd` with `source: "release"` and the sha of that commit's file. Asked for the second key, the running session answers the new marker, and the daemon log (`GET /p/<sbx>/8000/kortix/logs`) holds no new `[pi] runtime ready` line: the release reached the session in place, with no runtime restart. Then `opencode.json` on the base branch is broken. On OpenCode the session reports a `fallback_reason` and a `failed_release_id` it is not running. On pi the same commit is a working config, because pi does not read OpenCode's files: the box moves to it with `proven: true` and no `fallback_reason`. Restoring the config tree exactly — which restores the release the box is ALREADY running, because a release is content-addressed — clears both fields with NO further push (DEF-FLAGON-2).
 
 `CFG-12` A base move and a prompt in the same instant never leave a half-written turn (`requires: funded, daytona, stripe`; the local profile self-skips it). It runs once per harness, like CFG-11 (`CFG-12-pi`). The account subscribes to a paid tier the real way first, for the same reason CFG-11 does — see its paragraph. A session boots on a proven release and opens a runtime conversation. Then, `KORTIX_CFG_RACE_ROUNDS` times (default 5; the acceptance run for DEF-DEV-1 is 50): a commit lands on the base branch and a prompt is sent 200 ms later. Every round asks about a directive NAME unique to that round (`RELOAD_VERIFY_MARKER_R<round>`), never the same sentence twice — proven on a real box 2026-09-27 that a repeated, literally identical question lets the model answer from its own prior turn in the conversation instead of the current system prompt, which reads as a stale config even when the daemon's own logs show the release fully applied and promoted tens of seconds earlier (the same confound `RELOAD_VERIFY_MARKER2` closes below, generalized to every round instead of only the final check). Every round answers `200` with a real message — never `503`, never `{deduplicated:true}` — the assistant row parented to that prompt carries the marker committed in THAT round, and no assistant row anywhere in the transcript is left with no completion time and no error. The marker assertion is the cross-process invalidation end to end: nothing tells the API process that answers the prompt about the push except the broadcast. One round is SCHEDULED rather than raced: `POST /kortix/config/converge?delay_before_swap_ms=10000` parks a convergence between the turn gate and the swap, and the prompt sent while it is parked answers `200` and completes, so the prompt is provably inside the window instead of racing it. The fix must not turn every convergence into a deferral, so an IDLE session (nobody prompting) still reaches `running_release_id === desired_release_id` with `proven: true` and no `fallback_reason` after a base move. A directive whose NAME has never appeared in the conversation is then pushed — `RELOAD_VERIFY_MARKER2`, beside the old key holding a deliberately wrong value — and once the box serves that release the session is asked for MARKER2 alone: the answer carries it, which proves the per-turn system prompt is CURRENT and settles DEF-DEV-2 as the model reading its own transcript rather than stale instance state (a wrong answer would prove the opposite and is a different defect). The flow ends by re-reading the whole transcript: zero assistant rows with `completed = null`.
 
@@ -463,6 +463,7 @@ The preview proxy is `/p/:sandboxId/:port/*` (`combinedAuth` + rate-limit). `:sa
 `RUN-14` A project slash command runs its template on every harness. The project commits one command file where its harness reads it: `harnesses/opencode/commands/<name>.md` on OpenCode, `harnesses/pi/prompts/<name>.md` on pi (a pi prompt template). The daemon health lists `session.commands` and `GET /p/<sbx>/8000/command` names the command. `POST /p/<sbx>/8000/session/<root>/command` `{ command, arguments }` → 200; `GET …/transcript` carries a reply with the argument, and the runtime message list carries a user message whose text is the template with `$ARGUMENTS` replaced. A command the project does not have is refused: pi answers 400, OpenCode answers 500.
 `RUN-16` An OpenCode PTY path on a pi box is refused, not dialed (R7.5). One harness: pi reports no OpenCode port. A WebSocket upgrade of `GET /v1/p/<sbx>/4096/pty/<id>/connect?token=` answers `409` with an `error` that names `pty_unsupported_runtime` and the daemon's own PTY, `/kortix/pty/:id/connect`; it used to dial port 4096, where nothing listens on pi, and close with 4502. The daemon's own PTY serves the pi box: `POST /p/<sbx>/8000/kortix/pty` → 200 with an `id`, and `DELETE /p/<sbx>/8000/kortix/pty/<id>` → 200.
 `RUN-17` A prompt's agent pick runs its turn on that agent, on every harness (R7.2). The project commits a second primary agent, `marker`; the session boots on the default agent, `kortix`. The flow waits until `GET /p/<sbx>/8000/kortix/runtime/agents` lists `marker` (a box that booted on the previous config converges first). A prompt through `POST …/prompts` with no `overrides.agent` is answered by assistant messages whose runtime `info.agent` (OpenCode: `mode`) is `kortix`; a prompt with `overrides.agent: "marker"` is answered only by messages on `marker`, read from `GET /p/<sbx>/8000/kortix/runtime/messages/<root>`. The runtime's own record is the assertion, not the model's wording. On pi the pick used to be accepted and ignored, so every turn ran, and was labelled with, the agent the box booted with.
+`RUN-18` The project's root `AGENTS.md` reaches the agent on every harness. The project commits a root `AGENTS.md` that holds one directive, `<NAME>: <value>`. The NAME is unique to the run and never appears in the conversation before the question (the `CFG-12` marker technique). A session boots, and is asked for the value of NAME from its instructions. `GET …/transcript` carries an assistant reply with the value. OpenCode reads `/workspace/AGENTS.md` by itself (OpenCode 1.18.23 `session/instruction.ts`). pi renders the same file as one `<project_instructions path="AGENTS.md">` section of its system prompt, for the root session and every `task` subagent. On pi the daemon health then reports `harness.details.agentsMd` with `source: "workspace"` and `sha` = the first 12 hex characters of the committed file's sha256.
 
 ---
 
@@ -1152,9 +1153,12 @@ deployment pointer. The provider remains an implementation detail.
 `APP-1` App CRUD — `GET/POST /projects/:projectId/apps` and
 `GET/PATCH/DELETE /projects/:projectId/apps/:appId`. Apps is a per-project
 feature flag, off by default: a member of a flag-off project gets
-`403 {code:'feature_disabled', feature:'apps'}` on every apps route; the flow
-first clears any override left by a reused local fixture, then enables the flag
-via `PATCH /projects/:projectId/features` and proceeds. A
+`403 {code:'feature_disabled', feature:'apps'}` on every apps route. Apps is
+internal-only: the owner's `PATCH /projects/:projectId/features` with
+`apps: true` answers `403 {code:'feature_operator_only'}`. The flow clears any
+override left by a reused local fixture and enables the flag as the run-scoped
+platform operator through `PUT /admin/api/projects/:id/features`; the owner's
+project read then lists `apps` with `enabled: true, operator_only: true`. A
 project writer creates a unique lower-case slug and machine policy; list/get
 return the stable public URL and active deployment pointer; every App carries
 `estimated_monthly_usd` (its machine 24/7 at list compute rates, `73.48` for
@@ -1166,6 +1170,8 @@ otherwise; a create without `monthly_budget_usd` gets a derived budget: the
 App is always on, `5` on demand; a derived budget follows later machine and
 run-mode patches, a budget a person sent never moves; patch updates mutable policy; delete is soft and removes the App
 from subsequent reads.
+A new App lists no backends (`backends: []`); patch sets the list by name,
+deduplicated, and get reads it back; an invalid backend name → 400.
 Invalid slugs → 400; `NONMEMBER` → 403.
 
 `APP-2` Artifact and deployment boundaries —
@@ -1527,6 +1533,72 @@ a trigger run. Every denial is `403 {code, action}` (spec §4).
 ## 33. Retired routes
 
 `RET-1` Every route the API retired answers `410` with `{ error, code: "ENDPOINT_RETIRED" }` for any caller, anonymous included, and runs no handler: the legacy router LLM and search routes, the `/billing/account/*` deletion mirror (use `/account/*`), `POST /billing/deduct` · `deduct-usage` · `sync-seat-quantity` · `create-checkout-session` · `confirm-checkout-session` · `schedule-downgrade`, `GET /generation`, `POST /prewarm`, and `/projects/suna-migration/*`. The table is `RETIRED_ROUTES` in `apps/api/src/routes/retired.ts`.
+
+---
+
+## 34. Kortix Backends
+
+A project owns up to 3 backends, an account up to 10. Each backend is a self-hosted Convex instance
+in its own always-on Platinum machine (1 vCPU, 1 GB, 10 GB). `backends` is an
+experimental per-project flag, off by default, available only where Platinum is
+configured. Routes: `GET/POST /projects/:projectId/backends`,
+`GET/DELETE /projects/:projectId/backends/:backendId`,
+`GET /projects/:projectId/backends/:backendId/credentials`,
+`PATCH /projects/:projectId/backends/:backendId` (resize),
+`POST /projects/:projectId/backends/:backendId/token`,
+`GET /projects/:projectId/backends/:backendId/backups`,
+`POST /projects/:projectId/backends/:backendId/{snapshots,restore}`,
+`DELETE /projects/:projectId/backends/:backendId/snapshots/:snapshotId`, and the
+public issuer routes `GET /backends/:backendId/.well-known/openid-configuration`
+and `GET /backends/:backendId/jwks.json`.
+
+`BKD-1` Gated surface. Flag off: list, create, get, credentials, delete, resize,
+token, backups, snapshot, snapshot delete, restore, rotate-admin-key and logs answer `403 {code:'feature_disabled', feature:'backends'}`. The owner's
+`PATCH /projects/:projectId/features` with `backends` true, false or null
+answers `403 {code:'feature_operator_only', feature:'backends'}`, and the
+owner's `PUT /admin/api/projects/:id/features` answers 403. The platform
+operator's `PUT /admin/api/projects/:id/features` with `backends: true` answers
+200. Where Platinum
+is configured the flag resolves on: list answers 200 with a `backends` array, and
+an invalid name answers 400 before any machine is requested. Where it is not, the
+flag resolves off and every route keeps the same 403. A `NONMEMBER` gets 403/404
+and an `ANON` caller gets 401. The issuer routes need no credential: an
+unknown backend answers 404 and a malformed id 400. The caps under concurrency,
+`Cache-Control: no-store` on credentials and token, `convex_version`, the stored
+issuer, the issuer discovery and key set (verified against a minted token), and
+the issuer move are asserted by the
+DB suites `apps/api/src/backends/*.integration.test.ts`. The same suites drive
+the maintenance sweep against a fake Platinum and a fake Convex: an interrupted
+provision resumes on its Idempotency-Key and reaches `running`, one interrupted
+3 times turns `error`, an interrupted resize is recovered with
+`last_operation_error`, the health probe records `health` and starts a stopped
+machine, restores a tombstoned one from backup, and turns a missing one `error`
+after 3 probes; admin-key rotation seals the key Convex accepts and answers
+`409 backend_busy` during another operation; a backup or snapshot restore of a
+rotated backend rotates again, so the rotated-away key never returns; an agent
+session's token names the agent's service account (`kind: "agent"`, no role,
+no groups), never its launcher; the App gate's `/_kortix/backend-token`
+re-checks a `public` App's cookie viewer (`401` once access is gone) and
+answers `403 feature_disabled` with Backends off; the logs route strips color codes
+and rejects `lines` outside 1–1000. Snapshots: a manual snapshot carries `kind:
+"manual"` and no expiry, and the 11th answers `409 snapshot_limit` with nothing
+deleted; snapshot, restore, snapshot delete and backend delete answer `409
+backend_busy` during a resize (backend delete stays allowed in `recovering`);
+two concurrent snapshots produce one; a restore answers only after Platinum
+reports `running` again, and one Platinum ends `stopped` answers `502
+restore_unhealthy` with the machine started again; a resize takes a `resize`
+snapshot kept 24 h outside the limit, and every snapshot older than the
+applied resize answers `409 snapshot_predates_resize`; the maintenance sweep
+takes a daily `automatic` snapshot kept 7 days, deletes an expired `resize`
+snapshot and an expired `automatic` one only when a newer one exists, and
+never a manual one; `GET …/backups` returns each snapshot's `kind` and
+`expires_at` and the `snapshot_schedule`; `DELETE …/snapshots/:snapshotId`
+answers 204, then 404 `snapshot_not_found`. Not asserted locally:
+create (`202 provisioning`), a duplicate name (`409 backend_name_taken`), the
+`backend.credentials.read` audit row, and delete. They
+need a Platinum machine and are verified on a deployed environment.
+
+---
 
 ## Browser-agent pilot (opt-in)
 

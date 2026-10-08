@@ -9,6 +9,7 @@ import { flow } from '../core/flow';
 import { waitFor } from '../core/poll';
 import { type CliResult, CliSandbox, throwIfCliInfraFailure } from '../fixtures/cli';
 import { AgentPrincipalsWorld } from '../fixtures/agent-principals';
+import { setFeatureAsOperator } from '../fixtures/feature-flags';
 
 function parseCliJson<T>(result: CliResult, action: string): T {
   throwIfCliInfraFailure(result, action);
@@ -4998,7 +4999,7 @@ flow(
     timeoutMs: 180_000,
     routes: [
       'POST /v1/connectors/projects/:projectId/call',
-      'PATCH /v1/projects/:projectId/features',
+      'PUT /v1/admin/api/projects/:id/features',
       'POST /v1/projects/:projectId/apps',
       'PATCH /v1/projects/:projectId/apps/:appId/access',
       'POST /v1/projects/:projectId/apps/:appId/access-session',
@@ -5125,8 +5126,7 @@ flow(
       });
 
       await ctx.step('an App viewer token (api scope) acts as the viewer: their private account and the shared one', async () => {
-        (await owner.patch('/v1/projects/:projectId/features', { feature: 'apps', enabled: true },
-          { params: projectParams })).status(200);
+        await setFeatureAsOperator(ctx, project.id, 'apps', true);
         const created = await owner.post('/v1/projects/:projectId/apps',
           { slug: `ident-${stamp}`, name: 'ke2e connector identities' }, { params: projectParams });
         created.status(201);

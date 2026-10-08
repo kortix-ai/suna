@@ -152,6 +152,14 @@ export const PROJECT_ACTIONS = {
   PROJECT_APP_WRITE: 'project.app.write',
   PROJECT_APP_DEPLOY: 'project.app.deploy',
 
+  // Kortix Backends: self-hosted Convex backends a project owns, one microVM
+  // each. `read` = list and inspect them (name, status, URL). `write` = create
+  // and delete a backend and read its admin credentials. The admin key grants
+  // full control of the backend's data and code, so reading it is deploy-level
+  // and sits on `write`, not `read`.
+  PROJECT_BACKEND_READ: 'project.backend.read',
+  PROJECT_BACKEND_WRITE: 'project.backend.write',
+
   // Review Center. `read` = see the inbox (floor user). `submit` = an agent puts
   // an output / decision / batch up for human review (floor user + their agent).
   // `act` = approve / reject / request-changes / answer — a consequential

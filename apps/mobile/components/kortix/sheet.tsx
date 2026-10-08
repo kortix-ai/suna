@@ -444,7 +444,13 @@ export function sheetFillShift(
 }
 
 /** Copies `text`; the glyph is a check for 1.5 s after. For `titleTrailing`. */
-export function CopyContentButton({ text }: { text: string }) {
+export function CopyContentButton({
+  text,
+  label = 'Copy file content',
+}: {
+  text: string;
+  label?: string;
+}) {
   const [copied, setCopied] = React.useState(false);
   const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   React.useEffect(() => () => void (timer.current && clearTimeout(timer.current)), []);
@@ -454,7 +460,7 @@ export function CopyContentButton({ text }: { text: string }) {
       size="icon"
       className="rounded-full"
       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-      accessibilityLabel={copied ? 'Copied' : 'Copy file content'}
+      accessibilityLabel={copied ? 'Copied' : label}
       onPress={async () => {
         await Clipboard.setStringAsync(text);
         haptics.success();

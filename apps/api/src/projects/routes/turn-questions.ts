@@ -165,12 +165,14 @@ export function registerTurnQuestionsRoutes(): void {
 
       // PERSIST FIRST, and independently of any channel.
       //
-      // A waiting turn makes no gateway LLM calls, earns no deadline extension,
-      // and its box is parked on schedule — correct, and the bounded-lifetime
-      // invariant depends on it. What parking used to destroy is the question
-      // itself: opencode restarts cold, so the user returned to a session that had
-      // forgotten what it asked. Storing it out here lets the box die on time and
-      // the conversation survive it. See lib/pending-questions.ts.
+      // A waiting turn makes no gateway LLM calls and earns no deadline
+      // extension: the reaper renews nothing for it and ends it after the wait
+      // bound (`turnWaitingMaxMs`, box-reaper.ts `holdWaitingTurn`), and its box
+      // is parked. The bounded-lifetime invariant depends on it. What parking
+      // used to destroy is the question itself: opencode restarts cold, so the
+      // user returned to a session that had forgotten what it asked. Storing it
+      // out here lets the box die on time and the conversation survive it. See
+      // lib/pending-questions.ts.
       //
       // Deliberately does NOT touch the deadline. A box that could keep itself
       // alive by reporting "still waiting" is the self-renewal this design

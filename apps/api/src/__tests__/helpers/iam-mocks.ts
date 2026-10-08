@@ -137,6 +137,7 @@ export function mockIamEngineAllowAll(
     credentialOnBehalfOf: () => null,
     loadTokenBinding: Object.assign(async () => null, { invalidate: () => {}, clear: () => {} }),
     loadServiceAccountActivation: async () => false,
+    tokenCredential: async (tokenId: string) => ({ kind: 'token' as const, tokenId }),
     actorOf: jwtActor,
     actorFor: jwtActor,
     buildActor: async (c: CtxLike, accountId?: string) =>

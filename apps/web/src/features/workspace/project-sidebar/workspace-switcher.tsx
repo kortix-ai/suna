@@ -312,9 +312,9 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                 <DropdownMenuShortcut>{settingsShortcutLabel()}</DropdownMenuShortcut>
               </DropdownMenuItem>
 
-              {/* `prefetch` explicitly: `(public)/download/page.tsx` awaits
-                  `headers()` and has no `loading.tsx`, so the default `auto`
-                  intent would cache nothing for a dynamic route. */}
+              {/* `prefetch` explicitly: `(marketing)/download/page.tsx` awaits
+                  `headers()`, so the default `auto` intent would cache nothing
+                  for a dynamic route. */}
               <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
                 <Link href="/download" prefetch data-desktop-hidden>
                   <Download />

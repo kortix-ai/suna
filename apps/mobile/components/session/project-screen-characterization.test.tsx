@@ -79,6 +79,8 @@ const moduleMocks: Record<string, Record<string, any>> = {
   '@/lib/session/new-session-input': { newSessionCreateInput: () => ({}) },
   '@/lib/session/composer-draft': { draftKey: () => 'draft' },
   'expo-crypto': { randomUUID: () => 'fresh-1' },
+  // A prompt with no paste tiles: the draft compare sees the text as sent.
+  '@kortix/shared': { splitPastedContent: (text: string) => ({ text, pastes: [] }) },
 };
 
 for (const [, name] of source.matchAll(/from ['"]([^'"]+)['"]/g)) {
