@@ -47,6 +47,7 @@ import { BillingError } from '../../errors';
 import { isUniqueViolation } from '../../shared/postgres-errors';
 import { tryGetProvider } from '../../platform/providers';
 import { KORTIX_REMOVAL_INTENT_KEY } from '../../projects/runtime-identity';
+import { deleteAccountBackends } from '../../backends/lifecycle';
 import {
   isAlreadyNotRunning,
   reconcileSandboxRemovedByExternalId,
@@ -136,7 +137,8 @@ export async function cancelAccountDeletion(accountId: string) {
  * The one deletion routine. The immediate path and the scheduled worker both
  * run it, in this order, so neither can leave a login or data behind:
  *
- *   1. `performDeletion`: sandboxes, Stripe cancel, wallet forfeit.
+ *   1. `performDeletion`: sandboxes, Kortix Backends (machines and
+ *      snapshots), Stripe cancel, wallet forfeit.
  *   2. `deleteAccountData`: the account's rows. Data goes before the auth
  *      identity: a failure here must not sign a user out of an account whose
  *      data survived (the browser signs out only when the route answered
@@ -562,6 +564,9 @@ async function reclaimAccountSandboxes(accountIds: string[]): Promise<SandboxRec
 
 async function performDeletion(accountId: string, userId?: string) {
   await reclaimAccountSandboxes(await reclaimableAccountIds(accountId, userId));
+  // Machines and snapshots go before the rows that name them cascade away.
+  // Throws on a failure, so the deletion retries instead of orphaning one.
+  await deleteAccountBackends(accountId);
 
   const account = await getCreditAccount(accountId);
 

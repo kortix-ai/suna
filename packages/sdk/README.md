@@ -545,7 +545,7 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | `kortix.gitBackend` | the instance git backend ("Kortix managed", one per deployment, never an account connection): `get()` → `{configured, kind: 'app'|'pat'|null, owner}` (any authenticated user) · `repositories({search?, limit?})` (self-host operator only; 403 otherwise) |
 | `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
 | `kortix.connectors` | Connector data plane for an agent-minted session token: `catalog` · `tools` · `search` · `describe` · `call` (`{ account }`) · `accounts` · `uploadAttachment` |
-| `kortix.project(id)` | id-bound handle: `.apps` (stable serverless App URLs, access, artifacts, deployments, logs, rollback, start/stop) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` (cron / webhook / monitor / event; `.eventTypes({ connector })` lists a connector's app events) · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
+| `kortix.project(id)` | id-bound handle: `.apps` (stable serverless App URLs, access, artifacts, deployments, logs, rollback, start/stop) · `.backends` (self-hosted Convex backends: list/create/get/credentials/remove) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` (cron / webhook / monitor / event; `.eventTypes({ connector })` lists a connector's app events) · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
 | `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`reloadConfig`/`reloadConfigStream`/`setSharing`/`participants`/`previews`/`commit`/`publicShares`/`ensureReady`) · `providerSecretPool.{list,get,set}` · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · runtime REST escape hatches: `stream()` and the deprecated `.runtime` |
 | `kortix.runtime()` | the runtime REST client for the active sandbox (the SDK's own `RuntimeClient`, frozen at the `@opencode-ai/sdk` 1.18.23 route shapes); use a session-scoped handle in multi-tenant code |
 
@@ -998,6 +998,24 @@ the API refused (after an access-policy change) and replays the call once.
 In the browser, `backendUrl` is `/_kortix/api/v1`: the gate on the App's own
 origin forwards to the Kortix API as the viewer (`viewer_token_scope: 'api'`).
 A direct call to `https://api.kortix.com/v1` from an App origin fails CORS.
+Guide: `/docs/sdk/apps`.
+
+### One member on every runtime: groups, roles, backends
+
+```ts
+convex.setAuth(kortixAppBackendToken('main'));                                   // App → Kortix Backend
+const me = requireKortixMember(await ctx.auth.getUserIdentity(), { groups: ['Finance'] });  // backend function
+const caller = await verifyKortixMemberToken(bearer);                           // any server (KORTIX_AUTH_* env)
+const viewer = readKortixMember(await fetchKortixAppViewer());                  // browser, no backend
+```
+
+`readKortixMember` reads every shape Kortix vouches with (gate answer, signed
+header, backend token) into one `KortixMember`: `userId`, `email`, `name`,
+`picture`, `groups`, `groupIds`, `role`, `accountId`, `projectId`.
+`requireKortixMember` throws `KortixMemberError` (`unauthenticated` |
+`forbidden`). `verifyKortixMemberToken` takes the key set inline or as an https
+URL; a backend's is `<KORTIX_AUTH_ISSUER>/jwks.json` (public, named by
+`<issuer>/.well-known/openid-configuration`). WebCrypto only; no dependency.
 Guide: `/docs/sdk/apps`.
 
 ### Headless sign-in (your users, straight through the API)

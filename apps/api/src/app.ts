@@ -274,6 +274,11 @@ app.route('/v1/approval-links', approvalLinksApp); // GET /v1/approval-links/:to
 import { publicSessionSharesApp } from './public-session-shares';
 app.route('/v1/public/session-shares', publicSessionSharesApp); // /v1/public/session-shares/:shareId[/messages]
 
+// A Kortix Backend's token issuer: public OpenID configuration and key set, so
+// any verifier finds the key from a token's `iss` (backends/discovery.ts).
+import { backendsPublicApp } from './backends/discovery';
+app.route('/v1/backends', backendsPublicApp); // /v1/backends/:backendId/{.well-known/openid-configuration,jwks.json}
+
 // Setup — local/self-hosted only. Hidden when billing is enabled so the admin
 // surface isn't exposed on managed/cloud deployments.
 if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {

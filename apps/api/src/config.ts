@@ -443,24 +443,6 @@ const envSchema = z.object({
   OPENCODE_ZEN_API_KEY: optStr,
   // Managed model IDs served by OpenCode Zen first (see OPENCODE_ZEN_MANAGED_MODELS_DEFAULT).
   OPENCODE_ZEN_MANAGED_MODELS: z.string().default(OPENCODE_ZEN_MANAGED_MODELS_DEFAULT).transform(parseMorphManagedModels),
-  // Whether a session's sandbox gets the `kortix-connectors` OpenCode MCP
-  // server (KORTIX_CONNECTORS_MCP_ENABLED in the guest). It exposes the
-  // connector meta-tools plus `secret_call`, the only way to use an
-  // HTTPS-broker secret — those have no env var and no readable value, so
-  // without a tool the model has to find a shell command in a prompt file.
-  //
-  // ON by default: the tools are the discoverable surface for capabilities the
-  // agent already has. This is the operator kill switch — it takes the MCP
-  // server away fleet-wide without a code change.
-  //
-  // optBoolTrue disables on the literal string `false` ONLY: `0`, `no` and
-  // `off` all leave it ON. Write `CONNECTORS_MCP_ENABLED=false`.
-  //
-  // The email channel sets the guest variable itself from durable session
-  // metadata (session-channel-env.ts) and keeps the face either way — that
-  // channel was the only consumer before this flag, so turning this off
-  // restores the previous behaviour rather than regressing email sessions.
-  CONNECTORS_MCP_ENABLED: optBoolTrue,
   // Managed LLM gateway (/v1/llm) — the `kortix` OpenCode provider routes every
   // sandbox model call here. Off by default.
   LLM_GATEWAY_ENABLED: optBoolFalse,
@@ -1293,7 +1275,6 @@ export const config = {
   OPENCODE_ZEN_API_URL: env.OPENCODE_ZEN_API_URL,
   OPENCODE_ZEN_API_KEY: env.OPENCODE_ZEN_API_KEY,
   OPENCODE_ZEN_MANAGED_MODELS: env.OPENCODE_ZEN_MANAGED_MODELS,
-  CONNECTORS_MCP_ENABLED: env.CONNECTORS_MCP_ENABLED,
   LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
   // Unset → follow billing (cloud keeps its revenue lineup even if the env
   // blob misses the var; self-host stays off). Explicit value always wins.

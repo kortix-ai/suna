@@ -16,18 +16,22 @@ import {
   type ProjectTriggerEventType,
   updateProjectTrigger,
 } from '@kortix/sdk';
-import { useProjectTriggerEventTypes } from '@kortix/sdk/react';
+import { useProjectTriggerEventApps, useProjectTriggerEventTypes } from '@kortix/sdk/react';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { LinkIcon, PencilSimpleIcon } from '@phosphor-icons/react';
 import { useMutation } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 
+import { EventAccountRows } from './event-account-picker';
 import {
+  appConnectors,
   appLabel,
   configProblem,
   configToDraft,
   defaultConfigDraft,
   describeEventStatus,
+  defaultAccount,
+  describeAccount,
   draftToConfig,
   humanizeEventType,
   parseConfigErrors,
@@ -125,6 +129,19 @@ export function EventPanel({
   // A different event picked in this sheet, not saved yet.
   const [picked, setPicked] = useState<ProjectTriggerEventType | null>(null);
   const [changing, setChanging] = useState(false);
+  // A different account picked in this sheet, not saved yet. undefined = unchanged, null = the connector default.
+  const [pickedAccount, setPickedAccount] = useState<string | null | undefined>(undefined);
+  const [changingAccount, setChangingAccount] = useState(false);
+  const apps = useProjectTriggerEventApps(projectId);
+  const { canConnect } = useEventAppConnect(projectId);
+  const profile = useMemo(
+    () =>
+      (apps.data?.apps ?? [])
+        .flatMap((a) => appConnectors(a))
+        .find((c) => c.slug === event.connector) ?? null,
+    [apps.data, event.connector],
+  );
+  const account = pickedAccount === undefined ? (event.account ?? null) : pickedAccount;
   const eventType =
     picked ?? types.data?.event_types.find((e) => e.type === event.type) ?? null;
   const fields = useMemo(() => schemaFields(eventType?.config_schema), [eventType]);
@@ -137,17 +154,23 @@ export function EventPanel({
   useEffect(() => setDraft(saved), [saved]);
 
   const problem = configProblem(fields, draft);
-  const dirty = picked !== null || fields.some((f) => (draft[f.key] ?? '') !== (saved[f.key] ?? ''));
+  const dirty =
+    picked !== null ||
+    pickedAccount !== undefined ||
+    fields.some((f) => (draft[f.key] ?? '') !== (saved[f.key] ?? ''));
 
   const save = useMutation({
     mutationFn: () =>
       updateProjectTrigger(projectId, trigger.slug, {
         ...(picked ? { event: picked.type } : {}),
+        ...(pickedAccount !== undefined ? { event_account: pickedAccount } : {}),
         event_config: draftToConfig(fields, draft),
       }),
     onSuccess: () => {
       successToast(tI18nComplete.raw('text3eb5eb8d3b9f'));
       setErrors({});
+      setPickedAccount(undefined);
+      setChangingAccount(false);
       onMutated();
     },
     onError: (e: Error) => {
@@ -161,6 +184,12 @@ export function EventPanel({
 
   const status = describeEventStatus(event, tI18nComplete);
   const editable = canWrite && (fields.length > 0 || Boolean(picked));
+  const defaultIdentity =
+    pickedAccount === undefined
+      ? event.connected_as
+      : profile && defaultAccount(profile)
+        ? describeAccount(defaultAccount(profile)!).title
+        : null;
 
   return (
     <PanelSection
@@ -180,6 +209,15 @@ export function EventPanel({
       <PropertyList
         rows={[
           { label: tI18nComplete.raw('text0d04bfeb7d64'), value: appLabel(event.app, event.connector) },
+          { label: tI18nComplete.raw('text8f0d706fff25'), value: event.connector },
+          {
+            label: tI18nComplete.raw('text7e1b0d5641f2'),
+            value: account
+              ? account
+              : defaultIdentity
+                ? tI18nComplete('textd975792aff6e', { account: defaultIdentity })
+                : tI18nComplete.raw('text21b111cbfe6e'),
+          },
           {
             label: tI18nComplete.raw('text4e1f49a9c8ae'),
             value: eventType?.name || humanizeEventType(picked?.type ?? event.type),
@@ -195,6 +233,32 @@ export function EventPanel({
           { label: tI18nComplete.raw('texta76d8716b0ff'), value: describeLastRun(event.last_event_at) },
         ]}
       />
+      {canWrite && profile && profile.accounts.length > 0 ? (
+        changingAccount ? (
+          <div className="space-y-2 pt-1">
+            <EventAccountRows
+              projectId={projectId}
+              connector={profile}
+              value={account}
+              canConnect={canConnect}
+              onChange={(next) => setPickedAccount(next === (event.account ?? null) ? undefined : next)}
+            />
+            <Button type="button" variant="ghost" size="sm" onClick={() => setChangingAccount(false)}>
+              {tI18nComplete.raw('text11a6767d5674')}
+            </Button>
+          </div>
+        ) : (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-fit"
+            onClick={() => setChangingAccount(true)}
+          >
+            {tI18nComplete.raw('text26639e783252')}
+          </Button>
+        )
+      ) : null}
       {canWrite ? (
         changing ? (
           <div className="space-y-2 pt-1">

@@ -963,6 +963,7 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
   const expected: FeatureFlagKey[] = [
     'agentmail_email',
     'apps',
+    'backends',
     'config_releases',
     'connectors_api_discover',
     'llm_gateway',
@@ -1049,6 +1050,22 @@ test('ExperimentalFeatureKey and ExperimentalFeatureView stay as aliases', () =>
   };
   const canonical: FeatureFlagView = legacy;
   expect(canonical.key).toBe('apps');
+});
+
+test('FeatureFlagView marks an operator-only flag; older servers omit the field', () => {
+  const managed: FeatureFlagView = {
+    key: 'backends',
+    name: 'Backends',
+    description: 'x',
+    stability: 'experimental',
+    available: true,
+    enabled: true,
+    overridden: true,
+    operator_only: true,
+  };
+  const legacy: FeatureFlagView = { ...managed, key: 'monitors', operator_only: undefined };
+  expect(managed.operator_only).toBe(true);
+  expect(legacy.operator_only).toBeUndefined();
 });
 
 async function captureFeatureCall(

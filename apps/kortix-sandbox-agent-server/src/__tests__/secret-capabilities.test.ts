@@ -29,7 +29,8 @@ describe('secret capability instructions', () => {
     expect(rendered).not.toContain('must-not-render')
     expect(rendered).not.toContain('api.weather.test')
     // A pasted value is stored, not re-requested through a link.
-    expect(rendered).toContain('store it at once with the `set_secret` tool')
+    expect(rendered).toContain('store it at once with `printf %s "$VALUE" | kortix secrets set NAME=-')
+    expect(rendered).not.toContain('set_secret')
   })
 
   test('fails closed for malformed catalogs and unsafe identifiers', () => {

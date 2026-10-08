@@ -93,9 +93,6 @@ mock.module('../../projects/lib/turn-start-convergence', () => ({
   scheduleAssetConvergence: () => {},
   convergeModelCatalogForTurnStart: async () => ({ decision: 'skipped' }),
 }));
-mock.module('../../projects/opencode-session-snapshot', () => ({
-  scheduleOpencodeSnapshotSync: () => {},
-}));
 mock.module('../../projects/session-activity', () => ({
   recordSessionActivity: async () => {},
 }));

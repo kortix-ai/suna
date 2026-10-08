@@ -6,6 +6,7 @@
 import { connectorConnections, connectors, projectTriggerRuntime } from '@kortix/db';
 import { createHash } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
+import { connectedAsOf } from '../../connectors/connection-identity';
 import { defaultConnectionIdForConnector } from '../../connectors/credentials';
 import { logger } from '../../lib/logger';
 import { connectionRowIsReachable } from '../lib/connection-access';
@@ -48,6 +49,24 @@ export function desiredHash(
 const errorText = (error: unknown): string =>
   (error instanceof Error ? error.message : String(error)).replace(/\s+/g, ' ').trim().slice(0, 500);
 
+/** The project-owned account of a connector with this label (labels are unique per connector). */
+async function sharedConnectionIdByLabel(connectorId: string, label: string): Promise<string | null> {
+  const [row] = await db
+    .select({ connectionId: connectorConnections.connectionId })
+    .from(connectorConnections)
+    .where(and(
+      eq(connectorConnections.connectorId, connectorId),
+      eq(connectorConnections.ownerType, 'project'),
+      eq(connectorConnections.label, label),
+    ))
+    .limit(1);
+  return row?.connectionId ?? null;
+}
+
+/** Who the connection acts as: the authorized identity, else its label. */
+export const connectionIdentity = (row: { label: string; metadata: unknown }): string =>
+  connectedAsOf(row.metadata) ?? row.label;
+
 export async function resolveSource(
   projectId: string,
   accountId: string,
@@ -78,14 +97,22 @@ export async function resolveSource(
     return { kind: 'error', message: `Connector "${event.connector}" does not name an app.`, providerId: provider.id };
   }
   // People read these messages: name the app as the project's connector does ("GitHub", not "github").
-  const label = connector.name?.trim() || app;
+  // A connector named after its own slug (CLI default) says nothing a person can read: name the app instead.
+  const name = connector.name?.trim();
+  const label = name && name !== event.connector ? name : app;
+  const named = event.account?.trim();
   const needs: Resolution = {
     kind: 'needs_connection',
-    message: `Connect a shared ${label} account to activate this trigger.`,
+    message: named
+      ? `Connect a shared ${label} account labelled "${named}" on ${event.connector}.`
+      : `Connect a shared ${label} account to activate this trigger.`,
   };
-  // A trigger is unattended: it runs on the project's shared default account,
-  // never a member's private one (connection-access.ts).
-  const connectionId = await defaultConnectionIdForConnector(connector.connectorId);
+  // A trigger is unattended: it runs on one of the connector's SHARED accounts
+  // (the one named by `account`, else the default), never a member's private
+  // one (connection-access.ts).
+  const connectionId = named
+    ? await sharedConnectionIdByLabel(connector.connectorId, named)
+    : await defaultConnectionIdForConnector(connector.connectorId);
   if (!connectionId) return { ...needs, providerId: provider.id };
   const [row] = await db
     .select({
@@ -100,7 +127,7 @@ export async function resolveSource(
   // Event data lands in a session prompt. An account narrowed to named people
   // must not feed it, so only an account open to the whole project qualifies.
   const audience = (await loadConnectionAudience({ projectId, accountId, userId: null }))(connectionId);
-  if (row && row.status === 'active' && audience !== 'open') {
+  if (row && row.status === 'active' && audience !== 'open' && !named) {
     return {
       kind: 'error',
       providerId: provider.id,
@@ -110,6 +137,8 @@ export async function resolveSource(
   if (
     !row ||
     row.status !== 'active' ||
+    // A named account that is narrowed to people is not usable by a trigger: same text as "not found".
+    (named && audience !== 'open') ||
     !connectionRowIsReachable(
       { ...row, providerType: connector.provider, connectorConfig: connector.config },
       { userId: '', isServiceAccount: true, agentPrincipal: null },

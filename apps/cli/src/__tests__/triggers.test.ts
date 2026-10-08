@@ -156,7 +156,16 @@ const EVENT_TYPES = {
 
 const EVENT_APPS = {
   apps: [
-    { provider: 'composio', app: 'github', name: 'GitHub', logo: null, event_count: 12, connector: 'github', connected: true },
+    {
+      provider: 'composio', app: 'github', name: 'GitHub', logo: null, event_count: 12, connector: 'github', connected: true,
+      connectors: [
+        { slug: 'github', name: 'GitHub', accounts: [
+          { label: 'acme-bot', connected_as: 'acme-bot-user', is_default: true, connected: true },
+          { label: 'acme-ci', connected_as: null, is_default: false, connected: true },
+        ] },
+        { slug: 'github-work', name: 'GitHub work', accounts: [] },
+      ],
+    },
     { provider: 'composio', app: 'gmail', name: 'Gmail', logo: null, event_count: 3, connector: 'gmail', connected: false },
     { provider: 'composio', app: 'linear', name: 'Linear', logo: null, event_count: 5, connector: null, connected: false },
   ],
@@ -910,7 +919,7 @@ describe('kortix triggers — events', () => {
 
   test('help documents the event type and its flags', async () => {
     const result = await runCli(['triggers', '--help']);
-    for (const fragment of ['monitors, and app events', '--connector <slug>', '--event <TYPE>', '--config <key=value>', '--config-json <json>', 'events --connector <slug>', 'event.data.<field>']) {
+    for (const fragment of ['monitors, and app events', '--connector <slug>', '--account <label>', '--default-account', '--event <TYPE>', '--config <key=value>', '--config-json <json>', 'events --connector <slug>', 'event.data.<field>']) {
       expect(result.stdout).toContain(fragment);
     }
   });
@@ -930,6 +939,14 @@ describe('kortix triggers — events', () => {
     expect(text).toContain('draft: false');
     expect(text).not.toContain('cron');
     expect(text).not.toContain('timezone');
+  });
+
+  test('add --account writes account under connector; omitted writes none', async () => {
+    const result = await add('--connector', 'github', '--account', 'acme-bot', '--event', 'GITHUB_PULL_REQUEST_EVENT');
+    expect(result.code).toBe(0);
+    expect(manifestText()).toContain('account: acme-bot');
+    const stray = await runCli(['triggers', 'add', 'c', '--cron', '0 0 9 * * *', '--account', 'x', '--prompt', 'x']);
+    expect(stray.stderr).toContain('--account is only valid on an event trigger');
   });
 
   test('add without --config omits the config key', async () => {
@@ -1009,9 +1026,11 @@ describe('kortix triggers — events', () => {
     const cfg = writeConfig(startServer([]));
     const r = await runCli(['triggers', 'events', '--apps', '--project', PROJECT], cfg);
     expect(r.code).toBe(0);
-    expect(r.stdout).toMatch(/github\s+12\s+github\s+connected/);
-    expect(r.stdout).toMatch(/gmail\s+3\s+gmail\s+needs account/);
-    expect(r.stdout).toMatch(/linear\s+5\s+—\s+no connector/);
+    expect(r.stdout).toMatch(/github\s+12 events\s+connected/);
+    expect(r.stdout).toMatch(/acme-bot\s+as acme-bot-user\s+default/);
+    expect(r.stdout).toMatch(/acme-ci\s+/);
+    expect(r.stdout).toMatch(/github-work\s+no shared account/);
+        expect(r.stdout).toMatch(/No connector yet \(2\): gmail \(3\), linear \(5\)/);
     const raw = await runCli(['triggers', 'events', '--apps', '--json', '--project', PROJECT], cfg);
     expect(JSON.parse(raw.stdout)).toEqual(EVENT_APPS);
   });
@@ -1043,11 +1062,30 @@ describe('kortix triggers — events', () => {
     expect(info.code).toBe(0);
     expect(info.stdout).toContain('connector');
     expect(info.stdout).toContain('github (github)');
+    expect(info.stdout).toMatch(/account\s+default/);
+    expect(info.stdout).toMatch(/connected as\s+—/);
     expect(info.stdout).toContain('GITHUB_PULL_REQUEST_EVENT');
     expect(info.stdout).toContain('{"owner":"acme","repo":"app"}');
     expect(info.stdout).toContain('needs connection');
     expect(info.stdout).toContain('No connected account');
     expect(info.stdout).toContain('last_event');
     expect(info.stdout).toContain('kortix connectors connect github --owner project');
+  });
+
+  test('ls shows connector/account and info shows connected as', async () => {
+    const t = { ...EVENT_TRIGGER, event: { ...EVENT_TRIGGER.event, account: 'acme-bot', connected_as: 'acme-bot-user', status: 'active', error: null } };
+    const cfg = writeConfig(startServer([t]));
+    const ls = await runCli(['triggers', 'ls', '--project', PROJECT], cfg);
+    expect(ls.stdout).toContain('github/acme-bot GITHUB_PULL_REQUEST_EVENT');
+    const info = await runCli(['triggers', 'info', 'new-pr', '--project', PROJECT], cfg);
+    expect(info.stdout).toMatch(/account\s+acme-bot/);
+    expect(info.stdout).toMatch(/connected as\s+acme-bot-user/);
+  });
+
+  test('needs_connection with an account names the label', async () => {
+    const t = { ...EVENT_TRIGGER, event: { ...EVENT_TRIGGER.event, account: 'acme-bot' } };
+    const cfg = writeConfig(startServer([t]));
+    const info = await runCli(['triggers', 'info', 'new-pr', '--project', PROJECT], cfg);
+    expect(info.stdout).toContain('labelled "acme-bot" on github');
   });
 });

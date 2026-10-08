@@ -702,6 +702,42 @@ Pinning a provider needs `project.settings.write`.
 
 `add`/`update` options: `--name <label>`, `--cpu <n>`, `--memory <n>` (GiB), `--disk <n>` (GiB).
 
+### Backends
+
+Manages the project's self-hosted Convex backends. Each backend runs in its own machine. A project owns up to 3. Needs the `backends` project feature. SDK: [Backends](/docs/sdk/backends).
+
+| Command | Effect |
+| --- | --- |
+| `kortix backends list [--json]` | List backends with status and URL. |
+| `kortix backends create <name> [--cpu <1-16>] [--memory <1-32>] [--disk <10-100>] [--json]` | Create and boot a backend. Memory and disk are in GB. Default size: 1 vCPU, 1 GB, 10 GB. Takes seconds, or minutes on the first image build. |
+| `kortix backends resize <name\|id> [--cpu N] [--memory GB] [--disk GB] [--no-wait] [--json]` | Change the machine size. Needs at least one size flag. A disk never shrinks. Waits until the resize ends and prints the new size. `--no-wait` returns when it starts. |
+| `kortix backends backups <name\|id> [--json]` | Show the automatic backup (last time, size, interval), the snapshot schedule, and the snapshots, newest first, each with its kind (`manual`, `automatic`, `resize`) and expiry. |
+| `kortix backends snapshot <name\|id> [--json]` | Take a manual snapshot now. It stays until deleted. A backend holds 10 manual snapshots; Kortix also keeps a daily snapshot for 7 days and a snapshot before each resize for 24 hours, or until the next resize replaces it. |
+| `kortix backends delete-snapshot <name\|id> <snapshot-id> [--yes] [--json]` | Delete one snapshot. Asks first unless `--yes`. |
+| `kortix backends restore <name\|id> <snapshot-id> [--yes] [--json]` | Roll the backend back to a snapshot. Every change after the snapshot is lost. A snapshot taken before a resize cannot be restored. Asks first unless `--yes`. |
+| `kortix backends get <name\|id> [--json]` | Show one backend, with its last health probe (machine state, disk use) and any operation in flight. `list` marks a backend whose probe failed `unhealthy`. |
+| `kortix backends logs <name\|id> [--lines <1-1000>] [--json]` | Print the end of the Convex process log (default 200 lines): startup, crashes, restarts, request lines. Function logs: `npx convex logs`. |
+| `kortix backends rotate-key <name\|id> [--yes] [--json]` | Replace the admin key. Every key read before stops working. Convex restarts for about 1 s; data, files and environment variables stay. Asks first unless `--yes`. |
+| `kortix backends dashboard <name\|id> [--open] [--json]` | Print the link to the backend's admin dashboard (Convex's dashboard inside Kortix, signed in for you). `--open` opens it in the browser. |
+| `kortix backends connect <name\|id> [--json]` | Print how to reach the backend, in three groups: from a Kortix App (`kortixAppBackendToken`), from outside (a member token, the HTTP API at `/api/query` and `/api/mutation`, HTTP actions at `site_url`, `verifyKortixMemberToken` on your own server), and from the CLI. The same snippets as **Connect** in Kortix web. Prints no secret. |
+| `kortix backends token <name\|id> [--json]` | Print a 15-minute Kortix sign-in token naming you. In an agent session it names the agent (`kind: "agent"`, no groups, no role). Convex functions read it with `ctx.auth.getUserIdentity()`. |
+| `kortix backends env <name\|id> [--format shell\|dotenv\|json]` | Print the Convex CLI credentials. `shell` (default) prints `export CONVEX_SELF_HOSTED_URL=…` and `export CONVEX_SELF_HOSTED_ADMIN_KEY=…`. `dotenv` prints `KEY=value` lines for `.env.local`. `json` prints the credentials object. |
+| `kortix backends deploy <name> [--dir <path>] [--create] [-- <convex args>]` | Run `convex deploy` in `--dir` (default: the current directory) against the backend: the project's own `node_modules/.bin/convex`, else `npx convex@<convex_version>`. Needs a `convex/` folder or `convex.json`. A name that does not exist exits `1` and lists the existing backends; `--create` creates it first. Exits with the Convex exit code. |
+| `kortix backends delete <name\|id> [--yes]` | Delete the backend and its machine. Asks first unless `--yes`. |
+
+```bash
+kortix backends deploy main                  # create if missing, then deploy ./convex
+kortix backends resize main --cpu 2 --memory 4   # restart on 2 vCPU, 4 GB
+kortix backends snapshot main                # keep a restore point before a risky deploy
+kortix backends restore main <snapshot-id>   # roll back to it
+kortix backends logs main --lines 500        # why did Convex restart?
+kortix backends rotate-key main --yes        # after a key leaked; read it again with env
+eval "$(kortix backends env main)"           # point the Convex CLI at it in this shell
+kortix backends env main --format dotenv >> .env.local
+```
+
+`deploy` removes `CONVEX_DEPLOY_KEY` and `CONVEX_DEPLOYMENT` from the Convex process, so neither can redirect the deploy. A `CONVEX_DEPLOYMENT` line in `.env.local` can still conflict. Remove it. The admin key grants full access to the backend. Do not commit it.
+
 ### Marketplace
 
 Browse the Kortix marketplace, and install an item into a project.
@@ -750,8 +786,7 @@ The in-sandbox agent's interface to every connector. Every call is checked, reso
 | `kortix connectors upload <file> --connector <slug>` | Stage one file. Prints `ref`, `{"$kortix_attachment":"<id>"}`, to place in call args. |
 | `kortix connectors add <slug> --provider pipedream --app <app>` | Add a connector immediately, then connect it. |
 | `kortix connectors rm <slug>` | Remove a connector from the project. |
-| `kortix connectors connect <slug>` | Mint a connect link for a human. |
-| `kortix connectors mcp` | Run the optional stdio MCP compatibility server. |
+| `kortix connectors connect <slug> [--owner me\|project] [--label <name>]` | Mint a connect link for a human. `--label` suggests a name for a new account, for example a second Gmail. |
 
 ### Files
 

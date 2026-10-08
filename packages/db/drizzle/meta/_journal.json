@@ -921,18 +921,52 @@
     },
     {
       "idx": 131,
+      "version": "7",
       "when": 1791422887237,
-      "tag": "20261008012807_krtx_1769_cost_index"
+      "tag": "20261008012807_krtx_1769_cost_index",
+      "breakpoints": true
     },
     {
       "idx": 132,
       "when": 1791428842223,
-      "tag": "20261008014722_feedback"
+      "tag": "20261008014722_feedback",
+      "version": "7",
+      "breakpoints": true
     },
     {
       "idx": 133,
+      "version": "7",
       "when": 1791445153230,
-      "tag": "20261008073913_push_device_token_auth_session"
+      "tag": "20261008073913_push_device_token_auth_session",
+      "breakpoints": true
+    },
+    {
+      "idx": 134,
+      "version": "7",
+      "when": 1791421203000,
+      "tag": "20261008200003_backends_snapshot",
+      "breakpoints": true
+    },
+    {
+      "idx": 135,
+      "version": "7",
+      "when": 1791421204000,
+      "tag": "20261008200004_backend_auth_issuer",
+      "breakpoints": true
+    },
+    {
+      "idx": 136,
+      "version": "7",
+      "when": 1791421205000,
+      "tag": "20261008200005_backend_workload_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 137,
+      "version": "7",
+      "when": 1791421207000,
+      "tag": "20261008200007_app_backends",
+      "breakpoints": true
     }
   ]
 }

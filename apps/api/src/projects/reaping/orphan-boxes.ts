@@ -22,7 +22,7 @@
  */
 
 import { isNotNull } from 'drizzle-orm';
-import { appRuntimes, projectMonitorBoxes, sessionSandboxes } from '@kortix/db';
+import { appRuntimes, projectBackends, projectMonitorBoxes, sessionSandboxes } from '@kortix/db';
 import { config } from '../../config';
 import { db } from '../../shared/db';
 import { getProvider, type ProviderName } from '../../platform/providers';
@@ -77,7 +77,7 @@ export async function reapOrphanProviderBoxes(now = new Date()): Promise<OrphanR
   }
   if (boxes.length === 0) return zero;
 
-  const [sessionKeepRows, appKeepRows, monitorKeepRows] = await Promise.all([
+  const [sessionKeepRows, appKeepRows, monitorKeepRows, backendKeepRows] = await Promise.all([
     db
       .select({
         provider: sessionSandboxes.provider,
@@ -100,8 +100,12 @@ export async function reapOrphanProviderBoxes(now = new Date()): Promise<OrphanR
       })
       .from(projectMonitorBoxes)
       .where(isNotNull(projectMonitorBoxes.externalId)),
+    db
+      .select({ provider: projectBackends.provider, externalId: projectBackends.externalId })
+      .from(projectBackends)
+      .where(isNotNull(projectBackends.externalId)),
   ]);
-  const keepRows = [...sessionKeepRows, ...appKeepRows, ...monitorKeepRows];
+  const keepRows = [...sessionKeepRows, ...appKeepRows, ...monitorKeepRows, ...backendKeepRows];
   const keep = new Set(
     keepRows
       .filter((row): row is typeof row & { externalId: string } => !!row.externalId)

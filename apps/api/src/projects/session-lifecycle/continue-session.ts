@@ -185,7 +185,14 @@ export async function continueSession(
           text: replacementText,
         }),
       markRepaired: () => lifecycleStore.markLegacyInlineAttachmentsRepaired(sessionId),
-    }).then(() => undefined);
+    }).then((result) => {
+      if (result.unsupported) {
+        logger.info('[session-lifecycle] legacy attachment repair skipped: the runtime edits no parts', {
+          session_id: sessionId,
+          external_id: externalId,
+        });
+      }
+    });
     legacyRepairByExternalId.set(externalId, repair);
     return repair;
   };
