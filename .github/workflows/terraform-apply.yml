@@ -65,7 +65,7 @@ on:
         type: string
       trusted_branch:
         description: >-
-          Branch the applied commit must be reachable from (main, staging, prod).
+          Branch the applied commit must be reachable from (dev, staging, prod).
           Enforced in-workflow before any credential is minted.
         required: true
         type: string
@@ -166,7 +166,7 @@ jobs:
 
       - name: Check out the aws-env action
         if: inputs.cloudflare
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env

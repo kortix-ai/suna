@@ -67,8 +67,10 @@ export function SessionStarterMark({
   else if (starter.type === 'channel') {
     Icon = SOURCE_ICONS[(starter.id ?? '') as keyof typeof SOURCE_ICONS] ?? ChatTeardropTextIcon;
   } else {
-    // A trigger: schedule for cron, webhook otherwise.
-    Icon = sessionSource(session, tI18nComplete).kind === 'webhook' ? SOURCE_ICONS.webhook : SOURCE_ICONS.schedule;
+    // A trigger fires under its own source kind: schedule, webhook, or manual
+    // (`kortix triggers fire`). The kind's glyph, not the scheduler's.
+    const kind = sessionSource(session, tI18nComplete).kind;
+    Icon = kind === 'chat' ? ChatTeardropTextIcon : SOURCE_ICONS[kind];
   }
   return <Icon className={cn('size-4', iconClassName)} />;
 }

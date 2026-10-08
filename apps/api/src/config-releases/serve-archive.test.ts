@@ -43,7 +43,8 @@ beforeAll(() => {
   tree = git('rev-parse', 'HEAD:.kortix/opencode');
   blob = git('rev-parse', 'HEAD:.kortix/opencode/opencode.json');
   mkdirSync(join(repo, 'huge'), { recursive: true });
-  writeFileSync(join(repo, 'huge/blob.bin'), randomBytes(4 * 1024 * 1024 + 4096));
+  // Random bytes do not compress: 64 KiB stays over the 32 KiB test cap.
+  writeFileSync(join(repo, 'huge/blob.bin'), randomBytes(64 * 1024));
   git('add', '-A');
   git('commit', '-qm', 'huge');
   hugeTree = git('rev-parse', 'HEAD:huge');
@@ -222,16 +223,14 @@ describe('serveConfigArchive', () => {
     const response = await serveConfigArchive(project, hugeTree, m.mirror, m.forced, {
       store: new MemoryConfigArchiveStore(),
       ...PRIVATE,
+      archiveLimit: 32 * 1024,
     });
     expect(response.status).toBe(413);
   });
 });
 
-describe('serveConfigArchive — a composed release tree (root skills/)', () => {
-  let rootCommit = '';
-  let composedTree = '';
-
-  beforeAll(async () => {
+describe('serveConfigArchive — a release is the commit tree', () => {
+  test('a root-layout release is served from the mirror by its tree ID, with no commit', async () => {
     mkdirSync(join(repo, 'harnesses/opencode'), { recursive: true });
     mkdirSync(join(repo, 'skills/demo'), { recursive: true });
     writeFileSync(join(repo, 'harnesses/opencode/opencode.jsonc'), '{}\n');
@@ -239,66 +238,41 @@ describe('serveConfigArchive — a composed release tree (root skills/)', () => 
     git('rm', '-rq', '.kortix', 'huge');
     git('add', '-A');
     git('commit', '-qm', 'root layout');
-    rootCommit = git('rev-parse', 'HEAD');
+    const rootCommit = git('rev-parse', 'HEAD');
     const resolved = await resolveReleaseTreeSource(repo, project, rootCommit);
     if (!('source' in resolved)) throw new Error(resolved.reason);
-    composedTree = (await readComposedRelease(repo, resolved.source, { archive: false })).treeId;
-  });
-
-  test('rebuilds the archive from the commit when the store has nothing', async () => {
-    const m = mirrors();
-    const response = await serveConfigArchive(
-      project,
-      composedTree,
-      m.mirror,
-      m.forced,
-      { store: new MemoryConfigArchiveStore(), ...PRIVATE },
-      rootCommit,
-    );
-    expect(response.status).toBe(200);
-    expect(response.headers.get('X-Kortix-Config-Archive-Source')).toBe('mirror');
-    expect((await response.arrayBuffer()).byteLength).toBeGreaterThan(0);
-  });
-
-  test('with nothing stored: 404 without the commit, and for a commit that composes a different tree', async () => {
-    const m = mirrors();
-    const store = new MemoryConfigArchiveStore();
-    expect((await serveConfigArchive(project, composedTree, m.mirror, m.forced, { store, ...PRIVATE })).status).toBe(404);
-    expect(
-      (await serveConfigArchive(project, composedTree, m.mirror, m.forced, { store, ...PRIVATE }, commit)).status,
-    ).toBe(404);
-    expect(
-      (await serveConfigArchive(project, composedTree, m.mirror, m.forced, { store, ...PRIVATE }, 'not-a-sha')).status,
-    ).toBe(404);
-  });
-});
-
-describe('serveConfigArchive — a composed release tree (the pi config dir alone)', () => {
-  test('rebuilds a release that differs from the config dir only by pi/ from its commit', async () => {
-    // No root skills: the pi config dir alone makes the tree a composed one.
-    git('rm', '-rq', 'skills');
-    mkdirSync(join(repo, 'harnesses/pi/extensions'), { recursive: true });
-    writeFileSync(join(repo, 'harnesses/pi/extensions/guard.ts'), 'export default () => {}\n');
-    git('add', '-A');
-    git('commit', '-qm', 'pi config dir only');
-    const piCommit = git('rev-parse', 'HEAD');
-    const resolved = await resolveReleaseTreeSource(repo, project, piCommit);
-    if (!('source' in resolved)) throw new Error(resolved.reason);
-    expect(resolved.source.rootSkills).toEqual([]);
-    expect(resolved.source.piTree).not.toBeNull();
     const read = await readComposedRelease(repo, resolved.source, { archive: false });
-    expect(read.files.map(([path]) => path)).toEqual(['opencode.jsonc', 'pi/extensions/guard.ts']);
+    expect(read.treeId).toBe(git('rev-parse', `${rootCommit}^{tree}`));
 
     const m = mirrors();
-    const response = await serveConfigArchive(
-      project,
-      read.treeId,
-      m.mirror,
-      m.forced,
-      { store: new MemoryConfigArchiveStore(), ...PRIVATE },
-      piCommit,
-    );
+    const response = await serveConfigArchive(project, read.treeId, m.mirror, m.forced, {
+      store: new MemoryConfigArchiveStore(),
+      ...PRIVATE,
+    });
     expect(response.status).toBe(200);
     expect(response.headers.get('X-Kortix-Config-Archive-Source')).toBe('mirror');
+  });
+
+  // KRTX-1728: a release without its export-ignored paths is a tree no mirror
+  // holds, so the route rebuilds it from the commit, the same way.
+  test('a release without export-ignored paths is rebuilt from its commit', async () => {
+    writeFileSync(join(repo, '.gitattributes'), 'assets/** export-ignore\n');
+    mkdirSync(join(repo, 'assets'), { recursive: true });
+    writeFileSync(join(repo, 'assets/big.bin'), randomBytes(1024));
+    git('add', '-A');
+    git('commit', '-qm', 'export-ignored assets');
+    const sha = git('rev-parse', 'HEAD');
+    const resolved = await resolveReleaseTreeSource(repo, project, sha);
+    if (!('source' in resolved)) throw new Error(resolved.reason);
+    expect(resolved.source.exportIgnored).toEqual(['assets/big.bin']);
+    const read = await readComposedRelease(repo, resolved.source, { archive: false });
+    expect(read.treeId).not.toBe(git('rev-parse', `${sha}^{tree}`));
+    expect(read.files.some(([path]) => path.startsWith('assets/'))).toBe(false);
+
+    const m = mirrors();
+    const deps = { store: new MemoryConfigArchiveStore(), ...PRIVATE };
+    expect((await serveConfigArchive(project, read.treeId, m.mirror, m.forced, deps, sha)).status).toBe(200);
+    // Without its commit the tree is unknown: 404, as for any tree no mirror holds.
+    expect((await serveConfigArchive(project, read.treeId, m.mirror, m.forced, { store: new MemoryConfigArchiveStore(), ...PRIVATE })).status).toBe(404);
   });
 });

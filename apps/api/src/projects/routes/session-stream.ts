@@ -1,5 +1,5 @@
 /**
- * GET /v1/projects/:projectId/sessions/:sessionId/stream
+ * GET /v1/projects/:projectId/sessions/:sessionId/events
  *
  * ONE client connection for everything that MOVES in a session.
  *
@@ -38,6 +38,20 @@
  * which is precisely the state a user watching a waking box needs to see. The
  * response is 200 from the first byte in every one of those cases.
  *
+ * ─── `?channels=control` ───────────────────────────────────────────────────
+ * Serves the control channel and the stream's own hello/heartbeat, and nothing
+ * else: no sandbox read, no daemon attach. Its reconciler reads the queue only,
+ * at the slow cadence (`ControlReconcilerMode`). The SDK's prompt queue reads
+ * it (`openSessionControlStream`). The default serves both channels.
+ *
+ * ─── BOUNDED, AND QUIET ON A STOPPED BOX ───────────────────────────────────
+ * A slow client gets backpressure: past {@link STREAM_BUFFER_BYTES} unread, the
+ * pump stops reading the daemon, whose ring holds the rest. A client that stops
+ * reading entirely is cut at {@link STREAM_MAX_BACKLOG_BYTES} and resumes at its
+ * cursor. A hang-up cancels the daemon body at once. A stream on a stopped box
+ * reads the box row once and then waits for its `kortix_session_changed`
+ * NOTIFY, not on a 5 s poll.
+ *
  * ─── THIS ROUTE NEVER WAKES A BOX ──────────────────────────────────────────
  * It attaches only when the sandbox row ALREADY says `active`. Waking is
  * `POST .../start`'s job and only its job; a read that could start a sandbox
@@ -46,21 +60,29 @@
  */
 
 import { createRoute, z } from '@hono/zod-openapi';
+import type { Context } from 'hono';
 import { eq } from 'drizzle-orm';
 import { sessionSandboxes } from '@kortix/db';
 
 import { PROJECT_ACTIONS } from '../../iam';
+import { assertAgentScope } from '../../iam/agent-scope';
+import { resolveAndAuthorizeAgent } from '../lib/agent-access';
+import { reauthorizeWakeLadderActor } from '../lib/wake-ladder-authorization';
+import { actorOf } from '../../iam/actor';
 import { auth, errors } from '../../openapi';
 import { db } from '../../shared/db';
 import {
   assertProjectCapability,
   loadProjectForUser,
   loadVisibleSession,
+  projectCapabilityAllowed,
   sessionIsTombstoned,
 } from '../lib/access';
 import { projectsApp } from '../lib/app';
-import { callerKortixSessionId } from '../lib/caller-session';
+import { callerKortixSessionId } from '../../middleware/caller-session';
 import { isUuid } from '../../shared/validate';
+import { isPgBroadcastListening, waitForSessionChange } from '../../shared/pg-broadcast';
+import { PRESENCE_RENEW_MS, renewSessionPresence } from '../lib/session-presence';
 import {
   CONTROL_EPOCH,
   subscribeControlEvents,
@@ -69,10 +91,12 @@ import {
 import {
   acquireControlReconciler,
   publishRuntimeStateFrame,
+  type WakeLadderActor,
 } from '../lib/session-control-reconciler';
 import { refreshRuntimeProjection } from '../lib/session-runtime-projection-refresh';
 import { readRuntimeLeg } from '../lib/session-runtime-projection';
 import {
+  fetchRuntimeHealth,
   openRuntimeEventStream,
   parseSseFrames,
 } from '../lib/session-runtime-transport';
@@ -84,8 +108,43 @@ export const STREAM_HEARTBEAT_MS = 15_000;
 /** Backoff ladder for re-attaching to the daemon, in ms. Capped, never zero. */
 export const RUNTIME_ATTACH_BACKOFF_MS = [1_000, 2_000, 5_000, 10_000, 20_000, 30_000];
 
-/** How long to wait before re-checking a sandbox that is not `active`. */
+/** How long to wait before re-checking a sandbox that is not `active`, when
+ *  this process holds no LISTEN (no NOTIFY can wake the wait). */
 export const RUNTIME_IDLE_RECHECK_MS = 5_000;
+/**
+ * A live daemon attachment that yields no frame for `stallMs` is dead: the
+ * daemon heartbeats every 15 s, so 45 s is three missed beats. Mutable so a
+ * test can shrink it.
+ */
+export const runtimeStreamTimings = { stallMs: 45_000 };
+
+/** The same wait with the LISTEN held: a `kortix_session_changed` NOTIFY
+ *  (migration 20261007140000000) ends it the moment the box row changes, so
+ *  this is only the backstop for a lost NOTIFY. */
+export const RUNTIME_IDLE_BACKSTOP_MS = 60_000;
+
+/**
+ * Bytes this stream buffers for a client that reads slower than the box
+ * writes. Past it, the runtime pump stops reading the daemon until the client
+ * catches up: the daemon's ring holds what the client has not read yet.
+ */
+export const STREAM_BUFFER_BYTES = 256 * 1024;
+
+/**
+ * Bytes a client may fall behind before this stream ends. Only control and
+ * meta frames can still grow the buffer while the pump waits, so reaching it
+ * means the client stopped reading. It reconnects with its cursor.
+ */
+export const STREAM_MAX_BACKLOG_BYTES = 8 * 1024 * 1024;
+
+/** Re-read delays for a harness that is not ready yet, in ms. The last repeats. */
+export const RUNTIME_HEALTH_BOOT_BACKOFF_MS = [300, 500, 1_000, 2_000];
+
+/** How long the pump keeps re-reading a harness that never reports ready. */
+export const RUNTIME_HEALTH_BOOT_WINDOW_MS = 120_000;
+
+/** Daemon frames after which `/kortix/health` may have changed. */
+const HEALTH_INVALIDATING_EVENTS = new Set(['kortix.boot', 'server.connected', 'server.instance.disposed']);
 
 /** Frames the daemon may send that mean the projection changed underneath us. */
 const PROJECTION_INVALIDATING_EVENTS = new Set([
@@ -148,229 +207,311 @@ function parseCursorQuery(c: {
   };
 }
 
-projectsApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{projectId}/sessions/{sessionId}/events',
-    tags: ['sessions'],
-    summary: 'Stream live events of a session',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string(), sessionId: z.string() }),
-      query: z.object({
-        since: z.string().optional(),
-        epoch: z.string().optional(),
-        since_control: z.string().optional(),
-        cepoch: z.string().optional(),
-      }),
-    },
-    responses: {
-      200: {
-        description:
-          'A never-ending text/event-stream multiplexing the sandbox runtime channel ' +
-          '(daemon seq/epoch, forwarded verbatim) and the control channel (cseq/cepoch).',
-        content: { 'text/event-stream': { schema: z.any() } },
+export function registerSessionStreamRoutes(): void {
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/sessions/{sessionId}/events',
+      tags: ['sessions'],
+      summary: 'Stream live events of a session',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+        query: z.object({
+          since: z.string().optional(),
+          epoch: z.string().optional(),
+          since_control: z.string().optional(),
+          cepoch: z.string().optional(),
+          /** `control`: the control channel only, no daemon attach. Default: both. */
+          channels: z.enum(['all', 'control']).optional(),
+          /** A browser tab's presence id: the stream renews its lease (R5.3). */
+          tab_id: z.string().optional(),
+        }),
       },
-      ...errors(400, 404),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const sessionId = c.req.param('sessionId');
-    if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+      responses: {
+        200: {
+          description:
+            'A never-ending text/event-stream multiplexing the sandbox runtime channel ' +
+            '(daemon seq/epoch, forwarded verbatim) and the control channel (cseq/cepoch).',
+          content: { 'text/event-stream': { schema: z.any() } },
+        },
+        ...errors(400, 404),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const sessionId = c.req.param('sessionId');
+      if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
-    // The SAME gate `open-bundle` applies, for the same reason: this stream
-    // carries strictly the facts that route already serves, so it must not be
-    // reachable by anyone who could not have asked for them one at a time.
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_SESSION_READ,
-    );
-    const visible = await loadVisibleSession(
-      loaded,
-      sessionId,
-      callerKortixSessionId(c),
-      callerKortixSessionId(c),
-    );
-    if (!visible) return c.json({ error: 'Not found' }, 404);
-    if (sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
-
-    const cursor = parseCursorQuery(c);
-    const userId = String(c.get('userId') ?? loaded.userId ?? '');
-    const accountId = String(loaded.row.accountId);
-
-    const abort = new AbortController();
-    const runtime: StreamCursor = { epoch: cursor.epoch, seq: cursor.seq };
-
-    const encoder = new TextEncoder();
-    let closed = false;
-    let controllerRef: ReadableStreamDefaultController<Uint8Array> | null = null;
-
-    const writeRaw = (payload: string): void => {
-      if (closed || !controllerRef) return;
-      try {
-        controllerRef.enqueue(encoder.encode(payload));
-      } catch {
-        closed = true;
-        abort.abort();
-      }
-    };
-
-    /** A frame that advances neither cursor (status, hello, our heartbeat). */
-    const writeMeta = (event: string, data: Record<string, unknown>): void => {
-      writeRaw(`event: ${event}\ndata: ${JSON.stringify({ ...data, channel: 'stream' })}\n\n`);
-    };
-
-    const writeControl = (event: ControlEvent): void => {
-      writeRaw(
-        `event: ${event.type}\nid: ${encodeStreamId(runtime, CONTROL_EPOCH, event.cseq)}\n` +
-          `data: ${JSON.stringify(event)}\n\n`,
+      // The SAME gate `open-bundle` applies, for the same reason: this stream
+      // carries strictly the facts that route already serves, so it must not be
+      // reachable by anyone who could not have asked for them one at a time.
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_SESSION_READ,
       );
-    };
+      const visible = await loadVisibleSession(
+        loaded,
+        sessionId,
+        callerKortixSessionId(c),
+        callerKortixSessionId(c),
+      );
+      if (!visible) return c.json({ error: 'Not found' }, 404);
+      if (sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
 
-    // A client resuming inside THIS process's control epoch has already applied
-    // everything up to its cursor. Seeding the write watermark from it is what
-    // stops the open-snapshot from re-sending four frames the client already
-    // holds — measured on the live stack: a reconnect at cseq=4 re-delivered
-    // cseq 1..4 before this. A resync clears it below, because a client that
-    // could not be replayed exactly must get the whole picture again.
-    let lastControlCseq: number | null =
-      cursor.cepoch === CONTROL_EPOCH && typeof cursor.cseq === 'number' ? cursor.cseq : null;
-    const writeControlOnce = (event: ControlEvent): void => {
-      if (lastControlCseq !== null && event.cseq <= lastControlCseq) return;
-      lastControlCseq = event.cseq;
-      writeControl(event);
-    };
-
-    const stream = new ReadableStream<Uint8Array>({
-      start(controller) {
-        controllerRef = controller;
-
-        const reconciler = acquireControlReconciler(sessionId, projectId);
-        let heartbeat: ReturnType<typeof setInterval> | null = null;
-
-        // Replay + live listener in the SAME synchronous tick — the handoff
-        // property WS-Z1's bus documents. Nothing can be published between
-        // reading the ring and registering, so nothing is lost or duplicated.
-        let replaying = true;
-        const queued: ControlEvent[] = [];
-        const subscription = subscribeControlEvents(
-          sessionId,
-          { sinceCseq: cursor.cseq, cepoch: cursor.cepoch },
-          (event) => {
-            if (replaying) queued.push(event);
-            else writeControlOnce(event);
-          },
-        );
-
-        writeMeta('kortix.stream.hello', {
-          type: 'kortix.stream.hello',
-          session_id: sessionId,
-          project_id: projectId,
-          at: Date.now(),
-          control: {
-            cepoch: CONTROL_EPOCH,
-            head_cseq: subscription.headCseq,
-            since: cursor.cseq,
-          },
-          runtime: {
-            attached: false,
-            requested_since: cursor.seq,
-            requested_epoch: cursor.epoch,
-          },
-        });
-
-        if (subscription.resync) {
-          // Never silent. The client is told the gap could not be replayed and
-          // is then handed a complete snapshot of every subsystem — which is
-          // possible only because a control frame is a snapshot, not a delta.
-          writeRaw(
-            `event: kortix.control.resync\ndata: ${JSON.stringify(subscription.resync)}\n\n`,
-          );
-          // The client's cursor is void. Everything below is written again.
-          lastControlCseq = null;
-        }
-        for (const event of subscription.replay) writeControlOnce(event);
-
-        void (async () => {
-          // The current snapshot of every subsystem, taken once the reconciler
-          // has read them at least once. A client therefore never has to wait a
-          // reconcile interval to learn the queue it already knows how to draw.
-          await reconciler.ready();
-          if (closed) return;
-          for (const event of reconciler.snapshot()) writeControlOnce(event);
-          replaying = false;
-          for (const event of queued) writeControlOnce(event);
-          queued.length = 0;
-        })();
-
-        // Our own TYPED heartbeat — not a `:` comment. An SSE parser swallows
-        // comments without yielding anything, so a comment keeps TCP warm while
-        // leaving every liveness watchdog blind (the 2026-08-26 prod defect).
-        heartbeat = setInterval(() => {
-          writeMeta('kortix.stream.heartbeat', {
-            type: 'kortix.stream.heartbeat',
-            at: Date.now(),
-            runtime_seq: runtime.seq,
-            control_cseq: lastControlCseq,
-          });
-        }, STREAM_HEARTBEAT_MS);
-        (heartbeat as unknown as { unref?: () => void }).unref?.();
-
-        void pumpRuntime({
-          sessionId,
-          projectId,
-          accountId,
-          userId,
-          runtime,
-          abort,
-          isClosed: () => closed,
-          controlCseq: () => lastControlCseq,
-          writeMeta,
-          writeRaw,
-        });
-
-        abort.signal.addEventListener('abort', () => {
-          if (heartbeat) clearInterval(heartbeat);
-          heartbeat = null;
-          subscription.unsubscribe();
-          reconciler.release();
-          replaying = false;
-          if (!closed) {
-            closed = true;
-            try {
-              controller.close();
-            } catch {
-              // Already closed by the client hanging up.
+      const cursor = parseCursorQuery(c);
+      const controlOnly = c.req.query('channels') === 'control';
+      // The server wake ladder acts as a watcher who could press Restart
+      // themselves: the same gates `/start` and `/restart` apply. Anyone else
+      // sees the ladder's state and never triggers it.
+      const ladderActor = controlOnly ? null : await wakeLadderActorFor(c, projectId, sessionId, visible);
+      // Presence is a human browser tab's: the same gates `PUT .../presence`
+      // applies, including who may keep the computer awake (KRTX-1729).
+      const presenceTabId = c.req.query('tab_id');
+      const presenceRenewal =
+        presenceTabId &&
+        isUuid(presenceTabId) &&
+        loaded.actor?.credential.kind === 'jwt' &&
+        !callerKortixSessionId(c)
+          ? {
+              userId: String(loaded.userId),
+              tabId: presenceTabId,
+              extendDeadline: await projectCapabilityAllowed(
+                c,
+                String(loaded.userId),
+                String(loaded.row.accountId),
+                projectId,
+                PROJECT_ACTIONS.PROJECT_SESSION_START,
+              ),
             }
-          }
-        });
-      },
-      cancel() {
-        closed = true;
-        abort.abort();
-      },
-    });
+          : null;
+      const userId = String(c.get('userId') ?? loaded.userId ?? '');
+      const accountId = String(loaded.row.accountId);
 
-    return new Response(stream, {
-      status: 200,
-      headers: {
-        'Content-Type': 'text/event-stream; charset=utf-8',
-        // `no-transform` matters as much as `no-cache`: an intermediary that
-        // "helpfully" compresses or buffers an event stream breaks it.
-        'Cache-Control': 'no-cache, no-transform',
-        Connection: 'keep-alive',
-        'X-Accel-Buffering': 'no',
-        'X-Kortix-Control-Epoch': CONTROL_EPOCH,
-      },
-    }) as any;
-  },
-);
+      const abort = new AbortController();
+      const runtime: StreamCursor = { epoch: cursor.epoch, seq: cursor.seq };
+
+      const encoder = new TextEncoder();
+      let closed = false;
+      let controllerRef: ReadableStreamDefaultController<Uint8Array> | null = null;
+
+      const writeRaw = (payload: string): void => {
+        if (closed || !controllerRef) return;
+        try {
+          controllerRef.enqueue(encoder.encode(payload));
+          if ((controllerRef.desiredSize ?? 0) < STREAM_BUFFER_BYTES - STREAM_MAX_BACKLOG_BYTES) {
+            // A client this far behind has stopped reading. End the stream;
+            // its reconnect resumes at its cursor.
+            closed = true;
+            abort.abort();
+            controllerRef.error(new Error('slow consumer'));
+          }
+        } catch {
+          closed = true;
+          abort.abort();
+        }
+      };
+
+      // Backpressure: the runtime pump awaits this before it reads the next
+      // daemon frame. `pull` fires when the client has drained the buffer.
+      let roomWaiters: Array<() => void> = [];
+      const wakeRoomWaiters = (): void => {
+        const waiters = roomWaiters;
+        roomWaiters = [];
+        for (const wake of waiters) wake();
+      };
+      abort.signal.addEventListener('abort', wakeRoomWaiters, { once: true });
+      const room = (): Promise<void> => {
+        if (closed || !controllerRef || (controllerRef.desiredSize ?? 1) > 0) return Promise.resolve();
+        return new Promise<void>((resolve) => roomWaiters.push(resolve));
+      };
+
+      /** A frame that advances neither cursor (status, hello, our heartbeat). */
+      const writeMeta = (event: string, data: Record<string, unknown>): void => {
+        writeRaw(`event: ${event}\ndata: ${JSON.stringify({ ...data, channel: 'stream' })}\n\n`);
+      };
+
+      const writeControl = (event: ControlEvent): void => {
+        writeRaw(
+          `event: ${event.type}\nid: ${encodeStreamId(runtime, CONTROL_EPOCH, event.cseq)}\n` +
+            `data: ${JSON.stringify(event)}\n\n`,
+        );
+      };
+
+      // A client resuming inside THIS process's control epoch has already applied
+      // everything up to its cursor. Seeding the write watermark from it is what
+      // stops the open-snapshot from re-sending four frames the client already
+      // holds — measured on the live stack: a reconnect at cseq=4 re-delivered
+      // cseq 1..4 before this. A resync clears it below, because a client that
+      // could not be replayed exactly must get the whole picture again.
+      let lastControlCseq: number | null =
+        cursor.cepoch === CONTROL_EPOCH && typeof cursor.cseq === 'number' ? cursor.cseq : null;
+      const writeControlOnce = (event: ControlEvent): void => {
+        if (lastControlCseq !== null && event.cseq <= lastControlCseq) return;
+        lastControlCseq = event.cseq;
+        writeControl(event);
+      };
+
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controllerRef = controller;
+
+          const reconciler = acquireControlReconciler(
+            sessionId,
+            projectId,
+            controlOnly ? 'queue' : 'full',
+            ladderActor,
+          );
+          let heartbeat: ReturnType<typeof setInterval> | null = null;
+
+          // Replay + live listener in the SAME synchronous tick — the handoff
+          // property WS-Z1's bus documents. Nothing can be published between
+          // reading the ring and registering, so nothing is lost or duplicated.
+          let replaying = true;
+          const queued: ControlEvent[] = [];
+          const subscription = subscribeControlEvents(
+            sessionId,
+            { sinceCseq: cursor.cseq, cepoch: cursor.cepoch },
+            (event) => {
+              if (replaying) queued.push(event);
+              else writeControlOnce(event);
+            },
+          );
+
+          writeMeta('kortix.stream.hello', {
+            type: 'kortix.stream.hello',
+            session_id: sessionId,
+            project_id: projectId,
+            at: Date.now(),
+            control: {
+              cepoch: CONTROL_EPOCH,
+              head_cseq: subscription.headCseq,
+              since: cursor.cseq,
+            },
+            runtime: {
+              attached: false,
+              requested_since: cursor.seq,
+              requested_epoch: cursor.epoch,
+            },
+          });
+
+          if (subscription.resync) {
+            // Never silent. The client is told the gap could not be replayed and
+            // is then handed a complete snapshot of every subsystem — which is
+            // possible only because a control frame is a snapshot, not a delta.
+            writeRaw(
+              `event: kortix.control.resync\ndata: ${JSON.stringify(subscription.resync)}\n\n`,
+            );
+            // The client's cursor is void. Everything below is written again.
+            lastControlCseq = null;
+          }
+          for (const event of subscription.replay) writeControlOnce(event);
+
+          void (async () => {
+            // The current snapshot of every subsystem, taken once the reconciler
+            // has read them at least once. A client therefore never has to wait a
+            // reconcile interval to learn the queue it already knows how to draw.
+            await reconciler.ready();
+            if (closed) return;
+            for (const event of reconciler.snapshot()) writeControlOnce(event);
+            replaying = false;
+            for (const event of queued) writeControlOnce(event);
+            queued.length = 0;
+          })();
+
+          // Our own TYPED heartbeat — not a `:` comment. An SSE parser swallows
+          // comments without yielding anything, so a comment keeps TCP warm while
+          // leaving every liveness watchdog blind (the 2026-08-26 prod defect).
+          heartbeat = setInterval(() => {
+            writeMeta('kortix.stream.heartbeat', {
+              type: 'kortix.stream.heartbeat',
+              at: Date.now(),
+              runtime_seq: runtime.seq,
+              control_cseq: lastControlCseq,
+            });
+          }, STREAM_HEARTBEAT_MS);
+          (heartbeat as unknown as { unref?: () => void }).unref?.();
+
+          let presenceTimer: ReturnType<typeof setInterval> | null = null;
+          if (presenceRenewal) {
+            const renew = () =>
+              void renewSessionPresence(presenceRenewal.userId, sessionId, presenceRenewal.tabId, {
+                extendDeadline: presenceRenewal.extendDeadline,
+              }).catch(() => {});
+            renew();
+            presenceTimer = setInterval(renew, PRESENCE_RENEW_MS);
+            (presenceTimer as unknown as { unref?: () => void }).unref?.();
+            abort.signal.addEventListener('abort', () => {
+              if (presenceTimer) clearInterval(presenceTimer);
+            }, { once: true });
+          }
+
+          if (!controlOnly) void pumpRuntime({
+            sessionId,
+            projectId,
+            accountId,
+            userId,
+            runtime,
+            abort,
+            isClosed: () => closed,
+            controlCseq: () => lastControlCseq,
+            writeMeta,
+            writeRaw,
+            room,
+            onRuntimeTurnEnd: (runtimeSessionId) =>
+              reconciler.noteRuntimeTurnEnd(runtimeSessionId, Date.now()),
+            onReachability: (reachable, reason) =>
+              reconciler.noteRuntimeReachability(reachable, reason),
+          });
+
+          abort.signal.addEventListener('abort', () => {
+            if (heartbeat) clearInterval(heartbeat);
+            heartbeat = null;
+            subscription.unsubscribe();
+            reconciler.release();
+            replaying = false;
+            if (!closed) {
+              closed = true;
+              try {
+                controller.close();
+              } catch {
+                // Already closed by the client hanging up.
+              }
+            }
+          });
+        },
+        pull() {
+          wakeRoomWaiters();
+        },
+        cancel() {
+          closed = true;
+          abort.abort();
+        },
+      }, {
+        highWaterMark: STREAM_BUFFER_BYTES,
+        size: (chunk) => chunk?.byteLength ?? 0,
+      });
+
+      return new Response(stream, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          // `no-transform` matters as much as `no-cache`: an intermediary that
+          // "helpfully" compresses or buffers an event stream breaks it.
+          'Cache-Control': 'no-cache, no-transform',
+          Connection: 'keep-alive',
+          'X-Accel-Buffering': 'no',
+          'X-Kortix-Control-Epoch': CONTROL_EPOCH,
+        },
+      }) as any;
+    },
+  );
+}
 
 interface PumpArgs {
   sessionId: string;
@@ -385,6 +526,16 @@ interface PumpArgs {
   controlCseq: () => number | null;
   writeMeta: (event: string, data: Record<string, unknown>) => void;
   writeRaw: (payload: string) => void;
+  /** Resolves when the client buffer has room (backpressure). */
+  room: () => Promise<void>;
+  /** A LIVE `kortix.turn` frame: the runtime ended a turn of this session id. */
+  onRuntimeTurnEnd: (runtimeSessionId: string) => void;
+  /** The harness answered ready (`true`), or the box went away (`false`, reason). */
+  onReachability: (reachable: boolean, reason: string | null) => void;
+  /** Frames at or below this seq are the daemon's replay, not news. */
+  liveAfterSeq?: number | null;
+  /** Re-read and push `/kortix/health`; set while a box is attached. */
+  refreshHealth?: () => void;
 }
 
 /**
@@ -404,6 +555,7 @@ async function pumpRuntime(args: PumpArgs): Promise<void> {
     // hour must not produce an event every five seconds.
     if (announcedDownReason === reason) return;
     announcedDownReason = reason;
+    args.onReachability(false, reason);
     args.writeMeta('kortix.runtime.status', {
       type: 'kortix.runtime.status',
       state: 'down',
@@ -447,20 +599,45 @@ async function pumpRuntime(args: PumpArgs): Promise<void> {
     const attachable = sandbox?.status === 'active' || sandbox?.status === 'provisioning';
     if (!sandbox?.externalId || !attachable) {
       announceDown(sandbox ? `sandbox_${sandbox.status}` : 'no_sandbox');
-      await sleep(RUNTIME_IDLE_RECHECK_MS, args.abort.signal);
+      // No poll: the row's next client-visible write wakes this wait.
+      await waitForSessionChange(
+        args.sessionId,
+        isPgBroadcastListening() ? RUNTIME_IDLE_BACKSTOP_MS : RUNTIME_IDLE_RECHECK_MS,
+        args.abort.signal,
+      );
       continue;
     }
 
+    // One controller per attachment: the caller's abort and the stall watchdog
+    // both end THIS attempt, and the next loop pass re-attaches on the ladder.
+    const attachment = new AbortController();
+    const onCallerAbort = (): void => attachment.abort(args.abort.signal.reason);
+    args.abort.signal.addEventListener('abort', onCallerAbort, { once: true });
+    let stallTimer: ReturnType<typeof setTimeout> | undefined;
+    const armStallWatchdog = (): void => {
+      clearTimeout(stallTimer);
+      stallTimer = setTimeout(
+        () => attachment.abort(new Error('runtime_stream_stalled')),
+        runtimeStreamTimings.stallMs,
+      );
+    };
+    const endAttachment = (): void => {
+      clearTimeout(stallTimer);
+      args.abort.signal.removeEventListener('abort', onCallerAbort);
+    };
+
     const opened = await openRuntimeEventStream(
       { externalId: sandbox.externalId, userId: args.userId },
-      { since: args.runtime.seq, epoch: args.runtime.epoch, signal: args.abort.signal },
+      { since: args.runtime.seq, epoch: args.runtime.epoch, signal: attachment.signal },
     );
     if (!opened.ok) {
+      endAttachment();
       announceDown(opened.reason);
       const delay =
         RUNTIME_ATTACH_BACKOFF_MS[Math.min(attempt, RUNTIME_ATTACH_BACKOFF_MS.length - 1)]!;
       attempt += 1;
-      await sleep(delay, args.abort.signal);
+      // A box that stops while it is unreachable ends the backoff early.
+      await waitForSessionChange(args.sessionId, delay, args.abort.signal);
       continue;
     }
 
@@ -479,20 +656,91 @@ async function pumpRuntime(args: PumpArgs): Promise<void> {
     // connection is warm. Awaited only inside this detached pump, never on a
     // request's response path.
     void refreshProjection(args, 'attach');
+    const attachAbort = new AbortController();
+    const stopHealth = () => attachAbort.abort();
+    args.abort.signal.addEventListener('abort', stopHealth, { once: true });
+    args.refreshHealth = watchRuntimeHealth(args, sandbox.externalId, attachAbort.signal);
+    args.refreshHealth();
 
+    armStallWatchdog();
     try {
-      for await (const frame of parseSseFrames(opened.body)) {
+      for await (const frame of parseSseFrames(opened.body, args.abort.signal)) {
         if (args.isClosed() || args.abort.signal.aborted) break;
+        armStallWatchdog();
         forwardRuntimeFrame(args, frame.event, frame.data);
+        await args.room();
       }
       announceDown('stream_ended');
     } catch (error) {
+      // The watchdog aborted the attempt (the caller did not): name it, whatever
+      // text the transport put on the resulting read error.
+      const stalled = attachment.signal.aborted && !args.abort.signal.aborted;
       announceDown(
-        error instanceof Error && error.message ? error.message.slice(0, 200) : 'stream_error',
+        stalled
+          ? 'runtime_stream_stalled'
+          : error instanceof Error && error.message
+            ? error.message.slice(0, 200)
+            : 'stream_error',
       );
+    } finally {
+      endAttachment();
     }
+    attachAbort.abort();
+    args.abort.signal.removeEventListener('abort', stopHealth);
+    args.refreshHealth = undefined;
     await sleep(RUNTIME_ATTACH_BACKOFF_MS[0]!, args.abort.signal);
   }
+}
+
+/**
+ * Push the daemon's `/kortix/health` document as `kortix.runtime.health`.
+ *
+ * One read per attach and per boot/restart frame. A harness that is not ready
+ * yet is re-read on a short backoff for at most {@link RUNTIME_HEALTH_BOOT_WINDOW_MS},
+ * so the client sees `ready` the moment the box does and never probes the box
+ * itself. An unchanged document is not pushed twice.
+ */
+function watchRuntimeHealth(args: PumpArgs, externalId: string, signal: AbortSignal): () => void {
+  let lastPushed: string | null = null;
+  let running = false;
+  let again = false;
+  const read = async (): Promise<void> => {
+    if (running) {
+      again = true;
+      return;
+    }
+    running = true;
+    const startedAt = Date.now();
+    try {
+      for (let attempt = 0; !signal.aborted; attempt += 1) {
+        const result = await fetchRuntimeHealth({ externalId, userId: args.userId }, signal);
+        if (signal.aborted || args.isClosed()) return;
+        if (result.ok) {
+          const serialized = JSON.stringify(result.health);
+          if (serialized !== lastPushed) {
+            lastPushed = serialized;
+            args.writeMeta('kortix.runtime.health', {
+              type: 'kortix.runtime.health',
+              health: result.health,
+              at: Date.now(),
+            });
+          }
+        }
+        const harness = result.ok ? (result.health.harness as { ready?: unknown } | undefined) : undefined;
+        const ready = result.ok && result.health.status !== 'starting' && harness?.ready !== false;
+        if (ready) args.onReachability(true, null);
+        if (ready && !again) return;
+        again = false;
+        if (Date.now() - startedAt > RUNTIME_HEALTH_BOOT_WINDOW_MS) return;
+        const delay =
+          RUNTIME_HEALTH_BOOT_BACKOFF_MS[Math.min(attempt, RUNTIME_HEALTH_BOOT_BACKOFF_MS.length - 1)]!;
+        await sleep(delay, signal);
+      }
+    } finally {
+      running = false;
+    }
+  };
+  return () => void read();
 }
 
 /**
@@ -518,6 +766,7 @@ function forwardRuntimeFrame(args: PumpArgs, event: string | null, data: string)
   const seq = typeof parsed.seq === 'number' ? parsed.seq : null;
 
   if (type === 'kortix.hello') {
+    args.liveAfterSeq = typeof parsed.head_seq === 'number' ? parsed.head_seq : null;
     const epoch = typeof parsed.epoch === 'string' ? parsed.epoch : null;
     if (epoch && epoch !== args.runtime.epoch) {
       // A new daemon boot invalidates our seq. Adopt the epoch and forget the
@@ -535,6 +784,22 @@ function forwardRuntimeFrame(args: PumpArgs, event: string | null, data: string)
 
   if (PROJECTION_INVALIDATING_EVENTS.has(type)) {
     void refreshProjection(args, type);
+  }
+  if (HEALTH_INVALIDATING_EVENTS.has(type) && seq !== null && seq > (args.liveAfterSeq ?? Number.POSITIVE_INFINITY)) {
+    args.refreshHealth?.();
+  }
+
+  if (type === 'kortix.turn' && seq !== null && seq > (args.liveAfterSeq ?? Number.POSITIVE_INFINITY)) {
+    // Only a LIVE end is news: a replayed one may predate the turn running now,
+    // and the box clock is not the clock turns start on, so it is stamped here.
+    const payload = (parsed.payload ?? {}) as Record<string, unknown>;
+    const runtimeSessionId =
+      typeof payload.runtime_session_id === 'string'
+        ? payload.runtime_session_id
+        : typeof payload.opencode_session_id === 'string'
+          ? payload.opencode_session_id
+          : null;
+    if (runtimeSessionId) args.onRuntimeTurnEnd(runtimeSessionId);
   }
 
   if (seq !== null) args.runtime.seq = seq;
@@ -572,6 +837,38 @@ async function refreshProjection(args: PumpArgs, trigger: string): Promise<void>
     publishRuntimeStateFrame(args.sessionId, leg);
   } catch {
     // A projection refresh is an optimisation. It never degrades the stream.
+  }
+}
+
+async function wakeLadderActorFor(
+  c: Context,
+  projectId: string,
+  sessionId: string,
+  visible: { row: { agentName: string | null }; canManageLifecycle?: boolean },
+): Promise<WakeLadderActor | null> {
+  // A cheap pre-filter at open. The real decision is `authorize()`, asked
+  // again right before every step (Strix CWE-863).
+  if (!visible.canManageLifecycle) return null;
+  if (c.get('authType') === 'apiKey' && c.get('apiKeyType') === 'user') return null;
+  try {
+    assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
+    const loaded = await loadProjectForUser(c, projectId, 'session');
+    if (!loaded) return null;
+    await resolveAndAuthorizeAgent(c, loaded, projectId, null, visible.row.agentName);
+    const actor = await actorOf(c, loaded.row.accountId);
+    // An agent's own stream never drives restarts of its session.
+    if (actor.credential.kind === 'agent_session') return null;
+    const authorization = {
+      actor,
+      onBehalfOf: c.get('onBehalfOfUserId') as string | null | undefined,
+      isServiceAccount: c.get('authType') === 'service_account',
+      userId: loaded.userId,
+      projectId,
+      sessionId,
+    };
+    return { authorize: () => reauthorizeWakeLadderActor(authorization) };
+  } catch {
+    return null;
   }
 }
 

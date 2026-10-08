@@ -54,7 +54,6 @@ const {
   isSandboxAuthored,
   isTurnStartRequest,
   shortenSandboxDeadline,
-  shortenSandboxDeadlineOnTurnEnd,
   turnGrantMs,
   turnUnconfirmedDripMs,
 } = await import('./sandbox-deadline');
@@ -330,45 +329,6 @@ describe('shortenSandboxDeadline — sandbox-reported, structurally unable to ex
     await shortenSandboxDeadline('sess-1');
 
     expect(executed[0]).toContain('900'); // 15 min in seconds
-  });
-});
-
-// ═══ THE MID-TURN KILL THIS CLOSES ═══
-// `session.error` fires while opencode is RETRYING too. Shortening the box there
-// cut it to the 15-minute idle tail WHILE THE TURN WAS STILL RUNNING, so any
-// rate-limit backoff longer than 15 minutes killed live work. The classifier
-// ships bound to the write so a future caller cannot re-wire one without the
-// other.
-describe('shortenSandboxDeadlineOnTurnEnd — a retry is not a turn end', () => {
-  test('an idle turn end shortens the box to the idle tail', async () => {
-    await shortenSandboxDeadlineOnTurnEnd('sess-1', 'idle');
-
-    expect(executed).toHaveLength(1);
-    expect(executed[0]).toContain('900'); // 15 min in seconds
-    expect(executed[0]).not.toContain('GREATEST'); // still LEAST-only
-  });
-
-  test('REGRESSION: a RETRYABLE error writes NOTHING — the turn is still running', async () => {
-    await shortenSandboxDeadlineOnTurnEnd('sess-1', 'error', {
-      isRetryable: true,
-    });
-
-    expect(executed).toEqual([]);
-  });
-
-  test('a permanent error shortens the box', async () => {
-    await shortenSandboxDeadlineOnTurnEnd('sess-1', 'error', {
-      isRetryable: false,
-    });
-
-    expect(executed).toHaveLength(1);
-  });
-
-  test('an error with no retry flag shortens — unknown is never assumed alive', async () => {
-    await shortenSandboxDeadlineOnTurnEnd('sess-1', 'error');
-    await shortenSandboxDeadlineOnTurnEnd('sess-1', 'error', undefined);
-
-    expect(executed).toHaveLength(2);
   });
 });
 

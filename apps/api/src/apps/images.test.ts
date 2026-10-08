@@ -5,6 +5,10 @@ import {
   deploymentIdFromAppSnapshotName,
 } from '../snapshots/quota-gc-select';
 import {
+  AppImageQuotaExceededError,
+  appImageName,
+  buildWithImageQuotaGuard,
+  pinnedOciReference,
   reclaimAppDeploymentImages,
   releaseDeploymentImage,
   releaseDeploymentImages,
@@ -48,6 +52,8 @@ function fakeIo(input: {
   lookupFails?: boolean;
   lingering?: AppRuntimeTeardownTarget[];
   events?: string[];
+  unusedImages?: Array<{ imageName: string; provider: string; outcome: 'released' | 'pending' | 'none' }>;
+  sharedReleased?: string[];
 }): AppImageReclaimIo & { lookups: string[][]; tornDown: string[] } {
   const lookups: string[][] = [];
   const tornDown: string[] = [];
@@ -68,6 +74,13 @@ function fakeIo(input: {
       lookups.push(ids);
       if (input.lookupFails) throw new Error('database unavailable');
       return new Set(ids.filter((id) => input.reclaimable?.includes(id)));
+    },
+    async loadUnusedImages(limit, providers) {
+      return (input.unusedImages ?? []).filter((image) => providers.includes(image.provider)).slice(0, limit);
+    },
+    async releaseImage(image) {
+      input.sharedReleased?.push(image.imageName);
+      return input.unusedImages?.find((row) => row.imageName === image.imageName)?.outcome ?? 'none';
     },
   };
 }
@@ -233,5 +246,188 @@ describe('reclaimAppDeploymentImages', () => {
     expect(events).toEqual(['teardown', 'lookup']);
     expect(io.tornDown).toEqual(['rt-1']);
     expect(result).toMatchObject({ runtimesRemoved: 1, released: 1 });
+  });
+});
+
+const IMAGE_INPUTS = {
+  environment: 'dev:https://api.example.test',
+  accountId: '00000000-0000-4000-a000-0000000000a1',
+  provider: 'platinum',
+  artifactDigest: `sha256:${'ab'.repeat(32)}`,
+  deploymentId: DEPLOYMENT_A,
+  source: { kind: 'dockerfile', dockerfile: 'Dockerfile' },
+  dockerfile: 'FROM node:22-alpine\nCOPY . /app\n',
+  runtimeSpec: { port: 3000, healthPath: '/health' },
+  machine: { cpuCores: 1, memoryGb: 2, diskGb: 10 },
+  runtimeImageKey: 'appd-0123456789abcdef',
+};
+
+describe('shared App image names', () => {
+  test('the same build inputs name the same image, whatever the deployment', () => {
+    const first = appImageName(IMAGE_INPUTS);
+    expect(first).toMatch(/^kortix-appimg-dev-[0-9a-f]{24}$/);
+    expect(appImageName({ ...IMAGE_INPUTS, deploymentId: DEPLOYMENT_B })).toBe(first);
+    // Key order in a spec object does not change the image.
+    expect(appImageName({ ...IMAGE_INPUTS, runtimeSpec: { healthPath: '/health', port: 3000 } })).toBe(first);
+  });
+
+  test('every image-affecting input changes the name', () => {
+    const base = appImageName(IMAGE_INPUTS);
+    const variants = [
+      { environment: 'staging:https://api.example.test' },
+      { environment: 'dev:https://other.example.test' },
+      { accountId: '00000000-0000-4000-a000-0000000000a2' },
+      { provider: 'daytona' },
+      { artifactDigest: `sha256:${'cd'.repeat(32)}` },
+      { source: { kind: 'dockerfile', dockerfile: 'Dockerfile.prod' } },
+      { dockerfile: 'FROM node:24-alpine\n' },
+      { runtimeSpec: { port: 8080, healthPath: '/health' } },
+      { machine: { cpuCores: 2, memoryGb: 2, diskGb: 10 } },
+      { runtimeImageKey: 'appd-fedcba9876543210' },
+    ];
+    const names = variants.map((variant) => appImageName({ ...IMAGE_INPUTS, ...variant }));
+    expect(new Set([base, ...names]).size).toBe(variants.length + 1);
+    expect(names[0]).toStartWith('kortix-appimg-staging-');
+  });
+
+  test('an artifact without a fixed digest never shares an image', () => {
+    const a = appImageName({ ...IMAGE_INPUTS, artifactDigest: null });
+    const b = appImageName({ ...IMAGE_INPUTS, artifactDigest: null, deploymentId: DEPLOYMENT_B });
+    expect(a).not.toBe(b);
+  });
+
+  test('only a digest-pinned OCI reference counts as fixed content', () => {
+    const pinned = `ghcr.io/example/app@sha256:${'0f'.repeat(32)}`;
+    expect(pinnedOciReference(pinned)).toBe(pinned);
+    expect(pinnedOciReference('ghcr.io/example/app:latest')).toBeNull();
+    expect(pinnedOciReference('docker.io/library/nginx:alpine')).toBeNull();
+    expect(pinnedOciReference(null)).toBeNull();
+  });
+});
+
+const PLATINUM_QUOTA = 'platinum POST /v1/templates/from-build -> 429 {"error":"org template quota reached (500/500); delete an existing template first","code":"org_template_quota_exceeded","quota":500,"used":500}';
+
+describe('template quota guard', () => {
+  test('a build that succeeds never reclaims', async () => {
+    let reclaims = 0;
+    await buildWithImageQuotaGuard({ provider: 'platinum', build: async () => {}, reclaim: async () => { reclaims += 1; } });
+    expect(reclaims).toBe(0);
+  });
+
+  test('a quota refusal reclaims unused images once, then builds once more', async () => {
+    const calls: string[] = [];
+    let builds = 0;
+    await buildWithImageQuotaGuard({
+      provider: 'platinum',
+      build: async () => {
+        builds += 1;
+        calls.push(`build${builds}`);
+        if (builds === 1) throw new Error(PLATINUM_QUOTA);
+      },
+      reclaim: async () => { calls.push('reclaim'); },
+      onReclaim: async (message) => { calls.push(message.includes('org_template_quota_exceeded') ? 'notice' : 'bad-notice'); },
+    });
+    expect(calls).toEqual(['build1', 'notice', 'reclaim', 'build2']);
+  });
+
+  test('a second quota refusal fails with app_image_quota_exceeded and an actionable message', async () => {
+    let builds = 0;
+    let reclaims = 0;
+    const failure = await buildWithImageQuotaGuard({
+      provider: 'platinum',
+      build: async () => { builds += 1; throw new Error(PLATINUM_QUOTA); },
+      reclaim: async () => { reclaims += 1; },
+    }).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(AppImageQuotaExceededError);
+    expect((failure as AppImageQuotaExceededError).code).toBe('app_image_quota_exceeded');
+    expect((failure as Error).message).toContain('Delete unused Apps or deployments');
+    expect(builds).toBe(2);
+    expect(reclaims).toBe(1);
+  });
+
+  // A disk/CPU quota is transient, and a Dockerfile's own log line names no
+  // template count: neither may reclaim or fail the deployment permanently.
+  test.each([
+    ['a Dockerfile RUN step that prints a disk quota error', 'Platinum template kortix-appimg-dev-abc build failed: RUN npm ci: write /app/node_modules: Disk quota exceeded'],
+    ['a Daytona organization disk quota', 'Snapshot build failed: Total disk quota exceeded (100GB). Please contact support'],
+    ['a Daytona CPU quota', 'Snapshot build failed: Total CPU quota exceeded'],
+    ['a pip quota line in a Platinum build log', 'Platinum template kortix-appimg-dev-abc build failed: ERROR: quota exceeded for package index'],
+  ])('%s passes through without a reclaim', async (_label, message) => {
+    let reclaims = 0;
+    let builds = 0;
+    const failure = await buildWithImageQuotaGuard({
+      provider: 'platinum',
+      build: async () => { builds += 1; throw new Error(message); },
+      reclaim: async () => { reclaims += 1; },
+    }).catch((error: unknown) => error);
+    expect(failure).not.toBeInstanceOf(AppImageQuotaExceededError);
+    expect((failure as Error).message).toBe(message);
+    expect(reclaims).toBe(0);
+    expect(builds).toBe(1);
+  });
+
+  test('a Daytona snapshot-count refusal reclaims like the Platinum template quota', async () => {
+    let reclaims = 0;
+    let builds = 0;
+    await buildWithImageQuotaGuard({
+      provider: 'daytona',
+      build: async () => {
+        builds += 1;
+        if (builds === 1) throw new Error('Snapshot build failed: Organization has reached the maximum number of snapshots (100)');
+      },
+      reclaim: async () => { reclaims += 1; },
+    });
+    expect([builds, reclaims]).toEqual([2, 1]);
+  });
+
+  test('any other build failure passes through without a reclaim', async () => {
+    let reclaims = 0;
+    const failure = await buildWithImageQuotaGuard({
+      provider: 'platinum',
+      build: async () => { throw new Error('dockerfile: RUN npm ci exited 1'); },
+      reclaim: async () => { reclaims += 1; },
+    }).catch((error: unknown) => error);
+    expect((failure as Error).message).toBe('dockerfile: RUN npm ci exited 1');
+    expect(failure).not.toBeInstanceOf(AppImageQuotaExceededError);
+    expect(reclaims).toBe(0);
+  });
+});
+
+describe('shared image reclaim pass', () => {
+  test('releases unused shared images with no provider listing, and counts what the provider kept', async () => {
+    const released: string[] = [];
+    const io = fakeIo({
+      providers: [{ name: 'platinum', adapter: fakeProvider() }],
+      unusedImages: [
+        { imageName: 'kortix-appimg-dev-aaaaaaaaaaaaaaaaaaaaaaaa', provider: 'platinum', outcome: 'released' },
+        { imageName: 'kortix-appimg-dev-bbbbbbbbbbbbbbbbbbbbbbbb', provider: 'platinum', outcome: 'pending' },
+      ],
+      sharedReleased: released,
+    });
+    const result = await reclaimAppDeploymentImages({}, io);
+    expect(released).toEqual([
+      'kortix-appimg-dev-aaaaaaaaaaaaaaaaaaaaaaaa',
+      'kortix-appimg-dev-bbbbbbbbbbbbbbbbbbbbbbbb',
+    ]);
+    expect(result).toMatchObject({ reclaimable: 2, released: 1, pending: 1, deferred: 0, errors: 0 });
+  });
+
+  test('the pass asks only for images on the providers configured here', async () => {
+    const asked: string[][] = [];
+    const io = fakeIo({ providers: [{ name: 'platinum', adapter: fakeProvider() }] });
+    await reclaimAppDeploymentImages({}, { ...io, loadUnusedImages: async (limit, providers) => { asked.push(providers); return []; } });
+    expect(asked).toEqual([['platinum']]);
+  });
+
+  test('one pass releases at most maxPerPass shared images', async () => {
+    const released: string[] = [];
+    const unusedImages = ['a', 'b', 'c'].map((letter) => ({
+      imageName: `kortix-appimg-dev-${letter.repeat(24)}`,
+      provider: 'platinum',
+      outcome: 'released' as const,
+    }));
+    const result = await reclaimAppDeploymentImages({ maxPerPass: 2 }, fakeIo({ providers: [{ name: 'platinum', adapter: fakeProvider() }], unusedImages, sharedReleased: released }));
+    expect(released).toHaveLength(2);
+    expect(result).toMatchObject({ released: 2, deferred: 1 });
   });
 });

@@ -4,6 +4,7 @@ import type { ProjectTrigger } from '@kortix/sdk';
 
 import { testUiTranslator } from '@/i18n/test-translator';
 import {
+  describeNextRun,
   CUSTOM_TIMING_LABEL,
   describeCadence,
   describeConditions,
@@ -13,6 +14,8 @@ import {
   describeSecurity,
   describeWhen,
   matchesQuery,
+  isCustomerTrigger,
+  isTriggerKind,
   triggerName,
   triggerStatus,
 } from './schedule-copy';
@@ -42,9 +45,60 @@ function trigger(overrides: Partial<ProjectTrigger> = {}): ProjectTrigger {
     filter: null,
     last_fired_at: null,
     webhook_url: null,
+    event: null,
     ...overrides,
   } as ProjectTrigger;
 }
+
+describe('customer trigger list', () => {
+  test('a fresh project has no visible triggers without deleting its reflector', () => {
+    const seeded = trigger({ slug: 'harness-reflector', agent: 'harness-reflector' });
+    expect([seeded].filter(isCustomerTrigger)).toEqual([]);
+    expect(seeded.slug).toBe('harness-reflector');
+  });
+
+  test('keeps customer schedules and webhooks, including paused and similarly named triggers', () => {
+    const schedules = [
+      trigger({ enabled: false }),
+      trigger({ slug: 'harness-reflector-custom' }),
+      trigger({ slug: 'custom-reflection', agent: 'harness-reflector' }),
+      trigger({ slug: 'incoming', type: 'webhook' }),
+    ];
+    expect(schedules.filter(isCustomerTrigger)).toEqual(schedules);
+    // The view's filter: kind first (monitors are not this screen), then owner.
+    const visible = (t: ProjectTrigger) => isTriggerKind(t.type) && isCustomerTrigger(t);
+    expect([trigger({ type: 'monitor' })].filter(visible)).toEqual([]);
+    // A customer's own trigger named the same stays visible: agent must match too.
+    expect([trigger({ slug: 'harness-reflector' }), trigger()].filter(visible)).toHaveLength(2);
+  });
+});
+
+describe('app event triggers in the copy layer', () => {
+  const event = trigger({
+    type: 'event',
+    cron: null,
+    name: '',
+    event: {
+      connector: 'github',
+      type: 'GITHUB_PULL_REQUEST_EVENT',
+      config: {},
+      provider: 'composio',
+      app: 'github',
+      status: 'active',
+      error: null,
+      last_event_at: null,
+    },
+  });
+
+  test('is a trigger kind the screen shows', () => {
+    expect(isTriggerKind('event')).toBe(true);
+  });
+
+  test('reads as the app event, in the list sentence and as the fallback name', () => {
+    expect(describeWhen(event)).toBe('Pull request on Github');
+    expect(triggerName(event)).toBe('Pull request on Github');
+  });
+});
 
 describe('describeCadence — cron syntax never reaches the screen', () => {
   const cases: [string, string][] = [
@@ -271,5 +325,21 @@ describe('matchesQuery — searches what is on screen', () => {
 
   test('a paused row is findable by its status word', () => {
     expect(matchesQuery(trigger({ enabled: false }), 'paused', testUiTranslator)).toBe(true);
+  });
+});
+
+// KRTX-1743: no surface showed when a cron trigger runs next, and a run can
+// start up to 30 minutes after its slot (jitter).
+describe('describeNextRun', () => {
+  test('an enabled cron trigger names its next run', () => {
+    const text = describeNextRun(trigger({ type: 'cron', enabled: true, next_fire_at: '2026-10-08T09:12:00.000Z' }));
+    expect(text).toStartWith('Next run ');
+    expect(text).toContain('Oct');
+  });
+
+  test('no next run: a webhook, a paused trigger, or an older API', () => {
+    expect(describeNextRun(trigger({ type: 'webhook', enabled: true, next_fire_at: null }))).toBeNull();
+    expect(describeNextRun(trigger({ type: 'cron', enabled: false, next_fire_at: '2026-10-08T09:12:00.000Z' }))).toBeNull();
+    expect(describeNextRun(trigger({ type: 'cron', enabled: true }))).toBeNull();
   });
 });

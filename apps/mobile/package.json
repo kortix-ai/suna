@@ -1,7 +1,6 @@
 {
   "name": "kortix",
   "main": "expo-router/entry",
-  "version": "1.0.0",
   "scripts": {
     "postinstall": "patch-package",
     "eas-build-post-install": "patch-package",
@@ -55,6 +54,7 @@
     "expo-asset": "~56.0.24",
     "expo-audio": "~56.0.13",
     "expo-auth-session": "~56.0.18",
+    "expo-blur": "~56.0.4",
     "expo-build-properties": "~56.0.27",
     "expo-clipboard": "~56.0.4",
     "expo-constants": "~56.0.25",

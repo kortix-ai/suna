@@ -1,8 +1,9 @@
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
 import { and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
-import { accountMembers, accountSecretGrants, accountSecretResources, sessionProviderSecretPools } from '@kortix/db';
+import { accountSecretGrants, accountSecretResources, sessionProviderSecretPools } from '@kortix/db';
 import { config } from '../config';
 import { db } from '../shared/db';
+import { accountMemberJoin } from '../iam/membership-read';
 
 const envelopeVersion = 'v1';
 
@@ -51,12 +52,57 @@ export interface ResolvedAccountSecret {
   updatedAt: Date;
 }
 
-/** Record a provider limit across gateway replicas. A concurrent limit never shortens the cooldown. */
+/**
+ * How long a resting account waits before one re-try. A user can reset a
+ * ChatGPT plan's usage before the reset the provider named; without a re-try the
+ * project stays on paid fallback models until that date (2026-10-06).
+ */
+export const COOLDOWN_PROBE_SECONDS = 15 * 60;
+
+/** The longest rest: ChatGPT's weekly plan limit, plus a day. */
+export const MAX_ACCOUNT_SECRET_REST_SECONDS = 8 * 24 * 60 * 60;
+
+/**
+ * Record a provider limit across gateway replicas: seconds for a rate limit,
+ * days for a plan's usage limit. A concurrent limit never shortens the cooldown.
+ */
 export async function coolDownAccountSecret(secretId: string, accountId: string, seconds: number): Promise<void> {
-  const until = new Date(Date.now() + Math.max(1, Math.min(60, Math.floor(seconds))) * 1000);
+  const until = new Date(Date.now() + Math.max(1, Math.min(MAX_ACCOUNT_SECRET_REST_SECONDS, Math.floor(seconds))) * 1000);
   await db.update(accountSecretResources).set({
     cooldownUntil: sql`greatest(coalesce(${accountSecretResources.cooldownUntil}, '-infinity'::timestamptz), ${until.toISOString()}::timestamptz)`,
+    cooldownProbeAt: new Date(Date.now() + COOLDOWN_PROBE_SECONDS * 1000),
   }).where(and(eq(accountSecretResources.secretId, secretId), eq(accountSecretResources.accountId, accountId)));
+}
+
+/**
+ * Lift the rest of every row whose re-try is due, once across replicas: the
+ * update claims the row only while its probe time is still the one read, and
+ * schedules the next re-try. A lifted row is usable again; when the provider
+ * still refuses, its next limit rests the account again (`coolDownAccountSecret`).
+ */
+async function liftDueCooldowns<T extends { secretId: string; cooldownUntil: Date | null; cooldownProbeAt: Date | null }>(accountId: string, rows: T[]): Promise<T[]> {
+  const now = Date.now();
+  return Promise.all(rows.map(async (row) => {
+    if (!row.cooldownUntil || row.cooldownUntil.getTime() <= now || !row.cooldownProbeAt || row.cooldownProbeAt.getTime() > now) return row;
+    const [claimed] = await db.update(accountSecretResources)
+      .set({ cooldownUntil: null, cooldownProbeAt: new Date(now + COOLDOWN_PROBE_SECONDS * 1000) })
+      .where(and(
+        eq(accountSecretResources.secretId, row.secretId),
+        eq(accountSecretResources.accountId, accountId),
+        eq(accountSecretResources.cooldownProbeAt, row.cooldownProbeAt),
+      ))
+      .returning({ secretId: accountSecretResources.secretId });
+    return claimed ? { ...row, cooldownUntil: null } : row;
+  }));
+}
+
+/** An owner's "retry now": end the rest of one stored account. False when no row matched. */
+export async function clearAccountSecretCooldown(secretId: string, accountId: string): Promise<boolean> {
+  const cleared = await db.update(accountSecretResources)
+    .set({ cooldownUntil: null, cooldownProbeAt: null })
+    .where(and(eq(accountSecretResources.secretId, secretId), eq(accountSecretResources.accountId, accountId)))
+    .returning({ secretId: accountSecretResources.secretId });
+  return cleared.length > 0;
 }
 
 /** Provider names visible to a member for model discovery. Never reads secret values. */
@@ -206,7 +252,7 @@ export async function listUsableGatewaySecrets(input: Omit<GatewaySecretQuery, '
   const q = { ...input, grantUserId: input.grantUserId === undefined ? input.userId : input.grantUserId };
   if (!(await memberMayReadProject(input.accountId, input.projectId, input.userId))) return [];
   return usableRows(q, await gatewaySecretRows(q)
-    .innerJoin(accountMembers, and(eq(accountMembers.accountId, input.accountId), eq(accountMembers.userId, input.userId))));
+    .innerJoin(...accountMemberJoin(input.accountId, input.userId)));
 }
 
 /** A stored ChatGPT login, read again when the provider refused its token. */
@@ -247,7 +293,7 @@ export async function resolveDefaultCodexAccountSecret(accountId: string, projec
     updatedAt: accountSecretResources.updatedAt,
   }).from(accountSecretResources)
     .innerJoin(accountSecretGrants, and(eq(accountSecretGrants.secretId, accountSecretResources.secretId), eq(accountSecretGrants.accountId, accountId)))
-    .innerJoin(accountMembers, and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)))
+    .innerJoin(...accountMemberJoin(accountId, userId))
     .where(and(
       eq(accountSecretResources.accountId, accountId),
       eq(accountSecretResources.providerId, 'codex'),
@@ -291,12 +337,13 @@ export async function resolveProjectSharedProviderSecrets(input: Omit<GatewaySec
     valueEnc: accountSecretResources.valueEnc,
     updatedAt: accountSecretResources.updatedAt,
     cooldownUntil: accountSecretResources.cooldownUntil,
+    cooldownProbeAt: accountSecretResources.cooldownProbeAt,
   }).from(accountSecretResources).where(and(
     eq(accountSecretResources.accountId, input.accountId),
     eq(accountSecretResources.active, true),
     inArray(accountSecretResources.secretId, usable.map((row) => row.secretId)),
   ));
-  const byId = new Map(rows.map((row) => [row.secretId, row]));
+  const byId = new Map((await liftDueCooldowns(input.accountId, rows)).map((row) => [row.secretId, row]));
   const ordered = usable.flatMap((key) => {
     const row = byId.get(key.secretId);
     return row ? [{ ...key, ...row }] : [];
@@ -350,6 +397,7 @@ export async function resolveSessionProviderSecrets(input: {
     valueEnc: accountSecretResources.valueEnc,
     updatedAt: accountSecretResources.updatedAt,
     cooldownUntil: accountSecretResources.cooldownUntil,
+    cooldownProbeAt: accountSecretResources.cooldownProbeAt,
     projectId: accountSecretResources.projectId,
     accessMode: accountSecretResources.accessMode,
     grantUserId: accountSecretGrants.userId,
@@ -358,7 +406,7 @@ export async function resolveSessionProviderSecrets(input: {
       eq(accountSecretGrants.secretId, accountSecretResources.secretId),
       grantUserId ? eq(accountSecretGrants.userId, grantUserId) : sql`false`,
     ))
-    .innerJoin(accountMembers, and(eq(accountMembers.accountId, input.accountId), eq(accountMembers.userId, input.userId)))
+    .innerJoin(...accountMemberJoin(input.accountId, input.userId))
     .where(and(
       eq(accountSecretResources.accountId, input.accountId),
       eq(accountSecretResources.providerId, input.providerId),
@@ -367,9 +415,10 @@ export async function resolveSessionProviderSecrets(input: {
       eq(accountSecretResources.active, true),
       inArray(accountSecretResources.secretId, pool.secretIds),
     ));
-  const byId = new Map(rows.filter((row) => secretUsableInProject(
+  const usableRows = rows.filter((row) => secretUsableInProject(
     row, input.projectId, personalKeyGranted(row.grantUserId, grantUserId),
-  )).map((row) => [row.secretId, row]));
+  ));
+  const byId = new Map((await liftDueCooldowns(input.accountId, usableRows)).map((row) => [row.secretId, row]));
   const ordered = pool.secretIds.flatMap((id) => {
     const row = byId.get(id);
     return row ? [row] : [];

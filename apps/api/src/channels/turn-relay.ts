@@ -46,14 +46,6 @@ async function platformFor(sessionId: string): Promise<Platform> {
   return channelOfSessionMetadata(session?.metadata) === 'teams' ? 'teams' : 'slack';
 }
 
-export async function relayTurnStep(
-  sessionId: string,
-  title: string,
-  opts: StepOpts = {},
-): Promise<boolean> {
-  return (await relayTurnStepDetailed(sessionId, title, opts)).ok;
-}
-
 /** Teams relays answer a bare boolean; carry a stable reason for the sandbox. */
 function fromBoolean(ok: boolean): slack.TurnRelayResult {
   return ok ? { ok: true } : { ok: false, reason: 'not_relayed' };
@@ -68,14 +60,6 @@ export async function relayTurnStepDetailed(
   return platform === 'teams'
     ? fromBoolean(await teams.relayTurnStep(sessionId, title, opts))
     : slack.relayTurnStepDetailed(sessionId, title, opts);
-}
-
-export async function relayTurnAnswer(
-  sessionId: string,
-  text: string,
-  blocks?: unknown[],
-): Promise<boolean> {
-  return (await relayTurnAnswerDetailed(sessionId, text, blocks)).ok;
 }
 
 export async function relayTurnAnswerDetailed(

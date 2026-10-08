@@ -15,6 +15,9 @@
 # ECS). Production stays on "ecs-fargate" until the database cutover. Check
 # the selected value in the Worker binding; responses do not disclose it.
 
+# Gateway control-plane gate: `wrangler secret put INTERNAL_EDGE_KEY --env <env>` makes
+# the API host answer 404 to /internal/* unless the caller sends the same value in
+# x-kortix-internal-edge-key. Set KORTIX_INTERNAL_EDGE_KEY on the gateway FIRST.
 main = "worker.mjs"
 compatibility_date = "2026-06-01"
 workers_dev = false
@@ -58,11 +61,15 @@ routes = [
 ]
 
 [env.staging.vars]
-# ECS Fargate is the ONLY staging backend. EKS was decommissioned 2026-08-02.
-ACTIVE_BACKEND = "ecs-fargate"
+# Staging runs in eu-west-2, next to its database (infra/terraform/environments/
+# staging-eu-west-2). "ecs-fargate" is the old us-west-2 stack, kept until it is
+# destroyed. Deploy Staging writes these same bindings (deploy-staging.yml).
+ACTIVE_BACKEND = "eu-west-2"
 BACKEND_ECS_FARGATE = "https://staging-api-ecs-fargate.kortix.com"
-GATEWAY_ACTIVE_BACKEND = "ecs-fargate"
+BACKEND_EU_WEST_2 = "https://staging-api-euw2.kortix.com"
+GATEWAY_ACTIVE_BACKEND = "eu-west-2"
 GATEWAY_BACKEND_ECS_FARGATE = "https://gateway-staging-ecs-fargate.kortix.com"
+GATEWAY_BACKEND_EU_WEST_2 = "https://gateway-staging-euw2.kortix.com"
 
 # ── DEV: dev-api.kortix.com + gateway-dev.kortix.com ──────────────────────────
 [env.dev]
@@ -73,8 +80,12 @@ routes = [
 ]
 
 [env.dev.vars]
-# ECS Fargate is the ONLY dev backend. EKS was decommissioned 2026-08-02.
-ACTIVE_BACKEND = "ecs-fargate"
+# Dev runs in us-east-2, next to its database (infra/terraform/environments/
+# dev-us-east-2). "ecs-fargate" is the old us-west-2 stack, kept until it is
+# destroyed: setting both ACTIVE values back to "ecs-fargate" is the undo.
+ACTIVE_BACKEND = "us-east-2"
 BACKEND_ECS_FARGATE = "https://dev-api-ecs-fargate.kortix.com"
-GATEWAY_ACTIVE_BACKEND = "ecs-fargate"
+BACKEND_US_EAST_2 = "https://dev-api-use2.kortix.com"
+GATEWAY_ACTIVE_BACKEND = "us-east-2"
 GATEWAY_BACKEND_ECS_FARGATE = "https://gateway-dev-ecs-fargate.kortix.com"
+GATEWAY_BACKEND_US_EAST_2 = "https://gateway-dev-use2.kortix.com"

@@ -1,9 +1,17 @@
 import { FEATURE_DISABLED_CODE } from '@kortix/sdk';
 
-import { loadAuth, loadAuthForHost, type Auth } from './api/auth.ts';
-import { activeAccount, activeHostName, getHost, hasEnvTokenHost, listHosts } from './api/config.ts';
+import { loadAuth, loadAuthForHost, loadEnvAuth, type Auth } from './api/auth.ts';
+import {
+  activeAccount,
+  activeHostEntry,
+  activeHostName,
+  getHost,
+  hasEnvTokenHost,
+  listHosts,
+  markerActive,
+} from './api/config.ts';
 import { ApiError, clientFromAuth, type ApiClient } from './api/client.ts';
-import { loadLink, resolveProjectId } from './project-link.ts';
+import { loadLink, resolveProjectRef } from './project-link.ts';
 import { ensureDefaultProjectBinding } from './project-bind.ts';
 import { denialDetailFromBody, recordPermissionDenial } from './token-denial.ts';
 import { C, status } from './style.ts';
@@ -14,6 +22,16 @@ interface ProjectContextOpts {
   projectArg?: string;
   /** Override active host for this invocation via --host flag. */
   hostArg?: string;
+  /**
+   * Enforce ONE principal (KRTX-1486, the change-request commands): a
+   * project resolved from .kortix/link.json travels with its own host's
+   * stored credential — never the sandbox's ambient session token, which is
+   * bound to the sandbox's own project. Without stored credentials for that
+   * host the command stops with an explicit login pointer instead of a
+   * doomed cross-project request. Other commands keep the documented
+   * env-token fallback.
+   */
+  onePrincipal?: boolean;
   /**
    * Do not print "No project linked" when nothing resolves.
    *
@@ -36,17 +54,39 @@ interface ProjectContextOpts {
 export function resolveProjectAuth(opts: { hostArg?: string } = {}): {
   hostName?: string;
   auth: Auth | null;
+  /** Plain auth resolved to the stored active host through an in-sandbox
+   *  `hosts use` selection (KRTX-1705) while the injected delegation points
+   *  elsewhere: the env project/session ids cannot be served by this
+   *  credential, so the project must resolve from the host's own context —
+   *  the branch an explicit `--host` already uses. */
+  hostScoped?: boolean;
 } {
   const link = opts.hostArg ? null : loadLink();
   let hostName = opts.hostArg ?? link?.host ?? undefined;
   let auth = hostName ? loadAuthForHost(hostName) : loadAuth();
   // A link naming a host with no stored credentials must not dead-end the CLI
-  // inside a sandbox: the injected env token stays the fallback there.
+  // inside a sandbox: the injected env token stays the fallback there — and
+  // it stays the INJECTED identity even when an in-sandbox `hosts use`
+  // selected another host (loadEnvAuth, KRTX-1705): the link's project
+  // belongs to the deployment the link names, never to the selection.
+  let fellBackToEnv = false;
   if (!auth?.token && !opts.hostArg && hasEnvTokenHost()) {
-    auth = loadAuth();
+    auth = loadEnvAuth();
     hostName = undefined;
+    fellBackToEnv = true;
   }
-  return { hostName, auth };
+  // The marker only ever wins for plain resolution (no --host, no link, and
+  // not the link's env fallback above): the command acts as the selected
+  // stored host, so the ambient project chain (KORTIX_PROJECT_ID) — which
+  // belongs to the injected deployment — must not pair with this credential.
+  // markerActive (not envWins) because the marker stays active after the
+  // injected env disappears. Downstream, resolveProjectContext then scopes
+  // the project the way --host does.
+  let hostScoped = false;
+  if (!opts.hostArg && !hostName && !fellBackToEnv && auth?.token && markerActive()) {
+    hostScoped = true;
+  }
+  return { hostName, auth, hostScoped };
 }
 
 /**
@@ -64,7 +104,7 @@ export function resolveProjectAuth(opts: { hostArg?: string } = {}): {
  *      dead-ends on "not logged in")
  *   4. globally active host (~/.config/kortix/config.json)
  *
- * Project id resolution order:
+ * Project id resolution order (resolveProjectRef):
  *   1. --project flag
  *   2. .kortix/link.json in cwd (the most specific binding — it outranks the
  *      session env so a linked clone reaches its own project; the host notice
@@ -72,10 +112,17 @@ export function resolveProjectAuth(opts: { hostArg?: string } = {}): {
  *   3. KORTIX_PROJECT_ID env (platform-injected inside a sandbox)
  *   4. the active host's global default project (`kortix projects use`)
  *
+ * ONE PRINCIPAL (KRTX-1486): whichever source resolves the project also
+ * supplies the credential. The env token is the credential only for the env
+ * project; a project that came from the config side (link.json or the active
+ * host's default) is paired with THAT host's stored credential, or the
+ * command stops with an explicit `kortix login --host` pointer; see the guard
+ * below.
+ *
  * Backward-compatible call shape: callers that pass a string get the
  * `(projectArg)` behavior; callers that need --host pass an object.
  */
-export type CtxOpts = Pick<ProjectContextOpts, 'projectArg' | 'hostArg'>;
+export type CtxOpts = Pick<ProjectContextOpts, 'projectArg' | 'hostArg' | 'onePrincipal'>;
 
 export async function resolveProjectContext(
   optsOrProjectArg?: ProjectContextOpts | string,
@@ -85,7 +132,8 @@ export async function resolveProjectContext(
       ? { projectArg: optsOrProjectArg }
       : optsOrProjectArg ?? {};
 
-  const { hostName, auth } = resolveProjectAuth({ hostArg: opts.hostArg });
+  const { hostName, auth: resolvedAuth, hostScoped } = resolveProjectAuth({ hostArg: opts.hostArg });
+  let auth: Auth | null = resolvedAuth;
   if (!auth?.token) {
     if (hostName) {
       const source = opts.hostArg ? '(--host)' : '(from .kortix/link.json)';
@@ -104,29 +152,56 @@ export async function resolveProjectContext(
   // host's token. Resolve the project from the named host's own context — a
   // --project pin, a link bound to that same host, or that host's stored
   // default — and say so clearly when it has none.
+  //
+  // The same scoping applies without the flag when an in-sandbox `hosts use`
+  // selected the active host (KRTX-1705): plain commands act as that host, so
+  // pairing its credential with the injected project id would 404
+  // cross-deployment, exactly like --host would.
+  const scopedHost = opts.hostArg ?? (hostScoped ? (activeHostName() ?? undefined) : undefined);
   let projectId: string | null;
-  if (opts.hostArg && !opts.projectArg) {
+  if (scopedHost && !opts.projectArg) {
     const link = loadLink();
-    const linkProject = link?.host === opts.hostArg ? link.project_id : undefined;
-    const hostDefault = getHost(opts.hostArg)?.default_project;
+    const linkProject = link?.host === scopedHost ? link.project_id : undefined;
+    const hostDefault = getHost(scopedHost)?.default_project;
     projectId = linkProject ?? hostDefault?.project_id ?? null;
     if (!projectId) {
       if (!opts.quietWhenUnresolved) {
+        const source = opts.hostArg ? '(--host)' : '(the active host)';
         process.stderr.write(
-          `${status.err(`No project context on host "${opts.hostArg}".`)} Pass ` +
-            `${C.cyan}--project <id>${C.reset} (${C.cyan}kortix projects ls --host ${opts.hostArg}${C.reset} lists them).\n`,
+          `${status.err(`No project context on host "${scopedHost}" ${source}.`)} Pass ` +
+            `${C.cyan}--project <id>${C.reset} (${C.cyan}kortix projects ls${opts.hostArg ? ` --host ${opts.hostArg}` : ''}${C.reset} lists them).\n`,
         );
       }
       return null;
     }
   } else {
-    // The directory link is the most specific project binding: it outranks
-    // the sandbox env's session project (KORTIX_PROJECT_ID) so a linked
-    // clone reaches ITS project. `resolveProjectId` (no arg) supplies the
-    // remaining env → host-default chain; its own link lookup returns null
-    // only when the one above did. `||` (not `??`) so an empty `--project=`
-    // flag value falls through like `resolveProjectId` treats it.
-    projectId = opts.projectArg || (loadLink()?.project_id ?? resolveProjectId());
+    const ref = resolveProjectRef(opts.projectArg);
+    projectId = ref?.projectId ?? null;
+    // ONE PRINCIPAL (KRTX-1486): the ambient sandbox session token is bound
+    // to the sandbox's own project. A project the CLI config resolved
+    // (.kortix/link.json) must never pair with it — writes 403 cross-project
+    // and reads return the wrong project's rows. The link project travels
+    // with its own host's stored credential; without stored credentials for
+    // that host, stop with an explicit login pointer instead of a doomed
+    // request. (`--host <name>` cannot rescue that state: it resolves the
+    // same absent credentials, so logging in is the only working fix.)
+    if (projectId && opts.onePrincipal && hasEnvTokenHost() && ref?.source === 'link') {
+      const configHostName = loadLink()?.host ?? activeHostName() ?? undefined;
+      const configAuth = configHostName ? loadAuthForHost(configHostName) : null;
+      if (configAuth?.token) {
+        auth = configAuth;
+      } else {
+        const hostLabel = configHostName
+          ? `host "${configHostName}"`
+          : 'a host with no stored credentials';
+        process.stderr.write(
+          `${status.err(
+            `Project is bound to ${hostLabel} (.kortix/link.json) but only the ambient sandbox session token is available here — it cannot act on that project.`,
+          )} Run ${C.cyan}kortix login --host ${configHostName ?? '<host>'}${C.reset} first.\n`,
+        );
+        return null;
+      }
+    }
     if (!projectId) {
       // The always-bound invariant: recover by binding a default project right
       // here instead of dead-ending. (Inside a sandbox the env-token host
@@ -562,6 +637,18 @@ function featureDisabledMessage(err: unknown): string | null {
     : null;
 }
 
+/** The 401 line every rejected-credential surface prints. The server's verdict
+ *  (e.g. `project token <id> is revoked`) names the credential the caller
+ *  passed; without it every rejection reads the same and the customer cannot
+ *  tell WHICH token the API refused (KRTX-1564). */
+export function tokenRejectedLine(
+  reason?: string | null,
+  remedy = 'Run `kortix login` to re-authenticate.',
+): string {
+  const why = reason ? ` — ${reason}` : '';
+  return `Token rejected${why}. ${remedy}`;
+}
+
 /** Print an HTTP error in a consistent style + return exit code 1. */
 export function surfaceApiError(err: unknown): number {
   // The feature-flag gate is actionable on its own — never let it fall through
@@ -576,11 +663,11 @@ export function surfaceApiError(err: unknown): number {
     // Both codes are identity verdicts. Note it so the CLI's tail can name the
     // token that was refused (see token-denial.ts) — the message itself only
     // ever names the action.
-    recordPermissionDenial(err.status, undefined, denialDetailFromBody(err.body));
+    recordPermissionDenial(err.status, denialDetailFromBody(err.body), err.credential);
     if (err.status === 401) {
-      process.stderr.write(
-        `${status.err('Token rejected. Run `kortix login` to re-authenticate.')}\n`,
-      );
+      // The server's reason names the credential ("project token <id> is
+      // revoked") when it has one; the bare line otherwise.
+      process.stderr.write(`${status.err(tokenRejectedLine(err.message))}\n`);
     } else if (err.status === 403) {
       // Surface the server's specific reason when it has one (e.g. the
       // backend-only secrets 403 tells you to use an API key or PAT);

@@ -2,7 +2,7 @@
  * Sandbox backend resolution — the single source of truth for "where does this
  * sandbox live, how do I authenticate to it, and is it healthy".
  *
- * Both proxy data paths (HTTP forward in routes/preview.ts and the WebSocket
+ * Both proxy data paths (HTTP forward in forward/ and the WebSocket
  * upstream resolver) used to duplicate this: each loaded the session-sandbox
  * row, resolved the service key, fetched the Daytona preview link, and built
  * the signed X-Kortix-User-Context header with slightly different code. The
@@ -22,7 +22,6 @@
 
 import { and, eq, gt, ne, sql, type SQL } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import { config } from '../config';
 import { timeUpstream } from '../middleware/upstream-timing';
 import {
   getProvider,
@@ -32,6 +31,7 @@ import {
   type SandboxIngressRoute,
 } from '../platform/providers';
 import { recoverTurnsAfterRuntimeRestart } from '../projects/session-lifecycle/runtime-restart-recovery';
+import { setBounded } from '../shared/bounded-cache';
 import { db } from '../shared/db';
 import { resolvePreviewUserContext } from '../shared/preview-ownership';
 import {
@@ -137,8 +137,14 @@ function preferredSandboxOrder() {
 const HOST_LABEL_MISS_TTL_MS = 30 * 1000;
 const hostLabelCache = new Map<string, { externalId: string | null; expiresAt: number }>();
 
+const HOST_LABEL_CACHE_MAX = 10_000;
+// A DNS label: at most 63 octets of [a-z0-9-]. Anything else cannot be a sandbox
+// host label, so it never costs a table scan (the TLS-check gate is anonymous).
+const HOST_LABEL_SHAPE = /^[a-z0-9-]{1,63}$/;
+
 export async function resolveExternalIdFromHostLabel(label: string): Promise<string | null> {
   const key = label.toLowerCase();
+  if (!HOST_LABEL_SHAPE.test(key)) return null;
   const cached = hostLabelCache.get(key);
   if (cached && (cached.externalId !== null || Date.now() < cached.expiresAt)) {
     return cached.externalId;
@@ -152,7 +158,7 @@ export async function resolveExternalIdFromHostLabel(label: string): Promise<str
     .limit(1);
 
   const externalId = match?.externalId ?? null;
-  hostLabelCache.set(key, { externalId, expiresAt: Date.now() + HOST_LABEL_MISS_TTL_MS });
+  setBounded(hostLabelCache, key, { externalId, expiresAt: Date.now() + HOST_LABEL_MISS_TTL_MS }, HOST_LABEL_CACHE_MAX);
   return externalId;
 }
 

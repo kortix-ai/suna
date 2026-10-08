@@ -72,7 +72,16 @@ describe('every session is compared the same way', () => {
   });
 
   test('stale is the release-ID compare, tri-state, never a default false', () => {
-    expect(CONFIG).toContain('stale: isReleaseStale(release, desired !== null)');
+    // No assignable release (an unbuildable tip with nothing proven) is
+    // nothing to reload into: unknown, never "stale".
+    expect(CONFIG).toContain(
+      'stale: isReleaseStale(release, desired !== null && desired.descriptor.release_id !== null)',
+    );
+  });
+
+  test('the API states why the tip is not assigned, when the box does not', () => {
+    // 2026-10-05: an unbuildable or quarantined tip read as "up to date".
+    expect(CONFIG).toContain('release.fallback_reason ??= desired?.fallbackReason ?? null');
   });
 
   test('the compiled etag is read for every session', () => {

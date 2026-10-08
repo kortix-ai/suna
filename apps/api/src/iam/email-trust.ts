@@ -17,30 +17,9 @@
  * (JIT membership, group sync); it only stops matching anything outside it.
  */
 import { sql, type SQL } from 'drizzle-orm';
+import { nonSsoIdentitySql, ssoProviderIdOf } from '../shared/auth-identity';
 import { db } from '../shared/db';
 import { isUuid } from '../shared/validate';
-
-/**
- * SQL expression: the Supabase `sso_providers` id an Auth user row signed in
- * with, or NULL. Mirrors `extractSsoProviderId` (iam/sso-sync.ts): an explicit
- * `sso_provider_id`/`provider_id`, then `provider = 'sso:<id>'`, then the first
- * `providers[]` entry of that shape.
- */
-function ssoProviderIdOf(user: SQL): SQL {
-  return sql`coalesce(
-    nullif(${user}.raw_app_meta_data->>'sso_provider_id', ''),
-    nullif(${user}.raw_app_meta_data->>'provider_id', ''),
-    CASE WHEN ${user}.raw_app_meta_data->>'provider' LIKE 'sso:%'
-      THEN nullif(substr(${user}.raw_app_meta_data->>'provider', 5), '') END,
-    (SELECT nullif(substr(tag, 5), '')
-       FROM jsonb_array_elements_text(
-         CASE WHEN jsonb_typeof(${user}.raw_app_meta_data->'providers') = 'array'
-           THEN ${user}.raw_app_meta_data->'providers' ELSE '[]'::jsonb END
-       ) AS tag
-      WHERE tag LIKE 'sso:%'
-      LIMIT 1)
-  )`;
-}
 
 /**
  * SQL predicate over an `auth.users` row: its email is proof of ownership.
@@ -58,7 +37,7 @@ export function emailTrustedSql(user: SQL, ownAccountId?: string): SQL {
       )`
     : sql``;
   return sql`(
-    (NOT coalesce(${user}.is_sso_user, false) AND ${ssoId} IS NULL)
+    ${nonSsoIdentitySql(user)}
     OR EXISTS (
       SELECT 1 FROM kortix.account_sso_providers vouching_provider
       WHERE vouching_provider.supabase_sso_provider_id::text = ${ssoId}

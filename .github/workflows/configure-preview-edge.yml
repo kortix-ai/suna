@@ -37,12 +37,12 @@ jobs:
       PREVIEW_DNS_TARGET: '192.0.2.1'
       PREVIEW_CERT_HOST: '*.p.kortix.com'
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # CLOUDFLARE_API_TOKEN — Account: Workers Scripts Write. kortix.com zone:
       # DNS Write, Workers Routes Write, SSL and Certificates Write, Zone Read.
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -78,7 +78,7 @@ jobs:
           ' <<<"$routes"
 
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
           aws-region: us-west-2

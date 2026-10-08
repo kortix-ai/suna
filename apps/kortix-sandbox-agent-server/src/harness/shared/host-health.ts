@@ -80,8 +80,6 @@ export async function readHostHealth(context: HarnessDiagnosticsContext, catalog
     repo: repoInfo?.remoteUrl ?? null,
     branch: repoInfo?.branch ?? null,
     commit_sha: repoInfo?.commit ?? null,
-    compiled_boot_mode: cfg.compiledBootMode,
-    compiled_checkout: existsSync(join(cfg.projectTarget, '.git', 'kortix-compiled-checkout.json')),
     // The content hash of the compiled agent config the runtime spawned
     // with. Not derivable from commit_sha: a warm-workspace refresh advances
     // the commit while deliberately skipping the restart, so a box can report

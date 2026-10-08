@@ -14,7 +14,6 @@
 
 import { createHash } from 'node:crypto';
 import { config } from '../config';
-import { SKILLS_DIR } from '@kortix/manifest-schema';
 import { refreshMirror, runGitCapture } from '../projects/git/mirror';
 import {
   agentConfigEtag,
@@ -48,9 +47,9 @@ export {
   resolveReleaseTreeSource,
   selectedOpenCodePlugins,
 } from './release-tree';
-export type { ConfigReleaseFile, ConfigReleaseVariant } from './release-tree';
+export type { ConfigReleaseVariant } from './release-tree';
 
-const CONFIG_RELEASE_FORMAT = 'config-release-v1';
+const CONFIG_RELEASE_FORMAT = 'config-release-v2';
 
 /**
  * Always `follow-base`: a session runs the base branch's CURRENT config
@@ -157,6 +156,8 @@ interface BuildConfigReleaseOptions {
   store?: ConfigArchiveStore;
   /** Tests only: skip the in-memory descriptor cache. */
   noCache?: boolean;
+  /** Tests only: a smaller archive cap, so the over-limit case needs no 32 MiB fixture. */
+  archiveLimit?: number;
 }
 
 /**
@@ -200,6 +201,17 @@ export async function storeConfigArchive(
   return outcome;
 }
 
+/**
+ * Releases over the archive limit. Unlike every other release without an ID,
+ * the answer is a fact of the commit, so it is cached: a box asks once a
+ * minute, and each miss tars and gzips the whole tree again (~1.5 s for 36 MB).
+ */
+const tooLargeReleases = new WeakSet<ConfigRelease>();
+function tooLarge(release: ConfigRelease): ConfigRelease {
+  tooLargeReleases.add(release);
+  return release;
+}
+
 /** The `none` variant's compiled governance: a valid, empty OpenCode config. */
 const EMPTY_GOVERNANCE = '{}';
 
@@ -219,6 +231,7 @@ async function build(
   commit: string,
   variant: ConfigReleaseVariant,
   store: ConfigArchiveStore,
+  archiveLimit?: number,
 ): Promise<ConfigRelease> {
   let mirror = await refreshMirror(project);
   // A commit the warm mirror has not fetched yet: fetch once, then give up.
@@ -256,8 +269,8 @@ async function build(
     compiled_governance_etag: etag,
   };
 
-  // No config dir: a governance-only release. The daemon runs the image
-  // default config dir with this governance.
+  // The meta coordinator gets a governance-only release: its box holds no
+  // project checkout.
   const governanceOnly = configReleaseId(null, etag);
   if (variant === 'meta') return { ...withGovernance, release_id: governanceOnly };
   let resolved: Awaited<ReturnType<typeof resolveReleaseTreeSource>>;
@@ -273,7 +286,7 @@ async function build(
   const configDir = source.configDir;
   const composed = isComposedSource(source);
 
-  let treeId = source.configTree;
+  let treeId = source.rootTree;
   let files: ConfigReleaseFile[] | null = null;
   let freshArchive: Buffer | null = null;
   try {
@@ -281,22 +294,26 @@ async function build(
       // The tree is only known once composed; the archive builds in the same
       // scratch repository, on an archive-size cache miss only.
       const read = await readComposedRelease(mirror, source, {
+        limit: archiveLimit,
         archive: (composedTreeId) => !archiveBytes.has(configArchiveKey(project.projectId, composedTreeId)),
       });
       treeId = read.treeId;
       files = read.files;
       freshArchive = read.archive;
     } else if (!archiveBytes.has(configArchiveKey(project.projectId, treeId))) {
-      freshArchive = await buildConfigArchive(mirror, treeId);
+      freshArchive = await buildConfigArchive(mirror, treeId, archiveLimit);
     }
   } catch (error) {
     if (error instanceof ConfigArchiveTooLargeError) {
-      return {
+      return tooLarge({
         ...withGovernance,
         config_dir: configDir,
         config_tree_id: composed ? null : treeId,
-        reason: `config dir ${configDir}${composed ? ` with ${SKILLS_DIR}/ and the pi config dir` : ''} exceeds the ${MAX_CONFIG_ARCHIVE_BYTES}-byte archive limit`,
-      };
+        reason:
+          `the repository at ${commit.slice(0, 12)} exceeds the ${archiveLimit ?? MAX_CONFIG_ARCHIVE_BYTES}-byte config archive limit. ` +
+          'Move large static files out of Git into object storage (S3, R2, GCS), or mark paths no agent reads ' +
+          '`export-ignore` in .gitattributes. `kortix validate` lists the largest files.',
+      });
     }
     throw error;
   }
@@ -330,18 +347,20 @@ export async function buildConfigRelease(
 ): Promise<ConfigRelease> {
   if (!HEX40.test(commit)) throw new Error(`invalid commit: ${commit}`);
   const store = options.store ?? getConfigArchiveStore();
-  if (options.noCache) return build(project, commit, variant, store);
+  if (options.noCache) return build(project, commit, variant, store, options.archiveLimit);
 
   const cacheKey = `${project.projectId}\0${commit}\0${variant}`;
   const cached = releases.get(cacheKey);
   if (cached) return cached.release;
   const running = inflight.get(cacheKey);
   if (running) return running;
-  const next = build(project, commit, variant, store)
+  const next = build(project, commit, variant, store, options.archiveLimit)
     .then((release) => {
       // A release with a reason can be transient (a compile read that failed).
-      // Only complete releases are cached.
-      if (release.release_id) bumpBounded(releases, cacheKey, { release, at: Date.now() }, MAX_CACHED_RELEASES);
+      // Only complete releases, and the deterministic over-limit answer, are cached.
+      if (release.release_id || tooLargeReleases.has(release)) {
+        bumpBounded(releases, cacheKey, { release, at: Date.now() }, MAX_CACHED_RELEASES);
+      }
       return release;
     })
     .finally(() => inflight.delete(cacheKey));

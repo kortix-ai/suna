@@ -941,6 +941,9 @@ export const accountSecretResources = kortixSchema.table('account_secret_resourc
   strategy: projectSecretStrategyEnum('strategy').notNull(),
   active: boolean('active').default(true).notNull(),
   cooldownUntil: timestamp('cooldown_until', { withTimezone: true }),
+  /** When a cooling-down account may be re-tried: each limit sets it 15 min out; the first
+   *  resolve after it lifts `cooldownUntil` once (a reset before the provider's hinted reset). */
+  cooldownProbeAt: timestamp('cooldown_probe_at', { withTimezone: true }),
   /** First permanent failure of the stored login (a refresh the provider
    *  rejected, or a login that cannot be read). The account stays usable and
    *  in its pools; a successful refresh or a reconnect clears it. */
@@ -1124,6 +1127,18 @@ export const projectSessions = kortixSchema.table(
       .where(
         sql`${table.originRef} is not null and ${table.status} in ('queued','branching','provisioning','running')`,
       ),
+    // A trigger fire looks its session up by `(project, slug, key)` in the
+    // metadata, newest first (projects/lib/trigger-fire.ts). Without this the
+    // lookup read every session of the project. Partial: only trigger-created
+    // rows carry a slug.
+    index('idx_project_sessions_trigger_key')
+      .on(
+        table.projectId,
+        sql`(${table.metadata} ->> 'trigger_slug')`,
+        sql`(${table.metadata} ->> 'trigger_session_key')`,
+        table.createdAt.desc(),
+      )
+      .where(sql`(${table.metadata} ->> 'trigger_slug') is not null`),
     uniqueIndex('idx_project_sessions_project_branch').on(table.projectId, table.branchName),
     uniqueIndex('idx_project_sessions_tenant_identity').on(
       table.accountId,
@@ -1524,6 +1539,52 @@ export const projectTriggerRuntime = kortixSchema.table(
     primaryKey({ columns: [table.projectId, table.slug] }),
     index('idx_project_trigger_runtime_owner_user').on(table.ownerUserId),
     index('idx_project_trigger_runtime_due').on(table.enabled, table.nextFireAt),
+  ],
+);
+
+/**
+ * Provider subscription behind an `event` trigger (apps/api trigger-events).
+ * The manifest declares the trigger; this row holds the provider's
+ * subscription id and health. `(provider, external_id)` is NOT unique: two
+ * triggers with the same connection, event and config share one provider
+ * instance.
+ */
+export const projectTriggerEventSubscriptions = kortixSchema.table(
+  'project_trigger_event_subscriptions',
+  {
+    projectId: uuid('project_id').notNull(),
+    slug: varchar('slug', { length: 128 }).notNull(),
+    accountId: uuid('account_id').notNull(),
+    provider: text('provider').notNull(),
+    connectionId: uuid('connection_id'),
+    eventType: text('event_type').notNull(),
+    externalId: text('external_id'),
+    desiredHash: text('desired_hash').notNull(),
+    status: text('status').notNull(),
+    lastError: text('last_error'),
+    lastEventAt: timestamp('last_event_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.projectId, table.slug] }),
+    foreignKey({
+      name: 'project_trigger_event_subscriptions_project_fk',
+      columns: [table.projectId],
+      foreignColumns: [projects.projectId],
+    }).onDelete('cascade'),
+    foreignKey({
+      name: 'project_trigger_event_subscriptions_connection_fk',
+      columns: [table.connectionId],
+      foreignColumns: [connectorConnections.connectionId],
+    }).onDelete('set null'),
+    index('idx_project_trigger_event_subscriptions_external')
+      .on(table.provider, table.externalId)
+      .where(sql`${table.externalId} is not null`),
+    check(
+      'project_trigger_event_subscriptions_status_check',
+      sql`${table.status} in ('active', 'needs_connection', 'error')`,
+    ),
   ],
 );
 
@@ -2079,6 +2140,25 @@ export const chatEventDedup = kortixSchema.table(
   (table) => [index('idx_chat_event_dedup_expiry').on(table.expiresAt)],
 );
 
+// One row per agent permission ask that sent a push: the cross-replica claim
+// behind "one push per (session, request id)" (api notifications/permission-push.ts).
+export const permissionPushClaims = kortixSchema.table(
+  'permission_push_claims',
+  {
+    sessionId: text('session_id').notNull(),
+    requestId: text('request_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.sessionId, table.requestId] }),
+    foreignKey({
+      name: 'permission_push_claims_session_fk',
+      columns: [table.sessionId],
+      foreignColumns: [projectSessions.sessionId],
+    }).onDelete('cascade'),
+  ],
+);
+
 // Single-row-per-lock advisory lease for cross-replica leader election (the
 // scheduler / sweepers elect one leader so background work doesn't double-run
 // across ECS tasks). Previously SQL-migration-only; folded into the schema so
@@ -2150,49 +2230,40 @@ export const sessionSandboxes = kortixSchema.table(
     index('idx_session_sandboxes_parked_verified')
       .on(table.status, sql`(${table.metadata} ->> 'parkedVerifiedAt') ASC NULLS FIRST`)
       .where(sql`${table.externalId} is not null`),
+    // The runtime-wake fence reconcile (apps/api/src/projects/session-lifecycle/
+    // runtime-wake-maintenance.ts `reconcileRuntimeWakeFences`) runs on every
+    // maintenance pass with `WHERE status = <param> AND external_id IS NOT NULL
+    // AND ((metadata->>'runtimeWakeId' IS NOT NULL AND <wake-lease open>)
+    // OR (metadata->>'runtimeWakeCleanupUntilAt' ~ <ISO regex> AND > <param>
+    // AND metadata->>'runtimeWakeLateStartStoppedAt' IS NULL)) LIMIT 100`. Its
+    // candidate set is nearly always empty (the Supabase collector measured a
+    // mean of ~0.4 rows per call, KRTX-1308), so every pass paid a scan of
+    // every `stopped` row with an external id (~45.6k, mean 3964 ms) just to
+    // evaluate the jsonb predicates on rows that carry no wake keys. One index
+    // per OR arm serves the two arms of the predicate as a BitmapOr; the
+    // remaining jsonb conditions are rechecked on the handful of candidates.
+    //   - `status` is the leading KEY, not a partial-index predicate: the app
+    //     binds it as a query parameter, and a generic plan cannot prove
+    //     `status = $1` implies `status = 'stopped'` (same reasoning as
+    //     `idx_session_sandboxes_parked_verified` above).
+    //   - NOT partial on `external_id IS NOT NULL`, unlike the parked-verified
+    //     index: that sweep orders by the indexed expression, so it never
+    //     depends on the planner's estimates; this query does (no ORDER BY,
+    //     LIMIT 100). For the planner to prefer the BitmapOr over a scan that
+    //     "finds 100 rows soon", it must know the OR arms are rare — i.e. it
+    //     needs the whole-table null fraction of `(metadata ->> 'key')`. A
+    //     partial index's statistics describe only its own predicate's rows,
+    //     and the planner will not use them for a global estimate, so
+    //     `expr IS NOT NULL` falls back to the base column (metadata is never
+    //     null → ~1.0) and the old scan wins. Measured on a prod-shaped
+    //     PostgreSQL 15.19 rig: partial → Seq Scan (91 ms); non-partial →
+    //     BitmapOr (0.2 ms) under the app's own parameterized driver.
+    index('idx_session_sandboxes_wake_id')
+      .on(table.status, sql`(${table.metadata} ->> 'runtimeWakeId')`),
+    index('idx_session_sandboxes_wake_cleanup_until')
+      .on(table.status, sql`(${table.metadata} ->> 'runtimeWakeCleanupUntilAt')`),
   ],
 );
-
-/**
- * Harness/worker split (P1.7): the lazily-provisioned COMPUTE ENVIRONMENT of a
- * pi worker session — the full daemon box (repo checkout, secrets, /file,
- * /find, /pty) the worker's tools act on, provisioned on the FIRST compute
- * tool call and never before.
- *
- * A separate table, not a second row in `session_sandboxes`: that table is
- * one-row-per-session by DB constraint + anchor-guard trigger, and everything
- * around it (turn lifecycle, prompt dedupe, compute metering, the reaper's
- * deadline math) assumes the row IS the session runtime. For a pi session the
- * session runtime is the WORKER; this environment is an auxiliary box the
- * worker reaches directly over the provider edge — the session proxy is not in
- * its data path.
- *
- * One environment per session, enforced by the primary key.
- */
-export const sessionEnvironments = kortixSchema.table(
-  'session_environments',
-  {
-    sessionId: text('session_id').primaryKey(),
-    accountId: uuid('account_id').notNull(),
-    projectId: uuid('project_id').notNull(),
-    provider: sandboxProviderEnum('provider').default('daytona').notNull(),
-    externalId: text('external_id'),
-    baseUrl: text('base_url'),
-    status: sessionSandboxStatusEnum('status').default('provisioning').notNull(),
-    config: jsonb('config').default({}).$type<Record<string, unknown>>(),
-    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
-    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    index('idx_session_environments_project').on(table.projectId),
-    index('idx_session_environments_account').on(table.accountId),
-    index('idx_session_environments_status').on(table.status),
-    index('idx_session_environments_external_id').on(table.externalId),
-  ],
-);
-
 
 /**
  * Durable per-turn ledger.
@@ -3631,6 +3702,16 @@ export const gatewayRequestLogs = kortixSchema.table(
       .on(table.projectId, table.createdAt)
       .where(sql`not ${table.ok}`),
     index('idx_gateway_logs_session').on(table.projectId, table.sessionId),
+    // Covering index for the per-session gateway rollup
+    // (listProjectGatewaySessionSpend, apps/api/src/shared/session-costs.ts):
+    // index-only scan in session_id order — no heap fetch, no sort. Built with
+    // INCLUDE (not expressible in drizzle-orm 0.45's index builder; the schema
+    // contract checks relation + uniqueness only) by
+    // 20261007050000009_gateway_logs_session_rollup_index.concurrent.ts — same
+    // pattern as idx_gateway_logs_project_failed_time.
+    index('idx_gateway_logs_project_session_time')
+      .on(table.projectId, table.sessionId, table.createdAt)
+      .where(sql`${table.sessionId} is not null`),
   ],
 );
 
@@ -4067,6 +4148,12 @@ export const apps = kortixSchema.table(
     diskGb: integer('disk_gb').default(10).notNull(),
     idleTimeoutSeconds: integer('idle_timeout_seconds').default(300).notNull(),
     /**
+     * Run 24/7 instead of stopping after `idle_timeout_seconds`: kept running
+     * by maintenance (cron jobs, workers and websockets keep working), still
+     * capped by `monthly_budget_usd`. A static App has no runtime and ignores it.
+     */
+    alwaysOn: boolean('always_on').default(false).notNull(),
+    /**
      * What the Apps gate hands this App about the person looking at it.
      *
      * `identity` (default) — a signed viewer header on every request plus a
@@ -4084,6 +4171,12 @@ export const apps = kortixSchema.table(
     monthlyBudgetUsd: numeric('monthly_budget_usd', { precision: 12, scale: 2 })
       .default('5.00')
       .notNull(),
+    /**
+     * false: the budget is the derived default (an always-on App's 24/7 estimate
+     * for its size) and follows size changes. true: a person set it. Rows that
+     * predate the column are true, so no existing budget moves.
+     */
+    monthlyBudgetExplicit: boolean('monthly_budget_explicit').default(true).notNull(),
     lastRequestAt: timestamp('last_request_at', { withTimezone: true }),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -4223,7 +4316,7 @@ export const appDeployments = kortixSchema.table(
       'app_deployments_source_kind_check',
       sql`${table.sourceKind} IN ('static', 'bundle', 'dockerfile', 'oci_image')`,
     ),
-    check('app_deployments_hosting_type_check', sql`${table.hostingType} = 'sandbox'`),
+    check('app_deployments_hosting_type_check', sql`${table.hostingType} IN ('sandbox', 'static')`),
     check(
       'app_deployments_actor_type_check',
       sql`${table.actorType} IN ('human', 'agent', 'service_account', 'system')`,
@@ -4232,6 +4325,74 @@ export const appDeployments = kortixSchema.table(
     uniqueIndex('app_deployments_app_version_unique').on(table.appId, table.version),
     index('app_deployments_queue_idx').on(table.status, table.nextAttemptAt, table.createdAt),
     index('app_deployments_app_idx').on(table.appId, table.createdAt),
+    index('app_deployments_provider_build_idx').on(table.providerBuildId),
+  ],
+);
+
+/**
+ * One provider image (template) that App deployment builds share. Its name is
+ * content-addressed (`apps/images.ts` `appImageName`), so deployments whose
+ * build inputs match reuse one image instead of minting a template each. The
+ * row exists from the first build attempt until the provider image is
+ * deleted. The deployments that use an image are the ones whose
+ * `provider_build_id` names it; usage is counted by query, never stored.
+ * `deleting`: a release is calling the provider delete; claims wait.
+ */
+export const appImages = kortixSchema.table(
+  'app_images',
+  {
+    imageName: text('image_name').primaryKey().notNull(),
+    provider: varchar('provider', { length: 32 }).notNull(),
+    status: varchar('status', { length: 16 }).default('building').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    readyAt: timestamp('ready_at', { withTimezone: true }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    /** The deployment that claimed the build. Only it builds while its lease is live. */
+    builderDeploymentId: uuid('builder_deployment_id'),
+  },
+  (table) => [check('app_images_status_check', sql`${table.status} IN ('building', 'ready', 'deleting')`)],
+);
+
+/**
+ * The files of a `static` App deployment: one row per path, naming the
+ * content-addressed blob that holds its bytes (`app_site_blobs`). The API
+ * serves a static App from these rows; no runtime exists. Rows go when the
+ * deployment is retired, which is what lets blob cleanup see an unused blob.
+ */
+export const appSiteFiles = kortixSchema.table(
+  'app_site_files',
+  {
+    deploymentId: uuid('deployment_id')
+      .notNull()
+      .references(() => appDeployments.deploymentId, { onDelete: 'cascade' }),
+    accountId: uuid('account_id').notNull(),
+    path: text('path').notNull(),
+    sha256: varchar('sha256', { length: 64 }).notNull(),
+    sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
+    contentType: text('content_type').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.deploymentId, table.path] }),
+    index('app_site_files_blob_idx').on(table.accountId, table.sha256),
+  ],
+);
+
+/**
+ * One stored blob of static App content, per account: the object
+ * `<account_id>/<sha256>` in the `app-sites` bucket. Identical files across an
+ * account's deployments share one blob.
+ */
+export const appSiteBlobs = kortixSchema.table(
+  'app_site_blobs',
+  {
+    accountId: uuid('account_id').notNull(),
+    sha256: varchar('sha256', { length: 64 }).notNull(),
+    sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.accountId, table.sha256] }),
+    index('app_site_blobs_created_idx').on(table.createdAt),
   ],
 );
 
@@ -4408,6 +4569,8 @@ export const accountDeletionRequests = kortixSchema.table(
     cancelledAt: timestamp('cancelled_at', { withTimezone: true, mode: 'string' }),
     isCancelled: boolean('is_cancelled').default(false),
     isDeleted: boolean('is_deleted').default(false),
+    /** Set while a worker holds the `processing` claim; a stale one is reclaimable. */
+    processingStartedAt: timestamp('processing_started_at', { withTimezone: true, mode: 'string' }),
   },
   (table) => [
     // At most one pending deletion request per account. The application

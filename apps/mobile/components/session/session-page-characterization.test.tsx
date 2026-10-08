@@ -54,6 +54,9 @@ const SANDBOX = 'https://sandbox.test';
 // (`KEEP_REAL`), or auto-filled with inert stand-ins by the import scan below.
 
 const Empty = () => null;
+const NO_REVIEW_ITEMS = { data: [] };
+const NO_CHANGES: never[] = [];
+const NO_ANCHORS = new Map();
 const calls: { name: string; args: any[] }[] = [];
 const spy =
   (name: string) =>
@@ -93,6 +96,8 @@ const buttons: any[] = []; // every mounted design-system Button's props
 const viewProps: any[] = []; // every mounted react-native View's props
 let composerRenders = 0; // how many times SessionChatInput rendered
 let gestureAreaProps: any = null; // KeyboardGestureArea's latest props
+let safeInsets = { top: 0, bottom: 0, left: 0, right: 0 }; // useSafeAreaInsets' answer
+const keyboardProgress = { value: 0 }; // keyboard-controller's progress, 0 down → 1 up
 /** keyboard-controller's `KeyboardEvents` listeners, by event name. */
 const keyboardListeners = new Map<string, Set<() => void>>();
 const keyboardEvent = (name: string) => keyboardListeners.get(name)?.forEach((cb) => cb());
@@ -110,6 +115,7 @@ let abortResponder: () => { ok: boolean; status: number; text: string };
 let commandResponder: () => { ok: boolean; status: number; text: string };
 let abortThrows = false;
 let inboxRows: any[] = []; // what GET .../prompts answers
+const SDK_QUEUE = { prompts: [] as any[] };
 let inboxFails = false; // POST .../prompts is refused
 
 const respond = (r: () => { ok: boolean; status: number; text: string }) => ({
@@ -256,6 +262,7 @@ const rnNative: Record<string, any> = {
     removeEventListener() {},
   },
   StyleSheet: { create: (s: any) => s, flatten: (s: any) => s, hairlineWidth: 1 },
+  useWindowDimensions: () => ({ width: 390, height: 800, scale: 3, fontScale: 1 }),
   Dimensions: { get: () => ({ width: 390, height: 844, scale: 3, fontScale: 1 }) },
   I18nManager: { isRTL: false, allowRTL() {}, forceRTL() {} },
   PixelRatio: { get: () => 3, getFontScale: () => 1 },
@@ -306,20 +313,23 @@ const moduleMocks: Record<string, Record<string, any>> = {
         return { remove: () => set.delete(cb) };
       },
     },
-    useReanimatedKeyboardAnimation: () => ({ progress: { value: 0 } }),
+    useKeyboardHandler: () => {},
+    useReanimatedKeyboardAnimation: () => ({ progress: keyboardProgress, height: { value: 0 } }),
   },
   'react-native-reanimated': {
     default: { View: (props: any) => props.children ?? null },
     View: (props: any) => props.children ?? null,
     Easing: { bezier: () => 0 },
-    useAnimatedStyle: () => ({}),
+    // Read at assertion time, as the UI thread would apply it now.
+    useAnimatedStyle: (worklet: () => Record<string, unknown>) =>
+      new Proxy({}, { get: (_target, key: string) => worklet()[key] }),
     useReducedMotion: () => false,
-    useSharedValue: (v: number) => ({ value: v }),
+    useSharedValue: (v: number) => React.useRef({ value: v }).current,
     withTiming: (v: number) => v,
     interpolate: () => 0,
   },
   'react-native-safe-area-context': {
-    useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
+    useSafeAreaInsets: () => safeInsets,
   },
   nativewind: { useColorScheme: () => ({ colorScheme: 'light' }) },
   'expo-linear-gradient': { LinearGradient: (props: any) => props.children ?? null },
@@ -367,7 +377,10 @@ const moduleMocks: Record<string, Record<string, any>> = {
   '@/components/session/SubAgentListSheet': { SubAgentListSheet: Capture(() => {}) },
   '@/components/session/ConnectProviderSheet': { ConnectProviderSheet: Capture(() => {}) },
   '@/components/session/ConnectorAuthSheet': { ConnectorAuthSheet: Capture(() => {}) },
-  '@/components/session/SessionChangeRequests': { SessionChangeRequests: Empty },
+  '@/components/review/ReviewDetailSheet': { ReviewDetailSheet: Capture(() => {}) },
+  // Stable results, as react-query's: `renderItem` must keep its identity.
+  '@/lib/review/use-review': { useReviewItems: () => NO_REVIEW_ITEMS },
+  '@/lib/session/session-change-requests': { sessionChangeRequests: () => NO_CHANGES, anchorChangeRequests: () => NO_ANCHORS },
   '@/components/session/SandboxHealthPill': { SandboxHealthPill: Capture((props: { onSwitch?: () => void }) => { healthPillProps = props; }) },
   '@/components/session/LiveUpdatesPausedPill': { LiveUpdatesPausedPill: Empty },
   '@/components/session/SandboxPreviewSheet': { SandboxPreviewSheet: Capture(() => {}) },
@@ -479,6 +492,10 @@ const mergedOverrides: Record<string, Record<string, any>> = {
     useRuntimeCommands: () => ({ data: NO_ROWS }),
     useQuestionSelfHeal: () => {},
     usePermissionSelfHeal: () => {},
+    // The live queue (R5.3) is the SDK's stream; the page's own reads, which
+    // the fetch fake answers, are what these tests drive.
+    useSessionPrompts: () => SDK_QUEUE,
+    useSessionStreamConnected: () => false,
     answerQuestion: (requestId: string, answers: string[][]) => acknowledgeQuestion('answerQuestion', requestId, answers),
     rejectQuestion: (requestId: string) => acknowledgeQuestion('rejectQuestion', requestId),
     answerPermission: spy('answerPermission'),
@@ -541,6 +558,7 @@ const KEEP_REAL = new Set([
   '@/stores/session-prompt-request-store',
   '@/stores/composer-draft-store',
   '@/components/session/tool/shared/connector-handoff-context',
+  '@/components/session/composer-bottom-fade',
 ]);
 
 const CAPTURE = [
@@ -744,6 +762,8 @@ beforeEach(() => {
   composerProps = null;
   composerRenders = 0;
   gestureAreaProps = null;
+  safeInsets = { top: 0, bottom: 0, left: 0, right: 0 };
+  keyboardProgress.value = 0;
   keyboardListeners.clear();
   wakingComposerProps = null;
   markdownActionsValue = null;
@@ -1002,7 +1022,7 @@ describe('SessionPage message queue', () => {
   const inboxPosts = () =>
     fetchCalls.filter((c) => c.method === 'POST' && c.url.endsWith('/projects/proj-1/sessions/ps-1/prompts'));
 
-  test('a queued message goes to the server inbox in order with the composer overrides', async () => {
+  test('a message sent while the agent works steers the running turn', async () => {
     await renderPage();
     const options = { agent: 'builder', model: { providerID: 'prov', modelID: 'mod' }, variant: 'high' };
     await act(async () => {
@@ -1010,7 +1030,9 @@ describe('SessionPage message queue', () => {
       await composerProps.onEnqueue('second', {});
     });
     expect(inboxPosts().map((c) => (c.body as any).parts[0].text)).toEqual(['first', 'second']);
+    // `steer` keeps `placement: 'composer'`: an older API reads it as a queued row.
     expect(inboxPosts()[0].body).toMatchObject({
+      delivery: 'steer',
       placement: 'composer',
       overrides: { agent: 'builder', model: { providerID: 'prov', modelID: 'mod' }, variant: 'high' },
     });
@@ -1390,6 +1412,39 @@ describe('SessionPage render work', () => {
     expect(heroMounted()).toBe(false);
   });
 
+  test('pauses the working turn motion while its row is scrolled out of the viewport', async () => {
+    const user = userMsg('one');
+    seedRows([user, assistantMsg('partial', user.info.id)]);
+    runtimeValue = { ...runtimeValue, isBusy: true };
+    await renderPage();
+    const working = () => turnProps.findLast((p) => p.isWorkingTurn);
+    const id = user.info.id;
+    expect(working().onScreen).toBe(true);
+    expect(listProps.viewabilityConfig).toEqual({ itemVisiblePercentThreshold: 1 });
+    const handler = listProps.onViewableItemsChanged;
+    await act(async () => handler({ viewableItems: [] }));
+    expect(working().onScreen).toBe(false);
+    expect(listProps.onViewableItemsChanged).toBe(handler);
+    await act(async () => handler({ viewableItems: [{ key: id }] }));
+    expect(working().onScreen).toBe(true);
+  });
+
+  test('a new working turn below the viewport stays paused without a new viewability event', async () => {
+    const first = userMsg('one');
+    seedRows([first, assistantMsg('done', first.info.id)]);
+    await renderPage();
+    await act(async () => listProps.onViewableItemsChanged({ viewableItems: [{ key: first.info.id }] }));
+    const next = userMsg('two');
+    runtimeValue = { ...runtimeValue, isBusy: true };
+    await act(async () => {
+      appendMessages([next, assistantMsg('partial', next.info.id)]);
+      await sleep(15);
+    });
+    const working = turnProps.findLast((p) => p.isWorkingTurn);
+    expect(working.turn.userMessage.info.id).toBe(next.info.id);
+    expect(working.onScreen).toBe(false);
+  });
+
   test('a stream delta and a new runtime object keep renderItem and Stop, and a stranded prompt stays interrupted', async () => {
     const user = userMsg('one');
     const reply = assistantMsg('partial', user.info.id);
@@ -1484,6 +1539,73 @@ describe('SessionPage render work', () => {
     });
     expect(gestureAreaProps.offset).toBe(120);
     expect(composerRenders).toBe(renders);
+  });
+
+  test('the composer floats over the list, and the list ends above it', async () => {
+    safeInsets = { top: 0, bottom: 34, left: 0, right: 0 };
+    seedTurns(['one']);
+    await renderPage();
+    const byTestID = (id: string) => tree!.root.find((node) => node.props.testID === id);
+    const composer = tree!.root.find(
+      (node) => typeof node.type === 'function' && node.props.inputNativeID === `composer-input-${SID}`,
+    );
+    const ancestors = (node: any) => {
+      const chain: any[] = [];
+      for (let at = node.parent; at; at = at.parent) chain.push(at);
+      return chain;
+    };
+    const flat = (style: any): any[] => (Array.isArray(style) ? style.flatMap(flat) : style ? [style] : []);
+    const isOverlay = (node: any) => node.type === RNView && node.props.style?.position === 'absolute';
+    // The composer sits in an absolute overlay over the list, not below it.
+    const overlay = ancestors(composer).find(isOverlay);
+    expect(overlay).toBeTruthy();
+    expect(overlay.props.style).toMatchObject({ top: 0, bottom: 0 });
+    expect(overlay.props.pointerEvents).toBe('box-none');
+    // No fill around the composer: from the composer up to the overlay,
+    // nothing paints a background. The only backing is the project drawer's
+    // bottom fade, which takes no touches.
+    const block = byTestID('session-composer-block');
+    expect(ancestors(composer)).toContain(block);
+    for (const node of ancestors(composer).slice(0, ancestors(composer).indexOf(overlay) + 1)) {
+      for (const style of flat(node.props.style)) expect(style.backgroundColor).toBeUndefined();
+    }
+    // Counts, not nodes: a failing diff of test instances prints for minutes.
+    const gradients = tree!.root.findAll((node) => typeof node.type === 'function' && Array.isArray(node.props.colors));
+    const inOverlay = gradients.filter((node) => ancestors(node).includes(overlay));
+    expect(inOverlay.length).toBe(1);
+    expect(inOverlay[0].props.locations).toEqual([0, 0.45, 1]);
+    // The host view, not the `ComposerBottomFade` element that carries the same testID.
+    const fade = tree!.root.findAll((node) => node.props.testID === 'session-composer-fade').at(-1)!;
+    expect(ancestors(inOverlay[0])).toContain(fade);
+    expect(fade.props.pointerEvents).toBe('none');
+
+    // The list's end padding: the measured composer area plus the inset.
+    const endPadding = () => byTestID('session-list-end-padding').props.style.height;
+    const layoutComposerArea = (height: number) =>
+      act(async () => {
+        byTestID('session-composer-area').props.onLayout({ nativeEvent: { layout: { height } } });
+      });
+    await layoutComposerArea(150.4);
+    expect(endPadding()).toBe(184);
+    // The drawer's bottom-bar fade at 28.75%: (34 inset + 96) × 0.2875.
+    const fadeHeight = () => flat(fade.props.style).reduce((h, st) => st.height ?? h, 0);
+    expect(fadeHeight()).toBeCloseTo(37.375);
+    const restingFade = fadeHeight();
+    // The room counts the covered height: 600 − 184 − 200 − 24 = 192.
+    await layoutTranscript(576, [200]);
+    expect(spacerHeight()).toBe(192);
+
+    // It follows the composer as it grows (a second line, a chip).
+    await layoutComposerArea(190);
+    expect(endPadding()).toBe(224);
+
+    // It follows the keyboard's progress, frame by frame, not its events:
+    // the inset goes as the keyboard covers the home indicator.
+    keyboardProgress.value = 0.5;
+    expect(endPadding()).toBe(207);
+    keyboardProgress.value = 1;
+    expect(endPadding()).toBe(190);
+    expect(fadeHeight()).toBe(restingFade);
   });
 
   test('while the keyboard moves a shrinking room waits for it to stop, a growing room commits at once', async () => {

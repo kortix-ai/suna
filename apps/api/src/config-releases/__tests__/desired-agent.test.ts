@@ -33,7 +33,7 @@ let built: ConfigReleaseVariant[] = [];
 /** One release per variant, so the release ID proves which variant was built. */
 function releaseFor(variant: ConfigReleaseVariant): ConfigRelease {
   return {
-    format: 'config-release-v1',
+    format: 'config-release-v2',
     release_id: `${variant}-release`,
     source_commit: TIP,
     config_dir: '.kortix/opencode',

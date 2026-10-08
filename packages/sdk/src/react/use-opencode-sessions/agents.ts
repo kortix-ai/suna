@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getClient } from '../../core/runtime/client';
 import type { Agent } from '../../core/runtime/runtime-types';
 import { runtimeKeys, useRuntimeReady } from './keys';
-import { unwrap, getLSCache, setLSCache, LS_AGENTS, CACHE_SCOPE_GLOBAL } from './shared';
+import { unwrap } from './shared';
 import { getProjectDetail } from '../../core/rest/projects-client';
 import {
   projectConfigAgentsToOpenCodeAgents,
@@ -33,11 +33,6 @@ export function useRuntimeAgents(options?: { directory?: string; projectId?: str
   const directory = options?.directory;
   const projectId = options?.projectId ?? null;
   const runtimeReady = useRuntimeReady();
-  const cacheScope = projectId
-    ? `project:${projectId}`
-    : directory
-      ? `dir:${directory}`
-      : CACHE_SCOPE_GLOBAL;
   return useQuery<Agent[]>({
     // This is its OWN fetch (re-derives agents from a fresh `getProjectDetail`
     // call rather than a `select` projection over the shared `qk.project.detail`
@@ -64,32 +59,20 @@ export function useRuntimeAgents(options?: { directory?: string; projectId?: str
           queryFn: () => getProjectDetail(projectId),
           ...contract('config'),
         });
-        const agents = projectConfigAgentsToRuntimeAgents(detail.config);
-        setLSCache(LS_AGENTS, agents, cacheScope);
-        return agents;
+        return projectConfigAgentsToRuntimeAgents(detail.config);
       }
       const client = getClient();
       const result = await client.app.agents(directory ? { directory } : undefined);
       const data = unwrap(result);
-      const agents: Agent[] = Array.isArray(data)
-        ? data
-        : Object.values(data as Record<string, Agent>);
-      // Agents are defined in the project repo (agents/, legacy .kortix/opencode/agents), so the
-      // roster is stable across every session that shares a working directory.
-      // Cache under a directory-scoped (or global) STABLE key — not the
-      // ephemeral per-sandbox server id — so a new session's picker paints from
-      // cache instead of waiting on sandbox boot + the in-box /app/agents call.
-      // (Previously the directory case cached nothing at all → guaranteed pop-in.)
-      setLSCache(LS_AGENTS, agents, cacheScope);
-      return agents;
+      return Array.isArray(data) ? data : Object.values(data as Record<string, Agent>);
     },
-    placeholderData: () => getLSCache<Agent[]>(LS_AGENTS, cacheScope),
     enabled: projectId ? true : runtimeReady,
     staleTime: projectId ? 30_000 : Infinity,
     gcTime: 10 * 60 * 1000,
   });
 }
 
+/** @deprecated Use `useRuntimeAgents` and select by `name`. Removed in the next major. */
 export function useRuntimeAgent(agentName: string) {
   const runtimeReady = useRuntimeReady();
   return useQuery<Agent | undefined>({

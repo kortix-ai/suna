@@ -7,6 +7,7 @@ import {
   type ProvisionResult,
   type ResolvedSandboxIngress,
   type SandboxProvider,
+  type SandboxStatus,
 } from '../platform/providers';
 import {
   getSandboxProvider,
@@ -46,6 +47,8 @@ export interface StartAppRuntimeInput {
   snapshotName: string;
   machine: AppMachineSpec;
   envVars?: Record<string, string>;
+  /** An always-on App: the provider must never auto-stop it (Platinum: auto_stop_minutes 0). */
+  alwaysOn?: boolean;
 }
 
 export interface AppRuntimeHandle extends ProvisionResult {
@@ -137,6 +140,11 @@ export class AppHostingProvider {
       resourceSpec: input.machine,
       publishedPorts: [APP_CONTROL_PORT, APP_INGRESS_PORT],
       envVars: { ...input.envVars, KORTIX_APPD_TOKEN: token },
+      // On-demand Apps keep the provider's idle backstop. An always-on App opts
+      // out of it on Platinum, where 0 means persistent. Daytona clamps 0 to a
+      // 1-minute stop and E2B ignores it, so there it keeps the backstop and
+      // the keep-alive pass renews it every 5 minutes (`renewLifecycle`).
+      ...(input.alwaysOn && input.provider === 'platinum' ? { autoStopInterval: 0 } : {}),
     });
     try {
       await provider.ensureAppRuntimeStarted(result.externalId);
@@ -172,6 +180,16 @@ export class AppHostingProvider {
     }
     await this.waitForProviderRunning(runtimeProvider, externalId);
     await runtimeProvider.ensureAppRuntimeStarted(externalId);
+  }
+
+  /** The provider's own answer. The database row can be wrong about it. */
+  async providerStatus(provider: SandboxProviderName, externalId: string): Promise<SandboxStatus> {
+    return this.dependencies.runtimeProvider(provider).getStatus(externalId);
+  }
+
+  /** Reset the provider's idle timer without waking a stopped runtime. */
+  async renewLifecycle(provider: SandboxProviderName, externalId: string): Promise<void> {
+    await this.dependencies.runtimeProvider(provider).renewLifecycle(externalId);
   }
 
   async ensureRunning(provider: SandboxProviderName, externalId: string): Promise<void> {

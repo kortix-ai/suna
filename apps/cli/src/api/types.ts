@@ -188,11 +188,58 @@ export interface ProjectSessionInitiator {
 /** A `type: monitor` trigger's shape. */
 export type MonitorMode = 'poll' | 'stream';
 
+/** A `type: event` trigger's source + subscription state. */
+export interface ProjectTriggerEvent {
+  connector: string;
+  type: string;
+  config: Record<string, unknown>;
+  provider: string | null;
+  app: string | null;
+  status: 'active' | 'needs_connection' | 'error' | 'pending';
+  error: string | null;
+  last_event_at: string | null;
+}
+
+/** One event type from `GET /projects/:id/triggers/event-types`. */
+export interface TriggerEventType {
+  type: string;
+  name: string;
+  description: string;
+  app: string;
+  delivery: 'poll' | 'push' | null;
+  /** JSON Schema of the event's `config`. */
+  config_schema: Record<string, unknown>;
+  payload_schema: Record<string, unknown> | null;
+}
+
+export interface TriggerEventTypesResponse {
+  provider: string;
+  app: string;
+  event_types: TriggerEventType[];
+}
+
+/** One app from `GET /projects/:id/triggers/event-apps`. */
+export interface TriggerEventApp {
+  provider: string;
+  app: string;
+  name: string;
+  logo: string | null;
+  event_count: number;
+  /** Slug of the project's connector for this app; null until one is added. */
+  connector: string | null;
+  /** The project has an active shared account for this app. */
+  connected: boolean;
+}
+
+export interface TriggerEventAppsResponse {
+  apps: TriggerEventApp[];
+}
+
 export interface ProjectTrigger {
   slug: string;
   path: string;
   name: string;
-  type: 'cron' | 'webhook' | 'monitor';
+  type: 'cron' | 'webhook' | 'monitor' | 'event';
   agent: string;
   enabled: boolean;
   cron: string | null;
@@ -208,6 +255,8 @@ export interface ProjectTrigger {
   interval_seconds: number | null;
   /** monitor only — the silence watchdog in whole seconds. */
   expect_event_within_seconds: number | null;
+  /** type=event only; null for every other type. */
+  event?: ProjectTriggerEvent | null;
   prompt_template: string;
   /** 'fresh' (default) mints a new session per fire; 'reuse' re-prompts one persistent session. */
   session_mode: 'fresh' | 'reuse';
@@ -216,6 +265,8 @@ export interface ProjectTrigger {
   last_status?: string | null;
   /** Why the last fire or run failed. */
   last_error?: string | null;
+  /** ISO time of the last fire attempt or run outcome. */
+  last_attempt_at?: string | null;
   webhook_url: string | null;
 }
 
@@ -229,7 +280,10 @@ export interface ProjectTriggersResponse {
 }
 
 export interface TriggerFireResponse {
-  status: 'queued' | 'fired';
+  // 'deduped' = an identical fire is already running; the request was
+  // collapsed into it (no new session). The route serves it (apps/api
+  // projects/routes/triggers.ts fire handler).
+  status: 'queued' | 'fired' | 'deduped';
   reason?: string | null;
   session_id?: string | null;
 }

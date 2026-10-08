@@ -10,6 +10,8 @@ import * as realProviders from '../../platform/providers';
 import { db } from '../../shared/db';
 
 const deletedUsers: string[] = [];
+// The `app-sites` bucket: static App objects by key (`<account_id>/<sha256>`).
+const siteObjects = new Set<string>();
 
 // The service's external seams are mocked; the database is real. Spread the
 // real module: `mock.module` replaces it WHOLESALE, so a stub that lists
@@ -25,6 +27,14 @@ mock.module('../../shared/supabase', () => ({
           return { error: null };
         },
       },
+    },
+    storage: {
+      from: () => ({
+        remove: async (keys: string[]) => {
+          for (const key of keys) siteObjects.delete(key);
+          return { error: null };
+        },
+      }),
     },
   }),
 }));
@@ -47,8 +57,10 @@ const confirmed = Boolean(
 );
 const withDb = confirmed ? describe : describe.skip;
 
-const ACCOUNT_ID = '11111111-1111-4111-8111-111111111111';
 const USER_ID = '22222222-2222-4222-8222-222222222222';
+// The user's personal account: its id is the user id, so deleting it also
+// deletes the user's login.
+const ACCOUNT_ID = USER_ID;
 const OTHER_ACCOUNT_ID = '33333333-3333-4333-8333-333333333333';
 const OTHER_USER_ID = '44444444-4444-4444-8444-444444444444';
 const PROJECT_ID = '55555555-5555-4555-8555-555555555555';
@@ -79,7 +91,12 @@ const RETAINED = new Set([
   'warm_pool_presence',
 ]);
 
+const SITE_SHA = 'f'.repeat(64);
+
 async function seed(): Promise<void> {
+  // The account's stored object, and a neighbor's that must survive.
+  siteObjects.add(`${ACCOUNT_ID}/${SITE_SHA}`);
+  siteObjects.add(`${OTHER_ACCOUNT_ID}/${SITE_SHA}`);
   const statements = [
     sql`INSERT INTO kortix.accounts (account_id, name) VALUES (${ACCOUNT_ID}, 'deletion-test')`,
     // The cascade core: membership, project, session, sandbox row.
@@ -99,8 +116,6 @@ async function seed(): Promise<void> {
       VALUES (${SANDBOX_ID}, ${ACCOUNT_ID}, 'deletion-test-box', 'https://example.test/box')`,
     sql`INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id)
       VALUES (${SANDBOX_ID}, ${SESSION_ID}, ${ACCOUNT_ID}, ${PROJECT_ID})`,
-    sql`INSERT INTO kortix.session_environments (session_id, account_id, project_id)
-      VALUES (${SESSION_ID}, ${ACCOUNT_ID}, ${PROJECT_ID})`,
     sql`INSERT INTO kortix.session_turns (turn_token, session_id, sandbox_id, project_id, account_id)
       VALUES ('del-test-turn', ${SESSION_ID}, ${SANDBOX_ID}, ${PROJECT_ID}, ${ACCOUNT_ID})`,
     sql`INSERT INTO kortix.session_pending_questions (account_id, project_id, session_id, request_id, questions)
@@ -144,6 +159,10 @@ async function seed(): Promise<void> {
       VALUES (${SANDBOX_ID}, 'built', 'deletion-test event')`,
     sql`INSERT INTO kortix.app_runtimes (deployment_id, account_id, provider, external_id, control_token_hash)
       VALUES (${SANDBOX_ID}, ${ACCOUNT_ID}, 'platinum', 'del-test-external', 'del-test-hash')`,
+    // Static App files: a manifest row, its blob ledger row and stored objects.
+    sql`INSERT INTO kortix.app_site_files (deployment_id, account_id, path, sha256, size_bytes, content_type)
+      VALUES (${SANDBOX_ID}, ${ACCOUNT_ID}, 'index.html', ${SITE_SHA}, 1, 'text/html')`,
+    sql`INSERT INTO kortix.app_site_blobs (account_id, sha256, size_bytes) VALUES (${ACCOUNT_ID}, ${SITE_SHA}, 1)`,
     // Project-plane children with NO ACTION edges into project sessions.
     sql`INSERT INTO kortix.change_requests (account_id, project_id, number, title, base_ref, head_ref, created_by)
       VALUES (${ACCOUNT_ID}, ${PROJECT_ID}, 1, 'deletion-test', 'base', 'head', ${USER_ID})`,
@@ -231,7 +250,16 @@ withDb('account deletion on PostgreSQL', () => {
     // memberships, PATs, chat threads, gateway state…) and the swept orphans
     // (api keys, sandbox/session plane, tunnels, connectors, apps, admin
     // plane) alike.
-    expect(await accountScopedTablesWithRows(ACCOUNT_ID)).toEqual([]);
+    // The one retained row is the deletion receipt: the request, `completed`,
+    // its free-text reason scrubbed.
+    expect(await accountScopedTablesWithRows(ACCOUNT_ID)).toEqual(['account_deletion_requests']);
+    // Every stored static App object of the account is gone; the neighbor's stays.
+    expect([...siteObjects]).toEqual([`${OTHER_ACCOUNT_ID}/${SITE_SHA}`]);
+    expect(
+      await rows<{ status: string; reason: string | null }>(
+        sql`SELECT status, reason FROM kortix.account_deletion_requests WHERE account_id = ${ACCOUNT_ID}`,
+      ),
+    ).toEqual([{ status: 'completed', reason: null }]);
 
     // The neighboring account is untouched.
     expect(await countWhere('accounts', sql`account_id = ${OTHER_ACCOUNT_ID}`)).toBe(1);
@@ -256,8 +284,8 @@ withDb('account deletion on PostgreSQL', () => {
     // deletion transaction fail mid-sweep with a test-only trigger, then
     // prove nothing was deleted — and that removing the trigger completes
     // the same deletion.
-    const failAccount = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
     const failUser = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const failAccount = failUser;
     const failProject = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
     for (const statement of [
       sql`INSERT INTO kortix.accounts (account_id, name) VALUES (${failAccount}, 'deletion-fail')`,

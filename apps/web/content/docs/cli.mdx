@@ -281,7 +281,7 @@ A command resolves "the project" in this order:
 | `kortix projects unlink` | Remove `.kortix/link.json`. |
 | `kortix projects open [<id>]` | Open a project's dashboard page in your browser. |
 | `kortix projects clone [<id>] [dir]` | Clone a project's repo through the authenticated Kortix git proxy. |
-| `kortix projects rm [<id>] [--purge] [-y\|--yes]` | Archive a project. `--purge` also deletes its managed git repo. |
+| `kortix projects rm [<id>] [-y\|--yes]` | Delete a project and its Kortix-managed git repo. Repositories you connected yourself are never touched. |
 | `kortix projects set [<id>] [--name <n>] [--branch <b>] [--manifest <path>] [--json]` | Update one project's settings. Only the fields you pass are written. Passing no field exits `2`. Alias: `update`. |
 | `kortix projects set [<id>] --icon <emoji>\|--no-icon\|--glyph <name>:<color>\|--no-glyph` | Set or remove the project's icon. |
 | `kortix projects rename [<id>] <name>` | Alias for `kortix projects set --name <name>`. |
@@ -338,7 +338,7 @@ The local coding-tool selection does not change the cloud OpenCode runtime.
 `kortix ship` stages, commits, and pushes your current branch to the project's git repo. Run it once to create the project. Run it again any time to sync. Alias: `kortix deploy`.
 
 Each run:
-- Parses and validates `kortix.yaml`, merged with every file it lists under [`imports:`](/docs/project/manifest#imports) (skip with `--no-verify`).
+- Runs the [`kortix validate`](#manifest-validation) checks: `kortix.yaml` merged with every file it lists under [`imports:`](/docs/project/manifest#imports), sandbox Dockerfiles, agent wiring, and repository size (skip with `--no-verify`). An error stops the ship. A warning never does.
 - Commits any dirty working tree (skip with `--no-commit`).
 - Prompts for any missing `env` secret (skip with `--no-env`).
 - Pushes the current branch to the same-named remote branch.
@@ -358,6 +358,28 @@ An existing GitHub `origin` links through the Kortix GitHub App. Any other exist
 | `-n, --dry-run` | Print what would happen; change nothing. |
 | `--project <id>` / `--host <name>` | Target a non-default project or host. |
 
+### Apps
+
+Deploys and operates the project's Kortix Apps: each App has one stable URL and immutable deployments. A static App is files that Kortix serves, with no machine. A server App (Dockerfile or OCI image) runs in its own machine, always on or on demand, up to a monthly budget. Needs the `apps` project feature. Full guide: [Apps](/docs/feature-flags/apps).
+
+| Command | Effect |
+| --- | --- |
+| `kortix apps ls [--json]` | List Apps with state (`static` for a static App) and URL. |
+| `kortix apps deploy <dir> --type static [--spa]` | Publish a built directory as a static App. Build first (`npm run build`), then deploy the output directory. |
+| `kortix apps deploy . --type dockerfile --command <argv> --port <n> [--always-on\|--on-demand] [--budget <usd>]` | Build and run a server App. A new App is always on. Its budget is the 24/7 estimate of its machine, rounded up to a whole dollar (74 USD by default), unless you pass `--budget`; on demand it is 5 USD. The command prints the cost, for example `Runs 24/7 on 1 vCPU / 2 GB: about $73/month (budget $74)`. |
+| `kortix apps deploy --image <ref> --command <argv> --port <n>` | Run a public OCI image as a server App. |
+| `kortix apps deploy --manifest-app <name>` | Deploy one `apps.<name>` block of a v2 `kortix.yaml`. |
+| `kortix apps set <app> [--always-on\|--on-demand] [--budget <usd>] [--cpu N] [--memory-gb N] [--disk-gb N] [--idle-timeout <s>]` | Change an App. Run mode and budget apply within 5 minutes; a machine change applies to the next deployment. |
+| `kortix apps show <app> [--json]` | The App (`hosting_type`, `always_on`, `monthly_budget_usd`, `estimated_monthly_usd`) and its deployments. |
+| `kortix apps logs <app> [deployment] [--after N] [--limit N]` | A server App's runtime logs. A static App prints its deployment events. |
+| `kortix apps start\|stop <app>` | Start or suspend a server App. A static App answers `409 static_app_no_runtime`. |
+| `kortix apps rollback <app> <deployment>` | Move traffic to a ready deployment. |
+| `kortix apps access <app> [--mode <mode>] [--viewer off\|identity\|api]` | Read or change who can open the App and what it learns about its viewer. |
+| `kortix apps access-link <app> [--json]` | A five-minute signed browser URL. Treat it as a secret. |
+| `kortix apps delete <app> [--deployment <id\|vN>] --yes` | Delete the App, or one deployment that is not live. |
+
+An always-on App of the default machine costs about 73 USD a month. When an explicit budget is lower, `deploy`, `create`, and `set` print `app_budget_below_always_on` on stderr; the App stops at the budget until the month ends.
+
 ### Sessions
 
 Each session runs in one sandbox on its own branch.
@@ -368,7 +390,7 @@ Each session runs in one sandbox on its own branch.
 | `kortix sessions status [--all] [--json]` | Every session and what its agent is doing right now. Aliases: `overview`, `ps`. |
 | `kortix sessions info <id> [--json]` | Detail view: status, branch, agent, sandbox URL. |
 | `kortix sessions new [--prompt "<text>"] [--agent <name>] [--model <id>] [--wait] [--connect] [--json]` | Start a session. `--connect` attaches the OpenCode TUI once it is ready (implies `--wait`); on an interactive terminal without it, the CLI asks whether to connect after creation. `--model <id>` overrides the project's default model; a model that runs on an API key or a ChatGPT subscription uses every key you may use for it, and they rotate. `--wait` blocks until it is running (up to ~5 minutes). Use `--secret <id>` or `--no-secrets` to narrow Secret access. These Secret flags require a backend token. Use `--connector <alias>=<authorization-id>` or `--no-connectors` to set Connector access. Use `--require-connector <alias>` to require an authorization before provisioning. Scope flags are repeatable. Use `--context <key>=<value>` for non-secret runtime context. `--label <label>` (repeatable) classifies the session; `--meta <key>=<value>` (repeatable) stores a string in its metadata. |
-| `kortix sessions chat [<id>] [--prompt "<text>"] [--queue] [--new] [--agent <name>] [--json]` | Talk to a session's agent. Interactive by default. Alias: `talk`. Top-level `kortix chat` also works. `--queue` is one-shot only: it stores the prompt in the session's durable inbox and returns as soon as it is stored, instead of handing it to the runtime. |
+| `kortix sessions chat [<id>] [--prompt "<text>"] [--queue \| --steer] [--new] [--agent <name>] [--json]` | Talk to a session's agent. Interactive by default. Alias: `talk`. Top-level `kortix chat` also works. `--queue` is one-shot only: it stores the prompt in the session's durable inbox and returns as soon as it is stored, instead of handing it to the runtime. `--steer` stores it the same way, and the running turn reads it at its next step without stopping. With no turn running, it starts one. A session that cannot steer runs it as `--queue`. |
 | `kortix sessions connect [<id>] [-- <opencode args>]` | Attach the OpenCode TUI to the session's OpenCode server. Also available top-level: `kortix connect` / `kortix attach`. With no id, opens a session picker (running, stopped-with-restart, or new). The CLI auto-downloads the version-matched `opencode` binary (cache: `~/.kortix/opencode/<version>/`; override: `KORTIX_OPENCODE_BIN`). A pi session has no opencode server: the command exits `1` and names `kortix sessions shell` and `kortix sessions chat` instead. |
 | `kortix tui [--host <name>] [--project <id>] [--session <id>] [--new] [--agent <name>] [--terminal] [--no-sidebar] [--mouse] [--install] [--uninstall]` | **Experimental.** Open the Kortix terminal client: sessions, transcript, composer, sandbox shell, Files, Review, Apps, Customize and Account. Aliases `kortix t` and `kortixt`. `--new` creates a session in the project at boot (`--agent` picks the agent), `--terminal` opens the sandbox shell focused, `--no-sidebar` starts without the sidebar (`Alt+B` toggles it), `--mouse` hands the mouse to the app (off by default so your terminal's selection, copy and link clicks keep working). The TUI is a separate ~80 MB binary; the first run asks, then installs the version-matched `kortix-tui` into `~/.kortix/tui/<version>/`; later CLI updates refresh it without asking and reuse an unchanged binary. `--install` does it without a prompt, `--uninstall` removes it. Uses the active host unless `--host` names another; with no host logged in it opens its own login screen. `?` prints every binding. See [/docs/tui](/docs/tui). |
 | `kortix sessions shell [<id>] [--new]` | Open a raw interactive terminal in the sandbox, with no agent. Reattaches to the session's existing terminal; `--new` always starts a fresh one. Aliases: `terminal`, `ssh`. |
@@ -392,7 +414,7 @@ Each session runs in one sandbox on its own branch.
 | `kortix sessions start <id> [--wait] [--json]` | Wake a session: provision a missing sandbox, resume a stopped one, and resolve its runtime. Idempotent. Alias: `wake`. `--wait` blocks until ready (up to ~5 min) and exits `1` if the session ends up failed or stopped. |
 | `kortix sessions warm [--exclude <id>] [--json]` | Pre-create the session you are about to use, so the sandbox is already up. Reuses an existing unused warm session. A warm session stays hidden from `sessions ls` until its first prompt. |
 | `kortix sessions model <id> <model-id> [--json]` | Change the model a session runs, mid-session. A live sandbox is re-pointed and its runtime restarts, which ends the turn running right now; a stopped session stores the value for its next start. A session with no keys selected for the new model's provider gets every key you may use there. |
-| `kortix sessions compact <id> [--json]` | Summarize the conversation so far and continue from the summary. A pi session does not support it: the command exits `1` with the reason. |
+| `kortix sessions compact <id> [--json]` | Summarize the conversation so far and continue from the summary. A session whose runtime does not list `session.compact` exits `1` with the reason. |
 | `kortix sessions queue <id> [ls] [--json]` | List the prompts still waiting in the session's durable inbox. |
 | `kortix sessions queue <id> rm <prompt-id>` | Drop one queued prompt. Refused (`409`) once a model step has started answering it. |
 | `kortix sessions queue <id> now <prompt-id>` | Run one queued prompt next: re-queue it ahead of the ordering rule and release the session's hold. |
@@ -408,7 +430,11 @@ Each session runs in one sandbox on its own branch.
 `sessions queue` needs `project.session.start` — the same permission as sending
 a message. A queued prompt survives a closed terminal and is delivered when the
 session can take it. Put one there with
-`kortix sessions chat <id> -p "…" --queue`.
+`kortix sessions chat <id> -p "…" --queue`, or steer the running turn with
+`--steer`. `sessions queue ls` shows each prompt's `DELIVERY` (`steer`,
+`queue` or `interrupt`) and, for a steer prompt that runs as `queue`, the
+reason: `unsupported` (the session cannot take messages mid-turn),
+`not_prompter` (another member's turn is running) or `turn_ended`.
 
 `sessions approvals` are durable: unlike `sessions pending`, they survive a
 sandbox restart. It needs `project.members.manage`, or being the human who
@@ -627,6 +653,7 @@ Connectors an agent calls as tools. `add`, `rm`, and `policy set` edit the local
 | `kortix connectors credential <slug> [value]` | Set a connector's credential. |
 | `kortix connectors connect <slug>` | Start a one-click connect flow. |
 | `kortix connectors link <slug> [--expires <min>]` | Mint a shareable connect link for a human. |
+| `kortix connectors types [--connector <a,b>] [--out <file>]` | Write TypeScript types for every callable action: a `declare module '@kortix/sdk'` file that types `connectors.callAction(slug, action, args)` args and `output`. Managed Composio and Pipedream connectors publish no output schema, so their result is `unknown`. Without `--out` it prints to stdout. |
 | `kortix connectors accounts <slug> [--default <label\|id>] [--json]` | List the accounts your calls may run as, with the identity each is connected as. `--default` pins one. |
 | `kortix connectors connections ls [--all] [--json]` | List connections with label, `CONNECTED AS`, owner, `WHO CAN USE` (`owner only`, `everyone`, or the grant labels, with `(not you)` when you list it only to manage it), status, and default. |
 | `kortix connectors connections rename <id> <label…>` | Rename a connection. Only the label changes; no re-authorization. |
@@ -731,7 +758,7 @@ Read-only view of the project's git repo. Operates on the default branch unless 
 
 | Command | Effect |
 | --- | --- |
-| `kortix files ls [<path>]` | List files under a path. |
+| `kortix files ls [<path>]` | List files under a path, recursively. The list stops at 1,000 files and says so; narrow it with a path or use `files search`. |
 | `kortix files cat <path>` | Print a file's contents. |
 | `kortix files search <query> [--content]` | Search filenames, or file contents with `--content`. |
 | `kortix files history <path>` | Commit history for one file. |
@@ -751,7 +778,7 @@ cannot be filtered mid-stream — so archive a narrower `--path` in that case.
 
 ### Triggers
 
-A trigger starts a session from a schedule, a webhook, or a monitor (experimental). `add`, `rm`, `enable`, `disable` edit the local manifest — run `kortix ship` to apply. `pause`/`resume` flip a separate, server-side switch. See [Triggers](/docs/connect/triggers).
+A trigger starts a session from a schedule, a webhook, an app event, or a monitor (experimental). `add`, `rm`, `enable`, `disable` edit the local manifest — run `kortix ship` to apply. `pause`/`resume` flip a separate, server-side switch. See [Triggers](/docs/connect/triggers).
 
 | Command | Effect |
 | --- | --- |
@@ -760,11 +787,12 @@ A trigger starts a session from a schedule, a webhook, or a monitor (experimenta
 | `kortix triggers set <slug> [options]` | Change a live trigger. Only the flags you pass are written. Always applies now — there is no local form. Alias: `update`. |
 | `kortix triggers rm <slug> [--apply]` | Remove a trigger from `kortix.yaml`, or from the cloud project now with `--apply`. |
 | `kortix triggers info <slug> [--json]` | Show one trigger. |
-| `kortix triggers fire <slug>` | Fire a trigger manually. |
+| `kortix triggers events --connector <slug> [--json]` | List the events a connector offers, with each event's settings. |
+| `kortix triggers fire <slug>` | Fire a trigger manually and wait for the run outcome: a failed run exits non-zero with its error, and the fired run's fresh session is cleaned up (a run queued into an existing session is left in place). `--wait <dur>` bounds the wait (default `90s`; `0` returns as soon as the fire is accepted). |
 | `kortix triggers enable <slug> [--apply]` / `disable <slug> [--apply]` | Turn one trigger on or off. |
 | `kortix triggers pause` / `resume` | Deactivate or reactivate every trigger on the project, server-side. |
 
-`add` options: `--type <cron\|webhook\|monitor>` (default `cron`), `--prompt <text>` (required), `--agent <name>`, `--cron <expr>` (6-field, e.g. `"0 0 9 * * 1-5"`), `--run-at <iso>` (run once at this instant instead of on a cron), `--timezone <tz>` (default UTC), `--secret-env <NAME>`, `--name <label>`, `--disabled`.
+`add` options: `--type <cron\|webhook\|event\|monitor>` (default `cron`), `--prompt <text>` (required), `--agent <name>`, `--cron <expr>` (6-field, e.g. `"0 0 9 * * 1-5"`), `--run-at <iso>` (run once at this instant instead of on a cron), `--timezone <tz>` (default UTC), `--secret-env <NAME>`, `--name <label>`, `--disabled`.
 
 Live-only options — valid on `add --apply`, and on every `set`: `--model <provider/model>`, `--session-mode <fresh\|keyed\|pinned\|reuse>`, `--session-key <tmpl>` (bucket one session per key, e.g. `"{{ body.data.chat_jid }}"`; implies `keyed`), `--session-id <id>` (the session a `pinned` trigger loops; must be this project's session), `--session-access <private\|project\|members>` (default `private`), `--member <uuid>` and `--group <uuid>` (repeatable; each implies `members`), and `--filter <path=value>` (repeatable; every one must match, e.g. `--filter body.type=push`).
 
@@ -783,6 +811,8 @@ A reminder re-prompts one session later, once or on repeat. It is stored in the 
 | `kortix reminders rm <id>` | Delete a reminder. Aliases: `stop`, `delete`. |
 
 Schedule options: `--in <duration>` or `--at <iso>` (first fire; alone, fire once), `--every <duration>` (repeat, min `5m`), `--cron "<expr>"` with `--timezone <tz>`. Other options: `--name <label>`, `--session <id>` (a unique prefix works), `--project <id>`, `--host <name>`, `--json`.
+
+Event options (`--type event`): `--connector <slug>` and `--event <TYPE>` (both required), `--config key=value` (repeatable, string values), and `--config-json '{...}'` (typed values). `set` accepts the same flags. An event trigger rejects `--cron`, `--run-at`, `--timezone`, `--secret-env`, and the monitor options. The prompt reads `{{ event.data.<field> }}`; see [App event triggers](/docs/connect/triggers#app-event-triggers).
 
 Monitor options (`--type monitor`): `--run <cmd>` (repo-relative command to supervise; required), `--mode <poll\|stream>` (required; `poll` re-runs on `--interval`, `stream` keeps the command alive), `--interval <dur>` (`mode=poll` only, minimum 30s, e.g. `60s`, `5m`), and `--expect-event-within <dur>` (silence watchdog; no event inside the window fires a lifecycle event instead, minimum 5m, e.g. `24h`). A monitor is a repo command the platform runs 24/7, and each stdout line fires the trigger. It is experimental: the platform runs monitors only where the `monitors` feature flag is on.
 
@@ -935,10 +965,19 @@ an assignment names them or one of their groups. `kortix access grant --agent
 
 | Command | Effect |
 | --- | --- |
-| `kortix validate [--file <path>] [--json] [--scopes]` | Validate the manifest against the canonical schema. Resolves `kortix.yaml` first, then `kortix.toml`. Exit codes: `0` valid, `1` errors, `2` file missing. |
+| `kortix validate [--file <path>] [--json] [--scopes] [--no-dockerfile-lint]` | Validate the manifest against the canonical schema, lint every sandbox Dockerfile and the agent wiring, and check the repository size. Resolves `kortix.yaml` first, then `kortix.toml`. Exit codes: `0` valid (warnings may be present), `1` errors, `2` file missing. `kortix ship` runs the same checks. |
 | `kortix schema [--version 1\|2] [--url]` | Print the manifest's JSON Schema. `--url` prints the schema URL instead. |
 
 See [Manifest reference](/docs/project/manifest).
+
+#### Repository size
+
+A session builds its [agent config](/docs/work/runtime) from every file Git tracks at the base commit. A build over 32 MiB compressed or 128 MiB uncompressed fails, and the session runs the platform default config. `kortix validate` counts the files Git stores, plus the untracked files `kortix ship` commits next, and prints a warning when one file is 10 MiB or more or the total is over 32 MiB. A Git LFS file counts as its pointer, because the release holds only the pointer. The warning names the largest files. It never fails the command.
+
+To clear it:
+- Move big static assets (video, images, datasets, model weights) to object storage such as S3, R2, or GCS, or a CDN, and download them at runtime.
+- Add build output (`dist/`, `out/`) to `.gitignore`.
+- For a path that must stay in Git but that no agent reads, add `<path> export-ignore` to `.gitattributes`. The release leaves it out, and so does the check; a directory rule covers everything under it. The agent config dir and `kortix.yaml` always ship whole.
 
 ### Self-host
 
@@ -960,7 +999,7 @@ See [Manifest reference](/docs/project/manifest).
 | `kortix self-host connect-github` | Connect a GitHub App for managed repos. |
 | `kortix self-host env ls [--show]` | Show persistent config values, masking secrets by default. |
 | `kortix self-host env set KEY=VALUE ...` | Set a value and restart only the services it affects. |
-| `kortix self-host env rotate KEY\|--all-generated` | Regenerate a rotatable, CLI-generated secret. |
+| `kortix self-host env rotate KEY\|--all-generated` | Regenerate a rotatable, CLI-generated secret. `API_KEY_SECRET` (it encrypts every stored secret) and `POSTGRES_PASSWORD` (the database roles keep the first one) are refused. |
 | `kortix self-host logs [service]` | Tail stack logs. |
 | `kortix self-host uninstall` | Stop the stack and delete this instance's containers, volumes, and config. |
 

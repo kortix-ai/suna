@@ -13,7 +13,7 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { auditEventsAll, auditWebhookDeliveries, auditWebhooks } from '@kortix/db';
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../iam';
 import { actorOf } from '../iam/actor';
 import { assertAllowedSourceAddress } from '../marketplace/catalog';
@@ -24,7 +24,7 @@ import {
   recordAuditEvent,
 } from '../shared/audit';
 import { auditCredentialNames } from '../shared/audit-credential-names';
-import { requestClientIp } from '../shared/client-ip';
+import { requestClientIp } from '../middleware/client-ip';
 import {
   deliverTestEvent,
   generateWebhookSecret,
@@ -38,13 +38,14 @@ import {
   parseAuditLimit,
   serializeAuditEvent,
 } from '../shared/audit-query';
+import { wakeAuditWebhookWorker } from '../workers/audit-webhook-worker';
 import { AuditActorTypeSchema, AuditListSchema } from '../shared/audit-schema';
 import { readExportPage } from '../shared/audit-archive/export-page';
 import { auditArchiveStore } from '../shared/audit-archive/store';
 import { reconcileAuditEvents } from '../shared/audit-reconciliation';
 import type { AppEnv } from '../types';
-import { type AuditFilterInput, buildFilters } from './audit-filters';
-import { requireEntitlement } from './iam/helpers';
+import { buildFilters } from './audit-filters';
+import { requireEntitlement } from './iam/http-helpers';
 import { readJsonObject } from '../shared/http-body';
 
 export const auditRouter = makeOpenApiApp<AppEnv>();
@@ -92,10 +93,6 @@ const AuditWebhookPatchSchema = z
 
 const MAX_LIMIT = 200;
 const DEFAULT_LIMIT = 50;
-
-// Re-exported from ./audit-filters (pure, unit-tested) so existing importers
-// keep working.
-export { buildFilters, type AuditFilterInput } from './audit-filters';
 
 // GET /v1/accounts/:accountId/audit
 //   ?action=connector.       — prefix match on action
@@ -150,7 +147,6 @@ auditRouter.openapi(
     },
   }),
   async (c: any) => {
-    const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.AUDIT_READ);
     const denied = await requireEntitlement(c, accountId, 'auditAccess');
@@ -348,7 +344,6 @@ auditRouter.openapi(
     },
   }),
   async (c: any) => {
-    const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.AUDIT_READ);
     const denied = await requireEntitlement(c, accountId, 'auditAccess');
@@ -534,7 +529,6 @@ auditRouter.openapi(
     },
   }),
   async (c: any) => {
-    const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
     // No entitlement gate on listing: a downgraded admin must be able to see
@@ -739,7 +733,6 @@ auditRouter.openapi(
     },
   }),
   async (c: any) => {
-    const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     const webhookId = c.req.param('webhookId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
@@ -819,6 +812,7 @@ auditRouter.openapi(
     if (!hook) return c.json({ error: 'webhook not found' }, 404);
     const replayed = await replayAuditWebhookDelivery(deliveryId, webhookId);
     if (!replayed) return c.json({ error: 'delivery not found' }, 404);
+    wakeAuditWebhookWorker();
     await recordAuditEvent({
       accountId,
       actorUserId: userId,

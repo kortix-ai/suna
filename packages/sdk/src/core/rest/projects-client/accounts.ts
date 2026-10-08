@@ -164,6 +164,9 @@ export interface AccountInviteDescribeFull {
   expired: boolean;
   accepted_at: string | null;
   email_matches_caller: true;
+  /** Projects the invite grants on accept, named. Empty for a workspace
+   *  invite; absent from an older API. */
+  projects?: Array<{ project_id: string; name: string; role: string }>;
 }
 
 export interface AccountInviteDescribeRedacted {
@@ -328,7 +331,13 @@ export async function describeAccountInvite(inviteId: string) {
 
 export async function acceptAccountInvite(inviteId: string) {
   return unwrap(
-    await backendApi.post<{ account_id: string; account_role: AccountRole }>(
+    await backendApi.post<{
+      account_id: string;
+      account_role: AccountRole;
+      already_accepted?: boolean;
+      /** The projects the invite granted, in order: where to land (KRTX-1731). */
+      bootstrap_grants_applied?: Array<{ project_id: string; role: string }>;
+    }>(
       `/account-invites/${inviteId}/accept`,
       {},
     ),

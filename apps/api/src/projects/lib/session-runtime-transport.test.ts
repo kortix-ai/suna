@@ -62,7 +62,12 @@ describe('parseSseFrames', () => {
         // Deliberately never closed inside this tick.
         setTimeout(() => {
           closed = true;
-          controller.close();
+          try {
+            controller.close();
+          } catch {
+            // The parser cancelled the body on `return()`; a real stream
+            // ignores a close after that.
+          }
         }, 50);
       },
     });
