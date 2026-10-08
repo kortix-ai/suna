@@ -473,6 +473,37 @@ describe('pi config releases: convergence', () => {
     expect(runtime.state).toMatchObject({ reconfigures: 1, restarts: 2 })
   })
 
+  test('a change to the Kortix tool list restarts the runtime; the same list reconfigures', async () => {
+    const withKortix = (prompt: string, kortixTools?: string[]) =>
+      JSON.stringify({ ...JSON.parse(governance(prompt)), ...(kortixTools ? { kortix_tools: kortixTools } : {}) })
+    const all = ['web_search', 'image_search', 'scrape_webpage', 'memory', 'show']
+    write(repo, 'README.md', 'all five\n')
+    const one = buildRelease(repo, commitAll(repo, 'all five'), DIR, { projectId: 'proj-1', governance: withKortix('one', all) })
+    serveRelease(api, one)
+    const { releases } = create()
+    await releases.boot()
+    const runtime = fakeRuntime()
+
+    write(repo, 'README.md', 'prompt only\n')
+    const two = buildRelease(repo, commitAll(repo, 'prompt only'), DIR, { projectId: 'proj-1', governance: withKortix('two', all) })
+    serveRelease(api, two)
+    expect((await releases.converge(runtime)).outcome).toBe('applied')
+    expect(runtime.state).toMatchObject({ reconfigures: 1, restarts: 0 })
+
+    write(repo, 'README.md', 'show removed\n')
+    const three = buildRelease(repo, commitAll(repo, 'no show'), DIR, { projectId: 'proj-1', governance: withKortix('two', all.slice(0, 4)) })
+    serveRelease(api, three)
+    expect((await releases.converge(runtime)).outcome).toBe('applied')
+    expect(runtime.state).toMatchObject({ reconfigures: 1, restarts: 1 })
+
+    // No list (a config compiled without a `tools` key) is a change too: every Kortix tool loads again.
+    write(repo, 'README.md', 'tools key removed\n')
+    const four = buildRelease(repo, commitAll(repo, 'no tools key'), DIR, { projectId: 'proj-1', governance: withKortix('two') })
+    serveRelease(api, four)
+    expect((await releases.converge(runtime)).outcome).toBe('applied')
+    expect(runtime.state).toMatchObject({ reconfigures: 1, restarts: 2 })
+  })
+
   test('a release without a pi config dir leaves pi none; with releases off pi resolves the working tree', async () => {
     serveRelease(api, release('deploy', 'from release one'))
     const on = create()

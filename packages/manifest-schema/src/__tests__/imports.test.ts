@@ -2,10 +2,12 @@ import { describe, expect, test } from 'bun:test';
 import {
   type ManifestImportReader,
   IMPORT_PATH_PATTERN,
+  KORTIX_TOOL_NAMES,
   ManifestImportError,
   manifestJsonSchema,
   normalizeImportPath,
   resolveManifestImports,
+  selectedKortixTools,
   splitManifestByOrigin,
   validateManifest,
 } from '../index.ts';
@@ -116,12 +118,28 @@ describe('resolveManifestImports', () => {
   test('an imported file declares project tools; the root agent may name them', async () => {
     const resolved = await resolve({
       'kortix.yaml': 'kortix_version: 2\ndefault_agent: a\nimports: [engineering/kortix.yaml]\ntools:\n  ping: tools/ping.ts\nagents:\n  a:\n    tools: [ping, review_gate]\n',
-      'engineering/kortix.yaml': 'tools:\n  review_gate: engineering/tools/review_gate.ts\n',
+      'engineering/kortix.yaml': 'tools:\n  review_gate: engineering/tools/review_gate.ts\n  web_search: kortix:web_search\n',
     });
-    expect(resolved.raw.tools).toEqual({ ping: 'tools/ping.ts', review_gate: 'engineering/tools/review_gate.ts' });
-    expect(resolved.origins.tools).toEqual({ ping: 'kortix.yaml', review_gate: 'engineering/kortix.yaml' });
+    expect(resolved.raw.tools).toEqual({ ping: 'tools/ping.ts', review_gate: 'engineering/tools/review_gate.ts', web_search: 'kortix:web_search' });
+    expect(resolved.origins.tools).toEqual({ ping: 'kortix.yaml', review_gate: 'engineering/kortix.yaml', web_search: 'engineering/kortix.yaml' });
     const result = validateManifest(resolved.raw, 'yaml');
     expect(result.issues).toEqual([]);
+  });
+
+  test('a tools key in any file selects the Kortix tools; with none in any file, all of them load', async () => {
+    const root = 'kortix_version: 2\ndefault_agent: a\nimports: [extra.yaml]\nagents:\n  a: {}\n';
+    const none = await resolve({ 'kortix.yaml': root, 'extra.yaml': 'agents:\n  b: {}\n' });
+    expect(none.raw.tools).toBeUndefined();
+    expect(selectedKortixTools(none.raw.tools)).toEqual([...KORTIX_TOOL_NAMES]);
+    const listed = await resolve({ 'kortix.yaml': root, 'extra.yaml': 'tools:\n  memory: kortix:memory\n' });
+    expect(selectedKortixTools(listed.raw.tools)).toEqual(['memory']);
+    // An empty `tools` in an imported file still counts: it lists no Kortix tool.
+    for (const empty of ['tools: {}\n', 'tools:\n']) {
+      const merged = await resolve({ 'kortix.yaml': root, 'extra.yaml': empty });
+      expect(merged.raw.tools).toEqual({});
+      expect(selectedKortixTools(merged.raw.tools)).toEqual([]);
+      expect(validateManifest(merged.raw, 'yaml').issues.map((i) => [i.path, i.severity])).toEqual([['tools', 'warning']]);
+    }
   });
 
   test('the merged document passes the ordinary validator, including cross-file agent refs', async () => {

@@ -112,7 +112,7 @@ triggers:
 | `kortix_version`                                    | yes      | must be `2`                                                                                |
 | `default_agent`                                     | yes      | must name a declared, enabled agent                                                        |
 | `imports`                                           | no       | other YAML files or directories whose `triggers`, `connectors`, `agents`, `apps`, and `tools` merge into this manifest. See [`imports:`](#imports) |
-| `tools`                                             | no       | project tools: tool name → repo-relative module path. Every harness runs them. See [`tools:`](#tools) |
+| `tools`                                             | no       | the tools every session gets: tool name → repo-relative module path, or `kortix:<name>` for a Kortix tool. With a `tools` key, sessions get only the Kortix tools it lists. Every harness runs them. See [`tools:`](#tools) |
 | `runtime`                                           | no       | `"opencode"` (the default) or `"pi"` — the agent harness a session boots inside its sandbox; `pi` runs pi-agent-core in-process in the sandbox daemon and reads the same agent `.md` files and skills. The project's `pi_harness` feature flag selects pi without this line. pi needs the `llm_gateway` flag; without it the session boots OpenCode. |
 | `harnesses.pi.packages`                             | no       | pi packages ([pi.dev/packages](https://pi.dev/packages)) the project's pi sessions load. See [`harnesses:`](#harnesses) |
 | `pi.config_dir`                                    | no       | `harnesses/pi`, then `.kortix/pi` if present. Pi-native `settings.json`, `extensions/`, `skills/`, and `prompts/`. |
@@ -187,19 +187,73 @@ imports: triggers "weekly-report" is declared in both triggers/a.yaml and trigge
 
 ## `tools:`
 
-Project tools, by name. Each value is the repo-relative path of the module that implements the tool, in any folder. OpenCode and pi run the same module. The module contract, the Kortix tools every session has, and the migration from `harnesses/opencode/tools/` are in [Tools](/docs/project/tools).
+The tools a session gets, by name. A value is one of two forms:
+
+| Form | Meaning |
+| --- | --- |
+| `kortix:<name>` | A Kortix tool (`web_search`, `image_search`, `scrape_webpage`, `memory`, `show`), maintained by Kortix. The key must be `<name>`. |
+| A repo-relative module path | A tool of the project's own, in any folder. Under a Kortix tool name, the module replaces the Kortix tool. |
 
 ```yaml
 tools:
+  web_search: kortix:web_search
+  image_search: kortix:image_search
+  scrape_webpage: kortix:scrape_webpage
+  memory: tools/memory.ts                # replaces the Kortix memory tool
   lookup_order: tools/lookup_order.ts
   crm_note: integrations/crm/note.ts
 ```
 
+OpenCode and pi run the same module. The module contract, `kortix tools ls`,
+`kortix tools eject`, and the migration from `harnesses/opencode/tools/` are in
+[Tools](/docs/project/tools).
+
+**Selection rule.**
+
+- No `tools` key, in the root file or in any imported file: sessions get all
+  five Kortix tools. Every project created before the list existed keeps them.
+- A `tools` key, even an empty one (`tools: {}`, or `tools:` with every line
+  deleted): sessions get only the Kortix tools it lists, as `kortix:<name>` or
+  as a module path. A `tools` key in an imported file counts.
+
+Delete a `kortix:<name>` line to remove that tool from every agent. Use
+[`agents.<name>.tools`](/docs/project/tools#who-may-use-which-tool) to limit one
+agent.
+
+**Errors.**
+
 - A name is snake_case: `^[a-z][a-z0-9_]{0,63}$`.
 - A harness tool name (`bash`, `read`, `write`, `edit`, `apply_patch`, `glob`, `grep`, `list`, `task`, `question`, `todowrite`, `webfetch`, `websearch`, `skill`, `lsp`, `invalid`, `execute`, `plan_exit`, `pty_*`) is an error.
-- A Kortix tool name (`web_search`, `image_search`, `scrape_webpage`, `memory`, `show`) is allowed: the project tool replaces the Kortix tool.
 - A path ends in `.ts`, `.js`, `.mts`, `.mjs`, `.cts`, or `.cjs`. It must not start with `/` or `-`, or contain a `.` or `..` segment.
-- `kortix validate` also reports a declared module that does not exist.
+- `kortix:<name>` under another key is an error. Under a Kortix tool name, for example `web_search: kortix:image_search`:
+
+  ```text
+  tools.web_search: must be `kortix:web_search` (the Kortix tool) or a repo-relative path to a .ts or .js module (e.g. `tools/web_search.ts`) that replaces it.
+  ```
+
+- `kortix:<name>` for a name that is not a Kortix tool, for example `web_serch: kortix:web_serch`:
+
+  ```text
+  tools.web_serch: must be a repo-relative path to a .ts or .js module (e.g. `tools/web_serch.ts`). `kortix:<name>` names a Kortix tool under its own name: `web_search: kortix:web_search`, `image_search: kortix:image_search`, `scrape_webpage: kortix:scrape_webpage`, `memory: kortix:memory`, `show: kortix:show`.
+  ```
+
+- `kortix validate` also reports a declared module that does not exist. A `kortix:` value needs no file.
+
+**Warnings.** A warning never fails `kortix validate`.
+
+- A `tools` key that lists none of the five Kortix tools:
+
+  ```text
+  tools: Sessions of this project get no Kortix tool (web_search, image_search, scrape_webpage, memory, show). Add `<name>: kortix:<name>` to keep one.
+  ```
+
+  It catches a project that adds its first own tool and drops the five by
+  accident.
+- An agent's `tools` that names a Kortix tool the project does not load:
+
+  ```text
+  agents.kortix.tools: "show" is a Kortix tool this project does not load: add `show: kortix:show` under the top-level `tools`, or remove it here.
+  ```
 
 ## `project:`
 

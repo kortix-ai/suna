@@ -1,13 +1,21 @@
 /**
- * show: present an existing output (a file, an image, a URL, inline text) to
- * the user. Every harness runs this one module, under the name, arguments and
- * output JSON the project template's tool had, so the client's show card
- * renders every call the same way. A relative `path` resolves against the
- * project checkout.
+ * show: the Kortix tool that presents an existing output (a file, an image, a
+ * URL, inline text) to the user. Kortix maintains this file. A project lists
+ * it in kortix.yaml as `show: kortix:show`. `kortix tools eject show` copies
+ * it to `tools/show.ts` for the project to own and change; the copy runs
+ * unchanged on every harness.
+ *
+ * The web UI renders a `show` call from its arguments (`type`, `path`, `url`,
+ * `content`, `items`). A changed copy must keep those arguments. A relative
+ * `path` resolves against the project checkout.
  */
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
-import type { KortixTool } from './tool'
+
+/** What a call receives (the project tool contract): `directory` is the project checkout. */
+interface ToolContext {
+  directory: string
+}
 
 /** Content types the show tool can present. */
 const TYPES = [
@@ -269,7 +277,7 @@ const showParameters = {
 const shown = (value: unknown) => JSON.stringify(value, null, 2)
 
 /** A relative `path` resolves against the project checkout (`context.directory`). */
-export const show: KortixTool = {
+export default {
   description:
     'Show outputs and attachments to the human user. This tool PRESENTS and DISPLAYS existing content — ' +
     'it is NOT a place to author or store artifacts. Show should SHOW, not be where you write.\n\n' +
@@ -301,7 +309,7 @@ export const show: KortixTool = {
     "v1 and v2 of a design), make ONE show call with 'items' — not one show call per output. " +
     'Give each item its own title so the user can tell them apart while paging.',
   parameters: showParameters,
-  async execute(args, { directory: dir }) {
+  async execute(args: Record<string, any>, { directory: dir }: ToolContext): Promise<string> {
     if (args.items) {
       let parsed: unknown
       try {

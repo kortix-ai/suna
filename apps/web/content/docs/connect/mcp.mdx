@@ -229,6 +229,7 @@ the alternative.
 | any `--host` or `--host=` flag, `hosts` | Points the CLI at another server and would send your token there. | This server already acts as you. |
 | `login`, `logout` | Browser sign-in and stored tokens. | You are signed in through the MCP connection. |
 | `init`, `ship`, `deploy` | Read or write a local directory. | `run_command` in a session sandbox, where the source lives. |
+| `tools` | Reads and edits a local `kortix.yaml`, and the server has no project checkout. | `run_command` in a session sandbox: run `kortix tools ls` there. |
 | `apps deploy` | Deploys a local directory, and the server has none. | `run_command` in a session sandbox: run `kortix apps deploy <path>` there. |
 | `env pull`, `env push` | Write or read a local file. | `secrets ls`, `secrets set KEY=value`. |
 | `token`, `whoami --token-only` | Print the raw access token. | `whoami --json`. |
