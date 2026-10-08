@@ -46,7 +46,7 @@ describe('OptimisticTurn', () => {
 
   test('offers copy before the server turn exists', () => {
     const markup = render(<OptimisticTurn text="ship the thing" />);
-    // The message's copy button is named "Copy" (user-message.tsx, #9380).
+    // #9380 labels the user-message copy button "Copy" (CopyButton `label`).
     expect(markup).toContain('aria-label="Copy"');
   });
 

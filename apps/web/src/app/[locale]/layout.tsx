@@ -1,5 +1,4 @@
 import { PRICING_PLANS } from '@/features/billing/pricing-plans';
-import { WebMcpTools } from '@/components/agent-discovery/webmcp-tools';
 import { BrowserNoiseGuard } from '@/components/browser-noise-guard';
 import { DesktopBackButton } from '@/components/desktop/desktop-back-button';
 import { DesktopChrome } from '@/components/desktop/desktop-chrome';
@@ -344,7 +343,6 @@ export default async function RootLayout({
               <TooltipProvider delayDuration={150}>
                 <AuthProvider>
                   <I18nProvider initialLocale={htmlLang}>
-                    <WebMcpTools />
                     {/* Publishes the App Router to lib/navigation/router-bridge so
                     stores and error handlers navigate softly instead of
                     reloading the document. */}

@@ -366,9 +366,7 @@ test('runtime descriptor requires the live sandbox and exact running command par
     attachment_id: id,
     part_index: 0,
     filename: 'proof.txt',
-    // KRTX-778: a declared type outside the model-native allowlist is stored as
-    // binary. `text/plain` is the one exception: it is inert, and a pasted-text
-    // file is one (#9380, prompt-attachment-upload.ts).
+    // KRTX-778: a declared type outside the model-native allowlist is stored as binary.
     mime: 'text/plain',
     size_bytes: 3,
     target_path: `/workspace/uploads/.kortix-inbox/${command.row.commandId}/0-proof.txt`,

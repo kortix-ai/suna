@@ -481,7 +481,7 @@ export async function runConnector(argv: string[]): Promise<number> {
     out({
       ok: false,
       error:
-        '`kortix connectors mcp` was removed. In a session, run `kortix connectors`. From an MCP client, use the hosted Kortix MCP server (<api>/v1/mcp) or `kortix mcp`.',
+        '`kortix connectors mcp` was removed. In a session, run `kortix connectors`. From an MCP client, use the hosted Kortix MCP server: <api>/v1/mcp.',
     });
     return 2;
   }

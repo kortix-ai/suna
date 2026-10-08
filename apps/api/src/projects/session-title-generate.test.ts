@@ -160,9 +160,8 @@ describe('paste markup in title sources', () => {
     expect(titleSourceForCreate({ initial_prompt: paste })?.startsWith('hello world')).toBe(true);
   });
 
-  // A tag the person typed travels neutralized and comes back as typed
-  // (`splitPastedContent` → `restorePastedTags`, packages/shared).
-  it('titleSourceForCreate gives a typed (neutralized) tag back as typed', () => {
+  it('titleSourceForCreate shows a typed (neutralized) tag as the user typed it', () => {
+    // Not a tile: splitPastedContent restores typed tags for display (restorePastedTags).
     const typed = '&lt;pasted_content id="x" chars="1"> what is this tag?';
     expect(titleSourceForCreate({ initial_prompt: typed })).toBe('<pasted_content id="x" chars="1"> what is this tag?');
   });
