@@ -56,6 +56,8 @@ interface CatalogAction {
   description: string;
   risk: string;
   inputSchema: Record<string, unknown> | null;
+  /** JSON Schema of the call's `output`; only with `includeOutputSchemas`. */
+  outputSchema?: Record<string, unknown> | null;
 }
 /** One account a connector can run as, as surfaced in the catalog. See {@link CatalogConnector.accounts}. */
 export interface CatalogAccount {
@@ -148,6 +150,12 @@ export interface ListCatalogOptions {
    * `slug` + `true` together instead of fetching the whole catalog.
    */
   includeSchemas?: boolean;
+  /**
+   * Add each action's stored `outputSchema` (null when the connector publishes
+   * none: managed Composio and Pipedream). Default false, so the sandbox
+   * catalog payload does not grow; `kortix connectors types` sets it.
+   */
+  includeOutputSchemas?: boolean;
 }
 
 /** The router's dependencies: its request authorizers (`ConnectorRouterAuth`,

@@ -5,7 +5,7 @@
  *   and the project row back (6dc118d740).
  * - The server-global managed GitHub PAT is never returned as a push token,
  *   by /provision or by /git-token (pentest finding, 705be76c1e).
- * PROJ-40 asserts the membership 403 and the unconfigured 503 over real HTTP.
+ * PROJ-42 asserts the membership 403 and the unconfigured 503 over real HTTP.
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { mockIamAssignments, mockIamEngineAllowAll, mockIamReadModels } from './helpers/iam-mocks';
@@ -158,7 +158,13 @@ mockIamAssignments({
   },
 });
 
+// Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
+// lists exports by hand deletes every export it omits — the failure surfaces in
+// whatever unrelated file imports the missing name next, attributed to no test
+// (readRepoFileBytes, added for the project-files route, broke this file).
+const actualGit = await import('../projects/git');
 mock.module('../projects/git', () => ({
+  ...actualGit,
   MergeConflictError: class MergeConflictError extends Error {},
   isRepoFileNotFoundError: () => false,
   grepRepoFiles: async () => [],

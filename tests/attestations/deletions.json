@@ -1,6 +1,8 @@
 {
-  "source_hash": "74eeae75aa7d77ddc694833ae35f41e680ae883193c2f27cbac00738b42af56c",
+  "source_hash": "ddaf559f518cc49a3ced4a054dc0a52d2636eedb3364fca79889c4bb87e8eb90",
   "diff_files": [
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-07T230522Z-in-a-fork-checkout-give-the-pre-push-guards-a-dev-ref-to-com.md",
     "apps/api/eslint-suppressions.json",
     "apps/api/package.json",
     "apps/api/src/__tests__/billing/credits.test.ts",
@@ -44,6 +46,7 @@
     "apps/api/src/__tests__/unit-agents-parse.test.ts",
     "apps/api/src/__tests__/unit-bootstrap-group.test.ts",
     "apps/api/src/__tests__/unit-channel-consolidation.test.ts",
+    "apps/api/src/__tests__/unit-connector-call-contract.test.ts",
     "apps/api/src/__tests__/unit-connector-channels.test.ts",
     "apps/api/src/__tests__/unit-connector-gateway.test.ts",
     "apps/api/src/__tests__/unit-connector-normalize.test.ts",
@@ -407,10 +410,12 @@
     "apps/web/content/docs/sdk/reference.mdx",
     "apps/web/src/features/session/session-chat.tsx",
     "apps/web/src/features/session/session-error-banner.tsx",
+    "apps/web/src/hooks/billing/index.ts",
+    "apps/web/src/hooks/billing/use-account-state.test.ts",
+    "apps/web/src/hooks/billing/use-account-state.ts",
     "apps/web/src/lib/seo/content-timestamps.json",
     "packages/db/drizzle/meta/20261007125103_snapshot.json",
     "packages/db/drizzle/meta/_journal.json",
-    "packages/db/migrations/20261006182246238_session_changed_notify.sql",
     "packages/db/migrations/20261007151006000_drop_session_environments.sql",
     "packages/db/src/index.ts",
     "packages/db/src/schema/kortix.ts",
@@ -471,6 +476,7 @@
     "packages/sdk/src/react/use-system-status.ts",
     "packages/sdk/src/runtime-terminology.test.ts",
     "pnpm-lock.yaml",
+    "scripts/check-migration-order.sh",
     "tests/e2e/specs/10-billing-journey.spec.ts",
     "tests/e2e/specs/21-trigger-session-access.spec.ts",
     "tests/migration/drop-session-environments.test.ts",
@@ -508,15 +514,16 @@
     "tests/src/flows/setup-billing-backlog.flow.ts",
     "tests/src/flows/sso-identity.flow.ts",
     "tests/src/flows/system.flow.ts",
-    "tests/src/flows/triggers.flow.ts"
+    "tests/src/flows/triggers.flow.ts",
+    "tests/unit/migration-order-guard.test.ts"
   ],
-  "diff_hash": "faa996e09d9793ffec968a3cf7df18c2feb95954763d0a28ea9413165e4e611e",
-  "head": "2bb3d79d9eeac9b518a52b124b3ad38f2e35d021",
+  "diff_hash": "a29c89b2bfc181161a6ed8630cc945de6f6a7d27c5ecc57ed604a3eb78ffd71e",
+  "head": "39de11bfffc8c43906a39f661b2adc86a8e15713",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-07T15:51:24.601Z"
+  "at": "2026-10-07T23:52:37.439Z"
 }

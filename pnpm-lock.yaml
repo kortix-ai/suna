@@ -558,6 +558,9 @@ importers:
       expo-auth-session:
         specifier: ~56.0.18
         version: 56.0.19(expo@56.0.22)(react-native@0.85.3)(react@19.2.3)
+      expo-blur:
+        specifier: ~56.0.4
+        version: 56.0.4(expo@56.0.22)(react-native@0.85.3)(react@19.2.3)
       expo-build-properties:
         specifier: ~56.0.27
         version: 56.0.27(expo@56.0.22)
@@ -19856,6 +19859,18 @@ packages:
     transitivePeerDependencies:
       - expo
       - supports-color
+    dev: false
+
+  /expo-blur@56.0.4(expo@56.0.22)(react-native@0.85.3)(react@19.2.3):
+    resolution: {integrity: sha512-/rNpe2NDTmMbSktVJb5z7HoX6apYtq8KVKJNjWOQV7NG01+LvctWzFeMNxWSZVWfIKTndqdqABwqcpYmiCRxxg==}
+    peerDependencies:
+      expo: '*'
+      react: '*'
+      react-native: '*'
+    dependencies:
+      expo: 56.0.22(@babel/core@7.29.7)(@expo/dom-webview@56.0.6)(@expo/metro-runtime@56.0.21)(expo-router@56.2.21)(react-dom@19.2.3)(react-native-web@0.21.2)(react-native-webview@13.16.1)(react-native-worklets@0.8.3)(react-native@0.85.3)(react@19.2.3)(typescript@5.9.3)
+      react: 19.2.3
+      react-native: 0.85.3(@babel/core@7.29.7)(@react-native/metro-config@0.87.1)(@types/react@19.2.18)(react@19.2.3)
     dev: false
 
   /expo-build-properties@56.0.27(expo@56.0.22):
