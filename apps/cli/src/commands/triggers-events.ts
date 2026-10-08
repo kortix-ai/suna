@@ -183,14 +183,24 @@ export function eventNextStep(
           'It goes live when the account is connected.',
         ],
       };
-    case 'error':
+    case 'error': {
+      // No provider: the connector is undeclared. A provider other than the
+      // source: the connector cannot serve that adapter. Neither is a config fix.
+      const connectorFix = !e.provider
+        ? '<slug>'
+        : e.source && e.source !== e.provider
+          ? `<a ${e.source} connector>`
+          : null;
       return {
         word: 'error',
         lines: [
           `Error: ${e.error ?? 'the provider rejected the subscription'}`,
-          `Fix the settings: kortix triggers set ${t.slug} --config <key>=<value>  (fields: kortix triggers events --connector ${e.connector} --event ${e.type})`,
+          connectorFix
+            ? `Pick a connector that serves it: kortix triggers set ${t.slug} --connector ${connectorFix}  (connectors with events: kortix triggers events --apps)`
+            : `Fix the settings: kortix triggers set ${t.slug} --config <key>=<value>  (fields: kortix triggers events --connector ${e.connector} --event ${e.type})`,
         ],
       };
+    }
     default:
       return {
         word: 'pending',

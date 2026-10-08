@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import type { ProjectTrigger } from '../api/types.ts';
+import { eventNextStep } from '../commands/triggers-events.ts';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -1182,5 +1184,32 @@ describe('kortix triggers — events', () => {
       expect(bad.code).toBe(2);
       expect(bad.stderr).toContain('Unknown --type "nope"');
     });
+  });
+});
+
+describe('eventNextStep on an error', () => {
+  const errored = (event: Record<string, unknown>) =>
+    ({
+      slug: 'pr-review',
+      event: { connector: 'docs', type: 'GITHUB_PULL_REQUEST_CREATED', status: 'error', ...event },
+    }) as unknown as ProjectTrigger;
+
+  test('a source the connector cannot serve points at the connector, not the config', () => {
+    const { lines } = eventNextStep(
+      errored({ source: 'composio', provider: 'mcp', error: 'Connector "docs" is a mcp connector; source "composio" needs a composio connector.' }),
+    );
+    expect(lines.join('\n')).toContain('kortix triggers set pr-review --connector <a composio connector>');
+    expect(lines.join('\n')).not.toContain('--config');
+  });
+
+  test('an undeclared connector points at the connector, not the config', () => {
+    const { lines } = eventNextStep(errored({ source: null, provider: null, error: 'Connector "docs" is not declared in kortix.yaml.' }));
+    expect(lines.join('\n')).toContain('kortix triggers set pr-review --connector <slug>');
+    expect(lines.join('\n')).not.toContain('--config');
+  });
+
+  test('a provider rejection still points at the config', () => {
+    const { lines } = eventNextStep(errored({ source: 'composio', provider: 'composio', error: 'repo is required' }));
+    expect(lines.join('\n')).toContain('kortix triggers set pr-review --config <key>=<value>');
   });
 });
