@@ -13,7 +13,7 @@ Every row in the [audit log](/docs/accounts#audit-log) carries an `action`: `dom
 - A route with two actions (`secret.strategy.update` or `secret.strategy.changed`) records the second when its handler records that event, for example only for a real change. That event, with its before and after state, is then the request's row.
 - Rows written before 2026-09-24 carry `METHOD /template` as their action. The web app and the CLI show them with the same titles.
 
-This page lists 703 route actions and 64 other events.
+This page lists 704 route actions and 64 other events.
 
 ## `account.`
 
@@ -859,6 +859,7 @@ This page lists 703 route actions and 64 other events.
 | `trigger.activation.set` | Paused or resumed all triggers | `PATCH /v1/projects/:projectId/triggers/activation` |
 | `trigger.create` | Created trigger | `POST /v1/projects/:projectId/triggers` |
 | `trigger.delete` | Deleted trigger | `DELETE /v1/projects/:projectId/triggers/:slug` |
+| `trigger.event_apps.list` | Listed apps that can trigger events | `GET /v1/projects/:projectId/triggers/event-apps` |
 | `trigger.event_types.list` | Listed trigger event types | `GET /v1/projects/:projectId/triggers/event-types` |
 | `trigger.fire` | Fired trigger | `POST /v1/projects/:projectId/triggers/:slug/fire` |
 | `trigger.list` | Listed triggers | `GET /v1/projects/:projectId/triggers` |

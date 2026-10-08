@@ -87,7 +87,7 @@ export function sessionSource(session: ProjectSession, tI18nComplete: UiTranslat
     const type = typeof meta.trigger_type === 'string' ? meta.trigger_type : meta.trigger_source;
     if (type === 'cron')
       return { kind: 'schedule', label: tI18nComplete.raw('text4724f344c1c0'), triggerSlug };
-    if (type === 'event') return { kind: 'event', label: 'App event', triggerSlug };
+    if (type === 'event') return { kind: 'event', label: tI18nComplete.raw('text5441e7146193'), triggerSlug };
     return { kind: 'webhook', label: tI18nComplete.raw('text4814f62c108d'), triggerSlug };
   }
   return { kind: 'chat', label: tI18nComplete.raw('text460b3a7da007'), triggerSlug: null };

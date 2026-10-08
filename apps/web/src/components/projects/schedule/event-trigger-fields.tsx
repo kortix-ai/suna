@@ -30,6 +30,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { AppLogo } from '@/components/projects/onboarding/app-logo';
 import Loading from '@/components/ui/loading';
 import { errorToast } from '@/components/ui/toast';
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import type { ProjectTriggerEventType } from '@kortix/sdk';
 import { useProjectTriggerEventApps, useProjectTriggerEventTypes } from '@kortix/sdk/react';
@@ -74,6 +75,7 @@ function EventAppRow({
   onSelect: () => void;
   onConnect: () => void;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const needsAdd = !app.connector;
   return (
     <li
@@ -93,19 +95,19 @@ function EventAppRow({
         <span className="min-w-0 flex-1">
           <span className="text-foreground block truncate text-sm font-medium">{app.name}</span>
           <span className="text-muted-foreground block text-xs">
-            {app.event_count} {app.event_count === 1 ? 'event' : 'events'}
+            {tI18nComplete('text6e4a170bdf81', { count: app.event_count })}
           </span>
         </span>
       </button>
       {app.connected ? (
         <Badge variant="kortix" size="sm">
-          Connected
+          {tI18nComplete.raw('text22965568d22a')}
         </Badge>
       ) : (
         <>
           {app.connector ? (
             <Badge variant="warning" size="sm">
-              Needs account
+              {tI18nComplete.raw('textb10983220f3e')}
             </Badge>
           ) : null}
           {canConnect ? (
@@ -118,7 +120,7 @@ function EventAppRow({
               onClick={onConnect}
             >
               {connecting ? <Loading className="size-3.5 shrink-0" /> : <LinkIcon className="size-3.5 shrink-0" />}
-              {connecting ? 'Connecting' : 'Connect'}
+              {connecting ? tI18nComplete.raw('textd403c686f6a1') : tI18nComplete.raw('text1a2303ede074')}
             </Button>
           ) : null}
         </>
@@ -141,6 +143,7 @@ export function EventAppPicker({
   value: string | null;
   onChange: (app: EventAppChoice) => void;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const query = useProjectTriggerEventApps(projectId);
   const { connect, add, connecting, canConnect, canAdd } = useEventAppConnect(projectId);
   const [search, setSearch] = useState('');
@@ -159,7 +162,11 @@ export function EventAppPicker({
     try {
       onChange({ slug: await add(target(app)), name: app.name });
     } catch (error) {
-      errorToast(error instanceof Error ? error.message : `Could not add ${app.name}`);
+      errorToast(
+        error instanceof Error
+          ? error.message
+          : tI18nComplete('textf5dd6c3bc8a9', { name: app.name }),
+      );
     } finally {
       setAdding(null);
     }
@@ -176,15 +183,15 @@ export function EventAppPicker({
   }
   if (query.isError) {
     return (
-      <InfoBanner tone="warning" className="text-xs" title="Could not load apps with events">
-        {query.error instanceof Error ? query.error.message : 'Try again in a moment.'}
+      <InfoBanner tone="warning" className="text-xs" title={tI18nComplete.raw('textc416d056595e')}>
+        {query.error instanceof Error ? query.error.message : tI18nComplete.raw('text29cc3339fce9')}
       </InfoBanner>
     );
   }
   if (apps.length === 0) {
     return (
-      <InfoBanner tone="warning" className="text-xs" title="No app events here yet">
-        App events are not set up on this deployment, so no app can send them yet.
+      <InfoBanner tone="warning" className="text-xs" title={tI18nComplete.raw('text2c4ef9cc0c30')}>
+        {tI18nComplete.raw('texte558709e2278')}
       </InfoBanner>
     );
   }
@@ -215,7 +222,7 @@ export function EventAppPicker({
             <MagnifyingGlassIcon />
           </InputGroupSearchIcon>
           <InputGroupSearchInput
-            placeholder="Search apps"
+            placeholder={tI18nComplete.raw('texta10a36fa1098')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             size="sm"
@@ -225,27 +232,33 @@ export function EventAppPicker({
       <div ref={listRef} className="max-h-80 space-y-4 overflow-y-auto">
         {yours.length > 0 ? (
           <section className="space-y-2">
-            <h3 className="text-muted-foreground text-xs font-medium">Your apps</h3>
+            <h3 className="text-muted-foreground text-xs font-medium">
+              {tI18nComplete.raw('text13b17cc7974b')}
+            </h3>
             <ul className="space-y-2">{renderRows(yours)}</ul>
           </section>
         ) : null}
         {more.length > 0 ? (
           <section className="space-y-2">
             {yours.length > 0 ? (
-              <h3 className="text-muted-foreground text-xs font-medium">More apps with events</h3>
+              <h3 className="text-muted-foreground text-xs font-medium">
+                {tI18nComplete.raw('textf82a179f9235')}
+              </h3>
             ) : null}
             <ul className="space-y-2">{renderRows(more)}</ul>
           </section>
         ) : null}
         {yours.length === 0 && more.length === 0 ? (
-          <p className="text-muted-foreground px-3 py-6 text-center text-xs">No apps match.</p>
+          <p className="text-muted-foreground px-3 py-6 text-center text-xs">
+            {tI18nComplete.raw('text3d6f73990a72')}
+          </p>
         ) : null}
       </div>
       <p className="text-muted-foreground min-h-10 text-xs leading-relaxed text-pretty">
         {chosen && !chosen.connected
           ? canConnect
-            ? `It goes live when the ${chosen.name} account is connected. You can connect it now or after you create the trigger.`
-            : `You cannot connect shared accounts. Ask a project admin to connect ${chosen.name}. The trigger goes live when they do.`
+            ? tI18nComplete('textf287f4494f4b', { name: chosen.name })
+            : tI18nComplete('text5550bcf169d6', { name: chosen.name })
           : null}
       </p>
     </div>
@@ -274,6 +287,7 @@ export function SelectedEventType({
   eventType: ProjectTriggerEventType;
   onChange: () => void;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const poll = describePollHint(eventType);
   return (
     <div className="flex items-start gap-3 rounded-md border p-3">
@@ -289,7 +303,7 @@ export function SelectedEventType({
         {poll ? <span className="text-muted-foreground mt-1 block text-xs">{poll}</span> : null}
       </span>
       <Button type="button" variant="ghost" size="sm" onClick={onChange}>
-        Change
+        {tI18nComplete.raw('textc0bf75bd78bf')}
       </Button>
     </div>
   );
@@ -306,6 +320,7 @@ export function EventTypePicker({
   value: string | null;
   onChange: (eventType: ProjectTriggerEventType) => void;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const query = useProjectTriggerEventTypes(projectId, connector);
   const [search, setSearch] = useState('');
   const visible = useMemo(
@@ -324,9 +339,9 @@ export function EventTypePicker({
   }
   if (query.isError) {
     return (
-      <InfoBanner tone="warning" className="text-xs" title="This app cannot send events here">
-        The event source for this app is not available on this deployment, so its events cannot be
-        listed yet. {query.error instanceof Error ? query.error.message : ''}
+      <InfoBanner tone="warning" className="text-xs" title={tI18nComplete.raw('text50a06ae2ec9e')}>
+        {tI18nComplete.raw('texta9cb192dbee2')}{' '}
+        {query.error instanceof Error ? query.error.message : ''}
       </InfoBanner>
     );
   }
@@ -340,7 +355,7 @@ export function EventTypePicker({
             <MagnifyingGlassIcon />
           </InputGroupSearchIcon>
           <InputGroupSearchInput
-            placeholder="Search events"
+            placeholder={tI18nComplete.raw('text901abe952186')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             size="sm"
@@ -348,9 +363,13 @@ export function EventTypePicker({
         </InputGroupSearch>
       ) : null}
       {all.length === 0 ? (
-        <p className="text-muted-foreground text-xs">This app has no events to listen for.</p>
+        <p className="text-muted-foreground text-xs">
+          {tI18nComplete.raw('textbb19f45c3461')}
+        </p>
       ) : visible.length === 0 ? (
-        <p className="text-muted-foreground px-3 py-6 text-center text-xs">No events match.</p>
+        <p className="text-muted-foreground px-3 py-6 text-center text-xs">
+          {tI18nComplete.raw('textd35a8ebc3a74')}
+        </p>
       ) : (
         <ul className="max-h-72 space-y-2 overflow-y-auto">
           {visible.map((eventType) => {
@@ -410,6 +429,7 @@ export function EventConfigForm({
   /** Per-field problems from the API, shown under the input. */
   errors?: Record<string, string>;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const set = (key: string, value: string) => onChange({ ...draft, [key]: value });
   return (
     <div className="space-y-4">
@@ -436,7 +456,7 @@ export function EventConfigForm({
                 <Label htmlFor={id} className="text-sm font-medium">
                   {field.label}
                   {field.required ? (
-                    <span className="text-muted-foreground font-normal"> (required)</span>
+                    <span className="text-muted-foreground font-normal"> {tI18nComplete.raw('text89db19f651b1')}</span>
                   ) : null}
                 </Label>
                 {field.kind === 'enum' ? (
@@ -450,7 +470,7 @@ export function EventConfigForm({
                       aria-invalid={error ? true : undefined}
                       className="w-full cursor-pointer text-sm"
                     >
-                      <SelectValue placeholder="Choose one" />
+                      <SelectValue placeholder={tI18nComplete.raw('text0b24aed53ab6')} />
                     </SelectTrigger>
                     <SelectContent>
                       {field.options.map((option) => (
@@ -466,7 +486,11 @@ export function EventConfigForm({
                     value={value}
                     rows={3}
                     disabled={disabled}
-                    placeholder={field.example ? `One per line, e.g. ${field.example}` : 'One per line'}
+                    placeholder={
+                      field.example
+                        ? tI18nComplete('text5914bebd5241', { example: field.example })
+                        : tI18nComplete.raw('text791210221e4a')
+                    }
                     aria-invalid={error ? true : undefined}
                     onChange={(e) => set(field.key, e.target.value)}
                   />
@@ -510,14 +534,18 @@ export function PromptVariableHints({
   payloadSchema: Record<string, unknown> | null | undefined;
   onInsert: (token: string) => void;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const variables = payloadVariables(payloadSchema);
   return (
     <div className="space-y-1.5">
       <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
-        {variables.length > 0
-          ? 'Click a field to add it to the instruction. The event is also available as '
-          : 'The event is available as '}
-        <code className="font-mono">{'{{ event.data }}'}</code>.
+        {tI18nComplete.rich(
+          variables.length > 0 ? 'text126ba406a50a' : 'text25a3107603e6',
+          {
+            token: '{{ event.data }}',
+            code: (chunks) => <code className="font-mono">{chunks}</code>,
+          },
+        )}
       </p>
       {variables.length > 0 ? (
         <div className="flex flex-wrap gap-1.5">

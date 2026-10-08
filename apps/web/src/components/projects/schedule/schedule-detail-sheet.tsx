@@ -202,7 +202,7 @@ export function ScheduleDetailSheet({
   const event = trigger.type === 'event' ? trigger.event : null;
   const baseStatus = triggerStatus(trigger.enabled, tI18nComplete);
   // A paused event trigger reads Paused; an enabled one reads its subscription state.
-  const eventStatus = event && trigger.enabled ? describeEventStatus(event) : null;
+  const eventStatus = event && trigger.enabled ? describeEventStatus(event, tI18nComplete) : null;
   const status = eventStatus
     ? { ...baseStatus, label: eventStatus.label as typeof baseStatus.label }
     : baseStatus;
@@ -312,8 +312,11 @@ export function ScheduleDetailSheet({
                 <DropdownMenuContent align="end" className="w-48">
                   <DropdownMenuItem variant="destructive" onClick={onDelete}>
                     <TrashIcon className="size-3.5 shrink-0" />
-                    {tI18nComplete.raw('texte2d0a54968ea')}
-                    {isCron ? 'schedule' : event ? 'app event' : 'webhook'}
+                    {isCron
+                      ? tI18nComplete.raw('textd8d0bd5c5106')
+                      : event
+                        ? tI18nComplete.raw('textf2f698118cc1')
+                        : tI18nComplete.raw('text60f85e57e4a7')}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>

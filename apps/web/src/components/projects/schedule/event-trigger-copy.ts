@@ -7,6 +7,7 @@
  * id first and never asks a person to write JSON.
  */
 
+import type { UiTranslator } from '@/i18n/translator';
 import type {
   ProjectTriggerEvent,
   ProjectTriggerEventApp,
@@ -42,36 +43,44 @@ export function describeEventWhen(event: ProjectTriggerEvent | null): string {
   if (!event) return 'When an app event happens';
   // The id repeats the app and often ends in a noise word; the sentence names the app once.
   const prefix = `${(event.app ?? '').toLowerCase()}_`;
-  const type = (event.type.toLowerCase().startsWith(prefix) ? event.type.slice(prefix.length) : event.type)
-    .replace(/_(trigger|event)$/i, '');
+  const type = (
+    event.type.toLowerCase().startsWith(prefix) ? event.type.slice(prefix.length) : event.type
+  ).replace(/_(trigger|event)$/i, '');
   return `${humanizeEventType(type || event.type)} on ${appLabel(event.app, event.connector)}`;
 }
 
 /* ─── Status ────────────────────────────────────────────────────────────── */
 
 export interface EventStatusCopy {
-  label: 'Live' | 'Needs connection' | 'Error' | 'Activating';
+  label: string;
   variant: 'kortix' | 'warning' | 'destructive' | 'muted';
   /** The text under the badge: the error, or what to do next. */
   detail: string | null;
 }
 
-export function describeEventStatus(event: ProjectTriggerEvent): EventStatusCopy {
+export function describeEventStatus(
+  event: ProjectTriggerEvent,
+  tI18nComplete: UiTranslator,
+): EventStatusCopy {
   switch (event.status) {
     case 'active':
-      return { label: 'Live', variant: 'kortix', detail: null };
+      return { label: tI18nComplete.raw('textb64ac05f17e6'), variant: 'kortix', detail: null };
     case 'needs_connection':
       return {
-        label: 'Needs connection',
+        label: tI18nComplete.raw('textd919fde889e9'),
         variant: 'warning',
         detail:
           event.error ??
-          `Connect a shared ${appLabel(event.app, event.connector)} account to activate this trigger.`,
+          tI18nComplete('text2a78b60b1056', { app: appLabel(event.app, event.connector) }),
       };
     case 'error':
-      return { label: 'Error', variant: 'destructive', detail: event.error };
+      return {
+        label: tI18nComplete.raw('text54a0e8c17ebb'),
+        variant: 'destructive',
+        detail: event.error,
+      };
     default:
-      return { label: 'Activating', variant: 'muted', detail: null };
+      return { label: tI18nComplete.raw('textd7b77185afd1'), variant: 'muted', detail: null };
   }
 }
 
@@ -239,7 +248,8 @@ export function parseConfigErrors(
     const field = fields.find((f) => part.startsWith(`${f.key} `));
     if (field) {
       // The description prints under the input already; keep only the problem.
-      byField[field.key] = `${field.label} ${part.slice(field.key.length + 1).replace(/\s+\(.*$/, '')}.`;
+      byField[field.key] =
+        `${field.label} ${part.slice(field.key.length + 1).replace(/\s+\(.*$/, '')}.`;
       last = field.key;
     } else if (!last) general.push(part); // else: a description that contains "; ", already shown
   }
@@ -288,13 +298,19 @@ export function groupEventApps(
     const i = POPULAR_APPS.indexOf(a.app);
     return i === -1 ? POPULAR_APPS.length : i;
   };
-  const more = visible.filter((a) => !a.connector).sort((a, b) => rank(a) - rank(b) || byName(a, b));
+  const more = visible
+    .filter((a) => !a.connector)
+    .sort((a, b) => rank(a) - rank(b) || byName(a, b));
   return { yours, more };
 }
 
 /** The connector slug for a new app: the app slug, or one with a suffix when taken. */
 export function newConnectorSlug(app: string, taken: readonly string[]): string {
-  const slug = app.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'app';
+  const slug =
+    app
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'app';
   if (!taken.includes(slug)) return slug;
   for (let n = 2; ; n++) if (!taken.includes(`${slug}-${n}`)) return `${slug}-${n}`;
 }

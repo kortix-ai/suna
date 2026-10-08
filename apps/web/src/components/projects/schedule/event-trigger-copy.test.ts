@@ -1,6 +1,7 @@
 import type { ProjectTriggerEvent } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
+import { testUiTranslator } from '@/i18n/test-translator';
 import {
   configProblem,
   configToDraft,
@@ -169,17 +170,19 @@ describe('status and links', () => {
     }) satisfies ProjectTriggerEvent;
 
   test('maps every wire status to a label', () => {
-    expect(describeEventStatus(event('active')).label).toBe('Live');
-    expect(describeEventStatus(event('needs_connection')).label).toBe('Needs connection');
-    expect(describeEventStatus(event('error', 'boom'))).toMatchObject({
+    expect(describeEventStatus(event('active'), testUiTranslator).label).toBe('Live');
+    expect(describeEventStatus(event('needs_connection'), testUiTranslator).label).toBe(
+      'Needs connection',
+    );
+    expect(describeEventStatus(event('error', 'boom'), testUiTranslator)).toMatchObject({
       label: 'Error',
       detail: 'boom',
     });
-    expect(describeEventStatus(event('pending')).label).toBe('Activating');
+    expect(describeEventStatus(event('pending'), testUiTranslator).label).toBe('Activating');
   });
 
   test('needs_connection tells the person what to connect', () => {
-    expect(describeEventStatus(event('needs_connection')).detail).toBe(
+    expect(describeEventStatus(event('needs_connection'), testUiTranslator).detail).toBe(
       'Connect a shared Github account to activate this trigger.',
     );
   });
@@ -253,7 +256,10 @@ describe('groupEventApps', () => {
   });
 
   test('popular apps lead the catalog', () => {
-    const { more } = groupEventApps([app('Asana', null), app('Github', null), app('Gmail', null)], '');
+    const { more } = groupEventApps(
+      [app('Asana', null), app('Github', null), app('Gmail', null)],
+      '',
+    );
     expect(more.map((a) => a.name)).toEqual(['Gmail', 'Github', 'Asana']);
   });
 

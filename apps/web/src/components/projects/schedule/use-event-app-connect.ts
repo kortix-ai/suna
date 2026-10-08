@@ -16,6 +16,7 @@ import {
   connectorConnectionQueryKeys,
   connectorSyncErrorForSlug,
 } from '@/features/workspace/customize/sections/connector-connection-form';
+import { useTranslations } from '@/i18n/use-translations';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { createConnector, listConnectors } from '@kortix/sdk';
@@ -39,6 +40,7 @@ export interface EventAppTarget {
 }
 
 export function useEventAppConnect(projectId: string) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const accountId = useProjectAccountId(projectId);
   const canConnect =
@@ -102,8 +104,8 @@ export function useEventAppConnect(projectId: string) {
         refresh,
       )
         .then(() => {
-          successToast(`${target.name} connected`, {
-            description: 'Triggers on this app go live now.',
+          successToast(tI18nComplete('text2dca9f542da4', { name: target.name }), {
+            description: tI18nComplete.raw('text54e2237efa16'),
           });
           onConnected?.(slug);
         })

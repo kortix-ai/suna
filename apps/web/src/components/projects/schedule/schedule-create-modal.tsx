@@ -409,7 +409,7 @@ export function ScheduleCreateModal({
         .slice(-1)[0];
       successToast(
         isEvent
-          ? 'App event created'
+          ? tI18nComplete.raw('text840993da3129')
           : isCron
             ? tI18nComplete.raw('text84e98b45ad8b')
             : tI18nComplete.raw('text20bf63f7b46f'),
@@ -417,8 +417,9 @@ export function ScheduleCreateModal({
           description: isEvent
             ? created?.event
               ? created.event.status === 'needs_connection'
-                ? 'It goes live when the account is connected.'
-                : (describeEventStatus(created.event).detail ?? 'It is live.')
+                ? tI18nComplete.raw('text2fd655fcbaad')
+                : (describeEventStatus(created.event, tI18nComplete).detail ??
+                  tI18nComplete.raw('text80273a6c8918'))
               : undefined
             : isCron
               ? runAt
@@ -598,11 +599,11 @@ export function ScheduleCreateModal({
             {step === 'type'
               ? tI18nComplete.raw('textf60eb7723e40')
               : step === 'app'
-                ? 'Pick the app the event happens in. Connect it here, or after you create the trigger.'
+                ? tI18nComplete.raw('textbd3baa5c3d2c')
                 : step === 'event'
-                  ? 'Pick what should start the agent.'
+                  ? tI18nComplete.raw('text89acd37e88bf')
                   : isEvent
-                    ? 'Say what the agent does when it happens.'
+                    ? tI18nComplete.raw('text1ca54705a9bb')
                     : isCron
                       ? tI18nComplete.raw('text530f84eed1b8')
                       : tI18nComplete.raw('text8d5ac88c84ff')}
@@ -627,8 +628,8 @@ export function ScheduleCreateModal({
               />
               <TypeCard
                 icon={LightningIcon}
-                title="App event"
-                description="Start an agent when something happens in a connected app, like a new email or pull request."
+                title={tI18nComplete.raw('text5441e7146193')}
+                description={tI18nComplete.raw('texteaafc7a66ef7')}
                 onClick={() => chooseKind('event')}
               />
             </div>
@@ -651,7 +652,10 @@ export function ScheduleCreateModal({
                 />
               )}
               {eventType && configFields.length > 0 ? (
-                <Field label="Event settings" hint="These narrow which events start the agent.">
+                <Field
+                  label={tI18nComplete.raw('text6abe3b60f184')}
+                  hint={tI18nComplete.raw('text9f2c75e76be9')}
+                >
                   <EventConfigForm
                     fields={configFields}
                     draft={configDraft}
@@ -774,8 +778,7 @@ export function ScheduleCreateModal({
                 <>
                   {chosenApp && !chosenApp.connected ? (
                     <InfoBanner tone="info" className="text-xs">
-                      {chosenApp.name} has no shared account yet. This trigger goes live when one
-                      is connected.
+                      {tI18nComplete('textf4d17716fd3b', { name: chosenApp.name })}
                     </InfoBanner>
                   ) : null}
                   {advanced}

@@ -462,7 +462,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
                     onClick={() => openCreate('event')}
                   >
                     <LightningIcon className="size-3.5 shrink-0" />
-                    App event
+                    {tI18nComplete.raw('text5441e7146193')}
                   </Button>
                 </div>
               ) : undefined

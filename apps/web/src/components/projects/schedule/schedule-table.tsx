@@ -176,7 +176,7 @@ function ScheduleTableRow({
   const KindIcon =
     kind === 'cron' ? TimerIcon : kind === 'event' ? LightningIcon : WebhooksLogoIcon;
   // A paused trigger holds no subscription: its tile already says Paused.
-  const eventStatus = trigger.event && trigger.enabled ? describeEventStatus(trigger.event) : null;
+  const eventStatus = trigger.event && trigger.enabled ? describeEventStatus(trigger.event, tI18nComplete) : null;
   const lastRun = describeLastRun(
     kind === 'event'
       ? (trigger.event?.last_event_at ?? trigger.last_fired_at)
@@ -343,7 +343,7 @@ function RowActions({
         {controls.canUpdate && kind === 'event' && trigger.event?.status === 'needs_connection' && onConnect ? (
           <DropdownMenuItem onClick={onConnect}>
             <LinkIcon className="size-3.5 shrink-0" />
-            Connect account
+            {tI18nComplete.raw('textf7d845186faa')}
           </DropdownMenuItem>
         ) : null}
         {controls.canFire ? (
