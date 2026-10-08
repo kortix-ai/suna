@@ -272,6 +272,19 @@ export function idleGraceMs(): number {
 }
 
 /**
+ * How long a turn that waits on a person — an open permission ask or question —
+ * keeps its box, from the first reaper pass that sees the wait (KRTX-1739).
+ * A waiting turn does no work. A run nobody attends (a cron, schedule or
+ * trigger run, or a worker session) gets the idle grace, because nobody will
+ * answer. A session a person prompted gets two hours to answer.
+ */
+export function turnWaitingMaxMs(unattended: boolean): number {
+  return unattended
+    ? idleGraceMs()
+    : positiveEnvInt('KORTIX_SANDBOX_TURN_WAITING_MINUTES', 120) * 60_000;
+}
+
+/**
  * Tight idle tail for CHILD sessions — ones spawned by a coordinator
  * (`metadata.spawned_by_session`). A worker exists for one bounded task; once
  * its turn ends the coordinator collects outputs with `sessions cp` and the

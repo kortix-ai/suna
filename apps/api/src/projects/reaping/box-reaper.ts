@@ -38,16 +38,18 @@ import { type SandboxProvider, type SandboxStatus, getProvider } from '../../pla
 import { invalidateProviderCache } from '../../sandbox-proxy';
 import { isDaytonaRateLimitError } from '../../shared/daytona-rate-limit';
 import { isDaytonaTransientProviderError } from '../../shared/daytona-transient';
+import { logger } from '../../lib/logger';
 import { sandboxBelongsToThisInstance } from '../instance-scope';
 import { scheduleLegacyRuntimeBootstrap } from '../lib/legacy-runtime-bootstrap-wiring';
 import { ORPHANED_PROMPT_MIN_AGE_MS, REAP_CONCURRENCY } from '../reaper-constants';
 import { preserveEstablishedRuntime } from '../runtime-identity';
-import { extendUnconfirmedTurnDeadline } from '../sandbox-deadline';
+import { extendUnconfirmedTurnDeadline, shortenSandboxDeadline } from '../sandbox-deadline';
 import {
   turnAbsoluteMaxMs,
   turnDeliveryGraceMs,
   turnGrantMs,
   turnNoBeginRelayMaxMs,
+  turnWaitingMaxMs,
 } from '../sandbox-deadline-policy';
 import {
   clearSandboxTurn,
@@ -84,6 +86,7 @@ import {
   markPendingStopObservation,
 } from './sandbox-state-sync';
 import { stopExpiredBox } from './stop-box';
+import { observeTurnWaiting, sessionIsUnattended } from './turn-waiting';
 
 export interface ReapResult {
   candidates: number; // rows this pass actually examined (capped by the batch)
@@ -125,6 +128,9 @@ export interface SandboxReaperDependencies {
   extendUnconfirmedTurnDeadline: typeof extendUnconfirmedTurnDeadline;
   requeueAbandonedPrompt: typeof requeueAbandonedPrompt;
   promoteNextInboxRow: typeof promoteNextInboxRow;
+  observeTurnWaiting: typeof observeTurnWaiting;
+  sessionIsUnattended: typeof sessionIsUnattended;
+  shortenSandboxDeadline: typeof shortenSandboxDeadline;
   drainSessionLifecycleQueue: (input: {
     idempotencyKey: string;
     coalesce?: boolean;
@@ -141,6 +147,9 @@ const DEFAULT_REAPER_DEPENDENCIES: SandboxReaperDependencies = {
   extendUnconfirmedTurnDeadline,
   requeueAbandonedPrompt,
   promoteNextInboxRow,
+  observeTurnWaiting,
+  sessionIsUnattended,
+  shortenSandboxDeadline,
   drainSessionLifecycleQueue: async (input) => {
     const { drainSessionLifecycleQueue } = await import('../session-lifecycle/drain');
     return drainSessionLifecycleQueue(input);
@@ -608,11 +617,73 @@ async function probeTurnRecords(
           deliveryGraceEndsAtMs,
         )
       ) {
+        if (await holdWaitingTurn(pass, row, turn, recordAgeMs)) continue;
         observedActiveTokens.push(turn.token);
       }
     }
   }
   return { observedActiveTokens, unreadableTurns, backedOffProbes, answeredProbes };
+}
+
+/**
+ * A turn younger than this is not asked whether it waits on a person: a wait
+ * that short costs less than the extra daemon read on every pass.
+ */
+const TURN_WAIT_PROBE_MIN_AGE_MS = 5 * 60_000;
+
+/**
+ * A turn that waits on a person (an open permission ask or question in its
+ * conversation tree) does no work, so it renews nothing (KRTX-1739). The daemon
+ * still answers `turn_in_flight: true` for it, and every pass used to grant
+ * four more hours until the 24 h ceiling. Prod, 7 days to 2026-10-08: 70 turns
+ * ran to that ceiling, 1,680 box-hours, most of them cron runs that hit an ask
+ * 0.4 min in with nobody there.
+ *
+ * The first pass that sees the wait pulls the deadline in to the wait bound
+ * (`turnWaitingMaxMs`). The write is LEAST-only, so later passes keep that
+ * anchor and the sandbox's word can only shorten the box. A model call extends
+ * the box again through the gateway grant, so a sub-agent that still works
+ * keeps it. Past the deadline the turn ends `failed` with a named cause, and
+ * the ordinary stop takes the box on this pass. A daemon that cannot tell
+ * (an unreadable state document) keeps today's renewal, and the 24 h ceiling.
+ *
+ * `true` when the turn waits and must not renew the box.
+ */
+async function holdWaitingTurn(
+  pass: ReapPass,
+  row: ReapCandidate,
+  turn: StoredSandboxTurn,
+  recordAgeMs: number | null,
+): Promise<boolean> {
+  const { now, dependencies, result } = pass;
+  if (!turn.runtimeSessionId || recordAgeMs === null || recordAgeMs < TURN_WAIT_PROBE_MIN_AGE_MS) {
+    return false;
+  }
+  const waitsOn = await dependencies.observeTurnWaiting(row.externalId, turn.runtimeSessionId);
+  if (!waitsOn) return false;
+  if (row.deadlineAt.getTime() <= now.getTime()) {
+    logger.warn('[reaper] ending a turn that waited on a person past its bound', {
+      sandboxId: row.sandboxId,
+      sessionId: row.sessionId,
+      turnToken: turn.token,
+      waitsOn,
+      ageMinutes: Math.round(recordAgeMs / 60_000),
+    });
+    await dependencies.clearSandboxTurn(
+      row.sandboxId,
+      turn.token,
+      undefined,
+      'failed',
+      REAPER_TURN_CAUSES.awaitingInput,
+    );
+    result.turnsSettled += 1;
+    return true;
+  }
+  const boundMs = turnWaitingMaxMs(await dependencies.sessionIsUnattended(row.sessionId));
+  if (row.deadlineAt.getTime() > now.getTime() + boundMs) {
+    await dependencies.shortenSandboxDeadline(row.sessionId, boundMs);
+  }
+  return true;
 }
 
 /**

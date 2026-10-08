@@ -504,6 +504,12 @@ export const REAPER_TURN_CAUSES = {
     name: 'SandboxStoppedMidTurnRecovering',
     message: 'The sandbox stopped unexpectedly. Kortix restarted it and resumed this turn.',
   },
+  /** The turn waited on a person past `turnWaitingMaxMs`; the reaper ended it. */
+  awaitingInput: {
+    name: 'TurnAwaitingInput',
+    message:
+      'This turn stopped because the agent waited for an answer or an approval that did not come. Send a message to continue.',
+  },
 } as const satisfies Record<string, SessionTurnEndErrorRecord>;
 
 /** How long after a bare abort a cause with no turn identity may still claim it. */
