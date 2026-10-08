@@ -164,6 +164,9 @@ export interface AccountInviteDescribeFull {
   expired: boolean;
   accepted_at: string | null;
   email_matches_caller: true;
+  /** Projects the invite grants on accept, named. Empty for a workspace
+   *  invite; absent from an older API. */
+  projects?: Array<{ project_id: string; name: string; role: string }>;
 }
 
 export interface AccountInviteDescribeRedacted {

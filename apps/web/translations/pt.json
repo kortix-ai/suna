@@ -2036,7 +2036,9 @@
       "whenBelow": "quando o saldo ficar abaixo de",
       "thresholdLabel": "Limite da recarga em dólares",
       "save": "Salvar",
-      "paymentNeeded": "Adicione um método de pagamento para executar a recarga automática."
+      "paymentNeeded": "Adicione um método de pagamento para executar a recarga automática.",
+      "turnedOffAfterFailure": "A recarga automática foi desativada em {date}: a última cobrança falhou ({reason}). Atualize o método de pagamento e ative a recarga automática novamente.",
+      "lastChargeFailed": "A última cobrança da recarga automática falhou em {date} ({reason}). O Kortix tenta novamente; após 3 cobranças com falha seguidas, a recarga automática é desativada."
     },
     "title": "Faturação & Assinatura",
     "subscription": "Assinatura",
@@ -4574,7 +4576,13 @@
       "invitationKicker": "Convite",
       "joinAccountDescription": "Você entrará nesta conta como {roleLabel} e verá os projetos aos quais o proprietário conceder acesso.",
       "decline": "Recusar",
-      "accept": "Aceitar"
+      "accept": "Aceitar",
+      "projectLabel": "Projeto",
+      "invitedYouToAProject": "convidou você para um projeto",
+      "youHaveBeenInvitedToAProject": "Você foi convidado para um projeto.",
+      "joinProjectDescription": "Você entrará em {projectName} como {roleLabel}.",
+      "roleManager": "gerente",
+      "signOutAndContinue": "Sair e continuar"
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – O AI Operating System de código aberto",
@@ -7156,7 +7164,11 @@
       "line58JsxAttrTitleYouRanOutOfCredits": "Você ficou sem créditos",
       "line74JsxTextEnableAutoTopUp": "Ativar recarga automática",
       "line82JsxTextBuyCredits": "Comprar créditos",
-      "askOwnerToAddCredits": "Só um proprietário da conta pode adicionar créditos. Peça a um que recarregue."
+      "askOwnerToAddCredits": "Só um proprietário da conta pode adicionar créditos. Peça a um que recarregue.",
+      "askOwnerForCredits": "Pedir a um proprietário",
+      "ownersNotified": "Proprietários avisados",
+      "alreadyAskedToday": "Já pediu hoje",
+      "askOwnerFailed": "Não foi possível avisar os proprietários. Tente novamente"
     },
     "componentsSessionSessionFilesPanel": {
       "line80JsxTextThisSessionIsItsOwnVersion": "Esta sessão é sua própria versão",

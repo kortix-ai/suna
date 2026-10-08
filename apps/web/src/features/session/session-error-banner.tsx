@@ -14,6 +14,7 @@ import {
   chatGptConnectionAction,
 } from './chatgpt-connection-action';
 import { sessionPersonalUser } from './overrides/provider-pool-draft';
+import { AskOwnerForCreditsButton } from './ask-owner-for-credits-button';
 
 import { Button } from '@/components/ui/button';
 import { ChainOfThoughtStep } from '@/components/ui/chain-of-thought';
@@ -243,9 +244,16 @@ function InsufficientCreditsCard({
           </Button>
         </ItemActions>
       ) : (
-        <ItemDescription className="text-xs">
-          {tHardcodedUi.raw('componentsSessionSessionErrorBanner.askOwnerToAddCredits')}
-        </ItemDescription>
+        <>
+          <ItemDescription className="text-xs">
+            {tHardcodedUi.raw('componentsSessionSessionErrorBanner.askOwnerToAddCredits')}
+          </ItemDescription>
+          {accountId ? (
+            <ItemActions className={ROW_ACTIONS}>
+              <AskOwnerForCreditsButton accountId={accountId} />
+            </ItemActions>
+          ) : null}
+        </>
       )}
     </ErrorRow>
   );

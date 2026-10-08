@@ -32,6 +32,8 @@ import { loadMessages } from '@/i18n/messages';
 import { notFound } from 'next/navigation';
 import { connection } from 'next/server';
 import { Toaster } from 'sonner';
+
+import { TurnAttentionBadge } from '@/components/turn-attention-badge';
 import { roobert } from '../(system)/fonts/roobert';
 import { roobertMono } from '../(system)/fonts/roobert-mono';
 import '../globals.css';
@@ -348,6 +350,7 @@ export default async function RootLayout({
                     reloading the document. */}
                     <RouterBridge />
                     <BrowserNoiseGuard />
+                    <TurnAttentionBadge />
                     <DesktopChrome />
                     {/* The window's one Back: every screen gets an exit on the
                     desktop shell unless its shell navigates already. */}
