@@ -401,6 +401,8 @@ function triggerSchema(): JsonSchemaFragment {
       connector: { type: 'string', minLength: 1 },
       // Optional: the label of one shared account of that connector.
       account: { type: 'string', minLength: 1 },
+      // Optional: the event source adapter (default: the connector's provider).
+      source: { type: 'string', minLength: 1 },
       event: { type: 'string', minLength: 1 },
       config: { type: 'object' },
     },
@@ -453,7 +455,7 @@ function triggerSchema(): JsonSchemaFragment {
       {
         // The event fields exist only on an event trigger.
         if: { properties: { type: { enum: ['cron', 'webhook', 'monitor'] } }, required: ['type'] },
-        then: { properties: { connector: false, account: false, event: false, config: false } },
+        then: { properties: { connector: false, account: false, source: false, event: false, config: false } },
       },
       {
         // `interval` is the poll period: required on poll, forbidden on stream.

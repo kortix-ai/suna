@@ -20,3 +20,9 @@ export function allEventSources(): EventSourceProvider[] {
   const ids = new Set([composioEventSource.id, ...overrides.keys()]);
   return [...ids].flatMap((id) => eventSourceFor(id) ?? []);
 }
+
+/** Error text for a `source` that names no registered adapter, or null. */
+export function unknownSourceMessage(source: string): string | null {
+  if (eventSourceFor(source)) return null;
+  return `Unknown event source "${source}". Sources: ${allEventSources().map((p) => p.id).join(', ')}.`;
+}

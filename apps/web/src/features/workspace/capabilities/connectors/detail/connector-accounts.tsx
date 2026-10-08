@@ -10,7 +10,6 @@ import {
   ConnectionsList,
 } from '@/features/workspace/customize/sections/connectors-view';
 import { isManagedConnectorProvider } from '../provider-label';
-import { ConnectorTriggers } from './connector-triggers';
 
 export interface ConnectorAccountsProps {
   projectId: string;
@@ -91,7 +90,6 @@ export function ConnectorAccounts({
         onStartSession={onStartSession}
         addRequest={addRequest}
       />
-      <ConnectorTriggers projectId={projectId} connector={connector} displayName={displayName} />
       {showRoster ? (
         <section className="space-y-2">
           <Label>{tI18nComplete.raw('text74156382383b')}</Label>

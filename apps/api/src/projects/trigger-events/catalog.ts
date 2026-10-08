@@ -5,9 +5,10 @@ import { defaultConnectionIdForConnector } from '../../connectors/credentials';
 import { logger } from '../../lib/logger';
 import { loadConnectionAudience } from '../lib/connection-audience';
 import { db } from '../../shared/db';
+import { RESERVED_CONNECTOR_SLUGS } from '../connectors';
 import { eventConfigProblem } from './config-validation';
 import { connectorInfo } from './deliver';
-import { allEventSources, eventSourceFor } from './registry';
+import { allEventSources, eventSourceFor, unknownSourceMessage } from './registry';
 import { connectionIdentity, resolveSource } from './subscriptions';
 import type { EventApp, EventTypeInfo } from './types';
 
@@ -23,9 +24,11 @@ export type EventTypeCatalog =
   | { kind: 'unavailable' }
   | { kind: 'provider_error'; message: string };
 
-export async function listConnectorEventTypes(projectId: string, connectorSlug: string): Promise<EventTypeCatalog> {
+export async function listConnectorEventTypes(projectId: string, connectorSlug: string, source?: string | null): Promise<EventTypeCatalog> {
   const connector = await connectorInfo(projectId, connectorSlug);
   if (!connector.found) return { kind: 'connector_not_found' };
+  // A source that is not the connector's provider has no catalog here: the reconciler reports the mismatch.
+  if (source && source !== connector.provider) return { kind: 'unavailable' };
   const provider = eventSourceFor(connector.provider);
   if (!provider || !provider.configured() || !connector.app) return { kind: 'unavailable' };
   const key = `${provider.id}:${connector.app}`;
@@ -44,9 +47,13 @@ export async function listConnectorEventTypes(projectId: string, connectorSlug: 
 /** A trigger's event and config problem, or null. Skips when the catalog cannot answer: the reconciler still reports. */
 export async function validateEventTrigger(
   projectId: string,
-  event: { connector: string; type: string; config: Record<string, unknown> },
+  event: { connector: string; source?: string | null; type: string; config: Record<string, unknown> },
 ): Promise<string | null> {
-  const catalog = await listConnectorEventTypes(projectId, event.connector);
+  if (event.source) {
+    const unknown = unknownSourceMessage(event.source);
+    if (unknown) return unknown;
+  }
+  const catalog = await listConnectorEventTypes(projectId, event.connector, event.source);
   if (catalog.kind !== 'ok') return null;
   return eventConfigProblem(catalog.items, event.connector, event.type, event.config);
 }
@@ -68,6 +75,8 @@ export interface EventAppEntry {
   connected: boolean;
   /** Every connector (profile) of this app with its shared accounts. */
   connectors: EventAppConnector[];
+  /** Slug to give a new connector for this app: the app's own, unless reserved or taken. */
+  newConnectorSlug: string;
 }
 
 export interface EventAppConnector {
@@ -121,6 +130,16 @@ async function loadSharedAccounts(
   return out;
 }
 
+/** `slack` is the built-in channel; a taken slug would update another connector. */
+export function freeConnectorSlug(app: string, taken: readonly string[]): string {
+  const used = new Set(taken);
+  if (!RESERVED_CONNECTOR_SLUGS.has(app) && !used.has(app)) return app;
+  for (let n = 1; ; n++) {
+    const slug = n === 1 ? `${app}-events` : `${app}-events-${n}`;
+    if (!used.has(slug)) return slug;
+  }
+}
+
 export async function listEventApps(projectId: string, accountId: string): Promise<EventAppEntry[]> {
   const rows = await db
     .select({ connectorId: connectors.connectorId, slug: connectors.slug, name: connectors.name, provider: connectors.providerType, config: connectors.config })
@@ -150,6 +169,7 @@ export async function listEventApps(projectId: string, accountId: string): Promi
         connector: row?.slug ?? null,
         connected,
         connectors: await loadSharedAccounts(projectId, accountId, profiles, provider, item.app),
+        newConnectorSlug: freeConnectorSlug(item.app, rows.map((r) => r.slug)),
       });
     }
   }
