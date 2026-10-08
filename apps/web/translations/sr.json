@@ -2036,7 +2036,9 @@
       "whenBelow": "када стање падне испод",
       "thresholdLabel": "Праг допуне у доларима",
       "save": "Сачувај",
-      "paymentNeeded": "Додајте начин плаћања да би аутоматска допуна могла да се изврши."
+      "paymentNeeded": "Додајте начин плаћања да би аутоматска допуна могла да се изврши.",
+      "turnedOffAfterFailure": "Аутоматска допуна је искључена {date}: последња наплата није успела ({reason}). Ажурирајте начин плаћања, па поново укључите аутоматску допуну.",
+      "lastChargeFailed": "Последња наплата аутоматске допуне није успела {date} ({reason}). Kortix покушава поново; после 3 неуспеле наплате заредом, аутоматска допуна се искључује."
     },
     "title": "Обрачун и претплата",
     "subscription": "Претплата",
@@ -7162,7 +7164,11 @@
       "line58JsxAttrTitleYouRanOutOfCredits": "Понестало вам је кредита",
       "line74JsxTextEnableAutoTopUp": "Омогући аутоматско допуњавање",
       "line82JsxTextBuyCredits": "Купите кредите",
-      "askOwnerToAddCredits": "Само власник налога може да дода кредите. Замолите власника да допуни."
+      "askOwnerToAddCredits": "Само власник налога може да дода кредите. Замолите власника да допуни.",
+      "askOwnerForCredits": "Замолите власника",
+      "ownersNotified": "Власници су обавештени",
+      "alreadyAskedToday": "Већ сте питали данас",
+      "askOwnerFailed": "Власници нису обавештени. Покушајте поново"
     },
     "componentsSessionSessionFilesPanel": {
       "line80JsxTextThisSessionIsItsOwnVersion": "Ова сесија је сопствена верзија",

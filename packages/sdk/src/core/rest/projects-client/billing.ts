@@ -199,6 +199,14 @@ export interface AccountState {
     enabled: boolean;
     threshold: number;
     amount: number;
+    /** Why auto top-up turned itself off: the decline code or failure text of
+     *  the charge that did it. Null while it is on, or after it was turned off by hand. */
+    disabled_reason?: string | null;
+    /** The decline code or failure text of the last failed charge. Null after a
+     *  successful charge or a re-enable. */
+    last_failure_reason?: string | null;
+    /** When that charge failed (ISO 8601). */
+    last_failure_at?: string | null;
   };
   instances?: Array<{
     sandbox_id: string;
@@ -767,6 +775,14 @@ export interface AutoTopupSettings {
   enabled: boolean;
   threshold: number;
   amount: number;
+  /** Why auto top-up turned itself off: the decline code or failure text of
+   *  the charge that did it. Null while it is on, or after it was turned off by hand. */
+  disabled_reason?: string | null;
+  /** The decline code or failure text of the last failed charge. Null after a
+   *  successful charge or a re-enable. */
+  last_failure_reason?: string | null;
+  /** When that charge failed (ISO 8601). */
+  last_failure_at?: string | null;
   [key: string]: unknown;
 }
 
@@ -776,6 +792,24 @@ export async function getAutoTopupSettings(accountId?: string): Promise<AutoTopu
   return unwrap(
     await backendApi.get<AutoTopupSettings>(`/billing/auto-topup/settings${query}`),
     'Failed to load auto-topup settings',
+  );
+}
+
+export interface TopUpRequestResult {
+  /** How many owners were emailed. */
+  notified: number;
+}
+
+/**
+ * Ask the account owners to add credits: for a member blocked by an empty
+ * wallet, who cannot buy credits. Once per member and account in 24 hours.
+ * Throws `ApiError` 429 `already_requested` inside that window, and 409
+ * `can_manage_billing` for a caller who can add credits.
+ */
+export async function requestTopUp(accountId: string): Promise<TopUpRequestResult> {
+  return unwrap(
+    await backendApi.post<TopUpRequestResult>(`/accounts/${encodeURIComponent(accountId)}/top-up-requests`, {}),
+    'Failed to ask the owners for credits',
   );
 }
 

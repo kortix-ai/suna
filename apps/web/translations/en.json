@@ -2036,7 +2036,9 @@
       "whenBelow": "when the balance drops below",
       "thresholdLabel": "Top-up threshold in dollars",
       "save": "Save",
-      "paymentNeeded": "Add a payment method for auto top-up to run."
+      "paymentNeeded": "Add a payment method for auto top-up to run.",
+      "turnedOffAfterFailure": "Auto top-up turned off on {date}: the last charge failed ({reason}). Update the payment method, then turn auto top-up back on.",
+      "lastChargeFailed": "The last auto top-up charge failed on {date} ({reason}). Kortix tries again; after 3 failed charges in a row, auto top-up turns off."
     },
     "title": "Billing & Subscription",
     "subscription": "Subscription",
@@ -7173,7 +7175,11 @@
       "line58JsxAttrTitleYouRanOutOfCredits": "You ran out of credits",
       "line74JsxTextEnableAutoTopUp": "Enable auto top-up",
       "line82JsxTextBuyCredits": "Buy credits",
-      "askOwnerToAddCredits": "Only an account owner can add credits. Ask one to top up."
+      "askOwnerToAddCredits": "Only an account owner can add credits. Ask one to top up.",
+      "askOwnerForCredits": "Ask an owner",
+      "ownersNotified": "Owners notified",
+      "alreadyAskedToday": "Already asked today",
+      "askOwnerFailed": "Couldn't reach the owners. Try again"
     },
     "componentsSessionSessionFilesPanel": {
       "line80JsxTextThisSessionIsItsOwnVersion": "This session is its own version",
