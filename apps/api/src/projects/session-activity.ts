@@ -17,12 +17,13 @@ import { WARM_SESSION_METADATA_KEY } from './lib/warm-sessions';
  *     sync, branch telemetry, and mapping repairs all advance it with no turn
  *     behind them, so an idle session drifts to the top of the list.
  *   - `metadata.opencode_sessions[].updated_at` is real conversation activity,
- *     but it is a CACHE of a sandbox read taken 20s and 60s after a prompt
- *     (opencode-session-snapshot.ts). Every step of that is best-effort: the
- *     box may be unreachable, the root may not resolve, the API pod may recycle
- *     inside the delay. When it never lands the session has no activity record
- *     at all, and the sidebar falls back to its CREATION date — which is how a
- *     session used every day stayed pinned to "Older".
+ *     but it is a CACHE of the runtime's state document, written each time a
+ *     projection is stored (`writeRuntimeSessionList`). The box may be
+ *     unreachable and the root may not resolve, so it can be missing. Before
+ *     R7.4 it was also a timer the API pod could recycle inside. When it never
+ *     lands the session has no activity record at all, and the sidebar falls
+ *     back to its CREATION date — which is how a session used every day
+ *     stayed pinned to "Older".
  *
  * This stamp is written from the one place that already knows a turn is real:
  * the preview proxy, after the prompt dedupe claim succeeds. It touches only

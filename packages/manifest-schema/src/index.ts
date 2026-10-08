@@ -37,6 +37,7 @@ import {
   MONITOR_MIN_INTERVAL_SECONDS,
   MONITOR_MODES,
   MONITOR_RUN_MAX_LENGTH,
+  EVENT_FORBIDDEN_KEYS,
   RESERVED_SANDBOX_SLUG,
   RESERVED_SLUG_PROVIDERS,
   SANDBOX_CPU_BOUNDS,
@@ -56,7 +57,9 @@ import {
   validateDefaultAgentV2,
   validateHarnessesV2,
   validateRuntimeV2,
+  validateToolsV2,
   validateTriggerAgentRefsV2,
+  warnUnknownAgentTools,
 } from './index.v2';
 
 /**
@@ -88,6 +91,7 @@ export {
   MEMORY_DIR,
   OPENCODE_CONFIG_DIR,
   SKILLS_DIR,
+  TOOL_FILE_PATTERN,
   agentFileCandidates,
   defaultAgentFile,
   legacyConfigDir,
@@ -95,6 +99,7 @@ export {
   opencodeConfigDirCandidates,
   piConfigDirCandidates,
   safeAgentFile,
+  safeToolFile,
   safeRepoPath,
   skillDirs,
 } from './layout';
@@ -184,6 +189,7 @@ export {
   MONITOR_MIN_INTERVAL_SECONDS,
   MONITOR_MODES,
   MONITOR_RUN_MAX_LENGTH,
+  EVENT_FORBIDDEN_KEYS,
   DURATION_RE,
   formatDurationSeconds,
   parseDurationSeconds,
@@ -191,6 +197,9 @@ export {
   SANDBOX_DISK_BOUNDS,
   SANDBOX_MEMORY_BOUNDS,
   SLUG_RE,
+  HARNESS_TOOL_NAMES,
+  KORTIX_TOOL_NAMES,
+  TOOL_NAME_RE,
   TRIGGER_TYPES,
   V2_RUNTIME_VALUES,
   WORKSPACE_MODES_V2,
@@ -211,12 +220,14 @@ export {
   type PermissionConfigObjectV2,
   type PermissionConfigV2,
   type GrantSetV2,
+  type AgentToolsV2,
   type AgentBlockV2,
   type AppBlockV2,
   type AppResourcesV2,
   type ManifestV2,
   type HarnessesV2,
   type PiPackageEntryV2,
+  resolveAgentTools,
   resolveGrantSet,
   validatePermissionConfig,
   validateAgentMdFrontmatter,
@@ -379,7 +390,9 @@ function validateManifestBodyV2(
   rejectChannelsV2(parsed.channels, 'channels', issues);
   validateRuntimeV2(parsed.runtime, 'runtime', issues);
   validateHarnessesV2(parsed.harnesses, 'harnesses', issues);
+  validateToolsV2(parsed.tools, 'tools', issues);
   const { names: agentNames, disabledNames } = validateAgentsV2(parsed.agents, 'agents', issues, parsed.kortix_version === 3);
+  warnUnknownAgentTools(parsed.agents, parsed.tools, issues);
   validateDefaultAgentV2(parsed.default_agent, 'default_agent', agentNames, disabledNames, issues);
   validateTriggerAgentRefsV2(parsed.triggers, 'triggers', agentNames, issues);
 }
@@ -939,8 +952,10 @@ const APP_TYPES = new Set(['static', 'bundle', 'dockerfile', 'oci_image']);
 const APP_KEYS = new Set([
   'path', 'type', 'image', 'dockerfile', 'command', 'port', 'root', 'output_dir',
   'install_command', 'build_command', 'spa', 'readiness_path', 'idle_timeout_seconds',
-  'monthly_budget_usd', 'resources', 'env', 'secrets',
+  'always_on', 'monthly_budget_usd', 'backends', 'resources', 'env', 'secrets',
 ]);
+/** A Kortix Backend name, as `kortix backends create` accepts it. */
+const BACKEND_NAME = /^[a-z][a-z0-9-]{0,62}$/;
 
 function validateAppStringMap(
   node: unknown,
@@ -1035,9 +1050,27 @@ function validateAppsV2(node: unknown, path: string, issues: ManifestIssue[]): v
       issues.push({ path: `${where}.readiness_path`, message: 'must be an absolute HTTP path.', severity: 'error' });
     }
     expectBoundedIntOrAbsent(value.idle_timeout_seconds, `${where}.idle_timeout_seconds`, { min: 120, max: 86400 }, issues);
+    if (value.always_on !== undefined && typeof value.always_on !== 'boolean') {
+      issues.push({ path: `${where}.always_on`, message: 'must be true or false.', severity: 'error' });
+    }
     if (value.monthly_budget_usd !== undefined &&
         (typeof value.monthly_budget_usd !== 'number' || value.monthly_budget_usd < 0)) {
       issues.push({ path: `${where}.monthly_budget_usd`, message: 'must be a non-negative number.', severity: 'error' });
+    }
+    if (value.backends !== undefined) {
+      if (!Array.isArray(value.backends)) {
+        issues.push({ path: `${where}.backends`, message: 'must be a list of backend names.', severity: 'error' });
+      } else {
+        value.backends.forEach((name: unknown, index: number) => {
+          if (typeof name !== 'string' || !BACKEND_NAME.test(name)) {
+            issues.push({
+              path: `${where}.backends[${index}]`,
+              message: 'must be a backend name: lowercase letters, digits and dashes, starting with a letter.',
+              severity: 'error',
+            });
+          }
+        });
+      }
     }
     if (value.resources !== undefined) {
       if (!isTable(value.resources)) {
@@ -1177,6 +1210,58 @@ function validateMonitorTrigger(
       issues.push({
         path: `${where}.${key}`,
         message: 'is not valid on a monitor trigger — monitors are driven by their `run` process.',
+        severity: 'error',
+      });
+    }
+  }
+}
+
+/**
+ * `type: event` — the fourth trigger type: "when <app event> happens on
+ * <connected app>, run the agent". `connector` names a declared connector,
+ * `event` is the provider's event type id, `config` is the provider event
+ * config (validated by the provider at subscribe time, not here). `account`
+ * optionally names one shared account of that connector by label. Wiring for
+ * the other three types is hard-rejected — a manifest must not claim a
+ * schedule the event source never reads.
+ *
+ * MUST stay in sync with `parseTriggerEntry`'s event branch (apps/api) and
+ * `triggerSchema` in ./json-schema.ts.
+ */
+function validateEventTrigger(
+  entry: Record<string, unknown>,
+  where: string,
+  issues: ManifestIssue[],
+): void {
+  for (const key of ['connector', 'event'] as const) {
+    const value = entry[key];
+    if (typeof value !== 'string' || !value.trim()) {
+      issues.push({
+        path: `${where}.${key}`,
+        message: `event triggers must declare \`${key}\`.`,
+        severity: 'error',
+      });
+    }
+  }
+  if (entry.config !== undefined && !isTable(entry.config)) {
+    issues.push({
+      path: `${where}.config`,
+      message: 'config must be an object.',
+      severity: 'error',
+    });
+  }
+  if (entry.account !== undefined && (typeof entry.account !== 'string' || !entry.account.trim())) {
+    issues.push({
+      path: `${where}.account`,
+      message: 'account must be the label of a shared account on the connector.',
+      severity: 'error',
+    });
+  }
+  for (const key of EVENT_FORBIDDEN_KEYS) {
+    if (entry[key] !== undefined) {
+      issues.push({
+        path: `${where}.${key}`,
+        message: 'is not valid on an event trigger — events are driven by the connected app.',
         severity: 'error',
       });
     }
@@ -1335,6 +1420,19 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], 
       }
     } else if (type === 'monitor') {
       validateMonitorTrigger(entry, where, issues);
+    } else if (type === 'event') {
+      validateEventTrigger(entry, where, issues);
+    }
+    if (type && type !== 'event' && (TRIGGER_TYPES as readonly string[]).includes(type)) {
+      for (const key of ['connector', 'account', 'event', 'config']) {
+        if (entry[key] !== undefined) {
+          issues.push({
+            path: `${where}.${key}`,
+            message: `is only valid on an event trigger (type is "${type}").`,
+            severity: 'error',
+          });
+        }
+      }
     }
     if (entry.enabled !== undefined && !isEnabledValue(entry.enabled)) {
       issues.push({

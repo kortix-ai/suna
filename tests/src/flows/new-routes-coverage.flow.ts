@@ -605,23 +605,11 @@ flow(
   'GW-11',
   {
     domain: 'llm-gateway',
-    routes: ['GET /v1/generation', 'GET /v1/usage'],
+    routes: ['GET /v1/usage'],
   },
   async (ctx) => {
     const owner = ctx.client.as(ctx.P.OWNER);
 
-    await ctx.step('ANON cannot read generation forensics', async () => {
-      const r = await ctx.client.as(ctx.P.ANON).get('/v1/generation', { query: { id: ZERO_UUID } });
-      r.status(401);
-    });
-    await ctx.step('missing id query param is a 400 boundary', async () => {
-      const r = await owner.get('/v1/generation');
-      r.status(400);
-    });
-    await ctx.step('unknown request id is a 404 boundary', async () => {
-      const r = await owner.get('/v1/generation', { query: { id: ZERO_UUID } });
-      r.status(404);
-    });
 
     await ctx.step('ANON cannot read the usage rollup', async () => {
       const r = await ctx.client.as(ctx.P.ANON).get('/v1/usage');

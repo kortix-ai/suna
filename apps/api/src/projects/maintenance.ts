@@ -8,6 +8,9 @@ import { recordAuditEvent } from '../shared/audit';
 import { reconcileStaleBuilds } from '../snapshots/builder';
 import { reconcileSnapshotQuota } from '../snapshots/quota-gc';
 import { EMPTY_APP_IMAGE_RECLAIM_RESULT, reclaimAppDeploymentImages } from '../apps/images';
+import { EMPTY_BACKEND_SWEEP, sweepBackends } from '../backends/maintenance';
+import { sweepAppRetention } from '../apps/retention';
+import { reclaimAppSiteBlobs } from '../apps/static-site';
 import { type GitBackedProject, deleteRemoteSessionBranch } from './git';
 import { purgeExpiredMonitorEvents, reconcileMonitorBoxes } from './lib/monitor-box';
 import { mapWithConcurrency } from './lib/trigger-scheduler-state';
@@ -413,11 +416,31 @@ function runMaintenanceSweeps() {
     // Daytona-only quota GC above. Deletes only images whose deployment THIS
     // database holds as unservable (App deleted, deployment failed/deleted),
     // after removing any runtime that still pins one. Bounded per pass.
-    () => reclaimAppDeploymentImages().catch((err) => {
-      logger.warn('[project-maintenance] App image reclaim failed:',
-        err instanceof Error ? err.message : err);
-      return { ...EMPTY_APP_IMAGE_RECLAIM_RESULT, errors: 1 };
-    }),
+    // Then retention: retire superseded deployments first (their images become
+    // reclaimable on this pass), and free static blobs and archives nothing
+    // uses any more. One positional slot, three isolated steps.
+    async () => {
+      const retention = await sweepAppRetention().catch((err) => {
+        logger.warn('[project-maintenance] App retention failed:', err instanceof Error ? err.message : err);
+        return { apps: 0, retired: 0, siteFilesReleased: 0, failedBuildLogLines: 0, artifacts: 0, errors: 1 };
+      });
+      const images = await reclaimAppDeploymentImages().catch((err) => {
+        logger.warn('[project-maintenance] App image reclaim failed:',
+          err instanceof Error ? err.message : err);
+        return { ...EMPTY_APP_IMAGE_RECLAIM_RESULT, errors: 1 };
+      });
+      const blobs = await reclaimAppSiteBlobs().catch((err) => {
+        logger.warn('[project-maintenance] App site blob reclaim failed:', err instanceof Error ? err.message : err);
+        return { reclaimed: 0, errors: 1 };
+      });
+      return {
+        ...images,
+        errors: images.errors + ('errors' in retention ? retention.errors : 0) + ('errors' in blobs ? blobs.errors : 0),
+        deploymentsRetired: retention.retired,
+        artifactsReclaimed: retention.artifacts,
+        siteBlobsReclaimed: blobs.reclaimed,
+      };
+    },
     // Private Connector email attachments expire after 24 hours. Successful
     // sends become non-replayable immediately, then this sweep deletes them
     // after the signed-URL ingestion grace window.
@@ -492,6 +515,14 @@ function runMaintenanceSweeps() {
       );
       return { examined: 0, activated: 0, parked: 0, lost: 0, archived: 0, errors: 1 };
     }),
+    // Kortix Backends: resume provisions and operations whose API process
+    // died, park an archived project's backends, probe and meter every
+    // running backend, repair a stopped or lost machine, take the daily
+    // snapshots and delete expired ones, delete orphans.
+    () => sweepBackends().catch((err) => {
+      logger.warn('[project-maintenance] backends sweep failed:', err instanceof Error ? err.message : err);
+      return { ...EMPTY_BACKEND_SWEEP, errors: 1 };
+    }),
   ]);
 }
 
@@ -520,6 +551,7 @@ function logMaintenanceCycle(
     monitorEventsPurged,
     archivedRemovals,
     stuckProvisioning,
+    backends,
   ] = sweeps;
   const hadAction = Boolean(
     idle.stopped ||
@@ -544,6 +576,9 @@ function logMaintenanceCycle(
       appImages.released ||
       appImages.runtimesRemoved ||
       appImages.errors ||
+      appImages.deploymentsRetired ||
+      appImages.artifactsReclaimed ||
+      appImages.siteBlobsReclaimed ||
       connectorAttachments.deleted ||
       connectorAttachments.errors ||
       promptAttachments.deleted ||
@@ -564,7 +599,17 @@ function logMaintenanceCycle(
       archivedRemovals.removed ||
       archivedRemovals.failed ||
       stuckProvisioning.examined ||
-      stuckProvisioning.errors,
+      stuckProvisioning.errors ||
+      backends.resumed ||
+      backends.failedProvisions ||
+      backends.recovered ||
+      backends.unhealthy ||
+      backends.repairs ||
+      backends.parked ||
+      backends.unparked ||
+      backends.machinesDeleted ||
+      backends.snapshotJobs ||
+      backends.errors,
   );
   if (hadAction) {
     console.log('[project-maintenance] completed', {
@@ -586,6 +631,7 @@ function logMaintenanceCycle(
       monitorEventsPurged,
       archivedRemovals,
       stuckProvisioning,
+      backends,
     });
   }
   // Unconditional heartbeat — proof-of-life independent of whether any
@@ -626,6 +672,9 @@ function logMaintenanceCycle(
     `app_images_released=${appImages.released}`,
     `app_images_pending=${appImages.pending}`,
     `app_images_deferred=${appImages.deferred}`,
+    `app_deployments_retired=${appImages.deploymentsRetired}`,
+    `app_artifacts_reclaimed=${appImages.artifactsReclaimed}`,
+    `app_site_blobs_reclaimed=${appImages.siteBlobsReclaimed}`,
     // A monitor box only stays billable while this sweep observes it, so
     // `monitor_observed` going flat while boxes exist is the signal that
     // monitor billing has silently stopped earning.
@@ -633,6 +682,9 @@ function logMaintenanceCycle(
     `monitor_observed=${monitorBoxes.observed}`,
     `monitor_created=${monitorBoxes.created}`,
     `monitor_stopped=${monitorBoxes.stopped}`,
+    // A backend counted unhealthy tick after tick is down for its users.
+    `backends_probed=${backends.probed}`,
+    `backends_unhealthy=${backends.unhealthy}`,
     // The sweeps run SWEEP_CONCURRENCY at a time. A cycle that takes longer
     // than the interval makes the next tick skip, which halves every sweep's
     // rate: alert on this value approaching the interval.
@@ -668,5 +720,3 @@ async function checkBillingInvariants(): Promise<void> {
     );
   }
 }
-
-export { startProjectMaintenance, stopProjectMaintenance } from '../workers/project-maintenance-worker';

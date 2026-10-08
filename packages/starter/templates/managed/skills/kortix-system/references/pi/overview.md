@@ -39,13 +39,12 @@ through the Kortix LLM gateway.
 | `agents/<name>.md` | The agent's prompt and behavior. See `agents.md`. |
 | `skills/<name>/SKILL.md` | Project skills. See `agents.md` → Skills. |
 | `memory/` | The project brain, through the `memory` tool. |
+| `AGENTS.md` | The project-wide rules, at the repository root. pi puts the file in the system prompt of the session and of each subagent. A root with no `AGENTS.md` gives `CLAUDE.md` instead. pi reads no `AGENTS.md` in a subdirectory. |
 | `harnesses/pi/` | pi's own config directory. See below. |
 
 pi does NOT read these. They belong to OpenCode:
 
 - `harnesses/opencode/opencode.jsonc`, `plugins/`, `tools/`, `commands/`;
-- `AGENTS.md` and `CLAUDE.md`. Put project rules in the agent's `.md` body or
-  in a skill;
 - `~/.config/opencode/` and `.opencode/`.
 
 ## The pi config directory
@@ -86,7 +85,6 @@ pi answers a request for a feature it does not have with
 | MCP servers | No MCP client. Use connectors through `kortix connectors`, or a pi package. |
 | Todo list (`todowrite`) | No tool. |
 | `opencode attach` | Not supported. |
-| `AGENTS.md` | Not loaded. |
 
 Do not tell a user to "restart opencode", to edit `opencode.jsonc`, or to add
 an OpenCode plugin when the session runs pi. None of that changes a pi
@@ -106,7 +104,13 @@ session.
 - Kortix builds the npm packages in `harnesses.pi.packages` when the change
   request merges. A session started before the merge does not have them.
 - With the project's `config_releases` flag on, a running session picks up a
-  merged agent, skill or pi config change without a new session.
+  merged agent, skill, `AGENTS.md` or pi config change without a new session.
+  It reads `AGENTS.md` from that release, never from `/workspace`: an edit in
+  `/workspace/AGENTS.md` changes nothing until it merges.
+- With the flag off, pi reads `/workspace/AGENTS.md` when the session starts or
+  restarts and after `kortix sessions reload <id>`, not before each turn.
+- `harness.details.agentsMd` in `GET /kortix/health` names the `AGENTS.md` pi
+  loaded: `source`, `path`, `bytes` and `sha`.
 
 ## Reference pages
 

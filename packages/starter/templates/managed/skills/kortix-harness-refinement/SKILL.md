@@ -14,7 +14,7 @@ here. It has four components, all in git:
 | **Prompts** | `agents/<name>.md` (body) | Each agent's instructions and strategy |
 | **Sub-agents** | `agents/*.md` | Specialist agents the orchestrator invokes |
 | **Skills** | `skills/<name>/SKILL.md` | Reusable routines: text heuristics and guides |
-| **Tools** | `harnesses/opencode/tools/*.ts` (OpenCode sessions), `harnesses/pi/extensions/*.ts` (pi sessions) | Executable code: wrappers, scripts, automations |
+| **Tools** | modules declared in `kortix.yaml` `tools:` (every harness); legacy `harnesses/opencode/tools/*.ts` (OpenCode only), `harnesses/pi/extensions/*.ts` (pi only) | Executable code: wrappers, scripts, automations |
 | **Memory** | `memory/` | Persistent facts, strategies, observations |
 
 Projects created before 2026-09 keep agents, skills and tools under
@@ -61,9 +61,9 @@ signatures. Each one names the component to fix:
 - **Repeated multi-step patterns** — you performed the same 3+ step
   sequence more than twice by hand. → Codify it: a skill (if guidance)
   or a tool (if executable).
-- **Exception-raising code** — an executable tool or script in
-  `harnesses/opencode/tools/` or `harnesses/pi/extensions/` raised; you worked around it instead of
-  fixing it. → Repair the code now.
+- **Exception-raising code** — an executable tool or script (a `kortix.yaml`
+  `tools:` module, `harnesses/opencode/tools/` or `harnesses/pi/extensions/`)
+  raised; you worked around it instead of fixing it. → Repair the code now.
 - **Missed opportunities** — information or shortcuts visible in the
   trajectory that no component captured. → Whichever component fits.
 </failure-signatures>

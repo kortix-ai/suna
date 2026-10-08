@@ -218,7 +218,7 @@ describe('connectorErrorHttpStatus()', () => {
 });
 
 describe('POST /call wire contract', () => {
-  function router(respond: Respond) {
+  function router(respond: Respond, overrides: Partial<GatewayDeps> = {}) {
     const principal = {
       userId: 'user-1',
       accountId: 'acct-1',
@@ -229,7 +229,7 @@ describe('POST /call wire contract', () => {
     return createConnectorRouter({
       resolvePrincipal: async () => principal,
       resolveProjectPrincipal: async () => principal,
-      makeGatewayDeps: () => gatewayDeps(respond),
+      makeGatewayDeps: () => gatewayDeps(respond, overrides),
     } as unknown as ConnectorRouterDeps);
   }
   const post = (app: ReturnType<typeof router>) =>
@@ -283,6 +283,39 @@ describe('POST /call wire contract', () => {
       upstream_status: 429,
       retry_after_seconds: 2,
     });
+  });
+
+  test('a credential failure before any upstream call → HTTP 500 with binding and upstream_status null', async () => {
+    // Native OAuth2 client credentials mint a token per call. A failed mint
+    // never reaches the upstream, so the body names no binding and no status.
+    let upstreamCalls = 0;
+    const res = await post(
+      router(
+        async () => {
+          upstreamCalls += 1;
+          return { status: 200, body: '{}' };
+        },
+        {
+          loadConnectorBySlug: async () => ({
+            ...CONNECTOR,
+            auth: { type: 'bearer', in: 'header', name: 'Authorization', prefix: 'Bearer' },
+            hasAuth: true,
+          }),
+          resolveCredential: async () => {
+            throw new Error('OAuth2 token request failed (503): temporarily_unavailable');
+          },
+        },
+      ),
+    );
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({
+      ok: false,
+      status: 'error',
+      reason: 'OAuth2 token request failed (503): temporarily_unavailable',
+      binding: null,
+      upstream_status: null,
+    });
+    expect(upstreamCalls).toBe(0);
   });
 
   test('upstream 500 → HTTP 500 with upstream_status 500 and no Retry-After', async () => {

@@ -16,6 +16,10 @@ import { bindDatabaseSessionCredential, createDatabaseSession } from '../fixture
 // a real 201 needs a GitHub App install + reachable repo, which the harness
 // can't guarantee.
 flow('PROJ-2', { domain: 'projects', routes: ['POST /v1/projects'] }, async (ctx) => {
+  await ctx.step('missing repo_url → 400 repo_url is required', async () => {
+    (await ctx.client.as(ctx.P.OWNER).post('/v1/projects', { name: ctx.fixtures.name('byo') }))
+      .status(400).body().has('$.error', 'repo_url is required');
+  });
   await ctx.step('non-GitHub repo_url → 400', async () => {
     const r = await ctx.client
       .as(ctx.P.OWNER)
@@ -871,42 +875,6 @@ flow(
           { params: { projectId: p.id } },
         );
       r.status([403, 404]);
-    });
-  },
-);
-
-// PROJ-28 — Suna-migration status surface. Top-level `/v1/projects/suna-migration/*`
-// (NOT project-scoped, despite the path prefix) — scoped to the caller's own
-// account. eligible = the account has legacy `public.projects` rows AND no
-// completed/in-flight migration yet. A fresh e2e account (synthesized per run)
-// has neither, so this asserts the real "nothing to migrate" shape rather than
-// kicking off a real migration against production Suna data.
-flow(
-  'PROJ-28',
-  {
-    domain: 'projects',
-    routes: [
-      'GET /v1/projects/suna-migration/eligibility',
-      'GET /v1/projects/suna-migration/status',
-      'POST /v1/projects/suna-migration/start',
-    ],
-  },
-  async (ctx) => {
-    await ctx.step('GET eligibility for a fresh account → 200, not eligible', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/suna-migration/eligibility');
-      r.status(200).body().has('$.eligible', false).has('$.migration', null);
-    });
-    await ctx.step('GET status for a fresh account → 200, no migration on record', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/suna-migration/status');
-      r.status(200).body().has('$.migration', null);
-    });
-    await ctx.step('POST start for a non-eligible account → 400 (nothing to migrate)', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).post('/v1/projects/suna-migration/start', {});
-      r.status(400);
-    });
-    await ctx.step('ANON cannot read eligibility → 401', async () => {
-      const r = await ctx.client.as(ctx.P.ANON).get('/v1/projects/suna-migration/eligibility');
-      r.status(401);
     });
   },
 );

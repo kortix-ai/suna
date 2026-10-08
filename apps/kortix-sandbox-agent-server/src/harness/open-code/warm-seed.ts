@@ -9,7 +9,7 @@ import { bootOpenCodeConfig } from './boot-config-path'
 import { OPENCODE_HOME } from './paths'
 import { createProjectEnvStore } from '@/services/sandbox-env/project-env'
 import { startEgressShim } from '@/services/egress-shim'
-import { startLlmProxy, setLlmProxyToken, llmProxyReady, llmProxyBaseUrl, startConnectorProxy, setConnectorProxyToken, connectorProxyReady, connectorProxyBaseUrl } from '@/services/llm-proxy/llm-proxy'
+import { startLlmProxy, setLlmProxyToken, llmProxyReady, llmProxyBaseUrl } from '@/services/llm-proxy/llm-proxy'
 import { createOpenCodeHarnessService } from './service'
 import { finalizeOrphanedTurn, markSeedBakedSession } from './initial-session'
 import { createInitialOpenCodeSession } from './initial-prompt'
@@ -124,15 +124,6 @@ export async function runWarmSeedMode(
       process.env.KORTIX_LLM_PROXY_URL = llmUrl
       bootMark('seed-llm-proxy-started')
       logger.info('[seed] llm hot-swap proxy up; seed bakes proxied gateway provider', { llmUrl })
-    }
-    const exPort = Number(process.env.KORTIX_CONNECTORS_PROXY_PORT) || 4320
-    const exUrl = startConnectorProxy(exPort)
-    if (exUrl) {
-      // Seen by buildOpencodeConfigContent only when KORTIX_CONNECTORS_MCP_ENABLED=1.
-      // The proxy is harmless when unused; the CLI remains the primary path.
-      process.env.KORTIX_CONNECTORS_PROXY_URL = exUrl
-      bootMark('seed-connector-proxy-started')
-      logger.info('[seed] connector hot-swap proxy up for optional connector MCP compatibility', { exUrl })
     }
     // Catalog prefetch (best-effort): the seed is tokenless and can't hit the
     // gateway /models, so fetch the FULL org catalog from an apps/api endpoint
@@ -334,20 +325,10 @@ export async function runWarmSeedMode(
       ) {
         // LLM gateway: required for the session to function.
         setLlmProxyToken(process.env.KORTIX_TOKEN, process.env.KORTIX_LLM_BASE_URL)
-        // Optional Connector MCP compatibility: if the seed enabled that face,
-        // the running MCP points at this proxy. The CLI path does not need this;
-        // it reads the live session env through BASH_ENV on every command.
-        if (process.env.KORTIX_CONNECTORS_PROXY_URL && connectorProxyBaseUrl() != null) {
-          setConnectorProxyToken(process.env.KORTIX_TOKEN, process.env.KORTIX_API_URL)
-        }
         if (llmProxyReady()) {
           hotSwapped = true
           bootMark('adopt-opencode-hotswapped')
-          // Observability only: this confirms the optional connector proxy has a
-          // live token. It does not assert that OpenCode registered MCP tools.
-          if (connectorProxyReady()) bootMark('adopt-connector-proxy-ready')
-          logger.info('[seed] fork adoption hot-swap: per-session tokens injected via proxies, opencode not restarted', {
-            connectorReady: connectorProxyReady(),
+          logger.info('[seed] fork adoption hot-swap: per-session token injected via the LLM proxy, opencode not restarted', {
             gatewayCatalogChanged,
           })
         }

@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { projects } from '@kortix/db';
 import { db } from '../../shared/db';
 import { accountRoleMap } from '../../iam/read-models';

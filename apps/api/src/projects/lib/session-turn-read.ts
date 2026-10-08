@@ -23,20 +23,7 @@ import { scheduleSessionTurnRecovery } from '../session-lifecycle/inbox-turn-rec
 import { RUNNING_SANDBOX_STATUSES, storedSandboxTurns } from '../session-turn-ledger';
 import { ABORT_END_ERROR_NAMES, isRequestedStopName } from '../session-turn-ledger';
 
-/**
- * The `/turn` wire shapes live in `@kortix/api-contract`. `last_ended` and
- * `recent_failures` are OMITTED, never null: `last_ended` is one row and
- * vanishes the moment the next turn starts, and a queued prompt starts it
- * seconds after a failure, so `recent_failures` keeps the outcome findable by
- * `message_id`. A turn the user stopped is not a failure and is never listed.
- */
-export type {
-  SessionTurn as SessionTurnView,
-  SessionTurnStatus as SessionTurnState,
-  SessionTurnFailure,
-} from '@kortix/api-contract';
 import type {
-  SessionTurn as SessionTurnView,
   SessionTurnStatus as SessionTurnState,
   SessionTurnFailure,
 } from '@kortix/api-contract';

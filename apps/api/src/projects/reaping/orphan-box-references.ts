@@ -11,6 +11,8 @@ export async function hasProviderBoxReference(provider: ProviderName, externalId
       select 1 from kortix.app_runtimes where provider = ${provider} and external_id = ${externalId}
       union all
       select 1 from kortix.project_monitor_boxes where provider = ${provider} and external_id = ${externalId}
+      union all
+      select 1 from kortix.project_backends where provider = ${provider} and external_id = ${externalId}
     ) as referenced
   `);
   // No result is not proof of absence. A failed query throws before stop().

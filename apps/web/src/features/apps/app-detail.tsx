@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
 
 import Loading from '@/components/ui/loading';
@@ -19,13 +19,14 @@ import { relativeTime } from '@/lib/relative-time';
 
 import { cn } from '@/lib/utils';
 import { type App, type AppDeployment } from '@kortix/sdk';
-import { useAppAccess, useAppDeployments, useProjectApps } from '@kortix/sdk/react';
-import { ArrowSquareOutIcon, ClockCounterClockwiseIcon, DotsThreeIcon, LockKeyIcon, PauseIcon, PlayIcon, TrashIcon, XIcon } from '@phosphor-icons/react';
+import { useAppAccess, useAppDeployment, useAppDeployments, useProjectApps } from '@kortix/sdk/react';
+import { ArrowSquareOutIcon, CaretDownIcon, CaretRightIcon, ClockCounterClockwiseIcon, CurrencyDollarIcon, DotsThreeIcon, LockKeyIcon, PauseIcon, PlayIcon, TrashIcon, XIcon } from '@phosphor-icons/react';
 
 import { useState } from 'react';
 
 import { AppPreview } from './app-preview';
 import { AppAccessModal } from './app-access';
+import { AppBudgetModal } from './app-budget';
 import { localizedAppCopy, appCommand, appHost, appStatus, deployNotice, DeployCommand } from './app-shared';
 
 /**
@@ -57,11 +58,19 @@ export function AppDetailModal({
   const canAccess = app.viewer_can_access !== false;
   const access = useAppAccess(projectId, app.app_id, { policy: canWrite, session: canAccess });
   const [versionsOpen, setVersionsOpen] = useState(false);
-  const [overlay, setOverlay] = useState<'access' | 'delete' | null>(null);
+  // The deployment whose events and build log are unfolded in the version drawer.
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [overlay, setOverlay] = useState<'access' | 'delete' | 'budget' | null>(null);
   const latest = deployments.data?.[0];
   const status = appStatus(app, tI18nComplete);
   const notice = deployNotice(latest, tI18nComplete);
   const running = app.desired_state === 'running';
+  // A static App is served from storage: no runtime to start, stop or keep on.
+  // `hosting_type` on the App is the source; the history covers an older server.
+  const isStatic =
+    app.hosting_type === 'static' ||
+    deployments.data?.find((row) => row.deployment_id === app.active_deployment_id)?.hosting_type === 'static';
+  const isServer = status.deployed && !isStatic;
   const busy = apps.start.isPending || apps.stop.isPending || apps.remove.isPending;
   const liveUrl = access.session.data?.url ?? app.url;
 
@@ -126,10 +135,20 @@ export function AppDetailModal({
               ) : (
                 <span className="text-muted-foreground shrink-0 text-xs">{status.label}</span>
               )}
-              {notice ? (
-                <Badge size="xs" variant={notice.tone} className="shrink-0">
-                  {notice.label}
-                </Badge>
+              {/* A failed deploy opens its own log: the badge is the way in. */}
+              {notice && latest ? (
+                <button
+                  type="button"
+                  className="shrink-0"
+                  onClick={() => {
+                    setVersionsOpen(true);
+                    setExpandedId(latest.deployment_id);
+                  }}
+                >
+                  <Badge size="xs" variant={notice.tone}>
+                    {notice.label}
+                  </Badge>
+                </button>
               ) : null}
             </div>
 
@@ -140,7 +159,7 @@ export function AppDetailModal({
                 `ghost` for the same reason — chrome, not an action. */}
             <div className="flex shrink-0 items-center gap-2">
               <ButtonGroup>
-                {canDeploy ? (
+                {canDeploy && isServer ? (
                   <Hint
                     label={
                       running
@@ -213,6 +232,34 @@ export function AppDetailModal({
                         </span>
                       </DropdownMenuItem>
                     ) : null}
+                    {canWrite && isServer ? (
+                      <DropdownMenuItem onClick={() => setOverlay('budget')}>
+                        <CurrencyDollarIcon className="size-3.5 shrink-0" />
+                        {tI18nComplete.raw('textc247593b2c0f')}
+                        <span className="text-muted-foreground ml-auto pl-3 text-xs tabular-nums">
+                          ${app.monthly_budget_usd}
+                        </span>
+                      </DropdownMenuItem>
+                    ) : null}
+                    {canWrite && !isStatic ? (
+                      <DropdownMenuCheckboxItem
+                        checked={app.always_on === true}
+                        disabled={apps.update.isPending}
+                        onCheckedChange={(on) =>
+                          apps.update.mutate({ appId: app.app_id, input: { always_on: on } })
+                        }
+                      >
+                        <span className="flex flex-col">
+                          {tI18nComplete.raw('text044ba8a9ae43')}
+                          <span className="text-muted-foreground text-xs">{tI18nComplete.raw('textb2fceee88a51')}</span>
+                        </span>
+                        {isServer && app.estimated_monthly_usd ? (
+                          <span className="text-muted-foreground ml-auto pl-3 text-xs tabular-nums">
+                            {tI18nComplete('texte15cb9ffae7f', { value0: Math.round(app.estimated_monthly_usd) })}
+                          </span>
+                        ) : null}
+                      </DropdownMenuCheckboxItem>
+                    ) : null}
                     <DropdownMenuItem onClick={() => setVersionsOpen((value) => !value)}>
                       <ClockCounterClockwiseIcon className="size-3.5 shrink-0" />
                       {versionsOpen
@@ -267,8 +314,30 @@ export function AppDetailModal({
                   glyph — it is the only way a new version gets here, and a bare
                   icon made the reader guess what it would put on their
                   clipboard. */}
-              <div className="mb-2 flex items-center gap-3">
+              <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1">
                 <DeployCommand code={appCommand(app)} className="min-w-0" />
+                {/* How this App runs and how much history it keeps: the facts
+                    that explain what the list below can and cannot roll back to. */}
+                <span className="text-muted-foreground text-xs">
+                  {[
+                    isStatic
+                      ? tI18nComplete.raw('text903b49a91e18')
+                      : isServer
+                        ? tI18nComplete.raw('textaef7de28d529')
+                        : null,
+                    isServer
+                      ? app.always_on
+                        ? tI18nComplete.raw('text044ba8a9ae43')
+                        : tI18nComplete.raw('text7be15cd189a3')
+                      : null,
+                    isServer ? tI18nComplete('text89ea53a8d7ac', { value0: app.monthly_budget_usd }) : null,
+                    app.retained_deployments !== undefined
+                      ? tI18nComplete('text04957fa46a70', { value0: app.retained_deployments })
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </span>
               </div>
               {deployments.isLoading ? (
                 <Loading className="text-muted-foreground" />
@@ -277,7 +346,14 @@ export function AppDetailModal({
                   {deployments.data.map((deployment) => (
                     <DeploymentRow
                       key={deployment.deployment_id}
+                      projectId={projectId}
                       deployment={deployment}
+                      expanded={expandedId === deployment.deployment_id}
+                      onToggle={() =>
+                        setExpandedId((current) =>
+                          current === deployment.deployment_id ? null : deployment.deployment_id,
+                        )
+                      }
                       active={deployment.deployment_id === app.active_deployment_id}
                       canDeploy={canDeploy}
                       rollbackPending={deployments.rollback.isPending}
@@ -325,6 +401,14 @@ export function AppDetailModal({
           }
         }}
       />
+      {overlay === 'budget' ? (
+        <AppBudgetModal
+          projectId={projectId}
+          app={app}
+          open
+          onOpenChange={(next) => setOverlay(next ? 'budget' : null)}
+        />
+      ) : null}
       {overlay === 'access' ? (
         <AppAccessModal
           projectId={projectId}
@@ -339,54 +423,109 @@ export function AppDetailModal({
 }
 
 function DeploymentRow({
+  projectId,
   deployment,
   active,
+  expanded,
+  onToggle,
   canDeploy,
   rollbackPending,
   onRollback,
 }: {
+  projectId: string;
   deployment: AppDeployment;
   active: boolean;
+  expanded: boolean;
+  onToggle: () => void;
   canDeploy: boolean;
   rollbackPending: boolean;
   onRollback: () => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const appCopy = localizedAppCopy(tI18nComplete);
+  const toggleLabel = expanded ? tI18nComplete.raw('text163de9edcec1') : tI18nComplete.raw('text34b66838fe48');
   return (
-    <div className="hover:bg-muted/40 flex items-center gap-3 rounded-md px-2 py-1.5">
-      <span className="text-foreground w-8 shrink-0 font-mono text-xs tabular-nums">
-        v{deployment.version}
-      </span>
-      {/* "Live" is the state of THIS version, so the active one says so and the
-          rest report their own build outcome. Showing both — a `ready` badge
-          and a separate "Live" word on the same row — said one thing twice. */}
-      <Badge size="xs" variant={active ? 'success' : appCopy.deployment[deployment.status].tone}>
-        {active ? appCopy.deployment.ready.label : appCopy.deployment[deployment.status].label}
-      </Badge>
-      {/* Age, not `hosting_provider`. That field is the name of the sandbox
-          fleet the build landed on ("daytona", "platinum") — infrastructure
-          this reader neither chose nor can change, printed where the one fact
-          they actually want ("when was this?") was missing. */}
-      <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
-        {relativeTime(deployment.created_at)}
-      </span>
-      {canDeploy && deployment.status === 'ready' && !active ? (
-        <Button
-          size="xs"
-          variant="ghost"
-          className="shrink-0"
-          disabled={rollbackPending}
-          onClick={onRollback}
-        >
-          {rollbackPending ? (
-            <Loading className="size-3.5 shrink-0" />
-          ) : (
-            <ClockCounterClockwiseIcon className="size-3.5 shrink-0" />
-          )}
-          {tI18nComplete.raw('texta76e13b98392')}
-        </Button>
-      ) : null}
+    <div>
+      <div className="hover:bg-muted/40 flex items-center gap-3 rounded-md px-2 py-1.5">
+        <Hint label={toggleLabel} side="top">
+          <Button
+            size="icon-xs"
+            variant="ghost"
+            className="shrink-0"
+            aria-label={toggleLabel}
+            aria-expanded={expanded}
+            onClick={onToggle}
+          >
+            {expanded ? <CaretDownIcon className="size-3.5 shrink-0" /> : <CaretRightIcon className="size-3.5 shrink-0" />}
+          </Button>
+        </Hint>
+        <span className="text-foreground w-8 shrink-0 font-mono text-xs tabular-nums">
+          v{deployment.version}
+        </span>
+        {/* "Live" is the state of THIS version, so the active one says so and the
+            rest report their own build outcome. Showing both — a `ready` badge
+            and a separate "Live" word on the same row — said one thing twice. */}
+        {/* An earlier ready version is not live: its Restore button says what it is. */}
+        {active || deployment.status !== 'ready' ? (
+          <Badge size="xs" variant={active ? 'success' : appCopy.deployment[deployment.status].tone}>
+            {active ? appCopy.deployment.ready.label : appCopy.deployment[deployment.status].label}
+          </Badge>
+        ) : null}
+        {/* Age, not `hosting_provider`. That field is the name of the sandbox
+            fleet the build landed on ("daytona", "platinum") — infrastructure
+            this reader neither chose nor can change, printed where the one fact
+            they actually want ("when was this?") was missing. */}
+        <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">
+          {relativeTime(deployment.created_at)}
+        </span>
+        {canDeploy && deployment.status === 'ready' && !active ? (
+          <Button
+            size="xs"
+            variant="ghost"
+            className="shrink-0"
+            disabled={rollbackPending}
+            onClick={onRollback}
+          >
+            {rollbackPending ? (
+              <Loading className="size-3.5 shrink-0" />
+            ) : (
+              <ClockCounterClockwiseIcon className="size-3.5 shrink-0" />
+            )}
+            {tI18nComplete.raw('texta76e13b98392')}
+          </Button>
+        ) : null}
+      </div>
+      {expanded ? <DeploymentLog projectId={projectId} deployment={deployment} /> : null}
+    </div>
+  );
+}
+
+/**
+ * One deployment's events, build log included, as one block of text. A build
+ * keeps at most 5,001 lines (apps/api/src/apps/build-log.ts), so one `pre`
+ * renders it without a virtual list.
+ */
+function DeploymentLog({ projectId, deployment }: { projectId: string; deployment: AppDeployment }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const detail = useAppDeployment(projectId, deployment.app_id, deployment.deployment_id);
+  const events = detail.data?.events ?? [];
+  const text = events
+    .map((event) => (event.type === 'build_log' ? event.message : `[${event.type}] ${event.message}`))
+    .join('\n');
+  return (
+    <div className="space-y-2 py-1 pr-2 pl-10">
+      {deployment.error ? <p className="text-destructive text-xs">{deployment.error}</p> : null}
+      {detail.isLoading ? (
+        <Loading className="text-muted-foreground" />
+      ) : detail.isError ? (
+        <p className="text-muted-foreground text-xs">{tI18nComplete.raw('text245c1e26ba4c')}</p>
+      ) : text ? (
+        <pre className="bg-popover text-foreground max-h-64 overflow-auto rounded-md border p-2 font-mono text-xs whitespace-pre-wrap">
+          {text}
+        </pre>
+      ) : (
+        <p className="text-muted-foreground text-xs">{tI18nComplete.raw('text80c652c4eeec')}</p>
+      )}
     </div>
   );
 }

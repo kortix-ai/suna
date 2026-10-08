@@ -30,23 +30,7 @@ export {
   resolvePreviewWsUpstream,
   shouldAutoResumeStoppedSandbox,
   shouldWakeStoppedSandboxForWsAttach,
-  type PreviewProxyAccess,
 } from '../forward';
-
-// The pre-prompt turn-start gate lives in ../pre-prompt-env-sync.ts so a unit
-// test can reach it without evaluating this route — importing this file caches
-// its collaborators and silently disables every sibling suite's `mock.module`
-// (see the header comment there). Re-exported so existing import paths, and the
-// suites that already read these names off `./preview`, keep working.
-export {
-  bodyWithoutPromptAgent,
-  isTurnStartEnvSync,
-  requestedPromptAgent,
-  requestedPromptManagedModelId,
-  runPrePromptEnvSync,
-  secretGrantErrorResponse,
-} from '../pre-prompt-env-sync';
-export type { PrePromptEnvSyncDeps } from '../pre-prompt-env-sync';
 
 // The response/header helpers moved to ../preview-response.ts (KRTX-326 phase 2).
 export * from '../preview-response';

@@ -1,51 +1,13 @@
 import { config } from '../config';
 import { getSupabase } from '../shared/supabase';
 
-const BUCKET = () => config.LEGACY_MIGRATION_BACKUP_BUCKET;
-const ARCHIVE_FILE_SIZE_LIMIT = 5 * 1024 * 1024 * 1024;
-
-export async function ensureBackupBucket(): Promise<void> {
-  const supabase = getSupabase();
-  const { data, error } = await supabase.storage.getBucket(BUCKET());
-  if (data) {
-    if ((data.file_size_limit ?? 0) < ARCHIVE_FILE_SIZE_LIMIT) {
-      await supabase.storage
-        .updateBucket(BUCKET(), { public: false, fileSizeLimit: ARCHIVE_FILE_SIZE_LIMIT })
-        .catch(() => {});
-    }
-    return;
-  }
-  if (error && !/not found/i.test(error.message)) throw error;
-  const { error: createError } = await supabase.storage.createBucket(BUCKET(), {
-    public: false,
-    fileSizeLimit: ARCHIVE_FILE_SIZE_LIMIT,
-  });
-  if (createError && !/already exists/i.test(createError.message)) throw createError;
-}
-
-export function opencodeObjectPath(sandboxId: string): string {
-  return `${sandboxId}/opencode.tar.gz`;
-}
-
-export async function uploadOpencodeArchive(
-  sandboxId: string,
-  tarball: Buffer | Uint8Array,
-): Promise<string> {
-  await ensureBackupBucket();
-  const path = opencodeObjectPath(sandboxId);
-  const supabase = getSupabase();
-  const { error } = await supabase.storage
-    .from(BUCKET())
-    .upload(path, tarball, { upsert: true, contentType: 'application/gzip' });
-  if (error) throw error;
-  return path;
-}
-
+// Read-only since the Suna migration writer was deleted (R6.5): the archives it
+// uploaded stay in the bucket and session open restores them
+// (legacy-migration-rehydrate.ts).
 export async function downloadOpencodeArchive(sandboxId: string): Promise<Buffer | null> {
-  const supabase = getSupabase();
-  const { data, error } = await supabase.storage
-    .from(BUCKET())
-    .download(opencodeObjectPath(sandboxId));
+  const { data, error } = await getSupabase()
+    .storage.from(config.LEGACY_MIGRATION_BACKUP_BUCKET)
+    .download(`${sandboxId}/opencode.tar.gz`);
   if (error || !data) return null;
   return Buffer.from(await data.arrayBuffer());
 }

@@ -1,7 +1,7 @@
 /**
  * Customize · Triggers.
  *
- * `useProjectTriggers` — cron, webhook and monitor triggers parsed out of the
+ * `useProjectTriggers` — cron, webhook, monitor and event triggers parsed out of the
  * project manifest. `Space`/`t` writes `enabled` through the same
  * `updateProjectTrigger` call the web's pause switch uses; the repo is the
  * source of truth, so that write commits to the manifest.
@@ -47,6 +47,10 @@ export interface TriggerRowData {
 /** The one-line answer to "when does this run?". */
 export function describeWhen(trigger: ProjectTrigger): string {
   if (trigger.type === 'webhook') return 'When a request arrives';
+  if (trigger.type === 'event') {
+    const e = trigger.event;
+    return e ? `On ${e.type} · ${e.app ?? e.connector}` : 'On an app event';
+  }
   if (trigger.type === 'monitor') {
     const mode = trigger.mode ?? 'poll';
     if (mode === 'poll' && trigger.interval_seconds)

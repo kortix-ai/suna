@@ -22,8 +22,11 @@ import {
   updateApp,
   updateAppAccess,
   uploadAppArtifactArchive,
+  type App,
   type AppDeployment,
   type AppImageRelease,
+  type CreateAppInput,
+  type UpdateAppInput,
   type DeleteAppDeploymentResult,
   type AppAccessMode,
   type AppHostingProvider,
@@ -141,6 +144,21 @@ test('Apps CRUD uses the project-scoped API contract', async () => {
 
   await deleteApp('project-1', 'app-1');
   expect(last().method).toBe('DELETE');
+});
+
+test('an App lists the backends it may mint viewer tokens for; create and update send the list', async () => {
+  const app = { app_id: 'app-1', backends: ['main'] } as App;
+  const listed: string[] | undefined = app.backends;
+  expect(listed).toEqual(['main']);
+  responses.push({ status: 201, body: app }, { body: app });
+
+  const created: CreateAppInput = { slug: 'crm', name: 'CRM', backends: ['main'] };
+  await createApp('project-1', created);
+  expect(last()).toMatchObject({ method: 'POST', body: { slug: 'crm', name: 'CRM', backends: ['main'] } });
+
+  const update: UpdateAppInput = { backends: [] };
+  await updateApp('project-1', 'app-1', update);
+  expect(last()).toMatchObject({ method: 'PATCH', url: 'http://backend.test/v1/projects/project-1/apps/app-1', body: { backends: [] } });
 });
 
 test('App access reads, updates, and creates a browser exchange URL through project-scoped REST routes', async () => {
@@ -350,4 +368,56 @@ test('deleteAppDeployment surfaces the 409 for the live deployment', async () =>
 test('DeleteAppDeploymentResult.image is exactly released, pending, or none', () => {
   const exact: Equal<DeleteAppDeploymentResult['image'], 'released' | 'pending' | 'none'> = true;
   expect(exact).toBe(true);
+});
+
+test('an App runs always-on or on demand: create and update send always_on, and the App reads it back', async () => {
+  const app: import('./apps').App = {
+    app_id: 'app-1', account_id: 'account-1', project_id: 'project-1', slug: 'demo', name: 'Demo',
+    url: 'https://demo.apps.kortix.com', access_mode: 'private', access_revision: 1, desired_state: 'running',
+    active_deployment_id: null, machine: { cpu: 1, memory_gb: 2, disk_gb: 10 }, idle_timeout_seconds: 300,
+    always_on: false, monthly_budget_usd: 5, last_request_at: null,
+    created_at: '2026-10-07T00:00:00.000Z', updated_at: '2026-10-07T00:00:00.000Z',
+  };
+  responses.push({ status: 201, body: { ...app, always_on: true } }, { body: app });
+  expect((await createApp('project-1', { slug: 'demo', name: 'Demo', always_on: true })).always_on).toBe(true);
+  expect(last().body).toMatchObject({ always_on: true });
+  expect((await updateApp('project-1', 'app-1', { always_on: false })).always_on).toBe(false);
+  expect(last().body).toEqual({ always_on: false });
+});
+
+test('an always-on App reads its monthly estimate, and create/update carry budget warnings', async () => {
+  const app: import('./apps').App = {
+    app_id: 'app-1', account_id: 'account-1', project_id: 'project-1', slug: 'demo', name: 'Demo',
+    url: 'https://demo.apps.kortix.com', access_mode: 'private', access_revision: 1, desired_state: 'running',
+    active_deployment_id: null, machine: { cpu: 1, memory_gb: 2, disk_gb: 10 }, idle_timeout_seconds: 300,
+    always_on: true, monthly_budget_usd: 5, estimated_monthly_usd: 73.48, last_request_at: null,
+    warnings: [{ code: 'app_budget_below_always_on', message: 'This App runs 24/7 …' }],
+    created_at: '2026-10-07T00:00:00.000Z', updated_at: '2026-10-07T00:00:00.000Z',
+  };
+  responses.push({ status: 201, body: app }, { body: { ...app, monthly_budget_usd: 100, warnings: [] } });
+  const created = await createApp('project-1', { slug: 'demo', name: 'Demo' });
+  expect(created.estimated_monthly_usd).toBe(73.48);
+  expect(created.warnings?.map((warning) => warning.code)).toEqual(['app_budget_below_always_on']);
+  expect((await updateApp('project-1', 'app-1', { monthly_budget_usd: 100 })).warnings).toEqual([]);
+});
+
+test('an App says how its active deployment is hosted: hosting_type', async () => {
+  const app = {
+    app_id: 'app-1', account_id: 'account-1', project_id: 'project-1', slug: 'site', name: 'Site',
+    url: 'https://site.apps.kortix.com', access_mode: 'public', access_revision: 1, desired_state: 'stopped',
+    active_deployment_id: 'deployment-1', machine: { cpu: 1, memory_gb: 2, disk_gb: 10 }, idle_timeout_seconds: 300,
+    monthly_budget_usd: 5, estimated_monthly_usd: 0, hosting_type: 'static', retained_deployments: 5, last_request_at: null,
+    created_at: '2026-10-07T00:00:00.000Z', updated_at: '2026-10-07T00:00:00.000Z',
+  } satisfies import('./apps').App;
+  responses.push({ body: { apps: [app] } });
+  const [listed] = await listApps('project-1');
+  const hosting: import('./apps').App['hosting_type'] = listed!.hosting_type;
+  expect(hosting).toBe('static');
+  const retained: number | undefined = listed!.retained_deployments;
+  expect(retained).toBe(5);
+});
+
+test('a static deployment says so: hosting_type static', () => {
+  const hosting: import('./apps').AppDeployment['hosting_type'] = 'static';
+  expect(hosting).toBe('static');
 });

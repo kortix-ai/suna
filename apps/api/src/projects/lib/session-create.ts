@@ -30,7 +30,6 @@ import {
   toOpencodeModelRef,
 } from '../../llm-gateway/resolution/effective';
 
-import { sandboxFrontendBaseUrl } from '../../platform/sandbox-frontend-url';
 import { selectProvider } from '../../platform/services/provider-balancer';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { provisionSessionSandbox } from '../../platform/services/session-sandbox';
@@ -96,7 +95,7 @@ import {
   resolveProjectSnapshotPinForSession,
 } from '../../git-proxy/project-snapshot';
 
-import { buildSessionSandboxEnvVars, deriveKortixApiBase } from './session-sandbox-env-build';
+import { buildSessionSandboxEnvVars } from './session-sandbox-env-build';
 import { sandboxCallbackUnreachableReason, sandboxCallbackDeadTunnelReason } from './session-callback-probe';
 /** Every status a failed create answers with. Routes that create a session
  *  declare these, so the published spec lists them. */
@@ -1392,29 +1391,25 @@ async function provisionCreatedSession(params: {
     // the hint is omitted → daemon delta-fetches as before. Runs CONCURRENTLY
     // with gitAuth (folded into the env-build chain, not awaited inline).
     let fastBootHintTimeout: ReturnType<typeof setTimeout> | undefined;
-    // Default on (KORTIX_FAST_GIT_BOOT_ENABLED): the hint is what lets the
-    // daemon boot with ZERO proxied git requests (scaffold + delta) and spawn
-    // OpenCode before the checkout. Bounded by the 2 s race below; a miss
+    // The hint is what lets the daemon boot with ZERO proxied git requests
+    // (scaffold + delta) and spawn OpenCode before the checkout. Bounded by the 2 s race below; a miss
     // just means the daemon's fetch fallback.
-    const fastBootGitHintPromise =
-      config.KORTIX_FAST_GIT_BOOT_ENABLED
-      ? Promise.race([
-          projectWithGitAuthPromise
-            .then((projectWithGitAuth) =>
-              resolveFastBootGitHintWithCache(
-                projectWithGitAuth,
-                baseRef,
-                project.metadata,
-              ),
-            )
-            .catch(() => undefined),
-          new Promise<undefined>((resolve) => {
-            fastBootHintTimeout = setTimeout(() => resolve(undefined), 2_000);
-          }),
-        ]).finally(() => {
-          if (fastBootHintTimeout) clearTimeout(fastBootHintTimeout);
-        })
-      : Promise.resolve(undefined);
+    const fastBootGitHintPromise = Promise.race([
+      projectWithGitAuthPromise
+        .then((projectWithGitAuth) =>
+          resolveFastBootGitHintWithCache(
+            projectWithGitAuth,
+            baseRef,
+            project.metadata,
+          ),
+        )
+        .catch(() => undefined),
+      new Promise<undefined>((resolve) => {
+        fastBootHintTimeout = setTimeout(() => resolve(undefined), 2_000);
+      }),
+    ]).finally(() => {
+      if (fastBootHintTimeout) clearTimeout(fastBootHintTimeout);
+    });
     const envPromise = fastBootGitHintPromise
       .then((fastBootGitHint) =>
         resolveCreatedSessionProjectSnapshot({ project, projectId, sessionId, baseRef, tl }, fastBootGitHint),

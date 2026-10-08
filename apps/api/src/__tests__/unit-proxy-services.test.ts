@@ -14,7 +14,6 @@ const services = getProxyServices();
 const tavilyRoutes = services.tavily.allowedRoutes;
 const serperRoutes = services.serper.allowedRoutes;
 const firecrawlRoutes = services.firecrawl.allowedRoutes;
-const context7Routes = services.context7.allowedRoutes;
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
@@ -111,22 +110,6 @@ describe('matchAllowedRoute', () => {
   });
 
 
-  describe('context7 routes', () => {
-    test('matches GET and POST on libs/search', () => {
-      expect(matchAllowedRoute('GET', '/api/v2/libs/search', context7Routes)).not.toBeNull();
-      expect(matchAllowedRoute('POST', '/api/v2/libs/search', context7Routes)).not.toBeNull();
-    });
-
-    test('matches GET and POST on context', () => {
-      expect(matchAllowedRoute('GET', '/api/v2/context', context7Routes)).not.toBeNull();
-      expect(matchAllowedRoute('POST', '/api/v2/context', context7Routes)).not.toBeNull();
-    });
-
-    test('rejects DELETE on context', () => {
-      expect(matchAllowedRoute('DELETE', '/api/v2/context', context7Routes)).toBeNull();
-    });
-  });
-
   describe('edge cases', () => {
     test('empty allowed routes returns null', () => {
       expect(matchAllowedRoute('POST', '/search', [])).toBeNull();
@@ -151,16 +134,7 @@ describe('matchAllowedRoute', () => {
   describe('registry integrity', () => {
     test('proxy services registry contains expected services', () => {
       const serviceNames = Object.keys(getProxyServices()).sort();
-      expect(serviceNames).toEqual([
-        'context7',
-        'firecrawl',
-        'gemini',
-        'groq',
-        'openai',
-        'serper',
-        'tavily',
-        'xai',
-      ]);
+      expect(serviceNames).toEqual(['firecrawl', 'serper', 'tavily']);
     });
 
     test('each service has required fields', () => {

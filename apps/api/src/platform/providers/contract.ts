@@ -29,7 +29,7 @@ export class SnapshotStillBuildingError extends Error {
  * verbatim as `sandbox_compute_sessions.workload_type`, so the union and that
  * column's CHECK constraint must stay in lockstep.
  */
-export type SandboxWorkloadType = 'session' | 'app' | 'monitor';
+export type SandboxWorkloadType = 'session' | 'app' | 'monitor' | 'backend';
 
 export interface CreateSandboxOpts {
   accountId: string;
@@ -357,8 +357,7 @@ export interface SandboxProvider {
  *
  * FLOOR 60. Never below the value this function returned before the split, so a
  * mis-set env var cannot resurrect the mid-work-kill class. Callers needing a
- * deliberately short timer pass an explicit override instead (the trigger path
- * does: KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES). The floor is also what makes
+ * deliberately short timer pass an explicit override instead. The floor is also what makes
  * the required ordering `billingLivenessGraceMinutes() <= this` structural
  * rather than coincidental — the billing grace floors at the same 60 and only
  * leaves that floor above a 30-minute idle window, which no environment sets.

@@ -68,6 +68,7 @@ import {
   WarningIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useMemo, useState } from 'react';
 
 import {
@@ -80,6 +81,8 @@ import {
   matchesQuery,
   triggerName,
 } from './schedule/schedule-copy';
+import { appLabel } from './schedule/event-trigger-copy';
+import { useEventAppConnect } from './schedule/use-event-app-connect';
 import { ScheduleCreateModal } from './schedule/schedule-create-modal';
 import { ScheduleDetailSheet } from './schedule/schedule-detail-sheet';
 import { ScheduleTable } from './schedule/schedule-table';
@@ -221,6 +224,7 @@ function TriggerActivationMenu({ projectId }: { projectId: string }) {
 }
 
 export function ScheduleView({ projectId }: { projectId: string }) {
+  const router = useRouter();
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const copy = localizedTriggersCopy(tI18nComplete);
   const kindCopy = localizedKindCopy(tI18nComplete);
@@ -242,8 +246,17 @@ export function ScheduleView({ projectId }: { projectId: string }) {
 
   const [query, setQuery] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
+  // The empty state's "App event" button opens the form past the type step.
+  const [createKind, setCreateKind] = useState<TriggerKind | null>(null);
+  const openCreate = (kind: TriggerKind | null = null) => {
+    setCreateKind(kind);
+    setCreateOpen(true);
+  };
+  const eventConnect = useEventAppConnect(projectId);
   const configure = useConfigureThread(projectId);
-  const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
+  // `?t=<slug>` opens that trigger's sheet: the connector page links here.
+  const linkedSlug = useSearchParams()?.get('t') ?? null;
+  const [selectedSlug, setSelectedSlug] = useState<string | null>(linkedSlug);
   const [deleteTarget, setDeleteTarget] = useState<ProjectTrigger | null>(null);
 
   const invalidate = useCallback(
@@ -374,7 +387,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
                 label={copy.createLabel}
                 pending={configure.pending}
                 onChat={() => configure.start(newConfigPrompt('trigger'))}
-                manual={{ onSelect: () => setCreateOpen(true) }}
+                manual={{ onSelect: () => openCreate() }}
               />
             ) : null}
           </div>
@@ -434,15 +447,26 @@ export function ScheduleView({ projectId }: { projectId: string }) {
             description={copy.emptyBody}
             action={
               canWrite ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={() => setCreateOpen(true)}
-                >
-                  <PlusIcon className="size-3.5 shrink-0" />
-                  {copy.createLabel}
-                </Button>
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => openCreate()}
+                  >
+                    <PlusIcon className="size-3.5 shrink-0" />
+                    {copy.createLabel}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => openCreate('event')}
+                  >
+                    <LightningIcon className="size-3.5 shrink-0" />
+                    {tI18nComplete.raw('text5441e7146193')}
+                  </Button>
+                </div>
               ) : undefined
             }
           />
@@ -461,6 +485,17 @@ export function ScheduleView({ projectId }: { projectId: string }) {
             onRun={(t) => run.mutate(t)}
             onToggle={(t) => toggle.mutate(t)}
             onDelete={(t) => setDeleteTarget(t)}
+            onConnect={
+              eventConnect.canConnect
+                ? (t) =>
+                    t.event &&
+                    eventConnect.connect({
+                      app: t.event.app ?? t.event.connector,
+                      name: appLabel(t.event.app, t.event.connector),
+                      connector: t.event.connector,
+                    })
+                : undefined
+            }
           />
         )}
 
@@ -485,6 +520,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
         projectId={projectId}
         open={createOpen}
         onOpenChange={setCreateOpen}
+        initialKind={createKind}
         onCreated={(slug) => {
           setCreateOpen(false);
           invalidate();

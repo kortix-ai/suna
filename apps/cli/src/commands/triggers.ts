@@ -30,12 +30,18 @@ import {
   triggersSetLive,
   triggersToggleLive,
 } from './triggers-live.ts';
-import { triggersAddLocal, triggersRmLocal, triggersToggle } from './triggers-manifest.ts';
+import { eventNextStep, triggersEvents } from './triggers-events.ts';
+import {
+  collectEventConfig,
+  triggersAddLocal,
+  triggersRmLocal,
+  triggersToggle,
+} from './triggers-manifest.ts';
 
 const HELP = help`Usage: kortix triggers <subcommand> [options]
 
 Manage the [[triggers]] declared in your project's kortix.yaml — cron
-schedules, webhooks, and monitors. add/rm/enable/disable edit the LOCAL
+schedules, webhooks, monitors, and app events. add/rm/enable/disable edit the LOCAL
 manifest (the source of truth); \`kortix ship\` applies them. When kortix.yaml
 lists \`imports:\`, rm/enable/disable edit the file that declares the trigger;
 add writes to kortix.yaml. ls/fire/info
@@ -44,7 +50,7 @@ switch (cloud state, not the manifest).
 
 Subcommands:
   ls [--json]              List triggers + runtime state.
-  add <slug> [options]     Append a [[triggers]] block (cron, webhook, monitor).
+  add <slug> [options]     Append a [[triggers]] block (cron, webhook, monitor, event).
              [--apply]     Create it on the cloud project now instead (commit
                            to kortix.yaml on main + reconcile).
   set <slug> [options]     Change a LIVE trigger. Only the flags you pass are
@@ -68,9 +74,18 @@ Subcommands:
                            firing. Manual \`fire\` still works.
   resume                   Re-activate this project's triggers server-side.
   info <slug> [--json]     Show one trigger in full.
+  events --apps [--json]   List apps that can trigger events: each app's
+                           connectors (profiles) and their shared accounts
+                           (label, connected as, default).
+  events --connector <slug> [--json]
+                           List the events a connector can trigger on.
+  events --connector <slug> --event <TYPE> [--json]
+                           One event in full: config fields (type, required,
+                           default, allowed values, description) and the
+                           {{ event.data.* }} prompt variables.
 
 Add options:
-  --type <cron|webhook|monitor>
+  --type <cron|webhook|monitor|event>
                            Trigger type (default cron).
   --prompt <text>          Initial prompt for the spawned session (required).
   --agent <name>           Logical agent to run (default: project default_agent).
@@ -81,6 +96,39 @@ Add options:
   --secret-env <NAME>      HMAC secret env var (webhook type).
   --name <label>           Display name (default: slug).
   --disabled               Create it disabled (default enabled).
+
+Event options (--type event). Run the agent when an app event happens on a
+connected app (e.g. a new pull request). The prompt reads the event as
+{{ event.data.<field> }}, plus event.id, event.type, event.app,
+event.connector, and event.occurred_at.
+  --connector <slug>       The project's connector (profile) the event happens
+                           on (required). Several connectors can share one app.
+  --account <label>        Optional. Label of one SHARED account of that
+                           connector. Omit it to use the connector's default
+                           shared account. Needed only when the connector has
+                           several shared accounts. Private accounts never
+                           feed a trigger. On \`set\`, --default-account clears
+                           it. Changing --connector also clears it.
+  --event <TYPE>           Provider event type, e.g. GITHUB_PULL_REQUEST_CREATED
+                           (required; list with \`triggers events\`).
+  --config <key=value>     Event config field. Repeat for more. Values are
+                           converted to the field's type (number, boolean,
+                           comma list) using the event catalog.
+  --config-json <json>     Event config as a JSON object, for typed values.
+                           --config keys override it. On \`set\` it REPLACES the
+                           config; bare --config MERGES into the current one.
+Online, \`add\` and \`set\` check the config against the catalog and list every
+missing or invalid field with its description. \`add --apply\` then prints the
+trigger status and the next step. Autonomous setup:
+  1. kortix triggers events --apps
+  2. kortix connectors add <slug> --provider composio --app <app> --apply
+  3. kortix connectors connect <slug> --owner project   (a person opens the link)
+  4. kortix triggers events --connector <slug> --event <TYPE>
+  5. kortix triggers add <slug> --type event --connector <slug> --event <TYPE> \\
+       --config <k>=<v> --prompt "…{{ event.data.<field> }}…" --apply
+  6. kortix triggers info <slug>   (until it prints "live")
+Event triggers take none of --cron, --run-at, --timezone, --secret-env,
+--run, --mode, --interval, or --expect-event-within.
 
 Live-only options (--apply on \`add\`, and every \`set\`):
   --model <provider/model> Model for the spawned session. Omit for the default.
@@ -132,6 +180,9 @@ export async function runTriggers(argv: string[]): Promise<number> {
   let members: string[] = [];
   let groups: string[] = [];
   let filters: string[] = [];
+  let configPairs: string[] = [];
+  let configJson: string | undefined;
+  let apps = false;
   try {
     json = takeFlagBool(rest, ['--json']);
     applyRemote = takeFlagBool(rest, ['--apply']);
@@ -147,6 +198,13 @@ export async function runTriggers(argv: string[]): Promise<number> {
     members = takeFlagValues(rest, ['--member']);
     groups = takeFlagValues(rest, ['--group']);
     filters = takeFlagValues(rest, ['--filter']);
+    configPairs = takeFlagValues(rest, ['--config']);
+    configJson = takeFlagValue(rest, ['--config-json']);
+    apps = takeFlagBool(rest, ['--apps']);
+    tf.connector = takeFlagValue(rest, ['--connector']);
+    tf.account = takeFlagValue(rest, ['--account']);
+    if (takeFlagBool(rest, ['--default-account'])) tf.defaultAccount = '1';
+    tf.event = takeFlagValue(rest, ['--event']);
     tf.type = takeFlagValue(rest, ['--type']);
     tf.prompt = takeFlagValue(rest, ['--prompt']);
     tf.agent = takeFlagValue(rest, ['--agent']);
@@ -170,6 +228,10 @@ export async function runTriggers(argv: string[]): Promise<number> {
   } catch (err) {
     return fail((err as Error).message);
   }
+  const eventConfig = collectEventConfig(configPairs, configJson);
+  if (typeof eventConfig === 'object') return fail(eventConfig.error);
+  tf.eventConfig = eventConfig;
+  if (configJson !== undefined) tf.eventConfigReplace = '1';
   const ctxOpts: CtxOpts = { projectArg: projectFlag, hostArg: hostFlag };
   const positional = rest.filter((a) => !a.startsWith('-'));
 
@@ -180,7 +242,7 @@ export async function runTriggers(argv: string[]): Promise<number> {
     case 'create':
       return applyRemote
         ? triggersAddLive(positional[0], tf, disabled, { members, groups, filters }, ctxOpts, json)
-        : triggersAddLocal(positional[0], tf, disabled);
+        : triggersAddLocal(positional[0], tf, disabled, ctxOpts);
     case 'set':
     case 'update':
       // No local form: a partial edit of a [[triggers]] block would have to
@@ -206,6 +268,8 @@ export async function runTriggers(argv: string[]): Promise<number> {
       return triggersActivation(ctxOpts, true);
     case 'resume':
       return triggersActivation(ctxOpts, false);
+    case 'events':
+      return triggersEvents({ apps, connector: tf.connector, event: tf.event }, ctxOpts, json);
     case 'info':
     case 'show':
       return triggersInfo(positional[0], ctxOpts, json);
@@ -246,15 +310,19 @@ async function triggersLs(opts: CtxOpts, json = false): Promise<number> {
     const nameW = Math.max(...resp.triggers.map((t) => t.name.length), 4);
     process.stdout.write('\n');
     process.stdout.write(
-      `  ${C.dim}${pad('SLUG', slugW)}   ${pad('NAME', nameW)}   TYPE     STATE     SCHEDULE / SECRET / MODE      LAST FIRED${C.reset}\n`,
+      `  ${C.dim}${pad('SLUG', slugW)}   ${pad('NAME', nameW)}   TYPE     STATE     SCHEDULE / SECRET / MODE / SOURCE              LAST FIRED${C.reset}\n`,
     );
     for (const t of resp.triggers) {
       const state = t.enabled ? `${C.green}enabled ${C.reset}` : `${C.faded}disabled${C.reset}`;
       const detail = triggerDetail(t);
+      const eventNote =
+        t.type === 'event' && t.event
+          ? `  ${t.event.status === 'active' ? C.green : t.event.status === 'error' ? C.red : C.yellow}${eventNextStep(t).word}${C.reset}`
+          : '';
       const lastFired = t.last_fired_at ? formatRelative(t.last_fired_at) : '—';
       const failed = t.last_status === 'failed' ? `  ${C.red}last run failed${C.reset}` : '';
       process.stdout.write(
-        `  ${pad(t.slug, slugW)}   ${pad(t.name, nameW)}   ${pad(t.type, 7)}  ${state}   ${pad(trimMid(detail, 30), 30)}  ${C.faded}${lastFired}${C.reset}${failed}\n`,
+        `  ${pad(t.slug, slugW)}   ${pad(t.name, nameW)}   ${pad(t.type, 7)}  ${state}   ${pad(trimMid(detail, 44), 44)}  ${C.faded}${lastFired}${C.reset}${failed}${eventNote}\n`,
       );
     }
     process.stdout.write(
@@ -518,6 +586,19 @@ async function triggersInfo(
     if (t.expect_event_within_seconds !== null && t.expect_event_within_seconds !== undefined) {
       rows.push(['expect_event_within', formatDurationSeconds(t.expect_event_within_seconds)]);
     }
+  } else if (t.type === 'event') {
+    const e = t.event;
+    rows.push(['connector', e ? `${e.connector}${e.app ? ` (${e.app})` : ''}` : '—']);
+    rows.push(['account', e ? (e.account ?? 'default') : '—']);
+    rows.push(['connected as', e?.connected_as ?? '—']);
+    rows.push(['event', e?.type ?? '—']);
+    if (e && Object.keys(e.config).length > 0) rows.push(['config', JSON.stringify(e.config)]);
+    rows.push([
+      'event_status',
+      e ? `${e.status === 'active' ? C.green : e.status === 'error' ? C.red : C.yellow}${eventNextStep(t).word}${C.reset}` : '—',
+    ]);
+    if (e?.error) rows.push(['event_error', e.error]);
+    rows.push(['last_event', e?.last_event_at ?? 'never']);
   } else {
     rows.push(['secret_env', t.secret_env ?? '—']);
     if (t.webhook_url) rows.push(['webhook_url', t.webhook_url]);
@@ -538,6 +619,10 @@ async function triggersInfo(
   for (const [label, value] of rows) {
     process.stdout.write(`  ${C.dim}${pad(label, labelW)} ${C.reset}${value}\n`);
   }
+  if (t.type === 'event') {
+    const next = eventNextStep(t).lines;
+    if (next.length > 0) process.stdout.write(`\n  ${C.dim}Next${C.reset}\n${next.map((l) => `    ${l}\n`).join('')}`);
+  }
   if (t.type === 'webhook' && t.webhook_url) {
     process.stdout.write(`\n  ${C.dim}Sample request${C.reset}\n\n`);
     for (const line of buildWebhookSampleRequest(t.webhook_url).split('\n')) {
@@ -548,7 +633,7 @@ async function triggersInfo(
   return 0;
 }
 
-/** One-line schedule/source column for `ls` — cron expression, webhook secret, or monitor shape. */
+/** One-line schedule/source column for `ls` — cron expression, webhook secret, monitor shape, or event source. */
 function triggerDetail(t: ProjectTrigger): string {
   if (t.type === 'cron') return `${t.cron ?? '?'} (${t.timezone})`;
   if (t.type === 'monitor') {
@@ -556,6 +641,9 @@ function triggerDetail(t: ProjectTrigger): string {
     return t.interval_seconds !== null && t.interval_seconds !== undefined
       ? `${mode} ${formatDurationSeconds(t.interval_seconds)}`
       : mode;
+  }
+  if (t.type === 'event') {
+    return t.event ? `${t.event.connector}/${t.event.account ?? 'default'} ${t.event.type}` : '?';
   }
   return `secret_env=${t.secret_env ?? '?'}`;
 }

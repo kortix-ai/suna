@@ -13,6 +13,7 @@
 #   agents/<name>.md          one file per agent (`agents.<name>.file`)
 #   skills/<name>/SKILL.md    skills, loaded by every harness
 #   memory/                   the project brain (the `kortix-memory` skill)
+#   tools/<name>.ts           project tools, loaded by every harness (`tools:` below)
 #   harnesses/opencode/       files only OpenCode reads (`opencode.config_dir`)
 #   harnesses/pi/             files only pi reads (`pi.config_dir`); create it when needed
 kortix_version: 2
@@ -68,11 +69,29 @@ env:
 #   default: python
 
 # Files only OpenCode reads: `opencode.jsonc` (plugins, MCP servers,
-# providers, runtime defaults), `plugins/`, `tools/`, `commands/`. The agent
+# providers, runtime defaults), `plugins/`, `commands/`. The agent
 # daemon launches opencode with OPENCODE_CONFIG_DIR pointed here. Agents and
 # skills do NOT live here — they sit at the root and serve every harness.
 opencode:
   config_dir: harnesses/opencode
+
+# ─── Tools ───────────────────────────────────────────────────────────────
+# Project tools: tool name → the module that implements it, in any folder.
+# Every harness (OpenCode, pi) runs the same module. A module default-exports
+# a plain object, with no import needed:
+#
+#   export default {
+#     description: 'Look up an order by id.',
+#     parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+#     async execute(args, context) { return `order ${args.id}: shipped` },
+#   }
+#
+# Every session also has the Kortix tools: web_search, image_search,
+# scrape_webpage, memory and show. A project tool with one of those names
+# replaces it. Which agent may use which tool is `agents.<name>.tools`.
+#
+# tools:
+#   lookup_order: tools/lookup_order.ts
 
 # ─── Agents ──────────────────────────────────────────────────────────────
 # One map per project, GOVERNANCE ONLY — connectors/secrets/kortix_permissions/
@@ -92,6 +111,9 @@ agents:
     secrets: all
     kortix_permissions: all
     skills: all
+    # Tools this agent may use (harness, Kortix and project tools). Default: all.
+    # tools: [read, grep, web_search, lookup_order]   # only these
+    # tools: { exclude: [bash] }                      # every tool but these
     # sandbox: python # Must name an available project template, or "default".
 
   harness-reflector:

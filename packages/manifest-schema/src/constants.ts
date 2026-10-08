@@ -89,7 +89,13 @@ export function reservedEnvNameReason(name: string): string | null {
   return null;
 }
 
-export const TRIGGER_TYPES = ['cron', 'webhook', 'monitor'] as const;
+export const TRIGGER_TYPES = ['cron', 'webhook', 'monitor', 'event'] as const;
+
+/** Cron/webhook/monitor-only keys: hard-rejected on a `type: event` trigger. */
+export const EVENT_FORBIDDEN_KEYS = [
+  'cron', 'schedule', 'run_at', 'runAt', 'timezone', 'secret_env', 'secretEnv',
+  'run', 'mode', 'interval', 'expect_event_within',
+] as const;
 
 /**
  * A `type: monitor` trigger's shape. `poll` runs `run` every `interval` and
@@ -266,6 +272,8 @@ export const GRANTABLE_KORTIX_PERMISSIONS: readonly string[] = [
   'project.app.read',
   'project.app.write',
   'project.app.deploy',
+  'project.backend.read',
+  'project.backend.write',
   'project.review.read',
   'project.review.submit',
   'project.review.act',
@@ -374,3 +382,39 @@ export const PI_PACKAGE_NPM_RE = /^npm:(@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9
 export const PI_PACKAGE_PATH_RE = /^\.\/(?!.*(^|\/)\.\.(\/|$))[^\s:]+$/;
 /** An npm package name without a version (`pi-web-access`, `@scope/name`): what an agent's `exclude` lists. */
 export const PI_PACKAGE_NAME_RE = /^(@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
+
+// ─── Tools ──────────────────────────────────────────────────────────────────
+
+/** A tool name: what the model calls. Snake case, as every model API accepts. */
+export const TOOL_NAME_RE = /^[a-z][a-z0-9_]{0,63}$/;
+/**
+ * Tools the harnesses implement themselves (OpenCode's and pi's native tool
+ * ids). A project tool cannot take one of these names, nor a `pty_` name
+ * (the shell plugin's). An agent's `tools` access may name them.
+ */
+export const HARNESS_TOOL_NAMES = [
+  'bash',
+  'read',
+  'write',
+  'edit',
+  'apply_patch',
+  'glob',
+  'grep',
+  'list',
+  'task',
+  'question',
+  'todowrite',
+  'webfetch',
+  'websearch',
+  'skill',
+  'lsp',
+  // OpenCode internals: the unknown-tool fallback, code mode, plan mode.
+  'invalid',
+  'execute',
+  'plan_exit',
+] as const;
+/**
+ * The Kortix tools every session has on every harness (apps/kortix-sandbox-agent-server
+ * `src/services/tools/`). A project tool with the same name replaces one.
+ */
+export const KORTIX_TOOL_NAMES = ['web_search', 'image_search', 'scrape_webpage', 'memory', 'show'] as const;
