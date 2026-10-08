@@ -1,20 +1,20 @@
 {
-  "source_hash": "c41c3fe81f34be792f689b9b04b8c0c46fcaafe499e1880afbd741431d07f045",
+  "source_hash": "014cde261ada5da2fae1a01c17585d89f59b105904456e24ce00d5a5831916b7",
   "diff_files": [
     "apps/web/src/lib/seo/content-timestamps.json",
-    "packages/db/drizzle/meta/20261008000036_snapshot.json",
+    "packages/db/drizzle/meta/20261008012807_snapshot.json",
     "packages/db/drizzle/meta/_journal.json",
-    "packages/db/migrations/20261007235952000_gateway_logs_account_time_covering.concurrent.ts",
+    "packages/db/migrations/20261008012757000_gateway_logs_account_time_covering.concurrent.ts",
     "packages/db/src/schema/kortix.ts",
     "tests/migration/gateway-logs-account-time-covering.test.ts"
   ],
-  "diff_hash": "b2e50249fcce093a397294ecfc6d82ab8c76c08f9b1efc752f6246eee112ecf8",
-  "head": "2c9b3eaf706cf582907b48dec46e30f3feaf01e3",
+  "diff_hash": "3ce55d0bb2123646f9e67804995a70166c66577d046efd37ffeb7ccb1b5f8a48",
+  "head": "f4745484dd7380262f9059bd6fd4363ea9ad30bc",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-08T01:25:42.218Z"
+  "at": "2026-10-08T02:42:53.482Z"
 }
