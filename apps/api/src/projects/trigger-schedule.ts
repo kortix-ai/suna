@@ -24,7 +24,7 @@ export interface TriggerScheduleSpec {
   intervalSeconds?: number | null;
   expectEventWithinSeconds?: number | null;
   /** type=event only — see GitTriggerSpec. Absent for every other type. */
-  event?: { connector: string; type: string; config: Record<string, unknown> } | null;
+  event?: { connector: string; account?: string | null; type: string; config: Record<string, unknown> } | null;
   /** Session reminder only — see GitTriggerSpec.reminder. */
   reminder?: { everySeconds: number | null } | null;
 }

@@ -1852,3 +1852,63 @@ flow(
     });
   },
 );
+
+flow(
+  'TRG-26',
+  {
+    domain: 'triggers',
+    routes: [
+      'POST /v1/projects/:projectId/triggers',
+      'GET /v1/projects/:projectId/triggers',
+      'PATCH /v1/projects/:projectId/triggers/:slug',
+    ],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project({ managedGit: true });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { projectId: p.id };
+    type AccountRow = { slug: string; event: { connector: string; account: string | null; connected_as: string | null } | null };
+    const eventOf = (body: { triggers: AccountRow[] }) => {
+      const row = body.triggers.find((t) => t.slug === 'acct-mail');
+      if (!row?.event) throw new Error(`trigger "acct-mail" missing; got ${JSON.stringify(body.triggers.map((t) => t.slug))}`);
+      return row.event;
+    };
+    const create = (extra: Record<string, unknown>) =>
+      owner.post(
+        '/v1/projects/:projectId/triggers',
+        { name: 'Acct mail', type: 'event', connector: 'inbox', event: 'EXAMPLE_NEW_MESSAGE', prompt_template: 'x', ...extra },
+        { params },
+      );
+    await ctx.step('create with event_account → 201 and the listing echoes account, with no account feeding it', async () => {
+      const r = await create({ event_account: 'acme-bot' });
+      r.status(201);
+      const event = eventOf(r.json<{ triggers: AccountRow[] }>());
+      if (event.account !== 'acme-bot' || event.connected_as !== null) {
+        throw new Error(`expected account "acme-bot" and connected_as null — got ${JSON.stringify(event)}`);
+      }
+    });
+    await ctx.step('PATCH event_account: null → 200 and the account clears to the connector default', async () => {
+      const r = await owner.patch('/v1/projects/:projectId/triggers/:slug', { event_account: null }, { params: { ...params, slug: 'acct-mail' } });
+      r.status(200);
+      const event = eventOf(r.json<{ triggers: AccountRow[] }>());
+      if (event.account !== null) throw new Error(`account not cleared: ${JSON.stringify(event)}`);
+    });
+    await ctx.step('PATCH event_account → 200 and it reads back; PATCH of another field keeps it', async () => {
+      const slug = 'acct-mail';
+      (await owner.patch('/v1/projects/:projectId/triggers/:slug', { event_account: 'ops-bot' }, { params: { ...params, slug } })).status(200);
+      const r = await owner.patch('/v1/projects/:projectId/triggers/:slug', { name: 'Acct mail 2' }, { params: { ...params, slug } });
+      r.status(200);
+      const event = eventOf(r.json<{ triggers: AccountRow[] }>());
+      if (event.account !== 'ops-bot') throw new Error(`account lost on unrelated PATCH: ${JSON.stringify(event)}`);
+    });
+    await ctx.step('empty event_account → 400; event_account on a cron trigger → 400', async () => {
+      (await create({ name: 'Bad', event_account: ' ' })).status(400);
+      const r = await owner.post(
+        '/v1/projects/:projectId/triggers',
+        { name: 'Cron', type: 'cron', cron: '0 0 3 * * *', timezone: 'UTC', prompt_template: 'x', event_account: 'acme-bot' },
+        { params },
+      );
+      r.status(400);
+    });
+  },
+);

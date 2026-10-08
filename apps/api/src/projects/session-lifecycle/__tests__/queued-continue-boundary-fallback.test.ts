@@ -85,7 +85,7 @@ mock.module('../runtime-client', () => ({
   },
   // Every other importer of this module keeps its own names — carried so the
   // mock stays complete for the import chain, never called on this path.
-  removeStrandedOpencodeMessage: async () => false,
+  retractStrandedMessage: async () => false,
   PromptNeverLandedError: class PromptNeverLandedError extends Error {},
   SteerNotTaken: class SteerNotTaken extends Error {
     name = 'SteerNotTaken';

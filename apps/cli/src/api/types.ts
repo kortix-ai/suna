@@ -191,6 +191,10 @@ export type MonitorMode = 'poll' | 'stream';
 /** A `type: event` trigger's source + subscription state. */
 export interface ProjectTriggerEvent {
   connector: string;
+  /** Declared `account` label; null = the connector's default shared account. */
+  account?: string | null;
+  /** Identity (or label) of the shared account feeding the trigger; null when none. */
+  connected_as?: string | null;
   type: string;
   config: Record<string, unknown>;
   provider: string | null;
@@ -218,6 +222,21 @@ export interface TriggerEventTypesResponse {
   event_types: TriggerEventType[];
 }
 
+/** One shared account of a connector. Only shared accounts can feed an event trigger. */
+export interface TriggerEventAccount {
+  label: string;
+  connected_as: string | null;
+  is_default: boolean;
+  connected: boolean;
+}
+
+/** A connector (profile) of an app, with its shared accounts. */
+export interface TriggerEventConnector {
+  slug: string;
+  name: string;
+  accounts: TriggerEventAccount[];
+}
+
 /** One app from `GET /projects/:id/triggers/event-apps`. */
 export interface TriggerEventApp {
   provider: string;
@@ -229,6 +248,8 @@ export interface TriggerEventApp {
   connector: string | null;
   /** The project has an active shared account for this app. */
   connected: boolean;
+  /** Every connector (profile) of this app with its shared accounts. */
+  connectors?: TriggerEventConnector[];
 }
 
 export interface TriggerEventAppsResponse {

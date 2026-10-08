@@ -19349,7 +19349,16 @@
       "textf2f698118cc1": "Eliminar evento de aplicación",
       "text2dca9f542da4": "{name} conectado",
       "text54e2237efa16": "Los disparadores de esta aplicación ya están activos.",
-      "text2fd655fcbaad": "Se activa cuando la cuenta esté conectada."
+      "text2fd655fcbaad": "Se activa cuando la cuenta esté conectada.",
+      "text261b28a3c6bf": "Conectar otra cuenta",
+      "text19646ef1ab9d": "Etiqueta de la cuenta",
+      "text0ade71c64183": "Etiqueta de la cuenta, p. ej. acme-bot",
+      "texta8f89bda4dfc": "Este conector ya tiene una cuenta con esa etiqueta.",
+      "textd975792aff6e": "Predeterminada ({account})",
+      "text26639e783252": "Cambiar cuenta",
+      "textea56119b98e2": "Disparadores de eventos de app",
+      "text1ee2cf623464": "Nuevo evento de app",
+      "text974e43358191": "Ningún disparador inicia un agente con eventos de {name} todavía."
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

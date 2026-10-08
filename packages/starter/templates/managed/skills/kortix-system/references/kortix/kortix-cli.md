@@ -335,11 +335,11 @@ the same state.
 | `kortix triggers fire <slug>` | Manually fire a trigger now. |
 | `kortix triggers enable <slug>` | Set `enabled = true`. |
 | `kortix triggers disable <slug>` | Set `enabled = false`. |
-| `kortix triggers events --apps [--json]` | List apps that can trigger events: event count, the project's connector, and whether a shared account is connected (`connected`, `needs account`, `no connector`). |
+| `kortix triggers events --apps [--json]` | List apps that can trigger events: event count and state (`connected`, `needs account`). Under each app, every connector (profile) with its shared accounts: label, `as <connected_as>`, `default`, `not connected`. Apps with no connector print as one `No connector yet` line. |
 | `kortix triggers events --connector <slug> [--json]` | List the events a connector offers: `TYPE`, `NAME`, `DELIVERY`. |
 | `kortix triggers events --connector <slug> --event <TYPE> [--json]` | One event in full: config fields (type, required, default, allowed values, description) and the `{{ event.data.* }}` prompt variables. |
-| `kortix triggers add <slug> --type event --connector <slug> --event <TYPE> --config <k>=<v> --prompt "…" [--apply]` | Add an event trigger. Without `--apply` it writes a `triggers:` block to the local `kortix.yaml` (`kortix ship` applies it). With `--apply` it creates the trigger now and prints its status and the next step. Online, the config is checked against the event catalog; every missing or invalid field is listed with its description. |
-| `kortix triggers set <slug> [--event <TYPE>] [--connector <slug>] [--config <k>=<v>] [--config-json '<json>']` | Change a live event trigger. `--config` merges into the current config. `--config-json` replaces it. Do not pass both. |
+| `kortix triggers add <slug> --type event --connector <slug> --event <TYPE> --config <k>=<v> [--account <label>] --prompt "…" [--apply]` | Add an event trigger. `--connector` is the profile. `--account` names one shared account of it; omit it for the connector's default shared account. Without `--apply` it writes a `triggers:` block to the local `kortix.yaml` (`kortix ship` applies it). With `--apply` it creates the trigger now and prints its status and the next step. Online, the config is checked against the event catalog; every missing or invalid field is listed with its description. |
+| `kortix triggers set <slug> [--event <TYPE>] [--connector <slug>] [--account <label> | --default-account] [--config <k>=<v>] [--config-json '<json>']` | Change a live event trigger. `--account` picks a shared account; `--default-account` clears it (the two are exclusive). Changing `--connector` clears the account. `--config` merges into the current config. `--config-json` replaces it. Do not pass both. |
 
 `--config k=v` is converted to the field's type (number, boolean, comma
 list) using the catalog. `--config-json` passes typed values as-is. An event
