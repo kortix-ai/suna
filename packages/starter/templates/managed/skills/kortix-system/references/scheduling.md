@@ -203,17 +203,30 @@ signature. Use a webhook trigger only for a system with no app connector.
 
 ### Autonomous setup recipe
 
+Terms: an **app** is the service (`github`). A **connector** is a profile,
+a `connectors:` entry. Several connectors can share one app (`github`,
+`github-work`). An **account** is one connected login under a connector.
+Only a **shared** account (project-owned, open to the whole project) can
+feed a trigger.
+
 Run these in order. Each step prints what the next step needs.
 
-1. **Find the app.** `kortix triggers events --apps`. The table shows `APP`,
-   `EVENTS`, `CONNECTOR`, `STATE`. `STATE` is `connected`, `needs account`,
-   or `no connector`.
+1. **Find the app.** `kortix triggers events --apps`. Each app prints its
+   `EVENTS` count and `STATE` (`connected` or `needs account`). Under it, each
+   connector (profile) lists its shared accounts: label, `as <identity>`,
+   `default`, `not connected`. Apps with no connector collapse into one
+   `No connector yet` line.
 2. **No connector?** `kortix connectors add <slug> --provider composio --app <app> --apply`.
    It commits the connector to `kortix.yaml` on main and syncs it.
 3. **Not connected?** `kortix connectors connect <slug> --owner project`.
    Give the link to the person and ask them to open it. Use the shared
    (`project`) account. Never use a member's private account: event
-   triggers cannot use it. You cannot finish this step yourself.
+   triggers cannot use it. You cannot finish this step yourself. To add a
+   second account to the same connector, run the same command again; then
+   label it (`kortix connectors rename <id> <label>`). When the
+   person finishes, Kortix picks the account up by itself. If the trigger
+   still says `needs connection` a minute later, run
+   `kortix connectors connect-finalize <slug> --owner project`.
 4. **Pick the event.** `kortix triggers events --connector <slug>` lists the
    events. Then `kortix triggers events --connector <slug> --event <TYPE>`
    shows the config fields and the `{{ event.data.* }}` variables.
@@ -226,17 +239,24 @@ Run these in order. Each step prints what the next step needs.
      --config repo=acme/api \
      --prompt "Review {{ event.data.html_url }}" --apply
    ```
+   `--connector` names the profile. Add `--account <label>` only when that
+   connector has several shared accounts and the trigger must use one that is
+   not the default. Without `--account` the trigger uses the connector's
+   default shared account. Change it later with
+   `kortix triggers set <slug> --account <label>`; `--default-account` clears
+   it. Switching the account resubscribes the trigger.
    Without `--apply` the CLI writes the block to the local `kortix.yaml`; then
    run `kortix ship`. A bad config exits 2 and lists every missing or invalid
    field.
-6. **Check it.** `kortix triggers info pr-review`. Repeat until it prints
-   `live`. Act on the status:
+6. **Check it.** `kortix triggers info pr-review`. It shows `connector`, `account`
+   (the label, or `default`) and `connected as` (the identity that feeds the
+   trigger). Repeat until it prints `live`. Act on the status:
 
    | CLI status | Do |
    | --- | --- |
    | `live` | Done. It fires on the next matching event. |
    | `pending` | Wait a moment and check again. |
-   | `needs connection` | Ask a person to open the `--owner project` link (step 3). It goes live by itself after. |
+   | `needs connection` | Ask a person to open the `--owner project` link (step 3). It goes live by itself after. If `info` shows an `account`, the text reads `Connect a shared <App> account labelled "<label>" on <connector>.` Connect that account, then label it with `kortix connectors rename <id> <label>`. |
    | `error` | Read the error. Fix the config: `kortix triggers set <slug> --config <k>=<v>`. If the error says the account is shared with specific people only, ask a person to share it with the whole project. |
 
 Change a live trigger with `kortix triggers set <slug> --config k=v` (merge)

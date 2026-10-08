@@ -7164,7 +7164,11 @@
       "line58JsxAttrTitleYouRanOutOfCredits": "你的额度已用完",
       "line74JsxTextEnableAutoTopUp": "启用自动充值",
       "line82JsxTextBuyCredits": "购买额度",
-      "askOwnerToAddCredits": "只有账户所有者可以添加额度。请联系所有者充值。"
+      "askOwnerToAddCredits": "只有账户所有者可以添加额度。请联系所有者充值。",
+      "askOwnerForCredits": "联系所有者",
+      "ownersNotified": "已通知所有者",
+      "alreadyAskedToday": "今天已经请求过",
+      "askOwnerFailed": "无法通知所有者，请重试"
     },
     "componentsSessionSessionFilesPanel": {
       "line80JsxTextThisSessionIsItsOwnVersion": "此会话是独立版本",
@@ -19346,6 +19350,15 @@
       "text2dca9f542da4": "{name} 已连接",
       "text54e2237efa16": "此应用的触发器现已上线。",
       "text2fd655fcbaad": "连接账户后即会上线。",
+      "text261b28a3c6bf": "连接另一个账户",
+      "text19646ef1ab9d": "账户标签",
+      "text0ade71c64183": "账户标签，例如 acme-bot",
+      "texta8f89bda4dfc": "此连接器已有使用该标签的账户。",
+      "textd975792aff6e": "默认（{account}）",
+      "text26639e783252": "更改账户",
+      "textea56119b98e2": "应用事件触发器",
+      "text1ee2cf623464": "新建应用事件",
+      "text974e43358191": "目前没有触发器会因 {name} 事件启动代理。",
       "text2eb91a6f88aa": "1 个文件仍将作为附件保留。移除文件以运行命令，或移除命令以将文件作为消息发送。",
       "text807f9beb34b1": "{count, plural, other {# 个文件仍将作为附件保留。移除文件以运行命令，或移除命令以将文件作为消息发送。}}"
     },

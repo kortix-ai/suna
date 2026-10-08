@@ -113,6 +113,17 @@ describe('resolveManifestImports', () => {
     expect(resolved.files[1]?.revision).toBe('sha-.kortix/triggers/dockets.yml');
   });
 
+  test('an imported file declares project tools; the root agent may name them', async () => {
+    const resolved = await resolve({
+      'kortix.yaml': 'kortix_version: 2\ndefault_agent: a\nimports: [engineering/kortix.yaml]\ntools:\n  ping: tools/ping.ts\nagents:\n  a:\n    tools: [ping, review_gate]\n',
+      'engineering/kortix.yaml': 'tools:\n  review_gate: engineering/tools/review_gate.ts\n',
+    });
+    expect(resolved.raw.tools).toEqual({ ping: 'tools/ping.ts', review_gate: 'engineering/tools/review_gate.ts' });
+    expect(resolved.origins.tools).toEqual({ ping: 'kortix.yaml', review_gate: 'engineering/kortix.yaml' });
+    const result = validateManifest(resolved.raw, 'yaml');
+    expect(result.issues).toEqual([]);
+  });
+
   test('the merged document passes the ordinary validator, including cross-file agent refs', async () => {
     const resolved = await resolve(FILES);
     const result = validateManifest(resolved.raw, 'yaml');

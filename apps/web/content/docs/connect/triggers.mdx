@@ -106,7 +106,7 @@ An event trigger runs an agent when an app event happens: a pull request opens, 
 
 1. Open the project, then **Triggers** and **New trigger**.
 2. Choose **App event**.
-3. Pick a connected app, or connect one.
+3. Pick an app. Under it, pick a connector and one of its shared accounts, or connect another account. The account marked **Default** is used unless you pick another.
 4. Pick an event. The form for the event's settings, such as the repository, appears below it.
 5. Write the prompt and save.
 
@@ -129,9 +129,9 @@ kortix triggers add pr-review --type event \
 kortix triggers info pr-review
 ```
 
-1. `triggers events --apps` lists the apps that can trigger events. The `STATE` column reads `connected`, `needs account`, or `no connector`.
+1. `triggers events --apps` lists the apps that can trigger events. Each app lists its connectors (profiles) and their shared accounts. The `STATE` column reads `connected` or `needs account`; apps with no connector appear under `No connector yet`.
 2. `connectors add` adds the connector when the app has none. Skip it when `CONNECTOR` is set.
-3. `connectors connect <slug> --owner project` prints a link. A person opens it to connect the shared account. A member's private account does not count.
+3. `connectors connect <slug> --owner project` prints a link. A person opens it to connect the shared account. A member's private account does not count. Run it again to add a second shared account, then label it with `connectors rename <id> <label>`.
 4. `triggers events --connector <slug>` lists the events. Add `--event <TYPE>` for one event's settings and its `{{ event.data.* }}` variables. Read each setting's description: some events take a full name in one setting, such as `repo: acme/api`, and reject the same value split across `owner` and `repo`.
 5. `triggers add --apply` creates the trigger now and prints its status and the next step. A missing or invalid setting exits with code 2 and lists every problem. Without `--apply`, the CLI writes the block to the local `kortix.yaml`; run `kortix ship` to apply it.
 6. `triggers info <slug>` shows the status. Repeat until it reads `live`.
@@ -145,7 +145,8 @@ kortix triggers info pr-review
 triggers:
   - slug: pr-review
     type: event
-    connector: github # required, slug of a connector under `connectors:`
+    connector: github-work # required, slug of a connector (profile) under `connectors:`
+    account: acme-bot # optional, label of one shared account of that connector
     event: GITHUB_PULL_REQUEST_CREATED # required, event type from `kortix triggers events`
     config: { repo: acme/api } # optional, settings of the event
     agent: default
@@ -179,7 +180,7 @@ Event data comes from a third party. Kortix starts the session's first message w
 | --- | --- | --- |
 | `active` | The subscription exists. Events fire the trigger. | None. |
 | `pending` | The trigger is declared and Kortix has not created the subscription yet. | Wait a moment. If it stays `pending`, save the trigger again. |
-| `needs_connection` | The connector has no usable shared account. The text reads "Connect a shared `<app>` account to activate this trigger." | Connect a shared account for the connector as the project. A member's private account does not count. |
+| `needs_connection` | The connector has no usable shared account. The text reads "Connect a shared `<app>` account to activate this trigger." or "Finish connecting the shared `<app>` account…" | Connect a shared account for the connector as the project (`kortix connectors connect <slug> --owner project`). A member's private account does not count. The trigger goes live by itself once the person finishes connecting, even when they connect from a link outside Kortix. |
 | `error` | The subscription failed or the provider disabled it. The trigger shows the error text. | Fix the cause the text names, then save the trigger again. |
 
 Common `error` texts:
@@ -192,10 +193,11 @@ Common `error` texts:
 
 ### Rules
 
+- **Connector and account.** An *app* is the service, such as GitHub. A *connector* is a profile in `kortix.yaml`; several connectors can share one app. An *account* is one connected login under a connector. A trigger names a connector. It uses that connector's default shared account unless it sets `account: <label>`. Set `account` only when a connector holds several shared accounts. In the CLI, `--account <label>` sets it and `--default-account` (on `triggers set`) clears it. A label that matches no shared account gives `needs_connection` with the text "Connect a shared `<app>` account labelled "`<label>`" on `<connector>`."
 - **One feeder account.** Only a project-shared account that is open to the whole project can feed a trigger. A trigger runs with nobody present, and event data lands in a session prompt. An account shared with named people only, or a private account, never feeds one.
 - **Each event fires once.** A trigger fires once per provider event. A redelivered event does not start a second session. Two triggers on the same event each fire once.
 - **Pause stops it.** A paused trigger or a paused project skips events. Skipped events do not queue.
-- **Edits resubscribe.** Changing `connector`, `event`, or `config` replaces the subscription. Deleting the trigger removes it.
+- **Edits resubscribe.** Changing `connector`, `account`, `event`, or `config` replaces the subscription. Deleting the trigger removes it.
 
 ### Self-hosting event triggers
 
@@ -212,6 +214,9 @@ Event delivery needs a Composio project with a webhook that points at your API. 
    ```
 
 3. The script prints the signing secret once, with a `dotenvx set COMPOSIO_WEBHOOK_SECRET ...` command. Run that command to store the secret. Composio does not show it again.
+4. Make the secret reach the running API. A deployment that reads its environment from a secret store (not the `.env` file) needs `COMPOSIO_WEBHOOK_SECRET` added there too, then a restart. Until the API has it, `POST /v1/webhooks/events/composio` answers `503 event_ingress_not_configured`.
+
+The subscription carries four events: `composio.trigger.message` (an app event), `composio.trigger.disabled` and `composio.connected_account.expired` (they set the trigger's `error` status), and `composio.connected_account.activated` (it finishes a connection a person completed outside Kortix, so the trigger goes live). Re-run the script after an upgrade; it adds missing events to an existing subscription and keeps the secret.
 
 A Composio project holds one webhook URL, so one project serves one API deployment. Two deployments that share a Composio project cannot both receive events. Add `--dry-run` to read the current subscription and print the plan without writing. Run the script again to change the URL. A repeat run with the same URL changes nothing and prints no secret. Without `COMPOSIO_WEBHOOK_SECRET`, the ingress route answers `503` and no event fires.
 

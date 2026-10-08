@@ -176,6 +176,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'DELETE /v1/accounts/:accountId/secret-resources/:secretId/grants/:userId': { action: 'secret.account_resource.revoke', title: 'Revoked pooled provider key grant' },
   'PUT /v1/accounts/:accountId/secret-resources/:secretId/grants/:userId': { action: 'secret.account_resource.grant', title: 'Granted pooled provider key' },
   'PUT /v1/accounts/:accountId/secret-resources/:secretId/value': { action: 'secret.account_resource.rotate', title: 'Rotated pooled provider key' },
+  'POST /v1/accounts/:accountId/top-up-requests': { action: 'billing.top_up_request.create', title: 'Asked the owners to add credits' },
   'GET /v1/accounts/me': { action: 'auth.identity.read', title: 'Viewed own identity' },
   'GET /v1/accounts/me/devices': { action: 'auth.device.list', title: 'Viewed signed-in devices' },
   'DELETE /v1/accounts/me/devices/:sessionId': { action: 'auth.device.sign_out', title: 'Signed a device out' },

@@ -6,8 +6,9 @@
  * glob/grep are Kortix additions on top of ripgrep, named exactly as
  * OpenCode's so `toolViewModel()` in the web client needs no remapping
  * (pi's own `find`/`grep` take other arguments). `question` is the interactive
- * ask the product renders. `web_search`, `image_search`, `scrape_webpage`,
- * `memory` and `show` are the Kortix tools every session has.
+ * ask the product renders. The hosted tools (`web_search`, `image_search`,
+ * `scrape_webpage`, `memory`, `show` and the project's own, services/tools)
+ * run here exactly as every other harness runs them.
  */
 import type { AgentTool } from '@earendil-works/pi-agent-core'
 import {
@@ -25,11 +26,9 @@ import {
 } from '@earendil-works/pi-coding-agent'
 import { Type } from 'typebox'
 import type { RuntimeQuestion } from '@kortix/api-contract/transcript'
+import { runTool, sessionEnv, type HostedTool } from '@/services/tools/host'
 import { AGENT_SHELL_ENV } from '../shared/agent-env-file'
 import type { QuestionBroker } from './interactions'
-import { createMemoryTool } from './kortix-memory-tool'
-import { createShowTool } from './kortix-show-tool'
-import { createImageSearchTool, createScrapeWebpageTool, createWebSearchTool } from './kortix-web-tools'
 
 /** pi's own grep cap for one matching line. */
 const GREP_MAX_LINE_LENGTH = 500
@@ -207,8 +206,26 @@ function agentTool(definition: ToolDefinition<any, any, any>): AgentTool<any, an
   }
 }
 
-/** Every tool a root agent and a subagent can be given: pi's workspace tools on this sandbox, then the Kortix tools. */
-export function createWorkspaceTools(cwd: string): AgentTool<any, any>[] {
+/** A hosted tool as the pi `Agent` runs it: the call's context names this session and agent. */
+function hostedAgentTool(tool: HostedTool, cwd: string, caller: () => { sessionId: string; agent: string }): AgentTool<any, undefined> {
+  return {
+    name: tool.name,
+    label: tool.name,
+    description: tool.description,
+    parameters: tool.parameters as never,
+    async execute(_id, args, signal) {
+      const text = await runTool(tool, args as Record<string, unknown>, { ...caller(), directory: cwd, env: sessionEnv(), signal: signal ?? new AbortController().signal })
+      return { content: [{ type: 'text', text }], details: undefined }
+    },
+  }
+}
+
+/** Every tool a root agent and a subagent can be given: pi's workspace tools on this sandbox, then the hosted tools. */
+export function createWorkspaceTools(
+  cwd: string,
+  hosted: readonly HostedTool[] = [],
+  caller: () => { sessionId: string; agent: string } = () => ({ sessionId: '', agent: '' }),
+): AgentTool<any, any>[] {
   return [
     // PI_* session variables need an extension context; the agent env file carries the session's own.
     agentTool(createBashToolDefinition(cwd, { exposeSessionEnvironment: false, spawnHook: (spawn) => ({ ...spawn, env: shellEnv(spawn.env) }) })),
@@ -217,10 +234,6 @@ export function createWorkspaceTools(cwd: string): AgentTool<any, any>[] {
     agentTool(createEditToolDefinition(cwd)),
     createGlobTool(cwd),
     createGrepTool(cwd),
-    createWebSearchTool(),
-    createImageSearchTool(),
-    createScrapeWebpageTool(),
-    createMemoryTool(cwd),
-    createShowTool(cwd),
+    ...hosted.map((tool) => hostedAgentTool(tool, cwd, caller)),
   ]
 }

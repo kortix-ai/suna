@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 728,
+  "count": 729,
   "routes": [
     {
       "method": "GET",
@@ -597,6 +597,10 @@
     {
       "method": "PUT",
       "path": "/v1/accounts/:accountId/secret-resources/:secretId/value"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/top-up-requests"
     },
     {
       "method": "GET",

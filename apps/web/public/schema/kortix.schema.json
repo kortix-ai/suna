@@ -324,6 +324,10 @@
                   "type": "string",
                   "minLength": 1
                 },
+                "account": {
+                  "type": "string",
+                  "minLength": 1
+                },
                 "event": {
                   "type": "string",
                   "minLength": 1
@@ -474,6 +478,7 @@
                   "then": {
                     "properties": {
                       "connector": false,
+                      "account": false,
                       "event": false,
                       "config": false
                     }
@@ -1250,6 +1255,17 @@
             },
             "additionalProperties": false
           },
+          "tools": {
+            "type": "object",
+            "description": "Project tools: tool name → repo-relative path of the module that implements it. Each module default-exports { description, parameters (JSON Schema), execute(args, context) }. Every harness loads them.",
+            "propertyNames": {
+              "pattern": "^[a-z][a-z0-9_]{0,63}$"
+            },
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^(?!-)(?!(?:.*/)?\\.\\.?(?:/|$))(?:[\\w .-]+/)*[\\w .-]+\\.[cm]?[jt]s$"
+            }
+          },
           "agents": {
             "type": "object",
             "minProperties": 1,
@@ -1268,10 +1284,50 @@
                   "type": "boolean"
                 },
                 "tools": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "boolean"
-                  }
+                  "description": "Which tools this agent may use: harness tools (bash, read, edit, …), Kortix tools (web_search, memory, show, …) and project tools (top-level `tools`). `all` (default) or `none`; a list allows only those; `{ exclude: [...] }` allows every tool but those. A map of tool name → boolean is the earlier form.",
+                  "oneOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "all",
+                        "none"
+                      ]
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "exclude"
+                      ],
+                      "properties": {
+                        "exclude": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "not": {
+                        "required": [
+                          "exclude"
+                        ]
+                      },
+                      "additionalProperties": {
+                        "type": "boolean"
+                      }
+                    }
+                  ]
                 },
                 "sandbox": {
                   "type": "string",
@@ -2003,6 +2059,10 @@
                   "type": "string",
                   "minLength": 1
                 },
+                "account": {
+                  "type": "string",
+                  "minLength": 1
+                },
                 "event": {
                   "type": "string",
                   "minLength": 1
@@ -2153,6 +2213,7 @@
                   "then": {
                     "properties": {
                       "connector": false,
+                      "account": false,
                       "event": false,
                       "config": false
                     }
@@ -2990,6 +3051,17 @@
             },
             "additionalProperties": false
           },
+          "tools": {
+            "type": "object",
+            "description": "Project tools: tool name → repo-relative path of the module that implements it. Each module default-exports { description, parameters (JSON Schema), execute(args, context) }. Every harness loads them.",
+            "propertyNames": {
+              "pattern": "^[a-z][a-z0-9_]{0,63}$"
+            },
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^(?!-)(?!(?:.*/)?\\.\\.?(?:/|$))(?:[\\w .-]+/)*[\\w .-]+\\.[cm]?[jt]s$"
+            }
+          },
           "agents": {
             "type": "object",
             "minProperties": 1,
@@ -3003,10 +3075,50 @@
                   "type": "boolean"
                 },
                 "tools": {
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "boolean"
-                  }
+                  "description": "Which tools this agent may use: harness tools (bash, read, edit, …), Kortix tools (web_search, memory, show, …) and project tools (top-level `tools`). `all` (default) or `none`; a list allows only those; `{ exclude: [...] }` allows every tool but those. A map of tool name → boolean is the earlier form.",
+                  "oneOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "all",
+                        "none"
+                      ]
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "exclude"
+                      ],
+                      "properties": {
+                        "exclude": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "not": {
+                        "required": [
+                          "exclude"
+                        ]
+                      },
+                      "additionalProperties": {
+                        "type": "boolean"
+                      }
+                    }
+                  ]
                 },
                 "sandbox": {
                   "type": "string",
@@ -3873,6 +3985,10 @@
                   "type": "string",
                   "minLength": 1
                 },
+                "account": {
+                  "type": "string",
+                  "minLength": 1
+                },
                 "event": {
                   "type": "string",
                   "minLength": 1
@@ -4023,6 +4139,7 @@
                   "then": {
                     "properties": {
                       "connector": false,
+                      "account": false,
                       "event": false,
                       "config": false
                     }

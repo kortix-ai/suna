@@ -42,6 +42,7 @@ shared layer.
 | `src/services/sandbox-env/` | services | The project env store and the secret-capability instruction file. |
 | `src/services/skills/` | services | Image-baked managed Kortix skills and their injection. |
 | `src/services/static-web/` | services | The static file server on port 3211. |
+| `src/services/tools/` | services | The hosted tools: the Kortix tools (`web_search`, `image_search`, `scrape_webpage`, `memory`, `show`) and the project's kortix.yaml `tools`, one module each, run the same way by every harness. |
 | `src/services/monitor/` | services | The monitor process runner for monitor boxes. |
 | `src/services/event-bus/` | services | The daemon event sequencer. |
 | `src/services/resources/` | services | Box resource telemetry (memory, cgroup, load, disk, RSS). |
@@ -59,7 +60,7 @@ shared layer.
 | --- | --- | --- |
 | `src/types/**` | `src/types/**` | none, and no runtime code at all |
 | `src/lib/**` | the shared layer | none |
-| `src/services/<name>/**` | its own folder, the services `SERVICES` declares for it, the shared layer | `egress-shim`: `node-forge`, `@kortix/api-contract`. `monitor`, `runtime-assets`: `@kortix/api-contract` |
+| `src/services/<name>/**` | its own folder, the services `SERVICES` declares for it, the shared layer | `egress-shim`: `node-forge`, `@kortix/api-contract`. `monitor`, `runtime-assets`, `tools`: `@kortix/api-contract` |
 | `src/harness/harness.ts` | the harness, all services, the shared layer | none |
 | `src/harness/{open-code,pi}/**` | its own folder, `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `@kortix/api-contract`. `open-code`: `bun:sqlite`. `pi`: `@earendil-works/*`, `typebox`, `@kortix/sdk/wire-message-id` |
 | `src/harness/{contract,shared}/**` | `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `@kortix/api-contract` (the daemon-to-API wire, `runtime-relay`) |

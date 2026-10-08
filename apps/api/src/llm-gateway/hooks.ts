@@ -24,7 +24,7 @@ import { isGatewayKey } from '../shared/crypto';
 import { recordGatewayTrace } from '../shared/gateway-logs';
 import { recordUsageEvent } from '../shared/usage-events';
 import { isPureHoldRefund, reconcileBillingHold } from './billing-hold-reconciliation';
-import { checkBudget, releaseBudgetReservation } from './budgets';
+import { type BudgetCrossing, checkBudget, releaseBudgetReservation } from './budgets';
 import { validateGatewayKey } from './gateway-keys';
 import { resolveDefaultModelForPrincipal } from './resolution/default-model';
 import { resolveSessionPersonalOwner } from '../projects/lib/personal-resources';
@@ -140,12 +140,28 @@ function logGatewayBudgetWarnings(
   }
 }
 
+/**
+ * Email the budget's managers at 80% and 100% (KRTX-1718). Fire-and-forget,
+ * and lazy: no request waits on it, and the alert module (IAM, email) stays
+ * out of the request path's import graph.
+ */
+function alertBudgetCrossings(principal: AuthedPrincipal, crossings: BudgetCrossing[] | undefined): void {
+  const projectId = principal.projectId;
+  if (!crossings?.length || !projectId) return;
+  void import('./budget-alerts')
+    .then((alerts) => alerts.alertBudgetCrossings(projectId, crossings))
+    .catch((err: unknown) =>
+      logger.warn('[gateway] budget alert failed', { projectId, error: err instanceof Error ? err.message : String(err) }),
+    );
+}
+
 /** Throw with the budget message when a project/member gateway budget is exhausted. */
 export class GatewayBudgetExceededError extends Error {}
 
 export async function assertGatewayBudget(principal: AuthedPrincipal): Promise<void> {
-  const { exceeded, message, warnings } = await checkBudget(principal);
+  const { exceeded, message, warnings, crossings } = await checkBudget(principal);
   logGatewayBudgetWarnings(principal, warnings);
+  alertBudgetCrossings(principal, crossings);
   if (exceeded) throw new GatewayBudgetExceededError(message ?? 'Budget exceeded');
 }
 
@@ -186,8 +202,9 @@ export async function authorizeRequest(
       };
     }
   }
-  const { exceeded, message, warnings } = await checkBudget(principal);
+  const { exceeded, message, warnings, crossings } = await checkBudget(principal);
   logGatewayBudgetWarnings(principal, warnings);
+  alertBudgetCrossings(principal, crossings);
   if (exceeded) {
     // A legacy gateway can have a hold here. It refunds the hold when it sees
     // this denial's principal.

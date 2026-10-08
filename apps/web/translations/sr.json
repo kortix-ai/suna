@@ -7164,7 +7164,11 @@
       "line58JsxAttrTitleYouRanOutOfCredits": "Понестало вам је кредита",
       "line74JsxTextEnableAutoTopUp": "Омогући аутоматско допуњавање",
       "line82JsxTextBuyCredits": "Купите кредите",
-      "askOwnerToAddCredits": "Само власник налога може да дода кредите. Замолите власника да допуни."
+      "askOwnerToAddCredits": "Само власник налога може да дода кредите. Замолите власника да допуни.",
+      "askOwnerForCredits": "Замолите власника",
+      "ownersNotified": "Власници су обавештени",
+      "alreadyAskedToday": "Већ сте питали данас",
+      "askOwnerFailed": "Власници нису обавештени. Покушајте поново"
     },
     "componentsSessionSessionFilesPanel": {
       "line80JsxTextThisSessionIsItsOwnVersion": "Ова сесија је сопствена верзија",
@@ -19346,6 +19350,15 @@
       "text2dca9f542da4": "{name} је повезан",
       "text54e2237efa16": "Окидачи за ову апликацију су сада активни.",
       "text2fd655fcbaad": "Постаје активан када се налог повеже.",
+      "text261b28a3c6bf": "Poveži još jedan nalog",
+      "text19646ef1ab9d": "Oznaka naloga",
+      "text0ade71c64183": "Oznaka naloga, npr. acme-bot",
+      "texta8f89bda4dfc": "Ovaj konektor već ima nalog sa tom oznakom.",
+      "textd975792aff6e": "Podrazumevani ({account})",
+      "text26639e783252": "Promeni nalog",
+      "textea56119b98e2": "Okidači događaja aplikacije",
+      "text1ee2cf623464": "Novi događaj aplikacije",
+      "text974e43358191": "Nijedan okidač još ne pokreće agenta iz {name} događaja.",
       "text2eb91a6f88aa": "1 датотека остаје приложена. Уклони је да покренеш команду, или уклони команду да пошаљеш датотеку као поруку.",
       "text807f9beb34b1": "{count, plural, few {# датотеке остају приложене. Уклони их да покренеш команду, или уклони команду да их пошаљеш као поруку.} other {# датотека остаје приложена. Уклони их да покренеш команду, или уклони команду да их пошаљеш као поруку.}}"
     },

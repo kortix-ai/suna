@@ -18,6 +18,7 @@ A Kortix project has two configuration surfaces with strict, non-overlapping own
 | `agents/<name>.md` | One agent: frontmatter and system prompt. `agents.<name>.file` names it. |
 | `skills/<name>/SKILL.md` | One skill. Every harness loads it. |
 | `memory/` | The project memory. |
+| `tools/<name>.ts` | Project tools, one module each. `tools:` declares them; every harness runs them. See [Tools](/docs/project/tools). |
 | `harnesses/opencode/` | Files only OpenCode reads: `opencode.jsonc`, `plugins/`, `tools/`, `commands/`. `opencode.config_dir` points here. |
 
 Projects created before 2026-09 keep agents and skills under `.kortix/opencode/` and memory under `.kortix/memory/`. Kortix reads both layouts.
@@ -110,7 +111,8 @@ triggers:
 | --------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------ |
 | `kortix_version`                                    | yes      | must be `2`                                                                                |
 | `default_agent`                                     | yes      | must name a declared, enabled agent                                                        |
-| `imports`                                           | no       | other YAML files or directories whose `triggers`, `connectors`, `agents`, and `apps` merge into this manifest. See [`imports:`](#imports) |
+| `imports`                                           | no       | other YAML files or directories whose `triggers`, `connectors`, `agents`, `apps`, and `tools` merge into this manifest. See [`imports:`](#imports) |
+| `tools`                                             | no       | project tools: tool name → repo-relative module path. Every harness runs them. See [`tools:`](#tools) |
 | `runtime`                                           | no       | `"opencode"` (the default) or `"pi"` — the agent harness a session boots inside its sandbox; `pi` runs pi-agent-core in-process in the sandbox daemon and reads the same agent `.md` files and skills. The project's `pi_harness` feature flag selects pi without this line. pi needs the `llm_gateway` flag; without it the session boots OpenCode. |
 | `harnesses.pi.packages`                             | no       | pi packages ([pi.dev/packages](https://pi.dev/packages)) the project's pi sessions load. See [`harnesses:`](#harnesses) |
 | `pi.config_dir`                                    | no       | `harnesses/pi`, then `.kortix/pi` if present. Pi-native `settings.json`, `extensions/`, `skills/`, and `prompts/`. |
@@ -168,9 +170,9 @@ The platform reads the root file, resolves every import, and works on the merged
 
 1. A path is relative to the repository root. `..`, absolute paths, and globs are rejected.
 2. A directory import takes every `.yaml` and `.yml` file below it, at any depth, sorted by path. Other files are skipped.
-3. An imported file declares `triggers`, `connectors`, `agents`, `apps`, and `imports`. Every other key (`kortix_version`, `default_agent`, `runtime`, `project`, `env`, `opencode`, `sandbox`, `policy`, `policies`) stays in the root file. An imported file that sets one fails validation.
+3. An imported file declares `triggers`, `connectors`, `agents`, `apps`, `tools`, and `imports`. Every other key (`kortix_version`, `default_agent`, `runtime`, `project`, `env`, `opencode`, `sandbox`, `policy`, `policies`) stays in the root file. An imported file that sets one fails validation.
 4. An imported file can import more files. The limit is 8 levels and 200 files. A cycle is an error. A file reached twice merges once.
-5. One name, one file. A trigger slug, connector slug, agent name, or app name declared in two files is an error that names both files. Nothing overrides silently.
+5. One name, one file. A trigger slug, connector slug, agent name, app name, or tool name declared in two files is an error that names both files. Nothing overrides silently.
 6. Entries merge in order: the importing file first, then its imports in the order listed.
 
 A broken import fails the whole manifest, the same way a YAML syntax error does. `kortix validate`, `kortix ship`, and the change request merge check all report it before it reaches `main`:
@@ -182,6 +184,22 @@ imports: triggers "weekly-report" is declared in both triggers/a.yaml and trigge
 **Edits go to the file that declares the entry.** When the dashboard, the API, or `kortix triggers enable|disable|rm` changes a trigger, connector, agent, or app that an imported file declares, only that file is written. The root file is not rewritten. A new entry is written to the root file. Move it into an imported file by hand if you want it there.
 
 `imports` requires `kortix.yaml`. A `kortix.toml` manifest ignores the key.
+
+## `tools:`
+
+Project tools, by name. Each value is the repo-relative path of the module that implements the tool, in any folder. OpenCode and pi run the same module. The module contract, the Kortix tools every session has, and the migration from `harnesses/opencode/tools/` are in [Tools](/docs/project/tools).
+
+```yaml
+tools:
+  lookup_order: tools/lookup_order.ts
+  crm_note: integrations/crm/note.ts
+```
+
+- A name is snake_case: `^[a-z][a-z0-9_]{0,63}$`.
+- A harness tool name (`bash`, `read`, `write`, `edit`, `apply_patch`, `glob`, `grep`, `list`, `task`, `question`, `todowrite`, `webfetch`, `websearch`, `skill`, `lsp`, `invalid`, `execute`, `plan_exit`, `pty_*`) is an error.
+- A Kortix tool name (`web_search`, `image_search`, `scrape_webpage`, `memory`, `show`) is allowed: the project tool replaces the Kortix tool.
+- A path ends in `.ts`, `.js`, `.mts`, `.mjs`, `.cts`, or `.cjs`. It must not start with `/` or `-`, or contain a `.` or `..` segment.
+- `kortix validate` also reports a declared module that does not exist.
 
 ## `project:`
 
@@ -457,6 +475,7 @@ agents:
 | `kortix_permissions`  | `none`  | Which Kortix permissions (project actions) this agent may exercise, through the CLI, the API, or git. `all` means every project permission, still capped by the agent's ceiling role and never including the human-only permissions. `kortix_cli` is the deprecated spelling: still accepted, with a validation warning; setting both to different values is an error. |
 | `skills`              | `none`  | Which skills this agent may load.                                                                                                                                                                         |
 | `apps`                | `none`  | Which Kortix App slugs this agent may open when the App is `restricted` or `private`. `all` means every App in the project. See [Agents and Apps](/docs/feature-flags/apps#agents-and-apps). |
+| `tools`               | `all`   | Which tools this agent may use: harness, Kortix, and project tools. `all`, `none`, a list (only those), or `{ exclude: [...] }` (all but those). The earlier map form `{ bash: false }` still works. Unlike the grants above, an omitted `tools` means every tool. See [Who may use which tool](/docs/project/tools#who-may-use-which-tool). |
 | `repository_access` | `true` | Whether new sessions receive the project repository. `false` disables repository delivery and repository access through session credentials. Existing sessions keep their saved policy. |
 
 v2 is deny-by-default: an omitted `connectors`, `secrets`, `kortix_permissions`, `skills`, or `apps` on a declared agent resolves to `none`. Grant every permission an agent needs explicitly, as the starter's `kortix` agent does above. A project migrating from v1 must re-grant everything by hand — v1 defaults `env` (secrets) to `all` when omitted, the opposite of v2.

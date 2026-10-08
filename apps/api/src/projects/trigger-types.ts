@@ -9,6 +9,8 @@ export type GitMonitorMode = 'poll' | 'stream';
 export interface GitTriggerEventFields {
   /** Slug of a connector declared under `connectors:`. */
   connector: string;
+  /** Label of one shared account of that connector. Absent = the connector's default shared account. */
+  account?: string | null;
   /** Provider event type id (e.g. `GITHUB_PULL_REQUEST_EVENT`). */
   type: string;
   /** Provider event config; the provider validates it at subscribe time. */

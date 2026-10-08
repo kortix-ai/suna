@@ -7164,7 +7164,11 @@
       "line58JsxAttrTitleYouRanOutOfCredits": "Você ficou sem créditos",
       "line74JsxTextEnableAutoTopUp": "Ativar recarga automática",
       "line82JsxTextBuyCredits": "Comprar créditos",
-      "askOwnerToAddCredits": "Só um proprietário da conta pode adicionar créditos. Peça a um que recarregue."
+      "askOwnerToAddCredits": "Só um proprietário da conta pode adicionar créditos. Peça a um que recarregue.",
+      "askOwnerForCredits": "Pedir a um proprietário",
+      "ownersNotified": "Proprietários avisados",
+      "alreadyAskedToday": "Já pediu hoje",
+      "askOwnerFailed": "Não foi possível avisar os proprietários. Tente novamente"
     },
     "componentsSessionSessionFilesPanel": {
       "line80JsxTextThisSessionIsItsOwnVersion": "Esta sessão é sua própria versão",
@@ -19346,6 +19350,15 @@
       "text2dca9f542da4": "{name} conectado",
       "text54e2237efa16": "Os gatilhos deste aplicativo já estão em funcionamento.",
       "text2fd655fcbaad": "Ele entra em funcionamento quando a conta for conectada.",
+      "text261b28a3c6bf": "Conectar outra conta",
+      "text19646ef1ab9d": "Rótulo da conta",
+      "text0ade71c64183": "Rótulo da conta, p. ex. acme-bot",
+      "texta8f89bda4dfc": "Este conector já tem uma conta com esse rótulo.",
+      "textd975792aff6e": "Padrão ({account})",
+      "text26639e783252": "Alterar conta",
+      "textea56119b98e2": "Gatilhos de eventos do app",
+      "text1ee2cf623464": "Novo evento do app",
+      "text974e43358191": "Nenhum gatilho inicia um agente com eventos de {name} ainda.",
       "text2eb91a6f88aa": "1 arquivo permanece anexado. Remova-o para executar o comando, ou remova o comando para enviar o arquivo como mensagem.",
       "text807f9beb34b1": "{count, plural, other {# arquivos permanecem anexados. Remova-os para executar o comando, ou remova o comando para enviá-los como mensagem.}}"
     },

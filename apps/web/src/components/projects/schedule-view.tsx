@@ -68,7 +68,7 @@ import {
   WarningIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useMemo, useState } from 'react';
 
 import {
@@ -254,7 +254,9 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   };
   const eventConnect = useEventAppConnect(projectId);
   const configure = useConfigureThread(projectId);
-  const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
+  // `?t=<slug>` opens that trigger's sheet: the connector page links here.
+  const linkedSlug = useSearchParams()?.get('t') ?? null;
+  const [selectedSlug, setSelectedSlug] = useState<string | null>(linkedSlug);
   const [deleteTarget, setDeleteTarget] = useState<ProjectTrigger | null>(null);
 
   const invalidate = useCallback(

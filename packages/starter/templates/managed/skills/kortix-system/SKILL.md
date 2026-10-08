@@ -45,8 +45,11 @@ under `harnesses/`:
   `kortix.yaml` names it as `agents.<name>.file`.
 - **Skills** — `skills/<name>/SKILL.md`. Every harness loads them.
 - **Memory** — `memory/`, the project brain (`kortix-memory` skill).
+- **Tools** — one module per tool (`tools/<name>.ts` by convention), declared
+  in `kortix.yaml` `tools:`. Every harness runs them
+  (`references/kortix/tools.md`).
 - **OpenCode config** — `harnesses/opencode/` (`opencode.config_dir`):
-  `opencode.jsonc`, plugins, tools, commands, MCP and provider settings.
+  `opencode.jsonc`, plugins, commands, MCP and provider settings.
   Only an OpenCode session reads it.
 - **pi config** — `harnesses/pi/` (`pi.config_dir`): extensions, prompt
   templates, `settings.json`. Only a pi session reads it. The starter does
@@ -64,7 +67,7 @@ Paths under `references/` below are relative to this skill's directory.
 
 Kortix-specific settings go in `kortix.yaml`. A large manifest splits across
 files: the root lists `imports:` (YAML files or directories), and each imported
-file declares `triggers`, `connectors`, `agents`, or `apps`. The platform merges
+file declares `triggers`, `connectors`, `agents`, `apps`, or `tools`. The platform merges
 them into one manifest. Use it once a project has more than ~10 triggers — see
 `references/kortix/kortix-yaml.md` → `imports:`. Harness-native settings stay
 in that harness's config directory.
@@ -88,7 +91,8 @@ OpenCode; else the `pi_harness` project flag on → pi; else `runtime: pi` in
 | --- | --- | --- |
 | Change an agent's prompt, model or permissions | `agents/<name>.md` | `agents/<name>.md` |
 | Add a skill | `skills/<name>/SKILL.md` | `skills/<name>/SKILL.md` |
-| Add a custom tool | `harnesses/opencode/tools/<name>.ts` | an extension in `harnesses/pi/extensions/`, or a pi package |
+| Add a custom tool | a module + `tools:` in `kortix.yaml` (`references/kortix/tools.md`) | the same module: every harness runs it |
+| Limit an agent's tools | `agents.<name>.tools` in `kortix.yaml` | `agents.<name>.tools` in `kortix.yaml` |
 | Add a hook or plugin | `harnesses/opencode/plugins/` | an extension, or a pi package |
 | Add a slash command | `harnesses/opencode/commands/<name>.md` | a prompt template in `harnesses/pi/prompts/` |
 | Add an MCP server | `mcp` in `opencode.jsonc` | not available; use a connector or a pi package |
@@ -103,8 +107,10 @@ Rules for both harnesses:
 - Never tell the user to "quit and restart opencode". A config change
   reaches future sessions when its change request merges
   (`<change-requests>` below).
-- `web_search`, `image_search`, `scrape_webpage`, `memory` and `show` exist
-  on both harnesses, with the same names and arguments.
+- `web_search`, `image_search`, `scrape_webpage`, `memory` and `show` are
+  Kortix tools: one implementation, run by the Kortix runtime on both
+  harnesses, with the same names, arguments and output. A project tool
+  declared in `kortix.yaml` `tools:` runs the same way.
 - pi does not have rewind, MCP servers or a todo tool.
   `references/pi/overview.md` lists the differences.
 </harnesses>
@@ -275,13 +281,12 @@ Never print or return a secret value or a handle. Use `kortix secrets ls
 
 **Getting a credential — never punt to the dashboard.** If the human already
 gave you the value (pasted in chat, in a file, "use this key"), **store it
-yourself in the same turn** with the `set_secret` tool (or
-`kortix secrets set NAME=-`, `--scope connector` for a connector credential) —
+yourself in the same turn** with `kortix secrets set NAME=-`
+(`--scope connector` for a connector credential) —
 no link, no second entry, never echo it back. A `403` means your agent lacks
 secret-write permission: fall back to a link. If you do NOT have the value,
-**mint a setup link and surface the URL in the same turn** with the
-`request_secret` / `connect` tools on the `kortix-connectors` MCP (or
-`kortix secrets request` / `kortix connectors connect`). The human gets a
+**mint a setup link and surface the URL in the same turn** with
+`kortix secrets request` / `kortix connectors connect`. The human gets a
 fill-in modal (web) or a tappable link (Slack). Never tell them to "open
 Customize → Connectors". Full playbook in the **credentials-and-setup-links**
 reference below.
@@ -334,8 +339,8 @@ context, and the result is `exit_code`, `stdout` (`json` for `--json` output), `
 sessions, sandbox files and connectors. The tool refuses `--host`, `hosts`,
 `login`, `logout`, `init`, `ship`, `update`, `uninstall`, `self-host`, `tui`,
 `connect`, `chat` without `--prompt`, `token`, `env pull|push`, `apps deploy`
-(a local directory: use `run_command` in a session sandbox) and
-`connectors mcp`, with the reason and the alternative. `read_skill` with
+(a local directory: use `run_command` in a session sandbox), with the reason
+and the alternative. `read_skill` with
 `project_id` lists the project's own skills.
 </mcp-client>
 
@@ -489,7 +494,9 @@ Decide the mechanism first:
 - **One-off project job** not tied to this session → `type: cron` + `run_at`.
 - **Reacts to an event in a connected app** ("when a PR opens", "when an
   email arrives", "when an issue changes") → `type: event` + `connector` +
-  `event`. Kortix subscribes for you: no webhook, no secret, no signature.
+  `event`. `connector` is the profile; add `account: <label>` only to pick
+  one of several shared accounts on it. Kortix subscribes for you: no
+  webhook, no secret, no signature.
   Use `type: webhook` + `secret_env` only for a system that has no app
   connector.
 
@@ -730,8 +737,8 @@ agents:
 
 | Setting | Lives in |
 | --- | --- |
-| v2 system prompt, `model`, `mode`, tools, and `permission` | the agent's `.md` (`agents.<name>.file`); on OpenCode also `opencode.jsonc` |
-| connectors, secrets, skills, `apps`, `kortix_permissions`, workspace, enabled | manifest `agents:` map |
+| v2 system prompt, `model`, `mode`, and `permission` | the agent's `.md` (`agents.<name>.file`); on OpenCode also `opencode.jsonc` |
+| connectors, secrets, skills, `apps`, `kortix_permissions`, `tools`, workspace, enabled | manifest `agents:` map |
 
 **How the grant resolves at session start:**
 - v2 (`kortix.yaml`) is **deny-by-default**: an omitted `connectors`/`secrets`/`skills`/`apps`/`kortix_permissions` on a declared agent resolves to `none`, not `all`. `default_agent` is required and must resolve to a declared, enabled agent — give it `connectors: all`, `secrets: all`, `kortix_permissions: all`, `skills: all` explicitly if it should keep full access.
@@ -796,11 +803,10 @@ to see the full enum.
 <reference path="references/kortix/credentials-and-setup-links.md">
   How to get a credential — an API key, or an app connected. A value you
   already have (the human gave it in chat) is stored directly with
-  `set_secret` / `kortix secrets set`; a value you lack is requested with a
+  `kortix secrets set`; a value you lack is requested with a
   short-lived **setup link** instead of punting the human to the dashboard. Covers
   the two link kinds (secret intake / Composio connect), how to mint each
-  (the `request_secret` + `connect` MCP tools, or the `kortix secrets request` /
-  `kortix connectors connect` CLI), what the human sees
+  (`kortix secrets request` / `kortix connectors connect`), what the human sees
   (web modal vs Slack link), how to verify it
   landed, and the security model. Load this whenever you hit "I need an API key /
   I need this app connected" — it is the canonical, autonomous flow.
@@ -843,6 +849,16 @@ to see the full enum.
   skill via CR and package it for sharing, a worked example, and common
   frontmatter errors with fixes. Load whenever creating, editing,
   restructuring, or validating a skill.
+</reference>
+
+<reference path="references/kortix/tools.md">
+  Tools on every harness: the three kinds (harness, Kortix, project), the
+  harness-neutral module contract (`description`, JSON Schema `parameters`,
+  `execute(args, context)` with `sessionId`, `agent`, `directory`, `env`,
+  `signal`), declaring modules under `kortix.yaml` `tools:`, per-agent access
+  with `agents.<name>.tools` (`all`, `none`, a list, `exclude`), output size,
+  imports, when a change takes effect, and moving an OpenCode-only tool out of
+  `harnesses/opencode/tools/`. Load before writing, changing or restricting a tool.
 </reference>
 
 <reference path="references/kortix/kortix-yaml.md">
@@ -895,11 +911,11 @@ to see the full enum.
 </reference>
 
 <reference path="references/pi/tools.md">
-  The thirteen tools of a pi session (`bash`, `read`, `write`, `edit`,
-  `glob`, `grep`, `question`, `task`, `web_search`, `image_search`,
-  `scrape_webpage`, `memory`, `show`), their arguments, the OpenCode tools pi
-  does not have and what to use instead, and the `permission` rules that
-  govern each tool.
+  The tools of a pi session (`bash`, `read`, `write`, `edit`, `glob`,
+  `grep`, `question`, `task`, the Kortix tools `web_search`,
+  `image_search`, `scrape_webpage`, `memory`, `show`, and the project's
+  `kortix.yaml` tools), their arguments, the OpenCode tools pi does not have
+  and what to use instead, and the `permission` rules that govern each tool.
 </reference>
 
 <reference path="references/pi/agents.md">
@@ -1019,15 +1035,17 @@ Things that surprise people:
   Centralized in the manifest now, parsed as `triggers:`.
 - **Harness-neutral files live at the repo root; harness files under
   `harnesses/`.** Agents (`agents/`), skills (`skills/`) and memory
-  (`memory/`) serve every harness. OpenCode's own files — commands, tools,
-  plugins, MCP, providers — sit in `harnesses/opencode/`, declared through
+  (`memory/`) serve every harness, and so do the tools `kortix.yaml` declares
+  under `tools:`. OpenCode's own files — commands, plugins, MCP, providers —
+  sit in `harnesses/opencode/`, declared through
   `opencode.config_dir`. pi's own files — extensions, prompt templates,
   `settings.json` — sit in `harnesses/pi/`, declared through `pi.config_dir`.
   The pre-2026-09 `.kortix/opencode/` layout still works.
-- **A harness reads only its own directory.** An OpenCode plugin, custom
-  tool, command or `opencode.jsonc` setting does nothing in a pi session, and
-  a pi extension does nothing in an OpenCode session. Check the harness
-  first (`<harnesses>` above).
+- **A harness reads only its own directory.** An OpenCode plugin, a tool in
+  `harnesses/opencode/tools/`, a command or an `opencode.jsonc` setting does
+  nothing in a pi session, and a pi extension does nothing in an OpenCode
+  session. Check the harness first (`<harnesses>` above). Write a new tool as
+  a project tool (`kortix.yaml` `tools:`): both harnesses run it.
 - **An agent is two halves.** Its `.md` holds behavior; its `agents:` entry
   in `kortix.yaml` holds what it may access. Declaring an agent there is a
   separate Kortix decision.

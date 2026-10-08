@@ -7164,7 +7164,11 @@
       "line58JsxAttrTitleYouRanOutOfCredits": "クレジットを使い切りました",
       "line74JsxTextEnableAutoTopUp": "自動チャージを有効にする",
       "line82JsxTextBuyCredits": "クレジットを購入",
-      "askOwnerToAddCredits": "クレジットを追加できるのはアカウントオーナーだけです。オーナーにチャージを依頼してください。"
+      "askOwnerToAddCredits": "クレジットを追加できるのはアカウントオーナーだけです。オーナーにチャージを依頼してください。",
+      "askOwnerForCredits": "オーナーに依頼",
+      "ownersNotified": "オーナーに通知しました",
+      "alreadyAskedToday": "今日はすでに依頼済みです",
+      "askOwnerFailed": "オーナーに通知できませんでした。もう一度お試しください"
     },
     "componentsSessionSessionFilesPanel": {
       "line80JsxTextThisSessionIsItsOwnVersion": "このセッションは独立したバージョンです",
@@ -19346,6 +19350,15 @@
       "text2dca9f542da4": "{name}を接続しました",
       "text54e2237efa16": "このアプリのトリガーが有効になりました。",
       "text2fd655fcbaad": "アカウントが接続されると有効になります。",
+      "text261b28a3c6bf": "別のアカウントを接続",
+      "text19646ef1ab9d": "アカウントのラベル",
+      "text0ade71c64183": "アカウントのラベル（例: acme-bot）",
+      "texta8f89bda4dfc": "このコネクタには、同じラベルのアカウントがすでにあります。",
+      "textd975792aff6e": "デフォルト（{account}）",
+      "text26639e783252": "アカウントを変更",
+      "textea56119b98e2": "アプリイベントのトリガー",
+      "text1ee2cf623464": "新しいアプリイベント",
+      "text974e43358191": "{name} のイベントでエージェントを起動するトリガーはまだありません。",
       "text2eb91a6f88aa": "1個のファイルが添付されたままです。コマンドを実行するにはファイルを削除するか、コマンドを削除してファイルをメッセージとして送信してください。",
       "text807f9beb34b1": "{count, plural, other {#個のファイルが添付されたままです。コマンドを実行するにはファイルを削除するか、コマンドを削除してファイルをメッセージとして送信してください。}}"
     },
