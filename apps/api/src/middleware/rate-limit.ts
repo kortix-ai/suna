@@ -239,7 +239,7 @@ export function createFeedbackRateLimitMiddleware() {
     return {
       key,
       policy: {
-        limit: positiveInt((config as any).KORTIX_FEEDBACK_REQS_PER_MIN, 10),
+        limit: positiveInt(config.KORTIX_FEEDBACK_REQS_PER_MIN, 10),
         windowMs: 60_000,
       },
       auditContext: {

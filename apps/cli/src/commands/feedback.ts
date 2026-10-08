@@ -81,7 +81,7 @@ export function parseFeedbackInvocation(
     return fail(`Unknown kind "${flags.kind}". Use one of: ${FEEDBACK_KINDS.join(', ')}.`);
   }
   const source = flags.source as FeedbackSource | undefined;
-  if (flags.source && !FEEDBACK_SOURCES.includes(source!)) {
+  if (source && !FEEDBACK_SOURCES.includes(source)) {
     return fail(`Unknown source "${flags.source}". Use one of: ${FEEDBACK_SOURCES.join(', ')}.`);
   }
 

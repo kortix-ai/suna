@@ -13,9 +13,12 @@ mock.module('../config', () => ({
 mock.module('../shared/db', () => ({
   db: {
     insert: () => ({
-      values: async (values: Record<string, unknown>) => {
-        auditRows.push(values);
-      },
+      values: (values: Record<string, unknown>) => ({
+        returning: async () => {
+          auditRows.push(values);
+          return [];
+        },
+      }),
     }),
   },
 }));
