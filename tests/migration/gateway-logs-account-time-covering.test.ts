@@ -1,6 +1,6 @@
 // KRTX-1769: regression test for the account+time cost covering index built by
 // 20261008012757000_gateway_logs_account_time_covering.concurrent.ts (the
-// account+window aggregates: getCostSummary and getCostByProject in
+// account+window aggregates: getCostSummary and listCostByProject in
 // apps/api/src/shared/cost-rollups.ts, served by GET /v1/usage/cost-summary
 // and GET /v1/usage/cost-by-project, plus the llmAggregateSubquery in
 // apps/api/src/shared/session-costs.ts). The measured evidence and the plan

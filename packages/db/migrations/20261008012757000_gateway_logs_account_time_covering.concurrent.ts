@@ -51,7 +51,7 @@ export const shorthands = undefined;
 //   GET /v1/usage/cost-summary   (apps/api/src/shared/cost-rollups.ts,
 //                                 getCostSummary: totals, daily series, model
 //                                 breakdown, distinct projects)
-//   GET /v1/usage/cost-by-project (getCostByProject: spend grouped by project)
+//   GET /v1/usage/cost-by-project (listCostByProject: spend grouped by project)
 //   GET /v1/usage/session-costs  (apps/api/src/shared/session-costs.ts,
 //                                 llmAggregateSubquery: per-session LLM
 //                                 rollup, incl. count(*) filter (where not ok))
