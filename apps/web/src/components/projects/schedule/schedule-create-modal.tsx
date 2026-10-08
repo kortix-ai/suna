@@ -164,6 +164,7 @@ export function ScheduleCreateModal({
   onCreated,
   initialAgent = null,
   initialKind = null,
+  initialConnector = null,
 }: {
   projectId: string;
   open: boolean;
@@ -175,9 +176,13 @@ export function ScheduleCreateModal({
   initialAgent?: string | null;
   /** Opens past the type step, e.g. the empty state's "App event" button. */
   initialKind?: TriggerKind | null;
+  /** With `initialKind="event"`: the connector to pre-select on the App step, e.g. from its own page. */
+  initialConnector?: { slug: string; name: string } | null;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const [kind, setKind] = useState<TriggerKind | null>(null);
+  const initialConnectorSlug = initialConnector?.slug ?? null;
+  const initialConnectorName = initialConnector?.name ?? '';
   const copy = kind ? KIND_COPY[kind] : null;
   const isCron = kind === 'cron';
   const isEvent = kind === 'event';
@@ -276,7 +281,10 @@ export function ScheduleCreateModal({
     if (!open || !initialKind) return;
     setKind(initialKind);
     setStep(initialKind === 'event' ? 'app' : 'what');
-  }, [open, initialKind]);
+    if (initialKind === 'event' && initialConnectorSlug) {
+      setConnector({ slug: initialConnectorSlug, name: initialConnectorName, account: null });
+    }
+  }, [open, initialKind, initialConnectorSlug, initialConnectorName]);
 
   /** First-step problems, in the order a person would hit them. */
   function checkWhat(): string | null {
@@ -397,6 +405,8 @@ export function ScheduleCreateModal({
           : isEvent
             ? {
                 connector: connector?.slug,
+                // Only a non-default account is written; the default stays out of kortix.yaml.
+                ...(connector?.account ? { event_account: connector.account } : {}),
                 event: eventType?.type,
                 event_config: draftToConfig(configFields, configDraft),
               }
@@ -636,7 +646,7 @@ export function ScheduleCreateModal({
           ) : step === 'app' ? (
             <EventAppPicker
               projectId={projectId}
-              value={connector?.slug ?? null}
+              value={connector}
               onChange={pickConnector}
             />
           ) : step === 'event' && connector ? (

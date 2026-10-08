@@ -1203,7 +1203,8 @@ function validateMonitorTrigger(
  * `type: event` — the fourth trigger type: "when <app event> happens on
  * <connected app>, run the agent". `connector` names a declared connector,
  * `event` is the provider's event type id, `config` is the provider event
- * config (validated by the provider at subscribe time, not here). Wiring for
+ * config (validated by the provider at subscribe time, not here). `account`
+ * optionally names one shared account of that connector by label. Wiring for
  * the other three types is hard-rejected — a manifest must not claim a
  * schedule the event source never reads.
  *
@@ -1229,6 +1230,13 @@ function validateEventTrigger(
     issues.push({
       path: `${where}.config`,
       message: 'config must be an object.',
+      severity: 'error',
+    });
+  }
+  if (entry.account !== undefined && (typeof entry.account !== 'string' || !entry.account.trim())) {
+    issues.push({
+      path: `${where}.account`,
+      message: 'account must be the label of a shared account on the connector.',
       severity: 'error',
     });
   }
@@ -1399,7 +1407,7 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], 
       validateEventTrigger(entry, where, issues);
     }
     if (type && type !== 'event' && (TRIGGER_TYPES as readonly string[]).includes(type)) {
-      for (const key of ['connector', 'event', 'config']) {
+      for (const key of ['connector', 'account', 'event', 'config']) {
         if (entry[key] !== undefined) {
           issues.push({
             path: `${where}.${key}`,

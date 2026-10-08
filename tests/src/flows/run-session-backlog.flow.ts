@@ -1,7 +1,7 @@
 /**
  * Agent-run + session happy-path backlog.
  *
- * Maps 1:1 to spec IDs: RUN-1..8, RUN-10..16, SESS-2, SESS-3, SESS-9, SESS-12,
+ * Maps 1:1 to spec IDs: RUN-1..8, RUN-10, RUN-11, RUN-12, SESS-2, SESS-3, SESS-9, SESS-12,
  * FILE-8, FILE-9, GOLD-1, CHN-6, SESS-10, CONN-26.
  *
  * REALITY: every flow here needs a REAL booted sandbox and/or a funded
@@ -86,18 +86,12 @@ harnessFlow(
 
     let mirrored: any = null;
     await ctx.step('the session read exposes a non-placeholder root title and tree', async () => {
-      // `metadata.opencode_sessions` is written by a deferred snapshot pass that
-      // a delivered prompt arms (prompt+20s, prompt+60s, then it stops). A
-      // poll that only waits reads a value whose writer has retired, so re-arm
-      // it with another prompt when the wait outlives the pass.
-      const REARM_AFTER_MS = 75_000;
-      let lastPromptAt = Date.now();
+      // `metadata.opencode_sessions` follows the runtime's state document: it
+      // is written when the turn end refreshes the projection and when the
+      // daemon pushes one for a new session or title (R7.4). No timer, so a
+      // poll needs no second prompt to re-arm a writer.
       mirrored = await waitFor(
         async () => {
-          if (Date.now() - lastPromptAt > REARM_AFTER_MS) {
-            lastPromptAt = Date.now();
-            await sendPrompt(ctx, projectId, sessionId, echo(`${marker}_REARM`));
-          }
           const response = await ctx.client
             .as(ctx.P.OWNER)
             .get('/v1/projects/:projectId/sessions/:sessionId', { params: { projectId, sessionId } });
@@ -1639,9 +1633,165 @@ harnessFlow(
   },
 );
 
-// ─── RUN-16: the project's root AGENTS.md reaches the agent ──────────────────
+/** A second primary agent whose prompt names it `token` (RUN-17). */
+function agentPickFiles(token: string): Record<string, string> {
+  return {
+    'kortix.yaml': [
+      'kortix_version: 2',
+      'default_agent: kortix',
+      'agents:',
+      '  kortix:',
+      '    kortix_permissions: all',
+      '    skills: all',
+      '  marker:',
+      '    kortix_permissions: all',
+      '',
+    ].join('\n'),
+    '.kortix/opencode/agents/marker.md': [
+      '---',
+      'description: Knows its own name.',
+      'mode: primary',
+      '---',
+      `Your name is ${token}. When anyone asks for your name, answer with exactly ${token} and nothing else.`,
+      '',
+    ].join('\n'),
+  };
+}
+
+/**
+ * Send `text` (with the run-unique `tag`), wait for its turn to end, and
+ * return the agents the runtime recorded on the replies to it: each assistant
+ * message's `info.agent` (OpenCode also writes it as `mode`).
+ */
+async function agentsThatAnswered(
+  ctx: FlowContext,
+  session: { projectId: string; sessionId: string; sandboxId: string },
+  text: string,
+  tag: string,
+  agent?: string,
+): Promise<string[]> {
+  const before = (await readTurn(ctx, session.projectId, session.sessionId)).last_ended?.turn_token;
+  await sendPrompt(ctx, session.projectId, session.sessionId, `${text} (${tag})`, agent ? { agent } : undefined);
+  await waitForTurn(ctx, session.projectId, session.sessionId, endedAfter(before), `the turn for ${tag} to end`);
+  const messages = await runtimeMessages(ctx, session.sandboxId, await pinnedRoot(ctx, session.projectId, session.sessionId));
+  const asked = messages.find((m) => m.info.role === 'user' && messageText(m).includes(tag));
+  if (!asked) throw new Error(`the prompt ${tag} is not in the runtime transcript`);
+  const replies = messages.filter((m) => m.info.role === 'assistant' && m.info.parentID === asked.info.id);
+  if (replies.length === 0) throw new Error(`no assistant message answers ${tag}`);
+  return replies.map((m) => String(m.info.agent ?? m.info.mode ?? ''));
+}
+
+// R7.2: pi fixed its agent at boot and ignored a prompt's pick.
 harnessFlow(
+  'RUN-17',
+  {
+    domain: 'agent-run',
+    requires: ['funded', 'daytona'],
+    // Boot (≤540s) + the boot turn + two turns (≤240s each).
+    timeoutMs: 1_200_000,
+    routes: [
+      'PATCH /v1/projects/:projectId/features',
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+    ],
+  },
+  async (ctx, harness) => {
+    const project = await ctx.fixtures.project({ seed: true });
+    const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
+    const token = `Agentpick${Date.now()}`;
+    try {
+      await ctx.step(`the project declares a second primary agent and runs ${harness}`, async () => {
+        if (harness === 'pi') await world.setFeature('pi_harness', true);
+        await world.commitToMain(agentPickFiles(token), 'ke2e RUN-17: a marker agent');
+      });
+      const session = await bootSession(ctx, harness, { project, prompt: 'Reply with the word ready.' });
+      await ctx.step('the session runtime lists the marker agent', async () => {
+        // The commit and the boot race: a box that booted on the previous
+        // config converges to the new one, and only then has the agent.
+        await waitFor(
+          async () => {
+            const r = await ctx.client.as(ctx.P.OWNER).get(runtimePath(session.sandboxId, '/kortix/runtime/agents'));
+            r.status(200);
+            return (r.json<{ agents?: Array<{ name?: string }> }>().agents ?? []).map((a) => a.name);
+          },
+          {
+            until: (names) => names.includes('marker'),
+            timeoutMs: 180_000,
+            intervalMs: 3_000,
+            description: `the marker agent in the runtime of ${session.sessionId}`,
+            retryOnError: isKe2eRetryableError,
+          },
+        );
+      });
+      await ctx.step('a prompt that picks no agent runs on the session agent', async () => {
+        const agents = await agentsThatAnswered(ctx, session, 'Reply with one word.', `RUN17PLAIN${Date.now()}`);
+        if (agents.some((name) => name !== 'kortix')) throw new Error(`a reply ran on ${JSON.stringify(agents)}, not the session agent kortix`);
+      });
+      await ctx.step('a prompt that picks the marker agent runs its whole turn on it', async () => {
+        const agents = await agentsThatAnswered(ctx, session, 'Reply with one word.', `RUN17PICKED${Date.now()}`, 'marker');
+        if (agents.some((name) => name !== 'marker')) {
+          throw new Error(`the picked agent did not run the turn on ${harness}: the replies ran on ${JSON.stringify(agents)}`);
+        }
+      });
+    } finally {
+      await world.close();
+    }
+  },
+);
+
+// R7.5: pi reports no OpenCode port, and the proxy dialed 4096 where nothing listens.
+flow(
   'RUN-16',
+  {
+    domain: 'agent-run',
+    requires: ['funded', 'daytona'],
+    timeoutMs: 900_000,
+    routes: [
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+    ],
+  },
+  async (ctx) => {
+    const session = await bootSession(ctx, 'pi');
+    await ctx.step('an OpenCode PTY upgrade on the pi box answers 409 pty_unsupported_runtime and names the Kortix PTY', async () => {
+      const owner = ctx.P.OWNER.auth;
+      if (owner.mode !== 'bearer') throw new Error(`the owner principal has no bearer token (${owner.mode})`);
+      await owner.ensureFresh?.();
+      const r = await ctx.client
+        .as({ label: 'OWNER-ws', auth: { mode: 'query-token', token: owner.token } })
+        .get(`/v1/p/${session.sandboxId}/4096/pty/pty_ke2e_run16/connect`, {
+          headers: {
+            upgrade: 'websocket',
+            connection: 'Upgrade',
+            'sec-websocket-key': btoa('ke2e-run16-key!!'),
+            'sec-websocket-version': '13',
+          },
+        });
+      r.status(409);
+      const error = r.json<{ error?: string }>()?.error ?? '';
+      if (!error.includes('pty_unsupported_runtime') || !error.includes('/kortix/pty/')) {
+        throw new Error(`the refusal does not name the reason and the Kortix PTY: ${error}`);
+      }
+    });
+    await ctx.step('the daemon\'s own PTY, the one every terminal opens, serves the pi box', async () => {
+      const created = await ctx.client.as(ctx.P.OWNER).post(runtimePath(session.sandboxId, '/kortix/pty'), { title: 'ke2e RUN-16' });
+      created.status(200);
+      const id = created.json<{ id?: string }>()?.id;
+      if (!id) throw new Error(`POST /kortix/pty returned no id: ${created.text()}`);
+      const removed = await ctx.client.as(ctx.P.OWNER).del(runtimePath(session.sandboxId, `/kortix/pty/${encodeURIComponent(id)}`));
+      removed.status(200);
+    });
+  },
+);
+
+// ─── RUN-18: the project's root AGENTS.md reaches the agent ──────────────────
+harnessFlow(
+  'RUN-18',
   {
     domain: 'agent-run',
     requires: ['funded', 'daytona'],
@@ -1659,13 +1809,13 @@ harnessFlow(
     const project = await ctx.fixtures.project({ seed: true });
     const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
     // A NAME the conversation never held: only the system prompt can supply its value (the CFG-12 technique).
-    const name = `RUN16_PROJECT_RULE_${Date.now()}`;
-    const value = `run16-${crypto.randomUUID()}`;
+    const name = `RUN18_PROJECT_RULE_${Date.now()}`;
+    const value = `run18-${crypto.randomUUID()}`;
     const agentsMd = `# Project rules\n\n${name}: ${value}\n`;
     try {
       await ctx.step(`the project runs ${harness} and commits a root AGENTS.md`, async () => {
         if (harness === 'pi') await world.setFeature('pi_harness', true);
-        await world.commitToMain({ 'AGENTS.md': agentsMd }, 'ke2e RUN-16: a root AGENTS.md');
+        await world.commitToMain({ 'AGENTS.md': agentsMd }, 'ke2e RUN-18: a root AGENTS.md');
       });
       const { projectId, sessionId, sandboxId } = await bootSession(ctx, harness, { project });
 

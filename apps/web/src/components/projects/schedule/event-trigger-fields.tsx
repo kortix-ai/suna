@@ -39,13 +39,16 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   type EventApp,
+  appConnectors,
   describePollHint,
+  profileConnected,
   groupEventApps,
   humanizeEventType,
   payloadVariables,
   type ConfigDraft,
   type SchemaField,
 } from './event-trigger-copy';
+import { EventAccountRows } from './event-account-picker';
 import { type EventAppTarget, useEventAppConnect } from './use-event-app-connect';
 
 /* ─── App ───────────────────────────────────────────────────────────────── */
@@ -54,6 +57,8 @@ import { type EventAppTarget, useEventAppConnect } from './use-event-app-connect
 export interface EventAppChoice {
   slug: string;
   name: string;
+  /** Label of the shared account picked on the connector; null = the connector's default. */
+  account: string | null;
 }
 
 function EventAppRow({
@@ -130,6 +135,101 @@ function EventAppRow({
 }
 
 /**
+ * An app the project has, with its connectors (profiles) and each profile's
+ * shared accounts. A profile with no shared account is a plain row with the
+ * inline Connect; one with accounts lists them as radio rows.
+ */
+function EventAppGroup({
+  app,
+  value,
+  busy,
+  canConnect,
+  canAdd,
+  connecting,
+  projectId,
+  onChange,
+  onConnect,
+}: {
+  app: EventApp;
+  value: EventAppChoice | null;
+  busy: boolean;
+  canConnect: boolean;
+  canAdd: boolean;
+  connecting: boolean;
+  projectId: string;
+  onChange: (choice: EventAppChoice) => void;
+  onConnect: (connector: string) => void;
+}) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const profiles = appConnectors(app);
+  const single = profiles.length === 1 ? profiles[0] : null;
+  // The common case, as before: one connector, nothing connected yet.
+  if (single && single.accounts.length === 0) {
+    return (
+      <EventAppRow
+        app={app}
+        selected={value?.slug === single.slug}
+        busy={busy}
+        canConnect={canConnect}
+        canAdd={canAdd}
+        connecting={connecting}
+        onSelect={() => onChange({ slug: single.slug, name: app.name, account: null })}
+        onConnect={() => onConnect(single.slug)}
+      />
+    );
+  }
+  return (
+    <li className="space-y-3 rounded-md border p-3">
+      <div className="flex items-center gap-3">
+        <AppLogo src={app.logo} />
+        <span className="min-w-0 flex-1">
+          <span className="text-foreground block truncate text-sm font-medium">{app.name}</span>
+          <span className="text-muted-foreground block text-xs">
+            {tI18nComplete('text6e4a170bdf81', {
+              count: app.event_count,
+            })}
+          </span>
+        </span>
+      </div>
+      {profiles.map((profile) => (
+        <section key={profile.slug} className="space-y-1.5">
+          {profiles.length > 1 ? (
+            <h4 className="text-muted-foreground flex items-baseline gap-2 text-xs font-medium">
+              {profile.name}
+              {profile.name.toLowerCase().includes(profile.slug.toLowerCase()) ? null : (
+                <span className="font-mono font-normal">{profile.slug}</span>
+              )}
+            </h4>
+          ) : null}
+          {profile.accounts.length > 0 ? (
+            <EventAccountRows
+              projectId={projectId}
+              connector={profile}
+              value={value?.slug === profile.slug ? value.account : null}
+              active={value?.slug === profile.slug}
+              canConnect={canConnect}
+              disabled={busy}
+              onChange={(account) => onChange({ slug: profile.slug, name: app.name, account })}
+            />
+          ) : (
+            <EventAppRow
+              app={{ ...app, name: profile.name, connector: profile.slug, connected: false }}
+              selected={value?.slug === profile.slug}
+              busy={busy}
+              canConnect={canConnect}
+              canAdd={canAdd}
+              connecting={connecting}
+              onSelect={() => onChange({ slug: profile.slug, name: app.name, account: null })}
+              onConnect={() => onConnect(profile.slug)}
+            />
+          )}
+        </section>
+      ))}
+    </li>
+  );
+}
+
+/**
  * One list of every app with events: the project's own apps first, then the
  * rest of the catalog. Picking an app the project lacks adds it; Connect signs
  * in as the project's shared account in a popup and the row flips to Connected.
@@ -140,7 +240,7 @@ export function EventAppPicker({
   onChange,
 }: {
   projectId: string;
-  value: string | null;
+  value: EventAppChoice | null;
   onChange: (app: EventAppChoice) => void;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
@@ -152,15 +252,14 @@ export function EventAppPicker({
   // A picked app moves into "Your apps" at the top: bring the list back to it.
   useEffect(() => {
     listRef.current?.scrollTo({ top: 0 });
-  }, [value]);
+  }, [value?.slug]);
   const apps = query.data?.apps ?? [];
   const { yours, more } = useMemo(() => groupEventApps(apps, search), [apps, search]);
 
   async function select(app: EventApp) {
-    if (app.connector) return onChange({ slug: app.connector, name: app.name });
     setAdding(app.app);
     try {
-      onChange({ slug: await add(target(app)), name: app.name });
+      onChange({ slug: await add(target(app)), name: app.name, account: null });
     } catch (error) {
       errorToast(
         error instanceof Error
@@ -196,23 +295,47 @@ export function EventAppPicker({
     );
   }
 
-  const chosen = value ? (apps.find((a) => a.connector === value) ?? null) : null;
+  const chosen = value
+    ? (apps.find((a) => appConnectors(a).some((c) => c.slug === value.slug)) ?? null)
+    : null;
+  const busy = Boolean(adding) || Boolean(connecting);
   const renderRows = (rows: EventApp[]) =>
-    rows.map((app) => (
-      <EventAppRow
-        key={app.app}
-        app={app}
-        selected={Boolean(value) && app.connector === value}
-        busy={Boolean(adding) || Boolean(connecting)}
-        canConnect={canConnect}
-        canAdd={canAdd}
-        connecting={connecting === app.app}
-        onSelect={() => void select(app)}
-        onConnect={() =>
-          connect(target(app), (connector) => onChange({ slug: connector, name: app.name }))
-        }
-      />
-    ));
+    rows.map((app) =>
+      app.connector ? (
+        <EventAppGroup
+          key={app.app}
+          app={app}
+          value={value}
+          busy={busy}
+          canConnect={canConnect}
+          canAdd={canAdd}
+          connecting={connecting === app.app}
+          projectId={projectId}
+          onChange={onChange}
+          onConnect={(connector) =>
+            connect({ ...target(app), connector }, (slug) =>
+              onChange({ slug, name: app.name, account: null }),
+            )
+          }
+        />
+      ) : (
+        <EventAppRow
+          key={app.app}
+          app={app}
+          selected={false}
+          busy={busy}
+          canConnect={canConnect}
+          canAdd={canAdd}
+          connecting={connecting === app.app}
+          onSelect={() => void select(app)}
+          onConnect={() =>
+            connect(target(app), (connector) =>
+              onChange({ slug: connector, name: app.name, account: null }),
+            )
+          }
+        />
+      ),
+    );
 
   return (
     <div className="space-y-4">
@@ -229,7 +352,7 @@ export function EventAppPicker({
           />
         </InputGroupSearch>
       ) : null}
-      <div ref={listRef} className="max-h-80 space-y-4 overflow-y-auto">
+      <div ref={listRef} className="max-h-80 space-y-4 overflow-y-auto pb-2">
         {yours.length > 0 ? (
           <section className="space-y-2">
             <h3 className="text-muted-foreground text-xs font-medium">
@@ -255,7 +378,7 @@ export function EventAppPicker({
         ) : null}
       </div>
       <p className="text-muted-foreground min-h-10 text-xs leading-relaxed text-pretty">
-        {chosen && !chosen.connected
+        {chosen && !profileConnected(chosen, value?.slug ?? '')
           ? canConnect
             ? tI18nComplete('textf287f4494f4b', { name: chosen.name })
             : tI18nComplete('text5550bcf169d6', { name: chosen.name })

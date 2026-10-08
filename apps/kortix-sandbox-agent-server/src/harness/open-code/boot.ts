@@ -40,7 +40,7 @@ import {
 } from './lifecycle'
 import { relayBootTimelineToApi } from '../shared/boot-timeline-relay'
 import { materializeProject } from '@/services/config-provider/config-provider'
-import { registerRuntimeStateReader, scheduleRuntimeProjectionPush } from '../shared/projection-relay'
+import { createSessionTreeWatch, registerRuntimeStateReader, scheduleRuntimeProjectionPush } from '../shared/projection-relay'
 import { ConvergeBusyError } from '@/services/config-release/release'
 import { convergeConfigRelease } from './config-release'
 import { bootOpenCodeConfig } from './boot-config-path'
@@ -686,6 +686,7 @@ async function startSessionRuntime(
   }
   process.once('SIGTERM', flushAuditRelay)
   process.once('SIGINT', flushAuditRelay)
+  const sessionTreeChanged = createSessionTreeWatch()
   const onEvent = (event: { type?: string; properties?: unknown }) => {
     // Fan out BEFORE the audit relay: the sequencer and the state projection
     // are what the product reads, and neither may be starved by a relay that
@@ -696,8 +697,8 @@ async function startSessionRuntime(
       publishOpenCodeEvent(kortixEventBus(), event)
       runtimeStateStore()?.noteEvent(event)
       observeSteerRead(event)
-      // A catalog-moving frame re-pushes the projection (debounced, etag-gated).
-      if (event.type && CATALOG_MOVING_EVENT_TYPES.has(event.type)) {
+      // A catalog-moving or session-tree frame re-pushes the projection (debounced, etag-gated).
+      if (event.type && (CATALOG_MOVING_EVENT_TYPES.has(event.type) || sessionTreeChanged(event))) {
         scheduleRuntimeProjectionPush(event.type)
       }
       // A disposed instance is rebuilt lazily by its next request. Make that

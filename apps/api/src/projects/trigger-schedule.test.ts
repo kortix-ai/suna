@@ -180,6 +180,21 @@ describe('schedule revision is pinned for non-event types', () => {
     expect(triggerScheduleRevision(event({ repo: 'api' }))).not.toBe(original);
     expect(triggerScheduleRevision(event({}, 'OTHER'))).not.toBe(original);
   });
+
+  test('an event revision tracks the account only when one is set', () => {
+    const event = (account?: string | null) =>
+      schedule({ type: 'event', cron: null, timezone: 'UTC', event: { connector: 'github', ...(account === undefined ? {} : { account }), type: 'E', config: {} } });
+    const original = triggerScheduleRevision(event());
+    expect(triggerScheduleRevision(event('acme-bot'))).not.toBe(original);
+    expect(triggerScheduleRevision(event('acme-bot'))).not.toBe(triggerScheduleRevision(event('other-bot')));
+  });
+
+  test('an event with no account keeps the revision it had before accounts existed', () => {
+    // Characterization: a changed revision re-upserts the catalog row of every existing event trigger.
+    expect(
+      triggerScheduleRevision(schedule({ type: 'event', cron: null, timezone: 'UTC', event: { connector: 'github', type: 'E', config: {} } })),
+    ).toBe('aebeec2d7fd43e59cd497b5d0fcb86933ad38c51c7316cc755252d702c520fbf');
+  });
 });
 
 // KRTX-1721: croner reads a 6-field cron seconds-first, so a cron that steps

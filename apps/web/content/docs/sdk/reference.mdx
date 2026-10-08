@@ -444,13 +444,15 @@ templating.
 
 `create(input)` takes `{ name, type: 'cron' | 'webhook' | 'monitor' | 'event', prompt_template,
 slug?, agent?, model?, enabled?, session_mode?, session_id?, cron?, run_at?,
-timezone?, secret_env?, connector?, event?, event_config?, session_access? }`. `name` and `prompt_template` are required.
+timezone?, secret_env?, connector?, event?, event_account?, event_config?, session_access? }`. `name` and `prompt_template` are required.
 `cron`/`run_at` are mutually exclusive (`type: 'cron'`); `secret_env` (the
 webhook HMAC secret) applies to `type: 'webhook'`.
 
 An `event` trigger needs `connector` (a connector slug) and `event` (a type id
-from `eventTypes`). `event_config` is shaped by that type's `config_schema`.
-Each listed trigger carries `event: { connector, type, config, provider, app,
+from `eventTypes`). `event_account` is optional: the label of one shared account of
+that connector; `null` or omitted uses the connector's default shared account.
+`event_config` is shaped by that type's `config_schema`.
+Each listed trigger carries `event: { connector, account, connected_as, type, config, provider, app,
 status: 'active' | 'needs_connection' | 'error' | 'pending', error,
 last_event_at } | null`. Prompt templates read the event as
 `{{ event.data.<field> }}` plus `event.id`, `event.type`, `event.app`,
