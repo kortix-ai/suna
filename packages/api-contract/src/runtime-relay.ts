@@ -347,6 +347,12 @@ export interface CompiledAgentSet {
    * of its module. Every harness loads them through the daemon's tool host.
    */
   project_tools?: Record<string, string>;
+  /**
+   * The Kortix tools the project lists as `<name>: kortix:<name>`. Present
+   * only when kortix.yaml has a `tools` key; then only these Kortix tools load,
+   * plus the ones `project_tools` replaces. Absent: all of them load.
+   */
+  kortix_tools?: string[];
 }
 
 /** May an agent with this compiled `tools` map use `tool`? Its own entry, else `*`, else yes. */

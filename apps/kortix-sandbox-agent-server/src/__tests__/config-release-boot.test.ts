@@ -305,6 +305,29 @@ describe('the desired release is what the box runs', () => {
     expect(git(work, 'status', '--porcelain')).toBe('')
   })
 
+  // Dev, 2026-10-08: a session created with no base pin (KORTIX_BASE_SHA
+  // unset) on a repository over the archive cap booted the image default for
+  // ~70 s, until the next convergence copied the same checkout.
+  test('a box with no base pin builds a release with no archive from its checkout', async () => {
+    api.respond({ status: 200, json: { ...release.descriptor, format: 'config-release-v3', archive: null, snapshot: null } })
+    const run = await boot()
+    const dir = join(releaseDir(store, release.descriptor.release_id!), DIR)
+    expect(run.result).toMatchObject({ dir, source: 'release', proven: true, fallbackReason: null })
+    expect(api.archiveRequests).toEqual([])
+    expect(api.storageRequests).toEqual([])
+  })
+
+  test('a box with no base pin whose checkout is behind says why it has no release', async () => {
+    write(work, 'agents/next.md', 'next\n')
+    const tip = commitAll(work, 'next')
+    const built = buildRelease(work, tip, DIR, { governance: GOV })
+    git(work, 'checkout', '-q', 'HEAD~1')
+    api.respond({ status: 200, json: { ...built.descriptor, format: 'config-release-v3', archive: null, snapshot: null } })
+    const run = await boot()
+    expect(run.result.source).toBe('image-default')
+    expect(run.result.fallbackReason).toContain(`the checkout is at ${release.descriptor.source_commit!.slice(0, 12)}, not the release commit ${tip.slice(0, 12)}`)
+  })
+
   test('a checkout that did not materialize is never read: the box downloads instead', async () => {
     const run = await boot(
       { cfg: { ...cfg(), baseSha: release.descriptor.source_commit } as OpenCodeConfig },

@@ -1335,6 +1335,19 @@ describe('project tools on pi', () => {
     expect(toolParts(await page(r), 'memory')[0]!.state.output).toBe('the project memory')
   })
 
+  test('a Kortix tool the project does not list is not offered, and a call to it is refused', async () => {
+    const r = await boot({
+      script: [{ tool: 'show', args: { action: 'show', type: 'text', content: 'hi' } }, { tool: 'memory', args: { command: 'view', path: 'memory' } }, { text: 'done' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: {} }, kortix_tools: ['web_search', 'image_search', 'scrape_webpage', 'memory'] }) },
+    })
+    expect(await ids(r)).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'question', 'task'])
+    await promptAndSettle(r, 'show hi, then view memory')
+    const show = toolParts(await page(r), 'show')[0]!
+    expect(show.state.status).toBe('error')
+    expect(String(show.state.error)).toBe('Tool show not found')
+    expect(toolParts(await page(r), 'memory')[0]!.state.status).toBe('completed')
+  })
+
   test("an agent's tool list allows only the tools it names; any other call is denied", async () => {
     const r = await boot({
       script: [{ tool: 'bash', args: { command: 'touch ran.txt' } }, { text: 'done' }],

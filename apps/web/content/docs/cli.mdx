@@ -583,6 +583,25 @@ instantly, with no `kortix.yaml` commit; `default` and `config` commit to
 `kortix.yaml` on the project's default branch. `scope` needs
 `project.agent.write`, and so do `default` and `config`.
 
+### Tools
+
+The tools this project's sessions get, read from the local `kortix.yaml` and its
+[imports](/docs/project/manifest#imports). Run from the project root. See
+[Tools](/docs/project/tools).
+
+| Command | Effect |
+| --- | --- |
+| `kortix tools ls [--json]` | List each tool the sessions get: name, kind (`kortix`, `kortix (overridden)`, `project`) and source (`kortix:<name>` or the module path). Also lists the Kortix tools the project removed. `--json` prints `{ manifest, tools_key, tools, removed }`. |
+| `kortix tools eject <name> [--force]` | Copy the Kortix tool `<name>` to `tools/<name>.ts` and set `tools.<name>: tools/<name>.ts` in `kortix.yaml`, in the file that declares it. The changed line ends with `# ejected from kortix:<name>`; every other comment stays. With no `tools:` key, it also lists the other four Kortix tools, so the eject removes nothing. Refuses when `tools/<name>.ts` exists or the tool already points at another module, unless `--force`. Refuses a name that is not a Kortix tool. |
+
+With no `tools:` key, every session gets all five Kortix tools (`web_search`,
+`image_search`, `scrape_webpage`, `memory`, `show`). With a `tools:` key,
+sessions get only the Kortix tools it lists. To remove a Kortix tool, delete its
+line under `tools:`, then run `kortix validate`. To limit the tools of one agent,
+use `agents.<name>.tools`. Exit codes: `0` done, `1` refused (a file exists, a
+manifest or import that does not parse), `2` no manifest, an unknown option, or a
+name that is not a Kortix tool.
+
 ### Models
 
 Which models the project offers, and which one it starts with. Same surface as

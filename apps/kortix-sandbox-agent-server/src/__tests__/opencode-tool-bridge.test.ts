@@ -44,7 +44,7 @@ afterEach(() => {
 })
 
 /** A project checkout with one tool, its OpenCode config dir, and a daemon serving `/kortix/tools`. */
-function rig(configDirTools: string[] = []) {
+function rig(configDirTools: string[] = [], kortixTools?: string[]) {
   const project = join(dir, 'project')
   mkdirSync(join(project, 'tools'), { recursive: true })
   writeFileSync(join(project, 'tools/lookup.ts'), LOOKUP)
@@ -56,6 +56,7 @@ function rig(configDirTools: string[] = []) {
     KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({
       agent: { kortix: {}, reader: { tools: { '*': false, read: true } } },
       project_tools: { lookup_order: 'tools/lookup.ts' },
+      ...(kortixTools ? { kortix_tools: kortixTools } : {}),
     }),
   }
   const app = new Hono()
@@ -81,6 +82,20 @@ describe('the hosted tools bridge plugin', () => {
     expect(list.key).toBe(toolBridgeKey(r.env))
     expect(statSync(path.replace(/\.js$/, '.json')).mode & 0o777).toBe(0o600)
     expect(list.tools.map((tool: { name: string }) => tool.name)).toEqual(['web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'lookup_order'])
+  })
+
+  test('a Kortix tool the project does not list is not in the plugin, and the daemon refuses a call to it', async () => {
+    const r = rig([], ['web_search', 'image_search', 'scrape_webpage', 'memory'])
+    const path = join(dir, 'home/.config/kortix-tools.js')
+    await writeToolBridge(path, { env: r.env, daemonPort: r.port, projectRoot: r.project, configDir: r.configDir })
+    const hooks = await bridge(path)
+    expect(Object.keys(hooks.tool)).toEqual(['web_search', 'image_search', 'scrape_webpage', 'memory', 'lookup_order'])
+    const response = await fetch(`http://127.0.0.1:${r.port}/kortix/tools/show`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${toolBridgeKey(r.env)}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ args: { action: 'show', type: 'text', content: 'hi' }, agent: 'kortix' }),
+    })
+    expect([response.status, await response.json()]).toEqual([404, { error: 'no tool named show is loaded' }])
   })
 
   test("a tool the config dir defines itself keeps the project's file", async () => {
@@ -159,6 +174,13 @@ describe('toolAccessRules', () => {
 })
 
 describe('the composed OpenCode config', () => {
+  test("drops kortix_tools and project_tools: OpenCode's config schema has neither key", async () => {
+    const env: NodeJS.ProcessEnv = { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { open: {} }, kortix_tools: ['memory'], project_tools: { x: 'tools/x.ts' } }) }
+    const config = JSON.parse((await buildOpencodeConfigContent(env, {}))!)
+    expect(Object.keys(config)).not.toContain('kortix_tools')
+    expect(Object.keys(config)).not.toContain('project_tools')
+  })
+
   test('carries the bridge plugin, drops project_tools, and turns agent tool access into permission rules', async () => {
     const env: NodeJS.ProcessEnv = {
       KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({

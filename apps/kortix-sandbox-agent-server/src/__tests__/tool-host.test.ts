@@ -49,16 +49,38 @@ describe('loadTools', () => {
 
   test('a declared module loads from any folder and runs with the call context', async () => {
     write('integrations/orders/lookup.ts', LOOKUP)
-    const { tools } = await loadTools(root, { lookup_order: 'integrations/orders/lookup.ts' })
+    const { tools } = await loadTools(root, { project_tools: { lookup_order: 'integrations/orders/lookup.ts' } })
     const tool = tools.find((entry) => entry.name === 'lookup_order')!
     expect(tool.source).toBe('integrations/orders/lookup.ts')
     expect(JSON.parse(await runTool(tool, { id: '42' }, ctx()))).toEqual({ order: '42', agent: 'kortix', directory: root, session: 'ses_1' })
     expect(hostedTool('lookup_order')).toBe(tool)
   })
 
+  test('kortix_tools picks the Kortix tools; absent, all of them load', async () => {
+    const names = async (compiled: Parameters<typeof loadTools>[1]) => (await loadTools(root, compiled)).tools.map((tool) => tool.name)
+    const all = ['web_search', 'image_search', 'scrape_webpage', 'memory', 'show']
+    expect(await names(undefined)).toEqual(all)
+    expect(await names(null)).toEqual(all)
+    expect(await names({})).toEqual(all)
+    expect(await names({ kortix_tools: ['web_search', 'image_search', 'scrape_webpage', 'memory'] })).toEqual(['web_search', 'image_search', 'scrape_webpage', 'memory'])
+    expect(hostedTool('show')).toBeUndefined()
+    expect(await names({ kortix_tools: [] })).toEqual([])
+    expect(hostedTool('web_search')).toBeUndefined()
+  })
+
+  test('an override in project_tools loads in place of a Kortix tool kortix_tools does not list', async () => {
+    write('tools/web_search.ts', `export default { description: 'Our search.', parameters: { type: 'object', properties: {} }, execute: () => 'ours' }\n`)
+    const { tools } = await loadTools(root, { kortix_tools: ['memory'], project_tools: { web_search: 'tools/web_search.ts' } })
+    expect(tools.map((tool) => [tool.name, tool.source])).toEqual([
+      ['memory', 'kortix'],
+      ['web_search', 'tools/web_search.ts'],
+    ])
+    expect(await runTool(hostedTool('web_search')!, {}, ctx())).toBe('ours')
+  })
+
   test('a project tool replaces the Kortix tool of its name', async () => {
     write('tools/memory.ts', `export default { description: 'Team memory.', parameters: { type: 'object', properties: {} }, execute: () => 'team' }\n`)
-    const { tools } = await loadTools(root, { memory: 'tools/memory.ts' })
+    const { tools } = await loadTools(root, { project_tools: { memory: 'tools/memory.ts' } })
     expect(tools.filter((tool) => tool.name === 'memory').map((tool) => tool.source)).toEqual(['tools/memory.ts'])
     expect(await runTool(hostedTool('memory')!, {}, ctx())).toBe('team')
   })
@@ -69,12 +91,14 @@ describe('loadTools', () => {
     write('tools/no-schema.ts', `export default { description: 'x', execute: () => 'x' }\n`)
     write('tools/throws.ts', `throw new Error('top-level failure')\n`)
     const { tools, failed } = await loadTools(root, {
-      ok: 'tools/ok.ts',
-      no_default: 'tools/no-default.ts',
-      no_schema: 'tools/no-schema.ts',
-      throws: 'tools/throws.ts',
-      missing: 'tools/missing.ts',
-      escapes: '../outside.ts',
+      project_tools: {
+        ok: 'tools/ok.ts',
+        no_default: 'tools/no-default.ts',
+        no_schema: 'tools/no-schema.ts',
+        throws: 'tools/throws.ts',
+        missing: 'tools/missing.ts',
+        escapes: '../outside.ts',
+      },
     })
     expect(tools.map((tool) => tool.name)).toContain('ok')
     expect(Object.fromEntries(failed.map(({ name, error }) => [name, error]))).toEqual({
@@ -87,19 +111,19 @@ describe('loadTools', () => {
   })
 
   test('with no project checkout only the Kortix tools load', async () => {
-    const { tools, failed } = await loadTools(null, { lookup_order: 'tools/lookup.ts' })
+    const { tools, failed } = await loadTools(null, { project_tools: { lookup_order: 'tools/lookup.ts' } })
     expect(tools).toHaveLength(Object.keys(KORTIX_TOOLS).length)
     expect(failed).toEqual([{ name: 'lookup_order', error: 'this session has no project checkout to load it from' }])
   })
 
   test('an edited module is imported again on the next load', async () => {
     write('tools/v.ts', `export default { description: 'v', parameters: { type: 'object', properties: {} }, execute: () => 'one' }\n`)
-    await loadTools(root, { v: 'tools/v.ts' })
+    await loadTools(root, { project_tools: { v: 'tools/v.ts' } })
     expect(await runTool(hostedTool('v')!, {}, ctx())).toBe('one')
     write('tools/v.ts', `export default { description: 'v', parameters: { type: 'object', properties: {} }, execute: () => 'two' }\n`)
     const later = new Date(statSync(join(root, 'tools/v.ts')).mtimeMs + 5_000)
     utimesSync(join(root, 'tools/v.ts'), later, later)
-    await loadTools(root, { v: 'tools/v.ts' })
+    await loadTools(root, { project_tools: { v: 'tools/v.ts' } })
     expect(await runTool(hostedTool('v')!, {}, ctx())).toBe('two')
   })
 })
@@ -186,7 +210,7 @@ describe('POST /kortix/tools/:name', () => {
 
   beforeEach(async () => {
     write('tools/lookup.ts', LOOKUP)
-    await loadTools(root, { lookup_order: 'tools/lookup.ts' })
+    await loadTools(root, { project_tools: { lookup_order: 'tools/lookup.ts' } })
   })
 
   test('the bridge key runs the tool for this box session', async () => {
@@ -200,6 +224,13 @@ describe('POST /kortix/tools/:name', () => {
     const userContext = signTestUserContext({ userId: 'u1', sandboxId: 's1', sandboxRole: 'owner' }, TOKEN)
     expect((await call('lookup_order', { args: { id: '1' }, agent: 'kortix' }, { 'X-Kortix-User-Context': userContext })).status).toBe(200)
     expect((await call('lookup_order', { args: { id: '1' }, agent: 'kortix' }, { Authorization: 'Bearer wrong' })).status).toBe(401)
+  })
+
+  test('a Kortix tool the project does not list is 404, like any tool that is not loaded', async () => {
+    await loadTools(root, { kortix_tools: ['web_search', 'image_search', 'scrape_webpage', 'memory'], project_tools: { lookup_order: 'tools/lookup.ts' } })
+    const response = await call('show', { args: { action: 'show', type: 'text', content: 'hi' }, agent: 'kortix' }, bridge())
+    expect([response.status, await response.json()]).toEqual([404, { error: 'no tool named show is loaded' }])
+    expect((await call('memory', { args: { command: 'view', path: 'memory' }, agent: 'kortix' }, bridge())).status).toBe(200)
   })
 
   test('an unknown tool is 404, an agent without access is 403, a thrown error is 422', async () => {
