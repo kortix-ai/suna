@@ -160,9 +160,11 @@ describe('paste markup in title sources', () => {
     expect(titleSourceForCreate({ initial_prompt: paste })?.startsWith('hello world')).toBe(true);
   });
 
-  it('titleSourceForCreate leaves a typed (neutralized) tag as is', () => {
+  // A tag the person typed travels neutralized and comes back as typed
+  // (`splitPastedContent` → `restorePastedTags`, packages/shared).
+  it('titleSourceForCreate gives a typed (neutralized) tag back as typed', () => {
     const typed = '&lt;pasted_content id="x" chars="1"> what is this tag?';
-    expect(titleSourceForCreate({ initial_prompt: typed })).toBe(typed);
+    expect(titleSourceForCreate({ initial_prompt: typed })).toBe('<pasted_content id="x" chars="1"> what is this tag?');
   });
 
   it('the model sees the typed question, not the markup', async () => {
