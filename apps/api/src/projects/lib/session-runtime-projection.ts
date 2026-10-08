@@ -41,7 +41,7 @@
  * is strictly worse than saying "as of 3 h ago".
  */
 
-import { and, eq, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import {
   projectSessions,
   sessionRuntimeProjections,
@@ -66,9 +66,6 @@ export const PROJECTION_MAX_BYTES = 256 * 1024;
 
 export type RuntimeProjectionSource = 'daemon_push' | 'api_pull';
 
-/** Identity the live runtime would also produce. See the ghost rule above.
- *  The wire shape lives in `@kortix/api-contract`. */
-export type { RuntimeProjectionIdentity } from '@kortix/api-contract';
 import type { RuntimeProjectionIdentity } from '@kortix/api-contract';
 
 export interface StoredRuntimeProjection {

@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   compareByProminence,
-  filterByCategory,
   pageOf,
   rankApps,
   type CatalogApp,
@@ -121,19 +120,6 @@ describe('compareByProminence', () => {
     const heavy = app({ slug: 'z', name: 'Zzz', featuredWeight: 1 });
     const light = app({ slug: 'a', name: 'Aaa', featuredWeight: 0 });
     expect([light, heavy].sort(compareByProminence).map((a) => a.slug)).toEqual(['z', 'a']);
-  });
-});
-
-describe('filterByCategory', () => {
-  test('keeps only apps claiming that exact category', () => {
-    const apps = [
-      app({ slug: 'a', name: 'A', categories: ['Marketing', 'CRM'] }),
-      app({ slug: 'b', name: 'B', categories: ['CRM'] }),
-      app({ slug: 'c', name: 'C', categories: [] }),
-    ];
-    expect(filterByCategory(apps, 'CRM').map((a) => a.slug)).toEqual(['a', 'b']);
-    expect(filterByCategory(apps, 'Marketing').map((a) => a.slug)).toEqual(['a']);
-    expect(filterByCategory(apps, 'Nope')).toEqual([]);
   });
 });
 

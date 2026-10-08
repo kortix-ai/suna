@@ -1,4 +1,3 @@
-import { auth } from '../../openapi';
 import { config } from '../../config';
 import { validateAccountToken } from '../../repositories/account-tokens';
 import { validateSecretKey } from '../../repositories/api-keys';

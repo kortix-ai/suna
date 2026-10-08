@@ -7,6 +7,7 @@ import {
   createAppDeployment,
   deleteApp,
   getAppAccess,
+  getAppDeployment,
   listAppDeployments,
   listApps,
   rollbackApp,
@@ -25,6 +26,14 @@ export const appDeploymentsKey = (
   projectId: string | null | undefined,
   appId: string | null | undefined,
 ) => qk.project.appDeployments(projectId ?? '', appId ?? '');
+
+export const appDeploymentKey = (
+  projectId: string | null | undefined,
+  appId: string | null | undefined,
+  deploymentId: string | null | undefined,
+) => qk.project.appDeployment(projectId ?? '', appId ?? '', deploymentId ?? '');
+
+const SETTLED_DEPLOYMENT = new Set(['ready', 'failed', 'cancelled']);
 
 /** Project App inventory and lifecycle mutations. */
 export function useProjectApps(projectId: string | null | undefined) {
@@ -95,6 +104,26 @@ export function useAppDeployments(
   });
 
   return { ...query, deploy, rollback };
+}
+
+/**
+ * One deployment and its events: lifecycle events and the build log
+ * (`build_log`, `log_truncated`). Polled every 2 s while the deployment is
+ * still in progress.
+ */
+export function useAppDeployment(
+  projectId: string | null | undefined,
+  appId: string | null | undefined,
+  deploymentId: string | null | undefined,
+) {
+  return useQuery({
+    queryKey: appDeploymentKey(projectId, appId, deploymentId),
+    queryFn: () => getAppDeployment(projectId as string, appId as string, deploymentId as string),
+    enabled: !!projectId && !!appId && !!deploymentId,
+    ...contract('inventory'),
+    refetchInterval: (query: { state: { data?: { deployment: { status: string } } } }) =>
+      query.state.data && SETTLED_DEPLOYMENT.has(query.state.data.deployment.status) ? false : 2_000,
+  });
 }
 
 export interface UseAppAccessOptions {

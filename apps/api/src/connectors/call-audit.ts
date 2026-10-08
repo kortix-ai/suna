@@ -1,39 +1,4 @@
-import type { AuditEventInput, AuditOutcome } from '../shared/audit';
-import type { ExecutionRecord } from './gateway';
-import { buildArgsPreview } from './args-preview';
-
-function outcome(status: ExecutionRecord['status']): AuditOutcome {
-  if (status === 'ok') return 'success';
-  if (status === 'denied') return 'denied';
-  if (status === 'pending_approval') return 'pending';
-  return 'failure';
-}
-
-export function executionAuditEvent(
-  execution: ExecutionRecord,
-  executionId: string,
-): AuditEventInput {
-  return {
-    accountId: execution.accountId,
-    projectId: execution.projectId,
-    sessionId: execution.sessionId,
-    actorUserId: execution.actingUserId,
-    actorType: execution.sessionId ? 'agent' : 'human',
-    source: 'connector',
-    outcome: outcome(execution.status),
-    action: `connector.${execution.actionPath}`,
-    resourceType: 'connector_action',
-    resourceId: executionId,
-    correlationId: executionId,
-    metadata: {
-      action_path: execution.actionPath,
-      connector_id: execution.connectorId,
-      connection_id: execution.connectionId,
-      risk: execution.risk,
-      result_summary: buildArgsPreview(execution.resultSummary),
-    },
-  };
-}
+import type { AuditEventInput } from '../shared/audit';
 
 interface ApprovalResolvedAuditInput {
   accountId: string;

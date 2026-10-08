@@ -108,6 +108,7 @@ need a running session. Each mirrors a method on the
 | `useAccountSecretResources(accountId)` | Account provider-secret metadata and use grants. Values are never returned. |
 | `useSessionProviderSecretPools(projectId, sessionId)` | Configured pools, including empty selections; `setPool` updates one provider and refreshes the session cache. |
 | `useProjectTriggers(projectId)` | Triggers: list, create, update, remove, fire. |
+| `useProjectTriggerEventTypes(projectId, connector)` | The app events a connector can trigger on. Idle until `connector` is set. |
 | `useChangeRequests(projectId, status?)` | Change requests: list, open, merge, close, request changes. |
 | `useRuntimeSupports(capability)` | Whether the open session's runtime serves a feature (`session.rewind`, `session.compact`, …), from the `/kortix/health` answers the runtime-reconnect poller reads. `true` until the first answer. See [What the runtime supports](/docs/sdk/sessions#what-the-runtime-supports). |
 | `resetRuntimeQueries(queryClient)` | Not a hook. Drops every cached runtime query (sessions, messages, agents, commands, diffs). Call it after the session's runtime is replaced by a restart or a config reload, so the next read comes from the new runtime. |
@@ -125,6 +126,16 @@ injects its adapters.
 | `createConnectorLinkInfoCache(fetchInfo, { storage })` | The cache factory itself (framework-free, storage injected) for a host that wants its own instance. |
 | `resolveConnectorStart({ start, finalize })` | The `/start` outcome rule: hosted url → popup, already connected → finalize once, otherwise the error message. |
 | `nextConnectorPollDelay(attempt, elapsedMs)` | The bounded poll schedule (3 s first, 5 s after, stops at 5 minutes). |
+
+## Connector data
+
+`useConnectorQuery(projectId, slug, action, args, { account, enabled, staleTime })`
+reads one connector action's output as a cached query. `error` is a
+`ConnectorCallError`: render a connect button from `error.connectUrl`, or an
+account picker from `error.availableAccounts`. Use it only for an action that
+reads; every fetch runs the action and writes an audit event. The output stays
+fresh for 30 s, focus never refetches, and only an upstream `429` or `503` is
+retried. See [Connectors from code](/docs/sdk/connectors#react).
 
 ## Start the open read early
 

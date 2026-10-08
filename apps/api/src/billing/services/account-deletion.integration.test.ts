@@ -10,6 +10,8 @@ import * as realProviders from '../../platform/providers';
 import { db } from '../../shared/db';
 
 const deletedUsers: string[] = [];
+// The `app-sites` bucket: static App objects by key (`<account_id>/<sha256>`).
+const siteObjects = new Set<string>();
 
 // The service's external seams are mocked; the database is real. Spread the
 // real module: `mock.module` replaces it WHOLESALE, so a stub that lists
@@ -25,6 +27,14 @@ mock.module('../../shared/supabase', () => ({
           return { error: null };
         },
       },
+    },
+    storage: {
+      from: () => ({
+        remove: async (keys: string[]) => {
+          for (const key of keys) siteObjects.delete(key);
+          return { error: null };
+        },
+      }),
     },
   }),
 }));
@@ -81,7 +91,12 @@ const RETAINED = new Set([
   'warm_pool_presence',
 ]);
 
+const SITE_SHA = 'f'.repeat(64);
+
 async function seed(): Promise<void> {
+  // The account's stored object, and a neighbor's that must survive.
+  siteObjects.add(`${ACCOUNT_ID}/${SITE_SHA}`);
+  siteObjects.add(`${OTHER_ACCOUNT_ID}/${SITE_SHA}`);
   const statements = [
     sql`INSERT INTO kortix.accounts (account_id, name) VALUES (${ACCOUNT_ID}, 'deletion-test')`,
     // The cascade core: membership, project, session, sandbox row.
@@ -144,6 +159,10 @@ async function seed(): Promise<void> {
       VALUES (${SANDBOX_ID}, 'built', 'deletion-test event')`,
     sql`INSERT INTO kortix.app_runtimes (deployment_id, account_id, provider, external_id, control_token_hash)
       VALUES (${SANDBOX_ID}, ${ACCOUNT_ID}, 'platinum', 'del-test-external', 'del-test-hash')`,
+    // Static App files: a manifest row, its blob ledger row and stored objects.
+    sql`INSERT INTO kortix.app_site_files (deployment_id, account_id, path, sha256, size_bytes, content_type)
+      VALUES (${SANDBOX_ID}, ${ACCOUNT_ID}, 'index.html', ${SITE_SHA}, 1, 'text/html')`,
+    sql`INSERT INTO kortix.app_site_blobs (account_id, sha256, size_bytes) VALUES (${ACCOUNT_ID}, ${SITE_SHA}, 1)`,
     // Project-plane children with NO ACTION edges into project sessions.
     sql`INSERT INTO kortix.change_requests (account_id, project_id, number, title, base_ref, head_ref, created_by)
       VALUES (${ACCOUNT_ID}, ${PROJECT_ID}, 1, 'deletion-test', 'base', 'head', ${USER_ID})`,
@@ -234,6 +253,8 @@ withDb('account deletion on PostgreSQL', () => {
     // The one retained row is the deletion receipt: the request, `completed`,
     // its free-text reason scrubbed.
     expect(await accountScopedTablesWithRows(ACCOUNT_ID)).toEqual(['account_deletion_requests']);
+    // Every stored static App object of the account is gone; the neighbor's stays.
+    expect([...siteObjects]).toEqual([`${OTHER_ACCOUNT_ID}/${SITE_SHA}`]);
     expect(
       await rows<{ status: string; reason: string | null }>(
         sql`SELECT status, reason FROM kortix.account_deletion_requests WHERE account_id = ${ACCOUNT_ID}`,

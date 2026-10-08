@@ -1,0 +1,17 @@
+{
+  "source_hash": "9890a0406b7639e4f07e3ecc7da077ead8bc1e69c458a1567dd085b2b69cace2",
+  "diff_files": [
+    "apps/web/next.config.ts",
+    "apps/web/src/config/blog-origin.ts",
+    "apps/web/src/config/blog-proxy.test.ts"
+  ],
+  "diff_hash": "495c350233b7ab197de0a34ceca3292a0e878a151fcd1dc405c7e107775f2547",
+  "head": "5bdf8eb8e39b3dbc271aaa909b150fc763a17084",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-08T02:07:49.775Z"
+}

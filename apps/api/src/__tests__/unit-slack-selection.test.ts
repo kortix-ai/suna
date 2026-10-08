@@ -38,7 +38,6 @@ mock.module('../projects/git', () => ({
 
 const {
   currentChannelSelection,
-  isValidModelId,
   loadProjectAgentGovernance,
   setChannelAgent,
   setChannelModel,
@@ -47,21 +46,6 @@ const {
 beforeEach(() => {
   dbResults = [];
   projectConfig = { agents: [] };
-});
-
-describe('isValidModelId — provider/model shape only (no stale-catalog gate)', () => {
-  test('accepts well-formed provider/model ids', () => {
-    expect(isValidModelId('anthropic/claude-opus-4-8')).toBe(true);
-    expect(isValidModelId('openai/gpt-5.5')).toBe(true);
-    expect(isValidModelId('a/b')).toBe(true);
-  });
-  test('rejects malformed ids', () => {
-    expect(isValidModelId('claude-opus-4-8')).toBe(false); // no provider
-    expect(isValidModelId('/leading')).toBe(false);
-    expect(isValidModelId('trailing/')).toBe(false);
-    expect(isValidModelId('has space/model')).toBe(false);
-    expect(isValidModelId('')).toBe(false);
-  });
 });
 
 describe('currentChannelSelection', () => {

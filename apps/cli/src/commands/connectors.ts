@@ -1,5 +1,8 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import {
   type ConnectionSharePrincipal,
+  getConnectorCatalog,
   renameConnection,
   setConnectorSecretBinding,
   shareConnection,
@@ -25,6 +28,7 @@ import {
 import { promptSecret } from '../prompts.ts';
 import { C, help, pad, status, trim } from '../style.ts';
 import { runConnector } from './connector-gateway.ts';
+import { renderConnectorTypes } from './connector-types.ts';
 
 // ── Shapes (mirror apps/api/src/connectors) ───────────────────────────────────
 
@@ -208,6 +212,14 @@ Subcommands:
                                     \`computer\` connector. List them with
                                     \`accounts computer\`; pick one with
                                     \`call computer <tool> --account "<machine name>"\`.
+  types [--connector <a,b>]         Print TypeScript types for every callable
+        [--out <file>]              action: \`declare module '@kortix/sdk'\`
+                                    filling ConnectorActionRegistry, so
+                                    \`connectors.callAction(slug, action, args)\`
+                                    type-checks args and \`output\`. Output is
+                                    \`unknown\` for managed Composio/Pipedream
+                                    connectors (they publish no output schema).
+                                    --out writes the file instead of stdout.
   connections <subcommand>          Manage configured connector connections.
   add <slug> --provider <p> [...]   Add a [[connectors]] block to kortix.yaml.
                                     Add --apply to skip ship/CR and apply it
@@ -432,6 +444,8 @@ export async function runConnectors(argv: string[]): Promise<number> {
     f.errorRedirect = takeFlagValue(rest, ['--error-redirect']);
     f.category = takeFlagValue(rest, ['--category']);
     f.limit = takeFlagValue(rest, ['--limit']);
+    f.connector = takeFlagValue(rest, ['--connector']);
+    f.out = takeFlagValue(rest, ['--out']);
     if (takeFlagBool(rest, ['--pipedream', '--legacy-pipedream'])) f.pipedream = 'true';
     conditions = takeFlagValues(rest, ['--condition', '--cond']);
     shareGroups = takeFlagValues(rest, ['--group']);
@@ -1149,6 +1163,49 @@ export async function runConnectors(argv: string[]): Promise<number> {
       // ── Browse the direct-connector catalogue ───────────────────────────
       // Gated on `connectors_api_discover`; the 403 names the flag and
       // surfaceApiError prints it verbatim.
+      case 'types': {
+        const slugs = (f.connector ?? '')
+          .split(',')
+          .map((slug) => slug.trim())
+          .filter(Boolean);
+        const read = (slug?: string) =>
+          withKortixScope(ctx.auth, () =>
+            getConnectorCatalog(ctx.projectId, {
+              slug,
+              includeSchemas: true,
+              includeOutputSchemas: true,
+            }),
+          );
+        const connectors = slugs.length
+          ? (await Promise.all(slugs.map(read))).flat()
+          : await read();
+        const missingSlugs = slugs.filter((slug) => !connectors.some((c) => c.slug === slug));
+        if (missingSlugs.length) {
+          process.stderr.write(
+            `${status.err(`No callable connector: ${missingSlugs.join(', ')}. List them with \`kortix connectors ls\`.`)}\n`,
+          );
+          return 1;
+        }
+        const source = renderConnectorTypes(connectors);
+        if (!f.out) {
+          process.stdout.write(source);
+          return 0;
+        }
+        const path = resolve(f.out);
+        mkdirSync(dirname(path), { recursive: true });
+        writeFileSync(path, source);
+        const actions = connectors.reduce((sum, c) => sum + c.actions.length, 0);
+        const untyped = connectors
+          .filter((c) => c.actions.length > 0 && c.actions.every((a) => !a.outputSchema))
+          .map((c) => c.slug);
+        process.stdout.write(
+          `${status.ok(`Wrote ${actions} action${actions === 1 ? '' : 's'} across ${connectors.length} connector${connectors.length === 1 ? '' : 's'} to ${f.out}`)}\n` +
+            (untyped.length
+              ? `  ${C.dim}No output schema (result is unknown): ${untyped.join(', ')}${C.reset}\n`
+              : ''),
+        );
+        return 0;
+      }
       case 'catalog':
       case 'discover-catalog': {
         if (positional[0] === 'show' || positional[0] === 'info') {
