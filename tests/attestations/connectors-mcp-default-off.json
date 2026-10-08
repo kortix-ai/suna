@@ -1,6 +1,8 @@
 {
-  "source_hash": "a7b2a80a68a1da8c6c7802492bd2ae48a34b1750bed968f74ebf8e2a574211c8",
+  "source_hash": "8adb561491069cd4fe12ef55082e0d89105e6f14c2f73cf8d1ff7d770f9e8d81",
   "diff_files": [
+    "apps/api/src/__tests__/integration-prompt-attachments.test.ts",
+    "apps/api/src/projects/session-title-generate.test.ts",
     "apps/cli/src/__tests__/connector-call-denial.test.ts",
     "apps/cli/src/commands/connector-gateway.ts",
     "apps/web/content/docs/connect/mcp.mdx",
@@ -8,6 +10,7 @@
     "apps/web/src/app/(public)/mcp/route.ts",
     "apps/web/src/app/[locale]/layout.tsx",
     "apps/web/src/components/agent-discovery/webmcp-tools.tsx",
+    "apps/web/src/features/session/optimistic-turn.test.tsx",
     "apps/web/src/i18n/remaining-ui-translation-keys.generated.ts",
     "apps/web/src/lib/agent-discovery.test.ts",
     "apps/web/src/lib/agent-discovery.ts",
@@ -23,15 +26,16 @@
     "apps/web/translations/sr.json",
     "apps/web/translations/zh.json",
     "packages/starter/src/embedded.generated.json",
-    "packages/starter/templates/managed/skills/kortix-system/SKILL.md"
+    "packages/starter/templates/managed/skills/kortix-system/SKILL.md",
+    "tests/spec/end-to-end.md"
   ],
-  "diff_hash": "691955e6254d3dfcdc25f9a5ef8ca12d65efd1a039450ef791c18249eb97586a",
-  "head": "7e313ce5fb94f1b84413b17253a527d316378b74",
+  "diff_hash": "3d7d7efd5fad1cfb8aecb2c2079a66e35853d27b7e3a8836e5e1aef2cac67dd2",
+  "head": "c6e0b43c06e4924e10fc3a554a99b59c7700ec1b",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-08T17:10:55.423Z"
+  "at": "2026-10-08T18:18:45.638Z"
 }
