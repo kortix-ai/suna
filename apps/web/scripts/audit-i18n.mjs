@@ -964,8 +964,6 @@ function scanFile(file) {
         (file === path.join(srcDir, 'lib/kortix/task-meta.ts') && catalogRoot === 'STATUS_META') ||
         (file === path.join(srcDir, 'lib/agent-discovery.ts') &&
           ['API_CATALOG', 'MCP_SERVER_CARD'].includes(catalogRoot)) ||
-        (file === path.join(srcDir, 'lib/mcp/public-content-server.ts') &&
-          catalogRoot === 'TOOL_DEFINITIONS') ||
         (file === path.join(srcDir, 'components/setup-links/setup-link-button.tsx') &&
           catalogRoot === 'COPY') ||
         (file === path.join(srcDir, 'features/billing/cost-explorer/cost-chart.tsx') &&
