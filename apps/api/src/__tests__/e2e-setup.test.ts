@@ -97,10 +97,11 @@ describe('/v1/setup', () => {
     });
 
     it('lets the host through, as a header or a Bearer, to the request checks', async () => {
-      for (const headers of [
+      const hostHeaders: Array<Record<string, string>> = [
         { 'X-Kortix-Internal-Key': config.INTERNAL_SERVICE_KEY },
         { Authorization: `Bearer ${config.INTERNAL_SERVICE_KEY}` },
-      ]) {
+      ];
+      for (const headers of hostHeaders) {
         const res = await post(headers);
         // Past the gate, the malformed email answers.
         expect(res.status).toBe(400);
