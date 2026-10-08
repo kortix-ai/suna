@@ -2794,6 +2794,30 @@ describe('pi per-prompt agent (R7.2)', () => {
     expect(state.config.value.default_agent).toBe('coder')
   })
 
+  // #9410's per-agent tool access follows the turn's agent, not the boot agent.
+  test('a picked agent\'s tool list governs its turn; the next unpicked turn has the session agent\'s tools again', async () => {
+    const ends: string[] = []
+    const r = await boot({
+      script: [
+        { tool: 'bash', args: { command: 'touch picked-ran.txt' } }, { text: 'reader done' },
+        { tool: 'bash', args: { command: 'touch session-ran.txt' } }, { text: 'coder done' },
+      ],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ default_agent: 'coder', agent: { coder: { mode: 'primary' }, reader: { mode: 'primary', tools: { '*': false, read: true } } } }) },
+      hooks: { onTurnEnd: ({ messageId }) => void ends.push(messageId) },
+    })
+    const first = gateway.sent.length
+    await send(r, 'run a command', 'reader')
+    await waitFor(() => ends.length === 1)
+    expect(existsSync(join(r.workspace, 'picked-ran.txt'))).toBe(false)
+    // The reader's request offers `read` alone.
+    expect(gateway.sampling[first]!.tools).toBe(1)
+    const second = gateway.sampling.length
+    await send(r, 'run a command')
+    await waitFor(() => ends.length === 2)
+    expect(gateway.sampling[second]!.tools).toBeGreaterThan(1)
+    expect(existsSync(join(r.workspace, 'session-ran.txt'))).toBe(true)
+  })
+
   // Strix finding on #9391 (CWE-863): `__proto__` and `constructor` resolve
   // through the prototype chain, and their undefined `permission` compiled to an
   // empty policy that allows every tool.

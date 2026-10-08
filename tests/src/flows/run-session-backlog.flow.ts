@@ -1632,7 +1632,7 @@ harnessFlow(
   },
 );
 
-/** A second primary agent whose prompt names it `token` (RUN-15). */
+/** A second primary agent whose prompt names it `token` (RUN-17). */
 function agentPickFiles(token: string): Record<string, string> {
   return {
     'kortix.yaml': [
@@ -1682,7 +1682,7 @@ async function agentsThatAnswered(
 
 // R7.2: pi fixed its agent at boot and ignored a prompt's pick.
 harnessFlow(
-  'RUN-15',
+  'RUN-17',
   {
     domain: 'agent-run',
     requires: ['funded', 'daytona'],
@@ -1704,7 +1704,7 @@ harnessFlow(
     try {
       await ctx.step(`the project declares a second primary agent and runs ${harness}`, async () => {
         if (harness === 'pi') await world.setFeature('pi_harness', true);
-        await world.commitToMain(agentPickFiles(token), 'ke2e RUN-15: a marker agent');
+        await world.commitToMain(agentPickFiles(token), 'ke2e RUN-17: a marker agent');
       });
       const session = await bootSession(ctx, harness, { project, prompt: 'Reply with the word ready.' });
       await ctx.step('the session runtime lists the marker agent', async () => {
@@ -1726,11 +1726,11 @@ harnessFlow(
         );
       });
       await ctx.step('a prompt that picks no agent runs on the session agent', async () => {
-        const agents = await agentsThatAnswered(ctx, session, 'Reply with one word.', `RUN15PLAIN${Date.now()}`);
+        const agents = await agentsThatAnswered(ctx, session, 'Reply with one word.', `RUN17PLAIN${Date.now()}`);
         if (agents.some((name) => name !== 'kortix')) throw new Error(`a reply ran on ${JSON.stringify(agents)}, not the session agent kortix`);
       });
       await ctx.step('a prompt that picks the marker agent runs its whole turn on it', async () => {
-        const agents = await agentsThatAnswered(ctx, session, 'Reply with one word.', `RUN15PICKED${Date.now()}`, 'marker');
+        const agents = await agentsThatAnswered(ctx, session, 'Reply with one word.', `RUN17PICKED${Date.now()}`, 'marker');
         if (agents.some((name) => name !== 'marker')) {
           throw new Error(`the picked agent did not run the turn on ${harness}: the replies ran on ${JSON.stringify(agents)}`);
         }
