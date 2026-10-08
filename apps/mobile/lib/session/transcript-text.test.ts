@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import { serializePromptWithPastes } from '@kortix/shared';
 import type { MessageWithParts, Part } from '@/lib/session/types';
 
 import {
@@ -58,6 +59,12 @@ describe('buildTranscriptText', () => {
     ])!;
     expect(out).toContain('You:\nRead this');
     expect(out).not.toContain('FILE BODY');
+  });
+
+  test('a paste in a user message is its text, not its XML', () => {
+    const prompt = serializePromptWithPastes('Explain this', [{ id: '0a1b2c3d', text: 'synthetic log line' }]);
+    const out = buildTranscriptText('', [msg('user', [text(prompt)])]);
+    expect(out).toBe('You:\nsynthetic log line\n\nExplain this');
   });
 
   test('consecutive messages of one role share one label', () => {

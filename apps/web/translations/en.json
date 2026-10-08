@@ -9471,6 +9471,9 @@
       "text1a9030082a20": "Create skill",
       "text25ab55af92b1": "Started attachment upload",
       "text38e64d6a8162": "Commits a SKILL.md to the project's default branch. No model or chat needed.",
+      "text39cfc32bd12c": "Pasted text",
+      "text23d0bb29fca0": "{count, plural, one {# word} other {# words}}",
+      "text426699d5a8c0": "{count, plural, one {# character} other {# characters}}",
       "text40078a553439": "Uploaded attachment chunk",
       "text4c7f8000aabd": "Completed attachment upload",
       "text91420d2587c2": "Removed attachment upload",
@@ -19513,7 +19516,9 @@
       "text5a4918e0201c": "Restoring…",
       "textd9682a5acb38": "{value0} of {value1} manual snapshots",
       "text581e89ae1f08": "Delete a backend snapshot",
-      "text1af77a9ae95c": "List this backend on the App. An App gets viewer tokens only for the backends it lists."
+      "text1af77a9ae95c": "List this backend on the App. An App gets viewer tokens only for the backends it lists.",
+      "text2eb91a6f88aa": "1 file stays attached. Remove it to run the command, or remove the command to send the file as a message.",
+      "text807f9beb34b1": "{count, plural, other {# files stay attached. Remove them to run the command, or remove the command to send them as a message.}}"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

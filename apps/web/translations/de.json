@@ -9460,6 +9460,9 @@
       "text1a9030082a20": "Skill erstellen",
       "text25ab55af92b1": "Anhang-Upload gestartet",
       "text38e64d6a8162": "Schreibt eine SKILL.md auf den Standard-Branch des Projekts. Kein Modell oder Chat nötig.",
+      "text39cfc32bd12c": "Eingefügter Text",
+      "text23d0bb29fca0": "{count, plural, one {# Wort} other {# Wörter}}",
+      "text426699d5a8c0": "{count, plural, one {# Zeichen} other {# Zeichen}}",
       "text40078a553439": "Anhang-Block hochgeladen",
       "text4c7f8000aabd": "Anhang-Upload abgeschlossen",
       "text91420d2587c2": "Anhang-Upload entfernt",
@@ -19502,7 +19505,9 @@
       "text5a4918e0201c": "Wird wiederhergestellt…",
       "textd9682a5acb38": "{value0} von {value1} manuellen Snapshots",
       "text581e89ae1f08": "Backend-Snapshot löschen",
-      "text1af77a9ae95c": "Dieses Backend in der App eintragen. Eine App erhält Betrachter-Tokens nur für die Backends, die sie auflistet."
+      "text1af77a9ae95c": "Dieses Backend in der App eintragen. Eine App erhält Betrachter-Tokens nur für die Backends, die sie auflistet.",
+      "text2eb91a6f88aa": "1 Datei bleibt angehängt. Entferne sie, um den Befehl auszuführen, oder entferne den Befehl, um die Datei als Nachricht zu senden.",
+      "text807f9beb34b1": "{count, plural, other {# Dateien bleiben angehängt. Entferne sie, um den Befehl auszuführen, oder entferne den Befehl, um sie als Nachricht zu senden.}}"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

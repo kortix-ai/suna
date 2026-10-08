@@ -1,0 +1,18 @@
+{
+  "source_hash": "0d82f93eb41d82701a81de237e64793023ccd529d1654d6ec55774b87f7deb99",
+  "diff_files": [
+    "apps/web/src/features/workspace/customize/sections/channels-view.email.test.tsx",
+    "apps/web/src/features/workspace/customize/sections/channels-view.test.ts",
+    "apps/web/src/features/workspace/customize/sections/view/channels-view.tsx",
+    "apps/web/src/lib/seo/content-timestamps.json"
+  ],
+  "diff_hash": "f3ab925a68bf7754c2a913b250f0fccc88d1b772ad0487f9382746e76d4dc45e",
+  "head": "6412e4107df633ca33a854d42259bf11c006bf28",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-08T15:33:41.210Z"
+}

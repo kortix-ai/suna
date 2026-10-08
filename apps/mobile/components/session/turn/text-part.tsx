@@ -4,6 +4,7 @@ import { detectLocalhostUrls } from '@kortix/sdk';
 import { SelectableMarkdownText } from '@/components/kortix/selectable-markdown';
 import { SandboxPreviewCard } from '@/components/session/SandboxPreviewCard';
 import { assistantSegments } from '@/lib/markdown/setup-links';
+import { holdBackTableHeader, useStreamingCadence } from '@/lib/markdown/stream-pacer';
 import { SetupLinkCard } from './setup-link-card';
 
 /**
@@ -16,7 +17,8 @@ import { SetupLinkCard } from './setup-link-card';
  * in the prose becomes a tappable link, as on web.
  *
  * Mirrors apps/web `session-chat.tsx` text rendering (`min-w-0 text-sm`,
- * `ThrottledMarkdown isStreaming` while the part can still grow,
+ * `ThrottledMarkdown isStreaming` while the part can still grow, paced by the
+ * same algorithm,
  * `SandboxUrlDetector` once settled). Spacing belongs to the turn's stacks,
  * so the block carries no margin. Memoized on its props, so a delta on
  * another part of the turn does not rescan this text.
@@ -31,8 +33,15 @@ export const TextPartBlock = React.memo(function TextPartBlock({
   /** The part can still grow: an unclosed code fence renders as growing. */
   isStreaming?: boolean;
 }) {
-  const detectedUrls = useMemo(() => detectLocalhostUrls(text), [text]);
-  const segments = useMemo(() => assistantSegments(text, isStreaming), [text, isStreaming]);
+  // The reply reveals word by word at the speed it arrives, not one network
+  // chunk at a time (`stream-pacer.ts`, the web pacer's mobile copy). Until
+  // the paced text has caught up, the part still renders as streaming, so
+  // the switch to the settled render changes nothing on screen.
+  const { text: paced, streaming } = useStreamingCadence(text, isStreaming);
+  const shown = useMemo(() => (streaming ? holdBackTableHeader(paced) : paced), [paced, streaming]);
+  const detectedUrls = useMemo(() => detectLocalhostUrls(shown), [shown]);
+  const segments = useMemo(() => assistantSegments(shown, streaming), [shown, streaming]);
+  if (streaming && !shown) return null;
   return (
     <View style={{ minWidth: 0 }}>
       {segments.map((segment, index) => {
@@ -46,7 +55,7 @@ export const TextPartBlock = React.memo(function TextPartBlock({
             {segment.type === 'setup' ? (
               <SetupLinkCard kind={segment.kind} token={segment.token} href={segment.href} label={segment.label} />
             ) : (
-              <SelectableMarkdownText isDark={isDark} isStreaming={isStreaming} remoteImages="load">
+              <SelectableMarkdownText isDark={isDark} isStreaming={streaming} remoteImages="load">
                 {segment.text}
               </SelectableMarkdownText>
             )}
