@@ -1,0 +1,24 @@
+{
+  "source_hash": "65da9813c8c92a4862863c2295656a8713d031cd80bc4d6b8763e04a5e25cfc6",
+  "diff_files": [
+    "apps/web/scripts/build-content-timestamps.mjs",
+    "apps/web/src/app/[locale]/(public)/(marketing)/download/loading.tsx",
+    "apps/web/src/app/[locale]/(public)/(marketing)/download/page.tsx",
+    "apps/web/src/app/[locale]/(public)/download/loading.tsx",
+    "apps/web/src/app/[locale]/(public)/download/page.tsx",
+    "apps/web/src/features/marketing/download/close-button.test.tsx",
+    "apps/web/src/features/marketing/download/close-button.tsx",
+    "apps/web/src/features/workspace/project-sidebar/workspace-switcher.tsx",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "tests/e2e/specs/47-download-site-nav.spec.ts"
+  ],
+  "diff_hash": "efd571cea1e47e06d8d2c86933d31d78bf3e976ba5d9f7c428ab4e2efd37dc35",
+  "head": "2cfafbfb6a10279911a780e76f359e7609433246",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-08T11:02:13.536Z"
+}
