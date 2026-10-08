@@ -9,8 +9,7 @@ import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { createRoute, z } from '@hono/zod-openapi';
 import { projectSessions, projectSessionConnectorBindings } from '@kortix/db';
-import { and, eq, or } from 'drizzle-orm';
-import { config } from '../../config';
+import { and, eq } from 'drizzle-orm';
 import { loadProjectForUser, loadVisibleSession, assertProjectCapability } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { isUuid } from '../../shared/validate';
@@ -26,7 +25,6 @@ import { canChangeSessionModel, mayChangeSessionModel, modelChangeNeedsLivePush,
 import { pushSessionModelToSandbox, pushSessionScopeToSandbox } from '../lib/sandbox-env-sync';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
-import { canonicalConnectorAlias, publicConnectorAlias } from '../../shared/connector-alias';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { admitSessionModelChange } from '../lib/session-model-keys';
 import { validateProviderSecretPool } from './provider-secret-pools';
@@ -195,7 +193,7 @@ export function registerSessionScopeRoutes(): void {
         sessionId,
       });
       if (!bindingsDecision.ok) return c.json(bindingsDecision.body, bindingsDecision.status);
-      const { nextBindings, bindingRows } = bindingsDecision;
+      const { bindingRows } = bindingsDecision;
 
       await db.transaction(async (tx) => {
         const sessionUpdates: {

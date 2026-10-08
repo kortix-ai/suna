@@ -58,6 +58,16 @@ flow(
         r.status(200).body().has("$.path", firstFile.path).exists("$.content");
       });
     }
+    await ctx.step("a path the repository does not hold → 404 File not found, never a 500", async () => {
+      (await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/files/content", { params: { projectId: p.id }, query: { path: "ke2e-no-such-file.txt" } }))
+        .status(404).body().has("$.error", "File not found");
+    });
+    await ctx.step("absolute and traversal paths → 404 File not found", async () => {
+      for (const path of ["/workspace/AGENTS.md", "../etc/passwd"]) {
+        (await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/files/content", { params: { projectId: p.id }, query: { path } }))
+          .status(404).body().has("$.error", "File not found");
+      }
+    });
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
@@ -148,11 +158,15 @@ flow(
   { domain: "files", routes: ["GET /v1/projects/:projectId/files/archive"] },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
-    await ctx.step("repo archive (no path) → 200 zip stream", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/files/archive", { params: { projectId: p.id } });
-      r.status([200, 400]);
+    await ctx.step("repo archive (no path) → 200 workspace.zip", async () => {
+      (await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/files/archive", { params: { projectId: p.id } }))
+        .status(200)
+        .headerEquals("content-type", "application/zip")
+        .headerEquals("content-disposition", 'attachment; filename="workspace.zip"');
+    });
+    await ctx.step("an absolute archive path → 400 Invalid path", async () => {
+      (await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/files/archive", { params: { projectId: p.id }, query: { path: "/workspace" } }))
+        .status(400).body().has("$.error", "Invalid path");
     });
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client
@@ -295,12 +309,12 @@ flow(
   "FILE-11",
   {
     domain: "files",
-    routes: ["GET /v1/projects/:projectId/files", "GET /v1/projects/:projectId/files/content"],
+    routes: ["GET /v1/projects/:projectId/files", "GET /v1/projects/:projectId/files/content", "GET /v1/projects/:projectId/files/archive"],
   },
   async (ctx) => {
     if (ctx.env.target !== "local") return; // deployed pushes go through the git proxy; local pushes hit the bare repo
     const { execFileSync } = await import("node:child_process");
-    const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
+    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");
     const { join } = await import("node:path");
     const { Client: PgClient } = await import("pg");
@@ -322,6 +336,8 @@ flow(
         git("clone", "-q", "--branch", base, repoUrl, ".");
         git("checkout", "-q", "-b", branch);
         writeFileSync(join(work, "fresh.txt"), "pushed just now\n");
+        mkdirSync(join(work, "docs"));
+        writeFileSync(join(work, "docs/guide.md"), "guide\n");
         git("add", "-A");
         git("-c", "user.name=KE2E", "-c", "user.email=ke2e@kortix.invalid", "commit", "-qm", "fresh");
         git("push", "-q", "origin", `HEAD:refs/heads/${branch}`);
@@ -333,6 +349,16 @@ flow(
         const list = await owner.get("/v1/projects/:projectId/files", { params: { projectId: p.id }, query: { ref: branch } });
         list.status(200);
         if (!list.json<Array<{ path: string }>>().some((e) => e.path === "fresh.txt")) throw new Error("fresh.txt missing from the branch listing");
+      });
+      await ctx.step("list and archive a subtree at that ref → only its files; a zip named after the folder", async () => {
+        const list = await owner.get("/v1/projects/:projectId/files", { params: { projectId: p.id }, query: { ref: branch, path: "docs" } });
+        list.status(200);
+        const paths = list.json<Array<{ path: string }>>().map((e) => e.path);
+        if (!paths.some((x) => x.endsWith("guide.md")) || paths.some((x) => x.endsWith("fresh.txt"))) throw new Error(`subtree listing: ${JSON.stringify(paths)}`);
+        (await owner.get("/v1/projects/:projectId/files/archive", { params: { projectId: p.id }, query: { ref: branch, path: "docs" } }))
+          .status(200)
+          .headerEquals("content-type", "application/zip")
+          .headerEquals("content-disposition", 'attachment; filename="docs.zip"');
       });
       await ctx.step("an unknown branch → 404", async () => {
         const r = await owner.get("/v1/projects/:projectId/files/content", {

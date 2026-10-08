@@ -14,7 +14,6 @@
  * (the repo's `--isolate` runner guarantees that).
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { Hono } from 'hono';
 import * as realAccess from '../lib/access';
 

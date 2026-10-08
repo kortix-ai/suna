@@ -2220,52 +2220,6 @@ export const sessionSandboxes = kortixSchema.table(
 );
 
 /**
- * Harness/worker split (P1.7): the lazily-provisioned COMPUTE ENVIRONMENT of a
- * pi worker session — the full daemon box (repo checkout, secrets, /file,
- * /find, /pty) the worker's tools act on, provisioned on the FIRST compute
- * tool call and never before.
- *
- * A separate table, not a second row in `session_sandboxes`: that table is
- * one-row-per-session by DB constraint + anchor-guard trigger, and everything
- * around it (turn lifecycle, prompt dedupe, compute metering, the reaper's
- * deadline math) assumes the row IS the session runtime. For a pi session the
- * session runtime is the WORKER; this environment is an auxiliary box the
- * worker reaches directly over the provider edge — the session proxy is not in
- * its data path.
- *
- * One environment per session, enforced by the primary key.
- *
- * RETIRED: the pi worker split was removed and nothing reads or writes this
- * table. It stays declared until a follow-up migration drops it, after every
- * replica runs code with no reader (a drop under an old replica fails its
- * account-deletion and orphan-reaper queries).
- */
-export const sessionEnvironments = kortixSchema.table(
-  'session_environments',
-  {
-    sessionId: text('session_id').primaryKey(),
-    accountId: uuid('account_id').notNull(),
-    projectId: uuid('project_id').notNull(),
-    provider: sandboxProviderEnum('provider').default('daytona').notNull(),
-    externalId: text('external_id'),
-    baseUrl: text('base_url'),
-    status: sessionSandboxStatusEnum('status').default('provisioning').notNull(),
-    config: jsonb('config').default({}).$type<Record<string, unknown>>(),
-    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
-    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    index('idx_session_environments_project').on(table.projectId),
-    index('idx_session_environments_account').on(table.accountId),
-    index('idx_session_environments_status').on(table.status),
-    index('idx_session_environments_external_id').on(table.externalId),
-  ],
-);
-
-
-/**
  * Durable per-turn ledger.
  *
  * `session_sandboxes.metadata.activeTurns` is the LIFECYCLE authority: the
@@ -3723,7 +3677,7 @@ export const gatewayRequestLogs = kortixSchema.table(
     // + uniqueness only, so the declaration here (without INCLUDE) is enough
     // to keep it in sync, the same pattern as
     // idx_gateway_logs_project_failed_time — by
-    // 20261007184418000_gateway_logs_account_time_covering.concurrent.ts.
+    // 20261007235952000_gateway_logs_account_time_covering.concurrent.ts.
     index('idx_gateway_logs_account_time_covering').on(table.accountId, table.createdAt),
   ],
 );

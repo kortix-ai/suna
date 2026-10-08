@@ -100,13 +100,6 @@ export function rankApps(apps: readonly CatalogApp[], query: string): CatalogApp
     .map((entry) => entry.app);
 }
 
-/** Apps in one category. Category keys are Pipedream's own strings, compared
- *  exactly — the snapshot builds the facet list from the same values, so there
- *  is no vocabulary to reconcile. */
-export function filterByCategory(apps: readonly CatalogApp[], category: string): CatalogApp[] {
-  return apps.filter((app) => app.categories.includes(category));
-}
-
 export interface CatalogPage<T> {
   items: T[];
   total: number;

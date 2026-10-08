@@ -187,7 +187,6 @@ function toGatewayConnector(
   } | null,
 ): GatewayConnector {
   const { auth, hasAuth: configuredHasAuth } = authOf(row);
-  const config = (row.config ?? {}) as Record<string, unknown>;
   const hasAuth = row.providerType === 'composio'
     ? !composioConnectionIsNoAuth(connection?.metadata)
     : configuredHasAuth;

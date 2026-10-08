@@ -254,12 +254,12 @@ unwired) now live in `projects-client/billing.ts` and are grouped on the
 facade as `kortix.billing.{checkout, subscription, credits}`:
 | group | op | REST |
 |---|---|---|
-| `checkout` | createSession | `POST /v1/billing/create-checkout-session` |
-| `checkout` | confirmSession | `POST /v1/billing/confirm-checkout-session` |
+| `checkout` | createSession | retired: rejects with `ENDPOINT_RETIRED` (API answers `410`) |
+| `checkout` | confirmSession | retired: rejects with `ENDPOINT_RETIRED` (API answers `410`) |
 | `subscription` | createPortalSession | `POST /v1/billing/create-portal-session` |
 | `subscription` | cancel | `POST /v1/billing/cancel-subscription` |
 | `subscription` | reactivate | `POST /v1/billing/reactivate-subscription` |
-| `subscription` | scheduleDowngrade | `POST /v1/billing/schedule-downgrade` |
+| `subscription` | scheduleDowngrade | retired: rejects with `ENDPOINT_RETIRED` (API answers `410`) |
 | `subscription` | cancelScheduledChange | `POST /v1/billing/cancel-scheduled-change` |
 | `subscription` | prorationPreview | `GET /v1/billing/proration-preview` |
 | `credits` | purchase | `POST /v1/billing/purchase-credits` |

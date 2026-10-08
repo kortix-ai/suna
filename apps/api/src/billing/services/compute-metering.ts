@@ -56,7 +56,6 @@ import {
   computeLivenessGraceMs,
   lastAliveAtOf,
 } from './compute-liveness';
-import { wallet } from '../wallet';
 import {
   DEFAULT_COMPUTE_RATE_MULTIPLIER,
   clampComputeRateMultiplier,

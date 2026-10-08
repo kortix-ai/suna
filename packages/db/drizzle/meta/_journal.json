@@ -873,8 +873,15 @@
     {
       "idx": 124,
       "version": "7",
-      "when": 1791398677413,
-      "tag": "20261007184437_gateway_logs_account_time_covering",
+      "when": 1791377463859,
+      "tag": "20261007125103_drop_session_environments",
+      "breakpoints": true
+    },
+    {
+      "idx": 125,
+      "version": "7",
+      "when": 1791417636758,
+      "tag": "20261008000036_krtx_1769_cost_index",
       "breakpoints": true
     }
   ]

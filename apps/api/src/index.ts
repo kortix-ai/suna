@@ -53,7 +53,7 @@ console.log(`
 ║  Env:  ${config.INTERNAL_KORTIX_ENV.padEnd(49)}║
 ╠═══════════════════════════════════════════════════════════╣
 ║  Services:                                                ║
-║    /v1/router     (search, LLM, proxy)                    ║
+║    /v1/router     (Tavily/Serper/Firecrawl proxy)         ║
 ║    /v1/billing    (subscriptions, credits, webhooks)       ║
 ║    /v1/platform   (api keys, sandbox version)               ║
 ║    /v1/projects   (Git-backed projects)                    ║
