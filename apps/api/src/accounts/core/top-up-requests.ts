@@ -28,8 +28,8 @@ export function registerTopUpRequestRoutes(): void {
         ...errors(401, 403, 409, 429),
       },
     }),
-    async (c: any) => {
-      const accountId = c.req.param('accountId');
+    async (c) => {
+      const { accountId } = c.req.valid('param');
       const userId = c.get('userId') as string;
       if (!(await getMembership(userId, accountId))) return c.json({ error: 'Forbidden' }, 403);
       if ((await authorize(await actorOf(c, accountId), ACCOUNT_ACTIONS.BILLING_WRITE)).allowed) {
