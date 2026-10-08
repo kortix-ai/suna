@@ -34,9 +34,12 @@ does not remove the sequential-round-trip count (a separate, larger change).
 
 ## Switch-over runbook
 
-Nothing below moves data. The dev database stays where it is. The snapshot
-bucket and the config-release archives are caches that the API rebuilds from
-Git (`apps/api/src/config-releases/store.ts`), so the new buckets start empty.
+The dev database stays where it is. The snapshot bucket and the config-release
+archives are caches that the API rebuilds from Git
+(`apps/api/src/config-releases/store.ts`), so the new buckets start empty.
+**The audit archive is not a cache.** It is the only copy of every week that
+the archive job removed from PostgreSQL, and the account audit export reads it
+from `AUDIT_ARCHIVE_BUCKET`. Copy it before the switch (Phase 4, "Data").
 Every `terraform apply`, Worker change and delete needs an approved plan.
 
 **Background workers.** The singleton loops (cron triggers, maintenance,
@@ -125,6 +128,32 @@ us-west-2 `kortix-dev-env` and `kortix-dev-web-env`, and add this root and
 No workflow reads the us-west-2 blobs. `aws-env` reads each blob from its row
 in `blob_region` (`.github/actions/aws-env/fetch.sh`). The same applies to
 staging's us-west-2 `kortix-staging-env` and `kortix-staging-web-env`.
+
+#### Data
+
+`terraform destroy` fails on every bucket here: all are versioned and none has
+`force_destroy`. Decide per bucket first.
+
+| Old data | Action |
+|---|---|
+| `kortix-dev-project-snapshots` | Cache. Destroy it with the root after it is empty (current objects expire after 30 days, old versions 7 days later). |
+| `kortix-dev-audit-archive` | Copied to `kortix-dev-use2-audit-archive` on 2026-10-09: 622 objects, and all 7 weekly manifests match `manifest_sha256` in `kortix.audit_archive_chunks`. Object Lock (GOVERNANCE) holds the old objects until 2027-07-06. `terraform state rm` the bucket before the destroy, and delete it after that date. |
+| ALB log buckets, `/ecs/kortix-dev*` log groups | Dev logs, 365-day retention. `terraform state rm` them and their KMS keys before the destroy, and let them expire. |
+
+Copy an audit archive object by object, keeping its bytes, lock and checksum.
+The app writes SSE-KMS with no key id (`apps/api/src/object-store/s3.ts`), so
+the copy does the same:
+
+```bash
+aws s3api copy-object --region <new-region> --bucket <new-bucket> --key "$KEY" \
+  --copy-source "<old-bucket>/$KEY?versionId=$VERSION" --metadata-directive COPY \
+  --server-side-encryption aws:kms --checksum-algorithm SHA256 \
+  --object-lock-mode "$MODE" --object-lock-retain-until-date "$RETAIN_UNTIL"
+```
+
+Then prove it: every object's `ChecksumSHA256`, size and lock date match, and
+each week's manifest checksum equals `manifest_sha256` in the database. Skip
+`verification/lock-probe-*`; it is a manual probe, not archive data.
 
 > ⚠️ `terraform apply` here creates billable AWS resources (VPC, NAT, 2 ALBs,
 > Fargate). It does not touch anything in `../dev`.
