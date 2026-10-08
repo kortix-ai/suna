@@ -197,7 +197,7 @@ describe('decideDoor — a requested account', () => {
 describe('inviteLandingPath — where an accepted invite lands', () => {
   test('a project invite opens the first project it granted', () => {
     expect(
-      inviteLandingPath({ account_id: 'b', bootstrap_grants_applied: [{ project_id: 'pw', role: 'member' }] }),
+      inviteLandingPath({ account_id: 'b', bootstrap_grants_applied: [{ project_id: 'pw' }] }),
     ).toBe('/projects/pw');
   });
 

@@ -30,6 +30,7 @@ function memoryStore() {
         onQuestion: p.onQuestion ?? prev?.onQuestion ?? true,
         onPermission: p.onPermission ?? prev?.onPermission ?? true,
         playSound: p.playSound ?? prev?.playSound ?? true,
+        authSessionId: input.authSessionId ?? null,
         createdAt: prev?.createdAt ?? now,
         updatedAt: now,
       };
@@ -94,9 +95,19 @@ describe('POST /device-token', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ success: true, message: 'Device token registered' });
     expect(upserts).toEqual([
-      { token: TOKEN, userId: USER_A, platform: 'ios', provider: 'expo', preferences: undefined },
+      { token: TOKEN, userId: USER_A, platform: 'ios', provider: 'expo', authSessionId: null, preferences: undefined },
     ]);
     expect(rows.get(TOKEN)).toMatchObject({ userId: USER_A, enabled: true, playSound: true });
+  });
+
+  // KRTX-1722: a push goes only while the registering sign-in exists.
+  test("a sign-in JWT records its session; a personal token and a malformed id record none", async () => {
+    const { store, upserts } = memoryStore();
+    const signIn = '11111111-2222-4333-8444-555555555555';
+    await appFor(store).as({ ...userA, sessionId: signIn }).post(register);
+    await appFor(store).as({ ...userA, sessionId: 'not-a-uuid' }).post(register);
+    await appFor(store).as({ userId: USER_A, authType: 'pat' }).post(register);
+    expect(upserts.map((u) => u.authSessionId)).toEqual([signIn, null, null]);
   });
 
   test('snake_case preferences map to the store fields; omitted keys stay undefined', async () => {
