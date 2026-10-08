@@ -13,6 +13,9 @@ interface CapabilityPageShellProps {
   action?: ReactNode;
   search?: ReactNode;
   filters?: ReactNode;
+  /** The `max-w-7xl` column, for a gallery whose tiles need the width (Apps:
+   *  a 5xl column made four-across tiles 230px, too small to read an App). */
+  wide?: boolean;
   children: ReactNode;
 }
 
@@ -38,12 +41,19 @@ export function CapabilityPageShell({
   action,
   search,
   filters,
+  wide = false,
   children,
 }: CapabilityPageShellProps) {
   const scrollRef = useCapabilityScrollRootRef();
   return (
     <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto w-full max-w-5xl space-y-5 px-4 py-10 pb-20 lg:py-14">
+      <div
+        className={
+          wide
+            ? 'mx-auto w-full max-w-7xl space-y-5 px-4 py-10 pb-20 md:px-8 lg:py-14'
+            : 'mx-auto w-full max-w-5xl space-y-5 px-4 py-10 pb-20 lg:py-14'
+        }
+      >
         <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           {/* `sm:max-w-md` fixes where the description wraps. Without it the
               text column took whatever the right-hand group left, and that

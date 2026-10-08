@@ -253,6 +253,10 @@ Options:
 
 Requires project.settings.write. A flag the platform marks unavailable stays
 off regardless of the project override.
+
+Internal-only flags (apps, backends) are listed only while they are on, with
+origin "kortix". Only Kortix changes them: enable, disable and reset answer
+feature_operator_only. Contact Kortix to change one.
 `;
 
 interface FeatureFlagRow {
@@ -263,6 +267,8 @@ interface FeatureFlagRow {
   available: boolean;
   enabled: boolean;
   overridden: boolean;
+  /** Internal-only flag: listed only while on, changed only by Kortix. */
+  operator_only?: boolean;
 }
 
 function featureRows(project: Record<string, unknown>): FeatureFlagRow[] {
@@ -286,8 +292,17 @@ function printFeatureTable(rows: FeatureFlagRow[]): void {
       : r.enabled
         ? `${C.green}on   ${C.reset}`
         : `${C.dim}off  ${C.reset}`;
-    const origin = !r.available ? 'unavailable' : r.overridden ? 'override' : 'default';
+    const origin = !r.available
+      ? 'unavailable'
+      : r.operator_only
+        ? 'kortix'
+        : r.overridden
+          ? 'override'
+          : 'default';
     process.stdout.write(`  ${pad(r.key, keyW)}  ${state}  ${pad(origin, 10)}  ${r.name}\n`);
+  }
+  if (rows.some((r) => r.operator_only)) {
+    process.stdout.write(`\n  ${C.dim}origin kortix: enabled by Kortix for this project. Contact Kortix to change it.${C.reset}\n`);
   }
   process.stdout.write('\n');
 }
@@ -1388,7 +1403,16 @@ async function projectsInfo(arg?: string, json = false, hostArg?: string): Promi
   process.stdout.write(`  ${C.dim}branch     ${C.reset}${p.default_branch}\n`);
   process.stdout.write(`  ${C.dim}manifest   ${C.reset}${p.manifest_path}\n`);
   process.stdout.write(`  ${C.dim}status     ${C.reset}${p.status}\n`);
-  process.stdout.write(`  ${C.dim}updated    ${C.reset}${formatRelative(p.updated_at)}\n\n`);
+  process.stdout.write(`  ${C.dim}updated    ${C.reset}${formatRelative(p.updated_at)}\n`);
+  // Internal-only surfaces Kortix turned on (apps, backends). Agents read this
+  // to know `kortix apps` and `kortix backends` work here.
+  const managed = featureRows(p as unknown as Record<string, unknown>)
+    .filter((r) => r.operator_only && r.enabled)
+    .map((r) => r.key);
+  if (managed.length > 0) {
+    process.stdout.write(`  ${C.dim}by kortix  ${C.reset}${managed.join(', ')}\n`);
+  }
+  process.stdout.write('\n');
   return 0;
 }
 

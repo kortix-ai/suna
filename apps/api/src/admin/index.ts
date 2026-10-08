@@ -471,6 +471,83 @@ adminApp.openapi(
   },
 );
 
+// ── Set a project's feature flag (operator) ─────────────────────────────────
+// The operator lever for internal-only flags (`apps`, `backends`): Kortix turns
+// them on per project on request. `PATCH /v1/projects/:id/features` refuses
+// those flags for everyone but a platform operator, and this route needs no
+// project membership. Any flag key works here. Audited on the project.
+adminApp.openapi(
+  createRoute({
+    method: 'put',
+    path: '/api/projects/{id}/features',
+    tags: ['admin'],
+    summary: "Set or clear a project's feature flag (operator)",
+    ...auth,
+    request: {
+      params: z.object({ id: z.string() }),
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({
+              feature: z.string().openapi({ description: 'Flag key, for example `backends`.' }),
+              enabled: z.boolean().nullable().openapi({ description: '`true`/`false` sets the override; `null` clears it.' }),
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: json(
+        z.object({
+          project_id: z.string(),
+          feature: z.string(),
+          override: z.boolean().nullable(),
+          enabled: z.boolean().openapi({ description: 'Effective state after the write.' }),
+        }),
+        'Updated flag',
+      ),
+      ...errors(400, 401, 403, 404),
+    },
+  }),
+  async (c) => {
+    const { id: projectId } = c.req.valid('param');
+    const { feature, enabled } = c.req.valid('json');
+    const { isFeatureFlagKey, resolveFeatureFlag } = await import('../feature-flags/registry');
+    if (!isFeatureFlagKey(feature)) return c.json({ error: `Unknown feature flag '${feature}'` }, 400);
+    if (!isUuid(projectId)) return c.json({ error: 'Not found' }, 404);
+    const before = await findProject(projectId);
+    if (!before || before.status === 'archived') return c.json({ error: 'Not found' }, 404);
+    const { writeProjectFeatureFlag } = await import('../feature-flags/write');
+    const row = await writeProjectFeatureFlag(projectId, feature, enabled);
+    if (!row) return c.json({ error: 'Not found' }, 404);
+    const override = (row.metadata as { experimental?: Record<string, unknown> } | null)?.experimental?.[feature];
+    const { recordAuditEvent } = await import('../shared/audit');
+    await recordAuditEvent({
+      accountId: row.accountId,
+      projectId,
+      actorUserId: c.get('userId') ?? null,
+      action: 'admin.project.feature.set',
+      resourceType: 'project',
+      resourceId: projectId,
+      before: { [feature]: (before.metadata as { experimental?: Record<string, unknown> } | null)?.experimental?.[feature] ?? null },
+      after: { [feature]: enabled },
+      ip: requestClientIp(c),
+      userAgent: c.req.header('user-agent') || null,
+    }).catch(() => {
+      /* audit is best-effort, as on the other admin writes */
+    });
+    return c.json(
+      {
+        project_id: projectId,
+        feature,
+        override: typeof override === 'boolean' ? override : null,
+        enabled: resolveFeatureFlag(row.metadata, feature),
+      },
+      200,
+    );
+  },
+);
+
 // ── Credit ledger ────────────────────────────────────────────────────────────
 adminApp.openapi(
   createRoute({

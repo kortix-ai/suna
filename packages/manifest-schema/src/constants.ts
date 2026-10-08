@@ -272,6 +272,8 @@ export const GRANTABLE_KORTIX_PERMISSIONS: readonly string[] = [
   'project.app.read',
   'project.app.write',
   'project.app.deploy',
+  'project.backend.read',
+  'project.backend.write',
   'project.review.read',
   'project.review.submit',
   'project.review.act',

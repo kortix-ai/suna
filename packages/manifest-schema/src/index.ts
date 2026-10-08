@@ -952,8 +952,10 @@ const APP_TYPES = new Set(['static', 'bundle', 'dockerfile', 'oci_image']);
 const APP_KEYS = new Set([
   'path', 'type', 'image', 'dockerfile', 'command', 'port', 'root', 'output_dir',
   'install_command', 'build_command', 'spa', 'readiness_path', 'idle_timeout_seconds',
-  'always_on', 'monthly_budget_usd', 'resources', 'env', 'secrets',
+  'always_on', 'monthly_budget_usd', 'backends', 'resources', 'env', 'secrets',
 ]);
+/** A Kortix Backend name, as `kortix backends create` accepts it. */
+const BACKEND_NAME = /^[a-z][a-z0-9-]{0,62}$/;
 
 function validateAppStringMap(
   node: unknown,
@@ -1054,6 +1056,21 @@ function validateAppsV2(node: unknown, path: string, issues: ManifestIssue[]): v
     if (value.monthly_budget_usd !== undefined &&
         (typeof value.monthly_budget_usd !== 'number' || value.monthly_budget_usd < 0)) {
       issues.push({ path: `${where}.monthly_budget_usd`, message: 'must be a non-negative number.', severity: 'error' });
+    }
+    if (value.backends !== undefined) {
+      if (!Array.isArray(value.backends)) {
+        issues.push({ path: `${where}.backends`, message: 'must be a list of backend names.', severity: 'error' });
+      } else {
+        value.backends.forEach((name: unknown, index: number) => {
+          if (typeof name !== 'string' || !BACKEND_NAME.test(name)) {
+            issues.push({
+              path: `${where}.backends[${index}]`,
+              message: 'must be a backend name: lowercase letters, digits and dashes, starting with a letter.',
+              severity: 'error',
+            });
+          }
+        });
+      }
     }
     if (value.resources !== undefined) {
       if (!isTable(value.resources)) {

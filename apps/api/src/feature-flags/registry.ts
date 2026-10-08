@@ -56,16 +56,25 @@
  *
  *   • `resolveFeatureFlag` / `resolveFeatureFlags` — UNCHANGED. The platform
  *     default still applies and an explicit project override still wins.
- *   • `buildFeatureFlagCatalog` — OMITS the entry, so Settings → Feature flags
- *     does not list it and no UI presents it as a toggle.
- *   • `isFeatureFlagKey` — UNCHANGED, so `PATCH /projects/:id/features` keeps
- *     accepting the key. That is the support escape hatch, and it is the whole
- *     reason this is not `available: () => false` (which would force the flag
- *     OFF for every project — the opposite of what a hidden default means).
+ *   • `buildFeatureFlagCatalog` — OMITS the entry while it is off, so
+ *     Settings → Feature flags never offers it. While it is ON the catalog
+ *     lists it with `operator_only: true`, so people and agents
+ *     (`kortix projects features`) see it, read-only.
+ *   • Writes — `PATCH /projects/:id/features` accepts the key only from a
+ *     platform operator (403 `feature_operator_only` otherwise). The operator
+ *     route is `PUT /v1/admin/api/projects/:id/features`. That is the support
+ *     lever, and it is the whole reason this is not `available: () => false`
+ *     (which would force the flag OFF for every project — the opposite of
+ *     what a hidden default means).
  *
  * A hidden flag is a DATED state, not a parking spot: hide it in the release
  * that makes it the default, delete it in the next one. The comment on the
  * entry names the release and the spec section that ends it.
+ *
+ * The same state also serves an INTERNAL-ONLY surface (`apps`, `backends`):
+ * not offered in Settings, enabled per project by a Kortix operator on
+ * request. Its 403 says "contact Kortix" instead of naming a toggle the caller
+ * cannot see (gate.ts).
  */
 import { config } from '../config';
 import { platinumUsRegion } from '../shared/platinum-region';
@@ -104,11 +113,10 @@ export interface FeatureFlagDef {
   /** Mandatory for 'ui-only': why the server does not enforce. */
   enforcementNote?: string;
   /**
-   * Omit this flag from the serialized catalog ({@link buildFeatureFlagCatalog})
-   * so no UI lists it as a toggle. Resolution and `PATCH /projects/:id/features`
-   * are untouched — see "Hidden flags" in this file's header. Set it only on a
-   * flag whose value is now the product behavior, and delete the flag in the
-   * next release.
+   * Not offered as a toggle: the catalog ({@link buildFeatureFlagCatalog})
+   * lists it only while it is on, marked `operator_only`, and only a platform
+   * operator can write it. Resolution is untouched — see "Hidden flags" in
+   * this file's header.
    */
   catalogHidden?: true;
 }
@@ -200,6 +208,23 @@ const FLAGS: readonly FeatureFlagDef[] = [
     available: () => true,
     platformDefault: () => false,
     enforcement: 'routes',
+    // Internal-only (2026-10-06, kortix-backends PR): not offered in Settings.
+    // Projects already on keep it; Kortix enables others on request.
+    catalogHidden: true,
+  },
+  {
+    key: 'backends',
+    name: 'Backends',
+    description:
+      'Give the project full backends: a database, server functions, realtime queries, file storage, scheduling, and search. Each backend is a self-hosted Convex instance in its own machine. Agents create one with `kortix backends create` and deploy to it with the Convex CLI.',
+    stability: 'experimental',
+    // A backend is a persistent per-backend machine. Only Platinum runs one
+    // (same reason as `monitors` below), so the surface stays dark without it.
+    available: () => Boolean(config.PLATINUM_API_KEY),
+    platformDefault: () => false,
+    enforcement: 'routes',
+    // Internal-only dark launch: Kortix enables it per project on request.
+    catalogHidden: true,
   },
   {
     key: 'monitors',
@@ -401,24 +426,36 @@ export interface FeatureFlagView {
   enabled: boolean;
   /** True when this project set an explicit choice (vs inheriting the default). */
   overridden: boolean;
+  /** A `catalogHidden` flag: listed only while on, writable only by a platform operator. */
+  operator_only: boolean;
 }
 
 /**
  * Build the per-project catalog the clients render. Self-contained so the UI
  * never hard-codes the flag list — add to FLAGS and it appears.
  *
- * `catalogHidden` entries are omitted: they still resolve and are still
- * writable through `PATCH /projects/:id/features`, they are simply not offered
- * as a toggle (see "Hidden flags" in this file's header).
+ * A `catalogHidden` entry appears only while it is on for this project, with
+ * `operator_only: true`, so the clients show it read-only (see "Hidden
+ * flags" in this file's header).
  */
 export function buildFeatureFlagCatalog(metadata: unknown): FeatureFlagView[] {
-  return FLAGS.filter((f) => !f.catalogHidden).map((f) => ({
-    key: f.key,
-    name: f.name,
-    description: f.description,
-    stability: f.stability,
-    available: f.available(),
-    enabled: resolveFeatureFlag(metadata, f.key),
-    overridden: explicitOverride(metadata, f.key) !== undefined,
-  }));
+  return FLAGS.flatMap((f) => {
+    const enabled = resolveFeatureFlag(metadata, f.key);
+    if (f.catalogHidden && !enabled) return [];
+    return [{
+      key: f.key,
+      name: f.name,
+      description: f.description,
+      stability: f.stability,
+      available: f.available(),
+      enabled,
+      overridden: explicitOverride(metadata, f.key) !== undefined,
+      operator_only: f.catalogHidden === true,
+    }];
+  });
+}
+
+/** True when only a platform operator may write this flag. */
+export function isOperatorOnlyFeatureFlag(key: FeatureFlagKey): boolean {
+  return FLAG_BY_KEY[key]?.catalogHidden === true;
 }

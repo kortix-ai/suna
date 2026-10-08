@@ -246,6 +246,7 @@ describe('kortix apps deploy (characterization)', () => {
         '    path: web',
         '    type: bundle',
         '    output_dir: dist',
+        '    backends: [main]',
         '    resources:',
         '      cpu: 2',
         '      memory_gb: 4',
@@ -267,7 +268,7 @@ describe('kortix apps deploy (characterization)', () => {
     const create = calls.find(
       (c) => c.method === 'POST' && c.path === `/v1/projects/${PROJECT}/apps`,
     );
-    expect(create?.body).toEqual({ slug: 'storefront', name: 'storefront', cpu: 2, memory_gb: 4 });
+    expect(create?.body).toEqual({ slug: 'storefront', name: 'storefront', cpu: 2, memory_gb: 4, backends: ['main'] });
     // --output-dir wins over the manifest's output_dir; env and secrets pass through.
     expect(deploymentCall()?.body).toEqual({
       artifact_id: 'art-1',

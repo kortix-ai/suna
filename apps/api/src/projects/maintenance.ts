@@ -8,6 +8,7 @@ import { recordAuditEvent } from '../shared/audit';
 import { reconcileStaleBuilds } from '../snapshots/builder';
 import { reconcileSnapshotQuota } from '../snapshots/quota-gc';
 import { EMPTY_APP_IMAGE_RECLAIM_RESULT, reclaimAppDeploymentImages } from '../apps/images';
+import { EMPTY_BACKEND_SWEEP, sweepBackends } from '../backends/maintenance';
 import { sweepAppRetention } from '../apps/retention';
 import { reclaimAppSiteBlobs } from '../apps/static-site';
 import { type GitBackedProject, deleteRemoteSessionBranch } from './git';
@@ -514,6 +515,14 @@ function runMaintenanceSweeps() {
       );
       return { examined: 0, activated: 0, parked: 0, lost: 0, archived: 0, errors: 1 };
     }),
+    // Kortix Backends: resume provisions and operations whose API process
+    // died, park an archived project's backends, probe and meter every
+    // running backend, repair a stopped or lost machine, take the daily
+    // snapshots and delete expired ones, delete orphans.
+    () => sweepBackends().catch((err) => {
+      logger.warn('[project-maintenance] backends sweep failed:', err instanceof Error ? err.message : err);
+      return { ...EMPTY_BACKEND_SWEEP, errors: 1 };
+    }),
   ]);
 }
 
@@ -542,6 +551,7 @@ function logMaintenanceCycle(
     monitorEventsPurged,
     archivedRemovals,
     stuckProvisioning,
+    backends,
   ] = sweeps;
   const hadAction = Boolean(
     idle.stopped ||
@@ -589,7 +599,17 @@ function logMaintenanceCycle(
       archivedRemovals.removed ||
       archivedRemovals.failed ||
       stuckProvisioning.examined ||
-      stuckProvisioning.errors,
+      stuckProvisioning.errors ||
+      backends.resumed ||
+      backends.failedProvisions ||
+      backends.recovered ||
+      backends.unhealthy ||
+      backends.repairs ||
+      backends.parked ||
+      backends.unparked ||
+      backends.machinesDeleted ||
+      backends.snapshotJobs ||
+      backends.errors,
   );
   if (hadAction) {
     console.log('[project-maintenance] completed', {
@@ -611,6 +631,7 @@ function logMaintenanceCycle(
       monitorEventsPurged,
       archivedRemovals,
       stuckProvisioning,
+      backends,
     });
   }
   // Unconditional heartbeat — proof-of-life independent of whether any
@@ -661,6 +682,9 @@ function logMaintenanceCycle(
     `monitor_observed=${monitorBoxes.observed}`,
     `monitor_created=${monitorBoxes.created}`,
     `monitor_stopped=${monitorBoxes.stopped}`,
+    // A backend counted unhealthy tick after tick is down for its users.
+    `backends_probed=${backends.probed}`,
+    `backends_unhealthy=${backends.unhealthy}`,
     // The sweeps run SWEEP_CONCURRENCY at a time. A cycle that takes longer
     // than the interval makes the next tick skip, which halves every sweep's
     // rate: alert on this value approaching the interval.

@@ -92,6 +92,15 @@ const ImageReleaseObject = z.object({ released: z.number().int(), pending: z.num
 const APP_SLUG = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const APP_ENV_NAME = /^(?!KORTIX_|OPENCODE_)[A-Za-z_][A-Za-z0-9_]{0,127}$/;
 const APP_SECRET_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
+/**
+ * The Kortix Backends (by name) this App may mint a viewer token for at
+ * `/_kortix/backend-token`. Empty, the default: none. A name may list a
+ * backend the project has not created yet.
+ */
+const BackendsSchema = z
+  .array(z.string().regex(/^[a-z][a-z0-9-]{0,62}$/, 'a backend name: lowercase letters, digits and dashes'))
+  .max(10)
+  .transform((names) => [...new Set(names)]);
 const EnvironmentSchema = z.record(
   z.string().regex(APP_ENV_NAME),
   z.string().max(32_768),
@@ -211,6 +220,7 @@ function serializeApp(row: typeof apps.$inferSelect, viewerCanAccess = true, hos
     idle_timeout_seconds: row.idleTimeoutSeconds,
     always_on: row.alwaysOn,
     monthly_budget_usd: Number(row.monthlyBudgetUsd),
+    backends: row.backends,
     /** `static`: served from storage, no runtime. `sandbox`: a server App. null: never deployed. */
     hosting_type: hostingType,
     /** Ready deployments kept besides the active one (rollback targets). */
@@ -527,6 +537,7 @@ export function registerAppsRoutes(): void {
           idle_timeout_seconds: z.number().int().min(120).max(86400).default(300),
           always_on: z.boolean().optional(),
           monthly_budget_usd: z.number().min(0).max(100000).optional(),
+          backends: BackendsSchema.default([]),
         }) } } },
       },
       responses: { 201: json(AppObject, 'App'), ...errors(400, 402, 403, 404, 409) },
@@ -559,6 +570,7 @@ export function registerAppsRoutes(): void {
           alwaysOn,
           monthlyBudgetUsd: budget.toFixed(2),
           monthlyBudgetExplicit: body.monthly_budget_usd !== undefined,
+          backends: body.backends,
         }).returning();
         const warning = alwaysOnBudgetWarning(row!, config.getDefaultProvider());
         return c.json({ ...serializeApp(row!), warnings: warning ? [warning] : [] }, 201);
@@ -667,6 +679,7 @@ export function registerAppsRoutes(): void {
           name: z.string().min(1).max(200).optional(), cpu: CpuSchema.optional(),
           memory_gb: MemorySchema.optional(), disk_gb: DiskSchema.optional(),
           idle_timeout_seconds: z.number().int().min(120).max(86400).optional(), always_on: z.boolean().optional(), monthly_budget_usd: z.number().min(0).max(100000).optional(),
+          backends: BackendsSchema.optional(),
         }) } } },
       },
       responses: { 200: json(AppObject, 'App'), ...errors(400, 403, 404) },
@@ -708,6 +721,7 @@ export function registerAppsRoutes(): void {
         ...(body.always_on !== undefined ? { alwaysOn: body.always_on } : {}),
         ...(body.monthly_budget_usd !== undefined ? { monthlyBudgetUsd: body.monthly_budget_usd.toFixed(2), monthlyBudgetExplicit: true } : {}),
         ...(derivedBudget !== undefined ? { monthlyBudgetUsd: derivedBudget.toFixed(2) } : {}),
+        ...(body.backends !== undefined ? { backends: body.backends } : {}),
         updatedAt: new Date(),
       }).where(and(eq(apps.appId, appId), eq(apps.projectId, projectId), isNull(apps.deletedAt))).returning();
       if (!row) return c.json({ error: 'Not found' }, 404);
