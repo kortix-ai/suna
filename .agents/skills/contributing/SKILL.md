@@ -195,10 +195,10 @@ gh pr view <pr> --json body --jq .body | grep -cE '\]\(\./output/'              
 
 | Event | Workflows | Blocks? |
 | --- | --- | --- |
-| PR into `main` | none. Adding `test` runs the six `Tests` lanes once (~9 min); adding `preview` deploys once (~7 min), with no tests. A push re-runs neither. | no |
+| PR into `main` | none. Adding `test` runs the `Tests` lanes once (~20 min); adding `preview` deploys once (~7 min), with no tests. A push re-runs neither. | no |
 | Push to `main` (the merge) | `secret-scan`, `secrets-guard`, path-gated `DB Migrations`, `i18n-catalogs`, `deploy-api-router-dev`, `Terraform Apply Global`. Nothing else. | no |
 | Dispatch / schedule on `main` | `Deploy Dev` and `Desktop`: dispatch only. `Tests`: daily. `drata`: daily. `CI`, `CodeQL`: weekly. | no |
-| PR into `staging` | the six `Tests` lanes, `CI`, `CodeQL`, `secret-scan`, `secrets-guard`, path-gated `DB Migrations`, `Terraform CI`, `Security Scan`, `i18n-catalogs`, `drata` | release discipline |
+| PR into `staging` | the `Tests` lanes, `CI`, `CodeQL`, `secret-scan`, `secrets-guard`, path-gated `DB Migrations`, `Terraform CI`, `Security Scan`, `i18n-catalogs`, `drata` | release discipline |
 | PR into `prod` | the same scanners plus `tests-release.yml`; its `full suite + quality gates` check is the only required check in the repo | yes |
 
 `tests/unit/sandbox-workflow.test.ts` fails when a workflow other than the label-gated
@@ -210,7 +210,7 @@ push runs on GitHub-billed minutes, and the factory merges ~37 PRs a day.
 
 | Label | Effect | Who can add it |
 | --- | --- | --- |
-| `test` | Runs the six `Tests` lanes (~9 min) once, on the head SHA when the label is added. A push does not re-run it; remove and re-add the label to run again. | Triage access. |
+| `test` | Runs the `Tests` lanes (~20 min) once, on the head SHA when the label is added. A push does not re-run it; remove and re-add the label to run again. | Triage access. |
 | `preview` | Builds one self-host environment for the branch on Platinum (~7 min), once, and runs no tests. A push does not redeploy; re-add the label. Removing the label tears it down. `gh workflow run deploy-preview.yml -f pr_number=<N>` redeploys and runs `pnpm test -- --target-full` (40–80 min). See [references/preview-environments.md](references/preview-environments.md). | Needs write access, and a PR from a branch of this repo (not a fork). |
 | `i18n-reorder` | Lets `i18n-catalogs.yml` accept an intentional key reorder in `apps/web/translations/*.json` on a release PR. On `main`, the same reorder needs `I18N_REORDER=1` past `.githooks/pre-commit` and the commit trailer `I18n-Reorder: intentional`. | Triage access. |
 

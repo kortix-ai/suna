@@ -1011,7 +1011,10 @@ describe('delete claims the backend (review: snapshot during delete)', () => {
   test('while the delete runs, no snapshot can claim the backend', async () => {
     const row = await runningBackend('delete-race', { snapshots: ['dr-1'], snapshotListDelayMs: 800 });
     const deleting = del(row.backendId);
-    await new Promise((r) => setTimeout(r, 300));
+    // Wait for the delete's mark, not a fixed delay: on a 4 vCPU CI runner the
+    // route had not marked the row 300 ms in. The 800 ms snapshot list keeps
+    // the delete running after the mark lands.
+    await eventually(() => read(row.backendId), (r) => meta(r).deleting !== undefined);
     expect(await claimOperation(row.backendId, 'snapshotting')).toBe(false);
     expect((await deleting).status).toBe(204);
     expect(machines.has('sbx-delete-race')).toBe(false);

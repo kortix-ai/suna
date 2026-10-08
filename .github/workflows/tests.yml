@@ -1,6 +1,6 @@
 name: Tests
 
-# The local suite: six lanes (core, browser-1..4, packages) on GitHub-hosted
+# The local suite: ten lanes (core, browser-1..8, packages) on GitHub-hosted
 # runners (free on this public repo). Each lane is the unchanged root command
 # `pnpm test -- <args>`.
 #
@@ -54,10 +54,11 @@ jobs:
       || (github.base_ref == 'staging' && github.event.action != 'labeled')
       || (github.event.action == 'labeled' && github.event.label.name == 'test')
     runs-on: ${{ vars.CI_RUNNER_L || 'ubuntu-24.04' }}
-    # 20, not 60. Over 57 measured runs the slowest lane (`packages`) had
-    # p50 370s and max 570s, so 20 min is ~2x the worst run seen. The cap is a
-    # hang detector: on 2026-09-21 `@kortix/cli` hung and the lane burned the
-    # full 60 min before `trunk-report` could say `dev` was red.
+    # 40, not 20 and not 60. On free 4 vCPU runners the lanes run ~3x their
+    # Blacksmith time: core 15.4 min, browser-1 17.7 min (run 37812339796),
+    # so 40 is ~2x the slowest measured lane. The cap is a hang detector: on
+    # 2026-09-21 `@kortix/cli` hung and the lane burned the full 60 min before
+    # `trunk-report` could say `dev` was red.
     timeout-minutes: 40
     strategy:
       fail-fast: false
@@ -66,24 +67,38 @@ jobs:
           - lane: core
             mode: core
             args: ""
-          # Four browser shards since 2026-09-18. Measured on Blacksmith L:
-          # the suite went 10m19s (run 35384964452, N=2) -> 8m17s (run
-          # 35388565759, N=4); the browser long pole dropped 619s -> 416s.
-          # `packages` (8m01s) is now the binding lane, so a fifth browser
-          # shard cannot move the total. `--browser-shard` is Playwright's
-          # native `--shard`, which splits by test count, not by duration.
+          # Eight browser shards, one Playwright worker each, since 2026-10-08.
+          # The lanes moved from Blacksmith 8 vCPU / 32 GB to free GitHub-hosted
+          # 4 vCPU / 16 GB runners. Four shards x two workers ran ~3x slower
+          # there (browser-1 17.7 min vs 6.1), a 180 s journey timed out, and
+          # one runner died mid-lane (run 37812339796). Half the tests per
+          # runner and one worker keep each test near its old CPU budget.
+          # `--browser-shard` is Playwright's native `--shard`, which splits by
+          # test count, not by duration.
           - lane: browser-1
             mode: browser
-            args: --browser-only --browser-shard=1/4
+            args: --browser-only --browser-shard=1/8
           - lane: browser-2
             mode: browser
-            args: --browser-only --browser-shard=2/4
+            args: --browser-only --browser-shard=2/8
           - lane: browser-3
             mode: browser
-            args: --browser-only --browser-shard=3/4
+            args: --browser-only --browser-shard=3/8
           - lane: browser-4
             mode: browser
-            args: --browser-only --browser-shard=4/4
+            args: --browser-only --browser-shard=4/8
+          - lane: browser-5
+            mode: browser
+            args: --browser-only --browser-shard=5/8
+          - lane: browser-6
+            mode: browser
+            args: --browser-only --browser-shard=6/8
+          - lane: browser-7
+            mode: browser
+            args: --browser-only --browser-shard=7/8
+          - lane: browser-8
+            mode: browser
+            args: --browser-only --browser-shard=8/8
           - lane: packages
             mode: packages
             args: --packages-only
@@ -93,6 +108,8 @@ jobs:
       TEST_LANE: ${{ matrix.lane }}
       TEST_ARGS: ${{ matrix.args }}
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
+      # One worker per browser shard on a 4 vCPU / 16 GB runner (see the matrix).
+      E2E_BROWSER_WORKERS: "1"
     steps:
       - uses: actions/checkout@v7
         with:
@@ -306,10 +323,14 @@ jobs:
             echo '```'
             echo "pnpm test                                        # core"
             echo "pnpm test -- --packages-only                     # packages"
-            echo "pnpm test -- --browser-only --browser-shard=1/4  # browser-1"
-            echo "pnpm test -- --browser-only --browser-shard=2/4  # browser-2"
-            echo "pnpm test -- --browser-only --browser-shard=3/4  # browser-3"
-            echo "pnpm test -- --browser-only --browser-shard=4/4  # browser-4"
+            echo "pnpm test -- --browser-only --browser-shard=1/8  # browser-1"
+            echo "pnpm test -- --browser-only --browser-shard=2/8  # browser-2"
+            echo "pnpm test -- --browser-only --browser-shard=3/8  # browser-3"
+            echo "pnpm test -- --browser-only --browser-shard=4/8  # browser-4"
+            echo "pnpm test -- --browser-only --browser-shard=5/8  # browser-5"
+            echo "pnpm test -- --browser-only --browser-shard=6/8  # browser-6"
+            echo "pnpm test -- --browser-only --browser-shard=7/8  # browser-7"
+            echo "pnpm test -- --browser-only --browser-shard=8/8  # browser-8"
             echo '```'
           } > /tmp/trunk-verdict.md
 

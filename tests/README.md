@@ -91,13 +91,14 @@ dispatch only; the `preview` label deploys without it) and `tests-release.yml` (
 staging, whose `full suite + quality gates` job is the only required check in
 the repository).
 
-The run is six lanes in parallel, each natively on one free GitHub-hosted
+The run is ten lanes in parallel, each natively on one free GitHub-hosted
 runner (`CI_RUNNER_L`, default `ubuntu-24.04`, 4 vCPU / 16 GB). Core and
-package lanes run `pnpm test` and `pnpm test -- --packages-only`. Four browser
-lanes run shards `1/4` through `4/4` via
+package lanes run `pnpm test` and `pnpm test -- --packages-only`. Eight browser
+lanes run shards `1/8` through `8/8` with one Playwright worker each
+(`E2E_BROWSER_WORKERS=1`) via
 `pnpm test -- --browser-only --browser-shard=CURRENT/TOTAL`, which maps straight
-to Playwright's native `--shard`. The six lanes are the parallel equivalent of
-`pnpm test -- --full` and measure 8m17s wall clock. Each lane checks out the
+to Playwright's native `--shard`. The ten lanes are the parallel equivalent of
+`pnpm test -- --full`; `tests.yml` records their measured times. Each lane checks out the
 exact requested SHA, runs `pnpm install --frozen-lockfile`, and invokes the
 unchanged root command; browser lanes also install Chromium and prestart
 Supabase so the root runner reuses it. `actions/cache` keeps the Chromium
