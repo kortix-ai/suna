@@ -45,6 +45,7 @@ function trigger(overrides: Partial<ProjectTrigger> = {}): ProjectTrigger {
     filter: null,
     last_fired_at: null,
     webhook_url: null,
+    event: null,
     ...overrides,
   } as ProjectTrigger;
 }
@@ -69,6 +70,33 @@ describe('customer trigger list', () => {
     expect([trigger({ type: 'monitor' })].filter(visible)).toEqual([]);
     // A customer's own trigger named the same stays visible: agent must match too.
     expect([trigger({ slug: 'harness-reflector' }), trigger()].filter(visible)).toHaveLength(2);
+  });
+});
+
+describe('app event triggers in the copy layer', () => {
+  const event = trigger({
+    type: 'event',
+    cron: null,
+    name: '',
+    event: {
+      connector: 'github',
+      type: 'GITHUB_PULL_REQUEST_EVENT',
+      config: {},
+      provider: 'composio',
+      app: 'github',
+      status: 'active',
+      error: null,
+      last_event_at: null,
+    },
+  });
+
+  test('is a trigger kind the screen shows', () => {
+    expect(isTriggerKind('event')).toBe(true);
+  });
+
+  test('reads as the app event, in the list sentence and as the fallback name', () => {
+    expect(describeWhen(event)).toBe('Pull request on Github');
+    expect(triggerName(event)).toBe('Pull request on Github');
   });
 });
 

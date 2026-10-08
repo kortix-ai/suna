@@ -38,7 +38,41 @@ export interface App {
   active_deployment_id: string | null;
   machine: AppMachineSpec;
   idle_timeout_seconds: number;
+  /**
+   * `true`: the App runs 24/7 (cron jobs, workers, websockets keep working)
+   * until its monthly budget is reached. `false`: it stops after
+   * `idle_timeout_seconds` without requests and wakes on the next one.
+   * Ignored by a static App, which has no runtime. Optional for wire
+   * compatibility with a server that predates it.
+   */
+  always_on?: boolean;
   monthly_budget_usd: number;
+  /**
+   * What the App's machine costs running 24/7 for one month at list compute
+   * rates (USD). It applies to a server App; a static App runs no machine.
+   * Optional for wire compatibility with a server that predates it.
+   */
+  estimated_monthly_usd?: number;
+  /**
+   * How the active deployment is hosted. `static`: served from storage, with
+   * no runtime: it serves whatever `desired_state` says, and start/stop
+   * answer `409 static_app_no_runtime`. `sandbox`: a server App. `null`: not
+   * deployed yet. Optional for wire compatibility with a server that
+   * predates it.
+   */
+  hosting_type?: 'sandbox' | 'static' | null;
+  /**
+   * Ready deployments the App keeps besides its active one, as rollback
+   * targets. Older ones are retired. Optional for wire compatibility.
+   */
+  retained_deployments?: number;
+  /**
+   * Set on the create and update responses only. `app_budget_below_always_on`:
+   * the App runs 24/7 and its monthly budget is below `estimated_monthly_usd`,
+   * so a server App stops at the budget until the month ends. Neither call
+   * refuses it.
+   */
+  warnings?: Array<{ code: string; message: string }>;
   last_request_at: string | null;
   /**
    * May the caller OPEN this App, as opposed to merely see it listed?
@@ -64,6 +98,8 @@ export interface CreateAppInput {
   memory_gb?: number;
   disk_gb?: number;
   idle_timeout_seconds?: number;
+  /** Run 24/7. Defaults to the server's setting (Kortix Cloud: `true`). */
+  always_on?: boolean;
   monthly_budget_usd?: number;
 }
 
@@ -73,6 +109,7 @@ export interface UpdateAppInput {
   memory_gb?: number;
   disk_gb?: number;
   idle_timeout_seconds?: number;
+  always_on?: boolean;
   monthly_budget_usd?: number;
 }
 
@@ -191,7 +228,8 @@ export interface AppDeployment {
   version: number;
   status: AppDeploymentStatus;
   source_kind: AppSourceKind;
-  hosting_type: 'sandbox';
+  /** `static`: served from storage, no runtime. `sandbox`: runs in its own machine. */
+  hosting_type: 'sandbox' | 'static';
   hosting_provider: AppHostingProvider | null;
   runtime_spec: Record<string, unknown>;
   build_spec: Record<string, unknown>;

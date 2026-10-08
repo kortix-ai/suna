@@ -537,10 +537,10 @@ flow(
       );
       r.status(400);
     });
-    await ctx.step('bad type (not cron/webhook) → 400', async () => {
+    await ctx.step('bad type (not cron/webhook/monitor/event) → 400', async () => {
       const r = await owner.post(
         '/v1/projects/:projectId/triggers',
-        { name: 'x', type: 'event', cron: '0 0 3 * * *', timezone: 'UTC', prompt_template: 'x' },
+        { name: 'x', type: 'bogus', cron: '0 0 3 * * *', timezone: 'UTC', prompt_template: 'x' },
         { params },
       );
       r.status(400);
@@ -1708,6 +1708,147 @@ flow(
       const r = await owner.patch('/v1/projects/:projectId/triggers/:slug', { name: 'Renamed hook' }, { params: { ...params, slug: 'hook' } });
       r.status(409).body().has('$.code', 'webhook_secret_delivery_mismatch');
       if ((await listed()).find((t) => t.slug === 'hook')?.name !== 'hook') throw new Error('a refused PATCH changed the trigger');
+    });
+  },
+);
+
+type EventTriggerRow = TriggerRow & {
+  type: string;
+  event: { connector: string; type: string; config: Record<string, unknown>; status: string; error: string | null } | null;
+};
+
+flow(
+  'TRG-21',
+  {
+    domain: 'triggers',
+    routes: [
+      'POST /v1/projects/:projectId/triggers',
+      'GET /v1/projects/:projectId/triggers',
+      'PATCH /v1/projects/:projectId/triggers/:slug',
+      'DELETE /v1/projects/:projectId/triggers/:slug',
+    ],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project({ managedGit: true });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { projectId: p.id };
+    const eventOf = (body: { triggers: EventTriggerRow[] }) => {
+      const row = body.triggers.find((t) => t.slug === 'new-mail');
+      if (!row) throw new Error(`trigger "new-mail" missing; got ${JSON.stringify(body.triggers.map((t) => t.slug))}`);
+      return row;
+    };
+    await ctx.step('create an event trigger → 201, listed as type event with its connector, event and config', async () => {
+      const r = await owner.post(
+        '/v1/projects/:projectId/triggers',
+        {
+          name: 'New mail',
+          type: 'event',
+          connector: 'inbox',
+          event: 'EXAMPLE_NEW_MESSAGE',
+          event_config: { label: 'INBOX' },
+          prompt_template: 'Triage {{ event.data.subject }}',
+        },
+        { params },
+      );
+      r.status(201);
+      const row = eventOf(r.json<{ triggers: EventTriggerRow[] }>());
+      if (row.type !== 'event') throw new Error(`type === "event" — got ${JSON.stringify(row.type)}`);
+      if (row.event?.connector !== 'inbox' || row.event.type !== 'EXAMPLE_NEW_MESSAGE') {
+        throw new Error(`event echo wrong: ${JSON.stringify(row.event)}`);
+      }
+      if (row.event.config.label !== 'INBOX') throw new Error(`config lost: ${JSON.stringify(row.event.config)}`);
+      // The connector is not declared in kortix.yaml, so no subscription can exist.
+      if (row.event.status !== 'error' || !/inbox/.test(row.event.error ?? '')) {
+        throw new Error(`expected status error naming "inbox" — got ${JSON.stringify(row.event)}`);
+      }
+    });
+    await ctx.step('PATCH event_config → 200 and the new config reads back', async () => {
+      const r = await owner.patch(
+        '/v1/projects/:projectId/triggers/:slug',
+        { event_config: { label: 'STARRED' } },
+        { params: { ...params, slug: 'new-mail' } },
+      );
+      r.status(200);
+      const config = eventOf(r.json<{ triggers: EventTriggerRow[] }>()).event?.config;
+      if (config?.label !== 'STARRED') throw new Error(`config not updated: ${JSON.stringify(config)}`);
+    });
+    await ctx.step('DELETE → 200 and the trigger leaves the list', async () => {
+      (await owner.del('/v1/projects/:projectId/triggers/:slug', { params: { ...params, slug: 'new-mail' } })).status(200);
+      const listed = (await owner.get('/v1/projects/:projectId/triggers', { params })).json<{ triggers: EventTriggerRow[] }>();
+      if (listed.triggers.some((t) => t.slug === 'new-mail')) throw new Error('trigger still listed after DELETE');
+    });
+  },
+);
+
+flow(
+  'TRG-22',
+  { domain: 'triggers', routes: ['POST /v1/projects/:projectId/triggers'] },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    const owner = ctx.client.as(ctx.P.OWNER).withTransientGatewayRetries();
+    const params = { projectId: p.id };
+    const base = { name: 'x', prompt_template: 'x' };
+    const cases: Array<[string, Record<string, unknown>]> = [
+      ['event without connector', { ...base, type: 'event', event: 'EXAMPLE_EVENT' }],
+      ['event without event', { ...base, type: 'event', connector: 'inbox' }],
+      ['event with cron', { ...base, type: 'event', connector: 'inbox', event: 'EXAMPLE_EVENT', cron: '0 0 3 * * *' }],
+      ['event with non-object event_config', { ...base, type: 'event', connector: 'inbox', event: 'EXAMPLE_EVENT', event_config: 'nope' }],
+      ['cron with connector', { ...base, type: 'cron', cron: '0 0 3 * * *', timezone: 'UTC', connector: 'inbox' }],
+    ];
+    for (const [name, body] of cases) {
+      await ctx.step(`${name} → 400`, async () => {
+        (await owner.post('/v1/projects/:projectId/triggers', body, { params })).status(400);
+      });
+    }
+  },
+);
+
+flow(
+  'TRG-23',
+  { domain: 'triggers', routes: ['POST /v1/webhooks/events/:provider'] },
+  async (ctx) => {
+    const anon = ctx.client.as(ctx.P.ANON);
+    await ctx.step('unknown provider → 404', async () => {
+      (await anon.post('/v1/webhooks/events/:provider', { hello: 'world' }, { params: { provider: 'nope' } })).status(404);
+    });
+    await ctx.step('composio without a valid signature → 401 (secret set) or 503 (no secret)', async () => {
+      const r = await anon.post('/v1/webhooks/events/:provider', { hello: 'world' }, { params: { provider: 'composio' } });
+      r.status([401, 503]);
+    });
+  },
+);
+
+flow(
+  'TRG-24',
+  { domain: 'triggers', routes: ['GET /v1/projects/:projectId/triggers/event-types'] },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    const params = { projectId: p.id };
+    await ctx.step('ANON → 401', async () => {
+      (await ctx.client.as(ctx.P.ANON).get('/v1/projects/:projectId/triggers/event-types', { params, query: { connector: 'inbox' } })).status(401);
+    });
+    await ctx.step('missing connector → 400', async () => {
+      (await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/triggers/event-types', { params })).status(400);
+    });
+    await ctx.step('unknown connector → 404', async () => {
+      (await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/triggers/event-types', { params, query: { connector: 'inbox' } })).status(404);
+    });
+  },
+);
+
+flow(
+  'TRG-25',
+  { domain: 'triggers', routes: ['GET /v1/projects/:projectId/triggers/event-apps'] },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    const params = { projectId: p.id };
+    await ctx.step('ANON → 401', async () => {
+      (await ctx.client.as(ctx.P.ANON).get('/v1/projects/:projectId/triggers/event-apps', { params })).status(401);
+    });
+    await ctx.step('owner → 200 with an apps array (empty when no event provider is configured)', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/triggers/event-apps', { params });
+      r.status(200);
+      if (!Array.isArray(r.json<{ apps: unknown[] }>().apps)) throw new Error('apps must be an array');
     });
   },
 );

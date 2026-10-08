@@ -95,7 +95,7 @@ export async function prepareAppWsUpgrade(
   }
   try {
     const hosting = dependencies.createHosting();
-    const coldStart = appRuntimeNeedsWake(loaded.runtime);
+    const coldStart = appRuntimeNeedsWake(loaded.runtime, new Date(), loaded.app.alwaysOn);
     if (coldStart) {
       await dependencies.enqueueCurrentAppRuntime(loaded.app, loaded.deployment).catch((error) => {
         console.warn(`[apps] runtime refresh queue failed for ${loaded.app.appId}:`, error);
