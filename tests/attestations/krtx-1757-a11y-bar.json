@@ -1,0 +1,19 @@
+{
+  "source_hash": "fd66ca6b3ab4e9f877e106cf4e452816494ba1c422c28630fd1e74faf5a00112",
+  "diff_files": [
+    "apps/web/src/features/session/tool/shared/infrastructure-preview.tsx",
+    "apps/web/src/features/session/tool/shared/show-helpers.tsx",
+    "apps/web/src/features/session/tool/shared/tool-action-bar.test.tsx",
+    "apps/web/src/features/session/tool/shared/tool-action-bar.tsx",
+    "apps/web/src/lib/seo/content-timestamps.json"
+  ],
+  "diff_hash": "64d2c9a4d47b46976fdecb97d91533975105e74338676da6f2cd849266404652",
+  "head": "318fa2e080c01f6e7916f2af3f146b1ce86949c3",
+  "passed": true,
+  "lanes": {
+    "packages": "pass",
+    "core": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-07T22:54:39.051Z"
+}
