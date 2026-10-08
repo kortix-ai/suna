@@ -1,0 +1,163 @@
+---
+title: Tools
+description: One tool module runs on every agent harness. kortix.yaml declares it, and each agent's tools list decides who may call it.
+---
+
+A tool is a function the model calls during a turn. Every [session](/docs/work/sessions)
+has three kinds, on both [harnesses](/docs/work/harnesses), OpenCode and pi:
+
+| Kind | Names | Implemented by |
+| --- | --- | --- |
+| Harness tools | `bash`, `read`, `write`, `edit`, `glob`, `grep`, `task`, `question`, … | The harness. |
+| Kortix tools | `web_search`, `image_search`, `scrape_webpage`, `memory`, `show` | Kortix. Every session has them. |
+| Project tools | Any name you declare | Your project: one module, declared under `tools:` in `kortix.yaml`. |
+
+Kortix tools and project tools are harness-neutral. The sandbox daemon loads
+one module per tool and runs it for either harness, with the same name,
+arguments, and output. pi calls the module in the daemon's process. OpenCode
+calls it through a plugin the daemon writes, which forwards each call to the
+daemon. A module never imports a harness package.
+
+## Write a project tool
+
+```ts
+// tools/lookup_order.ts
+export default {
+  description: 'Look up an order by id. Returns its status and carrier.',
+  parameters: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', description: 'The order id, e.g. "A-1042"' },
+      include_items: { type: 'boolean', description: 'Also list the items' },
+    },
+    required: ['id'],
+  },
+  async execute(args, context) {
+    const response = await fetch(`https://orders.example.com/v1/orders/${args.id}`, {
+      headers: { authorization: `Bearer ${context.env.ORDERS_API_KEY}` },
+      signal: context.signal,
+    })
+    if (!response.ok) throw new Error(`orders API answered ${response.status}`)
+    return await response.json()
+  },
+}
+```
+
+```yaml
+# kortix.yaml
+tools:
+  lookup_order: tools/lookup_order.ts
+```
+
+The default export is a plain object:
+
+| Field | Rule |
+| --- | --- |
+| `description` | Non-empty string. The model reads it to decide when to call the tool. |
+| `parameters` | [JSON Schema](https://json-schema.org) of the arguments, `type: 'object'`. The model receives it as it is, so list required arguments in `required`. Kortix does not validate the arguments against it. |
+| `execute(args, context)` | Returns a string, or any JSON value (sent as indented JSON). May be `async`. A thrown error is the tool's error, and the model reads its message. |
+
+`context` carries:
+
+| Field | What it is |
+| --- | --- |
+| `sessionId` | The Kortix session the call belongs to. |
+| `agent` | The agent that made the call. |
+| `directory` | The project checkout, `/workspace`. Resolve a relative path against it. |
+| `env` | The box environment plus the [secrets](/docs/project/secrets) this agent receives, as they are now. Read a secret as `context.env.NAME`: a secret changed after the box booted is in `context.env`, not in `process.env`. |
+| `signal` | An `AbortSignal` that aborts when the user stops the turn. Pass it to `fetch`. |
+
+- **Output size.** An output over 50 KB or 2,000 lines is saved whole to a
+  file in the sandbox's temp directory. The model receives the head, the size,
+  and the file path.
+- **Imports.** A module may import `node:*` modules, Bun APIs, and relative
+  files. A package resolves from a `node_modules` next to the module or above
+  it; the sandbox installs no package for a tool. Use `fetch` for HTTP APIs.
+  TypeScript runs without a build step.
+- **Failures.** A module that does not load (a missing file, no default
+  export, a `parameters` that is not an object schema, an error at import) is
+  left out, and the other tools still load. The daemon logs
+  `[tools] project tools that did not load` with the reason per tool.
+
+## Declare tools
+
+`tools:` maps each tool name to its module. The folder is yours to choose.
+
+```yaml
+tools:
+  lookup_order: tools/lookup_order.ts
+  crm_note: integrations/crm/note.ts
+```
+
+- A name is snake_case, at most 64 characters: `^[a-z][a-z0-9_]{0,63}$`.
+- A harness tool name is an error. A Kortix tool name is allowed: the project
+  tool replaces the Kortix tool, on every harness.
+- A path is repo-relative and ends in `.ts`, `.js`, `.mts`, `.mjs`, `.cts`, or
+  `.cjs`.
+- A file listed under [`imports:`](/docs/project/manifest#imports) may declare
+  tools. A name declared in two files is an error.
+
+[The manifest reference](/docs/project/manifest#tools) has the full rules.
+
+## Who may use which tool
+
+`agents.<name>.tools` decides which tools an agent's model sees. It names
+harness, Kortix, and project tools alike.
+
+```yaml
+agents:
+  kortix:
+    tools: all                                    # every tool (the default)
+  researcher:
+    tools: [read, grep, web_search, lookup_order] # only these
+  support:
+    tools:
+      exclude: [bash, write, edit]                # every tool but these
+  greeter:
+    tools: none                                    # no tool
+```
+
+| Value | The agent gets |
+| --- | --- |
+| omitted, or `all` | Every tool. |
+| `none` | No tool. |
+| a list | Only the tools listed. A list with `*` is `all`. |
+| `{ exclude: [...] }` | Every tool except the ones listed. |
+| `{ bash: false, … }` | The earlier map form: `false` removes a tool. |
+
+- `tools` decides visibility. The agent's `permission` rules still decide
+  whether a call is allowed, asked, or denied. A tool not in the list is
+  hidden from the model and denied if called.
+- A subagent started with the `task` tool gets only the tools both its own
+  list and the session agent's list allow.
+- [Connector](/docs/connect/connectors) tools follow `agents.<name>.connectors`,
+  not this list.
+- `kortix validate` warns about a name that is not a harness, Kortix, or
+  project tool. A typo in an `exclude` list leaves the real tool on.
+
+On OpenCode, `bash` also covers the terminal plugin's `pty_*` tools, and
+`write`, `edit`, and `apply_patch` share one permission: listing one shows
+all three, and excluding one hides all three. pi has separate `write` and
+`edit` tools.
+
+## When a change takes effect
+
+A session loads its tools when its runtime starts. A change applies after
+the change request merges: new sessions load it, and with
+[config releases](/docs/work/runtime#config-convergence) a running session
+loads it at the next convergence. On pi that restarts the runtime in place
+while no turn runs; the conversation continues.
+
+## Tools in `harnesses/opencode/tools/`
+
+OpenCode still loads custom tools from its config directory. pi does not.
+Projects created before hosted tools carry copies of the Kortix tools there
+(`web_search.ts`, `memory.ts`, …).
+
+- On OpenCode, a tool in that folder wins over the hosted tool of the same
+  name, so a project keeps its copy until it deletes it. Delete the copies of
+  the Kortix tools: every session has them.
+- To make an OpenCode tool run on both harnesses, move it out of the folder,
+  replace `tool({ description, args, execute })` with a plain object whose
+  `parameters` is JSON Schema, read secrets from `context.env`, and declare it
+  under `tools:`.

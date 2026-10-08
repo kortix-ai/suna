@@ -391,6 +391,39 @@ describe('pi config releases: convergence', () => {
     expect(runtime.state).toMatchObject({ reconfigures: 1, restarts: 1 })
   })
 
+  test('project tools load from the release root; a change to one restarts, an unrelated change reconfigures', async () => {
+    const withTools = (prompt: string) => JSON.stringify({ ...JSON.parse(governance(prompt)), project_tools: { lookup_order: 'tools/lookup.ts' } })
+    write(repo, 'tools/lookup.ts', 'export default {}\n')
+    write(repo, 'tools/lib/client.ts', 'export const v = 1\n')
+    write(repo, `${DIR}/opencode.json`, '{}\n')
+    const one = buildRelease(repo, commitAll(repo, 'tools'), DIR, { projectId: 'proj-1', governance: withTools('one') })
+    serveRelease(api, one)
+    const { releases } = create()
+    await releases.boot()
+    expect(releases.projectRoot()).toBe(releaseDir(root, one.descriptor.release_id!))
+    const runtime = fakeRuntime()
+
+    write(repo, 'README.md', 'unrelated\n')
+    const two = buildRelease(repo, commitAll(repo, 'readme'), DIR, { projectId: 'proj-1', governance: withTools('one') })
+    serveRelease(api, two)
+    expect((await releases.converge(runtime)).outcome).toBe('applied')
+    expect(runtime.state).toMatchObject({ reconfigures: 1, restarts: 0 })
+
+    // A helper beside the module is part of the tool.
+    write(repo, 'tools/lib/client.ts', 'export const v = 2\n')
+    const three = buildRelease(repo, commitAll(repo, 'tool helper'), DIR, { projectId: 'proj-1', governance: withTools('one') })
+    serveRelease(api, three)
+    expect((await releases.converge(runtime)).outcome).toBe('applied')
+    expect(runtime.state).toMatchObject({ reconfigures: 1, restarts: 1 })
+
+    // So is the declaration itself.
+    write(repo, 'README.md', 'still unrelated\n')
+    const four = buildRelease(repo, commitAll(repo, 'no tools'), DIR, { projectId: 'proj-1', governance: governance('one') })
+    serveRelease(api, four)
+    expect((await releases.converge(runtime)).outcome).toBe('applied')
+    expect(runtime.state).toMatchObject({ reconfigures: 1, restarts: 2 })
+  })
+
   test('a release without a pi config dir leaves pi none; with releases off pi resolves the working tree', async () => {
     serveRelease(api, release('deploy', 'from release one'))
     const on = create()
