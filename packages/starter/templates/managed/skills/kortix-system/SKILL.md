@@ -92,7 +92,7 @@ OpenCode; else the `pi_harness` project flag on → pi; else `runtime: pi` in
 | Add a hook or plugin | `harnesses/opencode/plugins/` | an extension, or a pi package |
 | Add a slash command | `harnesses/opencode/commands/<name>.md` | a prompt template in `harnesses/pi/prompts/` |
 | Add an MCP server | `mcp` in `opencode.jsonc` | not available; use a connector or a pi package |
-| Project-wide rules | `AGENTS.md`, or the agent's `.md` | the agent's `.md`, or a skill |
+| Project-wide rules | `AGENTS.md`, or the agent's `.md` | `AGENTS.md` (root only), or the agent's `.md` |
 | Read the full reference | `references/opencode/overview.md` | `references/pi/overview.md` |
 
 Rules for both harnesses:
@@ -172,7 +172,7 @@ Load this skill when the user asks any of:
 - "How do I create an agent, a subagent or a reusable skill?"
 - "How do I register an MCP server?"
 - "How do I tighten permissions for the build agent?"
-- "What does `AGENTS.md` do?" (OpenCode loads it; pi does not)
+- "What does `AGENTS.md` do?" (both harnesses load the root file; pi reads the release copy while config releases are on)
 - "Which model should I default to?" / "How do I configure reasoning effort?"
 - "How do I land this work on `main`?" / "Open a PR / change request for me"
 - "How do change requests work in Kortix?" / "What's `kortix cr`?"
@@ -887,8 +887,8 @@ to see the full enum.
 
 <reference path="references/pi/overview.md">
   How pi fits into a Kortix project: how to tell which harness a session
-  runs, what pi reads from the repository and what it ignores
-  (`opencode.jsonc`, `plugins/`, `tools/`, `commands/`, `AGENTS.md`), the pi
+  runs, what pi reads from the repository (the root `AGENTS.md` among it)
+  and what it ignores (`opencode.jsonc`, `plugins/`, `tools/`, `commands/`), the pi
   config directory (`pi.config_dir`, `harnesses/pi/`), the features pi does
   not support, and when a change takes effect. Load it first for any
   customization request in a pi session.

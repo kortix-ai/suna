@@ -8,10 +8,11 @@ loop, calls tools, and produces the transcript. Kortix has two: **OpenCode**
 (the default) and **pi**. A session runs exactly one.
 
 Both harnesses read the same project: `kortix.yaml`, the agent files in
-`agents/`, the skills in `skills/`, and `memory/`. The clients (web, CLI, TUI,
-mobile, SDK) read both through the same session API. The differences are the
-session features in the [matrix](#what-each-harness-supports) below and the
-files each harness reads for its own configuration.
+`agents/`, the skills in `skills/`, the root `AGENTS.md`, and `memory/`. The
+clients (web, CLI, TUI, mobile, SDK) read both through the same session API.
+The differences are the session features in the
+[matrix](#what-each-harness-supports) below and the files each harness reads
+for its own configuration.
 
 ## How a session selects its harness
 
@@ -51,6 +52,7 @@ array of `GET /kortix/health`. A client hides a control when the session's
 | Agent `.md`: prompt, `model`, `variant`, `mode`, `tools`, `permission`, `temperature`, `top_p`, `steps` | Yes | Yes. pi does not apply `options` (provider options). |
 | Per-agent `permission` rules and permission requests | Yes | Yes |
 | Questions (`question` tool) | Yes | Yes |
+| The project's root `AGENTS.md` rules file, or `CLAUDE.md` when the root has no `AGENTS.md` | Yes. OpenCode also reads the file in parent directories of `/workspace`, and reads `/workspace` while it runs a config release. | Yes, the root file only. It is part of the system prompt of the session and of each subagent. [With config releases on](#agentsmd-on-pi), pi reads the release copy. |
 | Subagents (`task` tool), `session.subagents` | Yes | Yes: `general`, `explore` (read-only), and each project agent with `mode: subagent` or `all`. A subagent cannot start another subagent. |
 | Skills (`skills/` and the managed `kortix-*` skills), with the agent's `skills` grant | Yes. The agent loads a skill with the `skill` tool. | Yes. The system prompt lists each granted skill; the agent reads the file. |
 | `web_search`, `image_search`, `scrape_webpage`, `memory`, `show` tools | Yes, from the tool files in the project's OpenCode config directory (`tools/`). | Yes, built into the sandbox daemon. The names, arguments, and output are the same. |
@@ -67,6 +69,31 @@ a permission request. On pi a `memory` command that changes a file follows
 `edit` and `view` follows `read`; on OpenCode only a `memory` rule governs
 the tool.
 
+### `AGENTS.md` on pi
+
+pi puts the project's root `AGENTS.md` in the system prompt as one section,
+`<project_instructions path="AGENTS.md">`, after the agent's prompt. A root
+with no `AGENTS.md` gives `CLAUDE.md` instead, as on OpenCode. pi reads no
+`AGENTS.md` in a subdirectory or a parent directory.
+
+- **Source.** With [config releases](/docs/work/runtime#config-convergence)
+  off, pi reads `/workspace/AGENTS.md`. With them on, pi reads the copy in the
+  release and never the one in `/workspace`: an edit in `/workspace` reaches
+  the session after it merges to the base branch. With them on and no release
+  to serve (`config.source: image-default`), pi reads no `AGENTS.md`, as it
+  reads no project skill.
+- **When.** pi reads the file when the runtime starts, when its configuration
+  reloads (a new release, a `/kortix/env` push), and after a repository
+  refresh. It does not read it before each turn. A new release reaches the
+  next turn without a restart; a turn in flight keeps the old file.
+- **Skipped.** An empty file, a file that is not a regular file, and a
+  symbolic link that resolves outside the repository add nothing. The last
+  two write one warning to the daemon log.
+- **Check.** `harness.details.agentsMd` in the daemon's `GET /kortix/health`
+  names the file pi loaded: `source` (`release` or `workspace`), `path`,
+  `bytes`, and `sha` (the first 12 hex characters of its sha256). It is `null`
+  when pi loaded none.
+
 ### OpenCode only today
 
 | Feature | Capability | OpenCode | pi |
@@ -78,7 +105,6 @@ the tool.
 | Runtime config document (`/global/config`) | `session.config` | Yes | No. Agents and models come from the project on both. |
 | Fork a session at a message | `session.fork` | Yes | No |
 | A shell command run as a turn | `session.shell` | Yes | No |
-| `AGENTS.md` rules file | — | Yes. OpenCode loads it. | No. Put the rules in the agent's `.md` or in a skill. |
 | Model providers without the LLM gateway | — | Yes | No. pi needs `llm_gateway` on. |
 
 A pi session answers a request for a feature it does not serve with
