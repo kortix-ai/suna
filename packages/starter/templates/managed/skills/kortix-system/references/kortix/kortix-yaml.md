@@ -666,7 +666,8 @@ subscribes to the event for you: no `secret_env`, no signature.
 
 | Field       | Required | Type   | Notes                                                                                           |
 | ----------- | -------- | ------ | ----------------------------------------------------------------------------------------------- |
-| `connector` | yes      | string | Slug of a connector under `connectors:`.                                                        |
+| `connector` | yes      | string | Slug of a connector (profile) under `connectors:`.                                              |
+| `account`   | no       | string | Label of one shared account of that connector. Omit it to use the connector's default shared account. Set it only when the connector has several shared accounts. Valid on `type: event` only. An unknown label gives status `needs_connection`, not an error. |
 | `event`     | yes      | string | Provider event type, e.g. `GITHUB_PULL_REQUEST_CREATED`. List with `kortix triggers events --connector <slug>`. |
 | `config`    | no       | map    | Settings of the event (e.g. `repo`). Fields and descriptions: `kortix triggers events --connector <slug> --event <TYPE>`. |
 | `filter`    | no       | map    | Same guard a webhook uses, e.g. `"event.data.draft": "false"`. Every entry must match.          |
@@ -675,7 +676,8 @@ subscribes to the event for you: no `secret_env`, no signature.
 triggers:
   - slug: pr-review
     type: event
-    connector: github
+    connector: github-work # the connector profile
+    account: acme-bot # optional: a shared account of that profile
     event: GITHUB_PULL_REQUEST_CREATED
     config: { repo: acme/api }
     session_mode: fresh

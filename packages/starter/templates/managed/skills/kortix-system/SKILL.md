@@ -495,7 +495,9 @@ Decide the mechanism first:
 - **One-off project job** not tied to this session → `type: cron` + `run_at`.
 - **Reacts to an event in a connected app** ("when a PR opens", "when an
   email arrives", "when an issue changes") → `type: event` + `connector` +
-  `event`. Kortix subscribes for you: no webhook, no secret, no signature.
+  `event`. `connector` is the profile; add `account: <label>` only to pick
+  one of several shared accounts on it. Kortix subscribes for you: no
+  webhook, no secret, no signature.
   Use `type: webhook` + `secret_env` only for a system that has no app
   connector.
 
