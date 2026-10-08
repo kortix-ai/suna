@@ -118,11 +118,6 @@ export function managedSkills(): Map<string, ManagedSkill> {
   return cached;
 }
 
-/** Test-only: drop the memo so a test can rebuild against a mutated fixture. */
-export function _resetManagedSkillsCache(): void {
-  cached = null;
-}
-
 /**
  * The cheap list. Bodies are large (kortix-system's SKILL.md alone is ~41 KB, its
  * full tree ~230 KB), so listing deliberately carries no content — only the

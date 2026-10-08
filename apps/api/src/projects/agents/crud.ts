@@ -1,28 +1,4 @@
-import { createHash } from 'node:crypto';
-import { type AgentSpec, type GrantSet, MANIFEST_FILENAME } from './types';
-
-/**
- * Convert an AgentSpec back to the raw manifest-entry object for the CRUD
- * round-trip (serialized as YAML for `kortix.yaml`, or TOML for a legacy v1
- * `kortix.toml`). Inverse of `parseAgentEntry`. Omits empty/default fields so
- * the emitted entry stays minimal.
- */
-export function agentSpecToTomlEntry(spec: AgentSpec): Record<string, unknown> {
-  const entry: Record<string, unknown> = { name: spec.name };
-  if (!spec.enabled) entry.enabled = false;
-  if (spec.file) entry.file = spec.file;
-  if (spec.model) entry.model = spec.model;
-  if (spec.connectors === 'all') entry.connectors = 'all';
-  else if (spec.connectors.length > 0) entry.connectors = spec.connectors;
-  if (spec.permissions === 'all') entry.kortix_permissions = 'all';
-  else if (spec.permissions.length > 0) entry.kortix_permissions = spec.permissions;
-  // 'all' is the env default, so only emit when narrowed (a list or explicit none).
-  if (spec.env !== 'all') entry.env = spec.env;
-  // none is the default → omit; 'all'/a list is explicit.
-  if (spec.apps === 'all') entry.apps = 'all';
-  else if (spec.apps && spec.apps.length > 0) entry.apps = spec.apps;
-  return entry;
-}
+import { type GrantSet, MANIFEST_FILENAME } from './types';
 
 /**
  * Apply a secrets/connectors scope edit to the RAW `agents` array (v1's
@@ -56,25 +32,4 @@ export function applyAgentScope(
   const next = [...agents];
   next[idx] = entry;
   return { ok: true, agents: next };
-}
-
-/**
- * Stable hash over what should trigger a re-reconcile of the agent's grant.
- * `name` is excluded — renaming is handled by the name being the key.
- */
-export function manifestHashForAgent(spec: AgentSpec): string {
-  const canonical = JSON.stringify({
-    enabled: spec.enabled,
-    connectors: spec.connectors,
-    connectorsRequired: spec.connectorsRequired,
-    permissions: spec.permissions,
-    env: spec.env,
-    // Only when declared, so the hash of every agent that never mentions Apps
-    // is unchanged by this field's introduction.
-    ...(spec.apps && (spec.apps === 'all' || spec.apps.length > 0) ? { apps: spec.apps } : {}),
-    file: spec.file,
-    repositoryAccess: spec.repositoryAccess,
-    legacyReadWorkspace: spec.legacyReadWorkspace,
-  });
-  return createHash('sha256').update(canonical).digest('hex');
 }

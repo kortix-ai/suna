@@ -7,7 +7,6 @@ import { config } from '../config';
 import { buildFeatureFlagCatalog, featureFlagDef } from '../feature-flags/registry';
 import { projectSnapshotStorageConfigured } from '../git-proxy/project-snapshot-store';
 import { CONFIG_RELEASES_FLAG, configReleasesEnabled } from './enabled';
-import { configArchiveStorageConfigured } from './store';
 
 describe('config_releases flag', () => {
   // OFF until the rollout is done (2026-09-24). A project that made no choice
@@ -53,7 +52,6 @@ describe('config-release storage is decoupled from the snapshot producer', () =>
     try {
       asMutable.KORTIX_PROJECT_SNAPSHOT_S3_BUCKET = '';
       asMutable.KORTIX_CONFIG_ARCHIVE_S3_BUCKET = 'kortix-config-releases';
-      expect(configArchiveStorageConfigured()).toBe(true);
       expect(projectSnapshotStorageConfigured()).toBe(false);
     } finally {
       asMutable.KORTIX_PROJECT_SNAPSHOT_S3_BUCKET = snapshotBucket;

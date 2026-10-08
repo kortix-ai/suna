@@ -12,6 +12,9 @@ export {
   type ConnectorPopupOpener,
 } from './connector-setup';
 
+// One connector action's output as a cached query, with typed connector errors.
+export { useConnectorQuery, type ConnectorQueryOptions } from './use-connector-query';
+
 // The one call a host makes on every identity change (sign-out, a different
 // user signing in) to drop the SDK's per-user in-memory session state.
 export { resetIdentityState } from './reset-identity-state';
@@ -135,7 +138,14 @@ export {
 } from './use-accounts';
 export { useProjectSecrets, projectSecretsKey } from './use-project-secrets';
 export { useAccountSecretResources, useSessionProviderSecretPools } from './use-provider-secrets';
-export { useProjectTriggers, projectTriggersKey } from './use-project-triggers';
+export {
+  useProjectTriggers,
+  projectTriggersKey,
+  useProjectTriggerEventTypes,
+  useProjectTriggerEventApps,
+  projectTriggerEventAppsKey,
+  projectTriggerEventTypesKey,
+} from './use-project-triggers';
 export { useProjectReminders, useSessionReminders } from './use-reminders';
 export { useSessionMessageAuthors } from './use-session-message-authors';
 export { useSessionModelUsage } from './use-session-model-usage';
@@ -144,10 +154,13 @@ export { useGatewayRoutingPolicy, gatewayRoutingPolicyKey } from './use-gateway-
 export {
   useProjectApps,
   useAppDeployments,
+  useAppDeployment,
   useAppAccess,
   projectAppsKey,
   appDeploymentsKey,
+  appDeploymentKey,
 } from './use-project-apps';
+export { useProjectBackends, useProjectBackendBackups, projectBackendsKey } from './use-project-backends';
 
 // The expected "no compaction model configured" configuration state thrown by
 // `useSummarizeRuntimeSession`'s mutation when every model-resolution fallback

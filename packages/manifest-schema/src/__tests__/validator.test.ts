@@ -743,6 +743,37 @@ apps:
     expect(v2.issues.filter((issue) => issue.severity === 'error')).toEqual([]);
   });
 
+  test('a v2 App lists the backends it may mint viewer tokens for, by backend name', () => {
+    const ok = validateManifest(
+      `kortix_version: 2
+default_agent: w
+agents:
+  w: {}
+apps:
+  crm:
+    path: apps/crm
+    backends: [main, billing]`,
+      'yaml',
+    );
+    expect(ok.issues.filter((issue) => issue.severity === 'error')).toEqual([]);
+    const bad = validateManifest(
+      `kortix_version: 2
+default_agent: w
+agents:
+  w: {}
+apps:
+  crm:
+    backends: [Main, ""]`,
+      'yaml',
+    );
+    expect(bad.issues.filter((issue) => issue.severity === 'error').map((issue) => issue.path)).toEqual([
+      'apps.crm.backends[0]',
+      'apps.crm.backends[1]',
+    ]);
+    const notList = validateManifest('kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\napps:\n  crm:\n    backends: main', 'yaml');
+    expect(notList.issues.filter((issue) => issue.severity === 'error').map((issue) => issue.path)).toEqual(['apps.crm.backends']);
+  });
+
   test('rejects invalid v2 App ports, commands, resources, and secret mappings', () => {
     const result = validateManifest(
       `kortix_version: 2
@@ -839,5 +870,37 @@ image = "ubuntu:22.04"
     const text = formatIssues(issues, { color: false });
     expect(text).toContain('error sandbox.templates[0].slug');
     expect(text).toContain('kortix_version');
+  });
+});
+
+describe('validateManifest — [[triggers]] type = "event"', () => {
+  const base = `kortix_version = 1\n[[triggers]]\nslug = "pr"\nprompt = "go"\n`;
+  const paths = (toml: string) => validateManifest(toml, 'toml').issues.map((i) => i.path);
+
+  test('connector + event (+ config table) passes', () => {
+    const toml = `${base}type = "event"\nconnector = "github"\nevent = "GITHUB_PULL_REQUEST_EVENT"\n[triggers.config]\nowner = "acme"\n`;
+    expect(validateManifest(toml, 'toml').valid).toBe(true);
+  });
+
+  test('missing connector and event are rejected', () => {
+    expect(paths(`${base}type = "event"\n`)).toEqual(
+      expect.arrayContaining(['triggers[0].connector', 'triggers[0].event']),
+    );
+  });
+
+  test('config must be an object', () => {
+    expect(paths(`${base}type = "event"\nconnector = "g"\nevent = "E"\nconfig = "x"\n`)).toContain(
+      'triggers[0].config',
+    );
+  });
+
+  test('cron/monitor wiring is rejected on an event trigger', () => {
+    const p = paths(`${base}type = "event"\nconnector = "g"\nevent = "E"\ncron = "0 9 * * *"\nmode = "poll"\n`);
+    expect(p).toEqual(expect.arrayContaining(['triggers[0].cron', 'triggers[0].mode']));
+  });
+
+  test('event keys are rejected on a cron trigger', () => {
+    const p = paths(`${base}type = "cron"\ncron = "0 9 * * *"\nconnector = "g"\nevent = "E"\n`);
+    expect(p).toEqual(expect.arrayContaining(['triggers[0].connector', 'triggers[0].event']));
   });
 });

@@ -1,7 +1,5 @@
 /**
- * The Connector's data plane, shared by both faces of `kortix connectors`:
- *   - the CLI subcommands (`kortix connectors call …`)
- *   - the stdio MCP server (`kortix connectors mcp`)
+ * The Connector's data plane behind the `kortix connectors` subcommands,
  * plus the `@kortix/sdk` project client, which this module uses directly.
  *
  * Two project surfaces live here:
@@ -9,7 +7,7 @@
  *      It acts as the launching user via KORTIX_TOKEN. The gateway resolves
  *      third-party credentials server-side. No secret touches the sandbox.
  *   2. The project-scoped API adapter — used for connector management
- *      (add/remove) and setup-link minting (connect / request_secret). Resolved
+ *      (add/remove) and setup-link minting (connect). Resolved
  *      through the same sandbox env-token host the rest of the CLI uses
  *      (`KORTIX_TOKEN` + `KORTIX_PROJECT_ID`).
  */
@@ -27,8 +25,8 @@ import { CliError, stringValue } from './io.ts';
  * `loadEnvAuth()` (the sandbox delegation env) wins, `loadAuth()` (the stored
  * login) is only the fallback when nothing is injected. That keeps it
  * identical in both worlds — and immune to an in-sandbox `hosts use`
- * selection (KRTX-1705): a session only ever invokes `kortix connectors` /
- * `kortix connectors mcp`, so the data plane always acts as the launching
+ * selection (KRTX-1705): a session only ever invokes `kortix connectors`,
+ * so the data plane always acts as the launching
  * user, whatever the config file says.
  * The project comes from KORTIX_PROJECT_ID / `.kortix/link.json` / `--project`.
  * When a project is known we hit the project-explicit gateway routes (which
@@ -93,10 +91,14 @@ export async function callWithApprovalHandoff<T = unknown>(
   const account = stringValue(options.account)?.trim();
   // Same flag-typo guard for the approval context.
   const approvalContext = stringValue(options.approvalContext)?.trim();
-  return client.call<T>(`${connector}.${action}`, args, {
+  const result = await client.call<T>(`${connector}.${action}`, args, {
     ...(account ? { account } : {}),
     ...(approvalContext ? { approvalContext } : {}),
   });
+  // `output` repeats the payload of `data` without its envelope (for SDK
+  // callers). The agent reads `data`; printing both doubles every result.
+  const { output: _output, ...shown } = result as ConnectorCallResult<T> & { output?: unknown };
+  return shown;
 }
 
 interface ConnectLinkResult {
@@ -110,26 +112,6 @@ interface ConnectLinkResult {
   connection_id: string | null;
   request_id: string | null;
   expires_at?: string;
-}
-
-interface FinalizeConnectionResult {
-  provider: string;
-  connected: boolean;
-  account_id: string | null;
-  connection_id: string | null;
-  is_no_auth: boolean;
-}
-
-export interface SecretLinkResult {
-  url: string;
-  names: string[];
-  scope: string;
-  expires_at: string;
-  /** Present only when this session's agent will not receive some names. */
-  agent?: string;
-  withheld?: Array<{ name: string; reason: 'agent_grant' | 'session_allowlist' }>;
-  /** The server's one-paragraph fix for `withheld`, ready to relay. */
-  withheld_fix?: string;
 }
 
 /**
@@ -221,134 +203,6 @@ export async function mintConnectLink(opts: {
     connection_id: result.connectionId ?? null,
     request_id: result.requestId ?? null,
   };
-}
-
-/** Confirm that a previously started provider authorization completed. */
-export async function finalizeConnectorConnection(opts: {
-  slug: string;
-  connectionId?: string;
-  requestId?: string;
-  projectOverride?: string;
-}): Promise<FinalizeConnectionResult> {
-  if (!opts.slug) throw new CliError('connector slug is required', 'USAGE');
-  const { client, projectId } = connectorProjectContext(opts.projectOverride);
-  const result = await client.post<{
-    provider?: string;
-    connected?: boolean;
-    accountId?: string;
-    connectionId?: string;
-    isNoAuth?: boolean;
-  }>(
-    `/connectors/projects/${projectId}/connectors/${encodeURIComponent(opts.slug)}/connect/finalize`,
-    {
-      ...(opts.connectionId ? { connection_id: opts.connectionId } : {}),
-      ...(opts.requestId ? { request_id: opts.requestId } : {}),
-    },
-  );
-  return {
-    provider: result.provider ?? 'unknown',
-    connected: result.connected === true,
-    account_id: result.accountId ?? null,
-    connection_id: result.connectionId ?? opts.connectionId ?? null,
-    is_no_auth: result.isNoAuth === true,
-  };
-}
-
-/** Mint a short-lived link a human opens to enter project secret value(s). */
-export async function mintSecretLink(opts: {
-  names: string[];
-  scope?: 'runtime' | 'connector';
-  expiresInMinutes?: number;
-  labels?: Record<string, string>;
-  descriptions?: Record<string, string>;
-  projectOverride?: string;
-}): Promise<SecretLinkResult> {
-  if (opts.names.length === 0) throw new CliError('at least one secret name is required', 'USAGE');
-  const { client, projectId } = connectorProjectContext(opts.projectOverride);
-  return client.post<SecretLinkResult>(`/projects/${projectId}/secret-requests`, {
-    names: opts.names,
-    ...(opts.scope ? { scope: opts.scope } : {}),
-    ...(opts.expiresInMinutes ? { expires_in_minutes: opts.expiresInMinutes } : {}),
-    ...(opts.labels && Object.keys(opts.labels).length ? { labels: opts.labels } : {}),
-    ...(opts.descriptions && Object.keys(opts.descriptions).length
-      ? { descriptions: opts.descriptions }
-      : {}),
-  });
-}
-
-/**
- * Store secret value(s) the caller already HAS — e.g. a key the human pasted in
- * chat. Same route as `kortix secrets set`; the API applies the caller's
- * secret-write permission. `connector` keeps the value server-side.
- */
-export async function setSecrets(opts: {
-  values: Record<string, string>;
-  scope?: 'runtime' | 'connector';
-  projectOverride?: string;
-}): Promise<string[]> {
-  const entries = Object.entries(opts.values);
-  if (entries.length === 0) throw new CliError('at least one NAME: value pair is required', 'USAGE');
-  const { client, projectId } = connectorProjectContext(opts.projectOverride);
-  const saved: string[] = [];
-  for (const [name, value] of entries) {
-    await client.post(`/projects/${projectId}/secrets`, {
-      name,
-      value,
-      ...(opts.scope === 'connector' ? { strategy: 'broker', consumer: 'connector' } : {}),
-    });
-    saved.push(name.toUpperCase());
-  }
-  return saved;
-}
-
-export type BrokerMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
-
-interface BrokerCallResult {
-  status: number;
-  headers: Record<string, string>;
-  body_base64: string;
-}
-
-/**
- * Make one HTTPS request with a project secret injected SERVER-SIDE.
- *
- * The sandbox never receives the credential: the API resolves it, applies the
- * secret's own host/method/injection policy, performs the request, and returns
- * only the upstream response. Same route the `kortix secrets call` CLI uses
- * (`POST /projects/:id/secrets/:identifier/broker`); this is its MCP face.
- */
-export async function brokerSecretRequest(opts: {
-  identifier: string;
-  url: string;
-  method?: BrokerMethod;
-  headers?: Record<string, string>;
-  body?: string;
-  projectOverride?: string;
-}): Promise<BrokerCallResult> {
-  if (!opts.identifier) throw new CliError('secret identifier is required', 'USAGE');
-  let parsed: URL;
-  try {
-    parsed = new URL(opts.url);
-  } catch {
-    throw new CliError(`not a valid URL: ${opts.url}`, 'USAGE');
-  }
-  // Fail here rather than at the API: a plaintext hop would expose the
-  // injected credential on the wire, so it is never a retryable condition.
-  if (parsed.protocol !== 'https:') {
-    throw new CliError('broker URL must be HTTPS', 'USAGE');
-  }
-  const { client, projectId } = connectorProjectContext(opts.projectOverride);
-  return client.post<BrokerCallResult>(
-    `/projects/${projectId}/secrets/${encodeURIComponent(opts.identifier)}/broker`,
-    {
-      url: opts.url,
-      ...(opts.method ? { method: opts.method } : {}),
-      ...(opts.headers && Object.keys(opts.headers).length ? { headers: opts.headers } : {}),
-      ...(opts.body !== undefined
-        ? { body_base64: Buffer.from(opts.body, 'utf8').toString('base64') }
-        : {}),
-    },
-  );
 }
 
 /**

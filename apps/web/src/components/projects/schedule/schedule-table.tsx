@@ -41,10 +41,13 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { copyToClipboard } from '@/lib/utils/clipboard';
 import type { ProjectTrigger } from '@kortix/sdk';
+import { Fragment, type ReactNode } from 'react';
 import type { TriggerControls } from './trigger-controls';
 import {
   CopyIcon,
   DotsThreeIcon,
+  LightningIcon,
+  LinkIcon,
   PauseIcon,
   PlayIcon,
   TimerIcon,
@@ -53,6 +56,7 @@ import {
   WebhooksLogoIcon,
 } from '@phosphor-icons/react';
 
+import { describeEventSource, describeEventStatus } from './event-trigger-copy';
 import {
   describeLastRun,
   describeSecurity,
@@ -84,6 +88,10 @@ export interface ScheduleTableProps {
   onRun: (trigger: ProjectTrigger) => void;
   onToggle: (trigger: ProjectTrigger) => void;
   onDelete: (trigger: ProjectTrigger) => void;
+  /** Opens the connect flow for an app-event trigger that needs an account. */
+  onConnect?: (trigger: ProjectTrigger) => void;
+  /** Rows under a heading row each, e.g. the App events view by app. Replaces `triggers`' order. */
+  groups?: { key: string; heading: ReactNode; triggers: ProjectTrigger[] }[];
 }
 
 /** A mixed list of schedules and webhooks — the type comes off each row's
@@ -98,8 +106,24 @@ export function ScheduleTable({
   onRun,
   onToggle,
   onDelete,
+  onConnect,
+  groups,
 }: ScheduleTableProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const renderRow = (trigger: ProjectTrigger) => (
+    <ScheduleTableRow
+      key={trigger.slug}
+      trigger={trigger}
+      controls={controls}
+      running={runningSlug === trigger.slug}
+      toggling={togglingSlug === trigger.slug}
+      onOpen={() => onOpen(trigger)}
+      onRun={() => onRun(trigger)}
+      onToggle={() => onToggle(trigger)}
+      onDelete={() => onDelete(trigger)}
+      onConnect={onConnect ? () => onConnect(trigger) : undefined}
+    />
+  );
   return (
     <Table>
       <TableHeader>
@@ -120,19 +144,18 @@ export function ScheduleTable({
         </TableRow>
       </TableHeader>
       <TableBody>
-        {triggers.map((trigger) => (
-          <ScheduleTableRow
-            key={trigger.slug}
-            trigger={trigger}
-            controls={controls}
-            running={runningSlug === trigger.slug}
-            toggling={togglingSlug === trigger.slug}
-            onOpen={() => onOpen(trigger)}
-            onRun={() => onRun(trigger)}
-            onToggle={() => onToggle(trigger)}
-            onDelete={() => onDelete(trigger)}
-          />
-        ))}
+        {groups
+          ? groups.map((group) => (
+              <Fragment key={group.key}>
+                <TableRow className="bg-muted/30 hover:bg-muted/30">
+                  <TableCell colSpan={5} className="py-2">
+                    {group.heading}
+                  </TableCell>
+                </TableRow>
+                {group.triggers.map(renderRow)}
+              </Fragment>
+            ))
+          : triggers.map(renderRow)}
       </TableBody>
     </Table>
   );
@@ -147,6 +170,7 @@ function ScheduleTableRow({
   onRun,
   onToggle,
   onDelete,
+  onConnect,
 }: {
   trigger: ProjectTrigger;
   controls: TriggerControls;
@@ -156,6 +180,7 @@ function ScheduleTableRow({
   onRun: () => void;
   onToggle: () => void;
   onDelete: () => void;
+  onConnect?: () => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tTriggers = useTranslations('triggers');
@@ -164,7 +189,15 @@ function ScheduleTableRow({
   const status = triggerStatus(trigger.enabled, tI18nComplete);
   const when = describeWhen(trigger);
   const security = describeSecurity(trigger, tI18nComplete);
-  const KindIcon = kind === 'cron' ? TimerIcon : WebhooksLogoIcon;
+  const KindIcon =
+    kind === 'cron' ? TimerIcon : kind === 'event' ? LightningIcon : WebhooksLogoIcon;
+  // A paused trigger holds no subscription: its tile already says Paused.
+  const eventStatus = trigger.event && trigger.enabled ? describeEventStatus(trigger.event, tI18nComplete) : null;
+  const lastRun = describeLastRun(
+    kind === 'event'
+      ? (trigger.event?.last_event_at ?? trigger.last_fired_at)
+      : trigger.last_fired_at,
+  );
   // A run that failed outranks Active/Paused on the tile: it is the one
   // state the owner has to act on.
   const failed = trigger.last_status === 'failed';
@@ -200,6 +233,11 @@ function ScheduleTableRow({
               {name}
             </button>
             <span className="text-muted-foreground block truncate text-xs sm:hidden">{when}</span>
+            {kind === 'event' && trigger.event ? (
+              <span className="text-muted-foreground block truncate text-xs sm:hidden">
+                {describeEventSource(trigger.event, tI18nComplete)}
+              </span>
+            ) : null}
             {failed ? (
               <span className="text-muted-foreground hidden text-xs sm:block">
                 {tTriggers('runFailed.label')}
@@ -216,12 +254,26 @@ function ScheduleTableRow({
       <TableCell className="hidden max-w-[14rem] align-middle sm:table-cell">
         <div className="min-w-0 space-y-1">
           <p className="text-foreground truncate text-sm">{when}</p>
+          {kind === 'event' && trigger.event ? (
+            <p className="text-muted-foreground truncate text-xs">
+              {describeEventSource(trigger.event, tI18nComplete)}
+            </p>
+          ) : null}
           {kind === 'cron' && !trigger.run_at ? (
             <p className="text-muted-foreground truncate text-xs">{trigger.timezone}</p>
           ) : kind === 'webhook' ? (
             <Badge variant={security.signed ? 'kortix' : 'warning'} size="sm">
               {security.label}
             </Badge>
+          ) : eventStatus ? (
+            <>
+              <Badge variant={eventStatus.variant} size="sm">
+                {eventStatus.label}
+              </Badge>
+              {eventStatus.label === 'Error' && eventStatus.detail ? (
+                <p className="text-muted-foreground truncate text-xs">{eventStatus.detail}</p>
+              ) : null}
+            </>
           ) : null}
         </div>
       </TableCell>
@@ -231,7 +283,7 @@ function ScheduleTableRow({
       </TableCell>
 
       <TableCell className="text-muted-foreground hidden align-middle text-sm whitespace-nowrap tabular-nums md:table-cell">
-        {describeLastRun(trigger.last_fired_at)}
+        {lastRun}
       </TableCell>
 
       <TableCell className="align-middle">
@@ -244,6 +296,7 @@ function ScheduleTableRow({
           onRun={onRun}
           onToggle={onToggle}
           onDelete={onDelete}
+          onConnect={onConnect}
         />
       </TableCell>
     </TableRow>
@@ -259,6 +312,7 @@ function RowActions({
   onRun,
   onToggle,
   onDelete,
+  onConnect,
 }: {
   trigger: ProjectTrigger;
   controls: TriggerControls;
@@ -268,6 +322,7 @@ function RowActions({
   onRun: () => void;
   onToggle: () => void;
   onDelete: () => void;
+  onConnect?: () => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // Safe: `ScheduleView` filters every list to `isTriggerKind` before it
@@ -311,6 +366,12 @@ function RowActions({
           </DropdownMenuItem>
         ) : null}
         {controls.canFire || controls.canUpdate ? <DropdownMenuSeparator /> : null}
+        {controls.canUpdate && kind === 'event' && trigger.event?.status === 'needs_connection' && onConnect ? (
+          <DropdownMenuItem onClick={onConnect}>
+            <LinkIcon className="size-3.5 shrink-0" />
+            {tI18nComplete.raw('textf7d845186faa')}
+          </DropdownMenuItem>
+        ) : null}
         {controls.canFire ? (
           <DropdownMenuItem onClick={onRun}>
             <PlayIcon weight="fill" className="size-3.5 shrink-0" />

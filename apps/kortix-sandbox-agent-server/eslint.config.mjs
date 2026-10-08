@@ -39,7 +39,8 @@ const RUNTIME = ['node:*', 'node:*/**', ...pkg('bun', 'zod', 'tar')]
 export const SERVICES = {
   'config-provider': [],
   // managedSkillsDir(): a release is sealed against the managed skill names.
-  'config-release': ['skills'],
+  // downloadAndExtractProjectSnapshot(): a release is built from the project snapshot.
+  'config-release': ['skills', 'config-provider'],
   'egress-shim': [],
   'event-bus': [],
   'llm-proxy': [],
@@ -50,6 +51,7 @@ export const SERVICES = {
   'sandbox-env': [],
   skills: [],
   'static-web': [],
+  tools: [],
 }
 // The wire contract is shared with apps/api through a tsconfig path (see
 // tsconfig.json). An aliased file outside the plugin root arrives as an
@@ -66,6 +68,8 @@ const SERVICE_EXTERNALS = {
   monitor: API_CONTRACT,
   // The image-baked paths (`@kortix/api-contract/sandbox-layout`).
   'runtime-assets': API_CONTRACT,
+  // The agent env file a tool's `context.env` reads (`@kortix/api-contract/sandbox-layout`).
+  tools: API_CONTRACT,
 }
 /** Harness adapters and the packages only they may load. @type {Record<string, string[]>} */
 export const ADAPTERS = {

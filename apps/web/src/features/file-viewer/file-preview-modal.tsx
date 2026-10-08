@@ -347,7 +347,7 @@ export function FilePreviewModal({
               aria-label={
                 markdownPreview ? tI18nHardcoded.raw('i18nComplete.text6ee818aa2de3') : 'Preview'
               }
-              aria-pressed={!markdownPreview}
+              aria-pressed={markdownPreview}
               className={cn(
                 'h-8 w-8 active:scale-[0.96]',
                 markdownPreview

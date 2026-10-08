@@ -26,6 +26,10 @@ name: Rollback Production
 #     (Refuses if target == current.) Requires the vX.Y.Z tag to exist.
 #   * DB is untouched: forward-only migrations are additive; the live schema is a
 #     superset of any older release. Reversing migrations is unsafe — never done.
+#   * Kortix Apps static hosting: an api target that predates
+#     apps/api/src/apps/static-site.ts cannot serve a static App (it has no
+#     runtime), so every static App shows a status page until the next promote.
+#     Refused unless static_apps_ack is exactly STATIC APPS OFFLINE.
 #
 # The next production promotion supersedes the rollback with new immutable
 # release images.
@@ -49,6 +53,11 @@ on:
       confirm:
         description: "Type ROLLBACK PROD to confirm"
         required: true
+        type: string
+      static_apps_ack:
+        description: "Only for an api target before static App hosting: type STATIC APPS OFFLINE to accept that static Apps serve a status page until the next promote"
+        required: false
+        default: ""
         type: string
 
 concurrency:
@@ -92,6 +101,7 @@ jobs:
           IN_CONFIRM: ${{ inputs.confirm }}
           IN_REASON: ${{ inputs.reason }}
           IN_SURFACES: ${{ inputs.surfaces }}
+          IN_STATIC_ACK: ${{ inputs.static_apps_ack }}
         run: |
           set -euo pipefail
           [ "$IN_CONFIRM" = "ROLLBACK PROD" ] || { echo "::error::confirm must be exactly: ROLLBACK PROD"; exit 1; }
@@ -110,6 +120,16 @@ jobs:
           ROLL_API=no; ROLL_GW=no; ROLL_FE=no; ROLL_FE_VERCEL=no
           if want api; then
             if img_exists kortix-api; then ROLL_API=yes; else echo "::warning::kortix-api:$TARGET missing — skipping api."; fi
+          fi
+          # Static Apps are served by the api from storage, with no runtime. An
+          # older api requires a runtime, so each static App would answer with a
+          # status page until the next promote. Retired deployments stay retired.
+          if [ "$ROLL_API" = yes ] \
+            && git cat-file -e "HEAD:apps/api/src/apps/static-site.ts" 2>/dev/null \
+            && ! git cat-file -e "v$TARGET:apps/api/src/apps/static-site.ts" 2>/dev/null \
+            && [ "${IN_STATIC_ACK:-}" != "STATIC APPS OFFLINE" ]; then
+            echo "::error::v$TARGET predates static App hosting: every static App serves a status page until the next promote. Re-run with static_apps_ack='STATIC APPS OFFLINE' to accept, or roll only gateway,frontend."
+            exit 1
           fi
           if want gateway; then
             if img_exists kortix-gateway; then ROLL_GW=yes; else echo "::warning::kortix-gateway:$TARGET missing (gateway likely didn't exist at $TARGET) — leaving gateway untouched."; fi

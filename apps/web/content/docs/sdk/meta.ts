@@ -9,6 +9,8 @@ export default defineMeta({
     'sign-in',
     'sessions',
     'apps',
+    'backends',
+    'connectors',
     'react',
     'reference',
   ],

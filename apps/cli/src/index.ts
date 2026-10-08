@@ -4,6 +4,7 @@ import { runAccess } from './commands/access.ts';
 import { runAccounts } from './commands/accounts.ts';
 import { runAgents } from './commands/agents.ts';
 import { runApps } from './commands/apps.ts';
+import { runBackends } from './commands/backends.ts';
 import { runAudit } from './commands/audit.ts';
 import { runBilling } from './commands/billing.ts';
 import { runChannels } from './commands/channels.ts';
@@ -45,6 +46,7 @@ import { runTui } from './commands/tui.ts';
 import { runUninstall } from './commands/uninstall.ts';
 import { runUpdate } from './commands/update.ts';
 import { runValidate } from './commands/validate.ts';
+import { runTools } from './commands/tools.ts';
 import { runWhoami } from './commands/whoami.ts';
 import { type Command, TIERS } from './command-table.ts';
 import { renderContext, renderHostNotice } from './host-notice.ts';
@@ -233,6 +235,7 @@ const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
   env: (rest) => runEnv(rest),
   gateway: (rest) => runGateway(rest),
   apps: (rest) => runApps(rest),
+  backends: (rest) => runBackends(rest),
   channels: (rest) => runChannels(rest),
   sandboxes: (rest) => runSandboxes(rest),
   marketplace: (rest) => runMarketplace(rest),
@@ -245,6 +248,7 @@ const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
     return runRegistry(rest);
   },
   agents: (rest) => runAgents(rest),
+  tools: (rest) => runTools(rest),
   models: (rest) => runModels(rest),
   access: (rest) => runAccess(rest),
   roles: (rest) => runRoles(rest),
@@ -287,7 +291,7 @@ async function main(argv: string[]): Promise<number> {
   }
   const connectorMachineCommand =
     argv[0] === 'connectors' &&
-    (['call', 'discover', 'upload', 'mcp'].includes(argv[1] ?? '') ||
+    (['call', 'discover', 'upload', 'mcp', 'types'].includes(argv[1] ?? '') ||
       (argv[1] === 'show' && (argv[2] ?? '').includes('.')) ||
       ((argv[1] === 'ls' || argv[1] === 'list') &&
         argv.some((arg) => arg === '--session' || arg.startsWith('--session='))));

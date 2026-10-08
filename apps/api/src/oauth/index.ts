@@ -15,7 +15,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { Context, Next } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { createHash, randomBytes, timingSafeEqual } from 'crypto';
-import { eq, and, desc, gt, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
+import { eq, and, desc, gt, gte, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { anyAccountMembershipOf } from '../iam/membership-read';
 import { hashSecretKey, randomAlphanumeric, verifySecretKey } from '../shared/crypto';

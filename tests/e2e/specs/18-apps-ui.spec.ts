@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 import { loadEnv } from '../../src/core/env';
-import { createDatabaseProject, deleteDatabaseProject, setDatabaseEnterpriseDemo } from '../../src/fixtures/database-project';
+import { createDatabaseProject, deleteDatabaseProject, setDatabaseEnterpriseDemo, setDatabaseProjectFeature } from '../../src/fixtures/database-project';
 import { createApiJsonClient } from '../helpers/http';
 import {
   createAuthUser,
@@ -9,7 +9,7 @@ import {
   installBrowserSessionDirect,
   signIn,
 } from '../helpers/session-auth';
-import { dismissOnboarding, featureFlagRow, selectAccountForUi } from '../helpers/ui';
+import { dismissOnboarding, selectAccountForUi } from '../helpers/ui';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
 
@@ -140,35 +140,20 @@ test.describe('18 — Kortix Apps UI', () => {
       expect(disabledAppRequests).toEqual([]);
       page.off('request', recordDisabledRequest);
 
-      // Enable through the flag list — the only activation path. The gate
-      // screen's "Feature flags" row is a real link
-      // (`feature-gate-screen.tsx`) to `/projects/[id]/settings/feature-flags`,
-      // the Settings overlay's deep-link route for its Feature flags tab.
-      await page.getByRole('link', { name: 'Feature flags' }).click();
-      const panel = page.locator('body');
-      await expect(
-        page.getByRole('heading', { name: 'Feature flags', exact: true }),
-      ).toBeVisible({ timeout: 30_000 });
-      const enabledRequest = page.waitForRequest(
-        (request) =>
-          request.method() === 'PATCH' &&
-          request.url().endsWith(`/v1/projects/${project.id}/features`),
+      // Apps is internal-only (catalogHidden): the gate names no toggle and
+      // links nowhere, because Settings → Feature flags does not list it.
+      await expect(page.getByText('Contact Kortix to enable it.', { exact: true })).toBeVisible();
+      await expect(page.getByRole('link', { name: 'Feature flags' })).toHaveCount(0);
+      // A project owner cannot enable it: only a Kortix operator writes it.
+      await api(
+        session.access_token,
+        'PATCH',
+        `/projects/${project.id}/features`,
+        { feature: 'apps', enabled: true },
+        403,
       );
-      const enabledResponse = page.waitForResponse(
-        (response) =>
-          response.request().method() === 'PATCH' &&
-          response.url().endsWith(`/v1/projects/${project.id}/features`),
-      );
-      // `Apps` is the registry's display name for the flag
-      // (apps/api/src/feature-flags/registry.ts:212).
-      await featureFlagRow(panel, page, 'Apps').getByRole('switch').click();
-      expect((await enabledRequest).postDataJSON()).toEqual({
-        feature: 'apps',
-        enabled: true,
-      });
-      expect((await enabledResponse).status()).toBe(200);
-      // No overlay to dismiss any more — Feature flags is a plain page now,
-      // so navigating straight to Apps is the whole "leave" step.
+      // The operator writes the same override (PUT /v1/admin/api/projects/:id/features).
+      await setDatabaseProjectFeature(loadEnv(), project.id, 'apps', true);
       await page.goto(`/projects/${project.id}/apps`, {
         waitUntil: 'domcontentloaded',
       });
@@ -183,7 +168,7 @@ test.describe('18 — Kortix Apps UI', () => {
       await page.reload({ waitUntil: 'domcontentloaded' });
       expect((await emptyListResponse).status()).toBe(200);
       await dismissOnboarding(page);
-      await expect(page.getByText('No Apps yet', { exact: true })).toBeVisible();
+      await expect(page.getByText('Apps you publish will show up here', { exact: true })).toBeVisible();
 
       const seeded = await api<AppResponse>(
         session.access_token,
@@ -287,9 +272,8 @@ test.describe('18 — Kortix Apps UI', () => {
       const appModal = page.getByRole('dialog', { name: 'Seed App App' });
       await expect(appModal).toBeVisible();
       await expect(page).toHaveURL(new RegExp(`/projects/${project.id}/apps`));
-      await expect(
-        appModal.getByRole('button', { name: 'Put this App to sleep' }),
-      ).toBeDisabled();
+      // Not deployed yet: there is no runtime to put to sleep, so no control.
+      await expect(appModal.getByRole('button', { name: 'Put this App to sleep' })).toHaveCount(0);
       // …and this is where the URL went: the control that opens the App names
       // the host it will open, so the tile can stay a picture of the App.
       const openInNewTab = appModal.getByRole('link', { name: 'Open in a new tab' });

@@ -1,5 +1,8 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import {
   type ConnectionSharePrincipal,
+  getConnectorCatalog,
   renameConnection,
   setConnectorSecretBinding,
   shareConnection,
@@ -25,6 +28,7 @@ import {
 import { promptSecret } from '../prompts.ts';
 import { C, help, pad, status, trim } from '../style.ts';
 import { runConnector } from './connector-gateway.ts';
+import { renderConnectorTypes } from './connector-types.ts';
 
 // ── Shapes (mirror apps/api/src/connectors) ───────────────────────────────────
 
@@ -208,6 +212,14 @@ Subcommands:
                                     \`computer\` connector. List them with
                                     \`accounts computer\`; pick one with
                                     \`call computer <tool> --account "<machine name>"\`.
+  types [--connector <a,b>]         Print TypeScript types for every callable
+        [--out <file>]              action: \`declare module '@kortix/sdk'\`
+                                    filling ConnectorActionRegistry, so
+                                    \`connectors.callAction(slug, action, args)\`
+                                    type-checks args and \`output\`. Output is
+                                    \`unknown\` for managed Composio/Pipedream
+                                    connectors (they publish no output schema).
+                                    --out writes the file instead of stdout.
   connections <subcommand>          Manage configured connector connections.
   add <slug> --provider <p> [...]   Add a [[connectors]] block to kortix.yaml.
                                     Add --apply to skip ship/CR and apply it
@@ -228,8 +240,12 @@ Subcommands:
                                     alone, the default) or \`project\` (shared
                                     with every member; needs
                                     project.connector.write).
+       [--label <name>]             Name a NEW account (a second Gmail). The
+                                    human confirms the name and who can use
+                                    the account in the setup dialog.
   connect-finalize <slug>           Confirm authorization completed. Accepts
-       [--connection-id <uuid>]     the IDs returned by \`connect\`.
+       [--owner me|project]         the IDs returned by \`connect\`. Pass the
+       [--connection-id <uuid>]     same --owner the link was started with.
        [--request-id <id>]
   apps [<query>] [--category <c>]   Search the Composio toolkit catalog — the
        [--cursor <c>] [--limit <n>]  slugs that add --provider composio --app
@@ -265,7 +281,6 @@ Subcommands:
   authorize <slug> --device         Same, on a server that supports the OAuth
                                     2.0 device flow: prints a code + URL and
                                     polls until it is approved.
-  mcp                               Run the stdio MCP server.
 
 \`policy ls|show|set|add|rm\` are the PROJECT-wide surface, so a connector
 named after one of those verbs must be addressed as \`policy <slug> ls\` etc.
@@ -421,6 +436,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
     f.default = takeFlagValue(rest, ['--default']);
     f.expires = takeFlagValue(rest, ['--expires']);
     f.owner = takeFlagValue(rest, ['--owner']);
+    f.label = takeFlagValue(rest, ['--label']);
     f.ownerId = takeFlagValue(rest, ['--owner-id']);
     f.connectionId = takeFlagValue(rest, ['--connection-id']);
     f.requestId = takeFlagValue(rest, ['--request-id']);
@@ -432,6 +448,8 @@ export async function runConnectors(argv: string[]): Promise<number> {
     f.errorRedirect = takeFlagValue(rest, ['--error-redirect']);
     f.category = takeFlagValue(rest, ['--category']);
     f.limit = takeFlagValue(rest, ['--limit']);
+    f.connector = takeFlagValue(rest, ['--connector']);
+    f.out = takeFlagValue(rest, ['--out']);
     if (takeFlagBool(rest, ['--pipedream', '--legacy-pipedream'])) f.pipedream = 'true';
     conditions = takeFlagValues(rest, ['--condition', '--cond']);
     shareGroups = takeFlagValues(rest, ['--group']);
@@ -793,6 +811,31 @@ export async function runConnectors(argv: string[]): Promise<number> {
         if (f.owner !== undefined && owner === undefined) {
           return fail('--owner must be me or project');
         }
+        // `--label` mints the same setup link as the MCP `connect` tool: a
+        // dialog where the human names the new account and picks who can use it.
+        if (f.label !== undefined) {
+          const label = f.label.trim();
+          if (!label) return missing('--label <account name>');
+          const link = await ctx.client.post<{ url: string; app?: string | null; expires_at?: string; label?: string | null }>(
+            `/projects/${ctx.projectId}/connect-requests`,
+            {
+              slug,
+              label,
+              ...(owner ? { owner } : {}),
+              ...(expires ? { expires_in_minutes: expires } : {}),
+            },
+          );
+          const output = { slug, owner: owner ?? 'me', label: link.label ?? label, app: link.app ?? null, url: link.url, expires_at: link.expires_at ?? null };
+          if (json) {
+            emitJson(output);
+            return 0;
+          }
+          process.stdout.write(
+            `\n  ${C.bold}Connect ${slug} as "${output.label}"${C.reset}\n  ${C.cyan}${output.url}${C.reset}\n\n` +
+              `  ${C.dim}Hand the URL to the human. They confirm the name and who can use the account.${C.reset}\n\n`,
+          );
+          return 0;
+        }
         const resp = await ctx.client.post<{
           provider: string;
           app?: string | null;
@@ -836,6 +879,13 @@ export async function runConnectors(argv: string[]): Promise<number> {
       case 'connect-finalize': {
         const slug = positional[0];
         if (!slug) return missing('a connector slug');
+        // Finalize the account the link authorized: `connect --owner project`
+        // starts a shared one, and the API looks for a private one by default.
+        const finalizeOwner: 'me' | 'project' | undefined =
+          f.owner === 'me' || f.owner === 'project' ? f.owner : undefined;
+        if (f.owner !== undefined && finalizeOwner === undefined) {
+          return fail('--owner must be me or project');
+        }
         const resp = await ctx.client.post<{
           provider: string;
           connected?: boolean;
@@ -843,6 +893,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
           connectionId?: string;
           isNoAuth?: boolean;
         }>(`${ex}/connectors/${encodeURIComponent(slug)}/connect/finalize`, {
+          ...(finalizeOwner ? { owner: finalizeOwner } : {}),
           ...(f.connectionId ? { connection_id: f.connectionId } : {}),
           ...(f.requestId ? { request_id: f.requestId } : {}),
         });
@@ -1149,6 +1200,49 @@ export async function runConnectors(argv: string[]): Promise<number> {
       // ── Browse the direct-connector catalogue ───────────────────────────
       // Gated on `connectors_api_discover`; the 403 names the flag and
       // surfaceApiError prints it verbatim.
+      case 'types': {
+        const slugs = (f.connector ?? '')
+          .split(',')
+          .map((slug) => slug.trim())
+          .filter(Boolean);
+        const read = (slug?: string) =>
+          withKortixScope(ctx.auth, () =>
+            getConnectorCatalog(ctx.projectId, {
+              slug,
+              includeSchemas: true,
+              includeOutputSchemas: true,
+            }),
+          );
+        const connectors = slugs.length
+          ? (await Promise.all(slugs.map(read))).flat()
+          : await read();
+        const missingSlugs = slugs.filter((slug) => !connectors.some((c) => c.slug === slug));
+        if (missingSlugs.length) {
+          process.stderr.write(
+            `${status.err(`No callable connector: ${missingSlugs.join(', ')}. List them with \`kortix connectors ls\`.`)}\n`,
+          );
+          return 1;
+        }
+        const source = renderConnectorTypes(connectors);
+        if (!f.out) {
+          process.stdout.write(source);
+          return 0;
+        }
+        const path = resolve(f.out);
+        mkdirSync(dirname(path), { recursive: true });
+        writeFileSync(path, source);
+        const actions = connectors.reduce((sum, c) => sum + c.actions.length, 0);
+        const untyped = connectors
+          .filter((c) => c.actions.length > 0 && c.actions.every((a) => !a.outputSchema))
+          .map((c) => c.slug);
+        process.stdout.write(
+          `${status.ok(`Wrote ${actions} action${actions === 1 ? '' : 's'} across ${connectors.length} connector${connectors.length === 1 ? '' : 's'} to ${f.out}`)}\n` +
+            (untyped.length
+              ? `  ${C.dim}No output schema (result is unknown): ${untyped.join(', ')}${C.reset}\n`
+              : ''),
+        );
+        return 0;
+      }
       case 'catalog':
       case 'discover-catalog': {
         if (positional[0] === 'show' || positional[0] === 'info') {

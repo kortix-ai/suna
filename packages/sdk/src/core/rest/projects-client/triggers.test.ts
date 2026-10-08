@@ -9,6 +9,8 @@ import type {
 } from './triggers';
 import {
   createProjectTrigger,
+  listProjectTriggerEventApps,
+  listProjectTriggerEventTypes,
   listProjectTriggers,
   updateProjectTrigger,
 } from './triggers';
@@ -52,6 +54,7 @@ const MONITOR_WIRE_ENTRY = {
   mode: 'poll',
   interval_seconds: 60,
   expect_event_within_seconds: 86400,
+  event: null,
   prompt_template: 'Checkout monitor emitted: {{ line }}',
   session_mode: 'reuse',
   session_id: null,
@@ -262,4 +265,153 @@ test('the public trigger access type rejects unknown modes', () => {
   };
 
   expect([access, badAccess]).toHaveLength(2);
+});
+
+test('listProjectTriggerEventTypes GETs event-types with the connector query and returns the typed catalog', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      provider: 'composio',
+      app: 'github',
+      event_types: [
+        {
+          type: 'GITHUB_PULL_REQUEST_EVENT',
+          name: 'Pull request',
+          description: 'A pull request changed.',
+          app: 'github',
+          delivery: 'push',
+          config_schema: { type: 'object' },
+          payload_schema: null,
+        },
+      ],
+    },
+  };
+
+  const catalog = await listProjectTriggerEventTypes('P1', { connector: 'my github' });
+
+  expect(last().method).toBe('GET');
+  expect(last().url).toContain('/projects/P1/triggers/event-types?connector=my%20github');
+  expect(catalog.provider).toBe('composio');
+  expect(catalog.event_types[0]!.delivery).toBe('push');
+});
+
+test('listProjectTriggerEventApps GETs event-apps and returns connector and connection state', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      apps: [
+        { provider: 'composio', app: 'github', name: 'GitHub', logo: null, event_count: 4, connector: 'github', connected: true },
+        { provider: 'composio', app: 'linear', name: 'Linear', logo: 'l.png', event_count: 2, connector: null, connected: false },
+      ],
+    },
+  };
+
+  const { apps } = await listProjectTriggerEventApps('P1');
+
+  expect(last().method).toBe('GET');
+  expect(last().url).toContain('/projects/P1/triggers/event-apps');
+  expect(apps[0]!.connected).toBe(true);
+  expect(apps[1]!.connector).toBeNull();
+});
+
+test('listProjectTriggerEventApps returns each connector profile with its shared accounts', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      apps: [
+        {
+          provider: 'composio', app: 'github', name: 'GitHub', logo: null, event_count: 4, connector: 'github-work', connected: true,
+          connectors: [
+            { slug: 'github-work', name: 'GitHub work', accounts: [
+              { label: 'ops-bot', connected_as: 'ops@example.test', is_default: true, connected: true },
+              { label: 'acme-bot', connected_as: null, is_default: false, connected: true },
+            ] },
+            { slug: 'github-oss', name: 'GitHub OSS', accounts: [] },
+          ],
+        },
+      ],
+    },
+  };
+
+  const { apps } = await listProjectTriggerEventApps('P1');
+
+  const [work, oss] = apps[0]!.connectors!;
+  expect(work!.accounts.map((a) => [a.label, a.is_default])).toEqual([['ops-bot', true], ['acme-bot', false]]);
+  expect(oss!.accounts).toEqual([]);
+});
+
+test('createProjectTrigger sends event_account and updateProjectTrigger clears it with null', async () => {
+  nextResponse = { status: 200, body: { triggers: [], errors: [] } };
+  await createProjectTrigger('P1', {
+    name: 'PR opened', type: 'event', prompt_template: 'x', connector: 'github-work',
+    event_account: 'acme-bot', event: 'GITHUB_PULL_REQUEST_EVENT',
+  });
+  expect(last().body).toMatchObject({ connector: 'github-work', event_account: 'acme-bot' });
+
+  nextResponse = { status: 200, body: { triggers: [], errors: [] } };
+  await updateProjectTrigger('P1', 'pr-review', { event_account: null });
+  expect(last().body).toEqual({ event_account: null });
+});
+
+test('event_source is sent on create, cleared with null on update, and read back as event.source', async () => {
+  nextResponse = { status: 200, body: { triggers: [], errors: [] } };
+  await createProjectTrigger('P1', {
+    name: 'PR opened', type: 'event', prompt_template: 'x', connector: 'github-work',
+    event_source: 'composio', event: 'GITHUB_PULL_REQUEST_CREATED',
+  });
+  expect(last().body).toMatchObject({ connector: 'github-work', event_source: 'composio' });
+
+  nextResponse = { status: 200, body: { triggers: [], errors: [] } };
+  await updateProjectTrigger('P1', 'pr-review', { event_source: null });
+  expect(last().body).toEqual({ event_source: null });
+
+  nextResponse = { status: 200, body: { triggers: [{ slug: 'pr-review', type: 'event', event: { connector: 'github-work', type: 'X', config: {}, source: 'composio', provider: 'composio', app: 'github', status: 'active', error: null, last_event_at: null } }], errors: [] } };
+  const listed = await listProjectTriggers('P1');
+  expect(listed.triggers[0]!.event?.source).toBe('composio');
+});
+
+test('listProjectTriggerEventTypes and EventApps expose source next to the deprecated provider', async () => {
+  nextResponse = { status: 200, body: { source: 'composio', provider: 'composio', app: 'github', event_types: [] } };
+  const catalog = await listProjectTriggerEventTypes('P1', { connector: 'github-work' });
+  expect(catalog.source).toBe('composio');
+  nextResponse = { status: 200, body: { apps: [{ source: 'composio', provider: 'composio', app: 'github', name: 'GitHub', logo: null, event_count: 1, connector: null, connected: false }] } };
+  expect((await listProjectTriggerEventApps('P1')).apps[0]!.source).toBe('composio');
+});
+
+test('createProjectTrigger sends an event trigger body and the listing reads event state back', async () => {
+  const input: CreateProjectTriggerInput = {
+    name: 'PR opened',
+    type: 'event',
+    prompt_template: 'Review {{ event.data.title }}',
+    connector: 'github',
+    event: 'GITHUB_PULL_REQUEST_EVENT',
+    event_config: { repo: 'acme/app' },
+  };
+  const event: NonNullable<ProjectTrigger['event']> = {
+    connector: 'github',
+    type: 'GITHUB_PULL_REQUEST_EVENT',
+    config: { repo: 'acme/app' },
+    provider: 'composio',
+    app: 'github',
+    status: 'needs_connection',
+    error: null,
+    last_event_at: null,
+  };
+  nextResponse = {
+    status: 200,
+    body: { triggers: [{ ...MONITOR_WIRE_ENTRY, type: 'event', event }], errors: [] },
+  };
+
+  const listing = await createProjectTrigger('P1', input);
+
+  expect(last().body).toEqual(input);
+  const type: ProjectTriggerType = listing.triggers[0]!.type;
+  expect(type).toBe('event');
+  expect(listing.triggers[0]!.event?.status).toBe('needs_connection');
+});
+
+test('updateProjectTrigger accepts event_config', async () => {
+  const input: UpdateProjectTriggerInput = { event_config: { repo: 'acme/other' } };
+  await updateProjectTrigger('P1', 's', input);
+  expect(last().body).toEqual(input);
 });

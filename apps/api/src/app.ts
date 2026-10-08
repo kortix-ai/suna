@@ -44,7 +44,6 @@ import { opsApp } from './ops';
 import { platformApp } from './platform';
 import { sandboxWebhooksApp } from './platform/webhooks/routes';
 import { projectWebhooksApp, projectsApp, registerAllProjectRoutes } from './projects';
-import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
 import { router } from './router';
 import { runtimeAssetsApp } from './runtime-assets';
 import { sandboxProxyApp } from './sandbox-proxy';
@@ -56,6 +55,7 @@ import { installHttpMiddleware } from './http-middleware';
 import { installHttpErrors } from './http-errors';
 import { registerSystemRoutes } from './routes/system';
 import { registerPlatformEndpoints } from './routes/platform-endpoints';
+import { registerRetiredRoutes } from './routes/retired';
 import { dispatchInProcess } from './inbound-dispatch';
 
 // ─── App Setup ──────────────────────────────────────────────────────────────
@@ -68,6 +68,9 @@ export { app };
 installHttpMiddleware(app);
 
 registerSystemRoutes(app);
+
+// Retired routes answer 410 before any mount below can match them.
+registerRetiredRoutes(app);
 
 registerPlatformEndpoints(app);
 
@@ -118,7 +121,7 @@ app.openapi(
 // ─── Mount Sub-Services ─────────────────────────────────────────────────────
 // All services follow the pattern: /v1/{serviceName}/...
 
-app.route('/v1/router', router); // /v1/router/chat/completions, /v1/router/models, /v1/router/web-search, /v1/router/tavily/*, etc.
+app.route('/v1/router', router); // /v1/router/health and the /v1/router/{tavily,serper,firecrawl}/* billed proxies
 
 // LLM gateway surfaces: in-API /v1/llm (full pipeline), /internal/gateway
 // control-plane RPC, and the /v1/llm-gateway reverse proxy. See ./llm-gateway/wire.
@@ -132,10 +135,8 @@ app.route('/v1/router', router); // /v1/router/chat/completions, /v1/router/mode
 // test 404'd instead of exercising its gate.
 mountLlmGateway(app);
 
-// OpenRouter-parity read endpoints, scoped to the authenticated account.
-import { generationApp } from './router/routes/generation';
+// OpenRouter-parity usage read, scoped to the authenticated account.
 import { usageApp } from './router/routes/usage';
-app.route('/v1/generation', generationApp); // GET /v1/generation?id=<requestId> — single gateway-call forensics
 app.route('/v1/usage', usageApp); // GET /v1/usage[?start&end&group_by] — account usage rollup
 
 app.route('/v1/billing', billingApp); // /v1/billing/account-state, /v1/billing/webhooks/*
@@ -161,7 +162,6 @@ app.use('/v1/platform/boot-timeline', supabaseAuth);
 app.use('/v1/platform/runtime-projection', supabaseAuth);
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
 registerAllProjectRoutes();
-registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
 // /v1/mcp — the hosted MCP server, bound to the caller's token like the CLI.
 // It answers its own 401 with an OAuth challenge, so no auth middleware here.
@@ -272,6 +272,11 @@ app.route('/v1/approval-links', approvalLinksApp); // GET /v1/approval-links/:to
 import { publicSessionSharesApp } from './public-session-shares';
 app.route('/v1/public/session-shares', publicSessionSharesApp); // /v1/public/session-shares/:shareId[/messages]
 
+// A Kortix Backend's token issuer: public OpenID configuration and key set, so
+// any verifier finds the key from a token's `iss` (backends/discovery.ts).
+import { backendsPublicApp } from './backends/discovery';
+app.route('/v1/backends', backendsPublicApp); // /v1/backends/:backendId/{.well-known/openid-configuration,jwks.json}
+
 // Setup — local/self-hosted only. Hidden when billing is enabled so the admin
 // surface isn't exposed on managed/cloud deployments.
 if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
@@ -285,7 +290,6 @@ app.route('/v1/admin', adminApp);
 app.route('/v1/oauth', oauthApp);
 app.route('/v1/connectors/oauth2', nativeOAuth2CallbackApp);
 
-import { warmPipedreamCatalog } from './connectors/pipedream';
 // TUNNEL_ENABLED=false: the relay never starts, so every tunnel route answers
 // 503. The web hides its computer surfaces when the machine list fails.
 app.use('/v1/tunnel/*', async (c, next) => {

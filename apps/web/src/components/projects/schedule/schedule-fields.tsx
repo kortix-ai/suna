@@ -43,12 +43,14 @@ import {
  * flush child (a code block, a table) can still sit edge-to-edge.
  */
 export function PanelSection({
+  id,
   title,
   description,
   action,
   children,
   className,
 }: {
+  id?: string;
   title: string;
   description?: ReactNode;
   action?: ReactNode;
@@ -56,7 +58,7 @@ export function PanelSection({
   className?: string;
 }) {
   return (
-    <section className={cn('bg-popover overflow-hidden rounded-md border', className)}>
+    <section id={id} className={cn('bg-popover overflow-hidden rounded-md border', className)}>
       <header className="border-border/60 flex items-start justify-between gap-3 border-b px-4 py-3">
         <div className="min-w-0 space-y-0.5">
           <h3 className="text-foreground text-sm font-medium">{title}</h3>

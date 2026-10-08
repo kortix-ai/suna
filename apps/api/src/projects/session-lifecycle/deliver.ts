@@ -13,7 +13,7 @@ import { recordSessionActivity } from '../session-activity';
 import { deliveryCountsAsActivity } from './delivery-activity';
 import { DAEMON_PORT, PromptNeverLandedError } from './runtime-client';
 import { waitForSessionRuntimeActive } from './runtime-active-signal';
-import { sessionTransitionLeaves, transitionSession } from './status-transitions';
+import { transitionSession } from './status-transitions';
 
 // After a session's runtime reports `ready` we still have to hand the prompt to
 // the opencode daemon — and a just-woken sandbox is flaky for a beat: the

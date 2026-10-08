@@ -808,6 +808,7 @@ function SessionListSection({
     email: 'email',
     schedule: 'scheduled',
     webhook: 'webhook',
+    event: 'event',
     manual: 'manual',
     all: 'all',
   } as const;

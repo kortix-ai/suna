@@ -217,14 +217,14 @@ describe('buildLayeredDockerfile', () => {
     expect(installIdx).toBeLessThan(verifyIdx);
   });
 
-  test('also verifies the real starter tool files bundle when opencodeConfigPath is provided', () => {
+  test('also verifies the real starter plugin files bundle when opencodeConfigPath is provided', () => {
     const withConfig = buildLayeredDockerfile({
       userDockerfile: 'FROM ubuntu:24.04',
       ...COMMON,
       opencodeConfigPath: 'kortix-opencode-config',
       catalogPath: 'kortix-llm-catalog.json',
     });
-    const verifyIdx = withConfig.indexOf('bun build tools/*.ts');
+    const verifyIdx = withConfig.indexOf('bun build plugins/*.ts');
     expect(verifyIdx).toBeGreaterThanOrEqual(0);
     const ownershipIdx = withConfig.indexOf(
       'RUN sudo chown -R kortix:kortix /opt/kortix/warm-config',
@@ -234,14 +234,14 @@ describe('buildLayeredDockerfile', () => {
     const precedingRun = withConfig.lastIndexOf('RUN', verifyIdx);
     const stepText = withConfig.slice(precedingRun, verifyIdx);
     expect(stepText).not.toContain('set +e');
-    // Without opencodeConfigPath there's no starter tool tree to verify, so
+    // Without opencodeConfigPath there's no starter plugin tree to verify, so
     // this stricter check is correctly absent — only the axios/form-data
     // override check (always present) still runs.
     const withoutConfig = buildLayeredDockerfile({
       userDockerfile: 'FROM ubuntu:24.04',
       ...COMMON,
     });
-    expect(withoutConfig).not.toContain('bun build tools/*.ts');
+    expect(withoutConfig).not.toContain('bun build plugins/*.ts');
     expect(withoutConfig).toContain(
       'bun build node_modules/axios/lib/utils.js node_modules/form-data/lib/form_data.js',
     );

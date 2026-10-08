@@ -157,7 +157,16 @@ function dispatch(
   }
   const url = String(input);
   const headers = withPlatformHeaders(url, callerHeaders(input, init), token);
-  return fetchImpl(url, { ...init, headers, ...(signal ? { signal } : {}) });
+  // A path-only URL is this page's own origin: a Kortix App calling the API
+  // through its gate (`/_kortix/api/v1`), which knows the viewer by the App's
+  // session cookie. Cross-origin calls keep the caller's `credentials`.
+  const sameOrigin = url.startsWith('/') && !url.startsWith('//');
+  return fetchImpl(url, {
+    ...init,
+    headers,
+    ...(sameOrigin ? { credentials: 'same-origin' as const } : {}),
+    ...(signal ? { signal } : {}),
+  });
 }
 
 // The last token the host handed out. `invalidateHostToken()` names it to the

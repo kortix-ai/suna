@@ -89,6 +89,14 @@ describe('extractMinimapItem', () => {
     expect(extractMinimapItem(turnWithParts([]))).toBeNull();
   });
 
+  test('previews the typed words of a message with a paste, never the paste XML', () => {
+    const block = '<pasted_content id="abcd1234" chars="11">\npasted body\n</pasted_content>';
+    const item = extractMinimapItem(turnWithParts([{ type: 'text', text: `${block}\n\nsummarize` }]));
+    expect(item!.text).toBe('summarize');
+    const only = extractMinimapItem(turnWithParts([{ type: 'text', text: block }]));
+    expect(only!.text).toBe('Pasted text');
+  });
+
   test('keeps a message that is only attachments, labelled by the first file', () => {
     const item = extractMinimapItem(
       turnWithParts([

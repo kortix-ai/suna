@@ -55,6 +55,7 @@ export const FeatureFlagMapSchema = z.object({
   llm_gateway: z.boolean(),
   meta_agent: z.boolean(),
   apps: z.boolean(),
+  backends: z.boolean(),
   monitors: z.boolean(),
   reminders: z.boolean(),
   warm_sessions: z.boolean(),
@@ -84,6 +85,8 @@ export const FeatureFlagViewSchema = z.object({
   available: z.boolean(),
   enabled: z.boolean(),
   overridden: z.boolean(),
+  /** Internal-only flag, listed only while on. Only a platform operator can change it. */
+  operator_only: z.boolean().optional(),
 });
 export type FeatureFlagView = z.infer<typeof FeatureFlagViewSchema>;
 
@@ -1381,7 +1384,7 @@ export const TriggerSchema = z.object({
   slug: z.string(),
   path: z.string(),
   name: z.string(),
-  type: z.enum(['cron', 'webhook', 'monitor']),
+  type: z.enum(['cron', 'webhook', 'monitor', 'event']),
   agent: z.string(),
   /** Wire-form model (`provider/model`) or null for "Default". */
   model: z.string().nullable(),
@@ -1398,6 +1401,30 @@ export const TriggerSchema = z.object({
   interval_seconds: z.number().nullable(),
   /** For type=monitor only — the silence watchdog, in whole seconds. */
   expect_event_within_seconds: z.number().nullable(),
+  /**
+   * For type=event only. `pending` = declared but no subscription row yet.
+   * Null for every other type.
+   */
+  event: z
+    .object({
+      connector: z.string(),
+      /** Declared `account` label; null = the connector's default shared account. */
+      account: z.string().nullable(),
+      /** Identity (or label) of the shared account actually feeding the trigger; null when none. */
+      connected_as: z.string().nullable(),
+      type: z.string(),
+      config: z.record(z.string(), z.unknown()),
+      /** Event source adapter: the declared `source`, else the connector's provider (e.g. `composio`). Null when unresolved. */
+      source: z.string().nullable().optional(),
+      /** @deprecated Same value as `source`. */
+      provider: z.string().nullable(),
+      /** Provider app slug (e.g. `github`). Null when unresolved. */
+      app: z.string().nullable(),
+      status: z.enum(['active', 'needs_connection', 'error', 'pending']),
+      error: z.string().nullable(),
+      last_event_at: z.string().nullable(),
+    })
+    .nullable(),
   prompt_template: z.string(),
   session_mode: z.enum(['fresh', 'reuse', 'pinned', 'keyed']),
   /** For session_mode === 'pinned' only: the exact session id looped. Null otherwise. */

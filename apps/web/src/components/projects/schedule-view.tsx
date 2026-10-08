@@ -26,6 +26,8 @@ import { useTranslations } from '@/i18n/use-translations';
  * one-line mount as a result: the shell is the route's scroll container.
  */
 
+import { AppLogo } from '@/components/projects/onboarding/app-logo';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Field, FieldContent, FieldDescription, FieldTitle } from '@/components/ui/field';
@@ -39,6 +41,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
+import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
@@ -58,7 +61,7 @@ import {
   setProjectTriggersActivation,
   updateProjectTrigger,
 } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
+import { contract, qk, useProjectTriggerEventApps } from '@kortix/sdk/react';
 import {
   GearSixIcon,
   LightningIcon,
@@ -68,6 +71,7 @@ import {
   WarningIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useMemo, useState } from 'react';
 
 import {
@@ -80,10 +84,29 @@ import {
   matchesQuery,
   triggerName,
 } from './schedule/schedule-copy';
+import { EventAppsStrip } from './schedule/event-apps-strip';
+import { type EventApp, appLabel } from './schedule/event-trigger-copy';
+import { useEventAppConnect } from './schedule/use-event-app-connect';
 import { ScheduleCreateModal } from './schedule/schedule-create-modal';
 import { ScheduleDetailSheet } from './schedule/schedule-detail-sheet';
 import { ScheduleTable } from './schedule/schedule-table';
 import { useTriggerControls } from './schedule/trigger-controls';
+import {
+  TRIGGER_FILTERS,
+  type TriggerFilter,
+  filterTriggers,
+  groupTriggersByApp,
+  parseTriggerFilter,
+  triggerCounts,
+} from './schedule/trigger-filter';
+
+/** Tab label per filter: the three kinds reuse the page's existing words. */
+const FILTER_LABEL_KEY: Record<TriggerFilter, string> = {
+  all: 'texta52ace420f21',
+  cron: 'text221ff19c904c',
+  event: 'text4b4847a6fb87',
+  webhook: 'text45808d75bf89',
+};
 
 /**
  * Pure — no hooks, no data fetching. Renders the pause switch for a MANAGER
@@ -221,6 +244,8 @@ function TriggerActivationMenu({ projectId }: { projectId: string }) {
 }
 
 export function ScheduleView({ projectId }: { projectId: string }) {
+  const router = useRouter();
+  const pathname = usePathname();
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const copy = localizedTriggersCopy(tI18nComplete);
   const kindCopy = localizedKindCopy(tI18nComplete);
@@ -242,8 +267,37 @@ export function ScheduleView({ projectId }: { projectId: string }) {
 
   const [query, setQuery] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
+  // The empty state's "App event" button opens the form past the type step.
+  const [createKind, setCreateKind] = useState<TriggerKind | null>(null);
+  // The app picked in the "Apps with events" strip, already a connector of the project.
+  const [createConnector, setCreateConnector] = useState<{ slug: string; name: string } | null>(
+    null,
+  );
+  const [addingApp, setAddingApp] = useState(false);
+  const openCreate = (
+    kind: TriggerKind | null = null,
+    connector: { slug: string; name: string } | null = null,
+  ) => {
+    setCreateKind(kind);
+    setCreateConnector(connector);
+    setCreateOpen(true);
+  };
+  const eventConnect = useEventAppConnect(projectId);
   const configure = useConfigureThread(projectId);
-  const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
+  // `?t=<slug>` opens that trigger's sheet: the connector page links here.
+  const searchParams = useSearchParams();
+  const linkedSlug = searchParams?.get('t') ?? null;
+  // `?type=cron|event|webhook` is the kind filter; anything else is all.
+  const filter = parseTriggerFilter(searchParams?.get('type'));
+  const setFilter = (next: TriggerFilter) => {
+    const params = new URLSearchParams(searchParams?.toString() ?? '');
+    if (next === 'all') params.delete('type');
+    else params.set('type', next);
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  };
+  const eventApps = useProjectTriggerEventApps(projectId);
+  const [selectedSlug, setSelectedSlug] = useState<string | null>(linkedSlug);
   const [deleteTarget, setDeleteTarget] = useState<ProjectTrigger | null>(null);
 
   const invalidate = useCallback(
@@ -327,10 +381,54 @@ export function ScheduleView({ projectId }: { projectId: string }) {
       ),
     [triggersQuery.data],
   );
+  const counts = useMemo(() => triggerCounts(triggers), [triggers]);
+  const ofKind = useMemo(() => filterTriggers(triggers, filter), [triggers, filter]);
   const filtered = useMemo(
-    () => triggers.filter((t) => matchesQuery(t, query, tI18nComplete)),
-    [triggers, query, tI18nComplete],
+    () => ofKind.filter((t) => matchesQuery(t, query, tI18nComplete)),
+    [ofKind, query, tI18nComplete],
   );
+  const appGroups = useMemo(
+    () =>
+      filter === 'event'
+        ? groupTriggersByApp(filtered, eventApps.data?.apps ?? []).map((g) => ({
+            key: g.app,
+            triggers: g.triggers,
+            heading: (
+              <span className="flex items-center gap-2">
+                <AppLogo src={g.logo} />
+                <span className="text-foreground text-sm font-medium">{g.name}</span>
+                <Badge variant="secondary" size="sm">
+                  {g.triggers.length}
+                </Badge>
+              </span>
+            ),
+          }))
+        : undefined,
+    [filter, filtered, eventApps.data],
+  );
+
+  /** A click in the strip: open the form on that app, adding its connector first when the project has none. */
+  async function pickApp(app: EventApp) {
+    let connector = app.connector ? { slug: app.connector, name: app.name } : null;
+    if (!connector && eventConnect.canAdd) {
+      setAddingApp(true);
+      try {
+        const slug = await eventConnect.add({ app: app.app, name: app.name, connector: null, newConnectorSlug: app.new_connector_slug });
+        connector = { slug, name: app.name };
+      } catch (error) {
+        errorToast(
+          error instanceof Error
+            ? error.message
+            : tI18nComplete('textf5dd6c3bc8a9', { name: app.name }),
+        );
+        return;
+      } finally {
+        setAddingApp(false);
+      }
+    }
+    openCreate('event', connector);
+  }
+  const showFilter = showContent && (triggers.length > 0 || filter !== 'all');
   const selected = triggers.find((t) => t.slug === selectedSlug) ?? null;
   const parseErrors = triggersQuery.data?.errors ?? [];
   const paused = triggersQuery.data?.triggers_paused ?? false;
@@ -360,6 +458,26 @@ export function ScheduleView({ projectId }: { projectId: string }) {
           </InputGroupSearch>
         ) : undefined
       }
+      filters={
+        showFilter ? (
+          <Tabs
+            value={filter}
+            onValueChange={(next) => setFilter(parseTriggerFilter(next))}
+            className="max-w-full overflow-x-auto"
+          >
+            <TabsListCompact aria-label={tI18nComplete.raw('text51035b5b67dc')}>
+              {TRIGGER_FILTERS.map((value) => (
+                <TabsTriggerCompact key={value} value={value} className="gap-1.5">
+                  {tI18nComplete.raw(FILTER_LABEL_KEY[value])}
+                  <Badge variant="secondary" size="sm">
+                    {counts[value]}
+                  </Badge>
+                </TabsTriggerCompact>
+              ))}
+            </TabsListCompact>
+          </Tabs>
+        ) : undefined
+      }
       action={
         /* One right-hand cluster, secondary control first: the gear holds the
            project-wide pause (its own manager-only probe, NOT this view's
@@ -374,7 +492,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
                 label={copy.createLabel}
                 pending={configure.pending}
                 onChat={() => configure.start(newConfigPrompt('trigger'))}
-                manual={{ onSelect: () => setCreateOpen(true) }}
+                manual={{ onSelect: () => openCreate() }}
               />
             ) : null}
           </div>
@@ -426,6 +544,12 @@ export function ScheduleView({ projectId }: { projectId: string }) {
               </Button>
             }
           />
+        ) : filter !== 'all' && ofKind.length === 0 ? (
+          <EmptyState
+            size="sm"
+            title={kindCopy[filter as TriggerKind].emptyTitle}
+            description={kindCopy[filter as TriggerKind].emptyBody}
+          />
         ) : triggers.length === 0 ? (
           <EmptyState
             icon={LightningIcon}
@@ -434,15 +558,26 @@ export function ScheduleView({ projectId }: { projectId: string }) {
             description={copy.emptyBody}
             action={
               canWrite ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={() => setCreateOpen(true)}
-                >
-                  <PlusIcon className="size-3.5 shrink-0" />
-                  {copy.createLabel}
-                </Button>
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => openCreate()}
+                  >
+                    <PlusIcon className="size-3.5 shrink-0" />
+                    {copy.createLabel}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => openCreate('event')}
+                  >
+                    <LightningIcon className="size-3.5 shrink-0" />
+                    {tI18nComplete.raw('text5441e7146193')}
+                  </Button>
+                </div>
               ) : undefined
             }
           />
@@ -454,6 +589,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
         ) : (
           <ScheduleTable
             triggers={filtered}
+            groups={appGroups}
             controls={controls}
             runningSlug={run.isPending ? (run.variables?.slug ?? null) : null}
             togglingSlug={toggle.isPending ? (toggle.variables?.slug ?? null) : null}
@@ -461,8 +597,27 @@ export function ScheduleView({ projectId }: { projectId: string }) {
             onRun={(t) => run.mutate(t)}
             onToggle={(t) => toggle.mutate(t)}
             onDelete={(t) => setDeleteTarget(t)}
+            onConnect={
+              eventConnect.canConnect
+                ? (t) =>
+                    t.event &&
+                    eventConnect.connect({
+                      app: t.event.app ?? t.event.connector,
+                      name: appLabel(t.event.app, t.event.connector),
+                      connector: t.event.connector,
+                    })
+                : undefined
+            }
           />
         )}
+
+        {showContent && filter === 'event' ? (
+          <EventAppsStrip
+            projectId={projectId}
+            disabled={!canWrite || addingApp}
+            onPick={(app) => void pickApp(app)}
+          />
+        ) : null}
 
         {parseErrors.length > 0 && (
           <InfoBanner
@@ -485,6 +640,8 @@ export function ScheduleView({ projectId }: { projectId: string }) {
         projectId={projectId}
         open={createOpen}
         onOpenChange={setCreateOpen}
+        initialKind={createKind}
+        initialConnector={createConnector}
         onCreated={(slug) => {
           setCreateOpen(false);
           invalidate();

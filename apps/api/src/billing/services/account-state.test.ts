@@ -173,6 +173,10 @@ describe('buildMinimalAccountState — credit row dedupe + concurrency (measured
       enabled: false,
       threshold: expect.any(Number),
       amount: expect.any(Number),
+      // KRTX-1718: why the last charge failed; none here.
+      disabled_reason: null,
+      last_failure_reason: null,
+      last_failure_at: null,
     });
     expect(state.instances).toEqual([]);
     expect('limits' in state).toBe(false);

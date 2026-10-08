@@ -15,23 +15,27 @@ client surface and the React hooks.
 
 ## Turn Apps on
 
-Open **Settings → Experimental** and switch **Apps** on for the project. You
-need `project.settings.write`.
+Apps is enabled per project by Kortix and is not listed in Settings → Feature
+flags. Contact Kortix to turn it on for a project. A project that already has
+it keeps it.
 
 While the flag is off:
 
 - Every Apps route answers `403` with
   `{ error, code: "feature_disabled", feature: "apps" }`.
 - `kortix apps <subcommand>` prints the same sentence and exits `1`.
-- The **Apps** entry does not appear in the project sidebar. Opening
-  `/projects/<id>/apps` directly shows a gate screen that links to the flag. The
-  page itself never enables the feature.
+- The **Apps** tab does not appear in Customize. Opening
+  `/projects/<id>/customize/apps` directly shows a gate screen. The page itself
+  never enables the feature.
 
 ## Source kinds
 
-All four source kinds run on the same Kortix sandbox hosting backend. Kortix
-selects Daytona, Platinum, or E2B. They therefore share one deployment contract
-and one cold-wake contract.
+A `static` App runs no server: Kortix stores its files and serves them itself,
+behind the App's access gate. A deploy takes seconds, there is no cold start and
+no compute bill, and a rollback is instant. The other three kinds run in their
+own machine on a Kortix sandbox provider (Daytona, Platinum, or E2B) and share
+one deployment contract and one cold-wake contract. Build a `bundle` source
+locally and deploy its output directory as `static` to get static hosting.
 
 | Kind | Deploy this | Kortix does |
 |---|---|---|
@@ -55,10 +59,18 @@ Pick the fastest path for the result you want:
 `dockerfile` and `oci_image` require `--command` and `--port`. `static` and
 `bundle` do not.
 
+A static App holds at most 20,000 files of at most 50 MiB each; a larger site
+fails with `invalid_site`. A static App runs no server, so it ignores `env` and
+`secrets`: a deploy that sets them records an `environment_ignored` event. The
+CLI never uploads `.env*` files, so a build-time value such as `VITE_*` in
+`.env.production` reaches the App only through a build you run before the
+deploy.
+
 ## Deploy from the CLI
 
 ```bash
-kortix apps deploy .
+npm run build
+kortix apps deploy dist --type static --spa
 ```
 
 `deploy` creates the App on first use, registers an immutable artifact —
@@ -67,8 +79,8 @@ builds it, and blocks until the stable URL is ready. The wait budget is `--wait-
 default `1200`. Use `--no-wait` only when another process owns status tracking.
 
 ```bash
-kortix apps deploy dist --slug docs --access project
-kortix apps deploy . --type dockerfile --command '["node","server.js"]' --port 3000
+kortix apps deploy dist --slug docs --type static --spa --access project
+kortix apps deploy . --type dockerfile --on-demand --command '["node","server.js"]' --port 3000
 kortix apps deploy --image ghcr.io/acme/service:2026-08-07 --command '["node","server.js"]' --port 3000
 ```
 
@@ -78,8 +90,8 @@ The full subcommand list:
 |---|---|
 | `kortix apps list` | List the project's Apps. `--json`. |
 | `kortix apps create <slug>` | Create an App without deploying it. |
-| `kortix apps deploy [path]` | Deploy a directory, a `.tar.gz`, or `--image`. |
-| `kortix apps set <id\|slug>` | Change an existing App: `--name`, `--cpu`, `--memory-gb`, `--disk-gb`, `--idle-timeout`, `--budget`. |
+| `kortix apps deploy [path]` | Deploy a directory, a `.tar.gz`, or `--image`. `--always-on`, `--on-demand` and `--budget <usd>` set the run mode and monthly budget. |
+| `kortix apps set <id\|slug>` | Change an existing App: `--name`, `--cpu`, `--memory-gb`, `--disk-gb`, `--idle-timeout`, `--always-on`, `--on-demand`, `--budget`, `--backends`. |
 | `kortix apps show <id\|slug>` | Show the App and its deployments; marks the live one. `--json`. |
 | `kortix apps logs <id\|slug> [deployment]` | Read runtime logs. `--after N --limit N`. |
 | `kortix apps start <id\|slug>` | Permit requests and start the App. |
@@ -94,8 +106,11 @@ The full subcommand list:
 
 `kortix apps set` sends only the flags you pass, and needs project write
 access. `--memory-gb` accepts `--memory` and `--disk-gb` accepts `--disk` as
-aliases. `--idle-timeout` takes 120-86400 seconds. A machine or budget change
-applies to the next deployment, not to the running runtime.
+aliases. `--idle-timeout` takes 120-86400 seconds. A machine change applies to
+the next deployment. A run-mode or budget change applies within 5 minutes,
+without a redeploy. `--backends main,crm` replaces the App's backend list (see
+[Backends an App may use](#backends-an-app-may-use)); `--backends=` clears it.
+It applies at once.
 
 ### Deployment defaults from `kortix.yaml`
 
@@ -108,21 +123,48 @@ apps:
     path: docs/dist
     type: static
     spa: true
-    readiness_path: /
+  api:
+    path: services/api
+    type: dockerfile
+    command: ["node", "server.js"]
+    port: 3000
+    readiness_path: /health
+    always_on: false
     idle_timeout_seconds: 300
-    monthly_budget_usd: 5
+    monthly_budget_usd: 10
+    backends: [main]
     resources:
       cpu: 1
       memory_gb: 2
       disk_gb: 10
     env:
-      PUBLIC_BASE: https://kortix.com
+      PUBLIC_BASE: https://example.com
     secrets:
-      API_TOKEN: docs_api_token
+      API_TOKEN: api_token
 ```
 
-Select the block with `kortix apps deploy --manifest-app docs`. An explicit flag
-always wins over the block.
+Select a block with `kortix apps deploy --manifest-app docs`. An explicit flag
+always wins over the block. A static block needs only `path`, `type`, and
+`spa`: the run mode, budget, machine, `env`, and `secrets` apply to server
+Apps. A block with `backends` replaces the App's backend list on every deploy.
+
+### Backends an App may use
+
+An App gets a viewer token at `/_kortix/backend-token?backend=<name>` (what
+`kortixAppBackendToken("<name>")` calls) only for a
+[backend](/docs/feature-flags/backends) it lists in `backends`. A new App lists
+none, so it acts as its viewer on no backend. Code in one App can never act as
+the viewer on a backend that only another App uses. Any other name answers
+`403` with `error: "backend_not_listed"`; the SDK warns in the browser console.
+
+| Surface | Set the list |
+|---|---|
+| CLI | `kortix apps set <app> --backends main` or `kortix apps create <slug> --backends main` |
+| `kortix.yaml` | `backends: [main]` in the `apps.<name>` block, applied by `kortix apps deploy` |
+| API | `backends` on `POST /v1/projects/:projectId/apps` and `PATCH …/apps/:appId` |
+
+A name may list a backend the project has not created yet. The token is always
+for the backend of that name in the App's own project.
 
 ### Machine, idle timeout, and budget
 
@@ -131,8 +173,96 @@ always wins over the block.
 | `cpu` | `1` | `1` to `32` cores |
 | `memory_gb` | `2` | `1` to `128` GiB |
 | `disk_gb` | `10` | `1` to `500` GiB |
-| `idle_timeout_seconds` | `300` | `120` to `86400` |
-| `monthly_budget_usd` | `5` | `0` to `100000`, or the operator's `KORTIX_APPS_MAX_MONTHLY_BUDGET_USD` |
+| `idle_timeout_seconds` | `300` | `120` to `86400`. Only for an on-demand App |
+| `always_on` | `true` for a new App | `true` or `false` |
+| `monthly_budget_usd` | The 24/7 estimate of the machine, rounded up to a whole dollar (74 for the default machine), when the App is always on; `5` on demand | `0` to `100000`, or the operator's `KORTIX_APPS_MAX_MONTHLY_BUDGET_USD` |
+
+Static Apps ignore the machine, idle timeout and run mode: they have no
+runtime. They serve while they have an active deployment, so
+`kortix apps start` and `kortix apps stop` answer `409 static_app_no_runtime`.
+Delete the App to take it offline.
+
+### Always on, or on demand
+
+A server App (`dockerfile`, `oci_image`, `bundle`) runs in one of two modes:
+
+| Mode | Behaviour | Use it for |
+|---|---|---|
+| Always on (`--always-on`, default) | Runs 24/7. Kortix restarts it within 5 minutes if it stops, and refreshes its runtime in the background. | Websockets, background loops, anything that must run without a request |
+| On demand (`--on-demand`) | Stops after `idle_timeout_seconds` without requests; the next request wakes it (cold start). | Every App that only answers requests |
+
+Every 5 minutes a keep-alive pass checks every running App and every
+always-on App:
+
+1. **Cost.** A running App (either mode) stops when its account can no longer
+   pay for compute (the check that refuses a new session), or when its
+   month-to-date compute reaches `monthly_budget_usd`. The stop is recorded as
+   an `app_stopped_unfunded` or `app_stopped_budget` event on the deployment.
+   The URL then shows the "paused" or "budget reached" page.
+2. **Alive.** Kortix asks the provider about each always-on App. A running one
+   bills for every hour it runs, with or without traffic. A stopped one is
+   started again through the same entitlement, concurrency and budget checks
+   as a cold start.
+3. **Refresh.** When a release ships a new App supervisor, at most 5 always-on
+   Apps rebuild per pass. A release that changes only the API rebuilds
+   nothing. A rebuild that failed is not repeated for the same source and
+   supervisor: never after a build or site error, and at most once an hour
+   after a provider error.
+
+Always-on depends on the provider:
+
+| Provider | Always-on behaviour |
+|---|---|
+| Platinum (Kortix Cloud) | The VM is persistent. The provider never idle-stops it. |
+| Daytona, E2B (self-host) | The VM keeps the provider's idle backstop. Keep-alive renews it every 5 minutes. If the provider stops the VM anyway (for example, an E2B plan's maximum sandbox length), keep-alive restarts it within 5 minutes, so the App can be unreachable for up to 5 minutes. |
+
+An App switched from on demand to always on keeps its current VM until the
+next deployment. On Platinum that VM keeps its idle backstop (12 hours without
+traffic by default); keep-alive restarts it within 5 minutes if it stops.
+
+#### Budget
+
+A new always-on App with no explicit budget gets its 24/7 estimate, rounded up
+to a whole dollar, as its monthly budget: 74 USD for the default machine, 60
+USD for 1 vCPU and 1 GiB. It does not stop mid-month on its own default.
+`create`, `deploy` and `set` print the cost, for example `Runs 24/7 on 1 vCPU /
+2 GB: about $73/month (budget $74)`, and the web app shows it beside **Always
+on**. A derived budget follows later changes to the machine or the run mode
+(on demand returns to 5 USD). Passing a budget (`monthly_budget_usd`,
+`--budget`) always wins: Kortix never changes it afterwards. A static App costs
+nothing and has no machine to size. Apps created before this default keep the
+budget they have.
+
+An always-on App of the default machine (1 vCPU, 2 GiB, 10 GiB disk) costs
+about 73 USD a month at list compute rates. The App's `estimated_monthly_usd`
+is that figure for its own machine. When an always-on App's budget is below
+it, `create`, `set` and `deploy` warn (`app_budget_below_always_on`) and do
+not refuse: the App runs until the budget is spent, then stays stopped until
+the next month. Set the budget when you deploy:
+
+```bash
+kortix apps deploy . --budget 80
+```
+
+`--budget` sets the monthly budget of a new App, or changes it on an existing
+one. The warning prints on stderr, so `--json` output stays parseable. The
+deployment also records it as an `app_budget_below_always_on` event.
+
+Change the mode with `kortix apps set <app> --always-on|--on-demand`,
+`always_on` in `kortix.yaml`, or the App's menu in the web app. A new App's
+mode defaults to the operator's `KORTIX_APPS_DEFAULT_ALWAYS_ON`.
+
+### Versions kept
+
+An App keeps its active deployment and the 5 newest other ready ones as
+rollback targets (`KORTIX_APPS_RETAINED_DEPLOYMENTS`). Older deployments are
+retired after every deploy: their runtime, image, files and build logs are
+freed, and they leave the deployment list. Archives no remaining deployment
+uses are deleted a day after upload. A failed or cancelled deployment keeps its
+build log for 14 days.
+
+A build log keeps the first 2,500 and the last 2,500 lines; a
+`log_truncated` event records how many lines in between were dropped.
 
 Apps reject a machine larger than the limits instead of clamping it. An App
 records its requested spec and bills off that record, so a silent downgrade
@@ -149,7 +279,27 @@ Kortix assigns the hostname when the App is created and never changes it. On
 Kortix cloud it is `<env>-<slug>-<route-key>.apps.kortix.com`. Self-hosted
 deployments serve their own wildcard domain from `KORTIX_APPS_BASE_DOMAIN`.
 
-An authorized request to a suspended App resumes its sandbox, waits for
+A static App answers every request at once. HTML revalidates on every load
+(`no-cache`, with an ETag), hashed build assets (`index-D8j1YYcB.js`) are cached
+for a year, text files are compressed (Brotli or gzip), a page navigation to an
+unknown path gets `index.html` when the App is an SPA, and a missing file gets
+your `404.html` with status `404`. A directory URL without its trailing slash
+(`/docs`) redirects `308` to `/docs/`, so relative links in `docs/index.html`
+resolve. Only build output with a content hash in its name (`_next/static/`,
+and files under `assets/` or `static/js|css|media/`) is immutable; every other
+file revalidates. Files over 4 MiB are streamed uncompressed and support
+`Range` requests. A static publish never includes `.git/`, `.env*` or
+`.DS_Store`, and a symlink that resolves outside the upload fails the deploy.
+Responses are `private` to shared caches unless the App is public. On Kortix cloud, a public App's hashed build assets
+are also cached at the edge for up to 1 hour. After the App turns non-public or
+is deleted, those copies stay reachable by exact URL for up to 1 hour.
+
+App code in the browser reaches the Kortix API, as the viewer, through
+`/_kortix/api/v1/*` on the App's own origin. The Kortix API refuses a direct
+cross-origin call from an App. The path needs `--viewer api`; see
+[SDK → Apps](/docs/sdk/apps).
+
+An authorized request to a suspended server App resumes its sandbox, waits for
 readiness, and proxies that same request. You do not have to wake it first.
 
 While the App is waiting for its first deployment, queued, validating,
@@ -170,8 +320,9 @@ Terminal and paused states answer differently:
 | Account cannot start compute | `402` | `app_account_unfunded` |
 | Account at its concurrent-App limit | `429` | `app_concurrency_limit` |
 
-`kortix apps stop` suspends compute immediately; the next authorized request
-resumes the App. `kortix apps start` warms it before traffic arrives.
+`kortix apps stop` suspends a server App's compute immediately; the next
+authorized request resumes it. `kortix apps start` warms it before traffic
+arrives. Neither applies to a static App.
 
 :::info[Cold starts stay invisible]
 The stable URL never exposes an `app_stopped` state. A provider edge that
@@ -293,14 +444,25 @@ Move traffic back to any ready deployment:
 kortix apps rollback docs <deployment-id>
 ```
 
-Rollback starts the target deployment's runtime first, then stops the previous
+A static App's rollback moves traffic at once: nothing boots. A server App's
+rollback starts the target deployment's runtime first, then stops the previous
 one. A target that fails to start leaves the current deployment serving.
 
 ## Delete deployments and Apps
 
-Each deployment builds one image on the hosting provider. Providers limit how
-many images an organization may hold, and an old deployment keeps its image so
-you can roll back to it. Delete what you no longer need:
+A server deployment runs from an image on the hosting provider. Deployments
+with the same build inputs share one image: the same artifact (archive digest,
+or an OCI reference pinned with `@sha256:`), source settings, Dockerfile,
+runtime spec, machine, and App supervisor version. A redeploy that changes only
+environment variables or secrets, an unchanged redeploy, and a retry reuse the
+image and record a `build_reused` event instead of building. An OCI tag such as
+`:latest` is pulled again on every deploy and never shares an image.
+
+Providers limit how many images an organization may hold, and an old deployment
+keeps its image so you can roll back to it. When a build hits the provider's
+template quota, Kortix deletes images no deployment uses and builds once more.
+If the quota is still full, the deployment fails with
+`app_image_quota_exceeded`. Delete what you no longer need:
 
 ```bash
 kortix apps show docs                               # v3 ready … live, v2 ready, v1 failed
@@ -314,27 +476,42 @@ kortix apps delete docs --yes                       # the App and every image it
   (`409 deployment_in_progress`). Delete it after it finishes or fails.
 - A deleted deployment leaves `show`, the deployment list, and its logs, and
   can no longer receive rollback traffic.
-- The output reports how many images were freed. An image still held by a
-  stopping runtime, or by a provider that did not answer, is reported as not
-  released yet; Kortix retries it automatically.
+- The output reports how many images were freed. An image another deployment
+  still uses stays, and that deployment reports no image of its own. An image
+  still held by a stopping runtime, or by a provider that did not answer, is
+  reported as not released yet; Kortix retries it automatically.
 
 Failed deployments and deleted Apps also release their images without any
 action: project maintenance removes them every few minutes.
 
-Each cold start compares the active deployment's runtime version against the
-current Kortix App runtime. The old deployment keeps serving while Kortix
-asynchronously builds one immutable replacement with the latest `kortix-appd`
-and Caddy binaries. A PostgreSQL advisory lock prevents duplicate refreshes.
+A static App's files are content-addressed and shared between its
+deployments. Deleting a deployment or the App releases its file list at once;
+maintenance deletes each stored file 1 hour after no deployment names it.
+Deleting the account deletes every stored file of the account immediately.
+
+When a Kortix release changes the App supervisor image (`kortix-appd` and
+Caddy), a server App gets one immutable replacement built from the same
+artifact: on its next cold start (on demand), or in a keep-alive pass (always
+on). The old deployment keeps serving until the replacement passes readiness.
+A PostgreSQL advisory lock prevents duplicate refreshes. A static App has no
+runtime to refresh.
 
 ## The Apps page
 
-Once the flag is on, an **Apps** row appears in the project sidebar, under
-Customize. The page is operational, not a creation surface: it lists the
+Once the flag is on, an **Apps** tab appears at the end of the project's
+Customize bar (`/projects/<id>/customize/apps`). The page is operational, not a creation surface: it lists the
 project's Apps with live state, a signed preview of each running App, and the
 access controls. Deploying is `kortix apps deploy .`.
 
 An App with no active deployment reads **Not deployed**, never **Running**. A
-suspended App's preview issues the request that wakes it.
+static App with an active deployment always reads **Running**. A suspended
+server App's preview issues the request that wakes it.
+
+The App's **Earlier versions** drawer states how it runs (static site, or a
+server that is always on or on demand, with its monthly budget) and how many
+earlier versions it keeps. Each version unfolds to its events and build log; a
+failed deploy's **Update failed** badge opens that log. A server App's menu
+holds **Monthly budget**, which shows the 24/7 estimate for its machine.
 
 Kortix opens `*.apps.kortix.com` and `*.apps.localhost` on their direct origin
 rather than through a session's web forward proxy. That preserves the host-only

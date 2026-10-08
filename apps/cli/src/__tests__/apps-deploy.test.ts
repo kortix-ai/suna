@@ -14,6 +14,8 @@ let server: ReturnType<typeof Bun.serve> | null = null;
 let serverPort = 0;
 let calls: Array<{ method: string; path: string; body: unknown }> = [];
 let uploaded: Uint8Array | null = null;
+/** Fields every App response carries in the current test. */
+let appFields: Record<string, unknown> = {};
 
 function writeConfig(apiBase: string): string {
   const path = join(tmp, 'config.json');
@@ -55,6 +57,7 @@ function app(overrides: Record<string, unknown> = {}) {
     last_request_at: null,
     created_at: '2026-01-01T00:00:00.000Z',
     updated_at: '2026-01-01T00:00:00.000Z',
+    ...appFields,
     ...overrides,
   };
 }
@@ -221,6 +224,7 @@ describe('kortix apps deploy (characterization)', () => {
     process.env = { ...ORIGINAL_ENV };
     calls = [];
     uploaded = null;
+    appFields = {};
   });
 
   afterEach(() => {
@@ -242,6 +246,7 @@ describe('kortix apps deploy (characterization)', () => {
         '    path: web',
         '    type: bundle',
         '    output_dir: dist',
+        '    backends: [main]',
         '    resources:',
         '      cpu: 2',
         '      memory_gb: 4',
@@ -263,7 +268,7 @@ describe('kortix apps deploy (characterization)', () => {
     const create = calls.find(
       (c) => c.method === 'POST' && c.path === `/v1/projects/${PROJECT}/apps`,
     );
-    expect(create?.body).toEqual({ slug: 'storefront', name: 'storefront', cpu: 2, memory_gb: 4 });
+    expect(create?.body).toEqual({ slug: 'storefront', name: 'storefront', cpu: 2, memory_gb: 4, backends: ['main'] });
     // --output-dir wins over the manifest's output_dir; env and secrets pass through.
     expect(deploymentCall()?.body).toEqual({
       artifact_id: 'art-1',
@@ -380,6 +385,57 @@ describe('kortix apps deploy (characterization)', () => {
     );
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('kortix.yaml has no apps.nope block');
+  });
+
+  test('--budget sets the new App\'s monthly budget; a server App below its 24/7 estimate is warned on stderr', async () => {
+    appFields = { always_on: true, estimated_monthly_usd: 73.48 };
+    mkdirSync(join(tmp, 'site'), { recursive: true });
+    writeFileSync(join(tmp, 'site', 'package.json'), '{"name":"site"}\n');
+    const config = writeConfig(startServer());
+    const r = await runCli(['apps', 'deploy', 'site', '--budget', '20', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    const create = calls.find((c) => c.method === 'POST' && c.path === `/v1/projects/${PROJECT}/apps`);
+    expect(create?.body).toEqual({ slug: 'site', name: 'site', monthly_budget_usd: 20 });
+    // The fake server answers with the default $5 budget.
+    expect(r.stderr).toContain('runs 24/7, about $73.48/month at list compute rates, but its monthly budget is $5.00');
+    expect(r.stdout).toContain('deployment ready');
+  });
+
+  test('a static deploy and an App whose budget covers 24/7 are not warned', async () => {
+    appFields = { always_on: true, estimated_monthly_usd: 73.48 };
+    writeFileSync(join(tmp, 'bundle.tar.gz'), new Uint8Array([0x1f, 0x8b, 8, 0]));
+    const config = writeConfig(startServer());
+    const staticRun = await runCli(['apps', 'deploy', 'bundle.tar.gz', '--project', PROJECT], config);
+    expect(staticRun.code).toBe(0);
+    expect(staticRun.stderr).not.toContain('runs 24/7');
+    appFields = { always_on: true, estimated_monthly_usd: 73.48, monthly_budget_usd: 100 };
+    mkdirSync(join(tmp, 'site'), { recursive: true });
+    writeFileSync(join(tmp, 'site', 'package.json'), '{"name":"site"}\n');
+    const serverRun = await runCli(['apps', 'deploy', 'site', '--project', PROJECT], config);
+    expect(serverRun.code).toBe(0);
+    expect(serverRun.stderr).not.toContain('runs 24/7');
+  });
+
+  test('a server deploy prints the 24/7 cost line; a static deploy and an on-demand App do not', async () => {
+    appFields = { always_on: true, estimated_monthly_usd: 73.48, monthly_budget_usd: 74 };
+    writeFileSync(join(tmp, 'bundle.tar.gz'), new Uint8Array([0x1f, 0x8b, 8, 0]));
+    mkdirSync(join(tmp, 'site'), { recursive: true });
+    writeFileSync(join(tmp, 'site', 'package.json'), '{"name":"site"}\n');
+    const config = writeConfig(startServer());
+    const server = await runCli(['apps', 'deploy', 'site', '--project', PROJECT], config);
+    expect(server.stdout).toContain('Runs 24/7 on 1 vCPU / 2 GB: about $73/month (budget $74)');
+    const staticRun = await runCli(['apps', 'deploy', 'bundle.tar.gz', '--project', PROJECT], config);
+    expect(staticRun.stdout).not.toContain('Runs 24/7');
+    appFields = { always_on: false, estimated_monthly_usd: 73.48 };
+    const onDemand = await runCli(['apps', 'deploy', 'site', '--project', PROJECT], config);
+    expect(onDemand.stdout).not.toContain('Runs 24/7');
+  });
+
+  test('--budget must be a positive number', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['apps', 'deploy', 'site', '--budget', 'lots', '--project', PROJECT], config);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain('--budget must be positive');
   });
 
   test('an unknown deploy flag is rejected', async () => {
