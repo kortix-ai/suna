@@ -9,8 +9,9 @@
  * SDK parses, the sequenced event stream and the control-plane probes the API
  * polls.
  */
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
+import { createHash } from 'node:crypto'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -26,6 +27,7 @@ import { signTestUserContext } from './helpers/open-code-harness'
 import { readHostHealth } from '@/harness/shared/host-health'
 import { sanitizeRuntimeEvent } from '@/harness/shared/audit-relay'
 import { AGENT_ENV_SH } from '@/harness/shared/agent-env-file'
+import { logger } from '@/lib/log/logger'
 import type { PiRuntimeHooks } from '@/harness/pi/runtime'
 import { MessageIdClock } from '@/harness/pi/message-id'
 import { spawnSync } from 'node:child_process'
@@ -1846,6 +1848,114 @@ describe('pi subagents extension', () => {
   })
 })
 
+/** The project's root instructions as pi renders them: pi's own context-file format. */
+const projectRules = (text: string, name = 'AGENTS.md') => `<project_instructions path="${name}">\n${text}\n</project_instructions>`
+const sha12 = (text: string) => createHash('sha256').update(text).digest('hex').slice(0, 12)
+const agentsMdOf = async (r: Rig) => ((await r.bearer('/kortix/health').then((res) => res.json())) as Record<string, any>).harness.details.agentsMd
+
+// A rig with no API reads the working tree (releases are not in play).
+describe('pi AGENTS.md', () => {
+  afterEach(() => mock.restore())
+
+  /** The system prompt of the next turn's first model request. */
+  const nextSystem = async (r: Rig) => {
+    const index = gateway.sent.length
+    await promptAndSettle(r, 'hi')
+    return systemSent(gateway.sent[index]!)
+  }
+  const notLoaded = (warn: { mock: { calls: unknown[][] } }) => warn.mock.calls.filter(([message]) => message === '[pi] AGENTS.md not loaded')
+
+  test('a task subagent gets the same AGENTS.md section as the root', async () => {
+    const r = await boot({
+      script: [{ tool: 'task', args: { description: 'Check', prompt: 'check it', subagent_type: 'general' } }, { text: 'child done' }, { text: 'parent done' }],
+      prepare: (workspace) => writeFileSync(join(workspace, 'AGENTS.md'), 'SHARED-RULES\n'),
+    })
+    const index = gateway.sent.length
+    await promptAndSettle(r, 'delegate it')
+    const [root, child] = gateway.sent.slice(index).map(systemSent)
+    expect(root).toContain(projectRules('SHARED-RULES'))
+    // Only a child prompt carries the working directory as text.
+    expect(child).toContain('Working directory:')
+    expect(child).toContain(projectRules('SHARED-RULES'))
+  })
+
+  test('no AGENTS.md: no section, no log, and health reports null', async () => {
+    const warn = spyOn(logger, 'warn')
+    const r = await boot({ script: [{ text: 'ok' }] })
+    expect(await nextSystem(r)).not.toContain('<project_instructions')
+    expect(await agentsMdOf(r)).toBeNull()
+    expect(notLoaded(warn)).toEqual([])
+  })
+
+  test('a whitespace-only AGENTS.md adds no section, and its CLAUDE.md stays unread', async () => {
+    const r = await boot({
+      script: [{ text: 'ok' }],
+      prepare: (workspace) => {
+        writeFileSync(join(workspace, 'AGENTS.md'), ' \n\t\n')
+        writeFileSync(join(workspace, 'CLAUDE.md'), 'CLAUDE-RULES\n')
+      },
+    })
+    expect(await nextSystem(r)).not.toContain('<project_instructions')
+    expect(await agentsMdOf(r)).toBeNull()
+  })
+
+  test('an AGENTS.md symlink out of the root adds no section and warns once; a symlink inside the root loads', async () => {
+    const outside = mkdtempSync(join(tmpdir(), 'pi-outside-'))
+    writeFileSync(join(outside, 'secret.md'), 'OUTSIDE-SECRET\n')
+    const warn = spyOn(logger, 'warn')
+    try {
+      const r = await boot({ script: [{ text: 'one' }, { text: 'two' }], prepare: (workspace) => symlinkSync(join(outside, 'secret.md'), join(workspace, 'AGENTS.md')) })
+      expect(await nextSystem(r)).not.toContain('OUTSIDE-SECRET')
+      expect(await agentsMdOf(r)).toBeNull()
+      expect(notLoaded(warn)).toHaveLength(1)
+
+      mkdirSync(join(r.workspace, 'docs'))
+      writeFileSync(join(r.workspace, 'docs', 'rules.md'), 'INSIDE-RULES\n')
+      rmSync(join(r.workspace, 'AGENTS.md'))
+      symlinkSync('docs/rules.md', join(r.workspace, 'AGENTS.md'))
+      await r.service.runtime()!.reconfigure()
+      expect(await nextSystem(r)).toContain(projectRules('INSIDE-RULES'))
+    } finally {
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  test('an AGENTS.md that is not a regular file adds no section and warns once', async () => {
+    const warn = spyOn(logger, 'warn')
+    const r = await boot({ script: [{ text: 'ok' }], prepare: (workspace) => mkdirSync(join(workspace, 'AGENTS.md')) })
+    expect(await nextSystem(r)).not.toContain('<project_instructions')
+    expect(await agentsMdOf(r)).toBeNull()
+    expect(notLoaded(warn)).toHaveLength(1)
+  })
+
+  // root reads a mode-000 file, so the read error cannot happen there.
+  test.skipIf(process.getuid?.() === 0)('an AGENTS.md that cannot be read adds no section, warns once, and the runtime still starts', async () => {
+    const warn = spyOn(logger, 'warn')
+    const r = await boot({
+      script: [{ text: 'ok' }],
+      prepare: (workspace) => {
+        writeFileSync(join(workspace, 'AGENTS.md'), 'UNREADABLE\n')
+        chmodSync(join(workspace, 'AGENTS.md'), 0o000)
+      },
+    })
+    expect(r.service.runtime()!.getState()).toBe('ok')
+    expect(await nextSystem(r)).not.toContain('UNREADABLE')
+    expect(notLoaded(warn)).toHaveLength(1)
+  })
+
+  test('without an AGENTS.md the root CLAUDE.md loads, as on OpenCode; an AGENTS.md takes precedence', async () => {
+    const r = await boot({ script: [{ text: 'one' }, { text: 'two' }], prepare: (workspace) => writeFileSync(join(workspace, 'CLAUDE.md'), 'CLAUDE-RULES\n') })
+    expect(await nextSystem(r)).toContain(projectRules('CLAUDE-RULES', 'CLAUDE.md'))
+    expect(await agentsMdOf(r)).toMatchObject({ source: 'workspace', path: join(r.workspace, 'CLAUDE.md') })
+
+    writeFileSync(join(r.workspace, 'AGENTS.md'), 'AGENTS-RULES\n')
+    await r.service.runtime()!.reconfigure()
+    const system = await nextSystem(r)
+    expect(system).toContain(projectRules('AGENTS-RULES'))
+    expect(system).not.toContain('CLAUDE-RULES')
+  })
+})
+
 describe('config releases on pi', () => {
   const PROVISIONED = JSON.stringify({ default_agent: 'build', agent: { build: { prompt: 'PROVISIONED: the prompt compiled at provision.' } } })
   let api: FakeApi
@@ -1885,7 +1995,7 @@ describe('config releases on pi', () => {
     })
   }
 
-  const bootOnReleases = (script: Step[]) =>
+  const bootOnReleases = (script: Step[], prepare?: (workspace: string) => void) =>
     boot({
       script,
       env: { KORTIX_API_URL: api.url, KORTIX_COMPILED_AGENT_CONFIG: PROVISIONED },
@@ -1896,6 +2006,7 @@ describe('config releases on pi', () => {
           mkdirSync(join(workspace, 'skills', name), { recursive: true })
           writeFileSync(join(workspace, 'skills', name, 'SKILL.md'), `---\nname: ${name}\ndescription: ${description}\n---\nBody.\n`)
         }
+        prepare?.(workspace)
       },
     })
 
@@ -2031,6 +2142,117 @@ describe('config releases on pi', () => {
     const system = await ask(r, 'hello')
     expect(system).toContain('PROVISIONED')
     expect(system).not.toContain("This session's agent config")
+  })
+
+  // AGENTS.md follows the skills: the release while one runs, the working tree only while releases are off.
+  test('config releases off: the working tree AGENTS.md is one section after the agent prompt, re-read with the skills', async () => {
+    api.respond(FEATURE_DISABLED)
+    const info = spyOn(logger, 'info')
+    const text = 'WORKSPACE-RULES: cite the ticket.\n'
+    const r = await bootOnReleases([{ text: 'one' }, { text: 'two' }, { text: 'three' }], (workspace) => writeFileSync(join(workspace, 'AGENTS.md'), text))
+    const path = join(r.workspace, 'AGENTS.md')
+    const loaded = { source: 'workspace', path, bytes: Buffer.byteLength(text), sha: sha12(text) }
+    try {
+      await ask(r, 'first')
+      expect(systemSent(gateway.sent.at(-1)!)).toContain(`PROVISIONED: the prompt compiled at provision.\n\n${projectRules('WORKSPACE-RULES: cite the ticket.')}\n\n`)
+      expect(await agentsMdOf(r)).toEqual(loaded)
+      expect(info.mock.calls.filter(([message]) => message === '[pi] AGENTS.md loaded')).toEqual([['[pi] AGENTS.md loaded', loaded]])
+
+      // No read per turn: an edit waits for the next re-read of the skills (here a reconfigure).
+      writeFileSync(path, 'WORKSPACE-EDIT\n')
+      expect(await ask(r, 'second')).not.toContain('WORKSPACE-EDIT')
+      await r.service.runtime()!.reconfigure()
+      const third = await ask(r, 'third')
+      expect(third).toContain('WORKSPACE-EDIT')
+      expect(third).not.toContain('WORKSPACE-RULES')
+    } finally {
+      info.mockRestore()
+    }
+  })
+
+  test("config releases on: the release's AGENTS.md is in the prompt, and the working tree's never is", async () => {
+    // The root layout: agents, skills and AGENTS.md at the repository root.
+    write(repo, 'harnesses/opencode/opencode.json', '{}\n')
+    write(repo, 'skills/deploy/SKILL.md', '---\nname: deploy\ndescription: deploy from the base branch\n---\nBody.\n')
+    write(repo, 'AGENTS.md', 'RELEASED-RULES\n')
+    const one = buildRelease(repo, commitAll(repo, 'root layout'), 'harnesses/opencode', {
+      projectId: 'proj-pi-test',
+      governance: JSON.stringify({ default_agent: 'build', agent: { build: { prompt: 'RELEASE-ONE' } } }),
+    })
+    serveRelease(api, one)
+    const r = await bootOnReleases([{ text: 'first' }, { text: 'second' }], (workspace) => writeFileSync(join(workspace, 'AGENTS.md'), 'WORKSPACE-RULES\n'))
+    const first = await ask(r, 'first')
+    expect(first).toContain('RELEASED-RULES')
+    expect(first).not.toContain('WORKSPACE-RULES')
+    // The session notice tells the agent its working-copy edit waits for the base branch.
+    expect(first).toContain('`/workspace/skills` or `/workspace/AGENTS.md` does NOT change the config')
+    expect(await agentsMdOf(r)).toEqual({
+      source: 'release',
+      path: join(dir, 'store', one.descriptor.release_id!, 'AGENTS.md'),
+      bytes: Buffer.byteLength('RELEASED-RULES\n'),
+      sha: sha12('RELEASED-RULES\n'),
+    })
+
+    // The working copy is the agent's: an edit there never reaches the prompt, not even through a reconfigure.
+    writeFileSync(join(r.workspace, 'AGENTS.md'), 'WORKSPACE-EDIT\n')
+    await r.service.runtime()!.reconfigure()
+    const second = await ask(r, 'second')
+    expect(second).toContain('RELEASED-RULES')
+    expect(second).not.toContain('WORKSPACE-')
+  })
+
+  test('config releases on with no release tree (the image default): no AGENTS.md, as no working-tree skill', async () => {
+    api.respond({
+      status: 200,
+      json: {
+        format: 'config-release-v2',
+        release_id: null,
+        mode: 'follow-base',
+        source_commit: null,
+        config_dir: null,
+        config_tree_id: null,
+        archive: null,
+        files: null,
+        compiled_governance: PROVISIONED,
+        compiled_governance_etag: '0123456789abcdef',
+        reason: null,
+      },
+    })
+    const r = await bootOnReleases([{ text: 'ok' }], (workspace) => writeFileSync(join(workspace, 'AGENTS.md'), 'WORKSPACE-RULES\n'))
+    expect(((await r.bearer('/kortix/health').then((res) => res.json())) as Record<string, any>).config.source).toBe('image-default')
+    expect(await ask(r, 'hello')).not.toContain('WORKSPACE-RULES')
+    expect(await agentsMdOf(r)).toBeNull()
+  })
+
+  test('a base move that changes AGENTS.md reaches the next turn in place: same root, same transcript, no restart', async () => {
+    write(repo, 'AGENTS.md', 'BASE-RULES-ONE\n')
+    serveRelease(api, releaseWith('deploy', 'RELEASE-ONE'))
+    const r = await bootOnReleases([{ text: 'first' }, { text: 'second' }])
+    const runtime = r.service.runtime()!
+    const root = runtime.rootId
+    const restart = spyOn(runtime, 'restart')
+    expect(await ask(r, 'first question')).toContain('BASE-RULES-ONE')
+
+    write(repo, 'AGENTS.md', 'BASE-RULES-TWO\n')
+    const two = releaseWith('deploy', 'RELEASE-ONE')
+    serveRelease(api, two)
+    const converged = await r.bearer('/kortix/config/converge', { method: 'POST' }).then((res) => res.json())
+    expect(converged).toMatchObject({ ok: true, outcome: 'applied', reload: null, config: { release_id: two.descriptor.release_id, source: 'release' } })
+    expect(restart).not.toHaveBeenCalled()
+    expect(r.service.runtime()).toBe(runtime)
+    expect(runtime.rootId).toBe(root)
+
+    const second = await ask(r, 'second question')
+    expect(second).toContain('BASE-RULES-TWO')
+    expect(second).not.toContain('BASE-RULES-ONE')
+    expect(await agentsMdOf(r)).toEqual({
+      source: 'release',
+      path: join(dir, 'store', two.descriptor.release_id!, 'AGENTS.md'),
+      bytes: Buffer.byteLength('BASE-RULES-TWO\n'),
+      sha: sha12('BASE-RULES-TWO\n'),
+    })
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+    expect(page.messages.filter((m) => m.info.role === 'user')).toHaveLength(2)
   })
 
   test('refresh with repo=0 leaves the checkout exactly as it is', async () => {
