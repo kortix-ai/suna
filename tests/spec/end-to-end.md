@@ -149,6 +149,7 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 `ACCT-2` `POST /accounts {name}` → 201 team account, caller = `owner` (an `account_memberships` identity row plus an account-scope `owner` assignment). No name → 400 `Validation failed`; a 256-character name → 400 `name is too long`.
 `ACCT-3` `GET /accounts/:id` → member → 200; `NONMEMBER` → 403.
 `ACCT-4` `PATCH /accounts/:id {name}` → `ACCOUNT_WRITE` (OWNER/ADMIN) → 200; `MEMBER` → 403. The response carries the new `name`.
+`TOPUP-1` `POST /accounts/:id/top-up-requests` → a member who cannot add credits asks the owners: 202 `{notified}` and each owner with an email gets one email (balance, Open billing). The same member again within 24 h → 429 `already_requested`. A caller who can add credits (`billing.write`) → 409 `can_manage_billing`. `NONMEMBER` → 403; `ANON` → 401.
 `ACCT-5` A new identity with pending plain invites: its first `GET /accounts` or `GET /accounts/me` creates the personal account (`account_id` = user id, `owner`, `is_primary_owner:true`) before it claims the invites. The list then holds the personal account plus every inviting account at the invite's role. A repeat call adds nothing. A user who already holds a membership gets no retroactive personal account.
 
 ### Members
