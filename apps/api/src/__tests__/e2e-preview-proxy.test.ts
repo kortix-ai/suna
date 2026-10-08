@@ -71,7 +71,6 @@ let mockResolvedPreviewPorts: number[] = [];
 let mockResolveIngressError: Error | null = null;
 /** Called on every ingress resolution; a fake clock uses it to make one slow. */
 let mockOnResolveIngress: (() => void) | null = null;
-let mockSnapshotSyncCalls: Array<Record<string, unknown>> = [];
 
 function mockSandboxRows(): any[] {
   if (!mockDbSandbox) return [];
@@ -416,12 +415,6 @@ mock.module('../projects/secrets', () => {
   };
 });
 
-mock.module('../projects/opencode-session-snapshot', () => ({
-  scheduleOpencodeSnapshotSync: (input: Record<string, unknown>) => {
-    mockSnapshotSyncCalls.push(input);
-  },
-}));
-
 // The proxy owns two of the four title hooks. Keep the REAL prompt extraction
 // (that is the part the proxy actually decides) and capture only the generator
 // call, whose own idempotency/CAS is covered by unit + integration tests.
@@ -558,7 +551,6 @@ beforeEach(() => {
   mockResolvedPreviewPorts = [];
   mockResolveIngressError = null;
   mockOnResolveIngress = null;
-  mockSnapshotSyncCalls = [];
   mockTitleCalls = [];
   // The per-sandbox env-push memo (`env-sync-skip-decision.ts`) would
   // otherwise carry over from the previous test on the same TEST_SANDBOX_ID

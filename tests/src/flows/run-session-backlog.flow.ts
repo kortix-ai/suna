@@ -85,18 +85,12 @@ harnessFlow(
 
     let mirrored: any = null;
     await ctx.step('the session read exposes a non-placeholder root title and tree', async () => {
-      // `metadata.opencode_sessions` is written by a deferred snapshot pass that
-      // a delivered prompt arms (prompt+20s, prompt+60s, then it stops). A
-      // poll that only waits reads a value whose writer has retired, so re-arm
-      // it with another prompt when the wait outlives the pass.
-      const REARM_AFTER_MS = 75_000;
-      let lastPromptAt = Date.now();
+      // `metadata.opencode_sessions` follows the runtime's state document: it
+      // is written when the turn end refreshes the projection and when the
+      // daemon pushes one for a new session or title (R7.4). No timer, so a
+      // poll needs no second prompt to re-arm a writer.
       mirrored = await waitFor(
         async () => {
-          if (Date.now() - lastPromptAt > REARM_AFTER_MS) {
-            lastPromptAt = Date.now();
-            await sendPrompt(ctx, projectId, sessionId, echo(`${marker}_REARM`));
-          }
           const response = await ctx.client
             .as(ctx.P.OWNER)
             .get('/v1/projects/:projectId/sessions/:sessionId', { params: { projectId, sessionId } });
