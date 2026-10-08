@@ -1,5 +1,5 @@
 // KRTX-1769: regression test for the account+time cost covering index built by
-// 20261007235952000_gateway_logs_account_time_covering.concurrent.ts (the
+// 20261008012757000_gateway_logs_account_time_covering.concurrent.ts (the
 // account+window aggregates: getCostSummary and getCostByProject in
 // apps/api/src/shared/cost-rollups.ts, served by GET /v1/usage/cost-summary
 // and GET /v1/usage/cost-by-project, plus the llmAggregateSubquery in
@@ -27,7 +27,7 @@ const PORT = Number(process.env.GATEWAY_LOGS_ACCOUNT_COVERING_INDEX_TEST_PORT ||
 const ROOT = repoRoot();
 const ports: Ports = { ...computePorts(0), sbDb: PORT };
 const URL = `postgresql://postgres:postgres@127.0.0.1:${PORT}/postgres`;
-const MIGRATION_NAME = '20261007235952000_gateway_logs_account_time_covering.concurrent';
+const MIGRATION_NAME = '20261008012757000_gateway_logs_account_time_covering.concurrent';
 const INDEX = 'idx_gateway_logs_account_time_covering';
 
 // Synthetic rows: one per shape the index carries — null session_id, a

@@ -10,10 +10,15 @@
  *
  * ```ts
  * const kortix = createKortix({
- *   backendUrl: 'https://api.kortix.com/v1',
+ *   backendUrl: '/_kortix/api/v1',
  *   getToken: kortixAppViewerToken(),
  * });
  * ```
+ *
+ * `/_kortix/api/v1/*` is the gate on the App's own origin. It forwards each
+ * call to the Kortix API as the signed-in viewer, so the browser makes no
+ * cross-origin request (the API answers no CORS preflight from an App origin).
+ * It needs the App's `viewer_token_scope: 'api'`.
  *
  * The token is NOT the user's Kortix session: it expires in an hour, carries
  * only the scopes the App was granted (`profile email`, plus `kortix` when the

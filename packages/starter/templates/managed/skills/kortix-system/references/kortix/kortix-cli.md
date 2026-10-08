@@ -129,9 +129,11 @@ If none resolve, the command errors with a pointer to `projects link`.
 
 ### Apps — serverless application deployments
 
-Apps have stable URLs and immutable deployment versions. Each deployment runs
-in one provider-neutral sandbox. Public traffic wakes an idle sandbox. Manual
-stop blocks wake.
+Apps have stable URLs and immutable deployment versions. A static App is files
+that Kortix serves: no machine, nothing to start or stop. A server App
+(`dockerfile`, `oci_image`, `bundle`) runs in one machine, always on or on
+demand, and stops at its monthly budget. An authorized request wakes a stopped
+server App.
 
 The selected project must enable **Apps** under Project Settings →
 Experimental. The top-level CLI help and every `kortix apps` command stay dark
@@ -139,26 +141,33 @@ when no selected project has the feature enabled.
 
 | Command | Effect |
 | --- | --- |
-| `kortix apps ls [--json]` | List the project's Apps, state, and stable URL. |
-| `kortix apps create <slug> [--name …]` | Create an App identity without deploying source. Resource flags: `--cpu`, `--memory`, `--disk`, `--idle-timeout`, `--budget`. |
-| `kortix apps deploy [path]` | Upload and deploy a directory or `.tar.gz`. Auto-detects static, bundle, or Dockerfile source. Waits for readiness by default. |
+| `kortix apps ls [--json]` | List the project's Apps, state (`static` for a static App), and stable URL. |
+| `kortix apps create <slug> [--name …]` | Create an App identity without deploying source. Flags: `--cpu`, `--memory`, `--disk`, `--idle-timeout`, `--always-on\|--on-demand`, `--budget`. |
+| `kortix apps deploy [path]` | Upload and deploy a directory or `.tar.gz`. Auto-detects static, bundle, or Dockerfile source; pass `--type`. Waits until ready by default. |
+| `kortix apps deploy … --always-on\|--on-demand --budget <usd>` | Server Apps: set the run mode and the monthly compute budget (default: the 24/7 estimate of the machine, rounded up, when always on; 5 USD on demand). Prints the cost. Warns on stderr (`app_budget_below_always_on`) when an always-on App's budget is below its 24/7 estimate. |
 | `kortix apps deploy --manifest-app <name>` | Use one v2 `kortix.yaml` `apps.<name>` block. A sole App block is selected automatically for bare `deploy`. |
 | `kortix apps deploy --image <ref> --command <argv> --port <n>` | Deploy a public OCI image. `--command` accepts a JSON string array or shell-like string. |
-| `kortix apps show <id-or-slug> [--json]` | Show an App and immutable deployment history. |
-| `kortix apps logs <id-or-slug> [deployment-id]` | Read supervisor, Caddy, and user-process logs. Supports `--after` and `--limit`. |
-| `kortix apps start <id-or-slug>` | Permit traffic and start the active deployment now. |
-| `kortix apps stop <id-or-slug>` | Stop the active runtime and block cold wake. |
-| `kortix apps rollback <id-or-slug> <deployment-id>` | Start a ready target, move traffic atomically, then stop the previous runtime. |
-| `kortix apps delete <id-or-slug> --yes` | Delete the App and every runtime. |
+| `kortix apps set <id-or-slug>` | Change an App: `--name`, `--cpu`, `--memory-gb`, `--disk-gb`, `--idle-timeout`, `--always-on\|--on-demand`, `--budget`. Run mode and budget apply within 5 minutes; a machine change applies to the next deployment. |
+| `kortix apps show <id-or-slug> [--json]` | Show an App (`hosting_type`, `always_on`, `monthly_budget_usd`, `estimated_monthly_usd`) and its deployment history. |
+| `kortix apps logs <id-or-slug> [deployment-id]` | Read supervisor, Caddy, and user-process logs; a static App prints its deployment events. Supports `--after` and `--limit`. |
+| `kortix apps start <id-or-slug>` | Server Apps: permit traffic and start the active deployment now. A static App answers `409 static_app_no_runtime`. |
+| `kortix apps stop <id-or-slug>` | Server Apps: suspend compute now. The next authorized request wakes it. A static App answers `409 static_app_no_runtime`. |
+| `kortix apps rollback <id-or-slug> <deployment-id>` | Move traffic to a ready deployment. A server App starts the target first, then stops the previous runtime. |
+| `kortix apps access <id-or-slug>` | Read or change access: `--mode private\|project\|restricted\|public\|password`, `--members`, `--groups`, `--password`, `--viewer off\|identity\|api`. |
+| `kortix apps access-link <id-or-slug> [--json]` | Create a five-minute authenticated browser URL. Treat it as a secret. |
+| `kortix apps delete <id-or-slug> --yes` | Delete the App, every runtime, and every deployment image. |
+| `kortix apps delete <id-or-slug> --deployment <id\|vN> --yes` | Delete one deployment. The live deployment answers `409 deployment_live`. |
 
 Deploy options include `--type static|bundle|dockerfile`, `--root`, `--spa`,
 `--output-dir`, `--install-command`, `--build-command`, `--dockerfile`,
-`--command`, `--port`, `--readiness-path`, and `--provider`. Omit `--provider`
-for platform policy. Use `--no-wait` only when another process will poll the
-deployment.
+`--command`, `--port`, `--readiness-path`, `--access`, `--members`, `--groups`,
+`--password`, `--always-on`, `--on-demand`, `--budget`, and `--provider`. Omit
+`--provider` for platform policy. Prefer a local build deployed with
+`--type static` over `--type bundle`. Use `--no-wait` only when another process
+will poll the deployment.
 
-Directory uploads read `.gitignore`, `.dockerignore`, and `.kortixignore`.
-They always exclude `.git`, `.kortix`, `.env*`, and `node_modules`.
+Directory uploads read `.gitignore`, `.dockerignore`, and `.kortixignore` from
+the uploaded directory only. They always exclude `.git`, `.kortix`, `.env*`, and `node_modules`.
 `--include-node-modules` only overrides the `node_modules` default.
 
 See the `apps.md` reference for the complete manifest, runtime, secret, and
@@ -332,6 +341,19 @@ the same state.
 | `kortix triggers fire <slug>` | Manually fire a trigger now. |
 | `kortix triggers enable <slug>` | Set `enabled = true`. |
 | `kortix triggers disable <slug>` | Set `enabled = false`. |
+| `kortix triggers events --apps [--json]` | List apps that can trigger events: event count, the project's connector, and whether a shared account is connected (`connected`, `needs account`, `no connector`). |
+| `kortix triggers events --connector <slug> [--json]` | List the events a connector offers: `TYPE`, `NAME`, `DELIVERY`. |
+| `kortix triggers events --connector <slug> --event <TYPE> [--json]` | One event in full: config fields (type, required, default, allowed values, description) and the `{{ event.data.* }}` prompt variables. |
+| `kortix triggers add <slug> --type event --connector <slug> --event <TYPE> --config <k>=<v> --prompt "…" [--apply]` | Add an event trigger. Without `--apply` it writes a `triggers:` block to the local `kortix.yaml` (`kortix ship` applies it). With `--apply` it creates the trigger now and prints its status and the next step. Online, the config is checked against the event catalog; every missing or invalid field is listed with its description. |
+| `kortix triggers set <slug> [--event <TYPE>] [--connector <slug>] [--config <k>=<v>] [--config-json '<json>']` | Change a live event trigger. `--config` merges into the current config. `--config-json` replaces it. Do not pass both. |
+
+`--config k=v` is converted to the field's type (number, boolean, comma
+list) using the catalog. `--config-json` passes typed values as-is. An event
+trigger takes none of `--cron`, `--run-at`, `--timezone`, `--secret-env`,
+`--run`, `--mode`, `--interval`, `--expect-event-within`. `triggers ls` shows
+a status word per event trigger (`live`, `pending`, `needs connection`,
+`error`). `triggers info <slug>` shows the status, the error, the last event,
+and a `Next` block with the exact command to run.
 
 ### Reminders
 

@@ -1542,6 +1542,52 @@ export const projectTriggerRuntime = kortixSchema.table(
   ],
 );
 
+/**
+ * Provider subscription behind an `event` trigger (apps/api trigger-events).
+ * The manifest declares the trigger; this row holds the provider's
+ * subscription id and health. `(provider, external_id)` is NOT unique: two
+ * triggers with the same connection, event and config share one provider
+ * instance.
+ */
+export const projectTriggerEventSubscriptions = kortixSchema.table(
+  'project_trigger_event_subscriptions',
+  {
+    projectId: uuid('project_id').notNull(),
+    slug: varchar('slug', { length: 128 }).notNull(),
+    accountId: uuid('account_id').notNull(),
+    provider: text('provider').notNull(),
+    connectionId: uuid('connection_id'),
+    eventType: text('event_type').notNull(),
+    externalId: text('external_id'),
+    desiredHash: text('desired_hash').notNull(),
+    status: text('status').notNull(),
+    lastError: text('last_error'),
+    lastEventAt: timestamp('last_event_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.projectId, table.slug] }),
+    foreignKey({
+      name: 'project_trigger_event_subscriptions_project_fk',
+      columns: [table.projectId],
+      foreignColumns: [projects.projectId],
+    }).onDelete('cascade'),
+    foreignKey({
+      name: 'project_trigger_event_subscriptions_connection_fk',
+      columns: [table.connectionId],
+      foreignColumns: [connectorConnections.connectionId],
+    }).onDelete('set null'),
+    index('idx_project_trigger_event_subscriptions_external')
+      .on(table.provider, table.externalId)
+      .where(sql`${table.externalId} is not null`),
+    check(
+      'project_trigger_event_subscriptions_status_check',
+      sql`${table.status} in ('active', 'needs_connection', 'error')`,
+    ),
+  ],
+);
+
 /** Member/group allow-list for a trigger's future and prior created sessions. */
 export const projectTriggerSessionAccessGrants = kortixSchema.table(
   'project_trigger_session_access_grants',
@@ -3677,7 +3723,7 @@ export const gatewayRequestLogs = kortixSchema.table(
     // + uniqueness only, so the declaration here (without INCLUDE) is enough
     // to keep it in sync, the same pattern as
     // idx_gateway_logs_project_failed_time — by
-    // 20261007235952000_gateway_logs_account_time_covering.concurrent.ts.
+    // 20261008012757000_gateway_logs_account_time_covering.concurrent.ts.
     index('idx_gateway_logs_account_time_covering').on(table.accountId, table.createdAt),
   ],
 );
@@ -4115,6 +4161,12 @@ export const apps = kortixSchema.table(
     diskGb: integer('disk_gb').default(10).notNull(),
     idleTimeoutSeconds: integer('idle_timeout_seconds').default(300).notNull(),
     /**
+     * Run 24/7 instead of stopping after `idle_timeout_seconds`: kept running
+     * by maintenance (cron jobs, workers and websockets keep working), still
+     * capped by `monthly_budget_usd`. A static App has no runtime and ignores it.
+     */
+    alwaysOn: boolean('always_on').default(false).notNull(),
+    /**
      * What the Apps gate hands this App about the person looking at it.
      *
      * `identity` (default) — a signed viewer header on every request plus a
@@ -4132,6 +4184,12 @@ export const apps = kortixSchema.table(
     monthlyBudgetUsd: numeric('monthly_budget_usd', { precision: 12, scale: 2 })
       .default('5.00')
       .notNull(),
+    /**
+     * false: the budget is the derived default (an always-on App's 24/7 estimate
+     * for its size) and follows size changes. true: a person set it. Rows that
+     * predate the column are true, so no existing budget moves.
+     */
+    monthlyBudgetExplicit: boolean('monthly_budget_explicit').default(true).notNull(),
     lastRequestAt: timestamp('last_request_at', { withTimezone: true }),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -4271,7 +4329,7 @@ export const appDeployments = kortixSchema.table(
       'app_deployments_source_kind_check',
       sql`${table.sourceKind} IN ('static', 'bundle', 'dockerfile', 'oci_image')`,
     ),
-    check('app_deployments_hosting_type_check', sql`${table.hostingType} = 'sandbox'`),
+    check('app_deployments_hosting_type_check', sql`${table.hostingType} IN ('sandbox', 'static')`),
     check(
       'app_deployments_actor_type_check',
       sql`${table.actorType} IN ('human', 'agent', 'service_account', 'system')`,
@@ -4280,6 +4338,74 @@ export const appDeployments = kortixSchema.table(
     uniqueIndex('app_deployments_app_version_unique').on(table.appId, table.version),
     index('app_deployments_queue_idx').on(table.status, table.nextAttemptAt, table.createdAt),
     index('app_deployments_app_idx').on(table.appId, table.createdAt),
+    index('app_deployments_provider_build_idx').on(table.providerBuildId),
+  ],
+);
+
+/**
+ * One provider image (template) that App deployment builds share. Its name is
+ * content-addressed (`apps/images.ts` `appImageName`), so deployments whose
+ * build inputs match reuse one image instead of minting a template each. The
+ * row exists from the first build attempt until the provider image is
+ * deleted. The deployments that use an image are the ones whose
+ * `provider_build_id` names it; usage is counted by query, never stored.
+ * `deleting`: a release is calling the provider delete; claims wait.
+ */
+export const appImages = kortixSchema.table(
+  'app_images',
+  {
+    imageName: text('image_name').primaryKey().notNull(),
+    provider: varchar('provider', { length: 32 }).notNull(),
+    status: varchar('status', { length: 16 }).default('building').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    readyAt: timestamp('ready_at', { withTimezone: true }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    /** The deployment that claimed the build. Only it builds while its lease is live. */
+    builderDeploymentId: uuid('builder_deployment_id'),
+  },
+  (table) => [check('app_images_status_check', sql`${table.status} IN ('building', 'ready', 'deleting')`)],
+);
+
+/**
+ * The files of a `static` App deployment: one row per path, naming the
+ * content-addressed blob that holds its bytes (`app_site_blobs`). The API
+ * serves a static App from these rows; no runtime exists. Rows go when the
+ * deployment is retired, which is what lets blob cleanup see an unused blob.
+ */
+export const appSiteFiles = kortixSchema.table(
+  'app_site_files',
+  {
+    deploymentId: uuid('deployment_id')
+      .notNull()
+      .references(() => appDeployments.deploymentId, { onDelete: 'cascade' }),
+    accountId: uuid('account_id').notNull(),
+    path: text('path').notNull(),
+    sha256: varchar('sha256', { length: 64 }).notNull(),
+    sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
+    contentType: text('content_type').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.deploymentId, table.path] }),
+    index('app_site_files_blob_idx').on(table.accountId, table.sha256),
+  ],
+);
+
+/**
+ * One stored blob of static App content, per account: the object
+ * `<account_id>/<sha256>` in the `app-sites` bucket. Identical files across an
+ * account's deployments share one blob.
+ */
+export const appSiteBlobs = kortixSchema.table(
+  'app_site_blobs',
+  {
+    accountId: uuid('account_id').notNull(),
+    sha256: varchar('sha256', { length: 64 }).notNull(),
+    sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.accountId, table.sha256] }),
+    index('app_site_blobs_created_idx').on(table.createdAt),
   ],
 );
 

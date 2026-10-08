@@ -120,6 +120,20 @@ describe('AppHostingProvider', () => {
     expect(appRuntimeStarts).toEqual(['box-1']);
   });
 
+  test('an always-on App is persistent on Platinum and keeps the provider backstop elsewhere', async () => {
+    const input = {
+      runtimeId: 'runtime-1', accountId: 'account-1', userId: 'user-1', name: 'app-hello-v1',
+      snapshotName: 'kortix-app-deployment-1', machine: { cpuCores: 1, memoryGb: 2, diskGb: 10 }, alwaysOn: true,
+    };
+    const { hosting, creates } = dependencies();
+    await hosting.createRuntime({ ...input, provider: 'platinum' });
+    await hosting.createRuntime({ ...input, provider: 'daytona' });
+    await hosting.createRuntime({ ...input, provider: 'e2b' });
+    await hosting.createRuntime({ ...input, provider: 'platinum', alwaysOn: false });
+    // Daytona would clamp 0 to a 1-minute stop; keep-alive renews the backstop instead.
+    expect(creates.map((create) => create.autoStopInterval)).toEqual([0, undefined, undefined, undefined]);
+  });
+
   test('restarts the App runtime daemon after provider start and cold wake', async () => {
     const { hosting, appRuntimeStarts } = dependencies();
 

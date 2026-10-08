@@ -20,7 +20,9 @@ import type { UiTranslator } from '@/i18n/translator';
 
 import type { ProjectTrigger } from '@kortix/sdk';
 
-export type TriggerKind = 'cron' | 'webhook';
+import { describeEventWhen } from './event-trigger-copy';
+
+export type TriggerKind = 'cron' | 'webhook' | 'event';
 
 /**
  * `ProjectTrigger['type']` on the wire also carries `'monitor'` — a separate
@@ -30,7 +32,7 @@ export type TriggerKind = 'cron' | 'webhook';
  * is safe to treat as {@link TriggerKind} anywhere downstream of that filter.
  */
 export function isTriggerKind(type: ProjectTrigger['type']): type is TriggerKind {
-  return type === 'cron' || type === 'webhook';
+  return type === 'cron' || type === 'webhook' || type === 'event';
 }
 
 /**
@@ -171,6 +173,7 @@ export function describeOneOff(iso: string): string {
  */
 export function describeWhen(trigger: ProjectTrigger): string {
   if (trigger.type === 'webhook') return 'When a request arrives';
+  if (trigger.type === 'event') return describeEventWhen(trigger.event);
   if (trigger.run_at) return describeOneOff(trigger.run_at);
   if (trigger.cron) return describeCadence(trigger.cron);
   return CUSTOM_TIMING_LABEL;
@@ -196,6 +199,7 @@ export function triggerName(trigger: ProjectTrigger): string {
   const named = trigger.name?.trim();
   if (named) return named;
   if (trigger.type === 'cron') return describeWhen(trigger);
+  if (trigger.type === 'event') return describeWhen(trigger);
   return 'Untitled webhook';
 }
 
@@ -377,6 +381,16 @@ export const KIND_COPY: Record<TriggerKind, KindCopy> = {
     emptyBody: 'Create one to let another app start an agent when something happens over there.',
     column: 'Security',
   },
+  event: {
+    title: 'App events',
+    description: 'Have an agent run when something happens in a connected app.',
+    noun: 'app event',
+    createLabel: 'New app event',
+    searchPlaceholder: 'Search app events',
+    emptyTitle: 'No app events yet',
+    emptyBody: 'Create one to have an agent run when a connected app reports something new.',
+    column: 'Status',
+  },
 };
 
 /**
@@ -387,13 +401,14 @@ export const KIND_COPY: Record<TriggerKind, KindCopy> = {
  */
 export const TRIGGERS_COPY = {
   title: 'Triggers',
-  description: 'Run an agent automatically — on a schedule, or when another app sends a signal.',
+  description:
+    'Start an agent on a schedule, when something happens in a connected app, or when a webhook is called.',
   noun: 'trigger',
   createLabel: 'New trigger',
   searchPlaceholder: 'Search triggers',
   emptyTitle: 'No triggers yet',
   emptyBody:
-    'Create one to have an agent run automatically — on a schedule, or when another app sends a signal.',
+    'Create one to start an agent on a schedule, when something happens in an app like Gmail or GitHub, or when a webhook is called.',
 } as const;
 
 export function localizedKindCopy(tI18nComplete: UiTranslator): Record<TriggerKind, KindCopy> {
