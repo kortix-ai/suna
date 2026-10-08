@@ -49,13 +49,14 @@
   "docs:host/architecture": "2026-09-05T14:37:02.000Z",
   "docs:host": "2026-10-06T19:26:13.000Z",
   "docs:index": "2026-10-04T21:48:06.000Z",
-  "docs:project/agents": "2026-10-02T11:51:41.000Z",
+  "docs:project/agents": "2026-10-08T02:09:09.000Z",
   "docs:project": "2026-10-08T07:06:35.000Z",
   "docs:project/legacy-toml": "2026-09-29T14:12:27.000Z",
-  "docs:project/manifest": "2026-10-01T00:21:54.000Z",
+  "docs:project/manifest": "2026-10-08T02:09:09.000Z",
   "docs:project/models": "2026-10-08T10:07:54.000Z",
   "docs:project/permissions": "2026-10-04T00:58:06.000Z",
   "docs:project/secrets": "2026-10-01T15:42:22.000Z",
+  "docs:project/tools": "2026-10-08T11:14:25.000Z",
   "docs:quickstart": "2026-09-05T14:37:02.000Z",
   "docs:sdk/apps": "2026-10-08T00:34:02.000Z",
   "docs:sdk/auth": "2026-10-06T17:40:09.000Z",
@@ -68,8 +69,8 @@
   "docs:sdk/sign-in": "2026-09-05T14:37:02.000Z",
   "docs:tui": "2026-09-30T13:13:23.000Z",
   "docs:work/change-requests": "2026-09-01T14:42:59.000Z",
-  "docs:work/harnesses": "2026-10-05T15:35:59.000Z",
+  "docs:work/harnesses": "2026-10-08T02:09:09.000Z",
   "docs:work": "2026-10-02T11:51:41.000Z",
-  "docs:work/runtime": "2026-10-07T14:43:06.000Z",
-  "docs:work/sessions": "2026-10-08T10:25:56.000Z"
+  "docs:work/runtime": "2026-10-08T02:09:09.000Z",
+  "docs:work/sessions": "2026-10-08T10:51:02.000Z"
 }
