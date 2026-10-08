@@ -5,12 +5,11 @@
  * sender heard nothing. Only AgentMail's HTTP API is stubbed.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
-import { accountMembers, chatEventDedup, projects } from '@kortix/db';
+import { accountMembers, chatEventDedup, connectorConnections, connectors, projects } from '@kortix/db';
 import { eq, like } from 'drizzle-orm';
 import { deleteAgentMailInstall, saveAgentMailInstall } from '../channels/install-store';
 import { dispatchAgentMailEvent } from '../channels/email/session';
 import type { AgentMailMessageReceivedEvent } from '../channels/email/types';
-import { reconcileChannelConnectors } from '../connectors/sync';
 import { db } from '../shared/db';
 import { insertIntoView } from './helpers/compat-views';
 import { removeSeeded, seedProject, type SeededProject } from './helpers/integration-fixtures';
@@ -52,7 +51,9 @@ async function expireThreadCreateClaims() {
 beforeAll(async () => {
   project = await seedProject('archived-email-reply');
   await insertIntoView(db, accountMembers, { userId: OWNER, accountId: project.account_id, accountRole: 'owner' });
-  // What POST /channels/email/connect stores, minus the AgentMail calls.
+  // What POST /channels/email/connect leaves behind, minus the AgentMail
+  // calls: the install, and the email connection the connector sync
+  // materializes from it.
   await saveAgentMailInstall({
     projectId: project.project_id,
     connectionSlug: 'kortix_email',
@@ -61,7 +62,18 @@ beforeAll(async () => {
     displayName: 'Inbox',
     apiKey: 'agentmail-project-key',
   });
-  await reconcileChannelConnectors(project.project_id);
+  const scope = { accountId: project.account_id, projectId: project.project_id };
+  const [connector] = await db
+    .insert(connectors)
+    .values({ ...scope, slug: 'kortix_email', name: 'Email', providerType: 'channel', config: { platform: 'email' } })
+    .returning({ connectorId: connectors.connectorId });
+  await db.insert(connectorConnections).values({
+    ...scope,
+    connectorId: connector!.connectorId,
+    label: 'Inbox',
+    isDefault: true,
+    metadata: { inbox_id: INBOX },
+  });
   // The workspace delete.
   await db.update(projects).set({ status: 'archived' }).where(eq(projects.projectId, project.project_id));
 
@@ -88,6 +100,8 @@ afterAll(async () => {
   if (!project) return;
   await db.delete(chatEventDedup).where(like(chatEventDedup.eventId, `%${INBOX}%`));
   await deleteAgentMailInstall(project.project_id, 'kortix_email');
+  await db.delete(connectorConnections).where(eq(connectorConnections.projectId, project.project_id));
+  await db.delete(connectors).where(eq(connectors.projectId, project.project_id));
   await removeSeeded([project]);
 });
 
