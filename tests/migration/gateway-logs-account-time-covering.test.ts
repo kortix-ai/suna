@@ -23,7 +23,7 @@ import { type Ports, computePorts, repoRoot, runMigrate, sh } from '../../script
 const dockerOk = sh(['docker', 'info']).ok;
 const CONTAINER = 'kortix-gateway-logs-account-covering-index-test';
 // Below 32768 for the reason given in worktree-migrate.test.ts.
-const PORT = Number(process.env.GATEWAY_LOGS_ACCOUNT_COVERING_INDEX_TEST_PORT || 5452);
+const PORT = Number(process.env.GATEWAY_LOGS_ACCOUNT_COVERING_INDEX_TEST_PORT || 5453);
 const ROOT = repoRoot();
 const ports: Ports = { ...computePorts(0), sbDb: PORT };
 const URL = `postgresql://postgres:postgres@127.0.0.1:${PORT}/postgres`;
