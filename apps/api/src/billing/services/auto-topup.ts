@@ -9,15 +9,14 @@ import { logger } from '../../lib/logger';
 import type Stripe from 'stripe';
 import { getStripe } from '../../shared/stripe';
 import { config } from '../../config';
-import { disableAutoTopupIfEnabled, getCreditAccount, updateCreditAccount } from '../repositories/credit-accounts';
-import { claimAutoTopupCharge } from '../repositories/auto-topup-claim';
+import { getCreditAccount, updateCreditAccount } from '../repositories/credit-accounts';
+import { claimAutoTopupCharge, disableAutoTopupIfEnabled } from '../repositories/auto-topup-claim';
 import { getCustomerByAccountId } from '../repositories/customers';
 import {
   type PaymentMethodResolution,
   paymentMethodIdOf,
   resolveUsablePaymentMethod,
 } from './auto-topup-payment-method';
-import { notifyAutoTopupDisabled } from './auto-topup-alert';
 import { autoTopupFailure, failureDisablesAutoTopup, HARD_DECLINE_CODES } from './auto-topup-failure';
 import { resolveAccountBilling } from './billing-cache';
 import { isDeadSubscriptionStatus } from './billing-state';
@@ -444,9 +443,13 @@ export async function handleFailedCharge(
       `${hardDecline ? 'hard decline' : `${nextFailures} consecutive failures`} (reason=${reason}). ` +
       `User must re-enable manually after fixing payment method.`,
     );
-    await notifyAutoTopupDisabled(accountId, reason).catch((err: unknown) =>
-      logger.warn('[AutoTopup] owner alert failed', { accountId, error: err instanceof Error ? err.message : String(err) }),
-    );
+    // Lazy: the alert reaches IAM, auth.users and the email transport, which
+    // the many unit tests that import this module never link.
+    await import('./auto-topup-alert')
+      .then(({ notifyAutoTopupDisabled }) => notifyAutoTopupDisabled(accountId, reason))
+      .catch((err: unknown) =>
+        logger.warn('[AutoTopup] owner alert failed', { accountId, error: err instanceof Error ? err.message : String(err) }),
+      );
   }
 }
 

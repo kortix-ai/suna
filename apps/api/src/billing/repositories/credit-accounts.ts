@@ -135,16 +135,6 @@ export async function updateCreditAccount(
     .where(eq(creditAccounts.accountId, accountId));
 }
 
-/** Turn auto top-up off. True only for the call that turned it off. */
-export async function disableAutoTopupIfEnabled(accountId: string): Promise<boolean> {
-  const rows = await db
-    .update(creditAccounts)
-    .set({ autoTopupEnabled: false, updatedAt: new Date().toISOString() })
-    .where(and(eq(creditAccounts.accountId, accountId), eq(creditAccounts.autoTopupEnabled, true)))
-    .returning({ accountId: creditAccounts.accountId });
-  return rows.length > 0;
-}
-
 const rotationColumns = {
   accountId: creditAccounts.accountId,
   tier: creditAccounts.tier,
