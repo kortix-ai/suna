@@ -65,7 +65,11 @@ import {
   claimDeletionRequest,
   releaseDeletionRequest,
 } from '../repositories/account-deletion';
-import { releaseProjectEventSubscriptions } from '../../projects/surface';
+import {
+  deleteManagedProjectRepo,
+  releaseProjectEventSubscriptions,
+  sessionAttachmentStore,
+} from '../../projects/surface';
 
 const GRACE_PERIOD_DAYS = 14;
 const ACTIVE_DELETION_REQUEST_EXISTS = 'An active deletion request already exists for this account';
@@ -139,6 +143,8 @@ export async function cancelAccountDeletion(accountId: string) {
  *
  *   1. `performDeletion`: sandboxes, Kortix Backends (machines and
  *      snapshots), Stripe cancel, wallet forfeit.
+ *   1b. `deleteAccountExternalStores`: parked boxes, session files and
+ *      Kortix-managed repos, while the rows that name them still exist.
  *   2. `deleteAccountData`: the account's rows. Data goes before the auth
  *      identity: a failure here must not sign a user out of an account whose
  *      data survived (the browser signs out only when the route answered
@@ -160,6 +166,7 @@ export async function cancelAccountDeletion(accountId: string) {
 async function runAccountDeletion(accountId: string, userId?: string, requestId?: string) {
   const requester = userId === accountId ? userId : undefined;
   await performDeletion(accountId, requester);
+  await deleteAccountExternalStores(accountId);
   await deleteAccountData(accountId, requestId);
   if (requester) {
     await clearLegacyAuthUserReferences(requester);
@@ -560,6 +567,66 @@ async function reclaimAccountSandboxes(accountIds: string[]): Promise<SandboxRec
     `[AccountDeletion] reclaim: accounts=${summary.accounts} boxes=${summary.boxes} stopped=${summary.stopped} removed=${summary.removed} sessions=${summary.sessionsSettled} errors=${summary.errors}`,
   );
   return summary;
+}
+
+/** Sandbox states the reclaim pass leaves alone: parked, but still on the provider's disk. */
+const PARKED_SANDBOX_STATUSES = ['stopped', 'archived'] as const;
+
+/**
+ * The account's data outside our database that the row delete cannot reach
+ * (KRTX-1734). A parked box keeps its disk at the provider (the reclaim pass
+ * takes only running boxes), a project's session files stay in object storage,
+ * and its Kortix-managed repo stays on the git host. Once the rows that name
+ * them are gone nothing can find them again, so this runs while the rows exist
+ * and throws on any failure: the request stays retryable instead of completed.
+ * A repo the user connected is never touched (`deleteManagedProjectRepo`).
+ */
+async function deleteAccountExternalStores(accountId: string): Promise<void> {
+  const parked = await db
+    .select({
+      sandboxId: sessionSandboxes.sandboxId,
+      provider: sessionSandboxes.provider,
+      externalId: sessionSandboxes.externalId,
+    })
+    .from(sessionSandboxes)
+    .where(
+      and(
+        eq(sessionSandboxes.accountId, accountId),
+        inArray(sessionSandboxes.status, [...PARKED_SANDBOX_STATUSES]),
+        isNotNull(sessionSandboxes.externalId),
+      ),
+    );
+  let failed = 0;
+  for (let i = 0; i < parked.length; i += STOP_CONCURRENCY) {
+    await Promise.all(
+      parked.slice(i, i + STOP_CONCURRENCY).map(async (row) => {
+        const provider = tryGetProvider(row.provider as string);
+        if (!provider) {
+          // Nothing on this deployment can remove it; retrying would block the
+          // deletion for ever.
+          logger.error(
+            `[AccountDeletion] No provider client for ${row.provider}; parked sandbox ${row.sandboxId} stays at the provider`,
+          );
+          return;
+        }
+        try {
+          await provider.remove(row.externalId as string);
+        } catch (err) {
+          if (isAlreadyNotRunning(err)) return;
+          failed++;
+          logger.error(`[AccountDeletion] Failed to remove parked sandbox ${row.sandboxId}:`, {
+            error: err instanceof Error ? err.message : err,
+          });
+        }
+      }),
+    );
+  }
+  if (failed > 0) throw new Error(`${failed} parked sandbox(es) of account ${accountId} could not be removed`);
+
+  for (const project of await db.select().from(projects).where(eq(projects.accountId, accountId))) {
+    await sessionAttachmentStore().removeProject(project.projectId);
+    await deleteManagedProjectRepo(project);
+  }
 }
 
 async function performDeletion(accountId: string, userId?: string) {
