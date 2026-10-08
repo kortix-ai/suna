@@ -1182,10 +1182,6 @@
           "name": "Harness Pi (nella sandbox)",
           "description": "Esegue le sessioni con l'harness Pi all'interno della sandbox della sessione invece di OpenCode. Disattivato, `runtime: pi` nel manifest seleziona comunque Pi."
         },
-        "config_releases": {
-          "name": "Release di configurazione",
-          "description": "Esegue le sessioni con la configurazione agente corrente del branch di base, servita in sola lettura, così un agente, skill o strumento unito raggiunge ogni sessione attiva. Disattivato, una sessione legge la propria cartella di configurazione nel workspace."
-        },
         "mcp": {
           "name": "Server MCP",
           "description": "Collega Claude, ChatGPT, Cursor, Codex o qualsiasi client MCP a questo progetto tramite OAuth. Il client accede a tuo nome e chiama Kortix con i tuoi permessi. Trovi l’URL in Connetti MCP, nel menu dello spazio di lavoro."
