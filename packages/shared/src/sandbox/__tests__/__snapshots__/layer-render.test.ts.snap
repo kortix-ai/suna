@@ -154,9 +154,9 @@ RUN sudo chown -R kortix:kortix /opt/kortix/warm-config
 RUN cd /opt/kortix/warm-config/.kortix/opencode \\
     && rm -rf node_modules \\
     && ln -s /opt/kortix/opencode-config-deps/node_modules node_modules \\
-    && bun build tools/*.ts --target=bun --outdir=/tmp/opencode-tools-bundle-check \\
-    && rm -rf /tmp/opencode-tools-bundle-check \\
-    && echo "opencode-config-deps: starter tool files bundle cleanly"
+    && bun build plugins/*.ts --target=bun --outdir=/tmp/opencode-plugins-bundle-check \\
+    && rm -rf /tmp/opencode-plugins-bundle-check \\
+    && echo "opencode-config-deps: starter plugin files bundle cleanly"
 
 COPY --chown=kortix:kortix kortix-opencode-warmup /tmp/kortix-opencode-warmup
 RUN bash /tmp/kortix-opencode-warmup instance wipe && rm -f /tmp/kortix-opencode-warmup
@@ -366,9 +366,9 @@ RUN sudo chown -R kortix:kortix /opt/kortix/warm-config
 RUN cd /opt/kortix/warm-config/.kortix/opencode \\
     && rm -rf node_modules \\
     && ln -s /opt/kortix/opencode-config-deps/node_modules node_modules \\
-    && bun build tools/*.ts --target=bun --outdir=/tmp/opencode-tools-bundle-check \\
-    && rm -rf /tmp/opencode-tools-bundle-check \\
-    && echo "opencode-config-deps: starter tool files bundle cleanly"
+    && bun build plugins/*.ts --target=bun --outdir=/tmp/opencode-plugins-bundle-check \\
+    && rm -rf /tmp/opencode-plugins-bundle-check \\
+    && echo "opencode-config-deps: starter plugin files bundle cleanly"
 
 COPY --chown=kortix:kortix kortix-opencode-warmup /tmp/kortix-opencode-warmup
 RUN bash /tmp/kortix-opencode-warmup instance targeted && rm -f /tmp/kortix-opencode-warmup

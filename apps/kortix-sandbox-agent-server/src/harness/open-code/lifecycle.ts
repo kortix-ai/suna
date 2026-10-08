@@ -124,6 +124,8 @@ import {
 import { configReleaseNoticePath } from '@/services/config-release/notice'
 import { bootLinkPath, readBootLinkTarget, releaseRootOf } from '@/services/config-release/boot-config'
 import { writeReleaseInstructionsPlugin } from './release-instructions'
+import { applyAgentToolAccess } from './tool-access'
+import { writeToolBridge } from './tool-bridge'
 import { opencodeTurnInFlight } from './opencode-turn-state'
 import { CONNECTORS_MCP_COMMAND } from '@kortix/api-contract/sandbox-layout'
 import { MINIMAL_FALLBACK_MODELS, BUNDLED_MANAGED_MODELS, type KortixGatewayModel } from '@kortix/api-contract/fallback-models'
@@ -398,6 +400,8 @@ export async function buildOpencodeConfigContent(
     configReleaseNoticePath?: string | null
     /** OpenCode serves a config release: load the release instructions plugin (release-instructions.ts). */
     servesRelease?: boolean
+    /** The hosted tools' bridge plugin (tool-bridge.ts), when one was written. */
+    toolBridgeSpec?: string | null
   } = {},
 ): Promise<string | undefined> {
   const connectorToken = env.KORTIX_TOKEN
@@ -510,6 +514,8 @@ export async function buildOpencodeConfigContent(
     }
   }
   const out: Record<string, unknown> = { ...base }
+  // The daemon's tool host reads the project's tools (tool-bridge.ts); OpenCode's schema has no such key.
+  delete out.project_tools
 
   // Instruction files the platform contributes. Appended, never clobbering
   // what the project's own config declares.
@@ -526,6 +532,12 @@ export async function buildOpencodeConfigContent(
   if (opts.servesRelease) {
     const plugins = Array.isArray(out.plugin) ? out.plugin.filter((item): item is string => typeof item === 'string') : []
     if (!plugins.includes(RELEASE_INSTRUCTIONS_PLUGIN_SPEC)) out.plugin = [...plugins, RELEASE_INSTRUCTIONS_PLUGIN_SPEC]
+  }
+
+  // The Kortix tools and the project's tools, run by the daemon (tool-bridge.ts).
+  if (opts.toolBridgeSpec) {
+    const plugins = Array.isArray(out.plugin) ? out.plugin.filter((item): item is string => typeof item === 'string') : []
+    if (!plugins.includes(opts.toolBridgeSpec)) out.plugin = [...plugins, opts.toolBridgeSpec]
   }
 
   // (5) Injected managed skills and the project root's skills — append to
@@ -683,6 +695,8 @@ export async function buildOpencodeConfigContent(
       }
     }
   }
+  // (8) Each agent's tool access (kortix.yaml `agents.<name>.tools`) last, so no rule above re-opens a removed tool.
+  applyAgentToolAccess(out)
 
   Object.assign(out, KORTIX_MANAGED_OPENCODE_OVERLAY)
   return JSON.stringify(out)
@@ -1034,6 +1048,7 @@ function scheduleCatalogWarmToPath(
 const KORTIX_OPENCODE_CONFIG_PATH = join(OPENCODE_HOME, '.config', 'kortix-opencode.json')
 const RELEASE_INSTRUCTIONS_PLUGIN_PATH = join(OPENCODE_HOME, '.config', 'kortix-release-instructions.js')
 const RELEASE_INSTRUCTIONS_PLUGIN_SPEC = `file://${RELEASE_INSTRUCTIONS_PLUGIN_PATH}`
+const TOOL_BRIDGE_PLUGIN_PATH = join(OPENCODE_HOME, '.config', 'kortix-tools.js')
 
 /**
  * Materialize the composed Kortix config (see buildOpencodeConfigContent) and
@@ -1054,15 +1069,26 @@ export async function writeKortixOpencodeConfig(
     secretCapabilitiesInstructionPath?: string | null
     configReleaseNoticePath?: string | null
     servesRelease?: boolean
+    /** Write the hosted tools' bridge plugin (tool-bridge.ts) for this daemon and checkout. */
+    toolBridge?: { daemonPort: number; projectRoot: string | null; configDir: string | null }
   } = {},
 ): Promise<string | null> {
   if (opts.servesRelease) writeReleaseInstructionsPlugin(RELEASE_INSTRUCTIONS_PLUGIN_PATH)
+  const toolBridgeSpec = opts.toolBridge
+    ? await writeToolBridge(TOOL_BRIDGE_PLUGIN_PATH, { env, ...opts.toolBridge }).catch((err) => {
+        logger.warn('[opencode] the hosted tools bridge was not written; the session runs without hosted tools', {
+          err: err instanceof Error ? err.message : String(err),
+        })
+        return null
+      })
+    : null
   const content = await buildOpencodeConfigContent(env, {
     injectedSkillsDir: opts.injectedSkillsDir,
     projectSkillsDir: opts.projectSkillsDir,
     secretCapabilitiesInstructionPath: opts.secretCapabilitiesInstructionPath,
     configReleaseNoticePath: opts.configReleaseNoticePath,
     servesRelease: opts.servesRelease,
+    toolBridgeSpec,
   })
   if (!content) return null
   const configPath = opts.configPath ?? KORTIX_OPENCODE_CONFIG_PATH
@@ -2125,6 +2151,7 @@ export function createOpencodeLifecycle(
       servesRelease: !!served && releaseRootOf(served) !== null,
       secretCapabilitiesInstructionPath,
       configReleaseNoticePath: configReleaseNoticePath(),
+      toolBridge: { daemonPort: currentCfg.servicePort, projectRoot: servesProject ? projectRoot : null, configDir: served },
     })
   }
 
