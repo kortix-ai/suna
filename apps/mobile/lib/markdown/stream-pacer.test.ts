@@ -1,12 +1,11 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, mock, test } from 'bun:test';
 
-import {
-  STREAM_COMMIT_MS,
-  STREAM_FADE_MS,
-  createStreamPacer,
-  revealCut,
-  type PacerClock,
-} from './streaming-cadence';
+mock.module('react-native', () => ({ AppState: { currentState: 'active' } }));
+
+import type { PacerClock } from './stream-pacer';
+
+// After the mock: the real react-native is Flow source bun cannot load.
+const { STREAM_COMMIT_MS, STREAM_FADE_MS, createStreamPacer, holdBackTableHeader, revealCut } = await import('./stream-pacer');
 
 /** A manual 60 Hz frame clock, so every reveal is asserted exactly. */
 function fakeClock() {
@@ -242,5 +241,29 @@ describe('createStreamPacer', () => {
     p.pacer.push(`${words(50)} `, true);
     p.pacer.dispose();
     expect(p.pending()).toBe(0);
+  });
+});
+
+describe('holdBackTableHeader', () => {
+  test('holds back a header row until its separator arrives', () => {
+    expect(holdBackTableHeader('Intro\n\n| Name | Age |')).toBe('Intro\n');
+    expect(holdBackTableHeader('Intro\n\n| Name | Age |\n')).toBe('Intro\n');
+    expect(holdBackTableHeader('Intro\n\n| Name')).toBe('Intro\n');
+  });
+
+  test('holds back a header and a half-written separator', () => {
+    expect(holdBackTableHeader('Intro\n\n| Name | Age |\n|---')).toBe('Intro\n');
+    expect(holdBackTableHeader('Intro\n\n| Name | Age |\n| --- |')).toBe('Intro\n');
+  });
+
+  test('shows the table once the separator is complete', () => {
+    const text = 'Intro\n\n| Name | Age |\n| --- | --- |';
+    expect(holdBackTableHeader(text)).toBe(text);
+  });
+
+  test('leaves body rows and plain text alone', () => {
+    const rows = 'Intro\n\n| Name | Age |\n|---|---|\n| Ada | 36';
+    expect(holdBackTableHeader(rows)).toBe(rows);
+    expect(holdBackTableHeader('no table here')).toBe('no table here');
   });
 });
