@@ -174,7 +174,7 @@ describe('toolAccessRules', () => {
 })
 
 describe('the composed OpenCode config', () => {
-  test('drops kortix_tools: OpenCode refuses a config with a key its schema does not have', async () => {
+  test("drops kortix_tools and project_tools: OpenCode's config schema has neither key", async () => {
     const env: NodeJS.ProcessEnv = { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { open: {} }, kortix_tools: ['memory'], project_tools: { x: 'tools/x.ts' } }) }
     const config = JSON.parse((await buildOpencodeConfigContent(env, {}))!)
     expect(Object.keys(config)).not.toContain('kortix_tools')

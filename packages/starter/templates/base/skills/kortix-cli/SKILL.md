@@ -47,6 +47,8 @@ kortix sessions status                          # every agent on the project + w
 kortix sessions new --json --wait --prompt "…"  # spawn a subagent, get a ready session id
 kortix connectors call <connector> <action> '…' # run a configured connector action (server-side)
 kortix apps deploy . --slug <slug>               # deploy and block until the stable URL is ready
+kortix tools ls                                 # the tools a session gets (kortix.yaml tools:), and removed Kortix tools
+kortix tools eject <name>                       # copy a Kortix tool to tools/<name>.ts to change it
 kortix cr open --title "…"                       # propose landing your branch on main (the user merges)
 ```
 
