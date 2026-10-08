@@ -71,6 +71,7 @@ import {
 } from './turn/working-turn';
 
 import { ChangeRequestDetailDialog } from '@/features/project-files/components/change-request-detail-dialog';
+import { warmHighlighter } from '@/components/markdown/code/shiki-highlighter';
 import { ProjectFilesProvider } from '@/features/project-files/context';
 import { useOptionalSessionPanel } from '@/features/session/action-panel/session-panel-provider';
 import {
@@ -1419,6 +1420,10 @@ export function SessionChat({
   useEffect(() => {
     prevMsgLenRef.current = messages?.length || 0;
   }, [messages?.length]);
+
+  // Compile the code highlighter while the session sits idle, so its one-time
+  // ~125 ms setup never freezes a streaming reply (see `warmHighlighter`).
+  useEffect(() => warmHighlighter(), []);
 
   // ---- Auto-scroll: see use-auto-scroll.ts (room + end + follow) ----
   const messageCount = messages?.length ?? 0;

@@ -1,8 +1,14 @@
-'use client';
-
 import { useEffect, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 
 /**
+ * Mobile copy of apps/web/src/features/session/turn/streaming-cadence.ts.
+ * Same algorithm and the same tests; keep the two in step. Differences, all
+ * for native: renders at ~20 Hz instead of ~30 (each render re-parses the
+ * tail block through markdown-it and rebuilds its native views), no wait for
+ * a per-word fade at the end (native text spans cannot fade), and a
+ * backgrounded app counts as a hidden tab.
+ *
  * Streamed text reaches the client in network chunks of any size and at any
  * spacing: one token every 16 ms, or a paragraph after a 300 ms stall.
  * Painting each chunk as it lands is what made a reply arrive in lumps.
@@ -29,19 +35,14 @@ export const STREAM_MIN_CPS = 30;
 /** After the stream ends the rest drains at this time constant, so the end is not held back. */
 export const STREAM_END_LAG_MS = 120;
 /**
- * Minimum gap between two renders of the streaming message (~30 a second).
- * Each render re-splits the message into blocks and re-parses the tail block;
- * at 60 a second that is the main-thread cost of a stream, and the per-word
- * fade already hides the step between two renders.
+ * Minimum gap between two renders of the streaming message (~20 a second).
+ * Each render re-splits the message (incrementally, `split-blocks.ts`) and
+ * re-parses the tail block into native views: the JS-thread cost of a stream
+ * on a low-end Android phone. Word steps 48 ms apart still read as typing.
  */
-export const STREAM_COMMIT_MS = 32;
-/**
- * The per-word fade (`.kx-stream-word` in globals.css, 300 ms) plus the
- * widest stagger delay (`STREAM_STAGGER_WINDOW_MS`). The message stays in
- * its streaming render this long after the last word lands, so that word
- * finishes its fade instead of snapping to full opacity.
- */
-export const STREAM_FADE_MS = 300 + 40; // the fade + its widest stagger delay
+export const STREAM_COMMIT_MS = 48;
+/** Mobile has no per-word fade (see the header), so the end settles as soon as the text is complete. */
+export const STREAM_FADE_MS = 0;
 /**
  * A segment that mounts while streaming with at most this much text is typed
  * from the start: it is the first delta batch of a new answer. More than this
@@ -98,7 +99,7 @@ export interface PacerClock {
   now: () => number;
   requestFrame: (fn: () => void) => unknown;
   cancelFrame: (id: never) => void;
-  /** A hidden tab runs no frames: the pacer shows the text at once there. */
+  /** No frames run (a backgrounded app): the pacer shows the text at once. */
   hidden: () => boolean;
 }
 
@@ -106,7 +107,8 @@ const defaultClock: PacerClock = {
   now: () => performance.now(),
   requestFrame: (fn) => requestAnimationFrame(fn),
   cancelFrame: (id) => cancelAnimationFrame(id),
-  hidden: () => typeof document !== 'undefined' && document.hidden,
+  // A backgrounded app runs no frames; its text shows at once on return.
+  hidden: () => AppState.currentState === 'background',
 };
 
 /**
@@ -270,4 +272,30 @@ export function useStreamingCadence(
 
   const text = value.startsWith(state.text) ? state.text : value;
   return { text, streaming: active || state.streaming || text !== value };
+}
+
+/**
+ * A table is plain text until its separator row (`|---|`) arrives: a header
+ * row on its own renders as a paragraph of pipes, then jumps into a table.
+ * While streaming, a trailing header row (and a half-written separator) is
+ * held back until the separator is complete, so the table appears as a table.
+ */
+export function holdBackTableHeader(text: string): string {
+  if (!text.includes('|')) return text;
+  const lines = text.split('\n');
+  let end = lines.length;
+  if (lines[end - 1]?.trim() === '') end--;
+  const isRow = (line: string | undefined) => line?.trimStart().startsWith('|') ?? false;
+  const last = lines[end - 1];
+  if (!isRow(last)) return text;
+  // `| a | b |` with no table line above it: a header still waiting for its separator.
+  if (!isRow(lines[end - 2])) return lines.slice(0, end - 1).join('\n');
+  // A separator still being written under a header that starts the table.
+  const cells = (line: string) => line.trim().replace(/^\||\|$/g, '').split('|').length;
+  const header = lines[end - 2];
+  const separatorDone = last.trim().endsWith('|') && cells(last) >= cells(header);
+  if (/^\s*\|[\s|:-]*$/.test(last) && !isRow(lines[end - 3]) && !separatorDone) {
+    return lines.slice(0, end - 2).join('\n');
+  }
+  return text;
 }
