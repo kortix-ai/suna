@@ -1,5 +1,5 @@
 {
-  "source_hash": "54604ddc23a4f98665f0dd876b2437032fd6c365c32ecd2be9f3510bed936c14",
+  "source_hash": "4971b2ea5184221336f79a2eb439f11a583cd351cabce92fb166999ea2d7a91e",
   "diff_files": [
     "apps/api/scripts/e2e-cli/command-matrix.ts",
     "apps/api/scripts/e2e-cli/harness.ts",
@@ -72,13 +72,13 @@
     "tests/spec/end-to-end.md",
     "tests/src/flows/connectors.flow.ts"
   ],
-  "diff_hash": "721fb43f91a17f9c2201583b6226afa7d25cf4215d54076381f9a986b2df3746",
-  "head": "9f72f78b0daa5b3b2de64bfe0075b5afe61f03e0",
+  "diff_hash": "4493fdefd2175e690f81ce88c90e282c06185ca8af563a853050f7934227d929",
+  "head": "8d4a3f21c2ab9af2e549c6fdea0c9be75461358f",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-08T13:34:01.177Z"
+  "at": "2026-10-08T13:45:09.048Z"
 }
