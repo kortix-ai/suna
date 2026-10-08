@@ -7,7 +7,6 @@ import {
   bootConfigRoot,
   configDirFiles,
   deactivateBootConfig,
-  materializeRelease,
   pruneBootConfigs,
   quarantineRelease,
   readBootConfigPointer,
@@ -15,11 +14,9 @@ import {
   releaseDir,
   verifyRelease,
   verifyReleaseDetail,
-  writeReleaseManifest,
 } from '@/services/config-release/boot-config'
 import {
   configReleaseApiFrom,
-  downloadConfigArchive,
   fetchConfigReleaseDescriptor,
   isFeatureDisabledError,
   type ConfigReleaseApi,
@@ -33,6 +30,7 @@ import {
   manifestFromDescriptor,
 } from '@/services/config-release/release'
 import { clearConfigReleaseNotice, writeConfigReleaseNotice } from '@/services/config-release/notice'
+import { obtainRelease } from '@/services/config-release/obtain'
 import { MAX_SWAP_DELAY_MS } from '../contract/control'
 import { sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
 import { logger } from '@/lib/log/logger'
@@ -505,13 +503,9 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
   }
   const releaseId = effectiveReleaseId(descriptor)
   setRunningConfig({ desired_release_id: releaseId })
-  // No release: a config dir over the 4 MiB limit (a tree without an
-  // archive), a governance compile failure, or nothing to run at all. The
-  // running config stays.
-  const noRelease =
-    releaseId === null ||
-    (descriptor.mode === 'follow-base' && descriptor.archive === null && descriptor.config_tree_id !== null)
-  if (noRelease || releaseId === null) {
+  // No release: a v2 tree over the API's archive cap, a governance compile
+  // failure, or nothing to run at all. The running config stays.
+  if (releaseId === null) {
     return respond(descriptor.reason ? 'failed' : 'unchanged', null, descriptor.reason)
   }
 
@@ -574,7 +568,7 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
 
   // Governance only: no repository access, or no config dir on the base branch.
   // The image default config dir runs with the compiled governance.
-  if (descriptor.archive === null) {
+  if (descriptor.files === null) {
     const dir = cfg.defaultOpencodeConfigDir
     if (running.release_id === releaseId && running.source === 'image-default' && (await servingConfigDir(root)) === dir) {
       noteDesiredReleaseMet()
@@ -647,23 +641,21 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
     await new Promise((resolve) => setTimeout(resolve, injectedDelay))
   }
 
-  // 5–6. Download, extract, verify, prepare, seal, rename. An intact copy
-  //      from an earlier attempt is reused without a download.
+  // 5–6. Obtain, verify, prepare, seal, rename: an intact copy from an earlier
+  //      attempt, the checkout when it is at the release's commit, the project
+  //      snapshot, or the archive (obtain.ts).
   try {
-    if (existsSync(dir) && (await verifies())) {
-      await writeReleaseManifest(root, manifest)
-    } else {
-      const archive = await downloadConfigArchive(api, manifest.archive_url, { expectedBytes: manifest.archive_bytes })
-      await materializeRelease({
-        root,
-        manifest,
-        archive,
-        managedSkillsDir: deps.managedSkillsDir,
-        prepare: deps.prepare
-          ? (staged) => deps.prepare!(manifest.config_dir ? join(staged, manifest.config_dir) : staged)
-          : (staged) => prepareRelease(staged, manifest.config_dir, deps.managedSkillsDir),
-      })
-    }
+    await obtainRelease({
+      root,
+      manifest,
+      snapshot: descriptor.snapshot,
+      api,
+      workspace: cfg.projectTarget,
+      managedSkillsDir: deps.managedSkillsDir,
+      prepare: deps.prepare
+        ? (staged) => deps.prepare!(manifest.config_dir ? join(staged, manifest.config_dir) : staged)
+        : (staged) => prepareRelease(staged, manifest.config_dir, deps.managedSkillsDir),
+    })
   } catch (err) {
     // The archive route gates on the feature flag too, and it can be turned
     // off between the two calls.
