@@ -1,12 +1,14 @@
 /** The app events a project connector can trigger on, from its provider's catalog. */
-import { connectors } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import { connectorConnections, connectors } from '@kortix/db';
+import { and, eq, inArray } from 'drizzle-orm';
+import { defaultConnectionIdForConnector } from '../../connectors/credentials';
 import { logger } from '../../lib/logger';
+import { loadConnectionAudience } from '../lib/connection-audience';
 import { db } from '../../shared/db';
 import { eventConfigProblem } from './config-validation';
 import { connectorInfo } from './deliver';
 import { allEventSources, eventSourceFor } from './registry';
-import { resolveSource } from './subscriptions';
+import { connectionIdentity, resolveSource } from './subscriptions';
 import type { EventApp, EventTypeInfo } from './types';
 
 /** Provider event catalogs change rarely and cost several provider calls. */
@@ -64,11 +66,64 @@ export interface EventAppEntry {
   connector: string | null;
   /** The project has an active account shared with the whole project: the one an event trigger runs on. */
   connected: boolean;
+  /** Every connector (profile) of this app with its shared accounts. */
+  connectors: EventAppConnector[];
+}
+
+export interface EventAppConnector {
+  slug: string;
+  name: string;
+  accounts: { label: string; connectedAs: string | null; isDefault: boolean; connected: boolean }[];
+}
+
+/** Each connector's SHARED accounts: project-owned, active, open to the whole project. Only these can feed an event trigger. */
+async function loadSharedAccounts(
+  projectId: string,
+  accountId: string,
+  rows: { connectorId: string; slug: string; name: string | null; config: unknown; provider: string }[],
+  provider: { connectionReady?: (c: { connectionId: string; connectorSlug: string; app: string; metadata: Record<string, unknown> }) => boolean },
+  app: string,
+): Promise<EventAppConnector[]> {
+  if (rows.length === 0) return [];
+  const accounts = await db
+    .select({
+      connectorId: connectorConnections.connectorId,
+      connectionId: connectorConnections.connectionId,
+      label: connectorConnections.label,
+      metadata: connectorConnections.metadata,
+    })
+    .from(connectorConnections)
+    .where(and(
+      inArray(connectorConnections.connectorId, rows.map((r) => r.connectorId)),
+      eq(connectorConnections.ownerType, 'project'),
+      eq(connectorConnections.status, 'active'),
+    ))
+    .orderBy(connectorConnections.createdAt);
+  const audience = await loadConnectionAudience({ projectId, accountId, userId: null });
+  const out: EventAppConnector[] = [];
+  for (const row of rows) {
+    const defaultId = await defaultConnectionIdForConnector(row.connectorId);
+    out.push({
+      slug: row.slug,
+      name: row.name?.trim() || app,
+      accounts: accounts
+        .filter((a) => a.connectorId === row.connectorId && audience(a.connectionId) === 'open')
+        .map((a) => ({
+          label: a.label,
+          connectedAs: connectionIdentity(a) === a.label ? null : connectionIdentity(a),
+          isDefault: a.connectionId === defaultId,
+          connected: provider.connectionReady
+            ? provider.connectionReady({ connectionId: a.connectionId, connectorSlug: row.slug, app, metadata: a.metadata })
+            : true,
+        })),
+    });
+  }
+  return out;
 }
 
 export async function listEventApps(projectId: string, accountId: string): Promise<EventAppEntry[]> {
   const rows = await db
-    .select({ slug: connectors.slug, provider: connectors.providerType, config: connectors.config })
+    .select({ connectorId: connectors.connectorId, slug: connectors.slug, name: connectors.name, provider: connectors.providerType, config: connectors.config })
     .from(connectors)
     .where(eq(connectors.projectId, projectId));
   const out: EventAppEntry[] = [];
@@ -88,7 +143,14 @@ export async function listEventApps(projectId: string, accountId: string): Promi
       const row = rows.find((r) => r.provider === provider.id && (r.config as Record<string, unknown> | null)?.app === item.app);
       const resolved = row ? await resolveSource(projectId, accountId, { connector: row.slug, type: '', config: {} }) : null;
       const connected = resolved?.kind === 'ok';
-      out.push({ provider: provider.id, ...item, connector: row?.slug ?? null, connected });
+      const profiles = rows.filter((r) => r.provider === provider.id && (r.config as Record<string, unknown> | null)?.app === item.app);
+      out.push({
+        provider: provider.id,
+        ...item,
+        connector: row?.slug ?? null,
+        connected,
+        connectors: await loadSharedAccounts(projectId, accountId, profiles, provider, item.app),
+      });
     }
   }
   return out;

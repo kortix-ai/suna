@@ -50,6 +50,8 @@ const EVENT_REJECTED_FLAGS: ReadonlyArray<[string, string]> = [
 /** Flags that only mean something on a `--type event` add. */
 const EVENT_ONLY_FLAGS: ReadonlyArray<[string, string]> = [
   ['--connector', 'connector'],
+  ['--account', 'account'],
+  ['--default-account', 'defaultAccount'],
   ['--event', 'event'],
   ['--config / --config-json', 'eventConfig'],
 ];
@@ -87,6 +89,7 @@ export function collectEventConfig(
 
 interface EventFields {
   connector: string;
+  account?: string;
   event: string;
   config: Record<string, unknown>;
 }
@@ -109,8 +112,12 @@ export function parseEventFlags(
       error: 'event triggers need --event <TYPE> (list them: `kortix triggers events --connector <slug>`).',
     };
   }
+  if (tf.defaultAccount !== undefined) {
+    return { error: '--default-account only applies to `kortix triggers set`. On add, omit --account.' };
+  }
+  const account = (tf.account ?? '').trim();
   const config = tf.eventConfig ? (JSON.parse(tf.eventConfig) as Record<string, unknown>) : {};
-  return { connector, event, config };
+  return { connector, ...(account ? { account } : {}), event, config };
 }
 
 /** Event flags on a non-event trigger are a hard error — the platform would never read them. */
@@ -289,6 +296,7 @@ export async function triggersAddLocal(
       }
     } else if (type === 'event' && event) {
       fields.connector = event.connector;
+      if (event.account) fields.account = event.account;
       fields.event = event.event;
       if (Object.keys(event.config).length > 0) fields.config = event.config;
     } else if (tf.secretEnv) {

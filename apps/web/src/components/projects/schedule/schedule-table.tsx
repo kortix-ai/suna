@@ -55,7 +55,7 @@ import {
   WebhooksLogoIcon,
 } from '@phosphor-icons/react';
 
-import { describeEventStatus } from './event-trigger-copy';
+import { describeEventSource, describeEventStatus } from './event-trigger-copy';
 import {
   describeLastRun,
   describeSecurity,
@@ -217,6 +217,11 @@ function ScheduleTableRow({
               {name}
             </button>
             <span className="text-muted-foreground block truncate text-xs sm:hidden">{when}</span>
+            {kind === 'event' && trigger.event ? (
+              <span className="text-muted-foreground block truncate text-xs sm:hidden">
+                {describeEventSource(trigger.event)}
+              </span>
+            ) : null}
             {failed ? (
               <span className="text-muted-foreground hidden text-xs sm:block">
                 {tTriggers('runFailed.label')}
@@ -233,6 +238,11 @@ function ScheduleTableRow({
       <TableCell className="hidden max-w-[14rem] align-middle sm:table-cell">
         <div className="min-w-0 space-y-1">
           <p className="text-foreground truncate text-sm">{when}</p>
+          {kind === 'event' && trigger.event ? (
+            <p className="text-muted-foreground truncate text-xs">
+              {describeEventSource(trigger.event)}
+            </p>
+          ) : null}
           {kind === 'cron' && !trigger.run_at ? (
             <p className="text-muted-foreground truncate text-xs">{trigger.timezone}</p>
           ) : kind === 'webhook' ? (
