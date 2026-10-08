@@ -4,7 +4,6 @@
 #
 # Input (environment):
 #   AWS_ENV_KEYS    one key per line: NAME | NAME=blob:KEY, optional trailing `?`
-#   AWS_ENV_REGION  Secrets Manager region
 #   AWS_ENV_ROLE    role to assume via GitHub OIDC; empty = use the job's own
 #                   credentials
 #   GITHUB_ENV      file the runner reads exported variables from
@@ -15,8 +14,20 @@
 set -euo pipefail
 
 DEFAULT_BLOB="kortix-ci-env"
-: "${AWS_ENV_REGION:=us-west-2}"
 : "${GITHUB_ENV:?GITHUB_ENV is not set}"
+
+# The region each blob lives in. A blob moves region here, in one row, not in
+# every workflow that reads it. A blob without a row fails before any read.
+# The us-west-2 copies of kortix-dev-env, kortix-staging-env and the web blobs
+# are stale since the 2026-10-06 switch and have no row.
+blob_region() {
+  case "$1" in
+    kortix-ci-env | kortix-preview-env | kortix-prod-env) echo us-west-2 ;;
+    kortix-dev-env | kortix-dev-use2-web-env) echo us-east-2 ;;
+    kortix-staging-env | kortix-staging-euw2-web-env) echo eu-west-2 ;;
+    *) return 1 ;;
+  esac
+}
 
 # Workflow-command data unescapes %25, so a literal % must be sent as %25.
 mask() { printf '::add-mask::%s\n' "$(printf '%s' "$1" | sed 's/%/%25/g')"; }
@@ -37,7 +48,7 @@ if [ -n "${AWS_ENV_ROLE:-}" ]; then
   fi
   mask "$oidc"
   creds="$(env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN -u AWS_PROFILE \
-    aws sts assume-role-with-web-identity --region "$AWS_ENV_REGION" \
+    aws sts assume-role-with-web-identity --region us-east-1 \
     --role-arn "$AWS_ENV_ROLE" --role-session-name "gha-aws-env-${GITHUB_RUN_ID:-local}" \
     --web-identity-token "$oidc" --duration-seconds 900 \
     --query Credentials --output json)"
@@ -88,6 +99,10 @@ while IFS= read -r raw || [ -n "$raw" ]; do
     echo "::error::aws-env: '$raw' must be NAME or NAME=blob:KEY"
     exit 1
   fi
+  if ! blob_region "$blob" >/dev/null; then
+    echo "::error::aws-env: no region for blob '$blob'. Add a row to blob_region in .github/actions/aws-env/fetch.sh."
+    exit 1
+  fi
   printf '%s\t%s\t%s\t%s\n' "$name" "$blob" "$key" "$optional" >>"$specs"
 done <<<"${AWS_ENV_KEYS:-}"
 
@@ -101,9 +116,10 @@ blob_file() { printf '%s/blob-%s.json' "$work" "$(printf '%s' "$1" | tr -c 'A-Za
 cut -f2 "$specs" | sort -u >"$work/blobs"
 while IFS= read -r blob; do
   file="$(blob_file "$blob")"
-  if ! aws secretsmanager get-secret-value --region "$AWS_ENV_REGION" \
+  region="$(blob_region "$blob")"
+  if ! aws secretsmanager get-secret-value --region "$region" \
       --secret-id "$blob" --query SecretString --output text </dev/null >"$file" 2>"$work/err"; then
-    echo "::error::aws-env: cannot read Secrets Manager blob '$blob' in $AWS_ENV_REGION: $(head -c 400 "$work/err")"
+    echo "::error::aws-env: cannot read Secrets Manager blob '$blob' in $region: $(head -c 400 "$work/err")"
     exit 1
   fi
   if ! jq -e 'type == "object"' "$file" >/dev/null 2>&1; then
