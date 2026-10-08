@@ -1022,7 +1022,7 @@ To clear it:
 | --- | --- |
 | `kortix self-host init` | Create or refresh the self-host config. Does not start the stack. |
 | `kortix self-host configure` | Interactive wizard for connections and update policy. |
-| `kortix self-host doctor` | Validate Docker tooling and the rendered config. |
+| `kortix self-host doctor` | Validate Docker tooling and the rendered config. On an instance the internet can reach, it fails while anyone can sign up without confirming an email (`open-sign-up`). |
 | `kortix self-host plan` | Validate the rendered Compose config; change nothing. |
 | `kortix self-host start` | Create config if needed, then start the stack. Aliases: `up`, `deploy`. |
 | `kortix self-host update [--tag <v>\|--channel stable\|latest]` | Pull images for the configured channel or tag and recreate the stack. Alias: `upgrade`/`reconcile`. |
