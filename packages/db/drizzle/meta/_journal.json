@@ -915,6 +915,13 @@
     {
       "idx": 130,
       "version": "7",
+      "when": 1791420042044,
+      "tag": "20261008004042_trigger_event_subscriptions",
+      "breakpoints": true
+    },
+    {
+      "idx": 131,
+      "version": "7",
       "when": 1791418941565,
       "tag": "20261008002221_feedback",
       "breakpoints": true

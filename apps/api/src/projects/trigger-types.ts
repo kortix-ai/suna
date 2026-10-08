@@ -1,9 +1,19 @@
 import type { ManifestFormat, ResolvedManifest } from '@kortix/manifest-schema';
 
-export type GitTriggerType = 'cron' | 'webhook' | 'monitor';
+export type GitTriggerType = 'cron' | 'webhook' | 'monitor' | 'event';
 
 /** For type=monitor only — how the platform runs `run`. */
 export type GitMonitorMode = 'poll' | 'stream';
+
+/** For type=event only — which app event on which connector fires the trigger. */
+export interface GitTriggerEventFields {
+  /** Slug of a connector declared under `connectors:`. */
+  connector: string;
+  /** Provider event type id (e.g. `GITHUB_PULL_REQUEST_EVENT`). */
+  type: string;
+  /** Provider event config; the provider validates it at subscribe time. */
+  config: Record<string, unknown>;
+}
 
 export interface GitTriggerSpec {
   /** URL-safe slug — unique per project. */
@@ -66,6 +76,8 @@ export interface GitTriggerSpec {
    * silently. Null when the monitor declares no expectation.
    */
   expectEventWithinSeconds: number | null;
+  /** For type=event only. Absent (or null) for every other type — parsed non-event specs omit it so existing spec shapes are unchanged. */
+  event?: GitTriggerEventFields | null;
   /**
    * Session reuse policy.
    * - `'fresh'` (default): every fire mints a brand-new session (new sandbox +

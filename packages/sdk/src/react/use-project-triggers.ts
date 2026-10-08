@@ -5,8 +5,12 @@ import {
   createProjectTrigger,
   deleteProjectTrigger,
   fireProjectTrigger,
+  listProjectTriggerEventApps,
+  listProjectTriggerEventTypes,
   listProjectTriggers,
   updateProjectTrigger,
+  type ProjectTriggerEventApps,
+  type ProjectTriggerEventTypes,
   type ProjectTriggerListing,
 } from '../core/rest/projects-client';
 import { contract } from './query-contracts';
@@ -63,4 +67,35 @@ export function useProjectTriggers(projectId: string | null | undefined) {
   });
 
   return { ...query, create, update, remove, fire };
+}
+
+export const projectTriggerEventTypesKey = (
+  projectId: string | null | undefined,
+  connector: string | null | undefined,
+) => qk.project.triggerEventTypes(projectId ?? '', connector ?? '');
+
+/** App events a connector can trigger on. Idle until a connector is chosen. */
+export function useProjectTriggerEventTypes(
+  projectId: string | null | undefined,
+  connector: string | null | undefined,
+) {
+  return useQuery<ProjectTriggerEventTypes>({
+    queryKey: projectTriggerEventTypesKey(projectId, connector),
+    queryFn: () => listProjectTriggerEventTypes(projectId as string, { connector: connector as string }),
+    enabled: !!projectId && !!connector,
+    ...contract('config'),
+  });
+}
+
+export const projectTriggerEventAppsKey = (projectId: string | null | undefined) =>
+  qk.project.triggerEventApps(projectId ?? '');
+
+/** Apps that can trigger events, with this project's connector and connection state. */
+export function useProjectTriggerEventApps(projectId: string | null | undefined) {
+  return useQuery<ProjectTriggerEventApps>({
+    queryKey: projectTriggerEventAppsKey(projectId),
+    queryFn: () => listProjectTriggerEventApps(projectId as string),
+    enabled: !!projectId,
+    ...contract('config'),
+  });
 }
