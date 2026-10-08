@@ -7,7 +7,7 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { accounts } from '@kortix/db';
 import { db } from '../../shared/db';
 import { accountMemberMfaRows, accountMfaEnrolledMemberRow, accountSuperAdminRow } from '../../iam/membership-read';
@@ -33,7 +33,6 @@ export function registerIamMfaRoutes(): void {
       },
     }),
     async (c: any) => {
-    const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_READ);
 
@@ -66,7 +65,6 @@ export function registerIamMfaRoutes(): void {
       },
     }),
     async (c: any) => {
-    const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_READ);
 
@@ -134,7 +132,6 @@ export function registerIamMfaRoutes(): void {
       },
     }),
     async (c: any) => {
-    const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     // Gate on account.write — same level as renaming the account or
     // flipping strict mode. Avoids inventing a new role action.

@@ -13,7 +13,7 @@
  * database mock so that suite keeps needing no harness.
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { projectSessions, sessionSandboxes } from '@kortix/db';
+import { projectSessions } from '@kortix/db';
 import * as realComputeMetering from '../billing/services/compute-metering';
 import * as realSentry from '../lib/sentry';
 import * as realProviders from '../platform/providers';

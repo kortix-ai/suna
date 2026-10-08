@@ -42,7 +42,7 @@ import { manifestPiPackages, manifestRuntime, resolveCompiledAgentConfigForSessi
 
 
 
-import { RESERVED_SANDBOX_ENV_NAMES, isReservedSandboxEnvName } from './sandbox-env-names';
+import { isReservedSandboxEnvName } from './sandbox-env-names';
 import { deriveKortixApiRoot, proxyGitUrl } from './serializers';
 
 export { proxyGitUrl };
@@ -65,8 +65,6 @@ import { buildPlatformMetaOpenCodeConfig } from './platform-meta-agent';
 
 import { resolveSessionPersonalOwner } from './personal-resources';
 
-
-export { RESERVED_SANDBOX_ENV_NAMES, isReservedSandboxEnvName };
 
 /** Re-derive persisted channel env so every cold reprovision restores it. */
 async function buildSessionChannelEnv(sessionId: string): Promise<Record<string, string>> {

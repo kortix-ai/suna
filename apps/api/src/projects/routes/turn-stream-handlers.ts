@@ -208,8 +208,8 @@ async function settleTurnLedger(sessionId: string, body: TurnStreamBody, childSe
           code: isTurnErrorCode(body.error_code) ? body.error_code : undefined,
         }
       : undefined;
-  // SANDBOX-REPORTED turn end. `shortenSandboxDeadline` is LEAST-only, so
-  // it is structurally incapable of EXTENDING the box's life — which is
+  // SANDBOX-REPORTED turn end. `completeSandboxTurn` pulls the deadline in
+  // with LEAST only, so it is structurally incapable of EXTENDING the box's life — which is
   // exactly why it is safe to trust a payload the sandbox authored, and
   // why it needs no auth gate of its own. This is the "die 15 minutes
   // after the last turn ended" half of the model.
@@ -219,8 +219,8 @@ async function settleTurnLedger(sessionId: string, body: TurnStreamBody, childSe
   // and pulling the deadline in to 15 minutes there killed the box mid-turn
   // on any backoff longer than that — the exact state the deleted execution
   // lease treated correctly, because it renewed on 'busy' OR 'retry'. The
-  // classifier lives with the write (shortenSandboxDeadlineOnTurnEnd) so it
-  // cannot be re-wired here without it.
+  // classifier (`isTerminalTurnEnd`) lives with the write in
+  // `completeSandboxTurn` so it cannot be re-wired here without it.
   // A 2xx acknowledges that terminal lifecycle evidence is durable. The
   // daemon retries network/5xx failures and periodically reconciles a lost
   // event. Returning before this write finished made a transient DB failure

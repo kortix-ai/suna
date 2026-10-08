@@ -258,7 +258,7 @@ describe('/kortix agent <name>', () => {
     expect(resp.text).toContain('reviewer');
   });
   test('"default" clears the override (null)', async () => {
-    const resp = await handleSlashCommand('agent', 'default', ctx);
+    await handleSlashCommand('agent', 'default', ctx);
     expect(setAgentCalls).toEqual([null]);
   });
   test('no arg → usage', async () => {
@@ -285,7 +285,7 @@ describe('/kortix agents (list)', () => {
     expect(resp.text).toContain('Loading agents');
   });
   test('/kortix agents <name> is an alias for set', async () => {
-    const resp = await handleSlashCommand('agents', 'reviewer', ctx);
+    await handleSlashCommand('agents', 'reviewer', ctx);
     expect(setAgentCalls).toEqual(['reviewer']);
   });
 });

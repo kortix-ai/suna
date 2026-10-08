@@ -999,39 +999,6 @@ export function normalizeTreePath(input?: string | null) {
 }
 
 /**
- * Get the tree OID for a subtree at a given commit. This is git's own
- * content-addressed hash of every file under that path — perfect input
- * for snapshot cache invalidation: same files → same tree OID → same
- * snapshot. When `contextPath` is null/`.`/empty, returns the commit's
- * root tree OID.
- */
-export async function resolveTreeOid(
-  project: GitBackedProject,
-  ref: string,
-  contextPath?: string | null,
-): Promise<string> {
-  validateRef(ref);
-  const repoPath = await refreshMirror(project);
-  const normalized = normalizeTreePath(contextPath);
-  if (!normalized) {
-    // Root tree of the commit.
-    const result = await runGit(['rev-parse', `${ref}^{tree}`], repoPath, false);
-    const oid = result.stdout.trim();
-    if (!/^[0-9a-f]{40}$/.test(oid)) {
-      throw new Error(`Unexpected tree OID for ${ref}: ${oid}`);
-    }
-    return oid;
-  }
-  // ls-tree of the parent, parse the entry for normalized's basename.
-  const result = await runGit(['ls-tree', ref, '--', normalized], repoPath, false);
-  const line = result.stdout.split('\n').find((l) => l.trim());
-  if (!line) throw new Error(`Path "${normalized}" not found at ${ref}`);
-  const match = line.match(/^\d+\s+(tree|blob)\s+([0-9a-f]{40})\t/);
-  if (!match) throw new Error(`Unparseable ls-tree line: ${line}`);
-  return match[2]!;
-}
-
-/**
  * Materialize a subtree of the repo at a commit into a fresh local
  * directory — the snapshot builder feeds this to Daytona's Image API
  * which expects a local Dockerfile + context. Archives to a temporary tarball

@@ -8,7 +8,7 @@ mock.module('../config', () => ({
   config: { INTERNAL_KORTIX_ENV: 'prod', KORTIX_LLM_MARKUP: undefined },
 }));
 
-const { PLAN_CATALOG, listPlanRecords } = await import('../billing/services/plan-catalog');
+const { PLAN_CATALOG } = await import('../billing/services/plan-catalog');
 const { resolvePriceId, resolvePerSeatPriceId } = await import('../billing/services/tiers');
 
 // Grandfathered/retired records that are KNOWN to have no Stripe price. Adding
@@ -27,7 +27,7 @@ describe('plan price coverage (prod)', () => {
   });
 
   test('every current-status paid plan resolves a prod monthly price', () => {
-    for (const record of listPlanRecords()) {
+    for (const record of Object.values(PLAN_CATALOG).sort((a, b) => a.rank - b.rank)) {
       if (record.status !== 'current') continue;
       if (record.price.amountUsd === 0 || record.shape === 'contract') continue;
       expect(resolvePriceId(record.key, 'monthly'), `current plan ${record.key}`).toBeTruthy();
@@ -35,7 +35,7 @@ describe('plan price coverage (prod)', () => {
   });
 
   test('every priced non-current plan either resolves a price or is explicitly enumerated priceless', () => {
-    for (const record of listPlanRecords()) {
+    for (const record of Object.values(PLAN_CATALOG).sort((a, b) => a.rank - b.rank)) {
       if (record.status === 'current' || record.status === 'non_plan') continue;
       if (record.price.amountUsd === 0 || record.shape === 'contract') continue;
       if (record.shape === 'seat') continue; // priced via resolvePerSeatPriceId above

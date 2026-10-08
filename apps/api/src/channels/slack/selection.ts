@@ -298,13 +298,3 @@ export async function getChannelBindingById(
   if (!row?.projectId) return null;
   return row as ChannelBindingRow;
 }
-
-/**
- * A model id is shaped like a usable ref if it's a non-empty `provider/model`
- * pair (or `kortix/<id>`). Shape only — real servability is enforced separately
- * via `isModelServableForAccount` against the account's tier + connected keys.
- */
-export function isValidModelId(s: string): boolean {
-  const slash = s.indexOf('/');
-  return slash > 0 && slash < s.length - 1 && !/\s/.test(s);
-}

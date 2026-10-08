@@ -17,14 +17,6 @@ import type {
   MergeResult,
 } from './types';
 
-export async function diffStat(project: GitBackedProject, branchName: string, baseRef?: string) {
-  const repoPath = await refreshMirror(project);
-  const base = baseRef || project.defaultBranch;
-  const result = await runGit(['diff', '--stat', `refs/heads/${base}...refs/heads/${branchName}`], repoPath, false)
-    .catch(() => ({ stdout: '', stderr: '' }));
-  return { text: result.stdout };
-}
-
 /** Returns the merge-base SHA between two branches, or null if there is none. */
 export async function getMergeBase(
   project: GitBackedProject,

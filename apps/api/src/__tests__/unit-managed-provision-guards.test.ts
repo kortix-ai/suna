@@ -1,9 +1,11 @@
 /**
- * E2E for `POST /v1/projects/provision` — the managed-git path behind
- * `kortix ship` when a repo has no `origin` remote. The managed backend is
- * provider-agnostic (GitHub is the default + only active one), so this test
- * drives the endpoint against a stub `GitHostBackend` and asserts the
- * provider-neutral behaviour: create repo → mint push token → register project.
+ * Managed provisioning guards that a local stack cannot reach: it has no
+ * managed git backend, so POST /provision answers 503 before any of this runs.
+ * - A seed that leaves no default branch answers 502 and rolls the repository
+ *   and the project row back (6dc118d740).
+ * - The server-global managed GitHub PAT is never returned as a push token,
+ *   by /provision or by /git-token (pentest finding, 705be76c1e).
+ * PROJ-42 asserts the membership 403 and the unconfigured 503 over real HTTP.
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { mockIamAssignments, mockIamEngineAllowAll, mockIamReadModels } from './helpers/iam-mocks';
@@ -411,94 +413,6 @@ describe('POST /v1/projects/provision (managed git)', () => {
     remoteBranchAfterSeed = true;
   });
 
-  test('provisions a managed repo + scoped token and registers the project', async () => {
-    const app = createApp();
-    const res = await app.request('/v1/projects/provision', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: ACCOUNT_ID, name: 'My Agent' }),
-    });
-
-    expect(res.status).toBe(201);
-    const body = await res.json();
-
-    // Repo slug = readable name + the (server-generated) project id; the managed
-    // repo lives under the managed org. Response carries the project + scoped
-    // push token for the CLI.
-    expect(createdSlug).toMatch(/^my-agent-[0-9a-f-]{36}$/);
-    const expectedRepoUrl = `https://github.com/${REPO_OWNER}/${createdSlug}.git`;
-    expect(body.project_id).toBe(PROJECT_ID);
-    expect(body.repo_url).toBe(expectedRepoUrl);
-    expect(body.repo_id).toBe(EXTERNAL_REPO_ID);
-    expect(body.push_token).toBe(PUSH_TOKEN);
-    expect(body.git_username).toBe('x-access-token');
-
-    // Persisted row records the canonical typed git-remote reference.
-    expect(insertedProject).toMatchObject({
-      accountId: ACCOUNT_ID,
-      name: 'My Agent',
-      repoUrl: expectedRepoUrl,
-      defaultBranch: 'main',
-      manifestPath: 'kortix.yaml',
-      status: 'active',
-      metadata: {
-        git: {
-          url: expectedRepoUrl,
-          provider: 'github',
-          managed: true,
-          auth: { method: 'github_app', installation_id: INSTALL_ID },
-          owner: REPO_OWNER,
-        },
-      },
-    });
-    // Provisioning does not stamp hidden experimental runtime metadata.
-    expect(insertedProject?.metadata).not.toHaveProperty('experimental');
-    expect(grantedProjectRole).toMatchObject({
-      accountId: ACCOUNT_ID,
-      projectId: PROJECT_ID,
-      userId: USER_ID,
-      projectRole: 'manager',
-    });
-
-    // A caller who says nothing about `seed_starter` gets the starter. Seeding
-    // is the DEFAULT, so a bare provision goes through BOTH backend seams.
-    expect(backendCalls).toEqual(['createRepo', 'seedFiles']);
-
-    // The row records the INTENT at insert time — the seed push has not been
-    // verified yet at that point, so `pending`, never `caller_opted_out`.
-    expect(insertedProject.metadata.git.seed).toMatchObject({
-      seeded: false,
-      expected: true,
-      reason: 'pending',
-    });
-    expect(body.seeded).toBe(true);
-  });
-
-  // The one opt-out, and what it does NOT mean. `kortix ship` pushes its own
-  // `kortix init` history with a plain non-force push, so the provision-time
-  // seed must be suppressed or that push is rejected as non-fast-forward. It is
-  // still recorded `expected: true` — a client that never pushes gets repaired
-  // by `shouldSelfHealManagedRepoSeed`, not left permanently without a manifest.
-  test('an explicit seed_starter:false suppresses the push but still expects a manifest', async () => {
-    const app = createApp();
-    const res = await app.request('/v1/projects/provision', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: ACCOUNT_ID, name: 'Shipped Agent', seed_starter: false }),
-    });
-
-    expect(res.status).toBe(201);
-    const body = await res.json();
-
-    expect(backendCalls).toEqual(['createRepo']);
-    expect(insertedProject.metadata.git.seed).toMatchObject({
-      seeded: false,
-      expected: true,
-      reason: 'client_owns_first_commit',
-    });
-    expect(body.seeded).toBe(false);
-  });
-
   test('does not report an active project when the seed pushed but left no default branch', async () => {
     remoteBranchAfterSeed = false;
 
@@ -522,30 +436,6 @@ describe('POST /v1/projects/provision (managed git)', () => {
     // The orphan repo + project row are rolled back, so no user can land in a
     // structurally empty project that claims to be active.
     expect(backendCalls).toContain('deleteRepo');
-  });
-
-  test('records the completed seed on the project when the default branch is verified', async () => {
-    const app = createApp();
-    const res = await app.request('/v1/projects/provision', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        account_id: ACCOUNT_ID,
-        name: 'Verified Seed',
-        seed_starter: true,
-        starter_template: 'minimal',
-      }),
-    });
-
-    expect(res.status).toBe(201);
-    const body = await res.json();
-    expect(body.seeded).toBe(true);
-    expect(updatedProjectSets.length).toBeGreaterThan(0);
-    expect(insertedProject.metadata.git.seed).toMatchObject({
-      seeded: false,
-      expected: true,
-      reason: 'pending',
-    });
   });
 
   test('does not return the server-global managed GitHub PAT as a provision push token', async () => {
@@ -583,100 +473,6 @@ describe('POST /v1/projects/provision (managed git)', () => {
     expect(body.git_origin_url).toBeTruthy();
   });
 
-  test('rejects an explicit account the caller has no membership in', async () => {
-    canonicalMembership = false;
-
-    const app = createApp();
-    const res = await app.request('/v1/projects/provision', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: ACCOUNT_ID, name: 'No Membership Project' }),
-    });
-
-    expect(res.status).toBe(403);
-    expect(insertedProject).toBeNull();
-  });
-
-  test('seeds the deterministic starter into the initial managed repo setup commit (marketplace_items is a no-op)', async () => {
-    // The deterministic install/lock engine is gone — provision seeds only
-    // the plain starter scaffold. `marketplace_items` is accepted for API
-    // back-compat but no longer installs anything at provision time; adding a
-    // marketplace item to a project is now an agent import
-    // (POST /:projectId/marketplace/install-session), which needs the project
-    // (and a session) to already exist.
-    const app = createApp();
-    const res = await app.request('/v1/projects/provision', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        account_id: ACCOUNT_ID,
-        name: 'Runtime Project',
-        seed_starter: true,
-        starter_template: 'minimal',
-        marketplace_items: [
-          'kortix-starter:agent-browser',
-          'kortix-starter:deep-research',
-          'kortix-starter:pdf',
-        ],
-      }),
-    });
-
-    expect(res.status).toBe(201);
-    expect(backendCalls).toEqual(['createRepo', 'seedFiles']);
-
-    // No lock is ever produced — the engine that wrote it is deleted.
-    expect(seedFilePaths).not.toContain('registry-lock.json');
-    // The requested marketplace skills are NOT deterministically installed —
-    // only the committed kortix-cli skill (part of the base minimal
-    // scaffold) is present.
-    expect(seedFilePaths).not.toContain('skills/agent-browser/SKILL.md');
-    expect(seedFilePaths).not.toContain('skills/deep-research/SKILL.md');
-    expect(seedFilePaths).not.toContain('skills/pdf/SKILL.md');
-    expect(seedFilePaths).toContain('skills/kortix-cli/SKILL.md');
-    expect(seedFilePaths).toContain('kortix.yaml');
-
-    expect(seedBaseFilePaths).toContain('harnesses/opencode/tools/show.ts');
-    expect(seedBaseFilePaths).toContain('harnesses/opencode/plugins/pty.ts');
-    expect(seedBaseFilePaths).toContain('harnesses/opencode/tools/web_search.ts');
-    expect(seedBaseFilePaths).toContain('harnesses/opencode/tools/lib/get-env.ts');
-    expect(seedBaseFilePaths).not.toContain('registry-lock.json');
-
-    // The bug this route fix closes: the base template's kortix.yaml declares
-    // `default_agent: kortix`, but project.metadata.default_agent was never
-    // mirrored from it — so every session silently stored the non-binding
-    // 'default' sentinel and any agent-scope model pin set on 'kortix' was
-    // never applied (see llm-gateway/resolution/default-model.ts). Provision
-    // must now stamp the mirror at creation time.
-    // Two writes, both intended: [0] the seed-state + default_agent
-    // metadataMerge, then [1] the fast-boot seed-hint cache persist
-    // (662329675f warms the hint at provision — persistFastBootGitHint writes
-    // metadata.git.fast_boot as its own best-effort project update).
-    expect(updatedProjectSets).toHaveLength(2);
-    expect(updatedProjectSets[0]?.metadata).toHaveProperty('queryChunks');
-    expect(updatedProjectSets[1]?.metadata).toHaveProperty('queryChunks');
-  });
-
-  test('returns 503 when managed git is not configured', async () => {
-    backendConfigured = false;
-    const app = createApp();
-    const res = await app.request('/v1/projects/provision', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: ACCOUNT_ID, name: 'My Agent' }),
-    });
-    expect(res.status).toBe(503);
-    expect(backendCalls).toHaveLength(0);
-  });
-
-  test('rejects an unsupported provider', async () => {
-    const app = createApp();
-    const res = await app.request('/v1/projects/provision', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: ACCOUNT_ID, name: 'My Agent', provider: 'gitlab' }),
-    });
-    expect(res.status).toBe(400);
-  });
 });
 
 // GET /v1/projects/managed-git/status — lets the create-project UI pre-check
@@ -684,22 +480,3 @@ describe('POST /v1/projects/provision (managed git)', () => {
 // the 503, so it can disable/annotate that option gracefully instead of
 // surfacing a raw server error (self-host with no MANAGED_GIT_* configured is
 // the primary case this exists for).
-describe('GET /v1/projects/managed-git/status', () => {
-  beforeEach(() => {
-    setTestAuth();
-    backendConfigured = true;
-  });
-
-  test('reports configured: true when the managed backend is configured', async () => {
-    const res = await createApp().request('/v1/projects/managed-git/status');
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ configured: true, provider: 'github' });
-  });
-
-  test('reports configured: false when the managed backend is not configured', async () => {
-    backendConfigured = false;
-    const res = await createApp().request('/v1/projects/managed-git/status');
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ configured: false, provider: 'github' });
-  });
-});
