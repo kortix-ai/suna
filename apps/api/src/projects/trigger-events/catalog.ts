@@ -5,6 +5,7 @@ import { defaultConnectionIdForConnector } from '../../connectors/credentials';
 import { logger } from '../../lib/logger';
 import { loadConnectionAudience } from '../lib/connection-audience';
 import { db } from '../../shared/db';
+import { RESERVED_CONNECTOR_SLUGS } from '../connectors';
 import { eventConfigProblem } from './config-validation';
 import { connectorInfo } from './deliver';
 import { allEventSources, eventSourceFor } from './registry';
@@ -68,6 +69,8 @@ export interface EventAppEntry {
   connected: boolean;
   /** Every connector (profile) of this app with its shared accounts. */
   connectors: EventAppConnector[];
+  /** Slug to give a new connector for this app: the app's own, unless reserved or taken. */
+  newConnectorSlug: string;
 }
 
 export interface EventAppConnector {
@@ -121,6 +124,16 @@ async function loadSharedAccounts(
   return out;
 }
 
+/** `slack` is the built-in channel; a taken slug would update another connector. */
+export function freeConnectorSlug(app: string, taken: readonly string[]): string {
+  const used = new Set(taken);
+  if (!RESERVED_CONNECTOR_SLUGS.has(app) && !used.has(app)) return app;
+  for (let n = 1; ; n++) {
+    const slug = n === 1 ? `${app}-events` : `${app}-events-${n}`;
+    if (!used.has(slug)) return slug;
+  }
+}
+
 export async function listEventApps(projectId: string, accountId: string): Promise<EventAppEntry[]> {
   const rows = await db
     .select({ connectorId: connectors.connectorId, slug: connectors.slug, name: connectors.name, provider: connectors.providerType, config: connectors.config })
@@ -150,6 +163,7 @@ export async function listEventApps(projectId: string, accountId: string): Promi
         connector: row?.slug ?? null,
         connected,
         connectors: await loadSharedAccounts(projectId, accountId, profiles, provider, item.app),
+        newConnectorSlug: freeConnectorSlug(item.app, rows.map((r) => r.slug)),
       });
     }
   }

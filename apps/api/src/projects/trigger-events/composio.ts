@@ -127,10 +127,13 @@ export const composioEventSource: EventSourceProvider = {
   async listApps() {
     const toolkits = getComposioRuntime().toolkits;
     if (!toolkits) throw new Error('Composio toolkit catalogue is unavailable');
+    // Offer only apps a project can connect: the connectors catalog's own hidden set.
+    const { composioHiddenToolkits } = await import('../../connectors/composio-catalog-search');
+    const hidden = await composioHiddenToolkits();
     const apps: EventApp[] = [];
     for (const t of await toolkits.get({ limit: 1000 })) {
       const eventCount = t.meta?.triggersCount ?? t.meta?.triggers_count ?? 0;
-      if (eventCount > 0) apps.push({ app: t.slug, name: t.name, logo: t.meta?.logo ?? null, eventCount });
+      if (eventCount > 0 && !hidden.has(t.slug.toLowerCase())) apps.push({ app: t.slug, name: t.name, logo: t.meta?.logo ?? null, eventCount });
     }
     return apps.sort((a, b) => a.name.localeCompare(b.name));
   },

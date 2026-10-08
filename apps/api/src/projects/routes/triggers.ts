@@ -147,6 +147,7 @@ export function registerTriggersRoutes(): void {
               name: z.string(),
               logo: z.string().nullable(),
               event_count: z.number(),
+              new_connector_slug: z.string(),
               connector: z.string().nullable().openapi({ description: 'Slug of the project connector for this app, or null.' }),
               connected: z.boolean().openapi({ description: 'The project has an active shared account for this app.' }),
               connectors: z.array(z.object({
@@ -185,6 +186,7 @@ export function registerTriggersRoutes(): void {
           name: a.name,
           logo: a.logo,
           event_count: a.eventCount,
+          new_connector_slug: a.newConnectorSlug,
           connector: a.connector,
           connected: a.connected,
           connectors: a.connectors.map((k) => ({
