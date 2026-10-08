@@ -73,18 +73,18 @@ async function seedBox(origin: 'user' | 'trigger'): Promise<Box> {
 }
 
 /** One real reaper pass over this box, with the daemon saying the turn runs. */
-function pass(box: Box) {
+function pass(box: Box, duringProbe: () => Promise<unknown> = async () => undefined) {
   return reapAndReconcileSandboxes(
     new Date(),
     {
-      observeSandboxTurn: async () => ({
+      observeSandboxTurn: async () => (await duringProbe(), {
         observation: 'active',
         endReason: null,
         daemonAnswered: true,
         orphanedPrompt: false,
       }),
       observeTurnWaiting: async (_externalId: string, runtimeSessionId: string) =>
-        waiting[runtimeSessionId] ?? null,
+        waiting[runtimeSessionId] ?? 'none',
     },
     { sandboxIds: [box.sandboxId] },
   );
@@ -143,13 +143,13 @@ afterAll(async () => {
 });
 
 describe('a turn that waits on a person', () => {
-  test('a trigger run on a permission ask: the box keeps 15 minutes, not four hours', async () => {
+  test('a trigger run on a permission ask: the box keeps 30 minutes, not four hours', async () => {
     const box = await seedBox('trigger');
     expect(await minutesLeft(box)).toBe(240);
     waiting[box.runtimeSessionId] = 'permission';
 
     await pass(box);
-    expect(await minutesLeft(box)).toBe(15);
+    expect(await minutesLeft(box)).toBe(30);
     expect(await hasTurnRecord(box)).toBe(true);
 
     // A later pass keeps the first anchor: the write is LEAST-only.
@@ -176,6 +176,21 @@ describe('a turn that waits on a person', () => {
       sandbox: 'stopped',
     });
     expect(stops).toContain(box.externalId);
+  });
+
+  test('a model call that lands during the pass keeps the turn: the clear re-reads the deadline', async () => {
+    const box = await seedBox('trigger');
+    waiting[box.runtimeSessionId] = 'permission';
+    await db.execute(sql`
+      UPDATE kortix.session_sandboxes SET deadline_at = now() - interval '1 second'
+       WHERE sandbox_id = ${box.sandboxId}::uuid`);
+
+    // The batch read the expired deadline; the gateway extends it before the clear.
+    await pass(box, () => setMinutesLeft(box, 240));
+
+    expect(await hasTurnRecord(box)).toBe(true);
+    expect(await ledgerOf(box)).toMatchObject({ state: 'active', end_reason: null, sandbox: 'active' });
+    expect(stops).not.toContain(box.externalId);
   });
 
   test("a person's session on a question: the box keeps two hours", async () => {

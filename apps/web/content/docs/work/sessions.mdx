@@ -38,9 +38,10 @@ the terminal turn.
 
 A turn that waits on a person does no work: the agent asked a question, or asks
 for permission to run a tool. Such a turn keeps the computer for at most 2 hours
-after Kortix first sees the wait. In a run nobody attends (a trigger or schedule
-run, or a worker session), the limit is 15 minutes. Kortix then ends the turn
-and stops the computer. Send a message to continue.
+after Kortix first sees the wait. In a trigger or schedule run, nobody receives
+the ask, and the limit is 30 minutes. Kortix then ends the turn and stops the
+computer. Send a message to continue. A model call or your open session page
+counts as activity and extends the computer as usual.
 
 A session page you are using keeps the session awake. It counts as in use while
 the tab is visible and you clicked, typed, scrolled or touched it in the last
@@ -53,7 +54,8 @@ agent turn; a new message starts a turn and resets that limit.
 Self-host operators can set `KORTIX_SANDBOX_AUTOSTOP_MINUTES` to change the
 normal idle grace. This setting does not change active-turn protection.
 `KORTIX_SANDBOX_TURN_WAITING_MINUTES` changes the 2-hour limit for a turn that
-waits on a person.
+waits on a person, up to half the 4-hour turn grant. Neither setting changes the
+30-minute limit of a trigger or schedule run.
 
 ## What stop and delete keep
 

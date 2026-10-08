@@ -55,7 +55,7 @@ let daemonTurnEndBySandbox: Record<string, 'completed' | 'failed' | 'abandoned'>
  *  answering it. Evidence about the PROMPT, not about the turn. */
 let orphanedPromptByToken: Record<string, boolean> = {};
 /** What `/kortix/runtime/state` says the turn on each runtime conversation waits on. */
-let turnWaitingByRuntimeSession: Record<string, 'permission' | 'question'> = {};
+let turnWaitingByRuntimeSession: Record<string, 'permission' | 'question' | 'unknown'> = {};
 /** Every runtime conversation the pass asked about. */
 let turnWaitingCalls: string[] = [];
 /** Sessions nobody attends: a cron, schedule or trigger run, or a worker session. */
@@ -82,6 +82,7 @@ let unconfirmedTurnDrips: string[] = [];
 // it.
 let clearedTurnReasons: Array<string | undefined> = [];
 let clearedTurnCauses: Array<string | null> = [];
+let clearedTurnPastDeadlineOnly: boolean[] = [];
 let ledgerSettleStatements: string[] = [];
 let huskFinalizeCalls: Array<{
   sandboxId: string;
@@ -442,7 +443,9 @@ const reapAndReconcileSandboxes = (
       _graceMs?: number,
       reason?: string,
       cause?: { name: string | null } | null,
+      onlyPastDeadline?: boolean,
     ) => {
+      clearedTurnPastDeadlineOnly.push(onlyPastDeadline === true);
       clearedTurnCalls.push({
         sandboxId,
         token,
@@ -481,7 +484,7 @@ const reapAndReconcileSandboxes = (
     },
     observeTurnWaiting: async (_externalId: string, runtimeSessionId: string) => {
       turnWaitingCalls.push(runtimeSessionId);
-      return turnWaitingByRuntimeSession[runtimeSessionId] ?? null;
+      return turnWaitingByRuntimeSession[runtimeSessionId] ?? 'none';
     },
     sessionIsUnattended: async (sessionId: string) => unattendedBySession[sessionId] ?? false,
     shortenSandboxDeadline: async (sessionId: string, graceMs?: number) => {
@@ -535,6 +538,7 @@ beforeEach(() => {
   promptRedeliveries = [];
   clearedTurnReasons = [];
   clearedTurnCauses = [];
+  clearedTurnPastDeadlineOnly = [];
   unconfirmedTurnDrips = [];
   __resetProbeBackoffForTests();
   ledgerSettleStatements = [];
@@ -1076,7 +1080,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       activeTurnRenewalBySandbox['sb-1'] = 'renewed';
     });
 
-    test('an unattended run on a permission ask: no renewal, and the deadline comes in to the idle grace', async () => {
+    test('an unattended run on a permission ask: no renewal, and the deadline comes in to 30 minutes', async () => {
       candidates = [waitingRow()];
       turnWaitingByRuntimeSession['ses_root'] = 'permission';
       unattendedBySession['sess-1'] = true;
@@ -1085,7 +1089,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
 
       expect(turnWaitingCalls).toEqual(['ses_root']);
       expect(activeTurnRenewalCalls).toEqual([]);
-      expect(shortenedDeadlines).toEqual([{ sessionId: 'sess-1', graceMs: 15 * MIN }]);
+      expect(shortenedDeadlines).toEqual([{ sessionId: 'sess-1', graceMs: 30 * MIN }]);
       expect(clearedTurnCalls).toEqual([]);
       expect(r.stopped).toBe(0);
       // The provider's own timer still follows the Kortix deadline, which has not passed.
@@ -1123,6 +1127,8 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       expect(clearedTurnCalls).toEqual([{ sandboxId: 'sb-1', token: 'turn-token' }]);
       expect(clearedTurnReasons).toEqual(['failed']);
       expect(clearedTurnCauses).toEqual(['TurnAwaitingInput']);
+      // The batch deadline is from before the probes: the clear re-reads it.
+      expect(clearedTurnPastDeadlineOnly).toEqual([true]);
       expect(activeTurnRenewalCalls).toEqual([]);
       expect(r.turnsSettled).toBe(1);
       // Nobody answered it: the prompt is not run again by a sweep.
@@ -1135,6 +1141,30 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       await reapAndReconcileSandboxes(NOW);
 
       expect(turnWaitingCalls).toEqual(['ses_root']);
+      expect(activeTurnRenewalCalls).toEqual([{ sandboxId: 'sb-1', token: 'turn-token' }]);
+      expect(shortenedDeadlines).toEqual([]);
+    });
+
+    test('a failed read while a hold is in effect renews nothing and keeps the anchor', async () => {
+      // A held deadline sits inside the attended bound; a renewal would put it
+      // four hours out and restart the bound on the next readable pass.
+      candidates = [waitingRow({ deadlineAt: new Date(NOW.getTime() + 25 * MIN) })];
+      turnWaitingByRuntimeSession['ses_root'] = 'unknown';
+
+      const r = await reapAndReconcileSandboxes(NOW);
+
+      expect(activeTurnRenewalCalls).toEqual([]);
+      expect(shortenedDeadlines).toEqual([]);
+      expect(clearedTurnCalls).toEqual([]);
+      expect(r.stopped).toBe(0);
+    });
+
+    test('a failed read on a turn that was never held renews, as before', async () => {
+      candidates = [waitingRow()];
+      turnWaitingByRuntimeSession['ses_root'] = 'unknown';
+
+      await reapAndReconcileSandboxes(NOW);
+
       expect(activeTurnRenewalCalls).toEqual([{ sandboxId: 'sb-1', token: 'turn-token' }]);
       expect(shortenedDeadlines).toEqual([]);
     });

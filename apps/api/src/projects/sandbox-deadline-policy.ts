@@ -274,14 +274,21 @@ export function idleGraceMs(): number {
 /**
  * How long a turn that waits on a person — an open permission ask or question —
  * keeps its box, from the first reaper pass that sees the wait (KRTX-1739).
- * A waiting turn does no work. A run nobody attends (a cron, schedule or
- * trigger run, or a worker session) gets the idle grace, because nobody will
- * answer. A session a person prompted gets two hours to answer.
+ * A waiting turn does no work.
+ *
+ * A cron, schedule, trigger or system run gets 30 minutes: nobody receives its
+ * ask, and 30 minutes clears the daemon's 15-minute state rebuild
+ * (RUNTIME_STATE_FLOOR_MS), so an ask answered while its `replied` frame was
+ * lost cannot end a working turn. Any other session gets two hours
+ * (`KORTIX_SANDBOX_TURN_WAITING_MINUTES`), capped at half the turn grant so a
+ * held deadline always reads shorter than a renewed one (`holdWaitingTurn`).
  */
 export function turnWaitingMaxMs(unattended: boolean): number {
-  return unattended
-    ? idleGraceMs()
-    : positiveEnvInt('KORTIX_SANDBOX_TURN_WAITING_MINUTES', 120) * 60_000;
+  if (unattended) return 30 * 60_000;
+  return Math.min(
+    positiveEnvInt('KORTIX_SANDBOX_TURN_WAITING_MINUTES', 120) * 60_000,
+    turnGrantMs() / 2,
+  );
 }
 
 /**
