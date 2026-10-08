@@ -2478,7 +2478,7 @@ describe('pi steering', () => {
     // Read: it cannot be withdrawn any more.
     const removed = await r.user(`/kortix/runtime/messages/${root}/${steered}`, { method: 'DELETE' })
     expect(removed.status).toBe(409)
-    expect(await removed.json()).toEqual({ error: 'message is already running' })
+    expect(await removed.json()).toEqual({ code: 'message_read', error: 'a model call read this message' })
   })
 
   test('two messages steered before one boundary arrive together, in send order', async () => {
@@ -2613,5 +2613,247 @@ describe('pi steering', () => {
     // The refused id stored nothing, so it may now be sent as a prompt.
     expect((await post(r, `/kortix/runtime/sessions/${root}/prompt`, { message_id: idle, parts: [{ type: 'text', text: 'now a prompt' }] })).status).toBe(202)
     await waitFor(() => seen.ends.length === 2)
+  })
+})
+
+describe('pi retract (R7.1)', () => {
+  const post = (r: Rig, path: string, body: unknown) =>
+    r.user(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  const root = (r: Rig) => r.service.runtime()!.rootId
+  const send = (r: Rig, messageId: string, text: string, extra: Record<string, unknown> = {}) =>
+    post(r, `/kortix/runtime/sessions/${root(r)}/prompt`, { message_id: messageId, parts: [{ type: 'text', text }], ...extra })
+  const retract = (r: Rig, messageId: string) => post(r, `/kortix/runtime/messages/${root(r)}/${messageId}/retract`, {})
+  const page = async (r: Rig) =>
+    (await r.bearer(`/kortix/runtime/messages/${root(r)}`).then((res) => res.json())) as WirePage
+  const sendTimeId = async (r: Rig) => {
+    const clock = new MessageIdClock()
+    for (const message of (await page(r)).messages) clock.observe(String(message.info.id))
+    return clock.mint(Date.now())
+  }
+  const turnRelays = () => {
+    const seen = { begins: [] as string[], ends: [] as string[] }
+    const hooks: PiRuntimeHooks = {
+      onTurnBegin: ({ messageId }) => void seen.begins.push(messageId),
+      onTurnEnd: ({ messageId }) => void seen.ends.push(messageId),
+    }
+    return { seen, hooks }
+  }
+  const TURN = 'msg_0198e2a4b0c3RETRACTTURN001'
+
+  test('health lists runtime.retract.v1', async () => {
+    const r = await boot({ script: [] })
+    const health = (await r.bearer('/kortix/health').then((res) => res.json())) as { capabilities: string[] }
+    expect(health.capabilities).toContain('runtime.retract.v1')
+  })
+
+  test('a prompt queued behind the running turn is retracted: it leaves the wire, never runs, and may be sent again', async () => {
+    const { seen, hooks } = turnRelays()
+    const r = await boot({ script: [{ tool: 'bash', args: { command: 'sleep 0.6; echo done' } }, { text: 'first done' }, { text: 'resent answer' }], hooks })
+    const before = gateway.sent.length
+    expect((await send(r, TURN, 'run the tool')).status).toBe(202)
+    await waitForRunningTool(r, root(r))
+    const queued = await sendTimeId(r)
+    expect((await send(r, queued, 'QUEUED-GONE')).status).toBe(202)
+    expect((await page(r)).messages.some((m) => m.info.id === queued)).toBe(true)
+
+    const retracted = await retract(r, queued)
+    expect(retracted.status).toBe(200)
+    expect(retracted.headers.get('X-Kortix-Turn-Verb')).toBe('1')
+    expect(await retracted.json()).toEqual({ retracted: true })
+    expect((await page(r)).messages.some((m) => m.info.id === queued)).toBe(false)
+    expect((await retract(r, queued)).status).toBe(404)
+
+    await waitFor(() => seen.ends.length === 1)
+    await Bun.sleep(150)
+    // Only the running turn ran, and no model request carried the retracted text.
+    expect(seen.begins).toEqual([TURN])
+    expect(gateway.sent.slice(before).some((messages) => JSON.stringify(messages).includes('QUEUED-GONE'))).toBe(false)
+
+    // A retracted id is not on record: a release may send it again.
+    expect((await send(r, queued, 'QUEUED-AGAIN')).status).toBe(202)
+    await waitFor(() => seen.ends.length === 2)
+    expect(seen.begins).toEqual([TURN, queued])
+  })
+
+  test('the running turn and an answered message are read; an unknown id is 404', async () => {
+    const { seen, hooks } = turnRelays()
+    const r = await boot({ script: [{ tool: 'bash', args: { command: 'sleep 0.6; echo done' } }, { text: 'done' }], hooks })
+    expect((await send(r, TURN, 'run the tool')).status).toBe(202)
+    await waitForRunningTool(r, root(r))
+    const running = await retract(r, TURN)
+    expect(running.status).toBe(409)
+    expect(await running.json()).toEqual({ code: 'message_read', error: 'a model call read this message' })
+    await waitFor(() => seen.ends.length === 1)
+    expect((await retract(r, TURN)).status).toBe(409)
+    expect((await retract(r, 'msg_0198e2a4b0c3UNKNOWNMSG0001')).status).toBe(404)
+    expect((await page(r)).messages.some((m) => m.info.id === TURN)).toBe(true)
+  })
+
+  test('a no_reply message starts no turn; retracted before a turn reads it, no model call ever gets it', async () => {
+    const { seen, hooks } = turnRelays()
+    const r = await boot({ script: [{ text: 'answered the second' }, { text: 'answered the third' }], hooks })
+    const silent = await sendTimeId(r)
+    expect((await send(r, silent, 'NOREPLY-GONE', { no_reply: true })).status).toBe(202)
+    await waitFor(() => (r.service.runtime()!.idle()))
+    expect((await page(r)).messages.some((m) => m.info.id === silent)).toBe(true)
+    // `no_reply` on the Kortix route persists the message and runs nothing.
+    await Bun.sleep(100)
+    expect(seen.begins).toEqual([])
+
+    expect(await retract(r, silent).then((res) => res.json())).toEqual({ retracted: true })
+    expect((await page(r)).messages.some((m) => m.info.id === silent)).toBe(false)
+
+    const kept = await sendTimeId(r)
+    expect((await send(r, kept, 'NOREPLY-KEPT', { no_reply: true })).status).toBe(202)
+    const before = gateway.sent.length
+    const next = await sendTimeId(r)
+    expect((await send(r, next, 'the second')).status).toBe(202)
+    await waitFor(() => seen.ends.length === 1)
+    const sent = JSON.stringify(gateway.sent[before])
+    expect(sent).toContain('NOREPLY-KEPT')
+    expect(sent).not.toContain('NOREPLY-GONE')
+    // The turn read the kept one: it can no longer be taken back.
+    expect((await retract(r, kept)).status).toBe(409)
+  })
+
+  test('the DELETE verb an older API sends retracts a queued prompt too', async () => {
+    const { seen, hooks } = turnRelays()
+    const r = await boot({ script: [{ tool: 'bash', args: { command: 'sleep 0.6; echo done' } }, { text: 'first done' }], hooks })
+    expect((await send(r, TURN, 'run the tool')).status).toBe(202)
+    await waitForRunningTool(r, root(r))
+    const queued = await sendTimeId(r)
+    expect((await send(r, queued, 'QUEUED-DELETED')).status).toBe(202)
+    expect((await r.user(`/kortix/runtime/messages/${root(r)}/${queued}`, { method: 'DELETE' })).status).toBe(200)
+    const legacy = await sendTimeId(r)
+    expect((await send(r, legacy, 'QUEUED-LEGACY')).status).toBe(202)
+    expect((await r.user(`/session/${root(r)}/message/${legacy}`, { method: 'DELETE' })).status).toBe(200)
+    await waitFor(() => seen.ends.length === 1)
+    await Bun.sleep(150)
+    expect(seen.begins).toEqual([TURN])
+  })
+})
+
+describe('pi per-prompt agent (R7.2)', () => {
+  const post = (r: Rig, path: string, body: unknown) =>
+    r.user(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  const root = (r: Rig) => r.service.runtime()!.rootId
+  const page = async (r: Rig) =>
+    (await r.bearer(`/kortix/runtime/messages/${root(r)}`).then((res) => res.json())) as WirePage
+  const sendTimeId = async (r: Rig) => {
+    const clock = new MessageIdClock()
+    for (const message of (await page(r)).messages) clock.observe(String(message.info.id))
+    return clock.mint(Date.now())
+  }
+  const send = async (r: Rig, text: string, agent?: string) => {
+    const messageId = await sendTimeId(r)
+    const res = await post(r, `/kortix/runtime/sessions/${root(r)}/prompt`, { message_id: messageId, parts: [{ type: 'text', text }], ...(agent ? { agent } : {}) })
+    expect(res.status).toBe(202)
+    return messageId
+  }
+  /** The system text the model was sent on request `index`: every system message, in order. */
+  const systemOf = (index: number) =>
+    gateway.sent[index]!.filter((m) => m.role === 'system').map((m) => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content))).join('\n')
+  const agents = {
+    default_agent: 'coder',
+    agent: {
+      coder: { mode: 'primary', prompt: 'PROMPT-OF-CODER' },
+      writer: { mode: 'primary', prompt: 'PROMPT-OF-WRITER', permission: { bash: 'deny' } },
+      reviewer: { mode: 'subagent', prompt: 'PROMPT-OF-REVIEWER' },
+      retired: { mode: 'primary', disable: true, prompt: 'PROMPT-OF-RETIRED' },
+    },
+  }
+
+  test('a prompt that picks an agent runs on that agent; one that picks none runs on the session agent', async () => {
+    const ends: string[] = []
+    const r = await boot({
+      script: [{ tool: 'bash', args: { command: 'echo writer-ran-bash' } }, { text: 'writer done' }, { text: 'coder done' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify(agents) },
+      hooks: { onTurnEnd: ({ messageId }) => void ends.push(messageId) },
+    })
+    const first = gateway.sent.length
+    const writerTurn = await send(r, 'as the writer, run a command', 'writer')
+    await waitFor(() => ends.length === 1)
+    // The writer's prompt reached the model, and its `bash: deny` refused the call.
+    expect(systemOf(first)).toContain('PROMPT-OF-WRITER')
+    let messages = (await page(r)).messages
+    const writerMessages = messages.filter((m) => m.info.id === writerTurn || m.info.parentID === writerTurn)
+    expect(writerMessages.map((m) => m.info.agent)).toEqual(['writer', 'writer', 'writer'])
+    const tool = writerMessages.flatMap((m) => m.parts).find((p) => p.type === 'tool')!
+    expect(tool.state.status).toBe('error')
+    expect(existsSync(join(r.workspace, 'writer-ran-bash'))).toBe(false)
+
+    const before = gateway.sent.length
+    const coderTurn = await send(r, 'and now with no pick')
+    await waitFor(() => ends.length === 2)
+    const system = systemOf(before)
+    expect(system.lastIndexOf('PROMPT-OF-CODER')).toBeGreaterThan(system.lastIndexOf('PROMPT-OF-WRITER'))
+    messages = (await page(r)).messages
+    expect(messages.filter((m) => m.info.id === coderTurn || m.info.parentID === coderTurn).map((m) => m.info.agent)).toEqual(['coder', 'coder'])
+    // The state document still names the session's agent as the default.
+    const state = (await r.bearer('/kortix/runtime/state').then((res) => res.json())) as { config: { value: { default_agent: string } } }
+    expect(state.config.value.default_agent).toBe('coder')
+  })
+
+  // #9410's per-agent tool access follows the turn's agent, not the boot agent.
+  test('a picked agent\'s tool list governs its turn; the next unpicked turn has the session agent\'s tools again', async () => {
+    const ends: string[] = []
+    const r = await boot({
+      script: [
+        { tool: 'bash', args: { command: 'touch picked-ran.txt' } }, { text: 'reader done' },
+        { tool: 'bash', args: { command: 'touch session-ran.txt' } }, { text: 'coder done' },
+      ],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ default_agent: 'coder', agent: { coder: { mode: 'primary' }, reader: { mode: 'primary', tools: { '*': false, read: true } } } }) },
+      hooks: { onTurnEnd: ({ messageId }) => void ends.push(messageId) },
+    })
+    const first = gateway.sent.length
+    await send(r, 'run a command', 'reader')
+    await waitFor(() => ends.length === 1)
+    expect(existsSync(join(r.workspace, 'picked-ran.txt'))).toBe(false)
+    // The reader's request offers `read` alone.
+    expect(gateway.sampling[first]!.tools).toBe(1)
+    const second = gateway.sampling.length
+    await send(r, 'run a command')
+    await waitFor(() => ends.length === 2)
+    expect(gateway.sampling[second]!.tools).toBeGreaterThan(1)
+    expect(existsSync(join(r.workspace, 'session-ran.txt'))).toBe(true)
+  })
+
+  // Strix finding on #9391 (CWE-863): `__proto__` and `constructor` resolve
+  // through the prototype chain, and their undefined `permission` compiled to an
+  // empty policy that allows every tool.
+  test('a pick named after an Object prototype key keeps the session agent and its permission policy', async () => {
+    for (const pick of ['__proto__', 'constructor']) {
+      const ends: string[] = []
+      const marker = `proto-${pick.replace(/_/g, '')}-ran.txt`
+      const r = await boot({
+        script: [{ tool: 'bash', args: { command: `touch ${marker}` } }, { text: 'done' }],
+        env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ default_agent: 'locked', agent: { locked: { mode: 'primary', prompt: 'PROMPT-OF-LOCKED', permission: { bash: 'deny' } } } }) },
+        hooks: { onTurnEnd: ({ messageId }) => void ends.push(messageId) },
+      })
+      const id = await send(r, 'run the command', pick)
+      await waitFor(() => ends.length === 1)
+      const messages = (await page(r)).messages.filter((m) => m.info.id === id || m.info.parentID === id)
+      expect({ pick, agents: messages.map((m) => m.info.agent) }).toEqual({ pick, agents: ['locked', 'locked', 'locked'] })
+      const tool = messages.flatMap((m) => m.parts).find((p) => p.type === 'tool')!
+      expect({ pick, status: tool.state.status }).toEqual({ pick, status: 'error' })
+      expect({ pick, ran: existsSync(join(r.workspace, marker)) }).toEqual({ pick, ran: false })
+    }
+  })
+
+  test('a subagent, a disabled agent and an unknown name are not run as the session agent', async () => {
+    const ends: string[] = []
+    const r = await boot({
+      script: [{ text: 'one' }, { text: 'two' }, { text: 'three' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify(agents) },
+      hooks: { onTurnEnd: ({ messageId }) => void ends.push(messageId) },
+    })
+    for (const [index, pick] of ['reviewer', 'retired', 'nobody'].entries()) {
+      const before = gateway.sent.length
+      const id = await send(r, `pick ${pick}`, pick)
+      await waitFor(() => ends.length === index + 1)
+      const system = systemOf(before)
+      expect({ pick, coder: system.includes('PROMPT-OF-CODER'), other: /PROMPT-OF-(REVIEWER|RETIRED)/.test(system) }).toEqual({ pick, coder: true, other: false })
+      expect((await page(r)).messages.find((m) => m.info.id === id)!.info.agent).toBe('coder')
+    }
   })
 })
