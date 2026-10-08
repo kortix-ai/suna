@@ -161,7 +161,7 @@ async function installProvenRelease(built: BuiltRelease = release, proven = true
   const manifest: ReleaseManifest = {
     release_id: d.release_id!,
     source_commit: d.source_commit!,
-    config_dir: d.config_dir!,
+    config_dir: d.config_dir,
     config_tree_id: d.config_tree_id!,
     archive_url: d.archive!.url,
     archive_bytes: d.archive!.bytes,
@@ -177,7 +177,8 @@ async function installProvenRelease(built: BuiltRelease = release, proven = true
     dir,
     proven,
   })
-  return dir
+  // What OpenCode is served: the config dir inside the release.
+  return join(dir, DIR)
 }
 
 /**
@@ -211,9 +212,9 @@ async function health(): Promise<{ runtimeReady: boolean; status: string; config
   }
 }
 
-function tamper(dir: string) {
-  spawnSync('chmod', ['-R', 'u+w', dir])
-  writeFileSync(join(dir, 'agents/kortix.md'), 'TAMPERED\n')
+function tamper(releaseRoot: string) {
+  spawnSync('chmod', ['-R', 'u+w', releaseRoot])
+  writeFileSync(join(releaseRoot, DIR, 'agents/kortix.md'), 'TAMPERED\n')
 }
 
 beforeEach(() => {
@@ -248,7 +249,7 @@ afterEach(() => {
 describe('the desired release is what the box runs', () => {
   test('a fresh box downloads it, proves it, writes the pointer and reports it', async () => {
     const run = await boot()
-    const dir = releaseDir(store, release.descriptor.release_id!)
+    const dir = join(releaseDir(store, release.descriptor.release_id!), DIR)
 
     expect(run.result).toMatchObject({
       dir,
@@ -280,7 +281,7 @@ describe('the desired release is what the box runs', () => {
   test('C0: the early spawn starts on the image default, before the config is known', async () => {
     const run = await boot()
     expect(run.starts).toBe(1)
-    expect(await readBootLinkTarget(store)).toBe(releaseDir(store, release.descriptor.release_id!))
+    expect(await readBootLinkTarget(store)).toBe(join(releaseDir(store, release.descriptor.release_id!), DIR))
     expect(api.archiveRequests.length).toBe(1)
   })
 
@@ -387,6 +388,24 @@ describe('valve B: the store or the API could not be reached', () => {
     expect(run.result.fallbackReason).toMatch(/the API could not be asked/)
   })
 
+  // 2026-10-05: the API sends `release_id: null` with governance when it
+  // cannot build the release (a composed archive over the limit carries no
+  // tree either). The box derived a governance-only ID from it and ran the
+  // image default with `fallback_reason: null` — every project tool, skill
+  // and plugin gone, reported as healthy.
+  test('a descriptor with no release keeps the last proven copy and states the API reason', async () => {
+    const dir = await installProvenRelease()
+    const reason = 'config dir harnesses/opencode with skills/ and the pi config dir exceeds the 33554432-byte archive limit'
+    api.respond({
+      status: 200,
+      json: { ...release.descriptor, release_id: null, config_tree_id: null, archive: null, files: null, reason },
+    })
+    const run = await boot()
+    expect(run.result).toMatchObject({ dir, source: 'release', releaseId: release.descriptor.release_id, proven: true })
+    expect(run.result.fallbackReason).toContain(reason)
+    expect(configReleaseReport().desired_release_id).toBeNull()
+  })
+
   test('an archive the store cannot serve falls back without quarantining the release', async () => {
     await installProvenRelease()
     const previousDir = releaseDir(store, release.descriptor.release_id!)
@@ -482,7 +501,7 @@ describe('C8: config releases off is one early return to the pre-release behavio
 
 describe('degenerate clones change nothing about the config', () => {
   test('no clone, an empty clone and a foreign clone all boot the current release', async () => {
-    const dir = releaseDir(store, release.descriptor.release_id!)
+    const dir = join(releaseDir(store, release.descriptor.release_id!), DIR)
 
     // No clone at all.
     rmSync(work, { recursive: true, force: true })
@@ -549,7 +568,7 @@ describe('what the API decides, the session is told and the box runs', () => {
       fallbackReason: null,
       failedReleaseId: null,
     })
-    expect(run.result.dir).toBe(releaseDir(store, none.descriptor.release_id!))
+    expect(run.result.dir).toBe(join(releaseDir(store, none.descriptor.release_id!), DIR))
     // Delivered as the governance it is — not read as "missing" and left unset.
     expect(process.env.KORTIX_COMPILED_AGENT_CONFIG).toBe('{}')
     expect(process.env.KORTIX_COMPILED_AGENT_CONFIG_ETAG).toBe(none.descriptor.compiled_governance_etag!)

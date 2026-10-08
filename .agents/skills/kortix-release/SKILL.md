@@ -320,3 +320,20 @@ no `vX.Y.Z` Release.
    the three npm packages, the GitHub Release (24 assets), and Better Stack all
    verified on the new version.
 8. `:stable` moved only if the user explicitly asked for it this release.
+9. **One-time, release carrying #9272 (the `/internal/*` edge gate):** the
+   api-router worker ships inert until `INTERNAL_EDGE_KEY` is set. Do it per env,
+   in this order, after that release is live in the env. A wrong order breaks LLM
+   inference, because the gateway calls `/internal/gateway/*` through the public
+   API host.
+   1. Generate a random 32-byte key. Never print it.
+   2. Add `KORTIX_INTERNAL_EDGE_KEY` to the env's Secrets Manager blob
+      `kortix-<env>-env` (needs an MFA session) and to `apps/api/.env.<env>` with
+      `dotenvx set`.
+   3. Redeploy the gateway (new ECS deployment). Confirm it sends the header:
+      gateway `GET /v1/models` with a PAT still returns 200.
+   4. Only then `wrangler secret put INTERNAL_EDGE_KEY --env <env>` on the
+      api-router worker, and redeploy the worker.
+   5. Verify: public `curl https://<api-host>/internal/gateway/authenticate`
+      returns 404 (the worker gate, not the app's 401), and a gateway chat call
+      gives the same answer as before.
+   Rollback: delete the worker secret. The gateway header is harmless.

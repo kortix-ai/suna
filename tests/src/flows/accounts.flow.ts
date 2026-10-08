@@ -4,7 +4,10 @@
  */
 import { AccountSummarySchema } from '@kortix/api-contract';
 import { flow } from '../core/flow';
+import type { Client } from '../core/client';
+import type { Principal } from '../core/types';
 import { enableEnterpriseDemo } from '../fixtures/enterprise-demo';
+import { adminCreateUser, adminDeleteUser, passwordGrant } from '../fixtures/supabase';
 
 flow(
   'ME-1',
@@ -67,6 +70,11 @@ flow(
         .get('/v1/accounts/:accountId', { params: { accountId } });
       r.status(403);
     });
+    await ctx.step('create without a name → 400 Validation failed; a 256-character name → 400 name is too long', async () => {
+      (await ctx.client.as(ctx.P.OWNER).post('/v1/accounts', {})).status(400).body().has('$.message', 'Validation failed');
+      (await ctx.client.as(ctx.P.OWNER).post('/v1/accounts', { name: 'a'.repeat(256) }))
+        .status(400).body().has('$.error', 'name is too long');
+    });
   },
 );
 
@@ -112,15 +120,12 @@ flow('TOK-2', { domain: 'accounts', routes: ['POST /v1/accounts/tokens'] }, asyn
 
 flow('ACCT-4', { domain: 'accounts', routes: ['PATCH /v1/accounts/:accountId'] }, async (ctx) => {
   const team = await ctx.fixtures.team();
-  await ctx.step('OWNER renames account', async () => {
+  await ctx.step('OWNER renames account → 200 with the new name', async () => {
+    const name = ctx.fixtures.name('renamed');
     const r = await ctx.client
       .as(ctx.P.OWNER)
-      .patch(
-        '/v1/accounts/:accountId',
-        { name: ctx.fixtures.name('renamed') },
-        { params: { accountId: team.id } },
-      );
-    r.status(200);
+      .patch('/v1/accounts/:accountId', { name }, { params: { accountId: team.id } });
+    r.status(200).body().has('$.name', name);
   });
   await ctx.step('MEMBER cannot rename → 403', async () => {
     const member = await team.addMember('member');
@@ -280,6 +285,17 @@ flow(
       });
       r.status(400).body().has('$.message', 'Validation failed');
     });
+    await ctx.step('an ADMIN removing the OWNER → 403 Admins cannot remove owners', async () => {
+      const admin = await team.addMember('admin');
+      (await ctx.client.as(admin).del('/v1/accounts/:accountId/members/:userId', {
+        params: { accountId: team.id, userId: ctx.P.OWNER.userId! },
+      })).status(403).body().has('$.error', 'Admins cannot remove owners');
+    });
+    await ctx.step('the OWNER removing the last owner (themselves) → 409', async () => {
+      (await ctx.client.as(ctx.P.OWNER).del('/v1/accounts/:accountId/members/:userId', {
+        params: { accountId: team.id, userId: ctx.P.OWNER.userId! },
+      })).status(409).body().has('$.error', 'Cannot remove the last owner');
+    });
     await ctx.step('OWNER removes member → ok', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).del('/v1/accounts/:accountId/members/:userId', {
         params: { accountId: team.id, userId: member.userId! },
@@ -304,21 +320,57 @@ flow(
 
 flow(
   'MEM-5',
-  { domain: 'accounts', routes: ['POST /v1/accounts/:accountId/leave'] },
+  { domain: 'accounts', routes: [
+    'POST /v1/accounts/:accountId/leave',
+    'POST /v1/accounts/:accountId/iam/groups',
+    'POST /v1/accounts/:accountId/iam/groups/:groupId/members',
+    'GET /v1/accounts/:accountId/iam/groups/:groupId/members',
+  ] },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const member = await team.addMember('member');
+    let groupId = '';
+    await ctx.step('the member is in a group', async () => {
+      await enableEnterpriseDemo(ctx, team.id);
+      const created = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/accounts/:accountId/iam/groups',
+        { name: ctx.fixtures.name('leaver') },
+        { params: { accountId: team.id } },
+      );
+      created.status(201);
+      groupId = created.json<any>().group_id;
+      (await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/accounts/:accountId/iam/groups/:groupId/members',
+        { userIds: [member.userId!] },
+        { params: { accountId: team.id, groupId } },
+      )).status(200).body().has('$.added', 1);
+    });
     await ctx.step('member leaves → ok', async () => {
       const r = await ctx.client
         .as(member)
         .post('/v1/accounts/:accountId/leave', {}, { params: { accountId: team.id } });
       r.status(200);
     });
+    // KRTX-1722: leaving kept the group rows, so a re-invite restored every
+    // group grant. Removal and SCIM already delete them.
+    await ctx.step('the leaver is in no group of the account', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/iam/groups/:groupId/members', {
+        params: { accountId: team.id, groupId },
+      });
+      r.status(200);
+      if (r.json<any>().members.some((row: any) => row.user_id === member.userId)) {
+        throw new Error('The member who left remains in the group');
+      }
+    });
     await ctx.step('non-member leave → 404', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
         .post('/v1/accounts/:accountId/leave', {}, { params: { accountId: team.id } });
       r.status(404);
+    });
+    await ctx.step('the last owner cannot leave → 409', async () => {
+      (await ctx.client.as(ctx.P.OWNER).post('/v1/accounts/:accountId/leave', {}, { params: { accountId: team.id } }))
+        .status(409).body().has('$.error', 'Cannot leave as the last owner — transfer ownership first');
     });
   },
 );
@@ -443,6 +495,8 @@ flow(
       'POST /v1/accounts/:accountId/members',
       'GET /v1/projects/:projectId/access',
       'POST /v1/account-invites/:inviteId/accept',
+      'DELETE /v1/accounts/:accountId/members/:userId',
+      'GET /v1/accounts/:accountId',
     ],
   },
   async (ctx) => {
@@ -554,6 +608,26 @@ flow(
         if (!row) throw new Error('accepted invitee missing from project access list');
         if (row.effective_project_role !== 'manager')
           throw new Error(`expected manager, got ${row.effective_project_role}`);
+
+        // A current member re-accepting the same invite still heals (200).
+        const again = await ctx.client
+          .as(addressee)
+          .post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId } });
+        again.status(200);
+
+        // After removal the accepted invite must not re-create the membership.
+        const removed = await ctx.client.as(ctx.P.OWNER).del('/v1/accounts/:accountId/members/:userId', {
+          params: { accountId: team.id, userId: addressee.userId! },
+        });
+        removed.status(200);
+        const replay = await ctx.client
+          .as(addressee)
+          .post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId } });
+        replay.status(410);
+        const after = await ctx.client
+          .as(addressee)
+          .get('/v1/accounts/:accountId', { params: { accountId: team.id } });
+        after.status([403, 404]);
       },
     );
 
@@ -578,41 +652,75 @@ flow(
 
 flow(
   'INV-1',
-  { domain: 'accounts', routes: ['GET /v1/accounts/:accountId/invites'] },
+  {
+    domain: 'accounts',
+    routes: [
+      'GET /v1/accounts/:accountId/invites',
+      'POST /v1/accounts/:accountId/members',
+      'PATCH /v1/accounts/:accountId/members/:userId',
+      'POST /v1/accounts/:accountId/invites/:inviteId/resend',
+      'DELETE /v1/accounts/:accountId/invites/:inviteId',
+    ],
+  },
   async (ctx) => {
     const team = await ctx.fixtures.team();
-    await ctx.step('list pending invites', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/invites', { params: { accountId: team.id } });
+    const params = { accountId: team.id };
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const email = `${ctx.fixtures.name('inv1')}@${ctx.env.testEmailDomain}`.toLowerCase();
+    let inviteId = '';
+    let admin!: Principal;
+    const pending = async (who: Principal) => {
+      const r = await ctx.client.as(who).get('/v1/accounts/:accountId/invites', { params });
       r.status(200);
+      return r.json<Array<Record<string, unknown>>>();
+    };
+    await ctx.step('an invite to a padded, mixed-case address is stored lower-cased → 201 pending with its link', async () => {
+      const r = await owner.post('/v1/accounts/:accountId/members', { email: `  ${email.toUpperCase()}  `, role: 'admin' }, { params });
+      r.status(201).body().has('$.status', 'pending').has('$.email', email).has('$.account_role', 'admin');
+      inviteId = r.json<{ invite_id: string }>().invite_id;
+      r.body().matches('$.invite_url', new RegExp(`/invites/${inviteId}$`));
     });
-    await ctx.step('plain MEMBER sees no pending invites', async () => {
-      const member = await team.addMember('member');
-      const r = await ctx.client
-        .as(member)
-        .get('/v1/accounts/:accountId/invites', { params: { accountId: team.id } });
-      r.status(200);
-      if (r.json<any[]>().length !== 0) throw new Error('pending invites leaked to plain member');
+    await ctx.step('the owner lists it with its email, role, inviter and link', async () => {
+      const row = (await pending(ctx.P.OWNER)).find((i) => i.invite_id === inviteId);
+      const ok = row && row.email === email && row.initial_role === 'admin' && row.invited_by === ctx.P.OWNER.userId &&
+        String(row.invite_url).endsWith(`/invites/${inviteId}`);
+      if (!ok) throw new Error(`listed invite: ${JSON.stringify(row)}`);
+    });
+    await ctx.step('an account admin lists it; after demoting themselves to member they see an empty list', async () => {
+      admin = await team.addMember('admin');
+      if (!(await pending(admin)).some((i) => i.invite_id === inviteId)) throw new Error('admin cannot see the pending invite');
+      (await ctx.client.as(admin).patch('/v1/accounts/:accountId/members/:userId', { role: 'member' }, { params: { ...params, userId: admin.userId! } }))
+        .status(200).body().has('$.account_role', 'member');
+      if ((await pending(admin)).length !== 0) throw new Error('pending invites leaked to a demoted member');
+    });
+    await ctx.step('a plain member cannot resend the invite or promote themselves → 403; the invite is unchanged', async () => {
+      (await ctx.client.as(admin).post('/v1/accounts/:accountId/invites/:inviteId/resend', {}, { params: { ...params, inviteId } })).status(403);
+      (await ctx.client.as(admin).patch('/v1/accounts/:accountId/members/:userId', { role: 'admin' }, { params: { ...params, userId: admin.userId! } })).status(403);
+      if (!(await pending(ctx.P.OWNER)).some((i) => i.invite_id === inviteId)) throw new Error('the invite vanished');
+    });
+    await ctx.step('NONMEMBER cannot list → 403 Forbidden', async () => {
+      (await ctx.client.as(ctx.P.NONMEMBER).get('/v1/accounts/:accountId/invites', { params })).status(403).body().has('$.error', 'Forbidden');
+    });
+    await ctx.step('the owner cancels → 200 {ok:true}; the invite drops out of the list', async () => {
+      (await owner.del('/v1/accounts/:accountId/invites/:inviteId', { params: { ...params, inviteId } })).status(200).body().has('$.ok', true);
+      if ((await pending(ctx.P.OWNER)).some((i) => i.invite_id === inviteId)) throw new Error('a cancelled invite is still listed');
     });
   },
 );
 
 flow(
   'DEL-1',
-  { domain: 'accounts', routes: ['GET /v1/billing/account/deletion-status'] },
+  { domain: 'accounts', routes: ['GET /v1/account/deletion-status'] },
   async (ctx) => {
     await ctx.step('OWNER reads deletion status', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/billing/account/deletion-status');
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/account/deletion-status');
       r.status(200);
     });
   },
 );
 
-// DEL-3 — the "backwards-compatible" `/v1/account/*` deletion mount
-// (apps/api/src/billing/routes/account-deletion.ts, mounted at /v1/account/*
-// in apps/api/src/index.ts:694, distinct from the `/v1/billing/account/*`
-// mirror mount covered by DEL-1/DEL-2). Drives `GET .../deletion-status` and
+// DEL-4 — the `/v1/account/*` deletion mount
+// (apps/api/src/billing/routes/account-deletion.ts). Drives `GET .../deletion-status` and
 // the real, destructive `DELETE .../delete-immediately` on a THROWAWAY user's
 // own personal account (never OWNER/team accounts other flows depend on).
 // Immediate self-deletion removes the auth identity, invalidates its token and
@@ -1156,5 +1264,91 @@ flow(
       const a = await ctx.client.as(ctx.P.ANON).get('/v1/accounts/:accountId/branding', { params });
       a.status(401);
     });
+  },
+);
+
+// ACCT-5 — an invite-first signup. The invites exist before the identity
+// does, and the identity is a raw Supabase user with no fixture bootstrap, so
+// its first Kortix read is the one that must create the personal account
+// before claiming the invites.
+flow(
+  'ACCT-5',
+  {
+    domain: 'accounts',
+    routes: [
+      'POST /v1/accounts/:accountId/members',
+      'GET /v1/accounts/:accountId/invites',
+      'GET /v1/accounts',
+      'GET /v1/accounts/me',
+    ],
+  },
+  async (ctx) => {
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const created: string[] = [];
+    const signUp = async (email: string): Promise<{ userId: string; client: Client }> => {
+      const password = `Ke2e-${crypto.randomUUID()}-Aa1!`;
+      const user = await adminCreateUser(ctx.env, email, password);
+      created.push(user.id);
+      return { userId: user.id, client: ctx.client.withBearer(await passwordGrant(ctx.env, email, password), 'INVITE-FIRST') };
+    };
+    const invite = async (accountId: string, email: string, role: 'admin' | 'member') => {
+      (await owner.post('/v1/accounts/:accountId/members', { email, role }, { params: { accountId } }))
+        .status(201).body().has('$.status', 'pending');
+    };
+    try {
+      await ctx.step('an invite-first signup invited as admin by two accounts: the first GET /v1/accounts lists its own account AND both accounts; a repeat adds nothing', async () => {
+        const teamA = await ctx.fixtures.team();
+        const teamB = await ctx.fixtures.team();
+        const email = `${ctx.fixtures.name('invite-first')}@${ctx.env.testEmailDomain}`.toLowerCase();
+        await invite(teamA.id, email, 'admin');
+        await invite(teamB.id, email, 'admin');
+        const { userId, client } = await signUp(email);
+        for (const attempt of [1, 2]) {
+          const r = await client.get('/v1/accounts');
+          r.status(200);
+          const rows = r.json<Array<{ account_id: string; account_role: string; is_primary_owner: boolean }>>();
+          const byId = new Map(rows.map((a) => [a.account_id, a]));
+          const own = byId.get(userId);
+          const ok =
+            rows.length === 3 &&
+            own?.account_role === 'owner' && own.is_primary_owner === true &&
+            [teamA.id, teamB.id].every((id) => byId.get(id)?.account_role === 'admin' && byId.get(id)?.is_primary_owner === false);
+          if (!ok) throw new Error(`call ${attempt}: ${JSON.stringify(rows)}`);
+        }
+        for (const team of [teamA, teamB]) {
+          const r = await owner.get('/v1/accounts/:accountId/invites', { params: { accountId: team.id } });
+          r.status(200);
+          if (r.json<Array<{ email: string }>>().some((i) => i.email === email)) throw new Error('the invite was not claimed');
+        }
+      });
+      await ctx.step('an invite-first signup whose first read is GET /v1/accounts/me gets its own account (owner) plus the inviting account (member); a repeat adds nothing', async () => {
+        const team = await ctx.fixtures.team();
+        const email = `${ctx.fixtures.name('invite-first-me')}@${ctx.env.testEmailDomain}`.toLowerCase();
+        await invite(team.id, email, 'member');
+        const { userId, client } = await signUp(email);
+        for (const attempt of [1, 2]) {
+          const r = await client.get('/v1/accounts/me');
+          r.status(200);
+          const accounts = r.json<{ accounts: Array<{ account_id: string; role: string }> }>().accounts;
+          const roles = new Map(accounts.map((a) => [a.account_id, a.role]));
+          if (accounts.length !== 2 || roles.get(userId) !== 'owner' || roles.get(team.id) !== 'member') {
+            throw new Error(`call ${attempt}: ${JSON.stringify(accounts)}`);
+          }
+        }
+      });
+      await ctx.step('a user who already has a membership gets no retroactive personal account from GET /v1/accounts or /accounts/me', async () => {
+        const team = await ctx.fixtures.team();
+        const member = await team.addMember('member');
+        for (const path of ['/v1/accounts', '/v1/accounts/me'] as const) {
+          const r = await ctx.client.as(member).get(path);
+          r.status(200);
+          const body = r.json<any>();
+          const ids = (Array.isArray(body) ? body : body.accounts).map((a: { account_id: string }) => a.account_id);
+          if (ids.length !== 1 || ids[0] !== team.id) throw new Error(`${path} listed ${JSON.stringify(ids)}, expected only the team`);
+        }
+      });
+    } finally {
+      for (const id of created) await adminDeleteUser(ctx.env, id).catch(() => {});
+    }
   },
 );

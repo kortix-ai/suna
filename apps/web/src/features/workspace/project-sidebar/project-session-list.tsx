@@ -255,6 +255,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     isFetchingNextPage,
     isFetchNextPageError,
     fetchNextPage,
+    isScanning,
   } = useProjectSessions(projectId, {
     // Sessions the viewer started, top level only. Spawned sessions load under
     // their parent; runs started by others or by automation have their own
@@ -395,6 +396,8 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     totalCount: sessions.length + otherCount,
     visibleCount: visibleSessions.length + visibleOtherCount,
     serverFiltered: labels !== undefined,
+    scanning: isScanning || sharedQuery.isScanning || automatedQuery.isScanning,
+    hasMore: hasNextPage || sharedQuery.hasNextPage || automatedQuery.hasNextPage,
   });
 
   // One session row, its opencode sub-sessions, and (top-level rows only) the
@@ -592,7 +595,8 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     // `hiddenSections` — it has no way to know every section got hidden. Catch
     // that case here instead of letting `FadedScrollArea` render nothing with
     // no explanation.
-    if (grouped.sections.length === 0 && visibleOtherCount === 0) {
+    // `more`: no row yet, but a list has a next page. Its Load more renders below.
+    if (viewState !== 'more' && grouped.sections.length === 0 && visibleOtherCount === 0) {
       return (
         <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">
           {t('allSectionsHidden')}
@@ -804,6 +808,8 @@ function SessionListSection({
     email: 'email',
     schedule: 'scheduled',
     webhook: 'webhook',
+    event: 'event',
+    manual: 'manual',
     all: 'all',
   } as const;
   const sectionKey = sectionTranslationKeys[section.id as keyof typeof sectionTranslationKeys];
@@ -975,7 +981,9 @@ function StarterSection({
   renderNode: (session: ProjectSession) => ReactNode;
 }) {
   const t = useTranslations('sidebar');
-  if (query.sessions.length === 0) return null;
+  // A section with no row yet but a next page stays, with its Load more: the
+  // rows the viewer can see may sit past the first pages (KRTX-1727).
+  if (query.sessions.length === 0 && !query.hasNextPage) return null;
   return (
     <Disclosure
       open={open}
@@ -1423,16 +1431,19 @@ function ProjectSessionRow({
                 ? 'Share'
                 : tI18nComplete.raw('textadc01d813da0')}
             </DropdownMenuItem>
-            <DropdownMenuItem
-              className="cursor-pointer"
-              disabled={isRestarting}
-              onSelect={() => deferAfterClose(() => onRestart(session.session_id, displayTitle))}
-            >
-              {isRestarting ? <Loading className="size-4 shrink-0" /> : <RotateCcw />}
-              {tI18nComplete.raw('text6b983a81e5e8')}
-            </DropdownMenuItem>
-            {/* Lifecycle, not sharing: a project manager keeps Stop on a
-                session they did not create. */}
+            {/* Lifecycle, not sharing: a project manager keeps Restart, Stop
+                and Delete on a session they did not create, and a member who
+                did not create it gets none of them (the server answers 403). */}
+            {session.can_manage_lifecycle !== false && (
+              <DropdownMenuItem
+                className="cursor-pointer"
+                disabled={isRestarting}
+                onSelect={() => deferAfterClose(() => onRestart(session.session_id, displayTitle))}
+              >
+                {isRestarting ? <Loading className="size-4 shrink-0" /> : <RotateCcw />}
+                {tI18nComplete.raw('text6b983a81e5e8')}
+              </DropdownMenuItem>
+            )}
             {sessionCanBeStopped(session) && session.can_manage_lifecycle !== false && (
               <DropdownMenuItem
                 className="cursor-pointer"
@@ -1453,13 +1464,15 @@ function ProjectSessionRow({
                 {tI18nComplete.raw('text0e5f7f6732e0')}
               </DropdownMenuItem>
             )}
-            <DropdownMenuItem
-              className="cursor-pointer"
-              onSelect={() => deferAfterClose(() => onDelete(session.session_id, displayTitle))}
-            >
-              <TrashIcon />
-              {tI18nComplete.raw('texte2d0a54968ea')}
-            </DropdownMenuItem>
+            {session.can_manage_lifecycle !== false && (
+              <DropdownMenuItem
+                className="cursor-pointer"
+                onSelect={() => deferAfterClose(() => onDelete(session.session_id, displayTitle))}
+              >
+                <TrashIcon />
+                {tI18nComplete.raw('texte2d0a54968ea')}
+              </DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

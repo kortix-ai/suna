@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
   auditRelayEnvPassthrough,
-  buildPiWorkerSessionEnvVars,
   buildSessionRuntimeEnv,
 } from './session-runtime-env';
 
@@ -156,57 +155,6 @@ describe('buildSessionRuntimeEnv — workspace mode', () => {
 });
 
 describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
-  test('enables compiled checkout for a fresh session', () => {
-    const env = buildSessionRuntimeEnv({
-      ...BASE_INPUT,
-      compiledBootMode: 'prefer',
-      freshSession: true,
-      baseSha: 'a'.repeat(40),
-    });
-
-    expect(env.KORTIX_COMPILED_BOOT_MODE).toBe('prefer');
-    expect(env.KORTIX_SESSION_FRESH).toBe('1');
-    expect(env.KORTIX_BASE_SHA).toBe('a'.repeat(40));
-  });
-
-  test('emits required mode for strict compiled runtime verification', () => {
-    const env = buildSessionRuntimeEnv({
-      ...BASE_INPUT,
-      compiledBootMode: 'required',
-      freshSession: true,
-      baseSha: 'a'.repeat(40),
-    });
-
-    expect(env.KORTIX_COMPILED_BOOT_MODE).toBe('required');
-    expect(env.KORTIX_BASE_SHA).toBe('a'.repeat(40));
-  });
-
-  test('keeps off, resumed, and repository-free sessions on the existing path', () => {
-    for (const env of [
-      buildSessionRuntimeEnv({
-        ...BASE_INPUT,
-        compiledBootMode: 'off',
-        freshSession: true,
-        baseSha: 'a'.repeat(40),
-      }),
-      buildSessionRuntimeEnv({
-        ...BASE_INPUT,
-        compiledBootMode: 'prefer',
-        freshSession: false,
-        baseSha: 'a'.repeat(40),
-      }),
-      buildSessionRuntimeEnv({
-        ...BASE_INPUT,
-        repositoryAccess: false,
-        compiledBootMode: 'prefer',
-        freshSession: true,
-        baseSha: 'a'.repeat(40),
-      }),
-    ]) {
-      expect(env).not.toHaveProperty('KORTIX_COMPILED_BOOT_MODE');
-    }
-  });
-
   test('marks replacement runtimes for remote session-branch restoration', () => {
     const env = buildSessionRuntimeEnv({
       ...BASE_INPUT,
@@ -228,9 +176,8 @@ describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
   });
 
   test('sends fresh-session and base-tip hints for a fresh session', () => {
-    // 2026-08-27: the fresh-session fast path is the default boot
-    // (KORTIX_FAST_GIT_BOOT_ENABLED, decided at create). Only the compiled-boot
-    // mode stays gated here (see the compiled-boot tests above).
+    // 2026-08-27: the fresh-session fast path is the default boot (decided at
+    // create).
     const env = buildSessionRuntimeEnv({
       ...BASE_INPUT,
       freshSession: true,
@@ -245,7 +192,6 @@ describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
     expect(env.KORTIX_GIT_DELTA_BUNDLE_BASE64).toBe('R0lUIEJVTkRMRQ==');
     expect(env.KORTIX_GIT_DELTA_PARENT_SHA).toBe('b'.repeat(40));
     expect(env.KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64).toBe('dHJlZSBkZWFkYmVlZgo=');
-    expect(env).not.toHaveProperty('KORTIX_COMPILED_BOOT_MODE');
   });
 
   test('marks a remote delta for fresh sessions only; no config-dir hint (nothing reads it)', () => {
@@ -321,49 +267,6 @@ describe('audit relay emission knobs', () => {
       KORTIX_AUDIT_RELAY_DROP_TYPES: '',
       KORTIX_AUDIT_RELAY_COALESCE: '0',
     });
-  });
-});
-
-describe('buildPiWorkerSessionEnvVars — minimal worker boot env', () => {
-  const input = {
-    projectId: 'proj-1',
-    sessionId: 'sess-1',
-    agentName: 'dev',
-    apiUrl: 'https://api.kortix.test/v1',
-    frontendUrl: 'https://kortix.test',
-    opencodeModel: 'openrouter/anthropic/claude-sonnet-4.5',
-  };
-
-  test('emits exactly the worker contract, nothing from the OpenCode chain', () => {
-    const env = buildPiWorkerSessionEnvVars(input);
-    expect(env).toEqual({
-      KORTIX_PROJECT_ID: 'proj-1',
-      KORTIX_SESSION_ID: 'sess-1',
-      KORTIX_SERVICE_PORT: '8000',
-      KORTIX_AGENT_NAME: 'dev',
-      KORTIX_AGENT: 'dev',
-      KORTIX_API_URL: 'https://api.kortix.test/v1',
-      KORTIX_FRONTEND_URL: 'https://kortix.test',
-      KORTIX_PROJECT_AUTO_CLONE: '0',
-      KORTIX_MODEL: 'openrouter/anthropic/claude-sonnet-4.5',
-    });
-    // The heavy chain must never leak in: no compiled config (baked into the
-    // artifact), no secret plumbing (v0 grants the worker none), no git.
-    expect(env).not.toHaveProperty('KORTIX_COMPILED_AGENT_CONFIG');
-    expect(env).not.toHaveProperty('KORTIX_PROJECT_SECRET_NAMES');
-    expect(env).not.toHaveProperty('KORTIX_REPO_URL');
-    expect(env).not.toHaveProperty('KORTIX_GIT_DELTA_BUNDLE_BASE64');
-  });
-
-  test('model and frontend URL are optional', () => {
-    const env = buildPiWorkerSessionEnvVars({
-      projectId: 'proj-1',
-      sessionId: 'sess-1',
-      agentName: 'dev',
-      apiUrl: 'https://api.kortix.test/v1',
-    });
-    expect(env).not.toHaveProperty('KORTIX_MODEL');
-    expect(env).not.toHaveProperty('KORTIX_FRONTEND_URL');
   });
 });
 

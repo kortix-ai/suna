@@ -714,6 +714,27 @@ describe('account_mfa_required 403 → kortix:mfa-required browser event', () =>
     }
   });
 
+  // The account enforces single sign-on and this credential is a password
+  // (or other non-IdP) identity: the host asks the person to sign in again
+  // through the IdP. A new sign-in, not a step-up, so a separate event.
+  test('the coded SSO denial dispatches kortix:sso-required, not the MFA step-up', async () => {
+    configureKortix({ backendUrl: 'http://test', getToken: async () => 'tok' });
+    const restoreFetch = stubFetch403({
+      error: true,
+      message: 'Your organization requires single sign-on.',
+      code: 'sso_required',
+    });
+    const win = stubWindow();
+    try {
+      const res = await backendApi.get('/accounts/abc');
+      expect(res.success).toBe(false);
+      expect(win.dispatched).toEqual(['kortix:sso-required']);
+    } finally {
+      win.restore();
+      restoreFetch();
+    }
+  });
+
   test('an ordinary 403 dispatches nothing', async () => {
     configureKortix({ backendUrl: 'http://test', getToken: async () => 'tok' });
     const restoreFetch = stubFetch403({

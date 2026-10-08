@@ -6,7 +6,6 @@ import {
   type SecretConsumer,
   type SecretEgressPolicy,
   type SecretStrategy,
-  emitsValue,
   resolveSecretDelivery,
 } from '../secrets/strategy';
 import { db } from '../shared/db';
@@ -258,79 +257,6 @@ export async function listResolvedProjectSecrets(
   return out;
 }
 
-export async function listProjectSecretsSnapshot(projectId: string): Promise<{
-  env: Record<string, string>;
-  names: string[];
-  revision: string;
-}> {
-  const env = await listProjectSecrets(projectId);
-  const names = Object.keys(env).sort();
-  return {
-    env,
-    names,
-    revision: projectSecretsRevision(env),
-  };
-}
-
-/**
- * Per-user, per-agent-grant snapshot — the sandbox-boot view. `grantEnv` is the
- * running agent's `secrets` grant (`AgentGrant.env`); omitted/`'all'` = every
- * secret in the project reaches this session (see resolveGrantedSecretEnv).
- */
-/**
- * THE chokepoint: everything a sandbox is handed passes through here.
- *
- * Two production callers — sandbox boot (`buildSessionSandboxEnvVars`) and the
- * per-prompt hot push (`resolveOwnerRawEnv`) — which is why the delivery
- * decision belongs here rather than at either of them. A row's `strategy`
- * decides whether its value may enter the box AT ALL; the pre-existing grant and
- * allowlist narrowing decide only WHICH rows are considered.
- *
- * `sessionId` is required to deliver anything non-`runtime`: a brokered value is
- * represented in the box by a per-session handle, and with no session there is
- * nothing to mint against. Absent it, non-`runtime` rows are withheld rather
- * than falling back to plaintext — the fallback would defeat the whole point.
- */
-/**
- * Delete from `env` every KEY that no longer has a deliverable value.
- *
- * Mutates in place because the caller owns the map and this is a pure narrowing
- * of it — a row whose delivery says "nothing" is removed from the values, and
- * therefore from `names`, which the daemon derives from the same map. (A name
- * emitted without a value, or the reverse, desynchronises the box's env store.)
- *
- * The subtlety is the SHARED KEY. Two identifiers may resolve to one env KEY —
- * that is deliberate, so an agent can be granted one specific value among
- * several candidates for the same variable. A KEY may therefore only be dropped
- * when EVERY identifier behind it is undeliverable; if one is still `runtime`,
- * the KEY has a legitimate value and dropping it would break a working session.
- */
-export function withholdUndeliverable(
-  rows: ResolvedProjectSecret[],
-  env: Record<string, string>,
-  sessionId: string | null,
-): void {
-  const deliverableKeys = new Set<string>();
-  const seenKeys = new Set<string>();
-  for (const row of rows) {
-    seenKeys.add(row.key);
-    const delivery = resolveSecretDelivery({
-      identifier: row.identifier,
-      strategy: row.strategy,
-      sessionId,
-      // The agent grant and the session allowlist were BOTH applied upstream by
-      // resolveGrantedSecretEnv; re-applying them here would double-count and
-      // could withhold a row the caller already admitted.
-      agentGrantEnv: 'all',
-      sessionAllowlist: null,
-    });
-    if (emitsValue(delivery)) deliverableKeys.add(row.key);
-  }
-  for (const key of seenKeys) {
-    if (!deliverableKeys.has(key)) delete env[key];
-  }
-}
-
 export type SecretHandleMinter = (row: ResolvedProjectSecret) => Promise<string>;
 
 /**
@@ -573,40 +499,6 @@ export async function listProjectSecretsSnapshotForUser(
     capabilities,
     capabilitiesJson: serializeSecretCapabilities(capabilities),
   };
-}
-
-export async function getProjectSecretValue(
-  projectId: string,
-  name: string,
-): Promise<string | null> {
-  const normalizedName = name.trim().toUpperCase();
-  // No person here: a value narrowed to an audience is never returned.
-  const rows = await filterSecretRowsByAudience({
-    projectId,
-    subject: NO_SUBJECT,
-    rows: await db
-      .select({
-        secretId: projectSecrets.secretId,
-        identifier: projectSecrets.identifier,
-        valueEnc: projectSecrets.valueEnc,
-        updatedAt: projectSecrets.updatedAt,
-      })
-      .from(projectSecrets)
-      .where(
-        and(
-          eq(projectSecrets.projectId, projectId),
-          eq(projectSecrets.name, normalizedName),
-          isNull(projectSecrets.ownerUserId),
-        ),
-      ),
-  });
-  if (rows.length === 0) return null;
-  // Deterministic pick when multiple identifiers share this key: the canonical
-  // (identifier === key) row wins, else the most-recently-updated one.
-  const canonical = rows.find((r) => r.identifier === normalizedName);
-  const row =
-    canonical ?? [...rows].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0]!;
-  return decryptProjectSecret(projectId, row.valueEnc);
 }
 
 // The AES-GCM envelope, the pure grant/allowlist predicates, the server-consumer

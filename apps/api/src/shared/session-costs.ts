@@ -19,6 +19,7 @@ import {
   lt,
   sql,
 } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { resolveSessionOwnerIdentities } from '../projects/lib/access';
 import type { SessionOwnerIdentity } from '../projects/lib/session-inventory';
 import type { CostSort, CostWindow } from './cost-window';
@@ -27,7 +28,6 @@ import {
   kortixBilledSpendSql,
   providerBilledSpendSql,
   rowKortixBilledSpendSql,
-  rowTotalSpendSql,
   totalSpendSql,
 } from './llm-spend';
 
@@ -930,5 +930,127 @@ export async function listProjectGatewaySessionSpend(input: {
   return {
     window_days: input.days,
     sessions: mergeLegacyGatewaySessionRows(llmRows, computeRows),
+  };
+}
+
+export interface GatewaySourceSpendRow {
+  /** The trigger slug that started the session (or its parent session), else
+   * the initiator type (`member`, `channel`, `api`, `system`), else
+   * `unattributed` for a request that carried no session. */
+  source: string;
+  sessions: number;
+  requests: number;
+  errors: number;
+  /** Total LLM spend in USD: what Kortix debited plus what an own key paid. */
+  cost: number;
+  kortix_cost: number;
+  input_tokens: number;
+  cached_tokens: number;
+  output_tokens: number;
+  avg_input_tokens: number;
+  last_at: string | null;
+}
+
+export interface GatewaySourceSpend {
+  window_hours: number;
+  total: Omit<GatewaySourceSpendRow, 'source' | 'last_at'>;
+  sources: GatewaySourceSpendRow[];
+}
+
+const SOURCE_WINDOW_MAX_HOURS = 720;
+
+/**
+ * LLM spend per source over the last `hours`: which trigger, member, channel or
+ * API caller started the sessions that spent it. A worker that a trigger
+ * session started (its `parent_session_id`) is billed to that trigger, so a
+ * factory's fan-out shows up under the trigger that caused it.
+ */
+export async function listProjectGatewaySourceSpend(input: {
+  accountId: string;
+  projectId: string;
+  hours: number;
+}): Promise<GatewaySourceSpend> {
+  const hours = Math.min(
+    Math.max(Math.trunc(Number(input.hours) || 0), 1),
+    SOURCE_WINDOW_MAX_HOURS,
+  );
+  const parent = alias(projectSessions, 'parent_session');
+  const sourceSql = sql<string>`coalesce(
+    case when ${projectSessions.initiatorType} = 'trigger' then ${projectSessions.initiatorId} end,
+    case when ${parent.initiatorType} = 'trigger' then ${parent.initiatorId} end,
+    ${projectSessions.initiatorType}::text,
+    case when ${gatewayRequestLogs.sessionId} is null then 'unattributed' end,
+    'unknown'
+  )`;
+
+  const rows = await db
+    .select({
+      source: sourceSql,
+      sessions: sql<number>`count(distinct ${gatewayRequestLogs.sessionId})::int`,
+      requests: sql<number>`count(*)::int`,
+      errors: sql<number>`count(*) filter (where not ${gatewayRequestLogs.ok})::int`,
+      cost: totalSpendSql,
+      kortixCost: kortixBilledSpendSql,
+      inputTokens: sql<number>`coalesce(sum(${gatewayRequestLogs.inputTokens}), 0)::float8`,
+      cachedTokens: sql<number>`coalesce(sum(${gatewayRequestLogs.cachedTokens}), 0)::float8`,
+      outputTokens: sql<number>`coalesce(sum(${gatewayRequestLogs.outputTokens}), 0)::float8`,
+      lastAt: sql<Date | null>`max(${gatewayRequestLogs.createdAt})`,
+    })
+    .from(gatewayRequestLogs)
+    .leftJoin(
+      projectSessions,
+      and(
+        eq(projectSessions.sessionId, gatewayRequestLogs.sessionId),
+        eq(projectSessions.projectId, gatewayRequestLogs.projectId),
+      ),
+    )
+    .leftJoin(parent, eq(parent.sessionId, projectSessions.parentSessionId))
+    .where(
+      and(
+        eq(gatewayRequestLogs.accountId, input.accountId),
+        eq(gatewayRequestLogs.projectId, input.projectId),
+        sql`${gatewayRequestLogs.createdAt} >= now() - make_interval(hours => ${hours})`,
+      ),
+    )
+    .groupBy(sourceSql);
+
+  const sources: GatewaySourceSpendRow[] = rows
+    .map((row) => {
+      const requests = numberValue(row.requests);
+      const inputTokens = numberValue(row.inputTokens);
+      return {
+        source: row.source,
+        sessions: numberValue(row.sessions),
+        requests,
+        errors: numberValue(row.errors),
+        cost: numberValue(row.cost),
+        kortix_cost: numberValue(row.kortixCost),
+        input_tokens: inputTokens,
+        cached_tokens: numberValue(row.cachedTokens),
+        output_tokens: numberValue(row.outputTokens),
+        avg_input_tokens: requests > 0 ? Math.round(inputTokens / requests) : 0,
+        last_at: isoValue(row.lastAt),
+      };
+    })
+    .sort((left, right) => right.cost - left.cost);
+
+  const sum = (key: 'sessions' | 'requests' | 'errors' | 'cost' | 'kortix_cost' | 'input_tokens' | 'cached_tokens' | 'output_tokens') =>
+    sources.reduce((acc, row) => acc + row[key], 0);
+  const totalRequests = sum('requests');
+  const totalInput = sum('input_tokens');
+  return {
+    window_hours: hours,
+    total: {
+      sessions: sum('sessions'),
+      requests: totalRequests,
+      errors: sum('errors'),
+      cost: sum('cost'),
+      kortix_cost: sum('kortix_cost'),
+      input_tokens: totalInput,
+      cached_tokens: sum('cached_tokens'),
+      output_tokens: sum('output_tokens'),
+      avg_input_tokens: totalRequests > 0 ? Math.round(totalInput / totalRequests) : 0,
+    },
+    sources,
   };
 }

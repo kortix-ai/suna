@@ -1,14 +1,16 @@
 // SCIM Groups routes: GET (list), GET/:id, POST, PATCH (member add/remove,
 // rename), PUT (full-state replace — Okta group-push renames), DELETE.
-// Registers onto the shared scimRouter via side effect.
+// registerScimGroupsRoutes() registers these onto the shared scimRouter.
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { accountGroupMembers, accountGroups, accountInvitations, accountMembers, accountScimUsers } from '@kortix/db';
+import { accountGroupMembers, accountGroups, accountInvitations, accountScimUsers } from '@kortix/db';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { invalidateIamCacheForGroup, invalidateIamCacheForUsers } from '../iam/cache-invalidation';
 import { scimError } from '../middleware/scim-auth';
 import { errors, json } from '../openapi';
 import { db } from '../shared/db';
+import { accountMemberRow, accountMembersAmong } from '../iam/membership-read';
+import { accountGroupFullRow, groupMemberUserIds, groupNameInAccountRow, scimGroupRow, scimGroupRowById, scimGroupRows } from '../iam/group-read';
 import { deleteGroup } from '../repositories/iam';
 import { directoryUserById, directoryGroupIds, saveDirectoryGroups } from './directory-users';
 import { groupChanges, memberValues, InvalidGroupMemberError, type GroupChange } from './group-patch';
@@ -50,12 +52,7 @@ async function addGroupMembersOrDeferInvites(
   memberValues = resolved.filter((value): value is string => value !== null);
   if (memberValues.length === 0) return;
 
-  const realMembers = await db
-    .select({ userId: accountMembers.userId })
-    .from(accountMembers)
-    .where(
-      and(eq(accountMembers.accountId, accountId), inArray(accountMembers.userId, memberValues)),
-    );
+  const realMembers = await accountMembersAmong(accountId, memberValues);
   const memberSet = new Set(realMembers.map((m) => m.userId));
 
   const rows = memberValues.filter((v) => memberSet.has(v)).map((v) => ({ groupId, userId: v }));
@@ -90,13 +87,7 @@ async function addGroupMembersOrDeferInvites(
     const resolvedUserId = await userIdByEmail(inv.email, accountId);
     let resolvedMemberUserId: string | null = null;
     if (resolvedUserId) {
-      const [member] = await db
-        .select({ userId: accountMembers.userId })
-        .from(accountMembers)
-        .where(
-          and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, resolvedUserId)),
-        )
-        .limit(1);
+      const [member] = await accountMemberRow(accountId, resolvedUserId);
       resolvedMemberUserId = member?.userId ?? null;
     }
 
@@ -254,183 +245,6 @@ async function removeGroupMemberValue(
   }
 }
 
-// ─── Groups ───────────────────────────────────────────────────────────────
-
-scimRouter.openapi(
-  createRoute({
-    method: 'get',
-    path: '/accounts/{accountId}/Groups',
-    tags: ['scim'],
-    summary: 'List SCIM Groups (filter by displayName/id/externalId eq)',
-    request: {
-      params: z.object({ accountId: z.string() }),
-      query: ScimListQuery,
-    },
-    responses: {
-      200: json(ScimResource, 'SCIM ListResponse'),
-      ...errors(401, 403),
-    },
-  }),
-  async (c: any) => {
-    const accountId = c.req.param('accountId');
-    const rawFilter = c.req.query('filter');
-    // Supplied-but-unsupported filter → 400, not a silent full-list (RFC 7644 §3.4.2.2).
-    if (isUnsupportedFilter(rawFilter)) {
-      return scimError(c, 400, 'Unsupported filter — only `attribute eq "value"` is supported');
-    }
-    const filter = parseFilter(rawFilter);
-
-    const rows = await db
-      .select({
-        groupId: accountGroups.groupId,
-        name: accountGroups.name,
-        externalId: accountGroups.externalId,
-        createdAt: accountGroups.createdAt,
-        updatedAt: accountGroups.updatedAt,
-      })
-      .from(accountGroups)
-      .where(eq(accountGroups.accountId, accountId));
-
-    let filteredRows = rows;
-    if (filter) {
-      if (filter.attr.toLowerCase() === 'displayname') {
-        filteredRows = rows.filter((r) => r.name.toLowerCase() === filter.value.toLowerCase());
-      } else if (filter.attr.toLowerCase() === 'id') {
-        filteredRows = rows.filter((r) => r.groupId === filter.value);
-      } else if (filter.attr.toLowerCase() === 'externalid') {
-        filteredRows = rows.filter((r) => r.externalId === filter.value);
-      } else {
-        filteredRows = [];
-      }
-    }
-
-    const resources = await Promise.all(filteredRows.map((r) => buildGroup(accountId, r)));
-    return c.json(listResponse(resources.sort((a, b) => a.id.localeCompare(b.id)), c.req.valid('query')));
-  },
-);
-
-scimRouter.openapi(
-  createRoute({
-    method: 'get',
-    path: '/accounts/{accountId}/Groups/{groupId}',
-    tags: ['scim'],
-    summary: 'Get a SCIM Group',
-    request: { params: z.object({ accountId: z.string(), groupId: z.string() }) },
-    responses: {
-      200: json(ScimResource, 'SCIM Group'),
-      ...errors(401, 403, 404),
-    },
-  }),
-  async (c: any) => {
-    const accountId = c.req.param('accountId');
-    const groupId = c.req.param('groupId');
-
-    const [row] = await db
-      .select({
-        groupId: accountGroups.groupId,
-        name: accountGroups.name,
-        externalId: accountGroups.externalId,
-        createdAt: accountGroups.createdAt,
-        updatedAt: accountGroups.updatedAt,
-      })
-      .from(accountGroups)
-      .where(and(eq(accountGroups.accountId, accountId), eq(accountGroups.groupId, groupId)))
-      .limit(1);
-    if (!row) return scimError(c, 404, 'Group not found');
-
-    return c.json(await buildGroup(accountId, row));
-  },
-);
-
-scimRouter.openapi(
-  createRoute({
-    method: 'post',
-    path: '/accounts/{accountId}/Groups',
-    tags: ['scim'],
-    summary: 'Create a SCIM Group',
-    request: {
-      params: z.object({ accountId: z.string() }),
-      body: { content: { 'application/json': { schema: ScimResource } } },
-    },
-    responses: {
-      201: json(ScimResource, 'SCIM Group created'),
-      ...errors(400, 401, 403, 409),
-    },
-  }),
-  async (c: any) => {
-    const accountId = c.req.param('accountId');
-    let body: Record<string, unknown>;
-    try {
-      body = await c.req.json();
-    } catch {
-      return scimError(c, 400, 'Body must be JSON');
-    }
-
-    let initialMembers: string[] = [];
-    try { if (body.members !== undefined) initialMembers = memberValues(body.members); }
-    catch (error) { return scimError(c, 400, (error as Error).message); }
-
-    const displayName = typeof body.displayName === 'string' ? body.displayName.trim() : '';
-    if (!displayName) return scimError(c, 400, 'displayName is required');
-    if (displayName.length > 128) {
-      return scimError(c, 400, 'displayName too long (max 128 chars)');
-    }
-
-    const externalId =
-      typeof body.externalId === 'string' && body.externalId.trim() ? body.externalId.trim() : null;
-
-    let groupId: string;
-    try {
-      const [row] = await db
-        .insert(accountGroups)
-        .values({
-          accountId,
-          name: displayName,
-          source: 'scim',
-          externalId,
-          createdBy: null,
-        })
-        .returning();
-      groupId = row.groupId;
-    } catch (err: unknown) {
-      if ((err as { cause?: { code?: string }; code?: string }).cause?.code === '23505' || (err as { code?: string }).code === '23505') {
-        return scimError(c, 409, 'A group with this displayName already exists');
-      }
-      throw err;
-    }
-
-    try { await addGroupMembersOrDeferInvites(accountId, groupId, initialMembers); }
-    catch (error) {
-      if (error instanceof InvalidGroupMemberError) return scimError(c, 400, error.message);
-      throw error;
-    }
-
-    await invalidateIamCacheForGroup(groupId);
-
-    await scimAudit(c, {
-      accountId,
-      action: 'scim.group.create',
-      resourceType: 'account_group',
-      resourceId: groupId,
-      after: { name: displayName, external_id: externalId },
-    });
-
-    const [row] = await db
-      .select({
-        groupId: accountGroups.groupId,
-        name: accountGroups.name,
-        externalId: accountGroups.externalId,
-        createdAt: accountGroups.createdAt,
-        updatedAt: accountGroups.updatedAt,
-      })
-      .from(accountGroups)
-      .where(eq(accountGroups.groupId, groupId))
-      .limit(1);
-
-    return c.json(await buildGroup(accountId, row!), 201);
-  },
-);
-
 async function applyGroupChanges(accountId: string, groupId: string, changes: GroupChange[]) {
   for (const change of changes) {
     if (change.path === 'displayName') {
@@ -449,27 +263,15 @@ async function applyGroupChanges(accountId: string, groupId: string, changes: Gr
   }
 }
 
-export function parseGroupPut(body: Record<string, unknown>) {
-  const changes = groupChanges(body);
-  return {
-    displayName: changes.find(c => c.path === 'displayName')?.value ?? null,
-    externalId: changes.find(c => c.path === 'externalId')?.value ?? null,
-    members: changes.find(c => c.path === 'members')?.value ?? null,
-  };
-}
-
 async function writeGroup(c: any) {
   const accountId = c.req.param('accountId');
   const groupId = c.req.param('groupId');
-  const [group] = await db.select().from(accountGroups).where(and(
-    eq(accountGroups.accountId, accountId), eq(accountGroups.groupId, groupId),
-  )).limit(1);
+  const [group] = await accountGroupFullRow(accountId, groupId);
   if (!group) return scimError(c, 404, 'Group not found');
   let changes: GroupChange[];
   try { changes = groupChanges(await c.req.json(), c.req.method === 'PATCH'); }
   catch (error) { return scimError(c, 400, (error as Error).message); }
-  const before = await db.select({ userId: accountGroupMembers.userId }).from(accountGroupMembers)
-    .where(eq(accountGroupMembers.groupId, groupId));
+  const before = await groupMemberUserIds(groupId);
   try {
     await applyGroupChanges(accountId, groupId, changes);
   } catch (error) {
@@ -489,66 +291,209 @@ async function writeGroup(c: any) {
   return c.json(await buildGroup(accountId, updated!));
 }
 
-for (const method of ['patch', 'put'] as const) {
-  scimRouter.openapi(createRoute({
-    method, path: '/accounts/{accountId}/Groups/{groupId}', tags: ['scim'],
-    summary: method === 'patch' ? 'Patch a SCIM Group' : 'Replace a SCIM Group',
-    request: {
-      params: z.object({ accountId: z.string().uuid(), groupId: z.string().uuid() }),
-      body: { content: { 'application/json': { schema: ScimResource } } },
+export function registerScimGroupsRoutes(): void {
+  // ─── Groups ───────────────────────────────────────────────────────────────
+
+  scimRouter.openapi(
+    createRoute({
+      method: 'get',
+      path: '/accounts/{accountId}/Groups',
+      tags: ['scim'],
+      summary: 'List SCIM Groups (filter by displayName/id/externalId eq)',
+      request: {
+        params: z.object({ accountId: z.string() }),
+        query: ScimListQuery,
+      },
+      responses: {
+        200: json(ScimResource, 'SCIM ListResponse'),
+        ...errors(401, 403),
+      },
+    }),
+    async (c: any) => {
+      const accountId = c.req.param('accountId');
+      const rawFilter = c.req.query('filter');
+      // Supplied-but-unsupported filter → 400, not a silent full-list (RFC 7644 §3.4.2.2).
+      if (isUnsupportedFilter(rawFilter)) {
+        return scimError(c, 400, 'Unsupported filter — only `attribute eq "value"` is supported');
+      }
+      const filter = parseFilter(rawFilter);
+
+      const rows = await scimGroupRows(accountId);
+
+      let filteredRows = rows;
+      if (filter) {
+        if (filter.attr.toLowerCase() === 'displayname') {
+          filteredRows = rows.filter((r) => r.name.toLowerCase() === filter.value.toLowerCase());
+        } else if (filter.attr.toLowerCase() === 'id') {
+          filteredRows = rows.filter((r) => r.groupId === filter.value);
+        } else if (filter.attr.toLowerCase() === 'externalid') {
+          filteredRows = rows.filter((r) => r.externalId === filter.value);
+        } else {
+          filteredRows = [];
+        }
+      }
+
+      const resources = await Promise.all(filteredRows.map((r) => buildGroup(accountId, r)));
+      return c.json(listResponse(resources.sort((a, b) => a.id.localeCompare(b.id)), c.req.valid('query')));
     },
-    responses: { 200: json(ScimResource, 'SCIM Group'), ...errors(400, 401, 403, 404, 409) },
-  }), writeGroup);
+  );
+
+  scimRouter.openapi(
+    createRoute({
+      method: 'get',
+      path: '/accounts/{accountId}/Groups/{groupId}',
+      tags: ['scim'],
+      summary: 'Get a SCIM Group',
+      request: { params: z.object({ accountId: z.string(), groupId: z.string() }) },
+      responses: {
+        200: json(ScimResource, 'SCIM Group'),
+        ...errors(401, 403, 404),
+      },
+    }),
+    async (c: any) => {
+      const accountId = c.req.param('accountId');
+      const groupId = c.req.param('groupId');
+
+      const [row] = await scimGroupRow(accountId, groupId);
+      if (!row) return scimError(c, 404, 'Group not found');
+
+      return c.json(await buildGroup(accountId, row));
+    },
+  );
+
+  scimRouter.openapi(
+    createRoute({
+      method: 'post',
+      path: '/accounts/{accountId}/Groups',
+      tags: ['scim'],
+      summary: 'Create a SCIM Group',
+      request: {
+        params: z.object({ accountId: z.string() }),
+        body: { content: { 'application/json': { schema: ScimResource } } },
+      },
+      responses: {
+        201: json(ScimResource, 'SCIM Group created'),
+        ...errors(400, 401, 403, 409),
+      },
+    }),
+    async (c: any) => {
+      const accountId = c.req.param('accountId');
+      let body: Record<string, unknown>;
+      try {
+        body = await c.req.json();
+      } catch {
+        return scimError(c, 400, 'Body must be JSON');
+      }
+
+      let initialMembers: string[] = [];
+      try { if (body.members !== undefined) initialMembers = memberValues(body.members); }
+      catch (error) { return scimError(c, 400, (error as Error).message); }
+
+      const displayName = typeof body.displayName === 'string' ? body.displayName.trim() : '';
+      if (!displayName) return scimError(c, 400, 'displayName is required');
+      if (displayName.length > 128) {
+        return scimError(c, 400, 'displayName too long (max 128 chars)');
+      }
+
+      const externalId =
+        typeof body.externalId === 'string' && body.externalId.trim() ? body.externalId.trim() : null;
+
+      let groupId: string;
+      try {
+        const [row] = await db
+          .insert(accountGroups)
+          .values({
+            accountId,
+            name: displayName,
+            source: 'scim',
+            externalId,
+            createdBy: null,
+          })
+          .returning();
+        groupId = row.groupId;
+      } catch (err: unknown) {
+        if ((err as { cause?: { code?: string }; code?: string }).cause?.code === '23505' || (err as { code?: string }).code === '23505') {
+          return scimError(c, 409, 'A group with this displayName already exists');
+        }
+        throw err;
+      }
+
+      try { await addGroupMembersOrDeferInvites(accountId, groupId, initialMembers); }
+      catch (error) {
+        if (error instanceof InvalidGroupMemberError) return scimError(c, 400, error.message);
+        throw error;
+      }
+
+      await invalidateIamCacheForGroup(groupId);
+
+      await scimAudit(c, {
+        accountId,
+        action: 'scim.group.create',
+        resourceType: 'account_group',
+        resourceId: groupId,
+        after: { name: displayName, external_id: externalId },
+      });
+
+      const [row] = await scimGroupRowById(groupId);
+
+      return c.json(await buildGroup(accountId, row!), 201);
+    },
+  );
+
+  for (const method of ['patch', 'put'] as const) {
+    scimRouter.openapi(createRoute({
+      method, path: '/accounts/{accountId}/Groups/{groupId}', tags: ['scim'],
+      summary: method === 'patch' ? 'Patch a SCIM Group' : 'Replace a SCIM Group',
+      request: {
+        params: z.object({ accountId: z.string().uuid(), groupId: z.string().uuid() }),
+        body: { content: { 'application/json': { schema: ScimResource } } },
+      },
+      responses: { 200: json(ScimResource, 'SCIM Group'), ...errors(400, 401, 403, 404, 409) },
+    }), writeGroup);
+  }
+
+  scimRouter.openapi(
+    createRoute({
+      method: 'delete',
+      path: '/accounts/{accountId}/Groups/{groupId}',
+      tags: ['scim'],
+      summary: 'Delete a SCIM Group',
+      request: { params: z.object({ accountId: z.string(), groupId: z.string() }) },
+      responses: {
+        204: { description: 'No content (deleted / idempotent)' },
+        ...errors(401, 403),
+      },
+    }),
+    async (c: any) => {
+      const accountId = c.req.param('accountId');
+      const groupId = c.req.param('groupId');
+
+      // Capture members before the cascade so we can bust their cached roles —
+      // deleting the group drops every grant it conferred.
+      const memberIds = (
+        await groupMemberUserIds(groupId)
+      ).map((r) => r.userId);
+
+      // Name first, for the audit event: the delete below takes the row with it.
+      const [existing] = await groupNameInAccountRow(accountId, groupId);
+      if (!existing) return c.body(null, 204);
+      await unparkGroupFromInvites(accountId, groupId);
+      // `deleteGroup`, not a bare delete: it also drops the group's assignments in
+      // the same transaction. `role_assignments.principal_id` is polymorphic, so
+      // there is no FK for Postgres to cascade, and the grants would outlive the
+      // group they belonged to.
+      if (!(await deleteGroup(accountId, groupId))) return c.body(null, 204);
+      const rows = [{ groupId, name: existing.name }];
+      invalidateIamCacheForUsers(memberIds);
+
+      await scimAudit(c, {
+        accountId,
+        action: 'scim.group.delete',
+        resourceType: 'account_group',
+        resourceId: groupId,
+        before: { name: rows[0]!.name },
+      });
+      return c.body(null, 204);
+    },
+  );
 }
-
-scimRouter.openapi(
-  createRoute({
-    method: 'delete',
-    path: '/accounts/{accountId}/Groups/{groupId}',
-    tags: ['scim'],
-    summary: 'Delete a SCIM Group',
-    request: { params: z.object({ accountId: z.string(), groupId: z.string() }) },
-    responses: {
-      204: { description: 'No content (deleted / idempotent)' },
-      ...errors(401, 403),
-    },
-  }),
-  async (c: any) => {
-    const accountId = c.req.param('accountId');
-    const groupId = c.req.param('groupId');
-
-    // Capture members before the cascade so we can bust their cached roles —
-    // deleting the group drops every grant it conferred.
-    const memberIds = (
-      await db
-        .select({ userId: accountGroupMembers.userId })
-        .from(accountGroupMembers)
-        .where(eq(accountGroupMembers.groupId, groupId))
-    ).map((r) => r.userId);
-
-    // Name first, for the audit event: the delete below takes the row with it.
-    const [existing] = await db
-      .select({ name: accountGroups.name })
-      .from(accountGroups)
-      .where(and(eq(accountGroups.accountId, accountId), eq(accountGroups.groupId, groupId)))
-      .limit(1);
-    if (!existing) return c.body(null, 204);
-    await unparkGroupFromInvites(accountId, groupId);
-    // `deleteGroup`, not a bare delete: it also drops the group's assignments in
-    // the same transaction. `role_assignments.principal_id` is polymorphic, so
-    // there is no FK for Postgres to cascade, and the grants would outlive the
-    // group they belonged to.
-    if (!(await deleteGroup(accountId, groupId))) return c.body(null, 204);
-    const rows = [{ groupId, name: existing.name }];
-    invalidateIamCacheForUsers(memberIds);
-
-    await scimAudit(c, {
-      accountId,
-      action: 'scim.group.delete',
-      resourceType: 'account_group',
-      resourceId: groupId,
-      before: { name: rows[0]!.name },
-    });
-    return c.body(null, 204);
-  },
-);

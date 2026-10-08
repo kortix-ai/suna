@@ -41,6 +41,7 @@ import { getBackendUrl } from '../core/session/server-store/url-helpers';
 import { ascendingId, useSyncStore } from '../browser/stores/sync-store';
 import { BillingError, parseBillingError } from '../core/http/api/errors';
 import { isSessionFresh } from '../core/http/fresh-sessions';
+import { onSessionStopped } from '../core/http/session-stopped';
 import { formatRuntimeError } from '../core/http/runtime-errors';
 import {
   type CreateSessionPromptInput,
@@ -56,7 +57,7 @@ import { setCurrentRuntime } from '../core/session/current-runtime';
 import { openSessionBundle } from '../core/session/open-bundle';
 import { messagesBeforeRewind } from '../core/session/rewind';
 import { extractGatewayErrorDetails, unwrapError } from '../core/turns/errors';
-import { holdLiveStart } from './hold-live-start';
+import { holdLiveStart, liveStartPollMode } from './hold-live-start';
 import { clearStartStash, readStartStash } from './session-start-stash';
 import { reconcileHydratedSessionTitle } from './session-title-sync';
 import { seedModelDefaultsFromOpenBundle } from './prefetch-session-open';
@@ -64,6 +65,9 @@ import { useSessionTranscriptHistory } from './use-session-transcript-history';
 import { useCanonicalRuntimeSession } from './use-canonical-opencode-session';
 import type { ModelKey } from './use-model-store';
 import { useRuntimeEventStream } from './use-opencode-events';
+import { useSessionStream } from './use-session-stream';
+import { sessionStreamConnected } from '../core/session/control-stream';
+import { watchHumanPresence } from './human-presence';
 import { formatModelString } from './use-opencode-local';
 import {
   type AbortSettlement,
@@ -144,7 +148,7 @@ export const SESSION_START_POLL_MS = 1_500;
  *  - `sandbox.external_id` — the provider sandbox id. The proxy route is the
  *    SDK's to compose (`getSandboxUrlForExternalId`), never the host's.
  *  - `runtime_url` — a RELATIVE path, `/p/<external_id>/8000`
- *    (`apps/api/src/projects/routes/shared.ts:526`). Returned verbatim it is a
+ *    (`apps/api/src/projects/session-open/index.ts:526`). Returned verbatim it is a
  *    string no host can fetch.
  *
  * The external id wins because it is the same derivation `startProjectSession`
@@ -973,7 +977,7 @@ export async function answerPermission(
 }
 
 export interface UseSessionOptions {
-  /** Renew this browser tab's presence while the signed-in session view is visible. */
+  /** Hold this browser tab's presence lease while the signed-in view is visible and used (input in the last 10 min). */
   browserPresence?: boolean;
   /** Long-poll budget (ms) the client requests on `/start`; the server clamps it. */
   waitMs?: number;
@@ -1085,36 +1089,50 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     browserPresence = false,
   } = options;
 
+  // One presence id per mounted view. The session stream carries it, and the
+  // server renews the lease while the stream is open (R5.3). The lease exists
+  // only while a person used the page recently, not while a tab is merely
+  // visible (KRTX-1729, `human-presence.ts`).
+  const [presenceTabId] = useState(() => (browserPresence ? crypto.randomUUID() : null));
   useEffect(() => {
-    if (!browserPresence || !projectId || !sessionId) return;
-    const tab_id = crypto.randomUUID();
+    if (!browserPresence || !presenceTabId || !projectId || !sessionId) return;
+    const tab_id = presenceTabId;
     const handle = createKortix(platformConfig()).session(projectId, sessionId);
-    const send = (active: boolean) => {
-      void handle.presence({ tab_id, active }).catch(() => {});
-    };
-    const visibility = () => send(!document.hidden);
-    visibility();
-    const interval = window.setInterval(() => {
-      if (!document.hidden) send(true);
-    }, 30_000);
-    document.addEventListener('visibilitychange', visibility);
-    return () => {
-      window.clearInterval(interval);
-      document.removeEventListener('visibilitychange', visibility);
-      send(false);
-    };
-  }, [browserPresence, projectId, sessionId]);
+    return watchHumanPresence(
+      { doc: document, win: window },
+      (active) => {
+        void handle.presence({ tab_id, active }).catch(() => {});
+      },
+      () => sessionStreamConnected(projectId, sessionId),
+    );
+  }, [browserPresence, presenceTabId, projectId, sessionId]);
 
   // 1. Drive /start until the runtime is ready (the server long-polls each tick).
   const startEnabled = enabled && !!projectId && !!sessionId;
+  // Read by `/start`'s refetch interval, which runs outside render.
+  const streamConnectedRef = useRef(false);
   const start = useQuery({
     queryKey: sessionStartKey(projectId, sessionId),
     // Once live, only a lifecycle fact leaves live (hold-live-start.ts).
-    queryFn: async () =>
-      holdLiveStart(
-        queryClient.getQueryData<SessionStartResult | null>(sessionStartKey(projectId, sessionId)),
-        await startProjectSession(projectId, sessionId, { waitMs, repositoryMode }),
-      ),
+    queryFn: async () => {
+      const previous = queryClient.getQueryData<SessionStartResult | null>(
+        sessionStartKey(projectId, sessionId),
+      );
+      const mode = liveStartPollMode(previous, typeof document !== 'undefined' && document.hidden);
+      // A background tab that shows the session ready does not poll: the poll
+      // only keeps a box alive for nobody. The next visible fetch revalidates.
+      if (mode === 'skip' && previous) return previous;
+      return holdLiveStart(
+        previous,
+        await startProjectSession(projectId, sessionId, {
+          waitMs,
+          repositoryMode,
+          // The keep-alive poll must report a user Stop or an idle park, never
+          // undo it. An open (no ready answer cached yet) wakes the box as before.
+          keepStopped: mode === 'keep-stopped',
+        }),
+      );
+    },
     enabled: startEnabled,
     retry: (failureCount, error) => shouldRetrySessionStart(failureCount, error, sessionId),
     retryDelay: (failureCount, error) =>
@@ -1123,7 +1141,22 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
         : Math.min(1000 * 2 ** failureCount, 5000),
     staleTime: sessionStartStaleTime,
     ...SESSION_START_POLL_OPTIONS,
+    // Once ready, a connected stream reports every box change (and re-reads
+    // `/start` on it); the 60 s ready recheck is a poll it replaces.
+    refetchInterval: (query) =>
+      streamConnectedRef.current && query.state.data?.stage === 'ready'
+        ? false
+        : SESSION_START_POLL_OPTIONS.refetchInterval(query),
   });
+  // A user Stop (any host, via `stopProjectSession`) re-reads `/start` at once:
+  // the poll answers `stopped` (keep_stopped) instead of waiting up to 60 s.
+  useEffect(() => {
+    if (!startEnabled) return;
+    return onSessionStopped((stoppedId) => {
+      if (stoppedId !== sessionId) return;
+      void queryClient.invalidateQueries({ queryKey: sessionStartKey(projectId, sessionId) });
+    });
+  }, [startEnabled, projectId, sessionId, queryClient]);
   const startData = start.data ?? null;
   const startError = isSessionStartError(start.error) ? start.error : null;
   const stage = startData?.stage ?? null;
@@ -1193,6 +1226,15 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     seedModelDefaultsFromOpenBundle(queryClient, projectId, sessionId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, sessionId]);
+
+  // 1c. The session's ONE live connection (R5.3): the server's turn verdict,
+  // queue, box, wake ladder, title and runtime health, plus the runtime's own
+  // events. While it is up, the polls below stand down.
+  const streamConnected = useSessionStream(projectId, sessionId, {
+    enabled: startEnabled,
+    tabId: presenceTabId ?? undefined,
+  });
+  streamConnectedRef.current = streamConnected;
 
   // Track how long /start has been returning nothing usable — no data, no
   // error — so `computeStartSettled` can bound the "given up" case (see
@@ -1274,7 +1316,8 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // 4. Open the live SSE stream. This was a provider component (RuntimeEvent
   // StreamProvider); calling the underlying hook here means the host mounts
   // nothing. It self-gates on the connection store's healthy flag (seeded above).
-  useRuntimeEventStream({ enabled: switched });
+  // R5.3: its events come from the session stream mounted in 1c.
+  useRuntimeEventStream({ enabled: switched, projectId, sessionId });
 
   // 5. Resolve the canonical OpenCode root id (server-owned; /start hands it over)
   // and sync messages off it.
@@ -1328,6 +1371,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // result instead of whatever it happens to return for that starved call.
   const rawSync = useSessionSync(chatEngine ? ocSessionId : '', {
     kortixSessionScope: `${projectId}/${sessionId}`,
+    streamConnected,
     // Until the saved-history read answers with a copy, the session-open
     // bundle's copy of the same mirror may paint (`undefined` = read it).
     mirror: transcriptHistory.envelope ?? undefined,
@@ -1420,11 +1464,14 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // hydration in `useRuntimeEventStream`. Disabled entirely when `chatEngine`
   // is off — see that option's jsdoc: a host mounting its own chat surface
   // already runs its own copy of this poller for the same session.
+  // R5.3: with the session stream up, an ask cannot be dropped — the box's
+  // ring replays it on a reconnect and a resync re-reads the pending lists —
+  // so these polls run only while the stream is down.
   useQuestionSelfHeal(ocSessionId, sync.messages, {
-    enabled: switched && chatEngine && !!ocSessionId,
+    enabled: switched && chatEngine && !!ocSessionId && !streamConnected,
   });
   usePermissionSelfHeal(ocSessionId, sync.messages, {
-    enabled: switched && chatEngine && !!ocSessionId,
+    enabled: switched && chatEngine && !!ocSessionId && !streamConnected,
   });
 
   // 6. Interactive prompts live in the pending store (the SSE writes them there,
@@ -1536,7 +1583,9 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // actually has: has this conversation produced a user message yet.
   const hasUserMessages = userMsgCount > 0;
   useEffect(() => {
-    if (!chatEngine || !hasUserMessages) return;
+    // R5.3: the stream's `kortix.control.session` frame carries the title the
+    // moment it is written; the ladder is the fallback without it.
+    if (!chatEngine || !hasUserMessages || streamConnected) return;
     titleRefreshAbortRef.current?.abort();
     const controller = new AbortController();
     titleRefreshAbortRef.current = controller;
@@ -1548,7 +1597,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       }
     });
     return () => controller.abort();
-  }, [chatEngine, projectId, queryClient, sessionId, hasUserMessages]);
+  }, [chatEngine, projectId, queryClient, sessionId, hasUserMessages, streamConnected]);
   const [sendState, setSendState] = useState<SendState>(IDLE_SEND_STATE);
   const pending = sendState.pending;
   const pendingBaseCount = useRef(0);

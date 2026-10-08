@@ -6,6 +6,7 @@ import { join } from 'node:path';
 
 import { renderContext, renderHostNotice } from '../host-notice.ts';
 import { clearTokenIdentityCache } from '../api/token-identity.ts';
+import { useHost } from '../api/config.ts';
 
 const ENV_KEYS = [
   'KORTIX_TOKEN',
@@ -182,6 +183,39 @@ describe('host notice', () => {
       expect(notice).toContain('host sandbox');
       expect(notice).toContain('authenticated (session token)');
       expect(notice).not.toContain('authenticated (project token)');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // KRTX-1705: an explicit `kortix hosts use` inside a sandbox flips plain
+  // commands to the stored credential — the notice must follow the actual
+  // acting identity, not keep calling it "sandbox".
+  test('shows the selected stored host after an in-sandbox `hosts use`', () => {
+    const dir = writeConfig(
+      {
+        self: {
+          url: 'https://self.example/v1',
+          token: 'kortix_pat_user',
+          user_id: 'user_123',
+          user_email: 'self@example.com',
+          account_id: 'acct_123',
+          logged_in_at: '2026-01-01T00:00:00.000Z',
+        },
+      },
+      'self',
+    );
+    try {
+      process.env.KORTIX_API_URL = 'https://sandbox-api.kortix.test/v1';
+      process.env.KORTIX_TOKEN = 'kortix_pat_session';
+      expect(useHost('self')).toBe(true);
+
+      const notice = renderHostNotice(['whoami']);
+      expect(notice).toContain('host self');
+      expect(notice).toContain('https://self.example/v1');
+      expect(notice).toContain('self@example.com (user)');
+      expect(notice).not.toContain('host sandbox');
+      expect(notice).not.toContain('sandbox-api.kortix.test');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

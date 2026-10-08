@@ -6,16 +6,16 @@
  * The desired release is ALWAYS the base branch's current tip. There is no
  * per-session mode: a session that edited its config dir under `/workspace`
  * still receives the base release, and its edits reach the box only once they
- * are pushed to the base branch. The one exception is the project quarantine,
- * which assigns the last release a session proved when the tip's release has
- * failed in enough sessions — a bad base config must not make sessions
- * unbootable.
+ * are pushed to the base branch. The one exception is a tip that cannot serve:
+ * a release the builder could not build, or one the project quarantined after
+ * it failed in enough sessions. Then the last release a session proved is
+ * assigned, with `fallbackReason` saying why — a bad base config must neither
+ * make sessions unbootable nor read as up to date.
  */
 
 import { resolveCommitSha } from '../projects/git/commits';
 import { invalidateProjectMirror } from '../projects/git/mirror';
 import type { GitBackedProject } from '../projects/git/types';
-import { repositoryAccessFromSessionMetadata } from '../projects/lib/session-sandbox-metadata';
 import {
   buildConfigRelease,
   toDescriptor,
@@ -72,6 +72,13 @@ export interface DesiredRelease {
   descriptor: ConfigReleaseDescriptor;
   /** The base release ID the project quarantined, when a fallback replaced it. */
   quarantinedReleaseId: string | null;
+  /**
+   * Why this session does not get the base tip's release: the tip could not
+   * be built, or the project quarantined it. Null when the tip is assigned.
+   * `GET /config` shows it as the release's `fallback_reason`, so a session on
+   * an older release never reads as up to date.
+   */
+  fallbackReason: string | null;
   /** The variant the release was built for, after the agent resolution. */
   variant: ConfigReleaseVariant;
 }
@@ -104,10 +111,11 @@ export function ledgerVariant(variant: ConfigReleaseVariant, repositoryAccess: b
 }
 
 /**
- * Resolve the base tip, build its release, and apply the project quarantine. A quarantined release is replaced by the newest release
- * of the same variant that any session proved; with none, the quarantined
- * release is assigned unchanged and each box keeps its own last proven
- * config through its box quarantine and fallback chain.
+ * Resolve the base tip, build its release, and apply the fallback. An
+ * unbuildable or quarantined tip is replaced by the newest release of the same
+ * variant that any session proved. With none, a quarantined tip is assigned
+ * unchanged and each box keeps its own last proven config through its box
+ * quarantine and fallback chain; an unbuildable tip is assigned no release.
  */
 export async function resolveDesiredRelease(
   input: DesiredReleaseInput,
@@ -169,28 +177,47 @@ export async function resolveDesiredRelease(
   const base = await deps.build(input.project, baseSha, variant);
   let descriptor = toDescriptor(base, { repositoryAccess: input.repositoryAccess, agentRepoint });
   let quarantinedReleaseId: string | null = null;
+  let fallbackReason: string | null = null;
   const variantKey = ledgerVariant(variant, input.repositoryAccess);
   const projectId = input.project.projectId;
+  const tip = `The base branch's latest agent config (commit ${baseSha.slice(0, 12)})`;
 
-  if (descriptor.release_id) {
-    try {
+  try {
+    // Why the tip's release cannot be assigned, or null when it can. A tip the
+    // builder could not build (an archive over the limit, a missing plugin, a
+    // git error) has no release ID; a tip that failed in enough sessions is
+    // quarantined. Either way the project's last proven release serves.
+    let unusable: string | null = null;
+    if (!descriptor.release_id) {
+      unusable = `${tip} could not be built: ${descriptor.reason ?? 'no reason given'}`;
+    } else {
       const quarantined = await deps.ledger.quarantined(projectId, [descriptor.release_id], PROJECT_QUARANTINE_SESSIONS);
       if (quarantined.has(descriptor.release_id)) {
-        const fallback = await deps.ledger.lastProven(projectId, variantKey, PROJECT_QUARANTINE_SESSIONS);
-        if (fallback && fallback.releaseId !== descriptor.release_id) {
-          const rebuilt = await deps.build(input.project, fallback.sourceCommit, variant);
-          const candidate = toDescriptor(rebuilt, { repositoryAccess: input.repositoryAccess, agentRepoint });
-          // Assign the fallback only when the rebuild reproduces the proven ID.
-          if (candidate.release_id === fallback.releaseId) {
-            quarantinedReleaseId = descriptor.release_id;
-            descriptor = candidate;
-          }
+        const reported = await deps.ledger.failureReason(projectId, descriptor.release_id);
+        unusable = `${tip} failed to load in ${PROJECT_QUARANTINE_SESSIONS} sessions${reported ? `: ${reported}` : ''}`;
+      }
+    }
+    if (unusable) {
+      const fallback = await deps.ledger.lastProven(projectId, variantKey, PROJECT_QUARANTINE_SESSIONS);
+      if (fallback && fallback.releaseId !== descriptor.release_id) {
+        const rebuilt = await deps.build(input.project, fallback.sourceCommit, variant);
+        const candidate = toDescriptor(rebuilt, { repositoryAccess: input.repositoryAccess, agentRepoint });
+        // Assign the fallback only when the rebuild reproduces the proven ID.
+        if (candidate.release_id === fallback.releaseId) {
+          quarantinedReleaseId = descriptor.release_id;
+          descriptor = candidate;
+          fallbackReason = `${unusable}. Sessions run the last config that loaded (commit ${fallback.sourceCommit.slice(0, 12)}).`;
         }
       }
-    } catch (error) {
-      // The ledger is bookkeeping. Without it the base release is assigned.
-      console.warn(`[config-releases] quarantine lookup failed for ${projectId}: ${(error as Error).message}`);
+      // No proven release to fall back to: an unbuildable tip stays
+      // unassigned (the box keeps what it runs) and the reason is stated. A
+      // quarantined tip stays assigned and each box keeps its own last proven
+      // config, which its health reports.
+      if (!fallbackReason && !descriptor.release_id) fallbackReason = unusable;
     }
+  } catch (error) {
+    // The ledger is bookkeeping. Without it the base release is assigned.
+    console.warn(`[config-releases] quarantine lookup failed for ${projectId}: ${(error as Error).message}`);
   }
 
   if (input.recordAssignment && descriptor.release_id && descriptor.source_commit) {
@@ -205,5 +232,5 @@ export async function resolveDesiredRelease(
         console.warn(`[config-releases] recording assignment failed for ${projectId}: ${error.message}`),
       );
   }
-  return { baseSha, descriptor, quarantinedReleaseId, variant };
+  return { baseSha, descriptor, quarantinedReleaseId, fallbackReason, variant };
 }

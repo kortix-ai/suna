@@ -109,8 +109,18 @@ mock.module('../shared/db', () => ({
   hasDatabase: () => true,
 }));
 
-const { finalizeTurn, repaintLivePlan, relayTurnAnswer, relayTurnEnd, relayTurnStep, relayProvisioningFailure } =
-  await import('../channels/slack/turn');
+const {
+  finalizeTurn,
+  repaintLivePlan,
+  relayTurnAnswerDetailed,
+  relayTurnEnd,
+  relayTurnStepDetailed,
+  relayProvisioningFailure,
+} = await import('../channels/slack/turn');
+const relayTurnStep = async (...args: Parameters<typeof relayTurnStepDetailed>) =>
+  (await relayTurnStepDetailed(...args)).ok;
+const relayTurnAnswer = async (...args: Parameters<typeof relayTurnAnswerDetailed>) =>
+  (await relayTurnAnswerDetailed(...args)).ok;
 
 function liveHandle(overrides: Record<string, unknown> = {}) {
   return {

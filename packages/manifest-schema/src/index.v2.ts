@@ -61,9 +61,8 @@ export type AgentModeV2 = 'primary' | 'subagent' | 'all';
 export type WorkspaceModeV2 = 'runtime' | 'read' | 'branch';
 
 /** Session runtimes — which agent harness a session boots inside its sandbox.
- *  `pi` runs pi-agent-core in-process in the sandbox daemon (`KORTIX_HARNESS=pi`);
- *  with the project's `pi_worker` feature flag it instead boots the split
- *  worker/environment topology. Anything else — including absence — keeps the
+ *  `pi` runs pi-agent-core in-process in the sandbox daemon (`KORTIX_HARNESS=pi`).
+ *  Anything else — including absence — keeps the
  *  OpenCode path byte-for-byte. Reserved room for `claude` later. */
 export type RuntimeV2 = 'opencode' | 'pi';
 
@@ -233,6 +232,8 @@ export interface AppBlockV2 {
   spa?: boolean;
   readiness_path?: string;
   idle_timeout_seconds?: number;
+  /** Run 24/7 (cron jobs, workers, websockets) instead of stopping when idle. */
+  always_on?: boolean;
   monthly_budget_usd?: number;
   resources?: AppResourcesV2;
   env?: Record<string, string>;

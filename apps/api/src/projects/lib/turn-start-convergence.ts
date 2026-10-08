@@ -1,7 +1,7 @@
 /**
  * C9 — a prompt on a box that is behind converges FIRST, then runs.
  *
- * THE CHOKEPOINT. `forwardToSandbox` (`sandbox-proxy/routes/preview.ts`) is
+ * THE CHOKEPOINT. `forwardToSandbox` (`sandbox-proxy/forward/`) is
  * the one funnel every turn passes through: the HTTP proxy calls it, and so
  * does the server-side prompt queue (`session-lifecycle/engine.ts`). The gate
  * is `isTurnStartRequest`, so the OpenCode ports 4096/4097 are covered too —
@@ -408,7 +408,7 @@ const defaultDeps: TurnStartConvergenceDeps = {
   desiredReleaseId: (target, sessionId) => desiredReleases.get(target, sessionId),
   runningReleaseId: lastKnownRunningRelease,
   probeRunningRelease,
-  // DYNAMIC import on purpose. `sandbox-proxy/routes/preview.ts` calls this
+  // DYNAMIC import on purpose. `sandbox-proxy/forward/turn-start.ts` calls this
   // gate on every turn start, and a static edge would pull the whole reload
   // graph — `session-reload` and `sandbox-env-sync` among them — into the
   // proxy's module graph. Five proxy unit tests that partially mock
@@ -529,7 +529,7 @@ export interface AssetConvergenceDeps {
 function defaultAssetDeps(): AssetConvergenceDeps {
   return {
     // DYNAMIC imports, same reason as `converge` above: this gate runs on every
-    // turn start from `sandbox-proxy/routes/preview.ts`, and a static edge would
+    // turn start from `sandbox-proxy/forward/turn-start.ts`, and a static edge would
     // pull the manifest graph (which hashes ~200 MB of binary on first use) and
     // the whole reload graph into the proxy's module graph. A box that is
     // already current never reaches either.

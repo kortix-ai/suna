@@ -24,7 +24,6 @@
 import { eq } from 'drizzle-orm';
 import { projects, sessionProviderSecretPools } from '@kortix/db';
 import { db } from '../shared/db';
-import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { servableProjectCatalog } from '../llm-gateway/models/servable-catalog';
 import { platformDefaultModelId } from '../llm-gateway/models/served-managed-models';
@@ -33,8 +32,7 @@ import { isModelServableForAccount, resolveEffectiveModel } from '../llm-gateway
 import { toWireModel } from '../llm-gateway/resolution/effective';
 import { resolveSessionPersonalOwner } from '../projects/lib/personal-resources';
 import { type ProviderKeySelection, providerKeyOf, usableProviderKeys } from '../secrets/provider-key-selection';
-import { channelModelContext, projectModelContext } from './slack/model-gate';
-import type { ChannelCtx } from './slack/selection';
+import { projectModelContext } from './slack/model-gate';
 import { channelTurnModel } from './vision-model';
 
 type AgentGrantEnv = () => Promise<readonly string[] | 'all' | null>;
@@ -78,16 +76,6 @@ export function channelModelScope(input: {
     llmGatewayEnabled: input.llmGatewayEnabled,
     pooledEnabled: input.pooledEnabled,
   };
-}
-
-export async function loadChannelModelScope(
-  ctx: ChannelCtx,
-  person: { linkedUserId: string | null; oneToOne: boolean },
-): Promise<ChannelModelScope | null> {
-  const gate = await channelModelContext(ctx);
-  if (!gate) return null;
-  const pooledEnabled = await projectFeatureFlagEnabled(gate.projectId, 'pooled_provider_secrets').catch(() => false);
-  return channelModelScope({ ...gate, pooledEnabled, ...person });
 }
 
 /** `loadChannelModelScope` for a project row the caller already holds. */

@@ -58,7 +58,7 @@ const EXEMPT_PREFIXES = [
   '/v1/p', // sandbox preview proxy (SSE event stream, long-poll, ws)
   '/v1/tunnel', // tunnel RPC relay (machine latency) + ws
   '/v1/git', // git smart-HTTP (large packfile up/download)
-  '/v1/router', // LLM gateway — streamed chat completions
+  '/v1/router', // billed tool proxies (Tavily/Serper/Firecrawl) — upstream latency
   '/v1/llm', // LLM chat completions (streamed; p99 >10s is normal)
   '/v1/llm-gateway', // reverse proxy to the standalone gateway (streamed SSE)
   '/v1/connectors', // connector calls + git/provider sync — arbitrary upstream latency
@@ -92,7 +92,6 @@ const EXEMPT_FRAGMENTS = [
   '/registry/update', // registry item update — same git-bound path,
   // plus its GET .../updates drift-listing route
   '/snapshots', // sandbox template builds
-  '/suna-migration', // OG Suna → opencode migration runs
   '/legacy-migration', // legacy VM → project migration runs
   '/oauth/', // provider OAuth device flow — `start` spawns
   // OpenCode + waits for the device challenge, which

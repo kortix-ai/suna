@@ -17,6 +17,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Keyboard, Platform, Pressable, TextInput, View, type LayoutChangeEvent } from 'react-native';
 import Reanimated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useColorScheme } from 'nativewind';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
@@ -24,21 +25,27 @@ import { ParticipantAvatar } from '../ParticipantAvatar';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { SlackIcon } from '@/components/icons/slack-icon';
 import { TeamsIcon } from '@/components/icons/teams-icon';
+import { TelegramIcon } from '@/components/icons/telegram-icon';
 import {
-  CaretDownIcon,
+  AlarmIcon,
+  CheckIcon,
   CopyIcon,
+  LightningIcon,
   PencilIcon,
   TextTIcon,
   DownloadSimpleIcon,
-  PaperPlaneTiltIcon,
-  TimerIcon,
 } from '@/lib/icons';
 import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
 import type { Turn } from '@/lib/session/types';
 import type { Command } from '@/lib/session/runtime-data';
 import { messageCreatedAt, type MessageWithParts } from '@kortix/sdk';
 import { type ChannelPlatform, parseChannelMessage } from '@kortix/shared';
-import { parseTriggerEvent } from '@kortix/shared';
+import { parseReminderPrompt, parseTriggerEvent, type ChannelMessageInfo } from '@kortix/shared';
+import { KortixLogo } from '@/components/kortix/KortixLogo';
+import { SourcePill } from './source-pill';
+import { CopyContentButton, KortixBottomSheetModal } from '@/components/kortix/sheet';
+import { BottomSheetScrollView, type BottomSheetModal } from '@gorhom/bottom-sheet';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { detectCommandFromText } from '@/lib/session/detect-command';
 import { formatMegabytes } from '@kortix/sdk/react';
 import { buildMentionSegments } from '@/lib/session/mention-segments';
@@ -77,8 +84,12 @@ import { useToast } from '@/components/kortix/toast-provider';
 
 // ─── Values (web → rendered px) ──────────────────────────────────────────────
 
-/** `text-[0.9rem] leading-[22px] font-medium`. */
-const BUBBLE_TEXT_STYLE = { fontFamily: 'Roobert-Medium', fontSize: 14.4, lineHeight: 22 } as const;
+/** Web is `text-[0.9rem] leading-[22px]` (14.4/22); mobile is smaller, 13/19 (Jay, 2026-10-07). Same in `SessionConnecting` and `mention-chip`. */
+const BUBBLE_TEXT_STYLE = { fontFamily: 'Roobert-Medium', fontSize: 13, lineHeight: 19 } as const;
+/** The full-message sheet reads a whole long prompt: a step larger than the bubble (Jay, 2026-10-07). */
+/** The full-message sheet opens full screen (Jay, 2026-10-07). A module constant: gorhom wants a stable array. */
+const FULL_SCREEN = ['100%'];
+const SHEET_TEXT_STYLE = { fontFamily: 'Roobert-Medium', fontSize: 15, lineHeight: 23 } as const;
 /** `px-3.5 py-2.5 rounded-lg`. */
 const BUBBLE_PADDING_X = webSpace(3.5);
 const BUBBLE_PADDING_Y = webSpace(2.5);
@@ -109,9 +120,9 @@ const CHANNEL_LABEL: Record<ChannelPlatform, string> = {
 };
 
 function ChannelMark({ platform, size }: { platform: ChannelPlatform; size: number }) {
-  return platform === 'Teams' ? <TeamsIcon size={size} /> : platform === 'Slack' ? <SlackIcon size={size} /> : (
-    <Icon as={PaperPlaneTiltIcon} size={size} color={TELEGRAM_BRAND_COLOR} />
-  );
+  if (platform === 'Teams') return <TeamsIcon size={size} />;
+  if (platform === 'Slack') return <SlackIcon size={size} />;
+  return <TelegramIcon size={size} />;
 }
 
 /** `isDark` is passed down from SessionTurn. */
@@ -156,28 +167,105 @@ export interface UserMessageUploadStatus {
   onRetry?: () => void;
 }
 
-function SystemMessageCard({ dimStyle, menuProps, openMenu, actions, children }: {
-  dimStyle: ReturnType<typeof useAnimatedStyle>;
-  menuProps: Omit<React.ComponentProps<typeof MessageMenu>, 'children'>;
-  openMenu: () => void;
-  actions: React.ReactNode;
-  children: React.ReactNode;
-}) {
+/** A sender that is another Kortix session (web `SessionMessageAuthor` `kind: 'session'`). */
+export interface SessionSourceAuthor {
+  session_id: string;
+  name: string;
+  agent?: string;
+}
+
+/** Slack / Teams / Telegram: mark · platform · sender; the sheet names the channel and sender. */
+function ChannelSourcePill({ info }: { info: ChannelMessageInfo }) {
+  const platform = CHANNEL_LABEL[info.platform];
+  // A Teams conversation id names nothing a person reads: no channel row.
+  const channel = info.platform === 'Teams' ? null : info.context;
   return (
-    <Reanimated.View className="px-4" style={dimStyle}>
-      <View className="items-end" style={{ gap: webSpace(1) }}>
-        <MessageMenu {...menuProps}>
-          <Pressable
-            onLongPress={openMenu}
-            delayLongPress={350}
-            className="border-border/60 bg-muted/40 rounded-lg border"
-            style={{ maxWidth: '80%', paddingHorizontal: webSpace(4), paddingVertical: webSpace(2.5), gap: webSpace(1.5) }}>
-            {children}
-          </Pressable>
-        </MessageMenu>
-        {actions}
-      </View>
-    </Reanimated.View>
+    <SourcePill
+      mark={<ChannelMark platform={info.platform} size={12} />}
+      sheetMark={<ChannelMark platform={info.platform} size={22} />}
+      source={platform}
+      sourceColor={CHANNEL_LABEL_COLOR[info.platform]}
+      sender={info.userName}
+      title={info.userName}
+      subtitle={channel ? `${platform} · ${channel}` : platform}
+      rows={[
+        { label: 'Channel', value: channel },
+        { label: 'From', value: info.userName },
+      ]}
+    />
+  );
+}
+
+/**
+ * A channel message's words. Every `@name` (`@Kortix`, `@here`, people) is a
+ * static chip, as web draws it; an email stays text (no `@` at a word start).
+ */
+function ChannelMessageText({ text }: { text: string }) {
+  // No regex lookbehind: split on every `@name`, then keep a part a chip only
+  // when it starts the text or follows whitespace.
+  const parts = text.split(/(@[\w.-]+)/);
+  let offset = 0;
+  return (
+    <Text style={BUBBLE_TEXT_STYLE}>
+      {parts.map((part, i) => {
+        const key = `${offset}`;
+        offset += part.length;
+        const previous = i > 0 ? parts[i - 1] : '';
+        const isMention = part.startsWith('@') && (previous === '' || /\s$/.test(previous));
+        return isMention ? (
+          <MentionChip key={key} kind="agent" label={part.slice(1)} />
+        ) : (
+          <Text key={key}>{part}</Text>
+        );
+      })}
+    </Text>
+  );
+}
+
+/**
+ * Another Kortix session sent this prompt: Kortix mark · Kortix · agent. The
+ * sheet names the session, the agent and the session id, always shown; a tap
+ * on the id copies it and its glyph turns to a check for 1.5 s.
+ */
+function SessionSourcePill({
+  author,
+  onOpenSession,
+}: {
+  author: SessionSourceAuthor;
+  onOpenSession?: (sessionId: string) => void;
+}) {
+  const { colorScheme } = useColorScheme();
+  const logoColor = colorScheme === 'dark' ? 'dark' : 'light';
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => void (timer.current && clearTimeout(timer.current)), []);
+  const name = author.name || 'Untitled session';
+  const copyId = async () => {
+    await Clipboard.setStringAsync(author.session_id);
+    haptics.success();
+    setCopied(true);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <SourcePill
+      mark={<KortixLogo size={12} color={logoColor} />}
+      sheetMark={<KortixLogo size={22} color={logoColor} />}
+      source="Kortix"
+      sender={author.agent || name}
+      title={name}
+      subtitle={author.agent ? `Kortix session · sent by ${author.agent}` : 'Kortix session'}
+      rows={[
+        { label: 'Agent', value: author.agent },
+        {
+          label: 'Session ID',
+          value: author.session_id,
+          onPress: copyId,
+          right: <Icon as={copied ? CheckIcon : CopyIcon} size={16} className="text-muted-foreground" />,
+        },
+      ]}
+      action={onOpenSession ? { label: 'Open session', onPress: () => onOpenSession(author.session_id) } : undefined}
+    />
   );
 }
 
@@ -199,6 +287,7 @@ export function UserMessage({
   queueState,
   uploadStatus,
   sender,
+  sessionAuthor,
 }: {
   turn: Turn;
   isDark: boolean;
@@ -225,6 +314,11 @@ export function UserMessage({
    * as their avatar above the bubble. Null when no sender is recorded.
    */
   sender?: AvatarPerson | null;
+  /**
+   * Another Kortix session sent this prompt (a coordinator, `kortix sessions
+   * new`): drawn as the source pill above the bubble, web's `MessageAuthorLabel`.
+   */
+  sessionAuthor?: SessionSourceAuthor | null;
 }) {
   const message = turn.userMessage;
   const messageId = message.info.id;
@@ -249,6 +343,8 @@ export function UserMessage({
   // text, and a regex version of each froze the JS thread on a crafted prompt.
   const channelMessageInfo = useMemo(() => parseChannelMessage(rawText), [rawText]);
   const triggerEventInfo = useMemo(() => parseTriggerEvent(rawText), [rawText]);
+  // A reminder fire: platform-written `[REMINDER …]` header + the reminder text.
+  const reminderInfo = useMemo(() => parseReminderPrompt(rawText), [rawText]);
 
   // Queued dim: `duration-slow transition-opacity` + `opacity-50`.
   const dim = useSharedValue(queueState ? 0.5 : 1);
@@ -268,7 +364,7 @@ export function UserMessage({
   // under the bubble; only a queued status line (or Select text's Done)
   // stays there. The bubble's own long press opens it through the trigger's
   // ref: the bubble is already a Pressable (tap expands a long message).
-  const canEdit = !!onEditStart && !rewindDisabled && !channelMessageInfo && !triggerEventInfo;
+  const canEdit = !!onEditStart && !rewindDisabled && !channelMessageInfo && !triggerEventInfo && !reminderInfo;
   const menuRef = useRef<TriggerRef>(null);
   // Select text: the bubble's text becomes selectable in place until Done.
   const [selecting, setSelecting] = useState(false);
@@ -319,52 +415,67 @@ export function UserMessage({
     );
   }
 
-  if (channelMessageInfo) {
-    const { platform } = channelMessageInfo;
-    const labelColor = CHANNEL_LABEL_COLOR[platform];
-    return (
-      <SystemMessageCard dimStyle={dimStyle} menuProps={menuProps} openMenu={openMenu} actions={actions}>
-        <View className="flex-row items-center" style={{ gap: webSpace(2) }}>
-          <ChannelMark platform={platform} size={webSpace(3.5)} />
-          <Text style={[META_TEXT_STYLE, { fontFamily: 'Roobert-Medium' }, labelColor ? { color: labelColor } : null]}>
-            {CHANNEL_LABEL[platform]}
-          </Text>
-          <Text variant="muted" style={META_TEXT_STYLE}>
-            ·
-          </Text>
-          <Text variant="small" className="leading-5">
-            {channelMessageInfo.userName}
-          </Text>
-        </View>
-        {channelMessageInfo.messageText ? (
-          <Text className="text-sm">{channelMessageInfo.messageText}</Text>
+  // A prompt a person did not type here (Slack / Teams / Telegram, a reminder,
+  // a trigger): the source pill over the same bubble a typed message uses,
+  // web's `ChannelMessage` / `PlatformPromptMessage`. Long press keeps Copy.
+  const platformMessage = (pill: React.ReactNode, body: React.ReactNode, fullText?: string) => (
+    <Reanimated.View className="px-4" style={dimStyle}>
+      <View className="items-end self-end" style={{ maxWidth: '80%', gap: webSpace(1.5) }}>
+        {pill}
+        {body ? (
+          <MessageMenu {...menuProps}>
+            <View className="items-end">
+              <UserMessageBubble isDark={isDark} onLongPress={openMenu} fullText={fullText}>
+                {body}
+              </UserMessageBubble>
+            </View>
+          </MessageMenu>
         ) : null}
-      </SystemMessageCard>
+        {actions}
+      </View>
+    </Reanimated.View>
+  );
+
+  if (channelMessageInfo) {
+    return platformMessage(
+      <ChannelSourcePill info={channelMessageInfo} />,
+      channelMessageInfo.messageText ? <ChannelMessageText text={channelMessageInfo.messageText} /> : null,
+      channelMessageInfo.messageText,
+    );
+  }
+
+  if (reminderInfo) {
+    const kind = reminderInfo.recurring ? 'Recurring' : 'One-time';
+    return platformMessage(
+      <SourcePill
+        mark={<Icon as={AlarmIcon} size={12} className="text-muted-foreground" />}
+        sheetMark={<Icon as={AlarmIcon} size={22} className="text-foreground" />}
+        source="Reminder"
+        sender={kind}
+        title="Reminder"
+        subtitle={kind}
+        rows={[{ label: 'ID', value: reminderInfo.id }]}
+      />,
+      reminderInfo.prompt ? <Text style={BUBBLE_TEXT_STYLE}>{reminderInfo.prompt}</Text> : null,
+      reminderInfo.prompt,
     );
   }
 
   if (triggerEventInfo) {
-    return (
-      <SystemMessageCard dimStyle={dimStyle} menuProps={menuProps} openMenu={openMenu} actions={actions}>
-        <View className="flex-row items-center" style={{ gap: webSpace(2) }}>
-          <Icon as={TimerIcon} size={webSpace(3.5)} className="text-muted-foreground" />
-          <Text className="text-sm" style={{ fontFamily: 'Roobert-Medium' }}>
-            {triggerEventInfo.data?.trigger || 'Scheduled Task'}
-          </Text>
-          {triggerEventInfo.data?.data?.manual ? (
-            <View className="bg-muted rounded-sm px-1.5">
-              <Text variant="muted" style={META_TEXT_STYLE}>
-                Manual
-              </Text>
-            </View>
-          ) : null}
-        </View>
-        {triggerEventInfo.prompt ? (
-          <Text variant="muted" numberOfLines={3} style={[META_TEXT_STYLE, { paddingLeft: webSpace(5.5) }]}>
-            {triggerEventInfo.prompt}
-          </Text>
-        ) : null}
-      </SystemMessageCard>
+    const name = triggerEventInfo.data?.trigger || 'Scheduled Task';
+    const manual = Boolean(triggerEventInfo.data?.data?.manual);
+    return platformMessage(
+      <SourcePill
+        mark={<Icon as={LightningIcon} size={12} className="text-muted-foreground" />}
+        sheetMark={<Icon as={LightningIcon} size={22} className="text-foreground" />}
+        source="Trigger"
+        sender={name}
+        title={name}
+        subtitle="Trigger"
+        rows={[{ label: 'Run', value: manual ? 'Manual' : null }]}
+      />,
+      triggerEventInfo.prompt ? <Text style={BUBBLE_TEXT_STYLE}>{triggerEventInfo.prompt}</Text> : null,
+      triggerEventInfo.prompt,
     );
   }
 
@@ -378,6 +489,7 @@ export function UserMessage({
           <MessageAttachments attachments={attachments} status={failed} onOpenPath={onFileMention} />
         ) : null}
 
+        {sessionAuthor ? <SessionSourcePill author={sessionAuthor} onOpenSession={onSessionMention} /> : null}
         {hasBubble ? (
           <MessageSenderAbove sender={sender}>
             {/* A failed send greys its bubble; "Try again" above stays full strength. */}
@@ -387,6 +499,7 @@ export function UserMessage({
                   isDark={isDark}
                   tail={!!sender}
                   quotes={content.quotes}
+                  fullText={selecting ? undefined : promptText}
                   // While selecting, a long press belongs to the text selection.
                   onLongPress={selecting ? undefined : openMenu}>
                   {selecting ? (
@@ -489,7 +602,16 @@ function MessageMenu({
  * `TextInput` (not `Input`: it is not a field, and `Input` draws one) gives
  * range selection.
  */
-function SelectableMessageText({ text, isDark }: { text: string; isDark: boolean }) {
+function SelectableMessageText({
+  text,
+  isDark,
+  textStyle = BUBBLE_TEXT_STYLE,
+}: {
+  text: string;
+  isDark: boolean;
+  /** The bubble's size by default; the full-message sheet passes its own. */
+  textStyle?: typeof BUBBLE_TEXT_STYLE | typeof SHEET_TEXT_STYLE;
+}) {
   if (Platform.OS === 'ios') {
     return (
       <TextInput
@@ -497,12 +619,12 @@ function SelectableMessageText({ text, isDark }: { text: string; isDark: boolean
         editable={false}
         multiline
         scrollEnabled={false}
-        style={[BUBBLE_TEXT_STYLE, { color: paletteFor(isDark).foreground, padding: 0 }]}
+        style={[textStyle, { color: paletteFor(isDark).foreground, padding: 0 }]}
       />
     );
   }
   return (
-    <Text selectable style={BUBBLE_TEXT_STYLE}>
+    <Text selectable style={textStyle}>
       {text}
     </Text>
   );
@@ -510,7 +632,13 @@ function SelectableMessageText({ text, isDark }: { text: string; isDark: boolean
 
 // ─── Body: text with mention chips ───────────────────────────────────────────
 
-function MessageBody({
+/**
+ * A typed prompt's words in the bubble. `SessionConnecting` renders the first
+ * prompt through this too, so the bubble keeps one type from the project home
+ * send to the live thread: a copy of the text style flashed a smaller size
+ * (the segments' `Text` overrides `BUBBLE_TEXT_STYLE`).
+ */
+export function MessageBody({
   text,
   command,
   sessions,
@@ -582,14 +710,18 @@ function MessageBody({
 
 /**
  * `bg-sidebar dark:bg-muted px-3.5 py-2.5 rounded-lg`, hugging its text. Long
- * text clamps at 200px under a 36.8px fade in the bubble colour; the chevron
- * (and a tap anywhere on the bubble) expands it.
+ * text clamps at 200px under a 36.8px fade in the bubble colour, with a
+ * "Show more" label (a label, not a control) at the bottom left. A tap on a
+ * clamped bubble opens the whole message in a sheet with selectable text
+ * (`FullMessageSheet`); it never expands in place. Long press still opens the
+ * message menu.
  */
 export function UserMessageBubble({
   isDark,
   quotes = [],
   children,
   onLongPress,
+  fullText,
   tail = false,
 }: {
   isDark: boolean;
@@ -600,99 +732,131 @@ export function UserMessageBubble({
   children?: React.ReactNode;
   /** Opens the message menu (Copy · Select text · Edit). */
   onLongPress?: () => void;
+  /** The whole message, for the sheet a tap on a clamped bubble opens. Omit: no sheet. */
+  fullText?: string;
 }) {
   const palette = paletteFor(isDark);
   const surface = isDark ? palette.muted : palette.sidebar;
-  const [expanded, setExpanded] = useState(false);
   const [contentHeight, setContentHeight] = useState(0);
-  const canExpand = contentHeight > CLAMP_HEIGHT + 2;
-  const toggle = useCallback(() => setExpanded((v) => !v), []);
-
-  const rotation = useSharedValue(0);
-  useEffect(() => {
-    rotation.value = withTiming(expanded ? 180 : 0, {
-      duration: MOTION.duration.normal,
-      easing: Easing.bezier(...MOTION.easing.default),
-    });
-  }, [expanded, rotation]);
-  const chevronStyle = useAnimatedStyle(() => ({ transform: [{ rotate: `${rotation.value}deg` }] }));
+  const clamped = contentHeight > CLAMP_HEIGHT + 2;
+  const sheetRef = useRef<BottomSheetModal>(null);
+  const opensSheet = clamped && !!fullText;
 
   const onContentLayout = useCallback((e: LayoutChangeEvent) => {
     setContentHeight(e.nativeEvent.layout.height);
   }, []);
 
   return (
-    <Pressable
-      onPress={canExpand ? toggle : undefined}
-      onLongPress={onLongPress}
-      delayLongPress={350}
-      disabled={!canExpand && !onLongPress}
-      accessible={false}
-      style={{
-        maxWidth: '100%',
-        backgroundColor: surface,
-        borderRadius: BUBBLE_RADIUS,
-        ...(tail ? { borderTopRightRadius: BUBBLE_TAIL_RADIUS } : null),
-        paddingHorizontal: BUBBLE_PADDING_X,
-        paddingVertical: BUBBLE_PADDING_Y,
-        overflow: 'hidden',
-      }}
-    >
-      {quotes.length > 0
-        ? quotes.map((quote, i) => (
-            <View
-              key={i}
-              className="border-border border-l-2"
-              style={{
-                paddingLeft: webSpace(2.5),
-                marginBottom: quoteMarginBottom(i, quotes.length, Boolean(children)),
-              }}
-            >
-              <Text variant="muted" numberOfLines={2} style={{ lineHeight: webSpace(5) }}>
-                {quote}
-              </Text>
+    <>
+      <Pressable
+        onPress={
+          opensSheet
+            ? () => {
+                haptics.selection();
+                sheetRef.current?.present();
+              }
+            : undefined
+        }
+        onLongPress={onLongPress}
+        delayLongPress={350}
+        disabled={!opensSheet && !onLongPress}
+        accessible={opensSheet}
+        accessibilityRole={opensSheet ? 'button' : undefined}
+        accessibilityLabel={opensSheet ? 'Show the whole message' : undefined}
+        style={{
+          maxWidth: '100%',
+          backgroundColor: surface,
+          borderRadius: BUBBLE_RADIUS,
+          ...(tail ? { borderTopRightRadius: BUBBLE_TAIL_RADIUS } : null),
+          paddingHorizontal: BUBBLE_PADDING_X,
+          paddingVertical: BUBBLE_PADDING_Y,
+          overflow: 'hidden',
+        }}
+      >
+        {quotes.length > 0
+          ? quotes.map((quote, i) => (
+              <View
+                key={i}
+                className="border-border border-l-2"
+                style={{
+                  paddingLeft: webSpace(2.5),
+                  marginBottom: quoteMarginBottom(i, quotes.length, Boolean(children)),
+                }}
+              >
+                <Text variant="muted" numberOfLines={2} style={{ lineHeight: webSpace(5) }}>
+                  {quote}
+                </Text>
+              </View>
+            ))
+          : null}
+
+        {children ? (
+          <View>
+            {/* `overflow: 'scroll'`, not 'hidden': Yoga measures a child of a
+                max-height box AT MOST that height unless the box scrolls, so
+                under 'hidden' the text measured 200pt and never read as long.
+                'scroll' measures the full text and still clips it (no
+                ScrollView, nothing scrolls). */}
+            <View style={{ maxHeight: CLAMP_HEIGHT, overflow: 'scroll' }}>
+              <View onLayout={onContentLayout}>{children}</View>
             </View>
-          ))
-        : null}
 
-      {children ? (
-        <View>
-          <View style={{ maxHeight: expanded ? undefined : CLAMP_HEIGHT, overflow: 'hidden' }}>
-            <View onLayout={onContentLayout}>{children}</View>
+            {clamped ? (
+              <LinearGradient
+                pointerEvents="none"
+                colors={[withAlpha(surface, 0), surface]}
+                style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: FADE_HEIGHT }}
+              />
+            ) : null}
           </View>
+        ) : null}
 
-          {canExpand && !expanded ? (
-            <LinearGradient
-              pointerEvents="none"
-              colors={[withAlpha(surface, 0), surface]}
-              style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: FADE_HEIGHT }}
-            />
-          ) : null}
+        {/* A label, not a control: the whole bubble is the target. */}
+        {children && clamped ? (
+          <Text variant="muted" style={[META_TEXT_STYLE, { fontFamily: 'Roobert-Medium', marginTop: webSpace(1.5) }]}>
+            Show more
+          </Text>
+        ) : null}
+      </Pressable>
 
-          {canExpand ? (
-            <Pressable
-              onPress={toggle}
-              hitSlop={14}
-              accessibilityRole="button"
-              accessibilityLabel={expanded ? 'Collapse message' : 'Expand message'}
-              accessibilityState={{ expanded }}
-              className="rounded-md"
-              style={{
-                position: 'absolute',
-                right: 0,
-                bottom: 0,
-                padding: webSpace(1),
-                backgroundColor: withAlpha(palette.muted, 0.8),
-              }}
-            >
-              <Reanimated.View style={chevronStyle}>
-                <Icon as={CaretDownIcon} size={webSpace(3.5)} className="text-muted-foreground" />
-              </Reanimated.View>
-            </Pressable>
-          ) : null}
-        </View>
-      ) : null}
-    </Pressable>
+      {opensSheet ? <FullMessageSheet sheetRef={sheetRef} text={fullText!} isDark={isDark} /> : null}
+    </>
+  );
+}
+
+/**
+ * The whole of a long message, in the app's one bottom sheet: "Message" title,
+ * Copy at the far right (`CopyContentButton`), the text below in a scroll view.
+ * Opens at full screen; swipe down to close.
+ * The text is selectable: press and hold to select, then the system menu
+ * copies the selection (`SelectableMessageText`, a read-only `TextInput` on
+ * iOS, where `Text selectable` cannot select part of a text).
+ */
+function FullMessageSheet({
+  sheetRef,
+  text,
+  isDark,
+}: {
+  sheetRef: React.RefObject<BottomSheetModal | null>;
+  text: string;
+  isDark: boolean;
+}) {
+  const insets = useSafeAreaInsets();
+  return (
+    <KortixBottomSheetModal
+      ref={sheetRef}
+      title="Message"
+      titleTrailing={<CopyContentButton text={text} />}
+      snapPoints={FULL_SCREEN}
+      enableDynamicSizing={false}
+      enablePanDownToClose
+    >
+      <BottomSheetScrollView
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: Math.max(insets.bottom, 16) + 16 }}
+      >
+        <SelectableMessageText text={text} isDark={isDark} textStyle={SHEET_TEXT_STYLE} />
+      </BottomSheetScrollView>
+    </KortixBottomSheetModal>
   );
 }
 

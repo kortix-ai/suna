@@ -1,7 +1,5 @@
 import type { TriggerSessionAccess } from '@kortix/api-contract';
 import {
-  accountGroups,
-  accountMembers,
   projectSessionGrants,
   projectSessions,
   projectTriggerRuntime,
@@ -9,16 +7,14 @@ import {
 } from '@kortix/db';
 import { and, eq, inArray, ne, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
+import { accountMembersAmong } from '../iam/membership-read';
+import { accountGroupsAmong } from '../iam/group-read';
 import { resolveAgentRunAttribution } from './session-lifecycle/actor';
-import {
-  PRIVATE_TRIGGER_SESSION_ACCESS,
-  triggerSessionAccessToVisibility,
-} from './trigger-session-access-policy';
+import { triggerSessionAccessToVisibility } from './trigger-session-access-policy';
 
 export {
   PRIVATE_TRIGGER_SESSION_ACCESS,
   parseTriggerSessionAccess,
-  triggerSessionAccessToVisibility,
 } from './trigger-session-access-policy';
 
 function publicMode(mode: string): TriggerSessionAccess['mode'] {
@@ -46,74 +42,17 @@ export async function validateTriggerSessionAccessPrincipals(
 ): Promise<string | null> {
   if (access.mode !== 'members') return null;
   const [members, groups] = await Promise.all([
-    access.memberIds.length
-      ? db
-          .select({ id: accountMembers.userId })
-          .from(accountMembers)
-          .where(
-            and(
-              eq(accountMembers.accountId, accountId),
-              inArray(accountMembers.userId, access.memberIds),
-            ),
-          )
-      : [],
-    access.groupIds.length
-      ? db
-          .select({ id: accountGroups.groupId })
-          .from(accountGroups)
-          .where(
-            and(
-              eq(accountGroups.accountId, accountId),
-              inArray(accountGroups.groupId, access.groupIds),
-            ),
-          )
-      : [],
+    access.memberIds.length ? accountMembersAmong(accountId, access.memberIds) : [],
+    access.groupIds.length ? accountGroupsAmong(accountId, access.groupIds) : [],
   ]);
-  const foundMembers = new Set(members.map((row) => row.id));
-  const foundGroups = new Set(groups.map((row) => row.id));
+  const foundMembers = new Set(members.map((row) => row.userId));
+  const foundGroups = new Set(groups.map((row) => row.groupId));
   const unknownMember = access.memberIds.find((id) => !foundMembers.has(id));
   if (unknownMember)
     return `Session access member ${unknownMember} does not belong to this account`;
   const unknownGroup = access.groupIds.find((id) => !foundGroups.has(id));
   if (unknownGroup) return `Session access group ${unknownGroup} does not belong to this account`;
   return null;
-}
-
-export async function loadTriggerSessionAccess(
-  projectId: string,
-  slug: string,
-): Promise<TriggerSessionAccess> {
-  const [runtime] = await db
-    .select({ sessionAccessMode: projectTriggerRuntime.sessionAccessMode })
-    .from(projectTriggerRuntime)
-    .where(
-      and(eq(projectTriggerRuntime.projectId, projectId), eq(projectTriggerRuntime.slug, slug)),
-    )
-    .limit(1);
-  if (!runtime) return PRIVATE_TRIGGER_SESSION_ACCESS;
-  const grants = await db
-    .select({
-      principalType: projectTriggerSessionAccessGrants.principalType,
-      principalId: projectTriggerSessionAccessGrants.principalId,
-    })
-    .from(projectTriggerSessionAccessGrants)
-    .where(
-      and(
-        eq(projectTriggerSessionAccessGrants.projectId, projectId),
-        eq(projectTriggerSessionAccessGrants.slug, slug),
-      ),
-    );
-  const mode = publicMode(runtime.sessionAccessMode);
-  if (mode !== 'members') return { mode, memberIds: [], groupIds: [] };
-  return {
-    mode,
-    memberIds: grants
-      .filter((grant) => grant.principalType === 'member')
-      .map((grant) => grant.principalId),
-    groupIds: grants
-      .filter((grant) => grant.principalType === 'group')
-      .map((grant) => grant.principalId),
-  };
 }
 
 export async function loadTriggerSessionAccessMap(

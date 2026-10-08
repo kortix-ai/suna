@@ -1,8 +1,6 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { eq } from 'drizzle-orm';
 import { json, errors, auth } from '../../openapi';
-import { accountMembers, accounts } from '@kortix/db';
-import { db } from '../../shared/db';
+import { userAccountNameRows } from '../../iam/membership-read';
 import { accountRolesForUser } from '../../iam/read-models';
 import { resolveAccountId } from '../../shared/resolve-account';
 import {
@@ -94,14 +92,7 @@ accountsRouter.openapi(
       // `account_members` says WHICH accounts; `role_assignments` says at what
       // role — the same split GET /accounts uses.
       const [rows, rolesByAccount] = await Promise.all([
-        db
-          .select({
-            accountId: accountMembers.accountId,
-            name: accounts.name,
-          })
-          .from(accountMembers)
-          .innerJoin(accounts, eq(accountMembers.accountId, accounts.accountId))
-          .where(eq(accountMembers.userId, userId)),
+        userAccountNameRows(userId),
         accountRolesForUser(userId),
       ]);
       return rows.map((r) => ({ ...r, accountRole: rolesByAccount.get(r.accountId) ?? 'member' }));

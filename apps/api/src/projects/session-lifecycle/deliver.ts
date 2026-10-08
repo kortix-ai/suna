@@ -3,7 +3,7 @@ import type { ProvisionTimeline } from '../../platform/services/provision-timeli
 import { projectSessions, projects, sessionSandboxes } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
-import { openSession } from '../routes/shared';
+import { openSession } from '../session-open';
 import { type SandboxRecord, resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { serviceKeyForExternalId } from '../../platform/service-key';
 import type { ProviderName } from '../../platform/providers';
@@ -13,7 +13,7 @@ import { recordSessionActivity } from '../session-activity';
 import { deliveryCountsAsActivity } from './delivery-activity';
 import { DAEMON_PORT, PromptNeverLandedError } from './runtime-client';
 import { waitForSessionRuntimeActive } from './runtime-active-signal';
-import { sessionTransitionLeaves, transitionSession } from './status-transitions';
+import { transitionSession } from './status-transitions';
 
 // After a session's runtime reports `ready` we still have to hand the prompt to
 // the opencode daemon — and a just-woken sandbox is flaky for a beat: the
@@ -36,8 +36,6 @@ import { sessionTransitionLeaves, transitionSession } from './status-transitions
 // no knowledge of the caller's retry cadence.
 const DELIVER_DEADLINE_MS = 45_000;
 const DELIVER_RETRY_INTERVAL_MS = 1_500;
-
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * What one hand-off attempt proved.
@@ -86,7 +84,7 @@ export async function deliverWithRetry(input: {
   intervalMs?: number;
 }): Promise<SessionDeliveryOutcome> {
   const now = input.now ?? Date.now;
-  const sleepFn = input.sleepFn ?? sleep;
+  const sleepFn = input.sleepFn ?? Bun.sleep;
   const deadlineMs = input.deadlineMs ?? DELIVER_DEADLINE_MS;
   const intervalMs = input.intervalMs ?? DELIVER_RETRY_INTERVAL_MS;
 

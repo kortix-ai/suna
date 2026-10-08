@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { searchFileTree, searchResultLocation } from './tree-search';
+import { directoryChildren, searchFileTree, searchResultLocation } from './tree-search';
 
 const TREE = [
   { path: 'README.md', size: 10 },
@@ -59,5 +59,23 @@ describe('searchResultLocation', () => {
   test('names the parent folder, or the root label', () => {
     expect(searchResultLocation({ parent: 'src/app' })).toBe('src/app');
     expect(searchResultLocation({ parent: '' })).toBe('Files');
+  });
+});
+
+// KRTX-1723: the page read one recursive list cut at 1,000 files, so every
+// folder that sorted after file 1,000 was missing. It reads one level now.
+describe('directoryChildren', () => {
+  test('splits one folder level into folder names and files, in entry order', () => {
+    expect(
+      directoryChildren([
+        { path: 'src/z', type: 'directory' },
+        { path: 'src/index.ts', type: 'file', size: 12 },
+        { path: 'src/a', type: 'directory' },
+      ]),
+    ).toEqual({ dirs: ['z', 'a'], files: [{ path: 'src/index.ts', size: 12 }] });
+  });
+
+  test('a file without a size keeps a null size', () => {
+    expect(directoryChildren([{ path: 'a.txt', type: 'file' }]).files).toEqual([{ path: 'a.txt', size: null }]);
   });
 });

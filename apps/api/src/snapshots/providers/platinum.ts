@@ -24,12 +24,11 @@ import {
 import { SANDBOX_SPEC_LIMITS } from '../dockerfile-layer';
 import { tarBuildContext } from '../staging-tar';
 import { normalizeExistingProviderState } from './state';
-import { productionPlatinumClient, observeTemplates, findTemplateByName, findTemplateById, paginateTemplates, fetchAllTemplates, lookupTemplatesNamed, waitForActive, requireExternalTemplateId, isPlatinumAuthFailure } from './platinum-templates';
+import { productionPlatinumClient, observeTemplates, findTemplateByName, findTemplateById, paginateTemplates, fetchAllTemplates, lookupTemplatesNamed, waitForActive, requireExternalTemplateId, isPlatinumAuthFailure, PlatinumTemplateBuildFailedError, PLATINUM_BUILD_FAILED_RE } from './platinum-templates';
 import type { PlatinumClient, PlatinumTemplate } from './platinum-templates';
 import { uploadWithRetry, templateInUseCount } from './platinum-upload';
-export { PlatinumTemplateListingError, findTemplateByName, waitForActive, requireExternalTemplateId } from './platinum-templates';
-export type { PlatinumClient } from './platinum-templates';
-export { uploadUrlGuardOptsFromEnv, uploadWithRetry, UploadUrlRejectedError } from './platinum-upload';
+export { PlatinumTemplateListingError, PlatinumTemplateBuildFailedError, summarizePlatinumBuildFailure, findTemplateByName, waitForActive, requireExternalTemplateId } from './platinum-templates';
+export { uploadWithRetry } from './platinum-upload';
 import type {
   BuildableTemplate,
   BuildLogTap,
@@ -159,7 +158,13 @@ export function isRetryablePlatinumBuildError(err: unknown): boolean {
   // non-retryable even if a raw ENOSPC/too_big message happens to also contain
   // one of the transient substrings matched below (e.g. "network").
   if (isPlatinumSizeCapBuildFailure(err)) return false;
+  // An explicit `state: failed` is a genuine build error. It now carries the
+  // build log's failing lines, which can contain any of the transient
+  // substrings below ("no such file", "timeout", "network") — so it must be
+  // decided before them, by type or (re-wrapped) by its message prefix.
+  if (err instanceof PlatinumTemplateBuildFailedError) return false;
   const m = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  if (PLATINUM_BUILD_FAILED_RE.test(m)) return false;
   // Platinum answers 429 for TWO opposite conditions, and only one is transient:
   //   - `rate_limited` (server.ts) — the per-org mutation-rate bucket
   //     (PT_ORG_MUT_RATE, 20 req/s). Transient; retrying is right.

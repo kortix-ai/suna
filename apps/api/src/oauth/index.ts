@@ -15,8 +15,9 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { Context, Next } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { createHash, randomBytes, timingSafeEqual } from 'crypto';
-import { eq, and, desc, gt, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
+import { eq, and, desc, gt, gte, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
+import { anyAccountMembershipOf } from '../iam/membership-read';
 import { hashSecretKey, randomAlphanumeric, verifySecretKey } from '../shared/crypto';
 import { hashSecretKeyAsync } from '../shared/token-hash';
 import { supabaseAuth } from '../middleware/auth';
@@ -28,18 +29,18 @@ import {
   oauthAccessTokens,
   oauthConsents,
   oauthRefreshTokens,
-  accountMembers,
 } from '@kortix/db';
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
 import { isMcpResource, oauthAuthorizationServerMetadata, oauthIssuer } from './discovery';
 import { createOAuthClient, normalizeRedirectUris, OAuthClientInputError } from '../repositories/oauth-clients';
 import { TokenBucketRateLimiter } from '../shared/rate-limit';
-import { requestClientKey } from '../shared/client-ip';
+import { requestClientKey } from '../middleware/client-ip';
 import { isOAuthAccessToken, isOAuthRefreshToken, isOAuthScope, OAUTH_SCOPE_EMAIL, OAUTH_SCOPE_KORTIX, OAUTH_SCOPE_PROFILE } from './access-token';
 import { isUuid } from '../shared/validate';
 import { actsAsFullIdentity } from '../accounts/core/tokens';
 import { actorOf } from '../iam/actor';
 import { resolveAccountId } from '../shared/resolve-account';
+import { bearerToken } from '../shared/bearer-token';
 
 // ─── Rate Limiter (per client_id) ───────────────────────────────────────────
 
@@ -55,10 +56,10 @@ function checkTokenRateLimit(clientId: string): boolean {
 
 async function oauthTokenAuth(c: Context, next: Next) {
   const authHeader = c.req.header('Authorization');
-  if (!authHeader?.startsWith('Bearer ')) {
+  const token = bearerToken(authHeader);
+  if (token === null) {
     throw new HTTPException(401, { message: 'Missing or invalid Authorization header' });
   }
-  const token = authHeader.slice(7);
   if (!token) throw new HTTPException(401, { message: 'Missing token' });
 
   const tokenHash = await hashSecretKeyAsync(token);
@@ -574,11 +575,7 @@ oauthApp.openapi(
     }
 
     const userId = (c as any).get('userId') as string;
-    const [membership] = await db
-      .select({ accountId: accountMembers.accountId })
-      .from(accountMembers)
-      .where(eq(accountMembers.userId, userId))
-      .limit(1);
+    const [membership] = await anyAccountMembershipOf(userId);
     const accountId = membership?.accountId ?? userId;
 
     const code = generateAuthCode();
