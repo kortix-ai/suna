@@ -281,13 +281,12 @@ Never print or return a secret value or a handle. Use `kortix secrets ls
 
 **Getting a credential — never punt to the dashboard.** If the human already
 gave you the value (pasted in chat, in a file, "use this key"), **store it
-yourself in the same turn** with the `set_secret` tool (or
-`kortix secrets set NAME=-`, `--scope connector` for a connector credential) —
+yourself in the same turn** with `kortix secrets set NAME=-`
+(`--scope connector` for a connector credential) —
 no link, no second entry, never echo it back. A `403` means your agent lacks
 secret-write permission: fall back to a link. If you do NOT have the value,
-**mint a setup link and surface the URL in the same turn** with the
-`request_secret` / `connect` tools on the `kortix-connectors` MCP (or
-`kortix secrets request` / `kortix connectors connect`). The human gets a
+**mint a setup link and surface the URL in the same turn** with
+`kortix secrets request` / `kortix connectors connect`. The human gets a
 fill-in modal (web) or a tappable link (Slack). Never tell them to "open
 Customize → Connectors". Full playbook in the **credentials-and-setup-links**
 reference below.
