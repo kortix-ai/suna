@@ -36,6 +36,12 @@ export interface Capabilities {
    * direct-edge mode, so `x-kortix-app-host` cannot stand in for it).
    */
   appHost: boolean;
+  /**
+   * The target's API publishes project snapshots (`KORTIX_PROJECT_SNAPSHOT_S3_*`),
+   * so a config release over the archive cap reaches a box through one. Dev,
+   * staging and prod do. The local profile and a preview do not.
+   */
+  projectSnapshots: boolean;
 }
 
 export interface Env {
@@ -166,6 +172,7 @@ export function loadEnv(): Env {
     internalCron: internalServiceKey != null,
     funded: pick('KE2E_CAP_FUNDED') === '1',
     appHost: pick('KE2E_CAP_APP_HOST') === '1' || inferTarget(apiUrl) === 'local',
+    projectSnapshots: pick('KE2E_CAP_PROJECT_SNAPSHOTS') !== '0',
   };
 
   cached = {

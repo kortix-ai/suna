@@ -475,12 +475,13 @@ title. Sorted newest first.
 
 | Command | What it does |
 | --- | --- |
-| `kortix validate` | Checks `kortix.yaml` against the schema, lints sandbox Dockerfiles and agent wiring, and warns when the files in Git are large (a file of 10 MiB or more, or more than 32 MiB in total). Exit `0` with warnings, `1` on an error. `--json` prints the report. |
+| `kortix validate` | Checks `kortix.yaml` against the schema, lints sandbox Dockerfiles and agent wiring, and warns when the files in Git are large (a file of 10 MiB or more, or more than 512 MiB in total). Exit `0` with warnings, `1` on an error. `--json` prints the report. |
 | `kortix ship` | Runs the `kortix validate` checks, commits, and pushes the current branch to the project repo (laptop flow). An error stops the ship; a warning never does. `--no-verify` skips the checks. |
 
-A session builds its agent config from the whole repository. Above 32 MiB
-compressed that build fails and the session runs the platform default
-config, so the size warning names the largest files. Move them to object
+A session builds its agent config from the whole repository, and every
+session downloads every file. Above 512 MiB compressed a running session
+stops picking up agent config changes from the base branch until a new
+session starts, so the size warning names the largest files. Move them to object
 storage (S3, R2, GCS), or mark paths no agent reads `export-ignore` in
 `.gitattributes`.
 

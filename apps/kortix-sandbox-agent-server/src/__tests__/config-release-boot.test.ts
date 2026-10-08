@@ -41,6 +41,7 @@ import {
   git,
   initRepo,
   serveRelease,
+  serveSnapshot,
   startFakeApi,
   write,
   type BuiltRelease,
@@ -291,6 +292,50 @@ describe('the desired release is what the box runs', () => {
     const run = await boot()
     expect(run.result.source).toBe('release')
     expect(api.archiveRequests).toHaveLength(0)
+  })
+
+  test('a box that checked out the release commit builds the release from its checkout: no download', async () => {
+    const run = await boot({ cfg: { ...cfg(), baseSha: release.descriptor.source_commit } as OpenCodeConfig })
+    const dir = join(releaseDir(store, release.descriptor.release_id!), DIR)
+    expect(run.result).toMatchObject({ dir, source: 'release', proven: true, fallbackReason: null })
+    expect(readFileSync(join(dir, 'agents/kortix.md'), 'utf8')).toBe('RELEASE PROMPT\n')
+    expect(api.archiveRequests).toEqual([])
+    // A copy, sealed in the store: the checkout stays the session's to edit.
+    expect(run.servedDirs).not.toContain(join(work, DIR))
+    expect(git(work, 'status', '--porcelain')).toBe('')
+  })
+
+  test('a checkout that did not materialize is never read: the box downloads instead', async () => {
+    const run = await boot(
+      { cfg: { ...cfg(), baseSha: release.descriptor.source_commit } as OpenCodeConfig },
+      { workspaceError: 'clone failed' },
+    )
+    expect(run.result.source).toBe('release')
+    expect(api.archiveRequests).toHaveLength(1)
+  })
+
+  test('a release over the archive cap boots from the project snapshot (v3)', async () => {
+    write(work, 'assets/big.bin', 'never in the release\n')
+    const tip = commitAll(work, 'big')
+    const built = buildRelease(work, tip, DIR, { governance: GOV })
+    api.respond({
+      status: 200,
+      json: {
+        ...built.descriptor,
+        format: 'config-release-v3',
+        archive: null,
+        files: built.descriptor.files!.filter(([path]) => !path.startsWith('assets/')),
+        snapshot: serveSnapshot(api, work, tip),
+      },
+    })
+    // The box checked out an older commit, so the checkout is not the release.
+    const run = await boot({ cfg: { ...cfg(), baseSha: release.descriptor.source_commit } as OpenCodeConfig })
+    const dir = releaseDir(store, built.descriptor.release_id!)
+    expect(run.result).toMatchObject({ dir: join(dir, DIR), source: 'release', proven: true, fallbackReason: null })
+    expect(api.archiveRequests).toEqual([])
+    expect(api.storageRequests).toHaveLength(1)
+    expect(existsSync(join(dir, '.git'))).toBe(false)
+    expect(existsSync(join(dir, 'assets'))).toBe(false)
   })
 })
 

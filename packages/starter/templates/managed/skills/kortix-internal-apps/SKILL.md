@@ -55,7 +55,7 @@ memory/<app>.md                # what you built, URLs, how to redeploy
 .gitignore                     # **/node_modules and apps/*/dist: never commit them
 ```
 
-A repository over 32 MiB breaks every session (kortix-system, `<gotchas>`).
+Every session downloads the whole repository, so keep it small (kortix-system, `<gotchas>`).
 Create `.gitignore` before the first `npm install`.
 
 ## Build it, in this order
