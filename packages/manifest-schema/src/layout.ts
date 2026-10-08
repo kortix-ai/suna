@@ -71,6 +71,15 @@ export function safeAgentFile(value: unknown): string | null {
 /** JSON Schema twin of `safeAgentFile` (validated by the conformance suite). */
 export const AGENT_FILE_PATTERN = String.raw`^(?!-)(?!(?:.*/)?\.\.?(?:/|$))(?:[\w .-]+/)*[\w .-]+\.md$`;
 
+/** A project tool module (top-level `tools`): a safe repo path to a `.ts`/`.js` (`.mts`, `.mjs`, …) file, or null. */
+export function safeToolFile(value: unknown): string | null {
+  const path = safeRepoPath(value);
+  return path && /[^/]\.[cm]?[jt]s$/.test(path) ? path : null;
+}
+
+/** JSON Schema twin of `safeToolFile`. */
+export const TOOL_FILE_PATTERN = String.raw`^(?!-)(?!(?:.*/)?\.\.?(?:/|$))(?:[\w .-]+/)*[\w .-]+\.[cm]?[jt]s$`;
+
 function table(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }

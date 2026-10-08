@@ -3,15 +3,16 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, wr
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PermissionBroker, compilePermissionPolicy } from '@/harness/pi/interactions'
-import { createMemoryTool } from '@/harness/pi/kortix-memory-tool'
-import { createShowTool } from '@/harness/pi/kortix-show-tool'
-import { createImageSearchTool, createScrapeWebpageTool, createWebSearchTool } from '@/harness/pi/kortix-web-tools'
+import { memory as memoryTool } from '@/services/tools/memory'
+import { show as showTool } from '@/services/tools/show'
+import type { ToolContext } from '@/services/tools/tool'
+import { imageSearch, scrapeWebpage, webSearch } from '@/services/tools/web'
 
 /**
- * The Kortix tools a pi session runs. The web tools are driven against a
- * router fake on a real port: the request each one sends (path, credential,
- * body) is the contract with the API's billed proxy, and the output JSON is
- * the contract with the skills and the client's tool views.
+ * The Kortix tools every harness runs (services/tools). The web tools are
+ * driven against a router fake on a real port: the request each one sends
+ * (path, credential, body) is the contract with the API's billed proxy, and
+ * the output JSON is the contract with the skills and the client's tool views.
  */
 const ENV_KEYS = ['KORTIX_API_URL', 'KORTIX_TOKEN', 'TAVILY_API_KEY', 'SERPER_API_KEY', 'FIRECRAWL_API_KEY'] as const
 type Call = { path: string; headers: Record<string, string>; body: any }
@@ -21,8 +22,10 @@ let server: ReturnType<typeof Bun.serve> | undefined
 let calls: Call[]
 let dir: string
 
-/** One parsed JSON output; the tools return a single text block. */
-const out = (result: { content: Array<{ type: string; text?: string }> }) => result.content[0]!.text!
+/** The call context a harness passes: this session, this agent, the project checkout. */
+const ctx = (): ToolContext => ({ sessionId: 'ses_test', agent: 'kortix', directory: dir, env: process.env, signal: new AbortController().signal })
+/** The tools return their output text. */
+const out = (result: unknown) => result as string
 
 function router(handle: (call: Call) => unknown | Response): void {
   server = Bun.serve({
@@ -63,7 +66,7 @@ describe('web_search', () => {
       images: ['https://img/1.png', { url: 'https://img/2.png', description: 'logo' }],
       response_time: 1.2,
     }))
-    const result = JSON.parse(out(await createWebSearchTool().execute('call', { query: ' bun runtime ', num_results: 50, topic: 'news' })))
+    const result = JSON.parse(out(await webSearch.execute({ query: ' bun runtime ', num_results: 50, topic: 'news' }, ctx())))
     expect(calls).toHaveLength(1)
     expect(calls[0]!.path).toBe('/v1/router/tavily/search')
     expect(calls[0]!.headers.authorization).toBe('Bearer kortix_sb_test')
@@ -88,7 +91,7 @@ describe('web_search', () => {
 
   test('a ||| batch runs one request per query and reports a failed query beside the good one', async () => {
     router((call) => (call.body.query === 'bad' ? new Response('quota', { status: 402 }) : { results: [{ title: 'ok', url: 'https://ok' }] }))
-    const result = JSON.parse(out(await createWebSearchTool().execute('call', { query: 'good ||| bad' })))
+    const result = JSON.parse(out(await webSearch.execute({ query: 'good ||| bad' }, ctx())))
     expect(calls.map((call) => call.body.query).sort()).toEqual(['bad', 'good'])
     expect(result.batch_mode).toBe(true)
     expect(result.total_queries).toBe(2)
@@ -99,24 +102,24 @@ describe('web_search', () => {
   test('a box with a control plane and no token refuses before any request', async () => {
     router(() => ({}))
     delete process.env.KORTIX_TOKEN
-    await expect(createWebSearchTool().execute('call', { query: 'x' })).rejects.toThrow('KORTIX_TOKEN is not set.')
+    await expect(webSearch.execute({ query: 'x' }, ctx())).rejects.toThrow('KORTIX_TOKEN is not set.')
     expect(calls).toHaveLength(0)
   })
 
   test('a box with no control plane and no upstream key names the key it needs', async () => {
-    await expect(createWebSearchTool().execute('call', { query: 'x' })).rejects.toThrow('TAVILY_API_KEY is not set.')
+    await expect(webSearch.execute({ query: 'x' }, ctx())).rejects.toThrow('TAVILY_API_KEY is not set.')
   })
 
   test('an empty query is refused', async () => {
     router(() => ({}))
-    await expect(createWebSearchTool().execute('call', { query: ' ||| ' })).rejects.toThrow('The query is empty.')
+    await expect(webSearch.execute({ query: ' ||| ' }, ctx())).rejects.toThrow('The query is empty.')
   })
 })
 
 describe('image_search', () => {
   test('one query posts to the serper proxy with the token as X-API-KEY', async () => {
     router(() => ({ images: [{ imageUrl: 'https://img/cat.png', title: 'Cat', link: 'https://cats', imageWidth: 10, imageHeight: 20 }] }))
-    const result = JSON.parse(out(await createImageSearchTool().execute('call', { query: 'cats', num_results: 500 })))
+    const result = JSON.parse(out(await imageSearch.execute({ query: 'cats', num_results: 500 }, ctx())))
     expect(calls[0]!.path).toBe('/v1/router/serper/images')
     expect(calls[0]!.headers['x-api-key']).toBe('kortix_sb_test')
     expect(calls[0]!.body).toEqual({ q: 'cats', num: 100 })
@@ -125,7 +128,7 @@ describe('image_search', () => {
 
   test('a batch posts one array and pairs each answer with its query', async () => {
     router(() => [{ images: [{ imageUrl: 'a' }] }, { images: [] }])
-    const result = JSON.parse(out(await createImageSearchTool().execute('call', { query: 'cats ||| dogs' })))
+    const result = JSON.parse(out(await imageSearch.execute({ query: 'cats ||| dogs' }, ctx())))
     expect(calls[0]!.body).toEqual([{ q: 'cats', num: 12 }, { q: 'dogs', num: 12 }])
     expect(result).toEqual({
       batch_mode: true,
@@ -138,8 +141,8 @@ describe('image_search', () => {
 
   test('no image and an upstream error are different answers', async () => {
     router((call) => (call.body.q === 'none' ? { images: [] } : new Response('down', { status: 503 })))
-    expect(out(await createImageSearchTool().execute('call', { query: 'none' }))).toBe("No images found for: 'none'")
-    await expect(createImageSearchTool().execute('call', { query: 'boom' })).rejects.toThrow('Serper API returned 503: down')
+    expect(out(await imageSearch.execute({ query: 'none' }, ctx()))).toBe("No images found for: 'none'")
+    await expect(imageSearch.execute({ query: 'boom' }, ctx())).rejects.toThrow('Serper API returned 503: down')
   })
 })
 
@@ -148,7 +151,7 @@ describe('scrape_webpage', () => {
 
   test('one URL posts to the firecrawl proxy and returns markdown without HTML by default', async () => {
     router((call) => page(call.body.url))
-    const result = JSON.parse(out(await createScrapeWebpageTool().execute('call', { urls: 'https://a.test' })))
+    const result = JSON.parse(out(await scrapeWebpage.execute({ urls: 'https://a.test' }, ctx())))
     expect(calls[0]!.path).toBe('/v1/router/firecrawl/v2/scrape')
     expect(calls[0]!.headers.authorization).toBe('Bearer kortix_sb_test')
     expect(calls[0]!.body).toEqual({ url: 'https://a.test', formats: ['markdown'], timeout: 30000 })
@@ -157,7 +160,7 @@ describe('scrape_webpage', () => {
 
   test('several URLs report the failed one beside the scraped ones', async () => {
     router((call) => (call.body.url.includes('bad') ? Response.json({ success: false, error: 'blocked' }, { status: 403 }) : page(call.body.url)))
-    const result = JSON.parse(out(await createScrapeWebpageTool().execute('call', { urls: 'https://a.test, https://bad.test', include_html: true })))
+    const result = JSON.parse(out(await scrapeWebpage.execute({ urls: 'https://a.test, https://bad.test', include_html: true }, ctx())))
     expect(calls[0]!.body.formats).toEqual(['markdown', 'html'])
     expect(result).toMatchObject({ total: 2, successful: 1, failed: 1 })
     expect(result.results[0].html).toBe('<h1>x</h1>')
@@ -166,7 +169,7 @@ describe('scrape_webpage', () => {
 
   test('a call where every URL fails is an error', async () => {
     router(() => Response.json({ success: false, error: 'blocked' }, { status: 403 }))
-    await expect(createScrapeWebpageTool().execute('call', { urls: 'https://bad.test' })).rejects.toThrow('Failed to scrape all 1 URLs. https://bad.test: blocked')
+    await expect(scrapeWebpage.execute({ urls: 'https://bad.test' }, ctx())).rejects.toThrow('Failed to scrape all 1 URLs. https://bad.test: blocked')
   })
 })
 
@@ -218,7 +221,7 @@ describe('the Kortix tools follow the capability of what they do', () => {
 })
 
 describe('memory', () => {
-  const memory = (args: Record<string, unknown>) => createMemoryTool(dir).execute('call', args as never).then(out)
+  const memory = (args: Record<string, unknown>) => Promise.resolve(memoryTool.execute(args, ctx())).then(out)
 
   test('create, view, str_replace, insert, rename and delete act on <project>/memory', async () => {
     expect(await memory({ command: 'create', path: 'memory/notes.md', file_text: 'alpha\nbeta' })).toBe('File created successfully at: memory/notes.md')
@@ -256,7 +259,7 @@ describe('memory', () => {
 })
 
 describe('show', () => {
-  const show = (args: Record<string, unknown>) => createShowTool(dir).execute('call', { action: 'show', ...args } as never)
+  const show = async (args: Record<string, unknown>) => showTool.execute({ action: 'show', ...args }, ctx())
 
   test('a relative path resolves against the project checkout', async () => {
     writeFileSync(join(dir, 'report.md'), '# report')

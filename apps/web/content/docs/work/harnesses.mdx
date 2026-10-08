@@ -48,17 +48,26 @@ array of `GET /kortix/health`. A client hides a control when the session's
 | Feature | OpenCode | pi |
 | --- | --- | --- |
 | Chat turns, streaming, stop | Yes | Yes |
-| Agent `.md`: prompt, `model`, `variant`, `mode`, `tools`, `permission`, `temperature`, `top_p`, `steps` | Yes | Yes. pi does not apply `options` (provider options). |
+| Agent `.md`: prompt, `model`, `variant`, `mode`, `permission`, `temperature`, `top_p`, `steps` | Yes | Yes. pi does not apply `options` (provider options). |
+| [Tool access](/docs/project/tools#who-may-use-which-tool) per agent (`agents.<name>.tools` in `kortix.yaml`: `all`, `none`, a list, `exclude`) | Yes | Yes |
 | Per-agent `permission` rules and permission requests | Yes | Yes |
 | Questions (`question` tool) | Yes | Yes |
 | Subagents (`task` tool), `session.subagents` | Yes | Yes: `general`, `explore` (read-only), and each project agent with `mode: subagent` or `all`. A subagent cannot start another subagent. |
 | Skills (`skills/` and the managed `kortix-*` skills), with the agent's `skills` grant | Yes. The agent loads a skill with the `skill` tool. | Yes. The system prompt lists each granted skill; the agent reads the file. |
-| `web_search`, `image_search`, `scrape_webpage`, `memory`, `show` tools | Yes, from the tool files in the project's OpenCode config directory (`tools/`). | Yes, built into the sandbox daemon. The names, arguments, and output are the same. |
+| Kortix tools: `web_search`, `image_search`, `scrape_webpage`, `memory`, `show` | Yes | Yes |
+| [Project tools](/docs/project/tools) (`tools:` in `kortix.yaml`) | Yes | Yes |
 | [Config releases](/docs/work/runtime#config-convergence), `config.release.v1` | Yes | Yes |
 | Compact (summarize) the conversation, on demand and by itself near the model's context window, `session.compact` | Yes | Yes. A model request that overflows the window compacts and retries once. |
 | Project slash commands, `session.commands` | Yes, from `commands/` in the OpenCode config directory. | Yes, from the prompt templates in `prompts/` in the pi config directory and in pi packages. pi does not read OpenCode's `commands/`. |
 | Terminal in the sandbox (PTY) | Yes | Yes |
 | `bash`, `read`, `write`, `edit`, `glob`, `grep` tools; [secrets](/docs/project/secrets) in the shell; the `kortix` CLI | Yes | Yes |
+
+The Kortix tools and the project tools are [harness-neutral](/docs/project/tools):
+the sandbox daemon runs one module per tool for both harnesses, with the same
+names, arguments and output. pi calls them in the daemon's process; OpenCode
+calls them through a plugin the daemon writes. A project that still has
+copies of the Kortix tools in `harnesses/opencode/tools/` keeps its copies on
+OpenCode until it deletes them.
 
 The web tools follow the `websearch` (`web_search`, `image_search`) and
 `webfetch` (`scrape_webpage`) permission keys on both harnesses. On OpenCode
@@ -94,10 +103,12 @@ Each harness has one directory for the files only that harness reads.
 | Directory | `harnesses/opencode/`, or `opencode.config_dir` | `harnesses/pi/`, or `pi.config_dir` |
 | Legacy directory | `.kortix/opencode/` | `.kortix/pi/` |
 | Contents | `opencode.jsonc`, `plugins/`, `tools/`, `commands/` | `settings.json`, `extensions/`, `skills/`, `prompts/` |
-| Extensions | Plugins and custom tools in that directory | [pi packages](/docs/project/manifest#harnesses) in `harnesses.pi.packages`, and extension files in `extensions/` |
+| Extensions | Plugins and OpenCode-only tools in that directory | [pi packages](/docs/project/manifest#harnesses) in `harnesses.pi.packages`, and extension files in `extensions/` |
 
 A pi session does not read `opencode.jsonc`, `plugins/`, `tools/`, or
-`commands/`. An OpenCode session does not read the pi directory.
+`commands/`. An OpenCode session does not read the pi directory. A tool both
+harnesses need is a [project tool](/docs/project/tools), declared in
+`kortix.yaml`, not a file in either directory.
 
 pi packages come from [pi.dev/packages](https://pi.dev/packages). A package
 can add tools that pi does not have, for example an MCP adapter or a todo

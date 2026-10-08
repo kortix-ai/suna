@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   type ManifestIssue,
+  resolveAgentTools,
   resolveGrantSet,
   validateAgentMdFrontmatter,
   validateManifest,
@@ -1296,10 +1297,67 @@ describe('kortix_version 3 YAML-only agent behavior', () => {
   });
 });
 
-describe('v2 agent tool toggles', () => {
-  test('agent tool toggles require boolean values', () => {
-  expect(summarize(V2_FIXTURE.replace('connectors: [github, slack]', 'tools: { bash: false, read: true }\n    connectors: [github, slack]')).errorPaths).not.toContain('agents.support.tools');
-  expect(summarize(V2_FIXTURE.replace('connectors: [github, slack]', 'tools: { bash: nope }\n    connectors: [github, slack]')).errorPaths).toContain('agents.support.tools');
+describe('v2 agent tool access', () => {
+  const withTools = (tools: string) => V2_FIXTURE.replace('connectors: [github, slack]', `tools: ${tools}\n    connectors: [github, slack]`);
+
+  test('accepts all, none, a list, exclude, and the earlier boolean map', () => {
+    for (const tools of ['all', 'none', '[read, grep, web_search]', '{ exclude: [bash, edit] }', '{ bash: false, read: true }']) {
+      const result = summarize(withTools(tools));
+      expect({ tools, errors: result.errorPaths }).toEqual({ tools, errors: [] });
+      expect({ tools, warnings: result.warningPaths.filter((p) => p.includes('tools')) }).toEqual({ tools, warnings: [] });
+    }
+  });
+
+  test('rejects any other shape', () => {
+    for (const tools of ['everything', '[read, 3]', '{ exclude: bash }', '{ exclude: [bash], read: true }', '{ bash: nope }']) {
+      expect({ tools, errors: summarize(withTools(tools)).errorPaths.filter((p) => p.startsWith('agents.support.tools')) }).not.toEqual({ tools, errors: [] });
+    }
+  });
+
+  test('warns about a name no harness, Kortix or project tool has', () => {
+    const result = summarize(withTools('{ exclude: [bassh] }'));
+    expect(result.errorPaths).toEqual([]);
+    expect(result.issues.find((i) => i.path === 'agents.support.tools')?.message).toContain('"bassh"');
+    // A declared project tool, a pty_ tool and the wildcard are known.
+    const declared = summarize(withTools('[lookup_order, pty_spawn, "*"]') + 'tools:\n  lookup_order: tools/lookup_order.ts\n');
+    expect(declared.warningPaths.filter((p) => p.includes('tools'))).toEqual([]);
+  });
+
+  test('compiles to the map a harness reads: name → visible, `*` for the rest', () => {
+    expect(resolveAgentTools(undefined)).toBeUndefined();
+    expect(resolveAgentTools('all')).toBeUndefined();
+    expect(resolveAgentTools(['read', '*'])).toBeUndefined();
+    expect(resolveAgentTools('none')).toEqual({ '*': false });
+    expect(resolveAgentTools(['read', 'web_search'])).toEqual({ '*': false, read: true, web_search: true });
+    expect(resolveAgentTools({ exclude: ['bash'] })).toEqual({ bash: false });
+    expect(resolveAgentTools({ bash: false, read: true })).toEqual({ bash: false, read: true });
+  });
+
+  test('kortix_version 3 accepts tools on the inline agent', () => {
+    const yaml = 'kortix_version: 3\ndefault_agent: writer\nagents:\n  writer:\n    prompt: Be concise.\n    tools: [read, web_search]\n';
+    expect(summarize(yaml).errorPaths).toEqual([]);
+  });
+});
+
+describe('v2 project tools', () => {
+  const base = 'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\n';
+
+  test('maps tool names to repo-relative modules in any folder', () => {
+    const result = summarize(base + 'tools:\n  lookup_order: tools/lookup_order.ts\n  crm_note: integrations/crm/note.mjs\n  ping: ping.js\n');
+    expect(result.errorPaths).toEqual([]);
+  });
+
+  test('rejects bad names, harness names, unsafe paths and non-modules', () => {
+    const result = summarize(
+      base +
+        'tools:\n  Lookup: tools/a.ts\n  bash: tools/bash.ts\n  pty_x: tools/pty.ts\n  up: ../outside.ts\n  abs: /etc/tool.ts\n  readme: tools/README.md\n  dir: tools/\n',
+    );
+    expect(result.errorPaths.sort()).toEqual(['tools.Lookup', 'tools.abs', 'tools.bash', 'tools.dir', 'tools.pty_x', 'tools.readme', 'tools.up']);
+    expect(summarize(base + 'tools: [tools/a.ts]\n').errorPaths).toEqual(['tools']);
+  });
+
+  test('a Kortix tool name is allowed: the project tool replaces it', () => {
+    expect(summarize(base + 'tools:\n  memory: tools/memory.ts\n').errorPaths).toEqual([]);
   });
 });
 
