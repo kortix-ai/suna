@@ -361,27 +361,26 @@ function buildOpencodeInstanceWarmupLines(opts: {
   return [
     `COPY --chown=kortix:kortix ${opencodeConfigPath}/ /opt/kortix/warm-config/.kortix/opencode/`,
     // Same "does it actually bundle" check as the opencode-config-deps
-    // verification above, but exercised against the REAL starter tool
-    // files (web_search / scrape_webpage / image_search / memory / show)
-    // instead of just their axios/form-data override targets — this is
-    // what actually walks the full transitive dependency tree
-    // (firecrawl-js, tavily-core, replicate) that ToolRegistry resolves
-    // on a session's first prompt. Deliberately its own RUN step: a tool that
-    // cannot bundle breaks every session's first prompt, so the image build
-    // must fail before it reaches the warm-up readiness probe below.
+    // verification above, but exercised against the REAL starter plugin
+    // files (the pty plugin) with the baked config deps — what OpenCode
+    // imports on a session's first prompt. The Kortix tools are hosted by the
+    // daemon (services/tools), so the starter carries no `tools/` to check.
+    // Deliberately its own RUN step: a plugin that cannot bundle breaks every
+    // session's first prompt, so the image build must fail before it reaches
+    // the warm-up readiness probe below.
     // E2B's Dockerfile parser does not preserve COPY --chown. Correct the
     // ownership explicitly before the standard kortix user changes this tree.
     'RUN sudo chown -R kortix:kortix /opt/kortix/warm-config',
     'RUN cd /opt/kortix/warm-config/.kortix/opencode \\',
     '    && rm -rf node_modules \\',
     '    && ln -s /opt/kortix/opencode-config-deps/node_modules node_modules \\',
-    '    && bun build tools/*.ts --target=bun --outdir=/tmp/opencode-tools-bundle-check \\',
-    '    && rm -rf /tmp/opencode-tools-bundle-check \\',
-    '    && echo "opencode-config-deps: starter tool files bundle cleanly"',
+    '    && bun build plugins/*.ts --target=bun --outdir=/tmp/opencode-plugins-bundle-check \\',
+    '    && rm -rf /tmp/opencode-plugins-bundle-check \\',
+    '    && echo "opencode-config-deps: starter plugin files bundle cleanly"',
     '',
     `COPY --chown=kortix:kortix ${opencodeWarmupScriptPath} /tmp/kortix-opencode-warmup`,
     // Stage the canonical starter opencode config so the instance warm-up
-    // has the pty plugin + tools to load. In repo mode the script hides any
+    // has the pty plugin to load. In repo mode the script hides any
     // repository-controlled `.kortix` tree and points OPENCODE_CONFIG_DIR at
     // this canonical tree. Git cleanup restores the repository tree afterward.
     // The warm-up script records whether the starter config in /workspace is

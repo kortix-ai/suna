@@ -179,7 +179,7 @@ Event data comes from a third party. Kortix starts the session's first message w
 | --- | --- | --- |
 | `active` | The subscription exists. Events fire the trigger. | None. |
 | `pending` | The trigger is declared and Kortix has not created the subscription yet. | Wait a moment. If it stays `pending`, save the trigger again. |
-| `needs_connection` | The connector has no usable shared account. The text reads "Connect a shared `<app>` account to activate this trigger." | Connect a shared account for the connector as the project. A member's private account does not count. |
+| `needs_connection` | The connector has no usable shared account. The text reads "Connect a shared `<app>` account to activate this trigger." or "Finish connecting the shared `<app>` account…" | Connect a shared account for the connector as the project (`kortix connectors connect <slug> --owner project`). A member's private account does not count. The trigger goes live by itself once the person finishes connecting, even when they connect from a link outside Kortix. |
 | `error` | The subscription failed or the provider disabled it. The trigger shows the error text. | Fix the cause the text names, then save the trigger again. |
 
 Common `error` texts:
@@ -212,6 +212,9 @@ Event delivery needs a Composio project with a webhook that points at your API. 
    ```
 
 3. The script prints the signing secret once, with a `dotenvx set COMPOSIO_WEBHOOK_SECRET ...` command. Run that command to store the secret. Composio does not show it again.
+4. Make the secret reach the running API. A deployment that reads its environment from a secret store (not the `.env` file) needs `COMPOSIO_WEBHOOK_SECRET` added there too, then a restart. Until the API has it, `POST /v1/webhooks/events/composio` answers `503 event_ingress_not_configured`.
+
+The subscription carries four events: `composio.trigger.message` (an app event), `composio.trigger.disabled` and `composio.connected_account.expired` (they set the trigger's `error` status), and `composio.connected_account.activated` (it finishes a connection a person completed outside Kortix, so the trigger goes live). Re-run the script after an upgrade; it adds missing events to an existing subscription and keeps the secret.
 
 A Composio project holds one webhook URL, so one project serves one API deployment. Two deployments that share a Composio project cannot both receive events. Add `--dry-run` to read the current subscription and print the plan without writing. Run the script again to change the URL. A repeat run with the same URL changes nothing and prints no secret. Without `COMPOSIO_WEBHOOK_SECRET`, the ingress route answers `503` and no event fires.
 
