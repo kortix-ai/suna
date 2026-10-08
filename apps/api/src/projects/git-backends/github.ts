@@ -1,5 +1,4 @@
 import {
-  type GitBackend,
   resolveGitBackend,
 } from '../../platform/services/managed-git-backend';
 import {
@@ -40,17 +39,6 @@ export function managedGithubOwner(): string | null {
 export function managedGithubInstallId(): string | null {
   const backend = resolveGitBackend();
   return backend?.kind === 'app' ? backend.installationId : null;
-}
-
-/**
- * The stored account type for the App-installation owner (install-callback
- * records `account.type` straight off the installation payload). `undefined`
- * when it was never recorded; callers fall back to a live `isOrgAccount`
- * lookup in that case (see `managedAdminAuth` below).
- */
-export function managedGithubOwnerType(): 'User' | 'Organization' | undefined {
-  const backend = resolveGitBackend();
-  return backend?.kind === 'app' ? (backend.ownerType ?? undefined) : undefined;
 }
 
 /**

@@ -198,7 +198,8 @@
                   "enum": [
                     "cron",
                     "webhook",
-                    "monitor"
+                    "monitor",
+                    "event"
                   ]
                 },
                 "name": {
@@ -318,6 +319,17 @@
                 "expect_event_within": {
                   "type": "string",
                   "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
+                },
+                "connector": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "event": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "config": {
+                  "type": "object"
                 }
               },
               "additionalProperties": true,
@@ -413,6 +425,57 @@
                       "timezone": false,
                       "secret_env": false,
                       "secretEnv": false
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "type": {
+                        "const": "event"
+                      }
+                    }
+                  },
+                  "then": {
+                    "required": [
+                      "connector",
+                      "event"
+                    ],
+                    "properties": {
+                      "cron": false,
+                      "schedule": false,
+                      "run_at": false,
+                      "runAt": false,
+                      "timezone": false,
+                      "secret_env": false,
+                      "secretEnv": false,
+                      "run": false,
+                      "mode": false,
+                      "interval": false,
+                      "expect_event_within": false
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "type": {
+                        "enum": [
+                          "cron",
+                          "webhook",
+                          "monitor"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "type"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "connector": false,
+                      "event": false,
+                      "config": false
                     }
                   }
                 },
@@ -1814,7 +1877,8 @@
                   "enum": [
                     "cron",
                     "webhook",
-                    "monitor"
+                    "monitor",
+                    "event"
                   ]
                 },
                 "name": {
@@ -1934,6 +1998,17 @@
                 "expect_event_within": {
                   "type": "string",
                   "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
+                },
+                "connector": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "event": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "config": {
+                  "type": "object"
                 }
               },
               "additionalProperties": true,
@@ -2029,6 +2104,57 @@
                       "timezone": false,
                       "secret_env": false,
                       "secretEnv": false
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "type": {
+                        "const": "event"
+                      }
+                    }
+                  },
+                  "then": {
+                    "required": [
+                      "connector",
+                      "event"
+                    ],
+                    "properties": {
+                      "cron": false,
+                      "schedule": false,
+                      "run_at": false,
+                      "runAt": false,
+                      "timezone": false,
+                      "secret_env": false,
+                      "secretEnv": false,
+                      "run": false,
+                      "mode": false,
+                      "interval": false,
+                      "expect_event_within": false
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "type": {
+                        "enum": [
+                          "cron",
+                          "webhook",
+                          "monitor"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "type"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "connector": false,
+                      "event": false,
+                      "config": false
                     }
                   }
                 },
@@ -2470,6 +2596,9 @@
                   "type": "integer",
                   "minimum": 120,
                   "maximum": 86400
+                },
+                "always_on": {
+                  "type": "boolean"
                 },
                 "monthly_budget_usd": {
                   "type": "number",
@@ -3618,7 +3747,8 @@
                   "enum": [
                     "cron",
                     "webhook",
-                    "monitor"
+                    "monitor",
+                    "event"
                   ]
                 },
                 "name": {
@@ -3738,6 +3868,17 @@
                 "expect_event_within": {
                   "type": "string",
                   "pattern": "^([1-9][0-9]*)(s|m|h|d)$"
+                },
+                "connector": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "event": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "config": {
+                  "type": "object"
                 }
               },
               "additionalProperties": true,
@@ -3833,6 +3974,57 @@
                       "timezone": false,
                       "secret_env": false,
                       "secretEnv": false
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "type": {
+                        "const": "event"
+                      }
+                    }
+                  },
+                  "then": {
+                    "required": [
+                      "connector",
+                      "event"
+                    ],
+                    "properties": {
+                      "cron": false,
+                      "schedule": false,
+                      "run_at": false,
+                      "runAt": false,
+                      "timezone": false,
+                      "secret_env": false,
+                      "secretEnv": false,
+                      "run": false,
+                      "mode": false,
+                      "interval": false,
+                      "expect_event_within": false
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "type": {
+                        "enum": [
+                          "cron",
+                          "webhook",
+                          "monitor"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "type"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "connector": false,
+                      "event": false,
+                      "config": false
                     }
                   }
                 },
@@ -4274,6 +4466,9 @@
                   "type": "integer",
                   "minimum": 120,
                   "maximum": 86400
+                },
+                "always_on": {
+                  "type": "boolean"
                 },
                 "monthly_budget_usd": {
                   "type": "number",

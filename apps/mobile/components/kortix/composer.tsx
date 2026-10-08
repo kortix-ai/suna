@@ -21,11 +21,15 @@
  */
 import * as React from 'react';
 import {
+  Platform,
+  StyleSheet,
   TextInput,
   View,
   type NativeSyntheticEvent,
   type TextInputSelectionChangeEventData,
 } from 'react-native';
+import { requireOptionalNativeModule } from 'expo';
+import { BlurView } from 'expo-blur';
 import { useColorScheme } from 'nativewind';
 import Animated, { Easing, FadeIn, FadeOut, LayoutAnimationConfig } from 'react-native-reanimated';
 import {
@@ -44,7 +48,7 @@ import { INPUT_FONT_FAMILY, INPUT_FONT_SIZE } from '@/components/kortix/pill-inp
 import type { AttachedFile } from '@/lib/session/attachments';
 import type { ComposerChip } from '@/lib/session/composer-config';
 import { BUTTON_LABEL_MAX_FONT_SCALE } from '@/lib/ui/font-scale';
-import { THEME } from '@/lib/utils/theme';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 import { cn } from '@/lib/utils/utils';
 import { StopIcon } from './StopIcon';
 import {
@@ -67,6 +71,32 @@ export const COMPOSER_CONTROL_HIT_SLOP = 4;
  * the two never drift.
  */
 export const COMPOSER_CARD_CLASS = 'rounded-3xl border border-border bg-background p-2';
+
+// The frosted card (web `backdrop-blur-sm`): a blur of what scrolls under the
+// floating composer, under a page-colour tint that keeps the text legible.
+// iOS blurs natively (`UIVisualEffectView`). Android draws the tint only:
+// expo-blur's Android blur needs a `blurTarget` view to sample, which the
+// composer does not have.
+const FROSTED_CARD_CLASS = 'overflow-hidden rounded-3xl border border-border p-2';
+// A binary built before `expo-blur` has no native blur view: it draws the tint
+// only. Rebuild the native app (`pod install`, then build) to get the blur.
+const BLUR_AVAILABLE = requireOptionalNativeModule('ExpoBlur') != null;
+if (__DEV__ && !BLUR_AVAILABLE) {
+  console.warn('[composer] ExpoBlur is not in this native build: rebuild the app to see the frosted composer.');
+}
+
+// Per platform and theme. iOS reads intensity 1–100 (an animator's
+// `fractionComplete`) and blurs harder than Android at the same number.
+const FROSTED = Platform.select({
+  ios: {
+    dark: { intensity: 15, tintAlpha: 0.95 },
+    light: { intensity: 15, tintAlpha: 0.9 },
+  },
+  default: {
+    dark: { intensity: 115, tintAlpha: 0.95 },
+    light: { intensity: 115, tintAlpha: 0.9 },
+  },
+});
 
 /**
  * The control row and the listening row swap with a crossfade in the same
@@ -165,7 +195,20 @@ export function Composer({
   }, [disabled, dictating, finishDictation]);
 
   return (
-    <View className={cn(COMPOSER_CARD_CLASS, className)}>
+    <View className={cn(FROSTED_CARD_CLASS, className)}>
+      {BLUR_AVAILABLE ? (
+        <BlurView
+          intensity={FROSTED[isDark ? 'dark' : 'light'].intensity}
+          tint={isDark ? 'dark' : 'light'}
+          // Without a `blurTarget` expo-blur falls back to "none" anyway, and warns.
+        blurMethod="none"
+          style={StyleSheet.absoluteFill}
+        />
+      ) : null}
+      <View
+        pointerEvents="none"
+        style={[StyleSheet.absoluteFill, { backgroundColor: withAlpha(colors.background, FROSTED[isDark ? 'dark' : 'light'].tintAlpha) }]}
+      />
       {header ? <View className="px-2 pb-1 pt-1">{header}</View> : null}
 
       {attachments.length > 0 ? (

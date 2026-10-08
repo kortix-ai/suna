@@ -20,18 +20,6 @@ export interface TokenRetryOptions {
 	invalidateBetweenAttempts?: boolean;
 }
 
-/**
- * @deprecated Inert. The SDK no longer sends `X-Kortix-Client`; the API audits
- * the authenticated credential instead. Kept exported for existing consumers.
- */
-const CLIENT_SOURCES = new Set(['api', 'cli', 'mobile', 'tui', 'web']);
-
-/** @deprecated Inert: nothing in the SDK calls it. Removed in the next major. */
-export function normalizeClientSource(value?: string): string | null {
-	const normalized = value?.trim().toLowerCase();
-	return normalized && CLIENT_SOURCES.has(normalized) ? normalized : null;
-}
-
 function delay(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }

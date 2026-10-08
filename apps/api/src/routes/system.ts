@@ -10,8 +10,6 @@ import { bearerToken } from '../shared/bearer-token';
 
 const MAX_EVENT_LOOP_LAG_MS = Number(process.env.HEALTH_MAX_EVENT_LOOP_LAG_MS || 5000);
 
-export { startEventLoopLagSampler, stopEventLoopLagSampler } from '../workers/event-loop-lag-worker';
-
 export function registerSystemRoutes(app: OpenAPIHono) {
 // === Top-Level Health Check (no auth) ===
 

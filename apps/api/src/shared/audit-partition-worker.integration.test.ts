@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import pg from 'pg';
+import { PgClient } from '../__tests__/helpers/pg-client';
 import { weekStartDate, weekStartOf } from './audit-archive/format';
 import { ensureAuditPartitions } from './audit-partition-worker';
 
@@ -7,8 +7,8 @@ const databaseUrl = process.env.TEST_DATABASE_URL;
 const ACCOUNT = 'b9100000-0000-4000-a000-000000000001';
 const DAY = 86_400_000;
 
-let client: pg.Client | null = null;
-const q = <T extends pg.QueryResultRow = Record<string, unknown>>(
+let client: PgClient | null = null;
+const q = <T extends Record<string, unknown> = Record<string, unknown>>(
   text: string,
   values?: unknown[],
 ) => client!.query<T>(text, values);
@@ -36,7 +36,7 @@ async function missingHorizonWeeks(weeksAhead: number): Promise<number> {
 
 describe.skipIf(!databaseUrl)('audit partition maintenance — migrated PostgreSQL', () => {
   beforeAll(async () => {
-    client = new pg.Client({ connectionString: databaseUrl });
+    client = new PgClient({ connectionString: databaseUrl });
     await client.connect();
   });
 

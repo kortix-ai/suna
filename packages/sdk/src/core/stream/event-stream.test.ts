@@ -7,9 +7,8 @@ import {
   type RuntimeEvent,
 } from './event-stream';
 
-// Mirrors event-stream.ts's default idle-watchdog budget (raised from 15s —
-// the server emits no idle keepalives, so a 15s budget killed healthy idle
-// sessions on a timer by design; see the HEARTBEAT_MS comment there).
+// Mirrors event-stream.ts's default idle-watchdog budget: three of the sandbox
+// daemon's 20 s keepalive frames (see the HEARTBEAT_MS comment there).
 const HEARTBEAT_MS = 60_000;
 
 function sessionStatus(sessionID: string, statusType: string): RuntimeEvent {

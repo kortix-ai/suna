@@ -68,6 +68,36 @@ await connectors.call('microsoft-graph.sendmail', {
 A Connector defines callable tools. A Connection stores one authorization for
 that Connector. Credentials remain server-side and never enter the sandbox.
 
+#### Typed calls
+
+`kortix connectors types --out kortix-connectors.d.ts` writes a declaration
+file that fills `ConnectorActionRegistry`. `callAction` then types `args` and
+`output` from it. The request and the result are the same as `call`:
+
+```ts
+const r = await connectors.callAction('linear', 'list_issues', { team: 'CORE' });
+r.output?.issues; // typed from the action's output schema
+```
+
+One connector as a handle: `run` returns the output itself and throws
+`ConnectorCallError` (`code`, `connectUrl`, `availableAccounts`,
+`upstreamStatus`, `retryAfterSeconds`) or `ConnectorApprovalPendingError`;
+`paginate` follows a cursor and throws `ConnectorPageLimitError` (with
+`nextArgs`) past `maxPages`; `useConnectorQuery` (`@kortix/sdk/react`) caches a
+read. Guide: `/docs/sdk/connectors`; runnable: `examples/13-connectors-as-code.ts`.
+
+```ts
+const linear = kortix.project(projectId).connector('linear');
+const { issues } = await linear.run('list_issues', { team: 'CORE' });
+await linear.describe(); // actions with input and output schemas
+await linear.accounts();
+```
+
+An action outside the file accepts any object and returns `output: unknown`.
+Managed Composio and Pipedream connectors publish no output schema, so their
+`output` stays `unknown`. `ConnectorArgs<'linear', 'list_issues'>` and
+`ConnectorResult<'linear', 'list_issues'>` name the same types.
+
 #### Choose which account a call runs as
 
 One Connector can hold the project's shared account and each member's own. List
@@ -106,6 +136,25 @@ await project.setupLinks.requestConnector({ slug: 'gmail', owner: 'project' });
 
 `owner` defaults to `me`. Creating a `project`-owned account requires
 `project.connector.write`.
+
+#### Call from an App, a Convex action, or a script
+
+The call is the same everywhere. The credential decides which accounts it
+reaches:
+
+| Where the code runs | `createKortix` options | Acts as | Reaches |
+|---|---|---|---|
+| App, browser | `backendUrl: '/_kortix/api/v1'`, `getToken: kortixAppViewerToken()` | the viewer | shared accounts the viewer may use, and the viewer's own private accounts |
+| App, server | `createAppViewerKortix(request, { backendUrl })` | the viewer | the same |
+| Convex action, App job with no viewer | `getToken: async () => process.env.KORTIX_API_KEY!` (a `kortix_sa_…` service account bearer a person minted) | the service account | shared accounts nobody narrowed; never a private account |
+| External program, CI | `getToken: async () => process.env.KORTIX_API_KEY!` (a `kortix_pat_…`) | you | your shared and private accounts |
+
+The browser path needs the App's viewer scope set to `api`
+(`kortix apps access <app> --viewer api`); with `identity` a call answers
+`403 insufficient_scope`. A service account answers `403` until a person
+grants it a project role (`kortix access grant --service-account <id> --role
+member --project <id>`). Never put a provider API key in an App or a Convex
+deployment when a connector exists. Guide: `/docs/sdk/connectors`.
 
 ### Upload prompt attachments before Send
 
@@ -223,7 +272,9 @@ no build step required:
 > must be in the API's CORS allowlist. Kortix's own domains and `localhost:3000/3010`
 > are allowed out of the box; any third-party origin (or a local page on another
 > port) needs adding via the API's `CORS_ALLOWED_ORIGINS` — otherwise the browser
-> blocks the request before it leaves the page.
+> blocks the request before it leaves the page. A Kortix-hosted App needs no
+> allowlist entry: it sets `backendUrl: '/_kortix/api/v1'`, its own origin
+> (see "A Kortix-hosted App is already signed in").
 
 ## Entry points
 
@@ -488,13 +539,13 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 |---|---|
 | `kortix.projects` | list · get · detail · create · provision · update · archive · llmCatalog · modelPicker · sandboxTemplates · sessions (+ more: `listForAccount`, `sandboxHealth`, `createSession`) |
 | `kortix.accounts` | list · get · create · members · invites · `secretResources.{list,create,rotate,delete,grant,revoke,setAccess}` · `tokens.{list,create,revoke}` (account-scoped CLI PATs, `kortix_pat_…`) · `audit.{log,export,webhooks.*}` (filterable project/session reconstruction log) · `branding.{get,update,uploadAsset,removeAsset,reset}` (Enterprise organization branding: logo / icon / favicon, light + dark, product name) (+ more: `updateName`, `leave`, `invite`, `removeMember`, `updateMemberRole`) |
-| `kortix.billing` | entitlement/usage reads: `accountState` · `accountStateMinimal` · `transactions` · `transactionsSummary` · `creditBreakdown` · `usageHistory` · `usageRollup` · `sessionCosts.{list,get}` · `tierConfigurations` — plus a curated mutation surface: `checkout.{createSession,confirmSession}` · `subscription.{createPortalSession,cancel,reactivate,scheduleDowngrade,cancelScheduledChange,prorationPreview}` · `credits.{purchase,autoTopupSettings,configureAutoTopup}` |
+| `kortix.billing` | entitlement/usage reads: `accountState` · `accountStateMinimal` · `transactions` · `transactionsSummary` · `creditBreakdown` · `usageHistory` · `usageRollup` · `sessionCosts.{list,get}` · `tierConfigurations` — plus a curated mutation surface: `subscription.{createPortalSession,cancel,reactivate,cancelScheduledChange,prorationPreview}` · `credits.{purchase,autoTopupSettings,configureAutoTopup}`. `checkout.{createSession,confirmSession}` and `subscription.scheduleDowngrade` are deprecated: they reject with `ENDPOINT_RETIRED` |
 | `kortix.marketplace` | public marketplace catalog browse + sources (not project-scoped): `items` · `item` · `itemFile` · `marketplaces` · `featured` · `sources.{list,add,remove}` — distinct from the install-scoped `project(id).marketplace` |
 | `kortix.github` | account-scoped GitHub App installs and repo linking: `getInstallation` · `listInstallations` · `listLinkableInstallations` (each entry carries `linked_to_other_accounts`, a count and never a tenant name) · `listRepositories` · `listRepositoryBranches` · `linkInstallation` · `saveInstallation` · `deleteInstallation` · `linkRepository` (`source: 'managed'` imports a repository the instance backend holds — self-host operator only, and mutually exclusive with `installation_id`) · `replaceProjectRepository` (changes an existing project's repository with an expected old URL; accepts a repository-scoped PAT or a temporary GitHub user proof for a repository-scoped App grant; can atomically copy selected shared runtime secrets from another project in the same account) |
 | `kortix.gitBackend` | the instance git backend ("Kortix managed", one per deployment, never an account connection): `get()` → `{configured, kind: 'app'|'pat'|null, owner}` (any authenticated user) · `repositories({search?, limit?})` (self-host operator only; 403 otherwise) |
 | `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
 | `kortix.connectors` | Connector data plane for an agent-minted session token: `catalog` · `tools` · `search` · `describe` · `call` (`{ account }`) · `accounts` · `uploadAttachment` |
-| `kortix.project(id)` | id-bound handle: `.apps` (stable serverless App URLs, access, artifacts, deployments, logs, rollback, start/stop) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
+| `kortix.project(id)` | id-bound handle: `.apps` (stable serverless App URLs, access, artifacts, deployments, logs, rollback, start/stop) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` (cron / webhook / monitor / event; `.eventTypes({ connector })` lists a connector's app events) · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
 | `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`reloadConfig`/`reloadConfigStream`/`setSharing`/`participants`/`previews`/`commit`/`publicShares`/`ensureReady`) · `providerSecretPool.{list,get,set}` · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · runtime REST escape hatches: `stream()` and the deprecated `.runtime` |
 | `kortix.runtime()` | the runtime REST client for the active sandbox (the SDK's own `RuntimeClient`, frozen at the `@opencode-ai/sdk` 1.18.23 route shapes); use a session-scoped handle in multi-tenant code |
 
@@ -934,7 +985,7 @@ Full guide: `/docs/sdk/sign-in`. Example: `examples/11-sign-in-with-kortix.ts`.
 ### A Kortix-hosted App is already signed in
 
 ```ts
-const kortix = createKortix({ backendUrl, getToken: kortixAppViewerToken() });  // browser
+const kortix = createKortix({ backendUrl: '/_kortix/api/v1', getToken: kortixAppViewerToken() });  // browser
 const viewer = await readAppViewer(request);                                    // server (@kortix/sdk/server)
 const asViewer = await createAppViewerKortix(request, { backendUrl });          // act as them
 ```
@@ -944,6 +995,9 @@ their identity into every request; `viewer_token_scope` on the App's access
 policy decides whether the App also gets a token to act with. On the server,
 read it per request; in the browser, `kortixAppViewerToken()` replaces a token
 the API refused (after an access-policy change) and replays the call once.
+In the browser, `backendUrl` is `/_kortix/api/v1`: the gate on the App's own
+origin forwards to the Kortix API as the viewer (`viewer_token_scope: 'api'`).
+A direct call to `https://api.kortix.com/v1` from an App origin fails CORS.
 Guide: `/docs/sdk/apps`.
 
 ### Headless sign-in (your users, straight through the API)

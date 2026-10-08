@@ -3,7 +3,8 @@
  *
  * Maps to spec §6 (PACC-*) and §5 invites accept-side (INV-*).
  *
- * Three surfaces, all real flows (no mocking, no direct DB):
+ * Three surfaces, all real flows (no mocking; INV-9 and PACC-8 seed one row
+ * the API cannot create on demand — an expired invite, a shadow membership):
  *  - Per-user project membership: GET/PUT/DELETE /projects/:id/access/:userId
  *    + email invite + the pending-invite queue (list/cancel/resend) for
  *    emails with no Kortix account yet.
@@ -20,6 +21,8 @@
  */
 import { assert } from '../core/expect';
 import { flow } from '../core/flow';
+import { withDb } from '../fixtures/chat';
+import { adminUpdateUserEmail } from '../fixtures/supabase';
 
 // ─── Per-user project access (list / grant / revoke) ─────────────────────
 
@@ -66,6 +69,10 @@ flow(
         .get('/v1/projects/:projectId/access', { params: { projectId: p.id } });
       r.status(200).body().has('$.project_id', p.id).has('$.can_manage', true).exists('$.members');
     });
+    await ctx.step('PUT a role on the account owner → 200, stays implicit manager with no direct grant', async () => {
+      (await ctx.client.as(ctx.P.OWNER).put('/v1/projects/:projectId/access/:userId', { role: 'member' }, { params: { projectId: p.id, userId: ctx.P.OWNER.userId! } }))
+        .status(200).body().has('$.account_role', 'owner').has('$.project_role', null).has('$.effective_project_role', 'manager').has('$.has_implicit_access', true);
+    });
     await ctx.step('OWNER revokes the grant → 200', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).del('/v1/projects/:projectId/access/:userId', {
         params: { projectId: p.id, userId: member.userId! },
@@ -78,6 +85,29 @@ flow(
         .get('/v1/projects/:projectId/access', { params: { projectId: p.id } });
       r.status([403, 404]);
     });
+  },
+);
+
+// PACC-8 — a shadow account_members row (user_id = account_id, no auth user)
+// never reaches the access roster. Seeded in the database: no route writes it.
+flow(
+  'PACC-8',
+  { domain: 'projects', requires: ['database'], routes: ['GET /v1/projects/:projectId/access'] },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const p = await team.project();
+    try {
+      await ctx.step('an account membership with no auth user (user_id = account_id) is not listed; the real owner is', async () => {
+        await withDb(ctx, (db) => db.query('INSERT INTO kortix.account_memberships (user_id, account_id) VALUES ($1, $1) ON CONFLICT DO NOTHING', [team.id]));
+        const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/access', { params: { projectId: p.id } });
+        r.status(200);
+        const ids = r.json<{ members: Array<{ user_id: string }> }>().members.map((m) => m.user_id);
+        if (ids.includes(team.id)) throw new Error('the shadow member is listed');
+        if (!ids.includes(ctx.P.OWNER.userId!)) throw new Error('the real owner is missing');
+      });
+    } finally {
+      await withDb(ctx, (db) => db.query('DELETE FROM kortix.account_memberships WHERE user_id = $1 AND account_id = $1', [team.id]));
+    }
   },
 );
 
@@ -732,7 +762,11 @@ flow(
         .body()
         .has('$.email_matches_caller', true)
         .has('$.expired', false)
-        .exists('$.accepted_at');
+        .exists('$.accepted_at')
+        .has('$.account_id', team.id)
+        .has('$.email', inviteEmail)
+        .has('$.initial_role', 'member')
+        .has('$.inviter_email', ctx.P.OWNER.email!.toLowerCase());
     });
     await ctx.step(
       'a NONMEMBER stranger describing the accepted invite is still redacted',
@@ -743,6 +777,66 @@ flow(
         r.status(200).body().has('$.email_matches_caller', false).has('$.email', null);
       },
     );
+    // Last: it moves the addressee off the address, so a later describe would redact.
+    await ctx.step('another user who now holds the address cannot use the accepted invite → 409', async () => {
+      await adminUpdateUserEmail(ctx.env, addressee.userId!, `${ctx.fixtures.name('inv6-moved')}@${ctx.env.testEmailDomain}`.toLowerCase());
+      const successor = await ctx.fixtures.userWithEmail(inviteEmail, { label: 'INV6-SUCCESSOR' });
+      (await ctx.client.as(successor).post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId } }))
+        .status(409).body().has('$.error', 'Invite has already been accepted by another account.');
+    });
+  },
+);
+
+// INV-9 — an expired invite. Expiry is 7 days out, so the row is aged in the
+// database; accept, list and resend all go through the real routes.
+flow(
+  'INV-9',
+  {
+    domain: 'projects',
+    serial: true,
+    requires: ['database'],
+    routes: [
+      'POST /v1/accounts/:accountId/members',
+      'GET /v1/accounts/:accountId/invites',
+      'POST /v1/accounts/:accountId/invites/:inviteId/resend',
+      'POST /v1/account-invites/:inviteId/accept',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const params = { accountId: team.id };
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const email = `${ctx.fixtures.name('inv9')}@${ctx.env.testEmailDomain}`.toLowerCase();
+    let inviteId = '';
+    const listed = async () => {
+      const r = await owner.get('/v1/accounts/:accountId/invites', { params });
+      r.status(200);
+      return r.json<Array<{ invite_id: string }>>().some((i) => i.invite_id === inviteId);
+    };
+    await ctx.step('create a pending invite, then age it past its expiry', async () => {
+      const r = await owner.post('/v1/accounts/:accountId/members', { email, role: 'member' }, { params });
+      r.status(201).body().has('$.status', 'pending');
+      inviteId = r.json<{ invite_id: string }>().invite_id;
+      await withDb(ctx, (db) =>
+        db.query("UPDATE kortix.account_invitations SET expires_at = now() - interval '1 minute' WHERE invite_id = $1", [inviteId]),
+      );
+    });
+    const addressee = await ctx.fixtures.userWithEmail(email, { label: 'INV9-ADDRESSEE' });
+    await ctx.step('accepting the expired invite → 410; the owner no longer lists it as pending', async () => {
+      (await ctx.client.as(addressee).post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId } }))
+        .status(410).body().has('$.error', 'This invite has expired. Ask the owner to send a new one.');
+      if (await listed()) throw new Error('an expired invite is still listed');
+    });
+    await ctx.step('resend renews the expiry → 200 with a future expires_at; the invite is listed again', async () => {
+      const r = await owner.post('/v1/accounts/:accountId/invites/:inviteId/resend', {}, { params: { ...params, inviteId } });
+      r.status(200).body().has('$.ok', true);
+      if (Date.parse(r.json<{ expires_at: string }>().expires_at) <= Date.now()) throw new Error('resend did not renew the expiry');
+      if (!(await listed())) throw new Error('a renewed invite is not listed');
+    });
+    await ctx.step('the renewed invite accepts → 200 {already_accepted:false}', async () => {
+      (await ctx.client.as(addressee).post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId } }))
+        .status(200).body().has('$.account_id', team.id).has('$.already_accepted', false);
+    });
   },
 );
 

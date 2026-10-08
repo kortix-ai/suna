@@ -8,6 +8,7 @@ import { assert } from '../core/expect';
 import { flow } from '../core/flow';
 import { waitFor } from '../core/poll';
 import { type CliResult, CliSandbox, throwIfCliInfraFailure } from '../fixtures/cli';
+import { AgentPrincipalsWorld } from '../fixtures/agent-principals';
 
 function parseCliJson<T>(result: CliResult, action: string): T {
   throwIfCliInfraFailure(result, action);
@@ -572,6 +573,13 @@ flow(
       // 200 against a slug that does not exist: the handler looks nothing up
       // any more, which is the proof it changes nothing.
       r.status(200).body().has('$.ok', true).has('$.deprecated', true);
+    });
+    await ctx.step('authorization strategy: still requires connector administration → NONMEMBER 403', async () => {
+      (await ctx.client.as(ctx.P.NONMEMBER).put(
+        '/v1/connectors/projects/:projectId/connectors/:slug/authorization-strategy',
+        { authorization_strategy: 'project' },
+        { params: { projectId: p.id, slug: 'nope' } },
+      )).status(403);
     });
 
     await ctx.step('name: empty name → 400', async () => {
@@ -1266,6 +1274,21 @@ flow(
         readback.status(404);
       },
     );
+
+    await ctx.step('an explicitly approved legacy Pipedream declaration → 200 and reads back as pipedream', async () => {
+      const legacySlug = `${slug}-legacy-approved`;
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/connectors/projects/:projectId/connectors',
+        { slug: legacySlug, provider: 'pipedream', app: 'gmail', allow_legacy_pipedream: true, create_only: true },
+        { params: { projectId: p.id }, timeoutMs: 60_000 },
+      );
+      // Same lost-response re-delivery as the first create: 409 is create_only answering it.
+      r.status([200, 409]);
+      (await ctx.client.as(ctx.P.OWNER).get('/v1/connectors/projects/:projectId/connectors/:slug/config', { params: { projectId: p.id, slug: legacySlug } }))
+        .status(200).body().has('$.provider', 'pipedream').has('$.app', 'gmail');
+      (await ctx.client.as(ctx.P.OWNER).del('/v1/connectors/projects/:projectId/connectors/:slug', { params: { projectId: p.id, slug: legacySlug } }))
+        .status(200);
+    });
 
     await ctx.step(
       'real CLI process rejects accidental Pipedream before calling the project API',
@@ -2308,6 +2331,8 @@ flow(
       'POST /v1/connectors/projects/:projectId/connectors',
       'PUT /v1/projects/:projectId/agents/:agentName/config',
       'POST /v1/projects/:projectId/turn-stream',
+      'POST /v1/connectors/attachments',
+      'POST /v1/connectors/projects/:projectId/attachments',
     ],
   },
   async (ctx) => {
@@ -2526,6 +2551,47 @@ flow(
           }
         },
       );
+
+      await ctx.step('a dotted tool reference in the connector field → 400 invalid_tool_reference, ahead of the grant gate', async () => {
+        const r = await session.post(
+          '/v1/connectors/projects/:projectId/call',
+          { connector: `${openapiSlug}.anything`, action: '{}', args: {} },
+          { params: { projectId: p.id }, timeoutMs: 60_000 },
+        );
+        r.status(400)
+          .body()
+          .has('$.ok', false)
+          .has('$.status', 'error')
+          .has('$.reason', 'invalid_tool_reference')
+          .has('$.connector', openapiSlug)
+          .has('$.action', 'anything');
+      });
+
+      await ctx.step('an agent outside the grant cannot stage a file on either attachment route → 403 connector_not_assigned', async () => {
+        const bytes = new TextEncoder().encode('must-not-be-staged');
+        const cases = [
+          { path: '/v1/connectors/attachments', params: undefined, connector: undefined, denied: 'kortix_email' },
+          { path: '/v1/connectors/projects/:projectId/attachments', params: { projectId: p.id }, connector: undefined, denied: 'kortix_email' },
+          { path: '/v1/connectors/projects/:projectId/attachments', params: { projectId: p.id }, connector: openapiSlug, denied: openapiSlug },
+        ];
+        for (const c of cases) {
+          const r = await session.post(c.path, bytes, {
+            ...(c.params ? { params: c.params } : {}),
+            raw: true,
+            headers: {
+              'Content-Type': 'application/pdf',
+              'X-Kortix-Attachment-Filename': 'memo.pdf',
+              ...(c.connector ? { 'X-Kortix-Attachment-Connector': c.connector } : {}),
+            },
+          });
+          r.status(403)
+            .body()
+            .has('$.reason', 'connector_not_assigned')
+            .has('$.connector', c.denied)
+            .has('$.agent', 'kortix')
+            .has('$.granted', ['stripe']);
+        }
+      });
 
       await ctx.step(
         "the session's own Slack channel connector stays callable under the narrow grant (never mute)",
@@ -4085,6 +4151,1138 @@ flow(
           .del('/v1/accounts/tokens/:tokenId', { params: { tokenId } })
           .catch(() => undefined);
       }
+    }
+  },
+);
+
+type PgDb = import('pg').Client;
+async function connectFlowDb(ctx: { env: { databaseUrl?: string | null } }): Promise<PgDb> {
+  const { Client: PgClient } = await import('pg');
+  const databaseUrl = ctx.env.databaseUrl as string;
+  const local = databaseUrl.includes('localhost') || databaseUrl.includes('127.0.0.1');
+  const db = new PgClient({ connectionString: databaseUrl, ssl: local ? false : { rejectUnauthorized: false } });
+  await db.connect();
+  return db;
+}
+
+/** Insert an active OpenAPI connector with one default project connection; returns its id. */
+async function seedOpenApiConnector(
+  db: PgDb,
+  input: { accountId: string; projectId: string; slug: string; name: string; auth: Record<string, unknown> },
+): Promise<string> {
+  const connector = await db.query<{ connector_id: string }>(
+    `INSERT INTO kortix.connectors (account_id, project_id, slug, name, provider_type, config, status)
+     VALUES ($1, $2, $3, $4, 'openapi', $5::jsonb, 'active') RETURNING connector_id`,
+    [input.accountId, input.projectId, input.slug, input.name, JSON.stringify({ auth: input.auth })],
+  );
+  const connectorId = connector.rows[0]!.connector_id;
+  await db.query(
+    `INSERT INTO kortix.connector_connections (account_id, project_id, connector_id, owner_type, label, status, is_default, metadata)
+     VALUES ($1, $2, $3, 'project', $4, 'active', true, $5::jsonb)`,
+    [input.accountId, input.projectId, connectorId, input.name, JSON.stringify({ provider: 'openapi', connector_slug: input.slug })],
+  );
+  return connectorId;
+}
+
+// ── CONN-31 — who reads the connector list, and who sees its secret names ───
+flow(
+  'CONN-31',
+  {
+    domain: 'connectors',
+    requires: ['database'],
+    timeoutMs: 180_000,
+    routes: [
+      'POST /v1/accounts/:accountId/iam/roles',
+      'POST /v1/accounts/:accountId/iam/policies',
+      'POST /v1/projects/:projectId/secrets',
+      'PUT /v1/connectors/projects/:projectId/connectors/:slug/secret-binding',
+      'GET /v1/connectors/projects/:projectId/connectors',
+      'POST /v1/connectors/projects/:projectId/connectors/sync',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team({ enterprise: true });
+    const p = await team.project({ seed: true });
+    const db = await connectFlowDb(ctx);
+    const slug = `ke2e-read-${Date.now().toString(36)}`;
+    const SECRET = 'KE2E_READ_TOKEN';
+    const suffix = team.id.replace(/-/g, '').slice(0, 10);
+    const params = { projectId: p.id };
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const reader = await team.addMember('member');
+    const writer = await team.addMember('member');
+    type Who = ReturnType<typeof ctx.client.as>;
+    const bind = (client: Who, secret_identifier: string | null) =>
+      client.put('/v1/connectors/projects/:projectId/connectors/:slug/secret-binding', { secret_identifier }, { params: { ...params, slug } });
+    const listRow = async (client: Who) => {
+      // IAM caches refresh within 15 s: a fresh assignment can answer 403 first.
+      const r = await waitFor(() => client.get('/v1/connectors/projects/:projectId/connectors', { params }), {
+        until: (res) => res.statusCode === 200,
+        timeoutMs: 20_000,
+        intervalMs: 1_000,
+        description: 'the connector list for a fresh role assignment',
+      });
+      r.status(200);
+      const row = r.json<{ connectors: Array<Record<string, unknown>> }>().connectors.find((c) => c.slug === slug);
+      if (!row) throw new Error(`the list omitted ${slug}: ${r.text()}`);
+      return row;
+    };
+    const grantRole = async (who: typeof reader, key: string, actions: string[]) => {
+      const role = await owner.post('/v1/accounts/:accountId/iam/roles', { key, name: key, resourceType: 'project', actions }, { params: { accountId: team.id } });
+      role.status(201);
+      (await owner.post(
+        '/v1/accounts/:accountId/iam/policies',
+        { principalType: 'member', principalId: who.userId, roleId: role.json<{ role_id: string }>().role_id, scopeType: 'project', scopeId: p.id },
+        { params: { accountId: team.id } },
+      )).status(201);
+    };
+
+    try {
+      await ctx.step('seed a bearer connector and bind it to a broker project secret → 200', async () => {
+        (await owner.post('/v1/projects/:projectId/secrets', { name: SECRET, value: 'ke2e-read-value', strategy: 'broker', consumer: 'connector' }, { params })).status(200);
+        await seedOpenApiConnector(db, { accountId: team.id, projectId: p.id, slug, name: 'KE2E Read', auth: { type: 'bearer' } });
+        (await bind(owner, SECRET)).status(200);
+      });
+
+      await ctx.step('the owner lists it connected through the bound secret, with the secret name', async () => {
+        const row = await listRow(owner);
+        if (row.secretIdentifier !== SECRET || row.credentialSource !== 'project_secret' || row.secretSet !== true) {
+          throw new Error(`owner row: ${JSON.stringify(row)}`);
+        }
+      });
+
+      await ctx.step('a custom role with only project.connector.read lists connectors without the secret name', async () => {
+        await grantRole(reader, `connread_${suffix}`, ['project.read', 'project.connector.read']);
+        const row = await listRow(ctx.client.as(reader));
+        if (row.requestAuthType !== 'bearer' || row.secretSet !== true || row.secretIdentifier !== null) {
+          throw new Error(`reader row: ${JSON.stringify(row)}`);
+        }
+      });
+
+      await ctx.step('that reader cannot administer connectors → sync 403', async () => {
+        (await ctx.client.as(reader).post('/v1/connectors/projects/:projectId/connectors/sync', {}, { params })).status(403);
+      });
+
+      await ctx.step('a connector writer with secret.read but no secret.write sees the name and cannot change the binding → 403', async () => {
+        await grantRole(writer, `connwrite_${suffix}`, ['project.read', 'project.connector.read', 'project.connector.write', 'project.secret.read']);
+        const row = await listRow(ctx.client.as(writer));
+        if (row.secretIdentifier !== SECRET) throw new Error(`writer row: ${JSON.stringify(row)}`);
+        (await bind(ctx.client.as(writer), null)).status(403);
+        if ((await listRow(owner)).secretIdentifier !== SECRET) throw new Error('a refused clear changed the binding');
+      });
+
+      await ctx.step('the owner clears the binding with null → 200; the connector lists as needs_auth with no secret', async () => {
+        (await bind(owner, null)).status(200);
+        const row = await listRow(owner);
+        if (row.secretIdentifier !== null || row.credentialSource !== 'none' || row.status !== 'needs_auth') {
+          throw new Error(`cleared row: ${JSON.stringify(row)}`);
+        }
+      });
+    } finally {
+      await db.query('DELETE FROM kortix.connectors WHERE project_id = $1 AND slug = $2', [p.id, slug]).catch(() => {});
+      await db.end().catch(() => {});
+    }
+  },
+);
+
+// ── CONN-32 — the REST call route: request checks and every policy layer ─────
+// The gateway reads three policy sources on every call: connector rules
+// (connector_policies), project rules on fully-qualified paths
+// (connector_project_policies) and default_mode (connector_project_settings).
+// Rows are seeded in a database-only project: no kortix.yaml, so no sync
+// rewrites them. A block or a hold never reaches the upstream and runs on every
+// target; a call that RUNS reaches the runner-local upstream on local only.
+flow(
+  'CONN-32',
+  {
+    domain: 'connectors',
+    requires: ['database'],
+    timeoutMs: 120_000,
+    routes: ['POST /v1/connectors/projects/:projectId/call', 'GET /v1/connectors/projects/:projectId/catalog'],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const p = await team.project();
+    const { createServer } = await import('node:http');
+    const db = await connectFlowDb(ctx);
+    const hits: string[] = [];
+    const upstream = createServer((req, res) => {
+      hits.push(`${req.method} ${req.url}`);
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end('{"done":true}');
+    });
+    const port = await new Promise<number>((resolve) => upstream.listen(0, '127.0.0.1', () => resolve((upstream.address() as { port: number }).port)));
+    const slug = `ke2e-policy-${Date.now().toString(36)}`;
+    let connectorId = '';
+    const call = (body: Record<string, unknown>) =>
+      ctx.client.as(ctx.P.OWNER).post('/v1/connectors/projects/:projectId/call', body, { params: { projectId: p.id }, timeoutMs: 60_000 });
+    const callAction = (action: string) => call({ connector: slug, action, args: {} });
+    const catalogActions = async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/connectors/projects/:projectId/catalog', { params: { projectId: p.id } });
+      r.status(200);
+      const row = r.json<{ connectors: Array<{ slug: string; actions: Array<{ path: string }> }> }>().connectors.find((c) => c.slug === slug);
+      return (row?.actions ?? []).map((a) => a.path).sort().join(',');
+    };
+    const connectorRules = async (rules: Array<[string, string]>) => {
+      await db.query('DELETE FROM kortix.connector_policies WHERE connector_id = $1', [connectorId]);
+      for (const [position, [match, action]] of rules.entries()) {
+        await db.query('INSERT INTO kortix.connector_policies (connector_id, match, action, position) VALUES ($1, $2, $3, $4)', [connectorId, match, action, position]);
+      }
+    };
+    const projectRules = async (rules: Array<[string, string]>) => {
+      await db.query('DELETE FROM kortix.connector_project_policies WHERE project_id = $1', [p.id]);
+      for (const [position, [match, action]] of rules.entries()) {
+        await db.query('INSERT INTO kortix.connector_project_policies (project_id, match, action, position) VALUES ($1, $2, $3, $4)', [p.id, match, action, position]);
+      }
+    };
+    const setDefaultMode = (mode: 'risk' | 'allow_all') =>
+      db.query(
+        `INSERT INTO kortix.connector_project_settings (project_id, default_mode) VALUES ($1, $2)
+         ON CONFLICT (project_id) DO UPDATE SET default_mode = EXCLUDED.default_mode, updated_at = now()`,
+        [p.id, mode],
+      );
+    const expectBlocked = async (action: string) => {
+      const before = hits.length;
+      (await callAction(action)).status(403).body().has('$.ok', false).has('$.status', 'denied').has('$.reason', 'policy_block');
+      if (hits.length !== before) throw new Error('a blocked call reached the upstream');
+    };
+    const expectHeld = async (action: string) => {
+      const before = hits.length;
+      const r = await callAction(action);
+      r.status(202).body().has('$.ok', false).has('$.status', 'pending_approval').has('$.retryable', false);
+      const body = r.json<{ execution_id: string | null; approval_url: string | null }>();
+      if (!body.execution_id || !String(body.approval_url ?? '').includes('/approve/')) throw new Error(`no one-time approval link: ${r.text()}`);
+      if (hits.length !== before) throw new Error('a held call reached the upstream');
+      return r;
+    };
+    // A deployed API cannot reach this runner's loopback upstream: its egress
+    // refusal comes only after every policy layer admitted the call.
+    const expectRan = async (action: string) => {
+      const before = hits.length;
+      const r = await callAction(action);
+      if (ctx.env.target === 'local') {
+        r.status(200).body().has('$.ok', true).has('$.data.done', true);
+        if (hits.length !== before + 1) throw new Error(`upstream saw ${hits.length - before} requests`);
+        return;
+      }
+      r.status(500);
+      const reason = r.json<{ reason?: string }>().reason ?? '';
+      if (!reason.startsWith('connector_egress_blocked')) throw new Error(`expected the post-admission egress refusal, got ${reason}`);
+    };
+
+    try {
+      await ctx.step('a call without connector or action → 400 naming both fields', async () => {
+        (await call({})).status(400).body().has('$.error', 'connector and action are required');
+      });
+
+      await ctx.step('a call to a connector the project does not have → 404 connector_not_found', async () => {
+        (await call({ connector: `${slug}-missing`, action: 'anything', args: {} }))
+          .status(404).body().has('$.ok', false).has('$.status', 'denied').has('$.reason', 'connector_not_found');
+      });
+
+      await ctx.step('seed an OpenAPI connector with a write and a read action on a runner-local upstream', async () => {
+        connectorId = await seedOpenApiConnector(db, { accountId: team.id, projectId: p.id, slug, name: 'KE2E Policy', auth: { type: 'none' } });
+        const server = `http://127.0.0.1:${port}`;
+        for (const [path, risk, method] of [['charges_create', 'write', 'POST'], ['charges_list', 'read', 'GET']] as const) {
+          await db.query(
+            `INSERT INTO kortix.connector_actions (connector_id, path, name, description, input_schema, risk, binding)
+             VALUES ($1, $2::text, $2::text, $2::text, '{"type":"object"}'::jsonb, $3, $4::jsonb)`,
+            [connectorId, path, risk, JSON.stringify({ kind: 'openapi', method, path: '/charges', server })],
+          );
+        }
+      });
+
+      await ctx.step('with no policy rows (default_mode allow_all) the write runs', async () => {
+        await expectRan('charges_create');
+      });
+
+      await ctx.step('a connector block rule → 403 policy_block, no upstream request, and the action leaves the catalog', async () => {
+        await connectorRules([['charges_create', 'block']]);
+        await expectBlocked('charges_create');
+        if ((await catalogActions()) !== 'charges_list') throw new Error('the blocked action is still in the catalog');
+      });
+
+      await ctx.step('a connector require_approval rule → 202 with the one-time approval link and what to do next', async () => {
+        await connectorRules([['charges_*', 'require_approval']]);
+        const r = await expectHeld('charges_create');
+        r.body().has(
+          '$.approval_instructions',
+          'Share approval_url with a human. Retry this exact call once they approve it. Next time pass approval_context (CLI: --reason) describing the effect, so the approver can judge it.',
+        );
+      });
+
+      await ctx.step('a project rule on the fully-qualified path beats a connector always_run: block → 403 and gone from the catalog, require_approval → 202', async () => {
+        await connectorRules([['*', 'always_run']]);
+        await projectRules([[`${slug}.charges_*`, 'block']]);
+        await expectBlocked('charges_create');
+        if ((await catalogActions()) !== '') throw new Error('a project-blocked action is still in the catalog');
+        await projectRules([[`${slug}.*`, 'require_approval']]);
+        await expectHeld('charges_create');
+      });
+
+      await ctx.step('default_mode risk: an unmatched write waits (202), an unmatched read runs, a connector always_run on the write runs', async () => {
+        await projectRules([]);
+        await connectorRules([]);
+        await setDefaultMode('risk');
+        await expectHeld('charges_create');
+        await expectRan('charges_list');
+        await connectorRules([['charges_create', 'always_run']]);
+        await expectRan('charges_create');
+      });
+    } finally {
+      upstream.close();
+      await db.query('DELETE FROM kortix.connectors WHERE project_id = $1 AND slug = $2', [p.id, slug]).catch(() => {});
+      await db.query('DELETE FROM kortix.connector_project_policies WHERE project_id = $1', [p.id]).catch(() => {});
+      await db.query('DELETE FROM kortix.connector_project_settings WHERE project_id = $1', [p.id]).catch(() => {});
+      await db.end().catch(() => {});
+    }
+  },
+);
+
+// ── CONN-33 — the real `kortix connectors` CLI drives a connector end to end ──
+// A PAT plus KORTIX_PROJECT_ID is the laptop path (project-explicit gateway).
+// Steps that need the runner-local upstream run on local only; discovery and
+// the --attach refusal need no upstream and run everywhere.
+flow(
+  'CONN-33',
+  {
+    domain: 'connectors',
+    requires: ['database'],
+    timeoutMs: 240_000,
+    routes: [
+      'GET /v1/connectors/projects/:projectId/catalog',
+      'POST /v1/connectors/projects/:projectId/call',
+      'POST /v1/connectors/projects/:projectId/attachments',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const p = await team.project();
+    const { createHash } = await import('node:crypto');
+    const { createServer } = await import('node:http');
+    const { mkdirSync, writeFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const db = await connectFlowDb(ctx);
+    const onLocal = ctx.env.target === 'local';
+    const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
+    const pdf = new Uint8Array(200_000);
+    pdf.set(new TextEncoder().encode('%PDF-1.7\n'));
+    for (let i = 9; i < pdf.length; i++) pdf[i] = (i * 31) % 256;
+    const received: Array<{ method: string; url: string; body: string }> = [];
+    const upstream = createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on('data', (chunk: Buffer) => chunks.push(chunk));
+      req.on('end', () => {
+        received.push({ method: req.method ?? '', url: req.url ?? '', body: Buffer.concat(chunks).toString('utf8') });
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ reached: true, url: req.url }));
+      });
+    });
+    const port = await new Promise<number>((resolve) => upstream.listen(0, '127.0.0.1', () => resolve((upstream.address() as { port: number }).port)));
+    const slug = `ke2e-cli-${Date.now().toString(36)}`;
+    const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name('connectors-cli') });
+    const cli = new CliSandbox('connectors-cli');
+    // `--attach` reads only from <workspace>/{output,artifacts,reports,deliverables}.
+    const env = { KORTIX_TOKEN: pat, KORTIX_PROJECT_ID: p.id, KORTIX_API_URL: ctx.env.apiUrl, KORTIX_INTERNAL_WORKSPACE_ROOT: cli.cwd };
+    const run = (args: string[], stdin?: string) => cli.run(['connectors', ...args], { env, timeoutMs: 60_000, ...(stdin ? { stdin } : {}) });
+    const report = join(cli.cwd, 'artifacts', 'weekly report.pdf');
+    const argsFile = join(cli.cwd, 'args.json');
+    const itemSchema = {
+      type: 'object',
+      properties: { '@odata.type': { type: 'string' }, name: { type: 'string' }, contentType: { type: 'string' }, contentBytes: { type: 'string', format: 'base64url' } },
+    };
+    const sendMailSchema = {
+      type: 'object',
+      properties: {
+        user: { type: 'string', 'x-in': 'path' },
+        body: {
+          type: 'object',
+          properties: {
+            message: { type: 'object', properties: { subject: { type: 'string' }, toRecipients: { type: 'array' }, attachments: { type: 'array', items: itemSchema } } },
+            saveToSentItems: { type: 'boolean' },
+          },
+        },
+      },
+    };
+
+    try {
+      await ctx.step('seed an OpenAPI connector with a read action and a Graph-shaped sendMail action, plus the files the CLI reads', async () => {
+        const connectorId = await seedOpenApiConnector(db, { accountId: team.id, projectId: p.id, slug, name: 'KE2E CLI', auth: { type: 'none' } });
+        const server = `http://127.0.0.1:${port}`;
+        await db.query(
+          `INSERT INTO kortix.connector_actions (connector_id, path, name, description, input_schema, risk, binding)
+           VALUES ($1, 'ping', 'ping', 'Ping the KE2E warehouse', $2::jsonb, 'read', $3::jsonb),
+                  ($1, 'sendmail', 'sendMail', 'Send a mail with attachments', $4::jsonb, 'write', $5::jsonb)`,
+          [
+            connectorId,
+            JSON.stringify({ type: 'object', properties: { q: { type: 'string', 'x-in': 'query' } } }),
+            JSON.stringify({ kind: 'openapi', method: 'GET', path: '/ping', server }),
+            JSON.stringify(sendMailSchema),
+            JSON.stringify({ kind: 'openapi', method: 'POST', path: '/users/{user}/sendMail', server: `${server}/v1.0` }),
+          ],
+        );
+        mkdirSync(join(cli.cwd, 'artifacts'), { recursive: true });
+        writeFileSync(report, pdf);
+        writeFileSync(argsFile, JSON.stringify({
+          user: 'sender@example.com',
+          body: { message: { subject: 'CONN-33 report', toRecipients: [{ emailAddress: { address: 'recipient@example.com' } }] }, saveToSentItems: true },
+        }));
+      });
+
+      await ctx.step('`connectors ls` lists the connector with both actions', async () => {
+        const listed = parseCliJson<{ connectors: Array<{ slug: string; actions: Array<{ path: string }> }> }>(await run(['ls', '--json']), 'kortix connectors ls');
+        const row = listed.connectors.find((c) => c.slug === slug);
+        if ((row?.actions ?? []).map((a) => a.path).sort().join(',') !== 'ping,sendmail') throw new Error(`ls returned ${JSON.stringify(row)}`);
+      });
+
+      await ctx.step('`connectors discover` finds the read action by intent and `connectors show` returns its input schema', async () => {
+        const found = parseCliJson<{ matches: Array<{ tool: string; risk: string }> }>(await run(['discover', 'ping', 'warehouse']), 'kortix connectors discover');
+        if (found.matches[0]?.tool !== `${slug}.ping` || found.matches[0].risk !== 'read') throw new Error(`discover returned ${JSON.stringify(found)}`);
+        const shown = parseCliJson<{ tool: string; inputSchema: { properties?: Record<string, unknown> } | null }>(await run(['show', `${slug}.ping`]), 'kortix connectors show');
+        if (shown.tool !== `${slug}.ping` || !shown.inputSchema?.properties?.q) throw new Error(`show returned ${JSON.stringify(shown)}`);
+      });
+
+      if (onLocal) {
+        await ctx.step('`connectors call` runs the read action in the split and the dotted form; the upstream receives each query', async () => {
+          for (const [args, q] of [[['call', slug, 'ping', '{"q":"split"}'], 'split'], [['call', `${slug}.ping`, '{"q":"dotted"}'], 'dotted']] as const) {
+            const before = received.length;
+            const called = parseCliJson<{ ok: boolean; risk: string; data: { url: string } }>(await run([...args]), `kortix connectors ${args.join(' ')}`);
+            if (called.ok !== true || called.risk !== 'read' || called.data?.url !== `/ping?q=${q}`) throw new Error(`call returned ${JSON.stringify(called)}`);
+            if (received.length !== before + 1) throw new Error(`upstream saw ${received.length - before} requests`);
+          }
+        });
+
+        await ctx.step('`connectors call --attach` stages the PDF and the upstream receives a Graph fileAttachment, byte for byte', async () => {
+          const called = parseCliJson<{ ok: boolean }>(await run(['call', `${slug}.sendmail`, `@${argsFile}`, '--attach', report]), 'kortix connectors call --attach');
+          if (called.ok !== true) throw new Error(`call returned ${JSON.stringify(called)}`);
+          const hit = received.at(-1)!;
+          if (hit.method !== 'POST' || hit.url !== '/v1.0/users/sender%40example.com/sendMail') throw new Error(`upstream hit ${hit.method} ${hit.url}`);
+          const attachment = (JSON.parse(hit.body) as { message: { attachments: Array<Record<string, string>> } }).message.attachments[0]!;
+          if (attachment['@odata.type'] !== '#microsoft.graph.fileAttachment' || attachment.name !== 'weekly report.pdf' || attachment.contentType !== 'application/pdf') {
+            throw new Error(`wrong attachment item: ${JSON.stringify({ ...attachment, contentBytes: '…' })}`);
+          }
+          if (sha256(new Uint8Array(Buffer.from(attachment.contentBytes!, 'base64'))) !== sha256(pdf)) throw new Error('attachment bytes differ from the file');
+        });
+      }
+
+      await ctx.step('`connectors call --attach` on an action with no attachments array exits non-zero before any upload or upstream request', async () => {
+        const before = received.length;
+        const refused = await run(['call', `${slug}.ping`, '{}', '--attach', report]);
+        throwIfCliInfraFailure(refused, 'kortix connectors call --attach (refused)');
+        if (refused.exitCode === 0 || !refused.all.includes('does not accept attachments')) throw new Error(`expected the attachments refusal: ${refused.all}`);
+        if (received.length !== before) throw new Error('a refused call reached the upstream');
+      });
+
+      if (onLocal) {
+        await ctx.step('the stdio `connectors mcp` server runs discover → describe → call against the same API', async () => {
+          const stdin = `${[
+            { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } },
+            { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'discover', arguments: { query: 'ping warehouse' } } },
+            { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'describe', arguments: { tool: `${slug}.ping` } } },
+            { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'call', arguments: { connector: slug, action: 'ping', args: { q: 'mcp' } } } },
+          ].map((line) => JSON.stringify(line)).join('\n')}\n`;
+          const result = await run(['mcp'], stdin);
+          throwIfCliInfraFailure(result, 'kortix connectors mcp');
+          if (result.exitCode !== 0) throw new Error(`MCP exited ${result.exitCode}: ${result.all.slice(0, 2_000)}`);
+          const byId = new Map<number, any>(result.stdout.trim().split('\n').map((line) => JSON.parse(line)).map((m: any) => [m.id, m]));
+          const text = (id: number) => JSON.parse(byId.get(id)?.result?.content?.[0]?.text ?? 'null');
+          if (byId.get(1)?.result?.serverInfo?.name !== 'kortix-connectors') throw new Error(`initialize: ${JSON.stringify(byId.get(1))}`);
+          if (text(2)?.matches?.[0]?.tool !== `${slug}.ping`) throw new Error(`discover: ${JSON.stringify(text(2))}`);
+          if (text(3)?.tool !== `${slug}.ping` || text(3)?.risk !== 'read') throw new Error(`describe: ${JSON.stringify(text(3))}`);
+          if (byId.get(4)?.result?.isError !== false || text(4)?.data?.url !== '/ping?q=mcp') throw new Error(`call: ${JSON.stringify(byId.get(4))}`);
+        });
+      }
+    } finally {
+      upstream.close();
+      cli.dispose();
+      await db.query('DELETE FROM kortix.connectors WHERE project_id = $1 AND slug = $2', [p.id, slug]).catch(() => {});
+      await db.end().catch(() => {});
+    }
+  },
+);
+
+// ── CONN-34 — project policies: validation, admin gate, write-through ───────
+flow(
+  'CONN-34',
+  {
+    domain: 'connectors',
+    requires: ['database'],
+    timeoutMs: 180_000,
+    routes: ['GET /v1/connectors/projects/:projectId/policies', 'PUT /v1/connectors/projects/:projectId/policies'],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const p = await team.project({ managedGit: true });
+    const db = await connectFlowDb(ctx);
+    const path = '/v1/connectors/projects/:projectId/policies';
+    const params = { projectId: p.id };
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const rules = [
+      { match: '*.delete*', action: 'block' },
+      { match: 'stripe.charges.create', action: 'require_approval' },
+    ];
+    const pairs = (list: Array<{ match: string; action: string }>) => list.map((x) => `${x.match}=${x.action}`).join(',');
+
+    try {
+      await ctx.step('a fresh project reads no rules and the allow_all default → 200', async () => {
+        (await owner.get(path, { params })).status(200).body().has('$.policies', []).has('$.defaultMode', 'allow_all').has('$.errors', []);
+      });
+
+      await ctx.step('an unknown action or a rule without match → 400 naming the rule', async () => {
+        (await owner.put(path, { policies: [{ match: '*', action: 'skip' }], defaultMode: 'allow_all' }, { params }))
+          .status(400).body().has('$.error', 'policy #1: invalid `action` "skip"');
+        (await owner.put(path, { policies: [{ action: 'block' }], defaultMode: 'allow_all' }, { params }))
+          .status(400).body().has('$.error', 'policy #1: `match` is required');
+      });
+
+      await ctx.step('NONMEMBER cannot read or replace project policies → 403', async () => {
+        (await ctx.client.as(ctx.P.NONMEMBER).get(path, { params })).status(403);
+        (await ctx.client.as(ctx.P.NONMEMBER).put(path, { policies: [] }, { params })).status(403);
+      });
+
+      await ctx.step('replace the rules with default_mode risk → 200; GET reads them back in order', async () => {
+        (await owner.put(path, { policies: rules, defaultMode: 'risk' }, { params, timeoutMs: 60_000 })).status(200).body().has('$.ok', true);
+        const r = await owner.get(path, { params });
+        r.status(200).body().has('$.defaultMode', 'risk');
+        const got = r.json<{ policies: Array<{ match: string; action: string }> }>().policies;
+        if (pairs(got) !== pairs(rules)) throw new Error(`read back ${JSON.stringify(got)}`);
+      });
+
+      await ctx.step('the write-through sync lands the rules and the mode in the tables the gateway reads', async () => {
+        await waitFor(
+          async () => {
+            const [rows, mode] = await Promise.all([
+              db.query<{ match: string; action: string }>('SELECT match, action FROM kortix.connector_project_policies WHERE project_id = $1 ORDER BY position', [p.id]),
+              db.query<{ default_mode: string }>('SELECT default_mode FROM kortix.connector_project_settings WHERE project_id = $1', [p.id]),
+            ]);
+            return { rules: pairs(rows.rows), mode: mode.rows[0]?.default_mode ?? null };
+          },
+          { until: (v) => v.rules === pairs(rules) && v.mode === 'risk', timeoutMs: 20_000, intervalMs: 500, description: 'synced project policies' },
+        );
+      });
+    } finally {
+      await db.end().catch(() => {});
+    }
+  },
+);
+
+// ── CONN-35 — a source's advertised auth is previewed, applied, or opted out ─
+flow(
+  'CONN-35',
+  {
+    domain: 'connectors',
+    requires: ['database'],
+    timeoutMs: 240_000,
+    routes: [
+      'POST /v1/connectors/projects/:projectId/connectors/auth-discovery',
+      'POST /v1/connectors/projects/:projectId/connectors',
+      'GET /v1/connectors/projects/:projectId/connectors/:slug/config',
+      'DELETE /v1/connectors/projects/:projectId/connectors/:slug',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const p = await team.project({ managedGit: true });
+    const stamp = Date.now().toString(36);
+    const detectedSlug = `ke2e-authdisc-${stamp}`;
+    const optOutSlug = `ke2e-authdisc-none-${stamp}`;
+    const spec = 'specs/ke2e-bearer.json';
+    const params = { projectId: p.id };
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const configOf = (slug: string) => owner.get('/v1/connectors/projects/:projectId/connectors/:slug/config', { params: { ...params, slug } });
+
+    await ctx.step('commit an OpenAPI spec whose operations require bearer auth', async () => {
+      const world = await AgentPrincipalsWorld.open(ctx, { accountId: team.id, projectId: p.id });
+      try {
+        await world.commitToMain(
+          {
+            [spec]: JSON.stringify({
+              openapi: '3.0.0',
+              info: { title: 'KE2E Bearer', version: '1' },
+              servers: [{ url: 'https://api.ke2e.kortix.test' }],
+              components: { securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer' } } },
+              security: [{ bearerAuth: [] }],
+              paths: { '/items': { get: { operationId: 'listItems', responses: { '200': { description: 'ok' } } } } },
+            }),
+          },
+          'ke2e CONN-35: a bearer-protected spec',
+        );
+      } finally {
+        await world.close();
+      }
+    });
+
+    await ctx.step('auth-discovery previews the spec bearer scheme as the recommendation → 200 detected', async () => {
+      // The API reads the repository through a mirror refreshed at most every 60 s.
+      const r = await waitFor(
+        () => owner.post('/v1/connectors/projects/:projectId/connectors/auth-discovery', { provider: 'openapi', spec }, { params }),
+        { until: (res) => res.statusCode === 200 && res.json<{ status?: string }>().status === 'detected', timeoutMs: 90_000, intervalMs: 3_000, description: 'the committed spec in auth discovery' },
+      );
+      r.status(200).body().has('$.status', 'detected').has('$.recommended.type', 'bearer').has('$.recommended.in', 'header').has('$.recommended.name', 'Authorization').has('$.recommended.prefix', 'Bearer');
+    });
+
+    await ctx.step('a create with no auth applies that recommendation and returns the discovery', async () => {
+      const r = await owner.post('/v1/connectors/projects/:projectId/connectors', { slug: detectedSlug, provider: 'openapi', spec, create_only: true }, { params, timeoutMs: 60_000 });
+      // A lost response re-delivered under create_only answers 409 (see CONN-8); the config read below is the proof either way.
+      r.status([200, 409]);
+      if (r.statusCode === 200) r.body().has('$.ok', true).has('$.authDiscovery.status', 'detected').has('$.authDiscovery.recommended.type', 'bearer');
+      (await configOf(detectedSlug)).status(200).body().has('$.auth.type', 'bearer');
+    });
+
+    await ctx.step('an explicit auth none skips discovery and stays none', async () => {
+      const r = await owner.post('/v1/connectors/projects/:projectId/connectors', { slug: optOutSlug, provider: 'openapi', spec, auth: { type: 'none' }, create_only: true }, { params, timeoutMs: 60_000 });
+      r.status([200, 409]);
+      if (r.statusCode === 200 && 'authDiscovery' in r.json<Record<string, unknown>>()) throw new Error(`explicit none still ran discovery: ${r.text()}`);
+      (await configOf(optOutSlug)).status(200).body().has('$.auth.type', 'none');
+    });
+
+    await ctx.step('delete both connectors → 200', async () => {
+      for (const slug of [detectedSlug, optOutSlug]) {
+        (await owner.del('/v1/connectors/projects/:projectId/connectors/:slug', { params: { ...params, slug } })).status(200);
+      }
+    });
+  },
+);
+
+// ── CONN-CALL-1 — the call contract: binding, output, upstream status ───────
+// Beside `data`, a call names its `binding`, the `upstream_status` and the
+// unwrapped `output`. An upstream 429 or 503 keeps its status with Retry-After;
+// an MCP `isError` result and GraphQL `errors` without data stay HTTP 200 and
+// name the failure in `upstream_error`; a hung upstream answers 500
+// `upstream_timeout` at the gateway deadline. The upstream is runner-local, so
+// every step runs on the local target only.
+flow(
+  'CONN-CALL-1',
+  {
+    domain: 'connectors',
+    requires: ['database'],
+    timeoutMs: 150_000,
+    routes: ['POST /v1/connectors/projects/:projectId/call'],
+  },
+  async (ctx) => {
+    if (ctx.env.target !== 'local') {
+      await ctx.step('deployed targets cannot reach a runner-local upstream: skipped', async () => {});
+      return;
+    }
+    const p = await ctx.fixtures.project();
+    const { createServer } = await import('node:http');
+    const { Client: PgClient } = await import('pg');
+    const db = new PgClient({ connectionString: ctx.env.databaseUrl as string, ssl: false });
+    const stamp = Date.now().toString(36);
+    const slug = { api: `ke2e-call-api-${stamp}`, mcp: `ke2e-call-mcp-${stamp}`, gql: `ke2e-call-gql-${stamp}` };
+
+    let slowStarted = 0;
+    let slowClosedAfterMs = -1;
+    const upstream = createServer((req, res) => {
+      const json = (status: number, body: unknown, headers: Record<string, string> = {}) => {
+        res.writeHead(status, { 'content-type': 'application/json', ...headers });
+        res.end(JSON.stringify(body));
+      };
+      if (req.url === '/api/ok') return json(200, { items: [1, 2] });
+      if (req.url === '/api/limited') return json(429, { message: 'slow down' }, { 'retry-after': '2' });
+      if (req.url === '/api/unavailable') return json(503, { message: 'maintenance' }, { 'retry-after': '30' });
+      if (req.url === '/api/slow') {
+        // Answers only after 70 s; the gateway deadline (60 s, or the local
+        // profile's KORTIX_CONNECTOR_CALL_TIMEOUT_MS) closes the socket first.
+        slowStarted = Date.now();
+        const timer = setTimeout(() => json(200, { late: true }), 70_000);
+        // `req` closes when the client drops the connection (Bun emits no
+        // `close` on an unfinished `res`).
+        req.on('close', () => {
+          clearTimeout(timer);
+          slowClosedAfterMs = Date.now() - slowStarted;
+        });
+        return;
+      }
+      const chunks: Buffer[] = [];
+      req.on('data', (chunk: Buffer) => chunks.push(chunk));
+      req.on('end', () => {
+        const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') as { id?: number };
+        if (req.url === '/mcp') {
+          return json(200, {
+            jsonrpc: '2.0',
+            id: body.id ?? 1,
+            result: { isError: true, content: [{ type: 'text', text: 'Issue KE2E-1 does not exist' }] },
+          });
+        }
+        if (req.url === '/graphql') {
+          return json(200, { data: { issue: null }, errors: [{ message: 'Entity not found: issue' }] });
+        }
+        json(404, { message: 'no route' });
+      });
+    });
+    const port = await new Promise<number>((resolve) =>
+      upstream.listen(0, '127.0.0.1', () => resolve((upstream.address() as { port: number }).port)),
+    );
+    const base = `http://127.0.0.1:${port}`;
+    const call = (connector: string, action: string, args: Record<string, unknown> = {}) =>
+      ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/connectors/projects/:projectId/call',
+          { connector, action, args },
+          { params: { projectId: p.id }, timeoutMs: 100_000 },
+        );
+
+    try {
+      await db.connect();
+      await ctx.step('seed OpenAPI, MCP and GraphQL connectors on a runner-local upstream', async () => {
+        const owner = await db.query<{ account_id: string }>(
+          `SELECT account_id FROM kortix.projects WHERE project_id = $1`,
+          [p.id],
+        );
+        const accountId = owner.rows[0]?.account_id;
+        if (!accountId) throw new Error('project has no account');
+        const seed = async (
+          connectorSlug: string,
+          providerType: string,
+          config: Record<string, unknown>,
+          actions: Array<{ path: string; binding: Record<string, unknown> }>,
+        ) => {
+          const row = await db.query<{ connector_id: string }>(
+            `INSERT INTO kortix.connectors (account_id, project_id, slug, name, provider_type, config, status)
+             VALUES ($1, $2, $3, $4, $5, $6::jsonb, 'active') RETURNING connector_id`,
+            [accountId, p.id, connectorSlug, connectorSlug, providerType, JSON.stringify({ ...config, auth: { type: 'none' } })],
+          );
+          const connectorId = row.rows[0]?.connector_id;
+          if (!connectorId) throw new Error('connector insert returned no id');
+          await db.query(
+            `INSERT INTO kortix.connector_connections (account_id, project_id, connector_id, owner_type, label, status, is_default, metadata)
+             VALUES ($1, $2, $3, 'project', $4, 'active', true, $5::jsonb)`,
+            [accountId, p.id, connectorId, connectorSlug, JSON.stringify({ provider: providerType, connector_slug: connectorSlug })],
+          );
+          for (const action of actions) {
+            await db.query(
+              `INSERT INTO kortix.connector_actions (connector_id, path, name, description, input_schema, risk, binding)
+               VALUES ($1, $2, $3, $4, '{"type":"object"}'::jsonb, 'read', $5::jsonb)`,
+              [connectorId, action.path, action.path, action.path, JSON.stringify(action.binding)],
+            );
+          }
+        };
+        const route = (path: string) => ({ path, binding: { kind: 'openapi', method: 'GET', path: `/api/${path}`, server: base } });
+        await seed(slug.api, 'openapi', {}, [route('ok'), route('limited'), route('unavailable'), route('slow')]);
+        await seed(slug.mcp, 'mcp', { url: `${base}/mcp` }, [{ path: 'get_issue', binding: { kind: 'mcp', tool: 'get_issue' } }]);
+        await seed(slug.gql, 'graphql', { endpoint: `${base}/graphql` }, [
+          { path: 'issue', binding: { kind: 'graphql', operation: 'query', field: 'issue' } },
+        ]);
+      });
+
+      await ctx.step('an ok openapi call → 200 with data, binding and upstream_status; no output copy of data', async () => {
+        const r = await call(slug.api, 'ok');
+        r.status(200)
+          .body()
+          .has('$.ok', true)
+          .has('$.binding', 'openapi')
+          .has('$.upstream_status', 200)
+          .has('$.data.items[1]', 2)
+          .has('$.output', undefined);
+      });
+
+      await ctx.step('upstream 429 → HTTP 429 with Retry-After: 2 and retry_after_seconds; reason unchanged', async () => {
+        const r = await call(slug.api, 'limited');
+        r.status(429)
+          .body()
+          .has('$.status', 'error')
+          .has('$.reason', 'upstream_429: {"message":"slow down"}')
+          .has('$.upstream_status', 429)
+          .has('$.retry_after_seconds', 2)
+          .has('$.binding', 'openapi');
+        if (r.header('retry-after') !== '2') throw new Error(`Retry-After: ${r.header('retry-after')}`);
+      });
+
+      await ctx.step('upstream 503 → HTTP 503 with Retry-After: 30', async () => {
+        const r = await call(slug.api, 'unavailable');
+        r.status(503).body().has('$.upstream_status', 503).has('$.retry_after_seconds', 30);
+        if (r.header('retry-after') !== '30') throw new Error(`Retry-After: ${r.header('retry-after')}`);
+      });
+
+      await ctx.step('an MCP isError result → 200 whose upstream_error carries the tool text', async () => {
+        const r = await call(slug.mcp, 'get_issue', { id: 'KE2E-1' });
+        r.status(200)
+          .body()
+          .has('$.ok', true)
+          .has('$.binding', 'mcp')
+          .has('$.upstream_error', 'Issue KE2E-1 does not exist')
+          .has('$.output[0].text', 'Issue KE2E-1 does not exist')
+          .has('$.data.result.isError', true);
+      });
+
+      await ctx.step('GraphQL errors with no data → 200 whose upstream_error names the GraphQL message', async () => {
+        const r = await call(slug.gql, 'issue', { id: 'KE2E-1', __select: 'id' });
+        r.status(200)
+          .body()
+          .has('$.binding', 'graphql')
+          .has('$.upstream_error', 'Entity not found: issue')
+          .has('$.output.issue', null);
+      });
+
+      await ctx.step('a hung upstream → 500 upstream_timeout at the deadline, and the upstream socket is closed', async () => {
+        const r = await call(slug.api, 'slow');
+        r.status(500).body().has('$.status', 'error').has('$.binding', 'openapi').has('$.upstream_status', null);
+        const reason = r.json<{ reason: string }>().reason;
+        if (!reason.startsWith(`upstream_timeout: ${slug.api}.slow did not answer within `)) {
+          throw new Error(`unexpected reason: ${reason}`);
+        }
+        await waitFor(() => slowClosedAfterMs, {
+          until: (ms) => ms >= 0,
+          timeoutMs: 5_000,
+          intervalMs: 100,
+          description: 'upstream socket closed',
+        });
+        if (slowClosedAfterMs >= 70_000) throw new Error(`the upstream ran to completion (${slowClosedAfterMs} ms)`);
+      });
+    } finally {
+      upstream.close();
+      upstream.closeAllConnections?.();
+      await db
+        .query(`DELETE FROM kortix.connectors WHERE project_id = $1 AND slug = ANY($2)`, [p.id, Object.values(slug)])
+        .catch(() => {});
+      await db.end().catch(() => {});
+    }
+  },
+);
+
+// ── CONN-TYPES-1 — output schemas in the catalog and `kortix connectors types` ──
+// The catalog adds each action's `outputSchema` only on request
+// (`include_output_schemas=true`), so the sandbox catalog payload does not grow.
+// `kortix connectors types` reads it and writes the `ConnectorActionRegistry`
+// augmentation: typed args, typed `result` where an output schema exists, and
+// `result: unknown` where none does.
+flow(
+  'CONN-TYPES-1',
+  {
+    domain: 'connectors',
+    requires: ['database'],
+    timeoutMs: 180_000,
+    routes: ['GET /v1/connectors/projects/:projectId/catalog'],
+  },
+  async (ctx) => {
+    if (ctx.env.target !== 'local') {
+      await ctx.step('deployed targets cannot seed connector actions directly: skipped', async () => {});
+      return;
+    }
+    const p = await ctx.fixtures.project();
+    const { Client: PgClient } = await import('pg');
+    const db = new PgClient({ connectionString: ctx.env.databaseUrl as string, ssl: false });
+    const stamp = Date.now().toString(36);
+    const slug = { typed: `ke2e-types-${stamp}`, untyped: `ke2e-untyped-${stamp}` };
+    const input = { type: 'object', properties: { team: { type: 'string' }, limit: { type: 'integer' } }, required: ['team'] };
+    const output = {
+      type: 'object',
+      properties: { issues: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } } },
+      required: ['issues'],
+    };
+    const sb = new CliSandbox('conn-types-1');
+    const catalog = (query: Record<string, string>) =>
+      ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/connectors/projects/:projectId/catalog', { params: { projectId: p.id }, query });
+
+    try {
+      await db.connect();
+      await ctx.step('seed one connector with an output schema and one without', async () => {
+        const owner = await db.query<{ account_id: string }>(
+          `SELECT account_id FROM kortix.projects WHERE project_id = $1`,
+          [p.id],
+        );
+        const accountId = owner.rows[0]?.account_id;
+        if (!accountId) throw new Error('project has no account');
+        for (const [connectorSlug, outputSchema] of [
+          [slug.typed, output],
+          [slug.untyped, null],
+        ] as const) {
+          const row = await db.query<{ connector_id: string }>(
+            `INSERT INTO kortix.connectors (account_id, project_id, slug, name, provider_type, config, status)
+             VALUES ($1, $2, $3, $3, 'openapi', '{"auth":{"type":"none"}}'::jsonb, 'active') RETURNING connector_id`,
+            [accountId, p.id, connectorSlug],
+          );
+          const connectorId = row.rows[0]?.connector_id;
+          if (!connectorId) throw new Error('connector insert returned no id');
+          await db.query(
+            `INSERT INTO kortix.connector_connections (account_id, project_id, connector_id, owner_type, label, status, is_default, metadata)
+             VALUES ($1, $2, $3, 'project', $4, 'active', true, $5::jsonb)`,
+            [accountId, p.id, connectorId, connectorSlug, JSON.stringify({ provider: 'openapi', connector_slug: connectorSlug })],
+          );
+          await db.query(
+            `INSERT INTO kortix.connector_actions (connector_id, path, name, description, input_schema, output_schema, risk, binding)
+             VALUES ($1, 'list_issues', 'list_issues', 'List issues', $2::jsonb, $3::jsonb, 'read', '{"kind":"openapi","method":"GET","path":"/issues"}'::jsonb)`,
+            [connectorId, JSON.stringify(input), outputSchema ? JSON.stringify(outputSchema) : null],
+          );
+        }
+      });
+
+      await ctx.step('GET catalog without include_output_schemas → 200, actions carry no outputSchema key', async () => {
+        const r = await catalog({ slug: slug.typed });
+        r.status(200).body().has('$.connectors[0].actions[0].path', 'list_issues');
+        const action = r.json<{ connectors: Array<{ actions: Array<Record<string, unknown>> }> }>().connectors[0]?.actions[0];
+        if (!action || 'outputSchema' in action) throw new Error(`outputSchema leaked: ${JSON.stringify(action)}`);
+      });
+
+      await ctx.step('GET catalog with include_output_schemas=true → the stored schema, null where none is stored', async () => {
+        (await catalog({ slug: slug.typed, include_output_schemas: 'true' }))
+          .status(200)
+          .body()
+          .has('$.connectors[0].actions[0].outputSchema.required[0]', 'issues');
+        (await catalog({ slug: slug.untyped, include_output_schemas: 'true' }))
+          .status(200)
+          .body()
+          .has('$.connectors[0].actions[0].outputSchema', null);
+      });
+
+      await ctx.step('the CLI logs in with an owner token → exit 0', async () => {
+        const login = await sb.login(await ctx.fixtures.pat(), { noProject: true });
+        throwIfCliInfraFailure(login, 'kortix login');
+        if (login.exitCode !== 0) throw new Error(`login: exit ${login.exitCode}: ${login.all.slice(0, 600)}`);
+      });
+
+      await ctx.step('kortix connectors types --out → exit 0 and a registry with typed args and result', async () => {
+        const r = await sb.run([
+          'connectors', 'types', '--connector', `${slug.typed},${slug.untyped}`,
+          '--out', 'types/kortix-connectors.d.ts', '--project', p.id,
+        ]);
+        throwIfCliInfraFailure(r, 'kortix connectors types');
+        if (r.exitCode !== 0) throw new Error(`types: exit ${r.exitCode}: ${r.all.slice(0, 800)}`);
+        if (!r.stdout.includes(`No output schema (result is unknown): ${slug.untyped}`)) {
+          throw new Error(`summary does not name the untyped connector: ${r.stdout}`);
+        }
+        const file = sb.readFile('types/kortix-connectors.d.ts');
+        for (const expected of [
+          "declare module '@kortix/sdk' {",
+          'interface ConnectorActionRegistry {',
+          `"${slug.typed}": {`,
+          'team: string;',
+          'limit?: number;',
+          'issues: {',
+          'id: string;',
+        ]) {
+          if (!file.includes(expected)) throw new Error(`generated file lacks ${JSON.stringify(expected)}:\n${file}`);
+        }
+        if (!new RegExp(`"${slug.untyped}": \\{[\\s\\S]*?result: unknown;`).test(file)) {
+          throw new Error(`untyped connector result is not unknown:\n${file}`);
+        }
+      });
+    } finally {
+      sb.dispose();
+      await db
+        .query(`DELETE FROM kortix.connectors WHERE project_id = $1 AND slug = ANY($2)`, [p.id, Object.values(slug)])
+        .catch(() => {});
+      await db.end().catch(() => {});
+    }
+  },
+);
+
+// ── CONN-IDENT-1 — the identities code calls a connector with ──
+// sdk/connectors.mdx names four callers: an App in the browser and on its
+// server (the App viewer token), unattended code such as a Convex action (a
+// service account), and an external program (a personal access token). Each
+// one reaches a different set of accounts on the same connector.
+flow(
+  'CONN-IDENT-1',
+  {
+    domain: 'connectors',
+    requires: ['database', 'appHost'],
+    timeoutMs: 180_000,
+    routes: [
+      'POST /v1/connectors/projects/:projectId/call',
+      'PATCH /v1/projects/:projectId/features',
+      'POST /v1/projects/:projectId/apps',
+      'PATCH /v1/projects/:projectId/apps/:appId/access',
+      'POST /v1/projects/:projectId/apps/:appId/access-session',
+      'DELETE /v1/projects/:projectId/apps/:appId',
+      'POST /v1/accounts/:accountId/iam/service-accounts',
+      'DELETE /v1/accounts/:accountId/iam/service-accounts/:saId',
+      'POST /v1/accounts/:accountId/iam/assignments',
+    ],
+  },
+  async (ctx) => {
+    if (ctx.env.target !== 'local') {
+      await ctx.step('deployed targets cannot reach a runner-local upstream: skipped', async () => {});
+      return;
+    }
+    const team = await ctx.fixtures.team({ enterprise: true });
+    const project = await team.project();
+    const projectParams = { projectId: project.id };
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const viewerPrincipal = await team.addMember('member');
+    const { createServer } = await import('node:http');
+    const { Client: PgClient } = await import('pg');
+    const db = new PgClient({ connectionString: ctx.env.databaseUrl as string, ssl: false });
+    const stamp = Date.now().toString(36);
+    const slug = `ke2e-ident-${stamp}`;
+    const SHARED = 'Team CRM';
+    const PRIVATE = 'Viewer CRM';
+    const apiOrigin = ctx.env.apiUrl.replace(/\/v1$/, '');
+    let appId = '';
+    let appHost = '';
+    let saId = '';
+    let sharedConnectionId = '';
+
+    const upstream = createServer((_req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ rows: [{ id: 'deal-1' }] }));
+    });
+    const port = await new Promise<number>((resolve) =>
+      upstream.listen(0, '127.0.0.1', () => resolve((upstream.address() as { port: number }).port)),
+    );
+    const call = (client: typeof owner, account?: string) =>
+      client.post(
+        '/v1/connectors/projects/:projectId/call',
+        { connector: slug, action: 'list_deals', args: {}, ...(account ? { account } : {}) },
+        { params: projectParams, timeoutMs: 60_000 },
+      );
+    const ranAs = async (client: typeof owner, account: string | undefined, label: string, ownerType: string) => {
+      (await call(client, account))
+        .status(200)
+        .body()
+        .has('$.ok', true)
+        .has('$.data.rows[0].id', 'deal-1')
+        .has('$.account.label', label)
+        .has('$.account.owner_type', ownerType);
+    };
+    const notConnected = async (client: typeof owner, account: string) => {
+      (await call(client, account)).status(403).body().has('$.reason', 'connector_not_connected');
+    };
+
+    // The gate at the App's own hostname, as APP-6 drives it.
+    const gate = async (pathAndQuery: string, headers: Record<string, string> = {}) => {
+      const response = await fetch(`${apiOrigin}${pathAndQuery}`, {
+        headers: { accept: 'application/json', 'x-kortix-app-host': appHost, ...headers },
+        redirect: 'manual',
+      });
+      const text = await response.text();
+      let body: any = null;
+      try { body = text ? JSON.parse(text) : null; } catch { body = null; }
+      return { status: response.status, headers: response.headers, body, text };
+    };
+    const viewerToken = async (): Promise<{ scopes: string[]; access_token: string }> => {
+      const session = await ctx.client.as(viewerPrincipal).post(
+        '/v1/projects/:projectId/apps/:appId/access-session',
+        {},
+        { params: { ...projectParams, appId } },
+      );
+      session.status(200);
+      const link = new URL(session.json<any>().url);
+      const redeemed = await gate(`${link.pathname}${link.search}`);
+      const cookie = redeemed.headers.get('set-cookie')?.split(';')[0] ?? '';
+      if (redeemed.status !== 303 || !cookie) throw new Error(`access link did not sign in: ${redeemed.status}`);
+      const r = await gate('/_kortix/viewer', { cookie });
+      if (r.status !== 200 || !r.body?.access_token) throw new Error(`/_kortix/viewer: ${r.status} ${r.text.slice(0, 200)}`);
+      return r.body;
+    };
+    const setViewerScope = async (scope: 'api' | 'identity') => {
+      (await owner.patch('/v1/projects/:projectId/apps/:appId/access',
+        { mode: 'restricted', member_ids: [viewerPrincipal.userId], viewer_token_scope: scope },
+        { params: { ...projectParams, appId } })).status(200);
+    };
+
+    try {
+      await db.connect();
+      await ctx.step('seed one connector with a shared account and the viewer\'s own private account', async () => {
+        await team.grantProjectRole(project.id, viewerPrincipal.userId!, 'member');
+        const connector = await db.query<{ connector_id: string }>(
+          `INSERT INTO kortix.connectors (account_id, project_id, slug, name, provider_type, config, status)
+           VALUES ($1, $2, $3, $3, 'openapi', '{"auth":{"type":"none"}}'::jsonb, 'active') RETURNING connector_id`,
+          [team.id, project.id, slug],
+        );
+        const connectorId = connector.rows[0]!.connector_id;
+        await db.query(
+          `INSERT INTO kortix.connector_actions (connector_id, path, name, description, input_schema, risk, binding)
+           VALUES ($1, 'list_deals', 'list_deals', 'List deals', '{"type":"object"}'::jsonb, 'read', $2::jsonb)`,
+          [connectorId, JSON.stringify({ kind: 'openapi', method: 'GET', path: '/deals', server: `http://127.0.0.1:${port}` })],
+        );
+        const account = async (ownerType: 'project' | 'member', ownerId: string | null, label: string) => {
+          const row = await db.query<{ connection_id: string }>(
+            `INSERT INTO kortix.connector_connections
+               (account_id, project_id, connector_id, owner_type, owner_id, label, status, is_default, metadata)
+             VALUES ($1, $2, $3, $4, $5, $6, 'active', true, $7::jsonb) RETURNING connection_id`,
+            [team.id, project.id, connectorId, ownerType, ownerId, label,
+              JSON.stringify({ provider: 'openapi', connector_slug: slug })],
+          );
+          return row.rows[0]!.connection_id;
+        };
+        sharedConnectionId = await account('project', null, SHARED);
+        await account('member', viewerPrincipal.userId!, PRIVATE);
+      });
+
+      await ctx.step('an external program with a personal access token acts as its owner: the shared account, never the viewer\'s', async () => {
+        const pat = ctx.client.withBearer(await ctx.fixtures.pat({ name: ctx.fixtures.name('ident-pat') }), 'pat');
+        await ranAs(pat, undefined, SHARED, 'project');
+        await notConnected(pat, PRIVATE);
+      });
+
+      await ctx.step('an App viewer token (api scope) acts as the viewer: their private account and the shared one', async () => {
+        (await owner.patch('/v1/projects/:projectId/features', { feature: 'apps', enabled: true },
+          { params: projectParams })).status(200);
+        const created = await owner.post('/v1/projects/:projectId/apps',
+          { slug: `ident-${stamp}`, name: 'ke2e connector identities' }, { params: projectParams });
+        created.status(201);
+        appId = created.json<any>().app_id;
+        appHost = new URL(created.json<any>().url).hostname;
+        await setViewerScope('api');
+        const token = await viewerToken();
+        const asViewer = ctx.client.withBearer(token.access_token, 'app-viewer-token');
+        await ranAs(asViewer, PRIVATE, PRIVATE, 'member');
+        await ranAs(asViewer, SHARED, SHARED, 'project');
+      });
+
+      await ctx.step('an identity-scoped App viewer token cannot call a connector (403 insufficient_scope)', async () => {
+        await setViewerScope('identity');
+        const token = await viewerToken();
+        if (token.scopes.includes('kortix')) throw new Error(`identity scope returned ${JSON.stringify(token.scopes)}`);
+        const refused = await call(ctx.client.withBearer(token.access_token, 'app-viewer-identity'), SHARED);
+        refused.status(403);
+        if (!refused.text().includes('insufficient_scope')) throw new Error(`expected insufficient_scope: ${refused.text()}`);
+      });
+
+      await ctx.step('a service account with no project role is refused; with the member role it reaches the shared account only', async () => {
+        const created = await owner.post('/v1/accounts/:accountId/iam/service-accounts',
+          { name: ctx.fixtures.name('ident-sa'), description: 'Convex action' }, { params: { accountId: team.id } });
+        created.status(201);
+        saId = created.json<any>().service_account_id;
+        const sa = ctx.client.withBearer(created.json<any>().secret, 'service-account');
+        if (!created.json<any>().secret?.startsWith('kortix_sa_')) throw new Error('no kortix_sa_ bearer');
+        (await call(sa)).status(403);
+        (await owner.post('/v1/accounts/:accountId/iam/assignments', {
+          principal_type: 'service_account', principal_id: saId, role_key: 'member',
+          scope_type: 'project', scope_id: project.id,
+        }, { params: { accountId: team.id } })).status(201);
+        // IAM verdicts are cached per API task for up to 15 s.
+        await waitFor(async () => (await call(sa)).statusCode, {
+          until: (status) => status === 200,
+          timeoutMs: 30_000,
+          intervalMs: 2_000,
+          description: 'service account call after the role grant',
+        });
+        await ranAs(sa, undefined, SHARED, 'project');
+        await notConnected(sa, PRIVATE);
+
+        // Narrow the shared account to the viewer: a service account never
+        // reaches a narrowed account.
+        (await owner.post('/v1/accounts/:accountId/iam/assignments', {
+          principal_type: 'user', principal_id: viewerPrincipal.userId, role_key: 'agent-user',
+          scope_type: 'project', scope_id: project.id, object_type: 'connection', object_id: sharedConnectionId,
+        }, { params: { accountId: team.id } })).status(201);
+        await waitFor(async () => (await call(sa, SHARED)).statusCode, {
+          until: (status) => status === 403,
+          timeoutMs: 30_000,
+          intervalMs: 2_000,
+          description: 'narrowed account leaves the service account reach',
+        });
+        await notConnected(sa, SHARED);
+      });
+    } finally {
+      upstream.close();
+      upstream.closeAllConnections?.();
+      if (saId) {
+        await owner.del('/v1/accounts/:accountId/iam/service-accounts/:saId', {
+          params: { accountId: team.id, saId },
+        }).catch(() => {});
+      }
+      if (appId) {
+        await owner.del('/v1/projects/:projectId/apps/:appId', { params: { ...projectParams, appId } }).catch(() => {});
+      }
+      await db.query(`DELETE FROM kortix.connectors WHERE project_id = $1 AND slug = $2`, [project.id, slug]).catch(() => {});
+      await db.end().catch(() => {});
     }
   },
 );

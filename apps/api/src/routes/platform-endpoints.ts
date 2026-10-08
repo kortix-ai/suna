@@ -172,22 +172,4 @@ app.openapi(
     return c.json({ ok: true, emailed: result.ok });
   },
 );
-
-// ─── Stub Endpoints ─────────────────────────────────────────────────────────
-// These endpoints are called by the frontend but were never implemented.
-// Adding proper stubs stops 404 noise and provides correct responses.
-
-// POST /v1/prewarm — no-op pre-warm. Frontend fires this on login.
-app.openapi(
-  createRoute({
-    method: 'post',
-    path: '/v1/prewarm',
-    tags: ['system'],
-    summary: 'No-op pre-warm (frontend fires this on login)',
-    responses: {
-      200: json(z.object({ success: z.boolean() }).openapi('Prewarm'), 'ok'),
-    },
-  }),
-  (c: any) => c.json({ success: true }),
-);
 }

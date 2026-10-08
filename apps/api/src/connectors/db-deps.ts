@@ -99,20 +99,13 @@ import { connectorConnected } from './db-deps-rows';
 export {
   composioConnectionMetadata,
   connectLinkEligibility,
-  type ConnectLinkEligibility,
-  loadComposioConnector,
-  loadPipedreamConnector,
-  readRequestingSessionId,
 } from './db-deps-connect';
 export {
-  consumeApprovedExecution,
-  isPendingApprovalExecution,
   makeDbGatewayDeps,
 } from './db-deps-gateway';
 export {
   projectSessionIdForProjectPrincipal,
   resolveTokenBoundSessionId,
-  sessionChannelConnectorSlugs,
 } from './db-deps-principal';
 export {
   composioConnectedAccountId,

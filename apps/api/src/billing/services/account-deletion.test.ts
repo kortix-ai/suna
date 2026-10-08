@@ -5,10 +5,9 @@ import {
   accounts,
   appDeploymentEvents,
   appDeployments,
+  appSiteBlobs,
   changeRequests,
-  connectorCalls,
   connectorConnections,
-  gatewayRequestLogs,
   impersonationGrants,
   kortixApiKeys,
   legacySandboxMigrations,
@@ -17,12 +16,9 @@ import {
   projectSessionConnectorBindings,
   projectTriggerExecutions,
   projectTriggerRuntime,
-  projects,
   providerEvents,
   reviewItems,
   sandboxes,
-  sandboxComputeSessions,
-  sessionLifecycleCommands,
   sessionPendingQuestions,
   sessionSandboxes,
   sessionTurns,
@@ -30,7 +26,6 @@ import {
   tunnelAuditLogs,
   tunnelConnections,
   tunnelDeviceAuthRequests,
-  usageEvents,
 } from '@kortix/db';
 import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
@@ -48,6 +43,7 @@ const ORPHAN_ACCOUNT_TABLES = [
   accountDeletionRequests,
   appDeploymentEvents,
   appDeployments,
+  appSiteBlobs,
   changeRequests,
   connectorConnections,
   impersonationGrants,
@@ -116,11 +112,13 @@ const { config } = await import('../../config');
 config.SUPABASE_JWT_LIVENESS_TTL_MS = 30000;
 const liveness = await import('../../shared/jwt-liveness');
 mock.module('../../shared/supabase', () => ({
-  getSupabase: () => ({ auth: { admin: { deleteUser: async (id: string) => {
-    if (deleteUserError) return { error: deleteUserError };
-    deletedUsers.push(id);
-    return { error: null };
-  } } } }),
+  getSupabase: () => ({
+    auth: { admin: { deleteUser: async (id: string) => {
+      if (deleteUserError) return { error: deleteUserError };
+      deletedUsers.push(id);
+      return { error: null };
+    } } },
+  }),
 }));
 
 /**

@@ -632,7 +632,13 @@ function SelectableMessageText({
 
 // ─── Body: text with mention chips ───────────────────────────────────────────
 
-function MessageBody({
+/**
+ * A typed prompt's words in the bubble. `SessionConnecting` renders the first
+ * prompt through this too, so the bubble keeps one type from the project home
+ * send to the live thread: a copy of the text style flashed a smaller size
+ * (the segments' `Text` overrides `BUBBLE_TEXT_STYLE`).
+ */
+export function MessageBody({
   text,
   command,
   sessions,

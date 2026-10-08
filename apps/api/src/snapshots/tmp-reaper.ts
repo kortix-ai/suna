@@ -64,5 +64,3 @@ export async function runTmpReaperSweep(): Promise<void> {
     });
   }
 }
-
-export { startTmpReaper, stopTmpReaper } from '../workers/tmp-reaper-worker';

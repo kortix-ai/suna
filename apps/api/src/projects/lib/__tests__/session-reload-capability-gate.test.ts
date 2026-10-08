@@ -13,7 +13,6 @@ import { join, relative } from 'node:path';
 import {
   convergeToReloadResult,
   reloadDetail,
-  reloadNeedsAttention,
   reloadSessionConfig,
   type SessionReloadDeps,
   type SessionReloadResult,
@@ -344,8 +343,8 @@ const releaseState = (overrides: Partial<NonNullable<SessionReloadResult['releas
   ...overrides,
 });
 
-describe('reloadDetail and reloadNeedsAttention with a release', () => {
-  test('a fallback leads the sentence and needs attention', () => {
+describe('reloadDetail with a release', () => {
+  test('a fallback leads the sentence', () => {
     const result = reloadResult({
       applied: false,
       agent_files: 'unknown',
@@ -355,7 +354,6 @@ describe('reloadDetail and reloadNeedsAttention with a release', () => {
     expect(reloadDetail(result)).toBe(
       'The new config failed to load: replacement did not serve GET /agent within 90 s. An earlier config still runs this session.',
     );
-    expect(reloadNeedsAttention(result)).toBe(true);
   });
 
   test('a fallback names what runs: the platform default config, or the workspace config', () => {
@@ -377,9 +375,8 @@ describe('reloadDetail and reloadNeedsAttention with a release', () => {
     expect(reloadDetail(earlier)).toBe('The new config failed to load: boom. An earlier config still runs this session.');
   });
 
-  test('a fallback needs attention even on an otherwise applied result', () => {
+  test('a fallback leads the sentence even on an otherwise applied result', () => {
     const result = reloadResult({ release: releaseState({ fallback_reason: 'disk full.' }) });
-    expect(reloadNeedsAttention(result)).toBe(true);
     expect(reloadDetail(result).startsWith('The new config failed to load: disk full. ')).toBe(true);
   });
 
@@ -390,9 +387,8 @@ describe('reloadDetail and reloadNeedsAttention with a release', () => {
     expect(reloadDetail(result)).not.toContain('own config files');
   });
 
-  test('an applied release without a fallback is not a warning', () => {
+  test('an applied release without a fallback reports a plain reload', () => {
     const result = reloadResult({ release: releaseState() });
-    expect(reloadNeedsAttention(result)).toBe(false);
     expect(reloadDetail(result)).toBe('Reloaded. The next prompt runs the new config.');
   });
 });
@@ -524,7 +520,6 @@ describe('reloadSessionConfig with config_releases off', () => {
     const result = await reloadSessionConfig(INPUT, daemon.deps);
 
     expect(result).toMatchObject({ applied: false, agent_files: 'kept-yours', opencode_reload: null });
-    expect(reloadNeedsAttention(result)).toBe(true);
   });
 
   test('agent files already on base read "already current", not the governance skip', async () => {

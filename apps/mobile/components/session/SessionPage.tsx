@@ -11,7 +11,7 @@
  * thread sends to that sub-agent's own runtime session.
  */
 
-import React, { useMemo, useCallback, useRef, useEffect, useState } from 'react';
+import React, { useMemo, useCallback, useRef, useEffect, useLayoutEffect, useState } from 'react';
 import {
   View,
   FlatList,
@@ -25,12 +25,13 @@ import {
   type NativeScrollEvent,
 } from 'react-native';
 import {
-  KeyboardAvoidingView,
   KeyboardController,
   KeyboardEvents,
   KeyboardGestureArea,
+  useKeyboardHandler,
   useReanimatedKeyboardAnimation,
 } from 'react-native-keyboard-controller';
+import { nextKeyboardInset } from '@/lib/session/keyboard-inset';
 import Reanimated, {
   Easing as ReanimatedEasing,
   useAnimatedStyle,
@@ -65,10 +66,12 @@ import { latestAssistantAgent, threadAgents } from '@/lib/session/composer-confi
 import { isModelUnavailable } from '@/lib/session/composer-model';
 import { offeredModelCount } from '@/lib/session/model-picker';
 import type { SubAgentRelation } from '@/lib/session/sub-agents';
+import { anchorChangeRequests, sessionChangeRequests } from '@/lib/session/session-change-requests';
+import { useReviewItems } from '@/lib/review/use-review';
 import type { ProjectSession } from '@/lib/projects/projects-client';
 import { haptics } from '@/lib/haptics';
 import { playSound } from '@/lib/sounds';
-import { SessionChangeRequests } from '@/components/session/SessionChangeRequests';
+import { ReviewDetailSheet } from '@/components/review/ReviewDetailSheet';
 import { requestPushPermissionOnce } from '@/lib/notifications/registration';
 import { Icon } from '@/components/ui/icon';
 import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
@@ -314,10 +317,40 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // the keyboard's progress: the composer then sits its own 12pt (`pb-3`) above
   // the keyboard, the same gap as the project home composer (design.md §5).
   const bottomInset = insets.bottom;
-  const { progress: keyboardProgress } = useReanimatedKeyboardAnimation();
+  const { progress: keyboardProgress, height: providerKeyboardHeight } = useReanimatedKeyboardAnimation();
   const bottomAreaStyle = useAnimatedStyle(() => ({
     paddingBottom: bottomInset * (1 - keyboardProgress.value),
   }));
+  // The page pads its bottom by the keyboard's live height, so the composer
+  // always sits on the keyboard (KRTX-1672, `lib/session/keyboard-inset.ts`).
+  // Seeded from the provider before the first paint, and again when a frozen
+  // screen shows: a keyboard that moved meanwhile sent this page no event.
+  const keyboardInset = useSharedValue(0);
+  useLayoutEffect(() => {
+    keyboardInset.value = -providerKeyboardHeight.value;
+  }, [keyboardInset, providerKeyboardHeight]);
+  useKeyboardHandler(
+    {
+      onStart: (e) => {
+        'worklet';
+        keyboardInset.value = nextKeyboardInset(keyboardInset.value, 'start', e.height);
+      },
+      onMove: (e) => {
+        'worklet';
+        keyboardInset.value = nextKeyboardInset(keyboardInset.value, 'move', e.height);
+      },
+      onInteractive: (e) => {
+        'worklet';
+        keyboardInset.value = nextKeyboardInset(keyboardInset.value, 'interactive', e.height);
+      },
+      onEnd: (e) => {
+        'worklet';
+        keyboardInset.value = nextKeyboardInset(keyboardInset.value, 'end', e.height);
+      },
+    },
+    [],
+  );
+  const pageStyle = useAnimatedStyle(() => ({ flex: 1, paddingBottom: keyboardInset.value }));
   // Height of the composer (or the question card), without the inset above.
   // It is the offset of the list's drag-to-dismiss: the keyboard starts to
   // follow the finger at the top of the composer, as in Messages, not at the
@@ -1003,6 +1036,43 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   useEffect(() => {
     prevTurnsRef.current = turns;
   }, [turns]);
+
+  // The change requests this session opened, each at the end of the turn that
+  // opened it (web `anchorOutcomes`; KRTX-1678). Reads the Review list
+  // `ProjectScreen` already polls, so it adds no request of its own.
+  const { data: reviewItems } = useReviewItems(projectId ?? null, { poll: false });
+  const sessionChanges = useMemo(
+    () => sessionChangeRequests(reviewItems, projectSessionId),
+    [reviewItems, projectSessionId],
+  );
+  // Keyed by content: `turns` changes on every stream delta, the starts only
+  // when a turn is added, so each turn keeps one change request array.
+  const turnStartsKey = useMemo(
+    () => turns.map((turn) => `${turn.userMessage.info.id}@${turn.userMessage.info.time?.created ?? ''}`).join(' '),
+    [turns],
+  );
+  const changesByTurn = useMemo(() => {
+    const starts = turnStartsKey
+      ? turnStartsKey.split(' ').map((entry) => {
+          const at = entry.lastIndexOf('@');
+          const created = Number(entry.slice(at + 1));
+          // A message with no `time.created` reads 0: no start, skipped.
+          return { key: entry.slice(0, at), startedAt: created > 0 ? created : null };
+        })
+      : [];
+    return anchorChangeRequests(sessionChanges, starts);
+  }, [sessionChanges, turnStartsKey]);
+  const changeSheetRef = useRef<SheetRef>(null);
+  const [selectedChangeId, setSelectedChangeId] = useState<string | null>(null);
+  // Read from the live list, so a merge made elsewhere updates the open sheet.
+  const selectedChange = useMemo(
+    () => sessionChanges.find((item) => item.id === selectedChangeId) ?? null,
+    [sessionChanges, selectedChangeId],
+  );
+  const openChangeRequest = useCallback((id: string) => {
+    setSelectedChangeId(id);
+    changeSheetRef.current?.open();
+  }, []);
   // Who can open this session, and who wrote each prompt. A new prompt with
   // no recorded author yet makes the authors hook ask once more.
   const participants = useSessionParticipants(projectId, projectSessionId).data;
@@ -1140,7 +1210,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   const roomRef = useRef(0);
   const renderedRoomRef = useRef(0);
   // The last room handed to `setRoom`. While the keyboard moves, the list's
-  // height changes every frame (the `padding` of `KeyboardAvoidingView`), and a
+  // height changes every frame (the page's `keyboardInset` padding), and a
   // room per frame is a page render per frame. A room that shrinks is blank
   // space the smaller list clips anyway, so it waits for the keyboard to stop.
   // A room that grows is set at once: the list cannot scroll past its content.
@@ -1878,12 +1948,14 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             sender={senderOf(id)}
             sessionAuthor={sessionAuthorOf(id)}
             onScreen={isWorkingTurn ? workingTurnOnScreen : true}
+            changeRequests={changesByTurn.get(id)}
+            onOpenChangeRequest={openChangeRequest}
           />
           )}
         </View>
       );
     },
-    [workingTurnId, lastCompactionTurnIndex, suppressWorkingBusy, turnGapAt, handleTurnLayout, sessionStatus, isBusy, sessionId, pendingPermissions, pendingQuestions, handlePermissionReply, agentNames, handleFileMention, handleSessionMention, commands, rewindTarget, editPending, handleEditStart, handleEditCancel, handleEditSend, rewindDisabled, interruptedIds, failedSends, handleRetrySend, senderOf, sessionAuthorOf, workingTurnOnScreen],
+    [workingTurnId, lastCompactionTurnIndex, suppressWorkingBusy, turnGapAt, handleTurnLayout, sessionStatus, isBusy, sessionId, pendingPermissions, pendingQuestions, handlePermissionReply, agentNames, handleFileMention, handleSessionMention, commands, rewindTarget, editPending, handleEditStart, handleEditCancel, handleEditSend, rewindDisabled, interruptedIds, failedSends, handleRetrySend, senderOf, workingTurnOnScreen, changesByTurn, openChangeRequest, sessionAuthorOf],
   );
 
   const keyExtractor = useCallback((item: Turn) => item.userMessage.info.id, []);
@@ -2031,11 +2103,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   );
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior="padding"
-      className="bg-background"
-    >
+    <Reanimated.View style={pageStyle} className="bg-background">
       {/* Floating menu button — opens the project drawer (every project page
           shows it, Jay 2026-09-16). `fade`: turns scroll under the button and
           the status bar, so they fade out there instead of showing through.
@@ -2072,6 +2140,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       </FloatingMenuButton>
       <SubAgentListSheet ref={subAgentListSheetRef} subAgents={subAgents ?? EMPTY_PROJECT_SESSIONS} onSelect={handleSubAgentSelect} />
       <SessionParticipantsSheet ref={participantsSheetRef} participants={participants} />
+      {projectId ? <ReviewDetailSheet ref={changeSheetRef} projectId={projectId} item={selectedChange} /> : null}
 
       {/* Messages + Fresh Session Hero — flat continuation of the page
           surface (the rounded "sheet" card treatment was removed app-wide). */}
@@ -2127,15 +2196,6 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             <View>
               {/* Footer content above the spacer — part of the anchor span. */}
               <View onLayout={handleFooterContentLayout} className="px-4">
-                {/* Web: the change requests this session opened, as cards.
-                    A tap opens the Review page's sheet. */}
-                {projectId && projectSessionId ? (
-                  <SessionChangeRequests
-                    projectId={projectId}
-                    projectSessionId={projectSessionId}
-                    style={turns.length > 0 ? { marginTop: webSpace(6) } : undefined}
-                  />
-                ) : null}
                 {/* Web: the optimistic compaction marker, where the real
                     compaction turn will mount, until that turn exists. */}
                 {isCompacting && !hasCompactionTurn ? (
@@ -2265,7 +2325,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       {/* Given the connector hand-off so a Connect inside it dismisses the
           activity sheet before the auth sheet opens (never two overlays). */}
       <ActivitySheetHost sessionId={sessionId} markdownActions={markdownActions} connectorHandoff={connectorHandoffApi} />
-    </KeyboardAvoidingView>
+    </Reanimated.View>
   );
 }
 

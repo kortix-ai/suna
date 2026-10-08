@@ -6,7 +6,7 @@ export interface TriggerScheduleSpec {
   slug: string;
   /** `monitor` never schedules — `nextTriggerScheduleSlot` returns null for it,
    *  so the cron sweep's `trigger_type = 'cron'` claim can never see one. */
-  type: 'cron' | 'webhook' | 'monitor';
+  type: 'cron' | 'webhook' | 'monitor' | 'event';
   enabled: boolean;
   cron: string | null;
   runAt: string | null;
@@ -23,6 +23,8 @@ export interface TriggerScheduleSpec {
   monitorMode?: 'poll' | 'stream' | null;
   intervalSeconds?: number | null;
   expectEventWithinSeconds?: number | null;
+  /** type=event only — see GitTriggerSpec. Absent for every other type. */
+  event?: { connector: string; type: string; config: Record<string, unknown> } | null;
   /** Session reminder only — see GitTriggerSpec.reminder. */
   reminder?: { everySeconds: number | null } | null;
 }
@@ -82,6 +84,8 @@ export function triggerScheduleRevision(spec: TriggerScheduleSpec): string {
           expectEventWithinSeconds: spec.expectEventWithinSeconds ?? null,
         }
       : {}),
+    // Same rule again: event fields join the hash only for an event trigger.
+    ...(spec.type === 'event' ? { event: spec.event ?? null } : {}),
     // Same rule as the monitor fields: absent for every manifest trigger.
     ...(spec.reminder ? { reminderEverySeconds: spec.reminder.everySeconds } : {}),
   };
@@ -179,13 +183,4 @@ export function initialTriggerScheduleSlot(
   options: { jitterKey?: string; jitterWindowMs?: number } = {},
 ): Date | null {
   return nextTriggerScheduleSlot(spec, now, { ...options, includePastOneOff: true });
-}
-
-export function advanceTriggerScheduleSlot(
-  spec: Pick<TriggerScheduleSpec, 'type' | 'enabled' | 'cron' | 'runAt' | 'timezone'>,
-  scheduledFor: Date,
-  options: { jitterKey?: string; jitterWindowMs?: number } = {},
-): Date | null {
-  if (spec.runAt) return null;
-  return nextTriggerScheduleSlot(spec, scheduledFor, options);
 }

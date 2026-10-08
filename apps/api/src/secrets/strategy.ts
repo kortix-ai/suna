@@ -64,17 +64,6 @@ export function maxStrategy(...declared: Array<SecretStrategy | null | undefined
   return winner;
 }
 
-/** True when the secret's plaintext may be written into the sandbox env. */
-export function deliversPlaintextToSandbox(strategy: SecretStrategy): boolean {
-  return strategy === 'runtime';
-}
-
-/** True when the name should not appear in the sandbox at all — not even as a
- *  handle, and not in `KORTIX_PROJECT_SECRET_NAMES`. */
-export function isFullyWithheld(strategy: SecretStrategy): boolean {
-  return strategy === 'denied';
-}
-
 // ── Egress policy ───────────────────────────────────────────────────────────
 
 /**
@@ -87,7 +76,7 @@ export function isFullyWithheld(strategy: SecretStrategy): boolean {
 import type { SecretEgressPolicy, SecretEgressRule, SecretInjectionSlot } from '@kortix/db';
 import type { SecretConsumer } from '@kortix/api-contract';
 
-export type { SecretConsumer, SecretEgressPolicy, SecretEgressRule, SecretInjectionSlot };
+export type { SecretConsumer, SecretEgressPolicy };
 
 export type EgressPolicyParse =
   { ok: true; policy: SecretEgressPolicy } | { ok: false; error: string };
@@ -386,12 +375,6 @@ export function parseHandle(value: string, rootSecret: string): HandleParse {
   return { ok: true, lookupId, prefix: value.slice(0, marker) };
 }
 
-/** Cheap pre-filter: does this look like a Kortix handle at all? Used to decide
- *  whether a value is worth parsing, never as an authorization check. */
-export function looksLikeHandle(value: string): boolean {
-  return value.includes(HANDLE_MARKER);
-}
-
 /**
  * The marker plus a body of exactly the right width, and NOT one character
  * more: the trailing lookahead is what stops a longer base32 run from being
@@ -546,45 +529,4 @@ export function resolveSecretDelivery(input: SecretDeliveryInput): SecretDeliver
   if (strategy === 'runtime') return { emit: 'plaintext', strategy };
   if (!input.sessionId) return withheld('no_session');
   return { emit: 'handle', strategy };
-}
-
-/** True when this row puts SOMETHING under its env KEY — a real value or a
- *  handle. The single predicate both the env map and the name list are built
- *  from, so the two cannot disagree. */
-export function emitsValue(delivery: SecretDelivery): boolean {
-  return delivery.emit !== 'nothing';
-}
-
-export interface DeliveredSecret {
-  /** The env var KEY (`project_secrets.name`). Several identifiers may share
-   *  one — that is a supported project shape, not a conflict. */
-  key: string;
-  delivery: SecretDelivery;
-}
-
-/**
- * Exactly what belongs in `KORTIX_PROJECT_SECRET_NAMES`.
- *
- * The invariant, which is not cosmetic: **a name appears here IFF a value (real
- * or handle) is emitted for it.** The daemon's env store seeds `knownNames` from
- * this list (project-env.ts) and scrubs/serves by it, so a name with no value
- * makes the box advertise a variable it does not have, and a value with no name
- * leaves a live credential outside the store's management — unscrubbable and
- * un-updatable by a later hot push.
- *
- * A KEY served by several identifiers appears once as soon as ANY of them
- * emits: the env map holds one value under that key (`resolveGrantedSecretEnv`
- * picks the winner), so the name is either present or it is not. A key whose
- * every identifier is withheld disappears entirely.
- *
- * Reserved-name filtering is NOT done here — `sanitizeSandboxEnv`
- * (../projects/lib/sandbox-env-names.ts) owns that, and the list must be
- * computed AFTER it runs, not beside it.
- */
-export function secretNamesForSandbox(rows: DeliveredSecret[]): string[] {
-  const names = new Set<string>();
-  for (const row of rows) {
-    if (emitsValue(row.delivery)) names.add(row.key);
-  }
-  return [...names].sort();
 }

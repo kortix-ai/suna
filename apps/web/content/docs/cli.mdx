@@ -358,6 +358,28 @@ An existing GitHub `origin` links through the Kortix GitHub App. Any other exist
 | `-n, --dry-run` | Print what would happen; change nothing. |
 | `--project <id>` / `--host <name>` | Target a non-default project or host. |
 
+### Apps
+
+Deploys and operates the project's Kortix Apps: each App has one stable URL and immutable deployments. A static App is files that Kortix serves, with no machine. A server App (Dockerfile or OCI image) runs in its own machine, always on or on demand, up to a monthly budget. Needs the `apps` project feature. Full guide: [Apps](/docs/feature-flags/apps).
+
+| Command | Effect |
+| --- | --- |
+| `kortix apps ls [--json]` | List Apps with state (`static` for a static App) and URL. |
+| `kortix apps deploy <dir> --type static [--spa]` | Publish a built directory as a static App. Build first (`npm run build`), then deploy the output directory. |
+| `kortix apps deploy . --type dockerfile --command <argv> --port <n> [--always-on\|--on-demand] [--budget <usd>]` | Build and run a server App. A new App is always on. Its budget is the 24/7 estimate of its machine, rounded up to a whole dollar (74 USD by default), unless you pass `--budget`; on demand it is 5 USD. The command prints the cost, for example `Runs 24/7 on 1 vCPU / 2 GB: about $73/month (budget $74)`. |
+| `kortix apps deploy --image <ref> --command <argv> --port <n>` | Run a public OCI image as a server App. |
+| `kortix apps deploy --manifest-app <name>` | Deploy one `apps.<name>` block of a v2 `kortix.yaml`. |
+| `kortix apps set <app> [--always-on\|--on-demand] [--budget <usd>] [--cpu N] [--memory-gb N] [--disk-gb N] [--idle-timeout <s>]` | Change an App. Run mode and budget apply within 5 minutes; a machine change applies to the next deployment. |
+| `kortix apps show <app> [--json]` | The App (`hosting_type`, `always_on`, `monthly_budget_usd`, `estimated_monthly_usd`) and its deployments. |
+| `kortix apps logs <app> [deployment] [--after N] [--limit N]` | A server App's runtime logs. A static App prints its deployment events. |
+| `kortix apps start\|stop <app>` | Start or suspend a server App. A static App answers `409 static_app_no_runtime`. |
+| `kortix apps rollback <app> <deployment>` | Move traffic to a ready deployment. |
+| `kortix apps access <app> [--mode <mode>] [--viewer off\|identity\|api]` | Read or change who can open the App and what it learns about its viewer. |
+| `kortix apps access-link <app> [--json]` | A five-minute signed browser URL. Treat it as a secret. |
+| `kortix apps delete <app> [--deployment <id\|vN>] --yes` | Delete the App, or one deployment that is not live. |
+
+An always-on App of the default machine costs about 73 USD a month. When an explicit budget is lower, `deploy`, `create`, and `set` print `app_budget_below_always_on` on stderr; the App stops at the budget until the month ends.
+
 ### Sessions
 
 Each session runs in one sandbox on its own branch.
@@ -631,6 +653,7 @@ Connectors an agent calls as tools. `add`, `rm`, and `policy set` edit the local
 | `kortix connectors credential <slug> [value]` | Set a connector's credential. |
 | `kortix connectors connect <slug>` | Start a one-click connect flow. |
 | `kortix connectors link <slug> [--expires <min>]` | Mint a shareable connect link for a human. |
+| `kortix connectors types [--connector <a,b>] [--out <file>]` | Write TypeScript types for every callable action: a `declare module '@kortix/sdk'` file that types `connectors.callAction(slug, action, args)` args and `output`. Managed Composio and Pipedream connectors publish no output schema, so their result is `unknown`. Without `--out` it prints to stdout. |
 | `kortix connectors accounts <slug> [--default <label\|id>] [--json]` | List the accounts your calls may run as, with the identity each is connected as. `--default` pins one. |
 | `kortix connectors connections ls [--all] [--json]` | List connections with label, `CONNECTED AS`, owner, `WHO CAN USE` (`owner only`, `everyone`, or the grant labels, with `(not you)` when you list it only to manage it), status, and default. |
 | `kortix connectors connections rename <id> <label…>` | Rename a connection. Only the label changes; no re-authorization. |
@@ -755,7 +778,7 @@ cannot be filtered mid-stream — so archive a narrower `--path` in that case.
 
 ### Triggers
 
-A trigger starts a session from a schedule, a webhook, or a monitor (experimental). `add`, `rm`, `enable`, `disable` edit the local manifest — run `kortix ship` to apply. `pause`/`resume` flip a separate, server-side switch. See [Triggers](/docs/connect/triggers).
+A trigger starts a session from a schedule, a webhook, an app event, or a monitor (experimental). `add`, `rm`, `enable`, `disable` edit the local manifest — run `kortix ship` to apply. `pause`/`resume` flip a separate, server-side switch. See [Triggers](/docs/connect/triggers).
 
 | Command | Effect |
 | --- | --- |
@@ -764,11 +787,12 @@ A trigger starts a session from a schedule, a webhook, or a monitor (experimenta
 | `kortix triggers set <slug> [options]` | Change a live trigger. Only the flags you pass are written. Always applies now — there is no local form. Alias: `update`. |
 | `kortix triggers rm <slug> [--apply]` | Remove a trigger from `kortix.yaml`, or from the cloud project now with `--apply`. |
 | `kortix triggers info <slug> [--json]` | Show one trigger. |
+| `kortix triggers events --connector <slug> [--json]` | List the events a connector offers, with each event's settings. |
 | `kortix triggers fire <slug>` | Fire a trigger manually and wait for the run outcome: a failed run exits non-zero with its error, and the fired run's fresh session is cleaned up (a run queued into an existing session is left in place). `--wait <dur>` bounds the wait (default `90s`; `0` returns as soon as the fire is accepted). |
 | `kortix triggers enable <slug> [--apply]` / `disable <slug> [--apply]` | Turn one trigger on or off. |
 | `kortix triggers pause` / `resume` | Deactivate or reactivate every trigger on the project, server-side. |
 
-`add` options: `--type <cron\|webhook\|monitor>` (default `cron`), `--prompt <text>` (required), `--agent <name>`, `--cron <expr>` (6-field, e.g. `"0 0 9 * * 1-5"`), `--run-at <iso>` (run once at this instant instead of on a cron), `--timezone <tz>` (default UTC), `--secret-env <NAME>`, `--name <label>`, `--disabled`.
+`add` options: `--type <cron\|webhook\|event\|monitor>` (default `cron`), `--prompt <text>` (required), `--agent <name>`, `--cron <expr>` (6-field, e.g. `"0 0 9 * * 1-5"`), `--run-at <iso>` (run once at this instant instead of on a cron), `--timezone <tz>` (default UTC), `--secret-env <NAME>`, `--name <label>`, `--disabled`.
 
 Live-only options — valid on `add --apply`, and on every `set`: `--model <provider/model>`, `--session-mode <fresh\|keyed\|pinned\|reuse>`, `--session-key <tmpl>` (bucket one session per key, e.g. `"{{ body.data.chat_jid }}"`; implies `keyed`), `--session-id <id>` (the session a `pinned` trigger loops; must be this project's session), `--session-access <private\|project\|members>` (default `private`), `--member <uuid>` and `--group <uuid>` (repeatable; each implies `members`), and `--filter <path=value>` (repeatable; every one must match, e.g. `--filter body.type=push`).
 
@@ -787,6 +811,8 @@ A reminder re-prompts one session later, once or on repeat. It is stored in the 
 | `kortix reminders rm <id>` | Delete a reminder. Aliases: `stop`, `delete`. |
 
 Schedule options: `--in <duration>` or `--at <iso>` (first fire; alone, fire once), `--every <duration>` (repeat, min `5m`), `--cron "<expr>"` with `--timezone <tz>`. Other options: `--name <label>`, `--session <id>` (a unique prefix works), `--project <id>`, `--host <name>`, `--json`.
+
+Event options (`--type event`): `--connector <slug>` and `--event <TYPE>` (both required), `--config key=value` (repeatable, string values), and `--config-json '{...}'` (typed values). `set` accepts the same flags. An event trigger rejects `--cron`, `--run-at`, `--timezone`, `--secret-env`, and the monitor options. The prompt reads `{{ event.data.<field> }}`; see [App event triggers](/docs/connect/triggers#app-event-triggers).
 
 Monitor options (`--type monitor`): `--run <cmd>` (repo-relative command to supervise; required), `--mode <poll\|stream>` (required; `poll` re-runs on `--interval`, `stream` keeps the command alive), `--interval <dur>` (`mode=poll` only, minimum 30s, e.g. `60s`, `5m`), and `--expect-event-within <dur>` (silence watchdog; no event inside the window fires a lifecycle event instead, minimum 5m, e.g. `24h`). A monitor is a repo command the platform runs 24/7, and each stdout line fires the trigger. It is experimental: the platform runs monitors only where the `monitors` feature flag is on.
 

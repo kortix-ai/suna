@@ -6,7 +6,7 @@ mock.module('../repositories/project-model-access', () => ({
   getProjectGatewayResolution: async () => ({ access: { disabledProviders: [], disabledModels: [] }, pooledEnabled: false }),
 }));
 mock.module('../feature-flags/for-project', () => ({ projectFeatureFlagEnabled: async () => false }));
-import { accountIsFreeTierForModels as realAccountIsFreeTierForModels } from '../billing/services/tiers';
+import { tierGrantsAllModels } from '../billing/services/tiers';
 
 let billingEnabled = true;
 let accountTier = 'free';
@@ -72,7 +72,7 @@ mock.module('../billing/services/entitlements', () => ({
   // accountTierCalls: in production it reads the same cached tier snapshot as
   // getCachedAccountTier — it is not a second tier resolution.
   accountMayUseManagedModels: async () =>
-    billingEnabled ? !realAccountIsFreeTierForModels(accountTier) : true,
+    billingEnabled ? tierGrantsAllModels(accountTier) : true,
 }));
 
 mock.module('../projects/secrets', () => ({
