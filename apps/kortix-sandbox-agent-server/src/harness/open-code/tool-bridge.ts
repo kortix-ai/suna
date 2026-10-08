@@ -64,13 +64,14 @@ export const KortixTools = async () => {
  * Load the hosted tools, write the bridge plugin to `path` and its tool list
  * beside it, and return the plugin's `file://` spec. `projectRoot` is the
  * checkout OpenCode serves its config from (the working tree or a release);
- * null loads only the Kortix tools.
+ * null loads only the Kortix tools. The list holds only the loaded tools: a
+ * Kortix tool the project does not list is not in it.
  */
 export async function writeToolBridge(
   path: string,
   input: { env: NodeJS.ProcessEnv; daemonPort: number; projectRoot: string | null; configDir: string | null },
 ): Promise<string> {
-  const { tools } = await loadTools(input.projectRoot, compiledProjectTools(input.env))
+  const { tools } = await loadTools(input.projectRoot, compiledTools(input.env))
   const native = new Set(input.configDir ? await toolNamesInDir(input.configDir) : [])
   const bridged = tools.filter((tool) => !native.has(tool.name))
   if (bridged.length < tools.length) {
@@ -91,10 +92,10 @@ export async function writeToolBridge(
   return `file://${path}`
 }
 
-function compiledProjectTools(env: NodeJS.ProcessEnv): Record<string, string> | undefined {
+function compiledTools(env: NodeJS.ProcessEnv): Partial<CompiledAgentSet> | null {
   try {
-    return (JSON.parse(env.KORTIX_COMPILED_AGENT_CONFIG ?? 'null') as Partial<CompiledAgentSet> | null)?.project_tools
+    return JSON.parse(env.KORTIX_COMPILED_AGENT_CONFIG ?? 'null') as Partial<CompiledAgentSet> | null
   } catch {
-    return undefined
+    return null
   }
 }

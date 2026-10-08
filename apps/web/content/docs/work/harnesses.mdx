@@ -56,7 +56,7 @@ array of `GET /kortix/health`. A client hides a control when the session's
 | The project's root `AGENTS.md` rules file, or `CLAUDE.md` when the root has no `AGENTS.md` | Yes. OpenCode also reads the file in parent directories of `/workspace`, and reads `/workspace` while it runs a config release. | Yes, the root file only. It is part of the system prompt of the session and of each subagent. [With config releases on](#agentsmd-on-pi), pi reads the release copy. |
 | Subagents (`task` tool), `session.subagents` | Yes | Yes: `general`, `explore` (read-only), and each project agent with `mode: subagent` or `all`. A subagent cannot start another subagent. |
 | Skills (`skills/` and the managed `kortix-*` skills), with the agent's `skills` grant | Yes. The agent loads a skill with the `skill` tool. | Yes. The system prompt lists each granted skill; the agent reads the file. |
-| Kortix tools: `web_search`, `image_search`, `scrape_webpage`, `memory`, `show` | Yes | Yes |
+| [Kortix tools](/docs/project/tools#kortix-tools-in-kortixyaml): `web_search`, `image_search`, `scrape_webpage`, `memory`, `show`. All five with no `tools:` key in `kortix.yaml`; with one, the ones it lists as `kortix:<name>` | Yes | Yes |
 | [Project tools](/docs/project/tools) (`tools:` in `kortix.yaml`) | Yes | Yes |
 | [Config releases](/docs/work/runtime#config-convergence), `config.release.v1` | Yes | Yes |
 | Compact (summarize) the conversation, on demand and by itself near the model's context window, `session.compact` | Yes | Yes. A model request that overflows the window compacts and retries once. |
@@ -67,9 +67,10 @@ array of `GET /kortix/health`. A client hides a control when the session's
 The Kortix tools and the project tools are [harness-neutral](/docs/project/tools):
 the sandbox daemon runs one module per tool for both harnesses, with the same
 names, arguments and output. pi calls them in the daemon's process; OpenCode
-calls them through a plugin the daemon writes. A project that still has
-copies of the Kortix tools in `harnesses/opencode/tools/` keeps its copies on
-OpenCode until it deletes them.
+calls them through a plugin the daemon writes. Both harnesses get the same
+list: a Kortix tool the project's `tools:` key does not list is on neither. A
+project that still has copies of the Kortix tools in `harnesses/opencode/tools/`
+keeps its copies on OpenCode until it deletes them.
 
 The web tools follow the `websearch` (`web_search`, `image_search`) and
 `webfetch` (`scrape_webpage`) permission keys on both harnesses. On OpenCode

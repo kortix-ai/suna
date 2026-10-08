@@ -8,17 +8,25 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve, sep } from 'node:path'
+import type { CompiledAgentSet } from '@kortix/api-contract/runtime-relay'
 import { AGENT_ENV_FILE } from '@kortix/api-contract/sandbox-layout'
 import { resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-dir'
 import { logger } from '@/lib/log/logger'
-import { memory } from './memory'
-import { show } from './show'
+import imageSearch from './kortix/image_search'
+import memory from './kortix/memory'
+import scrapeWebpage from './kortix/scrape_webpage'
+import show from './kortix/show'
+import webSearch from './kortix/web_search'
 import { asTool, toolText, type KortixTool, type ToolContext } from './tool'
-import { imageSearch, scrapeWebpage, webSearch } from './web'
 
 export type { KortixTool, ToolContext } from './tool'
 
-/** The tools every session has. A project tool of the same name replaces one. */
+/**
+ * The Kortix tools. Each is one self-contained module in `kortix/` that
+ * follows the project tool contract, so `kortix tools eject <name>` gives a
+ * project a copy that runs as its own tool. A project tool of the same name
+ * replaces one.
+ */
 export const KORTIX_TOOLS: Readonly<Record<string, KortixTool>> = {
   web_search: webSearch,
   image_search: imageSearch,
@@ -42,15 +50,23 @@ export interface ToolLoad {
 let loaded = new Map<string, HostedTool>()
 
 /**
- * Load the Kortix tools and the declared project tools: tool name → module
- * path, relative to `root` (the checkout the runtime reads its config from).
- * A module is imported again when its file changed since the last load. A
- * module that fails to load is reported and skipped; the rest still load.
+ * Load the session's tools from its compiled config. The Kortix tools: the
+ * ones `kortix_tools` lists, or all of them when it is absent (a project with
+ * no kortix.yaml `tools` key, or a config compiled before the key existed).
+ * Then the project tools (`project_tools`: tool name → module path, relative
+ * to `root`, the checkout the runtime reads its config from); one with a
+ * Kortix tool's name replaces it. A module is imported again when its file
+ * changed since the last load. A module that fails to load is reported and
+ * skipped; the rest still load.
  */
-export async function loadTools(root: string | null, declared: Record<string, string> | undefined): Promise<ToolLoad> {
-  const tools = new Map<string, HostedTool>(Object.entries(KORTIX_TOOLS).map(([name, tool]) => [name, { ...tool, name, source: 'kortix' }]))
+export async function loadTools(
+  root: string | null,
+  compiled: Pick<CompiledAgentSet, 'project_tools' | 'kortix_tools'> | null | undefined,
+): Promise<ToolLoad> {
+  const kortix = Object.entries(KORTIX_TOOLS).filter(([name]) => !compiled?.kortix_tools || compiled.kortix_tools.includes(name))
+  const tools = new Map<string, HostedTool>(kortix.map(([name, tool]) => [name, { ...tool, name, source: 'kortix' }]))
   const failed: ToolLoad['failed'] = []
-  for (const [name, path] of Object.entries(declared ?? {})) {
+  for (const [name, path] of Object.entries(compiled?.project_tools ?? {})) {
     const tool = await importTool(root, path)
     if (typeof tool === 'string') failed.push({ name, error: tool })
     else tools.set(name, { ...tool, name, source: path })

@@ -82,7 +82,7 @@ describe('validate project tools', () => {
 
   test('a declared tool whose module exists, and an agent naming it, validate', () => {
     const result = validateProject({
-      'kortix.yaml': manifest('  lookup_order: integrations/lookup.ts\n', '    tools: [read, lookup_order]\n'),
+      'kortix.yaml': manifest('  web_search: kortix:web_search\n  lookup_order: integrations/lookup.ts\n', '    tools: [read, lookup_order]\n'),
       'agents/kortix.md': '---\ndescription: d\n---\nPrompt.\n',
       'integrations/lookup.ts': 'export default {}\n',
     });
@@ -92,7 +92,7 @@ describe('validate project tools', () => {
 
   test('a declared tool whose module is missing fails; a typo in an agent list warns', () => {
     const result = validateProject({
-      'kortix.yaml': manifest('  lookup_order: tools/lookup.ts\n', '    tools: { exclude: [bassh] }\n'),
+      'kortix.yaml': manifest('  web_search: kortix:web_search\n  lookup_order: tools/lookup.ts\n', '    tools: { exclude: [bassh] }\n'),
       'agents/kortix.md': '---\ndescription: d\n---\nPrompt.\n',
     });
     expect(result.exitCode).not.toBe(0);

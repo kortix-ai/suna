@@ -46,8 +46,9 @@ under `harnesses/`:
   `kortix.yaml` names it as `agents.<name>.file`.
 - **Skills** — `skills/<name>/SKILL.md`. Every harness loads them.
 - **Memory** — `memory/`, the project brain (`kortix-memory` skill).
-- **Tools** — one module per tool (`tools/<name>.ts` by convention), declared
-  in `kortix.yaml` `tools:`. Every harness runs them
+- **Tools** — `kortix.yaml` `tools:` lists the Kortix tools the project keeps
+  (`<name>: kortix:<name>`) and its own tools, one module each
+  (`tools/<name>.ts` by convention). Every harness runs them
   (`references/kortix/tools.md`).
 - **OpenCode config** — `harnesses/opencode/` (`opencode.config_dir`):
   `opencode.jsonc`, plugins, commands, MCP and provider settings.
@@ -93,6 +94,9 @@ OpenCode; else the `pi_harness` project flag on → pi; else `runtime: pi` in
 | Change an agent's prompt, model or permissions | `agents/<name>.md` | `agents/<name>.md` |
 | Add a skill | `skills/<name>/SKILL.md` | `skills/<name>/SKILL.md` |
 | Add a custom tool | a module + `tools:` in `kortix.yaml` (`references/kortix/tools.md`) | the same module: every harness runs it |
+| See which tools a session gets | `kortix tools ls` | `kortix tools ls` |
+| Remove a Kortix tool (`web_search`, `memory`, …) | delete its `kortix:<name>` line under `tools:` (`references/kortix/tools.md`) | the same line: both harnesses lose it |
+| Change a Kortix tool | `kortix tools eject <name>`, then edit `tools/<name>.ts` (`references/kortix/tools.md`) | the same copy: every harness runs it |
 | Limit an agent's tools | `agents.<name>.tools` in `kortix.yaml` | `agents.<name>.tools` in `kortix.yaml` |
 | Add a hook or plugin | `harnesses/opencode/plugins/` | an extension, or a pi package |
 | Add a slash command | `harnesses/opencode/commands/<name>.md` | a prompt template in `harnesses/pi/prompts/` |
@@ -110,8 +114,10 @@ Rules for both harnesses:
   (`<change-requests>` below).
 - `web_search`, `image_search`, `scrape_webpage`, `memory` and `show` are
   Kortix tools: one implementation, run by the Kortix runtime on both
-  harnesses, with the same names, arguments and output. A project tool
-  declared in `kortix.yaml` `tools:` runs the same way.
+  harnesses, with the same names, arguments and output. A project with no
+  `tools:` key gets all five; a project with one gets only the ones it lists
+  as `<name>: kortix:<name>`. A project tool declared in `kortix.yaml`
+  `tools:` runs the same way. `kortix tools ls` lists what a session gets.
 - pi does not have rewind, MCP servers or a todo tool.
   `references/pi/overview.md` lists the differences.
 </harnesses>
@@ -231,6 +237,7 @@ Kortix cloud state — not just files in the repo. Examples:
 | "show me every app event trigger" / "what listens to <app>?" | `kortix triggers ls --type event` (grouped by app) · `kortix triggers ls --connector <slug>` · web: Triggers → **App events** |
 | "when X happens in <app>, do Y" (new email, PR, issue, calendar event, Slack message) | `kortix triggers events --apps` → `triggers events --connector <slug> --event <TYPE>` → `triggers add … --type event … --apply` · playbook: `references/scheduling.md` → App event triggers |
 | "edit a trigger live (schedule, conditions, agent, model)" | `kortix triggers set <slug> --cron … --filter k=v` · `triggers add … --apply` |
+| "which tools does this project have? remove / change a Kortix tool" | `kortix tools ls` · delete the `<name>: kortix:<name>` line in `kortix.yaml` · `kortix tools eject <name>` *(`references/kortix/tools.md` has the checklists)* |
 | "who is in the account / invite someone / manage groups" | `kortix members ls|invite` · `kortix groups …` · `kortix access requests ls` |
 
 **Everything is scriptable — drive Kortix like the dashboard.** Every
@@ -891,13 +898,18 @@ to see the full enum.
 </reference>
 
 <reference path="references/kortix/tools.md">
-  Tools on every harness: the three kinds (harness, Kortix, project), the
+  Tools on every harness: the three kinds (harness, Kortix, project), which
+  Kortix tools a session gets (`kortix:<name>` in `kortix.yaml` `tools:`,
+  all five with no `tools:` key), `kortix tools ls` and
+  `kortix tools eject <name>`, one checklist per task (add a tool, remove a
+  Kortix tool, change a Kortix tool, limit tools per agent), the
   harness-neutral module contract (`description`, JSON Schema `parameters`,
   `execute(args, context)` with `sessionId`, `agent`, `directory`, `env`,
-  `signal`), declaring modules under `kortix.yaml` `tools:`, per-agent access
-  with `agents.<name>.tools` (`all`, `none`, a list, `exclude`), output size,
+  `signal`), the `kortix validate` errors and warnings, per-agent access with
+  `agents.<name>.tools` (`all`, `none`, a list, `exclude`), output size,
   imports, when a change takes effect, and moving an OpenCode-only tool out of
-  `harnesses/opencode/tools/`. Load before writing, changing or restricting a tool.
+  `harnesses/opencode/tools/`. Load before writing, changing, removing or
+  restricting a tool.
 </reference>
 
 <reference path="references/kortix/kortix-yaml.md">
@@ -952,8 +964,8 @@ to see the full enum.
 <reference path="references/pi/tools.md">
   The tools of a pi session (`bash`, `read`, `write`, `edit`, `glob`,
   `grep`, `question`, `task`, the Kortix tools `web_search`,
-  `image_search`, `scrape_webpage`, `memory`, `show`, and the project's
-  `kortix.yaml` tools), their arguments, the OpenCode tools pi does not have
+  `image_search`, `scrape_webpage`, `memory`, `show` that the project's
+  `kortix.yaml` lists, and the project's own tools), their arguments, the OpenCode tools pi does not have
   and what to use instead, and the `permission` rules that govern each tool.
 </reference>
 

@@ -1,12 +1,15 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PermissionBroker, compilePermissionPolicy } from '@/harness/pi/interactions'
-import { memory as memoryTool } from '@/services/tools/memory'
-import { show as showTool } from '@/services/tools/show'
-import type { ToolContext } from '@/services/tools/tool'
-import { imageSearch, scrapeWebpage, webSearch } from '@/services/tools/web'
+import imageSearch from '@/services/tools/kortix/image_search'
+import memoryTool from '@/services/tools/kortix/memory'
+import scrapeWebpage from '@/services/tools/kortix/scrape_webpage'
+import showTool from '@/services/tools/kortix/show'
+import webSearch from '@/services/tools/kortix/web_search'
+import { KORTIX_TOOLS, loadTools, runTool } from '@/services/tools/host'
+import { asTool, type ToolContext } from '@/services/tools/tool'
 
 /**
  * The Kortix tools every harness runs (services/tools). The web tools are
@@ -284,5 +287,42 @@ describe('show', () => {
     expect(result.message).toBe('1 item(s) presented to user as carousel.')
     await expect(show({ items: JSON.stringify([{ type: 'image' }]) })).rejects.toThrow('All items failed validation')
     await expect(show({ items: 'not json' })).rejects.toThrow("Invalid JSON in 'items' parameter.")
+  })
+})
+
+describe('each Kortix tool is one self-contained module (what `kortix tools eject` copies)', () => {
+  const kortixDir = join(import.meta.dir, '../services/tools/kortix')
+  const modules = { web_search: webSearch, image_search: imageSearch, scrape_webpage: scrapeWebpage, memory: memoryTool, show: showTool }
+
+  test('one file per Kortix tool, named after the tool', () => {
+    expect(readdirSync(kortixDir).sort()).toEqual(Object.keys(KORTIX_TOOLS).map((name) => `${name}.ts`).sort())
+  })
+
+  test('a module imports only node:* and default-exports the project tool contract', () => {
+    for (const [name, tool] of Object.entries(modules)) {
+      const source = readFileSync(join(kortixDir, `${name}.ts`), 'utf8')
+      const specifiers = [...source.matchAll(/\bfrom\s+['"]([^'"]+)['"]|\bimport\s*\(?\s*['"]([^'"]+)['"]|\brequire\s*\(\s*['"]([^'"]+)['"]/g)].map((m) => m[1] ?? m[2] ?? m[3])
+      expect({ name, imports: specifiers.filter((specifier) => !specifier!.startsWith('node:')) }).toEqual({ name, imports: [] })
+      expect(typeof asTool(tool)).toBe('object')
+      expect(KORTIX_TOOLS[name]).toBe(tool)
+    }
+  })
+
+  test('a web tool reads the Kortix API and token from context.env, not process.env', async () => {
+    router(() => ({ results: [{ title: 'ok', url: 'https://ok' }] }))
+    const env = { KORTIX_API_URL: `${process.env.KORTIX_API_URL}/v1/`, KORTIX_TOKEN: 'kortix_sb_from_context' }
+    process.env.KORTIX_TOKEN = 'kortix_sb_process'
+    await webSearch.execute({ query: 'x' }, { ...ctx(), env })
+    expect(calls.map((call) => [call.path, call.headers.authorization])).toEqual([['/v1/router/tavily/search', 'Bearer kortix_sb_from_context']])
+  })
+
+  test('a copy in the project checkout loads as a project tool and gives the same output', async () => {
+    router(() => ({ answer: 'same', results: [] }))
+    mkdirSync(join(dir, 'tools'))
+    writeFileSync(join(dir, 'tools/web_search.ts'), readFileSync(join(kortixDir, 'web_search.ts')))
+    const { tools, failed } = await loadTools(dir, { kortix_tools: [], project_tools: { web_search: 'tools/web_search.ts' } })
+    expect(failed).toEqual([])
+    expect(tools.map((tool) => [tool.name, tool.source])).toEqual([['web_search', 'tools/web_search.ts']])
+    expect(await runTool(tools[0]!, { query: 'q' }, ctx())).toBe(await runTool({ ...webSearch, name: 'web_search' }, { query: 'q' }, ctx()))
   })
 })
