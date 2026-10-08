@@ -1,0 +1,33 @@
+{
+  "source_hash": "6132917a41120b4d339a8385a13b1af02e273cfaa5c0e3a4d80a4df0bf41f462",
+  "diff_files": [
+    "apps/api/src/accounts/invites.ts",
+    "apps/web/src/app/[locale]/(app)/invites/[inviteId]/page.tsx",
+    "apps/web/src/lib/auth/perform-sign-out.ts",
+    "apps/web/src/lib/auth/sign-out-destination.test.ts",
+    "apps/web/src/lib/auth/sign-out-navigation.test.ts",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "apps/web/translations/de.json",
+    "apps/web/translations/en.json",
+    "apps/web/translations/es.json",
+    "apps/web/translations/fr.json",
+    "apps/web/translations/it.json",
+    "apps/web/translations/ja.json",
+    "apps/web/translations/pt.json",
+    "apps/web/translations/sr.json",
+    "apps/web/translations/zh.json",
+    "packages/sdk/src/core/rest/projects-client/accounts.ts",
+    "tests/e2e/specs/45-invite-lands-in-invited-project.spec.ts",
+    "tests/spec/end-to-end.md",
+    "tests/src/flows/project-access.flow.ts"
+  ],
+  "diff_hash": "5d33edd6a442c46ceb0568a0649100657b1cb410ffec7cd7b406b163140cd5ce",
+  "head": "d55a1ecb248753d359ac8634aae19415336c1380",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-07T19:14:04.069Z"
+}
