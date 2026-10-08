@@ -267,11 +267,11 @@ async function printApps(
   const rest = resp.apps.filter((a) => (a.connectors?.length ?? 0) === 0);
   if (rest.length > 0) {
     out.write(
-      `\n  ${C.dim}No connector yet (${rest.length}): ${rest.map((a) => `${a.app} (${a.event_count})`).join(', ')}${C.reset}\n`,
+      `\n  ${C.dim}No connector yet (${rest.length}): ${rest.map((a) => `${a.app} (${a.event_count}${a.new_connector_slug && a.new_connector_slug !== a.app ? `, add as ${a.new_connector_slug}` : ''})`).join(', ')}${C.reset}\n`,
     );
   }
   out.write(
-    `\n  ${C.dim}${resp.apps.length} apps. List a connector's events: kortix triggers events --connector <slug>.\n  Add a connector: kortix connectors add <slug> --provider composio --app <app> --apply\n  Pick an account: kortix triggers add … --connector <slug> --account <label> (omit it for the default).${C.reset}\n\n`,
+    `\n  ${C.dim}${resp.apps.length} apps. List a connector's events: kortix triggers events --connector <slug>.\n  Add a connector: kortix connectors add <slug> --provider composio --app <app> --apply\n  Pick an account: kortix triggers add … --connector <slug> --account <label> (omit it for the default).\n  See every app event trigger: kortix triggers ls --type event  (one connector: kortix triggers ls --connector <slug>).${C.reset}\n\n`,
   );
   return 0;
 }

@@ -1031,6 +1031,8 @@ describe('kortix triggers — events', () => {
     expect(r.stdout).toMatch(/acme-ci\s+/);
     expect(r.stdout).toMatch(/github-work\s+no shared account/);
         expect(r.stdout).toMatch(/No connector yet \(2\): gmail \(3\), linear \(5\)/);
+    expect(r.stdout).toContain('kortix triggers ls --type event');
+    expect(r.stdout).toContain('kortix triggers ls --connector <slug>');
     const raw = await runCli(['triggers', 'events', '--apps', '--json', '--project', PROJECT], cfg);
     expect(JSON.parse(raw.stdout)).toEqual(EVENT_APPS);
   });
@@ -1087,5 +1089,70 @@ describe('kortix triggers — events', () => {
     const cfg = writeConfig(startServer([t]));
     const info = await runCli(['triggers', 'info', 'new-pr', '--project', PROJECT], cfg);
     expect(info.stdout).toContain('labelled "acme-bot" on github');
+  });
+
+  describe('ls filters', () => {
+    const second = {
+      ...EVENT_TRIGGER,
+      slug: 'new-issue',
+      name: 'New issue',
+      event: { ...EVENT_TRIGGER.event, connector: 'github-work', type: 'GITHUB_ISSUE_EVENT' },
+    };
+    const mail = {
+      ...EVENT_TRIGGER,
+      slug: 'new-mail',
+      name: 'New mail',
+      event: { ...EVENT_TRIGGER.event, connector: 'gmail', app: 'gmail', type: 'GMAIL_NEW_MESSAGE' },
+    };
+    const all = [MONITOR_TRIGGER, EVENT_TRIGGER, second, mail];
+    const slugs = (json: string) =>
+      (JSON.parse(json).triggers as { slug: string }[]).map((t) => t.slug);
+
+    test('--type event keeps only app events and groups them by app', async () => {
+      const cfg = writeConfig(startServer(all));
+      const r = await runCli(['triggers', 'ls', '--type', 'event', '--project', PROJECT], cfg);
+      expect(r.code).toBe(0);
+      expect(r.stdout).toMatch(/github \(2\)\n[\s\S]*new-pr[\s\S]*new-issue/);
+      expect(r.stdout).toMatch(/gmail \(1\)\n[\s\S]*new-mail/);
+      expect(r.stdout).not.toContain('checkout-errors');
+      expect(r.stdout).toContain('3 triggers');
+    });
+
+    test('--connector keeps the app events of one connector; --json respects it', async () => {
+      const cfg = writeConfig(startServer(all));
+      const r = await runCli(
+        ['triggers', 'ls', '--connector', 'github-work', '--json', '--project', PROJECT],
+        cfg,
+      );
+      expect(r.code).toBe(0);
+      expect(slugs(r.stdout)).toEqual(['new-issue']);
+    });
+
+    test('--type and --connector combine; a mismatch lists nothing', async () => {
+      const cfg = writeConfig(startServer(all));
+      const both = await runCli(
+        ['triggers', 'ls', '--type', 'event', '--connector', 'gmail', '--json', '--project', PROJECT],
+        cfg,
+      );
+      expect(slugs(both.stdout)).toEqual(['new-mail']);
+      const none = await runCli(
+        ['triggers', 'ls', '--type', 'monitor', '--connector', 'gmail', '--project', PROJECT],
+        cfg,
+      );
+      expect(none.code).toBe(0);
+      expect(none.stdout).toContain('No trigger matches that filter');
+    });
+
+    test('--type monitor keeps the monitor; an unknown type exits 2', async () => {
+      const cfg = writeConfig(startServer(all));
+      const ok = await runCli(
+        ['triggers', 'ls', '--type', 'monitor', '--json', '--project', PROJECT],
+        cfg,
+      );
+      expect(slugs(ok.stdout)).toEqual(['checkout-errors']);
+      const bad = await runCli(['triggers', 'ls', '--type', 'nope', '--project', PROJECT], cfg);
+      expect(bad.code).toBe(2);
+      expect(bad.stderr).toContain('Unknown --type "nope"');
+    });
   });
 });

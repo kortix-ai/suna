@@ -244,6 +244,8 @@ export interface TriggerEventApp {
   name: string;
   logo: string | null;
   event_count: number;
+  /** Slug for a new connector of this app (never reserved or taken). */
+  new_connector_slug?: string;
   /** Slug of the project's connector for this app; null until one is added. */
   connector: string | null;
   /** The project has an active shared account for this app. */

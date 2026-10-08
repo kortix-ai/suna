@@ -49,7 +49,12 @@ read live state from the cloud. pause/resume are a SERVER-SIDE activation
 switch (cloud state, not the manifest).
 
 Subcommands:
-  ls [--json]              List triggers + runtime state.
+  ls [--type <cron|webhook|event|monitor>] [--connector <slug>] [--json]
+                           List triggers + runtime state. --type keeps one
+                           kind; --type event groups the rows by app.
+                           --connector keeps the app events on one connector
+                           (profile). The two combine. --json respects both.
+                           All app events: \`kortix triggers ls --type event\`.
   add <slug> [options]     Append a [[triggers]] block (cron, webhook, monitor, event).
              [--apply]     Create it on the cloud project now instead (commit
                            to kortix.yaml on main + reconcile).
@@ -237,7 +242,7 @@ export async function runTriggers(argv: string[]): Promise<number> {
 
   switch (sub) {
     case 'ls':
-      return triggersLs(ctxOpts, json);
+      return triggersLs(ctxOpts, json, { type: tf.type, connector: tf.connector });
     case 'add':
     case 'create':
       return applyRemote
@@ -279,7 +284,43 @@ export async function runTriggers(argv: string[]): Promise<number> {
   }
 }
 
-async function triggersLs(opts: CtxOpts, json = false): Promise<number> {
+const LS_TYPES = ['cron', 'webhook', 'event', 'monitor'] as const;
+
+export interface TriggerLsFilter {
+  type?: string;
+  connector?: string;
+}
+
+/** Keeps the triggers of one `--type` and/or the app events of one `--connector`. */
+export function filterTriggersForLs(
+  triggers: ProjectTrigger[],
+  filter: TriggerLsFilter,
+): ProjectTrigger[] {
+  return triggers.filter(
+    (t) =>
+      (!filter.type || t.type === filter.type) &&
+      (!filter.connector || (t.type === 'event' && t.event?.connector === filter.connector)),
+  );
+}
+
+/** App events by app (provider app slug, else the connector), first-seen order. */
+function groupByApp(triggers: ProjectTrigger[]): [string, ProjectTrigger[]][] {
+  const groups = new Map<string, ProjectTrigger[]>();
+  for (const t of triggers) {
+    const app = t.event?.app ?? t.event?.connector ?? 'unknown';
+    groups.set(app, [...(groups.get(app) ?? []), t]);
+  }
+  return [...groups];
+}
+
+async function triggersLs(
+  opts: CtxOpts,
+  json = false,
+  filter: TriggerLsFilter = {},
+): Promise<number> {
+  if (filter.type && !(LS_TYPES as readonly string[]).includes(filter.type)) {
+    return fail(`Unknown --type "${filter.type}". Use ${LS_TYPES.join(', ')}.`);
+  }
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
 
@@ -289,6 +330,9 @@ async function triggersLs(opts: CtxOpts, json = false): Promise<number> {
   } catch (err) {
     return surfaceApiError(err);
   }
+
+  const filtered = filter.type || filter.connector;
+  if (filtered) resp = { ...resp, triggers: filterTriggersForLs(resp.triggers, filter) };
 
   if (json) {
     emitJson(resp);
@@ -303,7 +347,7 @@ async function triggersLs(opts: CtxOpts, json = false): Promise<number> {
 
   if (resp.triggers.length === 0) {
     process.stdout.write(
-      `  ${C.dim}No triggers declared. Add [[triggers]] to kortix.yaml.${C.reset}\n`,
+      `  ${C.dim}${filtered ? 'No trigger matches that filter. Run `kortix triggers ls` to see them all.' : 'No triggers declared. Add [[triggers]] to kortix.yaml.'}${C.reset}\n`,
     );
   } else {
     const slugW = Math.max(...resp.triggers.map((t) => t.slug.length), 4);
@@ -312,7 +356,7 @@ async function triggersLs(opts: CtxOpts, json = false): Promise<number> {
     process.stdout.write(
       `  ${C.dim}${pad('SLUG', slugW)}   ${pad('NAME', nameW)}   TYPE     STATE     SCHEDULE / SECRET / MODE / SOURCE              LAST FIRED${C.reset}\n`,
     );
-    for (const t of resp.triggers) {
+    const printRow = (t: ProjectTrigger) => {
       const state = t.enabled ? `${C.green}enabled ${C.reset}` : `${C.faded}disabled${C.reset}`;
       const detail = triggerDetail(t);
       const eventNote =
@@ -324,6 +368,14 @@ async function triggersLs(opts: CtxOpts, json = false): Promise<number> {
       process.stdout.write(
         `  ${pad(t.slug, slugW)}   ${pad(t.name, nameW)}   ${pad(t.type, 7)}  ${state}   ${pad(trimMid(detail, 44), 44)}  ${C.faded}${lastFired}${C.reset}${failed}${eventNote}\n`,
       );
+    };
+    if (filter.type === 'event') {
+      for (const [app, rows] of groupByApp(resp.triggers)) {
+        process.stdout.write(`\n  ${app} (${rows.length})\n`);
+        rows.forEach(printRow);
+      }
+    } else {
+      resp.triggers.forEach(printRow);
     }
     process.stdout.write(
       `\n  ${C.dim}${resp.triggers.length} trigger${resp.triggers.length === 1 ? '' : 's'}${C.reset}\n`,
