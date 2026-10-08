@@ -29,12 +29,18 @@ reset. The OpenCode conversation remains attached to the session.
 
 Kortix also stops an idle session for you:
 
-- After 15 minutes idle, for a normal session.
-- After 5 minutes idle, for a session a trigger started.
+- After 15 minutes idle, for a normal session or a trigger run.
+- After 2 minutes idle, for a worker session another session started.
 
 A busy agent turn blocks the stop. The maintenance sweep runs every 5 minutes.
 A normal automatic Stop therefore occurs approximately 15 to 20 minutes after
 the terminal turn.
+
+A turn that waits on a person does no work: the agent asked a question, or asks
+for permission to run a tool. Such a turn keeps the computer for at most 2 hours
+after Kortix first sees the wait. In a run nobody attends (a trigger or schedule
+run, or a worker session), the limit is 15 minutes. Kortix then ends the turn
+and stops the computer. Send a message to continue.
 
 A session page you are using keeps the session awake. It counts as in use while
 the tab is visible and you clicked, typed, scrolled or touched it in the last
@@ -46,6 +52,8 @@ agent turn; a new message starts a turn and resets that limit.
 
 Self-host operators can set `KORTIX_SANDBOX_AUTOSTOP_MINUTES` to change the
 normal idle grace. This setting does not change active-turn protection.
+`KORTIX_SANDBOX_TURN_WAITING_MINUTES` changes the 2-hour limit for a turn that
+waits on a person.
 
 ## What stop and delete keep
 
