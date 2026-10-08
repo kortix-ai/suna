@@ -224,10 +224,8 @@ flow(
       const items = r.json<any>().items as any[];
       const mine = items.find((t) => t.token_id === tokenId);
       // The minted token is present and the list never re-exposes the secret.
-      r.body().exists("$.items");
-      if (mine && "secret_key" in mine) {
-        throw new Error("cli-token list must not return secret_key");
-      }
+      if (!mine) throw new Error(`cli-token list must include the minted token ${tokenId}`);
+      if ("secret_key" in mine) throw new Error("cli-token list must not return secret_key");
     });
     await ctx.step("NONMEMBER cannot mint → 404 (project not loadable)", async () => {
       const r = await ctx.client
