@@ -1,6 +1,6 @@
 {
   "id": "4c5f6f18-000b-41a8-a97b-a184af543df6",
-  "prevId": "efd162b0-7ed5-4f6c-b01b-a1558d7c1a21",
+  "prevId": "345afbfd-d0ff-45e2-9063-70b72ac6c6c0",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -22295,94 +22295,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "kortix.feedback": {
-      "name": "feedback",
-      "schema": "kortix",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "source": {
-          "name": "source",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "message": {
-          "name": "message",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "context": {
-          "name": "context",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_feedback_created_at": {
-          "name": "idx_feedback_created_at",
-          "columns": [
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "feedback_source": {
-          "name": "feedback_source",
-          "value": "\"kortix\".\"feedback\".\"source\" in ('cli', 'agent', 'web')"
-        },
-        "feedback_kind": {
-          "name": "feedback_kind",
-          "value": "\"kortix\".\"feedback\".\"kind\" in ('bug', 'idea', 'friction')"
-        }
-      },
       "isRLSEnabled": false
     }
   },

@@ -1,6 +1,6 @@
 {
-  "id": "efd162b0-7ed5-4f6c-b01b-a1558d7c1a21",
-  "prevId": "345afbfd-d0ff-45e2-9063-70b72ac6c6c0",
+  "id": "a9099400-e7ab-4645-8f16-985068857731",
+  "prevId": "ebe43b7f-286e-4b73-9aec-a0088406baeb",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3845,13 +3845,6 @@
           "notNull": true,
           "default": 300
         },
-        "always_on": {
-          "name": "always_on",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
         "viewer_token_scope": {
           "name": "viewer_token_scope",
           "type": "varchar(16)",
@@ -3866,12 +3859,12 @@
           "notNull": true,
           "default": "'5.00'"
         },
-        "monthly_budget_explicit": {
-          "name": "monthly_budget_explicit",
-          "type": "boolean",
+        "backends": {
+          "name": "backends",
+          "type": "text[]",
           "primaryKey": false,
           "notNull": true,
-          "default": true
+          "default": "'{}'::text[]"
         },
         "last_request_at": {
           "name": "last_request_at",
@@ -3904,6 +3897,20 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "always_on": {
+          "name": "always_on",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "monthly_budget_explicit": {
+          "name": "monthly_budget_explicit",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
         }
       },
       "indexes": {
@@ -12307,6 +12314,193 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "kortix.project_backends": {
+      "name": "project_backends",
+      "schema": "kortix",
+      "columns": {
+        "backend_id": {
+          "name": "backend_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "varchar(63)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'provisioning'"
+        },
+        "provider": {
+          "name": "provider",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "external_id": {
+          "name": "external_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "url": {
+          "name": "url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "site_url": {
+          "name": "site_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "admin_key_enc": {
+          "name": "admin_key_enc",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "auth_key_enc": {
+          "name": "auth_key_enc",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "auth_issuer": {
+          "name": "auth_issuer",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "template": {
+          "name": "template",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cpu": {
+          "name": "cpu",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "memory_gb": {
+          "name": "memory_gb",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "disk_gb": {
+          "name": "disk_gb",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "metadata": {
+          "name": "metadata",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        }
+      },
+      "indexes": {
+        "project_backends_live_name_uniq": {
+          "name": "project_backends_live_name_uniq",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"kortix\".\"project_backends\".\"deleted_at\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "project_backends_project_id_projects_project_id_fk": {
+          "name": "project_backends_project_id_projects_project_id_fk",
+          "tableFrom": "project_backends",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "project_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "project_backends_status_check": {
+          "name": "project_backends_status_check",
+          "value": "\"kortix\".\"project_backends\".\"status\" IN ('provisioning', 'running', 'error', 'deleted')"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "kortix.project_git_connections": {
       "name": "project_git_connections",
       "schema": "kortix",
@@ -16941,6 +17135,12 @@
           "notNull": true,
           "default": true
         },
+        "auth_session_id": {
+          "name": "auth_session_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -17765,7 +17965,7 @@
       "checkConstraints": {
         "sandbox_compute_sessions_workload_type_check": {
           "name": "sandbox_compute_sessions_workload_type_check",
-          "value": "\"kortix\".\"sandbox_compute_sessions\".\"workload_type\" IN ('session', 'app', 'monitor')"
+          "value": "\"kortix\".\"sandbox_compute_sessions\".\"workload_type\" IN ('session', 'app', 'monitor', 'backend')"
         }
       },
       "isRLSEnabled": false
