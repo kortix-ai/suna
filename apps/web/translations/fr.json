@@ -2036,7 +2036,9 @@
       "whenBelow": "lorsque le solde passe sous",
       "thresholdLabel": "Seuil de rechargement en dollars",
       "save": "Enregistrer",
-      "paymentNeeded": "Ajoutez un moyen de paiement pour exécuter le rechargement automatique."
+      "paymentNeeded": "Ajoutez un moyen de paiement pour exécuter le rechargement automatique.",
+      "turnedOffAfterFailure": "Le rechargement automatique a été désactivé le {date} : le dernier prélèvement a échoué ({reason}). Mettez à jour le moyen de paiement, puis réactivez le rechargement automatique.",
+      "lastChargeFailed": "Le dernier prélèvement du rechargement automatique a échoué le {date} ({reason}). Kortix réessaie ; après 3 prélèvements échoués d’affilée, le rechargement automatique se désactive."
     },
     "title": "Facturation & Abonnement",
     "subscription": "Abonnement",
