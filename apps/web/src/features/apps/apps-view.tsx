@@ -17,7 +17,7 @@ import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { createAppAccessSession, type App } from '@kortix/sdk';
 import { useAppAccess, useFeatureFlag, useProjectApps } from '@kortix/sdk/react';
-import { ArrowUpRightIcon, GlobeIcon } from '@phosphor-icons/react';
+import { ArrowUpRightIcon } from '@phosphor-icons/react';
 
 import Link from '@/components/site-link';
 import { useSearchParams } from 'next/navigation';
@@ -26,7 +26,7 @@ import { useEffect, useState } from 'react';
 import { AppPreview, PREVIEW_TILE_ASPECT } from './app-preview';
 import { APP_GRID_CONTAINER, APP_GRID_COLUMN_OPTIONS, AppGridColumnsControl, useAppGridColumns, type AppGridColumns } from './app-density';
 import { AppDetailModal } from './app-detail';
-import { appStatus, DeployCommand, FIRST_DEPLOY_COMMAND } from './app-shared';
+import { appStatus } from './app-shared';
 export { DEPLOYMENT_COPY, deployNotice, appHost } from './app-shared';
 export { AppPreview, AppPreviewOverlay, PREVIEW_SPINNER_DELAY_MS, scheduleSlowPreview, PREVIEW_VIEWPORT_WIDTH, PREVIEW_VIEWPORT_HEIGHT, PREVIEW_TILE_ASPECT, previewScale } from './app-preview';
 export { APP_GRID_CONTAINER, APP_GRID_DEFAULT_COLUMNS, APP_GRID_COLUMN_OPTIONS, APP_GRID_COLUMN_ORDER, APP_GRID_COLUMNS_STORAGE_KEY, parseAppGridColumns, type AppGridColumns } from './app-density';
@@ -244,12 +244,12 @@ function AppGridSkeleton({ columns }: { columns: AppGridColumns }) {
  */
 function AppsEmptyState() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  // One muted line and a hint (brand D4g): Apps are what agents build, so the
+  // hint points at an agent, not at a CLI command.
   return (
     <EmptyState
-      icon={GlobeIcon}
-      title={tI18nComplete.raw('text7aaec6fe02f0')}
-      description={tI18nComplete.raw('text4b2e1a2b9cbc')}
-      action={<DeployCommand code={FIRST_DEPLOY_COMMAND} />}
+      title={tI18nComplete.raw('textdb4764b8b3e7')}
+      description={tI18nComplete.raw('texta7a8d2a5fb25')}
     />
   );
 }

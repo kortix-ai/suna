@@ -122,6 +122,19 @@ flow(
       // The spec's defining assertion: the no-install path surfaces an install_url.
       if (r.statusCode === 409) r.body().exists("$.install_url");
     });
+    await ctx.step("an unknown or retired marketplace project id → 400 before any GitHub call", async () => {
+      // A fresh team with no install would otherwise answer 409: the 400 proves
+      // the catalog gate runs before anything is created upstream.
+      const team = await ctx.fixtures.team();
+      const name = ctx.fixtures.name("repo-src").replace(/[^a-zA-Z0-9._-]/g, "-");
+      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/create-repo", {
+        name,
+        private: true,
+        account_id: team.id,
+        source_item_id: "kortix-projects:seo-department",
+      });
+      r.status(400).body().has("$.error", 'Unknown or non-cloneable project item "kortix-projects:seo-department"');
+    });
   },
 );
 

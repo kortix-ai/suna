@@ -6,9 +6,10 @@ import {
   appDeploymentEvents,
   appDeployments,
   appRuntimes,
+  appSiteFiles,
   apps,
 } from '@kortix/db';
-import { and, desc, eq, exists, inArray, isNull, max, ne, notInArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, max, ne, notInArray, sql } from 'drizzle-orm';
 import { PROJECT_ACTIONS } from '../iam';
 import { auth, errors, json } from '../openapi';
 import { pauseComputeSession } from '../billing/services/compute-metering';
@@ -24,10 +25,11 @@ import { APP_RUNTIME_VERSION, triggerAppDeploymentWorker } from './deployment-wo
 import { AppHostingProvider } from './hosting';
 import { deploymentEventsAsLogs } from './logs';
 import { releaseDeploymentImage, releaseDeploymentImages, teardownAppRuntimes } from './images';
+import { rollBackActiveDeployment } from './retention';
 import { ensureAppRuntimeRunning, loadPublicApp } from './public-proxy';
 import { type AppSourceSpec } from './spec';
 import { appPublicUrl } from './hostnames';
-import { AppBudgetExceededError } from './budget';
+import { AppBudgetExceededError, alwaysOnBudgetWarning, appMonthlyEstimateUsd, defaultAppBudgetUsd } from './budget';
 import {
   APP_MACHINE_LIMITS,
   AppAccountUnfundedError,
@@ -175,8 +177,6 @@ function sourceFromWire(input: z.infer<typeof SourceSchema>): AppSourceSpec {
   }
 }
 
-export { appPublicUrl } from './hostnames';
-
 /**
  * `viewerCanAccess` is the caller's OPEN verdict, which is not the same as the
  * verdict that put this App in their list — a project manager sees every App so
@@ -187,7 +187,24 @@ export { appPublicUrl } from './hostnames';
  * Defaults to true so the single-App serializations that have already run the
  * check are not forced to restate it.
  */
-function serializeApp(row: typeof apps.$inferSelect, viewerCanAccess = true) {
+type AppHostingType = 'sandbox' | 'static';
+
+/** The hosting type of each App's active deployment, in one query. */
+async function activeHostingTypes(rows: Array<typeof apps.$inferSelect>): Promise<Map<string, AppHostingType>> {
+  const ids = rows.map((row) => row.activeDeploymentId).filter((id): id is string => !!id);
+  if (ids.length === 0) return new Map();
+  const found = await db.select({ deploymentId: appDeployments.deploymentId, hostingType: appDeployments.hostingType })
+    .from(appDeployments).where(inArray(appDeployments.deploymentId, ids));
+  return new Map(found.map((row) => [row.deploymentId, row.hostingType as AppHostingType]));
+}
+
+/** One App as JSON, with its active deployment's hosting type. */
+async function appJson(row: typeof apps.$inferSelect) {
+  const hosting = await activeHostingTypes([row]);
+  return serializeApp(row, true, row.activeDeploymentId ? hosting.get(row.activeDeploymentId) ?? null : null);
+}
+
+function serializeApp(row: typeof apps.$inferSelect, viewerCanAccess = true, hostingType: AppHostingType | null = null) {
   return {
     app_id: row.appId,
     account_id: row.accountId,
@@ -201,8 +218,15 @@ function serializeApp(row: typeof apps.$inferSelect, viewerCanAccess = true) {
     active_deployment_id: row.activeDeploymentId,
     machine: { cpu: row.cpuCores, memory_gb: row.memoryGb, disk_gb: row.diskGb },
     idle_timeout_seconds: row.idleTimeoutSeconds,
+    always_on: row.alwaysOn,
     monthly_budget_usd: Number(row.monthlyBudgetUsd),
     backends: row.backends,
+    /** `static`: served from storage, no runtime. `sandbox`: a server App. null: never deployed. */
+    hosting_type: hostingType,
+    /** Ready deployments kept besides the active one (rollback targets). */
+    retained_deployments: config.KORTIX_APPS_RETAINED_DEPLOYMENTS,
+    /** A server App's machine running 24/7 for a month at list compute rates. A static App runs none. */
+    estimated_monthly_usd: hostingType === 'static' ? 0 : appMonthlyEstimateUsd(row, config.getDefaultProvider()),
     last_request_at: row.lastRequestAt?.toISOString() ?? null,
     viewer_can_access: viewerCanAccess,
     created_at: row.createdAt.toISOString(),
@@ -347,7 +371,12 @@ export function registerAppsRoutes(): void {
         .orderBy(desc(apps.createdAt));
       const visible = await filterAppsVisibleToUser(rows, loaded.userId);
       const openable = await appsOpenableByUser(visible, loaded.userId);
-      return c.json({ apps: visible.map((row) => serializeApp(row, openable.has(row.appId))) });
+      const hosting = await activeHostingTypes(visible);
+      return c.json({ apps: visible.map((row) => serializeApp(
+        row,
+        openable.has(row.appId),
+        row.activeDeploymentId ? hosting.get(row.activeDeploymentId) ?? null : null,
+      )) });
     },
   );
 
@@ -506,7 +535,8 @@ export function registerAppsRoutes(): void {
           memory_gb: MemorySchema.default(2),
           disk_gb: DiskSchema.default(10),
           idle_timeout_seconds: z.number().int().min(120).max(86400).default(300),
-          monthly_budget_usd: z.number().min(0).max(100000).default(5),
+          always_on: z.boolean().optional(),
+          monthly_budget_usd: z.number().min(0).max(100000).optional(),
           backends: BackendsSchema.default([]),
         }) } } },
       },
@@ -529,15 +559,21 @@ export function registerAppsRoutes(): void {
         throw error;
       }
       try {
+        const alwaysOn = body.always_on ?? config.KORTIX_APPS_DEFAULT_ALWAYS_ON;
+        const budget = body.monthly_budget_usd
+          ?? defaultAppBudgetUsd({ cpuCores: body.cpu, memoryGb: body.memory_gb, diskGb: body.disk_gb, alwaysOn }, config.getDefaultProvider());
         const [row] = await db.insert(apps).values({
           accountId: loaded.row.accountId, projectId, slug, name: body.name.trim(),
           routeKey: randomBytes(8).toString('hex'), createdBy: loaded.userId,
           cpuCores: body.cpu, memoryGb: body.memory_gb, diskGb: body.disk_gb,
           idleTimeoutSeconds: body.idle_timeout_seconds,
-          monthlyBudgetUsd: body.monthly_budget_usd.toFixed(2),
+          alwaysOn,
+          monthlyBudgetUsd: budget.toFixed(2),
+          monthlyBudgetExplicit: body.monthly_budget_usd !== undefined,
           backends: body.backends,
         }).returning();
-        return c.json(serializeApp(row!), 201);
+        const warning = alwaysOnBudgetWarning(row!, config.getDefaultProvider());
+        return c.json({ ...serializeApp(row!), warnings: warning ? [warning] : [] }, 201);
       } catch (error) {
         // Drizzle wraps the postgres.js error, so the SQLSTATE lives on
         // error.cause.code, NOT error.code — reading error.code left this branch
@@ -630,7 +666,7 @@ export function registerAppsRoutes(): void {
       const loaded = await authorizedProject(c, projectId);
       if (loaded instanceof Response) return loaded;
       const row = await visibleApp(projectId, appId, loaded.userId);
-      return row ? c.json(serializeApp(row)) : c.json({ error: 'Not found' }, 404);
+      return row ? c.json(await appJson(row)) : c.json({ error: 'Not found' }, 404);
     },
   );
 
@@ -642,7 +678,7 @@ export function registerAppsRoutes(): void {
         body: { content: { 'application/json': { schema: z.object({
           name: z.string().min(1).max(200).optional(), cpu: CpuSchema.optional(),
           memory_gb: MemorySchema.optional(), disk_gb: DiskSchema.optional(),
-          idle_timeout_seconds: z.number().int().min(120).max(86400).optional(), monthly_budget_usd: z.number().min(0).max(100000).optional(),
+          idle_timeout_seconds: z.number().int().min(120).max(86400).optional(), always_on: z.boolean().optional(), monthly_budget_usd: z.number().min(0).max(100000).optional(),
           backends: BackendsSchema.optional(),
         }) } } },
       },
@@ -652,7 +688,8 @@ export function registerAppsRoutes(): void {
       const { projectId, appId } = c.req.param();
       const loaded = await authorizedProject(c, projectId, 'write');
       if (loaded instanceof Response) return loaded;
-      if (!(await visibleApp(projectId, appId, loaded.userId))) {
+      const current = await visibleApp(projectId, appId, loaded.userId);
+      if (!current) {
         return c.json({ error: 'Not found' }, 404);
       }
       const body = c.req.valid('json');
@@ -664,17 +701,41 @@ export function registerAppsRoutes(): void {
         if (refusal) return refusal;
         throw error;
       }
+      // A budget nobody set follows the machine and run mode; one a person set never moves.
+      const nextMachine = {
+        cpuCores: body.cpu ?? current.cpuCores,
+        memoryGb: body.memory_gb ?? current.memoryGb,
+        diskGb: body.disk_gb ?? current.diskGb,
+        alwaysOn: body.always_on ?? current.alwaysOn,
+      };
+      const machineChanged = [body.cpu, body.memory_gb, body.disk_gb, body.always_on].some((value) => value !== undefined);
+      const derivedBudget = body.monthly_budget_usd === undefined && !current.monthlyBudgetExplicit && machineChanged
+        ? defaultAppBudgetUsd(nextMachine, config.getDefaultProvider())
+        : undefined;
       const [row] = await db.update(apps).set({
         ...(body.name !== undefined ? { name: body.name.trim() } : {}),
         ...(body.cpu !== undefined ? { cpuCores: body.cpu } : {}),
         ...(body.memory_gb !== undefined ? { memoryGb: body.memory_gb } : {}),
         ...(body.disk_gb !== undefined ? { diskGb: body.disk_gb } : {}),
         ...(body.idle_timeout_seconds !== undefined ? { idleTimeoutSeconds: body.idle_timeout_seconds } : {}),
-        ...(body.monthly_budget_usd !== undefined ? { monthlyBudgetUsd: body.monthly_budget_usd.toFixed(2) } : {}),
+        ...(body.always_on !== undefined ? { alwaysOn: body.always_on } : {}),
+        ...(body.monthly_budget_usd !== undefined ? { monthlyBudgetUsd: body.monthly_budget_usd.toFixed(2), monthlyBudgetExplicit: true } : {}),
+        ...(derivedBudget !== undefined ? { monthlyBudgetUsd: derivedBudget.toFixed(2) } : {}),
         ...(body.backends !== undefined ? { backends: body.backends } : {}),
         updatedAt: new Date(),
       }).where(and(eq(apps.appId, appId), eq(apps.projectId, projectId), isNull(apps.deletedAt))).returning();
-      return row ? c.json(serializeApp(row)) : c.json({ error: 'Not found' }, 404);
+      if (!row) return c.json({ error: 'Not found' }, 404);
+      // Warn only when this change touched the run mode, the machine or the budget.
+      const costChanged = [body.always_on, body.monthly_budget_usd, body.cpu, body.memory_gb, body.disk_gb]
+        .some((value) => value !== undefined);
+      const [active] = row.activeDeploymentId
+        ? await db.select({ hostingType: appDeployments.hostingType, hostingProvider: appDeployments.hostingProvider })
+            .from(appDeployments).where(eq(appDeployments.deploymentId, row.activeDeploymentId)).limit(1)
+        : [];
+      const warning = costChanged && active?.hostingType !== 'static'
+        ? alwaysOnBudgetWarning(row, (active?.hostingProvider as SandboxProviderName | null) ?? config.getDefaultProvider())
+        : null;
+      return c.json({ ...serializeApp(row, true, (active?.hostingType as AppHostingType | undefined) ?? null), warnings: warning ? [warning] : [] });
     },
   );
 
@@ -699,10 +760,17 @@ export function registerAppsRoutes(): void {
         .select({
           deploymentId: appDeployments.deploymentId,
           hostingProvider: appDeployments.hostingProvider,
+          providerBuildId: appDeployments.providerBuildId,
           status: appDeployments.status,
         })
         .from(appDeployments)
         .where(eq(appDeployments.appId, appId));
+      // Static files: the manifests go now, so `reclaimAppSiteBlobs` frees the
+      // blobs after its grace. A publish still running writes after this; the
+      // retention sweep drops those rows (the App is deleted).
+      if (deployments.length > 0) {
+        await db.delete(appSiteFiles).where(inArray(appSiteFiles.deploymentId, deployments.map((d) => d.deploymentId)));
+      }
       const runtimes = await db
         .select({ runtimeId: appRuntimes.runtimeId, provider: appRuntimes.provider, externalId: appRuntimes.externalId })
         .from(appRuntimes)
@@ -929,7 +997,11 @@ export function registerAppsRoutes(): void {
             eq(appDeployments.deploymentId, deploymentId),
             notInArray(appDeployments.status, [...IN_PROGRESS_DEPLOYMENT_STATUSES, 'deleted']),
           ));
-        return { kind: 'deleted' as const, hostingProvider: deployment.hostingProvider };
+        return {
+          kind: 'deleted' as const,
+          hostingProvider: deployment.hostingProvider,
+          providerBuildId: deployment.providerBuildId,
+        };
       });
       if (decision.kind === 'missing') return c.json({ error: 'Not found' }, 404);
       if (decision.kind === 'live') {
@@ -953,7 +1025,13 @@ export function registerAppsRoutes(): void {
       // Platinum refuses to delete an image while a sandbox pins it, so the
       // runtime goes first. Anything left `pending` is retried by maintenance.
       await teardownAppRuntimes(runtimes);
-      const image = await releaseDeploymentImage({ deploymentId, hostingProvider: decision.hostingProvider });
+      // A shared image another deployment still uses stays; the outcome is then `none`.
+      const image = await releaseDeploymentImage({
+        deploymentId,
+        hostingProvider: decision.hostingProvider,
+        providerBuildId: decision.providerBuildId,
+      });
+      await db.delete(appSiteFiles).where(eq(appSiteFiles.deploymentId, deploymentId));
       await db.insert(appDeploymentEvents).values({
         deploymentId,
         type: 'deployment_deleted',
@@ -978,6 +1056,17 @@ export function registerAppsRoutes(): void {
         const app = await visibleApp(projectId, appId, loaded.userId);
         if (!app) return c.json({ error: 'Not found' }, 404);
         if (!app.activeDeploymentId) return c.json({ error: 'App has no active deployment' }, 409);
+        const [active] = await db.select({ hostingType: appDeployments.hostingType }).from(appDeployments)
+          .where(eq(appDeployments.deploymentId, app.activeDeploymentId)).limit(1);
+        if (active?.hostingType === 'static') {
+          // Served from storage: there is no runtime to start or stop. The
+          // static path ignores desired_state, so writing it would only make
+          // the App read "stopped" while it serves. Unpublish = delete the App.
+          return c.json({
+            error: 'A static App has no runtime to start or stop. It serves while it has an active deployment; delete the App to take it offline.',
+            code: 'static_app_no_runtime',
+          }, 409);
+        }
         const [row] = await db.update(apps).set({ desiredState: action === 'start' ? 'running' : 'stopped', updatedAt: new Date() }).where(eq(apps.appId, appId)).returning();
         if (action === 'stop') {
           const [runtime] = await db.select().from(appRuntimes).where(and(
@@ -1017,7 +1106,7 @@ export function registerAppsRoutes(): void {
             }, 503);
           }
         }
-        return c.json(serializeApp(row!));
+        return c.json(serializeApp(row!, true, 'sandbox'));
       },
     );
   }
@@ -1037,11 +1126,13 @@ export function registerAppsRoutes(): void {
       const { deployment_id: deploymentId } = c.req.valid('json');
       const [deployment] = await db.select().from(appDeployments).where(and(eq(appDeployments.deploymentId, deploymentId), eq(appDeployments.appId, appId), eq(appDeployments.status, 'ready'))).limit(1);
       if (!deployment) return c.json({ error: 'Only a ready deployment can receive rollback traffic' }, 409);
-      const [targetRuntime] = await db.select().from(appRuntimes)
+      // A static deployment is served from storage: nothing to start.
+      const isStatic = deployment.hostingType === 'static';
+      const [targetRuntime] = isStatic ? [] : await db.select().from(appRuntimes)
         .where(eq(appRuntimes.deploymentId, deploymentId))
         .orderBy(desc(appRuntimes.createdAt))
         .limit(1);
-      if (!targetRuntime) return c.json({ error: 'Rollback deployment has no runtime' }, 409);
+      if (!isStatic && !targetRuntime) return c.json({ error: 'Rollback deployment has no runtime' }, 409);
 
       const [runningApp] = await db.update(apps)
         .set({ desiredState: 'running', updatedAt: new Date() })
@@ -1049,7 +1140,7 @@ export function registerAppsRoutes(): void {
         .returning();
       const hosting = new AppHostingProvider();
       try {
-        await ensureAppRuntimeRunning({ app: runningApp!, deployment, runtime: targetRuntime }, hosting);
+        if (targetRuntime) await ensureAppRuntimeRunning({ app: runningApp!, deployment, runtime: targetRuntime }, hosting);
       } catch (error) {
         await db.update(apps).set({ desiredState: app.desiredState, updatedAt: new Date() })
           .where(eq(apps.appId, appId));
@@ -1063,22 +1154,13 @@ export function registerAppsRoutes(): void {
       }
 
       const previousDeploymentId = app.activeDeploymentId;
-      // A concurrent `DELETE …/deployments/:id` can delete the target after the
-      // ready check above. Move traffic only while the target is still ready.
-      const [row] = await db.update(apps)
-        .set({ activeDeploymentId: deploymentId, desiredState: 'running', updatedAt: new Date() })
-        .where(and(
-          eq(apps.appId, appId),
-          exists(db.select({ deploymentId: appDeployments.deploymentId }).from(appDeployments).where(and(
-            eq(appDeployments.deploymentId, deploymentId),
-            eq(appDeployments.status, 'ready'),
-          ))),
-        ))
-        .returning();
+      // A concurrent delete or retention can retire the target after the ready
+      // check above. Move traffic only while the target is still ready.
+      const row = await rollBackActiveDeployment(appId, deploymentId);
       if (!row) return c.json({ error: 'The rollback deployment was deleted' }, 409);
       await db.insert(appDeploymentEvents).values({
         deploymentId,
-        runtimeId: targetRuntime.runtimeId,
+        runtimeId: targetRuntime?.runtimeId ?? null,
         type: 'deployment_rollback',
         message: 'Rollback deployment is serving traffic',
         data: { previousDeploymentId },
@@ -1100,7 +1182,7 @@ export function registerAppsRoutes(): void {
           await pauseComputeSession(previousRuntime.runtimeId, stoppedAt);
         }
       }
-      return c.json(serializeApp(row!));
+      return c.json(serializeApp(row!, true, deployment.hostingType as AppHostingType));
     },
   );
 }

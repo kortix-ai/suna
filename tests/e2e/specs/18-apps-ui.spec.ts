@@ -168,7 +168,7 @@ test.describe('18 — Kortix Apps UI', () => {
       await page.reload({ waitUntil: 'domcontentloaded' });
       expect((await emptyListResponse).status()).toBe(200);
       await dismissOnboarding(page);
-      await expect(page.getByText('No Apps yet', { exact: true })).toBeVisible();
+      await expect(page.getByText('Apps you publish will show up here', { exact: true })).toBeVisible();
 
       const seeded = await api<AppResponse>(
         session.access_token,
@@ -272,9 +272,8 @@ test.describe('18 — Kortix Apps UI', () => {
       const appModal = page.getByRole('dialog', { name: 'Seed App App' });
       await expect(appModal).toBeVisible();
       await expect(page).toHaveURL(new RegExp(`/projects/${project.id}/apps`));
-      await expect(
-        appModal.getByRole('button', { name: 'Put this App to sleep' }),
-      ).toBeDisabled();
+      // Not deployed yet: there is no runtime to put to sleep, so no control.
+      await expect(appModal.getByRole('button', { name: 'Put this App to sleep' })).toHaveCount(0);
       // …and this is where the URL went: the control that opens the App names
       // the host it will open, so the tile can stay a picture of the App.
       const openInNewTab = appModal.getByRole('link', { name: 'Open in a new tab' });

@@ -147,9 +147,11 @@ export { useGatewayRoutingPolicy, gatewayRoutingPolicyKey } from './use-gateway-
 export {
   useProjectApps,
   useAppDeployments,
+  useAppDeployment,
   useAppAccess,
   projectAppsKey,
   appDeploymentsKey,
+  appDeploymentKey,
 } from './use-project-apps';
 export { useProjectBackends, useProjectBackendBackups, projectBackendsKey } from './use-project-backends';
 

@@ -28,7 +28,6 @@ import {
   kortixBilledSpendSql,
   providerBilledSpendSql,
   rowKortixBilledSpendSql,
-  rowTotalSpendSql,
   totalSpendSql,
 } from './llm-spend';
 

@@ -5,6 +5,7 @@ import {
   accounts,
   appDeploymentEvents,
   appDeployments,
+  appSiteBlobs,
   apps,
   changeRequests,
   connectorCalls,
@@ -34,6 +35,7 @@ import {
   usageEvents,
 } from '@kortix/db';
 import { getSupabase } from '../../shared/supabase';
+import { deleteAccountSiteObjects } from '../../apps/static-site';
 import { forgetUserJwtLiveness } from '../../shared/jwt-liveness';
 import { getStripe } from '../../shared/stripe';
 import { config } from '../../config';
@@ -644,6 +646,11 @@ async function deleteInChunks(table: PgTable, where: SQL): Promise<void> {
  * the account. `prompt_attachments` and `connector_attachments` stay with
  * their existing TTL sweeps, which own both their rows and their Storage
  * objects — deleting the rows here would orphan their objects forever.
+ *
+ * Static App files are deleted here, objects first: every object under the
+ * account's `app-sites/<account_id>/` prefix, then the `app_site_blobs` rows
+ * in pass 2 (`app_site_files` cascades from `app_deployments`). A failed
+ * object delete throws before any row goes, so the retry still finds them.
  */
 async function deleteAccountData(accountId: string, keepRequestId?: string): Promise<void> {
   // Pass 0 — bounded chunks. Children before parents, as in pass 1.
@@ -656,6 +663,7 @@ async function deleteAccountData(accountId: string, keepRequestId?: string): Pro
   await deleteInChunks(sessionLifecycleCommands, eq(sessionLifecycleCommands.accountId, accountId));
   await deleteInChunks(sessionTurns, inAccountSessions(sessionTurns.sessionId));
   await deleteInChunks(sessionPendingQuestions, inAccountSessions(sessionPendingQuestions.sessionId));
+  await deleteAccountSiteObjects(accountId);
 
   await db.transaction(async (tx) => {
     // Scopes for the child rows that carry no account_id of their own.
@@ -690,6 +698,7 @@ async function deleteAccountData(accountId: string, keepRequestId?: string): Pro
     await tx.delete(tunnelAuditLogs).where(eq(tunnelAuditLogs.accountId, accountId));
     await tx.delete(tunnelConnections).where(eq(tunnelConnections.accountId, accountId));
     await tx.delete(sandboxes).where(eq(sandboxes.accountId, accountId));
+    await tx.delete(appSiteBlobs).where(eq(appSiteBlobs.accountId, accountId));
     // kortix.guard_session_sandbox_identity() refuses to delete a session box
     // that has an external_id unless its session is soft-deleted. The account is
     // going away, so soft-delete its sessions first. Without this the delete

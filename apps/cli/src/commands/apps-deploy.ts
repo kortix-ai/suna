@@ -176,6 +176,10 @@ interface DeployFlags {
   password?: string;
   memberIds?: string[];
   groupIds?: string[];
+  /** `--always-on` / `--on-demand`: applied to a new App, or to the existing one. */
+  alwaysOn?: boolean;
+  /** `--budget <usd>`: the monthly compute budget, applied like `alwaysOn`. */
+  budget?: number;
 }
 
 export function deployFlags(rest: string[]): DeployFlags {
@@ -195,6 +199,9 @@ export function deployFlags(rest: string[]): DeployFlags {
   if (spa && noSpa) throw new Error('Use only one of --spa and --no-spa');
   const waitSeconds =
     positiveInteger(takeFlagValue(rest, ['--wait-seconds']), '--wait-seconds') ?? 1200;
+  const alwaysOn = takeFlagBool(rest, ['--always-on']);
+  const onDemand = takeFlagBool(rest, ['--on-demand']);
+  if (alwaysOn && onDemand) throw new Error('Pass --always-on or --on-demand, not both');
   return {
     app: takeFlagValue(rest, ['--app']),
     slug: takeFlagValue(rest, ['--slug']),
@@ -219,6 +226,8 @@ export function deployFlags(rest: string[]): DeployFlags {
     password: takeFlagValue(rest, ['--password']),
     memberIds: csv(takeFlagValue(rest, ['--members'])),
     groupIds: csv(takeFlagValue(rest, ['--groups'])),
+    alwaysOn: alwaysOn ? true : onDemand ? false : undefined,
+    budget: positiveNumber(takeFlagValue(rest, ['--budget']), '--budget'),
   };
 }
 
@@ -388,8 +397,16 @@ export async function provisionDeployApp(
   manifestDefaults: ManifestAppDefaults | null,
   sourcePath: string | undefined,
 ): Promise<App> {
+  const flagSettings = {
+    ...(flags.alwaysOn === undefined ? {} : { always_on: flags.alwaysOn }),
+    ...(flags.budget === undefined ? {} : { monthly_budget_usd: flags.budget }),
+  };
   if (flags.app) {
-    return resolveApp(apps, flags.app);
+    const app = await resolveApp(apps, flags.app);
+    const changed =
+      (flags.alwaysOn !== undefined && app.always_on !== flags.alwaysOn) ||
+      (flags.budget !== undefined && app.monthly_budget_usd !== flags.budget);
+    return changed ? apps.update(app.app_id, flagSettings) : app;
   }
   if (manifestDefaults) {
     const manifestBlock = manifestDefaults.block;
@@ -406,9 +423,11 @@ export async function provisionDeployApp(
       ...(manifestBlock?.idle_timeout_seconds !== undefined
         ? { idle_timeout_seconds: manifestBlock.idle_timeout_seconds }
         : {}),
+      ...(manifestBlock?.always_on !== undefined ? { always_on: manifestBlock.always_on } : {}),
       ...(manifestBlock?.monthly_budget_usd !== undefined
         ? { monthly_budget_usd: manifestBlock.monthly_budget_usd }
         : {}),
+      ...flagSettings,
       // The backends the App may mint viewer tokens for; the manifest's list replaces the App's.
       ...(manifestBlock?.backends !== undefined ? { backends: manifestBlock.backends } : {}),
     };
@@ -424,7 +443,35 @@ export async function provisionDeployApp(
     ? flags.image.split('/').pop()!.split(':')[0]!
     : basename(sourcePath!);
   const slug = slugFrom(flags.slug ?? inferred);
-  return apps.create({ slug, name: flags.name ?? slug });
+  return apps.create({ slug, name: flags.name ?? slug, ...flagSettings });
+}
+
+/**
+ * What a server App costs: "Runs 24/7 on 1 vCPU / 2 GB: about $73/month (budget $74)".
+ * Null for an on-demand or static App, or when the server predates the estimate.
+ */
+export function runCostLine(app: App): string | null {
+  const estimate = app.estimated_monthly_usd;
+  if (!app.always_on || !estimate || app.hosting_type === 'static') return null;
+  return (
+    `Runs 24/7 on ${app.machine.cpu} vCPU / ${app.machine.memory_gb} GB: ` +
+    `about $${Math.round(estimate)}/month (budget $${app.monthly_budget_usd})`
+  );
+}
+
+/**
+ * The warning for a server App that runs 24/7 on a monthly budget below what
+ * its machine costs for a month: it stops at the budget until the month ends.
+ * Null when it does not apply, or when the server predates the estimate.
+ */
+export function alwaysOnBudgetNotice(app: App): string | null {
+  const estimate = app.estimated_monthly_usd;
+  if (!app.always_on || estimate === undefined || app.monthly_budget_usd >= estimate) return null;
+  return (
+    `${app.slug} runs 24/7, about $${estimate.toFixed(2)}/month at list compute rates, ` +
+    `but its monthly budget is $${app.monthly_budget_usd.toFixed(2)}. It stops when the budget is reached. ` +
+    'Raise it with --budget <usd>, or deploy with --on-demand.'
+  );
 }
 
 /**

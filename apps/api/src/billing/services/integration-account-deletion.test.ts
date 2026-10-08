@@ -9,7 +9,7 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { eq, sql } from 'drizzle-orm';
-import pg from 'pg';
+import { PgClient } from '../../__tests__/helpers/pg-client';
 import {
   accountDeletionRequests,
   accountMembers,
@@ -36,7 +36,7 @@ const { claimDeletionRequest } = await import('../repositories/account-deletion'
 const { config } = await import('../../config');
 const { SWEEP_BATCH_SIZE } = await import('./account-deletion');
 
-const superuser = new pg.Client({ connectionString: process.env.TEST_DATABASE_SUPERUSER_URL });
+const superuser = new PgClient({ connectionString: process.env.TEST_DATABASE_SUPERUSER_URL });
 const past = () => new Date(Date.now() - 60_000).toISOString();
 
 /**

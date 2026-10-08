@@ -7,7 +7,7 @@ import { annotateAuditEvent, bindAuditPrincipal } from '../shared/audit-scope';
 import { appAccessibleToAgentSession, appAccessibleToUser, appAccessCookie, appAccessCookieName, appAccessSecret, cookieValue, createAppAccessToken, isAppAgentAssertion, verifyAppAccessToken, verifyAppAgentAssertion, type AppAccessMode, type AppAgentSessionPrincipal } from './access';
 import { escapeHtml } from '../shared/html';
 import { appBrowserNavigation, appFrameAncestors, PROXY_PAGE_SYMBOL, PROXY_PAGE_TOKENS } from './public-proxy-status';
-import { APP_VIEWER_HEADER, APP_VIEWER_TOKEN_HEADER, appViewerSecret, encodeAppViewerContext, mintAppViewerToken, normalizeViewerTokenScope, resolveAppViewerIdentity } from './viewer';
+import { appViewerSecret, encodeAppViewerContext, mintAppViewerToken, normalizeViewerTokenScope, resolveAppViewerIdentity } from './viewer';
 
 function accessTokenMatchesMode(
   token: ReturnType<typeof verifyAppAccessToken>,

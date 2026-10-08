@@ -38,7 +38,6 @@ export { handBackClaims } from './session-lifecycle/claim-handover';
 export {
   drainTriggerExecutionQueue,
   runProjectTriggerSweep,
-  resolveGitTriggerActor,
   startProjectTriggerScheduler,
   stopProjectTriggerScheduler,
   schedulerSweepIsStale,

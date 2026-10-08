@@ -390,6 +390,9 @@ export const qk = {
     /** Immutable deployment history for one App. */
     appDeployments: (id: string, appId: string) =>
       [...qk.project.apps(id), appId, 'deployments'] as const,
+    /** One deployment and its events (build log included). */
+    appDeployment: (id: string, appId: string, deploymentId: string) =>
+      [...qk.project.appDeployments(id, appId), deploymentId] as const,
 
     /** `listProjectTriggers` — `GET /projects/:id/triggers`, the cron/webhook
      *  listing (file-defined in the repo manifest). Shared by

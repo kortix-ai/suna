@@ -14,10 +14,75 @@ import { resolveAppRequest, verifyAppEdgeRequest } from './public-proxy-edge';
 import { appPublicStatusResponse, publicDeploymentStatus, appPublicBudgetResponse, appPublicUnavailableResponse, appProviderStoppedResponse, appColdStartUpstreamResponse } from './public-proxy-status';
 import { loadPublicAppState, loadPublicApp, ensureAppRuntimeRunning, appRuntimeNeedsWake } from './public-proxy-runtime';
 import { appUpstreamHeaders, appPublicResponseHeaders } from './public-proxy-headers';
+import { serveStaticDeployment } from './static-site';
+import { APP_API_PROXY_PREFIX, appApiProxyResponse } from './public-proxy-api';
 const ACTIVITY_LEASE_MS = 60_000;
 type LoadedApp = Omit<NonNullable<Awaited<ReturnType<typeof loadPublicApp>>>, 'agentPrincipal'>;
 
-export async function handleAppPublicRequest(request: Request): Promise<Response | null> {
+const ACTIVITY_WRITE_EVERY_MS = 10_000;
+// replica-local: a write throttle only. Each replica records a runtime's
+// activity at most once per window; the lease it writes (60 s) outlives the
+// window, so a busy App never looks idle, whichever replica served it.
+const lastActivityWrite = new Map<string, number>();
+
+/**
+ * Mark an App active. Throttled to one write set per runtime per 10 s: a
+ * request used to cost three writes up front and one more to clear its lease
+ * after the response. The lease now simply expires, so the idle reaper sees an
+ * App go idle at most 60 s after its last request.
+ */
+async function recordAppActivity(app: LoadedApp['app'], runtimeId: string, now: Date): Promise<void> {
+  const last = lastActivityWrite.get(runtimeId) ?? 0;
+  if (now.getTime() - last < ACTIVITY_WRITE_EVERY_MS) return;
+  if (lastActivityWrite.size > 10_000) lastActivityWrite.clear();
+  lastActivityWrite.set(runtimeId, now.getTime());
+  await Promise.all([
+    db.update(apps).set({ lastRequestAt: now, updatedAt: now }).where(eq(apps.appId, app.appId)),
+    db.update(appRuntimes).set({
+      lastRequestAt: now,
+      activityLeaseUntil: new Date(now.getTime() + ACTIVITY_LEASE_MS),
+      idleDeadlineAt: new Date(now.getTime() + app.idleTimeoutSeconds * 1000),
+      updatedAt: now,
+    }).where(eq(appRuntimes.runtimeId, runtimeId)),
+    markComputeSessionAlive(runtimeId, now),
+  ]);
+}
+
+/**
+ * `forwardApi` dispatches a request to the API in-process; it serves
+ * `/_kortix/api/v1/*` (public-proxy-api.ts). Without it that path is the App's.
+ */
+export async function handleAppPublicRequest(
+  request: Request,
+  forwardApi?: (request: Request) => Promise<Response>,
+): Promise<Response | null> {
+  const response = await routeAppPublicRequest(request, forwardApi);
+  return response && withoutCloudflareCache(response);
+}
+
+/**
+ * Every App-origin answer, the gate's own included (sign-in redirect, 403,
+ * status page), carries `cloudflare-cdn-cache-control: no-store`. The API
+ * hostnames are Cloudflare-proxied and that cache keys on the API host and
+ * path, not the App host: a cached answer for one App would serve another.
+ * Only the apps-router Worker caches App responses, keyed on the App host.
+ */
+function withoutCloudflareCache(response: Response): Response {
+  try {
+    response.headers.set('cloudflare-cdn-cache-control', 'no-store');
+    return response;
+  } catch {
+    // Immutable headers (a fetched response): copy them.
+    const headers = new Headers(response.headers);
+    headers.set('cloudflare-cdn-cache-control', 'no-store');
+    return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+  }
+}
+
+async function routeAppPublicRequest(
+  request: Request,
+  forwardApi?: (request: Request) => Promise<Response>,
+): Promise<Response | null> {
   const url = new URL(request.url);
   const matched = resolveAppRequest(request, url);
   if (!matched) return null;
@@ -39,6 +104,25 @@ export async function handleAppPublicRequest(request: Request): Promise<Response
   if (url.pathname === '/_kortix/backend-token') {
     return appBackendTokenResponse(request, url, gateApp);
   }
+  if (forwardApi && url.pathname.startsWith(`${APP_API_PROXY_PREFIX}/`)) {
+    return appApiProxyResponse(request, url, matched.publicHost, gateApp, forwardApi);
+  }
+  // A static App has no runtime: its files are served from storage here, past
+  // the same access gate, with no wake, meter or upstream.
+  if (
+    state.deployment?.hostingType === 'static' &&
+    state.deployment.status === 'ready' &&
+    state.deployment.deploymentId === state.app.activeDeploymentId
+  ) {
+    return serveStaticDeployment({
+      request,
+      url,
+      accountId: state.app.accountId,
+      deploymentId: state.deployment.deploymentId,
+      spa: (state.deployment.runtimeSpec as { spa?: boolean }).spa === true,
+      publicApp: state.app.accessMode === 'public',
+    });
+  }
   const viewer = await appViewerContextHeader(request, url, state.app);
   if (
     !state.app.activeDeploymentId ||
@@ -50,7 +134,7 @@ export async function handleAppPublicRequest(request: Request): Promise<Response
   }
   const loaded = { app: state.app, deployment: state.deployment, runtime: state.runtime };
   const hosting = new AppHostingProvider();
-  const coldStart = appRuntimeNeedsWake(state.runtime);
+  const coldStart = appRuntimeNeedsWake(state.runtime, new Date(), state.app.alwaysOn);
   if (coldStart) {
     await enqueueCurrentAppRuntime(state.app, state.deployment).catch((error) => {
       console.warn(`[apps] runtime refresh queue failed for ${state.app.appId}:`, error);
@@ -83,18 +167,7 @@ async function proxyRunningApp(
     }
     return appPublicUnavailableResponse(request, loaded.app);
   }
-  const now = new Date();
-  const leaseUntil = new Date(now.getTime() + ACTIVITY_LEASE_MS);
-  await Promise.all([
-    db.update(apps).set({ lastRequestAt: now, updatedAt: now }).where(eq(apps.appId, loaded.app.appId)),
-    db.update(appRuntimes).set({
-      lastRequestAt: now,
-      activityLeaseUntil: leaseUntil,
-      idleDeadlineAt: new Date(now.getTime() + loaded.app.idleTimeoutSeconds * 1000),
-      updatedAt: now,
-    }).where(eq(appRuntimes.runtimeId, runtime.runtimeId)),
-    markComputeSessionAlive(runtime.runtimeId, now),
-  ]);
+  await recordAppActivity(loaded.app, runtime.runtimeId, new Date());
 
   const replayableRequest = request.method === 'GET' || request.method === 'HEAD';
   const fetchUpstream = async () => {
@@ -208,8 +281,6 @@ async function respondFromUpstream(
     responseHeaders.delete(name);
   }
   if (!upstream.body || request.method === 'HEAD') {
-    await db.update(appRuntimes).set({ activityLeaseUntil: null, updatedAt: new Date() })
-      .where(eq(appRuntimes.runtimeId, runtime.runtimeId));
     return new Response(null, { status: upstream.status, statusText: upstream.statusText, headers: responseHeaders });
   }
 
@@ -231,11 +302,7 @@ async function respondFromUpstream(
     // already owns that failure, so consume it instead of emitting an
     // unhandled rejection from this fire-and-forget stream.
     .catch(() => {})
-    .finally(() => {
-      clearInterval(renew);
-      void db.update(appRuntimes).set({ activityLeaseUntil: null, updatedAt: new Date() })
-        .where(eq(appRuntimes.runtimeId, runtime.runtimeId));
-    });
+    .finally(() => clearInterval(renew));
   return new Response(stream.readable, {
     status: upstream.status,
     statusText: upstream.statusText,

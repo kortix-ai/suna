@@ -126,7 +126,7 @@ function ErrorRow({ className, children, ...props }: ComponentProps<typeof Item>
 }
 
 // ============================================================================
-// Insufficient-credits detection — upstream 402 from /v1/router/chat/completions
+// Insufficient-credits detection — an upstream 402 from the LLM gateway
 // surfaces as "Payment Required: Insufficient credits. Balance: $-0.06". Render
 // a specialized card with one-click actions instead of raw text.
 // ============================================================================

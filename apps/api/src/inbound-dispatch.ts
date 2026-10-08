@@ -83,7 +83,7 @@ export async function dispatchInbound(
       setInboundAuditEntrypoint('app_origin', 'app_origin:websocket');
       return upgradeAppOriginWs(req, url, server);
     }
-    const appResponse = await handleAppPublicRequest(req);
+    const appResponse = await handleAppPublicRequest(req, (inner) => dispatchInProcess(inner, app));
     if (appResponse) {
       setInboundAuditEntrypoint('app_origin', 'app_origin');
       return appResponse;

@@ -272,7 +272,9 @@ no build step required:
 > must be in the API's CORS allowlist. Kortix's own domains and `localhost:3000/3010`
 > are allowed out of the box; any third-party origin (or a local page on another
 > port) needs adding via the API's `CORS_ALLOWED_ORIGINS` — otherwise the browser
-> blocks the request before it leaves the page.
+> blocks the request before it leaves the page. A Kortix-hosted App needs no
+> allowlist entry: it sets `backendUrl: '/_kortix/api/v1'`, its own origin
+> (see "A Kortix-hosted App is already signed in").
 
 ## Entry points
 
@@ -537,7 +539,7 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 |---|---|
 | `kortix.projects` | list · get · detail · create · provision · update · archive · llmCatalog · modelPicker · sandboxTemplates · sessions (+ more: `listForAccount`, `sandboxHealth`, `createSession`) |
 | `kortix.accounts` | list · get · create · members · invites · `secretResources.{list,create,rotate,delete,grant,revoke,setAccess}` · `tokens.{list,create,revoke}` (account-scoped CLI PATs, `kortix_pat_…`) · `audit.{log,export,webhooks.*}` (filterable project/session reconstruction log) · `branding.{get,update,uploadAsset,removeAsset,reset}` (Enterprise organization branding: logo / icon / favicon, light + dark, product name) (+ more: `updateName`, `leave`, `invite`, `removeMember`, `updateMemberRole`) |
-| `kortix.billing` | entitlement/usage reads: `accountState` · `accountStateMinimal` · `transactions` · `transactionsSummary` · `creditBreakdown` · `usageHistory` · `usageRollup` · `sessionCosts.{list,get}` · `tierConfigurations` — plus a curated mutation surface: `checkout.{createSession,confirmSession}` · `subscription.{createPortalSession,cancel,reactivate,scheduleDowngrade,cancelScheduledChange,prorationPreview}` · `credits.{purchase,autoTopupSettings,configureAutoTopup}` |
+| `kortix.billing` | entitlement/usage reads: `accountState` · `accountStateMinimal` · `transactions` · `transactionsSummary` · `creditBreakdown` · `usageHistory` · `usageRollup` · `sessionCosts.{list,get}` · `tierConfigurations` — plus a curated mutation surface: `subscription.{createPortalSession,cancel,reactivate,cancelScheduledChange,prorationPreview}` · `credits.{purchase,autoTopupSettings,configureAutoTopup}`. `checkout.{createSession,confirmSession}` and `subscription.scheduleDowngrade` are deprecated: they reject with `ENDPOINT_RETIRED` |
 | `kortix.marketplace` | public marketplace catalog browse + sources (not project-scoped): `items` · `item` · `itemFile` · `marketplaces` · `featured` · `sources.{list,add,remove}` — distinct from the install-scoped `project(id).marketplace` |
 | `kortix.github` | account-scoped GitHub App installs and repo linking: `getInstallation` · `listInstallations` · `listLinkableInstallations` (each entry carries `linked_to_other_accounts`, a count and never a tenant name) · `listRepositories` · `listRepositoryBranches` · `linkInstallation` · `saveInstallation` · `deleteInstallation` · `linkRepository` (`source: 'managed'` imports a repository the instance backend holds — self-host operator only, and mutually exclusive with `installation_id`) · `replaceProjectRepository` (changes an existing project's repository with an expected old URL; accepts a repository-scoped PAT or a temporary GitHub user proof for a repository-scoped App grant; can atomically copy selected shared runtime secrets from another project in the same account) |
 | `kortix.gitBackend` | the instance git backend ("Kortix managed", one per deployment, never an account connection): `get()` → `{configured, kind: 'app'|'pat'|null, owner}` (any authenticated user) · `repositories({search?, limit?})` (self-host operator only; 403 otherwise) |
@@ -983,7 +985,7 @@ Full guide: `/docs/sdk/sign-in`. Example: `examples/11-sign-in-with-kortix.ts`.
 ### A Kortix-hosted App is already signed in
 
 ```ts
-const kortix = createKortix({ backendUrl, getToken: kortixAppViewerToken() });  // browser
+const kortix = createKortix({ backendUrl: '/_kortix/api/v1', getToken: kortixAppViewerToken() });  // browser
 const viewer = await readAppViewer(request);                                    // server (@kortix/sdk/server)
 const asViewer = await createAppViewerKortix(request, { backendUrl });          // act as them
 ```
@@ -993,6 +995,9 @@ their identity into every request; `viewer_token_scope` on the App's access
 policy decides whether the App also gets a token to act with. On the server,
 read it per request; in the browser, `kortixAppViewerToken()` replaces a token
 the API refused (after an access-policy change) and replays the call once.
+In the browser, `backendUrl` is `/_kortix/api/v1`: the gate on the App's own
+origin forwards to the Kortix API as the viewer (`viewer_token_scope: 'api'`).
+A direct call to `https://api.kortix.com/v1` from an App origin fails CORS.
 Guide: `/docs/sdk/apps`.
 
 ### One member on every runtime: groups, roles, backends

@@ -84,6 +84,39 @@ describe('kortixAppViewerToken', () => {
   });
 });
 
+describe('an App reaching the Kortix API through its own origin', () => {
+  // The API refuses an App origin's CORS preflight. The gate forwards
+  // `/_kortix/api/v1/*` to the API as the viewer, and it knows the viewer only
+  // by the App's own session cookie, so a relative backendUrl must send it.
+  test('a relative backendUrl calls /_kortix/api/v1 with this origin’s credentials', async () => {
+    const { createKortix } = await import('../client/kortix');
+    const seen: Array<{ url: string; credentials: RequestCredentials | undefined; auth: string | null }> = [];
+    const api = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      seen.push({ url: String(input), credentials: init?.credentials, auth: new Headers(init?.headers).get('authorization') });
+      return Response.json([]);
+    }) as typeof fetch;
+    const kortix = createKortix({ backendUrl: '/_kortix/api/v1', getToken: kortixAppViewerToken({ fetch: fetchImpl }), fetch: api });
+
+    await kortix.projects.list();
+
+    expect(seen).toEqual([{ url: '/_kortix/api/v1/projects', credentials: 'same-origin', auth: 'Bearer kortix_oat_1' }]);
+  });
+
+  test('an absolute backendUrl still sends no cookies', async () => {
+    const { createKortix } = await import('../client/kortix');
+    const seen: Array<RequestCredentials | undefined> = [];
+    const api = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      seen.push(init?.credentials);
+      return Response.json([]);
+    }) as typeof fetch;
+    const kortix = createKortix({ backendUrl: 'https://api.example.test/v1', getToken: kortixAppViewerToken({ fetch: fetchImpl }), fetch: api });
+
+    await kortix.projects.list();
+
+    expect(seen).toEqual(['omit']);
+  });
+});
+
 describe('a viewer token the API rejects', () => {
   // The gate revokes every viewer token when the App's access policy is saved.
   // A browser App holding the cached token must recover on the next request,

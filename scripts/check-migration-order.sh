@@ -12,16 +12,37 @@
 # The check is the same as that job: each migration the branch adds
 # (origin/dev...<pushed sha>) needs a 17-digit timestamp above the newest one on
 # origin/dev. Fetch origin/dev first; the guard reads the local tracking ref.
+# In a fork checkout `origin` is the fork, which often has no `dev` (or a stale
+# one), so the guard also reads `upstream/dev` and compares against the newer
+# of the two. With neither ref it warns and allows the push: on 2026-10-07 a
+# fork checkout with no origin/dev pushed a duplicate of an old migration past
+# this guard without a word (#9360).
 #
 # Usage: pre-push stdin ("<local ref> <local sha> <remote ref> <remote sha>").
 set -e
 
 zero=0000000000000000000000000000000000000000
-base=$(git rev-parse -q --verify refs/remotes/origin/dev) || exit 0
 dir=packages/db/migrations
-base_max=$(git ls-tree --name-only "$base" -- "$dir/" \
-  | sed -En 's#.*/([0-9]{17})_.*\.(sql|concurrent\.ts)$#\1#p' | sort -n | tail -1)
-[ -n "$base_max" ] || exit 0
+newest() {
+  git ls-tree --name-only "$1" -- "$dir/" \
+    | sed -En 's#.*/([0-9]{17})_.*\.(sql|concurrent\.ts)$#\1#p' | sort -n | tail -1
+}
+base=""
+base_max=""
+for ref in refs/remotes/origin/dev refs/remotes/upstream/dev; do
+  sha=$(git rev-parse -q --verify "$ref") || continue
+  max=$(newest "$sha")
+  [ -n "$max" ] || continue
+  if [ -z "$base_max" ] || [ "$max" -gt "$base_max" ]; then
+    base=$sha
+    base_max=$max
+  fi
+done
+if [ -z "$base" ]; then
+  echo "migration-order: no origin/dev or upstream/dev ref with migrations; check skipped." >&2
+  echo "  Fetch the canonical dev branch (git fetch <kortix-ai/suna remote> dev) so this guard can run." >&2
+  exit 0
+fi
 
 out=$(while read -r _ local_sha remote_ref _; do
   [ -n "$local_sha" ] && [ "$local_sha" != "$zero" ] || continue

@@ -346,19 +346,6 @@ function reloadOutcomeSentence(result: SessionReloadResult): string {
   }
 }
 
-/**
- * Is this an outcome the user should be nudged about?
- *
- * Only two are: their own version was kept, or we could not confirm. Everything
- * else — including the two cases where nothing needed doing — is a success, and
- * warning on those was the first thing the review caught.
- */
-export function reloadNeedsAttention(result: SessionReloadResult): boolean {
-  if (result.release?.fallback_reason) return true;
-  if (!result.applied) return true;
-  return result.agent_files === 'kept-yours' || result.agent_files === 'unknown';
-}
-
 /** The daemon's service endpoint for a session's active sandbox, or null. */
 async function sandboxServiceEndpoint(sessionId: string): Promise<SandboxEndpoint | null> {
   const [row] = await db

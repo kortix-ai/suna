@@ -1,6 +1,6 @@
 /**
  * Kortix Backends — a project owns up to 3 self-hosted Convex backends, each in
- * its own Platinum machine. Maps to spec section 33 (BKD-1).
+ * its own Platinum machine. Maps to spec section 34 (BKD-1).
  *
  * `backends` is internal-only: a project owner gets 403
  * `feature_operator_only` on `PATCH /features`; the run-scoped platform

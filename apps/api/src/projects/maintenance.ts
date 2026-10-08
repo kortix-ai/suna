@@ -9,6 +9,8 @@ import { reconcileStaleBuilds } from '../snapshots/builder';
 import { reconcileSnapshotQuota } from '../snapshots/quota-gc';
 import { EMPTY_APP_IMAGE_RECLAIM_RESULT, reclaimAppDeploymentImages } from '../apps/images';
 import { EMPTY_BACKEND_SWEEP, sweepBackends } from '../backends/maintenance';
+import { sweepAppRetention } from '../apps/retention';
+import { reclaimAppSiteBlobs } from '../apps/static-site';
 import { type GitBackedProject, deleteRemoteSessionBranch } from './git';
 import { purgeExpiredMonitorEvents, reconcileMonitorBoxes } from './lib/monitor-box';
 import { mapWithConcurrency } from './lib/trigger-scheduler-state';
@@ -414,11 +416,31 @@ function runMaintenanceSweeps() {
     // Daytona-only quota GC above. Deletes only images whose deployment THIS
     // database holds as unservable (App deleted, deployment failed/deleted),
     // after removing any runtime that still pins one. Bounded per pass.
-    () => reclaimAppDeploymentImages().catch((err) => {
-      logger.warn('[project-maintenance] App image reclaim failed:',
-        err instanceof Error ? err.message : err);
-      return { ...EMPTY_APP_IMAGE_RECLAIM_RESULT, errors: 1 };
-    }),
+    // Then retention: retire superseded deployments first (their images become
+    // reclaimable on this pass), and free static blobs and archives nothing
+    // uses any more. One positional slot, three isolated steps.
+    async () => {
+      const retention = await sweepAppRetention().catch((err) => {
+        logger.warn('[project-maintenance] App retention failed:', err instanceof Error ? err.message : err);
+        return { apps: 0, retired: 0, siteFilesReleased: 0, failedBuildLogLines: 0, artifacts: 0, errors: 1 };
+      });
+      const images = await reclaimAppDeploymentImages().catch((err) => {
+        logger.warn('[project-maintenance] App image reclaim failed:',
+          err instanceof Error ? err.message : err);
+        return { ...EMPTY_APP_IMAGE_RECLAIM_RESULT, errors: 1 };
+      });
+      const blobs = await reclaimAppSiteBlobs().catch((err) => {
+        logger.warn('[project-maintenance] App site blob reclaim failed:', err instanceof Error ? err.message : err);
+        return { reclaimed: 0, errors: 1 };
+      });
+      return {
+        ...images,
+        errors: images.errors + ('errors' in retention ? retention.errors : 0) + ('errors' in blobs ? blobs.errors : 0),
+        deploymentsRetired: retention.retired,
+        artifactsReclaimed: retention.artifacts,
+        siteBlobsReclaimed: blobs.reclaimed,
+      };
+    },
     // Private Connector email attachments expire after 24 hours. Successful
     // sends become non-replayable immediately, then this sweep deletes them
     // after the signed-URL ingestion grace window.
@@ -554,6 +576,9 @@ function logMaintenanceCycle(
       appImages.released ||
       appImages.runtimesRemoved ||
       appImages.errors ||
+      appImages.deploymentsRetired ||
+      appImages.artifactsReclaimed ||
+      appImages.siteBlobsReclaimed ||
       connectorAttachments.deleted ||
       connectorAttachments.errors ||
       promptAttachments.deleted ||
@@ -647,6 +672,9 @@ function logMaintenanceCycle(
     `app_images_released=${appImages.released}`,
     `app_images_pending=${appImages.pending}`,
     `app_images_deferred=${appImages.deferred}`,
+    `app_deployments_retired=${appImages.deploymentsRetired}`,
+    `app_artifacts_reclaimed=${appImages.artifactsReclaimed}`,
+    `app_site_blobs_reclaimed=${appImages.siteBlobsReclaimed}`,
     // A monitor box only stays billable while this sweep observes it, so
     // `monitor_observed` going flat while boxes exist is the signal that
     // monitor billing has silently stopped earning.
@@ -692,5 +720,3 @@ async function checkBillingInvariants(): Promise<void> {
     );
   }
 }
-
-export { startProjectMaintenance, stopProjectMaintenance } from '../workers/project-maintenance-worker';

@@ -232,6 +232,8 @@ export interface AppBlockV2 {
   spa?: boolean;
   readiness_path?: string;
   idle_timeout_seconds?: number;
+  /** Run 24/7 (cron jobs, workers, websockets) instead of stopping when idle. */
+  always_on?: boolean;
   monthly_budget_usd?: number;
   /** Kortix Backends, by name, the App may mint viewer tokens for. Default: none. */
   backends?: string[];
