@@ -97,7 +97,9 @@ export async function resolveSource(
     return { kind: 'error', message: `Connector "${event.connector}" does not name an app.`, providerId: provider.id };
   }
   // People read these messages: name the app as the project's connector does ("GitHub", not "github").
-  const label = connector.name?.trim() || app;
+  // A connector named after its own slug (CLI default) says nothing a person can read: name the app instead.
+  const name = connector.name?.trim();
+  const label = name && name !== event.connector ? name : app;
   const named = event.account?.trim();
   const needs: Resolution = {
     kind: 'needs_connection',
