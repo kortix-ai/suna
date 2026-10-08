@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test.describe("39 — The public /download page keeps the site navigation", () => {
+test.describe("47 — The public /download page keeps the site navigation", () => {
   // Regression for KRTX-1792. `/download` used to sit outside the marketing
   // route group, so a signed-out visitor who opened a pasted link got a page
   // with no navbar, no brand link home, and no menu — the only exits were the
