@@ -1459,8 +1459,10 @@ flow(
             (await db.query('SELECT status, command_type, source, payload FROM kortix.session_lifecycle_commands WHERE command_id = $1', [commandId])).rows[0],
           );
           const body = row?.payload?.body ?? {};
+          // The 202 above proves it queued; the lifecycle worker may claim it
+          // (`running`) before this read, so either status is the same command.
           if (
-            row?.status !== 'queued' ||
+            !['queued', 'running'].includes(row?.status) ||
             row.command_type !== 'create_session' ||
             row.source !== 'trigger:manual' ||
             row.payload?.visibility !== 'private' ||

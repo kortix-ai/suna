@@ -445,6 +445,8 @@ export function applyPreviewEnvironment(
     KE2E_CAP_DAYTONA: rawSecrets.DAYTONA_API_KEY ? '1' : '0',
     KE2E_CAP_MANAGED_GIT: managedGitEnabled ? '1' : '0',
     KE2E_CAP_MANAGED_GIT_PUSH: managedGitEnabled ? '1' : '0',
+    // A preview publishes no project snapshots (no KORTIX_PROJECT_SNAPSHOT_S3_BUCKET).
+    KE2E_CAP_PROJECT_SNAPSHOTS: '0',
     KE2E_DEFAULT_FLOW_ATTEMPTS: '1',
   };
 
