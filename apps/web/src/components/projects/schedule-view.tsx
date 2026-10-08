@@ -68,20 +68,25 @@ import {
   WarningIcon,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
 import { useCallback, useMemo, useState } from 'react';
 
 import {
   type TriggerKind,
   describeWhen,
+  isCustomerTrigger,
   isTriggerKind,
   localizedKindCopy,
   localizedTriggersCopy,
   matchesQuery,
   triggerName,
 } from './schedule/schedule-copy';
+import { appLabel } from './schedule/event-trigger-copy';
+import { useEventAppConnect } from './schedule/use-event-app-connect';
 import { ScheduleCreateModal } from './schedule/schedule-create-modal';
 import { ScheduleDetailSheet } from './schedule/schedule-detail-sheet';
 import { ScheduleTable } from './schedule/schedule-table';
+import { useTriggerControls } from './schedule/trigger-controls';
 
 /**
  * Pure — no hooks, no data fetching. Renders the pause switch for a MANAGER
@@ -219,12 +224,14 @@ function TriggerActivationMenu({ projectId }: { projectId: string }) {
 }
 
 export function ScheduleView({ projectId }: { projectId: string }) {
+  const router = useRouter();
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const copy = localizedTriggersCopy(tI18nComplete);
   const kindCopy = localizedKindCopy(tI18nComplete);
   const queryClient = useQueryClient();
-  const canWrite =
-    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE).allowed === true;
+  // One leaf per control, the same as on the Agent page (KRTX-1720).
+  const controls = useTriggerControls(projectId);
+  const canWrite = controls.canCreate;
 
   // Same entity/fetcher `TriggersActivationCard` above reads — both must share
   // this key, via `qk.project.triggers`, or a pause in one goes unseen in the
@@ -233,12 +240,19 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   const triggersQuery = useQuery({
     queryKey,
     queryFn: () => listProjectTriggers(projectId),
-    refetchInterval: 10_000,
     ...contract('config'),
+    refetchInterval: 10_000,
   });
 
   const [query, setQuery] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
+  // The empty state's "App event" button opens the form past the type step.
+  const [createKind, setCreateKind] = useState<TriggerKind | null>(null);
+  const openCreate = (kind: TriggerKind | null = null) => {
+    setCreateKind(kind);
+    setCreateOpen(true);
+  };
+  const eventConnect = useEventAppConnect(projectId);
   const configure = useConfigureThread(projectId);
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ProjectTrigger | null>(null);
@@ -313,8 +327,15 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   // Both kinds, together — the create flow is where a person picks one.
   // `isTriggerKind` also drops `monitor`-type entries: a separate
   // experimental feature that shares this backend list but not this screen.
+  // `isCustomerTrigger` then hides the reflector cron the starter seeds into
+  // every new project: hiding it keeps the empty state reachable on a fresh
+  // project without making the customer delete a trigger they never created.
+  // It still schedules and fires — this is display only.
   const triggers = useMemo(
-    () => (triggersQuery.data?.triggers ?? []).filter((t) => isTriggerKind(t.type)),
+    () =>
+      (triggersQuery.data?.triggers ?? []).filter(
+        (t) => isTriggerKind(t.type) && isCustomerTrigger(t),
+      ),
     [triggersQuery.data],
   );
   const filtered = useMemo(
@@ -364,7 +385,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
                 label={copy.createLabel}
                 pending={configure.pending}
                 onChat={() => configure.start(newConfigPrompt('trigger'))}
-                manual={{ onSelect: () => setCreateOpen(true) }}
+                manual={{ onSelect: () => openCreate() }}
               />
             ) : null}
           </div>
@@ -424,15 +445,26 @@ export function ScheduleView({ projectId }: { projectId: string }) {
             description={copy.emptyBody}
             action={
               canWrite ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={() => setCreateOpen(true)}
-                >
-                  <PlusIcon className="size-3.5 shrink-0" />
-                  {copy.createLabel}
-                </Button>
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => openCreate()}
+                  >
+                    <PlusIcon className="size-3.5 shrink-0" />
+                    {copy.createLabel}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => openCreate('event')}
+                  >
+                    <LightningIcon className="size-3.5 shrink-0" />
+                    {tI18nComplete.raw('text5441e7146193')}
+                  </Button>
+                </div>
               ) : undefined
             }
           />
@@ -444,13 +476,24 @@ export function ScheduleView({ projectId }: { projectId: string }) {
         ) : (
           <ScheduleTable
             triggers={filtered}
-            canWrite={canWrite}
+            controls={controls}
             runningSlug={run.isPending ? (run.variables?.slug ?? null) : null}
             togglingSlug={toggle.isPending ? (toggle.variables?.slug ?? null) : null}
             onOpen={(t) => setSelectedSlug(t.slug)}
             onRun={(t) => run.mutate(t)}
             onToggle={(t) => toggle.mutate(t)}
             onDelete={(t) => setDeleteTarget(t)}
+            onConnect={
+              eventConnect.canConnect
+                ? (t) =>
+                    t.event &&
+                    eventConnect.connect({
+                      app: t.event.app ?? t.event.connector,
+                      name: appLabel(t.event.app, t.event.connector),
+                      connector: t.event.connector,
+                    })
+                : undefined
+            }
           />
         )}
 
@@ -475,6 +518,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
         projectId={projectId}
         open={createOpen}
         onOpenChange={setCreateOpen}
+        initialKind={createKind}
         onCreated={(slug) => {
           setCreateOpen(false);
           invalidate();
@@ -487,7 +531,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
       <ScheduleDetailSheet
         projectId={projectId}
         trigger={selected}
-        canWrite={canWrite}
+        controls={controls}
         open={!!selected}
         onOpenChange={(next) => {
           if (!next) setSelectedSlug(null);

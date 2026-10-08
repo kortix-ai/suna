@@ -141,6 +141,37 @@ export async function revokeOAuthGrant(clientId: string) {
   );
 }
 
+// ─── Signed-in devices (browser sign-ins) ─────────────────────────────────
+
+/**
+ * One place the caller is signed in: a live Supabase auth session, as the
+ * auth server recorded it. `GET /accounts/me/devices`.
+ */
+export interface SignedInDevice {
+  session_id: string;
+  /** The User-Agent the device signed in with. */
+  user_agent: string | null;
+  ip: string | null;
+  signed_in_at: string;
+  /** When the device last refreshed its token; it refreshes about hourly while open. */
+  last_active_at: string;
+  /** The device that made this request. */
+  current: boolean;
+}
+
+/** The caller's signed-in devices, most recently active first. */
+export async function listSignedInDevices(): Promise<SignedInDevice[]> {
+  return unwrap(await backendApi.get<{ devices: SignedInDevice[] }>('/accounts/me/devices'))
+    .devices;
+}
+
+/** Sign one other device out. The current device signs out with `auth.signOut()`. */
+export async function signOutDevice(sessionId: string) {
+  return unwrap(
+    await backendApi.delete<{ ok: true }>(`/accounts/me/devices/${encodeURIComponent(sessionId)}`),
+  );
+}
+
 export interface ProjectCliToken {
   token_id: string;
   name: string;
@@ -154,6 +185,11 @@ export interface ProjectCliToken {
 
 export interface ProjectCliTokenListResponse {
   items: ProjectCliToken[];
+  /** Session-bound tokens the list hides — the runtime mints one per session
+   *  (the sandbox's `KORTIX_TOKEN`) and revokes it with the session, so they
+   *  are not CLI credentials a person manages. The count keeps their
+   *  provenance visible instead of a silent hole in the list. */
+  session_tokens: number;
 }
 
 /** The newly minted project-scoped token — `secret_key` is returned once. */

@@ -22,9 +22,6 @@ import {
 import { pageOf, rankApps, type CatalogApp } from './pipedream-search';
 import type { PipedreamActionLike } from './types';
 
-export { isCatalogApp } from './pipedream-catalog';
-export type { CatalogCategory } from './pipedream-index';
-
 const PD_BASE = 'https://api.pipedream.com';
 
 /**
@@ -328,7 +325,7 @@ export async function findPipedreamAccount(
   } = {},
 ): Promise<PipedreamAccount | null> {
   const listAccounts = runtime.listAccounts ?? ((id: string) => getProvider().listAccounts(id));
-  const sleep = runtime.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const sleep = runtime.sleep ?? Bun.sleep;
   const attempts = runtime.attempts ?? PIPEDREAM_ACCOUNT_LOOKUP_ATTEMPTS;
   for (let attempt = 0; attempt < attempts; attempt++) {
     if (attempt > 0) await sleep(PIPEDREAM_ACCOUNT_LOOKUP_DELAY_MS);
@@ -406,11 +403,6 @@ export function verifyWebhookSig(extUserId: string, sig: string | null): boolean
 /** Fetch the app's action catalog (raw, for normalizePipedream). */
 export async function pipedreamCatalog(app: string): Promise<PipedreamActionLike[]> {
   return getProvider().listActions(app);
-}
-
-/** List the connected accounts for an external user id (used by finalize + live e2e). */
-export async function pipedreamListAccounts(extUserId: string): Promise<Array<{ id: string; app: string; appName: string }>> {
-  return getProvider().listAccounts(extUserId);
 }
 
 /**

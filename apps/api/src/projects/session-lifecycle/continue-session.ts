@@ -7,7 +7,7 @@
 import * as lifecycleStore from './store';
 import { sessionAttachmentStore } from '../lib/session-attachments';
 import { projectSessions } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import type { SandboxRecord } from '../../sandbox-proxy/backend';
@@ -22,6 +22,7 @@ import { materializePromptAttachments } from './prompt-attachment-materializer';
 import { confirmPromptLanded, promptNeedsLandingProof } from './prompt-landing-proof';
 import { writeRuntimePromptFile } from './runtime-prompt-file';
 import { db } from '../../shared/db';
+import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
 import { resolveProjectAutomationActor } from './actor';
 import { awakeDeliveryTarget, deliverAfterWake, undoDeliveryWake, type SendOutcome } from './deliver';
@@ -70,12 +71,16 @@ export async function continueSession(
       projectId: projectSessions.projectId,
       status: projectSessions.status,
       metadata: projectSessions.metadata,
+      projectStatus: sql<string | null>`(SELECT p.status::text FROM kortix.projects p WHERE p.project_id = ${qualifiedColumn(projectSessions.projectId)})`,
     })
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, sessionId))
     .limit(1);
 
   if (!session) return 'no-session';
+  // A deleted workspace's sessions take no more messages (KRTX-1714): a chat
+  // reply in a bound thread, a trigger, a prompt queued before the delete.
+  if (session.projectStatus === 'archived') return 'no-session';
   // A parked session is a parked RUNTIME (`runtime_boot_failed` /
   // `runtime_wake_failed` stamp it), not a bad prompt. It is deliberately not
   // auto-restarted — see the 2026-08-24 learning — but the prompt waits for the
@@ -288,19 +293,26 @@ export async function continueSession(
     (await transitionSession('wake', sessionId, { error: null }))
       ? session.status
       : null;
-  const outcome = await deliverAfterWake({ command, session, sessionId, userId, awakeEarly, sendPrompt, beforeSend, tl });
   // The wake above is a claim that a runtime is coming. A delivery that ends
   // with no runtime (`unreachable`, `pending`, `no-session`) takes the claim
   // back, or the session reads `running` over a stopped box through every
-  // retry. `failed` and `not-landed`
-  // reached a live runtime, so they keep it.
-  if (wokeFrom && (outcome === 'unreachable' || outcome === 'pending' || outcome === 'no-session')) {
-    await undoDeliveryWake(sessionId, wokeFrom).catch((err) =>
+  // retry. So does one that throws, e.g. `InboxDeliveryPaused` from a Stop:
+  // `undoDeliveryWake` keeps the status when a box did come up. `failed` and
+  // `not-landed` reached a live runtime, so they keep it.
+  const undoWake = () =>
+    undoDeliveryWake(sessionId, wokeFrom!).catch((err) =>
       console.warn('[session-lifecycle] failed to undo the pre-delivery wake', {
         sessionId,
         error: err instanceof Error ? err.message : String(err),
       }),
     );
+  const outcome = await deliverAfterWake({ command, session, sessionId, userId, awakeEarly, sendPrompt, beforeSend, tl })
+    .catch(async (err) => {
+      if (wokeFrom) await undoWake();
+      throw err;
+    });
+  if (wokeFrom && (outcome === 'unreachable' || outcome === 'pending' || outcome === 'no-session')) {
+    await undoWake();
   }
   return outcome;
 }

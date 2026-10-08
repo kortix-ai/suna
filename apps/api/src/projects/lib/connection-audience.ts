@@ -57,21 +57,14 @@ export function audiencePersonId(input: {
  * reads: the project's `connection` grants and the person's groups. A project
  * with no narrowed account answers `open` without the second read.
  */
-export function loadConnectionAudience(input: {
+export async function loadConnectionAudience(input: {
   projectId: string;
   accountId: string;
   userId: string | null;
   /** The calling session's agent service account, when it acts as one. */
   agentId?: string | null;
 }): Promise<(connectionId: string) => ConnectionAudienceReach> {
-  return loadObjectAudience('connection', input);
-}
-
-async function loadObjectAudience(
-  objectType: 'connection',
-  input: { projectId: string; accountId: string; userId: string | null; agentId?: string | null },
-): Promise<(objectId: string) => ConnectionAudienceReach> {
-  const grants = await iamAuthorize.loadObjectGrants(input.projectId, objectType);
+  const grants = await iamAuthorize.loadObjectGrants(input.projectId, 'connection');
   if (grants.size === 0) return () => 'open';
   const userId = input.userId ? input.userId : null;
   const record = userId

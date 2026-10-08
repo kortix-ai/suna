@@ -2,7 +2,7 @@
 
 import type { SessionTranscriptSyncEnvelope } from '../core/rest/projects-client/sessions';
 import type { SessionStatus, Todo } from '../core/runtime/runtime-types';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
   claimSessionCacheOwnership,
   getSessionCacheOwnership,
@@ -59,6 +59,12 @@ const IDLE_STATUS = { type: 'idle' } as SessionStatus;
  * Network synchronization lives in the framework-free SessionSyncController.
  */
 interface UseSessionSyncOptions {
+  /**
+   * The session stream is connected (R5.3): no liveness or verify reads.
+   * Omit it when this hook does not watch the stream; another hook on the same
+   * session then decides.
+   */
+  streamConnected?: boolean;
   mirror?: SessionTranscriptSyncEnvelope | null;
   /**
    * Stable Kortix `(projectId, sessionId)` scope for disk transcript ownership.
@@ -161,9 +167,6 @@ export function livenessBusy(input: {
   return sessionSyncBusy(input) || input.serverHoldsTurn === true;
 }
 
-// `useLayoutEffect` warns during a server render, where it cannot run anyway.
-const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
-
 export function useSessionSync(sessionId: string, options: UseSessionSyncOptions = {}) {
   const {
     kortixSessionScope,
@@ -245,9 +248,11 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     mirror === undefined ? 'read' : mirror === null ? 'null' : 'envelope'
   }${savedChild ? '|child' : ''}`;
   const [mirrorAbsentFor, setMirrorAbsentFor] = useState<string | null>(null);
-  // A LAYOUT effect, so the copy kept on this device paints before the browser
-  // does: the first frame of an open shows the transcript, not placeholder rows.
-  useIsomorphicLayoutEffect(() => {
+  // A passive effect: the device's copy is read asynchronously (IndexedDB on
+  // web, AsyncStorage on mobile) and paints one task after the first frame.
+  // A layout effect over a synchronous localStorage read parsed up to 300 KB
+  // before the browser painted anything.
+  useEffect(() => {
     if (!canQueryRuntimeSession(sessionId) || !kortixSessionScope) return;
     // Already have the thread (a warm remount, or the runtime beat us): the
     // live read outranks a snapshot and must never be overwritten by one.
@@ -285,9 +290,8 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
       return true;
     };
 
-    // 1. The saved copy this device kept from the last open. Synchronous on
-    //    web, so it paints in this very commit. Not read again over a saved
-    //    copy already on screen: that one is this copy or newer.
+    // 1. The saved copy this device kept from the last open. Not read again
+    //    over a saved copy already on screen: that one is this copy or newer.
     let local: SessionTranscriptSyncEnvelope | null = null;
     const applyLocal = (envelope: SessionTranscriptSyncEnvelope | null) => {
       if (abort.signal.aborted || !envelope) return;
@@ -482,6 +486,15 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
         : !isLoading || mirrorAbsentFor === mirrorKey
           ? 'absent'
           : 'loading';
+
+  // The controller is shared by every hook on this session. Only a hook that
+  // passes `streamConnected` speaks for the stream; one that omits it (an
+  // export dialog) must not switch the verification poll back on.
+  useEffect(() => {
+    if (options.streamConnected === undefined) return;
+    controller.setStreamReliable(options.streamConnected);
+    return () => controller.setStreamReliable(false);
+  }, [controller, options.streamConnected]);
 
   useEffect(() => {
     // No runtime session to read (`''` under `useSession({ chatEngine: false })`):

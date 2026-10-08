@@ -22,11 +22,19 @@ describe('classifyRefreshResult', () => {
     expect(classifyRefreshResult({ error: null, hasSession: false })).toBe('transient');
   });
 
-  test('a dead refresh token or a missing session is expired', () => {
-    expect(classifyRefreshResult({ error: { name: 'AuthApiError', status: 400 }, hasSession: false })).toBe('expired');
-    expect(classifyRefreshResult({ error: { name: 'AuthApiError', status: 401 }, hasSession: false })).toBe('expired');
-    expect(classifyRefreshResult({ error: { name: 'AuthApiError', status: 403 }, hasSession: false })).toBe('expired');
+  test('a GoTrue code for a dead login, or a missing session, is expired', () => {
+    for (const code of ['refresh_token_not_found', 'refresh_token_already_used', 'session_not_found', 'validation_failed']) {
+      expect(classifyRefreshResult({ error: { name: 'AuthApiError', status: 400, code }, hasSession: false })).toBe('expired');
+    }
     expect(classifyRefreshResult({ error: { name: 'AuthSessionMissingError', status: 400 }, hasSession: false })).toBe('expired');
+  });
+
+  test('a 4xx without a dead-login code is transient', () => {
+    expect(classifyRefreshResult({ error: { name: 'AuthApiError', status: 400 }, hasSession: false })).toBe('transient');
+    expect(classifyRefreshResult({ error: { name: 'AuthApiError', status: 401 }, hasSession: false })).toBe('transient');
+    expect(classifyRefreshResult({ error: { name: 'AuthApiError', status: 403 }, hasSession: false })).toBe('transient');
+    expect(classifyRefreshResult({ error: { name: 'AuthRefreshDiscardedError', status: 409 }, hasSession: false })).toBe('transient');
+    expect(classifyRefreshResult({ error: { name: 'AuthUnknownError', status: 403 }, hasSession: false })).toBe('transient');
   });
 });
 
@@ -64,7 +72,7 @@ function setup(results: RefreshResult[]) {
   };
 }
 
-const EXPIRED: RefreshResult = { error: { name: 'AuthApiError', status: 400 }, hasSession: false };
+const EXPIRED: RefreshResult = { error: { name: 'AuthApiError', status: 400, code: 'refresh_token_not_found' }, hasSession: false };
 const OFFLINE: RefreshResult = { error: { name: 'AuthRetryableFetchError', status: 0 }, hasSession: false };
 
 describe('createSessionExpiryMonitor', () => {

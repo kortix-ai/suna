@@ -1,11 +1,4 @@
-import { ScopedCache } from '../../platform/storage/managed-storage';
 import { getCurrentRuntimeSandboxId } from '../../core/session/current-runtime';
-import type {
-  Session,
-  Agent,
-  Command,
-  ProviderListResponse as SdkProviderListResponse,
-} from '../../core/runtime/runtime-types';
 
 // ============================================================================
 // Query Keys
@@ -76,48 +69,6 @@ export function unwrap<T>(result: {
 }
 
 // ============================================================================
-// Session Hooks
-// ============================================================================
-
-// localStorage placeholder caches are per-sandbox too — scope by active server
-// id so re-opening a warm session paints its OWN last data, never the previous
-// sandbox's. Scoping lives in the helpers so every call site inherits it.
-//
-// These are backed by ScopedCache, which caps each family to its N
-// most-recently-used scopes. That cap is the whole point: the default scope is
-// the EPHEMERAL per-sandbox server id, so without a cap every new session would
-// leak a fresh `kortix_cache_*:<serverId>` blob forever and eventually blow the
-// localStorage quota (which then crashes whatever store writes next). The cache
-// is disposable — a miss just refetches — so small caps are safe.
-export const LS_SESSIONS = 'kortix_cache_sessions';
-export const LS_AGENTS = 'kortix_cache_agents';
-export const LS_COMMANDS = 'kortix_cache_commands';
-export const LS_PROVIDERS = 'kortix_cache_providers';
-
-// Session/command lists are keyed per ephemeral sandbox — keep only the few
-// most-recent sandboxes warm. Agents are keyed per directory (+ global), which
-// is a small, stable space, so it gets more headroom. Providers are global.
-const sessionsCache = new ScopedCache<Session[]>(LS_SESSIONS, 4);
-const agentsCache = new ScopedCache<Agent[]>(LS_AGENTS, 8);
-const commandsCache = new ScopedCache<Command[]>(LS_COMMANDS, 4);
-const providersCache = new ScopedCache<SdkProviderListResponse>(LS_PROVIDERS, 2);
-
-const cacheByFamily: Record<string, ScopedCache<unknown>> = {
-  [LS_SESSIONS]: sessionsCache,
-  [LS_AGENTS]: agentsCache,
-  [LS_COMMANDS]: commandsCache,
-  [LS_PROVIDERS]: providersCache,
-};
-
-export function getLSCache<T>(family: string, scope?: string): T | undefined {
-  return cacheByFamily[family]?.get(scope ?? activeServerKey()) as T | undefined;
-}
-
-export function setLSCache(family: string, value: unknown, scope?: string): void {
-  cacheByFamily[family]?.set(scope ?? activeServerKey(), value);
-}
-
-// ============================================================================
 // Helper: shape guard for runtime LIST endpoints
 // ============================================================================
 
@@ -140,17 +91,6 @@ export function asRuntimeList<T>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
 }
 
-/**
- * Read a localStorage-cached list for `placeholderData`. A cached value that is
- * not an array reads as a MISS (`undefined`), exactly like a legacy-shaped
- * entry — the query then simply refetches instead of painting a corrupt
- * placeholder into the render.
- */
-export function cachedRuntimeList<T>(family: string, scope?: string): T[] | undefined {
-  const cached = getLSCache<unknown>(family, scope);
-  return Array.isArray(cached) ? (cached as T[]) : undefined;
-}
-
 const PROJECT_SESSION_UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -158,22 +98,11 @@ export function canQueryRuntimeSession(sessionId: string | null | undefined): se
   return !!sessionId && !PROJECT_SESSION_UUID_RE.test(sessionId);
 }
 
-export function clearProjectProviderCache(projectId: string): void {
-  providersCache.remove(`proj:${projectId}:native`);
-  providersCache.remove(`proj:${projectId}:gateway`);
-}
-
 /**
- * Stable cache scope for data that does NOT vary per sandbox. The default
- * scope is the ephemeral per-sandbox server id, which is correct for
- * session-specific data (session lists collide across sandboxes) but wrong for
- * platform/project-level data like the model list and the agent roster: those
- * are identical across every sandbox, yet a per-server key guarantees a cache
- * MISS on every brand-new session (new sandbox → new server id → never seen).
- * Keying them here instead lets a fresh session paint its pickers from cache on
- * the first frame, before the sandbox is even up — killing the visible pop-in.
+ * @deprecated The provider lists are no longer kept in localStorage, so there
+ * is nothing to clear. Does nothing. Removed in the next major.
  */
-export const CACHE_SCOPE_GLOBAL = 'global';
+export function clearProjectProviderCache(_projectId: string): void {}
 
 // Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
 /** @deprecated Renamed to `canQueryRuntimeSession`. Removed in the next major. */

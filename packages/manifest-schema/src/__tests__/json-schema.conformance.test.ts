@@ -378,6 +378,71 @@ channels:
       'kortix_version = 1\n[[triggers]]\nslug = "t"\ntype = "cron"\ncron = "0 9 * * *"\nprompt = "go"\nsession_mode = "sometimes"\n',
   },
 
+  // ─── shared sections: triggers type = "event" ─────────────────────────
+  {
+    name: 'event: connector + event + config object is valid',
+    format: 'yaml',
+    valid: true,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: event\n    connector: github\n    event: GITHUB_PULL_REQUEST_EVENT\n    config: { owner: acme }\n    prompt: go\n',
+  },
+  {
+    name: 'event: config is optional',
+    format: 'yaml',
+    valid: true,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: event\n    connector: github\n    event: GITHUB_PULL_REQUEST_EVENT\n    prompt: go\n',
+  },
+  {
+    name: 'event: missing connector is rejected',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: event\n    event: X\n    prompt: go\n',
+  },
+  {
+    name: 'event: missing event is rejected',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: event\n    connector: github\n    prompt: go\n',
+  },
+  {
+    name: 'event: config must be an object',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: event\n    connector: github\n    event: GITHUB_PULL_REQUEST_EVENT\n    config: nope\n    prompt: go\n',
+  },
+  {
+    name: 'event: cron key on event is rejected',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: event\n    connector: github\n    event: GITHUB_PULL_REQUEST_EVENT\n    cron: "0 9 * * *"\n    prompt: go\n',
+  },
+  {
+    name: 'event: secret_env on event is rejected',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: event\n    connector: github\n    event: GITHUB_PULL_REQUEST_EVENT\n    secret_env: HOOK_SECRET\n    prompt: go\n',
+  },
+  {
+    name: 'cron: event keys on cron are rejected',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    cron: "0 9 * * *"\n    connector: github\n    prompt: go\n',
+  },
+  {
+    name: 'webhook: config on webhook is rejected',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: webhook\n    secret_env: HOOK_SECRET\n    config: {}\n    prompt: go\n',
+  },
+
   // ─── shared sections: triggers type = "monitor" ───────────────────────
   {
     name: 'monitor: a stream monitor with run + mode is valid',

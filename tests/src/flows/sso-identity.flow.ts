@@ -292,6 +292,7 @@ flow(
       'PATCH /v1/accounts/:accountId/members/:userId',
       'GET /v1/accounts/:accountId/members',
       'GET /v1/accounts/:accountId',
+      'POST /v1/access/check-email',
     ],
   },
   async (ctx) => {
@@ -349,6 +350,12 @@ flow(
 
     await ctx.step('an operator verifies the domain', async () => {
       (await operatorVerifies(ctx, team.id, true)).status(200).body().has('$.domain_verified', true);
+    });
+
+    await ctx.step('a verified domain without enforce_sso: check-email for an existing address on it → signin, not sso', async () => {
+      const person = await ctx.fixtures.userWithEmail(`${ctx.fixtures.name('no-enforce')}@${domain}`);
+      const mode = await checkEmailMode(ctx, person.email!);
+      if (mode !== 'signin') throw new Error(`a verified domain without enforce_sso must not force SSO, got ${mode}`);
     });
 
     await ctx.step('verified domain: an owner is never merged; the SSO identity joins as a plain member', async () => {
@@ -460,6 +467,136 @@ flow(
 
     await ctx.step('cleanup: remove the provider', async () => {
       (await owner.del('/v1/accounts/:accountId/iam/sso/provider', { params: { accountId: idpTeam.id } })).status(200);
+    });
+  },
+);
+
+// SSO-5 — SAML belongs to an organization. On a personal account its owner
+// could register an IdP that asserts any address (an operator's, say); Supabase
+// creates a separate SSO user for it (KRTX-1715).
+flow(
+  'SSO-5',
+  {
+    domain: 'iam',
+    routes: [
+      'GET /v1/accounts',
+      'GET /v1/accounts/:accountId/iam/sso/provider',
+      'PUT /v1/accounts/:accountId/iam/sso/provider',
+      'POST /v1/accounts/:accountId/iam/sso/provider/from-metadata',
+    ],
+  },
+  async (ctx) => {
+    const owner = ctx.client.as(ctx.P.OWNER);
+    let personal = '';
+    await ctx.step("the owner's personal account is the one whose id is their user id", async () => {
+      const r = await owner.get('/v1/accounts');
+      r.status(200);
+      personal = r.json<Array<{ account_id: string }>>().find((a) => a.account_id === ctx.P.OWNER.userId)?.account_id ?? '';
+      if (!personal) throw new Error('the owner has no personal account');
+    });
+
+    await ctx.step('setting up SAML on it → 403 sso_personal_account, on both routes', async () => {
+      const put = await owner.put(
+        '/v1/accounts/:accountId/iam/sso/provider',
+        { supabase_sso_provider_id: crypto.randomUUID(), name: 'Synthetic IdP', primary_domain: 'personal-sso.test' },
+        { params: { accountId: personal } },
+      );
+      put.status(403).body().has('$.code', 'sso_personal_account');
+      const fromMetadata = await owner.post(
+        '/v1/accounts/:accountId/iam/sso/provider/from-metadata',
+        { name: 'Synthetic IdP', primary_domain: 'personal-sso.test', metadata_url: 'https://idp.personal-sso.test/metadata' },
+        { params: { accountId: personal } },
+      );
+      fromMetadata.status(403).body().has('$.code', 'sso_personal_account');
+    });
+
+    await ctx.step('no provider was recorded on the personal account', async () => {
+      const r = await owner.get('/v1/accounts/:accountId/iam/sso/provider', { params: { accountId: personal } });
+      if (r.statusCode === 200) {
+        const provider = r.json<{ provider: unknown }>().provider;
+        if (provider) throw new Error(`a provider was recorded: ${JSON.stringify(provider)}`);
+      }
+    });
+  },
+);
+
+// SSO-6 — SSO only is enforced by the API on every credential, not only by the
+// web sign-in form. A password identity in the enforced domain still held a
+// JWT from GoTrue (a direct password grant, mobile, a social sign-in), and the
+// API accepted it everywhere (KRTX-1716).
+flow(
+  'SSO-6',
+  {
+    domain: 'iam',
+    routes: [
+      'POST /v1/accounts/:accountId/members',
+      'PUT /v1/accounts/:accountId/iam/sso/provider',
+      'PUT /v1/admin/api/accounts/:id/sso-domain-verification',
+      'GET /v1/accounts/:accountId',
+      'GET /v1/projects/:projectId',
+      'DELETE /v1/accounts/:accountId/iam/sso/provider',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team({ enterprise: true });
+    const project = await team.project();
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const domain = `${ctx.fixtures.name('sso-only')}.test`.toLowerCase();
+    const supabaseProviderId = crypto.randomUUID();
+    const params = { accountId: team.id };
+    const passwordPerson = await ctx.fixtures.userWithEmail(`admin@${domain}`);
+    const ssoPerson = await ctx.fixtures.userWithEmail(`member@${domain}`);
+    const elsewhere = await team.addMember('member');
+    // An account member reads a project only with a project role.
+    await team.grantProjectRole(project.id, elsewhere.userId!, 'member');
+    let sso: Client;
+
+    await ctx.step('two people on the domain join the account; one of them signs in through the IdP', async () => {
+      for (const person of [passwordPerson, ssoPerson]) {
+        const r = await owner.post('/v1/accounts/:accountId/members', { email: person.email, role: 'admin' }, { params });
+        r.status([200, 201]);
+      }
+      sso = ctx.client.withBearer(await ssoFixtureToken(ctx.env, ssoPerson, supabaseProviderId, []), 'SSO-only');
+    });
+
+    const reads = async (client: Client) => [
+      (await client.get('/v1/accounts/:accountId', { params })).statusCode,
+      (await client.get('/v1/projects/:projectId', { params: { projectId: project.id } })).statusCode,
+    ];
+
+    await ctx.step('before enforcement every member reads the account and its project', async () => {
+      await saveProvider(ctx, team.id, { supabaseProviderId, domain, enforceSso: true });
+      for (const client of [ctx.client.as(passwordPerson), sso, ctx.client.as(elsewhere)]) {
+        const codes = await reads(client);
+        if (codes.join() !== '200,200') throw new Error(`expected 200,200 before verification, got ${codes}`);
+      }
+    });
+
+    await ctx.step('with the domain verified, the password identity gets 403 sso_required on the account and the project', async () => {
+      (await operatorVerifies(ctx, team.id, true)).status(200).body().has('$.domain_verified', true);
+      const asPassword = ctx.client.as(passwordPerson);
+      (await asPassword.get('/v1/accounts/:accountId', { params })).status(403).body().has('$.code', 'sso_required');
+      (await asPassword.get('/v1/projects/:projectId', { params: { projectId: project.id } }))
+        .status(403)
+        .body()
+        .has('$.code', 'sso_required');
+    });
+
+    await ctx.step("the IdP's own identity, a member outside the domain, and the owner keep working", async () => {
+      for (const [label, client] of [['sso', sso], ['elsewhere', ctx.client.as(elsewhere)], ['owner', owner]] as const) {
+        const codes = await reads(client);
+        if (codes.join() !== '200,200') throw new Error(`${label}: expected 200,200, got ${codes}`);
+      }
+    });
+
+    await ctx.step('break-glass: an operator marks the domain unverified and the password identity reads again', async () => {
+      (await operatorVerifies(ctx, team.id, false)).status(200).body().has('$.domain_verified', false);
+      const codes = await reads(ctx.client.as(passwordPerson));
+      if (codes.join() !== '200,200') throw new Error(`expected 200,200 after break-glass, got ${codes}`);
+    });
+
+    await ctx.step('cleanup: remove the provider', async () => {
+      (await owner.del('/v1/accounts/:accountId/iam/sso/provider', { params })).status(200);
     });
   },
 );

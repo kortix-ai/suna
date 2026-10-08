@@ -69,7 +69,7 @@ mock.module('../projects/lib/sandbox-runtime-refresh', () => ({
 }));
 
 const { applyStoppedState } = await import('../projects/reaping/sandbox-state-sync');
-const { resumeStoppedSandbox } = await import('../projects/routes/shared');
+const { resumeStoppedSandbox } = await import('../projects/session-open');
 const {
   claimInPlaceRuntimeRecovery,
   markInPlaceRuntimeRecoveryAccepted,

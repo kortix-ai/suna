@@ -30,6 +30,7 @@ import Loading from '@/components/ui/loading';
 import { cn } from '@/lib/utils';
 import { accountSettingsTarget } from '@/stores/account-settings-modal-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { useAccountState } from '@/hooks/billing';
 import { getProjectDetail, isAbortError, turnRetryLabel, type GatewayErrorDetails } from '@kortix/sdk';
 import {
   contract,
@@ -125,7 +126,7 @@ function ErrorRow({ className, children, ...props }: ComponentProps<typeof Item>
 }
 
 // ============================================================================
-// Insufficient-credits detection — upstream 402 from /v1/router/chat/completions
+// Insufficient-credits detection — an upstream 402 from the LLM gateway
 // surfaces as "Payment Required: Insufficient credits. Balance: $-0.06". Render
 // a specialized card with one-click actions instead of raw text.
 // ============================================================================
@@ -205,6 +206,9 @@ function InsufficientCreditsCard({
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const accountId = useCurrentAccountStore((s) => s.selectedAccountId);
+  // KRTX-1720: a member cannot buy credits (`billing.write`), and the billing
+  // pane the buttons open is hidden from them. Say who can act instead.
+  const canManageBilling = useAccountState({ accountId }).data?.can_manage_billing !== false;
   const balance = parseBalance(errorText);
   const billingTo = accountSettingsTarget({ tab: 'billing', accountId });
   const title = tHardcodedUi.raw(
@@ -224,19 +228,25 @@ function InsufficientCreditsCard({
           {balance ? `Balance ${balance}` : errorText}
         </ItemDescription>
       </ItemContent>
-      <ItemActions className={ROW_ACTIONS}>
-        <Button asChild size="sm" className="active:scale-[0.96]">
-          <HubLink to={billingTo}>
-            <LightningIcon className="size-3.5 shrink-0" />
-            {tHardcodedUi.raw('componentsSessionSessionErrorBanner.line74JsxTextEnableAutoTopUp')}
-          </HubLink>
-        </Button>
-        <Button asChild variant="outline" size="sm" className="active:scale-[0.96]">
-          <HubLink to={billingTo}>
-            {tHardcodedUi.raw('componentsSessionSessionErrorBanner.line82JsxTextBuyCredits')}
-          </HubLink>
-        </Button>
-      </ItemActions>
+      {canManageBilling ? (
+        <ItemActions className={ROW_ACTIONS}>
+          <Button asChild size="sm" className="active:scale-[0.96]">
+            <HubLink to={billingTo}>
+              <LightningIcon className="size-3.5 shrink-0" />
+              {tHardcodedUi.raw('componentsSessionSessionErrorBanner.line74JsxTextEnableAutoTopUp')}
+            </HubLink>
+          </Button>
+          <Button asChild variant="outline" size="sm" className="active:scale-[0.96]">
+            <HubLink to={billingTo}>
+              {tHardcodedUi.raw('componentsSessionSessionErrorBanner.line82JsxTextBuyCredits')}
+            </HubLink>
+          </Button>
+        </ItemActions>
+      ) : (
+        <ItemDescription className="text-xs">
+          {tHardcodedUi.raw('componentsSessionSessionErrorBanner.askOwnerToAddCredits')}
+        </ItemDescription>
+      )}
     </ErrorRow>
   );
 }

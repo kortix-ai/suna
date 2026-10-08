@@ -252,7 +252,7 @@ mock.module('../lib/access', () => ({
 }));
 
 const { projectsApp } = await import('../lib/app');
-await import('./session-runtime');
+(await import('./session-runtime')).registerSessionRuntimeRoutes();
 
 /** `c.get('sessionId')` is OVERLOADED: a Kortix project-session id under a
  *  connector token, the SUPABASE AUTH session id under a browser JWT. The

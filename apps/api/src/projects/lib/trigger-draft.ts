@@ -1,12 +1,13 @@
 import type { TriggerList } from '@kortix/api-contract';
-import { projectTriggerRuntime } from '@kortix/db';
-import { formatDurationSeconds } from '@kortix/manifest-schema';
-import { eq } from 'drizzle-orm';
+import { connectors, projectTriggerRuntime } from '@kortix/db';
+import { cronIntervalError, formatDurationSeconds } from '@kortix/manifest-schema';
+import { and, eq, inArray } from 'drizzle-orm';
 import { config } from '../../config';
 import { db } from '../../shared/db';
+import * as store from '../trigger-events/store';
 import { ensureProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { validateTriggerCron, validateTriggerTimezone } from '../trigger-schedule';
-import { GIT_TRIGGER_SESSION_MODES, type GitMonitorMode, type GitTriggerSessionMode, type GitTriggerSpec, type GitTriggerType, type LoadedTriggers, MANIFEST_FILENAME, type ParsedManifest, defaultTriggerSessionMode, extractTriggers, parseMonitorFields, readManifest, triggerSpecToTomlEntry } from '../triggers';
+import { GIT_TRIGGER_SESSION_MODES, type GitMonitorMode, type GitTriggerEventFields, type GitTriggerSessionMode, type GitTriggerSpec, type GitTriggerType, type LoadedTriggers, MANIFEST_FILENAME, type ParsedManifest, defaultTriggerSessionMode, eventOnlyKeyError, extractTriggers, parseEventFields, parseMonitorFields, readManifest, triggerSpecToTomlEntry } from '../triggers';
 import { PRIVATE_TRIGGER_SESSION_ACCESS, loadTriggerSessionAccessMap } from '../trigger-session-access';
 import { withProjectGitAuth } from './git';
 import { type ProjectRow, deriveKortixApiRoot, normalizeBoolean, normalizeString } from './serializers';
@@ -61,6 +62,10 @@ export async function loadTriggersForResponse(
           .select()
           .from(projectTriggerRuntime)
           .where(eq(projectTriggerRuntime.projectId, projectId));
+  const eventConnectors = await loadEventConnectorInfo(projectId, specs);
+  const subscriptionBySlug = new Map(
+    specs.some((spec) => spec.event) ? (await store.listByProject(projectId)).map((r) => [r.slug, r]) : [],
+  );
   const runtimeBySlug = new Map(runtimeRows.map((row) => [row.slug, row]));
   const sessionAccessBySlug =
     specs.length === 0 ? new Map() : await loadTriggerSessionAccessMap(projectId);
@@ -82,6 +87,16 @@ export async function loadTriggersForResponse(
       mode: spec.monitorMode,
       interval_seconds: spec.intervalSeconds,
       expect_event_within_seconds: spec.expectEventWithinSeconds,
+      event: spec.event
+        ? {
+            connector: spec.event.connector,
+            type: spec.event.type,
+            config: spec.event.config,
+            provider: eventConnectors.get(spec.event.connector)?.provider ?? null,
+            app: eventConnectors.get(spec.event.connector)?.app ?? null,
+            ...eventStatusFor(subscriptionBySlug.get(spec.slug)),
+          }
+        : null,
       prompt_template: spec.promptTemplate,
       session_mode: spec.sessionMode,
       session_id: spec.pinnedSessionId,
@@ -92,6 +107,8 @@ export async function loadTriggersForResponse(
       last_status: runtimeBySlug.get(spec.slug)?.lastStatus ?? null,
       last_error: runtimeBySlug.get(spec.slug)?.lastError ?? null,
       last_attempt_at: runtimeBySlug.get(spec.slug)?.lastAttemptAt?.toISOString() ?? null,
+      // The slot the scheduler claims next, jitter included (KRTX-1743).
+      next_fire_at: runtimeBySlug.get(spec.slug)?.nextFireAt?.toISOString() ?? null,
       webhook_url: spec.type === 'webhook' ? buildPublicWebhookUrl(projectId, spec.slug) : null,
     })),
     // Server-side activation state for this project's whole trigger set. When
@@ -99,6 +116,38 @@ export async function loadTriggersForResponse(
     // ignored), regardless of each trigger's own `enabled`.
     triggers_paused: triggersPausedForProject(project.metadata),
     errors,
+  };
+}
+
+/** provider + app of each connector an event trigger names (null when the connector is not declared). */
+async function loadEventConnectorInfo(
+  projectId: string,
+  specs: GitTriggerSpec[],
+): Promise<Map<string, { provider: string; app: string | null }>> {
+  const slugs = [...new Set(specs.flatMap((spec) => (spec.event ? [spec.event.connector] : [])))];
+  if (slugs.length === 0) return new Map();
+  const rows = await db
+    .select({ slug: connectors.slug, provider: connectors.providerType, config: connectors.config })
+    .from(connectors)
+    .where(and(eq(connectors.projectId, projectId), inArray(connectors.slug, slugs)));
+  return new Map(
+    rows.map((row) => {
+      const app = (row.config as Record<string, unknown> | null)?.app;
+      return [row.slug, { provider: row.provider, app: typeof app === 'string' ? app : null }];
+    }),
+  );
+}
+
+/** Subscription state of one event trigger for the list response; `pending` = no subscription row yet. */
+export function eventStatusFor(row: store.EventSubscriptionRow | undefined): {
+  status: 'active' | 'needs_connection' | 'error' | 'pending';
+  error: string | null;
+  last_event_at: string | null;
+} {
+  return {
+    status: (row?.status as store.EventSubscriptionStatus | undefined) ?? 'pending',
+    error: row?.lastError ?? null,
+    last_event_at: row?.lastEventAt?.toISOString() ?? null,
   };
 }
 
@@ -123,6 +172,8 @@ export interface TriggerDraft {
   intervalSeconds: number | null;
   /** For type=monitor only — the silence watchdog, in whole seconds. */
   expectEventWithinSeconds: number | null;
+  /** For type=event only — connector, provider event type and event config. */
+  event?: GitTriggerEventFields | null;
   sessionMode: GitTriggerSessionMode;
   /** For sessionMode === 'pinned' only: the exact session id to loop. */
   pinnedSessionId: string | null;
@@ -136,8 +187,8 @@ export function parseTriggerDraft(
   body: Record<string, unknown>,
   opts: { existingSlug: string | null },
 ): TriggerDraft | { error: string } {
-  const rawSlug = normalizeString((body as any).slug);
-  const name = normalizeString((body as any).name);
+  const rawSlug = normalizeString(body.slug);
+  const name = normalizeString(body.name);
   if (!name) return { error: 'name is required' };
 
   const slug = opts.existingSlug ?? rawSlug ?? slugify(name);
@@ -145,29 +196,36 @@ export function parseTriggerDraft(
     return { error: `Invalid slug "${slug}" — use letters, digits, dashes, underscores only` };
   }
 
-  const typeRaw = normalizeString((body as any).type);
+  const typeRaw = normalizeString(body.type);
   const type: GitTriggerType | null =
-    typeRaw === 'webhook' || typeRaw === 'cron' || typeRaw === 'monitor' ? typeRaw : null;
-  if (!type) return { error: 'type must be "cron", "webhook", or "monitor"' };
+    typeRaw === 'webhook' || typeRaw === 'cron' || typeRaw === 'monitor' || typeRaw === 'event'
+      ? typeRaw
+      : null;
+  if (!type) return { error: 'type must be "cron", "webhook", "monitor", or "event"' };
+  if (type !== 'event') {
+    const bad = eventOnlyKeyError(body, 'event_config', type);
+    if (bad) return { error: bad };
+  }
 
   const promptTemplate = normalizeString(
-    (body as any).prompt_template ?? (body as any).promptTemplate,
+    body.prompt_template ?? body.promptTemplate,
   );
   if (!promptTemplate) return { error: 'prompt_template is required' };
 
-  const agent = normalizeString((body as any).agent ?? (body as any).agent_name) ?? 'default';
+  const agent = normalizeString(body.agent ?? body.agent_name) ?? 'default';
   // null/empty model = "Default" — leave it to the resolution chain at fire time.
-  const model = normalizeString((body as any).model) ?? null;
-  const enabled = normalizeBoolean((body as any).enabled) ?? true;
+  const model = normalizeString(body.model) ?? null;
+  const enabled = normalizeBoolean(body.enabled) ?? true;
 
   const session = parseDraftSession(body, type);
   if ('error' in session) return session;
   const { sessionMode, pinnedSessionId, sessionKey } = session;
-  const parsedFilter = parseDraftFilter((body as any).filter);
+  const parsedFilter = parseDraftFilter(body.filter);
   if ('error' in parsedFilter) return parsedFilter;
   const { filter } = parsedFilter;
 
   const common = { slug, name, agent, model, enabled, promptTemplate, sessionMode, pinnedSessionId, sessionKey, filter };
+  if (type === 'event') return parseEventDraft(body, common);
   if (type === 'monitor') return parseMonitorDraft(body, common);
   if (type === 'cron') return parseCronDraft(body, common);
   return parseWebhookDraft(body, common);
@@ -175,7 +233,7 @@ export function parseTriggerDraft(
 
 function parseDraftSession(body: Record<string, unknown>, type: GitTriggerType):
   Pick<TriggerDraft, 'sessionMode' | 'pinnedSessionId' | 'sessionKey'> | { error: string } {
-  const sessionModeRaw = normalizeString((body as any).session_mode ?? (body as any).sessionMode);
+  const sessionModeRaw = normalizeString(body.session_mode ?? body.sessionMode);
   if (
     sessionModeRaw &&
     !(GIT_TRIGGER_SESSION_MODES as readonly string[]).includes(sessionModeRaw)
@@ -187,14 +245,14 @@ function parseDraftSession(body: Record<string, unknown>, type: GitTriggerType):
   // Declaring a `session_key` IS the opt-in to keyed sessions — requiring both
   // it and `session_mode: keyed` was redundant. An explicit mode still wins, so
   // `session_mode: fresh` + a stray key stays fresh (and nulls the key below).
-  const sessionKeyRaw = normalizeString((body as any).session_key ?? (body as any).sessionKey);
+  const sessionKeyRaw = normalizeString(body.session_key ?? body.sessionKey);
 
   const sessionMode: GitTriggerSessionMode = sessionModeRaw
     ? (sessionModeRaw as GitTriggerSessionMode)
     : sessionKeyRaw
       ? 'keyed'
       : defaultTriggerSessionMode(type);
-  const pinnedSessionIdRaw = normalizeString((body as any).session_id ?? (body as any).sessionId);
+  const pinnedSessionIdRaw = normalizeString(body.session_id ?? body.sessionId);
   if (sessionMode === 'pinned' && !pinnedSessionIdRaw) {
     return { error: 'session_mode "pinned" requires a session_id to pin the trigger to' };
   }
@@ -235,6 +293,24 @@ function parseDraftFilter(filterRaw: unknown): { filter: TriggerDraft['filter'] 
 
 type DraftCommon = Pick<TriggerDraft, 'slug' | 'name' | 'agent' | 'model' | 'enabled' | 'promptTemplate' | 'sessionMode' | 'pinnedSessionId' | 'sessionKey' | 'filter'>;
 
+function parseEventDraft(body: Record<string, unknown>, common: DraftCommon): TriggerDraft | { error: string } {
+  const event = parseEventFields(body, 'event_config');
+  if ('error' in event) return { error: event.error };
+  return {
+    ...common,
+    type: 'event',
+    cron: null,
+    runAt: null,
+    timezone: 'UTC',
+    secretEnv: null,
+    run: null,
+    monitorMode: null,
+    intervalSeconds: null,
+    expectEventWithinSeconds: null,
+    event,
+  };
+}
+
 function parseMonitorDraft(body: Record<string, unknown>, common: DraftCommon): TriggerDraft | { error: string } {
     const monitor = parseMonitorFields(body);
     if ('error' in monitor) return { error: monitor.error };
@@ -253,11 +329,11 @@ function parseMonitorDraft(body: Record<string, unknown>, common: DraftCommon): 
 }
 
 function parseCronDraft(body: Record<string, unknown>, common: DraftCommon): TriggerDraft | { error: string } {
-    const timezone = normalizeString((body as any).timezone) ?? 'UTC';
+    const timezone = normalizeString(body.timezone) ?? 'UTC';
     const timezoneError = validateTriggerTimezone(timezone);
     if (timezoneError) return { error: timezoneError };
     // One-off ("run once") schedules carry `run_at` instead of `cron`.
-    const runAtRaw = normalizeString((body as any).run_at ?? (body as any).runAt);
+    const runAtRaw = normalizeString(body.run_at ?? body.runAt);
     if (runAtRaw) {
       const parsed = Date.parse(runAtRaw);
       if (Number.isNaN(parsed)) {
@@ -276,10 +352,10 @@ function parseCronDraft(body: Record<string, unknown>, common: DraftCommon): Tri
         expectEventWithinSeconds: null,
       };
     }
-    const cron = normalizeString((body as any).cron ?? (body as any).schedule);
+    const cron = normalizeString(body.cron ?? body.schedule);
     if (!cron)
       return { error: 'cron triggers must declare a `cron` expression or a one-off `run_at`' };
-    const cronError = validateTriggerCron(cron, timezone);
+    const cronError = validateTriggerCron(cron, timezone) ?? cronIntervalError(cron, timezone);
     if (cronError) return { error: cronError };
     return {
       ...common,
@@ -296,7 +372,7 @@ function parseCronDraft(body: Record<string, unknown>, common: DraftCommon): Tri
 }
 
 function parseWebhookDraft(body: Record<string, unknown>, common: DraftCommon): TriggerDraft | { error: string } {
-  const secretEnv = normalizeString((body as any).secret_env ?? (body as any).secretEnv);
+  const secretEnv = normalizeString(body.secret_env ?? body.secretEnv);
   if (!secretEnv) return { error: 'webhook triggers must declare `secret_env`' };
   if (!/^[A-Z_][A-Z0-9_]*$/.test(secretEnv)) {
     return { error: `secret_env must look like a project_secrets name (got "${secretEnv}")` };
@@ -319,7 +395,8 @@ function parseWebhookDraft(body: Record<string, unknown>, common: DraftCommon): 
  * PATCH merge before re-parsing. */
 
 export function specToBody(spec: GitTriggerSpec): Record<string, unknown> {
-  const isMonitor = spec.type === 'monitor';
+  // Monitor and event triggers reject cron wiring outright.
+  const noCronWiring = spec.type === 'monitor' || spec.type === 'event';
   return {
     slug: spec.slug,
     name: spec.name,
@@ -333,10 +410,10 @@ export function specToBody(spec: GitTriggerSpec): Record<string, unknown> {
     // `run_at` trigger would drop its schedule and fail re-validation ("cron
     // triggers must declare a `cron` expression or a one-off `run_at`").
     run_at: spec.runAt,
-    // A monitor rejects cron wiring outright, so its merge body must carry the
+    // A monitor/event rejects cron wiring outright, so its merge body must carry the
     // implicit 'UTC' as null — re-parsing the splat would otherwise fail on the
     // timezone the spec only holds as a placeholder.
-    timezone: isMonitor ? null : spec.timezone,
+    timezone: noCronWiring ? null : spec.timezone,
     secret_env: spec.secretEnv,
     run: spec.run,
     mode: spec.monitorMode,
@@ -350,6 +427,10 @@ export function specToBody(spec: GitTriggerSpec): Record<string, unknown> {
     session_id: spec.pinnedSessionId,
     session_key: spec.sessionKey,
     filter: spec.filter,
+    // Event keys only for an event trigger: a non-event body must not carry them.
+    ...(spec.event
+      ? { connector: spec.event.connector, event: spec.event.type, event_config: spec.event.config }
+      : {}),
   };
 }
 
@@ -387,6 +468,7 @@ export function draftToSpec(
     monitorMode: draft.monitorMode,
     intervalSeconds: draft.intervalSeconds,
     expectEventWithinSeconds: draft.expectEventWithinSeconds,
+    event: draft.event,
     sessionMode: draft.sessionMode,
     pinnedSessionId: draft.pinnedSessionId,
     sessionKey: draft.sessionKey,

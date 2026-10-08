@@ -1925,6 +1925,13 @@ flow(
       }
       throw new Error(`IAM-40: ${label} did not hold within 25 s`);
     };
+    // Turning oversight ON clears cached denials only on the replica that took
+    // the PATCH. Every other replica answers from a denial cached while the
+    // policy was off until that entry expires (IAM_CACHE_TTL_MS, 15 s). One
+    // 200 from one replica does not prove the next request agrees, so the
+    // checks after the flip start once the whole window has passed.
+    const IAM_CACHE_WINDOW_MS = 15_000 + 2_000;
+    let oversightOnAt = 0;
 
     await ctx.step('the policy is off by default; only the owner may change it', async () => {
       const asOwner = await owner.get('/v1/accounts/:accountId/iam/session-oversight', { params: accountParams });
@@ -1972,6 +1979,7 @@ flow(
         params: accountParams,
       });
       r.status(200).body().has('$.enabled', true);
+      oversightOnAt = Date.now();
       const readBack = await asBystander.get('/v1/accounts/:accountId/iam/session-oversight', {
         params: accountParams,
       });
@@ -1979,6 +1987,8 @@ flow(
     });
 
     await ctx.step('with the policy on, the admin opens the private session and finds it in the Sessions inventory', async () => {
+      const wait = oversightOnAt + IAM_CACHE_WINDOW_MS - Date.now();
+      if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
       await eventually('admin opens the private session', async () => (await readSession(asAdmin)).statusCode === 200);
       (await readSession(asAdmin)).status(200).body().has('$.session_id', privateSessionId);
       if (!(await inventoryIds(asAdmin, 'project')).has(privateSessionId)) {

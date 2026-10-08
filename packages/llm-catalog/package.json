@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "The Kortix LLM model catalog — the models the Kortix gateway supports and the managed-model set and defaults. Generated from models.dev; consumed across the Kortix platform and by the @kortix/sdk.",
   "license": "Elastic-2.0",
-  "homepage": "https://github.com/kortix-ai/suna/tree/main/packages/llm-catalog",
+  "homepage": "https://github.com/kortix-ai/suna/tree/dev/packages/llm-catalog",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/kortix-ai/suna.git",

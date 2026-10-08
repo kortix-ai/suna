@@ -4,7 +4,7 @@ import { MicrosoftTeams } from '@/features/icon/icons/microsoft-teams';
 import { Schedule } from '@/features/icon/icons/schedule';
 import { Slack } from '@/features/icon/icons/slack';
 import { Telegram } from '@/features/icon/icons/telegram';
-import { WebhooksLogoIcon } from '@phosphor-icons/react';
+import { CursorClickIcon, LightningIcon, WebhooksLogoIcon } from '@phosphor-icons/react';
 import type { ComponentType } from 'react';
 
 /**
@@ -31,4 +31,7 @@ export const SOURCE_ICONS: Record<
   email: Email,
   schedule: Schedule,
   webhook: WebhooksLogoIcon,
+  event: LightningIcon,
+  // A manual `kortix triggers fire` — the person ran it, not the scheduler.
+  manual: CursorClickIcon,
 };

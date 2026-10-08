@@ -29,14 +29,13 @@ import {
 } from '@/components/projects/schedule/schedule-copy';
 import { ScheduleCreateModal } from '@/components/projects/schedule/schedule-create-modal';
 import { ScheduleDetailSheet } from '@/components/projects/schedule/schedule-detail-sheet';
+import { useTriggerControls } from '@/components/projects/schedule/trigger-controls';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EditorSection } from '@/features/workspace/customize/sections/view/agent-editor-primitives';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
   deleteProjectTrigger,
@@ -45,7 +44,14 @@ import {
   type ProjectTrigger,
 } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
-import { PlusIcon, PulseIcon, TimerIcon, WebhooksLogoIcon, type Icon } from '@phosphor-icons/react';
+import {
+  LightningIcon,
+  PlusIcon,
+  PulseIcon,
+  TimerIcon,
+  WebhooksLogoIcon,
+  type Icon,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo, useState } from 'react';
 
@@ -53,6 +59,7 @@ const KIND_ICON: Record<ProjectTrigger['type'], Icon> = {
   cron: TimerIcon,
   webhook: WebhooksLogoIcon,
   monitor: PulseIcon,
+  event: LightningIcon,
 };
 
 /**
@@ -92,10 +99,9 @@ export function AgentTriggersSection({
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
-  const canCreate =
-    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE).allowed === true;
-  const canWrite =
-    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE).allowed === true;
+  // One leaf per control, the same as on the Triggers page (KRTX-1720).
+  const controls = useTriggerControls(projectId);
+  const canCreate = controls.canCreate;
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ProjectTrigger | null>(null);
@@ -252,7 +258,7 @@ export function AgentTriggersSection({
       <ScheduleDetailSheet
         projectId={projectId}
         trigger={selected}
-        canWrite={canWrite}
+        controls={controls}
         open={!!selected}
         onOpenChange={(next) => {
           if (!next) setSelectedSlug(null);

@@ -51,6 +51,7 @@ import {
   isRuntimeIdentityUnavailable,
   isSandboxResumable,
   isWakeClassFailure,
+  sessionWakeProgress,
 } from '@/features/session/session-resume';
 import { canPollSessionStart } from '@/features/session/session-start-gate';
 import {
@@ -107,7 +108,6 @@ import {
   sessionStartKey,
   setActiveInstanceCookie,
   updateProjectSession,
-  wakeProgressFingerprint,
 } from '@kortix/sdk';
 import {
   type UseSessionResult,
@@ -121,6 +121,7 @@ import {
   useProjectSession,
   useSession,
   useSessionPrompts,
+  useSessionStreamConnected,
   useWakeEscalation,
 } from '@kortix/sdk/react';
 
@@ -366,9 +367,6 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   const runtimeConnectionStatus = useRuntimeConnectionStore((s) => s.status);
   const runtimeVersion = useRuntimeConnectionStore((s) => s.openCodeVersion);
   const runtimeProbeError = useRuntimeConnectionStore((s) => s.runtimeError);
-  const sandboxMetadata = (sandbox?.metadata as Record<string, unknown> | undefined) ?? {};
-  const wakeStopReason =
-    typeof sandboxMetadata.stopReason === 'string' ? sandboxMetadata.stopReason : null;
   // Only an ESTABLISHED runtime is woken. A session whose first sandbox is
   // still being built (`external_id` null, "Sandbox build running…") is not
   // stuck — it is doing minutes of legitimate work with no client-visible
@@ -391,20 +389,16 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   const wake = useWakeEscalation({
     waking: wakeLadderApplies,
     runtimeReachable: runtimeProbed && runtimeHealthy,
-    progress: wakeProgressFingerprint([
-      startStage,
-      session.reason,
-      sandbox?.status,
-      wakeStopReason,
-      typeof sandboxMetadata.runtimeWakeStartedAt === 'string'
-        ? sandboxMetadata.runtimeWakeStartedAt
-        : null,
-      session.runtimeSessionId,
+    progress: sessionWakeProgress({
+      stage: startStage,
+      reason: session.reason,
+      sandbox,
+      runtimeSessionId: session.runtimeSessionId,
       runtimeConnectionStatus,
       runtimeHealthy,
       runtimeVersion,
       runtimeProbeError,
-    ]),
+    }),
     serverGaveUp: wakeServerGaveUp,
     onRetryStart: () => {
       queryClient.invalidateQueries({ queryKey: sessionStartKey(projectId, sessionId) });
@@ -413,6 +407,10 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     // own ref, so a rebuilt closure here cannot re-run its decision effect and
     // fire one rung twice.
     onRestart: handleRestart,
+    // While the session stream is up the server runs this ladder (R5.2) and
+    // the hook only reports it.
+    projectId,
+    sessionId,
   });
   // THE progress-aware budget. Every consumer below reads time-since-CHANGE,
   // never time-since-wake-started — the fixed clock this replaces expired
@@ -425,9 +423,13 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // than one second could then never elapse, silently ending the resume loop
   // after its first immediate attempt.
   const wakeShowingProgress = wakeSilentMs < AUTO_RESUME_WINDOW_MS;
+  // With the session stream up, every change of the box row re-reads `/start`
+  // (R5.3), so only the first, waking attempt is needed here.
+  const sessionStreamConnected = useSessionStreamConnected(projectId, sessionId);
   useEffect(() => {
     if (!sandboxResumable) return;
     if (!wakeShowingProgress) return;
+    if (sessionStreamConnected && resumeAttempts > 0) return;
     // First attempt fires immediately (match the refresh); back off after that,
     // and keep re-asking for as long as the wake is still showing progress.
     const t = setTimeout(
@@ -438,7 +440,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       resumeAttempts === 0 ? 0 : Math.min(1500 * 2 ** Math.min(resumeAttempts - 1, 3), 8000),
     );
     return () => clearTimeout(t);
-  }, [sandboxResumable, resumeAttempts, wakeShowingProgress, projectId, sessionId, queryClient]);
+  }, [sandboxResumable, resumeAttempts, wakeShowingProgress, sessionStreamConnected, projectId, sessionId, queryClient]);
   // While a resumable box is still SHOWING PROGRESS it is "waking", not "dead"
   // — render the boot loader, never the dead-end card.
   const autoResuming = isAutoResuming(sandbox, { elapsedMs: wakeSilentMs });
@@ -1273,6 +1275,15 @@ function RestartSessionButton({
   pendingLabel?: string;
 }) {
   const t = useTranslations('sessionPage');
+  // Restart is the session owner's or a project manager's; the server answers
+  // anyone else 403. The row is the page's own cached read of this session.
+  const params = useParams<{ id: string; sessionId: string }>();
+  const { data: session } = useProjectSession(params?.id, params?.sessionId, {
+    enabled: !!params?.id && !!params?.sessionId,
+  });
+  if (session?.can_manage_lifecycle === false) {
+    return <p className="text-muted-foreground text-sm">{t('restart.ownerOnly')}</p>;
+  }
   return (
     <Button
       type="button"

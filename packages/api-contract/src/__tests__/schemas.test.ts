@@ -3,7 +3,6 @@ import {
   ConnectorAuthorizationStrategySchema,
   ConnectionSchema,
   ConnectionMetadataSchema,
-  EXPERIMENTAL_FEATURE_KEYS,
   FEATURE_FLAG_KEYS,
   FeatureFlagStabilitySchema,
   ErrorEnvelopeSchema,
@@ -143,7 +142,6 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       reminders: false,
       warm_sessions: false,
       secrets_egress: false,
-      pi_worker: false,
       pooled_provider_secrets: false,
       pi_harness: false,
       config_releases: true,
@@ -227,6 +225,7 @@ function triggerFixture(overrides: Record<string, unknown> = {}) {
     mode: null,
     interval_seconds: null,
     expect_event_within_seconds: null,
+    event: null,
     prompt_template: 'Summarize yesterday.',
     session_mode: 'fresh',
     session_id: null,
@@ -530,6 +529,24 @@ describe('TriggerSchema', () => {
     ).not.toThrow();
   });
 
+  test('accepts an event trigger with its subscription state', () => {
+    const event = {
+      connector: 'github',
+      type: 'GITHUB_PULL_REQUEST_EVENT',
+      config: { owner: 'acme' },
+      provider: 'composio',
+      app: 'github',
+      status: 'needs_connection',
+      error: 'Connect a shared GitHub account to activate this trigger.',
+      last_event_at: null,
+    };
+    const trigger = triggerFixture({ type: 'event', cron: null, event });
+    expect(() => TriggerSchema.strict().parse(trigger)).not.toThrow();
+    expect(
+      TriggerSchema.safeParse(triggerFixture({ type: 'event', event: { ...event, status: 'bogus' } })).success,
+    ).toBe(false);
+  });
+
   // `monitor` is the third trigger type:
   // no cron/secret_env wiring, a `run` command plus a `mode` instead.
   test('accepts a monitor trigger', () => {
@@ -721,16 +738,11 @@ describe('envelopes', () => {
       'reminders',
       'warm_sessions',
       'secrets_egress',
-      'pi_worker',
       'pooled_provider_secrets',
       'pi_harness',
       'config_releases',
       'us_region',
     ]);
-  });
-
-  test('EXPERIMENTAL_FEATURE_KEYS is a deprecated alias of the same list', () => {
-    expect(EXPERIMENTAL_FEATURE_KEYS).toBe(FEATURE_FLAG_KEYS);
   });
 
   test('stability admits stable — a settled feature can still ship behind a flag', () => {

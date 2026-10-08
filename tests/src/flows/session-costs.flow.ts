@@ -282,3 +282,53 @@ flow(
     }
   },
 );
+
+// COST-4 — account-wide usage reads need `billing.read` for every credential
+// class. An account-bound token alone is not authority: a service account with
+// no role assignment is denied. A project-filtered read stays on the project.
+flow(
+  'COST-4',
+  {
+    domain: 'billing',
+    requires: ['database'],
+    routes: [
+      'GET /v1/usage/cost-summary',
+      'GET /v1/usage/cost-by-project',
+      'GET /v1/usage/session-costs',
+      'GET /v1/usage',
+      'POST /v1/accounts/tokens',
+      'POST /v1/accounts/:accountId/iam/service-accounts',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const otherProject = await (await ctx.fixtures.team()).project();
+    const member = await team.addMember('member');
+    const reads = ['/v1/usage/cost-summary', '/v1/usage/cost-by-project', '/v1/usage/session-costs', '/v1/usage'] as const;
+
+    await ctx.step('service account with zero role assignments cannot read account-wide usage → 403', async () => {
+      const sa = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/accounts/:accountId/iam/service-accounts',
+        { name: ctx.fixtures.name('cost4-sa') },
+        { params: { accountId: team.id } },
+      );
+      sa.status(201);
+      const c = ctx.client.withBearer(sa.json<{ secret: string }>().secret, 'COST-4-SA');
+      for (const path of reads) (await c.get(path)).status(403);
+    });
+    await ctx.step('member PAT (billing.read) still reads account usage → 200; foreign project filter → 403/404', async () => {
+      const created = await ctx.client.as(member).post('/v1/accounts/tokens', {
+        name: ctx.fixtures.name('cost4-pat'),
+        account_id: team.id,
+      });
+      created.status(201);
+      const c = ctx.client.withBearer(created.json<{ secret_key: string }>().secret_key, 'COST-4-PAT');
+      for (const path of reads) (await c.get(path)).status(200);
+      (await c.get('/v1/usage/session-costs', { query: { project_id: otherProject.id } })).status([403, 404]);
+    });
+    await ctx.step('OWNER JWT still reads account usage → 200', async () => {
+      const owner = ctx.client.as(ctx.P.OWNER);
+      (await owner.get('/v1/usage/cost-summary', { query: { account_id: team.id } })).status(200);
+    });
+  },
+);

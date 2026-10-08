@@ -2,7 +2,6 @@
 
 import { MessageSenderAbove } from '../participants/session-participants';
 import { MessageAuthorLabel } from './message-author-label';
-import { ReminderTurnCard } from './reminder-turn-card';
 import { errorToast } from '@/components/ui/toast';
 import {
   fetchSessionAttachment,
@@ -18,13 +17,13 @@ import { sanitizePromptUploadFilename } from '@kortix/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
-  CaretDownIcon as ChevronDown,
   PencilSimpleIcon,
-  TimerIcon as Timer,
+  AlarmIcon,
+  LightningIcon,
 } from '@phosphor-icons/react';
 
 import { CopyButton } from '@/components/markdown/copy-button';
-import { Badge } from '@/components/ui/badge';
+import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { InlineMeta } from '@/components/ui/inline-meta';
@@ -73,7 +72,10 @@ import {
   type MentionSegment,
   type MentionSourceRef,
 } from '../mention-segments';
-import { parseChannelMessage } from './channel-message';
+import { parseChannelMessage, slackConversationName, type ChannelMessageInfo } from './channel-message';
+import { SourceCard, SourcePill } from './source-pill';
+import { useChannelBindings } from '@/hooks/channels/use-channel-bindings';
+import { useParams } from 'next/navigation';
 import { CHANNEL_BRAND_COLOR, ChannelBrandMark, channelPlatformLabel } from './channel-brand';
 import {
   parseAgentMentionReferences,
@@ -84,7 +86,9 @@ import {
   parseSessionReferences,
   parseSystemNotifications,
   parseReminderPrompt,
+  type ReminderPromptInfo,
   parseTriggerEvent,
+  type TriggerEventInfo,
   QUOTE_MARKER_RE,
   quoteMarker,
   splitAtQuoteMarkers,
@@ -137,6 +141,187 @@ export const BUBBLE_TEXT = cn(
 export const BUBBLE_SURFACE = cn(
   'bg-sidebar dark:bg-muted text-foreground flex max-w-full flex-col px-3.5 py-2.5 select-none rounded-lg',
 );
+
+/**
+ * Where a channel message came from, in the pill's hover card: the platform,
+ * the channel or chat it was posted in, and who posted it. A Slack prompt
+ * written before channel names were recorded carries a bare id (`C0DEV`); the
+ * project's Slack bindings name it, read only while this card is open. A Teams
+ * conversation id names nothing a person reads, so Teams shows no channel row.
+ */
+export function ChannelOrigin({ info, platform }: { info: ChannelMessageInfo; platform: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const projectId = useParams<{ id?: string }>()?.id ?? null;
+  const bareSlackId = info.platform === 'Slack' && /^[CDG][A-Z0-9]+$/.test(info.context);
+  const { data } = useChannelBindings(bareSlackId ? projectId : null);
+  const binding = bareSlackId
+    ? data?.bindings.find((b) => b.platform === 'slack' && b.channelId === info.context)
+    : undefined;
+  const channel = info.platform === 'Teams' ? '' : (binding && slackConversationName(binding)) || info.context;
+  return (
+    <SourceCard
+      mark={<ChannelBrandMark platform={info.platform} className="size-3.5 shrink-0" />}
+      title={platform}
+      rows={[
+        { label: tI18nComplete('textce4683e7013a'), value: channel },
+        { label: tI18nComplete('text218197693424'), value: info.userName },
+      ]}
+    />
+  );
+}
+
+/**
+ * A message that arrived from a chat channel (Slack / Microsoft Teams /
+ * Telegram): a source pill — mark, platform, sender — over the same bubble a
+ * typed message gets. Every `@name` in the text (`@Kortix`, `@KortixDev`,
+ * `@here`) is a `MentionChip`, the chip the composer draws, static because a
+ * channel mention opens nothing here. Exported for `channel-message-card.test.tsx`.
+ */
+export function ChannelMessage({
+  info,
+  actions,
+}: {
+  info: ChannelMessageInfo;
+  actions?: React.ReactNode;
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const platform = channelPlatformLabel(info.platform, tI18nComplete);
+  return (
+    <div className="flex flex-col items-end gap-1.5">
+      <SourcePill
+        mark={<ChannelBrandMark platform={info.platform} className="size-3 shrink-0" />}
+        source={platform}
+        sourceColor={CHANNEL_BRAND_COLOR[info.platform]}
+        sender={info.userName}
+        card={<ChannelOrigin info={info} platform={platform} />}
+      />
+      {info.messageText && (
+        <div className={cn(BUBBLE_SURFACE, 'max-w-[80%]')}>
+          <div className={BUBBLE_TEXT}>
+            {buildMentionSegments({ text: info.messageText }).map((segment, i) =>
+              segment.type ? (
+                <MentionChip key={i} kind="user" label={segment.text.slice(1)} />
+              ) : (
+                <span key={i}>{segment.text}</span>
+              ),
+            )}
+          </div>
+        </div>
+      )}
+      {actions}
+    </div>
+  );
+}
+
+/**
+ * A prompt the platform wrote — a reminder fire or a trigger fire — drawn the
+ * way a channel message is: a source pill over the plain bubble, so every
+ * prompt a person did not type carries the same mark. One layout for both.
+ */
+function PlatformPromptMessage({
+  pill,
+  text,
+  actions,
+  ...data
+}: {
+  pill: React.ReactNode;
+  text: string;
+  actions?: React.ReactNode;
+} & Record<`data-${string}`, string>) {
+  return (
+    <div className="flex flex-col items-end gap-1.5" {...data}>
+      {pill}
+      {text && (
+        <div className={cn(BUBBLE_SURFACE, 'max-w-[80%]')}>
+          <div className={BUBBLE_TEXT}>{text}</div>
+        </div>
+      )}
+      {actions}
+    </div>
+  );
+}
+
+/**
+ * A reminder fire (`[REMINDER reminder.<id> …]`). The pill says Reminder and
+ * whether it repeats; its card carries the id and a link to the project's
+ * reminders for this session.
+ */
+function ReminderMessage({ info, actions }: { info: ReminderPromptInfo; actions?: React.ReactNode }) {
+  const t = useTranslations('reminders');
+  const params = useParams<{ id?: string; sessionId?: string }>();
+  const manageHref =
+    params?.id && params.sessionId ? `/projects/${params.id}/reminders?session=${params.sessionId}` : null;
+  return (
+    <PlatformPromptMessage
+      data-testid="reminder-turn"
+      data-reminder-id={info.id}
+      text={info.prompt}
+      actions={actions}
+      pill={
+        <SourcePill
+          mark={<AlarmIcon className="size-3 shrink-0" aria-hidden />}
+          source={t('cardLabel')}
+          sender={info.recurring ? t('cardRecurring') : t('cardOneTime')}
+          card={
+            <SourceCard
+              mark={<AlarmIcon className="size-3.5 shrink-0" aria-hidden />}
+              title={t('cardLabel')}
+              footer={
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-muted-foreground truncate font-mono">{info.id}</span>
+                  {manageHref && (
+                    <HoverPrefetchLink
+                      href={manageHref}
+                      className="text-foreground shrink-0 font-medium underline-offset-2 hover:underline"
+                    >
+                      {t('cardManage')}
+                    </HoverPrefetchLink>
+                  )}
+                </div>
+              }
+            />
+          }
+        />
+      }
+    />
+  );
+}
+
+/** A trigger fire (`<trigger_event>{…}</trigger_event>`): the trigger's name in the pill, the prompt in the bubble. */
+function TriggerMessage({ info, actions }: { info: TriggerEventInfo; actions?: React.ReactNode }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const name = info.data?.trigger || tI18nComplete.raw('text512618790549');
+  const manual = Boolean(info.data?.data?.manual);
+  const source = tI18nComplete.raw('text8b9c643731c9');
+  return (
+    <PlatformPromptMessage
+      data-testid="trigger-turn"
+      text={info.prompt}
+      actions={actions}
+      pill={
+        <SourcePill
+          mark={<LightningIcon className="size-3 shrink-0" aria-hidden />}
+          source={source}
+          sender={name}
+          card={
+            <SourceCard
+              mark={<LightningIcon className="size-3.5 shrink-0" aria-hidden />}
+              title={source}
+              footer={
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-foreground truncate font-mono">{name}</span>
+                  {manual && (
+                    <span className="text-muted-foreground shrink-0">{tI18nComplete.raw('textb0b9fe24ffa9')}</span>
+                  )}
+                </div>
+              }
+            />
+          }
+        />
+      }
+    />
+  );
+}
 
 export interface NormalizedAttachment {
   key: string;
@@ -455,7 +640,7 @@ function useDecodedImageSrc(src: string | null, showBytesNow: boolean): string |
         if (!cancelled) setDecoded(src);
       },
       // Undecodable here (a HEIC echo, a broken file): keep what is on screen.
-      () => {},
+      () => { },
     );
     return () => {
       cancelled = true;
@@ -763,7 +948,7 @@ export function editResendAttachments(
 /**
  * The message bubble, including the clamp and its expand affordance.
  *
- * The expand control is the CHEVRON, not the bubble. The bubble used to carry
+ * The expand control is the "Show more" button, not the bubble. The bubble used to carry
  * `role="button"` + `tabIndex={0}` whenever the text was clamped, and it
  * contains `MentionChip` buttons — a file or session chip that opens what it
  * names. Interactive content inside a `role="button"` is invalid for a reason
@@ -772,13 +957,11 @@ export function editResendAttachments(
  * being tab stops in the browser — a bubble that a keyboard user could enter,
  * tab through, and never operate.
  *
- * Promoting the chevron — which already sat exactly where the affordance reads
- * — makes it a real `<button>` with a name (`Expand message`), state
- * (`aria-expanded`) and a target (`aria-controls` → the clamped region). The
- * bubble keeps a plain `onClick` because clicking anywhere in a long message to
- * open it is a mouse convenience worth keeping, and a div with a click handler
- * claims nothing to a screen reader. That click is also why `MentionChip` calls
- * `stopPropagation`: without it, opening a file would toggle the bubble too.
+ * A real `<button>` carries a name (its visible "Show more" text), state
+ * (`aria-expanded`) and a target (`aria-controls` → the clamped region). It is
+ * the ONLY toggle. The bubble itself used to toggle on click, and selecting
+ * text to copy from a long prompt opened or closed it at random: a drag that
+ * ends inside the bubble is a click.
  *
  * Exported, and taking `canExpand` as a PROP rather than measuring it, because
  * the measurement is a `ResizeObserver` in `UserMessage` that only exists in a
@@ -826,9 +1009,7 @@ export function UserMessageBubble({
         // 4px: `--radius` (10) minus 6, the corner under the sender's avatar.
         tail && 'rounded-tr-[calc(var(--radius)-6px)]',
         fullWidth ? 'w-full' : 'w-fit',
-        canExpand && 'cursor-pointer',
       )}
-      onClick={() => canExpand && onToggle()}
     >
       {/* Text content. Quoted context, when the message has any, is part of
           it — see `QuotedMessageBody`. */}
@@ -851,32 +1032,25 @@ export function UserMessageBubble({
           {canExpand && !expanded && (
             <div className="from-sidebar dark:from-muted pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t to-transparent" />
           )}
-
-          {/* The expand/collapse control. `stopPropagation` because the bubble
-              behind it still toggles on click — without it one press would fire
-              both handlers and cancel itself out. */}
-          {canExpand && (
-            <button
-              type="button"
-              aria-label={
-                expanded
-                  ? tI18nComplete.raw('text8820bd428377')
-                  : tI18nComplete.raw('text737f67f9918f')
-              }
-              aria-expanded={expanded}
-              aria-controls={textId}
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggle();
-              }}
-              className="bg-muted/80 text-muted-foreground hover:bg-muted focus-visible:ring-ring absolute right-0 bottom-0 z-10 cursor-pointer rounded-md p-1 backdrop-blur-sm transition-colors focus-visible:ring-2 focus-visible:outline-none"
-            >
-              <ChevronDown
-                className={cn('size-3.5 transition-transform', expanded && 'rotate-180')}
-              />
-            </button>
-          )}
         </div>
+      )}
+      {/* "Show more" / "Show less", under the text at the bottom left, where a
+          reader's eye ends the clamped run. Text, not a corner chevron: the
+          chevron read as decoration and sat on top of the last line. Visible
+          text is its accessible name. `hit-area-x-2 hit-area-y-2` grows the
+          target past the 16px line without moving it; the bubble padding
+          holds the extension, so its `overflow-hidden` clips none of it.
+          `print:hidden`: a printed page has nothing to expand. */}
+      {children && canExpand && (
+        <button
+          type="button"
+          aria-expanded={expanded}
+          aria-controls={textId}
+          onClick={onToggle}
+          className="text-muted-foreground hover:text-foreground hit-area-x-2  hit-area-r-20 hit-area-y-2 focus-visible:ring-ring mt-1.5 self-start rounded-sm text-xs font-medium transition-colors duration-(--duration-normal) focus-visible:ring-2 focus-visible:outline-none print:hidden"
+        >
+          {expanded ? tI18nComplete.raw('text94ea9b1d33a0') : tI18nComplete.raw('textf5c9bd131486')}
+        </button>
       )}
     </div>
   );
@@ -916,7 +1090,7 @@ export function UserMessageActions({
   rewindPromptText,
   onRewind,
   rewindDisabled,
-  leadingStatus,
+  deliveryStatus,
 }: {
   /** Epoch milliseconds, or `null` when the backend never stamped one. */
   timestamp: number | null;
@@ -929,11 +1103,11 @@ export function UserMessageActions({
   onRewind?: (messageId: string, text: string) => void;
   rewindDisabled?: boolean;
   /**
-   * Rendered before `leading` and ALWAYS visible — a queued prompt's delivery
-   * failure and its recovery actions (`QueuedPromptFailure`). Waiting and
-   * sending prompts render no words; the bubble's queue tone carries them.
+   * ALWAYS visible, at the row's right edge — a queued prompt's delivery
+   * progress (`QueuedPromptProgress`) or its failure and recovery actions
+   * (`QueuedPromptFailure`).
    */
-  leadingStatus?: React.ReactNode;
+  deliveryStatus?: React.ReactNode;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // Copy stays available while the agent is busy / rewind is locked.
@@ -942,7 +1116,7 @@ export function UserMessageActions({
   const hasMeta = timestamp !== null || Boolean(edited);
 
   // Nothing to say and nothing to do — don't leave an empty row behind.
-  if (!hasMeta && !copyText && !leadingStatus) return null;
+  if (!hasMeta && !copyText && !deliveryStatus) return null;
 
   return (
     // The fade sits on the ROW, so the timestamp and the buttons reveal
@@ -950,12 +1124,14 @@ export function UserMessageActions({
     // it. `opacity`, never mounting: the row holds its height whether or not
     // the pointer is over the turn, so nothing in the transcript reflows.
     // The status word (when there is one) sits OUTSIDE the fade: it is the
-    // one thing on this row a user must not have to hover to learn.
+    // one thing on this row a user must not have to hover to learn. It is the
+    // LAST child, pinned to the right edge: the faded group still takes its
+    // width, and the server stamp lands while a prompt is still `delivering`,
+    // so a status to its left slid 56px for a frame before it vanished.
     <div className="flex w-full items-center justify-end gap-2">
-      {leadingStatus}
       <div
         className={cn(
-          'flex items-center gap-2 transition-opacity duration-150',
+          'flex items-center gap-2 transition-opacity duration-normal',
           // `max-md:opacity-100` — the reveal is a DESKTOP affordance only.
           //
           // A touch screen has no hover, so under 768px this row would sit
@@ -1010,6 +1186,7 @@ export function UserMessageActions({
           </div>
         )}
       </div>
+      {deliveryStatus}
     </div>
   );
 }
@@ -1160,7 +1337,7 @@ export function UserMessage({
   editPending,
   onEditCancel,
   onEditSend,
-  leadingStatus,
+  deliveryStatus,
   pendingAttachments,
   uploadStatus,
   pendingText,
@@ -1198,8 +1375,8 @@ export function UserMessage({
   onEditCancel?: () => void;
   /** Send the edit: stage the rewind at this message and deliver `text`. */
   onEditSend?: (messageId: string, text: string, kept: NormalizedAttachment[]) => void;
-  /** See `UserMessageActions.leadingStatus`. */
-  leadingStatus?: React.ReactNode;
+  /** See `UserMessageActions.deliveryStatus`. */
+  deliveryStatus?: React.ReactNode;
   /**
    * The files this message's Send carried, in send order. The runtime streams
    * a message's parts text-first and the file parts seconds later; these keep
@@ -1313,8 +1490,8 @@ export function UserMessage({
       ? commandSplit.after
       : (effectiveCommandInfo.args ?? '')
     : // While this message has no text part of its own (the store is swapping
-      // in the runtime's echo), the sender's copy keeps the bubble on screen.
-      text || (pendingText ?? '');
+    // in the runtime's echo), the sender's copy keeps the bubble on screen.
+    text || (pendingText ?? '');
 
   const copyText = useMemo(() => {
     const lines: string[] = [];
@@ -1366,7 +1543,7 @@ export function UserMessage({
       rewindPromptText={rewindPromptText}
       onRewind={onRewind}
       rewindDisabled={rewindDisabled}
-      leadingStatus={leadingStatus}
+      deliveryStatus={deliveryStatus}
     />
   );
 
@@ -1586,65 +1763,15 @@ export function UserMessage({
 
   // Channel messages (Slack / Microsoft Teams / Telegram): a branded card with the sender
   if (channelMessageInfo) {
-    const brandColor = CHANNEL_BRAND_COLOR[channelMessageInfo.platform];
-    return (
-      <div className="flex flex-col items-end gap-1">
-        <div className="border-border/60 bg-muted/40 inline-flex max-w-[80%] flex-col gap-1.5 rounded-lg border px-4 py-2.5">
-          <div className="flex items-center gap-2">
-            <ChannelBrandMark platform={channelMessageInfo.platform} />
-            <span className="text-xs font-medium" style={{ color: brandColor }}>
-              {channelPlatformLabel(channelMessageInfo.platform, tI18nComplete)}
-            </span>
-            <span className="text-muted-foreground text-xs">·</span>
-            <span className="text-foreground text-sm font-medium">
-              {channelMessageInfo.userName}
-            </span>
-          </div>
-          {channelMessageInfo.messageText && (
-            <div className="text-foreground text-sm wrap-break-word">
-              {channelMessageInfo.messageText}
-            </div>
-          )}
-        </div>
-        {actions}
-      </div>
-    );
+    return <ChannelMessage info={channelMessageInfo} actions={actions} />;
   }
 
   if (reminderInfo) {
-    return (
-      <div className="flex flex-col items-end gap-1">
-        <ReminderTurnCard info={reminderInfo} />
-        {actions}
-      </div>
-    );
+    return <ReminderMessage info={reminderInfo} actions={actions} />;
   }
 
-  // Trigger event messages: render as a right-aligned card
   if (triggerEventInfo) {
-    return (
-      <div className="flex flex-col items-end gap-1">
-        <div className="border-border/60 bg-muted/40 inline-flex flex-col gap-1.5 rounded-lg border px-4 py-2.5">
-          <div className="flex items-center gap-2">
-            <Timer className="text-muted-foreground size-3.5 shrink-0" />
-            <span className="text-foreground font-mono text-sm">
-              {triggerEventInfo.data?.trigger || tI18nComplete.raw('text512618790549')}
-            </span>
-            {triggerEventInfo.data?.data?.manual && (
-              <Badge variant="muted" size="sm">
-                {tI18nComplete.raw('textb0b9fe24ffa9')}
-              </Badge>
-            )}
-          </div>
-          {triggerEventInfo.prompt && (
-            <div className="text-muted-foreground max-w-[400px] pl-5.5 text-xs wrap-break-word">
-              {triggerEventInfo.prompt}
-            </div>
-          )}
-        </div>
-        {actions}
-      </div>
-    );
+    return <TriggerMessage info={triggerEventInfo} actions={actions} />;
   }
 
   // A `/command` message used to return early here as a bordered card with a

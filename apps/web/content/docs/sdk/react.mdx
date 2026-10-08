@@ -108,6 +108,7 @@ need a running session. Each mirrors a method on the
 | `useAccountSecretResources(accountId)` | Account provider-secret metadata and use grants. Values are never returned. |
 | `useSessionProviderSecretPools(projectId, sessionId)` | Configured pools, including empty selections; `setPool` updates one provider and refreshes the session cache. |
 | `useProjectTriggers(projectId)` | Triggers: list, create, update, remove, fire. |
+| `useProjectTriggerEventTypes(projectId, connector)` | The app events a connector can trigger on. Idle until `connector` is set. |
 | `useChangeRequests(projectId, status?)` | Change requests: list, open, merge, close, request changes. |
 | `useRuntimeSupports(capability)` | Whether the open session's runtime serves a feature (`session.rewind`, `session.compact`, …), from the `/kortix/health` answers the runtime-reconnect poller reads. `true` until the first answer. See [What the runtime supports](/docs/sdk/sessions#what-the-runtime-supports). |
 | `resetRuntimeQueries(queryClient)` | Not a hook. Drops every cached runtime query (sessions, messages, agents, commands, diffs). Call it after the session's runtime is replaced by a restart or a config reload, so the next read comes from the new runtime. |
@@ -125,6 +126,16 @@ injects its adapters.
 | `createConnectorLinkInfoCache(fetchInfo, { storage })` | The cache factory itself (framework-free, storage injected) for a host that wants its own instance. |
 | `resolveConnectorStart({ start, finalize })` | The `/start` outcome rule: hosted url → popup, already connected → finalize once, otherwise the error message. |
 | `nextConnectorPollDelay(attempt, elapsedMs)` | The bounded poll schedule (3 s first, 5 s after, stops at 5 minutes). |
+
+## Connector data
+
+`useConnectorQuery(projectId, slug, action, args, { account, enabled, staleTime })`
+reads one connector action's output as a cached query. `error` is a
+`ConnectorCallError`: render a connect button from `error.connectUrl`, or an
+account picker from `error.availableAccounts`. Use it only for an action that
+reads; every fetch runs the action and writes an audit event. The output stays
+fresh for 30 s, focus never refetches, and only an upstream `429` or `503` is
+retried. See [Connectors from code](/docs/sdk/connectors#react).
 
 ## Start the open read early
 
@@ -270,8 +281,18 @@ It runs before every `composer` entry and ends the active response after the
 current tool call completes.
 Pass `placement: 'composer'` to keep it in the editable list above the input.
 It waits for the active response to finish. Each placement keeps submission order.
-The web composer uses Enter for transcript placement and Command+Enter
-(Control+Enter on Windows/Linux) for composer placement. Shift+Enter inserts a newline.
+Pass `delivery: 'steer' | 'queue' | 'interrupt'` to say how the prompt reaches a
+running turn. `steer` hands it to the turn at its next step; the turn does not
+stop. `queue` waits for the turn to end. `interrupt` ends the turn after the
+running tool. With only `delivery`, the SDK sends the placement it implies:
+`interrupt` is `transcript`, the others are `composer`. A steer row that cannot
+steer reads `delivery: 'queue'` with `steer_fallback` set to `unsupported`,
+`not_prompter` or `turn_ended`. `interrupt(promptId)` ("Stop and send") turns a
+waiting row into a transcript entry; a row already on the wire answers `409`.
+
+The web composer sends Enter as `steer` while a turn runs, and as a transcript
+send while the session is idle. Command+Enter (Control+Enter on Windows/Linux)
+is composer placement. Shift+Enter inserts a newline.
 
 List rows include `full_text` for complete previews after reload. `text` remains
 the bounded preview for older clients. Attachment bytes are excluded from list
@@ -290,8 +311,8 @@ after admission succeeds. A confirmed active turn clears the pending presentatio
 even if the previous inbox snapshot still lists that prompt. Runtime activity
 preserves the active turn's message ID during this handoff.
 
-The web composer names Enter **Quick Queue** and Command/Ctrl+Enter **Queue List**.
-Quick Queue entries run first. A waiting Quick Queue entry is a tinted bubble after
+The web composer names Command/Ctrl+Enter **Queue List** and a row's "Stop and
+send" **Quick Queue**. Quick Queue entries run first. A waiting Quick Queue entry is a tinted bubble after
 delivered turns, with no status text. Queue List entries remain editable until delivery starts.
 The server recovers missed completion events from exact runtime evidence, including
 after reload, without treating an unreachable runtime as a completed turn.
@@ -299,6 +320,12 @@ after reload, without treating an unreachable runtime as a completed turn.
 Each distinct Enter displays its pending prompt immediately, even while an earlier
 acceptance request is unresolved. Only a delivery failure adds text: its cause,
 Retry, and Remove. The server inbox continues to own execution order.
+
+The hook reads queue changes from the session's control stream
+(`GET .../sessions/:id/events?channels=control`), one connection per session
+however many components mount it. Every write of an inbox row arrives as a
+`kortix.control.queue` frame. The `GET .../prompts` poll runs only while that
+stream is not connected.
 
 ### Why a turn ended
 

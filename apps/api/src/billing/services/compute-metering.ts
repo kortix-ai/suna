@@ -20,6 +20,7 @@ import { settleAndCheckAutoTopup } from './wallet-debits';
 // partially bills any session whose last_billed_at is at least 5 minutes old,
 // so a missed close hook can never silently accrue uncharged compute.
 
+import { logger } from '../../lib/logger';
 import {
   appDeployments,
   appRuntimes,
@@ -48,13 +49,13 @@ import {
   releaseComputeWindow,
 } from '../repositories/compute-sessions';
 import { getCreditAccount } from '../repositories/credit-accounts';
+import { ledgerRequestKeyExists } from '../repositories/ledger-keys';
 import { resolveAccountBilling } from './billing-cache';
 import {
   billableWindowEnd,
   computeLivenessGraceMs,
   lastAliveAtOf,
 } from './compute-liveness';
-import { wallet } from '../wallet';
 import {
   DEFAULT_COMPUTE_RATE_MULTIPLIER,
   clampComputeRateMultiplier,
@@ -287,6 +288,7 @@ async function settleComputeWindow(
   // always has and a session charge is traceable to its session — the same
   // identifier the Session costs tab shows.
   const sessionLabel = row.sessionId ? `${row.sessionId} · ` : '';
+  const debitKey = `compute:${row.id}:${claimedEnd.toISOString()}`;
   try {
     await settleAndCheckAutoTopup({
       accountId: row.accountId,
@@ -303,9 +305,20 @@ async function settleComputeWindow(
       // of charging again. The CAS claim above already stops two settlers from
       // both billing; this covers the single settler that never learned its own
       // debit succeeded.
-      key: { request: `compute:${row.id}:${claimedEnd.toISOString()}` },
+      key: { request: debitKey },
     });
   } catch (err) {
+    // The failure may be a lost RESPONSE: the debit committed and only the
+    // answer was lost. Releasing then moves the cursor back, the next tick
+    // bills the same seconds under a later window end (a different key), and
+    // the customer pays twice. Ask the ledger before releasing.
+    if (await ledgerRequestKeyExists(debitKey).catch(() => false)) {
+      logger.warn(
+        `[compute-metering] debit for session ${row.id} committed despite an error; window kept`,
+        { error: err instanceof Error ? err.message : String(err) },
+      );
+      return 'settled';
+    }
     // No longer reachable for a merely-drained wallet (settlement overdrafts
     // instead of refusing). Retained for the real failures that remain — a
     // missing credit row, an RPC/transport error — where handing the window

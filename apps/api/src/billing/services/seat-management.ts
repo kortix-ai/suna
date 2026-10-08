@@ -11,9 +11,7 @@
 // Hard guard: every call no-ops on legacy accounts. New seat behaviour only
 // engages when credit_accounts.billing_model = 'per_seat'.
 
-import { eq, sql } from 'drizzle-orm';
-import { accountMembers } from '@kortix/db';
-import { db } from '../../shared/db';
+import { accountMemberUserIds, countBillableAccountMembers } from '../../iam/membership-read';
 import { getStripe } from '../../shared/stripe';
 import { getCreditAccount, updateCreditAccount } from '../repositories/credit-accounts';
 import { mintYoloTokenForMember, revokeYoloTokenForMember } from './yolo-tokens';
@@ -33,24 +31,13 @@ export async function countActiveMembers(accountId: string): Promise<number> {
   // and must NOT be billed as a seat. A personal account's owner also has
   // user_id == account_id but IS a real auth user, so the NOT EXISTS keeps it.
   try {
-    const res = await db.execute<{ n: number }>(sql`
-      SELECT COUNT(*)::int AS n
-      FROM kortix.account_members am
-      WHERE am.account_id = ${accountId}::uuid
-        AND NOT (
-          am.user_id = am.account_id
-          AND NOT EXISTS (SELECT 1 FROM auth.users u WHERE u.id = am.user_id)
-        )
-    `);
+    const res = await countBillableAccountMembers(accountId);
     const rows = ((res as unknown) as { rows?: Array<{ n: number }> }).rows ?? (res as unknown as Array<{ n: number }>);
     return Number(rows?.[0]?.n ?? 0);
   } catch {
     // auth schema not reachable (e.g. local dev without Supabase auth) — fall
     // back to the plain member count rather than failing the seat count.
-    const rows = await db
-      .select({ userId: accountMembers.userId })
-      .from(accountMembers)
-      .where(eq(accountMembers.accountId, accountId));
+    const rows = await accountMemberUserIds(accountId);
     return rows.length;
   }
 }
@@ -209,10 +196,7 @@ export async function syncSeatQuantity(accountId: string): Promise<{
  * Safe to call repeatedly — only members WITHOUT an active token get one.
  */
 export async function mintYoloTokensForAllMembers(accountId: string): Promise<{ minted: number }> {
-  const memberRows = await db
-    .select({ userId: accountMembers.userId })
-    .from(accountMembers)
-    .where(eq(accountMembers.accountId, accountId));
+  const memberRows = await accountMemberUserIds(accountId);
 
   let minted = 0;
   for (const m of memberRows) {

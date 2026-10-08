@@ -63,7 +63,7 @@ const suite = dockerOk ? describe : describe.skip;
 
 suite('credit_accounts lifetime_* rollup (throwaway Postgres)', () => {
   beforeAll(async () => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    sh(['docker', 'rm', '-f', '-v', CONTAINER]);
     const up = sh([
       'docker',
       'run',
@@ -89,17 +89,22 @@ suite('credit_accounts lifetime_* rollup (throwaway Postgres)', () => {
       'full_page_writes=off',
     ]);
     if (!up.ok) throw new Error(`could not start test container: ${up.stderr}`);
+    // Poll until ready and let the last poll be the proof: a second poll
+    // after the loop races a loaded Docker daemon (a failed exec reads as
+    // "not ready") and throws right after a successful poll.
+    let ready = false;
     for (let i = 0; i < 60; i++) {
-      if (pgReady()) break;
+      ready = pgReady();
+      if (ready) break;
       await Bun.sleep(1000);
     }
-    if (!pgReady()) throw new Error('test Postgres never became ready');
+    if (!ready) throw new Error('test Postgres never became ready');
     const code = await runMigrate(ROOT, ports);
     if (code !== 0) throw new Error('migrations failed');
   }, 240_000);
 
   afterAll(() => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    sh(['docker', 'rm', '-f', '-v', CONTAINER]);
   });
 
   test('a tier grant increments lifetime_granted, not purchased or used', () => {

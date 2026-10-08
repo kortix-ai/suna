@@ -62,12 +62,15 @@ import {
   modelKeyToWire,
   qk,
   useFeatureFlag,
+  useProjectTriggerEventTypes,
   useRuntimeProviders,
   useVisibleAgents,
 } from '@kortix/sdk/react';
+import { buildWebhookSampleRequest } from '@kortix/shared';
 import {
   CaretDownIcon,
   DotsThreeIcon,
+  LightningIcon,
   PauseIcon,
   PencilSimpleIcon,
   PlayIcon,
@@ -78,8 +81,11 @@ import {
 } from '@phosphor-icons/react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
+import type { TriggerControls } from './trigger-controls';
 import { triggerSessionAccessCopy } from './trigger-session-access-copy';
 
+import { describeEventStatus, payloadVariables } from './event-trigger-copy';
+import { EventPanel, EventStatusBanner } from './event-trigger-panel';
 import {
   CUSTOM_TIMING_LABEL,
   type SessionMode,
@@ -87,6 +93,7 @@ import {
   describeLastRun,
   describeRunLocation,
   describeSecurity,
+  describeNextRun,
   describeWhen,
   triggerName,
   triggerStatus,
@@ -151,23 +158,10 @@ function useTriggerUpdate<TInput = void>(
   });
 }
 
-/** A copy-pasteable request for whoever is wiring the other end up. */
-function buildSampleRequest(url: string): string {
-  return [
-    `curl -X POST ${url} \\`,
-    `  -H "Content-Type: application/json" \\`,
-    `  -H "X-Kortix-Signature: sha256=$(echo -n '$BODY' | openssl dgst -sha256 -hmac "$SECRET" -hex | sed 's/^.* //')" \\`,
-    `  -d '$BODY'`,
-    ``,
-    `# $BODY   is the JSON you want to send, e.g. {"event":"deploy.succeeded"}`,
-    `# $SECRET is the signing key you saved for this webhook`,
-  ].join('\n');
-}
-
 export function ScheduleDetailSheet({
   projectId,
   trigger,
-  canWrite,
+  controls,
   open,
   onOpenChange,
   onRun,
@@ -177,7 +171,7 @@ export function ScheduleDetailSheet({
 }: {
   projectId: string;
   trigger: ProjectTrigger | null;
-  canWrite: boolean;
+  controls: TriggerControls;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onRun: () => void;
@@ -201,9 +195,18 @@ export function ScheduleDetailSheet({
 
   if (!trigger) return null;
 
+  // The edit panels change the trigger: `project.trigger.update`.
+  const canWrite = controls.canUpdate;
+  const nextRun = describeNextRun(trigger);
   const isCron = trigger.type === 'cron';
-  const status = triggerStatus(trigger.enabled, tI18nComplete);
-  const KindIcon = isCron ? TimerIcon : WebhooksLogoIcon;
+  const event = trigger.type === 'event' ? trigger.event : null;
+  const baseStatus = triggerStatus(trigger.enabled, tI18nComplete);
+  // A paused event trigger reads Paused; an enabled one reads its subscription state.
+  const eventStatus = event && trigger.enabled ? describeEventStatus(event, tI18nComplete) : null;
+  const status = eventStatus
+    ? { ...baseStatus, label: eventStatus.label as typeof baseStatus.label }
+    : baseStatus;
+  const KindIcon = isCron ? TimerIcon : event ? LightningIcon : WebhooksLogoIcon;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -250,41 +253,52 @@ export function ScheduleDetailSheet({
                 <SheetTitle className="truncate text-base font-semibold tracking-tight">
                   {triggerName(trigger)}
                 </SheetTitle>
-                <Badge variant={status.active ? 'kortix' : 'muted'} size="sm">
+                <Badge
+                  variant={eventStatus ? eventStatus.variant : status.active ? 'kortix' : 'muted'}
+                  size="sm"
+                >
                   {status.label}
                 </Badge>
               </div>
-              <SheetDescription className="text-xs">{describeWhen(trigger)}</SheetDescription>
+              <SheetDescription className="text-xs">
+                {describeWhen(trigger)}
+                {nextRun ? ` · ${nextRun}` : null}
+              </SheetDescription>
             </div>
           </div>
 
-          {canWrite ? (
+          {controls.canFire || controls.canUpdate || controls.canDelete ? (
             <div className="flex items-center gap-1.5">
-              <Button size="sm" className="gap-1.5" onClick={onRun} disabled={running}>
-                {running ? (
-                  <Loading className="size-3.5 shrink-0" />
-                ) : (
-                  <PlayIcon weight="fill" className="size-3.5 shrink-0" />
-                )}
-                {tI18nComplete.raw('text0991397702fa')}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-1.5"
-                onClick={() => toggle.mutate(!trigger.enabled)}
-                disabled={toggle.isPending}
-              >
-                {toggle.isPending ? (
-                  <Loading className="size-3.5 shrink-0" />
-                ) : status.active ? (
-                  <PauseIcon weight="fill" className="size-3.5 shrink-0" />
-                ) : (
-                  <PlayIcon weight="fill" className="size-3.5 shrink-0" />
-                )}
-                {status.active ? 'Pause' : 'Resume'}
-              </Button>
+              {controls.canFire ? (
+                <Button size="sm" className="gap-1.5" onClick={onRun} disabled={running}>
+                  {running ? (
+                    <Loading className="size-3.5 shrink-0" />
+                  ) : (
+                    <PlayIcon weight="fill" className="size-3.5 shrink-0" />
+                  )}
+                  {tI18nComplete.raw('text0991397702fa')}
+                </Button>
+              ) : null}
+              {controls.canUpdate ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5"
+                  onClick={() => toggle.mutate(!trigger.enabled)}
+                  disabled={toggle.isPending}
+                >
+                  {toggle.isPending ? (
+                    <Loading className="size-3.5 shrink-0" />
+                  ) : status.active ? (
+                    <PauseIcon weight="fill" className="size-3.5 shrink-0" />
+                  ) : (
+                    <PlayIcon weight="fill" className="size-3.5 shrink-0" />
+                  )}
+                  {status.active ? 'Pause' : 'Resume'}
+                </Button>
+              ) : null}
               <div className="min-w-2 flex-1" />
+              {controls.canDelete ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
@@ -298,11 +312,15 @@ export function ScheduleDetailSheet({
                 <DropdownMenuContent align="end" className="w-48">
                   <DropdownMenuItem variant="destructive" onClick={onDelete}>
                     <TrashIcon className="size-3.5 shrink-0" />
-                    {tI18nComplete.raw('texte2d0a54968ea')}
-                    {isCron ? 'schedule' : 'webhook'}
+                    {isCron
+                      ? tI18nComplete.raw('textd8d0bd5c5106')
+                      : event
+                        ? tI18nComplete.raw('textf2f698118cc1')
+                        : tI18nComplete.raw('text60f85e57e4a7')}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+              ) : null}
             </div>
           ) : null}
         </SheetHeader>
@@ -344,6 +362,7 @@ export function ScheduleDetailSheet({
               {tTriggers('runFailed.nextRun')}
             </InfoBanner>
           ) : null}
+          {event ? <EventStatusBanner projectId={projectId} event={event} canWrite={canWrite} /> : null}
           <WhatItDoesPanel
             projectId={projectId}
             trigger={trigger}
@@ -351,7 +370,24 @@ export function ScheduleDetailSheet({
             onMutated={onMutated}
           />
 
-          {isCron ? (
+          {event ? (
+            <>
+              <EventPanel
+                key={event.type}
+                projectId={projectId}
+                trigger={trigger}
+                event={event}
+                canWrite={canWrite}
+                onMutated={onMutated}
+              />
+              <ConditionsPanel
+                projectId={projectId}
+                trigger={trigger}
+                canWrite={canWrite}
+                onMutated={onMutated}
+              />
+            </>
+          ) : isCron ? (
             <WhenItRunsPanel
               projectId={projectId}
               trigger={trigger}
@@ -423,6 +459,22 @@ function WhatItDoesPanel({
   onMutated: () => void;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const eventTypes = useProjectTriggerEventTypes(
+    projectId,
+    trigger.type === 'event' ? (trigger.event?.connector ?? null) : null,
+  );
+  const placeholders =
+    trigger.type === 'event'
+      ? [
+          '{{ event.data }}',
+          ...payloadVariables(
+            eventTypes.data?.event_types.find((e) => e.type === trigger.event?.type)
+              ?.payload_schema,
+          )
+            .slice(0, 6)
+            .map((v) => v.token),
+        ]
+      : PLACEHOLDERS;
   const [name, setName] = useState(trigger.name);
   const [instruction, setInstruction] = useState(trigger.prompt_template);
 
@@ -492,7 +544,7 @@ function WhatItDoesPanel({
         />
         <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
           {tI18nComplete.raw('textb560dc33f1db')}{' '}
-          {PLACEHOLDERS.map((p, i) => (
+          {placeholders.map((p, i) => (
             <span key={p}>
               {i > 0 ? ', ' : ''}
               <code className="font-mono">{p}</code>
@@ -623,7 +675,7 @@ function AddressPanel({
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const url = trigger.webhook_url ?? '';
-  const sample = useMemo(() => buildSampleRequest(url), [url]);
+  const sample = useMemo(() => buildWebhookSampleRequest(url), [url]);
   const security = describeSecurity(trigger, tI18nComplete);
 
   const [secretName, setSecretName] = useState(trigger.secret_env ?? '');

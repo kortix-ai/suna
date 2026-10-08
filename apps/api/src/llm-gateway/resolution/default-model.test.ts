@@ -117,6 +117,20 @@ describe('isModelServableForAccount — never 500s a passive servability check',
     ).rejects.toThrow('unexpected DB failure');
   });
 
+  // A prod project's one shared ChatGPT account hit its weekly limit. Each
+  // 30 s cooldown made the model "unservable": the project default degraded,
+  // the route stopped matching `project:default`, and the project's chain never
+  // ran, so the turn failed. New sessions and channel turns were refused too.
+  test('a pool that is cooling down is still servable: the pause is temporary', async () => {
+    resolveCandidatesImpl = async () => {
+      throw new GatewayResolutionError('provider_pool_rate_limited', 'All selected ChatGPT connections are cooling down.',
+        'Select a granted ChatGPT connection in session settings.', 30);
+    };
+    await expect(
+      isModelServableForAccount({ ...PRINCIPAL_BASE, freeModelsOnly: false, model: 'codex/gpt-6.1-sol' }),
+    ).resolves.toBe(true);
+  });
+
   test('a real candidate list → true', async () => {
     resolveCandidatesImpl = async () => [{ provider: 'openai' }];
     await expect(
@@ -304,6 +318,18 @@ describe('resolveDefaultModelForPrincipal — the real "auto" resolution used at
     expect(result).toBeDefined();
     expect(result).not.toBe('openrouter/some-model');
     expect(result?.startsWith('openai/')).toBe(true);
+  });
+
+  test('a default whose ChatGPT pool is cooling down stays the default, so the project chain still matches', async () => {
+    accountDefaults = { account: null, agents: {}, projects: { p1: 'kortix/codex/gpt-6.1-sol' } };
+    resolveCandidatesImpl = async (model) => {
+      if (model === 'codex/gpt-6.1-sol') {
+        throw new GatewayResolutionError('provider_pool_rate_limited', 'cooling down', 'wait', 30);
+      }
+      return [{ provider: 'kortix' }];
+    };
+    const result = await resolveDefaultModelForPrincipal({ ...PRINCIPAL_BASE, freeModelsOnly: false });
+    expect(result).toBe('kortix/codex/gpt-6.1-sol');
   });
 
   test('a stale configured default with nothing connected degrades to undefined (platform default applies), never throws', async () => {
