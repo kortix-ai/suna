@@ -565,11 +565,11 @@ flow(
   },
 );
 
-// INV-9 — the invite page names the project an email invite grants
+// INV-10 — the invite page names the project an email invite grants
 // (KRTX-1731). The describe route returned no projects, so the page said
 // "join a team" for a project invite.
 flow(
-  'INV-9',
+  'INV-10',
   {
     domain: 'projects',
     routes: ['POST /v1/projects/:projectId/access/invite', 'GET /v1/account-invites/:inviteId'],
@@ -577,7 +577,7 @@ flow(
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const project = await team.project();
-    const inviteEmail = `${ctx.fixtures.name('inv9')}@ke2e.kortix.test`.toLowerCase();
+    const inviteEmail = `${ctx.fixtures.name('inv10')}@ke2e.kortix.test`.toLowerCase();
     let inviteId = '';
     await ctx.step('a project invite to an address with no Kortix user yet → 201 invited', async () => {
       const r = await ctx.client
