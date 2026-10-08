@@ -6,6 +6,7 @@ import {
 } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { config } from '../../config';
+import { logger } from '../../lib/logger';
 import {
   ensureEmailSessionBinding,
   loadEmailInstallConnectionId,
@@ -16,8 +17,13 @@ import {
   resolveProjectAutomationActor as resolveLifecycleAutomationActor,
 } from '../../projects/session-lifecycle';
 import { db } from '../../shared/db';
+import { replyToAgentMailMessage, resolveAgentMailApiKey } from '../agentmail-api';
 import { dropChatThread, findChatThread, touchChatThread } from '../core/threads';
-import { type AgentMailSenderPolicy, loadAgentMailSenderPolicyForInbox } from '../install-store';
+import {
+  type AgentMailSenderPolicy,
+  loadAgentMailApiKeyForInbox,
+  loadAgentMailSenderPolicyForInbox,
+} from '../install-store';
 import { EMAIL_EVENT_DEDUPE_TTL_MS } from './app';
 import { recordClaim } from '../webhook-work';
 import { matchesEmailSenderRegex } from './sender-policy-regex';
@@ -270,6 +276,42 @@ async function createThreadSession(
     console.error('[email-webhook] createProjectSession failed', {
       status: result.error.status,
       body: result.error.body,
+    });
+    if (result.error.body.code === 'project_archived') await replyNotAccepting(projectId, event);
+  }
+}
+
+// A deleted workspace keeps its inbox until the purge, so mail still arrives
+// and no session can start (KRTX-1714). Tell the sender, in words that fit a
+// sender outside the workspace. Once per thread for 30 days, so an
+// auto-responder cannot loop; fail closed (no claim, no reply). An
+// `.unauthenticated` message gets nothing: its From may be forged.
+const NOT_ACCEPTING_NOTICE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+export const NOT_ACCEPTING_REPLY =
+  'This address is not accepting email right now. No one will answer this message.';
+
+async function replyNotAccepting(
+  projectId: string,
+  event: AgentMailMessageReceivedEvent,
+): Promise<void> {
+  const { inbox_id: inboxId, thread_id: threadId, message_id: messageId } = event.message;
+  if (event.event_type !== 'message.received' || !messageId) return;
+  try {
+    const claimed = await db
+      .insert(chatEventDedup)
+      .values({
+        eventId: `email:not-accepting:${inboxId}:${threadId}`,
+        expiresAt: new Date(Date.now() + NOT_ACCEPTING_NOTICE_TTL_MS),
+      })
+      .onConflictDoNothing({ target: chatEventDedup.eventId })
+      .returning({ eventId: chatEventDedup.eventId });
+    if (claimed.length === 0) return;
+    const apiKey = resolveAgentMailApiKey(await loadAgentMailApiKeyForInbox(projectId, inboxId));
+    if (!apiKey) return;
+    await replyToAgentMailMessage({ apiKey, inboxId, messageId, text: NOT_ACCEPTING_REPLY });
+  } catch (err) {
+    logger.warn('[email-webhook] not-accepting reply failed', {
+      error: err instanceof Error ? err.message : String(err),
     });
   }
 }

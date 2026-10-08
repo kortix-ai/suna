@@ -27,6 +27,14 @@ import { positiveEnvInt } from './reaper-constants';
 export const NON_TURN_DEADLINE_CAP_MS = 24 * 3_600_000;
 
 /**
+ * How long a person's presence alone keeps a box after its run's latest turn,
+ * or after the run started (KRTX-1729). A client that reports "present" for
+ * every visible tab, as clients before the input check do, cannot keep a box
+ * past this; a prompt or a turn can.
+ */
+export const PRESENCE_ONLY_CAP_MS = 2 * 3_600_000;
+
+/**
  * Granted on every OBSERVED turn start.
  *
  * 4 hours sits above the p99 turn (~78 min, sessionised at a 5-minute

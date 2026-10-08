@@ -2036,7 +2036,9 @@
       "whenBelow": "当余额低于",
       "thresholdLabel": "充值阈值（美元）",
       "save": "保存",
-      "paymentNeeded": "请添加付款方式，以便执行自动充值。"
+      "paymentNeeded": "请添加付款方式，以便执行自动充值。",
+      "turnedOffAfterFailure": "自动充值已于 {date} 关闭：上一次扣款失败（{reason}）。请更新付款方式，然后重新开启自动充值。",
+      "lastChargeFailed": "上一次自动充值扣款于 {date} 失败（{reason}）。Kortix 会重试；连续 3 次扣款失败后，自动充值将关闭。"
     },
     "title": "计费与订阅",
     "subscription": "订阅",
@@ -4574,7 +4576,13 @@
       "invitationKicker": "邀请",
       "joinAccountDescription": "你将以{roleLabel}身份加入此账户，并查看所有者授予你访问权限的项目。",
       "decline": "拒绝",
-      "accept": "接受"
+      "accept": "接受",
+      "projectLabel": "项目",
+      "invitedYouToAProject": "邀请你加入一个项目",
+      "youHaveBeenInvitedToAProject": "你已受邀加入一个项目。",
+      "joinProjectDescription": "你将以{roleLabel}身份加入 {projectName}。",
+      "roleManager": "管理员",
+      "signOutAndContinue": "退出并继续"
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – 开源的 AI Operating System",
@@ -7156,7 +7164,11 @@
       "line58JsxAttrTitleYouRanOutOfCredits": "你的额度已用完",
       "line74JsxTextEnableAutoTopUp": "启用自动充值",
       "line82JsxTextBuyCredits": "购买额度",
-      "askOwnerToAddCredits": "只有账户所有者可以添加额度。请联系所有者充值。"
+      "askOwnerToAddCredits": "只有账户所有者可以添加额度。请联系所有者充值。",
+      "askOwnerForCredits": "联系所有者",
+      "ownersNotified": "已通知所有者",
+      "alreadyAskedToday": "今天已经请求过",
+      "askOwnerFailed": "无法通知所有者，请重试"
     },
     "componentsSessionSessionFilesPanel": {
       "line80JsxTextThisSessionIsItsOwnVersion": "此会话是独立版本",
