@@ -4574,7 +4574,13 @@
       "invitationKicker": "Позивница",
       "joinAccountDescription": "Придружићете се овом налогу као {roleLabel} и видети пројекте којима вам власник даје приступ.",
       "decline": "Одбиј",
-      "accept": "Прихватам"
+      "accept": "Прихватам",
+      "projectLabel": "Пројекат",
+      "invitedYouToAProject": "вас је позвао у пројекат",
+      "youHaveBeenInvitedToAProject": "Позвани сте у пројекат.",
+      "joinProjectDescription": "Придружићете се пројекту {projectName} као {roleLabel}.",
+      "roleManager": "менаџер",
+      "signOutAndContinue": "Одјавите се и наставите"
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – AI Operating System отвореног кода",

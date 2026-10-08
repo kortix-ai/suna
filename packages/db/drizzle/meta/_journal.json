@@ -921,10 +921,13 @@
     },
     {
       "idx": 131,
-      "version": "7",
+      "when": 1791422887237,
+      "tag": "20261008012807_krtx_1769_cost_index"
+    },
+    {
+      "idx": 132,
       "when": 1791428842223,
-      "tag": "20261008014722_feedback",
-      "breakpoints": true
+      "tag": "20261008014722_feedback"
     }
   ]
 }
