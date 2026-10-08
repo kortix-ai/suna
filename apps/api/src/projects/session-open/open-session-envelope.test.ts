@@ -15,7 +15,7 @@
  * are scripted per test; the projection/fence modules under test stay real.
  */
 import type { sessionSandboxes } from '@kortix/db';
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import * as realOpencodeMapping from '../opencode-mapping';
 import * as realProviders from '../../platform/providers';
 import * as realRuntimeIdentity from '../runtime-identity';

@@ -12,7 +12,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { accountMembers, connectorConnections, tunnelConnections } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
-import type pg from 'pg';
+import type { PgClient } from './helpers/pg-client';
 import { ensureProjectComputer } from '../connectors/sync';
 import { db } from '../shared/db';
 import { insertIntoView } from './helpers/compat-views';
@@ -56,7 +56,7 @@ async function pairMachine(name: string): Promise<string> {
   return row!.tunnelId;
 }
 
-const unpair = (tunnelId: string) => (tx: pg.Client) =>
+const unpair = (tunnelId: string) => (tx: PgClient) =>
   tx.query('DELETE FROM kortix.tunnel_connections WHERE tunnel_id = $1', [tunnelId]);
 
 const ownerAccounts = () =>

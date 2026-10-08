@@ -307,15 +307,3 @@ export async function extractAppArchive(
     throw error;
   }
 }
-
-export async function sha256File(path: string): Promise<{ sha256: string; sizeBytes: number }> {
-  const hash = createHash('sha256');
-  let sizeBytes = 0;
-  for await (const chunk of createReadStream(path)) {
-    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    sizeBytes += bytes.byteLength;
-    if (sizeBytes > MAX_ARCHIVE_BYTES) throw new Error(`App artifact exceeds ${MAX_ARCHIVE_BYTES} bytes`);
-    hash.update(bytes);
-  }
-  return { sha256: hash.digest('hex'), sizeBytes };
-}

@@ -16,7 +16,7 @@ import {
   UV_SHA256_ARM64,
   UV_VERSION,
 } from '@kortix/shared';
-import { SANDBOX_VERSION, config } from '../config';
+import { SANDBOX_VERSION } from '../config';
 import {
   buildRuntimeArtifactFingerprint,
   cliConnectorRuntimeArtifacts,
@@ -204,7 +204,12 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // Without both, a cold box answered `runtime.running` with nulls until its
 // first reconcile finished — ~140 s on a preview box — and paid a full overlay
 // download plus a ~210 MB re-hash to get there.
-const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v49';
+// v50: the entrypoint's root block repairs /etc/hosts to 0644 before the
+// privilege drop. Platinum writes it 0700 root:root at every boot, so the
+// runtime user cannot read it and `localhost` never resolves — Bun fetch to
+// an http://localhost origin dials ::1 and fails (db-suites red on every
+// fresh worker sandbox until a manual chmod; KRTX-1814).
+const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v50';
 
 // The runtime layer bakes source artifacts into every template's rootfs. The
 // first set is the kortix-agent binary (its source, package.json and the shared

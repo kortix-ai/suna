@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
-import { Client } from 'pg';
+import { PgClient } from './helpers/pg-client';
 import { captureSessionTranscriptMirror } from '../projects/lib/session-transcript-capture';
 import { readSessionTranscriptMirror } from '../projects/lib/session-transcript-mirror';
 import {
@@ -12,7 +12,7 @@ import {
 } from './helpers/integration-fixtures';
 
 test('complete capture persists all pages, retries, serializes writes, and keeps history whatever the project stored', async () => {
-  const db = new Client({ connectionString: localTestDatabaseUrl() });
+  const db = new PgClient({ connectionString: localTestDatabaseUrl() });
   await db.connect();
   let project: SeededProject | undefined;
   try {
@@ -173,7 +173,7 @@ test('complete capture persists all pages, retries, serializes writes, and keeps
 }, 20_000);
 
 test('a turn writes only what changed, and only what vanished is deleted', async () => {
-  const db = new Client({ connectionString: localTestDatabaseUrl() });
+  const db = new PgClient({ connectionString: localTestDatabaseUrl() });
   await db.connect();
   let project: SeededProject | undefined;
   try {
@@ -275,7 +275,7 @@ test('a turn writes only what changed, and only what vanished is deleted', async
 }, 20_000);
 
 test("a sub-agent's transcript is saved under its own OpenCode session, and a root read never shows it", async () => {
-  const db = new Client({ connectionString: localTestDatabaseUrl() });
+  const db = new PgClient({ connectionString: localTestDatabaseUrl() });
   await db.connect();
   let project: SeededProject | undefined;
   try {
@@ -385,7 +385,7 @@ test("a sub-agent's transcript is saved under its own OpenCode session, and a ro
 }, 20_000);
 
 test('a complete read of an empty conversation is saved and served as complete and empty', async () => {
-  const db = new Client({ connectionString: localTestDatabaseUrl() });
+  const db = new PgClient({ connectionString: localTestDatabaseUrl() });
   await db.connect();
   let project: SeededProject | undefined;
   try {
@@ -433,7 +433,7 @@ test('a transcript string Postgres jsonb cannot represent is made storable, not 
     doomed transaction and warned — 568 lines in one prod hour, one session
     unmirrored from then on. The projection must make such a string storable.
   */
-  const db = new Client({ connectionString: localTestDatabaseUrl() });
+  const db = new PgClient({ connectionString: localTestDatabaseUrl() });
   await db.connect();
   let project: SeededProject | undefined;
   try {

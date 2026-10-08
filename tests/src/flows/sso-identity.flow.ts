@@ -292,6 +292,7 @@ flow(
       'PATCH /v1/accounts/:accountId/members/:userId',
       'GET /v1/accounts/:accountId/members',
       'GET /v1/accounts/:accountId',
+      'POST /v1/access/check-email',
     ],
   },
   async (ctx) => {
@@ -349,6 +350,12 @@ flow(
 
     await ctx.step('an operator verifies the domain', async () => {
       (await operatorVerifies(ctx, team.id, true)).status(200).body().has('$.domain_verified', true);
+    });
+
+    await ctx.step('a verified domain without enforce_sso: check-email for an existing address on it → signin, not sso', async () => {
+      const person = await ctx.fixtures.userWithEmail(`${ctx.fixtures.name('no-enforce')}@${domain}`);
+      const mode = await checkEmailMode(ctx, person.email!);
+      if (mode !== 'signin') throw new Error(`a verified domain without enforce_sso must not force SSO, got ${mode}`);
     });
 
     await ctx.step('verified domain: an owner is never merged; the SSO identity joins as a plain member', async () => {

@@ -137,7 +137,16 @@
     "verifyEmailInstructions": "Cliquez sur le lien dans l'e-mail pour vérifier votre compte, puis connectez-vous.",
     "browseAsGuest": "Parcourir en tant qu'invité",
     "signOutFailed": "Impossible de se déconnecter. Vérifiez votre connexion et réessayez.",
-    "signingOut": "Déconnexion…"
+    "signingOut": "Déconnexion…",
+    "mfa": {
+      "title": "Confirmez votre identité",
+      "enterCode": "Saisissez le code à 6 chiffres de votre application d’authentification.",
+      "codeLabel": "Code à 6 chiffres",
+      "verify": "Vérifier",
+      "verifying": "Vérification…",
+      "invalidCode": "Ce code n’a pas fonctionné. Vérifiez votre application d’authentification et réessayez.",
+      "verifyFailed": "Impossible de vérifier le code. Vérifiez votre connexion et réessayez."
+    }
   },
   "onboarding": {
     "welcome": "Découvrez ce que Kortix peut faire",

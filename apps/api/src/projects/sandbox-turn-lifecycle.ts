@@ -34,7 +34,6 @@ import {
   ABORT_END_ERROR_NAMES,
   type ActiveTurnRenewal,
   type RuntimeTurnAdoption,
-  type SandboxTurnCompletionOutcome,
   type SandboxTurnCompletionResult,
   type SandboxTurnDeliveryReconciliation,
   type SandboxTurnEndError,

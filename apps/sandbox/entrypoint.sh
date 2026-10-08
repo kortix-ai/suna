@@ -36,6 +36,11 @@ if [ "$(id -u)" -eq 0 ] && id kortix >/dev/null 2>&1; then
     || { mkdir -p /dev/shm && mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs /dev/shm; } 2>/dev/null \
     || true
   chmod 1777 /dev/shm 2>/dev/null || true
+  # TEMPORARY: Platinum writes /etc/hosts as 0700 root:root at every boot, so
+  # the runtime user cannot read it and `localhost` never resolves — a Bun
+  # fetch to an http://localhost origin then dials ::1 and fails with
+  # "Unable to connect". The content is already correct; only the mode is.
+  chmod 644 /etc/hosts 2>/dev/null || true
   ulimit -Hn 1048576 2>/dev/null || true
   ulimit -Sn 1048576 2>/dev/null || true
   # kortix.yaml `container_runtime: true` sets KORTIX_CONTAINER_RUNTIME=1 in the

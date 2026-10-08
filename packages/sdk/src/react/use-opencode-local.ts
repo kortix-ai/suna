@@ -114,19 +114,6 @@ export interface RuntimeLocal {
 // Helpers
 // ============================================================================
 
-function uniqueBy<T>(arr: T[], key: (item: T) => string): T[] {
-  const seen = new Set<string>();
-  const result: T[] = [];
-  for (const item of arr) {
-    const k = key(item);
-    if (!seen.has(k)) {
-      seen.add(k);
-      result.push(item);
-    }
-  }
-  return result;
-}
-
 /**
  * Normalize a model value into a ModelKey.
  * Handles:

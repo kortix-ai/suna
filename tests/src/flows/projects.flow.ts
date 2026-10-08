@@ -4,7 +4,8 @@
 import { ProjectSchema } from "@kortix/api-contract";
 import { Client } from "../core/client";
 import { flow } from "../core/flow";
-import { createDatabaseSession } from "../fixtures/database-project";
+import { waitFor } from "../core/poll";
+import { createDatabaseSession, fundDatabaseAccount } from "../fixtures/database-project";
 import { seedSessionTranscript } from "../fixtures/session-transcript";
 
 flow("PROJ-1", { domain: "projects", tags: ["smoke"], routes: ["GET /v1/projects"] }, async (ctx) => {
@@ -16,9 +17,33 @@ flow("PROJ-1", { domain: "projects", tags: ["smoke"], routes: ["GET /v1/projects
     const r = await ctx.client.as(ctx.P.ANON).get("/v1/projects");
     r.status(401);
   });
+  await ctx.step("the account owner lists every active project as manager; a member lists only the project granted to them", async () => {
+    const team = await ctx.fixtures.team();
+    const granted = await team.project();
+    const other = await team.project();
+    const member = await team.addMember("member");
+    await team.grantProjectRole(granted.id, member.userId!, "member");
+    type Row = { project_id: string; project_role: string | null; effective_project_role: string };
+    const asOwner = await ctx.client.as(ctx.P.OWNER).get("/v1/projects", { query: { account_id: team.id } });
+    asOwner.status(200);
+    const ownerRows = asOwner.json<Row[]>();
+    const ids = ownerRows.map((p) => p.project_id).sort();
+    if (JSON.stringify(ids) !== JSON.stringify([granted.id, other.id].sort()) || !ownerRows.every((p) => p.effective_project_role === "manager")) {
+      throw new Error(`owner list: ${JSON.stringify(ownerRows)}`);
+    }
+    const asMember = await ctx.client.as(member).get("/v1/projects", { query: { account_id: team.id } });
+    asMember.status(200);
+    const rows = asMember.json<Row[]>();
+    if (rows.length !== 1 || rows[0]!.project_id !== granted.id || rows[0]!.project_role !== "member" || rows[0]!.effective_project_role !== "member") {
+      throw new Error(`member list: ${JSON.stringify(rows)}`);
+    }
+  });
 });
 
-flow("PROJ-3", { domain: "projects", requires: ["managedGit"], routes: ["POST /v1/projects/provision"] }, async (ctx) => {
+flow("PROJ-3", { domain: "projects", requires: ["managedGit"], routes: ["POST /v1/projects/provision", "GET /v1/projects/managed-git/status"] }, async (ctx) => {
+  await ctx.step("managed-git status reports configured:true on a managed-git target", async () => {
+    (await ctx.client.as(ctx.P.OWNER).get("/v1/projects/managed-git/status")).status(200).body().has("$.configured", true);
+  });
   await ctx.step("managed provision → 201 with repo", async () => {
     const r = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/provision", { name: ctx.fixtures.name("prov") });
     // 502 can occur transiently when the managed git host is rate-limited/unavailable.
@@ -99,6 +124,12 @@ flow("PROJ-5", { domain: "projects", routes: ["GET /v1/projects/:projectId"] }, 
       .get("/v1/projects/:projectId", { params: { projectId: "00000000-0000-4000-a000-000000000000" } });
     r.status(404);
   });
+  await ctx.step("a read stamps last_opened_at → a later read carries it", async () => {
+    await waitFor(
+      async () => (await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId", { params: { projectId: p.id } })).json<{ last_opened_at: string | null }>(),
+      { until: (b) => typeof b.last_opened_at === "string", timeoutMs: 5_000, intervalMs: 250, description: "last_opened_at stamp" },
+    );
+  });
 });
 
 flow("PROJ-6", { domain: "projects", routes: ["GET /v1/projects/:projectId/detail"] }, async (ctx) => {
@@ -111,6 +142,18 @@ flow("PROJ-6", { domain: "projects", routes: ["GET /v1/projects/:projectId/detai
     const r = await ctx.client.as(ctx.P.NONMEMBER).get("/v1/projects/:projectId/detail", { params: { projectId: p.id } });
     r.status(403);
   });
+  if (ctx.env.target === "local") {
+    await ctx.step("detail of a git-backed project: manager role, a config block, and file_count equal to the files listed", async () => {
+      const g = await ctx.fixtures.project({ managedGit: true });
+      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/detail", { params: { projectId: g.id } });
+      r.status(200).body().has("$.project.project_id", g.id).has("$.project.effective_project_role", "manager").exists("$.config");
+      const { file_count, files } = r.json<{ file_count: number; files: Array<{ path: string }> }>();
+      const paths = files.map((f) => f.path);
+      if (file_count !== files.length || !paths.includes("kortix.yaml")) {
+        throw new Error(`detail files: ${file_count} ${JSON.stringify(paths)}`);
+      }
+    });
+  }
   if (ctx.env.capabilities.admin) {
     const admin = ctx.client.withBearer(ctx.env.adminToken!, "ADMIN_TOKEN");
     await ctx.step("platform admin WITHOUT the bypass header → still 403 (no standing access)", async () => {
@@ -129,11 +172,24 @@ flow("PROJ-6", { domain: "projects", routes: ["GET /v1/projects/:projectId/detai
 
 flow("PROJ-7", { domain: "projects", routes: ["PATCH /v1/projects/:projectId"] }, async (ctx) => {
   const p = await ctx.fixtures.project();
-  await ctx.step("OWNER renames project", async () => {
-    const r = await ctx.client
-      .as(ctx.P.OWNER)
-      .patch("/v1/projects/:projectId", { name: ctx.fixtures.name("renamed") }, { params: { projectId: p.id } });
-    r.status(200);
+  await ctx.step("OWNER patches name, default_branch and manifest_path; repo_url in the body is ignored", async () => {
+    const before = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId", { params: { projectId: p.id } });
+    before.status(200);
+    const repoUrl = before.json<{ repo_url: string }>().repo_url;
+    const name = ctx.fixtures.name("patched");
+    const r = await ctx.client.as(ctx.P.OWNER).patch(
+      "/v1/projects/:projectId",
+      { name, default_branch: "release", manifest_path: "ops/kortix.yaml", repo_url: "https://github.com/example-org/should-not-change.git" },
+      { params: { projectId: p.id } },
+    );
+    r.status(200).body().has("$.name", name).has("$.default_branch", "release").has("$.manifest_path", "ops/kortix.yaml").has("$.repo_url", repoUrl);
+  });
+  await ctx.step("a project member (floor role) cannot patch the project → 403", async () => {
+    const team = await ctx.fixtures.team();
+    const tp = await team.project();
+    const member = await team.addMember("member");
+    await team.grantProjectRole(tp.id, member.userId!, "member");
+    (await ctx.client.as(member).patch("/v1/projects/:projectId", { name: "nope" }, { params: { projectId: tp.id } })).status(403);
   });
   await ctx.step("NONMEMBER cannot patch → 403/404", async () => {
     const r = await ctx.client
@@ -321,6 +377,69 @@ flow(
       rmSync(work, { recursive: true, force: true });
       await db.end();
     }
+  },
+);
+
+flow(
+  "PROJ-42",
+  { domain: "projects", routes: ["GET /v1/projects/managed-git/status", "POST /v1/projects/provision", "GET /v1/projects"] },
+  async (ctx) => {
+    const owner = ctx.client.as(ctx.P.OWNER);
+    await ctx.step("provision into an account the caller is not a member of → 403", async () => {
+      const foreign = ctx.P.NONMEMBER.accountId;
+      if (!foreign) throw new Error("NONMEMBER fixture has no account id");
+      const r = await owner.post("/v1/projects/provision", { name: ctx.fixtures.name("foreign-acct"), account_id: foreign });
+      r.status(403).body().has("$.message", "You do not have access to this account");
+    });
+    const status = await owner.get("/v1/projects/managed-git/status");
+    status.status(200);
+    const { configured, provider } = status.json<{ configured: boolean; provider: string }>();
+    if (!configured) {
+      await ctx.step("managed git unconfigured → POST /provision 503 naming the provider; no project registered", async () => {
+        const name = ctx.fixtures.name("unconfigured");
+        const r = await owner.post("/v1/projects/provision", { name });
+        r.status(503).body().has("$.error", `Managed git provider "${provider}" is not configured on this server`);
+        const list = await owner.get("/v1/projects");
+        list.status(200);
+        if (list.json<Array<{ name: string }>>().some((project) => project.name === name)) throw new Error("a refused provision registered a project");
+      });
+    }
+  },
+);
+
+// PROJ-41 — the per-account project cap on POST /v1/projects, which calls the
+// same quota check as /provision before any GitHub lookup. PROJ-18 owns the
+// deployed cap through /provision; the local profile enforces billing itself.
+flow(
+  "PROJ-41",
+  { domain: "projects", requires: ["database"], routes: ["POST /v1/projects", "DELETE /v1/projects/:projectId"] },
+  async (ctx) => {
+    if (ctx.env.target !== "local") return;
+    const team = await ctx.fixtures.team();
+    const first = await team.project();
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const create = () =>
+      owner.post("/v1/projects", { account_id: team.id, name: ctx.fixtures.name("quota-probe"), repo_url: "https://github.com/example-org/quota-probe" });
+    await ctx.step("free team account at its 1-project cap → 403 project_limit_reached {limit:1,count:1}", async () => {
+      (await create())
+        .status(403)
+        .body()
+        .has("$.code", "project_limit_reached")
+        .has("$.limit", 1)
+        .has("$.count", 1)
+        .has("$.error", "Free accounts are limited to 1 project. Upgrade to a paid plan to create more.");
+    });
+    await ctx.step("archiving the one project frees the slot → the create passes the cap and stops at the GitHub App check (409)", async () => {
+      (await owner.del("/v1/projects/:projectId", { params: { projectId: first.id } })).status(200);
+      const r = await create();
+      r.status(409);
+      if (r.json<any>()?.code === "project_limit_reached") throw new Error("an archived project still consumed the slot");
+    });
+    await ctx.step("a paid plan lifts the free cap → 409 at the GitHub App check, not 403", async () => {
+      await team.project();
+      await fundDatabaseAccount(ctx.env, team.id);
+      (await create()).status(409);
+    });
   },
 );
 

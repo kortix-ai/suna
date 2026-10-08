@@ -321,5 +321,3 @@ async function keepAlwaysOnAppsRunning(hosting: AppHostingProvider, now: Date) {
   if (refreshDeferred > 0) logger.info('[apps] keep-alive deferred runtime refreshes', { refreshed, refreshDeferred });
   return { started, refreshed, refreshDeferred, confirmed, lost };
 }
-
-export { startAppIdleReaper, stopAppIdleReaper } from '../workers/app-idle-reaper-worker';

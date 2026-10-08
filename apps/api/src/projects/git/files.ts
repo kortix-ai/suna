@@ -15,7 +15,6 @@ import { listCommits } from './commits';
 import { type MirrorRefresh, isGitPathNotFoundError, isGitRefNotFoundError, normalizeTreePath, refreshMirror, runGit, runGitBuffer, runGitCapture, spawn } from './mirror';
 import { cachedGitRead, resolveRefSha } from './read-cache';
 import type {
-  GetFileAtRefResult,
   GetFileHistoryOptions,
   GitBackedProject,
   GitLogEntry,
@@ -542,30 +541,4 @@ export async function getFileHistory(
     limit: options.limit,
     skip: options.skip,
   });
-}
-
-export async function getFileAtRef(
-  project: GitBackedProject,
-  filePath: string,
-  ref: string,
-): Promise<GetFileAtRefResult> {
-  const normalized = normalizeTreePath(filePath);
-  if (!normalized) return { content: '', found: false };
-  validateRef(ref);
-  const repoPath = await refreshMirror(project);
-  const read = async (at: string): Promise<GetFileAtRefResult> => {
-    try {
-      const result = await runGit(['show', `${at}:${normalized}`], repoPath, false);
-      return { content: result.stdout, found: true };
-    } catch (err) {
-      if (isGitPathNotFoundError(err)) return { content: '', found: false };
-      throw err;
-    }
-  };
-  try {
-    const sha = await resolveRefSha(repoPath, ref);
-    return sha ? await cachedGitRead(repoPath, sha, 'show-at', normalized, () => read(sha)) : await read(ref);
-  } catch {
-    return { content: '', found: false };
-  }
 }

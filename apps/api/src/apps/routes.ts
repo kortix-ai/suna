@@ -168,8 +168,6 @@ function sourceFromWire(input: z.infer<typeof SourceSchema>): AppSourceSpec {
   }
 }
 
-export { appPublicUrl } from './hostnames';
-
 /**
  * `viewerCanAccess` is the caller's OPEN verdict, which is not the same as the
  * verdict that put this App in their list — a project manager sees every App so

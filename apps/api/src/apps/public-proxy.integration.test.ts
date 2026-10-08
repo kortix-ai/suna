@@ -245,7 +245,7 @@ describeWithDb('App wake lifecycle races — real PostgreSQL', () => {
   });
 
   test('an expired idle deadline wakes a running row before serving it', async () => {
-    const loaded = await seedStoppedRuntime();
+    await seedStoppedRuntime();
     await testDb().update(appRuntimes).set({
       status: 'running',
       idleDeadlineAt: new Date(Date.now() - 1000),

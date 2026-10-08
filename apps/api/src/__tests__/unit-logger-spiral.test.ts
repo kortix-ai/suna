@@ -8,7 +8,7 @@
  * The logger must now (a) never let a transport failure surface as an unhandled
  * rejection, and (b) never re-ship the transport's own failures.
  */
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
 type ShipAttempt = { level: string; message: string };
 

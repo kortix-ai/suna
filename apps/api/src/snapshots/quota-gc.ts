@@ -22,7 +22,7 @@
 
 import { appDeployments, appImages, sandboxTemplates } from '@kortix/db';
 import { type BudgetReportState, decideBudgetReport } from './budget-report-policy';
-import { eq, isNotNull, sql } from 'drizzle-orm';
+import { eq, isNotNull } from 'drizzle-orm';
 import {
   deleteDaytonaSnapshotById,
   isDaytonaConfigured,
@@ -59,21 +59,6 @@ export interface QuotaGcResult {
   /** GC cannot get the org back to target — capacity problem, needs a human. */
   budgetUnresolved: boolean;
   dryRun: boolean;
-}
-
-export type DaytonaProjectImageAdmissionReason =
-  | 'allowed'
-  | 'provider_not_configured'
-  | 'org_list_failed'
-  | 'referenced_names_failed'
-  | 'budget_unresolved'
-  | 'deferred_candidates'
-  | 'org_target_reached';
-
-export interface DaytonaProjectImageAdmission {
-  allowed: boolean;
-  reason: DaytonaProjectImageAdmissionReason;
-  quota: QuotaGcResult;
 }
 
 export interface SnapshotQuotaIo {
@@ -250,29 +235,4 @@ export async function reconcileSnapshotQuota(
         : ''),
   );
   return result;
-}
-
-/**
- * Observe Daytona capacity without deleting snapshots. Project-image admission
- * fails closed unless the provider and every safety read produced a complete,
- * immediately actionable view below the post-GC target.
- */
-export async function assessDaytonaProjectImageAdmission(
-  opts: { now?: number } = {},
-  io: SnapshotQuotaIo = defaultSnapshotQuotaIo,
-): Promise<DaytonaProjectImageAdmission> {
-  const quota = await reconcileSnapshotQuota({ dryRun: true, now: opts.now }, io);
-  if (quota.observationStatus !== 'complete') {
-    return { allowed: false, reason: quota.observationStatus, quota };
-  }
-  if (quota.budgetUnresolved) {
-    return { allowed: false, reason: 'budget_unresolved', quota };
-  }
-  if (quota.deferred > 0) {
-    return { allowed: false, reason: 'deferred_candidates', quota };
-  }
-  if (quota.orgTotal >= QUOTA_GC_ORG_TARGET) {
-    return { allowed: false, reason: 'org_target_reached', quota };
-  }
-  return { allowed: true, reason: 'allowed', quota };
 }

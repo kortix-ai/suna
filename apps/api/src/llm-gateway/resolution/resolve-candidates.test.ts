@@ -18,7 +18,7 @@ mock.module('../../billing/services/entitlements', () => ({
   getAccountTier,
   getCachedAccountTier: getAccountTier,
   accountMayUseManagedModels: async (accountId: string) =>
-    !realTiers.accountIsFreeTierForModels(await getAccountTier(accountId)),
+    realTiers.tierGrantsAllModels(await getAccountTier(accountId)),
 }));
 
 const config: Record<string, unknown> = {};
