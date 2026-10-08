@@ -532,7 +532,9 @@ Decide the mechanism first:
 - **Reacts to an event in a connected app** ("when a PR opens", "when an
   email arrives", "when an issue changes") → `type: event` + `connector` +
   `event`. `connector` is the profile; add `account: <label>` only to pick
-  one of several shared accounts on it. Kortix subscribes for you: no
+  one of several shared accounts on it. `source` names the event source
+  adapter and defaults to the connector's provider; Composio is one adapter.
+  The event id belongs to the adapter. Kortix subscribes for you: no
   webhook, no secret, no signature.
   Use `type: webhook` + `secret_env` only for a system that has no app
   connector.

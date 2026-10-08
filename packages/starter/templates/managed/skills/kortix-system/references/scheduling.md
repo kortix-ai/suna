@@ -31,7 +31,7 @@ Rules: `kortix-yaml.md` → `imports:`.
 | To follow up on **this** task later ("remind me at 4pm", "check tomorrow whether they replied", "keep checking hourly until the deploy is green") | **session reminder** | `kortix remind "<what to do>" --at <ISO> \| --in 24h [--every 1h]` — no `kortix.yaml` change |
 | A one-time project job not tied to this session ("send the launch email tomorrow 9am") | **cron trigger, one-off** | `type: cron` + `run_at: "<ISO-8601>"` |
 | Something to repeat ("every weekday morning", "daily digest", "check hourly") | **cron trigger, recurring** | `type: cron` + `cron: "<6-field>"` + `timezone` |
-| To react to an event **in a connected app** ("when a PR opens", "when an email arrives", "when an issue changes", "when a calendar event is created", "when a Slack message is posted") | **event trigger** | `type: event` + `connector` + `event` — see [App event triggers](#app-event-triggers) |
+| To react to an event **in a connected app** ("when a PR opens", "when an email arrives", "when an issue changes", "when a calendar event is created", "when a Slack message is posted") | **event trigger** | `type: event` + `connector` + `event` (optional `source`) — see [App event triggers](#app-event-triggers) |
 | To react to a system that has **no app connector** ("when our in-house tool calls us") | **webhook trigger** | `type: webhook` + `secret_env` |
 | To **pause mid-task and resume later with full context** | **session reminder** | See [Pausing mid-task](#pausing-mid-task) |
 
@@ -259,10 +259,15 @@ Run these in order. Each step prints what the next step needs.
    default shared account. Change it later with
    `kortix triggers set <slug> --account <label>`; `--default-account` clears
    it. Switching the account resubscribes the trigger.
+   `--source <adapter>` names the event source. Omit it: the default is the
+   connector's provider (`composio`). Composio is one adapter, and the event
+   id belongs to it; Kortix has no event ids of its own. A source that does
+   not match the connector's provider reads `error`. `kortix triggers info`
+   shows the `source`.
    Without `--apply` the CLI writes the block to the local `kortix.yaml`; then
    run `kortix ship`. A bad config exits 2 and lists every missing or invalid
    field.
-6. **Check it.** `kortix triggers info pr-review`. It shows `connector`, `account`
+6. **Check it.** `kortix triggers info pr-review`. It shows `source`, `connector`, `account`
    (the label, or `default`) and `connected as` (the identity that feeds the
    trigger). Repeat until it prints `live`. Act on the status:
 
