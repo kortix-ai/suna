@@ -73,7 +73,7 @@ function FilesBrowser({ drive }: { drive: Drive }) {
   // The explorer's store starts at the top of Files, not at a sandbox path.
   const store = useMemo(() => {
     const s = createFilesStore();
-    s.setState({ currentPath: '/', rootPath: '/', expandedDirs: new Set() });
+    s.setState({ currentPath: '/', rootPath: null, expandedDirs: new Set() });
     return s;
   }, []);
   return (
