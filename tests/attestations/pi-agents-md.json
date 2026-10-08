@@ -1,28 +1,11 @@
 {
-  "source_hash": "ca9e6bc6160d5cba719573a6f4e0ba301e95c77662c529bae979472e5645e3b5",
-  "diff_files": [
-    "apps/kortix-sandbox-agent-server/src/__tests__/pi-harness.test.ts",
-    "apps/kortix-sandbox-agent-server/src/harness/README.md",
-    "apps/kortix-sandbox-agent-server/src/harness/pi/config-release.ts",
-    "apps/kortix-sandbox-agent-server/src/harness/pi/config.ts",
-    "apps/kortix-sandbox-agent-server/src/harness/pi/diagnostics.ts",
-    "apps/kortix-sandbox-agent-server/src/harness/pi/runtime.ts",
-    "apps/web/content/docs/work/harnesses.mdx",
-    "apps/web/src/lib/seo/content-timestamps.json",
-    "packages/starter/src/embedded.generated.json",
-    "packages/starter/templates/managed/skills/kortix-system/SKILL.md",
-    "packages/starter/templates/managed/skills/kortix-system/references/pi/overview.md",
-    "tests/spec/end-to-end.md",
-    "tests/src/flows/config-releases.flow.ts",
-    "tests/src/flows/run-session-backlog.flow.ts"
-  ],
-  "diff_hash": "19fd726274858630e2d27bda112e035b3a4a164a71b88bae8e49d7c5912e6ebb",
-  "head": "ce44a7d7b22084de2dafa46a5bbf0c470971d25e",
+  "source_hash": "42badf5c6eda01402e392cb77b8b76a6d26d38d21d17f9172173866317983fc3",
+  "head": "aa9c66fd544e56719a2bb538dc2d620a5cefdd20",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-08T12:10:27.115Z"
+  "at": "2026-10-08T12:53:13.267Z"
 }
