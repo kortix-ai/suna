@@ -71,7 +71,7 @@ export function BackendDetailView({
         </Hint>
         {backend ? (
           <>
-            <span className="min-w-0 truncate text-sm font-medium">{backend.name}</span>
+            <span className="max-w-60 shrink-0 truncate text-sm font-medium">{backend.name}</span>
             <BackendStatusBadge backend={backend} />
             <span className="text-muted-foreground hidden text-xs whitespace-nowrap md:inline">
               {backendSizeLabel(backend, t)}

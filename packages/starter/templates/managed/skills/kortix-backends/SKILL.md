@@ -65,6 +65,11 @@ Deploy from the project repo unless the user says otherwise.
 Every backend task runs these six steps in order. Skip none: step 3 keeps you
 from breaking what exists, and step 5 is the proof.
 
+If `kortix backends env` prints a URL on `*.apps.localhost`, the project runs on
+a developer's local Kortix stack, which this sandbox cannot reach. Do not probe
+the network: write the change, say the backend is unreachable from here, and
+give the user the `kortix backends deploy` command to run on their machine.
+
 **1. Install** (once per backend directory):
 
 ```sh

@@ -642,8 +642,10 @@ per hour at list price, about $59 for a 30-day month. Each charge is a
 - Convex Cloud-only features are absent (see the table above).
 - A backend keeps the image it was created with. Image fixes (the log cap,
   a newer Convex) reach new backends only. There is no in-place upgrade.
-- The backend URL is the machine's provider URL, fixed for the backend's
-  life. There is no stable Kortix hostname for a backend.
+- On a local stack the backend hosts are `*.apps.localhost`, which only the
+  machine running the stack resolves. An agent session runs in a cloud
+  sandbox and cannot reach them: test an agent's backend work on a deployed
+  environment. Your own terminal, the CLI and the browser reach them.
 - Durability depends on a journaled machine disk that is not shipped yet. See
   [Database and durability](#database-and-durability).
 - `npx convex export` covers data and files. It does not cover environment
