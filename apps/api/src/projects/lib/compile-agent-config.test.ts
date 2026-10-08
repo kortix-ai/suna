@@ -925,6 +925,43 @@ describe('v2 agent tool toggles', () => {
     expect(config?.agent.worker.tools).toEqual({ bash: false, read: true });
     expect(config?.agent.other.tools).toBeUndefined();
   });
+
+  test('all, none, a list and exclude compile to the map a harness reads', () => {
+    const config = compileAgentConfig({
+      kortix_version: 2,
+      default_agent: 'everything',
+      agents: {
+        everything: { tools: 'all' },
+        nothing: { tools: 'none' },
+        researcher: { tools: ['read', 'web_search', 'lookup_order'] },
+        no_shell: { tools: { exclude: ['bash', 'edit'] } },
+      },
+    });
+    expect(config?.agent.everything.tools).toBeUndefined();
+    expect(config?.agent.nothing.tools).toEqual({ '*': false });
+    expect(config?.agent.researcher.tools).toEqual({ '*': false, read: true, web_search: true, lookup_order: true });
+    expect(config?.agent.no_shell.tools).toEqual({ bash: false, edit: false });
+  });
+
+  test('kortix_version 3 compiles tools on the inline agent', () => {
+    const config = compileAgentConfig({ kortix_version: 3, default_agent: 'writer', agents: { writer: { prompt: 'Write.', tools: ['read'] } } });
+    expect(config?.agent.writer.tools).toEqual({ '*': false, read: true });
+  });
+});
+
+describe('project tools', () => {
+  test('the valid top-level tools reach the compiled set as project_tools', () => {
+    const manifest = {
+      kortix_version: 2,
+      default_agent: 'worker',
+      tools: { lookup_order: 'tools/lookup_order.ts', note: 'integrations/crm/note.mjs', bash: 'tools/bash.ts', up: '../x.ts' },
+      agents: { worker: {} },
+    };
+    const expected = { lookup_order: 'tools/lookup_order.ts', note: 'integrations/crm/note.mjs' };
+    expect(compileAgentConfig(manifest)?.project_tools).toEqual(expected);
+    expect(compileSelectedAgentConfig(manifest, 'worker').project_tools).toEqual(expected);
+    expect(compileAgentConfig({ ...manifest, tools: undefined })?.project_tools).toBeUndefined();
+  });
 });
 
 describe('compileAgentConfig — a denied bash/edit also denies the tools that do the same job', () => {
