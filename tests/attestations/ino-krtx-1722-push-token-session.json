@@ -1,0 +1,30 @@
+{
+  "source_hash": "5496ad4319dda53441ae91e3fa6458dc520e1736699c128c3e58d805209f6d5d",
+  "diff_files": [
+    "apps/api/src/billing/services/account-deletion.integration.test.ts",
+    "apps/api/src/billing/services/account-deletion.ts",
+    "apps/api/src/notifications/device-tokens.integration.test.ts",
+    "apps/api/src/notifications/device-tokens.ts",
+    "apps/api/src/notifications/routes.test.ts",
+    "apps/api/src/notifications/routes.ts",
+    "apps/api/src/notifications/session-push.test.ts",
+    "apps/api/src/repositories/auth-devices.ts",
+    "apps/web/content/docs/accounts.mdx",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "packages/db/drizzle/meta/20261008073913_snapshot.json",
+    "packages/db/drizzle/meta/_journal.json",
+    "packages/db/migrations/20261008073913244_push_device_token_auth_session.sql",
+    "packages/db/src/schema/kortix.ts",
+    "tests/spec/end-to-end.md",
+    "tests/src/flows/notifications.flow.ts"
+  ],
+  "diff_hash": "e21548c2f0b590843b303e0be9d34cb1381d2e7bd16245da1da86c35bd0b24b1",
+  "head": "6941fd1a055bdd9f84af5b9d04f123286d5804d2",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-08T07:56:18.878Z"
+}

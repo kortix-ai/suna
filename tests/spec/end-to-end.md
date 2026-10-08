@@ -192,6 +192,8 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 
 `PUSH-1` `POST /notifications/device-token {device_token, device_type: ios|android, provider?: expo, preferences?: {enabled, on_completion, on_error, on_question, on_permission, play_sound}}` → 200 `{success:true, message}`. Upsert keyed on `device_token`: a new token stores every omitted preference as `true`; a re-registration updates only the preference keys it sends; a token registered by another user moves to the caller. Empty token, token > 512 chars, unknown `device_type`, non-`expo` provider, non-boolean or unknown preference key → 400. `DELETE /notifications/device-token/:token` (URL-encoded Expo token) → 200 `{success:true, deleted}`: deletes only the caller's row; another user's token or an unknown token → `deleted:false` and the row is untouched; a repeat delete → `deleted:false`. Only a user JWT or a personal PAT may call either route: `ANON` → 401; a service account or session-scoped agent PAT → 403.
 
+`PUSH-2` A user signed in on two devices registers a push token from each. `DELETE /accounts/me/devices/:sessionId` for the second device also deletes the token that sign-in registered: the caller's later `DELETE /notifications/device-token/:token` for it → 200 `deleted:false`. The caller's own token is untouched (`deleted:true`). A push goes only to tokens whose registering sign-in still exists in `auth.sessions`; a token registered before that was recorded counts as live until its next registration.
+
 ---
 
 ## 5. IAM (groups / policies / roles / super-admin)
