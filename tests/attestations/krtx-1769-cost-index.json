@@ -1,5 +1,5 @@
 {
-  "source_hash": "014cde261ada5da2fae1a01c17585d89f59b105904456e24ce00d5a5831916b7",
+  "source_hash": "b22916538dacd9699badfb67004c2247773a580409e89a7f0181df8a1bb427e7",
   "diff_files": [
     "apps/web/src/lib/seo/content-timestamps.json",
     "packages/db/drizzle/meta/20261008012807_snapshot.json",
@@ -8,13 +8,13 @@
     "packages/db/src/schema/kortix.ts",
     "tests/migration/gateway-logs-account-time-covering.test.ts"
   ],
-  "diff_hash": "3ce55d0bb2123646f9e67804995a70166c66577d046efd37ffeb7ccb1b5f8a48",
-  "head": "f4745484dd7380262f9059bd6fd4363ea9ad30bc",
+  "diff_hash": "987ffd0490c1419d1b92787a9634bbf4f80576391f18f62c380e35c534def304",
+  "head": "d2755fea3a1ef549c3252d59e111374f50c572cb",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-08T02:42:53.482Z"
+  "at": "2026-10-08T03:40:41.445Z"
 }
