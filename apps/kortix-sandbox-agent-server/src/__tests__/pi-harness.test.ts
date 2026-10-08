@@ -2732,6 +2732,28 @@ describe('pi per-prompt agent (R7.2)', () => {
     expect(state.config.value.default_agent).toBe('coder')
   })
 
+  // Strix finding on #9391 (CWE-863): `__proto__` and `constructor` resolve
+  // through the prototype chain, and their undefined `permission` compiled to an
+  // empty policy that allows every tool.
+  test('a pick named after an Object prototype key keeps the session agent and its permission policy', async () => {
+    for (const pick of ['__proto__', 'constructor']) {
+      const ends: string[] = []
+      const marker = `proto-${pick.replace(/_/g, '')}-ran.txt`
+      const r = await boot({
+        script: [{ tool: 'bash', args: { command: `touch ${marker}` } }, { text: 'done' }],
+        env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ default_agent: 'locked', agent: { locked: { mode: 'primary', prompt: 'PROMPT-OF-LOCKED', permission: { bash: 'deny' } } } }) },
+        hooks: { onTurnEnd: ({ messageId }) => void ends.push(messageId) },
+      })
+      const id = await send(r, 'run the command', pick)
+      await waitFor(() => ends.length === 1)
+      const messages = (await page(r)).messages.filter((m) => m.info.id === id || m.info.parentID === id)
+      expect({ pick, agents: messages.map((m) => m.info.agent) }).toEqual({ pick, agents: ['locked', 'locked', 'locked'] })
+      const tool = messages.flatMap((m) => m.parts).find((p) => p.type === 'tool')!
+      expect({ pick, status: tool.state.status }).toEqual({ pick, status: 'error' })
+      expect({ pick, ran: existsSync(join(r.workspace, marker)) }).toEqual({ pick, ran: false })
+    }
+  })
+
   test('a subagent, a disabled agent and an unknown name are not run as the session agent', async () => {
     const ends: string[] = []
     const r = await boot({

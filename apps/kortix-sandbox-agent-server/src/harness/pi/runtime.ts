@@ -1393,7 +1393,10 @@ export class PiRuntime {
   private resolveTurnAgent(requested: string | undefined): string {
     const name = requested?.trim()
     if (!name || name === 'default' || name === this.sessionAgentName) return this.sessionAgentName
-    const agent = this.compiled?.agent?.[name]
+    // Own keys only: `__proto__` or `constructor` would resolve through the
+    // prototype chain to an agent with no permission rules, which allows every tool.
+    const agents = this.compiled?.agent ?? {}
+    const agent = Object.hasOwn(agents, name) ? agents[name] : undefined
     if (agent && !agent.disable && agent.mode !== 'subagent') return name
     logger.warn('[pi] the prompt picks an agent the session cannot run; it runs on the session agent', {
       requested: name,
