@@ -84,6 +84,7 @@ describe('qk.project', () => {
       qk.project.appAccess(id, 'app_1'),
       qk.project.appAccessSession(id, 'app_1'),
       qk.project.appDeployments(id, 'app_1'),
+      qk.project.appDeployment(id, 'app_1', 'deployment_1'),
       qk.project.triggers(id),
       qk.project.files(id),
       qk.project.fileSource(id, 'AGENTS.md'),

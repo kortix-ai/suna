@@ -20,7 +20,7 @@
  * the pass does nothing.
  */
 
-import { appDeployments, sandboxTemplates } from '@kortix/db';
+import { appDeployments, appImages, sandboxTemplates } from '@kortix/db';
 import { type BudgetReportState, decideBudgetReport } from './budget-report-policy';
 import { eq, isNotNull } from 'drizzle-orm';
 import {
@@ -98,6 +98,11 @@ export async function loadReferencedSnapshotNames(now: number): Promise<Set<stri
     .from(appDeployments)
     .where(eq(appDeployments.status, 'ready'))) {
     referenced.add(appDeploymentSnapshotName(row.deploymentId));
+  }
+  // Shared App images: every one this environment tracks. `reclaimAppDeploymentImages`
+  // deletes a tracked image once no deployment uses it; GC never races it.
+  for (const row of await db.select({ name: appImages.imageName }).from(appImages)) {
+    referenced.add(row.name);
   }
   return referenced;
 }

@@ -340,12 +340,17 @@ sessions, sandbox files and connectors. The tool refuses `--host`, `hosts`,
 <apps>
 ## Kortix Apps — deploy a website or container
 
-An **App** is a project-scoped, serverless deployment with one stable Kortix
-URL. A deployment is immutable. A failed deployment never replaces the active
-version. The control plane starts the App sandbox on the first public request,
-keeps it running while requests arrive, and stops it after the configured idle
-timeout. `stop` suspends compute immediately. The next public request resumes
-the App and returns the original request after readiness.
+An **App** is a project-scoped deployment with one stable Kortix URL. A
+deployment is immutable. A failed deployment never replaces the active version.
+
+- A **static App** (`--type static`) is files that Kortix serves itself: no
+  machine, no cold start, no compute bill, instant rollback. Build a Vite,
+  React, or exported Next.js App here and deploy its output directory.
+- A **server App** (`--type dockerfile`, or `--image`) runs in its own machine.
+  It runs **always on** (the default for a new App, 24/7) or **on demand**
+  (`--on-demand`: stops when idle, wakes on the next request). It stops at its
+  monthly compute budget (default 5 USD). 24/7 on the default machine costs
+  about 73 USD a month, so an always-on App needs `--budget`.
 
 Apps is experimental and off by default. Enable **Apps** for the selected
 project under Project Settings → Experimental before using the CLI or SDK. The
@@ -359,9 +364,9 @@ an App password in `kortix.yaml`.
 Use the CLI from the source directory:
 
 ```sh
-kortix apps deploy .                         # auto-detect static, bundle, or Dockerfile
-kortix apps deploy ./dist --type static
-kortix apps deploy . --type dockerfile --command '["bun","run","start"]' --port 3000
+kortix apps deploy ./dist --type static --spa
+kortix apps deploy . --type dockerfile --on-demand --command '["bun","run","start"]' --port 3000
+kortix apps deploy . --type dockerfile --always-on --budget 80 --command '["bun","run","start"]' --port 3000
 kortix apps deploy --image ghcr.io/acme/api:1.4.2 --command '["/app/server"]' --port 8081
 kortix apps access storefront --mode restricted --members <member-id> --groups <group-id>
 kortix apps ls --json
@@ -373,16 +378,15 @@ the default for bare `kortix apps deploy`. The manifest stores non-secret
 environment values and maps runtime environment keys to **project secret
 identifiers**. It never stores secret values.
 
-The first release supports one public HTTP port, static sites, JavaScript
-bundles, Dockerfiles, and public OCI images. It supports HTTP streaming, SSE,
-and WebSockets. It does not support replicas, persistent volumes, UDP, private
+An App keeps its active deployment and the 5 newest other ready ones for
+rollback. A server App supports one public HTTP port, HTTP streaming, SSE, and
+WebSockets. Apps do not support replicas, persistent volumes, UDP, private
 registries, or custom domains.
 
-**Full reference:**
-`references/kortix/apps.md` — workload
-selection, manifest fields, every lifecycle command, ignore rules, secrets,
-cold starts, rollback, limits, and failure handling. Load it before deploying
-or operating an App.
+Load the `kortix-apps` system skill before you deploy or operate an App.
+**Full reference:** `references/kortix/apps.md` — workload selection, manifest
+fields, every lifecycle command, run modes and budget, ignore rules, secrets,
+cold starts, rollback, retention, limits, and failure handling.
 </apps>
 
 <marketplace>
@@ -807,11 +811,12 @@ to see the full enum.
 </reference>
 
 <reference path="references/kortix/apps.md">
-  Kortix Apps deployment and operations reference. Covers static, bundle,
-  Dockerfile, and OCI workloads; the v2 manifest `apps:` map; archive ignore
-  rules; environment and secret mappings; stable URLs; cold wake and idle
-  stop; lifecycle commands; rollback; resource and budget limits; and current
-  first-release boundaries. Load before deploying or operating an App.
+  Kortix Apps deployment and operations reference. Covers static hosting and
+  server Apps (bundle, Dockerfile, and OCI workloads); always-on and on-demand
+  run modes and the monthly budget; the v2 manifest `apps:` map; archive
+  ignore rules; environment and secret mappings; stable URLs; cold wake and
+  idle stop; lifecycle commands; rollback and retention; resource limits; and
+  current boundaries. Load before deploying or operating an App.
 </reference>
 
 <reference path="references/kortix/marketplace.md">

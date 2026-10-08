@@ -876,6 +876,41 @@
       "when": 1791377463859,
       "tag": "20261007125103_drop_session_environments",
       "breakpoints": true
+    },
+    {
+      "idx": 125,
+      "version": "7",
+      "when": 1791365887483,
+      "tag": "20261007154600_apps_static_hosting",
+      "breakpoints": true
+    },
+    {
+      "idx": 126,
+      "version": "7",
+      "when": 1791369023739,
+      "tag": "20261007154601_apps_always_on",
+      "breakpoints": true
+    },
+    {
+      "idx": 127,
+      "version": "7",
+      "when": 1791385479308,
+      "tag": "20261007154602_apps_shared_images",
+      "breakpoints": true
+    },
+    {
+      "idx": 128,
+      "version": "7",
+      "when": 1791387123632,
+      "tag": "20261007154604_apps_image_builder_and_deleting",
+      "breakpoints": true
+    },
+    {
+      "idx": 129,
+      "version": "7",
+      "when": 1791402474240,
+      "tag": "20261007194754_apps_budget_explicit",
+      "breakpoints": true
     }
   ]
 }

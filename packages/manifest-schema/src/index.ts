@@ -939,7 +939,7 @@ const APP_TYPES = new Set(['static', 'bundle', 'dockerfile', 'oci_image']);
 const APP_KEYS = new Set([
   'path', 'type', 'image', 'dockerfile', 'command', 'port', 'root', 'output_dir',
   'install_command', 'build_command', 'spa', 'readiness_path', 'idle_timeout_seconds',
-  'monthly_budget_usd', 'resources', 'env', 'secrets',
+  'always_on', 'monthly_budget_usd', 'resources', 'env', 'secrets',
 ]);
 
 function validateAppStringMap(
@@ -1035,6 +1035,9 @@ function validateAppsV2(node: unknown, path: string, issues: ManifestIssue[]): v
       issues.push({ path: `${where}.readiness_path`, message: 'must be an absolute HTTP path.', severity: 'error' });
     }
     expectBoundedIntOrAbsent(value.idle_timeout_seconds, `${where}.idle_timeout_seconds`, { min: 120, max: 86400 }, issues);
+    if (value.always_on !== undefined && typeof value.always_on !== 'boolean') {
+      issues.push({ path: `${where}.always_on`, message: 'must be true or false.', severity: 'error' });
+    }
     if (value.monthly_budget_usd !== undefined &&
         (typeof value.monthly_budget_usd !== 'number' || value.monthly_budget_usd < 0)) {
       issues.push({ path: `${where}.monthly_budget_usd`, message: 'must be a non-negative number.', severity: 'error' });
