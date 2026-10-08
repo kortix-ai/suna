@@ -320,7 +320,6 @@ export const AGENT_CONFIG_SECTIONS = [
   { key: 'basics', label: 'Basics', group: 'General' },
   { key: 'people', label: 'People', group: 'General' },
   { key: 'triggers', label: 'Triggers', group: 'General' },
-  { key: 'drive', label: 'Drive', group: 'General' },
   { key: 'skills', label: 'Skills', group: 'Access' },
   { key: 'connectors', label: 'Connectors', group: 'Access' },
   { key: 'secrets', label: 'Secrets', group: 'Access' },
@@ -364,7 +363,6 @@ export function AgentConfigSections({
   overview,
   triggers,
   people,
-  drive,
   skills,
   connectors,
   secrets,
@@ -381,8 +379,6 @@ export function AgentConfigSections({
   triggers?: React.ReactNode;
   /** Who may use the agent — a page-owned section, the People tab. */
   people?: React.ReactNode;
-  /** The agent's own drive (Kortix Drive) — a page-owned section. */
-  drive?: React.ReactNode;
   /** The catalog-backed grant pages (`agent-grant-pages.tsx`) — the same
    *  cards and modals as the project-wide tabs. When a host passes them the
    *  plain checklist sections below are the fallback only. */
@@ -428,8 +424,6 @@ export function AgentConfigSections({
         );
       case 'triggers':
         return <>{triggers}</>;
-      case 'drive':
-        return <>{drive}</>;
       case 'model':
         return <ModelSection oc={oc} setOc={setOc} showPrompt={false} />;
       case 'workspace':

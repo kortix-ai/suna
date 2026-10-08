@@ -1594,7 +1594,8 @@
       "tooLong": "Un’etichetta ha al massimo 64 caratteri.",
       "tooMany": "Una sessione ha al massimo 20 etichette."
     },
-    "drive": "Drive"
+    "drive": "Drive",
+    "repo": "Repo"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -20776,6 +20777,28 @@
     "agentFullWriteTitle": "Consenti a questo agente di scrivere in tutto il tuo drive",
     "agentFullWriteDescription": "Nelle sessioni che avvii, questo agente può modificare qualsiasi file del tuo drive, non solo la cartella From agents.",
     "agentCardDrive": "Drive di {size}",
-    "sessionSkippedDrives": "{count, plural, one {# drive non è entrato in questa sessione} other {# drive non sono entrati in questa sessione}}: {names}. Rimuovi un drive per fare spazio, poi riavvia la sessione."
+    "sessionSkippedDrives": "{count, plural, one {# drive non è entrato in questa sessione} other {# drive non sono entrati in questa sessione}}: {names}. Rimuovi un drive per fare spazio, poi riavvia la sessione.",
+    "shareFolder": "Share",
+    "shareTitle": "Share {name}",
+    "shareDescription": "People, teams and agents you add get this folder and everything in it. A session sees a folder when its agent, its project or the person who started it has access.",
+    "everyoneInProject": "Everyone in this project",
+    "agentLabel": "Agent: {name}",
+    "shared": "Access updated",
+    "shareFailed": "Couldn't change access",
+    "inheritedFrom": "From {path}",
+    "ownFolder": "Their own folder",
+    "level": {
+      "read": "Can view",
+      "write": "Can edit",
+      "manage": "Can share"
+    },
+    "addAccess": "Add a person, team or agent",
+    "notGrantable": "This folder holds the tree together and can't be shared. Share a folder inside it.",
+    "viewOnlyAccess": "Only people who can share this folder can change who has access.",
+    "noGrants": "Nobody has been given access here yet. Project admins can open every folder except people's own.",
+    "myFolder": "My folder",
+    "myFolderHint": "Your own folder: private until you share it, and your desktop in your sessions",
+    "sessionNoFolders": "No folders are mounted in this session.",
+    "sessionDesktop": "Your folder (desktop)"
   }
 }

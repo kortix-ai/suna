@@ -2,19 +2,19 @@
 
 import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
 import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
-import { useDrives } from '@/hooks/drives/use-drives';
+import { useProjectDrive } from '@/hooks/drives/use-drives';
 import { useIsMobile } from '@/hooks/utils';
 import { useTranslations } from '@/i18n/use-translations';
 import { useFeatureFlag } from '@kortix/sdk/react';
-import { HardDrivesIcon } from '@phosphor-icons/react';
+import { FolderSimpleUserIcon } from '@phosphor-icons/react';
 import { useParams, usePathname } from 'next/navigation';
 import { useCallback } from 'react';
 
 /**
- * Drive entry: the caller's drives, the company drives this project uses and
- * the project's agent drives. Same row contract as Files beside it — a
- * hover-prefetching Link, never router.push. Shown once the project turns on
- * the `drives` feature flag; loading counts as off.
+ * Files entry: the project's shared folders (its drive), with each person's
+ * own folder in it. Same row contract as Repo beside it — a hover-prefetching
+ * Link, never router.push. Shown once the project turns on the `drives`
+ * feature flag; loading counts as off.
  */
 export function ProjectDriveNavItem() {
   const t = useTranslations('sidebar');
@@ -25,9 +25,9 @@ export function ProjectDriveNavItem() {
   const { setOpenMobile } = useSidebar();
   const drivesGate = useFeatureFlag(projectId, 'drives');
   const tDrives = useTranslations('drives');
-  // Open conflict copies across the caller's drives: the row's only badge.
-  const drives = useDrives(projectId, drivesGate.enabled);
-  const conflicts = (drives.data ?? []).reduce((sum, drive) => sum + (drive.openConflicts ?? 0), 0);
+  // Open conflict copies in folders the caller can see: the row's only badge.
+  const drive = useProjectDrive(projectId, drivesGate.enabled);
+  const conflicts = drive.data?.openConflicts ?? 0;
   const isActive = !!pathname && /^\/projects\/[^/]+\/drive(\/|$)/.test(pathname);
 
   const handleClick = useCallback(() => {
@@ -41,12 +41,12 @@ export function ProjectDriveNavItem() {
       <SidebarMenuButton
         asChild
         isActive={isActive}
-        tooltip={t('drive')}
+        tooltip={t('files')}
         className="group/menu-button text-sidebar-foreground relative"
       >
         <HoverPrefetchLink href={`/projects/${projectId}/drive`} prefetch onClick={handleClick}>
-          <HardDrivesIcon />
-          {t('drive')}
+          <FolderSimpleUserIcon />
+          {t('files')}
           {conflicts > 0 ? (
             <span
               className="text-kortix-orange ml-auto text-xs font-medium tabular-nums"

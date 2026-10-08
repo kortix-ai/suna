@@ -15,7 +15,7 @@ import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggl
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectPageCans } from '@/lib/use-project-can';
 import { getProjectDetail } from '@kortix/sdk';
-import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
+import { contract, qk } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 
 import { receivedDenial } from './capability-access-gate';
@@ -143,9 +143,6 @@ function MembersLaunchLink({ projectId }: { projectId: string }) {
  */
 const TRAILING_TABS: readonly CapabilityTab['key'][] = ['config'];
 
-/** The bar without Drives, for a project without the `drives` flag. Module-level: the catalog hook keys on identity. */
-const TABS_WITHOUT_DRIVES: readonly CapabilityTab[] = CAPABILITY_TABS.filter((tab) => tab.key !== 'drives');
-
 function GroupSeam() {
   return <span aria-hidden className="bg-border mx-1 h-4 w-px shrink-0 self-center" />;
 }
@@ -158,9 +155,7 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
   // shell it starts at y=0 and shares the band with the OS window controls.
   // Without the indent the first tab renders under the macOS traffic lights.
   const sidebar = useOptionalSidebar();
-  // Drives is the one flagged tab: a project without Kortix Drive has nothing to show there.
-  const drives = useFeatureFlag(projectId, 'drives').enabled;
-  const tabs = useLocalizedUiCatalog(drives ? CAPABILITY_TABS : TABS_WITHOUT_DRIVES);
+  const tabs = useLocalizedUiCatalog(CAPABILITY_TABS);
 
   const leading = tabs.filter((tab) => !TRAILING_TABS.includes(tab.key));
   const primary = leading.filter((tab) => PRIMARY_TABS.includes(tab.key));

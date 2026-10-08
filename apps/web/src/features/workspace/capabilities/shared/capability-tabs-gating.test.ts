@@ -56,7 +56,6 @@ describe('capabilityTabDenied', () => {
     );
     expect(CAPABILITY_TABS.map((t) => t.key).filter((k) => !deniedKeys(member).includes(k)).sort()).toEqual([
       'agent',
-      'drives',
       'triggers',
     ]);
   });
@@ -82,9 +81,7 @@ describe('Customize permission wiring', () => {
   const layout = code(read('../../../../app/[locale]/(app)/projects/[id]/(capabilities)/layout.tsx'));
 
   test('the bar renders every tab without a permission probe', () => {
-    expect(bar).toContain('useLocalizedUiCatalog(drives ? CAPABILITY_TABS : TABS_WITHOUT_DRIVES)');
-    // The one flag on the bar is `drives`, for the Drives tab.
-    expect(bar).toContain("useFeatureFlag(projectId, 'drives')");
+    expect(bar).toContain('useLocalizedUiCatalog(CAPABILITY_TABS)');
     expect(bar).not.toContain('useProjectCans(');
     expect(bar).not.toContain('useProjectCan(');
     // The only probe in the bar is the Members launcher's read leaf.

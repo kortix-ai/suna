@@ -1594,7 +1594,8 @@
       "tooLong": "Um rótulo tem no máximo 64 caracteres.",
       "tooMany": "Uma sessão tem no máximo 20 rótulos."
     },
-    "drive": "Drive"
+    "drive": "Drive",
+    "repo": "Repo"
   },
   "dashboard": {
     "title": "Painel",
@@ -20776,6 +20777,28 @@
     "agentFullWriteTitle": "Permitir que este agente escreva em todo o seu drive",
     "agentFullWriteDescription": "Nas sessões que inicia, este agente pode alterar qualquer ficheiro do seu drive, não só a pasta From agents.",
     "agentCardDrive": "Drive de {size}",
-    "sessionSkippedDrives": "{count, plural, one {# drive não coube nesta sessão} other {# drives não couberam nesta sessão}}: {names}. Retire um drive para liberar espaço e reinicie a sessão."
+    "sessionSkippedDrives": "{count, plural, one {# drive não coube nesta sessão} other {# drives não couberam nesta sessão}}: {names}. Retire um drive para liberar espaço e reinicie a sessão.",
+    "shareFolder": "Share",
+    "shareTitle": "Share {name}",
+    "shareDescription": "People, teams and agents you add get this folder and everything in it. A session sees a folder when its agent, its project or the person who started it has access.",
+    "everyoneInProject": "Everyone in this project",
+    "agentLabel": "Agent: {name}",
+    "shared": "Access updated",
+    "shareFailed": "Couldn't change access",
+    "inheritedFrom": "From {path}",
+    "ownFolder": "Their own folder",
+    "level": {
+      "read": "Can view",
+      "write": "Can edit",
+      "manage": "Can share"
+    },
+    "addAccess": "Add a person, team or agent",
+    "notGrantable": "This folder holds the tree together and can't be shared. Share a folder inside it.",
+    "viewOnlyAccess": "Only people who can share this folder can change who has access.",
+    "noGrants": "Nobody has been given access here yet. Project admins can open every folder except people's own.",
+    "myFolder": "My folder",
+    "myFolderHint": "Your own folder: private until you share it, and your desktop in your sessions",
+    "sessionNoFolders": "No folders are mounted in this session.",
+    "sessionDesktop": "Your folder (desktop)"
   }
 }

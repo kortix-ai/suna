@@ -80,6 +80,7 @@ export function DriveHeader({
   offsetForSidebarToggle = false,
 }: DriveHeaderProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tSidebar = useTranslations('sidebar');
   const sidebar = useOptionalSidebar();
   const sidebarCollapsed = sidebar?.state === 'collapsed';
 
@@ -148,7 +149,8 @@ export function DriveHeader({
   // The standalone page: the shared project page header, with the folder path
   // in its own strip below it, shown only inside a subfolder.
   if (offsetForSidebarToggle && params?.id) {
-    const title = tI18nComplete.raw('textabc7e9892806');
+    // The project's git repository is "Repo"; "Files" is the shared folders.
+    const title = tSidebar('repo');
     return (
       <>
         <ProjectPageHeader title={title} href={`/projects/${params.id}/files`}>

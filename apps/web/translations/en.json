@@ -1594,7 +1594,8 @@
       "tooLong": "A label has at most 64 characters.",
       "tooMany": "A session has at most 20 labels."
     },
-    "drive": "Drive"
+    "drive": "Drive",
+    "repo": "Repo"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -20611,7 +20612,7 @@
     "more": "{count} more can open this session"
   },
   "drives": {
-    "title": "Drive",
+    "title": "Files",
     "myDrives": "My drives",
     "companyDrives": "Company drives",
     "agentDrives": "Agent drives",
@@ -20622,7 +20623,7 @@
     "newCompanyDrive": "New company drive",
     "noCompanyDrives": "No company drives yet.",
     "noAgentDrives": "Each agent gets its own drive the first time it runs in this project.",
-    "loadError": "Couldn't load drives",
+    "loadError": "Couldn't load Files",
     "retry": "Try again",
     "selectDrive": "Choose a drive",
     "files": "Files",
@@ -20711,12 +20712,12 @@
     },
     "versionChanged": "{count, plural, one {# file changed} other {# files changed}}",
     "versionDeleted": "{count, plural, one {# file deleted} other {# files deleted}}",
-    "sessionChipLabel": "{count, plural, one {# drive} other {# drives}}",
-    "sessionChipTitle": "Drives in this session",
-    "sessionChipDescription": "Files here sync with Drive within seconds.",
+    "sessionChipLabel": "{count, plural, one {# folder} other {# folders}}",
+    "sessionChipTitle": "Files in this session",
+    "sessionChipDescription": "Folders the agent can use here. Share a folder in Files to add it; it arrives within seconds.",
     "readOnly": "Read only",
-    "openDrive": "Open Drive",
-    "unavailableTitle": "Drive is off for this project",
+    "openDrive": "Open Files",
+    "unavailableTitle": "Files is off for this project",
     "unavailableDescription": "A project admin can turn it on in Settings → Feature flags.",
     "grantAdminOnly": "Only an account owner or admin can change this.",
     "mountedAtPrivate": "Your private sessions see it at {path}",
@@ -20776,6 +20777,28 @@
     "agentFullWriteTitle": "Let this agent write all of your drive",
     "agentFullWriteDescription": "In the sessions you start, this agent can change any file in your drive, not only its From agents folder.",
     "agentCardDrive": "{size} drive",
-    "sessionSkippedDrives": "{count, plural, one {# drive did not fit in this session} other {# drives did not fit in this session}}: {names}. Take a drive out to make room, then restart the session."
+    "sessionSkippedDrives": "{count, plural, one {# drive did not fit in this session} other {# drives did not fit in this session}}: {names}. Take a drive out to make room, then restart the session.",
+    "shareFolder": "Share",
+    "shareTitle": "Share {name}",
+    "shareDescription": "People, teams and agents you add get this folder and everything in it. A session sees a folder when its agent, its project or the person who started it has access.",
+    "everyoneInProject": "Everyone in this project",
+    "agentLabel": "Agent: {name}",
+    "shared": "Access updated",
+    "shareFailed": "Couldn't change access",
+    "inheritedFrom": "From {path}",
+    "ownFolder": "Their own folder",
+    "level": {
+      "read": "Can view",
+      "write": "Can edit",
+      "manage": "Can share"
+    },
+    "addAccess": "Add a person, team or agent",
+    "notGrantable": "This folder holds the tree together and can't be shared. Share a folder inside it.",
+    "viewOnlyAccess": "Only people who can share this folder can change who has access.",
+    "noGrants": "Nobody has been given access here yet. Project admins can open every folder except people's own.",
+    "myFolder": "My folder",
+    "myFolderHint": "Your own folder: private until you share it, and your desktop in your sessions",
+    "sessionNoFolders": "No folders are mounted in this session.",
+    "sessionDesktop": "Your folder (desktop)"
   }
 }

@@ -6,20 +6,19 @@ import { useDismissDriveConflict, useDriveConflicts } from '@/hooks/drives/use-d
 import { useFormatter, useNow, useTranslations } from '@/i18n/use-translations';
 import { WarningIcon } from '@phosphor-icons/react';
 
-import { parentDrivePath } from './drive-model';
+import { parentDrivePath } from './drive-explorer-source';
 
 /**
- * Conflict copies on one drive: two writers changed the same file at once and
- * both versions were kept. Each row opens the folder that holds the copy, or
- * dismisses the notice (the copy stays). Renders nothing without conflicts.
+ * Conflict copies in the folders the caller can see: two writers changed the
+ * same file at once and both versions were kept. Each row opens the folder
+ * that holds the copy, or dismisses the notice (the copy stays; the API
+ * refuses a dismiss without write access there). Renders nothing without conflicts.
  */
 export function DriveConflictsBanner({
   driveId,
-  canWrite,
   onOpenFolder,
 }: {
   driveId: string;
-  canWrite: boolean;
   onOpenFolder: (path: string) => void;
 }) {
   const t = useTranslations('drives');
@@ -59,7 +58,7 @@ export function DriveConflictsBanner({
             >
               {t('conflictOpenFolder')}
             </Button>
-            {canWrite ? (
+            {(
               <Button
                 type="button"
                 variant="ghost"
@@ -74,7 +73,7 @@ export function DriveConflictsBanner({
               >
                 {t('conflictDismiss')}
               </Button>
-            ) : null}
+            )}
           </li>
         ))}
       </ul>

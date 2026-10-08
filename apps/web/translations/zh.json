@@ -1594,7 +1594,8 @@
       "tooLong": "标签最多 64 个字符。",
       "tooMany": "每个会话最多 20 个标签。"
     },
-    "drive": "云盘"
+    "drive": "云盘",
+    "repo": "Repo"
   },
   "dashboard": {
     "title": "仪表板",
@@ -20776,6 +20777,28 @@
     "agentFullWriteTitle": "允许此智能体写入你的整个云盘",
     "agentFullWriteDescription": "在你启动的会话中，此智能体可以修改你云盘中的任何文件，而不仅是 From agents 文件夹。",
     "agentCardDrive": "{size} 云盘",
-    "sessionSkippedDrives": "{count, plural, other {有 # 个云盘无法装入此会话}}：{names}。请移除一个云盘腾出位置，然后重启会话。"
+    "sessionSkippedDrives": "{count, plural, other {有 # 个云盘无法装入此会话}}：{names}。请移除一个云盘腾出位置，然后重启会话。",
+    "shareFolder": "Share",
+    "shareTitle": "Share {name}",
+    "shareDescription": "People, teams and agents you add get this folder and everything in it. A session sees a folder when its agent, its project or the person who started it has access.",
+    "everyoneInProject": "Everyone in this project",
+    "agentLabel": "Agent: {name}",
+    "shared": "Access updated",
+    "shareFailed": "Couldn't change access",
+    "inheritedFrom": "From {path}",
+    "ownFolder": "Their own folder",
+    "level": {
+      "read": "Can view",
+      "write": "Can edit",
+      "manage": "Can share"
+    },
+    "addAccess": "Add a person, team or agent",
+    "notGrantable": "This folder holds the tree together and can't be shared. Share a folder inside it.",
+    "viewOnlyAccess": "Only people who can share this folder can change who has access.",
+    "noGrants": "Nobody has been given access here yet. Project admins can open every folder except people's own.",
+    "myFolder": "My folder",
+    "myFolderHint": "Your own folder: private until you share it, and your desktop in your sessions",
+    "sessionNoFolders": "No folders are mounted in this session.",
+    "sessionDesktop": "Your folder (desktop)"
   }
 }

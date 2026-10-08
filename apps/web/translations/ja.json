@@ -1594,7 +1594,8 @@
       "tooLong": "ラベルは 64 文字以内です。",
       "tooMany": "1 つのセッションのラベルは 20 個までです。"
     },
-    "drive": "ドライブ"
+    "drive": "ドライブ",
+    "repo": "Repo"
   },
   "dashboard": {
     "title": "ダッシュボード",
@@ -20776,6 +20777,28 @@
     "agentFullWriteTitle": "このエージェントにドライブ全体への書き込みを許可",
     "agentFullWriteDescription": "あなたが開始したセッションで、このエージェントは From agents フォルダだけでなく、ドライブ内のすべてのファイルを変更できます。",
     "agentCardDrive": "ドライブ {size}",
-    "sessionSkippedDrives": "{count, plural, other {# 個のドライブがこのセッションに収まりませんでした}}: {names}。ドライブを 1 つ外して空きを作り、セッションを再起動してください。"
+    "sessionSkippedDrives": "{count, plural, other {# 個のドライブがこのセッションに収まりませんでした}}: {names}。ドライブを 1 つ外して空きを作り、セッションを再起動してください。",
+    "shareFolder": "Share",
+    "shareTitle": "Share {name}",
+    "shareDescription": "People, teams and agents you add get this folder and everything in it. A session sees a folder when its agent, its project or the person who started it has access.",
+    "everyoneInProject": "Everyone in this project",
+    "agentLabel": "Agent: {name}",
+    "shared": "Access updated",
+    "shareFailed": "Couldn't change access",
+    "inheritedFrom": "From {path}",
+    "ownFolder": "Their own folder",
+    "level": {
+      "read": "Can view",
+      "write": "Can edit",
+      "manage": "Can share"
+    },
+    "addAccess": "Add a person, team or agent",
+    "notGrantable": "This folder holds the tree together and can't be shared. Share a folder inside it.",
+    "viewOnlyAccess": "Only people who can share this folder can change who has access.",
+    "noGrants": "Nobody has been given access here yet. Project admins can open every folder except people's own.",
+    "myFolder": "My folder",
+    "myFolderHint": "Your own folder: private until you share it, and your desktop in your sessions",
+    "sessionNoFolders": "No folders are mounted in this session.",
+    "sessionDesktop": "Your folder (desktop)"
   }
 }

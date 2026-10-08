@@ -1,6 +1,6 @@
-import { DriveView } from '@/features/drives/drive-view';
+import { FilesView } from '@/features/drives/files-view';
 
-export default async function ProjectDrivePage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ProjectFilesDrivePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  return <DriveView projectId={id} />;
+  return <FilesView projectId={id} />;
 }

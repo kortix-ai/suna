@@ -88,6 +88,7 @@ export function DriveExplorer({
   embedded = false,
   shareContext,
   leading,
+  rootLabel,
   listingAs,
   panels,
   children,
@@ -99,6 +100,8 @@ export function DriveExplorer({
    * strip. Sharing the row is what lets that host drop its own header.
    */
   leading?: ReactNode;
+  /** The first crumb of the path bar (default: the store root's name). */
+  rootLabel?: string;
   /**
    * Element type for the listing region.
    *
@@ -745,7 +748,7 @@ export function DriveExplorer({
         </div>
       </div>
 
-      <DrivePathBar as="row" />
+      <DrivePathBar as="row" rootLabel={rootLabel} />
 
       {/* Search overlay */}
       {capabilities.search && isSearchOpen && <FileSearch />}

@@ -12,10 +12,11 @@ import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectPageCans } from '@/lib/use-project-can';
 import { getProject } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
-import { FoldersIcon } from '@phosphor-icons/react';
+import { GitBranchIcon } from '@phosphor-icons/react';
 
 /**
- * Top-level Files entry. Hidden when the caller lacks `project.file.read`: that
+ * Top-level Repo entry (the project's git repository; the shared folders are
+ * Files, `project-drive-nav.tsx`). Hidden when the caller lacks `project.file.read`: that
  * leaf is editor-tier (IAM v1 moved the sensitive file/secret reads off the
  * floor `member` role), so showing it to a plain member would just land them on
  * a page whose every read 403s. Optimistic while the probe loads — the entry
@@ -83,7 +84,7 @@ export function ProjectFilesNavItem() {
       <SidebarMenuButton
         asChild
         isActive={isActive}
-        tooltip={t('files')}
+        tooltip={t('repo')}
         className="group/menu-button text-sidebar-foreground relative"
       >
         <HoverPrefetchLink
@@ -94,8 +95,8 @@ export function ProjectFilesNavItem() {
           onFocus={prefetchSummary}
           onTouchStart={prefetchSummary}
         >
-          <FoldersIcon />
-          {t('files')}
+          <GitBranchIcon />
+          {t('repo')}
         </HoverPrefetchLink>
       </SidebarMenuButton>
     </SidebarMenuItem>
