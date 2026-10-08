@@ -9,7 +9,7 @@ model automatically, and two billing gotchas to know.
 
 This page applies to projects with the LLM Gateway on. LLM Gateway is an
 experimental [feature flag](/docs/feature-flags), **on by default** where the
-platform offers it — check or toggle it in Settings → Experimental (operators
+platform offers it — check or toggle it in Settings → Feature flags (operators
 can default a whole deployment off with `LLM_GATEWAY_DEFAULT_ENABLED=false`).
 
 Turning the flag off is a fully supported path. The project then runs
@@ -197,7 +197,7 @@ With **Pooled provider secrets** off, a connected provider key applies to the
 whole project. Personal overrides for these project secrets return
 `llm_credentials_project_wide`.
 
-Enable **Pooled provider secrets** and **LLM Gateway** in Settings → Experimental
+Enable **Pooled provider secrets** and **LLM Gateway** in Settings → Feature flags
 to use provider secret resources. Open **Customize → Models → Providers** and
 choose **Add key** beside a provider. Give each key a distinct label. The value
 is write-only; later screens show its label and access list.

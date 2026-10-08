@@ -227,7 +227,7 @@ describe('reply quotes in the draft envelope', () => {
 
   test('an envelope written before quotes existed loads with an empty list', () => {
     const old = { v: DRAFT_ENVELOPE_VERSION, u: USER, doc: TEXT_DOC, files: [] };
-    expect(deserializeDraft(old, USER)).toEqual({ ...old, quotes: [] });
+    expect(deserializeDraft(old, USER)).toEqual({ ...old, quotes: [], pastes: [] });
   });
 
   test('malformed quotes are dropped, not trusted', () => {
@@ -276,5 +276,58 @@ describe('reply quotes in the draft envelope', () => {
     const back = deserializeDraft(legacy, USER);
     expect(back?.quotes).toEqual(['only passage']);
     expect(back?.doc).toEqual({ type: 'doc', content: [{ type: 'paragraph' }] });
+  });
+});
+
+describe('pasted tiles in the draft envelope', () => {
+  const paste = { id: 'a1b2c3d4', text: 'line one\nline two' };
+
+  test('an empty document with a tile is still worth storing', () => {
+    const draft = serializeDraft({
+      doc: EMPTY_DOC,
+      documentIsEmpty: true,
+      files: [],
+      pastes: [paste],
+      userId: USER,
+    });
+    expect(draft?.pastes).toEqual([paste]);
+  });
+
+  test('tiles survive the round trip, in order', () => {
+    const second = { id: 'e5f6a7b8', text: 'more' };
+    const stored = serializeDraft({
+      doc: TEXT_DOC,
+      documentIsEmpty: false,
+      files: [],
+      pastes: [paste, second],
+      userId: USER,
+    });
+    const back = deserializeDraft(JSON.parse(JSON.stringify(stored)), USER);
+    expect(back?.pastes).toEqual([paste, second]);
+  });
+
+  test('over the cap, the pastes go and the typed text stays', () => {
+    const huge = { id: 'c9d0e1f2', text: 'x'.repeat(MAX_DRAFT_BYTES) };
+    const draft = serializeDraft({
+      doc: TEXT_DOC,
+      documentIsEmpty: false,
+      files: [],
+      pastes: [huge],
+      userId: USER,
+    });
+    expect(draft?.doc).toEqual(TEXT_DOC);
+    expect(draft && 'pastes' in draft).toBe(false);
+  });
+
+  test('no tiles writes no key', () => {
+    const draft = serializeDraft({ doc: TEXT_DOC, documentIsEmpty: false, files: [], userId: USER });
+    expect(draft && 'pastes' in draft).toBe(false);
+  });
+
+  test('malformed tiles are dropped, not trusted', () => {
+    const bad = { v: DRAFT_ENVELOPE_VERSION, u: USER, doc: TEXT_DOC, files: [], pastes: 'no' };
+    expect(deserializeDraft(bad, USER)?.pastes).toEqual([]);
+    const mixed = { ...bad, pastes: [paste, { id: 7, text: 'x' }, { id: 'b', text: '' }, null] };
+    expect(deserializeDraft(mixed, USER)?.pastes).toEqual([paste]);
   });
 });

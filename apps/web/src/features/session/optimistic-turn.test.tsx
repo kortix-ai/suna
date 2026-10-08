@@ -30,6 +30,15 @@ const render = (el: React.ReactElement) =>
   );
 
 describe('OptimisticTurn', () => {
+  test('a paste is a PASTED tile, never raw XML, and Copy carries its body', () => {
+    const block = '<pasted_content id="abcd1234" chars="11">\npasted body\n</pasted_content>';
+    const markup = render(<OptimisticTurn text={`${block}\n\nsummarize`} />);
+    expect(markup).toContain('summarize');
+    expect(markup).toContain('pasted body');
+    expect(markup).toContain('title="Pasted text"');
+    expect(markup).not.toContain('pasted_content');
+  });
+
   test('shows the prompt the user typed', () => {
     const markup = render(<OptimisticTurn text="ship the thing" />);
     expect(markup).toContain('ship the thing');

@@ -937,7 +937,7 @@ function scanFile(file) {
           catalogRoot === 'CARD_COPY') ||
         (file ===
           path.join(srcDir, 'features/workspace/capabilities/shared/capability-tab-routes.ts') &&
-          catalogRoot === 'CAPABILITY_TABS') ||
+          ['CAPABILITY_TABS', 'FLAGGED_CAPABILITY_TABS'].includes(catalogRoot)) ||
         (file === path.join(srcDir, 'features/workspace/customize/sections/connectors-view.tsx') &&
           ['POLICY_CHOICES', 'POLICY_LABEL'].includes(catalogRoot)) ||
         (file === path.join(srcDir, 'features/workspace/customize/sections/gateway-view.tsx') &&

@@ -19,6 +19,7 @@
  *
  * Denials follow spec §4: `403 { code, action }`.
  */
+import { setFeatureAsOperator } from '../fixtures/feature-flags';
 import { flow } from '../core/flow';
 import type { FlowContext, Principal, TeamFixture } from '../core/types';
 import { CliSandbox } from '../fixtures/cli';
@@ -759,7 +760,7 @@ flow(
     let appUrl = '';
     try {
       await ctx.step('enable Apps; create an App restricted to the owner', async () => {
-        await world.setFeature('apps', true);
+        await setFeatureAsOperator(ctx, project.id, 'apps', true);
         const created = await world.owner.post('/v1/projects/:projectId/apps', { slug: appSlug, name: 'Example Org dashboards' },
           { params: { projectId: project.id } });
         created.status(201);
@@ -874,7 +875,7 @@ flow(
     let appUrl = '';
     try {
       await ctx.step('enable Apps; create an App restricted to the owner', async () => {
-        await world.setFeature('apps', true);
+        await setFeatureAsOperator(ctx, project.id, 'apps', true);
         const created = await world.owner.post('/v1/projects/:projectId/apps', { slug: appSlug, name: 'Example Org dashboards' },
           { params: { projectId: project.id } });
         created.status(201);

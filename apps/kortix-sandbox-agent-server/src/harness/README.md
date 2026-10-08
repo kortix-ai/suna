@@ -41,7 +41,7 @@ session (a restart or resume re-reads the selection).
 | `open-code/background.ts`, `open-code/resource-diagnostics.ts`, `open-code/quick-queue-interrupt.ts` | Native offload, turn guard, tool-boundary queue interrupt and diagnostic projection |
 | Other `open-code/` modules | Native database, projections, pins, attachments, audit and recovery |
 | `pi/service.ts` | Composition; loads pi lazily so an OpenCode boot never pays for it |
-| `pi/runtime.ts` | The in-process pi `Agent`: model, tools, skills, turns, transcript, durability |
+| `pi/runtime.ts` | The in-process pi `Agent`: model, tools, skills, the root `AGENTS.md`, turns, transcript, durability |
 | `pi/boot.ts` | Session boot: the same host steps as OpenCode, then `pi-ready` |
 | `pi/surface.ts` | The raw OpenCode-compatible routes, answered in-process |
 | `pi/turn-events.ts`, `pi/transcript.ts` | pi events → Kortix session events (`@kortix/api-contract/transcript`); the transcript store |
@@ -192,9 +192,10 @@ branch under `/opt/kortix/config/<release_id>`, with the repository's own
 layout, verified against its Git blob IDs and sealed read-only. pi reads from
 it what it reads from `/workspace`: the compiled governance
 (`KORTIX_COMPILED_AGENT_CONFIG`, the agents), `skills/` (and the legacy
-`.kortix/opencode/skills`), and its own config dir (`pi.config_dir`, else
-`harnesses/pi`, else `.kortix/pi`: skills, extensions, prompts,
-`settings.json`), resolved inside the release by `resolvePiProjectConfigDir`.
+`.kortix/opencode/skills`), the root `AGENTS.md` (else `CLAUDE.md`), and its
+own config dir (`pi.config_dir`, else `harnesses/pi`, else `.kortix/pi`:
+skills, extensions, prompts, `settings.json`), resolved inside the release by
+`resolvePiProjectConfigDir`.
 OpenCode's files (`harnesses/opencode`) are not pi's, so a commit that breaks
 only those files is a working config on pi.
 
@@ -204,8 +205,9 @@ only those files is a working config on pi.
   the provisioned governance). `/workspace` is read only while the flag is off.
 - **Convergence** (`POST /kortix/config/converge`, the 60 s runtime-truth tick,
   one pass after ready). pi applies a release in place: the governance goes
-  into the runtime's env, the skill directories move into the release, and
-  `PiRuntime.reconfigure()` re-reads both. A release that changes anything
+  into the runtime's env, the skill directories and the `AGENTS.md` root
+  (`PiConfigReleases.projectRoot()`) move into the release, and
+  `PiRuntime.reconfigure()` re-reads them. A release that changes anything
   in pi's config dir other than its skills (extensions, prompts, settings, which only
   a start reads) restarts the runtime in place instead: the same root, the
   transcript restored. Nothing else restarts, and the answer carries

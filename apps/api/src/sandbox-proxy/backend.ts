@@ -270,7 +270,8 @@ export async function resolveServiceKey(sandboxId: string): Promise<string | nul
 // through `/v1/p/`.)
 
 export async function resolveSandboxIngress(
-  sandboxRef: string | SandboxRecord,
+  // A Kortix Backend machine has no session row, so it passes the two fields used.
+  sandboxRef: string | Pick<SandboxRecord, 'externalId' | 'provider'>,
   request: SandboxIngressRequest,
 ): Promise<ResolvedSandboxIngress> {
   const sandboxId = typeof sandboxRef === 'string' ? sandboxRef : sandboxRef.externalId;
