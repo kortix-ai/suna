@@ -68,21 +68,13 @@ function readKortixEnvNames(source: string): Set<string> {
  * this test is built to catch.
  */
 const BOOT_ONLY_KORTIX_ENV_NAMES = new Set([
-  // Connector MCP identity, materialized once at provision. A rotated
-  // connector token is a new session, not a live push.
-  'KORTIX_API_URL',
+  // The session token, materialized once at provision. A rotated token is a
+  // new session, not a live push.
   'KORTIX_TOKEN',
   // The session PAT a 2026-07 box carries beside its service key; read only to
   // pick the LLM gateway bearer at spawn, boot-only for the same reason as
   // KORTIX_TOKEN.
   'KORTIX_LLM_API_KEY',
-  // Warm-fork proxy-mode flag. Daemon-injected at boot so a warm seed's
-  // provider config is session-independent; never posted by the API — see
-  // buildOpencodeConfigContent's comment on `llmProxyUrl`/`connectorProxyUrl`.
-  // (KORTIX_LLM_PROXY_URL moved to OPENCODE_RUNTIME_ENV_NAMES: a live
-  // gateway→native toggle must be able to CLEAR it, because a set proxy URL
-  // reads as "gateway on" in hasKortixLlmGateway.)
-  'KORTIX_CONNECTORS_PROXY_URL',
   // Local catalog-file override; operator/dev-only, not an API-driven field.
   'KORTIX_LLM_CATALOG_FILE',
   // Where the baked-catalog fallback reads. Test/operator-only override of the
@@ -92,8 +84,6 @@ const BOOT_ONLY_KORTIX_ENV_NAMES = new Set([
   // Manual operator debug toggle (checked against `process.env` directly, not
   // part of the env-sync contract at all).
   'KORTIX_OPENCODE_DEBUG',
-  // Static project identity baked at seed — see the comment beside its read.
-  'KORTIX_PROJECT_ID',
 ])
 
 describe('OPENCODE_RUNTIME_ENV_NAMES — allowlist completeness', () => {

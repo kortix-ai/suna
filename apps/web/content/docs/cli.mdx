@@ -749,8 +749,7 @@ The in-sandbox agent's interface to every connector. Every call is checked, reso
 | `kortix connectors upload <file> --connector <slug>` | Stage one file. Prints `ref`, `{"$kortix_attachment":"<id>"}`, to place in call args. |
 | `kortix connectors add <slug> --provider pipedream --app <app>` | Add a connector immediately, then connect it. |
 | `kortix connectors rm <slug>` | Remove a connector from the project. |
-| `kortix connectors connect <slug>` | Mint a connect link for a human. |
-| `kortix connectors mcp` | Run the optional stdio MCP compatibility server. |
+| `kortix connectors connect <slug> [--owner me\|project] [--label <name>]` | Mint a connect link for a human. `--label` suggests a name for a new account, for example a second Gmail. |
 
 ### Files
 

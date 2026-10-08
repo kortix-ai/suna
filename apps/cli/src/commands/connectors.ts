@@ -281,7 +281,6 @@ Subcommands:
   authorize <slug> --device         Same, on a server that supports the OAuth
                                     2.0 device flow: prints a code + URL and
                                     polls until it is approved.
-  mcp                               Run the stdio MCP server.
 
 \`policy ls|show|set|add|rm\` are the PROJECT-wide surface, so a connector
 named after one of those verbs must be addressed as \`policy <slug> ls\` etc.
