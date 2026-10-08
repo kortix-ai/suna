@@ -1,5 +1,5 @@
 {
-  "source_hash": "f37d5f54732420053829220913b069e0c84526e2147b159ccba845c4d9d1da29",
+  "source_hash": "8a23d5b76f091bcc5ad1fef16e8334a480d780ff3616f61662123d3b8b909e72",
   "diff_files": [
     "apps/kortix-sandbox-agent-server/src/__tests__/turn-auto-resume.test.ts",
     "apps/kortix-sandbox-agent-server/src/harness/open-code/turn-auto-resume.ts",
@@ -12,12 +12,12 @@
     "packages/sdk/src/core/turns/turns.test.ts"
   ],
   "diff_hash": "3ce45c24e8f65d1ad82715ddeaea50b9aaa0b6bb5ef05377f535881d8cd538a7",
-  "head": "86999dbad919294985d2b00db982e0247dbb9e12",
+  "head": "67bd427177b48861c5445f7642409671f096621c",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-08T22:54:53.821Z"
+  "at": "2026-10-08T23:55:19.056Z"
 }
