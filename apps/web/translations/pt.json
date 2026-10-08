@@ -19508,7 +19508,9 @@
       "text1af77a9ae95c": "Liste este backend no App. Um App só recebe tokens do visitante para os backends que lista.",
       "text4b4847a6fb87": "Eventos de apps",
       "text07fb9f8661dc": "Apps com eventos",
-      "text51035b5b67dc": "Filtrar por tipo"
+      "text51035b5b67dc": "Filtrar por tipo",
+      "text12a4656bfd2a": "via {source}",
+      "textfd26b2373251": "Eventos via {source}"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

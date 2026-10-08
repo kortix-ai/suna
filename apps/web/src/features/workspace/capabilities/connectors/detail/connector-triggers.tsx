@@ -104,7 +104,7 @@ export function ConnectorTriggers({
                   </Link>
                   {trigger.event ? (
                     <span className="text-muted-foreground block truncate text-xs">
-                      {describeEventSource(trigger.event)}
+                      {describeEventSource(trigger.event, tI18nComplete)}
                     </span>
                   ) : null}
                 </span>

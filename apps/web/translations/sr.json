@@ -19508,7 +19508,9 @@
       "text1af77a9ae95c": "Navedite ovaj backend u aplikaciji. Aplikacija dobija tokene posetioca samo za backende koje navodi.",
       "text4b4847a6fb87": "Догађаји апликација",
       "text07fb9f8661dc": "Апликације са догађајима",
-      "text51035b5b67dc": "Филтрирај по типу"
+      "text51035b5b67dc": "Филтрирај по типу",
+      "text12a4656bfd2a": "преко {source}",
+      "textfd26b2373251": "Догађаји преко {source}"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",

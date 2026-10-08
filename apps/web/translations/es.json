@@ -19508,7 +19508,9 @@
       "text1af77a9ae95c": "Añade este backend a la App. Una App solo obtiene tokens de espectador para los backends que enumera.",
       "text4b4847a6fb87": "Eventos de apps",
       "text07fb9f8661dc": "Apps con eventos",
-      "text51035b5b67dc": "Filtrar por tipo"
+      "text51035b5b67dc": "Filtrar por tipo",
+      "text12a4656bfd2a": "vía {source}",
+      "textfd26b2373251": "Eventos vía {source}"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

@@ -19508,7 +19508,9 @@
       "text1af77a9ae95c": "Ajoutez ce backend à l'App. Une App n'obtient des jetons de visiteur que pour les backends qu'elle liste.",
       "text4b4847a6fb87": "Événements d’apps",
       "text07fb9f8661dc": "Apps avec événements",
-      "text51035b5b67dc": "Filtrer par type"
+      "text51035b5b67dc": "Filtrer par type",
+      "text12a4656bfd2a": "via {source}",
+      "textfd26b2373251": "Événements via {source}"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

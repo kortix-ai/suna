@@ -52,12 +52,22 @@ export function describeEventWhen(event: ProjectTriggerEvent | null): string {
   return `${humanizeEventType(type || event.type)} on ${appLabel(event.app, event.connector)}`;
 }
 
+/** Display names of the event source adapters: the one place a source id becomes a name. */
+const EVENT_SOURCE_NAMES: Record<string, string> = { composio: 'Composio' };
+
+/** `composio` -> `Composio`; null when the event names no source. */
+export function eventSourceName(event: { source?: string | null; provider?: string | null }): string | null {
+  const id = event.source ?? event.provider;
+  return id ? (EVENT_SOURCE_NAMES[id] ?? appLabel(id, id)) : null;
+}
+
 /**
- * Where an event comes from, as one line: `Github · github-work · acme-bot`.
+ * Where an event comes from, as one line: `Github · github-work · acme-bot · via Composio`.
  * The connector shows only when it is not just the app's own name, and the
  * account is the declared label, else the identity the default account runs as.
+ * The last part names the event source adapter.
  */
-export function describeEventSource(event: ProjectTriggerEvent): string {
+export function describeEventSource(event: ProjectTriggerEvent, tI18nComplete: UiTranslator): string {
   const app = appLabel(event.app, event.connector);
   const parts = [app];
   const same = (a: string, b: string) =>
@@ -67,6 +77,8 @@ export function describeEventSource(event: ProjectTriggerEvent): string {
   }
   const account = event.account ?? event.connected_as ?? null;
   if (account) parts.push(account);
+  const source = eventSourceName(event);
+  if (source) parts.push(tI18nComplete('text12a4656bfd2a', { source }));
   return parts.join(' · ');
 }
 

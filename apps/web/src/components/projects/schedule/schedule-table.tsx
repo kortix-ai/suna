@@ -235,7 +235,7 @@ function ScheduleTableRow({
             <span className="text-muted-foreground block truncate text-xs sm:hidden">{when}</span>
             {kind === 'event' && trigger.event ? (
               <span className="text-muted-foreground block truncate text-xs sm:hidden">
-                {describeEventSource(trigger.event)}
+                {describeEventSource(trigger.event, tI18nComplete)}
               </span>
             ) : null}
             {failed ? (
@@ -256,7 +256,7 @@ function ScheduleTableRow({
           <p className="text-foreground truncate text-sm">{when}</p>
           {kind === 'event' && trigger.event ? (
             <p className="text-muted-foreground truncate text-xs">
-              {describeEventSource(trigger.event)}
+              {describeEventSource(trigger.event, tI18nComplete)}
             </p>
           ) : null}
           {kind === 'cron' && !trigger.run_at ? (

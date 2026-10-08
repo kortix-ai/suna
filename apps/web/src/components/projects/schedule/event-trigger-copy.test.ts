@@ -18,6 +18,7 @@ import {
   describeAccount,
   describeEventSource,
   describeEventStatus,
+  eventSourceName,
   eventTriggersOn,
   describePollHint,
   draftToConfig,
@@ -316,14 +317,21 @@ function eventOf(patch: Partial<ProjectTriggerEvent>): ProjectTriggerEvent {
 
 describe('describeEventSource', () => {
   test('names the app alone when the connector is the app and the default account feeds it', () => {
-    expect(describeEventSource(eventOf({}))).toBe('Github');
+    expect(describeEventSource(eventOf({}), testUiTranslator)).toBe('Github');
+  });
+  test('ends with the event source adapter by display name; an unmapped id is capitalized', () => {
+    expect(describeEventSource(eventOf({ source: 'composio' }), testUiTranslator)).toBe('Github · via Composio');
+    expect(describeEventSource(eventOf({ provider: 'composio' }), testUiTranslator)).toBe('Github · via Composio');
+    expect(describeEventSource(eventOf({ source: 'acme_hooks' }), testUiTranslator)).toBe('Github · via Acme hooks');
+    expect(eventSourceName(eventOf({ source: 'composio' }))).toBe('Composio');
+    expect(eventSourceName(eventOf({}))).toBeNull();
   });
   test('adds the connector when it is a different profile, and the account it runs as', () => {
     expect(
-      describeEventSource(eventOf({ connector: 'github-work', account: 'acme-bot' })),
-    ).toBe('Github · github-work · acme-bot');
+      describeEventSource(eventOf({ connector: 'github-work', account: 'acme-bot', source: 'composio' }), testUiTranslator),
+    ).toBe('Github · github-work · acme-bot · via Composio');
     expect(
-      describeEventSource(eventOf({ connector: 'github-work', connected_as: 'acme-org' })),
+      describeEventSource(eventOf({ connector: 'github-work', connected_as: 'acme-org' }), testUiTranslator),
     ).toBe('Github · github-work · acme-org');
   });
 });
