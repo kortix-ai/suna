@@ -1221,7 +1221,9 @@ function validateMonitorTrigger(
  * <connected app>, run the agent". `connector` names a declared connector,
  * `event` is the provider's event type id, `config` is the provider event
  * config (validated by the provider at subscribe time, not here). `account`
- * optionally names one shared account of that connector by label. Wiring for
+ * optionally names one shared account of that connector by label. `source`
+ * optionally names the event source adapter (default: the connector's
+ * provider); event ids belong to that adapter. Wiring for
  * the other three types is hard-rejected — a manifest must not claim a
  * schedule the event source never reads.
  *
@@ -1254,6 +1256,13 @@ function validateEventTrigger(
     issues.push({
       path: `${where}.account`,
       message: 'account must be the label of a shared account on the connector.',
+      severity: 'error',
+    });
+  }
+  if (entry.source !== undefined && (typeof entry.source !== 'string' || !entry.source.trim())) {
+    issues.push({
+      path: `${where}.source`,
+      message: 'source must be the event source adapter id, such as "composio".',
       severity: 'error',
     });
   }
@@ -1424,7 +1433,7 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], 
       validateEventTrigger(entry, where, issues);
     }
     if (type && type !== 'event' && (TRIGGER_TYPES as readonly string[]).includes(type)) {
-      for (const key of ['connector', 'account', 'event', 'config']) {
+      for (const key of ['connector', 'account', 'source', 'event', 'config']) {
         if (entry[key] !== undefined) {
           issues.push({
             path: `${where}.${key}`,

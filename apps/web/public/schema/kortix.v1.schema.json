@@ -304,6 +304,10 @@
             "type": "string",
             "minLength": 1
           },
+          "source": {
+            "type": "string",
+            "minLength": 1
+          },
           "event": {
             "type": "string",
             "minLength": 1
@@ -455,6 +459,7 @@
               "properties": {
                 "connector": false,
                 "account": false,
+                "source": false,
                 "event": false,
                 "config": false
               }

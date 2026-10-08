@@ -397,6 +397,43 @@ describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
     expect((await store.get(PROJECT_ID, 'b'))?.lastError).toContain('COMPOSIO_API_KEY');
   });
 
+  describe('source', () => {
+    const withSource = (source: string) => spec('a', { event: { connector: 'inbox', source, type: 'EXAMPLE_NEW_MESSAGE', config: {} } });
+
+    test('a source equal to the connector provider activates like the default derivation', async () => {
+      await connect();
+      await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [withSource('composio'), spec('b')]);
+      expect(await status('a')).toBe('active');
+      expect(await status('b')).toBe('active');
+      expect((await store.get(PROJECT_ID, 'a'))?.provider).toBe('composio');
+    });
+
+    test('a source that needs another connector provider is status error naming both', async () => {
+      await connect();
+      setEventSourceForTest('other', { ...fake, id: 'other' });
+      try {
+        await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [withSource('other')]);
+        expect(await status('a')).toBe('error');
+        expect((await store.get(PROJECT_ID, 'a'))?.lastError).toBe(
+          'Connector "inbox" is a composio connector; source "other" needs a other connector.',
+        );
+        expect(calls.filter((x) => x.startsWith('subscribe'))).toEqual([]);
+      } finally {
+        setEventSourceForTest('other', undefined);
+      }
+    });
+
+    test('an unknown source is status error and a 400-grade validation problem', async () => {
+      await connect();
+      await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [withSource('nope')]);
+      expect(await status('a')).toBe('error');
+      expect((await store.get(PROJECT_ID, 'a'))?.lastError).toBe('Unknown event source "nope". Sources: composio.');
+      expect(await validateEventTrigger(PROJECT_ID, { connector: 'inbox', source: 'nope', type: 'X', config: {} })).toBe(
+        'Unknown event source "nope". Sources: composio.',
+      );
+    });
+  });
+
   describe('delivery', () => {
     const delivery = (over: Record<string, unknown> = {}) => ({
       externalId: 'ti_EXAMPLE_NEW_MESSAGE_{}',

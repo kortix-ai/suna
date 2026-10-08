@@ -19502,7 +19502,12 @@
       "text581e89ae1f08": "Backend-Snapshot löschen",
       "text1af77a9ae95c": "Dieses Backend in der App eintragen. Eine App erhält Betrachter-Tokens nur für die Backends, die sie auflistet.",
       "text2eb91a6f88aa": "1 Datei bleibt angehängt. Entferne sie, um den Befehl auszuführen, oder entferne den Befehl, um die Datei als Nachricht zu senden.",
-      "text807f9beb34b1": "{count, plural, other {# Dateien bleiben angehängt. Entferne sie, um den Befehl auszuführen, oder entferne den Befehl, um sie als Nachricht zu senden.}}"
+      "text807f9beb34b1": "{count, plural, other {# Dateien bleiben angehängt. Entferne sie, um den Befehl auszuführen, oder entferne den Befehl, um sie als Nachricht zu senden.}}",
+      "text4b4847a6fb87": "App-Ereignisse",
+      "text07fb9f8661dc": "Apps mit Ereignissen",
+      "text51035b5b67dc": "Nach Typ filtern",
+      "text12a4656bfd2a": "über {source}",
+      "textfd26b2373251": "Ereignisse über {source}"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
