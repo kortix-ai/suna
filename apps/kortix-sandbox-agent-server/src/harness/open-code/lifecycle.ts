@@ -109,7 +109,7 @@ import { access, constants, open, readdir, readFile, realpath, stat } from 'node
 import { isDeepStrictEqual } from 'node:util'
 
 import { AGENT_SHELL_ENV } from '../shared/agent-env-file'
-import { LLM_PROXY_PLACEHOLDER_KEY, CONNECTOR_PROXY_PLACEHOLDER_KEY } from '@/services/llm-proxy/llm-proxy'
+import { LLM_PROXY_PLACEHOLDER_KEY } from '@/services/llm-proxy/llm-proxy'
 import type { OpenCodeConfig as Config } from './config'
 import { buildGitIdentityEnv } from '@/lib/git/git'
 import { egressShimEnv } from '@/services/egress-shim'
@@ -127,7 +127,6 @@ import { writeReleaseInstructionsPlugin } from './release-instructions'
 import { applyAgentToolAccess } from './tool-access'
 import { writeToolBridge } from './tool-bridge'
 import { opencodeTurnInFlight } from './opencode-turn-state'
-import { CONNECTORS_MCP_COMMAND } from '@kortix/api-contract/sandbox-layout'
 import { MINIMAL_FALLBACK_MODELS, BUNDLED_MANAGED_MODELS, type KortixGatewayModel } from '@kortix/api-contract/fallback-models'
 import { SKILLS_DIR } from './project-layout'
 
@@ -197,27 +196,6 @@ export const RESPAWN_REQUIRED_ENV_NAMES = [
   OPENCODE_AUTH_JSON_SECRET,
   SECRET_CAPABILITIES_ENV_NAME,
 ] as const
-
-/**
- * NOT in the list above, deliberately: `KORTIX_CONNECTORS_MCP_ENABLED`.
- *
- * It shapes `out.mcp` INSIDE the config file, and `tryDisposeReload` rewrites
- * that file and makes opencode re-read it — so it belongs to the dispose fast
- * path by the same rule as every other config-file key.
- *
- * Flagged because two comments in this repo disagree and one of them is wrong:
- * `routes/env.ts` says enabling the face "must restart OpenCode because MCP
- * servers are registered only at spawn", which would make dispose insufficient
- * for the email channel's mid-session enable (channels/email/session.ts:123,
- * 208). Whether `POST /global/dispose` re-registers a server that was not
- * previously in the set is UNVERIFIED against the pinned opencode.
- *
- * Left alone rather than guessed at: every name here is one spawnChild
- * consumes OUTSIDE the config file, which this name is not, and adding it
- * would buy an ~8s respawn for a case nobody has measured. Resolve it with a live sandbox — enable the face mid-session,
- * then ask opencode whether the server is registered — and update whichever
- * comment turns out to be false.
- */
 
 /** Does this env delta need a full respawn rather than a dispose? */
 export function requiresRespawn(changedNames: readonly string[]): boolean {
@@ -376,17 +354,16 @@ function normalizeNativeModelRefs(config: Record<string, unknown>): void {
 }
 
 // Assemble the inline opencode config (OPENCODE_CONFIG_CONTENT) the daemon hands
-// opencode at spawn. It MERGES over the repo's own opencode config and has four
+// opencode at spawn. It MERGES over the repo's own opencode config and has three
 // independent contributors, any of which may apply:
-//   1. the optional Kortix Connector MCP server (KORTIX_CONNECTORS_MCP_ENABLED=1)
-//   2. the Kortix LLM gateway provider        (when KORTIX_LLM_* env)
-//   3. a Slack permission override            (when this is a Slack session)
-//   4. the server-compiled v2 agent config    (KORTIX_COMPILED_AGENT_CONFIG,
+//   1. the Kortix LLM gateway provider        (when KORTIX_LLM_* env)
+//   2. a Slack permission override            (when this is a Slack session)
+//   3. the server-compiled v2 agent config    (KORTIX_COMPILED_AGENT_CONFIG,
 //                                               apps/api's compile-agent-config.ts)
-// #4 is folded into the BASE (alongside OPENCODE_CONFIG_CONTENT) rather than
+// #3 is folded into the BASE (alongside OPENCODE_CONFIG_CONTENT) rather than
 // applied as an overlay — it's apps/api's compiled equivalent of "the repo's
 // own opencode config" for a v2 project, not a daemon-side session-local
-// decision like #1-3.
+// decision like #1-2.
 // If NONE apply there's nothing to inject, so we return undefined and opencode
 // just uses the repo config as-is.
 export async function buildOpencodeConfigContent(
@@ -404,8 +381,6 @@ export async function buildOpencodeConfigContent(
     toolBridgeSpec?: string | null
   } = {},
 ): Promise<string | undefined> {
-  const connectorToken = env.KORTIX_TOKEN
-  const apiUrl = env.KORTIX_API_URL
   const llmBaseUrl = env.KORTIX_LLM_BASE_URL
   const llmApiKey = pickLlmGatewayKey(env)
 
@@ -418,24 +393,12 @@ export async function buildOpencodeConfigContent(
   // env → unchanged direct-provider behavior below.
   const llmProxyUrl = env.KORTIX_LLM_PROXY_URL
   const proxyMode = !!llmProxyUrl
-  // Optional MCP compatibility face. The agent-facing default is the
-  // `kortix connectors` CLI, so we only inject this MCP server when explicitly
-  // enabled. In proxy mode its KORTIX_API_URL points at the local connector proxy
-  // with a placeholder token; otherwise it receives the real session token.
-  const connectorProxyUrl = env.KORTIX_CONNECTORS_PROXY_URL
-  const connectorProxyMode = !!connectorProxyUrl
-  const connectorMcpEnabled = ['1', 'true', 'yes', 'on'].includes(
-    (env.KORTIX_CONNECTORS_MCP_ENABLED ?? '').trim().toLowerCase(),
-  )
-
-  // Direct mode needs both token+url; proxy mode needs only the proxy URL.
-  const hasConnectorMcp = connectorMcpEnabled && (connectorProxyMode || (!!connectorToken && !!apiUrl))
   const hasLlmGateway = hasKortixLlmGateway(env)
   // A Slack-provisioned session carries SLACK_CHANNEL_ID / SLACK_THREAD_TS (the
   // session identity the API hands us at boot; also what the in-sandbox `slack`
-  // CLI uses to post back to the thread). Contributor #3 keys off it.
+  // CLI uses to post back to the thread). Contributor #2 keys off it.
   const isSlackSession = !!(env.SLACK_THREAD_TS || env.SLACK_CHANNEL_ID)
-  // (4) Server-compiled agent config (kortix_version 2 projects only — see
+  // (3) Server-compiled agent config (kortix_version 2 projects only — see
   // apps/api/src/projects/lib/compile-agent-config.ts). apps/api compiles the
   // manifest's `agents:` map into OpenCode's `agent` map + top-level model
   // server-side and hands it down sealed; the daemon only LAYERS its own
@@ -554,39 +517,7 @@ export async function buildOpencodeConfigContent(
     out.skills = { ...skills, paths: [...paths, ...extraSkillDirs.filter((dir) => !paths.includes(dir))] }
   }
 
-  // (1) Optional Kortix Connector MCP server. CLI remains the primary agent path.
-  if (hasConnectorMcp) {
-    const mcp =
-      out.mcp && typeof out.mcp === 'object' && !Array.isArray(out.mcp)
-        ? (out.mcp as Record<string, unknown>)
-        : {}
-    out.mcp = {
-      ...mcp,
-      'kortix-connectors': {
-        type: 'local',
-        // The absolute path, so OpenCode's MCP launcher does not depend on PATH
-        // propagation. apps/cli runs this argv in a test (connectors-mcp-handshake).
-        command: [...CONNECTORS_MCP_COMMAND],
-        enabled: true,
-        environment: {
-          // Proxy mode: the MCP talks to the localhost connector proxy with a
-          // placeholder token; the proxy injects the real per-session token
-          // upstream (so the baked config is session-independent → no restart on
-          // restore). Direct mode (cold/Daytona): the real token + api url, as before.
-          KORTIX_TOKEN: connectorProxyMode ? CONNECTOR_PROXY_PLACEHOLDER_KEY : connectorToken!,
-          KORTIX_API_URL: connectorProxyMode ? connectorProxyUrl! : apiUrl!,
-          PATH: '/usr/local/bin:/usr/bin:/bin',
-          // Lets the CLI target the project-explicit gateway route. Optional —
-          // the session token also pins the project for the legacy flat route,
-          // so this is belt-and-suspenders. Project id is session-independent so
-          // it's safe to bake at seed.
-          ...(env.KORTIX_PROJECT_ID ? { KORTIX_PROJECT_ID: env.KORTIX_PROJECT_ID } : {}),
-        },
-      },
-    }
-  }
-
-  // (2) Kortix LLM gateway provider.
+  // (1) Kortix LLM gateway provider.
   if (hasLlmGateway) {
     const provider =
       out.provider && typeof out.provider === 'object' && !Array.isArray(out.provider)
@@ -667,7 +598,7 @@ export async function buildOpencodeConfigContent(
     }
   }
 
-  // (3) Slack sessions: DENY opencode's blocking `question` tool. A Slack thread
+  // (2) Slack sessions: DENY opencode's blocking `question` tool. A Slack thread
   // is async — there's no live form to answer a synchronous question, so the
   // agent must ask via `slack send` instead; a `question` call would otherwise
   // stall the turn. The web dashboard keeps the tool (it answers `question.asked`

@@ -19349,7 +19349,16 @@
       "textf2f698118cc1": "Elimina evento dell'app",
       "text2dca9f542da4": "{name} connesso",
       "text54e2237efa16": "I trigger di questa app sono ora attivi.",
-      "text2fd655fcbaad": "Diventa attivo quando l'account è collegato."
+      "text2fd655fcbaad": "Diventa attivo quando l'account è collegato.",
+      "text261b28a3c6bf": "Collega un altro account",
+      "text19646ef1ab9d": "Etichetta dell'account",
+      "text0ade71c64183": "Etichetta dell'account, ad es. acme-bot",
+      "texta8f89bda4dfc": "Questo connettore ha già un account con questa etichetta.",
+      "textd975792aff6e": "Predefinito ({account})",
+      "text26639e783252": "Cambia account",
+      "textea56119b98e2": "Trigger di eventi dell'app",
+      "text1ee2cf623464": "Nuovo evento dell'app",
+      "text974e43358191": "Nessun trigger avvia ancora un agente dagli eventi di {name}."
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

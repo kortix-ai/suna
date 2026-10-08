@@ -97,10 +97,6 @@ import {
   setLlmProxyToken,
   llmProxyReady,
   llmProxyBaseUrl,
-  startConnectorProxy,
-  setConnectorProxyToken,
-  connectorProxyReady,
-  connectorProxyBaseUrl,
 } from '@/services/llm-proxy/llm-proxy'
 import type { OpenCodeBootState as SandboxBootState } from './boot-state'
 import { createOpenCodeHarnessService, type OpenCodeHarnessService } from './service'

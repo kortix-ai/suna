@@ -33,9 +33,6 @@ const OPENCODE_RUNTIME_ENV_NAMES = new Set([
   'KORTIX_OPENCODE_MODEL',
   // Its harness-neutral name (D3). The API sends both for one release.
   'KORTIX_MODEL',
-  // Channel sessions can opt into the Connector MCP face after a deploy. This
-  // must restart OpenCode because MCP servers are registered only at spawn.
-  'KORTIX_CONNECTORS_MCP_ENABLED',
   // The server-compiled agent config (agents, prompts, permissions, model) —
   // apps/api's compile-agent-config.ts output.
   //

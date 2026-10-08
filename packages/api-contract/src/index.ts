@@ -1405,6 +1405,10 @@ export const TriggerSchema = z.object({
   event: z
     .object({
       connector: z.string(),
+      /** Declared `account` label; null = the connector's default shared account. */
+      account: z.string().nullable(),
+      /** Identity (or label) of the shared account actually feeding the trigger; null when none. */
+      connected_as: z.string().nullable(),
       type: z.string(),
       config: z.record(z.string(), z.unknown()),
       /** Event source provider derived from the connector (e.g. `composio`). Null when unresolved. */
