@@ -62,6 +62,11 @@ sandbox:
 # The harness a session boots: "opencode" (the default) or "pi".
 runtime: opencode
 
+# Project tools: tool name -> module path. Every harness runs them
+# (references/kortix/tools.md).
+tools:
+  lookup_order: tools/lookup_order.ts
+
 # Files only OpenCode reads: opencode.jsonc, plugins/, tools/, commands/.
 # Defaults to "harnesses/opencode", then the legacy ".kortix/opencode",
 # when omitted. The agent daemon launches opencode with
@@ -515,8 +520,8 @@ Where the OpenCode runtime config lives. **Optional**, with a default.
 
 The agent daemon launches `opencode serve` with
 `OPENCODE_CONFIG_DIR=<config_dir>`. OpenCode reads its own files from that
-folder: `opencode.jsonc`, `commands/`, `tools/`, `plugins/`. Agents and
-skills do not live there. Kortix compiles agents from `agents/` and
+folder: `opencode.jsonc`, `commands/`, `tools/`, `plugins/`. Agents,
+skills and harness-neutral tools (top-level `tools:`) do not live there. Kortix compiles agents from `agents/` and
 `kortix.yaml` and hands them to the harness. Every harness loads the
 skills in `skills/`.
 

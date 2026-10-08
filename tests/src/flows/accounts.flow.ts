@@ -1352,3 +1352,31 @@ flow(
     }
   },
 );
+
+// TOPUP-1 — KRTX-1718: a member out of credits asks the owners to add some.
+// The member cannot buy credits (billing.write is owner-only by default) and
+// had no way to tell an owner from inside the product.
+flow(
+  'TOPUP-1',
+  { domain: 'accounts', routes: ['POST /v1/accounts/:accountId/top-up-requests'] },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const member = await team.addMember('member');
+    const ask = (who: Principal) =>
+      ctx.client.as(who).post('/v1/accounts/:accountId/top-up-requests', {}, { params: { accountId: team.id } });
+
+    await ctx.step('ANON → 401; NONMEMBER → 403', async () => {
+      (await ask(ctx.P.ANON)).status(401);
+      (await ask(ctx.P.NONMEMBER)).status(403);
+    });
+    await ctx.step('the OWNER can add credits, so asking → 409 can_manage_billing', async () => {
+      (await ask(ctx.P.OWNER)).status(409).body().has('$.code', 'can_manage_billing');
+    });
+    await ctx.step('a MEMBER asks → 202, and the one owner is emailed', async () => {
+      (await ask(member)).status(202).body().has('$.notified', 1);
+    });
+    await ctx.step('the same MEMBER again that day → 429 already_requested', async () => {
+      (await ask(member)).status(429).body().has('$.code', 'already_requested');
+    });
+  },
+);

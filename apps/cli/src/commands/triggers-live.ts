@@ -173,11 +173,13 @@ export async function triggersAddLive(
     emitJson(resp);
     return 0;
   }
+  const created = resp.triggers?.find((t) => t.slug === slug);
+  // An event trigger is only live once its subscription is; until then it is just added.
+  const where = created?.type === 'event' && created.event?.status !== 'active' ? 'added to' : 'live on';
   process.stdout.write(
-    `${status.ok(`${C.bold}${slug}${C.reset} (${type}) live on the project`)} ${C.dim}(committed to kortix.yaml on main + reconciled)${C.reset}\n`,
+    `${status.ok(`${C.bold}${slug}${C.reset} (${type}) ${where} the project`)} ${C.dim}(committed to kortix.yaml on main + reconciled)${C.reset}\n`,
   );
   reportWebhookUrl(resp, slug);
-  const created = resp.triggers?.find((t) => t.slug === slug);
   if (created?.type === 'event') {
     for (const line of eventNextStep(created, eventName).lines) {
       process.stdout.write(`  ${C.dim}${line}${C.reset}\n`);

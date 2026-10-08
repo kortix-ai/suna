@@ -7,6 +7,13 @@ import { agentFileCandidates, skillDirs } from '@kortix/manifest-schema/layout';
 export function lintWiring(manifest: Record<string, unknown> | null, root: string): ManifestIssue[] {
   if (!manifest || manifest.kortix_version !== 2) return [];
   const issues: ManifestIssue[] = [];
+  const tools = manifest.tools;
+  if (tools && typeof tools === 'object' && !Array.isArray(tools)) {
+    for (const [name, file] of Object.entries(tools)) {
+      if (typeof file === 'string' && !existsSync(resolve(root, file)))
+        issues.push({ path: `tools.${name}`, message: `"${file}" does not exist in the project files.`, severity: 'error' });
+    }
+  }
   const agents = manifest.agents;
   if (!agents || typeof agents !== 'object' || Array.isArray(agents)) return issues;
   const env = manifest.env as { required?: string[]; optional?: string[] } | undefined;

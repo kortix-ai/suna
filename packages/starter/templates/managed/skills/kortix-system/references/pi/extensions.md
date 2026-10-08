@@ -4,9 +4,11 @@ An extension adds tools, hooks or commands to a pi session. pi's own
 extension system runs every extension. Kortix writes no adapter code for an
 extension, so a package from <https://pi.dev/packages> runs unmodified.
 
-This is the pi counterpart of an OpenCode plugin or custom tool. An OpenCode
-file in `harnesses/opencode/plugins/` or `harnesses/opencode/tools/` does
-nothing in a pi session.
+This is the pi counterpart of an OpenCode plugin. An OpenCode file in
+`harnesses/opencode/plugins/` or `harnesses/opencode/tools/` does nothing in
+a pi session. A tool that takes arguments and returns text needs no
+extension: write it as a project tool (`kortix.yaml` `tools:`,
+`../kortix/tools.md`) and both harnesses run it.
 
 ## An extension file in the repository
 

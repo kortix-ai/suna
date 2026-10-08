@@ -7,7 +7,7 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { assertProjectCapability, loadProjectForUser, loadVisibleSession, projectCapabilityAllowed, sessionIsTombstoned } from '../lib/access';
 import { projectsApp } from '../lib/app';
-import { extendSandboxDeadline, idleGraceMs } from '../sandbox-deadline';
+import { extendSandboxDeadlineForPresence } from '../sandbox-deadline';
 
 export function registerSessionPresenceRoutes(): void {
   projectsApp.openapi(createRoute({
@@ -31,7 +31,7 @@ export function registerSessionPresenceRoutes(): void {
       // KRTX-1729: a person who may start the session keeps its computer awake,
       // by the idle grace. A read-only viewer's lease only routes pushes.
       if (await projectCapabilityAllowed(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_START)) {
-        await extendSandboxDeadline({ sessionId }, idleGraceMs());
+        await extendSandboxDeadlineForPresence({ sessionId });
       }
     } else {
       await db.delete(sessionPresenceLeases).where(and(eq(sessionPresenceLeases.userId, loaded.userId), eq(sessionPresenceLeases.sessionId, sessionId), eq(sessionPresenceLeases.tabId, tabId)));
