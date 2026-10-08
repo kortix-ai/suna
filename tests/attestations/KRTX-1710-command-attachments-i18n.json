@@ -1,5 +1,5 @@
 {
-  "source_hash": "a94bb3b77cccf4b24926f5f7e5b91a9f3949378965f7381126d49de7ec6daa65",
+  "source_hash": "4211f3d5c6b1214cd1783e084b73f24d775bd534ede173c0d28062a524f92772",
   "diff_files": [
     "apps/web/src/features/session/composer/command-attachments.test.ts",
     "apps/web/src/features/session/composer/command-attachments.ts",
@@ -14,13 +14,13 @@
     "apps/web/translations/sr.json",
     "apps/web/translations/zh.json"
   ],
-  "diff_hash": "74a0dec395c399b889a366b5849da8007a472271fbc9508c78739459d7f4a93c",
-  "head": "c8d8eda65041311fda4b91afb0a85912516e98f9",
-  "passed": true,
+  "diff_hash": "a9a7d1533b034469a4c451be5f797b4fb5586dd7d60eb4e52f852d6bd5f66a2d",
+  "head": "a88169be8a186da033b3f009aedec3fb60e05054",
+  "passed": false,
   "lanes": {
     "core": "pass",
-    "packages": "pass",
-    "db-suites": "pass"
+    "packages": "fail",
+    "db-suites": "fail"
   },
-  "at": "2026-10-08T14:30:39.233Z"
+  "at": "2026-10-08T14:55:16.429Z"
 }
