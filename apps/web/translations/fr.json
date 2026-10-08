@@ -19506,6 +19506,8 @@
       "textd9682a5acb38": "{value0} sur {value1} instantanés manuels",
       "text581e89ae1f08": "Supprimer un instantané de backend",
       "text1af77a9ae95c": "Ajoutez ce backend à l'App. Une App n'obtient des jetons de visiteur que pour les backends qu'elle liste.",
+      "text2eb91a6f88aa": "1 fichier reste joint. Retirez-le pour exécuter la commande, ou retirez la commande pour envoyer le fichier en message.",
+      "text807f9beb34b1": "{count, plural, other {# fichiers restent joints. Retirez-les pour exécuter la commande, ou retirez la commande pour les envoyer en message.}}",
       "text4b4847a6fb87": "Événements d’apps",
       "text07fb9f8661dc": "Apps avec événements",
       "text51035b5b67dc": "Filtrer par type",

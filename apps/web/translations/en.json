@@ -19517,6 +19517,8 @@
       "textd9682a5acb38": "{value0} of {value1} manual snapshots",
       "text581e89ae1f08": "Delete a backend snapshot",
       "text1af77a9ae95c": "List this backend on the App. An App gets viewer tokens only for the backends it lists.",
+      "text2eb91a6f88aa": "1 file stays attached. Remove it to run the command, or remove the command to send the file as a message.",
+      "text807f9beb34b1": "{count, plural, other {# files stay attached. Remove them to run the command, or remove the command to send them as a message.}}",
       "text4b4847a6fb87": "App events",
       "text07fb9f8661dc": "Apps with events",
       "text51035b5b67dc": "Filter by type",
