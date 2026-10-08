@@ -494,4 +494,18 @@ describe('kortix connectors connections', () => {
       },
     ]);
   });
+
+  test('finalizes the shared account when the link was started with --owner project', async () => {
+    const code = await runConnectors(['connect-finalize', 'github', '--owner', 'project', '--json']);
+
+    expect(code).toBe(0);
+    expect(requests[0]?.body).toEqual({ owner: 'project' });
+  });
+
+  test('refuses an unknown --owner before calling the API', async () => {
+    const code = await runConnectors(['connect-finalize', 'github', '--owner', 'team', '--json']);
+
+    expect(code).not.toBe(0);
+    expect(requests).toEqual([]);
+  });
 });

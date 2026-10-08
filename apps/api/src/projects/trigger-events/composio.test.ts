@@ -15,6 +15,7 @@ let prevKey: string | undefined;
 const calls: Array<[string, ...unknown[]]> = [];
 let listPages: Array<{ items: unknown[]; nextCursor?: string | null }> = [];
 let deleteError: unknown = null;
+const CONNECTION = '00000000-0000-4000-a000-0000000000c1';
 
 function installRuntime() {
   setComposioRuntimeForTest({
@@ -22,6 +23,9 @@ function installRuntime() {
       async listTypes(q: unknown) { calls.push(['listTypes', q]); return listPages.shift() as never; },
       async create(...a: unknown[]) { calls.push(['create', ...a]); return { triggerId: 'ti_synthetic1' }; },
       async delete(id: string) { calls.push(['delete', id]); if (deleteError) throw deleteError; return { triggerId: id }; },
+    },
+    connectedAccounts: {
+      async get(id: string) { calls.push(['getAccount', id]); return id === 'ca_known' ? { user_id: `kortix-connection:${CONNECTION}` } : null; },
     },
   } as unknown as ComposioRuntime);
 }
@@ -184,6 +188,20 @@ describe('receive: parsing', () => {
     expect(d.notices).toEqual([{ kind: 'subscription_disabled', externalId: 'ti_synthetic1', reason: 'auth failed' }]);
     const e = await run(v3('composio.connected_account.expired'));
     expect(e.notices).toMatchObject([{ kind: 'connection_expired', connectionExternalId: 'ca_1' }]);
+  });
+  test('an activated account names its Kortix connection, wherever the payload puts the user id', async () => {
+    const inData = await run(v3('composio.connected_account.activated', { metadata: {}, data: { id: 'ca_x', user_id: `kortix-connection:${CONNECTION}` } }));
+    expect(inData.notices).toEqual([{ kind: 'connection_activated', connectionId: CONNECTION }]);
+    const inMeta = await run(v3('composio.connected_account.activated', { metadata: { user_id: `kortix-connection:${CONNECTION}` }, data: {} }));
+    expect(inMeta.notices).toEqual([{ kind: 'connection_activated', connectionId: CONNECTION }]);
+    expect(calls.filter((c) => c[0] === 'getAccount')).toEqual([]);
+  });
+  test('without a user id in the payload the account is read; a foreign user id is ignored', async () => {
+    const read = await run(v3('composio.connected_account.activated', { metadata: { connected_account_id: 'ca_known' }, data: {} }));
+    expect(read.notices).toEqual([{ kind: 'connection_activated', connectionId: CONNECTION }]);
+    expect(calls).toContainEqual(['getAccount', 'ca_known']);
+    const foreign = await run(v3('composio.connected_account.activated', { metadata: { user_id: 'someone-else' }, data: { id: 'ca_unknown' } }));
+    expect(foreign.notices).toEqual([]);
   });
   test('unknown type is ignored; malformed JSON after a valid signature is empty', async () => {
     expect(await run(v3('composio.something.else'))).toEqual({ deliveries: [], notices: [] });
