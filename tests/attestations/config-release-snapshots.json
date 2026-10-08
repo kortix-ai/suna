@@ -1,7 +1,6 @@
 {
-  "source_hash": "aee57d871de51bd657e3447774b08ed4d3024aa21d486fc0af8948e185524b8d",
+  "source_hash": "7f96169304e28889a2884bd2e1b62300957c9f54afba6c362320e80be9e4b4c3",
   "diff_files": [
-    "apps/api/src/__tests__/integration-prompt-attachments.test.ts",
     "apps/api/src/config-releases/ROLLOUT.md",
     "apps/api/src/config-releases/__tests__/desired-agent.test.ts",
     "apps/api/src/config-releases/__tests__/desired-freshness.test.ts",
@@ -12,7 +11,6 @@
     "apps/api/src/config-releases/routes.ts",
     "apps/api/src/config-releases/snapshot.test.ts",
     "apps/api/src/config-releases/snapshot.ts",
-    "apps/api/src/projects/session-title-generate.test.ts",
     "apps/cli/src/__tests__/repo-size.blackbox.test.ts",
     "apps/cli/src/commands/validate.ts",
     "apps/cli/src/project-lint.ts",
@@ -37,7 +35,6 @@
     "apps/kortix-sandbox-agent-server/src/services/config-release/release.ts",
     "apps/web/content/docs/cli.mdx",
     "apps/web/content/docs/work/runtime.mdx",
-    "apps/web/src/features/session/optimistic-turn.test.tsx",
     "apps/web/src/lib/seo/content-timestamps.json",
     "packages/starter/src/embedded.generated.json",
     "packages/starter/templates/base/skills/kortix-cli/SKILL.md",
@@ -51,13 +48,13 @@
     "tests/src/flows/config-releases.flow.ts",
     "tests/unit/local-profile.test.ts"
   ],
-  "diff_hash": "aa780a5f1a6f2aa949b69e02f3f0a353a48df4090dd94723c63bdaf71dc79b3f",
-  "head": "77fad5abf3c86a1d526dbac3c6f3d359c4e6a616",
+  "diff_hash": "b2bee91f87c834bd18db0124a8448ceb05350f16e4419c17cd1e93e4eae25d7d",
+  "head": "ad1d37da34d60e9fc878b03a0c6afe30e5b01c57",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-08T18:37:33.437Z"
+  "at": "2026-10-08T19:00:07.038Z"
 }
