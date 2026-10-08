@@ -31,16 +31,35 @@ const SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="2000" 
 const FILES: Record<string, string> = { 'kortix.md': MD, 'kortix.yaml': YAML, 'brand.svg': SVG };
 const PATHS = Object.keys(FILES);
 
+// `useFileContent` must return a referentially stable object per path: the
+// viewer's content-revision hook treats a new object as new content and bumps
+// its revision every render, which loops in dev ("Too many re-renders"). The
+// real sources cache their fetch results, so the stub caches too.
+const STUB_FILE_CONTENT = new Map<string, { type: 'text'; content: string }>();
+
+function stubFileContent(filePath: string) {
+  let entry = STUB_FILE_CONTENT.get(filePath);
+  if (!entry) {
+    entry = { type: 'text' as const, content: FILES[filePath] ?? '' };
+    STUB_FILE_CONTENT.set(filePath, entry);
+  }
+  return entry;
+}
+
 const stubSource = {
   id: 'debug-stub',
   useFileContent: (filePath: string) => ({
-    data: { type: 'text' as const, content: FILES[filePath] ?? '' },
+    data: stubFileContent(filePath),
     isLoading: false,
     error: null,
     refetch: async () => undefined,
   }),
   useBinaryBlob: () => ({ blobUrl: null, blob: null, isLoading: false, error: null }),
 } as unknown as FileSource;
+
+// Stable context value for the same reason: a fresh object per render makes
+// every provider consumer re-render (and remount via `key={source.id}`).
+const stubExplorerSource = { useFileViewerSource: () => stubSource } as never;
 
 export function DebugFilePreviewHarness() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -52,7 +71,7 @@ export function DebugFilePreviewHarness() {
         {tI18nComplete.raw('text50d5fd0a05d4')} <code>&lt;/&gt;</code>{' '}
         {tI18nComplete.raw('textdfd7d37e2b63')}
       </p>
-      <FileExplorerSourceProvider value={{ useFileViewerSource: () => stubSource } as never}>
+      <FileExplorerSourceProvider value={stubExplorerSource}>
         <div data-testid="thumbs" className="mb-6 flex gap-3">
           {['brand.svg', 'kortix.yaml', 'kortix.md'].map((name) => (
             <div key={name} data-thumb={name} className="w-[170px]">
