@@ -71,6 +71,9 @@ When available, a project's `us_region` flag places newly provisioned Platinum
 sandboxes in `KORTIX_PLATINUM_US_REGION`. API, database, and S3 archive regions
 do not override that compute preference. Disabling the flag uses the provider's
 home region; existing sandboxes retain their placement, including on restart.
+`KORTIX_PLATINUM_US_REGION_DEFAULT_ENABLED=true` turns the flag on for every
+project without an explicit choice. Kortix dev, staging, and production leave
+it unset.
 
 Warm-session adoption requires provider-reported placement matching the current
 project flag. Server-owned placement intent only deduplicates in-flight warming;

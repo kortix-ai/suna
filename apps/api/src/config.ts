@@ -632,6 +632,12 @@ const envSchema = z.object({
   // Per-webhook HMAC-SHA-256 secret from Platinum's `POST /v1/webhooks` (shown
   // once at registration). Optional — same backstop story as Daytona's.
   PLATINUM_WEBHOOK_SECRET: optStr,
+  // The `us_region` project flag's default (feature-flags/registry.ts). Off:
+  // KORTIX_PLATINUM_US_REGION alone only makes the flag available. On: every
+  // project that never chose places its newly provisioned sandboxes in that
+  // region, e.g. a self-host whose API runs in the US. A project's explicit
+  // choice still wins, and an existing sandbox keeps its region.
+  KORTIX_PLATINUM_US_REGION_DEFAULT_ENABLED: optBoolFalse,
 
   // ── E2B — sandbox provisioning (conditional: required if enabled) ────────
   // E2B_DOMAIN is the base E2B domain without a protocol. The default uses
@@ -1345,6 +1351,7 @@ export const config = {
   PLATINUM_API_URL: env.PLATINUM_API_URL,
   PLATINUM_TEMPLATE: env.PLATINUM_TEMPLATE,
   PLATINUM_WEBHOOK_SECRET: env.PLATINUM_WEBHOOK_SECRET,
+  KORTIX_PLATINUM_US_REGION_DEFAULT_ENABLED: env.KORTIX_PLATINUM_US_REGION_DEFAULT_ENABLED,
   E2B_API_KEY: env.E2B_API_KEY,
   E2B_DOMAIN: env.E2B_DOMAIN,
   E2B_TEMPLATE: env.E2B_TEMPLATE,

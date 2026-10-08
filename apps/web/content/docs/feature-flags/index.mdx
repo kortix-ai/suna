@@ -61,12 +61,13 @@ Each flag has two gates. They answer different questions.
 AND-gated by `available`. `enabled` therefore always implies `available`.
 
 `available` is an operator decision, made by the environment the API runs in.
-Two flags read it from configuration; every other flag is always available:
+Three flags read it from configuration; every other flag is always available:
 
 | Flag | Available when |
 |---|---|
 | `llm_gateway` | `LLM_GATEWAY_ENABLED` is on |
 | `monitors` | `PLATINUM_API_KEY` is set |
+| `us_region` | `PLATINUM_API_KEY` and `KORTIX_PLATINUM_US_REGION` are set |
 
 ## Stability badges
 
@@ -123,12 +124,17 @@ Registry order — the same order **Settings → Feature flags** shows.
 | `warm_sessions` | Warm Sessions | Beta | On | `routes` |
 | `secrets_egress` | Network-Enforced Secrets | Experimental | On | `behavioral` |
 | `pi_harness` | Pi Harness (in-sandbox) | Experimental | Off | `behavioral` |
+| `us_region` | US Region | Experimental | Off (operator can default on) | `behavioral` |
 
 `llm_gateway` reads its per-project default from
 `LLM_GATEWAY_DEFAULT_ENABLED`, which defaults to on. Turning the flag off per
 project is a first-class path: the project runs native OpenCode model
 management (provider keys injected into the sandbox, native `provider/model`
 refs). An explicit project choice always wins.
+
+`us_region` reads its per-project default from
+`KORTIX_PLATINUM_US_REGION_DEFAULT_ENABLED`, which defaults to off. An
+explicit project choice always wins.
 
 ### What each flag gates
 
@@ -169,6 +175,14 @@ refs). An explicit project choice always wins.
   see [`harnesses:`](/docs/project/manifest#harnesses). pi does not serve every
   session feature OpenCode does: see the matrix in
   [Harnesses](/docs/work/harnesses#what-each-harness-supports).
+- **`us_region`** — create this project's new Platinum sandboxes in the
+  region `KORTIX_PLATINUM_US_REGION` names (for example `us-east`) instead of
+  Platinum's home region (`eu-west`). An existing sandbox keeps its region,
+  also on restart. Only a newly provisioned sandbox moves. The API, database,
+  and archives stay where they are. The Platinum organization of
+  `PLATINUM_API_KEY` must hold a grant for the region; without it Platinum
+  answers `403 region_not_enabled`. See
+  [Sandbox region](/docs/host#sandbox-region).
 
 ### Graduated flags
 

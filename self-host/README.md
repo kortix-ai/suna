@@ -181,6 +181,14 @@ kortix self-host status            # container status
 kortix self-host uninstall         # stop + permanently delete this instance's data and config
 ```
 
+**Sandbox region (Platinum).** Sessions run in Platinum's home region
+(`eu-west`). For an instance in a US AWS region, place new sandboxes in
+`us-east`: grant the region to the instance's Platinum organization (Kortix
+operators: `PATCH /internal/admin/org-overrides/<org_id>` with
+`{"set":{"regions":["us-east"]}}`), then run
+`kortix self-host env set KORTIX_PLATINUM_US_REGION=us-east KORTIX_PLATINUM_US_REGION_DEFAULT_ENABLED=true`.
+Existing sandboxes keep their region; only newly provisioned ones move.
+
 **Restoring from a snapshot** (disaster recovery / cloning an instance):
 
 1. Find the snapshot: `aws ec2 describe-snapshots --filters

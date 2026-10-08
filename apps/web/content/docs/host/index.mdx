@@ -88,6 +88,29 @@ kortix self-host env set KORTIX_API_MEMORY_LIMIT=1024m
 
 Confirm the applied limit with `docker stats --no-stream`.
 
+## Sandbox region
+
+With Platinum, sessions run in Platinum's home region, `eu-west`. A host whose
+API runs in the US can place new sandboxes in `us-east`, next to the API:
+
+1. Ask Kortix to grant the region to the Platinum organization of your
+   `PLATINUM_API_KEY`. Without the grant, Platinum refuses the create with
+   `403 region_not_enabled`.
+2. Name the region and turn it on for every project:
+
+   ```sh
+   kortix self-host env set KORTIX_PLATINUM_US_REGION=us-east KORTIX_PLATINUM_US_REGION_DEFAULT_ENABLED=true
+   ```
+
+`KORTIX_PLATINUM_US_REGION` alone makes the **US Region** flag available in
+**Settings → Feature flags**, off by default. With
+`KORTIX_PLATINUM_US_REGION_DEFAULT_ENABLED=true` it is on for every project
+that did not choose. A project can still turn it off.
+
+Only a newly provisioned sandbox moves. An existing sandbox keeps its region,
+also on restart. At startup the API copies each new platform image to the
+region, so the first session after an update does not wait for the copy.
+
 ## Updates
 
 Every instance updates itself automatically. Pin an exact version instead:

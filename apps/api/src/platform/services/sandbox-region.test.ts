@@ -19,6 +19,7 @@ setTestEnv('PLATINUM_API_KEY', 'pt_test_key');
 const { resolveSessionSandboxRegion } = await import('./sandbox-region');
 const { platinumUsRegion } = await import('../../shared/platinum-region');
 const { resolveFeatureFlag, buildFeatureFlagCatalog } = await import('../../feature-flags/registry');
+const { config } = await import('../../config');
 
 const ON = { experimental: { us_region: true } };
 const OFF = { experimental: { us_region: false } };
@@ -27,6 +28,7 @@ let saved: Record<string, string | undefined>;
 
 beforeEach(() => { saved = Object.fromEntries(regionEnv.map((key) => [key, process.env[key]])); });
 afterEach(() => {
+  config.KORTIX_PLATINUM_US_REGION_DEFAULT_ENABLED = false;
   for (const key of regionEnv) {
     if (saved[key] === undefined) delete process.env[key];
     else process.env[key] = saved[key];
@@ -52,6 +54,29 @@ describe('us_region', () => {
     expect(resolveSessionSandboxRegion(OFF)).toBeUndefined();
     expect(resolveSessionSandboxRegion({})).toBeUndefined();
     expect(resolveSessionSandboxRegion(null)).toBeUndefined();
+  });
+
+  test('operator default on ⇒ a project that never chose gets the US region; an explicit off still wins', () => {
+    process.env.KORTIX_PLATINUM_US_REGION = 'us-east';
+    config.KORTIX_PLATINUM_US_REGION_DEFAULT_ENABLED = true;
+    expect(resolveSessionSandboxRegion({})).toBe('us-east');
+    expect(resolveSessionSandboxRegion(null)).toBe('us-east');
+    expect(resolveSessionSandboxRegion(ON)).toBe('us-east');
+    expect(resolveSessionSandboxRegion(OFF)).toBeUndefined();
+    const entry = buildFeatureFlagCatalog({}).find((f: { key: string }) => f.key === 'us_region');
+    expect(entry).toMatchObject({ available: true, enabled: true, overridden: false });
+  });
+
+  test('operator default on without a region ⇒ the flag stays unavailable and every project gets the home region', () => {
+    delete process.env.KORTIX_PLATINUM_US_REGION;
+    config.KORTIX_PLATINUM_US_REGION_DEFAULT_ENABLED = true;
+    expect(resolveFeatureFlag({}, 'us_region')).toBe(false);
+    expect(resolveSessionSandboxRegion({})).toBeUndefined();
+  });
+
+  test('the operator default is off when the environment does not set it', () => {
+    expect(process.env.KORTIX_PLATINUM_US_REGION_DEFAULT_ENABLED).toBeUndefined();
+    expect(config.KORTIX_PLATINUM_US_REGION_DEFAULT_ENABLED).toBe(false);
   });
 
   test('environment unset ⇒ the flag is unavailable: not enabled, not listed, and a project that switched it on still gets the home region', () => {

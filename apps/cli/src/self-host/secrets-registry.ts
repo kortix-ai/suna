@@ -277,6 +277,10 @@ export const KEY_SERVICE_MAP: Record<string, readonly string[]> = {
   PLATINUM_API_URL: ['kortix-api'],
   PLATINUM_TEMPLATE: ['kortix-api'],
   PLATINUM_WEBHOOK_SECRET: ['kortix-api'],
+  // Platinum US region (not secrets): the region the `us_region` project flag
+  // places new sandboxes in, and whether that flag defaults on.
+  KORTIX_PLATINUM_US_REGION: ['kortix-api'],
+  KORTIX_PLATINUM_US_REGION_DEFAULT_ENABLED: ['kortix-api'],
 
   // Managed git
   MANAGED_GIT_GITHUB_OWNER: ['kortix-api'],

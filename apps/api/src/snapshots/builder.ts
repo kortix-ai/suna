@@ -34,6 +34,7 @@ import { openBuildLog, closeBuildLogReady, closeBuildLogFailed, recentlyBuiltSna
 import { waitForProviderBuild, findFirstActiveSnapshot, maybeSwapAgent, ensureMetaSandboxImage, SnapshotBuildError } from './runtime-images';
 import { claimSnapshotBuild, holdSnapshotBuild, releaseSnapshotBuild, waitForSnapshotBuildRelease } from './build-claim';
 import { enabledTemplateBuildProviders } from './provider-coverage';
+import { prepareUsRegionResidency } from './us-region-residency';
 import { config, type SandboxProviderName } from '../config';
 import { logger } from '../lib/logger';
 
@@ -591,11 +592,12 @@ function startupPreBuild(): void {
     isEnabled: (provider) => config.isProviderEnabled(provider as SandboxProviderName),
   })) {
     void ensurePlatformDefaultImage({ source: 'startup', provider: providerId })
-      .then((r) =>
+      .then((r) => {
         console.log(
           `[snapshots] startup pre-build (${providerId}): default image ${r.snapshotName} ${r.built ? 'built' : 'ready'}`,
-        ),
-      )
+        );
+        return prepareUsRegionResidency(providerId, r.snapshotName);
+      })
       .catch((err) => {
         // A failed pre-build is retried by the next leader term, not skipped for the process lifetime.
         startupPreBuildKicked = false;
@@ -605,11 +607,12 @@ function startupPreBuild(): void {
         );
       });
     void ensureMetaSandboxImage({ source: 'startup', provider: providerId })
-      .then((r) =>
+      .then((r) => {
         console.log(
           `[snapshots] startup pre-build (${providerId}): meta image ${r.snapshotName} ${r.built ? 'built' : 'ready'}`,
-        ),
-      )
+        );
+        return prepareUsRegionResidency(providerId, r.snapshotName);
+      })
       .catch((err) => {
         // A failed pre-build is retried by the next leader term, not skipped for the process lifetime.
         startupPreBuildKicked = false;

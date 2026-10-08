@@ -330,7 +330,9 @@ const FLAGS: readonly FeatureFlagDef[] = [
     // environment must name the region (KORTIX_PLATINUM_US_REGION), which is
     // also what says the Platinum org holds a grant for it. Unset ⇒ hidden.
     available: () => Boolean(config.PLATINUM_API_KEY) && platinumUsRegion() !== null,
-    platformDefault: () => false,
+    // Off unless the operator sets KORTIX_PLATINUM_US_REGION_DEFAULT_ENABLED
+    // (config.ts), e.g. a self-host whose API runs in the US.
+    platformDefault: () => config.KORTIX_PLATINUM_US_REGION_DEFAULT_ENABLED,
     // Read at provisioning (platform/services/session-sandbox.ts
     // resolveSessionSandboxRegion) and sent as `region` on the Platinum
     // create. Off ⇒ no region is sent and Platinum places in its home region.
