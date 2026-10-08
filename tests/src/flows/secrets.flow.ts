@@ -790,6 +790,27 @@ flow('SEC-9', {
     }
   });
 
+  await ctx.step('a session narrowed to zero runtime secrets still lists what its agent stores, with the agent grant as agent_scope', async () => {
+    const databaseUrl = ctx.env.databaseUrl!;
+    const database = new PgClient({ connectionString: databaseUrl, ssl: /localhost|127\.0\.0\.1/.test(databaseUrl) ? false : { rejectUnauthorized: false } });
+    await database.connect();
+    try {
+      await database.query(`UPDATE kortix.project_sessions SET secrets_allowlist = '[]'::jsonb WHERE session_id = $1`, [sessionId]);
+    } finally {
+      await database.end();
+    }
+    (await agent.post('/v1/projects/:projectId/secrets', { name: 'AGENT_NARROWED_KEY', value: 'agent-narrowed-value' }, { params }))
+      .status(200)
+      .body()
+      .has('$.identifier', 'AGENT_NARROWED_KEY')
+      .has('$.configured', true);
+    const listed = await agent.get('/v1/projects/:projectId/secrets', { params });
+    listed.status(200).body().has('$.agent_scope', { agent: 'kortix', secrets: 'all' });
+    const item = listed.json<{ items: Array<Record<string, unknown>> }>().items.find((i) => i.identifier === 'AGENT_NARROWED_KEY');
+    if (!item || item.configured !== true) throw new Error(`the agent cannot see its own write: ${JSON.stringify(item)}`);
+    (await owner.get('/v1/projects/:projectId/secrets', { params })).status(200).body().has('$.agent_scope', null);
+  });
+
   await ctx.step('an agent session stores a connector-scoped value that stays server-side', async () => {
     (await agent.post('/v1/projects/:projectId/secrets',
       { name: 'AGENT_CONNECTOR_TOKEN', value: 'agent-connector-value', strategy: 'broker', consumer: 'connector' }, { params }))
@@ -859,7 +880,7 @@ flow(
 
 flow(
   "SEC-3",
-  { domain: "secrets", routes: ["DELETE /v1/projects/:projectId/secrets/:name"] },
+  { domain: "secrets", routes: ["DELETE /v1/projects/:projectId/secrets/:name", "POST /v1/projects/:projectId/secrets", "GET /v1/projects/:projectId/secrets"] },
   async (ctx) => {
     const p = await ctx.fixtures.project();
     await ctx.step("create then delete a secret", async () => {
@@ -877,6 +898,39 @@ flow(
         .as(ctx.P.OWNER)
         .del("/v1/projects/:projectId/secrets/:name", { params: { projectId: p.id, name: "KORTIX_TOKEN" } });
       r.status(403);
+    });
+
+    await ctx.step("a stored value is never echoed: upsert, list and stored row carry no plaintext; delete answers ok and removes it", async () => {
+      const owner = ctx.client.as(ctx.P.OWNER);
+      const params = { projectId: p.id };
+      const plaintext = `ke2e-plain-${crypto.randomUUID()}`;
+      const written = await owner.post("/v1/projects/:projectId/secrets", { name: "KE2E_NEVER_ECHOED", value: plaintext }, { params });
+      written.status(200).body().has("$.name", "KE2E_NEVER_ECHOED");
+      const body = written.json<Record<string, unknown>>();
+      for (const key of ["value", "value_enc"]) if (key in body) throw new Error(`upsert response carries ${key}`);
+      if (written.text().includes(plaintext)) throw new Error("upsert response echoed the value");
+      const listed = await owner.get("/v1/projects/:projectId/secrets", { params });
+      listed.status(200).body().has("$.agent_scope", null);
+      const list = listed.json<{ items: Array<Record<string, unknown>>; required: unknown; optional: unknown }>();
+      if (!Array.isArray(list.required) || !Array.isArray(list.optional)) throw new Error("required/optional are not arrays");
+      const item = list.items.find((i) => i.name === "KE2E_NEVER_ECHOED");
+      if (!item || "value" in item || "value_enc" in item || listed.text().includes(plaintext)) throw new Error(`list leaked or missed: ${JSON.stringify(item)}`);
+      if (ctx.env.databaseUrl) {
+        const { Client } = await import("pg");
+        const db = new Client({ connectionString: ctx.env.databaseUrl, ssl: /localhost|127\.0\.0\.1/.test(ctx.env.databaseUrl) ? false : { rejectUnauthorized: false } });
+        await db.connect();
+        try {
+          const row = (
+            await db.query<{ value_enc: string }>("SELECT value_enc FROM kortix.project_secrets WHERE project_id = $1::uuid AND identifier = 'KE2E_NEVER_ECHOED'", [p.id])
+          ).rows[0];
+          if (!row || row.value_enc.includes(plaintext)) throw new Error("the stored row is missing or holds plaintext");
+        } finally {
+          await db.end();
+        }
+      }
+      (await owner.del("/v1/projects/:projectId/secrets/:name", { params: { ...params, name: "KE2E_NEVER_ECHOED" } })).status(200).body().has("$.ok", true);
+      const after = (await owner.get("/v1/projects/:projectId/secrets", { params })).json<{ items: Array<{ name?: string }> }>();
+      if (after.items.some((i) => i.name === "KE2E_NEVER_ECHOED")) throw new Error("the deleted secret is still listed");
     });
   },
 );

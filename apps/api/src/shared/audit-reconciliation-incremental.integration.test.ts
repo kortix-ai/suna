@@ -9,7 +9,7 @@
  * only once per FULL_RESCAN interval.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import pg from 'pg';
+import { PgClient } from '../__tests__/helpers/pg-client';
 import { reconcileAuditEvents } from './audit-reconciliation';
 import { runAuditReconciliationPage } from './audit-reconciliation-worker';
 
@@ -18,7 +18,7 @@ const fixtureUrl = process.env.TEST_DATABASE_SUPERUSER_URL ?? databaseUrl;
 const ACCOUNT = 'b8100000-0000-4000-a000-000000000001';
 const OTHER = 'b8100000-0000-4000-a000-000000000002';
 
-let client: pg.Client;
+let client: PgClient;
 
 async function providerEvent(accountId: string, kind: string, ageDays = 0) {
   await client.query(`SET session_replication_role = 'replica'`);
@@ -52,7 +52,7 @@ const stateOf = async (accountId: string) =>
 
 describe.skipIf(!databaseUrl)('audit reconciliation is incremental', () => {
   beforeAll(async () => {
-    client = new pg.Client({ connectionString: fixtureUrl });
+    client = new PgClient({ connectionString: fixtureUrl });
     await client.connect();
     await client.query('DELETE FROM kortix.provider_events WHERE account_id = ANY($1::uuid[])', [
       [ACCOUNT, OTHER],

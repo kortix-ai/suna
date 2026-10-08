@@ -4,11 +4,11 @@
  */
 import { describe, expect, test } from 'bun:test';
 import {
-  normalize,
   normalizeGraphql,
   normalizeHttp,
   normalizeMcp,
   normalizeOpenApi,
+  normalizePipedream,
   normalizePostmanCollection,
 } from '../connectors/normalize';
 
@@ -351,19 +351,9 @@ describe('normalizeHttp', () => {
 });
 
 describe('dispatch', () => {
-  test('normalize() routes by provider', () => {
-    expect(normalize({ provider: 'openapi', doc: { paths: { '/x': { get: { responses: {} } } } } })).toHaveLength(1);
-    const pd = normalize({ provider: 'pipedream', app: 'gmail', actions: [{ key: 'gmail-send-email', name: 'Send Email' }] });
-    expect(pd[0]!.binding).toEqual({ kind: 'pipedream', app: 'gmail', actionKey: 'gmail-send-email' });
-    expect(pd[0]!.path).toBe('send_email');
-  });
-
   test('the account-selector prop (type "app", named after the slug) is stripped from the schema', () => {
     // Pipedream returns the connection prop named after the app slug, not "app".
-    const pd = normalize({
-      provider: 'pipedream',
-      app: 'gmail',
-      actions: [{
+    const pd = normalizePipedream([{
         key: 'gmail-find-email',
         name: 'Find Email',
         params: [
@@ -371,8 +361,7 @@ describe('dispatch', () => {
           { name: 'q', type: 'string', required: false },
           { name: 'withTextPayload', type: 'boolean', required: true },
         ],
-      }],
-    });
+      }], 'gmail');
     const find = pd.find((a) => a.path === 'find_email')!;
     const props = (find.inputSchema as any).properties;
     expect(props.gmail).toBeUndefined();                          // selector gone
@@ -382,13 +371,13 @@ describe('dispatch', () => {
   });
 
   test('every pipedream connector gets a generic `request` (Connect Proxy) tool', () => {
-    const pd = normalize({ provider: 'pipedream', app: 'github', actions: [{ key: 'github-create-issue', name: 'Create Issue' }] });
+    const pd = normalizePipedream([{ key: 'github-create-issue', name: 'Create Issue' }], 'github');
     const request = pd.find((a) => a.path === 'request');
     expect(request).toBeDefined();
     expect(request!.binding).toEqual({ kind: 'pipedream_proxy', app: 'github' });
     expect(request!.inputSchema).toMatchObject({ required: ['method', 'url'] });
     // present even when the app exposes no curated actions at all
-    const empty = normalize({ provider: 'pipedream', app: 'github', actions: [] });
+    const empty = normalizePipedream([], 'github');
     expect(empty.some((a) => a.path === 'request')).toBe(true);
   });
 

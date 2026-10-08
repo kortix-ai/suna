@@ -27,9 +27,7 @@ import { isPureHoldRefund, reconcileBillingHold } from './billing-hold-reconcili
 import { checkBudget, releaseBudgetReservation } from './budgets';
 import { validateGatewayKey } from './gateway-keys';
 import { resolveDefaultModelForPrincipal } from './resolution/default-model';
-import { resolveCandidates } from './resolution/resolve-candidates';
 import { resolveSessionPersonalOwner } from '../projects/lib/personal-resources';
-import { resolveGatewayRoute } from './routing';
 
 // ─── Canonical gateway control plane ────────────────────────────────────────
 //
