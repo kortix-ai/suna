@@ -99,6 +99,7 @@ git add . && git commit -m "…" && git push origin HEAD
 kortix cr open --title "…" --description "…"     # head + session auto-detected in a sandbox
 ```
 
-Never commit big static assets (video, datasets, build output): a session's
-agent config build fails when the repository is over 32 MiB compressed. Put
-them in object storage instead. Never merge your own CR. Full CR lifecycle: `kortix skills get kortix-system`.
+Never commit big static assets (video, datasets, build output): every session
+downloads them, and above 512 MiB compressed a running session stops picking
+up agent config changes from the base branch. Put them in object storage
+instead. Never merge your own CR. Full CR lifecycle: `kortix skills get kortix-system`.

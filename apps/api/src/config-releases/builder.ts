@@ -1,10 +1,12 @@
 /**
  * Config release builder.
  *
- * A config release is one config archive plus one compiled governance. The
- * archive is keyed by the config tree ID, so every commit and every variant
- * with identical config files shares one archive. The builder reads only the
- * API's bare mirror. It never calls into a sandbox.
+ * A config release is one tree (its file list with blob IDs) plus one compiled
+ * governance. The API-built archive of the tree is keyed by the tree ID, so
+ * every commit and every variant with identical files shares one archive; a
+ * tree over `MAX_CONFIG_ARCHIVE_BYTES` has none, and a v3 box builds it from
+ * its checkout or the project snapshot (`snapshot.ts`). The builder reads only
+ * the API's bare mirror. It never calls into a sandbox.
  *
  * The git plumbing behind `build` — tree resolution, release-tree composition,
  * archive bytes — lives in `release-tree.ts`; this module owns the release

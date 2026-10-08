@@ -1056,15 +1056,16 @@ Things that surprise people:
   push, never asking the user to copy files out. See the
   `<change-requests>` section above.
 - **Keep big static assets out of Git.** Every session builds its agent
-  config from the whole repository at the base commit (`git archive`, so
-  history and `.git` do not count). Above 32 MiB compressed or 128 MiB
-  uncompressed that build fails, and every session runs the platform
-  default config without the project's agents. Put videos, images,
-  datasets, model weights and generated media in object storage (S3, R2,
-  GCS) or a CDN, and download them at runtime. Add build output (`dist/`,
-  `out/`, `node_modules/`) to `.gitignore`. `kortix validate` warns about
-  any file of 10 MiB or more and a repository over 32 MiB; run it before
-  you commit. A path that must stay in Git but that no agent reads can be
+  config from the whole repository at the base commit (history and `.git`
+  do not count), and downloads every file. A new session takes the files
+  from its own checkout, whatever the size. A running session picks up a
+  base-branch change through the project snapshot, built up to 512 MiB
+  compressed; above that it keeps the config it runs until a new session
+  starts. Put videos, images, datasets, model weights and generated media
+  in object storage (S3, R2, GCS) or a CDN, and download them at runtime.
+  Add build output (`dist/`, `out/`, `node_modules/`) to `.gitignore`.
+  `kortix validate` warns about any file of 10 MiB or more and a
+  repository over 512 MiB; run it before you commit. A path that must stay in Git but that no agent reads can be
   left out of the agent config with `<path> export-ignore` in
   `.gitattributes`.
 - **Triggers live in `kortix.yaml`, not as files.** Old Kortix shipped

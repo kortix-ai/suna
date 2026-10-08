@@ -16,7 +16,15 @@ import { subscribe } from '../fixtures/billing';
 import { flow, harnessFlow } from '../core/flow';
 import { sleep, waitFor } from '../core/poll';
 import type { CreatedProject, FlowContext, Harness, TeamFixture } from '../core/types';
-import { assertRuntimeHarness, readTranscript, readTurn } from '../fixtures/session-run';
+import {
+  assertRuntimeHarness,
+  bootSession,
+  readTranscript,
+  readTurn,
+  runtimePath,
+  sendPrompt,
+  waitForAssistantText,
+} from '../fixtures/session-run';
 import { isKe2eRetryableError } from '../core/client';
 
 const HEX40 = /^[0-9a-f]{40}$/;
@@ -52,6 +60,8 @@ type Descriptor = {
     applied: boolean;
     reason: string;
   } | null;
+  /** v3 only: the project snapshot of `source_commit`, presigned. */
+  snapshot?: { url: string; sha256: string; bytes: number; entries: number; expires_at: string } | null;
 };
 
 interface SessionToken {
@@ -92,7 +102,7 @@ interface Fixture {
   /** `query` is the archive URL's query string (a composed release tree carries `?commit=`). */
   download(secret: string | null, treeId: string, query?: string): Promise<{ status: number; bytes: Buffer; source: string | null }>;
   /** Commit files onto the base branch of the project repository. Returns the new tip. */
-  commit(files: Record<string, string>, message: string): Promise<string>;
+  commit(files: Record<string, string | Buffer>, message: string): Promise<string>;
   /** Open another project's repository with the same credential. */
   openRepo(projectId: string): Promise<ProjectRepo>;
   /** `GET .../sessions/:sessionId/config` as the project owner. */
@@ -242,7 +252,7 @@ async function extract(archive: Buffer): Promise<Map<string, Buffer>> {
  */
 async function commitTo(
   repo: ProjectRepo,
-  files: Record<string, string>,
+  files: Record<string, string | Buffer>,
   message: string,
   removePaths: string[] = [],
 ): Promise<string> {
@@ -2356,6 +2366,299 @@ flow(
         const worker = await fixture.mint();
         const d = (await fixture.descriptor(worker.secret, worker.sessionId)).body as Descriptor;
         if (d.source_commit !== tip || d.archive === null || d.release_id === release) throw new Error(`project session got ${JSON.stringify({ ...d, files: undefined })}`);
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  },
+);
+
+// ── Config releases over the 32 MiB archive cap (CFG-14 … CFG-16) ──────────
+//
+// A release is the whole repository tree (#9197), and the API-built archive is
+// capped at 32 MiB gzip (`MAX_CONFIG_ARCHIVE_BYTES`). A daemon that asks for
+// the v3 descriptor builds a release over the cap from its own checkout or
+// from the project snapshot of the release commit; a daemon that does not
+// keeps the v2 answer it always had.
+
+/** Just over the cap. Random bytes do not compress, so gzip stays over it too. */
+const OVER_CAP_BYTES = 33 * 1024 * 1024;
+const V3 = { accept: ['config-release-v3'] };
+
+async function overCapFile(): Promise<Buffer> {
+  const { randomBytes } = await import('node:crypto');
+  return randomBytes(OVER_CAP_BYTES);
+}
+
+function releaseIdOf(descriptor: Descriptor): Promise<string> {
+  return import('node:crypto').then(({ createHash }) =>
+    createHash('sha256').update(`${descriptor.config_tree_id}:${descriptor.compiled_governance_etag ?? ''}`).digest('hex'),
+  );
+}
+
+// ── CFG-14 — v2 and v3 for a repository over the archive cap ───────────────
+flow(
+  'CFG-14',
+  {
+    domain: 'config-releases',
+    requires: ['database'],
+    timeoutMs: 300_000,
+    routes: [FEATURES, PROJECT_DETAIL, MINT, DESCRIPTOR, ARCHIVE, ...GIT_PROXY],
+  },
+  async (ctx) => {
+    const fixture = await setup(ctx);
+    try {
+      const own = await fixture.mint();
+      const large = await overCapFile();
+      let tip = '';
+      let v3!: Descriptor;
+
+      await ctx.step('the project opts in: `config_releases` is OFF by default, so this flow enables it', async () => {
+        await fixture.setFeature(true);
+        if (!(await fixture.featureEnabled())) throw new Error('config_releases did not turn on for this project');
+      });
+
+      await ctx.step('a commit adds 33 MiB that gzip cannot shrink, outside every config dir', async () => {
+        tip = await fixture.commit({ 'data/large.bin': large }, 'over the archive cap');
+      });
+
+      await ctx.step('a daemon that does not ask for v3 gets no release, and the reason names the cap (v2, unchanged)', async () => {
+        const r = await fixture.descriptor(own.secret, own.sessionId);
+        if (r.status !== 200) throw new Error(`expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
+        const d = r.body as Descriptor;
+        if (d.format !== 'config-release-v2') throw new Error(`format ${d.format}`);
+        if (d.release_id !== null || d.files !== null || d.archive !== null) {
+          throw new Error(`v2 assigned a release over the cap: ${JSON.stringify({ ...d, files: d.files?.length })}`);
+        }
+        if (!d.reason?.includes('exceeds the 33554432-byte config archive limit')) throw new Error(`reason ${d.reason}`);
+        if ('snapshot' in d) throw new Error('a v2 descriptor carries a snapshot');
+      });
+
+      await ctx.step('a daemon that asks for v3 gets the release: the tip, its tree, every file with its blob ID, and no archive', async () => {
+        const r = await fixture.descriptor(own.secret, own.sessionId, V3);
+        if (r.status !== 200) throw new Error(`expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
+        v3 = r.body as Descriptor;
+        if (v3.format !== 'config-release-v3') throw new Error(`format ${v3.format}`);
+        if (v3.source_commit !== tip) throw new Error(`source_commit ${v3.source_commit} is not the tip ${tip}`);
+        if (!HEX40.test(v3.config_tree_id ?? '')) throw new Error(`config_tree_id ${v3.config_tree_id}`);
+        if (v3.release_id !== (await releaseIdOf(v3))) throw new Error('release_id is not sha256(tree:etag)');
+        if (v3.archive !== null) throw new Error(`a release over the cap carries an archive: ${JSON.stringify(v3.archive)}`);
+        if (v3.reason !== null) throw new Error(`reason ${v3.reason}`);
+        const listed = new Map((v3.files ?? []).map(([path, mode, blob]) => [path, { mode, blob }]));
+        const entry = listed.get('data/large.bin');
+        if (!entry || entry.mode !== '100644' || entry.blob !== (await gitBlobId(large))) {
+          throw new Error(`data/large.bin is listed as ${JSON.stringify(entry)}`);
+        }
+        if (!listed.has('.kortix/opencode/agents/kortix.md')) throw new Error('the release lists no agent');
+        if (!('snapshot' in v3)) throw new Error('a v3 descriptor has no snapshot field');
+        if (v3.snapshot !== null && !HEX64.test(v3.snapshot?.sha256 ?? '')) throw new Error(`snapshot ${JSON.stringify(v3.snapshot)}`);
+      });
+
+      await ctx.step('the archive route refuses the tree with 413: no daemon can download an archive over the cap', async () => {
+        const r = await fixture.download(own.secret, v3.config_tree_id!);
+        if (r.status !== 413) throw new Error(`expected 413, got ${r.status}`);
+      });
+
+      await ctx.step('back under the cap, v2 and v3 assign the same release, and both carry the archive', async () => {
+        await commitTo(fixture.repo, {}, 'back under the cap', ['data']);
+        const v2r = await fixture.descriptor(own.secret, own.sessionId);
+        const v3r = await fixture.descriptor(own.secret, own.sessionId, V3);
+        if (v2r.status !== 200 || v3r.status !== 200) throw new Error(`statuses ${v2r.status}/${v3r.status}`);
+        if (!HEX64.test(v2r.body.release_id ?? '') || v2r.body.release_id !== v3r.body.release_id) {
+          throw new Error(`v2 ${v2r.body.release_id} and v3 ${v3r.body.release_id} disagree`);
+        }
+        if (!v2r.body.archive || !v3r.body.archive) throw new Error('a release under the cap has no archive');
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  },
+);
+
+// ── CFG-15 — the project snapshot delivers a release over the cap ──────────
+flow(
+  'CFG-15',
+  {
+    domain: 'config-releases',
+    requires: ['database', 'projectSnapshots'],
+    timeoutMs: 480_000,
+    routes: [FEATURES, PROJECT_DETAIL, MINT, DESCRIPTOR, ...GIT_PROXY],
+  },
+  async (ctx) => {
+    const fixture = await setup(ctx);
+    try {
+      const own = await fixture.mint();
+      const large = await overCapFile();
+      let tip = '';
+      let d!: Descriptor;
+      let bytes!: Buffer;
+
+      await ctx.step('the project opts in and its base branch goes over the archive cap', async () => {
+        await fixture.setFeature(true);
+        tip = await fixture.commit({ 'data/large.bin': large }, 'over the archive cap');
+      });
+
+      await ctx.step('the v3 descriptor names the project snapshot of the tip once the API has built it', async () => {
+        // The first request queues the snapshot; the producer builds it in the background.
+        d = await waitFor(async () => (await fixture.descriptor(own.secret, own.sessionId, V3)).body as Descriptor, {
+          until: (body) => Boolean(body?.snapshot),
+          timeoutMs: 360_000,
+          intervalMs: 5_000,
+          description: `the project snapshot of ${tip.slice(0, 12)}`,
+        });
+        const snapshot = d.snapshot!;
+        if (d.source_commit !== tip || d.archive !== null) throw new Error(`descriptor ${JSON.stringify({ ...d, files: d.files?.length })}`);
+        if (!/^https?:\/\//.test(snapshot.url) || !HEX64.test(snapshot.sha256)) throw new Error(`snapshot ${JSON.stringify(snapshot)}`);
+        if (snapshot.bytes <= OVER_CAP_BYTES || snapshot.entries <= 0) throw new Error(`snapshot size ${snapshot.bytes}, entries ${snapshot.entries}`);
+        if (Date.parse(snapshot.expires_at) <= Date.now()) throw new Error(`snapshot URL already expired: ${snapshot.expires_at}`);
+      });
+
+      await ctx.step('the snapshot downloads with no credential, and its size and digest are the descriptor\'s', async () => {
+        const r = await fetch(d.snapshot!.url, { signal: AbortSignal.timeout(120_000) });
+        if (r.status !== 200) throw new Error(`expected 200, got ${r.status}`);
+        bytes = Buffer.from(await r.arrayBuffer());
+        const { createHash } = await import('node:crypto');
+        const sha256 = createHash('sha256').update(bytes).digest('hex');
+        if (bytes.length !== d.snapshot!.bytes || sha256 !== d.snapshot!.sha256) {
+          throw new Error(`downloaded ${bytes.length} bytes, sha256 ${sha256}; descriptor says ${d.snapshot!.bytes}, ${d.snapshot!.sha256}`);
+        }
+      });
+
+      await ctx.step('every file the release lists is in the snapshot with its blob ID; the snapshot also carries a .git no release lists', async () => {
+        const files = await extract(bytes);
+        for (const [path, , blob] of d.files!) {
+          const content = files.get(path);
+          if (!content) throw new Error(`the snapshot lacks ${path}`);
+          if ((await gitBlobId(content)) !== blob) throw new Error(`${path} in the snapshot does not match its blob ID`);
+        }
+        if (!files.has('.git/HEAD')) throw new Error('the snapshot carries no .git');
+        if (d.files!.some(([path]) => path.startsWith('.git/'))) throw new Error('the release lists a .git path');
+      });
+
+      await ctx.step('the presigned URL serves that object only: a changed signature is refused', async () => {
+        const url = new URL(d.snapshot!.url);
+        const signature = url.searchParams.get('X-Amz-Signature');
+        if (!signature) throw new Error('the snapshot URL is not presigned');
+        url.searchParams.set('X-Amz-Signature', `${signature.slice(0, -4)}0000`);
+        const r = await fetch(url, { signal: AbortSignal.timeout(60_000) });
+        if (r.status !== 403 && r.status !== 400) throw new Error(`a tampered signature answered ${r.status}`);
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  },
+);
+
+// ── CFG-16 — a box runs a release over the cap, from its checkout then the snapshot ──
+const OVER_CAP_AGENT = (key: string, marker: string): string =>
+  `---\ndescription: main agent\nmode: primary\n---\nYou are the main agent.\n${key}: ${marker}\n`;
+const OVER_CAP_PROMPT = (key: string): string => `Answer with the ${key} value from your instructions and nothing else.`;
+
+harnessFlow(
+  'CFG-16',
+  {
+    domain: 'config-releases',
+    requires: ['database', 'funded', 'daytona', 'managedGit', 'stripe', 'projectSnapshots'],
+    timeoutMs: 1_500_000,
+    routes: [
+      FEATURES,
+      PROJECT_DETAIL,
+      CONFIG_STATE,
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+      ...GIT_PROXY,
+    ],
+  },
+  async (ctx, harness) => {
+    const fixture = await setup(ctx);
+    try {
+      const large = await overCapFile();
+      // A directive NAME per release, never asked before (the CFG-12 technique).
+      const keyA = `CFG16_MARKER_A_${Date.now()}`;
+      const keyB = `${keyA}_NEXT`;
+      const markerA = `over-cap-${crypto.randomUUID()}`;
+      const markerB = `over-cap-${crypto.randomUUID()}`;
+
+      await ctx.step('the account is entitled to the managed lineup', async () => {
+        await subscribe(ctx.env, ctx.client.as(ctx.P.OWNER), fixture.team.id);
+      });
+      await ctx.step('the project opts in: `config_releases` is OFF by default, so this flow enables it', async () => {
+        await fixture.setFeature(true);
+      });
+      await optIntoHarness(ctx, fixture, harness);
+      await ctx.step('the base branch holds 33 MiB that gzip cannot shrink, beside the agent config', async () => {
+        await fixture.commit(
+          { 'data/large.bin': large, '.kortix/opencode/agents/kortix.md': OVER_CAP_AGENT(keyA, markerA) },
+          'over the archive cap',
+        );
+      });
+
+      const booted = await bootSession(ctx, harness, { project: fixture.project });
+      const releaseOf = async () => {
+        const r = await fixture.configState(booted.sessionId);
+        if (r.status !== 200) throw new Error(`GET /config answered ${r.status}`);
+        return r.body?.release ?? null;
+      };
+      const materialized = async (releaseId: string): Promise<string | null> => {
+        const r = await ctx.client.as(ctx.P.OWNER).get(runtimePath(booted.sandboxId, '/kortix/logs?source=daemon&tail=5000'));
+        r.status(200);
+        return (
+          r
+            .text()
+            .split('\n')
+            .filter((line) => line.includes('"[boot-config] release materialized"') && line.includes(releaseId))
+            .map((line) => /"transport":"(\w+)"/.exec(line)?.[1] ?? null)
+            .pop() ?? null
+        );
+      };
+
+      let first = '';
+      await ctx.step('the box runs the release over the cap, built from its own checkout with no download', async () => {
+        const release = await waitFor(releaseOf, {
+          until: (rel) => Boolean(rel) && rel.source === 'release' && rel.proven === true && rel.running_release_id === rel.desired_release_id,
+          timeoutMs: 180_000,
+          intervalMs: 3_000,
+          description: 'the box runs its desired release',
+        });
+        if (release.fallback_reason) throw new Error(`fallback_reason ${release.fallback_reason}`);
+        first = String(release.running_release_id);
+        const transport = await materialized(first);
+        if (transport !== 'workspace') throw new Error(`release ${first.slice(0, 12)} was materialized from ${transport}, not the checkout`);
+      });
+
+      await ctx.step('the agent answers from that release', async () => {
+        await sendPrompt(ctx, fixture.projectId, booted.sessionId, OVER_CAP_PROMPT(keyA));
+        await waitForAssistantText(ctx, fixture.projectId, booted.sessionId, markerA);
+      });
+
+      await ctx.step('a push moves the base: the box converges to the new release from the project snapshot', async () => {
+        await fixture.commit({ '.kortix/opencode/agents/kortix.md': OVER_CAP_AGENT(keyB, markerB) }, 'next release over the cap');
+        // The snapshot is built in the background; the box retries once a minute until it is ready.
+        const release = await waitFor(releaseOf, {
+          until: (rel) => Boolean(rel) && rel.running_release_id !== first && rel.running_release_id === rel.desired_release_id && rel.proven === true,
+          timeoutMs: 480_000,
+          intervalMs: 5_000,
+          description: 'the box runs the new release',
+        });
+        if (release.fallback_reason) throw new Error(`fallback_reason ${release.fallback_reason}`);
+        const transport = await materialized(String(release.running_release_id));
+        if (transport !== 'snapshot') throw new Error(`the new release was materialized from ${transport}, not the project snapshot`);
+      });
+
+      await ctx.step('the agent answers from the new release', async () => {
+        await sendPrompt(ctx, fixture.projectId, booted.sessionId, OVER_CAP_PROMPT(keyB));
+        await waitForAssistantText(ctx, fixture.projectId, booted.sessionId, markerB);
+      });
+
+      await ctx.step('GET /config reports the session current: not stale, no fallback', async () => {
+        const r = await fixture.configState(booted.sessionId);
+        if (r.status !== 200) throw new Error(`GET /config answered ${r.status}`);
+        if (r.body.stale !== false || r.body.release?.fallback_reason !== null) {
+          throw new Error(`config state ${JSON.stringify({ stale: r.body.stale, release: r.body.release })}`);
+        }
       });
     } finally {
       await fixture.cleanup();
