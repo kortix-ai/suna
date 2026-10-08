@@ -1,5 +1,5 @@
 {
-  "source_hash": "5213640a994efd8c8f9f8b569b52ca2e0099784bf67eee74e4c0a561683ac8ee",
+  "source_hash": "91bf1d0e5a71c4e7e8335955115f6148496cde53a96c440e5a6e926f9e51e13f",
   "diff_files": [
     "apps/api/src/__tests__/integration-waiting-turn-deadline.test.ts",
     "apps/api/src/projects/__snapshots__/sandbox-turn-lifecycle.golden.test.ts.snap",
@@ -16,13 +16,13 @@
     "apps/web/content/docs/work/sessions.mdx",
     "apps/web/src/lib/seo/content-timestamps.json"
   ],
-  "diff_hash": "a2b610750ed901010a24171492cb46ec5370708137ce7bf025ad89ed9d1d3b58",
-  "head": "dbea4d19210cadbc83a17de7705dcc3f7e89e64b",
+  "diff_hash": "b99b2b86fddf084d7455e526957444e3d8ccc65596fbd812d0830353b6c7b35b",
+  "head": "d315fa4baecb009099c9af95654ada245edec48d",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-08T14:52:13.709Z"
+  "at": "2026-10-08T15:04:28.754Z"
 }
