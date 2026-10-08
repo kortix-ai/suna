@@ -368,10 +368,25 @@ describe('Channels view — Email and Teams are entity rows', () => {
     expect(channelsSource).toContain('Add to Teams');
   });
 
-  test('keeps Email behind its per-project flag; Teams is on for every project', () => {
+  test('the Email row renders with the flag off, as the CLI lists it; Teams is on for every project', () => {
     expect(channelsSource).toContain("useFeatureFlag(projectId, 'agentmail_email')");
     expect(channelsSource).toContain("EMAIL_CONNECTOR_SLUG = 'kortix_email'");
-    expect(channelsSource).toMatch(/emailChannelEnabled \? \(\s*<EmailChannelRow/);
+    // Not `emailChannelEnabled ? (<EmailChannelRow …/>) : null` — the CLI help
+    // lists Email on every project (flag note included), so the web list may
+    // not drop the row when the flag is off (dogfood:channels-page-readonly).
+    // The flag only decides the row's STATE.
+    expect(channelsSource).not.toMatch(/emailChannelEnabled \? \(\s*<EmailChannelRow/);
+    expect(channelsSource).toMatch(
+      /<EmailChannelRow\s+projectId=\{projectId\}\s+enabled=\{emailChannelEnabled\}\s+installation=\{emailInstall \?\? null\}\s+canWrite=\{canWrite\}\s*\/>/,
+    );
+    // Flag off: the row says what is missing in `FeatureGateScreen`'s own words
+    // and links to the one place a flag turns on. No Install: connect would 403.
+    expect(channelsSource).toContain("raw('text26965989cce5')"); // "is off for this project"
+    expect(channelsSource).toContain("raw('text20a2e59ba129')"); // "Feature flags"
+    expect(channelsSource).toContain("projectSettingsSectionHref(projectId, 'feature-flags')");
+    expect(channelsSource).toContain('AgentMail Email ');
+    // Flag on, disconnected: the pitch still says what the channel DOES.
+    expect(channelsSource).toContain('Give your agent an inbox it can read and reply from.');
     // The `teams` flag graduated: no gate before the Teams row or panel.
     expect(channelsSource).not.toContain("useFeatureFlag(projectId, 'teams')");
     expect(channelsSource).toMatch(/\n\s*<TeamsChannelRow\s+projectId=\{projectId\}\s+canWrite=\{canWrite\}/);
