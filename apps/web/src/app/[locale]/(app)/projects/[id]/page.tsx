@@ -242,6 +242,10 @@ export default function ProjectIndexPage() {
                 }),
           },
           scope: options?.scope,
+          // The composer's send spinner is the pending signal, and the
+          // session draws this prompt from its first frame: no toast, and this
+          // page dissolves into the session instead of cutting to it.
+          fromComposer: true,
           // Create failed (already surfaced by the hook). Reject so the
           // composer restores its submitted draft and keeps every handle.
           onError: () => {

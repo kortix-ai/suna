@@ -3,7 +3,7 @@
 import { cn } from '@/lib/utils';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 import { useTranslations } from '@/i18n/use-translations';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useSyncExternalStore } from 'react';
 
 import { COMPOSER_TEXT_METRICS } from './composer-text-metrics';
 
@@ -12,6 +12,54 @@ const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(na
 
 /** How long each hint stays before rotating to the next. */
 const HOLD_MS = 6000;
+
+/**
+ * ONE rotation for every composer on screen, not one per instance.
+ *
+ * Two composers are on screen together for the length of a crossfade: the
+ * instant shell's dissolving off the session chat's, both docked in the same
+ * place. Each used to count from its own mount, and the shell had been
+ * counting for the whole boot while the chat started at the base line, so the
+ * fade drew two different hints over each other ("Ask anything…" through
+ * "Ask to compact the session when it gets long", measured on a 137 s boot).
+ * One module-level index, ticked by one interval while any active overlay
+ * subscribes, makes both draw the same line in every frame.
+ *
+ * The index is never reset, so it still survives deactivation: type, delete,
+ * and the rotation resumes where it was instead of restarting the first hints.
+ */
+export function createSharedRotation(
+  holdMs: number,
+  schedule: (tick: () => void, ms: number) => unknown = setInterval,
+  cancel: (timer: unknown) => void = (timer) =>
+    clearInterval(timer as ReturnType<typeof setInterval>),
+) {
+  let index = 0;
+  let timer: unknown = null;
+  const listeners = new Set<() => void>();
+  return {
+    subscribe(listener: () => void): () => void {
+      listeners.add(listener);
+      timer ??= schedule(() => {
+        index += 1;
+        for (const notify of listeners) notify();
+      }, holdMs);
+      return () => {
+        listeners.delete(listener);
+        if (listeners.size === 0 && timer !== null) {
+          cancel(timer);
+          timer = null;
+        }
+      };
+    },
+    read: () => index,
+  };
+}
+
+const rotation = createSharedRotation(HOLD_MS);
+// The server, and the hydrating client, draw the base line (see below).
+const readServerRotation = () => 0;
+const subscribeToNothing = () => () => {};
 
 /**
  * The swap animations, verbatim from `session-busy-indicator.tsx` so the two
@@ -148,17 +196,14 @@ export function AnimatedComposerPlaceholder({
       }),
     [placeholder, t],
   );
-  const [index, setIndex] = useState(0);
-
-  // The index survives deactivation on purpose: type, delete, and the
-  // rotation resumes where it was instead of restarting the same first hints.
-  useEffect(() => {
-    if (!active) return;
-    const id = setInterval(() => {
-      setIndex((i) => (i + 1) % variants.length);
-    }, HOLD_MS);
-    return () => clearInterval(id);
-  }, [active, variants.length]);
+  // Subscribed only while active, so a composer with a draft does not keep
+  // the shared interval running on its own.
+  const tick = useSyncExternalStore(
+    active ? rotation.subscribe : subscribeToNothing,
+    rotation.read,
+    readServerRotation,
+  );
+  const index = tick % variants.length;
 
   if (!active) return null;
 

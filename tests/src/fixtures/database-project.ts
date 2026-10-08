@@ -248,11 +248,13 @@ export async function createDatabaseSession(
     platinumRegion?: string;
     parentSessionId?: string;
     initiator?: { type: "member" | "trigger" | "channel" | "api" | "system"; id: string | null };
+    /** The id a browser minted for its create (`POST .../sessions` carries it). */
+    sessionId?: string;
   },
   open: OpenProjectDb = openProjectDb,
 ): Promise<string> {
   const databaseUrl = assertDatabaseFixtureAllowed(env, "create a session for");
-  const sessionId = randomUUID();
+  const sessionId = input.sessionId ?? randomUUID();
   const client = await open(databaseUrl);
   try {
     await client.query(
