@@ -1946,7 +1946,51 @@ harnessFlow(
         }
       });
 
-      const brokenJson = { '.kortix/opencode/opencode.json': '{ "$schema": "https://opencode.ai/config.json",, }\n' };
+      if (harness === 'pi') {
+        await ctx.step('pi: a base-branch change to the root AGENTS.md reaches the running session in place, with no restart', async () => {
+          const rules = (lines: string[]) => `# Project rules\n\n${lines.join('\n')}\n`;
+          // Commit, wait until the box serves it, and check health names that file.
+          const serve = async (content: string, message: string) => {
+            const before = String((await releaseOf())?.running_release_id ?? '');
+            await fixture.commit({ 'AGENTS.md': content }, message);
+            await waitFor(releaseOf, {
+              until: (rel) => Boolean(rel) && rel.running_release_id === rel.desired_release_id && rel.running_release_id !== before && rel.proven === true,
+              timeoutMs: 300_000,
+              intervalMs: 3_000,
+              description: `the box serves the release with ${message}`,
+            });
+            const health = await ctx.client.as(ctx.P.OWNER).get(box.box('/kortix/health'));
+            health.status(200);
+            const loaded = health.json<any>().harness?.details?.agentsMd;
+            const { createHash } = await import('node:crypto');
+            const sha = createHash('sha256').update(content).digest('hex').slice(0, 12);
+            if (loaded?.source !== 'release' || loaded?.sha !== sha) {
+              throw new Error(`pi reports ${JSON.stringify(loaded)}; expected source "release" and sha ${sha}`);
+            }
+          };
+          // The daemon logs `[pi] runtime ready` on every runtime start.
+          const lastStart = async () => {
+            const r = await ctx.client.as(ctx.P.OWNER).get(box.box('/kortix/logs?source=daemon&tail=5000'));
+            r.status(200);
+            return r.text().split('\n').filter((line) => line.includes('"[pi] runtime ready"')).pop() ?? null;
+          };
+          // The CFG-12 technique: the old key keeps a stale value, the new key was never asked.
+          const key = `CFG11_AGENTS_RULE_${Date.now()}`;
+          const marker = `agents-${crypto.randomUUID()}`;
+          await serve(rules([`${key}: agents-one`]), 'add AGENTS.md');
+          const started = await lastStart();
+          await serve(rules([`${key}: stale-on-purpose`, `${key}_NEXT: ${marker}`]), 'change AGENTS.md');
+          const r = await send(`Answer with the ${key}_NEXT value from your project instructions and nothing else.`);
+          r.status(200);
+          const answer = ((r.json<any>()?.parts ?? []) as Array<{ text?: unknown }>)
+            .map((part) => (typeof part.text === 'string' ? part.text : ''))
+            .join('');
+          if (!answer.includes(marker)) throw new Error(`the answer does not carry the new AGENTS.md marker: ${answer.slice(0, 200)}`);
+          if ((await lastStart()) !== started) throw new Error('the pi runtime restarted to apply an AGENTS.md change');
+        });
+      }
+
+      const brokenJson ={ '.kortix/opencode/opencode.json': '{ "$schema": "https://opencode.ai/config.json",, }\n' };
       if (harness === 'opencode') {
         await ctx.step('DEF-FLAGON-2 — a broken base branch makes the session report a fallback', async () => {
           await fixture.commit(brokenJson, 'break the config');

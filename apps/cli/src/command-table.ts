@@ -213,6 +213,11 @@ export const TIERS: readonly CommandTier[] = [
             blurb: 'Experimental: deploy serverless Apps with stable Kortix URLs',
           },
           {
+            name: 'backends',
+            args: '<subcommand>',
+            blurb: 'Experimental: self-hosted Convex backends; deploy with kortix backends deploy',
+          },
+          {
             name: 'marketplace',
             args: '<subcommand>',
             blurb: 'Search, show, install, and inspect marketplace items',

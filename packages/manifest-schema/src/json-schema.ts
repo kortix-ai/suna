@@ -399,6 +399,8 @@ function triggerSchema(): JsonSchemaFragment {
       // `type: event` only — the connector slug, the provider event type id
       // and the provider event config (opaque here; the provider validates it).
       connector: { type: 'string', minLength: 1 },
+      // Optional: the label of one shared account of that connector.
+      account: { type: 'string', minLength: 1 },
       event: { type: 'string', minLength: 1 },
       config: { type: 'object' },
     },
@@ -451,7 +453,7 @@ function triggerSchema(): JsonSchemaFragment {
       {
         // The event fields exist only on an event trigger.
         if: { properties: { type: { enum: ['cron', 'webhook', 'monitor'] } }, required: ['type'] },
-        then: { properties: { connector: false, event: false, config: false } },
+        then: { properties: { connector: false, account: false, event: false, config: false } },
       },
       {
         // `interval` is the poll period: required on poll, forbidden on stream.
@@ -781,6 +783,7 @@ function appBlockV2Schema(): JsonSchemaFragment {
       idle_timeout_seconds: { type: 'integer', minimum: 120, maximum: 86400 },
       always_on: { type: 'boolean' },
       monthly_budget_usd: { type: 'number', minimum: 0 },
+      backends: { type: 'array', items: { type: 'string', pattern: '^[a-z][a-z0-9-]{0,62}$' } },
       resources: {
         type: 'object',
         properties: {

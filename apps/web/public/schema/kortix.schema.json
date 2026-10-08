@@ -324,6 +324,10 @@
                   "type": "string",
                   "minLength": 1
                 },
+                "account": {
+                  "type": "string",
+                  "minLength": 1
+                },
                 "event": {
                   "type": "string",
                   "minLength": 1
@@ -474,6 +478,7 @@
                   "then": {
                     "properties": {
                       "connector": false,
+                      "account": false,
                       "event": false,
                       "config": false
                     }
@@ -913,6 +918,8 @@
                           "project.app.read",
                           "project.app.write",
                           "project.app.deploy",
+                          "project.backend.read",
+                          "project.backend.write",
                           "project.review.read",
                           "project.review.submit",
                           "project.review.act",
@@ -997,6 +1004,8 @@
                           "project.app.read",
                           "project.app.write",
                           "project.app.deploy",
+                          "project.backend.read",
+                          "project.backend.write",
                           "project.review.read",
                           "project.review.submit",
                           "project.review.act",
@@ -1499,6 +1508,8 @@
                           "project.app.read",
                           "project.app.write",
                           "project.app.deploy",
+                          "project.backend.read",
+                          "project.backend.write",
                           "project.review.read",
                           "project.review.submit",
                           "project.review.act",
@@ -1573,6 +1584,8 @@
                           "project.app.read",
                           "project.app.write",
                           "project.app.deploy",
+                          "project.backend.read",
+                          "project.backend.write",
                           "project.review.read",
                           "project.review.submit",
                           "project.review.act",
@@ -2054,6 +2067,10 @@
                   "type": "string",
                   "minLength": 1
                 },
+                "account": {
+                  "type": "string",
+                  "minLength": 1
+                },
                 "event": {
                   "type": "string",
                   "minLength": 1
@@ -2204,6 +2221,7 @@
                   "then": {
                     "properties": {
                       "connector": false,
+                      "account": false,
                       "event": false,
                       "config": false
                     }
@@ -2654,6 +2672,13 @@
                 "monthly_budget_usd": {
                   "type": "number",
                   "minimum": 0
+                },
+                "backends": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,62}$"
+                  }
                 },
                 "resources": {
                   "type": "object",
@@ -3285,6 +3310,8 @@
                           "project.app.read",
                           "project.app.write",
                           "project.app.deploy",
+                          "project.backend.read",
+                          "project.backend.write",
                           "project.review.read",
                           "project.review.submit",
                           "project.review.act",
@@ -3359,6 +3386,8 @@
                           "project.app.read",
                           "project.app.write",
                           "project.app.deploy",
+                          "project.backend.read",
+                          "project.backend.write",
                           "project.review.read",
                           "project.review.submit",
                           "project.review.act",
@@ -3975,6 +4004,10 @@
                   "type": "string",
                   "minLength": 1
                 },
+                "account": {
+                  "type": "string",
+                  "minLength": 1
+                },
                 "event": {
                   "type": "string",
                   "minLength": 1
@@ -4125,6 +4158,7 @@
                   "then": {
                     "properties": {
                       "connector": false,
+                      "account": false,
                       "event": false,
                       "config": false
                     }
@@ -4575,6 +4609,13 @@
                 "monthly_budget_usd": {
                   "type": "number",
                   "minimum": 0
+                },
+                "backends": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,62}$"
+                  }
                 },
                 "resources": {
                   "type": "object",

@@ -12,6 +12,7 @@
  * Auth is the host's: the daemon verifies the signed user context before this
  * catch-all runs, so the surface never sees an unauthenticated request.
  */
+import { MESSAGE_READ_CODE } from '@kortix/api-contract/runtime-relay'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { stripInlineAttachmentBytes } from '../shared/inline-attachments'
 import type { HarnessForwardInput, HarnessForwardResult } from '../contract/proxy'
@@ -250,8 +251,14 @@ export function createPiSurface(runtime: () => PiRuntime | null): PiSurface {
           const messageId = message[1] ? decodeSegment(message[1]) : null
           if (message[1] && messageId === null) return json(400, { error: 'path contains malformed percent-encoding' })
           if (method === 'DELETE') {
-            if (rt.activeTurnMessageId() === messageId) return json(409, { error: 'message is already running' })
-            return json(409, { error: 'message deletion is not supported by the pi harness' })
+            // A whole message no model call has read is retracted; a part of one is not.
+            if (messageId && !message[2]) {
+              const outcome = rt.retract(messageId)
+              if (outcome === 'retracted') return json(200, true)
+              if (outcome === null) return json(404, { error: 'unknown message' })
+            }
+            if (messageId && !rt.transcript.messageById(messageId)) return json(404, { error: 'unknown message' })
+            return json(409, { code: MESSAGE_READ_CODE, error: 'a model call read this message' })
           }
           if (method === 'PATCH') return json(501, { code: 'feature_not_supported', error: 'part edits are not supported by the pi harness' })
         }

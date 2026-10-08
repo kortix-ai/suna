@@ -13,7 +13,7 @@ Every row in the [audit log](/docs/accounts#audit-log) carries an `action`: `dom
 - A route with two actions (`secret.strategy.update` or `secret.strategy.changed`) records the second when its handler records that event, for example only for a real change. That event, with its before and after state, is then the request's row.
 - Rows written before 2026-09-24 carry `METHOD /template` as their action. The web app and the CLI show them with the same titles.
 
-This page lists 705 route actions and 64 other events.
+This page lists 724 route actions and 65 other events.
 
 ## `account.`
 
@@ -62,6 +62,7 @@ This page lists 705 route actions and 64 other events.
 | `admin.impersonate.start` | Started account impersonation | `POST /v1/admin/api/impersonate` |
 | `admin.impersonate.stop` | Stopped account impersonation | `DELETE /v1/admin/api/impersonate/:grantId` |
 | `admin.ops.overview.read` | Viewed platform operations overview | `GET /v1/ops/overview` |
+| `admin.project.feature.set` | Set project feature flag as admin | `PUT /v1/admin/api/projects/:id/features` |
 | `admin.project.list` | Listed all platform projects | `GET /v1/admin/api/projects` |
 | `admin.sandbox.list` | Listed all platform sandboxes | `GET /v1/admin/api/sandboxes` |
 | `admin.sandbox.migrate` | Migrated sandbox to another provider | `POST /v1/admin/api/sandboxes/:sessionId/migrate` |
@@ -148,6 +149,29 @@ This page lists 705 route actions and 64 other events.
 | `auth.sso_sign_in.start` | Started an SSO sign-in | `POST /v1/auth/sign-in/sso` |
 | `auth.user.create` | Signed up | `POST /v1/auth/signup` |
 | `auth.user.read` | Viewed the signed-in user | `GET /v1/auth/user` |
+
+## `backend.`
+
+| Action | Title | Route |
+| --- | --- | --- |
+| `backend.backups.view` | List backend backups | `GET /v1/projects/:projectId/backends/:backendId/backups` |
+| `backend.create` | Created backend | `POST /v1/projects/:projectId/backends` |
+| `backend.credentials.rotate` | Rotated backend admin key | `POST /v1/projects/:projectId/backends/:backendId/rotate-admin-key` |
+| `backend.credentials.view` or `backend.credentials.read` | Read backend admin credentials | `GET /v1/projects/:projectId/backends/:backendId/credentials` |
+| `backend.dashboard.access` | Opened backend dashboard | before the API router |
+| `backend.delete` | Deleted backend | `DELETE /v1/projects/:projectId/backends/:backendId` |
+| `backend.host.access` | Called backend Convex host | before the API router |
+| `backend.host.websocket.connect` | Opened backend Convex WebSocket | before the API router |
+| `backend.issuer.keys.read` | Read backend signing keys | `GET /v1/backends/:backendId/jwks.json` |
+| `backend.issuer.metadata.read` | Read backend issuer metadata | `GET /v1/backends/:backendId/.well-known/openid-configuration` |
+| `backend.list` | Listed backends | `GET /v1/projects/:projectId/backends` |
+| `backend.logs.read` | Read backend logs | `GET /v1/projects/:projectId/backends/:backendId/logs` |
+| `backend.read` | Viewed backend | `GET /v1/projects/:projectId/backends/:backendId` |
+| `backend.resize` | Resize a backend | `PATCH /v1/projects/:projectId/backends/:backendId` |
+| `backend.snapshot.create` | Take a backend snapshot | `POST /v1/projects/:projectId/backends/:backendId/snapshots` |
+| `backend.snapshot.delete` | Delete a backend snapshot | `DELETE /v1/projects/:projectId/backends/:backendId/snapshots/:snapshotId` |
+| `backend.snapshot.restore` | Restore a backend snapshot | `POST /v1/projects/:projectId/backends/:backendId/restore` |
+| `backend.token.mint` | Mint a backend sign-in token | `POST /v1/projects/:projectId/backends/:backendId/token` |
 
 ## `billing.`
 
@@ -931,6 +955,7 @@ Sandboxes, background jobs, database triggers, and handlers record these for som
 | `auth.login.fail` | Failed to sign in |
 | `auth.login.success` | Signed in |
 | `auth.session.first_sight` | Started authenticated session |
+| `backend.credentials.read` | Read backend admin credentials |
 | `billing.trial.converted` | Converted trial to paid plan |
 | `connector.*` | Ran connector call |
 | `connector.approval.approved` | Approved connector action |

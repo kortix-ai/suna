@@ -952,8 +952,10 @@ const APP_TYPES = new Set(['static', 'bundle', 'dockerfile', 'oci_image']);
 const APP_KEYS = new Set([
   'path', 'type', 'image', 'dockerfile', 'command', 'port', 'root', 'output_dir',
   'install_command', 'build_command', 'spa', 'readiness_path', 'idle_timeout_seconds',
-  'always_on', 'monthly_budget_usd', 'resources', 'env', 'secrets',
+  'always_on', 'monthly_budget_usd', 'backends', 'resources', 'env', 'secrets',
 ]);
+/** A Kortix Backend name, as `kortix backends create` accepts it. */
+const BACKEND_NAME = /^[a-z][a-z0-9-]{0,62}$/;
 
 function validateAppStringMap(
   node: unknown,
@@ -1054,6 +1056,21 @@ function validateAppsV2(node: unknown, path: string, issues: ManifestIssue[]): v
     if (value.monthly_budget_usd !== undefined &&
         (typeof value.monthly_budget_usd !== 'number' || value.monthly_budget_usd < 0)) {
       issues.push({ path: `${where}.monthly_budget_usd`, message: 'must be a non-negative number.', severity: 'error' });
+    }
+    if (value.backends !== undefined) {
+      if (!Array.isArray(value.backends)) {
+        issues.push({ path: `${where}.backends`, message: 'must be a list of backend names.', severity: 'error' });
+      } else {
+        value.backends.forEach((name: unknown, index: number) => {
+          if (typeof name !== 'string' || !BACKEND_NAME.test(name)) {
+            issues.push({
+              path: `${where}.backends[${index}]`,
+              message: 'must be a backend name: lowercase letters, digits and dashes, starting with a letter.',
+              severity: 'error',
+            });
+          }
+        });
+      }
     }
     if (value.resources !== undefined) {
       if (!isTable(value.resources)) {
@@ -1203,7 +1220,8 @@ function validateMonitorTrigger(
  * `type: event` — the fourth trigger type: "when <app event> happens on
  * <connected app>, run the agent". `connector` names a declared connector,
  * `event` is the provider's event type id, `config` is the provider event
- * config (validated by the provider at subscribe time, not here). Wiring for
+ * config (validated by the provider at subscribe time, not here). `account`
+ * optionally names one shared account of that connector by label. Wiring for
  * the other three types is hard-rejected — a manifest must not claim a
  * schedule the event source never reads.
  *
@@ -1229,6 +1247,13 @@ function validateEventTrigger(
     issues.push({
       path: `${where}.config`,
       message: 'config must be an object.',
+      severity: 'error',
+    });
+  }
+  if (entry.account !== undefined && (typeof entry.account !== 'string' || !entry.account.trim())) {
+    issues.push({
+      path: `${where}.account`,
+      message: 'account must be the label of a shared account on the connector.',
       severity: 'error',
     });
   }
@@ -1399,7 +1424,7 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], 
       validateEventTrigger(entry, where, issues);
     }
     if (type && type !== 'event' && (TRIGGER_TYPES as readonly string[]).includes(type)) {
-      for (const key of ['connector', 'event', 'config']) {
+      for (const key of ['connector', 'account', 'event', 'config']) {
         if (entry[key] !== undefined) {
           issues.push({
             path: `${where}.${key}`,

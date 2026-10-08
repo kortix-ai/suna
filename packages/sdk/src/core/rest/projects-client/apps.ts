@@ -87,6 +87,14 @@ export interface App {
    * Treat `undefined` as "unknown", not as "denied".
    */
   viewer_can_access?: boolean;
+  /**
+   * The Kortix Backends, by name, this App may mint a viewer token for at
+   * `/_kortix/backend-token` (what `kortixAppBackendToken(name)` calls). An
+   * App that lists none gets `403 backend_not_listed` for every backend.
+   *
+   * Optional for wire compatibility with a server that predates the field.
+   */
+  backends?: string[];
   created_at: string;
   updated_at: string;
 }
@@ -101,6 +109,8 @@ export interface CreateAppInput {
   /** Run 24/7. Defaults to the server's setting (Kortix Cloud: `true`). */
   always_on?: boolean;
   monthly_budget_usd?: number;
+  /** Backend names the App may mint viewer tokens for. Default: none. */
+  backends?: string[];
 }
 
 export interface UpdateAppInput {
@@ -111,6 +121,8 @@ export interface UpdateAppInput {
   idle_timeout_seconds?: number;
   always_on?: boolean;
   monthly_budget_usd?: number;
+  /** Replaces the App's backend list. `[]` removes every backend's access. */
+  backends?: string[];
 }
 
 /**

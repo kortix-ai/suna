@@ -18,6 +18,7 @@ import {
 } from '../../channels/turn-relay';
 import { notifySessionEvent, turnEndPushType } from '../../notifications/session-push';
 import { db } from '../../shared/db';
+import { refreshRuntimeProjection } from '../lib/session-runtime-projection-refresh';
 import { captureSessionTranscriptMirror } from '../lib/session-transcript-capture';
 import { recordTriggerRunEnd } from '../lib/trigger-run-outcome';
 import { childIdleGraceMs } from '../sandbox-deadline';
@@ -465,8 +466,29 @@ export async function settleTurnEnd(
   ctx: TurnEndContext,
 ): Promise<Response> {
   const settled = await settleTurnLedger(ctx.sessionId, body, ctx.childSession);
+  // Started beside the promotion, awaited before the acknowledgement.
+  const sessionList = refreshSessionListAtTurnEnd(ctx);
   const promotedPromptId = await promoteAfterTurnEnd(ctx, body, settled);
-  return publishTurnEnd(c, ctx, body, settled, promotedPromptId);
+  const response = await publishTurnEnd(c, ctx, body, settled, promotedPromptId);
+  await sessionList;
+  return response;
+}
+
+/**
+ * THE TURN ENDED, SO ITS SUBAGENT CHILDREN EXIST — store the box's state
+ * document, which writes the session's list of runtime conversations
+ * (`writeRuntimeSessionList`). Awaited before the turn end is acknowledged:
+ * the daemon re-sends an unacknowledged turn end, so an API that stops
+ * mid-write (a deploy) gets the turn end again and writes the list then
+ * (R7.4). Never throws.
+ */
+async function refreshSessionListAtTurnEnd(ctx: TurnEndContext): Promise<void> {
+  const userId = ctx.turnStreamSession.createdBy;
+  if (!userId) return;
+  await refreshRuntimeProjection(
+    { sessionId: ctx.sessionId, projectId: ctx.projectId, accountId: ctx.turnStreamSession.accountId, userId },
+    { force: true },
+  );
 }
 
 // `runtime_session` carries the canonical runtime ROOT id the sandbox just
