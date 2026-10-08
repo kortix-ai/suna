@@ -7164,7 +7164,11 @@
       "line58JsxAttrTitleYouRanOutOfCredits": "你的额度已用完",
       "line74JsxTextEnableAutoTopUp": "启用自动充值",
       "line82JsxTextBuyCredits": "购买额度",
-      "askOwnerToAddCredits": "只有账户所有者可以添加额度。请联系所有者充值。"
+      "askOwnerToAddCredits": "只有账户所有者可以添加额度。请联系所有者充值。",
+      "askOwnerForCredits": "联系所有者",
+      "ownersNotified": "已通知所有者",
+      "alreadyAskedToday": "今天已经请求过",
+      "askOwnerFailed": "无法通知所有者，请重试"
     },
     "componentsSessionSessionFilesPanel": {
       "line80JsxTextThisSessionIsItsOwnVersion": "此会话是独立版本",

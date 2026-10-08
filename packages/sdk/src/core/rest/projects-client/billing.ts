@@ -795,6 +795,24 @@ export async function getAutoTopupSettings(accountId?: string): Promise<AutoTopu
   );
 }
 
+export interface TopUpRequestResult {
+  /** How many owners were emailed. */
+  notified: number;
+}
+
+/**
+ * Ask the account owners to add credits: for a member blocked by an empty
+ * wallet, who cannot buy credits. Once per member and account in 24 hours.
+ * Throws `ApiError` 429 `already_requested` inside that window, and 409
+ * `can_manage_billing` for a caller who can add credits.
+ */
+export async function requestTopUp(accountId: string): Promise<TopUpRequestResult> {
+  return unwrap(
+    await backendApi.post<TopUpRequestResult>(`/accounts/${encodeURIComponent(accountId)}/top-up-requests`, {}),
+    'Failed to ask the owners for credits',
+  );
+}
+
 export interface ConfigureAutoTopupInput {
   accountId?: string;
   enabled: boolean;
