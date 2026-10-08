@@ -1,0 +1,17 @@
+{
+  "source_hash": "7b2bccd9bd78764f7e247cf009435ca0c2356c627955c20d80c8c407746a7a4e",
+  "diff_files": [
+    "apps/cli/src/__tests__/triggers.test.ts",
+    "apps/cli/src/commands/triggers-events.ts",
+    "tests/src/flows/triggers.flow.ts"
+  ],
+  "diff_hash": "0ec415bce07ed7ec9f6b2027b7b1759085fbfa5831a539c18c0ad1601b407f6d",
+  "head": "85bfbb61c24bb4ee507cc58c4e46720a58da3806",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-08T19:32:21.680Z"
+}
