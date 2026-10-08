@@ -20,6 +20,36 @@ describe('isDefinitiveSessionRejection: only the auth server saying NO signs a s
     );
   });
 
+  test('401 no_authorization is NOT definitive — the JWT never reached the server (KRTX-1693)', () => {
+    // dev, 2026-10-07: a probe harness stored the dev-gate Basic credentials as
+    // browser httpCredentials; GoTrue/Kong's 401s carry a Basic challenge, so
+    // Chromium answered EVERY Supabase request with `Authorization: Basic
+    // <dev-gate>` and REPLACED the Bearer. GoTrue replied 401 no_authorization
+    // ("This endpoint requires a valid Bearer token") — a verdict on the
+    // MISSING header, not on the session — and the provider signed out a
+    // perfectly valid session, wiping the cookie: "dev sign-in doesn't
+    // persist". `getUser()` only runs after `getSession()` returned a session,
+    // so auth-js DID send the bearer; a no_authorization verdict means the
+    // header vanished in transit (harness, privacy extension, stripping
+    // proxy), never that the JWT was rejected.
+    expect(
+      isDefinitiveSessionRejection(
+        new AuthApiError(
+          'This endpoint requires a valid Bearer token',
+          401,
+          'no_authorization',
+        ),
+      ),
+    ).toBe(false);
+    // The same message with the code stripped (older SDK/server mixes read the
+    // message when the body's code is absent) must also be kept.
+    expect(
+      isDefinitiveSessionRejection(
+        new AuthApiError('This endpoint requires a valid Bearer token', 401, undefined),
+      ),
+    ).toBe(false);
+  });
+
   test('403 session_not_found is definitive (the row behind the JWT was deleted)', () => {
     expect(
       isDefinitiveSessionRejection(new AuthApiError('Session not found', 403, 'session_not_found')),

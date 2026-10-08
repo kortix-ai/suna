@@ -39,7 +39,6 @@ import {
 } from './template-runtime-fingerprint';
 export {
   currentRuntimeArtifactFingerprint,
-  currentNonAgentRuntimeFingerprint,
   RUNTIME_ARTIFACTS,
 } from './template-runtime-fingerprint';
 import { getSandboxProvider } from './providers';

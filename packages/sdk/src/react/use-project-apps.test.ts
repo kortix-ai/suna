@@ -11,7 +11,7 @@ mock.module('@tanstack/react-query', () => ({
   }),
 }));
 
-const { appDeploymentsKey, projectAppsKey, useAppAccess, useAppDeployments, useProjectApps } =
+const { appDeploymentKey, appDeploymentsKey, projectAppsKey, useAppAccess, useAppDeployment, useAppDeployments, useProjectApps } =
   await import('./use-project-apps');
 
 beforeEach(() => {
@@ -26,6 +26,18 @@ describe('Kortix Apps React Query bindings', () => {
       appDeploymentsKey('project-1', 'app-1'),
     );
     expect((useAppDeployments('project-1', null) as any).enabled).toBe(false);
+  });
+
+  test('one deployment with its events: keyed under the history, off until all three ids exist', () => {
+    const detail = useAppDeployment('project-1', 'app-1', 'deployment-1') as any;
+    expect(detail.queryKey).toEqual(appDeploymentKey('project-1', 'app-1', 'deployment-1'));
+    const history = appDeploymentsKey('project-1', 'app-1');
+    expect(detail.queryKey.slice(0, history.length)).toEqual([...history]);
+    expect(detail.enabled).toBe(true);
+    expect((useAppDeployment('project-1', 'app-1', null) as any).enabled).toBe(false);
+    // A deployment in progress is polled; a finished one is not.
+    expect(detail.refetchInterval({ state: { data: { deployment: { status: 'building' } } } })).toBe(2_000);
+    expect(detail.refetchInterval({ state: { data: { deployment: { status: 'failed' } } } })).toBe(false);
   });
 
   test('App mutations invalidate the App list and deployment history', () => {

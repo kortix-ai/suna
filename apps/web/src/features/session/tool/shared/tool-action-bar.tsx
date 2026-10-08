@@ -23,6 +23,7 @@ export function ToolActionBar({
   onSecondary,
   secondaryDisabled,
   secondaryDisabledClassName,
+  secondaryIconClassName,
   refreshButtonClassName,
   secondaryButtonClassName,
   primary,
@@ -37,6 +38,10 @@ export function ToolActionBar({
   onSecondary: () => void;
   secondaryDisabled?: boolean;
   secondaryDisabledClassName?: string;
+  /** The secondary icon's size class. Sized per caller; never derived from
+   *  a styling className prop, which callers pass only when they have styles
+   *  to add. */
+  secondaryIconClassName?: string;
   refreshButtonClassName?: string;
   secondaryButtonClassName?: string;
   primary: ReactNode;
@@ -75,7 +80,7 @@ export function ToolActionBar({
               size="icon-sm"
               type="button"
               onClick={onRefresh}
-              aria-label={refreshButtonClassName ? refreshLabel : undefined}
+              aria-label={refreshLabel}
               className={refreshButtonClassName}
             >
               <ArrowClockwiseIcon className={cn('size-4', loading && 'animate-spinner-spin')} />
@@ -88,13 +93,13 @@ export function ToolActionBar({
               type="button"
               onClick={onSecondary}
               disabled={secondaryDisabled}
-              aria-label={secondaryButtonClassName ? secondaryLabel : undefined}
+              aria-label={secondaryLabel}
               className={cn(
                 secondaryButtonClassName,
                 secondaryDisabled && secondaryDisabledClassName,
               )}
             >
-              <SecondaryIcon className={secondaryButtonClassName ? 'size-4' : 'size-4.5'} />
+              <SecondaryIcon className={secondaryIconClassName} />
             </Button>
           </Hint>
         </>

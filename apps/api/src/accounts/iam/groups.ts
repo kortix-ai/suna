@@ -2,7 +2,7 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
-import { and, asc, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { projects } from '@kortix/db';
 import { groupProjectGrants } from '../../iam/read-models';
 import { db } from '../../shared/db';
@@ -80,7 +80,6 @@ export function registerIamGroupsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const userId = c.get('userId') as string;
       const accountId = c.req.param('accountId');
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.GROUP_READ);
 
@@ -181,7 +180,6 @@ export function registerIamGroupsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const userId = c.get('userId') as string;
       const accountId = c.req.param('accountId');
       const groupId = c.req.param('groupId');
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.GROUP_READ);
@@ -224,7 +222,6 @@ export function registerIamGroupsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const userId = c.get('userId') as string;
       const accountId = c.req.param('accountId');
       const groupId = c.req.param('groupId');
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.GROUP_UPDATE);
@@ -288,7 +285,6 @@ export function registerIamGroupsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const userId = c.get('userId') as string;
       const accountId = c.req.param('accountId');
       const groupId = c.req.param('groupId');
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.GROUP_DELETE);
@@ -339,7 +335,6 @@ export function registerIamGroupsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const userId = c.get('userId') as string;
       const accountId = c.req.param('accountId');
       const groupId = c.req.param('groupId');
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.GROUP_READ);
@@ -437,7 +432,6 @@ export function registerIamGroupsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const callerId = c.get('userId') as string;
       const accountId = c.req.param('accountId');
       const groupId = c.req.param('groupId');
       const targetUserId = c.req.param('userId');
@@ -492,7 +486,6 @@ export function registerIamGroupsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const userId = c.get('userId') as string;
       const accountId = c.req.param('accountId');
       const groupId = c.req.param('groupId');
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.GROUP_READ);

@@ -94,7 +94,7 @@ mock.module('../service-key', () => ({ serviceKeyForExternalId: () => 'svc_key' 
 mock.module('../sandbox-frontend-url', () => ({ sandboxFrontendBaseUrl: () => 'https://app.example.com' }));
 
 const { PlatinumProvider } = await import('./platinum');
-const { restorePlatinumCreateAttempt } = await import('../services/session-sandbox');
+await import('../services/session-sandbox');
 
 const SANDBOX_ID = '11111111-2222-4333-8444-555555555555';
 

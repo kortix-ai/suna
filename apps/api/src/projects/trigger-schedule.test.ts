@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  advanceTriggerScheduleSlot,
   initialTriggerScheduleSlot,
+  nextTriggerScheduleSlot,
   triggerScheduleRevision,
   validateTriggerCron,
   validateTriggerTimezone,
@@ -94,9 +94,8 @@ describe('materialized next_fire_at', () => {
     expect(
       initialTriggerScheduleSlot(oneOff, new Date('2026-07-27T16:00:00.000Z'))?.toISOString(),
     ).toBe('2026-07-27T15:00:00.000Z');
-    expect(advanceTriggerScheduleSlot(oneOff, new Date('2026-07-27T15:00:00.000Z'))).toBeNull();
     expect(
-      advanceTriggerScheduleSlot(schedule(), new Date('2026-07-27T15:00:00.000Z'))?.toISOString(),
+      nextTriggerScheduleSlot(schedule(), new Date('2026-07-27T15:00:00.000Z'))?.toISOString(),
     ).toBe('2026-07-28T15:00:00.000Z');
   });
 });
@@ -136,7 +135,7 @@ describe('type = "monitor" never schedules', () => {
 
   test('claims no initial or next slot', () => {
     expect(initialTriggerScheduleSlot(monitor(), new Date('2026-07-27T14:00:00.000Z'))).toBeNull();
-    expect(advanceTriggerScheduleSlot(monitor(), new Date('2026-07-27T14:00:00.000Z'))).toBeNull();
+    expect(nextTriggerScheduleSlot(monitor(), new Date('2026-07-27T14:00:00.000Z'))).toBeNull();
   });
 
   test('its revision tracks the monitor fields', () => {
@@ -191,14 +190,14 @@ describe('a stored cron that fires more than once a minute', () => {
 
   test('advances at least 60 seconds past the previous slot', () => {
     for (const cron of ['*/5 * * * * *', '*/30 * * * * *', '0,30 * * * * *']) {
-      expect(advanceTriggerScheduleSlot(schedule({ cron, timezone: 'UTC' }), at)?.toISOString()).toBe(
+      expect(nextTriggerScheduleSlot(schedule({ cron, timezone: 'UTC' }), at)?.toISOString()).toBe(
         '2026-07-27T10:01:00.000Z',
       );
     }
   });
 
   test('keeps its floor with jitter', () => {
-    const next = advanceTriggerScheduleSlot(schedule({ cron: '*/5 * * * * *', timezone: 'UTC' }), at, {
+    const next = nextTriggerScheduleSlot(schedule({ cron: '*/5 * * * * *', timezone: 'UTC' }), at, {
       jitterKey: 'trigger-a',
       jitterWindowMs: 60_000,
     });
@@ -206,11 +205,11 @@ describe('a stored cron that fires more than once a minute', () => {
   });
 
   test('a once-a-minute cron is unchanged', () => {
-    expect(advanceTriggerScheduleSlot(schedule({ cron: '0 * * * * *', timezone: 'UTC' }), at)?.toISOString()).toBe(
+    expect(nextTriggerScheduleSlot(schedule({ cron: '0 * * * * *', timezone: 'UTC' }), at)?.toISOString()).toBe(
       '2026-07-27T10:01:00.000Z',
     );
     expect(
-      advanceTriggerScheduleSlot(schedule({ cron: '0 */30 * * * *', timezone: 'UTC' }), at)?.toISOString(),
+      nextTriggerScheduleSlot(schedule({ cron: '0 */30 * * * *', timezone: 'UTC' }), at)?.toISOString(),
     ).toBe('2026-07-27T10:30:00.000Z');
   });
 });

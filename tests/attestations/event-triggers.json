@@ -1,5 +1,5 @@
 {
-  "source_hash": "aae930aebe886cceb1a918645e7256ed615352afc507f5ab60bcee36b2c5e0c0",
+  "source_hash": "04145dcef34cb1941e81e412cae37f56181fcac32a915da5c6de4e43b8cb64b6",
   "diff_files": [
     "apps/api/.env",
     "apps/api/.env.dev",
@@ -91,9 +91,9 @@
     "apps/web/translations/zh.json",
     "packages/api-contract/src/__tests__/schemas.test.ts",
     "packages/api-contract/src/index.ts",
-    "packages/db/drizzle/meta/20261007130409_snapshot.json",
+    "packages/db/drizzle/meta/20261008003736_snapshot.json",
     "packages/db/drizzle/meta/_journal.json",
-    "packages/db/migrations/20261007130409266_trigger_event_subscriptions.sql",
+    "packages/db/migrations/20261008003736000_trigger_event_subscriptions.sql",
     "packages/db/src/index.ts",
     "packages/db/src/schema/kortix.ts",
     "packages/manifest-schema/src/__tests__/json-schema.conformance.test.ts",
@@ -121,13 +121,13 @@
     "tests/spec/routes.generated.json",
     "tests/src/flows/triggers.flow.ts"
   ],
-  "diff_hash": "8da55c72e09cf1b9465df0c1055a21cea9f48615768b148f6519fa588477ad3b",
-  "head": "4409092236dc3c1f6443b37bc743eeabd16c81ce",
-  "passed": true,
+  "diff_hash": "15075ce8679755d9007243803105c65e58a58abc568d012de5565fdc3f176c51",
+  "head": "dc33d4b798774f8a04adfe5f0485014b2bed7973",
+  "passed": false,
   "lanes": {
-    "core": "pass",
-    "packages": "pass",
-    "db-suites": "pass"
+    "core": "fail",
+    "packages": "fail",
+    "db-suites": "fail"
   },
-  "at": "2026-10-08T00:36:42.313Z"
+  "at": "2026-10-08T00:39:45.738Z"
 }

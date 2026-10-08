@@ -383,7 +383,6 @@ const {
   reconcileOrphanComputeSessions,
   reapOrphanProviderBoxes,
   reconcileStuckActiveSessions,
-  REAP_BATCH_SIZE,
   observeSandboxTurn,
 } = sandboxReaper;
 
@@ -1167,7 +1166,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     statusByExternal['ext-1'] = 'running';
     turnObservationByToken['delivering-token'] = 'terminal';
 
-    const r = await reapAndReconcileSandboxes(NOW);
+    await reapAndReconcileSandboxes(NOW);
 
     // Not settled by the new ceiling; the existing delivering-state path (its
     // own grace already long expired at 31 min) reconciles it instead.

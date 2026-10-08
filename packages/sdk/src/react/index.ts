@@ -154,9 +154,11 @@ export { useGatewayRoutingPolicy, gatewayRoutingPolicyKey } from './use-gateway-
 export {
   useProjectApps,
   useAppDeployments,
+  useAppDeployment,
   useAppAccess,
   projectAppsKey,
   appDeploymentsKey,
+  appDeploymentKey,
 } from './use-project-apps';
 
 // The expected "no compaction model configured" configuration state thrown by

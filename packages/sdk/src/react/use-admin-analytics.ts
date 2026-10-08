@@ -7,12 +7,14 @@
 import { useRetiredMutation, useRetiredQuery } from './retired-endpoint';
 
 // Analytics source type
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export type AnalyticsSource = 'vercel' | 'ga';
 
 // ============================================================================
 // TYPES
 // ============================================================================
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface AnalyticsSummary {
   total_users: number;
   total_threads: number;
@@ -23,6 +25,7 @@ export interface AnalyticsSummary {
   avg_threads_per_user: number;
 }
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface ThreadAnalytics {
   thread_id: string;
   project_id?: string | null;
@@ -39,6 +42,7 @@ export interface ThreadAnalytics {
   is_public: boolean;
 }
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface RetentionData {
   user_id: string;
   email?: string | null;
@@ -49,6 +53,7 @@ export interface RetentionData {
   is_recurring: boolean;
 }
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface MessageDistribution {
   distribution: {
     '0_messages': number;
@@ -59,18 +64,21 @@ export interface MessageDistribution {
   total_threads: number;
 }
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface CategoryDistribution {
   distribution: Record<string, number>;
   total_projects: number;
   date: string;
 }
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface TierDistribution {
   distribution: Record<string, number>;
   total_threads: number;
   date: string;
 }
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface VisitorStats {
   total_visitors: number;
   unique_visitors: number;
@@ -78,6 +86,7 @@ export interface VisitorStats {
   date: string;
 }
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface ConversionFunnel {
   visitors: number;
   signups: number;
@@ -91,6 +100,7 @@ export interface ConversionFunnel {
   date: string;
 }
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface TranslationResponse {
   original: string;
   translated: string;
@@ -115,6 +125,7 @@ interface PaginatedResponse<T> {
 // QUERY PARAMS
 // ============================================================================
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface ThreadBrowseParams {
   page?: number;
   page_size?: number;
@@ -129,6 +140,7 @@ export interface ThreadBrowseParams {
   sort_order?: 'asc' | 'desc';
 }
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface RetentionParams {
   page?: number;
   page_size?: number;
@@ -140,47 +152,47 @@ export interface RetentionParams {
 // HOOKS
 // ============================================================================
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useAnalyticsSummary() {
   return useRetiredQuery<AnalyticsSummary>('useAnalyticsSummary', ['admin', 'analytics', 'summary']);
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useThreadBrowser(params: ThreadBrowseParams = {}) {
   return useRetiredQuery<PaginatedResponse<ThreadAnalytics>>('useThreadBrowser', ['admin', 'analytics', 'threads', params]);
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useMessageDistribution(dateFrom?: string, dateTo?: string, enabled: boolean = true) {
   return useRetiredQuery<MessageDistribution>('useMessageDistribution', ['admin', 'analytics', 'message-distribution', dateFrom, dateTo], enabled);
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useCategoryDistribution(dateFrom?: string, dateTo?: string, tier?: string | null, enabled: boolean = true) {
   return useRetiredQuery<CategoryDistribution>('useCategoryDistribution', ['admin', 'analytics', 'category-distribution', dateFrom, dateTo, tier], enabled);
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useTierDistribution(dateFrom?: string, dateTo?: string, enabled: boolean = true) {
   return useRetiredQuery<TierDistribution>('useTierDistribution', ['admin', 'analytics', 'tier-distribution', dateFrom, dateTo], enabled);
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useVisitorStats(date?: string, source: AnalyticsSource = 'vercel') {
   return useRetiredQuery<VisitorStats>('useVisitorStats', ['admin', 'analytics', 'visitors', date, source]);
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useConversionFunnel(dateFrom?: string, dateTo?: string, source: AnalyticsSource = 'vercel') {
   return useRetiredQuery<ConversionFunnel>('useConversionFunnel', ['admin', 'analytics', 'conversion-funnel', dateFrom, dateTo, source]);
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useRetentionData(params: RetentionParams = {}) {
   return useRetiredQuery<PaginatedResponse<RetentionData>>('useRetentionData', ['admin', 'analytics', 'retention', params]);
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useTranslate() {
   return useRetiredMutation<TranslationResponse, { text: string; targetLanguage?: string }>('useTranslate');
 }
@@ -192,6 +204,7 @@ export function useTranslate() {
 
 // Tracks which fields have been manually overridden by admin
 // When a field is true, its value should NOT be overwritten by Stripe/API data
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface FieldOverrides {
   views?: boolean;
   signups?: boolean;
@@ -202,8 +215,10 @@ export interface FieldOverrides {
   arr?: boolean;
 }
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export type Platform = 'web' | 'app';
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface WeeklyActualData {
   week_number: number;
   week_start_date: string;
@@ -218,32 +233,35 @@ export interface WeeklyActualData {
   overrides?: FieldOverrides;  // Tracks which fields are locked/manually overridden
 }
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface WeeklyActualsResponse {
   // Key is "{week_number}_{platform}" e.g. "1_web", "1_app"
   actuals: Record<string, WeeklyActualData>;
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useARRWeeklyActuals() {
   return useRetiredQuery<WeeklyActualsResponse>('useARRWeeklyActuals', ['admin', 'analytics', 'arr-actuals']);
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useUpdateARRWeeklyActual() {
   return useRetiredMutation<WeeklyActualData, WeeklyActualData>('useUpdateARRWeeklyActual');
 }
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface DeleteWeeklyActualParams {
   weekNumber: number;
   platform: Platform;
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useDeleteARRWeeklyActual() {
   return useRetiredMutation<{ message: string }, DeleteWeeklyActualParams>('useDeleteARRWeeklyActual');
 }
 
 // Toggle override for a specific field in a week
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface ToggleOverrideParams {
   weekNumber: number;
   platform: Platform;
@@ -251,7 +269,7 @@ export interface ToggleOverrideParams {
   override: boolean;
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useToggleFieldOverride() {
   return useRetiredMutation<{ message: string }, ToggleOverrideParams>('useToggleFieldOverride');
 }
@@ -260,6 +278,7 @@ export function useToggleFieldOverride() {
 // ARR SIMULATOR CONFIG
 // ============================================================================
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface SimulatorConfigData {
   starting_subs: number;
   starting_mrr: number;
@@ -272,12 +291,12 @@ export interface SimulatorConfigData {
   target_arr: number;
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useARRSimulatorConfig() {
   return useRetiredQuery<SimulatorConfigData>('useARRSimulatorConfig', ['admin', 'analytics', 'arr-config']);
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useUpdateARRSimulatorConfig() {
   return useRetiredMutation<SimulatorConfigData, SimulatorConfigData>('useUpdateARRSimulatorConfig');
 }
@@ -286,6 +305,7 @@ export function useUpdateARRSimulatorConfig() {
 // ARR SIGNUPS BY DATE (fetched from database, grouped by frontend)
 // ============================================================================
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface SignupsByDateResponse {
   date_from: string;
   date_to: string;
@@ -293,7 +313,7 @@ export interface SignupsByDateResponse {
   total: number;
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useSignupsByDate(dateFrom: string, dateTo: string) {
   return useRetiredQuery<SignupsByDateResponse>('useSignupsByDate', ['admin', 'analytics', 'signups-by-date', dateFrom, dateTo], !!dateFrom && !!dateTo);
 }
@@ -302,6 +322,7 @@ export function useSignupsByDate(dateFrom: string, dateTo: string) {
 // ARR VIEWS BY DATE (fetched from Google Analytics, grouped by frontend)
 // ============================================================================
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface ViewsByDateResponse {
   date_from: string;
   date_to: string;
@@ -309,7 +330,7 @@ export interface ViewsByDateResponse {
   total: number;
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useViewsByDate(dateFrom: string, dateTo: string, source: AnalyticsSource = 'vercel') {
   return useRetiredQuery<ViewsByDateResponse>('useViewsByDate', ['admin', 'analytics', 'views-by-date', dateFrom, dateTo, source], !!dateFrom && !!dateTo);
 }
@@ -318,6 +339,7 @@ export function useViewsByDate(dateFrom: string, dateTo: string, source: Analyti
 // ARR NEW PAID SUBSCRIPTIONS BY DATE (fetched from Stripe, excludes free tier)
 // ============================================================================
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface NewPaidByDateResponse {
   date_from: string;
   date_to: string;
@@ -325,7 +347,7 @@ export interface NewPaidByDateResponse {
   total: number;
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useNewPaidByDate(dateFrom: string, dateTo: string) {
   return useRetiredQuery<NewPaidByDateResponse>('useNewPaidByDate', ['admin', 'analytics', 'new-paid-by-date', dateFrom, dateTo], !!dateFrom && !!dateTo);
 }
@@ -334,6 +356,7 @@ export function useNewPaidByDate(dateFrom: string, dateTo: string) {
 // ARR CHURN BY DATE (fetched from Stripe Events, grouped by frontend)
 // ============================================================================
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface ChurnByDateResponse {
   date_from: string;
   date_to: string;
@@ -341,7 +364,7 @@ export interface ChurnByDateResponse {
   total: number;
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useChurnByDate(dateFrom: string, dateTo: string) {
   return useRetiredQuery<ChurnByDateResponse>('useChurnByDate', ['admin', 'analytics', 'churn-by-date', dateFrom, dateTo], !!dateFrom && !!dateTo);
 }
@@ -351,6 +374,7 @@ export function useChurnByDate(dateFrom: string, dateTo: string) {
 // ARR MONTHLY ACTUALS (Direct monthly editing with override support)
 // ============================================================================
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface MonthlyActualData {
   month_index: number;  // 0=Dec 2024, 1=Jan 2025, etc.
   month_name: string;   // 'Dec 2024', 'Jan 2025', etc.
@@ -365,32 +389,35 @@ export interface MonthlyActualData {
   overrides?: FieldOverrides;  // Tracks which fields are locked/manually overridden
 }
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface MonthlyActualsResponse {
   // Key is "{month_index}_{platform}" e.g. "0_web", "0_app"
   actuals: Record<string, MonthlyActualData>;
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useARRMonthlyActuals() {
   return useRetiredQuery<MonthlyActualsResponse>('useARRMonthlyActuals', ['admin', 'analytics', 'arr-monthly-actuals']);
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useUpdateARRMonthlyActual() {
   return useRetiredMutation<MonthlyActualData, MonthlyActualData>('useUpdateARRMonthlyActual');
 }
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface DeleteMonthlyActualParams {
   monthIndex: number;
   platform: Platform;
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useDeleteARRMonthlyActual() {
   return useRetiredMutation<{ message: string }, DeleteMonthlyActualParams>('useDeleteARRMonthlyActual');
 }
 
 // Toggle override for a specific field in a month
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface ToggleMonthlyOverrideParams {
   monthIndex: number;
   platform: Platform;
@@ -398,7 +425,7 @@ export interface ToggleMonthlyOverrideParams {
   override: boolean;
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useToggleMonthlyFieldOverride() {
   return useRetiredMutation<{ message: string }, ToggleMonthlyOverrideParams>('useToggleMonthlyFieldOverride');
 }
@@ -408,6 +435,7 @@ export function useToggleMonthlyFieldOverride() {
 // EXECUTIVE OVERVIEW HOOKS
 // ============================================================================
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface RevenueSummary {
   mrr: number;
   arr: number;
@@ -419,6 +447,7 @@ export interface RevenueSummary {
   churned_this_month: number;
 }
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface EngagementSummary {
   dau: number;
   wau: number;
@@ -432,6 +461,7 @@ export interface EngagementSummary {
   retention_d30: number | null;
 }
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface TaskPerformance {
   total_runs: number;
   completed_runs: number;
@@ -446,6 +476,7 @@ export interface TaskPerformance {
   runs_by_status: Record<string, number>;
 }
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface ToolUsage {
   tool_name: string;
   usage_count: number;
@@ -453,6 +484,7 @@ export interface ToolUsage {
   percentage_of_threads: number;
 }
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface ToolAdoptionSummary {
   total_tool_calls: number;
   total_threads_with_tools: number;
@@ -460,22 +492,22 @@ export interface ToolAdoptionSummary {
   tool_adoption_rate: number;
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useRevenueSummary() {
   return useRetiredQuery<RevenueSummary>('useRevenueSummary', ['admin', 'analytics', 'revenue-summary']);
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useEngagementSummary(dateFrom?: string, dateTo?: string) {
   return useRetiredQuery<EngagementSummary>('useEngagementSummary', ['admin', 'analytics', 'engagement-summary', dateFrom, dateTo]);
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useTaskPerformance(dateFrom?: string, dateTo?: string) {
   return useRetiredQuery<TaskPerformance>('useTaskPerformance', ['admin', 'analytics', 'task-performance', dateFrom, dateTo]);
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useToolAdoption(date?: string) {
   return useRetiredQuery<ToolAdoptionSummary>('useToolAdoption', ['admin', 'analytics', 'tool-adoption', date]);
 }
@@ -485,6 +517,7 @@ export function useToolAdoption(date?: string) {
 // PROFITABILITY
 // ============================================================================
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface TierProfitability {
   tier: string;
   display_name: string;
@@ -502,6 +535,7 @@ export interface TierProfitability {
   avg_profit_per_user: number;
 }
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface ProfitabilitySummary {
   // Overall metrics
   total_revenue: number;
@@ -540,7 +574,7 @@ export interface ProfitabilitySummary {
   total_payments: number;
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useProfitability(dateFrom?: string, dateTo?: string) {
   return useRetiredQuery<ProfitabilitySummary>('useProfitability', ['admin', 'analytics', 'profitability', dateFrom, dateTo]);
 }

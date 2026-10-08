@@ -22,6 +22,8 @@ import {
   mergeManifestDefaults,
   positiveInteger,
   positiveNumber,
+  alwaysOnBudgetNotice,
+  runCostLine,
   provisionDeployApp,
   resolveApp,
   scoped,
@@ -44,8 +46,12 @@ Subcommands:
     --cpu <cores>                   Default: 1.
     --memory <gb>                   Default: 2.
     --disk <gb>                     Default: 10.
-    --idle-timeout <seconds>        Default: 300.
-    --budget <usd>                  Monthly compute budget. Default: 5.
+    --idle-timeout <seconds>        Default: 300. Only for --on-demand.
+    --always-on | --on-demand       Run 24/7, or stop when idle and wake on the
+                                    next request. A static App has no runtime
+                                    and ignores both.
+    --budget <usd>                  Monthly compute budget. Default: the 24/7
+                                    estimate for an always-on App, 5 on demand.
   deploy [path]                     Deploy a directory or .tar.gz archive.
     --manifest-app <name>           Use one apps.<name> block from kortix.yaml.
     --app <id|slug>                 Existing App. Omit to create one.
@@ -66,23 +72,31 @@ Subcommands:
     --password <value>              Required for new password-protected Apps.
     --members <ids>                 Comma-separated member ids for restricted access.
     --groups <ids>                  Comma-separated group ids for restricted access.
+    --always-on | --on-demand       Server Apps: run 24/7 (default), or stop when
+                                    idle. Static Apps run no server.
+    --budget <usd>                  Monthly compute budget. A server App stops at
+                                    it. Default for a new always-on App: its 24/7
+                                    estimate (about $73/month on the default
+                                    machine). Deploy warns when it is lower.
     --no-wait                       Return after the deployment is queued.
     --wait-seconds <seconds>        Default: 1200.
   set <id|slug>                     Change an existing App. Only the flags you
                                     pass are sent. Needs project write access.
-                                    A machine or budget change applies to the
-                                    next deployment, not the running runtime.
+                                    A machine change applies to the next
+                                    deployment. A run-mode or budget change
+                                    applies within 5 minutes.
     --name <name>
     --cpu <cores>
     --memory-gb <gb>                Alias: --memory.
     --disk-gb <gb>                  Alias: --disk.
     --idle-timeout <seconds>        120-86400.
+    --always-on | --on-demand       Run 24/7, or stop when idle.
     --budget <usd>                  Monthly compute budget.
   show <id|slug>                    Show an App and its deployments. --json.
   logs <id|slug> [deployment-id]    Read runtime logs. --after N --limit N.
   start <id|slug>                   Permit requests and start the App.
   stop <id|slug>                    Suspend now. The next authorized request wakes it.
-  rollback <id|slug> <deployment>   Move traffic to a ready deployment.
+  rollback <id|slug> <id|vN>        Move traffic to a ready deployment.
   access <id|slug>                  Read or update access. --mode, --password, --members, --groups.
     --viewer off|identity|api       What the App is told about its viewer. api = a token
                                     that acts as them on the Kortix API (their role caps it).
@@ -118,16 +132,26 @@ export function resolveDeploymentTarget(
   throw new Error(`Deployment ${target} not found${known ? ` (deployments: ${known})` : ''}`);
 }
 
+/**
+ * The STATE column. A static App has no runtime: it serves while it has an
+ * active deployment, whatever `desired_state` says, so it reads `static`.
+ */
+export function appStateLabel(app: Pick<App, 'desired_state' | 'hosting_type' | 'active_deployment_id'>): string {
+  if (!app.active_deployment_id) return 'undeployed';
+  if (app.hosting_type === 'static') return 'static';
+  return app.desired_state;
+}
+
 function renderApps(apps: App[]): number {
   if (apps.length === 0) {
     process.stdout.write(`\n  ${C.dim}No Apps deployed.${C.reset}\n\n`);
     return 0;
   }
   const slugWidth = Math.max(4, ...apps.map((app) => app.slug.length));
-  process.stdout.write(`\n  ${C.bold}${pad('SLUG', slugWidth)}  STATE     URL${C.reset}\n`);
+  process.stdout.write(`\n  ${C.bold}${pad('SLUG', slugWidth)}  STATE      URL${C.reset}\n`);
   for (const app of apps) {
     process.stdout.write(
-      `  ${pad(app.slug, slugWidth)}  ${pad(app.desired_state, 9)} ${app.url}\n`,
+      `  ${pad(app.slug, slugWidth)}  ${pad(appStateLabel(app), 10)} ${app.url}\n`,
     );
   }
   process.stdout.write('\n');
@@ -221,13 +245,34 @@ async function createCommand(
       '--idle-timeout',
     ),
     monthly_budget_usd: positiveNumber(takeFlagValue(rest, ['--budget']), '--budget'),
+    ...runMode(rest),
   };
   const ctx = await context(options);
   if (!ctx) return 1;
   const app = await scoped(ctx, () => ctx.apps.create(input));
+  printWarnings(app);
   if (json) emitJson(app);
-  else process.stdout.write(`\n  ${status.ok(`created ${app.slug}`)}\n  ${app.url}\n\n`);
+  else process.stdout.write(`\n  ${status.ok(`created ${app.slug}`)}\n  ${app.url}\n${costBlock(app)}\n`);
   return 0;
+}
+
+/** The run-cost line for a server App, indented under the result; empty when none applies. */
+function costBlock(app: App): string {
+  const line = runCostLine(app);
+  return line ? `  ${C.dim}${line}${C.reset}\n` : '';
+}
+
+/** The server's warnings for a create or update, on stderr so `--json` stdout stays clean. */
+function printWarnings(app: App): void {
+  for (const warning of app.warnings ?? []) process.stderr.write(`${status.warn(warning.message)}\n`);
+}
+
+/** `--always-on` / `--on-demand`, consumed from `rest`; neither → the server decides. */
+function runMode(rest: string[]): { always_on?: boolean } {
+  const alwaysOn = takeFlagBool(rest, ['--always-on']);
+  const onDemand = takeFlagBool(rest, ['--on-demand']);
+  if (alwaysOn && onDemand) throw new Error('Pass --always-on or --on-demand, not both');
+  return alwaysOn ? { always_on: true } : onDemand ? { always_on: false } : {};
 }
 
 /**
@@ -247,6 +292,7 @@ async function setCommand(rest: string[], options: ContextOptions, json: boolean
   const disk = positiveInteger(takeFlagValue(rest, ['--disk-gb', '--disk']), '--disk-gb');
   const idle = positiveInteger(takeFlagValue(rest, ['--idle-timeout']), '--idle-timeout');
   const budget = positiveNumber(takeFlagValue(rest, ['--budget']), '--budget');
+  Object.assign(input, runMode(rest));
   const target = rest.find((value) => !value.startsWith('-'));
   if (!target) return fail('set needs an App id or slug');
   if (name !== undefined) input.name = name;
@@ -257,7 +303,7 @@ async function setCommand(rest: string[], options: ContextOptions, json: boolean
   if (budget !== undefined) input.monthly_budget_usd = budget;
   if (Object.keys(input).length === 0) {
     return fail(
-      'set needs at least one of --name, --cpu, --memory-gb, --disk-gb, --idle-timeout, --budget',
+      'set needs at least one of --name, --cpu, --memory-gb, --disk-gb, --idle-timeout, --always-on, --on-demand, --budget',
     );
   }
   const ctx = await context(options);
@@ -266,6 +312,7 @@ async function setCommand(rest: string[], options: ContextOptions, json: boolean
     const found = await resolveApp(ctx.apps, target);
     return ctx.apps.update(found.app_id, input);
   });
+  printWarnings(app);
   if (json) emitJson(app);
   else {
     process.stdout.write(`\n  ${status.ok(`updated ${app.slug}`)}\n`);
@@ -276,7 +323,7 @@ async function setCommand(rest: string[], options: ContextOptions, json: boolean
       `  ${C.dim}${pad('idle timeout', 14)}${C.reset}${app.idle_timeout_seconds}s\n`,
     );
     process.stdout.write(
-      `  ${C.dim}${pad('budget', 14)}${C.reset}$${app.monthly_budget_usd}/mo\n\n`,
+      `  ${C.dim}${pad('budget', 14)}${C.reset}$${app.monthly_budget_usd}/mo\n${costBlock(app)}\n`,
     );
   }
   return 0;
@@ -337,10 +384,12 @@ async function deployCommand(
       if (flags.wait)
         deployment = await waitForDeployment(ctx.apps, app.app_id, deployment, flags.waitSeconds);
       const currentApp = flags.wait ? await ctx.apps.get(app.app_id) : app;
+      const budgetNotice = staged.source.kind === 'static' ? null : alwaysOnBudgetNotice(currentApp);
+      if (budgetNotice) process.stderr.write(`${status.warn(budgetNotice)}\n`);
       if (json) emitJson({ app: currentApp, deployment });
       else {
         process.stdout.write(
-          `\n  ${status.ok(`deployment ${deployment.status}`)}\n  ${currentApp.url}\n\n`,
+          `\n  ${status.ok(`deployment ${deployment.status}`)}\n  ${currentApp.url}\n${staged.source.kind === 'static' ? '' : costBlock(currentApp)}\n`,
         );
       }
       return 0;
@@ -365,7 +414,13 @@ async function showCommand(
   });
   if (json) emitJson(result);
   else {
-    process.stdout.write(`\n  ${C.bold}${result.app.name}${C.reset}\n  ${result.app.url}\n`);
+    const app = result.app;
+    const hosting = app.hosting_type === 'static'
+      ? 'static · served from storage, no runtime'
+      : app.hosting_type === 'sandbox'
+        ? `server · ${app.always_on ? 'always on' : 'on demand'} · ${app.desired_state} · budget $${app.monthly_budget_usd}/mo`
+        : 'not deployed';
+    process.stdout.write(`\n  ${C.bold}${app.name}${C.reset}\n  ${app.url}\n  ${C.dim}${hosting}${C.reset}\n`);
     for (const deployment of result.deployments) {
       const live =
         deployment.deployment_id === result.app.active_deployment_id
@@ -438,7 +493,8 @@ async function rollbackCommand(
   if (!ctx) return 1;
   const app = await scoped(ctx, async () => {
     const found = await resolveApp(ctx.apps, positional[0]!);
-    return ctx.apps.rollback(found.app_id, positional[1]!);
+    const deployment = resolveDeploymentTarget(await ctx.apps.deployments.list(found.app_id), positional[1]!);
+    return ctx.apps.rollback(found.app_id, deployment.deployment_id);
   });
   if (json) emitJson(app);
   else

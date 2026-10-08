@@ -8,8 +8,6 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { resolveSessionBinding } from './lib/route-bindings';
 import { auth, errors, json } from '../../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
-import { and, or } from 'drizzle-orm';
-import { config } from '../../config';
 import { loadVisibleSession, assertProjectCapability } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { readJsonObject } from '../../shared/http-body';

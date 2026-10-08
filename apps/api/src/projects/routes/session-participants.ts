@@ -1,7 +1,6 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
-import { db } from '../../shared/db';
 import { groupMemberRows } from '../../iam/group-read';
 import {
   assertProjectCapability,
