@@ -359,6 +359,28 @@ An existing GitHub `origin` links through the Kortix GitHub App. Any other exist
 | `-n, --dry-run` | Print what would happen; change nothing. |
 | `--project <id>` / `--host <name>` | Target a non-default project or host. |
 
+### Apps
+
+Deploys and operates the project's Kortix Apps: each App has one stable URL and immutable deployments. A static App is files that Kortix serves, with no machine. A server App (Dockerfile or OCI image) runs in its own machine, always on or on demand, up to a monthly budget. Needs the `apps` project feature. Full guide: [Apps](/docs/feature-flags/apps).
+
+| Command | Effect |
+| --- | --- |
+| `kortix apps ls [--json]` | List Apps with state (`static` for a static App) and URL. |
+| `kortix apps deploy <dir> --type static [--spa]` | Publish a built directory as a static App. Build first (`npm run build`), then deploy the output directory. |
+| `kortix apps deploy . --type dockerfile --command <argv> --port <n> [--always-on\|--on-demand] [--budget <usd>]` | Build and run a server App. A new App is always on. Its budget is the 24/7 estimate of its machine, rounded up to a whole dollar (74 USD by default), unless you pass `--budget`; on demand it is 5 USD. The command prints the cost, for example `Runs 24/7 on 1 vCPU / 2 GB: about $73/month (budget $74)`. |
+| `kortix apps deploy --image <ref> --command <argv> --port <n>` | Run a public OCI image as a server App. |
+| `kortix apps deploy --manifest-app <name>` | Deploy one `apps.<name>` block of a v2 `kortix.yaml`. |
+| `kortix apps set <app> [--always-on\|--on-demand] [--budget <usd>] [--cpu N] [--memory-gb N] [--disk-gb N] [--idle-timeout <s>]` | Change an App. Run mode and budget apply within 5 minutes; a machine change applies to the next deployment. |
+| `kortix apps show <app> [--json]` | The App (`hosting_type`, `always_on`, `monthly_budget_usd`, `estimated_monthly_usd`) and its deployments. |
+| `kortix apps logs <app> [deployment] [--after N] [--limit N]` | A server App's runtime logs. A static App prints its deployment events. |
+| `kortix apps start\|stop <app>` | Start or suspend a server App. A static App answers `409 static_app_no_runtime`. |
+| `kortix apps rollback <app> <deployment>` | Move traffic to a ready deployment. |
+| `kortix apps access <app> [--mode <mode>] [--viewer off\|identity\|api]` | Read or change who can open the App and what it learns about its viewer. |
+| `kortix apps access-link <app> [--json]` | A five-minute signed browser URL. Treat it as a secret. |
+| `kortix apps delete <app> [--deployment <id\|vN>] --yes` | Delete the App, or one deployment that is not live. |
+
+An always-on App of the default machine costs about 73 USD a month. When an explicit budget is lower, `deploy`, `create`, and `set` print `app_budget_below_always_on` on stderr; the App stops at the budget until the month ends.
+
 ### Sessions
 
 Each session runs in one sandbox on its own branch.

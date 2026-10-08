@@ -272,7 +272,9 @@ no build step required:
 > must be in the API's CORS allowlist. Kortix's own domains and `localhost:3000/3010`
 > are allowed out of the box; any third-party origin (or a local page on another
 > port) needs adding via the API's `CORS_ALLOWED_ORIGINS` — otherwise the browser
-> blocks the request before it leaves the page.
+> blocks the request before it leaves the page. A Kortix-hosted App needs no
+> allowlist entry: it sets `backendUrl: '/_kortix/api/v1'`, its own origin
+> (see "A Kortix-hosted App is already signed in").
 
 ## Entry points
 
@@ -983,7 +985,7 @@ Full guide: `/docs/sdk/sign-in`. Example: `examples/11-sign-in-with-kortix.ts`.
 ### A Kortix-hosted App is already signed in
 
 ```ts
-const kortix = createKortix({ backendUrl, getToken: kortixAppViewerToken() });  // browser
+const kortix = createKortix({ backendUrl: '/_kortix/api/v1', getToken: kortixAppViewerToken() });  // browser
 const viewer = await readAppViewer(request);                                    // server (@kortix/sdk/server)
 const asViewer = await createAppViewerKortix(request, { backendUrl });          // act as them
 ```
@@ -993,6 +995,9 @@ their identity into every request; `viewer_token_scope` on the App's access
 policy decides whether the App also gets a token to act with. On the server,
 read it per request; in the browser, `kortixAppViewerToken()` replaces a token
 the API refused (after an access-policy change) and replays the call once.
+In the browser, `backendUrl` is `/_kortix/api/v1`: the gate on the App's own
+origin forwards to the Kortix API as the viewer (`viewer_token_scope: 'api'`).
+A direct call to `https://api.kortix.com/v1` from an App origin fails CORS.
 Guide: `/docs/sdk/apps`.
 
 ### Headless sign-in (your users, straight through the API)

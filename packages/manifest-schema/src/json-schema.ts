@@ -730,6 +730,7 @@ function appBlockV2Schema(): JsonSchemaFragment {
       spa: { type: 'boolean' },
       readiness_path: { type: 'string', pattern: '^/' },
       idle_timeout_seconds: { type: 'integer', minimum: 120, maximum: 86400 },
+      always_on: { type: 'boolean' },
       monthly_budget_usd: { type: 'number', minimum: 0 },
       resources: {
         type: 'object',

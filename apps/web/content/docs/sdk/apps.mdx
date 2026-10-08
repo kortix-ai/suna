@@ -27,10 +27,10 @@ on it. See [Feature flags](/docs/feature-flags).
 | `apps.list()` | `GET /projects/:pid/apps` | Lists the project's Apps |
 | `apps.create(input)` | `POST …/apps` | Creates an App and assigns its stable URL |
 | `apps.get(appId)` | `GET …/apps/:id` | Reads one App |
-| `apps.update(appId, input)` | `PATCH …/apps/:id` | Renames it or changes machine, idle timeout, or budget |
+| `apps.update(appId, input)` | `PATCH …/apps/:id` | Renames it or changes machine, idle timeout, run mode (`always_on`), or budget. Run mode and budget apply within 5 minutes; a machine change applies to the next deployment |
 | `apps.remove(appId)` | `DELETE …/apps/:id` | Deletes the App, its runtimes, and every deployment image; returns `images: {released, pending}` |
-| `apps.start(appId)` | `POST …/apps/:id/start` | Sets `desired_state` to `running` and warms the runtime |
-| `apps.stop(appId)` | `POST …/apps/:id/stop` | Suspends compute now; the next request resumes it |
+| `apps.start(appId)` | `POST …/apps/:id/start` | Sets `desired_state` to `running` and warms the runtime. A static App answers `409 static_app_no_runtime` |
+| `apps.stop(appId)` | `POST …/apps/:id/stop` | Suspends compute now; the next request resumes it. A static App answers `409 static_app_no_runtime`: it has no runtime and serves while it has an active deployment |
 | `apps.rollback(appId, deploymentId)` | `POST …/apps/:id/rollback` | Moves traffic to a ready deployment |
 
 Artifacts are the immutable input to a deployment:
@@ -82,8 +82,25 @@ console.log(app.url, deployment.status); // https://…apps.kortix.com  queued
 ```
 
 `create` accepts the machine and budget fields too: `cpu`, `memory_gb`,
-`disk_gb`, `idle_timeout_seconds`, and `monthly_budget_usd`. Omit them for the
-defaults.
+`disk_gb`, `idle_timeout_seconds`, `always_on`, and `monthly_budget_usd`. Omit
+them for the defaults. Without `monthly_budget_usd`, an always-on App gets its
+`estimated_monthly_usd` rounded up to a whole dollar and an on-demand App gets
+5. That derived budget follows later `update` calls that change the machine or
+`always_on`; a budget you send is never changed. `always_on: true` runs a server App 24/7 (websockets,
+background loops); `false` stops it after `idle_timeout_seconds` and wakes it
+on the next request. Both stop at the monthly budget. A static App has no
+runtime and ignores both.
+
+`estimated_monthly_usd` is what the App's machine costs running 24/7 for a
+month at list compute rates. `create` and `update` return `warnings`: an
+always-on App whose `monthly_budget_usd` is below that estimate gets
+`app_budget_below_always_on`. The call still succeeds; the App stops when the
+budget is spent.
+
+```ts
+const app = await kortix.project(projectId).apps.create({ slug: 'worker', name: 'Worker', always_on: true });
+for (const warning of app.warnings ?? []) console.warn(warning.code, warning.message);
+```
 
 Wait for the deployment by polling its status:
 
@@ -166,7 +183,7 @@ import { createKortix, kortixAppViewerToken } from '@kortix/sdk';
 import { useKortixAppViewer } from '@kortix/sdk/react';
 
 const kortix = createKortix({
-  backendUrl: 'https://api.kortix.com/v1',
+  backendUrl: '/_kortix/api/v1',             // the gate, on your App's own origin
   getToken: kortixAppViewerToken(),          // the viewer's own App-scoped token
 });
 
@@ -175,6 +192,22 @@ function Header() {
   return <span>{status === 'viewer' ? viewer.email : 'Signed out'}</span>;
 }
 ```
+
+The browser calls `/_kortix/api/v1/*` on your App's own origin, never
+`https://api.kortix.com/v1` directly: the API answers no CORS preflight from
+an App origin, so a direct call fails in the browser. The gate forwards each
+call to the Kortix API as the signed-in viewer, with the viewer's App-scoped
+token. Rules:
+
+- It needs `viewer_token_scope: 'api'`. Otherwise it answers
+  `403 viewer_api_disabled`.
+- It acts only for a viewer the gate signed in (Kortix login or an access
+  link). With none, it answers `401 no_viewer_identity`.
+- It answers a request from the App's own origin only. A cross-site request
+  answers `403 cross_site_request`.
+- It forwards `/v1/*` except `/v1/oauth/*` and MCP endpoints, which answer
+  `404`. Your App's cookie and its own `Authorization` header never reach the
+  API, and the API cannot set a cookie on your App.
 
 On your App's server, the gate signs the identity into every request:
 
@@ -260,9 +293,9 @@ Every type below is exported from `@kortix/sdk`.
 
 | Type | What it holds |
 |---|---|
-| `App` | Identity, `url`, `access_mode`, `access_revision`, `desired_state`, `active_deployment_id`, `machine`, `idle_timeout_seconds`, `monthly_budget_usd`, `last_request_at`, `viewer_can_access` |
-| `AppDeployment` | `version`, `status`, `source_kind`, `hosting_provider`, `runtime_spec`, `build_spec`, `error_code`, `attempt_count`, `created_by`, `actor_type`, `source_session_id` |
-| `AppDeploymentDetail` | One `deployment` plus its `events` |
+| `App` | Identity, `url`, `access_mode`, `access_revision`, `desired_state`, `active_deployment_id`, `hosting_type` (of the active deployment: `static`, `sandbox`, or `null` before the first deploy), `machine`, `idle_timeout_seconds`, `always_on`, `monthly_budget_usd`, `estimated_monthly_usd` (`0` for a static App), `retained_deployments`, `warnings` (create and update only), `last_request_at`, `viewer_can_access` |
+| `AppDeployment` | `version`, `status`, `source_kind`, `hosting_type` (`static`: served from storage, no runtime; `sandbox`: its own machine), `hosting_provider`, `runtime_spec`, `build_spec`, `error_code`, `attempt_count`, `created_by`, `actor_type`, `source_session_id` |
+| `AppDeploymentDetail` | One `deployment` plus its `events`: lifecycle events and the build log (`build_log` lines, and one `log_truncated` event when the build printed more than 5,000 lines) |
 | `AppAccessConfig` | `mode`, `revision`, `member_ids`, `group_ids`, `password_configured` |
 | `AppAccessMode` | `'private' \| 'project' \| 'restricted' \| 'public' \| 'password'` |
 | `AppSource` | `StaticAppSource \| BundleAppSource \| DockerfileAppSource \| OciImageAppSource` |
@@ -285,7 +318,7 @@ role model uses. See
 
 ## React hooks
 
-`@kortix/sdk/react` exports three hooks for Apps.
+`@kortix/sdk/react` exports four hooks for Apps.
 
 ### useProjectApps(projectId)
 
@@ -331,6 +364,23 @@ await deployments.rollback.mutateAsync(previousDeploymentId);
 ```
 
 Both mutations invalidate the deployment list and the App inventory.
+
+### useAppDeployment(projectId, appId, deploymentId)
+
+One deployment and its events, build log included (`AppDeploymentDetail`). It
+polls every 2 s until the deployment is `ready`, `failed` or `cancelled`. Pass
+`null` as `deploymentId` to keep it idle.
+
+```tsx
+const detail = useAppDeployment(projectId, appId, deploymentId);
+const log = (detail.data?.events ?? [])
+  .map((event) => (event.type === 'build_log' ? event.message : `[${event.type}] ${event.message}`))
+  .join('\n');
+```
+
+A build keeps its first 2,500 and its last 2,500 lines. Lines are written in
+batches, at most 1 s after they are printed. A failed or cancelled deployment
+keeps its build log for 14 days.
 
 ### useAppAccess(projectId, appId, options?)
 

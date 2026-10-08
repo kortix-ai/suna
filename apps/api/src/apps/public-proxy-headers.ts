@@ -84,10 +84,22 @@ function withoutFrameAncestors(value: string): string[] {
     .filter((directive) => directive && !/^frame-ancestors(?:\s|$)/i.test(directive));
 }
 
+/**
+ * Set by the API, never by an App: this response is the same for every viewer
+ * of the App host, so the apps-router Worker may keep it in its edge cache.
+ */
+export const APP_EDGE_CACHEABLE_HEADER = 'x-kortix-edge-cacheable';
+
 /** Preserve App security policy while allowing the Kortix preview browser to frame it. */
 export function appPublicResponseHeaders(upstreamHeaders: Headers): Headers {
   const headers = new Headers(upstreamHeaders);
   headers.delete('x-frame-options');
+  // An App's own headers never mark a response shareable at the edge.
+  headers.delete(APP_EDGE_CACHEABLE_HEADER);
+  // The API origin hostnames are Cloudflare-proxied, and Cloudflare keys its
+  // cache on the API host and path, not the App host. Only the apps-router
+  // Worker decides edge caching, keyed on the App host.
+  headers.set('cloudflare-cdn-cache-control', 'no-store');
 
   const enforced = withoutFrameAncestors(headers.get('content-security-policy') || '');
   headers.set('content-security-policy', [...enforced, appFrameAncestors()].join('; '));
