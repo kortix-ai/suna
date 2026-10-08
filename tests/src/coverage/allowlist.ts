@@ -150,11 +150,18 @@ export const uncoveredAllow: AllowEntry[] = [
     path: `/v1/p/public-share/:token${tail}`,
     reason: "public-share proxy into a live sandbox; needs a cloud sandbox, which the local profile excludes",
   })),
-  ...["context7", "firecrawl", "gemini", "groq", "openai", "serper", "tavily", "xai"].flatMap((provider) =>
+  ...["firecrawl", "serper", "tavily"].flatMap((provider) =>
     [`/v1/router/${provider}`, `/v1/router/${provider}/*`].map((path) => ({
       method: "ALL",
       path,
       reason: "provider passthrough to a third-party API; needs real provider keys, which the local profile excludes",
+    })),
+  ),
+  ...["context7", "gemini", "groq", "openai", "xai"].flatMap((provider) =>
+    [`/v1/router/${provider}`, `/v1/router/${provider}/*`].map((path) => ({
+      method: "ALL",
+      path,
+      reason: "retired provider passthrough: a 410 stub (apps/api/src/routes/retired.ts). No flow can declare ALL; RET-1 calls one and unit-retired-routes.test.ts covers every row",
     })),
   ),
 ];

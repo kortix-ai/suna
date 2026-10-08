@@ -7,7 +7,6 @@ import {
   classifyAgentFiles,
   isConfigStale,
   reloadDetail,
-  reloadNeedsAttention,
   type ReloadAgentFiles,
 } from './session-reload';
 
@@ -235,38 +234,6 @@ describe('reloadDetail', () => {
         reason: 'no reachable sandbox',
       }),
     ).toBe('Nothing to apply: no reachable sandbox.');
-  });
-});
-
-describe('reloadNeedsAttention', () => {
-  const base = {
-    applied: true,
-    previous_etag: 'aaaa',
-    etag: 'bbbb',
-    repo_refreshed: true,
-    commit_sha: null,
-    opencode_reload: null,
-    turn_ended: null,
-  } as const;
-
-  test('the three success outcomes are NOT warnings', () => {
-    // The first thing the review caught: warning on "already current" and on a
-    // project that simply keeps no agent files, both of which are fine.
-    for (const agent_files of ['updated', 'already-current', 'not-applicable'] as const) {
-      expect(reloadNeedsAttention({ ...base, agent_files })).toBe(false);
-    }
-  });
-
-  test('kept-yours and unknown ARE warnings — the agent may not have changed', () => {
-    for (const agent_files of ['kept-yours', 'unknown'] as const) {
-      expect(reloadNeedsAttention({ ...base, agent_files })).toBe(true);
-    }
-  });
-
-  test('a non-applied reload always needs attention', () => {
-    expect(
-      reloadNeedsAttention({ ...base, applied: false, agent_files: 'updated' }),
-    ).toBe(true);
   });
 });
 

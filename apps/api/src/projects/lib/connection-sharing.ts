@@ -6,7 +6,7 @@
  * `GET /:projectId/secrets` reads the same list for `secret` grants.
  */
 import type { ConnectionShare } from '@kortix/api-contract';
-import { and, sql } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import { loadObjectGrants } from '../../iam/authorize';
 import { objectGrantRows } from '../../iam/read-models';
 import { db } from '../../shared/db';

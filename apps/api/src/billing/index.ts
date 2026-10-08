@@ -2,7 +2,6 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { timingSafeEqual } from 'node:crypto';
 import type { Context } from 'hono';
 import { config } from '../config';
-import { runWorkerTick } from '../shared/audit-scope';
 import { supabaseAuth } from '../middleware/auth';
 import { errors, json, makeOpenApiApp } from '../openapi';
 import type { AppEnv } from '../types';
@@ -27,10 +26,7 @@ billingApp.route('/webhook', webhooksRouter);
 // (`includes('/webhook')`) would skip auth on any future param route whose
 // value contains the word.
 const UNAUTHENTICATED_BILLING_PATH = /^\/v1\/billing\/(webhooks?|cron)(\/|$)/;
-// `account` is account deletion: every deployment owes it, billing or not. Its
-// billing steps (Stripe cancel, wallet forfeit) find nothing to do without
-// billing.
-const BILLING_GATE_EXEMPT_PATH = /^\/v1\/billing\/(account-state|account|webhooks|cron)(\/|$)/;
+const BILLING_GATE_EXEMPT_PATH = /^\/v1\/billing\/(account-state|webhooks|cron)(\/|$)/;
 export const isUnauthenticatedBillingPath = (path: string) => UNAUTHENTICATED_BILLING_PATH.test(path);
 export const isBillingGateExemptPath = (path: string) => BILLING_GATE_EXEMPT_PATH.test(path);
 
@@ -63,12 +59,9 @@ billingApp.route('/', subscriptionsRouter);
 billingApp.route('/', paymentsRouter);
 billingApp.route('/', creditsRouter);
 
-// Account deletion (mounted at /v1/billing/account/*). Exempt from the billing
-// gate above: a self-hosted deployment deletes accounts too.
-billingApp.route('/account', accountDeletionRouter);
-
-// Backwards-compatible account deletion API (mounted at /v1/account/*). No
-// billing gate, for the same reason.
+// Account deletion API (mounted at /v1/account/*). No billing gate: every
+// deployment deletes accounts, billing or not. Its billing steps (Stripe
+// cancel, wallet forfeit) find nothing to do without billing.
 accountDeletionApp.use('*', supabaseAuth);
 accountDeletionApp.route('/', accountDeletionRouter);
 

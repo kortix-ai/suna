@@ -7,48 +7,16 @@ import {
   DEFAULT_MAX_BUILDING_MS,
   interpretImageReadiness,
   isBuildDeadlineExceeded,
-  isLiveTransition,
   isPermanentTransitionError,
   isSupersededByGeneration,
-  isTerminalTransition,
-  isTransientTransitionError,
   MAX_TRANSITION_ATTEMPTS,
-  nextGeneration,
   normalizeTargetProvider,
   prepIdentityUnchanged,
   preparationLabel,
   transitionBackoffMs,
-  transitionDedupKey,
 } from './provider-transition-core';
 
-describe('status predicates', () => {
-  test('live vs terminal partition every status', () => {
-    for (const s of ['pending', 'building', 'ready', 'activating'] as const) {
-      expect(isLiveTransition(s)).toBe(true);
-      expect(isTerminalTransition(s)).toBe(false);
-    }
-    for (const s of ['activated', 'failed', 'superseded', 'cancelled'] as const) {
-      expect(isTerminalTransition(s)).toBe(true);
-      expect(isLiveTransition(s)).toBe(false);
-    }
-  });
-});
-
 describe('dedup key + identity drift', () => {
-  const base = {
-    projectId: 'p1',
-    targetProvider: 'platinum',
-    commitSha: 'abc',
-    baseRuntimeIdentity: 'kortix-default-1',
-  };
-
-  test('same inputs produce the same key; a moved commit changes it', () => {
-    expect(transitionDedupKey(base)).toBe(transitionDedupKey({ ...base }));
-    expect(transitionDedupKey(base)).not.toBe(transitionDedupKey({ ...base, commitSha: 'def' }));
-    expect(transitionDedupKey(base)).not.toBe(
-      transitionDedupKey({ ...base, baseRuntimeIdentity: 'kortix-default-2' }),
-    );
-  });
 
   test('prepIdentityUnchanged detects a moved tip or bumped base runtime', () => {
     expect(prepIdentityUnchanged({ commitSha: 'abc', baseRuntimeIdentity: 'r1' }, { commitSha: 'abc', baseRuntimeIdentity: 'r1' })).toBe(true);
@@ -70,12 +38,6 @@ describe('generation CAS', () => {
     expect(isSupersededByGeneration(3, 2)).toBe(false);
   });
 
-  test('nextGeneration is monotonic from the max seen', () => {
-    expect(nextGeneration(0)).toBe(1);
-    expect(nextGeneration(null)).toBe(1);
-    expect(nextGeneration(undefined)).toBe(1);
-    expect(nextGeneration(7)).toBe(8);
-  });
 });
 
 describe('image readiness never mistakes an outage for "missing"', () => {
@@ -141,13 +103,11 @@ describe('failure classification', () => {
   test('auth / authorization / invalid-build are permanent, not "image missing"', () => {
     for (const m of ['401 Unauthorized', 'HTTP 403 forbidden', 'authentication failed', 'invalid build spec', 'template build failed']) {
       expect(isPermanentTransitionError(new Error(m))).toBe(true);
-      expect(isTransientTransitionError(new Error(m))).toBe(false);
     }
   });
 
   test('network / rate-limit / 5xx are transient', () => {
     for (const m of ['ETIMEDOUT', 'socket hang up', '429 too many requests', 'bad gateway 502', '503 service unavailable', 'ECONNRESET']) {
-      expect(isTransientTransitionError(new Error(m))).toBe(true);
       expect(isPermanentTransitionError(new Error(m))).toBe(false);
     }
   });

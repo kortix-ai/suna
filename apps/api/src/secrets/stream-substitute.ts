@@ -238,18 +238,3 @@ export class StreamSubstituter {
     return { output: chunks.length > 0 ? Buffer.concat(chunks) : Buffer.alloc(0), consumed: cursor };
   }
 }
-
-/**
- * The whole-buffer equivalent, kept here as the ORACLE the streaming path is
- * fuzzed against. Callers with a complete buffer should keep using
- * `http-broker.ts`'s own helpers; this exists so the test can assert the two
- * agree for every chunking.
- */
-export function substituteWholeBuffer(
-  source: Buffer,
-  pairs: readonly StreamReplacement[],
-): Buffer {
-  const substituter = new StreamSubstituter(pairs);
-  const head = substituter.push(source);
-  return Buffer.concat([head, substituter.flush()]);
-}

@@ -873,6 +873,13 @@
     {
       "idx": 124,
       "version": "7",
+      "when": 1791377463859,
+      "tag": "20261007125103_drop_session_environments",
+      "breakpoints": true
+    },
+    {
+      "idx": 125,
+      "version": "7",
       "when": 1791409653071,
       "tag": "20261007214733_feedback",
       "breakpoints": true

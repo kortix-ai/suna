@@ -35,7 +35,6 @@ import { startProviderTransitionWorker, stopProviderTransitionWorker } from './w
 import { startSessionLifecycleWorker, stopSessionLifecycleWorker } from './workers/session-lifecycle-worker';
 import { handBackClaims } from './projects/surface';
 import { startSlackTurnGc, stopSlackTurnGc } from './workers/slack-turn-gc-worker';
-import { startSunaMigrationWorker, stopSunaMigrationWorker } from './workers/suna-migration-worker';
 import { startTeamsBotTokenRefresh, stopTeamsBotTokenRefresh } from './workers/teams-bot-token-refresh-worker';
 import { startTeamsTurnGc, stopTeamsTurnGc } from './workers/teams-turn-gc-worker';
 import { startTmpReaper, stopTmpReaper } from './workers/tmp-reaper-worker';
@@ -206,7 +205,6 @@ async function startSingletonWorkers() {
   // the first session anywhere lands on a cache hit. Idempotent + best-effort;
   // the session-boot graceful path is the lazy fallback if this is skipped.
   kickStartupPreBuild();
-  startSunaMigrationWorker();
   // Resume durable sandbox-provider migrations (prepare→verify→activate) that
   // were mid-flight when the API last stopped — a crash at building/ready/
   // activating converges instead of stranding. Safe across replicas (lease CAS).
@@ -247,7 +245,6 @@ async function stopSingletonWorkers() {
   stopActiveTurnRenewal();
   stopProjectTriggerScheduler();
   stopProjectMaintenance();
-  stopSunaMigrationWorker();
   stopProviderTransitionWorker();
   stopAppDeploymentWorker();
   stopAppIdleReaper();
