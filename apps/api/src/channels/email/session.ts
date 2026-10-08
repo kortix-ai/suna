@@ -119,7 +119,6 @@ async function spawnEmailAgentTurn(
       idempotencyKey: emailFollowUpKey(event),
       sessionId: existing.sessionId,
       text: renderFollowUpPrompt(event),
-      opencodeEnv: { KORTIX_CONNECTORS_MCP_ENABLED: '1' },
     });
     if (outcome === 'delivered' || outcome === 'queued') {
       await touchChatThread(thread);
@@ -193,7 +192,6 @@ async function createThreadSession(
         idempotencyKey: emailFollowUpKey(event),
         sessionId,
         text: renderFollowUpPrompt(event),
-        opencodeEnv: { KORTIX_CONNECTORS_MCP_ENABLED: '1' },
       });
     }
     return;
@@ -261,9 +259,6 @@ async function createThreadSession(
       },
     },
     extraEnvVars: {
-      // Email delivery cannot depend on a shell fallback. Enable the
-      // session-scoped MCP face so OpenCode exposes the bound inbox as tools.
-      KORTIX_CONNECTORS_MCP_ENABLED: '1',
       KORTIX_EMAIL_INBOX_ID: inboxId,
       KORTIX_EMAIL_THREAD_ID: threadId,
       KORTIX_EMAIL_MESSAGE_ID: event.message.message_id,

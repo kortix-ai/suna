@@ -23,14 +23,11 @@ import { persistTitle } from '../projects/session-title-generate';
 import { db } from '../shared/db';
 import { getPublicSessionInfo } from '../shared/public-session-share-view';
 
-const { syncOpencodeSessionSnapshot } = await import('../projects/opencode-session-snapshot');
+const { writeRuntimeSessionList } = await import('../projects/lib/runtime-session-snapshot');
+const { saveRuntimeProjection } = await import('../projects/lib/session-runtime-projection');
 
-// The runtime projection a running sandbox reported to the snapshot pass.
-const runtimeLeg = (async () => ({
-  known: true,
-  identity: { opencode_session_id: 'ses_root' },
-  state: { sessions: { known: true, value: [{ id: 'ses_root', title: 'Runtime Title', parent_id: null }] } },
-})) as never;
+// The state document a running sandbox reported.
+const projection = { sessions: { known: true, value: [{ id: 'ses_root', title: 'Runtime Title', parent_id: null }] } };
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
@@ -197,14 +194,21 @@ describe('persistTitle — compare-and-set', () => {
     expect(metadata.runtime_transport).toBe('rest');
   });
 
-  // The snapshot pass runs off the same prompt that fires title generation. It
-  // read the row before the title landed; its write must not drop that title.
-  test('no clobber: the opencode_sessions snapshot keeps a title committed after its read', async () => {
+  // The list write runs beside title generation. It merges in SQL, so a title
+  // committed after the session was created survives it.
+  test('no clobber: the opencode_sessions list write keeps a title committed before it', async () => {
     const row = await seed({ runtime_transport: 'rest' });
-    const staleRead = { ...row, runtimeSessionId: 'ses_root' } as ProjectSessionRow;
     await persistTitle(row, 'Generated Title');
 
-    await syncOpencodeSessionSnapshot({ row: staleRead }, { readLeg: runtimeLeg });
+    expect(
+      await writeRuntimeSessionList({
+        sessionId: row.sessionId,
+        projectId: row.projectId,
+        accountId: row.accountId,
+        projection,
+        runtimeSessionId: 'ses_root',
+      }),
+    ).toBe('written');
 
     const metadata = await metadataOf(row.sessionId);
     expect(metadata.name).toBe('Generated Title');
@@ -273,5 +277,51 @@ describe('getPublicSessionInfo — the anonymous share viewer sees the same titl
     expect(await titleOf(placeholder.sessionId)).toBeNull();
     expect(await titleOf(generated.sessionId)).toBe('Set Up MS Graph');
     expect(await titleOf(renamed.sessionId)).toBe('Mine');
+  });
+});
+
+// R7.4: the list follows every stored projection, scoped to the session's root.
+describe('writeRuntimeSessionList', () => {
+  const conv = (id: string, parent: string | null, updated: number) => ({ id, title: id, parent_id: parent, time: { created: 1, updated } });
+  const doc = (...value: unknown[]) => ({ sessions: { known: true, value } });
+  const write = (row: ProjectSessionRow, projection: Record<string, unknown>, runtimeSessionId: string | null) =>
+    writeRuntimeSessionList({ sessionId: row.sessionId, projectId: row.projectId, accountId: row.accountId, projection, runtimeSessionId });
+
+  test('the root and its children, newest first; another root and an unchanged list write nothing', async () => {
+    const row = await seed({});
+    const tree = doc(conv('ses_a', null, 2), conv('ses_a_kid', 'ses_a', 9), conv('ses_other', null, 5));
+    expect(await write(row, tree, 'ses_a')).toBe('written');
+    expect(((await metadataOf(row.sessionId)).opencode_sessions as Array<{ id: string }>).map((s) => s.id)).toEqual(['ses_a_kid', 'ses_a']);
+    expect(await write(row, tree, 'ses_a')).toBe('unchanged');
+  });
+
+  test('storing a projection writes the list; an out-of-order capture writes neither', async () => {
+    const row = await seed({});
+    const save = (capturedAt: string, projection: Record<string, unknown>) =>
+      saveRuntimeProjection({
+        sessionId: row.sessionId,
+        projectId: row.projectId,
+        accountId: row.accountId,
+        externalId: 'box-1',
+        projectionEtag: `etag-${capturedAt}`,
+        projection: { ...projection, identity: { harness: 'pi', runtime_session_id: 'ses_r' } },
+        capturedAt: new Date(capturedAt),
+        source: 'daemon_push',
+      });
+    expect(await save('2026-10-08T10:00:00.000Z', doc(conv('ses_r', null, 1), conv('ses_r_kid', 'ses_r', 4)))).toBe('stored');
+    expect(((await metadataOf(row.sessionId)).opencode_sessions as Array<{ id: string }>).map((s) => s.id)).toEqual(['ses_r_kid', 'ses_r']);
+    expect(await save('2026-10-08T09:00:00.000Z', doc(conv('ses_r', null, 1)))).toBe('ignored');
+    expect(((await metadataOf(row.sessionId)).opencode_sessions as Array<{ id: string }>).map((s) => s.id)).toEqual(['ses_r_kid', 'ses_r']);
+  });
+
+  test('a pinned session ignores a document for another root, and a document that does not know its sessions', async () => {
+    const row = await seed({});
+    await db.update(projectSessions).set({ runtimeSessionId: 'ses_pinned' }).where(eq(projectSessions.sessionId, row.sessionId));
+    expect(await write(row, doc(conv('ses_new', null, 1)), 'ses_new')).toBe('skipped');
+    expect(await write(row, { sessions: { known: false, value: [] } }, 'ses_pinned')).toBe('skipped');
+    expect((await metadataOf(row.sessionId)).opencode_sessions).toBeUndefined();
+    // With the pin and no root in the document, the pin scopes it.
+    expect(await write(row, doc(conv('ses_pinned', null, 1), conv('ses_kid', 'ses_pinned', 3)), null)).toBe('written');
+    expect(((await metadataOf(row.sessionId)).opencode_sessions as Array<{ id: string }>).map((s) => s.id)).toEqual(['ses_kid', 'ses_pinned']);
   });
 });

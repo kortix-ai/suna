@@ -651,12 +651,6 @@ the call envelope without `data`, plus `saved_to`, `bytes`, and `shape`: the
 outline of `data` (keys, array lengths, and every `pageInfo`). The exit code is
 unchanged.
 
-The `kortix-connectors` MCP tool `call` does the same without a flag. A result
-larger than 16 KB is saved under
-`/workspace/.kortix/state/connector-results/` and the tool returns
-`{ saved_to, bytes, shape, preview, hint }`, with a ~2 KB preview. That
-directory ignores itself in git. A smaller result is returned inline.
-
 ### Attach files
 
 A call never carries file bytes in its arguments. Stage the file, then put its

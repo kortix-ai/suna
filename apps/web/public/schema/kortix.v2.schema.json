@@ -938,6 +938,10 @@
             "type": "string",
             "minLength": 1
           },
+          "account": {
+            "type": "string",
+            "minLength": 1
+          },
           "event": {
             "type": "string",
             "minLength": 1
@@ -1088,6 +1092,7 @@
             "then": {
               "properties": {
                 "connector": false,
+                "account": false,
                 "event": false,
                 "config": false
               }

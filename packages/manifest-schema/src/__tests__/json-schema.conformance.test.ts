@@ -429,6 +429,48 @@ channels:
       'kortix_version: 1\ntriggers:\n  - slug: t\n    type: event\n    connector: github\n    event: GITHUB_PULL_REQUEST_EVENT\n    secret_env: HOOK_SECRET\n    prompt: go\n',
   },
   {
+    name: 'event: account label is valid',
+    format: 'yaml',
+    valid: true,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: event\n    connector: github\n    event: GITHUB_PULL_REQUEST_EVENT\n    account: acme-bot\n    prompt: go\n',
+  },
+  {
+    name: 'event: empty account is rejected',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: event\n    connector: github\n    event: GITHUB_PULL_REQUEST_EVENT\n    account: ""\n    prompt: go\n',
+  },
+  {
+    name: 'event: non-string account is rejected',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: event\n    connector: github\n    event: GITHUB_PULL_REQUEST_EVENT\n    account: 7\n    prompt: go\n',
+  },
+  {
+    name: 'cron: account is rejected (event only)',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    cron: "0 9 * * *"\n    account: acme-bot\n    prompt: go\n',
+  },
+  {
+    name: 'webhook: account is rejected (event only)',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: webhook\n    secret_env: S\n    account: acme-bot\n    prompt: go\n',
+  },
+  {
+    name: 'monitor: account is rejected (event only)',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: monitor\n    run: ./m.ts\n    mode: stream\n    account: acme-bot\n    prompt: go\n',
+  },
+  {
     name: 'cron: event keys on cron are rejected',
     format: 'yaml',
     valid: false,

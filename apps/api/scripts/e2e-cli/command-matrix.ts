@@ -15,7 +15,6 @@ import {
   check,
   driveConnectorSdk,
   driveExistingSessionGrantRefresh,
-  driveMcp,
   expectCli,
   projectId,
   restoreLease,
@@ -391,8 +390,6 @@ async function matrixPipedreamGateway(): Promise<void> {
   await expectCli('connectors connect mints the new connection link', ['connectors', 'connect', PIPEDREAM_SLUG, '--expires', '10'], {
     stdout: /https?:\/\//,
   });
-
-  await driveMcp();
 
   await expectCli(
     'gateway test sends a real model request with the agent token',

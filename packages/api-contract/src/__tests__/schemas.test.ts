@@ -533,6 +533,8 @@ describe('TriggerSchema', () => {
   test('accepts an event trigger with its subscription state', () => {
     const event = {
       connector: 'github',
+      account: 'acme-bot',
+      connected_as: 'bot@example.test',
       type: 'GITHUB_PULL_REQUEST_EVENT',
       config: { owner: 'acme' },
       provider: 'composio',
@@ -546,6 +548,8 @@ describe('TriggerSchema', () => {
     expect(
       TriggerSchema.safeParse(triggerFixture({ type: 'event', event: { ...event, status: 'bogus' } })).success,
     ).toBe(false);
+    // `account` is null for the connector default and `connected_as` null when no account feeds it.
+    expect(TriggerSchema.safeParse(triggerFixture({ type: 'event', event: { ...event, account: null, connected_as: null } })).success).toBe(true);
   });
 
   // `monitor` is the third trigger type:

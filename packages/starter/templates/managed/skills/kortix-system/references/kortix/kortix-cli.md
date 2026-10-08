@@ -202,9 +202,8 @@ has no sandbox presence at all.
 
 > **Have the value? Set it. Lack it? Request it.** When the human already gave
 > you the value, store it now: `printf '%s' "$V" | kortix secrets set NAME=-`
-> (or the `set_secret` tool) — no link. When you lack it, run
-> `kortix secrets request APOLLO_API_KEY` (or the `request_secret` tool on the
-> `kortix-connectors` MCP), surface the returned URL, end your turn, and when they
+> — no link. When you lack it, run
+> `kortix secrets request APOLLO_API_KEY`, surface the returned URL, end your turn, and when they
 > say "done" confirm with `kortix secrets ls`. See the
 > **credentials-and-setup-links** reference.
 
@@ -214,9 +213,8 @@ A connector defines actions against an external system. **A connector is not
 an account** — one connector (e.g. Gmail) can hold several accounts, each
 SHARED with the whole project or PRIVATE to one member. Calls run
 **server-side** through the connector gateway, so no third-party credential
-enters the sandbox. The same gateway is available through the
-`kortix-connectors` **MCP**, this **CLI**, and the `@kortix/sdk` **TypeScript
-package**. JSON output.
+enters the sandbox. The same gateway is available through this **CLI** and the
+`@kortix/sdk` **TypeScript package**. JSON output.
 
 | Command | Effect |
 | --- | --- |
@@ -233,16 +231,12 @@ package**. JSON output.
 | `kortix connectors upload <file> --connector <slug>` | Stage one file; prints `ref` (`{"$kortix_attachment":"<id>"}`) to place in args — an attachments[] element or a base64 field such as `contentBytes`. |
 | `kortix connectors add <slug> --provider composio --app <toolkit> --apply` | Add a managed SaaS connector now, commit it to `kortix.yaml` on main, and sync it. |
 | `kortix connectors rm <slug> --apply` | Remove a connector from `kortix.yaml` on main and sync it. |
-| `kortix connectors connect <slug> [--owner me\|project]` | Mint the provider's raw authorization URL for the connector's default account (`me`, the default, is yours; `project` is the shared one). It cannot name a new account: add one with the MCP `connect` tool and its `label`. |
-| `kortix connectors mcp` | Run the `kortix-connectors` stdio MCP server. |
+| `kortix connectors connect <slug> [--owner me\|project]` | Mint the provider's raw authorization URL for the connector's default account (`me`, the default, is yours; `project` is the shared one). |
+| `kortix connectors connect <slug> --label "<name>" [--owner me\|project]` | Add a NEW account (a second Gmail): mint a Kortix link where the human confirms the name and who can use it. |
 
 > Use Composio for every new managed SaaS connector. Pipedream is retained only
 > for rollback compatibility with existing declarations. Do not select it unless
 > the human explicitly approves the `--allow-legacy-pipedream` fallback.
-
-> Inside a session, the `kortix-connectors` MCP tools can expose the same
-> list/discover/show/accounts/call loop. Use the CLI when those tools are
-> absent.
 
 > **Choosing the account:** one account → just call. Several, and the human
 > named one → `--account <label>`. Several, and it is unclear which → ASK,
@@ -343,11 +337,11 @@ the same state.
 | `kortix triggers fire <slug>` | Manually fire a trigger now. |
 | `kortix triggers enable <slug>` | Set `enabled = true`. |
 | `kortix triggers disable <slug>` | Set `enabled = false`. |
-| `kortix triggers events --apps [--json]` | List apps that can trigger events: event count, the project's connector, and whether a shared account is connected (`connected`, `needs account`, `no connector`). |
+| `kortix triggers events --apps [--json]` | List apps that can trigger events: event count and state (`connected`, `needs account`). Under each app, every connector (profile) with its shared accounts: label, `as <connected_as>`, `default`, `not connected`. Apps with no connector print as one `No connector yet` line. |
 | `kortix triggers events --connector <slug> [--json]` | List the events a connector offers: `TYPE`, `NAME`, `DELIVERY`. |
 | `kortix triggers events --connector <slug> --event <TYPE> [--json]` | One event in full: config fields (type, required, default, allowed values, description) and the `{{ event.data.* }}` prompt variables. |
-| `kortix triggers add <slug> --type event --connector <slug> --event <TYPE> --config <k>=<v> --prompt "…" [--apply]` | Add an event trigger. Without `--apply` it writes a `triggers:` block to the local `kortix.yaml` (`kortix ship` applies it). With `--apply` it creates the trigger now and prints its status and the next step. Online, the config is checked against the event catalog; every missing or invalid field is listed with its description. |
-| `kortix triggers set <slug> [--event <TYPE>] [--connector <slug>] [--config <k>=<v>] [--config-json '<json>']` | Change a live event trigger. `--config` merges into the current config. `--config-json` replaces it. Do not pass both. |
+| `kortix triggers add <slug> --type event --connector <slug> --event <TYPE> --config <k>=<v> [--account <label>] --prompt "…" [--apply]` | Add an event trigger. `--connector` is the profile. `--account` names one shared account of it; omit it for the connector's default shared account. Without `--apply` it writes a `triggers:` block to the local `kortix.yaml` (`kortix ship` applies it). With `--apply` it creates the trigger now and prints its status and the next step. Online, the config is checked against the event catalog; every missing or invalid field is listed with its description. |
+| `kortix triggers set <slug> [--event <TYPE>] [--connector <slug>] [--account <label> | --default-account] [--config <k>=<v>] [--config-json '<json>']` | Change a live event trigger. `--account` picks a shared account; `--default-account` clears it (the two are exclusive). Changing `--connector` clears the account. `--config` merges into the current config. `--config-json` replaces it. Do not pass both. |
 
 `--config k=v` is converted to the field's type (number, boolean, comma
 list) using the catalog. `--config-json` passes typed values as-is. An event
