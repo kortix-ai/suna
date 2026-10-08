@@ -128,8 +128,10 @@ agents:
 - `tools` decides visibility. The agent's `permission` rules still decide
   whether a call is allowed, asked, or denied. A tool not in the list is
   hidden from the model and denied if called.
-- A subagent started with the `task` tool gets only the tools both its own
-  list and the session agent's list allow.
+- A subagent started with the `task` tool: on pi it gets only the tools both
+  its own list and the session agent's list allow. On OpenCode it gets the
+  tools of its own list: OpenCode applies an agent's rules to that agent only.
+  To stop an agent from delegating, leave `task` out of its list.
 - [Connector](/docs/connect/connectors) tools follow `agents.<name>.connectors`,
   not this list.
 - `kortix validate` warns about a name that is not a harness, Kortix, or

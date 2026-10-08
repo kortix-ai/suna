@@ -128,8 +128,10 @@ agents:
 - `tools` decides whether the model sees a tool. `permission` in the agent's
   `.md` decides whether a call is allowed, asked, or denied. A tool in the
   list keeps its permission rule; a tool not in the list is hidden and denied.
-- A subagent started with `task` gets the tools both lists allow: its own
-  and the agent of the session.
+- A subagent started with `task`: on pi it gets the tools both lists allow
+  (its own and the session agent's). On OpenCode it gets its own list's tools,
+  because OpenCode applies an agent's rules to that agent only. Leave `task`
+  out of a list to stop that agent from delegating.
 - `kortix validate` warns about a name that is not a harness, Kortix or
   project tool. A typo in an `exclude` list leaves the real tool on.
 
