@@ -11,7 +11,7 @@
  * No animation, a plain placeholder. Every control is a design-system
  * `Button`: secondary `rounded-full` for add, a `sm` chip with the agent name
  * (ghost; secondary for "Connect model", KRTX-247), and a round send button that fills with `primary` once
- * there is text or a file to send. The control row is 36pt (Jay, 2026-09-21:
+ * there is text, a paste or a file to send. The control row is 36pt (Jay, 2026-09-21:
  * 40pt read oversized): `icon-md` icon buttons with 18pt glyphs. Text is 16pt Roobert Regular
  * (design.md §3 Inputs).
  *
@@ -45,6 +45,7 @@ import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { INPUT_FONT_FAMILY, INPUT_FONT_SIZE } from '@/components/kortix/pill-input';
+import type { PastedContent } from '@kortix/shared';
 import type { AttachedFile } from '@/lib/session/attachments';
 import type { ComposerChip } from '@/lib/session/composer-config';
 import { BUTTON_LABEL_MAX_FONT_SCALE } from '@/lib/ui/font-scale';
@@ -106,6 +107,8 @@ const ROW_IN = FadeIn.duration(160).easing(Easing.out(Easing.quad));
 const ROW_OUT = FadeOut.duration(120).easing(Easing.out(Easing.quad));
 const ROW_LAYER = { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 } as const;
 
+const NO_PASTES: PastedContent[] = [];
+
 /** About seven lines of 16pt text, then the field scrolls. */
 const MAX_INPUT_HEIGHT = 160;
 
@@ -142,6 +145,11 @@ interface ComposerProps {
   onRemoveAttachment?: (index: number) => void;
   /** Per-file upload progress ring / failure scrim, keyed by index in `attachments`. */
   attachmentUploads?: Readonly<Record<number, ComposerAttachmentUpload>>;
+  /** "Pasted text" tiles, drawn before the files (`usePastedTiles`). They count as something to send. */
+  pastes?: PastedContent[];
+  onRemovePaste?: (id: string) => void;
+  /** Pressing a paste tile. Without it the tile is inert. */
+  onOpenPaste?: (paste: PastedContent) => void;
   /**
    * Shows the chip: the agent name, or "Connect model" (`composerChip`). It
    * opens the agent and model sheet.
@@ -176,6 +184,9 @@ export function Composer({
   allowEmptySend = false,
   onRemoveAttachment,
   attachmentUploads,
+  pastes = NO_PASTES,
+  onRemovePaste,
+  onOpenPaste,
   chip,
   onChipPress,
   className,
@@ -185,7 +196,7 @@ export function Composer({
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const colors = THEME[isDark ? 'dark' : 'light'];
-  const canSend = !disabled && (allowEmptySend || value.trim().length > 0 || attachments.length > 0);
+  const canSend = !disabled && (allowEmptySend || value.trim().length > 0 || attachments.length > 0 || pastes.length > 0);
   const dictation = useDictation({ value, onChangeText });
   const showMic = dictationEnabled && dictation.available;
   // A send or a lock ends dictation, keeping the words.
@@ -211,13 +222,16 @@ export function Composer({
       />
       {header ? <View className="px-2 pb-1 pt-1">{header}</View> : null}
 
-      {attachments.length > 0 ? (
+      {attachments.length > 0 || pastes.length > 0 ? (
         <View className="pb-1">
           <ComposerAttachmentTiles
             files={attachments}
             disabled={disabled}
             uploads={attachmentUploads}
             onRemove={(index) => onRemoveAttachment?.(index)}
+            pastes={pastes}
+            onRemovePaste={onRemovePaste}
+            onOpenPaste={onOpenPaste}
           />
         </View>
       ) : null}

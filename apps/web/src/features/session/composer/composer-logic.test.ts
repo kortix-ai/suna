@@ -4,7 +4,11 @@ import { describe, expect, test } from 'bun:test';
 import {
   acknowledgeQuoteRequests,
   appendComposerQuote,
+  classifyPaste,
+  isUndoKey,
+  popPasteUndo,
   extractReplyQuotes,
+  nextPastedTextFileName,
   mergeComposerQuotes,
   planDraftSubmission,
   planFailedSendRecovery,
@@ -530,6 +534,91 @@ describe('planDraftSubmission', () => {
   });
 });
 
+// ── Pasted-text tiles ──────────────────────────────────────────────────────
+//
+// A long paste leaves the editor as a tile; Send writes each tile as one
+// `<pasted_content>` block ahead of the typed text (`serializePromptWithPastes`).
+describe('planDraftSubmission with pasted tiles', () => {
+  const commands = [
+    { name: 'deep-research', description: 'Research deeply' },
+  ] as never as Parameters<typeof planDraftSubmission>[0]['commands'];
+  const paste = { id: 'a1b2c3d4', text: 'line one\nline two' };
+  const block = '<pasted_content id="a1b2c3d4" chars="17">\nline one\nline two\n</pasted_content>';
+
+  test('a message leads with its tiles, then the typed text', () => {
+    expect(
+      planDraftSubmission({ commandName: undefined, text: '  explain this  ', commands, pastes: [paste] }),
+    ).toEqual({ kind: 'message', text: `${block}\n\nexplain this` });
+  });
+
+  test('tiles alone are a message, with no stray blank line', () => {
+    expect(
+      planDraftSubmission({ commandName: undefined, text: '   ', commands, pastes: [paste] }),
+    ).toEqual({ kind: 'message', text: block });
+  });
+
+  test('reply quotes still lead, ahead of the tiles', () => {
+    const plan = planDraftSubmission({
+      commandName: undefined,
+      text: 'why',
+      commands,
+      quotes: ['earlier answer'],
+      pastes: [paste],
+    });
+    expect(plan).toEqual({
+      kind: 'message',
+      text: withReplyQuotes(['earlier answer'], `${block}\n\nwhy`),
+    });
+  });
+
+  test('a tag the user typed never parses as a tile', () => {
+    expect(
+      planDraftSubmission({ commandName: undefined, text: '<pasted_content id="x">', commands }),
+    ).toEqual({ kind: 'message', text: '&lt;pasted_content id="x">' });
+  });
+
+  test('a command carries its tiles in the args and in split.before', () => {
+    const plan = planDraftSubmission({
+      commandName: 'deep-research',
+      text: 'this',
+      commands,
+      commandSplit: { before: '', after: 'this' },
+      pastes: [paste],
+    });
+    if (plan.kind !== 'command') throw new Error('expected a command');
+    expect(plan.args).toBe(`${block}\n\nthis`);
+    expect(plan.split).toEqual({ before: block, after: 'this' });
+  });
+});
+
+describe('classifyPaste', () => {
+  test('a short paste stays in the editor', () => {
+    expect(classifyPaste('a short line', '', [])).toBe('inline');
+  });
+
+  test('1000 characters, or more than 10 lines, becomes a tile', () => {
+    expect(classifyPaste('x'.repeat(1000), '', [])).toBe('tile');
+    expect(classifyPaste(Array.from({ length: 11 }, () => 'l').join('\n'), '', [])).toBe('tile');
+    expect(classifyPaste(Array.from({ length: 10 }, () => 'l').join('\n'), '', [])).toBe('inline');
+  });
+
+  test('a paste that would push the prompt past 100,000 bytes goes out as a file', () => {
+    expect(classifyPaste('x'.repeat(99_000), '', [])).toBe('tile');
+    expect(classifyPaste('x'.repeat(100_001), '', [])).toBe('file');
+    // The tiles already attached count toward the same budget.
+    const held = [{ id: 'aaaaaaaa', text: 'y'.repeat(60_000) }];
+    expect(classifyPaste('x'.repeat(50_000), '', held)).toBe('file');
+  });
+});
+
+describe('nextPastedTextFileName', () => {
+  test('numbers the file after the pasted-text files already attached', () => {
+    expect(nextPastedTextFileName([])).toBe('pasted-text-1.txt');
+    expect(nextPastedTextFileName(['notes.md', 'pasted-text-1.txt'])).toBe('pasted-text-2.txt');
+    expect(nextPastedTextFileName(['pasted-text-3.txt'])).toBe('pasted-text-4.txt');
+  });
+});
+
 // ── Clicking the composer's padding ────────────────────────────────────────
 //
 // The editor's wrapper carries `px-1 pb-9`, and padding belongs to the
@@ -860,5 +949,37 @@ describe('restoreComposerQuotes — quotes that left with a draft come back at t
     const current = [{ id: 'q1', text: 'kept' }];
     expect(restoreComposerQuotes(current, [], ids())).toBe(current);
     expect(restoreComposerQuotes([], ['a', '  ', 'a'], ids())).toEqual([{ id: 'new-1', text: 'a' }]);
+  });
+});
+
+describe('tile paste undo', () => {
+  const key = (k: string, mods: Partial<KeyboardEvent> = {}) => ({
+    key: k,
+    metaKey: false,
+    ctrlKey: false,
+    shiftKey: false,
+    altKey: false,
+    isComposing: false,
+    ...mods,
+  });
+  test('Mod-z is undo; Mod-Shift-z, Alt and a bare z are not', () => {
+    expect(isUndoKey(key('z', { metaKey: true }))).toBe(true);
+    expect(isUndoKey(key('z', { ctrlKey: true }))).toBe(true);
+    expect(isUndoKey(key('Z', { metaKey: true, shiftKey: true }))).toBe(false);
+    expect(isUndoKey(key('z', { metaKey: true, altKey: true }))).toBe(false);
+    expect(isUndoKey(key('z'))).toBe(false);
+    expect(isUndoKey(key('y', { ctrlKey: true }))).toBe(false);
+    expect(isUndoKey(key('z', { metaKey: true, isComposing: true }))).toBe(false);
+  });
+  test('pops the newest live tile, skips removed ones, then leaves undo to the editor', () => {
+    const pastes = [
+      { id: 'a', text: 'A' },
+      { id: 'c', text: 'C' },
+    ];
+    const stack = ['a', 'b', 'c'];
+    expect(popPasteUndo(stack, pastes)).toBe('c');
+    expect(popPasteUndo(stack, pastes)).toBe('a'); // `b` was removed with its X
+    expect(popPasteUndo(stack, pastes)).toBeUndefined();
+    expect(stack).toEqual([]);
   });
 });

@@ -7,6 +7,8 @@
  * not brought back.
  */
 
+import { splitPastedContent } from '@kortix/shared';
+
 interface QueuedLike {
   id: string;
 }
@@ -26,6 +28,12 @@ export function restoreQueued<T extends QueuedLike>(
     ...restored.map((m) => byId.get(m.id) ?? m),
     ...current.filter((m) => !snapshotIds.has(m.id)),
   ];
+}
+
+/** A queue row's line: the typed text without its pastes, or `Pasted text` for a pastes-only prompt (web `rowText`). */
+export function queueRowText(text: string): string {
+  const { text: typed, pastes } = splitPastedContent(text);
+  return typed || (pastes.length > 0 ? 'Pasted text' : '');
 }
 
 export function queueHeaderLabel(count: number): string {

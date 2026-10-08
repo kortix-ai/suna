@@ -21,7 +21,11 @@ import {
   projectSessionConnection,
 } from '@kortix/sdk';
 import { useProjectSession, useSessionMessageAuthors, useSessionModelUsage, useSessionParticipants } from '@kortix/sdk/react';
-import { ArrowBendUpLeftIcon, CaretDownIcon, StackIcon as Layers } from '@phosphor-icons/react';
+import {
+  ArrowBendUpLeftIcon,
+  CaretDownIcon,
+  StackIcon as Layers,
+} from '@phosphor-icons/react';
 import { m } from 'motion/react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -54,6 +58,7 @@ import { chatPlanAnchorId } from './turn/plan-anchor';
 import { stabilizeTurns } from './turn/stable-turns';
 import { ThrottledMarkdown } from './turn/throttled-markdown';
 import { TurnViewport } from './turn/turn-viewport';
+import { PastedTextBody, PastedTextCopy, PastedTextMeta } from './pasted-text';
 import { UserMessage } from './turn/user-message';
 import {
   fallbackBusyRowAfterTurnId,
@@ -3456,6 +3461,20 @@ export function SessionChat({
     },
     [tHardcodedUi],
   );
+  // A sent paste opens the same way, keyed by its id.
+  const handleOpenPastedContent = useCallback(
+    (id: string, text: string) => {
+      panelRef.current?.openDetail({
+        key: `pasted:${id}`,
+        title: tHardcodedUi.raw('i18nComplete.text39cfc32bd12c'),
+        meta: <PastedTextMeta text={text} />,
+        actions: <PastedTextCopy text={text} />,
+        padded: true,
+        body: <PastedTextBody text={text} />,
+      });
+    },
+    [tHardcodedUi],
+  );
 
   // Stable identities for every handler a memoized `SessionTurn` receives.
   // Several of these close over the live transcript (`handleEditSend` →
@@ -3464,6 +3483,7 @@ export function SessionChat({
   const stableRetryQueued = useStableCallback(handleRetryQueuedMessage);
   const stableRemoveQueued = useStableCallback(handleRemoveQueuedMessage);
   const stableOpenCompactionSummary = useStableCallback(handleOpenCompactionSummary);
+  const stableOpenPastedContent = useStableCallback(handleOpenPastedContent);
   const stablePermissionReply = useStableCallback(handlePermissionReply);
   const stableRewind = useStableCallback(handleRewind);
   const stableEditCancel = useStableCallback(handleEditCancel);
@@ -4266,6 +4286,7 @@ export function SessionChat({
                               onOpenCompactionSummary={
                                 panel ? stableOpenCompactionSummary : undefined
                               }
+                              onOpenPastedContent={panel ? stableOpenPastedContent : undefined}
                               providers={providers}
                               commandMessages={commandMessagesRef.current}
                               commands={commands}
@@ -4493,6 +4514,7 @@ export function SessionChat({
                 noAccessibleAgents={noAccessibleAgents}
                 commands={chatCommands}
                 slashFiles={chatSlashFiles}
+                onOpenPastedContent={panel ? stableOpenPastedContent : undefined}
                 onCommand={handleCommand}
                 models={local.model.list}
                 selectedModel={local.model.currentKey ?? null}
