@@ -1,0 +1,21 @@
+{
+  "source_hash": "ad2dd26454832ea1964c9e368c5791e2524d82389b63d227583771a3329a75ea",
+  "diff_files": [
+    "apps/api/src/config.ts",
+    "apps/cli/src/__tests__/connectors-connect.test.ts",
+    "apps/cli/src/commands/connectors.ts",
+    "packages/starter/src/embedded.generated.json",
+    "packages/starter/templates/managed/skills/kortix-connectors/SKILL.md",
+    "packages/starter/templates/managed/skills/kortix-system/SKILL.md",
+    "packages/starter/templates/managed/skills/kortix-system/references/kortix/credentials-and-setup-links.md"
+  ],
+  "diff_hash": "b777e83cf297225743919ca8c60fba160d7ba9912bab840bf8c2378db86df65a",
+  "head": "9fd9eaa95227737f6033bbe20b782333293c0cdd",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-08T13:08:37.175Z"
+}
