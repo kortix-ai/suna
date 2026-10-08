@@ -204,6 +204,7 @@ const baseTrigger: ProjectTrigger = {
   last_error: null,
   last_attempt_at: '2026-10-01T06:00:00.000Z',
   webhook_url: 'https://api.test/v1/webhooks/triage',
+  event: null,
 };
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 10));

@@ -62,6 +62,7 @@ import {
   PERMISSION_ACTIONS_V2,
   DURATION_RE,
   MONITOR_MODES,
+  EVENT_FORBIDDEN_KEYS,
   MONITOR_RUN_MAX_LENGTH,
   RESERVED_SANDBOX_SLUG,
   RESERVED_SLUG_PROVIDERS,
@@ -354,7 +355,7 @@ function sandboxSchema(): JsonSchemaFragment {
   };
 }
 
-/** One `[[triggers]]` entry — cron, webhook, or monitor (`validateTriggers`). */
+/** One `[[triggers]]` entry — cron, webhook, monitor, or event (`validateTriggers`). */
 function triggerSchema(): JsonSchemaFragment {
   const durationSchema: JsonSchemaFragment = { type: 'string', pattern: DURATION_RE.source };
   return {
@@ -394,6 +395,11 @@ function triggerSchema(): JsonSchemaFragment {
       mode: { type: 'string', enum: [...MONITOR_MODES] },
       interval: durationSchema,
       expect_event_within: durationSchema,
+      // `type: event` only — the connector slug, the provider event type id
+      // and the provider event config (opaque here; the provider validates it).
+      connector: { type: 'string', minLength: 1 },
+      event: { type: 'string', minLength: 1 },
+      config: { type: 'object' },
     },
     additionalProperties: true,
     allOf: [
@@ -431,6 +437,20 @@ function triggerSchema(): JsonSchemaFragment {
             secretEnv: false,
           },
         },
+      },
+      {
+        // An event names its connector + event type and carries none of the
+        // cron/webhook/monitor wiring.
+        if: { properties: { type: { const: 'event' } } },
+        then: {
+          required: ['connector', 'event'],
+          properties: Object.fromEntries(EVENT_FORBIDDEN_KEYS.map((k) => [k, false])),
+        },
+      },
+      {
+        // The event fields exist only on an event trigger.
+        if: { properties: { type: { enum: ['cron', 'webhook', 'monitor'] } }, required: ['type'] },
+        then: { properties: { connector: false, event: false, config: false } },
       },
       {
         // `interval` is the poll period: required on poll, forbidden on stream.

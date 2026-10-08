@@ -1,4 +1,5 @@
 /** Project settings: onboarding, deletion, feature flags, and the sandbox provider override. */
+import { releaseProjectEventSubscriptions } from '../trigger-events/subscriptions';
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { auth, errors, json, lenientBody } from '../../openapi';
@@ -268,6 +269,8 @@ export function registerProjectSettingsRoutes(): void {
     void import('../../backends/lifecycle')
       .then(({ parkAndUnparkBackends }) => parkAndUnparkBackends(projectId))
       .catch((error) => logger.warn('[projects] could not park the backends', { projectId, error: String(error) }));
+    // An archived project fires nothing: release its app-event provider instances.
+    await releaseProjectEventSubscriptions(projectId);
     return c.json({ ok: true, archived: true, repo_deleted: repoDeleted });
   },
   );

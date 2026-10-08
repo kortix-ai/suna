@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 741,
+  "count": 744,
   "routes": [
     {
       "method": "GET",
@@ -2547,6 +2547,14 @@
       "path": "/v1/projects/:projectId/triggers/activation"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/triggers/event-apps"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/triggers/event-types"
+    },
+    {
       "method": "POST",
       "path": "/v1/projects/:projectId/turn-permission"
     },
@@ -2905,6 +2913,10 @@
     {
       "method": "POST",
       "path": "/v1/webhooks/email/agentmail"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/webhooks/events/:provider"
     },
     {
       "method": "POST",

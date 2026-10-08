@@ -402,6 +402,13 @@ export const qk = {
      *  they must share this one key. */
     triggers: (id: string) => [...qk.project.scope(id), 'triggers'] as const,
 
+    /** `listProjectTriggerEventTypes` — the app events one connector can trigger on. */
+    triggerEventTypes: (id: string, connector: string) =>
+      [...qk.project.triggers(id), 'event-types', connector] as const,
+
+    /** `listProjectTriggerEventApps` — the apps that can trigger events. */
+    triggerEventApps: (id: string) => [...qk.project.triggers(id), 'event-apps'] as const,
+
     /** `listProjectReminders` — `GET /projects/:id/reminders`. Also the prefix
      *  of every `sessionReminders` key, so invalidating it refreshes the
      *  project page and every session's reminder chip together. */

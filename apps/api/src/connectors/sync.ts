@@ -40,8 +40,9 @@ import {
   confineSharedProjectSecretToConnector,
   getProjectSecretValueForConsumer,
 } from '../projects/secrets';
-import { extractTriggers, readManifest } from '../projects/triggers';
+import { type GitTriggerSpec, extractTriggers, readManifest } from '../projects/triggers';
 import { reconcileProjectTriggerRuntime } from '../projects/trigger-runtime-catalog';
+import { reconcileEventSubscriptions } from '../projects/surface';
 import { db } from '../shared/db';
 import { isUniqueViolation } from '../shared/postgres-errors';
 import { ensureChannelConnectorDeclared, removeChannelConnectorDeclared } from './channel-manifest';
@@ -465,8 +466,10 @@ async function syncProjectConnectorsFenced(
   // kortix.yaml" OR a transient git error — either way we must not treat it as
   // "zero declared connectors" and delete the project's real ones below.
   let declaredSpecs: ConnectorSpec[] = [];
+  let triggerSpecs: GitTriggerSpec[] | null = null;
   if (manifest) {
     const triggers = extractTriggers(manifest);
+    triggerSpecs = triggers.specs;
     await reconcileProjectTriggerRuntime(projectId, triggers.specs);
     errors.push(...triggers.errors.map((e) => ({ slug: e.slug, error: e.error })));
 
@@ -656,6 +659,10 @@ async function syncProjectConnectorsFenced(
       }
     });
   }
+
+  // After the connector rows above exist: an event trigger resolves its connector row.
+  // The periodic sweep also retries `error` / `needs_connection` subscriptions here.
+  if (triggerSpecs) await reconcileEventSubscriptions(projectId, accountId, triggerSpecs);
 
   return { synced, errors };
 }

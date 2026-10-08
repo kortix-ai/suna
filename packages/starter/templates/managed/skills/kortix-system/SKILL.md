@@ -155,7 +155,8 @@ Load this skill when the user asks any of:
 - "What can you do?" / "Can you do X?" / "How does Kortix work?" / "How do I
   do Y in Kortix?" / how Kortix compares to other AI tools or assistants
 - "Schedule this / remind me later / run this every morning / on a
-  schedule" / "recurring task" / "cron job" / "webhook trigger"
+  schedule" / "recurring task" / "cron job" / "webhook trigger" / "when a PR opens /
+  an email arrives" (app event trigger)
 - "Check back on this later / follow up tomorrow / keep checking until X
   happens" — a session reminder (`kortix remind`)
 - "What does `kortix.yaml` do?" / "What is `kortix_version`?"
@@ -221,6 +222,7 @@ Kortix cloud state — not just files in the repo. Examples:
 | "call Gmail / a CRM / any connector from an App, a Convex backend or a script" | `@kortix/sdk` through the connector gateway, never a raw provider key · `kortix system-skills get kortix-connectors` (**From apps and backends**) |
 | "edit files in another session's sandbox" | `kortix sessions files <id> ls|write|mv|rm|find` |
 | "what needs review? approve / reject / request changes" | `kortix review ls` · `kortix review act <id> approve` · `kortix cr request-changes <cr> --message` |
+| "when X happens in <app>, do Y" (new email, PR, issue, calendar event, Slack message) | `kortix triggers events --apps` → `triggers events --connector <slug> --event <TYPE>` → `triggers add … --type event … --apply` · playbook: `references/scheduling.md` → App event triggers |
 | "edit a trigger live (schedule, conditions, agent, model)" | `kortix triggers set <slug> --cron … --filter k=v` · `triggers add … --apply` |
 | "who is in the account / invite someone / manage groups" | `kortix members ls|invite` · `kortix groups …` · `kortix access requests ls` |
 
@@ -521,7 +523,11 @@ Decide the mechanism first:
 - **Recurring project work** anyone should see (daily digest) →
   `type: cron` + `cron` (6-field croner) + `timezone` in `kortix.yaml`.
 - **One-off project job** not tied to this session → `type: cron` + `run_at`.
-- **Reacts to an external event** → `type: webhook` + `secret_env`.
+- **Reacts to an event in a connected app** ("when a PR opens", "when an
+  email arrives", "when an issue changes") → `type: event` + `connector` +
+  `event`. Kortix subscribes for you: no webhook, no secret, no signature.
+  Use `type: webhook` + `secret_env` only for a system that has no app
+  connector.
 
 For triggers, `session_mode` governs every fire: `"fresh"` (default, clean session, no chat
 history — right for monitoring/digests) vs `"reuse"` (re-prompts the same
@@ -536,16 +542,17 @@ watching — usually via `slack send`, silent otherwise), and it must be
 
 **Full references:**
 - `references/kortix/kortix-yaml.md`
-  — the complete `triggers:` field schema (cron/webhook fields, prompt
+  — the complete `triggers:` field schema (cron/webhook/event fields, prompt
   template variables, webhook signature + response codes, `session_mode`,
   the project-wide `triggers_paused` kill-switch).
 - `references/scheduling.md` — the
   operational playbook: full cron cheat-sheet + gotchas (DOM+DOW OR-not-AND
   trap, no exact-minute gates), fresh-vs-reuse guidance, notifying/
   idempotency practices in depth, the pause-and-wait re-fire pattern,
-  worked examples, and a pre-ship checklist.
+  worked examples, a pre-ship checklist, and the **App event triggers**
+  playbook (autonomous setup recipe, statuses, noise control).
 - `references/kortix/kortix-cli.md`
-  — the `kortix triggers ls/info/fire/enable/disable` and
+  — the `kortix triggers ls/info/fire/enable/disable/events/add/set` and
   `kortix reminders` command reference.
 </scheduling>
 

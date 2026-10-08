@@ -160,6 +160,28 @@ describe('type = "monitor" never schedules', () => {
   });
 });
 
+// Characterization: the hash string of an existing trigger must not move when
+// the event type lands. A moved revision re-upserts every catalog row.
+describe('schedule revision is pinned for non-event types', () => {
+  test('cron and webhook revisions equal the pre-event hashes', () => {
+    expect(triggerScheduleRevision(schedule())).toBe(
+      'c62c42e5c5e7b7b69d399925bf34ff11d22f12c1a62044a72c80e3e502316b75',
+    );
+    expect(triggerScheduleRevision(schedule({ type: 'webhook' }))).toBe(
+      'fca2ff133482b29721769bfaf3e9b4c1b88dbe71c45654f2a32ede10e065f2e5',
+    );
+  });
+
+  test('an event revision tracks connector, event type and config', () => {
+    const event = (config: Record<string, unknown> = {}, type = 'E') =>
+      schedule({ type: 'event', cron: null, timezone: 'UTC', event: { connector: 'github', type, config } });
+    const original = triggerScheduleRevision(event());
+    expect(triggerScheduleRevision(event())).toBe(original);
+    expect(triggerScheduleRevision(event({ repo: 'api' }))).not.toBe(original);
+    expect(triggerScheduleRevision(event({}, 'OTHER'))).not.toBe(original);
+  });
+});
+
 // KRTX-1721: croner reads a 6-field cron seconds-first, so a cron that steps
 // the first field fires every few seconds, and each fire starts a session.
 // New crons are refused at write time; a stored one runs at most once a minute.

@@ -1384,7 +1384,7 @@ export const TriggerSchema = z.object({
   slug: z.string(),
   path: z.string(),
   name: z.string(),
-  type: z.enum(['cron', 'webhook', 'monitor']),
+  type: z.enum(['cron', 'webhook', 'monitor', 'event']),
   agent: z.string(),
   /** Wire-form model (`provider/model`) or null for "Default". */
   model: z.string().nullable(),
@@ -1401,6 +1401,24 @@ export const TriggerSchema = z.object({
   interval_seconds: z.number().nullable(),
   /** For type=monitor only — the silence watchdog, in whole seconds. */
   expect_event_within_seconds: z.number().nullable(),
+  /**
+   * For type=event only. `pending` = declared but no subscription row yet.
+   * Null for every other type.
+   */
+  event: z
+    .object({
+      connector: z.string(),
+      type: z.string(),
+      config: z.record(z.string(), z.unknown()),
+      /** Event source provider derived from the connector (e.g. `composio`). Null when unresolved. */
+      provider: z.string().nullable(),
+      /** Provider app slug (e.g. `github`). Null when unresolved. */
+      app: z.string().nullable(),
+      status: z.enum(['active', 'needs_connection', 'error', 'pending']),
+      error: z.string().nullable(),
+      last_event_at: z.string().nullable(),
+    })
+    .nullable(),
   prompt_template: z.string(),
   session_mode: z.enum(['fresh', 'reuse', 'pinned', 'keyed']),
   /** For session_mode === 'pinned' only: the exact session id looped. Null otherwise. */
