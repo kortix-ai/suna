@@ -1973,3 +1973,27 @@ flow(
     });
   },
 );
+
+flow(
+  'TRG-28',
+  { domain: 'triggers', routes: ['GET /v1/projects/:projectId/triggers/event-types'] },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    const params = { projectId: p.id };
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const url = '/v1/projects/:projectId/triggers/event-types';
+    await ctx.step('?app= with no connector → 200 (provider configured) or 409 event_source_unavailable (local profile)', async () => {
+      const r = await owner.get(url, { params, query: { app: 'github' } });
+      r.status([200, 409, 404, 502]);
+      if (r.json<{ error?: string }>().error === 'connector is required') throw new Error('app must not need a connector');
+    });
+    await ctx.step('unknown source → 400 naming the sources', async () => {
+      const r = await owner.get(url, { params, query: { app: 'github', source: 'nope' } });
+      r.status(400);
+      if (!JSON.stringify(r.json()).includes('Unknown event source \\"nope\\". Sources: composio.')) throw new Error(`error text missing: ${JSON.stringify(r.json())}`);
+    });
+    await ctx.step('connector and app together → 400', async () => {
+      (await owner.get(url, { params, query: { connector: 'inbox', app: 'github' } })).status(400);
+    });
+  },
+);

@@ -33,7 +33,8 @@ import { markGitTriggerAttemptFailed } from '../lib/trigger-fire';
 import { validateWebhookSecretConfiguration } from '../lib/webhook-secret-policy';
 import { reconcileProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { connectorInfo, eventPayload } from '../trigger-events/deliver';
-import { listConnectorEventTypes, listEventApps, validateEventTrigger } from '../trigger-events/catalog';
+import { unknownSourceMessage } from '../trigger-events/registry';
+import { listAppEventTypes, listConnectorEventTypes, listEventApps, validateEventTrigger } from '../trigger-events/catalog';
 import { reconcileEventSubscriptions } from '../trigger-events/subscriptions';
 import {
   PRIVATE_TRIGGER_SESSION_ACCESS,
@@ -204,7 +205,7 @@ export function registerTriggersRoutes(): void {
     },
   );
 
-  // GET /v1/projects/:projectId/triggers/event-types?connector=<slug>
+  // GET /v1/projects/:projectId/triggers/event-types?connector=<slug>  |  ?app=<app>[&source=<adapter>]
   //
   // ⚠️ Keep registered BEFORE the `…/triggers/{slug}` routes (see `activation` below).
   projectsApp.openapi(
@@ -212,11 +213,16 @@ export function registerTriggersRoutes(): void {
       method: 'get',
       path: '/{projectId}/triggers/event-types',
       tags: ['triggers'],
-      summary: 'List the app events a connector can trigger on',
+      summary: 'List the app events a connector or an app can trigger on',
+      description: 'Send `connector` (a project connector slug) or `app` (an app of an event source, no connector needed) with an optional `source`, not both.',
       ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
-        query: z.object({ connector: z.string().min(1).openapi({ description: 'Connector slug.' }) }),
+        query: z.object({
+          connector: z.string().min(1).optional().openapi({ description: 'Connector slug. Exclusive with `app`.' }),
+          app: z.string().min(1).optional().openapi({ description: 'App slug of an event source, such as `github`. Exclusive with `connector`.' }),
+          source: z.string().min(1).optional().openapi({ description: 'Event source adapter id for `app`. Default `composio`.' }),
+        }),
       },
       responses: {
         200: json(
@@ -251,9 +257,14 @@ export function registerTriggersRoutes(): void {
         PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
       );
       const slug = c.req.query('connector')?.trim();
-      if (!slug) return c.json({ error: 'connector is required' }, 400);
-      const catalog = await listConnectorEventTypes(projectId, slug);
+      const app = c.req.query('app')?.trim();
+      if (!slug === !app) return c.json({ error: 'Send exactly one of connector or app' }, 400);
+      const source = c.req.query('source')?.trim() || 'composio';
+      const unknownSource = app ? unknownSourceMessage(source) : null;
+      if (unknownSource) return c.json({ error: unknownSource }, 400);
+      const catalog = app ? await listAppEventTypes(source, app) : await listConnectorEventTypes(projectId, slug as string);
       if (catalog.kind === 'connector_not_found') return c.json({ error: `Connector "${slug}" not found` }, 404);
+      if (catalog.kind === 'app_not_found') return c.json({ error: 'app_not_found' }, 404);
       if (catalog.kind === 'unavailable') return c.json({ error: 'event_source_unavailable' }, 409);
       if (catalog.kind === 'provider_error') return c.json({ error: `Could not list events: ${catalog.message}` }, 502);
       return c.json({

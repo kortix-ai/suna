@@ -136,6 +136,7 @@ An agent or a person runs these steps in order. Each step prints what the next s
 
 ```sh
 kortix triggers events --apps
+kortix triggers events --app github
 kortix connectors add github --provider composio --app github --apply
 kortix connectors connect github --owner project
 kortix triggers events --connector github
@@ -148,6 +149,7 @@ kortix triggers info pr-review
 ```
 
 1. `triggers events --apps` lists the apps that can trigger events. Apps are grouped under their event source (`source: composio`). Each app lists its connectors (profiles) and their shared accounts. The `STATE` column reads `connected` or `needs account`; apps with no connector appear under `No connector yet`.
+   `triggers events --app <app>` lists one app's events, and `--event <TYPE>` one event's settings, before you add any connector.
 2. `connectors add` adds the connector when the app has none. Skip it when `CONNECTOR` is set.
 3. `connectors connect <slug> --owner project` prints a link. A person opens it to connect the shared account. A member's private account does not count. Run it again to add a second shared account, then label it with `connectors rename <id> <label>`.
 4. `triggers events --connector <slug>` lists the events. Add `--event <TYPE>` for one event's settings and its `{{ event.data.* }}` variables. Read each setting's description: some events take a full name in one setting, such as `repo: acme/api`, and reject the same value split across `owner` and `repo`.

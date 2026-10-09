@@ -173,11 +173,14 @@ const EVENT_APPS = {
   ],
 };
 
+const eventTypesQueries: string[] = [];
+
 function startServer(triggers: unknown[]): string {
   server = Bun.serve({
     port: 0,
     fetch: (req) => {
-      const { pathname } = new URL(req.url);
+      const { pathname, search } = new URL(req.url);
+      if (pathname.endsWith('/triggers/event-types')) eventTypesQueries.push(search);
       if (pathname.endsWith('/triggers/event-apps')) return Response.json(EVENT_APPS);
       if (pathname.endsWith('/triggers/event-types')) {
         return Response.json(EVENT_TYPES);
@@ -1022,6 +1025,24 @@ describe('kortix triggers — events', () => {
     expect(JSON.parse(raw.stdout)).toEqual(EVENT_TYPES);
     const noConnector = await runCli(['triggers', 'events', '--project', PROJECT], cfg);
     expect(noConnector.code).toBe(2);
+  });
+
+  test('events --app lists an app\'s events with no connector; --event shows one; --json is raw', async () => {
+    const cfg = writeConfig(startServer([]));
+    eventTypesQueries.length = 0;
+    const r = await runCli(['triggers', 'events', '--app', 'github', '--source', 'composio', '--project', PROJECT], cfg);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('GITHUB_PULL_REQUEST_EVENT');
+    expect(r.stdout).toContain('kortix triggers events --app github --event <TYPE>');
+    const one = await runCli(['triggers', 'events', '--app', 'github', '--event', 'GITHUB_PULL_REQUEST_EVENT', '--project', PROJECT], cfg);
+    expect(one.code).toBe(0);
+    expect(one.stdout).toContain('owner (string, required) — Repository owner');
+    expect(one.stdout).toContain('kortix connectors add <slug> --provider composio --app github');
+    const raw = await runCli(['triggers', 'events', '--app', 'github', '--json', '--project', PROJECT], cfg);
+    expect(JSON.parse(raw.stdout)).toEqual(EVENT_TYPES);
+    expect(eventTypesQueries).toEqual(['?app=github&source=composio', '?app=github', '?app=github']);
+    const both = await runCli(['triggers', 'events', '--app', 'github', '--connector', 'github', '--project', PROJECT], cfg);
+    expect(both.code).toBe(2);
   });
 
   test('events --event prints config fields and prompt variables', async () => {

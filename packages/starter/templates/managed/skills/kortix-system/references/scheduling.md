@@ -227,7 +227,9 @@ Run these in order. Each step prints what the next step needs.
    `EVENTS` count and `STATE` (`connected` or `needs account`). Under it, each
    connector (profile) lists its shared accounts: label, `as <identity>`,
    `default`, `not connected`. Apps with no connector collapse into one
-   `No connector yet` line.
+   `No connector yet` line. To read an app's events before you add a
+   connector, run `kortix triggers events --app <app>` (add `--event <TYPE>`
+   for the config fields). It needs no connector.
 2. **No connector?** `kortix connectors add <slug> --provider composio --app <app> --apply`.
    It commits the connector to `kortix.yaml` on main and syncs it.
    Use the slug `triggers events --apps` suggests when it prints `add as <slug>`
