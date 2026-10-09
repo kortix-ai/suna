@@ -750,7 +750,9 @@ async function deleteCommand(
   if (!target) return fail('delete needs an App id or slug');
   if (!yes)
     return fail(
-      `${deploymentTarget ? 'deleting a deployment' : 'delete'} is destructive; pass --yes`,
+      deploymentTarget
+        ? 'deleting a deployment is destructive; pass --yes'
+        : 'delete is destructive; pass --yes (an App that holds data needs --confirm <slug> instead)',
     );
   const ctx = await context(options);
   if (!ctx) return 1;

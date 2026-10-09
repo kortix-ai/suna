@@ -74,7 +74,7 @@ export function appCapabilities(app: { kind: string }, hostingType: AppHostingTy
 /** The 409 body for a route whose capability this App lacks. */
 export function capabilityUnsupportedBody(app: { kind: string }, capability: AppCapability) {
   return {
-    error: `This App does not support ${capability.replaceAll('_', ' ')}.`,
+    error: `A ${app.kind} App does not support ${capability.replaceAll('_', ' ')}.`,
     code: 'app_capability_unsupported',
     capability,
     kind: app.kind,

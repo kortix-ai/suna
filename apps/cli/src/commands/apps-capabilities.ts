@@ -153,7 +153,10 @@ export async function restoreCommand(rest: string[], options: ContextOptions, js
   if (!(await confirmed(yes, question))) return 0;
   const restored = await scoped(ctx, () => ctx.apps.snapshots.restore(app.app_id, snapshotId));
   if (json) emitJson(restored);
-  else process.stdout.write(`\n  ${status.ok(`restored ${restored.slug} to ${snapshotId}`)}\n\n`);
+  else process.stdout.write(
+    `\n  ${status.ok(`restored ${restored.slug} to ${snapshotId}`)}\n` +
+      `  The admin key changed: run \`eval "$(kortix apps credentials ${restored.slug})"\` again.\n\n`,
+  );
   return 0;
 }
 

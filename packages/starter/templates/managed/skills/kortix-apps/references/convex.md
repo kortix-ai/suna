@@ -263,7 +263,8 @@ kortix apps restore db <snapshot-id> --yes     # roll back; later changes are lo
 - **Restore:** rolls the running App back in place, in seconds. Every change
   after the snapshot is gone, so confirm with the user first. A snapshot from
   before a resize cannot be restored (`409 snapshot_predates_resize`): it
-  holds the old machine size.
+  holds the old machine size. A restore changes the admin key: run
+  `eval "$(kortix apps credentials <slug>)"` again before the next `npx convex`.
 - One operation at a time: snapshot, restore and snapshot delete answer
   `409 app_busy` while a resize, restore, rotation or recovery runs. Wait for
   `instance.operation` to clear (`kortix apps show <slug>`), then retry.
