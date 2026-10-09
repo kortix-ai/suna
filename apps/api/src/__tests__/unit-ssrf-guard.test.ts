@@ -209,6 +209,14 @@ describe('safeEgressFetch', () => {
       UnsafeEgressError,
     );
   });
+  test('maxRedirects 0 refuses the first 3xx without a second request', async () => {
+    dnsResults['push.example'] = [{ address: '93.184.216.34', family: 4 }];
+    fetchResponses = [{ status: 307, headers: { location: 'https://push.example/elsewhere' } }];
+    await expect(
+      safeEgressFetch('https://push.example/send', { method: 'POST', body: 'x', maxRedirects: 0 }),
+    ).rejects.toBeInstanceOf(UnsafeEgressError);
+    expect(fetchCalls).toHaveLength(1);
+  });
   test('propagates the caller signal to every hop', async () => {
     dnsResults['example.com'] = [{ address: '93.184.216.34', family: 4 }];
     const ac = new AbortController();

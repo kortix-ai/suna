@@ -11,6 +11,7 @@
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
+import * as realWatchers from '../../notifications/watchers';
 import * as realAccess from '../lib/access';
 import * as realLifecycle from '../session-lifecycle';
 import * as realHoldSettle from '../session-lifecycle/inbox-hold-settle';
@@ -384,14 +385,28 @@ mock.module('../session-lifecycle/inbox-hold-settle', () => ({
   },
 }));
 
+// KRTX-1742: who starts following a session by prompting it.
+let autoWatches: Array<{ projectId: string; sessionId: string; userId: string }> = [];
+mock.module('../../notifications/watchers', () => ({
+  ...realWatchers,
+  autoWatchSession: async (projectId: string, sessionId: string, userId: string) => {
+    autoWatches.push({ projectId, sessionId, userId });
+  },
+}));
+
 const { projectsApp } = await import('../lib/app');
 (await import('./session-prompts')).registerSessionPromptsRoutes();
 
+/** The credential the test request carries. */
+let callerAuthType = 'pat';
+let callerSessionId: string | undefined;
+
 function app() {
-  const application = new Hono<{ Variables: { userId: string; authType: string } }>();
+  const application = new Hono<{ Variables: { userId: string; authType: string; sessionId: string } }>();
   application.use('*', async (c, next) => {
     c.set('userId', USER_ID);
-    c.set('authType', 'pat');
+    c.set('authType', callerAuthType);
+    if (callerSessionId) c.set('sessionId', callerSessionId);
     await next();
   });
   application.route('/v1/projects', projectsApp);
@@ -436,6 +451,9 @@ beforeEach(() => {
   stopLog.length = 0;
   loadedProject = { row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID }, userId: USER_ID };
   visibleSession = { row: { sessionId: SESSION_ID, metadata: {} } };
+  autoWatches = [];
+  callerAuthType = 'pat';
+  callerSessionId = undefined;
 });
 
 describe('POST .../prompts', () => {
@@ -663,6 +681,55 @@ describe('POST .../prompts', () => {
   test('400s a non-UUID session id before any load', async () => {
     expect((await post(validBody, 'not-a-uuid')).status).toBe(400);
     expect(loadProjectCalls).toEqual([]);
+  });
+
+  describe('a person who prompts a session follows it (KRTX-1742)', () => {
+    const OTHER_CREATOR = '77777777-7777-4777-8777-777777777777';
+    const asCredential = (authType: string, kind: string, sessionId?: string) => {
+      callerAuthType = authType;
+      callerSessionId = sessionId;
+      loadedProject = { ...loadedProject!, actor: { credential: { kind } } } as never;
+    };
+    beforeEach(() => {
+      visibleSession = { row: { sessionId: SESSION_ID, metadata: {}, createdBy: OTHER_CREATOR } };
+    });
+
+    test('a browser sign-in and a personal CLI token start following the session', async () => {
+      asCredential('supabase', 'jwt');
+      expect((await post(validBody)).status).toBe(202);
+      asCredential('pat', 'pat');
+      expect((await post({ ...validBody, client_message_id: 'q_2' })).status).toBe(202);
+      expect(autoWatches).toEqual([
+        { projectId: PROJECT_ID, sessionId: SESSION_ID, userId: USER_ID },
+        { projectId: PROJECT_ID, sessionId: SESSION_ID, userId: USER_ID },
+      ]);
+    });
+
+    test('the creator needs no row: they follow their own session already', async () => {
+      asCredential('supabase', 'jwt');
+      visibleSession = { row: { sessionId: SESSION_ID, metadata: {}, createdBy: USER_ID } };
+      expect((await post(validBody)).status).toBe(202);
+      expect(autoWatches).toEqual([]);
+    });
+
+    test('an agent session token, a session-bound PAT and an API key never follow', async () => {
+      asCredential('pat', 'agent_session', SESSION_ID);
+      expect((await post(validBody)).status).toBe(202);
+      asCredential('pat', 'pat', SESSION_ID);
+      expect((await post({ ...validBody, client_message_id: 'q_2' })).status).toBe(202);
+      asCredential('apiKey', 'sandbox');
+      expect((await post({ ...validBody, client_message_id: 'q_3' })).status).toBe(202);
+      expect(autoWatches).toEqual([]);
+    });
+
+    test('a refused prompt follows nothing', async () => {
+      asCredential('supabase', 'jwt');
+      billingOk = false;
+      expect((await post(validBody)).status).toBe(402);
+      visibleSession = null;
+      expect((await post(validBody)).status).toBe(404);
+      expect(autoWatches).toEqual([]);
+    });
   });
 });
 

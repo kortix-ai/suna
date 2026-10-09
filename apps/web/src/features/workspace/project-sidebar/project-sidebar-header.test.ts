@@ -92,6 +92,17 @@ describe('project sidebar header', () => {
     expect(source).toContain('openCommandPalette()');
   });
 
+  // KRTX-1742: the inbox lives in the same trailing group, before search, and
+  // on mobile too. The group is `shrink-0` and the switcher `min-w-0`, so the
+  // bell never pushes search or the toggle out of the 208px minimum sidebar.
+  test('the notification bell leads the trailing group, before search', () => {
+    const trailing = header.slice(header.indexOf('className="ml-auto flex shrink-0 items-center gap-0.5"'));
+    expect(trailing).toContain('<NotificationBell');
+    expect(trailing.indexOf('<NotificationBell')).toBeLessThan(trailing.indexOf("aria-label={t('search')}"));
+    const beforeBell = header.slice(0, header.indexOf('<NotificationBell'));
+    expect(beforeBell).not.toContain('{!isMobile && !peek && (');
+  });
+
   // No keystroke exists on touch, so the button is the only way in there.
   test('search renders on mobile too, unlike the collapse toggle', () => {
     const search = header.slice(header.indexOf("aria-label={t('search')}"));
