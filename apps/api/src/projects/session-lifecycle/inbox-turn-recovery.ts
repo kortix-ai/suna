@@ -29,10 +29,23 @@ export async function settleCompletedInboxTurns(
   return settled;
 }
 
-export async function reconcileInboxTurn(sessionId: string): Promise<void> {
+async function readSessionBox(sessionId: string): Promise<Box | undefined> {
   const [box] = await db.select().from(sessionSandboxes)
     .where(eq(sessionSandboxes.sessionId, sessionId)).limit(1);
-  if (box) await settleCompletedInboxTurns(box);
+  return box;
+}
+
+/** Admission settles a finished turn before it admits the queued head prompt. */
+export async function reconcileInboxTurn(
+  sessionId: string,
+  deps = { readBox: readSessionBox, settle: settleCompletedInboxTurns, notify: notifyClosedTurn },
+): Promise<void> {
+  const box = await deps.readBox(sessionId);
+  if (!box) return;
+  const settled = await deps.settle(box);
+  if (settled.length === 0) return;
+  // The queued head prompt runs next, so only an error notifies.
+  void deps.notify({ sessionId, reason: settled.includes('failed') ? 'failed' : 'completed', promoted: true });
 }
 
 const recoveryInFlight = new Set<string>();
@@ -59,10 +72,15 @@ export function scheduleSessionTurnRecovery(
   void recover(box)
     .then(async (settled) => {
       if (settled.length === 0) return;
-      const promoted = await wake(box.sessionId);
-      // This read closed the turn, so the relay's late `end` gets
-      // `already_closed` and sends nothing: the push is ours. One per settle.
-      void notify({ sessionId: box.sessionId, reason: settled.includes('failed') ? 'failed' : 'completed', promoted });
+      // Unknown until the wake answers: a wake that throws sends no completion.
+      let promoted = true;
+      try {
+        promoted = await wake(box.sessionId);
+      } finally {
+        // This read closed the turn, so the relay's late `end` gets
+        // `already_closed` and sends nothing: the push is ours. One per settle.
+        void notify({ sessionId: box.sessionId, reason: settled.includes('failed') ? 'failed' : 'completed', promoted });
+      }
     })
     .catch((error) => console.warn('[session-turn] terminal recovery failed', error))
     .finally(() => recoveryInFlight.delete(box.sandboxId));

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { notifyClosedTurn, type SessionPushEvent } from '../../notifications/session-push';
-import { settleCompletedInboxTurns, scheduleSessionTurnRecovery } from './inbox-turn-recovery';
+import { reconcileInboxTurn, settleCompletedInboxTurns, scheduleSessionTurnRecovery } from './inbox-turn-recovery';
 
 const turn = { token: 'token-1', state: 'active', runtimeSessionId: 'ses-1', messageId: 'msg-1', startedAtMs: 1 };
 const box = { sessionId: 'session-1', sandboxId: 'box-1', externalId: 'ext-1', provider: 'platinum' as const, metadata: { activeTurns: { 'token-1': turn } } };
@@ -135,10 +135,74 @@ describe('a recovered turn close pushes once', () => {
     expect(events).toEqual([]);
   });
 
+  test('a wake that throws still sends the error push', async () => {
+    const events: SessionPushEvent[] = [];
+    scheduleSessionTurnRecovery(freshBox(), settle('failed'), async () => { throw new Error('drain down'); }, realNotify(false, events));
+    await flush();
+    expect(events).toEqual([{ type: 'error', sessionId: 'session-1', projectId: PROJECT }]);
+  });
+
+  test('a wake that throws sends no completion: promotion is unknown', async () => {
+    const calls: unknown[] = [];
+    const events: SessionPushEvent[] = [];
+    const notify = realNotify(false, events);
+    scheduleSessionTurnRecovery(freshBox(), settle('completed'), async () => { throw new Error('promote down'); },
+      async (input) => { calls.push(input); await notify(input); });
+    await flush();
+    expect(calls).toEqual([{ sessionId: 'session-1', reason: 'completed', promoted: true }]);
+    expect(events).toEqual([]);
+  });
+
   test('two cleared turns send one push, error when either failed', async () => {
     const calls: unknown[] = [];
     scheduleSessionTurnRecovery(freshBox(), async () => ['completed', 'failed'], async () => false, async (input) => { calls.push(input); });
     await flush();
     expect(calls).toEqual([{ sessionId: 'session-1', reason: 'failed', promoted: false }]);
+  });
+});
+
+describe('admission reconcile pushes for the turns it closes', () => {
+  const PROJECT = '00000000-0000-4000-8000-000000000001';
+  const run = async (endReason: 'completed' | 'failed', opts: { won?: boolean; child?: boolean; found?: boolean } = {}) => {
+    const calls: unknown[] = [];
+    const events: SessionPushEvent[] = [];
+    await reconcileInboxTurn('session-1', {
+      readBox: async () => (opts.found === false ? undefined : box),
+      settle: (b) => settleCompletedInboxTurns(b, {
+        provider: (() => ({})) as never,
+        observe: async () => ({ observation: 'terminal', endReason, daemonAnswered: true, orphanedPrompt: false }),
+        clear: async () => opts.won ?? true,
+      }),
+      notify: async (input) => {
+        calls.push(input);
+        await notifyClosedTurn(input, {
+          loadSession: async () => ({ projectId: PROJECT, childSession: opts.child ?? false }),
+          notify: async (event) => { events.push(event); return { sent: 0, reason: 'no_devices' }; },
+        });
+      },
+    });
+    return { calls, events };
+  };
+
+  test('a failed turn sends one error push', async () => {
+    const { events } = await run('failed');
+    expect(events).toEqual([{ type: 'error', sessionId: 'session-1', projectId: PROJECT }]);
+  });
+  test('a completed turn sends no completion: the queued head prompt runs next', async () => {
+    const { calls, events } = await run('completed');
+    expect(calls).toEqual([{ sessionId: 'session-1', reason: 'completed', promoted: true }]);
+    expect(events).toEqual([]);
+  });
+  test('a lost close race sends nothing', async () => {
+    const { calls } = await run('failed', { won: false });
+    expect(calls).toEqual([]);
+  });
+  test('a child session sends nothing', async () => {
+    const { events } = await run('failed', { child: true });
+    expect(events).toEqual([]);
+  });
+  test('a session with no box sends nothing', async () => {
+    const { calls } = await run('failed', { found: false });
+    expect(calls).toEqual([]);
   });
 });
