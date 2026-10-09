@@ -11,6 +11,7 @@
 import { appLinks, apps } from '@kortix/db';
 import { and, eq, inArray, isNull, or } from 'drizzle-orm';
 import { db } from '../shared/db';
+import { isUuid } from '../shared/validate';
 import { filterAppsVisibleToUser } from './access';
 
 export interface AppLinkSlugs {
@@ -89,7 +90,6 @@ export async function writeAppLinks(tx: Tx, appId: string, found: Array<{ appId:
   if (found.length) await tx.insert(appLinks).values(found.map((row) => ({ appId, usesAppId: row.appId })));
 }
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The live App of the project that `appId` uses, named by slug or by App id, or null. */
 export async function linkedApp(appId: string, projectId: string, slugOrId: string) {
@@ -101,7 +101,7 @@ export async function linkedApp(appId: string, projectId: string, slugOrId: stri
       and(
         eq(appLinks.appId, appId),
         eq(apps.projectId, projectId),
-        UUID.test(slugOrId) ? eq(apps.appId, slugOrId.toLowerCase()) : eq(apps.slug, slugOrId),
+        isUuid(slugOrId) ? eq(apps.appId, slugOrId.toLowerCase()) : eq(apps.slug, slugOrId),
         isNull(apps.deletedAt),
       ),
     )
