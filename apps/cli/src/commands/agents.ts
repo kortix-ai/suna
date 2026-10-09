@@ -4,6 +4,7 @@ import type {
   AgentConfigResponse,
   AgentGrantSetV2,
   ModelDefaultsResponse,
+  ProjectConfigSummary,
   ProjectDetail,
 } from '@kortix/sdk';
 import { splitHelp } from '../command-argv.ts';
@@ -32,6 +33,8 @@ interface AgentScopeResponse {
 
 type ProjectCtx = NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>;
 
+type DetailAgent = ProjectConfigSummary['agents'][number];
+
 const HELP = help`Usage: kortix agents <subcommand> [options]
 
 Per-agent settings on the linked Kortix project — the CLI half of Customize →
@@ -41,8 +44,8 @@ instantly, with no kortix.yaml commit; \`default\` and \`config\` commit to
 kortix.yaml on the project's default branch.
 
 Subcommands:
-  ls [--json]                     Show every agent's pinned model + the fallback
-                                  default. (Alias: \`models\`.)
+  ls [--json]                     List the project's agents (name, source file,
+                                  model) + the fallback default. (Alias: \`models\`.)
   model <agent> <model-id>        Pin an agent to a plain model id (e.g. deepseek-v4.1-flash).
   model <agent> --clear           Clear the pin — the agent follows the default again.
   default <agent>                 Make this the project's default agent.
@@ -152,34 +155,94 @@ export async function runAgents(argv: string[]): Promise<number> {
 
 // ── model defaults ──────────────────────────────────────────────────────────
 
+/** The model an agent runs on: the gateway pin when one exists, else the
+ *  manifest's `model:` frontmatter with its provider prefix stripped — the
+ *  same bare id the web Agents card shows. Null = follows the default. */
+function agentModel(agent: DetailAgent, pin: string | undefined): string | null {
+  if (pin) return pin;
+  const model = agent.model;
+  if (!model) return null;
+  return model.slice(model.lastIndexOf('/') + 1) || model;
+}
+
+function renderAgent(
+  agent: DetailAgent,
+  pins: Record<string, string>,
+  defaultAgent: string | null,
+  width: number,
+): string {
+  const pin = pins[agent.name];
+  const model = agentModel(agent, pin);
+  const modelText = model ? `${C.cyan}${model}${C.reset}` : `${C.dim}model default${C.reset}`;
+  // The web Agents card's badges: the default-agent star, the mode (omitted
+  // for the implicit primary) and disabled.
+  const markers: string[] = [];
+  if (agent.name === defaultAgent) markers.push('default agent');
+  if (pin) markers.push('pin');
+  const mode = agent.mode?.toLowerCase();
+  if (mode && mode !== 'primary') markers.push(mode);
+  if (agent.enabled === false) markers.push('disabled');
+  const tail = markers.length > 0 ? ` ${C.dim}· ${markers.join(' · ')}${C.reset}` : '';
+  return `  ${pad(agent.name, width)}   ${C.dim}${agent.path}${C.reset}   ${modelText}${tail}\n`;
+}
+
 async function agentsLs(ctx: ProjectCtx, json: boolean): Promise<number> {
   const d = await ctx.client.get<ModelDefaultsResponse>(
     `/projects/${ctx.projectId}/model-defaults`,
   );
+  // The agents live on the same /detail the web Agents page reads, so the two
+  // cannot disagree about what a project declares.
+  const detail = await ctx.client.get<ProjectDetail>(`/projects/${ctx.projectId}/detail`);
+  const agents = detail.config?.agents ?? [];
+  const pins = d.agentDefaults ?? {};
+
   if (json) {
-    emitJson(d);
+    emitJson({
+      ...d,
+      agents: agents.map((agent) => ({
+        name: agent.name,
+        path: agent.path,
+        model: agentModel(agent, pins[agent.name]),
+      })),
+    });
     return 0;
   }
+
   const fallback = d.projectDefault ?? d.accountDefault ?? d.platformDefault ?? 'unavailable';
-  const entries = Object.entries(d.agentDefaults ?? {});
   process.stdout.write('\n');
   process.stdout.write(
     `  ${C.dim}Default (project → account → platform): ${C.reset}${C.bold}${fallback}${C.reset}\n\n`,
   );
-  if (entries.length === 0) {
+  if (agents.length === 0) {
+    process.stdout.write(`  ${C.dim}No agents declared in this project.${C.reset}\n\n`);
+  } else {
+    process.stdout.write(`  ${C.dim}Agents (${agents.length})${C.reset}\n`);
+    const width = Math.max(...agents.map((agent) => agent.name.length));
+    for (const agent of agents) {
+      process.stdout.write(renderAgent(agent, pins, detail.config?.default_agent ?? null, width));
+    }
+    process.stdout.write('\n');
+  }
+
+  const declared = new Set(agents.map((agent) => agent.name));
+  const orphans = Object.entries(pins)
+    .filter(([name]) => !declared.has(name))
+    .sort((a, b) => a[0].localeCompare(b[0]));
+  if (orphans.length > 0) {
+    const width = Math.max(...orphans.map(([name]) => name.length));
+    process.stdout.write(`  ${C.dim}Pins without an agent${C.reset}\n`);
+    for (const [name, model] of orphans) {
+      process.stdout.write(`  ${pad(name, width)}   ${C.cyan}${model}${C.reset}\n`);
+    }
+    process.stdout.write(
+      `  ${C.dim}Clear one: ${C.reset}${C.cyan}kortix agents model <agent> --clear${C.reset}\n\n`,
+    );
+  } else if (Object.keys(pins).length === 0) {
     process.stdout.write(
       `  ${C.dim}No per-agent model pins — every agent follows the default.${C.reset}\n` +
         `  ${C.dim}Pin one: ${C.reset}${C.cyan}kortix agents model <agent> <model-id>${C.reset}\n\n`,
     );
-    return 0;
   }
-  const w = Math.max(...entries.map(([n]) => n.length), 5);
-  for (const [name, model] of entries.sort((a, b) => a[0].localeCompare(b[0]))) {
-    process.stdout.write(`  ${pad(name, w)}   ${C.cyan}${model}${C.reset}\n`);
-  }
-  process.stdout.write(
-    `\n  ${C.dim}${entries.length} pinned · the rest follow the default${C.reset}\n\n`,
-  );
   return 0;
 }
 
