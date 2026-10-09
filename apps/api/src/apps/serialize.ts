@@ -73,7 +73,9 @@ function serializeApp(
     /** Ready deployments kept besides the active one (rollback targets). */
     retained_deployments: config.KORTIX_APPS_RETAINED_DEPLOYMENTS,
     /** The App's machine running 24/7 for a month at list compute rates. A static App runs none. */
-    estimated_monthly_usd: hostingType === 'static' && row.kind !== 'convex' ? 0 : appMonthlyEstimateUsd(row, config.getDefaultProvider()),
+    estimated_monthly_usd: row.kind === 'convex'
+      ? appMonthlyEstimateUsd(row, 'platinum')
+      : hostingType === 'static' ? 0 : appMonthlyEstimateUsd(row, config.getDefaultProvider()),
     instance,
     last_request_at: row.lastRequestAt?.toISOString() ?? null,
     viewer_can_access: viewerCanAccess,
