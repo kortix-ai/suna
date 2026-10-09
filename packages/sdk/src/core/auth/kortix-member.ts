@@ -149,8 +149,13 @@ export interface VerifyKortixTokenOptions {
   jwks?: KortixMemberKeySet;
   /** Default: `KORTIX_AUTH_ISSUER`. */
   issuer?: string;
-  /** Default: `KORTIX_AUTH_AUDIENCE`. */
-  audience?: string;
+  /**
+   * The App id the token must name (`aud`). Default: `KORTIX_AUTH_AUDIENCE`.
+   * Required: one project key signs the tokens of every App in the project,
+   * so `aud` is what keeps a token for another App out. With neither set the
+   * token is refused. `false` accepts any App of the key set's project.
+   */
+  audience?: string | false;
   fetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 }
 
@@ -200,8 +205,8 @@ async function loadKeySet(
 /**
  * Verifies a Kortix-signed member token (ES256) and returns the member. Checks
  * the signature, `exp` (60 s skew), the issuer and the audience. Every failure,
- * including a missing key set, is a `KortixMemberError` with code
- * `unauthenticated`: nothing is ever accepted unchecked.
+ * including a missing key set or a missing audience, is a `KortixMemberError`
+ * with code `unauthenticated`: nothing is ever accepted unchecked.
  */
 export async function verifyKortixToken(
   token: string,
@@ -214,6 +219,9 @@ export async function verifyKortixToken(
   const issuer = options.issuer ?? safeEnv('KORTIX_AUTH_ISSUER');
   const audience = options.audience ?? safeEnv('KORTIX_AUTH_AUDIENCE');
   if (!jwks) return refuse('no key set configured (KORTIX_AUTH_JWKS)');
+  if (audience !== false && !audience) {
+    return refuse('no audience configured (KORTIX_AUTH_AUDIENCE, or `audience: false` to accept any App)');
+  }
 
   const parts = typeof token === 'string' ? token.split('.') : [];
   if (parts.length !== 3) return refuse('malformed');

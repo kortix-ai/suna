@@ -171,6 +171,11 @@ const member = await verifyKortixToken(bearer, {
 requireKortixMember(member, { roles: ['owner', 'admin'] });
 ```
 
+`verifyKortixToken` refuses a token when no audience is set (the option or
+`KORTIX_AUTH_AUDIENCE`): one project key signs the tokens of every App in the
+project, so `aud` is what keeps another App's token out. Pass
+`audience: false` only to accept a token for any App of the project.
+
 `kortixToken` reads `GET /_kortix/token?audience=<slug or id>` on the App's
 own origin. The audience is the App itself (the default) or an App it uses
 (`kortix apps link <app> --uses <other>`); any other answers

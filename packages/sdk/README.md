@@ -1035,7 +1035,9 @@ header, sign-in token) into one `KortixMember`: `userId`, `email`, `name`,
 `picture`, `groups`, `groupIds`, `role`, `accountId`, `projectId`.
 `requireKortixMember` throws `KortixMemberError` (`unauthenticated` |
 `forbidden`). `verifyKortixToken` takes the key set inline or as an https URL
-(`auth.jwks_uri`). WebCrypto only; no dependency. Guide: `/docs/sdk/apps`.
+(`auth.jwks_uri`), and refuses every token when no audience is set (option or
+`KORTIX_AUTH_AUDIENCE`): one project key signs every App's tokens, so `aud` is
+the only thing that keeps another App's token out. `audience: false` opts out. WebCrypto only; no dependency. Guide: `/docs/sdk/apps`.
 
 ### Headless sign-in (your users, straight through the API)
 

@@ -244,6 +244,24 @@ describe('verifyKortixToken', () => {
     }
   });
 
+  test('refuses when no audience is configured: one project key signs every App, so `aud` is the only separation', async () => {
+    const { jwks, sign } = await issuer();
+    const saved = { ...process.env };
+    delete process.env.KORTIX_AUTH_AUDIENCE;
+    try {
+      // A token Kortix minted for another App of the same project (aud = that App).
+      const otherApp = await sign({ ...live, aud: 'another-app' });
+      expect(await rejects(otherApp, { jwks, issuer: CLAIMS.iss })).toBe('unauthenticated');
+      expect(await rejects(otherApp, { jwks, issuer: CLAIMS.iss, audience: '' })).toBe('unauthenticated');
+      // The refusal names the missing setting.
+      await expect(verifyKortixToken(otherApp, { jwks, issuer: CLAIMS.iss })).rejects.toThrow('KORTIX_AUTH_AUDIENCE');
+      // `audience: false` is the explicit opt-out: accept a token for any App of the key set.
+      expect((await verifyKortixToken(otherApp, { jwks, issuer: CLAIMS.iss, audience: false })).userId).toBe('user-1');
+    } finally {
+      process.env = saved;
+    }
+  });
+
   test('tolerates 60 s of clock skew on expiry, no more', async () => {
     const { jwks, sign } = await issuer();
     expect((await verifyKortixToken(await sign({ ...live, exp: now - 30 }), options(jwks))).userId).toBe('user-1');
