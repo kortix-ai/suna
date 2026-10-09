@@ -20,13 +20,6 @@ import { createRequire } from 'node:module';
  * without ever loading the unparsable 'react-native' module graph. This
  * only affects this test process; production code is untouched.
  */
-// `useThemePalette()` (added with KRTX-1292) imports `useColorScheme` from
-// 'nativewind', whose module graph reaches the unparsable react-native entry.
-// Same mitigation as above: stub the one export the hook uses. Test-only.
-mock.module('nativewind', () => ({
-  useColorScheme: () => ({ colorScheme: 'light' }),
-}));
-
 mock.module('expo-router/react-navigation', () => ({
   DefaultTheme: {
     dark: false,

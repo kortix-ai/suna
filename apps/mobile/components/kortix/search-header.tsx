@@ -17,7 +17,7 @@ import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { INPUT_FONT_FAMILY, INPUT_FONT_SIZE } from '@/components/kortix/pill-input';
 import { haptics } from '@/lib/haptics';
-import { useThemePalette } from '@/lib/utils/theme';
+import { useThemePalette } from '@/lib/utils/use-theme-palette';
 
 export interface SearchHeaderProps {
   value: string;

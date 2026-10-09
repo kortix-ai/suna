@@ -10,7 +10,8 @@
 import * as React from 'react';
 import { TextInput, type TextStyle } from 'react-native';
 import { MONO_FONT_FAMILY } from '@/lib/utils/mono-font';
-import { THEME, useThemePalette } from '@/lib/utils/theme';
+import { THEME } from '@/lib/utils/theme';
+import { useThemePalette } from '@/lib/utils/use-theme-palette';
 
 /** Matches `Button size="lg"` (h-11, 44pt), so fields and buttons stack flush. */
 export const PILL_INPUT_HEIGHT = 44;

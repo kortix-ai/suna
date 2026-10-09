@@ -35,7 +35,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useThemePalette, withAlpha } from '@/lib/utils/theme';
+import { withAlpha } from '@/lib/utils/theme';
+import { useThemePalette } from '@/lib/utils/use-theme-palette';
 
 /** The bottom gradient's height above the safe-area inset. */
 export const BOTTOM_FADE_HEIGHT = 56;
