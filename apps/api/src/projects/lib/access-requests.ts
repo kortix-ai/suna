@@ -1,10 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { projects } from '@kortix/db';
-import {
-  accountRoleMap,
-  isAccountManagerRole,
-  projectRoleGrants,
-} from '../../iam/read-models';
+import { projectManagerUserIds } from '../../iam/project-managers';
 import { sendProjectAccessRequestEmail } from '../../accounts/email';
 import { config } from '../../config';
 import { db } from '../../shared/db';
@@ -27,22 +23,10 @@ export async function notifyProjectAccessRequestManagers(input: {
     .where(eq(projects.projectId, input.projectId))
     .limit(1);
 
-  // Who can approve this: account owners/admins (implicit Manager everywhere)
-  // plus anyone holding the project `manager` role here. Both from
-  // `role_assignments`, so the notification reaches exactly the people the
+  // Who can approve this: the project's managers, exactly the people the
   // approve route will actually let through.
-  const [accountRoles, projectGrants] = await Promise.all([
-    accountRoleMap(input.accountId),
-    projectRoleGrants({ accountId: input.accountId, projectId: input.projectId }),
-  ]);
-  const reviewerIds = Array.from(
-    new Set([
-      ...[...accountRoles.entries()]
-        .filter(([, role]) => isAccountManagerRole(role))
-        .map(([userId]) => userId),
-      ...projectGrants.filter((g) => g.projectRole === 'manager').map((g) => g.userId),
-    ]),
-  ).filter((userId) => userId !== input.requesterUserId);
+  const reviewerIds = (await projectManagerUserIds(input.accountId, input.projectId))
+    .filter((userId) => userId !== input.requesterUserId);
   if (reviewerIds.length === 0) return;
 
   const emails = await lookupEmailsByUserIds(

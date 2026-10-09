@@ -48,6 +48,7 @@ const { applyNotices, deliverEvents } = await import('./deliver');
 const { setEventSourceForTest } = await import('./registry');
 const { listEventApps, validateEventTrigger } = await import('./catalog');
 const store = await import('./store');
+const { settleTriggerAlerts } = await import('../lib/trigger-alerts');
 
 const CONFIRMATION = 'I_UNDERSTAND_THIS_DELETES_TEST_DATA';
 const HAS_CONFIRMED_TEST_DB = Boolean(
@@ -509,6 +510,10 @@ describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
       expect((await deliverEvents('composio', [delivery()])).failed).toBe(1);
       expect(await runtime('a')).toMatchObject({ lastStatus: 'failed', lastError: 'boom', lastFiredAt: null });
       expect((await runtime('a'))?.lastAttemptAt).toBeInstanceOf(Date);
+      // An event fire is never retried by Kortix: its first failure opens an alert (KRTX-1742).
+      expect(await runtime('a')).toMatchObject({ alertSource: 'fire' });
+      expect((await runtime('a'))?.alertFailingSince).toBeInstanceOf(Date);
+      await settleTriggerAlerts();
     });
 
     test('a thrown fire is recorded on the trigger, and the next good fire clears it (KRTX-1743)', async () => {
@@ -517,10 +522,15 @@ describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
       expect((await deliverEvents('composio', [delivery()])).failed).toBe(1);
       expect(await runtime('a')).toMatchObject({ lastStatus: 'failed', lastError: 'sandbox unavailable' });
 
+      expect(await runtime('a')).toMatchObject({ alertSource: 'fire' });
+
       fireStatus = 'fired';
       expect((await deliverEvents('composio', [delivery({ eventId: 'msg_synthetic2' })])).fired).toBe(1);
       expect(await runtime('a')).toMatchObject({ lastStatus: 'fired', lastError: null });
       expect((await runtime('a'))?.lastFiredAt).toBeInstanceOf(Date);
+      // The good fire ends the alert (KRTX-1742).
+      expect(await runtime('a')).toMatchObject({ alertSource: null, alertFailingSince: null });
+      await settleTriggerAlerts();
     });
 
     test('notices mark rows error with remediation text', async () => {

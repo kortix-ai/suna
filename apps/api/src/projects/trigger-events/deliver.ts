@@ -11,6 +11,7 @@ import {
   triggersPausedForProject,
 } from '../lib/triggers';
 import { releaseWebhookDeliveryKey } from '../lib/webhook-delivery';
+import { raiseTriggerAlert } from '../lib/trigger-alerts';
 import type { GitTriggerSpec } from '../trigger-types';
 import { db } from '../../shared/db';
 import * as store from './store';
@@ -129,6 +130,8 @@ async function deliverToRow(
       logger.warn('[trigger-events] fire failed', { projectId: row.projectId, slug: row.slug, error });
       // Recorded like a failed cron fire, so the trigger says it failed (KRTX-1743).
       await markGitTriggerAttemptFailed(row.projectId, row.slug, new Date(), error).catch(() => {});
+      // Never retried by us: the first failure of a streak alerts the watchers (KRTX-1742).
+      await raiseTriggerAlert({ projectId: row.projectId, accountId: project.accountId, slug: row.slug, source: 'fire', error });
       return 'failed';
     }
     // A duplicate ran nothing: it leaves last_fired_at and last_event_at alone.
@@ -140,6 +143,7 @@ async function deliverToRow(
     const message = error instanceof Error ? error.message : String(error);
     logger.warn('[trigger-events] fire threw', { projectId: row.projectId, slug: row.slug, error: message });
     await markGitTriggerAttemptFailed(row.projectId, row.slug, new Date(), message).catch(() => {});
+    await raiseTriggerAlert({ projectId: row.projectId, accountId: project.accountId, slug: row.slug, source: 'fire', error: message });
     return 'failed';
   }
 }

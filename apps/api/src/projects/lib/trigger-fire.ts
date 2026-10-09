@@ -14,6 +14,7 @@ import { disableSessionReminder, reminderPromptText } from './session-reminders'
 import { accountMemberRow } from '../../iam/membership-read';
 import type { TriggerFireSource } from './trigger-webhook-auth';
 import { claimTriggerCreate, releaseTriggerCreate, triggerCreateKey } from './trigger-create-claim';
+import { clearTriggerAlert } from './trigger-alerts';
 
 /**
  * Find a user we can attribute trigger-spawned sessions to. Git-backed
@@ -64,6 +65,10 @@ export async function markGitTriggerFired(
         updatedAt: when,
       },
     });
+  // A fire that reached a session ends a fire failure streak (KRTX-1742). A
+  // queued fire has not reached one yet: its delivery clears the streak
+  // (markTriggerRuntimeDelivered), or the next good fire does.
+  if (status === 'fired') await clearTriggerAlert({ projectId, slug, source: 'fire' });
 }
 
 /**

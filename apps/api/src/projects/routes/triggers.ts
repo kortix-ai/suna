@@ -1,5 +1,6 @@
 /** Project triggers: list, create, update, activate, delete, and manual fire. */
 import { createRoute, z } from '@hono/zod-openapi';
+import type { Context } from 'hono';
 import { projectTriggerRuntime, projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { mutateManifestWithRetry } from '../../connectors/manifest-mutation';
@@ -30,6 +31,10 @@ import {
 // From the leaf, not the barrel: suites that stub '../lib/triggers' by listing
 // its exports would otherwise lose this name.
 import { markGitTriggerAttemptFailed } from '../lib/trigger-fire';
+import { raiseTriggerAlert } from '../lib/trigger-alerts';
+import { deleteTriggerWatchers, triggerWatcherOf, upsertTriggerWatcher } from '../lib/trigger-watchers';
+import { getRequestOnBehalfOf } from '../../middleware/on-behalf-of';
+import type { AppEnv } from '../../types';
 import { validateWebhookSecretConfiguration } from '../lib/webhook-secret-policy';
 import { reconcileProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { connectorInfo, eventPayload } from '../trigger-events/deliver';
@@ -46,6 +51,20 @@ import {
   extractTriggers,
   findProjectTriggerBySlug,
 } from '../triggers';
+
+/**
+ * The person who created or edited a trigger follows its alerts (KRTX-1742).
+ * Never an API key or a service account: they name no person.
+ */
+async function followTrigger(c: Context<AppEnv>, accountId: string, projectId: string, slug: string): Promise<void> {
+  const userId = triggerWatcherOf({
+    authType: c.get('authType'),
+    userId: c.get('userId'),
+    sessionId: c.get('sessionId'),
+    onBehalfOfUserId: getRequestOnBehalfOf(c),
+  });
+  if (userId) await upsertTriggerWatcher({ accountId, projectId, slug, userId });
+}
 
 /** Body keys that change which event a trigger subscribes to. */
 const EVENT_BODY_KEYS = ['connector', 'event_account', 'event_source', 'event', 'event_config'];
@@ -402,6 +421,7 @@ export function registerTriggersRoutes(): void {
         access: parsedAccess.access,
         pinnedSessionId: draft.pinnedSessionId,
       });
+      await followTrigger(c, loaded.row.accountId, projectId, draft.slug);
 
       return c.json(await loadTriggersForResponse(projectId, loaded.row), 201);
     },
@@ -631,6 +651,7 @@ export function registerTriggersRoutes(): void {
           pinnedSessionId: effectivePinnedSessionId,
         });
       }
+      await followTrigger(c, loaded.row.accountId, projectId, slug);
 
       return c.json(await loadTriggersForResponse(projectId, loaded.row));
     },
@@ -695,6 +716,7 @@ export function registerTriggersRoutes(): void {
         .where(
           and(eq(projectTriggerRuntime.projectId, projectId), eq(projectTriggerRuntime.slug, slug)),
         );
+      await deleteTriggerWatchers({ projectId, slug });
       if (remainingManifest) {
         await reconcileEventSubscriptions(projectId, loaded.row.accountId, extractTriggers(remainingManifest).specs);
       }
@@ -820,6 +842,8 @@ export function registerTriggersRoutes(): void {
         const error = result.error ?? 'Failed to fire trigger';
         // Recorded like a failed cron fire, so the trigger says it failed (KRTX-1743).
         await markGitTriggerAttemptFailed(projectId, slug, now, error).catch(() => {});
+        // The first failure of a streak alerts the watchers, not only the firer (KRTX-1742).
+        await raiseTriggerAlert({ projectId, accountId: loaded.row.accountId, slug, source: 'fire', error });
         return c.json({ error }, 500);
       }
       await markGitTriggerFired(projectId, slug, now);

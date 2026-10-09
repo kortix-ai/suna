@@ -13,6 +13,7 @@ import { requestAuditContext } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
 import { releaseWebhookDeliveryKey, webhookDeliveryKey } from '../lib/webhook-delivery';
 import { markGitTriggerAttemptFailed } from '../lib/trigger-fire';
+import { raiseTriggerAlert } from '../lib/trigger-alerts';
 import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggerFilterMatches, triggersPausedForProject, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
 import {
   validateWebhookSecretConfiguration,
@@ -199,6 +200,8 @@ export function registerTriggerWebhooksRoutes(): void {
       const error = result.error ?? 'Failed to fire trigger';
       // Recorded like a failed cron fire, so the trigger says it failed (KRTX-1743).
       await markGitTriggerAttemptFailed(project.projectId, spec.slug, new Date(), error).catch(() => {});
+      // Never retried by us: the first failure of a streak alerts the watchers (KRTX-1742).
+      await raiseTriggerAlert({ projectId: project.projectId, accountId: project.accountId, slug: spec.slug, source: 'fire', error });
       return c.json({ error }, 500);
     }
     // Stamp runtime last_fired_at so the UI's "last fired N ago" matches the
