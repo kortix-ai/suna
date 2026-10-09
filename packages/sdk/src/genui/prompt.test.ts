@@ -19,8 +19,8 @@ describe('prompt', () => {
     expect(prompt).toContain('Arguments are positional only');
     expect(prompt).toContain('never Stat(label: "Users", value: "900")');
     expect(prompt).toContain('Children of Stack, Tab, and AccordionItem are component references, never plain strings');
-    expect(prompt).toContain('Map zoom is the 4th argument');
-    expect(prompt).toContain('Stat delta is at most 16 characters');
+    expect(prompt).toContain('Map(markers, source, zoom?, route?)');
+    expect(prompt).toContain('Stat delta is at most 24 characters');
     expect(prompt).toContain('Table takes exactly columns, rows, caption?');
   });
   test('size and version', () => {

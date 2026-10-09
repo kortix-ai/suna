@@ -41,6 +41,23 @@ describe('parse + validate', () => {
     expect((many.root?.props.children as { type: string }[]).map((c) => c.type)).toEqual(['Badge']);
   });
 
+  test('Map takes zoom before route: Map(markers, source, zoom?, route?)', () => {
+    const { root, issues } = parseGenui(
+      'root = Stack([m])\nm = Map([p], "src", 12, [[1, 2], [3, 4]])\np = Marker(1, 2, "A")',
+    );
+    expect(issues).toEqual([]);
+    const map = (root?.props.children as { type: string; props: Record<string, unknown> }[])[0]!;
+    expect(map.type).toBe('Map');
+    expect(map.props.zoom).toBe(12);
+    expect(map.props.route).toEqual([[1, 2], [3, 4]]);
+  });
+
+  test('Stat delta allows 24 characters and rejects 25', () => {
+    const stat = (delta: string) => parseGenui(`root = Stack([s])\ns = Stat("Open rate", "31%", "${delta}")`);
+    expect(stat('x'.repeat(24)).issues).toEqual([]);
+    expect(stat('x'.repeat(25)).issues.map((i) => i.code)).toContain('schema');
+  });
+
   test('rejects a component in the wrong slot', () => {
     const { root, issues } = parseGenui('root = Stack([s, ok])\ns = Series("x", [1])\nok = Badge("kept")');
     expect((root?.props.children as { type: string }[]).map((c) => c.type)).toEqual(['Badge']);

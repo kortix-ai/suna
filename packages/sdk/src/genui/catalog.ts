@@ -183,7 +183,7 @@ component({
   fields: {
     label: text(40),
     value: text(24),
-    delta: optText(16),
+    delta: optText(24),
     trend: z.enum(['up', 'down', 'flat']).optional(),
     unit: optText(12),
   },
@@ -360,12 +360,12 @@ component({
 
 component({
   name: 'Map',
-  description: 'Up to 25 places, optional route as [lat, lng] pairs, zoom 1-18. source names where the coordinates came from',
+  description: 'Up to 25 places, zoom 1-18, then an optional route as [lat, lng] pairs. source names where the coordinates came from',
   fields: {
     markers: { accepts: ['Marker'], min: 1, max: 25 },
     source: text(200),
-    route: z.array(z.array(z.number()).length(2)).max(500).optional(),
     zoom: z.number().int().min(1).max(18).optional(),
+    route: z.array(z.array(z.number()).length(2)).max(500).optional(),
   },
   toMarkdown: (p, child) => `${nodes(p.markers).map((m) => `- ${child(m)}`).join('\n')}\n\n${sourceLine(p.source)}`,
   a11y: (p) =>
