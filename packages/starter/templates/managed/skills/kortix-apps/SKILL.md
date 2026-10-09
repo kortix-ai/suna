@@ -253,7 +253,7 @@ back alone:
 | --- | --- |
 | The UI | `kortix apps rollback crm <deployment-id>` (ids in `kortix apps show crm --json`) |
 | Convex code | `git checkout <good-sha> -- apps/db/convex`, then `kortix apps deploy apps/db --app db`, then commit |
-| Data | `kortix apps restore db <snapshot-id>`, only with the user's consent: it drops every later change |
+| Data | `kortix apps restore db <snapshot-id> --yes`, only with the user's consent: it drops every later change |
 
 ## Verify before you report (mandatory)
 
@@ -301,7 +301,7 @@ Tell the user the cost of each App before you hand over.
 ```bash
 kortix apps delete <slug> --yes                         # a web App
 kortix apps delete <slug> --deployment <id|vN> --yes    # one web deployment (not the live one)
-kortix apps delete <slug>                               # a convex App: type the slug to confirm
+kortix apps delete <slug> --confirm <slug>              # an App with snapshots (convex): the typed slug
 ```
 
 A web App delete removes the identity, its runtimes and every image it built.

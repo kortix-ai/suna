@@ -114,7 +114,7 @@ import or a destructive backfill.
 **5. Verify** with real calls, never with the deploy output alone:
 
 ```sh
-kortix apps logs db                                  # process log: crashes, restarts
+kortix apps logs db --lines 200                      # process log: crashes, restarts
 timeout 20 npx convex logs --history 50              # function logs; it never exits by itself
 npx convex run tasks:list '{}'                       # admin, no identity: must FAIL
 TOKEN=$(kortix apps token db)                        # a real token: in a session it names the agent, not you
@@ -138,18 +138,18 @@ Commit the Convex code on the session branch like any other code.
 
 | Command | Use |
 | --- | --- |
-| `kortix apps create <slug> --kind convex` | Create and wait, without deploying. `--cpu`, `--memory`, `--disk`. |
+| `kortix apps create <slug> --kind convex` | Create and wait until it runs, without deploying. `--cpu`, `--memory`, `--disk`, `--uses`, `--no-wait`. |
 | `kortix apps show <slug> [--json]` | `instance.url` (Convex client URL), `instance.site_url` (HTTP actions), `instance.status`, `instance.client_version`, `instance.health` (the last 5-minute probe: machine state, disk use), `capabilities`, `uses`, `used_by`. |
-| `kortix apps deploy <dir> --app <slug>` | Deploy the Convex code in `<dir>/convex`. |
-| `kortix apps credentials <slug>` | Shell exports for the Convex CLI (admin). Use with `eval`. Audited. |
+| `kortix apps deploy <dir> --app <slug> [-- <convex deploy args>]` | Deploy the Convex code in `<dir>/convex`. Exits with the Convex exit code. |
+| `kortix apps credentials <slug> [--format shell\|dotenv\|json]` | The Convex CLI credentials (admin). `shell` (default) prints `export` lines for `eval`. Audited. |
 | `kortix apps connect <slug>` | Working code to reach the App from another App, from outside, and from the CLI. No secret. |
 | `kortix apps token <slug>` | A 15-minute sign-in token. A person's own login: names that person, with groups and role. An agent session: names the agent (`kind: "agent"`), with no groups and no role. |
 | `kortix apps dashboard <slug>` | Link to Convex's dashboard inside Kortix. |
-| `kortix apps logs <slug>` | The Convex process log (startup, crashes, restarts, request lines). |
-| `kortix apps snapshots <slug>` · `snapshot <slug>` · `restore <slug> <snapshot-id>` | Backups, snapshots (with kind and expiry) and point-in-time restore. |
-| `kortix apps rotate-credentials <slug>` | Replace the admin key; every key read before stops working. About 1 s of restart; data stays. |
-| `kortix apps set <slug> --cpu N --memory GB --disk GB` | Resize (below). |
-| `kortix apps delete <slug>` | Retire the App: final snapshot, machine kept 7 days, then purged. Asks for the slug. |
+| `kortix apps logs <slug> [--lines N]` | The Convex process log (startup, crashes, restarts, request lines). 1–1000 lines, default 200. |
+| `kortix apps snapshots <slug>` · `snapshot <slug>` · `delete-snapshot <slug> <id> --yes` · `restore <slug> <id> --yes` | Backups, snapshots (with kind and expiry), snapshot delete and point-in-time restore. |
+| `kortix apps rotate-credentials <slug> --yes` | Replace the admin key; every key read before stops working. About 1 s of restart; data stays. |
+| `kortix apps set <slug> --cpu N --memory GB --disk GB` | Resize now and wait (below). `--no-wait` returns when it starts. |
+| `kortix apps delete <slug> --confirm <slug>` | Retire the App: final snapshot, machine kept 7 days, then purged. The typed slug is required. |
 
 A slug is lowercase letters, digits and dashes. A project holds up to 3
 `convex` Apps and an account 10 (`409 app_kind_limit`). On `instance.status:
@@ -231,7 +231,7 @@ scheduler all live in the App. Do not add a second database next to it.
   put it in a web App, a bundle, `kortix.yaml` or a chat. Keep it in the
   shell via `eval "$(kortix apps credentials <slug>)"`.
 - If the admin key leaked (printed, committed, pasted into a chat), rotate it:
-  `kortix apps rotate-credentials <slug>`, then
+  `kortix apps rotate-credentials <slug> --yes`, then
   `eval "$(kortix apps credentials <slug>)"` again. Tell the user: every
   `.env.local` holding the old key needs the new one.
 - Sign-in tokens are 15-minute bearer tokens. Never commit or log them either.
@@ -249,7 +249,7 @@ kortix apps create db --kind convex --cpu 2 --memory 4 --disk 20   # default 1 v
 kortix apps set db --cpu 4 --memory 8          # seconds of downtime; disk only grows
 kortix apps snapshots db                       # automatic backup, schedule, snapshots with kind and expiry
 kortix apps snapshot db                        # manual point-in-time copy, kept until deleted
-kortix apps restore db <snapshot-id>           # roll back; later changes are lost
+kortix apps restore db <snapshot-id> --yes     # roll back; later changes are lost
 ```
 
 - **Automatic backup:** Kortix copies the machine to object storage every
@@ -292,8 +292,8 @@ kortix apps restore db <snapshot-id>           # roll back; later changes are lo
 
 ## Delete
 
-`kortix apps delete <slug>` needs the slug typed as confirmation
-(API: `confirm=<slug>`, else `400 confirmation_required`) and the
+`kortix apps delete <slug> --confirm <slug>` needs the slug typed as
+confirmation (API: `confirm=<slug>`, else `400 confirmation_required`) and the
 `project.app.admin` permission. Kortix takes a `final` snapshot, stops the
 machine and keeps it 7 days (`retained_until`). The App's hosts answer `410`
 meanwhile. After 7 days Kortix deletes the machine, its snapshots and every

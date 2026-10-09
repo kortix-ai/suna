@@ -16,7 +16,11 @@ A new App uses none.
 ```sh
 kortix apps link crm --uses db          # crm may reach db
 kortix apps show crm --json             # app.uses: ["db"]; db shows app.used_by: ["crm"]
+kortix apps unlink crm --uses db        # remove the link
 ```
+
+`--uses <slugs>` on `kortix apps create` sets the list at create, and on
+`kortix apps set` replaces it (`--uses=` clears it).
 
 In `kortix.yaml`, `uses` in the App's block replaces its list on every
 `kortix apps deploy`:

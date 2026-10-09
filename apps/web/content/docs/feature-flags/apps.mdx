@@ -452,7 +452,7 @@ Rotate it when it may have leaked: a removed project member read it, it was
 printed into a session, or a `.env.local` left the machine.
 
 ```bash
-kortix apps rotate-credentials db
+kortix apps rotate-credentials db --yes
 eval "$(kortix apps credentials db)"   # read the new key
 ```
 
@@ -719,7 +719,7 @@ kortix apps create db --kind convex --cpu 2 --memory 4 --disk 20
 kortix apps set db --cpu 4 --memory 8      # seconds of downtime; disk only grows
 kortix apps snapshots db                   # automatic backup, schedule, snapshots with kind and expiry
 kortix apps snapshot db                    # a manual snapshot, kept until deleted
-kortix apps restore db <snapshot-id>       # rolls back; later changes are lost
+kortix apps restore db <snapshot-id> --yes # rolls back; later changes are lost
 ```
 
 | | What it is |
@@ -773,7 +773,7 @@ machine running and `instance.last_operation_error` set. A create interrupted
 3 times turns `error`.
 
 ```bash
-kortix apps logs db                     # the Convex process log: startup, crashes, restarts, requests
+kortix apps logs db --lines 500         # the Convex process log: startup, crashes, restarts, requests
 npx convex logs                         # function logs (console.log in your functions)
 ```
 

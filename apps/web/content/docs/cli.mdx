@@ -369,14 +369,23 @@ Deploys and operates the project's Kortix Apps: each App has one stable URL and 
 | `kortix apps deploy . --type dockerfile --command <argv> --port <n> [--always-on\|--on-demand] [--budget <usd>]` | Build and run a server App. A new App is always on. Its budget is the 24/7 estimate of its machine, rounded up to a whole dollar (74 USD by default), unless you pass `--budget`; on demand it is 5 USD. The command prints the cost, for example `Runs 24/7 on 1 vCPU / 2 GB: about $73/month (budget $74)`. |
 | `kortix apps deploy --image <ref> --command <argv> --port <n>` | Run a public OCI image as a server App. |
 | `kortix apps deploy --manifest-app <name>` | Deploy one `apps.<name>` block of a v2 `kortix.yaml`. |
-| `kortix apps set <app> [--always-on\|--on-demand] [--budget <usd>] [--cpu N] [--memory-gb N] [--disk-gb N] [--idle-timeout <s>]` | Change an App. Run mode and budget apply within 5 minutes; a machine change applies to the next deployment. |
-| `kortix apps show <app> [--json]` | The App (`hosting_type`, `always_on`, `monthly_budget_usd`, `estimated_monthly_usd`) and its deployments. |
-| `kortix apps logs <app> [deployment] [--after N] [--limit N]` | A server App's runtime logs. A static App prints its deployment events. |
+| `kortix apps set <app> [--always-on\|--on-demand] [--budget <usd>] [--cpu N] [--memory-gb N] [--disk-gb N] [--idle-timeout <s>] [--uses <slugs>]` | Change an App. Run mode and budget apply within 5 minutes; a web machine change applies to the next deployment; a `convex` App resizes now and the command waits. |
+| `kortix apps create <slug> --kind convex [--cpu N] [--memory GB] [--disk GB]` | Create a `convex` App (a self-hosted Convex backend) and wait until its machine runs. `--uses <slugs>` sets the Apps it uses. |
+| `kortix apps deploy <dir> --app <slug> [-- <convex deploy args>]` | For a `convex` App: run `convex deploy` with its credentials (the directory's own `node_modules/.bin/convex`, else `npx convex@<instance.client_version>`), then record the deployment with the git commit. With no path and several `kortix.yaml` blocks, deploy every App, each after the Apps it uses. |
+| `kortix apps link\|unlink <app> --uses <slugs>` | Add or remove Apps this App uses: it may bind to them (`/_kortix/apps/<slug>`) and mint their sign-in tokens. `set --uses` replaces the list. |
+| `kortix apps connect <app> [--json]` | Print how to reach the App from code: from an App that uses it, from outside, and from the CLI. No secret. |
+| `kortix apps token <app> [--json]` | Print a 15-minute sign-in token for the App, naming you. In an agent session it names the agent. |
+| `kortix apps credentials <app> [--format shell\|dotenv\|json]` | Capability `admin_credentials`: the client CLI credentials, for `eval "$(kortix apps credentials db)"`. Audited. |
+| `kortix apps rotate-credentials <app> --yes` | Replace the admin key; every key read before stops working. |
+| `kortix apps dashboard <app> [--open]` | Capability `dashboard`: the Kortix page that opens the App's dashboard. |
+| `kortix apps snapshots\|snapshot <app>` · `delete-snapshot <app> <id> --yes` · `restore <app> <id> --yes` | Capabilities `snapshots` and `restore`: list, take, delete, roll back. |
+| `kortix apps show <app> [--json]` | The App (`kind`, `capabilities`, `uses`, `used_by`, `instance`, `hosting_type`, `always_on`, `monthly_budget_usd`, `estimated_monthly_usd`) and its deployments. |
+| `kortix apps logs <app> [deployment] [--after N] [--limit N] [--lines N]` | A server App's runtime logs. A static App prints its deployment events. An App with the `logs` capability prints its process log (`--lines 1-1000`). |
 | `kortix apps start\|stop <app>` | Start or suspend a server App. A static App answers `409 static_app_no_runtime`. |
 | `kortix apps rollback <app> <deployment>` | Move traffic to a ready deployment. |
 | `kortix apps access <app> [--mode <mode>] [--viewer off\|identity\|api]` | Read or change who can open the App and what it learns about its viewer. |
 | `kortix apps access-link <app> [--json]` | A five-minute signed browser URL. Treat it as a secret. |
-| `kortix apps delete <app> [--deployment <id\|vN>] --yes` | Delete the App, or one deployment that is not live. |
+| `kortix apps delete <app> [--deployment <id\|vN>] --yes` | Delete the App, or one deployment that is not live. An App with `snapshots` needs `--confirm <slug>` instead: Kortix keeps a `final` snapshot and the stopped machine 7 days. |
 
 An always-on App of the default machine costs about 73 USD a month. When an explicit budget is lower, `deploy`, `create`, and `set` print `app_budget_below_always_on` on stderr; the App stops at the budget until the month ends.
 
