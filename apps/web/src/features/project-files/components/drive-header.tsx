@@ -24,8 +24,6 @@ interface DriveHeaderProps {
   onRefresh: () => void;
   onDownloadDir: () => void;
   isDownloading?: boolean;
-  /** Offer "Find a file" (⌘P) in the `⋯` menu. */
-  showSearch?: boolean;
   /**
    * Draw the page-level sidebar opener. Only the standalone Files page needs
    * it: ProjectShell does not render a web opener, and the embedded session
@@ -79,10 +77,10 @@ export function DriveHeader({
   onRefresh,
   onDownloadDir,
   isDownloading,
-  showSearch = false,
   offsetForSidebarToggle = false,
 }: DriveHeaderProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tSidebar = useTranslations('sidebar');
   const sidebar = useOptionalSidebar();
   const sidebarCollapsed = sidebar?.state === 'collapsed';
 
@@ -144,7 +142,6 @@ export function DriveHeader({
         onRefresh={onRefresh}
         onDownloadDir={onDownloadDir}
         isDownloading={isDownloading}
-        showSearch={showSearch}
       />
     </div>
   );
@@ -152,7 +149,8 @@ export function DriveHeader({
   // The standalone page: the shared project page header, with the folder path
   // in its own strip below it, shown only inside a subfolder.
   if (offsetForSidebarToggle && params?.id) {
-    const title = tI18nComplete.raw('textabc7e9892806');
+    // The project's git repository is "Repo"; "Files" is the shared folders.
+    const title = tSidebar('repo');
     return (
       <>
         <ProjectPageHeader title={title} href={`/projects/${params.id}/files`}>
