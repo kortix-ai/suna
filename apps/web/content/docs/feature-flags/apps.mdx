@@ -4,9 +4,9 @@ description: Deploy static sites, bundles, Dockerfiles, OCI images, and Convex b
 ---
 
 A Kortix App is a provider-neutral deployment owned by one project. An App
-owns one stable URL, an access policy, a size, and a monthly budget. Each
-deployment is immutable and numbered. A failed deployment never replaces live
-traffic.
+owns one stable URL, an access policy, and a size. An on-demand server App
+also has a monthly budget. Each deployment is immutable and numbered. A
+failed deployment never replaces live traffic.
 
 Apps is a [feature flag](/docs/feature-flags). Its stability is **stable**, and
 it is off by default. Turn it on per project before you deploy.
@@ -131,12 +131,12 @@ The full subcommand list:
 
 | Command | What it does |
 |---|---|
-| `kortix apps list` | List the project's Apps with their kind. `--json`. |
+| `kortix apps list` | List the Apps you may open, with their kind. `--json`. |
 | `kortix apps create <slug>` | Create an App without deploying it. `--kind web\|convex` (default `web`); a `convex` App waits until its machine runs (`--no-wait` returns at once). `--uses <slugs>`. |
-| `kortix apps deploy [path]` | Deploy a directory, a `.tar.gz`, or `--image`. `--always-on`, `--on-demand` and `--budget <usd>` set the run mode and monthly budget. The target App's kind decides how: a `convex` App runs `convex deploy` with its credentials, then records the deployment with the git commit; arguments after `--` go to `convex deploy`. With no arguments and several `apps` blocks, it deploys every block in link order. |
+| `kortix apps deploy [path]` | Deploy a directory, a `.tar.gz`, or `--image`. `--always-on`, `--on-demand` and `--budget <usd>` set the run mode and the monthly budget. `--budget` applies to on-demand server Apps only. The target App's kind decides how: a `convex` App runs `convex deploy` with its credentials, then records the deployment with the git commit; arguments after `--` go to `convex deploy`. With no arguments and several `apps` blocks, it deploys every block in link order. |
 | `kortix apps set <id\|slug>` | Change an existing App: `--name`, `--cpu`, `--memory-gb`, `--disk-gb`, `--idle-timeout`, `--always-on`, `--on-demand`, `--budget`, `--uses <slugs>` (replaces; `--uses=` clears). A `convex` resize waits until it applies (`--no-wait`). |
 | `kortix apps link <id\|slug> --uses <slugs>` | Add Apps this App uses. `kortix apps unlink` removes them. |
-| `kortix apps show <id\|slug>` | Show the App: kind, capabilities, `uses` / `used by`, its instance, and its deployments; marks the live one. `--json`. |
+| `kortix apps show <id\|slug>` | Show the App: kind, cost line (`about $N/month` for an always-on or `convex` App, `budget $N/month` for an on-demand App), capabilities, `uses` / `used by`, its instance, and its deployments; marks the live one. `--json`. |
 | `kortix apps logs <id\|slug> [deployment]` | Read runtime logs. `--after N --limit N`. An App with `logs` prints its process log: `--lines 1-1000`. |
 | `kortix apps connect <id\|slug>` | Print how to reach the App from code, the same snippets as Connect in Kortix web. No secret. `--json`. |
 | `kortix apps token <id\|slug>` | Print a 15-minute sign-in token for the App, naming you (`member_tokens`). |
@@ -188,7 +188,7 @@ apps:
     readiness_path: /health
     always_on: false
     idle_timeout_seconds: 300
-    monthly_budget_usd: 10
+    monthly_budget_usd: 10   # on-demand server Apps only
     resources:
       cpu: 1
       memory_gb: 2
@@ -202,7 +202,7 @@ apps:
 Select a block with `kortix apps deploy --manifest-app docs`. An explicit flag
 always wins over the block. A static block needs only `path`, `type`, and
 `spa`: the run mode, budget, machine, `env`, and `secrets` apply to server
-Apps. A `convex` block needs `path` and `kind: convex`. A block with `uses`
+Apps. A `convex` block needs `path` and `kind: convex`, and takes no `monthly_budget_usd`. A block with `uses`
 replaces the App's list of used Apps on every deploy. `kortix apps deploy`
 with no arguments deploys every block, used Apps first.
 
@@ -231,6 +231,14 @@ App response carries the three values that verify it: `auth.issuer`,
 Any other audience answers `403` with `error: "app_not_linked"`. Code in one
 App never gets a token for an App it does not use.
 
+Kortix injects the verifying values into every server App's runtime:
+`KORTIX_AUTH_ISSUER` (the project issuer), `KORTIX_AUTH_AUDIENCE` (the App's own
+id) and `KORTIX_AUTH_JWKS` (the project key set, as a `data:` URI).
+`verifyKortixToken(bearer)` from `@kortix/sdk` works in a server App with no
+options. Do not set `KORTIX_AUTH_*` in the App's `env`: the `KORTIX_` prefix is
+reserved, and `kortix validate` rejects it. A server App deployed before
+2026-10-10 gets the values on its next deployment.
+
 The bindings mount `/_kortix/apps/<slug>/*` on an App's origin reaches an App
 it uses, HTTP and WebSocket, with the prefix removed. App code needs one origin
 and no CORS (`kortixBinding("<slug>")` in `@kortix/sdk` returns the URL and a
@@ -249,7 +257,7 @@ host.
 | `disk_gb` | `10` | `1` to `500` GiB |
 | `idle_timeout_seconds` | `300` | `120` to `86400`. Only for an on-demand App |
 | `always_on` | `true` for a new App | `true` or `false` |
-| `monthly_budget_usd` | The 24/7 estimate of the machine, rounded up to a whole dollar (74 for the default machine), when the App is always on; `5` on demand | `0` to `100000`, or the operator's `KORTIX_APPS_MAX_MONTHLY_BUDGET_USD` |
+| `monthly_budget_usd` | `5` for an on-demand server App. `null` for an always-on server App, a `convex` App and a static App: they take no budget | `0` to `100000`, or the operator's `KORTIX_APPS_MAX_MONTHLY_BUDGET_USD` |
 
 Static Apps ignore the machine, idle timeout and run mode: they have no
 runtime. They serve while they have an active deployment, so
@@ -269,14 +277,15 @@ Every 5 minutes a keep-alive pass checks every running App and every
 always-on App:
 
 1. **Cost.** A running App (either mode) stops when its account can no longer
-   pay for compute (the check that refuses a new session), or when its
-   month-to-date compute reaches `monthly_budget_usd`. The stop is recorded as
-   an `app_stopped_unfunded` or `app_stopped_budget` event on the deployment.
-   The URL then shows the "paused" or "budget reached" page.
+   pay for compute (the check that refuses a new session). An on-demand App
+   also stops when its month-to-date compute reaches `monthly_budget_usd`. The
+   stops are recorded as `app_stopped_unfunded` and `app_stopped_budget`
+   events on the deployment. The URL then shows the "paused" or "budget
+   reached" page. A budget never stops an always-on App.
 2. **Alive.** Kortix asks the provider about each always-on App. A running one
    bills for every hour it runs, with or without traffic. A stopped one is
-   started again through the same entitlement, concurrency and budget checks
-   as a cold start.
+   started again through the same entitlement and concurrency checks as a cold
+   start.
 3. **Refresh.** When a release ships a new App supervisor, at most 5 always-on
    Apps rebuild per pass. A release that changes only the API rebuilds
    nothing. A rebuild that failed is not repeated for the same source and
@@ -294,33 +303,38 @@ An App switched from on demand to always on keeps its current VM until the
 next deployment. On Platinum that VM keeps its idle backstop (12 hours without
 traffic by default); keep-alive restarts it within 5 minutes if it stops.
 
-#### Budget
+#### Budget and cost
 
-A new always-on App with no explicit budget gets its 24/7 estimate, rounded up
-to a whole dollar, as its monthly budget: 74 USD for the default machine, 60
-USD for 1 vCPU and 1 GiB. It does not stop mid-month on its own default.
-`create`, `deploy` and `set` print the cost, for example `Runs 24/7 on 1 vCPU /
-2 GB: about $73/month (budget $74)`, and the web app shows it beside **Always
-on**. A derived budget follows later changes to the machine or the run mode
-(on demand returns to 5 USD). Passing a budget (`monthly_budget_usd`,
-`--budget`) always wins: Kortix never changes it afterwards. A static App costs
-nothing and has no machine to size. Apps created before this default keep the
-budget they have.
+The cost shape of an App decides whether it has a budget:
+
+| App | Monthly budget | Cost |
+|---|---|---|
+| On-demand server App | Yes. Default 5 USD. Kortix stops the App at the cap (`app_stopped_budget`). | Compute time while it runs, up to the budget |
+| Always-on server App | No. `monthly_budget_usd` is `null`. | Fixed: machine size × 24/7 = `estimated_monthly_usd` |
+| `convex` App | No. `monthly_budget_usd` is `null`. | Fixed: machine size × 24/7 = `estimated_monthly_usd` |
+| Static App | No. `always_on` is `false`, `estimated_monthly_usd` is `0`. | None: there is no machine |
 
 An always-on App of the default machine (1 vCPU, 2 GiB, 10 GiB disk) costs
-about 73 USD a month at list compute rates. The App's `estimated_monthly_usd`
-is that figure for its own machine. When an always-on App's budget is below
-it, `create`, `set` and `deploy` warn (`app_budget_below_always_on`) and do
-not refuse: the App runs until the budget is spent, then stays stopped until
-the next month. Set the budget when you deploy:
+about 73.48 USD a month at list compute rates. A `convex` App of the default
+machine (1 vCPU, 1 GiB, 10 GiB) costs about 59.29 USD. The web app shows the
+cost beside **Always on** (for example `About $59 a month · 1 vCPU · 1 GB`).
+`create`, `deploy` and `set` print it too, and `kortix apps show` prints a cost
+line.
+
+A budget on an always-on or `convex` App answers `400` with
+`code: "app_budget_not_applicable"`. The message names the monthly cost. This
+holds for `monthly_budget_usd` on create and on `PATCH`, for `--budget`, and for
+`monthly_budget_usd` in `kortix.yaml`. To cap the cost, switch to on demand or
+shrink the machine.
+
+Switching modes changes the budget: entering on demand sets the budget you pass
+or 5 USD; entering always on clears it (`null`).
 
 ```bash
-kortix apps deploy . --budget 80
+kortix apps deploy . --on-demand --budget 10
 ```
 
-`--budget` sets the monthly budget of a new App, or changes it on an existing
-one. The warning prints on stderr, so `--json` output stays parseable. The
-deployment also records it as an `app_budget_below_always_on` event.
+The web app shows **Monthly budget** only for an on-demand server App.
 
 Change the mode with `kortix apps set <app> --always-on|--on-demand`,
 `always_on` in `kortix.yaml`, or the App's menu in the web app. A new App's
@@ -367,7 +381,7 @@ kortix apps create db --kind convex
 | Storage | SQLite on the machine disk. See [Database and durability](#database-and-durability). |
 | Machine | One per App. Default 1 vCPU, 1 GB memory, 10 GB disk; resizable to 16 vCPU, 32 GB, 100 GB. A disk only grows. |
 | Uptime | Always on. `always_on: false` answers `400 app_always_on_required`. |
-| Budget | Alerts at 80 % and 100 % of `monthly_budget_usd`, once per month each. It never stops the machine. |
+| Budget | None. The cost is fixed: `estimated_monthly_usd`. `monthly_budget_usd` is `null`, and a budget answers `400 app_budget_not_applicable`. |
 | Billing | Reserved CPU, memory and disk × the time the machine runs. See [Billing](#billing). |
 | Limit | 3 `convex` Apps per project, 10 per account (`409 app_kind_limit`) |
 | Capabilities | `deployments`, `snapshots`, `restore`, `admin_credentials`, `dashboard`, `logs`, `member_tokens` |
@@ -530,6 +544,30 @@ anonymous caller, or one outside the groups or roles, throws
 `KortixMemberError`. The App's URL is public, so every function that touches
 non-public data must call it first. Kortix groups need the Enterprise plan;
 roles work on every plan.
+
+In a React client, set up the Convex client with `ConvexProvider` and
+`convex.setAuth(binding.token)`. Do not call `useConvexAuth()`: it throws under
+a plain `ConvexProvider`, because it needs `ConvexProviderWithAuth`. Read the
+signed-in member with a query:
+
+```ts
+// convex/members.ts
+import { query } from "./_generated/server";
+import { readKortixMember } from "@kortix/sdk";
+
+export const me = query({
+  args: {},
+  handler: async (ctx) => readKortixMember(await ctx.auth.getUserIdentity()),
+});
+```
+
+```tsx
+const me = useQuery(api.members.me);
+// undefined while loading, null when signed out, the member otherwise.
+```
+
+`readKortixMember` returns `null` for an anonymous caller. Use
+`requireKortixMember` only where a function must throw.
 
 Tokens last 15 minutes, so a member you remove loses access within 15
 minutes. The App gate refuses them at once. Which callers get a token, and
@@ -793,10 +831,9 @@ per hour at list price, about $59 for a 30-day month.
   new size.
 - An account that cannot pay gets `402` on create and on a resize that grows
   the machine. A shrinking resize is always allowed.
-- At 80 % and at 100 % of `monthly_budget_usd`, Kortix records one alert per
-  month each (`instance.budget_alert`, audit `app.budget.alert`). The machine
-  keeps running: a stopped database breaks every client. Raise the budget,
-  shrink the machine, or delete the App.
+- A `convex` App has no budget and no budget alert: `instance.budget_alert` is
+  always `null`. The machine keeps running, because a stopped database breaks
+  every client. To lower the cost, shrink the machine or delete the App.
 - Snapshot and backup storage are not billed.
 
 ### Archive, account deletion and orphans
@@ -939,11 +976,17 @@ return a password or its hash.
 or set it from the access modal.
 :::
 
-Being able to see an App listed and being able to open it are different
-verdicts. A project manager sees every App in the project, so a private App
+The Apps list shows only the Apps the caller may open. Private: the creator.
+Restricted: the listed members and groups. Project, password and public: the
+project team. A project manager sees every App in the project, so a private App
 stays manageable when its creator leaves. An account owner and an account admin
 hold manager-equivalent access on every project, so the same applies to them.
-The App record reports `viewer_can_access` for the second question.
+Convex Apps follow the same rule, the same one that decides token minting.
+
+`GET /v1/projects/:projectId/apps` applies the filter. The SDK (`listApps`,
+`useProjectApps`), the web Apps grid, `kortix apps list`, and agents all read
+this route. `viewer_can_access` is `true` for every listed App. A `GET` of an
+App the caller cannot open answers `404`, not `403`.
 
 ## Agents and Apps
 
@@ -1089,10 +1132,11 @@ it. Deleting it asks for its slug. The old `/projects/<id>/backends` URLs
 redirect to the Apps page.
 
 The App's **Earlier versions** drawer states how it runs (static site, or a
-server that is always on or on demand, with its monthly budget) and how many
+server that is always on or on demand, with its monthly budget when on demand) and how many
 earlier versions it keeps. Each version unfolds to its events and build log; a
-failed deploy's **Update failed** badge opens that log. A server App's menu
-holds **Monthly budget**, which shows the 24/7 estimate for its machine.
+failed deploy's **Update failed** badge opens that log. The menu of an on-demand
+server App holds **Monthly budget**. An always-on or `convex` App shows its
+fixed monthly cost instead.
 
 Kortix opens `*.apps.kortix.com` and `*.apps.localhost` on their direct origin
 rather than through a session's web forward proxy. That preserves the host-only
