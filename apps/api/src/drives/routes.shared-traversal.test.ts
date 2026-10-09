@@ -87,7 +87,35 @@ mock.module('./service', () => ({
 }));
 const realConflicts = await import('./conflicts');
 mock.module('./conflicts', () => ({ ...realConflicts, noteDriveWrite: () => undefined }));
+// The storage behind a drive file, as the volume API keeps it: a write with
+// If-Match lands only while the file is at that version, in one step.
+const stored = { version: 'v1', body: 'original' };
+let held: Array<() => void> = [];
+let holdWrites = 0;
+const realPlatinum = await import('../shared/platinum');
+mock.module('../shared/platinum', () => ({
+  ...realPlatinum,
+  isPlatinumConfigured: () => true,
+  platinumFetch: async (_path: string, init: RequestInit = {}) => {
+    // Hold writes until `holdWrites` of them have arrived: both saves have
+    // passed every check that comes before the write.
+    if (holdWrites > 0) {
+      await new Promise<void>((resolve) => {
+        held.push(resolve);
+        if (held.length === holdWrites) for (const go of held) go();
+      });
+    }
+    const ifMatch = new Headers(init.headers).get('if-match');
+    if (ifMatch && ifMatch.replace(/"/g, '') !== stored.version) {
+      return Response.json({ code: 'precondition_failed', error: 'stale' }, { status: 412 });
+    }
+    stored.body = new TextDecoder().decode(init.body as Uint8Array);
+    stored.version = `v${Number(stored.version.slice(1)) + 1}`;
+    return Response.json({ path: '/Users/ana/notes.txt', size: stored.body.length, version: stored.version }, { status: 201 });
+  },
+}));
 const realVolumes = await import('./volumes');
+const realWriteVolumeFile = realVolumes.writeVolumeFile;
 mock.module('./volumes', () => ({
   ...realVolumes,
   listVolumeFiles: async (_volume: string, path: string) => {
@@ -98,11 +126,12 @@ mock.module('./volumes', () => ({
   readVolumeFile: async (_volume: string, path: string) => {
     const known = Object.values(TREE).flat().some((e) => e.path === path && e.type === 'file');
     if (!known) throw new realVolumes.DriveStorageError(404, 'File or folder not found');
-    return new Response(`bytes of ${path}`, { headers: { etag: '"v1"' } });
+    const etag = path === '/Users/ana/notes.txt' ? stored.version : 'v1';
+    return new Response(`bytes of ${path}`, { headers: { etag: `"${etag}"` } });
   },
-  writeVolumeFile: async (_volume: string, path: string, body: Uint8Array) => {
-    writes.push(path);
-    return { path, size: body.byteLength };
+  writeVolumeFile: async (...args: Parameters<typeof realWriteVolumeFile>) => {
+    writes.push(args[1]);
+    return realWriteVolumeFile(...args);
   },
 }));
 
@@ -117,6 +146,9 @@ async function list(path: string) {
 beforeEach(() => {
   caller = ANA;
   writes.length = 0;
+  Object.assign(stored, { version: 'v1', body: 'original' });
+  held = [];
+  holdWrites = 0;
 });
 
 describe('a member walking to a folder shared from a private folder', () => {
@@ -156,10 +188,10 @@ describe('a member walking to a folder shared from a private folder', () => {
 });
 
 describe('saving an edit from the Files viewer', () => {
-  const put = (ifMatch?: string) =>
+  const put = (ifMatch?: string, body = 'edited') =>
     drivesApp.request(`/${DRIVE_ID}/files/content?path=/Users/ana/notes.txt`, {
       method: 'PUT',
-      body: 'edited',
+      body,
       headers: ifMatch ? { 'if-match': ifMatch } : {},
     });
 
@@ -174,5 +206,16 @@ describe('saving an edit from the Files viewer', () => {
     expect(res.status).toBe(409);
     expect(((await res.json()) as { code?: string }).code).toBe('file_changed');
     expect(writes).toEqual([]);
+  });
+
+  test('two saves from the same version: one lands, the other is refused and the first edit is kept', async () => {
+    holdWrites = 2;
+    const [a, b] = await Promise.all([put('"v1"', 'edit A'), put('"v1"', 'edit B')]);
+    expect([a.status, b.status].sort()).toEqual([200, 409]);
+    const refused = a.status === 409 ? a : b;
+    expect(((await refused.json()) as { code?: string }).code).toBe('file_changed');
+    const landed = a.status === 200 ? a : b;
+    expect(stored.body).toBe(landed === a ? 'edit A' : 'edit B');
+    expect(landed.headers.get('etag')).toBe('"v2"');
   });
 });

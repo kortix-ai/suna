@@ -23,6 +23,8 @@ export function driveStorageAvailable(): boolean {
 
 const FILE_TIMEOUT_MS = 5 * 60_000;
 
+export const FILE_CHANGED_MESSAGE = 'This file changed since you opened it. Reload it to see the latest version, then save again.';
+
 async function call(path: string, init: RequestInit = {}): Promise<Response> {
   if (!driveStorageAvailable()) throw new DriveStorageError(503, 'Drive storage is not available', 'drive_storage_unavailable');
   let res: Response;
@@ -54,6 +56,8 @@ async function call(path: string, init: RequestInit = {}): Promise<Response> {
     case 409:
       if (code === 'volume_busy') throw new DriveStorageError(409, 'The drive is attached to a running session', code);
       throw new DriveStorageError(409, 'A file or folder with that name already exists', code);
+    case 412:
+      throw new DriveStorageError(409, FILE_CHANGED_MESSAGE, 'file_changed');
     case 413:
       throw new DriveStorageError(413, 'File is too large', code);
     default:
@@ -140,14 +144,16 @@ export async function writeVolumeFile(
   volume: string,
   path: string,
   body: Uint8Array<ArrayBuffer>,
-  opts: { overwrite: boolean },
+  opts: { overwrite: boolean; ifMatch?: string },
 ): Promise<{ path: string; size: number; version?: string }> {
   const q = new URLSearchParams({ path, overwrite: String(opts.overwrite) });
   const r = await callJson<{ path: string; size: number; version?: string }>(`${v(volume)}/files/content?${q}`, {
     method: 'PUT',
     body,
     signal: AbortSignal.timeout(FILE_TIMEOUT_MS),
-    headers: { 'Content-Type': 'application/octet-stream' },
+    // Storage lands the write only while the file is at this version, in the
+    // same step as the write: two saves from one version cannot both land.
+    headers: { 'Content-Type': 'application/octet-stream', ...(opts.ifMatch ? { 'If-Match': opts.ifMatch } : {}) },
   });
   return { path: r.path ?? path, size: Number(r.size ?? body.byteLength), ...(r.version ? { version: String(r.version) } : {}) };
 }

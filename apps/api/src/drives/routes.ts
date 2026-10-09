@@ -70,6 +70,7 @@ import {
   removeVolumeFile,
   restoreVolume,
   writeVolumeFile,
+  FILE_CHANGED_MESSAGE,
   type VolumeCommit,
 } from './volumes';
 
@@ -521,19 +522,23 @@ drivesApp.openapi(
     if (body.byteLength > MAX_DRIVE_UPLOAD_BYTES) fail(413, 'File is too large');
     // A save from an editor names the version it was opened at (the download's
     // ETag). Someone else's write since then refuses the save instead of
-    // silently replacing their change.
+    // silently replacing their change. Storage enforces it atomically with the
+    // write (If-Match on the volume write); the read here only refuses a save
+    // that is already stale before its bytes are sent.
     const ifMatch = c.req.header('if-match');
     if (ifMatch) {
       const current = await withStorage(() => currentFileVersion(caller.drive, path));
-      if (!current || !sameVersion(current, ifMatch)) {
-        fail(409, 'This file changed since you opened it. Reload it to see the latest version, then save again.', 'file_changed');
-      }
+      if (!current || !sameVersion(current, ifMatch)) fail(409, FILE_CHANGED_MESSAGE, 'file_changed');
     }
     const written = await withStorage(() =>
-      writeDriveVolume(caller.drive, (volume) => writeVolumeFile(volume, path, body, { overwrite: true })),
+      writeDriveVolume(caller.drive, (volume) =>
+        writeVolumeFile(volume, path, body, { overwrite: true, ...(ifMatch ? { ifMatch } : {}) }),
+      ),
     );
     noteDriveWrite(caller.drive.driveId);
-    const version = ifMatch ? await withStorage(() => currentFileVersion(caller.drive, path)).catch(() => null) : null;
+    // The version this write made, as storage answered it: a read afterwards
+    // could name a later save's version and let the next save clobber it.
+    const version = ifMatch && written.version ? `"${bareVersion(written.version)}"` : null;
     if (version) c.header('etag', version);
     return c.json({ path: written.path, size: written.size, ...(version ? { version } : {}) });
   },
