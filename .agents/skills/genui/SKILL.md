@@ -7,6 +7,8 @@ description: "Generative UI for Kortix: the agent writes typed UI blocks (cards,
 
 **Status: SDK layer shipped (`@kortix/sdk/genui`, `/genui/react`). Runtime, web, mobile: see references/plan.md.**
 
+Phase 0 (provisional, local stand-in models): NO-GO (2026-10-09, prompt 244a8521). See `references/eval-results.md`.
+
 | Path | What it is |
 | --- | --- |
 | `references/spec.md` | The product spec: problem, goals, architecture, the 17 v1 components, streaming contract, toggle, requirements with acceptance criteria, Phase 4 guards, metrics, phases, risks, open questions |
