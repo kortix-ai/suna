@@ -15,6 +15,7 @@
  */
 import { createPublicKey, verify } from "node:crypto";
 import { flow } from "../core/flow";
+import { CliSandbox } from "../fixtures/cli";
 import { setFeatureAsOperator } from "../fixtures/feature-flags";
 
 const UNKNOWN_ID = "00000000-0000-4000-a000-000000000000";
@@ -45,6 +46,9 @@ flow(
       "GET /v1/projects/:projectId/apps/:appId/credentials",
       "POST /v1/projects/:projectId/apps/:appId/rotate-credentials",
       "GET /v1/projects/:projectId/apps/:appId/logs",
+      "GET /v1/projects/:projectId/apps",
+      "PATCH /v1/projects/:projectId/apps/:appId",
+      "POST /v1/projects/:projectId/apps/:appId/token",
     ],
   },
   async (ctx) => {
@@ -52,6 +56,7 @@ flow(
     const owner = ctx.client.as(ctx.P.OWNER);
     const projectParams = { projectId: project.id };
     let webAppId = "";
+    let otherAppId = "";
     let convexAppId = "";
     const convexSlug = `cvx-${ctx.fixtures.name("main").toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 40)}`.replace(/-+$/, "");
 
@@ -138,6 +143,54 @@ flow(
       }
     });
 
+    await ctx.step("the real CLI: link/unlink set `uses`, show prints kind and capabilities, a missing capability exits 1 before the route, token prints a JWT", async () => {
+      const otherSlug = ctx.fixtures.name("other").toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 40).replace(/-+$/, "");
+      const other = await owner.post("/v1/projects/:projectId/apps", { slug: otherSlug, name: "other" }, { params: projectParams });
+      other.status(201);
+      otherAppId = other.json<{ app_id: string }>().app_id;
+      const cli = new CliSandbox("app9");
+      try {
+        const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name("cli-app9") });
+        const login = await cli.login(pat, { noProject: true, account: project.accountId });
+        if (login.exitCode !== 0) throw new Error(`kortix login: ${login.stderr}`);
+        const P = ["--project", project.id];
+
+        const link = await cli.run(["apps", "link", webAppId, "--uses", otherSlug, ...P, "--json"]);
+        if (link.exitCode !== 0) throw new Error(`kortix apps link: ${link.exitCode} ${link.stderr}`);
+        if (JSON.stringify(JSON.parse(link.stdout).uses) !== JSON.stringify([otherSlug])) {
+          throw new Error(`link answered uses ${link.stdout.slice(0, 300)}`);
+        }
+        (await owner.get("/v1/projects/:projectId/apps/:appId", { params: { ...projectParams, appId: otherAppId } }))
+          .status(200)
+          .body()
+          .has("$.used_by", [JSON.parse(link.stdout).slug]);
+
+        const show = await cli.run(["apps", "show", webAppId, ...P, "--json"]);
+        if (show.exitCode !== 0) throw new Error(`kortix apps show: ${show.exitCode} ${show.stderr}`);
+        const shown = JSON.parse(show.stdout).app as { kind: string; capabilities: string[]; uses: string[] };
+        if (shown.kind !== "web" || !shown.capabilities.includes("member_tokens") || shown.uses[0] !== otherSlug) {
+          throw new Error(`show printed ${JSON.stringify(shown)}`);
+        }
+
+        const snapshots = await cli.run(["apps", "snapshots", webAppId, ...P]);
+        if (snapshots.exitCode !== 1 || !/\(kind web\) does not support snapshots/.test(snapshots.stderr)) {
+          throw new Error(`kortix apps snapshots on a web App: ${snapshots.exitCode} ${snapshots.stderr}`);
+        }
+
+        const token = await cli.run(["apps", "token", webAppId, ...P]);
+        if (token.exitCode !== 0 || token.stdout.trim().split(".").length !== 3) {
+          throw new Error(`kortix apps token: ${token.exitCode} ${token.stderr} ${token.stdout.slice(0, 80)}`);
+        }
+
+        const unlink = await cli.run(["apps", "unlink", webAppId, "--uses", otherSlug, ...P, "--json"]);
+        if (unlink.exitCode !== 0 || JSON.parse(unlink.stdout).uses.length !== 0) {
+          throw new Error(`kortix apps unlink: ${unlink.exitCode} ${unlink.stderr}`);
+        }
+      } finally {
+        cli.dispose();
+      }
+    });
+
     await ctx.step("an unknown App answers 404 on a capability route", async () => {
       (
         await owner.get("/v1/projects/:projectId/apps/:appId/snapshots", {
@@ -167,8 +220,8 @@ flow(
     });
 
     await ctx.step("cleanup: delete the web App, clear the flag override", async () => {
-      if (webAppId) {
-        (await owner.del("/v1/projects/:projectId/apps/:appId", { params: { ...projectParams, appId: webAppId } })).status(200);
+      for (const appId of [webAppId, otherAppId].filter(Boolean)) {
+        (await owner.del("/v1/projects/:projectId/apps/:appId", { params: { ...projectParams, appId } })).status(200);
       }
       await setFeatureAsOperator(ctx, project.id, "apps", null);
     });

@@ -1580,8 +1580,13 @@ Platinum is not configured). A `convex` create answers `201` with
 `instance.status: "provisioning"` and the seven `convex` capabilities where
 Platinum is configured, else `409 app_kind_unavailable`. A `web` App lists
 `deployments`, `rollback`, `preview`, `member_tokens` and answers 409
-`app_capability_unsupported` on the 7 `convex`-only capability routes; an
-unknown App answers 404. A `NONMEMBER` gets 403/404 and an `ANON` caller 401. The DB suites
+`app_capability_unsupported` on the 7 `convex`-only capability routes. The real
+CLI process: `kortix apps link <web> --uses <other>` sets `uses` (the other App
+reads it in `used_by`), `kortix apps show --json` prints `kind` and
+`capabilities`, `kortix apps snapshots <web>` exits 1 with `(kind web) does not
+support snapshots` before any capability route, `kortix apps token <web>` prints
+a three-part JWT, and `kortix apps unlink` empties `uses`. An unknown App
+answers 404. A `NONMEMBER` gets 403/404 and an `ANON` caller 401. The DB suites
 `apps/api/src/apps/kinds/convex/*.integration.test.ts` assert the rest against a
 fake Platinum and a fake Convex: the caps under concurrency (`409
 app_kind_limit`), `Cache-Control: no-store` on credentials and token,
