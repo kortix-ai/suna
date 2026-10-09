@@ -341,6 +341,9 @@ importers:
       '@kortix/starter':
         specifier: workspace:*
         version: link:../../packages/starter
+      '@openuidev/lang-core':
+        specifier: 0.3.1
+        version: 0.3.1(zod@3.25.76)
       ignore:
         specifier: 7.0.5
         version: 7.0.5
@@ -353,6 +356,9 @@ importers:
       yaml:
         specifier: ^2.8.2
         version: 2.9.1
+      zod:
+        specifier: ^3.25.0
+        version: 3.25.76
     devDependencies:
       '@types/bun':
         specifier: ^1.1.0

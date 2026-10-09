@@ -9,6 +9,7 @@
 import type { TurnStreamRelayBody } from '@kortix/api-contract/runtime-relay';
 import { isTurnErrorCode } from '@kortix/api-contract/transcript';
 import { projectSessions } from '@kortix/db';
+import { genuiToMarkdown } from '@kortix/sdk/genui';
 import { and, eq } from 'drizzle-orm';
 import { type TeamsFormSpec, buildFormCard } from '../../channels/teams/cards';
 import {
@@ -40,6 +41,11 @@ import {
 
 /** The relay request body, shape only — the route parses JSON into this. */
 export type TurnStreamBody = Partial<TurnStreamRelayBody>;
+
+/** Text relayed to Slack/Teams. Generative UI blocks become markdown first. */
+export function relayAnswerText(raw: string | undefined): string {
+  return genuiToMarkdown((raw ?? '').trim());
+}
 
 /** The only surface these handlers use from the Hono context. */
 export interface RelayResponder {
@@ -542,7 +548,7 @@ export async function relayContent(
   body: TurnStreamBody,
   sessionId: string,
 ): Promise<Response> {
-  const text = (body.text ?? '').trim();
+  const text = relayAnswerText(body.text);
   if (!text) {
     return c.json({ error: 'text is required' }, 400);
   }

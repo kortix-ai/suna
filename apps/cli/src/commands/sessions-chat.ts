@@ -7,6 +7,7 @@ import {
   sessionModelPin,
   unwrapError,
 } from '@kortix/sdk';
+import { genuiToMarkdown } from '@kortix/sdk/genui';
 import { formatRelative } from '@kortix/shared';
 
 import type { Auth } from '../api/auth.ts';
@@ -108,7 +109,7 @@ export function extractMessageText(msg: MessageWithParts): string {
 function partToText(part: Part): string {
   if (part.type === 'text' && typeof (part as { text?: string }).text === 'string') {
     if ((part as { synthetic?: boolean }).synthetic) return '';
-    return (part as { text: string }).text;
+    return genuiToMarkdown((part as { text: string }).text);
   }
   if (part.type === 'reasoning' && typeof (part as { text?: string }).text === 'string') {
     return `${C.dim}[reasoning] ${(part as { text: string }).text}${C.reset}`;
