@@ -78,6 +78,12 @@ export interface Env {
   capabilities: Capabilities;
   /** Email domain for synthetic principal accounts. */
   testEmailDomain: string;
+  /**
+   * Mailpit HTTP origin that receives the target's email (local stack, preview).
+   * Null on a target without one. Deliberately not a capability: a capability
+   * staging lacks would fail `--require-all` on the prod release gate.
+   */
+  mailpitUrl: string | null;
 }
 
 function pick(...names: string[]): string | null {
@@ -193,6 +199,7 @@ export function loadEnv(): Env {
     target,
     capabilities,
     testEmailDomain: pick('KE2E_EMAIL_DOMAIN') || 'ke2e.kortix.test',
+    mailpitUrl: pick('KE2E_MAILPIT_URL', 'E2E_MAILPIT_URL'),
   };
   return cached;
 }

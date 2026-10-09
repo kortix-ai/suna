@@ -123,6 +123,12 @@ export {
   creditPurchases,
   // Mobile push notification device tokens
   pushDeviceTokens,
+  // Notification inbox, preferences, watchers, Web Push (KRTX-1742)
+  notifications,
+  notificationPreferences,
+  notificationWatchers,
+  triggerWatchers,
+  webPushSubscriptions,
   // Product feedback (POST /v1/feedback)
   feedback,
   // Billing v2 — per-seat + compute metering + per-member YOLO

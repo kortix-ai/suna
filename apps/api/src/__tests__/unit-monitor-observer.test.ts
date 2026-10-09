@@ -29,6 +29,8 @@ let eventUpdates: Array<Record<string, unknown>> = [];
 let runtimeUpdates: Array<Record<string, unknown>> = [];
 /** What the fire seam recorded on the trigger's runtime row (last_status / last_error). */
 let runtimeMarks: Array<Record<string, unknown>> = [];
+/** The automation alerts the drain raised (KRTX-1742). */
+let raisedAlerts: Array<Record<string, unknown>> = [];
 
 function thenableUpdate(table: unknown, patch: Record<string, unknown>) {
   const pending: any = Promise.resolve(undefined).then(() => {
@@ -88,6 +90,15 @@ mock.module('../projects/lib/trigger-fire', () => ({
   },
 }));
 
+const realTriggerAlerts = await import('../projects/lib/trigger-alerts');
+mock.module('../projects/lib/trigger-alerts', () => ({
+  ...realTriggerAlerts,
+  raiseTriggerAlert: async (input: Record<string, unknown>) => {
+    raisedAlerts.push(input);
+    return true;
+  },
+}));
+
 const { drainMonitorEvents, processMonitorEvent } = await import(
   '../projects/lib/monitor-observer'
 );
@@ -143,6 +154,7 @@ describe('processMonitorEvent', () => {
     eventUpdates = [];
     runtimeUpdates = [];
     runtimeMarks = [];
+    raisedAlerts = [];
   });
 
   test('fires the trigger with the documented payload, prompt, and idempotency key', async () => {
@@ -271,9 +283,14 @@ describe('processMonitorEvent', () => {
       { mark: 'failed', projectId: PROJECT_ID, slug: 'checkout', when: NOW, error: 'sandbox unavailable' },
     ]);
 
+    // A retried attempt alerts nobody.
+    expect(raisedAlerts).toEqual([]);
+
     eventUpdates = [];
     expect(await processMonitorEvent(eventRow({ attempts: 5 }), NOW)).toBe('failed');
     expect(eventUpdates[0]).toMatchObject({ status: 'failed' });
+    // The dead letter alerts the trigger's watchers (KRTX-1742).
+    expect(raisedAlerts).toEqual([{ projectId: PROJECT_ID, slug: 'checkout', source: 'fire', error: 'sandbox unavailable' }]);
   });
 
   test('a thrown fire is recorded, not swallowed', async () => {

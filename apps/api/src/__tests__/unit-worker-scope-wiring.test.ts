@@ -53,6 +53,7 @@ const WORKERS: Record<string, string> = {
   'account-deletion': 'workers/account-deletion-worker.ts',
   'slack-turn-gc': 'workers/slack-turn-gc-worker.ts',
   'teams-turn-gc': 'workers/teams-turn-gc-worker.ts',
+  'notification-digest': 'workers/notification-worker.ts',
 };
 
 /** Files with a `setInterval` that is not a background job over tenant state. */
@@ -96,6 +97,7 @@ const STARTS: Record<string, string> = {
   startAccountDeletionSchedule: 'account-deletion',
   startSlackTurnGc: 'slack-turn-gc',
   startTeamsTurnGc: 'teams-turn-gc',
+  startNotificationWorker: 'notification-digest',
   startTeamsBotTokenRefresh: 'not a worker: in-memory Teams bot token',
   startEventLoopLagSampler: 'not a worker: measures this process event-loop lag',
   startSessionLifecycleWorker: 'session-lifecycle',
