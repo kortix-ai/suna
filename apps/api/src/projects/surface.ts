@@ -45,7 +45,7 @@ export {
   commitManifest,
 } from './lib/triggers';
 
-// Project access, the route app and the secret envelope (consumed by ../backends).
+// Project access, the route app and the secret envelope (consumed by ../apps/kinds/convex).
 export { assertProjectCapability, loadProjectForUser } from './lib/access';
 export { projectsApp } from './lib/app';
 export { decryptProjectSecret, encryptProjectSecret } from './secrets/envelope';
@@ -60,6 +60,8 @@ export { isAlreadyNotRunning } from './reaping/policy';
 
 // Nested `projects.metadata` writes (consumed by ../feature-flags/write).
 export { metadataClearSubtreeKey, metadataMergeSubtree } from './lib/metadata-merge';
+
+// Whether any app-event adapter is configured (consumed by ../feature-flags/registry).
 
 // App-event subscriptions (consumed by connector sync/connect and account
 // deletion). Loaded on first call: their import chain reaches back into

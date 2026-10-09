@@ -190,10 +190,9 @@ describe('marketplace catalog', () => {
     // off the browse list.
     const managedCandidates = [
       'kortix-cli',
-      'kortix-backends',
+      'kortix-apps',
       'kortix-computer',
       'kortix-connectors',
-      'kortix-internal-apps',
       'kortix-marketplace',
       'kortix-memory',
       'kortix-onboarding',

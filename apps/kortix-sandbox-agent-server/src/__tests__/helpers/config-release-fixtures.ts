@@ -9,7 +9,7 @@ import { createHash } from 'node:crypto'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { ConfigReleaseDescriptor, ConfigReleaseFile, ConfigReleaseSnapshot } from '@/services/config-release/descriptor'
+import type { ConfigReleaseDescriptor, ConfigReleaseFile, ConfigReleaseSnapshot } from '@/services/config-provider/descriptor'
 
 export function git(cwd: string, ...args: string[]): string {
   const r = spawnSync('git', args, { cwd, encoding: 'utf8' })

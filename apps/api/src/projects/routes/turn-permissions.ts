@@ -16,7 +16,8 @@ import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 // and pi alike (apps/kortix-sandbox-agent-server/src/harness/shared/turn-relay.ts `relayPermission`).
 // It only notifies: one "needs your approval" notification per request id, to
 // the person who prompted the running turn and the session's watchers
-// (KRTX-1742). It never answers the permission — the user
+// (KRTX-1742), or, with the project's notification_center flag off, to the
+// session creator's phones. It never answers the permission — the user
 // approves in the session UI, over the harness's own API. Session resolution
 // matches POST /turn-question (routes/turn-questions.ts), but only a sandbox
 // credential may call it.
@@ -114,7 +115,8 @@ export function registerTurnPermissionsRoutes(): void {
 
       // One notification per request id across replicas; it is not awaited
       // (notifications/permission-push.ts). It reaches the person who prompted
-      // the running turn and the session's (or the trigger's) watchers.
+      // the running turn and the session's (or the trigger's) watchers. The
+      // notifier resolves this context only when the flag is on.
       const notified = await permissionPushGate.notify({
         sessionId,
         projectId,

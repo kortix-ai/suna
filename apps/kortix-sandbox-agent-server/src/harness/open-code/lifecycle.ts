@@ -121,8 +121,8 @@ import {
   SECRET_CAPABILITIES_ENV_NAME,
   writeSecretCapabilitiesInstruction,
 } from '@/services/sandbox-env/secret-capabilities'
-import { configReleaseNoticePath } from '@/services/config-release/notice'
-import { bootLinkPath, readBootLinkTarget, releaseRootOf } from '@/services/config-release/boot-config'
+import { configReleaseNoticePath } from '@/services/config-provider/notice'
+import { bootLinkPath, readBootLinkTarget, releaseRootOf } from '@/services/config-provider/boot-config'
 import { writeReleaseInstructionsPlugin } from './release-instructions'
 import { applyAgentToolAccess } from './tool-access'
 import { writeToolBridge } from './tool-bridge'
@@ -373,7 +373,7 @@ export async function buildOpencodeConfigContent(
     /** The project root's `skills/`, only while OpenCode serves the working tree. */
     projectSkillsDir?: string | null
     secretCapabilitiesInstructionPath?: string | null
-    /** The config-release notice, when one exists (config-release/notice.ts). */
+    /** The config-release notice, when one exists (config-provider/notice.ts). */
     configReleaseNoticePath?: string | null
     /** OpenCode serves a config release: load the release instructions plugin (release-instructions.ts). */
     servesRelease?: boolean

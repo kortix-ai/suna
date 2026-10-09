@@ -13,7 +13,7 @@ import type {
 } from '@/services/runtime-assets/port'
 import { requireOpenCodeConfig } from './config'
 import { ensureInjectedManagedSkills } from '@/services/skills/managed-skills'
-import { isInReleaseStore, readBootLinkTarget, releaseRootOf } from '@/services/config-release/boot-config'
+import { isInReleaseStore, readBootLinkTarget, releaseRootOf } from '@/services/config-provider/boot-config'
 import { managedOverlayRoot } from './project-layout'
 import {
   captureProcessOutput,

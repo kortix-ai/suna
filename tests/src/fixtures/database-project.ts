@@ -133,7 +133,7 @@ export async function setDatabaseEnterpriseDemo(
 /**
  * Set one feature-flag override on a project row, as the operator route
  * (`PUT /v1/admin/api/projects/:id/features`) does. For browser journeys that
- * need an internal-only flag (`apps`, `backends`): a project owner cannot
+ * need the internal-only flag `apps`: a project owner cannot
  * write those through `PATCH /projects/:id/features`.
  */
 export async function setDatabaseProjectFeature(

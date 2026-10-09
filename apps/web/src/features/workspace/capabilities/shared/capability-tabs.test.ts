@@ -169,20 +169,3 @@ describe('CapabilityTabs stays pinned to the top', () => {
     expect(code(source)).not.toContain('fixed top-0');
   });
 });
-
-describe('CapabilityTabs: Backends', () => {
-  const bar = readFileSync(fileURLToPath(new URL('./capability-tabs.tsx', import.meta.url)), 'utf8');
-  test('Backends paints only while its flag is on, after every static tab and before Members', () => {
-    // Apps is a sidebar row again (Marko, 2026-10-07), not a Customize tab.
-    expect(bar).not.toContain("useFeatureFlag(projectId, 'apps')");
-    expect(bar).toContain("useFeatureFlag(projectId, 'backends').enabled");
-    const library = bar.indexOf('{library.map(renderTab)}');
-    const shipped = bar.indexOf('{shipped.map(renderTab)}');
-    const members = bar.indexOf('<MembersLaunchLink');
-    expect(library).toBeGreaterThan(-1);
-    expect(shipped).toBeGreaterThan(library);
-    expect(members).toBeGreaterThan(shipped);
-    // Their own seam, only when at least one of them shows.
-    expect(bar).toContain('{shipped.length ? <GroupSeam /> : null}');
-  });
-});
