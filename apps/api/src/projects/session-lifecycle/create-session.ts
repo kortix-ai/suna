@@ -180,7 +180,7 @@ async function runInlineCreate(
     // immediately, and the row is queued for backoff / dead-lettered per the
     // normal 5-attempt budget rather than left dangling on a lease.
     const message = err instanceof Error ? err.message : String(err);
-    await markCommandFailed(row, message, {
+    const outcome = await markCommandFailed(row, message, {
       retryable: true,
       attempts: row.attempts + 1,
     });
@@ -188,6 +188,8 @@ async function runInlineCreate(
       status: 'failed',
       commandId: row.commandId,
       retryable: true,
+      // A lost lease means another owner holds the row.
+      requeued: outcome !== 'dead_lettered',
       error: { status: 503, body: { error: message } },
     };
   }
@@ -199,7 +201,7 @@ async function runInlineCreate(
       commandId: row.commandId,
     });
     if (!postCreate.ok) {
-      await markCommandFailed(row, postCreate.error, {
+      const outcome = await markCommandFailed(row, postCreate.error, {
         retryable: true,
         attempts: row.attempts + 1,
         sessionId: result.sessionId,
@@ -216,6 +218,7 @@ async function runInlineCreate(
         sessionId: result.sessionId,
         row: result.row,
         retryable: true,
+        requeued: outcome !== 'dead_lettered',
         error: { status: 500, body: { error: postCreate.error } },
       };
     }

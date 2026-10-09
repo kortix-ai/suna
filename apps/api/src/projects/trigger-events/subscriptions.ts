@@ -6,6 +6,7 @@
 import { connectorConnections, connectors, projectTriggerRuntime } from '@kortix/db';
 import { createHash } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
+import { projects } from '@kortix/db';
 import { connectedAsOf } from '../../connectors/connection-identity';
 import { defaultConnectionIdForConnector } from '../../connectors/credentials';
 import { logger } from '../../lib/logger';
@@ -13,6 +14,7 @@ import { connectionRowIsReachable } from '../lib/connection-access';
 import { loadConnectionAudience } from '../lib/connection-audience';
 import type { GitTriggerSpec } from '../trigger-types';
 import { db } from '../../shared/db';
+import { EVENT_TRIGGERS_OFF_MESSAGE, eventTriggersOffForProject } from './flag';
 import { eventSourceFor, unknownSourceMessage } from './registry';
 import * as store from './store';
 import { EventConnectionNotReadyError, type EventSourceConnection, type EventSourceProvider } from './types';
@@ -183,9 +185,13 @@ async function reconcileOne(
   accountId: string,
   spec: GitTriggerSpec,
   prev: store.EventSubscriptionRow | undefined,
+  flagOff: boolean,
 ): Promise<void> {
   const event = spec.event!;
-  const resolved = await resolveSource(projectId, accountId, event);
+  // Flag off: the trigger stays declared but is never subscribed; a live instance is dropped below.
+  const resolved: Resolution & { providerId?: string } = flagOff
+    ? { kind: 'error', message: EVENT_TRIGGERS_OFF_MESSAGE }
+    : await resolveSource(projectId, accountId, event);
   const providerId = resolved.providerId ?? prev?.provider ?? 'composio';
   const base = {
     projectId,
@@ -255,9 +261,11 @@ export async function reconcileEventSubscriptions(
       const desired = specs.filter((s) => s.type === 'event' && s.enabled && s.event);
       const desiredSlugs = new Set(desired.map((s) => s.slug));
       const rows = new Map((await store.listByProject(projectId)).map((r) => [r.slug, r]));
+      const [project] = await db.select({ metadata: projects.metadata }).from(projects).where(eq(projects.projectId, projectId)).limit(1);
+      const flagOff = eventTriggersOffForProject(project?.metadata);
       for (const spec of desired) {
         try {
-          await reconcileOne(projectId, accountId, spec, rows.get(spec.slug));
+          await reconcileOne(projectId, accountId, spec, rows.get(spec.slug), flagOff);
         } catch (error) {
           logger.warn('[trigger-events] reconcile failed', { projectId, slug: spec.slug, error: errorText(error) });
         }

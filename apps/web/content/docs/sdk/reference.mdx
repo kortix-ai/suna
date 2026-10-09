@@ -231,6 +231,69 @@ which installs an item onto a project.
 | `marketplaces()` · `featured()` | all · featured marketplaces |
 | `sources.list()` · `sources.add(input)` · `sources.remove(id)` | list · add · remove a source |
 
+### Notifications — `kortix.notifications`
+
+The caller's notifications, across every account and project. Each signed-in
+person has one inbox, one preference record, and Web Push subscriptions for
+their browsers. Every method needs a person's credential: a service account
+gets `403`.
+
+:::info[Notifications is a feature flag]
+Kortix writes inbox rows, Web Push, and email only for projects with the
+`notification_center` flag on. It is off by default. `list()` leaves out rows
+from projects with the flag off. `session(pid, sid).watch()` and `.setWatch()`
+answer `403` with `{ error, code: "feature_disabled", feature: "notification_center" }`
+while it is off; use `isFeatureDisabledError(error)` to branch on it.
+Preferences, Web Push subscriptions, and device tokens are per person and work
+either way. With the flag off, the session creator's phone still gets a push
+when a turn ends, fails, asks a question, or asks for permission. See
+[Feature flags](/docs/feature-flags) and [Notifications](/docs/work/notifications).
+:::
+
+```ts
+const page = await kortix.notifications.list({ limit: 20 });
+await kortix.notifications.markRead({ ids: [page.notifications[0].id] });
+await kortix.notifications.updatePreferences({ kinds: { turn_done: { push: false } } });
+```
+
+| method | what |
+| --- | --- |
+| `list({ limit?, before? }, { signal? })` | the newest page: `{ notifications, unread_count, next_before }`. `limit` is 1 to 50 (default 20). Pass `next_before` as `before` for the next page. Rows the caller can no longer see are left out. A failure does not call the host error handler. |
+| `markRead({ ids })` · `markRead({ all: true })` · `markRead({ sessionId })` | mark 1 to 100 rows, every row, or every row of one session read. Changes only the caller's rows. Returns `{ updated, unread_count }`. |
+| `preferences()` · `updatePreferences({ kinds })` | read · change the push and email choice per kind. Returns `{ kinds, email_available }`. A patch changes only the kinds and channels it names. |
+| `webPushPublicKey()` | `{ public_key }`: the `applicationServerKey` for `pushManager.subscribe` |
+| `registerWebPushSubscription({ endpoint, keys })` | deliver push to this browser. Needs a browser sign-in: a personal token gets `403`. An endpoint on an unknown push service gets `400`. |
+| `unregisterWebPushSubscription(endpoint, { signal? })` | stop push to this browser. Returns `{ deleted }`. |
+| `registerDeviceToken(input)` · `unregisterDeviceToken(token, { signal? })` | register · remove a native app's Expo push token |
+
+Kinds (`InboxNotificationKind`, listed in `INBOX_NOTIFICATION_KINDS`):
+
+| kind | sent when | push | email (default) |
+| --- | --- | --- | --- |
+| `turn_done` | a turn you prompted or watch ended | on | off |
+| `turn_error` | that turn ended with an error | on | on, in a digest |
+| `question` | the agent asks a question | on | on, in a digest |
+| `permission` | the agent asks for permission | on | off |
+| `shared` | someone shared a session with you | on | on, in a digest |
+| `automation_failed` | an automation you watch started to fail | on | on, at once |
+| `automation_recovered` | that automation works again | on | off |
+
+`DEFAULT_NOTIFICATION_PREFERENCES` holds these defaults. The inbox row is
+always written; the preferences decide only push and email. A digest email
+lists the rows still unread 15 minutes after they arrived, at most one digest
+per hour. Hide the email column when `email_available` is `false`.
+
+Each row's `url` opens its subject. Its `?notification=<id>` query lets the
+page mark the row read.
+
+The session handle carries the caller's watch on one session:
+
+| method | what |
+| --- | --- |
+| `session(pid, sid).watch()` | `{ watching }`: is the caller notified about this session |
+| `session(pid, sid).setWatch(watching)` | `false` mutes the session for the caller, `true` watches it again. Prompting a session watches it, but never undoes a mute. |
+| `session(pid, sid).presence({ tab_id, active, alerts? })` | this tab's presence lease. `alerts: true` says the tab shows its own notifications: with `notification_center` on, the server skips the phone and Web Push only while an alerting tab is in use. With it off, `alerts` is ignored and any present tab holds back the phone push. An absent report is sent with `keepalive`. |
+
 ### The project handle — `kortix.project(id)`
 
 Binds the project id; every sub-resource hangs off it.
@@ -270,15 +333,16 @@ project access.
 | --- | --- |
 | `requestSecret(input)` · `requestConnector(input)` | link to collect a secret · connect an app |
 
-#### `p.backends` — self-hosted Convex backends
+#### `p.apps` — Apps of every kind
 
-Behind the `backends` project feature. Guide: [Backends](/docs/sdk/backends).
+Behind the `apps` project feature. Guide: [SDK → Apps](/docs/sdk/apps).
 
 | method | what |
 | --- | --- |
-| `list()` · `get(backendId)` | list · read one backend |
-| `create({ name })` · `remove(backendId)` | boot a backend (synchronous) · delete it |
-| `credentials(backendId)` | `url`, `site_url`, `admin_key`, and the Convex CLI `env` |
+| `list()` · `get(appId)` · `create(input)` · `update(appId, input)` · `remove(appId, { confirm? })` | inventory and lifecycle; `create` takes `kind` (`web`, `convex`) and `uses` |
+| `deployments.*` · `artifacts.*` · `access.*` · `rollback` · `start` · `stop` | deployments, artifacts, the access policy, traffic and runtime |
+| `waitUntilReady(appId)` | poll until a `convex` App's instance runs with no operation in flight |
+| `snapshots.list/create/delete/restore` · `credentials` · `rotateCredentials` · `token` · `log` | capability calls; `409 app_capability_unsupported` when the App lacks the capability |
 
 #### `p.secrets` — project secrets
 

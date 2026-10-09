@@ -213,10 +213,27 @@ mock.module('../lib/trigger-run-outcome', () => ({
   },
 }));
 
+const notified: Array<Record<string, unknown>> = [];
+// The real notifier resolves the context thunk only for a flag-on project
+// (notifications/session-push.ts); this stand-in always resolves it.
 mock.module('../../notifications/session-push', () => ({
   turnEndPushType: () => pushType,
-  notifySessionEvent: async () => {
+  notifySessionEvent: async (
+    event: Record<string, unknown>,
+    options: { context?: () => Promise<Record<string, unknown>> } = {},
+  ) => {
     order.push('notify');
+    notified.push({ ...event, ...(options.context ? await options.context() : {}) });
+  },
+}));
+
+// KRTX-1742: the turn end hands the notifier a thunk that resolves who
+// prompted the turn.
+const contextLookups: Array<{ session: Record<string, unknown>; turnMessageId: string | null }> = [];
+mock.module('../lib/notification-recipients', () => ({
+  turnEndNotificationContext: async (session: Record<string, unknown>, turnMessageId: string | null) => {
+    contextLookups.push({ session, turnMessageId });
+    return { prompterUserId: 'user-prompter', originClass: 'attended', isChild: false };
   },
 }));
 
@@ -274,6 +291,8 @@ beforeEach(() => {
   adoptResult = 'adopted';
   causeResult = 'attached';
   order.length = 0;
+  notified.length = 0;
+  contextLookups.length = 0;
   triggerRunEnds.length = 0;
   completionQueue = [];
   completedMessageIds.length = 0;
@@ -691,6 +710,50 @@ describe('POST /v1/projects/:projectId/turn-stream — end / turn_end settlement
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ queue_promoted: false });
     expect(order).toEqual(['complete', 'mirror', 'notify', 'relayEnd']);
+  });
+
+  // KRTX-1742: the person who prompted the ended turn is told, not only the
+  // creator. The turn end names its message; projects/ resolves the prompter
+  // and the origin class, and the event carries them to the notifier.
+  test('a closed turn end hands the notifier its message id, prompter, origin class and error', async () => {
+    sessionRow = { ...session({ source: 'ui' }), origin: 'user' };
+    pushType = 'error';
+    await post(
+      {
+        session_id: SESSION_ID,
+        kind: 'turn_end',
+        status: 'error',
+        turn_message_id: 'msg_turn',
+        error_name: 'APIError',
+        error_message: 'Payment Required: Insufficient credits.',
+      },
+      sandboxCtx,
+    );
+    expect(contextLookups).toEqual([
+      {
+        session: { sessionId: SESSION_ID, projectId: PROJECT_ID, accountId: ACCOUNT_ID, metadata: { source: 'ui' }, origin: 'user' },
+        turnMessageId: 'msg_turn',
+      },
+    ]);
+    expect(notified).toEqual([
+      {
+        type: 'error',
+        sessionId: SESSION_ID,
+        projectId: PROJECT_ID,
+        turnMessageId: 'msg_turn',
+        errorMessage: 'Payment Required: Insufficient credits.',
+        prompterUserId: 'user-prompter',
+        originClass: 'attended',
+        isChild: false,
+      },
+    ]);
+  });
+
+  test('an end that earns no notification resolves no prompter', async () => {
+    pushType = null;
+    await post({ session_id: SESSION_ID, kind: 'end', turn_message_id: 'msg_turn' }, sandboxCtx);
+    expect(contextLookups).toEqual([]);
+    expect(notified).toEqual([]);
   });
 
   test('the end side effects fire in the pinned order, promotion awaited before the ack', async () => {

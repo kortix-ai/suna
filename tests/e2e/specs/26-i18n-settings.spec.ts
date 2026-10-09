@@ -648,6 +648,10 @@ test.describe("26 — Settings localization", () => {
             await notificationSwitch.click();
           }
           await expect(notificationSwitch).toBeChecked();
+          // This project keeps the `notification_center` flag off (the
+          // default, KRTX-1742), so the pane is the one from before the
+          // notification center: the four per-browser kind switches
+          // (`settings.sessions.types`). Spec 48 covers the flag-on pane.
           for (const notificationText of [
             copy.settings.sessions.notificationTypes,
             copy.settings.sessions.behavior,

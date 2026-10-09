@@ -20,7 +20,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Text } from '@/components/ui/text';
 import { parsePatchFile, type DiffRow } from '@/lib/diff/parse-patch';
 import { MONO_FONT_FAMILY } from '@/lib/utils/mono-font';
-import { THEME, withAlpha } from '@/lib/utils/theme';
+import { diffRowPalette, DiffRowView } from '@/components/diff/PatchDiffView';
 
 interface ReviewFileDiffProps {
   patch: string | undefined;
@@ -32,55 +32,11 @@ interface ReviewFileDiffProps {
   bottomInset: number;
 }
 
-interface LinePalette {
-  fg: string;
-  muted: string;
-  add: string;
-  del: string;
-  hunk: string;
-  addBg: string;
-  delBg: string;
-  hunkBg: string;
-}
-
-function linePalette(isDark: boolean): LinePalette {
-  const theme = isDark ? THEME.dark : THEME.light;
-  return {
-    fg: theme.foreground,
-    muted: theme.mutedForeground,
-    add: THEME.accent.green,
-    del: theme.destructive,
-    hunk: THEME.accent.purple,
-    addBg: withAlpha(THEME.accent.green, isDark ? 0.14 : 0.12),
-    delBg: withAlpha(theme.destructive, isDark ? 0.14 : 0.1),
-    hunkBg: withAlpha(THEME.accent.purple, isDark ? 0.12 : 0.08),
-  };
-}
-
-const DiffLine = React.memo(function DiffLine({ row, palette }: { row: DiffRow; palette: LinePalette }) {
-  const bg =
-    row.kind === 'add' ? palette.addBg : row.kind === 'del' ? palette.delBg : row.kind === 'hunk' ? palette.hunkBg : undefined;
-  const color =
-    row.kind === 'add' ? palette.add : row.kind === 'del' ? palette.del : row.kind === 'hunk' ? palette.hunk : palette.fg;
-  const sign = row.kind === 'add' ? '+' : row.kind === 'del' ? '−' : ' ';
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'flex-start', backgroundColor: bg, paddingVertical: 1 }}>
-      <Text
-        style={{ width: 44, textAlign: 'right', paddingRight: 8, fontSize: 11, lineHeight: 18, fontFamily: MONO_FONT_FAMILY, color: palette.muted }}>
-        {row.kind === 'hunk' ? '' : (row.num ?? '')}
-      </Text>
-      <Text style={{ flex: 1, fontSize: 12, lineHeight: 18, fontFamily: MONO_FONT_FAMILY, color, paddingRight: 12 }}>
-        {row.kind === 'hunk' ? row.text : `${sign} ${row.text}`}
-      </Text>
-    </View>
-  );
-});
-
 export function ReviewFileDiff({ patch, path, isLoading, isError, isDark, bottomInset }: ReviewFileDiffProps) {
-  const palette = React.useMemo(() => linePalette(isDark), [isDark]);
+  const palette = React.useMemo(() => diffRowPalette(isDark), [isDark]);
   const parsed = React.useMemo(() => (patch ? parsePatchFile(patch, path) : null), [patch, path]);
   const renderItem = React.useCallback(
-    ({ item }: { item: DiffRow }) => <DiffLine row={item} palette={palette} />,
+    ({ item }: { item: DiffRow }) => <DiffRowView row={item} palette={palette} wrap />,
     [palette],
   );
 

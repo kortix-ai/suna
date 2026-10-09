@@ -1,18 +1,22 @@
 /** Fans one provider delivery or notice out to the event triggers subscribed to it. */
 import { connectorConnections, connectors, projectTriggerRuntime, projects } from '@kortix/db';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
+import { notificationsEnabled } from '../../notifications/enabled';
 import {
   fireGitTrigger,
+  markGitTriggerAttemptFailed,
   markGitTriggerFired,
   renderPromptTemplate,
   triggerFilterMatches,
   triggersPausedForProject,
 } from '../lib/triggers';
 import { releaseWebhookDeliveryKey } from '../lib/webhook-delivery';
+import { raiseTriggerAlert } from '../lib/trigger-alerts';
 import type { GitTriggerSpec } from '../trigger-types';
 import { db } from '../../shared/db';
 import * as store from './store';
+import { eventTriggersEnabled } from './flag';
 import { reconcileEventSubscriptionsFromCatalog } from './subscriptions';
 import type { EventDelivery, ProviderNotice } from './types';
 
@@ -73,6 +77,36 @@ export async function connectorInfo(
   return { found: Boolean(connector), provider: connector?.provider ?? 'unknown', app: typeof app === 'string' ? app : null };
 }
 
+/**
+ * The app redelivers an event we answer with a 500, so a failure a retry can
+ * fix alerts only on the third failed attempt of one event (KRTX-1742). Each
+ * redelivery releases the earlier attempt's dead-lettered create under
+ * `<key>:released:<command_id>` (webhook-delivery.ts): those rows count the
+ * earlier failures. A create still queued or running under the key belongs to
+ * the drain, which alerts if it dead-letters.
+ */
+const EVENT_FAILURES_BEFORE_ALERT = 2;
+
+/** Never throws: a failed read alerts nobody, and the next attempt asks again. */
+async function eventFailureAlerts(projectId: string, key: string): Promise<boolean> {
+  const released = `${key}:released:`;
+  try {
+    const [row] = (await db.execute(sql`
+      SELECT count(*) FILTER (WHERE c.idempotency_key <> ${key} AND c.status = 'dead_lettered')::int AS failed_before,
+             coalesce(bool_or(c.idempotency_key = ${key} AND c.status IN ('queued', 'running')), false) AS in_flight
+        FROM kortix.session_lifecycle_commands c
+       WHERE c.project_id = ${projectId}
+         AND (c.idempotency_key = ${key} OR starts_with(c.idempotency_key, ${released}))`)) as unknown as Array<{
+      failed_before: number;
+      in_flight: boolean;
+    }>;
+    return !row?.in_flight && (row?.failed_before ?? 0) >= EVENT_FAILURES_BEFORE_ALERT;
+  } catch (error) {
+    logger.warn('[trigger-events] failure count read failed', { projectId, error: error instanceof Error ? error.message : String(error) });
+    return false;
+  }
+}
+
 async function deliverToRow(
   provider: string,
   row: store.EventSubscriptionRow,
@@ -84,6 +118,11 @@ async function deliverToRow(
   const [project] = await db.select().from(projects).where(eq(projects.projectId, row.projectId)).limit(1);
   if (!project || project.status !== 'active') return 'skipped';
   if (triggersPausedForProject(project.metadata)) return 'skipped';
+  // Defense in depth: turning the flag off releases the subscriptions, so this is normally unreachable.
+  if (!eventTriggersEnabled(project.metadata)) {
+    logger.info('[trigger-events] delivery skipped: event_triggers flag is off', { projectId: row.projectId, slug: row.slug });
+    return 'skipped';
+  }
 
   const [runtime] = await db
     .select({
@@ -111,6 +150,9 @@ async function deliverToRow(
   if (!triggerFilterMatches(spec, payload)) return 'skipped';
 
   const idempotencyKey = eventIdempotencyKey(row.projectId, row.slug, delivery.eventId);
+  // Alerts need the project's notification_center flag; off, the failure
+  // count is not read either.
+  const alertsOn = notificationsEnabled(project.metadata);
   try {
     // A provider retry of an event whose run dead-lettered or lost its session
     // runs again instead of replaying that outcome (webhook-delivery.ts).
@@ -124,7 +166,18 @@ async function deliverToRow(
       idempotencyKey,
     });
     if (result.status === 'failed') {
-      logger.warn('[trigger-events] fire failed', { projectId: row.projectId, slug: row.slug, error: result.error });
+      const error = result.error ?? 'Failed to fire trigger';
+      logger.warn('[trigger-events] fire failed', { projectId: row.projectId, slug: row.slug, error });
+      // Recorded like a failed cron fire, so the trigger says it failed (KRTX-1743).
+      await markGitTriggerAttemptFailed(row.projectId, row.slug, new Date(), error).catch(() => {});
+      // The provider retries on our 500. Only a failure no retry can fix, or
+      // the third failed attempt of one event, alerts (KRTX-1742). A create
+      // that went back to the queue alerts from the drain if it dead-letters.
+      const alerts =
+        alertsOn && !result.requeued && (!result.retryable || (await eventFailureAlerts(row.projectId, idempotencyKey)));
+      if (alerts) {
+        await raiseTriggerAlert({ projectId: row.projectId, accountId: project.accountId, slug: row.slug, source: 'fire', error, notificationCenter: true });
+      }
       return 'failed';
     }
     // A duplicate ran nothing: it leaves last_fired_at and last_event_at alone.
@@ -133,11 +186,13 @@ async function deliverToRow(
     await store.touchLastEvent(row.projectId, row.slug);
     return 'fired';
   } catch (error) {
-    logger.warn('[trigger-events] fire threw', {
-      projectId: row.projectId,
-      slug: row.slug,
-      error: error instanceof Error ? error.message : String(error),
-    });
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn('[trigger-events] fire threw', { projectId: row.projectId, slug: row.slug, error: message });
+    await markGitTriggerAttemptFailed(row.projectId, row.slug, new Date(), message).catch(() => {});
+    // The provider retries on our 500: the same rule as a retryable failure.
+    if (alertsOn && (await eventFailureAlerts(row.projectId, idempotencyKey))) {
+      await raiseTriggerAlert({ projectId: row.projectId, accountId: project.accountId, slug: row.slug, source: 'fire', error: message, notificationCenter: true });
+    }
     return 'failed';
   }
 }

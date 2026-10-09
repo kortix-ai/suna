@@ -800,7 +800,8 @@ function appBlockV2Schema(): JsonSchemaFragment {
       idle_timeout_seconds: { type: 'integer', minimum: 120, maximum: 86400 },
       always_on: { type: 'boolean' },
       monthly_budget_usd: { type: 'number', minimum: 0 },
-      backends: { type: 'array', items: { type: 'string', pattern: '^[a-z][a-z0-9-]{0,62}$' } },
+      kind: { type: 'string', enum: ['web', 'convex'] },
+      uses: { type: 'array', items: { type: 'string', pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$' } },
       resources: {
         type: 'object',
         properties: {

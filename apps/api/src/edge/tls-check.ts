@@ -20,7 +20,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { errors, json, makeOpenApiApp } from '../openapi';
 import { appTlsCheckStatus, type AppExistsCheck } from '../apps/edge';
-import { backendHostTlsCheckStatus } from '../backends/hosts';
+import { backendHostTlsCheckStatus } from '../apps/kinds/convex/hosts';
 import { resolvePreviewHost } from '../sandbox-proxy/preview-hosts';
 import { resolveExternalIdFromHostLabel } from '../sandbox-proxy/backend';
 import { requestClientKey } from '../middleware/client-ip';
@@ -60,8 +60,8 @@ export async function previewTlsCheckStatus(
 
 /**
  * 200 if `domain` is a hostname this deployment actually serves — an App, a
- * backend host (Convex API, HTTP actions, dashboard), or a sandbox preview.
- * Checked in that order; no two can match: Apps and backend hosts differ in
+ * `convex` App host (Convex API, HTTP actions, dashboard), or a sandbox preview.
+ * Checked in that order; no two can match: web App and `convex` App hosts differ in
  * label shape, previews sit under a different base domain.
  */
 export async function edgeTlsCheckStatus(

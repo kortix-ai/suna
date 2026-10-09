@@ -108,14 +108,18 @@ interface Fixture {
   /** `GET .../sessions/:sessionId/config` as the project owner. */
   configState(sessionId: string): Promise<{ status: number; body: any }>;
   /**
-   * The project's own switch for `config_releases` (or `pi_harness`), through
-   * the published write path. `true` opts in, `false` opts out, `null` clears
-   * the override and returns the project to the platform default — which is
-   * OFF for both (`apps/api/src/feature-flags/registry.ts`).
+   * The project's own switch for `pi_harness` or `meta_agent`, through the
+   * published write path. `true` opts in, `false` opts out, `null` clears the
+   * override and returns the project to the platform default — which is OFF
+   * for both (`apps/api/src/feature-flags/registry.ts`).
    */
-  setFeature(enabled: boolean | null, feature?: 'config_releases' | 'pi_harness' | 'meta_agent'): Promise<void>;
-  /** The project's effective `config_releases` value, read back from the API. */
-  featureEnabled(): Promise<boolean>;
+  setFeature(enabled: boolean | null, feature: 'pi_harness' | 'meta_agent'): Promise<void>;
+  /**
+   * Write a `config_releases` value straight into the project's stored flag
+   * overrides, as a project that chose one before config releases graduated
+   * still holds it. No API path writes it any more.
+   */
+  storeRetiredConfigReleasesFlag(enabled: boolean): Promise<void>;
   cleanup(): Promise<void>;
 }
 
@@ -397,7 +401,7 @@ async function setup(ctx: FlowContext): Promise<Fixture> {
     commit(files, message) {
       return commitTo(repo, files, message);
     },
-    async setFeature(enabled, feature = 'config_releases') {
+    async setFeature(enabled, feature) {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
@@ -407,10 +411,17 @@ async function setup(ctx: FlowContext): Promise<Fixture> {
         );
       r.status(200);
     },
-    async featureEnabled() {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId', { params: { projectId: project.id } });
-      r.status(200);
-      return r.json<{ experimental: Record<string, boolean> }>().experimental.config_releases === true;
+    async storeRetiredConfigReleasesFlag(enabled) {
+      await db.query(
+        `UPDATE kortix.projects
+            SET metadata = COALESCE(metadata, '{}'::jsonb)
+              || jsonb_build_object(
+                   'experimental',
+                   COALESCE(metadata->'experimental', '{}'::jsonb) || jsonb_build_object('config_releases', $2::boolean)
+                 )
+          WHERE project_id = $1`,
+        [project.id, enabled],
+      );
     },
     async configState(sessionId) {
       const token = (ctx.P.OWNER.auth as { token?: string }).token ?? null;
@@ -509,7 +520,7 @@ flow(
     domain: 'config-releases',
     requires: ['database'],
     timeoutMs: 180_000,
-    routes: [FEATURES, PROJECT_DETAIL, MINT, DESCRIPTOR, ...GIT_PROXY],
+    routes: [MINT, DESCRIPTOR, ...GIT_PROXY],
   },
   async (ctx) => {
     const fixture = await setup(ctx);
@@ -517,11 +528,6 @@ flow(
       const own = await fixture.mint();
       const sibling = await fixture.mint();
       const otherProject = await fixture.team.project();
-
-      await ctx.step('the project opts in: `config_releases` is OFF by default, so this flow enables it', async () => {
-        await fixture.setFeature(true);
-        if (!(await fixture.featureEnabled())) throw new Error('config_releases did not turn on for this project');
-      });
 
       await ctx.step('ANON posting for a session is rejected with 401', async () => {
         const r = await fixture.descriptor(null, own.sessionId);
@@ -598,7 +604,7 @@ flow(
     domain: 'config-releases',
     requires: ['database'],
     timeoutMs: 240_000,
-    routes: [FEATURES, PROJECT_DETAIL, MINT, DESCRIPTOR, ARCHIVE, ...GIT_PROXY],
+    routes: [MINT, DESCRIPTOR, ARCHIVE, ...GIT_PROXY],
   },
   async (ctx) => {
     const fixture = await setup(ctx);
@@ -606,11 +612,6 @@ flow(
       const own = await fixture.mint();
       let descriptor!: Descriptor;
       let firstBytes!: Buffer;
-
-      await ctx.step('the project opts in: `config_releases` is OFF by default, so this flow enables it', async () => {
-        await fixture.setFeature(true);
-        if (!(await fixture.featureEnabled())) throw new Error('config_releases did not turn on for this project');
-      });
 
       await ctx.step('the descriptor names the base tip, its config tree, and a release ID over tree and governance', async () => {
         const r = await fixture.descriptor(own.secret, own.sessionId);
@@ -760,18 +761,13 @@ flow(
     domain: 'config-releases',
     requires: ['database'],
     timeoutMs: 180_000,
-    routes: [FEATURES, PROJECT_DETAIL, MINT, DESCRIPTOR, ARCHIVE, 'POST /v1/projects/:projectId/secrets', ...GIT_PROXY],
+    routes: [MINT, DESCRIPTOR, ARCHIVE, 'POST /v1/projects/:projectId/secrets', ...GIT_PROXY],
   },
   async (ctx) => {
     const { randomBytes } = await import('node:crypto');
     const fixture = await setup(ctx);
     try {
       const value = `ke2e-cfg-secret-${randomBytes(16).toString('hex')}`;
-      await ctx.step('the project opts in: `config_releases` is OFF by default, so this flow enables it', async () => {
-        await fixture.setFeature(true);
-        if (!(await fixture.featureEnabled())) throw new Error('config_releases did not turn on for this project');
-      });
-
       await ctx.step('seed a project secret with a known value', async () => {
         const r = await ctx.client
           .as(ctx.P.OWNER)
@@ -821,7 +817,7 @@ flow(
     domain: 'config-releases',
     requires: ['database'],
     timeoutMs: 300_000,
-    routes: [FEATURES, PROJECT_DETAIL, MINT, DESCRIPTOR, ARCHIVE, ...GIT_PROXY],
+    routes: [MINT, DESCRIPTOR, ARCHIVE, ...GIT_PROXY],
   },
   async (ctx) => {
     const fixture = await setup(ctx);
@@ -847,11 +843,6 @@ flow(
         );
       let good!: Descriptor;
       let bad!: Descriptor;
-
-      await ctx.step('the project opts in: `config_releases` is OFF by default, so this flow enables it', async () => {
-        await fixture.setFeature(true);
-        if (!(await fixture.featureEnabled())) throw new Error('config_releases did not turn on for this project');
-      });
 
       await ctx.step("the daemon's descriptor request records the assignment; a human read does not", async () => {
         const r = await fixture.descriptor(a.secret, a.sessionId);
@@ -937,17 +928,12 @@ flow(
     domain: 'config-releases',
     requires: ['database'],
     timeoutMs: 120_000,
-    routes: [FEATURES, PROJECT_DETAIL, MINT, CONFIG_STATE, ...GIT_PROXY],
+    routes: [MINT, CONFIG_STATE, ...GIT_PROXY],
   },
   async (ctx) => {
     const fixture = await setup(ctx);
     try {
       const own = await fixture.mint();
-      await ctx.step('the project opts in: `config_releases` is OFF by default, so this flow enables it', async () => {
-        await fixture.setFeature(true);
-        if (!(await fixture.featureEnabled())) throw new Error('config_releases did not turn on for this project');
-      });
-
       await ctx.step('a session whose daemon cannot be reached reports stale null, never false, and no release block', async () => {
         const r = await fixture.configState(own.sessionId);
         if (r.status !== 200) throw new Error(`expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
@@ -996,7 +982,7 @@ flow(
     domain: 'config-releases',
     requires: ['database'],
     timeoutMs: 300_000,
-    routes: [FEATURES, PROJECT_DETAIL, MINT, DESCRIPTOR, ARCHIVE, CONFIG_STATE, ...GIT_PROXY],
+    routes: [MINT, DESCRIPTOR, ARCHIVE, CONFIG_STATE, ...GIT_PROXY],
   },
   async (ctx) => {
     const fixture = await setup(ctx);
@@ -1007,11 +993,6 @@ flow(
     try {
       const old = await fixture.mint();
       let oldDescriptor!: Descriptor;
-      await ctx.step('the project opts in: `config_releases` is OFF by default, so this flow enables it', async () => {
-        await fixture.setFeature(true);
-        if (!(await fixture.featureEnabled())) throw new Error('config_releases did not turn on for this project');
-      });
-
       await ctx.step('before the replacement the session receives a descriptor', async () => {
         const r = await fixture.descriptor(old.secret, old.sessionId);
         if (r.status !== 200) throw new Error(`expected 200, got ${r.status}`);
@@ -1166,143 +1147,93 @@ flow(
   },
 );
 
-// ── CFG-8 — the `config_releases` feature flag: the whole three-state contract
+// ── CFG-8 — config releases graduated: there is no off switch
 //
-// `config_releases` is OPT-IN. Its platform default is OFF
-// (`apps/api/src/feature-flags/registry.ts`, `platformDefault: () => false`),
-// so a project that made no choice gets the pre-release behaviour, and only a
-// project that turns the flag on gets a release. This flow drives all three
-// states through the published write path, in order:
-//
-//   1. no choice  ⇒ the flag reads false and the release path is 403 `feature_disabled`
-//   2. enabled    ⇒ the descriptor and the archive work
-//   3. disabled   ⇒ the pre-release behaviour returns, and the session survives it
-//
-// The flag's authority is the boot/start of a box, but the API side of it is
-// the descriptor route and the archive route: OFF ⇒ both answer 403
-// `feature_disabled`, the box then reads its workspace config dir, and no
-// release is built, stored, or recorded.
+// `config_releases` was a per-project feature flag until 2026-10. It is no
+// longer a flag key: every project gets releases, the published write path
+// refuses the old key, and a value a project stored before graduation —
+// including an explicit `false` — changes nothing. No route answers
+// `403 feature_disabled` for config releases any more.
 flow(
   'CFG-8',
   {
     domain: 'config-releases',
     requires: ['database'],
     timeoutMs: 180_000,
-    routes: [MINT, DESCRIPTOR, ARCHIVE, CONFIG_STATE, FEATURES, PROJECT_DETAIL, ...GIT_PROXY],
+    routes: [MINT, DESCRIPTOR, ARCHIVE, FEATURES, PROJECT_DETAIL, ...GIT_PROXY],
   },
   async (ctx) => {
     const fixture = await setup(ctx);
-    const setFlag = (enabled: boolean | null) => fixture.setFeature(enabled);
-    const sessionExists = async (sessionId: string) =>
+    const ledgerRows = async () =>
       Number(
-        (await fixture.db.query('SELECT count(*)::int AS n FROM kortix.project_sessions WHERE session_id = $1', [sessionId]))
-          .rows[0].n,
-      ) === 1;
+        (await fixture.db.query('SELECT count(*)::int AS n FROM kortix.config_releases WHERE project_id = $1', [
+          fixture.projectId,
+        ])).rows[0].n,
+      );
+    const servesARelease = async (secret: string, sessionId: string, label: string) => {
+      const r = await fixture.descriptor(secret, sessionId);
+      if (r.status !== 200) throw new Error(`${label}: expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
+      if (!HEX64.test(r.body.release_id)) throw new Error(`${label}: release_id ${r.body.release_id}`);
+      if (!HEX40.test(r.body.config_tree_id)) throw new Error(`${label}: config_tree_id ${r.body.config_tree_id}`);
+      const archive = await fixture.download(secret, r.body.config_tree_id);
+      if (archive.status !== 200) throw new Error(`${label}: archive answered ${archive.status}`);
+      return r.body as { release_id: string; source_commit: string; mode: string };
+    };
     try {
       const own = await fixture.mint();
-      let treeId!: string;
 
-      await ctx.step('state 1 — a project that made no choice reports the flag OFF', async () => {
-        if (await fixture.featureEnabled()) throw new Error('config_releases is on for a project that never opted in');
+      await ctx.step('the project reports no `config_releases` flag at all', async () => {
+        const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId', { params: { projectId: fixture.projectId } });
+        r.status(200);
+        const experimental = r.json<{ experimental: Record<string, boolean> }>().experimental;
+        if ('config_releases' in experimental) {
+          throw new Error(`experimental still serves config_releases: ${JSON.stringify(experimental)}`);
+        }
       });
 
-      await ctx.step('state 1 — with no choice made, the session gets the PRE-RELEASE behaviour, not a release', async () => {
-        const r = await fixture.descriptor(own.secret, own.sessionId);
-        if (r.status !== 403) throw new Error(`expected 403, got ${r.status}: ${JSON.stringify(r.body)}`);
-        if (r.body.code !== 'feature_disabled') throw new Error(`code ${r.body.code}`);
-        if (r.body.feature !== 'config_releases') throw new Error(`feature ${r.body.feature}`);
-        const state = await fixture.configState(own.sessionId);
-        if (state.status !== 200) throw new Error(`config state: ${state.status}`);
-        if ('release' in state.body) throw new Error('release block for a project that never opted in');
-        const rows = await fixture.db.query('SELECT count(*)::int AS n FROM kortix.config_releases WHERE project_id = $1', [
-          fixture.projectId,
-        ]);
-        if (rows.rows[0].n !== 0) throw new Error(`${rows.rows[0].n} ledger row(s) for a project that never opted in`);
+      await ctx.step('a project that made no choice receives a release, and its archive downloads', async () => {
+        await servesARelease(own.secret, own.sessionId, 'no choice');
+        if ((await ledgerRows()) < 1) throw new Error('the assignment wrote no kortix.config_releases row');
       });
 
-      await ctx.step('state 2 — the project opts in, and the same session then receives a release', async () => {
-        await setFlag(true);
-        if (!(await fixture.featureEnabled())) throw new Error('config_releases did not turn on');
-        const r = await fixture.descriptor(own.secret, own.sessionId);
-        if (r.status !== 200) throw new Error(`expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
-        if (!HEX64.test(r.body.release_id)) throw new Error(`release_id ${r.body.release_id}`);
-        treeId = r.body.config_tree_id;
-        if (!HEX40.test(treeId)) throw new Error(`config_tree_id ${treeId}`);
-        const archive = await fixture.download(own.secret, treeId);
-        if (archive.status !== 200) throw new Error(`archive: expected 200, got ${archive.status}`);
+      await ctx.step('the published write path refuses the old key, in every state it used to accept', async () => {
+        for (const enabled of [false, true, null]) {
+          const r = await ctx.client
+            .as(ctx.P.OWNER)
+            .patch('/v1/projects/:projectId/features', { feature: 'config_releases', enabled }, {
+              params: { projectId: fixture.projectId },
+            });
+          r.status(400);
+          r.body().has('$.error', "Unknown feature flag 'config_releases'");
+        }
       });
 
-      await ctx.step('state 3 — turning it OFF makes the descriptor route answer 403 feature_disabled', async () => {
-        await setFlag(false);
-        if (await fixture.featureEnabled()) throw new Error('config_releases still reads on after an explicit off');
-        if (!(await sessionExists(own.sessionId))) throw new Error('turning the flag off deleted the session');
-        const r = await fixture.descriptor(own.secret, own.sessionId);
-        if (r.status !== 403) throw new Error(`expected 403, got ${r.status}: ${JSON.stringify(r.body)}`);
-        if (r.body.code !== 'feature_disabled') throw new Error(`code ${r.body.code}`);
-        if (r.body.feature !== 'config_releases') throw new Error(`feature ${r.body.feature}`);
+      await ctx.step('a stored `false` from before graduation changes nothing: the release is still served', async () => {
+        await fixture.storeRetiredConfigReleasesFlag(false);
+        const stored = await fixture.db.query(
+          "SELECT metadata->'experimental'->>'config_releases' AS v FROM kortix.projects WHERE project_id = $1",
+          [fixture.projectId],
+        );
+        if (stored.rows[0]?.v !== 'false') throw new Error(`the stored value reads ${stored.rows[0]?.v}`);
+        const body = await servesARelease(own.secret, own.sessionId, 'stored false');
+        if (body.mode !== 'follow-base') throw new Error(`mode ${body.mode}`);
       });
 
-      await ctx.step('the archive route answers the same 403, so no archive can be fetched', async () => {
-        const r = await fixture.download(own.secret, treeId);
-        if (r.status !== 403) throw new Error(`expected 403, got ${r.status}`);
-      });
-
-      await ctx.step('a human reader is refused the same way, after authz', async () => {
+      await ctx.step('a human reader gets the same release after authz; ANON is still 401', async () => {
         const token = (ctx.P.OWNER.auth as { token?: string }).token ?? null;
-        const r = await fixture.descriptor(token, own.sessionId);
-        if (r.status !== 403) throw new Error(`owner: expected 403, got ${r.status}`);
+        const owner = await fixture.descriptor(token, own.sessionId);
+        if (owner.status !== 200) throw new Error(`owner: expected 200, got ${owner.status}: ${JSON.stringify(owner.body)}`);
         const anon = await fixture.descriptor(null, own.sessionId);
         if (anon.status !== 401) throw new Error(`ANON: expected 401, got ${anon.status}`);
       });
 
-      await ctx.step('GET /config carries no release block while the flag is off', async () => {
-        const r = await fixture.configState(own.sessionId);
-        if (r.status !== 200) throw new Error(`expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
-        if ('release' in r.body) throw new Error('release block while the flag is off');
-        if (r.body.stale !== null) throw new Error(`stale ${r.body.stale}, expected null`);
-      });
-
-      await ctx.step('nothing is recorded while the flag is off: no new ledger row', async () => {
-        const before = await fixture.db.query('SELECT count(*)::int AS n FROM kortix.config_releases WHERE project_id = $1', [
-          fixture.projectId,
-        ]);
-        await fixture.descriptor(own.secret, own.sessionId);
-        await fixture.configState(own.sessionId);
-        const after = await fixture.db.query('SELECT count(*)::int AS n FROM kortix.config_releases WHERE project_id = $1', [
-          fixture.projectId,
-        ]);
-        if (after.rows[0].n !== before.rows[0].n) {
-          throw new Error(`config_releases rows moved from ${before.rows[0].n} to ${after.rows[0].n} with the flag off`);
-        }
-      });
-
-      await ctx.step('a base-branch commit while the flag is off changes nothing', async () => {
-        await fixture.commit({ '.kortix/opencode/agents/kortix.md': '---\ndescription: edited\n---\nEdited.\n' }, 'off');
-        const r = await fixture.descriptor(own.secret, own.sessionId);
-        if (r.status !== 403) throw new Error(`expected 403, got ${r.status}`);
-      });
-
-      await ctx.step('turning it back ON converges the same session, on the new tip', async () => {
-        await setFlag(true);
+      await ctx.step('a base-branch commit is the new release, whatever the stored value says', async () => {
+        await fixture.commit({ '.kortix/opencode/agents/kortix.md': '---\ndescription: edited\n---\nEdited.\n' }, 'graduated');
         const tip = await baseTip(fixture);
-        const r = await fixture.descriptor(own.secret, own.sessionId);
-        if (r.status !== 200) throw new Error(`expected 200, got ${r.status}: ${JSON.stringify(r.body)}`);
-        if (r.body.source_commit !== tip) throw new Error(`source_commit ${r.body.source_commit}, tip ${tip}`);
-        if (r.body.mode !== 'follow-base') throw new Error(`mode ${r.body.mode}`);
-        const archive = await fixture.download(own.secret, r.body.config_tree_id);
-        if (archive.status !== 200) throw new Error(`archive: expected 200, got ${archive.status}`);
-      });
-
-      await ctx.step('clearing the override returns the project to the OFF platform default', async () => {
-        await setFlag(null);
-        if (await fixture.featureEnabled()) throw new Error('clearing the override left config_releases on');
-        const r = await fixture.descriptor(own.secret, own.sessionId);
-        if (r.status !== 403) throw new Error(`expected 403, got ${r.status}: ${JSON.stringify(r.body)}`);
-        if (r.body.code !== 'feature_disabled') throw new Error(`code ${r.body.code}`);
-        if (!(await sessionExists(own.sessionId))) throw new Error('the session did not survive the whole toggle cycle');
+        const body = await servesARelease(own.secret, own.sessionId, 'new tip');
+        if (body.source_commit !== tip) throw new Error(`source_commit ${body.source_commit}, tip ${tip}`);
       });
     } finally {
-      await setFlag(null).catch(() => {});
       await fixture.cleanup();
     }
   },
@@ -1326,7 +1257,7 @@ flow(
     domain: 'config-releases',
     requires: ['database'],
     timeoutMs: 240_000,
-    routes: [FEATURES, PROJECT_DETAIL, MINT, DESCRIPTOR, ...GIT_PROXY],
+    routes: [MINT, DESCRIPTOR, ...GIT_PROXY],
   },
   async (ctx) => {
     const fixture = await setup(ctx);
@@ -1367,11 +1298,6 @@ flow(
       // No repository access, so the release compiles exactly ONE agent. That
       // is what proves which agent the session ended up being.
       const dropped = await fixture.mint({ repositoryAccess: false, agentName: 'retired' });
-
-      await ctx.step('the project opts in: `config_releases` is OFF by default, so this flow enables it', async () => {
-        await fixture.setFeature(true);
-        if (!(await fixture.featureEnabled())) throw new Error('config_releases did not turn on for this project');
-      });
 
       await ctx.step('a dropped agent still produces a release, built for the declared default agent', async () => {
         const r = await fixture.descriptor(dropped.secret, dropped.sessionId);
@@ -1486,18 +1412,13 @@ flow(
     domain: 'config-releases',
     requires: ['database'],
     timeoutMs: 240_000,
-    routes: [FEATURES, PROJECT_DETAIL, MINT, DESCRIPTOR, CONFIG_STATE, ...GIT_PROXY],
+    routes: [MINT, DESCRIPTOR, CONFIG_STATE, ...GIT_PROXY],
   },
   async (ctx) => {
     const fixture = await setup(ctx);
     try {
       const own = await fixture.mint();
       let first!: string;
-
-      await ctx.step('the project opts in: `config_releases` is OFF by default, so this flow enables it', async () => {
-        await fixture.setFeature(true);
-        if (!(await fixture.featureEnabled())) throw new Error('config_releases did not turn on for this project');
-      });
 
       await ctx.step('the daemon assignment and the human read resolve one desired release', async () => {
         const token = (ctx.P.OWNER.auth as { token?: string }).token ?? null;
@@ -1556,7 +1477,7 @@ flow(
     domain: 'config-releases',
     requires: ['database'],
     timeoutMs: 180_000,
-    routes: [FEATURES, PROJECT_DETAIL, MINT, DESCRIPTOR, ARCHIVE, ...GIT_PROXY],
+    routes: [FEATURES, MINT, DESCRIPTOR, ARCHIVE, ...GIT_PROXY],
   },
   async (ctx) => {
     const fixture = await setup(ctx);
@@ -1564,11 +1485,6 @@ flow(
     try {
       const ordinary = await fixture.mint();
       let expected!: Descriptor;
-      await ctx.step('the project opts in: `config_releases` is OFF by default, so this flow enables it', async () => {
-        await fixture.setFeature(true);
-        if (!(await fixture.featureEnabled())) throw new Error('config_releases did not turn on for this project');
-      });
-
       await ctx.step('an ordinary session fixes the release every other session must receive', async () => {
         const r = await fixture.descriptor(ordinary.secret, ordinary.sessionId);
         if (r.status !== 200) throw new Error(`expected 200, got ${r.status}`);
@@ -1812,7 +1728,6 @@ harnessFlow(
     timeoutMs: 1_500_000,
     routes: [
       FEATURES,
-      PROJECT_DETAIL,
       CONFIG_STATE,
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
@@ -1841,11 +1756,6 @@ harnessFlow(
       // synchronous with the turn below, not a race with it.
       await ctx.step('the account is entitled to the managed lineup', async () => {
         await subscribe(ctx.env, ctx.client.as(ctx.P.OWNER), fixture.team.id);
-      });
-
-      await ctx.step('the project opts in: `config_releases` is OFF by default, so this flow enables it', async () => {
-        await fixture.setFeature(true);
-        if (!(await fixture.featureEnabled())) throw new Error('config_releases did not turn on');
       });
 
       await optIntoHarness(ctx, fixture, harness);
@@ -2097,7 +2007,6 @@ harnessFlow(
     timeoutMs: 1_800_000,
     routes: [
       FEATURES,
-      PROJECT_DETAIL,
       CONFIG_STATE,
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
@@ -2116,11 +2025,6 @@ harnessFlow(
       // failures attributed to config releases on 2026-09-26/27.
       await ctx.step('the account is entitled to the managed lineup', async () => {
         await subscribe(ctx.env, ctx.client.as(ctx.P.OWNER), fixture.team.id);
-      });
-
-      await ctx.step('the project opts in: `config_releases` is OFF by default, so this flow enables it', async () => {
-        await fixture.setFeature(true);
-        if (!(await fixture.featureEnabled())) throw new Error('config_releases did not turn on');
       });
 
       await optIntoHarness(ctx, fixture, harness);
@@ -2299,7 +2203,6 @@ flow(
     timeoutMs: 900_000,
     routes: [
       FEATURES,
-      PROJECT_DETAIL,
       CONFIG_STATE,
       DESCRIPTOR,
       MINT,
@@ -2321,10 +2224,8 @@ flow(
         await subscribe(ctx.env, ctx.client.as(ctx.P.OWNER), fixture.team.id);
       });
 
-      await ctx.step('the project opts into `config_releases` and `meta_agent`, and its config holds a tool with a dependency', async () => {
-        await fixture.setFeature(true);
+      await ctx.step('the project opts into `meta_agent`, and its config holds a tool with a dependency', async () => {
         await fixture.setFeature(true, 'meta_agent');
-        if (!(await fixture.featureEnabled())) throw new Error('config_releases did not turn on');
         await fixture.commit({ '.kortix/opencode/tools/needs_dep.ts': DEPENDENT_TOOL('one') }, 'a tool that imports a dependency');
       });
 
@@ -2403,7 +2304,7 @@ flow(
     domain: 'config-releases',
     requires: ['database'],
     timeoutMs: 300_000,
-    routes: [FEATURES, PROJECT_DETAIL, MINT, DESCRIPTOR, ARCHIVE, ...GIT_PROXY],
+    routes: [MINT, DESCRIPTOR, ARCHIVE, ...GIT_PROXY],
   },
   async (ctx) => {
     const fixture = await setup(ctx);
@@ -2412,11 +2313,6 @@ flow(
       const large = await overCapFile();
       let tip = '';
       let v3!: Descriptor;
-
-      await ctx.step('the project opts in: `config_releases` is OFF by default, so this flow enables it', async () => {
-        await fixture.setFeature(true);
-        if (!(await fixture.featureEnabled())) throw new Error('config_releases did not turn on for this project');
-      });
 
       await ctx.step('a commit adds 33 MiB that gzip cannot shrink, outside every config dir', async () => {
         tip = await fixture.commit({ 'data/large.bin': large }, 'over the archive cap');
@@ -2482,7 +2378,7 @@ flow(
     domain: 'config-releases',
     requires: ['database', 'projectSnapshots'],
     timeoutMs: 480_000,
-    routes: [FEATURES, PROJECT_DETAIL, MINT, DESCRIPTOR, ...GIT_PROXY],
+    routes: [MINT, DESCRIPTOR, ...GIT_PROXY],
   },
   async (ctx) => {
     const fixture = await setup(ctx);
@@ -2493,8 +2389,7 @@ flow(
       let d!: Descriptor;
       let bytes!: Buffer;
 
-      await ctx.step('the project opts in and its base branch goes over the archive cap', async () => {
-        await fixture.setFeature(true);
+      await ctx.step('the base branch goes over the archive cap', async () => {
         tip = await fixture.commit({ 'data/large.bin': large }, 'over the archive cap');
       });
 
@@ -2568,7 +2463,6 @@ harnessFlow(
     timeoutMs: 1_500_000,
     routes: [
       FEATURES,
-      PROJECT_DETAIL,
       CONFIG_STATE,
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
@@ -2587,9 +2481,6 @@ harnessFlow(
 
       await ctx.step('the account is entitled to the managed lineup', async () => {
         await subscribe(ctx.env, ctx.client.as(ctx.P.OWNER), fixture.team.id);
-      });
-      await ctx.step('the project opts in: `config_releases` is OFF by default, so this flow enables it', async () => {
-        await fixture.setFeature(true);
       });
       await optIntoHarness(ctx, fixture, harness);
       await ctx.step('the base branch holds 33 MiB that gzip cannot shrink, beside the agent config', async () => {

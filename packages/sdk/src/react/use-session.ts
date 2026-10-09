@@ -67,7 +67,7 @@ import type { ModelKey } from './use-model-store';
 import { useRuntimeEventStream } from './use-opencode-events';
 import { useSessionStream } from './use-session-stream';
 import { sessionStreamConnected } from '../core/session/control-stream';
-import { watchHumanPresence } from './human-presence';
+import { presenceReporter, watchHumanPresence } from './human-presence';
 import { formatModelString } from './use-opencode-local';
 import {
   type AbortSettlement,
@@ -979,6 +979,22 @@ export async function answerPermission(
 export interface UseSessionOptions {
   /** Hold this browser tab's presence lease while the signed-in view is visible and used (input in the last 10 min). */
   browserPresence?: boolean;
+  /**
+   * This tab shows its own notifications (the host's browser notifications
+   * are on and permitted). Sent on the presence lease, so the server skips the
+   * phone and Web Push only while an ALERTING tab is in use. Default false: a
+   * present tab that does not alert leaves the phone push on. A change is
+   * sent at once. Needs `browserPresence`.
+   */
+  presenceAlerts?: boolean;
+  /**
+   * End the presence lease when the page closes or enters the back/forward
+   * cache (`pagehide`), so a turn that ends right after the tab closes still
+   * notifies. Default false: the lease lives to its 90 s expiry. Pass the
+   * project's `notification_center` flag. A change applies at once, with no
+   * new report. Needs `browserPresence`.
+   */
+  presencePageExit?: boolean;
   /** Long-poll budget (ms) the client requests on `/start`; the server clamps it. */
   waitMs?: number;
   /**
@@ -1087,6 +1103,8 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     initialRuntimeSessionId = options.initialOpenCodeSessionId ?? null,
     subscribeMessages = true,
     browserPresence = false,
+    presenceAlerts = false,
+    presencePageExit = false,
   } = options;
 
   // One presence id per mounted view. The session stream carries it, and the
@@ -1094,18 +1112,37 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // only while a person used the page recently, not while a tab is merely
   // visible (KRTX-1729, `human-presence.ts`).
   const [presenceTabId] = useState(() => (browserPresence ? crypto.randomUUID() : null));
+  // The flag rides on the reporter, not on the effect's deps: a dep change
+  // would stop the watcher (an absent PUT) and start it again (KRTX-1742).
+  const presenceAlertsRef = useRef(presenceAlerts);
+  const presencePageExitRef = useRef(presencePageExit);
+  const presenceReporterRef = useRef<ReturnType<typeof presenceReporter> | null>(null);
   useEffect(() => {
     if (!browserPresence || !presenceTabId || !projectId || !sessionId) return;
     const tab_id = presenceTabId;
     const handle = createKortix(platformConfig()).session(projectId, sessionId);
-    return watchHumanPresence(
+    const reporter = presenceReporter(({ active, alerts }) => {
+      void handle.presence({ tab_id, active, alerts }).catch(() => {});
+    }, presenceAlertsRef.current);
+    presenceReporterRef.current = reporter;
+    const stop = watchHumanPresence(
       { doc: document, win: window },
-      (active) => {
-        void handle.presence({ tab_id, active }).catch(() => {});
-      },
+      reporter.report,
       () => sessionStreamConnected(projectId, sessionId),
+      () => presencePageExitRef.current,
     );
+    return () => {
+      presenceReporterRef.current = null;
+      stop();
+    };
   }, [browserPresence, presenceTabId, projectId, sessionId]);
+  useEffect(() => {
+    presenceAlertsRef.current = presenceAlerts;
+    presenceReporterRef.current?.setAlerts(presenceAlerts);
+  }, [presenceAlerts]);
+  useEffect(() => {
+    presencePageExitRef.current = presencePageExit;
+  }, [presencePageExit]);
 
   // 1. Drive /start until the runtime is ready (the server long-polls each tick).
   const startEnabled = enabled && !!projectId && !!sessionId;

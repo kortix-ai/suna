@@ -14,10 +14,16 @@ import { useProjectApps } from '@kortix/sdk/react';
 
 import { useState } from 'react';
 
+import { appCan } from './app-shared';
+
 /** The API ceiling for `monthly_budget_usd` (apps/api/src/apps/routes.ts). */
 const MAX_BUDGET_USD = 100_000;
 
-/** Edit a server App's monthly compute budget. */
+/**
+ * Edit an App's monthly compute budget. A server that can sleep stops at the
+ * budget; an App that never sleeps (capability `sleep` absent, its own
+ * machine) is only alerted at 80 % and 100 %.
+ */
 export function AppBudgetModal({
   projectId,
   app,
@@ -51,7 +57,9 @@ export function AppBudgetModal({
       <ModalContent className="lg:max-w-md">
         <ModalHeader>
           <ModalTitle>{tI18nComplete.raw('textc247593b2c0f')}</ModalTitle>
-          <ModalDescription>{tI18nComplete.raw('texted76c66b7a8d')}</ModalDescription>
+          <ModalDescription>
+            {appCan(app, 'sleep') ? tI18nComplete.raw('texted76c66b7a8d') : tI18nComplete.raw('text97688b7bce1f')}
+          </ModalDescription>
         </ModalHeader>
         <ModalBody>
           <Field>

@@ -45,6 +45,36 @@ test('notifications register and unregister a push device token', async () => {
   ]);
 });
 
+test('notifications reach the inbox, preferences and Web Push routes (KRTX-1742)', async () => {
+  const n = kortix.notifications;
+  await n.list({ limit: 20 });
+  await n.markRead({ sessionId: 'S1' });
+  await n.preferences();
+  await n.updatePreferences({ kinds: { question: { email: false } } });
+  await n.webPushPublicKey();
+  await n.registerWebPushSubscription({ endpoint: 'https://fcm.googleapis.com/fcm/send/x', keys: { p256dh: 'k', auth: 'a' } });
+  await n.unregisterWebPushSubscription('https://fcm.googleapis.com/fcm/send/x');
+  expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+    'GET http://test.local/notifications?limit=20',
+    'POST http://test.local/notifications/read',
+    'GET http://test.local/notifications/preferences',
+    'PUT http://test.local/notifications/preferences',
+    'GET http://test.local/notifications/web-push/key',
+    'POST http://test.local/notifications/web-push/subscriptions',
+    `DELETE http://test.local/notifications/web-push/subscriptions?endpoint=${encodeURIComponent('https://fcm.googleapis.com/fcm/send/x')}`,
+  ]);
+  expect(calls[1]?.body).toEqual({ session_id: 'S1' });
+});
+
+test('session(pid, sid).watch and setWatch read and write the caller watch', async () => {
+  await kortix.session('P1', 'S1').watch();
+  await kortix.session('P1', 'S1').setWatch(false);
+  expect(calls).toEqual([
+    { method: 'GET', url: 'http://test.local/projects/P1/sessions/S1/watch', body: undefined },
+    { method: 'PUT', url: 'http://test.local/projects/P1/sessions/S1/watch', body: { watching: false } },
+  ]);
+});
+
 test('the root builds a sandbox proxy URL from an external id (mobile: no SandboxInfo in hand)', async () => {
   const root = await import('../../index');
   expect(root.getSandboxUrlForExternalId('ext-1', 6080)).toBe('http://test.local/p/ext-1/6080');
