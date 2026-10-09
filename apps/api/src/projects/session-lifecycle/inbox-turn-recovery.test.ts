@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { notifyClosedTurn, type SessionPushEvent } from '../../notifications/session-push';
 import { settleCompletedInboxTurns, scheduleSessionTurnRecovery } from './inbox-turn-recovery';
 
 const turn = { token: 'token-1', state: 'active', runtimeSessionId: 'ses-1', messageId: 'msg-1', startedAtMs: 1 };
@@ -14,7 +15,7 @@ describe('queue terminal recovery', () => {
         observe: async (...args) => { observed.push(args); return { observation: 'terminal', endReason, daemonAnswered: true, orphanedPrompt: false }; },
         clear: async (...args) => { cleared.push(args); return true; },
       });
-      expect(settled).toBe(true);
+      expect(settled).toEqual([endReason]);
       expect(observed[0]?.[3]).toMatchObject(turn);
       expect(cleared).toEqual([['box-1', 'token-1', undefined, endReason]]);
     });
@@ -46,7 +47,7 @@ test('concurrent turn readers share one recovery without waiting for the runtime
   let calls = 0;
   let finish!: () => void;
   const pending = new Promise<void>((resolve) => { finish = resolve; });
-  const recover = async () => { calls++; await pending; return false; };
+  const recover = async () => { calls++; await pending; return []; };
   scheduleSessionTurnRecovery(box, recover);
   scheduleSessionTurnRecovery(box, recover);
   expect(calls).toBe(1);
@@ -57,13 +58,13 @@ test('concurrent turn readers share one recovery without waiting for the runtime
 
 test('a recovered completion wakes its session immediately and does not impose a cooldown', async () => {
   const calls: string[] = [];
-  const recover = async () => { calls.push('recover'); return true; };
-  const wake = async (sessionId: string) => { calls.push(sessionId); };
+  const recover = async () => { calls.push('recover'); return ['completed' as const]; };
+  const wake = async (sessionId: string) => { calls.push(sessionId); return false; };
   const recoveredBox = { ...box, sandboxId: 'handoff-box' };
-  scheduleSessionTurnRecovery(recoveredBox, recover, wake);
+  scheduleSessionTurnRecovery(recoveredBox, recover, wake, async () => {});
   await Bun.sleep(0);
   expect(calls).toEqual(['recover', 'session-1']);
-  scheduleSessionTurnRecovery(recoveredBox, async () => { calls.push('next-read'); return false; }, wake);
+  scheduleSessionTurnRecovery(recoveredBox, async () => { calls.push('next-read'); return []; }, wake);
   await Bun.sleep(0);
   expect(calls).toEqual(['recover', 'session-1', 'next-read']);
 });
@@ -74,5 +75,70 @@ test('a superseded recovery token cannot wake the queue', async () => {
     provider: (() => ({})) as never,
     observe: async () => ({ observation: 'terminal', endReason: 'completed', daemonAnswered: true, orphanedPrompt: false }),
     clear: async () => false,
-  })).toBe(false);
+  })).toEqual([]);
+});
+
+describe('a recovered turn close pushes once', () => {
+  const PROJECT = '00000000-0000-4000-8000-000000000001';
+  let seq = 0;
+  // Each test needs its own sandbox id: recoveryInFlight is keyed by it.
+  const freshBox = () => ({ ...box, sandboxId: `push-box-${++seq}` });
+  const settle = (endReason: 'completed' | 'failed', won = true) => (b: Parameters<typeof settleCompletedInboxTurns>[0]) =>
+    settleCompletedInboxTurns(b, {
+      provider: (() => ({})) as never,
+      observe: async () => ({ observation: 'terminal', endReason, daemonAnswered: true, orphanedPrompt: false }),
+      clear: async () => won,
+    });
+  // The real notifier rule with a synthetic session row.
+  const realNotify = (childSession: boolean, events: SessionPushEvent[]) =>
+    (input: Parameters<typeof notifyClosedTurn>[0]) =>
+      notifyClosedTurn(input, {
+        loadSession: async () => ({ projectId: PROJECT, childSession }),
+        notify: async (event) => { events.push(event); return { sent: 0, reason: 'no_devices' }; },
+      });
+  const flush = async () => { for (let i = 0; i < 5; i++) await Bun.sleep(0); };
+
+  for (const [endReason, type] of [['completed', 'completion'], ['failed', 'error']] as const) {
+    test(`a ${endReason} turn sends one ${type} push`, async () => {
+      const events: SessionPushEvent[] = [];
+      scheduleSessionTurnRecovery(freshBox(), settle(endReason), async () => false, realNotify(false, events));
+      await flush();
+      expect(events).toEqual([{ type, sessionId: 'session-1', projectId: PROJECT }]);
+    });
+  }
+
+  test('a lost close race sends nothing', async () => {
+    const calls: unknown[] = [];
+    scheduleSessionTurnRecovery(freshBox(), settle('completed', false), async () => false, async (input) => { calls.push(input); });
+    await flush();
+    expect(calls).toEqual([]);
+  });
+
+  test('a promoted queued prompt cancels the completion push', async () => {
+    const events: SessionPushEvent[] = [];
+    scheduleSessionTurnRecovery(freshBox(), settle('completed'), async () => true, realNotify(false, events));
+    await flush();
+    expect(events).toEqual([]);
+  });
+
+  test('a failed turn still sends its error when a prompt was promoted', async () => {
+    const events: SessionPushEvent[] = [];
+    scheduleSessionTurnRecovery(freshBox(), settle('failed'), async () => true, realNotify(false, events));
+    await flush();
+    expect(events).toEqual([{ type: 'error', sessionId: 'session-1', projectId: PROJECT }]);
+  });
+
+  test('a child session sends nothing', async () => {
+    const events: SessionPushEvent[] = [];
+    scheduleSessionTurnRecovery(freshBox(), settle('completed'), async () => false, realNotify(true, events));
+    await flush();
+    expect(events).toEqual([]);
+  });
+
+  test('two cleared turns send one push, error when either failed', async () => {
+    const calls: unknown[] = [];
+    scheduleSessionTurnRecovery(freshBox(), async () => ['completed', 'failed'], async () => false, async (input) => { calls.push(input); });
+    await flush();
+    expect(calls).toEqual([{ sessionId: 'session-1', reason: 'failed', promoted: false }]);
+  });
 });

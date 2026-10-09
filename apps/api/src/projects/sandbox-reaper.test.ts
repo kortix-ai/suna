@@ -81,6 +81,12 @@ let unconfirmedTurnDrips: string[] = [];
 // on its own, without every existing exact-equality assertion having to carry
 // it.
 let clearedTurnReasons: Array<string | undefined> = [];
+/** What every `clearSandboxTurn` answers: false = another caller won the close. */
+let clearSandboxTurnWins = true;
+/** False = `promoteNextInboxRow` finds no queued prompt. */
+let queuedPromptWaiting = true;
+/** Every push the pass asked for after it closed a turn. */
+let closedTurnPushes: Array<{ sessionId: string; reason: string; promoted?: boolean }> = [];
 let clearedTurnCauses: Array<string | null> = [];
 let clearedTurnPastDeadlineOnly: boolean[] = [];
 let ledgerSettleStatements: string[] = [];
@@ -453,7 +459,7 @@ const reapAndReconcileSandboxes = (
       clearedTurnReasons.push(reason);
       clearedTurnCauses.push(cause?.name ?? null);
       lifecycleCallOrder.push(`clear:${token}`);
-      return true;
+      return clearSandboxTurnWins;
     },
     finalizeHuskTurn: async (target: {
       sandboxId: string;
@@ -480,7 +486,10 @@ const reapAndReconcileSandboxes = (
     },
     promoteNextInboxRow: async (sessionId: string) => {
       promotedQueueSessions.push(sessionId);
-      return `prompt:${sessionId}`;
+      return queuedPromptWaiting ? `prompt:${sessionId}` : null;
+    },
+    notifyClosedTurn: async (input: { sessionId: string; reason: string; promoted?: boolean }) => {
+      closedTurnPushes.push(input);
     },
     observeTurnWaiting: async (_externalId: string, runtimeSessionId: string) => {
       turnWaitingCalls.push(runtimeSessionId);
@@ -537,6 +546,9 @@ beforeEach(() => {
   clearedTurnCalls = [];
   promptRedeliveries = [];
   clearedTurnReasons = [];
+  clearSandboxTurnWins = true;
+  queuedPromptWaiting = true;
+  closedTurnPushes = [];
   clearedTurnCauses = [];
   clearedTurnPastDeadlineOnly = [];
   unconfirmedTurnDrips = [];
@@ -2091,6 +2103,101 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     await reapAndReconcileSandboxes(NOW);
 
     expect(clearedTurnReasons).toEqual(['unknown']);
+  });
+
+  describe('the push for a turn the reaper closed', () => {
+    for (const reason of ['completed', 'failed'] as const) {
+      test(`a ${reason} turn the reaper closed asks for one push`, async () => {
+        candidates = [activeTurnCandidate(new Date(NOW.getTime() + HOUR))];
+        statusByExternal['ext-1'] = 'running';
+        deliveringTurnObservationBySandbox['sb-1'] = 'terminal';
+        daemonTurnEndBySandbox['sb-1'] = reason;
+        queuedPromptWaiting = false;
+
+        await reapAndReconcileSandboxes(NOW);
+
+        expect(closedTurnPushes).toEqual([{ sessionId: 'sess-1', reason, promoted: false }]);
+      });
+    }
+
+    test('a promoted queued prompt is passed on, so the completion can be dropped', async () => {
+      candidates = [activeTurnCandidate(new Date(NOW.getTime() + HOUR))];
+      statusByExternal['ext-1'] = 'running';
+      deliveringTurnObservationBySandbox['sb-1'] = 'terminal';
+      daemonTurnEndBySandbox['sb-1'] = 'completed';
+
+      await reapAndReconcileSandboxes(NOW);
+
+      expect(closedTurnPushes).toEqual([{ sessionId: 'sess-1', reason: 'completed', promoted: true }]);
+    });
+
+    test('a husk the reaper force-closed is a failure push', async () => {
+      candidates = [activeTurnCandidate(new Date(NOW.getTime() + HOUR))];
+      statusByExternal['ext-1'] = 'running';
+      deliveringTurnObservationBySandbox['sb-1'] = 'terminal';
+      huskOutcomeBySandbox['sb-1'] = 'finalized';
+      queuedPromptWaiting = false;
+
+      await reapAndReconcileSandboxes(NOW);
+
+      expect(closedTurnPushes).toEqual([{ sessionId: 'sess-1', reason: 'failed', promoted: false }]);
+    });
+
+    test('an unknown or abandoned close sends nothing', async () => {
+      candidates = [activeTurnCandidate(new Date(NOW.getTime() + HOUR))];
+      statusByExternal['ext-1'] = 'running';
+      deliveringTurnObservationBySandbox['sb-1'] = 'terminal';
+      huskOutcomeBySandbox['sb-1'] = 'not_husk';
+      await reapAndReconcileSandboxes(NOW);
+      expect(clearedTurnReasons).toEqual(['unknown']);
+
+      daemonTurnEndBySandbox['sb-1'] = 'abandoned';
+      await reapAndReconcileSandboxes(NOW);
+      expect(clearedTurnReasons).toEqual(['unknown', 'abandoned']);
+
+      expect(closedTurnPushes).toEqual([]);
+    });
+
+    test('a close another caller won sends nothing', async () => {
+      candidates = [activeTurnCandidate(new Date(NOW.getTime() + HOUR))];
+      statusByExternal['ext-1'] = 'running';
+      deliveringTurnObservationBySandbox['sb-1'] = 'terminal';
+      daemonTurnEndBySandbox['sb-1'] = 'completed';
+      clearSandboxTurnWins = false;
+
+      await reapAndReconcileSandboxes(NOW);
+
+      expect(clearedTurnReasons).toEqual(['completed']);
+      expect(closedTurnPushes).toEqual([]);
+    });
+
+    test('a pass that gives an orphaned prompt back sends nothing', async () => {
+      candidates = [
+        candidate({
+          deadlineAt: new Date(NOW.getTime() + HOUR),
+          metadata: {
+            activeTurns: {
+              'active-token': {
+                token: 'active-token',
+                state: 'active',
+                opencodeSessionId: 'ses_root',
+                messageId: 'msg_turn_1',
+                startedAtMs: NOW.getTime() - 120_000,
+              },
+            },
+          },
+        }),
+      ];
+      statusByExternal['ext-1'] = 'running';
+      deliveringTurnObservationBySandbox['sb-1'] = 'terminal';
+      daemonTurnEndBySandbox['sb-1'] = 'completed';
+      orphanedPromptByToken['active-token'] = true;
+
+      await reapAndReconcileSandboxes(NOW);
+
+      expect(clearedTurnReasons).toEqual(['completed']);
+      expect(closedTurnPushes).toEqual([]);
+    });
   });
 
   test('a delivering turn the daemon never saw is reconciled as abandoned', async () => {

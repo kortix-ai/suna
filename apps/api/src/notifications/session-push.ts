@@ -6,7 +6,12 @@
 import { projectSessions, sessionPresenceLeases } from '@kortix/db';
 import { and, eq, gt, sql } from 'drizzle-orm';
 import { config } from '../config';
-import { ABORT_END_ERROR_NAMES, type SandboxTurnCompletionOutcome } from '../projects/session-turn-ledger';
+import {
+  ABORT_END_ERROR_NAMES,
+  type SandboxTurnCompletionOutcome,
+  type SessionTurnEndReason,
+} from '../projects/session-turn-ledger';
+import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { PROJECT_ACTIONS } from '../iam/actions';
 import { listAccessible } from '../iam/authorize';
@@ -134,6 +139,59 @@ export function turnEndPushType(input: {
   if (input.status === 'idle') return input.promoted ? null : 'completion';
   if (input.errorName && ABORT_END_ERROR_NAMES.includes(input.errorName)) return null;
   return 'error';
+}
+
+/**
+ * Which push a turn the control plane closed earns: the turn recovery on a
+ * turn read, or the reaper. Same rules as `turnEndPushType`, keyed by the
+ * ledger's end reason. Only the caller whose `clearSandboxTurn` returned true
+ * may ask, so the relay and these paths never both notify one turn.
+ */
+export function closedTurnPushType(input: {
+  reason: SessionTurnEndReason;
+  childSession?: boolean;
+  /** A queued prompt was promoted by this close: the session keeps running. */
+  promoted?: boolean;
+}): 'completion' | 'error' | null {
+  if (input.childSession) return null;
+  if (input.reason === 'completed') return input.promoted ? null : 'completion';
+  if (input.reason === 'failed') return 'error';
+  return null;
+}
+
+export interface ClosedTurnPushDeps {
+  loadSession(sessionId: string): Promise<{ projectId: string; childSession: boolean } | null>;
+  notify(event: SessionPushEvent): Promise<SessionPushOutcome>;
+}
+
+/** The session's project, and the relay's child test (routes/turn-stream.ts). */
+async function loadClosedTurnSession(sessionId: string) {
+  const [row] = await db
+    .select({ projectId: projectSessions.projectId, metadata: projectSessions.metadata })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, sessionId))
+    .limit(1);
+  if (!row) return null;
+  const meta = (row.metadata ?? {}) as Record<string, unknown>;
+  return { projectId: row.projectId, childSession: typeof meta.spawned_by_session === 'string' };
+}
+
+/** Push for a turn this caller closed (see `closedTurnPushType`). Never throws. */
+export async function notifyClosedTurn(
+  input: { sessionId: string; reason: SessionTurnEndReason; promoted?: boolean },
+  deps: ClosedTurnPushDeps = { loadSession: loadClosedTurnSession, notify: notifySessionEvent },
+): Promise<void> {
+  if (!closedTurnPushType(input)) return;
+  try {
+    const session = await deps.loadSession(input.sessionId);
+    const type = session && closedTurnPushType({ ...input, childSession: session.childSession });
+    if (session && type) await deps.notify({ type, sessionId: input.sessionId, projectId: session.projectId });
+  } catch (err) {
+    logger.warn('[push] closed-turn notification failed', {
+      sessionId: input.sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 }
 
 export function createSessionNotifier(deps: SessionPushDeps) {

@@ -39,6 +39,7 @@ import { invalidateProviderCache } from '../../sandbox-proxy';
 import { isDaytonaRateLimitError } from '../../shared/daytona-rate-limit';
 import { isDaytonaTransientProviderError } from '../../shared/daytona-transient';
 import { logger } from '../../lib/logger';
+import { notifyClosedTurn } from '../../notifications/session-push';
 import { sandboxBelongsToThisInstance } from '../instance-scope';
 import { scheduleLegacyRuntimeBootstrap } from '../lib/legacy-runtime-bootstrap-wiring';
 import { ORPHANED_PROMPT_MIN_AGE_MS, REAP_CONCURRENCY } from '../reaper-constants';
@@ -131,6 +132,7 @@ export interface SandboxReaperDependencies {
   observeTurnWaiting: typeof observeTurnWaiting;
   sessionIsUnattended: typeof sessionIsUnattended;
   shortenSandboxDeadline: typeof shortenSandboxDeadline;
+  notifyClosedTurn: typeof notifyClosedTurn;
   drainSessionLifecycleQueue: (input: {
     idempotencyKey: string;
     coalesce?: boolean;
@@ -150,6 +152,7 @@ const DEFAULT_REAPER_DEPENDENCIES: SandboxReaperDependencies = {
   observeTurnWaiting,
   sessionIsUnattended,
   shortenSandboxDeadline,
+  notifyClosedTurn,
   drainSessionLifecycleQueue: async (input) => {
     const { drainSessionLifecycleQueue } = await import('../session-lifecycle/drain');
     return drainSessionLifecycleQueue(input);
@@ -214,13 +217,16 @@ async function redeliverAbandonedPrompt(
   }
 }
 
-/** Release one durable queue row after terminal evidence removed turn authority. */
+/**
+ * Release one durable queue row after terminal evidence removed turn authority.
+ * True when a prompt was promoted: the session keeps running.
+ */
 async function releaseQueuedPromptAfterTerminalTurn(
   dependencies: SandboxReaperDependencies,
   row: { sessionId: string | null; sandboxId: string },
   turn: { token: string },
-): Promise<void> {
-  if (!row.sessionId) return;
+): Promise<boolean> {
+  if (!row.sessionId) return false;
   try {
     const promotedPromptId = await dependencies.promoteNextInboxRow(row.sessionId);
     console.info('[reaper] terminal turn queue settlement', {
@@ -243,6 +249,7 @@ async function releaseQueuedPromptAfterTerminalTurn(
           }),
         );
     }
+    return promotedPromptId !== null;
   } catch (error) {
     console.warn('[reaper] terminal turn queue promotion failed', {
       sandboxId: row.sandboxId,
@@ -250,6 +257,7 @@ async function releaseQueuedPromptAfterTerminalTurn(
       turnToken: turn.token,
       error: error instanceof Error ? error.message : String(error),
     });
+    return false;
   }
 }
 
@@ -983,16 +991,19 @@ async function settleTerminalTurn(
   // legacy `activeTurn`) can prove no age at all, so it never
   // qualifies.
   const turnAgeMs = turn.startedAtMs === null ? null : now.getTime() - turn.startedAtMs;
-  if (
-    orphanedPrompt &&
-    !huskFinalized &&
-    turnAgeMs !== null &&
-    turnAgeMs >= ORPHANED_PROMPT_MIN_AGE_MS
-  ) {
+  const redeliversPrompt =
+    orphanedPrompt && !huskFinalized && turnAgeMs !== null && turnAgeMs >= ORPHANED_PROMPT_MIN_AGE_MS;
+  if (redeliversPrompt) {
     await redeliverAbandonedPrompt(dependencies, row, turn, endReason ?? 'abandoned');
   }
   if (cleared) {
-    await releaseQueuedPromptAfterTerminalTurn(dependencies, row, turn);
+    const promoted = await releaseQueuedPromptAfterTerminalTurn(dependencies, row, turn);
+    // The relay's `end` was lost, so this close is the only one that can
+    // notify. A daemon that also reports the prompt orphaned did not answer
+    // the user: no push for that pass.
+    if ((clearReason === 'completed' || clearReason === 'failed') && !redeliversPrompt) {
+      void dependencies.notifyClosedTurn({ sessionId: row.sessionId, reason: clearReason, promoted });
+    }
   }
 }
 

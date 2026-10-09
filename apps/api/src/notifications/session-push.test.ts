@@ -6,7 +6,9 @@ import type { PushDeviceTokenRow } from './device-tokens';
 import type { ExpoPushMessage } from './expo-push';
 import {
   buildSessionPushMessages,
+  closedTurnPushType,
   createSessionNotifier,
+  notifyClosedTurn,
   truncateQuestion,
   turnEndPushType,
   type SessionPushDeps,
@@ -102,6 +104,78 @@ describe('turnEndPushType — only a turn this call closed notifies', () => {
   });
   test('a coordinator-spawned child session sends nothing', () => {
     expect(turnEndPushType({ outcome: 'closed', status: 'idle', childSession: true })).toBeNull();
+  });
+});
+
+describe('closedTurnPushType — a turn the control plane closed', () => {
+  test('completed is a completion, failed is an error', () => {
+    expect(closedTurnPushType({ reason: 'completed' })).toBe('completion');
+    expect(closedTurnPushType({ reason: 'failed' })).toBe('error');
+  });
+  test('a promoted queued prompt cancels the completion, never the error', () => {
+    expect(closedTurnPushType({ reason: 'completed', promoted: true })).toBeNull();
+    expect(closedTurnPushType({ reason: 'failed', promoted: true })).toBe('error');
+  });
+  test('a child session never notifies', () => {
+    expect(closedTurnPushType({ reason: 'completed', childSession: true })).toBeNull();
+    expect(closedTurnPushType({ reason: 'failed', childSession: true })).toBeNull();
+  });
+  test('every other end reason sends nothing', () => {
+    for (const reason of ['abandoned', 'runtime_gone', 'unknown'] as const) {
+      expect(closedTurnPushType({ reason })).toBeNull();
+    }
+  });
+});
+
+describe('notifyClosedTurn', () => {
+  function harness(session: { projectId: string; childSession: boolean } | null | Error) {
+    const loads: string[] = [];
+    const events: unknown[] = [];
+    const deps = {
+      loadSession: async (sessionId: string) => {
+        loads.push(sessionId);
+        if (session instanceof Error) throw session;
+        return session;
+      },
+      notify: async (event: unknown) => {
+        events.push(event);
+        return { sent: 1, reason: 'sent' as const, result: { tickets: [], invalidTokens: [] } as never };
+      },
+    };
+    return { loads, events, deps };
+  }
+
+  test('a completed turn notifies the session project once', async () => {
+    const h = harness({ projectId: PROJECT, childSession: false });
+    await notifyClosedTurn({ sessionId: SESSION, reason: 'completed' }, h.deps);
+    expect(h.events).toEqual([{ type: 'completion', sessionId: SESSION, projectId: PROJECT }]);
+  });
+  test('a failed turn sends an error even when a prompt was promoted', async () => {
+    const h = harness({ projectId: PROJECT, childSession: false });
+    await notifyClosedTurn({ sessionId: SESSION, reason: 'failed', promoted: true }, h.deps);
+    expect(h.events).toEqual([{ type: 'error', sessionId: SESSION, projectId: PROJECT }]);
+  });
+  test('a child session sends nothing', async () => {
+    const h = harness({ projectId: PROJECT, childSession: true });
+    await notifyClosedTurn({ sessionId: SESSION, reason: 'completed' }, h.deps);
+    expect(h.events).toEqual([]);
+  });
+  test('a missing session sends nothing', async () => {
+    const h = harness(null);
+    await notifyClosedTurn({ sessionId: SESSION, reason: 'failed' }, h.deps);
+    expect(h.events).toEqual([]);
+  });
+  test('no push type skips the session read', async () => {
+    const h = harness({ projectId: PROJECT, childSession: false });
+    await notifyClosedTurn({ sessionId: SESSION, reason: 'completed', promoted: true }, h.deps);
+    await notifyClosedTurn({ sessionId: SESSION, reason: 'unknown' }, h.deps);
+    expect(h.loads).toEqual([]);
+    expect(h.events).toEqual([]);
+  });
+  test('a failed session read never throws', async () => {
+    const h = harness(new Error('db down'));
+    await notifyClosedTurn({ sessionId: SESSION, reason: 'completed' }, h.deps);
+    expect(h.events).toEqual([]);
   });
 });
 
