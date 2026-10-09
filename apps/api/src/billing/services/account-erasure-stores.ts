@@ -29,7 +29,11 @@ const PARKED_SANDBOX_STATUSES = ['stopped', 'archived'] as const;
  * and throws on any failure: the request stays retryable instead of completed.
  * A repo the user connected is never touched (`deleteManagedProjectRepo`).
  */
-export async function deleteAccountExternalStores(accountId: string): Promise<void> {
+export async function deleteAccountExternalStores(
+  accountId: string,
+  /** Boxes the reclaim pass of this run already removed. */
+  alreadyRemoved: ReadonlySet<string> = new Set(),
+): Promise<void> {
   const parked = await db
     .select({
       sandboxId: sessionSandboxes.sandboxId,
@@ -44,10 +48,13 @@ export async function deleteAccountExternalStores(accountId: string): Promise<vo
         isNotNull(sessionSandboxes.externalId),
       ),
     );
+  // A box the reclaim just removed is still being destroyed; removing it again
+  // can fail on the provider's own transition.
+  const targets = parked.filter((row) => !alreadyRemoved.has(row.externalId as string));
   let failed = 0;
-  for (let i = 0; i < parked.length; i += REMOVE_CONCURRENCY) {
+  for (let i = 0; i < targets.length; i += REMOVE_CONCURRENCY) {
     await Promise.all(
-      parked.slice(i, i + REMOVE_CONCURRENCY).map(async (row) => {
+      targets.slice(i, i + REMOVE_CONCURRENCY).map(async (row) => {
         const provider = tryGetProvider(row.provider as string);
         if (!provider) {
           // Nothing on this deployment can remove it; retrying would block the
@@ -71,8 +78,13 @@ export async function deleteAccountExternalStores(accountId: string): Promise<vo
   }
   if (failed > 0) throw new Error(`${failed} parked sandbox(es) of account ${accountId} could not be removed`);
 
-  for (const project of await db.select().from(projects).where(eq(projects.accountId, accountId))) {
-    await sessionAttachmentStore().removeProject(project.projectId);
-    await deleteManagedProjectRepo(project);
+  const accountProjects = await db.select().from(projects).where(eq(projects.accountId, accountId));
+  for (let i = 0; i < accountProjects.length; i += REMOVE_CONCURRENCY) {
+    await Promise.all(
+      accountProjects.slice(i, i + REMOVE_CONCURRENCY).map(async (project) => {
+        await sessionAttachmentStore().removeProject(project.projectId);
+        await deleteManagedProjectRepo(project);
+      }),
+    );
   }
 }

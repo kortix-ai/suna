@@ -10,11 +10,12 @@
  */
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { eq, sql } from 'drizzle-orm';
-import { accounts } from '@kortix/db';
+import { accounts, creditAccounts } from '@kortix/db';
 
 /** The `session-attachments` bucket: `<project_id>/<session_id>/<attachment_id>`. */
 const bucket = new Set<string>();
 const removedBoxes: string[] = [];
+const cancelledSubscriptions: string[] = [];
 const deletedRepos: string[] = [];
 let failBoxRemove = false;
 let failRepoDelete = false;
@@ -47,7 +48,14 @@ mock.module('../../shared/supabase', () => ({
 const realStripe = await import('../../shared/stripe');
 mock.module('../../shared/stripe', () => ({
   ...realStripe,
-  getStripe: () => ({ subscriptions: { cancel: async () => ({}) } }),
+  getStripe: () => ({
+    subscriptions: {
+      cancel: async (id: string) => {
+        cancelledSubscriptions.push(id);
+        return {};
+      },
+    },
+  }),
 }));
 const realProviders = await import('../../platform/providers');
 mock.module('../../platform/providers', () => ({
@@ -82,8 +90,10 @@ async function seed() {
   const managed = crypto.randomUUID();
   const connected = crypto.randomUUID();
   const box = (status: string) => ({ sandboxId: crypto.randomUUID(), externalId: `ext-${status}-${accountId}`, status });
-  const boxes = [box('stopped'), box('archived')];
+  // The running box is the reclaim pass's; the parked ones are this step's.
+  const boxes = [box('active'), box('stopped'), box('archived')];
   await db.insert(accounts).values({ accountId, name: 'erasure-stores' });
+  await db.insert(creditAccounts).values({ accountId, stripeSubscriptionId: `sub_${accountId}` });
   await db.execute(sql`
     INSERT INTO kortix.projects (project_id, account_id, name, repo_url, metadata) VALUES
       (${managed}::uuid, ${accountId}::uuid, 'managed', 'https://git.example.test/managed.git',
@@ -93,7 +103,8 @@ async function seed() {
     const sessionId = `erasure-${b.sandboxId}`;
     await db.execute(sql`
       INSERT INTO kortix.project_sessions (session_id, account_id, project_id, branch_name, status)
-      VALUES (${sessionId}, ${accountId}::uuid, ${managed}::uuid, ${`br-${i}-${b.sandboxId}`}, 'stopped')`);
+      VALUES (${sessionId}, ${accountId}::uuid, ${managed}::uuid, ${`br-${i}-${b.sandboxId}`},
+              ${b.status === 'active' ? 'running' : 'stopped'})`);
     await db.execute(sql`
       INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status, external_id)
       VALUES (${b.sandboxId}::uuid, ${sessionId}, ${accountId}::uuid, ${managed}::uuid,
@@ -109,6 +120,7 @@ const accountExists = async (accountId: string) =>
 
 beforeEach(() => {
   removedBoxes.length = 0;
+  cancelledSubscriptions.length = 0;
   deletedRepos.length = 0;
   failBoxRemove = false;
   failRepoDelete = false;
@@ -128,6 +140,7 @@ describe('account erasure empties the stores outside the database', () => {
 
     await deleteAccountImmediately(accountId, accountId);
 
+    // Each box once: the reclaim removes the running one, this step the parked ones.
     expect(removedBoxes.sort()).toEqual(boxes.map((b) => b.externalId).sort());
     expect([...bucket]).toEqual([neighbor]);
     expect(deletedRepos).toEqual([`repo-${managed}`]);
@@ -143,12 +156,15 @@ describe('account erasure empties the stores outside the database', () => {
     expect(await accountExists(accountId)).toBe(true);
     expect(bucket.size).toBe(3);
     expect(deletedRepos).toEqual([]);
+    // The stores go before the money steps: the subscription is still there.
+    expect(cancelledSubscriptions).toEqual([]);
 
     failBoxRemove = false;
     await deleteAccountImmediately(accountId, accountId);
     expect(await accountExists(accountId)).toBe(false);
     expect(bucket.size).toBe(0);
     expect(deletedRepos).toEqual([`repo-${managed}`]);
+    expect(cancelledSubscriptions).toEqual([`sub_${accountId}`]);
   });
 
   test('a repo the git host will not delete keeps the account; the retry finishes', async () => {
