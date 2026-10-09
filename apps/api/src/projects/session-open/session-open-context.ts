@@ -29,4 +29,11 @@ export type OpenSessionArgs = {
   sessionId: string;
   /** Keep-alive poll: report a deliberately stopped box, never wake it. */
   keepStopped?: boolean;
+  /** A sandbox row the caller read milliseconds ago — the `/start` prologue's
+   *  joined read (session + sandbox in one statement) and every long-poll
+   *  tick's fresh pair. The open acts on it instead of re-reading the same row
+   *  a second time inside the same tick; `null` means "read, and there is no
+   *  row yet" (the provisioning path), `undefined` keeps the open reading it
+   *  itself, which is what every other caller does. */
+  preloadedSandboxRow?: OpenSessionRow | null;
 };
