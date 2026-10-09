@@ -683,6 +683,32 @@ function selfHostDoctor(flags: GlobalFlags): number {
       });
     }
   }
+  if (existsSync(envPath(flags.instance))) {
+    // KRTX-1715. The shipped auth defaults leave sign-up open with email
+    // autoconfirm on. On an instance the internet can reach, anyone can then
+    // create a CONFIRMED account for any address: the admin address in
+    // KORTIX_PLATFORM_ADMIN_EMAILS, or a colleague's address an invite waits
+    // for. Nothing in the running stack says so. Either fix closes it: an email
+    // provider makes GoTrue require confirmation (`env set EMAIL_URL=…` turns
+    // autoconfirm off), or DISABLE_SIGNUP stops self sign-up once the team is in.
+    // Not on a laptop instance, which strangers cannot reach.
+    const env = loadEnv(flags.instance);
+    if (env && reachabilityMode(env) !== 'local') {
+      const signupOpen = (env.DISABLE_SIGNUP ?? 'false').trim() !== 'true';
+      const autoconfirm = (env.ENABLE_EMAIL_AUTOCONFIRM ?? 'true').trim() === 'true';
+      checks.push({
+        name: 'open-sign-up',
+        ok: !(signupOpen && autoconfirm),
+        detail: !signupOpen
+          ? 'self sign-up is off (DISABLE_SIGNUP=true)'
+          : !autoconfirm
+            ? 'new accounts must confirm their email'
+            : 'anyone who reaches this instance can create a confirmed account for any email address, including an admin address. '
+              + 'Configure email so new accounts must confirm it: kortix self-host env set EMAIL_URL=smtp://user:password@smtp.example.com:587 '
+              + '— or, once your team has signed up: kortix self-host env set DISABLE_SIGNUP=true',
+      });
+    }
+  }
   const ok = checks.every((check) => check.ok);
   if (flags.json) {
     process.stdout.write(`${JSON.stringify({ instance: flags.instance, ok, checks }, null, 2)}\n`);

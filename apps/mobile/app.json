@@ -18,7 +18,8 @@
       "associatedDomains": [
         "applinks:kortix.com",
         "applinks:www.kortix.com",
-        "applinks:staging.kortix.com"
+        "applinks:staging.kortix.com",
+        "webcredentials:kortix.com"
       ],
       "infoPlist": {
         "UIViewControllerBasedStatusBarAppearance": false,

@@ -1,10 +1,11 @@
 import type { TriggerList } from '@kortix/api-contract';
-import { connectors, projectTriggerRuntime } from '@kortix/db';
+import { connectorConnections, connectors, projectTriggerRuntime } from '@kortix/db';
 import { cronIntervalError, formatDurationSeconds } from '@kortix/manifest-schema';
 import { and, eq, inArray } from 'drizzle-orm';
 import { config } from '../../config';
 import { db } from '../../shared/db';
 import * as store from '../trigger-events/store';
+import { connectionIdentity } from '../trigger-events/subscriptions';
 import { ensureProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { validateTriggerCron, validateTriggerTimezone } from '../trigger-schedule';
 import { GIT_TRIGGER_SESSION_MODES, type GitMonitorMode, type GitTriggerEventFields, type GitTriggerSessionMode, type GitTriggerSpec, type GitTriggerType, type LoadedTriggers, MANIFEST_FILENAME, type ParsedManifest, defaultTriggerSessionMode, eventOnlyKeyError, extractTriggers, parseEventFields, parseMonitorFields, readManifest, triggerSpecToTomlEntry } from '../triggers';
@@ -66,6 +67,7 @@ export async function loadTriggersForResponse(
   const subscriptionBySlug = new Map(
     specs.some((spec) => spec.event) ? (await store.listByProject(projectId)).map((r) => [r.slug, r]) : [],
   );
+  const connectedAsBySlug = await loadConnectedAs([...subscriptionBySlug.values()]);
   const runtimeBySlug = new Map(runtimeRows.map((row) => [row.slug, row]));
   const sessionAccessBySlug =
     specs.length === 0 ? new Map() : await loadTriggerSessionAccessMap(projectId);
@@ -90,8 +92,13 @@ export async function loadTriggersForResponse(
       event: spec.event
         ? {
             connector: spec.event.connector,
+            account: spec.event.account ?? null,
+            connected_as: connectedAsBySlug.get(spec.slug) ?? null,
             type: spec.event.type,
             config: spec.event.config,
+            // `source` = the adapter (declared, else the connector's provider). `provider` stays the
+            // connector's own provider for older clients: it differs only when a declared source mismatches.
+            source: spec.event.source ?? eventConnectors.get(spec.event.connector)?.provider ?? null,
             provider: eventConnectors.get(spec.event.connector)?.provider ?? null,
             app: eventConnectors.get(spec.event.connector)?.app ?? null,
             ...eventStatusFor(subscriptionBySlug.get(spec.slug)),
@@ -117,6 +124,18 @@ export async function loadTriggersForResponse(
     triggers_paused: triggersPausedForProject(project.metadata),
     errors,
   };
+}
+
+/** Identity of the account each active subscription runs on, by trigger slug. */
+async function loadConnectedAs(subs: store.EventSubscriptionRow[]): Promise<Map<string, string>> {
+  const ids = [...new Set(subs.flatMap((s) => (s.connectionId ? [s.connectionId] : [])))];
+  if (ids.length === 0) return new Map();
+  const rows = await db
+    .select({ id: connectorConnections.connectionId, label: connectorConnections.label, metadata: connectorConnections.metadata })
+    .from(connectorConnections)
+    .where(inArray(connectorConnections.connectionId, ids));
+  const byId = new Map(rows.map((r) => [r.id, connectionIdentity(r)]));
+  return new Map(subs.flatMap((s) => (s.connectionId && byId.has(s.connectionId) ? [[s.slug, byId.get(s.connectionId)!] as const] : [])));
 }
 
 /** provider + app of each connector an event trigger names (null when the connector is not declared). */
@@ -172,7 +191,7 @@ export interface TriggerDraft {
   intervalSeconds: number | null;
   /** For type=monitor only — the silence watchdog, in whole seconds. */
   expectEventWithinSeconds: number | null;
-  /** For type=event only — connector, provider event type and event config. */
+  /** For type=event only — connector, optional source adapter, the adapter's event type and event config. */
   event?: GitTriggerEventFields | null;
   sessionMode: GitTriggerSessionMode;
   /** For sessionMode === 'pinned' only: the exact session id to loop. */
@@ -429,7 +448,7 @@ export function specToBody(spec: GitTriggerSpec): Record<string, unknown> {
     filter: spec.filter,
     // Event keys only for an event trigger: a non-event body must not carry them.
     ...(spec.event
-      ? { connector: spec.event.connector, event: spec.event.type, event_config: spec.event.config }
+      ? { connector: spec.event.connector, event_account: spec.event.account ?? null, event_source: spec.event.source ?? null, event: spec.event.type, event_config: spec.event.config }
       : {}),
   };
 }

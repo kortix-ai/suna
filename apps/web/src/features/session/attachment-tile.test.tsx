@@ -166,3 +166,48 @@ describe('AttachmentTile', () => {
     });
   });
 });
+
+describe('AttachmentTile preview (a pasted-text tile)', () => {
+  const markup = renderToStaticMarkup(
+    <AttachmentTile filename="Pasted text" preview={'first line\nsecond line'} />,
+  );
+
+  test('shows the text, fading out at the bottom instead of an ellipsis, in the muted small ink', () => {
+    expect(markup).toContain('first line\nsecond line');
+    expect(markup).not.toContain('line-clamp');
+    expect(markup).toContain('mask-b-from-60%');
+    expect(markup).toContain('whitespace-pre-wrap');
+    expect(markup).toContain('text-muted-foreground');
+  });
+
+  test('wears the pasted badge, not a filename or an extension', () => {
+    expect(markup).toMatch(/uppercase[^>]*>pasted<\/span>/);
+    expect(markup).not.toContain('>Pasted text<');
+  });
+
+  test('is as tall as every tile, one step wider, with a folded corner', () => {
+    expect(markup).not.toContain(TILE_SURFACE);
+    expect(markup).toContain('h-28 w-32');
+    expect(markup).toContain('rounded-tr-xl');
+    expect(markup).toMatch(/aria-hidden="true" class="[^"]*size-5[^"]*rounded-bl-sm/);
+  });
+
+  test('its first line reads as the title, and it shows no count', () => {
+    expect(markup).toContain('first-line:text-foreground');
+    expect(markup).not.toMatch(/\d words|characters/);
+  });
+
+  test('a pressable paste flips its fold to the resting fill on hover; an inert one does not', () => {
+    expect(markup).not.toContain('group-hover/paste:bg-popover');
+    const live = renderToStaticMarkup(
+      <AttachmentTile filename="Pasted text" preview="x" onOpen={() => {}} />,
+    );
+    expect(live).toContain('group/paste');
+    expect(live).toContain('group-hover/paste:bg-popover');
+    // `bg-accent` is the resting fill in dark; the paste tile hovers to `bg-muted`.
+    expect(live).toContain('hover:bg-muted');
+    expect(live).not.toContain('hover:bg-accent');
+    // No press scale on a paste tile.
+    expect(live).not.toContain('active:scale-[0.96]');
+  });
+});

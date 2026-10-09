@@ -48,6 +48,8 @@ export function createPiDiagnosticsService(
             model: model ? `${model.providerID}/${model.modelID}` : null,
             // Which pi extensions loaded, and why any package did not (not installed, load error).
             extensions: rt?.extensionStatus() ?? null,
+            // The root AGENTS.md (or CLAUDE.md) in the system prompt: where it came from and which version.
+            agentsMd: rt?.agentsMd() ?? null,
           },
         },
         config,

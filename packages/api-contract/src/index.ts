@@ -55,6 +55,7 @@ export const FeatureFlagMapSchema = z.object({
   llm_gateway: z.boolean(),
   meta_agent: z.boolean(),
   apps: z.boolean(),
+  backends: z.boolean(),
   monitors: z.boolean(),
   reminders: z.boolean(),
   warm_sessions: z.boolean(),
@@ -84,6 +85,8 @@ export const FeatureFlagViewSchema = z.object({
   available: z.boolean(),
   enabled: z.boolean(),
   overridden: z.boolean(),
+  /** Internal-only flag, listed only while on. Only a platform operator can change it. */
+  operator_only: z.boolean().optional(),
 });
 export type FeatureFlagView = z.infer<typeof FeatureFlagViewSchema>;
 
@@ -1405,9 +1408,15 @@ export const TriggerSchema = z.object({
   event: z
     .object({
       connector: z.string(),
+      /** Declared `account` label; null = the connector's default shared account. */
+      account: z.string().nullable(),
+      /** Identity (or label) of the shared account actually feeding the trigger; null when none. */
+      connected_as: z.string().nullable(),
       type: z.string(),
       config: z.record(z.string(), z.unknown()),
-      /** Event source provider derived from the connector (e.g. `composio`). Null when unresolved. */
+      /** Event source adapter: the declared `source`, else the connector's provider (e.g. `composio`). Null when unresolved. */
+      source: z.string().nullable().optional(),
+      /** @deprecated Same value as `source`. */
       provider: z.string().nullable(),
       /** Provider app slug (e.g. `github`). Null when unresolved. */
       app: z.string().nullable(),

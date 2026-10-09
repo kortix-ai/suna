@@ -14,7 +14,7 @@ import { join } from 'node:path'
 import { agentEnvDirIsTmpfs, writeAgentEnvFile } from '../shared/agent-env-file'
 import { relayBootTimelineToApi } from '../shared/boot-timeline-relay'
 import { createRuntimeAuditRelay, type AuditRelay } from '../shared/audit-relay'
-import { scheduleRuntimeProjectionPush } from '../shared/projection-relay'
+import { createSessionTreeWatch, scheduleRuntimeProjectionPush } from '../shared/projection-relay'
 import {
   claimInitialTurn,
   relayPermission,
@@ -96,6 +96,7 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
 
   // ── Serve BEFORE doing any slow work ────────────────────────────────────
   const relayedTurnEnds = new Set<string>()
+  const sessionTreeChanged = createSessionTreeWatch()
   const hooks: PiRuntimeHooks = {
     onTurnBegin: ({ rootId, messageId }) => {
       void relayTurnBegin(rootId, messageId)
@@ -120,6 +121,8 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
       void relayPermission(request)
     },
     onFrame: (frame) => {
+      // A child session or a new title: apps/api lists the tree from the pushed projection.
+      if (sessionTreeChanged(frame)) scheduleRuntimeProjectionPush(frame.type)
       if (!auditRelay) return
       try {
         auditRelay.enqueue(frame)
@@ -162,36 +165,40 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
     }
   }
 
-  // The config release the runtime starts on (config-release.ts): fetched,
-  // verified and sealed beside the checkout. `lifecycle.start()` joins it.
-  void harness.releases.boot(bootMark)
-
   // Fresh-boot acquisition goes through the config-provider coordinator
   // (git | prefer-s3 | require-s3), exactly as the OpenCode boot does.
-  if (cfg.autoClone) {
-    bootState.workspaceReady = false
-    await materializeProject(cfg, {
-      bootMark,
-      onSummary: (summary) => {
-        bootState.configProvider = summary
-      },
-    })
-      .then((result) => {
-        if (result.provider === 's3') {
-          const hydration = result.hydration ?? Promise.resolve()
-          bootState.deferredHistoryBackfill = () => {
-            void hydration.then(
-              () => scheduleHistoryBackfill(cfg, cfg.projectTarget),
-              () => scheduleHistoryBackfill(cfg, cfg.projectTarget),
-            )
+  if (cfg.autoClone) bootState.workspaceReady = false
+  const checkout: Promise<string | null> = cfg.autoClone
+    ? materializeProject(cfg, {
+        bootMark,
+        onSummary: (summary) => {
+          bootState.configProvider = summary
+        },
+      })
+        .then((result) => {
+          if (result.provider === 's3') {
+            const hydration = result.hydration ?? Promise.resolve()
+            bootState.deferredHistoryBackfill = () => {
+              void hydration.then(
+                () => scheduleHistoryBackfill(cfg, cfg.projectTarget),
+                () => scheduleHistoryBackfill(cfg, cfg.projectTarget),
+              )
+            }
           }
-        }
-      })
-      .catch((err) => {
-        bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
-        logger.error('[boot] repo materialization failed', err)
-      })
-  }
+          return null
+        })
+        .catch((err) => {
+          bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
+          logger.error('[boot] repo materialization failed', err)
+          return bootState.repoMaterializationError
+        })
+    : Promise.resolve('this box does not clone the project')
+
+  // The config release the runtime starts on (config-release.ts): fetched,
+  // verified and sealed beside the checkout, or copied from the checkout when
+  // it is the release's commit. `lifecycle.start()` joins it.
+  void harness.releases.boot(bootMark, checkout)
+  await checkout
   bootMark('repo-materialized')
   if (cfg.autoClone && !bootState.repoMaterializationError) {
     if (!bootState.deferredHistoryBackfill) scheduleHistoryBackfill(cfg, cfg.projectTarget)

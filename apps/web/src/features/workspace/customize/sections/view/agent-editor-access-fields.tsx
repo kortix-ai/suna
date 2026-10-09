@@ -99,8 +99,8 @@ export function GrantHeaderTrailing({
 }: {
   value: AgentGrantSetV2 | undefined;
   tab?: 'skills' | 'connectors' | 'secrets';
-  /** A project page that is NOT a Customize tab — Apps lives at
-   *  `/projects/<id>/apps`, so it cannot be named by `tab`. */
+  /** A page `tab` cannot name — Apps is a flag-gated Customize tab, reached
+   *  through `capabilityTabHref(projectId, 'apps')`. */
   href?: (projectId: string) => string;
   label: string;
 }) {

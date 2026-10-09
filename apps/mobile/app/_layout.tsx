@@ -29,6 +29,7 @@ import { OVERLAY_PORTAL_HOST } from '@/lib/ui/portal-hosts';
 import { ToastProvider } from '@/components/kortix/toast-provider';
 import { OfflineBanner } from '@/components/kortix/OfflineBanner';
 import { SessionEndedDialog } from '@/components/kortix/SessionEndedDialog';
+import { PastedTextSheet } from '@/components/files/PastedTextSheet';
 import { PushNotificationsBridge } from '@/components/notifications/PushNotificationsBridge';
 import { reportUnauthorized } from '@/lib/auth/session-expiry-monitor';
 import { authRedirect } from '@/lib/auth/mfa';
@@ -586,6 +587,8 @@ export default function RootLayout() {
                             <OtaUpdateManager />
                             <SandboxUpgradeGateListener />
                             <GlobalUpgradeSheet />
+                            {/* A "Pasted text" tile's full text: sent messages and composers (`openPastedText`). */}
+                            <PastedTextSheet />
                             <PortalHost />
                             <OfflineBanner />
                             <SessionEndedDialog />

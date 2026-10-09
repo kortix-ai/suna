@@ -22,6 +22,7 @@ import {
   getProrationPreview,
   purchaseCredits,
   reactivateSubscription,
+  requestTopUp,
   resolvedPlan,
   syncSubscription,
   getUsageRollup,
@@ -344,4 +345,18 @@ test('the app-access projection carries the resolved plan key', () => {
 
   expect(trialing.plan?.key).toBe('team');
   expect(olderApi.plan).toBeUndefined();
+});
+
+// KRTX-1718: a member out of credits asks the owners.
+test('requestTopUp POSTs to the account top-up-requests route and returns how many owners were told', async () => {
+  nextResponse = { status: 202, body: { notified: 2 } };
+  const result = await requestTopUp('acc/1');
+  expect(last().url).toBe('http://test.local/accounts/acc%2F1/top-up-requests');
+  expect(last().method).toBe('POST');
+  expect(result).toEqual({ notified: 2 });
+});
+
+test('requestTopUp rejects with the 429 status and code when the member already asked', async () => {
+  nextResponse = { status: 429, body: { error: 'You already asked', code: 'already_requested' } };
+  await expect(requestTopUp('acc_1')).rejects.toMatchObject({ status: 429 });
 });

@@ -52,6 +52,8 @@ Subcommands:
                                     and ignores both.
     --budget <usd>                  Monthly compute budget. Default: the 24/7
                                     estimate for an always-on App, 5 on demand.
+    --backends <names>              Backends the App may get viewer tokens for,
+                                    comma-separated. Default: none.
   deploy [path]                     Deploy a directory or .tar.gz archive.
     --manifest-app <name>           Use one apps.<name> block from kortix.yaml.
     --app <id|slug>                 Existing App. Omit to create one.
@@ -92,6 +94,9 @@ Subcommands:
     --idle-timeout <seconds>        120-86400.
     --always-on | --on-demand       Run 24/7, or stop when idle.
     --budget <usd>                  Monthly compute budget.
+    --backends <names>              Replace the backends the App may get viewer
+                                    tokens for (kortixAppBackendToken). Comma-
+                                    separated; --backends= clears the list.
   show <id|slug>                    Show an App and its deployments. --json.
   logs <id|slug> [deployment-id]    Read runtime logs. --after N --limit N.
   start <id|slug>                   Permit requests and start the App.
@@ -245,6 +250,7 @@ async function createCommand(
       '--idle-timeout',
     ),
     monthly_budget_usd: positiveNumber(takeFlagValue(rest, ['--budget']), '--budget'),
+    backends: backendNames(takeFlagValue(rest, ['--backends'])),
     ...runMode(rest),
   };
   const ctx = await context(options);
@@ -292,6 +298,7 @@ async function setCommand(rest: string[], options: ContextOptions, json: boolean
   const disk = positiveInteger(takeFlagValue(rest, ['--disk-gb', '--disk']), '--disk-gb');
   const idle = positiveInteger(takeFlagValue(rest, ['--idle-timeout']), '--idle-timeout');
   const budget = positiveNumber(takeFlagValue(rest, ['--budget']), '--budget');
+  const backends = backendNames(takeFlagValue(rest, ['--backends']));
   Object.assign(input, runMode(rest));
   const target = rest.find((value) => !value.startsWith('-'));
   if (!target) return fail('set needs an App id or slug');
@@ -301,9 +308,10 @@ async function setCommand(rest: string[], options: ContextOptions, json: boolean
   if (disk !== undefined) input.disk_gb = disk;
   if (idle !== undefined) input.idle_timeout_seconds = idle;
   if (budget !== undefined) input.monthly_budget_usd = budget;
+  if (backends !== undefined) input.backends = backends;
   if (Object.keys(input).length === 0) {
     return fail(
-      'set needs at least one of --name, --cpu, --memory-gb, --disk-gb, --idle-timeout, --always-on, --on-demand, --budget',
+      'set needs at least one of --name, --cpu, --memory-gb, --disk-gb, --idle-timeout, --always-on, --on-demand, --budget, --backends',
     );
   }
   const ctx = await context(options);
@@ -323,10 +331,24 @@ async function setCommand(rest: string[], options: ContextOptions, json: boolean
       `  ${C.dim}${pad('idle timeout', 14)}${C.reset}${app.idle_timeout_seconds}s\n`,
     );
     process.stdout.write(
-      `  ${C.dim}${pad('budget', 14)}${C.reset}$${app.monthly_budget_usd}/mo\n${costBlock(app)}\n`,
+      `  ${C.dim}${pad('budget', 14)}${C.reset}$${app.monthly_budget_usd}/mo\n${costBlock(app)}`,
     );
+    process.stdout.write(`  ${C.dim}${pad('backends', 14)}${C.reset}${appBackendsLabel(app)}\n\n`);
   }
   return 0;
+}
+
+/** `--backends a,b`: trimmed, deduplicated backend names; `--backends=` is the empty list. */
+function backendNames(value: string | undefined): string[] | undefined {
+  if (value === undefined) return undefined;
+  const names = [...new Set(value.split(',').map((name) => name.trim()).filter(Boolean))];
+  const bad = names.find((name) => !/^[a-z][a-z0-9-]{0,62}$/.test(name));
+  if (bad) throw new Error(`--backends: "${bad}" is not a backend name (lowercase letters, digits and dashes)`);
+  return names;
+}
+
+function appBackendsLabel(app: App): string {
+  return app.backends?.length ? app.backends.join(', ') : 'none';
 }
 
 async function deployCommand(
@@ -421,6 +443,7 @@ async function showCommand(
         ? `server · ${app.always_on ? 'always on' : 'on demand'} · ${app.desired_state} · budget $${app.monthly_budget_usd}/mo`
         : 'not deployed';
     process.stdout.write(`\n  ${C.bold}${app.name}${C.reset}\n  ${app.url}\n  ${C.dim}${hosting}${C.reset}\n`);
+    process.stdout.write(`  ${C.dim}${pad('backends', 10)}${C.reset}${appBackendsLabel(app)}\n`);
     for (const deployment of result.deployments) {
       const live =
         deployment.deployment_id === result.app.active_deployment_id

@@ -1,9 +1,10 @@
 /** Fans one provider delivery or notice out to the event triggers subscribed to it. */
-import { connectors, projectTriggerRuntime, projects } from '@kortix/db';
+import { connectorConnections, connectors, projectTriggerRuntime, projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import {
   fireGitTrigger,
+  markGitTriggerAttemptFailed,
   markGitTriggerFired,
   renderPromptTemplate,
   triggerFilterMatches,
@@ -13,6 +14,7 @@ import { releaseWebhookDeliveryKey } from '../lib/webhook-delivery';
 import type { GitTriggerSpec } from '../trigger-types';
 import { db } from '../../shared/db';
 import * as store from './store';
+import { reconcileEventSubscriptionsFromCatalog } from './subscriptions';
 import type { EventDelivery, ProviderNotice } from './types';
 
 export interface DeliveryTally {
@@ -123,7 +125,10 @@ async function deliverToRow(
       idempotencyKey,
     });
     if (result.status === 'failed') {
-      logger.warn('[trigger-events] fire failed', { projectId: row.projectId, slug: row.slug, error: result.error });
+      const error = result.error ?? 'Failed to fire trigger';
+      logger.warn('[trigger-events] fire failed', { projectId: row.projectId, slug: row.slug, error });
+      // Recorded like a failed cron fire, so the trigger says it failed (KRTX-1743).
+      await markGitTriggerAttemptFailed(row.projectId, row.slug, new Date(), error).catch(() => {});
       return 'failed';
     }
     // A duplicate ran nothing: it leaves last_fired_at and last_event_at alone.
@@ -132,11 +137,9 @@ async function deliverToRow(
     await store.touchLastEvent(row.projectId, row.slug);
     return 'fired';
   } catch (error) {
-    logger.warn('[trigger-events] fire threw', {
-      projectId: row.projectId,
-      slug: row.slug,
-      error: error instanceof Error ? error.message : String(error),
-    });
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn('[trigger-events] fire threw', { projectId: row.projectId, slug: row.slug, error: message });
+    await markGitTriggerAttemptFailed(row.projectId, row.slug, new Date(), message).catch(() => {});
     return 'failed';
   }
 }
@@ -160,12 +163,54 @@ export async function applyNotices(provider: string, notices: readonly ProviderN
         notice.externalId,
         `The app disabled this subscription: ${notice.reason} Save the trigger again to re-subscribe.`,
       );
-    } else {
+    } else if (notice.kind === 'connection_expired') {
       await store.markErrorByConnectedAccount(
         provider,
         notice.connectionExternalId,
         `The connected account expired: ${notice.reason} Reconnect the app to resume this trigger.`,
       );
+    } else {
+      await activateConnection(notice.connectionId);
     }
+  }
+}
+
+/**
+ * A person finished connecting an account outside any open Kortix page (a CLI or
+ * agent link): finalize it the way the connect route does, then let the project's
+ * event triggers pick the account up. Unknown connections (another environment
+ * sharing the provider project) are ignored. Never throws.
+ */
+async function activateConnection(connectionId: string): Promise<void> {
+  try {
+    const [row] = await db
+      .select({
+        projectId: connectorConnections.projectId,
+        accountId: connectorConnections.accountId,
+        ownerType: connectorConnections.ownerType,
+        ownerId: connectorConnections.ownerId,
+        slug: connectors.slug,
+      })
+      .from(connectorConnections)
+      .innerJoin(connectors, eq(connectors.connectorId, connectorConnections.connectorId))
+      .where(eq(connectorConnections.connectionId, connectionId))
+      .limit(1);
+    if (!row) return;
+    // Loaded on use: the connector routes' deps reach back into projects/.
+    const { dbConnectorRouterDeps } = await import('../../connectors/db-deps');
+    const owner = row.ownerType === 'project' ? 'project' : 'me';
+    await dbConnectorRouterDeps.connectorFinalize?.(
+      row.projectId,
+      row.slug,
+      owner === 'me' ? (row.ownerId ?? '') : '',
+      { connectionId },
+      owner,
+    );
+    await reconcileEventSubscriptionsFromCatalog(row.projectId, row.accountId);
+  } catch (error) {
+    logger.warn('[trigger-events] connection activation failed', {
+      connectionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }

@@ -300,6 +300,14 @@
             "type": "string",
             "minLength": 1
           },
+          "account": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1
+          },
           "event": {
             "type": "string",
             "minLength": 1
@@ -450,6 +458,8 @@
             "then": {
               "properties": {
                 "connector": false,
+                "account": false,
+                "source": false,
                 "event": false,
                 "config": false
               }
@@ -889,6 +899,8 @@
                     "project.app.read",
                     "project.app.write",
                     "project.app.deploy",
+                    "project.backend.read",
+                    "project.backend.write",
                     "project.review.read",
                     "project.review.submit",
                     "project.review.act",
@@ -973,6 +985,8 @@
                     "project.app.read",
                     "project.app.write",
                     "project.app.deploy",
+                    "project.backend.read",
+                    "project.backend.write",
                     "project.review.read",
                     "project.review.submit",
                     "project.review.act",

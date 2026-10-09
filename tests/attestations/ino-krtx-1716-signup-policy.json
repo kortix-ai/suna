@@ -1,0 +1,20 @@
+{
+  "source_hash": "143af3c39f9c74f742b9d42036844dd8457b123e4c37ac4ae02ca364e6d98c89",
+  "diff_files": [
+    "apps/api/src/__tests__/unit-auth-headless.test.ts",
+    "apps/api/src/auth/headless.ts",
+    "apps/web/content/docs/sdk/auth.mdx",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "tests/spec/end-to-end.md",
+    "tests/src/flows/sso-identity.flow.ts"
+  ],
+  "diff_hash": "4f9a800e2be75a41ce3f3e162842f665e478102c8d619430f8998205b31624c6",
+  "head": "78a082a8dd2d08ace3bf62be626b317ca021f5d2",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-09T05:29:14.438Z"
+}

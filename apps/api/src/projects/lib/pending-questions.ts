@@ -2,9 +2,10 @@
  * Park-and-restore for a blocked turn.
  *
  * THE PROBLEM. When the agent calls the `question` tool it stops and waits for
- * a human. A waiting turn makes no gateway LLM calls, so it earns no deadline
- * extension, so its box is parked on schedule. That part is correct and must
- * stay correct: the whole bounded-lifetime design rests on "only a
+ * a human. A waiting turn makes no gateway LLM calls and the reaper renews
+ * nothing for it, so after the wait bound (`turnWaitingMaxMs`) the turn ends
+ * and its box is parked (box-reaper.ts `holdWaitingTurn`). That part is
+ * correct and must stay correct: the whole bounded-lifetime design rests on "only a
  * control-plane-OBSERVED event may extend a box", and a box that could keep
  * itself alive by saying "I'm still waiting" is exactly the self-renewal that
  * once left 187 boxes running, the oldest for 264 hours.

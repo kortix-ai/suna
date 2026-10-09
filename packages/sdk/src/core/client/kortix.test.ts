@@ -51,6 +51,28 @@ test('project(id) handle binds the id and hits the right endpoint', async () => 
   expect(last().method).toBe('GET');
 });
 
+test('project(id).backends binds the project id on every call', async () => {
+  const backends = kortix.project('PID123').backends;
+  for (const fn of ['list', 'create', 'get', 'credentials', 'remove', 'resize', 'waitForOperation', 'backups', 'snapshot', 'restore'] as const) {
+    expect(typeof backends[fn]).toBe('function');
+  }
+  await backends.list().catch(() => undefined);
+  expect(last().url).toContain('/projects/PID123/backends');
+  await backends.credentials('B1').catch(() => undefined);
+  expect(last().url).toContain('/projects/PID123/backends/B1/credentials');
+  await backends.backups('B1').catch(() => undefined);
+  expect(last().url).toContain('/projects/PID123/backends/B1/backups');
+  await backends.restore('B1', 'S1').catch(() => undefined);
+  expect(last().url).toContain('/projects/PID123/backends/B1/restore');
+  await backends.rotateAdminKey('B1').catch(() => undefined);
+  expect(last().url).toContain('/projects/PID123/backends/B1/rotate-admin-key');
+  await backends.logs('B1', { lines: 50 }).catch(() => undefined);
+  expect(last().url).toContain('/projects/PID123/backends/B1/logs?lines=50');
+  await backends.deleteSnapshot('B1', 'S1').catch(() => undefined);
+  expect(last().url).toContain('/projects/PID123/backends/B1/snapshots/S1');
+  expect(last().method).toBe('DELETE');
+});
+
 test('project(id).apps exposes the complete App lifecycle with the project id bound', async () => {
   const apps = kortix.project('PID123').apps;
 

@@ -35,7 +35,7 @@ export const MANIFEST_IMPORTS_KEY = 'imports';
 /** List collections; entries are identified by `slug`. */
 export const IMPORTABLE_LIST_KEYS = ['triggers', 'connectors'] as const;
 /** Map collections; entries are identified by their key. */
-export const IMPORTABLE_MAP_KEYS = ['agents', 'apps'] as const;
+export const IMPORTABLE_MAP_KEYS = ['agents', 'apps', 'tools'] as const;
 
 export type ImportableKey =
   | (typeof IMPORTABLE_LIST_KEYS)[number]
@@ -152,7 +152,7 @@ function declaredImports(file: string, raw: Record<string, unknown>): string[] {
 }
 
 function emptyOrigins(): ManifestOrigins {
-  return { triggers: {}, connectors: {}, agents: {}, apps: {} };
+  return { triggers: {}, connectors: {}, agents: {}, apps: {}, tools: {} };
 }
 
 /** Entries of one collection in one file, as [id, value] pairs. Entries without
@@ -209,6 +209,9 @@ export function resolveManifestImportsSync(
   const visited = new Set<string>([root.path]);
 
   const mergeFile = (file: ManifestSourceFile) => {
+    // A `tools` key selects the Kortix tools, so an empty one in any file
+    // still reaches the merged document (`selectedKortixTools`).
+    if (file.raw.tools !== undefined) maps.tools ??= {};
     for (const key of ALL_IMPORTABLE_KEYS) {
       for (const [id, entry] of collectionEntries(file.path, key, file.raw[key])) {
         if (id !== null) {

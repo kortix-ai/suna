@@ -3,9 +3,8 @@ import { logger } from '@/lib/log/logger'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Localhost credential-injecting reverse proxy (the warm-fork "no restart on
-// restore" mechanism). Two instances run when KORTIX_LLM_HOTSWAP=1:
-//   • the LLM gateway proxy   (opencode's kortix provider baseURL → here)
-//   • the connector MCP proxy  (kortix-connectors MCP's KORTIX_API_URL → here)
+// restore" mechanism). One instance runs when KORTIX_LLM_HOTSWAP=1: the LLM
+// gateway proxy (opencode's kortix provider baseURL → here).
 //
 // WHY: a stateful warm-fork session attach used to KILL + respawn
 // opencode purely to swap in the per-session tokens (LLM gateway key + connector
@@ -59,8 +58,7 @@ async function windowModelRequestBody(req: Request, pathname: string, name: stri
 }
 
 type ProxyState = {
-  /** The real upstream base, e.g. https://gateway-dev.kortix.com/v1/llm (LLM) or
-   *  the real KORTIX_API_URL (connector). */
+  /** The real upstream base, e.g. https://gateway-dev.kortix.com/v1/llm. */
   upstreamBase: string | null
   /** The live per-session bearer token sent upstream. */
   token: string | null
@@ -225,7 +223,6 @@ function createCredentialProxy(name: string, placeholderKey: string): Credential
 
 // ── instances ────────────────────────────────────────────────────────────────
 const llm = createCredentialProxy('llm', 'kortix-llm-proxy-injected')
-const connector = createCredentialProxy('connector', 'kortix-connectors-proxy-injected')
 
 // LLM gateway proxy.
 export const LLM_PROXY_PLACEHOLDER_KEY = llm.placeholderKey
@@ -236,13 +233,3 @@ export const setLlmProxyToken = (token: string | undefined, upstreamBase?: strin
 export const llmProxyReady = () => llm.ready()
 export const llmProxyBaseUrl = () => llm.baseUrl()
 export const stopLlmProxy = () => llm.stop()
-
-// Connector MCP proxy.
-export const CONNECTOR_PROXY_PLACEHOLDER_KEY = connector.placeholderKey
-export const startConnectorProxy = (port: number, upstreamBase?: string, token?: string) =>
-  connector.start(port, upstreamBase, token)
-export const setConnectorProxyToken = (token: string | undefined, upstreamBase?: string | undefined) =>
-  connector.setToken(token, upstreamBase)
-export const connectorProxyReady = () => connector.ready()
-export const connectorProxyBaseUrl = () => connector.baseUrl()
-export const stopConnectorProxy = () => connector.stop()

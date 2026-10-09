@@ -13,6 +13,7 @@ import { slowRequestLogger } from './slow-request'
 import { agentSwapRequiresUnattendedBox, registerAgentSwapBlocker } from '@/services/runtime-assets/runtime-assets'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { createEnvRpcRouter } from '@/routes/kortix/env-rpc'
+import { createToolsRouter } from '@/routes/kortix/tools'
 import { createHarnessControlRouter } from '@/routes/kortix/harness-control'
 import { createRuntimeProxyRouter } from '@/routes/proxy/runtime-proxy'
 import { createGitRouter } from '@/routes/kortix/git'
@@ -135,6 +136,8 @@ export function buildDaemonApp(
   const envRpcRouter = createEnvRpcRouter(cfg)
   kortixRouter.route('/env-rpc', envRpcRouter)
   kortixRouter.route('/env-rpc/', envRpcRouter)
+  // Hosted tools for a harness outside this process (OpenCode's bridge plugin).
+  kortixRouter.route('/tools', createToolsRouter(cfg))
 
   // Terminate daemon-owned paths before the OpenCode SPA catch-all.
   kortixRouter.all('*', (c) => c.json({ error: UNKNOWN_DAEMON_ROUTE_ERROR }, 404))

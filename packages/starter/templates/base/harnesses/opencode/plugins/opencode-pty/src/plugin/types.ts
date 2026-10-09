@@ -1,4 +1,4 @@
-import type { Plugin } from '../../../../tools/lib/tool'
+import type { Plugin } from '../../../lib/tool'
 
 export type PluginClient = Parameters<Plugin>[0]['client']
 
