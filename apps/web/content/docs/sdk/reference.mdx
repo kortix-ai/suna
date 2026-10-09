@@ -292,7 +292,7 @@ The session handle carries the caller's watch on one session:
 | --- | --- |
 | `session(pid, sid).watch()` | `{ watching }`: is the caller notified about this session |
 | `session(pid, sid).setWatch(watching)` | `false` mutes the session for the caller, `true` watches it again. Prompting a session watches it, but never undoes a mute. |
-| `session(pid, sid).presence({ tab_id, active, alerts? })` | this tab's presence lease. `alerts: true` says the tab shows its own notifications: with `notification_center` on, the server skips the phone and Web Push only while an alerting tab is in use. With it off, `alerts` is ignored and any present tab holds back the phone push. An absent report is sent with `keepalive`. |
+| `session(pid, sid).presence({ tab_id, active, alerts? }, { keepalive? })` | this tab's presence lease. `alerts: true` says the tab shows its own notifications: with `notification_center` on, the server skips the phone and Web Push only while an alerting tab is in use. With it off, `alerts` is ignored and any present tab holds back the phone push. `keepalive` lets the request outlive a closing page. Default: on for an absent report, off for a present one. `useSession` sends `keepalive` only with `presencePageExit`. |
 
 ### The project handle — `kortix.project(id)`
 

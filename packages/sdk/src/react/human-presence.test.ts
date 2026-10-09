@@ -148,7 +148,7 @@ describe('watchHumanPresence on pagehide', () => {
     expect(sent).toEqual([true, false]);
   });
 
-  test('without pageExit, pagehide reports nothing: the lease lives to its expiry', () => {
+  test('without pageExit, pagehide reports nothing, as before KRTX-1742', () => {
     const f = fakeEnv();
     const sent: boolean[] = [];
     watchHumanPresence(f.env, (a) => sent.push(a), () => false);

@@ -775,7 +775,7 @@
       "enableDescriptionPush": "在此浏览器中显示通知，即使所有 Kortix 标签页都已关闭。",
       "enableDescriptionDesktop": "在桌面应用窗口打开期间显示通知。",
       "enableDescriptionBrowser": "在 Kortix 标签页打开期间于此浏览器中显示通知。",
-      "notificationTypesDescription": "这些设置适用于每部手机和每个浏览器。铃铛会列出每条通知。",
+      "notificationTypesDescription": "这些设置适用于每部手机和每个浏览器。手机对「本轮已完成」「本轮失败」「问题」「权限请求」还有自己的开关，只有两者都开启时才会收到。铃铛会列出已开启通知中心的项目的每条通知。",
       "push": "推送",
       "email": "电子邮件",
       "channelSwitch": "{kind}：{channel}",
@@ -1197,7 +1197,7 @@
         },
         "notification_center": {
           "name": "通知中心",
-          "description": "通过铃铛收件箱、浏览器推送和电子邮件通知与会话相关的人（发送提示的人、创建者和关注者），并在触发器和提醒失败时发出警报。关闭时，只有会话创建者的手机会收到推送。"
+          "description": "通过铃铛收件箱、浏览器推送和电子邮件通知与会话相关的人（发送提示的人、创建者和关注者），并在触发器和提醒失败时发出警报。关闭时，会话的推送只发到会话创建者的手机；触发器开始失败时，账户所有者的手机会收到一条推送。"
         },
         "event_triggers": {
           "name": "应用事件触发器",
