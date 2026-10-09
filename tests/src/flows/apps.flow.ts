@@ -1265,8 +1265,8 @@ flow(
           throw new Error(`kortix apps stop: exit ${stop.exitCode}, stderr ${stop.stderr}`);
         }
         const ls = await cli.run(["apps", "ls", "--project", project.id]);
-        if (ls.exitCode !== 0 || !new RegExp(`${slug}\\s+static\\s`).test(ls.stdout)) {
-          throw new Error(`kortix apps ls does not print static: ${ls.stdout}`);
+        if (ls.exitCode !== 0 || !new RegExp(`${slug}\\s+web\\s+static\\s`).test(ls.stdout)) {
+          throw new Error(`kortix apps ls does not print static: exit ${ls.exitCode}, stdout ${ls.stdout}, stderr ${ls.stderr}`);
         }
         const home = await page("/");
         if (home.status !== 200 || !home.text.includes("<title>v1</title>")) throw new Error(`not served after stop: ${home.status}`);
