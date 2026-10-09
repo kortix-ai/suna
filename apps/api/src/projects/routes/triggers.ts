@@ -1,8 +1,10 @@
 /** Project triggers: list, create, update, activate, delete, and manual fire. */
 import { createRoute, z } from '@hono/zod-openapi';
+import type { Context } from 'hono';
 import { projectTriggerRuntime, projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { mutateManifestWithRetry } from '../../connectors/manifest-mutation';
+import { loadProjectAgents } from '../agents';
 import { assertMayRunAgent } from '../lib/agent-access';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json, lenientBody } from '../../openapi';
@@ -11,6 +13,7 @@ import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { OkSchema, TriggerFireResultSchema, TriggerListSchema, projectsApp } from '../lib/app';
 import { guardSession } from '../lib/http-session-access';
 import { withProjectGitAuth } from '../lib/git';
+import { resolveSessionAgentName } from '../lib/session-create';
 import { metadataMerge } from '../lib/metadata-merge';
 import { requestAuditContext } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
@@ -28,6 +31,11 @@ import {
 // From the leaf, not the barrel: suites that stub '../lib/triggers' by listing
 // its exports would otherwise lose this name.
 import { markGitTriggerAttemptFailed } from '../lib/trigger-fire';
+import { raiseTriggerAlert } from '../lib/trigger-alerts';
+import { deleteTriggerWatchers, triggerWatcherOf, upsertTriggerWatcher } from '../lib/trigger-watchers';
+import { getRequestOnBehalfOf } from '../../middleware/on-behalf-of';
+import { logger } from '../../lib/logger';
+import type { AppEnv } from '../../types';
 import { validateWebhookSecretConfiguration } from '../lib/webhook-secret-policy';
 import { reconcileProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { connectorInfo, eventPayload } from '../trigger-events/deliver';
@@ -44,6 +52,23 @@ import {
   extractTriggers,
   findProjectTriggerBySlug,
 } from '../triggers';
+
+/**
+ * The person who created or edited a trigger follows its alerts (KRTX-1742).
+ * Never an API key or a service account: they name no person.
+ */
+async function followTrigger(c: Context<AppEnv>, accountId: string, projectId: string, slug: string): Promise<void> {
+  const userId = triggerWatcherOf({
+    authType: c.get('authType'),
+    userId: c.get('userId'),
+    sessionId: c.get('sessionId'),
+    onBehalfOfUserId: getRequestOnBehalfOf(c),
+  });
+  if (!userId) return;
+  // Best-effort: the manifest is already committed, so a failed write must not fail the route.
+  await upsertTriggerWatcher({ accountId, projectId, slug, userId }).catch((err) =>
+    logger.warn('[trigger-watchers] follow failed', { projectId, slug, error: err instanceof Error ? err.message : String(err) }));
+}
 
 /** Body keys that change which event a trigger subscribes to. */
 const EVENT_BODY_KEYS = ['connector', 'event_account', 'event_source', 'event', 'event_config'];
@@ -400,6 +425,7 @@ export function registerTriggersRoutes(): void {
         access: parsedAccess.access,
         pinnedSessionId: draft.pinnedSessionId,
       });
+      await followTrigger(c, loaded.row.accountId, projectId, draft.slug);
 
       return c.json(await loadTriggersForResponse(projectId, loaded.row), 201);
     },
@@ -629,6 +655,7 @@ export function registerTriggersRoutes(): void {
           pinnedSessionId: effectivePinnedSessionId,
         });
       }
+      await followTrigger(c, loaded.row.accountId, projectId, slug);
 
       return c.json(await loadTriggersForResponse(projectId, loaded.row));
     },
@@ -693,6 +720,8 @@ export function registerTriggersRoutes(): void {
         .where(
           and(eq(projectTriggerRuntime.projectId, projectId), eq(projectTriggerRuntime.slug, slug)),
         );
+      await deleteTriggerWatchers({ projectId, slug }).catch((err) =>
+        logger.warn('[trigger-watchers] cleanup failed', { projectId, slug, error: err instanceof Error ? err.message : String(err) }));
       if (remainingManifest) {
         await reconcileEventSubscriptions(projectId, loaded.row.accountId, extractTriggers(remainingManifest).specs);
       }
@@ -739,15 +768,26 @@ export function registerTriggersRoutes(): void {
         PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE,
       );
 
-      const spec = await findProjectTriggerBySlug(await withProjectGitAuth(loaded.row), slug);
+      const gitProject = await withProjectGitAuth(loaded.row);
+      const spec = await findProjectTriggerBySlug(gitProject, slug);
       if (!spec) return c.json({ error: 'Not found' }, 404);
       // Agents as principals (spec 2026-09-22 §2.2, closes V2): the fired run
       // acts as the trigger's agent, so the FIRER must be allowed to run that
-      // agent. `default` selects the project's default agent; ask about that one.
+      // agent. `default` is resolved exactly as session creation resolves it
+      // (KRTX-1720): the manifest's default first; the metadata mirror, which
+      // can lag a git push, only for a v1 manifest that declares none.
+      // Asking about the mirror instead refused a member allowed to run the
+      // real default, and admitted one allowed to run only the stale name.
       const mirroredDefault = (loaded.row.metadata as Record<string, unknown> | null)?.default_agent;
       const firedAgent =
-        spec.agent === 'default' && typeof mirroredDefault === 'string' && mirroredDefault.trim()
-          ? mirroredDefault.trim()
+        spec.agent === 'default'
+          ? resolveSessionAgentName({
+              requestedAgent: null,
+              manifestDefaultAgent:
+                (await loadProjectAgents(gitProject, { forceRefresh: 'tip-proof' })).defaultAgent?.trim() || null,
+              mirroredDefaultAgent:
+                typeof mirroredDefault === 'string' && mirroredDefault.trim() ? mirroredDefault.trim() : null,
+            })
           : spec.agent;
       await assertMayRunAgent(
         c,
@@ -791,7 +831,8 @@ export function registerTriggersRoutes(): void {
       });
 
       if (result.status === 'queued') {
-        await markGitTriggerFired(projectId, slug, now);
+        // Not run yet: its delivery ends an alert streak, not this handoff (KRTX-1742).
+        await markGitTriggerFired(projectId, slug, now, 'fired', { endsAlert: false });
         return c.json(
           {
             status: 'queued' as const,
@@ -807,6 +848,12 @@ export function registerTriggersRoutes(): void {
         const error = result.error ?? 'Failed to fire trigger';
         // Recorded like a failed cron fire, so the trigger says it failed (KRTX-1743).
         await markGitTriggerAttemptFailed(projectId, slug, now, error).catch(() => {});
+        // The first failure of a streak alerts the watchers, not only the firer
+        // (KRTX-1742). A create that went back to the queue alerts from the
+        // drain only if it dead-letters.
+        if (!result.requeued) {
+          await raiseTriggerAlert({ projectId, accountId: loaded.row.accountId, slug, source: 'fire', error });
+        }
         return c.json({ error }, 500);
       }
       await markGitTriggerFired(projectId, slug, now);

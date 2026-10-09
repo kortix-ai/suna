@@ -9,7 +9,7 @@
 import * as React from 'react';
 import { View, type ViewProps, type StyleProp, type ViewStyle } from 'react-native';
 
-export interface PageContentProps extends ViewProps {
+interface PageContentProps extends ViewProps {
   /** Override the default `bg-background` surface (e.g. for dark terminal pages). */
   backgroundColor?: string;
   children?: React.ReactNode;
