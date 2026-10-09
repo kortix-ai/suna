@@ -60,7 +60,7 @@ shared layer.
 | --- | --- | --- |
 | `src/types/**` | `src/types/**` | none, and no runtime code at all |
 | `src/lib/**` | the shared layer | none |
-| `src/services/<name>/**` | its own folder, the services `SERVICES` declares for it, the shared layer | `egress-shim`: `node-forge`, `@kortix/api-contract`. `monitor`, `runtime-assets`, `tools`: `@kortix/api-contract` |
+| `src/services/<name>/**` | its own folder, the services `SERVICES` declares for it, the shared layer | `egress-shim`: `node-forge`, `@kortix/api-contract`. `monitor`, `runtime-assets`, `tools`: `@kortix/api-contract`. `sandbox-env`: `@kortix/sdk/genui` (shared source; its closure brings `@openuidev/lang-core` and `zod/v4`) |
 | `src/harness/harness.ts` | the harness, all services, the shared layer | none |
 | `src/harness/{open-code,pi}/**` | its own folder, `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `@kortix/api-contract`. `open-code`: `bun:sqlite`. `pi`: `@earendil-works/*`, `typebox`, `@kortix/sdk/wire-message-id` |
 | `src/harness/{contract,shared}/**` | `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `@kortix/api-contract` (the daemon-to-API wire, `runtime-relay`) |
@@ -107,7 +107,10 @@ No other package imports or reads `src/`, and `src/` imports no other app
 (`tests/unit/kortixd-package-boundary.test.ts`). A value the daemon shares with
 apps/api, the CLI or `@kortix/shared` lives in `packages/api-contract` and both
 sides import it. The daemon reaches those files, and the SDK's import-free
-`wire-message-id.ts`, through tsconfig paths. `KORTIXD_SHARED_SOURCES`
+`wire-message-id.ts`, through tsconfig paths. The generative-UI prompt
+(`@kortix/sdk/genui`, read by `services/sandbox-env`) is a shared source too: its
+file closure is listed, and it imports `@openuidev/lang-core` and `zod/v4`, which
+the tsconfig maps to this package's `node_modules`. `KORTIXD_SHARED_SOURCES`
 (`@kortix/api-contract/sandbox-layout`) lists them: apps/api fingerprints them
 with this source, and the Dockerfiles copy them (`src/__tests__/shared-sources.test.ts`).
 

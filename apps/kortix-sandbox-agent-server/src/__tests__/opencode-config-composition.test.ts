@@ -98,10 +98,9 @@ describe('buildOpencodeConfigContent — injected managed skills', () => {
     writeFileSync(file, 'genui')
     const withFile = JSON.parse((await buildOpencodeConfigContent(ENV, { genuiInstructionPath: file }))!)
     expect(withFile.instructions).toContain(file)
-    const missing = JSON.parse(
-      (await buildOpencodeConfigContent(ENV, { genuiInstructionPath: join(tmpdir(), 'genui-absent', 'genui.md') }))!,
-    )
-    expect(missing.instructions ?? []).not.toContain(file)
+    const absent = join(tmpdir(), 'genui-absent', 'genui.md')
+    const missing = JSON.parse((await buildOpencodeConfigContent(ENV, { genuiInstructionPath: absent }))!)
+    expect(missing.instructions ?? []).not.toContain(absent)
   })
 
   test('flag off: the composed config is byte-identical to one built without the option (R-FLAG-1)', async () => {
