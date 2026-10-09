@@ -31,7 +31,10 @@ import { createElement } from 'react';
  */
 
 import { Button } from '@/components/ui/button';
-import { cachedNotificationCenter } from '@/features/notifications/use-notification-center';
+import {
+  cachedNotificationCenter,
+  cachedNotificationCenterAnswer,
+} from '@/features/notifications/use-notification-center';
 import { hasWebPushSubscription } from '@/features/notifications/web-push';
 import {
   dismissToast,
@@ -43,7 +46,7 @@ import {
 import { logger } from '@/lib/logger';
 import { softNavigate } from '@/lib/navigation/router-bridge';
 import { projectSessionHref } from '@/lib/navigation/session-href';
-import { broadcastTurnComplete } from '@/lib/turn-broadcast';
+import { broadcastTurnComplete, type TurnCompleteMsg } from '@/lib/turn-broadcast';
 import { getSharedQueryClient } from '@/lib/query-client-singleton';
 import { playSound } from '@/lib/sounds';
 import type { SoundEvent } from '@/stores/sound-store';
@@ -92,6 +95,11 @@ export interface WebNotificationPayload {
   onClick?: () => void;
   /** A row of the notification inbox. Inbox rows exist only for projects with `notification_center` on. */
   fromInbox?: boolean;
+  /**
+   * The project's `notification_center` flag as the tab that raised the event
+   * knew it (a relayed completion). Absent: this tab's query cache decides.
+   */
+  notificationCenter?: boolean;
 }
 
 // ============================================================================
@@ -141,14 +149,15 @@ const TYPE_TO_PREF: Partial<
 };
 
 /**
- * An inbox row, or a session of a project whose cached detail has
- * `notification_center` on. Fail-closed: no project id or nothing cached
- * takes the path from before the notification center.
+ * An inbox row, or a session of a project with `notification_center` on: by
+ * the raising tab's answer, else by this tab's cached detail or project list.
+ * Fail-closed: no project id or nothing cached takes the path from before
+ * the notification center.
  */
 function fromNotificationCenter(payload: WebNotificationPayload): boolean {
   return (
     payload.fromInbox === true ||
-    cachedNotificationCenter(getSharedQueryClient(), payload.projectId)
+    (payload.notificationCenter ?? cachedNotificationCenter(getSharedQueryClient(), payload.projectId))
   );
 }
 
@@ -517,22 +526,27 @@ export function notifyTaskComplete(
   tI18nComplete: UiTranslator,
 ) {
   // Captured now, while the raising event proves which project is open — a
-  // receiving tab may be on a page whose path holds no project id.
+  // receiving tab may be on a page whose path holds no project id, and may
+  // never have loaded the project's `notification_center` flag.
   const projectId = currentProjectId();
-  broadcastTurnComplete({ sessionId, sessionTitle, projectId });
-  notifyTaskCompleteFor(sessionId, sessionTitle, tI18nComplete, projectId);
+  const msg = {
+    sessionId,
+    sessionTitle,
+    projectId,
+    notificationCenter: cachedNotificationCenterAnswer(getSharedQueryClient(), projectId),
+  };
+  broadcastTurnComplete(msg);
+  notifyTaskCompleteFor(msg, tI18nComplete);
 }
 
 /**
  * The local completion notification — no cross-tab propagation. This is the
  * shape the broadcast receiver runs so a relayed completion cannot re-broadcast
- * and loop.
+ * and loop. It takes the relayed message whole, so no field gets lost.
  */
 export function notifyTaskCompleteFor(
-  sessionId: string,
-  sessionTitle: string | undefined,
+  { sessionId, sessionTitle, projectId, notificationCenter }: Omit<TurnCompleteMsg, 'at'>,
   tI18nComplete: UiTranslator,
-  projectId?: string | null,
 ) {
   const label = sessionTitle
     ? `"${sessionTitle.slice(0, 60)}"`
@@ -549,6 +563,7 @@ export function notifyTaskCompleteFor(
     // page — reinterpreting it as THIS tab's project would build a wrong
     // deep link (the same rule the click-time path documents above).
     projectId,
+    notificationCenter,
   });
 }
 
