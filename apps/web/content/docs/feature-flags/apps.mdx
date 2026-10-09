@@ -1080,11 +1080,13 @@ An App with no active deployment reads **Not deployed**, never **Running**. A
 static App with an active deployment always reads **Running**. A suspended
 server App's preview issues the request that wakes it.
 
-A `convex` App appears on the same page with a **Backend** badge. Its detail
-shows Convex's dashboard instead of a preview, and its menu offers the
+A `convex` App appears on the same page with a **Backend** badge and a
+machine tile (state, last deploy, size, health) in place of a screenshot. Its
+detail frames Convex's dashboard instead of a preview, and its menu adds the
 capability actions: **Connect**, **Backups** (snapshots and restore), and
-**Rotate credentials**. The header lists the Apps it uses and the Apps that
-use it.
+**Rotate admin key**. The header lists the Apps it uses and the Apps that use
+it. Deleting it asks for its slug. The old `/projects/<id>/backends` URLs
+redirect to the Apps page.
 
 The App's **Earlier versions** drawer states how it runs (static site, or a
 server that is always on or on demand, with its monthly budget) and how many
