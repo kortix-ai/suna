@@ -1,16 +1,16 @@
 {
-  "source_hash": "ec4b63e8c55419844f1fc85ee81ee2ae525df9feb303aae660708a6b2d745372",
+  "source_hash": "111a7317b03bb31ac46a061471f1260234f6481b9d0af800c1bab0e2d08021c5",
   "diff_files": [
     "packages/db/migrations/20261009020359014_wrap_credit_ledger_rls_auth_initplan.sql",
     "packages/db/scripts/credit-ledger-rls-auth-initplan.integration.test.ts"
   ],
   "diff_hash": "7baf6764ce9b54b1471a0dba752b78db7544cfbee947d4178ea51dcd427bf5fc",
-  "head": "e13f49322bb5de2d39c531cac175a5e79a87b58b",
+  "head": "16db354bd75439be60d721603cfd7fa68e32c61f",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-09T05:28:28.738Z"
+  "at": "2026-10-09T12:10:06.043Z"
 }
