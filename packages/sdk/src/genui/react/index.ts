@@ -1,3 +1,4 @@
+export { defaultGenuiComponents } from './default-components';
 export {
   GenuiBlock,
   useGenuiParse,

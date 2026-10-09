@@ -3222,6 +3222,7 @@
     "GenuiComponentMap",
     "GenuiComponentProps",
     "GenuiOutcome",
+    "defaultGenuiComponents",
     "useGenuiParse"
   ],
   "./server": [
