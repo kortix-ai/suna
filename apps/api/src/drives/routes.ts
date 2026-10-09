@@ -8,6 +8,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { requireFeatureFlag } from '../feature-flags/gate';
+import { volumesEnabledFor } from '../platform/services/boot-mode-setting';
 import { combinedAuth } from '../middleware/auth';
 import { rejectSandboxTokens } from '../middleware/reject-sandbox-tokens';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
@@ -200,6 +201,9 @@ async function callerOn(c: DriveContext, drive: DriveRow): Promise<Caller> {
   const userId = callerId(c);
   const projectId = drive.projectId!;
   if (!(await mayUseProject(c, projectId, 'read'))) fail(404, 'Files not found');
+  // Volumes off for the organization: Files is not part of its product. The
+  // files stay on the volume and come back when Volumes is turned on again.
+  if (!volumesEnabledFor(drive.accountId)) fail(403, 'Files is not enabled for this organization.', 'feature_disabled');
   const [projectMember, admin, groupIds] = await Promise.all([
     mayUseProject(c, projectId, 'session'),
     mayUseProject(c, projectId, 'write'),
@@ -367,7 +371,7 @@ drivesApp.openapi(
     if (!projectId || !isUuid(projectId)) fail(400, 'projectId is required');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) fail(404, 'Project not found');
-    const gate = requireFeatureFlag(c, loaded.row.metadata, 'drives');
+    const gate = requireFeatureFlag(c, loaded.row.metadata, 'drives', loaded.row.accountId);
     if (gate) return gate;
     const drive = await ensureProjectDrive(loaded.row.accountId, projectId);
     const caller = await callerOn(c, drive);

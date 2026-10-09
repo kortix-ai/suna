@@ -19,7 +19,7 @@ import { serializeProject } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
 import { isPlainObject } from '../../shared/json';
 import { metadataMerge, metadataMergeSubtree } from '../lib/metadata-merge';
-import { featureFlagDef, isFeatureFlagKey, isOperatorOnlyFeatureFlag } from '../../feature-flags/registry';
+import { featureFlagDef, isDerivedFeatureFlag, isFeatureFlagKey, isOperatorOnlyFeatureFlag } from '../../feature-flags/registry';
 import { FEATURE_OPERATOR_ONLY_CODE } from '../../feature-flags/gate';
 import { writeProjectFeatureFlag } from '../../feature-flags/write';
 import { isPlatformAdmin } from '../../shared/platform-roles';
@@ -112,6 +112,9 @@ const patchFeatureFlagHandler = async (c: any) => {
   assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);
   if (!isFeatureFlagKey(feature)) {
     return c.json({ error: `Unknown feature flag '${feature}'` }, 400);
+  }
+  if (isDerivedFeatureFlag(feature)) {
+    return c.json({ error: `'${feature}' follows the organization's Volumes setting and cannot be set per project` }, 400);
   }
   if (enabled !== null && typeof enabled !== 'boolean') {
     return c.json({ error: 'enabled must be a boolean or null' }, 400);

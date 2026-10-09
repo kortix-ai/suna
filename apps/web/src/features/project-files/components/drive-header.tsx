@@ -8,6 +8,8 @@ import { ProjectPageHeader } from '@/features/workspace/project-layout/project-p
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
+import { repoNavLabel } from '@/features/workspace/project-sidebar/footer/files-nav-label';
+import { useFeatureFlag } from '@kortix/sdk/react';
 import { useParams } from 'next/navigation';
 import {
   GitDiffIcon as FileDiff,
@@ -24,6 +26,8 @@ interface DriveHeaderProps {
   onRefresh: () => void;
   onDownloadDir: () => void;
   isDownloading?: boolean;
+  /** Offer "Find a file" (⌘P) in the `⋯` menu. */
+  showSearch?: boolean;
   /**
    * Draw the page-level sidebar opener. Only the standalone Files page needs
    * it: ProjectShell does not render a web opener, and the embedded session
@@ -77,6 +81,7 @@ export function DriveHeader({
   onRefresh,
   onDownloadDir,
   isDownloading,
+  showSearch = false,
   offsetForSidebarToggle = false,
 }: DriveHeaderProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -86,6 +91,8 @@ export function DriveHeader({
 
   const reviewCount = reviewsToggle.openCount ?? 0;
   const params = useParams<{ id?: string }>();
+  // Volumes on for the organization: the repo browser is Repo; off, it is Files.
+  const volumes = useFeatureFlag(params?.id, 'drives');
 
   const actions = (
     <div className="flex shrink-0 items-center gap-1">
@@ -142,6 +149,7 @@ export function DriveHeader({
         onRefresh={onRefresh}
         onDownloadDir={onDownloadDir}
         isDownloading={isDownloading}
+        showSearch={showSearch}
       />
     </div>
   );
@@ -149,8 +157,9 @@ export function DriveHeader({
   // The standalone page: the shared project page header, with the folder path
   // in its own strip below it, shown only inside a subfolder.
   if (offsetForSidebarToggle && params?.id) {
-    // The project's git repository is "Repo"; "Files" is the shared folders.
-    const title = tSidebar('repo');
+    // With Volumes on, the git repository is "Repo" and "Files" is the shared
+    // folders; off, the repository is "Files", as before volumes.
+    const title = tSidebar(repoNavLabel(volumes.enabled));
     return (
       <>
         <ProjectPageHeader title={title} href={`/projects/${params.id}/files`}>

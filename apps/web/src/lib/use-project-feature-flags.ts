@@ -43,6 +43,7 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const eventTriggers = useFeatureFlag(projectId, 'event_triggers');
   const notificationCenter = useFeatureFlag(projectId, 'notification_center');
   const drives = useFeatureFlag(projectId, 'drives');
+  const ephemeralSandboxes = useFeatureFlag(projectId, 'ephemeral_sandboxes');
 
   return {
     flags: {
@@ -62,8 +63,9 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       event_triggers: eventTriggers.enabled,
       notification_center: notificationCenter.enabled,
       drives: drives.enabled,
+      ephemeral_sandboxes: ephemeralSandboxes.enabled,
     },
     // The trailing hook's loading state — keep this on the LAST hook above.
-    isLoading: drives.isLoading,
+    isLoading: ephemeralSandboxes.isLoading,
   };
 }
