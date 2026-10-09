@@ -9,3 +9,4 @@ export {
 export { genuiVersionFromClassName, genuiVersionOf, splitGenui } from './fence';
 export { safeUrl } from './urls';
 export { buildGenuiPrompt, GENUI_PROMPT_VERSION } from './prompt';
+export { createGenuiParser, parseGenui, type GenuiParser } from './parse';

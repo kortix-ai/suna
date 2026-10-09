@@ -3199,10 +3199,13 @@
     "GenuiIssueCode",
     "GenuiNode",
     "GenuiParseResult",
+    "GenuiParser",
     "GenuiSegment",
     "buildGenuiPrompt",
+    "createGenuiParser",
     "genuiVersionFromClassName",
     "genuiVersionOf",
+    "parseGenui",
     "safeUrl",
     "splitGenui"
   ],

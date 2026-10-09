@@ -1729,8 +1729,10 @@
     "GENUI_PROMPT_VERSION",
     "GENUI_SCHEMA_VERSION",
     "buildGenuiPrompt",
+    "createGenuiParser",
     "genuiVersionFromClassName",
     "genuiVersionOf",
+    "parseGenui",
     "safeUrl",
     "splitGenui"
   ],
