@@ -254,7 +254,7 @@ Options:
 Requires project.settings.write. A flag the platform marks unavailable stays
 off regardless of the project override.
 
-Internal-only flags (apps, backends) are listed only while they are on, with
+Internal-only flags (apps) are listed only while they are on, with
 origin "kortix". Only Kortix changes them: enable, disable and reset answer
 feature_operator_only. Contact Kortix to change one.
 `;
@@ -1404,8 +1404,8 @@ async function projectsInfo(arg?: string, json = false, hostArg?: string): Promi
   process.stdout.write(`  ${C.dim}manifest   ${C.reset}${p.manifest_path}\n`);
   process.stdout.write(`  ${C.dim}status     ${C.reset}${p.status}\n`);
   process.stdout.write(`  ${C.dim}updated    ${C.reset}${formatRelative(p.updated_at)}\n`);
-  // Internal-only surfaces Kortix turned on (apps, backends). Agents read this
-  // to know `kortix apps` and `kortix backends` work here.
+  // Internal-only surfaces Kortix turned on (apps). Agents read this
+  // to know `kortix apps` works here.
   const managed = featureRows(p as unknown as Record<string, unknown>)
     .filter((r) => r.operator_only && r.enabled)
     .map((r) => r.key);

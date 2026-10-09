@@ -1,7 +1,8 @@
 // Reading the notification inbox (KRTX-1742): the bell's page, its unread
 // count, and marking rows read. One read rule serves the bell, the mobile
 // inbox and the email digest (`filterVisibleNotificationRows`): a row shows
-// only while its reader may still open what it names. A revoked share, a lost
+// only while its project has the `notification_center` flag on and its reader
+// may still open what it names. A flag turned off, a revoked share, a lost
 // project role, a removed member, a deleted session or an MFA step-up the
 // sign-in has not passed hides the row; it is never deleted here.
 import { and, desc, eq, inArray, isNull, lt, type SQL, sql } from 'drizzle-orm';
@@ -10,6 +11,7 @@ import type { NotificationKindName } from '@kortix/shared/notification-kinds';
 import { mfaGateBlocks } from '../iam/authorize';
 import { db } from '../shared/db';
 import { loadSessionAccessRows, mayReadProjectTriggers, maySeeSessions, type SessionAccessRow } from './access';
+import { notificationsEnabled } from './enabled';
 import { inboxStore } from './inbox-store';
 import { notificationUrl } from './push-payload';
 
@@ -94,19 +96,36 @@ async function mfaBlockedAccounts(accountIds: string[], ctx: InboxReadContext): 
 }
 
 /**
+ * The names of the projects with the `notification_center` flag on. Off, a
+ * project has no inbox: its rows (from before a switch off) stay hidden.
+ */
+async function notificationCenterProjects(projectIds: string[]): Promise<Map<string, string>> {
+  if (projectIds.length === 0) return new Map();
+  const rows = await db
+    .select({ projectId: projects.projectId, name: projects.name, metadata: projects.metadata })
+    .from(projects)
+    .where(inArray(projects.projectId, projectIds));
+  return new Map(rows.filter((row) => notificationsEnabled(row.metadata)).map((row) => [row.projectId, row.name]));
+}
+
+/**
  * The rows `userId` may see, plus the session rows the check loaded (their
- * live titles). A row without a session is an automation row: its project's
- * triggers must be readable.
+ * live titles) and the names of the rows' projects. A row needs a project
+ * with the `notification_center` flag on. A row without a session is an
+ * automation row: its project's triggers must be readable.
  */
 async function visible<T extends InboxRowForFilter>(
   userId: string,
   rows: readonly T[],
   ctx: InboxReadContext,
-): Promise<{ rows: T[]; sessions: Map<string, SessionAccessRow> }> {
+): Promise<{ rows: T[]; sessions: Map<string, SessionAccessRow>; projectNames: Map<string, string> }> {
   const sessions = new Map<string, SessionAccessRow>();
-  if (!userId || rows.length === 0) return { rows: [], sessions };
-  const blocked = await mfaBlockedAccounts([...new Set(rows.map((row) => row.accountId))], ctx);
-  const open = rows.filter((row) => !blocked.has(row.accountId));
+  if (!userId || rows.length === 0) return { rows: [], sessions, projectNames: new Map() };
+  const [blocked, projectNames] = await Promise.all([
+    mfaBlockedAccounts([...new Set(rows.map((row) => row.accountId))], ctx),
+    notificationCenterProjects([...new Set(rows.flatMap((row) => (row.projectId ? [row.projectId] : [])))]),
+  ]);
+  const open = rows.filter((row) => !blocked.has(row.accountId) && row.projectId !== null && projectNames.has(row.projectId));
 
   const loaded = await loadSessionAccessRows(open.flatMap((row) => (row.sessionId ? [row.sessionId] : [])));
   const seen = await maySeeSessions(userId, [...loaded.values()]);
@@ -125,15 +144,16 @@ async function visible<T extends InboxRowForFilter>(
   }));
 
   const kept = open.filter((row) =>
-    row.sessionId ? seen.has(row.sessionId) : row.projectId !== null && readable.has(`${row.accountId}:${row.projectId}`),
+    row.sessionId ? seen.has(row.sessionId) : readable.has(`${row.accountId}:${row.projectId}`),
   );
-  return { rows: kept, sessions };
+  return { rows: kept, sessions, projectNames };
 }
 
 /**
- * The rows `userId` may still see: the account's MFA step-up (unless skipped),
- * session rows through `maySeeSessions`, trigger rows through
- * `mayReadProjectTriggers`. Order preserved.
+ * The rows `userId` may still see: the project's `notification_center` flag,
+ * the account's MFA step-up (unless skipped), session rows through
+ * `maySeeSessions`, trigger rows through `mayReadProjectTriggers`. Order
+ * preserved.
  */
 export async function filterVisibleNotificationRows<T extends InboxRowForFilter>(
   userId: string,
@@ -164,15 +184,6 @@ function liveTitle(session: SessionAccessRow | undefined): string | null {
   return title?.trim() ?? null;
 }
 
-async function projectNames(projectIds: string[]): Promise<Map<string, string>> {
-  if (projectIds.length === 0) return new Map();
-  const rows = await db
-    .select({ projectId: projects.projectId, name: projects.name })
-    .from(projects)
-    .where(inArray(projects.projectId, projectIds));
-  return new Map(rows.map((row) => [row.projectId, row.name]));
-}
-
 /**
  * One page, newest first. `before` is a notification id (uuid_v7, so id order
  * is time order). Hidden rows are left out: the page reads older batches until
@@ -187,6 +198,7 @@ export async function listInbox(
 ): Promise<InboxPage> {
   const listed: StoredRow[] = [];
   const sessions = new Map<string, SessionAccessRow>();
+  const names = new Map<string, string>();
   let unreadShown = 0;
   let cursor = opts.before ?? null;
   let exhausted = false;
@@ -206,6 +218,7 @@ export async function listInbox(
     for (const row of [...batch, ...unread]) union.set(row.notificationId, row);
     const checked = await visible(userId, [...union.values()], ctx);
     for (const [id, session] of checked.sessions) sessions.set(id, session);
+    for (const [id, name] of checked.projectNames) names.set(id, name);
     const shown = new Set(checked.rows.map((row) => row.notificationId));
     if (batchNo === 0) unreadShown = unread.filter((row) => shown.has(row.notificationId)).length;
     let readAll = true;
@@ -222,7 +235,6 @@ export async function listInbox(
       break;
     }
   }
-  const names = await projectNames([...new Set(listed.flatMap((row) => (row.projectId ? [row.projectId] : [])))]);
   return {
     notifications: listed.map((row) => ({
       id: row.notificationId,

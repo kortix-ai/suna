@@ -17,7 +17,9 @@ import Loading from '@/components/ui/loading';
 import { useTranslations } from '@/i18n/use-translations';
 
 // Client only: the inbox is per signed-in person and polls, so the server
-// renders no bell and these pages' static tests need no query client.
+// renders no bell and these pages' static tests need no query client. The
+// bell itself renders only while a cached project has the
+// `notification_center` flag on (these pages have no project of their own).
 const NotificationBell = dynamic(
   () => import('@/features/notifications/notification-bell').then((mod) => mod.NotificationBell),
   { ssr: false },
@@ -27,8 +29,8 @@ const NotificationBell = dynamic(
  * The top row of the account-level pages that sit outside a project —
  * `/projects` and `/new`.
  *
- * Left: an optional way back. Right: the notification bell (KRTX-1742), then
- * who you are, as a button. Log out lives
+ * Left: an optional way back. Right: the notification bell (KRTX-1742, behind
+ * the `notification_center` flag), then who you are, as a button. Log out lives
  * in its menu rather than as a bare button in the corner — it is the rarest
  * action on these pages, and the identity above it is what a user checks
  * first ("am I in the right account?").

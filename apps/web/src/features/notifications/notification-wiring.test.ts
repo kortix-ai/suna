@@ -22,14 +22,20 @@ describe('notification wiring', () => {
     expect(queryHosts).toContain('<NotificationHost />');
   });
 
-  test('the session page tells the server when this tab shows its own alerts', () => {
+  // With the `notification_center` flag off, presence is as before KRTX-1742:
+  // no `alerts` claim and no page-exit report.
+  test('the session page tells the server when this tab shows its own alerts, flag on only', () => {
     const page = code('app/[locale]/(app)/projects/[id]/sessions/[sessionId]/page.tsx');
-    expect(page).toContain("presenceAlerts: notificationsOn && notificationPermission === 'granted',");
+    expect(page).toContain('const notificationCenter = useNotificationCenter(projectId);');
+    expect(page).toContain(
+      "notificationCenter && browserNotificationsOn && notificationPermission === 'granted',",
+    );
+    expect(page).toContain('presencePageExit: notificationCenter,');
   });
 
-  test('the session page clears its notifications from the bell when it opens', () => {
+  test('the session page clears its notifications from the bell when it opens, flag on only', () => {
     const page = code('app/[locale]/(app)/projects/[id]/sessions/[sessionId]/page.tsx');
-    expect(page).toContain('useOpenSessionRead(user?.id, sessionId);');
+    expect(page).toContain('useOpenSessionRead(notificationCenter ? user?.id : null, sessionId);');
   });
 
   test('sign-out removes the Web Push subscription first, on a clock', () => {
@@ -41,10 +47,32 @@ describe('notification wiring', () => {
     expect(stop).toBeLessThan(body.indexOf('await runSignOut('));
   });
 
-  test('the access-requests control no longer looks like the bell', () => {
+  test('the access-requests control gives up the bell glyph only to the inbox', () => {
     const accessRequests = code('features/workspace/project-layout/home/access-requests-bell.tsx');
-    expect(accessRequests).toContain('<UserPlusIcon');
-    expect(accessRequests).not.toContain('BellIcon');
+    expect(accessRequests).toContain('const Glyph = notificationCenter ? UserPlusIcon : BellIcon;');
+    expect(accessRequests).toContain('notificationCenter = false,');
+    expect(code('features/workspace/project-layout/project-home.tsx')).toContain(
+      'notificationCenter={notificationCenterOn(projectDetailQuery.data?.project)}',
+    );
+  });
+
+  test('the bell reads no inbox and renders nothing while the flag is off', () => {
+    const bell = code('features/notifications/notification-bell.tsx');
+    expect(bell).toContain('const notificationCenter = useNotificationCenter(projectId);');
+    expect(bell).toContain('useNotificationInbox({ userId: user?.id, enabled: notificationCenter });');
+    expect(bell).toContain('if (!user || !notificationCenter) return null;');
+    expect(code('features/workspace/project-sidebar/project-sidebar.tsx')).toMatch(
+      /<NotificationBell\s+projectId=\{projectId\}/,
+    );
+  });
+
+  test('Settings > Notifications reads the flag for its project', () => {
+    expect(code('features/workspace/settings/settings-panel-body.tsx')).toContain(
+      '<SessionsTab projectId={projectId} />',
+    );
+    const tab = code('features/workspace/settings/tabs/sessions-tab.tsx');
+    expect(tab).toContain('const notificationCenter = useNotificationCenter(projectId);');
+    expect(tab).toContain('enabled: notificationCenter,');
   });
 
   test('a host never subscribes in the desktop app', () => {

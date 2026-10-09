@@ -7,6 +7,41 @@ A notification tells you that a session or a trigger needs you. Kortix writes
 each one to your inbox, the bell. It then sends it to your phone, your browser,
 or your email, as your settings allow.
 
+## Turn notifications on
+
+Notifications are a per-project [feature flag](/docs/feature-flags),
+`notification_center`, off by default. Turn it on in **Settings → Feature
+flags**, or:
+
+```sh
+kortix projects features enable notification_center
+```
+
+Outside a linked project, add `--project <id>`. Everything below this section
+needs the flag.
+
+While the flag is off, the project works as it did before notifications
+existed:
+
+- A session notifies only its creator. The creator's phone gets a push when a
+  turn ends, fails, asks a question, or asks for permission. Kortix skips the
+  push while the creator has the session open in the web or desktop app. The
+  phone's switches under **Settings → Notifications** in the mobile app choose
+  the kinds.
+- An open Kortix tab still shows its own alerts, as that browser's switches
+  under **Settings → Notifications** allow. With every Kortix tab closed, the
+  browser shows nothing.
+- When a trigger's runs start failing, an owner of the account gets one mobile
+  push. A recovery and a failing reminder send nothing.
+- The project writes nothing to the bell and sends no Web Push and no email.
+  Its pages show no bell and no **Mute notifications** item, and its mobile
+  drawer shows no **Notifications**.
+- `GET` and `PUT /v1/projects/:projectId/sessions/:sessionId/watch` answer
+  `403` with `code: "feature_disabled"`.
+
+Turning the flag off hides the project's notifications from the bell, the
+unread count, and the digest. Turning it on again shows them in the bell.
+
 ## Kinds
 
 A turn is one round of agent work, from a message to the agent's last reply.
@@ -154,9 +189,14 @@ a **Push** switch and an **Email** switch. **Permission request** has no
 
 - The switches follow you: they apply in every account, on every phone, and in
   every browser.
+- A phone also has its own switch for **Turn finished**, **Turn failed**,
+  **Question**, and **Permission request**. It gets these only while both
+  switches are on. A change on the web does not change the phone's switch. A
+  change in the mobile app sets both.
 - **Push** covers the mobile app, Web Push, and the notifications an open tab
   shows.
-- The bell lists every notification, whatever the switches say.
+- The bell lists every notification of a project with the flag on, whatever
+  the switches say.
 - The mobile app's **Settings → Notifications** shows the **Push** switches.
   Change **Email** on the web. The mobile **Notifications** and **Play sound**
   switches apply to that phone only.

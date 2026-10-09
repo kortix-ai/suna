@@ -135,20 +135,20 @@ The App's **Access** dialog lists the agents with access, read from
 `kortix.yaml`. The Apps page appears only when the project has the
 [Apps](/docs/feature-flags/apps) feature flag on.
 
-## Backends
+## Apps that hold data
 
-A project can own self-hosted Convex Backends. Two permissions govern them.
-They follow the Apps permissions: a role that holds `project.app.read` or
-`project.app.write` holds the matching Backend permission.
+A [`convex` App](/docs/feature-flags/apps#kind-convex-a-convex-backend) holds
+the project's data and an admin key. One permission guards the powers that
+reach past the App's functions:
 
 | Permission | Allows |
 |---|---|
-| `project.backend.read` | List and inspect the project's Backends: name, status, and URL |
-| `project.backend.write` | Create and delete Backends, and read a Backend's admin credentials. Implies `project.backend.read` |
+| `project.app.admin` | Reveal and rotate an App's admin credentials (and open its dashboard), restore a snapshot, and delete an App that holds data. Implies `project.app.write` |
 
-The admin key gives full control of a Backend's data and code, so reading it
-needs `project.backend.write`. The built-in Manager role holds both
-permissions. The built-in Member role holds `project.backend.read`.
+Every role that holds `project.app.write` holds `project.app.admin`: in the
+built-in roles, that is Manager. `project.app.read` lists Apps, reads their
+snapshots and mints a sign-in token. `project.app.write` creates, resizes and
+snapshots them and reads the process log.
 
 ## Changing agents and triggers
 

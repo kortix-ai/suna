@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { INBOX_NOTIFICATION_KINDS } from '@kortix/sdk';
 import {
   ANDROID_CHANNELS,
+  DEVICE_KIND_SWITCH,
   deliveryForKind,
   legacyKindPatch,
   notificationOpenMove,
@@ -195,69 +196,70 @@ describe('notificationOpenMove', () => {
   });
 });
 
+const ALL_ON = {
+  enabled: true,
+  onCompletion: true,
+  onError: true,
+  onQuestion: true,
+  onPermission: true,
+  playSound: true,
+};
+
+describe('DEVICE_KIND_SWITCH', () => {
+  test("names this phone's switch for each of the 4 session kinds, and none for the 3 new kinds", () => {
+    expect(DEVICE_KIND_SWITCH).toEqual({
+      turn_done: 'onCompletion',
+      turn_error: 'onError',
+      question: 'onQuestion',
+      permission: 'onPermission',
+    });
+  });
+});
+
 describe('legacyKindPatch', () => {
-  test('a kind this phone turned off before KRTX-1742 becomes push off in the user record', () => {
-    expect(
-      legacyKindPatch({ enabled: true, playSound: true, onCompletion: false, onError: true, onQuestion: false })
-    ).toEqual({ kinds: { turn_done: { push: false }, question: { push: false } } });
-    expect(legacyKindPatch({ enabled: true, playSound: true, onError: false, onPermission: false })).toEqual({
+  test("a kind this phone turned off becomes push off in the user's record", () => {
+    expect(legacyKindPatch({ ...ALL_ON, onCompletion: false, onQuestion: false })).toEqual({
+      kinds: { turn_done: { push: false }, question: { push: false } },
+    });
+    expect(legacyKindPatch({ ...ALL_ON, onError: false, onPermission: false })).toEqual({
       kinds: { turn_error: { push: false }, permission: { push: false } },
     });
   });
 
-  test('nothing turned off (every key on, or a fresh install with none) → null', () => {
-    expect(
-      legacyKindPatch({
-        enabled: true,
-        playSound: true,
-        onCompletion: true,
-        onError: true,
-        onQuestion: true,
-        onPermission: true,
-      })
-    ).toBeNull();
-    expect(legacyKindPatch({ enabled: false, playSound: false })).toBeNull();
+  test('nothing turned off → null; the off switch and the sound are not kinds', () => {
+    expect(legacyKindPatch(ALL_ON)).toBeNull();
+    expect(legacyKindPatch({ ...ALL_ON, enabled: false, playSound: false })).toBeNull();
   });
 });
 
 describe('serverPreferences', () => {
-  test("after the migration: this phone's switches; every per-kind column on, so the user's record decides", () => {
-    expect(serverPreferences({ enabled: true, playSound: false }, true)).toEqual({
-      enabled: true,
-      on_completion: true,
-      on_error: true,
-      on_question: true,
-      on_permission: true,
-      play_sound: false,
-    });
-    expect(serverPreferences({ enabled: false, playSound: true, onCompletion: false }, true)).toEqual({
-      enabled: false,
-      on_completion: true,
-      on_error: true,
-      on_question: true,
-      on_permission: true,
-      play_sound: true,
-    });
-  });
-
-  test('before the migration: the kinds this phone turned off stay off on its device row', () => {
+  test('maps every field to snake_case', () => {
     expect(
-      serverPreferences({ enabled: true, playSound: true, onCompletion: false, onPermission: false }, false)
+      serverPreferences({
+        enabled: true,
+        onCompletion: false,
+        onError: true,
+        onQuestion: false,
+        onPermission: true,
+        playSound: false,
+      })
     ).toEqual({
       enabled: true,
       on_completion: false,
       on_error: true,
-      on_question: true,
-      on_permission: false,
-      play_sound: true,
+      on_question: false,
+      on_permission: true,
+      play_sound: false,
     });
-    // A fresh install has no stored kinds: every column on.
-    expect(serverPreferences({ enabled: true, playSound: true }, false)).toEqual({
-      enabled: true,
+  });
+
+  test("posts this phone's per-kind switches as they are: a project with the flag off reads them alone", () => {
+    expect(serverPreferences({ ...ALL_ON, enabled: false, onPermission: false })).toEqual({
+      enabled: false,
       on_completion: true,
       on_error: true,
       on_question: true,
-      on_permission: true,
+      on_permission: false,
       play_sound: true,
     });
   });

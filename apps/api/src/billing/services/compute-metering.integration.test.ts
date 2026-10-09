@@ -10,7 +10,6 @@ import {
   apps,
   creditAccounts,
   creditLedger,
-  projectBackends,
   projectMonitorBoxes,
   sandboxComputeSessions,
   sessionSandboxes,
@@ -57,6 +56,7 @@ mock.module('../../platform/providers', () => ({
 
 const { db } = await import('../../shared/db');
 const fixtures = await import('../../__tests__/helpers/integration-fixtures');
+const { insertConvexRow } = await import('../../__tests__/helpers/convex-apps');
 const {
   endComputeSession,
   markComputeSessionAlive,
@@ -270,7 +270,6 @@ withDb('compute metering on PostgreSQL', () => {
     await db.execute(sql`delete from kortix.apps`);
     await db.execute(sql`delete from kortix.app_artifacts`);
     await db.execute(sql`delete from kortix.project_monitor_boxes`);
-    await db.execute(sql`delete from kortix.project_backends`);
   });
 
   describe('a window opens, settles, and closes', () => {
@@ -749,15 +748,12 @@ withDb('compute metering on PostgreSQL', () => {
       const accountId = await account({ billingModel: 'per_seat' });
       const now = Date.now();
       const project = await fixtures.seedProject('compute-backend', { accountId });
-      const backend = async (name: string, extra: Partial<typeof projectBackends.$inferInsert> = {}) => {
-        const [row] = await db
-          .insert(projectBackends)
-          .values({
-            projectId: project.project_id, accountId, name, status: 'running', provider: 'platinum',
-            externalId: `backend-ext-${name}`, cpu: 1, memoryGb: 1, diskGb: 10, ...extra,
-          })
-          .returning({ backendId: projectBackends.backendId });
-        return openWindow({ accountId, sandboxId: row!.backendId, startedAt: iso(now - MINUTE), workloadType: 'backend' });
+      const backend = async (name: string, extra: Partial<Parameters<typeof insertConvexRow>[0]> = {}) => {
+        const row = await insertConvexRow({
+          projectId: project.project_id, accountId, slug: name, status: 'running',
+          externalId: `backend-ext-${name}`, ...extra,
+        });
+        return openWindow({ accountId, sandboxId: row.appId, startedAt: iso(now - MINUTE), workloadType: 'backend' });
       };
       const running = await backend('live');
       const parked = await backend('parked', { metadata: { parked: iso(now) } });

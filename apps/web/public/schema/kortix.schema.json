@@ -923,8 +923,7 @@
                           "project.app.read",
                           "project.app.write",
                           "project.app.deploy",
-                          "project.backend.read",
-                          "project.backend.write",
+                          "project.app.admin",
                           "project.review.read",
                           "project.review.submit",
                           "project.review.act",
@@ -1009,8 +1008,7 @@
                           "project.app.read",
                           "project.app.write",
                           "project.app.deploy",
-                          "project.backend.read",
-                          "project.backend.write",
+                          "project.app.admin",
                           "project.review.read",
                           "project.review.submit",
                           "project.review.act",
@@ -1578,8 +1576,7 @@
                           "project.app.read",
                           "project.app.write",
                           "project.app.deploy",
-                          "project.backend.read",
-                          "project.backend.write",
+                          "project.app.admin",
                           "project.review.read",
                           "project.review.submit",
                           "project.review.act",
@@ -1654,8 +1651,7 @@
                           "project.app.read",
                           "project.app.write",
                           "project.app.deploy",
-                          "project.backend.read",
-                          "project.backend.write",
+                          "project.app.admin",
                           "project.review.read",
                           "project.review.submit",
                           "project.review.act",
@@ -2748,11 +2744,18 @@
                   "type": "number",
                   "minimum": 0
                 },
-                "backends": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "web",
+                    "convex"
+                  ]
+                },
+                "uses": {
                   "type": "array",
                   "items": {
                     "type": "string",
-                    "pattern": "^[a-z][a-z0-9-]{0,62}$"
+                    "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
                   }
                 },
                 "resources": {
@@ -3450,8 +3453,7 @@
                           "project.app.read",
                           "project.app.write",
                           "project.app.deploy",
-                          "project.backend.read",
-                          "project.backend.write",
+                          "project.app.admin",
                           "project.review.read",
                           "project.review.submit",
                           "project.review.act",
@@ -3526,8 +3528,7 @@
                           "project.app.read",
                           "project.app.write",
                           "project.app.deploy",
-                          "project.backend.read",
-                          "project.backend.write",
+                          "project.app.admin",
                           "project.review.read",
                           "project.review.submit",
                           "project.review.act",
@@ -4755,11 +4756,18 @@
                   "type": "number",
                   "minimum": 0
                 },
-                "backends": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "web",
+                    "convex"
+                  ]
+                },
+                "uses": {
                   "type": "array",
                   "items": {
                     "type": "string",
-                    "pattern": "^[a-z][a-z0-9-]{0,62}$"
+                    "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
                   }
                 },
                 "resources": {
