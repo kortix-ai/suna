@@ -1,0 +1,16 @@
+{
+  "source_hash": "fee3f0d0908c37c25deda245ed74923fda690a41e891281f8a7c143db5a07881",
+  "diff_files": [
+    "apps/cli/src/__tests__/agents-parity.test.ts",
+    "apps/cli/src/commands/agents.ts"
+  ],
+  "diff_hash": "6bfdfac7c592fbf9ef02b77e4423b63c4ed2d542b4993696666458662039c1cb",
+  "head": "f83dc2f721a16faa490057f8e68bc96a5e67b879",
+  "passed": false,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "fail"
+  },
+  "at": "2026-10-09T17:52:46.330Z"
+}
