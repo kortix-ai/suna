@@ -25,8 +25,10 @@ import {
   type PermissionRequest,
   type QuestionRequest,
   type ToolPart,
+  getChildSessionId,
   shouldShowToolPart,
 } from '@/ui';
+import { toolKind } from '@kortix/sdk';
 import { useTranslations } from '@/i18n/use-translations';
 import { memo, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
@@ -142,8 +144,26 @@ function ToolPartRendererImpl({
   // The SDK's verdict on tools that never render (a todo read, context bookkeeping).
   if (!shouldShowToolPart(part)) return null;
 
-  if (part.state.status === 'error' && 'error' in part.state) {
+  // A failed `task` dispatch is still a dispatch. OpenCode keeps the child
+  // session alive through the failure (its id rides the part's
+  // `state.metadata.sessionId`, or the `task_id:` sentence in the error), so
+  // the row must stay a dispatch row — TaskTool's "Open full view" affordance
+  // and the child's transcript. Collapsing it into the generic error card
+  // below left the child thread unopenable from the session UI, which is
+  // exactly what a failed subagent looked like to a reader (KRTX-1746).
+  // TaskTool draws `state.error` itself, so the failure reason stays on the
+  // row too. Only the task tool takes this route: the other errored tools have
+  // no child thread to lose, and the generic card is the only renderer that
+  // shows the error text of a tool that does not draw it itself.
+  const childBearingTaskError =
+    part.state.status === 'error' &&
+    'error' in part.state &&
+    toolKind(part.tool) === 'task' &&
+    Boolean(getChildSessionId(part));
+
+  if (part.state.status === 'error' && 'error' in part.state && !childBearingTaskError) {
     const errorStr = (part.state as { error: string }).error;
+
     const { display, server } = (() => {
       const slashIdx = part.tool.lastIndexOf('/');
       const s = slashIdx > 0 ? part.tool.slice(0, slashIdx) : null;
