@@ -1,0 +1,21 @@
+{
+  "source_hash": "25054146e9448943b9158679e5f8c630c8167db250728c4a7d8539c3dde87465",
+  "diff_files": [
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-09T195033Z-run-project-boot-hooks-on-every-provider-resume-and-verify-t.md",
+    "apps/api/src/projects/lib/__tests__/sandbox-runtime-refresh.test.ts",
+    "apps/api/src/projects/lib/sandbox-runtime-refresh.ts",
+    "apps/api/src/projects/session-lifecycle/actions.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/refresh-route-guards.test.ts",
+    "apps/kortix-sandbox-agent-server/src/routes/kortix/refresh.ts"
+  ],
+  "diff_hash": "0fffafc107c210fc6cb851c0aa1067ec8607c4c9d2e323235f43e92f00e1477c",
+  "head": "73934a86372b1ebac3dd69224e3f30ff54fcc8d5",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-09T20:51:58.785Z"
+}
