@@ -998,6 +998,7 @@ flow(
       'GET /v1/projects/:projectId/sessions/:sessionId/watch',
       'PUT /v1/projects/:projectId/sessions/:sessionId/watch',
       'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'POST /v1/projects/:projectId/resource-grants',
       'POST /v1/accounts/tokens',
       'POST /v1/projects/:projectId/turn-stream',
       'POST /v1/projects/:projectId/turn-question',
@@ -1028,6 +1029,21 @@ flow(
       }
     };
     const extraSessions: string[] = [];
+    let promptSessionId = '';
+    /** B sends one prompt into A's session `promptSessionId`. */
+    const promptAsB = async () =>
+      (
+        await ctx.client.as(b).post(
+          '/v1/projects/:projectId/sessions/:sessionId/prompts',
+          {
+            client_message_id: randomUUID(),
+            message_id: mintWireMessageId(),
+            remint_on_delivery: false,
+            parts: [{ type: 'text', text: 'Summarize the open issues.' }],
+          },
+          { params: { projectId: project.id, sessionId: promptSessionId } },
+        )
+      ).status([200, 202]);
     let storedId = '';
     const listsStored = (page: InboxPage) => page.notifications.some((row) => row.id === storedId);
     try {
@@ -1048,23 +1064,25 @@ flow(
       });
 
       await ctx.step("B's prompt in A's project-visible session → 2xx, and B follows nothing: no watcher row", async () => {
-        const sessionId = await createDatabaseSession(ctx.env, {
+        // A plain member runs no agent until a manager grants one; the fixture project's agent is `kortix`.
+        (
+          await ctx.client.as(ctx.P.OWNER).post(
+            '/v1/projects/:projectId/resource-grants',
+            { resource_type: 'agent', resource_id: 'kortix', principal_type: 'member', principal_id: b.userId },
+            { params: { projectId: project.id } },
+          )
+        ).status([200, 201]);
+        promptSessionId = await createDatabaseSession(ctx.env, {
           projectId: project.id,
           accountId: team.id,
           userId: a.userId!,
           visibility: 'project',
         });
-        extraSessions.push(sessionId);
-        const prompt = {
-          client_message_id: randomUUID(),
-          message_id: mintWireMessageId(),
-          remint_on_delivery: false,
-          parts: [{ type: 'text', text: 'Summarize the open issues.' }],
-        };
-        (await ctx.client.as(b).post('/v1/projects/:projectId/sessions/:sessionId/prompts', prompt, { params: { projectId: project.id, sessionId } }))
-          .status([200, 202]);
+        extraSessions.push(promptSessionId);
+        await db.query(`UPDATE kortix.project_sessions SET agent_name = 'kortix' WHERE session_id = $1`, [promptSessionId]);
+        await promptAsB();
         await settle();
-        expectCount(await watcherRows(sessionId), 0, 'watcher rows after a non-creator prompt');
+        expectCount(await watcherRows(promptSessionId), 0, 'watcher rows after a non-creator prompt');
       });
 
       await ctx.step("B's turn in A's session ends → closed; neither A nor B gets a row", async () => {
@@ -1146,9 +1164,13 @@ flow(
         }
       });
 
-      await ctx.step('OWNER turns the flag on: watch → 200, the stored row lists and counts, and a new question reaches B', async () => {
+      await ctx.step("OWNER turns the flag on: watch → 200, B's prompt makes B a follower, the stored row lists and counts, and a new question reaches B", async () => {
         await setNotificationCenter(ctx, project.id, true);
         (await creatorWatch()).status(200).body().has('$.watching', true);
+        // The positive control for the prompt step: the same prompt now makes B a follower.
+        await promptAsB();
+        await settle();
+        expectCount(await watcherRows(promptSessionId), 1, 'watcher rows after a non-creator prompt with the flag on');
         const page = await readInbox(ctx, b);
         if (!listsStored(page)) throw new Error('the stored row is not listed with the flag on');
         expectCount(page.unread_count, 1, "B's unread_count with the flag on");
