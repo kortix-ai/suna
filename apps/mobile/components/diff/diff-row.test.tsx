@@ -126,9 +126,10 @@ describe('diff rows: ReviewFileDiff vs PatchDiffView', () => {
     expect(added.container.style.backgroundColor).toBe('alpha(green,0.12)');
     expect(added.content.style.color).toBe('green');
     expect(rowText(added.content as never)).toBe('+ added');
-    // Rows are one line tall (paddingVertical 1, no minHeight).
+    // Rows are one line tall (paddingVertical 1, minHeight 18 — the floor
+    // both copies converged on; a one-line row already renders 18pt).
     expect(kept.container.style.paddingVertical).toBe(1);
-    expect(kept.container.style.minHeight).toBeUndefined();
+    expect(kept.container.style.minHeight).toBe(18);
   });
 
   test('PatchDiffView DiffFile rows: gutter 42, content paddingRight 14, minHeight 18, unprefixed hunk lines', () => {
@@ -144,16 +145,18 @@ describe('diff rows: ReviewFileDiff vs PatchDiffView', () => {
     const rows = patchRows();
     expect(rows).toHaveLength(4);
     const [hunk, kept, removed, added] = rows;
-    expect(hunk.gutter.style).toMatchObject({ width: 42, textAlign: 'right', paddingRight: 8, fontSize: 11, lineHeight: 18 });
+    // The two deltas this dedupe converged (disclosed): gutter 42→44 and
+    // paddingRight 14→12, plus the shared paddingVertical 1.
+    expect(hunk.gutter.style).toMatchObject({ width: 44, textAlign: 'right', paddingRight: 8, fontSize: 11, lineHeight: 18 });
     expect(rowText(hunk.content as never)).toBe('@@ -1,3 +1,3 @@'); // hunks are unprefixed in both copies
     expect(hunk.container.style.backgroundColor).toBe('alpha(purple,0.08)');
     expect(added.content.style.color).toBe('green');
     expect(rowText(added.content as never)).toBe('+ added');
     expect(removed.container.style.backgroundColor).toBe('alpha(red,0.1)');
-    // The two deltas this dedupe converges: gutter 42→44, paddingRight 14→12.
-    expect(added.gutter.style.width).toBe(42);
-    expect(added.content.style.paddingRight).toBe(14);
+    expect(added.gutter.style.width).toBe(44);
+    expect(added.content.style.paddingRight).toBe(12);
     expect(kept.container.style.minHeight).toBe(18);
+    expect(kept.container.style.paddingVertical).toBe(1);
   });
 
   test('both copies agree on the dark-theme washes and on the empty state', () => {

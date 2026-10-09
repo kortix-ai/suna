@@ -1,3 +1,4 @@
+import { useColorScheme } from 'nativewind';
 import { DarkTheme, DefaultTheme, type Theme } from 'expo-router/react-navigation';
 
 /**
@@ -242,3 +243,12 @@ export const NAV_THEME: Record<'light' | 'dark', Theme> = {
     },
   },
 };
+
+/**
+ * The one useColorScheme + THEME pick. Components that need the active
+ * palette import this instead of writing the ternary themselves.
+ */
+export function useThemePalette(): (typeof THEME)['dark'] | (typeof THEME)['light'] {
+  const { colorScheme } = useColorScheme();
+  return colorScheme === 'dark' ? THEME.dark : THEME.light;
+}

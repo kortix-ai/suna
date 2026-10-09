@@ -9,9 +9,8 @@
 
 import * as React from 'react';
 import { TextInput, type TextStyle } from 'react-native';
-import { useColorScheme } from 'nativewind';
 import { MONO_FONT_FAMILY } from '@/lib/utils/mono-font';
-import { THEME } from '@/lib/utils/theme';
+import { THEME, useThemePalette } from '@/lib/utils/theme';
 
 /** Matches `Button size="lg"` (h-11, 44pt), so fields and buttons stack flush. */
 export const PILL_INPUT_HEIGHT = 44;
@@ -33,8 +32,7 @@ export const INPUT_FONT_FAMILY = 'Roobert-Regular';
  * Read from THEME because neither host input receives NativeWind `className`.
  */
 export function usePillInputStyle({ height, mono }: { height: number; mono?: boolean }) {
-  const { colorScheme } = useColorScheme();
-  const c = colorScheme === 'dark' ? THEME.dark : THEME.light;
+  const c = useThemePalette();
   const style: TextStyle = {
     height,
     borderRadius: 9999,

@@ -39,7 +39,7 @@
  * unmounts. Both shaders draw for that one crossfade only.
  */
 import * as React from 'react';
-import { AccessibilityInfo, AppState, StyleSheet, View } from 'react-native';
+import { AppState, StyleSheet, View } from 'react-native';
 import {
   Canvas,
   FilterMode,
@@ -55,6 +55,7 @@ import Animated, {
   runOnJS,
   useAnimatedStyle,
   useDerivedValue,
+  useReducedMotion,
   useSharedValue,
   withTiming,
   type SharedValue,
@@ -190,7 +191,7 @@ function ShaderLogo({
   image,
   effect,
 }: MetalKortixLogoProps & { image: SkiaImage; effect: SkiaEffect }) {
-  const reduceMotion = useReduceMotion();
+  const reduceMotion = useReducedMotion();
   const isFocused = useIsFocused();
   const appActive = useAppActive();
   const running = isFocused && appActive && !reduceMotion;
@@ -315,22 +316,6 @@ function ShaderBox<U extends HeatmapUniforms | DitheringUniforms>({
       </Canvas>
     </View>
   );
-}
-
-function useReduceMotion(): boolean {
-  const [reduceMotion, setReduceMotion] = React.useState(false);
-  React.useEffect(() => {
-    let alive = true;
-    void AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
-      if (alive) setReduceMotion(enabled);
-    });
-    const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduceMotion);
-    return () => {
-      alive = false;
-      sub.remove();
-    };
-  }, []);
-  return reduceMotion;
 }
 
 function useAppActive(): boolean {

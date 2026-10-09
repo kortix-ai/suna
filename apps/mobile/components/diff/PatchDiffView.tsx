@@ -26,6 +26,66 @@ export function fileStatusMeta(status: ProjectCommitFile['status'], isDark = fal
   return { icon: FilePen, color: THEME.accent.blue };
 }
 
+
+/**
+ * The one diff-row paint for every patch renderer: a right-aligned line-number
+ * gutter (44pt), sign-prefixed content in the mono face, and the theme's
+ * add/delete/hunk washes. `wrap` flexes the content to the container width
+ * (a vertical list); without it the row keeps its natural width and scrolls
+ * horizontally.
+ */
+export interface DiffRowPalette {
+  fg: string;
+  muted: string;
+  add: string;
+  del: string;
+  hunk: string;
+  addBg: string;
+  delBg: string;
+  hunkBg: string;
+}
+
+export function diffRowPalette(isDark: boolean): DiffRowPalette {
+  const theme = isDark ? THEME.dark : THEME.light;
+  return {
+    fg: theme.foreground,
+    muted: theme.mutedForeground,
+    add: THEME.accent.green,
+    del: theme.destructive,
+    hunk: THEME.accent.purple,
+    addBg: withAlpha(THEME.accent.green, isDark ? 0.14 : 0.12),
+    delBg: withAlpha(theme.destructive, isDark ? 0.14 : 0.1),
+    hunkBg: withAlpha(THEME.accent.purple, isDark ? 0.12 : 0.08),
+  };
+}
+
+export const DiffRowView = React.memo(function DiffRowView({
+  row,
+  palette,
+  wrap = false,
+}: {
+  row: DiffRow;
+  palette: DiffRowPalette;
+  wrap?: boolean;
+}) {
+  const bg =
+    row.kind === 'add' ? palette.addBg : row.kind === 'del' ? palette.delBg : row.kind === 'hunk' ? palette.hunkBg : undefined;
+  const color =
+    row.kind === 'add' ? palette.add : row.kind === 'del' ? palette.del : row.kind === 'hunk' ? palette.hunk : palette.fg;
+  const sign = row.kind === 'add' ? '+' : row.kind === 'del' ? '−' : ' ';
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'flex-start', backgroundColor: bg, paddingVertical: 1, minHeight: 18 }}>
+      <Text
+        style={{ width: 44, textAlign: 'right', paddingRight: 8, fontSize: 11, lineHeight: 18, fontFamily: MONO_FONT_FAMILY, color: palette.muted }}>
+        {row.kind === 'hunk' ? '' : (row.num ?? '')}
+      </Text>
+      <Text style={{ flex: wrap ? 1 : undefined, fontSize: 12, lineHeight: 18, fontFamily: MONO_FONT_FAMILY, color, paddingRight: 12 }}>
+        {row.kind === 'hunk' ? row.text : `${sign} ${row.text}`}
+      </Text>
+    </View>
+  );
+});
+
 export function DiffFile({
   file,
   parsed,
@@ -39,9 +99,7 @@ export function DiffFile({
   const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
   const border = isDark ? THEME.dark.border : THEME.light.border;
   const codeBg = isDark ? withAlpha(THEME.dark.foreground, 0.02) : withAlpha(THEME.light.foreground, 0.015);
-  const addBg = isDark ? withAlpha(THEME.accent.green, 0.14) : withAlpha(THEME.accent.green, 0.12);
-  const delBg = isDark ? withAlpha(THEME.dark.destructive, 0.14) : withAlpha(THEME.light.destructive, 0.10);
-  const hunkBg = isDark ? withAlpha(THEME.accent.purple, 0.12) : withAlpha(THEME.accent.purple, 0.08);
+  const palette = useMemo(() => diffRowPalette(isDark), [isDark]);
   const meta = fileStatusMeta(file.status, isDark);
   const Icon = meta.icon;
 
@@ -62,27 +120,9 @@ export function DiffFile({
       ) : parsed && parsed.rows.length > 0 ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ backgroundColor: codeBg }}>
           <View>
-            {parsed.rows.map((row, i) => {
-              const bg = row.kind === 'add' ? addBg : row.kind === 'del' ? delBg : row.kind === 'hunk' ? hunkBg : 'transparent';
-              const color = row.kind === 'hunk'
-                ? THEME.accent.purple
-                : row.kind === 'add'
-                  ? THEME.accent.green
-                  : row.kind === 'del'
-                    ? (isDark ? THEME.dark.destructive : THEME.light.destructive)
-                    : fg;
-              const sign = row.kind === 'add' ? '+' : row.kind === 'del' ? '−' : row.kind === 'hunk' ? '' : ' ';
-              return (
-                <View key={i} style={{ flexDirection: 'row', alignItems: 'flex-start', backgroundColor: bg, minHeight: 18 }}>
-                  <Text style={{ width: 42, textAlign: 'right', paddingRight: 8, fontSize: 11, lineHeight: 18, fontFamily: MONO, color: muted }}>
-                    {row.kind === 'hunk' ? '' : row.num ?? ''}
-                  </Text>
-                  <Text style={{ fontSize: 12, lineHeight: 18, fontFamily: MONO, color, paddingRight: 14 }}>
-                    {row.kind === 'hunk' ? row.text : `${sign} ${row.text}`}
-                  </Text>
-                </View>
-              );
-            })}
+            {parsed.rows.map((row, i) => (
+              <DiffRowView key={i} row={row} palette={palette} />
+            ))}
           </View>
         </ScrollView>
       ) : null}
