@@ -31,6 +31,7 @@ import {
   folderAccessAtLeast,
   folderVisible,
   grantableFolder,
+  grantReaches,
   grantsCovering,
   pathWithinFolder,
   folderKnownToTree,
@@ -90,6 +91,8 @@ const DriveSchema = z
     access: AccessSchema,
     personalFolder: z.string().nullable(),
     openConflicts: z.number(),
+    /** Folders other people shared with the caller (directly or through a team), outside their own folder. */
+    sharedWithMe: z.array(z.object({ path: z.string(), access: AccessSchema })).optional(),
   })
   .openapi('Drive');
 
@@ -219,6 +222,24 @@ function need(caller: Caller, path: string, level: FolderLevel): FolderAccess {
   return access;
 }
 
+/**
+ * Folders shared with the caller by someone else: a grant naming them or one
+ * of their teams, never Kortix's own grants and never inside their own folder.
+ * Nearest the root first, each folder once.
+ */
+function sharedWithCaller(caller: Caller): Array<{ path: string; access: FolderAccess }> {
+  const paths = new Set<string>();
+  for (const g of caller.grants) {
+    if (g.source === 'system' || (g.principalType !== 'user' && g.principalType !== 'group')) continue;
+    if (!grantReaches(g, caller.subject) || pathWithinFolder(g.path, caller.personalFolder)) continue;
+    paths.add(g.path);
+  }
+  return [...paths]
+    .filter((p) => ![...paths].some((other) => other !== p && pathWithinFolder(p, other)))
+    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+    .map((path) => ({ path, access: folderAccess(path, caller.grants, caller.subject) }));
+}
+
 /** Folders that hold the tree together: never moved, deleted or renamed. */
 function structural(path: string, caller: Caller): boolean {
   return path === '/' || path === USERS_DIR || path === COMPANY_DIR || personalFolderOf(path) === path || path === caller.personalFolder;
@@ -240,6 +261,27 @@ async function withStorage<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 const notFound = (): never => fail(404, 'File or folder not found');
+
+/** The file's current version, as the download's ETag names it; null when there is no file. */
+async function currentFileVersion(drive: DriveRow, path: string): Promise<string | null> {
+  return readDriveVolume(
+    drive,
+    async (volume) => {
+      try {
+        const res = await readVolumeFile(volume, path);
+        await res.body?.cancel().catch(() => undefined);
+        return res.headers.get('etag');
+      } catch (err) {
+        if (err instanceof DriveStorageError && err.status === 404) return null;
+        throw err;
+      }
+    },
+    () => null,
+  );
+}
+
+const bareVersion = (tag: string) => tag.trim().replace(/^W\//, '').replace(/^"|"$/g, '');
+const sameVersion = (a: string, b: string) => bareVersion(a) === bareVersion(b);
 
 const baseName = (p: string) => p.split('/').filter(Boolean).pop() ?? '';
 const parentOf = (p: string) => p.slice(0, p.lastIndexOf('/')) || '/';
@@ -311,12 +353,15 @@ drivesApp.openapi(
     const visible = conflicts.filter((r) => folderAccess(r.path, caller.grants, caller.subject) !== 'none');
     return c.json({
       drives: [
-        toDriveJson(drive, {
-          access: folderAccess('/', caller.grants, caller.subject),
-          personalFolder: caller.personalFolder,
-          openConflicts: visible.length,
-          stats,
-        }),
+        {
+          ...toDriveJson(drive, {
+            access: folderAccess('/', caller.grants, caller.subject),
+            personalFolder: caller.personalFolder,
+            openConflicts: visible.length,
+            stats,
+          }),
+          sharedWithMe: sharedWithCaller(caller),
+        },
       ],
     });
   },
@@ -338,7 +383,11 @@ drivesApp.openapi(
     const caller = await loadDrive(c);
     const { drive, grants, subject } = caller;
     const path = drivePath(c.req.query('path'), { allowRoot: true });
-    if (path !== '/') need(caller, path, 'read');
+    // A folder on the way to one the caller may read opens for traversal even
+    // without access of its own (`/Users` for someone with a share in another
+    // person's folder). The visibility filter below lists only the entries on
+    // that way, never the folder's other contents.
+    if (path !== '/' && !folderVisible(path, grants, subject)) notFound();
     const raw = await withStorage(() =>
       readDriveVolume(
         drive,
@@ -431,11 +480,11 @@ drivesApp.openapi(
     path: '/{driveId}/files/content',
     tags: ['drives'],
     summary: 'Upload a file',
-    description: `Raw request body, at most ${MAX_DRIVE_UPLOAD_BYTES} bytes. Replaces an existing file at the path.`,
+    description: `Raw request body, at most ${MAX_DRIVE_UPLOAD_BYTES} bytes. Replaces an existing file at the path. With \`If-Match\` (the ETag the file was downloaded with), a file changed since then is refused with 409 \`file_changed\`.`,
     ...auth,
     request: { params: DriveParams, query: z.object({ path: z.string() }) },
     responses: {
-      200: json(z.object({ path: z.string(), size: z.number() }), 'Uploaded'),
+      200: json(z.object({ path: z.string(), size: z.number(), version: z.string().optional() }), 'Uploaded'),
       ...errors(400, 401, 403, 404, 409, 413, 503),
     },
   }),
@@ -448,11 +497,23 @@ drivesApp.openapi(
     if (Number.isFinite(declared) && declared > MAX_DRIVE_UPLOAD_BYTES) fail(413, 'File is too large');
     const body = new Uint8Array(await c.req.arrayBuffer());
     if (body.byteLength > MAX_DRIVE_UPLOAD_BYTES) fail(413, 'File is too large');
+    // A save from an editor names the version it was opened at (the download's
+    // ETag). Someone else's write since then refuses the save instead of
+    // silently replacing their change.
+    const ifMatch = c.req.header('if-match');
+    if (ifMatch) {
+      const current = await withStorage(() => currentFileVersion(caller.drive, path));
+      if (!current || !sameVersion(current, ifMatch)) {
+        fail(409, 'This file changed since you opened it. Reload it to see the latest version, then save again.', 'file_changed');
+      }
+    }
     const written = await withStorage(() =>
       writeDriveVolume(caller.drive, (volume) => writeVolumeFile(volume, path, body, { overwrite: true })),
     );
     noteDriveWrite(caller.drive.driveId);
-    return c.json({ path: written.path, size: written.size });
+    const version = ifMatch ? await withStorage(() => currentFileVersion(caller.drive, path)).catch(() => null) : null;
+    if (version) c.header('etag', version);
+    return c.json({ path: written.path, size: written.size, ...(version ? { version } : {}) });
   },
 );
 

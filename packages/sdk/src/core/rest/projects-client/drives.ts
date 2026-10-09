@@ -31,6 +31,8 @@ export interface Drive {
   personalFolder: string | null;
   /** "(conflict ...)" copies in folders the caller can see that nobody resolved or dismissed yet. */
   openConflicts?: number;
+  /** Folders other people shared with the caller, outside their own folder. */
+  sharedWithMe?: Array<{ path: string; access: FolderAccess }>;
 }
 
 export interface DriveEntry {
@@ -204,18 +206,36 @@ export async function downloadDriveFile(driveId: string, path: string, signal?: 
   return response.blob();
 }
 
-/** Write a file (at most 64 MiB), replacing any file at `path`. */
+/** A file's bytes and the version they are (the ETag), for a later conditional save. */
+export async function readDriveFile(
+  driveId: string,
+  path: string,
+  signal?: AbortSignal,
+): Promise<{ blob: Blob; version: string | null }> {
+  const response = await authenticatedFetch(getDriveFileUrl(driveId, path), { signal });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { message?: string } | null;
+    throw new ApiError(body?.message || 'Could not download file', { status: response.status });
+  }
+  return { blob: await response.blob(), version: response.headers.get('etag') };
+}
+
+/**
+ * Write a file (at most 64 MiB), replacing any file at `path`. With `ifMatch`
+ * (the version it was read at), a file someone changed since is refused with
+ * 409 `file_changed` instead of being overwritten.
+ */
 export async function uploadDriveFile(
   driveId: string,
   path: string,
   body: Blob | ArrayBuffer | Uint8Array<ArrayBuffer>,
-  options?: { signal?: AbortSignal },
-): Promise<{ path: string; size: number }> {
+  options?: { signal?: AbortSignal; ifMatch?: string | null },
+): Promise<{ path: string; size: number; version?: string }> {
   return unwrap(
-    await backendApi.putRaw<{ path: string; size: number }>(
+    await backendApi.putRaw<{ path: string; size: number; version?: string }>(
       `${drivePath(driveId)}/files/content?${new URLSearchParams({ path })}`,
       body,
-      { signal: options?.signal },
+      { signal: options?.signal, ...(options?.ifMatch ? { headers: { 'If-Match': options.ifMatch } } : {}) },
     ),
     'Failed to upload file',
   );
