@@ -29,6 +29,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { successToast } from '@/components/ui/toast';
 import { agentDisplayLabel } from '@/features/session/session-chat-input';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
+import { useProjectFeatureFlags } from '@/lib/use-project-feature-flags';
 import { createProjectTrigger, upsertProjectSecret } from '@kortix/sdk';
 import { modelKeyToWire, useProjectTriggerEventApps, useVisibleAgents } from '@kortix/sdk/react';
 import { LightningIcon, TimerIcon, WebhooksLogoIcon } from '@phosphor-icons/react';
@@ -127,9 +128,16 @@ function ComposerForm({
   onBusyChange,
 }: TriggerComposerProps & { onBusyChange: (busy: boolean) => void }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  // App events are a beta feature behind the project flag `event_triggers`. Off: no App event tab,
+  // no catalog request, and an entry point that asks for an app event opens on Schedule.
+  const eventsOn = useProjectFeatureFlags(projectId).flags.event_triggers === true;
   const [draft, setDraft] = useState<ComposerDraft>(() =>
     initialDraft({
-      kind: initialKind ?? (initialApp || initialConnector ? 'event' : null),
+      kind: eventsOn
+        ? (initialKind ?? (initialApp || initialConnector ? 'event' : null))
+        : initialKind === 'event'
+          ? null
+          : initialKind,
       agent: initialAgent,
       appSlug: initialApp?.app ?? null,
       profile: initialConnector?.slug ?? null,
@@ -154,7 +162,8 @@ function ComposerForm({
   const addedConnector = useRef<{ app: string; slug: string } | null>(null);
 
   const agents = useVisibleAgents({ projectId });
-  const apps = useProjectTriggerEventApps(projectId);
+  // A null project id keeps the hook idle: with events off nothing asks for the catalog.
+  const apps = useProjectTriggerEventApps(eventsOn ? projectId : null);
   const { add, canConnect } = useEventAppConnect(projectId);
   // Create adds the app's connector, which refreshes the app list. Hold the
   // app as it was at the click so the form does not rearrange under the spinner.
@@ -354,10 +363,12 @@ function ComposerForm({
                   {tabIcon('cron')}
                   {tI18nComplete.raw('textf4830a1dae29')}
                 </TabsTrigger>
-                <TabsTrigger value="event" className="flex-1 gap-1.5">
-                  {tabIcon('event')}
-                  {tI18nComplete.raw('text5441e7146193')}
-                </TabsTrigger>
+                {eventsOn ? (
+                  <TabsTrigger value="event" className="flex-1 gap-1.5">
+                    {tabIcon('event')}
+                    {tI18nComplete.raw('text5441e7146193')}
+                  </TabsTrigger>
+                ) : null}
                 <TabsTrigger value="webhook" className="flex-1 gap-1.5">
                   {tabIcon('webhook')}
                   {tI18nComplete.raw('text4814f62c108d')}
@@ -366,6 +377,7 @@ function ComposerForm({
               <TabsContent value="cron" className="pt-2">
                 <WhenSchedule draft={draft} patch={patch} error={blockError('when')} />
               </TabsContent>
+              {eventsOn ? (
               <TabsContent value="event" className="pt-2">
                 <WhenEvent
                   projectId={projectId}
@@ -379,6 +391,7 @@ function ComposerForm({
                   error={blockError('when')}
                 />
               </TabsContent>
+              ) : null}
               <TabsContent value="webhook" className="pt-2">
                 <WhenWebhook draft={draft} patch={patch} error={blockError('when')} />
               </TabsContent>

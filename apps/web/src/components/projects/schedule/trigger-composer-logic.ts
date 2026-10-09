@@ -14,6 +14,7 @@ import {
   type ConfigDraft,
   type EventApp,
   type SchemaField,
+  accountToWrite,
   appConnectors,
   configProblem,
   defaultEventName,
@@ -206,7 +207,14 @@ export interface ComposerProblem {
 /** Every reason Create is blocked, in the order a person meets the blocks. */
 export function validate(
   draft: ComposerDraft,
-  ctx: { name: string; configFields: SchemaField[]; app: EventApp | null; now?: number },
+  ctx: {
+    name: string;
+    configFields: SchemaField[];
+    app: EventApp | null;
+    now?: number;
+    /** Editing a saved trigger: its app may be missing from the catalog, and a webhook keeps its signing key. */
+    edit?: boolean;
+  },
   tI18nComplete: UiTranslator,
 ): ComposerProblem[] {
   const problems: ComposerProblem[] = [];
@@ -214,8 +222,9 @@ export function validate(
     problems.push({ block, message, ...(field ? { field } : {}) });
 
   if (draft.kind === 'event') {
-    if (!ctx.app) add('when', tI18nComplete.raw('text98bc0d3ce693'));
-    else if (!draft.eventType) add('when', tI18nComplete.raw('textbb96443de263'));
+    if (!ctx.app) {
+      if (!ctx.edit) add('when', tI18nComplete.raw('text98bc0d3ce693'));
+    } else if (!draft.eventType) add('when', tI18nComplete.raw('textbb96443de263'));
     else {
       for (const field of ctx.configFields) {
         const message = configProblem([field], draft.configDraft);
@@ -228,7 +237,7 @@ export function validate(
       else if (Date.parse(draft.runAt) <= (ctx.now ?? Date.now()))
         add('when', tI18nComplete.raw('textebfef07e2d2b'));
     } else if (!draft.cron.trim()) add('when', tI18nComplete.raw('texta1b7270dbe34'));
-  } else if (!draft.signingKey.trim()) {
+  } else if (!ctx.edit && !draft.signingKey.trim()) {
     add('when', tI18nComplete.raw('textc10cd37e5462'));
   }
 
@@ -331,8 +340,8 @@ export function connectionView(app: EventApp | null, draft: ComposerDraft) {
 
 /**
  * The connector and account an event trigger is written with. `connector` is
- * the profile slug (or the one Create just added); `event_account` appears only
- * for a non-default account, so the default stays out of kortix.yaml.
+ * the profile slug (or the one Create just added); `event_account` appears for a
+ * non-default account, and for the account the form shows when the connector has no default.
  */
 export function triggerConnection(
   app: EventApp | null,
@@ -341,5 +350,7 @@ export function triggerConnection(
 ): { connector: string | undefined; event_account?: string } {
   if (added) return { connector: added };
   const connector = resolveProfile(app, draft) ?? undefined;
-  return { connector, ...(draft.account ? { event_account: draft.account } : {}) };
+  const profile = (app ? appConnectors(app) : []).find((c) => c.slug === connector) ?? null;
+  const account = accountToWrite(profile, draft.account);
+  return { connector, ...(account ? { event_account: account } : {}) };
 }

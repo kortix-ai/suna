@@ -41,15 +41,52 @@ export function appLabel(app: string | null | undefined, fallback: string): stri
   return sentence[0].toUpperCase() + sentence.slice(1);
 }
 
-/** The list-row sentence: `GITHUB_PULL_REQUEST_CREATED` on github -> "Pull request created on Github". */
-export function describeEventWhen(event: ProjectTriggerEvent | null): string {
-  if (!event) return 'When an app event happens';
-  // The id repeats the app and often ends in a noise word; the sentence names the app once.
+/** App slug -> catalog entry: the one place a slug becomes the app's real name and logo. */
+export type EventAppIndex = ReadonlyMap<string, EventApp>;
+
+export function indexEventApps(apps: readonly EventApp[] | undefined): EventAppIndex {
+  return new Map((apps ?? []).map((a) => [a.app, a]));
+}
+
+/**
+ * The app's real name from the catalog (`GitHub`, `Gmail`). A trigger whose app
+ * is not in the catalog shows its slug as it is written: a capitalised slug
+ * ("Docs mcp") reads as a name and is wrong.
+ */
+export function eventAppName(
+  event: Pick<ProjectTriggerEvent, 'app' | 'connector'>,
+  index?: EventAppIndex,
+): string {
+  const slug = event.app ?? event.connector;
+  return index?.get(slug)?.name ?? slug;
+}
+
+/**
+ * The list-row title of an event: the adapter's event name where the catalog
+ * has it (`New Gmail Message`), else the event id without its app prefix and
+ * noise suffix, in title case (`GITHUB_PULL_REQUEST_CREATED` -> `Pull Request
+ * Created`). It never adds "on <App>": the event name already carries the app
+ * where that matters, and the app is the row's second line.
+ */
+export function describeEventTitle(
+  event: ProjectTriggerEvent | null,
+  names?: ReadonlyMap<string, string>,
+  appName?: string,
+): string {
+  if (!event) return 'App event';
+  const known = names?.get(event.type);
+  if (known) return known;
   const prefix = `${(event.app ?? '').toLowerCase()}_`;
-  const type = (
-    event.type.toLowerCase().startsWith(prefix) ? event.type.slice(prefix.length) : event.type
-  ).replace(/_(trigger|event)$/i, '');
-  return `${humanizeEventType(type || event.type)} on ${appLabel(event.app, event.connector)}`;
+  const lower = event.type.toLowerCase();
+  const bare = (
+    prefix.length > 1 && lower.startsWith(prefix) ? lower.slice(prefix.length) : lower
+  ).replace(/_(trigger|event)$/, '');
+  const slug = (event.app ?? '').toLowerCase();
+  const words = bare.split(/[_\s]+/).filter(Boolean);
+  if (words.length === 0) return humanizeEventType(event.type);
+  return words
+    .map((w) => (appName && w === slug ? appName : w[0].toUpperCase() + w.slice(1)))
+    .join(' ');
 }
 
 /** Display names of the event source adapters: the one place a source id becomes a name. */
@@ -65,16 +102,17 @@ export function eventSourceName(event: {
 }
 
 /**
- * Where an event comes from, as one line: `Github · github-work · acme-bot · via Composio`.
+ * Where an event comes from, as one line: `GitHub · github-work · acme-bot · via Composio`.
  * The connector shows only when it is not just the app's own name, and the
  * account is the declared label, else the identity the default account runs as.
- * The last part names the event source adapter.
+ * The last part names the event source adapter. `index` gives the app's real name.
  */
 export function describeEventSource(
   event: ProjectTriggerEvent,
   tI18nComplete: UiTranslator,
+  index?: EventAppIndex,
 ): string {
-  const app = appLabel(event.app, event.connector);
+  const app = eventAppName(event, index);
   const parts = [app];
   const same = (a: string, b: string) =>
     a.toLowerCase().replace(/[^a-z0-9]/g, '') === b.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -100,6 +138,7 @@ export interface EventStatusCopy {
 export function describeEventStatus(
   event: ProjectTriggerEvent,
   tI18nComplete: UiTranslator,
+  index?: EventAppIndex,
 ): EventStatusCopy {
   switch (event.status) {
     case 'active':
@@ -109,8 +148,7 @@ export function describeEventStatus(
         label: tI18nComplete.raw('textd919fde889e9'),
         variant: 'warning',
         detail:
-          event.error ??
-          tI18nComplete('text2a78b60b1056', { app: appLabel(event.app, event.connector) }),
+          event.error ?? tI18nComplete('text2a78b60b1056', { app: eventAppName(event, index) }),
       };
     case 'error':
       return {
@@ -377,12 +415,38 @@ export function defaultAccount(
   return connector.accounts.find((a) => a.is_default) ?? null;
 }
 
-/** The label the form highlights: the declared one, else the connector default's. */
+/**
+ * The account a connector falls back to when none is flagged default: its
+ * first connected one, else its first. A person must always see which account
+ * a trigger will use, so the form selects this one.
+ */
+export function fallbackAccount(
+  connector: ProjectTriggerEventConnector,
+): ProjectTriggerEventAccount | null {
+  return connector.accounts.find((a) => a.connected) ?? connector.accounts[0] ?? null;
+}
+
+/** The label the form highlights: the declared one, else the default's, else the fallback's. */
 export function selectedAccountLabel(
   connector: ProjectTriggerEventConnector,
   account: string | null,
 ): string | null {
-  return account ?? defaultAccount(connector)?.label ?? null;
+  return account ?? (defaultAccount(connector) ?? fallbackAccount(connector))?.label ?? null;
+}
+
+/**
+ * The `event_account` a new trigger is written with. A connector with a default
+ * account needs none (the trigger follows the default). Without one, the
+ * account the form shows is named, so the trigger does not depend on an
+ * account nobody picked.
+ */
+export function accountToWrite(
+  connector: ProjectTriggerEventConnector | null,
+  account: string | null,
+): string | null {
+  if (account) return account;
+  if (!connector || defaultAccount(connector)) return null;
+  return fallbackAccount(connector)?.label ?? null;
 }
 
 /**
@@ -436,7 +500,9 @@ export function describePollHint(eventType: ProjectTriggerEventType): string | n
 /* ─── Prompt ────────────────────────────────────────────────────────────── */
 
 export interface PayloadVariable {
-  /** The template expression, e.g. `{{ event.data.title }}`. */
+  /** The field's name, e.g. `title`: what a chip shows. */
+  field: string;
+  /** The template expression, e.g. `{{ event.data.title }}`: what a click inserts. */
   token: string;
   description: string | null;
 }
@@ -450,6 +516,7 @@ export function payloadVariables(
   return Object.entries(properties).map(([key, raw]) => {
     const description = asRecord(raw)?.description;
     return {
+      field: key,
       token: `{{ event.data.${key} }}`,
       description:
         typeof description === 'string' && description.trim() ? description.trim() : null,

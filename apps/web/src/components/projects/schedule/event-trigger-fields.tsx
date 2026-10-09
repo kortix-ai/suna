@@ -7,6 +7,7 @@
  * and the detail sheet share them.
  */
 
+import Hint from '@/components/ui/hint';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import {
@@ -48,107 +49,6 @@ export function matchesEventQuery(eventType: ProjectTriggerEventType, query: str
   if (!q) return true;
   return [eventType.name, eventType.description, humanizeEventType(eventType.type)].some((field) =>
     field.toLowerCase().includes(q),
-  );
-}
-
-export function EventTypePicker({
-  projectId,
-  connector,
-  value,
-  onChange,
-}: {
-  projectId: string;
-  connector: string;
-  value: string | null;
-  onChange: (eventType: ProjectTriggerEventType) => void;
-}) {
-  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  const query = useProjectTriggerEventTypes(projectId, connector);
-  const [search, setSearch] = useState('');
-  const visible = useMemo(
-    () => (query.data?.event_types ?? []).filter((e) => matchesEventQuery(e, search)),
-    [query.data, search],
-  );
-
-  if (query.isLoading) {
-    return (
-      <div className="space-y-2">
-        <Skeleton className="h-14 rounded-md" />
-        <Skeleton className="h-14 rounded-md" />
-        <Skeleton className="h-14 rounded-md" />
-      </div>
-    );
-  }
-  if (query.isError) {
-    return (
-      <InfoBanner tone="warning" className="text-xs" title={tI18nComplete.raw('text50a06ae2ec9e')}>
-        {tI18nComplete.raw('texta9cb192dbee2')}{' '}
-        {query.error instanceof Error ? query.error.message : ''}
-      </InfoBanner>
-    );
-  }
-
-  const all = query.data?.event_types ?? [];
-  return (
-    <div className="space-y-3">
-      {all.length > 6 ? (
-        <InputGroupSearch>
-          <InputGroupSearchIcon>
-            <MagnifyingGlassIcon />
-          </InputGroupSearchIcon>
-          <InputGroupSearchInput
-            placeholder={tI18nComplete.raw('text901abe952186')}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            size="sm"
-          />
-        </InputGroupSearch>
-      ) : null}
-      {all.length === 0 ? (
-        <p className="text-muted-foreground text-xs">{tI18nComplete.raw('textbb19f45c3461')}</p>
-      ) : visible.length === 0 ? (
-        <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-          {tI18nComplete.raw('textd35a8ebc3a74')}
-        </p>
-      ) : (
-        <ul className="max-h-72 space-y-2 overflow-y-auto">
-          {visible.map((eventType) => {
-            const selected = value === eventType.type;
-            const poll = describePollHint(eventType);
-            return (
-              <li key={eventType.type}>
-                <button
-                  type="button"
-                  onClick={() => onChange(eventType)}
-                  aria-pressed={selected}
-                  className={cn(
-                    'hover:bg-accent/50 flex w-full items-start gap-3 rounded-md border p-3 text-left transition-colors',
-                    selected && 'border-foreground/30 bg-accent/50',
-                  )}
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="text-foreground block text-sm font-medium">
-                      {eventType.name || humanizeEventType(eventType.type)}
-                    </span>
-                    {eventType.description ? (
-                      <span className="text-muted-foreground line-clamp-2 text-xs leading-relaxed text-pretty">
-                        {oneLineDescription(eventType.description)}
-                      </span>
-                    ) : null}
-                    {poll ? (
-                      <span className="text-muted-foreground mt-1 block text-xs">{poll}</span>
-                    ) : null}
-                  </span>
-                  {selected ? (
-                    <CheckIcon className="text-foreground mt-0.5 size-4 shrink-0" />
-                  ) : null}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </div>
   );
 }
 
@@ -269,7 +169,7 @@ export function EventConfigForm({
 
 /* ─── Prompt variables ──────────────────────────────────────────────────── */
 
-/** Clickable `{{ event.data.<field> }}` chips; a click hands the token to `onInsert`. */
+/** One chip per field of `event.data`, showing the field's name; a click hands the full `{{ event.data.<field> }}` token to `onInsert`. */
 export function PromptVariableHints({
   payloadSchema,
   onInsert,
@@ -288,17 +188,18 @@ export function PromptVariableHints({
         })}
       </p>
       {variables.length > 0 ? (
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-1">
           {variables.map((variable) => (
-            <button
-              key={variable.token}
-              type="button"
-              title={variable.description ?? undefined}
-              onClick={() => onInsert(variable.token)}
-              className="bg-muted text-muted-foreground hover:text-foreground rounded-sm px-1.5 py-0.5 font-mono text-xs transition-colors"
-            >
-              {variable.token}
-            </button>
+            <Hint key={variable.field} label={variable.description ?? variable.token} side="top">
+              <button
+                type="button"
+                aria-label={variable.token}
+                onClick={() => onInsert(variable.token)}
+                className="bg-muted text-muted-foreground hover:text-foreground hover:bg-accent duration-fast cursor-pointer rounded-sm px-1.5 py-0.5 text-xs transition-colors"
+              >
+                {variable.field}
+              </button>
+            </Hint>
           ))}
         </div>
       ) : null}

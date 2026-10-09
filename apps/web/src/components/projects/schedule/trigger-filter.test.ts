@@ -6,6 +6,7 @@ import {
   eventAppStrip,
   filterTriggers,
   groupTriggersByApp,
+  TRIGGER_FILTERS,
   parseTriggerFilter,
   triggerCounts,
 } from './trigger-filter';
@@ -44,6 +45,11 @@ describe('parseTriggerFilter', () => {
     expect(parseTriggerFilter(null)).toBe('all');
     expect(parseTriggerFilter('monitor')).toBe('all');
   });
+  test('a filter the page does not offer is all: ?type=event with events off', () => {
+    const offered = TRIGGER_FILTERS.filter((f) => f !== 'event');
+    expect(parseTriggerFilter('event', offered)).toBe('all');
+    expect(parseTriggerFilter('cron', offered)).toBe('cron');
+  });
 });
 
 describe('counts and filter', () => {
@@ -66,7 +72,9 @@ describe('groupTriggersByApp', () => {
     ]);
     expect(groups[0].logo).toBe('https://logos.test/github.png');
     expect(groups[1].logo).toBeNull();
-    expect(groups[1].name).toBe('Gmail');
+    expect(groups[0].name).toBe('Github');
+    // Not in the catalog: the slug as written, never a capitalised one.
+    expect(groups[1].name).toBe('gmail');
   });
 });
 

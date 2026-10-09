@@ -27,7 +27,6 @@ import { useTranslations } from '@/i18n/use-translations';
  */
 
 import { AppLogo } from '@/components/projects/onboarding/app-logo';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Field, FieldContent, FieldDescription, FieldTitle } from '@/components/ui/field';
@@ -38,13 +37,15 @@ import {
   InputGroupSearchIcon,
   InputGroupSearchInput,
 } from '@/components/ui/input-group';
+import { PixelKortixMark } from '@/components/ui/pixel-kortix-mark';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
-import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
+import { agentDisplayLabel } from '@/features/session/session-chat-input';
 import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
 import { NewEntityMenu } from '@/features/workspace/capabilities/shared/new-entity-menu';
 import {
@@ -53,6 +54,7 @@ import {
 } from '@/features/workspace/customize/use-configure-thread';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
+import { useProjectFeatureFlags } from '@/lib/use-project-feature-flags';
 import {
   type ProjectTrigger,
   deleteProjectTrigger,
@@ -61,12 +63,10 @@ import {
   setProjectTriggersActivation,
   updateProjectTrigger,
 } from '@kortix/sdk';
-import { contract, qk, useProjectTriggerEventApps } from '@kortix/sdk/react';
+import { contract, qk, useProjectTriggerEventApps, useVisibleAgents } from '@kortix/sdk/react';
 import {
   GearSixIcon,
-  LightningIcon,
   LockKeyIcon,
-  PlusIcon,
   MagnifyingGlassIcon as SearchIcon,
   WarningIcon,
 } from '@phosphor-icons/react';
@@ -75,7 +75,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useMemo, useState } from 'react';
 
 import { EventAppsStrip } from './schedule/event-apps-strip';
-import { appLabel } from './schedule/event-trigger-copy';
+import { eventAppName, indexEventApps } from './schedule/event-trigger-copy';
 import {
   type TriggerKind,
   describeWhen,
@@ -99,6 +99,7 @@ import {
   triggerCounts,
 } from './schedule/trigger-filter';
 import { useEventAppConnect } from './schedule/use-event-app-connect';
+import { useEventTitles } from './schedule/use-event-titles';
 
 /** Tab label per filter: the three kinds reuse the page's existing words. */
 const FILTER_LABEL_KEY: Record<TriggerFilter, string> = {
@@ -281,8 +282,16 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   // `?t=<slug>` opens that trigger's sheet: the connector page links here.
   const searchParams = useSearchParams();
   const linkedSlug = searchParams?.get('t') ?? null;
-  // `?type=cron|event|webhook` is the kind filter; anything else is all.
-  const filter = parseTriggerFilter(searchParams?.get('type'));
+  // App events are a beta feature behind the project flag `event_triggers`. Fail
+  // closed: until the flag resolves on, nothing that lists, browses or requests events renders.
+  const featureFlags = useProjectFeatureFlags(projectId);
+  const eventsOn = featureFlags.flags.event_triggers === true;
+  const filters = useMemo(
+    () => (eventsOn ? TRIGGER_FILTERS : TRIGGER_FILTERS.filter((f) => f !== 'event')),
+    [eventsOn],
+  );
+  // `?type=cron|event|webhook` is the kind filter; anything else, and `event` while events are off, is all.
+  const filter = parseTriggerFilter(searchParams?.get('type'), filters);
   const setFilter = (next: TriggerFilter) => {
     const params = new URLSearchParams(searchParams?.toString() ?? '');
     if (next === 'all') params.delete('type');
@@ -290,7 +299,11 @@ export function ScheduleView({ projectId }: { projectId: string }) {
     const qs = params.toString();
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   };
-  const eventApps = useProjectTriggerEventApps(projectId);
+  // A null project id keeps the hook idle: with events off the page asks for no event data at all.
+  const eventApps = useProjectTriggerEventApps(eventsOn ? projectId : null);
+  const appIndex = useMemo(() => indexEventApps(eventApps.data?.apps), [eventApps.data]);
+  const agents = useVisibleAgents({ projectId });
+  const agentLabel = useCallback((slug: string) => agentDisplayLabel(agents, slug), [agents]);
   const [selectedSlug, setSelectedSlug] = useState<string | null>(linkedSlug);
   const [deleteTarget, setDeleteTarget] = useState<ProjectTrigger | null>(null);
 
@@ -375,6 +388,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
       ),
     [triggersQuery.data],
   );
+  const eventNames = useEventTitles(projectId, triggers, eventsOn, eventApps.data?.apps);
   const counts = useMemo(() => triggerCounts(triggers), [triggers]);
   const ofKind = useMemo(() => filterTriggers(triggers, filter), [triggers, filter]);
   const filtered = useMemo(
@@ -391,9 +405,9 @@ export function ScheduleView({ projectId }: { projectId: string }) {
               <span className="flex items-center gap-2">
                 <AppLogo src={g.logo} />
                 <span className="text-foreground text-sm font-medium">{g.name}</span>
-                <Badge variant="secondary" size="sm">
+                <span className="text-muted-foreground text-xs tabular-nums">
                   {g.triggers.length}
-                </Badge>
+                </span>
               </span>
             ),
           }))
@@ -435,19 +449,17 @@ export function ScheduleView({ projectId }: { projectId: string }) {
         showFilter ? (
           <Tabs
             value={filter}
-            onValueChange={(next) => setFilter(parseTriggerFilter(next))}
+            onValueChange={(next) => setFilter(parseTriggerFilter(next, filters))}
             className="max-w-full overflow-x-auto"
           >
-            <TabsListCompact aria-label={tI18nComplete.raw('text51035b5b67dc')}>
-              {TRIGGER_FILTERS.map((value) => (
-                <TabsTriggerCompact key={value} value={value} className="gap-1.5">
+            <TabsList aria-label={tI18nComplete.raw('text51035b5b67dc')}>
+              {filters.map((value) => (
+                <TabsTrigger key={value} value={value} className="gap-1.5">
                   {tI18nComplete.raw(FILTER_LABEL_KEY[value])}
-                  <Badge variant="secondary" size="sm">
-                    {counts[value]}
-                  </Badge>
-                </TabsTriggerCompact>
+                  <span className="text-muted-foreground tabular-nums">{counts[value]}</span>
+                </TabsTrigger>
               ))}
-            </TabsListCompact>
+            </TabsList>
           </Tabs>
         ) : undefined
       }
@@ -518,42 +530,12 @@ export function ScheduleView({ projectId }: { projectId: string }) {
             }
           />
         ) : filter !== 'all' && ofKind.length === 0 ? (
-          <EmptyState
-            size="sm"
-            title={kindCopy[filter as TriggerKind].emptyTitle}
-            description={kindCopy[filter as TriggerKind].emptyBody}
-          />
+          <EmptyState size="sm" title={kindCopy[filter as TriggerKind].emptyTitle} />
         ) : triggers.length === 0 ? (
-          <EmptyState
-            icon={LightningIcon}
-            size="sm"
-            title={copy.emptyTitle}
-            description={copy.emptyBody}
-            action={
-              canWrite ? (
-                <div className="flex flex-wrap items-center justify-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-1.5"
-                    onClick={() => openCreate()}
-                  >
-                    <PlusIcon className="size-3.5 shrink-0" />
-                    {copy.createLabel}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-1.5"
-                    onClick={() => openCreate('event')}
-                  >
-                    <LightningIcon className="size-3.5 shrink-0" />
-                    {tI18nComplete.raw('text5441e7146193')}
-                  </Button>
-                </div>
-              ) : undefined
-            }
-          />
+          <div className="text-muted-foreground flex flex-col items-center gap-6 py-8">
+            <EmptyState size="sm" title={copy.emptyTitle} description={copy.emptyBody} />
+            <PixelKortixMark className="opacity-50" />
+          </div>
         ) : filtered.length === 0 ? (
           <p className="text-muted-foreground px-3 py-6 text-center text-xs">
             {tI18nComplete.raw('text965b516df3ba')}{' '}
@@ -563,6 +545,9 @@ export function ScheduleView({ projectId }: { projectId: string }) {
           <ScheduleTable
             triggers={filtered}
             groups={appGroups}
+            apps={appIndex}
+            eventNames={eventNames}
+            agentLabel={agentLabel}
             controls={controls}
             runningSlug={run.isPending ? (run.variables?.slug ?? null) : null}
             togglingSlug={toggle.isPending ? (toggle.variables?.slug ?? null) : null}
@@ -576,7 +561,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
                     t.event &&
                     eventConnect.connect({
                       app: t.event.app ?? t.event.connector,
-                      name: appLabel(t.event.app, t.event.connector),
+                      name: eventAppName(t.event, appIndex),
                       connector: t.event.connector,
                     })
                 : undefined
@@ -584,7 +569,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
           />
         )}
 
-        {showContent && filter === 'event' ? (
+        {showContent && eventsOn && filter === 'event' ? (
           <EventAppsStrip
             projectId={projectId}
             disabled={!canWrite}
@@ -627,6 +612,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
       <ScheduleDetailSheet
         projectId={projectId}
         trigger={selected}
+        eventsEnabled={eventsOn}
         controls={controls}
         open={!!selected}
         onOpenChange={(next) => {

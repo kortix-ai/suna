@@ -44,6 +44,7 @@ export function TriggerOptions({
   open,
   onOpenChange,
   error,
+  edit = false,
 }: {
   projectId: string;
   draft: ComposerDraft;
@@ -52,6 +53,8 @@ export function TriggerOptions({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   error?: string;
+  /** A saved trigger: its ID is fixed, it is paused or resumed from the header, and a webhook's secret sits in the When block. */
+  edit?: boolean;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const sessions = useQuery({
@@ -114,7 +117,7 @@ export function TriggerOptions({
             </OptionField>
           )}
 
-          {draft.kind === 'webhook' && (
+          {draft.kind === 'webhook' && !edit && (
             <OptionField
               label={tI18nComplete.raw('text301cd463a175')}
               hint={tI18nComplete.raw('text432020e4f157')}
@@ -128,36 +131,42 @@ export function TriggerOptions({
             </OptionField>
           )}
 
-          <OptionField
-            label={tI18nComplete.raw('text7396f100afdf')}
-            hint={
-              isCron ? tI18nComplete.raw('textfb2536db879a') : tI18nComplete.raw('text9f2198f23b84')
-            }
-          >
-            <Input
-              value={draft.customId}
-              onChange={(e) => patch({ customId: e.target.value })}
-              placeholder={name.trim() ? slugify(name.trim()) : 'daily-standup-digest'}
-              maxLength={128}
-              className="font-mono text-sm"
-            />
-          </OptionField>
+          {!edit && (
+            <>
+              <OptionField
+                label={tI18nComplete.raw('text7396f100afdf')}
+                hint={
+                  isCron
+                    ? tI18nComplete.raw('textfb2536db879a')
+                    : tI18nComplete.raw('text9f2198f23b84')
+                }
+              >
+                <Input
+                  value={draft.customId}
+                  onChange={(e) => patch({ customId: e.target.value })}
+                  placeholder={name.trim() ? slugify(name.trim()) : 'daily-standup-digest'}
+                  maxLength={128}
+                  className="font-mono text-sm"
+                />
+              </OptionField>
 
-          <OptionField
-            label={tI18nComplete.raw('textd90c143bf007')}
-            hint={tI18nComplete.raw('textbed03adbb73f')}
-          >
-            <div className="bg-card flex items-center justify-between gap-3 rounded-md border px-3 py-2.5">
-              <Label htmlFor="trigger-start-active" className="text-sm font-normal">
-                {draft.startActive ? 'Active' : 'Paused'}
-              </Label>
-              <Switch
-                id="trigger-start-active"
-                checked={draft.startActive}
-                onCheckedChange={(startActive) => patch({ startActive })}
-              />
-            </div>
-          </OptionField>
+              <OptionField
+                label={tI18nComplete.raw('textd90c143bf007')}
+                hint={tI18nComplete.raw('textbed03adbb73f')}
+              >
+                <div className="bg-card flex items-center justify-between gap-3 rounded-md border px-3 py-2.5">
+                  <Label htmlFor="trigger-start-active" className="text-sm font-normal">
+                    {draft.startActive ? 'Active' : 'Paused'}
+                  </Label>
+                  <Switch
+                    id="trigger-start-active"
+                    checked={draft.startActive}
+                    onCheckedChange={(startActive) => patch({ startActive })}
+                  />
+                </div>
+              </OptionField>
+            </>
+          )}
         </div>
       </DisclosureContent>
     </Disclosure>
