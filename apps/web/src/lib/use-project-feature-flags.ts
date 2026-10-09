@@ -42,6 +42,7 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const piHarness = useFeatureFlag(projectId, 'pi_harness');
   const configReleases = useFeatureFlag(projectId, 'config_releases');
   const usRegion = useFeatureFlag(projectId, 'us_region');
+  const notificationCenter = useFeatureFlag(projectId, 'notification_center');
 
   return {
     flags: {
@@ -60,8 +61,9 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       pi_harness: piHarness.enabled,
       config_releases: configReleases.enabled,
       us_region: usRegion.enabled,
+      notification_center: notificationCenter.enabled,
     },
     // The trailing hook's loading state — keep this on the LAST hook above.
-    isLoading: usRegion.isLoading,
+    isLoading: notificationCenter.isLoading,
   };
 }

@@ -1206,6 +1206,10 @@
         "us_region": {
           "name": "Регион САД",
           "description": "Покрените нове сесије овог пројекта у региону Исток САД. Сесија која је у току задржава свој регион до поновног покретања."
+        },
+        "notification_center": {
+          "name": "Centar za obaveštenja",
+          "description": "Obaveštava ljude kojih se sesija tiče (ko je poslao prompt, ko ju je napravio i ko je prati) preko prijemnog sandučeta sa zvoncem, push obaveštenja u pregledaču i e-pošte, i upozorava na okidače i podsetnike koji ne uspevaju. Isključeno: push dobija samo telefon osobe koja je napravila sesiju."
         }
       }
     },

@@ -1206,6 +1206,10 @@
         "us_region": {
           "name": "Região dos EUA",
           "description": "Execute as novas sessões deste projeto na região Leste dos EUA. Uma sessão em andamento mantém a região até reiniciar."
+        },
+        "notification_center": {
+          "name": "Central de notificações",
+          "description": "Avisa as pessoas a quem uma sessão diz respeito (quem enviou o prompt, quem a criou e quem a segue) com uma caixa de entrada com sino, push do navegador e e-mail, e alerta sobre gatilhos e lembretes que falham. Desligado: só o telefone de quem criou a sessão recebe um push."
         }
       }
     },

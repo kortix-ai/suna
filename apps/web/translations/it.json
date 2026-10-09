@@ -1206,6 +1206,10 @@
         "us_region": {
           "name": "Regione USA",
           "description": "Esegui le nuove sessioni di questo progetto nella regione USA Est. Una sessione in corso mantiene la sua regione fino al riavvio."
+        },
+        "notification_center": {
+          "name": "Centro notifiche",
+          "description": "Avvisa le persone a cui una sessione interessa (chi ha inviato il prompt, chi l’ha creata e chi la segue) con una casella con campanella, notifiche push del browser ed email, e segnala trigger e promemoria che falliscono. Disattivato: solo il telefono di chi ha creato la sessione riceve un push."
         }
       }
     },
