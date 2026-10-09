@@ -1,0 +1,23 @@
+{
+  "source_hash": "04fe3b368d3ce74aaa562a3822017bc84b570f7cde407aed682ca400ae3c5ea3",
+  "diff_files": [
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-09T163433Z-keep-turbopackgc-on-without-it-next-s-persistent-dev-cache-k.md",
+    "apps/web/AGENTS.md",
+    "apps/web/next.config.ts",
+    "apps/web/package.json",
+    "apps/web/src/config/turbopack-gc.test.ts",
+    "apps/whitelabel-demo/package.json",
+    "package.json",
+    "pnpm-lock.yaml"
+  ],
+  "diff_hash": "fefe257e631330de6cc11d2c529745c8b6848861c4a30f9d73c723dd988a450b",
+  "head": "f8120a5028fdd098e00097eed3ddfb5e57a9e008",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-09T16:46:50.473Z"
+}
