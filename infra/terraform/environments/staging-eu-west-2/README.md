@@ -48,6 +48,7 @@ The same four phases as `../dev-us-east-2/README.md`, with these names:
 | copy | `us-west-2` → `us-east-2` | `us-west-2` → `eu-west-2` |
 | web root | `../dev-web-us-east-2` | `../staging-web-eu-west-2` |
 | live web record | `dev` | `staging-fe-ecs` |
+| audit archive to copy (Phase 4, "Data") | 622 objects, copied 2026-10-09 | none: `kortix-staging-audit-archive` was empty on 2026-10-09 |
 
 Staging differs from dev in two ways:
 
