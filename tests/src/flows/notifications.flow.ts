@@ -621,16 +621,6 @@ flow(
     const team = await ctx.fixtures.team();
     const db = await openFlowDb(ctx.env);
     try {
-      // BILL-17: a paid tier with no credit left fails every fire before a sandbox, on every target.
-      await db.query(
-        `INSERT INTO kortix.credit_accounts
-           (account_id, balance, balance_precise, non_expiring_credits, non_expiring_credits_precise, tier)
-         VALUES ($1, 0, 0, 0, 0, 'tier_2_20')
-         ON CONFLICT (account_id) DO UPDATE SET
-           balance = 0, balance_precise = 0, non_expiring_credits = 0, non_expiring_credits_precise = 0,
-           expiring_credits = 0, expiring_credits_precise = 0, tier = 'tier_2_20'`,
-        [team.id],
-      );
       const project = await team.project({ managedGit: true });
       const creator = await team.addMember('member');
       await team.grantProjectRole(project.id, creator.userId!, 'manager');
@@ -655,6 +645,18 @@ flow(
       });
 
       await ctx.step('a manual fire on the account with no credit fails → 500', async () => {
+        // BILL-17: a paid tier with no credit left. Session creation refuses it
+        // before any sandbox on a deployed target; the local profile refuses
+        // one step earlier, at the sandbox callback check (no public KORTIX_URL).
+        await db.query(
+          `INSERT INTO kortix.credit_accounts
+             (account_id, balance, balance_precise, non_expiring_credits, non_expiring_credits_precise, tier)
+           VALUES ($1, 0, 0, 0, 0, 'tier_2_20')
+           ON CONFLICT (account_id) DO UPDATE SET
+             balance = 0, balance_precise = 0, non_expiring_credits = 0, non_expiring_credits_precise = 0,
+             expiring_credits = 0, expiring_credits_precise = 0, tier = 'tier_2_20'`,
+          [team.id],
+        );
         (await fire()).status(500);
       });
 
