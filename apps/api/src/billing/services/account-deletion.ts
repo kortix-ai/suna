@@ -66,6 +66,7 @@ import {
   releaseDeletionRequest,
 } from '../repositories/account-deletion';
 import { releaseProjectEventSubscriptions } from '../../projects/surface';
+import { deleteAccountExternalStores } from './account-erasure-stores';
 
 const GRACE_PERIOD_DAYS = 14;
 const ACTIVE_DELETION_REQUEST_EXISTS = 'An active deletion request already exists for this account';
@@ -138,7 +139,9 @@ export async function cancelAccountDeletion(accountId: string) {
  * run it, in this order, so neither can leave a login or data behind:
  *
  *   1. `performDeletion`: sandboxes, Kortix Backends (machines and
- *      snapshots), Stripe cancel, wallet forfeit.
+ *      snapshots), the stores outside the database (`deleteAccountExternalStores`:
+ *      parked boxes, session files, Kortix-managed repos), Stripe cancel,
+ *      wallet forfeit.
  *   2. `deleteAccountData`: the account's rows. Data goes before the auth
  *      identity: a failure here must not sign a user out of an account whose
  *      data survived (the browser signs out only when the route answered
@@ -352,6 +355,8 @@ export interface SandboxReclaimSummary {
   removed: number;
   sessionsSettled: number;
   errors: number;
+  /** Boxes this pass removed at the provider; the parked-box pass skips them. */
+  removedExternalIds: string[];
 }
 
 /**
@@ -423,6 +428,7 @@ async function reclaimAccountSandboxes(accountIds: string[]): Promise<SandboxRec
     removed: 0,
     sessionsSettled: 0,
     errors: 0,
+    removedExternalIds: [],
   };
   // Deletion must never fail because teardown did. Every failure mode here —
   // the lookup itself, a provider stop, a reconcile — degrades to "leave the
@@ -488,6 +494,7 @@ async function reclaimAccountSandboxes(accountIds: string[]): Promise<SandboxRec
             try {
               await provider.remove(externalId);
               summary.removed++;
+              summary.removedExternalIds.push(externalId);
             } catch (err) {
               if (!isAlreadyNotRunning(err)) {
                 summary.errors++;
@@ -496,6 +503,7 @@ async function reclaimAccountSandboxes(accountIds: string[]): Promise<SandboxRec
                 );
               } else {
                 summary.removed++;
+                summary.removedExternalIds.push(externalId);
               }
             }
           } else {
@@ -563,10 +571,13 @@ async function reclaimAccountSandboxes(accountIds: string[]): Promise<SandboxRec
 }
 
 async function performDeletion(accountId: string, userId?: string) {
-  await reclaimAccountSandboxes(await reclaimableAccountIds(accountId, userId));
+  const reclaimed = await reclaimAccountSandboxes(await reclaimableAccountIds(accountId, userId));
   // Machines and snapshots go before the rows that name them cascade away.
   // Throws on a failure, so the deletion retries instead of orphaning one.
   await deleteAccountBackends(accountId);
+  // Parked boxes, session files and managed repos, before the money steps: a
+  // store that fails leaves the subscription and the credits as they were.
+  await deleteAccountExternalStores(accountId, new Set(reclaimed.removedExternalIds));
 
   const account = await getCreditAccount(accountId);
 
