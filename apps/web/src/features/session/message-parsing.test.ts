@@ -204,6 +204,18 @@ FAIL src/routes/sessions.test.ts
     expect(notifications.map((n) => n.label)).toEqual(['Task completed', 'Snapshot build queued']);
   });
 
+  test('a <pasted_content> block is never a notification card, valid or not', () => {
+    // An unclaimed block (`chars` wrong, or no attributes at all) stays text.
+    for (const text of [
+      'hi\n\n<pasted_content id="abcd1234" chars="99">\nshort\n</pasted_content>',
+      'hi\n\n<pasted_content>\nshort\n</pasted_content>',
+    ]) {
+      const { cleanText, notifications } = parseSystemNotifications(text);
+      expect(notifications).toEqual([]);
+      expect(cleanText).toBe(text);
+    }
+  });
+
   test('text with no tags is returned untouched', () => {
     const { cleanText, notifications } = parseSystemNotifications('Just a normal message.');
 

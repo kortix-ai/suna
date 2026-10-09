@@ -1,12 +1,15 @@
 /**
  * Device registration for remote push: OS permission, the Expo push token,
- * and the server's device-token rows (lib/notifications/api.ts).
+ * and the server's device-token rows (`@kortix/sdk` `registerDeviceToken`).
  *
  * - `syncPushRegistration()`: signed in and permission already granted →
  *   register the token with the current preferences. Never asks.
  * - `requestPushPermissionOnce()`: after the first successful send. Asks the
  *   OS once per install, then registers on grant.
  * - `syncPushPreferences()`: re-posts preferences after a toggle.
+ * - `carryOverLegacyKinds()`: copies the kinds this phone turned off into the
+ *   user's record, once. Only for a user with a `notification_center`
+ *   project (KRTX-1742); the device row keeps this phone's switches.
  * - `unregisterPushOnSignOut()`: deletes this device's row before the auth
  *   session is cleared. Bounded, never throws.
  *
@@ -18,8 +21,13 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import { isRunningInExpoGo } from 'expo';
 import { log } from '@/lib/logger';
-import { notificationsApi } from '@/lib/notifications/api';
-import { serverPreferences, SIGN_OUT_UNREGISTER_TIMEOUT_MS } from '@/lib/notifications/push';
+import { registerDeviceToken, unregisterDeviceToken, updateNotificationPreferences } from '@kortix/sdk';
+import {
+  legacyKindPatch,
+  serverPreferences,
+  SIGN_OUT_UNREGISTER_TIMEOUT_MS,
+  type ServerPreferences,
+} from '@/lib/notifications/push';
 import { withDeadline } from '@/lib/utils/with-deadline';
 import { useNotificationStore } from '@/stores/notification-store';
 import { usePushStore } from '@/stores/push-store';
@@ -90,6 +98,46 @@ function postedKey(token: string, prefs: ReturnType<typeof serverPreferences>): 
   return `${token}|${JSON.stringify(prefs)}`;
 }
 
+let carryOverInFlight: Promise<void> | null = null;
+
+/**
+ * Copies the kinds this phone turned off into the user's record, once
+ * (KRTX-1742). A project with `notification_center` on pushes a session kind
+ * only when the record AND this phone's switch allow it, so the record then
+ * holds this phone's choice on every device and Web Push. Called when such a
+ * project opens and from Settings → Notifications in that mode; a user with
+ * no such project sends no write. Waits for the stored switches to load. A
+ * failure leaves the marker off, and the next call tries again.
+ */
+export function carryOverLegacyKinds(): Promise<void> {
+  if (!carryOverInFlight) {
+    carryOverInFlight = runCarryOver().finally(() => {
+      carryOverInFlight = null;
+    });
+  }
+  return carryOverInFlight;
+}
+
+async function runCarryOver(): Promise<void> {
+  const store = useNotificationStore;
+  if (!store.persist.hasHydrated()) {
+    await new Promise<void>((resolve) => {
+      const unsubscribe = store.persist.onFinishHydration(() => {
+        unsubscribe();
+        resolve();
+      });
+    });
+  }
+  if (store.getState().legacyKindsMigrated) return;
+  const patch = legacyKindPatch(store.getState().preferences);
+  try {
+    if (patch) await updateNotificationPreferences(patch);
+    store.getState().markLegacyKindsMigrated();
+  } catch (error) {
+    log.warn('[PUSH] Legacy kind carry-over failed:', error);
+  }
+}
+
 /**
  * Registers this device when OS permission is already granted. The caller
  * guarantees a signed-in user. Returns the token, or null.
@@ -103,6 +151,16 @@ export function syncPushRegistration(): Promise<string | null> {
   return syncInFlight;
 }
 
+/** Idempotent upsert: re-registering the same token only updates its preferences. */
+function register(token: string, preferences: ServerPreferences) {
+  return registerDeviceToken({
+    device_token: token,
+    device_type: Platform.OS === 'ios' ? 'ios' : 'android',
+    provider: 'expo',
+    preferences,
+  });
+}
+
 async function runSync(): Promise<string | null> {
   if (!remotePushSupported()) return null;
   const Notifications = getNotifications()!;
@@ -111,7 +169,7 @@ async function runSync(): Promise<string | null> {
   if (!token) return null;
   const prefs = serverPreferences(useNotificationStore.getState().preferences);
   try {
-    await notificationsApi.registerDeviceToken(token, prefs);
+    await register(token, prefs);
     lastPosted = postedKey(token, prefs);
     usePushStore.getState().setToken(token);
     return token;
@@ -132,7 +190,7 @@ export async function syncPushPreferences(): Promise<void> {
   const key = postedKey(token, prefs);
   if (key === lastPosted) return;
   try {
-    await notificationsApi.registerDeviceToken(token, prefs);
+    await register(token, prefs);
     lastPosted = key;
   } catch (error) {
     log.warn('[PUSH] Preference sync failed:', error);
@@ -174,7 +232,7 @@ export async function unregisterPushOnSignOut(): Promise<void> {
     // The deadline also covers the auth header read, which can wait on a
     // token refresh before the request starts.
     await withDeadline(
-      notificationsApi.unregisterDeviceToken(token, controller.signal),
+      unregisterDeviceToken(token, { signal: controller.signal }),
       SIGN_OUT_UNREGISTER_TIMEOUT_MS,
       undefined
     );

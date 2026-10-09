@@ -1,6 +1,6 @@
 import { PLATFORM_DEFAULT_MODEL_ID } from '@kortix/llm-catalog';
 import { hydrateEnvironmentSecret } from '@kortix/shared';
-import { z } from 'zod';
+import { z } from '@hono/zod-openapi';
 import { SLACK_BOT_SCOPES } from './channels/slack-manifest';
 import {
   DEFAULT_LLM_GATEWAY_FALLBACK_POLICIES,
@@ -48,20 +48,6 @@ const optInt = (def: number) =>
     .transform((v) => {
       const n = Number.parseInt(v, 10);
       return Number.isNaN(n) ? def : n;
-    });
-
-/** Optional decimal with a default — money, unlike optInt's counts. A
- *  non-numeric or negative value falls back to the default rather than
- *  silently becoming a cap of NaN (which compares false against everything and
- *  would disable the limit it was set to enforce). */
-const optNum = (def: number) =>
-  z
-    .string()
-    .optional()
-    .default(String(def))
-    .transform((v) => {
-      const n = Number.parseFloat(v);
-      return Number.isFinite(n) && n >= 0 ? n : def;
     });
 
 /** Optional boolean. optBoolFalse accepts the common truthy spellings
@@ -221,9 +207,24 @@ const envSchema = z.object({
   // KORTIX_URL fatal-required, mounts the proxy-auth gate, hides /v1/setup.
   // Set to true on managed/cloud deployments; leave false for self-host + dev.
   KORTIX_BILLING_INTERNAL_ENABLED: optBoolFalse,
+  // Kortix Apps: a `static` App is served by the API from content-addressed
+  // storage, with no runtime. `false` builds it into a sandbox, as before.
+  KORTIX_APPS_STATIC_HOSTING: optBoolTrue,
+  // Ready deployments an App keeps besides its active one (rollback targets).
+  // Older ones are retired: runtime, image, files and archive are freed.
+  KORTIX_APPS_RETAINED_DEPLOYMENTS: optInt(5),
+  KORTIX_APPS_MAX_MONTHLY_BUDGET_USD: optInt(100_000),
+  // New server Apps run 24/7 unless the request says otherwise. Existing Apps
+  // keep their own setting. Static Apps have no runtime and ignore it.
+  KORTIX_APPS_DEFAULT_ALWAYS_ON: optBoolTrue,
+  // 'false' stops the Apps deployment worker; 'static' drives only static deployments.
+  KORTIX_APPS_WORKER_ENABLED: optStr,
   // Global background-worker switch. API-only and migration-shadow deployments
   // keep request handling active while disabling every recurring write loop.
   KORTIX_WORKERS_ENABLED: optBoolTrue,
+  // Kill switch for the scheduled account-deletion sweep. True skips every
+  // scheduled run; immediate deletion is unaffected. Default off (sweep runs).
+  ACCOUNT_DELETION_SWEEP_PAUSED: optBoolFalse,
   /**
    * Enforce the sandbox egress pin on the secret-broker route (default ON).
    *
@@ -255,8 +256,6 @@ const envSchema = z.object({
   // alternative (a capability header on every request) costs a round trip per
   // relayed request and still cannot un-consume a body already streamed.
   KORTIX_SECRET_RELAY_STREAM_ENABLED: optBoolTrue,
-  /** Websocket relay, gated separately so it can roll out behind the HTTP leg. */
-  KORTIX_RELAY_WS_ENABLED: optBoolTrue,
   // Byte budgets. These are a RESOURCE guard, not a product limit: 1 GiB is
   // 1024x the legacy request cap and 205x the response cap — effectively
   // uncapped for any real API call — but it stops one runaway sandbox.
@@ -284,10 +283,6 @@ const envSchema = z.object({
   // disables title generation entirely — nothing else writes `metadata.name`,
   // so sessions then stay untitled and clients fall back to their display chain.
   SESSION_TITLE_GENERATION_ENABLED: optBoolTrue,
-  // EXPERIMENTAL: the "Use this template" install feature — the /v1/templates
-  // routes plus the use-case-page button + install wizard. Single kill-switch;
-  // off by default so it stays hidden in prod while templates are authored.
-  KORTIX_TEMPLATES_ENABLED: optBoolTrue,
   // Serve the public OpenAPI spec (/v1/openapi.json) + Scalar docs UI (/v1/docs).
   // On by default — the base API surface is meant to be discoverable. Internal
   // routers (/v1/admin, /v1/ops) are ALWAYS stripped from the spec regardless
@@ -329,8 +324,6 @@ const envSchema = z.object({
   // ── Proxy Providers (optional) ───────────────────────────────────────────
   FIRECRAWL_API_URL: optUrl('https://api.firecrawl.dev'),
   FIRECRAWL_API_KEY: optStr,
-  CONTEXT7_API_URL: optUrl('https://context7.com'),
-  CONTEXT7_API_KEY: optStr,
 
   // ── Managed git (provider-agnostic via the git proxy) ────────────────────
   // MANAGED_GIT_PROVIDER selects the backend NEW managed repos provision on
@@ -393,9 +386,7 @@ const envSchema = z.object({
   LEGACY_MIGRATION_BACKUP_BUCKET: optStrDefault('legacy-migrations'),
 
   // ── Channels — Slack adapter (optional) ──────────────────────────────────
-  SLACK_BOT_TOKEN: optStr,
   SLACK_SIGNING_SECRET: optStr,
-  SLACK_TEAM_ID: optStr,
   SLACK_CLIENT_ID: optStr,
   SLACK_CLIENT_SECRET: optStr,
   SLACK_REDIRECT_URI: optStr,
@@ -452,24 +443,6 @@ const envSchema = z.object({
   OPENCODE_ZEN_API_KEY: optStr,
   // Managed model IDs served by OpenCode Zen first (see OPENCODE_ZEN_MANAGED_MODELS_DEFAULT).
   OPENCODE_ZEN_MANAGED_MODELS: z.string().default(OPENCODE_ZEN_MANAGED_MODELS_DEFAULT).transform(parseMorphManagedModels),
-  // Whether a session's sandbox gets the `kortix-connectors` OpenCode MCP
-  // server (KORTIX_CONNECTORS_MCP_ENABLED in the guest). It exposes the
-  // connector meta-tools plus `secret_call`, the only way to use an
-  // HTTPS-broker secret — those have no env var and no readable value, so
-  // without a tool the model has to find a shell command in a prompt file.
-  //
-  // ON by default: the tools are the discoverable surface for capabilities the
-  // agent already has. This is the operator kill switch — it takes the MCP
-  // server away fleet-wide without a code change.
-  //
-  // optBoolTrue disables on the literal string `false` ONLY: `0`, `no` and
-  // `off` all leave it ON. Write `CONNECTORS_MCP_ENABLED=false`.
-  //
-  // The email channel sets the guest variable itself from durable session
-  // metadata (session-channel-env.ts) and keeps the face either way — that
-  // channel was the only consumer before this flag, so turning this off
-  // restores the previous behaviour rather than regressing email sessions.
-  CONNECTORS_MCP_ENABLED: optBoolTrue,
   // Managed LLM gateway (/v1/llm) — the `kortix` OpenCode provider routes every
   // sandbox model call here. Off by default.
   LLM_GATEWAY_ENABLED: optBoolFalse,
@@ -517,10 +490,6 @@ const envSchema = z.object({
   // Runtime source for provider/model metadata. The API keeps the last known
   // snapshot if this source is temporarily unavailable.
   LLM_GATEWAY_CATALOG_URL: optUrl('https://models.dev/api.json'),
-  // BYOK resilience: when a user's own provider key hits a rate-limit / quota /
-  // billing error (429/402/403), fall over to THIS managed model (billed as
-  // Kortix credits) so the turn survives instead of erroring. Empty disables.
-  LLM_GATEWAY_BYOK_FALLBACK_MODEL: optStrDefault('deepseek-v4.1-flash'),
   // Dev: reverse-proxy /v1/llm-gateway/* to a standalone gateway on this port,
   // so sandboxes reach it through the API's own tunnel (no separate tunnel).
   LLM_GATEWAY_PROXY_PORT: optInt(0),
@@ -529,22 +498,7 @@ const envSchema = z.object({
   // the in-cluster gateway service, e.g. http://kortix-gateway:8090, so the
   // gateway stays internal and sandboxes reach it via the API's public origin.
   LLM_GATEWAY_PROXY_TARGET: optStr,
-  OPENAI_API_URL: optUrl('https://api.openai.com/v1'),
   OPENAI_API_KEY: optStr,
-  // xAI / Gemini / Groq route their TEXT models through OpenRouter (see
-  // router/config/proxy-services.ts), so only base URLs are read there.
-  XAI_API_URL: optUrl('https://api.x.ai/v1'),
-  GEMINI_API_URL: optUrl('https://generativelanguage.googleapis.com/v1beta'),
-  GROQ_API_URL: optUrl('https://api.groq.com/openai/v1'),
-  // ── LiveKit — the voice channel's transport (see channels/voice/livekit.ts) ──
-  // A room per call, an agents-js worker doing STT->LLM->TTS, a plain LiveKit
-  // client page a human opens directly. Defaults match the project's local dev
-  // server (ws://localhost:7880, devkey/secret are LiveKit's own published
-  // dev-mode credentials, not a real secret) — every real deployment overrides
-  // all three.
-  LIVEKIT_URL: optStrDefault('ws://localhost:7880'),
-  LIVEKIT_API_KEY: optStrDefault('devkey'),
-  LIVEKIT_API_SECRET: optStrDefault('secret'),
   // ── Billing — Stripe (optional, only for cloud billing) ──────────────────
   STRIPE_SECRET_KEY: optStr,
   STRIPE_WEBHOOK_SECRET: optStr,
@@ -580,7 +534,6 @@ const envSchema = z.object({
   // hint that lets the daemon spawn OpenCode before the checkout. Default ON;
   // `false` restores the pre-2026-08-27 create-time contract. The daemon side
   // is additive and falls back to the clone path without these hints.
-  KORTIX_FAST_GIT_BOOT_ENABLED: optBoolTrue,
   // ── Project snapshot archives (S3 config provider) ─────────────────────
   // A fresh session materializes its project from a prebuilt `.tar.gz` in S3
   // instead of a Git clone. `git` (default) never attempts S3 and is the
@@ -722,7 +675,6 @@ const envSchema = z.object({
   //                explicitly deletes the session — auto-stop + cold archive
   //                make an idle box nearly free, so we never destroy disk.
   KORTIX_SANDBOX_AUTOSTOP_MINUTES: optInt(15),
-  KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES: optInt(5),
   KORTIX_SANDBOX_AUTOARCHIVE_MINUTES: optInt(720), // 12 hours
   KORTIX_SANDBOX_AUTODELETE_MINUTES: optInt(-1), // never auto-delete
   // The PROVIDER-NATIVE idle timer (Daytona autoStopInterval / Platinum
@@ -751,6 +703,8 @@ const envSchema = z.object({
 
   // ── Composio Connect (optional — powers provider-neutral connector connect) ─
   COMPOSIO_API_KEY: optStr,
+  // Optional: signing secret of the Composio project webhook subscription; required to receive app-event triggers.
+  COMPOSIO_WEBHOOK_SECRET: optStr,
   // Optional: required only when importing a public Postman workspace URL.
   // Exported collection JSON and Postman-managed Git repositories need no key.
   POSTMAN_API_KEY: optStr,
@@ -771,11 +725,6 @@ const envSchema = z.object({
   KORTIX_INVITE_ACCEPT_REQS_PER_MIN: optInt(20),
   KORTIX_PUBLIC_SESSION_SHARE_REQS_PER_MIN: optInt(60),
   KORTIX_DEMO_REQUEST_REQS_PER_MIN: optInt(10),
-  KORTIX_VOICE_JOIN_LINK_REQS_PER_MIN: optInt(30),
-  // Higher than the resolve step above on purpose: the /voice page polls the
-  // call transcript for the whole call, so this is per-listener-per-minute
-  // traffic, not a one-shot handshake.
-  KORTIX_VOICE_TRANSCRIPT_REQS_PER_MIN: optInt(120),
   KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: optInt(60),
   KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: optInt(600),
   // Per-credential bound on the LLM gateway mount (/v1/llm and its
@@ -878,6 +827,13 @@ const envSchema = z.object({
   // Additional list for work-email signups (founder "book a call" flow).
   MAILTRAP_BUSINESS_SIGNUPS_LIST_ID: optStr,
 
+  // ── Signup webhook (signup → sales factory) ─────────────────────────────
+  // Every genuinely new account POSTs one `account.signup` event here, signed
+  // `X-Kortix-Signature: sha256=<HMAC-SHA256 of the raw body>` with the secret.
+  // Inert unless both are set (accounts/signup-webhook.ts).
+  SIGNUP_WEBHOOK_URL: optStr,
+  SIGNUP_WEBHOOK_SECRET: optStr,
+
   // ── Better Stack Observability (optional — graceful degradation) ────────
   BETTERSTACK_API_LOG_TOKEN: optStr, // Logtail source token for structured logs
   BETTERSTACK_API_LOG_HOST: optStr, // Logtail ingesting host (e.g. s1234.us-east-9.betterstackdata.com)
@@ -885,9 +841,6 @@ const envSchema = z.object({
 
   // ── Stray env vars used directly in other files (centralized here) ───────
   CORS_ALLOWED_ORIGINS: optStr,
-  KORTIX_MASTER_URL: optStr,
-  OPENCODE_URL: optStr,
-  KORTIX_DATA_DIR: optStr,
 });
 
 // ─── Validation + Conditional Checks ────────────────────────────────────────
@@ -1026,9 +979,9 @@ function validateEnv(): z.infer<typeof envSchema> {
   }
 
   // ── Config archives → the ONE object store ──────────────────────────────
-  // A project that turns on `config_releases` publishes config archives
-  // through the API's one object store (src/object-store/s3.ts); there is no
-  // second store and no fallback path that quietly writes somewhere else.
+  // Every project publishes config archives through the API's one object
+  // store (src/object-store/s3.ts); there is no second store and no fallback
+  // path that quietly writes somewhere else.
   // Unset ⇒ every archive request rebuilds from the Git mirror, every time,
   // for every box. A warning, not an error: the store is a cache, and a
   // container with a stale env block must still boot.
@@ -1213,20 +1166,24 @@ export const config = {
   KORTIX_PREVIEW_BASE_DOMAIN: env.KORTIX_PREVIEW_BASE_DOMAIN,
   // Single master switch — see schema docstring above.
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,
+  KORTIX_APPS_STATIC_HOSTING: env.KORTIX_APPS_STATIC_HOSTING,
+  KORTIX_APPS_RETAINED_DEPLOYMENTS: Math.max(1, env.KORTIX_APPS_RETAINED_DEPLOYMENTS),
+  KORTIX_APPS_MAX_MONTHLY_BUDGET_USD: Math.max(1, env.KORTIX_APPS_MAX_MONTHLY_BUDGET_USD),
+  KORTIX_APPS_DEFAULT_ALWAYS_ON: env.KORTIX_APPS_DEFAULT_ALWAYS_ON,
+  KORTIX_APPS_WORKER_ENABLED: env.KORTIX_APPS_WORKER_ENABLED,
   KORTIX_WORKERS_ENABLED: env.KORTIX_WORKERS_ENABLED,
+  ACCOUNT_DELETION_SWEEP_PAUSED: env.ACCOUNT_DELETION_SWEEP_PAUSED,
   KORTIX_SANDBOX_EGRESS_PIN_ENFORCED: env.KORTIX_SANDBOX_EGRESS_PIN_ENFORCED,
   KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS: env.KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS
     .split(',')
     .map((host) => host.trim())
     .filter(Boolean),
   KORTIX_SECRET_RELAY_STREAM_ENABLED: env.KORTIX_SECRET_RELAY_STREAM_ENABLED,
-  KORTIX_RELAY_WS_ENABLED: env.KORTIX_RELAY_WS_ENABLED,
   KORTIX_RELAY_MAX_REQUEST_BYTES: env.KORTIX_RELAY_MAX_REQUEST_BYTES,
   KORTIX_RELAY_MAX_RESPONSE_BYTES: env.KORTIX_RELAY_MAX_RESPONSE_BYTES,
   KORTIX_RELAY_HEADERS_TIMEOUT_MS: env.KORTIX_RELAY_HEADERS_TIMEOUT_MS,
   KORTIX_RELAY_UPSTREAM_IDLE_TIMEOUT_MS: env.KORTIX_RELAY_UPSTREAM_IDLE_TIMEOUT_MS,
   SESSION_TITLE_GENERATION_ENABLED: env.SESSION_TITLE_GENERATION_ENABLED,
-  KORTIX_TEMPLATES_ENABLED: env.KORTIX_TEMPLATES_ENABLED,
   OPENAPI_PUBLIC_DOCS: env.OPENAPI_PUBLIC_DOCS,
   ENTERPRISE_LICENSE_AVAILABLE: env.ENTERPRISE_LICENSE_AVAILABLE,
   KORTIX_RESTRICT_ACCOUNT_CREATION: env.KORTIX_RESTRICT_ACCOUNT_CREATION,
@@ -1259,6 +1216,7 @@ export const config = {
 
   // ─── Composio Connect (Connector connect provider) ─────────────────────────
   COMPOSIO_API_KEY: env.COMPOSIO_API_KEY,
+  COMPOSIO_WEBHOOK_SECRET: env.COMPOSIO_WEBHOOK_SECRET,
   POSTMAN_API_KEY: env.POSTMAN_API_KEY,
 
   // ─── Search Providers ──────────────────────────────────────────────────────
@@ -1270,8 +1228,6 @@ export const config = {
   // ─── Proxy Providers ──────────────────────────────────────────────────────
   FIRECRAWL_API_URL: env.FIRECRAWL_API_URL,
   FIRECRAWL_API_KEY: env.FIRECRAWL_API_KEY,
-  CONTEXT7_API_URL: env.CONTEXT7_API_URL,
-  CONTEXT7_API_KEY: env.CONTEXT7_API_KEY,
 
   // ─── Managed git ──────────────────────────────────────────────────────────
   MANAGED_GIT_PROVIDER: env.MANAGED_GIT_PROVIDER,
@@ -1288,9 +1244,7 @@ export const config = {
   LEGACY_MIGRATION_BACKUP_BUCKET: env.LEGACY_MIGRATION_BACKUP_BUCKET,
 
   // ─── Channels (Slack) ─────────────────────────────────────────────────────
-  SLACK_BOT_TOKEN: env.SLACK_BOT_TOKEN,
   SLACK_SIGNING_SECRET: env.SLACK_SIGNING_SECRET,
-  SLACK_TEAM_ID: env.SLACK_TEAM_ID,
   SLACK_CLIENT_ID: env.SLACK_CLIENT_ID,
   SLACK_CLIENT_SECRET: env.SLACK_CLIENT_SECRET,
   SLACK_REDIRECT_URI: env.SLACK_REDIRECT_URI,
@@ -1320,7 +1274,6 @@ export const config = {
   OPENCODE_ZEN_API_URL: env.OPENCODE_ZEN_API_URL,
   OPENCODE_ZEN_API_KEY: env.OPENCODE_ZEN_API_KEY,
   OPENCODE_ZEN_MANAGED_MODELS: env.OPENCODE_ZEN_MANAGED_MODELS,
-  CONNECTORS_MCP_ENABLED: env.CONNECTORS_MCP_ENABLED,
   LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
   // Unset → follow billing (cloud keeps its revenue lineup even if the env
   // blob misses the var; self-host stays off). Explicit value always wins.
@@ -1333,17 +1286,9 @@ export const config = {
   LLM_GATEWAY_FALLBACK_POLICIES: env.LLM_GATEWAY_FALLBACK_POLICIES,
   LLM_GATEWAY_MANAGED_MODELS: env.LLM_GATEWAY_MANAGED_MODELS,
   LLM_GATEWAY_CATALOG_URL: env.LLM_GATEWAY_CATALOG_URL,
-  LLM_GATEWAY_BYOK_FALLBACK_MODEL: env.LLM_GATEWAY_BYOK_FALLBACK_MODEL,
   LLM_GATEWAY_PROXY_PORT: env.LLM_GATEWAY_PROXY_PORT,
   LLM_GATEWAY_PROXY_TARGET: env.LLM_GATEWAY_PROXY_TARGET,
-  OPENAI_API_URL: env.OPENAI_API_URL,
   OPENAI_API_KEY: env.OPENAI_API_KEY,
-  XAI_API_URL: env.XAI_API_URL,
-  GEMINI_API_URL: env.GEMINI_API_URL,
-  GROQ_API_URL: env.GROQ_API_URL,
-  LIVEKIT_URL: env.LIVEKIT_URL,
-  LIVEKIT_API_KEY: env.LIVEKIT_API_KEY,
-  LIVEKIT_API_SECRET: env.LIVEKIT_API_SECRET,
   // ─── Stripe (Billing) ─────────────────────────────────────────────────────
   STRIPE_SECRET_KEY: env.STRIPE_SECRET_KEY,
   STRIPE_WEBHOOK_SECRET: env.STRIPE_WEBHOOK_SECRET,
@@ -1360,7 +1305,6 @@ export const config = {
   DAYTONA_TARGET: env.DAYTONA_TARGET,
   DAYTONA_WEBHOOK_SECRET: env.DAYTONA_WEBHOOK_SECRET,
   KORTIX_SNAPSHOT_REAP_PREDECESSOR: env.KORTIX_SNAPSHOT_REAP_PREDECESSOR,
-  KORTIX_FAST_GIT_BOOT_ENABLED: env.KORTIX_FAST_GIT_BOOT_ENABLED,
   KORTIX_PROJECT_SNAPSHOT_MODE: env.KORTIX_PROJECT_SNAPSHOT_MODE,
   KORTIX_PROJECT_SNAPSHOT_S3_BUCKET: env.KORTIX_PROJECT_SNAPSHOT_S3_BUCKET,
   KORTIX_PROJECT_SNAPSHOT_S3_REGION: env.KORTIX_PROJECT_SNAPSHOT_S3_REGION,
@@ -1393,7 +1337,6 @@ export const config = {
 
   // Sandbox lifecycle intervals (minutes) — see schema comment above.
   KORTIX_SANDBOX_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_AUTOSTOP_MINUTES,
-  KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES,
   KORTIX_SANDBOX_AUTOARCHIVE_MINUTES: env.KORTIX_SANDBOX_AUTOARCHIVE_MINUTES,
   KORTIX_SANDBOX_AUTODELETE_MINUTES: env.KORTIX_SANDBOX_AUTODELETE_MINUTES,
   KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES,
@@ -1482,8 +1425,6 @@ export const config = {
   KORTIX_INVITE_ACCEPT_REQS_PER_MIN: env.KORTIX_INVITE_ACCEPT_REQS_PER_MIN,
   KORTIX_PUBLIC_SESSION_SHARE_REQS_PER_MIN: env.KORTIX_PUBLIC_SESSION_SHARE_REQS_PER_MIN,
   KORTIX_DEMO_REQUEST_REQS_PER_MIN: env.KORTIX_DEMO_REQUEST_REQS_PER_MIN,
-  KORTIX_VOICE_JOIN_LINK_REQS_PER_MIN: env.KORTIX_VOICE_JOIN_LINK_REQS_PER_MIN,
-  KORTIX_VOICE_TRANSCRIPT_REQS_PER_MIN: env.KORTIX_VOICE_TRANSCRIPT_REQS_PER_MIN,
   KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: env.KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE,
   KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: env.KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID,
   KORTIX_LLM_GATEWAY_REQS_PER_MIN: env.KORTIX_LLM_GATEWAY_REQS_PER_MIN,
@@ -1528,11 +1469,12 @@ export const config = {
   MAILTRAP_SIGNUPS_LIST_ID: env.MAILTRAP_SIGNUPS_LIST_ID,
   MAILTRAP_BUSINESS_SIGNUPS_LIST_ID: env.MAILTRAP_BUSINESS_SIGNUPS_LIST_ID,
 
+  // ─── Signup webhook (signup → sales factory) ──────────────────────────────
+  SIGNUP_WEBHOOK_URL: env.SIGNUP_WEBHOOK_URL,
+  SIGNUP_WEBHOOK_SECRET: env.SIGNUP_WEBHOOK_SECRET,
+
   // ─── Stray env vars (centralized from other files) ────────────────────────
   CORS_ALLOWED_ORIGINS: env.CORS_ALLOWED_ORIGINS,
-  KORTIX_MASTER_URL: env.KORTIX_MASTER_URL,
-  OPENCODE_URL: env.OPENCODE_URL,
-  KORTIX_DATA_DIR: env.KORTIX_DATA_DIR,
 
   // ─── Helper Methods ────────────────────────────────────────────────────────
 
@@ -1562,16 +1504,8 @@ export const config = {
     return this.ALLOWED_SANDBOX_PROVIDERS[0] ?? 'daytona';
   },
 
-  isDaytonaEnabled(): boolean {
-    return this.ALLOWED_SANDBOX_PROVIDERS.includes('daytona') && !!this.DAYTONA_API_KEY;
-  },
-
   isPlatinumEnabled(): boolean {
     return this.ALLOWED_SANDBOX_PROVIDERS.includes('platinum') && !!this.PLATINUM_API_KEY;
-  },
-
-  isE2BEnabled(): boolean {
-    return this.ALLOWED_SANDBOX_PROVIDERS.includes('e2b') && !!this.E2B_API_KEY;
   },
 };
 

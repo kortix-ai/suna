@@ -1,20 +1,23 @@
 import { revokeAppViewerTokens } from './viewer';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { createRoute, z } from '@hono/zod-openapi';
+import type { Context } from 'hono';
+import type { AppEnv } from '../types';
 import {
   appArtifacts,
   appDeploymentEvents,
   appDeployments,
   appRuntimes,
+  appSiteFiles,
   apps,
 } from '@kortix/db';
-import { and, desc, eq, exists, inArray, isNull, max, ne, notInArray, sql } from 'drizzle-orm';
-import { PROJECT_ACTIONS } from '../iam';
+import { and, desc, eq, inArray, isNull, max, ne, notInArray, sql } from 'drizzle-orm';
 import { auth, errors, json } from '../openapi';
 import { pauseComputeSession } from '../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../config';
 import { db } from '../shared/db';
 import { inspectDatabaseError } from '../shared/database-errors';
+import { readJsonObject } from '../shared/http-body';
 import {
   AppArtifactStorageUnavailableError,
   createAppArtifactUploadUrl,
@@ -24,34 +27,50 @@ import { APP_RUNTIME_VERSION, triggerAppDeploymentWorker } from './deployment-wo
 import { AppHostingProvider } from './hosting';
 import { deploymentEventsAsLogs } from './logs';
 import { releaseDeploymentImage, releaseDeploymentImages, teardownAppRuntimes } from './images';
+import { rollBackActiveDeployment } from './retention';
 import { ensureAppRuntimeRunning, loadPublicApp } from './public-proxy';
 import { type AppSourceSpec } from './spec';
 import { appPublicUrl } from './hostnames';
-import { AppBudgetExceededError } from './budget';
+import { AppBudgetExceededError, alwaysOnBudgetWarning, defaultAppBudgetUsd } from './budget';
 import {
   APP_MACHINE_LIMITS,
   AppAccountUnfundedError,
   AppLimitError,
   assertAppBudgetWithinLimits,
   assertAppMachineWithinLimits,
+  assertAppAccountFunded,
   assertAppQuotaAvailable,
 } from './limits';
-import { assertProjectCapability, loadProjectForUser } from '../projects/lib/access';
 import { callerKortixSessionId } from '../middleware/caller-session';
 import { projectsApp } from '../projects/lib/app';
-import { requireFeatureFlag } from '../feature-flags/gate';
+import { resolveSessionSandboxRegion } from '../platform/services/sandbox-region';
+import { isPlatinumConfigured } from '../shared/platinum';
+import { logger } from '../lib/logger';
 import { readAgentsGrantingApp } from './agent-grants';
 import {
   appAccessibleToUser,
   appsOpenableByUser,
   appAccessSessionUrl,
-  appVisibleToUser,
   filterAppsVisibleToUser,
   persistAppAccessPolicy,
   serializeAppAccessPolicy,
   validateAppAccessPrincipals,
-  type AppAccessMode,
 } from './access';
+import { APP_KINDS, type AppHostingType } from './kinds';
+import { authorizedProject, capabilityRefusal, visibleApp } from './route-access';
+import { AppObject, appJson, appsJson } from './serialize';
+import { UnknownLinkedAppError, resolveAppLinks, writeAppLinks } from './links';
+import { registerAppCapabilityRoutes } from './capability-routes';
+import {
+  BACKEND_MACHINE_LIMITS,
+  BackendLimitError,
+  getLiveConvexApp,
+  insertConvexApp,
+  newConvexSize,
+  provisionBackend,
+} from './kinds/convex/provision';
+import { CONVEX_CLI_VERSION } from './kinds/convex/convex-image';
+import { BackendOperationError, backendOperation, beginResize, backendProviderFailure, retireConvexApp, runResize } from './kinds/convex/operations';
 
 /** The machine bounds an App shares with a session sandbox. Stated here so the
  *  published OpenAPI schema carries the real ceiling instead of a number the
@@ -79,7 +98,6 @@ function appLimitResponse(c: any, error: unknown): Response | null {
   return null;
 }
 
-const AppObject = z.object({}).passthrough().openapi('KortixApp');
 const DeploymentObject = z.object({}).passthrough().openapi('KortixAppDeployment');
 const ArtifactObject = z.object({}).passthrough().openapi('KortixAppArtifact');
 /** Deployment states the worker still drives. Deleting one would race its build. */
@@ -90,6 +108,14 @@ const ImageReleaseObject = z.object({ released: z.number().int(), pending: z.num
 const APP_SLUG = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const APP_ENV_NAME = /^(?!KORTIX_|OPENCODE_)[A-Za-z_][A-Za-z0-9_]{0,127}$/;
 const APP_SECRET_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
+/**
+ * The Apps (by slug, in this App's project) this App uses: it may mint their
+ * sign-in tokens. Each must exist and be visible to the caller. Empty, the default: none.
+ */
+const UsesSchema = z
+  .array(z.string().regex(APP_SLUG, 'an App slug: lowercase letters, numbers and single hyphens'))
+  .max(20)
+  .transform((slugs) => [...new Set(slugs)]);
 const EnvironmentSchema = z.record(
   z.string().regex(APP_ENV_NAME),
   z.string().max(32_768),
@@ -132,6 +158,12 @@ const SourceSchema = z.discriminatedUnion('kind', [
   }),
 ]);
 
+/** What a `convex` App records after the client CLI deployed its functions. */
+const ConvexSourceSchema = z.object({
+  kind: z.literal('convex'),
+  revision: z.string().max(200).optional().openapi({ description: 'What was deployed, e.g. a git commit. Shown in the history.' }),
+});
+
 function sourceFromWire(input: z.infer<typeof SourceSchema>): AppSourceSpec {
   switch (input.kind) {
     case 'static':
@@ -164,40 +196,6 @@ function sourceFromWire(input: z.infer<typeof SourceSchema>): AppSourceSpec {
         restartLimit: input.restart_limit,
       };
   }
-}
-
-export { appPublicUrl } from './hostnames';
-
-/**
- * `viewerCanAccess` is the caller's OPEN verdict, which is not the same as the
- * verdict that put this App in their list — a project manager sees every App so
- * that a private one stays manageable, and may or may not be allowed to open
- * it. The client needs both: without this it optimistically mints an access
- * session per card and collects a 403 for every App it may only manage.
- *
- * Defaults to true so the single-App serializations that have already run the
- * check are not forced to restate it.
- */
-function serializeApp(row: typeof apps.$inferSelect, viewerCanAccess = true) {
-  return {
-    app_id: row.appId,
-    account_id: row.accountId,
-    project_id: row.projectId,
-    slug: row.slug,
-    name: row.name,
-    url: appPublicUrl(row),
-    access_mode: row.accessMode as AppAccessMode,
-    access_revision: row.accessRevision,
-    desired_state: row.desiredState,
-    active_deployment_id: row.activeDeploymentId,
-    machine: { cpu: row.cpuCores, memory_gb: row.memoryGb, disk_gb: row.diskGb },
-    idle_timeout_seconds: row.idleTimeoutSeconds,
-    monthly_budget_usd: Number(row.monthlyBudgetUsd),
-    last_request_at: row.lastRequestAt?.toISOString() ?? null,
-    viewer_can_access: viewerCanAccess,
-    created_at: row.createdAt.toISOString(),
-    updated_at: row.updatedAt.toISOString(),
-  };
 }
 
 function serializeArtifact(row: typeof appArtifacts.$inferSelect) {
@@ -248,68 +246,6 @@ function appDeploymentActorType(c: any): 'human' | 'agent' | 'service_account' |
   return 'human';
 }
 
-/** The App capability a route needs. Apps own these leaves outright — they no
- *  longer borrow project.customize.write / project.gitops.read, so a custom
- *  role can grant or revoke Apps without touching any other capability. */
-type AppCapability = 'read' | 'write' | 'deploy';
-
-const APP_CAPABILITY_ACTION: Record<AppCapability, string> = {
-  read: PROJECT_ACTIONS.PROJECT_APP_READ,
-  write: PROJECT_ACTIONS.PROJECT_APP_WRITE,
-  deploy: PROJECT_ACTIONS.PROJECT_APP_DEPLOY,
-};
-
-/**
- * Membership + capability + `apps` flag, in that order. Returns the loaded
- * project on success, or the Response the route must return:
- *   • 404 — the project does not exist or the caller is not a member (a
- *     non-member must not be able to distinguish the two).
- *   • 403 `feature_disabled` — the caller IS a member, but the project has the
- *     `apps` flag off. A member already knows the project exists, so the honest
- *     "turn it on in Settings" answer beats a misleading 404.
- * A capability denial still throws (403) from assertProjectCapability.
- */
-async function authorizedProject(
-  c: any,
-  projectId: string,
-  capability: AppCapability = 'read',
-) {
-  const loaded = await loadProjectForUser(c, projectId, capability === 'read' ? 'read' : 'write');
-  if (!loaded) return c.json({ error: 'Not found' }, 404) as Response;
-  await assertProjectCapability(
-    c,
-    loaded.userId,
-    loaded.row.accountId,
-    projectId,
-    APP_CAPABILITY_ACTION[capability],
-  );
-  const gate = requireFeatureFlag(c, loaded.row.metadata, 'apps');
-  if (gate) return gate;
-  return loaded;
-}
-
-async function scopedApp(projectId: string, appId: string) {
-  const [row] = await db
-    .select()
-    .from(apps)
-    .where(and(eq(apps.appId, appId), eq(apps.projectId, projectId), isNull(apps.deletedAt)))
-    .limit(1);
-  return row ?? null;
-}
-
-/**
- * The App a caller may act on, or null. Holding project.app.read is necessary
- * but not sufficient: the App access policy decides WHICH Apps in the project
- * the caller sees (see appVisibleToUser). An App the caller cannot see answers
- * 404, never 403 — a member must not learn that a teammate's private App
- * exists from the status code.
- */
-async function visibleApp(projectId: string, appId: string, userId: string) {
-  const row = await scopedApp(projectId, appId);
-  if (!row) return null;
-  return (await appVisibleToUser(row, userId)) ? row : null;
-}
-
 const AppAccessSchema = z.object({
   mode: z.enum(['private', 'project', 'restricted', 'public', 'password']),
   revision: z.number().int().positive(),
@@ -321,7 +257,200 @@ const AppAccessSchema = z.object({
 
 export { agentsGrantingApp } from './agent-grants';
 
+/**
+ * Records a deployment of a `convex` App: the client CLI already deployed the
+ * functions with the admin credentials, so the row is `ready` at once. It is
+ * history, not routing: `active_deployment_id` does not move.
+ */
+async function recordConvexDeployment(c: Context<AppEnv>, appId: string, userId: string, revision: string | null) {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${appId}))`);
+    const [versionRow] = await tx.select({ value: max(appDeployments.version) }).from(appDeployments)
+      .where(eq(appDeployments.appId, appId));
+    const now = new Date();
+    const [row] = await tx.insert(appDeployments).values({
+      appId,
+      artifactId: null,
+      version: Number(versionRow?.value ?? 0) + 1,
+      status: 'ready',
+      sourceKind: 'convex',
+      hostingType: 'convex',
+      createdBy: userId,
+      sourceSessionId: callerKortixSessionId(c),
+      actorType: appDeploymentActorType(c),
+      runtimeVersion: CONVEX_CLI_VERSION,
+      buildSpec: { source: { kind: 'convex', revision } },
+      runtimeSpec: {},
+      startedAt: now,
+      readyAt: now,
+    }).returning();
+    return row!;
+  });
+}
+
+/** A `convex` refusal (cap, size) or provider failure as its documented answer; null for anything else. */
+function convexRefusal(c: Context<AppEnv>, error: unknown): Response | null {
+  if (error instanceof BackendLimitError || error instanceof BackendOperationError) {
+    return c.json({ error: error.message, code: error.code }, error.status);
+  }
+  const known = backendProviderFailure(error);
+  if (!known) return null;
+  logger.warn('[apps] provider call failed', { path: c.req.path, code: known.code, error: String(error) });
+  return c.json({ error: known.message, code: known.code }, known.status);
+}
+
+/**
+ * The Apps `uses` names, resolved among the live Apps of the project that
+ * `userId` can see; the 400 `app_not_found` to answer for any other slug
+ * (a missing App and one the caller cannot see answer alike). Writes nothing.
+ */
+async function resolveLinksOrRefuse(
+  c: Context<AppEnv>,
+  app: typeof apps.$inferSelect,
+  uses: string[],
+  userId: string,
+): Promise<Array<{ appId: string }> | Response> {
+  try {
+    return await resolveAppLinks(app, uses, userId);
+  } catch (error) {
+    if (!(error instanceof UnknownLinkedAppError)) throw error;
+    return c.json({ error: error.message, code: 'app_not_found', slugs: error.slugs }, 400);
+  }
+}
+
+/** Sets the Apps a just-created App uses; the 400 to answer when a slug names no App the caller can see. */
+async function linkOrRefuse(c: Context<AppEnv>, app: typeof apps.$inferSelect, uses: string[], userId: string): Promise<Response | null> {
+  const found = await resolveLinksOrRefuse(c, app, uses, userId);
+  if (found instanceof Response) return found;
+  await db.transaction((tx) => writeAppLinks(tx, app.appId, found));
+  return null;
+}
+
+/**
+ * Create, kind `convex`: claim the slug (App + machine row, capped per project
+ * and account), link it, then provision the machine in the background. A
+ * failure lands on the row as `instance.status: "error"`; the provision
+ * heartbeats, so maintenance resumes it if this process dies.
+ */
+async function createConvexApp(
+  c: Context<AppEnv>,
+  loaded: { userId: string; row: { accountId: string; metadata: unknown } },
+  body: { slug: string; name: string; cpu?: number; memory_gb?: number; disk_gb?: number; always_on?: boolean; monthly_budget_usd?: number; uses: string[] },
+): Promise<Response> {
+  const projectId = c.req.param('projectId')!;
+  const accountId = loaded.row.accountId;
+  if (!isPlatinumConfigured()) {
+    return c.json({ error: 'This deployment cannot run convex Apps: it has no Platinum machine provider.', code: 'app_kind_unavailable' }, 409);
+  }
+  if (body.always_on === false) {
+    return c.json({ error: 'A convex App always runs; always_on cannot be false.', code: 'app_always_on_required' }, 400);
+  }
+  let size: ReturnType<typeof newConvexSize>;
+  try {
+    size = newConvexSize({ cpu: body.cpu, memoryGb: body.memory_gb, diskGb: body.disk_gb });
+    assertAppBudgetWithinLimits(body.monthly_budget_usd);
+    await assertAppQuotaAvailable(accountId);
+    // The machine bills its reserved size from its first second.
+    await assertAppAccountFunded(accountId);
+  } catch (error) {
+    const refusal = appLimitResponse(c, error) ?? convexRefusal(c, error);
+    if (refusal) return refusal;
+    throw error;
+  }
+  const budget = body.monthly_budget_usd
+    ?? defaultAppBudgetUsd({ cpuCores: size.cpu, memoryGb: size.memoryGb, diskGb: size.diskGb, alwaysOn: true }, 'platinum');
+  let created: Awaited<ReturnType<typeof insertConvexApp>>;
+  try {
+    created = await insertConvexApp({
+      projectId,
+      accountId,
+      userId: loaded.userId,
+      slug: body.slug,
+      name: body.name.trim(),
+      size,
+      monthlyBudgetUsd: budget.toFixed(2),
+      monthlyBudgetExplicit: body.monthly_budget_usd !== undefined,
+    });
+  } catch (error) {
+    if (inspectDatabaseError(error)?.pgCode === '23505') return c.json({ error: 'An App with this slug already exists' }, 409);
+    const refusal = convexRefusal(c, error);
+    if (refusal) return refusal;
+    throw error;
+  }
+  const linked = body.uses.length ? await linkOrRefuse(c, created.app, body.uses, loaded.userId) : null;
+  if (linked) {
+    // Nothing runs yet: the App and its machine row go (cascade).
+    await db.delete(apps).where(eq(apps.appId, created.app.appId));
+    return linked;
+  }
+  void provisionBackend(created.row, resolveSessionSandboxRegion(loaded.row.metadata as Record<string, unknown>)).catch((error) =>
+    logger.error('[apps] convex provision failed', { projectId, appId: created.app.appId, error: String(error) }),
+  );
+  return c.json({ ...(await appJson(created.app, loaded.userId)), warnings: [] }, 201);
+}
+
+/**
+ * Starts the resize of a `convex` App: the wallet gate when it grows, the
+ * operation claim (409 `app_busy`), then the resize in the background (its
+ * result lands on the machine row; it heartbeats, so maintenance recovers the
+ * App if this process dies). Null when started, else the Response to answer.
+ */
+async function startConvexResize(
+  c: Context<AppEnv>,
+  projectId: string,
+  app: typeof apps.$inferSelect,
+  next: { cpuCores: number; memoryGb: number; diskGb: number },
+): Promise<Response | null> {
+  const row = await getLiveConvexApp(projectId, app.appId);
+  if (!row) return c.json({ error: 'Not found' }, 404);
+  const grows = next.cpuCores > row.cpu || next.memoryGb > row.memoryGb || next.diskGb > row.diskGb;
+  try {
+    if (grows) await assertAppAccountFunded(row.accountId);
+    const size = await beginResize(row, { cpu: next.cpuCores, memoryGb: next.memoryGb, diskGb: next.diskGb });
+    void runResize(row, size);
+  } catch (error) {
+    const refusal = appLimitResponse(c, error) ?? convexRefusal(c, error);
+    if (refusal) return refusal;
+    throw error;
+  }
+  return null;
+}
+
+/** Delete, kind `convex`: project.app.admin, the typed slug, then a retained delete (kinds/convex/operations.ts retireConvexApp). */
+async function deleteConvexApp(c: Context<AppEnv>, projectId: string, app: typeof apps.$inferSelect): Promise<Response> {
+  const admin = await authorizedProject(c, projectId, 'admin');
+  if (admin instanceof Response) return admin;
+  const body = await readJsonObject(c);
+  const confirm = c.req.query('confirm') ?? (typeof body.confirm === 'string' ? body.confirm : undefined);
+  if (confirm !== app.slug) {
+    return c.json({
+      error: `This App holds data. Type its slug to delete it: confirm=${app.slug}.`,
+      code: 'confirmation_required',
+    }, 400);
+  }
+  const row = await getLiveConvexApp(projectId, app.appId);
+  if (!row) return c.json({ error: 'Not found' }, 404);
+  let retired: Awaited<ReturnType<typeof retireConvexApp>>;
+  try {
+    retired = await retireConvexApp(row);
+  } catch (error) {
+    logger.error('[apps] convex delete failed', { projectId, appId: app.appId, error: String(error) });
+    return c.json({ error: 'The App machine could not be stopped. Try again.', code: 'app_delete_failed' }, 502);
+  }
+  if (!retired) {
+    const busy = backendOperation(row) ?? 'running another operation';
+    return c.json({ error: `the App is ${busy}; delete it when that finishes`, code: 'app_busy' }, 409);
+  }
+  return c.json({
+    ok: true,
+    images: { released: 0, pending: 0 },
+    retained_until: retired.purgeAfter,
+    final_snapshot_id: retired.finalSnapshotId,
+  });
+}
+
 export function registerAppsRoutes(): void {
+  registerAppCapabilityRoutes();
   projectsApp.openapi(
     createRoute({
       method: 'get', path: '/{projectId}/apps', tags: ['apps'], summary: 'List Apps', ...auth,
@@ -337,7 +466,7 @@ export function registerAppsRoutes(): void {
         .orderBy(desc(apps.createdAt));
       const visible = await filterAppsVisibleToUser(rows, loaded.userId);
       const openable = await appsOpenableByUser(visible, loaded.userId);
-      return c.json({ apps: visible.map((row) => serializeApp(row, openable.has(row.appId))) });
+      return c.json({ apps: await appsJson(visible, loaded.userId, openable) });
     },
   );
 
@@ -464,6 +593,8 @@ export function registerAppsRoutes(): void {
       if (loaded instanceof Response) return loaded;
       const row = await visibleApp(projectId, appId, loaded.userId);
       if (!row) return c.json({ error: 'Not found' }, 404);
+      const refusal = capabilityRefusal(c, row, 'preview');
+      if (refusal) return refusal;
       if (row.accessMode !== 'public' && row.accessMode !== 'password' && !(await appAccessibleToUser(row, loaded.userId))) {
         return c.json({ error: 'App access denied' }, 403);
       }
@@ -488,15 +619,26 @@ export function registerAppsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post', path: '/{projectId}/apps', tags: ['apps'], summary: 'Create an App', ...auth,
+      description:
+        '`kind` (default `web`) is fixed for the App\'s life. A `web` App serves what its deployments build. A ' +
+        '`convex` App is a self-hosted Convex backend in its own always-on machine (default 1 CPU, 1 GB, 10 GB; ' +
+        `CPU ${BACKEND_MACHINE_LIMITS.cpu.min}-${BACKEND_MACHINE_LIMITS.cpu.max}, memory ${BACKEND_MACHINE_LIMITS.memoryGb.min}-${BACKEND_MACHINE_LIMITS.memoryGb.max} GB, ` +
+        `disk ${BACKEND_MACHINE_LIMITS.diskGb.min}-${BACKEND_MACHINE_LIMITS.diskGb.max} GB): it answers 201 with ` +
+        '`instance.status: "provisioning"`; poll the App until it is `running` or `error` (seconds; the first in a ' +
+        'region builds the image). At most 3 `convex` Apps per project and 10 per account (409 `app_kind_limit`). ' +
+        'A `convex` App needs a funded account (402) and a deployment with Platinum (409 `app_kind_unavailable`).',
       request: {
         params: z.object({ projectId: z.string().uuid() }),
         body: { content: { 'application/json': { schema: z.object({
           slug: z.string().min(1).max(63), name: z.string().min(1).max(200),
-          cpu: CpuSchema.default(1),
-          memory_gb: MemorySchema.default(2),
-          disk_gb: DiskSchema.default(10),
+          kind: z.enum(APP_KINDS).default('web'),
+          cpu: CpuSchema.optional(),
+          memory_gb: MemorySchema.optional(),
+          disk_gb: DiskSchema.optional(),
           idle_timeout_seconds: z.number().int().min(120).max(86400).default(300),
-          monthly_budget_usd: z.number().min(0).max(100000).default(5),
+          always_on: z.boolean().optional(),
+          monthly_budget_usd: z.number().min(0).max(100000).optional(),
+          uses: UsesSchema.default([]),
         }) } } },
       },
       responses: { 201: json(AppObject, 'App'), ...errors(400, 402, 403, 404, 409) },
@@ -508,8 +650,10 @@ export function registerAppsRoutes(): void {
       const body = c.req.valid('json');
       const slug = body.slug.toLowerCase();
       if (!APP_SLUG.test(slug)) return c.json({ error: 'slug must contain lowercase letters, numbers, and single hyphens' }, 400);
+      if (body.kind === 'convex') return createConvexApp(c, loaded, { ...body, slug });
+      const machine = { cpu: body.cpu ?? 1, memoryGb: body.memory_gb ?? 2, diskGb: body.disk_gb ?? 10 };
       try {
-        assertAppMachineWithinLimits({ cpu: body.cpu, memoryGb: body.memory_gb, diskGb: body.disk_gb });
+        assertAppMachineWithinLimits(machine);
         assertAppBudgetWithinLimits(body.monthly_budget_usd);
         await assertAppQuotaAvailable(loaded.row.accountId);
       } catch (error) {
@@ -517,15 +661,20 @@ export function registerAppsRoutes(): void {
         if (refusal) return refusal;
         throw error;
       }
+      let row: typeof apps.$inferSelect;
       try {
-        const [row] = await db.insert(apps).values({
+        const alwaysOn = body.always_on ?? config.KORTIX_APPS_DEFAULT_ALWAYS_ON;
+        const budget = body.monthly_budget_usd
+          ?? defaultAppBudgetUsd({ cpuCores: machine.cpu, memoryGb: machine.memoryGb, diskGb: machine.diskGb, alwaysOn }, config.getDefaultProvider());
+        [row] = (await db.insert(apps).values({
           accountId: loaded.row.accountId, projectId, slug, name: body.name.trim(),
           routeKey: randomBytes(8).toString('hex'), createdBy: loaded.userId,
-          cpuCores: body.cpu, memoryGb: body.memory_gb, diskGb: body.disk_gb,
+          cpuCores: machine.cpu, memoryGb: machine.memoryGb, diskGb: machine.diskGb,
           idleTimeoutSeconds: body.idle_timeout_seconds,
-          monthlyBudgetUsd: body.monthly_budget_usd.toFixed(2),
-        }).returning();
-        return c.json(serializeApp(row!), 201);
+          alwaysOn,
+          monthlyBudgetUsd: budget.toFixed(2),
+          monthlyBudgetExplicit: body.monthly_budget_usd !== undefined,
+        }).returning()) as [typeof apps.$inferSelect];
       } catch (error) {
         // Drizzle wraps the postgres.js error, so the SQLSTATE lives on
         // error.cause.code, NOT error.code — reading error.code left this branch
@@ -535,6 +684,13 @@ export function registerAppsRoutes(): void {
           return c.json({ error: 'An App with this slug already exists' }, 409);
         throw error;
       }
+      const linked = body.uses.length ? await linkOrRefuse(c, row, body.uses, loaded.userId) : null;
+      if (linked) {
+        await db.delete(apps).where(eq(apps.appId, row.appId));
+        return linked;
+      }
+      const warning = alwaysOnBudgetWarning(row, config.getDefaultProvider());
+      return c.json({ ...(await appJson(row, loaded.userId)), warnings: warning ? [warning] : [] }, 201);
     },
   );
 
@@ -618,57 +774,124 @@ export function registerAppsRoutes(): void {
       const loaded = await authorizedProject(c, projectId);
       if (loaded instanceof Response) return loaded;
       const row = await visibleApp(projectId, appId, loaded.userId);
-      return row ? c.json(serializeApp(row)) : c.json({ error: 'Not found' }, 404);
+      return row ? c.json(await appJson(row, loaded.userId)) : c.json({ error: 'Not found' }, 404);
     },
   );
 
   projectsApp.openapi(
     createRoute({
       method: 'patch', path: '/{projectId}/apps/{appId}', tags: ['apps'], summary: 'Update an App', ...auth,
+      description:
+        '`uses` replaces the Apps (by slug) this App uses; each must be a live App of the project the caller can see (400 `app_not_found` otherwise, the same for a missing App and a hidden one). A refused PATCH changes nothing. ' +
+        'A `convex` App resizes in the background: the answer carries `instance.operation: "resizing"` and the new ' +
+        'size shows when it is applied (seconds of downtime, a `resize` snapshot first; disk only grows; 409 `app_busy` ' +
+        'while another operation runs). It always runs: `always_on: false` answers 400.',
       request: {
         params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
         body: { content: { 'application/json': { schema: z.object({
           name: z.string().min(1).max(200).optional(), cpu: CpuSchema.optional(),
           memory_gb: MemorySchema.optional(), disk_gb: DiskSchema.optional(),
-          idle_timeout_seconds: z.number().int().min(120).max(86400).optional(), monthly_budget_usd: z.number().min(0).max(100000).optional(),
+          idle_timeout_seconds: z.number().int().min(120).max(86400).optional(), always_on: z.boolean().optional(), monthly_budget_usd: z.number().min(0).max(100000).optional(),
+          uses: UsesSchema.optional(),
         }) } } },
       },
-      responses: { 200: json(AppObject, 'App'), ...errors(400, 403, 404) },
+      responses: { 200: json(AppObject, 'App'), ...errors(400, 402, 403, 404, 409, 502, 503) },
     }),
     async (c: any) => {
       const { projectId, appId } = c.req.param();
       const loaded = await authorizedProject(c, projectId, 'write');
       if (loaded instanceof Response) return loaded;
-      if (!(await visibleApp(projectId, appId, loaded.userId))) {
+      const current = await visibleApp(projectId, appId, loaded.userId);
+      if (!current) {
         return c.json({ error: 'Not found' }, 404);
       }
       const body = c.req.valid('json');
+      const convex = current.kind === 'convex';
+      if (convex && body.always_on === false) {
+        return c.json({ error: 'A convex App always runs; always_on cannot be false.', code: 'app_always_on_required' }, 400);
+      }
       try {
-        assertAppMachineWithinLimits({ cpu: body.cpu, memoryGb: body.memory_gb, diskGb: body.disk_gb });
+        if (!convex) assertAppMachineWithinLimits({ cpu: body.cpu, memoryGb: body.memory_gb, diskGb: body.disk_gb });
         assertAppBudgetWithinLimits(body.monthly_budget_usd);
       } catch (error) {
         const refusal = appLimitResponse(c, error);
         if (refusal) return refusal;
         throw error;
       }
-      const [row] = await db.update(apps).set({
-        ...(body.name !== undefined ? { name: body.name.trim() } : {}),
-        ...(body.cpu !== undefined ? { cpuCores: body.cpu } : {}),
-        ...(body.memory_gb !== undefined ? { memoryGb: body.memory_gb } : {}),
-        ...(body.disk_gb !== undefined ? { diskGb: body.disk_gb } : {}),
-        ...(body.idle_timeout_seconds !== undefined ? { idleTimeoutSeconds: body.idle_timeout_seconds } : {}),
-        ...(body.monthly_budget_usd !== undefined ? { monthlyBudgetUsd: body.monthly_budget_usd.toFixed(2) } : {}),
-        updatedAt: new Date(),
-      }).where(and(eq(apps.appId, appId), eq(apps.projectId, projectId), isNull(apps.deletedAt))).returning();
-      return row ? c.json(serializeApp(row)) : c.json({ error: 'Not found' }, 404);
+      // A budget nobody set follows the machine and run mode; one a person set never moves.
+      const nextMachine = {
+        cpuCores: body.cpu ?? current.cpuCores,
+        memoryGb: body.memory_gb ?? current.memoryGb,
+        diskGb: body.disk_gb ?? current.diskGb,
+        alwaysOn: body.always_on ?? current.alwaysOn,
+      };
+      const sizeChanged = nextMachine.cpuCores !== current.cpuCores || nextMachine.memoryGb !== current.memoryGb
+        || nextMachine.diskGb !== current.diskGb;
+      // Every refusal comes before any write: the links resolve (400), the
+      // resize claims its operation (402/409), then one transaction writes the
+      // links and the row, so a refused PATCH changes nothing.
+      const links = body.uses === undefined ? undefined : await resolveLinksOrRefuse(c, current, body.uses, loaded.userId);
+      if (links instanceof Response) return links;
+      if (convex && sizeChanged) {
+        const resized = await startConvexResize(c, projectId, current, nextMachine);
+        if (resized) return resized;
+      }
+      const machineChanged = [body.cpu, body.memory_gb, body.disk_gb, body.always_on].some((value) => value !== undefined);
+      const derivedBudget = body.monthly_budget_usd === undefined && !current.monthlyBudgetExplicit && machineChanged
+        ? defaultAppBudgetUsd(nextMachine, convex ? 'platinum' : config.getDefaultProvider())
+        : undefined;
+      const [row] = await db.transaction(async (tx) => {
+        if (links) await writeAppLinks(tx, appId, links);
+        return tx.update(apps).set({
+          ...(body.name !== undefined ? { name: body.name.trim() } : {}),
+          // A `convex` App's size is written when the resize applies (kinds/convex/operations.ts runResize).
+          ...(body.cpu !== undefined && !convex ? { cpuCores: body.cpu } : {}),
+          ...(body.memory_gb !== undefined && !convex ? { memoryGb: body.memory_gb } : {}),
+          ...(body.disk_gb !== undefined && !convex ? { diskGb: body.disk_gb } : {}),
+          ...(body.idle_timeout_seconds !== undefined ? { idleTimeoutSeconds: body.idle_timeout_seconds } : {}),
+          ...(body.always_on !== undefined ? { alwaysOn: body.always_on } : {}),
+          ...(body.monthly_budget_usd !== undefined ? { monthlyBudgetUsd: body.monthly_budget_usd.toFixed(2), monthlyBudgetExplicit: true } : {}),
+          ...(derivedBudget !== undefined ? { monthlyBudgetUsd: derivedBudget.toFixed(2) } : {}),
+          updatedAt: new Date(),
+        }).where(and(eq(apps.appId, appId), eq(apps.projectId, projectId), isNull(apps.deletedAt))).returning();
+      });
+      if (!row) return c.json({ error: 'Not found' }, 404);
+      // Warn only when this change touched the run mode, the machine or the budget.
+      const costChanged = [body.always_on, body.monthly_budget_usd, body.cpu, body.memory_gb, body.disk_gb]
+        .some((value) => value !== undefined);
+      const [active] = row.activeDeploymentId
+        ? await db.select({ hostingType: appDeployments.hostingType, hostingProvider: appDeployments.hostingProvider })
+            .from(appDeployments).where(eq(appDeployments.deploymentId, row.activeDeploymentId)).limit(1)
+        : [];
+      const warning = costChanged && !convex && active?.hostingType !== 'static'
+        ? alwaysOnBudgetWarning(row, (active?.hostingProvider as SandboxProviderName | null) ?? config.getDefaultProvider())
+        : null;
+      return c.json({ ...(await appJson(row, loaded.userId)), warnings: warning ? [warning] : [] });
     },
   );
 
   projectsApp.openapi(
     createRoute({
       method: 'delete', path: '/{projectId}/apps/{appId}', tags: ['apps'], summary: 'Delete an App', ...auth,
-      request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }) },
-      responses: { 200: json(z.object({ ok: z.boolean(), images: ImageReleaseObject }), 'Deleted'), ...errors(403, 404) },
+      description:
+        'A `web` App stops serving at once; its runtimes and images go. A `convex` App holds data, so its delete needs ' +
+        'project.app.admin and the typed slug: `confirm=<slug>` as a query parameter or `{ "confirm": "<slug>" }` as ' +
+        'the body (400 `confirmation_required` otherwise). Kortix takes a `final` snapshot, stops the machine and keeps ' +
+        'both 7 days (`retained_until`); its hosts answer 410 meanwhile. 409 `app_busy` while a resize, restore, ' +
+        'snapshot or credential rotation runs.',
+      request: {
+        params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
+        query: z.object({ confirm: z.string().max(63).optional() }),
+      },
+      responses: {
+        200: json(z.object({
+          ok: z.boolean(),
+          images: ImageReleaseObject,
+          retained_until: z.string().nullable().optional(),
+          final_snapshot_id: z.string().nullable().optional(),
+        }), 'Deleted'),
+        ...errors(400, 403, 404, 409, 502),
+      },
     }),
     async (c: any) => {
       const { projectId, appId } = c.req.param();
@@ -676,6 +899,7 @@ export function registerAppsRoutes(): void {
       if (loaded instanceof Response) return loaded;
       const row = await visibleApp(projectId, appId, loaded.userId);
       if (!row) return c.json({ error: 'Not found' }, 404);
+      if (row.kind === 'convex') return deleteConvexApp(c, projectId, row);
       // Delete first, tear down second. A deleted App stops routing and leaves
       // the idle reaper at once; if this request dies mid-teardown, project
       // maintenance (`reclaimAppDeploymentImages`) removes what it left behind.
@@ -685,10 +909,17 @@ export function registerAppsRoutes(): void {
         .select({
           deploymentId: appDeployments.deploymentId,
           hostingProvider: appDeployments.hostingProvider,
+          providerBuildId: appDeployments.providerBuildId,
           status: appDeployments.status,
         })
         .from(appDeployments)
         .where(eq(appDeployments.appId, appId));
+      // Static files: the manifests go now, so `reclaimAppSiteBlobs` frees the
+      // blobs after its grace. A publish still running writes after this; the
+      // retention sweep drops those rows (the App is deleted).
+      if (deployments.length > 0) {
+        await db.delete(appSiteFiles).where(inArray(appSiteFiles.deploymentId, deployments.map((d) => d.deploymentId)));
+      }
       const runtimes = await db
         .select({ runtimeId: appRuntimes.runtimeId, provider: appRuntimes.provider, externalId: appRuntimes.externalId })
         .from(appRuntimes)
@@ -719,17 +950,25 @@ export function registerAppsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post', path: '/{projectId}/apps/{appId}/deployments', tags: ['apps'], summary: 'Deploy an App', ...auth,
+      description:
+        'A `web` App: queue a build of an uploaded artifact (`artifact_id` + `source`); answers 202. A `convex` App: ' +
+        'the client CLI deploys the functions itself, then records the deployment here with `source: { kind: "convex", ' +
+        'revision? }` and no artifact; answers 201 with a `ready` deployment, so the history shows who deployed what.',
       request: {
         params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
         body: { content: { 'application/json': { schema: z.object({
-          artifact_id: z.string().uuid(),
-          source: SourceSchema,
+          artifact_id: z.string().uuid().optional(),
+          source: z.union([SourceSchema, ConvexSourceSchema]),
           provider: z.enum(['daytona', 'platinum', 'e2b']).optional(),
           environment: EnvironmentSchema.optional(),
           secrets: SecretMappingsSchema.optional(),
         }) } } },
       },
-      responses: { 202: json(DeploymentObject, 'Deployment queued'), ...errors(400, 403, 404, 409) },
+      responses: {
+        201: json(DeploymentObject, 'Deployment recorded (convex)'),
+        202: json(DeploymentObject, 'Deployment queued'),
+        ...errors(400, 403, 404, 409),
+      },
     }),
     async (c: any) => {
       const { projectId, appId } = c.req.param();
@@ -738,6 +977,20 @@ export function registerAppsRoutes(): void {
       const app = await visibleApp(projectId, appId, loaded.userId);
       if (!app) return c.json({ error: 'Not found' }, 404);
       const body = c.req.valid('json');
+      if ((app.kind === 'convex') !== (body.source.kind === 'convex')) {
+        return c.json({
+          error: app.kind === 'convex'
+            ? 'A convex App records its deployments with source.kind "convex".'
+            : 'source.kind "convex" deploys only to a convex App.',
+          code: 'source_kind_mismatch',
+        }, 400);
+      }
+      if (body.source.kind === 'convex') {
+        if (body.artifact_id) return c.json({ error: 'A convex deployment has no artifact.', code: 'source_kind_mismatch' }, 400);
+        const recorded = await recordConvexDeployment(c, appId, loaded.userId, body.source.revision ?? null);
+        return c.json(serializeDeployment(recorded), 201);
+      }
+      if (!body.artifact_id) return c.json({ error: 'artifact_id is required' }, 400);
       const [artifact] = await db.select().from(appArtifacts).where(and(
         eq(appArtifacts.artifactId, body.artifact_id), eq(appArtifacts.projectId, projectId),
       )).limit(1);
@@ -915,7 +1168,11 @@ export function registerAppsRoutes(): void {
             eq(appDeployments.deploymentId, deploymentId),
             notInArray(appDeployments.status, [...IN_PROGRESS_DEPLOYMENT_STATUSES, 'deleted']),
           ));
-        return { kind: 'deleted' as const, hostingProvider: deployment.hostingProvider };
+        return {
+          kind: 'deleted' as const,
+          hostingProvider: deployment.hostingProvider,
+          providerBuildId: deployment.providerBuildId,
+        };
       });
       if (decision.kind === 'missing') return c.json({ error: 'Not found' }, 404);
       if (decision.kind === 'live') {
@@ -939,7 +1196,13 @@ export function registerAppsRoutes(): void {
       // Platinum refuses to delete an image while a sandbox pins it, so the
       // runtime goes first. Anything left `pending` is retried by maintenance.
       await teardownAppRuntimes(runtimes);
-      const image = await releaseDeploymentImage({ deploymentId, hostingProvider: decision.hostingProvider });
+      // A shared image another deployment still uses stays; the outcome is then `none`.
+      const image = await releaseDeploymentImage({
+        deploymentId,
+        hostingProvider: decision.hostingProvider,
+        providerBuildId: decision.providerBuildId,
+      });
+      await db.delete(appSiteFiles).where(eq(appSiteFiles.deploymentId, deploymentId));
       await db.insert(appDeploymentEvents).values({
         deploymentId,
         type: 'deployment_deleted',
@@ -963,7 +1226,21 @@ export function registerAppsRoutes(): void {
         if (loaded instanceof Response) return loaded;
         const app = await visibleApp(projectId, appId, loaded.userId);
         if (!app) return c.json({ error: 'Not found' }, 404);
+        // A kind that never sleeps (`convex`) has nothing to start or stop.
+        const refusal = app.kind === 'web' ? null : capabilityRefusal(c, app, 'sleep');
+        if (refusal) return refusal;
         if (!app.activeDeploymentId) return c.json({ error: 'App has no active deployment' }, 409);
+        const [active] = await db.select({ hostingType: appDeployments.hostingType }).from(appDeployments)
+          .where(eq(appDeployments.deploymentId, app.activeDeploymentId)).limit(1);
+        if (active?.hostingType === 'static') {
+          // Served from storage: there is no runtime to start or stop. The
+          // static path ignores desired_state, so writing it would only make
+          // the App read "stopped" while it serves. Unpublish = delete the App.
+          return c.json({
+            error: 'A static App has no runtime to start or stop. It serves while it has an active deployment; delete the App to take it offline.',
+            code: 'static_app_no_runtime',
+          }, 409);
+        }
         const [row] = await db.update(apps).set({ desiredState: action === 'start' ? 'running' : 'stopped', updatedAt: new Date() }).where(eq(apps.appId, appId)).returning();
         if (action === 'stop') {
           const [runtime] = await db.select().from(appRuntimes).where(and(
@@ -1003,7 +1280,7 @@ export function registerAppsRoutes(): void {
             }, 503);
           }
         }
-        return c.json(serializeApp(row!));
+        return c.json(await appJson(row!, loaded.userId));
       },
     );
   }
@@ -1020,14 +1297,18 @@ export function registerAppsRoutes(): void {
       if (loaded instanceof Response) return loaded;
       const app = await visibleApp(projectId, appId, loaded.userId);
       if (!app) return c.json({ error: 'Not found' }, 404);
+      const refusal = capabilityRefusal(c, app, 'rollback');
+      if (refusal) return refusal;
       const { deployment_id: deploymentId } = c.req.valid('json');
       const [deployment] = await db.select().from(appDeployments).where(and(eq(appDeployments.deploymentId, deploymentId), eq(appDeployments.appId, appId), eq(appDeployments.status, 'ready'))).limit(1);
       if (!deployment) return c.json({ error: 'Only a ready deployment can receive rollback traffic' }, 409);
-      const [targetRuntime] = await db.select().from(appRuntimes)
+      // A static deployment is served from storage: nothing to start.
+      const isStatic = deployment.hostingType === 'static';
+      const [targetRuntime] = isStatic ? [] : await db.select().from(appRuntimes)
         .where(eq(appRuntimes.deploymentId, deploymentId))
         .orderBy(desc(appRuntimes.createdAt))
         .limit(1);
-      if (!targetRuntime) return c.json({ error: 'Rollback deployment has no runtime' }, 409);
+      if (!isStatic && !targetRuntime) return c.json({ error: 'Rollback deployment has no runtime' }, 409);
 
       const [runningApp] = await db.update(apps)
         .set({ desiredState: 'running', updatedAt: new Date() })
@@ -1035,7 +1316,7 @@ export function registerAppsRoutes(): void {
         .returning();
       const hosting = new AppHostingProvider();
       try {
-        await ensureAppRuntimeRunning({ app: runningApp!, deployment, runtime: targetRuntime }, hosting);
+        if (targetRuntime) await ensureAppRuntimeRunning({ app: runningApp!, deployment, runtime: targetRuntime }, hosting);
       } catch (error) {
         await db.update(apps).set({ desiredState: app.desiredState, updatedAt: new Date() })
           .where(eq(apps.appId, appId));
@@ -1049,22 +1330,13 @@ export function registerAppsRoutes(): void {
       }
 
       const previousDeploymentId = app.activeDeploymentId;
-      // A concurrent `DELETE …/deployments/:id` can delete the target after the
-      // ready check above. Move traffic only while the target is still ready.
-      const [row] = await db.update(apps)
-        .set({ activeDeploymentId: deploymentId, desiredState: 'running', updatedAt: new Date() })
-        .where(and(
-          eq(apps.appId, appId),
-          exists(db.select({ deploymentId: appDeployments.deploymentId }).from(appDeployments).where(and(
-            eq(appDeployments.deploymentId, deploymentId),
-            eq(appDeployments.status, 'ready'),
-          ))),
-        ))
-        .returning();
+      // A concurrent delete or retention can retire the target after the ready
+      // check above. Move traffic only while the target is still ready.
+      const row = await rollBackActiveDeployment(appId, deploymentId);
       if (!row) return c.json({ error: 'The rollback deployment was deleted' }, 409);
       await db.insert(appDeploymentEvents).values({
         deploymentId,
-        runtimeId: targetRuntime.runtimeId,
+        runtimeId: targetRuntime?.runtimeId ?? null,
         type: 'deployment_rollback',
         message: 'Rollback deployment is serving traffic',
         data: { previousDeploymentId },
@@ -1086,7 +1358,7 @@ export function registerAppsRoutes(): void {
           await pauseComputeSession(previousRuntime.runtimeId, stoppedAt);
         }
       }
-      return c.json(serializeApp(row!));
+      return c.json(await appJson(row!, loaded.userId));
     },
   );
 }

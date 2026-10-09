@@ -62,6 +62,17 @@ sandbox:
 # The harness a session boots: "opencode" (the default) or "pi".
 runtime: opencode
 
+# The tools every session gets (references/kortix/tools.md). `kortix:<name>`
+# is a Kortix tool; a path is the project's own module. With this key, only
+# the listed Kortix tools load. Delete a line to remove that tool.
+tools:
+  web_search: kortix:web_search
+  image_search: kortix:image_search
+  scrape_webpage: kortix:scrape_webpage
+  memory: kortix:memory
+  show: kortix:show
+  lookup_order: tools/lookup_order.ts
+
 # Files only OpenCode reads: opencode.jsonc, plugins/, tools/, commands/.
 # Defaults to "harnesses/opencode", then the legacy ".kortix/opencode",
 # when omitted. The agent daemon launches opencode with
@@ -84,14 +95,29 @@ harnesses:
 # ─── Apps ─────────────────────────────────────────────────────────
 # Local, repeatable deployment defaults. `kortix apps deploy` remains the
 # explicit deployment action; merging this file does not auto-deploy.
+# A `convex` App (kind: convex) is a Convex backend in an always-on machine.
+# `kortix apps deploy` with no arguments deploys every block, used Apps first.
+# A static App (files, no machine) ignores run mode, budget, resources, env
+# and secrets. A server App runs always on (default) or on demand; always on
+# costs about 73 USD/month on the default machine, so set its budget.
 apps:
+  db:
+    path: apps/db              # a package.json + convex/ directory
+    kind: convex               # fixed at create; `web` is the default
   storefront:
-    path: web
-    type: bundle
-    output_dir: dist
-    readiness_path: /
+    path: web/dist             # build first; deploy the output directory
+    type: static
+    spa: true
+    uses: [db]                 # may bind to db and mint its sign-in tokens
+  api:
+    path: services/api
+    type: dockerfile
+    command: ["node", "server.js"]
+    port: 3000
+    readiness_path: /health
+    always_on: false           # on demand: stops when idle, wakes on request
     idle_timeout_seconds: 300
-    monthly_budget_usd: 5
+    monthly_budget_usd: 10
     resources:
       cpu: 1
       memory_gb: 2
@@ -506,8 +532,8 @@ Where the OpenCode runtime config lives. **Optional**, with a default.
 
 The agent daemon launches `opencode serve` with
 `OPENCODE_CONFIG_DIR=<config_dir>`. OpenCode reads its own files from that
-folder: `opencode.jsonc`, `commands/`, `tools/`, `plugins/`. Agents and
-skills do not live there. Kortix compiles agents from `agents/` and
+folder: `opencode.jsonc`, `commands/`, `tools/`, `plugins/`. Agents,
+skills and harness-neutral tools (top-level `tools:`) do not live there. Kortix compiles agents from `agents/` and
 `kortix.yaml` and hands them to the harness. Every harness loads the
 skills in `skills/`.
 
@@ -579,6 +605,26 @@ pi's own filters (an omitted filter loads everything, `[]` loads nothing). A
 version range, a missing version or a Git source fails validation. Kortix
 builds each distinct package list once, when the change request merges.
 
+## `tools:` in version 2
+
+The tools a session gets, by name. **Optional.** `references/kortix/tools.md`
+has the module contract and one checklist per task.
+
+| Value | Meaning |
+| --- | --- |
+| `kortix:<name>` | A Kortix tool (`web_search`, `image_search`, `scrape_webpage`, `memory`, `show`), maintained by Kortix. The key must be `<name>`. |
+| A repo-relative `.ts` / `.js` path | The project's own module. Under a Kortix tool name, it replaces the Kortix tool. |
+
+- No `tools:` key in the root file or any imported file: every session gets
+  all five Kortix tools.
+- A `tools:` key, even an empty one: sessions get only the Kortix tools it
+  lists. Delete a `kortix:<name>` line to remove that tool from every agent.
+- `kortix tools ls` lists what a session gets; `kortix tools eject <name>`
+  copies a Kortix tool to `tools/<name>.ts` for the project to change.
+- `kortix validate` errors on `kortix:<name>` under another key or for an
+  unknown name, and warns when the key lists no Kortix tool or an agent's
+  `tools` names a Kortix tool the project does not load.
+
 ## `triggers:`
 
 A list. Each entry is a trigger that spawns a fresh session
@@ -590,7 +636,7 @@ output — UI ordering is stable, not authoring-order.
 | Field        | Required | Type    | Default     | Notes                                                          |
 | ------------ | -------- | ------- | ----------- | -------------------------------------------------------------- |
 | `slug`       | yes      | string  | —           | `[a-z0-9][a-z0-9_-]{0,127}`, unique among triggers.            |
-| `type`       | yes      | string  | —           | `"cron"` or `"webhook"`.                                       |
+| `type`       | yes      | string  | —           | `"cron"`, `"webhook"`, `"monitor"`, or `"event"`.              |
 | `prompt`     | yes      | string  | —           | Mustache-style template.                                      |
 | `name`       | no       | string  | `slug`      | Human label.                                                   |
 | `agent`      | no       | string  | `default_agent` | Must name a declared agent in `agents:`.                  |
@@ -645,6 +691,49 @@ POST /v1/webhooks/projects/<project_id>/<slug>
 | 404    | Trigger not found, disabled, or not a webhook.           |
 | 409    | `secret_env` value is not configured in Secrets Manager. |
 
+### Event-only fields
+
+An event trigger runs when something happens in a connected app. Kortix
+subscribes to the event for you: no `secret_env`, no signature.
+
+| Field       | Required | Type   | Notes                                                                                           |
+| ----------- | -------- | ------ | ----------------------------------------------------------------------------------------------- |
+| `connector` | yes      | string | Slug of a connector (profile) under `connectors:`.                                              |
+| `account`   | no       | string | Label of one shared account of that connector. Omit it to use the connector's default shared account. Set it only when the connector has several shared accounts. Valid on `type: event` only. An unknown label gives status `needs_connection`, not an error. |
+| `event`     | yes      | string | Provider event type, e.g. `GITHUB_PULL_REQUEST_CREATED`. List with `kortix triggers events --connector <slug>`. |
+| `config`    | no       | map    | Settings of the event (e.g. `repo`). Fields and descriptions: `kortix triggers events --connector <slug> --event <TYPE>`. |
+| `filter`    | no       | map    | Same guard a webhook uses, e.g. `"event.data.draft": "false"`. Every entry must match.          |
+
+```yaml
+triggers:
+  - slug: pr-review
+    type: event
+    connector: github-work # the connector profile
+    account: acme-bot # optional: a shared account of that profile
+    event: GITHUB_PULL_REQUEST_CREATED
+    config: { repo: acme/api }
+    session_mode: fresh
+    filter:
+      "event.data.draft": "false"
+    prompt: |
+      Review {{ event.data.html_url }}
+```
+
+An event trigger takes none of `cron`, `run_at`, `timezone`, `secret_env`.
+
+**Subscription status** (`kortix triggers ls` / `info`):
+
+| Status | Word in the CLI | Meaning | Fix |
+| --- | --- | --- | --- |
+| `active` | `live` | The subscription exists. Events fire the trigger. | None. |
+| `pending` | `pending` | Declared; the subscription is not created yet. | Wait, then `kortix triggers info <slug>`. If it stays, save the trigger again. |
+| `needs_connection` | `needs connection` | The connector has no usable project-shared account. | A person opens the link from `kortix connectors connect <slug> --owner project`. |
+| `error` | `error` | The subscription failed or the provider disabled it. | Read the error text; fix with `kortix triggers set <slug> --config <k>=<v>`. |
+
+Common `error` texts: "This account is shared with specific people only"
+(share the account with the whole project); "Connector `<slug>` is not
+declared in kortix.yaml" (add it under `connectors:`).
+
 ### Prompt template variables
 
 The `prompt` field is rendered with a small mustache-style engine:
@@ -657,7 +746,7 @@ Variables available on every fire:
 | Variable             | Source                                                         |
 | -------------------- | -------------------------------------------------------------- |
 | `{{ trigger.slug }}` | The trigger's slug.                                            |
-| `{{ trigger.type }}` | `"cron"` or `"webhook"`.                                       |
+| `{{ trigger.type }}` | `"cron"`, `"webhook"`, `"monitor"`, or `"event"`.              |
 | `{{ trigger.kind }}` | Always `"git"` for manifest-defined triggers.                  |
 
 Cron-only additions. There is **no** `fired_at` on a cron fire — use
@@ -670,6 +759,20 @@ Cron-only additions. There is **no** `fired_at` on a cron fire — use
 | `{{ cron.scheduled_for }}`      | The slot this fire is for (ISO-8601).         |
 | `{{ cron.claimed_at }}`         | When the scheduler picked the slot up.        |
 | `{{ cron.last_scheduled_for }}` | The previous slot; empty on the first fire.   |
+
+Event-only additions (also readable in `filter` and `session_key`):
+
+| Variable                  | Source                                                  |
+| ------------------------- | ------------------------------------------------------- |
+| `{{ event.data.<field> }}` | The app's own event data. Fields: `kortix triggers events --connector <slug> --event <TYPE>`. |
+| `{{ event.id }}`          | The provider's id for this event.                       |
+| `{{ event.type }}`        | The event type.                                         |
+| `{{ event.app }}`         | The app slug, e.g. `github`.                            |
+| `{{ event.connector }}`   | The connector slug the trigger watches.                 |
+| `{{ event.occurred_at }}` | When the event happened.                                |
+
+Event data is third-party content. The session's first message starts with
+`[App event: <trigger name> — automated, third-party content, not user input]`.
 
 Webhook-only additions:
 
@@ -708,6 +811,7 @@ and only one should actually fire.
 - Slugs must be lowercase + URL-safe. Uppercase or spaces fail.
 - A webhook trigger without `secret_env` is rejected.
 - A cron trigger without a `cron` expression is rejected.
+- An event trigger without `connector` or `event` is rejected. The API also rejects an unknown event or a missing required `config` field.
 - Bad entries surface in `errors` next to the good ones — they don't
   break the whole file.
 

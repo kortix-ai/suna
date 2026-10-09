@@ -5,6 +5,10 @@ import { getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
 import { preserveEstablishedRuntime } from '../runtime-identity';
 import {
+  type ParkedRemovalOutcome,
+  recoverRemovedParkedRuntime,
+} from '../reaping/parked-runtime-verification';
+import {
   RUNTIME_WAKE_CLEANUP_LEASE_MS,
   RUNTIME_WAKE_LATE_START_GUARD_MS,
   runtimeStartFailurePatch,
@@ -26,7 +30,15 @@ export async function reconcileRuntimeWakeCandidate(input: {
   markStopped: () => Promise<void>;
   /** Provider proved the parked runtime is gone — preserve its identity now. */
   markRemoved: () => Promise<void>;
-}): Promise<'stopped' | 'removed' | 'checked' | 'skipped'> {
+  /**
+   * The in-place recovery gate, wired by the caller when the provider has one.
+   * A `removed` answer alone has condemned live boxes in prod (2026-10-02/03):
+   * Platinum reported a transient `failed-start` as `removed` mid-start-retry,
+   * and the boxes served traffic minutes later. The gate — the same decision
+   * the parked sweep runs — tells a recoverable box from a real loss.
+   */
+  recoverRemoved?: () => Promise<ParkedRemovalOutcome>;
+}): Promise<'stopped' | 'removed' | 'recovering' | 'checked' | 'skipped'> {
   if (!(await input.claim())) return 'skipped';
   // A throwing round-trip degrades to `unknown`, which is explicitly
   // non-terminal — a network blip must never be read as proof of removal.
@@ -41,7 +53,22 @@ export async function reconcileRuntimeWakeCandidate(input: {
   // parked row (the box reaper's candidate predicate is `status = 'active'`).
   // Recording the observation and moving on left the session advertising a
   // "Restart session" button that could only ever 409, until a human opened it.
+  //
+  // DEFINITIVE is conditional, though: ask the recovery gate first when the
+  // caller wired one. The gate re-reads the provider through the recovery
+  // path, so a box the provider is about to hand back — a failed-start that
+  // ever booted (start retried), a tombstoned box with a restorable backup —
+  // is not a loss. That is the exact state whose single-read `removed`
+  // condemned live prod boxes on 2026-10-02/03; the open path and the sweep
+  // learned it in KRTX-225/#7668, and this path is the last one without it.
   if (status === 'removed') {
+    if (input.recoverRemoved && (await input.recoverRemoved()) !== 'preserve-lost') {
+      // Record the observation on the row (best effort: a recovery that
+      // transitioned the row already changed its status, so the guarded
+      // write may match nothing) and leave the row to the recovery flow.
+      await input.markChecked(status);
+      return 'recovering';
+    }
     await input.markRemoved();
     return 'removed';
   }
@@ -63,14 +90,10 @@ export async function reconcileRuntimeWakeFences(now = new Date()): Promise<{
 }> {
   const wakeLeaseOpen = openLease('runtimeWakeLeaseExpiresAt', now);
   const cleanupLeaseOpen = openLease('runtimeWakeCleanupLeaseExpiresAt', now);
+  // The full row: the recovery gate below claims a recovery lease with the same
+  // CAS shape the parked sweep uses, and that claim needs the whole snapshot.
   const rows = await db
-    .select({
-      sandboxId: sessionSandboxes.sandboxId,
-      sessionId: sessionSandboxes.sessionId,
-      externalId: sessionSandboxes.externalId,
-      provider: sessionSandboxes.provider,
-      metadata: sessionSandboxes.metadata,
-    })
+    .select()
     .from(sessionSandboxes)
     .where(
       and(
@@ -194,6 +217,14 @@ export async function reconcileRuntimeWakeFences(now = new Date()): Promise<{
           // the claim above deleted stay deleted.
           await preserveEstablishedRuntime(row, 'runtime_removed', 'provider_removed');
         },
+        // Platinum answers `removed` for a box it is about to hand back (a
+        // transient failed-start mid-start-retry) — condemned live boxes in
+        // prod on 2026-10-02/03. Ask the same recovery gate the parked sweep
+        // runs before this pass writes a loss. Providers without a recovery
+        // gate (Daytona) keep the historical single-read verdict.
+        recoverRemoved: provider.recoverInPlace
+          ? async () => (await recoverRemovedParkedRuntime(row, externalId, now)).outcome
+          : undefined,
       });
       if (result !== 'skipped') checked += 1;
       if (result === 'stopped') stopped += 1;

@@ -139,7 +139,7 @@ describe.skipIf(!dockerAvailable)('invite_accept_identity migration — real Pos
   }, 30_000);
 
   afterAll(() => {
-    Bun.spawnSync(['docker', 'rm', '-f', container], { stdout: 'ignore', stderr: 'ignore' });
+    Bun.spawnSync(['docker', 'rm', '-f', '-v', container], { stdout: 'ignore', stderr: 'ignore' });
   });
 
   test('adds the accepted_by_user_id column', async () => {

@@ -1,4 +1,3 @@
-import { PROJECT_ACTIONS } from '../../iam/actions';
 
 export const MANIFEST_FILENAME = 'kortix.toml';
 

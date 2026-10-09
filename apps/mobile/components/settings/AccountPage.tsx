@@ -196,7 +196,7 @@ export function AccountPage({
             onPress={openAccount}
             right={
               <View className="flex-row items-center gap-2">
-                {planName ? <PricingTierBadge planName={planName} size="md" /> : null}
+                {planName ? <PricingTierBadge planName={planName} /> : null}
                 <Icon as={ChevronRight} size={16} className="text-muted-foreground/70" />
               </View>
             }

@@ -149,6 +149,29 @@ export const qk = {
       [...qk.accounts.scope(), 'my-invites', userId ?? 'anonymous'] as const,
   },
 
+  /**
+   * The caller's notifications (KRTX-1742): the inbox, the preference record,
+   * and whether the caller watches one session. Every member answers for the
+   * CALLER, so the user id is segment 2 — the `qk.accounts` rule: without it,
+   * an in-tab identity swap shows user B user A's inbox until the next poll.
+   * `null`/`undefined` route to the `'anonymous'` slot, which no hook writes
+   * (each is gated on a user id). The member literal is segment 3, so no user
+   * id can alias another member.
+   */
+  notifications: {
+    /** Invalidation prefix covering every member for every user. Never a `queryKey`. */
+    scope: () => ['kx', 'notifications'] as const,
+    /** `listNotifications({ limit })` — the newest page. The page size changes the response. */
+    inbox: (userId: string | null | undefined, limit: number) =>
+      [...qk.notifications.scope(), userId ?? 'anonymous', 'inbox', limit] as const,
+    /** `getNotificationPreferences()`. */
+    preferences: (userId: string | null | undefined) =>
+      [...qk.notifications.scope(), userId ?? 'anonymous', 'preferences'] as const,
+    /** `getSessionWatch(projectId, sessionId)` — the caller's watch on one session. */
+    sessionWatch: (userId: string | null | undefined, projectId: string, sessionId: string) =>
+      [...qk.notifications.scope(), userId ?? 'anonymous', 'session-watch', projectId, sessionId] as const,
+  },
+
   projects: {
     /** Invalidation prefix covering every account's list AND the accountless
      *  slot. Never pass this as a `queryKey` — `list(accountId)` and
@@ -335,6 +358,14 @@ export const qk = {
     /** `getSessionTurn` — server truth about the turns running right now. */
     sessionTurn: (id: string, sessionId: string) =>
       [...qk.project.session(id, sessionId), 'turn'] as const,
+    /** The session stream's `kortix.control.runtime` frame: the box and the
+     *  server wake ladder. Written by the stream only; never fetched. */
+    sessionRuntimeControl: (id: string, sessionId: string) =>
+      [...qk.project.session(id, sessionId), 'runtime-control'] as const,
+    /** The session stream's `kortix.control.audit` watermark (pending count +
+     *  newest instants). A host re-reads its audit list when it moves. */
+    sessionAuditWatermark: (id: string, sessionId: string) =>
+      [...qk.project.session(id, sessionId), 'audit-watermark'] as const,
 
     connectors: (id: string) => [...qk.project.scope(id), 'connectors'] as const,
     /** One connector's config — `getConnectorConfig(id, slug)`. */
@@ -346,6 +377,11 @@ export const qk = {
      *  so pass `connection` (the connection id, or a stable stand-in for one not
      *  created yet): two connections of one connector must not share an entry.
      *  Without it, the key is the per-connector prefix every entry sits under. */
+    /** One connector action's output — `useConnectorQuery`. Under
+     *  `connectorConfig(id, slug)`, so invalidating a connector (a new account
+     *  connected) refetches its calls. */
+    connectorCall: (id: string, slug: string, action: string, args: unknown, account?: string | null) =>
+      [...qk.project.connectorConfig(id, slug), 'call', action, account ?? null, args] as const,
     connectorOAuth2Discovery: (id: string, slug: string, connection?: string) =>
       connection === undefined
         ? ([...qk.project.connectorConfig(id, slug), 'oauth2-discovery'] as const)
@@ -372,6 +408,11 @@ export const qk = {
     /** Immutable deployment history for one App. */
     appDeployments: (id: string, appId: string) =>
       [...qk.project.apps(id), appId, 'deployments'] as const,
+    /** Snapshots of one App (capability `snapshots`). */
+    appSnapshots: (id: string, appId: string) => [...qk.project.apps(id), appId, 'snapshots'] as const,
+    /** One deployment and its events (build log included). */
+    appDeployment: (id: string, appId: string, deploymentId: string) =>
+      [...qk.project.appDeployments(id, appId), deploymentId] as const,
 
     /** `listProjectTriggers` — `GET /projects/:id/triggers`, the cron/webhook
      *  listing (file-defined in the repo manifest). Shared by
@@ -380,6 +421,13 @@ export const qk = {
      *  and write the identical entity through `listProjectTriggers(id)`, so
      *  they must share this one key. */
     triggers: (id: string) => [...qk.project.scope(id), 'triggers'] as const,
+
+    /** `listProjectTriggerEventTypes` — the app events one connector can trigger on. */
+    triggerEventTypes: (id: string, connector: string) =>
+      [...qk.project.triggers(id), 'event-types', connector] as const,
+
+    /** `listProjectTriggerEventApps` — the apps that can trigger events. */
+    triggerEventApps: (id: string) => [...qk.project.triggers(id), 'event-apps'] as const,
 
     /** `listProjectReminders` — `GET /projects/:id/reminders`. Also the prefix
      *  of every `sessionReminders` key, so invalidating it refreshes the

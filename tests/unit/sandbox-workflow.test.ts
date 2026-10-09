@@ -205,7 +205,7 @@ describe('native test-lane workflow', () => {
       expect(block).toContain('uses: ./.aws-env/.github/actions/aws-env');
       expect(block).toContain('id-token: write');
       expect(block).toMatch(/^ {12}VERCEL_AUTOMATION_BYPASS_SECRET$/m);
-      expect(block).toContain('WEB_PROTECTION_PASSWORD=kortix-staging-web-env:WEB_PROTECTION_PASSWORD');
+      expect(block).toContain('WEB_PROTECTION_PASSWORD=kortix-staging-euw2-web-env:WEB_PROTECTION_PASSWORD');
     }
     expect(release).toContain('https://staging-api.kortix.com/v1');
     expect(release).toContain('https://staging.kortix.com');
@@ -462,7 +462,7 @@ describe('the preview label is one fast deploy, and a superseded run never deplo
   const previewWorkflow = readFileSync(resolve(root, '.github/workflows/deploy-preview.yml'), 'utf8');
   const revalidate = previewWorkflow.slice(
     previewWorkflow.indexOf('- name: Revalidate exact preview approval'),
-    previewWorkflow.indexOf('- uses: actions/download-artifact@v8'),
+    previewWorkflow.indexOf('- uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c'),
   );
 
   test('only an explicit act starts a run, and only a dispatch runs the suite', () => {

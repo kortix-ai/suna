@@ -15,6 +15,7 @@ export type SessionInvocationSource =
   | 'trigger:cron'
   | 'trigger:manual'
   | 'trigger:monitor'
+  | 'trigger:event'
   | 'trigger:reminder'
   | 'system:sandbox-build-fix'
   | 'system:approval-resume'
@@ -250,6 +251,8 @@ export interface SessionLifecycleResult {
   delivery?: SessionDeliveryOutcome;
   deduped?: boolean;
   retryable?: boolean;
+  /** The command row went back to the queue: the drain owns the outcome. */
+  requeued?: boolean;
   reason?: string;
   error?: SessionCreateError;
 }

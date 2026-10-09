@@ -9,9 +9,11 @@ import { Platform, AppState, AppStateStatus } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import { shouldUseRevenueCat } from '@/lib/billing/provider';
 import { consumeAuthCallbackState, createAuthCallbackRedirect } from '@/lib/auth/callback-state';
+import { mfaChallengeRequired, verifiedTotpFactor } from '@/lib/auth/mfa';
 import { admitMobileOAuthSession } from '@/lib/auth/mobile-admission';
 import { parsePersistedSession, sessionForNullAuthResult } from '@/lib/auth/persisted-session';
 import { sessionExpiry } from '@/lib/auth/session-expiry-monitor';
+import { signOutThisDevice } from '@/lib/auth/sign-out';
 import { keysToClear } from '@/lib/auth/sign-out-keys';
 import { applyProfileLocale } from '@/lib/utils/i18n';
 import { withDeadline } from '@/lib/utils/with-deadline';
@@ -208,26 +210,30 @@ async function createSessionFromUrl(url: string) {
 /**
  * What the auth context shows. No `session`: a token refresh replaces it about
  * once an hour, and code that needs the token reads it at call time
- * (`getAuthToken`, `api/config.ts`).
+ * (`getAuthToken`, `api/config.ts`). `mfaRequired`: the session owes a TOTP
+ * code before it reaches the app (lib/auth/mfa).
  */
-export type UserState = Omit<AuthState, 'session'>;
+export type UserState = Omit<AuthState, 'session'> & { mfaRequired: boolean };
 
 /**
  * The state for a session from the restore or an auth event. The same user
  * with the same data keeps the previous object, so a token refresh does not
  * re-render every consumer of the auth context. Another user, changed user
- * data, or a change of signed-in state replaces it.
+ * data, a change of signed-in state, or a change of `mfaRequired` (a TOTP
+ * verify) replaces it.
  */
 function nextAuthState(prev: UserState, session: Session | null): UserState {
   const user = session?.user ?? null;
+  const mfaRequired = mfaChallengeRequired(session);
   if (
     !prev.isLoading &&
     prev.isAuthenticated === !!session &&
+    prev.mfaRequired === mfaRequired &&
     JSON.stringify(prev.user) === JSON.stringify(user)
   ) {
     return prev;
   }
-  return { user, isLoading: false, isAuthenticated: !!session };
+  return { user, isLoading: false, isAuthenticated: !!session, mfaRequired };
 }
 
 export function useAuth() {
@@ -238,6 +244,7 @@ export function useAuth() {
     user: null,
     isLoading: true,
     isAuthenticated: false,
+    mfaRequired: false,
   });
 
   const [error, setError] = useState<AuthError | null>(null);
@@ -348,7 +355,7 @@ export function useAuth() {
             );
             setOauthRejection('No account found. Create an account on the web first.');
             sessionExpiry.disarm();
-            await supabase.auth.signOut().catch(() => {});
+            await signOutThisDevice(supabase.auth);
             return;
           }
         }
@@ -1014,12 +1021,12 @@ export function useAuth() {
   /**
    * Sign out - Best practice implementation
    *
-   * 1. Attempts global sign out (server + local)
-   * 2. Falls back to local-only if global fails
-   * 3. Clears every AsyncStorage key except device preferences (theme,
+   * 1. Signs out this device only (scope local): web and other installs
+   *    stay signed in.
+   * 2. Clears every AsyncStorage key except device preferences (theme,
    *    language, onboarding cache — see lib/auth/sign-out-keys), including the
    *    Supabase session keys as a failsafe
-   * 4. Forces React state update
+   * 3. Forces React state update
    *
    * Note: Onboarding status is stored in user_metadata (backend), so it persists
    * across devices and logins. AsyncStorage cache is kept for faster checks.
@@ -1057,6 +1064,7 @@ export function useAuth() {
         user: null,
         isLoading: false,
         isAuthenticated: false,
+        mfaRequired: false,
       });
       setError(null);
     };
@@ -1085,17 +1093,8 @@ export function useAuth() {
       // Bounded (3 s) and never throws: sign-out does not wait on it failing.
       await unregisterPushOnSignOut();
 
-      const { error: globalError } = await supabase.auth.signOut({ scope: 'global' });
-
-      if (globalError) {
-        log.warn('⚠️  Global sign out failed:', globalError.message);
-
-        const { error: localError } = await supabase.auth.signOut({ scope: 'local' });
-
-        if (localError) {
-          log.warn('⚠️  Local sign out also failed:', localError.message);
-        }
-      }
+      const signOutError = await signOutThisDevice(supabase.auth);
+      if (signOutError) log.warn('⚠️  Sign out returned an error:', signOutError);
 
       await clearUserStorage();
 
@@ -1129,6 +1128,35 @@ export function useAuth() {
 
   const clearOauthRejection = useCallback(() => setOauthRejection(null), []);
 
+  /**
+   * Completes the TOTP step-up with the verified TOTP factor. On success
+   * auth-js stores the aal2 session and emits MFA_CHALLENGE_VERIFIED, which
+   * clears `mfaRequired`. Returns the error's `code` only (a wrong code is
+   * `mfa_verification_failed`; the screen localizes by it), or null. Never throws.
+   */
+  const verifyTotp = useCallback(
+    async (code: string): Promise<{ code?: string } | null> => {
+      try {
+        // An expired token refreshes here; offline that returns the error, not a session.
+        const {
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession();
+        if (sessionError) return { code: sessionError.code };
+        const factor = session ? verifiedTotpFactor(session.user) : undefined;
+        if (!factor) return {};
+        const { error: verifyError } = await supabase.auth.mfa.challengeAndVerify({
+          factorId: factor.id,
+          code,
+        });
+        return verifyError ? { code: verifyError.code } : null;
+      } catch {
+        return {};
+      }
+    },
+    []
+  );
+
   // Stable identity: AuthProvider passes this object as the context value, and
   // a fresh object every render re-renders every consumer.
   return useMemo(
@@ -1146,6 +1174,7 @@ export function useAuth() {
       resetPassword,
       updatePassword,
       signOut,
+      verifyTotp,
     }),
     [
       authState,
@@ -1161,6 +1190,7 @@ export function useAuth() {
       resetPassword,
       updatePassword,
       signOut,
+      verifyTotp,
     ]
   );
 }

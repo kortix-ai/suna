@@ -79,11 +79,11 @@ outside `[A-Za-z0-9._-]` become `-`; a detached HEAD writes
 plus the legacy `tests/test-attestation.json`; commit `tests/attestations/`.
 One file per branch keeps PRs from conflicting on it; deleting a merged PR's
 file is conflict-free because no branch edits it again. Format:
-`{source_hash, diff_files, diff_hash, head, passed, lanes: {<lane>: pass|fail|skipped-no-db|skipped-sandbox-image}, at}`.
-`diff_files` is the files the PR itself changed (`git diff origin/main...HEAD`,
+`{source_hash, diff_files, diff_hash, head, passed, lanes: {<lane>: pass|fail|skipped-no-db}, at}`.
+`diff_files` is the files the PR itself changed (`git diff origin/dev...HEAD`,
 minus every attestation file) and `diff_hash` their sha256; both are recomputed from
 the verified rev, so committing the attestation does not change them. Verify
-stays green after a merge of `origin/main` that touches other files, and goes
+stays green after a merge of `origin/dev` that touches other files, and goes
 stale only when a file the PR changed is edited after the run. `source_hash`
 (the sha256 of every file the commit would contain except attestation files) is
 the full-tree fallback used on a direct main push, where there is no diverging
@@ -99,10 +99,10 @@ reads the file the rev's PR diff adds or edits under `tests/attestations/` (with
 several, the `--branch` match, else the newest `at`), else `<branch>.json` at the
 rev (`--branch`, else the checked-out branch), else the legacy file. It
 recomputes the diff: exit `0` green, `1` missing/stale/red. `core` and `packages` must be `pass`,
-every other lane must be `pass`. Two skips exist, neither a pass: `db-suites`
-`skipped-no-db` (no Docker) and `packages` `skipped-sandbox-image` (a Kortix
-sandbox image breaks those tests identically at `origin/main`; the scheduled
-clean-runner `Tests` run is the backstop). `--strict` exits `3` for either skip. No in-sandbox
+every other lane must be `pass`. One skip exists, not a pass: `db-suites`
+`skipped-no-db` (no Docker). The `packages` lane has no skip — it runs on a
+laptop, a CI runner and a Kortix factory sandbox alike. `--strict` exits `3` for
+the skip. No in-sandbox
 Postgres: the DB lanes depend on Docker in three places, so a Docker-less box
 records the skip and the merge gate holds DB PRs.
 The `.githooks/pre-push` hook enforces this on every branch push except

@@ -10,6 +10,7 @@ import {
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { SubAgentActivity, SubAgentStatusBanner } from '@/features/session/tool/shared/sub-agent';
 import type { ToolProps } from '@/features/session/tool/shared/types';
+import { ToolError } from '@/features/session/tool/tool-error';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import {
@@ -131,6 +132,13 @@ export function TaskTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const isRunning = status === 'running' || status === 'pending';
   const isCompleted = status === 'completed';
 
+  // The task tool's failure reason, drawn in the body. The renderer routes
+  // errored dispatches back here (they keep their row and their child thread),
+  // and this row must still say WHY it failed — before it only announced the
+  // dispatch, never the error (KRTX-1746).
+  const errorText =
+    status === 'error' && 'error' in part.state ? (part.state as { error: string }).error : undefined;
+
   const lastActivity = useMemo(() => {
     if (childToolParts.length === 0) return null;
     const last = childToolParts[childToolParts.length - 1];
@@ -175,10 +183,19 @@ export function TaskTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
         // plain button onto the full view — the same destination the `View`
         // action carries, so the row and its action never disagree. Without
         // this the reader met a row that looked openable and was not.
-        onClick={childSessionId && !hasInlineSteps ? openModal : undefined}
+        // A FAILED dispatch keeps the disclosure instead: its body is the
+        // failure reason, which `ClickableToolRow` would drop, and the reason
+        // must stay readable on the row exactly as the generic error card
+        // showed it (KRTX-1746). The child thread stays one `View` away.
+        onClick={childSessionId && !hasInlineSteps && !errorText ? openModal : undefined}
       >
-        {hasInlineSteps ? (
-          <SubAgentActivity childSessionId={childSessionId} parts={childToolParts} />
+        {(errorText || hasInlineSteps) ? (
+          <>
+            {errorText ? <ToolError error={errorText} toolName={part.tool} /> : undefined}
+            {hasInlineSteps ? (
+              <SubAgentActivity childSessionId={childSessionId} parts={childToolParts} />
+            ) : undefined}
+          </>
         ) : undefined}
       </BasicTool>
       <SubAgentStatusBanner childSessionId={childSessionId} childMessages={childMessages} />

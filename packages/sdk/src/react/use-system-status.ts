@@ -5,12 +5,14 @@
  */
 import { useRetiredMutation, useRetiredQuery } from './retired-endpoint';
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface MaintenanceNotice {
   enabled: boolean;
   start_time?: string | null;
   end_time?: string | null;
 }
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface TechnicalIssue {
   enabled: boolean;
   message?: string | null;
@@ -21,6 +23,7 @@ export interface TechnicalIssue {
   severity?: 'degraded' | 'outage' | 'maintenance' | null;
 }
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface SystemStatus {
   maintenance_notice: MaintenanceNotice;
   technical_issue: TechnicalIssue;
@@ -28,12 +31,14 @@ export interface SystemStatus {
   updated_by?: string | null;
 }
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface UpdateMaintenanceRequest {
   enabled: boolean;
   start_time?: string | null;
   end_time?: string | null;
 }
 
+/** @deprecated No replacement: the API removed the admin route this type describes. Removed in the next major. */
 export interface UpdateTechnicalIssueRequest {
   enabled: boolean;
   message?: string | null;
@@ -44,14 +49,14 @@ export interface UpdateTechnicalIssueRequest {
   severity?: 'degraded' | 'outage' | 'maintenance' | null;
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export const useSystemStatus = () => useRetiredQuery<SystemStatus>('useSystemStatus', ['admin-system-status']);
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export const useUpdateMaintenanceNotice = () => useRetiredMutation<SystemStatus | undefined, UpdateMaintenanceRequest>('useUpdateMaintenanceNotice');
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export const useUpdateTechnicalIssue = () => useRetiredMutation<SystemStatus | undefined, UpdateTechnicalIssueRequest>('useUpdateTechnicalIssue');
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export const useClearSystemStatus = () => useRetiredMutation<SystemStatus | undefined, void>('useClearSystemStatus');

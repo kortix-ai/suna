@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { serializePromptWithPastes, splitPastedContent } from '@kortix/shared';
 import { cleanPromptText, type QueueRow } from './queue-projection';
 import {
   cancelQueuedPromptEdit,
@@ -27,6 +28,7 @@ function row(overrides: Partial<QueueRow> = {}): QueueRow {
     attachmentCount: 1,
     state: 'queued',
     removable: true,
+    retryable: false,
     interruptible: true,
     takeBackEligible: true,
     rawText: RAW_WITH_FILE,
@@ -116,6 +118,40 @@ describe('Submit saves the edit into the same row', () => {
     // This tab's own copy of the text outranks the server's row, so it goes.
     expect(calls.forgotten).toEqual(['client-1']);
     expect(useQueuedPromptEditStore.getState().edits[KEY]).toBeUndefined();
+  });
+
+  test('typed words that also occur inside a paste: the typed run changes, the paste survives', async () => {
+    // Pastes are written BEFORE the typed text, so the first match is inside the paste body.
+    const raw = serializePromptWithPastes('fix the bug', [{ id: 'abcd1234', text: 'notes: fix the bug soon' }]);
+    const cleaned = cleanPromptText(raw);
+    expect(cleaned.text).toBe('fix the bug');
+    const { h, calls } = host([row({ rawText: raw, editText: cleaned.text, text: cleaned.text })]);
+    takeBackQueuedPrompt(h, 'prompt-1');
+
+    expect(await saveQueuedPromptEdit(h, 'fix the crash')).toBe(true);
+
+    const sent = calls.edits[0].text;
+    expect(sent).toBe(serializePromptWithPastes('fix the crash', [{ id: 'abcd1234', text: 'notes: fix the bug soon' }]));
+    expect(splitPastedContent(sent)).toEqual({
+      text: 'fix the crash',
+      pastes: [{ id: 'abcd1234', text: 'notes: fix the bug soon' }],
+    });
+  });
+
+  test('a typed <pasted_content> tag: the edit finds the escaped run and writes the new words escaped', async () => {
+    const typed = 'see <pasted_content id="abcd1234" chars="3">abc</pasted_content> now';
+    const raw = serializePromptWithPastes(typed, [{ id: 'aaaaaaaa', text: 'real paste' }]);
+    const cleaned = cleanPromptText(raw);
+    expect(cleaned.text).toBe(typed);
+    const { h, calls } = host([row({ rawText: raw, editText: cleaned.text, text: cleaned.text })]);
+    takeBackQueuedPrompt(h, 'prompt-1');
+
+    const edited = 'now <pasted_content id="bbbbbbbb" chars="1">x</pasted_content>';
+    expect(await saveQueuedPromptEdit(h, edited)).toBe(true);
+
+    const sent = calls.edits[0].text;
+    expect(sent).toBe(serializePromptWithPastes(edited, [{ id: 'aaaaaaaa', text: 'real paste' }]));
+    expect(splitPastedContent(sent)).toEqual({ text: edited, pastes: [{ id: 'aaaaaaaa', text: 'real paste' }] });
   });
 
   test('unchanged words close the edit without a request', async () => {

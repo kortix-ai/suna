@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { buildOpencodeConfigContent, capabilityToolRules, denyBuiltinSkills } from '@/harness/open-code/lifecycle'
-import { CONNECTOR_PROXY_PLACEHOLDER_KEY, LLM_PROXY_PLACEHOLDER_KEY } from '@/services/llm-proxy/llm-proxy'
+import { LLM_PROXY_PLACEHOLDER_KEY } from '@/services/llm-proxy/llm-proxy'
 
 const ENV = { KORTIX_TOKEN: 'tok-123', KORTIX_API_URL: 'https://api.kortix.test/v1' }
 
@@ -94,37 +94,16 @@ describe('buildOpencodeConfigContent — injected managed skills', () => {
   })
 })
 
-describe('buildOpencodeConfigContent — optional connector MCP server', () => {
-  test('does not register connector MCP by default; CLI is the primary Connector path', async () => {
-    const parsed = JSON.parse((await buildOpencodeConfigContent(ENV))!)
-    expect(parsed.mcp).toBeUndefined()
-  })
-
-  test.each(['1', 'true'])('registers the connector MCP server only when explicitly enabled (%j)', async (enabled) => {
-    const raw = await buildOpencodeConfigContent({ ...ENV, KORTIX_CONNECTORS_MCP_ENABLED: enabled })
-    expect(raw).toBeDefined()
-    const config = JSON.parse(raw!)
-    const server = config.mcp['kortix-connectors']
-    expect(server).toMatchObject({
-      type: 'local',
-      enabled: true,
-      environment: {
-        KORTIX_TOKEN: 'tok-123',
-        KORTIX_API_URL: 'https://api.kortix.test/v1',
-        PATH: '/usr/local/bin:/usr/bin:/bin',
-      },
-    })
-    expect(server.command).toEqual(['/usr/local/bin/kortix', 'connectors', 'mcp'])
+describe('buildOpencodeConfigContent — base composition', () => {
+  test('registers no Kortix MCP server, also when an older API still sends KORTIX_CONNECTORS_MCP_ENABLED', async () => {
+    // The in-sandbox `kortix-connectors` MCP is gone: agents use the `kortix` CLI.
+    for (const env of [ENV, { ...ENV, KORTIX_CONNECTORS_MCP_ENABLED: '1' }]) {
+      expect(JSON.parse((await buildOpencodeConfigContent(env))!).mcp).toBeUndefined()
+    }
   })
 
   test('registers nothing session-specific when no contributor applies', async () => {
-    for (const env of [
-      {},
-      // Enabled, but direct mode needs BOTH the token and the API URL.
-      { KORTIX_TOKEN: 'tok-123', KORTIX_CONNECTORS_MCP_ENABLED: '1' },
-      { KORTIX_API_URL: 'https://api.kortix.test/v1', KORTIX_CONNECTORS_MCP_ENABLED: '1' },
-      { ...ENV, KORTIX_CONNECTORS_MCP_ENABLED: '0' },
-    ]) {
+    for (const env of [{}, ENV]) {
       const parsed = JSON.parse((await buildOpencodeConfigContent(env))!)
       expect(parsed.mcp).toBeUndefined()
       expect(parsed.provider).toBeUndefined()
@@ -138,7 +117,7 @@ describe('buildOpencodeConfigContent — optional connector MCP server', () => {
     // /opt/kortix/opencode.current. The next OpenCode restart would have booted
     // the stub. Every composed config now pins autoupdate off, and a base
     // config cannot turn it back on.
-    for (const env of [{}, ENV, { ...ENV, KORTIX_CONNECTORS_MCP_ENABLED: '1' }]) {
+    for (const env of [{}, ENV]) {
       expect(JSON.parse((await buildOpencodeConfigContent(env))!).autoupdate).toBe(false)
     }
     const parsed = JSON.parse(
@@ -152,23 +131,14 @@ describe('buildOpencodeConfigContent — optional connector MCP server', () => {
       theme: 'dark',
       mcp: { other: { type: 'local', command: ['echo'], enabled: true } },
     })
-    const config = JSON.parse((await buildOpencodeConfigContent({
-      ...ENV,
-      KORTIX_CONNECTORS_MCP_ENABLED: '1',
-      OPENCODE_CONFIG_CONTENT: existing,
-    }))!)
+    const config = JSON.parse((await buildOpencodeConfigContent({ ...ENV, OPENCODE_CONFIG_CONTENT: existing }))!)
     expect(config.theme).toBe('dark')
-    expect(config.mcp.other).toBeDefined()
-    expect(config.mcp['kortix-connectors']).toBeDefined()
+    expect(Object.keys(config.mcp)).toEqual(['other'])
   })
 
   test('survives malformed pre-existing inline config', async () => {
-    const config = JSON.parse((await buildOpencodeConfigContent({
-      ...ENV,
-      KORTIX_CONNECTORS_MCP_ENABLED: '1',
-      OPENCODE_CONFIG_CONTENT: 'not json{',
-    }))!)
-    expect(config.mcp['kortix-connectors']).toBeDefined()
+    const config = JSON.parse((await buildOpencodeConfigContent({ ...ENV, OPENCODE_CONFIG_CONTENT: 'not json{' }))!)
+    expect(config.autoupdate).toBe(false)
   })
 })
 
@@ -273,8 +243,8 @@ describe('buildOpencodeConfigContent — Slack sessions deny the question tool',
   })
 
   test('does NOT touch permissions for a non-Slack (web) session — tool stays native', async () => {
-    const config = JSON.parse((await buildOpencodeConfigContent({ ...ENV, KORTIX_CONNECTORS_MCP_ENABLED: '1' }))!)
-    expect(config.permission.question).toBeUndefined()
+    const config = JSON.parse((await buildOpencodeConfigContent(ENV))!)
+    expect(config.permission?.question).toBeUndefined()
   })
 
   test('merges the deny onto a pre-existing permission block', async () => {
@@ -340,22 +310,19 @@ describe('buildOpencodeConfigContent — server-compiled v2 agent config (KORTIX
   test('malformed KORTIX_COMPILED_AGENT_CONFIG is ignored, not fatal', async () => {
     const config = await buildOpencodeConfigContent({
       ...ENV,
-      KORTIX_CONNECTORS_MCP_ENABLED: '1',
       KORTIX_COMPILED_AGENT_CONFIG: 'not json{',
     })
     expect(config).toBeDefined()
     expect(JSON.parse(config!).agent).toBeUndefined()
-    expect(JSON.parse(config!).mcp['kortix-connectors']).toBeDefined()
   })
 })
 
 describe('buildOpencodeConfigContent — warm-fork proxy mode bakes no session credential', () => {
-  // A warm seed has no session token. With the localhost proxies the composed
+  // A warm seed has no session token. With the localhost LLM proxy the composed
   // config is session-independent: the proxy injects the live token per request,
   // so a restored fork swaps credentials with no OpenCode restart.
   const PROXY_ENV = {
     KORTIX_LLM_PROXY_URL: 'http://127.0.0.1:4319',
-    KORTIX_CONNECTORS_PROXY_URL: 'http://127.0.0.1:4320',
     KORTIX_API_URL: 'https://api.kortix.test/v1',
     KORTIX_LLM_BASE_URL: 'https://gateway.kortix.test/v1/llm',
     KORTIX_TOKEN: 'real-session-token',
@@ -369,18 +336,6 @@ describe('buildOpencodeConfigContent — warm-fork proxy mode bakes no session c
     expect(config.provider.kortix.options.apiKey).toBe(LLM_PROXY_PLACEHOLDER_KEY)
     expect(JSON.stringify(config)).not.toContain('real-session-token')
     expect(config.mcp).toBeUndefined()
-  })
-
-  test('an enabled connector MCP points at the connector proxy with its placeholder', async () => {
-    stageGatewayCatalog(GATEWAY_CATALOG)
-    const config = JSON.parse(
-      (await buildOpencodeConfigContent({ ...PROXY_ENV, KORTIX_CONNECTORS_MCP_ENABLED: '1' }))!,
-    )
-    const server = config.mcp['kortix-connectors']
-    expect(server.command).toEqual(['/usr/local/bin/kortix', 'connectors', 'mcp'])
-    expect(server.environment.KORTIX_API_URL).toBe('http://127.0.0.1:4320')
-    expect(server.environment.KORTIX_TOKEN).toBe(CONNECTOR_PROXY_PLACEHOLDER_KEY)
-    expect(JSON.stringify(config)).not.toContain('real-session-token')
   })
 })
 

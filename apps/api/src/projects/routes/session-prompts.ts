@@ -20,6 +20,11 @@ import { loadSandboxMetadataForSessions } from '../session-lifecycle/instance-re
 import { normalizeString } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
 import { readJsonObject } from '../../shared/http-body';
+import { annotateAuditEvent } from '../../shared/audit-scope';
+import { notificationsEnabled } from '../../notifications/enabled';
+import { autoWatchSession } from '../../notifications/watchers';
+import { logger } from '../../lib/logger';
+import { personUserId } from './session-watch';
 import {
   deleteInboxPrompt,
   editInboxPrompt,
@@ -47,7 +52,7 @@ import {
   serializePrompt,
 } from '../lib/session-prompt-view';
 import { SessionPromptDeliverySchema } from '@kortix/api-contract';
-import { WIRE_MESSAGE_ID, isWireIdAheadOf } from '../wire-message-id';
+import { WIRE_MESSAGE_ID, isWireIdAheadOf, mintWireMessageId } from '../wire-message-id';
 
 // ─── Prompt inbox ───────────────────────────────────────────────────────────
 //
@@ -78,6 +83,12 @@ const LONE_SEND_MAX_AGE_MS = 1_000;
  *  byte. Not a subset of `SessionPromptSchema`: that one carries a truncated
  *  text PREVIEW and no parts at all, which is a display shape, not a restore
  *  shape. */
+/** A queued prompt runs as its author: another member may not change or send it. */
+const NOT_PROMPT_AUTHOR = {
+  error: 'Only the member who sent this prompt can change or send it',
+  code: 'not_prompt_author',
+} as const;
+
 const RemovedSessionPromptSchema = z.object({
   placement: z.enum(['transcript', 'composer']).optional(),
   delivery: SessionPromptDeliverySchema.optional(),
@@ -131,7 +142,7 @@ export function registerSessionPromptsRoutes(): void {
         params: z.object({ projectId: z.string(), sessionId: z.string() }),
         body: { content: { 'application/json': { schema: lenientBody({
             client_message_id: z.string().openapi({ description: 'Caller-chosen id, 1-128 chars, unique per prompt. Reuse it to retry safely.' }),
-            message_id: z.string().openapi({ description: 'OpenCode wire message id (starts with msg_). Must sort after earlier messages of the session.' }),
+            message_id: z.string().optional().openapi({ description: 'Wire message id (starts with msg_). Omit it and the server mints one and places it in order on delivery.' }),
             parts: z.array(z.object({ type: z.enum(['text', 'file', 'agent']).optional(), text: z.string().optional(), mime: z.string().optional(), url: z.string().optional(), filename: z.string().optional(), attachment_id: z.string().optional() }).passthrough()).openapi({ description: '1 or more parts. Text prompt: [{"type":"text","text":"..."}].' }),
             placement: z.enum(['transcript', 'composer']).optional().openapi({ description: 'transcript sends now; composer stages it as a draft.' }),
             delivery: SessionPromptDeliverySchema.optional().openapi({ description: 'How the prompt reaches a running turn: steer (read at its next step), queue (after it ends), interrupt (ends it after the running tool). Sets placement.' }),
@@ -225,7 +236,12 @@ export function registerSessionPromptsRoutes(): void {
 
       const body = await readJsonObject(c);
       const clientMessageId = normalizeString(body.client_message_id);
-      const messageId = normalizeString(body.message_id);
+      // R5.2: the server owns message ids and order. A caller that sends none
+      // gets one minted here and re-placed above the transcript on delivery.
+      const serverMinted = body.message_id === undefined || body.message_id === null;
+      const messageId = serverMinted
+        ? mintWireMessageId({ nowMs: Date.now() }).id
+        : normalizeString(body.message_id);
       if (body.placement !== undefined && body.placement !== 'transcript' && body.placement !== 'composer') {
         return c.json({ error: 'placement must be transcript or composer' }, 400);
       }
@@ -341,7 +357,7 @@ export function registerSessionPromptsRoutes(): void {
         // HIGH bits of the id clock (`msg_1a0d…`, ~40 days out) until 2026-09 —
         // and delivered as-is it renders every later turn above this prompt.
         // Accepted rather than refused, so every installed CLI keeps working.
-        ...(body.remint_on_delivery === true || isWireIdAheadOf(messageId, Date.now())
+        ...(serverMinted || body.remint_on_delivery === true || isWireIdAheadOf(messageId, Date.now())
           ? { remintOnDelivery: true }
           : {}),
         // SEND order across surfaces whose POSTs race — see the batch sort in
@@ -361,6 +377,16 @@ export function registerSessionPromptsRoutes(): void {
         undefined,
         sendState.then((state) => state.held),
       );
+
+      // KRTX-1742: a person who prompts a session follows its notifications
+      // from now on. Never un-mutes; the creator follows without a row. Only
+      // with the `notification_center` flag on.
+      const prompter = notificationsEnabled(loaded.row.metadata) ? personUserId(c, loaded) : null;
+      if (prompter && prompter !== visible.row.createdBy) {
+        void autoWatchSession(projectId, sessionId, prompter).catch((err) =>
+          logger.warn('[notify] auto-watch failed', { sessionId, error: err instanceof Error ? err.message : String(err) }),
+        );
+      }
 
       const stored = (enqueued.row.payload ?? {}) as Record<string, unknown>;
       const response = {
@@ -460,7 +486,7 @@ export function registerSessionPromptsRoutes(): void {
       },
       responses: {
         200: json(z.object({ removed: RemovedSessionPromptSchema }), 'Deleted'),
-        ...errors(400, 404, 409),
+        ...errors(400, 403, 404, 409),
       },
     }),
     async (c) => {
@@ -503,15 +529,31 @@ export function registerSessionPromptsRoutes(): void {
         if (!found) return c.json({ error: 'Not found' }, 404);
         effectivePromptId = found;
       }
-      const outcome = await deleteInboxPrompt(sessionId, effectivePromptId);
+      // Its author removes a prompt, or someone who manages the session (who
+      // could stop the whole session anyway).
+      const actor = { userId: loaded.userId, managesSession: visible.canManageLifecycle };
+      // The audit row names whose prompt was removed, not only who removed it.
+      const removed = async (row: Parameters<typeof serializeRemovedPrompt>[0]) => {
+        annotateAuditEvent({
+          resourceType: 'session_prompt',
+          resourceId: effectivePromptId,
+          metadata: { prompt_author_user_id: row.actorUserId ?? null },
+        });
+        await disarmQuickQueueInterrupt(sessionId, loaded.userId, effectivePromptId);
+        return c.json({ removed: serializeRemovedPrompt(row) }, 200);
+      };
+      const outcome = await deleteInboxPrompt(sessionId, effectivePromptId, actor);
       // The response CARRIES THE PROMPT IT REMOVED. A removal is offered with an
       // undo, and the row is hard-deleted, so this response is the only place the
       // full body still exists. Undoing from `GET /prompts`'s view instead
       // restores a 2000-char preview with no attachments and no model override —
       // a silent, unannounced loss on a button labelled "Undo".
-      if (outcome.outcome === 'deleted') {
-        await disarmQuickQueueInterrupt(sessionId, loaded.userId, effectivePromptId);
-        return c.json({ removed: serializeRemovedPrompt(outcome.row) }, 200);
+      if (outcome.outcome === 'deleted') return removed(outcome.row);
+      if (outcome.outcome === 'not_author') {
+        return c.json(
+          { error: 'Only the member who sent this prompt or a session manager can remove it', code: 'not_prompt_author' },
+          403,
+        );
       }
       if (outcome.outcome === 'delivering') {
         // On the wire is no longer the point of no return: a forwarded prompt
@@ -519,17 +561,11 @@ export function registerSessionPromptsRoutes(): void {
         // message when idle, part by part when busy (an empty user message is
         // invisible to the model). Only "a step is answering it" still refuses.
         const cancelled = await cancelForwardedPrompt(sessionId, effectivePromptId);
-        if (cancelled.outcome === 'cancelled') {
-          await disarmQuickQueueInterrupt(sessionId, loaded.userId, effectivePromptId);
-          return c.json({ removed: serializeRemovedPrompt(cancelled.row) }, 200);
-        }
+        if (cancelled.outcome === 'cancelled') return removed(cancelled.row);
         if (cancelled.outcome === 'not_forwarded') {
           // The row fell back into the queue while the cancel watched it.
-          const retried = await deleteInboxPrompt(sessionId, effectivePromptId);
-          if (retried.outcome === 'deleted') {
-            await disarmQuickQueueInterrupt(sessionId, loaded.userId, effectivePromptId);
-            return c.json({ removed: serializeRemovedPrompt(retried.row) }, 200);
-          }
+          const retried = await deleteInboxPrompt(sessionId, effectivePromptId, actor);
+          if (retried.outcome === 'deleted') return removed(retried.row);
         }
         return c.json(
           {
@@ -567,7 +603,7 @@ export function registerSessionPromptsRoutes(): void {
       },
       responses: {
         200: json(SessionPromptSchema, 'Prompt edited'),
-        ...errors(400, 404, 409),
+        ...errors(400, 403, 404, 409),
       },
     }),
     async (c) => {
@@ -608,16 +644,17 @@ export function registerSessionPromptsRoutes(): void {
         if (!text.trim()) return c.json({ error: 'text is required' }, 400);
         // No drain kick and no hold release: an edit changes a waiting message,
         // it does not send one. `POST /prompts` would do both.
-        outcome = await editInboxPrompt(sessionId, promptId, text);
+        outcome = await editInboxPrompt(sessionId, promptId, text, { userId: loaded.userId });
       }
       if (body.delivery === 'interrupt' && (!outcome || outcome.outcome === 'edited')) {
-        outcome = await interruptInboxPrompt(sessionId, promptId);
+        outcome = await interruptInboxPrompt(sessionId, promptId, { userId: loaded.userId });
         // "Stop and send" sends: the row is due now and the drain arms the interrupt.
         if (outcome.outcome === 'edited' && outcome.row.idempotencyKey) {
           void drainSessionLifecycleQueue({ idempotencyKey: outcome.row.idempotencyKey }).catch(() => undefined);
         }
       }
       if (outcome?.outcome === 'edited') return c.json(serializePrompt(outcome.row), 200);
+      if (outcome?.outcome === 'not_author') return c.json(NOT_PROMPT_AUTHOR, 403);
       if (outcome?.outcome === 'delivering') {
         return c.json({ error: 'Prompt is already with the agent' }, 409);
       }
@@ -641,7 +678,7 @@ export function registerSessionPromptsRoutes(): void {
       },
       responses: {
         200: json(SessionPromptSchema, 'Prompt re-queued'),
-        ...errors(400, 404),
+        ...errors(400, 403, 404),
       },
     }),
     async (c) => {
@@ -672,8 +709,9 @@ export function registerSessionPromptsRoutes(): void {
       // its wire id. When the release frees OTHER held rows, "send now" is a
       // Stop release: the row joins that batch, is NOT promoted, and the batch is
       // answered in one turn in queue order (KRTX-683).
-      const requeued = await retryInboxPrompt(sessionId, promptId);
+      const requeued = await retryInboxPrompt(sessionId, promptId, { userId: loaded.userId });
       if (!requeued) return c.json({ error: 'Not found' }, 404);
+      if ('outcome' in requeued) return c.json(NOT_PROMPT_AUTHOR, 403);
 
       void drainSessionLifecycleQueue(
         requeued.idempotencyKey ? { idempotencyKey: requeued.idempotencyKey } : { limit: 1 },

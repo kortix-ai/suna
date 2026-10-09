@@ -25,6 +25,7 @@ import {
   type Writer,
 } from '../../iam/assignments';
 import { revokeAllAccountTokensForUser } from '../../repositories/account-tokens';
+import { deleteMemberNotificationData } from '../../notifications/cleanup';
 import { db } from '../../shared/db';
 import { registerInviteRoutes, registerMemberInviteRoute } from './invites';
 import { grantAccountRole } from './member-role-write';
@@ -107,6 +108,18 @@ async function auditProjectAssignmentsRevoked(
 
 // Routes are registered via this function (called by the orchestrator in the
 // original route-registration order).
+/**
+ * Group grants are independent rows. Leaving them behind makes a later
+ * re-invite restore access to groups this user was taken out of. Removal,
+ * leave and SCIM deprovisioning all delete them (KRTX-1722).
+ */
+async function deleteAccountGroupMemberships(accountId: string, userId: string): Promise<void> {
+  await db.delete(accountGroupMembers).where(and(
+    eq(accountGroupMembers.userId, userId),
+    inArray(accountGroupMembers.groupId, accountGroupIds(accountId)),
+  ));
+}
+
 export function registerMemberRoutes(): void {
   // GET /v1/accounts/:accountId/members — list members.
   accountsRouter.openapi(
@@ -355,12 +368,9 @@ export function registerMemberRoutes(): void {
       // without access rather than with access and no identity.
       await deleteProjectScopeAssignments(accountId, targetUserId);
       await deleteAccountScopeAssignments(accountId, targetUserId);
-      // Group grants are independent rows. Leaving them behind makes a later
-      // re-invite restore access to groups the owner already removed this user from.
-      await db.delete(accountGroupMembers).where(and(
-        eq(accountGroupMembers.userId, targetUserId),
-        inArray(accountGroupMembers.groupId, accountGroupIds(accountId)),
-      ));
+      await deleteAccountGroupMemberships(accountId, targetUserId);
+      // KRTX-1742: their inbox and watcher rows here would keep naming sessions.
+      await deleteMemberNotificationData(accountId, targetUserId);
       await db
         .delete(accountMemberships)
         .where(
@@ -540,6 +550,8 @@ export function registerMemberRoutes(): void {
 
       await deleteProjectScopeAssignments(accountId, userId);
       await deleteAccountScopeAssignments(accountId, userId);
+      await deleteAccountGroupMemberships(accountId, userId);
+      await deleteMemberNotificationData(accountId, userId);
       await db
         .delete(accountMemberships)
         .where(

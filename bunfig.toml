@@ -1,0 +1,7 @@
+[test]
+# The mobile native trees hold no tests. Locally they hold Pods and build
+# output (thousands of directories), and in Bun 1.3.14 a discovery walk that
+# large leaves every later `Bun.spawn` child with a bad stdout: git, CLI and
+# child-process probes read as empty. CI has no native build, so only local
+# runs failed. `apps/mobile/bunfig.toml` ignores the same trees.
+pathIgnorePatterns = ["apps/mobile/ios/**", "apps/mobile/android/**"]

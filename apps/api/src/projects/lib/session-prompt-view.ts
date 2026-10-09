@@ -23,9 +23,6 @@ import { isForwarded, isHeld } from '../session-lifecycle/delivery-state';
 
 export type PromptRow = typeof sessionLifecycleCommands.$inferSelect;
 
-/** One inbox row in wire shape — the element type of `{ prompts: [...] }`. */
-export type SessionPromptView = ReturnType<typeof serializePrompt>;
-
 /**
  * Map a durable command row onto the inbox's four user-visible states.
  *
@@ -170,6 +167,8 @@ export function serializePrompt(row: PromptRow): SessionPrompt {
     /** Posted without a turn (the first message of a conversation with people):
      *  no agent will answer it, so a host shows no "thinking" for it. */
     no_reply: payload.noReply === true,
+    /** The member it runs as: only they edit, send now or retry it. */
+    author_user_id: row.actorUserId ?? null,
     created_at: row.createdAt.toISOString(),
     available_at: row.availableAt.toISOString(),
   };

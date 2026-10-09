@@ -42,6 +42,8 @@ interface ConfirmDialogProps {
   confirmVariant?: 'default' | 'destructive';
   /** Optional leading icon on the confirm button. */
   confirmIcon?: React.ReactNode;
+  /** Keep the confirm button disabled, e.g. until a typed confirmation matches. */
+  confirmDisabled?: boolean;
 }
 
 export function ConfirmDialog({
@@ -55,6 +57,7 @@ export function ConfirmDialog({
   isPending,
   confirmVariant = 'default',
   confirmIcon,
+  confirmDisabled,
 }: ConfirmDialogProps) {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -72,7 +75,7 @@ export function ConfirmDialog({
               e.preventDefault();
               onConfirm();
             }}
-            disabled={isPending}
+            disabled={isPending || confirmDisabled}
             className={cn(buttonVariants({ variant: confirmVariant, size: 'sm' }), 'gap-1.5')}
           >
             {confirmIcon}

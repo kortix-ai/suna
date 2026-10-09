@@ -8,6 +8,7 @@ import {
   getSessionAgentContext,
 } from '../../repositories/model-preferences';
 import { chooseDefaultModel } from './choose-default-model';
+import { platformDefaultModelId } from '../models/served-managed-models';
 import {
   chooseEffectiveAgent,
   type ModelSource,
@@ -139,6 +140,7 @@ export async function resolveDefaultModelForPrincipal(
     agentName,
     projectDefault,
     freeModelsOnly: principal.freeModelsOnly,
+    platformDefault: platformDefaultModelId(),
   });
 
   const kept = await degradeUnservableDefault(
@@ -268,6 +270,7 @@ export async function resolveEffectiveModel(params: {
     projectDefault: defaults.projects[params.projectId],
     accountDefault: defaults.account,
     freeModelsOnly: params.freeModelsOnly,
+    platformDefault: platformDefaultModelId(),
   });
   // Degrade a stale/unservable resolved default (e.g. a BYOK model whose key was
   // disconnected) to something the project can actually use right now, so the

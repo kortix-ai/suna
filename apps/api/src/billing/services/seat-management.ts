@@ -11,7 +11,6 @@
 // Hard guard: every call no-ops on legacy accounts. New seat behaviour only
 // engages when credit_accounts.billing_model = 'per_seat'.
 
-import { db } from '../../shared/db';
 import { accountMemberUserIds, countBillableAccountMembers } from '../../iam/membership-read';
 import { getStripe } from '../../shared/stripe';
 import { getCreditAccount, updateCreditAccount } from '../repositories/credit-accounts';

@@ -1,7 +1,7 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { and, count, eq, sql } from "drizzle-orm";
+import { and, count, eq } from "drizzle-orm";
 import { json, errors, auth } from "../../openapi";
-import { accountMembers, accountMemberships, accounts, projects } from "@kortix/db";
+import { accountMemberships, accounts, projects } from "@kortix/db";
 import { config } from "../../config";
 import { db } from "../../shared/db";
 import { ACCOUNT_ACTIONS, assertAuthorized } from "../../iam";

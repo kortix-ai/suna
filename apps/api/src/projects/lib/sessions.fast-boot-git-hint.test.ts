@@ -12,7 +12,7 @@ describe('session fast boot Git hint cache', () => {
   test('resolves a validated cache entry through the authenticated project', async () => {
     const source = await sessionsSource();
     const authPromise = source.indexOf('const projectWithGitAuthPromise');
-    const gate = source.indexOf('config.KORTIX_FAST_GIT_BOOT_ENABLED', authPromise);
+    const gate = source.indexOf('const fastBootGitHintPromise', authPromise);
     const resolver = source.indexOf('resolveFastBootGitHintWithCache(', gate);
     const provision = source.indexOf('provisionSessionSandbox({', resolver);
     expect(authPromise).toBeGreaterThan(-1);
@@ -25,12 +25,11 @@ describe('session fast boot Git hint cache', () => {
 
   test('keeps the cache lookup inside the existing two-second boot deadline', async () => {
     const source = await sessionsSource();
-    const gate = source.indexOf('config.KORTIX_FAST_GIT_BOOT_ENABLED');
+    const gate = source.indexOf('const fastBootGitHintPromise');
     const provision = source.indexOf('provisionSessionSandbox({', gate);
     const fastBootBlock = source.slice(gate, provision);
     expect(fastBootBlock).toContain('setTimeout(() => resolve(undefined), 2_000)');
     expect(fastBootBlock).toContain('clearTimeout(fastBootHintTimeout)');
-    expect(fastBootBlock).toContain(': Promise.resolve(undefined)');
   });
 
   test('gates every session allocation before a full-repository image can be selected', async () => {

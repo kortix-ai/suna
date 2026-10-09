@@ -3,7 +3,7 @@
  *
  * `harness.ts` re-exports these and adds the resolver, but it also value-imports
  * the OpenCode definition — so anything that imports `harness.ts` for a type
- * pulls the whole daemon (routes, config provider, its bun-only dependencies)
+ * pulls the whole daemon (routes, workspace provider, its bun-only dependencies)
  * into its TypeScript program. `open-code/lifecycle.ts` is imported by
  * `apps/api` (managed-models drift tripwire) and must stay as light as the old
  * `opencode.ts` was: it takes the port from here.

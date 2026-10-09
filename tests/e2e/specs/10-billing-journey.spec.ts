@@ -112,7 +112,7 @@ test.describe
         await api(
           session.access_token,
           'DELETE',
-          '/billing/account/delete-immediately',
+          '/account/delete-immediately',
           undefined,
         ).catch(() => {});
       }

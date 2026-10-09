@@ -22,8 +22,6 @@ import {
   scrollFades,
   shimmerBandCenter,
   shimmerSpread,
-  thoughtBodyCapped,
-  thoughtLabel,
   toolDisplayName,
   toolDurationMs,
   toolStreamingInput,
@@ -62,34 +60,6 @@ function reasoning(text: string, time: { start?: number; end?: number } = { star
   } as unknown as Part;
 }
 
-// ─── Thought label ───────────────────────────────────────────────────────────
-
-describe('thoughtLabel', () => {
-  test('under one second stays "Thinking" while running', () => {
-    expect(thoughtLabel(true, 0)).toBe('Thinking');
-    expect(thoughtLabel(true, 999)).toBe('Thinking');
-  });
-
-  test('counts up live while running', () => {
-    expect(thoughtLabel(true, 1000)).toBe('Thinking for 1s');
-    expect(thoughtLabel(true, 12_400)).toBe('Thinking for 12s');
-  });
-
-  test('settles on the run total when done', () => {
-    expect(thoughtLabel(false, 0, 12_000)).toBe('Thought for 12s');
-    expect(thoughtLabel(false, 0, 61_000)).toBe('Thought for 1m 1s');
-  });
-
-  test('a settled thought with no timing, or under one second, stays "Thinking"', () => {
-    expect(thoughtLabel(false, 0)).toBe('Thinking');
-    expect(thoughtLabel(false, 0, 400)).toBe('Thinking');
-  });
-
-  test('the live clock is ignored once the thought settles', () => {
-    expect(thoughtLabel(false, 30_000, 2_000)).toBe('Thought for 2s');
-  });
-});
-
 // ─── Disclosure rule ─────────────────────────────────────────────────────────
 
 describe('resolveDisclosureOpen', () => {
@@ -122,8 +92,6 @@ describe('burstIsRunning', () => {
   test('an earlier burst runs only while it holds an unfinished part', () => {
     expect(burstIsRunning([tool('bash', 'completed')], true, false)).toBe(false);
     expect(burstIsRunning([tool('bash', 'pending')], true, false)).toBe(true);
-    expect(burstIsRunning([reasoning('hm', { start: 1 })], true, false)).toBe(true);
-    expect(burstIsRunning([reasoning('hm', { start: 1, end: 2 })], true, false)).toBe(false);
   });
 });
 
@@ -137,11 +105,13 @@ describe('burstView', () => {
     expect(view.title).toBe('Completed 1 step');
   });
 
-  test('a lone thought gets the dedicated thinking label', () => {
-    const view = burstView([reasoning('plan', { start: 1, end: 2 })], false, false);
-    expect(view.hidden).toBe(false);
-    expect(view.title).toBe('Thinking');
-    expect(view.steps[0]?.kind).toBe('thought');
+  test('reasoning is not a step: a lone thought is hidden, and one beside a call is not counted', () => {
+    const lone = burstView([reasoning('plan', { start: 1, end: 2 })], false, false);
+    expect(lone.hidden).toBe(true);
+    expect(lone.steps).toEqual([]);
+    const mixed = burstView([reasoning('plan', { start: 1, end: 2 }), tool('bash', 'completed')], false, false);
+    expect(mixed.steps).toHaveLength(1);
+    expect(mixed.title).toBe('Completed 1 step');
   });
 
   test('a same-family group of 3 is ONE step row and summarises 3 calls', () => {
@@ -428,14 +398,9 @@ describe('disclosure body max height', () => {
   });
 });
 
-// ─── Thought body ────────────────────────────────────────────────────────────
+// ─── Scroll fades ───────────────────────────────────────────────────────────
 
-describe('thought body', () => {
-  test('capped only while the thought is still streaming; a finished thought shows in full', () => {
-    expect(thoughtBodyCapped(true)).toBe(true);
-    expect(thoughtBodyCapped(false)).toBe(false);
-  });
-
+describe('scroll fades', () => {
   test('scroll fades: none when content fits, end only at the top, both mid-way, start only at the end', () => {
     expect(scrollFades(0, 100, 199)).toEqual({ start: false, end: false });
     expect(scrollFades(0, 400, 199)).toEqual({ start: false, end: true });

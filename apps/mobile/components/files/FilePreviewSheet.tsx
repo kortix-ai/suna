@@ -59,7 +59,7 @@ function toSandboxFile(file: PreviewFile): SandboxFile {
   return { name: file.name, path, type: 'file' } as SandboxFile;
 }
 
-export interface FilePreviewSheetProps {
+interface FilePreviewSheetProps {
   /** The file to show, or null while the sheet is closed. */
   file: PreviewFile | null;
   /** The session's sandbox: where the file loads from. */

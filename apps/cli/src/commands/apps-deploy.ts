@@ -9,6 +9,7 @@ import type {
   AppDeployment,
   AppHostingProvider,
   AppSource,
+  KortixProject,
   ProjectHandle,
 } from '@kortix/sdk';
 import ignore from 'ignore';
@@ -109,6 +110,7 @@ export function commandArg(value: string | undefined): string[] | undefined {
 export async function context(options: ContextOptions): Promise<{
   projectId: string;
   auth: NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>['auth'];
+  project: KortixProject;
   apps: AppsHandle;
 } | null> {
   const resolved = await resolveProjectContext(options);
@@ -129,6 +131,7 @@ export async function context(options: ContextOptions): Promise<{
   return {
     projectId: resolved.projectId,
     auth: resolved.auth,
+    project,
     apps: kortix.project(resolved.projectId).apps,
   };
 }
@@ -176,6 +179,10 @@ interface DeployFlags {
   password?: string;
   memberIds?: string[];
   groupIds?: string[];
+  /** `--always-on` / `--on-demand`: applied to a new App, or to the existing one. */
+  alwaysOn?: boolean;
+  /** `--budget <usd>`: the monthly compute budget, applied like `alwaysOn`. */
+  budget?: number;
 }
 
 export function deployFlags(rest: string[]): DeployFlags {
@@ -195,6 +202,9 @@ export function deployFlags(rest: string[]): DeployFlags {
   if (spa && noSpa) throw new Error('Use only one of --spa and --no-spa');
   const waitSeconds =
     positiveInteger(takeFlagValue(rest, ['--wait-seconds']), '--wait-seconds') ?? 1200;
+  const alwaysOn = takeFlagBool(rest, ['--always-on']);
+  const onDemand = takeFlagBool(rest, ['--on-demand']);
+  if (alwaysOn && onDemand) throw new Error('Pass --always-on or --on-demand, not both');
   return {
     app: takeFlagValue(rest, ['--app']),
     slug: takeFlagValue(rest, ['--slug']),
@@ -219,13 +229,24 @@ export function deployFlags(rest: string[]): DeployFlags {
     password: takeFlagValue(rest, ['--password']),
     memberIds: csv(takeFlagValue(rest, ['--members'])),
     groupIds: csv(takeFlagValue(rest, ['--groups'])),
+    alwaysOn: alwaysOn ? true : onDemand ? false : undefined,
+    budget: positiveNumber(takeFlagValue(rest, ['--budget']), '--budget'),
   };
 }
 
-interface ManifestAppDefaults {
+export interface ManifestAppDefaults {
   name: string;
   root: string;
   block: AppBlockV2;
+}
+
+/** Every `apps.<name>` block of the v2 kortix.yaml above `cwd`, or null. */
+export function loadManifestApps(cwd: string): { root: string; blocks: Record<string, AppBlockV2> } | null {
+  const manifest = loadLocalManifest(cwd);
+  if (!manifest || manifest.data.kortix_version !== 2) return null;
+  const rawApps = manifest.data.apps;
+  if (!rawApps || typeof rawApps !== 'object' || Array.isArray(rawApps)) return null;
+  return { root: dirname(manifest.path), blocks: rawApps as Record<string, AppBlockV2> };
 }
 
 export function loadManifestAppDefaults(
@@ -233,11 +254,9 @@ export function loadManifestAppDefaults(
   requestedName?: string,
   allowSingleDefault = false,
 ): ManifestAppDefaults | null {
-  const manifest = loadLocalManifest(cwd);
-  if (!manifest || manifest.data.kortix_version !== 2) return null;
-  const rawApps = manifest.data.apps;
-  if (!rawApps || typeof rawApps !== 'object' || Array.isArray(rawApps)) return null;
-  const entries = Object.entries(rawApps as Record<string, AppBlockV2>);
+  const loaded = loadManifestApps(cwd);
+  if (!loaded) return null;
+  const entries = Object.entries(loaded.blocks);
   const selected = requestedName
     ? entries.find(([name]) => name === requestedName)
     : allowSingleDefault && entries.length === 1
@@ -247,7 +266,7 @@ export function loadManifestAppDefaults(
     if (requestedName) throw new Error(`kortix.yaml has no apps.${requestedName} block`);
     return null;
   }
-  return { name: selected[0], root: dirname(manifest.path), block: selected[1] };
+  return { name: selected[0], root: loaded.root, block: selected[1] };
 }
 
 /**
@@ -388,8 +407,16 @@ export async function provisionDeployApp(
   manifestDefaults: ManifestAppDefaults | null,
   sourcePath: string | undefined,
 ): Promise<App> {
+  const flagSettings = {
+    ...(flags.alwaysOn === undefined ? {} : { always_on: flags.alwaysOn }),
+    ...(flags.budget === undefined ? {} : { monthly_budget_usd: flags.budget }),
+  };
   if (flags.app) {
-    return resolveApp(apps, flags.app);
+    const app = await resolveApp(apps, flags.app);
+    const changed =
+      (flags.alwaysOn !== undefined && app.always_on !== flags.alwaysOn) ||
+      (flags.budget !== undefined && app.monthly_budget_usd !== flags.budget);
+    return changed ? apps.update(app.app_id, flagSettings) : app;
   }
   if (manifestDefaults) {
     const manifestBlock = manifestDefaults.block;
@@ -406,23 +433,56 @@ export async function provisionDeployApp(
       ...(manifestBlock?.idle_timeout_seconds !== undefined
         ? { idle_timeout_seconds: manifestBlock.idle_timeout_seconds }
         : {}),
+      ...(manifestBlock?.always_on !== undefined ? { always_on: manifestBlock.always_on } : {}),
       ...(manifestBlock?.monthly_budget_usd !== undefined
         ? { monthly_budget_usd: manifestBlock.monthly_budget_usd }
         : {}),
+      ...flagSettings,
+      // The Apps this App uses; the manifest's list replaces the App's.
+      ...(manifestBlock?.uses !== undefined ? { uses: manifestBlock.uses } : {}),
     };
-    return existing
-      ? apps.update(existing.app_id, settings)
-      : apps.create({
-          slug: manifestSlug,
-          name: flags.name ?? manifestDefaults.name,
-          ...settings,
-        });
+    if (existing) return apps.update(existing.app_id, settings);
+    return apps.create({
+      slug: manifestSlug,
+      name: flags.name ?? manifestDefaults.name,
+      // The kind is fixed at create; a later manifest change does not convert an App.
+      ...(manifestBlock?.kind ? { kind: manifestBlock.kind } : {}),
+      ...settings,
+    });
   }
   const inferred = flags.image
     ? flags.image.split('/').pop()!.split(':')[0]!
     : basename(sourcePath!);
   const slug = slugFrom(flags.slug ?? inferred);
-  return apps.create({ slug, name: flags.name ?? slug });
+  return apps.create({ slug, name: flags.name ?? slug, ...flagSettings });
+}
+
+/**
+ * What a server App costs: "Runs 24/7 on 1 vCPU / 2 GB: about $73/month (budget $74)".
+ * Null for an on-demand or static App, or when the server predates the estimate.
+ */
+export function runCostLine(app: App): string | null {
+  const estimate = app.estimated_monthly_usd;
+  if (!app.always_on || !estimate || app.hosting_type === 'static') return null;
+  return (
+    `Runs 24/7 on ${app.machine.cpu} vCPU / ${app.machine.memory_gb} GB: ` +
+    `about $${Math.round(estimate)}/month (budget $${app.monthly_budget_usd})`
+  );
+}
+
+/**
+ * The warning for a server App that runs 24/7 on a monthly budget below what
+ * its machine costs for a month: it stops at the budget until the month ends.
+ * Null when it does not apply, or when the server predates the estimate.
+ */
+export function alwaysOnBudgetNotice(app: App): string | null {
+  const estimate = app.estimated_monthly_usd;
+  if (!app.always_on || estimate === undefined || app.monthly_budget_usd >= estimate) return null;
+  return (
+    `${app.slug} runs 24/7, about $${estimate.toFixed(2)}/month at list compute rates, ` +
+    `but its monthly budget is $${app.monthly_budget_usd.toFixed(2)}. It stops when the budget is reached. ` +
+    'Raise it with --budget <usd>, or deploy with --on-demand.'
+  );
 }
 
 /**

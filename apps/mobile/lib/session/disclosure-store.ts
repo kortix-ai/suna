@@ -1,6 +1,6 @@
 /**
- * Expand/collapse choices for the rows of an assistant turn — thought rows,
- * file-chip runs, tool rows, and error stack traces.
+ * Expand/collapse choices for the rows of an assistant turn — file-chip runs,
+ * tool rows, and error stack traces.
  *
  * apps/web keeps this in component state (`userToggled` ref + `useState`). A
  * mobile transcript is a FlatList, and a recycled or re-mounted cell loses
@@ -14,9 +14,9 @@ import { create } from 'zustand';
 import { useCallback, useEffect, useState } from 'react';
 import { resolveDisclosureOpen } from './activity';
 
-export type DisclosureKind = 'thought' | 'chips' | 'tool' | 'trace';
+export type DisclosureKind = 'chips' | 'tool' | 'trace';
 
-/** `thought:<key>`, `tool:<part id>`, … — ids stay stable while a turn streams. */
+/** `tool:<part id>`, … — ids stay stable while a turn streams. */
 export function disclosureKey(kind: DisclosureKind, id: string): string {
   return `${kind}:${id}`;
 }

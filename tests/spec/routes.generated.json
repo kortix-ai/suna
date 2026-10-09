@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 724,
+  "count": 749,
   "routes": [
     {
       "method": "GET",
@@ -599,6 +599,10 @@
       "path": "/v1/accounts/:accountId/secret-resources/:secretId/value"
     },
     {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/top-up-requests"
+    },
+    {
       "method": "GET",
       "path": "/v1/accounts/me"
     },
@@ -709,6 +713,10 @@
     {
       "method": "GET",
       "path": "/v1/admin/api/projects"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/admin/api/projects/:id/features"
     },
     {
       "method": "GET",
@@ -1255,12 +1263,40 @@
       "path": "/v1/mcp"
     },
     {
+      "method": "GET",
+      "path": "/v1/notifications"
+    },
+    {
       "method": "POST",
       "path": "/v1/notifications/device-token"
     },
     {
       "method": "DELETE",
       "path": "/v1/notifications/device-token/:token"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/notifications/preferences"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/notifications/preferences"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/notifications/read"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/notifications/web-push/key"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/notifications/web-push/subscriptions"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/notifications/web-push/subscriptions"
     },
     {
       "method": "GET",
@@ -1448,6 +1484,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/.well-known/openid-configuration"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/access"
     },
     {
@@ -1556,6 +1596,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/apps/:appId/credentials"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/apps/:appId/deployments"
     },
     {
@@ -1575,8 +1619,32 @@
       "path": "/v1/projects/:projectId/apps/:appId/deployments/:deploymentId/logs"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/apps/:appId/logs"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/restore"
+    },
+    {
       "method": "POST",
       "path": "/v1/projects/:projectId/apps/:appId/rollback"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/rotate-credentials"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/apps/:appId/snapshots"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/snapshots"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/apps/:appId/snapshots/:snapshotId"
     },
     {
       "method": "POST",
@@ -1585,6 +1653,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/apps/:appId/stop"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/token"
     },
     {
       "method": "POST",
@@ -1928,6 +2000,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/files/raw"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/files/search"
     },
     {
@@ -2045,6 +2121,10 @@
     {
       "method": "PATCH",
       "path": "/v1/projects/:projectId/group-grants/:groupId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/jwks.json"
     },
     {
       "method": "GET",
@@ -2431,6 +2511,14 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId/turn"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/watch"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/watch"
+    },
+    {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/warm"
     },
@@ -2477,6 +2565,14 @@
     {
       "method": "PATCH",
       "path": "/v1/projects/:projectId/triggers/activation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/triggers/event-apps"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/triggers/event-types"
     },
     {
       "method": "POST",
@@ -2837,6 +2933,10 @@
     {
       "method": "POST",
       "path": "/v1/webhooks/email/agentmail"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/webhooks/events/:provider"
     },
     {
       "method": "POST",

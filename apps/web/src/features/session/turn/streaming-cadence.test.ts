@@ -1,110 +1,246 @@
 import { describe, expect, test } from 'bun:test';
 
-import { STREAM_RENDER_INTERVAL_MS, createStreamingCadence } from './streaming-cadence';
+import {
+  STREAM_COMMIT_MS,
+  STREAM_FADE_MS,
+  createStreamPacer,
+  revealCut,
+  type PacerClock,
+} from './streaming-cadence';
 
-/** A manual clock + timer queue, so every schedule is asserted exactly. */
-function fakeTimers() {
+/** A manual 60 Hz frame clock, so every reveal is asserted exactly. */
+function fakeClock() {
   let now = 0;
   let nextId = 1;
-  const queue = new Map<number, { at: number; fn: () => void }>();
-  return {
+  let hidden = false;
+  const frames = new Map<number, () => void>();
+  const clock: PacerClock = {
     now: () => now,
-    setTimeout: (fn: () => void, ms: number) => {
+    requestFrame: (fn) => {
       const id = nextId++;
-      queue.set(id, { at: now + ms, fn });
+      frames.set(id, fn);
       return id;
     },
-    clearTimeout: (id: number) => {
-      queue.delete(id);
+    cancelFrame: (id) => {
+      frames.delete(id as number);
     },
+    hidden: () => hidden,
+  };
+  return {
+    clock,
+    /** Run frames every 16 ms for `ms`. */
     advance(ms: number) {
       const until = now + ms;
-      for (;;) {
-        const due = [...queue.entries()]
-          .filter(([, t]) => t.at <= until)
-          .sort((a, b) => a[1].at - b[1].at)[0];
-        if (!due) break;
-        queue.delete(due[0]);
-        now = due[1].at;
-        due[1].fn();
+      while (now + 16 <= until) {
+        now += 16;
+        const due = [...frames.values()];
+        frames.clear();
+        for (const fn of due) fn();
       }
       now = until;
     },
-    pending: () => queue.size,
+    pending: () => frames.size,
+    setHidden: (value: boolean) => {
+      hidden = value;
+    },
   };
 }
 
-describe('createStreamingCadence', () => {
-  test('the first streamed value shows at once', () => {
-    const timers = fakeTimers();
-    const shown: string[] = [];
-    const cadence = createStreamingCadence((v) => shown.push(v), timers);
-    cadence.push('a', true);
-    expect(shown).toEqual(['a']);
+function setup(initial = '') {
+  const t = fakeClock();
+  const shown: string[] = [];
+  const settles: number[] = [];
+  const pacer = createStreamPacer(
+    (text, streaming) => {
+      if (streaming) shown.push(text);
+      else settles.push(t.clock.now());
+      if (!streaming && shown[shown.length - 1] !== text) shown.push(text);
+    },
+    initial,
+    t.clock,
+  );
+  return { ...t, shown, settles, pacer, last: () => shown[shown.length - 1] };
+}
+
+const words = (n: number) => Array.from({ length: n }, (_, i) => `word${i}`).join(' ');
+
+describe('revealCut', () => {
+  test('extends the cut to the end of the word it lands in', () => {
+    expect(revealCut('hello world again', 0, 2, false)).toBe(5);
+    expect(revealCut('hello world again', 5, 3, false)).toBe(11);
   });
 
-  test('a burst inside one interval shows only its last value, once, at the interval edge', () => {
-    const timers = fakeTimers();
-    const shown: string[] = [];
-    const cadence = createStreamingCadence((v) => shown.push(v), timers);
-    cadence.push('a', true);
-    for (const v of ['ab', 'abc', 'abcd', 'abcde']) {
-      timers.advance(10);
-      cadence.push(v, true);
+  test('never shows the trailing word while the stream is live, and shows it when final', () => {
+    expect(revealCut('hello wor', 0, 100, false)).toBe(6);
+    expect(revealCut('hello wor', 0, 100, true)).toBe(9);
+  });
+
+  test('reveals a syntax-only word together with the word after it', () => {
+    expect(revealCut('intro\n\n## Heading more', 5, 3, false)).toBe(17);
+    expect(revealCut('a\n- item b', 1, 2, false)).toBe(8);
+    expect(revealCut('a\n1. first b', 1, 2, false)).toBe(10);
+  });
+
+  test('backs off past a syntax-only word that would end the visible text', () => {
+    expect(revealCut('intro ## Head', 0, 100, false)).toBe(6);
+  });
+
+  test('a budget under one char reveals nothing', () => {
+    expect(revealCut('hello world', 5, 0.5, false)).toBe(5);
+  });
+});
+
+describe('createStreamPacer', () => {
+  test('text present at mount shows at once and is never re-typed', () => {
+    const p = setup('already here ');
+    p.pacer.push('already here ', true);
+    p.advance(500);
+    expect(p.shown).toEqual([]);
+  });
+
+  test('one large chunk is revealed over many renders, never all at once', () => {
+    const p = setup();
+    const chunk = `${words(80)} `;
+    p.pacer.push(chunk, true);
+    p.advance(48);
+    expect(p.shown.length).toBeGreaterThan(0);
+    expect(p.last().length).toBeLessThan(chunk.length / 4);
+    p.advance(2000);
+    expect(p.last()).toBe(chunk);
+    expect(p.shown.length).toBeGreaterThan(15);
+  });
+
+  test('every render is a word-boundary prefix of the target and strictly grows', () => {
+    const p = setup();
+    const full = `${words(60)} `;
+    for (let i = 7; i <= full.length; i += 7) {
+      p.pacer.push(full.slice(0, i), true);
+      p.advance(16);
     }
-    expect(shown).toEqual(['a']);
-    timers.advance(STREAM_RENDER_INTERVAL_MS);
-    expect(shown).toEqual(['a', 'abcde']);
-    expect(timers.pending()).toBe(0);
-  });
-
-  test('200 deltas at 16 ms render at most once per interval, and the final text always lands', () => {
-    const timers = fakeTimers();
-    const shown: string[] = [];
-    const cadence = createStreamingCadence((v) => shown.push(v), timers);
-    let text = '';
-    for (let i = 0; i < 200; i++) {
-      text += 'x';
-      cadence.push(text, true);
-      timers.advance(16);
+    p.pacer.push(full, true);
+    p.advance(2000);
+    let prev = 0;
+    for (const s of p.shown) {
+      expect(full.startsWith(s)).toBe(true);
+      expect(s.length).toBeGreaterThan(prev);
+      expect(s.length === full.length || full[s.length] === ' ').toBe(true);
+      prev = s.length;
     }
-    timers.advance(STREAM_RENDER_INTERVAL_MS);
-    expect(shown[shown.length - 1]).toBe(text);
-    // 200 × 16 ms = 3.2 s of stream → ~40 renders at 80 ms, not 200.
-    expect(shown.length).toBeLessThanOrEqual(Math.ceil((200 * 16) / STREAM_RENDER_INTERVAL_MS) + 1);
-    expect(shown.length).toBeGreaterThan(10);
+    expect(p.last()).toBe(full);
   });
 
-  test('the stream ending flushes the latest value immediately and cancels the trailing timer', () => {
-    const timers = fakeTimers();
-    const shown: string[] = [];
-    const cadence = createStreamingCadence((v) => shown.push(v), timers);
-    cadence.push('a', true);
-    timers.advance(5);
-    cadence.push('ab', true);
-    cadence.push('ab!', false);
-    expect(shown).toEqual(['a', 'ab!']);
-    expect(timers.pending()).toBe(0);
+  test('renders are at least STREAM_COMMIT_MS apart', () => {
+    const p = setup();
+    const at: number[] = [];
+    const pacer = createStreamPacer((_, streaming) => streaming && at.push(p.clock.now()), '', p.clock);
+    pacer.push(`${words(200)} `, true);
+    p.advance(3000);
+    for (let i = 1; i < at.length; i++) {
+      expect(at[i] - at[i - 1]).toBeGreaterThanOrEqual(STREAM_COMMIT_MS);
+    }
   });
 
-  test('dispose cancels a pending trailing update', () => {
-    const timers = fakeTimers();
-    const shown: string[] = [];
-    const cadence = createStreamingCadence((v) => shown.push(v), timers);
-    cadence.push('a', true);
-    cadence.push('ab', true);
-    cadence.dispose();
-    timers.advance(1000);
-    expect(shown).toEqual(['a']);
+  test('the visible text stays close behind a steady stream', () => {
+    const p = setup();
+    const full = `${words(300)} `;
+    // ~440 chars a second, in 16 ms deltas.
+    let received = '';
+    for (let i = 0; received.length < full.length; i++) {
+      received = full.slice(0, Math.min(full.length, (i + 1) * 7));
+      p.pacer.push(received, true);
+      p.advance(16);
+      if (i > 60) expect(received.length - p.last().length).toBeLessThan(250);
+    }
   });
 
-  test('an unchanged value schedules nothing', () => {
-    const timers = fakeTimers();
-    const shown: string[] = [];
-    const cadence = createStreamingCadence((v) => shown.push(v), timers);
-    cadence.push('a', true);
-    cadence.push('a', true);
-    expect(timers.pending()).toBe(0);
-    expect(shown).toEqual(['a']);
+  test('bursty chunks reveal at a steady speed, not in surges', () => {
+    const p = setup();
+    const full = `${words(400)} `;
+    // 60 chars every 150 ms (400 chars/s), the shape of a batching gateway.
+    const sizes: number[] = [];
+    let received = 0;
+    let prev = 0;
+    for (let ms = 0; ms < 6000; ms += 16) {
+      if (ms % 144 === 0 && received < full.length) {
+        received = Math.min(full.length, received + 58);
+        p.pacer.push(full.slice(0, received), true);
+      }
+      p.advance(16);
+      if (ms % 96 === 0) {
+        if (ms > 1500 && ms < 4500) sizes.push(p.last().length - prev);
+        prev = p.last().length;
+      }
+    }
+    // Every 96 ms window of the steady phase reveals text: no stall between chunks.
+    expect(Math.min(...sizes)).toBeGreaterThan(0);
+    // And no window reveals more than ~2.5x the mean: no surge after a chunk.
+    const mean = sizes.reduce((a, b) => a + b, 0) / sizes.length;
+    expect(Math.max(...sizes)).toBeLessThan(mean * 2.5);
+  });
+
+  test('the stream ending settles only after the last word has faded in', () => {
+    const p = setup();
+    const full = `${words(10)} `;
+    p.pacer.push(full, true);
+    p.advance(2000);
+    expect(p.last()).toBe(full);
+    expect(p.settles).toEqual([]);
+    const endAt = p.clock.now();
+    p.pacer.push(full, false);
+    p.advance(STREAM_FADE_MS + 40);
+    expect(p.settles.length).toBe(1);
+    expect(p.settles[0] - endAt).toBeGreaterThanOrEqual(STREAM_FADE_MS);
+    expect(p.pending()).toBe(0);
+  });
+
+  test('the stream ending drains the rest within a few hundred ms and drops nothing', () => {
+    const p = setup();
+    const full = `${words(120)} tail`;
+    p.pacer.push(full, true);
+    p.advance(48);
+    p.pacer.push(full, false);
+    p.advance(400 + STREAM_FADE_MS);
+    expect(p.last()).toBe(full);
+    expect(p.settles.length).toBe(1);
+    expect(p.pending()).toBe(0);
+  });
+
+  test('a trailing partial word waits without spinning frames, then lands on the next chunk', () => {
+    const p = setup();
+    p.pacer.push('hello wor', true);
+    p.advance(500);
+    expect(p.last()).toBe('hello ');
+    expect(p.pending()).toBe(0);
+    p.pacer.push('hello world ', true);
+    p.advance(200);
+    expect(p.last().trimEnd()).toBe('hello world');
+  });
+
+  test('text that does not extend the shown text shows at once', () => {
+    const p = setup('first answer');
+    p.pacer.push('rewritten', true);
+    expect(p.last()).toBe('rewritten');
+  });
+
+  test('a value that was never streamed shows at once', () => {
+    const p = setup('old');
+    p.pacer.push('old and new', false);
+    expect(p.last()).toBe('old and new');
+    expect(p.settles.length).toBe(1);
+    expect(p.pending()).toBe(0);
+  });
+
+  test('a hidden tab shows the text at once', () => {
+    const p = setup();
+    p.setHidden(true);
+    p.pacer.push(`${words(50)} `, true);
+    expect(p.last()).toBe(`${words(50)} `);
+  });
+
+  test('dispose cancels the pending frame', () => {
+    const p = setup();
+    p.pacer.push(`${words(50)} `, true);
+    p.pacer.dispose();
+    expect(p.pending()).toBe(0);
   });
 });

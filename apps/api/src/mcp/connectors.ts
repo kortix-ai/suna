@@ -413,7 +413,8 @@ export async function runConnectorTool(name: string, input: Record<string, unkno
       const body = parse(r.body);
       if (!body || typeof body !== 'object') return h.apiResult(r);
       if (r.status < 400 && body.ok === true) {
-        const { data, ...head } = body;
+        // `output` repeats `data` without its envelope; only `data` is fitted.
+        const { data, output: _output, ...head } = body;
         return h.text(fitData(head, 'data', data));
       }
       if (body.status === 'pending_approval') {

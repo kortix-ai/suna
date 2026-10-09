@@ -1,11 +1,12 @@
 ---
 title: Apps
-description: Deploy static sites, bundles, Dockerfiles, and OCI images to stable Kortix URLs.
+description: Deploy static sites, bundles, Dockerfiles, OCI images, and Convex backends to stable Kortix URLs.
 ---
 
-A Kortix App is a provider-neutral serverless deployment owned by one project.
-An App owns one stable URL. Each deployment is immutable and numbered. A failed
-deployment never replaces live traffic.
+A Kortix App is a provider-neutral deployment owned by one project. An App
+owns one stable URL, an access policy, a size, and a monthly budget. Each
+deployment is immutable and numbered. A failed deployment never replaces live
+traffic.
 
 Apps is a [feature flag](/docs/feature-flags). Its stability is **stable**, and
 it is off by default. Turn it on per project before you deploy.
@@ -13,25 +14,71 @@ it is off by default. Turn it on per project before you deploy.
 Building on Apps from TypeScript? See [SDK → Apps](/docs/sdk/apps) for the
 client surface and the React hooks.
 
+## Kinds and capabilities
+
+Every App has one `kind`, fixed at create:
+
+| Kind | What it is | `capabilities` |
+|---|---|---|
+| `web` (default) | A site or a server built from its deployments: static files Kortix serves, or a runtime in its own machine. | `deployments`, `rollback`, `preview`, `member_tokens`, plus `static` (a static App) or `sleep` (a server App) |
+| `convex` | A self-hosted Convex backend in its own always-on machine: a database, server functions, realtime queries, file storage, schedules. See [Kind `convex`](#kind-convex-a-convex-backend). | `deployments`, `snapshots`, `restore`, `admin_credentials`, `dashboard`, `logs`, `member_tokens` |
+
+Every App response carries `kind`, `capabilities`, `uses` and `used_by` (the
+Apps it uses and the Apps that use it, by slug), `auth` (the values that
+verify its sign-in tokens), and `instance` (the machine state of a `convex`
+App; `null` for a `web` App). Clients branch on `capabilities`, never on
+`kind`. A route that needs a capability the App lacks answers `409`:
+
+```json
+{ "error": "This App does not support snapshots.", "code": "app_capability_unsupported", "capability": "snapshots", "kind": "web" }
+```
+
+The capability routes live under `/v1/projects/:projectId/apps/:appId`:
+
+| Route | Capability | Permission |
+|---|---|---|
+| `GET snapshots`, `POST snapshots`, `DELETE snapshots/:snapshotId` | `snapshots` | read (list), write |
+| `POST restore` `{ snapshot_id }` | `restore` | `project.app.admin` |
+| `GET credentials`, `POST rotate-credentials` | `admin_credentials` | `project.app.admin` |
+| `POST token` | `member_tokens` | `project.app.read` |
+| `GET logs?lines=1..1000` | `logs` | `project.app.write` |
+
+| Permission | Allows |
+|---|---|
+| `project.app.read` | List and view Apps, read snapshots, mint a sign-in token. |
+| `project.app.write` | Create and change Apps, resize, take and delete snapshots, read the process log. |
+| `project.app.deploy` | Deploy, roll back, start and stop. |
+| `project.app.admin` | Reveal and rotate admin credentials, restore a snapshot, delete an App that holds data. Every `project.app.write` role holds it. |
+
+Reading credentials writes an `app.credentials.read` audit event. See
+[Audit actions](/docs/audit-actions).
+
 ## Turn Apps on
 
-Open **Settings → Experimental** and switch **Apps** on for the project. You
-need `project.settings.write`.
+Apps is enabled per project by Kortix and is not listed in Settings → Feature
+flags. Contact Kortix to turn it on for a project. A project that already has
+it keeps it.
 
 While the flag is off:
 
 - Every Apps route answers `403` with
   `{ error, code: "feature_disabled", feature: "apps" }`.
 - `kortix apps <subcommand>` prints the same sentence and exits `1`.
-- The **Apps** entry does not appear in the project sidebar. Opening
-  `/projects/<id>/apps` directly shows a gate screen that links to the flag. The
-  page itself never enables the feature.
+- The **Apps** tab does not appear in Customize. Opening
+  `/projects/<id>/customize/apps` directly shows a gate screen. The page itself
+  never enables the feature.
 
-## Source kinds
+A `convex` App also needs Platinum. Where `PLATINUM_API_KEY` is not set, a
+`convex` create answers `409 app_kind_unavailable`.
 
-All four source kinds run on the same Kortix sandbox hosting backend. Kortix
-selects Daytona, Platinum, or E2B. They therefore share one deployment contract
-and one cold-wake contract.
+## Web App sources
+
+A `static` App runs no server: Kortix stores its files and serves them itself,
+behind the App's access gate. A deploy takes seconds, there is no cold start and
+no compute bill, and a rollback is instant. The other three kinds run in their
+own machine on a Kortix sandbox provider (Daytona, Platinum, or E2B) and share
+one deployment contract and one cold-wake contract. Build a `bundle` source
+locally and deploy its output directory as `static` to get static hosting.
 
 | Kind | Deploy this | Kortix does |
 |---|---|---|
@@ -55,10 +102,18 @@ Pick the fastest path for the result you want:
 `dockerfile` and `oci_image` require `--command` and `--port`. `static` and
 `bundle` do not.
 
+A static App holds at most 20,000 files of at most 50 MiB each; a larger site
+fails with `invalid_site`. A static App runs no server, so it ignores `env` and
+`secrets`: a deploy that sets them records an `environment_ignored` event. The
+CLI never uploads `.env*` files, so a build-time value such as `VITE_*` in
+`.env.production` reaches the App only through a build you run before the
+deploy.
+
 ## Deploy from the CLI
 
 ```bash
-kortix apps deploy .
+npm run build
+kortix apps deploy dist --type static --spa
 ```
 
 `deploy` creates the App on first use, registers an immutable artifact —
@@ -67,8 +122,8 @@ builds it, and blocks until the stable URL is ready. The wait budget is `--wait-
 default `1200`. Use `--no-wait` only when another process owns status tracking.
 
 ```bash
-kortix apps deploy dist --slug docs --access project
-kortix apps deploy . --type dockerfile --command '["node","server.js"]' --port 3000
+kortix apps deploy dist --slug docs --type static --spa --access project
+kortix apps deploy . --type dockerfile --on-demand --command '["node","server.js"]' --port 3000
 kortix apps deploy --image ghcr.io/acme/service:2026-08-07 --command '["node","server.js"]' --port 3000
 ```
 
@@ -76,26 +131,39 @@ The full subcommand list:
 
 | Command | What it does |
 |---|---|
-| `kortix apps list` | List the project's Apps. `--json`. |
-| `kortix apps create <slug>` | Create an App without deploying it. |
-| `kortix apps deploy [path]` | Deploy a directory, a `.tar.gz`, or `--image`. |
-| `kortix apps set <id\|slug>` | Change an existing App: `--name`, `--cpu`, `--memory-gb`, `--disk-gb`, `--idle-timeout`, `--budget`. |
-| `kortix apps show <id\|slug>` | Show the App and its deployments; marks the live one. `--json`. |
-| `kortix apps logs <id\|slug> [deployment]` | Read runtime logs. `--after N --limit N`. |
+| `kortix apps list` | List the project's Apps with their kind. `--json`. |
+| `kortix apps create <slug>` | Create an App without deploying it. `--kind web\|convex` (default `web`); a `convex` App waits until its machine runs (`--no-wait` returns at once). `--uses <slugs>`. |
+| `kortix apps deploy [path]` | Deploy a directory, a `.tar.gz`, or `--image`. `--always-on`, `--on-demand` and `--budget <usd>` set the run mode and monthly budget. The target App's kind decides how: a `convex` App runs `convex deploy` with its credentials, then records the deployment with the git commit; arguments after `--` go to `convex deploy`. With no arguments and several `apps` blocks, it deploys every block in link order. |
+| `kortix apps set <id\|slug>` | Change an existing App: `--name`, `--cpu`, `--memory-gb`, `--disk-gb`, `--idle-timeout`, `--always-on`, `--on-demand`, `--budget`, `--uses <slugs>` (replaces; `--uses=` clears). A `convex` resize waits until it applies (`--no-wait`). |
+| `kortix apps link <id\|slug> --uses <slugs>` | Add Apps this App uses. `kortix apps unlink` removes them. |
+| `kortix apps show <id\|slug>` | Show the App: kind, capabilities, `uses` / `used by`, its instance, and its deployments; marks the live one. `--json`. |
+| `kortix apps logs <id\|slug> [deployment]` | Read runtime logs. `--after N --limit N`. An App with `logs` prints its process log: `--lines 1-1000`. |
+| `kortix apps connect <id\|slug>` | Print how to reach the App from code, the same snippets as Connect in Kortix web. No secret. `--json`. |
+| `kortix apps token <id\|slug>` | Print a 15-minute sign-in token for the App, naming you (`member_tokens`). |
+| `kortix apps dashboard <id\|slug>` | Print the Kortix page that opens the App's dashboard (`dashboard`). `--open`. |
+| `kortix apps credentials <id\|slug>` | Print the admin credentials (`admin_credentials`, audited). `--format shell\|dotenv\|json`. |
+| `kortix apps rotate-credentials <id\|slug>` | Replace the admin key (`admin_credentials`). `--yes`. |
+| `kortix apps snapshots <id\|slug>` | List snapshots with kind and expiry (`snapshots`). `--json`. |
+| `kortix apps snapshot <id\|slug>` | Take a manual snapshot (`snapshots`). |
+| `kortix apps delete-snapshot <id\|slug> <snapshot>` | Delete one snapshot (`snapshots`). `--yes`. |
+| `kortix apps restore <id\|slug> <snapshot>` | Roll the App back to a snapshot (`restore`). `--yes`. |
 | `kortix apps start <id\|slug>` | Permit requests and start the App. |
 | `kortix apps stop <id\|slug>` | Suspend compute now. |
 | `kortix apps rollback <id\|slug> <deployment>` | Move traffic to a ready deployment. |
 | `kortix apps access <id\|slug>` | Read or update the access policy. |
 | `kortix apps access-link <id\|slug>` | Create a short-lived authenticated browser URL. |
-| `kortix apps delete <id\|slug>` | Delete the App, its runtimes, and every deployment image. `--yes`. |
+| `kortix apps delete <id\|slug>` | Delete the App, its runtimes, and every deployment image. `--yes`. An App with `snapshots` needs `--confirm <slug>`. |
 | `kortix apps delete <id\|slug> --deployment <id\|vN>` | Delete one deployment and its image. Not the live one. `--yes`. |
 
-`--project`, `--host`, and `--json` work on every subcommand.
+`--project`, `--host`, and `--json` work on every subcommand. A subcommand for
+a capability the App lacks exits `1` with `App <slug> (kind <kind>) does not
+support <capability>.` before it calls the capability route.
 
 `kortix apps set` sends only the flags you pass, and needs project write
 access. `--memory-gb` accepts `--memory` and `--disk-gb` accepts `--disk` as
-aliases. `--idle-timeout` takes 120-86400 seconds. A machine or budget change
-applies to the next deployment, not to the running runtime.
+aliases. `--idle-timeout` takes 120-86400 seconds. A machine change applies to
+the next deployment. A run-mode or budget change applies within 5 minutes,
+without a redeploy.
 
 ### Deployment defaults from `kortix.yaml`
 
@@ -104,25 +172,73 @@ control plane: the block never carries access, passwords, or member ids.
 
 ```yaml
 apps:
+  db:
+    path: apps/db
+    kind: convex
   docs:
     path: docs/dist
     type: static
     spa: true
-    readiness_path: /
+    uses: [db]
+  api:
+    path: services/api
+    type: dockerfile
+    command: ["node", "server.js"]
+    port: 3000
+    readiness_path: /health
+    always_on: false
     idle_timeout_seconds: 300
-    monthly_budget_usd: 5
+    monthly_budget_usd: 10
     resources:
       cpu: 1
       memory_gb: 2
       disk_gb: 10
     env:
-      PUBLIC_BASE: https://kortix.com
+      PUBLIC_BASE: https://example.com
     secrets:
-      API_TOKEN: docs_api_token
+      API_TOKEN: api_token
 ```
 
-Select the block with `kortix apps deploy --manifest-app docs`. An explicit flag
-always wins over the block.
+Select a block with `kortix apps deploy --manifest-app docs`. An explicit flag
+always wins over the block. A static block needs only `path`, `type`, and
+`spa`: the run mode, budget, machine, `env`, and `secrets` apply to server
+Apps. A `convex` block needs `path` and `kind: convex`. A block with `uses`
+replaces the App's list of used Apps on every deploy. `kortix apps deploy`
+with no arguments deploys every block, used Apps first.
+
+### Apps an App uses: sign-in tokens and bindings
+
+An App can use other Apps of its project (`uses`). A new App uses none.
+
+| Surface | Set the list |
+|---|---|
+| CLI | `kortix apps link <app> --uses <other>` |
+| `kortix.yaml` | `uses: [db]` in the `apps.<name>` block, applied by `kortix apps deploy` |
+| API | `uses` on `POST /v1/projects/:projectId/apps` and `PATCH …/apps/:appId` |
+
+Every project has one sign-in token issuer:
+`https://<api host>/v1/projects/<project_id>`. Its
+`/.well-known/openid-configuration` and `/jwks.json` are public. A token is an
+ES256 JWT that lives 15 minutes. Its `aud` is the id of the App it is for. Every
+App response carries the three values that verify it: `auth.issuer`,
+`auth.audience` and `auth.jwks_uri`.
+
+| Who | How they get a token |
+|---|---|
+| A person in an App | `GET /_kortix/token?audience=<slug or id>` on the App's own origin (`kortixToken({ audience })` in `@kortix/sdk`). The audience is the App itself (the default) or an App it uses. |
+| A member, the CLI, an agent | `POST /v1/projects/:projectId/apps/:appId/token`. An agent session gets a token that names its agent, never the person who started it. |
+
+Any other audience answers `403` with `error: "app_not_linked"`. Code in one
+App never gets a token for an App it does not use.
+
+The bindings mount `/_kortix/apps/<slug>/*` on an App's origin reaches an App
+it uses, HTTP and WebSocket, with the prefix removed. App code needs one origin
+and no CORS (`kortixBinding("<slug>")` in `@kortix/sdk` returns the URL and a
+token). The mount passes the App's own access gate first. An App it does not use
+answers `403 app_not_linked`. Only a `convex` App has an endpoint to bind (its
+Convex client API); any other kind answers `409 app_binding_unsupported`. URLs
+that Convex makes itself, such as file storage URLs, keep the `convex` App's own
+host.
 
 ### Machine, idle timeout, and budget
 
@@ -131,8 +247,96 @@ always wins over the block.
 | `cpu` | `1` | `1` to `32` cores |
 | `memory_gb` | `2` | `1` to `128` GiB |
 | `disk_gb` | `10` | `1` to `500` GiB |
-| `idle_timeout_seconds` | `300` | `120` to `86400` |
-| `monthly_budget_usd` | `5` | `0` to `100000`, or the operator's `KORTIX_APPS_MAX_MONTHLY_BUDGET_USD` |
+| `idle_timeout_seconds` | `300` | `120` to `86400`. Only for an on-demand App |
+| `always_on` | `true` for a new App | `true` or `false` |
+| `monthly_budget_usd` | The 24/7 estimate of the machine, rounded up to a whole dollar (74 for the default machine), when the App is always on; `5` on demand | `0` to `100000`, or the operator's `KORTIX_APPS_MAX_MONTHLY_BUDGET_USD` |
+
+Static Apps ignore the machine, idle timeout and run mode: they have no
+runtime. They serve while they have an active deployment, so
+`kortix apps start` and `kortix apps stop` answer `409 static_app_no_runtime`.
+Delete the App to take it offline.
+
+### Always on, or on demand
+
+A server App (`dockerfile`, `oci_image`, `bundle`) runs in one of two modes:
+
+| Mode | Behaviour | Use it for |
+|---|---|---|
+| Always on (`--always-on`, default) | Runs 24/7. Kortix restarts it within 5 minutes if it stops, and refreshes its runtime in the background. | Websockets, background loops, anything that must run without a request |
+| On demand (`--on-demand`) | Stops after `idle_timeout_seconds` without requests; the next request wakes it (cold start). | Every App that only answers requests |
+
+Every 5 minutes a keep-alive pass checks every running App and every
+always-on App:
+
+1. **Cost.** A running App (either mode) stops when its account can no longer
+   pay for compute (the check that refuses a new session), or when its
+   month-to-date compute reaches `monthly_budget_usd`. The stop is recorded as
+   an `app_stopped_unfunded` or `app_stopped_budget` event on the deployment.
+   The URL then shows the "paused" or "budget reached" page.
+2. **Alive.** Kortix asks the provider about each always-on App. A running one
+   bills for every hour it runs, with or without traffic. A stopped one is
+   started again through the same entitlement, concurrency and budget checks
+   as a cold start.
+3. **Refresh.** When a release ships a new App supervisor, at most 5 always-on
+   Apps rebuild per pass. A release that changes only the API rebuilds
+   nothing. A rebuild that failed is not repeated for the same source and
+   supervisor: never after a build or site error, and at most once an hour
+   after a provider error.
+
+Always-on depends on the provider:
+
+| Provider | Always-on behaviour |
+|---|---|
+| Platinum (Kortix Cloud) | The VM is persistent. The provider never idle-stops it. |
+| Daytona, E2B (self-host) | The VM keeps the provider's idle backstop. Keep-alive renews it every 5 minutes. If the provider stops the VM anyway (for example, an E2B plan's maximum sandbox length), keep-alive restarts it within 5 minutes, so the App can be unreachable for up to 5 minutes. |
+
+An App switched from on demand to always on keeps its current VM until the
+next deployment. On Platinum that VM keeps its idle backstop (12 hours without
+traffic by default); keep-alive restarts it within 5 minutes if it stops.
+
+#### Budget
+
+A new always-on App with no explicit budget gets its 24/7 estimate, rounded up
+to a whole dollar, as its monthly budget: 74 USD for the default machine, 60
+USD for 1 vCPU and 1 GiB. It does not stop mid-month on its own default.
+`create`, `deploy` and `set` print the cost, for example `Runs 24/7 on 1 vCPU /
+2 GB: about $73/month (budget $74)`, and the web app shows it beside **Always
+on**. A derived budget follows later changes to the machine or the run mode
+(on demand returns to 5 USD). Passing a budget (`monthly_budget_usd`,
+`--budget`) always wins: Kortix never changes it afterwards. A static App costs
+nothing and has no machine to size. Apps created before this default keep the
+budget they have.
+
+An always-on App of the default machine (1 vCPU, 2 GiB, 10 GiB disk) costs
+about 73 USD a month at list compute rates. The App's `estimated_monthly_usd`
+is that figure for its own machine. When an always-on App's budget is below
+it, `create`, `set` and `deploy` warn (`app_budget_below_always_on`) and do
+not refuse: the App runs until the budget is spent, then stays stopped until
+the next month. Set the budget when you deploy:
+
+```bash
+kortix apps deploy . --budget 80
+```
+
+`--budget` sets the monthly budget of a new App, or changes it on an existing
+one. The warning prints on stderr, so `--json` output stays parseable. The
+deployment also records it as an `app_budget_below_always_on` event.
+
+Change the mode with `kortix apps set <app> --always-on|--on-demand`,
+`always_on` in `kortix.yaml`, or the App's menu in the web app. A new App's
+mode defaults to the operator's `KORTIX_APPS_DEFAULT_ALWAYS_ON`.
+
+### Versions kept
+
+An App keeps its active deployment and the 5 newest other ready ones as
+rollback targets (`KORTIX_APPS_RETAINED_DEPLOYMENTS`). Older deployments are
+retired after every deploy: their runtime, image, files and build logs are
+freed, and they leave the deployment list. Archives no remaining deployment
+uses are deleted a day after upload. A failed or cancelled deployment keeps its
+build log for 14 days.
+
+A build log keeps the first 2,500 and the last 2,500 lines; a
+`log_truncated` event records how many lines in between were dropped.
 
 Apps reject a machine larger than the limits instead of clamping it. An App
 records its requested spec and bills off that record, so a silent downgrade
@@ -143,13 +347,529 @@ Creating an App past the account's App quota answers `402` with
 `code: "app_quota_exceeded"`. A duplicate slug in the same project answers
 `409`.
 
+## Kind `convex`: a Convex backend
+
+A `convex` App is a full backend for one project: a database, server
+functions, realtime queries, file storage, schedules, and search, powered by
+Convex. Each one is a self-hosted Convex deployment in its own Platinum
+machine, with built-in Kortix sign-in.
+
+```bash
+kortix apps create db --kind convex
+```
+
+`convex` needs Platinum. Where `PLATINUM_API_KEY` is not set, a create answers
+`409 app_kind_unavailable`.
+
+| Property | Value |
+|---|---|
+| Runtime | Self-hosted Convex, one deployment per machine |
+| Storage | SQLite on the machine disk. See [Database and durability](#database-and-durability). |
+| Machine | One per App. Default 1 vCPU, 1 GB memory, 10 GB disk; resizable to 16 vCPU, 32 GB, 100 GB. A disk only grows. |
+| Uptime | Always on. `always_on: false` answers `400 app_always_on_required`. |
+| Budget | Alerts at 80 % and 100 % of `monthly_budget_usd`, once per month each. It never stops the machine. |
+| Billing | Reserved CPU, memory and disk × the time the machine runs. See [Billing](#billing). |
+| Limit | 3 `convex` Apps per project, 10 per account (`409 app_kind_limit`) |
+| Capabilities | `deployments`, `snapshots`, `restore`, `admin_credentials`, `dashboard`, `logs`, `member_tokens` |
+
+`start`, `stop`, `rollback` and `access-link` answer
+`409 app_capability_unsupported` for a `convex` App. Its access mode decides
+who may administer it. Its endpoint is public: its functions enforce sign-in.
+
+A new `convex` App starts with `instance.status: "provisioning"`. It usually
+runs within a few seconds. The first create in a region also builds the
+machine image and takes up to 10 minutes. A provision older than 15 minutes
+reads as `error`. A failed create ends in `error` with a short reason (for
+example "No machine capacity is free right now.") and releases the machine.
+Delete the App and create it again.
+
+### Hosts
+
+A `convex` App has two public URLs, both Kortix hosts under the Apps domain:
+
+| Field | Use it for |
+|---|---|
+| `url` (`instance.url`) | The Convex client (`CONVEX_URL`): queries, mutations, the realtime WebSocket, and the admin API (`npx convex …`). Public, not secret. |
+| `instance.site_url` | Convex HTTP actions. |
+
+Both hosts stay the same for the App's life: a restore, a resize, or a new
+machine does not change them. Convex builds file storage URLs and
+`process.env.CONVEX_SITE_URL` from them. The Kortix API proxies both hosts to
+the machine, HTTP and WebSocket. The machine's own ports refuse every request
+that does not come through Kortix. On a local stack the hosts are under
+`*.apps.localhost`.
+
+An App that uses a `convex` App reaches it through its own origin instead:
+`/_kortix/apps/<slug>` (see
+[Apps an App uses](#apps-an-app-uses-sign-in-tokens-and-bindings)).
+
+### Deploy Convex code
+
+The Convex code lives in your project repo, for example `apps/db/` with a
+`package.json` and a `convex/` directory.
+
+```bash
+kortix apps deploy apps/db --app db
+```
+
+`deploy` sees the `convex/` directory, waits until the App runs, and runs
+`convex deploy` there with the App's admin credentials: the directory's own
+`node_modules/.bin/convex` when it exists, else
+`npx convex@<instance.client_version>`, never the newest release. It then
+records a deployment (`source_kind: "convex"`, the git revision) so the App's
+history shows who deployed what. A type error, or a schema that existing
+documents violate, fails the deploy before anything changes.
+
+The API takes the record directly:
+`POST /v1/projects/:projectId/apps/:appId/deployments` with
+`{ "source": { "kind": "convex", "revision": "<git sha>" } }` and no artifact
+answers `201` with a `ready` deployment. The active deployment does not move.
+
+A `convex` App does not know about repositories. A deploy pushes code with the
+admin key, so the code can also live in another directory, a separate
+repository, or on a laptop or CI runner that runs
+`eval "$(kortix apps credentials db)" && npx convex deploy`.
+
+### Admin credentials
+
+```bash
+eval "$(kortix apps credentials db)"     # CONVEX_SELF_HOSTED_URL, CONVEX_SELF_HOSTED_ADMIN_KEY
+npx convex data
+npx convex run messages:list '{}'
+```
+
+`GET /v1/projects/:projectId/apps/:appId/credentials` answers `url`,
+`site_url`, `admin_key`, and `env` with `Cache-Control: no-store`. Reading
+them needs `project.app.admin` and writes one `app.credentials.read` audit
+event.
+
+:::warning[Never commit or print the admin key]
+The admin key controls the App's code and data. Keep it out of the repo, chat,
+and logs. Export it into the shell with `eval`, as shown above.
+:::
+
+Rotate it when it may have leaked: a removed project member read it, it was
+printed into a session, or a `.env.local` left the machine.
+
+```bash
+kortix apps rotate-credentials db --yes
+eval "$(kortix apps credentials db)"   # read the new key
+```
+
+API: `POST /v1/projects/:projectId/apps/:appId/rotate-credentials`. Convex
+derives every admin key from the deployment's instance secret. Rotation writes
+a new instance secret and restarts Convex: about 1 second of downtime, and
+clients reconnect. After it:
+
+- Every admin key read before answers `401 BadAdminKey`.
+- Documents, files, functions and environment variables are unchanged.
+- Upload URLs not yet used and open pagination cursors stop working.
+- Sign-in tokens keep working: they use a different key.
+- A dashboard open in Kortix web signs in again after a reload.
+
+A restored disk (a snapshot, or the automatic backup after a host loss)
+carries the instance secret it was taken with. If the App's admin key was ever
+rotated, Kortix rotates it again after every restore, so a key you rotated
+away never works again. Read the admin key again after a restore.
+
+### The admin dashboard
+
+Every `convex` App has Convex's own dashboard inside Kortix. Open the App on
+the project's **Apps** page. The page signs the dashboard in for you.
+`kortix apps dashboard db` prints the link.
+
+| Page | What it does |
+|---|---|
+| Health | Function calls, failure rate, cache hit rate, concurrency |
+| Data | Browse, filter, add, edit and delete documents in every table |
+| Schema | The deployed schema and its indexes |
+| Functions | Every query, mutation and action, with a runner and per-function metrics |
+| Files | Stored files: upload, download, delete |
+| Schedules | Scheduled functions and crons |
+| Logs | Live function logs |
+| History | Deploys and configuration changes |
+| Settings | Environment variables, authentication, components, integrations, usage limits |
+
+The dashboard acts with the admin key, so it needs `project.app.admin`.
+Kortix records each opening as `app.credentials.read`. The key goes from the
+Kortix API straight into the dashboard frame. Kortix web never renders or
+stores it.
+
+### Sign-in: functions know the member
+
+Kortix writes `KORTIX_AUTH_ISSUER` (the project issuer),
+`KORTIX_AUTH_AUDIENCE` (the App id) and `KORTIX_AUTH_JWKS` (the project's key
+set, inline) into every `convex` App's environment. `instance.auth_env` shows
+the same public values. Add this file and deploy:
+
+```ts
+// convex/auth.config.ts
+export default {
+  providers: [{
+    type: "customJwt",
+    issuer: process.env.KORTIX_AUTH_ISSUER!,
+    applicationID: process.env.KORTIX_AUTH_AUDIENCE!,
+    jwks: process.env.KORTIX_AUTH_JWKS!,
+    algorithm: "ES256",
+  }],
+};
+```
+
+Read and enforce the member with `@kortix/sdk`:
+
+```ts
+import { requireKortixMember } from "@kortix/sdk";
+
+const me = requireKortixMember(await ctx.auth.getUserIdentity());
+const finance = requireKortixMember(await ctx.auth.getUserIdentity(), { groups: ["Finance"] });
+```
+
+`me` carries `userId`, `email`, `name`, `picture`, `groups` (Kortix group
+names), `groupIds`, `role` (account role), `accountId` and `projectId`. An
+anonymous caller, or one outside the groups or roles, throws
+`KortixMemberError`. The App's URL is public, so every function that touches
+non-public data must call it first. Kortix groups need the Enterprise plan;
+roles work on every plan.
+
+Tokens last 15 minutes, so a member you remove loses access within 15
+minutes. The App gate refuses them at once. Which callers get a token, and
+from where: [Apps an App uses](#apps-an-app-uses-sign-in-tokens-and-bindings).
+
+A `convex` App created before the project issuer moves to it in the 5-minute
+maintenance pass: Kortix rewrites the three `KORTIX_AUTH_*` values, up to 4
+Apps per pass. Until it moves, Convex refuses newly minted tokens with `401`.
+
+The token proves who the member is, not what they may do. Every person an App
+admits gets tokens for every App that App uses. Check `groups` or `roles` in
+every function whose data is not meant for all of them.
+
+### Access from outside
+
+The App's URL is public. Every path below works from anywhere: a script, a
+service, CI, or your own server. Each one sends either a member token (the
+functions see a Kortix member) or the admin key (no identity, full control).
+`CONVEX_URL` is the App's `url` and `CONVEX_SITE_URL` its `instance.site_url`.
+
+**1. Get a member token.** It lasts 15 minutes and names the caller, with
+their groups and role. In an agent session it names the agent, with no groups
+and no role.
+
+```bash
+TOKEN=$(kortix apps token db)
+```
+
+```ts
+import { createKortix } from "@kortix/sdk";
+
+const kortix = createKortix({
+  backendUrl: "https://api.kortix.com/v1",
+  getToken: async () => process.env.KORTIX_TOKEN!,   // a personal access token
+});
+const { token } = await kortix.project(projectId).apps.token(appId);
+```
+
+**2. Call a function over HTTP.** `POST <url>/api/query`, `/api/mutation` or
+`/api/action`. The answer is `{"status":"success","value":…}` or
+`{"status":"error","errorMessage":…}`.
+
+```bash
+curl -s "$CONVEX_URL/api/query" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"path":"tasks:list","args":{},"format":"json"}'
+```
+
+**3. Use the Convex client from Node or Bun.** `ConvexHttpClient` takes the
+token as a string. `ConvexClient` (live subscriptions) takes a function and
+asks it again before the token expires.
+
+```ts
+import { ConvexHttpClient, ConvexClient } from "convex/browser";
+
+const http = new ConvexHttpClient(process.env.CONVEX_URL!);
+http.setAuth(token);
+const tasks = await http.query("tasks:list" as any, {});
+
+const live = new ConvexClient(process.env.CONVEX_URL!);
+live.setAuth(async () => (await kortix.project(projectId).apps.token(appId)).token);
+live.onUpdate("tasks:list" as any, {}, (rows) => console.log(rows.length));
+```
+
+**4. Use the Python client.**
+
+```python
+from convex import ConvexClient  # pip install convex
+
+client = ConvexClient(convex_url)
+client.set_auth(token)
+print(client.query("tasks:list"))
+```
+
+**5. Call an HTTP action.** Routes in `convex/http.ts` answer on
+`instance.site_url`. They are public: authenticate inside the handler.
+
+```bash
+curl -s "$CONVEX_SITE_URL/webhooks/crm" -H "Authorization: Bearer $TOKEN" -d '{}'
+```
+
+**6. Verify the token on your own server** with the App's `auth` values:
+
+```ts
+import { verifyKortixToken } from "@kortix/sdk";
+
+const member = await verifyKortixToken(bearer, {
+  issuer: app.auth.issuer,
+  audience: app.auth.audience,
+  jwks: app.auth.jwks_uri,
+});   // checks signature, issuer, audience, expiry
+```
+
+**7. Act as admin.** The admin key bypasses sign-in and runs any function,
+including internal ones. Use it for tooling, never in an App or a browser.
+
+```bash
+eval "$(kortix apps credentials db)"
+npx convex run tasks:list '{}'
+npx convex data tasks --limit 20
+npx convex export --path backup.zip --include-file-storage
+npx convex mcp start                   # the Convex MCP server for an AI tool
+```
+
+`kortix apps connect db` prints these paths with the App's real URLs filled
+in.
+
+#### Convex Cloud features a `convex` App does not have
+
+A `convex` App runs the same open-source Convex backend as Convex Cloud.
+Convex documents these features for Convex Cloud only, or on a paid Convex
+plan:
+
+| Convex Cloud feature | On a `convex` App |
+|---|---|
+| `npx convex dev`, deploy keys, preview deployments | `kortix apps deploy`; one deployment per App |
+| dashboard.convex.dev, `npx convex dashboard` | The dashboard inside Kortix (`kortix apps dashboard`) |
+| `npx convex insights` (Convex Cloud only) | `instance.health` and `npx convex logs` |
+| AI Gateway for models called from actions (unavailable when self-hosting) | Call the model provider from an action with your own key in an environment variable |
+| Custom domains (Convex Pro) | Not available: the URLs are fixed for the App's life |
+| Log streams and exception reporting (Convex Pro) | `kortix apps logs`, `npx convex logs`; send errors from an action yourself |
+| Scheduled backups in the Convex dashboard (Convex Pro) | Kortix's hourly automatic backup and snapshots |
+| Streaming export to Fivetran (Convex Pro) | `npx convex export` |
+
+### Customers who are not Kortix members
+
+Kortix sign-in is for the project's own people and stays the primary
+provider. When an App also serves customers, add Convex Auth (password, magic
+link, OTP or OAuth) to the same `convex` App as a second provider. Convex's CLI
+does not set Convex Auth up on a self-hosted deployment; the manual setup
+works:
+
+1. `npm i @convex-dev/auth @auth/core@^0.41.1` in the App's directory.
+2. Generate an RS256 key pair (Convex's `generateKeys.mjs`) and set
+   `JWT_PRIVATE_KEY` and `JWKS` with `npx convex env set <NAME> --from-file <file>`,
+   and `SITE_URL` to the customer App's URL.
+3. Add `{ domain: process.env.CONVEX_SITE_URL, applicationID: "convex" }` to
+   `providers` in `convex/auth.config.ts`, after the Kortix provider.
+4. Add `convex/auth.ts` (`convexAuth({ providers: [Password] })`),
+   `auth.addHttpRoutes(http)` in `convex/http.ts`, and `...authTables` in the
+   schema.
+5. Tell the two kinds of user apart by the token issuer:
+
+```ts
+// Staff: only a token Kortix signed.
+const identity = await ctx.auth.getUserIdentity();
+if (identity?.issuer !== process.env.KORTIX_AUTH_ISSUER) throw new Error("Sign in with Kortix.");
+const member = requireKortixMember(identity);
+
+// Customers: only a token Convex Auth signed.
+if (identity?.issuer !== process.env.CONVEX_SITE_URL) throw new Error("Sign in to continue.");
+const customerId = await getAuthUserId(ctx);
+```
+
+`requireKortixMember` alone accepts any identity with a subject, a Convex Auth
+customer included. Check the issuer first in every staff function. The
+customer UI is a separate `public` App that uses `ConvexAuthProvider` from
+`@convex-dev/auth/react`.
+
+### Database and durability
+
+Convex is the database. Documents, indexes, file storage and the scheduler all
+live in the App, with transactions, realtime queries and schema validation. A
+`convex` App needs no second database.
+
+| Question | Answer |
+|---|---|
+| Where is the data? | Convex's SQLite files on the machine disk, next to the uploaded files. |
+| Why SQLite? | Kortix measured SQLite against Postgres 17 in the same 2 vCPU machine. Throughput and median latency were the same: Convex's own CPU use is the limit, not the database. SQLite used 3.6× less disk for the same 200,000 documents (476 MB against 1,705 MB), booted 0.85 s faster, and had a lower realtime push p99 (0.25 s against 1.45 s). |
+| Can I use Postgres? | Not today. An external Postgres would not scale an App out: Convex still runs as one process on one machine. Resize to scale up. |
+| How fast can it write? | Convex caps writes at about 4 MiB/s per deployment and answers `TooManyWrites` above it. Batch bulk imports and retry with backoff. |
+| What loses no acknowledged write? | A machine stop and start, a resize, and a crash of the Convex process. Kortix measured each with writers running. |
+| What can lose data? | A host crash or a hard reset of the machine. The machine disk has no file system journal yet ([kortix-ai/platinum#1450](https://github.com/kortix-ai/platinum/issues/1450)), so the last acknowledged writes can be lost, or the data directory can be left unreadable. |
+| What is the recovery point? | After a host loss, Kortix restores the machine from its last automatic backup by itself. The backup runs every hour, so up to 1 hour of writes is lost (RPO ≤ 60 minutes). An unreadable data directory keeps Convex from starting; Kortix is alerted after 3 failed health probes (15 minutes), and you restore the newest snapshot. |
+| How long does recovery take? | The health probe runs every 5 minutes and starts the restore from backup on the first probe that sees the host lost. Kortix waits up to 10 minutes for it, then retries on the next probe. Kortix has not measured a real host loss, so the recovery time (RTO) is not stated as a number yet. |
+| Do snapshots survive a host loss? | Not reliably. Platinum keeps snapshots on the host's disk. The automatic backup is the copy that lives off the host. |
+
+Keep your own copy of data you cannot re-create:
+`npx convex export --path backup.zip --include-file-storage`. Without
+`--include-file-storage` the export holds no files. The export does not cover
+environment variables or pending scheduled jobs.
+
+### Size, snapshots and restore
+
+```bash
+kortix apps create db --kind convex --cpu 2 --memory 4 --disk 20
+kortix apps set db --cpu 4 --memory 8      # seconds of downtime; disk only grows
+kortix apps snapshots db                   # automatic backup, schedule, snapshots with kind and expiry
+kortix apps snapshot db                    # a manual snapshot, kept until deleted
+kortix apps restore db <snapshot-id> --yes # rolls back; later changes are lost
+```
+
+| | What it is |
+|---|---|
+| Automatic backup | Kortix copies the machine to object storage every hour, to recover from a host loss. Kortix restores it by itself; you cannot pick one. |
+| Snapshot | A point-in-time copy of the running App: data, files, functions and environment variables, plus the machine's memory. The machine pauses for the copy (seconds; up to 90 s for 8 GB of memory). |
+| Restore | Rolls the running App back to a snapshot in place, in seconds. The call answers once the machine runs the snapshot and Convex answers. |
+
+A snapshot has a kind, and the kind decides how long it stays:
+
+| Kind | Taken by | Kept |
+|---|---|---|
+| `manual` | A member or agent (`kortix apps snapshot`) | Until someone deletes it. An App holds 10; the 11th answers `409 snapshot_limit`. |
+| `automatic` | Kortix, once a day | 7 days. The newest one stays past that until a newer one exists. |
+| `resize` | Kortix, before every resize | 24 hours, or until the next resize replaces it. Outside the limit of 10. |
+| `final` | Kortix, when the App is deleted | 7 days, then purged with the machine. |
+
+Every Kortix-made snapshot shows its expiry (`expires_at`) from the moment it
+exists. One operation runs at a time: a snapshot, restore or snapshot delete
+during a resize, restore, rotation or recovery answers `409 app_busy`, and
+`instance.operation` reads `snapshotting` or `restoring` while one of them
+runs.
+
+A snapshot holds the CPU, memory and disk image of the moment it was taken. A
+snapshot from before an applied resize cannot be restored
+(`409 snapshot_predates_resize`). The `resize` snapshot undoes a resize that
+failed before the size changed. To undo a resize that worked, resize again (a
+disk cannot shrink).
+
+API, all under `/v1/projects/:projectId/apps/:appId`: `PATCH` (resize),
+`GET snapshots`, `POST snapshots`, `DELETE snapshots/:snapshotId`,
+`POST restore` with `{ "snapshot_id": "…" }`.
+
+### Health and logs
+
+Kortix probes every running `convex` App every 5 minutes: the machine state,
+Convex `/version` (5 s timeout) and disk use. The result is `instance.health`
+in the API and a **Not responding** badge in Kortix web.
+
+| The probe finds | Kortix does |
+|---|---|
+| Convex does not answer | Records the failure. Convex's supervisor restarts a crashed Convex within 1 s. Three failed probes in a row alert Kortix. |
+| The machine is stopped | Starts it, then re-reads the admin key. `instance.operation` reads `recovering` meanwhile. |
+| The host was lost | Restores the machine from its last automatic backup: same URLs, data since that backup is lost (up to 1 hour). |
+| The machine no longer exists | After 3 probes the App turns `error`. Delete it and create it again. |
+| Disk use at 80% or more | Shows **Disk N% full**. Resize the disk (`kortix apps set <slug> --disk <gb>`). |
+
+A create or resize survives an API restart: one with no heartbeat for 2
+minutes is resumed, and an interrupted resize or rotation ends with the
+machine running and `instance.last_operation_error` set. A create interrupted
+3 times turns `error`.
+
+```bash
+kortix apps logs db --lines 500         # the Convex process log: startup, crashes, restarts, requests
+npx convex logs                         # function logs (console.log in your functions)
+```
+
+API: `GET /v1/projects/:projectId/apps/:appId/logs?lines=1..1000` (default
+200). The machine keeps each log at 50 MB plus one previous 50 MB file.
+
+### Billing
+
+A `convex` App is billed like a sandbox: its reserved CPU, memory and disk ×
+wall-clock time while the machine runs, at the compute rate, from the
+account's wallet. The default size (1 vCPU, 1 GB, 10 GB) costs about $0.081
+per hour at list price, about $59 for a 30-day month.
+
+- The health probe opens the App's compute window when it sees the machine
+  running and records it alive every 5 minutes.
+- A resize closes the window at the old size; the next probe opens one at the
+  new size.
+- An account that cannot pay gets `402` on create and on a resize that grows
+  the machine. A shrinking resize is always allowed.
+- At 80 % and at 100 % of `monthly_budget_usd`, Kortix records one alert per
+  month each (`instance.budget_alert`, audit `app.budget.alert`). The machine
+  keeps running: a stopped database breaks every client. Raise the budget,
+  shrink the machine, or delete the App.
+- Snapshot and backup storage are not billed.
+
+### Archive, account deletion and orphans
+
+| Event | What happens to the machine |
+|---|---|
+| The project is archived | Kortix turns Platinum's auto-resume off, stops the machine and closes its compute window. The data stays. A public request does not wake it. |
+| The project is active again | Auto-resume goes back on and the machine starts within 5 minutes. |
+| The account is deleted | Kortix deletes every `convex` App of the account at once, retained ones included: snapshots, then the machine. |
+| A machine no live App references | Kortix deletes it, with its snapshots, once it is 1 hour old. A machine kept after a delete is left alone until its retention ends. |
+
+### Delete a `convex` App
+
+```bash
+kortix apps delete db --confirm db
+```
+
+An App with the `snapshots` capability holds data, so a delete needs its slug
+typed as confirmation (the CLI's `--confirm <slug>`, where `--yes` alone is
+refused; `DELETE …/apps/:appId?confirm=<slug>`, or
+`{ "confirm": "<slug>" }` as the body) and `project.app.admin`. Without it the
+API answers `400 confirmation_required`. Kortix then:
+
+1. takes a `final` snapshot,
+2. turns auto-resume off, stops the machine and closes its compute window,
+3. answers `{ ok, retained_until, final_snapshot_id }`; both hosts answer
+   `410` with the purge date,
+4. after 7 days deletes the machine, its snapshots, and every document and
+   file.
+
+Export first with `npx convex export` when you need the data.
+
+### Limits
+
+- 3 `convex` Apps per project, 10 per account.
+- Always on. One machine per App: it scales up (resize), not out.
+- `npx convex dev` and `npx convex dashboard` need a Convex Cloud login. Use
+  `kortix apps deploy` and the dashboard in Kortix.
+- An App keeps the Convex image it was created with. There is no in-place
+  upgrade.
+- On a local stack the hosts are `*.apps.localhost`, which only the machine
+  running the stack resolves. An agent session runs in a cloud sandbox and
+  cannot reach them: test an agent's work on a deployed environment.
+- Durability depends on a journaled machine disk that is not shipped yet. See
+  [Database and durability](#database-and-durability).
+
 ## The stable URL
 
 Kortix assigns the hostname when the App is created and never changes it. On
 Kortix cloud it is `<env>-<slug>-<route-key>.apps.kortix.com`. Self-hosted
 deployments serve their own wildcard domain from `KORTIX_APPS_BASE_DOMAIN`.
 
-An authorized request to a suspended App resumes its sandbox, waits for
+A static App answers every request at once. HTML revalidates on every load
+(`no-cache`, with an ETag), hashed build assets (`index-D8j1YYcB.js`) are cached
+for a year, text files are compressed (Brotli or gzip), a page navigation to an
+unknown path gets `index.html` when the App is an SPA, and a missing file gets
+your `404.html` with status `404`. A directory URL without its trailing slash
+(`/docs`) redirects `308` to `/docs/`, so relative links in `docs/index.html`
+resolve. Only build output with a content hash in its name (`_next/static/`,
+and files under `assets/` or `static/js|css|media/`) is immutable; every other
+file revalidates. Files over 4 MiB are streamed uncompressed and support
+`Range` requests. A static publish never includes `.git/`, `.env*` or
+`.DS_Store`, and a symlink that resolves outside the upload fails the deploy.
+Responses are `private` to shared caches unless the App is public. On Kortix cloud, a public App's hashed build assets
+are also cached at the edge for up to 1 hour. After the App turns non-public or
+is deleted, those copies stay reachable by exact URL for up to 1 hour.
+
+App code in the browser reaches the Kortix API, as the viewer, through
+`/_kortix/api/v1/*` on the App's own origin. The Kortix API refuses a direct
+cross-origin call from an App. The path needs `--viewer api`; see
+[SDK → Apps](/docs/sdk/apps).
+
+An authorized request to a suspended server App resumes its sandbox, waits for
 readiness, and proxies that same request. You do not have to wake it first.
 
 While the App is waiting for its first deployment, queued, validating,
@@ -170,8 +890,9 @@ Terminal and paused states answer differently:
 | Account cannot start compute | `402` | `app_account_unfunded` |
 | Account at its concurrent-App limit | `429` | `app_concurrency_limit` |
 
-`kortix apps stop` suspends compute immediately; the next authorized request
-resumes the App. `kortix apps start` warms it before traffic arrives.
+`kortix apps stop` suspends a server App's compute immediately; the next
+authorized request resumes it. `kortix apps start` warms it before traffic
+arrives. Neither applies to a static App.
 
 :::info[Cold starts stay invisible]
 The stable URL never exposes an `app_stopped` state. A provider edge that
@@ -293,14 +1014,25 @@ Move traffic back to any ready deployment:
 kortix apps rollback docs <deployment-id>
 ```
 
-Rollback starts the target deployment's runtime first, then stops the previous
+A static App's rollback moves traffic at once: nothing boots. A server App's
+rollback starts the target deployment's runtime first, then stops the previous
 one. A target that fails to start leaves the current deployment serving.
 
 ## Delete deployments and Apps
 
-Each deployment builds one image on the hosting provider. Providers limit how
-many images an organization may hold, and an old deployment keeps its image so
-you can roll back to it. Delete what you no longer need:
+A server deployment runs from an image on the hosting provider. Deployments
+with the same build inputs share one image: the same artifact (archive digest,
+or an OCI reference pinned with `@sha256:`), source settings, Dockerfile,
+runtime spec, machine, and App supervisor version. A redeploy that changes only
+environment variables or secrets, an unchanged redeploy, and a retry reuse the
+image and record a `build_reused` event instead of building. An OCI tag such as
+`:latest` is pulled again on every deploy and never shares an image.
+
+Providers limit how many images an organization may hold, and an old deployment
+keeps its image so you can roll back to it. When a build hits the provider's
+template quota, Kortix deletes images no deployment uses and builds once more.
+If the quota is still full, the deployment fails with
+`app_image_quota_exceeded`. Delete what you no longer need:
 
 ```bash
 kortix apps show docs                               # v3 ready … live, v2 ready, v1 failed
@@ -314,27 +1046,53 @@ kortix apps delete docs --yes                       # the App and every image it
   (`409 deployment_in_progress`). Delete it after it finishes or fails.
 - A deleted deployment leaves `show`, the deployment list, and its logs, and
   can no longer receive rollback traffic.
-- The output reports how many images were freed. An image still held by a
-  stopping runtime, or by a provider that did not answer, is reported as not
-  released yet; Kortix retries it automatically.
+- The output reports how many images were freed. An image another deployment
+  still uses stays, and that deployment reports no image of its own. An image
+  still held by a stopping runtime, or by a provider that did not answer, is
+  reported as not released yet; Kortix retries it automatically.
 
 Failed deployments and deleted Apps also release their images without any
 action: project maintenance removes them every few minutes.
 
-Each cold start compares the active deployment's runtime version against the
-current Kortix App runtime. The old deployment keeps serving while Kortix
-asynchronously builds one immutable replacement with the latest `kortix-appd`
-and Caddy binaries. A PostgreSQL advisory lock prevents duplicate refreshes.
+A `convex` App's delete keeps its machine and a `final` snapshot for 7 days
+first. See [Delete a `convex` App](#delete-a-convex-app).
+
+A static App's files are content-addressed and shared between its
+deployments. Deleting a deployment or the App releases its file list at once;
+maintenance deletes each stored file 1 hour after no deployment names it.
+Deleting the account deletes every stored file of the account immediately.
+
+When a Kortix release changes the App supervisor image (`kortix-appd` and
+Caddy), a server App gets one immutable replacement built from the same
+artifact: on its next cold start (on demand), or in a keep-alive pass (always
+on). The old deployment keeps serving until the replacement passes readiness.
+A PostgreSQL advisory lock prevents duplicate refreshes. A static App has no
+runtime to refresh.
 
 ## The Apps page
 
-Once the flag is on, an **Apps** row appears in the project sidebar, under
-Customize. The page is operational, not a creation surface: it lists the
+Once the flag is on, an **Apps** tab appears at the end of the project's
+Customize bar (`/projects/<id>/customize/apps`). The page is operational, not a creation surface: it lists the
 project's Apps with live state, a signed preview of each running App, and the
 access controls. Deploying is `kortix apps deploy .`.
 
 An App with no active deployment reads **Not deployed**, never **Running**. A
-suspended App's preview issues the request that wakes it.
+static App with an active deployment always reads **Running**. A suspended
+server App's preview issues the request that wakes it.
+
+A `convex` App appears on the same page with a **Backend** badge and a
+machine tile (state, last deploy, size, health) in place of a screenshot. Its
+detail frames Convex's dashboard instead of a preview, and its menu adds the
+capability actions: **Connect**, **Backups** (snapshots and restore), and
+**Rotate admin key**. The header lists the Apps it uses and the Apps that use
+it. Deleting it asks for its slug. The old `/projects/<id>/backends` URLs
+redirect to the Apps page.
+
+The App's **Earlier versions** drawer states how it runs (static site, or a
+server that is always on or on demand, with its monthly budget) and how many
+earlier versions it keeps. Each version unfolds to its events and build log; a
+failed deploy's **Update failed** badge opens that log. A server App's menu
+holds **Monthly budget**, which shows the 24/7 estimate for its machine.
 
 Kortix opens `*.apps.kortix.com` and `*.apps.localhost` on their direct origin
 rather than through a session's web forward proxy. That preserves the host-only

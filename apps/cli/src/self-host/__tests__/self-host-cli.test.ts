@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parse } from 'yaml';
@@ -62,6 +62,40 @@ describe('kortix self-host (generic Docker CLI)', () => {
     ]);
     return { code, stdout, stderr };
   }
+
+  test.each([true, false])('status --json emits only JSON with updater available=%s', async (available) => {
+    expect((await run(['init', '--yes'])).code).toBe(0);
+    const bin = join(tmp, 'bin');
+    mkdirSync(bin);
+    const report = {
+      status: { outcome: 'ok', from_version: '0.9.71', to_version: '0.9.72' },
+      drift: [],
+      lock: { locked: false, holder: '' },
+    };
+    // Stub only the external Docker boundary; execute the real CLI process.
+    writeFileSync(join(bin, 'docker'), `#!/bin/sh
+case " $* " in
+  *" ps "*) printf 'NAME IMAGE STATUS\\nfixture-api fixture:stable Up\\n' ;;
+  *" report "*) ${available ? `printf '%s\\n' '${JSON.stringify(report)}'` : 'exit 1'} ;;
+esac
+`, { mode: 0o755 });
+    const env = { PATH: `${bin}:${process.env.PATH}` };
+    const human = await run(['status'], env);
+    expect(human.code).toBe(0);
+    expect(human.stdout).toContain('NAME IMAGE STATUS');
+    const result = await run(['status', '--json'], env);
+    expect(result.code).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(JSON.parse(result.stdout)).toEqual({
+      instance,
+      auto_update: true,
+      update_time: '02:00',
+      update_tz: 'America/New_York',
+      update: available ? report.status : null,
+      drift: available ? report.drift : null,
+      lock: available ? report.lock : null,
+    });
+  });
 
   function readEnv(instanceName = instance): Record<string, string> {
     const content = readFileSync(join(configRoot, instanceName, '.env'), 'utf8');
@@ -637,6 +671,52 @@ describe('kortix self-host (generic Docker CLI)', () => {
     const { stdout } = await run(['doctor', '--json']);
     const checks = JSON.parse(stdout).checks as Array<{ name: string }>;
     expect(checks.find((c) => c.name === 'preview-origins')).toBeUndefined();
+  });
+
+  // KRTX-1715. The shipped auth defaults (open sign-up, email autoconfirm) let
+  // anyone who reaches a public instance create a confirmed account for any
+  // address, including the admin address. `doctor` fails until email
+  // confirmation or DISABLE_SIGNUP closes that, and names both commands.
+  type DoctorCheck = { name: string; ok: boolean; detail: string };
+  const signUpCheck = async () => {
+    const result = await run(['doctor', '--json']);
+    const check = (JSON.parse(result.stdout).checks as DoctorCheck[]).find((c) => c.name === 'open-sign-up');
+    return { result, check };
+  };
+
+  test('doctor FAILS open sign-up on a domain instance, and passes once email confirmation is on', async () => {
+    await run(['init', '--yes', '--domain', 'kortix.example.com']);
+
+    const open = await signUpCheck();
+    expect(open.check?.ok).toBe(false);
+    expect(open.check?.detail).toContain('create a confirmed account for any email address');
+    expect(open.check?.detail).toContain('kortix self-host env set EMAIL_URL=');
+    expect(open.check?.detail).toContain('kortix self-host env set DISABLE_SIGNUP=true');
+    expect(JSON.parse(open.result.stdout).ok).toBe(false);
+    expect(open.result.code).not.toBe(0);
+
+    // An email provider turns autoconfirm off (email-wiring.ts), which closes it.
+    await run(['env', 'set', 'EMAIL_URL=smtp://user:secret@smtp.example.com:587']);
+    const confirmed = await signUpCheck();
+    expect(confirmed.check).toEqual({ name: 'open-sign-up', ok: true, detail: 'new accounts must confirm their email' });
+  }, 60_000);
+
+  test('doctor passes open sign-up once self sign-up is off', async () => {
+    await run(['init', '--yes', '--domain', 'kortix.example.com']);
+    await run(['env', 'set', 'DISABLE_SIGNUP=true']);
+
+    const { check } = await signUpCheck();
+    expect(check).toEqual({ name: 'open-sign-up', ok: true, detail: 'self sign-up is off (DISABLE_SIGNUP=true)' });
+  }, 60_000);
+
+  test('doctor checks open sign-up on a tunnel instance, and not on a laptop instance', async () => {
+    await run(['init', '--yes']);
+    expect((await signUpCheck()).check).toBeUndefined();
+
+    // A tunnel URL reaches the internet like a domain does.
+    const envFile = join(configRoot, instance, '.env');
+    writeFileSync(envFile, `${readFileSync(envFile, 'utf8').replace(/^KORTIX_REACHABILITY_MODE=.*\n/m, '')}KORTIX_REACHABILITY_MODE=tunnel\n`);
+    expect((await signUpCheck()).check?.ok).toBe(false);
   });
 
   // Sets the preview domain by editing .env directly rather than via `env set`.

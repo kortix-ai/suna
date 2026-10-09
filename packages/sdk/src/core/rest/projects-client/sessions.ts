@@ -2,6 +2,7 @@
 
 import { type ApiClientOptions, ApiError, backendApi } from '../../http/api-client';
 import { markSessionFresh } from '../../http/fresh-sessions';
+import { currentSavedCopyStore } from '../../session-sync/saved-copy-store';
 import { noteSessionStopped } from '../../http/session-stopped';
 import type { AuditEvent } from './audit';
 import { type ConnectorSharing, unwrap } from './shared';
@@ -455,6 +456,32 @@ export async function getSessionParticipants(projectId: string, sessionId: strin
       `/projects/${projectId}/sessions/${sessionId}/participants`,
       { showErrors: false },
     ),
+  );
+}
+
+/**
+ * Is the caller notified about this session (KRTX-1742)? The creator and
+ * everyone who prompted it watch it until they mute it; `watching` is false
+ * after a mute. A failed read does not call the host's error handler.
+ */
+export async function getSessionWatch(projectId: string, sessionId: string) {
+  return unwrap(
+    await backendApi.get<{ watching: boolean }>(`/projects/${projectId}/sessions/${sessionId}/watch`, {
+      showErrors: false,
+    }),
+  );
+}
+
+/**
+ * Watch (`true`) or mute (`false`) a session for the caller. A mute holds
+ * until the caller watches again: prompting the session does not undo it.
+ * Needs a person's credential; an agent token gets 403.
+ */
+export async function setSessionWatch(projectId: string, sessionId: string, watching: boolean) {
+  return unwrap(
+    await backendApi.put<{ watching: boolean }>(`/projects/${projectId}/sessions/${sessionId}/watch`, {
+      watching,
+    }),
   );
 }
 
@@ -1294,6 +1321,10 @@ export interface SessionPrompt {
   /** Posted without a turn: no agent answers it, so show no "thinking"
    *  state. Absent from servers older than this field. */
   no_reply?: boolean;
+  /** The member who sent it. The prompt runs as this member, so only they
+   *  edit, send now or retry it (`sessionPromptActions`). Null for a prompt
+   *  with no recorded sender; absent from servers older than this field. */
+  author_user_id?: string | null;
   created_at: string;
   available_at: string;
 }
@@ -1557,9 +1588,12 @@ export async function updateProjectSession(
 }
 
 export async function deleteProjectSession(projectId: string, sessionId: string) {
-  return unwrap(
+  const result = unwrap(
     await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}/sessions/${sessionId}`),
   );
+  // The device's saved copy of a deleted session would only take space.
+  void currentSavedCopyStore()?.remove(projectId, sessionId);
+  return result;
 }
 
 export async function restartProjectSession(projectId: string, sessionId: string) {

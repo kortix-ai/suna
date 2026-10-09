@@ -13,11 +13,13 @@ import {
   listCommits,
   listRepoFiles,
   readRepoFile,
+  readRepoFileBytes,
   searchRepoFileNames,
 } from '../git';
 // From the leaf, not the barrel: suites that stub '../git' by listing its
 // exports would otherwise lose these names and fail at import.
 import { BRANCH_LIST_MAX_LIMIT, filterBranchesForResponse } from '../git/branches';
+import { listRepoDirectory } from '../git/files';
 import { createRoute, z } from '@hono/zod-openapi';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { resourceDenierForRequest } from '../lib/project-resources';
@@ -30,6 +32,9 @@ function isMissingGitPathError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error || '');
   return /^fatal: path '.+' does not exist in '.+'$/m.test(message);
 }
+
+/** Entry cap of the recursive `GET /files` list (no `depth`). */
+const RECURSIVE_LIST_LIMIT = 1000;
 
 export function registerProjectFilesRoutes(): void {
   // GET /v1/projects/:projectId/files
@@ -57,16 +62,14 @@ export function registerProjectFilesRoutes(): void {
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_FILE_READ);
 
     const gitProject = await withProjectGitAuth(loaded.row);
-    let files: Awaited<ReturnType<typeof listRepoFiles>> = [];
-    try {
-      files = await listRepoFiles(gitProject, c.req.query('ref') || loaded.row.defaultBranch, c.req.query('path'), { freshOnMiss: true });
-    } catch (error) {
+    const ref = c.req.query('ref') || loaded.row.defaultBranch;
+    const unavailable = (error: unknown) => {
       console.warn('[projects] repo file listing unavailable', {
         projectId,
         error: error instanceof Error ? error.message : String(error),
       });
       c.header('X-Kortix-Repo-Status', 'unavailable');
-    }
+    };
     // Visibility isolation: drop files of agents/skills this member is scoped out
     // of. No-op (one memo check) when the project scopes nothing.
     const denier = await resourceDenierForRequest({
@@ -76,8 +79,30 @@ export function registerProjectFilesRoutes(): void {
       actingTokenId: (c.get('iamTokenId') as string | undefined) ?? undefined,
       row: loaded.row,
     });
+
+    // `depth=1`: one folder level, complete up to its own entry cap. The Files
+    // tree reads this; the recursive list below cuts at 1,000 files (KRTX-1723).
+    if (c.req.query('depth') === '1') {
+      let listing: Awaited<ReturnType<typeof listRepoDirectory>> = { entries: [], truncated: false };
+      try {
+        listing = await listRepoDirectory(gitProject, ref, c.req.query('path'), { freshOnMiss: true });
+      } catch (error) {
+        unavailable(error);
+      }
+      const entries = denier ? listing.entries.filter((e) => !denier.isDenied(e.path)) : listing.entries;
+      return c.json({ entries, truncated: listing.truncated });
+    }
+
+    let files: Awaited<ReturnType<typeof listRepoFiles>> = [];
+    try {
+      files = await listRepoFiles(gitProject, ref, c.req.query('path'), { freshOnMiss: true });
+    } catch (error) {
+      unavailable(error);
+    }
     const visible = denier ? files.filter((f) => !denier.isDenied(f.path)) : files;
-    return c.json(visible.slice(0, 1000));
+    // The recursive list stays capped for its callers; it says so when it is.
+    if (visible.length > RECURSIVE_LIST_LIMIT) c.header('X-Kortix-Truncated', '1');
+    return c.json(visible.slice(0, RECURSIVE_LIST_LIMIT));
   },
   );
 
@@ -265,6 +290,74 @@ export function registerProjectFilesRoutes(): void {
       // (Better Stack pattern `5b40ec1a…`). Keep `isMissingGitPathError` as a
       // backstop for genuine `GitOperationError`s carrying the raw `fatal: path
       // … does not exist in …` message from callers that bypass `readRepoFile`.
+      if (isRepoFileNotFoundError(error) || isMissingGitPathError(error)) {
+        return c.json({ error: 'File not found' }, 404);
+      }
+      throw error;
+    }
+  },
+  );
+
+  // GET /v1/projects/:projectId/files/raw?path=...&ref=...
+  // Streams a file's exact bytes. `/files/content` captures `git show` stdout as
+  // a UTF-8 string, which corrupts every byte that is not valid UTF-8, so the
+  // file previews (and downloads) on the project files page had no honest way to
+  // read a PNG, PDF or DOCX. The response is always bytes; the client classifies
+  // text vs binary (the same NUL-byte heuristic the sandbox daemon uses).
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/files/raw',
+      tags: ['files'],
+      summary: 'Read a file\u2019s raw bytes from the project repository',
+      ...auth,
+        request: {
+          params: z.object({ projectId: z.string() }),
+          query: z.object({}).passthrough(),
+        },
+      responses: {
+          200: { description: 'Raw file bytes', content: { 'application/octet-stream': { schema: z.any() } } },
+          ...errors(400, 404),
+      },
+    }),
+    async (c) => {
+    const projectId = c.req.param('projectId');
+    const path = normalizeString(c.req.query('path'));
+    if (!path) return c.json({ error: 'path query param is required' }, 400);
+    // Absolute and traversal paths can never resolve inside the repo tree —
+    // same answer as files/content.
+    if (path.startsWith('/') || path.includes('..')) {
+      return c.json({ error: 'File not found' }, 404);
+    }
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_FILE_READ);
+
+    // Visibility isolation: a scoped-out member can't read the raw bytes of an
+    // agent/skill they aren't granted — the same 404 as a missing file, so the
+    // path isn't even confirmed to exist. Mirrors files/content (above).
+    const denier = await resourceDenierForRequest({
+      userId: loaded.userId,
+      accountId: loaded.row.accountId,
+      projectId,
+      actingTokenId: (c.get('iamTokenId') as string | undefined) ?? undefined,
+      row: loaded.row,
+    });
+    if (denier?.isDenied(path)) return c.json({ error: 'File not found' }, 404);
+
+    const ref = c.req.query('ref') || loaded.row.defaultBranch;
+    try {
+      const bytes = await readRepoFileBytes(await withProjectGitAuth(loaded.row), path, ref, { freshOnMiss: true });
+      return new Response(new Uint8Array(bytes), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'Cache-Control': 'no-store',
+        },
+      });
+    } catch (error) {
+      if (isGitRefNotFoundError(error)) return c.json({ error: 'ref not found' }, 404);
       if (isRepoFileNotFoundError(error) || isMissingGitPathError(error)) {
         return c.json({ error: 'File not found' }, 404);
       }

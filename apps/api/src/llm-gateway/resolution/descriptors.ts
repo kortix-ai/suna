@@ -249,10 +249,6 @@ export function managedCandidates(managed: ManagedModel): UpstreamDescriptor[] {
   return [zen, morph, openrouter].filter((candidate): candidate is UpstreamDescriptor => candidate !== null);
 }
 
-export function managedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
-  return managedCandidates(managed)[0] ?? null;
-}
-
 /**
  * Whether THIS deployment can actually reach `managed` — i.e. its transport's
  * credential is configured (OPENROUTER_API_KEY, or Morph when explicitly enabled) and the
