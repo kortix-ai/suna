@@ -53,10 +53,10 @@ array of `GET /kortix/health`. A client hides a control when the session's
 | [Tool access](/docs/project/tools#who-may-use-which-tool) per agent (`agents.<name>.tools` in `kortix.yaml`: `all`, `none`, a list, `exclude`) | Yes | Yes |
 | Per-agent `permission` rules and permission requests | Yes | Yes |
 | Questions (`question` tool) | Yes | Yes |
-| The project's root `AGENTS.md` rules file, or `CLAUDE.md` when the root has no `AGENTS.md` | Yes. OpenCode also reads the file in parent directories of `/workspace`, and reads `/workspace` while it runs a config release. | Yes, the root file only. It is part of the system prompt of the session and of each subagent. [With config releases on](#agentsmd-on-pi), pi reads the release copy. |
+| The project's root `AGENTS.md` rules file, or `CLAUDE.md` when the root has no `AGENTS.md` | Yes. OpenCode also reads the file in parent directories of `/workspace`, and reads `/workspace` while it runs a config release. | Yes, the root file only. It is part of the system prompt of the session and of each subagent. pi reads [the release copy](#agentsmd-on-pi). |
 | Subagents (`task` tool), `session.subagents` | Yes | Yes: `general`, `explore` (read-only), and each project agent with `mode: subagent` or `all`. A subagent cannot start another subagent. |
 | Skills (`skills/` and the managed `kortix-*` skills), with the agent's `skills` grant | Yes. The agent loads a skill with the `skill` tool. | Yes. The system prompt lists each granted skill; the agent reads the file. |
-| Kortix tools: `web_search`, `image_search`, `scrape_webpage`, `memory`, `show` | Yes | Yes |
+| [Kortix tools](/docs/project/tools#kortix-tools-in-kortixyaml): `web_search`, `image_search`, `scrape_webpage`, `memory`, `show`. All five with no `tools:` key in `kortix.yaml`; with one, the ones it lists as `kortix:<name>` | Yes | Yes |
 | [Project tools](/docs/project/tools) (`tools:` in `kortix.yaml`) | Yes | Yes |
 | [Config releases](/docs/work/runtime#config-convergence), `config.release.v1` | Yes | Yes |
 | Compact (summarize) the conversation, on demand and by itself near the model's context window, `session.compact` | Yes | Yes. A model request that overflows the window compacts and retries once. |
@@ -67,9 +67,10 @@ array of `GET /kortix/health`. A client hides a control when the session's
 The Kortix tools and the project tools are [harness-neutral](/docs/project/tools):
 the sandbox daemon runs one module per tool for both harnesses, with the same
 names, arguments and output. pi calls them in the daemon's process; OpenCode
-calls them through a plugin the daemon writes. A project that still has
-copies of the Kortix tools in `harnesses/opencode/tools/` keeps its copies on
-OpenCode until it deletes them.
+calls them through a plugin the daemon writes. Both harnesses get the same
+list: a Kortix tool the project's `tools:` key does not list is on neither. A
+project that still has copies of the Kortix tools in `harnesses/opencode/tools/`
+keeps its copies on OpenCode until it deletes them.
 
 The web tools follow the `websearch` (`web_search`, `image_search`) and
 `webfetch` (`scrape_webpage`) permission keys on both harnesses. On OpenCode
@@ -85,12 +86,11 @@ pi puts the project's root `AGENTS.md` in the system prompt as one section,
 with no `AGENTS.md` gives `CLAUDE.md` instead, as on OpenCode. pi reads no
 `AGENTS.md` in a subdirectory or a parent directory.
 
-- **Source.** With [config releases](/docs/work/runtime#config-convergence)
-  off, pi reads `/workspace/AGENTS.md`. With them on, pi reads the copy in the
-  release and never the one in `/workspace`: an edit in `/workspace` reaches
-  the session after it merges to the base branch. With them on and no release
-  to serve (`config.source: image-default`), pi reads no `AGENTS.md`, as it
-  reads no project skill.
+- **Source.** pi reads the copy in the
+  [config release](/docs/work/runtime#config-convergence) and never the one in
+  `/workspace`: an edit in `/workspace` reaches the session after it merges to
+  the base branch. With no release to serve (`config.source: image-default`),
+  pi reads no `AGENTS.md`, as it reads no project skill.
 - **When.** pi reads the file when the runtime starts, when its configuration
   reloads (a new release, a `/kortix/env` push), and after a repository
   refresh. It does not read it before each turn. A new release reaches the

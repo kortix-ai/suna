@@ -145,7 +145,6 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       secrets_egress: false,
       pooled_provider_secrets: false,
       pi_harness: false,
-      config_releases: true,
       us_region: false,
     },
     experimental_features: [],
@@ -537,6 +536,7 @@ describe('TriggerSchema', () => {
       connected_as: 'bot@example.test',
       type: 'GITHUB_PULL_REQUEST_EVENT',
       config: { owner: 'acme' },
+      source: 'composio',
       provider: 'composio',
       app: 'github',
       status: 'needs_connection',
@@ -746,7 +746,6 @@ describe('envelopes', () => {
       'secrets_egress',
       'pooled_provider_secrets',
       'pi_harness',
-      'config_releases',
       'us_region',
     ]);
   });

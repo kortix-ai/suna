@@ -8,20 +8,35 @@ import {
   type Database,
   projectTriggerRuntime,
   projects,
+  sessionLifecycleCommands,
 } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
 import { clearAuthorizeCaches } from '../../iam/authorize';
 import type { GitTriggerSpec } from '../trigger-types';
 
 const fires: Array<Record<string, any>> = [];
-let fireStatus: 'fired' | 'failed' | 'deduped' = 'fired';
+let fireStatus: 'fired' | 'failed' | 'retryable' | 'deduped' | 'throws' = 'fired';
+/** The create command a fire leaves under its key, as `createSession` does. */
+let leftCommand: 'dead_lettered' | 'queued' | null = null;
 const actualTriggers = await import('../lib/triggers');
 mock.module('../lib/triggers', () => ({
   ...actualTriggers,
   fireGitTrigger: async (input: Record<string, any>) => {
     fires.push(input);
-    if (fireStatus === 'failed') return { status: 'failed', error: 'boom' };
+    if (leftCommand) {
+      await testDb().insert(sessionLifecycleCommands).values({
+        commandType: 'create_session',
+        source: 'trigger:event',
+        status: leftCommand,
+        projectId: PROJECT_ID,
+        accountId: ACCOUNT_ID,
+        idempotencyKey: input.idempotencyKey,
+      });
+    }
+    if (fireStatus === 'failed') return { status: 'failed', error: 'boom', retryable: false };
+    if (fireStatus === 'retryable') return { status: 'failed', error: 'The sandbox provider is busy', retryable: true };
+    if (fireStatus === 'throws') throw new Error('sandbox unavailable');
     return { status: 'fired', sessionId: 'sess_synthetic', deduped: fireStatus === 'deduped' };
   },
 }));
@@ -47,6 +62,7 @@ const { applyNotices, deliverEvents } = await import('./deliver');
 const { setEventSourceForTest } = await import('./registry');
 const { listEventApps, validateEventTrigger } = await import('./catalog');
 const store = await import('./store');
+const { settleTriggerAlerts } = await import('../lib/trigger-alerts');
 
 const CONFIRMATION = 'I_UNDERSTAND_THIS_DELETES_TEST_DATA';
 const HAS_CONFIRMED_TEST_DB = Boolean(
@@ -138,6 +154,14 @@ const catalog = async (s: GitTriggerSpec) =>
     scheduleSpec: s as unknown as Record<string, unknown>,
   });
 const status = async (slug: string) => (await store.get(PROJECT_ID, slug))?.status;
+/** The trigger's own row: what the triggers API reports as last_status / last_error. */
+const runtime = async (slug: string) => {
+  const [row] = await testDb()
+    .select()
+    .from(projectTriggerRuntime)
+    .where(and(eq(projectTriggerRuntime.projectId, PROJECT_ID), eq(projectTriggerRuntime.slug, slug)));
+  return row;
+};
 
 describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
   beforeEach(async () => {
@@ -145,6 +169,7 @@ describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
     calls.length = 0;
     fires.length = 0;
     fireStatus = 'fired';
+    leftCommand = null;
     subscribeError = null;
     setEventSourceForTest('composio', fake);
     const db = testDb();
@@ -397,6 +422,43 @@ describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
     expect((await store.get(PROJECT_ID, 'b'))?.lastError).toContain('COMPOSIO_API_KEY');
   });
 
+  describe('source', () => {
+    const withSource = (source: string) => spec('a', { event: { connector: 'inbox', source, type: 'EXAMPLE_NEW_MESSAGE', config: {} } });
+
+    test('a source equal to the connector provider activates like the default derivation', async () => {
+      await connect();
+      await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [withSource('composio'), spec('b')]);
+      expect(await status('a')).toBe('active');
+      expect(await status('b')).toBe('active');
+      expect((await store.get(PROJECT_ID, 'a'))?.provider).toBe('composio');
+    });
+
+    test('a source that needs another connector provider is status error naming both', async () => {
+      await connect();
+      setEventSourceForTest('other', { ...fake, id: 'other' });
+      try {
+        await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [withSource('other')]);
+        expect(await status('a')).toBe('error');
+        expect((await store.get(PROJECT_ID, 'a'))?.lastError).toBe(
+          'Connector "inbox" is a composio connector; source "other" needs a other connector.',
+        );
+        expect(calls.filter((x) => x.startsWith('subscribe'))).toEqual([]);
+      } finally {
+        setEventSourceForTest('other', undefined);
+      }
+    });
+
+    test('an unknown source is status error and a 400-grade validation problem', async () => {
+      await connect();
+      await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [withSource('nope')]);
+      expect(await status('a')).toBe('error');
+      expect((await store.get(PROJECT_ID, 'a'))?.lastError).toBe('Unknown event source "nope". Sources: composio.');
+      expect(await validateEventTrigger(PROJECT_ID, { connector: 'inbox', source: 'nope', type: 'X', config: {} })).toBe(
+        'Unknown event source "nope". Sources: composio.',
+      );
+    });
+  });
+
   describe('delivery', () => {
     const delivery = (over: Record<string, unknown> = {}) => ({
       externalId: 'ti_EXAMPLE_NEW_MESSAGE_{}',
@@ -457,10 +519,83 @@ describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
       expect((await store.get(PROJECT_ID, 'a'))?.lastEventAt).toBeNull();
     });
 
-    test('a failed fire is counted as failed', async () => {
+    test('a failed fire is counted as failed and recorded on the trigger (KRTX-1743)', async () => {
       await armed();
       fireStatus = 'failed';
       expect((await deliverEvents('composio', [delivery()])).failed).toBe(1);
+      expect(await runtime('a')).toMatchObject({ lastStatus: 'failed', lastError: 'boom', lastFiredAt: null });
+      expect((await runtime('a'))?.lastAttemptAt).toBeInstanceOf(Date);
+      // A failure no redelivery can fix opens an alert on its first attempt (KRTX-1742).
+      expect(await runtime('a')).toMatchObject({ alertSource: 'fire' });
+      expect((await runtime('a'))?.alertFailingSince).toBeInstanceOf(Date);
+      await settleTriggerAlerts();
+    });
+
+    test('a thrown fire is recorded on the trigger, and the next good fire clears it (KRTX-1743)', async () => {
+      await armed();
+      fireStatus = 'throws';
+      expect((await deliverEvents('composio', [delivery()])).failed).toBe(1);
+      expect(await runtime('a')).toMatchObject({ lastStatus: 'failed', lastError: 'sandbox unavailable' });
+      // The app redelivers on our 500: a first failed attempt alerts nobody (KRTX-1742).
+      expect(await runtime('a')).toMatchObject({ alertSource: null, alertFailingSince: null });
+
+      fireStatus = 'fired';
+      expect((await deliverEvents('composio', [delivery({ eventId: 'msg_synthetic2' })])).fired).toBe(1);
+      expect(await runtime('a')).toMatchObject({ lastStatus: 'fired', lastError: null });
+      expect((await runtime('a'))?.lastFiredAt).toBeInstanceOf(Date);
+      expect(await runtime('a')).toMatchObject({ alertSource: null, alertFailingSince: null });
+      await settleTriggerAlerts();
+    });
+
+    describe('a failure the app redelivery can fix (KRTX-1742)', () => {
+      test('alerts nobody when the redelivery of the same event works', async () => {
+        await armed();
+        fireStatus = 'retryable';
+        leftCommand = 'dead_lettered';
+        expect((await deliverEvents('composio', [delivery()])).failed).toBe(1);
+        expect(await runtime('a')).toMatchObject({ lastStatus: 'failed', alertSource: null, alertFailingSince: null });
+
+        fireStatus = 'fired';
+        leftCommand = null;
+        expect((await deliverEvents('composio', [delivery()])).fired).toBe(1);
+        expect(await runtime('a')).toMatchObject({ lastStatus: 'fired', alertSource: null, alertFailingSince: null });
+        await settleTriggerAlerts();
+      });
+
+      test('alerts on the third failed delivery of one event', async () => {
+        await armed();
+        fireStatus = 'retryable';
+        leftCommand = 'dead_lettered';
+        for (const attempt of [1, 2]) {
+          expect((await deliverEvents('composio', [delivery()])).failed).toBe(1);
+          expect({ attempt, alertFailingSince: (await runtime('a'))?.alertFailingSince }).toEqual({ attempt, alertFailingSince: null });
+        }
+        expect((await deliverEvents('composio', [delivery()])).failed).toBe(1);
+        expect(await runtime('a')).toMatchObject({ alertSource: 'fire' });
+        expect((await runtime('a'))?.alertFailingSince).toBeInstanceOf(Date);
+        await settleTriggerAlerts();
+      });
+
+      test('a thrown third attempt alerts, unless a create still owns the event', async () => {
+        await armed();
+        fireStatus = 'retryable';
+        leftCommand = 'dead_lettered';
+        await deliverEvents('composio', [delivery()]);
+        await deliverEvents('composio', [delivery()]);
+
+        fireStatus = 'throws';
+        leftCommand = 'queued';
+        expect((await deliverEvents('composio', [delivery()])).failed).toBe(1);
+        expect(await runtime('a')).toMatchObject({ alertSource: null, alertFailingSince: null });
+
+        await testDb()
+          .delete(sessionLifecycleCommands)
+          .where(and(eq(sessionLifecycleCommands.projectId, PROJECT_ID), eq(sessionLifecycleCommands.status, 'queued')));
+        leftCommand = null;
+        expect((await deliverEvents('composio', [delivery()])).failed).toBe(1);
+        expect(await runtime('a')).toMatchObject({ alertSource: 'fire' });
+        await settleTriggerAlerts();
+      });
     });
 
     test('notices mark rows error with remediation text', async () => {

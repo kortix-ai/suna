@@ -35,6 +35,7 @@ export const DENY_COMMANDS: Record<string, Denial> = {
   connect: { reason: 'it attaches an interactive terminal to a session', use: 'start_session and send_message' },
   attach: { reason: 'it attaches an interactive terminal to a session', use: 'start_session and send_message' },
   token: { reason: 'it prints the raw access token', use: '`whoami --json` names the user' },
+  tools: { reason: "it reads and edits a local kortix.yaml, and this server has no project checkout", use: 'run_command in a session sandbox, where the project lives: `kortix tools ls` there' },
 };
 
 /** [command, subcommand] → refusal. */

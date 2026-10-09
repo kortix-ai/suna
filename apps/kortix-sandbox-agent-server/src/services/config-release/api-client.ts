@@ -1,5 +1,6 @@
 import { noteControlPlaneResponse } from '@/lib/kortix-api/session-token-health'
 import {
+  ACCEPTED_FORMATS,
   MAX_CONFIG_ARCHIVE_BYTES,
   parseConfigReleaseDescriptor,
   type ConfigReleaseDescriptor,
@@ -61,15 +62,17 @@ export class ConfigReleaseApiError extends Error {
 }
 
 /**
- * The API's code for a project whose `config_releases` feature flag is off —
- * per project, or platform-wide through the operator kill switch. Emitted by
- * `requireFeatureFlag` as `403`.
+ * The code an API answers when config releases are off for the project:
+ * `requireFeatureFlag`'s `403`. Config releases graduated out of the flag
+ * system in 2026-10, so a current API never sends it. Only an API from before
+ * graduation (a self-host on an older release, or a rollback) does, and the
+ * daemon keeps handling it so that API still gets a working box.
  */
 export const FEATURE_DISABLED = 'feature_disabled'
 
 /**
- * Config releases are switched off for this project. This is not a failure and
- * not a release problem: the session runs the config it always ran before
+ * Config releases are switched off for this project (an API from before they
+ * graduated). This is not a failure and not a release problem: the session runs the config it always ran before
  * releases existed — the workspace config dir. The caller reverts to it and
  * clears its boot pointer.
  */
@@ -102,12 +105,12 @@ async function errorFromResponse(res: Response, what: string): Promise<ConfigRel
 /**
  * `POST /v1/projects/{projectId}/sessions/{sessionId}/config-release`.
  *
- * The request carries no inputs: the desired release is always the base
- * branch's current release for this session, and nothing the box sends can
- * change it. The response is validated in full before any field is used. An
+ * The request carries no inputs that change which release is assigned: the
+ * desired release is always the base branch's current release for this
+ * session. The body only asks for the v3 format (`ACCEPTED_FORMATS`). The response is validated in full before any field is used. An
  * API that predates the spec answers `404`; the caller keeps its current
- * behaviour. A `403 feature_disabled` means config releases are off for the
- * project (`isFeatureDisabledError`).
+ * behaviour. A `403 feature_disabled` means an API from before config releases
+ * graduated has them off for the project (`isFeatureDisabledError`).
  */
 export async function fetchConfigReleaseDescriptor(
   api: ConfigReleaseApi,
@@ -122,7 +125,7 @@ export async function fetchConfigReleaseDescriptor(
     res = await fetchImpl(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${api.token}` },
-      body: '{}',
+      body: JSON.stringify({ accept: ACCEPTED_FORMATS }),
       redirect: 'error',
       signal: AbortSignal.timeout(opts.timeoutMs ?? DESCRIPTOR_TIMEOUT_MS),
     })

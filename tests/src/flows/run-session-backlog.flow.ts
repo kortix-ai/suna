@@ -28,6 +28,7 @@ import { isKe2eRetryableError } from '../core/client';
 import { waitFor } from '../core/poll';
 import type { FlowContext } from '../core/types';
 import { AgentPrincipalsWorld } from '../fixtures/agent-principals';
+import { CliSandbox } from '../fixtures/cli';
 import { subscribe } from '../fixtures/billing';
 import {
   abortTurn,
@@ -1455,6 +1456,104 @@ harnessFlow(
         (await file(limited.sandboxId, limitedNonce)).status(404);
       });
     } finally {
+      await world.close();
+    }
+  },
+);
+
+// ─── RUN-19: Kortix tools in kortix.yaml, removed and ejected ────────────────
+// The project lists four Kortix tools (no `show`) and owns a changed copy of
+// `web_search`, made by the real `kortix tools eject`. The copy answers a
+// `ke2e-` query itself and writes its proof to the workspace, so the flow reads
+// the effect back instead of trusting the model's text.
+const RUN19_MANIFEST = [
+  'kortix_version: 2',
+  'default_agent: kortix',
+  'tools:',
+  '  web_search: kortix:web_search',
+  '  image_search: kortix:image_search',
+  '  scrape_webpage: kortix:scrape_webpage',
+  '  memory: kortix:memory',
+  'agents:',
+  '  kortix:',
+  '    kortix_permissions: all',
+  '    skills: all',
+  '',
+].join('\n');
+const EJECTED_EXECUTE = '  async execute(args: Record<string, any>, { env, signal }: ToolContext): Promise<string> {\n';
+const CHANGED_EXECUTE = [
+  '  async execute(args: Record<string, any>, { env, signal, directory }: ToolContext & { directory: string }): Promise<string> {',
+  "    if (String(args.query).startsWith('ke2e-')) {",
+  '      const text = `EJECTED ${args.query}`',
+  "      ;(await import('node:fs')).writeFileSync(`${directory}/${args.query}.txt`, text)",
+  '      return text',
+  '    }',
+  '',
+].join('\n');
+
+harnessFlow(
+  'RUN-19',
+  {
+    domain: 'agent-run',
+    requires: ['funded', 'daytona'],
+    // One session: boot (≤540s) + one turn (≤240s).
+    timeoutMs: 900_000,
+    routes: [
+      'PATCH /v1/projects/:projectId/features',
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+    ],
+  },
+  async (ctx, harness) => {
+    const project = await ctx.fixtures.project({ seed: true });
+    const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
+    const cli = new CliSandbox('run19');
+    const query = `ke2e-run19-${Date.now()}`;
+    const done = `RUN19_DONE_${Date.now()}`;
+    try {
+      await ctx.step(`the project ejects web_search with kortix tools eject, changes the copy, lists no show, and runs ${harness}`, async () => {
+        cli.writeFile('kortix.yaml', RUN19_MANIFEST);
+        const ejected = await cli.run(['tools', 'eject', 'web_search']);
+        if (ejected.exitCode !== 0) throw new Error(`kortix tools eject web_search exited ${ejected.exitCode}: ${ejected.all}`);
+        const manifest = cli.readFile('kortix.yaml');
+        if (!manifest.includes('  web_search: tools/web_search.ts  # ejected from kortix:web_search\n')) throw new Error(`eject did not point kortix.yaml at the copy:\n${manifest}`);
+        const source = cli.readFile('tools/web_search.ts');
+        if (!source.includes(EJECTED_EXECUTE)) throw new Error('the ejected web_search no longer has the execute line this flow changes');
+        if (harness === 'pi') await world.setFeature('pi_harness', true);
+        await world.commitToMain({ 'kortix.yaml': manifest, 'tools/web_search.ts': source.replace(EJECTED_EXECUTE, CHANGED_EXECUTE) }, 'ke2e RUN-19: four Kortix tools and an ejected web_search');
+      });
+
+      const session = await bootSession(ctx, harness, {
+        project,
+        prompt:
+          `Call the web_search tool once with query "${query}". Then call the show tool once with type "text" and content "${query}". ` +
+          `If you have no show tool, skip that call. Use no other tool. Then reply with exactly: ${done}`,
+      });
+      await ctx.step("the project's changed web_search ran; its proof is in the workspace", async () => {
+        const messages = await waitForAssistantText(ctx, session.projectId, session.sessionId, done);
+        const calls = messages.flatMap((m) => m.tools ?? []).filter((t) => t.tool === 'web_search');
+        if (!calls.some((t) => t.status === 'completed')) throw new Error(`no completed web_search call on ${harness}: ${JSON.stringify(calls)}`);
+        (await ctx.client.as(ctx.P.OWNER).get(runtimePath(session.sandboxId, `/file/content?path=${encodeURIComponent(`${query}.txt`)}`)))
+          .status(200)
+          .body()
+          .matches('$.content', new RegExp(`^EJECTED ${query}$`));
+      });
+
+      await ctx.step('show is not loaded: no show call completes and the daemon answers 404 for it; a listed Kortix tool runs', async () => {
+        const { messages } = await readTranscript(ctx, session.projectId, session.sessionId);
+        const shown = messages.flatMap((m) => m.tools ?? []).filter((t) => t.tool === 'show' && t.status === 'completed');
+        if (shown.length > 0) throw new Error(`a show call completed on ${harness}: ${JSON.stringify(shown)}`);
+        const owner = ctx.client.as(ctx.P.OWNER);
+        (await owner.post(runtimePath(session.sandboxId, '/kortix/tools/show'), { args: { action: 'show', type: 'text', content: query }, agent: 'kortix' }))
+          .status(404)
+          .body()
+          .matches('$.error', /^no tool named show is loaded$/);
+        (await owner.post(runtimePath(session.sandboxId, '/kortix/tools/memory'), { args: { command: 'view', path: 'memory' }, agent: 'kortix' })).status(200);
+      });
+    } finally {
+      cli.dispose();
       await world.close();
     }
   },

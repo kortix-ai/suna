@@ -771,7 +771,16 @@
         }
       },
       "testNotificationTitle": "Notificação de teste",
-      "testNotificationBody": "As notificações estão funcionando corretamente!"
+      "testNotificationBody": "As notificações estão funcionando corretamente!",
+      "enableDescriptionPush": "Mostra notificações neste navegador, mesmo com todas as abas do Kortix fechadas.",
+      "enableDescriptionDesktop": "Mostra notificações do aplicativo desktop enquanto a janela dele estiver aberta.",
+      "enableDescriptionBrowser": "Mostra notificações neste navegador enquanto uma aba do Kortix estiver aberta.",
+      "notificationTypesDescription": "Estas escolhas valem em todos os celulares e navegadores. O sino lista todas as notificações.",
+      "push": "Push",
+      "email": "E-mail",
+      "channelSwitch": "{kind}: {channel}",
+      "preferencesLoadError": "Não foi possível carregar suas configurações de notificação",
+      "retry": "Tentar novamente"
     },
     "git": {
       "updateFailed": "Não foi possível atualizar o repositório",
@@ -1181,10 +1190,6 @@
         "pi_harness": {
           "name": "Harness Pi (na sandbox)",
           "description": "Executa as sessões com o harness Pi dentro da sandbox da sessão em vez do OpenCode. Desativado, `runtime: pi` no manifesto continua a selecionar o Pi."
-        },
-        "config_releases": {
-          "name": "Versões de configuração",
-          "description": "Executa as sessões com a configuração de agente atual do branch base, servida apenas para leitura, para que um agente, skill ou ferramenta integrado chegue a todas as sessões em curso. Desativado, cada sessão lê a sua própria pasta de configuração no workspace."
         },
         "mcp": {
           "name": "Servidor MCP",
@@ -2561,7 +2566,50 @@
     "settingsFailed": "Falha ao atualizar preferências de notificação",
     "enableAll": "Ativar Todas",
     "disableAll": "Desativar Todas",
-    "saveChanges": "Salvar Mudanças"
+    "saveChanges": "Salvar Mudanças",
+    "kind": {
+      "turn_done": "Turno concluído",
+      "turn_error": "Turno com falha",
+      "question": "Pergunta",
+      "permission": "Pedido de permissão",
+      "shared": "Compartilhada com você",
+      "automation_failed": "Alerta de falha",
+      "automation_recovered": "Alerta de recuperação"
+    },
+    "kindDescription": {
+      "turn_done": "Um turno termina.",
+      "turn_error": "Um turno termina com um erro.",
+      "question": "O agente faz uma pergunta e aguarda a resposta.",
+      "permission": "O agente pede permissão para executar uma ferramenta.",
+      "shared": "Alguém compartilha uma sessão com você.",
+      "automation_failed": "Um trigger ou lembrete começa a falhar.",
+      "automation_recovered": "Um trigger ou lembrete que falhava volta a funcionar."
+    },
+    "bell": {
+      "label": "Notificações",
+      "unreadLabel": "Notificações: {count} não lidas",
+      "markAllRead": "Marcar tudo como lido",
+      "empty": "As notificações aparecerão aqui",
+      "loadError": "Não foi possível carregar as notificações",
+      "retry": "Tentar novamente",
+      "unread": "Não lida",
+      "promptPush": "Receba notificações quando o Kortix estiver fechado",
+      "promptBackground": "Receba notificações quando o Kortix estiver em segundo plano",
+      "turnOn": "Ativar",
+      "dismiss": "Dispensar"
+    },
+    "arrival": {
+      "inProject": "{kind} em {project}",
+      "openSession": "Abrir sessão",
+      "openReminders": "Abrir lembretes",
+      "openTriggers": "Abrir triggers"
+    },
+    "session": {
+      "mute": "Silenciar notificações",
+      "unmute": "Reativar notificações",
+      "muted": "Notificações silenciadas",
+      "unmuted": "Notificações reativadas"
+    }
   },
   "modes": {
     "samplePrompts": "Prompts de exemplo",
@@ -9460,6 +9508,9 @@
       "text1a9030082a20": "Criar habilidade",
       "text25ab55af92b1": "Envio do anexo iniciado",
       "text38e64d6a8162": "Faz commit de um SKILL.md no branch padrão do projeto. Não precisa de modelo nem de chat.",
+      "text39cfc32bd12c": "Texto colado",
+      "text23d0bb29fca0": "{count, plural, one {# palavra} other {# palavras}}",
+      "text426699d5a8c0": "{count, plural, one {# caractere} other {# caracteres}}",
       "text40078a553439": "Bloco do anexo enviado",
       "text4c7f8000aabd": "Envio do anexo concluído",
       "text91420d2587c2": "Envio do anexo removido",
@@ -11669,7 +11720,6 @@
       "text41528be66c4c": "Ele para onde você mandou parar",
       "text415dcc179975": "O checkout não foi iniciado",
       "text416476d59f76": "Acesso à sessão atualizado",
-      "text416a977cfdba": "Palavras a corresponder.",
       "text416f3a19f614": "Grupo excluído",
       "text416fe8bd72df": "Log de auditoria reconciliado",
       "text417500e4ecdb": "  name: Northwind",
@@ -12413,7 +12463,6 @@
       "text55a733d57ce1": "Abrir ações do PDF",
       "text55a834c80aa9": "Somente o proprietário",
       "text55afa51cc456": "Provisões, despesas antecipadas, receita diferida e movimentações de ativos fixos. Mecânicos, orientados por regras e recalculados a partir da fonte a cada período, em vez de uma pasta de trabalho copiada desde 2023.",
-      "text55c84320074b": "Pesquise na documentação pública e no conteúdo de produto da Kortix.",
       "text55e970c35216": "Obter código do dispositivo",
       "text55fa9981994c": "Mostrando as",
       "text56000ae371ac": ". Os aplicativos são privados por padrão.",
@@ -13309,7 +13358,6 @@
       "text7033ce3d1e7a": "Conexão de e-mail",
       "text7039b3d4be40": "Estado do turno da sessão visualizado",
       "text703a3d810fc0": "Migre o blog para MDX",
-      "text703f49b261e2": "Caminho da Kortix a partir de um resultado de pesquisa.",
       "text7040ecc689ea": "Esta prévia não pode executar comandos pelo navegador.",
       "text704aed35a6fe": "Segredo copiado",
       "text704e738861ba": "Remover projeto",
@@ -14125,7 +14173,6 @@
       "text87c5912f2cef": "Construindo",
       "text87d296ec9489": "Legenda",
       "text87d2f3386f90": "Pesquisando na web",
-      "text87e3eca29ea9": "Caminho canônico retornado por list_public_content, como /docs ou /pricing.",
       "text87e6d00bbf53": "Revogar",
       "text87e8ac388eb1": "Cada remetente é uma pessoa conhecida",
       "text87f29356aaf3": "Responsabilidade prolongada",
@@ -16493,7 +16540,6 @@
       "textca9c05caf0c3": "Status do agente",
       "textca9c32c53e90": "Saindo",
       "textcaa6c42f2b7c": "$ kortix channels disconnect",
-      "textcaace11153c1": "Leia uma página pública da Kortix como Markdown.",
       "textcab94aba84f9": "Tipografia",
       "textcac616ab8697": "Suas próprias funções e vinculações de políticas granulares, além das predefinições.",
       "textcac716114be6": "Teste do webhook de auditoria enviado",
@@ -19502,7 +19548,14 @@
       "text5a4918e0201c": "Restaurando…",
       "textd9682a5acb38": "{value0} de {value1} snapshots manuais",
       "text581e89ae1f08": "Excluir um snapshot do backend",
-      "text1af77a9ae95c": "Liste este backend no App. Um App só recebe tokens do visitante para os backends que lista."
+      "text1af77a9ae95c": "Liste este backend no App. Um App só recebe tokens do visitante para os backends que lista.",
+      "text2eb91a6f88aa": "1 arquivo permanece anexado. Remova-o para executar o comando, ou remova o comando para enviar o arquivo como mensagem.",
+      "text807f9beb34b1": "{count, plural, other {# arquivos permanecem anexados. Remova-os para executar o comando, ou remova o comando para enviá-los como mensagem.}}",
+      "text4b4847a6fb87": "Eventos de apps",
+      "text07fb9f8661dc": "Apps com eventos",
+      "text51035b5b67dc": "Filtrar por tipo",
+      "text12a4656bfd2a": "via {source}",
+      "textfd26b2373251": "Eventos via {source}"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

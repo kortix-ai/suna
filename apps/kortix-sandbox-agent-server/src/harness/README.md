@@ -185,24 +185,25 @@ packages and extensions stay the ones the session booted with.
 
 ### Config releases
 
-With the project's `config_releases` flag on, pi runs the base branch's
-current config release, exactly as OpenCode does (`pi/config-release.ts`,
-contract in `services/config-release/`). A release is a checkout of the base
-branch under `/opt/kortix/config/<release_id>`, with the repository's own
-layout, verified against its Git blob IDs and sealed read-only. pi reads from
-it what it reads from `/workspace`: the compiled governance
-(`KORTIX_COMPILED_AGENT_CONFIG`, the agents), `skills/` (and the legacy
-`.kortix/opencode/skills`), the root `AGENTS.md` (else `CLAUDE.md`), and its
-own config dir (`pi.config_dir`, else `harnesses/pi`, else `.kortix/pi`:
-skills, extensions, prompts, `settings.json`), resolved inside the release by
-`resolvePiProjectConfigDir`.
+pi runs the base branch's current config release, exactly as OpenCode does
+(`pi/config-release.ts`, contract in `services/config-release/`). A release is
+a checkout of the base branch under `/opt/kortix/config/<release_id>`, with
+the repository's own layout, verified against its Git blob IDs and sealed
+read-only. pi reads from it what it reads from `/workspace`: the compiled
+governance (`KORTIX_COMPILED_AGENT_CONFIG`, the agents), `skills/` (and the
+legacy `.kortix/opencode/skills`), the root `AGENTS.md` (else `CLAUDE.md`),
+and its own config dir (`pi.config_dir`, else `harnesses/pi`, else
+`.kortix/pi`: skills, extensions, prompts, `settings.json`), resolved inside
+the release by `resolvePiProjectConfigDir`.
 OpenCode's files (`harnesses/opencode`) are not pi's, so a commit that breaks
 only those files is a working config on pi.
 
 - **Boot.** `runPi` starts the choice beside the repository checkout, and
   `lifecycle.start()` waits for it: the desired release, then the last release
   this box proved (`current.json`), then the image default (managed skills and
-  the provisioned governance). `/workspace` is read only while the flag is off.
+  the provisioned governance). `/workspace` is read only when the box has no
+  Kortix API, or an API from before config releases graduated answers `403
+  feature_disabled`.
 - **Convergence** (`POST /kortix/config/converge`, the 60 s runtime-truth tick,
   one pass after ready). pi applies a release in place: the governance goes
   into the runtime's env, the skill directories and the `AGENTS.md` root
@@ -338,8 +339,8 @@ runs (`../services/tools/`):
 | Module | What |
 | --- | --- |
 | `services/tools/tool.ts` | The contract: a default export `{ description, parameters (JSON Schema), execute(args, context) }`, with `context` = `{ sessionId, agent, directory, env, signal }`. |
-| `services/tools/{web,memory,show}.ts` | The Kortix tools: `web_search` (Tavily), `image_search` (Serper), `scrape_webpage` (Firecrawl), `memory`, `show`. The web tools call the API's billed router proxy (`/v1/router/{tavily,serper,firecrawl}`) with the sandbox token; a box with no control plane calls the upstream with the project's own key. |
-| `services/tools/host.ts` | `loadTools(root, declared)`: the Kortix tools, then the project's (`CompiledAgentSet.project_tools`, from kortix.yaml `tools`), imported from `root` (the working tree or the config release). A project tool replaces a Kortix tool of its name; a module that does not load is logged and skipped. `runTool` bounds the output (over 50 KB or 2000 lines: the whole text to a temp file, the head to the model). `sessionEnv` is `context.env`: the process env with the live agent env file over it. |
+| `services/tools/kortix/<name>.ts` | The Kortix tools, one self-contained module each: `web_search` (Tavily), `image_search` (Serper), `scrape_webpage` (Firecrawl), `memory`, `show`. Each follows the project tool contract and imports only `node:*`, so `kortix tools eject <name>` copies the file into a project unchanged (the CLI embeds the same bytes, `apps/cli/src/kortix-tools.generated.json`). The web tools read `KORTIX_API_URL` and `KORTIX_TOKEN` from `context.env` and call the API's billed router proxy (`/v1/router/{tavily,serper,firecrawl}`); a box with no control plane calls the upstream with the project's own key. |
+| `services/tools/host.ts` | `loadTools(root, compiled)`: the Kortix tools `CompiledAgentSet.kortix_tools` lists (all five when it is absent: no kortix.yaml `tools` key, or a config compiled before the key existed), then the project's (`project_tools`), imported from `root` (the working tree or the config release). A project tool replaces a Kortix tool of its name; a module that does not load is logged and skipped. `runTool` bounds the output (over 50 KB or 2000 lines: the whole text to a temp file, the head to the model). `sessionEnv` is `context.env`: the process env with the live agent env file over it. |
 | `routes/kortix/tools.ts` | `POST /kortix/tools/:name` for an out-of-process harness: the box's tool-bridge key (`toolBridgeKey`, kept in the runtime state dir) or the control credential; `403` when the agent's tool access refuses the tool. |
 
 - **pi** loads them at `start()` and registers each as an `AgentTool`

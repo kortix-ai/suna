@@ -30,6 +30,9 @@ mock.module('@/components/ui/toast', () => ({
   warningToast: (title: string, opts?: Record<string, unknown>) => {
     toastCalls.push({ kind: 'warning', title, opts });
   },
+  infoToast: (title: string, opts?: Record<string, unknown>) => {
+    toastCalls.push({ kind: 'info', title, opts });
+  },
   dismissToast: () => {},
 }));
 
@@ -47,8 +50,17 @@ mock.module('@/lib/navigation/router-bridge', () => ({
   },
 }));
 
+let webPushOn = false;
+mock.module('@/features/notifications/web-push', () => ({
+  hasWebPushSubscription: () => webPushOn,
+}));
+
 // ── minimum browser surface ────────────────────────────────────────────────
-const notificationInstances: { title: string; options: { body?: string; tag?: string } }[] = [];
+const notificationInstances: {
+  title: string;
+  options: { body?: string; tag?: string };
+  instance: FakeNotification;
+}[] = [];
 
 class FakeNotification {
   static permission: 'default' | 'granted' | 'denied' = 'default';
@@ -58,7 +70,7 @@ class FakeNotification {
     title: string,
     options: { body?: string; tag?: string },
   ) {
-    notificationInstances.push({ title, options });
+    notificationInstances.push({ title, options, instance: this });
   }
 }
 
@@ -112,8 +124,36 @@ world.window = {
 world.Notification = FakeNotification;
 world.BroadcastChannel = FakeBroadcastChannel;
 
-const { sendWebNotification, notifyTaskComplete, notifyTaskCompleteFor, isViewingSession } =
-  await import('./web-notifications');
+/** The service worker's notifications: what it showed, and what is on screen by tag. */
+const workerShown: { title: string; options: Record<string, unknown> }[] = [];
+const workerOnScreen = new Map<string, { data: unknown }>();
+Object.defineProperty(globalThis.navigator, 'serviceWorker', {
+  configurable: true,
+  value: {
+    ready: Promise.resolve({
+      showNotification: async (title: string, options: Record<string, unknown>) => {
+        workerShown.push({ title, options });
+        if (typeof options.tag === 'string') workerOnScreen.set(options.tag, { data: options.data });
+      },
+      getNotifications: async ({ tag }: { tag: string }) => {
+        const shown = workerOnScreen.get(tag);
+        return shown ? [shown] : [];
+      },
+    }),
+  },
+});
+
+/** Lets the async service-worker path finish. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+const {
+  sendWebNotification,
+  notifyTaskComplete,
+  notifyTaskCompleteFor,
+  isViewingSession,
+  setServerPushPreferences,
+} = await import('./web-notifications');
+const { DEFAULT_NOTIFICATION_PREFERENCES } = await import('@kortix/sdk');
 const { useWebNotificationStore } = await import('@/stores/web-notification-store');
 const { useTabStore } = await import('@/stores/tab-store');
 const { useTurnAttentionStore } = await import('@/stores/turn-attention-store');
@@ -149,6 +189,11 @@ beforeEach(() => {
   useWebNotificationStore.setState({ preferences: defaultPreferences() });
   useTabStore.setState({ activeTabId: null, tabs: {} });
   useTurnAttentionStore.setState({ unseen: [] });
+  setServerPushPreferences(null);
+  softNavigateCalls.length = 0;
+  webPushOn = false;
+  workerShown.length = 0;
+  workerOnScreen.clear();
 });
 
 afterEach(() => {
@@ -285,6 +330,169 @@ describe('sendWebNotification — turn signals reach a customer watching another
 
     expect(toastCalls).toHaveLength(0);
     expect(notificationInstances).toHaveLength(0);
+  });
+});
+
+/**
+ * KRTX-1742: the per-browser per-kind switches (`onCompletion` …) are retired.
+ * The person's Push choice per kind, saved on the server, gates the OS
+ * notification instead — the same choice that gates Web Push and the phone.
+ */
+describe('sendWebNotification — the server Push choice gates each kind', () => {
+  function enabledAndHidden() {
+    setPreferences({ enabled: true });
+    FakeNotification.permission = 'granted';
+    visibility = { hidden: true, hasFocus: false };
+  }
+
+  test('a kind whose Push is off shows no OS notification, but still toasts', () => {
+    enabledAndHidden();
+    setServerPushPreferences({
+      ...DEFAULT_NOTIFICATION_PREFERENCES,
+      turn_done: { push: false, email: false },
+    });
+
+    sendWebNotification(completionPayload());
+
+    expect(notificationInstances).toHaveLength(0);
+    expect(toastCalls).toHaveLength(1);
+  });
+
+  test('another kind still shows, tagged <type>:<sessionId>', () => {
+    enabledAndHidden();
+    setServerPushPreferences({
+      ...DEFAULT_NOTIFICATION_PREFERENCES,
+      turn_done: { push: false, email: false },
+    });
+
+    sendWebNotification({
+      type: 'question',
+      title: 'Kortix has a question',
+      body: '"dogfood-1": continue?',
+      tag: 'question:sess1',
+      sessionId: 'sess1',
+    });
+
+    expect(notificationInstances).toHaveLength(1);
+    expect(notificationInstances[0].options.tag).toBe('question:sess1');
+  });
+
+  test('before the preferences load every kind may notify, and the retired local switch does nothing', () => {
+    enabledAndHidden();
+    setPreferences({ enabled: true, onCompletion: false });
+
+    sendWebNotification(completionPayload());
+
+    expect(notificationInstances).toHaveLength(1);
+  });
+
+  test('an automation alert has no session: its toast and its OS notification open its href', () => {
+    enabledAndHidden();
+
+    sendWebNotification({
+      type: 'automation_failed',
+      title: 'Nightly report',
+      body: 'Failure alert',
+      tag: 'automation_failed:nightly-report',
+      href: '/projects/proj1/customize/triggers',
+      actionLabel: 'Open triggers',
+    });
+
+    expect(toastCalls[0].kind).toBe('error');
+    const button = toastCalls[0].opts?.button as { props: { onClick: () => void } };
+    button.props.onClick();
+    notificationInstances[0].instance.onclick?.();
+    expect(softNavigateCalls).toEqual([
+      '/projects/proj1/customize/triggers',
+      '/projects/proj1/customize/triggers',
+    ]);
+  });
+});
+
+describe('sendWebNotification — the toast open button', () => {
+  test('runs the payload onClick, like a click on the OS notification', () => {
+    visibility = { hidden: true, hasFocus: false };
+    let clicks = 0;
+
+    sendWebNotification({
+      type: 'automation_failed',
+      title: 'Nightly report',
+      body: 'Failure alert',
+      tag: 'automation_failed:proj1:nightly-report',
+      href: '/projects/proj1/customize/triggers',
+      actionLabel: 'Open triggers',
+      onClick: () => {
+        clicks += 1;
+      },
+    });
+
+    const button = toastCalls[0].opts?.button as { props: { onClick: () => void } };
+    button.props.onClick();
+    expect(clicks).toBe(1);
+    expect(softNavigateCalls).toEqual(['/projects/proj1/customize/triggers']);
+  });
+});
+
+/**
+ * KRTX-1742 review: a `new Notification` and a service-worker notification
+ * never replace each other, even with one tag. While this browser holds a Web
+ * Push subscription, the tab's copy goes through the service worker.
+ */
+describe('sendWebNotification — with a Web Push subscription the worker shows the copy', () => {
+  function enabledAndHidden() {
+    setPreferences({ enabled: true });
+    FakeNotification.permission = 'granted';
+    visibility = { hidden: true, hasFocus: false };
+  }
+
+  test('the worker shows it with the push tag and the session url, and no in-page notification', async () => {
+    enabledAndHidden();
+    webPushOn = true;
+
+    expect(sendWebNotification(completionPayload())).toBeNull();
+    await settle();
+
+    expect(notificationInstances).toHaveLength(0);
+    expect(workerShown).toEqual([
+      {
+        title: 'Task complete',
+        options: {
+          body: '"dogfood-1" has finished',
+          icon: '/favicon.svg',
+          tag: 'completion:sess1',
+          renotify: false,
+          data: { url: '/projects/proj1/sessions/sess1', at: (workerShown[0]?.options.data as { at: unknown }).at },
+        },
+      },
+    ]);
+    expect(typeof (workerShown[0].options.data as { at: unknown }).at).toBe('number');
+    // The in-app channels still run.
+    expect(toastCalls).toHaveLength(1);
+  });
+
+  test("a push for this event shown seconds ago is replaced quietly; an earlier event's alerts again", async () => {
+    enabledAndHidden();
+    webPushOn = true;
+
+    workerOnScreen.set('completion:sess1', { data: { url: '/', at: Date.now() - 5_000 } });
+    sendWebNotification(completionPayload());
+    await settle();
+    workerOnScreen.set('completion:sess1', { data: { url: '/', at: Date.now() - 120_000 } });
+    sendWebNotification(completionPayload());
+    await settle();
+
+    expect(workerShown.map((shown) => shown.options.renotify)).toEqual([false, true]);
+  });
+
+  test('without a subscription, or for the settings test, the tab shows its own notification', async () => {
+    enabledAndHidden();
+    sendWebNotification(completionPayload());
+    webPushOn = true;
+    sendWebNotification(completionPayload(), true);
+    await settle();
+
+    expect(notificationInstances).toHaveLength(2);
+    expect(workerShown).toHaveLength(0);
   });
 });
 

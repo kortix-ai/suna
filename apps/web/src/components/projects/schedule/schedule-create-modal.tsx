@@ -83,6 +83,7 @@ import {
   defaultEventPrompt,
   describeEventStatus,
   draftToConfig,
+  eventSourceName,
   parseConfigErrors,
   schemaFields,
 } from './event-trigger-copy';
@@ -651,6 +652,11 @@ export function ScheduleCreateModal({
             />
           ) : step === 'event' && connector ? (
             <>
+              {chosenApp && eventSourceName(chosenApp) ? (
+                <h3 className="text-muted-foreground text-xs font-medium">
+                  {tI18nComplete('textfd26b2373251', { source: eventSourceName(chosenApp) ?? '' })}
+                </h3>
+              ) : null}
               {eventType && !changingEvent ? (
                 <SelectedEventType eventType={eventType} onChange={() => setChangingEvent(true)} />
               ) : (

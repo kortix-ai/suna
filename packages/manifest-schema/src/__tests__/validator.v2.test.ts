@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  KORTIX_TOOL_NAMES,
+  kortixToolRef,
   type ManifestIssue,
   resolveAgentTools,
+  selectedKortixTools,
   resolveGrantSet,
   validateAgentMdFrontmatter,
   validateManifest,
@@ -1319,8 +1322,20 @@ describe('v2 agent tool access', () => {
     expect(result.errorPaths).toEqual([]);
     expect(result.issues.find((i) => i.path === 'agents.support.tools')?.message).toContain('"bassh"');
     // A declared project tool, a pty_ tool and the wildcard are known.
-    const declared = summarize(withTools('[lookup_order, pty_spawn, "*"]') + 'tools:\n  lookup_order: tools/lookup_order.ts\n');
+    const declared = summarize(withTools('[lookup_order, pty_spawn, "*"]') + 'tools:\n  lookup_order: tools/lookup_order.ts\n  web_search: kortix:web_search\n');
     expect(declared.warningPaths.filter((p) => p.includes('tools'))).toEqual([]);
+  });
+
+  test('warns about a Kortix tool the project does not load, and names the line that loads it', () => {
+    // No `tools` key: every Kortix tool loads.
+    expect(summarize(withTools('[read, image_search]')).warningPaths.filter((p) => p.includes('tools'))).toEqual([]);
+    const listed = summarize(withTools('[read, image_search, web_search]') + 'tools:\n  web_search: kortix:web_search\n');
+    expect(listed.errorPaths).toEqual([]);
+    expect(listed.issues.filter((i) => i.path === 'agents.support.tools').map((i) => [i.severity, i.message])).toEqual([
+      ['warning', '"image_search" is a Kortix tool this project does not load: add `image_search: kortix:image_search` under the top-level `tools`, or remove it here.'],
+    ]);
+    // An override module loads the tool under its name.
+    expect(summarize(withTools('{ exclude: [memory] }') + 'tools:\n  memory: tools/memory.ts\n').warningPaths.filter((p) => p.includes('tools'))).toEqual([]);
   });
 
   test('compiles to the map a harness reads: name → visible, `*` for the rest', () => {
@@ -1358,6 +1373,47 @@ describe('v2 project tools', () => {
 
   test('a Kortix tool name is allowed: the project tool replaces it', () => {
     expect(summarize(base + 'tools:\n  memory: tools/memory.ts\n').errorPaths).toEqual([]);
+  });
+
+  test('a value is a module path or kortix:<name>, and the two forms mix', () => {
+    const result = summarize(
+      base + 'tools:\n  web_search: kortix:web_search\n  image_search: kortix:image_search\n  scrape_webpage: kortix:scrape_webpage\n  memory: tools/memory.ts\n  show: kortix:show\n  lookup_order: tools/lookup_order.ts\n',
+    );
+    expect(result.issues).toEqual([]);
+  });
+
+  test('kortix:<name> must name a Kortix tool under its own key; the error names the allowed values', () => {
+    const message = (tools: string) => summarize(base + `tools:\n${tools}\n`).issues.filter((i) => i.severity === 'error').map((i) => [i.path, i.message]);
+    expect(message('  web_search: kortix:image_search')).toEqual([
+      ['tools.web_search', 'must be `kortix:web_search` (the Kortix tool) or a repo-relative path to a .ts or .js module (e.g. `tools/web_search.ts`) that replaces it.'],
+    ]);
+    const others =
+      'must be a repo-relative path to a .ts or .js module (e.g. `tools/web_serch.ts`). `kortix:<name>` names a Kortix tool under its own name: ' +
+      '`web_search: kortix:web_search`, `image_search: kortix:image_search`, `scrape_webpage: kortix:scrape_webpage`, `memory: kortix:memory`, `show: kortix:show`.';
+    expect(message('  web_serch: kortix:web_serch')).toEqual([['tools.web_serch', others]]);
+    expect(message('  web_serch: kortix:web_search')).toEqual([['tools.web_serch', others]]);
+    expect(message('  memory: "kortix:"')).toEqual([['tools.memory', 'must be `kortix:memory` (the Kortix tool) or a repo-relative path to a .ts or .js module (e.g. `tools/memory.ts`) that replaces it.']]);
+    expect(message('  show: KORTIX:show').map(([path]) => path)).toEqual(['tools.show']);
+  });
+
+  test('selection: no tools key loads every Kortix tool; a tools key loads only the ones it lists', () => {
+    expect(selectedKortixTools(undefined)).toEqual([...KORTIX_TOOL_NAMES]);
+    expect(selectedKortixTools({})).toEqual([]);
+    expect(selectedKortixTools(null)).toEqual([]);
+    expect(selectedKortixTools({ show: 'kortix:show', lookup_order: 'tools/l.ts', web_search: 'tools/web_search.ts' })).toEqual(['web_search', 'show']);
+    expect(kortixToolRef('kortix:memory')).toBe('memory');
+    expect(kortixToolRef('tools/memory.ts')).toBeNull();
+  });
+
+  test('a tools key that lists no Kortix tool is a warning, not an error', () => {
+    const warning =
+      'Sessions of this project get no Kortix tool (web_search, image_search, scrape_webpage, memory, show). Add `<name>: kortix:<name>` to keep one.';
+    for (const tools of ['tools:\n  lookup_order: tools/lookup_order.ts\n', 'tools: {}\n', 'tools:\n  # web_search: kortix:web_search\n']) {
+      const result = summarize(base + tools);
+      expect({ tools, valid: result.valid, issues: result.issues }).toEqual({ tools, valid: true, issues: [{ path: 'tools', message: warning, severity: 'warning' }] });
+    }
+    expect(summarize(base).issues).toEqual([]);
+    expect(summarize(base + 'tools:\n  show: kortix:show\n').issues).toEqual([]);
   });
 });
 

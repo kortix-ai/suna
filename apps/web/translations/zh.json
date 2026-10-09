@@ -771,7 +771,16 @@
         }
       },
       "testNotificationTitle": "测试通知",
-      "testNotificationBody": "通知功能运行正常！"
+      "testNotificationBody": "通知功能运行正常！",
+      "enableDescriptionPush": "在此浏览器中显示通知，即使所有 Kortix 标签页都已关闭。",
+      "enableDescriptionDesktop": "在桌面应用窗口打开期间显示通知。",
+      "enableDescriptionBrowser": "在 Kortix 标签页打开期间于此浏览器中显示通知。",
+      "notificationTypesDescription": "这些设置适用于每部手机和每个浏览器。铃铛会列出每条通知。",
+      "push": "推送",
+      "email": "电子邮件",
+      "channelSwitch": "{kind}：{channel}",
+      "preferencesLoadError": "无法加载你的通知设置",
+      "retry": "重试"
     },
     "git": {
       "updateFailed": "无法更新存储库",
@@ -1181,10 +1190,6 @@
         "pi_harness": {
           "name": "Pi 运行框架（沙箱内）",
           "description": "在会话沙箱内使用 Pi 运行框架而不是 OpenCode 来运行会话。关闭时，清单中的 `runtime: pi` 仍会选择 Pi。"
-        },
-        "config_releases": {
-          "name": "配置发布",
-          "description": "使用基础分支当前的智能体配置运行会话，以只读方式提供，让已合并的智能体、技能或工具到达每个运行中的会话。关闭时，会话读取自己工作区的配置目录。"
         },
         "mcp": {
           "name": "MCP 服务器",
@@ -2561,7 +2566,50 @@
     "settingsFailed": "更新通知偏好设置失败",
     "enableAll": "全部启用",
     "disableAll": "全部禁用",
-    "saveChanges": "保存更改"
+    "saveChanges": "保存更改",
+    "kind": {
+      "turn_done": "本轮已完成",
+      "turn_error": "本轮失败",
+      "question": "问题",
+      "permission": "权限请求",
+      "shared": "与你共享",
+      "automation_failed": "失败提醒",
+      "automation_recovered": "恢复提醒"
+    },
+    "kindDescription": {
+      "turn_done": "一轮结束。",
+      "turn_error": "一轮以错误结束。",
+      "question": "智能体提出问题并等待回答。",
+      "permission": "智能体请求运行工具的权限。",
+      "shared": "有人与你共享了一个会话。",
+      "automation_failed": "触发器或提醒开始失败。",
+      "automation_recovered": "失败的触发器或提醒恢复正常。"
+    },
+    "bell": {
+      "label": "通知",
+      "unreadLabel": "通知：{count} 条未读",
+      "markAllRead": "全部标记为已读",
+      "empty": "通知将显示在这里",
+      "loadError": "无法加载通知",
+      "retry": "重试",
+      "unread": "未读",
+      "promptPush": "在 Kortix 关闭时接收通知",
+      "promptBackground": "在 Kortix 处于后台时接收通知",
+      "turnOn": "开启",
+      "dismiss": "关闭"
+    },
+    "arrival": {
+      "inProject": "{project} 中的{kind}",
+      "openSession": "打开会话",
+      "openReminders": "打开提醒",
+      "openTriggers": "打开触发器"
+    },
+    "session": {
+      "mute": "将通知设为静音",
+      "unmute": "取消通知静音",
+      "muted": "通知已静音",
+      "unmuted": "已取消通知静音"
+    }
   },
   "modes": {
     "samplePrompts": "示例提示",
@@ -9460,6 +9508,9 @@
       "text1a9030082a20": "创建技能",
       "text25ab55af92b1": "已开始上传附件",
       "text38e64d6a8162": "将 SKILL.md 提交到项目的默认分支。无需模型或聊天。",
+      "text39cfc32bd12c": "粘贴的文本",
+      "text23d0bb29fca0": "{count, plural, other {# 个词}}",
+      "text426699d5a8c0": "{count, plural, other {# 个字符}}",
       "text40078a553439": "已上传附件分块",
       "text4c7f8000aabd": "附件上传完成",
       "text91420d2587c2": "已移除附件上传",
@@ -11669,7 +11720,6 @@
       "text41528be66c4c": "它会在您指定的位置停下",
       "text415dcc179975": "结账未启动",
       "text416476d59f76": "会话访问已更新",
-      "text416a977cfdba": "要匹配的词。",
       "text416f3a19f614": "群组已删除",
       "text416fe8bd72df": "已核对审计日志",
       "text417500e4ecdb": "  name: Northwind",
@@ -12413,7 +12463,6 @@
       "text55a733d57ce1": "打开 PDF 操作",
       "text55a834c80aa9": "仅所有者",
       "text55afa51cc456": "应计、预付、递延收入、固定资产滚动表。机械、基于规则，并在每个期间从来源重新推导，而不是沿用自 2023 年以来一直复制的工作簿。",
-      "text55c84320074b": "搜索 Kortix 公开文档和产品内容。",
       "text55e970c35216": "获取设备代码",
       "text55fa9981994c": "显示最近的",
       "text56000ae371ac": "。应用默认为私有。",
@@ -13309,7 +13358,6 @@
       "text7033ce3d1e7a": "Email 连接",
       "text7039b3d4be40": "已查看会话轮次状态",
       "text703a3d810fc0": "将博客迁移到 MDX",
-      "text703f49b261e2": "搜索结果中的 Kortix 路径。",
       "text7040ecc689ea": "此预览无法从浏览器运行命令。",
       "text704aed35a6fe": "密钥已复制",
       "text704e738861ba": "移除项目",
@@ -14125,7 +14173,6 @@
       "text87c5912f2cef": "构建中",
       "text87d296ec9489": "标题",
       "text87d2f3386f90": "正在搜索网页",
-      "text87e3eca29ea9": "由 list_public_content 返回的规范路径，例如 /docs 或 /pricing。",
       "text87e6d00bbf53": "撤销",
       "text87e8ac388eb1": "每个发送者都是已知的人",
       "text87f29356aaf3": "长期负责",
@@ -16493,7 +16540,6 @@
       "textca9c05caf0c3": "代理状态",
       "textca9c32c53e90": "正在退出",
       "textcaa6c42f2b7c": "$ kortix channels disconnect",
-      "textcaace11153c1": "以 Markdown 形式读取 Kortix 公开页面。",
       "textcab94aba84f9": "排版",
       "textcac616ab8697": "在预设角色之外，自定义角色和细粒度策略绑定。",
       "textcac716114be6": "已发送审计 Webhook 测试",
@@ -19502,7 +19548,14 @@
       "text5a4918e0201c": "正在恢复…",
       "textd9682a5acb38": "{value0}/{value1} 个手动快照",
       "text581e89ae1f08": "删除后端快照",
-      "text1af77a9ae95c": "在应用中列出此后端。应用只能为其列出的后端获取访问者令牌。"
+      "text1af77a9ae95c": "在应用中列出此后端。应用只能为其列出的后端获取访问者令牌。",
+      "text2eb91a6f88aa": "1 个文件仍将作为附件保留。移除文件以运行命令，或移除命令以将文件作为消息发送。",
+      "text807f9beb34b1": "{count, plural, other {# 个文件仍将作为附件保留。移除文件以运行命令，或移除命令以将文件作为消息发送。}}",
+      "text4b4847a6fb87": "应用事件",
+      "text07fb9f8661dc": "支持事件的应用",
+      "text51035b5b67dc": "按类型筛选",
+      "text12a4656bfd2a": "通过 {source}",
+      "textfd26b2373251": "通过 {source} 的事件"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

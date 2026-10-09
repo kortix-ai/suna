@@ -39,7 +39,7 @@ env:
   # Credentials are NOT here: a workflow-level env cannot read AWS. Every job
   # that talks to staging reads them first thing through .github/actions/aws-env
   # (the "Read staging credentials" step), from kortix-staging-env,
-  # kortix-staging-web-env, and kortix-ci-env. Notes on the less obvious ones:
+  # kortix-staging-euw2-web-env, and kortix-ci-env. Notes on the less obvious ones:
   # - VERCEL_AUTOMATION_BYPASS_SECRET: staging is behind Vercel SSO deployment
   #   protection; the browser lane must send x-vercel-protection-bypass
   #   (playwright.config) or every authenticated page 302s to vercel.com/sso-api.
@@ -90,7 +90,7 @@ jobs:
             KE2E_STRIPE_SECRET_KEY=kortix-staging-env:STRIPE_SECRET_KEY
             KE2E_STRIPE_WEBHOOK_SECRET=kortix-staging-env:STRIPE_WEBHOOK_SECRET
             E2E_AGENTMAIL_API_KEY
-            WEB_PROTECTION_PASSWORD=kortix-staging-web-env:WEB_PROTECTION_PASSWORD
+            WEB_PROTECTION_PASSWORD=kortix-staging-euw2-web-env:WEB_PROTECTION_PASSWORD
             VERCEL_AUTOMATION_BYPASS_SECRET
             KE2E_CI_PASSTHROUGH_SECRET=kortix-ci-env:CF_WORKER_CI_PASSTHROUGH_SECRET
             KE2E_AUTH_EMAIL_HOOK_SECRET=kortix-staging-env:AUTH_EMAIL_HOOK_SECRET?
@@ -231,7 +231,7 @@ jobs:
             KE2E_STRIPE_SECRET_KEY=kortix-staging-env:STRIPE_SECRET_KEY
             KE2E_STRIPE_WEBHOOK_SECRET=kortix-staging-env:STRIPE_WEBHOOK_SECRET
             E2E_AGENTMAIL_API_KEY
-            WEB_PROTECTION_PASSWORD=kortix-staging-web-env:WEB_PROTECTION_PASSWORD
+            WEB_PROTECTION_PASSWORD=kortix-staging-euw2-web-env:WEB_PROTECTION_PASSWORD
             VERCEL_AUTOMATION_BYPASS_SECRET
             KE2E_CI_PASSTHROUGH_SECRET=kortix-ci-env:CF_WORKER_CI_PASSTHROUGH_SECRET
             KE2E_AUTH_EMAIL_HOOK_SECRET=kortix-staging-env:AUTH_EMAIL_HOOK_SECRET?
@@ -372,7 +372,7 @@ jobs:
             KE2E_STRIPE_SECRET_KEY=kortix-staging-env:STRIPE_SECRET_KEY
             KE2E_STRIPE_WEBHOOK_SECRET=kortix-staging-env:STRIPE_WEBHOOK_SECRET
             E2E_AGENTMAIL_API_KEY
-            WEB_PROTECTION_PASSWORD=kortix-staging-web-env:WEB_PROTECTION_PASSWORD
+            WEB_PROTECTION_PASSWORD=kortix-staging-euw2-web-env:WEB_PROTECTION_PASSWORD
             VERCEL_AUTOMATION_BYPASS_SECRET
             KE2E_CI_PASSTHROUGH_SECRET=kortix-ci-env:CF_WORKER_CI_PASSTHROUGH_SECRET
             KE2E_AUTH_EMAIL_HOOK_SECRET=kortix-staging-env:AUTH_EMAIL_HOOK_SECRET?
@@ -495,7 +495,7 @@ jobs:
             KE2E_STRIPE_SECRET_KEY=kortix-staging-env:STRIPE_SECRET_KEY
             KE2E_STRIPE_WEBHOOK_SECRET=kortix-staging-env:STRIPE_WEBHOOK_SECRET
             E2E_AGENTMAIL_API_KEY
-            WEB_PROTECTION_PASSWORD=kortix-staging-web-env:WEB_PROTECTION_PASSWORD
+            WEB_PROTECTION_PASSWORD=kortix-staging-euw2-web-env:WEB_PROTECTION_PASSWORD
             VERCEL_AUTOMATION_BYPASS_SECRET
             KE2E_CI_PASSTHROUGH_SECRET=kortix-ci-env:CF_WORKER_CI_PASSTHROUGH_SECRET
             KE2E_AUTH_EMAIL_HOOK_SECRET=kortix-staging-env:AUTH_EMAIL_HOOK_SECRET?

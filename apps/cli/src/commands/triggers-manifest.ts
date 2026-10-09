@@ -52,6 +52,7 @@ const EVENT_ONLY_FLAGS: ReadonlyArray<[string, string]> = [
   ['--connector', 'connector'],
   ['--account', 'account'],
   ['--default-account', 'defaultAccount'],
+  ['--source', 'source'],
   ['--event', 'event'],
   ['--config / --config-json', 'eventConfig'],
 ];
@@ -90,6 +91,7 @@ export function collectEventConfig(
 interface EventFields {
   connector: string;
   account?: string;
+  source?: string;
   event: string;
   config: Record<string, unknown>;
 }
@@ -116,8 +118,9 @@ export function parseEventFlags(
     return { error: '--default-account only applies to `kortix triggers set`. On add, omit --account.' };
   }
   const account = (tf.account ?? '').trim();
+  const source = (tf.source ?? '').trim();
   const config = tf.eventConfig ? (JSON.parse(tf.eventConfig) as Record<string, unknown>) : {};
-  return { connector, ...(account ? { account } : {}), event, config };
+  return { connector, ...(account ? { account } : {}), ...(source ? { source } : {}), event, config };
 }
 
 /** Event flags on a non-event trigger are a hard error — the platform would never read them. */
@@ -297,6 +300,7 @@ export async function triggersAddLocal(
     } else if (type === 'event' && event) {
       fields.connector = event.connector;
       if (event.account) fields.account = event.account;
+      if (event.source) fields.source = event.source;
       fields.event = event.event;
       if (Object.keys(event.config).length > 0) fields.config = event.config;
     } else if (tf.secretEnv) {

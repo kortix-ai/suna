@@ -771,7 +771,16 @@
         }
       },
       "testNotificationTitle": "テスト通知",
-      "testNotificationBody": "通知は正常に動作しています！"
+      "testNotificationBody": "通知は正常に動作しています！",
+      "enableDescriptionPush": "Kortix のタブをすべて閉じていても、このブラウザに通知を表示します。",
+      "enableDescriptionDesktop": "デスクトップアプリのウィンドウが開いている間、通知を表示します。",
+      "enableDescriptionBrowser": "Kortix のタブが開いている間、このブラウザに通知を表示します。",
+      "notificationTypesDescription": "これらの設定はすべてのスマートフォンとブラウザに適用されます。ベルにはすべての通知が表示されます。",
+      "push": "プッシュ",
+      "email": "メール",
+      "channelSwitch": "{kind}：{channel}",
+      "preferencesLoadError": "通知設定を読み込めませんでした",
+      "retry": "もう一度試す"
     },
     "git": {
       "updateFailed": "リポジトリを更新できませんでした",
@@ -1181,10 +1190,6 @@
         "pi_harness": {
           "name": "Pi ハーネス（サンドボックス内）",
           "description": "セッションを OpenCode の代わりにセッションのサンドボックス内の Pi ハーネスで実行します。オフでも、マニフェストの `runtime: pi` は引き続き Pi を選択します。"
-        },
-        "config_releases": {
-          "name": "設定リリース",
-          "description": "ベースブランチの現在のエージェント設定を読み取り専用で配信してセッションを実行し、マージされたエージェント・スキル・ツールが実行中のすべてのセッションに届きます。オフの場合、セッションは自分のワークスペース設定フォルダーを読みます。"
         },
         "mcp": {
           "name": "MCP サーバー",
@@ -2561,7 +2566,50 @@
     "settingsFailed": "通知設定の更新に失敗しました",
     "enableAll": "すべて有効化",
     "disableAll": "すべて無効化",
-    "saveChanges": "変更を保存"
+    "saveChanges": "変更を保存",
+    "kind": {
+      "turn_done": "ターン完了",
+      "turn_error": "ターン失敗",
+      "question": "質問",
+      "permission": "権限リクエスト",
+      "shared": "あなたと共有",
+      "automation_failed": "失敗アラート",
+      "automation_recovered": "復旧アラート"
+    },
+    "kindDescription": {
+      "turn_done": "ターンが終了します。",
+      "turn_error": "ターンがエラーで終了します。",
+      "question": "エージェントが質問し、回答を待ちます。",
+      "permission": "エージェントがツールを実行する権限を求めます。",
+      "shared": "誰かがあなたとセッションを共有します。",
+      "automation_failed": "トリガーまたはリマインダーが失敗し始めます。",
+      "automation_recovered": "失敗していたトリガーまたはリマインダーが再び動作します。"
+    },
+    "bell": {
+      "label": "通知",
+      "unreadLabel": "通知：未読 {count} 件",
+      "markAllRead": "すべて既読にする",
+      "empty": "通知はここに表示されます",
+      "loadError": "通知を読み込めませんでした",
+      "retry": "もう一度試す",
+      "unread": "未読",
+      "promptPush": "Kortix を閉じているときも通知を受け取る",
+      "promptBackground": "Kortix がバックグラウンドのときに通知を受け取る",
+      "turnOn": "オンにする",
+      "dismiss": "閉じる"
+    },
+    "arrival": {
+      "inProject": "{project} の{kind}",
+      "openSession": "セッションを開く",
+      "openReminders": "リマインダーを開く",
+      "openTriggers": "トリガーを開く"
+    },
+    "session": {
+      "mute": "通知をミュート",
+      "unmute": "通知のミュートを解除",
+      "muted": "通知をミュートしました",
+      "unmuted": "通知のミュートを解除しました"
+    }
   },
   "modes": {
     "samplePrompts": "サンプルプロンプト",
@@ -9460,6 +9508,9 @@
       "text1a9030082a20": "スキルを作成",
       "text25ab55af92b1": "添付ファイルのアップロードを開始しました",
       "text38e64d6a8162": "プロジェクトのデフォルトブランチに SKILL.md をコミットします。モデルもチャットも不要です。",
+      "text39cfc32bd12c": "貼り付けたテキスト",
+      "text23d0bb29fca0": "{count, plural, other {# 語}}",
+      "text426699d5a8c0": "{count, plural, other {# 文字}}",
       "text40078a553439": "添付ファイルのチャンクをアップロードしました",
       "text4c7f8000aabd": "添付ファイルのアップロードが完了しました",
       "text91420d2587c2": "添付ファイルのアップロードを削除しました",
@@ -11669,7 +11720,6 @@
       "text41528be66c4c": "指定した場所で停止",
       "text415dcc179975": "チェックアウトを開始できませんでした",
       "text416476d59f76": "セッションアクセスが更新されました",
-      "text416a977cfdba": "一致させる語句。",
       "text416f3a19f614": "グループを削除しました",
       "text416fe8bd72df": "監査ログを照合しました",
       "text417500e4ecdb": "  name: Northwind",
@@ -12413,7 +12463,6 @@
       "text55a733d57ce1": "PDFの操作を開く",
       "text55a834c80aa9": "オーナーのみ",
       "text55afa51cc456": "未払費用、前払費用、繰延収益、固定資産のロールフォワード。機械的かつルールベースで、2023年からコピーされ続けたワークブックではなく、毎期ソースから再作成します。",
-      "text55c84320074b": "Kortixの公開ドキュメントと製品コンテンツを検索します。",
       "text55e970c35216": "デバイスコードを取得",
       "text55fa9981994c": "最新の",
       "text56000ae371ac": ". アプリはデフォルトで非公開です。",
@@ -13309,7 +13358,6 @@
       "text7033ce3d1e7a": "メール接続",
       "text7039b3d4be40": "セッションターンの状態を表示しました",
       "text703a3d810fc0": "ブログをMDXに移行",
-      "text703f49b261e2": "検索結果のKortixパス。",
       "text7040ecc689ea": "このプレビューではブラウザからコマンドを実行できません。",
       "text704aed35a6fe": "シークレットをコピーしました",
       "text704e738861ba": "プロジェクトを削除",
@@ -14125,7 +14173,6 @@
       "text87c5912f2cef": "構築中",
       "text87d296ec9489": "キャプション",
       "text87d2f3386f90": "Web を検索中",
-      "text87e3eca29ea9": "list_public_contentが返す正規パス（/docsや/pricingなど）。",
       "text87e6d00bbf53": "取り消す",
       "text87e8ac388eb1": "送信者は全員、既知の人物",
       "text87f29356aaf3": "長期的なオーナーシップ",
@@ -16493,7 +16540,6 @@
       "textca9c05caf0c3": "エージェントのステータス",
       "textca9c32c53e90": "サインアウト中",
       "textcaa6c42f2b7c": "$ kortix channels disconnect",
-      "textcaace11153c1": "Kortixの公開ページをMarkdownとして読み込みます。",
       "textcab94aba84f9": "タイポグラフィ",
       "textcac616ab8697": "プリセットを超える、独自のロールときめ細かなポリシーバインディング。",
       "textcac716114be6": "監査 Webhook テストを送信しました",
@@ -19502,7 +19548,14 @@
       "text5a4918e0201c": "復元中…",
       "textd9682a5acb38": "手動スナップショット {value0}/{value1}",
       "text581e89ae1f08": "バックエンドのスナップショットを削除",
-      "text1af77a9ae95c": "このバックエンドをアプリに登録してください。アプリは登録したバックエンドの閲覧者トークンだけを取得できます。"
+      "text1af77a9ae95c": "このバックエンドをアプリに登録してください。アプリは登録したバックエンドの閲覧者トークンだけを取得できます。",
+      "text2eb91a6f88aa": "1個のファイルが添付されたままです。コマンドを実行するにはファイルを削除するか、コマンドを削除してファイルをメッセージとして送信してください。",
+      "text807f9beb34b1": "{count, plural, other {#個のファイルが添付されたままです。コマンドを実行するにはファイルを削除するか、コマンドを削除してファイルをメッセージとして送信してください。}}",
+      "text4b4847a6fb87": "アプリイベント",
+      "text07fb9f8661dc": "イベントのあるアプリ",
+      "text51035b5b67dc": "種類で絞り込む",
+      "text12a4656bfd2a": "{source} 経由",
+      "textfd26b2373251": "{source} 経由のイベント"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",

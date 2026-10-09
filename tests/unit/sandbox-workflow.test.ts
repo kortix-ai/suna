@@ -203,7 +203,7 @@ describe('native test-lane workflow', () => {
       expect(block).toContain('uses: ./.aws-env/.github/actions/aws-env');
       expect(block).toContain('id-token: write');
       expect(block).toMatch(/^ {12}VERCEL_AUTOMATION_BYPASS_SECRET$/m);
-      expect(block).toContain('WEB_PROTECTION_PASSWORD=kortix-staging-web-env:WEB_PROTECTION_PASSWORD');
+      expect(block).toContain('WEB_PROTECTION_PASSWORD=kortix-staging-euw2-web-env:WEB_PROTECTION_PASSWORD');
     }
     expect(release).toContain('https://staging-api.kortix.com/v1');
     expect(release).toContain('https://staging.kortix.com');

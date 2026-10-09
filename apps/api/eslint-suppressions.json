@@ -2425,11 +2425,6 @@
       "count": 1
     }
   },
-  "src/projects/routes/session-presence.ts": {
-    "no-restricted-imports": {
-      "count": 2
-    }
-  },
   "src/projects/routes/session-reminders.ts": {
     "no-restricted-syntax": {
       "count": 6
@@ -2769,7 +2764,7 @@
       "count": 4
     },
     "no-restricted-syntax": {
-      "count": 4
+      "count": 3
     }
   },
   "src/runtime-assets/index.ts": {

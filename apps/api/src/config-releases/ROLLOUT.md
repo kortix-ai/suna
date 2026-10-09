@@ -1,4 +1,4 @@
-# Config releases: prod rollout
+# Config releases: operations
 
 Config releases make a session run the base branch's **current, built**
 config, from a read-only release directory — never the session's own
@@ -15,71 +15,57 @@ process, pi reloads the release in place. Full contract:
 `apps/kortix-sandbox-agent-server/src/harness/open-code/config-release.ts`,
 `apps/kortix-sandbox-agent-server/src/harness/pi/config-release.ts`.
 
-## The lever
+## Status: graduated, no lever
 
-One gate: the per-project `config_releases` flag.
+Config releases run for every project. The per-project `config_releases`
+feature flag was removed in 2026-10 (the flag-removal PR), after:
 
-| Lever | Scope | Set by | Changed by |
-|---|---|---|---|
-| `config_releases` project flag | One project | Project owner/admin, at any time | Settings → Feature flags, or `PATCH /v1/projects/:projectId/features {feature:"config_releases",enabled:true|false|null}` |
+- 2026-09-25 to 2026-10-08: the flag on for 4 prod projects. In the 14 days
+  to 2026-10-08 they carried 9,230 of 13,733 prod sessions (67%), with 62
+  releases, 60 proven. 27 of the 29 failure reports were the 2026-10-02 meta-coordinator
+  incident (fixed: the `meta` variant, `notFromMetaSession`).
+- #9424 and #9429 (2026-10-08): a tree over the 32 MiB archive cap keeps its
+  release, built from the session's checkout or the project snapshot.
+  Verified on dev with a 33 MiB repository.
 
-The flag is available on every deployment, so the Settings row always
-renders. It defaults to **off** (`apps/api/src/feature-flags/registry.ts`,
-`platformDefault: () => false`). A project that made no choice reads its
-workspace config directory directly — the pre-release behavior. There is no
-operator env switch: `CONFIG_RELEASES_ENABLED` was removed.
+A value a project stored for the flag
+(`projects.metadata.experimental.config_releases`) is inert: no code reads it,
+and `PATCH /v1/projects/:projectId/features {feature:"config_releases",…}`
+answers `400 Unknown feature flag`. The values
+stay in the database, so a revert brings back every project's old choice.
 
-## Rollout order
+There is no per-project switch and no operator switch. The safety net is the
+fallback chain below: a release that cannot be built or does not load is never
+run; the session keeps a config that loaded.
 
-**Sandbox flows on deployed staging.** CFG-11 and CFG-12 are the only
-config-releases flows that `requires: funded, daytona` — the only ones that
-boot a real sandbox and prove the daemon side (descriptor fetch, archive
-download, apply, proven check). The local test profile skips both. Latest
-state: release gate run `36497729410` (2026-09-28) passed CFG-11 and failed
-CFG-12 with `the send answered 503 while a convergence was parked`. Run
-`36522694163` (2026-09-29) failed both on staging timeouts (`524`, network
-timeout). Keep the flag on internal projects only until CFG-12 is green.
+## Watch
 
-1. **Prerequisites (already met on prod).**
-   - the config archive bucket exists in the target region and the ECS task
-     role holds `s3:GetObject` / `s3:PutObject` / `s3:ListBucket` on it (no
-     `s3:DeleteObject` — retention is the bucket's lifecycle rule, see
-     "Retention" below);
-   - every `config_releases` DB migration
-     (`packages/db/migrations/20260925105614842_config_release_quarantine.sql`,
-     `..._config_releases_bucket.sql`) is applied;
-   - `KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT` is `0` (see "Retention").
-   A missing bucket is a boot warning, not an error: every archive request
-   then rebuilds from the Git mirror.
-2. **Enable one internal project per harness.**
-   `PATCH /v1/projects/:projectId/features {feature:"config_releases",enabled:true}`
-   on a Kortix-internal OpenCode project and on one with `pi_harness` on (not a
-   customer's). Commit an agent or skill change to each project's base branch
-   to trigger a real build. The staging gate runs CFG-11/CFG-12 and their
-   `-pi` twins.
-3. **Watch that project, not the fleet.** Per session:
-   - `GET /v1/projects/:projectId/sessions/:sessionId/config` — `release_id`,
-     `desired_release_id`, `stale`. `stale: true` for longer than one
-     reconnect/reload cycle means convergence did not run.
-   - The daemon's `/kortix/health` `config` block — `release_id`,
-     `desired_release_id`, `proven`, `fallback_reason`, `failed_release_id`,
-     `source` (`release` / `workspace` / `image-default`). The same block on
-     both harnesses; `harness.id` names the runtime. `source: "workspace"` while
-     the flag is `enabled: true` is a bug — it should never happen once the
-     flag is on.
-   - API logs, prefix `[config-releases]`: `store put … failed` (archive write
-     to S3 failed — the route falls back to streaming the build, not fatal),
-     `pruned N archive(s) of project …` (per-project pruning ran — only fires
-     when `KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT > 0`, so with the prod
-     value `0` you will not see this line; that is expected), `quarantine
-     lookup failed`, `recording assignment failed`.
-   - `kortix.config_releases` / `kortix.config_release_failures` rows for the
-     project: a release proven (`proven_at` set) vs. failed
-     (`failed_release_id` reported by ≥ `PROJECT_QUARANTINE_SESSIONS` = 2
-     distinct sessions — see "Fallback chain").
-4. **Widen slowly.** One more internal project, then volunteers, then a
-   customer project. Flip `platformDefault` to `true` in the registry when
-   the rollout is done.
+Per session:
+
+- `GET /v1/projects/:projectId/sessions/:sessionId/config` — `release_id`,
+  `desired_release_id`, `stale`, `fallback_reason`. `stale: true` for longer
+  than one reconnect/reload cycle means convergence did not run.
+- The daemon's `/kortix/health` `config` block — `release_id`,
+  `desired_release_id`, `proven`, `fallback_reason`, `failed_release_id`,
+  `source` (`release` / `workspace` / `image-default`). The same block on both
+  harnesses; `harness.id` names the runtime. `source: "workspace"` is a bug on
+  a box that can reach a current API.
+
+Fleet:
+
+- API logs, prefix `[config-releases]`: `store put … failed` (archive write
+  to S3 failed — the route falls back to streaming the build, not fatal),
+  `quarantine lookup failed`, `recording assignment failed`.
+- The descriptor route, `POST /v1/projects/:projectId/sessions/:sessionId/config-release`:
+  every running box calls it every 60 s (`runtime-truth.ts`), and each call
+  resolves the base tip with a `git fetch` of the project mirror. Prod before
+  graduation (24 h to 2026-10-08 22:40 UTC): 32,058 answered `200` (p50 886 ms,
+  p95 3.3 s, p99 7.5 s, `git;dur` most of it) and 20,910 answered `403
+  feature_disabled` in 27 ms (p50). After graduation those `403`s become
+  `200`s: about +65% Git work on this route.
+- `kortix.config_releases` / `kortix.config_release_failures` rows: a release
+  proven (`proven_at` set) vs. failed (`failed_release_id` reported by ≥
+  `PROJECT_QUARANTINE_SESSIONS` = 2 distinct sessions — see "Fallback chain").
 
 ## Fallback chain
 
@@ -101,8 +87,6 @@ unbootable.
    web header shows "Config failed to load" with that reason.
 3. With nothing proven to fall back to, an unbuildable tip is assigned no
    release: each box keeps what it runs, and `fallback_reason` says why.
-4. If the flag is off for the project: no release is assigned at all; the session reads its workspace config
-   directory — pre-release behavior.
 
 **The meta coordinator is the exception.** A session whose agent is `meta`
 (`meta_agent` flag) is never assigned the project's release. It gets the `meta`
@@ -114,7 +98,8 @@ load there. A failure a meta session reported never counts toward the project
 quarantine (`notFromMetaSession` in `quarantine.ts`).
 
 **Daemon side — where a box reads config from, per boot/converge:**
-1. The API's desired release, downloaded and verified against its manifest.
+1. The API's desired release, from the copy on disk, the checkout, the
+   project snapshot or the archive, verified against its manifest.
 2. The last release **this box** proved, if the desired release cannot be
    verified or applied (a new OpenCode fails its proven check, or pi refuses
    the config — the running config is kept, nothing is torn down).
@@ -127,12 +112,33 @@ request. The store is a cache; the Git mirror is always the source of truth.
 
 ## Limits
 
-- The release archive is the repository at the commit, capped at 32 MiB gzip
-  and 128 MiB uncompressed (`MAX_CONFIG_ARCHIVE_BYTES` / `MAX_CONFIG_TAR_BYTES`
-  in `release-tree.ts`, matched by the daemon's `descriptor.ts` /
-  `boot-config.ts`). The company project measured 248 files, 2.6 MB
-  (2026-10-05). A repository over the cap gets no release; its sessions keep
-  the last proven one and `fallback_reason` names the cap.
+- A box takes a release from the first source that holds it
+  (`apps/kortix-sandbox-agent-server/src/services/config-release/obtain.ts`):
+  the intact copy on disk, the session's checkout when its HEAD is the
+  release commit, the project snapshot of the commit (descriptor `snapshot`,
+  v3), then the API archive. Every source is verified file by file against
+  the blob IDs. The daemon log line `[boot-config] release materialized`
+  names the source in `transport`.
+- The API archive is capped at 32 MiB gzip and 128 MiB uncompressed
+  (`MAX_CONFIG_ARCHIVE_BYTES` / `MAX_CONFIG_TAR_BYTES` in `release-tree.ts`,
+  matched by the daemon's `descriptor.ts` / `boot-config.ts`). The company
+  project measured 248 files, 2.6 MB (2026-10-05). A tree over the cap keeps
+  its release ID and file list; only the archive is withheld. A v3 daemon
+  (`{"accept":["config-release-v3"]}`) gets the release with `archive: null`
+  and builds it from its checkout or the snapshot. A v2 daemon gets "no
+  release" and the reason, as before v3: it reads `archive: null` as
+  governance only.
+- The project snapshot is capped at `KORTIX_PROJECT_SNAPSHOT_MAX_ARCHIVE_BYTES`
+  (512 MiB gzip by default). Prod measured a largest repository of 220 MiB
+  (2026-10-08). Over that cap, or on a deployment without
+  `KORTIX_PROJECT_SNAPSHOT_S3_*` (local, self-host), a running box over the
+  archive cap cannot converge: it keeps its release, `GET /config` says
+  `stale: true`, and the converge reason names both missing sources. A new
+  session still builds the release from its own checkout.
+- `GET /config`, the turn gate and admission compare against the v3 release
+  ID (`resolveDesiredRelease`'s default format). For a tree under the archive
+  cap the v2 and v3 IDs are equal. A v2 box on a tree over the cap therefore
+  reads `stale: true` until it gets the current daemon.
 - A path the repository's `.gitattributes` marks `export-ignore` (the file or
   one of its directories) is left out of the release tree, as `git archive`
   would leave it out (`exportIgnoredPaths` in `release-tree.ts`, KRTX-1728).
@@ -141,8 +147,8 @@ request. The store is a cache; the Git mirror is always the source of truth.
   the box matches. A pruned tree is composed, so its archive URL carries the
   commit. `kortix validate` and
   `kortix ship` warn (never fail) when one file is 10 MiB or more or the files
-  Git stores total more than 32 MiB (`apps/cli/src/project-lint.ts`, which
-  repeats the cap). The too-large `reason` names both remedies.
+  Git stores total more than 512 MiB (`apps/cli/src/project-lint.ts`, which
+  repeats the snapshot cap). The too-large `reason` names both remedies.
 - Every commit to the base branch is a new release, because the tree changed.
   Running sessions converge to it in the background; a prompt on a box that is
   behind converges first.
@@ -156,9 +162,10 @@ request. The store is a cache; the Git mirror is always the source of truth.
   `~/`, absolute paths and globs in a directory part keep OpenCode's own
   resolution. The project's `AGENTS.md` is OpenCode's own lookup from
   `/workspace` and is not rewritten.
-- The descriptor format is `config-release-v2`. A daemon built for v1 (the
-  composed layout) refuses it and keeps its running config until the
-  runtime-assets swap gives it the current daemon.
+- The descriptor format is `config-release-v3` for a daemon that sends
+  `{"accept":["config-release-v3"]}`, else `config-release-v2`. A daemon built
+  for v1 (the composed layout) refuses both and keeps its running config until
+  the runtime-assets swap gives it the current daemon.
 
 ## Retention
 
@@ -180,19 +187,17 @@ Do not raise this above `0` in prod without also granting that permission.
 
 ## Rolling back
 
-**Per project (fast, no deploy):**
-```
-PATCH /v1/projects/:projectId/features {"feature":"config_releases","enabled":false}
-```
-Takes effect on the project's next session boot or reload. Stops the one
-project; every other enabled project is unaffected.
+There is no per-project lever. A defect in the feature itself is rolled back
+by reverting the flag-removal squash commit and deploying. The revert restores
+the flag with its OFF platform default: every project that stored no value
+goes back to reading its workspace config directory at the next boot or start
+of each session's box, and the 4 projects that stored `true` keep releases.
+The daemon still handles `403 feature_disabled` (`isFeatureDisabledError`), so
+boxes on the new image revert cleanly.
 
-**Whole platform (requires a deploy):**
-Set `available: () => false` on the `config_releases` entry in
-`apps/api/src/feature-flags/registry.ts` and ship it. The flag becomes
-unavailable for every project at once, the Settings row disappears, and every
-session reads its workspace config directory at its next boot or start.
-Prefer the per-project flag; reserve this for a defect in the feature itself.
+A defect in one project's config is not a rollback: the fallback chain keeps
+that project's sessions on the last release that loaded, and
+`fallback_reason` names the commit and the error. Fix the config and merge.
 
 ## What NOT to do
 
@@ -201,9 +206,5 @@ Prefer the per-project flag; reserve this for a defect in the feature itself.
   `aws_iam_role_policy.project_snapshots` grant
   (`infra/terraform/modules/ecs-api/main.tf`) — Terraform apply is a human
   action, never CI.
-- Do not enable the project flag for a customer project before it has run
-  clean on at least one internal project through a real build, a proven
-  release, and a session restart.
-- Do not treat `source: "workspace"` on a flag-enabled project as anything
-  but a bug — file it, do not re-enable the same project until it is
-  understood.
+- Do not treat `source: "workspace"` on a box that can reach a current API as
+  anything but a bug — file it.

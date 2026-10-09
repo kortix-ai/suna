@@ -511,6 +511,35 @@ describe('kortix triggers — the live (--apply) path', () => {
     expect(calls.find((c) => c.method === 'PATCH')).toBeUndefined();
   });
 
+  test('add --apply --source sends event_source; omitted sends none', async () => {
+    const config = writeConfig(startServer());
+    const base = [
+      'triggers', 'add', 'new-pr', '--apply', '--type', 'event', '--connector', 'github',
+      '--event', 'GITHUB_PULL_REQUEST_EVENT', '--config', 'owner=acme', '--prompt', 'p', '--project', PROJECT,
+    ];
+    const withSource = await runCli([...base, '--source', 'composio'], config);
+    expect(withSource.code).toBe(0);
+    expect(postBody()?.event_source).toBe('composio');
+    calls.length = 0;
+    await runCli(base, config);
+    expect(postBody()).not.toHaveProperty('event_source');
+  });
+
+  test('set --source PATCHes event_source', async () => {
+    const config = writeConfig(startServer());
+    const set = await runCli(['triggers', 'set', 'new-pr', '--source', 'composio', '--project', PROJECT], config);
+    expect(set.code).toBe(0);
+    const body = calls.find((c) => c.method === 'PATCH')?.body;
+    expect(body).toMatchObject({ event_source: 'composio' });
+    expect(body).not.toHaveProperty('event_config');
+  });
+
+  test('set --source on a non-event trigger fails', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['triggers', 'set', 'digest', '--source', 'composio', '--project', PROJECT], config);
+    expect(r.code).not.toBe(0);
+  });
+
   test('set --account on a non-event trigger fails', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(

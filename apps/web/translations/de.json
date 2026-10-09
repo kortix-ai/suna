@@ -771,7 +771,16 @@
         }
       },
       "testNotificationTitle": "Testbenachrichtigung",
-      "testNotificationBody": "Benachrichtigungen funktionieren korrekt!"
+      "testNotificationBody": "Benachrichtigungen funktionieren korrekt!",
+      "enableDescriptionPush": "Zeigt Benachrichtigungen in diesem Browser, auch wenn alle Kortix-Tabs geschlossen sind.",
+      "enableDescriptionDesktop": "Zeigt Benachrichtigungen der Desktop-App, solange ihr Fenster geöffnet ist.",
+      "enableDescriptionBrowser": "Zeigt Benachrichtigungen in diesem Browser, solange ein Kortix-Tab geöffnet ist.",
+      "notificationTypesDescription": "Diese Einstellungen gelten auf jedem Telefon und in jedem Browser. Die Glocke listet jede Benachrichtigung.",
+      "push": "Push",
+      "email": "E-Mail",
+      "channelSwitch": "{kind}: {channel}",
+      "preferencesLoadError": "Deine Benachrichtigungseinstellungen konnten nicht geladen werden",
+      "retry": "Erneut versuchen"
     },
     "git": {
       "updateFailed": "Repository konnte nicht aktualisiert werden",
@@ -1181,10 +1190,6 @@
         "pi_harness": {
           "name": "Pi-Harness (in der Sandbox)",
           "description": "Sitzungen mit dem Pi-Harness in der Sitzungs-Sandbox statt mit OpenCode ausführen. Bei Aus wählt `runtime: pi` im Manifest weiterhin Pi."
-        },
-        "config_releases": {
-          "name": "Config-Releases",
-          "description": "Sitzungen mit der aktuellen Agent-Konfiguration des Basis-Branch ausführen, schreibgeschützt bereitgestellt, damit ein gemergter Agent, Skill oder Tool jede laufende Sitzung erreicht. Bei Aus liest eine Sitzung ihren eigenen Workspace-Konfigurationsordner."
         },
         "mcp": {
           "name": "MCP-Server",
@@ -2561,7 +2566,50 @@
     "settingsFailed": "Benachrichtigungseinstellungen konnten nicht aktualisiert werden",
     "enableAll": "Alle aktivieren",
     "disableAll": "Alle deaktivieren",
-    "saveChanges": "Änderungen speichern"
+    "saveChanges": "Änderungen speichern",
+    "kind": {
+      "turn_done": "Durchlauf beendet",
+      "turn_error": "Durchlauf fehlgeschlagen",
+      "question": "Frage",
+      "permission": "Berechtigungsanfrage",
+      "shared": "Mit dir geteilt",
+      "automation_failed": "Fehleralarm",
+      "automation_recovered": "Entwarnung"
+    },
+    "kindDescription": {
+      "turn_done": "Ein Durchlauf endet.",
+      "turn_error": "Ein Durchlauf endet mit einem Fehler.",
+      "question": "Der Agent stellt eine Frage und wartet auf die Antwort.",
+      "permission": "Der Agent bittet um die Erlaubnis, ein Tool auszuführen.",
+      "shared": "Jemand teilt eine Sitzung mit dir.",
+      "automation_failed": "Ein Trigger oder eine Erinnerung schlägt fehl.",
+      "automation_recovered": "Ein fehlschlagender Trigger oder eine Erinnerung funktioniert wieder."
+    },
+    "bell": {
+      "label": "Benachrichtigungen",
+      "unreadLabel": "Benachrichtigungen: {count} ungelesen",
+      "markAllRead": "Alle als gelesen markieren",
+      "empty": "Benachrichtigungen erscheinen hier",
+      "loadError": "Benachrichtigungen konnten nicht geladen werden",
+      "retry": "Erneut versuchen",
+      "unread": "Ungelesen",
+      "promptPush": "Benachrichtigt werden, wenn Kortix geschlossen ist",
+      "promptBackground": "Benachrichtigt werden, wenn Kortix im Hintergrund läuft",
+      "turnOn": "Einschalten",
+      "dismiss": "Schließen"
+    },
+    "arrival": {
+      "inProject": "{kind} in {project}",
+      "openSession": "Sitzung öffnen",
+      "openReminders": "Erinnerungen öffnen",
+      "openTriggers": "Trigger öffnen"
+    },
+    "session": {
+      "mute": "Benachrichtigungen stummschalten",
+      "unmute": "Stummschaltung aufheben",
+      "muted": "Benachrichtigungen stummgeschaltet",
+      "unmuted": "Stummschaltung aufgehoben"
+    }
   },
   "modes": {
     "samplePrompts": "Beispiel-Prompts",
@@ -9460,6 +9508,9 @@
       "text1a9030082a20": "Skill erstellen",
       "text25ab55af92b1": "Anhang-Upload gestartet",
       "text38e64d6a8162": "Schreibt eine SKILL.md auf den Standard-Branch des Projekts. Kein Modell oder Chat nötig.",
+      "text39cfc32bd12c": "Eingefügter Text",
+      "text23d0bb29fca0": "{count, plural, one {# Wort} other {# Wörter}}",
+      "text426699d5a8c0": "{count, plural, one {# Zeichen} other {# Zeichen}}",
       "text40078a553439": "Anhang-Block hochgeladen",
       "text4c7f8000aabd": "Anhang-Upload abgeschlossen",
       "text91420d2587c2": "Anhang-Upload entfernt",
@@ -11669,7 +11720,6 @@
       "text41528be66c4c": "Es stoppt dort, wo Sie es angewiesen haben",
       "text415dcc179975": "Bezahlvorgang wurde nicht gestartet",
       "text416476d59f76": "Sitzungszugriff aktualisiert",
-      "text416a977cfdba": "Abzugleichende Wörter.",
       "text416f3a19f614": "Gruppe gelöscht",
       "text416fe8bd72df": "Audit-Log abgeglichen",
       "text417500e4ecdb": "  name: Northwind",
@@ -12413,7 +12463,6 @@
       "text55a733d57ce1": "PDF-Aktionen öffnen",
       "text55a834c80aa9": "Nur Eigentümer",
       "text55afa51cc456": "Abgrenzungen, Vorauszahlungen, passive Rechnungsabgrenzungen, Anlagenbewegungen. Mechanisch, regelbasiert und in jeder Periode aus der Quelle neu abgeleitet – statt aus einer Arbeitsmappe, die seit 2023 fortgeschrieben wird.",
-      "text55c84320074b": "Durchsuche öffentliche Kortix-Dokumentation und Produktinhalte.",
       "text55e970c35216": "Gerätecode abrufen",
       "text55fa9981994c": "Die",
       "text56000ae371ac": ". Apps sind standardmäßig privat.",
@@ -13309,7 +13358,6 @@
       "text7033ce3d1e7a": "E-Mail-Verbindung",
       "text7039b3d4be40": "Status des Sitzungsdurchlaufs angezeigt",
       "text703a3d810fc0": "Blog zu MDX migrieren",
-      "text703f49b261e2": "Kortix-Pfad aus einem Suchergebnis.",
       "text7040ecc689ea": "Diese Vorschau kann keine Befehle aus dem Browser ausführen.",
       "text704aed35a6fe": "Secret kopiert",
       "text704e738861ba": "Projekt entfernen",
@@ -14125,7 +14173,6 @@
       "text87c5912f2cef": "Wird erstellt",
       "text87d296ec9489": "Beschriftung",
       "text87d2f3386f90": "Web durchsuchen",
-      "text87e3eca29ea9": "Kanonischer Pfad, der von list_public_content zurückgegeben wird, z. B. /docs oder /pricing.",
       "text87e6d00bbf53": "Widerrufen",
       "text87e8ac388eb1": "Jeder Absender ist eine bekannte Person",
       "text87f29356aaf3": "Langfristige Verantwortung",
@@ -16493,7 +16540,6 @@
       "textca9c05caf0c3": "Agentenstatus",
       "textca9c32c53e90": "Abmeldung läuft",
       "textcaa6c42f2b7c": "$ kortix channels disconnect",
-      "textcaace11153c1": "Lies eine öffentliche Kortix-Seite als Markdown.",
       "textcab94aba84f9": "Typografie",
       "textcac616ab8697": "Eigene Rollen und feingranulare Richtlinienbindungen über die Voreinstellungen hinaus.",
       "textcac716114be6": "Audit-Webhook-Test gesendet",
@@ -19502,7 +19548,14 @@
       "text5a4918e0201c": "Wird wiederhergestellt…",
       "textd9682a5acb38": "{value0} von {value1} manuellen Snapshots",
       "text581e89ae1f08": "Backend-Snapshot löschen",
-      "text1af77a9ae95c": "Dieses Backend in der App eintragen. Eine App erhält Betrachter-Tokens nur für die Backends, die sie auflistet."
+      "text1af77a9ae95c": "Dieses Backend in der App eintragen. Eine App erhält Betrachter-Tokens nur für die Backends, die sie auflistet.",
+      "text2eb91a6f88aa": "1 Datei bleibt angehängt. Entferne sie, um den Befehl auszuführen, oder entferne den Befehl, um die Datei als Nachricht zu senden.",
+      "text807f9beb34b1": "{count, plural, other {# Dateien bleiben angehängt. Entferne sie, um den Befehl auszuführen, oder entferne den Befehl, um sie als Nachricht zu senden.}}",
+      "text4b4847a6fb87": "App-Ereignisse",
+      "text07fb9f8661dc": "Apps mit Ereignissen",
+      "text51035b5b67dc": "Nach Typ filtern",
+      "text12a4656bfd2a": "über {source}",
+      "textfd26b2373251": "Ereignisse über {source}"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

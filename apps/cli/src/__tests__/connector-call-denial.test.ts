@@ -203,6 +203,8 @@ describe('a denied connector call carries its remedy', () => {
     expect(result.payload.ok).toBe(false);
     expect(String(result.payload.error)).toContain('`kortix connectors mcp` was removed');
     expect(String(result.payload.error)).toContain('/v1/mcp');
+    // `kortix mcp` itself was removed in #7881; never point people at it.
+    expect(String(result.payload.error)).not.toContain('`kortix mcp`');
     expect(captured).toEqual([]);
   });
 });

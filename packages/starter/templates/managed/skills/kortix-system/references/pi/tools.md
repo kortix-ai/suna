@@ -1,9 +1,9 @@
 # pi tools
 
-A pi session has thirteen built-in tools, then the project's own tools
-(`kortix.yaml` `tools:`, `../kortix/tools.md`). A project file is not
-necessary for the built-in ones. A pi extension or a pi package can add more
-(`extensions.md`).
+A pi session has eight harness tools and up to five Kortix tools, then the
+project's own tools (`kortix.yaml` `tools:`, `../kortix/tools.md`). A project
+file is not necessary for the harness tools. A pi extension or a pi package
+can add more (`extensions.md`).
 
 | Tool | What it does | Permission key |
 | --- | --- | --- |
@@ -23,8 +23,12 @@ necessary for the built-in ones. A pi extension or a pi package can add more
 
 `web_search`, `image_search`, `scrape_webpage`, `memory` and `show` are the
 Kortix tools: the Kortix runtime runs one implementation of each on every
-harness, so a skill that names one of them works on both. A project tool is
-a harness-neutral module the runtime runs the same way; prefer it over a pi
+harness, so a skill that names one of them works on both. With no `tools:`
+key in `kortix.yaml`, a session has all five; with one, only the ones it
+lists as `<name>: kortix:<name>`. A Kortix tool the project does not list is
+not offered, and a call to it fails with `Tool <name> not found`.
+`kortix tools ls` lists what a session gets. A project tool is a
+harness-neutral module the runtime runs the same way; prefer it over a pi
 extension when the tool only needs arguments in and text out.
 `agents.<name>.tools` in `kortix.yaml` decides which tools an agent sees.
 

@@ -62,16 +62,16 @@ afterEach(() => {
 })
 
 describe('fetchConfigReleaseDescriptor', () => {
-  test('posts an empty request with the sandbox bearer and returns the validated descriptor', async () => {
-    // The request has no inputs: the desired release is always the base
-    // branch's current one, and nothing the box sends can change it.
+  test('asks for v3 with the sandbox bearer and returns the validated descriptor', async () => {
+    // The request has no inputs that pick the release: the desired release is
+    // always the base branch's current one. The body only asks for v3.
     serveRelease(api, release)
     const descriptor = await fetchConfigReleaseDescriptor(client)
     expect(descriptor).toEqual(release.descriptor)
     const last = api.descriptorRequests.at(-1)!
     expect(last.path).toBe('/v1/projects/proj-1/sessions/ses-1/config-release')
     expect(last.authorization).toBe('Bearer tok')
-    expect(last.body).toEqual({})
+    expect(last.body).toEqual({ accept: ['config-release-v3'] })
   })
 
   test('accepts an API URL without the /v1 suffix', async () => {
@@ -163,6 +163,26 @@ describe('parseConfigReleaseDescriptor', () => {
 
   test('governance and its etag are both set or both null', () => {
     expect(() => parseConfigReleaseDescriptor({ ...valid(), compiled_governance_etag: null })).toThrow(/both/)
+  })
+
+  // v3: a tree over the API's archive cap keeps its release and has no
+  // archive. A v2 daemon read `archive: null` as governance only, so v2 keeps
+  // refusing that shape.
+  test('a v3 tree release may have no archive; a v2 one may not', () => {
+    const snapshot = { url: 'https://bucket.example/o/r.tree.tar.gz?X-Amz-Signature=s', sha256: 'a'.repeat(64), bytes: 40 << 20, entries: 9, expires_at: '2026-10-08T12:00:00Z' }
+    const v3 = parseConfigReleaseDescriptor({ ...valid(), format: 'config-release-v3', archive: null, snapshot })
+    expect(v3.files).toEqual(release.descriptor.files)
+    expect(v3.snapshot).toEqual(snapshot)
+    expect(parseConfigReleaseDescriptor({ ...valid(), format: 'config-release-v3', archive: null }).snapshot).toBeNull()
+    expect(() => parseConfigReleaseDescriptor({ ...valid(), archive: null })).toThrow(/v2 tree release needs its archive/)
+  })
+
+  test('refuses a snapshot without files, files without a release, and a snapshot URL that is not http(s)', () => {
+    const snapshot = { url: 'https://bucket.example/x', sha256: 'a'.repeat(64), bytes: 1, entries: 1, expires_at: 'x' }
+    const v3 = { ...valid(), format: 'config-release-v3' }
+    expect(() => parseConfigReleaseDescriptor({ ...v3, archive: null, files: null, snapshot })).toThrow(/snapshot needs its files/)
+    expect(() => parseConfigReleaseDescriptor({ ...v3, archive: null, release_id: null })).toThrow(/files need a release_id/)
+    expect(() => parseConfigReleaseDescriptor({ ...v3, snapshot: { ...snapshot, url: 'file:///etc/passwd' } })).toThrow(/snapshot.url/)
   })
 })
 

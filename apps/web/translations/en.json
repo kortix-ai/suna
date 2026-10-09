@@ -597,7 +597,16 @@
         }
       },
       "testNotificationTitle": "Test Notification",
-      "testNotificationBody": "Notifications are working correctly!"
+      "testNotificationBody": "Notifications are working correctly!",
+      "enableDescriptionPush": "Shows notifications in this browser, also with every Kortix tab closed.",
+      "enableDescriptionDesktop": "Shows notifications from the desktop app while its window is open.",
+      "enableDescriptionBrowser": "Shows notifications in this browser while a Kortix tab is open.",
+      "notificationTypesDescription": "These choices apply on every phone and in every browser. The bell lists every notification.",
+      "push": "Push",
+      "email": "Email",
+      "channelSwitch": "{kind}: {channel}",
+      "preferencesLoadError": "Could not load your notification settings",
+      "retry": "Try again"
     },
     "git": {
       "updateFailed": "Failed to update repository",
@@ -1007,10 +1016,6 @@
         "pi_harness": {
           "name": "Pi Harness (in-sandbox)",
           "description": "Run sessions on the pi harness inside the session sandbox instead of OpenCode. Off, `runtime: pi` in the manifest still selects pi."
-        },
-        "config_releases": {
-          "name": "Config Releases",
-          "description": "Run sessions on the base branch's current agent config, served read-only, so a merged agent, skill, or tool reaches every running session. Off, a session reads its own workspace config folder."
         },
         "mcp": {
           "name": "MCP server",
@@ -2572,7 +2577,50 @@
     "settingsFailed": "Failed to update notification preferences",
     "enableAll": "Enable All",
     "disableAll": "Disable All",
-    "saveChanges": "Save Changes"
+    "saveChanges": "Save Changes",
+    "kind": {
+      "turn_done": "Turn finished",
+      "turn_error": "Turn failed",
+      "question": "Question",
+      "permission": "Permission request",
+      "shared": "Shared with you",
+      "automation_failed": "Failure alert",
+      "automation_recovered": "Recovery alert"
+    },
+    "kindDescription": {
+      "turn_done": "A turn ends.",
+      "turn_error": "A turn ends with an error.",
+      "question": "The agent asks a question and waits for the answer.",
+      "permission": "The agent asks for permission to run a tool.",
+      "shared": "Someone shares a session with you.",
+      "automation_failed": "A trigger or a reminder starts failing.",
+      "automation_recovered": "A failing trigger or reminder works again."
+    },
+    "bell": {
+      "label": "Notifications",
+      "unreadLabel": "Notifications: {count} unread",
+      "markAllRead": "Mark all as read",
+      "empty": "Notifications will show up here",
+      "loadError": "Could not load notifications",
+      "retry": "Try again",
+      "unread": "Unread",
+      "promptPush": "Get notified when Kortix is closed",
+      "promptBackground": "Get notified when Kortix is in the background",
+      "turnOn": "Turn on",
+      "dismiss": "Dismiss"
+    },
+    "arrival": {
+      "inProject": "{kind} in {project}",
+      "openSession": "Open session",
+      "openReminders": "Open reminders",
+      "openTriggers": "Open triggers"
+    },
+    "session": {
+      "mute": "Mute notifications",
+      "unmute": "Unmute notifications",
+      "muted": "Notifications muted",
+      "unmuted": "Notifications unmuted"
+    }
   },
   "modes": {
     "samplePrompts": "Sample prompts",
@@ -9471,6 +9519,9 @@
       "text1a9030082a20": "Create skill",
       "text25ab55af92b1": "Started attachment upload",
       "text38e64d6a8162": "Commits a SKILL.md to the project's default branch. No model or chat needed.",
+      "text39cfc32bd12c": "Pasted text",
+      "text23d0bb29fca0": "{count, plural, one {# word} other {# words}}",
+      "text426699d5a8c0": "{count, plural, one {# character} other {# characters}}",
       "text40078a553439": "Uploaded attachment chunk",
       "text4c7f8000aabd": "Completed attachment upload",
       "text91420d2587c2": "Removed attachment upload",
@@ -11680,7 +11731,6 @@
       "text41528be66c4c": "It stops where you told it to stop",
       "text415dcc179975": "Checkout did not start",
       "text416476d59f76": "Session access updated",
-      "text416a977cfdba": "Words to match.",
       "text416f3a19f614": "Group deleted",
       "text416fe8bd72df": "Reconciled audit log",
       "text417500e4ecdb": "  name: Northwind",
@@ -12424,7 +12474,6 @@
       "text55a733d57ce1": "Open PDF actions",
       "text55a834c80aa9": "Owner only",
       "text55afa51cc456": "Accruals, prepayments, deferred revenue, fixed asset roll-forwards. Mechanical, rule-driven, and re-derived from source every period instead of a workbook that has been copied forward since 2023.",
-      "text55c84320074b": "Search Kortix public documentation and product content.",
       "text55e970c35216": "Get device code",
       "text55fa9981994c": "Showing the",
       "text56000ae371ac": ". Apps are private by default.",
@@ -13320,7 +13369,6 @@
       "text7033ce3d1e7a": "Email connection",
       "text7039b3d4be40": "Viewed session turn state",
       "text703a3d810fc0": "Migrate the blog to MDX",
-      "text703f49b261e2": "Kortix path from a search result.",
       "text7040ecc689ea": "This preview can’t run commands from the browser.",
       "text704aed35a6fe": "Secret copied",
       "text704e738861ba": "Remove project",
@@ -14136,7 +14184,6 @@
       "text87c5912f2cef": "Building",
       "text87d296ec9489": "Caption",
       "text87d2f3386f90": "Searching the web",
-      "text87e3eca29ea9": "Canonical path returned by list_public_content, such as /docs or /pricing.",
       "text87e6d00bbf53": "Revoke",
       "text87e8ac388eb1": "Every sender is a known person",
       "text87f29356aaf3": "Prolonged ownership",
@@ -16504,7 +16551,6 @@
       "textca9c05caf0c3": "Agent status",
       "textca9c32c53e90": "Signing out",
       "textcaa6c42f2b7c": "$ kortix channels disconnect",
-      "textcaace11153c1": "Read a Kortix public page as Markdown.",
       "textcab94aba84f9": "Typography",
       "textcac616ab8697": "Your own roles and fine-grained policy bindings beyond the presets.",
       "textcac716114be6": "Sent audit webhook test",
@@ -19513,7 +19559,14 @@
       "text5a4918e0201c": "Restoring…",
       "textd9682a5acb38": "{value0} of {value1} manual snapshots",
       "text581e89ae1f08": "Delete a backend snapshot",
-      "text1af77a9ae95c": "List this backend on the App. An App gets viewer tokens only for the backends it lists."
+      "text1af77a9ae95c": "List this backend on the App. An App gets viewer tokens only for the backends it lists.",
+      "text2eb91a6f88aa": "1 file stays attached. Remove it to run the command, or remove the command to send the file as a message.",
+      "text807f9beb34b1": "{count, plural, other {# files stay attached. Remove them to run the command, or remove the command to send them as a message.}}",
+      "text4b4847a6fb87": "App events",
+      "text07fb9f8661dc": "Apps with events",
+      "text51035b5b67dc": "Filter by type",
+      "text12a4656bfd2a": "via {source}",
+      "textfd26b2373251": "Events via {source}"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

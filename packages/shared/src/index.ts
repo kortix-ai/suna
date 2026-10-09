@@ -26,3 +26,4 @@ export * from './channel-message';
 export * from './slack-text';
 export * from './chat-mention';
 export * from './webhook-signing';
+export * from './pasted-content';
