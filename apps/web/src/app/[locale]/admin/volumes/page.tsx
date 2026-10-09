@@ -1,9 +1,12 @@
 'use client';
 
 /**
- * Session boot modes: how new session boxes boot, and which organizations get
- * which mode. One policy, stored server-side (GET/PUT /admin/api/boot-modes);
- * the rules themselves live in apps/api/src/platform/services/boot-mode.ts.
+ * Volumes: the one switch for the volumes feature (Files over the project
+ * drive, drive mounts, session volumes, boot artifacts, persistent machines),
+ * per organization with an optional rollout, plus how new sessions of an
+ * organization with Volumes on boot. One policy, stored server-side
+ * (GET/PUT /admin/api/boot-modes); the rules live in
+ * apps/api/src/platform/services/boot-mode.ts.
  */
 import { ArrowRightIcon, PlusIcon, XIcon } from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';
@@ -32,6 +35,8 @@ import {
 import { errorToast, successToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import type { AdminBootMode, AdminBootModePolicy, AdminBootModeRule } from '@kortix/sdk';
+
+const INHERIT = 'inherit';
 import { useAdminAccounts, useAdminBootModes, useSetAdminBootModes } from '@kortix/sdk/react';
 
 import { AdminPageShell, AdminRefreshButton } from '../_components/admin-page-shell';
@@ -116,7 +121,7 @@ function Row({ title, detail, children }: { title: string; detail?: string; chil
 
 const clampAttempts = (v: string) => Math.min(10, Math.max(1, Math.round(Number(v) || 1)));
 
-export default function AdminBootModesPage() {
+export default function AdminVolumesPage() {
   const q = useAdminBootModes();
   const [draft, setDraft] = useState<AdminBootModePolicy | null>(null);
   const [picked, setPicked] = useState<Record<string, string>>({});
@@ -138,8 +143,8 @@ export default function AdminBootModesPage() {
   }, [picked, q.data]);
 
   const save = useSetAdminBootModes({
-    onSuccess: () => successToast('Boot modes saved'),
-    onError: (e) => errorToast(e.message || 'Could not save boot modes'),
+    onSuccess: () => successToast('Volumes saved'),
+    onError: (e) => errorToast(e.message || 'Could not save Volumes'),
   });
 
   const dirty = Boolean(q.data && draft && JSON.stringify(draft) !== JSON.stringify(q.data.policy));
@@ -147,7 +152,17 @@ export default function AdminBootModesPage() {
   const data = q.data;
   const stats = data && 'modes' in data.stats ? data.stats : null;
   const set = (patch: Partial<AdminBootModePolicy>) => setDraft((d) => (d ? { ...d, ...patch } : d));
-  const setOrg = (id: string, rule: AdminBootModeRule | null) =>
+  const setVolumes = (patch: Partial<AdminBootModePolicy['volumes']>) =>
+    setDraft((d) => (d ? { ...d, volumes: { ...d.volumes, ...patch } } : d));
+  const setOrgVolumes = (id: string, on: boolean | null) =>
+    setDraft((d) => {
+      if (!d) return d;
+      const orgs = { ...d.volumes.orgs };
+      if (on === null) delete orgs[id];
+      else orgs[id] = on;
+      return { ...d, volumes: { ...d.volumes, orgs } };
+    });
+  const setOrgRule = (id: string, rule: AdminBootModeRule | null) =>
     setDraft((d) => {
       if (!d) return d;
       const orgs = { ...d.orgs };
@@ -155,17 +170,19 @@ export default function AdminBootModesPage() {
       else delete orgs[id];
       return { ...d, orgs };
     });
+  const removeOrg = (id: string) => {
+    setOrgVolumes(id, null);
+    setOrgRule(id, null);
+  };
 
-  const orgIds = draft ? Object.keys(draft.orgs) : [];
-  const candidates = (accounts.data?.accounts ?? []).filter((a) => !draft?.orgs[a.accountId]);
-  const artifactsSource = draft?.artifacts || data?.env.bootArtifacts || null;
-  const volumeProvider = data?.providers.volumeProvider ?? 'platinum';
-  const otherProviders = (data?.providers.allowed ?? []).filter((p) => p !== volumeProvider);
+  const orgIds = draft ? [...new Set([...Object.keys(draft.volumes.orgs), ...Object.keys(draft.orgs)])] : [];
+  const candidates = (accounts.data?.accounts ?? []).filter((a) => !orgIds.includes(a.accountId));
+  const everyone = draft?.volumes.enabled ?? false;
 
   return (
     <AdminPageShell
-      title="Boot modes"
-      description="How new sessions boot, and which organizations get which mode. Changes reach every API process within 30 seconds."
+      title="Volumes"
+      description="One switch for Files, drive mounts, session volumes and boot artifacts, per organization. Off, an organization sees the product without volumes. Changes reach every API process within 30 seconds."
       action={
         <>
           <AdminRefreshButton busy={q.isFetching} onRefresh={() => void q.refetch()} />
@@ -192,8 +209,215 @@ export default function AdminBootModesPage() {
       ) : (
         <div className="space-y-8">
           <AdminSection
+            title="Volumes"
+            description="On: Files is the project drive and the repo browser is Repo, sessions mount their folders and boot on a volume. Off: Files is the repo browser and sessions boot from the image. A session whose files already live on a volume keeps its volume when its organization is turned off."
+          >
+            <AdminPanel className="space-y-5">
+              <Row
+                title="On for every organization"
+                detail="Organizations turned off below stay off."
+              >
+                <Switch
+                  checked={everyone}
+                  onCheckedChange={(on) => setVolumes({ enabled: on })}
+                  aria-label="Volumes for every organization"
+                />
+              </Row>
+              <div className="border-t" />
+              <Row
+                title="Rollout"
+                detail={
+                  everyone
+                    ? 'Not used while Volumes is on for every organization.'
+                    : draft.volumes.percent > 0
+                      ? `${draft.volumes.percent}% of the organizations without a setting of their own, picked by a stable hash of the organization id.`
+                      : 'Turn Volumes on for a share of the organizations without a setting of their own.'
+                }
+              >
+                <span className={cn('text-muted-foreground flex items-center gap-1.5 text-xs', everyone && 'opacity-50')}>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={100}
+                    disabled={everyone}
+                    value={draft.volumes.percent}
+                    onChange={(e) =>
+                      setVolumes({ percent: Math.min(100, Math.max(0, Math.round(Number(e.target.value) || 0))) })
+                    }
+                    className="h-8 w-20"
+                    aria-label="Rollout percent"
+                  />
+                  %
+                </span>
+              </Row>
+            </AdminPanel>
+          </AdminSection>
+
+          <AdminSection
+            title="Organizations"
+            description="An organization's own setting wins over the switch and the rollout. Its boot mode applies while Volumes is on for it."
+            action={
+              <div className="w-full sm:w-72">
+                <AdminSearch value={search} onChange={setSearch} placeholder="Find an organization" />
+              </div>
+            }
+          >
+            <div className="space-y-3">
+              {search.trim() ? (
+                <AdminPanel flush>
+                  {accounts.isLoading ? (
+                    <div className="p-3">
+                      <Skeleton className="h-8 w-full" />
+                    </div>
+                  ) : candidates.length === 0 ? (
+                    <p className="text-muted-foreground p-3 text-xs">No organization matches “{search}”.</p>
+                  ) : (
+                    <ul className="divide-y">
+                      {candidates.map((a) => {
+                        const label = a.displayName || a.name || a.accountId;
+                        return (
+                          <li key={a.accountId} className="flex items-center justify-between gap-3 px-3 py-2">
+                            <div className="min-w-0">
+                              <div className="truncate text-sm">{label}</div>
+                              <div className="text-muted-foreground truncate font-mono text-xs">
+                                {a.ownerEmail ? `${a.ownerEmail} · ` : ''}
+                                {a.accountId}
+                              </div>
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="gap-1"
+                              onClick={() => {
+                                setPicked((n) => ({ ...n, [a.accountId]: label }));
+                                setOrgVolumes(a.accountId, true);
+                                setSearch('');
+                              }}
+                            >
+                              <PlusIcon className="size-3.5" />
+                              Add
+                            </Button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </AdminPanel>
+              ) : null}
+              {orgIds.length ? (
+                <AdminPanel flush>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Organization</TableHead>
+                        <TableHead>Volumes</TableHead>
+                        <TableHead>Boot mode</TableHead>
+                        <TableHead className="hidden sm:table-cell">Last step</TableHead>
+                        <TableHead className="w-10" />
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {orgIds.map((id) => {
+                        const explicit = draft.volumes.orgs[id];
+                        const on = explicit ?? everyone;
+                        const rule = draft.orgs[id] ?? null;
+                        return (
+                          <TableRow key={id} className="group">
+                            <TableCell className="max-w-56">
+                              <div className="truncate text-sm">{names[id] ?? 'Organization'}</div>
+                              <div className="text-muted-foreground truncate font-mono text-xs">{id}</div>
+                            </TableCell>
+                            <TableCell>
+                              <label className="flex items-center gap-2 text-xs">
+                                <Switch
+                                  checked={on}
+                                  onCheckedChange={(v) => setOrgVolumes(id, v)}
+                                  aria-label={`Volumes for ${names[id] ?? id}`}
+                                />
+                                <span className="text-muted-foreground">{on ? 'On' : 'Off'}</span>
+                              </label>
+                            </TableCell>
+                            <TableCell>
+                              <Select
+                                value={rule?.mode ?? INHERIT}
+                                disabled={!on}
+                                onValueChange={(v) =>
+                                  setOrgRule(
+                                    id,
+                                    v === INHERIT ? null : { mode: v as AdminBootMode, standardFallback: rule?.standardFallback ?? true },
+                                  )
+                                }
+                              >
+                                <SelectTrigger className="w-44" size="sm">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value={INHERIT}>Default ({modeLabel(draft.default.mode)})</SelectItem>
+                                  {MODES.map((m) => (
+                                    <SelectItem key={m.value} value={m.value}>
+                                      {m.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </TableCell>
+                            <TableCell className="hidden sm:table-cell">
+                              {rule && on ? (
+                                <FallbackSwitch rule={rule} onChange={(v) => setOrgRule(id, { ...rule, standardFallback: v })} />
+                              ) : null}
+                            </TableCell>
+                            <TableCell>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                                onClick={() => removeOrg(id)}
+                                aria-label="Remove organization"
+                              >
+                                <XIcon className="size-4" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </AdminPanel>
+              ) : (
+                <p className="text-muted-foreground text-xs">No organization has a setting of its own.</p>
+              )}
+            </div>
+          </AdminSection>
+
+          <AdminSection
+            title="Boot mode"
+            description="How new sessions of an organization with Volumes on boot, unless the organization has a mode of its own."
+          >
+            <AdminPanel className="space-y-5">
+              <Row title="Default mode" detail={MODES.find((m) => m.value === draft.default.mode)?.detail}>
+                <ModeSelect value={draft.default.mode} onChange={(mode) => set({ default: { ...draft.default, mode } })} />
+                <FallbackSwitch
+                  rule={draft.default}
+                  onChange={(on) => set({ default: { ...draft.default, standardFallback: on } })}
+                />
+              </Row>
+              <div className="border-t" />
+              <Row
+                title="Kill switch: boot every new session from the image"
+                detail="Overrides every mode at once; Files and drives stay as they are. A session whose files already live on a volume keeps its volume."
+              >
+                <Switch
+                  checked={draft.killSwitch}
+                  onCheckedChange={(on) => set({ killSwitch: on })}
+                  aria-label="Kill switch"
+                />
+              </Row>
+            </AdminPanel>
+          </AdminSection>
+
+          <AdminSection
             title="Last 24 hours"
-            description="Sessions that booted in each mode, and the fallbacks they took. Counted on the volume provider, where the mode is a choice."
+            description="Sessions that booted in each mode, and the fallbacks they took. Counted on the volume provider."
           >
             {stats ? (
               <div className="space-y-3">
@@ -246,184 +470,6 @@ export default function AdminBootModesPage() {
                 Counts unavailable: {'error' in data.stats ? data.stats.error : 'unknown error'}
               </p>
             )}
-          </AdminSection>
-
-          <AdminSection title="Kill switch">
-            <AdminPanel>
-              <Row
-                title="Boot every new session from the image"
-                detail="Overrides every rule below at once. A session whose files already live on a volume keeps its volume."
-              >
-                <Switch
-                  checked={draft.killSwitch}
-                  onCheckedChange={(on) => set({ killSwitch: on })}
-                  aria-label="Kill switch"
-                />
-              </Row>
-            </AdminPanel>
-          </AdminSection>
-
-          <AdminSection
-            title="Default"
-            description="Every organization without a rule of its own. A project with the Ephemeral sandboxes flag on asks for Volume."
-          >
-            <AdminPanel className="space-y-5">
-              <Row title="Mode" detail={MODES.find((m) => m.value === draft.default.mode)?.detail}>
-                <ModeSelect value={draft.default.mode} onChange={(mode) => set({ default: { ...draft.default, mode } })} />
-                <FallbackSwitch
-                  rule={draft.default}
-                  onChange={(on) => set({ default: { ...draft.default, standardFallback: on } })}
-                />
-              </Row>
-              <div className="border-t" />
-              <Row
-                title="Rollout"
-                detail={
-                  draft.rollout
-                    ? `${draft.rollout.percent}% of the other organizations, picked by a stable hash of the organization id.`
-                    : 'Give a share of the other organizations a different mode.'
-                }
-              >
-                {draft.rollout ? (
-                  <>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={100}
-                      value={draft.rollout.percent}
-                      onChange={(e) =>
-                        set({
-                          rollout: {
-                            ...draft.rollout!,
-                            percent: Math.min(100, Math.max(1, Math.round(Number(e.target.value) || 1))),
-                          },
-                        })
-                      }
-                      className="h-8 w-20"
-                      aria-label="Rollout percent"
-                    />
-                    <ModeSelect
-                      value={draft.rollout.mode}
-                      onChange={(mode) => set({ rollout: { ...draft.rollout!, mode } })}
-                    />
-                    <FallbackSwitch
-                      rule={draft.rollout}
-                      onChange={(on) => set({ rollout: { ...draft.rollout!, standardFallback: on } })}
-                    />
-                    <Button variant="ghost" size="icon" onClick={() => set({ rollout: null })} aria-label="Remove rollout">
-                      <XIcon className="size-4" />
-                    </Button>
-                  </>
-                ) : (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => set({ rollout: { mode: 'volume', percent: 10, standardFallback: true } })}
-                  >
-                    Add rollout
-                  </Button>
-                )}
-              </Row>
-            </AdminPanel>
-          </AdminSection>
-
-          <AdminSection
-            title="Organizations"
-            description="Rules for named organizations win over the project flag, the rollout and the default."
-            action={
-              <div className="w-full sm:w-72">
-                <AdminSearch value={search} onChange={setSearch} placeholder="Find an organization" />
-              </div>
-            }
-          >
-            <div className="space-y-3">
-              {search.trim() ? (
-                <AdminPanel flush>
-                  {accounts.isLoading ? (
-                    <div className="p-3">
-                      <Skeleton className="h-8 w-full" />
-                    </div>
-                  ) : candidates.length === 0 ? (
-                    <p className="text-muted-foreground p-3 text-xs">No organization matches “{search}”.</p>
-                  ) : (
-                    <ul className="divide-y">
-                      {candidates.map((a) => {
-                        const label = a.displayName || a.name || a.accountId;
-                        return (
-                          <li key={a.accountId} className="flex items-center justify-between gap-3 px-3 py-2">
-                            <div className="min-w-0">
-                              <div className="truncate text-sm">{label}</div>
-                              <div className="text-muted-foreground truncate font-mono text-xs">
-                                {a.ownerEmail ? `${a.ownerEmail} · ` : ''}
-                                {a.accountId}
-                              </div>
-                            </div>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="gap-1"
-                              onClick={() => {
-                                setPicked((n) => ({ ...n, [a.accountId]: label }));
-                                setOrg(a.accountId, { mode: 'volume', standardFallback: true });
-                              }}
-                            >
-                              <PlusIcon className="size-3.5" />
-                              Add
-                            </Button>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-                </AdminPanel>
-              ) : null}
-              {orgIds.length ? (
-                <AdminPanel flush>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Organization</TableHead>
-                        <TableHead>Mode</TableHead>
-                        <TableHead className="hidden sm:table-cell">Last step</TableHead>
-                        <TableHead className="w-10" />
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {orgIds.map((id) => {
-                        const rule = draft.orgs[id]!;
-                        return (
-                          <TableRow key={id} className="group">
-                            <TableCell className="max-w-56">
-                              <div className="truncate text-sm">{names[id] ?? 'Organization'}</div>
-                              <div className="text-muted-foreground truncate font-mono text-xs">{id}</div>
-                            </TableCell>
-                            <TableCell>
-                              <ModeSelect value={rule.mode} onChange={(mode) => setOrg(id, { ...rule, mode })} className="w-44" />
-                            </TableCell>
-                            <TableCell className="hidden sm:table-cell">
-                              <FallbackSwitch rule={rule} onChange={(on) => setOrg(id, { ...rule, standardFallback: on })} />
-                            </TableCell>
-                            <TableCell>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-                                onClick={() => setOrg(id, null)}
-                                aria-label="Remove rule"
-                              >
-                                <XIcon className="size-4" />
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </AdminPanel>
-              ) : (
-                <p className="text-muted-foreground text-xs">No organization has a rule of its own.</p>
-              )}
-            </div>
           </AdminSection>
 
           <AdminSection
@@ -524,7 +570,7 @@ export default function AdminBootModesPage() {
               ) : null}
               {!data.stored ? (
                 <p className="text-muted-foreground text-xs">
-                  Nothing saved yet: the defaults above mirror the deployment&apos;s environment.
+                  Nothing saved yet: Volumes is off for every organization.
                 </p>
               ) : null}
             </AdminPanel>
