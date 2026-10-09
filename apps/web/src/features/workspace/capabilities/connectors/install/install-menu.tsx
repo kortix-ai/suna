@@ -1,7 +1,7 @@
 'use client';
 
 import { CaretDownIcon, LockIcon, UsersThreeIcon } from '@phosphor-icons/react';
-
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { SessionDotMatrix } from '@/components/ui/dot-matrix/session-dot-matrix';
 import {
@@ -84,7 +84,7 @@ export function InstallMenu({
           type="button"
           size="sm"
           variant={variant}
-          className={className}
+          className={cn(variant !== 'default' && "hover:border-ring hover:border hover:ring-ring/15 hover:ring-2 border border-transparent hit-area-y-3 hit-area-l-3 shrink-0", className)}
           disabled={inactive}
           aria-label={ariaLabel}
           data-testid={testId}

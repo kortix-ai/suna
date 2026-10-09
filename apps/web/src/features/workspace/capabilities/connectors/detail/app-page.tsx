@@ -389,7 +389,7 @@ export function AppPage({ projectId, appSegment }: { projectId: string; appSegme
             </h1>
           </div>
           {primary ? (
-            <div className="shrink-0">a
+            <div className="shrink-0">
               {installMenu('header', primary.target, 'default', resolved.name)}
             </div>
           ) : null}
