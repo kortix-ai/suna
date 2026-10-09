@@ -16,7 +16,7 @@ import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { DRAG_MIME } from '@/features/file-browser/components/file-tree-item';
-import { useFilesStore } from '@/features/file-browser/store/files-store';
+import { useFilesStore, useFilesStoreApi } from '@/features/file-browser/store/files-store';
 import type { FileNode } from '@/features/file-browser/types';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
@@ -364,9 +364,17 @@ export function DriveExplorer({
     [renameMutation, tHardcodedUi],
   );
 
-  const handleDelete = useCallback((node: FileNode) => {
-    setDeleteTarget(node);
-  }, []);
+  const goBackToBrowser = useFilesStore((s) => s.goBackToBrowser);
+  const filesStore = useFilesStoreApi();
+  const handleDelete = useCallback(
+    (node: FileNode) => {
+      // An open preview sits above every dialog; close it so the confirmation
+      // is not hidden behind it.
+      if (filesStore.getState().selectedFilePath) goBackToBrowser();
+      setDeleteTarget(node);
+    },
+    [goBackToBrowser, filesStore],
+  );
 
   const confirmDelete = useCallback(async () => {
     if (!deleteTarget) return;
