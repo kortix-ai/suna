@@ -13,19 +13,11 @@ import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArchiveIcon as Archive, FolderOpenIcon as FolderOpen } from '@/lib/icons';
 
-import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
 import { Avatar } from '@/components/kortix/avatar';
 import { Sheet, type SheetRef } from '@/components/kortix/sheet';
+import { PendingConfirmDialog } from '@/components/ui/pending-confirm-dialog';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import { useToast } from '@/components/kortix/toast-provider';
 import { haptics } from '@/lib/haptics';
@@ -128,38 +120,23 @@ export function ProjectActions({
         ) : null}
       </Sheet>
 
-      <AlertDialog
+      <PendingConfirmDialog
         open={!!confirmProject}
         onOpenChange={(open) => {
-          // Keep the dialog up until an in-flight archive settles.
-          if (!open && !archive.isPending) setConfirmProject(null);
-        }}>
-        <AlertDialogContent className="rounded-3xl">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Archive project</AlertDialogTitle>
-            <AlertDialogDescription className={archiveFailed ? 'text-destructive' : undefined}>
-              {archiveFailed
-                ? 'Unable to archive. Check your connection and try again.'
-                : `Archive “${confirmProject?.name ?? ''}”?`}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel asChild disabled={archive.isPending}>
-              <Button variant="secondary" size="lg" className="rounded-full">
-                <Text>Cancel</Text>
-              </Button>
-            </AlertDialogCancel>
-            <Button
-              variant="destructive"
-              size="lg"
-              className="rounded-full"
-              disabled={archive.isPending}
-              onPress={confirmArchive}>
-              <Text>{archive.isPending ? 'Archiving…' : 'Archive project'}</Text>
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
+          if (!open) setConfirmProject(null);
+        }}
+        pending={archive.isPending}
+        title="Archive project"
+        description={
+          archiveFailed
+            ? 'Unable to archive. Check your connection and try again.'
+            : `Archive “${confirmProject?.name ?? ''}”?`
+        }
+        descriptionError={archiveFailed}
+        confirmLabel={archive.isPending ? 'Archiving…' : 'Archive project'}
+        confirmVariant="destructive"
+        onConfirm={confirmArchive}
+      />
+</>
   );
 }

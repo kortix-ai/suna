@@ -18,7 +18,7 @@ export const PILL_INPUT_HEIGHT = 44;
 
 /**
  * Input text: one size, one family, one weight for every text field in the
- * app (`Input`, `PillInput`, `SheetTextInput`, `SearchHeader`, `SearchBar`).
+ * app (`Input`, `PillInput`, `SheetTextInput`, `SearchHeader`)
  * 16pt — the iOS body size, and the size below which mobile browsers zoom a
  * focused field. `Roobert-Regular` is the loaded font name; the bare family
  * name 'Roobert' does not resolve on Android and fell back to the system font.

@@ -5,8 +5,8 @@ import * as DialogPrimitive from '@rn-primitives/dialog';
 import { XIcon as X } from '@/lib/icons';
 import * as React from 'react';
 import { Platform, Text, View, type GestureResponderEvent, type ViewProps } from 'react-native';
+import { FullWindowOverlay } from '@/components/ui/full-window-overlay';
 import { FadeIn, FadeOut, ReduceMotion } from 'react-native-reanimated';
-import { FullWindowOverlay as RNFullWindowOverlay } from 'react-native-screens';
 
 const Dialog = DialogPrimitive.Root;
 
@@ -16,7 +16,6 @@ const DialogPortal = DialogPrimitive.Portal;
 
 const DialogClose = DialogPrimitive.Close;
 
-const FullWindowOverlay = Platform.OS === 'ios' ? RNFullWindowOverlay : React.Fragment;
 
 function DialogOverlay({
   className,

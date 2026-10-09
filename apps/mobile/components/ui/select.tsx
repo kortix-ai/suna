@@ -3,11 +3,11 @@ import { NativeOnlyAnimatedView } from '@/components/ui/native-only-animated-vie
 import { TextClassContext } from '@/components/ui/text';
 import { cn } from '@/lib/utils/index';
 import * as SelectPrimitive from '@rn-primitives/select';
-import { CheckIcon as Check, CaretDownIcon as ChevronDown, CaretDownIcon as ChevronDownIcon, CaretUpIcon as ChevronUpIcon } from '@/lib/icons';
+import { CheckIcon as Check, CaretDownIcon as ChevronDown, CaretUpIcon as ChevronUpIcon } from '@/lib/icons';
 import * as React from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
+import { FullWindowOverlay } from '@/components/ui/full-window-overlay';
 import { FadeIn, FadeOut, ReduceMotion } from 'react-native-reanimated';
-import { FullWindowOverlay as RNFullWindowOverlay } from 'react-native-screens';
 
 type Option = SelectPrimitive.Option;
 
@@ -65,7 +65,6 @@ function SelectTrigger({
   );
 }
 
-const FullWindowOverlay = Platform.OS === 'ios' ? RNFullWindowOverlay : React.Fragment;
 
 function SelectContent({
   className,
@@ -193,40 +192,37 @@ function SelectSeparator({
  * @platform Web only
  * Returns null on native platforms
  */
-function SelectScrollUpButton({
-  className,
-  ...props
-}: React.ComponentProps<typeof SelectPrimitive.ScrollUpButton>) {
-  if (Platform.OS !== 'web') {
-    return null;
-  }
-  return (
-    <SelectPrimitive.ScrollUpButton
-      className={cn('flex cursor-default items-center justify-center py-1', className)}
-      {...props}>
-      <Icon as={ChevronUpIcon} className="size-4" />
-    </SelectPrimitive.ScrollUpButton>
-  );
-}
-
 /**
  * @platform Web only
  * Returns null on native platforms
  */
-function SelectScrollDownButton({
+function SelectScrollButton({
+  Primitive,
+  icon,
   className,
   ...props
-}: React.ComponentProps<typeof SelectPrimitive.ScrollDownButton>) {
+}: {
+  Primitive: typeof SelectPrimitive.ScrollUpButton;
+  icon: 'caret-up' | 'caret-down';
+  className?: string;
+} & React.ComponentProps<typeof SelectPrimitive.ScrollUpButton>) {
   if (Platform.OS !== 'web') {
     return null;
   }
   return (
-    <SelectPrimitive.ScrollDownButton
+    <Primitive
       className={cn('flex cursor-default items-center justify-center py-1', className)}
       {...props}>
-      <Icon as={ChevronDownIcon} className="size-4" />
-    </SelectPrimitive.ScrollDownButton>
+      <Icon as={icon === 'caret-up' ? ChevronUpIcon : ChevronDown} className="size-4" />
+    </Primitive>
   );
+}
+
+function SelectScrollUpButton(props: React.ComponentProps<typeof SelectPrimitive.ScrollUpButton>) {
+  return <SelectScrollButton Primitive={SelectPrimitive.ScrollUpButton} icon="caret-up" {...props} />;
+}
+function SelectScrollDownButton(props: React.ComponentProps<typeof SelectPrimitive.ScrollDownButton>) {
+  return <SelectScrollButton Primitive={SelectPrimitive.ScrollDownButton} icon="caret-down" {...props} />;
 }
 
 
