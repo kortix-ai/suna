@@ -160,12 +160,12 @@ export async function flushDriveSyncBeforeStop(input: {
       signal: AbortSignal.timeout(DRIVE_SYNC_FLUSH_TIMEOUT_MS),
     });
     if (res.status !== 200) {
-      console.warn(`[stop] drive sync flush incomplete for sandbox ${input.sandboxId}: ${res.status}`);
+      logger.warn(`[stop] drive sync flush incomplete for sandbox ${input.sandboxId}: ${res.status}`);
       return false;
     }
     return true;
   } catch (err) {
-    console.warn(`[stop] drive sync flush failed for sandbox ${input.sandboxId}:`, err instanceof Error ? err.message : err);
+    logger.warn(`[stop] drive sync flush failed for sandbox ${input.sandboxId}`, { error: err instanceof Error ? err.message : String(err) });
     return false;
   }
 }

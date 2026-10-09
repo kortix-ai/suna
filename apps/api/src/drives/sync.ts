@@ -6,6 +6,7 @@
 // credential: every file call is authorized against the drives the session
 // was given, as recorded on its sandbox row.
 
+import { config } from '../config';
 import type { RecordedDriveMount } from './service';
 
 /** The box env var that turns the daemon's drive sync on. */
@@ -20,7 +21,7 @@ export const DRIVE_SYNC_METADATA_KEY = 'driveSync';
  * synced in. Off, such a session refuses to boot (drives are Platinum only).
  */
 export function driveSyncEnabled(): boolean {
-  const raw = (process.env.KORTIX_DRIVES_SYNC ?? '').trim().toLowerCase();
+  const raw = (config.KORTIX_DRIVES_SYNC ?? '').trim().toLowerCase();
   return raw === '1' || raw === 'on' || raw === 'true' || raw === 'yes';
 }
 
@@ -60,6 +61,8 @@ export function syncVersionToken(stat: { size: number; mtime: number } | null): 
   return stat ? `${Number(stat.size)}:${Number(stat.mtime)}` : 'absent';
 }
 
+// replica-local: a path lock only orders the conditional writes this process
+// makes; withSyncPathLock documents what it cannot cover across replicas.
 const pathLocks = new Map<string, Promise<unknown>>();
 
 /**

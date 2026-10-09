@@ -1,5 +1,3 @@
-import { sessionSandboxes } from '@kortix/db';
-import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { normalizeDrivePath } from '../../drives/access';
 import { noteDriveWrite } from '../../drives/conflicts';
@@ -15,6 +13,13 @@ import {
 } from '../../drives/service';
 import { isDriveSyncBox, syncMountAllows, syncVersionToken, withSyncPathLock } from '../../drives/sync';
 import {
+  type UploadPlanRecord,
+  forgetUploadPlan,
+  liveSessionSandbox,
+  rememberUploadPlan,
+  uploadPlans,
+} from '../../drives/sync-store';
+import {
   DriveStorageError,
   commitVolumeUpload,
   getDriveVolume,
@@ -29,7 +34,7 @@ import {
 } from '../../drives/volumes';
 import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
 import { isUuid } from '../../shared/validate';
-import { db } from '../../shared/db';
+import { logger } from '../../lib/logger';
 import { projectsApp } from '../lib/app';
 
 // Drive sync: the file calls a session box's daemon makes to keep the drives
@@ -60,52 +65,6 @@ interface SyncScope {
   uploads: Record<string, UploadPlanRecord>;
 }
 
-/** session_sandboxes metadata: the block uploads this box planned, by upload id. */
-const SYNC_UPLOADS_KEY = 'driveSyncUploads';
-/** A plan never committed (a box that died mid-upload) is dropped after this. */
-const UPLOAD_PLAN_TTL_MS = 24 * 60 * 60_000;
-
-interface UploadPlanRecord {
-  driveId: string;
-  paths: string[];
-  at: string;
-}
-
-function uploadPlans(metadata: unknown): Record<string, UploadPlanRecord> {
-  const raw = (metadata as Record<string, unknown> | null | undefined)?.[SYNC_UPLOADS_KEY];
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
-  const out: Record<string, UploadPlanRecord> = {};
-  for (const [id, v] of Object.entries(raw as Record<string, unknown>)) {
-    const r = v as Partial<UploadPlanRecord> | null;
-    if (r && typeof r.driveId === 'string' && Array.isArray(r.paths) && r.paths.every((p) => typeof p === 'string')) {
-      out[id] = { driveId: r.driveId, paths: r.paths as string[], at: typeof r.at === 'string' ? r.at : '' };
-    }
-  }
-  return out;
-}
-
-/** Record a plan on the sandbox row, in one statement (concurrent plans keep each other), dropping expired ones. */
-async function rememberUploadPlan(sandboxId: string, uploadId: string, plan: UploadPlanRecord): Promise<void> {
-  const live = sql`(
-    SELECT coalesce(jsonb_object_agg(e.key, e.value), '{}'::jsonb)
-      FROM jsonb_each(coalesce(${sessionSandboxes.metadata} -> ${SYNC_UPLOADS_KEY}, '{}'::jsonb)) e
-     WHERE (e.value ->> 'at') > ${new Date(Date.now() - UPLOAD_PLAN_TTL_MS).toISOString()}
-  )`;
-  await db
-    .update(sessionSandboxes)
-    .set({
-      metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || jsonb_build_object(${SYNC_UPLOADS_KEY}::text, ${live} || ${JSON.stringify({ [uploadId]: plan })}::jsonb)`,
-    })
-    .where(eq(sessionSandboxes.sandboxId, sandboxId));
-}
-
-async function forgetUploadPlan(sandboxId: string, uploadId: string): Promise<void> {
-  await db
-    .update(sessionSandboxes)
-    .set({ metadata: sql`${sessionSandboxes.metadata} #- ${`{${SYNC_UPLOADS_KEY},${uploadId}}`}::text[]` })
-    .where(eq(sessionSandboxes.sandboxId, sandboxId));
-}
-
 function refuse(c: Ctx, status: 400 | 403 | 404 | 413, error: string): Response {
   return c.json({ error }, status);
 }
@@ -119,24 +78,7 @@ async function scopeOf(c: Ctx): Promise<SyncScope | Response> {
   }
   const accountId = c.get('accountId') as string | undefined;
   if (!accountId) return refuse(c, 403, 'Drive sync takes the session sandbox credential');
-  const [row] = await db
-    .select({
-      sandboxId: sessionSandboxes.sandboxId,
-      sessionId: sessionSandboxes.sessionId,
-      projectId: sessionSandboxes.projectId,
-      provider: sessionSandboxes.provider,
-      metadata: sessionSandboxes.metadata,
-    })
-    .from(sessionSandboxes)
-    .where(
-      and(
-        eq(sessionSandboxes.sessionId, sessionId),
-        eq(sessionSandboxes.projectId, projectId),
-        eq(sessionSandboxes.accountId, accountId),
-        inArray(sessionSandboxes.status, ['provisioning', 'active']),
-      ),
-    )
-    .limit(1);
+  const row = await liveSessionSandbox({ sessionId, projectId, accountId });
   if (!row) return refuse(c, 403, 'The session sandbox is not live');
   return {
     sandboxId: row.sandboxId,
@@ -403,7 +345,7 @@ export function registerSessionDriveSyncRoutes(): void {
     if (r instanceof Response) return r;
     if (r === REMOTE_CHANGED) return remoteChanged(c);
     await forgetUploadPlan(scope.sandboxId, uploadId).catch((err) =>
-      console.warn(`[drive-sync] forgetting upload ${uploadId} failed:`, err instanceof Error ? err.message : err),
+      logger.warn(`[drive-sync] forgetting upload ${uploadId} failed:`, { error: err instanceof Error ? err.message : String(err) }),
     );
     noteDriveWrite(drive.driveId);
     return c.json(r as Record<string, unknown>);

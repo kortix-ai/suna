@@ -1,9 +1,6 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { projectSessions } from '@kortix/db';
-import { eq } from 'drizzle-orm';
-import { isPersonalSession, readSessionDriveMounts, readSkippedSessionDrives } from '../../drives/service';
+import { isCallersPersonalSession, readSessionDriveMounts, readSkippedSessionDrives } from '../../drives/service';
 import { auth, errors, json } from '../../openapi';
-import { db } from '../../shared/db';
 import { isUuid } from '../../shared/validate';
 import { loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
@@ -41,17 +38,6 @@ const SessionDrivesBody = z.object({
 const Params = z.object({ projectId: z.string(), sessionId: z.string() });
 
 async function sessionView(sessionId: string, callerId: string | undefined) {
-  const [facts] = await db
-    .select({
-      createdBy: projectSessions.createdBy,
-      visibility: projectSessions.visibility,
-      origin: projectSessions.origin,
-      agentName: projectSessions.agentName,
-      metadata: projectSessions.metadata,
-    })
-    .from(projectSessions)
-    .where(eq(projectSessions.sessionId, sessionId))
-    .limit(1);
   const [mounts, skipped] = await Promise.all([readSessionDriveMounts(sessionId), readSkippedSessionDrives(sessionId)]);
   return {
     drives: mounts.map((m) => ({
@@ -64,7 +50,7 @@ async function sessionView(sessionId: string, callerId: string | undefined) {
       ...(m.role ? { role: m.role } : {}),
       openConflicts: m.openConflicts,
     })),
-    personal: isPersonalSession(facts ?? null, callerId ?? null),
+    personal: await isCallersPersonalSession(sessionId, callerId ?? null),
     skipped: skipped.skipped,
     skippedMessage: skipped.message,
   };
@@ -83,14 +69,14 @@ export function registerSessionDrivesRoutes(): void {
       request: { params: Params },
       responses: { 200: json(SessionDrivesBody, 'Session drives'), ...errors(400, 404) },
     }),
-    async (c: any) => {
+    async (c) => {
       const projectId = c.req.param('projectId');
       const sessionId = c.req.param('sessionId');
       if (!isUuid(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       const guard = await guardSession(c, loaded, sessionId, 'read');
-      if (!guard.ok) return sessionAccessDenied(c, guard);
+      if (!guard.ok) return sessionAccessDenied(c, guard) as never;
       return c.json(await sessionView(sessionId, c.get('userId')));
     },
   );

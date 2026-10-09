@@ -12,11 +12,13 @@
 // folders it was given (a mount cannot hide part of itself from a box whose
 // agent can become root).
 
+import { logger } from '../lib/logger';
 import { accountMembers, driveConflicts, driveMountRevocations, drives, iamRoles, projectSessions, roleAssignments, serviceAccounts, sessionSandboxes } from '@kortix/db';
 import { and, asc, count, eq, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
 import { SYSTEM_ACTOR, assignRole, revokeAssignment } from '../iam/assignments';
 import { resolvePrincipal } from '../iam/authorize';
+import { config } from '../config';
 import { db } from '../shared/db';
 import { driveVolumeName, skippedDrivesMessage } from './access';
 import {
@@ -490,6 +492,11 @@ export function isPersonalSession(session: SessionFacts | null, bootingUserId: s
   return session.createdBy === bootingUserId;
 }
 
+/** Whether the session is the caller's own (its person's folder mounts in it). */
+export async function isCallersPersonalSession(sessionId: string, callerId: string | null): Promise<boolean> {
+  return isPersonalSession(await sessionFacts(sessionId), callerId);
+}
+
 async function inAccount(userId: string, accountId: string): Promise<boolean> {
   const [m] = await db
     .select({ role: accountMembers.accountRole })
@@ -590,7 +597,7 @@ export async function sessionVolumeMounts(input: {
   const plan = await planSessionDrives({ ...input, slots });
   const skipped = plan.skipped.map((path) => ({ driveId: plan.drive.driveId, name: path }));
   if (skipped.length) {
-    console.warn(`[drives] session ${input.sessionId}: ${skipped.length} folder(s) past the ${slots} mount slots left out`);
+    logger.warn(`[drives] session ${input.sessionId}: ${skipped.length} folder(s) past the ${slots} mount slots left out`);
   }
   if (!plan.mounts.length) return skipped.length ? { volumes: {}, mounts: [], skipped, slots } : undefined;
   let volume: string | null = null;
@@ -606,7 +613,7 @@ export async function sessionVolumeMounts(input: {
     }
   }
   if (!volume) {
-    console.warn(`[drives] files of project ${input.projectId} did not open:`, lastErr instanceof Error ? lastErr.message : lastErr);
+    logger.warn(`[drives] files of project ${input.projectId} did not open:`, { error: lastErr instanceof Error ? lastErr.message : String(lastErr) });
     const quota = lastErr instanceof DriveStorageError && lastErr.code === 'quota_exceeded';
     throw new DriveMountError(
       quota
@@ -632,7 +639,7 @@ export async function sessionDrivesEnabled(projectId: string): Promise<boolean> 
 /** Operator kill switch: KORTIX_DRIVES_SESSION_MOUNT=off boots every session without files. */
 export function sessionDriveMountEnabled(): boolean {
   if (!driveStorageAvailable()) return false;
-  const raw = (process.env.KORTIX_DRIVES_SESSION_MOUNT ?? '').trim().toLowerCase();
+  const raw = (config.KORTIX_DRIVES_SESSION_MOUNT ?? '').trim().toLowerCase();
   return !(raw === '0' || raw === 'off' || raw === 'false' || raw === 'no');
 }
 
@@ -767,7 +774,7 @@ async function applyDriveToSyncedSandbox(
   const losesWrite = have.some((h) => !h.readOnly && !kept.includes(h));
   let flushed: boolean | undefined;
   if (losesWrite && box.externalId) {
-    const { flushDriveSyncBeforeStop } = await import('../projects/reaping/stop-box');
+    const { flushDriveSyncBeforeStop } = await import('../projects/surface');
     flushed = await flushDriveSyncBeforeStop({
       sandboxId: box.sandboxId,
       externalId: box.externalId,
@@ -873,7 +880,7 @@ export async function reconcileSessionDrives(sessionId: string): Promise<void> {
     if (box) await clearMountRevocation(box.sandboxId);
     await refreshDriveNotes(sessionId);
   } catch (err) {
-    console.warn(`[drives] reconciling the files of session ${sessionId} failed:`, err instanceof Error ? err.message : err);
+    logger.warn(`[drives] reconciling the files of session ${sessionId} failed:`, { error: err instanceof Error ? err.message : String(err) });
   }
 }
 
@@ -977,7 +984,7 @@ export async function refreshDriveNotes(sessionId: string): Promise<void> {
       60_000,
     );
   } catch (err) {
-    console.warn(`[drives] notes for session ${sessionId} not written:`, err instanceof Error ? err.message : err);
+    logger.warn(`[drives] notes for session ${sessionId} not written:`, { error: err instanceof Error ? err.message : String(err) });
   }
 }
 
@@ -995,7 +1002,7 @@ export async function detachDriveEverywhere(driveId: string): Promise<void> {
     if (row.provider === 'platinum' && row.externalId) {
       for (const m of mounts.filter((x) => x.driveId === driveId)) {
         await detachSandboxVolume(row.externalId, m.mountPath).catch((err) =>
-          console.warn(`[drives] detaching ${m.mountPath} from ${row.externalId} failed:`, err instanceof Error ? err.message : err),
+          logger.warn(`[drives] detaching ${m.mountPath} from ${row.externalId} failed:`, { error: err instanceof Error ? err.message : String(err) }),
         );
       }
     }
@@ -1079,7 +1086,7 @@ export async function enforceDriveMounts(
       .innerJoin(projectSessions, eq(projectSessions.sessionId, sessionSandboxes.sessionId))
       .where(where);
   } catch (err) {
-    console.error('[drives] finding the sessions to bring in line with folder access failed:', err);
+    logger.error('[drives] finding the sessions to bring in line with folder access failed:', { error: err instanceof Error ? err.message : String(err) });
     if (opts.progress) opts.progress.failed++;
     return { sessions: 0, failed: 1 };
   }
@@ -1093,7 +1100,7 @@ export async function enforceDriveMounts(
       await bringInLine(row);
     } catch (err) {
       failed++;
-      console.error(`[drives] REVOCATION: session ${row.sessionId} failed:`, err);
+      logger.error(`[drives] REVOCATION: session ${row.sessionId} failed:`, { error: err instanceof Error ? err.message : String(err) });
     }
     const rowFailed = failed > before;
     if (opts.progress) {
@@ -1101,7 +1108,7 @@ export async function enforceDriveMounts(
       if (rowFailed) opts.progress.failed++;
     }
     await (rowFailed ? recordMountRevocation(row.sandboxId, 'mounts not brought in line') : clearMountRevocation(row.sandboxId)).catch(
-      (err) => console.error(`[drives] REVOCATION: recording the state of ${row.sandboxId} failed:`, err),
+      (err) => logger.error(`[drives] REVOCATION: recording the state of ${row.sandboxId} failed:`, { error: err instanceof Error ? err.message : String(err) }),
     );
   };
   const bringInLine = async (row: (typeof rows)[number]): Promise<void> => {
@@ -1121,10 +1128,7 @@ export async function enforceDriveMounts(
         await applyDriveToRunningSandbox({ ...base, driveId: drive.driveId });
       } catch (err) {
         failed++;
-        console.error(
-          `[drives] REVOCATION: folders could not be brought in line in running session ${row.sessionId}; retried by the drive worker:`,
-          err instanceof Error ? err.message : err,
-        );
+        logger.error(`[drives] REVOCATION: folders could not be brought in line in running session ${row.sessionId}; retried by the drive worker:`, { error: err instanceof Error ? err.message : String(err) });
       }
       return;
     }
@@ -1140,10 +1144,7 @@ export async function enforceDriveMounts(
           await detachSandboxVolume(row.externalId, m.mountPath);
         } catch (err) {
           failed++;
-          console.error(
-            `[drives] REVOCATION: ending mount ${m.mountPath} of stopped session ${row.sessionId} failed:`,
-            err instanceof Error ? err.message : err,
-          );
+          logger.error(`[drives] REVOCATION: ending mount ${m.mountPath} of stopped session ${row.sessionId} failed:`, { error: err instanceof Error ? err.message : String(err) });
           continue;
         }
       }
@@ -1279,7 +1280,7 @@ export async function detachPersonalDrives(sessionId: string): Promise<boolean> 
     try {
       for (const m of personal) await detachSandboxVolume(row.externalId, m.mountPath);
     } catch (err) {
-      console.warn(`[drives] detaching personal folders from session ${sessionId} failed:`, err instanceof Error ? err.message : err);
+      logger.warn(`[drives] detaching personal folders from session ${sessionId} failed:`, { error: err instanceof Error ? err.message : String(err) });
       return false;
     }
   }
@@ -1314,7 +1315,7 @@ export async function releaseMemberDrives(accountId: string, userId: string): Pr
       if (own && owner) {
         await setFolderGrant({ drive, path: own, principal: { type: 'user', id: owner.userId }, level: 'manage', grantedBy: null, source: 'manual' });
       } else if (own) {
-        console.warn(`[drives] no owner in account ${accountId} to take over ${own} of a removed member`);
+        logger.warn(`[drives] no owner in account ${accountId} to take over ${own} of a removed member`);
       }
       for (const g of grants) {
         if (g.principalType === 'user' && g.principalId === userId && g.grantId) {
@@ -1326,7 +1327,7 @@ export async function releaseMemberDrives(accountId: string, userId: string): Pr
       }
     }
   } catch (err) {
-    console.error(`[drives] releasing the folders of a removed member of ${accountId} failed:`, err);
+    logger.error(`[drives] releasing the folders of a removed member of ${accountId} failed:`, { error: err instanceof Error ? err.message : String(err) });
   } finally {
     await enforceDriveMounts({ accountId });
   }

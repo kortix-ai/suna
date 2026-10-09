@@ -27,6 +27,7 @@
 // deletes the rows of sources that every target finished, and the drives
 // delete trigger queues their volumes for the cleanup worker.
 
+import { logger } from '../lib/logger';
 import { driveGrants, drives, projectSessions, projects, sessionSandboxes } from '@kortix/db';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
@@ -300,7 +301,7 @@ export async function foldAll(opts: { accountId?: string; storage?: FoldStorage;
         opts.log?.(r);
       }
     } catch (err) {
-      console.error(`[drives] folding drive ${source.driveId} (${source.kind}) failed; run again to resume:`, err);
+      logger.error(`[drives] folding drive ${source.driveId} (${source.kind}) failed; run again to resume:`, { error: err instanceof Error ? err.message : String(err) });
     }
   }
   return out;

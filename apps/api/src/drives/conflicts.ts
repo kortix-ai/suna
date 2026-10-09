@@ -6,6 +6,7 @@
 // it lists the drive and records every conflict copy it finds, and closes the
 // record once the copy is gone.
 
+import { logger } from '../lib/logger';
 import { driveConflicts, drives, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
@@ -14,6 +15,9 @@ import { DRIVE_MOUNTS_METADATA_KEY, type DriveRow, recordedDriveMounts, refreshD
 import { getDriveVolume, isMissingVolume, listVolumeFiles, readVolumeFile } from './volumes';
 
 /** Drives written through the API lately: scanned even when no session mounts them. */
+// replica-local: a hint for the scanner on this replica. The scanner also
+// scans every drive a session mounts, so only conflicts made by API writes
+// alone through another replica wait for a write or a mount seen here.
 const recentWrites = new Map<string, number>();
 const RECENT_MS = 15 * 60_000;
 
@@ -144,10 +148,10 @@ export async function runConflictScan(): Promise<void> {
           const fresh = await scanDriveConflicts(drive);
           if (fresh.length) {
             changed.push(drive.driveId);
-            console.info(`[drives] ${fresh.length} new conflict copy(ies) on drive ${drive.driveId}`);
+            logger.info(`[drives] ${fresh.length} new conflict copy(ies) on drive ${drive.driveId}`);
           }
         } catch (err) {
-          console.warn(`[drives] conflict scan of ${drive.driveId} failed:`, err instanceof Error ? err.message : err);
+          logger.warn(`[drives] conflict scan of ${drive.driveId} failed:`, { error: err instanceof Error ? err.message : String(err) });
         }
       }
     };

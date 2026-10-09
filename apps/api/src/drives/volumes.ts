@@ -1,6 +1,7 @@
 // The storage behind a drive: one Platinum volume in drive sync mode. Every
 // call here speaks the Platinum volumes API; nothing above this file does.
 
+import { logger } from '../lib/logger';
 import { isPlatinumConfigured, platinumFetch } from '../shared/platinum';
 import { DEFAULT_SANDBOX_MOUNT_LIMIT } from './access';
 
@@ -28,7 +29,7 @@ async function call(path: string, init: RequestInit = {}): Promise<Response> {
   try {
     res = await platinumFetch(path, init);
   } catch (err) {
-    console.warn(`[drives] ${init.method ?? 'GET'} ${path} failed:`, err instanceof Error ? err.message : err);
+    logger.warn(`[drives] ${init.method ?? 'GET'} ${path} failed:`, { error: err instanceof Error ? err.message : String(err) });
     throw new DriveStorageError(503, 'Drive storage is unavailable, try again shortly', 'drive_storage_unavailable');
   }
   if (res.ok) return res;
@@ -48,7 +49,7 @@ async function call(path: string, init: RequestInit = {}): Promise<Response> {
       if (code === 'quota_exceeded') {
         throw new DriveStorageError(409, 'This workspace has reached its drive storage limit. Delete a drive you no longer need, or ask Kortix for more.', code);
       }
-      console.warn(`[drives] ${init.method ?? 'GET'} ${path} -> 403 ${text.slice(0, 300)}`);
+      logger.warn(`[drives] ${init.method ?? 'GET'} ${path} -> 403 ${text.slice(0, 300)}`);
       throw new DriveStorageError(503, 'Drive storage is unavailable, try again shortly', code);
     case 409:
       if (code === 'volume_busy') throw new DriveStorageError(409, 'The drive is attached to a running session', code);
@@ -56,7 +57,7 @@ async function call(path: string, init: RequestInit = {}): Promise<Response> {
     case 413:
       throw new DriveStorageError(413, 'File is too large', code);
     default:
-      console.warn(`[drives] ${init.method ?? 'GET'} ${path} -> ${res.status} ${text.slice(0, 300)}`);
+      logger.warn(`[drives] ${init.method ?? 'GET'} ${path} -> ${res.status} ${text.slice(0, 300)}`);
       throw new DriveStorageError(503, 'Drive storage is unavailable, try again shortly', code);
   }
 }
@@ -252,7 +253,7 @@ export async function sandboxMountLimit(): Promise<number> {
     const max = Number(limits.max_mounts_per_sandbox);
     if (Number.isFinite(max) && max >= 1) value = Math.min(DEFAULT_SANDBOX_MOUNT_LIMIT, Math.floor(max));
   } catch (err) {
-    console.warn('[drives] reading the sandbox mount limit failed:', err instanceof Error ? err.message : err);
+    logger.warn('[drives] reading the sandbox mount limit failed:', { error: err instanceof Error ? err.message : String(err) });
     return value;
   }
   mountLimitCache = { value, at: Date.now() };

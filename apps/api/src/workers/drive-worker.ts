@@ -8,6 +8,7 @@
 // - the revocation retry: a session sandbox whose folder access narrowed but
 //   whose detach did not land is brought in line again until it does.
 
+import { logger } from '../lib/logger';
 import { platinumVolumeDeletions } from '@kortix/db';
 import { asc, eq, lte, sql } from 'drizzle-orm';
 import { runWorkerTick } from '../shared/audit-scope';
@@ -54,7 +55,7 @@ export async function drainVolumeDeletions(limit = 20): Promise<{ deleted: numbe
         await deleteDriveVolume(row.volumeName);
         await db.delete(platinumVolumeDeletions).where(eq(platinumVolumeDeletions.volumeName, row.volumeName));
         deleted++;
-        console.info(`[drives] deleted volume ${row.volumeName} (${row.reason})`);
+        logger.info(`[drives] deleted volume ${row.volumeName} (${row.reason})`);
       } catch (err) {
         deferred++;
         const backoff = Math.min(MAX_BACKOFF_MS, 30_000 * 2 ** Math.min(row.attempts, 10));
@@ -82,7 +83,7 @@ export async function retryPendingRevocations(): Promise<void> {
   try {
     const { retryMountRevocations } = await import('../drives/service');
     const { retried, failed } = await retryMountRevocations();
-    if (retried) console.info(`[drives] revocation retry: ${retried} sandbox(es), ${failed} still pending`);
+    if (retried) logger.info(`[drives] revocation retry: ${retried} sandbox(es), ${failed} still pending`);
   } finally {
     retryingRevocations = false;
   }
@@ -93,21 +94,21 @@ export function startDriveWorkers(): void {
   if (!scanTimer) {
     scanTimer = setInterval(() => {
       runWorkerTick('drive-conflict-scan', runConflictScan).catch((err) =>
-        console.warn('[drives] conflict scan pass failed:', err),
+        logger.warn('[drives] conflict scan pass failed:', { error: err instanceof Error ? err.message : String(err) }),
       );
     }, SCAN_MS);
   }
   if (!drainTimer) {
     drainTimer = setInterval(() => {
       runWorkerTick('volume-deletions', () => drainVolumeDeletions()).catch((err) =>
-        console.warn('[drives] volume deletion pass failed:', err),
+        logger.warn('[drives] volume deletion pass failed:', { error: err instanceof Error ? err.message : String(err) }),
       );
     }, DRAIN_MS);
   }
   if (!revocationTimer) {
     revocationTimer = setInterval(() => {
       runWorkerTick('drive-mount-revocations', retryPendingRevocations).catch((err) =>
-        console.warn('[drives] revocation retry pass failed:', err),
+        logger.warn('[drives] revocation retry pass failed:', { error: err instanceof Error ? err.message : String(err) }),
       );
     }, REVOCATION_TICK_MS);
   }
