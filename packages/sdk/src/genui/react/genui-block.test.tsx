@@ -188,4 +188,37 @@ describe('GenuiBlock', () => {
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ outcome: 'fallback', components: [], msToFirstPaint: null });
   });
+
+  test('a disabled block reports no issues', () => {
+    const events: GenuiBlockEvent[] = [];
+    mount(
+      <GenuiBlock
+        code={CODE}
+        streaming={false}
+        enabled={false}
+        components={COMPONENTS}
+        renderMarkdown={renderMarkdown}
+        onSettled={(e) => events.push(e)}
+      />,
+    );
+    // The disabled path parses '' internally, which would report one empty-source issue.
+    expect(events[0]?.issueCount).toBe(0);
+  });
+
+  test('a disabled block converts to markdown once per distinct code, not once per render', () => {
+    let markdownCalls = 0;
+    const counting = (markdown: string) => {
+      markdownCalls += 1;
+      return <pre data-type="markdown">{markdown}</pre>;
+    };
+    const props = { version: 1, enabled: false, components: COMPONENTS, renderMarkdown: counting };
+    const ticks = [CODE.slice(0, 44), CODE.slice(0, CODE.indexOf('\nc =')), CODE];
+    const renderer = mount(<GenuiBlock {...props} code={ticks[0]!} streaming />);
+    for (const code of ticks.slice(1)) act(() => renderer.update(<GenuiBlock {...props} code={code} streaming />));
+    expect(markdownCalls).toBe(3);
+    // An identical re-render must not convert (or render the fallback) again.
+    act(() => renderer.update(<GenuiBlock {...props} code={CODE} streaming />));
+    act(() => renderer.update(<GenuiBlock {...props} code={CODE} streaming />));
+    expect(markdownCalls).toBe(3);
+  });
 });

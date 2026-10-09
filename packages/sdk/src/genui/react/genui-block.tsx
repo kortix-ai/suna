@@ -110,8 +110,8 @@ function collectTypes(node: GenuiNode | null, into: Set<string>): Set<string> {
   return into;
 }
 
-/** The block as markdown. A component, so the full parse runs only when the fallback actually renders. */
-function BlockFallback({
+/** The block as markdown. A memoized component: the full parse runs only when the fallback renders, and only when code or version change. */
+const BlockFallback = memo(function BlockFallback({
   code,
   version,
   renderMarkdown,
@@ -122,7 +122,7 @@ function BlockFallback({
 }) {
   const markdown = useMemo(() => genuiBlockToMarkdown(code, version), [code, version]);
   return <>{markdown ? renderMarkdown(markdown) : null}</>;
-}
+});
 
 /** Parse the block on every render with one parser per block; same input returns the same result. */
 export function useGenuiParse(code: string, version: number, streaming: boolean): GenuiParseResult {
@@ -180,20 +180,22 @@ export function GenuiBlock({
       outcome,
       components: [...collectTypes(result.root, new Set())].sort(),
       msToFirstPaint: firstPaint.current === null ? null : Math.round(firstPaint.current),
-      issueCount: result.issues.length,
+      // A disabled block parses '' internally; its empty-source issue is not the block's.
+      issueCount: enabled ? result.issues.length : 0,
     });
     // Fires when streaming settles; later re-renders of a settled block do not re-fire.
   }, [streaming]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (unsupported) return <>{renderMarkdown(`*${GENUI_UNSUPPORTED_NOTE}*`)}</>;
-  if (!enabled) return <>{renderMarkdown(genuiBlockToMarkdown(code, version))}</>;
-  if (!result.root) return streaming ? null : <BlockFallback code={code} version={version} renderMarkdown={renderMarkdown} />;
+  if (!enabled) return <BlockFallback code={code} version={version} renderMarkdown={stableRenderMarkdown} />;
+  if (!result.root) return streaming ? null : <BlockFallback code={code} version={version} renderMarkdown={stableRenderMarkdown} />;
 
   return (
     <BlockBoundary
       // A throw while streaming gets one fresh try when the stream settles.
+      // Settling remounts the node views once: host state such as an active tab resets.
       key={streaming ? 'live' : 'settled'}
-      fallback={<BlockFallback code={code} version={version} renderMarkdown={renderMarkdown} />}
+      fallback={<BlockFallback code={code} version={version} renderMarkdown={stableRenderMarkdown} />}
       onError={() => (renderError.current = !streaming)}
     >
       <RenderContext.Provider value={context}>
