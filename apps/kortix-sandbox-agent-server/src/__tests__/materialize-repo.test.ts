@@ -13,13 +13,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 
-import {
-  __setScaffoldRepoPathForTests,
-  checkoutSessionBranch,
-  isShallowRepo,
-  materializeRepo,
-  scheduleHistoryBackfill,
-} from '@/lib/git/git'
+import { checkoutSessionBranch, isShallowRepo } from '@/services/workspace-provider/checkout'
+import { __setScaffoldRepoPathForTests, materializeRepo, scheduleHistoryBackfill } from '@/services/workspace-provider/git'
 import { testOpenCodeConfig as baseConfig } from './helpers/open-code-harness'
 
 function git(args: string[], cwd?: string) {

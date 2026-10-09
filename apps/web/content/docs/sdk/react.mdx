@@ -82,7 +82,8 @@ the run stays blocked. Use `answerQuestion`, `rejectQuestion`, or
 | `chatEngine` | `true` | Set `false` if your app mounts its own chat surface for this session, to avoid syncing messages twice. |
 | `initialRuntimeSessionId` | `null` | A runtime session pin your server already holds for this session. The transcript renders from it while `/start` runs; the `/start` answer stays authoritative. `initialOpenCodeSessionId` is its deprecated name. |
 | `browserPresence` | `false` | Hold this tab's presence lease while a signed-in person uses the page (input in the last 10 minutes). The lease keeps the session's computer awake. |
-| `presenceAlerts` | `false` | This tab shows its own notifications. Sent on the presence lease: the server skips the phone and Web Push only while an alerting tab is in use. A change is sent at once. Needs `browserPresence`. |
+| `presenceAlerts` | `false` | This tab shows its own notifications. Sent on the presence lease: the server skips the phone and Web Push only while an alerting tab is in use. A change is sent at once. Pass `true` only when the project's `notification_center` flag is on; the server ignores it otherwise. Needs `browserPresence`. |
+| `presencePageExit` | `false` | End the presence lease when the page closes or enters the back/forward cache (`pagehide`), so a turn that ends right after the tab closes still notifies. Off, the lease lives to its 90 s expiry. Pass the project's `notification_center` flag. A change applies at once, with no new presence report. Needs `browserPresence`. |
 | `repositoryMode` | — | Telemetry only. A session created before a repository replacement starts and runs the project's current config without it. Only its `/workspace` clone still comes from the old repository, so a push from it needs a rebase first. |
 
 Sending is optimistic. `send` shows your message right away, then stream
@@ -121,6 +122,11 @@ need a running session. Each mirrors a method on the
 The three notification hooks key their cache by `userId` (`qk.notifications`),
 so a user switch in the same tab never shows the previous user's inbox. Pass
 the signed-in user's id.
+
+Notifications are behind the per-project `notification_center`
+[feature flag](/docs/feature-flags), off by default. Gate each hook with
+`enabled: useFeatureFlag(projectId, 'notification_center').enabled`, so a
+project with the flag off sends no notification request.
 
 ## Connector setup links
 

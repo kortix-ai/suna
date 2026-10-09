@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test } from 'bun:test'
 import { loadOpenCodeConfig as loadConfig } from '@/harness/open-code/config'
-import { __setScaffoldRepoPathForTests, buildFastBootBundleUrl, isShallowRepo, materializeRepo } from '@/lib/git/git'
+import { isShallowRepo } from '@/services/workspace-provider/checkout'
+import { __setScaffoldRepoPathForTests, buildFastBootBundleUrl, materializeRepo } from '@/services/workspace-provider/git'
 
 const roots: string[] = []
 const realFetch = globalThis.fetch

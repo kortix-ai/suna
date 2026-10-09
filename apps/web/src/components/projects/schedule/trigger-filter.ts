@@ -6,7 +6,7 @@
 
 import type { ProjectTrigger } from '@kortix/sdk';
 
-import { type EventApp, appLabel, groupEventApps } from './event-trigger-copy';
+import { type EventApp, eventAppName, groupEventApps, indexEventApps } from './event-trigger-copy';
 import type { TriggerKind } from './schedule-copy';
 
 export type TriggerFilter = 'all' | TriggerKind;
@@ -14,17 +14,28 @@ export type TriggerFilter = 'all' | TriggerKind;
 /** Tab order on the page; the value is the `?type=` it writes. */
 export const TRIGGER_FILTERS: readonly TriggerFilter[] = ['all', 'cron', 'event', 'webhook'];
 
-/** An unknown or missing `?type=` is `all`. */
-export function parseTriggerFilter(value: string | null | undefined): TriggerFilter {
-  return TRIGGER_FILTERS.find((f) => f === value) ?? 'all';
+/** An unknown or missing `?type=` is `all`, and so is one the page does not offer (`event` while events are off). */
+export function parseTriggerFilter(
+  value: string | null | undefined,
+  offered: readonly TriggerFilter[] = TRIGGER_FILTERS,
+): TriggerFilter {
+  return offered.find((f) => f === value) ?? 'all';
 }
 
-export function filterTriggers(triggers: ProjectTrigger[], filter: TriggerFilter): ProjectTrigger[] {
+export function filterTriggers(
+  triggers: ProjectTrigger[],
+  filter: TriggerFilter,
+): ProjectTrigger[] {
   return filter === 'all' ? triggers : triggers.filter((t) => t.type === filter);
 }
 
 export function triggerCounts(triggers: ProjectTrigger[]): Record<TriggerFilter, number> {
-  const counts: Record<TriggerFilter, number> = { all: triggers.length, cron: 0, event: 0, webhook: 0 };
+  const counts: Record<TriggerFilter, number> = {
+    all: triggers.length,
+    cron: 0,
+    event: 0,
+    webhook: 0,
+  };
   for (const t of triggers) if (t.type in counts) counts[t.type as TriggerKind] += 1;
   return counts;
 }
@@ -38,16 +49,19 @@ export interface TriggerAppGroup {
 }
 
 /** App event triggers grouped by app, sorted by app name; logo and name come from the catalog when it has the app. */
-export function groupTriggersByApp(triggers: ProjectTrigger[], apps: EventApp[]): TriggerAppGroup[] {
+export function groupTriggersByApp(
+  triggers: ProjectTrigger[],
+  apps: EventApp[],
+): TriggerAppGroup[] {
   const groups = new Map<string, TriggerAppGroup>();
+  const index = indexEventApps(apps);
   for (const t of triggers) {
     if (!t.event) continue;
     const app = t.event.app ?? t.event.connector;
-    const known = apps.find((a) => a.app === app);
     const group = groups.get(app) ?? {
       app,
-      name: known?.name ?? appLabel(t.event.app, t.event.connector),
-      logo: known?.logo ?? null,
+      name: eventAppName(t.event, index),
+      logo: index.get(app)?.logo ?? null,
       triggers: [],
     };
     group.triggers.push(t);

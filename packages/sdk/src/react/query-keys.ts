@@ -400,11 +400,6 @@ export const qk = {
 
     /** Stable App inventory for `GET /projects/:id/apps`. */
     apps: (id: string) => [...qk.project.scope(id), 'apps'] as const,
-    /** Backend inventory for `GET /projects/:id/backends`. */
-    backends: (id: string) => [...qk.project.scope(id), 'backends'] as const,
-    /** Automatic backup state and snapshots of one backend. */
-    backendBackups: (id: string, backendId: string) =>
-      [...qk.project.backends(id), backendId, 'backups'] as const,
     /** Access policy and short-lived browser session for one App. */
     appAccess: (id: string, appId: string) => [...qk.project.apps(id), appId, 'access'] as const,
     /** Short-lived browser exchange URL for one App. */
@@ -413,6 +408,8 @@ export const qk = {
     /** Immutable deployment history for one App. */
     appDeployments: (id: string, appId: string) =>
       [...qk.project.apps(id), appId, 'deployments'] as const,
+    /** Snapshots of one App (capability `snapshots`). */
+    appSnapshots: (id: string, appId: string) => [...qk.project.apps(id), appId, 'snapshots'] as const,
     /** One deployment and its events (build log included). */
     appDeployment: (id: string, appId: string, deploymentId: string) =>
       [...qk.project.appDeployments(id, appId), deploymentId] as const,

@@ -112,8 +112,11 @@ flow(
         .has("$.always_on", true)
         .has("$.estimated_monthly_usd", 73.48)
         .has("$.warnings[0].code", "app_budget_below_always_on")
-        // No backend access unless the App lists the backend.
-        .has("$.backends", []);
+        // Kind web by default; clients branch on capabilities. Uses no App until it lists one.
+        .has("$.kind", "web")
+        .has("$.capabilities", ["deployments", "rollback", "preview", "member_tokens"])
+        .has("$.instance", null)
+        .has("$.uses", []);
       appId = response.json<any>().app_id;
     });
 
@@ -149,17 +152,18 @@ flow(
       );
       underfunded.status(200).body().has("$.warnings[0].code", "app_budget_below_always_on");
 
-      const listed = await owner.patch(
+      // `uses` names live Apps of the project by slug: an unknown one → 400 app_not_found, a malformed one → 400.
+      const unknown = await owner.patch(
         "/v1/projects/:projectId/apps/:appId",
-        { backends: ["main", "crm", "main"] },
+        { uses: ["no-such-app"] },
         { params },
       );
-      listed.status(200).body().has("$.backends", ["main", "crm"]);
-      (await owner.get("/v1/projects/:projectId/apps/:appId", { params }))
+      unknown.status(400).body().has("$.code", "app_not_found").has("$.slugs", ["no-such-app"]);
+      (await owner.patch("/v1/projects/:projectId/apps/:appId", { uses: ["Not A Slug"] }, { params })).status(400);
+      (await owner.patch("/v1/projects/:projectId/apps/:appId", { uses: [] }, { params }))
         .status(200)
         .body()
-        .has("$.backends", ["main", "crm"]);
-      (await owner.patch("/v1/projects/:projectId/apps/:appId", { backends: ["Not A Name"] }, { params })).status(400);
+        .has("$.uses", []);
     });
 
     await ctx.step("an always-on App with no budget defaults to its 24/7 estimate; an explicit budget never moves; on demand stays $5", async () => {
@@ -1261,8 +1265,8 @@ flow(
           throw new Error(`kortix apps stop: exit ${stop.exitCode}, stderr ${stop.stderr}`);
         }
         const ls = await cli.run(["apps", "ls", "--project", project.id]);
-        if (ls.exitCode !== 0 || !new RegExp(`${slug}\\s+static\\s`).test(ls.stdout)) {
-          throw new Error(`kortix apps ls does not print static: ${ls.stdout}`);
+        if (ls.exitCode !== 0 || !new RegExp(`${slug}\\s+web\\s+static\\s`).test(ls.stdout)) {
+          throw new Error(`kortix apps ls does not print static: exit ${ls.exitCode}, stdout ${ls.stdout}, stderr ${ls.stderr}`);
         }
         const home = await page("/");
         if (home.status !== 200 || !home.text.includes("<title>v1</title>")) throw new Error(`not served after stop: ${home.status}`);

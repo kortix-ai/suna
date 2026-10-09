@@ -31,13 +31,18 @@ import {
 const MIGRATIONS_DIR = join(import.meta.dir, '../../../../../packages/db/migrations');
 
 /** Every `INSERT INTO kortix.permissions (...) VALUES ...` row in the migration
- *  tree, in file order. Handles both column orders in use. */
+ *  tree, in file order, minus the leaves a later
+ *  `DELETE FROM kortix.permissions WHERE action IN (...)` retires. Handles both
+ *  column orders in use. */
 function seededCatalog(): Permission[] {
   const out = new Map<string, Permission>();
   for (const file of readdirSync(MIGRATIONS_DIR)
     .filter((f) => f.endsWith('.sql'))
     .sort()) {
     const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
+    for (const retired of sql.matchAll(/DELETE FROM kortix\.permissions WHERE action IN \(([^)]*)\)/gi)) {
+      for (const action of splitValues(retired[1])) out.delete(unquote(action));
+    }
     const inserts = sql.matchAll(
       /INSERT INTO kortix\.permissions\s*\(([^)]*)\)\s*VALUES([\s\S]*?);/gi,
     );
@@ -175,13 +180,12 @@ function seededRolePermissions(): Map<string, string[]> {
 
 /**
  * Grants a later migration copies from an Apps leaf with INSERT ... SELECT
- * (20261006180000000: every role holding project.app.read / .write also gets
- * project.backend.read / .write). The parser above reads only literal rows, so
- * the fixture applies the same copy rule.
+ * (20261009115640000: every role holding project.app.write also gets
+ * project.app.admin). The parser above reads only literal rows, so the
+ * fixture applies the same copy rule.
  */
 const MIRRORED: Record<string, string> = {
-  'project.app.read': 'project.backend.read',
-  'project.app.write': 'project.backend.write',
+  'project.app.write': 'project.app.admin',
 };
 const withMirrored = (actions: readonly string[]): string[] => [
   ...actions,
@@ -219,7 +223,7 @@ function sorted(set: Iterable<string>): string[] {
 
 describe('the area table covers the catalog', () => {
   test('the seeded catalog is the shape the matrix expects (drift alarm)', () => {
-    expect(PROJECT_LEAVES.length).toBe(50);
+    expect(PROJECT_LEAVES.length).toBe(49);
     expect(ACCOUNT_LEAVES.length).toBe(29);
     // The retired spellings must not come back: `project.cr.*` collapsed into
     // `project.gitops.*` (the same capability named twice), and `trigger.*` was
@@ -286,14 +290,14 @@ describe('foldSelection → expandFold is lossless', () => {
     const fold = foldSelection('project', CATALOG, new Set());
     expect([...expandFold(fold)]).toEqual([]);
     expect(fold.selectedCount).toBe(0);
-    expect(fold.totalCount).toBe(50);
+    expect(fold.totalCount).toBe(49);
   });
 
   test('a full project role round-trips', () => {
     const selected = new Set(PROJECT_LEAVES);
     const fold = foldSelection('project', CATALOG, selected);
     expect(sorted(expandFold(fold))).toEqual(sorted(selected));
-    expect(fold.selectedCount).toBe(50);
+    expect(fold.selectedCount).toBe(49);
     expect(fold.areas.every((a) => a.view.state !== 'partial' && a.edit.state !== 'partial')).toBe(
       true,
     );

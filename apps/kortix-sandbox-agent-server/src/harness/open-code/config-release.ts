@@ -14,23 +14,23 @@ import {
   releaseDir,
   verifyRelease,
   verifyReleaseDetail,
-} from '@/services/config-release/boot-config'
+} from '@/services/config-provider/boot-config'
 import {
   configReleaseApiFrom,
   fetchConfigReleaseDescriptor,
   isFeatureDisabledError,
   type ConfigReleaseApi,
-} from '@/services/config-release/api-client'
-import type { ConfigReleaseDescriptor } from '@/services/config-release/descriptor'
+} from '@/services/config-provider/api-client'
+import type { ConfigReleaseDescriptor } from '@/services/config-provider/descriptor'
 import {
   ConvergeBusyError,
   agentRepointSentence,
   deliverGovernance,
   effectiveReleaseId,
   manifestFromDescriptor,
-} from '@/services/config-release/release'
-import { clearConfigReleaseNotice, writeConfigReleaseNotice } from '@/services/config-release/notice'
-import { obtainRelease } from '@/services/config-release/obtain'
+} from '@/services/config-provider/release'
+import { clearConfigReleaseNotice, writeConfigReleaseNotice } from '@/services/config-provider/notice'
+import { obtainRelease } from '@/services/config-provider/obtain'
 import { MAX_SWAP_DELAY_MS } from '../contract/control'
 import { sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
 import { logger } from '@/lib/log/logger'

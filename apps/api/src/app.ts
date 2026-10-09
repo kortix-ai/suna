@@ -163,6 +163,11 @@ app.use('/v1/platform/boot-timeline', supabaseAuth);
 // pins this route too.
 app.use('/v1/platform/runtime-projection', supabaseAuth);
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
+// A project's sign-in token issuer: public OpenID configuration and key set
+// (apps/token-issuer-routes.ts). Mounted BEFORE projectsApp, whose `/*`
+// supabaseAuth would otherwise 401 an anonymous verifier.
+import { tokenIssuerApp } from './apps/token-issuer-routes';
+app.route('/v1/projects', tokenIssuerApp); // /v1/projects/:projectId/{.well-known/openid-configuration,jwks.json}
 registerAllProjectRoutes();
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
 // /v1/mcp — the hosted MCP server, bound to the caller's token like the CLI.
@@ -274,10 +279,6 @@ app.route('/v1/approval-links', approvalLinksApp); // GET /v1/approval-links/:to
 import { publicSessionSharesApp } from './public-session-shares';
 app.route('/v1/public/session-shares', publicSessionSharesApp); // /v1/public/session-shares/:shareId[/messages]
 
-// A Kortix Backend's token issuer: public OpenID configuration and key set, so
-// any verifier finds the key from a token's `iss` (backends/discovery.ts).
-import { backendsPublicApp } from './backends/discovery';
-app.route('/v1/backends', backendsPublicApp); // /v1/backends/:backendId/{.well-known/openid-configuration,jwks.json}
 
 // Setup — local/self-hosted only. Hidden when billing is enabled so the admin
 // surface isn't exposed on managed/cloud deployments.

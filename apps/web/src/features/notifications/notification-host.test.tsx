@@ -8,25 +8,39 @@ Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, con
 /**
  * `NotificationHost` against fakes: the SDK inbox, the auth client, Web Push,
  * the service worker container, the window clock and the page visibility.
- * Each test pins one KRTX-1742 review fix.
+ * Each test pins one KRTX-1742 review fix, or the `notification_center` gate.
  */
 
 // ── fakes ──────────────────────────────────────────────────────────────────
 let rows: InboxNotification[] = [];
 const markReadCalls: string[][] = [];
 let refetches = 0;
+let inboxReads = 0;
 const refetch = async () => {
   refetches += 1;
 };
 mock.module('@kortix/sdk/react', () => ({
-  useNotificationInbox: () => ({
-    data: { notifications: rows, unread_count: 0, next_before: null },
-    refetch,
-    markRead: async (ids: string[]) => {
-      markReadCalls.push(ids);
-    },
-  }),
+  useNotificationInbox: () => {
+    inboxReads += 1;
+    return {
+      data: { notifications: rows, unread_count: 0, next_before: null },
+      refetch,
+      markRead: async (ids: string[]) => {
+        markReadCalls.push(ids);
+      },
+    };
+  },
   useNotificationPreferences: () => ({ data: undefined }),
+}));
+
+/** The `notification_center` flag, and the project id the host asked about. */
+let center = true;
+const centerAsked: (string | null | undefined)[] = [];
+mock.module('./use-notification-center', () => ({
+  useNotificationCenter: (projectId?: string | null) => {
+    centerAsked.push(projectId);
+    return center;
+  },
 }));
 
 type AuthListener = (event: string) => void;
@@ -67,12 +81,20 @@ mock.module('@/components/ui/button', () => ({ Button: 'button' }));
 const t = (key: string) => key;
 mock.module('@/i18n/use-translations', () => ({ useTranslations: () => t }));
 mock.module('@/lib/navigation/router-bridge', () => ({ softNavigate: () => {} }));
-mock.module('next/navigation', () => ({ useSearchParams: () => null }));
+let pathname = '/projects/p1';
+mock.module('next/navigation', () => ({ useSearchParams: () => null, usePathname: () => pathname }));
+const sent: { fromInbox?: boolean }[] = [];
+const mirrored: unknown[] = [];
 mock.module('@/lib/web-notifications', () => ({
   isTabHidden: () => true,
   isViewingSession: () => false,
-  sendWebNotification: () => null,
-  setServerPushPreferences: () => {},
+  sendWebNotification: (payload: { fromInbox?: boolean }) => {
+    sent.push(payload);
+    return null;
+  },
+  setServerPushPreferences: (kinds: unknown) => {
+    mirrored.push(kinds);
+  },
 }));
 
 // ── minimum browser surface ────────────────────────────────────────────────
@@ -138,6 +160,12 @@ beforeEach(() => {
   rows = [];
   markReadCalls.length = 0;
   refetches = 0;
+  inboxReads = 0;
+  center = true;
+  centerAsked.length = 0;
+  pathname = '/projects/p1';
+  sent.length = 0;
+  mirrored.length = 0;
   supported = true;
   subscribed = false;
   syncCalls.length = 0;
@@ -223,5 +251,66 @@ describe('NotificationHost', () => {
       'arrival.openReminders',
       'arrival.openTriggers',
     ]);
+  });
+});
+
+/**
+ * KRTX-1742 behind `notification_center`: with the flag off for the project in
+ * the URL, the host is the pre-KRTX-1742 nothing, except that a "no" to
+ * browser notifications still removes a subscription made elsewhere.
+ */
+describe('NotificationHost — the notification_center flag', () => {
+  test('asks about the project in the URL, and about none on an account page', async () => {
+    await mount();
+    expect(centerAsked.at(-1)).toBe('p1');
+    pathname = '/projects';
+    await rerender();
+    expect(centerAsked.at(-1)).toBeNull();
+  });
+
+  test('flag off: no inbox, no subscription, no clock, no worker listener', async () => {
+    center = false;
+    await mount();
+    expect(inboxReads).toBe(0);
+    expect(syncCalls).toEqual([]);
+    expect(intervals).toHaveLength(0);
+    expect(workerListeners.size).toBe(0);
+    expect(mirrored).toEqual([]);
+  });
+
+  test('flag off: turning browser notifications off still removes the subscription', async () => {
+    center = false;
+    await mount();
+    await act(async () => {
+      useWebNotificationStore.setState({
+        preferences: { ...useWebNotificationStore.getState().preferences, enabled: false },
+      });
+    });
+    expect(syncCalls).toEqual([false]);
+  });
+
+  test('leaving a flag-on project for a flag-off one keeps the subscription', async () => {
+    await mount();
+    expect(syncCalls).toEqual([true]);
+    center = false;
+    pathname = '/projects/p2';
+    await rerender();
+    expect(syncCalls).toEqual([true]);
+    // The Push mirror is cleared with the part that filled it.
+    expect(mirrored.at(-1)).toBeUndefined();
+  });
+
+  test('an arrival shown as an OS notification is marked as an inbox row', async () => {
+    const world = globalThis as { Notification?: unknown };
+    world.Notification = { permission: 'granted' };
+    try {
+      await mount();
+      rows = [row()];
+      await rerender();
+      expect(sent).toHaveLength(1);
+      expect(sent[0].fromInbox).toBe(true);
+    } finally {
+      delete world.Notification;
+    }
   });
 });

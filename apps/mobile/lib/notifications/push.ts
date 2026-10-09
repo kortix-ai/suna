@@ -11,14 +11,14 @@
  * before the inbox sends alone, with no `notificationId`. An automation alert
  * has no session: its tap opens the project.
  * This file holds the matching client side: the Android channels, the
- * kind → channel/sound map, the payload parser, the foreground rule, and
- * the preference wire format.
+ * kind → channel/sound map, the payload parser, the foreground rule, the
+ * preference wire format, and this phone's per-kind switches.
  *
  * Pure: no React, React Native, or expo imports (unit-tested under bun test).
  */
 
 import { INBOX_NOTIFICATION_KINDS, type InboxNotificationKind, type NotificationPreferencesPatch } from '@kortix/sdk';
-import type { DeviceNotificationPreferences } from '@/stores/notification-store';
+import type { NotificationPreferences } from '@/stores/notification-store';
 
 /** The pre-inbox `type` of the 4 session kinds (`LEGACY_PUSH_TYPE` on the server). */
 const LEGACY_PUSH_TYPES: ReadonlyMap<string, InboxNotificationKind> = new Map([
@@ -171,46 +171,37 @@ export interface ServerPreferences {
   play_sound: boolean;
 }
 
-/** The per-kind switches a phone stored before KRTX-1742, and the inbox kind each one decided. */
-const LEGACY_KINDS = {
-  onCompletion: 'turn_done',
-  onError: 'turn_error',
-  onQuestion: 'question',
-  onPermission: 'permission',
-} as const satisfies Record<string, InboxNotificationKind>;
-type LegacyKindKey = keyof typeof LEGACY_KINDS;
-
-/** This phone's switches as persisted: an app from before KRTX-1742 also stored the per-kind ones. */
-type StoredPreferences = DeviceNotificationPreferences & Partial<Record<LegacyKindKey, boolean>>;
+/** This phone's switch for each session kind (Settings → Notifications). */
+export type DeviceKindKey = 'onCompletion' | 'onError' | 'onQuestion' | 'onPermission';
+export const DEVICE_KIND_SWITCH: Partial<Record<InboxNotificationKind, DeviceKindKey>> = {
+  turn_done: 'onCompletion',
+  turn_error: 'onError',
+  question: 'onQuestion',
+  permission: 'onPermission',
+};
 
 /**
- * The kinds this phone turned off before KRTX-1742, as a patch for the user's
- * record (`updateNotificationPreferences`). Null when it turned none off. The
- * patch applies to the whole user: every device and Web Push.
+ * The kinds this phone turned off, as a patch for the user's record
+ * (`updateNotificationPreferences`). Null when it turned none off. The patch
+ * applies to the whole user: every device and Web Push of a project with
+ * `notification_center` on.
  */
-export function legacyKindPatch(prefs: StoredPreferences): NotificationPreferencesPatch | null {
+export function legacyKindPatch(prefs: NotificationPreferences): NotificationPreferencesPatch | null {
   const kinds: NotificationPreferencesPatch['kinds'] = {};
-  for (const key of Object.keys(LEGACY_KINDS) as LegacyKindKey[]) {
-    if (prefs[key] === false) kinds[LEGACY_KINDS[key]] = { push: false };
+  for (const [kind, key] of Object.entries(DEVICE_KIND_SWITCH) as [InboxNotificationKind, DeviceKindKey][]) {
+    if (prefs[key] === false) kinds[kind] = { push: false };
   }
   return Object.keys(kinds).length ? { kinds } : null;
 }
 
-/**
- * This phone's switches in the wire format of `POST /notifications/device-token`.
- * After `legacyMigrated`, the per-kind columns are always on: the user's record
- * (Settings → Notifications, `useNotificationPreferences`) decides each kind on
- * every device (KRTX-1742). Before it, a kind this phone turned off stays off
- * on its device row, so the opt-out holds until the record has it.
- */
-export function serverPreferences(prefs: StoredPreferences, legacyMigrated: boolean): ServerPreferences {
-  const legacy: Partial<Record<LegacyKindKey, boolean>> = legacyMigrated ? {} : prefs;
+/** The local preferences in the wire format of `POST /notifications/device-token`. */
+export function serverPreferences(prefs: NotificationPreferences): ServerPreferences {
   return {
     enabled: prefs.enabled,
-    on_completion: legacy.onCompletion ?? true,
-    on_error: legacy.onError ?? true,
-    on_question: legacy.onQuestion ?? true,
-    on_permission: legacy.onPermission ?? true,
+    on_completion: prefs.onCompletion,
+    on_error: prefs.onError,
+    on_question: prefs.onQuestion,
+    on_permission: prefs.onPermission,
     play_sound: prefs.playSound,
   };
 }

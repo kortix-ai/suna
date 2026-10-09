@@ -51,26 +51,28 @@ test('project(id) handle binds the id and hits the right endpoint', async () => 
   expect(last().method).toBe('GET');
 });
 
-test('project(id).backends binds the project id on every call', async () => {
-  const backends = kortix.project('PID123').backends;
-  for (const fn of ['list', 'create', 'get', 'credentials', 'remove', 'resize', 'waitForOperation', 'backups', 'snapshot', 'restore'] as const) {
-    expect(typeof backends[fn]).toBe('function');
-  }
-  await backends.list().catch(() => undefined);
-  expect(last().url).toContain('/projects/PID123/backends');
-  await backends.credentials('B1').catch(() => undefined);
-  expect(last().url).toContain('/projects/PID123/backends/B1/credentials');
-  await backends.backups('B1').catch(() => undefined);
-  expect(last().url).toContain('/projects/PID123/backends/B1/backups');
-  await backends.restore('B1', 'S1').catch(() => undefined);
-  expect(last().url).toContain('/projects/PID123/backends/B1/restore');
-  await backends.rotateAdminKey('B1').catch(() => undefined);
-  expect(last().url).toContain('/projects/PID123/backends/B1/rotate-admin-key');
-  await backends.logs('B1', { lines: 50 }).catch(() => undefined);
-  expect(last().url).toContain('/projects/PID123/backends/B1/logs?lines=50');
-  await backends.deleteSnapshot('B1', 'S1').catch(() => undefined);
-  expect(last().url).toContain('/projects/PID123/backends/B1/snapshots/S1');
-  expect(last().method).toBe('DELETE');
+test('project(id).apps binds the project id on every capability call', async () => {
+  const apps = kortix.project('PID123').apps;
+  await apps.snapshots.list('A1').catch(() => undefined);
+  expect(last()).toMatchObject({ method: 'GET', url: 'http://test.local/projects/PID123/apps/A1/snapshots' });
+  await apps.snapshots.create('A1').catch(() => undefined);
+  expect(last()).toMatchObject({ method: 'POST', url: 'http://test.local/projects/PID123/apps/A1/snapshots' });
+  await apps.snapshots.delete('A1', 'S1').catch(() => undefined);
+  expect(last()).toMatchObject({ method: 'DELETE', url: 'http://test.local/projects/PID123/apps/A1/snapshots/S1' });
+  await apps.snapshots.restore('A1', 'S1').catch(() => undefined);
+  expect(last()).toMatchObject({ method: 'POST', url: 'http://test.local/projects/PID123/apps/A1/restore', body: { snapshot_id: 'S1' } });
+  await apps.credentials('A1').catch(() => undefined);
+  expect(last().url).toBe('http://test.local/projects/PID123/apps/A1/credentials');
+  await apps.rotateCredentials('A1').catch(() => undefined);
+  expect(last().url).toBe('http://test.local/projects/PID123/apps/A1/rotate-credentials');
+  await apps.token('A1').catch(() => undefined);
+  expect(last()).toMatchObject({ method: 'POST', url: 'http://test.local/projects/PID123/apps/A1/token' });
+  await apps.log('A1', { lines: 50 }).catch(() => undefined);
+  expect(last().url).toBe('http://test.local/projects/PID123/apps/A1/logs?lines=50');
+  await apps.remove('A1', { confirm: 'db' }).catch(() => undefined);
+  expect(last()).toMatchObject({ method: 'DELETE', url: 'http://test.local/projects/PID123/apps/A1?confirm=db' });
+  expect(typeof apps.waitUntilReady).toBe('function');
+  expect('backends' in kortix.project('PID123')).toBe(false);
 });
 
 test('project(id).apps exposes the complete App lifecycle with the project id bound', async () => {

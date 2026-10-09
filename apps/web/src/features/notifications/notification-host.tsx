@@ -4,9 +4,16 @@
  * Notification behavior that does not depend on the page (KRTX-1742). Mounted
  * once by `RootQueryHosts`; does nothing while signed out.
  *
+ * Always, while signed in: when "Enable notifications" is off, or the browser
+ * blocks it, this browser's Web Push subscription is removed. A subscription
+ * made on one project must end on any page once the person says no.
+ *
+ * Only while the `notification_center` flag is on for the project in the URL
+ * (on a page without one: for any cached project, `useNotificationCenter`):
+ *
  * 1. Web Push: this browser subscribes while "Enable notifications" is on and
- *    the browser allows it, and unsubscribes when it is turned off. The switch
- *    never waits for it. The MFA step-up registers it again, at aal2.
+ *    the browser allows it. The switch never waits for it. The MFA step-up
+ *    registers it again, at aal2.
  * 2. The Push choice per kind, mirrored into `web-notifications.ts`, so an
  *    in-page OS notification obeys the same choice as the phone.
  * 3. Arrivals: a new unread row toasts, and becomes an OS notification where
@@ -14,6 +21,9 @@
  *    There, a hidden window keeps checking the inbox once a minute.
  * 4. `?notification=<id>` on any page, or the service worker's message for a
  *    clicked notification, marks that row read.
+ *
+ * Leaving a flag-on project for a flag-off one unmounts that part and keeps
+ * the subscription: the other project's pushes still arrive.
  */
 
 import { Button } from '@/components/ui/button';
@@ -27,11 +37,12 @@ import {
   sendWebNotification,
   setServerPushPreferences,
 } from '@/lib/web-notifications';
+import { projectIdFromPathname } from '@/stores/project-switch-store';
 import { useTurnAttentionStore } from '@/stores/turn-attention-store';
 import { useWebNotificationStore } from '@/stores/web-notification-store';
 import type { InboxNotification } from '@kortix/sdk';
 import { useNotificationInbox, useNotificationPreferences } from '@kortix/sdk/react';
-import { useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { createElement, useEffect, useRef } from 'react';
 import {
   NOTIFICATION_PARAM,
@@ -45,6 +56,7 @@ import {
   webNotificationType,
   withoutNotificationParam,
 } from './notification-rows';
+import { useNotificationCenter } from './use-notification-center';
 import { hasWebPushSubscription, syncWebPush, wantsWebPush, webPushSupported } from './web-push';
 
 /** The inbox check of a hidden window, the SDK poll's interval. */
@@ -63,6 +75,20 @@ export function NotificationHost() {
 }
 
 function SignedInNotificationHost({ userId }: { userId: string }) {
+  const notificationCenter = useNotificationCenter(projectIdFromPathname(usePathname()));
+  const enabled = useWebNotificationStore((s) => s.preferences.enabled);
+  const permission = useWebNotificationStore((s) => s.permission);
+
+  useEffect(() => {
+    if (!webPushSupported()) return;
+    if (!wantsWebPush({ supported: true, enabled, permission })) void syncWebPush(false);
+  }, [enabled, permission, userId]);
+
+  return notificationCenter ? <NotificationCenterHost userId={userId} /> : null;
+}
+
+/** Everything else. Unmounting it never removes the Web Push subscription. */
+function NotificationCenterHost({ userId }: { userId: string }) {
   const t = useTranslations('notifications');
   const { supabase } = useAuth();
   const enabled = useWebNotificationStore((s) => s.preferences.enabled);
@@ -77,7 +103,7 @@ function SignedInNotificationHost({ userId }: { userId: string }) {
 
   useEffect(() => {
     if (!webPushSupported()) return;
-    void syncWebPush(wantsWebPush({ supported: true, enabled, permission }));
+    if (wantsWebPush({ supported: true, enabled, permission })) void syncWebPush(true);
   }, [enabled, permission, userId]);
 
   // The MFA step-up upgrades this sign-in to aal2 in place, with no reload.
@@ -131,8 +157,10 @@ function SignedInNotificationHost({ userId }: { userId: string }) {
     return () => container.removeEventListener('message', onMessage);
   }, []);
 
+  // Read only for a notification-center payload; cleared when this unmounts.
   useEffect(() => {
     setServerPushPreferences(preferences?.kinds);
+    return () => setServerPushPreferences(undefined);
   }, [preferences]);
 
   const seen = useRef<Set<string> | null>(null);
@@ -196,6 +224,7 @@ function SignedInNotificationHost({ userId }: { userId: string }) {
         onClick: () => {
           markRead.current([row.id]).catch(() => {});
         },
+        fromInbox: true,
       });
     }
   }, [rows, t]);

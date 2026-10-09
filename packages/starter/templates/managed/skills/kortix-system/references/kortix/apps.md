@@ -1,6 +1,8 @@
 # Kortix Apps
 
-Kortix Apps deploy static sites and HTTP applications from a project. Each App
+Kortix Apps deploy static sites, HTTP applications and Convex backends
+(kind `convex`) from a project. The `kortix-apps` system skill covers the
+`convex` kind, sign-in tokens and bindings. Each App
 has one stable URL. Each deployment is immutable. The active deployment pointer
 changes only after the new deployment is ready.
 
@@ -197,6 +199,8 @@ the block's `resources`, `idle_timeout_seconds`, `always_on`, and
 
 | Field | Meaning |
 | --- | --- |
+| `kind` | `web` (default) or `convex`. Fixed at create. A `convex` block deploys `path` (a `convex/` directory) with the Convex CLI. |
+| `uses` | Apps of the project, by slug, this App uses: it may bind to them and mint their sign-in tokens. Replaces the App's list on every deploy. |
 | `path` | Source path relative to the manifest. Default `.`. |
 | `type` | `static`, `bundle`, `dockerfile`, or `oci_image`. |
 | `image` | Public OCI image reference. Required for `oci_image`. |
