@@ -121,6 +121,9 @@ export function useShareFolder() {
       level: FolderLevel;
     }) => shareFolder(input.driveId, input),
     onSettled: invalidate,
+    // The dialog toasts the outcome itself; no retry of a change already applied.
+    retry: false,
+    onError: () => undefined,
   });
 }
 
@@ -129,6 +132,9 @@ export function useUnshareFolder() {
   return useMutation({
     mutationFn: (input: { driveId: string; grantId: string }) => unshareFolder(input.driveId, input.grantId),
     onSettled: invalidate,
+    // The dialog toasts the outcome itself; no retry of a change already applied.
+    retry: false,
+    onError: () => undefined,
   });
 }
 
