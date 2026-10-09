@@ -1,6 +1,9 @@
 {
-  "source_hash": "215f75c665332472e0521ce43a62d992042a55fa0233a556456666cc760111ba",
+  "source_hash": "f0a0d1e91a5097d7258df9f8a9679e5dcdae28e628d98b208cf305c37f333e58",
   "diff_files": [
+    "apps/api/src/apps/kinds/convex/hosts.integration.test.ts",
+    "apps/api/src/apps/kinds/convex/provision.integration.test.ts",
+    "apps/api/src/apps/kinds/convex/routes.integration.test.ts",
     "apps/api/src/projects/git/merge-diff.test.ts",
     "apps/api/src/projects/git/merge.ts",
     "apps/api/src/projects/git/types.ts",
@@ -19,13 +22,13 @@
     "apps/web/translations/zh.json",
     "packages/sdk/src/core/rest/projects-client/change-requests.ts"
   ],
-  "diff_hash": "ffc2ad27582c0177a80077fbf38a049576fb81622007853b42e7854294221421",
-  "head": "7ce825a0b4cac5d252c608026490122c884d9957",
+  "diff_hash": "a2f9da24ddf0601f1470e60c45a2b2371fb509d3a6dbf3dd9d0c1305596db918",
+  "head": "2f55faf76db8b2aaa2cd5cfdb3c1b0b28fc66feb",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-09T18:44:22.556Z"
+  "at": "2026-10-09T21:08:42.294Z"
 }
