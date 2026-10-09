@@ -1313,11 +1313,18 @@ flow(
     });
 
     await ctx.step('using the session drops the marker', async () => {
-      const r = await owner.post(
+      // A claim needs a placed box. On Platinum the sandbox row gets its
+      // region a few seconds after /warm, and until then the claim is 409.
+      const claim = () => owner.post(
         '/v1/projects/:projectId/sessions/warm/claim',
         { session_id: warmSessionId },
         { params: { projectId: p.id } },
       );
+      let r = await claim();
+      for (let attempt = 0; r.statusCode === 409 && attempt < 60; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 2_000));
+        r = await claim();
+      }
       r.status(200).body().has('$.session_id', warmSessionId);
       if ((r.json<any>().metadata ?? {}).warm !== undefined) {
         throw new Error('The warm marker survived first use');
