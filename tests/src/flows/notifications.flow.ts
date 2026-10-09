@@ -674,7 +674,8 @@ flow(
         );
         if (!stamped.rows[0]?.emailed_at) throw new Error(`emailed_at not stamped: ${JSON.stringify(stamped.rows)}`);
         const mailpit = ctx.env.mailpitUrl;
-        if (!mailpit) return; // a target without Mailpit proves the send by the stamp alone
+        if (!mailpit && ctx.env.target === 'local') throw new Error('the local profile always has Mailpit: KE2E_MAILPIT_URL is missing');
+        if (!mailpit) return; // a deployed target without Mailpit proves the send by the stamp alone
         const subject = (message: { Subject: string }) => message.Subject === `Automation failing: ${name}`;
         await waitForMailpit(mailpit, creator.email!, (messages) => messages.some(subject));
         expectCount((await mailpitMessagesTo(mailpit, creator.email!)).filter(subject).length, 1, "the creator's alert emails");
