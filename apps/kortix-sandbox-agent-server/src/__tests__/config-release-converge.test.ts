@@ -12,17 +12,17 @@ import { createHash } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
-import { pointBootLink, readBootConfigPointer, readBootLinkTarget, readQuarantine, releaseDir } from '@/services/config-release/boot-config'
-import type { ConfigReleaseApi } from '@/services/config-release/api-client'
+import { pointBootLink, readBootConfigPointer, readBootLinkTarget, readQuarantine, releaseDir } from '@/services/config-provider/boot-config'
+import type { ConfigReleaseApi } from '@/services/config-provider/api-client'
 import type { OpenCodeConfig } from '@/harness/open-code/config'
-import { CONFIG_RELEASE_NOTICE_PATH, clearConfigReleaseNotice, writeConfigReleaseNotice } from '@/services/config-release/notice'
+import { CONFIG_RELEASE_NOTICE_PATH, clearConfigReleaseNotice, writeConfigReleaseNotice } from '@/services/config-provider/notice'
 import { releaseSourcePaths } from '@/harness/open-code/project-layout'
 import {
   __setDaemonShuttingDownForTests,
   isDaemonShuttingDown,
   resetDaemonShutdownStateForTests,
 } from '@/lib/shutdown-state'
-import { ConvergeBusyError } from '@/services/config-release/release'
+import { ConvergeBusyError } from '@/services/config-provider/release'
 import {
   configReleaseReport,
   convergeConfigRelease,
@@ -1201,7 +1201,7 @@ describe('the session is told which commit it runs', () => {
     // every spawn, so the note survives the restart the convergence performs.
     const lifecycle = readFileSync(join(import.meta.dir, '..', 'harness', 'open-code', 'lifecycle.ts'), 'utf8')
     expect(lifecycle).toContain('configReleaseNoticePath: configReleaseNoticePath()')
-    expect(lifecycle).toContain("import { configReleaseNoticePath } from '@/services/config-release/notice'")
+    expect(lifecycle).toContain("import { configReleaseNoticePath } from '@/services/config-provider/notice'")
     expect(noteFor({ source_commit: 'a'.repeat(40), config_dir: DIR })).toBe('written')
     expect(readNotice()).toContain('kortix sessions reload ses-1')
   })

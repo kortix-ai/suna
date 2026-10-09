@@ -4,12 +4,12 @@ import {
   KortixMemberError,
   readKortixMember,
   requireKortixMember,
-  verifyKortixMemberToken,
+  verifyKortixToken,
 } from './kortix-member';
 
 // One member, in each shape a runtime hands it over.
 const CLAIMS = {
-  iss: 'https://kortix.com/backends/b-1',
+  iss: 'https://api.example.test/v1/projects/p-1',
   aud: 'b-1',
   sub: 'user-1',
   email: 'ada@example.test',
@@ -133,7 +133,7 @@ describe('requireKortixMember', () => {
   });
 });
 
-// ── verifyKortixMemberToken: a real ES256 key, signed the way Kortix signs ──
+// ── verifyKortixToken: a real ES256 key, signed the way Kortix signs ──
 
 const b64url = (bytes: Uint8Array | string) =>
   Buffer.from(bytes).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -160,10 +160,10 @@ const now = Math.floor(Date.now() / 1000);
 const live = { ...CLAIMS, iat: now, exp: now + 900 };
 const options = (jwks: KortixMemberKeySet) => ({ jwks, issuer: CLAIMS.iss, audience: CLAIMS.aud });
 
-describe('verifyKortixMemberToken', () => {
+describe('verifyKortixToken', () => {
   test('verifies the signature and returns the member', async () => {
     const { jwks, sign } = await issuer();
-    expect(await verifyKortixMemberToken(await sign(live), options(jwks))).toEqual(MEMBER);
+    expect(await verifyKortixToken(await sign(live), options(jwks))).toEqual(MEMBER);
   });
 
   test('takes the key set as an object, JSON text, or the data: URI Kortix sets in KORTIX_AUTH_JWKS', async () => {
@@ -172,7 +172,7 @@ describe('verifyKortixMemberToken', () => {
     const json = JSON.stringify(jwks);
     const dataUri = `data:text/plain;charset=utf-8;base64,${Buffer.from(json).toString('base64')}`;
     for (const form of [jwks, json, dataUri]) {
-      expect((await verifyKortixMemberToken(token, options(form))).userId).toBe('user-1');
+      expect((await verifyKortixToken(token, options(form))).userId).toBe('user-1');
     }
   });
 
@@ -184,8 +184,8 @@ describe('verifyKortixMemberToken', () => {
       return Response.json(jwks);
     }) as unknown as typeof fetch;
     const opts = { ...options('https://example.test/jwks.json'), fetch: fetchImpl };
-    await verifyKortixMemberToken(await sign(live), opts);
-    await verifyKortixMemberToken(await sign(live), opts);
+    await verifyKortixToken(await sign(live), opts);
+    await verifyKortixToken(await sign(live), opts);
     expect(fetched).toBe(1);
   });
 
@@ -196,15 +196,15 @@ describe('verifyKortixMemberToken', () => {
     process.env.KORTIX_AUTH_ISSUER = CLAIMS.iss;
     process.env.KORTIX_AUTH_AUDIENCE = CLAIMS.aud;
     try {
-      expect((await verifyKortixMemberToken(await sign(live))).userId).toBe('user-1');
+      expect((await verifyKortixToken(await sign(live))).userId).toBe('user-1');
     } finally {
       process.env = saved;
     }
   });
 
-  const rejects = async (token: string, opts: Parameters<typeof verifyKortixMemberToken>[1]) => {
+  const rejects = async (token: string, opts: Parameters<typeof verifyKortixToken>[1]) => {
     try {
-      await verifyKortixMemberToken(token, opts);
+      await verifyKortixToken(token, opts);
     } catch (error) {
       return error instanceof KortixMemberError ? error.code : `other: ${String(error)}`;
     }
@@ -244,9 +244,27 @@ describe('verifyKortixMemberToken', () => {
     }
   });
 
+  test('refuses when no audience is configured: one project key signs every App, so `aud` is the only separation', async () => {
+    const { jwks, sign } = await issuer();
+    const saved = { ...process.env };
+    delete process.env.KORTIX_AUTH_AUDIENCE;
+    try {
+      // A token Kortix minted for another App of the same project (aud = that App).
+      const otherApp = await sign({ ...live, aud: 'another-app' });
+      expect(await rejects(otherApp, { jwks, issuer: CLAIMS.iss })).toBe('unauthenticated');
+      expect(await rejects(otherApp, { jwks, issuer: CLAIMS.iss, audience: '' })).toBe('unauthenticated');
+      // The refusal names the missing setting.
+      await expect(verifyKortixToken(otherApp, { jwks, issuer: CLAIMS.iss })).rejects.toThrow('KORTIX_AUTH_AUDIENCE');
+      // `audience: false` is the explicit opt-out: accept a token for any App of the key set.
+      expect((await verifyKortixToken(otherApp, { jwks, issuer: CLAIMS.iss, audience: false })).userId).toBe('user-1');
+    } finally {
+      process.env = saved;
+    }
+  });
+
   test('tolerates 60 s of clock skew on expiry, no more', async () => {
     const { jwks, sign } = await issuer();
-    expect((await verifyKortixMemberToken(await sign({ ...live, exp: now - 30 }), options(jwks))).userId).toBe('user-1');
+    expect((await verifyKortixToken(await sign({ ...live, exp: now - 30 }), options(jwks))).userId).toBe('user-1');
     expect(await rejects(await sign({ ...live, exp: now - 120 }), options(jwks))).toBe('unauthenticated');
   });
 });

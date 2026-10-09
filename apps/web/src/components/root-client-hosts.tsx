@@ -106,7 +106,8 @@ export function RootQueryHosts() {
           is held. */}
       <ImpersonationBanner />
       {/* Web Push for this browser, new-notification toasts, and
-          `?notification=<id>` read marks. Signed-in only (KRTX-1742). */}
+          `?notification=<id>` read marks. Signed-in only, and only with the
+          `notification_center` flag on (KRTX-1742). */}
       <NotificationHost />
     </>
   );

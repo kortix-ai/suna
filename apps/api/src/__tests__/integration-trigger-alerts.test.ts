@@ -9,6 +9,10 @@
  * alerts the trigger's watcher, not the account owner. Session creation is
  * replaced by the billing gate alone (no git, model or sandbox step runs).
  * The senders are captured through the notifier seam; every query is real.
+ *
+ * Alerts need the project's `notification_center` flag. A project with it off
+ * (the default) gets no edge, no row and no email; an edge left from an on
+ * period clears without a word.
  */
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
 import {
@@ -51,7 +55,7 @@ const { drainTriggerExecutionQueue } = await import('../projects/lib/trigger-sch
 const { drainSessionLifecycleQueue } = await import('../projects/session-lifecycle');
 const { markGitTriggerFired } = await import('../projects/lib/trigger-fire');
 const { recordTriggerRunEnd } = await import('../projects/lib/trigger-run-outcome');
-const { raiseTriggerAlert, setTriggerAlertNotifierForTest, settleTriggerAlerts } = await import('../projects/lib/trigger-alerts');
+const { clearTriggerAlert, raiseTriggerAlert, setTriggerAlertNotifierForTest, settleTriggerAlerts } = await import('../projects/lib/trigger-alerts');
 const { resolveTriggerWatchers, upsertTriggerWatcher } = await import('../projects/lib/trigger-watchers');
 const { markCommandFailed } = await import('../projects/session-lifecycle/command-transitions');
 const { markTriggerRuntimeDelivered } = await import('../projects/trigger-execution-store');
@@ -64,6 +68,8 @@ const MEMBER = crypto.randomUUID();
 const DEMOTED = crypto.randomUUID();
 
 let project: SeededProject;
+/** The same account and wallet, the flag left at its default (off). */
+let legacy: SeededProject;
 const emails: Array<{ userId: string; kind: NotificationKindName }> = [];
 const billingWasEnabled = config.KORTIX_BILLING_INTERNAL_ENABLED;
 
@@ -94,9 +100,14 @@ function reminderSpec(slug: string, name: string, sessionId: string) {
   return { ...cronSpec(slug, name), sessionMode: 'pinned', pinnedSessionId: sessionId, reminder: { createdAt: new Date().toISOString() } };
 }
 
-async function seedTrigger(slug: string, spec: Record<string, unknown> = cronSpec(slug, `Trigger ${slug}`), ownerUserId: string | null = null) {
+async function seedTrigger(
+  slug: string,
+  spec: Record<string, unknown> = cronSpec(slug, `Trigger ${slug}`),
+  ownerUserId: string | null = null,
+  where: SeededProject = project,
+) {
   await db.insert(projectTriggerRuntime).values({
-    projectId: project.project_id,
+    projectId: where.project_id,
     slug,
     triggerType: 'cron',
     enabled: true,
@@ -107,9 +118,9 @@ async function seedTrigger(slug: string, spec: Record<string, unknown> = cronSpe
 }
 
 /** One due slot of `slug`, as `claimDueScheduleSlots` would have written it. */
-async function seedDueExecution(slug: string, spec: Record<string, unknown>) {
+async function seedDueExecution(slug: string, spec: Record<string, unknown>, where: SeededProject = project) {
   await db.insert(projectTriggerExecutions).values({
-    projectId: project.project_id,
+    projectId: where.project_id,
     slug,
     scheduleRevision: 'a'.repeat(64),
     scheduledFor: new Date(Date.now() - 60_000 - Math.floor(Math.random() * 1_000_000)),
@@ -125,11 +136,19 @@ async function drainCron(): Promise<void> {
   await settleTriggerAlerts();
 }
 
-async function alertRows(slug: string) {
+async function alertRows(slug: string, where: SeededProject = project) {
   return db
     .select({ userId: notifications.userId, kind: notifications.kind, title: notifications.title, body: notifications.body, emailedAt: notifications.emailedAt })
     .from(notifications)
-    .where(and(eq(notifications.projectId, project.project_id), eq(notifications.triggerSlug, slug)));
+    .where(and(eq(notifications.projectId, where.project_id), eq(notifications.triggerSlug, slug)));
+}
+
+async function runtimeOf(slug: string, where: SeededProject = project) {
+  const [runtime] = await db
+    .select()
+    .from(projectTriggerRuntime)
+    .where(and(eq(projectTriggerRuntime.projectId, where.project_id), eq(projectTriggerRuntime.slug, slug)));
+  return runtime!;
 }
 
 function usersOf(rows: Array<{ userId: string }>): string[] {
@@ -137,7 +156,8 @@ function usersOf(rows: Array<{ userId: string }>): string[] {
 }
 
 beforeAll(async () => {
-  project = await seedProject('trigger-alerts');
+  project = await seedProject('trigger-alerts', { metadata: { experimental: { notification_center: true } } });
+  legacy = await seedProject('trigger-alerts-legacy', { accountId: project.account_id });
   await insertIntoView(db, accountMembers, [
     { userId: OWNER, accountId: project.account_id, accountRole: 'owner' },
     { userId: ADMIN, accountId: project.account_id, accountRole: 'admin' },
@@ -148,6 +168,7 @@ beforeAll(async () => {
   await insertIntoView(db, projectMembers, [
     { accountId: project.account_id, projectId: project.project_id, userId: MANAGER, projectRole: 'manager' },
     { accountId: project.account_id, projectId: project.project_id, userId: MEMBER, projectRole: 'member' },
+    { accountId: legacy.account_id, projectId: legacy.project_id, userId: MEMBER, projectRole: 'member' },
   ]);
   // A paid plan with an empty wallet: the billing gate refuses every run.
   await db.execute(sql`
@@ -171,8 +192,10 @@ afterAll(async () => {
   config.KORTIX_BILLING_INTERNAL_ENABLED = billingWasEnabled;
   setTriggerAlertNotifierForTest(null);
   await db.execute(sql`DELETE FROM kortix.credit_accounts WHERE account_id = ${project.account_id}::uuid`);
-  await db.delete(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.projectId, project.project_id));
-  await removeSeeded([project]);
+  for (const where of [project, legacy]) {
+    await db.delete(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.projectId, where.project_id));
+  }
+  await removeSeeded([project, legacy]);
 });
 
 function emailsFor(kind: NotificationKindName): string[] {
@@ -560,5 +583,57 @@ describe('a run failure streak', () => {
     await recordTriggerRunEnd(end('idle'));
     await settleTriggerAlerts();
     expect((await alertRows(slug)).map((row) => row.kind).sort()).toEqual(['automation_failed', 'automation_recovered']);
+  });
+});
+
+describe('a project with the notification_center flag off', () => {
+  test('a cron trigger that dead-letters records the failure but opens no alert, row or email', async () => {
+    const slug = 'nightly-off';
+    const spec = cronSpec(slug, 'Nightly off');
+    await seedTrigger(slug, spec, null, legacy);
+    await upsertTriggerWatcher({ accountId: legacy.account_id, projectId: legacy.project_id, slug, userId: MEMBER });
+    await seedDueExecution(slug, spec, legacy);
+    emails.length = 0;
+
+    await drainCron();
+
+    const [execution] = await db
+      .select()
+      .from(projectTriggerExecutions)
+      .where(and(eq(projectTriggerExecutions.projectId, legacy.project_id), eq(projectTriggerExecutions.slug, slug)));
+    expect(execution).toMatchObject({ status: 'dead_lettered', attempts: 1 });
+    expect(await runtimeOf(slug, legacy)).toMatchObject({ lastStatus: 'failed', alertFailingSince: null, alertSource: null });
+    expect(await alertRows(slug, legacy)).toEqual([]);
+    expect(emails).toEqual([]);
+  });
+
+  test('a raise writes no edge, so turning the flag on later starts clean', async () => {
+    const slug = 'raise-off';
+    await seedTrigger(slug, cronSpec(slug, 'Raise off'), null, legacy);
+    await upsertTriggerWatcher({ accountId: legacy.account_id, projectId: legacy.project_id, slug, userId: MEMBER });
+    const raised = await raiseTriggerAlert({ projectId: legacy.project_id, accountId: legacy.account_id, slug, source: 'fire', error: 'boom' });
+    await settleTriggerAlerts();
+
+    expect(raised).toBe(false);
+    expect(await runtimeOf(slug, legacy)).toMatchObject({ alertFailingSince: null, alertSource: null });
+    expect(await alertRows(slug, legacy)).toEqual([]);
+  });
+
+  test('a clear ends an edge left from an on period without telling anyone', async () => {
+    const slug = 'clear-off';
+    await seedTrigger(slug, cronSpec(slug, 'Clear off'), null, legacy);
+    await upsertTriggerWatcher({ accountId: legacy.account_id, projectId: legacy.project_id, slug, userId: MEMBER });
+    await db
+      .update(projectTriggerRuntime)
+      .set({ alertFailingSince: new Date(Date.now() - 60_000), alertSource: 'fire' })
+      .where(and(eq(projectTriggerRuntime.projectId, legacy.project_id), eq(projectTriggerRuntime.slug, slug)));
+    emails.length = 0;
+
+    expect(await clearTriggerAlert({ projectId: legacy.project_id, slug, source: 'fire' })).toBe(true);
+    await settleTriggerAlerts();
+
+    expect(await runtimeOf(slug, legacy)).toMatchObject({ alertFailingSince: null, alertSource: null });
+    expect(await alertRows(slug, legacy)).toEqual([]);
+    expect(emails).toEqual([]);
   });
 });

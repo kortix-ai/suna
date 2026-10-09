@@ -15,19 +15,26 @@ import { createElement } from 'react';
  *  1. Browser support for the Notification API
  *  2. Permission is granted
  *  3. Master enable toggle is on
- *  4. The person's server-side Push choice for the kind (Settings >
- *     Notifications); the per-browser per-kind switches are retired
+ *  4. The kind: for a notification-center payload (an inbox row, or a
+ *     session of a project with `notification_center` on), the person's
+ *     server-side Push choice; otherwise the per-browser kind switch
  *  5. Optionally skips if tab is visible (onlyWhenHidden preference)
  *
  * Every OS notification carries the tag of the Web Push message for the same
  * event: `<type>:<sessionId>`, or `<type>:<projectId>:<triggerSlug>` for an
  * alert (`notificationTag`). Only two service-worker notifications with one
  * tag replace each other: a `new Notification` never replaces one. So while
- * this browser holds a Web Push subscription, the service worker shows this
- * tab's copy too, and whichever copy arrives second replaces the first.
+ * this browser holds a Web Push subscription, the service worker shows a
+ * notification-center payload's copy too, and whichever copy arrives second
+ * replaces the first. Any other payload stays a `new Notification`, as before
+ * the notification center (KRTX-1742).
  */
 
 import { Button } from '@/components/ui/button';
+import {
+  cachedNotificationCenter,
+  cachedNotificationCenterAnswer,
+} from '@/features/notifications/use-notification-center';
 import { hasWebPushSubscription } from '@/features/notifications/web-push';
 import {
   dismissToast,
@@ -39,7 +46,8 @@ import {
 import { logger } from '@/lib/logger';
 import { softNavigate } from '@/lib/navigation/router-bridge';
 import { projectSessionHref } from '@/lib/navigation/session-href';
-import { broadcastTurnComplete } from '@/lib/turn-broadcast';
+import { broadcastTurnComplete, type TurnCompleteMsg } from '@/lib/turn-broadcast';
+import { getSharedQueryClient } from '@/lib/query-client-singleton';
 import { playSound } from '@/lib/sounds';
 import type { SoundEvent } from '@/stores/sound-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
@@ -85,6 +93,13 @@ export interface WebNotificationPayload {
    * A service-worker notification opens its url and does not run it.
    */
   onClick?: () => void;
+  /** A row of the notification inbox. Inbox rows exist only for projects with `notification_center` on. */
+  fromInbox?: boolean;
+  /**
+   * The project's `notification_center` flag as the tab that raised the event
+   * knew it (a relayed completion). Absent: this tab's query cache decides.
+   */
+  notificationCenter?: boolean;
 }
 
 // ============================================================================
@@ -117,6 +132,33 @@ export function setServerPushPreferences(kinds: NotificationPreferences['kinds']
 
 function serverPushAllows(type: WebNotificationType): boolean {
   return serverPush[TYPE_TO_KIND[type]] !== false;
+}
+
+/**
+ * The per-browser switch of each session kind: the kind gate for a payload of
+ * a project with `notification_center` off. The other kinds come only from
+ * the inbox.
+ */
+const TYPE_TO_PREF: Partial<
+  Record<WebNotificationType, 'onCompletion' | 'onError' | 'onQuestion' | 'onPermission'>
+> = {
+  completion: 'onCompletion',
+  error: 'onError',
+  question: 'onQuestion',
+  permission: 'onPermission',
+};
+
+/**
+ * An inbox row, or a session of a project with `notification_center` on: by
+ * the raising tab's answer, else by this tab's cached detail or project list.
+ * Fail-closed: no project id or nothing cached takes the path from before
+ * the notification center.
+ */
+function fromNotificationCenter(payload: WebNotificationPayload): boolean {
+  return (
+    payload.fromInbox === true ||
+    (payload.notificationCenter ?? cachedNotificationCenter(getSharedQueryClient(), payload.projectId))
+  );
 }
 
 /** Map notification types to sound events */
@@ -247,6 +289,7 @@ export function sendWebNotification(
   force = false,
 ): Notification | null {
   const { preferences } = useWebNotificationStore.getState();
+  const notificationCenter = fromNotificationCenter(payload);
 
   // The user watching the session live already sees the turn finish in the
   // chat — repeating it as a toast, a sound, a badge or an OS notification
@@ -291,8 +334,13 @@ export function sendWebNotification(
     // Preferences check
     if (!preferences.enabled) return null;
 
-    // Kind check: the person's Push choice for this kind.
-    if (!serverPushAllows(payload.type)) return null;
+    // Kind check: the person's Push choice, or this browser's switch.
+    if (notificationCenter) {
+      if (!serverPushAllows(payload.type)) return null;
+    } else {
+      const prefKey = TYPE_TO_PREF[payload.type];
+      if (prefKey && !preferences[prefKey]) return null;
+    }
 
     // Active session check — skip notifications for the session the user
     // is currently looking at (they can already see the question/permission
@@ -309,8 +357,9 @@ export function sendWebNotification(
 
   // With Web Push on, the service worker also shows this event's push, and a
   // `new Notification` would never replace it: hand this copy to the worker.
-  // `force` (the settings test button) keeps the in-page notification.
-  if (!force && hasWebPushSubscription() && 'serviceWorker' in navigator) {
+  // `force` (the settings test button) keeps the in-page notification. A
+  // project with the flag off gets no push, so its copy stays in the page.
+  if (!force && notificationCenter && hasWebPushSubscription() && 'serviceWorker' in navigator) {
     void showWorkerNotification(payload);
     return null;
   }
@@ -477,22 +526,27 @@ export function notifyTaskComplete(
   tI18nComplete: UiTranslator,
 ) {
   // Captured now, while the raising event proves which project is open — a
-  // receiving tab may be on a page whose path holds no project id.
+  // receiving tab may be on a page whose path holds no project id, and may
+  // never have loaded the project's `notification_center` flag.
   const projectId = currentProjectId();
-  broadcastTurnComplete({ sessionId, sessionTitle, projectId });
-  notifyTaskCompleteFor(sessionId, sessionTitle, tI18nComplete, projectId);
+  const msg = {
+    sessionId,
+    sessionTitle,
+    projectId,
+    notificationCenter: cachedNotificationCenterAnswer(getSharedQueryClient(), projectId),
+  };
+  broadcastTurnComplete(msg);
+  notifyTaskCompleteFor(msg, tI18nComplete);
 }
 
 /**
  * The local completion notification — no cross-tab propagation. This is the
  * shape the broadcast receiver runs so a relayed completion cannot re-broadcast
- * and loop.
+ * and loop. It takes the relayed message whole, so no field gets lost.
  */
 export function notifyTaskCompleteFor(
-  sessionId: string,
-  sessionTitle: string | undefined,
+  { sessionId, sessionTitle, projectId, notificationCenter }: Omit<TurnCompleteMsg, 'at'>,
   tI18nComplete: UiTranslator,
-  projectId?: string | null,
 ) {
   const label = sessionTitle
     ? `"${sessionTitle.slice(0, 60)}"`
@@ -509,6 +563,7 @@ export function notifyTaskCompleteFor(
     // page — reinterpreting it as THIS tab's project would build a wrong
     // deep link (the same rule the click-time path documents above).
     projectId,
+    notificationCenter,
   });
 }
 

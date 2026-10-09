@@ -201,9 +201,13 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 
 `PUSH-2` A user signed in on two devices registers a push token from each. `DELETE /accounts/me/devices/:sessionId` for the second device also deletes the token that sign-in registered: the caller's later `DELETE /notifications/device-token/:token` for it → 200 `deleted:false`. The caller's own token is untouched (`deleted:true`). A push goes only to tokens whose registering sign-in still exists in `auth.sessions`; a token registered before that was recorded counts as live until its next registration.
 
+Legacy push contract. In a project with the `notification_center` flag off (the default, see the next section), a session event pushes only the session creator's registered devices, as before KRTX-1742: a turn end (`completion`), a turn error (`error`), an agent question (`question`), and a permission request (`permission`, once per request id). Each device's `preferences` filter the kinds. The creator gets nothing while they hold a live presence lease on the session (any open tab, whatever its `alerts`), and nothing for a session they can no longer read. A trigger whose runs start failing pushes `error` once per failure streak to an owner of the account. The payload `data` is `{type, projectId, sessionId}`. No inbox row, Web Push, or email follows. The push goes to Expo, so no flow observes it: the apps/api tests of the legacy notifier (`apps/api/src/notifications/session-push-legacy.ts`) prove it, and `NOTIF-9` proves that nothing else is written.
+
 ### Notifications: inbox, preferences, Web Push, session watch (KRTX-1742)
 
 Every route acts for a person: a browser sign-in or a personal access token (`ANON` → 401; a session-scoped agent token → 403). Each delivery writes one inbox row per recipient; a flow notifies only fresh run-scoped users with no device token and no Web Push subscription. A delivery runs after the request that caused it answers, so a flow polls the inbox for the positive row and lets that delivery settle before it asserts an absence.
+
+The section is behind the per-project `notification_center` feature flag, which is OPT-IN and OFF by default (`apps/api/src/feature-flags/registry.ts`, `platformDefault: () => false`). A project that made no choice keeps the legacy push contract above. Every flow below except `NOTIF-4` (Web Push registration names no project) therefore turns the flag on as its first step, as the project OWNER, through `PATCH /v1/projects/:projectId/features {feature:"notification_center",enabled:true}`; `NOTIF-5` uses that route on deployed targets too, never a database write. `NOTIF-9` starts from the default and owns the flag states. The per-person `/v1/notifications/*` routes carry no project and answer with the flag off too; the inbox list, `unread_count`, and the digest leave out every row of a project whose flag is off. The list and the count show those rows again when the flag turns back on.
 
 `NOTIF-1` `GET /notifications?limit=1..50&before=<id>` → 200 `{notifications, unread_count, next_before}`, newest first. A row carries `kind`, the live session title (the stored title when the session has no name), `project_id`, `project_name`, `session_id`, `trigger_slug`, `actor_user_id`, `read`, `created_at`, and `url` `/projects/<pid>/sessions/<sid>?notification=<id>`. A row whose session the reader cannot open is neither listed nor counted. `limit=2` → two rows and `next_before`; `before=<next_before>` → the next page. `limit` 0 or 51, a non-uuid `before` → 400. `POST /notifications/read` takes exactly one of `{ids}` (1–100 uuids), `{all:true}`, `{session_id}` → 200 `{updated, unread_count}`, and changes only the caller's rows: another member posting the reader's id → `updated:0` and the row stays unread. `{session_id}` marks that session's unread rows only; `{all:true}` marks every unread row the caller owns, a hidden one included; a repeat → `updated:0`. No target, two targets, an empty or non-uuid `ids`, `all:false`, an empty `session_id`, an unknown key → 400. `GET /notifications/preferences` → 200 `{kinds, email_available}` with the documented defaults for the seven kinds (`turn_done` push on/email off, `turn_error` on/on, `question` on/on, `permission` on/off, `shared` on/on, `automation_failed` on/on, `automation_recovered` on/off). `PUT` with `{kinds:{turn_done:{push:false}}}` changes that switch only; a later `{kinds:{turn_done:{email:true}}}` keeps `push:false`; `GET` reads both back. An unknown kind or channel, a non-boolean, no `kinds` → 400.
 `NOTIF-2` Member B's prompt in member A's project-visible session (a `continue_session` row that bound the turn to B) ends: `POST /projects/:pid/turn-stream {kind:'end', status:'idle', turn_message_id}` from the session's sandbox credential → 200 `turn_completion.outcome:'closed'`, `queue_promoted:false`. B, the prompter, gets one unread `turn_done` row titled with the session name; A, the creator and so a watcher, gets one too; both name B as `actor_user_id`. A mutes the session (`PUT .../watch {watching:false}` → 200 `watching:false`); B's next turn ends → B has two rows, A still one.
@@ -213,6 +217,7 @@ Every route acts for a person: a browser sign-in or a personal access token (`AN
 `NOTIF-6` A turn B prompted in a session A created ends. In a Slack-origin and in an email-origin session (`metadata.source` `slack` / `email`) B gets the `turn_done` row and A gets no row. Positive control: the same turn in a web session (`source:'ui'`) gives A a row.
 `NOTIF-7` `GET /projects/:pid/sessions/:sid/watch` → 200 `{watching}`: true for the creator, false for a project member who never wrote in it. `PUT .../watch {watching}` → 200 `{watching}` and reads back. `ANON` → 401; a user outside the account → 403; the session's own sandbox token → 403 on both watch routes and on `GET /notifications`; a body without a boolean `watching` → 400. A member who follows the session (`watching:true`) gets the `turn_done` row of a turn no person prompted, and of a turn the muted creator prompted; the muted creator gets neither, though they prompted the second. The creator's `watching:true` unmutes it.
 `NOTIF-8` B prompted A's session's running turn; A muted the session; W, a project member, follows it (`PUT .../watch {watching:true}` → 200 `watching:true`). The sandbox's `POST /projects/:pid/turn-question {session_id, request_id, questions}` → 200 `persisted:true`; B and W each get one `question` row whose body is the question; A gets none; a retry of the same `request_id` adds no row. The same relay with a person's token → 200 `persisted:true` and notifies nobody: B and W still have one `question` row each. `POST /projects/:pid/turn-permission {session_id, request_id, permission, patterns}` twice from the sandbox → 200 `notified:true`, then `notified:false`; B and W each have exactly one `permission` row; A has none. A person's token → 403.
+`NOTIF-9` The `notification_center` flag off, then on, then cleared, on a fresh team project where A created a project-visible session. `GET /projects/:pid` → 200 `experimental.notification_center:false`, and its `experimental_features` row reads `enabled:false`, `overridden:false`. With the flag off: a member's `GET` and `PUT .../watch` → 403 `{code:'feature_disabled', feature:'notification_center'}` and no `notification_watchers` row is stored; `ANON` → 401. Member B's prompt in A's project-visible session (`POST .../sessions/:sid/prompts`) → 200/202 and writes no `notification_watchers` row. B's turn in A's session ends from the sandbox credential → 200 `turn_completion.outcome:'closed'`; neither A nor B gets a row. During B's next turn the sandbox's `turn-question` → 200 `persisted:true` and `turn-permission` → 200 `notified:true`; neither A nor B gets a row. The OWNER shares a private session with B → 200; B gets no `shared` row. A row stored in the database for B in this project is neither listed by `GET /notifications` nor counted in `unread_count`. In a second flag-off project of the account, a project manager creates a cron trigger → 201 and no `trigger_watchers` row; on the account with no credit a manual fire → 500, the trigger's `last_status` reads `failed`, `alert_failing_since` stays null, neither the manager nor the OWNER gets a row, and Mailpit (when `env.mailpitUrl` is set) holds no "Automation failing: <name>" email. `PATCH .../features {enabled:true}` → 200 `experimental.notification_center:true`: the creator's `GET .../watch` → 200 `watching:true`, B's bell lists the stored row with `unread_count` 1, and a new sandbox question reaches B as one `question` row. `{enabled:null}` → 200 `experimental.notification_center:false`: the creator's `GET .../watch` → 403 again, and B's bell lists no row of the project and counts 0.
 
 ---
 
@@ -563,10 +568,12 @@ Specs in `[[triggers]]`; CRUD commits the manifest; runtime state and account-lo
 `TRG-21` event trigger lifecycle — `POST /projects/:id/triggers` with `type: event`, `connector`, `event` and `event_config` → `201`; the trigger lists with `type: event` and an `event` object that echoes `connector`, `type` and `config`. The connector is not declared in `kortix.yaml`, so `event.status` is `error` and `event.error` names the missing connector. `PATCH {event_config}` → `200` and the new config reads back. `DELETE` → `200` and the trigger leaves the list. The API commits the manifest and reconciles subscriptions in the same request.
 `TRG-22` event trigger validation — `type: event` without `connector` → `400`; without `event` → `400`; with `cron` → `400`; with `event_config` that is not an object → `400`. `type: cron` with `connector` → `400`.
 `TRG-23` app-event ingress `POST /v1/webhooks/events/:provider` — unknown provider → `404`. Provider `composio` without a matching signature → `401` when the deployment holds `COMPOSIO_WEBHOOK_SECRET`, `503` when it does not. The route needs no bearer token.
-`TRG-24` `GET /projects/:id/triggers/event-types?connector=<slug>` — `ANON → 401`; missing `connector` → `400`; unknown connector → `404`.
+`TRG-24` `GET /projects/:id/triggers/event-types?connector=<slug>` — `ANON → 401`; neither `connector` nor `app` → `400`; unknown connector → `404`.
 `TRG-25` `GET /projects/:id/triggers/event-apps` — `ANON → 401`; the project owner → `200` with an `apps` array; the local profile has no event provider configured, so the array is empty. Event trigger create/PATCH with an event the catalog does not know validates only when the provider catalog is reachable, so the local profile skips it.
 `TRG-26` event trigger account — `POST /projects/:id/triggers` with `type: event` and `event_account: "acme-bot"` → `201`; the listing's `event.account` is `acme-bot` and `event.connected_as` is `null` (no shared account feeds it). `PATCH {event_account: null}` → `200` and `event.account` is `null` (the connector default). `PATCH {event_account: "ops-bot"}` → `200`; a later `PATCH {name}` keeps the account. `event_account` that is empty → `400`; on a `type: cron` trigger → `400`.
 `TRG-27` event trigger source — `POST /projects/:id/triggers` with `type: event` and `event_source: "composio"` → `201`; the listing's `event.source` is `composio`. `PATCH {name}` keeps it; `PATCH {event_source: null}` → `200` and `event.source` is unset (the connector is undeclared, so no provider fills it in). `event_source: "nope"` → `400` with `Unknown event source "nope". Sources: composio.`; a blank `event_source` → `400`; on a `type: cron` trigger → `400`. The event id stays the adapter's own: Kortix defines no event catalog.
+`TRG-28` `GET /projects/:id/triggers/event-types?app=<app>[&source=<adapter>]` lists an app's events with no connector. The local profile has no event provider, so the answer is `409 event_source_unavailable` (`200` where a provider is configured; it never asks for a connector). An unknown `source` → `400` with `Unknown event source "nope". Sources: composio.`; `connector` together with `app` → `400`; an app the adapter does not offer → `404 app_not_found`.
+`TRG-29` App event triggers sit behind the per-project flag `event_triggers` (beta, off by default). With the flag off: `GET /projects/:id/triggers/event-types` (`?connector=` and `?app=`) and `GET …/triggers/event-apps` → `403` `{code:"feature_disabled", feature:"event_triggers"}`; `POST …/triggers` with `type: event` → `403` and no commit, while a `type: cron` POST is still `201`. `PATCH /projects/:id/features {feature:"event_triggers", enabled:true}` → `200`, and the same calls pass the gate (`event-types` for an undeclared connector → `404`, `event-apps` → `200`, the event `POST` → `201`). Turning the flag off again leaves the declared event trigger listed with `event.status: error` and `event.error` `App event triggers are off for this project. Turn them on in Settings → Feature flags.`; `PATCH` of that trigger → `403`, `PATCH` of the cron trigger → `200`, `DELETE` of the event trigger → `200`. `TRG-21`…`TRG-28` turn the flag on in their setup. The flag is `available` only when an event source is configured: on the local profile (no `COMPOSIO_API_KEY`) it never resolves on, every event call stays `403 feature_disabled` after the toggle, and the flows assert that instead of the pass-through.
 
 **Trigger behavior with no black-box HTTP surface.** These are documented
 boundaries, not flow ids.
@@ -1558,67 +1565,96 @@ a trigger run. Every denial is `403 {code, action}` (spec §4).
 
 ---
 
-## 34. Kortix Backends
+## 34. Apps of kind `convex` and capability routes
 
-A project owns up to 3 backends, an account up to 10. Each backend is a self-hosted Convex instance
-in its own always-on Platinum machine (1 vCPU, 1 GB, 10 GB). `backends` is an
-experimental per-project flag, off by default, available only where Platinum is
-configured. Routes: `GET/POST /projects/:projectId/backends`,
-`GET/DELETE /projects/:projectId/backends/:backendId`,
-`GET /projects/:projectId/backends/:backendId/credentials`,
-`PATCH /projects/:projectId/backends/:backendId` (resize),
-`POST /projects/:projectId/backends/:backendId/token`,
-`GET /projects/:projectId/backends/:backendId/backups`,
-`POST /projects/:projectId/backends/:backendId/{snapshots,restore}`,
-`DELETE /projects/:projectId/backends/:backendId/snapshots/:snapshotId`, and the
-public issuer routes `GET /backends/:backendId/.well-known/openid-configuration`
-and `GET /backends/:backendId/jwks.json`.
+An App has one `kind`, fixed at create: `web` (default) or `convex`, a
+self-hosted Convex backend in its own always-on Platinum machine (1 vCPU, 1 GB,
+10 GB by default). A project owns up to 3 `convex` Apps, an account up to 10.
+The `apps` flag gates every kind; a `convex` create needs a deployment with
+Platinum. Every App response carries `kind`, `capabilities`, `uses`/`used_by`
+(App links by slug), `auth` (`issuer`, `audience` = the App id, `jwks_uri`) and
+`instance` (the machine state of a `convex` App, null for `web`). Capability routes under `/projects/:projectId/apps/:appId`:
+`GET/POST snapshots`, `DELETE snapshots/:snapshotId` (`snapshots`),
+`POST restore` (`restore`), `GET credentials` and `POST rotate-credentials`
+(`admin_credentials`), `POST token` (`member_tokens`, every kind), `GET logs`
+(`logs`). An App without the capability answers `409
+{code:'app_capability_unsupported', capability, kind}`.
 
-`BKD-1` Gated surface. Flag off: list, create, get, credentials, delete, resize,
-token, backups, snapshot, snapshot delete, restore, rotate-admin-key and logs answer `403 {code:'feature_disabled', feature:'backends'}`. The owner's
-`PATCH /projects/:projectId/features` with `backends` true, false or null
-answers `403 {code:'feature_operator_only', feature:'backends'}`, and the
-owner's `PUT /admin/api/projects/:id/features` answers 403. The platform
-operator's `PUT /admin/api/projects/:id/features` with `backends: true` answers
-200. Where Platinum
-is configured the flag resolves on: list answers 200 with a `backends` array, and
-an invalid name answers 400 before any machine is requested. Where it is not, the
-flag resolves off and every route keeps the same 403. A `NONMEMBER` gets 403/404
-and an `ANON` caller gets 401. The issuer routes need no credential: an
-unknown backend answers 404 and a malformed id 400. The caps under concurrency,
-`Cache-Control: no-store` on credentials and token, `convex_version`, the stored
-issuer, the issuer discovery and key set (verified against a minted token), and
-the issuer move are asserted by the
-DB suites `apps/api/src/backends/*.integration.test.ts`. The same suites drive
-the maintenance sweep against a fake Platinum and a fake Convex: an interrupted
-provision resumes on its Idempotency-Key and reaches `running`, one interrupted
-3 times turns `error`, an interrupted resize is recovered with
-`last_operation_error`, the health probe records `health` and starts a stopped
-machine, restores a tombstoned one from backup, and turns a missing one `error`
-after 3 probes; admin-key rotation seals the key Convex accepts and answers
-`409 backend_busy` during another operation; a backup or snapshot restore of a
-rotated backend rotates again, so the rotated-away key never returns; an agent
-session's token names the agent's service account (`kind: "agent"`, no role,
-no groups), never its launcher; the App gate's `/_kortix/backend-token`
-re-checks a `public` App's cookie viewer (`401` once access is gone) and
-answers `403 feature_disabled` with Backends off; the logs route strips color codes
-and rejects `lines` outside 1–1000. Snapshots: a manual snapshot carries `kind:
-"manual"` and no expiry, and the 11th answers `409 snapshot_limit` with nothing
-deleted; snapshot, restore, snapshot delete and backend delete answer `409
-backend_busy` during a resize (backend delete stays allowed in `recovering`);
-two concurrent snapshots produce one; a restore answers only after Platinum
-reports `running` again, and one Platinum ends `stopped` answers `502
-restore_unhealthy` with the machine started again; a resize takes a `resize`
-snapshot kept 24 h outside the limit, and every snapshot older than the
-applied resize answers `409 snapshot_predates_resize`; the maintenance sweep
-takes a daily `automatic` snapshot kept 7 days, deletes an expired `resize`
-snapshot and an expired `automatic` one only when a newer one exists, and
-never a manual one; `GET …/backups` returns each snapshot's `kind` and
-`expires_at` and the `snapshot_schedule`; `DELETE …/snapshots/:snapshotId`
-answers 204, then 404 `snapshot_not_found`. Not asserted locally:
-create (`202 provisioning`), a duplicate name (`409 backend_name_taken`), the
-`backend.credentials.read` audit row, and delete. They
-need a Platinum machine and are verified on a deployed environment.
+Sign-in tokens have one issuer per project: `<API origin>/v1/projects/:projectId`,
+with the public routes `GET /projects/:projectId/.well-known/openid-configuration`
+and `GET /projects/:projectId/jwks.json` (one ES256 key per project, created on
+the first token; an empty key set before it). A token lives 15 minutes and its
+`aud` is the App it is for. On an App host, `GET /_kortix/token?audience=<slug|id>`
+mints one naming the viewer for the App itself (the default) or an App it
+`uses`; any other App answers `403 app_not_linked`. The bindings mount
+`/_kortix/apps/<slug>/*` on an App host proxies HTTP and WebSocket to a used
+App's endpoint (a `convex` App: its client API) with the prefix stripped; an App
+it does not use answers `403 app_not_linked`, a used App of a kind with no
+endpoint `409 app_binding_unsupported`.
+
+`APP-9` Kind and capability surface. Flag off: a `convex` create and every
+capability route answer `403 {code:'feature_disabled', feature:'apps'}`. Flag
+on: an unknown `kind` or an invalid slug answers 400 before any machine is
+requested; `always_on: false` for a `convex` App answers 400 (or 409 where
+Platinum is not configured). A `convex` create answers `201` with
+`instance.status: "provisioning"` and the seven `convex` capabilities where
+Platinum is configured, else `409 app_kind_unavailable`. A `web` App lists
+`deployments`, `rollback`, `preview`, `member_tokens` and answers 409
+`app_capability_unsupported` on the 7 `convex`-only capability routes. The real
+CLI process: `kortix apps link <web> --uses <other>` sets `uses` (the other App
+reads it in `used_by`), `kortix apps show --json` prints `kind` and
+`capabilities`, `kortix apps snapshots <web>` exits 1 with `(kind web) does not
+support snapshots` before any capability route, `kortix apps token <web>` prints
+a three-part JWT, and `kortix apps unlink` empties `uses`. An unknown App
+answers 404. A `NONMEMBER` gets 403/404 and an `ANON` caller 401. The DB suites
+`apps/api/src/apps/kinds/convex/*.integration.test.ts` assert the rest against a
+fake Platinum and a fake Convex: the caps under concurrency (`409
+app_kind_limit`), `Cache-Control: no-store` on credentials and token,
+`instance.client_version`, the project issuer discovery and key set (verified
+against a minted token, for a `convex` and a `web` App), the maintenance issuer
+move (all three `KORTIX_AUTH_*` written, a failed write retried, a moved App
+left alone), `uses` links both ways and
+`400 app_not_found` for an unknown slug, a `convex` deployment recorded `ready`
+with no artifact (`source_kind: "convex"`, `201`), and `409
+app_capability_unsupported` for start, stop and rollback of a `convex` App. The
+maintenance sweep: an interrupted provision resumes on its Idempotency-Key and
+reaches `running`, one interrupted 3 times turns `error`, an interrupted resize
+is recovered with `last_operation_error`, the health probe records
+`instance.health` and starts a stopped machine, restores a tombstoned one from
+backup, and turns a missing one `error` after 3 probes; admin-key rotation
+seals the key Convex accepts and answers `409 app_busy` during another
+operation; a backup or snapshot restore of a rotated App rotates again; an agent
+session's token names the agent's service account (`kind: "agent"`), never its
+launcher; the App gate's `/_kortix/token` mints for the App itself or an App it
+`uses` (by slug or id), `403 app_not_linked` otherwise (also across projects),
+and re-checks a `public` App's cookie viewer (`401` once access is gone); the
+bindings mount forwards a request to the used `convex` App's client API with the
+prefix stripped and the Kortix cookies removed; the logs route strips color codes and
+rejects `lines` outside 1–1000. Snapshots: `manual` carries no expiry and the
+11th answers `409 snapshot_limit`; snapshot, restore, snapshot delete and App
+delete answer `409 app_busy` during a resize (delete stays allowed in
+`recovering`); a restore answers only after Platinum reports `running` again;
+a resize takes a `resize` snapshot kept 24 h, and an older snapshot answers
+`409 snapshot_predates_resize`; the daily `automatic` snapshot is kept 7 days.
+Delete: without `confirm=<slug>` → `400 confirmation_required`; with it, a
+`final` snapshot is taken, the machine is stopped and kept 7 days
+(`retained_until`), the hosts answer 410, the sweep and the orphan reaper leave
+the machine alone, and the purge after retention deletes machine, snapshots and
+row. Budget: 80 % and 100 % of the monthly budget each alert once per month
+(`instance.budget_alert`, audit `app.budget.alert`) and the machine keeps
+running. Not asserted locally: a provisioned machine and the
+`app.credentials.read` audit row; they are verified on a deployed environment.
+
+`APP-10` Sign-in tokens and the bindings mount, black-box on a local App host.
+An `ANON` caller reads the project issuer: `openid-configuration` names
+`<API origin>/v1/projects/:projectId` and its `jwks.json`; an unknown project
+answers 404 and a malformed id 400. The owner mints a member token for a `web`
+App (`POST token`, 200, `aud` = the App, verified against the published key
+set); a `NONMEMBER` gets 403/404. Signed in to App A through its access link,
+`/_kortix/token` answers 200 for A itself and for App C that A uses, and `403
+app_not_linked` for App B of the same project that A does not use and for an
+App of another project. The bindings mount answers `403 app_not_linked` for B
+and `409 app_binding_unsupported` for C, a `web` App.
 
 ---
 

@@ -284,7 +284,7 @@ Event list + CSV/JSONL export + outbound SIEM webhook CRUD, gated server-side on
 | webhooks CRUD | `GET/POST /v1/accounts/:id/audit/webhooks`, `PATCH/DELETE .../:webhookId` |
 
 ### 19. Notifications (per user)  ✅ (client + facade + hooks)
-The caller's inbox, preferences, Web Push and session watch (KRTX-1742). `projects-client/notifications.ts` + `sessions.ts` ✅; facade `kortix.notifications.*` and `session(pid, sid).{watch, setWatch, presence}` ✅; hooks `useNotificationInbox`, `useNotificationPreferences`, `useSessionWatch` (`react/use-notifications.ts`, keys `qk.notifications.*`) ✅. Every route needs a person's credential.
+The caller's inbox, preferences, Web Push and session watch (KRTX-1742). `projects-client/notifications.ts` + `sessions.ts` ✅; facade `kortix.notifications.*` and `session(pid, sid).{watch, setWatch, presence}` ✅; hooks `useNotificationInbox`, `useNotificationPreferences`, `useSessionWatch` (`react/use-notifications.ts`, keys `qk.notifications.*`) ✅. Every route needs a person's credential. Delivery is behind the per-project `notification_center` flag, off by default: the inbox lists rows only from flag-on projects, and the watch routes answer `403` `feature_disabled` while it is off.
 | op | REST |
 |---|---|
 | inbox page (`limit`, `before` cursor) | `GET /v1/notifications` |

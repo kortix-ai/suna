@@ -11,7 +11,7 @@ mock.module('@tanstack/react-query', () => ({
   }),
 }));
 
-const { appDeploymentKey, appDeploymentsKey, projectAppsKey, useAppAccess, useAppDeployment, useAppDeployments, useProjectApps } =
+const { appDeploymentKey, appDeploymentsKey, appSnapshotsKey, projectAppsKey, useAppAccess, useAppDeployment, useAppDeployments, useAppSnapshots, useProjectApps } =
   await import('./use-project-apps');
 
 beforeEach(() => {
@@ -75,5 +75,40 @@ describe('Kortix Apps React Query bindings', () => {
       qk.project.appAccessSession('project-1', 'app-1'),
       qk.project.apps('project-1'),
     ]);
+  });
+
+  test('the App list polls while an instance provisions or runs an operation', () => {
+    const interval = (useProjectApps('project-1') as any).refetchInterval;
+    const poll = (rows: object[] | undefined) => interval({ state: { data: rows } });
+    expect(poll(undefined)).toBe(false);
+    expect(poll([{ instance: null }, { instance: { status: 'running', operation: null } }])).toBe(false);
+    expect(poll([{ instance: { status: 'running', operation: 'resizing' } }])).toBe(2_000);
+    expect(poll([{ instance: { status: 'provisioning', operation: null } }])).toBe(2_000);
+  });
+
+  test('rotateCredentials refreshes the App list', () => {
+    (useProjectApps('project-1') as any).rotateCredentials.onSuccess();
+    expect(invalidated).toEqual([qk.project.apps('project-1')]);
+  });
+
+  test('snapshots are keyed under the App, off without an App or when disabled', () => {
+    const snapshots = useAppSnapshots('project-1', 'app-1') as any;
+    expect(snapshots.queryKey).toEqual(appSnapshotsKey('project-1', 'app-1'));
+    expect(appSnapshotsKey('project-1', 'app-1')).toEqual(qk.project.appSnapshots('project-1', 'app-1'));
+    const apps = qk.project.apps('project-1');
+    expect(snapshots.queryKey.slice(0, apps.length)).toEqual([...apps]);
+    expect(snapshots.enabled).toBe(true);
+    expect((useAppSnapshots('project-1', null) as any).enabled).toBe(false);
+    expect((useAppSnapshots('project-1', 'app-1', false) as any).enabled).toBe(false);
+  });
+
+  test('create and delete refresh the snapshots; restore refreshes the App list too', () => {
+    const snapshots = useAppSnapshots('project-1', 'app-1') as any;
+    snapshots.create.onSuccess();
+    snapshots.delete.onSuccess();
+    expect(invalidated).toEqual([qk.project.appSnapshots('project-1', 'app-1'), qk.project.appSnapshots('project-1', 'app-1')]);
+    invalidated = [];
+    snapshots.restore.onSuccess();
+    expect(invalidated).toEqual([qk.project.appSnapshots('project-1', 'app-1'), qk.project.apps('project-1')]);
   });
 });

@@ -7,7 +7,7 @@
 import { homedir } from 'node:os'
 import type { ProjectEnvStore } from '@/services/sandbox-env/project-env'
 import type { HarnessDefinition, HarnessService, HarnessStartupOptions } from '../harness'
-import { isRepoMaterialized } from '@/lib/git/git'
+import { isRepoMaterialized } from '@/services/workspace-provider/checkout'
 import { runtimeAssetsActivity } from '@/services/runtime-assets/runtime-assets'
 import { createPiAssetsService, registerPiSkillReload } from './assets'
 import { startPiBackground } from './background'

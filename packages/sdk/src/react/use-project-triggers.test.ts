@@ -68,6 +68,18 @@ describe('useProjectTriggerEventTypes', () => {
     expect((useProjectTriggerEventTypes('proj-1', null) as any).enabled).toBe(false);
     expect((useProjectTriggerEventTypes(undefined, 'github') as any).enabled).toBe(false);
   });
+
+  test('an { app, source } target keys apart from any connector slug and is enabled without a connector', async () => {
+    const { useProjectTriggerEventTypes, projectTriggerEventTypesKey } = await import('./use-project-triggers');
+    const byApp = useProjectTriggerEventTypes('proj-1', { app: 'github' }) as any;
+    expect(byApp.enabled).toBe(true);
+    expect(byApp.queryKey).toEqual(projectTriggerEventTypesKey('proj-1', { app: 'github' }));
+    expect(byApp.queryKey).not.toEqual(projectTriggerEventTypesKey('proj-1', 'github'));
+    expect(projectTriggerEventTypesKey('proj-1', { app: 'github', source: 'composio' })).toEqual(
+      projectTriggerEventTypesKey('proj-1', { app: 'github' }),
+    );
+    expect((useProjectTriggerEventTypes('proj-1', { app: '' }) as any).enabled).toBe(false);
+  });
 });
 
 describe('useProjectTriggerEventApps', () => {
