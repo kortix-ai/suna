@@ -178,6 +178,9 @@ export default function AdminVolumesPage() {
   const orgIds = draft ? [...new Set([...Object.keys(draft.volumes.orgs), ...Object.keys(draft.orgs)])] : [];
   const candidates = (accounts.data?.accounts ?? []).filter((a) => !orgIds.includes(a.accountId));
   const everyone = draft?.volumes.enabled ?? false;
+  const artifactsSource = draft?.artifacts || data?.env.bootArtifacts || null;
+  const volumeProvider = data?.providers.volumeProvider ?? 'platinum';
+  const otherProviders = (data?.providers.allowed ?? []).filter((p) => p !== volumeProvider);
 
   return (
     <AdminPageShell
