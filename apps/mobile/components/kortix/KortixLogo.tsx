@@ -15,71 +15,37 @@ interface KortixLogoProps extends Omit<ViewProps, 'style'> {
   color?: 'light' | 'dark';
 }
 
-export function KortixLogo({ 
-  size = 24, 
+// One row per variant × color: the SVG to render and its aspect ratio
+// (the wide marks scale `size` by it; the symbol is square).
+const LOGOS: Record<'symbol' | 'logomark' | 'text', Record<'light' | 'dark', { logo: React.ComponentType<{ width: number; height: number }>; ratio: number }>> = {
+  symbol: {
+    light: { logo: KortixSymbolBlack, ratio: 1 },
+    dark: { logo: KortixSymbolWhite, ratio: 1 },
+  },
+  logomark: {
+    light: { logo: LogomarkBlack, ratio: 5 },
+    dark: { logo: LogomarkWhite, ratio: 5 },
+  },
+  text: {
+    light: { logo: LogomarkTextBlack, ratio: 74 / 22 },
+    dark: { logo: LogomarkTextWhite, ratio: 74 / 22 },
+  },
+};
+
+export function KortixLogo({
+  size = 24,
   variant = 'symbol',
   className,
   style,
   color = 'dark',
-  ...props 
+  ...props
 }: KortixLogoProps) {
-  // Logomark is wide (112x22 ≈ 5:1), text logomark is 74x22 ≈ 3.36:1, symbol is almost square
-  if (variant === 'logomark' || variant === 'text') {
-    const aspectRatio = variant === 'text' ? 74 / 22 : 5;
-    const logoWidth = size * aspectRatio;
-    const logoHeight = size;
-
-    const containerStyle: ViewStyle = {
-      width: logoWidth,
-      height: logoHeight,
-      flexShrink: 0,
-      ...style,
-    };
-
-    const LogoComponent =
-      variant === 'text'
-        ? color === 'dark'
-          ? LogomarkTextWhite
-          : LogomarkTextBlack
-        : color === 'dark'
-          ? LogomarkWhite
-          : LogomarkBlack;
-
-    return (
-      <View
-        className={className}
-        style={containerStyle}
-        {...props}
-      >
-        <LogoComponent
-          width={logoWidth}
-          height={logoHeight}
-        />
-      </View>
-    );
-  }
-
-  // Symbol is almost square
-  const containerStyle: ViewStyle = {
-    width: size,
-    height: size,
-    flexShrink: 0,
-    ...style,
-  };
-
-  const SymbolComponent = color === 'dark' ? KortixSymbolWhite : KortixSymbolBlack;
-
+  const { logo: Logo, ratio } = LOGOS[variant][color];
+  const width = size * ratio;
+  const containerStyle: ViewStyle = { width, height: size, flexShrink: 0, ...style };
   return (
-    <View 
-      className={className}
-      style={containerStyle}
-      {...props}
-    >
-      <SymbolComponent 
-        width={size} 
-        height={size}
-      />
+    <View className={className} style={containerStyle} {...props}>
+      <Logo width={width} height={size} />
     </View>
   );
 }
-

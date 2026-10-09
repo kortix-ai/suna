@@ -73,16 +73,17 @@ const MarkdownIt = createRequire(join(libraryRoot, 'package.json'))('markdown-it
 
 type Ast = { type: string; children: Ast[] };
 let parser: (source: string, renderer: (nodes: Ast[]) => unknown, md: unknown) => Ast[];
-let MarkdownTable: typeof import('./selectable-markdown').MarkdownTable;
+let MarkdownTable: typeof import('../markdown/markdown-table').MarkdownTable;
 let SelectableMarkdownText: typeof import('./selectable-markdown').SelectableMarkdownText;
-let MarkdownSurfaceContext: typeof import('./selectable-markdown').MarkdownSurfaceContext;
+let MarkdownSurfaceContext: typeof import('../markdown/markdown-table').MarkdownSurfaceContext;
 let markdownPalette: typeof import('@/components/markdown/markdown-theme').markdownPalette;
 let tree: ReactTestRenderer | undefined;
 
 beforeAll(async () => {
   Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true });
   parser = (await import(join(libraryRoot, 'src/lib/parser.js'))).default;
-  ({ MarkdownTable, SelectableMarkdownText, MarkdownSurfaceContext } = await import('./selectable-markdown'));
+  ({ MarkdownTable, MarkdownSurfaceContext } = await import('../markdown/markdown-table'));
+  ({ SelectableMarkdownText } = await import('./selectable-markdown'));
   ({ markdownPalette } = await import('@/components/markdown/markdown-theme'));
 });
 afterEach(() => {

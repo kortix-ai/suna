@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { FilePreviewType } from '@/components/files/FilePreviewRenderers';
+import type { FilePreviewType } from '@/lib/files/preview-type';
 
 import {
   BINARY_PREVIEW_MAX_BYTES,
