@@ -3,15 +3,15 @@
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { createFilesStore, useFilesStore } from '@/features/file-browser/store/files-store';
-import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { DriveExplorer, FileExplorerSourceProvider, FilesStoreProvider } from '@/features/project-files';
 import { ProjectPageHeader } from '@/features/workspace/project-layout/project-page-header';
 import { useDriveAvailability, useDriveFolder, useProjectDrive } from '@/hooks/drives/use-drives';
 import { useTranslations } from '@/i18n/use-translations';
 import type { Drive } from '@kortix/sdk';
-import { HardDrivesIcon, HouseIcon, ShareNetworkIcon } from '@phosphor-icons/react';
-import { type ReactNode, useMemo, useState } from 'react';
+import { HouseIcon, ShareNetworkIcon } from '@phosphor-icons/react';
+import { useRouter } from 'next/navigation';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 
 import { DriveConflictsBanner } from './drive-conflicts-banner';
 import { DriveFilesProvider, driveExplorerSource, toDrivePath } from './drive-explorer-source';
@@ -27,6 +27,12 @@ export function FilesView({ projectId }: { projectId: string }) {
   const t = useTranslations('drives');
   const availability = useDriveAvailability(projectId);
   const drive = useProjectDrive(projectId, availability.enabled);
+  const router = useRouter();
+  // Volumes off for the organization: there is no drive page; Files is the repo browser.
+  const off = !availability.isLoading && !availability.enabled;
+  useEffect(() => {
+    if (off) router.replace(`/projects/${projectId}/files`);
+  }, [off, projectId, router]);
 
   let body: ReactNode;
   if (availability.isLoading || (availability.enabled && drive.isLoading)) {
@@ -37,14 +43,7 @@ export function FilesView({ projectId }: { projectId: string }) {
       </div>
     );
   } else if (!availability.enabled) {
-    body = (
-      <EmptyState
-        className="h-full"
-        icon={HardDrivesIcon}
-        title={t('unavailableTitle')}
-        description={t('unavailableDescription')}
-      />
-    );
+    body = null;
   } else if (drive.isError || !drive.data) {
     body = (
       <ErrorState

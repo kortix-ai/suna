@@ -13,8 +13,8 @@ import { useCallback } from 'react';
 /**
  * Files entry: the project's shared folders (its drive), with each person's
  * own folder in it. Same row contract as Repo beside it — a hover-prefetching
- * Link, never router.push. Shown once the project turns on the `drives`
- * feature flag; loading counts as off.
+ * Link, never router.push. Shown only when the organization has Volumes on
+ * (the project's derived `drives` flag); loading counts as off.
  */
 export function ProjectDriveNavItem() {
   const t = useTranslations('sidebar');
