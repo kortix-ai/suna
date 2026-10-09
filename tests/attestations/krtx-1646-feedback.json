@@ -1,7 +1,10 @@
 {
-  "source_hash": "4353198232237d3552cb1254855daeca65de5809a2f6fbabf63801c538108714",
+  "source_hash": "5ff45cd3df002d706447d94761c3de2a47866d99427b6083c7a51d3d5dc8a45b",
   "diff_files": [
+    "apps/api/src/__tests__/integration-gateway-keys.test.ts",
     "apps/api/src/app.ts",
+    "apps/api/src/backends/hosts.integration.test.ts",
+    "apps/api/src/backends/provision.integration.test.ts",
     "apps/api/src/config.ts",
     "apps/api/src/feedback/index.test.ts",
     "apps/api/src/feedback/index.ts",
@@ -27,13 +30,13 @@
     "tests/spec/routes.generated.json",
     "tests/src/flows/feedback.flow.ts"
   ],
-  "diff_hash": "0f034b33bd4c85b521a051f261a18900a532e280eb99fdf0481d71859e77e1e3",
-  "head": "8b4cb88785a03e89c53add10f74afb7d7a3fc56a",
-  "passed": false,
+  "diff_hash": "ace67867392b28ee57414afecf9872416f4ac77dbd3a238d6252d1cf71759632",
+  "head": "7b63de18f5170c0be1fd72606e67bf38bbcf4563",
+  "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "fail",
-    "db-suites": "fail"
+    "packages": "pass",
+    "db-suites": "pass"
   },
-  "at": "2026-10-09T14:44:48.632Z"
+  "at": "2026-10-09T16:13:46.004Z"
 }
