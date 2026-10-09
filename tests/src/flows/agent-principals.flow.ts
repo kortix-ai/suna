@@ -1367,3 +1367,59 @@ flow(
   },
 );
 
+// ── AGP-14 — a trigger with no agent fires as the MANIFEST default, not the mirror ──
+// KRTX-1720. The fire route asked about `projects.metadata.default_agent`, a read
+// mirror that lags a git push, while session creation runs the manifest's
+// `default_agent`. A stale mirror refused a member allowed to run the real
+// default, and admitted a member allowed to run only the stale name.
+flow(
+  'AGP-14',
+  {
+    domain: 'agent-principals',
+    requires: ['database'],
+    timeoutMs: 240_000,
+    routes: ['POST /v1/projects/:projectId/triggers/:slug/fire'],
+  },
+  async (ctx) => {
+    const { team, project, world } = await governedWorld(ctx);
+    const nightlyRunner = await projectMember(team, project.id);
+    const decoyRunner = await projectMember(team, project.id);
+    const permissions = JSON.stringify(['project.file.read', 'project.session.read']);
+    try {
+      await world.fund();
+      await ctx.step('commit default_agent `nightly` and a trigger that names no agent', async () => {
+        await world.writeManifest(
+          'kortix_version: 2\nproject:\n  name: example-org-agp\ndefault_agent: nightly\nagents:\n  kortix: {}\n'
+            + `  nightly:\n    kortix_permissions: ${permissions}\n`
+            + `  decoy:\n    kortix_permissions: ${permissions}\n`
+            + 'triggers:\n  - slug: agp-default\n    type: cron\n    cron: "0 9 * * *"\n    prompt: summarize open work\n',
+        );
+        await world.grantRun('nightly', nightlyRunner);
+        await world.grantRun('decoy', decoyRunner);
+      });
+
+      // The mirror lags a git push; make it name the other agent before each fire.
+      const staleMirror = () =>
+        world.db.query(
+          `UPDATE kortix.projects SET metadata = coalesce(metadata, '{}'::jsonb) || '{"default_agent":"decoy"}'::jsonb
+            WHERE project_id = $1`,
+          [project.id],
+        );
+      const fire = (who: Principal) =>
+        ctx.client.as(who).post('/v1/projects/:projectId/triggers/:slug/fire', {},
+          { params: { projectId: project.id, slug: 'agp-default' } });
+
+      await ctx.step('a member allowed to run the manifest default fires it → 202', async () => {
+        await staleMirror();
+        (await fire(nightlyRunner)).status(202);
+      });
+
+      await ctx.step('a member allowed to run only the stale mirror name → 403 agent_not_accessible', async () => {
+        await staleMirror();
+        assertDenial(await fire(decoyRunner), 'agent_not_accessible');
+      });
+    } finally {
+      await world.close();
+    }
+  },
+);
