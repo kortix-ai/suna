@@ -34,7 +34,6 @@ mock.module('@/components/ui/text', () => ({ Text: host('text') }));
 mock.module('@/components/ui/skeleton', () => ({ Skeleton: host('skeleton') }));
 mock.module('@/lib/utils/mono-font', () => ({ MONO_FONT_FAMILY: 'mono' }));
 mock.module('@/lib/icons', () => ({ FilePlusIcon: none, FileMinusIcon: none, NotePencilIcon: none }));
-import { parsePatchFile } from '@/lib/diff/parse-patch';
 
 mock.module('@/lib/utils/theme', () => ({
   THEME: {
@@ -47,11 +46,11 @@ mock.module('@/lib/utils/theme', () => ({
 mock.module('@/lib/logger', () => ({ log: { error: none, warn: none, info: none } }));
 
 let ReviewFileDiff: typeof import('@/components/review/ReviewFileDiff').ReviewFileDiff;
-let DiffFile: typeof import('@/components/diff/PatchDiffView').DiffFile;
+let PatchDiffView: typeof import('@/components/diff/PatchDiffView').PatchDiffView;
 beforeAll(async () => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   ({ ReviewFileDiff } = await import('@/components/review/ReviewFileDiff'));
-  ({ DiffFile } = await import('@/components/diff/PatchDiffView'));
+  ({ PatchDiffView } = await import('@/components/diff/PatchDiffView'));
 });
 
 const PATCH = [
@@ -65,7 +64,6 @@ const PATCH = [
   '+added',
 ].join('\n');
 
-const FILE = { path: 'notes.txt', status: 'modified', additions: 1, deletions: 1 } as never;
 
 let tree: ReactTestRenderer | undefined;
 afterEach(() => {
@@ -132,15 +130,11 @@ describe('diff rows: ReviewFileDiff vs PatchDiffView', () => {
     expect(kept.container.style.minHeight).toBe(18);
   });
 
-  test('PatchDiffView DiffFile rows: gutter 42, content paddingRight 14, minHeight 18, unprefixed hunk lines', () => {
+  test('PatchDiffView DiffFile rows: converged on the shared 44/12 paint, unprefixed hunk lines', () => {
+    // Through the public surface: PatchDiffView infers the file entry and
+    // renders its DiffFile (`DiffFile` itself is not exported).
     act(() => {
-      tree = create(<DiffFile file={FILE} parsed={{ binary: false, rows: [] }} isDark={false} />);
-    });
-    // DiffFile without parsed rows renders the empty state; drive it with the parser.
-    act(() => tree?.unmount());
-    act(() => {
-      const parsed = parsePatchFile(PATCH, 'notes.txt');
-      tree = create(<DiffFile file={FILE} parsed={parsed ? { binary: parsed.binary, rows: parsed.rows } : undefined} isDark={false} />);
+      tree = create(<PatchDiffView patch={PATCH} isDark={false} />);
     });
     const rows = patchRows();
     expect(rows).toHaveLength(4);

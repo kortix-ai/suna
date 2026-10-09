@@ -18,8 +18,6 @@ import { parsePatch, type DiffRow } from '@/lib/diff/parse-patch';
 
 const MONO = MONO_FONT_FAMILY;
 
-export { MAX_DIFF_ROWS, parsePatch, type DiffRow } from '@/lib/diff/parse-patch';
-
 export function fileStatusMeta(status: ProjectCommitFile['status'], isDark = false): { icon: AppIcon; color: string } {
   if (status === 'added') return { icon: FilePlus, color: THEME.accent.green };
   if (status === 'deleted') return { icon: FileMinus, color: isDark ? THEME.dark.destructive : THEME.light.destructive };
@@ -86,7 +84,7 @@ export const DiffRowView = React.memo(function DiffRowView({
   );
 });
 
-export function DiffFile({
+function DiffFile({
   file,
   parsed,
   isDark,
