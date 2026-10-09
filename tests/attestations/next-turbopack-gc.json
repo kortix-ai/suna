@@ -1,5 +1,5 @@
 {
-  "source_hash": "04fe3b368d3ce74aaa562a3822017bc84b570f7cde407aed682ca400ae3c5ea3",
+  "source_hash": "a60ed201a437dc641f8aa067eeb6a2212d9f3e3ecad8f6a1036f75f80e7533ce",
   "diff_files": [
     ".agents/skills/learnings/MEMORY.md",
     ".agents/skills/learnings/entries/2026-10-09T163433Z-keep-turbopackgc-on-without-it-next-s-persistent-dev-cache-k.md",
@@ -11,13 +11,13 @@
     "package.json",
     "pnpm-lock.yaml"
   ],
-  "diff_hash": "fefe257e631330de6cc11d2c529745c8b6848861c4a30f9d73c723dd988a450b",
-  "head": "f8120a5028fdd098e00097eed3ddfb5e57a9e008",
+  "diff_hash": "174230e38bcbd7b2336d21525d163e7fb03e0544a2b8d27da5546042c2d8a5a2",
+  "head": "632cc4519ddc2360f3a11fb2babe8e8ac3853d49",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-09T16:46:50.473Z"
+  "at": "2026-10-09T17:09:10.214Z"
 }
