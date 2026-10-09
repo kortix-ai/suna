@@ -10,6 +10,15 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ---
 
+## 2026-10-09
+
+### D13 A backend is an App of kind `convex`
+- **Decision:** A Convex-powered backend is an App of kind `convex`, not a product of its own. The CLI, API, SDK and skills name Apps, kinds and capabilities only (`kortix apps create <slug> --kind convex`, `/apps/:appId/snapshots`, `app.capabilities`). "Backend" stays the plain-language noun for what a `convex` App is, and the label of its kind badge in the web app. Never "database", "DB", "Convex project", or "app backend".
+- **Why:** The founder decided on 2026-10-09: "technically the backends are apps as well." One noun for every deployable thing removes a second inventory, a second permission set and a second CLI group. Clients branch on capabilities, so a future kind needs no new noun.
+- **Where:** `verbal/voice-and-tone.md` section 3 (product nouns), `apps/web/content/docs/feature-flags/apps.mdx` (Kind `convex`), the `kortix-apps` system skill (`packages/starter/templates/managed/skills/kortix-apps/`), the `kortix apps` CLI help.
+- **Supersedes:** D12 (the CLI `kortix backends`, the `/backends` API routes and the Backends product area; the banned synonyms stay).
+- **Source:** branch `apps-convex` (2026-10-09).
+
 ## 2026-10-06
 
 ### D12 "Backend" is the noun for a project's Convex-powered service

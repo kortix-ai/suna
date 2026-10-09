@@ -11,8 +11,7 @@ Flags are per project. Turning a flag on in one project changes nothing in
 another project, and nothing for other accounts.
 
 <CardGroup>
-  <Card icon="app-window" title="Apps" href="/docs/feature-flags/apps">Deploy static sites, bundles, Dockerfiles, and OCI images to stable URLs.</Card>
-  <Card icon="database" title="Backends" href="/docs/feature-flags/backends">Give a project a database, server functions, realtime queries, files, and schedules, powered by Convex.</Card>
+  <Card icon="app-window" title="Apps" href="/docs/feature-flags/apps">Deploy static sites, bundles, Dockerfiles, OCI images, and Convex backends to stable URLs.</Card>
 </CardGroup>
 
 ## Turn a flag on
@@ -67,7 +66,6 @@ Some flags read it from configuration; every other flag is always available:
 | Flag | Available when |
 |---|---|
 | `llm_gateway` | `LLM_GATEWAY_ENABLED` is on |
-| `backends` | `PLATINUM_API_KEY` is set |
 | `monitors` | `PLATINUM_API_KEY` is set |
 
 ## Stability badges
@@ -112,10 +110,10 @@ this.
 
 Registry order — the same order **Settings → Feature flags** shows.
 
-### Internal-only flags: `apps` and `backends`
+### Internal-only flag: `apps`
 
-`apps` and `backends` start billable machines, so Kortix turns them on per
-project on request.
+`apps` starts billable machines, so Kortix turns it on per project on
+request.
 
 - **Off:** Settings and `kortix projects features` do not list the flag. Its
   routes answer `403` `feature_disabled` with "Contact Kortix to enable it."
@@ -128,14 +126,14 @@ project on request.
 
 ```json
 {
-  "error": "Backends is managed by Kortix. Contact Kortix to change it.",
+  "error": "Apps is managed by Kortix. Contact Kortix to change it.",
   "code": "feature_operator_only",
-  "feature": "backends"
+  "feature": "apps"
 }
 ```
 
 Kortix operators set the flag with
-`PUT /v1/admin/api/projects/:id/features` `{ "feature": "backends", "enabled": true }`
+`PUT /v1/admin/api/projects/:id/features` `{ "feature": "apps", "enabled": true }`
 (`null` clears it). The audit log records `admin.project.feature.set` on the
 project.
 
@@ -147,7 +145,6 @@ project.
 | `llm_gateway` | LLM Gateway | Experimental | On (operator can default off) | `behavioral` |
 | `meta_agent` | Meta Agent | Experimental | Off | `behavioral` |
 | `apps` | Apps | Stable | Off | `routes` |
-| `backends` | Backends | Experimental | Off | `routes` |
 | `monitors` | Monitors | Experimental | Off | `routes` |
 | `reminders` | Reminders | Beta | Off | `routes` |
 | `warm_sessions` | Warm Sessions | Beta | On | `routes` |
@@ -174,10 +171,9 @@ refs). An explicit project choice always wins.
 - **`meta_agent`** — add a platform-owned coordinator agent that spawns and
   manages specialized sessions.
 - **`apps`** — deploy static sites, bundles, Dockerfiles, and OCI images to
-  stable serverless URLs. See [Apps](/docs/feature-flags/apps).
-- **`backends`** — give a project up to 3 full backends: a database, server
-  functions, realtime queries, file storage, and schedules, powered by Convex.
-  See [Backends](/docs/feature-flags/backends).
+  stable serverless URLs, and run up to 3 Convex backends (kind `convex`: a
+  database, server functions, realtime queries, file storage, and schedules)
+  where Platinum is configured. See [Apps](/docs/feature-flags/apps).
 - **`monitors`** — run 24/7 watchers from your repo that fire trigger events
   into sessions. See [Triggers](/docs/connect/triggers).
 - **`reminders`** — scheduled check-ins that re-prompt one session, once or

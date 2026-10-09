@@ -17,8 +17,9 @@ instance.
 :::note
   Building an App **hosted by Kortix** (`*.apps.kortix.com`)? You need none of
   this. The Apps gate already authenticated the viewer — read them with
-  `kortixAppViewerToken()` / `readAppViewer()`. See
-  [Apps → Your App already knows who is looking](/docs/sdk/apps).
+  `kortixAppViewerToken()` / `readAppViewer()`, and get sign-in tokens for the
+  App or an App it uses with `kortixToken()`. See
+  [Sign-in tokens for Apps](#sign-in-tokens-for-apps) below.
 :::
 
 ## 1. Register your app
@@ -135,3 +136,46 @@ straight back. Revoking an app deletes every token it minted.
 `GET https://api.kortix.com/.well-known/oauth-authorization-server` (also
 under `/v1/oauth/.well-known/…`) publishes the endpoints for a generic OAuth
 client. The SDK does not need it — it derives every endpoint from `backendUrl`.
+
+## Sign-in tokens for Apps
+
+Code in an App hosted by Kortix, and the Apps it uses, accepts a second kind
+of token: a short ES256 JWT that Kortix mints for one App. No OAuth flow, no
+redirect, no client secret.
+
+| | Value |
+|---|---|
+| Issuer | `<API origin>/v1/projects/<projectId>`, one per project |
+| Discovery | `<issuer>/.well-known/openid-configuration` and `<issuer>/jwks.json`, public |
+| Audience | The id of the App the token is for |
+| Lifetime | 15 minutes |
+| Claims | `sub`, `email`, `name`, `picture`, `groups`, `group_ids`, `role`, `account_id`, `project_id`; an agent's token adds `kind: "agent"` and has no groups or role |
+
+Every App carries the values that verify its tokens: `app.auth.issuer`,
+`app.auth.audience`, `app.auth.jwks_uri`.
+
+```ts
+import { kortixToken, kortixBinding, verifyKortixToken, requireKortixMember } from '@kortix/sdk';
+
+// In the App's browser code: a token fetcher for this App, or an App it uses.
+const forThisApp = kortixToken();
+const forDb = kortixToken({ audience: 'db' });
+const db = kortixBinding('db');   // { url: '<origin>/_kortix/apps/db', token: forDb }
+
+// On a server that receives the token:
+const member = await verifyKortixToken(bearer, {
+  issuer: app.auth.issuer,
+  audience: app.auth.audience,
+  jwks: app.auth.jwks_uri,
+});
+requireKortixMember(member, { roles: ['owner', 'admin'] });
+```
+
+`kortixToken` reads `GET /_kortix/token?audience=<slug or id>` on the App's
+own origin. The audience is the App itself (the default) or an App it uses
+(`kortix apps link <app> --uses <other>`); any other answers
+`403 app_not_linked`. A member, a script or an agent mints one through the API
+instead: `kortix.project(projectId).apps.token(appId)`, or
+`kortix apps token <app>`. The full contract, the bindings mount and the
+`convex` App setup: [SDK → Apps](/docs/sdk/apps) and
+[Apps → Apps an App uses](/docs/feature-flags/apps#apps-an-app-uses-sign-in-tokens-and-bindings).
