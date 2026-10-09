@@ -50,11 +50,12 @@ function harness(opts: {
   const sent: ExpoPushMessage[][] = [];
   const listed: string[] = [];
   const warnings: unknown[][] = [];
+  const infos: unknown[][] = [];
   const deps: SessionPushDeps = {
     enabled: opts.enabled ?? true,
     isPresent: opts.isPresent,
     mayReceive: opts.mayReceive,
-    logger: { warn: (...args: unknown[]) => void warnings.push(args) },
+    logger: { warn: (...args: unknown[]) => void warnings.push(args), info: (...args: unknown[]) => void infos.push(args) },
     loadSession: async () => (opts.session === undefined ? { createdBy: USER, title: 'Fix the build' } : opts.session),
     store: {
       async listByUser(userId) {
@@ -72,7 +73,7 @@ function harness(opts: {
         return { tickets: [], removedTokens: [], failedMessages: 0 };
       }),
   };
-  return { notify: createSessionNotifier(deps), sent, listed, warnings };
+  return { notify: createSessionNotifier(deps), sent, listed, warnings, infos };
 }
 
 describe('turnEndPushType — only a turn this call closed notifies', () => {
@@ -360,5 +361,18 @@ describe('createSessionNotifier', () => {
     });
     expect(await h.notify(event)).toEqual({ sent: 0, reason: 'failed' });
     expect(h.warnings).toHaveLength(1);
+    expect(h.warnings[0]![1]).toMatchObject({ type: 'completion', sessionId: SESSION, reason: 'failed', sent: 0 });
+    expect(h.infos).toHaveLength(0);
+  });
+
+  test('logs one info line per call with type, sessionId, reason and sent', async () => {
+    const h = harness({ rows: [row('a'), row('b')] });
+    await h.notify({ ...event, type: 'question', question: 'secret question text' });
+    expect(h.infos).toEqual([['[push] session event', { type: 'question', sessionId: SESSION, reason: 'sent', sent: 2 }]]);
+    expect(JSON.stringify(h.infos)).not.toContain('secret question text');
+    const p = harness({ isPresent: async () => true });
+    await p.notify(event);
+    expect(p.infos).toEqual([['[push] session event', { type: 'completion', sessionId: SESSION, reason: 'present', sent: 0 }]]);
+    expect(p.warnings).toHaveLength(0);
   });
 });

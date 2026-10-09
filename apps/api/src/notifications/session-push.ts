@@ -47,8 +47,8 @@ export interface SessionPushDeps {
   mayReceive?(userId: string, session: SessionPushTarget): Promise<boolean>;
   store: Pick<PushDeviceTokenStore, 'listByUser' | 'deleteTokens'>;
   send(messages: ExpoPushMessage[], store: Pick<PushDeviceTokenStore, 'deleteTokens'>): Promise<ExpoPushResult>;
-  /** Receives failure warnings. Defaults to `console`. */
-  logger?: Pick<Console, 'warn'>;
+  /** Receives the outcome line and failure warnings. Defaults to the API logger. */
+  logger?: Pick<typeof logger, 'info' | 'warn'>;
 }
 
 export type SessionPushOutcome =
@@ -195,7 +195,17 @@ export async function notifyClosedTurn(
 }
 
 export function createSessionNotifier(deps: SessionPushDeps) {
+  const log = deps.logger ?? logger;
   return async function notify(event: SessionPushEvent): Promise<SessionPushOutcome> {
+    const outcome = await run(event);
+    // `failed` already warned with the error below. Never log message bodies or question text.
+    if (outcome.reason !== 'failed') {
+      log.info('[push] session event', { type: event.type, sessionId: event.sessionId, reason: outcome.reason, sent: outcome.sent });
+    }
+    return outcome;
+  };
+
+  async function run(event: SessionPushEvent): Promise<SessionPushOutcome> {
     try {
       if (!deps.enabled) return { sent: 0, reason: 'disabled' };
       const session = await deps.loadSession(event.sessionId, event.projectId);
@@ -221,14 +231,16 @@ export function createSessionNotifier(deps: SessionPushDeps) {
       const result = await deps.send(messages, deps.store);
       return { sent: messages.length, reason: 'sent', result };
     } catch (err) {
-      (deps.logger ?? console).warn('[push] session notification failed', {
+      log.warn('[push] session notification failed', {
         type: event.type,
         sessionId: event.sessionId,
+        reason: 'failed',
+        sent: 0,
         error: err instanceof Error ? err.message : String(err),
       });
       return { sent: 0, reason: 'failed' };
     }
-  };
+  }
 }
 
 async function loadSessionTarget(sessionId: string, projectId: string): Promise<SessionPushTarget | null> {
