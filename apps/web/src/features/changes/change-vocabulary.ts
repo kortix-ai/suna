@@ -231,6 +231,10 @@ export function proposedChangeTimeline(
  * each `diff --git` header and keying the pieces by the **new** path (the `b/`
  * side), which is the path the file list reports for everything except a
  * deletion — and a deletion's `b/` path is the same string anyway.
+ *
+ * Each chunk's quoted header lines are also rewritten to their decoded paths
+ * (`unquotePatchHeaders`): the diff renderer parses only the unquoted form and
+ * throws on the quoted one.
  */
 export function splitUnifiedPatch(patch: string): Map<string, string> {
   const byPath = new Map<string, string>();
@@ -238,11 +242,103 @@ export function splitUnifiedPatch(patch: string): Map<string, string> {
 
   for (const chunk of patch.split(/^(?=diff --git )/m)) {
     if (!chunk.trim()) continue;
-    const match = chunk.match(/^diff --git a\/(?:.*?) b\/(.+?)$/m);
-    if (!match) continue;
-    byPath.set(match[1], chunk);
+    const path = patchChunkPath(chunk);
+    if (path) byPath.set(path, unquotePatchHeaders(chunk));
   }
   return byPath;
+}
+
+/**
+ * Rewrite a chunk's C-quoted header lines to plain decoded paths. The diff
+ * renderer (@pierre/diffs) matches `---`/`+++`/`diff --git` lines with regexes
+ * that only accept the unquoted `[ab]/<path>` form: a quoted path both crashes
+ * its parser (TypeError on its own match groups) and, where it parses, shows
+ * git's octal escapes as the file name. The quoted token already carries the
+ * `a/`/`b/` prefix and an optional trailing TAB, so the decoded path replaces
+ * the whole token. `/dev/null` and unquoted lines are left untouched.
+ */
+function unquotePatchHeaders(chunk: string): string {
+  return chunk
+    .replace(
+      /^diff --git ("[ab]\/(?:[^"\\]|\\.)*") ("[ab]\/(?:[^"\\]|\\.)*")[ \t]*$/m,
+      (_line, aToken: string, bToken: string) =>
+        `diff --git ${unquoteGitPath(aToken)} ${unquoteGitPath(bToken)}`,
+    )
+    .replace(/^--- ("a\/(?:[^"\\]|\\.)*")[ \t]*$/m, (_line, token: string) => `--- ${unquoteGitPath(token)}`)
+    .replace(/^\+\+\+ ("b\/(?:[^"\\]|\\.)*")[ \t]*$/m, (_line, token: string) => `+++ ${unquoteGitPath(token)}`);
+}
+
+/**
+ * The file list comes from `git diff --name-status -z`, which reports raw
+ * (unquoted) paths. Patch headers do not: git C-quotes non-ASCII paths (octal
+ * UTF-8 bytes) and writes paths containing " b/" ambiguously. A chunk that
+ * cannot be read back into a file-list path renders as an accordion with no
+ * body (KRTX-2010), so the b-side is read the way git actually writes it:
+ *
+ * 1. `+++ b/<path>` — the post-image file. Unambiguous even when the path
+ *    itself contains " b/", absent for pure renames, `/dev/null` for deletions.
+ * 2. The `diff --git` header's quoted pair — unquoted byte-for-byte.
+ * 3. The header's raw pair — split at the LAST ` b/`, because the old path may
+ *    itself contain " b/" while the separator is the boundary git appended last.
+ */
+function patchChunkPath(chunk: string): string | null {
+  // git writes `+++ b/<path>\t` — a TAB (plus an empty timestamp) trails the
+  // path. A path never contains a raw TAB: git quotes control characters, so
+  // cutting at the first one is safe.
+  const plusLine = chunk.match(/^\+\+\+ (.+)$/m)?.[1]?.split('\t')[0];
+  if (plusLine && plusLine.trim() !== '/dev/null') {
+    return stripBPrefixed(unquoteGitPath(plusLine));
+  }
+
+  const header = chunk.match(/^diff --git (.+)$/m)?.[1];
+  if (!header) return null;
+  if (header.startsWith('"')) {
+    const tokens = header.match(/"(?:[^"\\]|\\.)*"/g);
+    const second = tokens?.[1];
+    return second ? stripBPrefixed(unquoteGitPath(second)) : null;
+  }
+  const rest = header.replace(/^a\//, '');
+  const separator = rest.lastIndexOf(' b/');
+  return separator >= 0 ? rest.slice(separator + 3) : null;
+}
+
+/** `+++ b/src/x.ts` and the header's `b/` side both mark the path with git's
+ *  `b/` prefix — one level, not part of the path itself. */
+function stripBPrefixed(path: string): string {
+  return path.startsWith('b/') ? path.slice(2) : path;
+}
+
+/** Decode the C-style string git wraps around a path it must quote
+ *  (`"b/\321\204..."`): octal escapes are raw BYTES, the rest are characters,
+ *  and only the byte re-assembly is allowed to be UTF-8-invalid mid-decode. */
+function unquoteGitPath(value: string): string {
+  if (value.length < 2 || !value.startsWith('"') || !value.endsWith('"')) return value;
+  const body = value.slice(1, -1);
+  const bytes: number[] = [];
+  const encoder = new TextEncoder();
+  const simpleEscapes: Record<string, number[]> = {
+    a: [0x07], b: [0x08], f: [0x0c], n: [0x0a], r: [0x0d], t: [0x09], v: [0x0b],
+    '"': [0x22], '\\': [0x5c],
+  };
+  for (let i = 0; i < body.length; i += 1) {
+    const ch = body[i];
+    if (ch === '\\') {
+      const octal = /^([0-7]{3})/.exec(body.slice(i + 1));
+      if (octal) {
+        bytes.push(parseInt(octal[1], 8));
+        i += 3;
+        continue;
+      }
+      const simple = simpleEscapes[body[i + 1]];
+      if (simple) {
+        bytes.push(...simple);
+        i += 1;
+        continue;
+      }
+    }
+    bytes.push(...encoder.encode(ch));
+  }
+  return new TextDecoder('utf-8', { fatal: false }).decode(new Uint8Array(bytes));
 }
 
 /**

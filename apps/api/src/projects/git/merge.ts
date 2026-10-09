@@ -108,10 +108,19 @@ async function computeDiffByRange(
 
   const range = `${baseRevish}...${headRevish}`;
 
-  const [nameStatus, numstat, patch] = await Promise.all([
+  // The file-list commands stay small (one short record per file) and are
+  // allowed to fail into empty output; the PATCH command is the one that can
+  // exceed runGit's 10 MiB exec cap on a big change (ERR_CHILD_PROCESS_STDIO_MAXBUFFER,
+  // or the 30 s timeout). Swallowing that failure used to ship a 200 whose
+  // `patch` was empty while `files` was populated — the review page then drew
+  // file rows with silently blank bodies (KRTX-2010). Flag it instead: the
+  // reviewer keeps the file list and the web shows an explicit per-file state.
+  const [nameStatus, numstat, patchResult] = await Promise.all([
     runGit(['diff', '--name-status', '-z', '-M', range], repoPath, false).catch(() => ({ stdout: '', stderr: '' })),
     runGit(['diff', '--numstat', '-M', range], repoPath, false).catch(() => ({ stdout: '', stderr: '' })),
-    runGit(['diff', '--no-color', '-M', range], repoPath, false).catch(() => ({ stdout: '', stderr: '' })),
+    runGit(['diff', '--no-color', '-M', range], repoPath, false)
+      .then((r) => ({ stdout: r.stdout, truncated: false }))
+      .catch(() => ({ stdout: '', truncated: true })),
   ]);
 
   const { files, additions, deletions } = parseGitFileChanges(nameStatus.stdout, numstat.stdout);
@@ -120,7 +129,8 @@ async function computeDiffByRange(
     files_changed: files.length,
     additions,
     deletions,
-    patch: patch.stdout,
+    patch: patchResult.stdout,
+    patch_truncated: patchResult.truncated,
     base_sha: baseSha,
     head_sha: headSha,
     merge_base: mergeBase,

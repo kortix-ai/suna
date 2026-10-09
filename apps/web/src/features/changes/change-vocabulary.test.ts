@@ -228,6 +228,136 @@ describe('splitting a whole-change patch', () => {
     expect(splitUnifiedPatch('').size).toBe(0);
     expect(splitUnifiedPatch('   \n  ').size).toBe(0);
   });
+
+  // The file list comes from `git diff --name-status -z`, which reports raw
+  // (unquoted) paths. The patch headers do not: git C-quotes non-ASCII paths
+  // (octal UTF-8 bytes) and leaves paths containing " b/" ambiguous. A chunk
+  // whose header cannot be read back into the file-list path renders as an
+  // accordion with no body — the review-page blank-body bug.
+  describe('paths git quotes or makes ambiguous', () => {
+    /** The quoted-octal form git writes for a non-ASCII path (core.quotepath). */
+    const quoted = (path: string) => {
+      const bytes = Buffer.from(path, 'utf8');
+      let out = '';
+      for (const b of bytes) {
+        if (b > 0x7e || b < 0x20) out += `\\${b.toString(8).padStart(3, '0')}`;
+        else out += String.fromCharCode(b);
+      }
+      return out;
+    };
+
+    test('a non-ASCII path keys by its raw name even though git quoted the header', () => {
+      const name = '日本語-ファイル.txt';
+      const q = quoted(name);
+      const patch = [
+        `diff --git "a/${q}" "b/${q}"`,
+        'index 111..222 100644',
+        `--- "a/${q}"\t`,
+        `+++ "b/${q}"\t`,
+        '@@ -1 +1 @@',
+        '-old',
+        '+new',
+      ].join('\n');
+      expect([...splitUnifiedPatch(patch).keys()]).toEqual([name]);
+    });
+
+    test('a path containing " b/" keys by the full new path from the +++ line', () => {
+      const patch = [
+        'diff --git a/x b/deep.txt b/x b/deep.txt',
+        'index 111..222 100644',
+        '--- a/x b/deep.txt\t',
+        '+++ b/x b/deep.txt\t',
+        '@@ -1 +1 @@',
+        '-old',
+        '+new',
+      ].join('\n');
+      expect([...splitUnifiedPatch(patch).keys()]).toEqual(['x b/deep.txt']);
+    });
+
+    test('a renamed file with spaces and non-ascii keys by the new path', () => {
+      const name = 'новая папка/файл с пробелом.txt';
+      const q = quoted(name);
+      const patch = [
+        `diff --git "a/stara/${q}" "b/${q}"`,
+        'similarity index 87%',
+        'rename from stara/стар файл.txt',
+        `rename to "${q}"`,
+        `--- "a/stara/${q}"`,
+        `+++ "b/${q}"`,
+        '@@ -1 +1 @@',
+        '-old',
+        '+new',
+      ].join('\n');
+      expect([...splitUnifiedPatch(patch).keys()]).toEqual([name]);
+    });
+
+    test('a deletion keys by the deleted path via the header (+++ is /dev/null)', () => {
+      const patch = [
+        'diff --git a/src/gone.ts b/src/gone.ts',
+        'deleted file mode 100644',
+        '--- a/src/gone.ts',
+        '+++ /dev/null',
+        '@@ -1 +0,0 @@',
+        '-bye',
+      ].join('\n');
+      expect([...splitUnifiedPatch(patch).keys()]).toEqual(['src/gone.ts']);
+    });
+
+    test('a pure rename (no hunks, no +++ line) keys by the new path', () => {
+      const renamed = [
+        'diff --git a/plan.md b/plans/plan.md',
+        'similarity index 100%',
+        'rename from plan.md',
+        'rename to plans/plan.md',
+      ].join('\n');
+      expect([...splitUnifiedPatch(renamed).keys()]).toEqual(['plans/plan.md']);
+    });
+
+    // The renderer's own parser (@pierre/diffs) only understands the unquoted
+    // `--- a/…` / `+++ b/…` / `diff --git a/… b/…` forms: a quoted header both
+    // crashes its parser and shows git's octal escapes as the file name. The
+    // chunks handed to it must carry the decoded paths instead.
+    test('a quoted header is rewritten to decoded paths in the rendered chunk', () => {
+      const name = '日本語-ファイル.txt';
+      const q = quoted(name);
+      const patch = [
+        `diff --git "a/${q}" "b/${q}"`,
+        'index 111..222 100644',
+        `--- "a/${q}"`,
+        `+++ "b/${q}"`,
+        '@@ -1 +1 @@',
+        '-old',
+        '+new',
+      ].join('\n');
+      const chunk = splitUnifiedPatch(patch).get(name);
+      expect(chunk).toContain(`diff --git a/${name} b/${name}`);
+      expect(chunk).toContain(`--- a/${name}`);
+      expect(chunk).toContain(`+++ b/${name}`);
+      expect(chunk).not.toContain('"a/');
+      expect(chunk).not.toContain('"b/');
+    });
+
+    test('a quoted tab-suffixed header is rewritten the same way', () => {
+      const name = 'отчёт.csv';
+      const q = quoted(name);
+      const patch = [
+        `diff --git "a/${q}" "b/${q}"`,
+        'new file mode 100644',
+        `--- "a/${q}"\t`,
+        `+++ "b/${q}"\t`,
+        '@@ -0,0 +1 @@',
+        '+v',
+      ].join('\n');
+      const chunk = splitUnifiedPatch(patch).get(name);
+      expect(chunk).toContain(`+++ b/${name}`);
+      expect(chunk).not.toContain('"b/');
+    });
+
+    test('unquoted chunks pass through untouched', () => {
+      const byPath = splitUnifiedPatch(patch);
+      expect(byPath.get('src/a.ts')).toStartWith('diff --git a/src/a.ts b/src/a.ts');
+    });
+  });
 });
 
 describe('which rows start open', () => {

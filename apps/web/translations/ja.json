@@ -19555,7 +19555,8 @@
       "text07fb9f8661dc": "イベントのあるアプリ",
       "text51035b5b67dc": "種類で絞り込む",
       "text12a4656bfd2a": "{source} 経由",
-      "textfd26b2373251": "{source} 経由のイベント"
+      "textfd26b2373251": "{source} 経由のイベント",
+      "texte3d92a0125e7": "この変更はインライン表示するには大きすぎます。ファイル一覧は正確です。"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",

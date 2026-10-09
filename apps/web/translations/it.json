@@ -19555,7 +19555,8 @@
       "text07fb9f8661dc": "App con eventi",
       "text51035b5b67dc": "Filtra per tipo",
       "text12a4656bfd2a": "tramite {source}",
-      "textfd26b2373251": "Eventi tramite {source}"
+      "textfd26b2373251": "Eventi tramite {source}",
+      "texte3d92a0125e7": "Questa modifica è troppo grande per essere mostrata in linea. L'elenco dei file resta accurato."
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
