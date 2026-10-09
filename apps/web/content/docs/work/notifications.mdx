@@ -1,0 +1,224 @@
+---
+title: Notifications
+description: How Kortix tells you that a session or a trigger needs you, and where.
+---
+
+A notification tells you that a session or a trigger needs you. Kortix writes
+each one to your inbox, the bell. It then sends it to your phone, your browser,
+or your email, as your settings allow.
+
+## Kinds
+
+A turn is one round of agent work, from a message to the agent's last reply.
+
+| Kind | Label in the app | Sent when | Push by default | Email by default |
+|---|---|---|---|---|
+| `turn_done` | Turn finished | A turn ends. | On | Off |
+| `turn_error` | Turn failed | A turn ends with an error. | On | Digest |
+| `question` | Question | The agent asks a question and waits for the answer. | On | Digest |
+| `permission` | Permission request | The agent asks for permission to run a tool. | On | Never |
+| `shared` | Shared with you | Someone shares a session with you. | On | Digest |
+| `automation_failed` | Failure alert | A trigger or a reminder starts failing. | On | At once |
+| `automation_recovered` | Recovery alert | That trigger or reminder works again. | On | Off |
+
+Turn on **Email** for `turn_done` and it joins the digest. Turn it on for
+`automation_recovered` and Kortix emails it at once. A permission request is
+never emailed: it goes stale before a digest is due.
+
+## Who gets a notification
+
+### Session events
+
+Two groups of people get a session's notifications.
+
+- **The prompter** — the person whose message started the turn.
+- **The watchers** — the session's creator, and each person who sent a message
+  in it as themselves: from the web app, the desktop app, the mobile app, the
+  CLI, or a personal access key. A message an agent sends with its session
+  token makes nobody a watcher.
+
+Who gets what depends on how the session started.
+
+| Session | Turn ends | Questions and permission requests |
+|---|---|---|
+| Started in the web app, the desktop app, the mobile app, the CLI, or the API | The prompter and the watchers | The prompter and the watchers |
+| Started from Slack, Microsoft Teams, or email | The prompter, in the bell only | See [Slack, Teams, and email sessions](#slack-teams-and-email-sessions) |
+| Started by a trigger | The prompter only. A fire has no prompter: its failed run raises an [alert](/docs/connect/triggers#alerts) instead. | The prompter and the trigger's alert recipients |
+| A worker session another session started | Nobody. The parent session reports. | The prompter and the watchers |
+
+These rules apply to every row:
+
+- A person who [muted the session](#mute-a-session) gets nothing from it.
+- A person who cannot open the session gets nothing from it.
+- A turn you stop yourself sends nothing. When a turn ends and your next queued
+  message starts at once, Kortix sends no `turn_done`: the session is still
+  working.
+
+### Shared sessions
+
+When the owner shares a session with specific people, each person added gets one
+`shared` notification. A person added through a group gets it too. The owner
+gets none. Sharing with the whole project sends none. Kortix sends at most one
+per person and session per day (UTC), so changing the list again does not
+repeat it. See [Session access](/docs/work/sessions#session-access).
+
+### Triggers and reminders
+
+An alert is the `automation_failed` or `automation_recovered` notification of a
+trigger or a reminder. It goes to the people who wrote the trigger or set the
+reminder. See [Triggers → Alerts](/docs/connect/triggers#alerts) and
+[Reminders → Failure alerts](/docs/connect/reminders#failure-alerts).
+
+## Where notifications appear
+
+### The bell
+
+On the web and in the desktop app, the bell sits at the top of the project
+sidebar and on the projects page. Its badge counts your unread notifications.
+Choose a notification to open its session, the **Triggers** page for a trigger
+alert, or the **Reminders** page for a reminder alert. That marks it read.
+**Mark all as read** clears the count.
+
+A notification that arrives while you use Kortix also shows as a toast, unless
+it is about the session on your screen. While this browser shows no
+notifications, the bell offers **Turn on**.
+
+Opening a session marks its notifications read, on the web, in the desktop app,
+and in the mobile app. The bell drops them at once.
+
+### The mobile app
+
+The mobile app gets a push for each notification your **Push** switches allow.
+Tap it to open the session, or the project for an alert. **Notifications** in the drawer lists every
+notification across your projects.
+
+### Browser notifications
+
+A browser can show notifications with every Kortix tab closed. This uses Web
+Push.
+
+1. Open **Settings → Notifications**.
+2. Turn on **Enable notifications**.
+3. Allow notifications when the browser asks.
+
+Click a notification to open its session. A tab that already shows that page
+comes to the front, and the notification is marked read. The setting is per
+browser: turn it on in each browser you use. Signing out of Kortix in that
+browser stops its notifications.
+
+A browser shows one notification per session, or per trigger, and kind. A new
+one replaces the last one. In Chrome and Edge it alerts again. A tab that is
+open on the session and the push for the same event show one notification, not
+two.
+
+Web Push works in Chrome, Edge, Firefox, and Safari on macOS. Another browser
+shows notifications only while a Kortix tab is open. With **Enable
+notifications** on, that tab checks for new notifications about once a minute,
+also while it is in the background.
+
+### The desktop app
+
+The desktop app has no push service. While its window is open, it checks for
+new notifications about once a minute, also while the window is minimized or
+covered. When the window is not in focus, it shows up to 3 new ones per check as
+OS notifications, with **Enable notifications** on. With the window closed, it
+shows nothing.
+
+### Email
+
+- An `automation_failed` alert is emailed at once.
+- `turn_error`, `question`, and `shared` go into a digest. A notification that is
+  still unread 15 minutes after it arrives joins your next digest.
+- Kortix sends you at most one digest per hour. A digest lists up to 10
+  notifications and counts the rest.
+- A digest leaves out a question that someone already answered, and anything you
+  can no longer open.
+
+Email needs an email provider on the deployment. Kortix Cloud has one. A
+[self-hosted](/docs/host) deployment sends email once its operator sets
+`EMAIL_URL`. Without a provider, the **Email** switches do not show.
+
+## When a session is open
+
+- A notification that arrives while you have its session open is marked read at
+  once. It never joins a digest.
+- A session open in a tab with **Enable notifications** on shows its own OS
+  notification. Kortix then sends no mobile push and no Web Push for that
+  session. A tab without browser notifications does not hold back the push.
+
+## Choose what you get
+
+Open **Settings → Notifications**. Under **Notification types**, each kind has
+a **Push** switch and an **Email** switch. **Permission request** has no
+**Email** switch.
+
+- The switches follow you: they apply in every account, on every phone, and in
+  every browser.
+- **Push** covers the mobile app, Web Push, and the notifications an open tab
+  shows.
+- The bell lists every notification, whatever the switches say.
+- The mobile app's **Settings → Notifications** shows the **Push** switches.
+  Change **Email** on the web. The mobile **Notifications** and **Play sound**
+  switches apply to that phone only.
+
+## Mute a session
+
+Open the session menu next to the session's title and choose **Mute
+notifications**. You then get nothing from that session: no turn ends, no
+questions, and no permission requests, even for turns you prompt. A new message
+from you does not unmute it.
+
+Choose **Unmute notifications** in the same menu to get them again. On a session
+you do not watch, such as one shared with you, it makes you a watcher.
+
+## Slack, Teams, and email sessions
+
+A session that started from a Slack thread, a Teams chat, or an email replies
+there. That reply is the notification.
+
+- A turn end sends no push and no email. Only the prompter gets it, as a row in
+  the bell. The creator and the watchers get nothing.
+- A question from a Slack or Teams session posts in the thread. If Kortix cannot
+  post it there, the prompter and the watchers get it as a notification.
+- A permission request from a Slack or Teams session also reaches the prompter
+  and the watchers.
+- An email session sends every question and permission request to the prompter
+  and the watchers. The email channel is experimental. See
+  [Slack & channels](/docs/connect/slack#live-channels).
+
+## Privacy and retention
+
+- Kortix writes a notification only for a person who can open its session, or
+  who can read the project's triggers for an alert.
+- A notification follows your access. When you lose access to its session or
+  project, it leaves your bell and your digests.
+- Leaving an account, or removal from it, deletes your notifications in that
+  account. You stop watching its sessions and triggers.
+- In an account that requires two-factor authentication, the bell shows that
+  account's notifications only after you sign in with your second factor. A
+  browser signed in without it gets no Web Push for that account.
+- A push and an email carry the session title and a short detail, such as the
+  agent's question or the error.
+- Signing out a device under **Settings → Security → Devices** stops its Web
+  Push. Deleting your Kortix account deletes your notifications and your
+  settings.
+- Kortix deletes notifications after 90 days.
+
+## API
+
+These routes act for a person: a browser sign-in or a personal access key. An
+agent's session token and a service account get `403`.
+
+| Route | Effect |
+|---|---|
+| `GET /v1/notifications` | Lists your newest notifications. `limit` takes 1–50 (default 20). `before=<id>` reads the next page. Returns `notifications`, `unread_count` (counts up to 100), and `next_before`. |
+| `POST /v1/notifications/read` | Marks notifications read. Body: exactly one of `{ "ids": [...] }` (1–100 ids), `{ "all": true }`, or `{ "session_id": "..." }`. Returns `updated` and `unread_count`. |
+| `GET /v1/notifications/preferences` | Returns `kinds` (the **Push** and **Email** switch of each kind) and `email_available`. |
+| `PUT /v1/notifications/preferences` | Changes the switches you send, for example `{ "kinds": { "turn_done": { "push": false } } }`. Returns the same shape as `GET`. |
+| `GET /v1/projects/:projectId/sessions/:sessionId/watch` | Returns `{ "watching": true }` when you watch the session. |
+| `PUT /v1/projects/:projectId/sessions/:sessionId/watch` | Body `{ "watching": false }` mutes the session. `{ "watching": true }` watches it. |
+
+`GET /v1/notifications/web-push/key` and
+`POST`/`DELETE /v1/notifications/web-push/subscriptions` register a browser for
+Web Push. The web app calls them. They accept a browser sign-in only. The SDK
+wraps every route above: see [SDK reference](/docs/sdk/reference).

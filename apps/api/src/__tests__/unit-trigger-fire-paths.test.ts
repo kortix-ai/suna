@@ -9,6 +9,9 @@
  *
  * The CRUD, webhook authentication and backpressure-queueing contracts run
  * over real HTTP in TRG-2..4 and TRG-17..19 (tests/src/flows/triggers.flow.ts).
+ * Automation alerts (KRTX-1742): only a dead-lettered slot raises one, a
+ * retried attempt never does; their SQL edge runs in
+ * integration-trigger-alerts.test.ts.
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { mockIamEngineAllowAll, mockIamReadModels } from './helpers/iam-mocks';
@@ -56,6 +59,16 @@ let triggerExecutionRows: any[];
 let sessionRows: Array<typeof projectSessions.$inferSelect>;
 let lifecycleCommandRows: Array<typeof sessionLifecycleCommands.$inferSelect>;
 let activeSessionCount = 0;
+let walletBalance = 1_000_000;
+let automationActor: string | null = USER_ID;
+const alertCalls: Array<{ kind: 'raise' | 'clear'; input: Record<string, unknown> }> = [];
+const watcherCalls: Array<{ kind: 'follow' | 'drop'; ref: Record<string, unknown> }> = [];
+/** The credential kind the mocked auth reports; unset by default, as before. */
+let testAuthType: string | undefined;
+/** Set to make that seam throw: the provider pick, the model defaults read, a watcher write. */
+let providerFailure: Error | null = null;
+let modelDefaultsFailure: Error | null = null;
+let watcherFailure: Error | null = null;
 let provisioningSessionCount = 0;
 let secretRows: Array<typeof projectSecrets.$inferSelect>;
 let manifestReadCalls = 0;
@@ -116,6 +129,14 @@ function resetState() {
   secretValues.clear();
   secretConsumerConfigurationStates.clear();
   secretConsumerReads.length = 0;
+  walletBalance = 1_000_000;
+  automationActor = USER_ID;
+  alertCalls.length = 0;
+  watcherCalls.length = 0;
+  testAuthType = undefined;
+  providerFailure = null;
+  modelDefaultsFailure = null;
+  watcherFailure = null;
 }
 
 function sign(rawBody: string, secret: string) {
@@ -129,7 +150,7 @@ mockIamEngineAllowAll();
 mockIamReadModels();
 
 mock.module('../projects/session-lifecycle/actor', () => ({
-  resolveProjectAutomationActor: async () => USER_ID,
+  resolveProjectAutomationActor: async () => automationActor,
   resolveAgentRunAttribution: async () => SERVICE_ACCOUNT_ID,
 }));
 
@@ -140,6 +161,7 @@ mock.module('../middleware/auth', () => ({
     const auth = getTestAuth();
     c.set('userId', auth.userId);
     c.set('userEmail', auth.userEmail);
+    if (testAuthType) c.set('authType', testAuthType);
     await next();
   },
 }));
@@ -325,7 +347,10 @@ mock.module('../platform/services/session-sandbox', () => ({
 }));
 
 mock.module('../platform/services/provider-balancer', () => ({
-  selectProvider: async () => 'daytona',
+  selectProvider: async () => {
+    if (providerFailure) throw providerFailure;
+    return 'daytona';
+  },
 }));
 
 const mockedProjectLlmGatewayEnabled = (metadata: unknown) =>
@@ -359,7 +384,7 @@ mock.module('../billing/repositories/credit-accounts', () => ({
   // billing-active account (live sub + ample balance) so the gate passes.
   getCreditAccount: async () => ({
     accountId: ACCOUNT_ID,
-    balance: 1_000_000,
+    balance: walletBalance,
     billingModel: 'credits',
     stripeSubscriptionId: 'sub_test',
     stripeSubscriptionStatus: 'active',
@@ -769,8 +794,8 @@ mock.module('../projects/trigger-execution-store', () => ({
       lockedUntil: null,
     });
   },
-  markTriggerExecutionFailed: async ({ row, failedAt, error }: any) => {
-    const terminal = row.attempts >= 5;
+  markTriggerExecutionFailed: async ({ row, failedAt, error, terminal: permanent }: any) => {
+    const terminal = permanent === true || row.attempts >= 5;
     Object.assign(row, {
       status: terminal ? 'dead_lettered' : 'queued',
       completedAt: terminal ? failedAt : null,
@@ -785,10 +810,41 @@ mock.module('../projects/trigger-execution-store', () => ({
     runtimeRows.some((row) => !row.scheduleRevision) ? 1 : 0,
 }));
 
+// The alert edge is SQL (integration-trigger-alerts.test.ts); here only which
+// failures raise or clear it.
+const realTriggerAlerts = await import('../projects/lib/trigger-alerts');
+mock.module('../projects/lib/trigger-alerts', () => ({
+  ...realTriggerAlerts,
+  raiseTriggerAlert: async (input: Record<string, unknown>) => {
+    alertCalls.push({ kind: 'raise', input });
+    return true;
+  },
+  clearTriggerAlert: async (input: Record<string, unknown>) => {
+    alertCalls.push({ kind: 'clear', input });
+    return false;
+  },
+}));
+
+const realTriggerWatchers = await import('../projects/lib/trigger-watchers');
+mock.module('../projects/lib/trigger-watchers', () => ({
+  ...realTriggerWatchers,
+  upsertTriggerWatcher: async (ref: Record<string, unknown>) => {
+    if (watcherFailure) throw watcherFailure;
+    watcherCalls.push({ kind: 'follow', ref });
+  },
+  deleteTriggerWatchers: async (ref: Record<string, unknown>) => {
+    if (watcherFailure) throw watcherFailure;
+    watcherCalls.push({ kind: 'drop', ref });
+  },
+}));
+
 const realModelPreferences = await import('../repositories/model-preferences');
 mock.module('../repositories/model-preferences', () => ({
   ...realModelPreferences,
-  getAccountModelDefaults: async () => modelDefaults,
+  getAccountModelDefaults: async () => {
+    if (modelDefaultsFailure) throw modelDefaultsFailure;
+    return modelDefaults;
+  },
 }));
 
 const realDefaultModel = await import('../llm-gateway/resolution/default-model');
@@ -805,6 +861,7 @@ const {
   registerAllProjectRoutes,
   runProjectTriggerSweep,
 } = await import('../projects/index');
+const { config } = await import('../config');
 registerAllProjectRoutes();
 const { resetRateLimiters } = await import('../middleware/rate-limit');
 
@@ -918,11 +975,13 @@ function webhookEntry(opts: {
   secretEnv: string;
   agent?: string;
   enabled?: boolean;
+  sessionMode?: string;
   prompt: string;
 }): string {
   const lines = [`  - slug: ${JSON.stringify(opts.slug)}`];
   if (opts.name !== undefined) lines.push(`    name: ${JSON.stringify(opts.name)}`);
   lines.push('    type: webhook');
+  if (opts.sessionMode !== undefined) lines.push(`    session_mode: ${opts.sessionMode}`);
   if (opts.agent !== undefined) lines.push(`    agent: ${JSON.stringify(opts.agent)}`);
   if (opts.enabled !== undefined) lines.push(`    enabled: ${opts.enabled}`);
   lines.push(`    secret_env: ${JSON.stringify(opts.secretEnv)}`);
@@ -983,6 +1042,8 @@ describe('git-backed triggers — runtime fire paths', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(sandboxProvisionCalls).toBe(1);
     expect(lastProvisionEnv?.KORTIX_INITIAL_PROMPT).toBeUndefined();
+    // A good fire ends a fire-failure alert streak.
+    expect(alertCalls).toEqual([{ kind: 'clear', input: { projectId: PROJECT_ID, slug: 'sweep', source: 'fire' } }]);
   });
 
   test('cron sweep under backpressure queues and records accepted fire', async () => {
@@ -1010,6 +1071,8 @@ describe('git-backed triggers — runtime fire paths', () => {
     expect(triggerExecutionRows[0]?.scheduledFor.toISOString()).toBe(
       '2026-01-01T00:00:30.000Z',
     );
+    // A create still queued has reached no session: the streak stays open.
+    expect(alertCalls).toEqual([]);
 
     provisioningSessionCount = 0;
     const secondSlot = new Date('2026-01-01T00:00:31Z');
@@ -1093,6 +1156,151 @@ describe('git-backed triggers — runtime fire paths', () => {
     expect(runtimeRows[0]!.lastStatus).toBe('fired');
     expect(runtimeRows[0]!.lastFiredAt).toBeTruthy();
     expect(sandboxProvisionCalls).toBe(0);
+    // Shown as fired, but the prompt has not run: its delivery ends a streak (KRTX-1742).
+    expect(alertCalls.filter((call) => call.kind === 'clear')).toEqual([]);
+  });
+
+  test('a cron slot refused for an empty wallet dead-letters at once and raises the fire alert once', async () => {
+    seedManifest(cronEntry({ slug: 'wallet', name: 'Wallet', cron: '* * * * * *', prompt: 'Report' }));
+    const slot = new Date('2026-01-01T00:00:30Z');
+    seedRuntimeCron({ slug: 'wallet', prompt: 'Report', nextFireAt: slot });
+    walletBalance = 0;
+    const billingWasEnabled = config.KORTIX_BILLING_INTERNAL_ENABLED;
+    config.KORTIX_BILLING_INTERNAL_ENABLED = true;
+    try {
+      await runProjectTriggerSweep(slot);
+      expect(await drainTriggerExecutionQueue(slot)).toMatchObject({ fired: 0, queued: 0, failed: 1 });
+    } finally {
+      config.KORTIX_BILLING_INTERNAL_ENABLED = billingWasEnabled;
+    }
+
+    expect(triggerExecutionRows[0]).toMatchObject({ status: 'dead_lettered', attempts: 1 });
+    expect(sandboxProvisionCalls).toBe(0);
+    // The inline create command dead-lettered too; only the slot alerts.
+    expect(lifecycleCommandRows.map((row) => row.status)).toEqual(['dead_lettered']);
+    expect(alertCalls).toEqual([
+      {
+        kind: 'raise',
+        input: { projectId: PROJECT_ID, slug: 'wallet', source: 'fire', error: triggerExecutionRows[0]!.lastError },
+      },
+    ]);
+  });
+
+  test('a failed attempt the cron retries raises nothing; the fifth dead-letters and raises once', async () => {
+    seedManifest(cronEntry({ slug: 'flaky', name: 'Flaky', cron: '* * * * * *', prompt: 'Report' }));
+    const slot = new Date('2026-01-01T00:00:30Z');
+    seedRuntimeCron({ slug: 'flaky', prompt: 'Report', nextFireAt: slot });
+    // No owner to run as: a failure with no permanent code, so it retries.
+    automationActor = null;
+
+    await runProjectTriggerSweep(slot);
+    expect(await drainTriggerExecutionQueue(slot)).toMatchObject({ queued: 1, failed: 0 });
+    expect(runtimeRows[0]).toMatchObject({ lastStatus: 'failed' });
+    expect(alertCalls).toEqual([]);
+
+    // Each retry is due 2 s after its failure; claim each one well after that.
+    for (let attempt = 2; attempt <= 5; attempt += 1) {
+      await drainTriggerExecutionQueue(new Date(Date.now() + attempt * 60_000));
+    }
+    expect(triggerExecutionRows[0]).toMatchObject({ status: 'dead_lettered', attempts: 5 });
+    expect(alertCalls).toEqual([
+      {
+        kind: 'raise',
+        input: {
+          projectId: PROJECT_ID,
+          slug: 'flaky',
+          source: 'fire',
+          error: 'No account owner available to own the session',
+        },
+      },
+    ]);
+  });
+
+  test('the person who creates or edits a trigger follows it; deleting it drops its followers', async () => {
+    seedManifest();
+    testAuthType = 'supabase';
+    const app = createApp();
+    const created = await app.request(`/v1/projects/${PROJECT_ID}/triggers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Nightly', type: 'cron', cron: '0 0 2 * * *', prompt_template: 'Report' }),
+    });
+    expect(created.status).toBe(201);
+    const edited = await app.request(`/v1/projects/${PROJECT_ID}/triggers/nightly`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt_template: 'Report again' }),
+    });
+    expect(edited.status).toBe(200);
+    const deleted = await app.request(`/v1/projects/${PROJECT_ID}/triggers/nightly`, { method: 'DELETE' });
+    expect(deleted.status).toBe(200);
+
+    const follow = { accountId: ACCOUNT_ID, projectId: PROJECT_ID, slug: 'nightly', userId: USER_ID };
+    expect(watcherCalls).toEqual([
+      { kind: 'follow', ref: follow },
+      { kind: 'follow', ref: follow },
+      { kind: 'drop', ref: { projectId: PROJECT_ID, slug: 'nightly' } },
+    ]);
+  });
+
+  test('an API key that creates a trigger names no person, so nobody follows it', async () => {
+    seedManifest();
+    testAuthType = 'apiKey';
+    const created = await createApp().request(`/v1/projects/${PROJECT_ID}/triggers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Nightly', type: 'cron', cron: '0 0 2 * * *', prompt_template: 'Report' }),
+    });
+    expect(created.status).toBe(201);
+    expect(watcherCalls).toEqual([]);
+  });
+
+  test('a manual fire that fails raises the fire alert', async () => {
+    seedManifest(cronEntry({ slug: 'manual', name: 'Manual', cron: '* * * * * *', prompt: 'Report' }));
+    automationActor = null;
+    const res = await createApp().request(`/v1/projects/${PROJECT_ID}/triggers/manual/fire`, { method: 'POST' });
+    expect(res.status).toBe(500);
+    expect(alertCalls).toEqual([
+      {
+        kind: 'raise',
+        input: {
+          projectId: PROJECT_ID,
+          accountId: ACCOUNT_ID,
+          slug: 'manual',
+          source: 'fire',
+          error: 'No account owner available to own the session',
+        },
+      },
+    ]);
+  });
+
+  test('a webhook fire that fails raises the fire alert', async () => {
+    seedManifest(webhookEntry({ slug: 'hook', name: 'Hook', secretEnv: 'HOOK_SECRET', prompt: 'New {{ body.action }}' }));
+    secretValues.set('HOOK_SECRET', 'shhh');
+    automationActor = null;
+    const rawBody = JSON.stringify({ action: 'opened' });
+    const res = await createApp().request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Kortix-Signature': sign(rawBody, 'shhh'),
+        'X-Kortix-Delivery-Id': 'failing-delivery-1',
+      },
+      body: rawBody,
+    });
+    expect(res.status).toBe(500);
+    expect(alertCalls).toEqual([
+      {
+        kind: 'raise',
+        input: {
+          projectId: PROJECT_ID,
+          accountId: ACCOUNT_ID,
+          slug: 'hook',
+          source: 'fire',
+          error: 'No account owner available to own the session',
+        },
+      },
+    ]);
   });
 
   test('a bad signature refreshes the manifest mirror at most once per budget window, and a missing one never reads it', async () => {
@@ -1228,4 +1436,134 @@ describe('git-backed triggers — runtime fire paths', () => {
     expect(lifecycleCommandRows[0]!.sessionId).toBeTruthy();
   });
 
+  describe('automation alerts (KRTX-1742)', () => {
+    const fireAlert = (input: Record<string, unknown>) => ({ projectId: PROJECT_ID, slug: 'hook', source: 'fire', ...input });
+
+    async function postHook(deliveryId: string) {
+      seedManifest(webhookEntry({ slug: 'hook', name: 'Hook', secretEnv: 'HOOK_SECRET', prompt: 'New {{ body.action }}' }));
+      secretValues.set('HOOK_SECRET', 'shhh');
+      const rawBody = JSON.stringify({ action: 'opened' });
+      return createApp().request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Kortix-Signature': sign(rawBody, 'shhh'),
+          'X-Kortix-Delivery-Id': deliveryId,
+        },
+        body: rawBody,
+      });
+    }
+
+    test('a webhook create queued under backpressure ends no streak; its drained create does', async () => {
+      provisioningSessionCount = 3;
+      const res = await postHook('queued-alert-1');
+      expect(res.status).toBe(202);
+      expect((await res.json()).status).toBe('queued');
+      expect(runtimeRows[0]).toMatchObject({ lastStatus: 'fired' });
+      expect(alertCalls).toEqual([]);
+
+      provisioningSessionCount = 0;
+      await drainSessionLifecycleQueue({ workerId: 'test-worker', limit: 1 });
+      expect(lifecycleCommandRows[0]!.status).toBe('succeeded');
+      expect(alertCalls).toEqual([{ kind: 'clear', input: fireAlert({ accountId: ACCOUNT_ID }) }]);
+    });
+
+    test('a webhook prompt queued into the reused session ends no streak', async () => {
+      seedManifest(webhookEntry({ slug: 'hook', name: 'Hook', secretEnv: 'HOOK_SECRET', sessionMode: 'reuse', prompt: 'New {{ body.action }}' }));
+      secretValues.set('HOOK_SECRET', 'shhh');
+      sessionRows.push({
+        ...sessionRowsTemplate(),
+        sessionId: 'sess-hook-reuse',
+        metadata: { trigger_slug: 'hook', trigger_kind: 'git' },
+      });
+      const rawBody = JSON.stringify({ action: 'opened' });
+      const res = await createApp().request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Kortix-Signature': sign(rawBody, 'shhh'), 'X-Kortix-Delivery-Id': 'reuse-alert-1' },
+        body: rawBody,
+      });
+      expect(res.status).toBe(202);
+      expect(await res.json()).toMatchObject({ status: 'queued', reason: 'prompt queued for delivery', session_id: 'sess-hook-reuse' });
+      expect(runtimeRows[0]).toMatchObject({ lastStatus: 'fired' });
+      expect(alertCalls.filter((call) => call.kind === 'clear')).toEqual([]);
+    });
+
+    test('a manual fire that only queues ends no streak', async () => {
+      seedManifest(cronEntry({ slug: 'manual', name: 'Manual', cron: '* * * * * *', prompt: 'Report' }));
+      provisioningSessionCount = 3;
+      const res = await createApp().request(`/v1/projects/${PROJECT_ID}/triggers/manual/fire`, { method: 'POST' });
+      expect(res.status).toBe(202);
+      expect((await res.json()).status).toBe('queued');
+      expect(alertCalls).toEqual([]);
+    });
+
+    test('a webhook create that throws goes back to the queue and alerts nobody yet', async () => {
+      providerFailure = new Error('git clone timed out after 90000ms');
+      const res = await postHook('throwing-delivery-1');
+      expect(res.status).toBe(500);
+      expect(lifecycleCommandRows.map((row) => row.status)).toEqual(['queued']);
+      expect(alertCalls).toEqual([]);
+    });
+
+    test('a webhook create that answers 503 is not requeued, so it alerts', async () => {
+      projectRow.metadata = { experimental: { llm_gateway: true } };
+      modelDefaultsFailure = new Error('model defaults unavailable');
+      const res = await postHook('503-delivery-1');
+      expect(res.status).toBe(500);
+      expect(lifecycleCommandRows.map((row) => row.status)).toEqual(['dead_lettered']);
+      expect(alertCalls).toEqual([
+        { kind: 'raise', input: fireAlert({ accountId: ACCOUNT_ID, error: 'The session default model could not be resolved' }) },
+      ]);
+    });
+
+    test('a failed watcher write does not fail the trigger create or delete', async () => {
+      seedManifest();
+      testAuthType = 'supabase';
+      watcherFailure = new Error('connection terminated');
+      const app = createApp();
+      const created = await app.request(`/v1/projects/${PROJECT_ID}/triggers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Nightly', type: 'cron', cron: '0 0 2 * * *', prompt_template: 'Report' }),
+      });
+      expect(created.status).toBe(201);
+      const deleted = await app.request(`/v1/projects/${PROJECT_ID}/triggers/nightly`, { method: 'DELETE' });
+      expect(deleted.status).toBe(200);
+      expect(repoFiles.get(MANIFEST_PATH)).not.toContain('nightly');
+    });
+  });
+
 });
+
+/** A stopped session row the trigger created earlier; override what the test needs. */
+function sessionRowsTemplate(): typeof projectSessions.$inferSelect {
+  return {
+    labels: [],
+    sessionId: 'sess-template',
+    accountId: ACCOUNT_ID,
+    projectId: PROJECT_ID,
+    branchName: 'main',
+    baseRef: 'main',
+    sandboxProvider: 'daytona',
+    sandboxId: null,
+    sandboxUrl: null,
+    runtimeSessionId: null,
+    agentName: 'default',
+    status: 'stopped',
+    error: null,
+    createdBy: USER_ID,
+    visibility: 'private',
+    origin: 'system',
+    originRef: null,
+    parentSessionId: null,
+    initiatorType: null,
+    initiatorId: null,
+    secretsAllowlist: null,
+    requiredConnectors: null,
+    connectorBindingsInheritUnbound: false,
+    connectorBindingsConfigured: false,
+    metadata: {},
+    createdAt: new Date('2026-01-01T00:00:00Z'),
+    updatedAt: new Date('2026-01-01T00:00:00Z'),
+  };
+}

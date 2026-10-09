@@ -6,6 +6,34 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 ### Added
+- Notifications (KRTX-1742). The caller's inbox: `listNotifications({ limit?,
+  before? })` → `InboxNotificationPage` (`notifications`, `unread_count`,
+  `next_before`) and `markNotificationsRead({ ids } | { all: true } |
+  { sessionId })`. Push and email choices per kind:
+  `getNotificationPreferences()` and `updateNotificationPreferences(patch)` →
+  `NotificationPreferences` (`kinds`, `email_available`). Web Push:
+  `getWebPushPublicKey()`, `registerWebPushSubscription({ endpoint, keys })`,
+  `unregisterWebPushSubscription(endpoint)`. Session watch:
+  `getSessionWatch(projectId, sessionId)` and `setSessionWatch(projectId,
+  sessionId, watching)`, also `session(pid, sid).watch()` and `.setWatch()`.
+  Facade: `kortix.notifications.{list, markRead, preferences,
+  updatePreferences, webPushPublicKey, registerWebPushSubscription,
+  unregisterWebPushSubscription}`. Types: `InboxNotification`,
+  `InboxNotificationKind`, `InboxNotificationPage`, `NotificationPreferences`,
+  `NotificationPreferencesPatch`, `WebPushSubscriptionInput`. Constants:
+  `INBOX_NOTIFICATION_KINDS`, `DEFAULT_NOTIFICATION_PREFERENCES`.
+- `@kortix/sdk/react`: `useNotificationInbox({ userId, limit?, enabled? })`
+  (60 s poll while visible, `unreadCount`, optimistic `markRead`,
+  `markAllRead`, `markSessionRead`), `useNotificationPreferences({ userId })`
+  (optimistic `update`), `useSessionWatch({ userId, projectId, sessionId })`
+  (optimistic `setWatching`), `notificationInboxQueryOptions`, and the
+  `qk.notifications` key family (`scope`, `inbox`, `preferences`,
+  `sessionWatch`, keyed by user).
+- `session(pid, sid).presence()` accepts `alerts?: boolean`, and
+  `useSession({ presenceAlerts })` sends it: the server skips the phone and
+  Web Push only while an alerting tab is in use. A change is sent at once,
+  without dropping the lease. An absent report is sent with `keepalive`, and
+  `pagehide` reports absent, so a closed tab ends its lease at once.
 - `ConnectorPageLimitError` (`code: 'max_pages_exceeded'`, `connector`,
   `action`, `maxPages`, `nextArgs`): `paginateConnector` and
   `connector(slug).paginate` throw it when `maxPages` (default 100) ends a
@@ -189,6 +217,12 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   unknown until the probe answers, as before.
 
 ### Deprecated
+- The `config_releases` member of `FeatureFlagKey`. Config releases graduated
+  out of the flag system: every session runs its base branch's config release.
+  It is absent from `FEATURE_FLAG_KEYS` and `KortixProject.experimental`, and
+  `useFeatureFlag(id, 'config_releases')` reports `enabled: true`.
+  `updateFeatureFlag(id, 'config_releases', …)` answers `400`. Removed in the
+  next major.
 - `createCheckoutSession`, `confirmCheckoutSession` and `scheduleDowngrade`
   (and the facade's `kortix.billing.checkout.{createSession,confirmSession}`
   and `kortix.billing.subscription.scheduleDowngrade`). The API retired their

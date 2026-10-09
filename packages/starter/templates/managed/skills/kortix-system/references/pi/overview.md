@@ -103,12 +103,10 @@ session.
   `kortix sessions restart <id>`.
 - Kortix builds the npm packages in `harnesses.pi.packages` when the change
   request merges. A session started before the merge does not have them.
-- With the project's `config_releases` flag on, a running session picks up a
-  merged agent, skill, `AGENTS.md` or pi config change without a new session.
-  It reads `AGENTS.md` from that release, never from `/workspace`: an edit in
+- A running session picks up a merged agent, skill, `AGENTS.md` or pi config
+  change without a new session: it runs the base branch's config release. It
+  reads `AGENTS.md` from that release, never from `/workspace`: an edit in
   `/workspace/AGENTS.md` changes nothing until it merges.
-- With the flag off, pi reads `/workspace/AGENTS.md` when the session starts or
-  restarts and after `kortix sessions reload <id>`, not before each turn.
 - `harness.details.agentsMd` in `GET /kortix/health` names the `AGENTS.md` pi
   loaded: `source`, `path`, `bytes` and `sha`.
 
