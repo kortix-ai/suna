@@ -25,11 +25,16 @@ export function scriptJson(value: unknown): string {
   return escapeForInlineScript(JSON.stringify(value));
 }
 
+const onGlobe = ([lat, lng]: [number, number]) => Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
+
 export function mapDocument(input: MapDocumentInput): string {
+  // The catalog checks a route point's length, not its range: MapLibre throws on an off-globe point
+  // (GeoJSON order written by mistake) before the map exists. Such points drop; under 2 left, no route.
+  const route = (input.route ?? []).filter(onGlobe).map(([lat, lng]) => [lng, lat]);
   const data = scriptJson({
     styleUrl: input.styleUrl,
     markers: input.markers.map((m) => ({ lngLat: [m.lng, m.lat], label: m.label, description: m.description ?? '' })),
-    route: (input.route ?? []).map(([lat, lng]) => [lng, lat]),
+    route: route.length > 1 ? route : [],
     zoom: input.zoom ?? null,
     routeColor: input.routeColor,
   });

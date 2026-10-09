@@ -74,9 +74,9 @@ const DATA = {
 };
 const closed: number[] = [];
 
-async function open() {
+async function open(Sheet: typeof MapSheet = MapSheet) {
   await act(async () => {
-    tree = create(<MapSheet title="Louvre" data={DATA} onClose={() => closed.push(1)} />);
+    tree = create(<Sheet title="Louvre" data={DATA} onClose={() => closed.push(1)} />);
   });
   return tree!.root;
 }
@@ -115,8 +115,14 @@ describe('MapSheet', () => {
   });
 
   test('the asset is read once per app run, and dismissing the dialog closes the sheet', async () => {
-    const root = await open();
-    expect(files.reads).toEqual([]);
+    // A fresh module instance starts with an empty cache, whatever ran before this test.
+    const cold: string = './map-sheet?cold';
+    const { MapSheet: Cold } = (await import(cold)) as typeof import('./map-sheet');
+    await open(Cold);
+    act(() => tree!.unmount());
+    const root = await open(Cold);
+    expect(files.reads).toEqual(['file:///script-asset', 'file:///css-asset']);
+    expect(all(root, 'webview')).toHaveLength(1);
     act(() => (all(root, 'dialog')[0]!.props.onOpenChange as (open: boolean) => void)(false));
     expect(closed).toEqual([1]);
   });

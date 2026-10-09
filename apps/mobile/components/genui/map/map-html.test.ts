@@ -116,4 +116,26 @@ describe('map document', () => {
     expect(seen.camera?.fitBoundsOptions).toEqual({ padding: 48, maxZoom: 16 });
     expect(seen.layers).toEqual([expect.objectContaining({ type: 'line', paint: { 'line-width': 3, 'line-color': 'black' } })]);
   });
+
+  test('route points outside lat ±90 / lng ±180 are dropped, so the camera never sees an invalid LngLat', () => {
+    // [-122.4, 37.7] is GeoJSON order written by mistake: lat -122.4 is off the globe.
+    const html = mapDocument({
+      script: '',
+      css: '',
+      styleUrl: 's',
+      markers: [{ lat: 37.77, lng: -122.42, label: 'A' }],
+      route: [[37.77, -122.42], [-122.4, 37.7], [37.8, -122.41], [37.79, 181], [Number.NaN, 1]],
+      background: 'white',
+      routeColor: 'black',
+    });
+    expect(html).toContain('"route":[[-122.42,37.77],[-122.41,37.8]]');
+  });
+
+  test('a route with fewer than 2 valid points is omitted: no line, and the frame holds only the places', () => {
+    const markers = [{ lat: 37.77, lng: -122.42, label: 'A' }];
+    expect(mapDocument({ script: '', css: '', styleUrl: 's', markers, route: [[-122.4, 37.7], [37.8, -122.41]], background: 'white', routeColor: 'black' })).toContain('"route":[]');
+    const seen = runPage({ markers, route: [[-122.4, 37.7], [-122.5, 37.6]] });
+    expect(seen.camera).toMatchObject({ center: [-122.42, 37.77], zoom: 14 });
+    expect(seen.layers).toEqual([]);
+  });
 });

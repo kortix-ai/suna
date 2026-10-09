@@ -11,7 +11,7 @@ import { MapSheet, type MapSheetData } from '../map/map-sheet';
 import { kids } from './layout';
 import { openGenuiLink } from './open-link';
 
-const osmLink = (lat: unknown, lng: unknown) =>
+const osmLink = ({ lat, lng }: { lat: number; lng: number }) =>
   `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=15/${lat}/${lng}`;
 
 /**
@@ -24,20 +24,25 @@ export function GenuiMap({
 }: GenuiComponentProps & { styleUrl?: string }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
-  const markers = kids(props.markers);
-  const data = useMemo<MapSheetData>(
-    () => ({
-      styleUrl: styleUrl ?? '',
-      markers: kids(props.markers).map((m) => ({
+  const markers = useMemo(
+    () =>
+      kids(props.markers).map((m) => ({
+        id: m.id,
         lat: Number(m.props.lat),
         lng: Number(m.props.lng),
         label: String(m.props.label),
         description: m.props.description ? String(m.props.description) : undefined,
       })),
+    [props.markers],
+  );
+  const data = useMemo<MapSheetData>(
+    () => ({
+      styleUrl: styleUrl ?? '',
+      markers,
       route: props.route as [number, number][] | undefined,
       zoom: props.zoom as number | undefined,
     }),
-    [styleUrl, props.markers, props.route, props.zoom],
+    [styleUrl, markers, props.route, props.zoom],
   );
 
   return (
@@ -50,8 +55,8 @@ export function GenuiMap({
           <SettingsRow
             key={m.id}
             icon={MapPinIcon}
-            label={String(m.props.label)}
-            onPress={() => openGenuiLink(osmLink(m.props.lat, m.props.lng))}
+            label={m.label}
+            onPress={() => openGenuiLink(osmLink(m))}
             external
             dense
           />
@@ -62,7 +67,7 @@ export function GenuiMap({
       </Text>
       {open ? (
         <MapSheet
-          title={markers.length === 1 ? String(markers[0]!.props.label) : t('genui.map', 'Map')}
+          title={markers.length === 1 ? markers[0]!.label : t('genui.map', 'Map')}
           data={data}
           onClose={() => setOpen(false)}
         />
