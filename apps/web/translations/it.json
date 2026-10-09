@@ -19931,6 +19931,7 @@
     "noticeSignInTitle": "Accedi a {name}",
     "noticeSignInBody": "Kortix ha aggiunto {name}. Completa l'accesso perché gli agenti possano usarne gli strumenti.",
     "noticeSignInAction": "Accedi",
+    "connectAccount": "Connetti",
     "infoRunsOver": "Funziona su",
     "waysToConnect": "Modi per connettersi",
     "recommended": "Consigliato",

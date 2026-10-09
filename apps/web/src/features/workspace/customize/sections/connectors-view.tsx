@@ -248,6 +248,7 @@ function ConnectionRow({
   onStartSession,
   onSetCredential,
   onShare,
+  onConnect,
   pending,
   disabled = false,
 }: {
@@ -268,12 +269,15 @@ function ConnectionRow({
   onSetCredential?: () => void;
   /** Open the share dialog: who may use this SHARED account. */
   onShare?: () => void;
+  /** Sign this account in. Shown only while it is not signed in. */
+  onConnect?: () => void;
   pending: boolean;
   disabled?: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tSharing = useTranslations('accessSharing');
   const tComputers = useTranslations('computers');
+  const tConnectorPages = useTranslations('connectorPages');
   const isProjectAuthorization = connection.owner_type === 'project';
   const active = connection.status === 'active';
   // Only the owner of a connection may change it: your own personal connection,
@@ -337,6 +341,13 @@ function ConnectionRow({
       </div>
       {/* Share and the row menu: one control group, so the pair reads as one
           set of actions for this account. */}
+      {/* An account that never finished signing in (an abandoned OAuth flow)
+          gets its next step on the row, not behind the menu. */}
+      {onConnect && mayMutate && connection.authorized === false ? (
+        <Button size="sm" className="shrink-0" onClick={onConnect} disabled={pending || disabled}>
+          {tConnectorPages('connectAccount')}
+        </Button>
+      ) : null}
       <ButtonGroup className="shrink-0">
         {onShare && mayMutate ? (
           // Your own private account is shared by turning it into a shared one,
@@ -448,6 +459,7 @@ export function ConnectionsList({
   onChanged,
   onStartSession,
   onSetCredential,
+  onConnect,
   titleAddon,
   addVariant = 'secondary',
   disabled = false,
@@ -465,6 +477,8 @@ export function ConnectionsList({
   onStartSession?: (connection: Connection) => void;
   /** Where credential entry opens. Omitted = this list's own dialog. */
   onSetCredential?: (target: { connectionId: string; owner: 'project' | 'me' }) => void;
+  /** Sign an unsigned account in. Omitted = no Connect on the rows. */
+  onConnect?: (connection: Connection) => void;
   disabled?: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -608,6 +622,7 @@ export function ConnectionsList({
       onRename={() => openRename(connection)}
       onStartSession={onStartSession ? () => onStartSession(connection) : undefined}
       onSetCredential={setCredential ? () => setCredential(connection) : undefined}
+      onConnect={onConnect ? () => onConnect(connection) : undefined}
       onShare={
         accountId
           ? () => {

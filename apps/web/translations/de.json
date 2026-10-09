@@ -19931,6 +19931,7 @@
     "noticeSignInTitle": "Bei {name} anmelden",
     "noticeSignInBody": "Kortix hat {name} hinzugefügt. Schließe die Anmeldung ab, damit Agenten die Tools nutzen können.",
     "noticeSignInAction": "Anmelden",
+    "connectAccount": "Verbinden",
     "infoRunsOver": "Läuft über",
     "waysToConnect": "Verbindungsarten",
     "recommended": "Empfohlen",

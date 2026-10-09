@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import {
   accountMembers,
   accounts,
+  connectionCredentials,
   connectorConnections,
   connectors,
   iamPolicies,
@@ -36,6 +37,7 @@ import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
 import { createServiceAccount } from '../repositories/service-accounts';
 import { mintSetupLink } from '../setup-links/token';
+import { encryptProjectSecret } from '../projects/secrets';
 import { db } from '../shared/db';
 import {
   publicShareToken,
@@ -1498,6 +1500,23 @@ describe('sharing your own private account', () => {
     request('POST', `/v1/projects/${PROJECT}/connections/${connectionId}/share`, token, {
       principals,
     });
+
+  // The account list says whether each account is signed in, so the page can
+  // offer Connect on one that is not (an abandoned OAuth sign-in, say).
+  test('each account says whether it is signed in: false until it holds a credential', async () => {
+    const connectionId = await privateAccount(MANAGER, 'Manager unsigned');
+    const authorized = async () =>
+      ((await listFor(MANAGER)) as Array<{ connection_id: string; authorized?: boolean }>).find(
+        (c) => c.connection_id === connectionId,
+      )?.authorized;
+    expect(await authorized()).toBe(false);
+    await db.insert(connectionCredentials).values({
+      connectorId: CONNECTOR,
+      connectionId,
+      valueEnc: encryptProjectSecret(PROJECT, 'synthetic-token'),
+    });
+    expect(await authorized()).toBe(true);
+  });
 
   test('the owner, a connections manager, shares it with chosen people: it becomes a shared account narrowed to them', async () => {
     const connectionId = await privateAccount(MANAGER, 'Manager inbox', true);

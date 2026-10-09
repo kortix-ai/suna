@@ -598,6 +598,12 @@ interface ConnectionFields {
    */
   usable?: boolean;
   /**
+   * `true` = the account is signed in: it holds a credential, or a connected
+   * provider account. `false` = it still needs a sign-in (an abandoned OAuth
+   * flow, say), so a client offers Connect. Absent on older servers.
+   */
+  authorized?: boolean;
+  /**
    * The paired machine this account points at. Set only on accounts of a
    * `computer` connector; `null` once the machine was unpaired (the account is
    * then `revoked`). Absent on every other connector, and on older servers.

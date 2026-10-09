@@ -115,16 +115,20 @@ export function useConnectorDetail({
     hasComputer: accounts.some((account) => Boolean(account.tunnel_id)),
   });
 
-  const replaceSoleAccount = () => {
-    if (!soleAccount) return;
-    const owner = soleAccount.owner_type === 'project' ? 'project' : 'me';
+  /** Re-authorize one account: the provider window for a managed one,
+   *  credential entry for a direct one. */
+  const reconnectAccount = (account: Connection) => {
+    const owner = account.owner_type === 'project' ? 'project' : 'me';
     if (isManagedProvider) {
       // Reconciling the SAME label re-points this row, never a second account.
-      if (owner === 'project') connectShared.mutate({ label: soleAccount.label });
-      else connectMine.mutate({ label: soleAccount.label });
+      if (owner === 'project') connectShared.mutate({ label: account.label });
+      else connectMine.mutate({ label: account.label });
       return;
     }
-    setCredentialTarget({ connectionId: soleAccount.connection_id, owner });
+    setCredentialTarget({ connectionId: account.connection_id, owner });
+  };
+  const replaceSoleAccount = () => {
+    if (soleAccount) reconnectAccount(soleAccount);
   };
 
   return {
@@ -141,6 +145,7 @@ export function useConnectorDetail({
     refreshAccounts,
     replaceSoleAccount,
     startPrivateSession,
+    reconnectAccount,
     credentialTarget,
     setCredentialTarget,
     computerOpen,

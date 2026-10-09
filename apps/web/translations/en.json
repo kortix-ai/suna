@@ -19931,6 +19931,7 @@
     "noticeSignInTitle": "Sign in to {name}",
     "noticeSignInBody": "Kortix added {name}. Finish signing in so agents can use its tools.",
     "noticeSignInAction": "Sign in",
+    "connectAccount": "Connect",
     "infoRunsOver": "Runs over",
     "waysToConnect": "Ways to connect",
     "recommended": "Recommended",

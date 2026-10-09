@@ -19931,6 +19931,7 @@
     "noticeSignInTitle": "{name} にサインイン",
     "noticeSignInBody": "Kortix は {name} を追加しました。エージェントがツールを使えるよう、サインインを完了してください。",
     "noticeSignInAction": "サインイン",
+    "connectAccount": "接続",
     "infoRunsOver": "接続方式",
     "waysToConnect": "接続方法",
     "recommended": "おすすめ",

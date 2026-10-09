@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { SessionDotMatrix } from '@/components/ui/dot-matrix/session-dot-matrix';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SplitSheet, SplitSheetMain } from '@/components/ui/split-sheet';
@@ -207,6 +208,7 @@ function ConnectorPageBody({
     refreshAccounts,
     replaceSoleAccount,
     startPrivateSession,
+    reconnectAccount,
     credentialTarget,
     setCredentialTarget,
     computerOpen,
@@ -360,13 +362,20 @@ function ConnectorPageBody({
   const soleAccount = accounts.length === 1 ? accounts[0]! : null;
   const canFixSoleAccount =
     soleAccount !== null && (soleAccount.owner_type !== 'project' || canManageConnections);
-  // The account the sign-in button finishes: the first one still not signed
-  // in that the caller may change, else the only account.
+  const mayChange = (account: { owner_type: string }) =>
+    account.owner_type !== 'project' || canManageConnections;
+  // The account the sign-in button finishes: the first one not signed in that
+  // the caller may change, else the only account.
   const signInAccount =
     accounts.find(
       (account) =>
-        account.status !== 'active' && (account.owner_type !== 'project' || canManageConnections),
+        (account.authorized === false || account.status !== 'active') && mayChange(account),
     ) ?? (canFixSoleAccount ? soleAccount : null);
+  // Connect on an account row: the same sign-in the notice runs. A managed
+  // account reconnects through its provider window.
+  const needsSignIn = isManagedProvider || Boolean(connector.authSecret);
+  const connectAccount = (account: (typeof accounts)[number]) =>
+    isManagedProvider ? reconnectAccount(account) : signIn.mutate(account);
 
   const tone = connectorStatusTone(connector);
   const providerManagedBy = isManagedConnectorProvider(connector.provider)
@@ -528,7 +537,9 @@ function ConnectorPageBody({
                       onClick={() => signIn.mutate(signInAccount)}
                       disabled={signIn.isPending}
                     >
-                      {signIn.isPending ? <Loading className="size-4 shrink-0" /> : null}
+                      {signIn.isPending ? (
+                        <SessionDotMatrix size={14} className="shrink-0" />
+                      ) : null}
                       {t('noticeSignInAction')}
                     </Button>
                   ) : null
@@ -603,6 +614,7 @@ function ConnectorPageBody({
                   onRemoved={() => router.push(connectorsHref(projectId, 'connected'))}
                   onStartSession={startPrivateSession}
                   onSetCredential={setCredentialTarget}
+                  onConnect={needsSignIn ? connectAccount : undefined}
                   showAccountInfo
                 />
               )}

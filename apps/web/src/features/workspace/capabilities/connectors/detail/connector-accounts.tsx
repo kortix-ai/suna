@@ -26,6 +26,8 @@ export interface ConnectorAccountsProps {
   onSetCredential?: (target: { connectionId: string; owner: 'project' | 'me' }) => void;
   /** Show the ⓘ that explains accounts. The page sets it; the modal does not. */
   showAccountInfo?: boolean;
+  /** Sign an unsigned account in (the row's Connect). */
+  onConnect?: (connection: Connection) => void;
 }
 
 /**
@@ -64,6 +66,7 @@ export function ConnectorAccounts({
   onStartSession,
   onSetCredential,
   showAccountInfo = false,
+  onConnect,
 }: ConnectorAccountsProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const isManagedProvider = isManagedConnectorProvider(connector.provider);
@@ -93,6 +96,7 @@ export function ConnectorAccounts({
         onChanged={onChanged}
         onStartSession={onStartSession}
         onSetCredential={onSetCredential}
+        onConnect={onConnect}
         addVariant="default"
         titleAddon={
           showAccountInfo ? (

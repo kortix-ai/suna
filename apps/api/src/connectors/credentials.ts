@@ -251,6 +251,18 @@ export async function connectorAccountLandedSince(
   return !!credential || !!connection;
 }
 
+/** Which of these accounts hold a credential row. One query. */
+export async function connectionIdsWithCredentials(
+  connectionIds: readonly string[],
+): Promise<Set<string>> {
+  if (connectionIds.length === 0) return new Set();
+  const rows = await db
+    .select({ connectionId: connectionCredentials.connectionId })
+    .from(connectionCredentials)
+    .where(inArray(connectionCredentials.connectionId, [...connectionIds]));
+  return new Set(rows.map((row) => row.connectionId).filter((id): id is string => id !== null));
+}
+
 export async function connectorIdsWithSharedCredentials(
   connectorIds: string[],
 ): Promise<Set<string>> {
