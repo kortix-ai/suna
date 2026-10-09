@@ -58,6 +58,35 @@ describe('SessionListBackgroundTool renders the worker rows', () => {
     expect(html).toContain('/app');
   });
 
+  test('rows split by the other line terminators keep their rows: CR, U+2028, U+2029', () => {
+    // The legacy `.` excluded every JavaScript line terminator, not only \n:
+    // a row cannot swallow the next one across CR, LS or PS, and a terminator
+    // inside a row ends that row. The shared parser pins the same rule
+    // (packages/shared scan.ts isLineTerminator); these goldens keep the
+    // component honest about it too.
+    const byKind = ['**ses_cr1** status: running project: /w/cr', '**ses_ls1** status: idle project: /w/ls', '**ses_ps1** status: done project: /w/ps'].join('\r\u2028\u2029');
+    const html = renderToStaticMarkup(<SessionListBackgroundTool part={makePart(byKind)} defaultOpen />);
+
+    expect(html).toContain('ses_cr1');
+    expect(html).toContain('running');
+    expect(html).toContain('/w/cr');
+    expect(html).toContain('ses_ls1');
+    expect(html).toContain('idle');
+    expect(html).toContain('/w/ls');
+    expect(html).toContain('ses_ps1');
+    expect(html).toContain('done');
+    expect(html).toContain('3 workers');
+
+    // A terminator inside a row cuts it: the broken row renders nothing, the
+    // next complete row still does.
+    const cut = '**ses_cut1** \rstatus: running project: /w/cut\n**ses_ok1** status: done project: /w/ok';
+    const cutHtml = renderToStaticMarkup(<SessionListBackgroundTool part={makePart(cut)} defaultOpen />);
+
+    expect(cutHtml).not.toContain('ses_cut1');
+    expect(cutHtml).toContain('ses_ok1');
+    expect(cutHtml).toContain('1 workers');
+  });
+
   test('no output at all and completed says there were no background sessions', () => {
     // `noWorkers` sits behind the truthy-output branch: the empty state is the
     // answer only when the output itself is empty.
