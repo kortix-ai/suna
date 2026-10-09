@@ -1199,6 +1199,9 @@
     "showMoreSubsessionsLabel_other": "{{title}} のサブセッションをさらに{{count}}件表示"
   },
   "genui": {
-    "pick": "おすすめ"
+    "pick": "おすすめ",
+    "source": "出典: {{source}}",
+    "showData": "データを表示",
+    "hideData": "データを非表示"
   }
 }

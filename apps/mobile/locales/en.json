@@ -1201,6 +1201,9 @@
     "showMoreSubsessionsLabel_other": "Show {{count}} more sub-sessions of {{title}}"
   },
   "genui": {
-    "pick": "Pick"
+    "pick": "Pick",
+    "source": "Source: {{source}}",
+    "showData": "Show data",
+    "hideData": "Hide data"
   }
 }

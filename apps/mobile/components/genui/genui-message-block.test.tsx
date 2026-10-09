@@ -34,8 +34,16 @@ mock.module('react-native-reanimated', () => ({
   withTiming: (to: unknown, config: unknown) => (motion.timings.push(config), to),
 }));
 mock.module('react-native-gesture-handler', () => ({ ScrollView: host('gh-scroll') }));
+mock.module('react-native-svg', () => ({ default: host('svg'), G: host('svg-g'), Path: host('svg-path') }));
+// `lib/utils/theme` builds NAV_THEME from React Navigation's themes, which do not load under Bun.
+mock.module('expo-router/react-navigation', () => ({ DefaultTheme: {}, DarkTheme: {} }));
 mock.module('nativewind', () => ({ useColorScheme: () => ({ colorScheme: 'light' }) }));
-mock.module('react-i18next', () => ({ useTranslation: () => ({ t: (_key: string, fallback: string) => fallback }) }));
+/** i18next's two call shapes: `t(key, fallback)` and `t(key, { defaultValue, ...values })`. */
+const translate = (_key: string, options: string | Record<string, unknown>) =>
+  typeof options === 'string'
+    ? options
+    : String(options.defaultValue).replace(/{{(\w+)}}/g, (_m, name: string) => String(options[name]));
+mock.module('react-i18next', () => ({ useTranslation: () => ({ t: translate, i18n: { language: 'en' } }) }));
 mock.module('@/components/ui/text', () => ({ Text: host('text') }));
 mock.module('@/components/ui/badge', () => ({ Badge: host('badge') }));
 mock.module('@/components/ui/icon', () => ({ Icon: host('icon') }));
@@ -57,6 +65,7 @@ mock.module('@/lib/icons', () => ({
   WarningIcon: 'warning',
   CheckCircleIcon: 'check-circle',
   CaretDownIcon: 'caret-down',
+  CaretRightIcon: 'caret-right',
 }));
 
 let GenuiMessageBlock: typeof import('./genui-message-block').GenuiMessageBlock;
@@ -136,6 +145,14 @@ a1 = AccordionItem("Details", [b1])
 a2 = AccordionItem("Policies", [b2])
 b1 = Badge("first")
 b2 = Badge("second")`;
+const BARS = `root = Stack([c])
+c = BarChart(["Q1", "Q2"], [rev, cost], "billing export", "USD")
+rev = Series("Revenue", [1200, 900])
+cost = Series("Cost", [400, 500])`;
+/** The plot measures itself before it draws: report a width the way React Native's layout pass would. */
+const layOut = (root: ReactTestInstance, width: number) =>
+  act(() => all(root, 'view').find((n) => n.props.onLayout)!.props.onLayout({ nativeEvent: { layout: { width } } }));
+
 const triggers = (root: ReactTestInstance) =>
   all(root, 'pressable').filter((n) => n.props.accessibilityRole === 'button');
 const press = (n: ReactTestInstance) => act(() => (n.props.onPress as () => void)());
@@ -382,6 +399,64 @@ b2 = Badge("second")`;
     press(triggers(still)[0]!);
     expect(caretTurn(still, 0)).toBe('180deg');
     expect(motion.timings).toEqual([]);
+  });
+
+  test('a chart is a figure carrying the SDK screen-reader text, with a legend for 2+ series and its source line', () => {
+    const root = render(BARS);
+    expect(all(root, 'fallback')).toHaveLength(0);
+    const figure = all(root, 'view').filter((n) => n.props.accessibilityRole === 'image');
+    expect(figure.map((n) => n.props.accessibilityLabel)).toEqual(['Bar chart: Revenue, Cost. Source: billing export']);
+    // The figure alone is one accessibility element: the Show data button stays reachable.
+    expect(all(root, 'view').filter((n) => n.props.accessible)).toHaveLength(1);
+    const shown = texts(root);
+    for (const text of ['Revenue (USD)', 'Cost (USD)', 'Q1', 'Q2', 'Source: billing export']) expect(shown).toContain(text);
+  });
+
+  test('after layout, bars draw on the brand chart ramp in web order, with the max value labelled', () => {
+    const root = render(BARS);
+    layOut(root, 300);
+    const fills = all(root, 'svg-path').map((n) => n.props.fill).filter(Boolean);
+    // Series 1 is --chart-3, series 2 --chart-5: in the comma form native renderers parse.
+    expect(fills).toEqual(['hsla(30.1, 100%, 44.1%, 1)', 'hsla(23.8, 100%, 29.6%, 1)', 'hsla(30.1, 100%, 44.1%, 1)', 'hsla(23.8, 100%, 29.6%, 1)']);
+    expect(texts(root)).toContain('1,200 USD');
+  });
+
+  test('a single-series chart has no legend: the title names it', () => {
+    const root = render(`root = Stack([c])
+c = LineChart(["Mon", "Tue", "Wed"], [s], "app logs")
+s = Series("Visits", [3, 5, 4])`);
+    layOut(root, 300);
+    expect(texts(root)).not.toContain('Visits');
+    // A line labels the ends of its x axis, where its first and last points sit.
+    expect(texts(root)).toEqual(expect.arrayContaining(['Mon', 'Wed']));
+    expect(texts(root)).not.toContain('Tue');
+    expect(all(root, 'svg-path').filter((n) => n.props.fill === 'none')).toHaveLength(1);
+  });
+
+  test('a pie chart draws one slice per non-zero value and names each slice with its share', () => {
+    const root = render(`root = Stack([c])
+c = PieChart([a, b, z], "survey")
+a = Slice("Yes", 3)
+b = Slice("No", 1)
+z = Slice("Unsure", 0)`);
+    layOut(root, 300);
+    expect(all(root, 'svg-path')).toHaveLength(2);
+    const shown = texts(root).join('|');
+    for (const text of ['Yes', '75%', 'No', '25%', 'Unsure', '0%']) expect(shown).toContain(text);
+  });
+
+  test('Show data toggles a table of every value, and the button reports its state', () => {
+    const root = render(BARS);
+    const button = () => triggers(root)[0]!;
+    expect(texts(button())).toContain('Show data');
+    expect(button().props.accessibilityState).toEqual({ expanded: false });
+    expect(texts(root)).not.toContain('1,200');
+    press(button());
+    expect(texts(button())).toContain('Hide data');
+    expect(button().props.accessibilityState).toEqual({ expanded: true });
+    for (const value of ['1,200', '900', '400', '500']) expect(texts(root)).toContain(value);
+    press(button());
+    expect(texts(root)).not.toContain('1,200');
   });
 
   test('pending heavy nodes hold their final height with the Kortix loader; pending text nodes render nothing', () => {

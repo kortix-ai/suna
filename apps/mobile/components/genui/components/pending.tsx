@@ -5,7 +5,8 @@ import type { GenuiNode } from '@kortix/sdk/genui';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 
 /** Final heights of the components that would otherwise jump when they finish streaming. */
-const RESERVED: Record<string, number> = { Table: 160, BarChart: 220, LineChart: 220, PieChart: 220 };
+// Charts: the single-series card `charts.tsx` draws (p-4, max label, 160pt plot, x labels, footer); a pie has no axis rows.
+const RESERVED: Record<string, number> = { Table: 160, BarChart: 284, LineChart: 284, PieChart: 256 };
 
 /** A node the model has not finished: heavy nodes hold their space with the Kortix loader; text nodes wait invisibly. */
 export function GenuiPending(node: GenuiNode): ReactNode {

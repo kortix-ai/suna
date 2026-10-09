@@ -1,13 +1,14 @@
 import type { GenuiComponentMap } from '@kortix/sdk/genui/react';
 
 import { GenuiAccordion } from './accordion';
+import { GenuiChart } from './charts';
 import { GenuiCompare, GenuiRankedList, GenuiStat, GenuiStatRow, GenuiTable } from './data';
 import { GenuiBadge, GenuiCallout, GenuiImage, GenuiLink } from './inline';
 import { GenuiCard, GenuiStack, GenuiTabs } from './layout';
 
 export { GenuiPending } from './pending';
 
-/** The charts and Map are not mapped yet: the SDK renders a missing entry as its markdown. */
+/** Map is not mapped yet: the SDK renders a missing entry as its markdown. */
 export const mobileGenuiComponents: GenuiComponentMap = {
   Stack: GenuiStack,
   Card: GenuiCard,
@@ -18,6 +19,9 @@ export const mobileGenuiComponents: GenuiComponentMap = {
   Table: GenuiTable,
   Compare: GenuiCompare,
   RankedList: GenuiRankedList,
+  BarChart: GenuiChart,
+  LineChart: GenuiChart,
+  PieChart: GenuiChart,
   Badge: GenuiBadge,
   Callout: GenuiCallout,
   Image: GenuiImage,

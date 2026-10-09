@@ -1199,6 +1199,9 @@
     "showMoreSubsessionsLabel_other": "Mostrar {{count}} subsesiones más de {{title}}"
   },
   "genui": {
-    "pick": "Recomendado"
+    "pick": "Recomendado",
+    "source": "Fuente: {{source}}",
+    "showData": "Mostrar datos",
+    "hideData": "Ocultar datos"
   }
 }
