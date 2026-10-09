@@ -20,7 +20,7 @@ import { FolderSimpleIcon, HardDrivesIcon, HouseIcon, ShareNetworkIcon, UsersThr
 import type { Drive } from '@kortix/sdk';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 
-import { DriveConflictsBanner } from './drive-conflicts-banner';
+import { DriveConflictsBar } from './drive-conflicts-bar';
 import { DriveFilesProvider, driveExplorerSource, parentDrivePath, toDrivePath } from './drive-explorer-source';
 import { FolderAccessDialog } from './folder-access-dialog';
 
@@ -167,12 +167,12 @@ function FilesExplorer({ drive }: { drive: Drive }) {
 
   return (
     <FileExplorerSourceProvider value={source}>
-      <DriveConflictsBanner
-        driveId={drive.driveId}
-        onOpenFolder={(p) => navigateToPath(p.replace(/^\//, ''))}
-      />
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div className="relative flex min-h-0 flex-1 flex-col">
         <DriveExplorer leading={leading} rootLabel={t('files')} />
+        <DriveConflictsBar
+          driveId={drive.driveId}
+          onOpenFolder={(p) => navigateToPath(p.replace(/^\//, ''))}
+        />
       </div>
       <FolderAccessDialog driveId={drive.driveId} path={path} open={sharing} onOpenChange={setSharing} />
     </FileExplorerSourceProvider>
