@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 749,
+  "count": 776,
   "routes": [
     {
       "method": "GET",
@@ -1169,6 +1169,66 @@
     {
       "method": "GET",
       "path": "/v1/docs"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/drives"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/drives/:driveId/access"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/drives/:driveId/access"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/drives/:driveId/access/:grantId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/drives/:driveId/conflicts"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/drives/:driveId/conflicts/:conflictId/dismiss"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/drives/:driveId/files"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/drives/:driveId/files"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/drives/:driveId/files/content"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/drives/:driveId/files/content"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/drives/:driveId/files/mkdir"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/drives/:driveId/files/move"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/drives/:driveId/principals"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/drives/:driveId/restore"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/drives/:driveId/versions"
     },
     {
       "method": "GET",
@@ -2361,6 +2421,54 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/config-release"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files/content"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files/content"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files/move"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files/stat"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files/upload"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files/upload/:uploadId/blocks/:sha"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files/upload/:uploadId/commit"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/head"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/drive-sync/mounts"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/drives"
     },
     {
       "method": "GET",

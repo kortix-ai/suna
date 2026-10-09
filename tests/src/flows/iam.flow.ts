@@ -1684,7 +1684,7 @@ flow(
     const member = await team.addMember('member');
     const project = await team.project();
 
-    await ctx.step('system roles come from the seeded DB rows, all six of them', async () => {
+    await ctx.step('system roles come from the seeded DB rows, all nine of them', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get('/v1/accounts/:accountId/iam/roles', { params: { accountId: team.id } });
@@ -1696,6 +1696,10 @@ flow(
         'account:member',
         'account:owner',
         'project:agent-user',
+        // Object grants on a Files folder (drives/folders.ts): they narrow, never add.
+        'project:folder-manager',
+        'project:folder-reader',
+        'project:folder-writer',
         'project:manager',
         'project:member',
       ].join(',');
