@@ -69,3 +69,36 @@ Rule 1 holds in 4 of 4 replies. No `Table` was used where `RankedList` fits.
 1. Add a rule: "Arguments are positional. Never write `name=value` or `name value`. Optional arguments are skipped only by filling every earlier slot." Covers 5 of 10 failures (`unit "units"`, `trend=`, `title=`, and the `Table` extra argument). The generated prompt already has a similar sentence, but it shows colon syntax only; show an `=` counter-example.
 2. Add a rule: "`Stack`, `Tab`, and `AccordionItem` children are references to components, never strings. Put text in `Card` `body` or `Callout` `body`." Covers 3 of 10 failures (`edge-faq` twice, `ui-itinerary-tabs`). Add a `Tabs` or `Accordion` example to `EXAMPLES` that shows `Card` children.
 3. Add a rule for `Map`: "`zoom` is the fourth argument. Write `Map(markers, source)` and omit `route` and `zoom` unless needed." Covers 2 of 10 failures. Also add: "`Stat` `delta` is at most 16 characters; put long comparisons in prose." Covers 1 of 10.
+
+## Run 2026-10-09T12:04:13.679Z — prompt 806347a8
+
+Gate: valid ≥ 97.0%, overuse ≤ 10.0%, underuse ≤ 25.0%, forbidden ≤ 1, errors = 0.
+
+| Model | Cases | Blocks | Valid | Overuse | Underuse | Forbidden | Median completion tokens | Errors | Go |
+|---|---|---|---|---|---|---|---|---|---|
+| `deepseek-v4.1-flash` | 46 | 28 | 92.9% | 0.0% | 3.8% | 0 | 369 | 0 | NO |
+| `glm-5.3-flash` | 46 | 29 | 96.6% | 0.0% | 0.0% | 0 | 749 | 0 | NO |
+
+Failing cases (issue codes only):
+
+- `deepseek-v4.1-flash` ui-pros-cons: underuse
+- `deepseek-v4.1-flash` ui-restaurants-map: schema:Map
+- `deepseek-v4.1-flash` ui-stats-and-tip: schema:Stat
+- `glm-5.3-flash` ui-places-map: schema:Map
+
+### Notes for run 2026-10-09T12:04:13.679Z — Provisional re-run after prompt rules (local stand-in models)
+
+- Prompt 806347a8 adds three rules (commit 450a8854db): positional arguments only, component references as `Stack`/`Tab`/`AccordionItem` children, argument order and limits.
+- Models: `deepseek-v4.1-flash`, `glm-5.3-flash`. `kimi-k3` still returned HTTP 503 on a single curl before the run, so it was not included.
+- Valid rate before and after: `deepseek-v4.1-flash` 82.1% to 92.9%; `glm-5.3-flash` 82.1% to 96.6%. Gate is 97.0%. Both models still fail it. `glm-5.3-flash` misses by one invalid block (28 of 29).
+- Failing cases: deepseek 5 to 3, glm 5 to 1 (10 to 4 in total).
+- Fixed: all string-children failures (`edge-faq`, `ui-itinerary-tabs`), all named-argument failures, and the `Table` arity failure.
+
+| Model | Case | Class | Cause |
+|---|---|---|---|
+| `deepseek-v4.1-flash` | `ui-restaurants-map` | invalid syntax | `Map([..], "source", "", 12)`: an empty string fills the `route` slot (expects `number[][]`) to reach `zoom`. The model followed "fill every earlier argument" literally with a wrong placeholder. |
+| `deepseek-v4.1-flash` | `ui-stats-and-tip` | limit breach | `Stat` `delta` `"+6 pts vs typical"` is 17 characters (max 16). The rule says 16; the model does not count. Also invented data (not flagged by the scorer): "typical" benchmark. |
+| `deepseek-v4.1-flash` | `ui-pros-cons` | underuse | The model asked which frameworks were meant and wrote no block. The prompt names placeholders `Framework One` and `Framework Two`; this is a clarification reply, not a format error. |
+| `glm-5.3-flash` | `ui-places-map` | invalid syntax | `Map([..], "source", 6)`: zoom still lands in the `route` slot, in spite of the new rule. |
+
+Remaining cause: `Map` argument order. 2 of the 4 remaining failures (and 2 of 10 before) put `zoom` in the `route` slot or fill it with a wrong placeholder. Options for the controller (not applied): (1) swap the schema to `Map(markers, source, zoom?, route?)`, since `zoom` is used more than `route`; (2) remove `route` from v1; (3) add a `Map` example with `zoom` to `EXAMPLES`.
