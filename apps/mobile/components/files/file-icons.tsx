@@ -6,6 +6,7 @@
 import * as React from 'react';
 import { View } from 'react-native';
 import { useColorScheme } from 'nativewind';
+import { FolderOpenIcon, FolderIcon } from '@/lib/icons';
 
 import { KortixLogo } from '@/components/kortix/KortixLogo';
 import { Icon } from '@/components/ui/icon';
@@ -74,4 +75,16 @@ export function FileGlyph({ name, size }: { name: string; size: number }) {
     );
   }
   return <Icon as={GLYPHS[key]} size={size} weight="fill" className="text-muted-foreground" />;
+}
+
+/**
+ * The icon component for a file name, resolved through the canonical
+ * `fileIconKey` mapping. Callers that render a plain `Icon` (not the filled
+ * `FileGlyph`) use this; the `kortix` key falls back to the generic file
+ * glyph because a plain line icon cannot carry the brand mark.
+ */
+export function fileIcon(name: string, options: { isOpen?: boolean } = {}): AppIcon {
+  if (options.isOpen) return FolderOpenIcon;
+  const key = fileIconKey(name);
+  return key === 'kortix' ? GLYPHS.file : GLYPHS[key];
 }
