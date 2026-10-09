@@ -1,10 +1,10 @@
 /**
  * One fresh-boot acquisition, exactly as the daemon runs it at session start
- * (config-provider coordinator: warm check → git | prefer-s3 → hydration),
+ * (workspace provider: warm check → git | prefer-s3 → hydration),
  * driven by the same KORTIX_* environment the API hands a session — but in a
  * throwaway workspace on THIS machine, with no sandbox provider in the loop.
  *
- * Used by config-provider-bench.ts; run directly for one shot:
+ * Used by workspace-provider-bench.ts; run directly for one shot:
  *
  *   KORTIX_WORKSPACE=/tmp/ws KORTIX_PROJECT_TARGET=/tmp/ws \
  *   KORTIX_REPO_URL=http://localhost:8008/v1/git/<project>.git KORTIX_TOKEN=<pat> \
@@ -18,20 +18,20 @@
  * precede it). KORTIX_BENCH_SCAFFOLD_GIT stands in for the image's
  * /opt/kortix/scaffold.git.
  */
-import { loadConfig } from '../src/lib/config/config'
-import { materializeProject } from '../src/services/config-provider/config-provider'
-import { __setScaffoldRepoPathForTests } from '../src/lib/git/git'
+import { loadHostConfig } from '../src/lib/config/config'
+import { __setScaffoldRepoPathForTests } from '../src/services/workspace-provider/git'
+import { provideWorkspace } from '../src/services/workspace-provider/workspace-provider'
 
 const scaffold = process.env.KORTIX_BENCH_SCAFFOLD_GIT?.trim()
 if (scaffold) __setScaffoldRepoPathForTests(scaffold)
 
-const cfg = loadConfig(process.env)
+const cfg = loadHostConfig(process.env)
 const t0 = performance.now()
 const marks: Record<string, number> = {}
 const ms = () => Math.round(performance.now() - t0)
 
 try {
-  const result = await materializeProject(cfg, {
+  const result = await provideWorkspace(cfg, {
     bootMark: (label) => {
       marks[label] = ms()
     },

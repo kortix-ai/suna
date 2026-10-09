@@ -41,26 +41,26 @@ import {
   verifyRelease,
   verifyReleaseDetail,
   type ReleaseManifest,
-} from '@/services/config-release/boot-config'
+} from '@/services/config-provider/boot-config'
 import {
   configReleaseApiFrom,
   fetchConfigReleaseDescriptor,
   isFeatureDisabledError,
   type ConfigReleaseApi,
-} from '@/services/config-release/api-client'
-import type { ConfigReleaseDescriptor } from '@/services/config-release/descriptor'
+} from '@/services/config-provider/api-client'
+import type { ConfigReleaseDescriptor } from '@/services/config-provider/descriptor'
 import {
   CONFIG_RELEASE_NOTICE_PATH,
   clearConfigReleaseNotice,
   writeConfigReleaseNotice,
-} from '@/services/config-release/notice'
-import { checkoutMayHold, obtainRelease } from '@/services/config-release/obtain'
+} from '@/services/config-provider/notice'
+import { checkoutMayHold, obtainRelease } from '@/services/config-provider/obtain'
 import {
   ConvergeBusyError,
   deliverGovernance,
   effectiveReleaseId,
   manifestFromDescriptor,
-} from '@/services/config-release/release'
+} from '@/services/config-provider/release'
 import { sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
 import { logger } from '@/lib/log/logger'
 import type { Config } from '@/lib/config/config'

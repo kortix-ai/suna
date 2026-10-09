@@ -72,7 +72,7 @@ describe('reboot must not reset an existing session branch', () => {
   })
 
   test('the daemon probes for the ref and only creates when it is absent', () => {
-    const SRC = readFileSync(join(import.meta.dir, '..', 'lib', 'git', 'git.ts'), 'utf8')
+    const SRC = readFileSync(join(import.meta.dir, '..', 'services', 'workspace-provider', 'checkout.ts'), 'utf8')
     const fn = SRC.split('async function checkoutLocalSessionBranch(')[1]?.split('\n}\n')[0]
     expect(fn).toBeTruthy()
     expect(fn).toContain("'rev-parse', '--verify', '--quiet'")
