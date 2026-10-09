@@ -46,6 +46,7 @@ import { join } from 'node:path';
 const NOT_ROOT_REACHABLE = new Set([
   './react',
   './genui', // optional peers (zod, lang-core): the root barrel must not pull them in
+  './genui/fence', // subpath for markdown renderers; ./genui already exports the same names
   './genui/react',
   './server',
   './workspace-search',

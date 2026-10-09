@@ -31,6 +31,13 @@ const TEST_FILE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
  *                            `@/lib/storage/managed-storage` shim.
  *                            Each import carries an inline eslint disable. The other four zustand
  *                            stores under `internal/` stay forbidden.
+ *  - `@kortix/sdk/genui/fence` — OpenUI fence detection for the markdown
+ *                            code renderer (`components/markdown/code/
+ *                            markdown-code.tsx`). It never loads `@openuidev/*`
+ *                            or `zod`, which the `./genui` barrel does at
+ *                            module load. The import carries an inline eslint
+ *                            disable (the `@kortix/sdk/*` gitignore pattern
+ *                            cannot re-include a path under `genui/`).
  */
 const CANONICAL_SDK_ENTRIES = new Set([
   '@kortix/sdk',
@@ -40,6 +47,7 @@ const CANONICAL_SDK_ENTRIES = new Set([
   '@kortix/sdk/internal/idb-sync-cache',
   '@kortix/sdk/internal/diagnostics-store',
   '@kortix/sdk/internal/managed-storage',
+  '@kortix/sdk/genui/fence',
 ]);
 
 const FORBIDDEN_IMPORTS = [

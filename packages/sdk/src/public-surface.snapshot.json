@@ -1742,6 +1742,11 @@
     "safeUrl",
     "splitGenui"
   ],
+  "./genui/fence": [
+    "genuiVersionFromClassName",
+    "genuiVersionOf",
+    "splitGenui"
+  ],
   "./genui/react": [
     "GenuiBlock",
     "defaultGenuiComponents",

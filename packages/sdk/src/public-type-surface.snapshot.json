@@ -3215,6 +3215,12 @@
     "safeUrl",
     "splitGenui"
   ],
+  "./genui/fence": [
+    "GenuiSegment",
+    "genuiVersionFromClassName",
+    "genuiVersionOf",
+    "splitGenui"
+  ],
   "./genui/react": [
     "GenuiBlock",
     "GenuiBlockEvent",

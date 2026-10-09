@@ -117,6 +117,7 @@ try {
       "const genui = await import('@kortix/sdk/genui');",
       "if (genui.GENUI_SCHEMA_VERSION !== 1) throw new Error('genui: wrong schema version');",
       "if (genui.genuiToMarkdown('```openui\\nroot = Stack([b])\\nb = Badge(\\\"ok\\\")\\n```') !== '[ok]') throw new Error('genui: markdown fallback broken in the published build');",
+      "if ((await import('@kortix/sdk/genui/fence')).genuiVersionFromClassName('language-openui') !== 1) throw new Error('genui/fence: fence check broken in the published build');",
       "await import('@kortix/sdk/genui/react');",
       "console.log('OK: @kortix/sdk imports and constructs from the packed tarball');",
     ].join('\n'),

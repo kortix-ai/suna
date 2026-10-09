@@ -34,6 +34,7 @@
     ".": "./src/index.ts",
     "./react": "./src/react/index.ts",
     "./genui": "./src/genui/index.ts",
+    "./genui/fence": "./src/genui/fence-entry.ts",
     "./genui/react": "./src/genui/react/index.ts",
     "./server": "./src/node/server.ts",
     "./internal/sync-store": "./src/internal/sync-store.ts",
@@ -75,6 +76,7 @@
       ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
       "./react": { "types": "./dist/react/index.d.ts", "import": "./dist/react/index.js" },
       "./genui": { "types": "./dist/genui/index.d.ts", "import": "./dist/genui/index.js" },
+      "./genui/fence": { "types": "./dist/genui/fence-entry.d.ts", "import": "./dist/genui/fence-entry.js" },
       "./genui/react": { "types": "./dist/genui/react/index.d.ts", "import": "./dist/genui/react/index.js" },
       "./server": { "types": "./dist/node/server.d.ts", "import": "./dist/node/server.js" },
       "./internal/sync-store": {

@@ -104,7 +104,8 @@ const eslintConfig = [
               // instead, where it is visible in review: `idb-sync-cache` in
               // `lib/device-caches.ts` and `lib/utils/reset-client-state.ts`,
               // `diagnostics-store` in `stores/diagnostics-store.ts`,
-              // `managed-storage` in `lib/storage/managed-storage.ts`. Mirrors CANONICAL_SDK_ENTRIES
+              // `managed-storage` in `lib/storage/managed-storage.ts`,
+              // `genui/fence` in `components/markdown/code/markdown-code.tsx`. Mirrors CANONICAL_SDK_ENTRIES
               // in scripts/sdk-boundary.mjs — keep the two in sync.
               group: ['@kortix/sdk/*', '!@kortix/sdk/react', '!@kortix/sdk/server', '!@kortix/sdk/workspace-search'],
               message: 'Use the canonical @kortix/sdk or @kortix/sdk/react entry point.',

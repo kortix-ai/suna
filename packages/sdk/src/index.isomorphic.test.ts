@@ -174,6 +174,7 @@ interface Subpath {
 const SUBPATH_TIERS: Subpath[] = [
   { name: './server', file: 'node/server.ts', tier: 'node-allowed' },
   { name: './genui', file: 'genui/index.ts', tier: 'isomorphic-core' },
+  { name: './genui/fence', file: 'genui/fence-entry.ts', tier: 'isomorphic-core' },
 
   // The ./internal/* stores — apps/web's zustand machinery, outside semver.
   { name: './internal/sync-store', file: 'internal/sync-store.ts', tier: 'browser-only' },

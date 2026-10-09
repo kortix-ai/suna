@@ -6,7 +6,7 @@ import { KATEX_FENCE_LANGUAGES } from '@/components/markdown/katex-markdown';
 import { SetupLinkButton } from '@/components/setup-links/setup-link-button';
 import { parseSetupLinkHref } from '@/components/setup-links/util';
 import { isMermaidCode } from '@/lib/mermaid-utils';
-import { genuiVersionFromClassName } from '@kortix/sdk/genui';
+import { genuiVersionFromClassName } from '@kortix/sdk/genui/fence'; // eslint-disable-line no-restricted-imports
 import React, { lazy, Suspense } from 'react';
 
 import { childrenToText } from './children-text';
