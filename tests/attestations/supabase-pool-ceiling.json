@@ -1,21 +1,22 @@
 {
-  "source_hash": "f5bd9dc74a83c50eb0cf5ffab24997aaf9c77bed3bc7b7d641759c395d80c9c8",
+  "source_hash": "1cdfa708fb86f26924f38948bafbdc3359f99ed8da67f40b58e355512bee81ca",
   "diff_files": [
     ".agents/skills/learnings/MEMORY.md",
     ".agents/skills/learnings/entries/2026-10-09T100152Z-raise-one-database-pool-at-a-time-inside-the-rolling-fleet-b.md",
+    ".agents/skills/learnings/entries/2026-10-09T201500Z-the-branch-rename-api-deletes-an-open-prs-head-never.md",
     "apps/api/src/ensure-schema.test.ts",
     "apps/api/src/ensure-schema.ts",
     "apps/api/src/shared/database-capacity.test.ts",
     "apps/api/src/shared/database-capacity.ts",
     "packages/db/src/connection-defaults.ts"
   ],
-  "diff_hash": "96d50e5fb3471c53bf847e713c82fc64e98842343d088cf4302a7f6b1cecbd27",
-  "head": "20a6ef227eb672e7474d9c65f29e96a8199db8f7",
-  "passed": false,
+  "diff_hash": "813c2b222cb12fdcb1aef60cb462bda57e6bd1e9efca9f3e76c810d93899dbfa",
+  "head": "e104b87a0b163cf28d64859b18feff4bfda3c073",
+  "passed": true,
   "lanes": {
-    "core": "fail",
-    "packages": "fail",
-    "db-suites": "fail"
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
   },
-  "at": "2026-10-09T11:00:50.370Z"
+  "at": "2026-10-09T20:34:26.478Z"
 }
