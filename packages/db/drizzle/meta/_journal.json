@@ -966,6 +966,7 @@
       "version": "7",
       "when": 1791536652319,
       "tag": "20261009090412_notification_inbox",
+      "breakpoints": true
     },
     {
       "idx": 138,
