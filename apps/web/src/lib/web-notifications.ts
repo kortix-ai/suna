@@ -15,12 +15,23 @@ import { createElement } from 'react';
  *  1. Browser support for the Notification API
  *  2. Permission is granted
  *  3. Master enable toggle is on
- *  4. The specific notification category is enabled
+ *  4. The person's server-side Push choice for the kind (Settings >
+ *     Notifications); the per-browser per-kind switches are retired
  *  5. Optionally skips if tab is visible (onlyWhenHidden preference)
+ *
+ * Every OS notification carries the tag `<type>:<sessionId>`, the same tag a
+ * Web Push message for that event carries, so whichever arrives second
+ * replaces the first.
  */
 
 import { Button } from '@/components/ui/button';
-import { dismissToast, errorToast, successToast, warningToast } from '@/components/ui/toast';
+import {
+  dismissToast,
+  errorToast,
+  infoToast,
+  successToast,
+  warningToast,
+} from '@/components/ui/toast';
 import { logger } from '@/lib/logger';
 import { softNavigate } from '@/lib/navigation/router-bridge';
 import { projectSessionHref } from '@/lib/navigation/session-href';
@@ -30,13 +41,21 @@ import type { SoundEvent } from '@/stores/sound-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import { useTurnAttentionStore } from '@/stores/turn-attention-store';
 import { useWebNotificationStore } from '@/stores/web-notification-store';
-import { normalizeAppPathname } from '@kortix/sdk';
+import { normalizeAppPathname, type InboxNotificationKind, type NotificationPreferences } from '@kortix/sdk';
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export type WebNotificationType = 'completion' | 'error' | 'question' | 'permission';
+/** The push `type` of each inbox kind (`pushTypeOf` in `@kortix/shared/notification-kinds`). */
+export type WebNotificationType =
+  | 'completion'
+  | 'error'
+  | 'question'
+  | 'permission'
+  | 'shared'
+  | 'automation_failed'
+  | 'automation_recovered';
 
 export interface WebNotificationPayload {
   /** Which category this notification belongs to */
@@ -52,25 +71,45 @@ export interface WebNotificationPayload {
   /** Project the session belongs to, captured when the notification is raised.
    *  Without it there is no routable URL — see `navigateToSession`. */
   projectId?: string | null;
-  /** Localized label for the in-app session action. */
+  /** Where a click goes when there is no session (an automation alert). */
+  href?: string;
+  /** Localized label for the in-app open action. */
   actionLabel?: string;
   /** Optional click handler — by default focuses the window and navigates to session */
   onClick?: () => void;
 }
 
 // ============================================================================
-// Preference key mapping
+// Server push preference
 // ============================================================================
 
-const TYPE_TO_PREF: Record<
-  WebNotificationType,
-  'onCompletion' | 'onError' | 'onQuestion' | 'onPermission'
-> = {
-  completion: 'onCompletion',
-  error: 'onError',
-  question: 'onQuestion',
-  permission: 'onPermission',
+const TYPE_TO_KIND: Record<WebNotificationType, InboxNotificationKind> = {
+  completion: 'turn_done',
+  error: 'turn_error',
+  question: 'question',
+  permission: 'permission',
+  shared: 'shared',
+  automation_failed: 'automation_failed',
+  automation_recovered: 'automation_recovered',
 };
+
+/**
+ * The person's Push choice per kind, mirrored from the preferences query by
+ * `NotificationHost`. Empty until it loads: every kind is allowed then, which
+ * is also the server default.
+ */
+let serverPush: Partial<Record<InboxNotificationKind, boolean>> = {};
+
+export function setServerPushPreferences(kinds: NotificationPreferences['kinds'] | null | undefined) {
+  serverPush = {};
+  for (const [kind, channels] of Object.entries(kinds ?? {})) {
+    serverPush[kind as InboxNotificationKind] = channels.push;
+  }
+}
+
+function serverPushAllows(type: WebNotificationType): boolean {
+  return serverPush[TYPE_TO_KIND[type]] !== false;
+}
 
 /** Map notification types to sound events */
 const TYPE_TO_SOUND: Record<WebNotificationType, SoundEvent> = {
@@ -78,6 +117,9 @@ const TYPE_TO_SOUND: Record<WebNotificationType, SoundEvent> = {
   error: 'error',
   question: 'notification',
   permission: 'notification',
+  shared: 'notification',
+  automation_failed: 'error',
+  automation_recovered: 'completion',
 };
 
 // ============================================================================
@@ -241,9 +283,8 @@ export function sendWebNotification(
     // Preferences check
     if (!preferences.enabled) return null;
 
-    // Category check
-    const prefKey = TYPE_TO_PREF[payload.type];
-    if (!preferences[prefKey]) return null;
+    // Kind check: the person's Push choice for this kind.
+    if (!serverPushAllows(payload.type)) return null;
 
     // Active session check — skip notifications for the session the user
     // is currently looking at (they can already see the question/permission
@@ -273,12 +314,7 @@ export function sendWebNotification(
       notification.onclick = () => {
         window.focus();
         notification?.close();
-        if (payload.sessionId) {
-          navigateToSession(payload.sessionId, payload.body, {
-            forceNavigation: true,
-            projectId: payload.projectId,
-          });
-        }
+        openPayload(payload, true);
         payload.onClick?.();
       };
 
@@ -289,7 +325,7 @@ export function sendWebNotification(
         } catch {
           // May already be closed
         }
-      }, 8000);
+      }, NOTIFICATION_VISIBLE_MS);
     } catch (err) {
       logger.error('Failed to send native notification', { error: String(err) });
     }
@@ -302,12 +338,30 @@ export function sendWebNotification(
 // In-app toast fallback
 // ============================================================================
 
+/** How long a notification stays on screen: the toast and the OS notification. */
+const NOTIFICATION_VISIBLE_MS = 8000;
+
 const TOAST_BY_TYPE: Record<WebNotificationType, typeof successToast> = {
   completion: successToast,
   error: errorToast,
   question: warningToast,
   permission: warningToast,
+  shared: infoToast,
+  automation_failed: errorToast,
+  automation_recovered: successToast,
 };
+
+/** Open what the notification is about: its session, or its `href`. */
+function openPayload(payload: WebNotificationPayload, forceNavigation: boolean) {
+  if (payload.sessionId) {
+    navigateToSession(payload.sessionId, payload.body, {
+      forceNavigation,
+      projectId: payload.projectId,
+    });
+  } else if (payload.href) {
+    softNavigate(payload.href);
+  }
+}
 
 /**
  * Show an in-app toast notification.
@@ -316,13 +370,13 @@ const TOAST_BY_TYPE: Record<WebNotificationType, typeof successToast> = {
 function showInAppToast(payload: WebNotificationPayload) {
   try {
     const id = `web-notification-${payload.tag ?? Date.now()}`;
-    const { sessionId, actionLabel } = payload;
+    const { sessionId, href, actionLabel } = payload;
     TOAST_BY_TYPE[payload.type](payload.title, {
       id,
       description: payload.body,
-      duration: 8000,
+      duration: NOTIFICATION_VISIBLE_MS,
       button:
-        sessionId && actionLabel
+        (sessionId || href) && actionLabel
           ? createElement(
               Button,
               {
@@ -330,7 +384,7 @@ function showInAppToast(payload: WebNotificationPayload) {
                 variant: 'outline',
                 onClick: () => {
                   dismissToast(id);
-                  navigateToSession(sessionId, payload.body, { projectId: payload.projectId });
+                  openPayload(payload, false);
                 },
               },
               actionLabel,

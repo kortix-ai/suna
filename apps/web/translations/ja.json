@@ -771,7 +771,16 @@
         }
       },
       "testNotificationTitle": "テスト通知",
-      "testNotificationBody": "通知は正常に動作しています！"
+      "testNotificationBody": "通知は正常に動作しています！",
+      "enableDescriptionPush": "Kortix のタブをすべて閉じていても、このブラウザに通知を表示します。",
+      "enableDescriptionDesktop": "デスクトップアプリのウィンドウが開いている間、通知を表示します。",
+      "enableDescriptionBrowser": "Kortix のタブが開いている間、このブラウザに通知を表示します。",
+      "notificationTypesDescription": "これらの設定はすべてのスマートフォンとブラウザに適用されます。ベルにはすべての通知が表示されます。",
+      "push": "プッシュ",
+      "email": "メール",
+      "channelSwitch": "{kind}：{channel}",
+      "preferencesLoadError": "通知設定を読み込めませんでした",
+      "retry": "もう一度試す"
     },
     "git": {
       "updateFailed": "リポジトリを更新できませんでした",
@@ -2561,7 +2570,49 @@
     "settingsFailed": "通知設定の更新に失敗しました",
     "enableAll": "すべて有効化",
     "disableAll": "すべて無効化",
-    "saveChanges": "変更を保存"
+    "saveChanges": "変更を保存",
+    "kind": {
+      "turn_done": "ターン完了",
+      "turn_error": "ターン失敗",
+      "question": "質問",
+      "permission": "権限リクエスト",
+      "shared": "あなたと共有",
+      "automation_failed": "失敗アラート",
+      "automation_recovered": "復旧アラート"
+    },
+    "kindDescription": {
+      "turn_done": "ターンが終了します。",
+      "turn_error": "ターンがエラーで終了します。",
+      "question": "エージェントが質問し、回答を待ちます。",
+      "permission": "エージェントがツールを実行する権限を求めます。",
+      "shared": "誰かがあなたとセッションを共有します。",
+      "automation_failed": "トリガーまたはリマインダーが失敗し始めます。",
+      "automation_recovered": "失敗していたトリガーまたはリマインダーが再び動作します。"
+    },
+    "bell": {
+      "label": "通知",
+      "unreadLabel": "通知：未読 {count} 件",
+      "markAllRead": "すべて既読にする",
+      "empty": "通知はここに表示されます",
+      "loadError": "通知を読み込めませんでした",
+      "retry": "もう一度試す",
+      "unread": "未読",
+      "promptPush": "Kortix を閉じているときも通知を受け取る",
+      "promptBackground": "Kortix がバックグラウンドのときに通知を受け取る",
+      "turnOn": "オンにする",
+      "dismiss": "閉じる"
+    },
+    "arrival": {
+      "inProject": "{project} の{kind}",
+      "openSession": "セッションを開く",
+      "openTriggers": "トリガーを開く"
+    },
+    "session": {
+      "mute": "通知をミュート",
+      "unmute": "通知のミュートを解除",
+      "muted": "通知をミュートしました",
+      "unmuted": "通知のミュートを解除しました"
+    }
   },
   "modes": {
     "samplePrompts": "サンプルプロンプト",

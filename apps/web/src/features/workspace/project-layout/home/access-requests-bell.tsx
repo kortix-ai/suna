@@ -1,6 +1,6 @@
 'use client';
 
-import { BellIcon as Bell } from '@phosphor-icons/react';
+import { UserPlusIcon } from '@phosphor-icons/react';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 
 import { HubLink } from '@/features/accounts/hub/account-hub-location';
@@ -11,7 +11,10 @@ import Hint from '@/components/ui/hint';
 import { cn } from '@/lib/utils';
 
 /**
- * The pending-access-requests bell, floated over the hero's top-right corner.
+ * The pending-access-requests control, floated over the hero's top-right
+ * corner. Its glyph is a person with a plus, not a bell: the bell is the
+ * notification inbox (KRTX-1742), and two bells on one screen would read as
+ * one control.
  *
  * ## One button, not two
  *
@@ -46,7 +49,7 @@ export function AccessRequestsBell({
 
   const body = (
     <>
-      <Bell className="size-4" />
+      <UserPlusIcon className="size-4" />
       <Badge size="xs" variant="new" className="absolute -top-1 -right-1 min-w-5 px-1 tabular-nums">
         {count}
       </Badge>

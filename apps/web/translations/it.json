@@ -771,7 +771,16 @@
         }
       },
       "testNotificationTitle": "Notifica di prova",
-      "testNotificationBody": "Le notifiche funzionano correttamente!"
+      "testNotificationBody": "Le notifiche funzionano correttamente!",
+      "enableDescriptionPush": "Mostra le notifiche in questo browser, anche con tutte le schede di Kortix chiuse.",
+      "enableDescriptionDesktop": "Mostra le notifiche dell'app desktop finché la sua finestra è aperta.",
+      "enableDescriptionBrowser": "Mostra le notifiche in questo browser finché una scheda di Kortix è aperta.",
+      "notificationTypesDescription": "Queste scelte valgono su ogni telefono e in ogni browser. La campanella elenca ogni notifica.",
+      "push": "Push",
+      "email": "Email",
+      "channelSwitch": "{kind}: {channel}",
+      "preferencesLoadError": "Impossibile caricare le impostazioni delle notifiche",
+      "retry": "Riprova"
     },
     "git": {
       "updateFailed": "Impossibile aggiornare il repository",
@@ -2561,7 +2570,49 @@
     "settingsFailed": "Impossibile aggiornare le preferenze di notifica",
     "enableAll": "Abilita Tutte",
     "disableAll": "Disabilita Tutte",
-    "saveChanges": "Salva modifiche"
+    "saveChanges": "Salva modifiche",
+    "kind": {
+      "turn_done": "Turno terminato",
+      "turn_error": "Turno non riuscito",
+      "question": "Domanda",
+      "permission": "Richiesta di autorizzazione",
+      "shared": "Condivisa con te",
+      "automation_failed": "Avviso di errore",
+      "automation_recovered": "Avviso di ripristino"
+    },
+    "kindDescription": {
+      "turn_done": "Un turno termina.",
+      "turn_error": "Un turno termina con un errore.",
+      "question": "L'agente fa una domanda e attende la risposta.",
+      "permission": "L'agente chiede l'autorizzazione per eseguire uno strumento.",
+      "shared": "Qualcuno condivide una sessione con te.",
+      "automation_failed": "Un trigger o un promemoria inizia a fallire.",
+      "automation_recovered": "Un trigger o un promemoria che falliva torna a funzionare."
+    },
+    "bell": {
+      "label": "Notifiche",
+      "unreadLabel": "Notifiche: {count} non lette",
+      "markAllRead": "Segna tutto come letto",
+      "empty": "Le notifiche appariranno qui",
+      "loadError": "Impossibile caricare le notifiche",
+      "retry": "Riprova",
+      "unread": "Non letta",
+      "promptPush": "Ricevi notifiche quando Kortix è chiuso",
+      "promptBackground": "Ricevi notifiche quando Kortix è in background",
+      "turnOn": "Attiva",
+      "dismiss": "Ignora"
+    },
+    "arrival": {
+      "inProject": "{kind} in {project}",
+      "openSession": "Apri sessione",
+      "openTriggers": "Apri trigger"
+    },
+    "session": {
+      "mute": "Silenzia notifiche",
+      "unmute": "Riattiva notifiche",
+      "muted": "Notifiche silenziate",
+      "unmuted": "Notifiche riattivate"
+    }
   },
   "modes": {
     "samplePrompts": "Prompt di esempio",

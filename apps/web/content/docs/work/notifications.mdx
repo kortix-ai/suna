@@ -11,15 +11,15 @@ or your email, as your settings allow.
 
 A turn is one round of agent work, from a message to the agent's last reply.
 
-| Kind | Sent when | Push by default | Email by default |
-|---|---|---|---|
-| `turn_done` | A turn ends. | On | Off |
-| `turn_error` | A turn ends with an error. | On | Digest |
-| `question` | The agent asks a question and waits for the answer. | On | Digest |
-| `permission` | The agent asks for permission to run a tool. | On | Never |
-| `shared` | Someone shares a session with you. | On | Digest |
-| `automation_failed` | A trigger or a reminder starts failing. | On | At once |
-| `automation_recovered` | That trigger or reminder works again. | On | Off |
+| Kind | Label in the app | Sent when | Push by default | Email by default |
+|---|---|---|---|---|
+| `turn_done` | Turn finished | A turn ends. | On | Off |
+| `turn_error` | Turn failed | A turn ends with an error. | On | Digest |
+| `question` | Question | The agent asks a question and waits for the answer. | On | Digest |
+| `permission` | Permission request | The agent asks for permission to run a tool. | On | Never |
+| `shared` | Shared with you | Someone shares a session with you. | On | Digest |
+| `automation_failed` | Failure alert | A trigger or a reminder starts failing. | On | At once |
+| `automation_recovered` | Recovery alert | That trigger or reminder works again. | On | Off |
 
 Turn on **Email** for `turn_done` and it joins the digest. Turn it on for
 `automation_recovered` and Kortix emails it at once. A permission request is
@@ -78,6 +78,10 @@ sidebar and on the projects page. Its badge counts your unread notifications.
 Choose a notification to open its session, or the **Triggers** page for an
 alert. That marks it read. **Mark all as read** clears the count.
 
+A notification that arrives while you use Kortix also shows as a toast, unless
+it is about the session on your screen. While this browser shows no
+notifications, the bell offers **Turn on**.
+
 Opening a session marks its notifications read, on the web, in the desktop app,
 and in the mobile app.
 
@@ -107,8 +111,8 @@ shows notifications only while a Kortix tab is open.
 
 The desktop app has no push service. While its window is open, it checks for
 new notifications about once a minute. When the window is not in focus, it shows
-each new one as an OS notification, with **Enable notifications** on. With the
-window closed, it shows nothing.
+up to 3 new ones per check as OS notifications, with **Enable notifications**
+on. With the window closed, it shows nothing.
 
 ### Email
 
@@ -134,7 +138,8 @@ Email needs an email provider on the deployment. Kortix Cloud has one. A
 
 ## Choose what you get
 
-Open **Settings → Notifications**. Each kind has a **Push** switch and an
+Open **Settings → Notifications**. Under **Notification types**, each kind has
+a **Push** switch and an **Email** switch. **Permission request** has no
 **Email** switch.
 
 - The switches follow you: they apply in every account, on every phone, and in

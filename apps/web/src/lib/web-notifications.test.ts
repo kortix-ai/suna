@@ -30,6 +30,9 @@ mock.module('@/components/ui/toast', () => ({
   warningToast: (title: string, opts?: Record<string, unknown>) => {
     toastCalls.push({ kind: 'warning', title, opts });
   },
+  infoToast: (title: string, opts?: Record<string, unknown>) => {
+    toastCalls.push({ kind: 'info', title, opts });
+  },
   dismissToast: () => {},
 }));
 
@@ -48,7 +51,11 @@ mock.module('@/lib/navigation/router-bridge', () => ({
 }));
 
 // ── minimum browser surface ────────────────────────────────────────────────
-const notificationInstances: { title: string; options: { body?: string; tag?: string } }[] = [];
+const notificationInstances: {
+  title: string;
+  options: { body?: string; tag?: string };
+  instance: FakeNotification;
+}[] = [];
 
 class FakeNotification {
   static permission: 'default' | 'granted' | 'denied' = 'default';
@@ -58,7 +65,7 @@ class FakeNotification {
     title: string,
     options: { body?: string; tag?: string },
   ) {
-    notificationInstances.push({ title, options });
+    notificationInstances.push({ title, options, instance: this });
   }
 }
 
@@ -112,8 +119,14 @@ world.window = {
 world.Notification = FakeNotification;
 world.BroadcastChannel = FakeBroadcastChannel;
 
-const { sendWebNotification, notifyTaskComplete, notifyTaskCompleteFor, isViewingSession } =
-  await import('./web-notifications');
+const {
+  sendWebNotification,
+  notifyTaskComplete,
+  notifyTaskCompleteFor,
+  isViewingSession,
+  setServerPushPreferences,
+} = await import('./web-notifications');
+const { DEFAULT_NOTIFICATION_PREFERENCES } = await import('@kortix/sdk');
 const { useWebNotificationStore } = await import('@/stores/web-notification-store');
 const { useTabStore } = await import('@/stores/tab-store');
 const { useTurnAttentionStore } = await import('@/stores/turn-attention-store');
@@ -149,6 +162,8 @@ beforeEach(() => {
   useWebNotificationStore.setState({ preferences: defaultPreferences() });
   useTabStore.setState({ activeTabId: null, tabs: {} });
   useTurnAttentionStore.setState({ unseen: [] });
+  setServerPushPreferences(null);
+  softNavigateCalls.length = 0;
 });
 
 afterEach(() => {
@@ -285,6 +300,82 @@ describe('sendWebNotification — turn signals reach a customer watching another
 
     expect(toastCalls).toHaveLength(0);
     expect(notificationInstances).toHaveLength(0);
+  });
+});
+
+/**
+ * KRTX-1742: the per-browser per-kind switches (`onCompletion` …) are retired.
+ * The person's Push choice per kind, saved on the server, gates the OS
+ * notification instead — the same choice that gates Web Push and the phone.
+ */
+describe('sendWebNotification — the server Push choice gates each kind', () => {
+  function enabledAndHidden() {
+    setPreferences({ enabled: true });
+    FakeNotification.permission = 'granted';
+    visibility = { hidden: true, hasFocus: false };
+  }
+
+  test('a kind whose Push is off shows no OS notification, but still toasts', () => {
+    enabledAndHidden();
+    setServerPushPreferences({
+      ...DEFAULT_NOTIFICATION_PREFERENCES,
+      turn_done: { push: false, email: false },
+    });
+
+    sendWebNotification(completionPayload());
+
+    expect(notificationInstances).toHaveLength(0);
+    expect(toastCalls).toHaveLength(1);
+  });
+
+  test('another kind still shows, tagged <type>:<sessionId>', () => {
+    enabledAndHidden();
+    setServerPushPreferences({
+      ...DEFAULT_NOTIFICATION_PREFERENCES,
+      turn_done: { push: false, email: false },
+    });
+
+    sendWebNotification({
+      type: 'question',
+      title: 'Kortix has a question',
+      body: '"dogfood-1": continue?',
+      tag: 'question:sess1',
+      sessionId: 'sess1',
+    });
+
+    expect(notificationInstances).toHaveLength(1);
+    expect(notificationInstances[0].options.tag).toBe('question:sess1');
+  });
+
+  test('before the preferences load every kind may notify, and the retired local switch does nothing', () => {
+    enabledAndHidden();
+    setPreferences({ enabled: true, onCompletion: false });
+
+    sendWebNotification(completionPayload());
+
+    expect(notificationInstances).toHaveLength(1);
+  });
+
+  test('an automation alert has no session: its toast and its OS notification open its href', () => {
+    enabledAndHidden();
+
+    sendWebNotification({
+      type: 'automation_failed',
+      title: 'Nightly report',
+      body: 'Failure alert',
+      tag: 'automation_failed:nightly-report',
+      href: '/projects/proj1/customize/triggers',
+      actionLabel: 'Open triggers',
+    });
+
+    expect(toastCalls[0].kind).toBe('error');
+    const button = toastCalls[0].opts?.button as { props: { onClick: () => void } };
+    button.props.onClick();
+    notificationInstances[0].instance.onclick?.();
+    expect(softNavigateCalls).toEqual([
+      '/projects/proj1/customize/triggers',
+      '/projects/proj1/customize/triggers',
+    ]);
   });
 });
 

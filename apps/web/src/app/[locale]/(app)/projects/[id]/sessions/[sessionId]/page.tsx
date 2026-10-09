@@ -100,6 +100,7 @@ import {
   useSessionSwitchStore,
 } from '@/stores/session-switch-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
+import { useWebNotificationStore } from '@/stores/web-notification-store';
 import {
   clearSessionFresh,
   formatRuntimeError,
@@ -238,8 +239,14 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // replayStartStash:false — the web has its own pending-prompt hand-off (below).
   // The default chat engine stays enabled. This hook owns message sync and the
   // question and permission recovery pollers for the root session.
+  // A tab that shows its own OS notification tells the server so, and the
+  // server then holds back the phone push and Web Push for this session
+  // (KRTX-1742).
+  const notificationsOn = useWebNotificationStore((s) => s.preferences.enabled);
+  const notificationPermission = useWebNotificationStore((s) => s.permission);
   const session = useSession(projectId, sessionId, {
     browserPresence: !!user,
+    presenceAlerts: notificationsOn && notificationPermission === 'granted',
     enabled: canPollSessionStart({ hasUser: !!user, billingBlocked }),
     replayStartStash: false,
     initialRuntimeSessionId,
