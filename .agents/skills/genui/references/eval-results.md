@@ -102,3 +102,24 @@ Failing cases (issue codes only):
 | `glm-5.3-flash` | `ui-places-map` | invalid syntax | `Map([..], "source", 6)`: zoom still lands in the `route` slot, in spite of the new rule. |
 
 Remaining cause: `Map` argument order. 2 of the 4 remaining failures (and 2 of 10 before) put `zoom` in the `route` slot or fill it with a wrong placeholder. Options for the controller (not applied): (1) swap the schema to `Map(markers, source, zoom?, route?)`, since `zoom` is used more than `route`; (2) remove `route` from v1; (3) add a `Map` example with `zoom` to `EXAMPLES`.
+
+## Run 2026-10-09T12:11:20.532Z — prompt 00a9030e
+
+Gate: valid ≥ 97.0%, overuse ≤ 10.0%, underuse ≤ 25.0%, forbidden ≤ 1, errors = 0.
+
+| Model | Cases | Blocks | Valid | Overuse | Underuse | Forbidden | Median completion tokens | Errors | Go |
+|---|---|---|---|---|---|---|---|---|---|
+| `deepseek-v4.1-flash` | 46 | 29 | 100.0% | 0.0% | 0.0% | 0 | 364 | 0 | YES |
+| `glm-5.3-flash` | 46 | 30 | 100.0% | 0.0% | 0.0% | 0 | 787 | 0 | YES |
+
+Failing cases (issue codes only):
+
+
+### Notes for run 2026-10-09T12:11:20.532Z — Provisional re-run 2 (local stand-in models)
+
+- Prompt 00a9030e: commit 59fc808815 changes `Map(markers, source, zoom?, route?)` (zoom before route) and raises `Stat` `delta` to 24 characters. The matching prompt rule changed with them.
+- Models: `deepseek-v4.1-flash`, `glm-5.3-flash`. `kimi-k3` returned HTTP 503 on a single curl before the run, so it was excluded.
+- Valid rate across runs: `deepseek-v4.1-flash` 82.1% (prompt 244a8521), 92.9% (806347a8), 100.0% (00a9030e). `glm-5.3-flash` 82.1%, 96.6%, 100.0%.
+- Both models pass every gate line: valid 100.0% (gate ≥ 97.0%), overuse 0.0%, underuse 0.0%, forbidden 0, errors 0. No failing cases.
+- Spot-check: `ui-rank-hotels`, `ui-stats-and-tip`, `ui-places-map` have prose before the first block in 6 of 6 replies (73 to 333 characters). Components fit: `Compare` for hotels, `StatRow` for stats, `Map` for places. `glm-5.3-flash` writes `Map([..], "source", 6)`, which now parses as zoom 6.
+- Caveat: stand-in models, not Jay's four. `kimi-k3` is untested. Two of the three prompt iterations (the `Map` order and the `delta` limit) were tuned on this case set, so the 100% is not a held-out result.

@@ -7,7 +7,7 @@ description: "Generative UI for Kortix: the agent writes typed UI blocks (cards,
 
 **Status: SDK layer shipped (`@kortix/sdk/genui`, `/genui/react`). Runtime, web, mobile: see references/plan.md.**
 
-Phase 0 (provisional, local stand-in models): NO-GO (2026-10-09, prompt 806347a8). Valid: deepseek-v4.1-flash 92.9%, glm-5.3-flash 96.6%, gate 97.0%; kimi-k3 unavailable (503). See `references/eval-results.md`.
+Phase 0 (provisional, local stand-in models): GO (2026-10-09, prompt 00a9030e). Valid: deepseek-v4.1-flash 100.0%, glm-5.3-flash 100.0%, gate 97.0%; kimi-k3 unavailable (503); Jay's 4 models untested. See `references/eval-results.md`.
 
 | Path | What it is |
 | --- | --- |
