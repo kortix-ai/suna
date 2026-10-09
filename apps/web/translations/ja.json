@@ -20101,6 +20101,7 @@
     "value": "値",
     "map": "地図",
     "zoomIn": "拡大",
-    "zoomOut": "縮小"
+    "zoomOut": "縮小",
+    "mapTwoFingers": "2本の指で地図を動かします"
   }
 }

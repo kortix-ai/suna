@@ -20101,6 +20101,7 @@
     "value": "Valor",
     "map": "Mapa",
     "zoomIn": "Acercar",
-    "zoomOut": "Alejar"
+    "zoomOut": "Alejar",
+    "mapTwoFingers": "Usa dos dedos para mover el mapa"
   }
 }

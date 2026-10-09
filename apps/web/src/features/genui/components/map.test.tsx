@@ -3,8 +3,15 @@ import { renderToStaticMarkup } from 'react-dom/server';
 // eslint-disable-next-line no-restricted-imports -- the test parses real OpenUI source into map nodes
 import { parseGenui } from '@kortix/sdk/genui';
 
+import { createTranslator } from 'next-intl';
+
+import { MAP_DEFAULTS } from '@/components/ui/map';
+
+import en from '../../../../translations/en.json';
 import type { GenuiNode } from '../sdk';
-import { GenuiMapView, mapBounds, routeCoordinates } from './map';
+import { GenuiMapView } from './map';
+import { canvasOptions, paintRgb } from './map-canvas';
+import { mapBounds, routeCoordinates } from './map-geo';
 import { GenuiPending } from './pending';
 
 /** The first block inside `root = Stack([...])`. */
@@ -61,7 +68,8 @@ describe('genui map', () => {
     expect(figureHeight).toBe('min-h-[304px]');
     expect(settled).toMatch(/<figure[^>]*class="(?![^"]*\bborder\b)[^"]*"/);
     expect(settled).toContain('h-[280px]');
-    expect(settled).toMatch(/<figcaption[^>]*>Source: places tool<\/figcaption>/);
+    // One line, full text on hover: a wrapped caption would grow past the reserved height.
+    expect(settled).toMatch(/<figcaption[^>]*class="[^"]*\btruncate\b[^"]*"[^>]*title="Source: places tool"[^>]*>Source: places tool<\/figcaption>/);
 
     const pending = renderToStaticMarkup(<>{GenuiPending({ id: 'm', type: 'Map', props: {}, partial: true })}</>);
     expect(pending).toContain(figureHeight!);
@@ -71,5 +79,34 @@ describe('genui map', () => {
   test('without a style, a pending map waits invisibly, like text: the place list has no fixed height to reserve', () => {
     delete process.env[STYLE_ENV];
     expect(renderToStaticMarkup(<>{GenuiPending({ id: 'm', type: 'Map', props: {}, partial: true })}</>)).toBe('');
+  });
+
+  test('on touch, one finger scrolls the chat and two fingers move the map; the wheel never zooms', () => {
+    const t = createTranslator({ locale: 'en', messages: en, namespace: 'genui' });
+    const options = canvasOptions((key) => t(key as never));
+    expect(options.cooperativeGestures).toBe(true);
+    expect(options.scrollZoom).toBe(false);
+    expect(options.locale).toEqual({ 'Map.Title': 'Map', 'CooperativeGesturesHandler.MobileHelpText': 'Use two fingers to move the map' });
+  });
+
+  test('the attribution stays expanded: the tile license text is always visible', () => {
+    expect(MAP_DEFAULTS.attributionControl).toEqual({ compact: false });
+  });
+
+  test('the route color falls back to the next token, then to a fixed grey, never to nothing', () => {
+    expect(paintRgb(null, ['oklch(0.66 0.17 53)'])).toBe('gray');
+    // A fake 2D context: a value it cannot parse leaves the pixel transparent, as a canvas does.
+    const painted: string[] = [];
+    let fill = 'transparent';
+    const context = {
+      clearRect: () => painted.splice(0),
+      set fillStyle(value: string) {
+        if (value === 'transparent' || value.startsWith('#') || value.startsWith('rgb')) fill = value;
+      },
+      fillRect: () => painted.push(fill),
+      getImageData: () => ({ data: painted.at(-1) === 'rgb(31, 31, 31)' ? [31, 31, 31, 255] : [0, 0, 0, 0] }),
+    };
+    expect(paintRgb(context as never, ['oklch(0.66 0.17 53)', 'rgb(31, 31, 31)'])).toBe('rgb(31, 31, 31)');
+    expect(paintRgb(context as never, ['', 'not a color'])).toBe('gray');
   });
 });

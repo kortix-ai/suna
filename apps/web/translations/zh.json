@@ -20101,6 +20101,7 @@
     "value": "数值",
     "map": "地图",
     "zoomIn": "放大",
-    "zoomOut": "缩小"
+    "zoomOut": "缩小",
+    "mapTwoFingers": "使用双指移动地图"
   }
 }

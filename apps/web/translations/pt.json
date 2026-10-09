@@ -20101,6 +20101,7 @@
     "value": "Valor",
     "map": "Mapa",
     "zoomIn": "Aumentar zoom",
-    "zoomOut": "Diminuir zoom"
+    "zoomOut": "Diminuir zoom",
+    "mapTwoFingers": "Use dois dedos para mover o mapa"
   }
 }

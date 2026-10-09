@@ -32,6 +32,17 @@ if (typeof window !== 'undefined' && !MapLibreGL.getWorkerUrl()) {
   MapLibreGL.setWorkerUrl(WORKER_URL);
 }
 
+/**
+ * `compact: false` keeps the attribution expanded at every width. Collapsed, it is
+ * an "i" button whose glyph is a black background image, invisible on a dark
+ * basemap, and the tile license (OpenStreetMap and the style provider) requires
+ * the text to be visible.
+ */
+const MAP_DEFAULTS = {
+  renderWorldCopies: false,
+  attributionControl: { compact: false },
+} satisfies Partial<MapLibreGL.MapOptions>;
+
 type Theme = 'light' | 'dark';
 type MapStyleOption = string | MapLibreGL.StyleSpecification;
 
@@ -97,8 +108,7 @@ function Map({ children, className, theme, styles, ...props }: MapProps) {
     const map = new MapLibreGL.Map({
       container: containerRef.current,
       style: initialStyle,
-      renderWorldCopies: false,
-      attributionControl: { compact: true },
+      ...MAP_DEFAULTS,
       ...props,
     });
 
@@ -307,7 +317,7 @@ function MapControls({ labels, className }: MapControlsProps) {
 }
 
 type MapRouteProps = {
-  /** The route as [longitude, latitude] pairs. */
+  /** The route as [longitude, latitude] pairs, at least two. */
   coordinates: [number, number][];
   /** Line color. MapLibre paints it, so it must be a color MapLibre parses (hex or rgb), not a CSS variable. */
   color: string;
@@ -356,7 +366,7 @@ function MapRoute({ coordinates, color, width = 3, opacity = 0.8 }: MapRouteProp
     source?.setData({
       type: 'Feature',
       properties: {},
-      geometry: { type: 'LineString', coordinates: coordinates.length < 2 ? [] : coordinates },
+      geometry: { type: 'LineString', coordinates },
     });
   }, [isLoaded, map, coordinates, sourceId]);
 
@@ -370,5 +380,5 @@ function MapRoute({ coordinates, color, width = 3, opacity = 0.8 }: MapRouteProp
   return null;
 }
 
-export { Map, MapControls, MapMarker, MapRoute, MarkerContent, MarkerPopup, useMap };
+export { Map, MAP_DEFAULTS, MapControls, MapMarker, MapRoute, MarkerContent, MarkerPopup, useMap };
 export type { MapControlsProps, MapMarkerProps, MapProps, MapRouteProps, MapStyleOption, MarkerContentProps, MarkerPopupProps };
