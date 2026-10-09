@@ -232,6 +232,17 @@ describe('Web Push subscriptions', () => {
     ).rejects.toBeTruthy();
   });
 
+  test('Web Push sync runs in the background: a failure rejects without the host error toast', async () => {
+    const onError = withErrorSpy();
+    nextResponse = { status: 500, body: { error: 'boom' } };
+    await expect(getWebPushPublicKey()).rejects.toBeTruthy();
+    nextResponse = { status: 500, body: { error: 'boom' } };
+    await expect(registerWebPushSubscription({ endpoint, keys: { p256dh: 'BKey', auth: 'AuthSecret' } })).rejects.toBeTruthy();
+    nextResponse = { status: 500, body: { error: 'boom' } };
+    await expect(unregisterWebPushSubscription(endpoint)).rejects.toBeTruthy();
+    expect(onError).not.toHaveBeenCalled();
+  });
+
   test('unregisterWebPushSubscription DELETEs with the endpoint encoded as a query value', async () => {
     nextResponse = { status: 200, body: { deleted: true } };
     expect(await unregisterWebPushSubscription(endpoint)).toEqual({ deleted: true });

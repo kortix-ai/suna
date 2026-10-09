@@ -190,7 +190,8 @@ export interface WebPushSubscriptionInput {
 
 /** The server's VAPID public key: pass it as `applicationServerKey` to `pushManager.subscribe`. */
 export async function getWebPushPublicKey() {
-  return unwrap(await backendApi.get<{ public_key: string }>('/notifications/web-push/key'));
+  // Web Push sync runs in the background: a failure is the host's to log, never a toast.
+  return unwrap(await backendApi.get<{ public_key: string }>('/notifications/web-push/key', { showErrors: false }));
 }
 
 /**
@@ -204,7 +205,7 @@ export async function registerWebPushSubscription(subscription: WebPushSubscript
     endpoint: subscription.endpoint,
     keys: { p256dh: subscription.keys.p256dh, auth: subscription.keys.auth },
   };
-  return unwrap(await backendApi.post<{ ok: true }>('/notifications/web-push/subscriptions', body));
+  return unwrap(await backendApi.post<{ ok: true }>('/notifications/web-push/subscriptions', body, { showErrors: false }));
 }
 
 /**
@@ -215,7 +216,7 @@ export async function unregisterWebPushSubscription(endpoint: string, options?: 
   return unwrap(
     await backendApi.delete<{ deleted: boolean }>(
       `/notifications/web-push/subscriptions?endpoint=${encodeURIComponent(endpoint)}`,
-      { signal: options?.signal },
+      { signal: options?.signal, showErrors: false },
     ),
   );
 }
