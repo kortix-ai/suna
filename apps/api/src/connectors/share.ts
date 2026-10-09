@@ -24,8 +24,6 @@ import {
 } from '@kortix/db';
 import { db } from '../shared/db';
 import { groupIdsOfUser } from '../iam/group-read';
-import { config } from '../config';
-import { ttlMemo } from '../shared/ttl-memo';
 
 export interface SecretGrant {
   principalType: 'member' | 'group';
@@ -66,24 +64,15 @@ export function parseSharingIntent(body: any, fallbackOwner: string): SharingInt
 
 /* ─── DB helpers (used by the gateway + CRUD) ─────────────────────────────── */
 
-/** Resolve a user's group memberships → the subject the gateway authorizes with. */
+/** Resolve a user's group memberships → the subject the gateway authorizes with.
+ *  Read fresh on every call: a membership added between two connector calls
+ *  must authorize (or deny) the second one, and no TTL can honor that without
+ *  an invalidation hook the admin routes and the flows' direct seeds don't
+ *  share. */
 export async function resolveShareSubject(userId: string): Promise<ShareSubject> {
-  return resolveShareSubjectMemo(userId);
+  const rows = await groupIdsOfUser(userId);
+  return { userId, groupIds: rows.map((r) => r.groupId) };
 }
-
-/** The IAM read model's usual staleness window — the same TTL `iam/authorize.ts`
- *  and `iam/actor.ts` apply to role and grant reads on this same call path.
- *  Group-membership edits apply to connector calls within it. */
-const SHARE_SUBJECT_TTL_MS = config.IAM_CACHE_TTL_MS;
-
-const resolveShareSubjectMemo = ttlMemo({
-  ttlMs: SHARE_SUBJECT_TTL_MS,
-  keyFn: (userId: string) => userId,
-  loader: async (userId: string): Promise<ShareSubject> => {
-    const rows = await groupIdsOfUser(userId);
-    return { userId, groupIds: rows.map((r) => r.groupId) };
-  },
-});
 
 /* ─── Session sharing — default private; team-wide or select-members ───────────
  *

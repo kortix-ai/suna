@@ -40,7 +40,6 @@ import type { ConnectorPrincipal } from './router-contract';
 import { COMPUTER_SLUG, withComputerCatalog } from './computers';
 import { ensureProjectComputer } from './sync';
 import type { ActionBinding, Risk } from './types';
-import { ttlMemo } from '../shared/ttl-memo';
 import {
   type ConnectorRow,
   authOf,
@@ -64,29 +63,15 @@ const APPROVAL_CARRYOVER_WINDOW_MS = 15 * 60 * 1000;
 
 /**
  * The call path reads connector/project policies and the project's default
- * mode on EVERY /call. Memoize at the IAM read model's usual staleness window
- * (`iam/authorize.ts`, `iam/actor.ts` run the same TTL on this same request
- * path), so a warm request spends no statements on them. Policy EDITS apply
- * within the window. Admin routes keep the unmemoized loaders in
- * `db-deps-rows.ts`: a policy edit must re-read at once.
+ * mode on EVERY /call — through these loaders directly. A TTL memo here
+ * (measured: warm calls saved ~5 statements) was reverted: the flow suite
+ * pins that a policy row seeded or edited between two calls is enforced by
+ * the very next call (CONN-32), and no TTL can honor that without an
+ * invalidation hook the raw-SQL seeds and the admin routes don't share.
+ * The bounded per-call statement count this issue promises comes from the
+ * stored-grant hint, the single git-project read and the single manifest
+ * load — not from caching policy rows.
  */
-const GATEWAY_POLICY_TTL_MS = config.IAM_CACHE_TTL_MS;
-
-const gatewayLoadPolicies = ttlMemo({
-  ttlMs: GATEWAY_POLICY_TTL_MS,
-  keyFn: (connectorId: string) => connectorId,
-  loader: loadConnectorPoliciesFor,
-});
-const gatewayLoadProjectPolicies = ttlMemo({
-  ttlMs: GATEWAY_POLICY_TTL_MS,
-  keyFn: (projectId: string) => projectId,
-  loader: loadProjectPoliciesFor,
-});
-const gatewayLoadDefaultMode = ttlMemo({
-  ttlMs: GATEWAY_POLICY_TTL_MS,
-  keyFn: (projectId: string) => projectId,
-  loader: loadDefaultModeFor,
-});
 
 /**
  * Claim a recent approval for one exact request digest. The guarded UPDATE on
@@ -471,9 +456,9 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
     },
     resolveEmailCredentialForInbox: async (projectId, inboxId) =>
       resolveAgentMailApiKey(await loadAgentMailApiKeyForInbox(projectId, inboxId)),
-    loadPolicies: gatewayLoadPolicies,
-    loadProjectPolicies: gatewayLoadProjectPolicies,
-    loadDefaultMode: gatewayLoadDefaultMode,
+    loadPolicies: loadConnectorPoliciesFor,
+    loadProjectPolicies: loadProjectPoliciesFor,
+    loadDefaultMode: loadDefaultModeFor,
     mintApprovalLink: ({ projectId, executionId, sessionId }) =>
       approvalPageUrl(projectId, executionId, sessionId, config.FRONTEND_URL),
     // Lazy: channels import connectors, so a static import here would cycle.
