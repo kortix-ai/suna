@@ -6,6 +6,7 @@
 // validation (jsonschema) crashes under the Bun runtime, and this file's name
 // keeps `bun test` from discovering it.
 import assert from 'node:assert/strict'
+import { readdirSync } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import { isBuiltin } from 'node:module'
 import { dirname, resolve } from 'node:path'
@@ -41,14 +42,15 @@ const cases = [
   ['types to a service', 'src/types/config-release.ts', "import type { ProjectEnvStore } from '@/services/sandbox-env/project-env';", false],
   ['types to a package', 'src/types/config-release.ts', "import type { z } from 'zod';", false],
 
-  // services/<name>/ — own folder, the shared layer and declared services
-  ['service to own folder', 'src/services/config-provider/config-provider.ts', "import './types';", true],
-  ['service to lib', 'src/services/config-provider/config-provider.ts', "import '@/lib/git/git';", true],
+  // services/<name>/ — own folder and the shared layer; never another service
+  // (every pair is generated below)
+  ['service to own folder', 'src/services/workspace-provider/workspace-provider.ts', "import './types';", true],
+  ['service to lib', 'src/services/workspace-provider/workspace-provider.ts', "import '@/lib/git/git';", true],
   ['service to types', 'src/services/runtime-assets/runtime-truth.ts', "import type { ConfigReleaseReport } from '@/types/config-release';", true],
-  ['service to a declared service', 'src/services/runtime-assets/runtime-assets.ts', "import '../config-release/boot-config';", true],
-  ['config-release to the snapshot transport', 'src/services/config-release/obtain.ts', "import '../config-provider/s3/s3-config-provider';", true],
-  ['config-provider to config-release', 'src/services/config-provider/config-provider.ts', "import '../config-release/obtain';", false],
-  ['service to an undeclared service', 'src/services/static-web/static-web.ts', "import '../egress-shim';", false],
+  ['config-provider to the project snapshot', 'src/services/config-provider/obtain.ts', "import '@/lib/project-snapshot/archive';", true],
+  ['runtime-assets to the release-store lock', 'src/services/runtime-assets/runtime-assets.ts', "import '@/lib/release-store-lock';", true],
+  ['config-provider to the managed-skills dir', 'src/services/config-provider/boot-config.ts', "import '@/lib/config/managed-skills-dir';", true],
+  ['service to another service, relative path', 'src/services/static-web/static-web.ts', "import '../egress-shim';", false],
   ['service to the harness resolver', 'src/services/static-web/static-web.ts', "import '@/harness/harness';", false],
   ['service to a harness type', 'src/services/runtime-assets/runtime-assets.ts', "import type { HarnessService } from '@/harness/harness';", false],
   ['service to a route', 'src/services/resources/resources.ts', "import '@/routes/kortix/health';", false],
@@ -67,7 +69,7 @@ const cases = [
   ['adapter to own nested folder', 'src/harness/pi/runtime.ts', "import './extensions/host';", true],
   ['adapter to the contract', 'src/harness/pi/boot.ts', "import type { SandboxBootState } from '../contract/boot-state';", true],
   ['adapter to shared', 'src/harness/pi/boot.ts', "import '../shared/on-boot';", true],
-  ['adapter to a service', 'src/harness/pi/boot.ts', "import '@/services/config-provider/config-provider';", true],
+  ['adapter to a service', 'src/harness/pi/boot.ts', "import '@/services/workspace-provider/workspace-provider';", true],
   ['adapter to types', 'src/harness/pi/boot.ts', "import type { InitialTurnClaim } from '@/types/control-plane';", true],
   ['adapter to another adapter', 'src/harness/pi/boot.ts', "import '../open-code/boot';", false],
   ['adapter to another adapter, type-only', 'src/harness/pi/boot.ts', "import type { Opencode } from '../open-code/lifecycle';", false],
@@ -108,6 +110,16 @@ const cases = [
   ['test to an adapter', 'src/__tests__/pi-harness.test.ts', "import '@/harness/open-code/boot';", true],
 ]
 
+// Every service to every other service: rejected. The probe source and target
+// are each service's first source file, so both resolve.
+const serviceFile = (name) =>
+  `src/services/${name}/${readdirSync(resolve(root, 'src/services', name)).filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts')).sort()[0]}`
+for (const from of SERVICES) {
+  for (const to of SERVICES) {
+    if (from !== to) cases.push([`service ${from} to service ${to}`, serviceFile(from), `import '@/${serviceFile(to).slice('src/'.length, -'.ts'.length)}';`, false])
+  }
+}
+
 for (const [name, file, code, allowed] of cases) {
   test(`architecture: ${name}`, async () => {
     const absolute = resolve(root, file)
@@ -142,8 +154,8 @@ test('architecture: a file outside every layer is rejected', async () => {
 // src/, relative inside one (kortixd/import-style).
 const styleCases = [
   ['relative inside one folder', 'src/harness/pi/boot.ts', "import '../shared/on-boot';", null],
-  ['@/ across folders', 'src/harness/pi/boot.ts', "import '@/services/config-provider/config-provider';", null],
-  ['relative across folders', 'src/harness/pi/boot.ts', "import '../../services/config-provider/config-provider';", 'useAlias'],
+  ['@/ across folders', 'src/harness/pi/boot.ts', "import '@/services/workspace-provider/workspace-provider';", null],
+  ['relative across folders', 'src/harness/pi/boot.ts', "import '../../services/workspace-provider/workspace-provider';", 'useAlias'],
   ['@/ inside one folder', 'src/harness/pi/boot.ts', "import '@/harness/shared/on-boot';", 'useRelative'],
   ['main.ts is its own folder', 'src/main.ts', "import './app/server';", 'useAlias'],
   ['a type-only import across folders', 'src/lib/log/logger.ts', "import type { InitialTurnClaim } from '../../types/control-plane';", 'useAlias'],
@@ -221,9 +233,8 @@ test('opencode names: every allowlist entry names an existing file and at least 
 })
 
 test('architecture: every registered service and adapter folder exists', async () => {
-  for (const name of Object.keys(SERVICES)) assert.ok((await stat(resolve(root, 'src/services', name))).isDirectory(), name)
+  for (const name of SERVICES) assert.ok((await stat(resolve(root, 'src/services', name))).isDirectory(), name)
   for (const name of Object.keys(ADAPTERS)) assert.ok((await stat(resolve(root, 'src/harness', name))).isDirectory(), name)
-  for (const deps of Object.values(SERVICES)) for (const dep of deps) assert.ok(dep in SERVICES, `undeclared dependency ${dep}`)
 })
 
 test('architecture: docs name paths that exist', async () => {

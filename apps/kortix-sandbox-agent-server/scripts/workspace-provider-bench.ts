@@ -1,11 +1,11 @@
 /**
- * Local config-provider bench: Git vs S3 acquisition of the same project, on
+ * Local workspace-provider bench: Git vs S3 acquisition of the same project, on
  * THIS machine, against a local API and its object store — no sandbox
  * provider, no tunnel. Every round is one materialize-once.ts child with the
  * environment a real fresh session gets (scaffold + remote delta bundle for
  * Git; pinned descriptor + presigned objects for S3), in a fresh workspace.
  *
- *   bun run scripts/config-provider-bench.ts \
+ *   bun run scripts/workspace-provider-bench.ts \
  *     --api http://localhost:8008 --token-file ~/.kortix/pat \
  *     --project <id> --sha <tip> --parent-sha <scaffold root> \
  *     --parent-commit-base64 <hint.parent_commit_base64> \
@@ -57,7 +57,7 @@ const envDescriptorEnabled = !process.argv.includes('--no-env-descriptor')
 const rounds = Number(arg('rounds', '10'))
 const warmups = Number(arg('warmups', '1'))
 const arms = (arg('arms', 'git,prefer-s3') as string).split(',').map((s) => s.trim()).filter(Boolean)
-const root = resolve(arg('root', `/tmp/config-provider-bench-${Date.now().toString(36)}`) as string)
+const root = resolve(arg('root', `/tmp/workspace-provider-bench-${Date.now().toString(36)}`) as string)
 const out = arg('out')
 const pkgDir = resolve(import.meta.dir, '..')
 const repoUrl = `${api}/v1/git/${project}.git`

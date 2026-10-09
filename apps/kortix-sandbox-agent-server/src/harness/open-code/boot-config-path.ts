@@ -12,22 +12,22 @@ import {
   releaseDir,
   verifyRelease,
   type ReleaseManifest,
-} from '@/services/config-release/boot-config'
+} from '@/services/config-provider/boot-config'
 import {
   configReleaseApiFrom,
   fetchConfigReleaseDescriptor,
   isFeatureDisabledError,
   type ConfigReleaseApi,
-} from '@/services/config-release/api-client'
-import type { ConfigReleaseDescriptor } from '@/services/config-release/descriptor'
-import { clearConfigReleaseNotice } from '@/services/config-release/notice'
-import { checkoutMayHold, obtainRelease } from '@/services/config-release/obtain'
+} from '@/services/config-provider/api-client'
+import type { ConfigReleaseDescriptor } from '@/services/config-provider/descriptor'
+import { clearConfigReleaseNotice } from '@/services/config-provider/notice'
+import { checkoutMayHold, obtainRelease } from '@/services/config-provider/obtain'
 import { logger } from '@/lib/log/logger'
 import { repairOpencodeConfigDir } from './apple-double'
 import { serveConfigDir } from './boot-link'
 import { releaseConfigDir } from './project-layout'
 import { resolveOpencodeConfigDir, type OpenCodeConfig } from './config'
-import { deliverGovernance, effectiveReleaseId, manifestFromDescriptor } from '@/services/config-release/release'
+import { deliverGovernance, effectiveReleaseId, manifestFromDescriptor } from '@/services/config-provider/release'
 import { noteRunningConfig, prepareConfigDir, preparePlatformConfigDir, prepareRelease, setRunningConfig } from './config-release'
 import type { ConfigSource } from '@/types/config-release'
 import { VERIFY_READY_TIMEOUT_MS, type Opencode } from './lifecycle'
