@@ -1,21 +1,22 @@
 {
-  "source_hash": "fba9a3bddbe4071c512cf6ae3ef5e851b4615b74bc012bdbc0bc79f917cccca5",
+  "source_hash": "b371b4c4c92ff05aa7fd61b730a3fc7d217586b7ce752d6c12eb11824a60bfcb",
   "diff_files": [
-    "apps/api/src/backends/hosts.integration.test.ts",
-    "apps/api/src/backends/provision.integration.test.ts",
+    "apps/api/src/apps/kinds/convex/hosts.integration.test.ts",
+    "apps/api/src/apps/kinds/convex/provision.integration.test.ts",
+    "apps/api/src/apps/kinds/convex/routes.integration.test.ts",
     "apps/web/src/app/[locale]/(system)/debug/tools/page.tsx",
     "apps/web/src/features/session/action-panel/easy/outputs-card.test.tsx",
     "apps/web/src/features/session/action-panel/easy/outputs-card.tsx",
     "apps/web/src/features/session/action-panel/shared/output-priority.ts",
     "apps/web/src/lib/seo/content-timestamps.json"
   ],
-  "diff_hash": "d5c227042ee9180d263f52c63009e9051d7f527f040bf85d21d7862c813501c7",
-  "head": "846ba0a334fd4729517e0404bc92564c68a65593",
+  "diff_hash": "dbead76003d4da2013d790a4a4643d96679b11738454f591d95875a9689e3ba1",
+  "head": "2eef5c7d6e53acff3566bd8bf4df65c4c6693036",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-09T14:05:41.806Z"
+  "at": "2026-10-09T17:22:56.872Z"
 }
