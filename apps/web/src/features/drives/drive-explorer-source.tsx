@@ -13,6 +13,7 @@
 import type { FileNode } from '@/features/file-browser/types';
 import type { FileContentResult, FileSource } from '@/features/file-viewer';
 import type { ExplorerQueryResult, FileExplorerSource } from '@/features/project-files/explorer-source';
+import { attachmentMime } from '@/features/session/attachment-mime';
 import { useInvalidateDrives, saveDriveFile } from '@/hooks/drives/use-drives';
 import {
   deleteDriveFile,
@@ -20,10 +21,11 @@ import {
   listDriveFolder,
   makeDriveFolder,
   moveDriveFile,
+  readDriveFile,
   uploadDriveFile,
 } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 const DriveFilesContext = createContext<{ driveId: string } | null>(null);
@@ -81,15 +83,36 @@ function useDriveFileList(dirPath: string): ExplorerQueryResult<FileNode[]> {
 
 const TEXT_LIMIT = 2 * 1024 * 1024;
 
+const blobKey = (driveId: string, filePath: string) => [...qk.drives.drive(driveId), 'blob', filePath] as const;
+
+/**
+ * A file's bytes, read through the drive API (never a session's sandbox), with
+ * the version they are. The type comes from the name: the API serves every
+ * file as octet-stream, and the previewers pick on it (images, PDF).
+ */
 function useDriveBlob(filePath: string | null) {
   const driveId = useDriveId();
   return useQuery({
-    queryKey: [...qk.drives.drive(driveId), 'blob', filePath ?? ''],
-    queryFn: () => downloadDriveFile(driveId, toDrivePath(filePath)),
+    queryKey: blobKey(driveId, filePath ?? ''),
+    queryFn: async ({ signal }) => {
+      const { blob, version } = await readDriveFile(driveId, toDrivePath(filePath), signal);
+      const type = attachmentMime(blob.type === 'application/octet-stream' ? '' : blob.type, filePath ?? '');
+      return { blob: type === blob.type ? blob : new Blob([blob], { type }), version };
+    },
     enabled: !!filePath,
     staleTime: 5_000,
     retry: false,
   });
+}
+
+/**
+ * Save an edit over `filePath`, conditional on the version the viewer read: a
+ * file someone changed since is refused (409 `file_changed`), never clobbered.
+ */
+async function saveDriveEdit(queryClient: QueryClient, driveId: string, filePath: string, file: File) {
+  const read = queryClient.getQueryData<{ blob: Blob; version: string | null }>(blobKey(driveId, filePath));
+  await uploadDriveFile(driveId, toDrivePath(filePath), file, { ifMatch: read?.version ?? null });
+  await queryClient.invalidateQueries({ queryKey: blobKey(driveId, filePath) });
 }
 
 function useDriveFileContent(filePath: string | null): FileContentResult {
@@ -97,7 +120,7 @@ function useDriveFileContent(filePath: string | null): FileContentResult {
   const [data, setData] = useState<FileContentResult['data']>(undefined);
   useEffect(() => {
     let cancelled = false;
-    const b = blob.data;
+    const b = blob.data?.blob;
     if (!b) {
       setData(undefined);
       return;
@@ -138,18 +161,19 @@ function useDriveFileContent(filePath: string | null): FileContentResult {
 function useDriveBinaryBlob(filePath: string | null) {
   const blob = useDriveBlob(filePath);
   const [url, setUrl] = useState<string | null>(null);
+  const bytes = blob.data?.blob ?? null;
   useEffect(() => {
-    if (!blob.data) {
+    if (!bytes) {
       setUrl(null);
       return;
     }
-    const next = URL.createObjectURL(blob.data);
+    const next = URL.createObjectURL(bytes);
     setUrl(next);
     return () => URL.revokeObjectURL(next);
-  }, [blob.data]);
+  }, [bytes]);
   return {
     blobUrl: url,
-    blob: blob.data ?? null,
+    blob: bytes,
     isLoading: blob.isLoading,
     error: blob.error ? (blob.error instanceof Error ? blob.error.message : String(blob.error)) : null,
   };
@@ -166,16 +190,18 @@ function useDriveUpload(driveId: string) {
 function useDriveFileViewerSource(): FileSource {
   const driveId = useDriveId();
   const upload = useDriveUpload(driveId);
+  const queryClient = useQueryClient();
   return useMemo<FileSource>(
     () => ({
       id: 'project-drive',
+      bytesOnly: true,
       useFileContent: useDriveFileContent,
       useBinaryBlob: useDriveBinaryBlob,
       download: (filePath, fileName) => saveDriveFile(driveId, toDrivePath(filePath), fileName),
-      // The viewer saves an edited file as a File named after it, into its folder.
       upload: (file, targetPath) => upload(file, targetPath),
+      save: (filePath, file) => saveDriveEdit(queryClient, driveId, filePath, file),
     }),
-    [driveId, upload],
+    [driveId, upload, queryClient],
   );
 }
 

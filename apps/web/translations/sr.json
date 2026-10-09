@@ -20799,6 +20799,7 @@
     "noGrants": "Nobody has been given access here yet. Project admins can open every folder except people's own.",
     "myFolder": "My folder",
     "myFolderHint": "Your own folder: private until you share it, and your desktop in your sessions",
+    "sharedWithMeHint": "Folders other people shared with you",
     "sessionNoFolders": "No folders are mounted in this session.",
     "sessionDesktop": "Your folder (desktop)"
   }

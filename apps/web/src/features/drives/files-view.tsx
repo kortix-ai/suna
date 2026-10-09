@@ -8,7 +8,14 @@ import { DriveExplorer, FileExplorerSourceProvider, FilesStoreProvider } from '@
 import { ProjectPageHeader } from '@/features/workspace/project-layout/project-page-header';
 import { useDriveAvailability, useDriveFolder, useProjectDrive } from '@/hooks/drives/use-drives';
 import { useTranslations } from '@/i18n/use-translations';
-import { HouseIcon, ShareNetworkIcon } from '@phosphor-icons/react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { FolderSimpleIcon, HouseIcon, ShareNetworkIcon, UsersThreeIcon } from '@phosphor-icons/react';
 import { type Drive, getProjectDetail } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
@@ -134,6 +141,29 @@ function FilesExplorer({ drive }: { drive: Drive }) {
           <HouseIcon className="size-4" />
           <span className="hidden sm:inline">{t('myFolder')}</span>
         </Button>
+      ) : null}
+      {drive.sharedWithMe?.length ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button type="button" variant="ghost" size="sm" title={t('sharedWithMeHint')}>
+              <UsersThreeIcon className="size-4" />
+              <span className="hidden sm:inline">{t('sharedWithMe')}</span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="max-w-80">
+            <DropdownMenuLabel className="text-muted-foreground text-xs font-normal">
+              {t('sharedWithMeHint')}
+            </DropdownMenuLabel>
+            {drive.sharedWithMe.map((folder) => (
+              <DropdownMenuItem key={folder.path} onSelect={() => navigateToPath(folder.path.replace(/^\//, ''))}>
+                <FolderSimpleIcon className="size-4 shrink-0" />
+                <span className="truncate" title={folder.path}>
+                  {folder.path.replace(/^\//, '')}
+                </span>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
       ) : null}
       {path !== '/' ? (
         <Button type="button" variant="ghost" size="sm" onClick={() => setSharing(true)}>

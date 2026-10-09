@@ -107,7 +107,9 @@ export function useFileContentState({
   const isMermaidFile = language === 'mermaid';
   const hasPreviewToggle = isMarkdownFile || isMermaidFile;
   const isJsonFile = language === 'json';
-  const isHtmlFile = fileCategory === 'html';
+  // The rendered HTML frame is served by a session's static file server; a
+  // bytes-only source has none, so its HTML opens as source.
+  const isHtmlFile = fileCategory === 'html' && !source.bytesOnly;
   // Markdown defaults to rendered preview (UnifiedMarkdown). Users can flip to
   // source/edit via the eye/code toggle in the header. The state is optionally
   // controlled by the caller (file-preview-modal lifts it into its own chrome).
@@ -153,7 +155,12 @@ export function useFileContentState({
 
   // Binary blob for DOCX, video, audio, PPTX — AND HEIC images.
   // PDFs intentionally use /file/content base64 so PdfRenderer can create a Blob URL from the string.
-  const blobPath = isBlobCategory(fileCategory) || isHeicImage ? filePath : null;
+  // A bytes-only source (the project's Files) also serves the spreadsheet and
+  // SQLite bytes: those renderers would otherwise read a sandbox path, and
+  // there is no sandbox behind Files.
+  const readsOwnBytes = fileCategory === 'xlsx' || fileCategory === 'sqlite';
+  const blobPath =
+    isBlobCategory(fileCategory) || isHeicImage || (source.bytesOnly && readsOwnBytes) ? filePath : null;
   const {
     blobUrl,
     blob: rawBlob,
@@ -225,8 +232,12 @@ export function useFileContentState({
       try {
         const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
         const file = new File([blob], fileName, { type: 'text/plain' });
-        const parentPath = filePath.substring(0, filePath.lastIndexOf('/'));
-        await source.upload(file, parentPath || undefined);
+        if (source.save) {
+          await source.save(filePath, file);
+        } else {
+          const parentPath = filePath.substring(0, filePath.lastIndexOf('/'));
+          await source.upload(file, parentPath || undefined);
+        }
         // Refetch so fileContent.content (= originalContent for CodeEditor) updates.
         // CodeEditor's originalContent effect will then sync savedContent.current
         // to match localContent, clearing its internal hasChanges flag.
@@ -305,7 +316,7 @@ export function useFileContentState({
   }, [fileContent, isHeicImage]);
 
   // Determine loading state
-  const needsBlob = isBlobCategory(fileCategory) || isHeicImage;
+  const needsBlob = isBlobCategory(fileCategory) || isHeicImage || (!!source.bytesOnly && readsOwnBytes);
   const isContentReady = needsBlob ? !blobLoading && !blobError : !isLoading && !error;
   const contentError = needsBlob
     ? blobError
