@@ -283,6 +283,19 @@ Event list + CSV/JSONL export + outbound SIEM webhook CRUD, gated server-side on
 | export (CSV/JSONL) | `GET /v1/accounts/:id/audit/export` |
 | webhooks CRUD | `GET/POST /v1/accounts/:id/audit/webhooks`, `PATCH/DELETE .../:webhookId` |
 
+### 19. Notifications (per user)  ✅ (client + facade + hooks)
+The caller's inbox, preferences, Web Push and session watch (KRTX-1742). `projects-client/notifications.ts` + `sessions.ts` ✅; facade `kortix.notifications.*` and `session(pid, sid).{watch, setWatch, presence}` ✅; hooks `useNotificationInbox`, `useNotificationPreferences`, `useSessionWatch` (`react/use-notifications.ts`, keys `qk.notifications.*`) ✅. Every route needs a person's credential.
+| op | REST |
+|---|---|
+| inbox page (`limit`, `before` cursor) | `GET /v1/notifications` |
+| mark read (`ids` / `all` / `session_id`) | `POST /v1/notifications/read` |
+| preferences | `GET/PUT /v1/notifications/preferences` |
+| Web Push VAPID key | `GET /v1/notifications/web-push/key` |
+| Web Push subscribe / unsubscribe | `POST /v1/notifications/web-push/subscriptions`, `DELETE .../subscriptions?endpoint=` |
+| native push token | `POST /v1/notifications/device-token`, `DELETE .../device-token/:token` |
+| session watch / mute | `GET/PUT /v1/projects/:id/sessions/:sid/watch` |
+| presence lease (`alerts`) | `PUT /v1/projects/:id/sessions/:sid/presence` |
+
 ---
 
 ## OUT OF SCOPE — control plane / platform admin (NOT the SDK)

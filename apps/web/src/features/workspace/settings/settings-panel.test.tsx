@@ -332,13 +332,17 @@ describe('SettingsPanelShell — real tab content gating', () => {
   });
 
   /**
-   * Appearance and Sessions read Zustand stores and `next-themes`, neither of
-   * which throws without a provider, so the throw signal cannot prove they
-   * mounted. For those two the proof is the pane heading: present when the
-   * tab is active, absent otherwise (`RailTriggerBody` renders the label too,
-   * so the heading is matched as the `h2` `SettingsTabHeader` emits).
+   * Appearance reads Zustand stores and `next-themes`, neither of which throws
+   * without a provider, so the throw signal cannot prove it mounted. Its proof
+   * is the pane heading: present when the tab is active, absent otherwise
+   * (`RailTriggerBody` renders the label too, so the heading is matched as the
+   * `h2` `SettingsTabHeader` emits).
+   *
+   * Sessions (Notifications) left this list deliberately with KRTX-1742: its
+   * "Notification types" section reads the person's server record through
+   * `useNotificationPreferences`, so it is query-backed like the rest.
    */
-  const STORE_ONLY_TABS = ['appearance', 'sessions'] as const;
+  const STORE_ONLY_TABS = ['appearance'] as const;
   const QUERY_BACKED_TABS = SETTINGS_TABS.filter(
     (tab) => !(STORE_ONLY_TABS as readonly string[]).includes(tab),
   );

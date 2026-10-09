@@ -2425,11 +2425,6 @@
       "count": 1
     }
   },
-  "src/projects/routes/session-presence.ts": {
-    "no-restricted-imports": {
-      "count": 2
-    }
-  },
   "src/projects/routes/session-reminders.ts": {
     "no-restricted-syntax": {
       "count": 6

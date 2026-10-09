@@ -17,6 +17,7 @@ import {
 import { scimError } from '../middleware/scim-auth';
 import { errors, json } from '../openapi';
 import { revokeAllAccountTokensForUser } from '../repositories/account-tokens';
+import { deleteMemberNotificationData } from '../notifications/cleanup';
 import { onMemberRemoved } from '../billing/services/seat-management';
 import { db } from '../shared/db';
 import { scimMemberRow, scimMemberRows } from '../iam/membership-read';
@@ -166,6 +167,8 @@ async function deprovisionMember(accountId: string, userId: string): Promise<str
     .delete(accountMemberships)
     .where(and(eq(accountMemberships.accountId, accountId), eq(accountMemberships.userId, userId)));
   invalidateIamCacheForUser(userId);
+  // KRTX-1742: the departed member's inbox and watcher rows of this account.
+  await deleteMemberNotificationData(accountId, userId);
 
   // RELEASE THE PAID SEAT.
   //

@@ -15,12 +15,27 @@ import { createElement } from 'react';
  *  1. Browser support for the Notification API
  *  2. Permission is granted
  *  3. Master enable toggle is on
- *  4. The specific notification category is enabled
+ *  4. The person's server-side Push choice for the kind (Settings >
+ *     Notifications); the per-browser per-kind switches are retired
  *  5. Optionally skips if tab is visible (onlyWhenHidden preference)
+ *
+ * Every OS notification carries the tag of the Web Push message for the same
+ * event: `<type>:<sessionId>`, or `<type>:<projectId>:<triggerSlug>` for an
+ * alert (`notificationTag`). Only two service-worker notifications with one
+ * tag replace each other: a `new Notification` never replaces one. So while
+ * this browser holds a Web Push subscription, the service worker shows this
+ * tab's copy too, and whichever copy arrives second replaces the first.
  */
 
 import { Button } from '@/components/ui/button';
-import { dismissToast, errorToast, successToast, warningToast } from '@/components/ui/toast';
+import { hasWebPushSubscription } from '@/features/notifications/web-push';
+import {
+  dismissToast,
+  errorToast,
+  infoToast,
+  successToast,
+  warningToast,
+} from '@/components/ui/toast';
 import { logger } from '@/lib/logger';
 import { softNavigate } from '@/lib/navigation/router-bridge';
 import { projectSessionHref } from '@/lib/navigation/session-href';
@@ -30,13 +45,21 @@ import type { SoundEvent } from '@/stores/sound-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import { useTurnAttentionStore } from '@/stores/turn-attention-store';
 import { useWebNotificationStore } from '@/stores/web-notification-store';
-import { normalizeAppPathname } from '@kortix/sdk';
+import { normalizeAppPathname, type InboxNotificationKind, type NotificationPreferences } from '@kortix/sdk';
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export type WebNotificationType = 'completion' | 'error' | 'question' | 'permission';
+/** The push `type` of each inbox kind (`pushTypeOf` in `@kortix/shared/notification-kinds`). */
+export type WebNotificationType =
+  | 'completion'
+  | 'error'
+  | 'question'
+  | 'permission'
+  | 'shared'
+  | 'automation_failed'
+  | 'automation_recovered';
 
 export interface WebNotificationPayload {
   /** Which category this notification belongs to */
@@ -52,25 +75,49 @@ export interface WebNotificationPayload {
   /** Project the session belongs to, captured when the notification is raised.
    *  Without it there is no routable URL — see `navigateToSession`. */
   projectId?: string | null;
-  /** Localized label for the in-app session action. */
+  /** Where a click goes when there is no session (an automation alert). */
+  href?: string;
+  /** Localized label for the in-app open action. */
   actionLabel?: string;
-  /** Optional click handler — by default focuses the window and navigates to session */
+  /**
+   * Runs after the default open (focus the window, open the session or
+   * `href`) on a click of the OS notification or of the toast's open button.
+   * A service-worker notification opens its url and does not run it.
+   */
   onClick?: () => void;
 }
 
 // ============================================================================
-// Preference key mapping
+// Server push preference
 // ============================================================================
 
-const TYPE_TO_PREF: Record<
-  WebNotificationType,
-  'onCompletion' | 'onError' | 'onQuestion' | 'onPermission'
-> = {
-  completion: 'onCompletion',
-  error: 'onError',
-  question: 'onQuestion',
-  permission: 'onPermission',
+const TYPE_TO_KIND: Record<WebNotificationType, InboxNotificationKind> = {
+  completion: 'turn_done',
+  error: 'turn_error',
+  question: 'question',
+  permission: 'permission',
+  shared: 'shared',
+  automation_failed: 'automation_failed',
+  automation_recovered: 'automation_recovered',
 };
+
+/**
+ * The person's Push choice per kind, mirrored from the preferences query by
+ * `NotificationHost`. Empty until it loads: every kind is allowed then, which
+ * is also the server default.
+ */
+let serverPush: Partial<Record<InboxNotificationKind, boolean>> = {};
+
+export function setServerPushPreferences(kinds: NotificationPreferences['kinds'] | null | undefined) {
+  serverPush = {};
+  for (const [kind, channels] of Object.entries(kinds ?? {})) {
+    serverPush[kind as InboxNotificationKind] = channels.push;
+  }
+}
+
+function serverPushAllows(type: WebNotificationType): boolean {
+  return serverPush[TYPE_TO_KIND[type]] !== false;
+}
 
 /** Map notification types to sound events */
 const TYPE_TO_SOUND: Record<WebNotificationType, SoundEvent> = {
@@ -78,6 +125,9 @@ const TYPE_TO_SOUND: Record<WebNotificationType, SoundEvent> = {
   error: 'error',
   question: 'notification',
   permission: 'notification',
+  shared: 'notification',
+  automation_failed: 'error',
+  automation_recovered: 'completion',
 };
 
 // ============================================================================
@@ -241,9 +291,8 @@ export function sendWebNotification(
     // Preferences check
     if (!preferences.enabled) return null;
 
-    // Category check
-    const prefKey = TYPE_TO_PREF[payload.type];
-    if (!preferences[prefKey]) return null;
+    // Kind check: the person's Push choice for this kind.
+    if (!serverPushAllows(payload.type)) return null;
 
     // Active session check — skip notifications for the session the user
     // is currently looking at (they can already see the question/permission
@@ -256,6 +305,14 @@ export function sendWebNotification(
     // agent is blocked waiting for user input
     const isBlocking = payload.type === 'question' || payload.type === 'permission';
     if (!isBlocking && preferences.onlyWhenHidden && !isTabHidden()) return null;
+  }
+
+  // With Web Push on, the service worker also shows this event's push, and a
+  // `new Notification` would never replace it: hand this copy to the worker.
+  // `force` (the settings test button) keeps the in-page notification.
+  if (!force && hasWebPushSubscription() && 'serviceWorker' in navigator) {
+    void showWorkerNotification(payload);
+    return null;
   }
 
   // 7. Fire native OS notification (may be blocked by OS settings)
@@ -273,12 +330,7 @@ export function sendWebNotification(
       notification.onclick = () => {
         window.focus();
         notification?.close();
-        if (payload.sessionId) {
-          navigateToSession(payload.sessionId, payload.body, {
-            forceNavigation: true,
-            projectId: payload.projectId,
-          });
-        }
+        openPayload(payload, true);
         payload.onClick?.();
       };
 
@@ -289,7 +341,7 @@ export function sendWebNotification(
         } catch {
           // May already be closed
         }
-      }, 8000);
+      }, NOTIFICATION_VISIBLE_MS);
     } catch (err) {
       logger.error('Failed to send native notification', { error: String(err) });
     }
@@ -298,16 +350,79 @@ export function sendWebNotification(
   return notification;
 }
 
+/** A same-tag notification shown this recently is the same event's other copy. */
+const SAME_EVENT_MS = 30_000;
+
+/**
+ * Whether a notification alerts again when it replaces `existing`, the
+ * same-tag notifications on screen: not when one is from the last 30 s (the
+ * push for this same event), and yes when it is older (an earlier event).
+ * `alertsAgain` in public/sw.js applies the same rule to a push.
+ */
+function alertsAgain(existing: readonly { data?: unknown }[], now = Date.now()): boolean {
+  return (
+    existing.length > 0 &&
+    existing.every((shown) => {
+      const at = (shown.data as { at?: unknown } | null | undefined)?.at;
+      return !(typeof at === 'number' && now - at < SAME_EVENT_MS);
+    })
+  );
+}
+
+/** This tab's copy of an OS notification, shown by the service worker. Its click opens `data.url`. */
+async function showWorkerNotification(payload: WebNotificationPayload) {
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    const existing = payload.tag ? await registration.getNotifications({ tag: payload.tag }) : [];
+    // The same project resolution as `navigateToSession`.
+    const projectId = payload.projectId ?? currentProjectId();
+    const url = payload.sessionId
+      ? projectId
+        ? projectSessionHref(projectId, payload.sessionId)
+        : '/'
+      : (payload.href ?? '/');
+    // `renotify` is missing from the DOM typings.
+    const options: NotificationOptions & { renotify: boolean } = {
+      body: payload.body,
+      icon: '/favicon.svg',
+      tag: payload.tag,
+      renotify: alertsAgain(existing),
+      data: { url, at: Date.now() },
+    };
+    await registration.showNotification(payload.title, options);
+  } catch (err) {
+    logger.error('Failed to send native notification', { error: String(err) });
+  }
+}
+
 // ============================================================================
 // In-app toast fallback
 // ============================================================================
+
+/** How long a notification stays on screen: the toast and the OS notification. */
+const NOTIFICATION_VISIBLE_MS = 8000;
 
 const TOAST_BY_TYPE: Record<WebNotificationType, typeof successToast> = {
   completion: successToast,
   error: errorToast,
   question: warningToast,
   permission: warningToast,
+  shared: infoToast,
+  automation_failed: errorToast,
+  automation_recovered: successToast,
 };
+
+/** Open what the notification is about: its session, or its `href`. */
+function openPayload(payload: WebNotificationPayload, forceNavigation: boolean) {
+  if (payload.sessionId) {
+    navigateToSession(payload.sessionId, payload.body, {
+      forceNavigation,
+      projectId: payload.projectId,
+    });
+  } else if (payload.href) {
+    softNavigate(payload.href);
+  }
+}
 
 /**
  * Show an in-app toast notification.
@@ -316,13 +431,13 @@ const TOAST_BY_TYPE: Record<WebNotificationType, typeof successToast> = {
 function showInAppToast(payload: WebNotificationPayload) {
   try {
     const id = `web-notification-${payload.tag ?? Date.now()}`;
-    const { sessionId, actionLabel } = payload;
+    const { sessionId, href, actionLabel } = payload;
     TOAST_BY_TYPE[payload.type](payload.title, {
       id,
       description: payload.body,
-      duration: 8000,
+      duration: NOTIFICATION_VISIBLE_MS,
       button:
-        sessionId && actionLabel
+        (sessionId || href) && actionLabel
           ? createElement(
               Button,
               {
@@ -330,7 +445,8 @@ function showInAppToast(payload: WebNotificationPayload) {
                 variant: 'outline',
                 onClick: () => {
                   dismissToast(id);
-                  navigateToSession(sessionId, payload.body, { projectId: payload.projectId });
+                  openPayload(payload, false);
+                  payload.onClick?.();
                 },
               },
               actionLabel,

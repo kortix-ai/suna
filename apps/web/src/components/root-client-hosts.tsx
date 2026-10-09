@@ -52,6 +52,10 @@ const MaintenanceBannerHost = dynamic(
     ),
   { ssr: false },
 );
+const NotificationHost = dynamic(
+  () => import('@/features/notifications/notification-host').then((mod) => mod.NotificationHost),
+  { ssr: false },
+);
 const ImpersonationBanner = dynamic(
   () =>
     import('@/components/impersonation/impersonation-banner').then(
@@ -101,6 +105,9 @@ export function RootQueryHosts() {
           banner has to be true everywhere too. Renders nothing when no grant
           is held. */}
       <ImpersonationBanner />
+      {/* Web Push for this browser, new-notification toasts, and
+          `?notification=<id>` read marks. Signed-in only (KRTX-1742). */}
+      <NotificationHost />
     </>
   );
 }
