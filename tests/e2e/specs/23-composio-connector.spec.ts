@@ -384,8 +384,11 @@ test.describe("23 — Composio managed connector", () => {
     const connectRequestPromise = page.waitForRequest((request) =>
       isConnectPost(request.url(), request.method()),
     );
-    const connectResponsePromise = page.waitForResponse((response) =>
-      isConnectPost(response.url(), response.request().method()),
+    // The shared-default 409 is the fallback signal, not the result: wait for
+    // the response that ends the exchange (release gate 37943505676).
+    const connectResponsePromise = page.waitForResponse(
+      (response) =>
+        isConnectPost(response.url(), response.request().method()) && response.status() !== 409,
     );
     await ((await connectButton.isVisible()) ? connectButton : reconnectButton).click();
     await connectRequestPromise;
