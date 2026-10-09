@@ -1,5 +1,5 @@
 {
-  "source_hash": "1cdfa708fb86f26924f38948bafbdc3359f99ed8da67f40b58e355512bee81ca",
+  "source_hash": "c7c97518b2c8a87dd934745f3409f753bccb8aca32f29ea29de29e016e95b3c3",
   "diff_files": [
     ".agents/skills/learnings/MEMORY.md",
     ".agents/skills/learnings/entries/2026-10-09T100152Z-raise-one-database-pool-at-a-time-inside-the-rolling-fleet-b.md",
@@ -10,13 +10,13 @@
     "apps/api/src/shared/database-capacity.ts",
     "packages/db/src/connection-defaults.ts"
   ],
-  "diff_hash": "813c2b222cb12fdcb1aef60cb462bda57e6bd1e9efca9f3e76c810d93899dbfa",
-  "head": "e104b87a0b163cf28d64859b18feff4bfda3c073",
+  "diff_hash": "4a66faec765d2ba154b09c9b5d537e2e15a14b05e0bdfc94bc3a71095d986b67",
+  "head": "032733d254fb58be084fef9452d26a528c06d3d3",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-09T20:34:26.478Z"
+  "at": "2026-10-09T21:58:53.248Z"
 }
