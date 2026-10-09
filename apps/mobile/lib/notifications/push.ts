@@ -163,3 +163,19 @@ export function serverPreferences(prefs: NotificationPreferences): ServerPrefere
 export const PREFERENCE_SYNC_DEBOUNCE_MS = 500;
 /** Upper bound on the sign-out unregister call. */
 export const SIGN_OUT_UNREGISTER_TIMEOUT_MS = 3_000;
+/** A resume re-registers the same token at most this often. */
+export const PUSH_REREGISTER_INTERVAL_MS = 10 * 60_000;
+
+/**
+ * Resume rule. No cached token, or none registered yet: register. Otherwise
+ * register only when the last success is at least PUSH_REREGISTER_INTERVAL_MS
+ * old, so quick app switches do not hit the API.
+ */
+export function shouldReRegisterPush(input: {
+  token: string | null;
+  lastRegisteredAt: number | null;
+  now: number;
+}): boolean {
+  if (!input.token || input.lastRegisteredAt === null) return true;
+  return input.now - input.lastRegisteredAt >= PUSH_REREGISTER_INTERVAL_MS;
+}

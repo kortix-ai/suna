@@ -85,6 +85,12 @@ async function fetchExpoPushToken(Notifications: NotificationsModule): Promise<s
 let syncInFlight: Promise<string | null> | null = null;
 /** `<token>|<preferences JSON>` last accepted by the server, to skip repeats. */
 let lastPosted: string | null = null;
+/** When the server last accepted a registration (ms epoch), for the resume throttle. */
+let lastRegisteredAt: number | null = null;
+
+export function getLastPushRegisteredAt(): number | null {
+  return lastRegisteredAt;
+}
 
 function postedKey(token: string, prefs: ReturnType<typeof serverPreferences>): string {
   return `${token}|${JSON.stringify(prefs)}`;
@@ -123,6 +129,7 @@ async function runSync(): Promise<string | null> {
   try {
     await register(token, prefs);
     lastPosted = postedKey(token, prefs);
+    lastRegisteredAt = Date.now();
     usePushStore.getState().setToken(token);
     return token;
   } catch (error) {
@@ -177,6 +184,7 @@ export async function requestPushPermissionOnce(): Promise<void> {
 export async function unregisterPushOnSignOut(): Promise<void> {
   const token = usePushStore.getState().token;
   lastPosted = null;
+  lastRegisteredAt = null;
   if (!token) return;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), SIGN_OUT_UNREGISTER_TIMEOUT_MS);

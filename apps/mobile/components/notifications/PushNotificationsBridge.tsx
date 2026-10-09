@@ -7,6 +7,8 @@
  *   that session (the live stream's in-app cue plays instead).
  * - Registers the token on sign-in when OS permission is already granted.
  *   It never asks: requestPushPermissionOnce() asks after the first send.
+ * - Registers again on each resume (at most every 10 min) and when the OS
+ *   rotates the token, so the server row never goes stale.
  * - Re-posts the Notifications preferences 500 ms after a change.
  * - Opens the tapped session, also for the tap that cold-started the app.
  */
@@ -25,8 +27,10 @@ import {
   PREFERENCE_SYNC_DEBOUNCE_MS,
   routeForNotification,
   shouldPresentInForeground,
+  shouldReRegisterPush,
 } from '@/lib/notifications/push';
 import {
+  getLastPushRegisteredAt,
   getNotifications,
   remotePushSupported,
   syncPushPreferences,
@@ -122,17 +126,38 @@ export function PushNotificationsBridge() {
     return () => subscription?.remove();
   }, []);
 
-  // Sign-in: register when permission is already granted. Back in the
-  // foreground without a token: the user may have allowed it in Settings.
-  // That check waits until the resume work that cannot wait has run.
+  // Sign-in: register when permission is already granted. Each resume
+  // registers again, throttled; with no token it also catches a permission
+  // allowed in Settings. That waits until the resume work that cannot wait
+  // has run.
   useEffect(() => {
     if (!signedIn || !remotePushSupported()) return;
     void syncPushRegistration();
     return addResumeListener(() => {
-      if (signedInRef.current && !usePushStore.getState().token) {
-        void syncPushRegistration();
-      }
+      if (!signedInRef.current) return;
+      const due = shouldReRegisterPush({
+        token: usePushStore.getState().token,
+        lastRegisteredAt: getLastPushRegisteredAt(),
+        now: Date.now(),
+      });
+      if (due) void syncPushRegistration();
     }, PUSH_RESUME_DELAY_MS);
+  }, [signedIn]);
+
+  // The OS rotated the push token: register the new one.
+  useEffect(() => {
+    if (!signedIn || !remotePushSupported()) return;
+    const Notifications = getNotifications();
+    if (!Notifications) return;
+    let subscription: { remove: () => void } | undefined;
+    try {
+      subscription = Notifications.addPushTokenListener(() => {
+        void syncPushRegistration();
+      });
+    } catch (error) {
+      log.warn('[PUSH] Token listener not set:', error);
+    }
+    return () => subscription?.remove();
   }, [signedIn]);
 
   // Preference toggles → server, debounced.

@@ -5,9 +5,11 @@ import {
   deliveryForKind,
   notificationOpenMove,
   parsePushData,
+  PUSH_REREGISTER_INTERVAL_MS,
   routeForNotification,
   serverPreferences,
   shouldPresentInForeground,
+  shouldReRegisterPush,
 } from './push';
 
 const DATA = { type: 'completion', projectId: 'proj-1', sessionId: 'sess-1' };
@@ -164,5 +166,30 @@ describe('serverPreferences', () => {
       on_permission: true,
       play_sound: false,
     });
+  });
+});
+
+describe('shouldReRegisterPush', () => {
+  const now = 1_000_000_000;
+
+  test('registers when no token is cached', () => {
+    expect(shouldReRegisterPush({ token: null, lastRegisteredAt: now - 1, now })).toBe(true);
+  });
+
+  test('registers when nothing was registered yet', () => {
+    expect(shouldReRegisterPush({ token: 'T', lastRegisteredAt: null, now })).toBe(true);
+  });
+
+  test('skips within the throttle window', () => {
+    expect(shouldReRegisterPush({ token: 'T', lastRegisteredAt: now - PUSH_REREGISTER_INTERVAL_MS + 1, now })).toBe(false);
+  });
+
+  test('registers at and after the throttle window', () => {
+    expect(shouldReRegisterPush({ token: 'T', lastRegisteredAt: now - PUSH_REREGISTER_INTERVAL_MS, now })).toBe(true);
+    expect(shouldReRegisterPush({ token: 'T', lastRegisteredAt: now - 3_600_000, now })).toBe(true);
+  });
+
+  test('the window is 10 minutes', () => {
+    expect(PUSH_REREGISTER_INTERVAL_MS).toBe(600_000);
   });
 });
