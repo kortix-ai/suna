@@ -127,7 +127,7 @@ describe('OutputRows folds scaffolding behind "more files" (W16)', () => {
 
   // The fold hides rows of any kind — a video or a deck past row 8 is not a
   // file, and "N more files" would misname it. An all-file fold keeps the
-  // pinned "N more files" wording (the two tests above); a mixed one says items.
+  // pinned "N more files" wording; a mixed one says items.
   test('a fold hiding non-file rows says "items", not "files"', () => {
     const files = Array.from({ length: 8 }, (_, i) => out({ name: `report-${i}.pdf` }));
     // One video past the fold: singular.
