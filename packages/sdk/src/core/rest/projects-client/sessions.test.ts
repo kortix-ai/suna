@@ -1,4 +1,4 @@
-import { beforeEach, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import { type SavedCopyStore, setSavedCopyStore } from '../../session-sync/saved-copy-store';
 import { clearSessionFresh, isSessionFresh } from '../../http/fresh-sessions';
@@ -40,6 +40,7 @@ import {
   getSessionTranscriptSync,
   getSessionTurn,
   getSessionModelUsage,
+  getSessionWatch,
   holdSessionPrompts,
   listProjectSessions,
   listProjectSessionsPage,
@@ -56,6 +57,7 @@ import {
   setProjectSessionModel,
   setProjectSessionScope,
   setProjectSessionSharing,
+  setSessionWatch,
   stopProjectSession,
   updateProjectSession,
 } from './sessions';
@@ -1844,4 +1846,38 @@ test('resolvePublicShareUrl falls back to public_token last', () => {
   expect(resolvePublicShareUrl(share({ public_token: 'tok_123' }), 'https://api.example.com')).toBe(
     'https://api.example.com/tok_123',
   );
+});
+
+// KRTX-1742: who is notified about a session. `watching` is false after the
+// caller muted it, even for its creator.
+describe('session watch', () => {
+  test('getSessionWatch GETs /watch and never raises an error toast', async () => {
+    nextResponse = { status: 200, body: { watching: true } };
+    expect(await getSessionWatch('P1', 'S1')).toEqual({ watching: true });
+    expect(last()).toMatchObject({ url: 'http://test.local/projects/P1/sessions/S1/watch', method: 'GET' });
+    const onError = mock(() => {});
+    configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok', onError });
+    try {
+      nextResponse = { status: 500, body: { error: 'boom' } };
+      await expect(getSessionWatch('P1', 'S1')).rejects.toBeTruthy();
+      expect(onError).not.toHaveBeenCalled();
+    } finally {
+      configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+    }
+  });
+
+  test('setSessionWatch PUTs { watching } and returns the stored value', async () => {
+    nextResponse = { status: 200, body: { watching: false } };
+    expect(await setSessionWatch('P1', 'S1', false)).toEqual({ watching: false });
+    expect(last()).toEqual({
+      url: 'http://test.local/projects/P1/sessions/S1/watch',
+      method: 'PUT',
+      body: { watching: false },
+    });
+  });
+
+  test('setSessionWatch rejects on a 403 (an agent token cannot watch)', async () => {
+    nextResponse = { status: 403, body: { error: 'Human login required' } };
+    await expect(setSessionWatch('P1', 'S1', true)).rejects.toBeTruthy();
+  });
 });

@@ -178,6 +178,28 @@ test('session presence writes a tab-scoped lease through the authenticated backe
   });
 });
 
+// KRTX-1742: `alerts` says this tab shows its own notifications, so the server
+// skips the phone push only for an alerting tab. Leaving is sent with
+// `keepalive`, so the lease ends even when the tab is closing.
+test('session presence carries alerts, and an absent report survives the page unloading', async () => {
+  const inits: RequestInit[] = [];
+  globalThis.fetch = mock(async (_url: unknown, init: RequestInit = {}) => {
+    inits.push(init);
+    return Response.json({ ok: true });
+  }) as unknown as typeof fetch;
+  const tabId = '00000000-0000-4000-8000-000000000002';
+  const handle = kortix.session('PID123', 'SID456');
+  await handle.presence({ tab_id: tabId, active: true, alerts: true });
+  await handle.presence({ tab_id: tabId, active: false, alerts: true });
+  await handle.presence({ tab_id: tabId, active: true });
+  expect(inits.map((init) => JSON.parse(String(init.body)))).toEqual([
+    { tab_id: tabId, active: true, alerts: true },
+    { tab_id: tabId, active: false, alerts: true },
+    { tab_id: tabId, active: true },
+  ]);
+  expect(inits.map((init) => init.keepalive === true)).toEqual([false, true, false]);
+});
+
 test('session(projectId, sessionId).cost binds project scope without starting the runtime', async () => {
   await kortix.session('PID123', 'SID456').cost();
 
