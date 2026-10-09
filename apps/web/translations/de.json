@@ -20091,5 +20091,9 @@
     "reschedule": "Anderer Termin? Nutze den Link in der Einladung.",
     "addToCalendar": "Zum Kalender hinzufügen",
     "done": "Fertig"
+  },
+  "genui": {
+    "showData": "Daten anzeigen",
+    "source": "Quelle: {source}"
   }
 }

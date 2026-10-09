@@ -20091,5 +20091,9 @@
     "reschedule": "Treba vam drugi termin? Koristite link iz pozivnice.",
     "addToCalendar": "Dodaj u kalendar",
     "done": "Gotovo"
+  },
+  "genui": {
+    "showData": "Прикажи податке",
+    "source": "Извор: {source}"
   }
 }

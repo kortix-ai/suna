@@ -43,6 +43,14 @@ const TEST_FILE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
  *                            `markdown-code.tsx` reaches only through `lazy()`,
  *                            so `@openuidev/*` and `zod` stay out of the main
  *                            bundle. The import carries an inline eslint disable.
+ *  - `@kortix/sdk/genui`   — the framework-free generative UI barrel. One static
+ *                            import, `genuiA11yText` in
+ *                            `features/genui/components/charts.tsx`, a module
+ *                            that `components/index.tsx` loads through `lazy()`
+ *                            inside the already-lazy genui feature, which has
+ *                            loaded `@openuidev/*` and `zod` through
+ *                            `genui/react` by then. The import carries an
+ *                            inline eslint disable.
  *
  * The `@kortix/sdk/genui` barrel loads `@openuidev/*` and `zod` at module load,
  * so a static import of it belongs only in lazily loaded genui code. Copy and
@@ -58,6 +66,7 @@ const CANONICAL_SDK_ENTRIES = new Set([
   '@kortix/sdk/internal/idb-sync-cache',
   '@kortix/sdk/internal/diagnostics-store',
   '@kortix/sdk/internal/managed-storage',
+  '@kortix/sdk/genui',
   '@kortix/sdk/genui/fence',
   '@kortix/sdk/genui/react',
 ]);

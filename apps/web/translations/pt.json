@@ -20091,5 +20091,9 @@
     "reschedule": "Precisa de outro horário? Use o link do convite.",
     "addToCalendar": "Adicionar ao calendário",
     "done": "Concluir"
+  },
+  "genui": {
+    "showData": "Mostrar dados",
+    "source": "Fonte: {source}"
   }
 }

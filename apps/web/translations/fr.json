@@ -20091,5 +20091,9 @@
     "reschedule": "Besoin d’un autre créneau ? Utilisez le lien de l’invitation.",
     "addToCalendar": "Ajouter au calendrier",
     "done": "Terminé"
+  },
+  "genui": {
+    "showData": "Afficher les données",
+    "source": "Source : {source}"
   }
 }

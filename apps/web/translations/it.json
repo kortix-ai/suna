@@ -20091,5 +20091,9 @@
     "reschedule": "Ti serve un altro orario? Usa il link nell’invito.",
     "addToCalendar": "Aggiungi al calendario",
     "done": "Fatto"
+  },
+  "genui": {
+    "showData": "Mostra dati",
+    "source": "Fonte: {source}"
   }
 }

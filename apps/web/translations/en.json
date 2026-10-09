@@ -20091,5 +20091,9 @@
     "reschedule": "Need another time? Use the link in the invite.",
     "addToCalendar": "Add to calendar",
     "done": "Done"
+  },
+  "genui": {
+    "showData": "Show data",
+    "source": "Source: {source}"
   }
 }

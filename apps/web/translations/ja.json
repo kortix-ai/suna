@@ -20091,5 +20091,9 @@
     "reschedule": "日時を変更する場合は招待状のリンクを使ってください。",
     "addToCalendar": "カレンダーに追加",
     "done": "完了"
+  },
+  "genui": {
+    "showData": "データを表示",
+    "source": "出典: {source}"
   }
 }

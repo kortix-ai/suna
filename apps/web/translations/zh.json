@@ -20091,5 +20091,9 @@
     "reschedule": "需要换个时间？请使用邀请中的链接。",
     "addToCalendar": "添加到日历",
     "done": "完成"
+  },
+  "genui": {
+    "showData": "显示数据",
+    "source": "来源：{source}"
   }
 }

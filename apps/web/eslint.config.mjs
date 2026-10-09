@@ -106,7 +106,8 @@ const eslintConfig = [
               // `diagnostics-store` in `stores/diagnostics-store.ts`,
               // `managed-storage` in `lib/storage/managed-storage.ts`,
               // `genui/fence` in `components/markdown/code/markdown-code.tsx`,
-              // `genui/react` in `features/genui/sdk.ts`. Mirrors CANONICAL_SDK_ENTRIES
+              // `genui/react` in `features/genui/sdk.ts`, `genui` in
+              // `features/genui/components/charts.tsx`. Mirrors CANONICAL_SDK_ENTRIES
               // in scripts/sdk-boundary.mjs — keep the two in sync.
               // `features/genui/to-markdown.ts` reaches the `genui` barrel
               // through a dynamic `import()`, which this rule does not inspect.
