@@ -111,6 +111,9 @@ let deleteUserError: Error | null = null;
 const { config } = await import('../../config');
 config.SUPABASE_JWT_LIVENESS_TTL_MS = 30000;
 const liveness = await import('../../shared/jwt-liveness');
+// The external stores (parked boxes, session files, managed repos) have their
+// own real-DB suite; here they would read the sandbox rows the fake db serves.
+mock.module('./account-erasure-stores', () => ({ deleteAccountExternalStores: async () => undefined }));
 mock.module('../../shared/supabase', () => ({
   getSupabase: () => ({
     auth: { admin: { deleteUser: async (id: string) => {
@@ -118,6 +121,8 @@ mock.module('../../shared/supabase', () => ({
       deletedUsers.push(id);
       return { error: null };
     } } },
+    // Session files: an empty bucket (account erasure lists each project).
+    storage: { from: () => ({ list: async () => ({ data: [], error: null }), remove: async () => ({ error: null }) }) },
   }),
 }));
 
