@@ -963,7 +963,6 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
   const expected: FeatureFlagKey[] = [
     'agentmail_email',
     'apps',
-    'backends',
     'connectors_api_discover',
     'llm_gateway',
     'marketplace',
@@ -974,6 +973,7 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'pooled_provider_secrets',
     'pi_harness',
     'us_region',
+    'event_triggers',
     'warm_sessions',
     'notification_center',
   ];
@@ -1054,8 +1054,8 @@ test('ExperimentalFeatureKey and ExperimentalFeatureView stay as aliases', () =>
 
 test('FeatureFlagView marks an operator-only flag; older servers omit the field', () => {
   const managed: FeatureFlagView = {
-    key: 'backends',
-    name: 'Backends',
+    key: 'apps',
+    name: 'Apps',
     description: 'x',
     stability: 'experimental',
     available: true,

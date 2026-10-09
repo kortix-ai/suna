@@ -409,16 +409,32 @@ async function resolveEndpointViewer(
   return { userId, agentViewer };
 }
 
+/** The 403 for an audience or binding the App does not use. */
+export function appNotLinkedResponse(name: string): Response {
+  return Response.json(
+    {
+      error: 'app_not_linked',
+      error_description: `This App does not use an App named "${name}". Add it: kortix apps link <app> --uses ${name}.`,
+    },
+    { status: 403, headers: { 'cache-control': 'no-store' } },
+  );
+}
+
 /**
- * `GET /_kortix/backend-token?backend=<name>` — a Kortix sign-in token for one
- * of the project's backends, naming this viewer. The App's Convex client sends
- * it (`client.setAuth`), and the backend's functions read the member with
- * `ctx.auth.getUserIdentity()`. Same viewer rules as `/_kortix/viewer`.
+ * `GET /_kortix/token?audience=<slug|id>` — a Kortix sign-in token naming this
+ * viewer, from the project issuer, for `audience`: this App itself (the
+ * default) or an App it uses (`app_links`). Any other audience answers 403
+ * `app_not_linked`: code in an App gets no token for an App it has nothing to
+ * do with. A used App also answers 403 `app_not_linked` when the viewer may
+ * not open it themselves (its own access policy, as for this App), so a link
+ * never lends a viewer an App they could not reach directly. The App's client
+ * sends it (a Convex client: `client.setAuth`), and the audience App verifies
+ * it with its `auth` values. Same viewer rules as `/_kortix/viewer`.
  */
-export async function appBackendTokenResponse(
+export async function appTokenResponse(
   request: Request,
   url: URL,
-  app: AppAccessRow & { viewerTokenScope?: string | null; backends?: string[] | null },
+  app: AppAccessRow & { viewerTokenScope?: string | null },
   verifyUserAccess: AppUserAccessVerifier = appAccessibleToUser,
 ): Promise<Response> {
   const noStore = { 'cache-control': 'no-store' };
@@ -428,59 +444,46 @@ export async function appBackendTokenResponse(
       { status: 404, headers: noStore },
     );
   }
-  const name = url.searchParams.get('backend') ?? 'main';
-  // An App acts as its viewer only on the backends it lists (`apps.backends`).
-  // Code in an App that has nothing to do with a backend gets no token for it.
-  if (!(app.backends ?? []).includes(name)) {
-    return Response.json(
-      {
-        error: 'backend_not_listed',
-        error_description: `This App does not list the backend "${name}". Add it to the App's backends: kortix apps set <app> --backends ${name}.`,
-      },
-      { status: 403, headers: noStore },
-    );
+  const audience = url.searchParams.get('audience')?.trim() || app.appId;
+  let linked: Awaited<ReturnType<typeof import('./links').linkedApp>> | null = null;
+  if (audience !== app.appId && audience.toLowerCase() !== app.appId && audience !== app.slug) {
+    // Loaded on use: the App gate's hot path (and every hand-written module
+    // mock of it) does not need the links graph.
+    const { linkedApp } = await import('./links');
+    linked = await linkedApp(app.appId, app.projectId, audience);
+    if (!linked) return appNotLinkedResponse(audience);
   }
+  const audienceAppId = linked?.appId ?? app.appId;
   const viewer = await resolveEndpointViewer(request, url, app);
   if (viewer instanceof Response) return viewer;
   if (viewer.agentViewer) {
     // As on /_kortix/viewer: an agent session must not act as the human who launched it.
     return Response.json(
-      { error: 'agent_viewer', error_description: 'An agent session mints a token naming the agent: POST /v1/projects/{projectId}/backends/{backendId}/token.' },
+      { error: 'agent_viewer', error_description: 'An agent session mints a token naming the agent: POST /v1/projects/{projectId}/apps/{appId}/token.' },
       { status: 403, headers: noStore },
     );
   }
   // A public App lets every request through, so nothing re-checked the gate
-  // cookie: a member removed after redeeming a link kept minting backend
-  // tokens for the cookie's 8 h. A token is a credential, so re-check access.
+  // cookie: a member removed after redeeming a link kept minting tokens for
+  // the cookie's 8 h. A token is a credential, so re-check access.
   if (app.accessMode === 'public' && !(await verifyUserAccess(app, viewer.userId))) {
     return Response.json(
       { error: 'no_viewer_identity', error_description: 'The signed-in viewer no longer has access to this App.', access_mode: app.accessMode },
       { status: 401, headers: noStore },
     );
   }
-  // Loaded on use: the backends service pulls the project graph, which the App
-  // gate's hot path (and every hand-written module mock of it) does not need.
-  const { backendMemberToken, backendsEnabled, getRunningBackendByName } = await import('../backends/provision');
-  if (!(await backendsEnabled(app.projectId))) {
-    const { featureDisabledBody } = await import('../feature-flags/gate');
-    return Response.json(featureDisabledBody('backends'), { status: 403, headers: noStore });
-  }
-  const backend = await getRunningBackendByName(app.projectId, name);
-  if (!backend) {
-    return Response.json(
-      { error: 'backend_not_found', error_description: `No running backend named "${name}" in this project.` },
-      { status: 404, headers: noStore },
-    );
-  }
+  // The same answer as an unlinked audience: no oracle for an App the viewer cannot reach.
+  if (linked && !(await appAccessibleToUser(linked, viewer.userId))) return appNotLinkedResponse(audience);
+  const { mintAppToken } = await import('./tokens');
   const identity = await resolveAppViewerIdentity(viewer.userId, app.accountId);
-  const minted = backendMemberToken(backend, { userId: viewer.userId, ...identity });
-  if (!minted) {
-    return Response.json(
-      { error: 'backend_auth_unavailable', error_description: 'This backend predates Kortix sign-in.' },
-      { status: 409, headers: noStore },
-    );
-  }
-  return Response.json({ token: minted.token, expires_at: minted.expiresAt.toISOString() }, { headers: noStore });
+  const minted = await mintAppToken(
+    { appId: audienceAppId, projectId: app.projectId, accountId: app.accountId },
+    { userId: viewer.userId, ...identity },
+  );
+  return Response.json(
+    { token: minted.token, expires_at: minted.expiresAt.toISOString(), audience: audienceAppId },
+    { headers: noStore },
+  );
 }
 
 /** `GET /_kortix/viewer` — the App asks the gate who is looking, and for a token to act with. */

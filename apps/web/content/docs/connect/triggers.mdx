@@ -102,21 +102,43 @@ By default, each fire starts a fresh session on a new branch. A trigger can inst
 
 An event trigger runs an agent when an app event happens: a pull request opens, an email arrives, an issue changes state. You do not wire a webhook, a secret, or a signature. Kortix subscribes to the event for you and signs nothing by hand.
 
+<Callout type="info">
+App event triggers are a **beta** feature behind the project flag `event_triggers`. It is off until you turn it on. See [Turn on app event triggers](#turn-on-app-event-triggers).
+</Callout>
+
 An event comes from an **event source**: an adapter that delivers the events of an app. Composio is one such adapter, and the only one today. Event ids belong to the adapter, so `GITHUB_PULL_REQUEST_CREATED` is a Composio event id. Kortix defines no event ids of its own. The web app shows the source on each trigger (`via Composio`) and in the new trigger form (`Events via Composio`).
+
+### Turn on app event triggers
+
+The project flag `event_triggers` ("App event triggers") gates the whole feature. It is off by default.
+
+- **Web app:** open **Settings**, then **Feature flags**, and switch on **App event triggers**.
+- **CLI:** `kortix projects features enable event_triggers`. `kortix projects features disable event_triggers` turns it off.
+
+With the flag off:
+
+- `kortix triggers events …` and `kortix triggers add|set --type event` print `App event triggers are off for this project. Turn them on: kortix projects features enable event_triggers` and exit with code 1. The API answers `403` with `code: feature_disabled`.
+- A `type: event` trigger in `kortix.yaml` is kept, but it is not subscribed. Its status reads `error`: `App event triggers are off for this project. Turn them on in Settings → Feature flags.` The other triggers in the file still apply.
+- Cron, webhook and monitor triggers are not affected.
+
+Turning the flag on subscribes the event triggers already in `kortix.yaml`; you do not save them again. Turning it off removes every event subscription of the project, so no event starts a session.
+
+The flag appears in **Feature flags** only on a deployment with an event source configured.
 
 ### Set up in the web app
 
-1. Open the project, then **Triggers** and **New trigger**.
-2. Choose **App event**.
-3. Pick an app. Under it, pick a connector and one of its shared accounts, or connect another account. The account marked **Default** is used unless you pick another.
-4. Pick an event. The form for the event's settings, such as the repository, appears below it.
-5. Write the prompt and save.
+1. Open the project, then **Triggers**, **New trigger** and **Set up manually**. One window shows the whole trigger: **When**, **Then**, the name and the options. The line under the title sums up the trigger as you set it.
+2. Under **When**, choose **App event**.
+3. Browse the apps. Your project's apps come first, then every app with events. Pick one to see its events. You do not need a connector for this: nothing is created while you browse.
+4. Pick an event. The form for the event's settings, such as the repository, appears below it. Under **Connection**, pick a connector and one of its shared accounts, or connect another account. The account marked **Default** is used unless you pick another. If your project has no connector for the app, Kortix adds one when you create the trigger.
+5. Under **Then**, write the instruction, and pick the agent and the model. The name follows the event until you type your own. **Options** holds the run location, who can open the sessions, conditions, a custom ID, and starting paused.
+6. Choose **Create trigger**. A missing or wrong value shows under its field, and nothing is created until it is fixed.
 
 The trigger is live as soon as its badge reads **Live**. The other badges are **Activating**, **Needs connection**, and **Error**. They match the `pending`, `needs_connection`, and `error` statuses below.
 
 ### See every app event trigger
 
-In the web app, open **Triggers** and choose **App events**. The filter row reads **All**, **Schedules**, **App events**, and **Webhooks**, each with a count. The choice is kept in the address as `?type=event`, so you can link to it. The rows are grouped by app. Below them, **Apps with events** lists every app that can start an agent, the apps your project already uses first. Choose one to open the new trigger form on that app.
+In the web app, open **Triggers** and choose **App events**. The filter row reads **All**, **Schedules**, **App events**, and **Webhooks**, each with a count. The choice is kept in the address as `?type=event`, so you can link to it. The rows are grouped by app. Below them, **Apps with events** lists every app that can start an agent, the apps your project already uses first. Choose one to open the new trigger window on that app's events.
 
 A connector's window has a **Triggers** tab with the app events on that connector. The tab appears only for an app that has events.
 
@@ -136,6 +158,7 @@ An agent or a person runs these steps in order. Each step prints what the next s
 
 ```sh
 kortix triggers events --apps
+kortix triggers events --app github
 kortix connectors add github --provider composio --app github --apply
 kortix connectors connect github --owner project
 kortix triggers events --connector github
@@ -148,6 +171,7 @@ kortix triggers info pr-review
 ```
 
 1. `triggers events --apps` lists the apps that can trigger events. Apps are grouped under their event source (`source: composio`). Each app lists its connectors (profiles) and their shared accounts. The `STATE` column reads `connected` or `needs account`; apps with no connector appear under `No connector yet`.
+   `triggers events --app <app>` lists one app's events, and `--event <TYPE>` one event's settings, before you add any connector.
 2. `connectors add` adds the connector when the app has none. Skip it when `CONNECTOR` is set.
 3. `connectors connect <slug> --owner project` prints a link. A person opens it to connect the shared account. A member's private account does not count. Run it again to add a second shared account, then label it with `connectors rename <id> <label>`.
 4. `triggers events --connector <slug>` lists the events. Add `--event <TYPE>` for one event's settings and its `{{ event.data.* }}` variables. Read each setting's description: some events take a full name in one setting, such as `repo: acme/api`, and reject the same value split across `owner` and `repo`.

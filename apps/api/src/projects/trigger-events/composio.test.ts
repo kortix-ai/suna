@@ -4,6 +4,7 @@ import { Composio } from '@composio/core';
 import { config } from '../../config';
 import { setComposioRuntimeForTest, type ComposioRuntime } from '../../connectors/composio';
 import { composioEventSource as provider, composioErrorMessage } from './composio';
+import { setComposioRestClientForTest } from '../../connectors/composio-catalog-search';
 import { eventSourceFor } from './registry';
 import { EventSignatureError, EventConnectionNotReadyError } from './types';
 
@@ -96,23 +97,29 @@ describe('listEventTypes', () => {
 });
 
 describe('listApps', () => {
-  test('keeps toolkits with events, either count key, sorted by name', async () => {
-    setComposioRuntimeForTest({
+  const toolkit = (slug: string, name: string, triggers: number, extra: Record<string, unknown> = {}) => ({
+    slug, name, auth_schemes: ['OAUTH2'], composio_managed_auth_schemes: ['OAUTH2'], meta: { triggers_count: triggers, ...(slug === 'zeta' ? { logo: 'z.png' } : {}) }, ...extra,
+  });
+  afterEach(() => setComposioRestClientForTest(null));
+
+  test('pages the whole catalogue, drops hidden toolkits and those without events, sorts by name', async () => {
+    const cursors: Array<string | undefined> = [];
+    setComposioRestClientForTest({
       toolkits: {
-        async get() {
-          return [
-            { slug: 'zeta', name: 'Zeta', meta: { logo: 'z.png', triggersCount: 2 } },
-            { slug: 'none', name: 'None', meta: { triggersCount: 0 } },
-            { slug: 'alpha', name: 'Alpha', meta: { triggers_count: 5 } },
-            { slug: 'bare', name: 'Bare', meta: {} },
-          ];
+        async list(q: { cursor?: string }) {
+          cursors.push(q.cursor);
+          return q.cursor
+            ? { items: [toolkit('late', 'Late', 3), toolkit('byo', 'Byo', 4, { composio_managed_auth_schemes: [] })], next_cursor: null }
+            : { items: [toolkit('zeta', 'Zeta', 2), toolkit('none', 'None', 0), toolkit('alpha', 'Alpha', 5)], next_cursor: 'p2' };
         },
       },
-    } as unknown as ComposioRuntime);
+    });
     expect(await provider.listApps()).toEqual([
       { app: 'alpha', name: 'Alpha', logo: null, eventCount: 5 },
+      { app: 'late', name: 'Late', logo: null, eventCount: 3 },
       { app: 'zeta', name: 'Zeta', logo: 'z.png', eventCount: 2 },
     ]);
+    expect(cursors).toEqual([undefined, 'p2']);
   });
 });
 

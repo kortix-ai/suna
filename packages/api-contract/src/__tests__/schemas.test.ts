@@ -138,7 +138,6 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       llm_gateway: true,
       meta_agent: false,
       apps: false,
-      backends: false,
       monitors: false,
       reminders: false,
       warm_sessions: false,
@@ -146,6 +145,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       pooled_provider_secrets: false,
       pi_harness: false,
       us_region: false,
+      event_triggers: false,
       notification_center: false,
     },
     experimental_features: [],
@@ -740,7 +740,6 @@ describe('envelopes', () => {
       'llm_gateway',
       'meta_agent',
       'apps',
-      'backends',
       'monitors',
       'reminders',
       'warm_sessions',
@@ -748,6 +747,7 @@ describe('envelopes', () => {
       'pooled_provider_secrets',
       'pi_harness',
       'us_region',
+      'event_triggers',
       'notification_center',
     ]);
   });

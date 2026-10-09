@@ -568,10 +568,12 @@ Specs in `[[triggers]]`; CRUD commits the manifest; runtime state and account-lo
 `TRG-21` event trigger lifecycle — `POST /projects/:id/triggers` with `type: event`, `connector`, `event` and `event_config` → `201`; the trigger lists with `type: event` and an `event` object that echoes `connector`, `type` and `config`. The connector is not declared in `kortix.yaml`, so `event.status` is `error` and `event.error` names the missing connector. `PATCH {event_config}` → `200` and the new config reads back. `DELETE` → `200` and the trigger leaves the list. The API commits the manifest and reconciles subscriptions in the same request.
 `TRG-22` event trigger validation — `type: event` without `connector` → `400`; without `event` → `400`; with `cron` → `400`; with `event_config` that is not an object → `400`. `type: cron` with `connector` → `400`.
 `TRG-23` app-event ingress `POST /v1/webhooks/events/:provider` — unknown provider → `404`. Provider `composio` without a matching signature → `401` when the deployment holds `COMPOSIO_WEBHOOK_SECRET`, `503` when it does not. The route needs no bearer token.
-`TRG-24` `GET /projects/:id/triggers/event-types?connector=<slug>` — `ANON → 401`; missing `connector` → `400`; unknown connector → `404`.
+`TRG-24` `GET /projects/:id/triggers/event-types?connector=<slug>` — `ANON → 401`; neither `connector` nor `app` → `400`; unknown connector → `404`.
 `TRG-25` `GET /projects/:id/triggers/event-apps` — `ANON → 401`; the project owner → `200` with an `apps` array; the local profile has no event provider configured, so the array is empty. Event trigger create/PATCH with an event the catalog does not know validates only when the provider catalog is reachable, so the local profile skips it.
 `TRG-26` event trigger account — `POST /projects/:id/triggers` with `type: event` and `event_account: "acme-bot"` → `201`; the listing's `event.account` is `acme-bot` and `event.connected_as` is `null` (no shared account feeds it). `PATCH {event_account: null}` → `200` and `event.account` is `null` (the connector default). `PATCH {event_account: "ops-bot"}` → `200`; a later `PATCH {name}` keeps the account. `event_account` that is empty → `400`; on a `type: cron` trigger → `400`.
 `TRG-27` event trigger source — `POST /projects/:id/triggers` with `type: event` and `event_source: "composio"` → `201`; the listing's `event.source` is `composio`. `PATCH {name}` keeps it; `PATCH {event_source: null}` → `200` and `event.source` is unset (the connector is undeclared, so no provider fills it in). `event_source: "nope"` → `400` with `Unknown event source "nope". Sources: composio.`; a blank `event_source` → `400`; on a `type: cron` trigger → `400`. The event id stays the adapter's own: Kortix defines no event catalog.
+`TRG-28` `GET /projects/:id/triggers/event-types?app=<app>[&source=<adapter>]` lists an app's events with no connector. The local profile has no event provider, so the answer is `409 event_source_unavailable` (`200` where a provider is configured; it never asks for a connector). An unknown `source` → `400` with `Unknown event source "nope". Sources: composio.`; `connector` together with `app` → `400`; an app the adapter does not offer → `404 app_not_found`.
+`TRG-29` App event triggers sit behind the per-project flag `event_triggers` (beta, off by default). With the flag off: `GET /projects/:id/triggers/event-types` (`?connector=` and `?app=`) and `GET …/triggers/event-apps` → `403` `{code:"feature_disabled", feature:"event_triggers"}`; `POST …/triggers` with `type: event` → `403` and no commit, while a `type: cron` POST is still `201`. `PATCH /projects/:id/features {feature:"event_triggers", enabled:true}` → `200`, and the same calls pass the gate (`event-types` for an undeclared connector → `404`, `event-apps` → `200`, the event `POST` → `201`). Turning the flag off again leaves the declared event trigger listed with `event.status: error` and `event.error` `App event triggers are off for this project. Turn them on in Settings → Feature flags.`; `PATCH` of that trigger → `403`, `PATCH` of the cron trigger → `200`, `DELETE` of the event trigger → `200`. `TRG-21`…`TRG-28` turn the flag on in their setup. The flag is `available` only when an event source is configured: on the local profile (no `COMPOSIO_API_KEY`) it never resolves on, every event call stays `403 feature_disabled` after the toggle, and the flows assert that instead of the pass-through.
 
 **Trigger behavior with no black-box HTTP surface.** These are documented
 boundaries, not flow ids.
@@ -1563,67 +1565,96 @@ a trigger run. Every denial is `403 {code, action}` (spec §4).
 
 ---
 
-## 34. Kortix Backends
+## 34. Apps of kind `convex` and capability routes
 
-A project owns up to 3 backends, an account up to 10. Each backend is a self-hosted Convex instance
-in its own always-on Platinum machine (1 vCPU, 1 GB, 10 GB). `backends` is an
-experimental per-project flag, off by default, available only where Platinum is
-configured. Routes: `GET/POST /projects/:projectId/backends`,
-`GET/DELETE /projects/:projectId/backends/:backendId`,
-`GET /projects/:projectId/backends/:backendId/credentials`,
-`PATCH /projects/:projectId/backends/:backendId` (resize),
-`POST /projects/:projectId/backends/:backendId/token`,
-`GET /projects/:projectId/backends/:backendId/backups`,
-`POST /projects/:projectId/backends/:backendId/{snapshots,restore}`,
-`DELETE /projects/:projectId/backends/:backendId/snapshots/:snapshotId`, and the
-public issuer routes `GET /backends/:backendId/.well-known/openid-configuration`
-and `GET /backends/:backendId/jwks.json`.
+An App has one `kind`, fixed at create: `web` (default) or `convex`, a
+self-hosted Convex backend in its own always-on Platinum machine (1 vCPU, 1 GB,
+10 GB by default). A project owns up to 3 `convex` Apps, an account up to 10.
+The `apps` flag gates every kind; a `convex` create needs a deployment with
+Platinum. Every App response carries `kind`, `capabilities`, `uses`/`used_by`
+(App links by slug), `auth` (`issuer`, `audience` = the App id, `jwks_uri`) and
+`instance` (the machine state of a `convex` App, null for `web`). Capability routes under `/projects/:projectId/apps/:appId`:
+`GET/POST snapshots`, `DELETE snapshots/:snapshotId` (`snapshots`),
+`POST restore` (`restore`), `GET credentials` and `POST rotate-credentials`
+(`admin_credentials`), `POST token` (`member_tokens`, every kind), `GET logs`
+(`logs`). An App without the capability answers `409
+{code:'app_capability_unsupported', capability, kind}`.
 
-`BKD-1` Gated surface. Flag off: list, create, get, credentials, delete, resize,
-token, backups, snapshot, snapshot delete, restore, rotate-admin-key and logs answer `403 {code:'feature_disabled', feature:'backends'}`. The owner's
-`PATCH /projects/:projectId/features` with `backends` true, false or null
-answers `403 {code:'feature_operator_only', feature:'backends'}`, and the
-owner's `PUT /admin/api/projects/:id/features` answers 403. The platform
-operator's `PUT /admin/api/projects/:id/features` with `backends: true` answers
-200. Where Platinum
-is configured the flag resolves on: list answers 200 with a `backends` array, and
-an invalid name answers 400 before any machine is requested. Where it is not, the
-flag resolves off and every route keeps the same 403. A `NONMEMBER` gets 403/404
-and an `ANON` caller gets 401. The issuer routes need no credential: an
-unknown backend answers 404 and a malformed id 400. The caps under concurrency,
-`Cache-Control: no-store` on credentials and token, `convex_version`, the stored
-issuer, the issuer discovery and key set (verified against a minted token), and
-the issuer move are asserted by the
-DB suites `apps/api/src/backends/*.integration.test.ts`. The same suites drive
-the maintenance sweep against a fake Platinum and a fake Convex: an interrupted
-provision resumes on its Idempotency-Key and reaches `running`, one interrupted
-3 times turns `error`, an interrupted resize is recovered with
-`last_operation_error`, the health probe records `health` and starts a stopped
-machine, restores a tombstoned one from backup, and turns a missing one `error`
-after 3 probes; admin-key rotation seals the key Convex accepts and answers
-`409 backend_busy` during another operation; a backup or snapshot restore of a
-rotated backend rotates again, so the rotated-away key never returns; an agent
-session's token names the agent's service account (`kind: "agent"`, no role,
-no groups), never its launcher; the App gate's `/_kortix/backend-token`
-re-checks a `public` App's cookie viewer (`401` once access is gone) and
-answers `403 feature_disabled` with Backends off; the logs route strips color codes
-and rejects `lines` outside 1–1000. Snapshots: a manual snapshot carries `kind:
-"manual"` and no expiry, and the 11th answers `409 snapshot_limit` with nothing
-deleted; snapshot, restore, snapshot delete and backend delete answer `409
-backend_busy` during a resize (backend delete stays allowed in `recovering`);
-two concurrent snapshots produce one; a restore answers only after Platinum
-reports `running` again, and one Platinum ends `stopped` answers `502
-restore_unhealthy` with the machine started again; a resize takes a `resize`
-snapshot kept 24 h outside the limit, and every snapshot older than the
-applied resize answers `409 snapshot_predates_resize`; the maintenance sweep
-takes a daily `automatic` snapshot kept 7 days, deletes an expired `resize`
-snapshot and an expired `automatic` one only when a newer one exists, and
-never a manual one; `GET …/backups` returns each snapshot's `kind` and
-`expires_at` and the `snapshot_schedule`; `DELETE …/snapshots/:snapshotId`
-answers 204, then 404 `snapshot_not_found`. Not asserted locally:
-create (`202 provisioning`), a duplicate name (`409 backend_name_taken`), the
-`backend.credentials.read` audit row, and delete. They
-need a Platinum machine and are verified on a deployed environment.
+Sign-in tokens have one issuer per project: `<API origin>/v1/projects/:projectId`,
+with the public routes `GET /projects/:projectId/.well-known/openid-configuration`
+and `GET /projects/:projectId/jwks.json` (one ES256 key per project, created on
+the first token; an empty key set before it). A token lives 15 minutes and its
+`aud` is the App it is for. On an App host, `GET /_kortix/token?audience=<slug|id>`
+mints one naming the viewer for the App itself (the default) or an App it
+`uses`; any other App answers `403 app_not_linked`. The bindings mount
+`/_kortix/apps/<slug>/*` on an App host proxies HTTP and WebSocket to a used
+App's endpoint (a `convex` App: its client API) with the prefix stripped; an App
+it does not use answers `403 app_not_linked`, a used App of a kind with no
+endpoint `409 app_binding_unsupported`.
+
+`APP-9` Kind and capability surface. Flag off: a `convex` create and every
+capability route answer `403 {code:'feature_disabled', feature:'apps'}`. Flag
+on: an unknown `kind` or an invalid slug answers 400 before any machine is
+requested; `always_on: false` for a `convex` App answers 400 (or 409 where
+Platinum is not configured). A `convex` create answers `201` with
+`instance.status: "provisioning"` and the seven `convex` capabilities where
+Platinum is configured, else `409 app_kind_unavailable`. A `web` App lists
+`deployments`, `rollback`, `preview`, `member_tokens` and answers 409
+`app_capability_unsupported` on the 7 `convex`-only capability routes. The real
+CLI process: `kortix apps link <web> --uses <other>` sets `uses` (the other App
+reads it in `used_by`), `kortix apps show --json` prints `kind` and
+`capabilities`, `kortix apps snapshots <web>` exits 1 with `(kind web) does not
+support snapshots` before any capability route, `kortix apps token <web>` prints
+a three-part JWT, and `kortix apps unlink` empties `uses`. An unknown App
+answers 404. A `NONMEMBER` gets 403/404 and an `ANON` caller 401. The DB suites
+`apps/api/src/apps/kinds/convex/*.integration.test.ts` assert the rest against a
+fake Platinum and a fake Convex: the caps under concurrency (`409
+app_kind_limit`), `Cache-Control: no-store` on credentials and token,
+`instance.client_version`, the project issuer discovery and key set (verified
+against a minted token, for a `convex` and a `web` App), the maintenance issuer
+move (all three `KORTIX_AUTH_*` written, a failed write retried, a moved App
+left alone), `uses` links both ways and
+`400 app_not_found` for an unknown slug, a `convex` deployment recorded `ready`
+with no artifact (`source_kind: "convex"`, `201`), and `409
+app_capability_unsupported` for start, stop and rollback of a `convex` App. The
+maintenance sweep: an interrupted provision resumes on its Idempotency-Key and
+reaches `running`, one interrupted 3 times turns `error`, an interrupted resize
+is recovered with `last_operation_error`, the health probe records
+`instance.health` and starts a stopped machine, restores a tombstoned one from
+backup, and turns a missing one `error` after 3 probes; admin-key rotation
+seals the key Convex accepts and answers `409 app_busy` during another
+operation; a backup or snapshot restore of a rotated App rotates again; an agent
+session's token names the agent's service account (`kind: "agent"`), never its
+launcher; the App gate's `/_kortix/token` mints for the App itself or an App it
+`uses` (by slug or id), `403 app_not_linked` otherwise (also across projects),
+and re-checks a `public` App's cookie viewer (`401` once access is gone); the
+bindings mount forwards a request to the used `convex` App's client API with the
+prefix stripped and the Kortix cookies removed; the logs route strips color codes and
+rejects `lines` outside 1–1000. Snapshots: `manual` carries no expiry and the
+11th answers `409 snapshot_limit`; snapshot, restore, snapshot delete and App
+delete answer `409 app_busy` during a resize (delete stays allowed in
+`recovering`); a restore answers only after Platinum reports `running` again;
+a resize takes a `resize` snapshot kept 24 h, and an older snapshot answers
+`409 snapshot_predates_resize`; the daily `automatic` snapshot is kept 7 days.
+Delete: without `confirm=<slug>` → `400 confirmation_required`; with it, a
+`final` snapshot is taken, the machine is stopped and kept 7 days
+(`retained_until`), the hosts answer 410, the sweep and the orphan reaper leave
+the machine alone, and the purge after retention deletes machine, snapshots and
+row. Budget: 80 % and 100 % of the monthly budget each alert once per month
+(`instance.budget_alert`, audit `app.budget.alert`) and the machine keeps
+running. Not asserted locally: a provisioned machine and the
+`app.credentials.read` audit row; they are verified on a deployed environment.
+
+`APP-10` Sign-in tokens and the bindings mount, black-box on a local App host.
+An `ANON` caller reads the project issuer: `openid-configuration` names
+`<API origin>/v1/projects/:projectId` and its `jwks.json`; an unknown project
+answers 404 and a malformed id 400. The owner mints a member token for a `web`
+App (`POST token`, 200, `aud` = the App, verified against the published key
+set); a `NONMEMBER` gets 403/404. Signed in to App A through its access link,
+`/_kortix/token` answers 200 for A itself and for App C that A uses, and `403
+app_not_linked` for App B of the same project that A does not use and for an
+App of another project. The bindings mount answers `403 app_not_linked` for B
+and `409 app_binding_unsupported` for C, a `web` App.
 
 ---
 

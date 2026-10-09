@@ -10,7 +10,7 @@ import {
   type CtxOpts,
 } from '../command-helpers.ts';
 import { C, status } from '../style.ts';
-import { checkEventConfig, eventNextStep } from './triggers-events.ts';
+import { checkEventConfig, eventNextStep, surfaceEventTriggerError } from './triggers-events.ts';
 import { parseEventFlags, parseMonitorFlags, strayEventFlag } from './triggers-manifest.ts';
 
 // ── The LIVE path (--apply, and every `set`) ───────────────────────────────
@@ -167,7 +167,7 @@ export async function triggersAddLive(
       body,
     );
   } catch (err) {
-    return surfaceApiError(err);
+    return surfaceEventTriggerError(err);
   }
   if (json) {
     emitJson(resp);
@@ -292,7 +292,7 @@ export async function triggersSetLive(
       body,
     );
   } catch (err) {
-    return surfaceApiError(err);
+    return surfaceEventTriggerError(err);
   }
   if (json) {
     emitJson(resp);
@@ -375,7 +375,7 @@ export async function triggersToggleLive(
       { enabled },
     );
   } catch (err) {
-    return surfaceApiError(err);
+    return surfaceEventTriggerError(err);
   }
   if (json) {
     emitJson(resp);
