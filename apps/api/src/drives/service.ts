@@ -19,7 +19,7 @@ import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
 import { SYSTEM_ACTOR, assignRole, revokeAssignment } from '../iam/assignments';
 import { resolvePrincipal } from '../iam/authorize';
 import { config } from '../config';
-import { db } from '../shared/db';
+import { db, withDbTransaction } from '../shared/db';
 import { driveVolumeName, skippedDrivesMessage } from './access';
 import {
   COMPANY_DIR,
@@ -362,19 +362,30 @@ export function personalFolderFor(grants: readonly FolderGrant[], userId: string
   return own?.path ?? null;
 }
 
-/** The person's folder, `/Users/<name>`, made the first time they need it. */
+/**
+ * The person's folder, `/Users/<name>`, made the first time they need it.
+ *
+ * Picking a free name and granting it is one step per drive: a transaction
+ * holding the drive's advisory lock re-reads the grants before choosing, so two
+ * first visits whose handles match (alex@a, alex@b) cannot both pick /Users/alex.
+ */
 export async function ensurePersonalFolder(drive: DriveRow, userId: string, grants?: FolderGrant[]): Promise<string> {
-  const known = grants ?? (await listFolderGrants(drive));
-  const existing = personalFolderFor(known, userId);
+  const existing = personalFolderFor(grants ?? (await listFolderGrants(drive)), userId);
   if (existing) return existing;
   const email = (await userEmails([userId])).get(userId) ?? null;
   const base = personalFolderName(email, userId);
-  const taken = new Set(known.filter((g) => g.path.startsWith(`${USERS_DIR}/`)).map((g) => g.path.split('/')[2]?.toLowerCase()));
-  let name = base;
-  for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${base}-${n}`;
-  const path = `${USERS_DIR}/${name}`;
-  await setFolderGrant({ drive, path, principal: { type: 'user', id: userId }, level: 'manage', grantedBy: null, source: 'system' });
-  return path;
+  return withDbTransaction(async () => {
+    await db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`drive-personal-folder:${drive.driveId}`}, 0))`);
+    const known = await listFolderGrants(drive);
+    const raced = personalFolderFor(known, userId);
+    if (raced) return raced;
+    const taken = new Set(known.filter((g) => g.path.startsWith(`${USERS_DIR}/`)).map((g) => g.path.split('/')[2]?.toLowerCase()));
+    let name = base;
+    for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${base}-${n}`;
+    const path = `${USERS_DIR}/${name}`;
+    await setFolderGrant({ drive, path, principal: { type: 'user', id: userId }, level: 'manage', grantedBy: null, source: 'system' });
+    return path;
+  });
 }
 
 /** The agent's service account, when it has one (a grant to an agent made it). */
