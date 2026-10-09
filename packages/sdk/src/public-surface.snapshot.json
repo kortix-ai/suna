@@ -1726,7 +1726,9 @@
     "writeStartStash"
   ],
   "./genui": [
+    "GENUI_PROMPT_VERSION",
     "GENUI_SCHEMA_VERSION",
+    "buildGenuiPrompt",
     "genuiVersionFromClassName",
     "genuiVersionOf",
     "safeUrl",

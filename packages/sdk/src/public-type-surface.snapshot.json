@@ -3193,12 +3193,14 @@
     "writeStartStash"
   ],
   "./genui": [
+    "GENUI_PROMPT_VERSION",
     "GENUI_SCHEMA_VERSION",
     "GenuiIssue",
     "GenuiIssueCode",
     "GenuiNode",
     "GenuiParseResult",
     "GenuiSegment",
+    "buildGenuiPrompt",
     "genuiVersionFromClassName",
     "genuiVersionOf",
     "safeUrl",
