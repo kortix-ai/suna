@@ -12,12 +12,14 @@
  *   project already in this client's query cache has the flag on. The scan
  *   reads the cached project details and project lists. It sends no request,
  *   so a cold load of such a page with nothing cached reads off.
+ * - `NotificationHost` uses `useNotificationHostGate`: while a project's
+ *   detail loads, a cached project list or its previous answer decides.
  */
 
 import type { KortixProject } from '@kortix/sdk';
 import { qk, useFeatureFlag } from '@kortix/sdk/react';
 import { useQueryClient, type Query, type QueryClient } from '@tanstack/react-query';
-import { useCallback, useSyncExternalStore } from 'react';
+import { useCallback, useState, useSyncExternalStore } from 'react';
 
 export const NOTIFICATION_CENTER_FLAG = 'notification_center';
 
@@ -28,14 +30,31 @@ export function notificationCenterOn(project: FlagHolder): boolean {
   return project?.experimental?.[NOTIFICATION_CENTER_FLAG] === true;
 }
 
-/** The flag for one project, from its cached detail. Sends no request; false when nothing is cached. */
+/**
+ * The flag for one project from the query cache: its detail, else a cached
+ * project list that holds it. Undefined when neither holds it. Sends no request.
+ */
+export function cachedNotificationCenterAnswer(
+  client: QueryClient | null,
+  projectId: string | null | undefined,
+): boolean | undefined {
+  if (!client || !projectId) return undefined;
+  const detail = client.getQueryData<{ project?: FlagHolder }>(qk.project.detail(projectId));
+  if (detail?.project) return notificationCenterOn(detail.project);
+  for (const [, data] of client.getQueriesData<unknown>({ queryKey: qk.projects.scope() })) {
+    if (!Array.isArray(data)) continue;
+    const project = data.find((row: { project_id?: unknown } | null) => row?.project_id === projectId);
+    if (project) return notificationCenterOn(project);
+  }
+  return undefined;
+}
+
+/** The flag for one project from the query cache. False when nothing cached holds it. */
 export function cachedNotificationCenter(
   client: QueryClient | null,
   projectId: string | null | undefined,
 ): boolean {
-  if (!client || !projectId) return false;
-  const detail = client.getQueryData<{ project?: FlagHolder }>(qk.project.detail(projectId));
-  return notificationCenterOn(detail?.project);
+  return cachedNotificationCenterAnswer(client, projectId) === true;
 }
 
 const [ROOT, LIST_SCOPE] = qk.projects.scope();
@@ -58,19 +77,46 @@ export function anyCachedNotificationCenter(client: QueryClient): boolean {
   return client.getQueryCache().getAll().some(holdsFlagOn);
 }
 
-/** Is the notification center on for `projectId`, or, without one, for any cached project. */
-export function useNotificationCenter(projectId?: string | null): boolean {
-  const project = useFeatureFlag(projectId, NOTIFICATION_CENTER_FLAG).enabled;
-  const client = useQueryClient();
-  const scan = !projectId;
+/** `anyCachedNotificationCenter`, reactive. Subscribes to the cache only while `scan`. */
+function useAnyCachedNotificationCenter(client: QueryClient, scan: boolean): boolean {
   const subscribe = useCallback(
     (onChange: () => void) => (scan ? client.getQueryCache().subscribe(onChange) : () => {}),
     [client, scan],
   );
-  const anyProject = useSyncExternalStore(
+  return useSyncExternalStore(
     subscribe,
     () => scan && anyCachedNotificationCenter(client),
     () => false,
   );
-  return scan ? anyProject : project;
+}
+
+/** Is the notification center on for `projectId`, or, without one, for any cached project. */
+export function useNotificationCenter(projectId?: string | null): boolean {
+  const project = useFeatureFlag(projectId, NOTIFICATION_CENTER_FLAG).enabled;
+  const anyProject = useAnyCachedNotificationCenter(useQueryClient(), !projectId);
+  return projectId ? project : anyProject;
+}
+
+/**
+ * The gate of `NotificationHost`: `useNotificationCenter`, except while the
+ * project's detail loads. Then a cached project list answers, else the
+ * previous answer stays. So entering a flag-on project from `/projects` or
+ * from another flag-on project does not unmount the host and subscribe Web
+ * Push again. Only a loaded detail without the flag turns it off. A cold
+ * load of a project page starts off.
+ */
+export function useNotificationHostGate(projectId?: string | null): boolean {
+  const flag = useFeatureFlag(projectId, NOTIFICATION_CENTER_FLAG);
+  const client = useQueryClient();
+  const anyProject = useAnyCachedNotificationCenter(client, !projectId);
+  const [previous, setPrevious] = useState(false);
+  let answer = anyProject;
+  if (projectId) {
+    answer = flag.isLoading
+      ? (cachedNotificationCenterAnswer(client, projectId) ?? previous)
+      : flag.enabled;
+  }
+  // The answer from an earlier render: React's derived-state pattern.
+  if (answer !== previous) setPrevious(answer);
+  return answer;
 }

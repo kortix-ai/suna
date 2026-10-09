@@ -40,12 +40,17 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `session(pid, sid).presence()` accepts `alerts?: boolean`, and
   `useSession({ presenceAlerts })` sends it: with `notification_center` on,
   the server skips the phone and Web Push only while an alerting tab is in
-  use. A change is sent at once, without dropping the lease. An absent report
-  is sent with `keepalive`.
+  use. A change is sent at once, without dropping the lease. A second
+  argument `{ keepalive?: boolean }` lets the request outlive a closing page;
+  default on for an absent report, off for a present one.
 - `useSession({ presencePageExit })`, default `false`: `pagehide` reports
-  absent, so a closed tab ends its lease at once. Off, the lease lives to its
-  90 s expiry, as before. Pass the project's `notification_center` flag. A
-  change applies without a new presence report.
+  absent, and every absent report is sent with `keepalive`, so a closed tab
+  ends its lease at once. Off is the presence from before: no `pagehide`
+  report and no `keepalive`. A closing tab still turns hidden and reports
+  absent, but the browser can cancel that request as the page unloads, and
+  the lease then lives to its 90 s expiry. Pass the project's
+  `notification_center` flag. A change applies without a new presence
+  report.
 - `ConnectorPageLimitError` (`code: 'max_pages_exceeded'`, `connector`,
   `action`, `maxPages`, `nextArgs`): `paginateConnector` and
   `connector(slug).paginate` throw it when `maxPages` (default 100) ends a
