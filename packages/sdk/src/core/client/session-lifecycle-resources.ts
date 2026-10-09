@@ -12,14 +12,17 @@ export function bindSessionLifecycleResources(ctx: SessionBindingContext) {
     /**
      * This tab's presence lease. `alerts: true` says the tab shows its own
      * notifications, so the server skips the phone and Web Push while the
-     * person is here (KRTX-1742). An absent report is sent with `keepalive`,
-     * so it still arrives when the page is closing.
+     * person is here (KRTX-1742). `keepalive` lets the request outlive a
+     * closing page. Default: on for an absent report, off for a present one.
      */
-    presence: (input: { tab_id: string; active: boolean; alerts?: boolean }) =>
+    presence: (
+      input: { tab_id: string; active: boolean; alerts?: boolean },
+      options?: { keepalive?: boolean },
+    ) =>
       backendApi.put<{ ok: boolean }>(
         `/projects/${ctx.projectId}/sessions/${ctx.sessionId}/presence`,
         input,
-        { showErrors: false, keepalive: !input.active },
+        { showErrors: false, keepalive: options?.keepalive ?? !input.active },
       ),
     /** Unified finalized LLM and compute cost for this session. */
     cost: () => P.getSessionCostRecord(ctx.sessionId, { projectId: ctx.projectId }),

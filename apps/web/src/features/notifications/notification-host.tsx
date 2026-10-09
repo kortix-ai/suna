@@ -4,16 +4,23 @@
  * Notification behavior that does not depend on the page (KRTX-1742). Mounted
  * once by `RootQueryHosts`; does nothing while signed out.
  *
- * Always, while signed in: when "Enable notifications" is off, or the browser
- * blocks it, this browser's Web Push subscription is removed. A subscription
- * made on one project must end on any page once the person says no.
+ * Always, while signed in. None of it sends a request for a browser that
+ * never subscribed:
+ *
+ * - When "Enable notifications" is off, or the browser blocks it, this
+ *   browser's Web Push subscription is removed. A subscription made on one
+ *   project must end on any page once the person says no.
+ * - When it is on, this tab reads whether the browser holds a subscription, so
+ *   its copy of a flag-on project's notification goes to the service worker.
+ * - The MFA step-up registers an existing subscription again, at aal2.
+ * - Sign-out or a change of person clears the Push mirror (2. below).
  *
  * Only while the `notification_center` flag is on for the project in the URL
- * (on a page without one: for any cached project, `useNotificationCenter`):
+ * (`useNotificationHostGate`; on a page without one: for any cached project):
  *
  * 1. Web Push: this browser subscribes while "Enable notifications" is on and
- *    the browser allows it. The switch never waits for it. The MFA step-up
- *    registers it again, at aal2.
+ *    the browser allows it, once per person and page load. The switch never
+ *    waits for it.
  * 2. The Push choice per kind, mirrored into `web-notifications.ts`, so an
  *    in-page OS notification obeys the same choice as the phone.
  * 3. Arrivals: a new unread row toasts, and becomes an OS notification where
@@ -23,7 +30,8 @@
  *    clicked notification, marks that row read.
  *
  * Leaving a flag-on project for a flag-off one unmounts that part and keeps
- * the subscription: the other project's pushes still arrive.
+ * the subscription and the Push mirror: the other project's pushes and
+ * relayed completions still arrive and obey the person's choice.
  */
 
 import { Button } from '@/components/ui/button';
@@ -56,8 +64,16 @@ import {
   webNotificationType,
   withoutNotificationParam,
 } from './notification-rows';
-import { useNotificationCenter } from './use-notification-center';
-import { hasWebPushSubscription, syncWebPush, wantsWebPush, webPushSupported } from './web-push';
+import { useNotificationHostGate } from './use-notification-center';
+import {
+  detectWebPush,
+  ensureWebPush,
+  hasWebPushSubscription,
+  reregisterWebPush,
+  syncWebPush,
+  wantsWebPush,
+  webPushSupported,
+} from './web-push';
 
 /** The inbox check of a hidden window, the SDK poll's interval. */
 const HIDDEN_POLL_MS = 60_000;
@@ -75,14 +91,35 @@ export function NotificationHost() {
 }
 
 function SignedInNotificationHost({ userId }: { userId: string }) {
-  const notificationCenter = useNotificationCenter(projectIdFromPathname(usePathname()));
+  const { supabase } = useAuth();
+  const notificationCenter = useNotificationHostGate(projectIdFromPathname(usePathname()));
   const enabled = useWebNotificationStore((s) => s.preferences.enabled);
   const permission = useWebNotificationStore((s) => s.permission);
 
   useEffect(() => {
     if (!webPushSupported()) return;
-    if (!wantsWebPush({ supported: true, enabled, permission })) void syncWebPush(false);
+    void (wantsWebPush({ supported: true, enabled, permission }) ? detectWebPush() : syncWebPush(false));
   }, [enabled, permission, userId]);
+
+  // The MFA step-up upgrades this sign-in to aal2 in place, with no reload.
+  // The API stores the level at registration and sends Web Push for an
+  // account that requires MFA only to an aal2 subscription: register the
+  // existing one again, on any page. The auth provider caches the aal2 token
+  // before this listener runs.
+  useEffect(() => {
+    if (!webPushSupported()) return;
+    const { data } = supabase.auth.onAuthStateChange((event) => {
+      if (event !== 'MFA_CHALLENGE_VERIFIED') return;
+      const state = useWebNotificationStore.getState();
+      if (wantsWebPush({ supported: true, enabled: state.preferences.enabled, permission: state.permission })) {
+        void reregisterWebPush();
+      }
+    });
+    return () => data.subscription.unsubscribe();
+  }, [supabase]);
+
+  // The Push mirror belongs to this person.
+  useEffect(() => () => setServerPushPreferences(undefined), []);
 
   return notificationCenter ? <NotificationCenterHost userId={userId} /> : null;
 }
@@ -90,7 +127,6 @@ function SignedInNotificationHost({ userId }: { userId: string }) {
 /** Everything else. Unmounting it never removes the Web Push subscription. */
 function NotificationCenterHost({ userId }: { userId: string }) {
   const t = useTranslations('notifications');
-  const { supabase } = useAuth();
   const enabled = useWebNotificationStore((s) => s.preferences.enabled);
   const permission = useWebNotificationStore((s) => s.permission);
   const inbox = useNotificationInbox({ userId });
@@ -103,24 +139,8 @@ function NotificationCenterHost({ userId }: { userId: string }) {
 
   useEffect(() => {
     if (!webPushSupported()) return;
-    if (wantsWebPush({ supported: true, enabled, permission })) void syncWebPush(true);
+    if (wantsWebPush({ supported: true, enabled, permission })) void ensureWebPush(userId);
   }, [enabled, permission, userId]);
-
-  // The MFA step-up upgrades this sign-in to aal2 in place, with no reload.
-  // The API stores the level at registration and sends Web Push for an
-  // account that requires MFA only to an aal2 subscription: register again.
-  // The auth provider caches the aal2 token before this listener runs.
-  useEffect(() => {
-    if (!webPushSupported()) return;
-    const { data } = supabase.auth.onAuthStateChange((event) => {
-      if (event !== 'MFA_CHALLENGE_VERIFIED') return;
-      const state = useWebNotificationStore.getState();
-      void syncWebPush(
-        wantsWebPush({ supported: true, enabled: state.preferences.enabled, permission: state.permission }),
-      );
-    });
-    return () => data.subscription.unsubscribe();
-  }, [supabase]);
 
   // The SDK poll stops while the page is hidden. Where Web Push does not
   // reach this renderer, a hidden window keeps checking, so its OS
@@ -157,10 +177,10 @@ function NotificationCenterHost({ userId }: { userId: string }) {
     return () => container.removeEventListener('message', onMessage);
   }, []);
 
-  // Read only for a notification-center payload; cleared when this unmounts.
+  // Read only for a notification-center payload. It outlives this part: a
+  // relayed completion of a flag-on project can reach a tab on a flag-off page.
   useEffect(() => {
-    setServerPushPreferences(preferences?.kinds);
-    return () => setServerPushPreferences(undefined);
+    if (preferences) setServerPushPreferences(preferences.kinds);
   }, [preferences]);
 
   const seen = useRef<Set<string> | null>(null);

@@ -37,12 +37,14 @@ let puts: Array<{ body: { tab_id: string; active: boolean; alerts?: boolean }; k
 let renderer: ReactTestRenderer | null = null;
 let queryClient: QueryClient;
 let win: ReturnType<typeof target>;
+let doc: ReturnType<typeof target> & { hidden: boolean };
 const globals = globalThis as { document?: unknown; window?: unknown };
 const saved = { document: globals.document, window: globals.window };
 
 beforeEach(() => {
   puts = [];
-  globals.document = { hidden: false, ...target() };
+  doc = { hidden: false, ...target() };
+  globals.document = doc;
   win = target();
   globals.window = { ...win, setInterval: () => 1, clearInterval: () => {} };
   configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
@@ -115,11 +117,9 @@ describe('useSession presence alerts', () => {
     expect(new Set(puts.map((p) => p.body.tab_id)).size).toBe(1);
   });
 
-  test('unmounting sends absent with keepalive, so a closing page still ends the lease', async () => {
+  test('with presencePageExit, unmounting sends absent with keepalive, so a closing page still ends the lease', async () => {
     act(() => {
-      renderer = create(
-        createElement(QueryClientProvider, { client: queryClient }, createElement(Host, { presenceAlerts: true })),
-      );
+      renderer = create(mount({ presenceAlerts: true, presencePageExit: true }));
     });
     await flush();
     act(() => renderer!.unmount());
@@ -134,8 +134,12 @@ describe('useSession presence alerts', () => {
 
 /**
  * `presencePageExit` follows the project's `notification_center` flag. Off is
- * the presence before KRTX-1742: a closing page sends no absent PUT, and the
- * lease lives to its 90 s expiry. On, `pagehide` ends the lease at once.
+ * the presence before KRTX-1742: no `pagehide` report, and every absent PUT
+ * (hidden, idle, unmount) goes without `keepalive`. A closing tab still turns
+ * hidden and sends absent, but the browser may cancel that PUT as the page
+ * unloads, and then the lease lives to its 90 s expiry. On, `pagehide` reports
+ * absent too, and every absent PUT goes with `keepalive`, so it outlives the
+ * page and ends the lease at once.
  */
 describe('useSession presence page exit', () => {
   test('by default, pagehide sends no absent PUT', async () => {
@@ -146,6 +150,71 @@ describe('useSession presence page exit', () => {
     act(() => win.fire('pagehide'));
     await flush();
     expect(puts.map((p) => p.body.active)).toEqual([true]);
+  });
+
+  test('by default, a closing page sends absent on visibilitychange without keepalive', async () => {
+    act(() => {
+      renderer = create(mount({}));
+    });
+    await flush();
+    act(() => win.fire('pagehide'));
+    act(() => {
+      doc.hidden = true;
+      doc.fire('visibilitychange');
+    });
+    await flush();
+    expect(puts.map((p) => [p.body.active, p.keepalive])).toEqual([
+      [true, false],
+      [false, false],
+    ]);
+  });
+
+  test('by default, unmounting sends absent without keepalive', async () => {
+    act(() => {
+      renderer = create(mount({ presenceAlerts: true }));
+    });
+    await flush();
+    act(() => renderer!.unmount());
+    renderer = null;
+    await flush();
+    expect(puts.map((p) => [p.body.active, p.keepalive])).toEqual([
+      [true, false],
+      [false, false],
+    ]);
+  });
+
+  test('with presencePageExit, a page that turns hidden sends absent with keepalive', async () => {
+    act(() => {
+      renderer = create(mount({ presencePageExit: true }));
+    });
+    await flush();
+    act(() => {
+      doc.hidden = true;
+      doc.fire('visibilitychange');
+    });
+    await flush();
+    expect(puts.map((p) => [p.body.active, p.keepalive])).toEqual([
+      [true, false],
+      [false, true],
+    ]);
+  });
+
+  test('turning presencePageExit off after mount drops keepalive from the next absent PUT', async () => {
+    act(() => {
+      renderer = create(mount({ presencePageExit: true }));
+    });
+    await flush();
+    act(() => renderer!.update(mount({ presencePageExit: false })));
+    await flush();
+    act(() => {
+      doc.hidden = true;
+      doc.fire('visibilitychange');
+    });
+    await flush();
+    expect(puts.map((p) => [p.body.active, p.keepalive])).toEqual([
+      [true, false],
+      [false, false],
+    ]);
   });
 
   test('with presencePageExit, pagehide sends absent with keepalive', async () => {
@@ -171,7 +240,10 @@ describe('useSession presence page exit', () => {
     expect(puts.map((p) => p.body.active)).toEqual([true]);
     act(() => win.fire('pagehide'));
     await flush();
-    expect(puts.map((p) => p.body.active)).toEqual([true, false]);
+    expect(puts.map((p) => [p.body.active, p.keepalive])).toEqual([
+      [true, false],
+      [false, true],
+    ]);
     expect(new Set(puts.map((p) => p.body.tab_id)).size).toBe(1);
   });
 });
