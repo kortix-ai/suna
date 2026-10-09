@@ -1,10 +1,11 @@
 {
-  "source_hash": "5ff45cd3df002d706447d94761c3de2a47866d99427b6083c7a51d3d5dc8a45b",
+  "source_hash": "f0bd0bde9b683d5acf857b0874a69eda0162df9b2176b486474cd66ce544fece",
   "diff_files": [
     "apps/api/src/__tests__/integration-gateway-keys.test.ts",
     "apps/api/src/app.ts",
-    "apps/api/src/backends/hosts.integration.test.ts",
-    "apps/api/src/backends/provision.integration.test.ts",
+    "apps/api/src/apps/kinds/convex/hosts.integration.test.ts",
+    "apps/api/src/apps/kinds/convex/provision.integration.test.ts",
+    "apps/api/src/apps/kinds/convex/routes.integration.test.ts",
     "apps/api/src/config.ts",
     "apps/api/src/feedback/index.test.ts",
     "apps/api/src/feedback/index.ts",
@@ -30,13 +31,13 @@
     "tests/spec/routes.generated.json",
     "tests/src/flows/feedback.flow.ts"
   ],
-  "diff_hash": "ace67867392b28ee57414afecf9872416f4ac77dbd3a238d6252d1cf71759632",
-  "head": "7b63de18f5170c0be1fd72606e67bf38bbcf4563",
+  "diff_hash": "6912c755c92fea4a6bb0f4d12edade16564ddb4d86fdc5061c04098ae7ed7304",
+  "head": "f1fb93a682e80b9e83aa7153aadcca826b0acf7a",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-09T16:13:46.004Z"
+  "at": "2026-10-09T17:09:10.559Z"
 }
