@@ -109,4 +109,63 @@ describe('env-config server branch BACKEND_URL precedence', () => {
     expect(proc.exitCode, new TextDecoder().decode(proc.stderr)).toBe(0);
     expect(out).toBe('https://api.example.com/v1');
   });
+
+  // Same-origin deployments keep a root-relative public value working when no
+  // absolute value is set: the precedence change must not force an absolute
+  // URL to exist, it must only prefer one when it does.
+  test('keeps the root-relative public value when no absolute value exists', () => {
+    const env: Record<string, string | undefined> = {
+      ...envWithoutRuntimeKeys(),
+      SUPABASE_URL: 'http://127.0.0.1:13321',
+      SUPABASE_ANON_KEY: 'test-anon-key',
+      KORTIX_PUBLIC_BACKEND_URL: '/v1',
+      NEXT_PUBLIC_BACKEND_URL: '/v1',
+    };
+    delete env.BACKEND_URL;
+    const proc = Bun.spawnSync({
+      cmd: [
+        'bun',
+        '-e',
+        'const { getEnv } = await import("./src/lib/env-config.ts");' +
+          'console.log(getEnv().BACKEND_URL);',
+      ],
+      cwd: webRoot,
+      env,
+      stderr: 'pipe',
+      stdout: 'pipe',
+    });
+    const out = new TextDecoder().decode(proc.stdout).trim();
+    expect(proc.exitCode, new TextDecoder().decode(proc.stderr)).toBe(0);
+    expect(out).toBe('/v1');
+  });
+
+  // The browser branch is untouched: the runtime config script the server
+  // renders wins over every process.env value, so the same precedence change
+  // cannot alter what the browser sees.
+  test('browser branch still reads the runtime config over process env', () => {
+    const env = {
+      ...envWithoutRuntimeKeys(),
+      SUPABASE_URL: 'http://127.0.0.1:13321',
+      SUPABASE_ANON_KEY: 'test-anon-key',
+      BACKEND_URL: 'http://127.0.0.1:13008/v1',
+      KORTIX_PUBLIC_BACKEND_URL: '/v1',
+      NEXT_PUBLIC_BACKEND_URL: '/v1',
+    };
+    const proc = Bun.spawnSync({
+      cmd: [
+        'bun',
+        '-e',
+        'globalThis.window = { __ENV_LOGGED__: true, __KORTIX_RUNTIME_CONFIG: { SUPABASE_URL: "http://browser-supa.test", SUPABASE_ANON_KEY: "browser-anon", BACKEND_URL: "/from-browser" } };' +
+          'const { getEnv } = await import("./src/lib/env-config.ts");' +
+          'console.log(getEnv().BACKEND_URL);',
+      ],
+      cwd: webRoot,
+      env,
+      stderr: 'pipe',
+      stdout: 'pipe',
+    });
+    const out = new TextDecoder().decode(proc.stdout).trim();
+    expect(proc.exitCode, new TextDecoder().decode(proc.stderr)).toBe(0);
+    expect(out).toBe('/from-browser');
+  });
 });

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
  * Rides out the known client-side crash class on the marketplace item page:
@@ -70,11 +70,12 @@ export function useDialogCrashGuard({
 
 /**
  * Rendered as the crash boundary's fallback. Effects only — the boundary
- * render itself must stay side-effect free — and the actions arrive through a
- * ref so a re-render while the fallback is up can never re-run the decision.
- * The thrown error is logged either way: the original dogfood report of this
- * crash carried only "[Kortix Home Error] DOMException" and no stack, which
- * is what made the diagnosis guesswork.
+ * render itself must stay side-effect free — and the decision fires once per
+ * crash: a ref latches it so a re-render (or dev StrictMode's double effect)
+ * while the fallback is up can never re-run it. The thrown error is logged
+ * either way: the original dogfood report of this crash carried only
+ * "[Kortix Home Error] DOMException" and no stack, which is what made the
+ * diagnosis guesswork.
  */
 export function DialogCrashRecovery({
   error,
@@ -87,8 +88,12 @@ export function DialogCrashRecovery({
   onRetry: () => void;
   onGiveUp: () => void;
 }) {
+  const decided = useRef(false);
+
   useEffect(() => {
     console.error('[marketplace] add-to-project dialog mount crashed', error);
+    if (decided.current) return;
+    decided.current = true;
     if (retried) onGiveUp();
     else onRetry();
   }, [error, retried, onRetry, onGiveUp]);
