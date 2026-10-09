@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 736,
+  "count": 730,
   "routes": [
     {
       "method": "GET",
@@ -1163,16 +1163,16 @@
       "path": "/v1/drives"
     },
     {
-      "method": "POST",
-      "path": "/v1/drives"
+      "method": "GET",
+      "path": "/v1/drives/:driveId/access"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/drives/:driveId/access"
     },
     {
       "method": "DELETE",
-      "path": "/v1/drives/:driveId"
-    },
-    {
-      "method": "PATCH",
-      "path": "/v1/drives/:driveId"
+      "path": "/v1/drives/:driveId/access/:grantId"
     },
     {
       "method": "GET",
@@ -1207,20 +1207,8 @@
       "path": "/v1/drives/:driveId/files/move"
     },
     {
-      "method": "DELETE",
-      "path": "/v1/drives/:driveId/grants"
-    },
-    {
       "method": "GET",
-      "path": "/v1/drives/:driveId/grants"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/drives/:driveId/grants"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/drives/:driveId/grants/:grantId"
+      "path": "/v1/drives/:driveId/principals"
     },
     {
       "method": "POST",
@@ -2377,18 +2365,6 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/drives"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/drives"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/drives/:driveId"
-    },
-    {
-      "method": "PATCH",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/drives/:driveId"
     },
     {
       "method": "GET",
