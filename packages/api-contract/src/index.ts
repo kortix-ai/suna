@@ -1414,7 +1414,9 @@ export const TriggerSchema = z.object({
       connected_as: z.string().nullable(),
       type: z.string(),
       config: z.record(z.string(), z.unknown()),
-      /** Event source provider derived from the connector (e.g. `composio`). Null when unresolved. */
+      /** Event source adapter: the declared `source`, else the connector's provider (e.g. `composio`). Null when unresolved. */
+      source: z.string().nullable().optional(),
+      /** @deprecated Same value as `source`. */
       provider: z.string().nullable(),
       /** Provider app slug (e.g. `github`). Null when unresolved. */
       app: z.string().nullable(),

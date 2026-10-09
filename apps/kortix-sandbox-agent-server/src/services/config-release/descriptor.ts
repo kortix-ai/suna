@@ -42,9 +42,31 @@ const FileEntry = z.tuple([
   z.string().regex(OBJECT_ID, 'blob must be a Git object ID'),
 ])
 
+/**
+ * The project snapshot of `source_commit`: the commit's working tree plus a
+ * blobless `.git`, as `tar.gz`, behind a presigned URL that takes no
+ * credential. Its digest and size come from the API; the box keeps only the
+ * listed files and verifies each against its blob ID.
+ */
+const SnapshotRef = z.object({
+  url: z.string().regex(/^https?:\/\//, 'snapshot.url must be an http(s) URL'),
+  sha256: z.string().regex(HEX64),
+  bytes: z.number().int().positive(),
+  entries: z.number().int().nonnegative(),
+  expires_at: z.string(),
+})
+
+/** What this daemon asks the API for. A v3 tree release may come with no archive. */
+export const ACCEPTED_FORMATS = ['config-release-v3'] as const
+
 const DescriptorSchema = z
   .object({
-    format: z.literal('config-release-v2'),
+    /**
+     * v2: a tree release always carries the archive. v3: a tree over the
+     * API's archive cap has `archive: null`, and the box builds the release
+     * from its own checkout or from `snapshot`.
+     */
+    format: z.enum(['config-release-v2', 'config-release-v3']),
     release_id: z.string().regex(HEX64).nullable(),
     mode: z.literal('follow-base'),
     source_commit: z.string().regex(OBJECT_ID).nullable(),
@@ -75,6 +97,7 @@ const DescriptorSchema = z
       .nullish()
       .transform((value) => value ?? null),
     reason: z.string().nullable(),
+    snapshot: SnapshotRef.nullish().transform((value) => value ?? null),
   })
   .superRefine((value, ctx) => {
     const issue = (message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, message })
@@ -88,12 +111,18 @@ const DescriptorSchema = z
       }
     }
     if (value.files !== null) {
+      // A tree release: the box builds it from the files, whatever carries them.
+      if (value.release_id === null) issue('files need a release_id')
+      if (value.config_tree_id === null) issue('files need their config_tree_id')
+      if (value.source_commit === null) issue('files need their source_commit')
+      if (value.format === 'config-release-v2' && value.archive === null) issue('a v2 tree release needs its archive')
       const seen = new Set<string>()
       for (const [path] of value.files) {
         if (seen.has(path)) issue(`duplicate file ${path}`)
         seen.add(path)
       }
     }
+    if (value.snapshot !== null && value.files === null) issue('a snapshot needs its files')
     if ((value.compiled_governance === null) !== (value.compiled_governance_etag === null)) {
       issue('compiled_governance and compiled_governance_etag are both set or both null')
     }
@@ -101,6 +130,7 @@ const DescriptorSchema = z
 
 export type ConfigReleaseDescriptor = z.infer<typeof DescriptorSchema>
 export type ConfigReleaseFile = z.infer<typeof FileEntry>
+export type ConfigReleaseSnapshot = z.infer<typeof SnapshotRef>
 
 /** Parse an untrusted JSON value. Throws with every validation issue. */
 export function parseConfigReleaseDescriptor(value: unknown): ConfigReleaseDescriptor {

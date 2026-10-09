@@ -582,7 +582,7 @@ function isTarError(err: unknown): boolean {
 }
 
 /** The archive's declared entry count + slack is the guard's ceiling. */
-function entryLimit(descriptor: ProjectSnapshotDescriptor): number {
+function entryLimit(descriptor: Pick<ProjectSnapshotDescriptor, 'tree'>): number {
   return Math.max(descriptor.tree.entries, 0) + ENTRY_SLACK
 }
 
@@ -647,7 +647,7 @@ async function extractWithSystemTar(
  * Rejects with a classified ConfigProviderError; the caller removes the stage.
  */
 export async function downloadAndExtractProjectSnapshot(
-  descriptor: ProjectSnapshotDescriptor,
+  descriptor: Pick<ProjectSnapshotDescriptor, 'tree'>,
   stage: string,
   options: {
     fetchImpl?: typeof fetch

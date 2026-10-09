@@ -1459,8 +1459,10 @@ flow(
             (await db.query('SELECT status, command_type, source, payload FROM kortix.session_lifecycle_commands WHERE command_id = $1', [commandId])).rows[0],
           );
           const body = row?.payload?.body ?? {};
+          // The 202 above proves it queued; the lifecycle worker may claim it
+          // (`running`) before this read, so either status is the same command.
           if (
-            row?.status !== 'queued' ||
+            !['queued', 'running'].includes(row?.status) ||
             row.command_type !== 'create_session' ||
             row.source !== 'trigger:manual' ||
             row.payload?.visibility !== 'private' ||
@@ -1906,6 +1908,65 @@ flow(
       const r = await owner.post(
         '/v1/projects/:projectId/triggers',
         { name: 'Cron', type: 'cron', cron: '0 0 3 * * *', timezone: 'UTC', prompt_template: 'x', event_account: 'acme-bot' },
+        { params },
+      );
+      r.status(400);
+    });
+  },
+);
+
+flow(
+  'TRG-27',
+  {
+    domain: 'triggers',
+    routes: [
+      'POST /v1/projects/:projectId/triggers',
+      'GET /v1/projects/:projectId/triggers',
+      'PATCH /v1/projects/:projectId/triggers/:slug',
+    ],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project({ managedGit: true });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { projectId: p.id };
+    type SourceRow = { slug: string; event: { source?: string | null } | null };
+    const sourceOf = (body: { triggers: SourceRow[] }) => {
+      const row = body.triggers.find((t) => t.slug === 'src-mail');
+      if (!row?.event) throw new Error(`trigger "src-mail" missing; got ${JSON.stringify(body.triggers.map((t) => t.slug))}`);
+      return row.event.source ?? null;
+    };
+    const create = (extra: Record<string, unknown>) =>
+      owner.post(
+        '/v1/projects/:projectId/triggers',
+        { name: 'Src mail', type: 'event', connector: 'inbox', event: 'EXAMPLE_NEW_MESSAGE', prompt_template: 'x', ...extra },
+        { params },
+      );
+    await ctx.step('create with event_source composio → 201 and the listing echoes event.source', async () => {
+      const r = await create({ event_source: 'composio' });
+      r.status(201);
+      const source = sourceOf(r.json<{ triggers: SourceRow[] }>());
+      if (source !== 'composio') throw new Error(`expected source "composio" — got ${JSON.stringify(source)}`);
+    });
+    await ctx.step('PATCH of another field keeps the source; PATCH event_source null clears it', async () => {
+      const at = { params: { ...params, slug: 'src-mail' } };
+      const kept = await owner.patch('/v1/projects/:projectId/triggers/:slug', { name: 'Src mail 2' }, at);
+      kept.status(200);
+      if (sourceOf(kept.json<{ triggers: SourceRow[] }>()) !== 'composio') throw new Error('source lost on an unrelated PATCH');
+      const cleared = await owner.patch('/v1/projects/:projectId/triggers/:slug', { event_source: null }, at);
+      cleared.status(200);
+      const source = sourceOf(cleared.json<{ triggers: SourceRow[] }>());
+      // The connector is undeclared, so no provider fills in: the source is unset.
+      if (source !== null) throw new Error(`source not cleared: ${JSON.stringify(source)}`);
+    });
+    await ctx.step('unknown event_source → 400 naming the sources; blank → 400; event_source on a cron trigger → 400', async () => {
+      const unknown = await create({ name: 'Bad source', event_source: 'nope' });
+      unknown.status(400);
+      const text = JSON.stringify(unknown.json());
+      if (!text.includes('Unknown event source \\"nope\\". Sources: composio.')) throw new Error(`error text missing: ${text}`);
+      (await create({ name: 'Blank source', event_source: ' ' })).status(400);
+      const r = await owner.post(
+        '/v1/projects/:projectId/triggers',
+        { name: 'Cron', type: 'cron', cron: '0 0 3 * * *', timezone: 'UTC', prompt_template: 'x', event_source: 'composio' },
         { params },
       );
       r.status(400);

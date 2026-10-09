@@ -52,3 +52,13 @@ describe('eventConfigProblem', () => {
     expect(eventConfigProblem(items, 'github', 'GITHUB_PR', {})).toBe('Invalid config for GITHUB_PR: repo is required (Repository as owner/name.).');
   });
 });
+
+describe('freeConnectorSlug', () => {
+  test('uses the app name unless it is reserved or taken', async () => {
+    const { freeConnectorSlug } = await import('./catalog');
+    expect(freeConnectorSlug('github', [])).toBe('github');
+    expect(freeConnectorSlug('github', ['github'])).toBe('github-events');
+    expect(freeConnectorSlug('github', ['github', 'github-events'])).toBe('github-events-2');
+    expect(freeConnectorSlug('slack', [])).toBe('slack-events');
+  });
+});

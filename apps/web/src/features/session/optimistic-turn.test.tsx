@@ -46,7 +46,8 @@ describe('OptimisticTurn', () => {
 
   test('offers copy before the server turn exists', () => {
     const markup = render(<OptimisticTurn text="ship the thing" />);
-    expect(markup).toContain('aria-label="Copy code"');
+    // #9380 labels the user-message copy button "Copy" (CopyButton `label`).
+    expect(markup).toContain('aria-label="Copy"');
   });
 
   test('waits with a Thinking shimmer — no logomark, no boot copy', () => {

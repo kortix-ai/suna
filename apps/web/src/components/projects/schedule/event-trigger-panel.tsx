@@ -33,6 +33,7 @@ import {
   defaultAccount,
   describeAccount,
   draftToConfig,
+  eventSourceName,
   humanizeEventType,
   parseConfigErrors,
   schemaFields,
@@ -209,6 +210,9 @@ export function EventPanel({
       <PropertyList
         rows={[
           { label: tI18nComplete.raw('text0d04bfeb7d64'), value: appLabel(event.app, event.connector) },
+          ...(eventSourceName(event)
+            ? [{ label: tI18nComplete.raw('text0e570ca6fabe'), value: eventSourceName(event) }]
+            : []),
           { label: tI18nComplete.raw('text8f0d706fff25'), value: event.connector },
           {
             label: tI18nComplete.raw('text7e1b0d5641f2'),

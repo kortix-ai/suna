@@ -44,6 +44,7 @@ const GROUPS = [
   'secrets',
   'sessions',
   'tokens',
+  'tools',
   'triggers',
 ] as const;
 

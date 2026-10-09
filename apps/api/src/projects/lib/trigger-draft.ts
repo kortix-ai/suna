@@ -96,6 +96,9 @@ export async function loadTriggersForResponse(
             connected_as: connectedAsBySlug.get(spec.slug) ?? null,
             type: spec.event.type,
             config: spec.event.config,
+            // `source` = the adapter (declared, else the connector's provider). `provider` stays the
+            // connector's own provider for older clients: it differs only when a declared source mismatches.
+            source: spec.event.source ?? eventConnectors.get(spec.event.connector)?.provider ?? null,
             provider: eventConnectors.get(spec.event.connector)?.provider ?? null,
             app: eventConnectors.get(spec.event.connector)?.app ?? null,
             ...eventStatusFor(subscriptionBySlug.get(spec.slug)),
@@ -188,7 +191,7 @@ export interface TriggerDraft {
   intervalSeconds: number | null;
   /** For type=monitor only — the silence watchdog, in whole seconds. */
   expectEventWithinSeconds: number | null;
-  /** For type=event only — connector, provider event type and event config. */
+  /** For type=event only — connector, optional source adapter, the adapter's event type and event config. */
   event?: GitTriggerEventFields | null;
   sessionMode: GitTriggerSessionMode;
   /** For sessionMode === 'pinned' only: the exact session id to loop. */
@@ -445,7 +448,7 @@ export function specToBody(spec: GitTriggerSpec): Record<string, unknown> {
     filter: spec.filter,
     // Event keys only for an event trigger: a non-event body must not carry them.
     ...(spec.event
-      ? { connector: spec.event.connector, event_account: spec.event.account ?? null, event: spec.event.type, event_config: spec.event.config }
+      ? { connector: spec.event.connector, event_account: spec.event.account ?? null, event_source: spec.event.source ?? null, event: spec.event.type, event_config: spec.event.config }
       : {}),
   };
 }

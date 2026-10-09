@@ -45,8 +45,10 @@ export function manifestFromDescriptor(descriptor: ConfigReleaseDescriptor, rele
     source_commit: descriptor.source_commit!,
     config_dir: descriptor.config_dir,
     config_tree_id: descriptor.config_tree_id!,
-    archive_url: descriptor.archive!.url,
-    archive_bytes: descriptor.archive!.bytes,
+    // v3: a tree over the API's archive cap has no archive. The box builds it
+    // from its checkout or the snapshot; '' never reaches the download.
+    archive_url: descriptor.archive?.url ?? '',
+    archive_bytes: descriptor.archive?.bytes ?? 0,
     files: descriptor.files!,
     compiled_governance: descriptor.compiled_governance,
     compiled_governance_etag: descriptor.compiled_governance_etag,
