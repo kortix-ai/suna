@@ -27,7 +27,7 @@ on it. See [Feature flags](/docs/feature-flags).
 
 | Method | Wraps | What it does |
 |---|---|---|
-| `apps.list()` | `GET /projects/:pid/apps` | Lists the project's Apps |
+| `apps.list()` | `GET /projects/:pid/apps` | Lists the Apps the caller may open (a project manager sees all) |
 | `apps.create(input)` | `POST …/apps` | Creates an App and assigns its stable URL |
 | `apps.get(appId)` | `GET …/apps/:id` | Reads one App |
 | `apps.update(appId, input)` | `PATCH …/apps/:id` | Renames it or changes machine, idle timeout, run mode (`always_on`), or budget. Run mode and budget apply within 5 minutes; a machine change applies to the next deployment |
@@ -101,13 +101,18 @@ console.log(app.url, deployment.status); // https://…apps.kortix.com  queued
 
 `create` accepts the machine and budget fields too: `cpu`, `memory_gb`,
 `disk_gb`, `idle_timeout_seconds`, `always_on`, and `monthly_budget_usd`. Omit
-them for the defaults. Without `monthly_budget_usd`, an always-on App gets its
-`estimated_monthly_usd` rounded up to a whole dollar and an on-demand App gets
-5. That derived budget follows later `update` calls that change the machine or
-`always_on`; a budget you send is never changed. `always_on: true` runs a server App 24/7 (websockets,
-background loops); `false` stops it after `idle_timeout_seconds` and wakes it
-on the next request. Both stop at the monthly budget. A static App has no
-runtime and ignores both.
+them for the defaults. Only an on-demand server App has a monthly budget:
+default 5 USD, and the App stops at the cap. An always-on server App and every
+`convex` App have no budget: their cost is fixed (`estimated_monthly_usd`), and
+`monthly_budget_usd` is `null`. `always_on: true` runs a server App 24/7
+(websockets, background loops); `false` stops it after `idle_timeout_seconds`
+and wakes it on the next request. A static App has no runtime: `always_on` is
+`false`, `monthly_budget_usd` is `null`, and `estimated_monthly_usd` is `0`.
+
+Sending `monthly_budget_usd` for an always-on or `convex` App, on `create` or
+`update`, answers `400` with `code: 'app_budget_not_applicable'`. The message
+names the monthly cost. `update` to on demand sets the budget you send or 5;
+`update` to always on clears it.
 
 `kind` is `web` (the default) or `convex`. `uses` lists the Apps, by slug,
 this App may get sign-in tokens for and reach through its bindings mount; the
@@ -115,14 +120,14 @@ default is none, and `update(appId, { uses })` replaces the list (see
 [Apps an App uses](/docs/feature-flags/apps#apps-an-app-uses-sign-in-tokens-and-bindings)).
 
 `estimated_monthly_usd` is what the App's machine costs running 24/7 for a
-month at list compute rates. `create` and `update` return `warnings`: an
-always-on App whose `monthly_budget_usd` is below that estimate gets
-`app_budget_below_always_on`. The call still succeeds; the App stops when the
-budget is spent.
+month at list compute rates: about 73.48 for 1 vCPU / 2 GB / 10 GB, and about
+59.29 for the `convex` default of 1 vCPU / 1 GB / 10 GB. `create` and `update`
+return `warnings`, which is now always `[]`: the `app_budget_below_always_on`
+warning is gone.
 
 ```ts
 const app = await kortix.project(projectId).apps.create({ slug: 'worker', name: 'Worker', always_on: true });
-for (const warning of app.warnings ?? []) console.warn(warning.code, warning.message);
+console.log(app.always_on, app.monthly_budget_usd, app.estimated_monthly_usd); // true null 73.48
 ```
 
 Wait for the deployment by polling its status:
@@ -265,7 +270,6 @@ const log = await apps.log(db.app_id, { lines: 500 });
 
 const { instance } = await apps.get(db.app_id);
 if (instance?.health && !instance.health.ok) console.warn(instance.health.machine_state, instance.health.error);
-if (instance?.budget_alert) console.warn(`${instance.budget_alert.percent}% of the monthly budget`);
 ```
 
 Rotation keeps documents, files, functions and environment variables. After a
@@ -412,6 +416,7 @@ const me = readKortixMember(await fetchKortixAppViewer());
 const db = kortixBinding('db');
 const convex = new ConvexReactClient(db.url);
 convex.setAuth(db.token);
+// React: read the member with useQuery(api.members.me), never useConvexAuth() (see below).
 
 // Browser: a token for this App itself, or for an App it uses.
 const token = await kortixToken()();
@@ -420,9 +425,26 @@ const dbToken = kortixToken({ audience: 'db' });
 // A Convex function: the runtime verified the token; enforce the rules.
 const member = requireKortixMember(await ctx.auth.getUserIdentity(), { groups: ['Finance'] });
 
-// Any other server: verify the bearer. No options = the KORTIX_AUTH_* env.
+// A server App: verify the bearer. No options = the KORTIX_AUTH_* env Kortix injects.
+// Any other server: pass the App's `auth` values.
 const caller = await verifyKortixToken(bearer, { issuer: app.auth.issuer, audience: app.auth.audience, jwks: app.auth.jwks_uri });
 ```
+
+In React, do not call `useConvexAuth()`: it throws under a plain
+`ConvexProvider` (it needs `ConvexProviderWithAuth`, and `kortixBinding` is not
+verified with that provider). Read the signed-in member with a query:
+
+```ts
+// convex/members.ts
+export const me = query({ args: {}, handler: async (ctx) => readKortixMember(await ctx.auth.getUserIdentity()) });
+```
+
+```tsx
+const me = useQuery(api.members.me);   // undefined: loading. null: signed out. Otherwise the member.
+```
+
+`readKortixMember` returns `null` for an anonymous caller. Use
+`requireKortixMember` only where the function must throw.
 
 | Field | Value |
 |---|---|
@@ -452,7 +474,7 @@ A token carries `sub`, `email`, `name`, `picture`, `groups`, `group_ids`,
 |---|---|
 | `kortixToken({ audience? })` | A token fetcher (the shape realtime clients take as their auth callback) for the App itself (default) or an App it uses. Reads `/_kortix/token` on the App's own origin. Cached until shortly before expiry; `{ forceRefreshToken: true }` asks again. Yields `null` without a signed-in viewer, and `null` plus one console warning for an App it does not use (`403 app_not_linked`). Never throws. |
 | `kortixBinding(slug, { origin? })` | `{ url, token }` for an App this App uses: `url` = `<origin>/_kortix/apps/<slug>` (HTTP and WebSocket, same origin, no CORS), `token` = `kortixToken({ audience: slug })`. |
-| `verifyKortixToken(bearer, { issuer?, audience?, jwks? })` | Checks the ES256 signature, expiry (60 s skew), issuer and audience. Defaults: `KORTIX_AUTH_ISSUER`, `KORTIX_AUTH_AUDIENCE`, `KORTIX_AUTH_JWKS`. The key set is an object, JSON text, a `data:` URI, or an https URL (`auth.jwks_uri`, fetched once per process). Every failure throws `KortixMemberError`, a missing key set or a missing audience included: one project key signs every App's tokens, so `aud` is what keeps another App's token out. `audience: false` accepts a token for any App of the project. |
+| `verifyKortixToken(bearer, { issuer?, audience?, jwks? })` | Checks the ES256 signature, expiry (60 s skew), issuer and audience. Defaults: `KORTIX_AUTH_ISSUER`, `KORTIX_AUTH_AUDIENCE`, `KORTIX_AUTH_JWKS`. Kortix injects all three into every server App's runtime (issuer: the project; audience: the App's own id; key set: a `data:` URI), so `verifyKortixToken(bearer)` works there with no options. Never set `KORTIX_AUTH_*` in a server App's `env`: the `KORTIX_` prefix is reserved and `kortix validate` rejects it. The key set is an object, JSON text, a `data:` URI, or an https URL (`auth.jwks_uri`, fetched once per process). Every failure throws `KortixMemberError`, a missing key set or a missing audience included: one project key signs every App's tokens, so `aud` is what keeps another App's token out. `audience: false` accepts a token for any App of the project. |
 | `apps.token(appId)` | A token naming the caller, from the API (`POST …/apps/:id/token`). An agent session gets one naming its agent. |
 
 A member you remove from the project or a group loses access within one token
@@ -482,10 +504,10 @@ Every type below is exported from `@kortix/sdk`.
 
 | Type | What it holds |
 |---|---|
-| `App` | Identity, `kind`, `capabilities`, `uses`, `used_by`, `auth`, `instance`, `url`, `access_mode`, `access_revision`, `desired_state`, `active_deployment_id`, `hosting_type` (of the active deployment: `static`, `sandbox`, `convex`, or `null` before the first deploy), `machine`, `idle_timeout_seconds`, `always_on`, `monthly_budget_usd`, `estimated_monthly_usd` (`0` for a static App), `retained_deployments`, `warnings` (create and update only), `last_request_at`, `viewer_can_access` |
+| `App` | Identity, `kind`, `capabilities`, `uses`, `used_by`, `auth`, `instance`, `url`, `access_mode`, `access_revision`, `desired_state`, `active_deployment_id`, `hosting_type` (of the active deployment: `static`, `sandbox`, `convex`, or `null` before the first deploy), `machine`, `idle_timeout_seconds`, `always_on`, `monthly_budget_usd` (`null` unless the App is an on-demand server App), `estimated_monthly_usd` (`0` for a static App), `retained_deployments`, `warnings` (create and update only; always `[]`), `last_request_at`, `viewer_can_access` |
 | `AppKind` · `AppCapability` | `'web' \| 'convex'` · `'deployments' \| 'rollback' \| 'preview' \| 'sleep' \| 'static' \| 'snapshots' \| 'restore' \| 'admin_credentials' \| 'dashboard' \| 'logs' \| 'member_tokens'` |
 | `AppAuth` | `issuer`, `audience` (the App id), `jwks_uri`: the public values that verify the App's sign-in tokens |
-| `AppInstance` | The machine of a `convex` App (`null` on a `web` App): `status` (`AppInstanceStatus`), `url`, `site_url`, `dashboard_url`, `error`, `operation` (`AppInstanceOperation`), `last_operation_error`, `health` (`AppInstanceHealth`), `auth_env`, `client_version`, `budget_alert`, `purge_after` |
+| `AppInstance` | The machine of a `convex` App (`null` on a `web` App): `status` (`AppInstanceStatus`), `url`, `site_url`, `dashboard_url`, `error`, `operation` (`AppInstanceOperation`), `last_operation_error`, `health` (`AppInstanceHealth`), `auth_env`, `client_version`, `budget_alert` (always `null`: deprecated, the budget alerts are removed), `purge_after` |
 | `AppInstanceStatus` · `AppInstanceOperation` | `'provisioning' \| 'running' \| 'error' \| 'deleted'` · `'resizing' \| 'rotating_key' \| 'recovering' \| 'snapshotting' \| 'restoring'` |
 | `AppInstanceHealth` | `ok`, `checked_at`, `machine_state`, `failures`, `error`, `disk_used_pct`, `repair` |
 | `AppSnapshots` · `AppSnapshot` · `AppSnapshotKind` | `automatic`, `snapshots`, `snapshot_limit`, `snapshot_schedule` · `snapshot_id`, `created_at`, `size_bytes`, `kind`, `expires_at` · `'manual' \| 'automatic' \| 'resize' \| 'final'` |
@@ -500,11 +522,13 @@ Every type below is exported from `@kortix/sdk`.
 | `AppArtifact` | `kind`, `status`, `sha256`, `size_bytes`, `image_reference` |
 | `AppLogEntry` · `AppLogsResponse` | One log line, and one page plus `next_cursor` |
 
-`viewer_can_access` answers whether the caller may OPEN the App, which is not
-the same as whether they can see it listed. A project manager sees every App in
-the project so a private one stays manageable when its creator leaves. Check
-this field before asking for an access session. Treat `undefined` as unknown,
-not as denied.
+`apps.list()` and `useProjectApps` return only the Apps the caller may open
+under each App's access policy (private: the creator; restricted: the listed
+members and groups; project, password and public: the project team). A project
+manager sees every App, so a private one stays manageable when its creator
+leaves. `viewer_can_access` is therefore `true` on every listed App. A `get` of
+an App the caller cannot open answers `404`, not `403`. Treat `undefined` as
+unknown, not as denied.
 
 `AppAccessMode` is a per-resource visibility setting on top of the role model,
 not a role. `restricted` names users and groups — the same principal types the
@@ -520,7 +544,7 @@ role model uses. See
 
 ### useProjectApps(projectId)
 
-The project's App inventory plus its lifecycle mutations. Every mutation
+The Apps the caller may open, plus its lifecycle mutations. Every mutation
 invalidates the inventory on success.
 
 ```tsx
@@ -600,7 +624,7 @@ await access.update.mutateAsync({ mode: 'project' });
 | Option | Default | Use `false` when |
 |---|---|---|
 | `policy` | `true` | The surface only previews the App. `GET …/access` is an administrative read and answers `403` for a caller without project-manager permissions. |
-| `session` | `true` | The caller may see the App but not open it. Pass `app.viewer_can_access`. |
+| `session` | `true` | The caller may not open the App. Pass `app.viewer_can_access` (always `true` for a listed App). |
 
 A grid of Apps that leaves both options at `true` fires one policy read and one
 session mint per App, and each is a `403` for a member who may not open that
@@ -637,7 +661,8 @@ Other answers you should handle:
 
 - `409` for a duplicate slug, `402` with `app_quota_exceeded` when the account
   is at its App limit, and `400` with `app_machine_out_of_range` or
-  `app_budget_out_of_range` for a spec outside its bounds.
+  `app_budget_out_of_range` for a spec outside its bounds, and `400
+  app_budget_not_applicable` for a budget on an always-on or `convex` App.
 - `409 app_capability_unsupported` (`capability`, `kind`) for a call the App's
   kind does not offer.
 - A `convex` create: `409 app_kind_unavailable` where Platinum is not
