@@ -207,7 +207,7 @@ The Phase 0 evaluation set includes negative cases, where the correct answer is 
 **R-FLAG-1. Toggle**
 - Given project flag `genui` is off, when a session starts, then the system prompt is byte-for-byte identical to the prompt on `dev` without the feature (asserted by a snapshot test on both harnesses).
 - Given the flag is on, when the session starts on OpenCode or pi, then the instructions are present (asserted on both harnesses).
-- Given the flag changes, when the next session starts, then the new value applies. Running sessions keep their prompt.
+- Given the flag changes, when the next new session starts (or a session is rebuilt from scratch), then the new value applies. An in-place restart keeps the sandbox env, so running and restarted sessions keep their prompt until a new session starts.
 - Given a user turned the personal override off, when a reply contains a block, then that user sees `toMarkdown` output. Other users still see UI.
 - Given the server kill switch is on, then new sessions get no instructions, and clients render blocks as `toMarkdown`.
 

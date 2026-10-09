@@ -1121,7 +1121,7 @@ export function deriveActivity(
         !(p as { synthetic?: boolean }).synthetic &&
         typeof (p as { text?: string }).text === 'string',
     )
-    .map((p) => (p as { text: string }).text)
+    .map((p) => genuiToMarkdown((p as { text: string }).text))
     .join(' ')
     .replace(/\s+/g, ' ')
     .trim();

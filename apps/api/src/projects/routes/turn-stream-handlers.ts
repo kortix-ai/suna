@@ -47,6 +47,20 @@ export function relayAnswerText(raw: string | undefined): string {
   return genuiToMarkdown((raw ?? '').trim());
 }
 
+/**
+ * The 400 body for text that cannot be relayed, or null. A non-empty answer whose generative UI
+ * renders to nothing is refused: the raw OpenUI source must never reach Slack or Teams.
+ */
+export function relayTextRejection(
+  raw: string | undefined,
+  text: string,
+): { error: 'text is required'; reason?: 'genui_block_unrenderable' } | null {
+  if (text) return null;
+  return raw?.trim()
+    ? { error: 'text is required', reason: 'genui_block_unrenderable' }
+    : { error: 'text is required' };
+}
+
 /** The only surface these handlers use from the Hono context. */
 export interface RelayResponder {
   json: (body: unknown, status?: number) => Response;
@@ -549,11 +563,12 @@ export async function relayContent(
   sessionId: string,
 ): Promise<Response> {
   const text = relayAnswerText(body.text);
-  if (!text) {
-    return c.json({ error: 'text is required' }, 400);
+  const rejection = relayTextRejection(body.text, text);
+  if (rejection) {
+    return c.json(rejection, 400);
   }
 
-  const detail = body.detail?.trim() || undefined;
+  const detail = relayAnswerText(body.detail) || undefined;
   const outputForPrev = body.output?.trim() || undefined;
   const sourcesForPrev = Array.isArray(body.sources)
     ? body.sources
