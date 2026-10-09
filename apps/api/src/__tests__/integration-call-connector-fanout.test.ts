@@ -77,11 +77,17 @@ let fixture: {
 } | null = null;
 let upstream: ReturnType<typeof createLocalGitUpstream> | null = null;
 let stubServer: ReturnType<typeof Bun.serve> | null = null;
+/** The egress allow-list as the process had it, restored in afterAll. */
+let egressAllowHosts: readonly string[] = [];
 
 beforeAll(async () => {
   localTestDatabaseUrl();
   // The stub upstream answers on loopback, which the connector egress guard
   // refuses by default; the suite allows it for its own fixture's host.
+  // Saved and restored in afterAll so the suite leaves the built config as it
+  // found it (the lane gives each suite its own process, but the file should
+  // not depend on that for its own cleanup).
+  egressAllowHosts = config.KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS;
   config.KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS = ['127.0.0.1', 'localhost'];
 
   // A bare repository on disk as the project's git upstream: the mirror reads
@@ -217,6 +223,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  config.KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS = [...egressAllowHosts];
   if (fixture) {
     await db.delete(connectors).where(eq(connectors.connectorId, fixture.connectorId));
     await removeSeeded([fixture.project]);
