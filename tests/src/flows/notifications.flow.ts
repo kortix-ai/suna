@@ -720,9 +720,12 @@ flow(
         if (watcher.rows[0]?.muted !== false) throw new Error(`creator watcher row: ${JSON.stringify(watcher.rows)}`);
       });
 
-      await ctx.step('a manual fire on the account with no credit fails → 500', async () => {
+      // KRTX-1505: with no credit and no BYOK key the account has no usable
+      // model, so the fire is gated with 402 no_usable_model before any
+      // billing admission — the clear failure the alert flow below pins on.
+      await ctx.step('a manual fire on the account with no usable model fails → 402', async () => {
         await exhaustCredit(db, team.id);
-        (await fire()).status(500);
+        (await fire()).status(402);
       });
 
       await ctx.step('the creator gets exactly one automation_failed row titled with the trigger; OWNER gets none', async () => {
@@ -753,8 +756,8 @@ flow(
         expectCount((await mailpitMessagesTo(mailpit, ctx.P.OWNER.email!)).filter(subject).length, 0, "OWNER's alert emails");
       });
 
-      await ctx.step('a second failed fire → 500, and still exactly one row: one alert per failure streak', async () => {
-        (await fire()).status(500);
+      await ctx.step('a second failed fire → 402, and still exactly one row: one alert per failure streak', async () => {
+        (await fire()).status(402);
         await settle();
         expectCount(await storedCount(db, creator.userId!, { projectId: project.id, kind: 'automation_failed' }), 1, "the creator's alert rows");
       });
@@ -1141,9 +1144,9 @@ flow(
         expectCount(r.rows[0].n as number, 0, 'trigger_watchers rows');
       });
 
-      await ctx.step('a manual fire on the account with no credit fails → 500: the failure is recorded, and no alert edge, alert row or alert email follows', async () => {
+      await ctx.step('a manual fire on the account with no usable model fails → 402: the failure is recorded, and no alert edge, alert row or alert email follows', async () => {
         await exhaustCredit(db, team.id);
-        (await ctx.client.as(a).post('/v1/projects/:projectId/triggers/:slug/fire', {}, { params: { projectId: triggers.id, slug } })).status(500);
+        (await ctx.client.as(a).post('/v1/projects/:projectId/triggers/:slug/fire', {}, { params: { projectId: triggers.id, slug } })).status(402);
         await settle();
         const runtime = await db.query(
           'SELECT last_status, alert_failing_since FROM kortix.project_trigger_runtime WHERE project_id = $1 AND slug = $2',
