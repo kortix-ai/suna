@@ -144,14 +144,15 @@ export function NotificationPanel({
                       ) : null}
                     </span>
                     <span className="text-muted-foreground mt-0.5 flex min-w-0 items-center gap-1.5 text-xs">
-                      <span className="truncate">{t(`kind.${row.kind}`)}</span>
+                      {/* The kind stays whole; a long project name truncates. */}
+                      <span className="shrink-0">{t(`kind.${row.kind}`)}</span>
                       {row.project_name ? (
                         <>
-                          <span aria-hidden>•</span>
-                          <span className="truncate">{row.project_name}</span>
+                          <span aria-hidden className="shrink-0">•</span>
+                          <span className="min-w-0 truncate">{row.project_name}</span>
                         </>
                       ) : null}
-                      <span aria-hidden>•</span>
+                      <span aria-hidden className="shrink-0">•</span>
                       <span className="shrink-0 tabular-nums">
                         {relativeTime(row.created_at, locale)}
                       </span>
@@ -227,7 +228,7 @@ export function NotificationBell({ onNavigate }: { onNavigate?: () => void }) {
           </Button>
         </PopoverTrigger>
       </Hint>
-      <PopoverContent align="end" sideOffset={8} className="w-80 overflow-hidden p-0">
+      <PopoverContent align="end" sideOffset={8} className="w-96 overflow-hidden p-0">
         <NotificationPanel
           rows={inbox.data?.notifications ?? []}
           state={inbox.data ? 'ready' : inbox.isError ? 'error' : 'loading'}
