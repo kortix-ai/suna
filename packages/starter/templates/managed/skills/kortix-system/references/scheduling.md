@@ -31,7 +31,7 @@ Rules: `kortix-yaml.md` → `imports:`.
 | To follow up on **this** task later ("remind me at 4pm", "check tomorrow whether they replied", "keep checking hourly until the deploy is green") | **session reminder** | `kortix remind "<what to do>" --at <ISO> \| --in 24h [--every 1h]` — no `kortix.yaml` change |
 | A one-time project job not tied to this session ("send the launch email tomorrow 9am") | **cron trigger, one-off** | `type: cron` + `run_at: "<ISO-8601>"` |
 | Something to repeat ("every weekday morning", "daily digest", "check hourly") | **cron trigger, recurring** | `type: cron` + `cron: "<6-field>"` + `timezone` |
-| To react to an event **in a connected app** ("when a PR opens", "when an email arrives", "when an issue changes", "when a calendar event is created", "when a Slack message is posted") | **event trigger** | `type: event` + `connector` + `event` (optional `source`) — see [App event triggers](#app-event-triggers) |
+| To react to an event **in a connected app** ("when a PR opens", "when an email arrives", "when an issue changes", "when a calendar event is created", "when a Slack message is posted") | **event trigger** | `type: event` + `connector` + `event` (optional `source`). Beta, behind the project flag `event_triggers` — see [App event triggers](#app-event-triggers) |
 | To react to a system that has **no app connector** ("when our in-house tool calls us") | **webhook trigger** | `type: webhook` + `secret_env` |
 | To **pause mid-task and resume later with full context** | **session reminder** | See [Pausing mid-task](#pausing-mid-task) |
 
@@ -200,6 +200,26 @@ minutes), a plain `sleep` in the run is fine.
 **Rule:** "when X happens in <app>" is an `event` trigger, NOT a webhook.
 Kortix creates the subscription for you. You wire no webhook, secret, or
 signature. Use a webhook trigger only for a system with no app connector.
+
+### Turn the feature on first
+
+App event triggers are a **beta** feature behind the project flag
+`event_triggers`. The flag is **off** by default.
+
+- With the flag off, `kortix triggers events …` and `kortix triggers add|set
+  --type event` print `App event triggers are off for this project. Turn them
+  on: kortix projects features enable event_triggers` and exit 1. The API
+  answers `403` with `code: feature_disabled`. Cron, webhook and monitor
+  triggers are not affected.
+- Turn it on: `kortix projects features enable event_triggers`, or **Settings →
+  Feature flags → App event triggers** in the web app. A person with project
+  write access does this. Ask the user when you cannot.
+- A `type: event` trigger already in `kortix.yaml` while the flag is off is not
+  subscribed. `kortix triggers ls` shows it as `error` with `App event triggers
+  are off for this project. Turn them on in Settings → Feature flags.` The other
+  triggers still apply.
+- Turning the flag on subscribes the declared event triggers by itself. Turning
+  it off drops every subscription, and no event fires.
 
 ### See every event trigger
 

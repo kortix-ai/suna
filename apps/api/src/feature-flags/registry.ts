@@ -361,6 +361,26 @@ const FLAGS: readonly FeatureFlagDef[] = [
     // create. Off ⇒ no region is sent and Platinum places in its home region.
     enforcement: 'behavioral',
   },
+  {
+    key: 'event_triggers',
+    name: 'App event triggers',
+    description:
+      'Start an agent when something happens in a connected app — a new email, a pull request, a calendar event.',
+    stability: 'beta',
+    // Always offered: on a deployment with no event source configured, the
+    // triggers themselves say so (status `error` naming COMPOSIO_API_KEY).
+    available: () => true,
+    // Per-project opt-in on every environment.
+    platformDefault: () => false,
+    enforcement: 'routes',
+    enforcementNote:
+      'ROUTES: GET /triggers/event-types, GET /triggers/event-apps, and POST|PATCH /triggers ' +
+      'with `type: event` answer 403 `feature_disabled` when off (projects/routes/triggers.ts). ' +
+      'BEHAVIORAL: a `type: event` trigger in kortix.yaml is not subscribed and reads status ' +
+      '`error` (trigger-events/subscriptions.ts); turning the flag off releases every event ' +
+      'subscription of the project and turning it on reconciles them (feature-flags/toggle-effects.ts); ' +
+      'deliverEvents never fires for a project with the flag off (trigger-events/deliver.ts).',
+  },
 ];
 
 const FLAG_BY_KEY: Record<FeatureFlagKey, FeatureFlagDef> = Object.fromEntries(

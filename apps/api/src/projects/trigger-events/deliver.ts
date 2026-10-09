@@ -14,6 +14,7 @@ import { releaseWebhookDeliveryKey } from '../lib/webhook-delivery';
 import type { GitTriggerSpec } from '../trigger-types';
 import { db } from '../../shared/db';
 import * as store from './store';
+import { eventTriggersEnabled } from './flag';
 import { reconcileEventSubscriptionsFromCatalog } from './subscriptions';
 import type { EventDelivery, ProviderNotice } from './types';
 
@@ -85,6 +86,11 @@ async function deliverToRow(
   const [project] = await db.select().from(projects).where(eq(projects.projectId, row.projectId)).limit(1);
   if (!project || project.status !== 'active') return 'skipped';
   if (triggersPausedForProject(project.metadata)) return 'skipped';
+  // Defense in depth: turning the flag off releases the subscriptions, so this is normally unreachable.
+  if (!eventTriggersEnabled(project.metadata)) {
+    logger.info('[trigger-events] delivery skipped: event_triggers flag is off', { projectId: row.projectId, slug: row.slug });
+    return 'skipped';
+  }
 
   const [runtime] = await db
     .select({

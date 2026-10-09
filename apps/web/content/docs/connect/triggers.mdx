@@ -102,7 +102,28 @@ By default, each fire starts a fresh session on a new branch. A trigger can inst
 
 An event trigger runs an agent when an app event happens: a pull request opens, an email arrives, an issue changes state. You do not wire a webhook, a secret, or a signature. Kortix subscribes to the event for you and signs nothing by hand.
 
+<Callout type="info">
+App event triggers are a **beta** feature behind the project flag `event_triggers`. It is off until you turn it on. See [Turn on app event triggers](#turn-on-app-event-triggers).
+</Callout>
+
 An event comes from an **event source**: an adapter that delivers the events of an app. Composio is one such adapter, and the only one today. Event ids belong to the adapter, so `GITHUB_PULL_REQUEST_CREATED` is a Composio event id. Kortix defines no event ids of its own. The web app shows the source on each trigger (`via Composio`) and in the new trigger form (`Events via Composio`).
+
+### Turn on app event triggers
+
+The project flag `event_triggers` ("App event triggers") gates the whole feature. It is off by default.
+
+- **Web app:** open **Settings**, then **Feature flags**, and switch on **App event triggers**.
+- **CLI:** `kortix projects features enable event_triggers`. `kortix projects features disable event_triggers` turns it off.
+
+With the flag off:
+
+- `kortix triggers events …` and `kortix triggers add|set --type event` print `App event triggers are off for this project. Turn them on: kortix projects features enable event_triggers` and exit with code 1. The API answers `403` with `code: feature_disabled`.
+- A `type: event` trigger in `kortix.yaml` is kept, but it is not subscribed. Its status reads `error`: `App event triggers are off for this project. Turn them on in Settings → Feature flags.` The other triggers in the file still apply.
+- Cron, webhook and monitor triggers are not affected.
+
+Turning the flag on subscribes the event triggers already in `kortix.yaml`; you do not save them again. Turning it off removes every event subscription of the project, so no event starts a session.
+
+The flag appears in **Feature flags** only on a deployment with an event source configured.
 
 ### Set up in the web app
 

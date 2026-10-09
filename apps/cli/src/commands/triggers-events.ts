@@ -154,6 +154,21 @@ export async function checkEventConfig(
   return { config: result.config, eventName: found.event.name };
 }
 
+/**
+ * Print an API error for an event-trigger command. The `event_triggers` flag gate
+ * (403 `feature_disabled`) gets the one actionable line; every other error is generic.
+ */
+export function surfaceEventTriggerError(err: unknown): number {
+  const body = (err as { body?: { code?: unknown; feature?: unknown } } | null)?.body;
+  if (body?.code === 'feature_disabled' && body.feature === 'event_triggers') {
+    process.stderr.write(
+      `${status.err('App event triggers are off for this project. Turn them on: kortix projects features enable event_triggers')}\n`,
+    );
+    return 1;
+  }
+  return surfaceApiError(err);
+}
+
 /** A project context for the catalog, or null when not logged in / no project (local mode stays offline-capable). */
 export async function quietCatalogContext(
   opts: CtxOpts,
@@ -184,6 +199,13 @@ export function eventNextStep(
         ],
       };
     case 'error': {
+      // The project flag is off: the fix is the flag, not the trigger's settings.
+      if (e.error?.startsWith('App event triggers are off')) {
+        return {
+          word: 'error',
+          lines: [`Error: ${e.error}`, 'Turn them on: kortix projects features enable event_triggers'],
+        };
+      }
       // No provider: the connector is undeclared. A provider other than the
       // source: the connector cannot serve that adapter. Neither is a config fix.
       const connectorFix = !e.provider
@@ -236,7 +258,7 @@ export async function triggersEvents(
     const via = args.app ? { app: args.app } : { connector: args.connector as string };
     return args.event ? printEvent(resp, args.event, json, via) : printEvents(resp, json, via);
   } catch (err) {
-    return surfaceApiError(err);
+    return surfaceEventTriggerError(err);
   }
 }
 
