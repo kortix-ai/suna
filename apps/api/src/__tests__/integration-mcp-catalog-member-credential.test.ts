@@ -122,14 +122,23 @@ afterAll(async () => {
 describe('MCP catalog credential', () => {
   test('signed in only by members: the earliest ACTIVE member account loads the tools', async () => {
     expect(await resolveFirstMemberCredential(MEMBER_ONLY)).toBe('member-a-token');
-    expect(await resolveMcpCatalogCredential(MEMBER_ONLY, undefined)).toBe('member-a-token');
+    expect(await resolveMcpCatalogCredential(MEMBER_ONLY, undefined)).toEqual({
+      value: 'member-a-token',
+      member: true,
+    });
   });
 
   test('a signed-in project account wins over any member account', async () => {
-    expect(await resolveMcpCatalogCredential(WITH_PROJECT, undefined)).toBe('project-token');
+    expect(await resolveMcpCatalogCredential(WITH_PROJECT, undefined)).toEqual({
+      value: 'project-token',
+      member: false,
+    });
   });
 
   test('nobody signed in: no credential, so the catalog stays unauthorized', async () => {
-    expect(await resolveMcpCatalogCredential(UNSIGNED, undefined)).toBeNull();
+    expect(await resolveMcpCatalogCredential(UNSIGNED, undefined)).toEqual({
+      value: null,
+      member: false,
+    });
   });
 });

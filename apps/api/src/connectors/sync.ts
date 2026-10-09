@@ -164,19 +164,24 @@ export function mcpCatalogCredentialError(error: unknown): string {
 
 /**
  * The credential an MCP catalog is fetched with: an explicit override, else
- * the project account's, else the earliest signed-in member account's (a
- * product decision, 2026-10-09: an app signed in only "for you" must still
- * load its tools).
+ * the project account's, else the earliest signed-in member account's (an
+ * app signed in only "for you" still loads its tools, 2026-10-09). `member`
+ * says the catalog came from a personal account: the connector list then
+ * shows it only to people with an account on the connector, so one member's
+ * tool names never reach the rest of the project.
  */
 export async function resolveMcpCatalogCredential(
   connectorId: string,
   overrides: ReadonlyMap<string, string> | undefined,
   resolve: typeof resolveCredentialValue = resolveCredentialValue,
   resolveMember: typeof resolveFirstMemberCredential = resolveFirstMemberCredential,
-): Promise<string | null> {
+): Promise<{ value: string | null; member: boolean }> {
   const override = overrides?.get(connectorId);
-  if (override) return override;
-  return (await resolve(connectorId, null)) ?? resolveMember(connectorId);
+  if (override) return { value: override, member: false };
+  const project = await resolve(connectorId, null);
+  if (project) return { value: project, member: false };
+  const member = await resolveMember(connectorId);
+  return { value: member, member: member !== null };
 }
 
 /**
@@ -410,6 +415,8 @@ export interface SyncOptions {
 
 interface ResolvedCatalog {
   actions: NormalizedAction[];
+  /** Fetched with a member's personal credential (`resolveMcpCatalogCredential`). */
+  memberPublished?: boolean;
   /** OpenAPI server discovered from the doc (folded into config). */
   server: string | null;
   iconUrl?: string | null;
@@ -609,12 +616,15 @@ async function syncProjectConnectorsFenced(
         manifestMatches: ex?.manifestHash === manifestHashForConnector(spec),
       });
       let catalogCredential: string | null = null;
+      let memberPublished = false;
       let catalogCredentialError: string | null = null;
       if (!catalogUnchanged && spec.provider === 'mcp') {
         try {
-          catalogCredential = ex
+          const resolved = ex
             ? await resolveMcpCatalogCredential(ex.connectorId, opts.mcpCredentialOverrides)
             : null;
+          catalogCredential = resolved?.value ?? null;
+          memberPublished = resolved?.member ?? false;
           if (catalogCredential === null && spec.auth.secret) {
             catalogCredential = await getProjectSecretValueForConsumer({
               projectId,
@@ -631,9 +641,10 @@ async function syncProjectConnectorsFenced(
         ? null
         : catalogCredentialError
           ? { actions: [], server: null, error: catalogCredentialError }
-          : await resolveCatalog(gitProject, spec, {
-              credential: catalogCredential,
-            });
+          : {
+              ...(await resolveCatalog(gitProject, spec, { credential: catalogCredential })),
+              memberPublished,
+            };
       await upsertConnector(projectId, accountId, spec, catalog, ex?.connectorId ?? null, fence);
       if (catalog?.error) errors.push({ slug: spec.slug, error: catalog.error });
       synced++;
@@ -901,7 +912,13 @@ async function upsertConnector(
           .limit(1);
     const currentId = current?.connectorId ?? null;
     const isNew = !currentId;
-    let resolvedConfig = catalog ? connectorConfig(spec, catalog.server, catalog.iconUrl) : null;
+    let resolvedConfig = catalog
+      ? {
+          ...connectorConfig(spec, catalog.server, catalog.iconUrl),
+          // A personal account's catalog: listed only to people with an account.
+          ...(catalog.memberPublished ? { catalog_source: 'member' } : {}),
+        }
+      : null;
     // Computer connectors are not in kortix.yaml. A sync refreshes their native
     // catalog but must keep every stored key: `sensitive` is edited in the
     // database, and the legacy keys (tunnel_ids, tunnel_account_ids,

@@ -306,11 +306,12 @@ describe('MCP catalog materialization', () => {
         new Map([['connector-1', 'connection-access-token']]),
         resolveDefault,
       ),
-    ).toBe('connection-access-token');
+    ).toEqual({ value: 'connection-access-token', member: false });
     expect(fallbackCalls).toBe(0);
-    expect(await resolveMcpCatalogCredential('connector-1', undefined, resolveDefault)).toBe(
-      'project-default-token',
-    );
+    expect(await resolveMcpCatalogCredential('connector-1', undefined, resolveDefault)).toEqual({
+      value: 'project-default-token',
+      member: false,
+    });
     expect(fallbackCalls).toBe(1);
   });
 
@@ -318,7 +319,7 @@ describe('MCP catalog materialization', () => {
     const none = async () => null;
     expect(
       await resolveMcpCatalogCredential('connector-1', undefined, none, async () => 'member-token'),
-    ).toBe('member-token');
+    ).toEqual({ value: 'member-token', member: true });
     // The project account still wins when it has a credential.
     expect(
       await resolveMcpCatalogCredential(
@@ -327,7 +328,7 @@ describe('MCP catalog materialization', () => {
         async () => 'project-default-token',
         async () => 'member-token',
       ),
-    ).toBe('project-default-token');
+    ).toEqual({ value: 'project-default-token', member: false });
   });
 
   test('credential-resolution errors retain safe OAuth codes and redact unknown messages', () => {

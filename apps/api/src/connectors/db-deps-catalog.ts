@@ -484,6 +484,7 @@ export async function listConnectors(
     const config = row.config as {
       icon_url?: unknown;
       sensitive?: unknown;
+      catalog_source?: unknown;
     } | null;
     return {
       slug: row.slug,
@@ -522,7 +523,13 @@ export async function listConnectors(
           ? ('user' as const)
           : ('project' as const),
       sensitive: config?.sensitive === true,
-      actions: (actionsByConnector.get(row.connectorId) ?? []).map((a) => ({
+      // A catalog fetched with one member's personal account is listed only to
+      // people with an account on the connector (`resolveMcpCatalogCredential`).
+      actions: (config?.catalog_source === 'member' &&
+      (entitledByConnector.get(row.connectorId) ?? []).length === 0
+        ? []
+        : (actionsByConnector.get(row.connectorId) ?? [])
+      ).map((a) => ({
         path: a.path,
         name: a.name,
         description: a.description ?? '',
