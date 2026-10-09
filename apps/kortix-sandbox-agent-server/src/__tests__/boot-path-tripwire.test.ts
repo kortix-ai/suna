@@ -76,7 +76,7 @@ describe('the one boot path is enforced, not merely intended', () => {
 
   test('T2 negative — a second direct caller is caught', () => {
     const probe: ScannedFile[] = [
-      { name: 'services/config-release/boot-config.ts', source: parse('export async function pointBootLink(){}') },
+      { name: 'services/config-provider/boot-config.ts', source: parse('export async function pointBootLink(){}') },
       { name: BOOT_LINK_FILE, source: parse('await pointBootLink(dir, root)') },
       { name: 'harness/open-code/boot.ts', source: parse('await pointBootLink(other)') },
     ]
@@ -172,7 +172,7 @@ describe('the one boot path is enforced, not merely intended', () => {
   test('anti-stale — every rule still has a target in the tree', () => {
     const names = new Set(sources.map((entry) => entry.name))
     for (const required of [
-      'services/config-release/boot-config.ts',
+      'services/config-provider/boot-config.ts',
       BOOT_LINK_FILE,
       BOOT_PATH_FILE,
       CONFIG_STATE_FILE,

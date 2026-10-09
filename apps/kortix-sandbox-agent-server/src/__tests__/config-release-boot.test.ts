@@ -25,15 +25,15 @@ import {
   readQuarantine,
   releaseDir,
   type ReleaseManifest,
-} from '@/services/config-release/boot-config'
+} from '@/services/config-provider/boot-config'
 import type { Config } from '@/lib/config/config'
-import type { ConfigReleaseApi } from '@/services/config-release/api-client'
+import type { ConfigReleaseApi } from '@/services/config-provider/api-client'
 import type { HarnessConfigReleaseReport } from '@/harness/contract/control'
 import { createOpenCodeDiagnosticsService } from '@/harness/open-code/diagnostics'
 import type { Opencode } from '@/harness/open-code/lifecycle'
 import { bootOpenCodeConfig, type BootConfigPathResult } from '@/harness/open-code/boot-config-path'
 import { configReleaseReport, resetConfigReleaseStateForTests } from '@/harness/open-code/config-release'
-import { CONFIG_RELEASE_NOTICE_PATH, clearConfigReleaseNotice } from '@/services/config-release/notice'
+import { CONFIG_RELEASE_NOTICE_PATH, clearConfigReleaseNotice } from '@/services/config-provider/notice'
 import type { OpenCodeConfig } from '@/harness/open-code/config'
 import {
   buildRelease,
@@ -489,7 +489,7 @@ describe('valve B: the store or the API could not be reached', () => {
 
   test('a quarantined desired release is skipped with its reason, not retried', async () => {
     const dir = await installProvenRelease()
-    const { quarantineRelease } = await import('@/services/config-release/boot-config')
+    const { quarantineRelease } = await import('@/services/config-provider/boot-config')
     write(work, `${DIR}/agents/kortix.md`, 'NEWER PROMPT\n')
     const newer = buildRelease(work, commitAll(work, 'newer'), DIR, { governance: GOV })
     serveRelease(api, newer)
