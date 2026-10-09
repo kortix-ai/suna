@@ -7,7 +7,7 @@ import { app } from '../../../index';
 import { createAccountToken } from '../../../repositories/account-tokens';
 import { insertIntoView } from '../../../__tests__/helpers/compat-views';
 import { encryptProjectSecret } from '../../../projects/surface';
-import { verifyKortixMemberToken } from '@kortix/sdk';
+import { verifyKortixToken } from '@kortix/sdk';
 import { CONVEX_CLI_VERSION } from './convex-image';
 import { appAccessCookieName, createAppAccessToken } from '../../access';
 import { appTokenResponse } from '../../public-proxy-access';
@@ -151,7 +151,7 @@ describe('convex App routes', () => {
     expect(backend.auth_env.KORTIX_AUTH_AUDIENCE).toBe(RUNNING);
     expect(JSON.stringify(backend)).not.toContain(ADMIN_KEY);
     const { token } = await (await call('POST', `/${RUNNING}/token`, {})).json();
-    const member = await verifyKortixMemberToken(token, {
+    const member = await verifyKortixToken(token, {
       jwks: backend.auth_env.KORTIX_AUTH_JWKS,
       issuer: backend.auth_env.KORTIX_AUTH_ISSUER,
       audience: backend.auth_env.KORTIX_AUTH_AUDIENCE,
@@ -166,7 +166,7 @@ describe('convex App routes', () => {
     const { instance: backend } = await (await call('GET', `/${RUNNING}`)).json();
     const { token } = await res.json();
     expect(JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString()).kind).toBe('agent');
-    const member = await verifyKortixMemberToken(token, {
+    const member = await verifyKortixToken(token, {
       jwks: backend.auth_env.KORTIX_AUTH_JWKS,
       issuer: backend.auth_env.KORTIX_AUTH_ISSUER,
       audience: backend.auth_env.KORTIX_AUTH_AUDIENCE,
@@ -337,7 +337,7 @@ describe('GET /_kortix/token and the bindings mount on the App gate', () => {
   test('the token verifies against the public key set of the project issuer', async () => {
     const { token } = await (await ask('public', MANAGER, { audience: 'main' })).json();
     const jwks = await (await app.request(`/v1/projects/${PROJECT}/jwks.json`)).json();
-    const member = await verifyKortixMemberToken(token, { jwks, issuer: projectIssuer(PROJECT), audience: RUNNING });
+    const member = await verifyKortixToken(token, { jwks, issuer: projectIssuer(PROJECT), audience: RUNNING });
     expect(member.userId).toBe(MANAGER);
   });
 
@@ -465,7 +465,7 @@ describe('the project token issuer (no auth)', () => {
     expect(jwks.keys).toHaveLength(1);
     expect(jwks.keys[0].d).toBeUndefined();
     const { token } = await (await call('POST', `/${ISSUED}/token`, {})).json();
-    const member = await verifyKortixMemberToken(token, { jwks, issuer: projectIssuer(PROJECT), audience: ISSUED });
+    const member = await verifyKortixToken(token, { jwks, issuer: projectIssuer(PROJECT), audience: ISSUED });
     expect(member.userId).toBe(MANAGER);
     const issued = await (await call('GET', `/${ISSUED}`)).json();
     expect(issued.instance.auth_env.KORTIX_AUTH_ISSUER).toBe(projectIssuer(PROJECT));
@@ -479,7 +479,7 @@ describe('the project token issuer (no auth)', () => {
     expect(res.status).toBe(200);
     const { token } = await res.json();
     const jwks = await (await app.request(new URL(web.auth.jwks_uri).pathname)).json();
-    const member = await verifyKortixMemberToken(token, { jwks, issuer: web.auth.issuer, audience: web.auth.audience });
+    const member = await verifyKortixToken(token, { jwks, issuer: web.auth.issuer, audience: web.auth.audience });
     expect(member.userId).toBe(MANAGER);
   });
 

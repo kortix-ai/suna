@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { createPublicKey, verify } from 'node:crypto';
-import { requireKortixMember, verifyKortixMemberToken } from '@kortix/sdk';
+import { requireKortixMember, verifyKortixToken } from '@kortix/sdk';
 import { TOKEN_TTL_SECONDS, authEnv, generateSigner, openIdConfiguration, signToken, signerJwks } from './tokens';
 
 const PROJECT = '0b8f1e52-3c0d-4a51-9a0e-2f7d1c6b9e11';
@@ -55,8 +55,8 @@ describe('one project issuer, the App as audience', () => {
     const signer = generateSigner();
     const { token } = signToken(signer, target(OTHER_APP), { userId: 'u', email: null });
     const jwks = signerJwks(signer);
-    expect((await verifyKortixMemberToken(token, { jwks, issuer: ISSUER, audience: OTHER_APP })).userId).toBe('u');
-    await expect(verifyKortixMemberToken(token, { jwks, issuer: ISSUER, audience: APP })).rejects.toThrow();
+    expect((await verifyKortixToken(token, { jwks, issuer: ISSUER, audience: OTHER_APP })).userId).toBe('u');
+    await expect(verifyKortixToken(token, { jwks, issuer: ISSUER, audience: APP })).rejects.toThrow();
   });
 
   test('two signers get two key ids', () => {
@@ -90,11 +90,11 @@ describe('the token carries the whole member, and the SDK reads it', () => {
     expect(payload.role).toBeUndefined();
   });
 
-  test('verifyKortixMemberToken accepts it with exactly the env Kortix writes', async () => {
+  test('verifyKortixToken accepts it with exactly the env Kortix writes', async () => {
     const signer = generateSigner();
     const env = authEnv(ISSUER, APP, signer);
     const { token } = signToken(signer, target(), subject);
-    const member = await verifyKortixMemberToken(token, {
+    const member = await verifyKortixToken(token, {
       jwks: env.KORTIX_AUTH_JWKS,
       issuer: env.KORTIX_AUTH_ISSUER,
       audience: env.KORTIX_AUTH_AUDIENCE,
