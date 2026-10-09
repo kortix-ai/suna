@@ -36,3 +36,11 @@ export function writeGenuiInstruction(
   renameSync(tmp, path)
   return path
 }
+
+/** pi: the catalog for the root agent when the flag is on; null for subagents and when off. */
+export function genuiPromptSection(
+  env: NodeJS.ProcessEnv | Record<string, string | undefined>,
+  isChild: boolean,
+): string | null {
+  return !isChild && genuiEnabled(env) ? genuiPromptText() : null
+}
