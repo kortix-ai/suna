@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { Pressable, View } from 'react-native';
+import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import type { GenuiNode } from '@kortix/sdk/genui';
 import type { GenuiComponentProps } from '@kortix/sdk/genui/react';
 
@@ -39,14 +40,15 @@ export function GenuiCard({ props, renderChild }: GenuiComponentProps) {
 
 export function GenuiTabs({ props, renderChild, streaming }: GenuiComponentProps) {
   const tabs = kids(props.tabs);
-  const [value, setValue] = useState(tabs[0]?.id ?? '');
+  // A top-down stream mounts Tabs before its tabs exist, so the first tab is resolved at render, not at mount.
+  const [value, setValue] = useState<string | null>(null);
   if (tabs.length === 0) return null;
   // While streaming, show the tab being written so progress is visible (spec §6.3).
-  const active = streaming ? tabs[tabs.length - 1]!.id : value;
+  const active = streaming ? tabs.at(-1)!.id : tabs.some((tab) => tab.id === value) ? value! : tabs[0]!.id;
   return (
     <Tabs value={active} onValueChange={setValue}>
       {/* Up to 5 labels: they scroll sideways instead of squeezing on a narrow phone. */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+      <GHScrollView horizontal showsHorizontalScrollIndicator={false}>
         <TabsList>
           {tabs.map((tab) => (
             <TabsTrigger key={tab.id} value={tab.id}>
@@ -54,7 +56,7 @@ export function GenuiTabs({ props, renderChild, streaming }: GenuiComponentProps
             </TabsTrigger>
           ))}
         </TabsList>
-      </ScrollView>
+      </GHScrollView>
       {tabs.map((tab) => (
         <TabsContent key={tab.id} value={tab.id}>
           <View className="gap-3 pt-1">{kids(tab.props.children).map(renderChild)}</View>

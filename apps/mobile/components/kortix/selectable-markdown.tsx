@@ -184,15 +184,23 @@ function hasParent(parents: AstNode[], type: string): boolean {
 }
 
 /**
+ * false inside a generative-UI fallback: an ```openui fence there renders as
+ * code, so a fallback can never re-enter `GenuiBlock`.
+ */
+const GenuiRoutingContext = createContext(true);
+
+/**
  * A generative-UI block's markdown fallback, under the message's remote-image
  * policy. `GenuiBlock` needs a stable renderer, so there is one per theme.
  */
 function GenuiFallback({ markdown, isDark }: { markdown: string; isDark: boolean }) {
   const remoteImages = useContext(MarkdownImagesContext);
   return (
-    <SelectableMarkdownText isDark={isDark} remoteImages={remoteImages}>
-      {markdown}
-    </SelectableMarkdownText>
+    <GenuiRoutingContext.Provider value={false}>
+      <SelectableMarkdownText isDark={isDark} remoteImages={remoteImages}>
+        {markdown}
+      </SelectableMarkdownText>
+    </GenuiRoutingContext.Provider>
   );
 }
 const genuiFallback = (isDark: boolean) => (markdown: string) =>
@@ -203,8 +211,9 @@ const GENUI_FALLBACK_DARK = genuiFallback(true);
 /** Web's `MarkdownCode` routing: generative UI, then Mermaid, then math fences, then code. */
 function FencedCode({ node, isDark }: { node: AstNode; isDark: boolean }) {
   const isStreaming = useContext(OpenFenceContext);
+  const routeGenui = useContext(GenuiRoutingContext);
   // The raw first word of the info string: `fenceLanguage` may normalize `openui-lang` away.
-  const genuiVersion = genuiVersionOf((node.sourceInfo ?? '').trim().split(/\s+/)[0] ?? '');
+  const genuiVersion = routeGenui ? genuiVersionOf((node.sourceInfo ?? '').trim().split(/\s+/)[0] ?? '') : null;
   if (genuiVersion !== null) {
     return (
       <GenuiMessageBlock

@@ -24,6 +24,7 @@ mock.module('react-native', () => ({
   Image: host('image'),
   Platform: { OS: 'ios', select: (o: Record<string, unknown>) => o.ios },
 }));
+mock.module('react-native-gesture-handler', () => ({ ScrollView: host('gh-scroll') }));
 mock.module('nativewind', () => ({ useColorScheme: () => ({ colorScheme: 'light' }) }));
 mock.module('react-i18next', () => ({ useTranslation: () => ({ t: (_key: string, fallback: string) => fallback }) }));
 mock.module('@/components/ui/text', () => ({ Text: host('text') }));
@@ -89,6 +90,12 @@ function texts(node: ReactTestInstance): string[] {
   return out;
 }
 const all = (root: ReactTestInstance, type: string) => root.findAll((n) => n.type === (type as never));
+const className = (n: ReactTestInstance) => String(n.props.className ?? '');
+/** Status chips: the pill View of `StatusChip`, with its label. */
+const chips = (root: ReactTestInstance) =>
+  all(root, 'view')
+    .filter((n) => className(n).includes('rounded-full'))
+    .map((n) => ({ className: className(n), label: all(n, 'text')[0]! }));
 
 const EVERYTHING = `root = Stack([stats, card, table, cmp, list, tabs, note, pic, link])
 stats = StatRow([s1, s2])
@@ -127,7 +134,7 @@ describe('mobile genui components', () => {
     });
     const root = render(EVERYTHING);
     expect(all(root, 'fallback')).toHaveLength(1);
-    expect(all(root, 'badge')).toHaveLength(0);
+    expect(chips(root)).toHaveLength(0);
   });
 
   test('the stat shows its trend glyph beside the delta', () => {
@@ -204,12 +211,48 @@ card = Card("Option A", null, null, "https://example.com/card.jpg")`);
     expect(all(root, 'image')).toHaveLength(0);
   });
 
-  test('callouts take the glyph of their tone', () => {
+  test('callouts take the glyph and the /15 tint of their tone, with ink icon and text', () => {
     const root = render(`root = Stack([a, b, c])
 a = Callout("info", "A")
 b = Callout("warn", "B")
 c = Callout("success", "C")`);
-    expect(all(root, 'icon').map((n) => n.props.as)).toEqual(['info', 'warning', 'check-circle']);
+    const icons = all(root, 'icon');
+    expect(icons.map((n) => n.props.as)).toEqual(['info', 'warning', 'check-circle']);
+    for (const icon of icons) expect(className(icon)).toContain('text-foreground');
+    const tints = all(root, 'view').map(className).filter((c) => /bg-kortix-\w+\/15/.test(c));
+    expect(tints.map((c) => c.match(/bg-kortix-\w+\/15/)![0])).toEqual(['bg-kortix-blue/15', 'bg-kortix-orange/15', 'bg-kortix-green/15']);
+  });
+
+  test('badges are informational status chips: the tone is a /15 tint, the label stays ink', () => {
+    const root = render(`root = Stack([bad, good, warn, plain])
+bad = Badge("Sold out", "bad")
+good = Badge("Top pick", "good")
+warn = Badge("Few left", "warn")
+plain = Badge("Hotel")`);
+    const found = chips(root);
+    expect(found.map((chip) => texts(chip.label).join(''))).toEqual(['Sold out', 'Top pick', 'Few left', 'Hotel']);
+    expect(found[0]!.className).toContain('bg-kortix-red/15');
+    expect(found[1]!.className).toContain('bg-kortix-green/15');
+    expect(found[2]!.className).toContain('bg-kortix-orange/15');
+    expect(found[3]!.className).toContain('bg-secondary');
+    expect(found[3]!.className).not.toContain('kortix-');
+    for (const chip of found) {
+      expect(className(chip.label)).toContain('text-foreground');
+      expect(className(chip.label)).not.toContain('destructive');
+    }
+    expect(all(root, 'badge')).toHaveLength(0);
+  });
+
+  test('tables and tab labels scroll sideways on the gesture-handler ScrollView, as markdown tables do', () => {
+    const root = render(`root = Stack([t, tabs])
+t = Table(["Name"], [["a"]])
+tabs = Tabs([t1, t2])
+t1 = Tab("One", [b1])
+t2 = Tab("Two", [b2])
+b1 = Badge("first")
+b2 = Badge("second")`);
+    expect(all(root, 'gh-scroll')).toHaveLength(2);
+    expect(all(root, 'scroll')).toHaveLength(0);
   });
 
   test('while streaming, tabs show the tab being written; settled, the first', () => {
@@ -224,6 +267,57 @@ b2 = Badge("second")`;
     expect(all(live, 'tabs')[0]!.props.value).toBe(ids[1]);
     const settled = render(code, false);
     expect(all(settled, 'tabs')[0]!.props.value).toBe(ids[0]);
+  });
+
+  test('tabs streamed top-down settle on the first tab and show its content', () => {
+    const lines = [
+      'root = Stack([tabs])',
+      'tabs = Tabs([t1, t2])',
+      't1 = Tab("One", [b1])',
+      'b1 = Badge("first")',
+      't2 = Tab("Two", [b2])',
+      'b2 = Badge("second")',
+    ];
+    const block = (code: string, isStreaming: boolean) => (
+      <GenuiMessageBlock code={code} version={1} isStreaming={isStreaming} renderMarkdown={fallback} />
+    );
+    act(() => {
+      tree = create(block(lines.slice(0, 2).join('\n'), true));
+    });
+    for (const count of [4, 6]) {
+      act(() => tree!.update(block(lines.slice(0, count).join('\n'), true)));
+    }
+    act(() => tree!.update(block(lines.join('\n'), false)));
+    const root = tree!.root;
+    const ids = all(root, 'tabs-trigger').map((n) => n.props.value);
+    expect(ids).toHaveLength(2);
+    const active = all(root, 'tabs')[0]!.props.value;
+    expect(active).toBe(ids[0]);
+    const content = all(root, 'tabs-content').find((n) => n.props.value === active)!;
+    expect(texts(content)).toContain('first');
+  });
+
+  test('a Tabs that mounted before its tabs existed settles on the first tab without a remount', async () => {
+    // GenuiBlock remounts node views when the stream settles; this holds even if it stops doing so.
+    const { GenuiTabs } = await import('./components/layout');
+    const tab = (id: string, label: string, badge: string) => ({
+      id,
+      type: 'Tab',
+      partial: false,
+      props: { label, children: [{ id: `${id}-b`, type: 'Badge', partial: false, props: { label: badge } }] },
+    });
+    const renderChild = (node: { id: string; props: Record<string, unknown> }) => (
+      <text key={node.id}>{String(node.props.label)}</text>
+    );
+    const view = (tabs: unknown[], streaming: boolean) => (
+      <GenuiTabs node={{ id: 'tabs', type: 'Tabs', partial: false, props: { tabs } }} props={{ tabs }} renderChild={renderChild as never} streaming={streaming} />
+    );
+    act(() => {
+      tree = create(view([], true));
+    });
+    act(() => tree!.update(view([tab('t1', 'One', 'first')], true)));
+    act(() => tree!.update(view([tab('t1', 'One', 'first'), tab('t2', 'Two', 'second')], false)));
+    expect(all(tree!.root, 'tabs')[0]!.props.value).toBe('t1');
   });
 
   test('pending heavy nodes hold their final height with the Kortix loader; pending text nodes render nothing', () => {

@@ -152,4 +152,13 @@ describe('openui fences in chat markdown', () => {
     expect(markdown.map((n) => n.props.children)).toEqual(['**Pick:** A']);
     expect(markdown[0]?.props.images).toBe('load');
   });
+
+  test('an openui fence inside a fallback renders as code, so a fallback never re-enters generative UI', () => {
+    const renderMarkdown = blocks(render('```openui\nroot = Stack([])\n```'))[0]?.props.renderMarkdown as RenderMarkdown;
+    act(() => {
+      tree = create(<>{renderMarkdown('```openui\nroot = Badge("x")\n```')}</>);
+    });
+    expect(blocks(tree!.root)).toHaveLength(0);
+    expect(codeBlocks(tree!.root)[0]?.props.code).toBe('root = Badge("x")');
+  });
 });

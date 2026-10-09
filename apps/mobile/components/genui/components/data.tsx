@@ -1,5 +1,6 @@
 import { Fragment } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { Pressable, View } from 'react-native';
+import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import { useTranslation } from 'react-i18next';
 import type { GenuiComponentProps } from '@kortix/sdk/genui/react';
 
@@ -23,17 +24,16 @@ export function GenuiStat({ props }: GenuiComponentProps) {
   const trend = props.trend ? TREND[props.trend as keyof typeof TREND] : null;
   return (
     <View className="min-w-[45%] flex-1 gap-0.5 rounded-2xl bg-card px-4 py-3">
-      <Text variant="muted" className="text-xs">
-        {props.label}
-      </Text>
-      <Text className="text-xl font-semibold tabular-nums">
+      <Text variant="muted">{props.label}</Text>
+      {/* `large`, not `h4`: the number is not a heading. */}
+      <Text variant="large" className="tabular-nums">
         {props.value}
         {props.unit ? <Text variant="muted"> {props.unit}</Text> : null}
       </Text>
       {props.delta ? (
         <View className="flex-row items-center gap-1">
           {trend ? <Icon as={trend} size={12} className="text-muted-foreground" /> : null}
-          <Text variant="muted" className="text-xs tabular-nums">
+          <Text variant="muted" className="tabular-nums">
             {props.delta}
           </Text>
         </View>
@@ -76,11 +76,11 @@ export function GenuiTable({ props }: GenuiComponentProps) {
   const align = (c: number) => (numeric[c] ? 'text-right' : '');
   return (
     <View className="overflow-hidden rounded-2xl bg-card">
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ flexGrow: 1 }}>
+      <GHScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ flexGrow: 1 }}>
         <View className="grow">
           <View className="flex-row bg-secondary">
             {columns.map((column, c) => (
-              <Text key={c} style={cellStyle(c)} className={`${CELL} text-xs font-medium ${align(c)}`}>
+              <Text key={c} style={cellStyle(c)} variant="small" className={`${CELL} leading-5 ${align(c)}`}>
                 {column}
               </Text>
             ))}
@@ -98,9 +98,9 @@ export function GenuiTable({ props }: GenuiComponentProps) {
             </Fragment>
           ))}
         </View>
-      </ScrollView>
+      </GHScrollView>
       {props.caption ? (
-        <Text variant="muted" className="px-3 py-2 text-xs">
+        <Text variant="muted" className="px-3 py-2">
           {props.caption}
         </Text>
       ) : null}
@@ -162,7 +162,7 @@ export function GenuiRankedList({ props }: GenuiComponentProps) {
               <View className="flex-row items-baseline gap-3">
                 <Text className={`flex-1 font-medium ${href ? 'underline' : ''}`}>{String(item.props.title)}</Text>
                 {item.props.meta ? (
-                  <Text variant="muted" className="max-w-[40%] text-right text-xs">
+                  <Text variant="muted" className="max-w-[40%] text-right">
                     {String(item.props.meta)}
                   </Text>
                 ) : null}
