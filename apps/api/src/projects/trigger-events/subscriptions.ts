@@ -13,7 +13,7 @@ import { connectionRowIsReachable } from '../lib/connection-access';
 import { loadConnectionAudience } from '../lib/connection-audience';
 import type { GitTriggerSpec } from '../trigger-types';
 import { db } from '../../shared/db';
-import { eventSourceFor } from './registry';
+import { eventSourceFor, unknownSourceMessage } from './registry';
 import * as store from './store';
 import { EventConnectionNotReadyError, type EventSourceConnection, type EventSourceProvider } from './types';
 
@@ -84,6 +84,17 @@ export async function resolveSource(
     .limit(1);
   if (!connector) {
     return { kind: 'error', message: `Connector "${event.connector}" is not declared in kortix.yaml. Add it under \`connectors:\`.` };
+  }
+  // The adapter is the declared `source`, else the connector's own provider.
+  if (event.source) {
+    const unknown = unknownSourceMessage(event.source);
+    if (unknown) return { kind: 'error', message: unknown };
+    if (event.source !== connector.provider) {
+      return {
+        kind: 'error',
+        message: `Connector "${event.connector}" is a ${connector.provider} connector; source "${event.source}" needs a ${event.source} connector.`,
+      };
+    }
   }
   const provider = eventSourceFor(connector.provider);
   if (!provider) {

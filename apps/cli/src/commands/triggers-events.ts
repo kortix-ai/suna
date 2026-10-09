@@ -183,14 +183,24 @@ export function eventNextStep(
           'It goes live when the account is connected.',
         ],
       };
-    case 'error':
+    case 'error': {
+      // No provider: the connector is undeclared. A provider other than the
+      // source: the connector cannot serve that adapter. Neither is a config fix.
+      const connectorFix = !e.provider
+        ? '<slug>'
+        : e.source && e.source !== e.provider
+          ? `<a ${e.source} connector>`
+          : null;
       return {
         word: 'error',
         lines: [
           `Error: ${e.error ?? 'the provider rejected the subscription'}`,
-          `Fix the settings: kortix triggers set ${t.slug} --config <key>=<value>  (fields: kortix triggers events --connector ${e.connector} --event ${e.type})`,
+          connectorFix
+            ? `Pick a connector that serves it: kortix triggers set ${t.slug} --connector ${connectorFix}  (connectors with events: kortix triggers events --apps)`
+            : `Fix the settings: kortix triggers set ${t.slug} --config <key>=<value>  (fields: kortix triggers events --connector ${e.connector} --event ${e.type})`,
         ],
       };
+    }
     default:
       return {
         word: 'pending',
@@ -242,8 +252,16 @@ async function printApps(
   }
   const out = process.stdout;
   out.write('\n');
-  const withConnector = resp.apps.filter((a) => (a.connectors?.length ?? 0) > 0);
+  const withConnector = resp.apps
+    .filter((a) => (a.connectors?.length ?? 0) > 0)
+    .sort((a, b) => (a.source ?? a.provider).localeCompare(b.source ?? b.provider));
+  let lastSource = '';
   for (const a of withConnector) {
+    const source = a.source ?? a.provider;
+    if (source !== lastSource) {
+      out.write(`${lastSource ? '\n' : ''}  ${C.dim}source: ${source}${C.reset}\n`);
+      lastSource = source;
+    }
     const state = a.connected
       ? `${C.green}connected${C.reset}`
       : `${C.yellow}needs account${C.reset}`;
@@ -267,11 +285,11 @@ async function printApps(
   const rest = resp.apps.filter((a) => (a.connectors?.length ?? 0) === 0);
   if (rest.length > 0) {
     out.write(
-      `\n  ${C.dim}No connector yet (${rest.length}): ${rest.map((a) => `${a.app} (${a.event_count})`).join(', ')}${C.reset}\n`,
+      `\n  ${C.dim}No connector yet (${rest.length}): ${rest.map((a) => `${a.app} (${a.event_count}${a.new_connector_slug && a.new_connector_slug !== a.app ? `, add as ${a.new_connector_slug}` : ''})`).join(', ')}${C.reset}\n`,
     );
   }
   out.write(
-    `\n  ${C.dim}${resp.apps.length} apps. List a connector's events: kortix triggers events --connector <slug>.\n  Add a connector: kortix connectors add <slug> --provider composio --app <app> --apply\n  Pick an account: kortix triggers add … --connector <slug> --account <label> (omit it for the default).${C.reset}\n\n`,
+    `\n  ${C.dim}${resp.apps.length} apps. List a connector's events: kortix triggers events --connector <slug>.\n  Add a connector: kortix connectors add <slug> --provider composio --app <app> --apply\n  Pick an account: kortix triggers add … --connector <slug> --account <label> (omit it for the default).\n  See every app event trigger: kortix triggers ls --type event  (one connector: kortix triggers ls --connector <slug>).${C.reset}\n\n`,
   );
   return 0;
 }
@@ -296,7 +314,7 @@ function printEvents(resp: TriggerEventTypesResponse, json: boolean): number {
     );
   }
   process.stdout.write(
-    `\n  ${C.dim}${resp.event_types.length} event type${resp.event_types.length === 1 ? '' : 's'} on ${resp.app} (${resp.provider}). Details: kortix triggers events --connector <slug> --event <TYPE>${C.reset}\n\n`,
+    `\n  ${C.dim}${resp.event_types.length} event type${resp.event_types.length === 1 ? '' : 's'} on ${resp.app} (${resp.source ?? resp.provider}). Details: kortix triggers events --connector <slug> --event <TYPE>${C.reset}\n\n`,
   );
   return 0;
 }

@@ -30,6 +30,8 @@ mock.module('../../shared/supabase', () => ({
     },
     storage: {
       from: () => ({
+        // Session files: an empty bucket (account erasure lists each project).
+        list: async () => ({ data: [], error: null }),
         remove: async (keys: string[]) => {
           for (const key of keys) siteObjects.delete(key);
           return { error: null };

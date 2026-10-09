@@ -12,6 +12,7 @@ A session of this project runs one agent harness: OpenCode (the default) or pi
 | `skills/<name>/SKILL.md` | Skills. Every agent harness loads them. |
 | `memory/` | The project brain. Load the `kortix-memory` skill to work with it. |
 | `tools/<name>.ts` | Project tools. `kortix.yaml` declares each one under `tools:` (name → module path). Every agent harness runs them. |
+| `kortix.yaml` `tools:` | The tools every agent gets. `<name>: kortix:<name>` is a Kortix tool (`web_search`, `image_search`, `scrape_webpage`, `memory`, `show`), maintained by Kortix. Delete a line to remove that tool. `kortix tools eject <name>` copies one to `tools/<name>.ts` for you to change. `kortix tools ls` lists what a session gets. |
 | `harnesses/opencode/` | Files only OpenCode reads: `opencode.jsonc`, `plugins/`. |
 | `harnesses/pi/` | Files only pi reads: `extensions/`, `prompts/`, `settings.json`. Not created by default. |
 

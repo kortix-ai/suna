@@ -6,9 +6,9 @@
  * glob/grep are Kortix additions on top of ripgrep, named exactly as
  * OpenCode's so `toolViewModel()` in the web client needs no remapping
  * (pi's own `find`/`grep` take other arguments). `question` is the interactive
- * ask the product renders. The hosted tools (`web_search`, `image_search`,
- * `scrape_webpage`, `memory`, `show` and the project's own, services/tools)
- * run here exactly as every other harness runs them.
+ * ask the product renders. The hosted tools (the Kortix tools the project
+ * loads and the project's own, services/tools) run here exactly as every
+ * other harness runs them.
  */
 import type { AgentTool } from '@earendil-works/pi-agent-core'
 import {

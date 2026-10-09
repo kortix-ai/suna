@@ -353,6 +353,31 @@ test('createProjectTrigger sends event_account and updateProjectTrigger clears i
   expect(last().body).toEqual({ event_account: null });
 });
 
+test('event_source is sent on create, cleared with null on update, and read back as event.source', async () => {
+  nextResponse = { status: 200, body: { triggers: [], errors: [] } };
+  await createProjectTrigger('P1', {
+    name: 'PR opened', type: 'event', prompt_template: 'x', connector: 'github-work',
+    event_source: 'composio', event: 'GITHUB_PULL_REQUEST_CREATED',
+  });
+  expect(last().body).toMatchObject({ connector: 'github-work', event_source: 'composio' });
+
+  nextResponse = { status: 200, body: { triggers: [], errors: [] } };
+  await updateProjectTrigger('P1', 'pr-review', { event_source: null });
+  expect(last().body).toEqual({ event_source: null });
+
+  nextResponse = { status: 200, body: { triggers: [{ slug: 'pr-review', type: 'event', event: { connector: 'github-work', type: 'X', config: {}, source: 'composio', provider: 'composio', app: 'github', status: 'active', error: null, last_event_at: null } }], errors: [] } };
+  const listed = await listProjectTriggers('P1');
+  expect(listed.triggers[0]!.event?.source).toBe('composio');
+});
+
+test('listProjectTriggerEventTypes and EventApps expose source next to the deprecated provider', async () => {
+  nextResponse = { status: 200, body: { source: 'composio', provider: 'composio', app: 'github', event_types: [] } };
+  const catalog = await listProjectTriggerEventTypes('P1', { connector: 'github-work' });
+  expect(catalog.source).toBe('composio');
+  nextResponse = { status: 200, body: { apps: [{ source: 'composio', provider: 'composio', app: 'github', name: 'GitHub', logo: null, event_count: 1, connector: null, connected: false }] } };
+  expect((await listProjectTriggerEventApps('P1')).apps[0]!.source).toBe('composio');
+});
+
 test('createProjectTrigger sends an event trigger body and the listing reads event state back', async () => {
   const input: CreateProjectTriggerInput = {
     name: 'PR opened',

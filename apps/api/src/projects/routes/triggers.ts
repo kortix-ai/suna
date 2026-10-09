@@ -3,6 +3,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { projectTriggerRuntime, projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { mutateManifestWithRetry } from '../../connectors/manifest-mutation';
+import { loadProjectAgents } from '../agents';
 import { assertMayRunAgent } from '../lib/agent-access';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json, lenientBody } from '../../openapi';
@@ -11,6 +12,7 @@ import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { OkSchema, TriggerFireResultSchema, TriggerListSchema, projectsApp } from '../lib/app';
 import { guardSession } from '../lib/http-session-access';
 import { withProjectGitAuth } from '../lib/git';
+import { resolveSessionAgentName } from '../lib/session-create';
 import { metadataMerge } from '../lib/metadata-merge';
 import { requestAuditContext } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
@@ -46,12 +48,12 @@ import {
 } from '../triggers';
 
 /** Body keys that change which event a trigger subscribes to. */
-const EVENT_BODY_KEYS = ['connector', 'event_account', 'event', 'event_config'];
+const EVENT_BODY_KEYS = ['connector', 'event_account', 'event_source', 'event', 'event_config'];
 
 /** Merge-body keys owned by one trigger type, dropped when a PATCH changes the type. */
 const TYPE_SPECIFIC_BODY_KEYS = [
   'cron', 'run_at', 'timezone', 'secret_env', 'run', 'mode', 'interval',
-  'expect_event_within', 'connector', 'event_account', 'event', 'event_config',
+  'expect_event_within', 'connector', 'event_account', 'event_source', 'event', 'event_config',
 ] as const;
 
 // Body keys that change the trigger's *repo manifest* (committed to git). A PATCH
@@ -81,6 +83,7 @@ const TRIGGER_MANIFEST_KEYS = [
   'filter',
   'connector',
   'event_account',
+  'event_source',
   'event',
   'event_config',
 ] as const;
@@ -142,11 +145,13 @@ export function registerTriggersRoutes(): void {
         200: json(
           z.object({
             apps: z.array(z.object({
-              provider: z.string(),
+              source: z.string().openapi({ description: 'Event source adapter id, such as composio. The trigger `event_source` value.' }),
+              provider: z.string().openapi({ deprecated: true, description: 'Deprecated alias of `source`.' }),
               app: z.string(),
               name: z.string(),
               logo: z.string().nullable(),
               event_count: z.number(),
+              new_connector_slug: z.string(),
               connector: z.string().nullable().openapi({ description: 'Slug of the project connector for this app, or null.' }),
               connected: z.boolean().openapi({ description: 'The project has an active shared account for this app.' }),
               connectors: z.array(z.object({
@@ -180,11 +185,13 @@ export function registerTriggersRoutes(): void {
       const apps = await listEventApps(projectId, loaded.row.accountId);
       return c.json({
         apps: apps.map((a) => ({
+          source: a.provider,
           provider: a.provider,
           app: a.app,
           name: a.name,
           logo: a.logo,
           event_count: a.eventCount,
+          new_connector_slug: a.newConnectorSlug,
           connector: a.connector,
           connected: a.connected,
           connectors: a.connectors.map((k) => ({
@@ -214,7 +221,8 @@ export function registerTriggersRoutes(): void {
       responses: {
         200: json(
           z.object({
-            provider: z.string(),
+            source: z.string().openapi({ description: 'Event source adapter id, such as composio.' }),
+            provider: z.string().openapi({ deprecated: true, description: 'Deprecated alias of `source`.' }),
             app: z.string(),
             event_types: z.array(z.object({
               type: z.string(),
@@ -249,6 +257,7 @@ export function registerTriggersRoutes(): void {
       if (catalog.kind === 'unavailable') return c.json({ error: 'event_source_unavailable' }, 409);
       if (catalog.kind === 'provider_error') return c.json({ error: `Could not list events: ${catalog.message}` }, 502);
       return c.json({
+        source: catalog.provider,
         provider: catalog.provider,
         app: catalog.app,
         event_types: catalog.items.map((t) => ({
@@ -289,7 +298,8 @@ export function registerTriggersRoutes(): void {
             secret_env: z.string().optional().openapi({ description: 'Project secret holding the webhook signing secret. Required for a webhook trigger.' }),
             connector: z.string().optional().openapi({ description: 'Connector slug the event happens on. Required for an event trigger.' }),
             event_account: z.string().nullish().openapi({ description: 'Label of one shared account of the connector. Omit or null for the connector default. Event triggers only.' }),
-            event: z.string().optional().openapi({ description: 'Provider event type id, such as GITHUB_PULL_REQUEST_EVENT. Required for an event trigger.' }),
+            event_source: z.string().nullish().openapi({ description: 'Event source adapter id, such as composio. Omit for the connector provider. Event triggers only.' }),
+            event: z.string().optional().openapi({ description: 'The adapter event type id, such as GITHUB_PULL_REQUEST_EVENT. Required for an event trigger.' }),
             event_config: z.record(z.string(), z.any()).optional().openapi({ description: 'Provider event config. Event triggers only.' }),
             run: z.string().optional().openapi({ description: 'Repo-relative command a monitor supervises. Required for a monitor.' }),
             mode: z.enum(['poll', 'stream']).optional().openapi({ description: 'Monitor mode. Required for a monitor.' }),
@@ -487,7 +497,8 @@ export function registerTriggersRoutes(): void {
             secret_env: z.string().optional().openapi({ description: 'Webhook signing secret name.' }),
             connector: z.string().optional().openapi({ description: 'Connector slug of an event trigger.' }),
             event_account: z.string().nullish().openapi({ description: 'Label of one shared account of the connector; null clears it to the connector default.' }),
-            event: z.string().optional().openapi({ description: 'Provider event type id of an event trigger.' }),
+            event_source: z.string().nullish().openapi({ description: 'Event source adapter id of an event trigger; null clears it to the connector provider.' }),
+            event: z.string().optional().openapi({ description: 'The adapter event type id of an event trigger.' }),
             event_config: z.record(z.string(), z.any()).optional().openapi({ description: 'Provider event config of an event trigger.' }),
             session_mode: z.enum(['fresh', 'reuse', 'pinned', 'keyed']).optional().openapi({ description: 'Session reuse mode.' }),
             session_id: z.string().optional().openapi({ description: 'Session to pin.' }),
@@ -558,6 +569,7 @@ export function registerTriggersRoutes(): void {
           }
           // An account label belongs to one connector: naming another connector drops it.
           if ('connector' in body && !('event_account' in body)) delete base.event_account;
+          if ('connector' in body && !('event_source' in body)) delete base.event_source;
           const draft = parseTriggerDraft({ ...base, ...body, slug: slug }, { existingSlug: slug });
           if ('error' in draft) return { ok: false, error: draft.error, status: 400 };
           if (draft.event && (body.type === 'event' || EVENT_BODY_KEYS.some((k) => k in body))) {
@@ -729,15 +741,26 @@ export function registerTriggersRoutes(): void {
         PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE,
       );
 
-      const spec = await findProjectTriggerBySlug(await withProjectGitAuth(loaded.row), slug);
+      const gitProject = await withProjectGitAuth(loaded.row);
+      const spec = await findProjectTriggerBySlug(gitProject, slug);
       if (!spec) return c.json({ error: 'Not found' }, 404);
       // Agents as principals (spec 2026-09-22 §2.2, closes V2): the fired run
       // acts as the trigger's agent, so the FIRER must be allowed to run that
-      // agent. `default` selects the project's default agent; ask about that one.
+      // agent. `default` is resolved exactly as session creation resolves it
+      // (KRTX-1720): the manifest's default first; the metadata mirror, which
+      // can lag a git push, only for a v1 manifest that declares none.
+      // Asking about the mirror instead refused a member allowed to run the
+      // real default, and admitted one allowed to run only the stale name.
       const mirroredDefault = (loaded.row.metadata as Record<string, unknown> | null)?.default_agent;
       const firedAgent =
-        spec.agent === 'default' && typeof mirroredDefault === 'string' && mirroredDefault.trim()
-          ? mirroredDefault.trim()
+        spec.agent === 'default'
+          ? resolveSessionAgentName({
+              requestedAgent: null,
+              manifestDefaultAgent:
+                (await loadProjectAgents(gitProject, { forceRefresh: 'tip-proof' })).defaultAgent?.trim() || null,
+              mirroredDefaultAgent:
+                typeof mirroredDefault === 'string' && mirroredDefault.trim() ? mirroredDefault.trim() : null,
+            })
           : spec.agent;
       await assertMayRunAgent(
         c,

@@ -70,6 +70,8 @@ import {
   SANDBOX_DISK_BOUNDS,
   SANDBOX_MEMORY_BOUNDS,
   SLUG_RE,
+  KORTIX_TOOL_NAMES,
+  KORTIX_TOOL_PREFIX,
   TOOL_NAME_RE,
   TRIGGER_TYPES,
   V2_RUNTIME_VALUES,
@@ -401,6 +403,8 @@ function triggerSchema(): JsonSchemaFragment {
       connector: { type: 'string', minLength: 1 },
       // Optional: the label of one shared account of that connector.
       account: { type: 'string', minLength: 1 },
+      // Optional: the event source adapter (default: the connector's provider).
+      source: { type: 'string', minLength: 1 },
       event: { type: 'string', minLength: 1 },
       config: { type: 'object' },
     },
@@ -453,7 +457,7 @@ function triggerSchema(): JsonSchemaFragment {
       {
         // The event fields exist only on an event trigger.
         if: { properties: { type: { enum: ['cron', 'webhook', 'monitor'] } }, required: ['type'] },
-        then: { properties: { connector: false, account: false, event: false, config: false } },
+        then: { properties: { connector: false, account: false, source: false, event: false, config: false } },
       },
       {
         // `interval` is the poll period: required on poll, forbidden on stream.
@@ -637,15 +641,28 @@ function agentToolsSchema(): JsonSchemaFragment {
   };
 }
 
-/** Top-level `tools` — project tools, by name. */
+/**
+ * Top-level `tools` — project tools, by name, and the Kortix tools the project
+ * keeps. A Kortix tool name takes `kortix:<name>` or a module path; any other
+ * name takes a module path. `null` (a `tools:` key with every line deleted)
+ * lists nothing.
+ */
 function projectToolsSchema(): JsonSchemaFragment {
+  const module = { type: 'string', pattern: TOOL_FILE_PATTERN };
   return {
-    type: 'object',
+    type: ['object', 'null'],
     description:
-      'Project tools: tool name → repo-relative path of the module that implements it. Each module default-exports ' +
-      '{ description, parameters (JSON Schema), execute(args, context) }. Every harness loads them.',
+      'Tools: tool name → repo-relative path of the module that implements it, or `kortix:<name>` for a Kortix tool. ' +
+      'Each module default-exports { description, parameters (JSON Schema), execute(args, context) }. Every harness loads them. ' +
+      'With a `tools` key, sessions get only the Kortix tools it lists; without one, they get all five.',
     propertyNames: { pattern: TOOL_NAME_RE.source },
-    additionalProperties: { type: 'string', pattern: TOOL_FILE_PATTERN },
+    properties: Object.fromEntries(
+      KORTIX_TOOL_NAMES.map((name) => [
+        name,
+        { anyOf: [{ const: `${KORTIX_TOOL_PREFIX}${name}`, description: `The Kortix ${name} tool, maintained by Kortix.` }, module] },
+      ]),
+    ),
+    additionalProperties: module,
   };
 }
 

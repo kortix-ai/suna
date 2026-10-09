@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import type { ProjectTrigger } from '../api/types.ts';
+import { eventNextStep } from '../commands/triggers-events.ts';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -919,7 +921,7 @@ describe('kortix triggers — events', () => {
 
   test('help documents the event type and its flags', async () => {
     const result = await runCli(['triggers', '--help']);
-    for (const fragment of ['monitors, and app events', '--connector <slug>', '--account <label>', '--default-account', '--event <TYPE>', '--config <key=value>', '--config-json <json>', 'events --connector <slug>', 'event.data.<field>']) {
+    for (const fragment of ['monitors, and app events', '--connector <slug>', '--account <label>', '--source <adapter>', '--default-account', '--event <TYPE>', '--config <key=value>', '--config-json <json>', 'events --connector <slug>', 'event.data.<field>']) {
       expect(result.stdout).toContain(fragment);
     }
   });
@@ -947,6 +949,20 @@ describe('kortix triggers — events', () => {
     expect(manifestText()).toContain('account: acme-bot');
     const stray = await runCli(['triggers', 'add', 'c', '--cron', '0 0 9 * * *', '--account', 'x', '--prompt', 'x']);
     expect(stray.stderr).toContain('--account is only valid on an event trigger');
+  });
+
+  test('add --source writes source under connector; omitted writes none; non-event rejects it', async () => {
+    const result = await add('--connector', 'github', '--source', 'composio', '--event', 'GITHUB_PULL_REQUEST_EVENT');
+    expect(result.code).toBe(0);
+    expect(manifestText()).toContain('source: composio');
+    const stray = await runCli(['triggers', 'add', 'c', '--cron', '0 0 9 * * *', '--source', 'composio', '--prompt', 'x']);
+    expect(stray.stderr).toContain('--source is only valid on an event trigger');
+  });
+
+  test('add without --source writes no source', async () => {
+    const result = await add('--connector', 'github', '--event', 'GITHUB_PULL_REQUEST_EVENT');
+    expect(result.code).toBe(0);
+    expect(manifestText()).not.toContain('source:');
   });
 
   test('add without --config omits the config key', async () => {
@@ -1026,11 +1042,14 @@ describe('kortix triggers — events', () => {
     const cfg = writeConfig(startServer([]));
     const r = await runCli(['triggers', 'events', '--apps', '--project', PROJECT], cfg);
     expect(r.code).toBe(0);
+    expect(r.stdout).toContain('source: composio');
     expect(r.stdout).toMatch(/github\s+12 events\s+connected/);
     expect(r.stdout).toMatch(/acme-bot\s+as acme-bot-user\s+default/);
     expect(r.stdout).toMatch(/acme-ci\s+/);
     expect(r.stdout).toMatch(/github-work\s+no shared account/);
         expect(r.stdout).toMatch(/No connector yet \(2\): gmail \(3\), linear \(5\)/);
+    expect(r.stdout).toContain('kortix triggers ls --type event');
+    expect(r.stdout).toContain('kortix triggers ls --connector <slug>');
     const raw = await runCli(['triggers', 'events', '--apps', '--json', '--project', PROJECT], cfg);
     expect(JSON.parse(raw.stdout)).toEqual(EVENT_APPS);
   });
@@ -1082,10 +1101,115 @@ describe('kortix triggers — events', () => {
     expect(info.stdout).toMatch(/connected as\s+acme-bot-user/);
   });
 
+  test('info shows the source; ls adds it only when it is not the connector provider', async () => {
+    const same = { ...EVENT_TRIGGER, event: { ...EVENT_TRIGGER.event, source: 'composio' } };
+    const cfg = writeConfig(startServer([same]));
+    const info = await runCli(['triggers', 'info', 'new-pr', '--project', PROJECT], cfg);
+    expect(info.stdout).toMatch(/source\s+composio/);
+    const ls = await runCli(['triggers', 'ls', '--project', PROJECT], cfg);
+    expect(ls.stdout).toContain('github/default GITHUB_PULL_REQUEST_EVENT');
+    expect(ls.stdout).not.toContain('composio:github');
+    const differs = { ...EVENT_TRIGGER, event: { ...EVENT_TRIGGER.event, source: 'composio', provider: 'pipedream' } };
+    const ls2 = await runCli(['triggers', 'ls', '--project', PROJECT], writeConfig(startServer([differs])));
+    expect(ls2.stdout).toContain('composio:github/');
+  });
+
   test('needs_connection with an account names the label', async () => {
     const t = { ...EVENT_TRIGGER, event: { ...EVENT_TRIGGER.event, account: 'acme-bot' } };
     const cfg = writeConfig(startServer([t]));
     const info = await runCli(['triggers', 'info', 'new-pr', '--project', PROJECT], cfg);
     expect(info.stdout).toContain('labelled "acme-bot" on github');
+  });
+
+  describe('ls filters', () => {
+    const second = {
+      ...EVENT_TRIGGER,
+      slug: 'new-issue',
+      name: 'New issue',
+      event: { ...EVENT_TRIGGER.event, connector: 'github-work', type: 'GITHUB_ISSUE_EVENT' },
+    };
+    const mail = {
+      ...EVENT_TRIGGER,
+      slug: 'new-mail',
+      name: 'New mail',
+      event: { ...EVENT_TRIGGER.event, connector: 'gmail', app: 'gmail', type: 'GMAIL_NEW_MESSAGE' },
+    };
+    const all = [MONITOR_TRIGGER, EVENT_TRIGGER, second, mail];
+    const slugs = (json: string) =>
+      (JSON.parse(json).triggers as { slug: string }[]).map((t) => t.slug);
+
+    test('--type event keeps only app events and groups them by app', async () => {
+      const cfg = writeConfig(startServer(all));
+      const r = await runCli(['triggers', 'ls', '--type', 'event', '--project', PROJECT], cfg);
+      expect(r.code).toBe(0);
+      expect(r.stdout).toMatch(/github \(2\)\n[\s\S]*new-pr[\s\S]*new-issue/);
+      expect(r.stdout).toMatch(/gmail \(1\)\n[\s\S]*new-mail/);
+      expect(r.stdout).not.toContain('checkout-errors');
+      expect(r.stdout).toContain('3 triggers');
+    });
+
+    test('--connector keeps the app events of one connector; --json respects it', async () => {
+      const cfg = writeConfig(startServer(all));
+      const r = await runCli(
+        ['triggers', 'ls', '--connector', 'github-work', '--json', '--project', PROJECT],
+        cfg,
+      );
+      expect(r.code).toBe(0);
+      expect(slugs(r.stdout)).toEqual(['new-issue']);
+    });
+
+    test('--type and --connector combine; a mismatch lists nothing', async () => {
+      const cfg = writeConfig(startServer(all));
+      const both = await runCli(
+        ['triggers', 'ls', '--type', 'event', '--connector', 'gmail', '--json', '--project', PROJECT],
+        cfg,
+      );
+      expect(slugs(both.stdout)).toEqual(['new-mail']);
+      const none = await runCli(
+        ['triggers', 'ls', '--type', 'monitor', '--connector', 'gmail', '--project', PROJECT],
+        cfg,
+      );
+      expect(none.code).toBe(0);
+      expect(none.stdout).toContain('No trigger matches that filter');
+    });
+
+    test('--type monitor keeps the monitor; an unknown type exits 2', async () => {
+      const cfg = writeConfig(startServer(all));
+      const ok = await runCli(
+        ['triggers', 'ls', '--type', 'monitor', '--json', '--project', PROJECT],
+        cfg,
+      );
+      expect(slugs(ok.stdout)).toEqual(['checkout-errors']);
+      const bad = await runCli(['triggers', 'ls', '--type', 'nope', '--project', PROJECT], cfg);
+      expect(bad.code).toBe(2);
+      expect(bad.stderr).toContain('Unknown --type "nope"');
+    });
+  });
+});
+
+describe('eventNextStep on an error', () => {
+  const errored = (event: Record<string, unknown>) =>
+    ({
+      slug: 'pr-review',
+      event: { connector: 'docs', type: 'GITHUB_PULL_REQUEST_CREATED', status: 'error', ...event },
+    }) as unknown as ProjectTrigger;
+
+  test('a source the connector cannot serve points at the connector, not the config', () => {
+    const { lines } = eventNextStep(
+      errored({ source: 'composio', provider: 'mcp', error: 'Connector "docs" is a mcp connector; source "composio" needs a composio connector.' }),
+    );
+    expect(lines.join('\n')).toContain('kortix triggers set pr-review --connector <a composio connector>');
+    expect(lines.join('\n')).not.toContain('--config');
+  });
+
+  test('an undeclared connector points at the connector, not the config', () => {
+    const { lines } = eventNextStep(errored({ source: null, provider: null, error: 'Connector "docs" is not declared in kortix.yaml.' }));
+    expect(lines.join('\n')).toContain('kortix triggers set pr-review --connector <slug>');
+    expect(lines.join('\n')).not.toContain('--config');
+  });
+
+  test('a provider rejection still points at the config', () => {
+    const { lines } = eventNextStep(errored({ source: 'composio', provider: 'composio', error: 'repo is required' }));
+    expect(lines.join('\n')).toContain('kortix triggers set pr-review --config <key>=<value>');
   });
 });

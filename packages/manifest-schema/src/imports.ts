@@ -209,6 +209,9 @@ export function resolveManifestImportsSync(
   const visited = new Set<string>([root.path]);
 
   const mergeFile = (file: ManifestSourceFile) => {
+    // A `tools` key selects the Kortix tools, so an empty one in any file
+    // still reaches the merged document (`selectedKortixTools`).
+    if (file.raw.tools !== undefined) maps.tools ??= {};
     for (const key of ALL_IMPORTABLE_KEYS) {
       for (const [id, entry] of collectionEntries(file.path, key, file.raw[key])) {
         if (id !== null) {

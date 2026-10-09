@@ -62,9 +62,15 @@ sandbox:
 # The harness a session boots: "opencode" (the default) or "pi".
 runtime: opencode
 
-# Project tools: tool name -> module path. Every harness runs them
-# (references/kortix/tools.md).
+# The tools every session gets (references/kortix/tools.md). `kortix:<name>`
+# is a Kortix tool; a path is the project's own module. With this key, only
+# the listed Kortix tools load. Delete a line to remove that tool.
 tools:
+  web_search: kortix:web_search
+  image_search: kortix:image_search
+  scrape_webpage: kortix:scrape_webpage
+  memory: kortix:memory
+  show: kortix:show
   lookup_order: tools/lookup_order.ts
 
 # Files only OpenCode reads: opencode.jsonc, plugins/, tools/, commands/.
@@ -592,6 +598,26 @@ in this repository, or `{ source, extensions, skills, prompts, themes }` with
 pi's own filters (an omitted filter loads everything, `[]` loads nothing). A
 version range, a missing version or a Git source fails validation. Kortix
 builds each distinct package list once, when the change request merges.
+
+## `tools:` in version 2
+
+The tools a session gets, by name. **Optional.** `references/kortix/tools.md`
+has the module contract and one checklist per task.
+
+| Value | Meaning |
+| --- | --- |
+| `kortix:<name>` | A Kortix tool (`web_search`, `image_search`, `scrape_webpage`, `memory`, `show`), maintained by Kortix. The key must be `<name>`. |
+| A repo-relative `.ts` / `.js` path | The project's own module. Under a Kortix tool name, it replaces the Kortix tool. |
+
+- No `tools:` key in the root file or any imported file: every session gets
+  all five Kortix tools.
+- A `tools:` key, even an empty one: sessions get only the Kortix tools it
+  lists. Delete a `kortix:<name>` line to remove that tool from every agent.
+- `kortix tools ls` lists what a session gets; `kortix tools eject <name>`
+  copies a Kortix tool to `tools/<name>.ts` for the project to change.
+- `kortix validate` errors on `kortix:<name>` under another key or for an
+  unknown name, and warns when the key lists no Kortix tool or an agent's
+  `tools` names a Kortix tool the project does not load.
 
 ## `triggers:`
 

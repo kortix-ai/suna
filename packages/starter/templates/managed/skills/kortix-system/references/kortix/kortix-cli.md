@@ -332,7 +332,7 @@ the same state.
 
 | Command | Effect |
 | --- | --- |
-| `kortix triggers ls` | List triggers + runtime state (`last_fired_at`). |
+| `kortix triggers ls [--type cron\|webhook\|event\|monitor] [--connector <slug>] [--json]` | List triggers + runtime state (`last_fired_at`). `--type` keeps one kind; `--type event` groups the rows by app. `--connector` keeps the app events on one connector. The filters combine, and `--json` respects them. |
 | `kortix triggers info <slug>` | Show one trigger in full. |
 | `kortix triggers fire <slug>` | Manually fire a trigger now. |
 | `kortix triggers enable <slug>` | Set `enabled = true`. |
@@ -475,12 +475,13 @@ title. Sorted newest first.
 
 | Command | What it does |
 | --- | --- |
-| `kortix validate` | Checks `kortix.yaml` against the schema, lints sandbox Dockerfiles and agent wiring, and warns when the files in Git are large (a file of 10 MiB or more, or more than 32 MiB in total). Exit `0` with warnings, `1` on an error. `--json` prints the report. |
+| `kortix validate` | Checks `kortix.yaml` against the schema, lints sandbox Dockerfiles and agent wiring, and warns when the files in Git are large (a file of 10 MiB or more, or more than 512 MiB in total). Exit `0` with warnings, `1` on an error. `--json` prints the report. |
 | `kortix ship` | Runs the `kortix validate` checks, commits, and pushes the current branch to the project repo (laptop flow). An error stops the ship; a warning never does. `--no-verify` skips the checks. |
 
-A session builds its agent config from the whole repository. Above 32 MiB
-compressed that build fails and the session runs the platform default
-config, so the size warning names the largest files. Move them to object
+A session builds its agent config from the whole repository, and every
+session downloads every file. Above 512 MiB compressed a running session
+stops picking up agent config changes from the base branch until a new
+session starts, so the size warning names the largest files. Move them to object
 storage (S3, R2, GCS), or mark paths no agent reads `export-ignore` in
 `.gitattributes`.
 

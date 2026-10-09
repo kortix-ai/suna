@@ -32,7 +32,6 @@ import {
   activateBootConfig,
   bootConfigRoot,
   deactivateBootConfig,
-  materializeRelease,
   pruneBootConfigs,
   quarantineRelease,
   readBootConfigPointer,
@@ -41,12 +40,10 @@ import {
   releaseDir,
   verifyRelease,
   verifyReleaseDetail,
-  writeReleaseManifest,
   type ReleaseManifest,
 } from '@/services/config-release/boot-config'
 import {
   configReleaseApiFrom,
-  downloadConfigArchive,
   fetchConfigReleaseDescriptor,
   isFeatureDisabledError,
   type ConfigReleaseApi,
@@ -57,6 +54,7 @@ import {
   clearConfigReleaseNotice,
   writeConfigReleaseNotice,
 } from '@/services/config-release/notice'
+import { checkoutMayHold, obtainRelease } from '@/services/config-release/obtain'
 import {
   ConvergeBusyError,
   deliverGovernance,
@@ -152,7 +150,12 @@ export interface PiConfigReleases {
    * Choose what the runtime starts on. Runs once, before `PiRuntime.start()`;
    * a second call joins the first. Never throws for a config reason.
    */
-  boot(mark?: (label: string) => void): Promise<void>
+  /**
+   * Choose the config the runtime starts on. `workspace` settles once the
+   * checkout is in place, with its failure message or null; a release of the
+   * commit the box checked out is then copied from it instead of downloaded.
+   */
+  boot(mark?: (label: string) => void, workspace?: Promise<string | null>): Promise<void>
   /** Apply the desired release. Single flight: a call while one runs throws `ConvergeBusyError`. */
   converge(runtime: PiReleaseRuntime | null, options?: { delayBeforeSwapMs?: number }): Promise<HarnessConfigConvergeResult>
 }
@@ -173,18 +176,24 @@ function piDirIn(releaseRoot: string): Promise<string | null> {
 
 /**
  * What only a runtime start reads from a release: everything in pi's own
- * config dir except its skills, and the project tools (their declaration in
- * the governance, and every file in the folder of each tool module).
+ * config dir except its skills, and the tools (the project tools and the
+ * Kortix tool list in the governance, and every file in the folder of each
+ * tool module).
  */
 function startOnlyFiles(release: Pick<ReleaseManifest, 'files' | 'compiled_governance'> | null, releaseRoot: string | null, piDir: string | null): string {
   if (!releaseRoot || !release) return ''
   const pi = piDir ? `${relative(releaseRoot, piDir)}/` : null
-  const declared = parseCompiledAgentConfig(release.compiled_governance ?? undefined)?.project_tools ?? {}
+  const governance = parseCompiledAgentConfig(release.compiled_governance ?? undefined)
+  const declared = governance?.project_tools ?? {}
   const toolDirs = Object.values(declared).map((path) => path.slice(0, path.lastIndexOf('/') + 1) || path)
   const startOnly = (path: string) =>
     (pi !== null && path.startsWith(pi) && !path.startsWith(`${pi}skills/`)) || toolDirs.some((dir) => path.startsWith(dir))
   const files = (release.files ?? []).filter(([path]) => startOnly(path!)).map(([path, , blob]) => `${path}:${blob}`).sort()
-  return [...(toolDirs.length > 0 ? [`tools:${JSON.stringify(declared)}`] : []), ...files].join('\n')
+  return [
+    ...(toolDirs.length > 0 ? [`tools:${JSON.stringify(declared)}`] : []),
+    ...(governance?.kortix_tools ? [`kortix_tools:${JSON.stringify(governance.kortix_tools)}`] : []),
+    ...files,
+  ].join('\n')
 }
 
 /** A release's compiled governance must parse to a config object. Null governance keeps the running one. */
@@ -257,18 +266,21 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
     }
   }
 
-  /** Download, verify, extract and seal a release, or reuse an intact copy. */
-  const materialize = async (manifest: ReleaseManifest, from: ConfigReleaseApi): Promise<string> => {
-    const dir = releaseDir(root, manifest.release_id)
-    const intact =
-      existsSync(dir) && (await verifyRelease({ dir, files: manifest.files, configDir: manifest.config_dir, managedSkillsDir: options.managedSkillsDir }))
-    if (intact) {
-      await writeReleaseManifest(root, manifest)
-      return dir
-    }
-    const archive = await downloadConfigArchive(from, manifest.archive_url, { expectedBytes: manifest.archive_bytes })
-    await materializeRelease({ root, manifest, archive, managedSkillsDir: options.managedSkillsDir })
-    return dir
+  /** Put a release on this box from the first source that holds it (obtain.ts). */
+  const materialize = async (
+    manifest: ReleaseManifest,
+    descriptor: ConfigReleaseDescriptor,
+    workspace: string | null,
+  ): Promise<string> => {
+    const obtained = await obtainRelease({
+      root,
+      manifest,
+      snapshot: descriptor.snapshot,
+      api,
+      workspace,
+      managedSkillsDir: options.managedSkillsDir,
+    })
+    return obtained.dir
   }
 
   const settleRelease = async (releaseId: string, manifest: ReleaseManifest, dir: string) => {
@@ -285,7 +297,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
 
   // ── Boot ─────────────────────────────────────────────────────────────────
 
-  async function chooseBootConfig(mark?: (label: string) => void): Promise<void> {
+  async function chooseBootConfig(mark?: (label: string) => void, workspace?: Promise<string | null>): Promise<void> {
     // 1. The descriptor request IS this boot's flag evaluation.
     let descriptor: ConfigReleaseDescriptor | null = null
     let disabled: string | null = api
@@ -321,7 +333,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
       const quarantined = (await readQuarantine(root))[desiredId]
       if (quarantined) {
         reasons.push(`release ${desiredId.slice(0, 12)} is quarantined on this box: ${quarantined.reason}`)
-      } else if (descriptor.archive === null) {
+      } else if (descriptor.files === null) {
         // Governance only: no repository access, or no config dir on the base branch.
         const problem = governanceProblem(descriptor.compiled_governance)
         if (!problem) {
@@ -353,7 +365,10 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
           await quarantineRelease(root, desiredId, problem)
         } else {
           try {
-            const dir = await materialize(manifest, api!)
+            // The checkout is the release when the box checked out its commit (obtain.ts).
+            const checkout =
+              checkoutMayHold(cfg.baseSha, descriptor) && workspace && (await workspace) === null ? cfg.projectTarget : null
+            const dir = await materialize(manifest, descriptor, checkout)
             mark?.('config-release-extracted')
             await useRelease(desiredId, desiredId, manifest, dir, reasons, null)
             mark?.('config-release-proven')
@@ -502,7 +517,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
     }
     const releaseId = effectiveReleaseId(descriptor)
     setCurrent({ ...current, desired_release_id: releaseId })
-    if (releaseId === null || (descriptor.archive === null && descriptor.config_tree_id !== null)) {
+    if (releaseId === null) {
       return respond(descriptor.reason ? 'failed' : 'unchanged', descriptor.reason)
     }
     const met = () => {
@@ -512,7 +527,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
     const busy = () => respond('failed', 'a turn is running; the apply waits for the next trigger')
 
     const governance = { value: descriptor.compiled_governance, etag: descriptor.compiled_governance_etag }
-    if (descriptor.archive === null) {
+    if (descriptor.files === null) {
       if (current.release_id === releaseId && current.source === 'image-default') return met()
       const problem = governanceProblem(governance.value)
       if (problem) {
@@ -570,7 +585,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
     }
 
     try {
-      await materialize(manifest, api)
+      await materialize(manifest, descriptor, cfg.projectTarget)
     } catch (err) {
       if (isFeatureDisabledError(err)) return revert(runtime, err.message)
       const reason = `could not build release ${releaseId.slice(0, 12)}: ${(err as Error).message}`
@@ -644,8 +659,8 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
     },
     governanceOwned: () => current.release_id !== null,
     inFlight: () => inFlight !== null,
-    boot(mark) {
-      booted ??= chooseBootConfig(mark).catch((err: unknown) => {
+    boot(mark, workspace) {
+      booted ??= chooseBootConfig(mark, workspace).catch((err: unknown) => {
         // A broken release store must not keep the runtime from starting: the
         // provisioned governance and the managed skills still run.
         setCurrent({

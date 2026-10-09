@@ -76,22 +76,20 @@ opencode:
   config_dir: harnesses/opencode
 
 # ─── Tools ───────────────────────────────────────────────────────────────
-# Project tools: tool name → the module that implements it, in any folder.
-# Every harness (OpenCode, pi) runs the same module. A module default-exports
-# a plain object, with no import needed:
-#
-#   export default {
-#     description: 'Look up an order by id.',
-#     parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
-#     async execute(args, context) { return `order ${args.id}: shipped` },
-#   }
-#
-# Every session also has the Kortix tools: web_search, image_search,
-# scrape_webpage, memory and show. A project tool with one of those names
-# replaces it. Which agent may use which tool is `agents.<name>.tools`.
-#
-# tools:
-#   lookup_order: tools/lookup_order.ts
+# The tools every agent of this project gets, on every harness (OpenCode, pi).
+# `kortix:<name>` is a tool Kortix maintains and updates. A path is your own
+# module, in any folder (https://kortix.com/docs/project/tools).
+#   - Delete a line to remove that tool from every agent.
+#   - Run `kortix tools eject <name>` to own and change a Kortix tool.
+#   - Use `agents.<name>.tools` to limit one agent.
+# `kortix tools ls` lists what a session gets.
+tools:
+  web_search: kortix:web_search      # maintained by Kortix, updated automatically
+  image_search: kortix:image_search
+  scrape_webpage: kortix:scrape_webpage
+  memory: kortix:memory
+  show: kortix:show
+  # lookup_order: tools/lookup_order.ts   # your own tool: a module in your repo
 
 # ─── Agents ──────────────────────────────────────────────────────────────
 # One map per project, GOVERNANCE ONLY — connectors/secrets/kortix_permissions/

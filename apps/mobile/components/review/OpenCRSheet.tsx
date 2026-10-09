@@ -27,7 +27,6 @@ import { useToast } from '@/components/kortix/toast-provider';
 
 import { shortRef } from '@/lib/review/review-detail';
 
-export { shortRef };
 
 function BranchPills({
   options,

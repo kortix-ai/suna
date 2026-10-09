@@ -59,17 +59,38 @@ The platform never writes `/workspace` to do this. `/workspace` stays the full c
 
 The unit a session runs is a **config release**: a read-only checkout of the base branch at one commit, with the same files and folders as `/workspace`, plus the agent config the API compiles from `kortix.yaml` and the agent files. The runtime reads its config inside the release from the same paths it uses in `/workspace`: `harnesses/opencode` (unless the manifest sets `opencode.config_dir`), `skills/`, and the agent files. A project created before 2026-09 uses `.kortix/opencode`, which also holds its agents and skills. Every commit to the base branch is a new release.
 
-The release holds every file Git tracks at that commit; history and `.git` do not count. A release over 32 MiB compressed or 128 MiB uncompressed is not built, and the session runs the platform default config without the project's agents. Keep big static assets (video, datasets, model weights, build output) in object storage such as S3, R2, or GCS, not in Git. A path that must stay in Git but that no agent reads can be left out of the release with `<path> export-ignore` in `.gitattributes`; a directory rule leaves out everything under it. The agent config dir and `kortix.yaml` always ship whole. [`kortix validate`](/docs/cli#manifest-validation) warns before you push.
+The release holds every file Git tracks at that commit; history and `.git` do not count. A path that no agent reads can be left out of the release with `<path> export-ignore` in `.gitattributes`; a directory rule leaves out everything under it. The agent config dir and `kortix.yaml` always ship whole.
 
-Both session runtimes run config releases. OpenCode reads its config directory inside the release. pi reads the agents, from the compiled agent config, `skills/`, and its own config directory: `pi.config_dir` in the manifest, else `harnesses/pi`, else `.kortix/pi`, at the same path inside the release, so pi's skills, extensions, prompts, and `settings.json` also come from the base branch. The OpenCode files (`opencode.json`, `tools/`, `plugins/`) do not affect a pi session. Both runtimes load the [project tools](/docs/project/tools) (`tools:` in `kortix.yaml`) from the release root.
+#### Where a box gets the release
+
+The box takes the release's files from the first source that holds them, and verifies every file against its Git blob ID before it uses any of them:
+
+1. The copy already on the box.
+2. The session's own checkout, when `/workspace` is at the release's commit. A new session checks that commit out anyway, so it builds its release with no second download.
+3. The project snapshot of the commit: the same prepared copy of the repository a new session can start from, downloaded straight from storage.
+4. The release archive the API builds. It holds at most 32 MiB compressed and 128 MiB uncompressed.
+
+A file that does not match its blob ID disqualifies the whole source, and the box moves to the next one. Uncommitted edits in `/workspace` therefore never become the release.
+
+Repository size limits only how a running session picks up a change:
+
+| Repository, compressed | New session | Running session after a base-branch change |
+| --- | --- | --- |
+| Up to 32 MiB | Runs the release | Converges |
+| Up to 512 MiB | Runs the release | Converges through the project snapshot |
+| Over 512 MiB | Runs the release | Keeps the release it runs; `stale` stays `true` until a new session |
+
+512 MiB is the project snapshot limit on Kortix cloud. A self-hosted deployment without project snapshot storage (`KORTIX_PROJECT_SNAPSHOT_S3_*`) has only the archive, so its limit for a running session is 32 MiB. Keep big static assets (video, datasets, model weights, build output) in object storage such as S3, R2, or GCS, not in Git: every session and every config change downloads them. [`kortix validate`](/docs/cli#manifest-validation) warns before you push.
+
+Both session runtimes run config releases. OpenCode reads its config directory inside the release. pi reads the agents, from the compiled agent config, `skills/`, and its own config directory: `pi.config_dir` in the manifest, else `harnesses/pi`, else `.kortix/pi`, at the same path inside the release, so pi's skills, extensions, prompts, and `settings.json` also come from the base branch. The OpenCode files (`opencode.json`, `tools/`, `plugins/`) do not affect a pi session. Both runtimes load the [project tools](/docs/project/tools) (`tools:` in `kortix.yaml`) from the release root, and the Kortix tools the release's `tools:` key lists (all five when the manifest has no `tools:` key).
 
 Convergence runs at the **start of every turn**: a prompt on a box that is behind converges first, then runs. It also runs after the box boots, after each resume and restart, when the base branch moves, and when you select **Reload config** or run `kortix sessions reload`. Those are a warm-up — they move the box onto the current config while nobody waits, so the turn usually starts with nothing to do and pays nothing.
 
 Convergence never ends a turn. A turn that is already running blocks it, and the next turn start picks it up.
 
 1. The box asks the API which release it should run. The request carries no inputs: the answer is always the base branch's current release for that session.
-2. The daemon downloads the archive through the API and extracts it to `/opt/kortix/config/<release_id>`. It verifies every file against its Git blob ID, then seals the directory read-only. OpenCode reads its agents, skills, tools, and plugins from there. pi reads its skills from there.
-3. On OpenCode, the daemon starts a replacement OpenCode on the new config and runs the proven check: the replacement serves the session API, lists the default agent, and loads every tool in `tools/`. Only a proven replacement takes over. On pi, the runtime runs inside the daemon, so the daemon loads the new config in place. A release that changes pi extensions, prompts, settings, or a project tool (its declaration, or a file in its module's folder) restarts the pi runtime in place, while no turn runs; the conversation continues. A config that pi does not accept leaves the previous config running. The daemon then records the release as the last proven release in `/opt/kortix/config/current.json`.
+2. The daemon puts the release in `/opt/kortix/config/<release_id>` from the first source that holds it (see [Where a box gets the release](#where-a-box-gets-the-release)). It verifies every file against its Git blob ID, then seals the directory read-only. OpenCode reads its agents, skills, tools, and plugins from there. pi reads its skills from there.
+3. On OpenCode, the daemon starts a replacement OpenCode on the new config and runs the proven check: the replacement serves the session API, lists the default agent, and loads every tool in `tools/`. Only a proven replacement takes over. On pi, the runtime runs inside the daemon, so the daemon loads the new config in place. A release that changes pi extensions, prompts, settings, a project tool (its declaration, or a file in its module's folder), or the list of Kortix tools restarts the pi runtime in place, while no turn runs; the conversation continues. A config that pi does not accept leaves the previous config running. The daemon then records the release as the last proven release in `/opt/kortix/config/current.json`.
 
 #### `/workspace` is where you edit, the base branch is what runs
 
@@ -172,7 +193,7 @@ Config releases are a per-project feature flag, **Config Releases**, in **Settin
 /usr/local/bin/kortix-agent      ← The daemon (supervisor + reverse proxy).
 /usr/local/bin/kortix-entrypoint ← The container ENTRYPOINT (PID 1).
 /opt/kortix/home                 ← OpenCode's HOME — its object store lives here, off the repo.
-/opt/kortix/config/<release_id>  ← Read-only config release: the OpenCode config dir and skills/ at a base commit.
+/opt/kortix/config/<release_id>  ← Read-only config release: the repository tree at a base commit.
 /opt/kortix/config/current.json  ← Pointer to the last proven config release.
 ```
 
