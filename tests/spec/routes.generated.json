@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 745,
+  "count": 740,
   "routes": [
     {
       "method": "GET",
@@ -1572,6 +1572,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/apps/:appId/credentials"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/apps/:appId/deployments"
     },
     {
@@ -1591,8 +1595,32 @@
       "path": "/v1/projects/:projectId/apps/:appId/deployments/:deploymentId/logs"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/apps/:appId/logs"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/restore"
+    },
+    {
       "method": "POST",
       "path": "/v1/projects/:projectId/apps/:appId/rollback"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/rotate-credentials"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/apps/:appId/snapshots"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/snapshots"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/apps/:appId/snapshots/:snapshotId"
     },
     {
       "method": "POST",
@@ -1601,6 +1629,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/apps/:appId/stop"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/token"
     },
     {
       "method": "POST",
@@ -1629,58 +1661,6 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/audit"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/backends"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/backends"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/projects/:projectId/backends/:backendId"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/backends/:backendId"
-    },
-    {
-      "method": "PATCH",
-      "path": "/v1/projects/:projectId/backends/:backendId"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/backends/:backendId/backups"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/backends/:backendId/credentials"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/backends/:backendId/logs"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/backends/:backendId/restore"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/backends/:backendId/rotate-admin-key"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/backends/:backendId/snapshots"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/projects/:projectId/backends/:backendId/snapshots/:snapshotId"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/backends/:backendId/token"
     },
     {
       "method": "GET",

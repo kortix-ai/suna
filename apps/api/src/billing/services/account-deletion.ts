@@ -47,7 +47,7 @@ import { BillingError } from '../../errors';
 import { isUniqueViolation } from '../../shared/postgres-errors';
 import { tryGetProvider } from '../../platform/providers';
 import { KORTIX_REMOVAL_INTENT_KEY } from '../../projects/runtime-identity';
-import { deleteAccountBackends } from '../../backends/lifecycle';
+import { deleteAccountBackends } from '../../apps/kinds/convex/lifecycle';
 import {
   isAlreadyNotRunning,
   reconcileSandboxRemovedByExternalId,
@@ -138,7 +138,7 @@ export async function cancelAccountDeletion(accountId: string) {
  * The one deletion routine. The immediate path and the scheduled worker both
  * run it, in this order, so neither can leave a login or data behind:
  *
- *   1. `performDeletion`: sandboxes, Kortix Backends (machines and
+ *   1. `performDeletion`: sandboxes, `convex` App machines (and their
  *      snapshots), the stores outside the database (`deleteAccountExternalStores`:
  *      parked boxes, session files, Kortix-managed repos), Stripe cancel,
  *      wallet forfeit.

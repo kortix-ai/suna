@@ -2,20 +2,21 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import {
   accountMembers,
   accounts,
+  appConvexInstances,
+  apps,
   creditAccounts,
-  projectBackends,
   projectMembers,
   projects,
   sandboxComputeSessions,
 } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
-import { config } from '../config';
-import { db } from '../shared/db';
-import { app } from '../index';
-import { createAccountToken } from '../repositories/account-tokens';
-import { insertIntoView } from '../__tests__/helpers/compat-views';
-import { decryptProjectSecret, encryptProjectSecret } from '../projects/surface';
-import { MAX_PROVISION_ATTEMPTS, UNHEALTHY_ALERT_AFTER, sweepBackends } from './maintenance';
+import { config } from '../../../config';
+import { db } from '../../../shared/db';
+import { app } from '../../../index';
+import { createAccountToken } from '../../../repositories/account-tokens';
+import { insertIntoView } from '../../../__tests__/helpers/compat-views';
+import { decryptProjectSecret, encryptProjectSecret } from '../../../projects/surface';
+import { MAX_PROVISION_ATTEMPTS, UNHEALTHY_ALERT_AFTER, budgetAlertDue, sweepBackends } from './maintenance';
 import {
   AUTOMATIC_SNAPSHOT_RETENTION_MS,
   BackendOperationError,
@@ -28,13 +29,14 @@ import {
   runResize,
   runSnapshotMaintenance,
 } from './operations';
-import { type BackendRow, discardMachine } from './provision';
+import { type ConvexRow, discardMachine } from './provision';
+import { insertConvexRow, readConvexRow } from '../../../__tests__/helpers/convex-apps';
 import { backendPublicUrls } from './hosts';
-import { ORPHAN_MACHINE_GRACE_MS, deleteAccountBackends, reapOrphanBackendMachines } from './lifecycle';
-import { sandboxOwnershipMarker } from '../platform/sandbox-ownership';
+import { ORPHAN_MACHINE_GRACE_MS, deleteAccountBackends, purgeRetiredConvexApps, reapOrphanBackendMachines } from './lifecycle';
+import { sandboxOwnershipMarker } from '../../../platform/sandbox-ownership';
 
-// The backends maintenance sweep, admin-key rotation and the logs route
-// against the real DB, a fake Platinum API and a fake Convex backend. Proves:
+// The maintenance sweep of Apps of kind `convex`, admin-key rotation and the
+// capability routes against the real DB, a fake Platinum API and a fake Convex. Proves:
 // an interrupted provision resumes on the same machine (H6), an interrupted
 // operation is recovered (H6), the probe records health and repairs a stopped,
 // lost or tombstoned machine (H1), rotation re-seals the key Convex accepts
@@ -43,7 +45,9 @@ import { sandboxOwnershipMarker } from '../platform/sandbox-ownership';
 // deletes machines and snapshots (D9), orphaned machines are deleted (B5), and
 // a running backend is metered (D11), and snapshots keep their kind, cap and
 // expiry, run under the operation lock, and restore only once Platinum has
-// restored (D22, H5, N2, N3).
+// restored (D22, H5, N2, N3). A delete keeps the stopped machine and a `final`
+// snapshot until the retention ends, then purges it; the budget alerts once
+// per threshold per month and never stops the machine.
 
 type Machine = {
   state: string;
@@ -82,6 +86,8 @@ const keyFor = (id: string) => `synthetic|${id}-secret-${machines.get(id)?.secre
 const machineOf = (path: string) => /^\/v1\/sandboxes\/([^/?]+)/.exec(path)?.[1] ?? '';
 /** Machines whose DELETE answers 500. */
 const failDelete = new Set<string>();
+/** Machines whose POST /stop answers 500. */
+const failStop = new Set<string>();
 /** Snapshot creation times; a snapshot not listed here was taken 2026-10-07T00:00:00Z. */
 const snapshotTimes = new Map<string, string>();
 let snapshotSeq = 0;
@@ -187,6 +193,7 @@ const platinum = Bun.serve({
       return Response.json(m);
     }
     if (req.method === 'POST' && sub === '/stop') {
+      if (failStop.has(id)) return Response.json({ error: 'synthetic failure' }, { status: 500 });
       if (m.state !== 'running') return Response.json({ code: 'sandbox_not_running' }, { status: 409 });
       m.state = 'stopped';
       return Response.json({ state: 'stopping' });
@@ -255,7 +262,7 @@ beforeAll(async () => {
   await db.execute(sql`alter table kortix.account_tokens add column if not exists service_account_id uuid`);
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'backend-maintenance-test' });
   await db.insert(projects).values([
-    { projectId: PROJECT, accountId: ACCOUNT, name: 'backend-maintenance', repoUrl: 'https://example.com/bm.git', metadata: { experimental: { backends: true } } },
+    { projectId: PROJECT, accountId: ACCOUNT, name: 'backend-maintenance', repoUrl: 'https://example.com/bm.git', metadata: { experimental: { apps: true } } },
     { projectId: ARCHIVED_PROJECT, accountId: ACCOUNT, name: 'backend-maintenance-archived', repoUrl: 'https://example.com/bma.git', status: 'archived' },
   ]);
   await insertIntoView(db, accountMembers, { userId: USER, accountId: ACCOUNT, accountRole: 'owner', isSuperAdmin: false });
@@ -269,7 +276,7 @@ afterAll(async () => {
   config.PLATINUM_API_KEY = saved.key;
   config.PLATINUM_API_URL = saved.url;
   await db.execute(sql`delete from kortix.account_tokens where token_id = ${tokenId}`);
-  await db.delete(projectBackends).where(eq(projectBackends.accountId, ACCOUNT));
+  await db.delete(apps).where(eq(apps.accountId, ACCOUNT));
   await db.delete(projects).where(eq(projects.accountId, ACCOUNT));
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT));
   platinum.stop(true);
@@ -278,37 +285,32 @@ afterAll(async () => {
 
 const ago = (ms: number) => new Date(Date.now() - ms);
 
-/** A running backend on machine `sbx-<name>`, holding that machine's current admin key. */
-async function runningBackend(name: string, machine: Partial<Machine>, extra: Partial<BackendRow> = {}): Promise<BackendRow> {
+/** A running `convex` App on machine `sbx-<name>`, holding that machine's current admin key. */
+async function runningBackend(name: string, machine: Partial<Machine>, extra: Partial<ConvexRow> = {}): Promise<ConvexRow> {
   const externalId = `sbx-${name}`;
   machines.set(externalId, { state: 'running', cpu: 1, ramMb: 1024, diskGb: 10, secret: 1, ...machine });
-  const backendId = extra.backendId ?? crypto.randomUUID();
-  const [row] = await db
-    .insert(projectBackends)
-    .values({
-      backendId,
-      projectId: PROJECT,
-      accountId: ACCOUNT,
-      name,
-      status: 'running',
-      provider: 'platinum',
-      externalId,
-      // Already on its Kortix hosts; `legacy-hosts` below starts on Platinum URLs.
-      url: backendPublicUrls(backendId).url,
-      siteUrl: backendPublicUrls(backendId).siteUrl,
-      adminKeyEnc: encryptProjectSecret(extra.projectId ?? PROJECT, keyFor(externalId)),
-      cpu: 1,
-      memoryGb: 1,
-      diskGb: 10,
-      ...extra,
-    })
-    .returning();
-  return row!;
+  const appId = extra.appId ?? crypto.randomUUID();
+  return insertConvexRow({
+    appId,
+    projectId: PROJECT,
+    accountId: ACCOUNT,
+    slug: name,
+    status: 'running',
+    externalId,
+    // Already on its Kortix hosts; `legacy-hosts` below starts on Platinum URLs.
+    url: backendPublicUrls(appId).url,
+    siteUrl: backendPublicUrls(appId).siteUrl,
+    adminKeyEnc: encryptProjectSecret(extra.projectId ?? PROJECT, keyFor(externalId)),
+    ...extra,
+  } as Parameters<typeof insertConvexRow>[0]);
 }
 
-const read = async (backendId: string) =>
-  (await db.select().from(projectBackends).where(eq(projectBackends.backendId, backendId)))[0]!;
-const meta = (row: BackendRow) => row.metadata as Record<string, any>;
+/** A `convex` App row in any state (no machine yet unless `externalId`). */
+const seedRow = (seed: Omit<Parameters<typeof insertConvexRow>[0], 'projectId' | 'accountId'> & { projectId?: string; accountId?: string }) =>
+  insertConvexRow({ projectId: PROJECT, accountId: ACCOUNT, ...seed });
+
+const read = async (appId: string) => (await readConvexRow(appId))!;
+const meta = (row: ConvexRow) => row.metadata as Record<string, any>;
 
 async function eventually<T>(fn: () => Promise<T>, check: (value: T) => boolean, timeoutMs = 15_000): Promise<T> {
   const deadline = Date.now() + timeoutMs;
@@ -322,42 +324,33 @@ async function eventually<T>(fn: () => Promise<T>, check: (value: T) => boolean,
 
 describe('resume an interrupted provision (H6)', () => {
   test('a provisioning row with no heartbeat for 2 min resumes on the same Idempotency-Key and reaches running', async () => {
-    const [row] = await db
-      .insert(projectBackends)
-      .values({ projectId: PROJECT, accountId: ACCOUNT, name: 'resumed', status: 'provisioning', provider: 'platinum', cpu: 1, memoryGb: 1, diskGb: 10, createdAt: ago(5 * 60_000) })
-      .returning();
+    const row = await seedRow({ slug: 'resumed', status: 'provisioning', createdAt: ago(5 * 60_000) });
     const fresh = (
-      await db
-        .insert(projectBackends)
-        .values({ projectId: PROJECT, accountId: ACCOUNT, name: 'still-building', status: 'provisioning', provider: 'platinum', cpu: 1, memoryGb: 1, diskGb: 10, createdAt: ago(20 * 60_000), metadata: { heartbeatAt: ago(10_000).toISOString() } })
-        .returning()
+      [await seedRow({ slug: 'still-building', status: 'provisioning', createdAt: ago(20 * 60_000), metadata: { heartbeatAt: ago(10_000).toISOString() } })]
     )[0]!;
     const result = await sweepBackends();
     expect(result.resumed).toBe(1);
-    const done = await eventually(() => read(row!.backendId), (r) => r.status === 'running');
-    expect(done.externalId).toBe(`sbx-backend-${row!.backendId}`);
+    const done = await eventually(() => read(row.appId), (r) => r.status === 'running');
+    expect(done.externalId).toBe(`sbx-backend-${row.appId}`);
     expect(decryptProjectSecret(PROJECT, done.adminKeyEnc!)).toBe(keyFor(done.externalId!));
     expect(meta(done).provisionAttempts).toBe(2);
-    // A new backend is born on its Kortix hosts, with Convex running on them.
-    expect(done.url).toBe(backendPublicUrls(done.backendId).url);
-    expect(done.siteUrl).toBe(backendPublicUrls(done.backendId).siteUrl);
+    // A new App is born on its Kortix hosts, with Convex running on them.
+    expect(done.url).toBe(backendPublicUrls(done.appId).url);
+    expect(done.siteUrl).toBe(backendPublicUrls(done.appId).siteUrl);
     expect(writtenOrigins.get(done.externalId!)).toContain(`CONVEX_CLOUD_ORIGIN=${done.url}\n`);
     expect(writtenOrigins.get(done.externalId!)).toContain(`CONVEX_SITE_ORIGIN=${done.siteUrl}\n`);
-    expect(calls).toContain(`POST /v1/sandboxes key=kortix-backend-${row!.backendId}`);
+    expect(calls).toContain(`POST /v1/sandboxes key=kortix-backend-${row.appId}`);
     // A provision that heartbeats is left alone, however old the row.
-    expect((await read(fresh.backendId)).status).toBe('provisioning');
-    expect(meta(await read(fresh.backendId)).provisionAttempts).toBeUndefined();
+    expect((await read(fresh.appId)).status).toBe('provisioning');
+    expect(meta(await read(fresh.appId)).provisionAttempts).toBeUndefined();
   });
 
   test(`a provision interrupted ${MAX_PROVISION_ATTEMPTS} times turns error and its machine is deleted`, async () => {
     machines.set('sbx-abandoned', { state: 'running', cpu: 1, ramMb: 1024, diskGb: 10, secret: 1 });
-    const [row] = await db
-      .insert(projectBackends)
-      .values({ projectId: PROJECT, accountId: ACCOUNT, name: 'abandoned', status: 'provisioning', provider: 'platinum', externalId: 'sbx-abandoned', cpu: 1, memoryGb: 1, diskGb: 10, createdAt: ago(60 * 60_000), metadata: { provisionAttempts: MAX_PROVISION_ATTEMPTS, heartbeatAt: ago(5 * 60_000).toISOString() } })
-      .returning();
+    const row = await seedRow({ slug: 'abandoned', status: 'provisioning', externalId: 'sbx-abandoned', createdAt: ago(60 * 60_000), metadata: { provisionAttempts: MAX_PROVISION_ATTEMPTS, heartbeatAt: ago(5 * 60_000).toISOString() } });
     const result = await sweepBackends();
     expect(result.failedProvisions).toBe(1);
-    const after = await read(row!.backendId);
+    const after = await read(row.appId);
     expect(after.status).toBe('error');
     expect(meta(after).lastError).toContain(`interrupted ${MAX_PROVISION_ATTEMPTS} times`);
     expect(machines.has('sbx-abandoned')).toBe(false);
@@ -371,10 +364,10 @@ describe('take over an interrupted operation (H6)', () => {
     });
     const result = await sweepBackends();
     expect(result.recovered).toBe(1);
-    const after = await eventually(() => read(row.backendId), (r) => !meta(r).operation);
+    const after = await eventually(() => read(row.appId), (r) => !meta(r).operation);
     expect(machines.get('sbx-resize-died')!.state).toBe('running');
     expect([after.cpu, after.memoryGb, after.diskGb]).toEqual([2, 4, 20]);
-    expect(meta(after).lastOperationError).toBe('The resize was interrupted. The backend runs again; retry it.');
+    expect(meta(after).lastOperationError).toBe('The resize was interrupted. The App runs again; retry it.');
     expect(meta(after).heartbeatAt).toBeUndefined();
   });
 
@@ -383,7 +376,7 @@ describe('take over an interrupted operation (H6)', () => {
       metadata: { operation: 'resizing', operationStartedAt: ago(10 * 60_000).toISOString(), heartbeatAt: ago(5_000).toISOString() },
     });
     await sweepBackends();
-    expect(meta(await read(row.backendId)).operation).toBe('resizing');
+    expect(meta(await read(row.appId)).operation).toBe('resizing');
     expect(machines.get('sbx-resize-alive')!.state).toBe('stopped');
   });
 });
@@ -394,8 +387,8 @@ describe('Kortix hosts', () => {
     runningOrigins.set('sbx-legacy-hosts', 'https://3210-sbx-legacy-hosts.example');
     const result = await sweepBackends();
     expect(result.movedToHosts).toBe(1);
-    const after = await read(row.backendId);
-    const hosts = backendPublicUrls(row.backendId);
+    const after = await read(row.appId);
+    const hosts = backendPublicUrls(row.appId);
     expect({ url: after.url, siteUrl: after.siteUrl }).toEqual({ url: hosts.url, siteUrl: hosts.siteUrl });
     expect(runningOrigins.get('sbx-legacy-hosts')).toBe(hosts.url);
     expect([3210, 3211, 6791].filter((port) => privatePorts.has(`sbx-legacy-hosts:${port}`))).toEqual([3210, 3211, 6791]);
@@ -403,7 +396,7 @@ describe('Kortix hosts', () => {
     expect(meta(after).health).toMatchObject({ ok: true, machine_state: 'running' });
 
     expect((await sweepBackends()).movedToHosts).toBe(0);
-    expect((await read(row.backendId)).url).toBe(hosts.url);
+    expect((await read(row.appId)).url).toBe(hosts.url);
   });
 
   test('a move that fails leaves the backend on its old URLs, unlocked, for the next tick', async () => {
@@ -411,10 +404,11 @@ describe('Kortix hosts', () => {
     machines.delete('sbx-legacy-down');
     const result = await sweepBackends();
     expect(result.movedToHosts).toBe(0);
-    const after = await read(row.backendId);
+    const after = await read(row.appId);
     expect(after.url).toBe('https://3210-sbx-legacy-down.example');
     expect(meta(after).operation).not.toBe('recovering');
-    await db.update(projectBackends).set({ status: 'deleted', deletedAt: new Date() }).where(eq(projectBackends.backendId, row.backendId));
+    await db.update(appConvexInstances).set({ status: 'deleted' }).where(eq(appConvexInstances.appId, row.appId));
+    await db.update(apps).set({ deletedAt: new Date() }).where(eq(apps.appId, row.appId));
   });
 });
 
@@ -422,7 +416,7 @@ describe('health probe (H1)', () => {
   test('a healthy backend records ok, the machine state and disk use', async () => {
     const row = await runningBackend('healthy', {});
     await sweepBackends();
-    const health = meta(await read(row.backendId)).health;
+    const health = meta(await read(row.appId)).health;
     expect(health).toMatchObject({ ok: true, machine_state: 'running', failures: 0, error: null, disk_used_pct: 42, repair: null });
   });
 
@@ -435,23 +429,23 @@ describe('health probe (H1)', () => {
     } finally {
       convexDown = false;
     }
-    const after = await read(row.backendId);
+    const after = await read(row.appId);
     expect(after.status).toBe('running');
     expect(meta(after).health).toMatchObject({ ok: false, machine_state: 'running', failures: 2, error: 'Convex answered HTTP 503' });
     await sweepBackends();
-    expect(meta(await read(row.backendId)).health).toMatchObject({ ok: true, failures: 0 });
+    expect(meta(await read(row.appId)).health).toMatchObject({ ok: true, failures: 0 });
   });
 
   test('a stopped machine is started and the admin key re-sealed', async () => {
     const row = await runningBackend('stopped', { state: 'stopped' });
     const result = await sweepBackends();
     expect(result.repairs).toBeGreaterThanOrEqual(1);
-    expect(meta(await read(row.backendId)).health).toMatchObject({ ok: false, machine_state: 'stopped', repair: 'started' });
-    const after = await eventually(() => read(row.backendId), (r) => !meta(r).operation);
+    expect(meta(await read(row.appId)).health).toMatchObject({ ok: false, machine_state: 'stopped', repair: 'started' });
+    const after = await eventually(() => read(row.appId), (r) => !meta(r).operation);
     expect(machines.get('sbx-stopped')!.state).toBe('running');
     expect(meta(after).lastOperationError).toBeUndefined();
     await sweepBackends();
-    expect(meta(await read(row.backendId)).health).toMatchObject({ ok: true, machine_state: 'running' });
+    expect(meta(await read(row.appId)).health).toMatchObject({ ok: true, machine_state: 'running' });
   });
 
   test('a system-tombstoned machine with a backup is restored from it; the restored secret is the one Kortix seals', async () => {
@@ -459,8 +453,8 @@ describe('health probe (H1)', () => {
     // The backup predates a rotation: the machine comes back on an older secret.
     machines.get('sbx-tombstoned')!.secret = 7;
     await sweepBackends();
-    expect(meta(await read(row.backendId)).health).toMatchObject({ machine_state: 'tombstoned', repair: 'restored_from_backup' });
-    const after = await eventually(() => read(row.backendId), (r) => !meta(r).operation);
+    expect(meta(await read(row.appId)).health).toMatchObject({ machine_state: 'tombstoned', repair: 'restored_from_backup' });
+    const after = await eventually(() => read(row.appId), (r) => !meta(r).operation);
     expect(calls).toContain('POST /v1/sandboxes/sbx-tombstoned/restore-from-backup');
     expect(decryptProjectSecret(PROJECT, after.adminKeyEnc!)).toBe('synthetic|sbx-tombstoned-secret-7');
   });
@@ -470,10 +464,10 @@ describe('health probe (H1)', () => {
     machines.delete('sbx-gone');
     for (let i = 1; i < UNHEALTHY_ALERT_AFTER; i += 1) {
       await sweepBackends();
-      expect((await read(row.backendId)).status).toBe('running');
+      expect((await read(row.appId)).status).toBe('running');
     }
     await sweepBackends();
-    const after = await read(row.backendId);
+    const after = await read(row.appId);
     expect(after.status).toBe('error');
     expect(meta(after).health).toMatchObject({ ok: false, machine_state: 'missing', failures: UNHEALTHY_ALERT_AFTER });
     expect(meta(after).lastError).toContain('no longer exists');
@@ -482,7 +476,7 @@ describe('health probe (H1)', () => {
   test("an archived project's stopped backend is not probed or started; it is parked", async () => {
     const row = await runningBackend('archived', { state: 'stopped' }, { projectId: ARCHIVED_PROJECT });
     await sweepBackends();
-    const after = await read(row.backendId);
+    const after = await read(row.appId);
     expect(meta(after).health).toBeUndefined();
     expect(typeof meta(after).parked).toBe('string');
     expect(machines.get('sbx-archived')).toMatchObject({ state: 'stopped', autoResume: false });
@@ -494,7 +488,7 @@ describe('admin-key rotation (H4)', () => {
     const row = await runningBackend('rotate', {});
     const before = keyFor('sbx-rotate');
     await rotateBackendAdminKey(row);
-    const after = await read(row.backendId);
+    const after = await read(row.appId);
     const sealed = decryptProjectSecret(PROJECT, after.adminKeyEnc!);
     expect(sealed).not.toBe(before);
     expect(sealed).toBe(keyFor('sbx-rotate'));
@@ -506,11 +500,11 @@ describe('admin-key rotation (H4)', () => {
     const row = await runningBackend('rotate-restore', {});
     const leaked = keyFor('sbx-rotate-restore');
     await rotateBackendAdminKey(row);
-    expect(typeof meta(await read(row.backendId)).adminKeyRotatedAt).toBe('string');
+    expect(typeof meta(await read(row.appId)).adminKeyRotatedAt).toBe('string');
     // The host is lost before the next hourly backup: the backup still holds the old secret.
     Object.assign(machines.get('sbx-rotate-restore')!, { state: 'deleted', recoverable: true, backupSecret: 1 });
     await sweepBackends();
-    const after = await eventually(() => read(row.backendId), (r) => !meta(r).operation);
+    const after = await eventually(() => read(row.appId), (r) => !meta(r).operation);
     expect(calls).toContain('POST /v1/sandboxes/sbx-rotate-restore/restore-from-backup');
     expect(keyFor('sbx-rotate-restore')).not.toBe(leaked);
     expect(decryptProjectSecret(PROJECT, after.adminKeyEnc!)).toBe(keyFor('sbx-rotate-restore'));
@@ -521,56 +515,59 @@ describe('admin-key rotation (H4)', () => {
     const leaked = keyFor('sbx-rotate-snapshot');
     await rotateBackendAdminKey(row);
     machines.get('sbx-rotate-snapshot')!.backupSecret = 1;
-    await restoreBackendSnapshot(await read(row.backendId), 'snap-old');
+    await restoreBackendSnapshot(await read(row.appId), 'snap-old');
     expect(keyFor('sbx-rotate-snapshot')).not.toBe(leaked);
-    expect(decryptProjectSecret(PROJECT, (await read(row.backendId)).adminKeyEnc!)).toBe(keyFor('sbx-rotate-snapshot'));
+    expect(decryptProjectSecret(PROJECT, (await read(row.appId)).adminKeyEnc!)).toBe(keyFor('sbx-rotate-snapshot'));
   });
 
   test('a rotation during another operation answers backend_busy and changes nothing', async () => {
     const row = await runningBackend('rotate-busy', {});
-    expect(await claimOperation(row.backendId, 'resizing')).toBe(true);
+    expect(await claimOperation(row.appId, 'resizing')).toBe(true);
     const error = await rotateBackendAdminKey(row).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(BackendOperationError);
-    expect((error as BackendOperationError).code).toBe('backend_busy');
+    expect((error as BackendOperationError).code).toBe('app_busy');
     expect(machines.get('sbx-rotate-busy')!.secret).toBe(1);
   });
 });
 
 describe('routes', () => {
   const call = (method: string, path: string) =>
-    app.request(`/v1/projects/${PROJECT}/backends${path}`, {
+    app.request(`/v1/projects/${PROJECT}/apps${path}`, {
       method,
       headers: { Authorization: `Bearer ${secret}`, 'content-type': 'application/json' },
       ...(method === 'POST' ? { body: '{}' } : {}),
     });
 
-  test('POST /rotate-admin-key: the old key stops matching, credentials return the new one', async () => {
+  test('POST /rotate-credentials: the old key stops matching, credentials return the new one', async () => {
     const row = await runningBackend('route-rotate', {});
-    const before = (await (await call('GET', `/${row.backendId}/credentials`)).json()).admin_key;
-    const res = await call('POST', `/${row.backendId}/rotate-admin-key`);
+    const before = (await (await call('GET', `/${row.appId}/credentials`)).json()).admin_key;
+    const res = await call('POST', `/${row.appId}/rotate-credentials`);
     expect(res.status).toBe(200);
-    expect((await res.json()).backend.operation).toBeNull();
-    const now = (await (await call('GET', `/${row.backendId}/credentials`)).json()).admin_key;
+    expect((await res.json()).instance.operation).toBeNull();
+    const now = (await (await call('GET', `/${row.appId}/credentials`)).json()).admin_key;
     expect(now).not.toBe(before);
     expect(now).toBe(keyFor('sbx-route-rotate'));
   });
 
   test('GET /logs: the tail without color codes, no-store; lines out of range → 400', async () => {
     const row = await runningBackend('route-logs', {});
-    const res = await call('GET', `/${row.backendId}/logs?lines=50`);
+    const res = await call('GET', `/${row.appId}/logs?lines=50`);
     expect(res.status).toBe(200);
     expect(res.headers.get('cache-control')).toBe('no-store');
     expect((await res.json()).log).toBe(' INFO started (50 lines)\nconvex exited 1 at 1700000000\n');
-    expect((await call('GET', `/${row.backendId}/logs?lines=0`)).status).toBe(400);
-    expect((await call('GET', `/${row.backendId}/logs?lines=1001`)).status).toBe(400);
+    expect((await call('GET', `/${row.appId}/logs?lines=0`)).status).toBe(400);
+    expect((await call('GET', `/${row.appId}/logs?lines=1001`)).status).toBe(400);
   });
 
-  test('GET a backend carries its last health probe', async () => {
+  test('GET the App carries kind, capabilities and its last health probe', async () => {
     const row = await runningBackend('route-health', {});
-    expect((await (await call('GET', `/${row.backendId}`)).json()).backend.health).toBeNull();
+    const before = await (await call('GET', `/${row.appId}`)).json();
+    expect(before).toMatchObject({ kind: 'convex', url: backendPublicUrls(row.appId).url, always_on: true });
+    expect(before.capabilities).toEqual(['deployments', 'snapshots', 'restore', 'admin_credentials', 'dashboard', 'logs', 'member_tokens']);
+    expect(before.instance.health).toBeNull();
     await sweepBackends();
-    const { backend } = await (await call('GET', `/${row.backendId}`)).json();
-    expect(backend.health).toMatchObject({ ok: true, machine_state: 'running', disk_used_pct: 42 });
+    const { instance } = await (await call('GET', `/${row.appId}`)).json();
+    expect(instance.health).toMatchObject({ ok: true, machine_state: 'running', disk_used_pct: 42 });
   });
 });
 
@@ -580,7 +577,7 @@ describe('archive and unarchive (D9)', () => {
     const result = await sweepBackends();
     expect(result.parked).toBeGreaterThanOrEqual(1);
     expect(machines.get('sbx-park-me')).toMatchObject({ state: 'stopped', autoResume: false });
-    const after = await read(row.backendId);
+    const after = await read(row.appId);
     expect(Date.parse(meta(after).parked)).toBeGreaterThan(Date.now() - 60_000);
     expect(meta(after).health).toBeUndefined();
     await sweepBackends();
@@ -599,7 +596,7 @@ describe('archive and unarchive (D9)', () => {
     expect(result.unparked).toBe(1);
     expect(machines.get('sbx-unpark-me')!.autoResume).toBe(true);
     const after = await eventually(
-      () => read(row.backendId),
+      () => read(row.appId),
       (r) => !meta(r).operation && machines.get('sbx-unpark-me')!.state === 'running',
     );
     expect(meta(after).parked).toBeUndefined();
@@ -622,11 +619,10 @@ describe('account deletion (D9)', () => {
       calls.indexOf('DELETE /v1/sandboxes/sbx-account-gone/snapshots/snap-b'),
     );
     expect(machines.has('sbx-account-gone')).toBe(false);
-    const after = await read(row.backendId);
-    expect(after.status).toBe('deleted');
-    expect(after.deletedAt).not.toBeNull();
+    expect(await readConvexRow(row.appId)).toBeUndefined();
+    expect((await db.select({ deletedAt: apps.deletedAt }).from(apps).where(eq(apps.appId, row.appId)))[0]!.deletedAt).not.toBeNull();
     expect(machines.has('sbx-account-stays')).toBe(true);
-    expect((await read(survivor.backendId)).deletedAt).toBeNull();
+    expect((await read(survivor.appId)).deletedAt).toBeNull();
   });
 
   test('a machine delete that fails throws, so account deletion stops and retries', async () => {
@@ -638,7 +634,7 @@ describe('account deletion (D9)', () => {
     failDelete.add('sbx-account-stuck');
     try {
       await expect(deleteAccountBackends(account)).rejects.toThrow();
-      expect((await read(row.backendId)).deletedAt).toBeNull();
+      expect((await read(row.appId)).deletedAt).toBeNull();
     } finally {
       failDelete.delete('sbx-account-stuck');
     }
@@ -653,14 +649,11 @@ describe('orphaned machines (B5)', () => {
     const backendId = crypto.randomUUID();
     expect(await discardMachine(backendId, 'sbx-pending')).toEqual({ machineDeletePending: true });
     failDelete.delete('sbx-pending');
-    const [row] = await db
-      .insert(projectBackends)
-      .values({ backendId, projectId: PROJECT, accountId: ACCOUNT, name: 'pending', status: 'error', provider: 'platinum', externalId: 'sbx-pending', cpu: 1, memoryGb: 1, diskGb: 10, metadata: { lastError: 'x', machineDeletePending: true } })
-      .returning();
+    const row = await seedRow({ appId: backendId, slug: 'pending', status: 'error', externalId: 'sbx-pending', metadata: { lastError: 'x', machineDeletePending: true } });
     const result = await sweepBackends();
     expect(result.machinesDeleted).toBeGreaterThanOrEqual(1);
     expect(machines.has('sbx-pending')).toBe(false);
-    expect(meta(await read(row!.backendId)).machineDeletePending).toBeUndefined();
+    expect(meta(await read(row.appId)).machineDeletePending).toBeUndefined();
   });
 
   test('every page, every state: old unreferenced machines go with their snapshots; young, referenced and foreign ones stay', async () => {
@@ -670,37 +663,31 @@ describe('orphaned machines (B5)', () => {
     const base = { cpu: 1, ramMb: 1024, diskGb: 10, secret: 1 };
     // Referenced by a live running row: kept.
     const kept = await runningBackend('orphan-kept', {});
-    Object.assign(machines.get('sbx-orphan-kept')!, { metadata: tag(kept.backendId), createdAt: old });
+    Object.assign(machines.get('sbx-orphan-kept')!, { metadata: tag(kept.appId), createdAt: old });
     // No row at all, stopped, with a snapshot: deleted.
     machines.set('sbx-orphan-rowless', { ...base, state: 'stopped', snapshots: ['snap-o'], metadata: tag(crypto.randomUUID()), createdAt: old });
     // No row, but younger than the grace: kept.
     machines.set('sbx-orphan-young', { ...base, state: 'running', metadata: tag(crypto.randomUUID()), createdAt: new Date().toISOString() });
-    // A soft-deleted row: deleted.
-    const [deleted] = await db
-      .insert(projectBackends)
-      .values({ projectId: PROJECT, accountId: ACCOUNT, name: 'orphan-deleted', status: 'deleted', provider: 'platinum', externalId: 'sbx-orphan-deleted', cpu: 1, memoryGb: 1, diskGb: 10, deletedAt: new Date() })
-      .returning();
-    machines.set('sbx-orphan-deleted', { ...base, state: 'running', metadata: tag(deleted!.backendId), createdAt: old });
+    // A deleted App in retention still owns its stopped machine: kept (the purge deletes it).
+    const deleted = await seedRow({ slug: 'orphan-deleted', status: 'deleted', externalId: 'sbx-orphan-deleted', deletedAt: new Date() });
+    machines.set('sbx-orphan-deleted', { ...base, state: 'running', metadata: tag(deleted.appId), createdAt: old });
     // A second machine for a running row that references another one: deleted.
-    machines.set('sbx-orphan-duplicate', { ...base, state: 'running', metadata: tag(kept.backendId), createdAt: old });
+    machines.set('sbx-orphan-duplicate', { ...base, state: 'running', metadata: tag(kept.appId), createdAt: old });
     // A provisioning row owns its machine before it records the id: kept.
-    const [provisioning] = await db
-      .insert(projectBackends)
-      .values({ projectId: PROJECT, accountId: ACCOUNT, name: 'orphan-provisioning', status: 'provisioning', provider: 'platinum', cpu: 1, memoryGb: 1, diskGb: 10, metadata: { heartbeatAt: new Date().toISOString() } })
-      .returning();
-    machines.set('sbx-orphan-provisioning', { ...base, state: 'running', metadata: tag(provisioning!.backendId), createdAt: old });
+    const provisioning = await seedRow({ slug: 'orphan-provisioning', status: 'provisioning', metadata: { heartbeatAt: new Date().toISOString() } });
+    machines.set('sbx-orphan-provisioning', { ...base, state: 'running', metadata: tag(provisioning.appId), createdAt: old });
     // Another control plane's machine: never ours to delete.
     machines.set('sbx-orphan-foreign', { ...base, state: 'running', metadata: tag(crypto.randomUUID(), 'v2-another-database'), createdAt: old });
     listPages.length = 0;
 
     const result = await reapOrphanBackendMachines({ force: true });
 
-    expect(result).toMatchObject({ deleted: 3, errors: 0 });
+    expect(result).toMatchObject({ deleted: 2, errors: 0 });
     expect(listPages.length).toBeGreaterThanOrEqual(4);
     for (const search of listPages) expect(search).toContain('regions=local');
-    for (const gone of ['sbx-orphan-rowless', 'sbx-orphan-deleted', 'sbx-orphan-duplicate']) expect(machines.has(gone)).toBe(false);
+    for (const gone of ['sbx-orphan-rowless', 'sbx-orphan-duplicate']) expect(machines.has(gone)).toBe(false);
     expect(calls).toContain('DELETE /v1/sandboxes/sbx-orphan-rowless/snapshots/snap-o');
-    for (const stays of ['sbx-orphan-kept', 'sbx-orphan-young', 'sbx-orphan-provisioning', 'sbx-orphan-foreign']) {
+    for (const stays of ['sbx-orphan-kept', 'sbx-orphan-young', 'sbx-orphan-deleted', 'sbx-orphan-provisioning', 'sbx-orphan-foreign']) {
       expect(machines.has(stays)).toBe(true);
     }
     // At most once an hour without `force`.
@@ -719,7 +706,7 @@ describe('metering (D11)', () => {
     const saved = config.KORTIX_BILLING_INTERNAL_ENABLED;
     config.KORTIX_BILLING_INTERNAL_ENABLED = true;
     try {
-      const windows = () => db.select().from(sandboxComputeSessions).where(eq(sandboxComputeSessions.sandboxId, row.backendId));
+      const windows = () => db.select().from(sandboxComputeSessions).where(eq(sandboxComputeSessions.sandboxId, row.appId));
       await sweepBackends();
       await sweepBackends();
       const open = await windows();
@@ -740,7 +727,7 @@ describe('metering (D11)', () => {
 
 describe('snapshots (D22, H5, N2, N3)', () => {
   const route = (method: string, path: string, body?: unknown) =>
-    app.request(`/v1/projects/${PROJECT}/backends${path}`, {
+    app.request(`/v1/projects/${PROJECT}/apps${path}`, {
       method,
       headers: { Authorization: `Bearer ${secret}`, 'content-type': 'application/json' },
       ...(body !== undefined ? { body: JSON.stringify(body) } : method === 'POST' ? { body: '{}' } : {}),
@@ -752,28 +739,28 @@ describe('snapshots (D22, H5, N2, N3)', () => {
     const row = await runningBackend('snap-cap', {});
     const first = await createBackendSnapshot(row);
     expect(first).toMatchObject({ kind: 'manual', expires_at: null, size_bytes: 1024 });
-    for (let i = 1; i < MAX_MANUAL_SNAPSHOTS; i += 1) await createBackendSnapshot(await read(row.backendId));
+    for (let i = 1; i < MAX_MANUAL_SNAPSHOTS; i += 1) await createBackendSnapshot(await read(row.appId));
     const held = [...machines.get('sbx-snap-cap')!.snapshots!];
     expect(held).toHaveLength(MAX_MANUAL_SNAPSHOTS);
-    const error = await createBackendSnapshot(await read(row.backendId)).catch((e: unknown) => e);
+    const error = await createBackendSnapshot(await read(row.appId)).catch((e: unknown) => e);
     expect(errorCode(error)).toBe('snapshot_limit');
     expect(machines.get('sbx-snap-cap')!.snapshots).toEqual(held);
     expect(calls.filter((c) => c.startsWith('DELETE /v1/sandboxes/sbx-snap-cap/snapshots/'))).toHaveLength(0);
-    expect(meta(await read(row.backendId)).operation).toBeUndefined();
+    expect(meta(await read(row.appId)).operation).toBeUndefined();
   });
 
   test('snapshot, restore and snapshot delete answer backend_busy during another operation (H5)', async () => {
     const row = await runningBackend('snap-busy', { snapshots: ['snap-busy-1'] });
-    expect(await claimOperation(row.backendId, 'resizing')).toBe(true);
-    const busy = await read(row.backendId);
-    expect(errorCode(await createBackendSnapshot(busy).catch((e: unknown) => e))).toBe('backend_busy');
-    expect(errorCode(await restoreBackendSnapshot(busy, 'snap-busy-1').catch((e: unknown) => e))).toBe('backend_busy');
-    const del = await route('DELETE', `/${row.backendId}/snapshots/snap-busy-1`);
+    expect(await claimOperation(row.appId, 'resizing')).toBe(true);
+    const busy = await read(row.appId);
+    expect(errorCode(await createBackendSnapshot(busy).catch((e: unknown) => e))).toBe('app_busy');
+    expect(errorCode(await restoreBackendSnapshot(busy, 'snap-busy-1').catch((e: unknown) => e))).toBe('app_busy');
+    const del = await route('DELETE', `/${row.appId}/snapshots/snap-busy-1`);
     expect(del.status).toBe(409);
-    expect((await del.json()).code).toBe('backend_busy');
-    const delBackend = await route('DELETE', `/${row.backendId}`);
+    expect((await del.json()).code).toBe('app_busy');
+    const delBackend = await route('DELETE', `/${row.appId}?confirm=snap-busy`);
     expect(delBackend.status).toBe(409);
-    expect((await delBackend.json()).code).toBe('backend_busy');
+    expect((await delBackend.json()).code).toBe('app_busy');
     expect(machines.has('sbx-snap-busy')).toBe(true);
     expect(calls).not.toContain('POST /v1/sandboxes/sbx-snap-busy/snapshot');
     expect(calls).not.toContain('POST /v1/sandboxes/sbx-snap-busy/restore');
@@ -784,7 +771,7 @@ describe('snapshots (D22, H5, N2, N3)', () => {
     const results = await Promise.allSettled([createBackendSnapshot(row), createBackendSnapshot(row)]);
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
     const rejected = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
-    expect(errorCode(rejected.reason)).toBe('backend_busy');
+    expect(errorCode(rejected.reason)).toBe('app_busy');
   });
 
   test('a restore answers only after Platinum reports running again (N3)', async () => {
@@ -794,7 +781,7 @@ describe('snapshots (D22, H5, N2, N3)', () => {
     expect(machines.get('sbx-snap-n3')!.state).toBe('running');
     // 3 polls answered `resuming`, the 4th `running`.
     expect(getsOf('sbx-snap-n3') - before).toBeGreaterThanOrEqual(4);
-    expect(meta(await read(row.backendId)).operation).toBeUndefined();
+    expect(meta(await read(row.appId)).operation).toBeUndefined();
   });
 
   test('a restore that Platinum ends stopped answers restore_unhealthy; recovery starts the machine', async () => {
@@ -803,7 +790,7 @@ describe('snapshots (D22, H5, N2, N3)', () => {
     expect(errorCode(error)).toBe('restore_unhealthy');
     expect(calls).toContain('POST /v1/sandboxes/sbx-snap-fail/start');
     expect(machines.get('sbx-snap-fail')!.state).toBe('running');
-    const after = await read(row.backendId);
+    const after = await read(row.appId);
     expect(meta(after).operation).toBeUndefined();
     expect(meta(after).lastOperationError).toContain('restore failed');
   });
@@ -811,9 +798,9 @@ describe('snapshots (D22, H5, N2, N3)', () => {
   test('a resize takes a resize snapshot kept 24 h outside the cap; a snapshot older than the resize cannot be restored (N2)', async () => {
     const row = await runningBackend('snap-resize', { snapshots: ['snap-before'] });
     snapshotTimes.set('snap-before', new Date(Date.now() - 60_000).toISOString());
-    expect(await claimOperation(row.backendId, 'resizing')).toBe(true);
-    await runResize(await read(row.backendId), { cpu: 2, memoryGb: 2, diskGb: 20 });
-    const after = await read(row.backendId);
+    expect(await claimOperation(row.appId, 'resizing')).toBe(true);
+    await runResize(await read(row.appId), { cpu: 2, memoryGb: 2, diskGb: 20 });
+    const after = await read(row.appId);
     expect([after.cpu, after.memoryGb, after.diskGb]).toEqual([2, 2, 20]);
     expect(meta(after).operation).toBeUndefined();
     expect(typeof meta(after).lastResizeAt).toBe('string');
@@ -830,11 +817,11 @@ describe('snapshots (D22, H5, N2, N3)', () => {
     }
     expect(calls).not.toContain('POST /v1/sandboxes/sbx-snap-resize/restore');
     // A snapshot at the new size restores.
-    const fresh = await createBackendSnapshot(await read(row.backendId));
-    await restoreBackendSnapshot(await read(row.backendId), fresh.snapshot_id);
+    const fresh = await createBackendSnapshot(await read(row.appId));
+    await restoreBackendSnapshot(await read(row.appId), fresh.snapshot_id);
     expect(calls).toContain('POST /v1/sandboxes/sbx-snap-resize/restore');
 
-    const listed = await (await route('GET', `/${row.backendId}/backups`)).json();
+    const listed = await (await route('GET', `/${row.appId}/snapshots`)).json();
     expect(listed.snapshot_limit).toBe(MAX_MANUAL_SNAPSHOTS);
     expect(listed.snapshot_schedule).toEqual({ automatic_interval_hours: 24, automatic_retention_days: 7, resize_retention_hours: 24, last_automatic_at: null });
     const kinds = Object.fromEntries(listed.snapshots.map((s: { snapshot_id: string; kind: string; expires_at: string | null }) => [s.snapshot_id, [s.kind, s.expires_at === null]]));
@@ -846,7 +833,7 @@ describe('snapshots (D22, H5, N2, N3)', () => {
     const fresh = await runningBackend('snap-daily-fresh', {});
     const result = await sweepBackends();
     expect(result.snapshotJobs).toBeGreaterThanOrEqual(1);
-    const after = await eventually(() => read(due.backendId), (r) => !meta(r).operation && Boolean(meta(r).lastAutomaticSnapshotAt));
+    const after = await eventually(() => read(due.appId), (r) => !meta(r).operation && Boolean(meta(r).lastAutomaticSnapshotAt));
     const [id, label] = Object.entries(meta(after).snapshotLabels as Record<string, { kind: string; expiresAt: string }>)[0]!;
     expect(label.kind).toBe('automatic');
     expect(Math.abs(Date.parse(label.expiresAt) - (Date.now() + AUTOMATIC_SNAPSHOT_RETENTION_MS))).toBeLessThan(60_000);
@@ -856,8 +843,8 @@ describe('snapshots (D22, H5, N2, N3)', () => {
     // Not due again within 24 h.
     await sweepBackends();
     expect(machines.get('sbx-snap-daily')!.snapshots).toEqual([id]);
-    expect(meta(await read(fresh.backendId)).lastAutomaticSnapshotAt).toBeUndefined();
-    const listed = await (await route('GET', `/${due.backendId}/backups`)).json();
+    expect(meta(await read(fresh.appId)).lastAutomaticSnapshotAt).toBeUndefined();
+    const listed = await (await route('GET', `/${due.appId}/snapshots`)).json();
     expect(listed.snapshot_schedule.last_automatic_at).toBe(meta(after).lastAutomaticSnapshotAt);
   });
 
@@ -878,34 +865,34 @@ describe('snapshots (D22, H5, N2, N3)', () => {
       metadata: { lastAutomaticSnapshotAt: new Date().toISOString(), snapshotLabels: { 'a-only': { kind: 'automatic', expiresAt: past(5) } } },
     });
     await sweepBackends();
-    const after = await eventually(() => read(row.backendId), (r) => !meta(r).operation && !('r-old' in meta(r).snapshotLabels));
+    const after = await eventually(() => read(row.appId), (r) => !meta(r).operation && !('r-old' in meta(r).snapshotLabels));
     expect(machines.get('sbx-snap-expire')!.snapshots).toEqual(['m-1', 'a-new']);
     expect(Object.keys(meta(after).snapshotLabels)).toEqual(['a-new']);
     // The newest automatic snapshot outlives its expiry until a newer one exists.
     expect(machines.get('sbx-snap-expire-lone')!.snapshots).toEqual(['a-only']);
-    expect(meta(await read(lone.backendId)).operation).toBeUndefined();
+    expect(meta(await read(lone.appId)).operation).toBeUndefined();
   });
 
   test('DELETE a snapshot: 204, gone with its label; an unknown id → 404 snapshot_not_found', async () => {
     const row = await runningBackend('snap-delete', { snapshots: ['d-1', 'd-2'] }, {
       metadata: { snapshotLabels: { 'd-2': { kind: 'automatic', expiresAt: new Date(Date.now() + 3_600_000).toISOString() } } },
     });
-    expect((await route('DELETE', `/${row.backendId}/snapshots/d-2`)).status).toBe(204);
+    expect((await route('DELETE', `/${row.appId}/snapshots/d-2`)).status).toBe(204);
     expect(machines.get('sbx-snap-delete')!.snapshots).toEqual(['d-1']);
-    expect(meta(await read(row.backendId)).snapshotLabels).toEqual({});
-    const missing = await route('DELETE', `/${row.backendId}/snapshots/nope`);
+    expect(meta(await read(row.appId)).snapshotLabels).toEqual({});
+    const missing = await route('DELETE', `/${row.appId}/snapshots/nope`);
     expect(missing.status).toBe(404);
     expect((await missing.json()).code).toBe('snapshot_not_found');
-    const taken = await route('POST', `/${row.backendId}/snapshots`);
+    const taken = await route('POST', `/${row.appId}/snapshots`);
     expect(taken.status).toBe(201);
     expect(await taken.json()).toMatchObject({ kind: 'manual', expires_at: null });
   });
 
-  test('a backend in `recovering` can still be deleted', async () => {
+  test('an App in `recovering` can still be deleted', async () => {
     const row = await runningBackend('snap-recovering-delete', {});
-    expect(await claimOperation(row.backendId, 'recovering')).toBe(true);
-    expect((await route('DELETE', `/${row.backendId}`)).status).toBe(204);
-    expect(machines.has('sbx-snap-recovering-delete')).toBe(false);
+    expect(await claimOperation(row.appId, 'recovering')).toBe(true);
+    expect((await route('DELETE', `/${row.appId}?confirm=snap-recovering-delete`)).status).toBe(200);
+    expect((await read(row.appId)).status).toBe('deleted');
   });
 });
 
@@ -925,7 +912,7 @@ describe('snapshot labels without a snapshot', () => {
       },
     });
     await sweepBackends();
-    const after = await eventually(() => read(row.backendId), (r) => !meta(r).operation && Boolean(meta(r).lastAutomaticSnapshotAt) && Date.parse(meta(r).lastAutomaticSnapshotAt) > Date.now() - 60_000);
+    const after = await eventually(() => read(row.appId), (r) => !meta(r).operation && Boolean(meta(r).lastAutomaticSnapshotAt) && Date.parse(meta(r).lastAutomaticSnapshotAt) > Date.now() - 60_000);
     const labels = meta(after).snapshotLabels as Record<string, { kind: string }>;
     expect(labels['a-phantom']).toBeUndefined();
     // The new daily snapshot is taken first, so the expired real one goes in the same job.
@@ -939,11 +926,11 @@ describe('snapshot labels without a snapshot', () => {
 describe('snapshot request failures (review: 20 s default timeout)', () => {
   test('a daily snapshot that takes 21 s: the POST is not aborted at the 20 s call default; the snapshot is labelled automatic', async () => {
     const row = await runningBackend('snap-slow', { snapshotDelayMs: 21_000 }, { createdAt: ago(25 * 3_600_000) });
-    expect(await claimOperation(row.backendId, 'snapshotting')).toBe(true);
-    const result = await runSnapshotMaintenance(await read(row.backendId), true);
+    expect(await claimOperation(row.appId, 'snapshotting')).toBe(true);
+    const result = await runSnapshotMaintenance(await read(row.appId), true);
     expect(result.taken).toBe(true);
     expect(abortedSnapshotPosts).not.toContain('sbx-snap-slow');
-    const after = await read(row.backendId);
+    const after = await read(row.appId);
     const ids = machines.get('sbx-snap-slow')!.snapshots!;
     expect(ids).toHaveLength(1);
     expect(meta(after).snapshotLabels[ids[0]!].kind).toBe('automatic');
@@ -953,9 +940,9 @@ describe('snapshot request failures (review: 20 s default timeout)', () => {
 
   test('a snapshot POST that answers 504 after the host took the snapshot: the resize labels it resize and goes on', async () => {
     const row = await runningBackend('snap-504', { snapshotAnswers: 504 });
-    expect(await claimOperation(row.backendId, 'resizing')).toBe(true);
-    await runResize(await read(row.backendId), { cpu: 2, memoryGb: 2, diskGb: 10 });
-    const after = await read(row.backendId);
+    expect(await claimOperation(row.appId, 'resizing')).toBe(true);
+    await runResize(await read(row.appId), { cpu: 2, memoryGb: 2, diskGb: 10 });
+    const after = await read(row.appId);
     expect([after.cpu, after.memoryGb]).toEqual([2, 2]);
     expect(meta(after).lastOperationError).toBeUndefined();
     const ids = machines.get('sbx-snap-504')!.snapshots!;
@@ -970,11 +957,11 @@ describe('restore of a rotated backend that does not finish (review: leaked key 
     const leaked = keyFor('sbx-restore-fail-rotated');
     await rotateBackendAdminKey(row);
     Object.assign(machines.get('sbx-restore-fail-rotated')!, { backupSecret: 1, restorePolls: 1, restoreEndsIn: 'stopped' });
-    const error = await restoreBackendSnapshot(await read(row.backendId), 'snap-rfr').catch((e: unknown) => e);
+    const error = await restoreBackendSnapshot(await read(row.appId), 'snap-rfr').catch((e: unknown) => e);
     expect((error as BackendOperationError).code).toBe('restore_unhealthy');
     expect(machines.get('sbx-restore-fail-rotated')!.state).toBe('running');
     expect(keyFor('sbx-restore-fail-rotated')).not.toBe(leaked);
-    const after = await read(row.backendId);
+    const after = await read(row.appId);
     expect(decryptProjectSecret(PROJECT, after.adminKeyEnc!)).toBe(keyFor('sbx-restore-fail-rotated'));
     expect(meta(after).rotateAfterRestore).toBeUndefined();
   });
@@ -986,7 +973,7 @@ describe('restore of a rotated backend that does not finish (review: leaked key 
     });
     const leaked = keyFor('sbx-restore-crash');
     await sweepBackends();
-    const after = await eventually(() => read(row.backendId), (r) => !meta(r).operation);
+    const after = await eventually(() => read(row.appId), (r) => !meta(r).operation);
     expect(keyFor('sbx-restore-crash')).not.toBe(leaked);
     expect(decryptProjectSecret(PROJECT, after.adminKeyEnc!)).toBe(keyFor('sbx-restore-crash'));
     expect(meta(after).lastOperationError).toContain('restore was interrupted');
@@ -998,47 +985,131 @@ describe('restore of a rotated backend that does not finish (review: leaked key 
     });
     const leaked = keyFor('sbx-restore-pending');
     await sweepBackends();
-    const after = await eventually(() => read(row.backendId), (r) => !meta(r).operation && !meta(r).rotateAfterRestore);
+    const after = await eventually(() => read(row.appId), (r) => !meta(r).operation && !meta(r).rotateAfterRestore);
     expect(keyFor('sbx-restore-pending')).not.toBe(leaked);
     expect(decryptProjectSecret(PROJECT, after.adminKeyEnc!)).toBe(keyFor('sbx-restore-pending'));
   });
 });
 
-describe('delete claims the backend (review: snapshot during delete)', () => {
-  const del = (backendId: string) =>
-    app.request(`/v1/projects/${PROJECT}/backends/${backendId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${secret}` } });
+describe('delete: typed slug, final snapshot, retention, purge', () => {
+  const del = (appId: string, confirm?: string) =>
+    app.request(`/v1/projects/${PROJECT}/apps/${appId}${confirm ? `?confirm=${confirm}` : ''}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${secret}` },
+    });
 
-  test('while the delete runs, no snapshot can claim the backend', async () => {
-    const row = await runningBackend('delete-race', { snapshots: ['dr-1'], snapshotListDelayMs: 800 });
-    const deleting = del(row.backendId);
-    await new Promise((r) => setTimeout(r, 300));
-    expect(await claimOperation(row.backendId, 'snapshotting')).toBe(false);
-    expect((await deleting).status).toBe(204);
-    expect(machines.has('sbx-delete-race')).toBe(false);
+  test('without the typed slug → 400 confirmation_required; nothing changes', async () => {
+    const row = await runningBackend('delete-unconfirmed', {});
+    for (const confirm of [undefined, 'not-the-slug']) {
+      const res = await del(row.appId, confirm);
+      expect(res.status).toBe(400);
+      expect((await res.json()).code).toBe('confirmation_required');
+    }
+    expect((await read(row.appId)).status).toBe('running');
+    expect(machines.get('sbx-delete-unconfirmed')!.state).toBe('running');
   });
 
-  test('a failed delete clears the mark: the backend takes operations again', async () => {
+  test('a delete takes a final snapshot kept 7 days, stops the machine, and its hosts answer 410 until the purge', async () => {
+    const row = await runningBackend('delete-retained', { snapshots: ['dk-manual'] });
+    const res = await del(row.appId, 'delete-retained');
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Math.abs(Date.parse(body.retained_until) - (Date.now() + 7 * 86_400_000))).toBeLessThan(60_000);
+    expect(typeof body.final_snapshot_id).toBe('string');
+    const after = await read(row.appId);
+    expect(after.status).toBe('deleted');
+    expect(after.deletedAt).not.toBeNull();
+    expect(meta(after)).toMatchObject({ purgeAfter: body.retained_until, finalSnapshotId: body.final_snapshot_id });
+    expect(meta(after).snapshotLabels[body.final_snapshot_id].kind).toBe('final');
+    expect(machines.get('sbx-delete-retained')).toMatchObject({ state: 'stopped', autoResume: false });
+    expect(machines.get('sbx-delete-retained')!.snapshots).toEqual(['dk-manual', body.final_snapshot_id]);
+    // The App is gone from the API; the slug is free again.
+    expect((await app.request(`/v1/projects/${PROJECT}/apps/${row.appId}`, { headers: { Authorization: `Bearer ${secret}` } })).status).toBe(404);
+    // The sweep neither probes nor reaps a retained machine.
+    await sweepBackends();
+    expect(machines.get('sbx-delete-retained')!.state).toBe('stopped');
+    expect((await reapOrphanBackendMachines({ force: true })).errors).toBe(0);
+    expect(machines.has('sbx-delete-retained')).toBe(true);
+    // After the retention the purge deletes snapshots, machine and row.
+    await db.update(appConvexInstances)
+      .set({ metadata: { ...meta(after), purgeAfter: ago(1_000).toISOString() } })
+      .where(eq(appConvexInstances.appId, row.appId));
+    expect((await purgeRetiredConvexApps()).purged).toBeGreaterThanOrEqual(1);
+    expect(machines.has('sbx-delete-retained')).toBe(false);
+    expect(await readConvexRow(row.appId)).toBeUndefined();
+  });
+
+  test('while the delete runs, no snapshot can claim the App', async () => {
+    const row = await runningBackend('delete-race', { snapshots: ['dr-1'], snapshotListDelayMs: 800 });
+    const deleting = del(row.appId, 'delete-race');
+    await new Promise((r) => setTimeout(r, 300));
+    expect(await claimOperation(row.appId, 'snapshotting')).toBe(false);
+    expect((await deleting).status).toBe(200);
+    expect((await read(row.appId)).status).toBe('deleted');
+  });
+
+  test('a failed delete clears the mark: the App takes operations again', async () => {
     const row = await runningBackend('delete-fails', {});
-    failDelete.add('sbx-delete-fails');
-    const failed = await del(row.backendId);
+    failStop.add('sbx-delete-fails');
+    const failed = await del(row.appId, 'delete-fails');
     // The route answers 502; the API edge rewrites a 502 to 503.
     expect(failed.status).toBe(503);
-    expect((await failed.json()).code).toBe('backend_delete_failed');
-    expect(meta(await read(row.backendId)).deleting).toBeUndefined();
-    expect(await claimOperation(row.backendId, 'snapshotting')).toBe(true);
-    failDelete.delete('sbx-delete-fails');
+    expect((await failed.json()).code).toBe('app_delete_failed');
+    const after = await read(row.appId);
+    expect(after.status).toBe('running');
+    expect(after.deletedAt).toBeNull();
+    expect(meta(after).deleting).toBeUndefined();
+    expect(await claimOperation(row.appId, 'snapshotting')).toBe(true);
+    failStop.delete('sbx-delete-fails');
+  });
+});
+
+describe('budget (alerts, never stops)', () => {
+  const spend = async (row: ConvexRow, costUsd: string) => {
+    await db.delete(sandboxComputeSessions).where(eq(sandboxComputeSessions.sandboxId, row.appId));
+    const at = new Date().toISOString();
+    await db.insert(sandboxComputeSessions).values({
+      accountId: row.accountId, sandboxId: row.appId, provider: 'platinum', cpuCores: 1, memoryGb: 1, diskGb: 10,
+      state: 'stopped', workloadType: 'backend', costUsd, startedAt: at, endedAt: at, lastBilledAt: at,
+    });
+  };
+
+  test('budgetAlertDue: the highest share reached, once per month per threshold', () => {
+    const now = new Date('2026-10-15T00:00:00Z');
+    expect(budgetAlertDue({ metadata: {} }, 3, 5, now)).toBeNull();
+    expect(budgetAlertDue({ metadata: {} }, 4, 5, now)).toBe(80);
+    expect(budgetAlertDue({ metadata: {} }, 6, 5, now)).toBe(100);
+    expect(budgetAlertDue({ metadata: { budgetAlert: { month: '2026-10', percent: 80 } } }, 4.5, 5, now)).toBeNull();
+    expect(budgetAlertDue({ metadata: { budgetAlert: { month: '2026-10', percent: 80 } } }, 5, 5, now)).toBe(100);
+    expect(budgetAlertDue({ metadata: { budgetAlert: { month: '2026-09', percent: 100 } } }, 4, 5, now)).toBe(80);
+    expect(budgetAlertDue({ metadata: {} }, 4, 0, now)).toBeNull();
+  });
+
+  test('80 % alerts once, 100 % alerts once more, and the machine keeps running', async () => {
+    const row = await runningBackend('budget-alert', {}, { monthlyBudgetUsd: '5.00' });
+    await spend(row, '4.200000');
+    expect((await sweepBackends()).budgetAlerts).toBeGreaterThanOrEqual(1);
+    expect(meta(await read(row.appId)).budgetAlert).toMatchObject({ percent: 80, budgetUsd: 5 });
+    await sweepBackends();
+    expect(meta(await read(row.appId)).budgetAlert.percent).toBe(80);
+    await spend(row, '5.100000');
+    await sweepBackends();
+    expect(meta(await read(row.appId)).budgetAlert).toMatchObject({ percent: 100 });
+    expect(machines.get('sbx-budget-alert')!.state).toBe('running');
+    expect((await read(row.appId)).status).toBe('running');
+    expect(calls).not.toContain('POST /v1/sandboxes/sbx-budget-alert/stop');
   });
 });
 
 describe('resize snapshots are bounded (review: host disk)', () => {
   test('a second resize replaces the first resize snapshot: a backend holds at most one', async () => {
     const row = await runningBackend('resize-twice', { snapshots: ['rt-manual'] });
-    expect(await claimOperation(row.backendId, 'resizing')).toBe(true);
-    await runResize(await read(row.backendId), { cpu: 2, memoryGb: 1, diskGb: 10 });
-    const [first] = Object.keys(meta(await read(row.backendId)).snapshotLabels);
-    expect(await claimOperation(row.backendId, 'resizing')).toBe(true);
-    await runResize(await read(row.backendId), { cpu: 1, memoryGb: 1, diskGb: 10 });
-    const labels = meta(await read(row.backendId)).snapshotLabels as Record<string, { kind: string }>;
+    expect(await claimOperation(row.appId, 'resizing')).toBe(true);
+    await runResize(await read(row.appId), { cpu: 2, memoryGb: 1, diskGb: 10 });
+    const [first] = Object.keys(meta(await read(row.appId)).snapshotLabels);
+    expect(await claimOperation(row.appId, 'resizing')).toBe(true);
+    await runResize(await read(row.appId), { cpu: 1, memoryGb: 1, diskGb: 10 });
+    const labels = meta(await read(row.appId)).snapshotLabels as Record<string, { kind: string }>;
     expect(Object.values(labels).map((l) => l.kind)).toEqual(['resize']);
     expect(Object.keys(labels)[0]).not.toBe(first);
     expect(machines.get('sbx-resize-twice')!.snapshots).toEqual(['rt-manual', Object.keys(labels)[0]!]);
@@ -1054,7 +1125,7 @@ describe('resize snapshots are bounded (review: host disk)', () => {
     });
     await sweepBackends();
     await eventually(() => Promise.resolve(machines.get('sbx-parked-expiry')!.snapshots!), (ids) => !ids.includes('pe-resize'));
-    const after = await eventually(() => read(row.backendId), (r) => !meta(r).operation);
+    const after = await eventually(() => read(row.appId), (r) => !meta(r).operation);
     expect(machines.get('sbx-parked-expiry')!.snapshots).toEqual(['pe-manual']);
     expect(meta(after).snapshotLabels).toEqual({});
     expect(typeof meta(after).parked).toBe('string');

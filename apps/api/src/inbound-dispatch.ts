@@ -7,7 +7,7 @@ import { isUuid } from './shared/validate';
 import { schemaReady } from './bootstrap';
 import { handleAppPublicRequest, resolveAppRequest } from './apps/public-proxy';
 import { prepareAppWsUpgrade } from './apps/ws-proxy';
-import { handleBackendHostRequest, prepareBackendWsUpgrade, resolveBackendRequest } from './backends/hosts';
+import { handleBackendHostRequest, prepareBackendWsUpgrade, resolveBackendRequest } from './apps/kinds/convex/hosts';
 // Subdomain preview routing — `p{port}-{sandboxId}.localhost:{apiPort}/...`
 // Handled at the Bun.serve level so the proxied app sees itself at root `/`
 // (Hono can't match on the Host header). See `sandbox-proxy/preview-origin.ts`.
@@ -65,15 +65,15 @@ export async function dispatchInbound(
   if (backendHost) {
     server.timeout(req, 0);
     if (backendHost.kind === 'dashboard') {
-      setInboundAuditEntrypoint('app_origin', 'backend_dashboard');
+      setInboundAuditEntrypoint('app_origin', 'app_dashboard');
     } else if (isWsUpgrade) {
-      setInboundAuditEntrypoint('app_origin', 'backend_host:websocket');
+      setInboundAuditEntrypoint('app_origin', 'app_endpoint:websocket');
       const prepared = await prepareBackendWsUpgrade(req, url, backendHost);
       if (!prepared.ok) return Response.json({ error: prepared.message }, { status: prepared.status });
       if (server.upgrade(req, { data: prepared.data })) return undefined;
-      return Response.json({ error: 'Backend WebSocket upgrade failed' }, { status: 500 });
+      return Response.json({ error: 'App WebSocket upgrade failed' }, { status: 500 });
     } else {
-      setInboundAuditEntrypoint('app_origin', 'backend_host');
+      setInboundAuditEntrypoint('app_origin', 'app_endpoint');
     }
     return handleBackendHostRequest(req, url, backendHost);
   }

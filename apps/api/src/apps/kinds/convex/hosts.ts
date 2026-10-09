@@ -1,7 +1,10 @@
 /**
- * The Kortix hostnames of a backend. Every backend answers on three hosts
- * under the Apps domain, derived from its backend id, so they never change
- * for the backend's life (a restore, a resize or a new machine keeps them):
+ * The Kortix hostnames of an App of kind `convex`. Every such App answers on
+ * three hosts under the Apps domain, derived from its App id, so they never
+ * change for the App's life (a restore, a resize or a new machine keeps them).
+ * The labels are the ones Kortix Backends shipped with (a backend became an
+ * App with the same id), so every URL a client or a Convex deployment already
+ * holds keeps working:
  *
  *   kind       remote (https)                              local (http, API port)        machine port
  *   api        <env>-convex-<id hex>.<apps domain>         bc-<id hex>.apps.localhost    3210  Convex client, sync WebSocket, admin API
@@ -26,18 +29,17 @@
  * the framing Kortix page (Convex's postMessage handshake), which reads them
  * through the audited credentials route.
  */
-import { projectBackends } from '@kortix/db';
-import { and, eq, isNull } from 'drizzle-orm';
-import { config } from '../config';
-import { appsBaseDomain, appsLocalMode, appsLocalUrl } from '../apps/hostnames';
-import { edgePublicHost, verifyAppEdgeRequest } from '../apps/public-proxy-edge';
-import { appUpstreamHeaders } from '../apps/public-proxy-headers';
-import { ingressTargetUrl } from '../platform/providers/ingress-url';
-import type { PreviewWsData } from '../sandbox-proxy/ws-proxy';
-import { db } from '../shared/db';
+import { appConvexInstances } from '@kortix/db';
+import { eq } from 'drizzle-orm';
+import { config } from '../../../config';
+import { appsBaseDomain, appsLocalMode, appsLocalUrl } from '../../hostnames';
+import { edgePublicHost, verifyAppEdgeRequest } from '../../public-proxy-edge';
+import { appUpstreamHeaders } from '../../public-proxy-headers';
+import { ingressTargetUrl } from '../../../platform/providers/ingress-url';
+import type { PreviewWsData } from '../../../sandbox-proxy/ws-proxy';
 import { CONVEX_API_PORT, CONVEX_DASHBOARD_PORT, CONVEX_SITE_PORT } from './convex-image';
 import { backendIngress, machineFetch } from './machine';
-import type { BackendRow } from './provision';
+import { type ConvexRow, selectConvexRows } from './rows';
 
 export type BackendHostKind = 'api' | 'site' | 'dashboard';
 
@@ -63,7 +65,7 @@ const expand = (hex: string) =>
   `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 
 export interface ResolvedBackendHost {
-  backendId: string;
+  appId: string;
   kind: BackendHostKind;
   local: boolean;
 }
@@ -74,57 +76,61 @@ export function resolveBackendHost(hostname: string): ResolvedBackendHost | null
   // Only a local stack answers local hosts: elsewhere a caller could name one
   // in the edge host header and skip the edge signature.
   const local = appsLocalMode() ? LOCAL_HOST.exec(host) : null;
-  if (local) return { backendId: expand(local[2]!), kind: KIND_OF_LABEL[local[1]!]!, local: true };
+  if (local) return { appId: expand(local[2]!), kind: KIND_OF_LABEL[local[1]!]!, local: true };
   const domain = appsBaseDomain();
   if (!domain || !host.endsWith(`.${domain}`)) return null;
   const match = REMOTE_LABEL.exec(host.slice(0, -(domain.length + 1)));
   if (!match || match[1] !== config.INTERNAL_KORTIX_ENV) return null;
-  return { backendId: expand(match[3]!), kind: KIND_OF_LABEL[match[2]!]!, local: false };
+  return { appId: expand(match[3]!), kind: KIND_OF_LABEL[match[2]!]!, local: false };
 }
 
 /** The origin of one of a backend's hosts, or null when this deployment has no Apps domain. */
-export function backendHostUrl(backendId: string, kind: BackendHostKind): string | null {
-  if (appsLocalMode()) return appsLocalUrl(`${KINDS[kind].local}-${compact(backendId)}`);
+export function backendHostUrl(appId: string, kind: BackendHostKind): string | null {
+  if (appsLocalMode()) return appsLocalUrl(`${KINDS[kind].local}-${compact(appId)}`);
   const domain = appsBaseDomain();
-  return domain ? `https://${config.INTERNAL_KORTIX_ENV}-${KINDS[kind].remote}-${compact(backendId)}.${domain}` : null;
+  return domain ? `https://${config.INTERNAL_KORTIX_ENV}-${KINDS[kind].remote}-${compact(appId)}.${domain}` : null;
 }
 
 /** The backend's Convex URL (`url`) and HTTP actions URL (`site_url`). */
-export function backendPublicUrls(backendId: string): { url: string; siteUrl: string } {
-  const url = backendHostUrl(backendId, 'api');
-  const siteUrl = backendHostUrl(backendId, 'site');
+export function backendPublicUrls(appId: string): { url: string; siteUrl: string } {
+  const url = backendHostUrl(appId, 'api');
+  const siteUrl = backendHostUrl(appId, 'site');
   if (!url || !siteUrl) {
-    throw new Error('Kortix Backends has no host domain: set KORTIX_APPS_BASE_DOMAIN to a wildcard domain this deployment serves.');
+    throw new Error('Apps of kind convex have no host domain: set KORTIX_APPS_BASE_DOMAIN to a wildcard domain this deployment serves.');
   }
   return { url, siteUrl };
 }
 
 /** The dashboard URL Kortix web frames, or null for a machine built before the dashboard shipped. */
-export function backendDashboardUrl(row: BackendRow): string | null {
+export function backendDashboardUrl(row: ConvexRow): string | null {
   if (row.status !== 'running' || !row.url || !(row.metadata as { dashboard?: boolean }).dashboard) return null;
-  return backendHostUrl(row.backendId, 'dashboard');
+  return backendHostUrl(row.appId, 'dashboard');
 }
 
 function plain(status: number, message: string, headers: Record<string, string> = {}): Response {
   return new Response(message, { status, headers: { 'content-type': 'text/plain; charset=utf-8', ...headers } });
 }
 
-const starting = () => plain(503, 'The backend is starting. Retry in a few seconds.', { 'retry-after': '3' });
+const starting = () => plain(503, 'The App is starting. Retry in a few seconds.', { 'retry-after': '3' });
 
-async function liveBackend(backendId: string): Promise<BackendRow | null> {
-  const [row] = await db
-    .select()
-    .from(projectBackends)
-    .where(and(eq(projectBackends.backendId, backendId), isNull(projectBackends.deletedAt)))
-    .limit(1);
+/** The App's machine row, a deleted App's in retention included (`status = 'deleted'`), or null. */
+async function machineRow(appId: string): Promise<ConvexRow | null> {
+  const [row] = await selectConvexRows().where(eq(appConvexInstances.appId, appId)).limit(1);
   return row ?? null;
+}
+
+/** 410 while a deleted App's data is kept; the body says until when. */
+function gone(row: ConvexRow): Response {
+  const until = (row.metadata as { purgeAfter?: string }).purgeAfter;
+  return plain(410, `This App was deleted.${until ? ` Kortix keeps its data until ${until}.` : ''}`);
 }
 
 export async function backendHostTlsCheckStatus(domain: string | null | undefined): Promise<200 | 403 | 404> {
   const matched = domain ? resolveBackendHost(domain) : null;
   if (!matched) return 403;
   if (matched.local) return 200;
-  return (await liveBackend(matched.backendId)) ? 200 : 404;
+  // A deleted App in retention keeps its certificate: its hosts answer 410, not a TLS error.
+  return (await machineRow(matched.appId)) ? 200 : 404;
 }
 
 export interface BackendHostRequest extends ResolvedBackendHost {
@@ -139,19 +145,20 @@ export function resolveBackendRequest(req: Request, url: URL): BackendHostReques
 }
 
 /** A running backend with a machine, or the response that explains why not. */
-async function runningMachine(backendId: string): Promise<{ row: BackendRow; externalId: string } | Response> {
-  const row = await liveBackend(backendId);
-  if (!row) return plain(404, 'No such backend');
+async function runningMachine(appId: string): Promise<{ row: ConvexRow; externalId: string } | Response> {
+  const row = await machineRow(appId);
+  if (!row) return plain(404, 'No such App');
+  if (row.status === 'deleted' || row.deletedAt) return gone(row);
   if (row.status === 'provisioning' && !row.externalId) return starting();
-  if (row.status !== 'running' || !row.externalId) return plain(503, `The backend is ${row.status}.`);
+  if (row.status !== 'running' || !row.externalId) return plain(503, `The App is ${row.status}.`);
   return { row, externalId: row.externalId };
 }
 
 /** Answers a request on a backend host. The caller matched the host with resolveBackendRequest. */
 export async function handleBackendHostRequest(req: Request, url: URL, matched: BackendHostRequest): Promise<Response> {
   if (!verifyAppEdgeRequest(req, url, matched.local, matched.publicHost)) return plain(403, 'Forbidden');
-  if (matched.kind === 'dashboard') return dashboardResponse(req, url, matched.backendId);
-  const machine = await runningMachine(matched.backendId);
+  if (matched.kind === 'dashboard') return dashboardResponse(req, url, matched.appId);
+  const machine = await runningMachine(matched.appId);
   if (machine instanceof Response) return machine;
   const bodyless = req.method === 'GET' || req.method === 'HEAD';
   let upstream: Response;
@@ -180,10 +187,11 @@ export async function handleBackendHostRequest(req: Request, url: URL, matched: 
   });
 }
 
-async function dashboardResponse(req: Request, url: URL, backendId: string): Promise<Response> {
+async function dashboardResponse(req: Request, url: URL, appId: string): Promise<Response> {
   if (req.method !== 'GET' && req.method !== 'HEAD') return plain(405, 'Method not allowed');
-  const row = await liveBackend(backendId);
-  if (!row?.externalId || !backendDashboardUrl(row)) return plain(404, 'No dashboard for this backend');
+  const row = await machineRow(appId);
+  if (row && (row.status === 'deleted' || row.deletedAt)) return gone(row);
+  if (!row?.externalId || !backendDashboardUrl(row)) return plain(404, 'No dashboard for this App');
   let upstream: Response;
   try {
     upstream = await machineFetch(row.externalId, CONVEX_DASHBOARD_PORT, `${url.pathname}${url.search}`, {
@@ -217,14 +225,14 @@ export async function prepareBackendWsUpgrade(
 ): Promise<{ ok: true; data: PreviewWsData } | { ok: false; status: number; message: string }> {
   if (!verifyAppEdgeRequest(req, url, matched.local, matched.publicHost)) return { ok: false, status: 403, message: 'Forbidden' };
   if (matched.kind === 'dashboard') return { ok: false, status: 404, message: 'The dashboard host has no WebSocket' };
-  const machine = await runningMachine(matched.backendId);
+  const machine = await runningMachine(matched.appId);
   if (machine instanceof Response) return { ok: false, status: machine.status, message: await machine.text() };
   const port = KINDS[matched.kind].port;
   let ingress: Awaited<ReturnType<typeof backendIngress>>;
   try {
     ingress = await backendIngress(machine.externalId, port);
   } catch {
-    return { ok: false, status: 503, message: 'The backend is starting. Retry in a few seconds.' };
+    return { ok: false, status: 503, message: 'The App is starting. Retry in a few seconds.' };
   }
   const headers = appUpstreamHeaders(req, ingress.headers, matched.publicHost);
   // The upstream socket negotiates its own handshake and extensions.

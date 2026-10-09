@@ -1,8 +1,10 @@
 /**
- * Kortix Backends lifecycle: one self-hosted Convex backend per persistent
- * Platinum machine.
+ * The machine of an App of kind `convex`: one self-hosted Convex backend per
+ * persistent Platinum machine. The App row (`apps`) holds the shared fields
+ * (slug, name, size, budget, access, deletion); `app_convex_instances` holds
+ * the machine. A `ConvexRow` is the two joined.
  *
- * Create is two steps. `insertBackend` claims the name and answers at once.
+ * Create is two steps. `insertConvexApp` claims the slug and answers at once.
  * `provisionBackend` then runs in the background (≈3 s on a warm image, up to
  * a few minutes the first time a region builds the image): create the machine
  * with 3210/3211/6791 exposed PRIVATELY, write the origins file the supervisor
@@ -21,24 +23,27 @@
  * Billing: a running machine is metered like a sandbox, reserved spec × wall
  * clock (workload_type `backend`); ./maintenance.ts opens the window and
  * records liveness. Snapshot storage is not billed yet.
- * ponytail: no per-backend budget. The caps (3 per project, 10 per account) and
- * the wallet gate on create and resize bound the spend; add a budget like Apps
- * when a customer runs many backends.
+ * The App's monthly budget alerts at 80 % and 100 % and never stops the machine
+ * (./maintenance.ts budgetAlerts): a stopped database breaks every client.
+ * The caps (3 per project, 10 per account) and the wallet gate on create and
+ * resize bound the spend.
  * ponytail: always on (`persistent`). Platinum does not count an open
  * WebSocket as activity, so idle-stop would cycle every live client; add it
  * once the edge does.
  */
 
-import { randomUUID } from 'node:crypto';
-import { projectBackends, projects } from '@kortix/db';
-import { and, asc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
-import { config } from '../config';
-import { resolveFeatureFlag } from '../feature-flags/registry';
-import { oauthIssuer } from '../oauth/discovery';
-import { db } from '../shared/db';
-import { PlatinumHttpError, platinumJson } from '../shared/platinum';
-import { sandboxOwnershipMarker } from '../platform/sandbox-ownership';
-import { currentInstanceId, decryptProjectSecret, encryptProjectSecret } from '../projects/surface';
+import { randomBytes } from 'node:crypto';
+import { appConvexInstances, apps } from '@kortix/db';
+import { and, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import { type ConvexRow, liveConvexApp, liveInstance, selectConvexRows } from './rows';
+
+export { CONVEX_ROW, type ConvexRow, liveConvexApp, liveInstance, selectConvexRows } from './rows';
+import { config } from '../../../config';
+import { oauthIssuer } from '../../../oauth/discovery';
+import { db } from '../../../shared/db';
+import { PlatinumHttpError, platinumJson } from '../../../shared/platinum';
+import { sandboxOwnershipMarker } from '../../../platform/sandbox-ownership';
+import { currentInstanceId, decryptProjectSecret, encryptProjectSecret } from '../../../projects/surface';
 import {
   type BackendTokenSubject,
   backendAuthEnv,
@@ -56,8 +61,8 @@ import {
 import { backendFailureMessage } from './errors';
 import { backendPublicUrls } from './hosts';
 import { backendIngress, machineFetch } from './machine';
-import { logger } from '../lib/logger';
-import { endComputeSession } from '../billing/services/compute-metering';
+import { logger } from '../../../lib/logger';
+import { endComputeSession } from '../../../billing/services/compute-metering';
 
 export const BACKEND_PROVIDER = 'platinum';
 export const MAX_BACKENDS_PER_PROJECT = 3;
@@ -79,9 +84,12 @@ const HEALTH_WAIT_MS = 60_000;
 type PlatinumCreated = { id: string };
 type PlatinumExec = { result?: { stdout?: string; stderr?: string; exit_code?: number }; error?: string };
 
-export type BackendRow = typeof projectBackends.$inferSelect;
-
-export class BackendLimitError extends Error {}
+/** A `convex` App create refused before any machine exists (a cap, a size): 409 or 400 with `code`. */
+export class BackendLimitError extends Error {
+  constructor(message: string, readonly code = 'app_kind_limit', readonly status: 400 | 409 = 409) {
+    super(message);
+  }
+}
 
 /** A provision or operation writes `metadata.heartbeatAt` this often while it runs. */
 export const HEARTBEAT_MS = 20_000;
@@ -90,7 +98,7 @@ export const HEARTBEAT_MS = 20_000;
 export const PROVISION_STALE_MS = 15 * 60_000;
 
 /** The last sign of life of the provision or operation running on this row. */
-export function lastHeartbeat(row: Pick<BackendRow, 'metadata' | 'createdAt'>): number {
+export function lastHeartbeat(row: Pick<ConvexRow, 'metadata' | 'createdAt'>): number {
   const meta = row.metadata as { heartbeatAt?: string; operationStartedAt?: string };
   const at = Date.parse(meta.heartbeatAt ?? meta.operationStartedAt ?? '');
   return Number.isFinite(at) ? at : row.createdAt.getTime();
@@ -100,7 +108,7 @@ export function lastHeartbeat(row: Pick<BackendRow, 'metadata' | 'createdAt'>): 
  * The status to show. A provision with no heartbeat for PROVISION_STALE_MS was
  * interrupted and maintenance could not resume it: it reads as `error`.
  */
-export function effectiveStatus(row: BackendRow, now = Date.now()): BackendRow['status'] {
+export function effectiveStatus(row: ConvexRow, now = Date.now()): ConvexRow['status'] {
   return row.status === 'provisioning' && now - lastHeartbeat(row) > PROVISION_STALE_MS ? 'error' : row.status;
 }
 
@@ -109,15 +117,15 @@ export function effectiveStatus(row: BackendRow, now = Date.now()): BackendRow['
  * returned stop is called, so maintenance can tell a running provision,
  * operation or delete from one whose API process died.
  */
-export function keepAlive(backendId: string, field: 'heartbeatAt' | 'deleting' = 'heartbeatAt'): () => void {
+export function keepAlive(appId: string, field: 'heartbeatAt' | 'deleting' = 'heartbeatAt'): () => void {
   const beat = () =>
     db
-      .update(projectBackends)
+      .update(appConvexInstances)
       .set({
-        metadata: sql`coalesce(${projectBackends.metadata}, '{}'::jsonb) || ${JSON.stringify({ [field]: new Date().toISOString() })}::jsonb`,
+        metadata: sql`coalesce(${appConvexInstances.metadata}, '{}'::jsonb) || ${JSON.stringify({ [field]: new Date().toISOString() })}::jsonb`,
       })
-      .where(and(eq(projectBackends.backendId, backendId), isNull(projectBackends.deletedAt)))
-      .catch((error) => logger.warn('[backends] heartbeat failed', { backendId, error: String(error) }));
+      .where(and(eq(appConvexInstances.appId, appId), liveInstance()))
+      .catch((error) => logger.warn('[apps:convex] heartbeat failed', { appId, error: String(error) }));
   const timer = setInterval(beat, HEARTBEAT_MS);
   timer.unref?.();
   return () => clearInterval(timer);
@@ -150,7 +158,7 @@ export async function execInBackend(externalId: string, script: string, timeoutM
     body: JSON.stringify({ cmd: ['bash', '-c', script], timeout_ms: timeoutMs }),
   });
   if (out.error || out.result?.exit_code !== 0) {
-    logger.error('[backends] exec failed', {
+    logger.error('[apps:convex] exec failed', {
       externalId,
       error: out.error ?? out.result?.stderr?.slice(0, 2_000) ?? `exit ${out.result?.exit_code}`,
     });
@@ -191,14 +199,14 @@ async function verifyAdminKey(externalId: string, adminKey: string): Promise<voi
  * takes it, and seals it on the row. Needed after anything that can change the
  * instance secret: a rotation, a snapshot restore, a backup restore.
  */
-export async function sealAdminKey(row: BackendRow): Promise<void> {
+export async function sealAdminKey(row: ConvexRow): Promise<void> {
   if (!row.externalId || !row.url) throw new Error('backend has no machine');
   const adminKey = await mintAdminKey(row.externalId);
   await verifyAdminKey(row.externalId, adminKey);
   await db
-    .update(projectBackends)
+    .update(appConvexInstances)
     .set({ adminKeyEnc: encryptProjectSecret(row.projectId, adminKey), updatedAt: new Date() })
-    .where(and(eq(projectBackends.backendId, row.backendId), isNull(projectBackends.deletedAt)));
+    .where(and(eq(appConvexInstances.appId, row.appId), liveInstance()));
 }
 
 /**
@@ -229,8 +237,8 @@ export async function setBackendEnv(externalId: string, adminKey: string, env: R
  * Convex puts in file storage URLs and in `process.env.CONVEX_CLOUD_URL` /
  * `CONVEX_SITE_URL`. They are the backend's Kortix hosts.
  */
-export function backendOriginsFile(backendId: string): string {
-  const { url, siteUrl } = backendPublicUrls(backendId);
+export function backendOriginsFile(appId: string): string {
+  const { url, siteUrl } = backendPublicUrls(appId);
   return `CONVEX_CLOUD_ORIGIN=${url}\nCONVEX_SITE_ORIGIN=${siteUrl}\nKORTIX_FRAME_ANCESTORS=${dashboardFrameAncestors()}\n`;
 }
 
@@ -273,10 +281,10 @@ exit 1`;
  * Runs after the move to the hosts, and after anything that can bring back an
  * older disk or memory image (a snapshot restore, a backup restore, a start).
  */
-export async function applyBackendOrigins(row: BackendRow): Promise<'unchanged' | 'restarted'> {
+export async function applyBackendOrigins(row: ConvexRow): Promise<'unchanged' | 'restarted'> {
   if (!row.externalId) throw new Error('backend has no machine');
-  await writeOriginsFile(row.externalId, backendOriginsFile(row.backendId));
-  const out = await execInBackend(row.externalId, restartWithOriginsScript(backendPublicUrls(row.backendId).url), 45_000);
+  await writeOriginsFile(row.externalId, backendOriginsFile(row.appId));
+  const out = await execInBackend(row.externalId, restartWithOriginsScript(backendPublicUrls(row.appId).url), 45_000);
   return out.trim().endsWith('restarted') ? 'restarted' : 'unchanged';
 }
 
@@ -286,16 +294,16 @@ export async function applyBackendOrigins(row: BackendRow): Promise<'unchanged' 
  * The machine's Platinum URLs answer only with Kortix's token from then on.
  * Safe to repeat. The caller holds the operation lock.
  */
-export async function moveBackendToKortixHosts(row: BackendRow): Promise<void> {
+export async function moveBackendToKortixHosts(row: ConvexRow): Promise<void> {
   if (!row.externalId) throw new Error('backend has no machine');
   const result = await applyBackendOrigins(row);
   for (const port of BACKEND_PORTS) await backendIngress(row.externalId, port);
-  const { url, siteUrl } = backendPublicUrls(row.backendId);
+  const { url, siteUrl } = backendPublicUrls(row.appId);
   await db
-    .update(projectBackends)
+    .update(appConvexInstances)
     .set({ url, siteUrl, updatedAt: new Date() })
-    .where(and(eq(projectBackends.backendId, row.backendId), isNull(projectBackends.deletedAt)));
-  logger.info('[backends] moved to the Kortix hosts', { backendId: row.backendId, convex: result });
+    .where(and(eq(appConvexInstances.appId, row.appId), liveInstance()));
+  logger.info('[apps:convex] moved to the Kortix hosts', { appId: row.appId, convex: result });
 }
 
 async function writeOriginsFile(externalId: string, body: string): Promise<void> {
@@ -343,69 +351,60 @@ export async function deleteBackendMachine(externalId: string): Promise<void> {
  * returns `{ machineDeletePending: true }` for the row's metadata, and
  * maintenance retries it every tick.
  */
-export async function discardMachine(backendId: string, externalId: string | null): Promise<{ machineDeletePending?: true }> {
+export async function discardMachine(appId: string, externalId: string | null): Promise<{ machineDeletePending?: true }> {
   if (!externalId) return {};
   try {
     await deleteBackendMachine(externalId);
     return {};
   } catch (error) {
-    logger.warn('[backends] machine delete failed; maintenance retries it', { backendId, externalId, error: String(error) });
+    logger.warn('[apps:convex] machine delete failed; maintenance retries it', { appId, externalId, error: String(error) });
     return { machineDeletePending: true };
   }
 }
 
-export async function listProjectBackends(projectId: string): Promise<BackendRow[]> {
-  return db
-    .select()
-    .from(projectBackends)
-    .where(and(eq(projectBackends.projectId, projectId), isNull(projectBackends.deletedAt)))
-    .orderBy(asc(projectBackends.createdAt));
-}
-
-/** A live (not deleted) backend of this project, or null. */
-export async function getLiveBackend(projectId: string, backendId: string): Promise<BackendRow | null> {
-  const [row] = await db
-    .select()
-    .from(projectBackends)
-    .where(
-      and(
-        eq(projectBackends.backendId, backendId),
-        eq(projectBackends.projectId, projectId),
-        isNull(projectBackends.deletedAt),
-      ),
-    )
+/** The live `convex` App with this id in this project, or null. */
+export async function getLiveConvexApp(projectId: string, appId: string): Promise<ConvexRow | null> {
+  const [row] = await selectConvexRows()
+    .where(and(eq(appConvexInstances.appId, appId), eq(apps.projectId, projectId), liveConvexApp()))
     .limit(1);
   return row ?? null;
 }
 
+/** The machine rows of these Apps (any state), by App id: one query for an App list. */
+export async function convexRowsByAppId(appIds: string[]): Promise<Map<string, ConvexRow>> {
+  if (appIds.length === 0) return new Map();
+  const rows = await selectConvexRows().where(inArray(appConvexInstances.appId, appIds));
+  return new Map(rows.map((row) => [row.appId, row]));
+}
+
 /**
- * The issuer a new backend's tokens carry: the public API origin (KORTIX_URL),
+ * The issuer a new App's tokens carry: the public API origin (KORTIX_URL),
  * where ./discovery.ts serves its OpenID configuration and key set. Stored on
- * the row and never recomputed, so a later KORTIX_URL change moves no backend.
+ * the row and never recomputed, so a later KORTIX_URL change moves no App.
  */
-export function newBackendIssuer(backendId: string): string {
-  return `${oauthIssuer()}/v1/backends/${backendId}`;
+export function newBackendIssuer(appId: string): string {
+  return `${oauthIssuer()}/v1/backends/${appId}`;
 }
 
-/** The issuer this backend's environment expects. */
-export function backendIssuer(row: BackendRow): string {
-  return row.authIssuer ?? legacyBackendIssuer(row.backendId);
+/** The issuer this App's environment expects. */
+export function backendIssuer(row: ConvexRow): string {
+  return row.authIssuer ?? legacyBackendIssuer(row.appId);
 }
 
-/** Mints a Kortix sign-in token for this member, or null when the backend predates sign-in. */
-export function backendMemberToken(row: BackendRow, subject: BackendTokenSubject) {
+/** Mints a Kortix sign-in token for this member, or null when the App predates sign-in. */
+export function backendMemberToken(row: ConvexRow, subject: BackendTokenSubject) {
   if (!row.authKeyEnc) return null;
-  return mintBackendToken(row.backendId, backendIssuer(row), decryptProjectSecret(row.projectId, row.authKeyEnc), {
+  return mintBackendToken(row.appId, backendIssuer(row), decryptProjectSecret(row.projectId, row.authKeyEnc), {
     ...subject,
     accountId: row.accountId,
     projectId: row.projectId,
   });
 }
 
-/** The public KORTIX_AUTH_* values that verify this backend's tokens, or null when it predates sign-in. */
-export function backendPublicAuthEnv(row: BackendRow) {
+/** The public KORTIX_AUTH_* values that verify this App's tokens, or null when it predates sign-in. */
+export function backendPublicAuthEnv(row: ConvexRow) {
   if (!row.authKeyEnc) return null;
-  const env = backendAuthEnv(row.backendId, backendIssuer(row), decryptProjectSecret(row.projectId, row.authKeyEnc));
+  const env = backendAuthEnv(row.appId, backendIssuer(row), decryptProjectSecret(row.projectId, row.authKeyEnc));
   return {
     KORTIX_AUTH_ISSUER: env.KORTIX_AUTH_ISSUER!,
     KORTIX_AUTH_AUDIENCE: env.KORTIX_AUTH_AUDIENCE!,
@@ -413,100 +412,123 @@ export function backendPublicAuthEnv(row: BackendRow) {
   };
 }
 
-/** Whether the project has the `backends` flag on. Fail-closed: a missing project is off. */
-export async function backendsEnabled(projectId: string): Promise<boolean> {
-  const [row] = await db.select({ metadata: projects.metadata }).from(projects).where(eq(projects.projectId, projectId)).limit(1);
-  return Boolean(row) && resolveFeatureFlag(row!.metadata, 'backends');
-}
-
-/** A live, running backend of this project by name, or null. */
-export async function getRunningBackendByName(projectId: string, name: string): Promise<BackendRow | null> {
-  const [row] = await db
-    .select()
-    .from(projectBackends)
-    .where(
-      and(
-        eq(projectBackends.projectId, projectId),
-        eq(projectBackends.name, name),
-        eq(projectBackends.status, 'running'),
-        isNull(projectBackends.deletedAt),
-      ),
-    )
-    .limit(1);
-  return row ?? null;
-}
-
-/** The admin key of a running backend. */
-export function backendAdminKey(row: BackendRow & { adminKeyEnc: string }): string {
+/** The admin key of a running App. */
+export function backendAdminKey(row: ConvexRow & { adminKeyEnc: string }): string {
   return decryptProjectSecret(row.projectId, row.adminKeyEnc);
 }
 
-/**
- * Claims a backend name. The project cap (3) and the account cap (10) are
- * counted and the row is inserted in ONE transaction that holds a per-account
- * advisory lock, so concurrent creates cannot overshoot either cap.
- */
-export async function insertBackend(input: {
+export interface NewConvexApp {
   projectId: string;
   accountId: string;
   userId: string;
+  slug: string;
   name: string;
   size?: Partial<BackendSize>;
-}): Promise<BackendRow> {
+  monthlyBudgetUsd: string;
+  monthlyBudgetExplicit: boolean;
+}
+
+/** The size a new `convex` App gets: the request, else BACKEND_MACHINE, inside BACKEND_MACHINE_LIMITS. */
+export function newConvexSize(size: Partial<BackendSize> = {}): BackendSize {
+  const next = {
+    cpu: size.cpu ?? BACKEND_MACHINE.cpu,
+    memoryGb: size.memoryGb ?? BACKEND_MACHINE.memoryGb,
+    diskGb: size.diskGb ?? BACKEND_MACHINE.diskGb,
+  };
+  for (const key of ['cpu', 'memoryGb', 'diskGb'] as const) {
+    const { min, max } = BACKEND_MACHINE_LIMITS[key];
+    if (!Number.isInteger(next[key]) || next[key] < min || next[key] > max) {
+      throw new BackendLimitError(`${key} must be an integer from ${min} to ${max}`, 'invalid_size', 400);
+    }
+  }
+  return next;
+}
+
+/**
+ * Claims the slug: inserts the App (kind `convex`, always on) and its machine
+ * row. The project cap (3) and the account cap (10) are counted and both rows
+ * inserted in ONE transaction that holds a per-account advisory lock, so
+ * concurrent creates cannot overshoot either cap. A taken slug throws the
+ * unique violation (23505) before any machine exists.
+ */
+export async function insertConvexApp(input: NewConvexApp): Promise<{ app: typeof apps.$inferSelect; row: ConvexRow }> {
+  const size = newConvexSize(input.size);
   return db.transaction(async (tx) => {
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`kortix.backends:${input.accountId}`}))`);
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`kortix.apps.convex:${input.accountId}`}))`);
     const [counts] = await tx
       .select({
         account: sql<number>`count(*)::int`,
-        project: sql<number>`(count(*) filter (where ${projectBackends.projectId} = ${input.projectId}))::int`,
+        project: sql<number>`(count(*) filter (where ${apps.projectId} = ${input.projectId}))::int`,
       })
-      .from(projectBackends)
-      .where(and(eq(projectBackends.accountId, input.accountId), isNull(projectBackends.deletedAt)));
+      .from(apps)
+      .where(and(eq(apps.accountId, input.accountId), eq(apps.kind, 'convex'), isNull(apps.deletedAt)));
     if ((counts?.project ?? 0) >= MAX_BACKENDS_PER_PROJECT) {
-      throw new BackendLimitError(`a project can have at most ${MAX_BACKENDS_PER_PROJECT} backends; delete one first`);
+      throw new BackendLimitError(`a project can have at most ${MAX_BACKENDS_PER_PROJECT} backend Apps; delete one first`);
     }
     if ((counts?.account ?? 0) >= MAX_BACKENDS_PER_ACCOUNT) {
       throw new BackendLimitError(
-        `an account can have at most ${MAX_BACKENDS_PER_ACCOUNT} backends across its projects; delete one or contact Kortix`,
+        `an account can have at most ${MAX_BACKENDS_PER_ACCOUNT} backend Apps across its projects; delete one or contact Kortix`,
       );
     }
-    // The live-name unique index makes a duplicate name throw here, before any machine exists.
-    const backendId = randomUUID();
-    const [row] = await tx
-      .insert(projectBackends)
+    const [app] = await tx
+      .insert(apps)
       .values({
-        backendId,
-        authIssuer: newBackendIssuer(backendId),
-        projectId: input.projectId,
         accountId: input.accountId,
+        projectId: input.projectId,
+        slug: input.slug,
         name: input.name,
-        provider: BACKEND_PROVIDER,
-        cpu: input.size?.cpu ?? BACKEND_MACHINE.cpu,
-        memoryGb: input.size?.memoryGb ?? BACKEND_MACHINE.memoryGb,
-        diskGb: input.size?.diskGb ?? BACKEND_MACHINE.diskGb,
-        template: CONVEX_IMAGE_SPEC.base_image,
+        kind: 'convex',
+        routeKey: randomBytes(8).toString('hex'),
         createdBy: input.userId,
+        cpuCores: size.cpu,
+        memoryGb: size.memoryGb,
+        diskGb: size.diskGb,
+        alwaysOn: true,
+        monthlyBudgetUsd: input.monthlyBudgetUsd,
+        monthlyBudgetExplicit: input.monthlyBudgetExplicit,
       })
       .returning();
-    return row!;
+    const [instance] = await tx
+      .insert(appConvexInstances)
+      .values({
+        appId: app!.appId,
+        authIssuer: newBackendIssuer(app!.appId),
+        provider: BACKEND_PROVIDER,
+        template: CONVEX_IMAGE_SPEC.base_image,
+      })
+      .returning();
+    return {
+      app: app!,
+      row: {
+        ...instance!,
+        projectId: app!.projectId,
+        accountId: app!.accountId,
+        slug: app!.slug,
+        cpu: app!.cpuCores,
+        memoryGb: app!.memoryGb,
+        diskGb: app!.diskGb,
+        monthlyBudgetUsd: app!.monthlyBudgetUsd,
+        deletedAt: null,
+      },
+    };
   });
 }
 
-export async function provisionBackend(row: BackendRow, region?: string): Promise<BackendRow> {
-  const { backendId, projectId } = row;
+export async function provisionBackend(row: ConvexRow, region?: string): Promise<ConvexRow> {
+  const { appId, projectId } = row;
   let externalId: string | null = null;
-  const stopHeartbeat = keepAlive(backendId);
+  const stopHeartbeat = keepAlive(appId);
   try {
     const created = await platinumJson<PlatinumCreated>(
       `/v1/sandboxes?wait_for_state=running&wait_timeout_ms=${CREATE_WAIT_MS}`,
       {
         method: 'POST',
         signal: AbortSignal.timeout(CREATE_WAIT_MS + 30_000),
-        // The backend id makes a retried create replay the committed machine.
-        headers: { 'Idempotency-Key': `kortix-backend-${backendId}` },
+        // The App id makes a retried create replay the committed machine.
+        headers: { 'Idempotency-Key': `kortix-backend-${appId}` },
         body: JSON.stringify({
           image: CONVEX_IMAGE_SPEC,
-          name: `backend-${backendId}`,
+          name: `backend-${appId}`,
           type: 'persistent',
           auto_stop_minutes: 0,
           auto_resume: true,
@@ -521,7 +543,8 @@ export async function provisionBackend(row: BackendRow, region?: string): Promis
             'kortix.managed': await sandboxOwnershipMarker(),
             'kortix.env': config.INTERNAL_KORTIX_ENV,
             'kortix.workload': 'backend',
-            'kortix.backend_id': backendId,
+            // The orphan reaper matches machines to Apps by this id (./lifecycle.ts).
+            'kortix.backend_id': appId,
             ...(currentInstanceId() ? { 'kortix.instance': currentInstanceId()! } : {}),
           },
         }),
@@ -529,20 +552,20 @@ export async function provisionBackend(row: BackendRow, region?: string): Promis
     );
     externalId = created.id;
     await db
-      .update(projectBackends)
+      .update(appConvexInstances)
       .set({ externalId, updatedAt: new Date() })
-      .where(eq(projectBackends.backendId, backendId));
+      .where(eq(appConvexInstances.appId, appId));
 
-    const { url, siteUrl } = backendPublicUrls(backendId);
-    await writeOriginsFile(externalId, backendOriginsFile(backendId));
+    const { url, siteUrl } = backendPublicUrls(appId);
+    await writeOriginsFile(externalId, backendOriginsFile(appId));
     await waitHealthy(externalId);
     const adminKey = await mintAdminKey(externalId);
     // Kortix sign-in: the backend verifies member tokens with this key's public half.
     const authKey = generateBackendAuthKey();
-    await setBackendEnv(externalId, adminKey, backendAuthEnv(backendId, backendIssuer(row), authKey));
+    await setBackendEnv(externalId, adminKey, backendAuthEnv(appId, backendIssuer(row), authKey));
 
     const [ready] = await db
-      .update(projectBackends)
+      .update(appConvexInstances)
       .set({
         status: 'running',
         url,
@@ -550,22 +573,22 @@ export async function provisionBackend(row: BackendRow, region?: string): Promis
         adminKeyEnc: encryptProjectSecret(projectId, adminKey),
         authKeyEnc: encryptProjectSecret(projectId, authKey),
         // This machine serves Convex's dashboard on CONVEX_DASHBOARD_PORT.
-        metadata: sql`coalesce(${projectBackends.metadata}, '{}'::jsonb) || '{"dashboard":true}'::jsonb`,
+        metadata: sql`coalesce(${appConvexInstances.metadata}, '{}'::jsonb) || '{"dashboard":true}'::jsonb`,
         updatedAt: new Date(),
       })
       // Only a row nobody deleted meanwhile may become `running`.
-      .where(and(eq(projectBackends.backendId, backendId), isNull(projectBackends.deletedAt)))
+      .where(and(eq(appConvexInstances.appId, appId), liveInstance()))
       .returning();
-    if (!ready) throw new Error('backend was deleted while it was provisioning');
-    return ready;
+    if (!ready) throw new Error('the App was deleted while it was provisioning');
+    return { ...row, ...ready };
   } catch (error) {
     // The row carries a mapped reason; the provider's raw text stays in the log.
     const message = backendFailureMessage(error);
-    const pending = await discardMachine(backendId, externalId);
+    const pending = await discardMachine(appId, externalId);
     await db
-      .update(projectBackends)
+      .update(appConvexInstances)
       .set({ status: 'error', updatedAt: new Date(), metadata: { lastError: message.slice(0, 2_000), ...pending } })
-      .where(and(eq(projectBackends.backendId, backendId), isNull(projectBackends.deletedAt)))
+      .where(and(eq(appConvexInstances.appId, appId), liveInstance()))
       .catch(() => {});
     throw error;
   } finally {
@@ -588,30 +611,27 @@ export async function provisionBackend(row: BackendRow, region?: string): Promis
  * unreachable then moves on the next deploy; it works on the old issuer meanwhile.
  */
 export async function moveBackendIssuers(): Promise<{ moved: number; failed: number }> {
-  const rows = await db
-    .select()
-    .from(projectBackends)
-    .where(
-      and(
-        isNull(projectBackends.authIssuer),
-        isNull(projectBackends.deletedAt),
-        eq(projectBackends.status, 'running'),
-        isNotNull(projectBackends.authKeyEnc),
-        isNotNull(projectBackends.adminKeyEnc),
-        isNotNull(projectBackends.externalId),
-      ),
-    );
+  const rows = await selectConvexRows().where(
+    and(
+      isNull(appConvexInstances.authIssuer),
+      liveConvexApp(),
+      eq(appConvexInstances.status, 'running'),
+      isNotNull(appConvexInstances.authKeyEnc),
+      isNotNull(appConvexInstances.adminKeyEnc),
+      isNotNull(appConvexInstances.externalId),
+    ),
+  );
   let moved = 0;
   let failed = 0;
   for (const row of rows) {
-    const issuer = newBackendIssuer(row.backendId);
+    const issuer = newBackendIssuer(row.appId);
     try {
       await db.transaction(async (tx) => {
         const [claimed] = await tx
-          .update(projectBackends)
+          .update(appConvexInstances)
           .set({ authIssuer: issuer, updatedAt: new Date() })
-          .where(and(eq(projectBackends.backendId, row.backendId), isNull(projectBackends.authIssuer)))
-          .returning({ backendId: projectBackends.backendId });
+          .where(and(eq(appConvexInstances.appId, row.appId), isNull(appConvexInstances.authIssuer)))
+          .returning({ appId: appConvexInstances.appId });
         if (!claimed) return;
         await setBackendEnv(row.externalId!, backendAdminKey({ ...row, adminKeyEnc: row.adminKeyEnc! }), {
           KORTIX_AUTH_ISSUER: issuer,
@@ -620,25 +640,31 @@ export async function moveBackendIssuers(): Promise<{ moved: number; failed: num
       });
     } catch (error) {
       failed += 1;
-      logger.warn('[backends] issuer move failed; the backend keeps its old issuer', {
-        backendId: row.backendId,
+      logger.warn('[apps:convex] issuer move failed; the backend keeps its old issuer', {
+        appId: row.appId,
         error: String(error),
       });
     }
   }
-  if (rows.length > 0) logger.info('[backends] issuer move', { candidates: rows.length, moved, failed });
+  if (rows.length > 0) logger.info('[apps:convex] issuer move', { candidates: rows.length, moved, failed });
   return { moved, failed };
 }
 
-/** Delete the machine and its snapshots (its data goes with them), close its meter, then retire the row. */
-export async function deleteBackend(row: BackendRow): Promise<void> {
+/**
+ * Deletes the machine and its snapshots (its data goes with them), closes its
+ * meter, then removes the machine row. The App row stays deleted.
+ */
+export async function deleteBackend(row: ConvexRow): Promise<void> {
   if (row.externalId) await deleteBackendMachine(row.externalId);
-  // The billing invariant sweep closes the window of a deleted backend if this fails.
-  await endComputeSession(row.backendId).catch((error) =>
-    logger.warn('[backends] could not close the compute window', { backendId: row.backendId, error: String(error) }),
+  // The billing invariant sweep closes the window of a deleted App if this fails.
+  await endComputeSession(row.appId).catch((error) =>
+    logger.warn('[apps:convex] could not close the compute window', { appId: row.appId, error: String(error) }),
   );
-  await db
-    .update(projectBackends)
-    .set({ status: 'deleted', deletedAt: new Date(), updatedAt: new Date() })
-    .where(eq(projectBackends.backendId, row.backendId));
+  await db.transaction(async (tx) => {
+    await tx
+      .update(apps)
+      .set({ deletedAt: row.deletedAt ?? new Date(), desiredState: 'stopped', updatedAt: new Date() })
+      .where(eq(apps.appId, row.appId));
+    await tx.delete(appConvexInstances).where(eq(appConvexInstances.appId, row.appId));
+  });
 }

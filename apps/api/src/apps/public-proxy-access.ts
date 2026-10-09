@@ -410,15 +410,16 @@ async function resolveEndpointViewer(
 }
 
 /**
- * `GET /_kortix/backend-token?backend=<name>` — a Kortix sign-in token for one
- * of the project's backends, naming this viewer. The App's Convex client sends
- * it (`client.setAuth`), and the backend's functions read the member with
- * `ctx.auth.getUserIdentity()`. Same viewer rules as `/_kortix/viewer`.
+ * `GET /_kortix/backend-token?backend=<slug>` — a Kortix sign-in token for an
+ * App of kind `convex` that this App `uses` (`app_links`), naming this viewer.
+ * The App's Convex client sends it (`client.setAuth`), and the used App's
+ * functions read the member with `ctx.auth.getUserIdentity()`. Same viewer
+ * rules as `/_kortix/viewer`.
  */
 export async function appBackendTokenResponse(
   request: Request,
   url: URL,
-  app: AppAccessRow & { viewerTokenScope?: string | null; backends?: string[] | null },
+  app: AppAccessRow & { viewerTokenScope?: string | null },
   verifyUserAccess: AppUserAccessVerifier = appAccessibleToUser,
 ): Promise<Response> {
   const noStore = { 'cache-control': 'no-store' };
@@ -428,14 +429,19 @@ export async function appBackendTokenResponse(
       { status: 404, headers: noStore },
     );
   }
-  const name = url.searchParams.get('backend') ?? 'main';
-  // An App acts as its viewer only on the backends it lists (`apps.backends`).
-  // Code in an App that has nothing to do with a backend gets no token for it.
-  if (!(app.backends ?? []).includes(name)) {
+  const slug = url.searchParams.get('backend') ?? 'main';
+  // Loaded on use: the links and the convex kind pull the project graph,
+  // which the App gate's hot path (and every hand-written module mock of it)
+  // does not need.
+  const { linkedApp } = await import('./links');
+  // An App acts as its viewer only on the Apps it uses (`app_links`). Code in
+  // an App that has nothing to do with another App gets no token for it.
+  const linked = await linkedApp(app.appId, app.projectId, slug);
+  if (!linked || linked.kind !== 'convex') {
     return Response.json(
       {
-        error: 'backend_not_listed',
-        error_description: `This App does not list the backend "${name}". Add it to the App's backends: kortix apps set <app> --backends ${name}.`,
+        error: 'app_not_linked',
+        error_description: `This App does not use an App named "${slug}". Add it: kortix apps link <app> --uses ${slug}.`,
       },
       { status: 403, headers: noStore },
     );
@@ -445,38 +451,32 @@ export async function appBackendTokenResponse(
   if (viewer.agentViewer) {
     // As on /_kortix/viewer: an agent session must not act as the human who launched it.
     return Response.json(
-      { error: 'agent_viewer', error_description: 'An agent session mints a token naming the agent: POST /v1/projects/{projectId}/backends/{backendId}/token.' },
+      { error: 'agent_viewer', error_description: 'An agent session mints a token naming the agent: POST /v1/projects/{projectId}/apps/{appId}/token.' },
       { status: 403, headers: noStore },
     );
   }
   // A public App lets every request through, so nothing re-checked the gate
-  // cookie: a member removed after redeeming a link kept minting backend
-  // tokens for the cookie's 8 h. A token is a credential, so re-check access.
+  // cookie: a member removed after redeeming a link kept minting tokens for
+  // the cookie's 8 h. A token is a credential, so re-check access.
   if (app.accessMode === 'public' && !(await verifyUserAccess(app, viewer.userId))) {
     return Response.json(
       { error: 'no_viewer_identity', error_description: 'The signed-in viewer no longer has access to this App.', access_mode: app.accessMode },
       { status: 401, headers: noStore },
     );
   }
-  // Loaded on use: the backends service pulls the project graph, which the App
-  // gate's hot path (and every hand-written module mock of it) does not need.
-  const { backendMemberToken, backendsEnabled, getRunningBackendByName } = await import('../backends/provision');
-  if (!(await backendsEnabled(app.projectId))) {
-    const { featureDisabledBody } = await import('../feature-flags/gate');
-    return Response.json(featureDisabledBody('backends'), { status: 403, headers: noStore });
-  }
-  const backend = await getRunningBackendByName(app.projectId, name);
-  if (!backend) {
+  const { backendMemberToken, getLiveConvexApp } = await import('./kinds/convex/provision');
+  const target = await getLiveConvexApp(app.projectId, linked.appId);
+  if (!target || target.status !== 'running') {
     return Response.json(
-      { error: 'backend_not_found', error_description: `No running backend named "${name}" in this project.` },
+      { error: 'app_not_running', error_description: `The App "${slug}" is not running.` },
       { status: 404, headers: noStore },
     );
   }
   const identity = await resolveAppViewerIdentity(viewer.userId, app.accountId);
-  const minted = backendMemberToken(backend, { userId: viewer.userId, ...identity });
+  const minted = backendMemberToken(target, { userId: viewer.userId, ...identity });
   if (!minted) {
     return Response.json(
-      { error: 'backend_auth_unavailable', error_description: 'This backend predates Kortix sign-in.' },
+      { error: 'app_auth_unavailable', error_description: 'This App predates Kortix sign-in.' },
       { status: 409, headers: noStore },
     );
   }

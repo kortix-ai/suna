@@ -1,6 +1,6 @@
 /**
- * What happens to a backend's machine when its project or account goes away,
- * and the cleanup of machines nothing references.
+ * What happens to a `convex` App's machine when its project or account goes
+ * away or the App is deleted, and the cleanup of machines nothing references.
  *
  * - Archive (project delete): the machine is parked. Kortix turns Platinum's
  *   auto-resume off, stops the machine and closes its compute window. The data
@@ -8,28 +8,41 @@
  * - Unarchive (the project is `active` again): auto-resume goes back on and the
  *   park marker is cleared. The health probe then starts the stopped machine
  *   (./maintenance.ts), which reopens its compute window.
- * - Account deletion: every backend of the account is deleted, machine and
- *   snapshots, before the account's rows cascade away.
+ * - App delete (./operations.ts retireConvexApp): the machine is stopped and
+ *   kept with its `final` snapshot until `metadata.purgeAfter` (7 days);
+ *   `purgeRetiredConvexApps` then deletes machine, snapshots and row.
+ * - Account deletion: every `convex` App of the account is deleted at once,
+ *   machine and snapshots, retained ones included, before the account's rows
+ *   cascade away.
  * - Orphans: a machine tagged `kortix.workload=backend` that no live backend
  *   row references is deleted once it is older than ORPHAN_MACHINE_GRACE_MS.
  *   `machineDeletePending` rows (a failed delete after a failed provision) are
  *   retried every tick.
  */
 
-import { projectBackends, projects } from '@kortix/db';
-import { and, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
-import { logger } from '../lib/logger';
-import { db } from '../shared/db';
-import { isUuid } from '../shared/validate';
-import { PlatinumHttpError, platinumJson, platinumRegionControlPlane } from '../shared/platinum';
-import { platinumUsRegion } from '../shared/platinum-region';
-import { sandboxOwnershipMarker } from '../platform/sandbox-ownership';
-import { pauseComputeSession } from '../billing/services/compute-metering';
+import { appConvexInstances, apps, projects } from '@kortix/db';
+import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { logger } from '../../../lib/logger';
+import { db } from '../../../shared/db';
+import { isUuid } from '../../../shared/validate';
+import { PlatinumHttpError, platinumJson, platinumRegionControlPlane } from '../../../shared/platinum';
+import { platinumUsRegion } from '../../../shared/platinum-region';
+import { sandboxOwnershipMarker } from '../../../platform/sandbox-ownership';
+import { pauseComputeSession } from '../../../billing/services/compute-metering';
 import { backendOperation, deleteBackendExclusive, readMachine } from './operations';
-import { type BackendRow, PROVISION_STALE_MS, deleteBackendMachine } from './provision';
+import {
+  CONVEX_ROW,
+  type ConvexRow,
+  PROVISION_STALE_MS,
+  deleteBackend,
+  deleteBackendMachine,
+  liveConvexApp,
+  liveInstance,
+  selectConvexRows,
+} from './provision';
 
 function mergeMetadata(patch: Record<string, unknown>) {
-  return sql`coalesce(${projectBackends.metadata}, '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb`;
+  return sql`coalesce(${appConvexInstances.metadata}, '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb`;
 }
 
 // ── Archive and unarchive ────────────────────────────────────────────────────
@@ -39,7 +52,7 @@ async function setAutoResume(externalId: string, on: boolean): Promise<void> {
 }
 
 /** Auto-resume off, machine stopped, compute window closed, row marked `parked`. */
-export async function parkBackend(row: BackendRow): Promise<void> {
+export async function parkBackend(row: ConvexRow): Promise<void> {
   const externalId = row.externalId!;
   const machine = await readMachine(externalId);
   if (machine && machine.state !== 'deleted') {
@@ -51,22 +64,22 @@ export async function parkBackend(row: BackendRow): Promise<void> {
       });
     }
   }
-  await pauseComputeSession(row.backendId);
+  await pauseComputeSession(row.appId);
   await db
-    .update(projectBackends)
+    .update(appConvexInstances)
     .set({ metadata: mergeMetadata({ parked: new Date().toISOString() }), updatedAt: new Date() })
-    .where(and(eq(projectBackends.backendId, row.backendId), isNull(projectBackends.deletedAt)));
+    .where(and(eq(appConvexInstances.appId, row.appId), liveInstance()));
 }
 
 /** Auto-resume on, park marker cleared. The next probe starts the machine. */
-export async function unparkBackend(row: BackendRow): Promise<void> {
+export async function unparkBackend(row: ConvexRow): Promise<void> {
   const externalId = row.externalId!;
   const machine = await readMachine(externalId);
   if (machine && machine.state !== 'deleted' && machine.autoResume === false) await setAutoResume(externalId, true);
   await db
-    .update(projectBackends)
-    .set({ metadata: sql`coalesce(${projectBackends.metadata}, '{}'::jsonb) - 'parked'`, updatedAt: new Date() })
-    .where(eq(projectBackends.backendId, row.backendId));
+    .update(appConvexInstances)
+    .set({ metadata: sql`coalesce(${appConvexInstances.metadata}, '{}'::jsonb) - 'parked'`, updatedAt: new Date() })
+    .where(eq(appConvexInstances.appId, row.appId));
 }
 
 /**
@@ -77,34 +90,35 @@ export async function unparkBackend(row: BackendRow): Promise<void> {
  * marker (`releaseOperation`), so an archived backend is parked again after it.
  */
 export async function parkAndUnparkBackends(projectId?: string): Promise<{ parked: number; unparked: number; errors: number }> {
-  const parked = sql`${projectBackends.metadata} ? 'parked'`;
+  const parked = sql`${appConvexInstances.metadata} ? 'parked'`;
   const rows = await db
-    .select({ backend: projectBackends, projectStatus: projects.status })
-    .from(projectBackends)
-    .innerJoin(projects, eq(projects.projectId, projectBackends.projectId))
+    .select({ ...CONVEX_ROW, projectStatus: projects.status })
+    .from(appConvexInstances)
+    .innerJoin(apps, eq(apps.appId, appConvexInstances.appId))
+    .innerJoin(projects, eq(projects.projectId, apps.projectId))
     .where(
       and(
-        isNull(projectBackends.deletedAt),
-        isNotNull(projectBackends.externalId),
-        eq(projectBackends.status, 'running'),
-        projectId ? eq(projectBackends.projectId, projectId) : undefined,
+        liveConvexApp(),
+        isNotNull(appConvexInstances.externalId),
+        eq(appConvexInstances.status, 'running'),
+        projectId ? eq(apps.projectId, projectId) : undefined,
         sql`((${projects.status} = 'archived' and not ${parked}) or (${projects.status} = 'active' and ${parked}))`,
       ),
     );
   const result = { parked: 0, unparked: 0, errors: 0 };
-  for (const { backend, projectStatus } of rows) {
+  for (const { projectStatus, ...backend } of rows) {
     if (backendOperation(backend)) continue;
     const park = projectStatus === 'archived';
     try {
       await (park ? parkBackend(backend) : unparkBackend(backend));
       result[park ? 'parked' : 'unparked'] += 1;
-      logger.info(park ? '[backends] parked: the project is archived' : '[backends] unparked: the project is active', {
-        backendId: backend.backendId,
+      logger.info(park ? '[apps:convex] parked: the project is archived' : '[apps:convex] unparked: the project is active', {
+        appId: backend.appId,
         projectId: backend.projectId,
       });
     } catch (error) {
       result.errors += 1;
-      logger.warn('[backends] park/unpark failed; the next tick retries', { backendId: backend.backendId, park, error: String(error) });
+      logger.warn('[apps:convex] park/unpark failed; the next tick retries', { appId: backend.appId, park, error: String(error) });
     }
   }
   return result;
@@ -113,20 +127,48 @@ export async function parkAndUnparkBackends(projectId?: string): Promise<{ parke
 // ── Account deletion ─────────────────────────────────────────────────────────
 
 /**
- * Deletes every backend of the account: snapshots, machine, compute window,
- * row. Throws on the first failure, so account deletion stops before the
- * cascade removes the rows that name the remaining machines, and retries.
- * Only this account: a team account the requester also owns keeps its data.
+ * Deletes every `convex` App of the account at once: snapshots, machine,
+ * compute window, machine row. Retained (deleted) Apps go too: an erased
+ * account keeps no data. Throws on the first failure, so account deletion
+ * stops before the cascade removes the rows that name the remaining machines,
+ * and retries. Only this account: a team account the requester also owns
+ * keeps its data.
  */
 export async function deleteAccountBackends(accountId: string): Promise<number> {
-  const rows = await db
-    .select()
-    .from(projectBackends)
-    .where(and(eq(projectBackends.accountId, accountId), isNull(projectBackends.deletedAt)));
+  const rows = await selectConvexRows().where(eq(apps.accountId, accountId));
   // `force`: the account goes whatever runs; the mark stops new operations.
-  for (const row of rows) await deleteBackendExclusive(row, { force: true });
-  if (rows.length > 0) logger.info('[backends] deleted the backends of a deleted account', { accountId, backends: rows.length });
+  for (const row of rows) {
+    if (row.status === 'deleted') await deleteBackend(row);
+    else await deleteBackendExclusive(row, { force: true });
+  }
+  if (rows.length > 0) logger.info('[apps:convex] deleted the convex Apps of a deleted account', { accountId, apps: rows.length });
   return rows.length;
+}
+
+/**
+ * Purges deleted Apps whose retention ran out (`metadata.purgeAfter`): the
+ * stopped machine, its snapshots (the `final` one too) and the machine row.
+ * A failure is retried next tick.
+ */
+export async function purgeRetiredConvexApps(now = new Date()): Promise<{ purged: number; errors: number }> {
+  const rows = await selectConvexRows().where(
+    and(
+      eq(appConvexInstances.status, 'deleted'),
+      sql`coalesce((${appConvexInstances.metadata}->>'purgeAfter')::timestamptz, ${appConvexInstances.updatedAt}) <= ${now.toISOString()}::timestamptz`,
+    ),
+  );
+  const result = { purged: 0, errors: 0 };
+  for (const row of rows) {
+    try {
+      await deleteBackend(row);
+      result.purged += 1;
+      logger.info('[apps:convex] purged a deleted App after its retention', { appId: row.appId });
+    } catch (error) {
+      result.errors += 1;
+      logger.warn('[apps:convex] purge failed; the next tick retries', { appId: row.appId, error: String(error) });
+    }
+  }
+  return result;
 }
 
 // ── Orphaned machines ────────────────────────────────────────────────────────
@@ -135,20 +177,20 @@ export async function deleteAccountBackends(accountId: string): Promise<number> 
 export async function retryPendingMachineDeletes(): Promise<{ deleted: number; errors: number }> {
   const rows = await db
     .select()
-    .from(projectBackends)
-    .where(and(isNotNull(projectBackends.externalId), sql`${projectBackends.metadata} ? 'machineDeletePending'`));
+    .from(appConvexInstances)
+    .where(and(isNotNull(appConvexInstances.externalId), sql`${appConvexInstances.metadata} ? 'machineDeletePending'`));
   const result = { deleted: 0, errors: 0 };
   for (const row of rows) {
     try {
       await deleteBackendMachine(row.externalId!);
       await db
-        .update(projectBackends)
-        .set({ metadata: sql`coalesce(${projectBackends.metadata}, '{}'::jsonb) - 'machineDeletePending'` })
-        .where(eq(projectBackends.backendId, row.backendId));
+        .update(appConvexInstances)
+        .set({ metadata: sql`coalesce(${appConvexInstances.metadata}, '{}'::jsonb) - 'machineDeletePending'` })
+        .where(eq(appConvexInstances.appId, row.appId));
       result.deleted += 1;
     } catch (error) {
       result.errors += 1;
-      logger.warn('[backends] machine delete retry failed', { backendId: row.backendId, error: String(error) });
+      logger.warn('[apps:convex] machine delete retry failed', { appId: row.appId, error: String(error) });
     }
   }
   return result;
@@ -164,16 +206,17 @@ const LIST_PAGE = 200;
 const MAX_LIST_PAGES = 1_000;
 
 export type ListedMachine = { id: string; backendId: string; createdAt: Date | null };
-type MachineOwner = Pick<BackendRow, 'backendId' | 'status' | 'externalId' | 'deletedAt'>;
+type MachineOwner = Pick<ConvexRow, 'status' | 'externalId'>;
 
 /**
- * Whether a listed backend machine is an orphan. A `provisioning` row owns its
- * machine whatever its externalId says (maintenance resumes it). Otherwise the
- * machine is kept only when a live row names exactly it.
+ * Whether a listed `convex` App machine is an orphan. A `provisioning` row owns
+ * its machine whatever its externalId says (maintenance resumes it). Otherwise
+ * the machine is kept only when a machine row names exactly it, a deleted
+ * App's row in retention included (purge deletes that machine).
  */
 export function isOrphanMachine(machine: ListedMachine, row: MachineOwner | undefined, now = Date.now()): boolean {
   if (!machine.createdAt || now - machine.createdAt.getTime() < ORPHAN_MACHINE_GRACE_MS) return false;
-  if (!row || row.deletedAt) return true;
+  if (!row) return true;
   if (row.status === 'provisioning') return false;
   return row.externalId !== machine.id;
 }
@@ -244,7 +287,7 @@ export async function reapOrphanBackendMachines(
       machines.push(...(await listBackendMachines(origin)));
     } catch (error) {
       result.errors += 1;
-      logger.warn('[backends] orphan listing failed for a region', { origin: origin ?? 'home', error: String(error) });
+      logger.warn('[apps:convex] orphan listing failed for a region', { origin: origin ?? 'home', error: String(error) });
     }
   }
   result.listed = machines.length;
@@ -253,25 +296,24 @@ export async function reapOrphanBackendMachines(
   const rows = ids.length
     ? await db
         .select({
-          backendId: projectBackends.backendId,
-          status: projectBackends.status,
-          externalId: projectBackends.externalId,
-          deletedAt: projectBackends.deletedAt,
+          appId: appConvexInstances.appId,
+          status: appConvexInstances.status,
+          externalId: appConvexInstances.externalId,
         })
-        .from(projectBackends)
-        .where(inArray(projectBackends.backendId, ids))
+        .from(appConvexInstances)
+        .where(inArray(appConvexInstances.appId, ids))
     : [];
-  const byId = new Map(rows.map((r) => [r.backendId, r]));
+  const byId = new Map(rows.map((r) => [r.appId, r]));
   for (const machine of machines) {
     if (result.deleted >= MAX_ORPHAN_DELETES_PER_PASS) break;
     if (!isOrphanMachine(machine, byId.get(machine.backendId), now)) continue;
     try {
       await deleteBackendMachine(machine.id);
       result.deleted += 1;
-      logger.warn('[backends] deleted an orphaned backend machine', { externalId: machine.id, backendId: machine.backendId });
+      logger.warn('[apps:convex] deleted an orphaned backend machine', { externalId: machine.id, backendId: machine.backendId });
     } catch (error) {
       result.errors += 1;
-      logger.warn('[backends] orphan delete failed', { externalId: machine.id, error: String(error) });
+      logger.warn('[apps:convex] orphan delete failed', { externalId: machine.id, error: String(error) });
     }
   }
   return result;

@@ -1,6 +1,8 @@
 /**
- * Public discovery for a backend's sign-in tokens, at the token issuer
- * (`<public API origin>/v1/backends/<id>`):
+ * Public discovery for the sign-in tokens of an App of kind `convex`, at its
+ * token issuer (`<public API origin>/v1/backends/<app id>`, the path Kortix
+ * Backends shipped with; the issuer is stored per App and written into its
+ * Convex environment, so the path stays until the project issuer replaces it):
  *
  *   GET /v1/backends/:backendId/.well-known/openid-configuration
  *   GET /v1/backends/:backendId/jwks.json
@@ -12,12 +14,13 @@
  */
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { projectBackends } from '@kortix/db';
-import { and, eq, isNull } from 'drizzle-orm';
-import { errors, json, makeOpenApiApp } from '../openapi';
-import { db } from '../shared/db';
-import { decryptProjectSecret } from '../projects/surface';
+import { appConvexInstances, apps } from '@kortix/db';
+import { and, eq } from 'drizzle-orm';
+import { errors, json, makeOpenApiApp } from '../../../openapi';
+import { db } from '../../../shared/db';
+import { decryptProjectSecret } from '../../../projects/surface';
 import { backendJwks, backendOpenIdConfiguration } from './auth';
+import { liveConvexApp } from './rows';
 
 export const backendsPublicApp = makeOpenApiApp();
 
@@ -28,12 +31,13 @@ const CACHE = 'public, max-age=3600';
 async function signer(backendId: string) {
   const [row] = await db
     .select({
-      projectId: projectBackends.projectId,
-      authKeyEnc: projectBackends.authKeyEnc,
-      authIssuer: projectBackends.authIssuer,
+      projectId: apps.projectId,
+      authKeyEnc: appConvexInstances.authKeyEnc,
+      authIssuer: appConvexInstances.authIssuer,
     })
-    .from(projectBackends)
-    .where(and(eq(projectBackends.backendId, backendId), isNull(projectBackends.deletedAt)))
+    .from(appConvexInstances)
+    .innerJoin(apps, eq(apps.appId, appConvexInstances.appId))
+    .where(and(eq(appConvexInstances.appId, backendId), liveConvexApp()))
     .limit(1);
   return row?.authKeyEnc && row.authIssuer ? { ...row, authKeyEnc: row.authKeyEnc, authIssuer: row.authIssuer } : null;
 }
@@ -42,10 +46,10 @@ const notFound = { error: 'Not found' };
 
 backendsPublicApp.openapi(
   createRoute({
-    method: 'get', path: '/{backendId}/.well-known/openid-configuration', tags: ['backends'],
-    summary: "A backend's token issuer metadata",
+    method: 'get', path: '/{backendId}/.well-known/openid-configuration', tags: ['apps'],
+    summary: "An App's token issuer metadata",
     description:
-      'OpenID Provider metadata for the issuer of the backend\'s member tokens: `issuer` and `jwks_uri`. ' +
+      'OpenID Provider metadata for the issuer of a `convex` App\'s member tokens: `issuer` and `jwks_uri`. ' +
       'Public. For verifiers only: there is no authorization endpoint.',
     request: { params: Params },
     responses: {
@@ -73,9 +77,9 @@ backendsPublicApp.openapi(
 
 backendsPublicApp.openapi(
   createRoute({
-    method: 'get', path: '/{backendId}/jwks.json', tags: ['backends'],
-    summary: "A backend's token key set",
-    description: 'The public ES256 key that signs the backend\'s member tokens, as a JSON Web Key Set. Public.',
+    method: 'get', path: '/{backendId}/jwks.json', tags: ['apps'],
+    summary: "An App's token key set",
+    description: 'The public ES256 key that signs a `convex` App\'s member tokens, as a JSON Web Key Set. Public.',
     request: { params: Params },
     responses: {
       200: json(z.object({ keys: z.array(z.record(z.string(), z.string())) }), 'Key set'),

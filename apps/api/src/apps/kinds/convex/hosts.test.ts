@@ -6,8 +6,8 @@ process.env.FRONTEND_URL = 'https://app.example.com';
 delete process.env.KORTIX_APPS_BASE_DOMAIN;
 delete process.env.KORTIX_APPS_LOCAL;
 
-const { config } = await import('../config');
-const { resolveAppHost } = await import('../apps/hostnames');
+const { config } = await import('../../../config');
+const { resolveAppHost } = await import('../../../apps/hostnames');
 const { backendDashboardUrl, backendHostUrl, backendPublicUrls, resolveBackendHost, prepareBackendWsUpgrade, resolveBackendRequest } =
   await import('./hosts');
 
@@ -15,7 +15,7 @@ const ID = '0f8fad5b-d9cb-469f-a165-70867728950e';
 const HEX = '0f8fad5bd9cb469fa16570867728950e';
 const originalUrl = config.KORTIX_URL;
 const row = (patch: Record<string, unknown> = {}) =>
-  ({ backendId: ID, status: 'running', url: 'https://x', metadata: { dashboard: true }, ...patch }) as never;
+  ({ appId: ID, status: 'running', url: 'https://x', metadata: { dashboard: true }, ...patch }) as never;
 const cloud = () => ((config as { KORTIX_URL: string }).KORTIX_URL = 'https://dev-api.kortix.com');
 const local = () => ((config as { KORTIX_URL: string }).KORTIX_URL = 'http://localhost:8008');
 
@@ -34,7 +34,7 @@ describe('backend hosts', () => {
     expect(backendDashboardUrl(row())).toBe(`https://dev-backend-${HEX}.apps.kortix.com`);
     for (const kind of ['api', 'site', 'dashboard'] as const) {
       const host = new URL(backendHostUrl(ID, kind)!).hostname;
-      expect(resolveBackendHost(host)).toEqual({ backendId: ID, kind, local: false });
+      expect(resolveBackendHost(host)).toEqual({ appId: ID, kind, local: false });
       // Never an App host.
       expect(resolveAppHost(host)).toBeNull();
     }
@@ -57,9 +57,9 @@ describe('backend hosts', () => {
     expect(url).toMatch(new RegExp(`^http://bc-${HEX}\\.apps\\.localhost:\\d+$`));
     expect(siteUrl).toMatch(new RegExp(`^http://bs-${HEX}\\.apps\\.localhost:\\d+$`));
     expect(backendDashboardUrl(row())).toMatch(new RegExp(`^http://bd-${HEX}\\.apps\\.localhost:\\d+$`));
-    expect(resolveBackendHost(`bc-${HEX}.apps.localhost`)).toEqual({ backendId: ID, kind: 'api', local: true });
-    expect(resolveBackendHost(`bs-${HEX}.apps.localhost`)).toEqual({ backendId: ID, kind: 'site', local: true });
-    expect(resolveBackendHost(`bd-${HEX}.apps.localhost`)).toEqual({ backendId: ID, kind: 'dashboard', local: true });
+    expect(resolveBackendHost(`bc-${HEX}.apps.localhost`)).toEqual({ appId: ID, kind: 'api', local: true });
+    expect(resolveBackendHost(`bs-${HEX}.apps.localhost`)).toEqual({ appId: ID, kind: 'site', local: true });
+    expect(resolveBackendHost(`bd-${HEX}.apps.localhost`)).toEqual({ appId: ID, kind: 'dashboard', local: true });
     expect(resolveBackendHost(`bx-${HEX}.apps.localhost`)).toBeNull();
     expect(resolveBackendHost(`bc-${HEX.slice(1)}.apps.localhost`)).toBeNull();
   });
@@ -75,7 +75,7 @@ describe('backend hosts', () => {
     const req = new Request(`https://dev-convex-${HEX}.apps.kortix.com/api/1.46.0/sync`, { headers: { upgrade: 'websocket' } });
     const url = new URL(req.url);
     const matched = resolveBackendRequest(req, url)!;
-    expect(matched).toMatchObject({ backendId: ID, kind: 'api', local: false });
+    expect(matched).toMatchObject({ appId: ID, kind: 'api', local: false });
     expect(await prepareBackendWsUpgrade(req, url, matched)).toEqual({ ok: false, status: 403, message: 'Forbidden' });
   });
 

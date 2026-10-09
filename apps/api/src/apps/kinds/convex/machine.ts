@@ -10,9 +10,9 @@
  * the token lives a day. Resolving a port also turns every port the machine
  * still exposes publicly into a private one.
  */
-import { ingressTargetUrl } from '../platform/providers/ingress-url';
-import type { ResolvedSandboxIngress } from '../platform/providers';
-import { invalidatePreviewLink, resolveSandboxIngress } from '../sandbox-proxy/backend';
+import { ingressTargetUrl } from '../../../platform/providers/ingress-url';
+import type { ResolvedSandboxIngress } from '../../../platform/providers';
+import { invalidatePreviewLink, resolveSandboxIngress } from '../../../sandbox-proxy/backend';
 
 export const BACKEND_MACHINE_PROVIDER = 'platinum';
 

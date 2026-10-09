@@ -1,21 +1,23 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { accounts, projectBackends, projects } from '@kortix/db';
+import { accounts, apps, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 
-// A backend's Kortix hosts, through the real inbound dispatcher, the real DB,
+// The Kortix hosts of an App of kind `convex`, through the real inbound
+// dispatcher, the real DB,
 // a fake Platinum control plane and a fake Convex behind a fake private edge.
 // Proves: the api and site hosts reach the machine's ports with Kortix's edge
 // token, pass every method and stream bodies both ways, never forward a Kortix
-// credential, strip the provider's headers, and refuse an unknown or deleted
-// backend; the dashboard host is GET-only; a WebSocket upgrade resolves to the
-// machine's private wss URL with the token.
+// credential, strip the provider's headers, answer 404 for an unknown App and
+// 410 for a deleted one in retention; the dashboard host is GET-only; a
+// WebSocket upgrade resolves to the machine's private wss URL with the token.
 process.env.KORTIX_APPS_LOCAL = 'true';
 
-const { config } = await import('../config');
-const { db } = await import('../shared/db');
-const { app } = await import('../index');
-const { dispatchInProcess } = await import('../inbound-dispatch');
+const { config } = await import('../../../config');
+const { db } = await import('../../../shared/db');
+const { app } = await import('../../../index');
+const { dispatchInProcess } = await import('../../../inbound-dispatch');
 const { backendPublicUrls, prepareBackendWsUpgrade, resolveBackendRequest } = await import('./hosts');
+const { insertConvexRow } = await import('../../../__tests__/helpers/convex-apps');
 
 const TOKEN = 'synthetic-edge-token';
 const seen: Array<{ port: string; method: string; path: string; token: string | null; authorization: string | null; body: string }> = [];
@@ -69,17 +71,18 @@ beforeAll(async () => {
   config.PLATINUM_API_URL = `http://127.0.0.1:${platinum.port}`;
   await db.insert(accounts).values({ accountId: ACCOUNT, name: 'backend-hosts-test' });
   await db.insert(projects).values({ projectId: PROJECT, accountId: ACCOUNT, name: 'backend-hosts-test', repoUrl: 'https://example.com/bh.git' });
-  const base = { projectId: PROJECT, accountId: ACCOUNT, provider: 'platinum', cpu: 1, memoryGb: 1, diskGb: 10 };
-  await db.insert(projectBackends).values([
-    { ...base, backendId: BACKEND, name: 'main', status: 'running', externalId: EXTERNAL, ...backendPublicUrls(BACKEND), metadata: { dashboard: true } },
-    { ...base, backendId: GONE, name: 'gone', status: 'deleted', externalId: 'sbx-gone', deletedAt: new Date() },
-  ]);
+  const base = { projectId: PROJECT, accountId: ACCOUNT };
+  await insertConvexRow({ ...base, appId: BACKEND, slug: 'main', status: 'running', externalId: EXTERNAL, ...backendPublicUrls(BACKEND), metadata: { dashboard: true } });
+  await insertConvexRow({
+    ...base, appId: GONE, slug: 'gone', status: 'deleted', externalId: 'sbx-gone', deletedAt: new Date(),
+    metadata: { dashboard: true, purgeAfter: '2026-10-16T00:00:00.000Z' },
+  });
 });
 
 afterAll(async () => {
   config.PLATINUM_API_KEY = saved.key;
   config.PLATINUM_API_URL = saved.url;
-  await db.delete(projectBackends).where(eq(projectBackends.accountId, ACCOUNT));
+  await db.delete(apps).where(eq(apps.accountId, ACCOUNT));
   await db.delete(projects).where(eq(projects.accountId, ACCOUNT));
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT));
   platinum.stop(true);
@@ -89,7 +92,7 @@ afterAll(async () => {
 const host = (backendId: string, kind: 'bc' | 'bs' | 'bd') => `http://${kind}-${backendId.replaceAll('-', '')}.apps.localhost:${config.PORT}`;
 const send = (url: string, init: RequestInit = {}) => dispatchInProcess(new Request(url, init), app);
 
-describe('backend hosts', () => {
+describe('convex App hosts', () => {
   test('GET on the api host reaches port 3210 with the edge token; provider headers are stripped', async () => {
     const res = await send(`${host(BACKEND, 'bc')}/version?x=1`, { headers: { origin: 'http://localhost:3000' } });
     expect(res.status).toBe(200);
@@ -124,10 +127,14 @@ describe('backend hosts', () => {
     expect(seen.at(-1)).toMatchObject({ port: '3210', authorization: 'Convex synthetic-admin-key' });
   });
 
-  test('an unknown or deleted backend answers 404 and reaches no machine', async () => {
+  test('an unknown App answers 404; a deleted App in retention answers 410 with its purge date; neither reaches a machine', async () => {
     const before = seen.length;
-    expect((await send(`${host(GONE, 'bc')}/version`)).status).toBe(404);
     expect((await send(`${host(crypto.randomUUID(), 'bs')}/version`)).status).toBe(404);
+    for (const kind of ['bc', 'bs', 'bd'] as const) {
+      const res = await send(`${host(GONE, kind)}/version`);
+      expect(res.status).toBe(410);
+      expect(await res.text()).toContain('2026-10-16T00:00:00.000Z');
+    }
     expect(seen.length).toBe(before);
   });
 

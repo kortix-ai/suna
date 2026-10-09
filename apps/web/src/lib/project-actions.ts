@@ -95,6 +95,7 @@ export const PROJECT_ACTIONS = {
   PROJECT_APP_READ: 'project.app.read',
   PROJECT_APP_WRITE: 'project.app.write',
   PROJECT_APP_DEPLOY: 'project.app.deploy',
+  PROJECT_APP_ADMIN: 'project.app.admin',
 
   PROJECT_BACKEND_READ: 'project.backend.read',
   PROJECT_BACKEND_WRITE: 'project.backend.write',

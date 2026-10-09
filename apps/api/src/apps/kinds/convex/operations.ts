@@ -41,16 +41,16 @@
  * its API process, and maintenance takes it over and recovers the backend.
  */
 
-import { projectBackends } from '@kortix/db';
-import { and, eq, isNull, sql } from 'drizzle-orm';
-import { db } from '../shared/db';
-import { PlatinumHttpError, platinumJson } from '../shared/platinum';
-import { logger } from '../lib/logger';
+import { appConvexInstances, apps } from '@kortix/db';
+import { and, eq, sql } from 'drizzle-orm';
+import { db } from '../../../shared/db';
+import { PlatinumHttpError, platinumJson } from '../../../shared/platinum';
+import { logger } from '../../../lib/logger';
 import { BackendOperationError, backendFailureMessage, backendProviderFailure } from './errors';
 import { CONVEX_LOG_FILE } from './convex-image';
-import { pauseComputeSession } from '../billing/services/compute-metering';
+import { endComputeSession, pauseComputeSession } from '../../../billing/services/compute-metering';
 import {
-  type BackendRow,
+  type ConvexRow,
   type BackendSize,
   BACKEND_MACHINE_LIMITS,
   applyBackendOrigins,
@@ -58,6 +58,7 @@ import {
   execInBackend,
   keepAlive,
   lastHeartbeat,
+  liveInstance,
   sealAdminKey,
   waitHealthy,
 } from './provision';
@@ -85,9 +86,9 @@ const isGone = (error: unknown) => error instanceof PlatinumHttpError && error.s
 
 export { BackendOperationError, backendFailureMessage, backendProviderFailure } from './errors';
 
-function machine(row: BackendRow): string {
+function machine(row: ConvexRow): string {
   if (row.status !== 'running' || !row.externalId || !row.url) {
-    throw new BackendOperationError(`backend is ${row.status}`, 'backend_not_running');
+    throw new BackendOperationError(`the App is ${row.status}`, 'app_not_running');
   }
   return row.externalId;
 }
@@ -99,7 +100,7 @@ export type BackendOperationKind = (typeof BACKEND_OPERATIONS)[number];
 export const OPERATION_STALE_MS = 2 * 60_000;
 
 /** The operation in flight, from row metadata. A stale one counts as none. */
-export function backendOperation(row: BackendRow, now = Date.now()): BackendOperationKind | null {
+export function backendOperation(row: ConvexRow, now = Date.now()): BackendOperationKind | null {
   const meta = row.metadata as { operation?: string; heartbeatAt?: string; operationStartedAt?: string };
   const kind = BACKEND_OPERATIONS.find((k) => k === meta.operation);
   if (!kind) return null;
@@ -111,7 +112,7 @@ export function backendOperation(row: BackendRow, now = Date.now()): BackendOper
 /** SQL: the row has no operation, or its operation stopped heartbeating. */
 function operationFree(now = Date.now()) {
   const staleBefore = new Date(now - OPERATION_STALE_MS).toISOString();
-  const meta = projectBackends.metadata;
+  const meta = appConvexInstances.metadata;
   return sql`(not (coalesce(${meta}, '{}'::jsonb) ? 'operation') or coalesce((${meta}->>'heartbeatAt')::timestamptz, (${meta}->>'operationStartedAt')::timestamptz) < ${staleBefore}::timestamptz)`;
 }
 
@@ -119,22 +120,22 @@ function operationFree(now = Date.now()) {
  * Marks the backend busy in one conditional UPDATE, so two concurrent
  * requests cannot both start an operation. A stale marker is taken over.
  */
-export async function claimOperation(backendId: string, kind: BackendOperationKind): Promise<boolean> {
+export async function claimOperation(appId: string, kind: BackendOperationKind): Promise<boolean> {
   const now = new Date().toISOString();
   const claimed = await db
-    .update(projectBackends)
+    .update(appConvexInstances)
     .set({
       updatedAt: new Date(),
-      metadata: sql`coalesce(${projectBackends.metadata}, '{}'::jsonb) || ${JSON.stringify({ operation: kind, operationStartedAt: now, heartbeatAt: now })}::jsonb`,
+      metadata: sql`coalesce(${appConvexInstances.metadata}, '{}'::jsonb) || ${JSON.stringify({ operation: kind, operationStartedAt: now, heartbeatAt: now })}::jsonb`,
     })
-    .where(and(eq(projectBackends.backendId, backendId), isNull(projectBackends.deletedAt), operationFree(), notDeleting()))
-    .returning({ id: projectBackends.backendId });
+    .where(and(eq(appConvexInstances.appId, appId), liveInstance(), operationFree(), notDeleting()))
+    .returning({ id: appConvexInstances.appId });
   return claimed.length === 1;
 }
 
 /** SQL: no delete runs. A delete marker the delete stopped refreshing (its API process died) no longer blocks. */
 function notDeleting(now = Date.now()) {
-  const meta = projectBackends.metadata;
+  const meta = appConvexInstances.metadata;
   const staleBefore = new Date(now - OPERATION_STALE_MS).toISOString();
   return sql`(not (coalesce(${meta}, '{}'::jsonb) ? 'deleting') or (${meta}->>'deleting')::timestamptz < ${staleBefore}::timestamptz)`;
 }
@@ -147,22 +148,22 @@ function notDeleting(now = Date.now()) {
  * marker and over an earlier delete. `force` (account deletion) marks the
  * backend whatever runs.
  */
-async function claimDelete(backendId: string, force: boolean): Promise<boolean> {
-  const meta = projectBackends.metadata;
+async function claimDelete(appId: string, force: boolean): Promise<boolean> {
+  const meta = appConvexInstances.metadata;
   const claimed = await db
-    .update(projectBackends)
+    .update(appConvexInstances)
     .set({
       updatedAt: new Date(),
       metadata: sql`coalesce(${meta}, '{}'::jsonb) || ${JSON.stringify({ deleting: new Date().toISOString() })}::jsonb`,
     })
     .where(
       and(
-        eq(projectBackends.backendId, backendId),
-        isNull(projectBackends.deletedAt),
+        eq(appConvexInstances.appId, appId),
+        liveInstance(),
         force ? undefined : sql`(${operationFree()} or ${meta}->>'operation' = 'recovering')`,
       ),
     )
-    .returning({ id: projectBackends.backendId });
+    .returning({ id: appConvexInstances.appId });
   return claimed.length === 1;
 }
 
@@ -172,17 +173,83 @@ async function claimDelete(backendId: string, force: boolean): Promise<boolean> 
  * operation other than `recovering` runs; never with `force`. A failed delete
  * clears the mark, so the backend takes operations again, and throws.
  */
-export async function deleteBackendExclusive(row: BackendRow, { force = false } = {}): Promise<boolean> {
-  if (!(await claimDelete(row.backendId, force))) return false;
-  const stopRefresh = keepAlive(row.backendId, 'deleting');
+export async function deleteBackendExclusive(row: ConvexRow, { force = false } = {}): Promise<boolean> {
+  if (!(await claimDelete(row.appId, force))) return false;
+  const stopRefresh = keepAlive(row.appId, 'deleting');
   try {
     await deleteBackend(row);
     return true;
   } catch (error) {
     await db
-      .update(projectBackends)
-      .set({ metadata: sql`coalesce(${projectBackends.metadata}, '{}'::jsonb) - 'deleting'` })
-      .where(eq(projectBackends.backendId, row.backendId))
+      .update(appConvexInstances)
+      .set({ metadata: sql`coalesce(${appConvexInstances.metadata}, '{}'::jsonb) - 'deleting'` })
+      .where(eq(appConvexInstances.appId, row.appId))
+      .catch(() => {});
+    throw error;
+  } finally {
+    stopRefresh();
+  }
+}
+
+/**
+ * Deletes a `convex` App the way a member does. Under the delete mark: a
+ * `final` snapshot of the running machine (best effort: a machine that does
+ * not run keeps its disk), auto-resume off, the machine stopped, its meter
+ * closed, then the App marked deleted and its machine row `deleted` with
+ * `metadata.purgeAfter`. The stopped machine and its snapshots stay
+ * DELETE_RETENTION_MS: the hosts answer 410 meanwhile, and maintenance purges
+ * them after (./lifecycle.ts purgeRetiredConvexApps). False, with nothing
+ * changed, while an operation other than `recovering` runs.
+ */
+export async function retireConvexApp(row: ConvexRow): Promise<{ purgeAfter: string; finalSnapshotId: string | null } | false> {
+  if (!(await claimDelete(row.appId, false))) return false;
+  const stopRefresh = keepAlive(row.appId, 'deleting');
+  try {
+    let finalSnapshotId: string | null = null;
+    if (row.status === 'running' && row.externalId && row.url) {
+      try {
+        finalSnapshotId = (await takeSnapshot(row, 'final')).snapshot_id;
+      } catch (error) {
+        logger.warn('[apps:convex] final snapshot failed; the stopped disk is kept', { appId: row.appId, error: String(error) });
+      }
+    }
+    if (row.externalId) {
+      const externalId = row.externalId;
+      await platinumJson(`/v1/sandboxes/${externalId}`, { method: 'PATCH', body: JSON.stringify({ auto_resume: false }) }).catch(
+        (error) => {
+          if (!isGone(error)) throw error;
+        },
+      );
+      await platinumJson(`/v1/sandboxes/${externalId}/stop`, { method: 'POST', body: '{}' }).catch((error) => {
+        // 404: gone already. 409: stopping or stopped.
+        if (!(error instanceof PlatinumHttpError && (error.status === 404 || error.status === 409))) throw error;
+      });
+    }
+    await endComputeSession(row.appId).catch((error) =>
+      logger.warn('[apps:convex] could not close the compute window', { appId: row.appId, error: String(error) }),
+    );
+    const now = new Date();
+    const purgeAfter = new Date(now.getTime() + DELETE_RETENTION_MS).toISOString();
+    await db.transaction(async (tx) => {
+      await tx
+        .update(apps)
+        .set({ deletedAt: now, desiredState: 'stopped', activeDeploymentId: null, updatedAt: now })
+        .where(eq(apps.appId, row.appId));
+      await tx
+        .update(appConvexInstances)
+        .set({
+          status: 'deleted',
+          updatedAt: now,
+          metadata: sql`(coalesce(${appConvexInstances.metadata}, '{}'::jsonb) - 'deleting' - 'operation' - 'operationStartedAt' - 'heartbeatAt') || ${JSON.stringify({ purgeAfter, finalSnapshotId })}::jsonb`,
+        })
+        .where(eq(appConvexInstances.appId, row.appId));
+    });
+    return { purgeAfter, finalSnapshotId };
+  } catch (error) {
+    await db
+      .update(appConvexInstances)
+      .set({ metadata: sql`coalesce(${appConvexInstances.metadata}, '{}'::jsonb) - 'deleting'` })
+      .where(eq(appConvexInstances.appId, row.appId))
       .catch(() => {});
     throw error;
   } finally {
@@ -195,23 +262,23 @@ export async function deleteBackendExclusive(row: BackendRow, { force = false } 
  * `keepParked`: the operation never started or stopped the machine (the
  * snapshot job), so a parked backend stays parked.
  */
-export async function releaseOperation(backendId: string, error: string | null, { keepParked = false } = {}): Promise<void> {
-  const meta = projectBackends.metadata;
+export async function releaseOperation(appId: string, error: string | null, { keepParked = false } = {}): Promise<void> {
+  const meta = appConvexInstances.metadata;
   const cleared = sql`coalesce(${meta}, '{}'::jsonb) - 'operation' - 'operationStartedAt' - 'heartbeatAt' - 'lastOperationError'`;
   await db
-    .update(projectBackends)
+    .update(appConvexInstances)
     .set({
       updatedAt: new Date(),
       // An operation ends with the machine running, so `parked` goes too: the
       // backend of an archived project is parked again on the next tick.
       metadata: sql`(${keepParked ? cleared : sql`${cleared} - 'parked'`}) || ${JSON.stringify(error ? { lastOperationError: error.slice(0, 600) } : {})}::jsonb`,
     })
-    .where(eq(projectBackends.backendId, backendId));
+    .where(eq(appConvexInstances.appId, appId));
 }
 
 // ── Backups and snapshots ────────────────────────────────────────────────────
 
-export const SNAPSHOT_KINDS = ['manual', 'automatic', 'resize'] as const;
+export const SNAPSHOT_KINDS = ['manual', 'automatic', 'resize', 'final'] as const;
 export type SnapshotKind = (typeof SNAPSHOT_KINDS)[number];
 
 /** Manual snapshots a backend holds. At the cap a new one answers 409 `snapshot_limit`; nothing is dropped. */
@@ -220,6 +287,8 @@ const HOUR_MS = 3_600_000;
 export const AUTOMATIC_SNAPSHOT_INTERVAL_MS = 24 * HOUR_MS;
 export const AUTOMATIC_SNAPSHOT_RETENTION_MS = 7 * 24 * HOUR_MS;
 export const RESIZE_SNAPSHOT_RETENTION_MS = 24 * HOUR_MS;
+/** A deleted App's stopped machine and its `final` snapshot are kept this long, then purged. */
+export const DELETE_RETENTION_MS = 7 * 24 * HOUR_MS;
 /** A failed automatic snapshot is tried again after this long. */
 export const AUTOMATIC_SNAPSHOT_RETRY_MS = HOUR_MS;
 /**
@@ -233,6 +302,7 @@ export const SNAPSHOT_POST_TIMEOUT_MS = 200_000;
 const RETENTION_MS: Record<Exclude<SnapshotKind, 'manual'>, number> = {
   automatic: AUTOMATIC_SNAPSHOT_RETENTION_MS,
   resize: RESIZE_SNAPSHOT_RETENTION_MS,
+  final: DELETE_RETENTION_MS,
 };
 
 type SnapshotLabel = { kind: Exclude<SnapshotKind, 'manual'>; expiresAt: string };
@@ -243,10 +313,10 @@ type SnapshotMeta = {
   lastResizeAt?: string;
 };
 
-const snapshotMeta = (row: Pick<BackendRow, 'metadata'>) => (row.metadata ?? {}) as SnapshotMeta;
+const snapshotMeta = (row: Pick<ConvexRow, 'metadata'>) => (row.metadata ?? {}) as SnapshotMeta;
 
 /** Kortix-made snapshots by id. A snapshot not listed here is manual. */
-export function snapshotLabels(row: Pick<BackendRow, 'metadata'>): Record<string, SnapshotLabel> {
+export function snapshotLabels(row: Pick<ConvexRow, 'metadata'>): Record<string, SnapshotLabel> {
   const labels = snapshotMeta(row).snapshotLabels;
   return labels && typeof labels === 'object' ? labels : {};
 }
@@ -260,7 +330,7 @@ export interface BackendSnapshotInfo {
   expires_at: string | null;
 }
 
-function describeSnapshot(row: Pick<BackendRow, 'metadata'>, snapshot: PlatinumSnapshot): BackendSnapshotInfo {
+function describeSnapshot(row: Pick<ConvexRow, 'metadata'>, snapshot: PlatinumSnapshot): BackendSnapshotInfo {
   const label = snapshotLabels(row)[snapshot.id];
   return {
     snapshot_id: snapshot.id,
@@ -274,7 +344,7 @@ function describeSnapshot(row: Pick<BackendRow, 'metadata'>, snapshot: PlatinumS
 const newestFirst = (snapshots: PlatinumSnapshot[]) => [...snapshots].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
 /** True when the daily automatic snapshot is due: 24 h since the last one (or since creation), 1 h since a failed try. */
-export function automaticSnapshotDue(row: Pick<BackendRow, 'metadata' | 'createdAt'>, now = Date.now()): boolean {
+export function automaticSnapshotDue(row: Pick<ConvexRow, 'metadata' | 'createdAt'>, now = Date.now()): boolean {
   const meta = snapshotMeta(row);
   const last = Date.parse(meta.lastAutomaticSnapshotAt ?? '') || row.createdAt.getTime();
   const attempt = Date.parse(meta.automaticSnapshotAttemptAt ?? '') || 0;
@@ -289,7 +359,7 @@ export function automaticSnapshotDue(row: Pick<BackendRow, 'metadata' | 'created
  * ids Platinum lists): only a listed snapshot counts as the newer one. A
  * labelled snapshot the host has not finished may still fail.
  */
-export function expiredSnapshotIds(row: Pick<BackendRow, 'metadata'>, now = Date.now(), listed?: ReadonlySet<string>): string[] {
+export function expiredSnapshotIds(row: Pick<ConvexRow, 'metadata'>, now = Date.now(), listed?: ReadonlySet<string>): string[] {
   const labels = Object.entries(snapshotLabels(row));
   const newestAutomatic = labels
     .filter(([id, label]) => label.kind === 'automatic' && (!listed || listed.has(id)))
@@ -300,45 +370,45 @@ export function expiredSnapshotIds(row: Pick<BackendRow, 'metadata'>, now = Date
     .map(([id]) => id);
 }
 
-async function labelSnapshot(backendId: string, snapshotId: string, kind: Exclude<SnapshotKind, 'manual'>): Promise<string> {
+async function labelSnapshot(appId: string, snapshotId: string, kind: Exclude<SnapshotKind, 'manual'>): Promise<string> {
   const expiresAt = new Date(Date.now() + RETENTION_MS[kind]).toISOString();
-  const meta = projectBackends.metadata;
+  const meta = appConvexInstances.metadata;
   await db
-    .update(projectBackends)
+    .update(appConvexInstances)
     .set({
       metadata: sql`jsonb_set(coalesce(${meta}, '{}'::jsonb), '{snapshotLabels}', coalesce(${meta}->'snapshotLabels', '{}'::jsonb) || ${JSON.stringify({ [snapshotId]: { kind, expiresAt } })}::jsonb)`,
     })
-    .where(eq(projectBackends.backendId, backendId));
+    .where(eq(appConvexInstances.appId, appId));
   return expiresAt;
 }
 
-async function unlabelSnapshot(backendId: string, snapshotId: string): Promise<void> {
-  const meta = projectBackends.metadata;
+async function unlabelSnapshot(appId: string, snapshotId: string): Promise<void> {
+  const meta = appConvexInstances.metadata;
   await db
-    .update(projectBackends)
+    .update(appConvexInstances)
     .set({ metadata: sql`${meta} #- array['snapshotLabels', ${snapshotId}::text]` })
-    .where(and(eq(projectBackends.backendId, backendId), sql`${meta} ? 'snapshotLabels'`));
+    .where(and(eq(appConvexInstances.appId, appId), sql`${meta} ? 'snapshotLabels'`));
 }
 
-async function mergeMetadata(backendId: string, patch: Record<string, unknown>): Promise<void> {
+async function mergeMetadata(appId: string, patch: Record<string, unknown>): Promise<void> {
   await db
-    .update(projectBackends)
-    .set({ metadata: sql`coalesce(${projectBackends.metadata}, '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb` })
-    .where(eq(projectBackends.backendId, backendId));
+    .update(appConvexInstances)
+    .set({ metadata: sql`coalesce(${appConvexInstances.metadata}, '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb` })
+    .where(eq(appConvexInstances.appId, appId));
 }
 
-async function dropMetadata(backendId: string, key: string): Promise<void> {
+async function dropMetadata(appId: string, key: string): Promise<void> {
   await db
-    .update(projectBackends)
-    .set({ metadata: sql`coalesce(${projectBackends.metadata}, '{}'::jsonb) - ${key}::text` })
-    .where(eq(projectBackends.backendId, backendId));
+    .update(appConvexInstances)
+    .set({ metadata: sql`coalesce(${appConvexInstances.metadata}, '{}'::jsonb) - ${key}::text` })
+    .where(eq(appConvexInstances.appId, appId));
 }
 
 async function readSnapshots(externalId: string): Promise<PlatinumSnapshot[]> {
   return platinumJson<PlatinumSnapshot[]>(`/v1/sandboxes/${externalId}/snapshots`);
 }
 
-export async function listBackendBackups(row: BackendRow) {
+export async function listBackendBackups(row: ConvexRow) {
   const externalId = machine(row);
   const [sandbox, snapshots] = await Promise.all([
     platinumJson<PlatinumSandboxState>(`/v1/sandboxes/${externalId}`),
@@ -371,7 +441,7 @@ export async function listBackendBackups(row: BackendRow) {
  * call is this one, and it gets the label. The caller holds the operation lock,
  * so no other snapshot of this machine starts meanwhile.
  */
-async function takeSnapshot(row: BackendRow, kind: SnapshotKind): Promise<BackendSnapshotInfo> {
+async function takeSnapshot(row: ConvexRow, kind: SnapshotKind): Promise<BackendSnapshotInfo> {
   const externalId = machine(row);
   const before = new Set((await readSnapshots(externalId)).map((s) => s.id));
   let startedId: string | null = null;
@@ -388,13 +458,13 @@ async function takeSnapshot(row: BackendRow, kind: SnapshotKind): Promise<Backen
     // A 4xx: Platinum refused, so no snapshot exists.
     if (error instanceof PlatinumHttpError && error.status < 500) throw error;
     postError = error;
-    logger.warn('[backends] the snapshot request failed; waiting for the snapshot to appear', {
-      backendId: row.backendId,
+    logger.warn('[apps:convex] the snapshot request failed; waiting for the snapshot to appear', {
+      appId: row.appId,
       kind,
       error: String(error),
     });
   }
-  let expiresAt = startedId && kind !== 'manual' ? await labelSnapshot(row.backendId, startedId, kind) : null;
+  let expiresAt = startedId && kind !== 'manual' ? await labelSnapshot(row.appId, startedId, kind) : null;
   const deadline = Date.now() + SNAPSHOT_WAIT_MS;
   for (;;) {
     const listed = await readSnapshots(externalId);
@@ -402,7 +472,7 @@ async function takeSnapshot(row: BackendRow, kind: SnapshotKind): Promise<Backen
       ? listed.find((s) => s.id === startedId)
       : [...listed].sort((a, b) => a.createdAt.localeCompare(b.createdAt)).find((s) => !before.has(s.id));
     if (mine) {
-      if (!startedId && kind !== 'manual') expiresAt = await labelSnapshot(row.backendId, mine.id, kind);
+      if (!startedId && kind !== 'manual') expiresAt = await labelSnapshot(row.appId, mine.id, kind);
       return { snapshot_id: mine.id, created_at: mine.createdAt, size_bytes: mine.sizeBytes ?? null, kind, expires_at: expiresAt };
     }
     if (Date.now() > deadline) {
@@ -413,31 +483,31 @@ async function takeSnapshot(row: BackendRow, kind: SnapshotKind): Promise<Backen
   }
 }
 
-/** Runs `work` under the operation lock with a heartbeat; 409 `backend_busy` when another operation runs. */
-async function underLock<T>(row: BackendRow, kind: BackendOperationKind, work: () => Promise<T>): Promise<T> {
+/** Runs `work` under the operation lock with a heartbeat; 409 `app_busy` when another operation runs. */
+async function underLock<T>(row: ConvexRow, kind: BackendOperationKind, work: () => Promise<T>): Promise<T> {
   machine(row);
-  if (!(await claimOperation(row.backendId, kind))) {
-    throw new BackendOperationError('another operation is running on this backend; wait for it to finish', 'backend_busy');
+  if (!(await claimOperation(row.appId, kind))) {
+    throw new BackendOperationError('another operation is running on this App; wait for it to finish', 'app_busy');
   }
-  const stopHeartbeat = keepAlive(row.backendId);
+  const stopHeartbeat = keepAlive(row.appId);
   try {
     return await work();
   } finally {
     stopHeartbeat();
-    await releaseOperation(row.backendId, null).catch((error) =>
-      logger.warn('[backends] could not release the operation', { backendId: row.backendId, kind, error: String(error) }),
+    await releaseOperation(row.appId, null).catch((error) =>
+      logger.warn('[apps:convex] could not release the operation', { appId: row.appId, kind, error: String(error) }),
     );
   }
 }
 
 /** A manual snapshot. 409 `snapshot_limit` at MAX_MANUAL_SNAPSHOTS: delete one first. */
-export async function createBackendSnapshot(row: BackendRow): Promise<BackendSnapshotInfo> {
+export async function createBackendSnapshot(row: ConvexRow): Promise<BackendSnapshotInfo> {
   return underLock(row, 'snapshotting', async () => {
     const labels = snapshotLabels(row);
     const manual = (await readSnapshots(row.externalId!)).filter((s) => !labels[s.id]);
     if (manual.length >= MAX_MANUAL_SNAPSHOTS) {
       throw new BackendOperationError(
-        `the backend holds ${MAX_MANUAL_SNAPSHOTS} manual snapshots; delete one first`,
+        `the App holds ${MAX_MANUAL_SNAPSHOTS} manual snapshots; delete one first`,
         'snapshot_limit',
       );
     }
@@ -446,16 +516,16 @@ export async function createBackendSnapshot(row: BackendRow): Promise<BackendSna
 }
 
 /** Deletes one snapshot of the backend, whatever its kind. 404 `snapshot_not_found` when the backend has no such snapshot. */
-export async function deleteBackendSnapshot(row: BackendRow, snapshotId: string): Promise<void> {
+export async function deleteBackendSnapshot(row: ConvexRow, snapshotId: string): Promise<void> {
   await underLock(row, 'snapshotting', async () => {
     const externalId = row.externalId!;
     if (!(await readSnapshots(externalId)).some((s) => s.id === snapshotId)) {
-      throw new BackendOperationError('no such snapshot on this backend', 'snapshot_not_found', 404);
+      throw new BackendOperationError('no such snapshot on this App', 'snapshot_not_found', 404);
     }
     await platinumJson(`/v1/sandboxes/${externalId}/snapshots/${snapshotId}`, { method: 'DELETE' }).catch((error) => {
       if (!isGone(error)) throw error;
     });
-    await unlabelSnapshot(row.backendId, snapshotId);
+    await unlabelSnapshot(row.appId, snapshotId);
   });
 }
 
@@ -465,8 +535,8 @@ export async function deleteBackendSnapshot(row: BackendRow, snapshotId: string)
  * false for a parked backend), then delete expired snapshots. The new snapshot first, so the one it replaces expires in the same
  * pass. Releases the lock; a failure lands in `last_operation_error`.
  */
-export async function runSnapshotMaintenance(row: BackendRow, takeAutomatic: boolean): Promise<{ expired: number; taken: boolean }> {
-  const stopHeartbeat = keepAlive(row.backendId);
+export async function runSnapshotMaintenance(row: ConvexRow, takeAutomatic: boolean): Promise<{ expired: number; taken: boolean }> {
+  const stopHeartbeat = keepAlive(row.appId);
   const externalId = row.externalId!;
   const result = { expired: 0, taken: false };
   const labels = { ...snapshotLabels(row) };
@@ -476,14 +546,14 @@ export async function runSnapshotMaintenance(row: BackendRow, takeAutomatic: boo
       await work();
     } catch (error) {
       failures.push(`${what}: ${backendFailureMessage(error)}`);
-      logger.error(`[backends] ${what} failed`, { backendId: row.backendId, error: String(error) });
+      logger.error(`[apps:convex] ${what} failed`, { appId: row.appId, error: String(error) });
     }
   };
   await attempt('the daily snapshot', async () => {
     if (!takeAutomatic) return;
-    await mergeMetadata(row.backendId, { automaticSnapshotAttemptAt: new Date().toISOString() });
+    await mergeMetadata(row.appId, { automaticSnapshotAttemptAt: new Date().toISOString() });
     const taken = await takeSnapshot(row, 'automatic');
-    await mergeMetadata(row.backendId, { lastAutomaticSnapshotAt: taken.created_at });
+    await mergeMetadata(row.appId, { lastAutomaticSnapshotAt: taken.created_at });
     labels[taken.snapshot_id] = { kind: 'automatic', expiresAt: taken.expires_at! };
     result.taken = true;
   });
@@ -494,20 +564,20 @@ export async function runSnapshotMaintenance(row: BackendRow, takeAutomatic: boo
     for (const [snapshotId, label] of Object.entries(labels)) {
       const labelledAt = Date.parse(label.expiresAt) - RETENTION_MS[label.kind];
       if (listed.has(snapshotId) || Date.now() - labelledAt < SNAPSHOT_WAIT_MS * 2) continue;
-      await unlabelSnapshot(row.backendId, snapshotId);
+      await unlabelSnapshot(row.appId, snapshotId);
       delete labels[snapshotId];
     }
     for (const snapshotId of expiredSnapshotIds({ metadata: { snapshotLabels: labels } }, Date.now(), listed)) {
       await platinumJson(`/v1/sandboxes/${externalId}/snapshots/${snapshotId}`, { method: 'DELETE' }).catch((deleteError) => {
         if (!isGone(deleteError)) throw deleteError;
       });
-      await unlabelSnapshot(row.backendId, snapshotId);
-      logger.info('[backends] expired snapshot deleted', { backendId: row.backendId, snapshotId, kind: labels[snapshotId]?.kind });
+      await unlabelSnapshot(row.appId, snapshotId);
+      logger.info('[apps:convex] expired snapshot deleted', { appId: row.appId, snapshotId, kind: labels[snapshotId]?.kind });
       result.expired += 1;
     }
   });
   stopHeartbeat();
-  await releaseOperation(row.backendId, failures.length ? `The snapshot job failed (${failures.join('; ')}).` : null, {
+  await releaseOperation(row.appId, failures.length ? `The snapshot job failed (${failures.join('; ')}).` : null, {
     keepParked: true,
   });
   return result;
@@ -532,32 +602,32 @@ async function waitRestored(externalId: string): Promise<void> {
  * Platinum reports the machine `running` again and Convex answers, so no write
  * after the answer is lost to a late restore.
  */
-export async function restoreBackendSnapshot(row: BackendRow, snapshotId: string): Promise<void> {
+export async function restoreBackendSnapshot(row: ConvexRow, snapshotId: string): Promise<void> {
   const externalId = machine(row);
-  if (!(await claimOperation(row.backendId, 'restoring'))) {
-    throw new BackendOperationError('another operation is running on this backend; wait for it to finish', 'backend_busy');
+  if (!(await claimOperation(row.appId, 'restoring'))) {
+    throw new BackendOperationError('another operation is running on this App; wait for it to finish', 'app_busy');
   }
-  const stopHeartbeat = keepAlive(row.backendId);
+  const stopHeartbeat = keepAlive(row.appId);
   let failure: string | null = null;
   try {
     const snapshot = (await readSnapshots(externalId)).find((s) => s.id === snapshotId);
-    if (!snapshot) throw new BackendOperationError('no such snapshot on this backend', 'snapshot_not_found', 400);
+    if (!snapshot) throw new BackendOperationError('no such snapshot on this App', 'snapshot_not_found', 400);
     const lastResizeAt = snapshotMeta(row).lastResizeAt;
     if (lastResizeAt && Date.parse(snapshot.createdAt) < Date.parse(lastResizeAt)) {
       throw new BackendOperationError(
-        'this snapshot was taken before the backend was resized; restoring it would bring back the old machine size. Take a snapshot at the current size, or resize again.',
+        'this snapshot was taken before the App was resized; restoring it would bring back the old machine size. Take a snapshot at the current size, or resize again.',
         'snapshot_predates_resize',
       );
     }
     // Set before the restore starts: whatever ends this request, the recovery
     // or the next probe rotates the restored secret away.
-    if (wasRotated(row)) await mergeMetadata(row.backendId, { [ROTATE_AFTER_RESTORE]: true });
+    if (wasRotated(row)) await mergeMetadata(row.appId, { [ROTATE_AFTER_RESTORE]: true });
     await platinumJson(`/v1/sandboxes/${externalId}/restore`, {
       method: 'POST',
       body: JSON.stringify({ snapshot_id: snapshotId }),
     }).catch(async (error) => {
       // A 4xx: Platinum refused, the machine still runs its own secret.
-      if (error instanceof PlatinumHttpError && error.status < 500) await dropMetadata(row.backendId, ROTATE_AFTER_RESTORE);
+      if (error instanceof PlatinumHttpError && error.status < 500) await dropMetadata(row.appId, ROTATE_AFTER_RESTORE);
       throw error;
     });
     try {
@@ -569,28 +639,28 @@ export async function restoreBackendSnapshot(row: BackendRow, snapshotId: string
       await sealAdminKey(row);
     } catch (error) {
       failure = `restore failed: ${backendFailureMessage(error)}`;
-      logger.error('[backends] restore failed', { backendId: row.backendId, snapshotId, error: String(error) });
+      logger.error('[apps:convex] restore failed', { appId: row.appId, snapshotId, error: String(error) });
       // Platinum ends a failed restore `stopped`; start it, rotate the restored
       // secret away and seal the key it accepts.
       await recoverBackend(row, { restored: true }).catch((recoverError) =>
-        logger.error('[backends] recovery after a failed restore failed', { backendId: row.backendId, error: String(recoverError) }),
+        logger.error('[apps:convex] recovery after a failed restore failed', { appId: row.appId, error: String(recoverError) }),
       );
       throw new BackendOperationError(
-        'the backend did not come back healthy after the restore; retry or restore again',
+        'the App did not come back healthy after the restore; retry or restore again',
         'restore_unhealthy',
         502,
       );
     }
   } finally {
     stopHeartbeat();
-    await releaseOperation(row.backendId, failure).catch(() => {});
+    await releaseOperation(row.appId, failure).catch(() => {});
   }
 }
 
 // ── Resize ───────────────────────────────────────────────────────────────────
 
 /** The size a resize request asks for, or a 400 reason. Disk only grows. */
-export function targetSize(row: BackendRow, want: Partial<BackendSize>): BackendSize {
+export function targetSize(row: ConvexRow, want: Partial<BackendSize>): BackendSize {
   const next: BackendSize = {
     cpu: want.cpu ?? row.cpu,
     memoryGb: want.memoryGb ?? row.memoryGb,
@@ -606,17 +676,17 @@ export function targetSize(row: BackendRow, want: Partial<BackendSize>): Backend
     throw new BackendOperationError('disk can only grow', 'disk_shrink_unsupported', 400);
   }
   if (next.cpu === row.cpu && next.memoryGb === row.memoryGb && next.diskGb === row.diskGb) {
-    throw new BackendOperationError('the backend already has this size', 'size_unchanged', 400);
+    throw new BackendOperationError('the App already has this size', 'size_unchanged', 400);
   }
   return next;
 }
 
 /** Marks the backend `resizing`; the caller then runs `runResize` in the background. */
-export async function beginResize(row: BackendRow, want: Partial<BackendSize>): Promise<BackendSize> {
+export async function beginResize(row: ConvexRow, want: Partial<BackendSize>): Promise<BackendSize> {
   machine(row);
   const next = targetSize(row, want);
-  if (!(await claimOperation(row.backendId, 'resizing'))) {
-    throw new BackendOperationError('another operation is running on this backend', 'backend_busy');
+  if (!(await claimOperation(row.appId, 'resizing'))) {
+    throw new BackendOperationError('another operation is running on this App', 'app_busy');
   }
   return next;
 }
@@ -626,18 +696,18 @@ export async function beginResize(row: BackendRow, want: Partial<BackendSize>): 
  * resize loop cannot fill the host disk. The newer one undoes the same resize
  * from a later state. A failed delete waits for expiry.
  */
-async function dropOlderResizeSnapshots(row: BackendRow, keep: string): Promise<void> {
+async function dropOlderResizeSnapshots(row: ConvexRow, keep: string): Promise<void> {
   for (const [snapshotId, label] of Object.entries(snapshotLabels(row))) {
     if (label.kind !== 'resize' || snapshotId === keep) continue;
     try {
       await platinumJson(`/v1/sandboxes/${row.externalId}/snapshots/${snapshotId}`, { method: 'DELETE' }).catch((error) => {
         if (!isGone(error)) throw error;
       });
-      await unlabelSnapshot(row.backendId, snapshotId);
-      logger.info('[backends] resize snapshot replaced by a newer one', { backendId: row.backendId, snapshotId, keep });
+      await unlabelSnapshot(row.appId, snapshotId);
+      logger.info('[apps:convex] resize snapshot replaced by a newer one', { appId: row.appId, snapshotId, keep });
     } catch (error) {
-      logger.warn('[backends] could not delete the previous resize snapshot; expiry deletes it', {
-        backendId: row.backendId,
+      logger.warn('[apps:convex] could not delete the previous resize snapshot; expiry deletes it', {
+        appId: row.appId,
         snapshotId,
         error: String(error),
       });
@@ -646,9 +716,9 @@ async function dropOlderResizeSnapshots(row: BackendRow, keep: string): Promise<
 }
 
 /** Safety snapshot (replacing the previous one) → stop → resize (boots) → healthy → record the size. Clears `resizing` either way. */
-export async function runResize(row: BackendRow, next: BackendSize): Promise<void> {
+export async function runResize(row: ConvexRow, next: BackendSize): Promise<void> {
   const externalId = row.externalId!;
-  const stopHeartbeat = keepAlive(row.backendId);
+  const stopHeartbeat = keepAlive(row.appId);
   try {
     const safety = await takeSnapshot(row, 'resize');
     await dropOlderResizeSnapshots(row, safety.snapshot_id);
@@ -664,30 +734,33 @@ export async function runResize(row: BackendRow, next: BackendSize): Promise<voi
     });
     // The machine has the new size from here on, healthy or not. Every older
     // snapshot holds the old size: restore refuses it from now on.
-    await db
-      .update(projectBackends)
-      .set({
-        cpu: next.cpu,
-        memoryGb: next.memoryGb,
-        diskGb: next.diskGb,
-        updatedAt: new Date(),
-        metadata: sql`coalesce(${projectBackends.metadata}, '{}'::jsonb) || ${JSON.stringify({ lastResizeAt: new Date().toISOString() })}::jsonb`,
-      })
-      .where(and(eq(projectBackends.backendId, row.backendId), isNull(projectBackends.deletedAt)));
+    await db.transaction(async (tx) => {
+      await tx
+        .update(apps)
+        .set({ cpuCores: next.cpu, memoryGb: next.memoryGb, diskGb: next.diskGb, updatedAt: new Date() })
+        .where(eq(apps.appId, row.appId));
+      await tx
+        .update(appConvexInstances)
+        .set({
+          updatedAt: new Date(),
+          metadata: sql`coalesce(${appConvexInstances.metadata}, '{}'::jsonb) || ${JSON.stringify({ lastResizeAt: new Date().toISOString() })}::jsonb`,
+        })
+        .where(and(eq(appConvexInstances.appId, row.appId), liveInstance()));
+    });
     // Close the window at the old size; the next probe opens one at the new size.
-    await pauseComputeSession(row.backendId).catch((error) =>
-      logger.warn('[backends] could not close the compute window after a resize', { backendId: row.backendId, error: String(error) }),
+    await pauseComputeSession(row.appId).catch((error) =>
+      logger.warn('[apps:convex] could not close the compute window after a resize', { appId: row.appId, error: String(error) }),
     );
     await waitHealthy(externalId);
-    await releaseOperation(row.backendId, null);
+    await releaseOperation(row.appId, null);
   } catch (error) {
-    logger.error('[backends] resize failed', { backendId: row.backendId, error: String(error) });
+    logger.error('[apps:convex] resize failed', { appId: row.appId, error: String(error) });
     // Never leave the backend down: boot it again at whatever size it has.
     const state = await platinumJson<PlatinumSandboxState>(`/v1/sandboxes/${externalId}`).catch(() => null);
     if (state?.state === 'stopped') {
       await platinumJson(`/v1/sandboxes/${externalId}/start`, { method: 'POST', body: '{}' }).catch(() => {});
     }
-    await releaseOperation(row.backendId, `resize failed: ${backendFailureMessage(error)}`).catch(() => {});
+    await releaseOperation(row.appId, `resize failed: ${backendFailureMessage(error)}`).catch(() => {});
   } finally {
     stopHeartbeat();
   }
@@ -724,34 +797,34 @@ exit 1`;
  * makes sure the old key never comes back. It costs one more Convex restart
  * (under 1 s), and the admin key changes: read it again after a restore.
  */
-async function rotateAgainAfterRestore(row: BackendRow, externalId: string): Promise<void> {
+async function rotateAgainAfterRestore(row: ConvexRow, externalId: string): Promise<void> {
   if (!wasRotated(row)) return;
-  logger.warn('[backends] restored a backend whose admin key was rotated; rotating again', { backendId: row.backendId });
+  logger.warn('[apps:convex] restored a backend whose admin key was rotated; rotating again', { appId: row.appId });
   await execInBackend(externalId, ROTATE_INSTANCE_SECRET_SCRIPT, 30_000);
   await waitHealthy(externalId);
-  await markRotated(row.backendId);
-  await dropMetadata(row.backendId, ROTATE_AFTER_RESTORE);
+  await markRotated(row.appId);
+  await dropMetadata(row.appId, ROTATE_AFTER_RESTORE);
 }
 
 /** Set while a restore of a rotated backend has not been rotated again. Recovery and the health probe act on it. */
 export const ROTATE_AFTER_RESTORE = 'rotateAfterRestore';
 
-const wasRotated = (row: Pick<BackendRow, 'metadata'>) =>
+const wasRotated = (row: Pick<ConvexRow, 'metadata'>) =>
   Boolean((row.metadata as { adminKeyRotatedAt?: string } | null)?.adminKeyRotatedAt);
 
 /** True when a restore of this rotated backend still waits for its rotation. */
-export const rotationPendingAfterRestore = (row: Pick<BackendRow, 'metadata'>) =>
+export const rotationPendingAfterRestore = (row: Pick<ConvexRow, 'metadata'>) =>
   wasRotated(row) && Boolean((row.metadata as Record<string, unknown> | null)?.[ROTATE_AFTER_RESTORE]);
 
 /** Records that the admin key was rotated. Rotation writes it before the secret changes, so no crash loses it. */
-async function markRotated(backendId: string): Promise<void> {
+async function markRotated(appId: string): Promise<void> {
   await db
-    .update(projectBackends)
+    .update(appConvexInstances)
     .set({
       updatedAt: new Date(),
-      metadata: sql`coalesce(${projectBackends.metadata}, '{}'::jsonb) || ${JSON.stringify({ adminKeyRotatedAt: new Date().toISOString() })}::jsonb`,
+      metadata: sql`coalesce(${appConvexInstances.metadata}, '{}'::jsonb) || ${JSON.stringify({ adminKeyRotatedAt: new Date().toISOString() })}::jsonb`,
     })
-    .where(eq(projectBackends.backendId, backendId));
+    .where(eq(appConvexInstances.appId, appId));
 }
 
 /**
@@ -760,25 +833,25 @@ async function markRotated(backendId: string): Promise<void> {
  * and Convex restarts (under 1 s). Data, files and environment variables stay.
  * Also invalidated: upload URLs not yet used and open pagination cursors.
  */
-export async function rotateBackendAdminKey(row: BackendRow): Promise<void> {
+export async function rotateBackendAdminKey(row: ConvexRow): Promise<void> {
   const externalId = machine(row);
-  if (!(await claimOperation(row.backendId, 'rotating_key'))) {
-    throw new BackendOperationError('another operation is running on this backend', 'backend_busy');
+  if (!(await claimOperation(row.appId, 'rotating_key'))) {
+    throw new BackendOperationError('another operation is running on this App', 'app_busy');
   }
-  const stopHeartbeat = keepAlive(row.backendId);
+  const stopHeartbeat = keepAlive(row.appId);
   try {
-    await markRotated(row.backendId);
+    await markRotated(row.appId);
     await execInBackend(externalId, ROTATE_INSTANCE_SECRET_SCRIPT, 30_000);
     await waitHealthy(externalId);
     await sealAdminKey(row);
-    await releaseOperation(row.backendId, null);
+    await releaseOperation(row.appId, null);
   } catch (error) {
-    logger.error('[backends] admin key rotation failed', { backendId: row.backendId, error: String(error) });
+    logger.error('[apps:convex] admin key rotation failed', { appId: row.appId, error: String(error) });
     // The secret may have changed already: Kortix must still hold a key the machine accepts.
     await recoverBackend(row).catch((recoverError) =>
-      logger.error('[backends] recovery after a failed rotation failed', { backendId: row.backendId, error: String(recoverError) }),
+      logger.error('[apps:convex] recovery after a failed rotation failed', { appId: row.appId, error: String(recoverError) }),
     );
-    await releaseOperation(row.backendId, `admin key rotation failed: ${backendFailureMessage(error)}`).catch(() => {});
+    await releaseOperation(row.appId, `admin key rotation failed: ${backendFailureMessage(error)}`).catch(() => {});
     throw backendProviderFailureOr(error, 'The admin key could not be rotated. Try again.', 'rotation_failed');
   } finally {
     stopHeartbeat();
@@ -795,7 +868,7 @@ function backendProviderFailureOr(error: unknown, message: string, code: string)
 export const MAX_LOG_LINES = 1_000;
 
 /** The last `lines` lines of the Convex process log, across the current and the previous (capped) file, without color codes. */
-export async function readBackendLog(row: BackendRow, lines: number): Promise<string> {
+export async function readBackendLog(row: ConvexRow, lines: number): Promise<string> {
   const externalId = machine(row);
   const n = Math.max(1, Math.min(MAX_LOG_LINES, Math.floor(lines)));
   const out = await execInBackend(externalId, `cat ${CONVEX_LOG_FILE}.1 ${CONVEX_LOG_FILE} 2>/dev/null | tail -n ${n}`, 15_000);
@@ -833,14 +906,14 @@ export type RecoveryAction = 'started' | 'restored_from_backup' | 'none';
  * pending `rotateAfterRestore`); seals the admin key the machine accepts now;
  * records the machine's real size. The caller holds the operation lock.
  */
-export async function recoverBackend(row: BackendRow, { restored = false } = {}): Promise<RecoveryAction> {
+export async function recoverBackend(row: ConvexRow, { restored = false } = {}): Promise<RecoveryAction> {
   const externalId = row.externalId;
-  if (!externalId || !row.url) throw new BackendOperationError('backend has no machine', 'backend_not_running');
+  if (!externalId || !row.url) throw new BackendOperationError('the App has no machine', 'app_not_running');
   let current = await readMachine(externalId);
-  if (!current) throw new BackendOperationError('The backend machine no longer exists.', 'backend_machine_missing');
+  if (!current) throw new BackendOperationError('The App machine no longer exists.', 'app_machine_missing');
   let action: RecoveryAction = 'none';
   if (current.recoverable || current.state === 'lost') {
-    if (wasRotated(row)) await mergeMetadata(row.backendId, { [ROTATE_AFTER_RESTORE]: true });
+    if (wasRotated(row)) await mergeMetadata(row.appId, { [ROTATE_AFTER_RESTORE]: true });
     await platinumJson(`/v1/sandboxes/${externalId}/restore-from-backup`, { method: 'POST', body: '{}' });
     action = 'restored_from_backup';
   } else if (current.state && START_STATES.has(current.state)) {
@@ -866,10 +939,11 @@ export async function recoverBackend(row: BackendRow, { restored = false } = {})
     diskGb: current.diskGb,
   };
   if (Object.values(size).every((v) => typeof v === 'number' && v > 0)) {
+    const real = size as BackendSize;
     await db
-      .update(projectBackends)
-      .set({ ...(size as BackendSize), updatedAt: new Date() })
-      .where(and(eq(projectBackends.backendId, row.backendId), isNull(projectBackends.deletedAt)));
+      .update(apps)
+      .set({ cpuCores: real.cpu, memoryGb: real.memoryGb, diskGb: real.diskGb, updatedAt: new Date() })
+      .where(eq(apps.appId, row.appId));
   }
   return action;
 }

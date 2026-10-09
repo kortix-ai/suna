@@ -6,7 +6,7 @@
 
 import {
   appRuntimes,
-  projectBackends,
+  appConvexInstances,
   projectMonitorBoxes,
   sandboxComputeSessions,
   sessionSandboxes,
@@ -65,17 +65,17 @@ function nonSessionRuntimeBillingStatus(status: string | null): string | null {
 }
 
 /**
- * A backend row's status in the same vocabulary. A soft-deleted row is gone,
- * and a parked one (its project is archived, ./backends/lifecycle.ts) is
+ * A `convex` App machine row's status in the same vocabulary. A deleted App's
+ * row (`deleted`, kept in retention) is gone, and a parked one (its project is
+ * archived, apps/kinds/convex/lifecycle.ts) is
  * stopped, whatever its `status` column says.
  */
 function backendBillingStatus(row: {
   backendStatus: string | null;
-  backendDeletedAt: Date | null;
   backendMetadata: unknown;
 }): string | null {
   if (!row.backendStatus) return null;
-  if (row.backendDeletedAt) return 'deleted';
+  if (row.backendStatus === 'deleted') return 'deleted';
   if ((row.backendMetadata as { parked?: unknown } | null)?.parked) return 'stopped';
   return nonSessionRuntimeBillingStatus(row.backendStatus);
 }
@@ -85,7 +85,7 @@ function backendBillingStatus(row: {
  * join through `session_sandboxes`; App windows join through `app_runtime_id`;
  * monitor windows join through `project_monitor_boxes.box_id`, which IS the
  * monitor window's `sandbox_id`; backend windows join through
- * `project_backends.backend_id`, likewise. Keeping all four joins in one
+ * `app_convex_instances.app_id` (the App id), likewise. Keeping all four joins in one
  * bounded query preserves oldest-first sweep order.
  *
  * The monitor join is load-bearing, not defensive: a monitor box has NO
@@ -116,12 +116,11 @@ function selectOpenComputeInvariantCandidates(limit = REAP_BATCH_SIZE) {
       monitorMetadata: projectMonitorBoxes.metadata,
       monitorProvider: projectMonitorBoxes.provider,
       monitorExternalId: projectMonitorBoxes.externalId,
-      backendStatus: projectBackends.status,
-      backendDeletedAt: projectBackends.deletedAt,
-      backendUpdatedAt: projectBackends.updatedAt,
-      backendMetadata: projectBackends.metadata,
-      backendProvider: projectBackends.provider,
-      backendExternalId: projectBackends.externalId,
+      backendStatus: appConvexInstances.status,
+      backendUpdatedAt: appConvexInstances.updatedAt,
+      backendMetadata: appConvexInstances.metadata,
+      backendProvider: appConvexInstances.provider,
+      backendExternalId: appConvexInstances.externalId,
     })
     .from(sandboxComputeSessions)
     .leftJoin(sessionSandboxes, eq(sessionSandboxes.sandboxId, sandboxComputeSessions.sandboxId))
@@ -130,7 +129,7 @@ function selectOpenComputeInvariantCandidates(limit = REAP_BATCH_SIZE) {
       projectMonitorBoxes,
       eq(projectMonitorBoxes.boxId, sandboxComputeSessions.sandboxId),
     )
-    .leftJoin(projectBackends, backendWindowJoin())
+    .leftJoin(appConvexInstances, backendWindowJoin())
     .where(eq(sandboxComputeSessions.state, 'active'))
     .orderBy(sql`${sandboxComputeSessions.startedAt} asc`)
     .limit(limit);
@@ -318,11 +317,11 @@ export async function reconcileOrphanComputeSessions(
   return result;
 }
 
-/** A backend window's `sandbox_id` IS its backend id. Joined for backend windows only. */
+/** A `convex` App window's `sandbox_id` IS its App id. Joined for those windows only. */
 function backendWindowJoin() {
   return and(
     eq(sandboxComputeSessions.workloadType, 'backend'),
-    eq(projectBackends.backendId, sandboxComputeSessions.sandboxId),
+    eq(appConvexInstances.appId, sandboxComputeSessions.sandboxId),
   );
 }
 
@@ -357,7 +356,7 @@ export async function countBillingInvariantViolations(): Promise<number> {
       projectMonitorBoxes,
       eq(projectMonitorBoxes.boxId, sandboxComputeSessions.sandboxId),
     )
-    .leftJoin(projectBackends, backendWindowJoin())
+    .leftJoin(appConvexInstances, backendWindowJoin())
     .where(
       and(
         eq(sandboxComputeSessions.state, 'active'),
@@ -371,10 +370,9 @@ export async function countBillingInvariantViolations(): Promise<number> {
           ${projectMonitorBoxes.status} NOT IN ('provisioning', 'starting', 'running')
         )) OR
         (${sandboxComputeSessions.workloadType} = 'backend' AND (
-          ${projectBackends.backendId} IS NULL OR
-          ${projectBackends.deletedAt} IS NOT NULL OR
-          ${projectBackends.status} NOT IN ('provisioning', 'running') OR
-          ${projectBackends.metadata} ? 'parked'
+          ${appConvexInstances.appId} IS NULL OR
+          ${appConvexInstances.status} NOT IN ('provisioning', 'running') OR
+          ${appConvexInstances.metadata} ? 'parked'
         )) OR
         (${sandboxComputeSessions.workloadType} NOT IN ('app', 'monitor', 'backend') AND (
           ${sessionSandboxes.status} IS NULL OR ${sessionSandboxes.status} <> 'active'
@@ -410,14 +408,14 @@ export async function countStaleLivenessWindows(now = new Date()): Promise<numbe
       projectMonitorBoxes,
       eq(projectMonitorBoxes.boxId, sandboxComputeSessions.sandboxId),
     )
-    .leftJoin(projectBackends, backendWindowJoin())
+    .leftJoin(appConvexInstances, backendWindowJoin())
     .where(
       and(
         eq(sandboxComputeSessions.state, 'active'),
         sql`(
         (${sandboxComputeSessions.workloadType} = 'app' AND ${appRuntimes.status} = 'running') OR
         (${sandboxComputeSessions.workloadType} = 'monitor' AND ${projectMonitorBoxes.status} = 'running') OR
-        (${sandboxComputeSessions.workloadType} = 'backend' AND ${projectBackends.status} = 'running' AND ${projectBackends.deletedAt} IS NULL AND NOT (${projectBackends.metadata} ? 'parked')) OR
+        (${sandboxComputeSessions.workloadType} = 'backend' AND ${appConvexInstances.status} = 'running' AND NOT (${appConvexInstances.metadata} ? 'parked')) OR
         (${sandboxComputeSessions.workloadType} NOT IN ('app', 'monitor', 'backend') AND ${sessionSandboxes.status} = 'active')
       )`,
         sql`coalesce(${sandboxComputeSessions.metadata}->>'lastAliveAt', ${sandboxComputeSessions.startedAt}::text) < ${cutoff}`,
