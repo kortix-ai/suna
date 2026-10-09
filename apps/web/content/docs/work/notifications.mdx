@@ -75,15 +75,16 @@ reminder. See [Triggers → Alerts](/docs/connect/triggers#alerts) and
 
 On the web and in the desktop app, the bell sits at the top of the project
 sidebar and on the projects page. Its badge counts your unread notifications.
-Choose a notification to open its session, or the **Triggers** page for an
-alert. That marks it read. **Mark all as read** clears the count.
+Choose a notification to open its session, the **Triggers** page for a trigger
+alert, or the **Reminders** page for a reminder alert. That marks it read.
+**Mark all as read** clears the count.
 
 A notification that arrives while you use Kortix also shows as a toast, unless
 it is about the session on your screen. While this browser shows no
 notifications, the bell offers **Turn on**.
 
 Opening a session marks its notifications read, on the web, in the desktop app,
-and in the mobile app.
+and in the mobile app. The bell drops them at once.
 
 ### The mobile app
 
@@ -100,19 +101,28 @@ Push.
 2. Turn on **Enable notifications**.
 3. Allow notifications when the browser asks.
 
-Click a notification to open its session. The setting is per browser: turn it on
-in each browser you use. Signing out of Kortix in that browser stops its
-notifications.
+Click a notification to open its session. A tab that already shows that page
+comes to the front, and the notification is marked read. The setting is per
+browser: turn it on in each browser you use. Signing out of Kortix in that
+browser stops its notifications.
+
+A browser shows one notification per session, or per trigger, and kind. A new
+one replaces the last one. In Chrome and Edge it alerts again. A tab that is
+open on the session and the push for the same event show one notification, not
+two.
 
 Web Push works in Chrome, Edge, Firefox, and Safari on macOS. Another browser
-shows notifications only while a Kortix tab is open.
+shows notifications only while a Kortix tab is open. With **Enable
+notifications** on, that tab checks for new notifications about once a minute,
+also while it is in the background.
 
 ### The desktop app
 
 The desktop app has no push service. While its window is open, it checks for
-new notifications about once a minute. When the window is not in focus, it shows
-up to 3 new ones per check as OS notifications, with **Enable notifications**
-on. With the window closed, it shows nothing.
+new notifications about once a minute, also while the window is minimized or
+covered. When the window is not in focus, it shows up to 3 new ones per check as
+OS notifications, with **Enable notifications** on. With the window closed, it
+shows nothing.
 
 ### Email
 

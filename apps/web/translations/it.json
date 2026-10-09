@@ -2605,6 +2605,7 @@
     "arrival": {
       "inProject": "{kind} in {project}",
       "openSession": "Apri sessione",
+      "openReminders": "Apri promemoria",
       "openTriggers": "Apri trigger"
     },
     "session": {

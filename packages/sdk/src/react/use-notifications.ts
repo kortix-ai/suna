@@ -33,8 +33,10 @@ const DEFAULT_INBOX_LIMIT = 20;
 /**
  * The key, gate and freshness `useNotificationInbox` reads, without React.
  * The inbox polls every 60 s while the page is visible and refetches when the
- * window regains focus. A hidden tab does not poll: Web Push covers it, and
- * every request writes an audit row.
+ * window regains focus. A hidden page does not poll here: every request writes
+ * an audit row, and Web Push reaches a browser that holds a subscription. A
+ * host without Web Push (the desktop app, a browser without it) runs its own
+ * hidden-page check with `refetch` (the web `NotificationHost` does).
  */
 export function notificationInboxQueryOptions(
   userId: string | null | undefined,

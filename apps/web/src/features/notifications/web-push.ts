@@ -9,6 +9,7 @@
 
 import { isDesktop } from '@/lib/desktop';
 import { logger } from '@/lib/logger';
+import { withTimeBudget } from '@/lib/utils/time-budget';
 import {
   getWebPushPublicKey,
   registerWebPushSubscription,
@@ -84,6 +85,9 @@ export function hasWebPushSubscription(): boolean {
   return subscribed;
 }
 
+/** How long a first-time worker may take to install and activate. */
+const WORKER_ACTIVE_BUDGET_MS = 10_000;
+
 let warned = false;
 function warnOnce(error: unknown) {
   if (warned) return;
@@ -92,10 +96,16 @@ function warnOnce(error: unknown) {
 }
 
 async function subscribe() {
-  // Unknown until the API confirms: a renderer that may lack Web Push raises
-  // its own OS notification, and a duplicate replaces itself by tag.
+  // Unknown until the API confirms. Until then this renderer raises its own
+  // OS notifications for new inbox rows.
   subscribed = false;
-  const registration = await navigator.serviceWorker.register('/sw.js');
+  await navigator.serviceWorker.register('/sw.js');
+  // `register` resolves while a first-time worker still installs, and
+  // `subscribe` rejects without an active one. `ready` never settles when the
+  // install fails, so a clock keeps the queue moving.
+  const ready = await withTimeBudget(navigator.serviceWorker.ready, WORKER_ACTIVE_BUDGET_MS);
+  if (ready.status !== 'settled') throw new Error('service worker not active');
+  const registration = ready.value;
   const key = base64UrlToBytes((await getWebPushPublicKey()).public_key);
   let subscription = await registration.pushManager.getSubscription();
   // A subscription made for another server key can never be delivered to.

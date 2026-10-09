@@ -6,12 +6,14 @@
  *
  * 1. Web Push: this browser subscribes while "Enable notifications" is on and
  *    the browser allows it, and unsubscribes when it is turned off. The switch
- *    never waits for it.
+ *    never waits for it. The MFA step-up registers it again, at aal2.
  * 2. The Push choice per kind, mirrored into `web-notifications.ts`, so an
  *    in-page OS notification obeys the same choice as the phone.
  * 3. Arrivals: a new unread row toasts, and becomes an OS notification where
  *    nothing else would deliver it (the desktop app, a browser without Web Push).
- * 4. `?notification=<id>` on any page marks that row read and leaves the URL.
+ *    There, a hidden window keeps checking the inbox once a minute.
+ * 4. `?notification=<id>` on any page, or the service worker's message for a
+ *    clicked notification, marks that row read.
  */
 
 import { Button } from '@/components/ui/button';
@@ -36,11 +38,23 @@ import {
   isNotificationId,
   newArrivals,
   notificationTag,
+  openedNotificationId,
   planArrivals,
+  pollsWhileHidden,
+  rowDestination,
   webNotificationType,
   withoutNotificationParam,
 } from './notification-rows';
 import { hasWebPushSubscription, syncWebPush, wantsWebPush, webPushSupported } from './web-push';
+
+/** The inbox check of a hidden window, the SDK poll's interval. */
+const HIDDEN_POLL_MS = 60_000;
+
+const ARRIVAL_LABEL = {
+  session: 'arrival.openSession',
+  reminders: 'arrival.openReminders',
+  triggers: 'arrival.openTriggers',
+} as const;
 
 export function NotificationHost() {
   const { user } = useAuth();
@@ -50,6 +64,7 @@ export function NotificationHost() {
 
 function SignedInNotificationHost({ userId }: { userId: string }) {
   const t = useTranslations('notifications');
+  const { supabase } = useAuth();
   const enabled = useWebNotificationStore((s) => s.preferences.enabled);
   const permission = useWebNotificationStore((s) => s.permission);
   const inbox = useNotificationInbox({ userId });
@@ -64,6 +79,57 @@ function SignedInNotificationHost({ userId }: { userId: string }) {
     if (!webPushSupported()) return;
     void syncWebPush(wantsWebPush({ supported: true, enabled, permission }));
   }, [enabled, permission, userId]);
+
+  // The MFA step-up upgrades this sign-in to aal2 in place, with no reload.
+  // The API stores the level at registration and sends Web Push for an
+  // account that requires MFA only to an aal2 subscription: register again.
+  // The auth provider caches the aal2 token before this listener runs.
+  useEffect(() => {
+    if (!webPushSupported()) return;
+    const { data } = supabase.auth.onAuthStateChange((event) => {
+      if (event !== 'MFA_CHALLENGE_VERIFIED') return;
+      const state = useWebNotificationStore.getState();
+      void syncWebPush(
+        wantsWebPush({ supported: true, enabled: state.preferences.enabled, permission: state.permission }),
+      );
+    });
+    return () => data.subscription.unsubscribe();
+  }, [supabase]);
+
+  // The SDK poll stops while the page is hidden. Where Web Push does not
+  // reach this renderer, a hidden window keeps checking, so its OS
+  // notifications fire while it is minimized or covered.
+  const refetch = inbox.refetch;
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const state = useWebNotificationStore.getState();
+      const hidden = document.visibilityState === 'hidden';
+      if (
+        pollsWhileHidden({
+          hidden,
+          subscribed: hasWebPushSubscription(),
+          enabled: state.preferences.enabled,
+          permission: state.permission,
+        })
+      ) {
+        void refetch();
+      }
+    }, HIDDEN_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [refetch]);
+
+  // A click on a notification whose page is already open focuses that tab
+  // and posts its url here (`public/sw.js`): mark that row read.
+  useEffect(() => {
+    const container = typeof navigator === 'undefined' ? undefined : navigator.serviceWorker;
+    if (!container) return;
+    const onMessage = (event: MessageEvent) => {
+      const id = openedNotificationId(event.data);
+      if (id) markRead.current([id]).catch(() => {});
+    };
+    container.addEventListener('message', onMessage);
+    return () => container.removeEventListener('message', onMessage);
+  }, []);
 
   useEffect(() => {
     setServerPushPreferences(preferences?.kinds);
@@ -91,8 +157,7 @@ function SignedInNotificationHost({ userId }: { userId: string }) {
       markRead.current([row.id]).catch(() => {});
       softNavigate(withoutNotificationParam(row.url));
     };
-    const label = (row: InboxNotification) =>
-      row.session_id ? t('arrival.openSession') : t('arrival.openTriggers');
+    const label = (row: InboxNotification) => t(ARRIVAL_LABEL[rowDestination(row)]);
     const kindLine = (row: InboxNotification) =>
       row.project_name
         ? t('arrival.inProject', { kind: t(`kind.${row.kind}`), project: row.project_name })

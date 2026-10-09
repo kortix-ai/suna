@@ -50,6 +50,11 @@ mock.module('@/lib/navigation/router-bridge', () => ({
   },
 }));
 
+let webPushOn = false;
+mock.module('@/features/notifications/web-push', () => ({
+  hasWebPushSubscription: () => webPushOn,
+}));
+
 // ── minimum browser surface ────────────────────────────────────────────────
 const notificationInstances: {
   title: string;
@@ -119,6 +124,28 @@ world.window = {
 world.Notification = FakeNotification;
 world.BroadcastChannel = FakeBroadcastChannel;
 
+/** The service worker's notifications: what it showed, and what is on screen by tag. */
+const workerShown: { title: string; options: Record<string, unknown> }[] = [];
+const workerOnScreen = new Map<string, { data: unknown }>();
+Object.defineProperty(globalThis.navigator, 'serviceWorker', {
+  configurable: true,
+  value: {
+    ready: Promise.resolve({
+      showNotification: async (title: string, options: Record<string, unknown>) => {
+        workerShown.push({ title, options });
+        if (typeof options.tag === 'string') workerOnScreen.set(options.tag, { data: options.data });
+      },
+      getNotifications: async ({ tag }: { tag: string }) => {
+        const shown = workerOnScreen.get(tag);
+        return shown ? [shown] : [];
+      },
+    }),
+  },
+});
+
+/** Lets the async service-worker path finish. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
 const {
   sendWebNotification,
   notifyTaskComplete,
@@ -164,6 +191,9 @@ beforeEach(() => {
   useTurnAttentionStore.setState({ unseen: [] });
   setServerPushPreferences(null);
   softNavigateCalls.length = 0;
+  webPushOn = false;
+  workerShown.length = 0;
+  workerOnScreen.clear();
 });
 
 afterEach(() => {
@@ -376,6 +406,93 @@ describe('sendWebNotification — the server Push choice gates each kind', () =>
       '/projects/proj1/customize/triggers',
       '/projects/proj1/customize/triggers',
     ]);
+  });
+});
+
+describe('sendWebNotification — the toast open button', () => {
+  test('runs the payload onClick, like a click on the OS notification', () => {
+    visibility = { hidden: true, hasFocus: false };
+    let clicks = 0;
+
+    sendWebNotification({
+      type: 'automation_failed',
+      title: 'Nightly report',
+      body: 'Failure alert',
+      tag: 'automation_failed:proj1:nightly-report',
+      href: '/projects/proj1/customize/triggers',
+      actionLabel: 'Open triggers',
+      onClick: () => {
+        clicks += 1;
+      },
+    });
+
+    const button = toastCalls[0].opts?.button as { props: { onClick: () => void } };
+    button.props.onClick();
+    expect(clicks).toBe(1);
+    expect(softNavigateCalls).toEqual(['/projects/proj1/customize/triggers']);
+  });
+});
+
+/**
+ * KRTX-1742 review: a `new Notification` and a service-worker notification
+ * never replace each other, even with one tag. While this browser holds a Web
+ * Push subscription, the tab's copy goes through the service worker.
+ */
+describe('sendWebNotification — with a Web Push subscription the worker shows the copy', () => {
+  function enabledAndHidden() {
+    setPreferences({ enabled: true });
+    FakeNotification.permission = 'granted';
+    visibility = { hidden: true, hasFocus: false };
+  }
+
+  test('the worker shows it with the push tag and the session url, and no in-page notification', async () => {
+    enabledAndHidden();
+    webPushOn = true;
+
+    expect(sendWebNotification(completionPayload())).toBeNull();
+    await settle();
+
+    expect(notificationInstances).toHaveLength(0);
+    expect(workerShown).toEqual([
+      {
+        title: 'Task complete',
+        options: {
+          body: '"dogfood-1" has finished',
+          icon: '/favicon.svg',
+          tag: 'completion:sess1',
+          renotify: false,
+          data: { url: '/projects/proj1/sessions/sess1', at: (workerShown[0]?.options.data as { at: unknown }).at },
+        },
+      },
+    ]);
+    expect(typeof (workerShown[0].options.data as { at: unknown }).at).toBe('number');
+    // The in-app channels still run.
+    expect(toastCalls).toHaveLength(1);
+  });
+
+  test("a push for this event shown seconds ago is replaced quietly; an earlier event's alerts again", async () => {
+    enabledAndHidden();
+    webPushOn = true;
+
+    workerOnScreen.set('completion:sess1', { data: { url: '/', at: Date.now() - 5_000 } });
+    sendWebNotification(completionPayload());
+    await settle();
+    workerOnScreen.set('completion:sess1', { data: { url: '/', at: Date.now() - 120_000 } });
+    sendWebNotification(completionPayload());
+    await settle();
+
+    expect(workerShown.map((shown) => shown.options.renotify)).toEqual([false, true]);
+  });
+
+  test('without a subscription, or for the settings test, the tab shows its own notification', async () => {
+    enabledAndHidden();
+    sendWebNotification(completionPayload());
+    webPushOn = true;
+    sendWebNotification(completionPayload(), true);
+    await settle();
+
+    expect(notificationInstances).toHaveLength(2);
+    expect(workerShown).toHaveLength(0);
   });
 });
 

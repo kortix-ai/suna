@@ -2605,6 +2605,7 @@
     "arrival": {
       "inProject": "{kind} en {project}",
       "openSession": "Abrir sesión",
+      "openReminders": "Abrir recordatorios",
       "openTriggers": "Abrir triggers"
     },
     "session": {

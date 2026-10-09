@@ -19,12 +19,16 @@ import { createElement } from 'react';
  *     Notifications); the per-browser per-kind switches are retired
  *  5. Optionally skips if tab is visible (onlyWhenHidden preference)
  *
- * Every OS notification carries the tag `<type>:<sessionId>`, the same tag a
- * Web Push message for that event carries, so whichever arrives second
- * replaces the first.
+ * Every OS notification carries the tag of the Web Push message for the same
+ * event: `<type>:<sessionId>`, or `<type>:<projectId>:<triggerSlug>` for an
+ * alert (`notificationTag`). Only two service-worker notifications with one
+ * tag replace each other: a `new Notification` never replaces one. So while
+ * this browser holds a Web Push subscription, the service worker shows this
+ * tab's copy too, and whichever copy arrives second replaces the first.
  */
 
 import { Button } from '@/components/ui/button';
+import { hasWebPushSubscription } from '@/features/notifications/web-push';
 import {
   dismissToast,
   errorToast,
@@ -75,7 +79,11 @@ export interface WebNotificationPayload {
   href?: string;
   /** Localized label for the in-app open action. */
   actionLabel?: string;
-  /** Optional click handler — by default focuses the window and navigates to session */
+  /**
+   * Runs after the default open (focus the window, open the session or
+   * `href`) on a click of the OS notification or of the toast's open button.
+   * A service-worker notification opens its url and does not run it.
+   */
   onClick?: () => void;
 }
 
@@ -299,6 +307,14 @@ export function sendWebNotification(
     if (!isBlocking && preferences.onlyWhenHidden && !isTabHidden()) return null;
   }
 
+  // With Web Push on, the service worker also shows this event's push, and a
+  // `new Notification` would never replace it: hand this copy to the worker.
+  // `force` (the settings test button) keeps the in-page notification.
+  if (!force && hasWebPushSubscription() && 'serviceWorker' in navigator) {
+    void showWorkerNotification(payload);
+    return null;
+  }
+
   // 7. Fire native OS notification (may be blocked by OS settings)
   let notification: Notification | null = null;
   if (Notification.permission === 'granted') {
@@ -332,6 +348,51 @@ export function sendWebNotification(
   }
 
   return notification;
+}
+
+/** A same-tag notification shown this recently is the same event's other copy. */
+const SAME_EVENT_MS = 30_000;
+
+/**
+ * Whether a notification alerts again when it replaces `existing`, the
+ * same-tag notifications on screen: not when one is from the last 30 s (the
+ * push for this same event), and yes when it is older (an earlier event).
+ * `alertsAgain` in public/sw.js applies the same rule to a push.
+ */
+function alertsAgain(existing: readonly { data?: unknown }[], now = Date.now()): boolean {
+  return (
+    existing.length > 0 &&
+    existing.every((shown) => {
+      const at = (shown.data as { at?: unknown } | null | undefined)?.at;
+      return !(typeof at === 'number' && now - at < SAME_EVENT_MS);
+    })
+  );
+}
+
+/** This tab's copy of an OS notification, shown by the service worker. Its click opens `data.url`. */
+async function showWorkerNotification(payload: WebNotificationPayload) {
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    const existing = payload.tag ? await registration.getNotifications({ tag: payload.tag }) : [];
+    // The same project resolution as `navigateToSession`.
+    const projectId = payload.projectId ?? currentProjectId();
+    const url = payload.sessionId
+      ? projectId
+        ? projectSessionHref(projectId, payload.sessionId)
+        : '/'
+      : (payload.href ?? '/');
+    // `renotify` is missing from the DOM typings.
+    const options: NotificationOptions & { renotify: boolean } = {
+      body: payload.body,
+      icon: '/favicon.svg',
+      tag: payload.tag,
+      renotify: alertsAgain(existing),
+      data: { url, at: Date.now() },
+    };
+    await registration.showNotification(payload.title, options);
+  } catch (err) {
+    logger.error('Failed to send native notification', { error: String(err) });
+  }
 }
 
 // ============================================================================
@@ -385,6 +446,7 @@ function showInAppToast(payload: WebNotificationPayload) {
                 onClick: () => {
                   dismissToast(id);
                   openPayload(payload, false);
+                  payload.onClick?.();
                 },
               },
               actionLabel,

@@ -183,21 +183,28 @@ test("48 — the bell opens another session's notification and the settings save
 
       const turnFinished = panel.getByRole("switch", { name: "Turn finished: Push", exact: true });
       await expect(turnFinished).toBeChecked();
-      const save = page.waitForRequest(
-        (request) =>
-          request.method() === "PUT" &&
-          new URL(request.url()).pathname === "/v1/notifications/preferences",
+      // The response, not the request: the API answers 200 after the row is written.
+      const save = page.waitForResponse(
+        (response) =>
+          response.request().method() === "PUT" &&
+          new URL(response.url()).pathname === "/v1/notifications/preferences",
       );
       await turnFinished.click();
-      expect((await save).postDataJSON()).toEqual({ kinds: { turn_done: { push: false } } });
+      const saved = await save;
+      expect(saved.status()).toBe(200);
+      expect(saved.request().postDataJSON()).toEqual({ kinds: { turn_done: { push: false } } });
       await expect(turnFinished).not.toBeChecked();
-      const [stored] = await queryDatabaseRows<{ push: boolean | null }>(
-        `SELECT (settings -> 'kinds' -> 'turn_done' ->> 'push')::boolean AS push
-           FROM kortix.notification_preferences WHERE user_id = $1::uuid`,
-        [user.id],
-        databaseUrl,
-      );
-      expect(stored?.push).toBe(false);
+      await expect
+        .poll(async () => {
+          const [stored] = await queryDatabaseRows<{ push: boolean | null }>(
+            `SELECT (settings -> 'kinds' -> 'turn_done' ->> 'push')::boolean AS push
+               FROM kortix.notification_preferences WHERE user_id = $1::uuid`,
+            [user.id],
+            databaseUrl,
+          );
+          return stored?.push;
+        })
+        .toBe(false);
     });
   } finally {
     await runDatabaseSql(

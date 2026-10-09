@@ -2605,6 +2605,7 @@
     "arrival": {
       "inProject": "{kind} у пројекту {project}",
       "openSession": "Отвори сесију",
+      "openReminders": "Отвори подсетнике",
       "openTriggers": "Отвори окидаче"
     },
     "session": {

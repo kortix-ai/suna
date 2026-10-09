@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { ErrorState } from '@/features/layout/section/error-state';
+import { useOpenSessionRead } from '@/features/notifications/use-open-session-read';
 import { useAuth } from '@/features/providers/auth-provider';
 import { InstantSessionShell } from '@/features/session/instant-session-shell';
 import { resolvePinnedRootSessionId } from '@/features/session/pinned-root-session';
@@ -255,6 +256,9 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     // re-renders the transcript only, not this whole page.
     subscribeMessages: false,
   });
+  // The presence write marks this session's notifications read on the server;
+  // this clears them from the bell at once.
+  useOpenSessionRead(user?.id, sessionId);
   // `/start` no longer refuses a session created before a repository
   // replacement, so there is no error to detect and no mode to flip into: the
   // session starts, gets the project's current config release, and converges

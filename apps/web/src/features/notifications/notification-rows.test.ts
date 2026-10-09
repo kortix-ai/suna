@@ -6,7 +6,11 @@ import {
   isNotificationId,
   newArrivals,
   notificationTag,
+  openedNotificationId,
   planArrivals,
+  pollsWhileHidden,
+  rowDestination,
+  sessionUnreadRowId,
   webNotificationType,
   withoutNotificationParam,
 } from './notification-rows';
@@ -93,6 +97,15 @@ describe('planArrivals', () => {
     expect(plan.toast).toEqual([other]);
   });
 
+  test('an unseen finished turn hides only its turn_done row, not a later ask or error', () => {
+    const done = row({ session_id: 'ses-a', kind: 'turn_done' });
+    const ask = row({ session_id: 'ses-a', kind: 'question' });
+    const permission = row({ session_id: 'ses-a', kind: 'permission' });
+    const error = row({ session_id: 'ses-a', kind: 'turn_error' });
+    const plan = planArrivals([done, ask, permission, error], { ...context, unseen: ['ses-a'] });
+    expect(plan.toast).toEqual([ask, permission, error]);
+  });
+
   test('an automation alert has no session and is always announced', () => {
     const alert = row({ kind: 'automation_failed', session_id: null, trigger_slug: 'nightly' });
     expect(planArrivals([alert], { ...context, onScreen: () => true }).toast).toEqual([alert]);
@@ -105,13 +118,22 @@ describe('planArrivals', () => {
 });
 
 describe('tags and types', () => {
-  test('the tag matches the Web Push message: <type>:<session|trigger|id>', () => {
+  test('the tag matches the Web Push message: <type>:<session|project:trigger|id>', () => {
     expect(notificationTag(row({ kind: 'turn_done', session_id: 'ses-b' }))).toBe('completion:ses-b');
     expect(
-      notificationTag(row({ kind: 'automation_failed', session_id: null, trigger_slug: 'nightly' })),
-    ).toBe('automation_failed:nightly');
+      notificationTag(
+        row({ kind: 'automation_failed', project_id: 'p1', session_id: null, trigger_slug: 'nightly' }),
+      ),
+    ).toBe('automation_failed:p1:nightly');
     const bare = row({ kind: 'shared', session_id: null });
     expect(notificationTag(bare)).toBe(`shared:${bare.id}`);
+  });
+
+  test('one trigger slug in two projects gives two tags: neither alert replaces the other', () => {
+    const alert = { kind: 'automation_failed', session_id: null, trigger_slug: 'nightly' } as const;
+    expect(notificationTag(row({ ...alert, project_id: 'p1' }))).not.toBe(
+      notificationTag(row({ ...alert, project_id: 'p2' })),
+    );
   });
 
   test('the in-page type is the push type of the kind', () => {
@@ -120,9 +142,61 @@ describe('tags and types', () => {
     expect(webNotificationType(row({ kind: 'automation_recovered' }))).toBe('automation_recovered');
   });
 
+  test('the open action names the page the row url opens', () => {
+    expect(rowDestination(row({ session_id: 'ses-b' }))).toBe('session');
+    const alert = { kind: 'automation_failed', session_id: null } as const;
+    expect(
+      rowDestination(row({ ...alert, trigger_slug: 'reminder.0a1b2c3d4e5f', url: '/projects/p1/reminders?notification=n1' })),
+    ).toBe('reminders');
+    expect(
+      rowDestination(row({ ...alert, trigger_slug: 'nightly', url: '/projects/p1/customize/triggers?notification=n1' })),
+    ).toBe('triggers');
+  });
+
   test('the badge clamps at 99+', () => {
     expect(badgeCount(1)).toBe('1');
     expect(badgeCount(99)).toBe('99');
     expect(badgeCount(100)).toBe('99+');
   });
+});
+
+describe('openedNotificationId', () => {
+  const id = '0192f0c4-0000-7000-8000-000000000009';
+  const message = { type: 'kortix:notification-open', url: `https://app.example.test/projects/p1/sessions/s?notification=${id}` };
+
+  test('reads the id from the service worker message', () => {
+    expect(openedNotificationId(message)).toBe(id);
+  });
+
+  test('ignores another message, a url without an id, and a non-uuid id', () => {
+    expect(openedNotificationId({ ...message, type: 'other' })).toBeNull();
+    expect(openedNotificationId({ ...message, url: 'https://app.example.test/projects/p1' })).toBeNull();
+    expect(openedNotificationId({ ...message, url: '/projects/p1?notification=n1' })).toBeNull();
+    expect(openedNotificationId({ type: message.type })).toBeNull();
+    expect(openedNotificationId(null)).toBeNull();
+  });
+});
+
+describe('pollsWhileHidden', () => {
+  const desktop = { hidden: true, subscribed: false, enabled: true, permission: 'granted' as const };
+
+  test('a hidden window without Web Push checks the inbox', () => {
+    expect(pollsWhileHidden(desktop)).toBe(true);
+  });
+
+  test('a visible window, a Web Push subscription, or notifications off or not granted: no check', () => {
+    expect(pollsWhileHidden({ ...desktop, hidden: false })).toBe(false);
+    expect(pollsWhileHidden({ ...desktop, subscribed: true })).toBe(false);
+    expect(pollsWhileHidden({ ...desktop, enabled: false })).toBe(false);
+    expect(pollsWhileHidden({ ...desktop, permission: 'default' })).toBe(false);
+  });
+});
+
+test('sessionUnreadRowId is the newest unread row of that session', () => {
+  const newest = row({ session_id: 'ses-a' });
+  const older = row({ session_id: 'ses-a' });
+  const rows = [row({ session_id: 'ses-a', read: true }), row({ session_id: 'ses-b' }), newest, older];
+  expect(sessionUnreadRowId(rows, 'ses-a')).toBe(newest.id);
+  expect(sessionUnreadRowId(rows, 'ses-c')).toBeNull();
+  expect(sessionUnreadRowId(undefined, 'ses-a')).toBeNull();
 });

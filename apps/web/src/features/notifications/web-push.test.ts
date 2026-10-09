@@ -36,6 +36,8 @@ type FakeSubscription = {
 };
 
 let current: FakeSubscription | null = null;
+/** No worker was registered before: `register` resolves before it is active. */
+let firstInstall = true;
 let endpointForNext = 'https://fcm.googleapis.com/fcm/send/abc';
 
 function fakeSubscription(endpoint: string, key: ArrayBuffer | null): FakeSubscription {
@@ -51,10 +53,23 @@ function fakeSubscription(endpoint: string, key: ArrayBuffer | null): FakeSubscr
   };
 }
 
-const registration = {
+/**
+ * `register` resolves while a first-time worker still installs (`active`
+ * null). `ready` resolves once it is active. `subscribe` needs an active worker,
+ * as in Chrome ("no active Service Worker").
+ */
+const registration: {
+  active: object | null;
+  pushManager: {
+    getSubscription: () => Promise<FakeSubscription | null>;
+    subscribe: (options: { userVisibleOnly: boolean; applicationServerKey: Uint8Array }) => Promise<FakeSubscription>;
+  };
+} = {
+  active: null,
   pushManager: {
     getSubscription: async () => current,
     subscribe: async (options: { userVisibleOnly: boolean; applicationServerKey: Uint8Array }) => {
+      if (!registration.active) throw new DOMException('no active Service Worker', 'AbortError');
       calls.push({ op: 'browser-subscribe', arg: options });
       current = fakeSubscription(endpointForNext, options.applicationServerKey.slice().buffer);
       return current;
@@ -74,7 +89,14 @@ Object.defineProperty(globalThis, 'navigator', {
     serviceWorker: {
       register: async (url: string) => {
         calls.push({ op: 'sw-register', arg: url });
+        if (firstInstall) registration.active = null;
         return registration;
+      },
+      get ready() {
+        return Promise.resolve().then(() => {
+          registration.active = { state: 'activated' };
+          return registration;
+        });
       },
       getRegistration: async () => registration,
     },
@@ -148,6 +170,13 @@ describe('syncWebPush', () => {
       endpoint: 'https://fcm.googleapis.com/fcm/send/abc',
       keys: { p256dh: 'BPublicKey', auth: 'authSecret' },
     });
+    expect(hasWebPushSubscription()).toBe(true);
+  });
+
+  test('a first-time worker is active before the browser subscribes', async () => {
+    firstInstall = true;
+    await syncWebPush(true);
+    expect(calls.map((call) => call.op)).toEqual(['sw-register', 'browser-subscribe', 'register']);
     expect(hasWebPushSubscription()).toBe(true);
   });
 

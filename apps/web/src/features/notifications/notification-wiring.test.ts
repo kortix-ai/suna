@@ -27,6 +27,11 @@ describe('notification wiring', () => {
     expect(page).toContain("presenceAlerts: notificationsOn && notificationPermission === 'granted',");
   });
 
+  test('the session page clears its notifications from the bell when it opens', () => {
+    const page = code('app/[locale]/(app)/projects/[id]/sessions/[sessionId]/page.tsx');
+    expect(page).toContain('useOpenSessionRead(user?.id, sessionId);');
+  });
+
   test('sign-out removes the Web Push subscription first, on a clock', () => {
     const signOut = code('lib/auth/perform-sign-out.ts');
     const body = signOut.slice(signOut.indexOf('export async function performSignOut('));

@@ -2605,6 +2605,7 @@
     "arrival": {
       "inProject": "{project} 中的{kind}",
       "openSession": "打开会话",
+      "openReminders": "打开提醒",
       "openTriggers": "打开触发器"
     },
     "session": {

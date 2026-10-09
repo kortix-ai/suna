@@ -10,6 +10,9 @@
  * Tested by apps/web/src/features/notifications/service-worker.test.ts.
  */
 
+/** A same-tag notification shown this recently is the same event's other copy. */
+const SAME_EVENT_MS = 30000;
+
 /** The app path a message or a notification points at, on this origin only. */
 function appUrl(path) {
   const origin = self.location.origin;
@@ -25,6 +28,22 @@ function windowClients() {
   return self.clients.matchAll({ type: 'window', includeUncontrolled: true });
 }
 
+/**
+ * Whether a notification alerts again when it replaces `existing`, the
+ * same-tag notifications on screen. A browser replaces a same-tag notification
+ * silently unless `renotify` is set. An older one is an earlier event, such as
+ * the last turn of this session: alert. One from the last 30 s is this event's
+ * other copy (an open tab raised it, or the push did): replace it quietly.
+ * `alertsAgain` in src/lib/web-notifications.ts applies the same rule.
+ */
+function alertsAgain(existing) {
+  const now = Date.now();
+  return (
+    existing.length > 0 &&
+    existing.every((notification) => !(notification.data && now - notification.data.at < SAME_EVENT_MS))
+  );
+}
+
 // A new version takes over at once, and `claim` lets `navigate` reach tabs
 // that loaded before this worker was registered.
 self.addEventListener('install', () => self.skipWaiting());
@@ -38,20 +57,22 @@ self.addEventListener('push', (event) => {
     message = {};
   }
   const url = appUrl(message.url);
+  const tag = message.tag || undefined;
+  // Every push shows a notification, also over a focused tab on this page:
+  // Safari removes the subscription after 3 pushes that show none. The API
+  // sends no push while a tab that shows its own alerts is present.
   event.waitUntil(
-    windowClients().then((clients) => {
-      // The focused tab already shows this page: it raises its own alert.
-      const onScreen = clients.some(
-        (client) => client.focused && new URL(client.url).pathname === url.pathname,
-      );
-      if (onScreen) return undefined;
-      return self.registration.showNotification(message.title || 'Kortix', {
-        body: message.body || '',
-        tag: message.tag || undefined,
-        data: { url: url.href },
-        icon: '/favicon.svg',
-      });
-    }),
+    (tag ? self.registration.getNotifications({ tag }) : Promise.resolve([]))
+      .catch(() => [])
+      .then((existing) =>
+        self.registration.showNotification(message.title || 'Kortix', {
+          body: message.body || '',
+          tag,
+          renotify: alertsAgain(existing),
+          data: { url: url.href, at: Date.now() },
+          icon: '/favicon.svg',
+        }),
+      ),
   );
 });
 
@@ -62,16 +83,25 @@ self.addEventListener('notificationclick', (event) => {
     windowClients().then(async (clients) => {
       const sameOrigin = clients.filter((client) => new URL(client.url).origin === url.origin);
       const onPage = sameOrigin.find((client) => new URL(client.url).pathname === url.pathname);
-      if (onPage) return onPage.focus();
+      if (onPage) {
+        // The tab keeps its state, so it never sees `?notification=<id>`: it
+        // marks the notification read from this message.
+        try {
+          onPage.postMessage({ type: 'kortix:notification-open', url: url.href });
+        } catch {
+          // The tab is closing.
+        }
+        return onPage.focus();
+      }
       const client = sameOrigin[0];
       if (client) {
-        try {
-          const focused = await client.focus();
-          const navigated = await (focused || client).navigate(url.href);
-          if (navigated) return navigated;
-        } catch {
-          // An uncontrolled tab refuses `navigate`: open a new window instead.
-        }
+        // `navigate` spends no window-interaction token. `focus` and
+        // `openWindow` share the click's only one, so only one of them runs.
+        // An uncontrolled tab (after Shift+Reload) rejects `navigate`.
+        const navigated = await client.navigate(url.href).catch(() => undefined);
+        if (navigated) return navigated.focus();
+        // null: the tab navigated, but away from this origin.
+        if (navigated === null) return undefined;
       }
       return self.clients.openWindow(url.href);
     }),
