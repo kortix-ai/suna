@@ -39,10 +39,10 @@
   "docs:connect/connectors": "2026-10-08T13:45:43.000Z",
   "docs:connect": "2026-09-29T05:42:25.000Z",
   "docs:connect/mcp": "2026-10-08T20:32:44.000Z",
-  "docs:connect/reminders": "2026-10-09T09:50:21.000Z",
+  "docs:connect/reminders": "2026-10-09T10:39:08.000Z",
   "docs:connect/slack": "2026-10-08T14:34:01.000Z",
   "docs:connect/teams": "2026-10-06T22:08:23.000Z",
-  "docs:connect/triggers": "2026-10-09T09:50:21.000Z",
+  "docs:connect/triggers": "2026-10-09T10:39:08.000Z",
   "docs:credits": "2026-10-08T10:22:42.000Z",
   "docs:feature-flags/apps": "2026-10-08T14:34:01.000Z",
   "docs:feature-flags/backends": "2026-10-08T14:34:01.000Z",
@@ -73,7 +73,7 @@
   "docs:work/change-requests": "2026-09-01T14:42:59.000Z",
   "docs:work/harnesses": "2026-10-08T20:32:44.000Z",
   "docs:work": "2026-10-09T09:53:05.000Z",
-  "docs:work/notifications": "2026-10-09T09:50:21.000Z",
+  "docs:work/notifications": "2026-10-09T10:43:20.000Z",
   "docs:work/runtime": "2026-10-08T20:32:44.000Z",
   "docs:work/sessions": "2026-10-09T09:50:21.000Z"
 }
