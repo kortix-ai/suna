@@ -1,0 +1,24 @@
+{
+  "source_hash": "a8ca2fd02a8b15df47d4f44eef2ae8fa87f21c4ee74125f6c690fdf3a99dd18e",
+  "diff_files": [
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-09T100152Z-raise-one-database-pool-at-a-time-inside-the-rolling-fleet-b.md",
+    ".agents/skills/learnings/entries/2026-10-09T201500Z-the-branch-rename-api-deletes-an-open-prs-head-never.md",
+    ".agents/skills/learnings/entries/2026-10-09T222908Z-a-pr-that-touches-content-must-regenerate-the-content-timest.md",
+    "apps/api/src/ensure-schema.test.ts",
+    "apps/api/src/ensure-schema.ts",
+    "apps/api/src/shared/database-capacity.test.ts",
+    "apps/api/src/shared/database-capacity.ts",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "packages/db/src/connection-defaults.ts"
+  ],
+  "diff_hash": "71b60edc79486a8e2bd8ecfec0bbbe17eba8f94cbf35989b89704b95cea7f2d2",
+  "head": "fa3b7a7f267ff0ae24dc8aa529ebf210a3528db6",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-09T22:50:47.872Z"
+}
