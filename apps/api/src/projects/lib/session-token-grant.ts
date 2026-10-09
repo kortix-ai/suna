@@ -43,12 +43,13 @@
 import { type AgentGrant, accountTokens, readStoredAgentGrant, projectSessions, projects } from '@kortix/db';
 import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '../../shared/db';
-import { DEFAULT_AGENT_SENTINEL } from '../agents';
+import { DEFAULT_AGENT_SENTINEL, grantFromLoadedAgents, isLaunchableAgentName, loadProjectAgents, type LoadedAgents } from '../agents';
 import { type MirrorRefresh, existingProjectMirrorPath, runGitCapture } from '../git/mirror';
 import {
   agentGrantDiffers,
   isAgentLaunchableForProject,
   resolveSessionAgentGrant,
+  withGrantProvenance,
 } from './secret-grant';
 
 /** The re-mint could not be written. The caller must FAIL the prompt: letting it
@@ -265,7 +266,20 @@ export async function agentLaunchableInProject(
   agentName: string,
 ): Promise<boolean> {
   try {
-    const project = await loadGitProjectRow(projectId);
+    return await launchableInProjectRow(await loadGitProjectRow(projectId), projectId, agentName);
+  } catch {
+    return false;
+  }
+}
+
+/** `agentLaunchableInProject` against a project row the caller already read —
+ *  the reconcile loads the row once for this gate and the grant resolution. */
+async function launchableInProjectRow(
+  project: Awaited<ReturnType<typeof loadGitProjectRow>>,
+  projectId: string,
+  agentName: string,
+): Promise<boolean> {
+  try {
     return await isAgentLaunchableForProject({
       projectId,
       repoUrl: project?.repoUrl ?? '',
@@ -469,13 +483,59 @@ export async function remintGrantForAgentSwitch(
 export async function reconcileStoredSessionAgentGrant(input: {
   projectId: string;
   sessionId: string;
+  /** The grant the caller read off the token row this request. When given, the
+   *  reconcile skips its own by-session read: a re-mint rewrites every ACTIVE
+   *  token of the session in one statement, so the row the auth middleware just
+   *  validated already carries the session's stored grant. Every /call saves
+   *  one `account_tokens` round trip. */
+  storedGrant?: AgentGrant | null;
 }): Promise<AgentGrant | null> {
-  const stored = await loadStoredSessionGrant(input.sessionId);
+  const stored =
+    input.storedGrant !== undefined ? input.storedGrant : await loadStoredSessionGrant(input.sessionId);
+
+  // The git project row feeds both the launch check and the grant resolution;
+  // read it once. A failed read is the manifest-unreadable path's twin: keep
+  // the last-known-good grant when there is one, fail closed otherwise — the
+  // shared keep-stored block below serves both.
+  let project: Awaited<ReturnType<typeof loadGitProjectRow>> | null = null;
+  let rowError: unknown = null;
+  try {
+    project = await loadGitProjectRow(input.projectId);
+  } catch (err) {
+    rowError = err;
+  }
 
   let runningAgent = stored?.agent?.trim() ?? '';
+  // ONE manifest read answers every gate this request needs: whether the stored
+  // agent is still declared (INC-2026-09-15) and what grant the agent holds.
+  // The launch check and the grant resolution used to load the manifest agents
+  // twice per call — two more round trips to the same rows.
+  let loaded: LoadedAgents | null = null;
+  let manifestError: unknown = null;
+  if (!rowError && project?.defaultBranch) {
+    try {
+      loaded = await loadProjectAgents(
+        {
+          projectId: input.projectId,
+          repoUrl: project.repoUrl ?? '',
+          defaultBranch: project.defaultBranch,
+          manifestPath: project.manifestPath,
+          gitAuthToken: null,
+        },
+        // Runs on EVERY connector call: the tip proof bounds the remote reads
+        // to one per refresh interval, and a manifest commit handled by another
+        // replica drops it (see `MirrorRefresh`).
+        { rethrowReadErrors: true, forceRefresh: 'tip-proof' },
+      );
+    } catch (err) {
+      manifestError = err;
+    }
+  }
   // Self-heal INC-2026-09-15: a stored agent the project does not declare is not
   // an identity to keep serving. Fall back to the session's own agent below.
-  if (runningAgent && !(await agentLaunchableInProject(input.projectId, runningAgent))) {
+  // Only a READ manifest can prove non-declaration; an unreadable one goes to
+  // the keep-stored path below untouched.
+  if (runningAgent && loaded && !isLaunchableAgentName(runningAgent, loaded)) {
     console.error('[session-token-grant] stored session grant names an undeclared agent; healing to the session agent', {
       sessionId: input.sessionId,
       projectId: input.projectId,
@@ -483,7 +543,7 @@ export async function reconcileStoredSessionAgentGrant(input: {
     });
     runningAgent = '';
   }
-  if (!runningAgent) {
+  if (!runningAgent && !rowError) {
     try {
       const [session] = await db
         .select({ agentName: projectSessions.agentName })
@@ -502,28 +562,36 @@ export async function reconcileStoredSessionAgentGrant(input: {
   }
 
   // This path refreshes connector and CLI authorization only. Secret delivery
-  // already ran at prompt time, so resolve this agent against itself.
+  // already ran at prompt time, so resolve this agent against itself — from the
+  // manifest agents already loaded above, exactly as `resolveSessionAgentGrant`
+  // would (same `loadGrantForRunningAgent` derivation, minus the duplicate
+  // manifest read).
   let running: AgentGrant | null;
-  try {
-    running = await resolveCurrentGrant({
-      ...input,
-      sessionAgent: runningAgent,
-      runningAgent,
-      // Runs on EVERY connector call: the tip proof bounds the remote reads
-      // to one per refresh interval, and a manifest commit handled by another
-      // replica drops it (see `MirrorRefresh`).
-      forceRefresh: 'tip-proof',
-    });
-  } catch (err) {
-    if (!stored) throw err;
+  if (rowError || manifestError) {
+    // The manifest cannot be read (mirror fetch failed, git proxy hop timed
+    // out, or the project row itself did). A token with a stored grant keeps
+    // it; one without fails closed.
+    const unreadableError = rowError ?? manifestError;
+    if (!stored) throw new SessionGrantRemintError(input.sessionId, unreadableError);
     console.error('[session-token-grant] manifest unreadable; serving the last-known-good session grant', {
       sessionId: input.sessionId,
       projectId: input.projectId,
       reason: 'manifest_unreadable' satisfies RemintKeepReason,
-      error: err instanceof Error ? err.message : String(err),
+      error: unreadableError instanceof Error ? unreadableError.message : String(unreadableError),
       stored: describeGrant(stored),
     });
     return stored;
+  }
+  if (!project?.defaultBranch) {
+    // No git context: no per-agent governance, the unrestricted grant.
+    running = null;
+  } else if (loaded) {
+    running = withGrantProvenance(grantFromLoadedAgents(runningAgent, loaded), loaded);
+  } else {
+    // Unreachable with `rethrowReadErrors: true` (a failed read throws, and a
+    // successful one returns agents); if it ever happens, serve the stored
+    // grant rather than derive from nothing.
+    running = stored;
   }
   let decision: RemintDecision;
   try {

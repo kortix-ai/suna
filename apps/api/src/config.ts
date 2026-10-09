@@ -171,6 +171,14 @@ const envSchema = z.object({
   // (the pre-2026-09-23 behavior).
   SUPABASE_JWT_LIVENESS_TTL_MS: optInt(0),
 
+  // ── IAM read cache window (optional, non-secret) ────────────────────────
+  // How long one replica may serve cached IAM answers — role assignments, the
+  // session token binding, connector/share policy reads on the connector-call
+  // path — before re-reading them. A role or policy edit applies at most this
+  // late on a replica that has the pre-edit answer cached. 0 disables the
+  // memos (every read hits the database).
+  IAM_CACHE_TTL_MS: optInt(15_000),
+
   // ── Prompt attachment uploads (optional, non-secret) ────────────────────
   // `direct` (default): the client PUTs each file once to a signed Storage URL.
   // `chunked`: the client PUTs bounded chunks through the API. Only for a
@@ -1201,6 +1209,7 @@ export const config = {
   KORTIX_PUBLIC_AUTH_PROVIDERS: env.KORTIX_PUBLIC_AUTH_PROVIDERS,
   SUPABASE_JWT_SECRET: env.SUPABASE_JWT_SECRET,
   SUPABASE_JWT_LIVENESS_TTL_MS: env.SUPABASE_JWT_LIVENESS_TTL_MS,
+  IAM_CACHE_TTL_MS: env.IAM_CACHE_TTL_MS,
   PROMPT_ATTACHMENT_UPLOAD_MODE: env.PROMPT_ATTACHMENT_UPLOAD_MODE,
   PROMPT_ATTACHMENT_CHUNK_BYTES: env.PROMPT_ATTACHMENT_CHUNK_BYTES,
 

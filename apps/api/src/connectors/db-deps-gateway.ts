@@ -40,6 +40,7 @@ import type { ConnectorPrincipal } from './router-contract';
 import { COMPUTER_SLUG, withComputerCatalog } from './computers';
 import { ensureProjectComputer } from './sync';
 import type { ActionBinding, Risk } from './types';
+import { ttlMemo } from '../shared/ttl-memo';
 import {
   type ConnectorRow,
   authOf,
@@ -60,6 +61,32 @@ import {
  *  round-trip, short enough that a stale yes can't silently authorize a much
  *  later call. */
 const APPROVAL_CARRYOVER_WINDOW_MS = 15 * 60 * 1000;
+
+/**
+ * The call path reads connector/project policies and the project's default
+ * mode on EVERY /call. Memoize at the IAM read model's usual staleness window
+ * (`iam/authorize.ts`, `iam/actor.ts` run the same TTL on this same request
+ * path), so a warm request spends no statements on them. Policy EDITS apply
+ * within the window. Admin routes keep the unmemoized loaders in
+ * `db-deps-rows.ts`: a policy edit must re-read at once.
+ */
+const GATEWAY_POLICY_TTL_MS = config.IAM_CACHE_TTL_MS;
+
+const gatewayLoadPolicies = ttlMemo({
+  ttlMs: GATEWAY_POLICY_TTL_MS,
+  keyFn: (connectorId: string) => connectorId,
+  loader: loadConnectorPoliciesFor,
+});
+const gatewayLoadProjectPolicies = ttlMemo({
+  ttlMs: GATEWAY_POLICY_TTL_MS,
+  keyFn: (projectId: string) => projectId,
+  loader: loadProjectPoliciesFor,
+});
+const gatewayLoadDefaultMode = ttlMemo({
+  ttlMs: GATEWAY_POLICY_TTL_MS,
+  keyFn: (projectId: string) => projectId,
+  loader: loadDefaultModeFor,
+});
 
 /**
  * Claim a recent approval for one exact request digest. The guarded UPDATE on
@@ -332,7 +359,10 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
       }
       return 'connector_not_connected';
     },
-    loadAction: async (connectorId, relPath) => {
+    loadAction: async (connectorId, relPath, providerType) => {
+      // The call path already holds the connector row (it loaded it to
+      // authorize the call) and passes its provider; only callers without it
+      // pay the duplicate `connectors` read.
       const [[stored], [owner]] = await Promise.all([
         db
           .select()
@@ -341,11 +371,13 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
             and(eq(connectorActions.connectorId, connectorId), eq(connectorActions.path, relPath)),
           )
           .limit(1),
-        db
-          .select({ providerType: connectors.providerType })
-          .from(connectors)
-          .where(eq(connectors.connectorId, connectorId))
-          .limit(1),
+        providerType !== undefined
+          ? Promise.resolve([{ providerType }])
+          : db
+              .select({ providerType: connectors.providerType })
+              .from(connectors)
+              .where(eq(connectors.connectorId, connectorId))
+              .limit(1),
       ]);
       const a =
         owner?.providerType === 'computer'
@@ -439,9 +471,9 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
     },
     resolveEmailCredentialForInbox: async (projectId, inboxId) =>
       resolveAgentMailApiKey(await loadAgentMailApiKeyForInbox(projectId, inboxId)),
-    loadPolicies: loadConnectorPoliciesFor,
-    loadProjectPolicies: loadProjectPoliciesFor,
-    loadDefaultMode: loadDefaultModeFor,
+    loadPolicies: gatewayLoadPolicies,
+    loadProjectPolicies: gatewayLoadProjectPolicies,
+    loadDefaultMode: gatewayLoadDefaultMode,
     mintApprovalLink: ({ projectId, executionId, sessionId }) =>
       approvalPageUrl(projectId, executionId, sessionId, config.FRONTEND_URL),
     // Lazy: channels import connectors, so a static import here would cycle.
