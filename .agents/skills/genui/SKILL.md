@@ -30,3 +30,9 @@ Phase 0 (provisional, local stand-in models): GO (2026-10-09, prompt 00a9030e). 
 5. No raw model output reaches Slack, push, email, or the CLI. Run `toMarkdown`.
 6. Query, Mutation, Form, Input, and Button are Phase 4 only, with the guards in
    `references/spec.md` §9.
+7. A Map draws tiles only from a style we configure: web
+   `NEXT_PUBLIC_GENUI_MAP_STYLE_URL` (optional `NEXT_PUBLIC_GENUI_MAP_STYLE_URL_DARK`),
+   mobile `EXPO_PUBLIC_GENUI_MAP_STYLE_URL`. Unset, it renders the place list with
+   OpenStreetMap links. Never mapcn's CARTO default (commercial license). Web
+   loads MapLibre only with a style set, and serves its worker from `/maplibre/`
+   (copied out of node_modules by `apps/web/scripts/viewer-wasm.mjs`).

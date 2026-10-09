@@ -20098,6 +20098,9 @@
     "showData": "Afficher les données",
     "source": "Source : {source}",
     "label": "Libellé",
-    "value": "Valeur"
+    "value": "Valeur",
+    "map": "Carte",
+    "zoomIn": "Augmenter le zoom",
+    "zoomOut": "Réduire le zoom"
   }
 }

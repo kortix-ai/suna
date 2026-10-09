@@ -20098,6 +20098,9 @@
     "showData": "Mostrar datos",
     "source": "Fuente: {source}",
     "label": "Etiqueta",
-    "value": "Valor"
+    "value": "Valor",
+    "map": "Mapa",
+    "zoomIn": "Acercar",
+    "zoomOut": "Alejar"
   }
 }

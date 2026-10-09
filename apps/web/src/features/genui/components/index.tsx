@@ -18,6 +18,16 @@ function GenuiChart(props: GenuiComponentProps) {
   );
 }
 
+// MapLibre loads only when a tile style is configured (see map.tsx). The fallback is the pending block.
+const LazyMap = lazy(() => import('./map'));
+function GenuiMap(props: GenuiComponentProps) {
+  return (
+    <Suspense fallback={GenuiPending(props.node)}>
+      <LazyMap {...props} />
+    </Suspense>
+  );
+}
+
 export const webGenuiComponents: GenuiComponentMap = {
   Stack: GenuiStack,
   Card: GenuiCard,
@@ -31,6 +41,7 @@ export const webGenuiComponents: GenuiComponentMap = {
   BarChart: GenuiChart,
   LineChart: GenuiChart,
   PieChart: GenuiChart,
+  Map: GenuiMap,
   Badge: GenuiBadge,
   Callout: GenuiCallout,
   Image: GenuiImage,
