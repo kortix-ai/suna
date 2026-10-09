@@ -852,11 +852,27 @@ flow(
 // Apps answer under `*.apps.localhost`; a deployed preview has no DNS for its
 // Apps domain and runs the API in direct-edge mode, where `x-kortix-app-host`
 // is ignored. `requires: ['appHost']` states that instead of hiding it.
+//
+// Staging has no working public Apps host (probed 2026-10-09):
+// `staging-<slug>-<key>.apps.kortix.com` answers Cloudflare 530 "Tunnel error |
+// staging-api.kortix.com", while the same probe on dev and prod answers 404
+// `{"error":"App not found"}` from the API. The apps-router Worker fetches
+// STAGING_API_ORIGIN (infra/cloudflare/workers/apps-router/wrangler.toml).
+// staging-api is a Worker ROUTE over a dead cfargotunnel record, so the
+// same-zone subrequest skips staging-api-kortix-router and hits the tunnel.
+// Un-quarantine in the PR that points STAGING_API_ORIGIN at a live origin
+// and sets KE2E_CAP_APP_HOST=1 in tests-release.yml. The local lane still runs it.
 flow(
   'AGP-13',
   {
     domain: 'agent-principals',
     requires: ['database', 'appHost'],
+    ...(process.env.KE2E_TARGET === 'staging'
+      ? {
+          quarantine:
+            'staging Apps edge: *.apps.kortix.com staging hosts return Cloudflare 530 (apps-router STAGING_API_ORIGIN=staging-api.kortix.com resolves to a dead tunnel), so the gate cannot set KE2E_CAP_APP_HOST — quarantined 2026-10-09 until the apps-router staging origin is fixed',
+        }
+      : {}),
     timeoutMs: 180_000,
     routes: [
       'POST /v1/projects/:projectId/apps',

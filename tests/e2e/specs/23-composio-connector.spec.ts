@@ -325,17 +325,14 @@ test.describe("23 — Composio managed connector", () => {
           .endsWith(`/v1/connectors/projects/${project.id}/connectors`) &&
         response.request().method() === "POST",
     );
+    // The header authorizes the project account through the connection-scoped
+    // route (`usePipedreamConnectProject`: reconcile, then
+    // POST /projects/:id/connections/:cid/connect) and falls back to the
+    // connector-scoped route on a shared-default 409. Accept either.
     const isConnectPost = (url: string, method: string) =>
       method === "POST" &&
-      new RegExp(`/v1/connectors/projects/${project.id}/connectors/[^/]+/connect$`).test(url);
-    // Settled to null on timeout: an account that is already connected sends
-    // no connect POST (release gate 37557504543 on staging).
-    const connectRequestPromise = page
-      .waitForRequest((request) => isConnectPost(request.url(), request.method()))
-      .catch(() => null);
-    const connectResponsePromise = page
-      .waitForResponse((response) => isConnectPost(response.url(), response.request().method()))
-      .catch(() => null);
+      (new RegExp(`/v1/connectors/projects/${project.id}/connectors/[^/]+/connect$`).test(url) ||
+        new RegExp(`/v1/projects/${project.id}/connections/[^/]+/connect$`).test(url));
     await addDialog
       .getByRole("button", { name: "Add connector", exact: true })
       .click();
@@ -374,35 +371,33 @@ test.describe("23 — Composio managed connector", () => {
     await expect(page).toHaveURL(new RegExp(`[?&]c=${connectorSlug}(?:&|$)`));
     const detail = page.getByRole("dialog", { name: "Composio Search" });
     await expect(detail).toBeVisible();
-    // A no-auth toolkit has nothing to authorize. The header offers Connect, or
-    // the account is already connected (Reconnect) by the time the dialog
-    // opens (release gates 37548429782 and 37557504543 on staging), and then
-    // no connect POST is sent. Either way the API read-back below proves the
-    // active no-auth account (`is_no_auth`, a `trs_` session).
+    // Creating the connector creates the project account but never authorizes
+    // it: nothing writes Composio metadata until a connect POST runs. The
+    // header reads "Reconnect" for that unauthorized sole account on staging
+    // (release gate 37933459772: no connect POST was sent, and the account
+    // carried only `connector_slug`/`default_slot`/`migrated_from_legacy`),
+    // so a journey that skips the click proves nothing. Click whichever header
+    // action is offered and require the authorization POST it sends.
     const connectButton = detail.getByRole("button", { name: "Connect", exact: true });
     const reconnectButton = detail.getByRole("button", { name: "Reconnect", exact: true });
     await expect(connectButton.or(reconnectButton)).toBeVisible();
-    const clickedConnect = await connectButton.isVisible();
-    if (clickedConnect) await connectButton.click();
-    const connectRequest = await connectRequestPromise;
-    if (clickedConnect) expect(connectRequest, "Connect sends one connect POST").not.toBeNull();
-    if (connectRequest) {
-      expect(connectRequest.url()).toMatch(new RegExp(`/connectors/${connectorSlug}/connect$`));
-      expect(connectRequest.postDataJSON() ?? {}).toEqual({});
-      const connectResponse = await connectResponsePromise;
-      expect(connectResponse?.status()).toBe(200);
-      const connectBody = (await connectResponse!.json()) as Record<string, unknown>;
-      expect(connectBody).toEqual(
-        expect.objectContaining({
-          provider: "composio",
-          app: "composio_search",
-          connected: true,
-          isNoAuth: true,
-        }),
-      );
-      expect(connectBody.sessionId).toEqual(expect.stringMatching(/^trs_/));
-      expect(connectBody.connectionId).toEqual(expect.any(String));
-    }
+    const connectRequestPromise = page.waitForRequest((request) =>
+      isConnectPost(request.url(), request.method()),
+    );
+    const connectResponsePromise = page.waitForResponse((response) =>
+      isConnectPost(response.url(), response.request().method()),
+    );
+    await ((await connectButton.isVisible()) ? connectButton : reconnectButton).click();
+    await connectRequestPromise;
+    const connectResponse = await connectResponsePromise;
+    expect(connectResponse.status()).toBe(200);
+    expect(await connectResponse.json()).toEqual(
+      expect.objectContaining({
+        app: "composio_search",
+        connected: true,
+        isNoAuth: true,
+      }),
+    );
 
     await expect(
       detail.getByRole("button", { name: "Reconnect", exact: true }),

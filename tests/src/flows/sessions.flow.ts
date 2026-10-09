@@ -1372,19 +1372,30 @@ flow(
     // must drop the marker (listing the row) and stamp last_activity_at (so
     // the just-started session sorts as the newest, not at its create time).
     await ctx.step('adopting via POST /start drops the marker and stamps activity', async () => {
-      const start = await owner.post(
-        '/v1/projects/:projectId/sessions/:sessionId/start',
-        {},
-        { params: { projectId: p.id, sessionId: replacementId } },
-      );
-      start.status(200);
-
-      const visible = await owner.get('/v1/projects/:projectId/sessions', {
-        params: { projectId: p.id },
-        query: { scope: 'visible' },
-      });
-      visible.status(200);
-      const row = sessionRows(visible).find((s: any) => s.session_id === replacementId);
+      // Adoption needs a placed box, like the claim above. Until the Platinum
+      // sandbox row has its region, /start answers 200 `stage: provisioning`
+      // with `sandbox: null` and keeps the marker (session-runtime.ts, the
+      // warmSessionPlacement 'pending' branch). The browser re-polls /start;
+      // so does this step, until the listed row has lost the marker.
+      const startAndRead = async () => {
+        const start = await owner.post(
+          '/v1/projects/:projectId/sessions/:sessionId/start',
+          {},
+          { params: { projectId: p.id, sessionId: replacementId } },
+        );
+        start.status(200);
+        const visible = await owner.get('/v1/projects/:projectId/sessions', {
+          params: { projectId: p.id },
+          query: { scope: 'visible' },
+        });
+        visible.status(200);
+        return sessionRows(visible).find((s: any) => s.session_id === replacementId);
+      };
+      let row = await startAndRead();
+      for (let attempt = 0; row && (row.metadata ?? {}).warm !== undefined && attempt < 60; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 2_000));
+        row = await startAndRead();
+      }
       if (!row) {
         throw new Error('An adopted warm session is still hidden from the visible session list');
       }

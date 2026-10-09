@@ -620,10 +620,22 @@ flow(
       );
       created!.status(200);
       conversationId = String(created!.json<{ id: string }>().id);
-      const runtime = await booted.runtimeBlock();
-      if (!runtime.running) throw new Error('the health report carries no `runtime.running` block');
-      before = runtime.running;
-      await assertBoxIsCurrent(ctx, before);
+      // A new box reports its snapshot's CLI until the first convergence pass
+      // (~20 s after start) swaps it; the API allows 300 s for that
+      // (FIRST_CONVERGENCE_GRACE_S). Release gate 37933459772 read at 19 s.
+      const deadline = Date.now() + 300_000;
+      for (;;) {
+        const runtime = await booted.runtimeBlock();
+        if (!runtime.running) throw new Error('the health report carries no `runtime.running` block');
+        before = runtime.running;
+        try {
+          await assertBoxIsCurrent(ctx, before);
+          break;
+        } catch (err) {
+          if (Date.now() > deadline) throw err;
+          await new Promise((resolve) => setTimeout(resolve, 5_000));
+        }
+      }
     });
 
     await ctx.step('the lane costs the send nothing: a second prompt is no slower', async () => {
