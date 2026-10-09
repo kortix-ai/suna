@@ -1062,7 +1062,7 @@ flow(
         (await ctx.client.as(ctx.P.ANON).get(watchRoute, { params: watchParams })).status(401);
       });
 
-      await ctx.step("the OWNER's prompt in A's project-visible session → 2xx, and the OWNER follows nothing: no watcher row", async () => {
+      await ctx.step("the OWNER's prompt in A's project-visible session → 2xx and no watcher row; the same prompt with the flag on → one row; the override is cleared again", async () => {
         promptSessionId = await createDatabaseSession(ctx.env, {
           projectId: project.id,
           accountId: team.id,
@@ -1073,6 +1073,12 @@ flow(
         await promptAsOwner();
         await settle();
         expectCount(await watcherRows(promptSessionId), 0, 'watcher rows after a non-creator prompt');
+        // Positive control, before a later step drains the account's credit (a prompt then answers 402).
+        await setNotificationCenter(ctx, project.id, true);
+        await promptAsOwner();
+        await settle();
+        expectCount(await watcherRows(promptSessionId), 1, 'watcher rows after a non-creator prompt with the flag on');
+        await setNotificationCenter(ctx, project.id, null);
       });
 
       await ctx.step("B's turn in A's session ends → closed; neither A nor B gets a row", async () => {
@@ -1154,13 +1160,9 @@ flow(
         }
       });
 
-      await ctx.step("OWNER turns the flag on: watch → 200, the OWNER's prompt makes them a follower, the stored row lists and counts, and a new question reaches B", async () => {
+      await ctx.step("OWNER turns the flag on: watch → 200, the stored row lists and counts, and a new question reaches B", async () => {
         await setNotificationCenter(ctx, project.id, true);
         (await creatorWatch()).status(200).body().has('$.watching', true);
-        // The positive control for the prompt step: the same prompt now makes the OWNER a follower.
-        await promptAsOwner();
-        await settle();
-        expectCount(await watcherRows(promptSessionId), 1, 'watcher rows after a non-creator prompt with the flag on');
         const page = await readInbox(ctx, b);
         if (!listsStored(page)) throw new Error('the stored row is not listed with the flag on');
         expectCount(page.unread_count, 1, "B's unread_count with the flag on");
