@@ -59,7 +59,7 @@ import {
 import { APP_KINDS, type AppHostingType } from './kinds';
 import { authorizedProject, capabilityRefusal, visibleApp } from './route-access';
 import { AppObject, appJson, appsJson } from './serialize';
-import { UnknownLinkedAppError, setAppLinks } from './links';
+import { UnknownLinkedAppError, resolveAppLinks, writeAppLinks } from './links';
 import { registerAppCapabilityRoutes } from './capability-routes';
 import {
   BACKEND_MACHINE_LIMITS,
@@ -110,7 +110,7 @@ const APP_ENV_NAME = /^(?!KORTIX_|OPENCODE_)[A-Za-z_][A-Za-z0-9_]{0,127}$/;
 const APP_SECRET_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
 /**
  * The Apps (by slug, in this App's project) this App uses: it may mint their
- * sign-in tokens. Each must exist. Empty, the default: none.
+ * sign-in tokens. Each must exist and be visible to the caller. Empty, the default: none.
  */
 const UsesSchema = z
   .array(z.string().regex(APP_SLUG, 'an App slug: lowercase letters, numbers and single hyphens'))
@@ -299,16 +299,31 @@ function convexRefusal(c: Context<AppEnv>, error: unknown): Response | null {
   return c.json({ error: known.message, code: known.code }, known.status);
 }
 
-/** Sets the Apps this App uses; the 400 to answer when a slug names no live App of the project. */
-async function linkOrRefuse(c: Context<AppEnv>, app: typeof apps.$inferSelect, uses: string[] | undefined): Promise<Response | null> {
-  if (uses === undefined) return null;
+/**
+ * The Apps `uses` names, resolved among the live Apps of the project that
+ * `userId` can see; the 400 `app_not_found` to answer for any other slug
+ * (a missing App and one the caller cannot see answer alike). Writes nothing.
+ */
+async function resolveLinksOrRefuse(
+  c: Context<AppEnv>,
+  app: typeof apps.$inferSelect,
+  uses: string[],
+  userId: string,
+): Promise<Array<{ appId: string }> | Response> {
   try {
-    await setAppLinks(app, uses);
-    return null;
+    return await resolveAppLinks(app, uses, userId);
   } catch (error) {
     if (!(error instanceof UnknownLinkedAppError)) throw error;
     return c.json({ error: error.message, code: 'app_not_found', slugs: error.slugs }, 400);
   }
+}
+
+/** Sets the Apps a just-created App uses; the 400 to answer when a slug names no App the caller can see. */
+async function linkOrRefuse(c: Context<AppEnv>, app: typeof apps.$inferSelect, uses: string[], userId: string): Promise<Response | null> {
+  const found = await resolveLinksOrRefuse(c, app, uses, userId);
+  if (found instanceof Response) return found;
+  await db.transaction((tx) => writeAppLinks(tx, app.appId, found));
+  return null;
 }
 
 /**
@@ -362,7 +377,7 @@ async function createConvexApp(
     if (refusal) return refusal;
     throw error;
   }
-  const linked = body.uses.length ? await linkOrRefuse(c, created.app, body.uses) : null;
+  const linked = body.uses.length ? await linkOrRefuse(c, created.app, body.uses, loaded.userId) : null;
   if (linked) {
     // Nothing runs yet: the App and its machine row go (cascade).
     await db.delete(apps).where(eq(apps.appId, created.app.appId));
@@ -371,7 +386,7 @@ async function createConvexApp(
   void provisionBackend(created.row, resolveSessionSandboxRegion(loaded.row.metadata as Record<string, unknown>)).catch((error) =>
     logger.error('[apps] convex provision failed', { projectId, appId: created.app.appId, error: String(error) }),
   );
-  return c.json({ ...(await appJson(created.app)), warnings: [] }, 201);
+  return c.json({ ...(await appJson(created.app, loaded.userId)), warnings: [] }, 201);
 }
 
 /**
@@ -451,7 +466,7 @@ export function registerAppsRoutes(): void {
         .orderBy(desc(apps.createdAt));
       const visible = await filterAppsVisibleToUser(rows, loaded.userId);
       const openable = await appsOpenableByUser(visible, loaded.userId);
-      return c.json({ apps: await appsJson(visible, openable) });
+      return c.json({ apps: await appsJson(visible, loaded.userId, openable) });
     },
   );
 
@@ -669,13 +684,13 @@ export function registerAppsRoutes(): void {
           return c.json({ error: 'An App with this slug already exists' }, 409);
         throw error;
       }
-      const linked = body.uses.length ? await linkOrRefuse(c, row, body.uses) : null;
+      const linked = body.uses.length ? await linkOrRefuse(c, row, body.uses, loaded.userId) : null;
       if (linked) {
         await db.delete(apps).where(eq(apps.appId, row.appId));
         return linked;
       }
       const warning = alwaysOnBudgetWarning(row, config.getDefaultProvider());
-      return c.json({ ...(await appJson(row)), warnings: warning ? [warning] : [] }, 201);
+      return c.json({ ...(await appJson(row, loaded.userId)), warnings: warning ? [warning] : [] }, 201);
     },
   );
 
@@ -759,7 +774,7 @@ export function registerAppsRoutes(): void {
       const loaded = await authorizedProject(c, projectId);
       if (loaded instanceof Response) return loaded;
       const row = await visibleApp(projectId, appId, loaded.userId);
-      return row ? c.json(await appJson(row)) : c.json({ error: 'Not found' }, 404);
+      return row ? c.json(await appJson(row, loaded.userId)) : c.json({ error: 'Not found' }, 404);
     },
   );
 
@@ -767,7 +782,7 @@ export function registerAppsRoutes(): void {
     createRoute({
       method: 'patch', path: '/{projectId}/apps/{appId}', tags: ['apps'], summary: 'Update an App', ...auth,
       description:
-        '`uses` replaces the Apps (by slug) this App uses; each must be a live App of the project (400 `app_not_found`). ' +
+        '`uses` replaces the Apps (by slug) this App uses; each must be a live App of the project the caller can see (400 `app_not_found` otherwise, the same for a missing App and a hidden one). A refused PATCH changes nothing. ' +
         'A `convex` App resizes in the background: the answer carries `instance.operation: "resizing"` and the new ' +
         'size shows when it is applied (seconds of downtime, a `resize` snapshot first; disk only grows; 409 `app_busy` ' +
         'while another operation runs). It always runs: `always_on: false` answers 400.',
@@ -812,9 +827,11 @@ export function registerAppsRoutes(): void {
       };
       const sizeChanged = nextMachine.cpuCores !== current.cpuCores || nextMachine.memoryGb !== current.memoryGb
         || nextMachine.diskGb !== current.diskGb;
-      // Links first: an unknown slug answers 400 before anything changes.
-      const linked = await linkOrRefuse(c, current, body.uses);
-      if (linked) return linked;
+      // Every refusal comes before any write: the links resolve (400), the
+      // resize claims its operation (402/409), then one transaction writes the
+      // links and the row, so a refused PATCH changes nothing.
+      const links = body.uses === undefined ? undefined : await resolveLinksOrRefuse(c, current, body.uses, loaded.userId);
+      if (links instanceof Response) return links;
       if (convex && sizeChanged) {
         const resized = await startConvexResize(c, projectId, current, nextMachine);
         if (resized) return resized;
@@ -823,18 +840,21 @@ export function registerAppsRoutes(): void {
       const derivedBudget = body.monthly_budget_usd === undefined && !current.monthlyBudgetExplicit && machineChanged
         ? defaultAppBudgetUsd(nextMachine, convex ? 'platinum' : config.getDefaultProvider())
         : undefined;
-      const [row] = await db.update(apps).set({
-        ...(body.name !== undefined ? { name: body.name.trim() } : {}),
-        // A `convex` App's size is written when the resize applies (kinds/convex/operations.ts runResize).
-        ...(body.cpu !== undefined && !convex ? { cpuCores: body.cpu } : {}),
-        ...(body.memory_gb !== undefined && !convex ? { memoryGb: body.memory_gb } : {}),
-        ...(body.disk_gb !== undefined && !convex ? { diskGb: body.disk_gb } : {}),
-        ...(body.idle_timeout_seconds !== undefined ? { idleTimeoutSeconds: body.idle_timeout_seconds } : {}),
-        ...(body.always_on !== undefined ? { alwaysOn: body.always_on } : {}),
-        ...(body.monthly_budget_usd !== undefined ? { monthlyBudgetUsd: body.monthly_budget_usd.toFixed(2), monthlyBudgetExplicit: true } : {}),
-        ...(derivedBudget !== undefined ? { monthlyBudgetUsd: derivedBudget.toFixed(2) } : {}),
-        updatedAt: new Date(),
-      }).where(and(eq(apps.appId, appId), eq(apps.projectId, projectId), isNull(apps.deletedAt))).returning();
+      const [row] = await db.transaction(async (tx) => {
+        if (links) await writeAppLinks(tx, appId, links);
+        return tx.update(apps).set({
+          ...(body.name !== undefined ? { name: body.name.trim() } : {}),
+          // A `convex` App's size is written when the resize applies (kinds/convex/operations.ts runResize).
+          ...(body.cpu !== undefined && !convex ? { cpuCores: body.cpu } : {}),
+          ...(body.memory_gb !== undefined && !convex ? { memoryGb: body.memory_gb } : {}),
+          ...(body.disk_gb !== undefined && !convex ? { diskGb: body.disk_gb } : {}),
+          ...(body.idle_timeout_seconds !== undefined ? { idleTimeoutSeconds: body.idle_timeout_seconds } : {}),
+          ...(body.always_on !== undefined ? { alwaysOn: body.always_on } : {}),
+          ...(body.monthly_budget_usd !== undefined ? { monthlyBudgetUsd: body.monthly_budget_usd.toFixed(2), monthlyBudgetExplicit: true } : {}),
+          ...(derivedBudget !== undefined ? { monthlyBudgetUsd: derivedBudget.toFixed(2) } : {}),
+          updatedAt: new Date(),
+        }).where(and(eq(apps.appId, appId), eq(apps.projectId, projectId), isNull(apps.deletedAt))).returning();
+      });
       if (!row) return c.json({ error: 'Not found' }, 404);
       // Warn only when this change touched the run mode, the machine or the budget.
       const costChanged = [body.always_on, body.monthly_budget_usd, body.cpu, body.memory_gb, body.disk_gb]
@@ -846,7 +866,7 @@ export function registerAppsRoutes(): void {
       const warning = costChanged && !convex && active?.hostingType !== 'static'
         ? alwaysOnBudgetWarning(row, (active?.hostingProvider as SandboxProviderName | null) ?? config.getDefaultProvider())
         : null;
-      return c.json({ ...(await appJson(row)), warnings: warning ? [warning] : [] });
+      return c.json({ ...(await appJson(row, loaded.userId)), warnings: warning ? [warning] : [] });
     },
   );
 
@@ -1260,7 +1280,7 @@ export function registerAppsRoutes(): void {
             }, 503);
           }
         }
-        return c.json(await appJson(row!));
+        return c.json(await appJson(row!, loaded.userId));
       },
     );
   }
@@ -1338,7 +1358,7 @@ export function registerAppsRoutes(): void {
           await pauseComputeSession(previousRuntime.runtimeId, stoppedAt);
         }
       }
-      return c.json(await appJson(row!));
+      return c.json(await appJson(row!, loaded.userId));
     },
   );
 }

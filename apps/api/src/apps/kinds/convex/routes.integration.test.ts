@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { eq, sql } from 'drizzle-orm';
-import { accountMembers, accounts, appDeployments, appLinks, apps, projectMembers, projectSessions, projects, serviceAccounts, sessionSandboxes } from '@kortix/db';
+import { accountMembers, accounts, appDeployments, appLinks, apps, iamRoleActions, iamRoles, projectMembers, projectSessions, projects, roleAssignments, serviceAccounts, sessionSandboxes } from '@kortix/db';
 import { config } from '../../../config';
 import { db } from '../../../shared/db';
 import { app } from '../../../index';
@@ -491,5 +491,112 @@ describe('the project token issuer (no auth)', () => {
     expect((await get(`/${crypto.randomUUID()}/jwks.json`)).status).toBe(404);
     expect((await get(`/${crypto.randomUUID()}/.well-known/openid-configuration`)).status).toBe(404);
     expect((await get('/not-a-uuid/jwks.json')).status).toBe(400);
+  });
+});
+
+// Links never cross App visibility. EDITOR holds project.app.write through a
+// custom project role but is no project manager, so a teammate's private App is
+// invisible to them; VIEWER is a plain project member. Before the fix, a link
+// let both reach the private App: EDITOR could link it (and learn its slug from
+// the 200), VIEWER could mint a token for it on the using App's host, and both
+// read its slug in `uses`.
+describe('links never cross App visibility', () => {
+  const EDITOR = crypto.randomUUID();
+  const VIEWER = crypto.randomUUID();
+  const SECRET = crypto.randomUUID();
+  const HUB = crypto.randomUUID();
+  const MINE = crypto.randomUUID();
+  const BUSY = crypto.randomUUID();
+  const ROLE = crypto.randomUUID();
+  const tokenIds: string[] = [];
+  let editorSecret = '';
+
+  beforeAll(async () => {
+    await insertIntoView(db, accountMembers, { userId: EDITOR, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false });
+    await insertIntoView(db, accountMembers, { userId: VIEWER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false });
+    await insertIntoView(db, projectMembers, { accountId: ACCOUNT, projectId: PROJECT, userId: VIEWER, projectRole: 'member' });
+    await db.insert(iamRoles).values({ roleId: ROLE, accountId: ACCOUNT, key: `links_editor_${ROLE.slice(0, 8)}`, name: 'Links editor', scopeType: 'project' });
+    await db.insert(iamRoleActions).values(
+      ['project.read', 'project.write', 'project.app.read', 'project.app.write'].map((action) => ({ roleId: ROLE, action })),
+    );
+    await db.insert(roleAssignments).values({
+      accountId: ACCOUNT, principalType: 'user', principalId: EDITOR, roleId: ROLE, scopeType: 'project', scopeId: PROJECT,
+    });
+    const editorToken = await createAccountToken({ accountId: ACCOUNT, userId: EDITOR, name: 'links-editor' });
+    tokenIds.push(editorToken.tokenId);
+    editorSecret = editorToken.secretKey;
+    await db.insert(apps).values([
+      { appId: SECRET, accountId: ACCOUNT, projectId: PROJECT, slug: 'links-secret', name: 'links-secret', routeKey: 'linkstest0000001', accessMode: 'private', createdBy: MANAGER },
+      { appId: HUB, accountId: ACCOUNT, projectId: PROJECT, slug: 'links-hub', name: 'links-hub', routeKey: 'linkstest0000002', accessMode: 'project', createdBy: MANAGER },
+      { appId: MINE, accountId: ACCOUNT, projectId: PROJECT, slug: 'links-mine', name: 'links-mine', routeKey: 'linkstest0000003', accessMode: 'project', createdBy: EDITOR },
+    ]);
+    await db.insert(appLinks).values({ appId: HUB, usesAppId: SECRET });
+    // A convex App busy with a snapshot (a marker with no timestamp never goes stale).
+    await insertConvexRow({
+      appId: BUSY, projectId: PROJECT, accountId: ACCOUNT, slug: 'links-busy', status: 'running',
+      externalId: 'sbx-links-busy', url: 'https://links-busy.backends.example.test', metadata: { operation: 'snapshotting' },
+    });
+  });
+
+  afterAll(async () => {
+    for (const id of tokenIds) await db.execute(sql`delete from kortix.account_tokens where token_id = ${id}`);
+    await db.delete(roleAssignments).where(eq(roleAssignments.roleId, ROLE));
+    await db.delete(iamRoles).where(eq(iamRoles.roleId, ROLE));
+  });
+
+  const linksOf = async (appId: string) =>
+    (await db.select({ usesAppId: appLinks.usesAppId }).from(appLinks).where(eq(appLinks.appId, appId))).map((row) => row.usesAppId);
+
+  test("`uses` lists only the linked Apps the reader can see; the manager still sees the private one", async () => {
+    const list = await (await call('GET', '', undefined, editorSecret)).json();
+    expect(list.apps.map((a: { slug: string }) => a.slug)).not.toContain('links-secret');
+    expect(list.apps.find((a: { app_id: string }) => a.app_id === HUB).uses).toEqual([]);
+    expect((await (await call('GET', `/${HUB}`, undefined, editorSecret)).json()).uses).toEqual([]);
+    expect((await (await call('GET', `/${HUB}`)).json()).uses).toEqual(['links-secret']);
+  });
+
+  test('linking an App the caller cannot see answers 400 app_not_found, exactly like a missing slug, and writes nothing', async () => {
+    const hidden = await call('PATCH', `/${MINE}`, { uses: ['links-secret'] }, editorSecret);
+    const missing = await call('PATCH', `/${MINE}`, { uses: ['links-nope'] }, editorSecret);
+    expect(hidden.status).toBe(400);
+    expect(missing.status).toBe(400);
+    const [hiddenBody, missingBody] = [await hidden.json(), await missing.json()];
+    expect(hiddenBody).toMatchObject({ code: 'app_not_found', slugs: ['links-secret'] });
+    expect(Object.keys(hiddenBody).sort()).toEqual(Object.keys(missingBody).sort());
+    expect(await linksOf(MINE)).toEqual([]);
+    const visible = await call('PATCH', `/${MINE}`, { uses: ['links-hub'] }, editorSecret);
+    expect(visible.status).toBe(200);
+    expect((await visible.json()).uses).toEqual(['links-hub']);
+  });
+
+  test("/_kortix/token on the using App: 403 app_not_linked for a linked App the viewer cannot open; the manager gets it", async () => {
+    const ask = (userId: string, audience: string) => {
+      const cookie = createAppAccessToken({ appId: HUB, kind: 'kortix', userId, revision: 1, expiresAt: new Date(Date.now() + 60_000) });
+      const url = new URL(`https://links-hub.apps.example.test/_kortix/token?audience=${audience}`);
+      return appTokenResponse(new Request(url, { headers: { cookie: `${appAccessCookieName()}=${cookie}` } }), url, {
+        appId: HUB, accountId: ACCOUNT, projectId: PROJECT, name: 'links-hub', slug: 'links-hub', accessMode: 'project',
+        accessPasswordHash: null, accessRevision: 1, createdBy: MANAGER, updatedAt: new Date(), viewerTokenScope: 'identity',
+      });
+    };
+    for (const audience of ['links-secret', SECRET]) {
+      const denied = await ask(VIEWER, audience);
+      expect(denied.status).toBe(403);
+      const body = await denied.json();
+      expect(body.error).toBe('app_not_linked');
+      expect(body.token).toBeUndefined();
+    }
+    expect((await ask(VIEWER, 'links-hub')).status).toBe(200);
+    const granted = await ask(MANAGER, 'links-secret');
+    expect(granted.status).toBe(200);
+    expect((await granted.json()).audience).toBe(SECRET);
+  });
+
+  test('a refused convex resize changes nothing: not the links, not the name', async () => {
+    const res = await call('PATCH', `/${BUSY}`, { uses: ['links-hub'], cpu: 2, name: 'renamed' });
+    expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe('app_busy');
+    expect(await linksOf(BUSY)).toEqual([]);
+    const [row] = await db.select({ name: apps.name }).from(apps).where(eq(apps.appId, BUSY));
+    expect(row!.name).toBe('links-busy');
   });
 });

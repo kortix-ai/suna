@@ -227,7 +227,7 @@ export function registerAppCapabilityRoutes(): void {
       } catch (error) {
         return operationError(c, error);
       }
-      return c.json(await appJson(found.app), 200);
+      return c.json(await appJson(found.app, found.loaded.userId), 200);
     },
   );
 
@@ -288,7 +288,7 @@ export function registerAppCapabilityRoutes(): void {
       } catch (error) {
         return operationError(c, error);
       }
-      return c.json(await appJson(found.app), 200);
+      return c.json(await appJson(found.app, found.loaded.userId), 200);
     },
   );
 

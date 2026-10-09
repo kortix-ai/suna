@@ -93,12 +93,17 @@ function serializeApp(
 
 export type AppJson = ReturnType<typeof serializeApp>;
 
-/** Many Apps as JSON in four queries (plus one per project with a convex App, cached per replica). `openable`: the App ids the caller may open; absent = all. */
-export async function appsJson(rows: AppRow[], openable?: Set<string>): Promise<AppJson[]> {
+/**
+ * Many Apps of one project as JSON, for `viewerId`, in four queries (plus one
+ * per project with a convex App, cached per replica). `uses` / `used_by` list
+ * only the linked Apps the viewer can see. `openable`: the App ids the viewer
+ * may open; absent = all.
+ */
+export async function appsJson(rows: AppRow[], viewerId: string, openable?: Set<string>): Promise<AppJson[]> {
   const convexProjects = [...new Set(rows.filter((row) => row.kind === 'convex').map((row) => row.projectId))];
   const [hosting, links, convex, signers] = await Promise.all([
     activeHostingTypes(rows),
-    appLinkSlugs(rows.map((row) => row.appId)),
+    appLinkSlugs(rows.map((row) => row.appId), viewerId),
     convexRowsByAppId(rows.filter((row) => row.kind === 'convex').map((row) => row.appId)),
     // A convex App's instance shows the KORTIX_AUTH_* its environment holds. Read only: never creates a key.
     Promise.all(convexProjects.map(async (id) => [id, await existingProjectSigner(id)] as const)).then((pairs) => new Map(pairs)),
@@ -115,7 +120,7 @@ export async function appsJson(rows: AppRow[], openable?: Set<string>): Promise<
   );
 }
 
-/** One App as JSON. */
-export async function appJson(row: AppRow): Promise<AppJson> {
-  return (await appsJson([row]))[0]!;
+/** One App as JSON, for `viewerId`. */
+export async function appJson(row: AppRow, viewerId: string): Promise<AppJson> {
+  return (await appsJson([row], viewerId))[0]!;
 }

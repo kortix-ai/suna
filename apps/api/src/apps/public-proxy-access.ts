@@ -425,9 +425,11 @@ export function appNotLinkedResponse(name: string): Response {
  * viewer, from the project issuer, for `audience`: this App itself (the
  * default) or an App it uses (`app_links`). Any other audience answers 403
  * `app_not_linked`: code in an App gets no token for an App it has nothing to
- * do with. The App's client sends it (a Convex client: `client.setAuth`), and
- * the audience App verifies it with its `auth` values. Same viewer rules as
- * `/_kortix/viewer`.
+ * do with. A used App also answers 403 `app_not_linked` when the viewer may
+ * not open it themselves (its own access policy, as for this App), so a link
+ * never lends a viewer an App they could not reach directly. The App's client
+ * sends it (a Convex client: `client.setAuth`), and the audience App verifies
+ * it with its `auth` values. Same viewer rules as `/_kortix/viewer`.
  */
 export async function appTokenResponse(
   request: Request,
@@ -443,15 +445,15 @@ export async function appTokenResponse(
     );
   }
   const audience = url.searchParams.get('audience')?.trim() || app.appId;
-  let audienceAppId = app.appId;
+  let linked: Awaited<ReturnType<typeof import('./links').linkedApp>> | null = null;
   if (audience !== app.appId && audience.toLowerCase() !== app.appId && audience !== app.slug) {
     // Loaded on use: the App gate's hot path (and every hand-written module
     // mock of it) does not need the links graph.
     const { linkedApp } = await import('./links');
-    const linked = await linkedApp(app.appId, app.projectId, audience);
+    linked = await linkedApp(app.appId, app.projectId, audience);
     if (!linked) return appNotLinkedResponse(audience);
-    audienceAppId = linked.appId;
   }
+  const audienceAppId = linked?.appId ?? app.appId;
   const viewer = await resolveEndpointViewer(request, url, app);
   if (viewer instanceof Response) return viewer;
   if (viewer.agentViewer) {
@@ -470,6 +472,8 @@ export async function appTokenResponse(
       { status: 401, headers: noStore },
     );
   }
+  // The same answer as an unlinked audience: no oracle for an App the viewer cannot reach.
+  if (linked && !(await appAccessibleToUser(linked, viewer.userId))) return appNotLinkedResponse(audience);
   const { mintAppToken } = await import('./tokens');
   const identity = await resolveAppViewerIdentity(viewer.userId, app.accountId);
   const minted = await mintAppToken(
