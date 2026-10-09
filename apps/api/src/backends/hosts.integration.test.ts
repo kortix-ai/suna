@@ -24,6 +24,7 @@ const seen: Array<{ port: string; method: string; path: string; token: string | 
 // machine port Platinum's edge would route to. No token, no answer.
 const convex = Bun.serve({
   port: 0,
+  hostname: '127.0.0.1', // the sandbox's localhost name refuses connections; the address always works
   async fetch(req) {
     const url = new URL(req.url);
     const [, port, ...rest] = url.pathname.split('/');
@@ -46,6 +47,7 @@ const convex = Bun.serve({
 const exposed: string[] = [];
 const platinum = Bun.serve({
   port: 0,
+  hostname: '127.0.0.1',
   async fetch(req) {
     const [, , , id, sub] = new URL(req.url).pathname.split('/');
     if (sub === 'expose') {
