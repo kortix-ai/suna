@@ -145,4 +145,15 @@ describe('useFeatureFlag', () => {
 
     expect(useFeatureFlag(null, 'teams').enabled).toBe(true);
   });
+
+  test('config_releases graduated: every session runs the base branch config release', () => {
+    // A `false` a project stored while config releases were a flag is inert.
+    withDetail({ config_releases: false });
+    expect(useFeatureFlag('p', 'config_releases').enabled).toBe(true);
+
+    withDetail(undefined);
+    expect(useFeatureFlag('p', 'config_releases').enabled).toBe(true);
+
+    expect(useFeatureFlag(null, 'config_releases').enabled).toBe(true);
+  });
 });

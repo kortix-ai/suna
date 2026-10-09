@@ -266,20 +266,7 @@ export async function agentLaunchableInProject(
   agentName: string,
 ): Promise<boolean> {
   try {
-    return await launchableInProjectRow(await loadGitProjectRow(projectId), projectId, agentName);
-  } catch {
-    return false;
-  }
-}
-
-/** `agentLaunchableInProject` against a project row the caller already read —
- *  the reconcile loads the row once for this gate and the grant resolution. */
-async function launchableInProjectRow(
-  project: Awaited<ReturnType<typeof loadGitProjectRow>>,
-  projectId: string,
-  agentName: string,
-): Promise<boolean> {
-  try {
+    const project = await loadGitProjectRow(projectId);
     return await isAgentLaunchableForProject({
       projectId,
       repoUrl: project?.repoUrl ?? '',
