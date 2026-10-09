@@ -1,0 +1,20 @@
+{
+  "source_hash": "cd8353a2b0fc274c03b7f010822108587b44046152ceb35a1ed46891271343ef",
+  "diff_files": [
+    "apps/api/src/__tests__/unit-monitor-observer.test.ts",
+    "apps/api/src/projects/lib/monitor-observer.ts",
+    "apps/api/src/projects/trigger-events/deliver.ts",
+    "apps/api/src/projects/trigger-events/subscriptions.integration.test.ts",
+    "apps/web/content/docs/connect/triggers.mdx",
+    "apps/web/src/lib/seo/content-timestamps.json"
+  ],
+  "diff_hash": "178be59e87715512909eff9ae5808c7fc9a7a68f172bc58d4f288520cb52f35a",
+  "head": "d4f063f8bdb43ffc5afeb6106b4ef6beb657a9cb",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-09T04:50:06.980Z"
+}
