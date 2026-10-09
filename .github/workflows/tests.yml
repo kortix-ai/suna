@@ -130,7 +130,8 @@ jobs:
         # The sandbox agent's glob/grep tools (kortix-sandbox-agent-server)
         # shell out to rg. The sandbox image ships it; GitHub's runner image
         # does not (Blacksmith's did, which hid this until 2026-10-08).
-        if: matrix.mode == 'packages'
+        # Core runs the package tests too (package-quality), so not only packages.
+        if: matrix.mode != 'browser'
         run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends ripgrep
       - name: Restore Chromium
         # The core and packages lanes also run apps/web's layout test that launches Chromium.
