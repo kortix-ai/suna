@@ -987,8 +987,12 @@ test.describe('public capability helpers and presentation decks', () => {
       for (const slug of ['security', 'platform', 'sales']) {
         await page.goto(`/presentations/${slug}`);
         await expect(page.getByRole('button', { name: 'Previous', exact: true })).toBeDisabled();
-        await page.keyboard.press('ArrowRight');
-        await expect(page.getByRole('button', { name: 'Previous', exact: true })).toBeEnabled();
+        // The deck's keydown listener attaches on hydration, which can land
+        // after `load`; a key pressed before it is lost. Press until it lands.
+        await expect(async () => {
+          await page.keyboard.press('ArrowRight');
+          await expect(page.getByRole('button', { name: 'Previous', exact: true })).toBeEnabled({ timeout: 1_000 });
+        }).toPass();
         await page.keyboard.press('Home');
         await expect(page.getByRole('button', { name: 'Previous', exact: true })).toBeDisabled();
         await page.keyboard.press('End');
