@@ -67,4 +67,20 @@ describe('defaultGenuiComponents', () => {
   test('charts carry an accessible label', () => {
     expect(render('root = Stack([c])\nc = BarChart(["a"], [s], "src")\ns = Series("S", [1])')).toContain('aria-label="Bar chart: S. Source: src"');
   });
+
+  // React 19 static markup keeps the camelCase attribute name.
+  test('images do not leak the referrer and load lazily', () => {
+    const html = render('root = Stack([i])\ni = Image("https://example.com/i.png", "A picture")');
+    expect(html).toContain('referrerPolicy="no-referrer"');
+    expect(html).toContain('loading="lazy"');
+    const card = render('root = Stack([c])\nc = Card("T", null, null, "https://example.com/c.png")');
+    expect(card).toContain('referrerPolicy="no-referrer"');
+    expect(card).toContain('loading="lazy"');
+  });
+
+  test('a javascript: link never reaches the markup and siblings still render', () => {
+    const html = render('root = Stack([l, ok])\nl = Link("x", "javascript:alert(1)")\nok = Badge("kept")');
+    expect(html).not.toContain('javascript:');
+    expect(html).toContain('kept');
+  });
 });

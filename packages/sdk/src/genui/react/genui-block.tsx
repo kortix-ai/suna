@@ -110,6 +110,20 @@ function collectTypes(node: GenuiNode | null, into: Set<string>): Set<string> {
   return into;
 }
 
+/** The block as markdown. A component, so the full parse runs only when the fallback actually renders. */
+function BlockFallback({
+  code,
+  version,
+  renderMarkdown,
+}: {
+  code: string;
+  version: number;
+  renderMarkdown: (markdown: string) => ReactNode;
+}) {
+  const markdown = useMemo(() => genuiBlockToMarkdown(code, version), [code, version]);
+  return <>{markdown ? renderMarkdown(markdown) : null}</>;
+}
+
 /** Parse the block on every render with one parser per block; same input returns the same result. */
 export function useGenuiParse(code: string, version: number, streaming: boolean): GenuiParseResult {
   const parserRef = useRef<{ version: number; parser: GenuiParser } | null>(null);
@@ -130,19 +144,24 @@ export function GenuiBlock({
   enabled = true,
   onSettled,
 }: GenuiBlockProps) {
-  const result = useGenuiParse(code, version, streaming);
-  const fallback = useMemo(
-    () => (streaming ? '' : genuiBlockToMarkdown(code, version)),
-    [code, version, streaming],
-  );
+  // A disabled block renders markdown only: skip the parse (hooks stay unconditional).
+  const result = useGenuiParse(enabled ? code : '', version, streaming);
+  // Hosts often pass inline arrows. Keep the latest in refs so the context value stays stable
+  // and memoized node views do not re-render on every tick.
+  const markdownRef = useRef(renderMarkdown);
+  markdownRef.current = renderMarkdown;
+  const pendingRef = useRef(renderPending);
+  pendingRef.current = renderPending;
+  const stableRenderMarkdown = useCallback((markdown: string) => markdownRef.current(markdown), []);
+  const stableRenderPending = useCallback((node: GenuiNode) => pendingRef.current(node), []);
   const mountedAt = useRef(performance.now());
   const firstPaint = useRef<number | null>(null);
   const renderError = useRef(false);
   if (result.root && firstPaint.current === null) firstPaint.current = performance.now() - mountedAt.current;
 
   const context = useMemo<RenderContextValue>(
-    () => ({ components, renderMarkdown, renderPending, streaming }),
-    [components, renderMarkdown, renderPending, streaming],
+    () => ({ components, renderMarkdown: stableRenderMarkdown, renderPending: stableRenderPending, streaming }),
+    [components, stableRenderMarkdown, stableRenderPending, streaming],
   );
 
   const unsupported = version !== GENUI_SCHEMA_VERSION;
@@ -168,10 +187,15 @@ export function GenuiBlock({
 
   if (unsupported) return <>{renderMarkdown(`*${GENUI_UNSUPPORTED_NOTE}*`)}</>;
   if (!enabled) return <>{renderMarkdown(genuiBlockToMarkdown(code, version))}</>;
-  if (!result.root) return streaming ? null : <>{fallback ? renderMarkdown(fallback) : null}</>;
+  if (!result.root) return streaming ? null : <BlockFallback code={code} version={version} renderMarkdown={renderMarkdown} />;
 
   return (
-    <BlockBoundary fallback={renderMarkdown(fallback || genuiBlockToMarkdown(code, version))} onError={() => (renderError.current = true)}>
+    <BlockBoundary
+      // A throw while streaming gets one fresh try when the stream settles.
+      key={streaming ? 'live' : 'settled'}
+      fallback={<BlockFallback code={code} version={version} renderMarkdown={renderMarkdown} />}
+      onError={() => (renderError.current = !streaming)}
+    >
       <RenderContext.Provider value={context}>
         <GenuiNodeView node={result.root} />
       </RenderContext.Provider>

@@ -62,7 +62,7 @@ const Stack = ({ props, renderChild }: GenuiComponentProps) => (
 
 const Card = ({ props, renderChild }: GenuiComponentProps) => (
   <article style={box}>
-    {props.image ? <img src={props.image} alt="" style={{ width: '100%', borderRadius: 6, marginBottom: 8 }} /> : null}
+    {props.image ? <img src={props.image} alt="" referrerPolicy="no-referrer" loading="lazy" style={{ width: '100%', borderRadius: 6, marginBottom: 8 }} /> : null}
     <h4 style={{ margin: 0 }}>{props.href ? <a href={props.href} target="_blank" rel="noopener noreferrer">{props.title}</a> : props.title}</h4>
     {props.subtitle ? <p style={muted}>{props.subtitle}</p> : null}
     {props.body ? <p style={{ margin: '6px 0 0' }}>{props.body}</p> : null}
@@ -214,7 +214,7 @@ const Callout = ({ props }: GenuiComponentProps) => (
 
 const Image = ({ props }: GenuiComponentProps) => (
   <figure style={{ margin: 0 }}>
-    <img src={props.src} alt={props.alt} style={{ maxWidth: '100%', borderRadius: 6 }} />
+    <img src={props.src} alt={props.alt} referrerPolicy="no-referrer" loading="lazy" style={{ maxWidth: '100%', borderRadius: 6 }} />
     {props.caption ? <figcaption style={muted}>{props.caption}</figcaption> : null}
   </figure>
 );

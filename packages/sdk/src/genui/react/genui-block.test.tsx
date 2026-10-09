@@ -121,4 +121,71 @@ describe('GenuiBlock', () => {
     expect(events[0]).toMatchObject({ outcome: 'rendered', components: ['Stack', 'Stat'], issueCount: 0 });
     expect(JSON.stringify(events[0])).not.toContain('A=1');
   });
+
+  test('inline renderMarkdown and renderPending callbacks do not re-render finished nodes', () => {
+    renders.clear();
+    const base = { version: 1, components: COMPONENTS };
+    const inline = () => ({
+      renderMarkdown: (markdown: string) => <pre data-type="markdown">{markdown}</pre>,
+      renderPending: () => null,
+    });
+    const renderer = mount(<GenuiBlock {...base} {...inline()} code={CODE.slice(0, 44)} streaming />);
+    const midString = CODE.indexOf('"2"') + 1;
+    act(() => renderer.update(<GenuiBlock {...base} {...inline()} code={CODE.slice(0, midString)} streaming />));
+    const cut = CODE.indexOf('\nc =');
+    act(() => renderer.update(<GenuiBlock {...base} {...inline()} code={CODE.slice(0, cut)} streaming />));
+    act(() => renderer.update(<GenuiBlock {...base} {...inline()} code={CODE} streaming />));
+    expect(renders.get('a')).toBe(1);
+  });
+
+  test('the fallback markdown is not computed while a valid block streams', () => {
+    let markdownCalls = 0;
+    const countingMarkdown = (markdown: string) => {
+      markdownCalls += 1;
+      return <pre data-type="markdown">{markdown}</pre>;
+    };
+    const props = { version: 1, components: COMPONENTS, renderMarkdown: countingMarkdown };
+    const renderer = mount(<GenuiBlock {...props} code={CODE.slice(0, 44)} streaming />);
+    act(() => renderer.update(<GenuiBlock {...props} code={CODE.slice(0, CODE.indexOf('\nc ='))} streaming />));
+    act(() => renderer.update(<GenuiBlock {...props} code={CODE} streaming />));
+    expect(markdownCalls).toBe(0);
+  });
+
+  test('a throw while streaming gets a fresh try once the stream settles', () => {
+    const FlakyStat = ({ node, props, streaming }: GenuiComponentProps) => {
+      if (streaming) throw new Error('only while streaming');
+      count(node.id);
+      return <span data-type="Stat">{`${props.label}=${props.value}`}</span>;
+    };
+    const components: GenuiComponentMap = { Stack, Stat: FlakyStat };
+    const original = console.error;
+    console.error = () => {};
+    const props = { version: 1, components, renderMarkdown };
+    const renderer = mount(<GenuiBlock {...props} code={CODE} streaming />);
+    expect(renderer.root.findAllByProps({ 'data-type': 'Stat' })).toHaveLength(0);
+    act(() => renderer.update(<GenuiBlock {...props} code={CODE} streaming={false} />));
+    console.error = original;
+    expect(renderer.root.findAll((n) => n.props['data-type'] === 'Stat').map((n) => n.children.join(''))).toEqual([
+      'A=1',
+      'B=2',
+      'C=3',
+    ]);
+  });
+
+  test('a disabled block does not parse', () => {
+    const events: GenuiBlockEvent[] = [];
+    // Valid source would report its component names and a first-paint time if it were parsed.
+    mount(
+      <GenuiBlock
+        code={CODE}
+        streaming={false}
+        enabled={false}
+        components={COMPONENTS}
+        renderMarkdown={renderMarkdown}
+        onSettled={(e) => events.push(e)}
+      />,
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ outcome: 'fallback', components: [], msToFirstPaint: null });
+  });
 });
