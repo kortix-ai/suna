@@ -21,7 +21,7 @@ export interface WebPushDeliveryInput {
 export interface WebPushMessageBody extends Record<string, unknown> {
   title: string;
   body: string;
-  /** `<type>:<sessionId|triggerSlug>`: a newer push for the subject replaces the older one, in-page alerts included. */
+  /** `<type>:<sessionId|projectId:triggerSlug|notificationId>`: a newer push for the subject replaces the older one, in-page alerts included. */
   tag: string;
   url: string;
   notificationId: string;
@@ -35,7 +35,9 @@ export function webPushMessageBody(content: NotificationPushContent): WebPushMes
     ...payload,
     title: clip(content.title, INBOX_TITLE_MAX_CHARS),
     body: clip(content.body, INBOX_BODY_MAX_CHARS),
-    tag: `${payload.type}:${payload.sessionId ?? payload.triggerSlug ?? payload.notificationId}`,
+    // Session tags match the in-page tags (`completion:<sid>`); a trigger slug
+    // is unique per project only, so its tag carries the project too.
+    tag: `${payload.type}:${payload.sessionId ?? (payload.triggerSlug ? `${payload.projectId}:${payload.triggerSlug}` : payload.notificationId)}`,
   };
 }
 

@@ -11317,6 +11317,28 @@
           "method": "btree",
           "with": {}
         },
+        "idx_notifications_digested": {
+          "name": "idx_notifications_digested",
+          "columns": [
+            {
+              "expression": "emailed_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"kortix\".\"notifications\".\"email_due_at\" IS NOT NULL AND \"kortix\".\"notifications\".\"emailed_at\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_notifications_account": {
           "name": "idx_notifications_account",
           "columns": [

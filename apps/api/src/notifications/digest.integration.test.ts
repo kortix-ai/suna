@@ -120,6 +120,18 @@ describe('the email digest', () => {
     expect((await stateOf([id])).get(id)!.emailedAt).toBeNull();
   });
 
+  test('a row due for over a day is no longer due, even while email is off; a fresh one stays due', async () => {
+    const { userId } = await userWithEmail();
+    const stale = await row(userId, project, { emailDueAt: sql`now() - interval '2 days'` });
+    const fresh = await row(userId, project);
+
+    await runNotificationDigestTick({ ...everyRowVisible, emailAvailable: () => false });
+    const state = await stateOf([stale, fresh]);
+    expect(state.get(stale)!.emailDueAt).toBeNull();
+    expect(state.get(fresh)!.emailDueAt).not.toBeNull();
+    expect(sent).toEqual([]);
+  });
+
   test('ALL due unread rows are claimed into ONE email listing the 10 newest and "And 2 more."', async () => {
     const { userId, email } = await userWithEmail();
     const sessionId = await seedSession(project, userId);

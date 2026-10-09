@@ -90,6 +90,7 @@ CREATE INDEX "idx_notification_watchers_project" ON "kortix"."notification_watch
 CREATE INDEX "idx_notifications_user_id" ON "kortix"."notifications" USING btree ("user_id","notification_id" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX "idx_notifications_user_unread" ON "kortix"."notifications" USING btree ("user_id") WHERE "kortix"."notifications"."read_at" IS NULL;--> statement-breakpoint
 CREATE INDEX "idx_notifications_email_due" ON "kortix"."notifications" USING btree ("email_due_at") WHERE "kortix"."notifications"."emailed_at" IS NULL AND "kortix"."notifications"."email_due_at" IS NOT NULL;--> statement-breakpoint
+CREATE INDEX "idx_notifications_digested" ON "kortix"."notifications" USING btree ("emailed_at","user_id") WHERE "kortix"."notifications"."email_due_at" IS NOT NULL AND "kortix"."notifications"."emailed_at" IS NOT NULL;--> statement-breakpoint
 CREATE INDEX "idx_notifications_account" ON "kortix"."notifications" USING btree ("account_id");--> statement-breakpoint
 CREATE INDEX "idx_notifications_project" ON "kortix"."notifications" USING btree ("project_id");--> statement-breakpoint
 CREATE INDEX "idx_notifications_created" ON "kortix"."notifications" USING btree ("created_at");--> statement-breakpoint

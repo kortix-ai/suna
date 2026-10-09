@@ -27,7 +27,10 @@ export const KIND_LABELS: Record<NotificationKindName, string> = {
   automation_recovered: 'Automation recovered',
 };
 
-const SETTINGS_NOTE = 'Change which notifications get email in Settings → Notifications.';
+/** The settings pane that holds the per-kind Push and Email switches. */
+const SETTINGS_PATH = '/settings/sessions';
+const SETTINGS_LINK_LABEL = 'Settings → Notifications';
+const SETTINGS_LEAD = 'Change which notifications get email in';
 
 /** An app path as a link that works from a mail client. */
 export function absoluteAppUrl(path: string): string {
@@ -46,8 +49,10 @@ function message(parts: {
   next?: string;
   extra?: { html: string; text: string[] };
   cta: { url: string; label: string };
+  /** Why the reader gets this email; always ends with the settings link. */
   note: string;
 }): RenderedEmail {
+  const settingsUrl = absoluteAppUrl(SETTINGS_PATH);
   const { lead } = parts;
   const leadHtml = lead.strong
     ? `<span style="${S.strong}">${escapeHtml(lead.strong)}</span> ${escapeHtml(lead.text)}`
@@ -63,7 +68,7 @@ function message(parts: {
         ${parts.next ? `<p style="${S.p}">${escapeHtml(parts.next)}</p>` : ''}
         ${parts.extra?.html ?? ''}
         ${actionButton(parts.cta.url, parts.cta.label)}
-        <p style="${S.smallNote}">${escapeHtml(parts.note)}</p>
+        <p style="${S.smallNote}">${escapeHtml(parts.note)} ${escapeHtml(SETTINGS_LEAD)} <a href="${escapeHtml(settingsUrl)}" style="${S.strong}text-decoration:underline;">${escapeHtml(SETTINGS_LINK_LABEL)}</a>.</p>
       `,
     }),
     text: renderText({
@@ -75,7 +80,7 @@ function message(parts: {
         ...(parts.extra?.text ?? []),
       ],
       cta: parts.cta,
-      note: parts.note,
+      note: `${parts.note} ${SETTINGS_LEAD} ${SETTINGS_LINK_LABEL}: ${settingsUrl}`,
     }),
   };
 }
@@ -86,13 +91,15 @@ function message(parts: {
  */
 export function renderImmediateNotificationEmail(item: NotificationEmailItem): RenderedEmail | null {
   const cta = { url: absoluteAppUrl(item.url), label: 'Open automations' };
-  const note = `You get this email because you watch this automation. ${SETTINGS_NOTE}`;
+  // True for the creator, the last editor, a reminder's owner and a project
+  // manager who gets the alert because nobody else can read the trigger.
+  const note = 'You get this email because you created or edited this automation, or you manage its project.';
   if (item.kind === 'automation_failed') {
     return message({
       subject: `Automation failing: ${item.title}`,
       kicker: 'Automation alert',
       title: 'An automation is failing',
-      lead: { strong: item.title, text: 'did not run.' },
+      lead: { strong: item.title, text: 'is failing.' },
       detail: item.body ? `Error: ${item.body}` : undefined,
       next: 'It stays failing until a run succeeds. Open it to see the last error and fix the cause.',
       cta,
@@ -105,7 +112,7 @@ export function renderImmediateNotificationEmail(item: NotificationEmailItem): R
       kicker: 'Automation alert',
       title: 'An automation works again',
       lead: { strong: item.title, text: 'ran successfully after a failure.' },
-      next: 'It runs on its schedule again. If it fails again, you get a new alert.',
+      next: 'It works again. If it fails again, you get a new alert.',
       cta,
       note,
     });
@@ -140,6 +147,6 @@ export function renderNotificationDigestEmail(input: { items: readonly Notificat
       ],
     },
     cta: { url: absoluteAppUrl('/projects'), label: 'Open Kortix' },
-    note: `You get this email for unread questions, failed sessions and shares. ${SETTINGS_NOTE}`,
+    note: 'You get this email for unread questions, failed sessions and shares.',
   });
 }

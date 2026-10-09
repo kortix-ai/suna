@@ -205,6 +205,14 @@ withDb('notification fan-out', () => {
     expect(String(sent.expo[0]!.data.url)).toContain(`/projects/${project.project_id}/customize/triggers?notification=`);
   });
 
+  test('no digest due time when the deployment cannot send email', async () => {
+    const { deps } = harness({ emailAvailable: () => false });
+    const [record] = await deliver({ kind: 'question', accountId: project.account_id, projectId: project.project_id, sessionId, title: 'S', body: 'Which region?', recipients: [alice] }, deps);
+
+    expect(record!.email).toBe('none');
+    expect((await rowsOf(alice))[0]!.emailDueAt).toBeNull();
+  });
+
   test('no email is attempted when the deployment cannot send email', async () => {
     const { deps, sent } = harness({ emailAvailable: () => false });
     await deliver({ kind: 'automation_failed', accountId: project.account_id, projectId: project.project_id, triggerSlug: 't', title: 'T', recipients: [alice] }, deps);

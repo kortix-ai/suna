@@ -86,3 +86,21 @@ describe('the digest', () => {
     expect(email.html).not.toContain('And 0 more');
   });
 });
+
+describe('every notification email links to the notification settings', () => {
+  test('a clickable link in the HTML and the URL in the text part', () => {
+    const settings = absoluteAppUrl('/settings/sessions');
+    for (const email of variants()) {
+      expect(email.html).toContain(`href="${settings}"`);
+      expect(email.text).toContain(`Settings → Notifications: ${settings}`);
+    }
+  });
+
+  test('the failing alert is true for a run that started and failed, and for a fallback manager', () => {
+    const email = renderImmediateNotificationEmail(failed)!;
+    expect(email.text).toContain('Nightly report is failing.');
+    expect(email.text).not.toContain('did not run');
+    expect(email.text).not.toContain('watch this automation');
+    expect(email.text).toContain('you created or edited this automation, or you manage its project');
+  });
+});

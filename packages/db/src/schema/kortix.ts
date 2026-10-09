@@ -6855,6 +6855,8 @@ export const notifications = kortixSchema.table('notifications', {
   index('idx_notifications_user_id').on(table.userId, table.notificationId.desc()),
   index('idx_notifications_user_unread').on(table.userId).where(sql`${table.readAt} IS NULL`),
   index('idx_notifications_email_due').on(table.emailDueAt).where(sql`${table.emailedAt} IS NULL AND ${table.emailDueAt} IS NOT NULL`),
+  // The digest's 60-minute cooldown probe: who got a digest in the last hour.
+  index('idx_notifications_digested').on(table.emailedAt, table.userId).where(sql`${table.emailDueAt} IS NOT NULL AND ${table.emailedAt} IS NOT NULL`),
   index('idx_notifications_account').on(table.accountId),
   index('idx_notifications_project').on(table.projectId),
   index('idx_notifications_created').on(table.createdAt),

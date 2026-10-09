@@ -8,7 +8,7 @@
 // send ONE email listing 10 plus "and N more". Dropped rows stay stamped.
 //
 // Retention. Rows older than 90 days are deleted, 1,000 per statement.
-import { and, eq, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import { notifications, sessionPendingQuestions } from '@kortix/db';
 import { IMMEDIATE_EMAIL_KINDS, NEVER_DIGESTED_KINDS, isNotificationKind } from '@kortix/shared/notification-kinds';
 import { logger } from '../lib/logger';
@@ -145,13 +145,18 @@ async function digestFor(userId: string, deps: DigestDeps, result: DigestTickRes
 export async function runNotificationDigestTick(overrides: Partial<DigestDeps> = {}): Promise<DigestTickResult> {
   const deps = { ...liveDigestDeps, ...overrides };
   const result: DigestTickResult = { users: 0, sent: 0, claimed: 0, dropped: 0 };
-  if (!deps.emailAvailable()) return result;
-  // A row read before its digest was due will never be emailed: take it out of
-  // the due index so the scan above stays small.
+  // A row read before its digest was due will never be emailed, and a row due
+  // for over a day (email was off, or kept failing) is stale: take both out of
+  // the due index so the scan stays small and a late transport mails nothing old.
   await db
     .update(notifications)
     .set({ emailDueAt: null })
-    .where(and(lte(notifications.emailDueAt, sql`now()`), isNull(notifications.emailedAt), isNotNull(notifications.readAt)));
+    .where(and(
+      lte(notifications.emailDueAt, sql`now()`),
+      isNull(notifications.emailedAt),
+      or(isNotNull(notifications.readAt), lt(notifications.emailDueAt, sql`now() - interval '1 day'`)),
+    ));
+  if (!deps.emailAvailable()) return result;
   const users = await usersWithDueRows();
   result.users = users.length;
   for (const userId of users) {

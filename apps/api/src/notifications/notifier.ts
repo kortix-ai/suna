@@ -100,7 +100,9 @@ export async function deliver(input: DeliverInput, deps: NotifierDeps = liveNoti
       const record: DeliveryRecord = { userId, notificationId: null, readOnArrival: false, expoMessages: 0, webPushSent: 0, email: 'none' };
       records.push(record);
 
-      const digest = pushAllowed && wantsDigest(input.kind, userPrefs);
+      // No transport, no digest: a row due now would be mailed months later
+      // when email is configured, long after it stopped mattering.
+      const digest = pushAllowed && deps.emailAvailable() && wantsDigest(input.kind, userPrefs);
       const notificationId = await deps.inbox.insert({
         userId,
         accountId: input.accountId,

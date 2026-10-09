@@ -13,8 +13,9 @@ import { removeSeeded, seedProject, seedSession, type SeededProject } from '../_
 import { fakePushBrowser, type FakePushBrowser } from '../__tests__/helpers/web-push-browser';
 import { deliver, liveNotifierDeps } from './notifier';
 import { getVapidPublicKey } from './vapid-keys';
+import type { NotificationPushContent } from './push-payload';
 import type { PushFetch } from './web-push';
-import { sendWebPushToUser } from './web-push-delivery';
+import { sendWebPushToUser, webPushMessageBody } from './web-push-delivery';
 import { registerWebPushSubscription } from './web-push-subscriptions';
 
 interface Posted {
@@ -180,5 +181,25 @@ describe('Web Push delivery', () => {
     expect(await sendWebPushToUser({ userId: alice.userId, accountId: project.account_id, content }, { fetch: service.fetch })).toEqual({ sent: 0 });
     expect(service.posted).toEqual([]);
     expect(await db.select().from(webPushSubscriptions).where(eq(webPushSubscriptions.userId, alice.userId))).toEqual([]);
+  });
+});
+
+describe('Web Push tags', () => {
+  const content = (over: Partial<NotificationPushContent['payload']>): NotificationPushContent => ({
+    title: 'T',
+    body: 'B',
+    payload: {
+      notificationId: 'n1', kind: 'automation_failed', type: 'automation_failed',
+      projectId: 'p1', sessionId: null, triggerSlug: 'daily-report', url: '/x', ...over,
+    },
+  });
+
+  test('a trigger alert tag carries the project: the same slug in two projects never replaces each other', () => {
+    expect(webPushMessageBody(content({ projectId: 'p1' })).tag).toBe('automation_failed:p1:daily-report');
+    expect(webPushMessageBody(content({ projectId: 'p2' })).tag).toBe('automation_failed:p2:daily-report');
+  });
+
+  test('a session tag stays <type>:<sessionId>, the tag the open tab uses', () => {
+    expect(webPushMessageBody(content({ kind: 'turn_done', type: 'completion', sessionId: 's1', triggerSlug: null })).tag).toBe('completion:s1');
   });
 });
