@@ -397,6 +397,27 @@ export async function readAppArchive(source: string): Promise<Uint8Array> {
 }
 
 /**
+ * A manifest budget applies only to an on-demand server App. On an always-on
+ * or convex App the cost is fixed (size × 24/7), so the API refuses a budget;
+ * an older kortix.yaml that still sets one deploys with a notice instead of failing.
+ */
+export function manifestBudget(
+  block: ManifestAppDefaults['block'] | undefined,
+  existing: App | undefined,
+  flags: DeployFlags,
+): number | undefined {
+  const budget = block?.monthly_budget_usd;
+  if (budget === undefined) return undefined;
+  const kind = block?.kind ?? existing?.kind ?? 'web';
+  const alwaysOn = flags.alwaysOn ?? block?.always_on ?? existing?.always_on ?? true;
+  if (kind === 'web' && alwaysOn === false) return budget;
+  process.stderr.write(
+    `  ! monthly_budget_usd in kortix.yaml is ignored: a ${kind === 'convex' ? 'convex' : 'always-on'} App has a fixed monthly cost. Remove it, or set always_on: false for a budget.\n`,
+  );
+  return undefined;
+}
+
+/**
  * Resolve or create the App a deployment targets: an explicit --app, else the
  * manifest block's identity (updating an existing slug in place), else one
  * derived from the image reference or source path.
@@ -434,8 +455,8 @@ export async function provisionDeployApp(
         ? { idle_timeout_seconds: manifestBlock.idle_timeout_seconds }
         : {}),
       ...(manifestBlock?.always_on !== undefined ? { always_on: manifestBlock.always_on } : {}),
-      ...(manifestBlock?.monthly_budget_usd !== undefined
-        ? { monthly_budget_usd: manifestBlock.monthly_budget_usd }
+      ...(manifestBudget(manifestBlock, existing, flags) !== undefined
+        ? { monthly_budget_usd: manifestBudget(manifestBlock, existing, flags) }
         : {}),
       ...flagSettings,
       // The Apps this App uses; the manifest's list replaces the App's.
