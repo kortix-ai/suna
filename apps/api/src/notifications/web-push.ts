@@ -30,7 +30,7 @@ export interface VapidKeyPair {
   privateKey: KeyObject;
 }
 
-export type PushFetch = (url: string, init: RequestInit) => Promise<Response>;
+export type PushFetch = (url: string, init: RequestInit & { maxRedirects?: number }) => Promise<Response>;
 
 export type WebPushOutcome = 'sent' | 'gone' | 'refused' | 'failed';
 
@@ -120,6 +120,8 @@ export async function sendWebPushMessage(
       },
       body: new Uint8Array(encryptWebPushPayload(payload, target)),
       signal: AbortSignal.timeout(options.timeoutMs ?? WEB_PUSH_TIMEOUT_MS),
+      // A push service never redirects; a 3xx is a failure, never a second POST.
+      maxRedirects: 0,
     });
     if (res.status >= 200 && res.status < 300) return { outcome: 'sent', status: res.status };
     if (res.status === 404 || res.status === 410) return { outcome: 'gone', status: res.status };

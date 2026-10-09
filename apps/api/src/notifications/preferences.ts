@@ -56,22 +56,23 @@ export async function updateNotificationPreferences(
   database: Database = defaultDb,
 ): Promise<NotificationKindPreferences> {
   const clean = sanitizePreferencesPatch(patch);
-  const kinds = JSON.stringify(clean.kinds ?? {});
+  const entries = Object.entries(clean.kinds ?? {}) as [NotificationKindName, Partial<NotificationChannelPreference>][];
+  const stored = sql`coalesce(${notificationPreferences.settings} -> 'kinds', '{}'::jsonb)`;
+  // Per-kind merge in one statement, so concurrent saves of different kinds
+  // both survive: {question: {email:false}} keeps question.push. Kind names
+  // come from the fixed NOTIFICATION_KINDS allowlist (sanitizePreferencesPatch).
+  const merged = entries.reduce(
+    (acc, [kind, value]) =>
+      sql`${acc} || jsonb_build_object(${kind}::text, coalesce(${stored} -> ${kind}::text, '{}'::jsonb) || ${JSON.stringify(value)}::jsonb)`,
+    stored,
+  );
   const [row] = await database
     .insert(notificationPreferences)
     .values({ userId, settings: { kinds: clean.kinds ?? {} } })
     .onConflictDoUpdate({
       target: notificationPreferences.userId,
-      // Per-kind merge: {kinds: {question: {email:false}}} keeps question.push.
       set: {
-        settings: sql`jsonb_set(
-          ${notificationPreferences.settings},
-          '{kinds}',
-          (
-            SELECT coalesce(jsonb_object_agg(k, coalesce(${notificationPreferences.settings} -> 'kinds' -> k, '{}'::jsonb) || v), '{}'::jsonb)
-            FROM jsonb_each(${kinds}::jsonb) AS e(k, v)
-          ) || (coalesce(${notificationPreferences.settings} -> 'kinds', '{}'::jsonb) - ARRAY(SELECT jsonb_object_keys(${kinds}::jsonb)))
-        )`,
+        settings: sql`jsonb_set(${notificationPreferences.settings}, '{kinds}', ${merged})`,
         updatedAt: sql`now()`,
       },
     })

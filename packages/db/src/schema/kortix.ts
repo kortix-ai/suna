@@ -1488,8 +1488,9 @@ export const projectTriggerRuntime = kortixSchema.table(
     lastError: text('last_error'),
     lastAttemptAt: timestamp('last_attempt_at', { withTimezone: true }),
     // When the current streak of failed RUNS began; null once a run finishes.
-    // While set, a fire or a delivery keeps `last_status = 'failed'`, and the
-    // owner is pushed only when it goes from null to set.
+    // While set, a fire or a delivery keeps `last_status = 'failed'`. The
+    // trigger's watchers are alerted through `alert_failing_since`
+    // (projects/lib/trigger-alerts.ts).
     runFailingSince: timestamp('run_failing_since', { withTimezone: true }),
     // When the trigger's watchers were last told it is failing (KRTX-1742).
     // Set by the first terminal failure, cleared by the recovery that matches

@@ -154,13 +154,15 @@ withDb('notification fan-out', () => {
     expect((await rowsOf(alice))[0]!.readAt).toBeNull();
   });
 
-  test('the kill switch stops sends but still writes the row', async () => {
+  test('the kill switch stops pushes but still writes the row and sends the automation email', async () => {
     const { deps, sent } = harness({ pushEnabled: false });
     await deliver({ kind: 'question', accountId: project.account_id, projectId: project.project_id, sessionId, title: 'S', body: 'Which region?', recipients: [alice] }, deps);
+    await deliver({ kind: 'automation_failed', accountId: project.account_id, projectId: project.project_id, triggerSlug: 't', title: 'T', recipients: [alice] }, deps);
 
-    expect(await rowsOf(alice)).toHaveLength(1);
+    expect(await rowsOf(alice)).toHaveLength(2);
     expect(sent.expo).toEqual([]);
     expect(sent.webPush).toEqual([]);
+    expect(sent.email).toEqual([alice]);
   });
 
   test('a question with email on gets a digest due time; push off sends no push', async () => {

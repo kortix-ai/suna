@@ -9,7 +9,7 @@
 //   4. email now for automation kinds; other kinds get `email_due_at` and the
 //      notification worker sends a digest
 //
-// `PUSH_NOTIFICATIONS_ENABLED=false` stops sends, never rows. Never throws.
+// `PUSH_NOTIFICATIONS_ENABLED=false` stops pushes, never rows or email. Never throws.
 import { and, eq, gt, inArray, sql } from 'drizzle-orm';
 import { sessionPresenceLeases } from '@kortix/db';
 import {
@@ -124,7 +124,7 @@ export async function deliver(input: DeliverInput, deps: NotifierDeps = liveNoti
         record.readOnArrival = true;
       }
 
-      if (!pushAllowed || !deps.pushEnabled) continue;
+      if (!pushAllowed) continue;
       const content = buildPushContent({
         notificationId,
         kind: input.kind,
@@ -135,7 +135,8 @@ export async function deliver(input: DeliverInput, deps: NotifierDeps = liveNoti
         triggerSlug: input.triggerSlug ?? null,
       });
 
-      if (userPrefs[input.kind].push && !here?.alerting) {
+      // The kill switch stops pushes only; email has its own availability check.
+      if (deps.pushEnabled && userPrefs[input.kind].push && !here?.alerting) {
         const messages = buildExpoMessages(content, await deps.listDevices(userId));
         record.expoMessages = messages.length;
         expoMessages.push(...messages);
