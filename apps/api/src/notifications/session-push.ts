@@ -8,7 +8,8 @@ import { and, eq, gt, sql } from 'drizzle-orm';
 import { config } from '../config';
 import { ABORT_END_ERROR_NAMES, type SandboxTurnCompletionOutcome } from '../projects/session-turn-ledger';
 import { db } from '../shared/db';
-import { accountMemberRow } from '../iam/membership-read';
+import { PROJECT_ACTIONS } from '../iam/actions';
+import { listAccessible } from '../iam/authorize';
 import { pushDeviceTokenStore, type PushDeviceTokenRow, type PushDeviceTokenStore } from './device-tokens';
 import { sendExpoPushMessages, type ExpoPushMessage, type ExpoPushResult } from './expo-push';
 
@@ -29,6 +30,8 @@ export interface SessionPushTarget {
   title: string | null;
   /** The session's account: a recipient must still be a member of it. */
   accountId?: string | null;
+  /** The session's project: a recipient must still be allowed into it. */
+  projectId?: string | null;
 }
 
 export interface SessionPushDeps {
@@ -180,7 +183,29 @@ async function loadSessionTarget(sessionId: string, projectId: string): Promise<
   // `metadata.name` is the session title (owned by session-title-generate.ts).
   const meta = (row.metadata ?? {}) as Record<string, unknown>;
   const title = [meta.custom_name, meta.name].find((v): v is string => typeof v === 'string');
-  return { createdBy: row.createdBy, title: title ?? null, accountId: row.accountId };
+  return { createdBy: row.createdBy, title: title ?? null, accountId: row.accountId, projectId };
+}
+
+/**
+ * May `userId` still be told about this session (KRTX-1722)? A member who left
+ * the account, or who lost the project while staying in the account, keeps the
+ * sessions they created, and teammates keep running them. Their phone must not
+ * keep getting the titles and the agent's questions.
+ *
+ * The project-list rule (`listAccessible`): account membership plus the project
+ * grant, owners and admins on every project, and SSO-only enforcement. It skips
+ * the MFA step-up on purpose: a push is not a sign-in. Today's recipients are
+ * the session's creator, who sees their own session wherever they may read the
+ * project, and the account's automation owner, an implicit manager.
+ */
+export async function mayReceiveSessionPush(userId: string, session: SessionPushTarget): Promise<boolean> {
+  if (!session.accountId || !session.projectId) return false;
+  const accessible = await listAccessible(
+    { userId, accountId: session.accountId, credential: { kind: 'jwt' }, ctx: {} },
+    PROJECT_ACTIONS.PROJECT_SESSION_READ,
+    'project',
+  );
+  return accessible.mode === 'all' || (accessible.mode === 'allow_only' && accessible.allowed.has(session.projectId));
 }
 
 let defaultNotifier: ReturnType<typeof createSessionNotifier> | null = null;
@@ -190,8 +215,7 @@ export function notifySessionEvent(event: SessionPushEvent): Promise<SessionPush
   defaultNotifier ??= createSessionNotifier({
     enabled: config.PUSH_NOTIFICATIONS_ENABLED,
     loadSession: loadSessionTarget,
-    mayReceive: async (userId, session) =>
-      !!session.accountId && (await accountMemberRow(session.accountId, userId)).length > 0,
+    mayReceive: mayReceiveSessionPush,
     isPresent: async (userId, sessionId) => {
       const rows = await db.select({ tabId: sessionPresenceLeases.tabId }).from(sessionPresenceLeases)
         .where(and(eq(sessionPresenceLeases.userId, userId), eq(sessionPresenceLeases.sessionId, sessionId), gt(sessionPresenceLeases.expiresAt, sql`now()`))).limit(1);
