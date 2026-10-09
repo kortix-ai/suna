@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/modal';
 import { Switch } from '@/components/ui/switch';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { genuiCopyText, mayHoldGenui } from '@/features/genui/to-markdown';
 import {
   DEFAULT_TRANSCRIPT_OPTIONS,
   formatTranscript,
@@ -141,7 +142,7 @@ export function ExportTranscriptModal({
     };
   }, [open, sessionId, tHardcodedUi]);
 
-  const transcript = useMemo(() => {
+  const rawTranscript = useMemo(() => {
     if (!session || messages.length === 0) return '';
     return formatTranscript(
       {
@@ -153,6 +154,26 @@ export function ExportTranscriptModal({
       options,
     );
   }, [session, messages, options]);
+
+  // Generative UI blocks become markdown before copy or download. The converter
+  // loads asynchronously; until it answers `transcript` is '', so both actions
+  // stay disabled and never write OpenUI source. Text without a block is used as is.
+  const [converted, setConverted] = useState<{ source: string; text: string } | null>(null);
+  useEffect(() => {
+    if (!mayHoldGenui(rawTranscript)) return;
+    let cancelled = false;
+    void genuiCopyText(rawTranscript).then((text) => {
+      if (!cancelled) setConverted({ source: rawTranscript, text });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [rawTranscript]);
+  const transcript = !mayHoldGenui(rawTranscript)
+    ? rawTranscript
+    : converted?.source === rawTranscript
+      ? converted.text
+      : '';
 
   const filename = useMemo(() => {
     if (!session) return 'session.md';

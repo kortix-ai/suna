@@ -43,6 +43,12 @@ const TEST_FILE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
  *                            `markdown-code.tsx` reaches only through `lazy()`,
  *                            so `@openuidev/*` and `zod` stay out of the main
  *                            bundle. The import carries an inline eslint disable.
+ *
+ * The `@kortix/sdk/genui` barrel loads `@openuidev/*` and `zod` at module load,
+ * so a static import of it belongs only in lazily loaded genui code. Copy and
+ * transcript export (in the main session chunk) reach it through the dynamic
+ * `import()` in `features/genui/to-markdown.ts`, which runs only for text that
+ * contains "openui". Neither this scan nor the eslint rule inspects `import()`.
  */
 const CANONICAL_SDK_ENTRIES = new Set([
   '@kortix/sdk',

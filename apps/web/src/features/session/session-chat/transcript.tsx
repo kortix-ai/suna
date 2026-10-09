@@ -14,6 +14,7 @@ import { isQuestionTool } from '../session-activity-groups';
 
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { detectCommandFromText } from '@/features/session/detect-command';
+import { genuiCopyText } from '@/features/genui/to-markdown';
 import { useTranslations } from '@/i18n/use-translations';
 import { type SessionMessageAuthor, type SessionPrompt, type SessionPromptViewer, groupShowSegments, isCompactionPart, isPatchPart, isSnapshotPart, isStepPart, sessionPromptActions, toolKind } from '@kortix/sdk';
 import {
@@ -2105,7 +2106,7 @@ const handleCopy = async () => {
         .join('\n\n')
     : response;
   if (!textToCopy) return;
-  await navigator.clipboard.writeText(textToCopy);
+  await navigator.clipboard.writeText(await genuiCopyText(textToCopy));
   setCopied(true);
   setTimeout(() => setCopied(false), 2000);
 };

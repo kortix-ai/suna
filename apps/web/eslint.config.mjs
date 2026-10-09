@@ -108,6 +108,8 @@ const eslintConfig = [
               // `genui/fence` in `components/markdown/code/markdown-code.tsx`,
               // `genui/react` in `features/genui/sdk.ts`. Mirrors CANONICAL_SDK_ENTRIES
               // in scripts/sdk-boundary.mjs — keep the two in sync.
+              // `features/genui/to-markdown.ts` reaches the `genui` barrel
+              // through a dynamic `import()`, which this rule does not inspect.
               group: ['@kortix/sdk/*', '!@kortix/sdk/react', '!@kortix/sdk/server', '!@kortix/sdk/workspace-search'],
               message: 'Use the canonical @kortix/sdk or @kortix/sdk/react entry point.',
             },
