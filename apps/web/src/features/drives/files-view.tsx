@@ -8,8 +8,10 @@ import { DriveExplorer, FileExplorerSourceProvider, FilesStoreProvider } from '@
 import { ProjectPageHeader } from '@/features/workspace/project-layout/project-page-header';
 import { useDriveAvailability, useDriveFolder, useProjectDrive } from '@/hooks/drives/use-drives';
 import { useTranslations } from '@/i18n/use-translations';
-import type { Drive } from '@kortix/sdk';
 import { HouseIcon, ShareNetworkIcon } from '@phosphor-icons/react';
+import { type Drive, getProjectDetail } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
+import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 
@@ -29,7 +31,15 @@ export function FilesView({ projectId }: { projectId: string }) {
   const drive = useProjectDrive(projectId, availability.enabled);
   const router = useRouter();
   // Volumes off for the organization: there is no drive page; Files is the repo browser.
-  const off = !availability.isLoading && !availability.enabled;
+  // Trust only a fresh answer: a cached one may predate a switch flip.
+  const detail = useQuery({
+    queryKey: qk.project.detail(projectId),
+    queryFn: () => getProjectDetail(projectId),
+    ...contract('config'),
+    refetchOnWindowFocus: false,
+  });
+  const settled = detail.isFetchedAfterMount || (detail.isSuccess && !detail.isStale);
+  const off = settled && !detail.isFetching && !availability.enabled;
   useEffect(() => {
     if (off) router.replace(`/projects/${projectId}/files`);
   }, [off, projectId, router]);

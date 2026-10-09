@@ -175,7 +175,12 @@ export default function AdminVolumesPage() {
     setOrgRule(id, null);
   };
 
-  const orgIds = draft ? [...new Set([...Object.keys(draft.volumes.orgs), ...Object.keys(draft.orgs)])] : [];
+  // Stable order (by name), so a row never jumps while it is being edited.
+  const orgIds = draft
+    ? [...new Set([...Object.keys(draft.volumes.orgs), ...Object.keys(draft.orgs)])].sort((a, b) =>
+        (names[a] ?? a).localeCompare(names[b] ?? b),
+      )
+    : [];
   const candidates = (accounts.data?.accounts ?? []).filter((a) => !orgIds.includes(a.accountId));
   const everyone = draft?.volumes.enabled ?? false;
   const artifactsSource = draft?.artifacts || data?.env.bootArtifacts || null;
@@ -273,7 +278,9 @@ export default function AdminVolumesPage() {
                       <Skeleton className="h-8 w-full" />
                     </div>
                   ) : candidates.length === 0 ? (
-                    <p className="text-muted-foreground p-3 text-xs">No organization matches “{search}”.</p>
+                    <p className="text-muted-foreground p-3 text-xs">
+                      No other organization matches “{search}”. Organizations already listed below are not repeated.
+                    </p>
                   ) : (
                     <ul className="divide-y">
                       {candidates.map((a) => {
