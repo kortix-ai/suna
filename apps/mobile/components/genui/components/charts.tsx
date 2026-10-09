@@ -1,12 +1,14 @@
 /**
  * Bar, line and pie charts for generative UI, drawn with react-native-svg.
  *
- * COLOR: the series take web's order on the brand data-viz ramp (`apps/web` genui
- * charts): `--chart-3`, `--chart-5`, `--chart-1`, muted ink, `--chart-2`, `--chart-4`.
- * The same entity is the same color on web and mobile. Adjacent slots pass the
- * dataviz CVD check (worst ΔE 19.0); a monochrome ink ramp failed the normal-vision
- * floor (ΔE 13.8 < 15). Two slots sit under 3:1 on the card, so color is never the
- * only carrier: 2+ series get a legend in ink, and Show data lists every value.
+ * COLOR: one order on web and mobile (the same entity is the same color):
+ * `--chart-3`, `--chart-5`, the theme's foreground ink, `--chart-1`, `--chart-4`,
+ * `--chart-2`. Adjacent slots pass the dataviz CVD and normal-vision checks; a
+ * monochrome ink ramp failed the normal-vision floor (ΔE 13.8 < 15). The ink slot
+ * sits between the ramp's darkest step and its lightest, so the pale `--chart-1`
+ * is never series 2. Ramp limit: `--chart-3` is 2.91:1 on the light card, so color
+ * is never the only carrier: 2+ series get a legend in ink, the unit rides on the
+ * source line, and Show data lists every value.
  * Native renderers get the comma form (`withAlpha(token, 1)`, design.md §9).
  *
  * MOTION: none. A chart answers a question; it is not a moment. No touch
@@ -46,7 +48,7 @@ export function GenuiChart({ node, props }: GenuiComponentProps) {
   const [showData, setShowData] = useState(false);
 
   const [c1, c2, c3, c4, c5] = THEME.chart;
-  const palette = [c3, c5, c1, theme.mutedForeground, c2, c4].map((color) => withAlpha(color, 1));
+  const palette = [c3, c5, theme.foreground, c1, c4, c2].map((color) => withAlpha(color, 1));
   const ink = (alpha: number) => withAlpha(theme.foreground, alpha);
   const format = (value: Cell) => (typeof value === 'number' ? value.toLocaleString(i18n.language) : (value ?? '—'));
   const unit = props.unit ? String(props.unit) : '';
@@ -58,13 +60,15 @@ export function GenuiChart({ node, props }: GenuiComponentProps) {
   let rows: Cell[][];
   let labels: string[] = [];
   let max = 0;
+  let hasValue = false;
   let marks: ReactNode = null;
   let everyLabel = false;
 
   if (node.type === 'PieChart') {
     const slices = kids(props.slices).map((slice) => ({ label: String(slice.props.label), value: Number(slice.props.value) || 0 }));
-    const total = slices.reduce((sum, slice) => sum + slice.value, 0);
-    const share = (value: number) => `${total > 0 ? Math.round((value / total) * 100) : 0}%`;
+    // Shares clamp a negative to 0, as `pieArcs` does, so the legend matches the slices.
+    const total = slices.reduce((sum, slice) => sum + Math.max(0, slice.value), 0);
+    const share = (value: number) => `${total > 0 ? Math.round((Math.max(0, value) / total) * 100) : 0}%`;
     legend = slices.map((slice) => `${slice.label} ${share(slice.value)}`);
     head = ['', unit, '%'];
     rows = slices.map((slice) => [slice.label, slice.value, share(slice.value)]);
@@ -82,13 +86,18 @@ export function GenuiChart({ node, props }: GenuiComponentProps) {
     const series = kids(props.series);
     labels = ((line ? props.x : props.categories) ?? []) as string[];
     everyLabel = !line && labels.length <= ALL_LABELS;
-    const values = series.map((s) => ((s.props.values as number[] | undefined) ?? []).slice(0, labels.length));
-    const named = series.map((s) => (unit ? `${String(s.props.name)} (${unit})` : String(s.props.name)));
-    legend = series.length > 1 ? named : [];
-    head = ['', ...named];
-    // A missing value stays a gap in the table, never a made-up zero.
-    rows = labels.map((label, i) => [label, ...values.map((v) => v[i] ?? null)]);
+    const all = series.map((s) => (s.props.values as number[] | undefined) ?? []);
+    // The plot draws one point per label; the table below keeps every value.
+    const values = all.map((v) => v.slice(0, labels.length));
+    const names = series.map((s) => String(s.props.name));
+    legend = series.length > 1 ? names : [];
+    head = ['', ...names.map((name) => (unit ? `${name} (${unit})` : name))];
+    // A value past the last label gets a row numbered by position. A missing value stays a gap, never a made-up zero.
+    const length = Math.max(labels.length, ...all.map((v) => v.length));
+    rows = Array.from({ length }, (_, i) => [labels[i] ?? String(i + 1), ...all.map((v) => v[i] ?? null)]);
     max = axisMax(values);
+    // `axisMax` is never 0 so the plot can scale; an all-zero chart must not print that 1 as data.
+    hasValue = values.some((v) => v.some((value) => typeof value === 'number' && value > 0));
     marks = line
       ? values.map((v, k) => (
           <Path
@@ -120,7 +129,7 @@ export function GenuiChart({ node, props }: GenuiComponentProps) {
           ))}
         </View>
       ) : null}
-      {pie ? null : <Text variant="muted" className="tabular-nums">{unit ? `${format(max)} ${unit}` : format(max)}</Text>}
+      {hasValue ? <Text variant="muted" className="tabular-nums">{unit ? `${format(max)} ${unit}` : format(max)}</Text> : null}
       <View
         accessible
         accessibilityRole="image"
@@ -168,7 +177,7 @@ export function GenuiChart({ node, props }: GenuiComponentProps) {
       ) : null}
       <View className="flex-row items-start gap-3">
         <Text variant="muted" className="flex-1 py-1">
-          {t('genui.source', { defaultValue: 'Source: {{source}}', source: String(props.source ?? '') })}
+          {`${t('genui.source', { defaultValue: 'Source: {{source}}', source: String(props.source ?? '') })}${unit ? ` · ${unit}` : ''}`}
         </Text>
         <Pressable
           accessibilityRole="button"

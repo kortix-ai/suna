@@ -70,12 +70,14 @@ mock.module('@/lib/icons', () => ({
 
 let GenuiMessageBlock: typeof import('./genui-message-block').GenuiMessageBlock;
 let GenuiPending: typeof import('./components').GenuiPending;
+let GenuiChart: typeof import('./components/charts').GenuiChart;
 let useGenuiStore: typeof import('@/stores/genui-store').useGenuiStore;
 
 beforeAll(async () => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   ({ GenuiMessageBlock } = await import('./genui-message-block'));
   ({ GenuiPending } = await import('./components'));
+  ({ GenuiChart } = await import('./components/charts'));
   ({ useGenuiStore } = await import('@/stores/genui-store'));
 });
 
@@ -409,7 +411,9 @@ b2 = Badge("second")`;
     // The figure alone is one accessibility element: the Show data button stays reachable.
     expect(all(root, 'view').filter((n) => n.props.accessible)).toHaveLength(1);
     const shown = texts(root);
-    for (const text of ['Revenue (USD)', 'Cost (USD)', 'Q1', 'Q2', 'Source: billing export']) expect(shown).toContain(text);
+    for (const text of ['Revenue', 'Cost', 'Q1', 'Q2']) expect(shown).toContain(text);
+    // The unit rides on the source line, so a single-series chart (no legend) still states it.
+    expect(shown).toContain('Source: billing export · USD');
   });
 
   test('after layout, bars draw on the brand chart ramp in web order, with the max value labelled', () => {
@@ -419,6 +423,52 @@ b2 = Badge("second")`;
     // Series 1 is --chart-3, series 2 --chart-5: in the comma form native renderers parse.
     expect(fills).toEqual(['hsla(30.1, 100%, 44.1%, 1)', 'hsla(23.8, 100%, 29.6%, 1)', 'hsla(30.1, 100%, 44.1%, 1)', 'hsla(23.8, 100%, 29.6%, 1)']);
     expect(texts(root)).toContain('1,200 USD');
+  });
+
+  test('series 3 is the theme ink, between the two ramp steps and --chart-1', () => {
+    const root = render(`root = Stack([c])
+c = BarChart(["Q1"], [a, b, d, e], "billing export")
+a = Series("A", [1])
+b = Series("B", [2])
+d = Series("C", [3])
+e = Series("D", [4])`);
+    layOut(root, 300);
+    const fills = all(root, 'svg-path').map((n) => n.props.fill).filter(Boolean);
+    expect(fills).toEqual(['hsla(30.1, 100%, 44.1%, 1)', 'hsla(23.8, 100%, 29.6%, 1)', 'hsla(0, 0%, 12.2%, 1)', 'hsla(47, 100%, 59.4%, 1)']);
+  });
+
+  test('an all-zero chart shows no made-up axis max', () => {
+    const root = render(`root = Stack([c])
+c = BarChart(["Q1", "Q2"], [s], "billing export", "USD")
+s = Series("Revenue", [0, 0])`);
+    expect(texts(root)).not.toContain('1 USD');
+    expect(texts(root).some((text) => text.endsWith(' USD') && !text.startsWith('Source'))).toBe(false);
+  });
+
+  test('Show data keeps values past the last label, in rows numbered by position', () => {
+    const root = render(`root = Stack([c])
+c = BarChart(["Q1"], [s], "billing export")
+s = Series("Revenue", [10, 20, 30])`);
+    press(triggers(root)[0]!);
+    const shown = texts(root);
+    for (const text of ['Q1', '10', '2', '20', '3', '30']) expect(shown).toContain(text);
+  });
+
+  test('a pie share treats a negative value as 0, as the slices do', () => {
+    const node = {
+      id: 'p',
+      type: 'PieChart',
+      props: { source: 'survey', slices: [
+        { id: 'a', type: 'Slice', props: { label: 'Yes', value: 3 } },
+        { id: 'b', type: 'Slice', props: { label: 'No', value: -1 } },
+      ] },
+    };
+    act(() => {
+      tree = create(<GenuiChart node={node as never} props={node.props} renderChild={() => null} streaming={false} />);
+    });
+    const shown = texts(tree!.root);
+    expect(shown).toContain('Yes 100%');
+    expect(shown).toContain('No 0%');
   });
 
   test('a single-series chart has no legend: the title names it', () => {
