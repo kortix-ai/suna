@@ -2744,11 +2744,18 @@
                   "type": "number",
                   "minimum": 0
                 },
-                "backends": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "web",
+                    "convex"
+                  ]
+                },
+                "uses": {
                   "type": "array",
                   "items": {
                     "type": "string",
-                    "pattern": "^[a-z][a-z0-9-]{0,62}$"
+                    "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
                   }
                 },
                 "resources": {
@@ -4749,11 +4756,18 @@
                   "type": "number",
                   "minimum": 0
                 },
-                "backends": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "web",
+                    "convex"
+                  ]
+                },
+                "uses": {
                   "type": "array",
                   "items": {
                     "type": "string",
-                    "pattern": "^[a-z][a-z0-9-]{0,62}$"
+                    "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
                   }
                 },
                 "resources": {

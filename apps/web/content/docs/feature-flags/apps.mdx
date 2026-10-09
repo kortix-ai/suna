@@ -131,21 +131,33 @@ The full subcommand list:
 
 | Command | What it does |
 |---|---|
-| `kortix apps list` | List the project's Apps. `--json`. |
-| `kortix apps create <slug>` | Create an App without deploying it. |
-| `kortix apps deploy [path]` | Deploy a directory, a `.tar.gz`, or `--image`. `--always-on`, `--on-demand` and `--budget <usd>` set the run mode and monthly budget. |
-| `kortix apps set <id\|slug>` | Change an existing App: `--name`, `--cpu`, `--memory-gb`, `--disk-gb`, `--idle-timeout`, `--always-on`, `--on-demand`, `--budget`. |
-| `kortix apps show <id\|slug>` | Show the App and its deployments; marks the live one. `--json`. |
-| `kortix apps logs <id\|slug> [deployment]` | Read runtime logs. `--after N --limit N`. |
+| `kortix apps list` | List the project's Apps with their kind. `--json`. |
+| `kortix apps create <slug>` | Create an App without deploying it. `--kind web\|convex` (default `web`); a `convex` App waits until its machine runs (`--no-wait` returns at once). `--uses <slugs>`. |
+| `kortix apps deploy [path]` | Deploy a directory, a `.tar.gz`, or `--image`. `--always-on`, `--on-demand` and `--budget <usd>` set the run mode and monthly budget. The target App's kind decides how: a `convex` App runs `convex deploy` with its credentials, then records the deployment with the git commit; arguments after `--` go to `convex deploy`. With no arguments and several `apps` blocks, it deploys every block in link order. |
+| `kortix apps set <id\|slug>` | Change an existing App: `--name`, `--cpu`, `--memory-gb`, `--disk-gb`, `--idle-timeout`, `--always-on`, `--on-demand`, `--budget`, `--uses <slugs>` (replaces; `--uses=` clears). A `convex` resize waits until it applies (`--no-wait`). |
+| `kortix apps link <id\|slug> --uses <slugs>` | Add Apps this App uses. `kortix apps unlink` removes them. |
+| `kortix apps show <id\|slug>` | Show the App: kind, capabilities, `uses` / `used by`, its instance, and its deployments; marks the live one. `--json`. |
+| `kortix apps logs <id\|slug> [deployment]` | Read runtime logs. `--after N --limit N`. An App with `logs` prints its process log: `--lines 1-1000`. |
+| `kortix apps connect <id\|slug>` | Print how to reach the App from code, the same snippets as Connect in Kortix web. No secret. `--json`. |
+| `kortix apps token <id\|slug>` | Print a 15-minute sign-in token for the App, naming you (`member_tokens`). |
+| `kortix apps dashboard <id\|slug>` | Print the Kortix page that opens the App's dashboard (`dashboard`). `--open`. |
+| `kortix apps credentials <id\|slug>` | Print the admin credentials (`admin_credentials`, audited). `--format shell\|dotenv\|json`. |
+| `kortix apps rotate-credentials <id\|slug>` | Replace the admin key (`admin_credentials`). `--yes`. |
+| `kortix apps snapshots <id\|slug>` | List snapshots with kind and expiry (`snapshots`). `--json`. |
+| `kortix apps snapshot <id\|slug>` | Take a manual snapshot (`snapshots`). |
+| `kortix apps delete-snapshot <id\|slug> <snapshot>` | Delete one snapshot (`snapshots`). `--yes`. |
+| `kortix apps restore <id\|slug> <snapshot>` | Roll the App back to a snapshot (`restore`). `--yes`. |
 | `kortix apps start <id\|slug>` | Permit requests and start the App. |
 | `kortix apps stop <id\|slug>` | Suspend compute now. |
 | `kortix apps rollback <id\|slug> <deployment>` | Move traffic to a ready deployment. |
 | `kortix apps access <id\|slug>` | Read or update the access policy. |
 | `kortix apps access-link <id\|slug>` | Create a short-lived authenticated browser URL. |
-| `kortix apps delete <id\|slug>` | Delete the App, its runtimes, and every deployment image. `--yes`. |
+| `kortix apps delete <id\|slug>` | Delete the App, its runtimes, and every deployment image. `--yes`. An App with `snapshots` needs `--confirm <slug>`. |
 | `kortix apps delete <id\|slug> --deployment <id\|vN>` | Delete one deployment and its image. Not the live one. `--yes`. |
 
-`--project`, `--host`, and `--json` work on every subcommand.
+`--project`, `--host`, and `--json` work on every subcommand. A subcommand for
+a capability the App lacks exits `1` with `App <slug> (kind <kind>) does not
+support <capability>.` before it calls the capability route.
 
 `kortix apps set` sends only the flags you pass, and needs project write
 access. `--memory-gb` accepts `--memory` and `--disk-gb` accepts `--disk` as
@@ -799,11 +811,12 @@ per hour at list price, about $59 for a 30-day month.
 ### Delete a `convex` App
 
 ```bash
-kortix apps delete db
+kortix apps delete db --confirm db
 ```
 
 An App with the `snapshots` capability holds data, so a delete needs its slug
-typed as confirmation (`DELETE …/apps/:appId?confirm=<slug>`, or
+typed as confirmation (the CLI's `--confirm <slug>`, where `--yes` alone is
+refused; `DELETE …/apps/:appId?confirm=<slug>`, or
 `{ "confirm": "<slug>" }` as the body) and `project.app.admin`. Without it the
 API answers `400 confirmation_required`. Kortix then:
 
