@@ -51,10 +51,13 @@ export function useEventAppConnect(projectId: string) {
   const canAdd =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE, { accountId }).allowed ===
     true;
-  // Same key and fetch as the Connectors page, so the two share one cache entry.
+  // Same key and fetch as the Connectors page, so the two share one cache entry. Only `add`
+  // reads it (to pick a free slug), and the route asserts connector read: a person who cannot
+  // add a connector never sends it.
   const connectors = useQuery({
     queryKey: qk.project.connectors(projectId),
     queryFn: () => listConnectors(projectId, { includeSchemas: false }),
+    enabled: canAdd,
     ...contract('inventory'),
   });
   const [connecting, setConnecting] = useState<string | null>(null);
