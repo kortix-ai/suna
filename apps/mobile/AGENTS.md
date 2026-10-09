@@ -52,7 +52,6 @@ Kortix-specific: 34 files, built on top of `components/ui/`. **There is no
 | `search-header.tsx` | `SearchHeader` — iOS-style search mode for a screen header: filled 40pt pill (magnifier, auto-focused field, round clear button) + Cancel. A screen swaps its header row for it (projects header search). |
 | `platform-button.tsx` | `PlatformButton` — native SwiftUI button (`@expo/ui`, plain style on the `secondary` fill; no Liquid Glass, its shadow clips) on iOS, design-system `Button` with `rounded-full` on Android. Used for the projects "New" button and the settings Go back button. Same file: `PlatformFullWidthButton` — a full-width pill (label centred, `leading` React Native element pinned to the left edge) drawn natively on iOS in the design-system variant's tokens (`default` / `outline`, `size` `lg` / `xl`), design-system `Button` elsewhere; used by the auth welcome screen's three sign-in pills. Both fall back to the design-system button when the running binary lacks the `ExpoUI` native module (OTA-safe). |
 | `KortixLogo.tsx` | Brand mark / wordmark, light and dark SVG variants. |
-| `SearchBar.tsx` | Standalone search input with clear button. |
 | `search-list-header.tsx` | "Search input + add button" row under `PageHeader` on list pages. |
 | `page-header.tsx` | Unified top header (hamburger / title / "···" more button) for every page. |
 | `page-content.tsx` | Content area under `PageHeader` — no card framing, consistent top spacing. |

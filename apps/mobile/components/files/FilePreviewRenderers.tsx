@@ -135,7 +135,10 @@ function usePreviewNavigationGuard({
 function PreviewWebView({
   source,
   onShouldStartLoadWithRequest,
-  scroll = false,
+  scrollEnabled,
+  showsVerticalScrollIndicator,
+  scalesPageToFit,
+  bounces,
   allowFileAccess,
   mixedContentMode,
   domStorageEnabled,
@@ -147,8 +150,11 @@ function PreviewWebView({
 }: {
   source: { uri: string } | { html: string };
   onShouldStartLoadWithRequest: (request: ShouldStartLoadRequest) => boolean;
-  /** Code previews scroll; the pdf.js / mammoth hosts manage their own scroll. */
-  scroll?: boolean;
+  /** Scroll props pass straight through; `undefined` keeps the WebView default. */
+  scrollEnabled?: boolean;
+  showsVerticalScrollIndicator?: boolean;
+  scalesPageToFit?: boolean;
+  bounces?: boolean;
   allowFileAccess?: boolean;
   mixedContentMode?: 'compatibility';
   domStorageEnabled?: boolean;
@@ -170,10 +176,10 @@ function PreviewWebView({
       allowFileAccess={allowFileAccess}
       mixedContentMode={mixedContentMode}
       contentInset={contentInset}
-      scrollEnabled={scroll}
-      showsVerticalScrollIndicator={scroll}
-      scalesPageToFit={!scroll}
-      bounces={!scroll}
+      scrollEnabled={scrollEnabled}
+      showsVerticalScrollIndicator={showsVerticalScrollIndicator}
+      scalesPageToFit={scalesPageToFit}
+      bounces={bounces}
       startInLoadingState
       renderLoading={() => loading}
       onError={onError}
@@ -298,7 +304,10 @@ function CodePreview({ content, fileName }: { content: string; fileName: string 
       <PreviewWebView
         source={{ html }}
         onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
-        scroll
+        scrollEnabled
+        showsVerticalScrollIndicator
+        scalesPageToFit={false}
+        bounces={false}
         loading={
           <View
             className="absolute inset-0 items-center justify-center"

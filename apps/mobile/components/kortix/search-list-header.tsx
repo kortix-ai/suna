@@ -1,8 +1,7 @@
 /**
  * SearchListHeader — the standard "search input + add button" row that sits
- * under PageHeader on list-style pages (Triggers, Channels, etc.). Single
- * source of truth for sizing, padding, and pill radii so every page using it
- * looks identical.
+ * under PageHeader on list-style pages (Triggers, Channels, etc.). Sizing,
+ * padding and pill radii come from the shared `SearchPill`.
  */
 
 import * as React from 'react';

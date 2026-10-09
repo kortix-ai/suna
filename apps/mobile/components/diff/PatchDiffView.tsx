@@ -32,7 +32,7 @@ export function fileStatusMeta(status: ProjectCommitFile['status'], isDark = fal
  * (a vertical list); without it the row keeps its natural width and scrolls
  * horizontally.
  */
-export interface DiffRowPalette {
+interface DiffRowPalette {
   fg: string;
   muted: string;
   add: string;

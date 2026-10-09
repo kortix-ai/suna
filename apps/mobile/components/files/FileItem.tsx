@@ -47,7 +47,7 @@ export const FileItem = React.memo(function FileItem({ file, onPress, onLongPres
     onLongPress?.(file);
   };
 
-  const icon = fileIcon(file.name, { isOpen: file.type === 'directory' });
+  const icon = fileIcon(file.name);
 
   return (
     <AnimatedPressable
