@@ -28,20 +28,6 @@ export function appMonthlyEstimateUsd(machine: AppMachine, provider?: ProviderNa
 /** Monthly budget of an on-demand App when nobody sets one. */
 export const DEFAULT_APP_MONTHLY_BUDGET_USD = 5;
 
-/**
- * The budget an App gets when nobody sets one. An always-on App gets its 24/7
- * estimate rounded up to a whole dollar, so it does not stop mid-month on its
- * own default. An on-demand App gets the flat default.
- */
-export function defaultAppBudgetUsd(
-  app: AppMachine & { alwaysOn: boolean },
-  provider?: ProviderName,
-  max = maxAppMonthlyBudgetUsd(),
-): number {
-  if (!app.alwaysOn) return DEFAULT_APP_MONTHLY_BUDGET_USD;
-  return Math.min(Math.ceil(appMonthlyEstimateUsd(app, provider)), max);
-}
-
 export const MAX_APP_MONTHLY_BUDGET_USD = 100_000;
 
 /** The highest monthly budget an App may have: the operator's `KORTIX_APPS_MAX_MONTHLY_BUDGET_USD`, default 100,000. */
@@ -49,37 +35,33 @@ export function maxAppMonthlyBudgetUsd(): number {
   return config.KORTIX_APPS_MAX_MONTHLY_BUDGET_USD;
 }
 
-export interface AppBudgetWarning {
-  code: 'app_budget_below_always_on';
-  message: string;
-  estimated_monthly_usd: number;
-  monthly_budget_usd: number;
+/**
+ * Cost shape decides whether an App has a monthly budget. Only an on-demand
+ * server App does: its cost follows its traffic, so the budget is the control
+ * and the App stops at it. An always-on server App and every `convex` App run
+ * a fixed machine 24/7: the cost is the size (`estimated_monthly_usd`), and a
+ * budget could only take the App down. A static App runs no machine.
+ */
+export function appHasBudget(app: { kind: string; alwaysOn: boolean }, hostingType: string | null = null): boolean {
+  return app.kind === 'web' && !app.alwaysOn && hostingType !== 'static';
 }
 
-/**
- * An always-on App whose monthly budget is below what its machine costs for a
- * month stops at the budget and stays stopped until the month ends. Create,
- * update and deploy report it; none of them refuses it.
- */
-export function alwaysOnBudgetWarning(
-  app: AppMachine & { alwaysOn: boolean; monthlyBudgetUsd: string | number },
+/** Why `monthly_budget_usd` does not apply to this App, or null when it does. */
+export function appBudgetNotApplicable(
+  app: AppMachine & { kind: string; alwaysOn: boolean },
+  hostingType: string | null,
   provider?: ProviderName,
-): AppBudgetWarning | null {
-  if (!app.alwaysOn) return null;
-  const estimate = appMonthlyEstimateUsd(app, provider);
-  const budget = Number(app.monthlyBudgetUsd);
-  if (budget >= estimate) return null;
-  const days = estimate > 0 ? (budget / estimate) * 30.4 : 0;
-  return {
-    code: 'app_budget_below_always_on',
-    message:
-      `This App runs 24/7, which costs about $${estimate.toFixed(2)} a month at list compute rates, ` +
-      `but its monthly budget is $${budget.toFixed(2)}. A server App stops at the budget ` +
-      `(after about ${days.toFixed(1)} days) until the next month. Raise the budget or run it on demand. ` +
-      'A static App runs no server and is not affected.',
-    estimated_monthly_usd: estimate,
-    monthly_budget_usd: budget,
-  };
+): string | null {
+  if (appHasBudget(app, hostingType)) return null;
+  if (hostingType === 'static' && app.kind === 'web') {
+    return 'A static App runs no machine, so it has no monthly budget.';
+  }
+  const cost = `about $${appMonthlyEstimateUsd(app, provider).toFixed(2)} a month`;
+  if (app.kind === 'convex') {
+    return `A convex App has no monthly budget: its machine runs 24/7 at a fixed cost (${cost}). Resize it to change the cost.`;
+  }
+  return `An always-on App has no monthly budget: it runs 24/7 at a fixed cost (${cost}). ` +
+    'Run it on demand (always_on: false) to cap its cost with a budget.';
 }
 
 export class AppBudgetExceededError extends Error {
