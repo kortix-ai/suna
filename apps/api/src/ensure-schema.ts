@@ -93,17 +93,18 @@ async function warnIfCriticalTablesMissing(): Promise<void> {
     'projects',
   ];
   try {
-    const rows = await db.execute<{ table_name: string }>(sql`
-      SELECT table_name
-      FROM information_schema.tables
-      WHERE table_schema = 'kortix'
-        AND table_name IN (${sql.join(
-          required.map((table) => sql`${table}`),
-          sql`, `,
-        )})
-    `);
     const present = new Set(
-      Array.from(rows as unknown as Array<{ table_name: string }>).map((r) => r.table_name),
+      Array.from(
+        await db.execute<{ table_name: string }>(sql`
+          SELECT table_name
+          FROM information_schema.tables
+          WHERE table_schema = 'kortix'
+            AND table_name IN (${sql.join(
+              required.map((table) => sql`${table}`),
+              sql`, `,
+            )})
+        `),
+      ).map((r) => r.table_name),
     );
     const missing = required.filter((n) => !present.has(n));
     if (missing.length > 0) {

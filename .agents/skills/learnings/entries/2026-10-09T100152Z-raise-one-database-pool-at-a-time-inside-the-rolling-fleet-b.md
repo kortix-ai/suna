@@ -29,9 +29,10 @@ slow tail was pool wait (measured 2026-10-07→09: per-statement wall p50
 225–242 ms, p95 745–891 ms against ~2.5 ms exec). PR #9437 (in review) cuts the
 fan-out from 64 to ~6 statements per request; KRTX-2020 raises the request pool
 5→6 with the headroom freed by folding the boot schema probe into the request
-pool (ceiling 190 → 200 ≤ 205, buffer 15 → 5). The next raise (6→7, 210 > 205)
-does not fit: it needs the infra lane first — a larger Postgres compute, a
-smaller rolling overlap in Terraform, or the transaction-mode pooler.
+pool (ceiling 190 → 200 ≤ 205, buffer 15 → 5). The next raise (6→7:
+10×2×11 = 220 > 205) does not fit: it needs the infra lane first — a larger
+Postgres compute, a smaller rolling overlap in Terraform, or the
+transaction-mode pooler.
 
 **Enforcement:** `apps/api/src/shared/database-capacity.test.ts` recomputes the
 ceiling from the pins and fails when the invariant breaks; its probe test fails
