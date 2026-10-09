@@ -58,6 +58,10 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   // server stamps conversation activity; a client value would let it fake a
   // sidebar position.
   'last_activity_at',
+  // Persistent machine (`platform/services/persistent-machine.ts`): set from
+  // the `persistent_machine` body field at create, and decides how the box
+  // boots, stops and is reset.
+  'persistent_machine',
 ] as const;
 
 /**

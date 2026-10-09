@@ -77,7 +77,18 @@ export interface CreateSandboxOpts {
    * Volumes mounted at create, keyed by guest mount path: the session's
    * drives. Platinum only; every other provider ignores it.
    */
-  volumes?: Record<string, { volume: string; read_only?: boolean; subdir?: string }>;
+  volumes?: Record<string, { volume: string; read_only?: boolean; subdir?: string; ref?: string }>;
+  /**
+   * An ephemeral session box: its state lives on a session volume and a stop
+   * deletes the box. (A create refused over any `volumes` always fails: a
+   * session never boots without its drives or its state.)
+   */
+  volumesRequired?: boolean;
+  /**
+   * A persistent machine: the box boots from a new Platinum root volume made
+   * from the template, owned by the box (deleted with it). Platinum only.
+   */
+  rootVolume?: boolean;
 }
 
 export function sandboxWorkloadType(opts: CreateSandboxOpts): SandboxWorkloadType {

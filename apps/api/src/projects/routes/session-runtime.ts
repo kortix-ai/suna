@@ -204,6 +204,18 @@ export function registerSessionRuntimeRoutes(): void {
       ...auth,
       request: {
         params: z.object({ projectId: z.string(), sessionId: z.string() }),
+        body: {
+          required: false,
+          content: {
+            'application/json': {
+              schema: z.object({
+                // Persistent machines only: discard the disk and boot a fresh box
+                // from the current image (the session's branch is restored).
+                reset_machine: z.boolean().optional(),
+              }),
+            },
+          },
+        },
       },
       responses: {
         202: json(z.any(), 'OK'),
@@ -234,11 +246,13 @@ export function registerSessionRuntimeRoutes(): void {
           403,
         );
       }
+      const body = (await c.req.json().catch(() => ({}))) as { reset_machine?: unknown };
       const result = await restartSession({
         loaded,
         session: visible.row,
         projectId,
         sessionId,
+        resetMachine: body?.reset_machine === true,
       });
       return c.json(result.body, result.status as any);
     },

@@ -228,6 +228,94 @@ if [ "${KORTIX_DRIVE_SYNC:-}" = "1" ]; then
   fi
 fi
 
+# ---------------------------------------------------------------------------
+# Session state on a volume (ephemeral sandboxes).
+#
+# When KORTIX_PERSIST_ROOT is set, this box is disposable: the session's
+# durable state lives on a Platinum volume mounted at that path, and the box
+# itself is deleted when the session stops. The next wake creates a new box
+# from the newest image and mounts the same volume here.
+#
+# Package and tool caches (~/.cache, the pnpm store, ~/.npm) stay on the image
+# disk: they are rebuildable, large (about 2 GB baked in), and would be uploaded
+# on every commit. A session's installed dependencies live in /workspace.
+#
+# Each persisted directory is a bind mount from the volume onto its usual
+# path, so nothing downstream (git, OpenCode, the daemon's pins) learns a new
+# location. A directory the volume does not have yet is seeded from the image
+# first, so a brand-new session keeps the image's warm paths (the baked
+# checkout, the migrated OpenCode database).
+#
+# The volume's mount point arrives from the platform agent, possibly after this
+# script starts. Running on the image disk instead would silently throw away
+# everything the session writes, so a mount that never shows up stops the boot.
+# ---------------------------------------------------------------------------
+kortix_as_root() {
+  if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo -n "$@"; fi
+}
+
+mount_session_state() {
+  local root="$1" wait_s="${KORTIX_PERSIST_WAIT_S:-120}" start now
+  start=$(date +%s)
+  until mountpoint -q "${root}"; do
+    now=$(date +%s)
+    if [ $((now - start)) -ge "${wait_s}" ]; then
+      echo "[entrypoint] session volume never mounted at ${root} (${wait_s}s)" >&2
+      return 1
+    fi
+    sleep 0.1
+  done
+  echo "[entrypoint] session volume mounted at ${root} after $(( $(date +%s) - start ))s" >&2
+  local uid gid
+  uid=$(id -u kortix) gid=$(id -g kortix)
+  # A fresh volume's root is root:root 0755; the runtime user must own it.
+  kortix_as_root chown "${uid}:${gid}" "${root}" || return 1
+  local home=/home/kortix spec name dst src
+  for spec in \
+    "workspace:${WORKSPACE}" \
+    "opencode-data:${home}/.local/share/opencode" \
+    "opencode-state:${home}/.local/state/opencode" \
+    "kortix-state:${home}/.local/state/kortix"; do
+    name="${spec%%:*}" dst="${spec#*:}" src="${root}/${name}"
+    if mountpoint -q "${dst}" 2>/dev/null; then continue; fi
+    kortix_as_root mkdir -p "${dst}" || return 1
+    kortix_as_root chown "${uid}:${gid}" "${dst}" || return 1
+    if [ ! -d "${src}" ]; then
+      rm -rf "${src}.seed"
+      mkdir -p "${src}.seed" || return 1
+      cp -a "${dst}/." "${src}.seed/" 2>/dev/null \
+        || kortix_as_root cp -a "${dst}/." "${src}.seed/" || return 1
+      kortix_as_root chown -R "${uid}:${gid}" "${src}.seed" || return 1
+      mv "${src}.seed" "${src}" || return 1
+    fi
+    kortix_as_root mount --bind "${src}" "${dst}" || return 1
+  done
+  # Headroom: a session that filled its volume would otherwise never boot
+  # again, because OpenCode and the daemon write their state here before the
+  # agent can answer. A reserve file (allocated, never written, so it costs no
+  # upload) is released at boot when the volume is nearly full and recreated
+  # once there is room again.
+  local reserve="${root}/.kortix-reserve" reserve_mb=256 free_mb
+  free_mb=$(( $(df -Pk "${root}" | awk 'NR==2 {print $4}') / 1024 ))
+  if [ -f "${reserve}" ] && [ "${free_mb}" -lt 64 ]; then
+    rm -f "${reserve}"
+    echo "[entrypoint] session volume is full (${free_mb} MB free); released the ${reserve_mb} MB reserve" >&2
+  elif [ ! -f "${reserve}" ] && [ "${free_mb}" -gt $(( reserve_mb * 4 )) ]; then
+    fallocate -l "${reserve_mb}M" "${reserve}" 2>/dev/null || rm -f "${reserve}"
+  fi
+  # auth.json is materialized from project secrets at every OpenCode spawn. A
+  # copy left by the previous box must not outlive a rotated secret.
+  rm -f "${home}/.local/share/opencode/auth.json"
+  echo "[entrypoint] session state bound from ${root} in $(( $(date +%s) - start ))s" >&2
+}
+
+if [ -n "${KORTIX_PERSIST_ROOT:-}" ]; then
+  if ! mount_session_state "${KORTIX_PERSIST_ROOT}"; then
+    echo "[entrypoint] session state is not on its volume; refusing to boot on the image disk" >&2
+    exit 1
+  fi
+fi
+
 DEADLINE_S=120
 # Require 2 consecutive clean probes at a tight 0.25s cadence (~0.5s on the
 # common path where the dir is stable immediately) instead of 4×0.5s=2s. The
@@ -281,6 +369,50 @@ done
 # cwd stable; the daemon itself works with absolute paths under
 # ${WORKSPACE} from here on.
 cd /
+
+# ---------------------------------------------------------------------------
+# Boot artifacts.
+#
+# A Platinum box may carry one release's prebuilt runtime on a read-only
+# volume (the API mounts the configured tag; scripts/boot-artifacts/publish.ts
+# builds it): the daemon, the `kortix` CLI, the OpenCode binary and the managed
+# skills, with their digests in manifest.json. When it is there the box runs
+# that release from the first second instead of booting the image's older
+# copies and downloading the new ones afterwards:
+#   - the daemon starts from the volume (below, select_agent),
+#   - OpenCode resolves from the volume first on PATH,
+#   - the image's managed-skill overlay is replaced by the release's,
+#   - the daemon's convergence reads the CLI from the volume, not the network.
+# Absent or unreadable, nothing changes: the box boots from its image.
+# ---------------------------------------------------------------------------
+BOOT_ARTIFACTS="${KORTIX_BOOT_ARTIFACTS_DIR:-/opt/kortix-artifacts}"
+AGENT_ARTIFACT=""
+use_boot_artifacts() {
+  local root="${BOOT_ARTIFACTS}" i
+  # The mount is attached before the box starts; allow a moment, never more.
+  for i in $(seq 1 20); do
+    [ -f "${root}/manifest.json" ] && break
+    [ -d "${root}" ] || return 1
+    sleep 0.1
+  done
+  [ -f "${root}/manifest.json" ] || return 1
+  if [ -x "${root}/opencode/bin/opencode" ]; then
+    PATH="${root}/opencode/bin:${PATH}"
+    export PATH
+  fi
+  if [ -d "${root}/managed-skills" ]; then
+    local dst=/opt/kortix/managed-skills
+    rm -rf "${dst}.boot" \
+      && cp -a "${root}/managed-skills" "${dst}.boot" \
+      && rm -rf "${dst}" \
+      && mv "${dst}.boot" "${dst}" \
+      || echo "[entrypoint] boot artifacts: managed skills not applied" >&2
+  fi
+  [ -x "${root}/kortix/kortix-agent" ] && AGENT_ARTIFACT="${root}/kortix/kortix-agent"
+  export KORTIX_BOOT_ARTIFACTS_DIR="${root}"
+  echo "[entrypoint] boot artifacts $(sed -n 's/.*"release": *"\([^"]*\)".*/\1/p' "${root}/manifest.json" | head -n1) in use" >&2
+}
+use_boot_artifacts || true
 
 # ---------------------------------------------------------------------------
 # Supervisor — the daemon's own updater.
@@ -380,6 +512,10 @@ promote_staged_agent() {
 select_agent() {
   if [ -x "${AGENT_CURRENT}" ]; then
     echo "${AGENT_CURRENT}"
+  elif [ -n "${AGENT_ARTIFACT}" ]; then
+    # The release's daemon from the boot artifacts volume. An update the box
+    # staged itself (agent.current) still wins; the image's binary stays the floor.
+    echo "${AGENT_ARTIFACT}"
   else
     echo "${AGENT_BAKED}"
   fi
@@ -450,6 +586,15 @@ while :; do
   # updated binary". The FIRST update has no predecessor to keep, so keying off
   # AGENT_PREV would leave exactly the first bad rollout unable to roll back,
   # which is the rollout most likely to be bad.
+  # The boot artifacts' daemon failing fast falls back to the image's, once.
+  if [ "${status}" -ne 0 ] && [ "${status}" -ne 137 ] \
+     && [ "${ran}" -lt "${HEALTHY_AFTER_S}" ] \
+     && [ -n "${AGENT_ARTIFACT}" ] && [ "${agent_bin}" = "${AGENT_ARTIFACT}" ]; then
+    echo "[entrypoint] boot artifacts agent exited ${status} after ${ran}s; using the image's agent" >&2
+    AGENT_ARTIFACT=""
+    continue
+  fi
+
   if [ "${status}" -ne 0 ] \
      && [ "${ran}" -lt "${HEALTHY_AFTER_S}" ] \
      && [ -f "${AGENT_CURRENT}" ] \
