@@ -1,11 +1,12 @@
 /** Agent questions: the sandbox `turn-question` relay and the session question read/answer routes. */
 import { createRoute, z } from '@hono/zod-openapi';
-import { projectSessions, sessionSandboxes } from '@kortix/db';
+import { projectSessions, projects, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { QuestionInfo } from '../../channels/slack-webhook';
 import { relayTurnQuestion } from '../../channels/turn-relay';
 import { channelOfSessionMetadata, releaseChannelQuestion } from '../../channels/question-release';
 import { PROJECT_ACTIONS } from '../../iam';
+import { logger } from '../../lib/logger';
 import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
@@ -27,7 +28,10 @@ import { AnyObject, projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import { readJsonObject } from '../../shared/http-body';
+import { notificationsEnabled } from '../../notifications/enabled';
 import { notifySessionEvent } from '../../notifications/session-push';
+import { notifySessionPushLegacy } from '../../notifications/session-push-legacy';
+import { askNotificationContext } from '../lib/notification-recipients';
 
 export function registerTurnQuestionsRoutes(): void {
   // POST /v1/projects/:projectId/turn-question
@@ -119,8 +123,15 @@ export function registerTurnQuestionsRoutes(): void {
       }
 
       const [turnQuestionSession] = await db
-        .select({ sessionId: projectSessions.sessionId, metadata: projectSessions.metadata })
+        .select({
+          sessionId: projectSessions.sessionId,
+          accountId: projectSessions.accountId,
+          origin: projectSessions.origin,
+          metadata: projectSessions.metadata,
+          projectMetadata: projects.metadata,
+        })
         .from(projectSessions)
+        .innerJoin(projects, eq(projects.projectId, projectSessions.projectId))
         .where(
           and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)),
         )
@@ -128,6 +139,11 @@ export function registerTurnQuestionsRoutes(): void {
       if (!turnQuestionSession) {
         return c.json({ error: 'Not found' }, 404);
       }
+      // KRTX-1742 is behind the project's notification_center flag. Off, this
+      // route keeps its earlier contract: any caller's new question pushes the
+      // session creator before the relay, and a relay that throws fails the
+      // request.
+      const notificationCenter = notificationsEnabled(turnQuestionSession.projectMetadata);
 
       if (!Array.isArray(body.questions) || body.questions.length === 0) {
         return c.json({ error: 'at least one question is required' }, 400);
@@ -178,12 +194,14 @@ export function registerTurnQuestionsRoutes(): void {
       // alive by reporting "still waiting" is the self-renewal this design
       // deleted.
       const resolvedAccountId = (c as any).get('accountId') as string | undefined;
+      const pendingRequestId = body.request_id?.trim() || `q-${sessionId}`;
+      let notify = false;
       if (resolvedAccountId) {
         const recorded = await recordPendingQuestion({
           accountId: resolvedAccountId,
           projectId,
           sessionId,
-          requestId: body.request_id?.trim() || `q-${sessionId}`,
+          requestId: pendingRequestId,
           opencodeSessionId: body.runtime_session_id ?? null,
           questions,
         }).catch((err) => {
@@ -192,16 +210,16 @@ export function registerTurnQuestionsRoutes(): void {
           console.warn('[turn-question] could not persist pending question:', err);
           return null;
         });
-        // Push once per request id: a daemon retry of the same request updates
-        // the stored row (`inserted` false) and sends nothing. Fire-and-forget.
-        if (recorded?.inserted) {
-          void notifySessionEvent({
-            type: 'question',
-            sessionId,
-            projectId,
-            question: questions[0]?.question,
-          }).catch((err) =>
-            console.warn('[push] question notification failed', err instanceof Error ? err.message : err),
+        // Notify once per request id: a daemon retry of the same request
+        // updates the stored row (`inserted` false) and sends nothing. Only the
+        // session's own sandbox notifies (KRTX-1742): a person's token may
+        // store a question, but its text must never reach other people's
+        // inbox, phone and email.
+        notify = notificationCenter && recorded?.inserted === true && callerSandboxSessionId !== null;
+        // Flag off: the session creator's phones, for any caller, before the relay.
+        if (!notificationCenter && recorded?.inserted) {
+          void notifySessionPushLegacy({ type: 'question', sessionId, projectId, question: questions[0]?.question }).catch(
+            (err) => logger.warn('[push] question notification failed', { sessionId, error: err instanceof Error ? err.message : String(err) }),
           );
         }
       }
@@ -215,7 +233,15 @@ export function registerTurnQuestionsRoutes(): void {
       // A session with no channel has nothing to post to. That is not an error now
       // that the question is durable: it is the ordinary web case, and failing here
       // would make the relay look broken for every non-Slack session.
-      const result = await relayTurnQuestion(sessionId, questions);
+      // A relay that throws (a DB read before anything is posted) must not cost
+      // the stored question its notification: the daemon never retries it.
+      // Flag off, the push went out above and a throw fails the request.
+      const result = notificationCenter
+        ? await relayTurnQuestion(sessionId, questions).catch((err): { ok: false; error: string } => {
+            logger.warn('[turn-question] relay failed', { sessionId, error: err instanceof Error ? err.message : String(err) });
+            return { ok: false, error: 'relay_failed' };
+          })
+        : await relayTurnQuestion(sessionId, questions);
 
       // Release the runtime's BLOCKING `question` call for a chat-channel session
       // — see channels/question-release.ts. Keyed on the session's own metadata,
@@ -223,6 +249,37 @@ export function registerTurnQuestionsRoutes(): void {
       // `q-<session>` fallback above names nothing the runtime can answer.
       // A dashboard session is left alone; its UI answers the question itself.
       const channel = channelOfSessionMetadata(turnQuestionSession.metadata);
+
+      // Tell the person who prompted the running turn and the session's (or
+      // the trigger's) watchers. A Slack/Teams thread that showed the question
+      // is the notification for its channel: the inbox row stays the record.
+      // Fire-and-forget, after the relay so its result is known.
+      if (notify) {
+        void notifySessionEvent(
+          {
+            type: 'question',
+            sessionId,
+            projectId,
+            question: questions[0]?.question,
+            requestId: pendingRequestId,
+            threadCarriesAsk: channel !== null && result.ok,
+          },
+          {
+            notificationCenter: true,
+            context: () =>
+              askNotificationContext({
+                sessionId,
+                projectId,
+                accountId: turnQuestionSession.accountId,
+                metadata: turnQuestionSession.metadata,
+                origin: turnQuestionSession.origin,
+              }),
+          },
+        ).catch((err) =>
+          console.warn('[push] question notification failed', err instanceof Error ? err.message : err),
+        );
+      }
+
       const runtimeRequestId = body.request_id?.trim();
       if (channel && runtimeRequestId) {
         await releaseChannelQuestion({

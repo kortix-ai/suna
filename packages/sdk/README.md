@@ -422,6 +422,18 @@ const browserSession = await apps.access.session(app.app_id);
 
 Access modes are `private`, `project`, `restricted`, `public`, and `password`. An access session exchanges a five-minute URL for an eight-hour, host-only cookie. A stopped or idle App resumes on the same public request. Transient machine requests receive `202 app_starting` and `Retry-After: 3`.
 
+Every App has a `kind`, fixed at create: `web` (the default: a site or a server built from its deployments) or `convex` (a self-hosted Convex backend in its own always-on machine). Branch on `app.capabilities`, never on the kind. A call for a capability the App lacks answers `409 app_capability_unsupported`.
+
+```ts
+const db = await apps.create({ slug: 'db', name: 'Database', kind: 'convex' });
+await apps.waitUntilReady(db.app_id);                 // instance.status 'running', no operation in flight
+await apps.update(site.app_id, { uses: ['db'] });     // the site may mint db tokens and bind to it
+const { env } = await apps.credentials(db.app_id);    // capability admin_credentials (audited)
+await apps.deployments.create(db.app_id, { source: { kind: 'convex', revision: gitSha } }); // record a CLI deploy
+const { snapshots } = await apps.snapshots.list(db.app_id);
+await apps.remove(db.app_id, { confirm: 'db' });      // an App with snapshots needs its typed slug
+```
+
 `send()` reads the persisted session model and
 agent before the first prompt on a handle. This prevents a snapshot-inherited
 runtime session from reusing stale snapshot defaults. A per-call choice
@@ -543,10 +555,11 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | `kortix.marketplace` | public marketplace catalog browse + sources (not project-scoped): `items` · `item` · `itemFile` · `marketplaces` · `featured` · `sources.{list,add,remove}` — distinct from the install-scoped `project(id).marketplace` |
 | `kortix.github` | account-scoped GitHub App installs and repo linking: `getInstallation` · `listInstallations` · `listLinkableInstallations` (each entry carries `linked_to_other_accounts`, a count and never a tenant name) · `listRepositories` · `listRepositoryBranches` · `linkInstallation` · `saveInstallation` · `deleteInstallation` · `linkRepository` (`source: 'managed'` imports a repository the instance backend holds — self-host operator only, and mutually exclusive with `installation_id`) · `replaceProjectRepository` (changes an existing project's repository with an expected old URL; accepts a repository-scoped PAT or a temporary GitHub user proof for a repository-scoped App grant; can atomically copy selected shared runtime secrets from another project in the same account) |
 | `kortix.gitBackend` | the instance git backend ("Kortix managed", one per deployment, never an account connection): `get()` → `{configured, kind: 'app'|'pat'|null, owner}` (any authenticated user) · `repositories({search?, limit?})` (self-host operator only; 403 otherwise) |
+| `kortix.notifications` | the caller's notifications, across accounts: `list({ limit?, before? })` (inbox page + `unread_count`) · `markRead({ ids } \| { all: true } \| { sessionId })` · `preferences` · `updatePreferences({ kinds })` (push and email per kind) · `webPushPublicKey` · `registerWebPushSubscription` · `unregisterWebPushSubscription` · `registerDeviceToken` · `unregisterDeviceToken` (native Expo push). Muting one session is `session(pid, sid).setWatch(false)`. Hooks: `useNotificationInbox`, `useNotificationPreferences`, `useSessionWatch`. Inbox rows, Web Push, email, and session watch are served only for projects with the `notification_center` flag on, off by default; with it off, the session creator's phone still gets the push |
 | `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
 | `kortix.connectors` | Connector data plane for an agent-minted session token: `catalog` · `tools` · `search` · `describe` · `call` (`{ account }`) · `accounts` · `uploadAttachment` |
-| `kortix.project(id)` | id-bound handle: `.apps` (stable serverless App URLs, access, artifacts, deployments, logs, rollback, start/stop) · `.backends` (self-hosted Convex backends: list/create/get/credentials/remove) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` (cron / webhook / monitor / event; `.eventTypes({ connector })` lists a connector's app events) · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
-| `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`reloadConfig`/`reloadConfigStream`/`setSharing`/`participants`/`previews`/`commit`/`publicShares`/`ensureReady`) · `providerSecretPool.{list,get,set}` · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · runtime REST escape hatches: `stream()` and the deprecated `.runtime` |
+| `kortix.project(id)` | id-bound handle: `.apps` (stable App URLs, access, artifacts, deployments, logs, rollback, start/stop, and the capability calls: `snapshots.list/create/delete/restore`, `credentials`, `rotateCredentials`, `token`, `log`, `waitUntilReady`) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` (cron / webhook / monitor / event; `.eventTypes({ connector })` lists a connector's app events) · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
+| `kortix.session(pid, sid)` | id-bound handle: lifecycle (`get`/`update`/`delete`/`start`/`restart`/`stop`/`reloadConfig`/`reloadConfigStream`/`setSharing`/`participants`/`watch`/`setWatch`/`presence`/`previews`/`commit`/`publicShares`/`ensureReady`) · `providerSecretPool.{list,get,set}` · finalized `cost()` · `send`/`abort`/`rewind`/`restoreRewind`/`setModel`/`setAgent` · `transcript()` · `.files` · runtime URL helpers (`health`/`previewUrl`/`proxyUrl`) · runtime REST escape hatches: `stream()` and the deprecated `.runtime` |
 | `kortix.runtime()` | the runtime REST client for the active sandbox (the SDK's own `RuntimeClient`, frozen at the `@opencode-ai/sdk` 1.18.23 route shapes); use a session-scoped handle in multi-tenant code |
 
 Runnable, self-contained scripts for the highest-value flows live in
@@ -1000,23 +1013,32 @@ origin forwards to the Kortix API as the viewer (`viewer_token_scope: 'api'`).
 A direct call to `https://api.kortix.com/v1` from an App origin fails CORS.
 Guide: `/docs/sdk/apps`.
 
-### One member on every runtime: groups, roles, backends
+### One member on every runtime: sign-in tokens, groups, roles
 
 ```ts
-convex.setAuth(kortixAppBackendToken('main'));                                   // App → Kortix Backend
-const me = requireKortixMember(await ctx.auth.getUserIdentity(), { groups: ['Finance'] });  // backend function
-const caller = await verifyKortixMemberToken(bearer);                           // any server (KORTIX_AUTH_* env)
-const viewer = readKortixMember(await fetchKortixAppViewer());                  // browser, no backend
+const db = kortixBinding('db');                                                  // an App this App uses, same origin
+convex = new ConvexReactClient(db.url); convex.setAuth(db.token);                // its client, signed in as the viewer
+const token = await kortixToken()();                                             // a token for this App itself
+const me = requireKortixMember(await ctx.auth.getUserIdentity(), { groups: ['Finance'] });  // a server function
+const caller = await verifyKortixToken(bearer);                                  // any server (KORTIX_AUTH_* env)
+const viewer = readKortixMember(await fetchKortixAppViewer());                   // browser
 ```
 
+One issuer per project signs every App's tokens: `iss` =
+`<API origin>/v1/projects/<projectId>`, `aud` = the App id, 15 minutes. Every
+App JSON carries the values that verify them: `auth.issuer`, `auth.audience`,
+`auth.jwks_uri`. `kortixToken({ audience })` asks the App's own origin
+(`/_kortix/token`) for a token for the App itself or an App it uses (`uses`);
+any other App yields `null` and warns (`403 app_not_linked`). `kortixBinding(slug)`
+reaches a used App's endpoint through `/_kortix/apps/<slug>` on the same origin.
 `readKortixMember` reads every shape Kortix vouches with (gate answer, signed
-header, backend token) into one `KortixMember`: `userId`, `email`, `name`,
+header, sign-in token) into one `KortixMember`: `userId`, `email`, `name`,
 `picture`, `groups`, `groupIds`, `role`, `accountId`, `projectId`.
 `requireKortixMember` throws `KortixMemberError` (`unauthenticated` |
-`forbidden`). `verifyKortixMemberToken` takes the key set inline or as an https
-URL; a backend's is `<KORTIX_AUTH_ISSUER>/jwks.json` (public, named by
-`<issuer>/.well-known/openid-configuration`). WebCrypto only; no dependency.
-Guide: `/docs/sdk/apps`.
+`forbidden`). `verifyKortixToken` takes the key set inline or as an https URL
+(`auth.jwks_uri`), and refuses every token when no audience is set (option or
+`KORTIX_AUTH_AUDIENCE`): one project key signs every App's tokens, so `aud` is
+the only thing that keeps another App's token out. `audience: false` opts out. WebCrypto only; no dependency. Guide: `/docs/sdk/apps`.
 
 ### Headless sign-in (your users, straight through the API)
 

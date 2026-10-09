@@ -237,7 +237,7 @@
   },
   "src/apps/routes.ts": {
     "kortix-api/projects-surface": {
-      "count": 2
+      "count": 1
     },
     "no-console": {
       "count": 2
@@ -246,7 +246,7 @@
       "count": 2
     },
     "no-restricted-syntax": {
-      "count": 21
+      "count": 20
     }
   },
   "src/apps/runtime-artifacts.ts": {
@@ -2423,11 +2423,6 @@
   "src/projects/routes/session-open-bundle.ts": {
     "no-console": {
       "count": 1
-    }
-  },
-  "src/projects/routes/session-presence.ts": {
-    "no-restricted-imports": {
-      "count": 2
     }
   },
   "src/projects/routes/session-reminders.ts": {

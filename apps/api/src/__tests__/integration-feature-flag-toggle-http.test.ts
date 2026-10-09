@@ -202,8 +202,8 @@ describe('PATCH /v1/projects/:projectId/features', () => {
   });
 });
 
-// `apps` and `backends` are internal-only (catalogHidden): they start billable
-// machines, so only a platform operator writes them (D10).
+// `apps` is internal-only (catalogHidden): it starts billable
+// machines, so only a platform operator writes it (D10).
 describe('operator-only flags', () => {
   test('a project manager gets 403 feature_operator_only for enable, disable and clear; nothing is stored', async () => {
     for (const enabled of [true, false, null]) {
@@ -244,18 +244,18 @@ describe('PUT /v1/admin/api/projects/:id/features', () => {
   }
 
   test('a non-operator gets 403 and nothing is stored', async () => {
-    const res = await put(PROJECT, { feature: 'backends', enabled: true }, secret);
+    const res = await put(PROJECT, { feature: 'apps', enabled: true }, secret);
     expect(res.status).toBe(403);
     expect(await storedOverrides(PROJECT)).toBeUndefined();
   });
 
   test('an operator sets and clears a hidden flag; unknown flag 400; unknown or archived project 404', async () => {
-    const on = await put(PROJECT, { feature: 'backends', enabled: true }, operatorSecret);
+    const on = await put(PROJECT, { feature: 'apps', enabled: true }, operatorSecret);
     expect(on.status).toBe(200);
-    expect(await on.json()).toMatchObject({ project_id: PROJECT, feature: 'backends', override: true });
-    expect(await storedOverrides(PROJECT)).toEqual({ backends: true });
+    expect(await on.json()).toMatchObject({ project_id: PROJECT, feature: 'apps', override: true });
+    expect(await storedOverrides(PROJECT)).toEqual({ apps: true });
 
-    const cleared = await put(PROJECT, { feature: 'backends', enabled: null }, operatorSecret);
+    const cleared = await put(PROJECT, { feature: 'apps', enabled: null }, operatorSecret);
     expect(cleared.status).toBe(200);
     expect(await cleared.json()).toMatchObject({ override: null, enabled: false });
     expect(await storedOverrides(PROJECT)).toBeUndefined();

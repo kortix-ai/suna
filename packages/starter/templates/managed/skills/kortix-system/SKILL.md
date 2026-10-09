@@ -1,6 +1,6 @@
 ---
 name: kortix-system
-description: "Canonical reference for Kortix projects, Apps, Kortix Backends (Convex) and internal business apps, the CLI, sessions, sandboxes, change requests, triggers, connectors, secrets, system skills, and the two session harnesses, pi and OpenCode. Covers `kortix.yaml` versions 1 and 2, serverless App deployments, harness configuration (`harnesses/pi/`, `harnesses/opencode/`), session identity, credential boundaries, and the complete pi and OpenCode references. Load when the user asks how Kortix works, what Kortix can do, how to deploy an App, how an agent discovers platform instructions, how to customize or configure this project's agents (create or fix an agent, subagent, skill, tool, plugin, extension, pi package, command, MCP server, model or permission rule; edit `opencode.jsonc`), how to edit `kortix.yaml`, how to use the `kortix` CLI, how to land work through a change request, or how to schedule and automate work."
+description: "Canonical reference for Kortix projects, Apps (web and `convex` kinds) and internal business apps, the CLI, sessions, sandboxes, change requests, triggers, connectors, secrets, system skills, and the two session harnesses, pi and OpenCode. Covers `kortix.yaml` versions 1 and 2, serverless App deployments, harness configuration (`harnesses/pi/`, `harnesses/opencode/`), session identity, credential boundaries, and the complete pi and OpenCode references. Load when the user asks how Kortix works, what Kortix can do, how to deploy an App, how an agent discovers platform instructions, how to customize or configure this project's agents (create or fix an agent, subagent, skill, tool, plugin, extension, pi package, command, MCP server, model or permission rule; edit `opencode.jsonc`), how to edit `kortix.yaml`, how to use the `kortix` CLI, how to land work through a change request, or how to schedule and automate work."
 ---
 
 <skill name="kortix-system">
@@ -9,9 +9,7 @@ description: "Canonical reference for Kortix projects, Apps, Kortix Backends (Co
 The `kortix` CLI is the live source of truth for how Kortix works. The Kortix
 **system skills** — `kortix-system`, `kortix-apps`, `kortix-connectors`,
 `kortix-memory`, `kortix-harness-refinement`, `kortix-slack`,
-`kortix-computer`, `kortix-marketplace`, `kortix-backends`,
-`kortix-internal-apps` — are
-served fresh by the CLI,
+`kortix-computer`, `kortix-marketplace` — are served fresh by the CLI,
 so their instructions always match the platform version you're running on (no
 re-install, no image re-bake):
 
@@ -183,7 +181,7 @@ Load this skill when the user asks any of:
 - "How do I customize the sandbox image?"
 - "How do I deploy a website, Dockerfile, or OCI image?" / "How do Kortix Apps work?"
 - "I need a database / a backend / an API for my app" / "Build an internal
-  tool or app the team logs in to" (route through `<backends>`)
+  tool or app the team logs in to" (route through `<apps>`)
 - "How do I create an agent, a subagent or a reusable skill?"
 - "How do I register an MCP server?"
 - "How do I tighten permissions for the build agent?"
@@ -224,18 +222,18 @@ Kortix cloud state — not just files in the repo. Examples:
 | "check back on this later / keep checking until it's done" | `kortix remind "…" --in 24h --every 1h` · `kortix reminders ls|pause|resume|rm` |
 | "show open change requests" | `kortix cr ls` |
 | "who am I? what project is this?" | `kortix whoami`, `kortix projects info` |
-| "turn on / off a feature flag (Reminders, Meta Agent, …)" | `kortix projects features` · `kortix projects features enable <flag>`. Apps and Backends are Kortix-managed: listed as `on kortix` only while on; only Kortix changes them. |
+| "turn on / off a feature flag (Reminders, Meta Agent, …)" | `kortix projects features` · `kortix projects features enable <flag>`. Apps is Kortix-managed: listed as `on kortix` only while on; only Kortix changes it. |
 | "rename the project / change its icon or default branch" | `kortix projects set --name … --icon … --branch …` |
 | "which models can this project use? set the default model" | `kortix models ls` · `kortix models default <model>` · `models enable|disable <id>` |
 | "change the default agent / an agent's scope or config" | `kortix agents default <name>` · `kortix agents scope <agent> [--secrets …] [--connectors …] [--apps …]` · `kortix agents config <agent>` |
 | "stop / wake a session, share it, or publish a preview link" | `kortix sessions stop|start <id>` · `sessions share <id> --mode …` · `sessions links <id> create --port 3000` |
 | "queue a prompt for later / see or reorder the queue" | `kortix sessions chat <id> -p "…" --queue` · `kortix sessions queue <id> ls|now|rm|hold|release` |
 | "approve / deny a pending connector call" | `kortix sessions approvals <id> ls|approve|deny` |
-| "call Gmail / a CRM / any connector from an App, a Convex backend or a script" | `@kortix/sdk` through the connector gateway, never a raw provider key · `kortix system-skills get kortix-connectors` (**From apps and backends**) |
+| "call Gmail / a CRM / any connector from an App (a `convex` App included) or a script" | `@kortix/sdk` through the connector gateway, never a raw provider key · `kortix system-skills get kortix-connectors` (**From apps and backends**) |
 | "edit files in another session's sandbox" | `kortix sessions files <id> ls|write|mv|rm|find` |
 | "what needs review? approve / reject / request changes" | `kortix review ls` · `kortix review act <id> approve` · `kortix cr request-changes <cr> --message` |
 | "show me every app event trigger" / "what listens to <app>?" | `kortix triggers ls --type event` (grouped by app) · `kortix triggers ls --connector <slug>` · web: Triggers → **App events** |
-| "when X happens in <app>, do Y" (new email, PR, issue, calendar event, Slack message) | `kortix triggers events --apps` → `triggers events --connector <slug> --event <TYPE>` → `triggers add … --type event … --apply` · playbook: `references/scheduling.md` → App event triggers |
+| "when X happens in <app>, do Y" (new email, PR, issue, calendar event, Slack message). Beta: needs the project flag `event_triggers` (`kortix projects features enable event_triggers`; a `403 feature_disabled` means it is off) | `kortix triggers events --apps` → `triggers events --app <app> [--event <TYPE>]` (browse events before any connector) → `triggers events --connector <slug> --event <TYPE>` → `triggers add … --type event … --apply` · playbook: `references/scheduling.md` → App event triggers |
 | "edit a trigger live (schedule, conditions, agent, model)" | `kortix triggers set <slug> --cron … --filter k=v` · `triggers add … --apply` |
 | "which tools does this project have? remove / change a Kortix tool" | `kortix tools ls` · delete the `<name>: kortix:<name>` line in `kortix.yaml` · `kortix tools eject <name>` *(`references/kortix/tools.md` has the checklists)* |
 | "who is in the account / invite someone / manage groups" | `kortix members ls|invite` · `kortix groups …` · `kortix access requests ls` |
@@ -355,10 +353,12 @@ and the alternative. `read_skill` with
 </mcp-client>
 
 <apps>
-## Kortix Apps — deploy a website or container
+## Kortix Apps — websites, containers and `convex` backends
 
-An **App** is a project-scoped deployment with one stable Kortix URL. A
-deployment is immutable. A failed deployment never replaces the active version.
+An **App** is a project-scoped thing with one stable Kortix URL. A deployment
+is immutable. A failed deployment never replaces the active version. Every App
+has one `kind`, fixed at create, and lists its `capabilities`; clients branch
+on capabilities, never on kind.
 
 - A **static App** (`--type static`) is files that Kortix serves itself: no
   machine, no cold start, no compute bill, instant rollback. Build a Vite,
@@ -368,6 +368,12 @@ deployment is immutable. A failed deployment never replaces the active version.
   (`--on-demand`: stops when idle, wakes on the next request). It stops at its
   monthly compute budget (default 5 USD). 24/7 on the default machine costs
   about 73 USD a month, so an always-on App needs `--budget`.
+- A **`convex` App** (`kortix apps create <slug> --kind convex`) is a full
+  backend: database, server functions, realtime queries, file storage,
+  schedules and search, powered by self-hosted Convex with built-in Kortix
+  sign-in. One always-on machine each, up to 3 per project and 10 per
+  account. Its code usually lives in `apps/<slug>/convex/` and ships with
+  `kortix apps deploy apps/<slug> --app <slug>`.
 
 Apps is off by default and enabled per project by Kortix (it is not listed in
 Project Settings → Feature flags; the user contacts Kortix). The
@@ -400,44 +406,29 @@ rollback. A server App supports one public HTTP port, HTTP streaming, SSE, and
 WebSockets. Apps do not support replicas, persistent volumes, UDP, private
 registries, or custom domains.
 
-Load the `kortix-apps` system skill before you deploy or operate an App.
+**Build a product: what to create.** Check the flag first:
+`kortix projects info --json` → `experimental.apps`.
+
+| The user wants | Build |
+| --- | --- |
+| A website or UI with no stored data | A static App |
+| An app with data, login or realtime | A `convex` App + a static App that uses it (`kortix apps link <ui> --uses <db>`) |
+| A database or API only | A `convex` App |
+| A call to an external system from an App | The connector gateway (`kortix-connectors`) |
+| Agent work on a schedule or an event | `<scheduling>` here, `references/scheduling.md` |
+
+When `apps` is off, or a `convex` create answers `409 app_kind_unavailable`,
+build with the project's own storage and code (the project's web-app skills,
+`webapp`, `web-publishing-and-deployments`), and tell the user once that
+Kortix can enable it.
+
+Load the `kortix-apps` system skill before you deploy or operate an App, and
+before you write Convex code.
 **Full reference:** `references/kortix/apps.md` — workload selection, manifest
 fields, every lifecycle command, run modes and budget, ignore rules, secrets,
 cold starts, rollback, retention, limits, and failure handling.
 </apps>
 
-<backends>
-A **Kortix backend** is a full backend for the project: a database, server
-functions, realtime queries, file storage, schedules and search, powered by
-self-hosted Convex, with built-in Kortix sign-in (functions know the signed-in
-member). One machine per backend, up to 3 per project and 10 per account. The Convex code usually
-lives in the project repo (`backends/<name>/`) and ships with
-`kortix backends deploy <name> --dir backends/<name>`. Experimental, off by
-default (feature flag `backends`).
-
-**Check the flag first:** `kortix backends list` exits `0` only when Backends
-is on in this project. When it is on, load `kortix-backends` before you create
-or change a backend or write Convex code, and `kortix-internal-apps` when the
-user wants a complete app (backend + UI + sign-in) built, deployed and
-verified. When it is off, do not load either skill and do not stop: build with
-the project's own storage and code, and tell the user once that Kortix can
-enable Backends.
-
-**Build a product: which skill owns it.** Check the flags first:
-`kortix projects info --json` → `experimental.apps` and
-`experimental.backends`.
-
-| The user wants | Load | Runs on |
-| --- | --- | --- |
-| A website or UI with no stored data | `kortix-apps` | An App |
-| An app with data, login or realtime | `kortix-internal-apps` (+ `kortix-backends`, `kortix-apps`) | A backend (one always-on machine, billed like a sandbox) + an App |
-| A database or API only | `kortix-backends` | A backend |
-| A call to an external system from an App or a backend | `kortix-connectors` | The connector gateway |
-| Agent work on a schedule or an event | `<scheduling>` here, `references/scheduling.md` | A session per run |
-
-When `apps` or `backends` is off, the rows that need it fall back to the
-project's own web-app skills (`webapp`, `web-publishing-and-deployments`).
-</backends>
 
 <marketplace>
 The **Kortix Marketplace** is the project skill library and the normal way to
@@ -826,7 +817,7 @@ project.model.read  project.model.write
 project.gitops.read  project.gitops.push  project.gitops.merge
 project.secret.read  project.secret.write
 project.connector.read  project.connector.write  project.connector.connections.manage   # channels (Slack/meet/email) send + connect are gated here
-project.backend.read  project.backend.write
+project.app.read  project.app.write  project.app.deploy  project.app.admin   # admin: credentials, rotate, restore, delete a convex App
 project.review.read  project.review.submit  project.review.act
 ```
 

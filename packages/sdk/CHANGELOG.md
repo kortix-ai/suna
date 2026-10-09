@@ -6,6 +6,51 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 ### Added
+- `FeatureFlagKey` gains `notification_center` (also in `FEATURE_FLAG_KEYS`
+  and `KortixProject.experimental`). Off by default. It gates the KRTX-1742
+  notification entries below per project. Turn it on with
+  `updateFeatureFlag(projectId, 'notification_center', true)`.
+- Notifications (KRTX-1742), behind the `notification_center` project flag,
+  off by default. While it is off, the server writes no inbox row and sends
+  no Web Push and no email for that project, and the session watch routes
+  answer `403` `feature_disabled`. The caller's inbox: `listNotifications({ limit?,
+  before? })` → `InboxNotificationPage` (`notifications`, `unread_count`,
+  `next_before`) and `markNotificationsRead({ ids } | { all: true } |
+  { sessionId })`. Push and email choices per kind:
+  `getNotificationPreferences()` and `updateNotificationPreferences(patch)` →
+  `NotificationPreferences` (`kinds`, `email_available`). Web Push:
+  `getWebPushPublicKey()`, `registerWebPushSubscription({ endpoint, keys })`,
+  `unregisterWebPushSubscription(endpoint)`. Session watch:
+  `getSessionWatch(projectId, sessionId)` and `setSessionWatch(projectId,
+  sessionId, watching)`, also `session(pid, sid).watch()` and `.setWatch()`.
+  Facade: `kortix.notifications.{list, markRead, preferences,
+  updatePreferences, webPushPublicKey, registerWebPushSubscription,
+  unregisterWebPushSubscription}`. Types: `InboxNotification`,
+  `InboxNotificationKind`, `InboxNotificationPage`, `NotificationPreferences`,
+  `NotificationPreferencesPatch`, `WebPushSubscriptionInput`. Constants:
+  `INBOX_NOTIFICATION_KINDS`, `DEFAULT_NOTIFICATION_PREFERENCES`.
+- `@kortix/sdk/react`: `useNotificationInbox({ userId, limit?, enabled? })`
+  (60 s poll while visible, `unreadCount`, optimistic `markRead`,
+  `markAllRead`, `markSessionRead`), `useNotificationPreferences({ userId })`
+  (optimistic `update`), `useSessionWatch({ userId, projectId, sessionId })`
+  (optimistic `setWatching`), `notificationInboxQueryOptions`, and the
+  `qk.notifications` key family (`scope`, `inbox`, `preferences`,
+  `sessionWatch`, keyed by user). Each hook takes `enabled`; a host passes
+  `useFeatureFlag(projectId, 'notification_center').enabled`.
+- `session(pid, sid).presence()` accepts `alerts?: boolean`, and
+  `useSession({ presenceAlerts })` sends it: with `notification_center` on,
+  the server skips the phone and Web Push only while an alerting tab is in
+  use. A change is sent at once, without dropping the lease. A second
+  argument `{ keepalive?: boolean }` lets the request outlive a closing page;
+  default on for an absent report, off for a present one.
+- `useSession({ presencePageExit })`, default `false`: `pagehide` reports
+  absent, and every absent report is sent with `keepalive`, so a closed tab
+  ends its lease at once. Off is the presence from before: no `pagehide`
+  report and no `keepalive`. A closing tab still turns hidden and reports
+  absent, but the browser can cancel that request as the page unloads, and
+  the lease then lives to its 90 s expiry. Pass the project's
+  `notification_center` flag. A change applies without a new presence
+  report.
 - `ConnectorPageLimitError` (`code: 'max_pages_exceeded'`, `connector`,
   `action`, `maxPages`, `nextArgs`): `paginateConnector` and
   `connector(slug).paginate` throw it when `maxPages` (default 100) ends a
@@ -189,6 +234,12 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   unknown until the probe answers, as before.
 
 ### Deprecated
+- The `config_releases` member of `FeatureFlagKey`. Config releases graduated
+  out of the flag system: every session runs its base branch's config release.
+  It is absent from `FEATURE_FLAG_KEYS` and `KortixProject.experimental`, and
+  `useFeatureFlag(id, 'config_releases')` reports `enabled: true`.
+  `updateFeatureFlag(id, 'config_releases', …)` answers `400`. Removed in the
+  next major.
 - `createCheckoutSession`, `confirmCheckoutSession` and `scheduleDowngrade`
   (and the facade's `kortix.billing.checkout.{createSession,confirmSession}`
   and `kortix.billing.subscription.scheduleDowngrade`). The API retired their

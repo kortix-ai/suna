@@ -156,11 +156,12 @@ export {
   useAppDeployments,
   useAppDeployment,
   useAppAccess,
+  useAppSnapshots,
   projectAppsKey,
   appDeploymentsKey,
   appDeploymentKey,
+  appSnapshotsKey,
 } from './use-project-apps';
-export { useProjectBackends, useProjectBackendBackups, projectBackendsKey } from './use-project-backends';
 
 // The expected "no compaction model configured" configuration state thrown by
 // `useSummarizeRuntimeSession`'s mutation when every model-resolution fallback
@@ -217,6 +218,8 @@ export * from './use-project-session';
 export * from './use-session-participants';
 export * from './use-project-sessions';
 export * from './use-sessions-needing-input';
+// The caller's notification inbox, preferences and session watch (KRTX-1742).
+export * from './use-notifications';
 export * from './session-cache-write';
 export * from './invalidate-project';
 export * from './use-feature-flag';

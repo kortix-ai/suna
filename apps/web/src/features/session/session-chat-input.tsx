@@ -9,7 +9,7 @@
  * `ProviderListResponse` user already imports it straight from
  * `@kortix/sdk/react`).
  */
-export { AgentSelector } from './composer/agent-selector';
+export { AgentSelector, agentDisplayLabel } from './composer/agent-selector';
 export { Composer as SessionChatInput, type SessionChatInputProps } from './composer/composer';
 export type { AttachedFile, TrackedMention } from './composer/types';
 export { flattenModels, type FlatModel } from './model-flatten';

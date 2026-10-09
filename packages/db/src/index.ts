@@ -63,7 +63,6 @@ export {
   projectTriggerExecutions,
   projectMonitorEvents,
   projectMonitorBoxes,
-  projectBackends,
   sessionLifecycleCommands,
   chatChannelBindings,
   chatInstalls,
@@ -123,10 +122,19 @@ export {
   creditPurchases,
   // Mobile push notification device tokens
   pushDeviceTokens,
+  // Notification inbox, preferences, watchers, Web Push (KRTX-1742)
+  notifications,
+  notificationPreferences,
+  notificationWatchers,
+  triggerWatchers,
+  webPushSubscriptions,
   // Billing v2 — per-seat + compute metering + per-member YOLO
   sandboxComputeSessions,
   apps,
   appAccessGrants,
+  appLinks,
+  appConvexInstances,
+  projectSigningKeys,
   appArtifacts,
   appDeployments,
   appImages,

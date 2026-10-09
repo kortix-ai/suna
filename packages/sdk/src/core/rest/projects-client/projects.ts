@@ -24,12 +24,13 @@ import {
  * every consumer's bundle. {@link FEATURE_FLAG_KEYS} is the runtime witness of
  * the same list, so other packages can assert the two have not drifted.
  *
- * `review_center`, `agent_tunnel`, `session_transcript_history` and `teams`
- * are deprecated. `agent_tunnel` graduated like `review_center` below: a
- * paired computer is a connector account and needs no flag. So did
- * `session_transcript_history`: every session saves its transcript and shows
- * it while its computer is off. And `teams`: every project can connect
- * Microsoft Teams.
+ * `review_center`, `agent_tunnel`, `session_transcript_history`, `teams` and
+ * `config_releases` are deprecated. `agent_tunnel` graduated like
+ * `review_center` below: a paired computer is a connector account and needs no
+ * flag. So did `session_transcript_history`: every session saves its
+ * transcript and shows it while its computer is off. And `teams`: every
+ * project can connect Microsoft Teams. And `config_releases`: every session
+ * runs its base branch's config release.
  *
  * `review_center` is deprecated. Review Center graduated out of the flag
  * system: it is on for every project, and the API no longer lists, resolves,
@@ -51,7 +52,6 @@ export type FeatureFlagKey =
   | 'review_center'
   | 'meta_agent'
   | 'apps'
-  | 'backends'
   | 'monitors'
   | 'reminders'
   | 'warm_sessions'
@@ -62,10 +62,13 @@ export type FeatureFlagKey =
   | 'session_transcript_history'
   | 'pooled_provider_secrets'
   | 'pi_harness'
+  /** @deprecated Graduated — every session runs its base branch's config release. Removed in the next major. */
   | 'config_releases'
   /** @deprecated Graduated — every governed agent authorizes as itself; there is no switch. Removed in the next major. */
   | 'agent_principal'
   | 'us_region'
+  | 'event_triggers'
+  | 'notification_center'
   /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'human_messaging';
 
@@ -77,7 +80,8 @@ type GraduatedFeatureFlagKey =
   | 'session_transcript_history'
   | 'agent_principal'
   | 'human_messaging'
-  | 'pi_worker';
+  | 'pi_worker'
+  | 'config_releases';
 /** The keys `KortixProject.experimental` carries on every response. */
 type ServedFeatureFlagKey = Exclude<FeatureFlagKey, GraduatedFeatureFlagKey>;
 
@@ -93,15 +97,15 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'llm_gateway',
   'meta_agent',
   'apps',
-  'backends',
   'monitors',
   'reminders',
   'warm_sessions',
   'secrets_egress',
   'pooled_provider_secrets',
   'pi_harness',
-  'config_releases',
   'us_region',
+  'event_triggers',
+  'notification_center',
 ] as const;
 
 /**
@@ -124,7 +128,7 @@ export interface FeatureFlagView {
   /** True when this project set an explicit choice (vs inheriting the default). */
   overridden: boolean;
   /**
-   * True for an internal-only flag (`apps`, `backends`). The catalog lists one
+   * True for an internal-only flag (`apps`). The catalog lists one
    * only while it is on, so agents and people can see it. Only a Kortix
    * platform operator can change it: `PATCH /features` answers `403` with
    * `feature_operator_only`. Absent on servers older than this field.

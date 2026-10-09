@@ -36,6 +36,8 @@ import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { SESSION_CREATE_ERROR_STATUSES, sendSessionCreateError } from '../lib/sessions';
 import { sessionHasPersonalConnectorBinding } from '../lib/session-connector-bindings';
 import { sessionPersonOnlyPlaintextSecrets } from '../lib/secret-audience';
+import { notifySessionShared } from '../lib/notification-recipients';
+import { notificationsEnabled } from '../../notifications/enabled';
 import { createSession, deleteSession } from '../session-lifecycle';
 import { validateProviderSecretPool } from './provider-secret-pools';
 import { requireFeatureFlag } from '../../feature-flags/gate';
@@ -563,6 +565,22 @@ export function registerProjectSessionsRoutes(): void {
     }
 
     await setSessionSharing(sessionId, intent);
+    // "Shared with you" for the people this change newly names (KRTX-1742),
+    // only with the project's notification_center flag on. `visible.grants`
+    // and `visible.row.visibility` were read BEFORE the change.
+    // Fire-and-forget: it never throws and never delays or fails the share.
+    if (notificationsEnabled(loaded.row.metadata)) {
+      void notifySessionShared({
+        accountId: loaded.row.accountId,
+        projectId,
+        sessionId,
+        sharerId: loaded.userId,
+        creatorId: visible.row.createdBy,
+        priorGrants: visible.grants,
+        priorVisibility: visible.row.visibility,
+        intent,
+      });
+    }
 
     const fresh = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
       return c.json(

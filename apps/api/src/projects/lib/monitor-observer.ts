@@ -25,6 +25,7 @@ import {
 } from './monitor-events';
 import { renderPromptTemplate, triggerFilterMatches } from './trigger-payload';
 import { fireGitTrigger, markGitTriggerAttemptFailed, markGitTriggerFired } from './trigger-fire';
+import { raiseTriggerAlert } from './trigger-alerts';
 import { triggersPausedForProject } from './trigger-scheduler-state';
 
 /** Attempts after which an event dead-letters as `failed`. Mirrors the
@@ -206,7 +207,8 @@ export async function processMonitorEvent(
 /**
  * A failed attempt stays `pending` so the next tick retries it, until the
  * attempt ceiling turns it into a dead-lettered `failed` row. The trigger
- * records every failed attempt, like a failed cron fire (KRTX-1743).
+ * records every failed attempt, like a failed cron fire (KRTX-1743); the dead
+ * letter alerts its watchers (KRTX-1742).
  */
 async function failMonitorEvent(row: MonitorEventRow, now: Date, error: string): Promise<'failed'> {
   const terminal = row.attempts >= MONITOR_EVENT_MAX_ATTEMPTS;
@@ -218,6 +220,7 @@ async function failMonitorEvent(row: MonitorEventRow, now: Date, error: string):
     })
     .where(eq(projectMonitorEvents.eventId, row.eventId));
   await markGitTriggerAttemptFailed(row.projectId, row.slug, now, error).catch(() => {});
+  if (terminal) await raiseTriggerAlert({ projectId: row.projectId, slug: row.slug, source: 'fire', error });
   return 'failed';
 }
 

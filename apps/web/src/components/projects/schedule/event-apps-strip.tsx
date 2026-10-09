@@ -3,7 +3,7 @@
 /**
  * "Apps with events": every app that can start an agent, the project's own
  * apps first. Under the App events list, so a person sees what else they can
- * listen to. A click opens the create form on that app.
+ * listen to. A click opens the create form on that app's events. It sends no request.
  */
 
 import { AppLogo } from '@/components/projects/onboarding/app-logo';
@@ -38,7 +38,7 @@ export function EventAppsStrip({
               type="button"
               disabled={disabled}
               onClick={() => onPick(app)}
-              className="hover:bg-accent/50 flex w-full cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-left transition-colors duration-fast disabled:cursor-default disabled:opacity-60"
+              className="hover:bg-accent/50 duration-fast flex w-full cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-left transition-colors disabled:cursor-default disabled:opacity-60"
             >
               <AppLogo src={app.logo} />
               <span className="min-w-0 flex-1">

@@ -1,9 +1,10 @@
 import { writeAgentEnvFile } from '@/harness/shared/agent-env-file'
-import { configureGlobalGitIdentity, configureGitCredentialHelper, materializeRepo } from '@/lib/git/git'
+import { configureGlobalGitIdentity, configureGitCredentialHelper } from '@/lib/git/git'
 import type { HarnessBootContext, HarnessDefinition } from '@/harness/harness'
 import { logger } from '@/lib/log/logger'
 import { MonitorRunner, parseMonitorSpecs } from '@/services/monitor/monitor-runner'
 import { createProjectEnvStore } from '@/services/sandbox-env/project-env'
+import { provideWorkspace } from '@/services/workspace-provider/workspace-provider'
 
 /**
  * Monitor mode — the box that watches things 24/7.
@@ -15,9 +16,9 @@ import { createProjectEnvStore } from '@/services/sandbox-env/project-env'
  * it is healthy), and MonitorRunner owns everything after that.
  *
  * The repo is checked out at the project's DEFAULT branch: the API omits
- * KORTIX_BRANCH_NAME for a monitor box, so materializeRepo leaves the checkout
- * on default-branch HEAD instead of minting a session branch. A monitor watches
- * what is shipped, not what some session is working on.
+ * KORTIX_BRANCH_NAME for a monitor box, so the workspace provider leaves the
+ * checkout on default-branch HEAD instead of minting a session branch. A monitor
+ * watches what is shipped, not what some session is working on.
  */
 export async function runMonitorMode(
   context: HarnessBootContext,
@@ -46,7 +47,8 @@ export async function runMonitorMode(
   bootMark('proxy-up')
 
   if (cfg.autoClone) {
-    await materializeRepo(cfg).catch((err) => {
+    // Git only: a monitor box has never taken the S3 transport.
+    await provideWorkspace({ ...cfg, projectSnapshotMode: 'git' }).catch((err) => {
       bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
       logger.error('[monitor] repo materialization failed', err)
     })

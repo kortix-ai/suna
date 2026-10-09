@@ -14,17 +14,28 @@
 #     Terraform assumes. A root cannot own the credential it runs as.
 # ════════════════════════════════════════════════════════════════════════════
 
-import {
-  to = aws_iam_role.bedrock_logs
-  id = "bedrock-logs"
+# 2026-10-09: whatsapp-gateway was shut down and us-west-2 Bedrock invocation
+# logging was turned off, so their three adopted roles left Terraform. The
+# `removed` blocks drop them from state without a destroy; the roles are then
+# deleted by hand (detach policies first). Delete these blocks once the
+# Terraform Apply Global run that applies them has finished.
+removed {
+  from = aws_iam_role.bedrock_logs
+  lifecycle {
+    destroy = false
+  }
 }
 
-import {
-  to = aws_iam_role.whatsapp_gateway_instance
-  id = "whatsapp-gateway-instance"
+removed {
+  from = aws_iam_role.whatsapp_gateway_instance
+  lifecycle {
+    destroy = false
+  }
 }
 
-import {
-  to = aws_iam_role.whatsapp_gateway_github_deploy
-  id = "whatsapp-gateway-github-deploy"
+removed {
+  from = aws_iam_role.whatsapp_gateway_github_deploy
+  lifecycle {
+    destroy = false
+  }
 }
