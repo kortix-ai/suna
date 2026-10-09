@@ -998,7 +998,6 @@ flow(
       'GET /v1/projects/:projectId/sessions/:sessionId/watch',
       'PUT /v1/projects/:projectId/sessions/:sessionId/watch',
       'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
-      'POST /v1/projects/:projectId/resource-grants',
       'POST /v1/accounts/tokens',
       'POST /v1/projects/:projectId/turn-stream',
       'POST /v1/projects/:projectId/turn-question',
@@ -1030,10 +1029,10 @@ flow(
     };
     const extraSessions: string[] = [];
     let promptSessionId = '';
-    /** B sends one prompt into A's session `promptSessionId`. */
-    const promptAsB = async () =>
+    /** The OWNER, a person who did not create it, sends one prompt into A's session `promptSessionId`. */
+    const promptAsOwner = async () =>
       (
-        await ctx.client.as(b).post(
+        await ctx.client.as(ctx.P.OWNER).post(
           '/v1/projects/:projectId/sessions/:sessionId/prompts',
           {
             client_message_id: randomUUID(),
@@ -1063,15 +1062,7 @@ flow(
         (await ctx.client.as(ctx.P.ANON).get(watchRoute, { params: watchParams })).status(401);
       });
 
-      await ctx.step("B's prompt in A's project-visible session → 2xx, and B follows nothing: no watcher row", async () => {
-        // A plain member runs no agent until a manager grants one; the fixture project's agent is `kortix`.
-        (
-          await ctx.client.as(ctx.P.OWNER).post(
-            '/v1/projects/:projectId/resource-grants',
-            { resource_type: 'agent', resource_id: 'kortix', principal_type: 'member', principal_id: b.userId },
-            { params: { projectId: project.id } },
-          )
-        ).status([200, 201]);
+      await ctx.step("the OWNER's prompt in A's project-visible session → 2xx, and the OWNER follows nothing: no watcher row", async () => {
         promptSessionId = await createDatabaseSession(ctx.env, {
           projectId: project.id,
           accountId: team.id,
@@ -1079,8 +1070,7 @@ flow(
           visibility: 'project',
         });
         extraSessions.push(promptSessionId);
-        await db.query(`UPDATE kortix.project_sessions SET agent_name = 'kortix' WHERE session_id = $1`, [promptSessionId]);
-        await promptAsB();
+        await promptAsOwner();
         await settle();
         expectCount(await watcherRows(promptSessionId), 0, 'watcher rows after a non-creator prompt');
       });
@@ -1164,11 +1154,11 @@ flow(
         }
       });
 
-      await ctx.step("OWNER turns the flag on: watch → 200, B's prompt makes B a follower, the stored row lists and counts, and a new question reaches B", async () => {
+      await ctx.step("OWNER turns the flag on: watch → 200, the OWNER's prompt makes them a follower, the stored row lists and counts, and a new question reaches B", async () => {
         await setNotificationCenter(ctx, project.id, true);
         (await creatorWatch()).status(200).body().has('$.watching', true);
-        // The positive control for the prompt step: the same prompt now makes B a follower.
-        await promptAsB();
+        // The positive control for the prompt step: the same prompt now makes the OWNER a follower.
+        await promptAsOwner();
         await settle();
         expectCount(await watcherRows(promptSessionId), 1, 'watcher rows after a non-creator prompt with the flag on');
         const page = await readInbox(ctx, b);
