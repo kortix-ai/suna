@@ -91,7 +91,6 @@ import {
   GearSixIcon as CogOne,
   SignOutIcon as LogOut,
   MonitorIcon,
-  CodeSimpleIcon,
   PlusIcon,
 } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -100,6 +99,7 @@ import { useRouter } from 'next/navigation';
 import * as React from 'react';
 import { useEffect, useState } from 'react';
 import { Download } from '@/features/icon/icons/download';
+import { Mcp } from '@/features/icon/icons/mcp';
 
 export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   const t = useI18nTranslations('sidebar');
@@ -326,7 +326,7 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                 onSelect={() => deferAfterClose(() => setConnectMcpOpen(true))}
                 size="sm"
               >
-                <CodeSimpleIcon />
+                <Mcp />
                 {t('workspace.connectMcp')}
               </DropdownMenuItem>
 
