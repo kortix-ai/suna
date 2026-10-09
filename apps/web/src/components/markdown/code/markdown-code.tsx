@@ -1,10 +1,12 @@
 'use client';
 
+import type { MarkdownTrust } from '@/components/markdown/markdown-policy';
 import { KaTeXBlock } from '@/components/markdown/katex-block';
 import { KATEX_FENCE_LANGUAGES } from '@/components/markdown/katex-markdown';
 import { SetupLinkButton } from '@/components/setup-links/setup-link-button';
 import { parseSetupLinkHref } from '@/components/setup-links/util';
 import { isMermaidCode } from '@/lib/mermaid-utils';
+import { genuiVersionFromClassName } from '@kortix/sdk/genui';
 import React, { lazy, Suspense } from 'react';
 
 import { childrenToText } from './children-text';
@@ -17,6 +19,9 @@ const MermaidRenderer = lazy(() =>
     default: mod.MermaidRenderer,
   })),
 );
+
+// Generative UI pulls in lang-core and the block components; load it only once a block exists.
+const GenuiMessageBlock = lazy(() => import('@/features/genui/genui-message-block'));
 
 export interface MarkdownCodeProps {
   children?: React.ReactNode;
@@ -31,6 +36,8 @@ export interface MarkdownCodeProps {
    * content sets this (see `MarkdownPolicy.setupLinks`).
    */
   setupLinks?: boolean;
+  /** Writer trust of the surrounding markdown; generative UI fallbacks render with the same trust. */
+  trust?: MarkdownTrust;
 }
 
 // Code — Mermaid and KaTeX fences render their own chrome; everything else goes
@@ -40,10 +47,19 @@ export function MarkdownCode({
   className: codeClassName,
   isStreaming,
   setupLinks = false,
+  trust,
 }: MarkdownCodeProps) {
   const match = /language-(\w+)/.exec(codeClassName || '');
   const language = match ? match[1] : '';
   const code = childrenToText(children).replace(/\n$/, '');
+  const genuiVersion = genuiVersionFromClassName(codeClassName);
+  if (genuiVersion !== null) {
+    return (
+      <Suspense fallback={null}>
+        <GenuiMessageBlock code={code} version={genuiVersion} isStreaming={Boolean(isStreaming)} trust={trust ?? 'untrusted'} />
+      </Suspense>
+    );
+  }
   const isBlock = codeClassName?.includes('language-') || code.includes('\n');
 
   if (isBlock) {

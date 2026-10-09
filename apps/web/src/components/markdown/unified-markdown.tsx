@@ -61,13 +61,132 @@ interface MarkdownRenderContextValue {
   isStreaming: boolean;
   proxy: (url: string | undefined) => string | undefined;
   policy: Readonly<MarkdownPolicy>;
+  trust: MarkdownTrust;
 }
 
 const MarkdownRenderContext = React.createContext<MarkdownRenderContextValue>({
   isStreaming: false,
   proxy: (url) => url,
   policy: markdownPolicy('untrusted'),
+  trust: 'untrusted',
 });
+
+/** For components rendered inside markdown (generative UI): the same policy, proxy, and trust. */
+export function useMarkdownRenderContext(): MarkdownRenderContextValue {
+  return useContext(MarkdownRenderContext);
+}
+
+export function MarkdownLink({ href, children }: { href?: string; children?: React.ReactNode }) {
+  const { proxy, policy } = useContext(MarkdownRenderContext);
+  // Only agent content may turn a setup link into the in-app card. From any
+  // other writer it stays a plain link to the same page.
+  const setupLink = policy.setupLinks ? parseSetupLinkHref(href) : null;
+  if (setupLink) {
+    return (
+      <SetupLinkButton kind={setupLink.kind} token={setupLink.token}>
+        {children}
+      </SetupLinkButton>
+    );
+  }
+
+  // A setup link whose URL is still streaming: the card it will
+  // become, with nothing to click yet (see `holdPendingSetupLink`).
+  const pendingSetupLink = policy.setupLinks ? parsePendingSetupLinkHref(href) : null;
+  if (pendingSetupLink) {
+    return (
+      <SetupLinkButton kind={pendingSetupLink} token={null}>
+        {children}
+      </SetupLinkButton>
+    );
+  }
+
+  // A file in the session's workspace opens the file preview, the same
+  // as a path in prose (see `remarkWorkspaceFileLinks`).
+  const filePath = policy.fileLinks ? parseFileLinkHref(href) : null;
+  if (filePath) {
+    return (
+      <ClickablePath filePath={filePath} className={LINK_CLASS}>
+        {children}
+      </ClickablePath>
+    );
+  }
+
+  // The URL is still streaming: show the label in link style, with
+  // nothing to click until the real href arrives.
+  if (isStreamingLinkPlaceholder(href)) {
+    return <span className={LINK_CLASS}>{children}</span>;
+  }
+
+  const resolvedHref = proxy(href) ?? href ?? '#';
+  const isHash = resolvedHref.startsWith('#');
+  const isExternal = !isInternalUrl(resolvedHref);
+
+  // Markdown can contain arbitrary same-origin absolute URLs. Next.js
+  // treats those as app routes and prefetches them, including typos such
+  // as `/legal/terms.`. Only trusted root-relative/hash paths belong in
+  // the app router; every other href stays a plain anchor.
+  if (!shouldUseNextLink(resolvedHref)) {
+    return (
+      <a
+        href={resolvedHref}
+        className={LINK_CLASS}
+        {...(isExternal && !isHash ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+      >
+        <InsideLinkContext.Provider value={true}>{children}</InsideLinkContext.Provider>
+      </a>
+    );
+  }
+
+  return (
+    <Link
+      href={resolvedHref}
+      onClick={isHash ? (e) => handleHashClick(e, resolvedHref) : undefined}
+      className={LINK_CLASS}
+      {...(isExternal && !isHash ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+    >
+      <InsideLinkContext.Provider value={true}>{children}</InsideLinkContext.Provider>
+    </Link>
+  );
+}
+
+export function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
+  const { proxy, policy } = useContext(MarkdownRenderContext);
+  const tHardcodedUi = useTranslations('hardcodedUi');
+  const [loadRequested, setLoadRequested] = useState(false);
+  if (!src) return null;
+  const resolvedSrc = proxy(src) ?? src;
+  const remoteHost = remoteImageHost(src, resolvedSrc);
+  if (policy.remoteImages === 'click-to-load' && remoteHost && !loadRequested) {
+    return (
+      <Button
+        type="button"
+        variant="outline"
+        size="xs"
+        title={alt || undefined}
+        onClick={() => setLoadRequested(true)}
+        className="text-muted-foreground max-w-full"
+      >
+        <ImageIcon className="size-3.5 shrink-0" />
+        <span className="truncate">
+          {tHardcodedUi('componentsMarkdownUnifiedMarkdown.loadRemoteImage', {
+            host: remoteHost,
+          })}
+        </span>
+      </Button>
+    );
+  }
+  return (
+    <span className="my-5 block">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={resolvedSrc}
+        alt={alt || ''}
+        loading="lazy"
+        className="h-auto max-w-full rounded-lg outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10"
+      />
+    </span>
+  );
+}
 
 /**
  * Every renderer the markdown uses, defined once for the module.
@@ -130,84 +249,13 @@ const MARKDOWN_COMPONENTS = {
   ),
 
   // Links — brand-blue, routed through next/link. Setup links open an in-app modal.
-  a: function MarkdownLink({ href, children }: { href?: string; children?: React.ReactNode }) {
-    const { proxy, policy } = useContext(MarkdownRenderContext);
-    // Only agent content may turn a setup link into the in-app card. From any
-    // other writer it stays a plain link to the same page.
-    const setupLink = policy.setupLinks ? parseSetupLinkHref(href) : null;
-    if (setupLink) {
-      return (
-        <SetupLinkButton kind={setupLink.kind} token={setupLink.token}>
-          {children}
-        </SetupLinkButton>
-      );
-    }
-
-    // A setup link whose URL is still streaming: the card it will
-    // become, with nothing to click yet (see `holdPendingSetupLink`).
-    const pendingSetupLink = policy.setupLinks ? parsePendingSetupLinkHref(href) : null;
-    if (pendingSetupLink) {
-      return (
-        <SetupLinkButton kind={pendingSetupLink} token={null}>
-          {children}
-        </SetupLinkButton>
-      );
-    }
-
-    // A file in the session's workspace opens the file preview, the same
-    // as a path in prose (see `remarkWorkspaceFileLinks`).
-    const filePath = policy.fileLinks ? parseFileLinkHref(href) : null;
-    if (filePath) {
-      return (
-        <ClickablePath filePath={filePath} className={LINK_CLASS}>
-          {children}
-        </ClickablePath>
-      );
-    }
-
-    // The URL is still streaming: show the label in link style, with
-    // nothing to click until the real href arrives.
-    if (isStreamingLinkPlaceholder(href)) {
-      return <span className={LINK_CLASS}>{children}</span>;
-    }
-
-    const resolvedHref = proxy(href) ?? href ?? '#';
-    const isHash = resolvedHref.startsWith('#');
-    const isExternal = !isInternalUrl(resolvedHref);
-
-    // Markdown can contain arbitrary same-origin absolute URLs. Next.js
-    // treats those as app routes and prefetches them, including typos such
-    // as `/legal/terms.`. Only trusted root-relative/hash paths belong in
-    // the app router; every other href stays a plain anchor.
-    if (!shouldUseNextLink(resolvedHref)) {
-      return (
-        <a
-          href={resolvedHref}
-          className={LINK_CLASS}
-          {...(isExternal && !isHash ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
-        >
-          <InsideLinkContext.Provider value={true}>{children}</InsideLinkContext.Provider>
-        </a>
-      );
-    }
-
-    return (
-      <Link
-        href={resolvedHref}
-        onClick={isHash ? (e) => handleHashClick(e, resolvedHref) : undefined}
-        className={LINK_CLASS}
-        {...(isExternal && !isHash ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
-      >
-        <InsideLinkContext.Provider value={true}>{children}</InsideLinkContext.Provider>
-      </Link>
-    );
-  },
+  a: MarkdownLink,
 
   // Every fence kind and inline code resolve in one shared place; see
   // components/markdown/code.
   code: function MarkdownCodeRenderer(props: { children?: React.ReactNode; className?: string }) {
-    const { isStreaming, policy } = useContext(MarkdownRenderContext);
-    return <MarkdownCode {...props} isStreaming={isStreaming} setupLinks={policy.setupLinks} />;
+    const { isStreaming, policy, trust } = useContext(MarkdownRenderContext);
+    return <MarkdownCode {...props} isStreaming={isStreaming} setupLinks={policy.setupLinks} trust={trust} />;
   },
   // `code` returns the fully-styled block; collapse the default `<pre>` wrapper.
   pre: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
@@ -266,44 +314,7 @@ const MARKDOWN_COMPONENTS = {
     </td>
   ),
 
-  img: function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
-    const { proxy, policy } = useContext(MarkdownRenderContext);
-    const tHardcodedUi = useTranslations('hardcodedUi');
-    const [loadRequested, setLoadRequested] = useState(false);
-    if (!src) return null;
-    const resolvedSrc = proxy(src) ?? src;
-    const remoteHost = remoteImageHost(src, resolvedSrc);
-    if (policy.remoteImages === 'click-to-load' && remoteHost && !loadRequested) {
-      return (
-        <Button
-          type="button"
-          variant="outline"
-          size="xs"
-          title={alt || undefined}
-          onClick={() => setLoadRequested(true)}
-          className="text-muted-foreground max-w-full"
-        >
-          <ImageIcon className="size-3.5 shrink-0" />
-          <span className="truncate">
-            {tHardcodedUi('componentsMarkdownUnifiedMarkdown.loadRemoteImage', {
-              host: remoteHost,
-            })}
-          </span>
-        </Button>
-      );
-    }
-    return (
-      <span className="my-5 block">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={resolvedSrc}
-          alt={alt || ''}
-          loading="lazy"
-          className="h-auto max-w-full rounded-lg outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10"
-        />
-      </span>
-    );
-  },
+  img: MarkdownImage,
 
   strong: ({ children }: { children?: React.ReactNode }) => (
     <strong className="text-foreground font-semibold">{children}</strong>
@@ -443,8 +454,8 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
     const proxy = useCallback((url: string | undefined) => proxyUrl(url), [proxyUrl]);
     const policy = markdownPolicy(trust, variant);
     const renderContext = useMemo(
-      () => ({ isStreaming, proxy, policy }),
-      [isStreaming, proxy, policy],
+      () => ({ isStreaming, proxy, policy, trust }),
+      [isStreaming, proxy, policy, trust],
     );
 
     // Streamdown renders streaming text block by block and settled text as one
