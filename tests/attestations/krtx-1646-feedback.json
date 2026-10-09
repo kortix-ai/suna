@@ -1,5 +1,5 @@
 {
-  "source_hash": "a62c3ba11cefe25af831d66d11b0f848ded7d7610c822d4cf094840d585c9992",
+  "source_hash": "fb824298f311a10a7edac29d413230e353942aa6e6b949cc81b6642c6c12da93",
   "diff_files": [
     "apps/api/src/app.ts",
     "apps/api/src/config.ts",
@@ -17,9 +17,9 @@
     "apps/web/content/docs/cli.mdx",
     "apps/web/src/components/iam/audit-http-routes.generated.ts",
     "apps/web/src/lib/seo/content-timestamps.json",
-    "packages/db/drizzle/meta/20261008200008_snapshot.json",
+    "packages/db/drizzle/meta/20261009103611_snapshot.json",
     "packages/db/drizzle/meta/_journal.json",
-    "packages/db/migrations/20261008200008000_feedback.sql",
+    "packages/db/migrations/20261009103611867_feedback.sql",
     "packages/db/src/index.ts",
     "packages/db/src/schema/kortix.ts",
     "packages/shared/src/audit-route-labels.ts",
@@ -27,13 +27,13 @@
     "tests/spec/routes.generated.json",
     "tests/src/flows/feedback.flow.ts"
   ],
-  "diff_hash": "bc955087c3922605482c74a0e02d495537925faed308699e84b7fd8d849de961",
-  "head": "3d2f894b0b05ff12e20b0052b1753f0e9e60a665",
+  "diff_hash": "520a426e98d84f5f5ba24eefe2ac3bd874b922f1c314ab848e6ded151dc52bb1",
+  "head": "4fbb0c3086570998d3b1f9c11e2e89ed232c534e",
   "passed": false,
   "lanes": {
     "core": "pass",
-    "packages": "pass",
+    "packages": "fail",
     "db-suites": "fail"
   },
-  "at": "2026-10-09T04:10:24.008Z"
+  "at": "2026-10-09T10:58:29.316Z"
 }
