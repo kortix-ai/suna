@@ -667,6 +667,8 @@
       "themeDescription": "选择 Kortix 在此设备上的外观。",
       "conversationDensity": "对话密度",
       "conversationDensityDescription": "选择智能体工作时在对话中显示多少细节。",
+      "richAnswers": "丰富回答",
+      "richAnswersDescription": "在回答中以可视化方式显示对比、表格、图表和地图。关闭后，回答以文本显示相同内容。",
       "wallpaper": "壁纸",
       "wallpaperDescription": "项目背后的背景。",
       "defaultWallpaper": "默认",
@@ -20094,6 +20096,8 @@
   },
   "genui": {
     "showData": "显示数据",
-    "source": "来源：{source}"
+    "source": "来源：{source}",
+    "label": "标签",
+    "value": "数值"
   }
 }

@@ -667,6 +667,8 @@
       "themeDescription": "このデバイスでの Kortix の外観を選択します。",
       "conversationDensity": "会話の表示密度",
       "conversationDensityDescription": "エージェントの作業中に会話へ表示する詳細の量を選択します。",
+      "richAnswers": "リッチな回答",
+      "richAnswersDescription": "回答内の比較、表、グラフ、地図をビジュアルで表示します。オフにすると、同じ内容をテキストで表示します。",
       "wallpaper": "壁紙",
       "wallpaperDescription": "プロジェクトの背景です。",
       "defaultWallpaper": "デフォルト",
@@ -20094,6 +20096,8 @@
   },
   "genui": {
     "showData": "データを表示",
-    "source": "出典: {source}"
+    "source": "出典: {source}",
+    "label": "ラベル",
+    "value": "値"
   }
 }

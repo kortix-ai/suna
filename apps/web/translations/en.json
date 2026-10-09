@@ -493,6 +493,8 @@
       "themeDescription": "Choose how Kortix looks on this device.",
       "conversationDensity": "Conversation density",
       "conversationDensityDescription": "How much detail the agent shows in the conversation while it works.",
+      "richAnswers": "Rich answers",
+      "richAnswersDescription": "Show comparisons, tables, charts, and maps as visuals in answers. When off, answers show the same content as text.",
       "wallpaper": "Wallpaper",
       "wallpaperDescription": "The background behind your project.",
       "defaultWallpaper": "Default",
@@ -20094,6 +20096,8 @@
   },
   "genui": {
     "showData": "Show data",
-    "source": "Source: {source}"
+    "source": "Source: {source}",
+    "label": "Label",
+    "value": "Value"
   }
 }

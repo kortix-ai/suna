@@ -667,6 +667,8 @@
       "themeDescription": "Изаберите изглед Kortix-а на овом уређају.",
       "conversationDensity": "Густина разговора",
       "conversationDensityDescription": "Изаберите колико детаља агент приказује у разговору док ради.",
+      "richAnswers": "Богати одговори",
+      "richAnswersDescription": "Приказује поређења, табеле, графиконе и мапе као визуелне елементе у одговорима. Када је искључено, одговори приказују исти садржај као текст.",
       "wallpaper": "Позадина",
       "wallpaperDescription": "Позадина вашег пројекта.",
       "defaultWallpaper": "Подразумевано",
@@ -20094,6 +20096,8 @@
   },
   "genui": {
     "showData": "Прикажи податке",
-    "source": "Извор: {source}"
+    "source": "Извор: {source}",
+    "label": "Ознака",
+    "value": "Вредност"
   }
 }

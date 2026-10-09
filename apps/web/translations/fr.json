@@ -667,6 +667,8 @@
       "themeDescription": "Choisissez l'apparence de Kortix sur cet appareil.",
       "conversationDensity": "Densité de la conversation",
       "conversationDensityDescription": "Choisissez le niveau de détail affiché par l'agent dans la conversation pendant son travail.",
+      "richAnswers": "Réponses enrichies",
+      "richAnswersDescription": "Affiche les comparaisons, tableaux, graphiques et cartes sous forme visuelle dans les réponses. Si désactivé, les réponses affichent le même contenu en texte.",
       "wallpaper": "Fond d'écran",
       "wallpaperDescription": "L'arrière-plan de votre projet.",
       "defaultWallpaper": "Par défaut",
@@ -20094,6 +20096,8 @@
   },
   "genui": {
     "showData": "Afficher les données",
-    "source": "Source : {source}"
+    "source": "Source : {source}",
+    "label": "Libellé",
+    "value": "Valeur"
   }
 }
