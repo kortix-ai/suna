@@ -167,6 +167,10 @@ async function runOpenSession(
   }
 
   if (row && isRetiredEphemeralRow(row)) {
+    // Stop intent is read BEFORE the claim: the claim deletes the retired row
+    // and allocates a fresh box, so a keep-alive poll that reached it would
+    // undo the stop it was only meant to observe. Only an explicit open wakes.
+    if (keepStoppedRefusesWake(args.keepStopped, row)) return keptStoppedAnswer(visible.row.agentName);
     const claim = sandboxCallbackUnreachableReason() ? null : await claimRetiredEphemeralRow(row.sandboxId);
     if (claim) {
       await allocateRuntimeOnOpen(args.loaded, visible.row, projectId, sessionId, {
@@ -199,15 +203,10 @@ async function runOpenSession(
     return existingWake;
   }
 
-  if (row?.status === 'stopped' && row.externalId && keepStoppedRefusesWake(args.keepStopped, row)) {
-    return {
-      stage: 'stopped',
-      agent_name: visible.row.agentName ?? 'default',
-      retriable: false,
-      sandbox: null,
-      opencode_session_id: null,
-      failure: null,
-    };
+  // Every stopped row, with or without a box: a stopped row with no external
+  // id would otherwise fall through to `openUnusableRow`, which allocates.
+  if (row?.status === 'stopped' && keepStoppedRefusesWake(args.keepStopped, row)) {
+    return keptStoppedAnswer(visible.row.agentName);
   }
 
   ({ row, stoppedProviderStatus } = await resumeHibernatedOnOpen(log, row));
@@ -249,6 +248,18 @@ async function runOpenSession(
   if (notRunning) return notRunning;
 
   return stageRunningOpen(args, log, establishedRow);
+}
+
+/** A keep-alive poll's answer for a deliberately stopped session: report it, never wake it. */
+function keptStoppedAnswer(agentName: string | null): SessionStartResult {
+  return {
+    stage: 'stopped',
+    agent_name: agentName ?? 'default',
+    retriable: false,
+    sandbox: null,
+    opencode_session_id: null,
+    failure: null,
+  };
 }
 
 /**
