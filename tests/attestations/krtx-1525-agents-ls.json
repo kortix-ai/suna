@@ -1,16 +1,21 @@
 {
-  "source_hash": "fee3f0d0908c37c25deda245ed74923fda690a41e891281f8a7c143db5a07881",
+  "source_hash": "13888c010941a3eea9cdbfcff1f1fd89726187f11e27a1c22d3c1c3aa73e0d85",
   "diff_files": [
+    "apps/api/src/__tests__/integration-lifecycle-command-settle-wake.test.ts",
+    "apps/api/src/apps/kinds/convex/hosts.integration.test.ts",
+    "apps/api/src/apps/kinds/convex/provision.integration.test.ts",
+    "apps/api/src/apps/kinds/convex/routes.integration.test.ts",
     "apps/cli/src/__tests__/agents-parity.test.ts",
-    "apps/cli/src/commands/agents.ts"
+    "apps/cli/src/commands/agents.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/workspace-provider.test.ts"
   ],
-  "diff_hash": "6bfdfac7c592fbf9ef02b77e4423b63c4ed2d542b4993696666458662039c1cb",
-  "head": "f83dc2f721a16faa490057f8e68bc96a5e67b879",
-  "passed": false,
+  "diff_hash": "7f5dabce318d265bf0cc67b1149e6ca29b658ccb2e1b7640baff4afb89b8a3cb",
+  "head": "28cce26902019894773869e7e6e75b0f4620e32e",
+  "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "fail"
+    "db-suites": "pass"
   },
-  "at": "2026-10-09T17:52:46.330Z"
+  "at": "2026-10-09T22:36:06.847Z"
 }
