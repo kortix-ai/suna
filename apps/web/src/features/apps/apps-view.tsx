@@ -13,10 +13,11 @@ import { ProjectPageHeader } from '@/features/workspace/project-layout/project-p
 import { useTranslations } from '@/i18n/use-translations';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 
+import { relativeTime } from '@/lib/relative-time';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { createAppAccessSession, type App } from '@kortix/sdk';
-import { useAppAccess, useFeatureFlag, useProjectApps } from '@kortix/sdk/react';
+import { useAppAccess, useAppDeployments, useFeatureFlag, useProjectApps } from '@kortix/sdk/react';
 import { ArrowUpRightIcon } from '@phosphor-icons/react';
 
 import Link from '@/components/site-link';
@@ -26,7 +27,7 @@ import { useEffect, useState } from 'react';
 import { AppPreview, PREVIEW_TILE_ASPECT } from './app-preview';
 import { APP_GRID_CONTAINER, APP_GRID_COLUMN_OPTIONS, AppGridColumnsControl, useAppGridColumns, type AppGridColumns } from './app-density';
 import { AppDetailModal } from './app-detail';
-import { appStatus } from './app-shared';
+import { appCan, appKindLabel, appSizeLabel, appStatus } from './app-shared';
 export { DEPLOYMENT_COPY, deployNotice, appHost } from './app-shared';
 export { AppPreview, AppPreviewOverlay, PREVIEW_SPINNER_DELAY_MS, scheduleSlowPreview, PREVIEW_VIEWPORT_WIDTH, PREVIEW_VIEWPORT_HEIGHT, PREVIEW_TILE_ASPECT, previewScale } from './app-preview';
 export { APP_GRID_CONTAINER, APP_GRID_DEFAULT_COLUMNS, APP_GRID_COLUMN_OPTIONS, APP_GRID_COLUMN_ORDER, APP_GRID_COLUMNS_STORAGE_KEY, parseAppGridColumns, type AppGridColumns } from './app-density';
@@ -87,10 +88,14 @@ export function AppsView({ projectId }: { projectId: string }) {
   // render the controls.
   const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_APP_WRITE).allowed === true;
   const canDeploy = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_APP_DEPLOY).allowed === true;
+  // Credentials, restore, rotation and the delete of an App that holds data.
+  const canAdmin = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_APP_ADMIN).allowed === true;
   // Which App the detail modal is showing. Held by id, not by object, so a
   // refetch (a lifecycle toggle, a rollback) re-renders the modal against the
-  // fresh row instead of a stale copy captured at click time.
-  const [openAppId, setOpenAppId] = useState<string | null>(null);
+  // fresh row instead of a stale copy captured at click time. `?app=<id>`
+  // opens one on arrival: the links the CLI prints and the retired
+  // `/backends/<id>` routes land here.
+  const [openAppId, setOpenAppId] = useState<string | null>(() => searchParams.get('app'));
   const [gridColumns, setGridColumns] = useAppGridColumns();
   const openApp = apps.data?.find((item) => item.app_id === openAppId) ?? null;
 
@@ -197,6 +202,11 @@ export function AppsView({ projectId }: { projectId: string }) {
           app={openApp}
           canWrite={canWrite}
           canDeploy={canDeploy}
+          canAdmin={canAdmin}
+          onOpenLinked={(slug) => {
+            const linked = apps.data?.find((item) => item.slug === slug);
+            if (linked) setOpenAppId(linked.app_id);
+          }}
           open
           onOpenChange={(next) => {
             if (!next) setOpenAppId(null);
@@ -256,14 +266,18 @@ function AppsEmptyState() {
 
 function AppCard({ projectId, app, onOpen }: { projectId: string; app: App; onOpen: () => void }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  // A screenshot only for an App with capability `preview`. An App that
+  // serves an API has nothing to look at: its tile shows its machine instead.
+  const preview = appCan(app, 'preview');
   // SESSION only, and only when the viewer may actually open this App. The
   // access POLICY is an administrative read that 403s for an ordinary member,
   // and the card never renders it — the detail modal asks. The SESSION 403s for
   // any App the viewer may see but not open, which is a state the server now
   // reports up front instead of leaving the card to discover it by failing.
   const canAccess = app.viewer_can_access !== false;
-  const access = useAppAccess(projectId, app.app_id, { policy: false, session: canAccess });
+  const access = useAppAccess(projectId, app.app_id, { policy: false, session: canAccess && preview });
   const status = appStatus(app, tI18nComplete);
+  const kind = appKindLabel(app, tI18nComplete);
 
   return (
     <li>
@@ -286,17 +300,22 @@ function AppCard({ projectId, app, onOpen }: { projectId: string; app: App; onOp
             'duration-normal relative overflow-hidden rounded-lg border transition-transform ease-out group-hover:-translate-y-1',
           )}
         >
-          <AppPreview
-            key={app.active_deployment_id ?? app.app_id}
-            app={app}
-            url={access.session.data?.url ?? null}
-            accessError={!canAccess || access.session.isError}
-            interactive={false}
-          />
+          {preview ? (
+            <AppPreview
+              key={app.active_deployment_id ?? app.app_id}
+              app={app}
+              url={access.session.data?.url ?? null}
+              accessError={!canAccess || access.session.isError}
+              interactive={false}
+            />
+          ) : (
+            <InstanceTile projectId={projectId} app={app} />
+          )}
         </div>
 
-        {/* The caption: the App's name and whether it is up. One line.
-            No padding of its own — it is page text, not the inside of a panel.
+        {/* The caption: the App's name, its kind when it is not a web App,
+            and whether it is up. One line. No padding of its own — it is page
+            text, not the inside of a panel.
 
             The hostname used to sit under the name in monospace. It is the
             same `<generated-key>.apps.<domain>` shape on every card, so a
@@ -310,6 +329,11 @@ function AppCard({ projectId, app, onOpen }: { projectId: string; app: App; onOp
           <h3 className="text-foreground min-w-0 flex-1 truncate text-sm font-medium">
             {app.name}
           </h3>
+          {kind ? (
+            <Badge variant="outline" className="shrink-0" data-testid="app-kind">
+              {kind}
+            </Badge>
+          ) : null}
           <Badge variant={status.live ? 'success' : 'muted'} className="shrink-0">
             {status.label}
           </Badge>
@@ -318,3 +342,47 @@ function AppCard({ projectId, app, onOpen }: { projectId: string; app: App; onOp
     </li>
   );
 }
+
+/**
+ * The tile of an App without a preview (kind `convex`): what its machine is
+ * doing, when it last took a deploy, and its size, in the same 16:9 box a
+ * screenshot fills. A failed health probe or a disk past 80 % says so here,
+ * where the owner looks first.
+ */
+function InstanceTile({ projectId, app }: { projectId: string; app: App }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const deployments = useAppDeployments(projectId, app.app_id);
+  const latest = deployments.data?.find((deployment) => deployment.status === 'ready');
+  const status = appStatus(app, tI18nComplete);
+  const health = app.instance?.health;
+  const problem =
+    app.instance?.status === 'error'
+      ? app.instance.error
+      : health?.ok === false
+        ? health.error
+        : health?.disk_used_pct != null && health.disk_used_pct >= INSTANCE_DISK_WARN_PCT
+          ? tI18nComplete('text652d18ba46c8', { value0: Math.round(health.disk_used_pct) })
+          : null;
+  return (
+    <div
+      className={cn(PREVIEW_TILE_ASPECT, 'bg-muted/20 flex w-full flex-col justify-end gap-1 p-4')}
+      data-testid="app-instance-tile"
+    >
+      <span className="text-foreground flex items-center gap-2 text-sm">
+        <span aria-hidden className={cn('size-1.5 shrink-0 rounded-full', status.dot)} />
+        {status.label}
+      </span>
+      <span className="text-muted-foreground text-xs">
+        {latest
+          ? tI18nComplete('textf3adc8b63850', { value0: relativeTime(latest.created_at) })
+          : tI18nComplete.raw('text43ef8f25ef0e')}
+        {' · '}
+        {appSizeLabel(app, tI18nComplete)}
+      </span>
+      {problem ? <span className="text-muted-foreground line-clamp-2 text-xs">{problem}</span> : null}
+    </div>
+  );
+}
+
+/** The API's disk warning threshold (DISK_WARN_PCT, apps/api/src/apps/kinds/convex/maintenance.ts). */
+const INSTANCE_DISK_WARN_PCT = 80;

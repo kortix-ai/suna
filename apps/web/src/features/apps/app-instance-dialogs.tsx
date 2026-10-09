@@ -20,57 +20,54 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import type { UiTranslator } from '@/i18n/translator';
 import { useTranslations } from '@/i18n/use-translations';
 import { relativeTime } from '@/lib/relative-time';
-import type { ProjectBackend, ProjectBackendSize, ProjectBackendSnapshot } from '@kortix/sdk';
-import { useProjectBackendBackups } from '@kortix/sdk/react';
+import type { App, AppSnapshot } from '@kortix/sdk';
+import { useAppSnapshots, useProjectApps } from '@kortix/sdk/react';
 import { useState } from 'react';
 
-/** Limits the API enforces on `POST` and `PATCH /backends`. The disk minimum rises to the current disk on resize. */
-export const BACKEND_SIZE_LIMITS = {
+/**
+ * Limits the API enforces on a resize of an App that runs its own machine
+ * (`BACKEND_MACHINE_LIMITS`, apps/api/src/apps/kinds/convex/provision.ts). The
+ * disk minimum rises to the current disk: a disk never shrinks.
+ */
+export const INSTANCE_SIZE_LIMITS = {
   cpu: { min: 1, max: 16 },
   memory_gb: { min: 1, max: 32 },
   disk_gb: { min: 10, max: 100 },
 } as const;
 
-type SizeKey = keyof typeof BACKEND_SIZE_LIMITS;
+type SizeKey = keyof typeof INSTANCE_SIZE_LIMITS;
 const SIZE_KEYS: SizeKey[] = ['cpu', 'memory_gb', 'disk_gb'];
 
 export type SizeDraft = Record<SizeKey, string>;
+type MachineSize = App['machine'];
 
-export function sizeDraft(backend: Pick<ProjectBackend, SizeKey>): SizeDraft {
+export function sizeDraft(current: MachineSize): SizeDraft {
   return {
-    cpu: String(backend.cpu),
-    memory_gb: String(backend.memory_gb),
-    disk_gb: String(backend.disk_gb),
+    cpu: String(current.cpu),
+    memory_gb: String(current.memory_gb),
+    disk_gb: String(current.disk_gb),
   };
 }
 
 /** The lowest value a field accepts. A disk never shrinks, so its minimum is the current disk. */
-export function sizeMin(key: SizeKey, current: Pick<ProjectBackend, SizeKey>): number {
+export function sizeMin(key: SizeKey, current: MachineSize): number {
   return key === 'disk_gb'
-    ? Math.max(BACKEND_SIZE_LIMITS.disk_gb.min, current.disk_gb)
-    : BACKEND_SIZE_LIMITS[key].min;
+    ? Math.max(INSTANCE_SIZE_LIMITS.disk_gb.min, current.disk_gb)
+    : INSTANCE_SIZE_LIMITS[key].min;
 }
 
 /** True when `raw` is a whole number inside the field's limits. */
-export function sizeFieldValid(key: SizeKey, raw: string, current: Pick<ProjectBackend, SizeKey>): boolean {
+export function sizeFieldValid(key: SizeKey, raw: string, current: MachineSize): boolean {
   if (!/^\d+$/.test(raw)) return false;
   const value = Number(raw);
-  return value >= sizeMin(key, current) && value <= BACKEND_SIZE_LIMITS[key].max;
+  return value >= sizeMin(key, current) && value <= INSTANCE_SIZE_LIMITS[key].max;
 }
 
 /** Only the fields that differ from the current size. The API answers `size_unchanged` for an empty change. */
-export function sizeChanges(draft: SizeDraft, current: Pick<ProjectBackend, SizeKey>): ProjectBackendSize {
-  const out: ProjectBackendSize = {};
+export function sizeChanges(draft: SizeDraft, current: MachineSize): Partial<MachineSize> {
+  const out: Partial<MachineSize> = {};
   for (const key of SIZE_KEYS) if (Number(draft[key]) !== current[key]) out[key] = Number(draft[key]);
   return out;
-}
-
-export function backendSizeLabel(backend: Pick<ProjectBackend, SizeKey>, t: UiTranslator): string {
-  return t('textce0eabb01151', {
-    value0: backend.cpu,
-    value1: backend.memory_gb,
-    value2: backend.disk_gb,
-  });
 }
 
 export function formatBackupSize(bytes: number | null): string {
@@ -96,53 +93,56 @@ export function timeUntil(iso: string, now = Date.now()): string | null {
 }
 
 /** Manual snapshots count against the limit; daily and resize snapshots do not. */
-export function manualSnapshotCount(snapshots: Pick<ProjectBackendSnapshot, 'kind'>[]): number {
-  return snapshots.filter((snapshot) => (snapshot.kind ?? 'manual') === 'manual').length;
+export function manualSnapshotCount(snapshots: Pick<AppSnapshot, 'kind'>[]): number {
+  return snapshots.filter((snapshot) => snapshot.kind === 'manual').length;
 }
 
-/** Turns a resize, snapshot or restore API error into a sentence. */
-export function backendOperationError(error: unknown, fallback: string, t: UiTranslator): string {
+/** Turns a resize, snapshot, restore or rotation API error into a sentence. */
+export function instanceOperationError(error: unknown, fallback: string, t: UiTranslator): string {
   const code = (error as { code?: string } | null)?.code;
   switch (code) {
     case 'size_unchanged':
-      return t.raw('texteeaf510d672b');
+      return t.raw('texte80235a54789');
     case 'disk_shrink_unsupported':
       return t.raw('text19505ae1c4fa');
     case 'invalid_size':
       return t.raw('text97b11693daf1');
-    case 'backend_busy':
-      return t.raw('text2e51fa03b6a4');
-    case 'backend_not_running':
-      return t.raw('textc6223308cd3f');
+    case 'app_busy':
+      return t.raw('textdffa6c4832ea');
+    case 'app_not_running':
+      return t.raw('text82d8fd7be760');
     case 'snapshot_not_found':
       return t.raw('text9d850085f763');
     case 'snapshot_limit':
-      return t.raw('text4e3a1dc4819c');
+      return t.raw('text66a50145812d');
     case 'snapshot_predates_resize':
       return t.raw('text71f6cc5e959a');
     case 'restore_unhealthy':
-      return t.raw('texte9d5195e7f19');
+      return t.raw('text0ea70cfac481');
     default:
       return error instanceof Error ? error.message : fallback;
   }
 }
 
-export function ResizeBackendDialog({
-  backend,
+
+/** Resize an App that runs its own machine: `PATCH /apps/:appId` with the changed fields; the machine restarts on the new size. */
+export function ResizeAppDialog({
+  projectId,
+  app,
   onOpenChange,
-  onResize,
-  isPending,
 }: {
-  backend: ProjectBackend;
+  projectId: string;
+  app: App;
   onOpenChange: (open: boolean) => void;
-  onResize: (size: ProjectBackendSize) => Promise<unknown>;
-  isPending: boolean;
 }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
-  const [draft, setDraft] = useState<SizeDraft>(() => sizeDraft(backend));
+  const apps = useProjectApps(projectId);
+  const current = app.machine;
+  const isPending = apps.update.isPending;
+  const [draft, setDraft] = useState<SizeDraft>(() => sizeDraft(current));
   const [apiError, setApiError] = useState<string | null>(null);
-  const valid = SIZE_KEYS.every((key) => sizeFieldValid(key, draft[key], backend));
-  const changes = sizeChanges(draft, backend);
+  const valid = SIZE_KEYS.every((key) => sizeFieldValid(key, draft[key], current));
+  const changes = sizeChanges(draft, current);
   const changed = Object.keys(changes).length > 0;
 
   const fields: Array<{ key: SizeKey; label: string }> = [
@@ -155,11 +155,11 @@ export function ResizeBackendDialog({
     if (!valid || !changed || isPending) return;
     setApiError(null);
     try {
-      await onResize(changes);
+      await apps.update.mutateAsync({ appId: app.app_id, input: changes });
       successToast(t.raw('textb31af9a5b37a'));
       onOpenChange(false);
     } catch (error) {
-      setApiError(backendOperationError(error, t.raw('text808c404f1155'), t));
+      setApiError(instanceOperationError(error, t.raw('textdf1c5a2018d4'), t));
     }
   };
 
@@ -173,36 +173,34 @@ export function ResizeBackendDialog({
           }}
         >
           <ModalHeader>
-            <ModalTitle>{t('texta507e087427a', { value0: backend.name })}</ModalTitle>
-            <ModalDescription>
-              {t.raw('text3d07e752f837')}
-            </ModalDescription>
+            <ModalTitle>{t('texta507e087427a', { value0: app.name })}</ModalTitle>
+            <ModalDescription>{t.raw('text0ddcdc542ef9')}</ModalDescription>
           </ModalHeader>
           <ModalBody>
             <div className="grid grid-cols-3 gap-3">
               {fields.map(({ key, label }) => {
-                const invalid = !sizeFieldValid(key, draft[key], backend);
+                const invalid = !sizeFieldValid(key, draft[key], current);
                 return (
                   <div key={key} className="space-y-2">
-                    <Label htmlFor={`backend-${key}`}>{label}</Label>
+                    <Label htmlFor={`app-size-${key}`}>{label}</Label>
                     <Input
-                      id={`backend-${key}`}
+                      id={`app-size-${key}`}
                       type="number"
                       inputMode="numeric"
-                      min={sizeMin(key, backend)}
-                      max={BACKEND_SIZE_LIMITS[key].max}
+                      min={sizeMin(key, current)}
+                      max={INSTANCE_SIZE_LIMITS[key].max}
                       step={1}
                       value={draft[key]}
                       onChange={(event) => {
-                        setDraft((current) => ({ ...current, [key]: event.target.value }));
+                        setDraft((value) => ({ ...value, [key]: event.target.value }));
                         setApiError(null);
                       }}
                       aria-invalid={invalid}
                     />
                     <p className={invalid ? 'text-destructive text-xs' : 'text-muted-foreground text-xs'}>
                       {t('text6dd8cdbf8352', {
-                        value0: sizeMin(key, backend),
-                        value1: BACKEND_SIZE_LIMITS[key].max,
+                        value0: sizeMin(key, current),
+                        value1: INSTANCE_SIZE_LIMITS[key].max,
                       })}
                     </p>
                   </div>
@@ -230,37 +228,39 @@ export function ResizeBackendDialog({
   );
 }
 
-export function BackendBackupsDialog({
+/** Snapshots of an App (capability `snapshots`): the automatic backup, the list, take, delete and restore (capability `restore`). */
+export function AppSnapshotsDialog({
   projectId,
-  backend,
+  app,
   canWrite,
+  canRestore,
   onOpenChange,
-  onRestore,
-  restoring,
 }: {
   projectId: string;
-  backend: ProjectBackend;
+  app: App;
   canWrite: boolean;
+  canRestore: boolean;
   onOpenChange: (open: boolean) => void;
-  onRestore: (snapshotId: string) => Promise<unknown>;
-  restoring: boolean;
 }) {
   const t = useTranslations('hardcodedUi.i18nComplete');
-  const backups = useProjectBackendBackups(projectId, backend.backend_id);
-  const [pendingRestore, setPendingRestore] = useState<{ snapshot_id: string; created_at: string } | null>(null);
-  const [pendingDelete, setPendingDelete] = useState<{ snapshot_id: string; created_at: string } | null>(null);
-  const busy = backend.operation !== null;
-  const automatic = backups.data?.automatic;
-  const schedule = backups.data?.snapshot_schedule;
-  const limit = backups.data?.snapshot_limit;
-  const atLimit = limit !== undefined && manualSnapshotCount(backups.data?.snapshots ?? []) >= limit;
-  const kindLabel = (kind: ProjectBackendSnapshot['kind']) =>
+  const snapshots = useAppSnapshots(projectId, app.app_id);
+  const [pendingRestore, setPendingRestore] = useState<AppSnapshot | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<AppSnapshot | null>(null);
+  const busy = Boolean(app.instance?.operation);
+  const restoring = snapshots.restore.isPending;
+  const automatic = snapshots.data?.automatic;
+  const schedule = snapshots.data?.snapshot_schedule;
+  const limit = snapshots.data?.snapshot_limit;
+  const atLimit = limit !== undefined && manualSnapshotCount(snapshots.data?.snapshots ?? []) >= limit;
+  const kindLabel = (kind: AppSnapshot['kind']) =>
     kind === 'automatic'
       ? t.raw('textb36c2611dcdf')
       : kind === 'resize'
         ? t.raw('text819a1788de99')
-        : t.raw('textb0b9fe24ffa9');
-  const expiryLabel = (snapshot: ProjectBackendSnapshot) => {
+        : kind === 'final'
+          ? t.raw('textf4ed8fa656b7')
+          : t.raw('textb0b9fe24ffa9');
+  const expiryLabel = (snapshot: AppSnapshot) => {
     if (!snapshot.expires_at) return t.raw('textbee3b293c9f6');
     const left = timeUntil(snapshot.expires_at);
     if (left) return t('text8c3e7e71155c', { value0: left });
@@ -270,10 +270,10 @@ export function BackendBackupsDialog({
 
   const takeSnapshot = async () => {
     try {
-      await backups.snapshot.mutateAsync();
+      await snapshots.create.mutateAsync();
       successToast(t.raw('text9a2de8b2728e'));
     } catch (error) {
-      errorToast(backendOperationError(error, t.raw('text3c7a3332a5a8'), t));
+      errorToast(instanceOperationError(error, t.raw('text3c7a3332a5a8'), t));
     }
   };
 
@@ -282,29 +282,27 @@ export function BackendBackupsDialog({
       <Modal open onOpenChange={onOpenChange}>
         <ModalContent className="lg:max-w-lg">
           <ModalHeader>
-            <ModalTitle>{t('text8103f212aba8', { value0: backend.name })}</ModalTitle>
-            <ModalDescription>
-              {t.raw('texte01556a13803')}
-            </ModalDescription>
+            <ModalTitle>{t('text8103f212aba8', { value0: app.name })}</ModalTitle>
+            <ModalDescription>{t.raw('text38d61e78c348')}</ModalDescription>
           </ModalHeader>
           <ModalBody>
-            {backups.isLoading ? (
+            {snapshots.isLoading ? (
               <div className="space-y-2">
                 <Skeleton className="h-10 w-full rounded-md" />
                 <Skeleton className="h-10 w-full rounded-md" />
               </div>
-            ) : backups.isError ? (
+            ) : snapshots.isError ? (
               <div className="flex items-center justify-between gap-3">
                 <p className="text-destructive text-sm" role="alert">
-                  {backendOperationError(backups.error, t.raw('text7a306da87381'), t)}
+                  {instanceOperationError(snapshots.error, t.raw('text7a306da87381'), t)}
                 </p>
-                <Button size="sm" variant="outline" onClick={() => backups.refetch()}>
+                <Button size="sm" variant="outline" onClick={() => snapshots.refetch()}>
                   {t.raw('text942087cc2d41')}
                 </Button>
               </div>
             ) : (
               <div className="space-y-5">
-                <section className="space-y-1" data-testid="backend-automatic-backup">
+                <section className="space-y-1" data-testid="app-automatic-backup">
                   <Label>{t.raw('text3dadeedf4c21')}</Label>
                   <p className="text-muted-foreground text-sm">
                     {automatic?.last_backup_at
@@ -326,17 +324,17 @@ export function BackendBackupsDialog({
                       <Button
                         size="sm"
                         variant="outline"
-                        disabled={busy || atLimit || backups.snapshot.isPending}
+                        disabled={busy || atLimit || snapshots.create.isPending}
                         onClick={() => void takeSnapshot()}
                       >
-                        {backups.snapshot.isPending ? <Loading className="size-4 shrink-0" /> : null}
+                        {snapshots.create.isPending ? <Loading className="size-4 shrink-0" /> : null}
                         {t.raw('text2c86d50742a1')}
                       </Button>
                     ) : null}
                   </div>
-                  {backups.data?.snapshots.length ? (
-                    <ul className="space-y-2" data-testid="backend-snapshots">
-                      {backups.data.snapshots.map((snapshot) => (
+                  {snapshots.data?.snapshots.length ? (
+                    <ul className="space-y-2" data-testid="app-snapshots">
+                      {snapshots.data.snapshots.map((snapshot) => (
                         <li
                           key={snapshot.snapshot_id}
                           className="bg-popover border-border flex items-center justify-between gap-3 rounded-md border px-3 py-2"
@@ -344,7 +342,7 @@ export function BackendBackupsDialog({
                           <span className="min-w-0 text-sm">
                             <span className="flex min-w-0 items-center gap-2">
                               <span className="truncate font-mono text-xs">{snapshot.snapshot_id}</span>
-                              <Badge variant="outline" size="sm" data-testid="backend-snapshot-kind">
+                              <Badge variant="outline" size="sm" data-testid="app-snapshot-kind">
                                 {kindLabel(snapshot.kind)}
                               </Badge>
                             </span>
@@ -353,24 +351,28 @@ export function BackendBackupsDialog({
                               {expiryLabel(snapshot)}
                             </span>
                           </span>
-                          {canWrite ? (
+                          {canWrite || canRestore ? (
                             <span className="flex shrink-0 items-center gap-1">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                disabled={busy || restoring || backups.deleteSnapshot.isPending}
-                                onClick={() => setPendingDelete(snapshot)}
-                              >
-                                {t.raw('texte2d0a54968ea')}
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                disabled={busy || restoring}
-                                onClick={() => setPendingRestore(snapshot)}
-                              >
-                                {t.raw('texta76e13b98392')}
-                              </Button>
+                              {canWrite ? (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  disabled={busy || restoring || snapshots.delete.isPending}
+                                  onClick={() => setPendingDelete(snapshot)}
+                                >
+                                  {t.raw('texte2d0a54968ea')}
+                                </Button>
+                              ) : null}
+                              {canRestore ? (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={busy || restoring}
+                                  onClick={() => setPendingRestore(snapshot)}
+                                >
+                                  {t.raw('texta76e13b98392')}
+                                </Button>
+                              ) : null}
                             </span>
                           ) : null}
                         </li>
@@ -379,16 +381,16 @@ export function BackendBackupsDialog({
                   ) : (
                     <p className="text-muted-foreground text-sm">{t.raw('textdce32a8bd22e')}</p>
                   )}
-                  <p className="text-muted-foreground text-xs" data-testid="backend-snapshot-schedule">
-                    {schedule && limit !== undefined
-                      ? t('textcac5e168fd53', {
-                          value0: schedule.automatic_interval_hours,
-                          value1: schedule.automatic_retention_days,
-                          value2: schedule.resize_retention_hours,
-                          value3: limit,
-                        })
-                      : t.raw('text703e24c19684')}
-                  </p>
+                  {schedule && limit !== undefined ? (
+                    <p className="text-muted-foreground text-xs" data-testid="app-snapshot-schedule">
+                      {t('textcac5e168fd53', {
+                        value0: schedule.automatic_interval_hours,
+                        value1: schedule.automatic_retention_days,
+                        value2: schedule.resize_retention_hours,
+                        value3: limit,
+                      })}
+                    </p>
+                  ) : null}
                 </section>
               </div>
             )}
@@ -406,7 +408,7 @@ export function BackendBackupsDialog({
         onOpenChange={(open) => !open && !restoring && setPendingRestore(null)}
         title={t.raw('text4f9edcd9f991')}
         description={t('text459953ec0256', {
-          value0: backend.name,
+          value0: app.name,
           value1: pendingRestore ? relativeTime(pendingRestore.created_at) : '',
         })}
         confirmLabel={t.raw('texta76e13b98392')}
@@ -415,57 +417,37 @@ export function BackendBackupsDialog({
         onConfirm={async () => {
           if (!pendingRestore) return;
           try {
-            await onRestore(pendingRestore.snapshot_id);
-            successToast(t.raw('textbd6c657bb3d5'));
-            setPendingRestore(null);
+            await snapshots.restore.mutateAsync(pendingRestore.snapshot_id);
+            successToast(t.raw('text50f89377e008'));
           } catch (error) {
-            errorToast(backendOperationError(error, t.raw('text8a59975b229b'), t));
-            setPendingRestore(null);
+            errorToast(instanceOperationError(error, t.raw('textc7749399019b'), t));
           }
+          setPendingRestore(null);
         }}
       />
 
       <ConfirmDialog
         open={pendingDelete !== null}
-        onOpenChange={(open) => !open && !backups.deleteSnapshot.isPending && setPendingDelete(null)}
+        onOpenChange={(open) => !open && !snapshots.delete.isPending && setPendingDelete(null)}
         title={t.raw('text6f70f5ac2047')}
         description={t('textc2ee618713fb', {
-          value0: backend.name,
+          value0: app.name,
           value1: pendingDelete ? relativeTime(pendingDelete.created_at) : '',
         })}
         confirmLabel={t.raw('textab50f27cec49')}
         confirmVariant="destructive"
-        isPending={backups.deleteSnapshot.isPending}
+        isPending={snapshots.delete.isPending}
         onConfirm={async () => {
           if (!pendingDelete) return;
           try {
-            await backups.deleteSnapshot.mutateAsync(pendingDelete.snapshot_id);
+            await snapshots.delete.mutateAsync(pendingDelete.snapshot_id);
             successToast(t.raw('textedc63daf62bc'));
           } catch (error) {
-            errorToast(backendOperationError(error, t.raw('text4ac5e5c981cc'), t));
+            errorToast(instanceOperationError(error, t.raw('text4ac5e5c981cc'), t));
           }
           setPendingDelete(null);
         }}
       />
     </>
-  );
-}
-
-/** The badge for an operation in flight: resize, admin-key rotation, snapshot, restore, or a recovery Kortix runs. */
-export function BackendOperationBadge({ operation }: { operation: NonNullable<ProjectBackend['operation']> }) {
-  const t = useTranslations('hardcodedUi.i18nComplete');
-  const labels: Record<NonNullable<ProjectBackend['operation']>, string> = {
-    resizing: t.raw('text6f2769b24c0f'),
-    rotating_key: t.raw('text4a75e77ccc8d'),
-    recovering: t.raw('text959bdc881c93'),
-    snapshotting: t.raw('textcd08dcee6a87'),
-    restoring: t.raw('text5a4918e0201c'),
-  };
-  const label = labels[operation];
-  return (
-    <Badge variant="warning" className="gap-1.5">
-      <Loading className="size-3 shrink-0" />
-      {label}
-    </Badge>
   );
 }
