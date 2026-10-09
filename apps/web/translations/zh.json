@@ -1156,11 +1156,7 @@
         },
         "apps": {
           "name": "应用",
-          "description": "将静态网站、JavaScript 包、Dockerfile 和 OCI 镜像部署到稳定的无服务器网址。"
-        },
-        "backends": {
-          "name": "后端",
-          "description": "为此项目提供自托管的 Convex 后端：数据库、服务器函数、实时和文件存储，每个后端运行在独立的机器上。"
+          "description": "将静态网站、JavaScript 包、Dockerfile 和 OCI 镜像部署到稳定的无服务器网址，并运行后端：在始终运行的机器上提供数据库、服务器函数、实时查询、文件存储、定时任务和搜索。"
         },
         "monitors": {
           "name": "监控器",
@@ -1185,10 +1181,6 @@
         "config_releases": {
           "name": "配置发布",
           "description": "使用基础分支当前的智能体配置运行会话，以只读方式提供，让已合并的智能体、技能或工具到达每个运行中的会话。关闭时，会话读取自己工作区的配置目录。"
-        },
-        "mcp": {
-          "name": "MCP 服务器",
-          "description": "通过 OAuth 将 Claude、ChatGPT、Cursor、Codex 或任何 MCP 客户端连接到此项目。客户端以你的身份登录，并以你的权限调用 Kortix。URL 位于工作区菜单的「连接 MCP」中。"
         },
         "reminders": {
           "name": "提醒",

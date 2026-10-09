@@ -982,11 +982,7 @@
         },
         "apps": {
           "name": "Apps",
-          "description": "Deploy static sites, JavaScript bundles, Dockerfiles, and OCI images to stable serverless URLs."
-        },
-        "backends": {
-          "name": "Backends",
-          "description": "Give this project self-hosted Convex backends: database, server functions, realtime and file storage, each on its own machine."
+          "description": "Deploy static sites, JavaScript bundles, Dockerfiles, and OCI images to stable serverless URLs, and run backends: a database, server functions, realtime queries, file storage, scheduling, and search on an always-on machine."
         },
         "monitors": {
           "name": "Monitors",
@@ -1011,10 +1007,6 @@
         "config_releases": {
           "name": "Config Releases",
           "description": "Run sessions on the base branch's current agent config, served read-only, so a merged agent, skill, or tool reaches every running session. Off, a session reads its own workspace config folder."
-        },
-        "mcp": {
-          "name": "MCP server",
-          "description": "Connect Claude, ChatGPT, Cursor, Codex or any MCP client to this project over OAuth. The client signs in as you and calls Kortix with your permissions. Find the URL under Connect MCP in the workspace menu."
         },
         "reminders": {
           "name": "Reminders",

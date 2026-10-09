@@ -1156,11 +1156,7 @@
         },
         "apps": {
           "name": "Apps",
-          "description": "Stellen Sie statische Websites, JavaScript-Pakete, Dockerfiles und OCI-Images unter stabilen serverlosen URLs bereit."
-        },
-        "backends": {
-          "name": "Backends",
-          "description": "Gib diesem Projekt selbst gehostete Convex-Backends: Datenbank, Serverfunktionen, Echtzeit und Dateispeicher, jeweils auf einer eigenen Maschine."
+          "description": "Stellen Sie statische Websites, JavaScript-Pakete, Dockerfiles und OCI-Images unter stabilen serverlosen URLs bereit und betreiben Sie Backends: eine Datenbank, Serverfunktionen, Echtzeitabfragen, Dateispeicher, Zeitpläne und Suche auf einer ständig laufenden Maschine."
         },
         "monitors": {
           "name": "Monitore",
@@ -1185,10 +1181,6 @@
         "config_releases": {
           "name": "Config-Releases",
           "description": "Sitzungen mit der aktuellen Agent-Konfiguration des Basis-Branch ausführen, schreibgeschützt bereitgestellt, damit ein gemergter Agent, Skill oder Tool jede laufende Sitzung erreicht. Bei Aus liest eine Sitzung ihren eigenen Workspace-Konfigurationsordner."
-        },
-        "mcp": {
-          "name": "MCP-Server",
-          "description": "Verbinde Claude, ChatGPT, Cursor, Codex oder einen anderen MCP-Client per OAuth mit diesem Projekt. Der Client meldet sich als du an und ruft Kortix mit deinen Berechtigungen auf. Die URL findest du unter „MCP verbinden“ im Workspace-Menü."
         },
         "reminders": {
           "name": "Erinnerungen",

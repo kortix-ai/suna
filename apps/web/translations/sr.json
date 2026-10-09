@@ -1156,11 +1156,7 @@
         },
         "apps": {
           "name": "Апликације",
-          "description": "Поставите статичке сајтове, JavaScript пакете, Dockerfile датотеке и OCI слике на стабилне serverless адресе."
-        },
-        "backends": {
-          "name": "Бекендови",
-          "description": "Дајте овом пројекту Convex бекендове на сопственом хостингу: база података, серверске функције, реално време и складиште датотека, сваки на својој машини."
+          "description": "Поставите статичке сајтове, JavaScript пакете, Dockerfile датотеке и OCI слике на стабилне serverless адресе и покрените бекенде: базу података, серверске функције, упите у реалном времену, складиште датотека, заказивање и претрагу на машини која стално ради."
         },
         "monitors": {
           "name": "Надгледања",
@@ -1185,10 +1181,6 @@
         "config_releases": {
           "name": "Издања конфигурације",
           "description": "Покрећите сесије са тренутном конфигурацијом агента са основне гране, послуженом само за читање, тако да спојени агент, вештина или алат стигне до сваке покренуте сесије. Када је искључено, сесија чита сопствену фасциклу конфигурације у радном простору."
-        },
-        "mcp": {
-          "name": "MCP server",
-          "description": "Poveži Claude, ChatGPT, Cursor, Codex ili bilo koji MCP klijent sa ovim projektom preko OAuth-a. Klijent se prijavljuje kao ti i poziva Kortix sa tvojim dozvolama. URL je pod „Poveži MCP“ u meniju radnog prostora."
         },
         "reminders": {
           "name": "Подсетници",

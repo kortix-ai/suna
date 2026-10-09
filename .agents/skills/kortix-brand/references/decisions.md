@@ -24,7 +24,7 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 ### D12 "Backend" is the noun for a project's Convex-powered service
 - **Decision:** "backend" is the canonical noun for a project's Convex-powered data-and-logic service. Plural in the product area: "Backends". Never "database", "DB", "Convex project", or "app backend".
 - **Why:** A backend holds data, server functions, realtime queries, files and schedules, not only tables. "Database" understates it. One noun across the UI, the CLI (`kortix backends`), the API (`/backends`) and the docs. The word "backend" also appears in "Kortix as a Backend" (KaaB) and "Git backend". Those name other things. A reader tells them apart by context and by the product name "Backends" for this feature.
-- **Where:** `verbal/voice-and-tone.md` section 3 (product nouns), `apps/web/content/docs/feature-flags/backends.mdx`, the `kortix-backends` and `kortix-internal-apps` system skills (`packages/starter/templates/managed/skills/`), the `kortix backends` CLI help, the `/backends` API routes.
+- **Where:** historical. D13 retired every location this decision named: the Backends docs page, the two Backends system skills, the `kortix backends` CLI group and the `/backends` API routes are deleted (branch `apps-convex`). The noun now lives where D13 says.
 - **Supersedes:** none.
 - **Source:** Kortix Backends feature, branch `kortix-backends` (2026-10-06).
 

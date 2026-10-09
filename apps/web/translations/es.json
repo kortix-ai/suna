@@ -1156,11 +1156,7 @@
         },
         "apps": {
           "name": "Aplicaciones",
-          "description": "Despliega sitios estáticos, paquetes JavaScript, Dockerfiles e imágenes OCI en URL serverless estables."
-        },
-        "backends": {
-          "name": "Backends",
-          "description": "Da a este proyecto backends de Convex autoalojados: base de datos, funciones de servidor, tiempo real y almacenamiento de archivos, cada uno en su propia máquina."
+          "description": "Despliega sitios estáticos, paquetes JavaScript, Dockerfiles e imágenes OCI en URL serverless estables, y ejecuta backends: una base de datos, funciones de servidor, consultas en tiempo real, almacenamiento de archivos, programación y búsqueda en una máquina siempre activa."
         },
         "monitors": {
           "name": "Monitores",
@@ -1185,10 +1181,6 @@
         "config_releases": {
           "name": "Versiones de configuración",
           "description": "Ejecuta las sesiones con la configuración de agente actual de la rama base, servida en solo lectura, para que un agente, skill o herramienta fusionado llegue a cada sesión en curso. Desactivado, cada sesión lee su propia carpeta de configuración del workspace."
-        },
-        "mcp": {
-          "name": "Servidor MCP",
-          "description": "Conecta Claude, ChatGPT, Cursor, Codex o cualquier cliente MCP a este proyecto mediante OAuth. El cliente inicia sesión como tú y llama a Kortix con tus permisos. Encuentra la URL en Conectar MCP, en el menú del espacio de trabajo."
         },
         "reminders": {
           "name": "Recordatorios",
