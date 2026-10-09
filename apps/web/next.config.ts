@@ -321,7 +321,8 @@ const nextConfig = (): NextConfig => ({
   // missing config" later or wonders whether we missed the release. The only
   // knobs we set are turbopackMemoryEviction and turbopackFileSystemCacheForDev
   // (both below) — and both only as escape hatches that default to upstream's
-  // value when their env var is unset.
+  // value when their env var is unset. 16.4 adds turbopackGc (below), which we
+  // turn on: upstream defaults it off.
   //
   // Already default-ON in 16.3 — restating them here would be dead config that
   // silently diverges the day upstream changes a default:
@@ -455,6 +456,13 @@ const nextConfig = (): NextConfig => ({
     // aborts the dev server and takes the whole browser shard with it — the
     // full rationale is on resolveTurbopackFileSystemCacheForDev above.
     turbopackFileSystemCacheForDev: resolveTurbopackFileSystemCacheForDev(),
+    // Without GC (the default, and the only mode before 16.4) the persistent
+    // cache keeps every task it ever computed. Each `git merge origin/dev`
+    // adds a new set, so a busy worktree's .next/dev/cache/turbopack reached
+    // 20GB in 2 days and 60GB in one case. GC drops unreachable work from
+    // memory and from that cache. It is a no-op when the FS cache is off, and
+    // Turbopack skips it when turbopackMemoryEviction is false.
+    turbopackGc: true,
     // Optimize package imports for faster builds and smaller bundles
     optimizePackageImports: [
       '@phosphor-icons/react',
