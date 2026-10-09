@@ -14,7 +14,7 @@ import { isQuestionTool } from '../session-activity-groups';
 
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { detectCommandFromText } from '@/features/session/detect-command';
-import { genuiCopyText } from '@/features/genui/to-markdown';
+import { copyGenuiText } from '@/features/genui/to-markdown';
 import { useTranslations } from '@/i18n/use-translations';
 import { type SessionMessageAuthor, type SessionPrompt, type SessionPromptViewer, groupShowSegments, isCompactionPart, isPatchPart, isSnapshotPart, isStepPart, sessionPromptActions, toolKind } from '@kortix/sdk';
 import {
@@ -2106,9 +2106,13 @@ const handleCopy = async () => {
         .join('\n\n')
     : response;
   if (!textToCopy) return;
-  await navigator.clipboard.writeText(await genuiCopyText(textToCopy));
-  setCopied(true);
-  setTimeout(() => setCopied(false), 2000);
+  try {
+    await copyGenuiText(textToCopy);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  } catch {
+    // The browser refused the write; `copied` stays false.
+  }
 };
   return (
     <div className="duration-normal flex items-center gap-0.5 opacity-0 transition-opacity group-hover/turn:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100 max-md:opacity-100">
