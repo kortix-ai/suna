@@ -160,9 +160,10 @@ export function ChartView({ node, props }: GenuiComponentProps) {
             <TableHeader>
               <TableRow>
                 {head.map((cell, c) => (
-                  // The label column needs no visible heading: its cells name themselves.
-                  <TableHead key={c} className={cn(c === 0 ? 'sr-only' : 'text-right')}>
-                    {cell}
+                  // The label column needs no visible heading: its cells name themselves. Only the text is
+                  // hidden: `sr-only` on the <th> makes it absolute and shifts every header one column left.
+                  <TableHead key={c} className={c === 0 ? undefined : 'text-right'}>
+                    {c === 0 ? <span className="sr-only">{cell}</span> : cell}
                   </TableHead>
                 ))}
               </TableRow>

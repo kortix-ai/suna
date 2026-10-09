@@ -11,6 +11,13 @@ import { GenuiPending } from './pending';
 const node = (code: string) => (parseGenui(code).root!.props.children as GenuiNode[])[0]!;
 const render = (chart: GenuiNode) =>
   renderToStaticMarkup(<ChartView node={chart} props={chart.props} renderChild={() => null} streaming={false} />);
+/** Every header cell stays a table cell, and each body row has as many cells as the header. */
+const expectAlignedTable = (html: string) => {
+  expect(html).not.toMatch(/<th[^>]*class="[^"]*\bsr-only\b/);
+  const headers = html.match(/<thead[\s\S]*?<\/thead>/)![0].match(/<th\b/g)!.length;
+  const rows = html.match(/<tbody[\s\S]*?<\/tbody>/)![0].match(/<tr\b[\s\S]*?<\/tr>/g)!;
+  for (const row of rows) expect(row.match(/<td\b/g)!.length).toBe(headers);
+};
 const legend = (html: string) => html.match(/<ul[^>]*>[\s\S]*?<\/ul>/)?.[0] ?? null;
 
 describe('ChartView', () => {
@@ -21,7 +28,8 @@ describe('ChartView', () => {
     expect(html).toContain('aria-label="Bar chart: Revenue. Source: billing export"');
     expect(html).toMatch(/<figcaption[^>]*>Source: billing export · USD<\/figcaption>/);
     expect(html).toMatch(/<details[^>]*><summary[^>]*>[\s\S]*Show data<\/summary>/);
-    expect(html).toMatch(/<th[^>]*sr-only[^>]*>Label<\/th><th[^>]*>Revenue \(USD\)<\/th>/);
+    expect(html).toMatch(/<th[^>]*><span class="sr-only">Label<\/span><\/th><th[^>]*>Revenue \(USD\)<\/th>/);
+    expectAlignedTable(html);
     expect(html).toMatch(/<td[^>]*>Q1<\/td><td[^>]*>120<\/td>/);
     expect(html).toMatch(/<td[^>]*>1,500<\/td>/);
   });
@@ -59,7 +67,8 @@ describe('ChartView', () => {
     const colors = new Map([...html.matchAll(/--color-(p\d): ([^;]+);/g)].map((match) => [match[1], match[2]]));
     expect(colors.size).toBe(6);
     expect(new Set(colors.values()).size).toBe(6);
-    expect(html).toMatch(/<th[^>]*>Value<\/th><th[^>]*>%<\/th>/);
+    expect(html).toMatch(/<th[^>]*><span class="sr-only">Label<\/span><\/th><th[^>]*>Value<\/th><th[^>]*>%<\/th>/);
+    expectAlignedTable(html);
     expect(html).toMatch(/<td[^>]*>North a<\/td><td[^>]*>50<\/td><td[^>]*>50%<\/td>/);
   });
 
