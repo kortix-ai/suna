@@ -9,7 +9,7 @@
 // its first open-mounts.
 import { describe, expect, test } from 'bun:test';
 import React, { act, useEffect, useLayoutEffect, useState } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
+import { createRoot, type Container } from 'react-dom/client';
 import { Window } from 'happy-dom';
 
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true });
@@ -24,7 +24,7 @@ globals.history = win.history;
 globals.requestAnimationFrame = (cb: () => void) => setTimeout(cb, 0);
 globals.cancelAnimationFrame = (id: number) => clearTimeout(id);
 for (const key of Object.getOwnPropertyNames(win)) {
-  if (/^[A-Z]/.test(key) && !(key in globals)) globals[key] = (win as Record<string, unknown>)[key];
+  if (/^[A-Z]/.test(key) && !(key in globals)) globals[key] = Reflect.get(win, key);
 }
 
 import { ClientErrorBoundary } from '@/components/common/error-boundary';
@@ -120,15 +120,20 @@ function UncontainedHarness({ crashOpens }: { crashOpens: number }) {
   return <CrashyDialogMount open={open} crashOpens={crashOpens} />;
 }
 
-async function renderHost(node: React.ReactNode): Promise<{ host: HTMLElement; root: Root }> {
+/**
+ * happy-dom's document produces happy-dom nodes, which are structurally
+ * distinct from the DOM-lib types react-dom's `Container` accepts — the same
+ * bridge the repo's other happy-dom harnesses bridge (see
+ * `diff-layout-toggle.test.tsx`).
+ */
+async function renderHost(node: React.ReactNode) {
   const host = win.document.createElement('div');
   win.document.body.appendChild(host);
-  let root: Root | null = null;
+  const root = createRoot(host as unknown as Container);
   await act(async () => {
-    root = createRoot(host);
     root.render(node);
   });
-  return { host, root: root! };
+  return { host, root };
 }
 
 async function settle() {

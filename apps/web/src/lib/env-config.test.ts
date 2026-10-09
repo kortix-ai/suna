@@ -85,7 +85,7 @@ describe('env-config server branch BACKEND_URL precedence', () => {
   // When no absolute value exists (production build without BACKEND_URL), the
   // public values remain the source — unchanged behavior.
   test('falls back to the public value when BACKEND_URL is absent', () => {
-    const env = {
+    const env: Record<string, string | undefined> = {
       ...envWithoutRuntimeKeys(),
       SUPABASE_URL: 'http://127.0.0.1:13321',
       SUPABASE_ANON_KEY: 'test-anon-key',
