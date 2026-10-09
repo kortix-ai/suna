@@ -243,9 +243,27 @@ test("48 — the bell opens another session's notification and the settings save
         databaseUrl,
       });
       const offProjectId = flagOffProject.id;
-      // "Enable notifications" asks the browser; grant it so the switch turns on.
-      await page.context().grantPermissions(["notifications"], {
-        origin: new URL(page.url()).origin,
+      // Headless Chromium keeps notifications blocked, so turn the stored
+      // per-browser choice on directly: the four switches render under it.
+      await page.evaluate(() => {
+        localStorage.setItem(
+          "kortix-web-notifications",
+          JSON.stringify({
+            state: {
+              preferences: {
+                enabled: true,
+                onCompletion: true,
+                onError: true,
+                onQuestion: true,
+                onPermission: true,
+                onlyWhenHidden: true,
+                playSound: false,
+              },
+              promptDismissed: false,
+            },
+            version: 0,
+          }),
+        );
       });
       // Leave the flag-on project first, so none of its requests are counted.
       await page.goto("about:blank");
@@ -261,9 +279,12 @@ test("48 — the bell opens another session's notification and the settings save
 
       const panel = await openSettingsTab(page, "Notifications");
       const enable = panel.getByRole("switch", { name: "Enable notifications", exact: true });
-      // The pre-notification-center line: the browser permission, not where Web Push reaches.
-      await expect(panel.getByText("Browser permission granted", { exact: true })).toBeVisible();
-      if (!(await enable.isChecked())) await enable.click();
+      // The pre-notification-center line names the browser permission, not where Web Push reaches.
+      await expect(
+        panel.getByText(
+          /^(Browser permission granted|Blocked by browser — update in browser site settings|Will request browser permission when enabled)$/,
+        ),
+      ).toBeVisible();
       await expect(enable).toBeChecked();
       for (const kind of ["Task completions", "Errors", "Questions", "Permission requests"]) {
         await expect(panel.getByRole("switch", { name: kind, exact: true })).toBeChecked();
