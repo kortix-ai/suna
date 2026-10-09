@@ -290,6 +290,7 @@ export function sessionStartFailureFromSandbox(
     rawCategory === 'unsupported-secret-delivery' ||
     rawCategory === 'invalid-secret-boundary-policy' ||
     rawCategory === 'snapshot-too-large' ||
+    rawCategory === 'drives-unavailable' ||
     rawCategory === 'sandbox-provider'
       ? rawCategory
       : 'sandbox-provider';

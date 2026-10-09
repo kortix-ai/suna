@@ -15,6 +15,7 @@
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { isMetaAgentName, META_SANDBOX_SLUG } from '@kortix/shared';
+import type { SessionDriveMounts } from '../../drives/service';
 import { db } from '../../shared/db';
 import {
   patchedSandboxMetadata,
@@ -324,6 +325,10 @@ export function restorePlatinumCreateAttempt(metadata: Record<string, unknown> |
   return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
+/** Platinum itself did not answer (as opposed to refusing a request). */
+const PLATINUM_UNREACHABLE =
+  /Unable to connect|ECONNREFUSED|ECONNRESET|ConnectionRefused|socket connection was closed|fetch failed|provider state is unknown|The operation timed out/i;
+
 type ProvisionSessionSandboxOpts = Parameters<typeof provisionSessionSandbox>[0];
 type SessionSandboxRow = typeof sessionSandboxes.$inferSelect;
 type SessionSandboxProvider = ReturnType<typeof getProvider>;
@@ -359,6 +364,11 @@ interface SessionProvisionState {
   lastProvisionAttempt: number;
   lastProvisionMaxAttempts: number;
   platinumCreateAttempt: number;
+  // Drives mount on Platinum only: resolved on the first Platinum attempt and
+  // reused by every later one, so a retry keeps the same create body. The
+  // provider drops them itself when Platinum refuses the create over them.
+  driveMounts: SessionDriveMounts | undefined;
+  driveMountsResolved: boolean;
 }
 
 /** What the detached provisioning loop reads but never changes. */
@@ -372,6 +382,14 @@ interface SessionProvisionContext {
   providerWasExplicitlySelected: boolean;
   resolveGitProject: () => Promise<GitBackedProject>;
   resolveImage: (gitProject: GitBackedProject, targetProvider: string) => Promise<EnsureSandboxImageResult>;
+  /** The template slug this session boots. */
+  slug: string;
+  // Kortix Drive: a project with drives boots its sessions on Platinum only,
+  // and never without their drives (see drives/service.ts sessionVolumeMounts).
+  drivesRequirePlatinum: boolean;
+  // Drive sync (operator switch): a session off Platinum gets its drives
+  // copied in and synced by the box's daemon instead of failing to boot.
+  drivesSyncAllowed: boolean;
 }
 
 /** Insert the `provisioning` row, or claim an authorized recovery placeholder. */
@@ -524,6 +542,8 @@ export async function provisionSessionSandbox(opts: {
     lastProvisionAttempt: SANDBOX_INIT_MAX_ATTEMPTS,
     lastProvisionMaxAttempts: SANDBOX_INIT_MAX_ATTEMPTS,
     platinumCreateAttempt: 0,
+    driveMounts: undefined,
+    driveMountsResolved: false,
   };
   const tl = new ProvisionTimeline(sandboxId, 'provision');
 
@@ -534,6 +554,13 @@ export async function provisionSessionSandbox(opts: {
     if (!opts.resolveGitProject) return opts.gitProject;
     return opts.resolveGitProject();
   };
+  const drivesRequirePlatinum =
+    slug !== META_SANDBOX_SLUG &&
+    (await import('../../drives/service')
+      .then((m) => m.sessionDrivesEnabled(projectId))
+      .catch(() => false));
+  const drivesSyncAllowed =
+    drivesRequirePlatinum && (await import('../../drives/sync').then((m) => m.driveSyncEnabled()).catch(() => false));
   const resolveImage = (
     gitProject: GitBackedProject,
     targetProvider: string,
@@ -673,6 +700,9 @@ export async function provisionSessionSandbox(opts: {
       providerWasExplicitlySelected,
       resolveGitProject,
       resolveImage,
+      slug,
+      drivesRequirePlatinum,
+      drivesSyncAllowed,
     },
     state,
   );
@@ -717,6 +747,84 @@ async function resolveAttemptImage(
     `branch ${branch}, ${image.built ? 'fresh build' : 'cache hit'})`,
   );
   return image;
+}
+
+/**
+ * The session's drives for this attempt's box: mounted on Platinum, synced
+ * by the box's daemon elsewhere (drive sync), or a refused boot when neither.
+ */
+async function prepareAttemptVolumes(ctx: SessionProvisionContext, state: SessionProvisionState): Promise<void> {
+  const { opts, sandbox, providerCreateInput, slug, drivesRequirePlatinum, drivesSyncAllowed } = ctx;
+  const { accountId, projectId, userId } = opts;
+  const { providerName } = state;
+  // Drive sync: on any other provider the session's drives are copied
+  // into the box and kept in sync by its daemon over the Kortix API, so
+  // the session still boots with every drive it is entitled to.
+  // A failover onto Platinum mounts natively: the sync switch must not follow it.
+  if (providerCreateInput.envVars?.KORTIX_DRIVE_SYNC) {
+    const { KORTIX_DRIVE_SYNC: _sync, ...rest } = providerCreateInput.envVars;
+    providerCreateInput.envVars = rest;
+  }
+  const planDrives = () =>
+    import('../../drives/service').then(({ sessionVolumeMounts }) =>
+      sessionVolumeMounts({
+        accountId,
+        projectId,
+        sessionId: sandbox.sandboxId,
+        bootingUserId: userId,
+        agentName: opts.agentName ?? 'default',
+      }),
+    );
+  if (drivesRequirePlatinum && providerName !== 'platinum' && drivesSyncAllowed) {
+    if (!state.driveMountsResolved) {
+      state.driveMounts = await planDrives();
+      state.driveMountsResolved = true;
+    }
+    if (state.driveMounts?.mounts.length) {
+      const { DRIVE_SYNC_ENV } = await import('../../drives/sync');
+      providerCreateInput.envVars = { ...(providerCreateInput.envVars ?? {}), [DRIVE_SYNC_ENV]: '1' };
+    }
+  }
+  if (drivesRequirePlatinum && providerName !== 'platinum' && !drivesSyncAllowed) {
+    const { DriveMountError } = await import('../../drives/service');
+    throw new DriveMountError(
+      'This project’s sessions mount drives, and drives run on Platinum only. Platinum is not available for this session right now, so it did not start. Try again in a minute.',
+      [],
+    );
+  }
+  if (providerName !== 'platinum' || slug === META_SANDBOX_SLUG) {
+    providerCreateInput.volumes = undefined;
+    return;
+  }
+  if (!state.driveMountsResolved) {
+    state.driveMounts = await planDrives();
+    state.driveMountsResolved = true;
+  }
+  providerCreateInput.volumes = state.driveMounts?.volumes;
+}
+
+/** What the box mounted, for its row: the session's drive chip and the agent's notes read it back. */
+interface AttemptBoxMetadata {
+  mountedDrives: NonNullable<SessionDriveMounts>['mounts'];
+  box: Record<string, unknown>;
+}
+
+function recordAttemptMounts(ctx: SessionProvisionContext, state: SessionProvisionState): AttemptBoxMetadata {
+  const { providerCreateInput, drivesSyncAllowed } = ctx;
+  const { providerName, driveMounts } = state;
+  // What this sandbox really mounted.
+  const mountedDrives =
+    driveMounts && (providerCreateInput.volumes || (providerName !== 'platinum' && drivesSyncAllowed))
+      ? driveMounts.mounts
+      : [];
+  // And the drives that did not fit, which the chip and the agent's notes name.
+  const driveAdmission =
+    mountedDrives.length && driveMounts
+      ? { driveMountsSkipped: driveMounts.skipped, driveMountSlots: driveMounts.slots }
+      : { driveMountsSkipped: [] };
+  // A synced box: its daemon copies the drives in and keeps them in sync.
+  const driveSyncMeta = providerName !== 'platinum' && mountedDrives.length ? { driveSync: true } : {};
+  return { mountedDrives, box: { driveMounts: mountedDrives, ...driveAdmission, ...driveSyncMeta } };
 }
 
 /**
@@ -834,6 +942,7 @@ async function settleSandboxStoppedDuringCreate(
   result: ProvisionResult,
   attempts: number,
   timeline: ProvisionTimelineSummary,
+  boot: AttemptBoxMetadata,
 ): Promise<boolean> {
   const { opts, sandbox, tl } = ctx;
   const { accountId } = opts;
@@ -895,6 +1004,7 @@ async function settleSandboxStoppedDuringCreate(
             ...result.metadata,
             provisionTimeline: timeline,
             providerExternalId: result.externalId,
+            ...boot.box,
           },
           attempts,
           state.lastProvisionMaxAttempts,
@@ -926,12 +1036,13 @@ async function activateProvisionedSandbox(
     timeline: ProvisionTimelineSummary;
     firstStage: ProvisioningStage;
     branch: string;
+    boot: AttemptBoxMetadata;
   },
 ): Promise<void> {
   const { opts, sandbox, sessionToken, tl, llmGatewayEnabled } = ctx;
   const { accountId, userId } = opts;
   const { providerName, provider } = state;
-  const { result, attempts, timeline, firstStage, branch } = created;
+  const { result, attempts, timeline, firstStage, branch, boot } = created;
   // Pre-active hook (legacy migration chat restore). Runs while the row is
   // still 'provisioning' so the frontend hasn't started ensure-opencode yet.
   //
@@ -973,6 +1084,7 @@ async function activateProvisionedSandbox(
         provisioningStage: firstStage?.id,
         provisionTimeline: timeline,
         providerExternalId: result.externalId,
+        ...boot.box,
         runtimeArtifact: {
           artifactType: providerName === 'daytona' ? 'daytona_snapshot' : `${providerName}_template`,
           providerArtifactRef: state.imageInfo!.snapshotName,
@@ -1060,6 +1172,10 @@ async function activateProvisionedSandbox(
     totalMs: okTl.totalMs, marks: okTl.marks, attempts,
     sessionId: sandbox.sandboxId, accountId,
   });
+  // The agent's map of its drives (/drives/README.md). Detached, best effort.
+  if (boot.mountedDrives.length) {
+    void import('../../drives/service').then(({ refreshDriveNotes }) => refreshDriveNotes(sandbox.sandboxId));
+  }
 
   // Billing v2 — open a compute metering row. No-op for legacy accounts.
   // Billed at the size of the image that booted (computeMeteringSpec).
@@ -1100,6 +1216,7 @@ async function runProvisionAttempt(
   tl.note('network-boundary');
 
   const image = await resolveAttemptImage(ctx, state, branch);
+  await prepareAttemptVolumes(ctx, state);
 
   const firstStage = state.provider.provisioning.stages[0];
   const created = await createAttemptSandbox(ctx, state, image, firstStage);
@@ -1107,10 +1224,11 @@ async function runProvisionAttempt(
   const { result, attempts } = created;
   state.bgExternalId = result.externalId;
   tl.mark(`provider-create:${attempts}x`);
+  const boot = recordAttemptMounts(ctx, state);
   const timeline = tl.summary();
 
-  if (await settleSandboxStoppedDuringCreate(ctx, state, result, attempts, timeline)) return 'done';
-  await activateProvisionedSandbox(ctx, state, { result, attempts, timeline, firstStage, branch });
+  if (await settleSandboxStoppedDuringCreate(ctx, state, result, attempts, timeline, boot)) return 'done';
+  await activateProvisionedSandbox(ctx, state, { result, attempts, timeline, firstStage, branch, boot });
   return 'done';
 }
 
@@ -1167,7 +1285,7 @@ async function failOverToNextProvider(
   state: SessionProvisionState,
   bgMessage: string,
 ): Promise<boolean> {
-  const { opts, sandbox, providerCreateInput, tl, providerWasExplicitlySelected } = ctx;
+  const { opts, sandbox, providerCreateInput, tl, providerWasExplicitlySelected, drivesRequirePlatinum, drivesSyncAllowed } = ctx;
   const { accountId } = opts;
   const { providerName, provider } = state;
   // ── Provider failover (one-shot, on init) ────────────────────────────
@@ -1178,7 +1296,9 @@ async function failOverToNextProvider(
   // its own image (the snapshot is provider-specific), so we clear all image
   // state and re-enter the loop.
   const next = nextFailoverProvider({
-    providerLocked: providerWasExplicitlySelected,
+    // Drives run on Platinum only: no hand-off to another provider. (With drive
+    // sync on, any provider can carry the drives.)
+    providerLocked: providerWasExplicitlySelected || (drivesRequirePlatinum && !drivesSyncAllowed),
     fallbackAttempted: state.fallbackAttempted,
     fallbackEnabled: providerFallbackSetting().enabled,
     current: providerName,
@@ -1256,7 +1376,16 @@ async function failSessionSandboxProvisioning(
   const { providerName, provider, bgExternalId } = state;
   // Keep provider SDK text in diagnostic metadata. Show one stable contract
   // for E2B, Daytona, Platinum, and future providers.
-  const failure = classifySandboxProvisioningFailure(bgErr);
+  // A project with drives runs on Platinum only: when Platinum cannot be
+  // reached at all, say that, instead of a generic provider failure.
+  const failure = classifySandboxProvisioningFailure(
+    ctx.drivesRequirePlatinum && !ctx.drivesSyncAllowed && PLATINUM_UNREACHABLE.test(bgMessage)
+      ? new Error(
+          '[drives] Platinum, which runs this project’s sessions and their drives, is not reachable right now. ' +
+            'The session did not start. Try again in a minute.',
+        )
+      : bgErr,
+  );
   const { isCapacity, isGitAuth, userMessage } = failure;
   const failureCategory = failure.category;
   if (isCapacity) {

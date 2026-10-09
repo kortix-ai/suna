@@ -67,6 +67,9 @@ const SYSTEM_ROLE_ORDER = [
   'account:admin',
   'account:member',
   'project:agent-user',
+  'project:folder-reader',
+  'project:folder-writer',
+  'project:folder-manager',
 ];
 
 /**

@@ -364,6 +364,27 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'rows of a project with the flag off (notifications/inbox-read.ts). The ' +
       'per-person /v1/notifications/* routes carry no project and stay ungated.',
   },
+  {
+    key: 'drives',
+    name: 'Files',
+    description:
+      'The project\'s shared folders, in sync with sessions: everyone has their own private folder (their session desktop), and any folder can be shared with people, teams and agents. New sessions see the folders they may use under /drives.',
+    stability: 'experimental',
+    // Every drive is a Platinum volume; without Platinum there is nothing to
+    // store files in.
+    available: () => Boolean(config.PLATINUM_API_KEY),
+    // Explicit opt-in: turning it on starts mounting drives into every new
+    // Platinum session of the project.
+    platformDefault: () => false,
+    enforcement: 'routes',
+    enforcementNote:
+      'Mixed, and both halves are enforced. ROUTES: GET /v1/drives?projectId= answers ' +
+      '403 `feature_disabled` when off (drives/routes.ts). BEHAVIORAL: session ' +
+      'provisioning mounts no folder when off (drives/service.ts sessionVolumeMounts). ' +
+      'Routes addressed by drive id stay reachable so Files keeps its contents when a ' +
+      'project turns the flag off, and GET /projects/:id/sessions/:id/drives keeps ' +
+      'reporting what a running sandbox actually mounted.',
+  },
 ];
 
 const FLAG_BY_KEY: Record<FeatureFlagKey, FeatureFlagDef> = Object.fromEntries(

@@ -239,7 +239,19 @@ type PlatinumExecResponse = {
  * a name-boot fallback.
  */
 function isDefinitiveTemplateNotFound(error: unknown): boolean {
-  return platinumHttp(error).status === 404;
+  // A 404 about a volume in the create body is not a missing template.
+  return platinumHttp(error).status === 404 && !isVolumeRejection(error);
+}
+
+/**
+ * Platinum refused a create because of its `volumes` (a volume it cannot
+ * find, no host that can mount volumes, a mount limit): a definite refusal,
+ * so no box exists, and the same body can never succeed.
+ */
+function isVolumeRejection(error: unknown): boolean {
+  const { status, code, body } = platinumHttp(error);
+  if (typeof status !== 'number' || !((status >= 400 && status < 500) || status === 503)) return false;
+  return /volume|mount/i.test(`${code ?? ''} ${body ?? ''}`);
 }
 
 /** The `status`, `code` and `body` of the `PlatinumHttpError` `platinumJson` throws. */
@@ -490,6 +502,9 @@ export class PlatinumProvider implements SandboxProvider {
     if (dedup) {
       createBody.name = dedup.name;
     }
+    if (opts.volumes && Object.keys(opts.volumes).length > 0) {
+      createBody.volumes = opts.volumes;
+    }
     const createBodyJson = JSON.stringify(createBody);
     const CREATE_PATH = '/v1/sandboxes?wait_for_state=running&wait_timeout_ms=60000';
     // This asks Platinum to long-poll server-side for up to 60s
@@ -513,6 +528,14 @@ export class PlatinumProvider implements SandboxProvider {
     try {
       sandbox = await postCreate();
     } catch (err) {
+      // A full fleet stays a capacity error (retried, "try again in a minute").
+      if (createBody.volumes && isVolumeRejection(err) && !/no capacity/i.test(platinumHttp(err).body ?? '')) {
+        // A session never boots without its drives: fail loudly.
+        const reason = (platinumHttp(err).body ?? '').slice(0, 300);
+        throw new Error(
+          `[drives] This session’s drives could not be mounted (storage refused: ${reason}). The session did not start without them.`,
+        );
+      }
       const notYetInRegion = regionalTemplateNotReady(err, template);
       if (notYetInRegion) throw notYetInRegion;
       if (!dedup || !isNameTakenConflict(err)) throw err;
