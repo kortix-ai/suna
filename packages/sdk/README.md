@@ -1222,6 +1222,8 @@ if (version !== null) {
 }
 ```
 
+Pass a stable `renderMarkdown` (module constant or `useCallback`): a new function re-renders the block's markdown parts and node views.
+
 A host that renders no UI (email, a chat bot, a CLI) converts a reply with `genuiToMarkdown(text)`.
 
 Install the optional peers: `npm i zod @openuidev/lang-core@0.3.1`. `@openuidev/lang-core`

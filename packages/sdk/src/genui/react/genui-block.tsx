@@ -54,7 +54,10 @@ export interface GenuiBlockProps {
   version?: number;
   streaming: boolean;
   components: GenuiComponentMap;
-  /** The host's markdown renderer, for fallbacks. */
+  /**
+   * The host's markdown renderer, for fallbacks.
+   * Pass a stable function (module constant or useCallback): a new function re-renders the block's markdown parts and node views.
+   */
   renderMarkdown: (markdown: string) => ReactNode;
   /** A node the model has not finished. Default: nothing (no skeletons). */
   renderPending?: (node: GenuiNode) => ReactNode;
@@ -146,22 +149,14 @@ export function GenuiBlock({
 }: GenuiBlockProps) {
   // A disabled block renders markdown only: skip the parse (hooks stay unconditional).
   const result = useGenuiParse(enabled ? code : '', version, streaming);
-  // Hosts often pass inline arrows. Keep the latest in refs so the context value stays stable
-  // and memoized node views do not re-render on every tick.
-  const markdownRef = useRef(renderMarkdown);
-  markdownRef.current = renderMarkdown;
-  const pendingRef = useRef(renderPending);
-  pendingRef.current = renderPending;
-  const stableRenderMarkdown = useCallback((markdown: string) => markdownRef.current(markdown), []);
-  const stableRenderPending = useCallback((node: GenuiNode) => pendingRef.current(node), []);
   const mountedAt = useRef(performance.now());
   const firstPaint = useRef<number | null>(null);
   const renderError = useRef(false);
   if (result.root && firstPaint.current === null) firstPaint.current = performance.now() - mountedAt.current;
 
   const context = useMemo<RenderContextValue>(
-    () => ({ components, renderMarkdown: stableRenderMarkdown, renderPending: stableRenderPending, streaming }),
-    [components, stableRenderMarkdown, stableRenderPending, streaming],
+    () => ({ components, renderMarkdown, renderPending, streaming }),
+    [components, renderMarkdown, renderPending, streaming],
   );
 
   const unsupported = version !== GENUI_SCHEMA_VERSION;
@@ -187,15 +182,15 @@ export function GenuiBlock({
   }, [streaming]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (unsupported) return <>{renderMarkdown(`*${GENUI_UNSUPPORTED_NOTE}*`)}</>;
-  if (!enabled) return <BlockFallback code={code} version={version} renderMarkdown={stableRenderMarkdown} />;
-  if (!result.root) return streaming ? null : <BlockFallback code={code} version={version} renderMarkdown={stableRenderMarkdown} />;
+  if (!enabled) return <BlockFallback code={code} version={version} renderMarkdown={renderMarkdown} />;
+  if (!result.root) return streaming ? null : <BlockFallback code={code} version={version} renderMarkdown={renderMarkdown} />;
 
   return (
     <BlockBoundary
       // A throw while streaming gets one fresh try when the stream settles.
       // Settling remounts the node views once: host state such as an active tab resets.
       key={streaming ? 'live' : 'settled'}
-      fallback={<BlockFallback code={code} version={version} renderMarkdown={stableRenderMarkdown} />}
+      fallback={<BlockFallback code={code} version={version} renderMarkdown={renderMarkdown} />}
       onError={() => (renderError.current = !streaming)}
     >
       <RenderContext.Provider value={context}>

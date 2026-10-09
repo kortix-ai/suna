@@ -20,6 +20,7 @@ const Boom = (): never => {
   throw new Error('render failure');
 };
 const COMPONENTS: GenuiComponentMap = { Stack, Stat };
+const renderNothing = () => null;
 const renderMarkdown = (markdown: string) => <pre data-type="markdown">{markdown}</pre>;
 
 const CODE = 'root = Stack([a, b, c])\na = Stat("A", "1")\nb = Stat("B", "2")\nc = Stat("C", "3")';
@@ -122,20 +123,39 @@ describe('GenuiBlock', () => {
     expect(JSON.stringify(events[0])).not.toContain('A=1');
   });
 
-  test('inline renderMarkdown and renderPending callbacks do not re-render finished nodes', () => {
+  test('a stable renderMarkdown keeps finished nodes from re-rendering', () => {
     renders.clear();
-    const base = { version: 1, components: COMPONENTS };
-    const inline = () => ({
-      renderMarkdown: (markdown: string) => <pre data-type="markdown">{markdown}</pre>,
-      renderPending: () => null,
-    });
-    const renderer = mount(<GenuiBlock {...base} {...inline()} code={CODE.slice(0, 44)} streaming />);
+    const props = { version: 1, components: COMPONENTS, renderMarkdown, renderPending: renderNothing };
+    const renderer = mount(<GenuiBlock {...props} code={CODE.slice(0, 44)} streaming />);
     const midString = CODE.indexOf('"2"') + 1;
-    act(() => renderer.update(<GenuiBlock {...base} {...inline()} code={CODE.slice(0, midString)} streaming />));
+    act(() => renderer.update(<GenuiBlock {...props} code={CODE.slice(0, midString)} streaming />));
     const cut = CODE.indexOf('\nc =');
-    act(() => renderer.update(<GenuiBlock {...base} {...inline()} code={CODE.slice(0, cut)} streaming />));
-    act(() => renderer.update(<GenuiBlock {...base} {...inline()} code={CODE} streaming />));
+    act(() => renderer.update(<GenuiBlock {...props} code={CODE.slice(0, cut)} streaming />));
+    act(() => renderer.update(<GenuiBlock {...props} code={CODE} streaming />));
     expect(renders.get('a')).toBe(1);
+  });
+
+  test('swapping renderMarkdown re-renders the fallback', () => {
+    const rendererA = (m: string) => <pre data-r="A">{m}</pre>;
+    const rendererB = (m: string) => <pre data-r="B">{m}</pre>;
+    const props = { version: 1, enabled: false, components: COMPONENTS, code: CODE, streaming: false };
+    const renderer = mount(<GenuiBlock {...props} renderMarkdown={rendererA} />);
+    expect(renderer.root.findAllByProps({ 'data-r': 'A' })).toHaveLength(1);
+    act(() => renderer.update(<GenuiBlock {...props} renderMarkdown={rendererB} />));
+    expect(renderer.root.findAllByProps({ 'data-r': 'B' })).toHaveLength(1);
+    expect(renderer.root.findAllByProps({ 'data-r': 'A' })).toHaveLength(0);
+  });
+
+  test('swapping renderMarkdown reaches nodes rendered as markdown', () => {
+    const rendererA = (m: string) => <pre data-r="A">{m}</pre>;
+    const rendererB = (m: string) => <pre data-r="B">{m}</pre>;
+    // No Stat entry: every Stat node renders through renderMarkdown.
+    const props = { version: 1, components: { Stack } as GenuiComponentMap, code: CODE, streaming: false };
+    const renderer = mount(<GenuiBlock {...props} renderMarkdown={rendererA} />);
+    expect(renderer.root.findAllByProps({ 'data-r': 'A' }).length).toBeGreaterThan(0);
+    act(() => renderer.update(<GenuiBlock {...props} renderMarkdown={rendererB} />));
+    expect(renderer.root.findAllByProps({ 'data-r': 'B' }).length).toBeGreaterThan(0);
+    expect(renderer.root.findAllByProps({ 'data-r': 'A' })).toHaveLength(0);
   });
 
   test('the fallback markdown is not computed while a valid block streams', () => {

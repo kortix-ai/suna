@@ -19,7 +19,7 @@ block name, or `defaultGenuiComponents` for unbranded HTML defaults.
 | `version` | `genuiVersionFromClassName(className)` or `genuiVersionOf(tag)` |
 | `streaming` | The message is still streaming |
 | `components` | Block name → your component (`GenuiComponentProps`) |
-| `renderMarkdown` | Your markdown renderer, used for fallbacks |
+| `renderMarkdown` | Your markdown renderer, used for fallbacks. Pass a stable function (module constant or `useCallback`): a new function re-renders the block's markdown parts and node views |
 | `enabled` | `false` renders the block as markdown (a viewer setting) |
 | `onSettled` | One event per block: outcome, component names, timing. Never content |
 
