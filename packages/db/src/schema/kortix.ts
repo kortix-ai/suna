@@ -4296,9 +4296,10 @@ export const appConvexInstances = kortixSchema.table(
     siteUrl: text('site_url'),
     /** Convex admin key, sealed with the project secret envelope. */
     adminKeyEnc: text('admin_key_enc'),
-    /** ES256 private key that signs Kortix sign-in tokens for this App, sealed like the admin key. */
-    authKeyEnc: text('auth_key_enc'),
-    /** The `iss` of this App's sign-in tokens, fixed at creation. */
+    /**
+     * The issuer the machine's Convex environment trusts (KORTIX_AUTH_ISSUER).
+     * Null or not the project issuer: maintenance rewrites the environment.
+     */
     authIssuer: text('auth_issuer'),
     /** The machine image, by template id. */
     template: text('template'),
@@ -4314,6 +4315,22 @@ export const appConvexInstances = kortixSchema.table(
     index('app_convex_instances_external_idx').on(table.provider, table.externalId),
   ],
 );
+
+/**
+ * The key that signs a project's Kortix sign-in tokens (issuer
+ * `<public API origin>/v1/projects/<project id>`, audience = an App id). One
+ * per project, created on first use. ES256 PKCS#8 PEM, sealed with the project
+ * secret envelope. `kid` names it in the project's JWKS.
+ */
+export const projectSigningKeys = kortixSchema.table('project_signing_keys', {
+  projectId: uuid('project_id')
+    .primaryKey()
+    .notNull()
+    .references(() => projects.projectId, { onDelete: 'cascade' }),
+  kid: text('kid').notNull(),
+  privateKeyEnc: text('private_key_enc').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
 
 /** Immutable uploaded source archive or OCI reference. */
 export const appArtifacts = kortixSchema.table(

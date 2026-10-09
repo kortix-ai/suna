@@ -53,6 +53,7 @@ import {
   type ConvexRow,
   type BackendSize,
   BACKEND_MACHINE_LIMITS,
+  applyAuthEnv,
   applyBackendOrigins,
   deleteBackend,
   execInBackend,
@@ -636,7 +637,7 @@ export async function restoreBackendSnapshot(row: ConvexRow, snapshotId: string)
       // The snapshot may predate the move to the Kortix hosts.
       await applyBackendOrigins(row);
       await rotateAgainAfterRestore(row, externalId);
-      await sealAdminKey(row);
+      await reapplyAuthEnv(row, await sealAdminKey(row));
     } catch (error) {
       failure = `restore failed: ${backendFailureMessage(error)}`;
       logger.error('[apps:convex] restore failed', { appId: row.appId, snapshotId, error: String(error) });
@@ -828,6 +829,21 @@ async function markRotated(appId: string): Promise<void> {
 }
 
 /**
+ * Writes the sign-in environment back after a restore or a recovery: the
+ * restored data may carry an older KORTIX_AUTH_*. A failed write clears
+ * `auth_issuer`, so the maintenance issuer step retries it; it never fails
+ * the restore, which already succeeded.
+ */
+async function reapplyAuthEnv(row: ConvexRow, adminKey: string): Promise<void> {
+  try {
+    await applyAuthEnv(row, adminKey);
+  } catch (error) {
+    logger.warn('[apps:convex] sign-in environment not written; maintenance retries it', { appId: row.appId, error: String(error) });
+    await db.update(appConvexInstances).set({ authIssuer: null }).where(eq(appConvexInstances.appId, row.appId)).catch(() => {});
+  }
+}
+
+/**
  * Replaces the backend's admin key: every key handed out before stops working.
  * Convex derives admin keys from its instance secret, so the secret changes
  * and Convex restarts (under 1 s). Data, files and environment variables stay.
@@ -932,7 +948,8 @@ export async function recoverBackend(row: ConvexRow, { restored = false } = {}):
   if (action === 'restored_from_backup' || restored || rotationPendingAfterRestore(row)) {
     await rotateAgainAfterRestore(row, externalId);
   }
-  await sealAdminKey(row);
+  // A backup or a snapshot may hold an environment that trusts another issuer.
+  await reapplyAuthEnv(row, await sealAdminKey(row));
   const size = {
     cpu: current.cpu,
     memoryGb: typeof current.ramMb === 'number' ? Math.round(current.ramMb / 1024) : undefined,

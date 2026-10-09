@@ -158,15 +158,31 @@ async function runningMachine(appId: string): Promise<{ row: ConvexRow; external
 export async function handleBackendHostRequest(req: Request, url: URL, matched: BackendHostRequest): Promise<Response> {
   if (!verifyAppEdgeRequest(req, url, matched.local, matched.publicHost)) return plain(403, 'Forbidden');
   if (matched.kind === 'dashboard') return dashboardResponse(req, url, matched.appId);
-  const machine = await runningMachine(matched.appId);
+  return convexEndpointResponse(req, matched.appId, matched.kind, `${url.pathname}${url.search}`, matched.publicHost);
+}
+
+/**
+ * Proxies one request to the App's machine port `kind` (`api`: the Convex
+ * client API, `site`: HTTP actions), every method, bodies streamed both ways.
+ * Shared by the App's own hosts and the bindings mount of an App that uses it
+ * (../../bindings.ts). The caller verified the edge and any access gate.
+ */
+export async function convexEndpointResponse(
+  req: Request,
+  appId: string,
+  kind: 'api' | 'site',
+  pathAndQuery: string,
+  publicHost: string,
+): Promise<Response> {
+  const machine = await runningMachine(appId);
   if (machine instanceof Response) return machine;
   const bodyless = req.method === 'GET' || req.method === 'HEAD';
   let upstream: Response;
   try {
-    upstream = await machineFetch(machine.externalId, KINDS[matched.kind].port, `${url.pathname}${url.search}`, {
+    upstream = await machineFetch(machine.externalId, KINDS[kind].port, pathAndQuery, {
       method: req.method,
       // The client's headers minus hop-by-hop, edge and Kortix credential headers, as for an App.
-      headers: appUpstreamHeaders(req, {}, matched.publicHost),
+      headers: appUpstreamHeaders(req, {}, publicHost),
       body: bodyless ? undefined : req.body,
       redirect: 'manual',
       duplex: 'half',
@@ -222,22 +238,35 @@ export async function prepareBackendWsUpgrade(
   req: Request,
   url: URL,
   matched: BackendHostRequest,
-): Promise<{ ok: true; data: PreviewWsData } | { ok: false; status: number; message: string }> {
+): Promise<EndpointWsUpgrade> {
   if (!verifyAppEdgeRequest(req, url, matched.local, matched.publicHost)) return { ok: false, status: 403, message: 'Forbidden' };
   if (matched.kind === 'dashboard') return { ok: false, status: 404, message: 'The dashboard host has no WebSocket' };
-  const machine = await runningMachine(matched.appId);
+  return convexEndpointWsUpgrade(req, matched.appId, matched.kind, `${url.pathname}${url.search}`, matched.publicHost);
+}
+
+export type EndpointWsUpgrade = { ok: true; data: PreviewWsData } | { ok: false; status: number; message: string };
+
+/** The WebSocket counterpart of convexEndpointResponse: the upstream the preview WebSocket handlers pipe to. */
+export async function convexEndpointWsUpgrade(
+  req: Request,
+  appId: string,
+  kind: 'api' | 'site',
+  pathAndQuery: string,
+  publicHost: string,
+): Promise<EndpointWsUpgrade> {
+  const machine = await runningMachine(appId);
   if (machine instanceof Response) return { ok: false, status: machine.status, message: await machine.text() };
-  const port = KINDS[matched.kind].port;
+  const port = KINDS[kind].port;
   let ingress: Awaited<ReturnType<typeof backendIngress>>;
   try {
     ingress = await backendIngress(machine.externalId, port);
   } catch {
     return { ok: false, status: 503, message: 'The App is starting. Retry in a few seconds.' };
   }
-  const headers = appUpstreamHeaders(req, ingress.headers, matched.publicHost);
+  const headers = appUpstreamHeaders(req, ingress.headers, publicHost);
   // The upstream socket negotiates its own handshake and extensions.
   for (const name of [...headers.keys()]) if (name.startsWith('sec-websocket-')) headers.delete(name);
-  const target = new URL(ingressTargetUrl(ingress, `${url.pathname}${url.search}`));
+  const target = new URL(ingressTargetUrl(ingress, pathAndQuery));
   target.protocol = target.protocol === 'https:' ? 'wss:' : 'ws:';
   return {
     ok: true,

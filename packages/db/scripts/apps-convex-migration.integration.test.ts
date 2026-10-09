@@ -22,7 +22,8 @@ const USER = 'c0a90000-0000-4000-a000-000000000007';
  * windows and issuer unchanged), its machine fields move to
  * app_convex_instances, a slug a web App already holds gets `-convex`, a
  * deleted backend is not copied, `apps.backends` names become app_links (an
- * unknown name is dropped), the old table and column are gone, and the two
+ * unknown name is dropped), the old table and column are gone, the per-App
+ * signing key column gives way to project_signing_keys, and the two
  * backend leaves fold into project.app.admin held by every app.write role.
  */
 describe.skipIf(!databaseUrl)('project_backends → apps (kind convex) — upgrade of a database with backends', () => {
@@ -96,19 +97,19 @@ describe.skipIf(!databaseUrl)('project_backends → apps (kind convex) — upgra
         ]);
 
         const instances = await client.query(
-          `SELECT app_id, status, provider, external_id, url, site_url, admin_key_enc, auth_key_enc, auth_issuer, metadata
+          `SELECT app_id, status, provider, external_id, url, site_url, admin_key_enc, auth_issuer, metadata
              FROM kortix.app_convex_instances ORDER BY app_id`,
         );
         expect(instances.rows).toEqual([
           {
             app_id: MAIN, status: 'running', provider: 'platinum', external_id: 'sbx-upgrade-main',
             url: 'https://main.example.invalid', site_url: 'https://main-site.example.invalid',
-            admin_key_enc: 'sealed-admin', auth_key_enc: 'sealed-auth',
+            admin_key_enc: 'sealed-admin',
             auth_issuer: 'https://api.example.invalid/v1/backends/main', metadata: { dashboard: true },
           },
           {
             app_id: CRM, status: 'error', provider: 'platinum', external_id: null, url: null, site_url: null,
-            admin_key_enc: null, auth_key_enc: null, auth_issuer: null, metadata: { lastError: 'synthetic' },
+            admin_key_enc: null, auth_issuer: null, metadata: { lastError: 'synthetic' },
           },
         ]);
 
@@ -121,9 +122,13 @@ describe.skipIf(!databaseUrl)('project_backends → apps (kind convex) — upgra
         const gone = await client.query(
           `SELECT to_regclass('kortix.project_backends') AS backends_table,
                   (SELECT count(*)::int FROM information_schema.columns
-                    WHERE table_schema = 'kortix' AND table_name = 'apps' AND column_name = 'backends') AS backends_column`,
+                    WHERE table_schema = 'kortix' AND table_name = 'apps' AND column_name = 'backends') AS backends_column,
+                  (SELECT count(*)::int FROM information_schema.columns
+                    WHERE table_schema = 'kortix' AND table_name = 'app_convex_instances' AND column_name = 'auth_key_enc') AS app_key_column,
+                  to_regclass('kortix.project_signing_keys') IS NOT NULL AS project_keys_table`,
         );
-        expect(gone.rows[0]).toEqual({ backends_table: null, backends_column: 0 });
+        // The per-App signing key is gone (20261009130527199): one key per project signs every App's tokens.
+        expect(gone.rows[0]).toEqual({ backends_table: null, backends_column: 0, app_key_column: 0, project_keys_table: true });
 
         const leaves = await client.query(
           `SELECT action, area, level, implies FROM kortix.permissions

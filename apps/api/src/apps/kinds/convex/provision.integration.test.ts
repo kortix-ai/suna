@@ -5,15 +5,14 @@ import { config } from '../../../config';
 import { db } from '../../../shared/db';
 import { inspectDatabaseError } from '../../../shared/database-errors';
 import { encryptProjectSecret } from '../../../projects/surface';
-import { generateBackendAuthKey, legacyBackendIssuer } from './auth';
+import { authEnv, projectIssuer, projectSigner } from '../../tokens';
+import { EMPTY_BACKEND_SWEEP, issuerStep } from './maintenance';
 import {
   BackendLimitError,
   MAX_BACKENDS_PER_ACCOUNT,
   MAX_BACKENDS_PER_PROJECT,
-  backendMemberToken,
   getLiveConvexApp,
   insertConvexApp,
-  moveBackendIssuers,
 } from './provision';
 import { insertConvexRow } from '../../../__tests__/helpers/convex-apps';
 
@@ -118,16 +117,16 @@ describe('insertConvexApp caps', () => {
 
 describe('sign-in issuer', () => {
   const apiOrigin = (config.KORTIX_URL ?? '').replace(/\/+$/, '').replace(/\/v1$/, '');
-  const issuerOf = (token: string) => JSON.parse(Buffer.from(token.split('.')[1]!, 'base64url').toString()).iss;
 
-  test('a new convex App stores <public API origin>/v1/backends/<app id> at creation', async () => {
+  test('the project issuer is <public API origin>/v1/projects/<project id>; a new App trusts none until its environment is written', async () => {
     const row = await create(OTHER_PROJECT, OTHER_ACCOUNT, 'issuer');
     expect(apiOrigin).toMatch(/^https?:\/\//);
-    expect(row.authIssuer).toBe(`${apiOrigin}/v1/backends/${row.appId}`);
+    expect(projectIssuer(OTHER_PROJECT)).toBe(`${apiOrigin}/v1/projects/${OTHER_PROJECT}`);
+    expect(row.authIssuer).toBeNull();
   });
 
-  test('the move writes the new issuer into the backend env, then mints with it; a failed write keeps the old one', async () => {
-    const envWrites: unknown[] = [];
+  test('maintenance moves an App off another issuer: all three KORTIX_AUTH_* written; a failed write is retried, a moved App is left alone', async () => {
+    const envWrites: Array<{ path: string; auth: string | null; edgeToken: string | null; body: unknown }> = [];
     const ok = Bun.serve({
       port: 0,
       fetch: async (req) => {
@@ -142,7 +141,7 @@ describe('sign-in issuer', () => {
     });
     const down = Bun.serve({ port: 0, fetch: () => new Response('boom', { status: 500 }) });
     // Kortix reaches a machine through its private Platinum exposure: the fake
-    // control plane exposes machine `sbx-ok` at `ok` and `sbx-down` at `down`.
+    // control plane exposes a machine whose id ends in `-ok` at `ok`, any other at `down`.
     const platinum = Bun.serve({
       port: 0,
       fetch: (req) => {
@@ -155,47 +154,50 @@ describe('sign-in issuer', () => {
     const saved = { key: config.PLATINUM_API_KEY, url: config.PLATINUM_API_URL };
     config.PLATINUM_API_KEY = 'pt_synthetic_issuer_move';
     config.PLATINUM_API_URL = `http://127.0.0.1:${platinum.port}`;
+    const project = PROJECTS[4]!;
     try {
-      const legacy = async (name: string, externalId: string) =>
+      const running = async (name: string, externalId: string, authIssuer: string | null) =>
         (
           await insertConvexRow({
-            projectId: PROJECTS[4]!,
+            projectId: project,
             accountId: ACCOUNT,
             slug: name,
             status: 'running',
             externalId,
             url: `https://legacy-${name}.example`,
-            adminKeyEnc: encryptProjectSecret(PROJECTS[4]!, 'synthetic-admin|key'),
-            authKeyEnc: encryptProjectSecret(PROJECTS[4]!, generateBackendAuthKey()),
+            adminKeyEnc: encryptProjectSecret(project, 'synthetic-admin|key'),
+            authIssuer,
           })
         ).appId;
       const suffix = crypto.randomUUID().slice(0, 8);
-      const movedId = await legacy('legacy-ok', `sbx-${suffix}-ok`);
-      const stuckId = await legacy('legacy-down', `sbx-${suffix}-down`);
-      const before = (await getLiveConvexApp(PROJECTS[4]!, movedId))!;
-      expect(issuerOf(backendMemberToken(before, { userId: 'u', email: null })!.token)).toBe(legacyBackendIssuer(movedId));
+      const movedId = await running('legacy-ok', `sbx-${suffix}-ok`, `${apiOrigin}/v1/backends/${crypto.randomUUID()}`);
+      const stuckId = await running('legacy-down', `sbx-${suffix}-down`, null);
+      const currentId = await running('current-ok', `sbx-${suffix}-current-ok`, projectIssuer(project));
 
-      expect(await moveBackendIssuers()).toEqual({ moved: 1, failed: 1 });
+      const first = { ...EMPTY_BACKEND_SWEEP };
+      await issuerStep(first);
+      expect(first).toMatchObject({ movedIssuers: 1, errors: 1 });
 
-      const issuer = `${apiOrigin}/v1/backends/${movedId}`;
+      const want = authEnv(projectIssuer(project), movedId, await projectSigner(project));
       expect(envWrites).toEqual([
         {
           path: '/api/update_environment_variables',
           auth: 'Convex synthetic-admin|key',
           edgeToken: 'synthetic-edge-token',
-          body: { changes: [{ name: 'KORTIX_AUTH_ISSUER', value: issuer }] },
+          body: { changes: Object.entries(want).map(([name, value]) => ({ name, value })) },
         },
       ]);
-      const after = (await getLiveConvexApp(PROJECTS[4]!, movedId))!;
-      expect(after.authIssuer).toBe(issuer);
-      expect(issuerOf(backendMemberToken(after, { userId: 'u', email: null })!.token)).toBe(issuer);
-      const stuck = (await getLiveConvexApp(PROJECTS[4]!, stuckId))!;
-      expect(stuck.authIssuer).toBeNull();
-      expect(issuerOf(backendMemberToken(stuck, { userId: 'u', email: null })!.token)).toBe(legacyBackendIssuer(stuckId));
+      expect((await getLiveConvexApp(project, movedId))!.authIssuer).toBe(projectIssuer(project));
+      expect((await getLiveConvexApp(project, stuckId))!.authIssuer).toBeNull();
+      expect((await getLiveConvexApp(project, currentId))!.authIssuer).toBe(projectIssuer(project));
+      // The operation lock is released either way.
+      expect((await getLiveConvexApp(project, stuckId))!.metadata).not.toHaveProperty('operation');
 
-      // A second pass writes nothing for the moved backend.
+      // A second pass writes nothing for the moved App and retries the failed one.
       envWrites.length = 0;
-      expect(await moveBackendIssuers()).toEqual({ moved: 0, failed: 1 });
+      const second = { ...EMPTY_BACKEND_SWEEP };
+      await issuerStep(second);
+      expect(second).toMatchObject({ movedIssuers: 0, errors: 1 });
       expect(envWrites).toEqual([]);
     } finally {
       config.PLATINUM_API_KEY = saved.key;

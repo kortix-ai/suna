@@ -114,7 +114,7 @@ flow(
         .has("$.warnings[0].code", "app_budget_below_always_on")
         // Kind web by default; clients branch on capabilities. Uses no App until it lists one.
         .has("$.kind", "web")
-        .has("$.capabilities", ["deployments", "rollback", "preview"])
+        .has("$.capabilities", ["deployments", "rollback", "preview", "member_tokens"])
         .has("$.instance", null)
         .has("$.uses", []);
       appId = response.json<any>().app_id;

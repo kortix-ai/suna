@@ -8,10 +8,11 @@ import { createAccountToken } from '../../../repositories/account-tokens';
 import { insertIntoView } from '../../../__tests__/helpers/compat-views';
 import { encryptProjectSecret } from '../../../projects/surface';
 import { verifyKortixMemberToken } from '@kortix/sdk';
-import { generateBackendAuthKey } from './auth';
 import { CONVEX_CLI_VERSION } from './convex-image';
 import { appAccessCookieName, createAppAccessToken } from '../../access';
-import { appBackendTokenResponse } from '../../public-proxy-access';
+import { appTokenResponse } from '../../public-proxy-access';
+import { appBindingResponse } from '../../bindings';
+import { projectIssuer, projectSigner } from '../../tokens';
 import { insertConvexRow } from '../../../__tests__/helpers/convex-apps';
 
 // The App routes for kind `convex` against the real DB, with no Platinum call:
@@ -25,7 +26,6 @@ const PROJECT = crypto.randomUUID();
 const MANAGER = crypto.randomUUID();
 const RUNNING = crypto.randomUUID();
 const ISSUED = crypto.randomUUID();
-const ISSUER = `https://api.example.test/v1/backends/${ISSUED}`;
 const ADMIN_KEY = 'synthetic-admin|key';
 const AGENT_SA = crypto.randomUUID();
 const AGENT_SESSION = crypto.randomUUID();
@@ -87,7 +87,7 @@ beforeAll(async () => {
     url: 'https://main.backends.example.test',
     siteUrl: 'https://main-site.backends.example.test',
     adminKeyEnc: encryptProjectSecret(PROJECT, ADMIN_KEY),
-    authKeyEnc: encryptProjectSecret(PROJECT, generateBackendAuthKey()),
+    authIssuer: projectIssuer(PROJECT),
   });
   await insertConvexRow({
     appId: ISSUED,
@@ -98,9 +98,10 @@ beforeAll(async () => {
     url: 'https://issued.backends.example.test',
     siteUrl: 'https://issued-site.backends.example.test',
     adminKeyEnc: encryptProjectSecret(PROJECT, ADMIN_KEY),
-    authKeyEnc: encryptProjectSecret(PROJECT, generateBackendAuthKey()),
-    authIssuer: ISSUER,
+    authIssuer: projectIssuer(PROJECT),
   });
+  // Provisioning creates the project key when it writes the App's environment.
+  await projectSigner(PROJECT);
 });
 
 afterAll(async () => {
@@ -205,12 +206,12 @@ describe('convex App routes', () => {
     expect((await res.json()).code).toBe('app_always_on_required');
   });
 
-  test('a web App: capabilities name no convex capability; every capability route answers 409 app_capability_unsupported', async () => {
+  test('a web App: capabilities name no convex capability; every convex capability route answers 409 app_capability_unsupported', async () => {
     const created = await call('POST', '', { slug: 'site', name: 'site' });
     expect(created.status).toBe(201);
     const web = await created.json();
     expect(web).toMatchObject({ kind: 'web', instance: null, uses: [], used_by: [] });
-    expect(web.capabilities).toEqual(['deployments', 'rollback', 'preview']);
+    expect(web.capabilities).toEqual(['deployments', 'rollback', 'preview', 'member_tokens']);
     for (const [method, path, capability] of [
       ['GET', '/snapshots', 'snapshots'],
       ['POST', '/snapshots', 'snapshots'],
@@ -218,7 +219,6 @@ describe('convex App routes', () => {
       ['POST', '/restore', 'restore'],
       ['GET', '/credentials', 'admin_credentials'],
       ['POST', '/rotate-credentials', 'admin_credentials'],
-      ['POST', '/token', 'member_tokens'],
       ['GET', '/logs', 'logs'],
     ] as const) {
       const res = await call(method, `/${web.app_id}${path}`, method === 'POST' ? (path === '/restore' ? { snapshot_id: 's' } : {}) : undefined);
@@ -272,25 +272,30 @@ describe('convex App routes', () => {
   });
 });
 
-describe('GET /_kortix/backend-token on the App gate', () => {
+describe('GET /_kortix/token and the bindings mount on the App gate', () => {
   const APP = crypto.randomUUID();
   const OTHER_APP = crypto.randomUUID();
+  const WEB_TARGET = crypto.randomUUID();
   const OTHER_PROJECT = crypto.randomUUID();
-  const gateApp = (accessMode: string, appId: string, projectId: string) => ({
-    appId, accountId: ACCOUNT, projectId, name: 'gate-test', accessMode,
+  const gateApp = (accessMode: string, appId: string, projectId: string, slug: string) => ({
+    appId, accountId: ACCOUNT, projectId, name: slug, slug, accessMode,
     accessPasswordHash: null, accessRevision: 1, createdBy: MANAGER, updatedAt: new Date(),
     viewerTokenScope: 'identity',
   });
+  const request = (path: string, appId: string, userId: string) => {
+    const cookie = createAppAccessToken({ appId, kind: 'kortix', userId, revision: 1, expiresAt: new Date(Date.now() + 60_000) });
+    const url = new URL(`https://gate-test.apps.example.test${path}`);
+    return { url, request: new Request(url, { headers: { cookie: `${appAccessCookieName()}=${cookie}` } }) };
+  };
   const ask = (
     accessMode: string,
     userId: string,
-    { backend = 'main', appId = APP, projectId = PROJECT }: { backend?: string; appId?: string; projectId?: string } = {},
+    { audience, appId = APP, projectId = PROJECT, slug = 'gate-test' }: { audience?: string; appId?: string; projectId?: string; slug?: string } = {},
   ) => {
-    const cookie = createAppAccessToken({ appId, kind: 'kortix', userId, revision: 1, expiresAt: new Date(Date.now() + 60_000) });
-    const url = new URL(`https://gate-test.apps.example.test/_kortix/backend-token?backend=${backend}`);
-    const request = new Request(url, { headers: { cookie: `${appAccessCookieName()}=${cookie}` } });
-    return appBackendTokenResponse(request, url, gateApp(accessMode, appId, projectId));
+    const { url, request: req } = request(`/_kortix/token${audience === undefined ? '' : `?audience=${audience}`}`, appId, userId);
+    return appTokenResponse(req, url, gateApp(accessMode, appId, projectId, slug));
   };
+  const claims = (token: string) => JSON.parse(Buffer.from(token.split('.')[1]!, 'base64url').toString());
   const link = async (uses: string[]) => {
     await db.delete(appLinks).where(eq(appLinks.appId, APP));
     if (uses.length) await db.insert(appLinks).values(uses.map((usesAppId) => ({ appId: APP, usesAppId })));
@@ -305,20 +310,41 @@ describe('GET /_kortix/backend-token on the App gate', () => {
     await db.insert(apps).values([
       { appId: APP, accountId: ACCOUNT, projectId: PROJECT, slug: 'gate-test', name: 'gate-test', routeKey: 'gatetest00000001', accessMode: 'public' },
       { appId: OTHER_APP, accountId: ACCOUNT, projectId: OTHER_PROJECT, slug: 'gate-other', name: 'gate-other', routeKey: 'gatetest00000002', accessMode: 'public' },
+      { appId: WEB_TARGET, accountId: ACCOUNT, projectId: PROJECT, slug: 'web-target', name: 'web-target', routeKey: 'gatetest00000003', accessMode: 'public' },
     ]);
     await link([RUNNING]);
   });
 
-  test('a public App: a member with a gate cookie gets a token for an App it uses', async () => {
-    const res = await ask('public', MANAGER);
-    expect(res.status).toBe(200);
-    expect((await res.json()).token).toMatch(/^ey/);
+  test('an App it uses, by slug or by id: 200, iss = the project issuer, aud = the used App', async () => {
+    for (const audience of ['main', RUNNING]) {
+      const res = await ask('public', MANAGER, { audience });
+      expect(res.status).toBe(200);
+      expect(res.headers.get('cache-control')).toBe('no-store');
+      const body = await res.json();
+      expect(body.audience).toBe(RUNNING);
+      expect(claims(body.token)).toMatchObject({ iss: projectIssuer(PROJECT), aud: RUNNING, sub: MANAGER, project_id: PROJECT });
+    }
   });
 
-  test('an App it does not use: 403 app_not_linked, also with no link at all (the default)', async () => {
-    for (const [backend, uses] of [['issued', [RUNNING]], ['main', []], ['main', [ISSUED]]] as const) {
+  test('the App itself, the default audience, by slug or by id: 200 with aud = the App', async () => {
+    for (const audience of [undefined, 'gate-test', APP]) {
+      const res = await ask('public', MANAGER, { audience });
+      expect(res.status).toBe(200);
+      expect(claims((await res.json()).token).aud).toBe(APP);
+    }
+  });
+
+  test('the token verifies against the public key set of the project issuer', async () => {
+    const { token } = await (await ask('public', MANAGER, { audience: 'main' })).json();
+    const jwks = await (await app.request(`/v1/projects/${PROJECT}/jwks.json`)).json();
+    const member = await verifyKortixMemberToken(token, { jwks, issuer: projectIssuer(PROJECT), audience: RUNNING });
+    expect(member.userId).toBe(MANAGER);
+  });
+
+  test('an App it does not use: 403 app_not_linked, also with no link at all', async () => {
+    for (const [audience, uses] of [['issued', [RUNNING]], ['main', []], ['main', [ISSUED]], [ISSUED, [RUNNING]]] as const) {
       await link([...uses]);
-      const res = await ask('public', MANAGER, { backend });
+      const res = await ask('public', MANAGER, { audience });
       expect(res.status).toBe(403);
       expect(res.headers.get('cache-control')).toBe('no-store');
       const body = await res.json();
@@ -328,48 +354,142 @@ describe('GET /_kortix/backend-token on the App gate', () => {
     await link([RUNNING]);
   });
 
-  test("an App of another project: 403 for this project's convex App, whatever the slug", async () => {
-    const res = await ask('public', MANAGER, { appId: OTHER_APP, projectId: OTHER_PROJECT });
-    expect(res.status).toBe(403);
-    expect((await res.json()).error).toBe('app_not_linked');
+  test("an App of another project: 403 for this project's App, by slug or by id", async () => {
+    for (const audience of ['main', RUNNING]) {
+      const res = await ask('public', MANAGER, { audience, appId: OTHER_APP, projectId: OTHER_PROJECT, slug: 'gate-other' });
+      expect(res.status).toBe(403);
+      expect((await res.json()).error).toBe('app_not_linked');
+    }
   });
 
   test('a public App: a cookie of someone who lost access mints nothing', async () => {
-    const res = await ask('public', crypto.randomUUID());
+    const res = await ask('public', crypto.randomUUID(), { audience: 'main' });
     expect(res.status).toBe(401);
     expect((await res.json()).error).toBe('no_viewer_identity');
   });
+
+  describe('/_kortix/apps/<slug>/*', () => {
+    const upstream: Array<{ path: string; method: string; edgeToken: string | null; cookie: string | null; body: string }> = [];
+    let machine: ReturnType<typeof Bun.serve>;
+    let platinum: ReturnType<typeof Bun.serve>;
+    const saved = { url: config.PLATINUM_API_URL };
+
+    beforeAll(() => {
+      machine = Bun.serve({
+        port: 0,
+        fetch: async (req) => {
+          const url = new URL(req.url);
+          upstream.push({
+            path: `${url.pathname}${url.search}`,
+            method: req.method,
+            edgeToken: req.headers.get('x-pt-preview-token'),
+            cookie: req.headers.get('cookie'),
+            body: await req.text(),
+          });
+          return Response.json({ convex: 'synthetic' }, { headers: { 'x-pt-edge': 'stripped' } });
+        },
+      });
+      // The fake control plane exposes the machine of `main` (sbx-synthetic) privately.
+      platinum = Bun.serve({
+        port: 0,
+        fetch: (req) => {
+          const [, , , id, sub] = new URL(req.url).pathname.split('/');
+          if (sub !== 'expose') return Response.json({ id, state: 'running' });
+          return Response.json({ port: 3210, public: false, url: `${machine.url.origin}/?t=synthetic-edge-token` });
+        },
+      });
+      config.PLATINUM_API_URL = `http://127.0.0.1:${platinum.port}`;
+    });
+
+    afterAll(() => {
+      config.PLATINUM_API_URL = saved.url;
+      machine.stop(true);
+      platinum.stop(true);
+    });
+
+    const bind = (path: string, init: RequestInit = {}, appId = APP, projectId = PROJECT) => {
+      const url = new URL(`https://gate-test.apps.example.test${path}`);
+      const headers = new Headers(init.headers);
+      headers.set('cookie', `${appAccessCookieName()}=gate-cookie; theme=dark`);
+      return appBindingResponse(new Request(url, { ...init, headers }), url, 'gate-test.apps.example.test', { appId, projectId });
+    };
+
+    test('a used convex App: the request reaches its client API with the prefix stripped, minus Kortix cookies', async () => {
+      upstream.length = 0;
+      const res = await bind('/_kortix/apps/main/api/1.46.0/query?format=json', { method: 'POST', body: '{"path":"x:y"}' });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ convex: 'synthetic' });
+      expect(res.headers.get('x-pt-edge')).toBeNull();
+      expect(upstream).toEqual([
+        { path: '/api/1.46.0/query?format=json', method: 'POST', edgeToken: 'synthetic-edge-token', cookie: 'theme=dark', body: '{"path":"x:y"}' },
+      ]);
+    });
+
+    test('an App it does not use: 403 app_not_linked, and nothing reaches any machine', async () => {
+      upstream.length = 0;
+      const res = await bind('/_kortix/apps/issued/api/version');
+      expect(res.status).toBe(403);
+      expect((await res.json()).error).toBe('app_not_linked');
+      const cross = await bind('/_kortix/apps/main/api/version', {}, OTHER_APP, OTHER_PROJECT);
+      expect(cross.status).toBe(403);
+      expect(upstream).toEqual([]);
+    });
+
+    test('a used App whose kind has no endpoint: 409 app_binding_unsupported', async () => {
+      await link([RUNNING, WEB_TARGET]);
+      const res = await bind('/_kortix/apps/web-target/');
+      expect(res.status).toBe(409);
+      expect(await res.json()).toMatchObject({ code: 'app_binding_unsupported', kind: 'web' });
+      await link([RUNNING]);
+    });
+  });
 });
 
-describe('public issuer discovery (no auth)', () => {
-  const get = (path: string) => app.request(`/v1/backends${path}`);
+describe('the project token issuer (no auth)', () => {
+  const get = (path: string) => app.request(`/v1/projects${path}`);
 
-  test('openid-configuration names the stored issuer and its key set, cacheable', async () => {
-    const res = await get(`/${ISSUED}/.well-known/openid-configuration`);
+  test('openid-configuration names the project issuer and its key set, cacheable', async () => {
+    const res = await get(`/${PROJECT}/.well-known/openid-configuration`);
     expect(res.status).toBe(200);
     expect(res.headers.get('cache-control')).toBe('public, max-age=3600');
     const body = await res.json();
-    expect(body.issuer).toBe(ISSUER);
-    expect(body.jwks_uri).toBe(`${ISSUER}/jwks.json`);
+    expect(body.issuer).toBe(projectIssuer(PROJECT));
+    expect(body.jwks_uri).toBe(`${projectIssuer(PROJECT)}/jwks.json`);
   });
 
-  test('jwks.json holds the public key only and verifies the token route\'s token', async () => {
-    const res = await get(`/${ISSUED}/jwks.json`);
+  test("jwks.json holds the public key only and verifies the token route's token; auth_env names the same issuer", async () => {
+    const res = await get(`/${PROJECT}/jwks.json`);
     expect(res.status).toBe(200);
     expect(res.headers.get('cache-control')).toBe('public, max-age=3600');
     const jwks = await res.json();
     expect(jwks.keys).toHaveLength(1);
     expect(jwks.keys[0].d).toBeUndefined();
     const { token } = await (await call('POST', `/${ISSUED}/token`, {})).json();
-    const member = await verifyKortixMemberToken(token, { jwks, issuer: ISSUER, audience: ISSUED });
+    const member = await verifyKortixMemberToken(token, { jwks, issuer: projectIssuer(PROJECT), audience: ISSUED });
     expect(member.userId).toBe(MANAGER);
-    const { instance } = await (await call('GET', `/${ISSUED}`)).json();
-    expect(instance.auth_env.KORTIX_AUTH_ISSUER).toBe(ISSUER);
+    const issued = await (await call('GET', `/${ISSUED}`)).json();
+    expect(issued.instance.auth_env.KORTIX_AUTH_ISSUER).toBe(projectIssuer(PROJECT));
+    expect(issued.auth).toEqual({ issuer: projectIssuer(PROJECT), audience: ISSUED, jwks_uri: `${projectIssuer(PROJECT)}/jwks.json` });
   });
 
-  test('unknown, placeholder-issuer and malformed ids answer 404, 404, 400', async () => {
+  test('a web App mints too: the token names the App as audience and verifies with its `auth`', async () => {
+    const web = await (await call('POST', '', { slug: 'tokens-web', name: 'tokens-web' })).json();
+    expect(web.capabilities).toContain('member_tokens');
+    const res = await call('POST', `/${web.app_id}/token`, {});
+    expect(res.status).toBe(200);
+    const { token } = await res.json();
+    const jwks = await (await app.request(new URL(web.auth.jwks_uri).pathname)).json();
+    const member = await verifyKortixMemberToken(token, { jwks, issuer: web.auth.issuer, audience: web.auth.audience });
+    expect(member.userId).toBe(MANAGER);
+  });
+
+  test('a project that never minted a token: an empty key set, not cached; unknown and malformed ids: 404, 400', async () => {
+    const empty = await get(`/${(await db.select({ id: projects.projectId }).from(projects).where(eq(projects.name, 'backend-routes-other')))[0]!.id}/jwks.json`);
+    expect(empty.status).toBe(200);
+    expect(empty.headers.get('cache-control')).toBe('no-store');
+    expect(await empty.json()).toEqual({ keys: [] });
     expect((await get(`/${crypto.randomUUID()}/jwks.json`)).status).toBe(404);
-    expect((await get(`/${RUNNING}/.well-known/openid-configuration`)).status).toBe(404);
+    expect((await get(`/${crypto.randomUUID()}/.well-known/openid-configuration`)).status).toBe(404);
     expect((await get('/not-a-uuid/jwks.json')).status).toBe(400);
   });
 });

@@ -14,6 +14,11 @@
  *    stop, those of a project that is active again come back.
  * 4. Move: a backend that still stores its Platinum URLs moves to its Kortix
  *    hosts (./hosts.ts): new Convex origins, private ports, new URLs.
+ * 4a. Issuer: a backend whose environment trusts another issuer than its
+ *    project's (`auth_issuer`: an App from before the project issuer, a
+ *    restore whose environment write failed, a changed KORTIX_URL) gets its
+ *    KORTIX_AUTH_* rewritten (./provision.ts applyAuthEnv). Until then its
+ *    members' new tokens get 401 from Convex.
  * 4b. Probe: every running backend of an active project. Platinum's view of the
  *    machine plus `GET /version` (5 s, through the private exposure) and disk use. The result is
  *    `metadata.health` (the API's `health`). A stopped machine is started; a
@@ -76,6 +81,8 @@ import {
   type ConvexRow,
   discardMachine,
   liveConvexApp,
+  applyAuthEnv,
+  backendAdminKey,
   moveBackendToKortixHosts,
   provisionBackend,
   selectConvexRows,
@@ -83,6 +90,7 @@ import {
 import { CONVEX_API_PORT } from './convex-image';
 import { backendPublicUrls } from './hosts';
 import { machineFetch } from './machine';
+import { projectIssuer } from '../../tokens';
 
 export const MAX_PROVISION_ATTEMPTS = 3;
 /** Consecutive failed probes before an error-level log, and before a missing machine turns the row `error`. */
@@ -122,6 +130,8 @@ export interface BackendSweepResult {
   snapshotJobs: number;
   /** Backends moved from their Platinum URLs to their Kortix hosts. */
   movedToHosts: number;
+  /** Backends whose sign-in environment moved to the project issuer. */
+  movedIssuers: number;
   /** Deleted Apps whose stopped machine and snapshots were purged after retention. */
   purged: number;
   /** Budget alerts recorded (80 % or 100 % of the monthly budget). */
@@ -390,6 +400,28 @@ async function moveHostsStep(result: BackendSweepResult): Promise<void> {
   }
 }
 
+/**
+ * 4a. A backend whose environment does not trust its project issuer gets it
+ * rewritten under the `recovering` lock. Active projects only. A failed write
+ * is retried next tick.
+ */
+export async function issuerStep(result: BackendSweepResult): Promise<void> {
+  const pending = (await runningBackends()).filter(
+    ({ row, active }) => active && !backendOperation(row) && row.adminKeyEnc && row.authIssuer !== projectIssuer(row.projectId),
+  );
+  for (const { row } of pending.slice(0, HOST_MOVES_PER_TICK)) {
+    if (!(await claimOperation(row.appId, 'recovering'))) continue;
+    try {
+      await applyAuthEnv(row, backendAdminKey({ ...row, adminKeyEnc: row.adminKeyEnc! }));
+      result.movedIssuers += 1;
+    } catch (error) {
+      result.errors += 1;
+      logger.warn('[apps:convex] issuer move failed; retried next tick', { appId: row.appId, error: String(error) });
+    }
+    await releaseOperation(row.appId, null).catch(() => {});
+  }
+}
+
 /** 5. Daily automatic snapshots (active projects) and snapshot expiry (parked backends too: their snapshots still fill the host disk). */
 async function snapshotStep(result: BackendSweepResult): Promise<void> {
   const now = Date.now();
@@ -418,6 +450,7 @@ export const EMPTY_BACKEND_SWEEP: BackendSweepResult = {
   machinesDeleted: 0,
   snapshotJobs: 0,
   movedToHosts: 0,
+  movedIssuers: 0,
   purged: 0,
   budgetAlerts: 0,
   errors: 0,
@@ -502,7 +535,7 @@ async function budgetStep(result: BackendSweepResult): Promise<void> {
 export async function sweepBackends(): Promise<BackendSweepResult> {
   const result = { ...EMPTY_BACKEND_SWEEP };
   if (!isPlatinumConfigured()) return result;
-  for (const step of [resumeProvisions, takeOverOperations, parkStep, moveHostsStep, probeRunning, snapshotStep, orphanStep, budgetStep]) {
+  for (const step of [resumeProvisions, takeOverOperations, parkStep, moveHostsStep, issuerStep, probeRunning, snapshotStep, orphanStep, budgetStep]) {
     await step(result).catch((error) => {
       result.errors += 1;
       logger.warn('[apps:convex] sweep step failed', { step: step.name, error: String(error) });

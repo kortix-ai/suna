@@ -109,7 +109,7 @@ access. `--memory-gb` accepts `--memory` and `--disk-gb` accepts `--disk` as
 aliases. `--idle-timeout` takes 120-86400 seconds. A machine change applies to
 the next deployment. A run-mode or budget change applies within 5 minutes,
 without a redeploy. `--backends main,crm` replaces the App's backend list (see
-[Backends an App may use](#backends-an-app-may-use)); `--backends=` clears it.
+[Apps an App uses](#apps-an-app-uses-sign-in-tokens-and-bindings)); `--backends=` clears it.
 It applies at once.
 
 ### Deployment defaults from `kortix.yaml`
@@ -146,25 +146,41 @@ apps:
 Select a block with `kortix apps deploy --manifest-app docs`. An explicit flag
 always wins over the block. A static block needs only `path`, `type`, and
 `spa`: the run mode, budget, machine, `env`, and `secrets` apply to server
-Apps. A block with `backends` replaces the App's backend list on every deploy.
+Apps. A block with `uses` replaces the App's list of used Apps on every deploy.
 
-### Backends an App may use
+### Apps an App uses: sign-in tokens and bindings
 
-An App gets a viewer token at `/_kortix/backend-token?backend=<name>` (what
-`kortixAppBackendToken("<name>")` calls) only for a
-[backend](/docs/feature-flags/backends) it lists in `backends`. A new App lists
-none, so it acts as its viewer on no backend. Code in one App can never act as
-the viewer on a backend that only another App uses. Any other name answers
-`403` with `error: "backend_not_listed"`; the SDK warns in the browser console.
+An App can use other Apps of its project (`uses`). A new App uses none.
 
 | Surface | Set the list |
 |---|---|
-| CLI | `kortix apps set <app> --backends main` or `kortix apps create <slug> --backends main` |
-| `kortix.yaml` | `backends: [main]` in the `apps.<name>` block, applied by `kortix apps deploy` |
-| API | `backends` on `POST /v1/projects/:projectId/apps` and `PATCH …/apps/:appId` |
+| CLI | `kortix apps link <app> --uses <other>` |
+| `kortix.yaml` | `uses: [db]` in the `apps.<name>` block, applied by `kortix apps deploy` |
+| API | `uses` on `POST /v1/projects/:projectId/apps` and `PATCH …/apps/:appId` |
 
-A name may list a backend the project has not created yet. The token is always
-for the backend of that name in the App's own project.
+Every project has one sign-in token issuer:
+`https://<api host>/v1/projects/<project_id>`. Its
+`/.well-known/openid-configuration` and `/jwks.json` are public. A token is an
+ES256 JWT that lives 15 minutes. Its `aud` is the id of the App it is for. Every
+App response carries the three values that verify it: `auth.issuer`,
+`auth.audience` and `auth.jwks_uri`.
+
+| Who | How they get a token |
+|---|---|
+| A person in an App | `GET /_kortix/token?audience=<slug or id>` on the App's own origin (`kortixToken({ audience })` in `@kortix/sdk`). The audience is the App itself (the default) or an App it uses. |
+| A member, the CLI, an agent | `POST /v1/projects/:projectId/apps/:appId/token`. An agent session gets a token that names its agent, never the person who started it. |
+
+Any other audience answers `403` with `error: "app_not_linked"`. Code in one
+App never gets a token for an App it does not use.
+
+The bindings mount `/_kortix/apps/<slug>/*` on an App's origin reaches an App
+it uses, HTTP and WebSocket, with the prefix removed. App code needs one origin
+and no CORS (`kortixBinding("<slug>")` in `@kortix/sdk` returns the URL and a
+token). The mount passes the App's own access gate first. An App it does not use
+answers `403 app_not_linked`. Only a `convex` App has an endpoint to bind (its
+Convex client API); any other kind answers `409 app_binding_unsupported`. URLs
+that Convex makes itself, such as file storage URLs, keep the `convex` App's own
+host.
 
 ### Machine, idle timeout, and budget
 

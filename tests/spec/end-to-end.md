@@ -1552,16 +1552,25 @@ self-hosted Convex backend in its own always-on Platinum machine (1 vCPU, 1 GB,
 10 GB by default). A project owns up to 3 `convex` Apps, an account up to 10.
 The `apps` flag gates every kind; a `convex` create needs a deployment with
 Platinum. Every App response carries `kind`, `capabilities`, `uses`/`used_by`
-(App links by slug) and `instance` (the machine state of a `convex` App, null
-for `web`). Capability routes under `/projects/:projectId/apps/:appId`:
+(App links by slug), `auth` (`issuer`, `audience` = the App id, `jwks_uri`) and
+`instance` (the machine state of a `convex` App, null for `web`). Capability routes under `/projects/:projectId/apps/:appId`:
 `GET/POST snapshots`, `DELETE snapshots/:snapshotId` (`snapshots`),
 `POST restore` (`restore`), `GET credentials` and `POST rotate-credentials`
-(`admin_credentials`), `POST token` (`member_tokens`), `GET logs` (`logs`).
-An App without the capability answers `409 {code:'app_capability_unsupported',
-capability, kind}`. The public issuer routes
-`GET /backends/:backendId/.well-known/openid-configuration` and
-`GET /backends/:backendId/jwks.json` serve a `convex` App's sign-in key by its
-App id.
+(`admin_credentials`), `POST token` (`member_tokens`, every kind), `GET logs`
+(`logs`). An App without the capability answers `409
+{code:'app_capability_unsupported', capability, kind}`.
+
+Sign-in tokens have one issuer per project: `<API origin>/v1/projects/:projectId`,
+with the public routes `GET /projects/:projectId/.well-known/openid-configuration`
+and `GET /projects/:projectId/jwks.json` (one ES256 key per project, created on
+the first token; an empty key set before it). A token lives 15 minutes and its
+`aud` is the App it is for. On an App host, `GET /_kortix/token?audience=<slug|id>`
+mints one naming the viewer for the App itself (the default) or an App it
+`uses`; any other App answers `403 app_not_linked`. The bindings mount
+`/_kortix/apps/<slug>/*` on an App host proxies HTTP and WebSocket to a used
+App's endpoint (a `convex` App: its client API) with the prefix stripped; an App
+it does not use answers `403 app_not_linked`, a used App of a kind with no
+endpoint `409 app_binding_unsupported`.
 
 `APP-9` Kind and capability surface. Flag off: a `convex` create and every
 capability route answer `403 {code:'feature_disabled', feature:'apps'}`. Flag
@@ -1570,15 +1579,16 @@ requested; `always_on: false` for a `convex` App answers 400 (or 409 where
 Platinum is not configured). A `convex` create answers `201` with
 `instance.status: "provisioning"` and the seven `convex` capabilities where
 Platinum is configured, else `409 app_kind_unavailable`. A `web` App lists
-`deployments`, `rollback`, `preview` and answers 409
-`app_capability_unsupported` on all 8 capability routes; an unknown App answers
-404. A `NONMEMBER` gets 403/404 and an `ANON` caller 401. The issuer routes need
-no credential: an unknown App answers 404 and a malformed id 400. The DB suites
+`deployments`, `rollback`, `preview`, `member_tokens` and answers 409
+`app_capability_unsupported` on the 7 `convex`-only capability routes; an
+unknown App answers 404. A `NONMEMBER` gets 403/404 and an `ANON` caller 401. The DB suites
 `apps/api/src/apps/kinds/convex/*.integration.test.ts` assert the rest against a
 fake Platinum and a fake Convex: the caps under concurrency (`409
 app_kind_limit`), `Cache-Control: no-store` on credentials and token,
-`instance.client_version`, the stored issuer, the issuer discovery and key set
-(verified against a minted token), the issuer move, `uses` links both ways and
+`instance.client_version`, the project issuer discovery and key set (verified
+against a minted token, for a `convex` and a `web` App), the maintenance issuer
+move (all three `KORTIX_AUTH_*` written, a failed write retried, a moved App
+left alone), `uses` links both ways and
 `400 app_not_found` for an unknown slug, a `convex` deployment recorded `ready`
 with no artifact (`source_kind: "convex"`, `201`), and `409
 app_capability_unsupported` for start, stop and rollback of a `convex` App. The
@@ -1590,9 +1600,11 @@ backup, and turns a missing one `error` after 3 probes; admin-key rotation
 seals the key Convex accepts and answers `409 app_busy` during another
 operation; a backup or snapshot restore of a rotated App rotates again; an agent
 session's token names the agent's service account (`kind: "agent"`), never its
-launcher; the App gate's `/_kortix/backend-token` mints only for an App this App
-`uses` (`403 app_not_linked` otherwise) and re-checks a `public` App's cookie
-viewer (`401` once access is gone); the logs route strips color codes and
+launcher; the App gate's `/_kortix/token` mints for the App itself or an App it
+`uses` (by slug or id), `403 app_not_linked` otherwise (also across projects),
+and re-checks a `public` App's cookie viewer (`401` once access is gone); the
+bindings mount forwards a request to the used `convex` App's client API with the
+prefix stripped and the Kortix cookies removed; the logs route strips color codes and
 rejects `lines` outside 1–1000. Snapshots: `manual` carries no expiry and the
 11th answers `409 snapshot_limit`; snapshot, restore, snapshot delete and App
 delete answer `409 app_busy` during a resize (delete stays allowed in
@@ -1607,6 +1619,17 @@ row. Budget: 80 % and 100 % of the monthly budget each alert once per month
 (`instance.budget_alert`, audit `app.budget.alert`) and the machine keeps
 running. Not asserted locally: a provisioned machine and the
 `app.credentials.read` audit row; they are verified on a deployed environment.
+
+`APP-10` Sign-in tokens and the bindings mount, black-box on a local App host.
+An `ANON` caller reads the project issuer: `openid-configuration` names
+`<API origin>/v1/projects/:projectId` and its `jwks.json`; an unknown project
+answers 404 and a malformed id 400. The owner mints a member token for a `web`
+App (`POST token`, 200, `aud` = the App, verified against the published key
+set); a `NONMEMBER` gets 403/404. Signed in to App A through its access link,
+`/_kortix/token` answers 200 for A itself and for App C that A uses, and `403
+app_not_linked` for App B of the same project that A does not use and for an
+App of another project. The bindings mount answers `403 app_not_linked` for B
+and `409 app_binding_unsupported` for C, a `web` App.
 
 ---
 

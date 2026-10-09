@@ -1,8 +1,9 @@
 /**
  * An App as JSON, for every kind. Every response carries `kind`,
  * `capabilities` (the only thing clients branch on), `uses` / `used_by` (App
- * links, by slug) and `instance`: the machine state of a kind that has one
- * (`convex`), null otherwise.
+ * links, by slug), `auth` (the issuer, audience and key set URL that verify
+ * the App's Kortix sign-in tokens) and `instance`: the machine state of a kind
+ * that has one (`convex`), null otherwise.
  */
 import { z } from '@hono/zod-openapi';
 import { appDeployments, apps } from '@kortix/db';
@@ -16,6 +17,7 @@ import { type AppHostingType, appCapabilities } from './kinds';
 import { convexInstanceJson } from './kinds/convex/serialize';
 import { type ConvexRow, convexRowsByAppId } from './kinds/convex/provision';
 import { type AppLinkSlugs, appLinkSlugs } from './links';
+import { type ProjectSigner, authEnv, existingProjectSigner, projectIssuer } from './tokens';
 
 type AppRow = typeof apps.$inferSelect;
 
@@ -46,8 +48,11 @@ function serializeApp(
   hostingType: AppHostingType | null,
   links: AppLinkSlugs,
   convex: ConvexRow | undefined,
+  signer: ProjectSigner | null,
 ) {
-  const instance = row.kind === 'convex' && convex ? convexInstanceJson(convex) : null;
+  const issuer = projectIssuer(row.projectId);
+  const instance =
+    row.kind === 'convex' && convex ? convexInstanceJson(convex, signer ? authEnv(issuer, row.appId, signer) : null) : null;
   return {
     app_id: row.appId,
     account_id: row.accountId,
@@ -66,6 +71,8 @@ function serializeApp(
     idle_timeout_seconds: row.idleTimeoutSeconds,
     always_on: row.alwaysOn,
     monthly_budget_usd: Number(row.monthlyBudgetUsd),
+    /** Verifies the Kortix sign-in tokens minted for this App (`aud` = app_id), for any kind. */
+    auth: { issuer, audience: row.appId, jwks_uri: `${issuer}/jwks.json` },
     uses: links.uses,
     used_by: links.usedBy,
     /** `static`: served from storage, no runtime. `sandbox`: a server App. `convex`: its own machine. null: never deployed. */
@@ -86,12 +93,15 @@ function serializeApp(
 
 export type AppJson = ReturnType<typeof serializeApp>;
 
-/** Many Apps as JSON in four queries. `openable`: the App ids the caller may open; absent = all. */
+/** Many Apps as JSON in four queries (plus one per project with a convex App, cached per replica). `openable`: the App ids the caller may open; absent = all. */
 export async function appsJson(rows: AppRow[], openable?: Set<string>): Promise<AppJson[]> {
-  const [hosting, links, convex] = await Promise.all([
+  const convexProjects = [...new Set(rows.filter((row) => row.kind === 'convex').map((row) => row.projectId))];
+  const [hosting, links, convex, signers] = await Promise.all([
     activeHostingTypes(rows),
     appLinkSlugs(rows.map((row) => row.appId)),
     convexRowsByAppId(rows.filter((row) => row.kind === 'convex').map((row) => row.appId)),
+    // A convex App's instance shows the KORTIX_AUTH_* its environment holds. Read only: never creates a key.
+    Promise.all(convexProjects.map(async (id) => [id, await existingProjectSigner(id)] as const)).then((pairs) => new Map(pairs)),
   ]);
   return rows.map((row) =>
     serializeApp(
@@ -100,6 +110,7 @@ export async function appsJson(rows: AppRow[], openable?: Set<string>): Promise<
       row.activeDeploymentId ? (hosting.get(row.activeDeploymentId) ?? null) : null,
       links.get(row.appId) ?? { uses: [], usedBy: [] },
       convex.get(row.appId),
+      signers.get(row.projectId) ?? null,
     ),
   );
 }

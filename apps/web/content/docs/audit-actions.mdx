@@ -161,13 +161,6 @@ This page lists 719 route actions and 66 other events.
 | `auth.user.create` | Signed up | `POST /v1/auth/signup` |
 | `auth.user.read` | Viewed the signed-in user | `GET /v1/auth/user` |
 
-## `backend.`
-
-| Action | Title | Route |
-| --- | --- | --- |
-| `backend.issuer.keys.read` | Read backend signing keys | `GET /v1/backends/:backendId/jwks.json` |
-| `backend.issuer.metadata.read` | Read backend issuer metadata | `GET /v1/backends/:backendId/.well-known/openid-configuration` |
-
 ## `billing.`
 
 | Action | Title | Route |
@@ -640,6 +633,8 @@ This page lists 719 route actions and 66 other events.
 | `project.suna_migration.eligibility.read` | Viewed project migration eligibility | `GET /v1/projects/suna-migration/eligibility` |
 | `project.suna_migration.read` | Viewed project migration status | `GET /v1/projects/suna-migration/status` |
 | `project.suna_migration.start` | Started project migration | `POST /v1/projects/suna-migration/start` |
+| `project.token_issuer.keys.read` | Read project token signing keys | `GET /v1/projects/:projectId/jwks.json` |
+| `project.token_issuer.read` | Read project token issuer metadata | `GET /v1/projects/:projectId/.well-known/openid-configuration` |
 | `project.update` | Updated project | `PATCH /v1/projects/:projectId` |
 
 ## `review.`

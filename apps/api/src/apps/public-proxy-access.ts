@@ -409,14 +409,27 @@ async function resolveEndpointViewer(
   return { userId, agentViewer };
 }
 
+/** The 403 for an audience or binding the App does not use. */
+export function appNotLinkedResponse(name: string): Response {
+  return Response.json(
+    {
+      error: 'app_not_linked',
+      error_description: `This App does not use an App named "${name}". Add it: kortix apps link <app> --uses ${name}.`,
+    },
+    { status: 403, headers: { 'cache-control': 'no-store' } },
+  );
+}
+
 /**
- * `GET /_kortix/backend-token?backend=<slug>` — a Kortix sign-in token for an
- * App of kind `convex` that this App `uses` (`app_links`), naming this viewer.
- * The App's Convex client sends it (`client.setAuth`), and the used App's
- * functions read the member with `ctx.auth.getUserIdentity()`. Same viewer
- * rules as `/_kortix/viewer`.
+ * `GET /_kortix/token?audience=<slug|id>` — a Kortix sign-in token naming this
+ * viewer, from the project issuer, for `audience`: this App itself (the
+ * default) or an App it uses (`app_links`). Any other audience answers 403
+ * `app_not_linked`: code in an App gets no token for an App it has nothing to
+ * do with. The App's client sends it (a Convex client: `client.setAuth`), and
+ * the audience App verifies it with its `auth` values. Same viewer rules as
+ * `/_kortix/viewer`.
  */
-export async function appBackendTokenResponse(
+export async function appTokenResponse(
   request: Request,
   url: URL,
   app: AppAccessRow & { viewerTokenScope?: string | null },
@@ -429,22 +442,15 @@ export async function appBackendTokenResponse(
       { status: 404, headers: noStore },
     );
   }
-  const slug = url.searchParams.get('backend') ?? 'main';
-  // Loaded on use: the links and the convex kind pull the project graph,
-  // which the App gate's hot path (and every hand-written module mock of it)
-  // does not need.
-  const { linkedApp } = await import('./links');
-  // An App acts as its viewer only on the Apps it uses (`app_links`). Code in
-  // an App that has nothing to do with another App gets no token for it.
-  const linked = await linkedApp(app.appId, app.projectId, slug);
-  if (!linked || linked.kind !== 'convex') {
-    return Response.json(
-      {
-        error: 'app_not_linked',
-        error_description: `This App does not use an App named "${slug}". Add it: kortix apps link <app> --uses ${slug}.`,
-      },
-      { status: 403, headers: noStore },
-    );
+  const audience = url.searchParams.get('audience')?.trim() || app.appId;
+  let audienceAppId = app.appId;
+  if (audience !== app.appId && audience.toLowerCase() !== app.appId && audience !== app.slug) {
+    // Loaded on use: the App gate's hot path (and every hand-written module
+    // mock of it) does not need the links graph.
+    const { linkedApp } = await import('./links');
+    const linked = await linkedApp(app.appId, app.projectId, audience);
+    if (!linked) return appNotLinkedResponse(audience);
+    audienceAppId = linked.appId;
   }
   const viewer = await resolveEndpointViewer(request, url, app);
   if (viewer instanceof Response) return viewer;
@@ -464,23 +470,16 @@ export async function appBackendTokenResponse(
       { status: 401, headers: noStore },
     );
   }
-  const { backendMemberToken, getLiveConvexApp } = await import('./kinds/convex/provision');
-  const target = await getLiveConvexApp(app.projectId, linked.appId);
-  if (!target || target.status !== 'running') {
-    return Response.json(
-      { error: 'app_not_running', error_description: `The App "${slug}" is not running.` },
-      { status: 404, headers: noStore },
-    );
-  }
+  const { mintAppToken } = await import('./tokens');
   const identity = await resolveAppViewerIdentity(viewer.userId, app.accountId);
-  const minted = backendMemberToken(target, { userId: viewer.userId, ...identity });
-  if (!minted) {
-    return Response.json(
-      { error: 'app_auth_unavailable', error_description: 'This App predates Kortix sign-in.' },
-      { status: 409, headers: noStore },
-    );
-  }
-  return Response.json({ token: minted.token, expires_at: minted.expiresAt.toISOString() }, { headers: noStore });
+  const minted = await mintAppToken(
+    { appId: audienceAppId, projectId: app.projectId, accountId: app.accountId },
+    { userId: viewer.userId, ...identity },
+  );
+  return Response.json(
+    { token: minted.token, expires_at: minted.expiresAt.toISOString(), audience: audienceAppId },
+    { headers: noStore },
+  );
 }
 
 /** `GET /_kortix/viewer` — the App asks the gate who is looking, and for a token to act with. */

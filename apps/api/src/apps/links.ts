@@ -1,7 +1,8 @@
 /**
  * App links: an App `uses` other Apps of its project (`kortix.yaml`
  * `apps.<name>.uses`). A link lets the using App mint sign-in tokens for the
- * used one. Rows cascade with either App.
+ * used one (`/_kortix/token?audience=`) and reach it through its bindings
+ * mount (`/_kortix/apps/<slug>/*`). Rows cascade with either App.
  */
 import { appLinks, apps } from '@kortix/db';
 import { and, eq, inArray, isNull, or } from 'drizzle-orm';
@@ -60,13 +61,22 @@ export async function setAppLinks(app: { appId: string; projectId: string; slug:
   });
 }
 
-/** The live App of the project named `slug` that `appId` uses, or null. */
-export async function linkedApp(appId: string, projectId: string, slug: string) {
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The live App of the project that `appId` uses, named by slug or by App id, or null. */
+export async function linkedApp(appId: string, projectId: string, slugOrId: string) {
   const [row] = await db
-    .select({ appId: apps.appId, kind: apps.kind })
+    .select({ appId: apps.appId, kind: apps.kind, slug: apps.slug })
     .from(appLinks)
     .innerJoin(apps, eq(apps.appId, appLinks.usesAppId))
-    .where(and(eq(appLinks.appId, appId), eq(apps.projectId, projectId), eq(apps.slug, slug), isNull(apps.deletedAt)))
+    .where(
+      and(
+        eq(appLinks.appId, appId),
+        eq(apps.projectId, projectId),
+        UUID.test(slugOrId) ? eq(apps.appId, slugOrId.toLowerCase()) : eq(apps.slug, slugOrId),
+        isNull(apps.deletedAt),
+      ),
+    )
     .limit(1);
   return row ?? null;
 }

@@ -34,23 +34,16 @@
 
 import { randomBytes } from 'node:crypto';
 import { appConvexInstances, apps } from '@kortix/db';
-import { and, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { type ConvexRow, liveConvexApp, liveInstance, selectConvexRows } from './rows';
 
 export { CONVEX_ROW, type ConvexRow, liveConvexApp, liveInstance, selectConvexRows } from './rows';
 import { config } from '../../../config';
-import { oauthIssuer } from '../../../oauth/discovery';
 import { db } from '../../../shared/db';
 import { PlatinumHttpError, platinumJson } from '../../../shared/platinum';
 import { sandboxOwnershipMarker } from '../../../platform/sandbox-ownership';
 import { currentInstanceId, decryptProjectSecret, encryptProjectSecret } from '../../../projects/surface';
-import {
-  type BackendTokenSubject,
-  backendAuthEnv,
-  generateBackendAuthKey,
-  legacyBackendIssuer,
-  mintBackendToken,
-} from './auth';
+import { authEnv, projectIssuer, projectSigner } from '../../tokens';
 import {
   CONVEX_API_PORT,
   CONVEX_DASHBOARD_PORT,
@@ -199,7 +192,7 @@ async function verifyAdminKey(externalId: string, adminKey: string): Promise<voi
  * takes it, and seals it on the row. Needed after anything that can change the
  * instance secret: a rotation, a snapshot restore, a backup restore.
  */
-export async function sealAdminKey(row: ConvexRow): Promise<void> {
+export async function sealAdminKey(row: ConvexRow): Promise<string> {
   if (!row.externalId || !row.url) throw new Error('backend has no machine');
   const adminKey = await mintAdminKey(row.externalId);
   await verifyAdminKey(row.externalId, adminKey);
@@ -207,6 +200,7 @@ export async function sealAdminKey(row: ConvexRow): Promise<void> {
     .update(appConvexInstances)
     .set({ adminKeyEnc: encryptProjectSecret(row.projectId, adminKey), updatedAt: new Date() })
     .where(and(eq(appConvexInstances.appId, row.appId), liveInstance()));
+  return adminKey;
 }
 
 /**
@@ -378,38 +372,20 @@ export async function convexRowsByAppId(appIds: string[]): Promise<Map<string, C
 }
 
 /**
- * The issuer a new App's tokens carry: the public API origin (KORTIX_URL),
- * where ./discovery.ts serves its OpenID configuration and key set. Stored on
- * the row and never recomputed, so a later KORTIX_URL change moves no App.
+ * Points the machine's Convex environment at the project issuer
+ * (KORTIX_AUTH_ISSUER / _AUDIENCE = the App id / _JWKS, ../../tokens.ts) and
+ * records it in `auth_issuer`. Convex re-reads `auth.config.ts` when an
+ * environment variable changes (no redeploy; verified on CONVEX_BACKEND_IMAGE):
+ * from this write on, the App accepts only project-issuer tokens. Safe to repeat.
  */
-export function newBackendIssuer(appId: string): string {
-  return `${oauthIssuer()}/v1/backends/${appId}`;
-}
-
-/** The issuer this App's environment expects. */
-export function backendIssuer(row: ConvexRow): string {
-  return row.authIssuer ?? legacyBackendIssuer(row.appId);
-}
-
-/** Mints a Kortix sign-in token for this member, or null when the App predates sign-in. */
-export function backendMemberToken(row: ConvexRow, subject: BackendTokenSubject) {
-  if (!row.authKeyEnc) return null;
-  return mintBackendToken(row.appId, backendIssuer(row), decryptProjectSecret(row.projectId, row.authKeyEnc), {
-    ...subject,
-    accountId: row.accountId,
-    projectId: row.projectId,
-  });
-}
-
-/** The public KORTIX_AUTH_* values that verify this App's tokens, or null when it predates sign-in. */
-export function backendPublicAuthEnv(row: ConvexRow) {
-  if (!row.authKeyEnc) return null;
-  const env = backendAuthEnv(row.appId, backendIssuer(row), decryptProjectSecret(row.projectId, row.authKeyEnc));
-  return {
-    KORTIX_AUTH_ISSUER: env.KORTIX_AUTH_ISSUER!,
-    KORTIX_AUTH_AUDIENCE: env.KORTIX_AUTH_AUDIENCE!,
-    KORTIX_AUTH_JWKS: env.KORTIX_AUTH_JWKS!,
-  };
+export async function applyAuthEnv(row: ConvexRow, adminKey: string): Promise<void> {
+  if (!row.externalId) throw new Error('backend has no machine');
+  const issuer = projectIssuer(row.projectId);
+  await setBackendEnv(row.externalId, adminKey, authEnv(issuer, row.appId, await projectSigner(row.projectId)));
+  await db
+    .update(appConvexInstances)
+    .set({ authIssuer: issuer, updatedAt: new Date() })
+    .where(and(eq(appConvexInstances.appId, row.appId), liveInstance()));
 }
 
 /** The admin key of a running App. */
@@ -492,7 +468,6 @@ export async function insertConvexApp(input: NewConvexApp): Promise<{ app: typeo
       .insert(appConvexInstances)
       .values({
         appId: app!.appId,
-        authIssuer: newBackendIssuer(app!.appId),
         provider: BACKEND_PROVIDER,
         template: CONVEX_IMAGE_SPEC.base_image,
       })
@@ -560,9 +535,9 @@ export async function provisionBackend(row: ConvexRow, region?: string): Promise
     await writeOriginsFile(externalId, backendOriginsFile(appId));
     await waitHealthy(externalId);
     const adminKey = await mintAdminKey(externalId);
-    // Kortix sign-in: the backend verifies member tokens with this key's public half.
-    const authKey = generateBackendAuthKey();
-    await setBackendEnv(externalId, adminKey, backendAuthEnv(appId, backendIssuer(row), authKey));
+    // Kortix sign-in: the App verifies project-issuer tokens with the project key's public half.
+    const issuer = projectIssuer(projectId);
+    await setBackendEnv(externalId, adminKey, authEnv(issuer, appId, await projectSigner(projectId)));
 
     const [ready] = await db
       .update(appConvexInstances)
@@ -571,7 +546,7 @@ export async function provisionBackend(row: ConvexRow, region?: string): Promise
         url,
         siteUrl,
         adminKeyEnc: encryptProjectSecret(projectId, adminKey),
-        authKeyEnc: encryptProjectSecret(projectId, authKey),
+        authIssuer: issuer,
         // This machine serves Convex's dashboard on CONVEX_DASHBOARD_PORT.
         metadata: sql`coalesce(${appConvexInstances.metadata}, '{}'::jsonb) || '{"dashboard":true}'::jsonb`,
         updatedAt: new Date(),
@@ -594,60 +569,6 @@ export async function provisionBackend(row: ConvexRow, region?: string): Promise
   } finally {
     stopHeartbeat();
   }
-}
-
-/**
- * Moves every running backend still on the placeholder issuer to its real one.
- * Convex re-reads `auth.config.ts` when an environment variable changes (no
- * redeploy; verified on CONVEX_BACKEND_IMAGE), so from the env write on, the
- * backend accepts only new-issuer tokens. A token minted before it gets 401;
- * Convex clients then fetch a fresh token, which carries the new issuer.
- *
- * The row is claimed and the env written in one transaction: a failed env
- * write rolls the claim back, and the backend keeps working on the old issuer.
- * One backend at a time, so the pass holds one pooled connection.
- *
- * ponytail: runs once per leadership term (bootstrap). A backend that was
- * unreachable then moves on the next deploy; it works on the old issuer meanwhile.
- */
-export async function moveBackendIssuers(): Promise<{ moved: number; failed: number }> {
-  const rows = await selectConvexRows().where(
-    and(
-      isNull(appConvexInstances.authIssuer),
-      liveConvexApp(),
-      eq(appConvexInstances.status, 'running'),
-      isNotNull(appConvexInstances.authKeyEnc),
-      isNotNull(appConvexInstances.adminKeyEnc),
-      isNotNull(appConvexInstances.externalId),
-    ),
-  );
-  let moved = 0;
-  let failed = 0;
-  for (const row of rows) {
-    const issuer = newBackendIssuer(row.appId);
-    try {
-      await db.transaction(async (tx) => {
-        const [claimed] = await tx
-          .update(appConvexInstances)
-          .set({ authIssuer: issuer, updatedAt: new Date() })
-          .where(and(eq(appConvexInstances.appId, row.appId), isNull(appConvexInstances.authIssuer)))
-          .returning({ appId: appConvexInstances.appId });
-        if (!claimed) return;
-        await setBackendEnv(row.externalId!, backendAdminKey({ ...row, adminKeyEnc: row.adminKeyEnc! }), {
-          KORTIX_AUTH_ISSUER: issuer,
-        });
-        moved += 1;
-      });
-    } catch (error) {
-      failed += 1;
-      logger.warn('[apps:convex] issuer move failed; the backend keeps its old issuer', {
-        appId: row.appId,
-        error: String(error),
-      });
-    }
-  }
-  if (rows.length > 0) logger.info('[apps:convex] issuer move', { candidates: rows.length, moved, failed });
-  return { moved, failed };
 }
 
 /**

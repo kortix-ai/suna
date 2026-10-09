@@ -20,7 +20,6 @@ export interface ConvexRowSeed {
   url?: string | null;
   siteUrl?: string | null;
   adminKeyEnc?: string | null;
-  authKeyEnc?: string | null;
   authIssuer?: string | null;
   cpu?: number;
   memoryGb?: number;
@@ -59,7 +58,6 @@ export async function insertConvexRow(seed: ConvexRowSeed): Promise<ConvexRow> {
     url: seed.url ?? null,
     siteUrl: seed.siteUrl ?? null,
     adminKeyEnc: seed.adminKeyEnc ?? null,
-    authKeyEnc: seed.authKeyEnc ?? null,
     authIssuer: seed.authIssuer ?? null,
     metadata: seed.metadata ?? {},
     ...(seed.createdAt ? { createdAt: seed.createdAt } : {}),

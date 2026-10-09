@@ -7,7 +7,7 @@ import type { AppCapability, AppHostingType, AppKindModule } from './index';
 
 export const webKind: AppKindModule = {
   capabilities(hostingType: AppHostingType | null): AppCapability[] {
-    const out: AppCapability[] = ['deployments', 'rollback', 'preview'];
+    const out: AppCapability[] = ['deployments', 'rollback', 'preview', 'member_tokens'];
     if (hostingType === 'sandbox') out.push('sleep');
     if (hostingType === 'static') out.push('static');
     return out;

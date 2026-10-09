@@ -128,6 +128,7 @@ export {
   appAccessGrants,
   appLinks,
   appConvexInstances,
+  projectSigningKeys,
   appArtifacts,
   appDeployments,
   appImages,

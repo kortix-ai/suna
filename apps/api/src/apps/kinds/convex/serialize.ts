@@ -7,9 +7,10 @@ import { CONVEX_CLI_VERSION } from './convex-image';
 import { backendDashboardUrl, backendPublicUrls } from './hosts';
 import type { BackendHealth } from './maintenance';
 import { backendOperation } from './operations';
-import { type ConvexRow, backendPublicAuthEnv, effectiveStatus } from './provision';
+import { type ConvexRow, effectiveStatus } from './provision';
 
-export function convexInstanceJson(row: ConvexRow) {
+/** `authEnv`: the KORTIX_AUTH_* the machine's environment holds (../../tokens.ts authEnv); null before its project has a key. */
+export function convexInstanceJson(row: ConvexRow, authEnv: Record<string, string> | null) {
   const status = effectiveStatus(row);
   const meta = row.metadata as {
     lastError?: unknown;
@@ -30,7 +31,7 @@ export function convexInstanceJson(row: ConvexRow) {
     operation: backendOperation(row),
     last_operation_error: typeof meta.lastOperationError === 'string' ? meta.lastOperationError : null,
     health: meta.health ?? null,
-    auth_env: live ? backendPublicAuthEnv(row) : null,
+    auth_env: live ? authEnv : null,
     /** The client CLI version that matches the machine (`npx convex@<version> deploy`). */
     client_version: CONVEX_CLI_VERSION,
     budget_alert: meta.budgetAlert

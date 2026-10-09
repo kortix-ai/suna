@@ -11,7 +11,7 @@
  *   POST   /projects/:projectId/apps/:appId/restore                 restore     admin
  *   GET    /projects/:projectId/apps/:appId/credentials             admin_credentials  admin (audited)
  *   POST   /projects/:projectId/apps/:appId/rotate-credentials      admin_credentials  admin
- *   POST   /projects/:projectId/apps/:appId/token                   member_tokens      read
+ *   POST   /projects/:projectId/apps/:appId/token                   member_tokens      read (every kind)
  *   GET    /projects/:projectId/apps/:appId/logs                    logs        write
  */
 import { createRoute, z } from '@hono/zod-openapi';
@@ -31,7 +31,7 @@ const AppResult = z
   .openapi({ description: 'The App after the operation, every `KortixApp` field.' });
 import type { AppCapability } from './kinds';
 import { type AppPermission, authorizedProject, capabilityRefusal, visibleApp } from './route-access';
-import { BACKEND_TOKEN_TTL_SECONDS } from './kinds/convex/auth';
+import { TOKEN_TTL_SECONDS, mintAppToken } from './tokens';
 import { backendPublicUrls } from './kinds/convex/hosts';
 import {
   AUTOMATIC_SNAPSHOT_RETENTION_MS,
@@ -49,7 +49,7 @@ import {
   restoreBackendSnapshot,
   rotateBackendAdminKey,
 } from './kinds/convex/operations';
-import { type ConvexRow, backendAdminKey, backendMemberToken, effectiveStatus, getLiveConvexApp } from './kinds/convex/provision';
+import { type ConvexRow, backendAdminKey, effectiveStatus, getLiveConvexApp } from './kinds/convex/provision';
 
 const AppParams = z.object({ projectId: z.string().uuid(), appId: z.string().uuid() });
 const SnapshotParams = AppParams.extend({ snapshotId: z.string().min(1).max(128) });
@@ -294,33 +294,33 @@ export function registerAppCapabilityRoutes(): void {
 
   projectsApp.openapi(
     createRoute({
-      method: 'post', path: '/{projectId}/apps/{appId}/token', tags: ['apps'], summary: 'Mint a member token for an App', ...auth,
+      method: 'post', path: '/{projectId}/apps/{appId}/token', tags: ['apps'], summary: 'Mint a sign-in token for an App', ...auth,
       description:
-        `Capability \`member_tokens\`. A ${BACKEND_TOKEN_TTL_SECONDS / 60}-minute JWT naming the caller (\`sub\` = Kortix ` +
-        'user id, `email`, `role`, `groups`). The App verifies it with the values in `instance.auth_env`. An agent ' +
-        'session gets a token naming its agent (`sub` = service account id, `kind: "agent"`, no role, no groups), never ' +
-        'the human who launched it.',
+        `Capability \`member_tokens\`. A ${TOKEN_TTL_SECONDS / 60}-minute ES256 JWT from the project issuer ` +
+        '(`iss` = `<API origin>/v1/projects/{projectId}`, `aud` = the App id) naming the caller (`sub` = Kortix user id, ' +
+        '`email`, `role`, `groups`). The App verifies it with its `auth` values. An agent session gets a token naming ' +
+        'its agent (`sub` = service account id, `kind: "agent"`, no role, no groups), never the human who launched it.',
       request: { params: AppParams },
       responses: { 200: json(MemberToken, 'Token'), ...errors(403, 404, 409) },
     }),
     async (c) => {
-      const found = await capableApp(c, 'read', 'member_tokens');
-      if (found instanceof Response) return found;
-      const { row, loaded } = found;
-      if (row.status !== 'running') return notRunning(c, row);
+      const { projectId, appId } = c.req.valid('param');
+      const loaded = await authorizedProject(c, projectId, 'read');
+      if (loaded instanceof Response) return loaded;
+      const app = await visibleApp(projectId, appId, loaded.userId);
+      if (!app) return c.json({ error: 'Not found' }, 404);
+      const refusal = capabilityRefusal(c, app, 'member_tokens');
+      if (refusal) return refusal;
       // An agent session's credential names the human who launched it. A token
       // for that id would carry the human's role and groups, so the agent gets
       // one naming its own service account, with no role and no groups.
-      const { credential } = await actorOf(c, row.accountId);
-      const minted = backendMemberToken(
-        row,
+      const { credential } = await actorOf(c, app.accountId);
+      const minted = await mintAppToken(
+        app,
         credential.kind === 'agent_session'
           ? { userId: credential.serviceAccountId, email: null, kind: 'agent' }
-          : { userId: loaded.userId, ...(await resolveAppViewerIdentity(loaded.userId, row.accountId)) },
+          : { userId: loaded.userId, ...(await resolveAppViewerIdentity(loaded.userId, app.accountId)) },
       );
-      if (!minted) {
-        return c.json({ error: 'this App predates Kortix sign-in; create a new one', code: 'app_auth_unavailable' }, 409);
-      }
       c.header('Cache-Control', 'no-store');
       return c.json({ token: minted.token, expires_at: minted.expiresAt.toISOString() }, 200);
     },

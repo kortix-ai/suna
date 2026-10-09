@@ -13,6 +13,7 @@
  * capability the App lacks answers 409 `app_capability_unsupported`.
  */
 import { logger } from '../../lib/logger';
+import type { PreviewWsData } from '../../sandbox-proxy/ws-proxy';
 import { convexKind } from './convex';
 import { webKind } from './web';
 
@@ -42,6 +43,22 @@ export interface AppKindModule {
   capabilities(hostingType: AppHostingType | null): AppCapability[];
   /** One pass of the kind's own lifecycle, from the project maintenance tick. Counters for its log line. */
   maintain?: () => Promise<Record<string, number>>;
+  /**
+   * The App's endpoint behind the bindings mount of an App that uses it
+   * (`/_kortix/apps/<slug>/*`, ../bindings.ts): HTTP and WebSocket, prefix
+   * already stripped. Absent: an App of this kind cannot be bound.
+   */
+  endpoint?: AppKindEndpoint;
+}
+
+export interface AppKindEndpoint {
+  fetch(request: Request, appId: string, pathAndQuery: string, publicHost: string): Promise<Response>;
+  websocket(
+    request: Request,
+    appId: string,
+    pathAndQuery: string,
+    publicHost: string,
+  ): Promise<{ ok: true; data: PreviewWsData } | { ok: false; status: number; message: string }>;
 }
 
 export const APP_KIND_MODULES: Record<AppKind, AppKindModule> = { web: webKind, convex: convexKind };
