@@ -11,7 +11,7 @@ test.describe('free-tier pricing and onboarding surface', () => {
     await expect(page.getByText('Team', { exact: true }).first()).toBeVisible();
     await expect(page.getByText('Enterprise', { exact: true }).first()).toBeVisible();
 
-    await expect(page.getByText('200 credits / month for sandbox compute')).toBeVisible();
+    await expect(page.getByText('200 credits / month for sandbox compute').first()).toBeVisible();
     await expect(page.getByText('1 project', { exact: true }).first()).toBeVisible();
     await expect(page.getByText('Bring your own API key for any premium model')).toBeVisible();
     await expect(page.getByText('2,500 credits / month per seat, pooled')).toBeVisible();

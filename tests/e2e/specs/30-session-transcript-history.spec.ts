@@ -662,6 +662,9 @@ if (process.env.E2E_ENABLE_SDK_ONLY_SESSION === '1') {
         const accepted = page.waitForResponse(
           (r) => r.request().method() === 'POST' && r.url().endsWith(`${sessionPath}/prompts`),
         );
+        // The welcome card can render after the reload and cover the Send
+        // button (release gate 37943505676).
+        await dismissWelcomeCard(page);
         await page.getByRole('button', { name: 'Send message', exact: true }).click();
         await expect(page.getByText(prompt(secondReply), { exact: true })).toBeVisible();
         await expect(page.getByTestId('session-busy-indicator')).toContainText('Thinking');
