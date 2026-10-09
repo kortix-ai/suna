@@ -235,6 +235,9 @@ importers:
       '@logtail/node':
         specifier: ^0.5.8
         version: 0.5.8
+      '@openuidev/lang-core':
+        specifier: 0.3.1
+        version: 0.3.1(zod@3.25.76)
       '@scalar/hono-api-reference':
         specifier: ^0.10.20
         version: 0.10.20(hono@4.13.7)
@@ -287,7 +290,7 @@ importers:
         specifier: ^2.8.2
         version: 2.9.1
       zod:
-        specifier: ^3.23.0
+        specifier: ^3.25.0
         version: 3.25.76
     devDependencies:
       '@aws-crypto/sha256-js':
@@ -8003,7 +8006,6 @@ packages:
     dependencies:
       ci-info: 4.4.0
       zod: 3.25.76
-    dev: true
 
   /@orama/orama@3.1.18:
     resolution: {integrity: sha512-a61ljmRVVyG5MC/698C8/FfFDw5a8LOIvyOLW5fztgUXqUpc1jOfQzOitSCbge657OgXXThmY3Tk8fpiDb4UcA==}
