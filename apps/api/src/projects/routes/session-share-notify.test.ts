@@ -33,6 +33,8 @@ describe('PUT sharing → shared with you', () => {
     expect(changeAt).toBeGreaterThan(visibleAt);
     expect(emitAt).toBeGreaterThan(changeAt);
     expect(src.slice(emitAt)).toContain('priorGrants: visible.grants');
+    // A project-visible session narrowed to members tells nobody (KRTX-1742 review).
+    expect(src.slice(emitAt)).toContain('priorVisibility: visible.row.visibility');
   });
 
   test('names the caller as the sharer and the session row`s creator', () => {

@@ -16,6 +16,9 @@ import { notificationUrl } from './push-payload';
 /** The unread count covers at most this many newest unread rows; clients show 99+. */
 export const INBOX_UNREAD_SCAN = 100;
 
+/** One page reads at most this many batches of `limit` stored rows to fill itself with visible ones. */
+export const INBOX_PAGE_SCAN_BATCHES = 5;
+
 export interface InboxRowForFilter {
   notificationId: string;
   userId: string;
@@ -172,29 +175,53 @@ async function projectNames(projectIds: string[]): Promise<Map<string, string>> 
 
 /**
  * One page, newest first. `before` is a notification id (uuid_v7, so id order
- * is time order). Hidden rows are left out of the page, so a page can hold
- * fewer than `limit` rows while `next_before` still points further back.
+ * is time order). Hidden rows are left out: the page reads older batches until
+ * it holds `limit` visible rows, up to {@link INBOX_PAGE_SCAN_BATCHES}
+ * batches, so a page can still hold fewer than `limit` rows while
+ * `next_before` points further back. `next_before` is the last row read.
  */
 export async function listInbox(
   userId: string,
   opts: { limit: number; before?: string | null },
   ctx: InboxReadContext = {},
 ): Promise<InboxPage> {
-  const [page, unread] = await Promise.all([
-    db
-      .select(ROW)
-      .from(notifications)
-      .where(and(eq(notifications.userId, userId), opts.before ? lt(notifications.notificationId, opts.before) : undefined))
-      .orderBy(desc(notifications.notificationId))
-      .limit(opts.limit),
-    newestUnread(userId),
-  ]);
-  // One access check for both lists: they overlap, and each check reads IAM.
-  const union = new Map<string, StoredRow>();
-  for (const row of [...page, ...unread]) union.set(row.notificationId, row);
-  const { rows, sessions } = await visible(userId, [...union.values()], ctx);
-  const shown = new Set(rows.map((row) => row.notificationId));
-  const listed = page.filter((row) => shown.has(row.notificationId));
+  const listed: StoredRow[] = [];
+  const sessions = new Map<string, SessionAccessRow>();
+  let unreadShown = 0;
+  let cursor = opts.before ?? null;
+  let exhausted = false;
+  for (let batchNo = 0; batchNo < INBOX_PAGE_SCAN_BATCHES && listed.length < opts.limit; batchNo += 1) {
+    // The first batch shares its access check with the unread rows: they
+    // overlap, and each check reads IAM.
+    const [batch, unread] = await Promise.all([
+      db
+        .select(ROW)
+        .from(notifications)
+        .where(and(eq(notifications.userId, userId), cursor ? lt(notifications.notificationId, cursor) : undefined))
+        .orderBy(desc(notifications.notificationId))
+        .limit(opts.limit),
+      batchNo === 0 ? newestUnread(userId) : [],
+    ]);
+    const union = new Map<string, StoredRow>();
+    for (const row of [...batch, ...unread]) union.set(row.notificationId, row);
+    const checked = await visible(userId, [...union.values()], ctx);
+    for (const [id, session] of checked.sessions) sessions.set(id, session);
+    const shown = new Set(checked.rows.map((row) => row.notificationId));
+    if (batchNo === 0) unreadShown = unread.filter((row) => shown.has(row.notificationId)).length;
+    let readAll = true;
+    for (const row of batch) {
+      if (listed.length === opts.limit) {
+        readAll = false;
+        break;
+      }
+      cursor = row.notificationId;
+      if (shown.has(row.notificationId)) listed.push(row);
+    }
+    if (readAll && batch.length < opts.limit) {
+      exhausted = true;
+      break;
+    }
+  }
   const names = await projectNames([...new Set(listed.flatMap((row) => (row.projectId ? [row.projectId] : [])))]);
   return {
     notifications: listed.map((row) => ({
@@ -217,8 +244,8 @@ export async function listInbox(
       read: row.readAt !== null,
       created_at: row.createdAt.toISOString(),
     })),
-    unread_count: unread.filter((row) => shown.has(row.notificationId)).length,
-    next_before: page.length === opts.limit ? page[page.length - 1]!.notificationId : null,
+    unread_count: unreadShown,
+    next_before: exhausted ? null : cursor,
   };
 }
 

@@ -8,7 +8,7 @@
  * Real: account and project roles, session visibility and grants, groups,
  * the tombstone, the trigger-run manager override, account oversight.
  */
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test';
 import {
   accountGroupMembers,
   accountGroups,
@@ -17,8 +17,10 @@ import {
   projectMembers,
   projectSessionGrants,
   projectSessions,
+  serviceAccounts,
 } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
+import * as authorize from '../iam/authorize';
 import { clearAuthorizeCaches } from '../iam/authorize';
 import { invalidateSessionOversight } from '../iam/session-oversight';
 import {
@@ -27,6 +29,7 @@ import {
   loadSessionAccessRows,
   mayReadProjectTriggers,
   maySeeSessions,
+  personsAmong,
   type SessionAccessRow,
 } from '../notifications/access';
 import { db } from '../shared/db';
@@ -43,7 +46,7 @@ const ACCOUNT_ONLY = crypto.randomUUID(); // account member, no project role
 const LOST = crypto.randomUUID(); // project member until the test removes the role
 const REMOVED = crypto.randomUUID(); // member until the test removes them from the account
 const STRANGER = crypto.randomUUID(); // in no account
-const SERVICE_ACCOUNT = crypto.randomUUID(); // a trigger session's creator
+const SERVICE_ACCOUNT = crypto.randomUUID(); // a trigger session's creator, with a project role
 const users = [OWNER, CREATOR, MEMBER, GROUPED, PLAIN, MANAGER, ACCOUNT_ONLY, LOST, REMOVED, STRANGER];
 const GROUP = crypto.randomUUID();
 
@@ -119,6 +122,19 @@ beforeAll(async () => {
     { sessionId: ids.restricted, principalType: 'member', principalId: MEMBER },
     { sessionId: ids.restricted, principalType: 'group', principalId: GROUP },
   ]);
+  // A backend's service account: active, with the project member role, so the
+  // IAM lets it read the project's sessions and triggers.
+  await db.insert(serviceAccounts).values({
+    serviceAccountId: SERVICE_ACCOUNT,
+    accountId: project.account_id,
+    name: 'notify-access-sa',
+    secretHash: `h_${SERVICE_ACCOUNT}`,
+    publicPrefix: `kortix_sa_${SERVICE_ACCOUNT.slice(0, 6)}`,
+  });
+  await db.execute(sql`
+    INSERT INTO kortix.role_assignments (account_id, principal_type, principal_id, role_id, scope_type, scope_id)
+    SELECT ${project.account_id}::uuid, 'service_account', ${SERVICE_ACCOUNT}::uuid, role_id, 'project', ${project.project_id}::uuid
+      FROM kortix.roles WHERE account_id IS NULL AND scope_type = 'project' AND key = 'member'`);
   rows = await loadSessionAccessRows(Object.values(ids));
 }, 30_000);
 
@@ -205,6 +221,75 @@ describe('filterSessionRecipients', () => {
       GROUPED,
       CREATOR,
     ]);
+  });
+});
+
+// KRTX-1742 review: a share to a 500-member group started 500 checks of ~7
+// queries each at once on a 5-connection pool.
+describe('the recipient checks run at most 4 at a time', () => {
+  test('a large candidate list keeps its order and never has more than 4 checks in flight', async () => {
+    const real = authorize.listAccessible;
+    let inFlight = 0;
+    let peak = 0;
+    const spy = spyOn(authorize, 'listAccessible').mockImplementation(async (...args) => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      try {
+        await Bun.sleep(5);
+        return await real(...args);
+      } finally {
+        inFlight -= 1;
+      }
+    });
+    try {
+      const candidates = [PLAIN, MEMBER, GROUPED, CREATOR, MANAGER, OWNER, ACCOUNT_ONLY, STRANGER];
+      expect(await filterSessionRecipients(rows.get(ids.project)!, candidates)).toEqual([
+        PLAIN,
+        MEMBER,
+        GROUPED,
+        CREATOR,
+        MANAGER,
+        OWNER,
+      ]);
+      // One check lists the projects twice (read, manage) in parallel.
+      expect(peak).toBeLessThanOrEqual(4 * 2);
+
+      peak = 0;
+      expect(await filterTriggerRecipients(project.account_id, project.project_id, candidates)).toEqual([
+        PLAIN,
+        MEMBER,
+        GROUPED,
+        CREATOR,
+        MANAGER,
+        OWNER,
+      ]);
+      expect(peak).toBeLessThanOrEqual(4);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
+// KRTX-1742 review: a backend's service account created a session and got an
+// inbox row, which no one can read, on every turn end.
+describe('only a person (an account member) is ever a recipient', () => {
+  test('a service account the IAM lets open the session and read the triggers is not a recipient', async () => {
+    // The IAM alone lets it in: its own private session, a project role.
+    expect([...(await maySeeSessions(SERVICE_ACCOUNT, [rows.get(ids.trigger)!]))]).toEqual([ids.trigger]);
+    expect([...(await mayReadProjectTriggers(SERVICE_ACCOUNT, project.account_id, [project.project_id]))]).toEqual([
+      project.project_id,
+    ]);
+
+    expect(await filterSessionRecipients(rows.get(ids.trigger)!, [SERVICE_ACCOUNT, MANAGER])).toEqual([MANAGER]);
+    expect(await filterTriggerRecipients(project.account_id, project.project_id, [SERVICE_ACCOUNT, PLAIN])).toEqual([PLAIN]);
+  });
+
+  test('personsAmong keeps the account`s members, in order, once each', async () => {
+    expect(await personsAmong(project.account_id, [SERVICE_ACCOUNT, PLAIN, STRANGER, 'not-a-uuid', '', OWNER, PLAIN])).toEqual([
+      PLAIN,
+      OWNER,
+    ]);
+    expect(await personsAmong(project.account_id, [])).toEqual([]);
   });
 });
 

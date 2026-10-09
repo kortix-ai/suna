@@ -439,18 +439,33 @@ export function registerSessionStreamRoutes(): void {
 
           let presenceTimer: ReturnType<typeof setInterval> | null = null;
           if (presenceRenewal) {
+            // The lease expiry this stream wrote last, or null before its first write.
+            let leaseWrittenUntil: Date | null = null;
             const renew = () =>
               void renewSessionPresence(presenceRenewal.userId, sessionId, presenceRenewal.tabId, {
                 extendDeadline: presenceRenewal.extendDeadline,
-              }).catch(() => {});
+              })
+                .then((wrote) => {
+                  if (wrote) leaseWrittenUntil = wrote;
+                })
+                .catch(() => {});
             renew();
             presenceTimer = setInterval(renew, PRESENCE_RENEW_MS);
             (presenceTimer as unknown as { unref?: () => void }).unref?.();
             abort.signal.addEventListener('abort', () => {
               if (presenceTimer) clearInterval(presenceTimer);
               // KRTX-1742: a closed tab must not hold back pushes for the rest
-              // of its lease. A reconnecting stream's first renewal restores it.
-              void expireSessionPresence(presenceRenewal.userId, sessionId, presenceRenewal.tabId).catch(() => {});
+              // of its lease. Only the expiry this stream wrote: a newer stream
+              // of the same tab (a reconnect, a control-to-runtime upgrade) may
+              // have renewed it since. A reconnecting stream's renewal restores it.
+              if (leaseWrittenUntil) {
+                void expireSessionPresence(
+                  presenceRenewal.userId,
+                  sessionId,
+                  presenceRenewal.tabId,
+                  leaseWrittenUntil,
+                ).catch(() => {});
+              }
             }, { once: true });
           }
 

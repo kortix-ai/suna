@@ -82,21 +82,21 @@ afterAll(async () => {
 
 describe('renewSessionPresence', () => {
   test('a person who may start the session keeps the box for the idle grace, not 30 minutes', async () => {
-    expect(await renewSessionPresence(USER_ID, SESSION_ID, TAB_ID, { extendDeadline: true })).toBe(true);
+    expect(await renewSessionPresence(USER_ID, SESSION_ID, TAB_ID, { extendDeadline: true })).toBeInstanceOf(Date);
     const secs = await secondsLeft();
     expect(Math.abs(secs - idleGraceMs() / 1000)).toBeLessThanOrEqual(5);
     expect(await leaseSecondsLeft()).toBeGreaterThan(60);
   });
 
   test('a viewer who may not start the session keeps the lease and leaves the deadline alone', async () => {
-    expect(await renewSessionPresence(USER_ID, SESSION_ID, TAB_ID, { extendDeadline: false })).toBe(true);
+    expect(await renewSessionPresence(USER_ID, SESSION_ID, TAB_ID, { extendDeadline: false })).toBeInstanceOf(Date);
     expect(await secondsLeft()).toBeLessThanOrEqual(60);
     expect(await leaseSecondsLeft()).toBeGreaterThan(60);
   });
 
   test('a tab with no lease (idle, or hidden) renews nothing and extends nothing', async () => {
     await db.execute(sql`DELETE FROM kortix.session_presence_leases WHERE session_id = ${SESSION_ID}`);
-    expect(await renewSessionPresence(USER_ID, SESSION_ID, TAB_ID, { extendDeadline: true })).toBe(false);
+    expect(await renewSessionPresence(USER_ID, SESSION_ID, TAB_ID, { extendDeadline: true })).toBeNull();
     expect(await secondsLeft()).toBeLessThanOrEqual(60);
   });
 });
@@ -125,12 +125,31 @@ describe('the lease says whether the tab alerts, and a closed stream expires it'
 
   test('an ended stream expires the lease now; the reconnecting stream renews it back', async () => {
     await upsertSessionPresence(USER_ID, SESSION_ID, TAB_ID, true);
-    await expireSessionPresence(USER_ID, SESSION_ID, TAB_ID);
+    const wrote = await renewSessionPresence(USER_ID, SESSION_ID, TAB_ID, { extendDeadline: false });
+    await expireSessionPresence(USER_ID, SESSION_ID, TAB_ID, wrote!);
     expect(await lease()).toEqual({ alerts: true, live: false });
     expect((await loadSessionPresence(SESSION_ID, [USER_ID])).size).toBe(0);
 
-    expect(await renewSessionPresence(USER_ID, SESSION_ID, TAB_ID, { extendDeadline: false })).toBe(true);
+    expect(await renewSessionPresence(USER_ID, SESSION_ID, TAB_ID, { extendDeadline: false })).toBeInstanceOf(Date);
     expect(await lease()).toEqual({ alerts: true, live: true });
+  });
+
+  // KRTX-1742 review: an old stream of the tab ended after a new stream of the
+  // same tab renewed, and set the lease to expired: the person looked absent
+  // for up to 30 s and got a push for the session they were looking at.
+  test('an ended stream expires only the lease it wrote, never a newer stream`s renewal', async () => {
+    await upsertSessionPresence(USER_ID, SESSION_ID, TAB_ID, true);
+    const a = await renewSessionPresence(USER_ID, SESSION_ID, TAB_ID, { extendDeadline: false });
+    await Bun.sleep(5);
+    const b = await renewSessionPresence(USER_ID, SESSION_ID, TAB_ID, { extendDeadline: false });
+    expect(b!.getTime()).toBeGreaterThan(a!.getTime());
+
+    await expireSessionPresence(USER_ID, SESSION_ID, TAB_ID, a!);
+    expect(await lease()).toEqual({ alerts: true, live: true });
+    expect(await loadSessionPresence(SESSION_ID, [USER_ID])).toEqual(new Map([[USER_ID, { alerting: true }]]));
+
+    await expireSessionPresence(USER_ID, SESSION_ID, TAB_ID, b!);
+    expect(await lease()).toEqual({ alerts: true, live: false });
   });
 
   test('a hidden tab drops only its own lease', async () => {
@@ -189,7 +208,7 @@ describe('presence alone keeps a box at most 2 h past its latest turn', () => {
 
   test('a turn that ended 3 h ago: presence extends nothing, and the lease still renews', async () => {
     await lastTurnEndedMinutesAgo(180);
-    expect(await renewSessionPresence(USER_ID, SESSION_ID, TAB_ID, { extendDeadline: true })).toBe(true);
+    expect(await renewSessionPresence(USER_ID, SESSION_ID, TAB_ID, { extendDeadline: true })).toBeInstanceOf(Date);
     expect(await secondsLeft()).toBeLessThanOrEqual(60);
     expect(await leaseSecondsLeft()).toBeGreaterThan(60);
   });

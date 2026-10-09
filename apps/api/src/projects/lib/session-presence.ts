@@ -15,7 +15,7 @@
  * latest turn (`PRESENCE_ONLY_CAP_MS`), whatever the client reports.
  */
 import { sessionPresenceLeases } from '@kortix/db';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, lte, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { extendSandboxDeadlineForPresence } from '../sandbox-deadline';
 
@@ -62,29 +62,40 @@ export async function deleteSessionPresence(userId: string, sessionId: string, t
 /**
  * The tab's stream ended (tab closed, network lost): the lease stops counting
  * now, so a closed tab does not hold back pushes for up to 90 s (KRTX-1742).
+ * Only while the lease still holds `wroteUntil`, the expiry this stream wrote
+ * last: a newer stream's renewal or a `PUT` wrote a later one and survives.
  * The row stays: a reconnecting stream's renewal makes it live again.
  */
-export async function expireSessionPresence(userId: string, sessionId: string, tabId: string): Promise<void> {
-  await db.update(sessionPresenceLeases).set({ expiresAt: sql`now()` }).where(leaseOf(userId, sessionId, tabId));
+export async function expireSessionPresence(
+  userId: string,
+  sessionId: string,
+  tabId: string,
+  wroteUntil: Date,
+): Promise<void> {
+  await db
+    .update(sessionPresenceLeases)
+    .set({ expiresAt: sql`now()` })
+    .where(and(leaseOf(userId, sessionId, tabId), lte(sessionPresenceLeases.expiresAt, wroteUntil)));
 }
 
 /**
  * Extend the lease of one (user, session, tab), and, with `extendDeadline`,
  * the box deadline by the idle grace. Only a lease the tab created exists to
- * renew; a hidden or idle tab's was deleted.
+ * renew; a hidden or idle tab's was deleted. Returns the expiry written, or
+ * null when there was no lease.
  */
 export async function renewSessionPresence(
   userId: string,
   sessionId: string,
   tabId: string,
   opts: { extendDeadline: boolean },
-): Promise<boolean> {
-  const renewed = await db
+): Promise<Date | null> {
+  const [renewed] = await db
     .update(sessionPresenceLeases)
     .set({ expiresAt: new Date(Date.now() + PRESENCE_LEASE_MS) })
     .where(leaseOf(userId, sessionId, tabId))
-    .returning({ tabId: sessionPresenceLeases.tabId });
-  if (renewed.length === 0) return false;
+    .returning({ expiresAt: sessionPresenceLeases.expiresAt });
+  if (!renewed) return null;
   if (opts.extendDeadline) await extendSandboxDeadlineForPresence({ sessionId });
-  return true;
+  return renewed.expiresAt;
 }

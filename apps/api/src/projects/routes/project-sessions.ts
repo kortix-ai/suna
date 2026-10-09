@@ -565,8 +565,9 @@ export function registerProjectSessionsRoutes(): void {
 
     await setSessionSharing(sessionId, intent);
     // "Shared with you" for the people this change newly names (KRTX-1742).
-    // `visible.grants` are the grants BEFORE the change. Fire-and-forget: it
-    // never throws and never delays or fails the share.
+    // `visible.grants` and `visible.row.visibility` were read BEFORE the
+    // change. Fire-and-forget: it never throws and never delays or fails the
+    // share.
     void notifySessionShared({
       accountId: loaded.row.accountId,
       projectId,
@@ -574,6 +575,7 @@ export function registerProjectSessionsRoutes(): void {
       sharerId: loaded.userId,
       creatorId: visible.row.createdBy,
       priorGrants: visible.grants,
+      priorVisibility: visible.row.visibility,
       intent,
     });
 

@@ -9,7 +9,7 @@ import type { SecretGrant, SharingIntent } from '../../connectors/share';
 import { accountGroupsAmong, groupMemberRows } from '../../iam/group-read';
 import { accountMembersAmong } from '../../iam/membership-read';
 import { logger } from '../../lib/logger';
-import { filterSessionRecipients, loadSessionAccessRows } from '../../notifications/access';
+import { filterSessionRecipients, loadSessionAccessRows, personsAmong } from '../../notifications/access';
 import { deliver, type DeliverInput } from '../../notifications/notifier';
 import { sessionTitleOf, type SessionOriginClass, type SessionPushEvent } from '../../notifications/session-push';
 import { db } from '../../shared/db';
@@ -52,8 +52,9 @@ export function classifySession(metadata: unknown, origin: string | null | undef
 /**
  * The person whose prompt the turn with this wire message id answers: the
  * newest `continue_session` row the id names, when that row bound the turn to
- * a person (`bindTurnIdentity`) and no agent session wrote it. A trigger,
- * channel follow-up or agent prompt has no person prompter.
+ * a person (`bindTurnIdentity`), no agent session wrote it, and its actor is a
+ * member of the account. A trigger, channel follow-up or agent prompt has no
+ * person prompter.
  */
 export async function personPrompterOf(
   sessionId: string,
@@ -75,8 +76,11 @@ export async function personPrompterOf(
     .limit(1);
   const payload = (row?.payload ?? {}) as Record<string, unknown>;
   if (!row?.actorUserId || payload.bindTurnIdentity !== true || payload.authorSessionId != null) return null;
-  // An API key stands in for the account; it is not a person.
-  return row.actorUserId === accountId ? null : row.actorUserId;
+  // Only a member of the account is a person. A personal account's owner is
+  // one (its account id is their user id); a service account is not, and
+  // neither is a team API key, which acts as the account id.
+  const [person] = await personsAmong(accountId, [row.actorUserId]);
+  return person ?? null;
 }
 
 /** The person who prompted the session's running turn (the newest live turn). */
@@ -131,7 +135,16 @@ export async function askNotificationContext(session: NotificationSessionRef): P
     orFallback(() => runningTurnPrompter(session.sessionId, session.accountId), null, 'running_turn_prompter', session.sessionId),
     originClass === 'unattended' && !isChild && triggerSlug
       ? orFallback(
-          () => resolveTriggerWatchers({ accountId: session.accountId, projectId: session.projectId, slug: triggerSlug }),
+          async () => {
+            // A watcher must be able to open the run session to see the ask;
+            // when none can, the project managers are asked instead.
+            const row = (await loadSessionAccessRows([session.sessionId])).get(session.sessionId);
+            if (!row) return [];
+            return resolveTriggerWatchers(
+              { accountId: session.accountId, projectId: session.projectId, slug: triggerSlug },
+              (ids) => filterSessionRecipients(row, ids),
+            );
+          },
           [] as string[],
           'trigger_watchers',
           session.sessionId,
@@ -149,6 +162,8 @@ export interface SessionShareChange {
   creatorId: string | null;
   /** The session's grants BEFORE `setSessionSharing` replaced them. */
   priorGrants: readonly SecretGrant[];
+  /** The session's visibility BEFORE the change. */
+  priorVisibility: string;
   intent: SharingIntent;
   now?: Date;
 }
@@ -157,7 +172,9 @@ export interface SessionShareChange {
  * "Shared with you" for the people a members share newly names (design §3.2):
  * the account's members and the members of the account's groups in the new
  * share, minus everyone the previous grants already named, the sharer and the
- * creator, minus anyone who cannot open the session after the change.
+ * creator, minus anyone who cannot open the session after the change. A
+ * project-visible session narrowed to named members tells nobody: every
+ * project member could already open it.
  * One row per person per session per UTC day, so toggling a share cannot
  * flood anyone. Returns the users told.
  */
@@ -165,7 +182,7 @@ export async function notifySessionShared(
   change: SessionShareChange,
   send: (input: DeliverInput) => Promise<unknown> = deliver,
 ): Promise<string[]> {
-  if (change.intent.mode !== 'members') return [];
+  if (change.intent.mode !== 'members' || change.priorVisibility === 'project') return [];
   try {
     const memberIds = (change.intent.memberIds ?? []).filter(isUuid);
     const groupIds = (change.intent.groupIds ?? []).filter(isUuid);

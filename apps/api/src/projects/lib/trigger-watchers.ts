@@ -5,7 +5,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { projectTriggerRuntime, triggerWatchers } from '@kortix/db';
 import { projectManagerUserIds } from '../../iam/project-managers';
-import { filterTriggerRecipients } from '../../notifications/access';
+import { filterSessionRecipients, filterTriggerRecipients, loadSessionAccessRows } from '../../notifications/access';
 import { db } from '../../shared/db';
 
 export interface TriggerRef {
@@ -37,20 +37,34 @@ export function triggerWatcherOf(credential: WatcherCredential): string | null {
   return credential.userId || null;
 }
 
+/** Of `ids`, the users who may receive this notification now. */
+export type RecipientFilter = (ids: readonly string[]) => Promise<string[]>;
+
 /**
- * The users to alert for this trigger, already access-checked: unmuted
- * watcher rows plus the implicit `project_trigger_runtime.owner_user_id`;
- * when none of them may read the project's triggers (and no muted watcher
- * with access exists), the project managers.
+ * The users to notify for this trigger, already access-checked by
+ * `canReceive` (default: may read the project's triggers): unmuted watcher
+ * rows plus the implicit `project_trigger_runtime.owner_user_id`; when none
+ * of them passes (and no muted watcher passes), the project managers.
+ *
+ * A reminder's name is free text about its session, so a reminder's users
+ * must also be able to open that session. When the session is gone, only
+ * the reminder's own users hear: the managers never learned of it.
  */
-export async function resolveTriggerWatchers(ref: TriggerRef): Promise<string[]> {
+export async function resolveTriggerWatchers(
+  ref: TriggerRef,
+  canReceive: RecipientFilter = (ids) => filterTriggerRecipients(ref.accountId, ref.projectId, ids),
+): Promise<string[]> {
   const [rows, [runtime]] = await Promise.all([
     db
       .select({ userId: triggerWatchers.userId, muted: triggerWatchers.muted })
       .from(triggerWatchers)
       .where(and(eq(triggerWatchers.projectId, ref.projectId), eq(triggerWatchers.slug, ref.slug))),
     db
-      .select({ ownerUserId: projectTriggerRuntime.ownerUserId })
+      .select({
+        ownerUserId: projectTriggerRuntime.ownerUserId,
+        reminder: sql<boolean>`${projectTriggerRuntime.scheduleSpec} ->> 'reminder' is not null`,
+        pinnedSessionId: sql<string | null>`${projectTriggerRuntime.scheduleSpec} ->> 'pinnedSessionId'`,
+      })
       .from(projectTriggerRuntime)
       .where(and(eq(projectTriggerRuntime.projectId, ref.projectId), eq(projectTriggerRuntime.slug, ref.slug)))
       .limit(1),
@@ -60,13 +74,23 @@ export async function resolveTriggerWatchers(ref: TriggerRef): Promise<string[]>
   const owner = runtime?.ownerUserId;
   if (owner && !muted.includes(owner)) candidates.push(owner);
 
-  const passing = await filterTriggerRecipients(ref.accountId, ref.projectId, candidates);
+  let gate = canReceive;
+  if (runtime?.reminder) {
+    const pinned = runtime.pinnedSessionId;
+    const session = pinned ? (await loadSessionAccessRows([pinned])).get(pinned) : undefined;
+    if (!session || typeof (session.metadata as { deletedAt?: unknown } | null)?.deletedAt === 'string') {
+      return canReceive(candidates);
+    }
+    gate = async (ids) => filterSessionRecipients(session, await canReceive(ids));
+  }
+
+  const passing = await gate(candidates);
   if (passing.length > 0) return passing;
   // Someone who can still see the trigger chose silence: respect it.
-  if ((await filterTriggerRecipients(ref.accountId, ref.projectId, muted)).length > 0) return [];
+  if ((await gate(muted)).length > 0) return [];
   // Nobody follows it any more (a demoted creator, an API-created trigger):
   // the people who can fix it hear about it.
-  return filterTriggerRecipients(ref.accountId, ref.projectId, await projectManagerUserIds(ref.accountId, ref.projectId));
+  return gate(await projectManagerUserIds(ref.accountId, ref.projectId));
 }
 
 /** The caller created or edited the trigger: follow it. Never un-mutes. */

@@ -25,6 +25,7 @@ const SESSION_ID = '55555555-5555-4555-8555-555555555555';
 let sessionMetadata: Record<string, unknown> = {};
 let inserted = true;
 let relayOk = false;
+let relayThrows = false;
 const notified: Array<Record<string, unknown>> = [];
 const contexts: Array<Record<string, unknown>> = [];
 
@@ -57,7 +58,10 @@ mock.module('../lib/pending-questions', () => ({
 }));
 
 mock.module('../../channels/turn-relay', () => ({
-  relayTurnQuestion: async () => (relayOk ? { ok: true, answers: [['x']] } : { ok: false, error: 'no_channel' }),
+  relayTurnQuestion: async () => {
+    if (relayThrows) throw new Error('db down');
+    return relayOk ? { ok: true, answers: [['x']] } : { ok: false, error: 'no_channel' };
+  },
 }));
 
 mock.module('../../channels/question-release', () => ({
@@ -111,6 +115,7 @@ beforeEach(() => {
   sessionMetadata = {};
   inserted = true;
   relayOk = false;
+  relayThrows = false;
   notified.length = 0;
   contexts.length = 0;
 });
@@ -163,6 +168,18 @@ describe('POST /turn-question — who is notified', () => {
     sessionMetadata = { source: 'slack' };
     await ask(sandboxCtx);
     expect(notified[0]).toMatchObject({ threadCarriesAsk: false });
+  });
+
+  // KRTX-1742 review: a relay that threw answered 500 before the notification,
+  // and the daemon never retries, so the stored question reached nobody.
+  test('a relay that throws still notifies, and the route still answers', async () => {
+    sessionMetadata = { source: 'slack' };
+    relayThrows = true;
+    const response = await ask(sandboxCtx);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ ok: true, persisted: true, channel_error: 'relay_failed' });
+    expect(notified).toHaveLength(1);
+    expect(notified[0]).toMatchObject({ type: 'question', threadCarriesAsk: false });
   });
 
   test('a question without a runtime request id is deduped on the stored fallback id', async () => {

@@ -13,10 +13,12 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import {
   accountMembers,
+  accounts,
   notifications,
   projectMembers,
   projectSessions,
   pushDeviceTokens,
+  serviceAccounts,
   sessionLifecycleCommands,
   sessionPresenceLeases,
   sessionSandboxes,
@@ -45,9 +47,12 @@ const C = crypto.randomUUID(); // project member, follows it explicitly
 const W = crypto.randomUUID(); // project member, follows the trigger
 const OUTSIDER = crypto.randomUUID(); // account member without the project
 const SERVICE_ACCOUNT = crypto.randomUUID(); // a trigger session's creator
-const users = [OWNER, A, B, C, W, OUTSIDER];
+const BACKEND_SA = crypto.randomUUID(); // a backend's service account, with a project role
+const PERSONAL = crypto.randomUUID(); // the owner of a personal account: account_id === user_id
+const users = [OWNER, A, B, C, W, OUTSIDER, PERSONAL];
 
 let project: SeededProject;
+let personal: SeededProject;
 
 interface Sent {
   expo: ExpoPushMessage[];
@@ -80,13 +85,29 @@ beforeAll(async () => {
   await db.insert(pushDeviceTokens).values(
     users.map((userId) => ({ token: `ExponentPushToken[${userId}]`, userId, platform: 'ios' })),
   );
+  // A backend's service account the IAM lets read the project's sessions.
+  await db.insert(serviceAccounts).values({
+    serviceAccountId: BACKEND_SA,
+    accountId: project.account_id,
+    name: 'notify-recipients-sa',
+    secretHash: `h_${BACKEND_SA}`,
+    publicPrefix: `kortix_sa_${BACKEND_SA.slice(0, 6)}`,
+  });
+  await db.execute(sql`
+    INSERT INTO kortix.role_assignments (account_id, principal_type, principal_id, role_id, scope_type, scope_id)
+    SELECT ${project.account_id}::uuid, 'service_account', ${BACKEND_SA}::uuid, role_id, 'project', ${project.project_id}::uuid
+      FROM kortix.roles WHERE account_id IS NULL AND scope_type = 'project' AND key = 'member'`);
+  // A personal account: its id is its owner's user id.
+  await db.insert(accounts).values({ accountId: PERSONAL, name: 'notify-recipients-personal' });
+  await insertIntoView(db, accountMembers, [{ userId: PERSONAL, accountId: PERSONAL, accountRole: 'owner' }]);
+  personal = await seedProject('notify-recipients-personal', { accountId: PERSONAL });
 }, 30_000);
 
 afterAll(async () => {
   if (!project) return;
   await db.delete(pushDeviceTokens).where(inArray(pushDeviceTokens.userId, users));
   await db.delete(sessionSandboxes).where(eq(sessionSandboxes.projectId, project.project_id));
-  await removeSeeded([project]);
+  await removeSeeded(personal ? [project, personal] : [project]);
   await db.execute(sql`DELETE FROM auth.users WHERE id IN (${sql.join(users.map((id) => sql`${id}::uuid`), sql`, `)})`);
 });
 
@@ -105,20 +126,23 @@ beforeEach(() => {
   });
 });
 
-/** A visibility-'project' session, so every project member may open it. */
+/** A visibility-'project' session by default, so every project member may open it. */
 async function seedSession(options: {
   createdBy?: string;
   metadata?: Record<string, unknown>;
   origin?: 'user' | 'trigger' | 'schedule' | 'backend' | 'system';
+  visibility?: 'private' | 'project';
+  in?: SeededProject;
 } = {}): Promise<string> {
   const sessionId = crypto.randomUUID();
+  const where = options.in ?? project;
   await db.insert(projectSessions).values({
     sessionId,
-    accountId: project.account_id,
-    projectId: project.project_id,
+    accountId: where.account_id,
+    projectId: where.project_id,
     branchName: `session/${sessionId}`,
     createdBy: options.createdBy ?? A,
-    visibility: 'project',
+    visibility: options.visibility ?? 'project',
     origin: options.origin ?? 'user',
     metadata: { name: 'Refactor the billing page', source: 'ui', ...options.metadata },
   });
@@ -131,13 +155,14 @@ async function seedPrompt(
   actorUserId: string,
   messageId: string,
   payload: Record<string, unknown> = { bindTurnIdentity: true },
+  where: SeededProject = project,
 ): Promise<void> {
   await db.insert(sessionLifecycleCommands).values({
     commandType: 'continue_session',
     source: 'ui',
     status: 'succeeded',
-    projectId: project.project_id,
-    accountId: project.account_id,
+    projectId: where.project_id,
+    accountId: where.account_id,
     sessionId,
     actorUserId,
     payload: { clientMessageId: messageId, wireMessageId: messageId, ...payload },
@@ -161,19 +186,24 @@ async function seedRunningTurn(sessionId: string, messageId: string): Promise<vo
   });
 }
 
-async function sessionRef(sessionId: string) {
+async function sessionRef(sessionId: string, where: SeededProject = project) {
   const [row] = await db
     .select({ metadata: projectSessions.metadata, origin: projectSessions.origin })
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, sessionId));
-  return { sessionId, projectId: project.project_id, accountId: project.account_id, metadata: row!.metadata, origin: row!.origin };
+  return { sessionId, projectId: where.project_id, accountId: where.account_id, metadata: row!.metadata, origin: row!.origin };
 }
 
 /** What `publishTurnEnd` runs for a closed turn end. */
-async function endTurn(sessionId: string, messageId: string, extra: Partial<SessionPushEvent> = {}) {
-  const context = await turnEndNotificationContext(await sessionRef(sessionId), messageId);
+async function endTurn(
+  sessionId: string,
+  messageId: string,
+  extra: Partial<SessionPushEvent> = {},
+  where: SeededProject = project,
+) {
+  const context = await turnEndNotificationContext(await sessionRef(sessionId, where), messageId);
   return notifySessionEvent(
-    { type: 'completion', sessionId, projectId: project.project_id, turnMessageId: messageId, ...context, ...extra },
+    { type: 'completion', sessionId, projectId: where.project_id, turnMessageId: messageId, ...context, ...extra },
     deps,
   );
 }
@@ -241,6 +271,33 @@ describe('the person who prompted a turn', () => {
     for (const id of ['msg_trigger', 'msg_agent', 'msg_api_key']) {
       expect(await personPrompterOf(sessionId, project.account_id, id)).toBeNull();
     }
+  });
+
+  // KRTX-1742 review: the old rule compared the actor with the account id, so
+  // a personal account's owner (account_id === user_id) was never a prompter.
+  test('is the owner of a personal account, who is told when their unattended turn ends', async () => {
+    const metadata = { trigger_kind: 'git', trigger_slug: 'personal-nightly', source: 'trigger:cron' };
+    const sessionId = await seedSession({ in: personal, createdBy: SERVICE_ACCOUNT, origin: 'trigger', metadata });
+    await seedPrompt(sessionId, PERSONAL, 'msg_personal', { bindTurnIdentity: true }, personal);
+    expect(await personPrompterOf(sessionId, PERSONAL, 'msg_personal')).toBe(PERSONAL);
+
+    expect((await endTurn(sessionId, 'msg_personal', {}, personal)).reason).toBe('delivered');
+    expect(await rowsFor(sessionId)).toEqual([
+      { userId: PERSONAL, kind: 'turn_done', body: '', actorUserId: PERSONAL, readAt: null },
+    ]);
+  });
+
+  // KRTX-1742 review: a backend's service account got an unreadable row on
+  // every turn end, and was named the actor of everyone else's.
+  test('is never a service account, which is never told either', async () => {
+    const sessionId = await seedSession({ createdBy: BACKEND_SA, origin: 'backend' });
+    await setSessionWatch(project.project_id, sessionId, C, true);
+    await seedPrompt(sessionId, BACKEND_SA, 'msg_sa');
+    expect(await personPrompterOf(sessionId, project.account_id, 'msg_sa')).toBeNull();
+
+    expect((await endTurn(sessionId, 'msg_sa')).reason).toBe('delivered');
+    expect(await rowsFor(sessionId)).toEqual([{ userId: C, kind: 'turn_done', body: '', actorUserId: null, readAt: null }]);
+    expect(pushedTo()).toEqual([token(C)]);
   });
 
   test('of the running turn is read from the sandbox`s newest live turn', async () => {
@@ -410,6 +467,28 @@ describe('asks (question / permission)', () => {
     await db.insert(triggerWatchers).values({ projectId: project.project_id, slug: 'nightly-ask', userId: W });
     await askQuestion(sessionId, 'que_cron');
     expect(await recipientsOf(sessionId)).toEqual([W]);
+  });
+
+  // KRTX-1742 review: a watcher who may read the trigger but not open its
+  // private run session hid the ask from everyone, managers included.
+  test('an unattended ask whose watchers cannot open the run session reaches the project managers', async () => {
+    const metadata = { trigger_kind: 'git', trigger_slug: 'private-ask', source: 'trigger:cron' };
+    const sessionId = await seedSession({ createdBy: SERVICE_ACCOUNT, origin: 'schedule', visibility: 'private', metadata });
+    await db.insert(triggerWatchers).values({ projectId: project.project_id, slug: 'private-ask', userId: W });
+    expect(await askNotificationContext(await sessionRef(sessionId))).toMatchObject({ triggerWatcherIds: [OWNER] });
+    await askQuestion(sessionId, 'que_private');
+    expect(await recipientsOf(sessionId)).toEqual([OWNER]);
+  });
+
+  test('a manager who muted the trigger and can open the run session keeps it silent', async () => {
+    const metadata = { trigger_kind: 'git', trigger_slug: 'private-muted', source: 'trigger:cron' };
+    const sessionId = await seedSession({ createdBy: SERVICE_ACCOUNT, origin: 'schedule', visibility: 'private', metadata });
+    await db.insert(triggerWatchers).values([
+      { projectId: project.project_id, slug: 'private-muted', userId: W },
+      { projectId: project.project_id, slug: 'private-muted', userId: OWNER, muted: true },
+    ]);
+    expect((await askQuestion(sessionId, 'que_muted')).reason).toBe('no_recipient');
+    expect(await recipientsOf(sessionId)).toEqual([]);
   });
 
   test('a child session ask reaches the person who launched the coordinator', async () => {

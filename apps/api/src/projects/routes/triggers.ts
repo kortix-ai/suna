@@ -34,6 +34,7 @@ import { markGitTriggerAttemptFailed } from '../lib/trigger-fire';
 import { raiseTriggerAlert } from '../lib/trigger-alerts';
 import { deleteTriggerWatchers, triggerWatcherOf, upsertTriggerWatcher } from '../lib/trigger-watchers';
 import { getRequestOnBehalfOf } from '../../middleware/on-behalf-of';
+import { logger } from '../../lib/logger';
 import type { AppEnv } from '../../types';
 import { validateWebhookSecretConfiguration } from '../lib/webhook-secret-policy';
 import { reconcileProjectTriggerRuntime } from '../trigger-runtime-catalog';
@@ -63,7 +64,10 @@ async function followTrigger(c: Context<AppEnv>, accountId: string, projectId: s
     sessionId: c.get('sessionId'),
     onBehalfOfUserId: getRequestOnBehalfOf(c),
   });
-  if (userId) await upsertTriggerWatcher({ accountId, projectId, slug, userId });
+  if (!userId) return;
+  // Best-effort: the manifest is already committed, so a failed write must not fail the route.
+  await upsertTriggerWatcher({ accountId, projectId, slug, userId }).catch((err) =>
+    logger.warn('[trigger-watchers] follow failed', { projectId, slug, error: err instanceof Error ? err.message : String(err) }));
 }
 
 /** Body keys that change which event a trigger subscribes to. */
@@ -716,7 +720,8 @@ export function registerTriggersRoutes(): void {
         .where(
           and(eq(projectTriggerRuntime.projectId, projectId), eq(projectTriggerRuntime.slug, slug)),
         );
-      await deleteTriggerWatchers({ projectId, slug });
+      await deleteTriggerWatchers({ projectId, slug }).catch((err) =>
+        logger.warn('[trigger-watchers] cleanup failed', { projectId, slug, error: err instanceof Error ? err.message : String(err) }));
       if (remainingManifest) {
         await reconcileEventSubscriptions(projectId, loaded.row.accountId, extractTriggers(remainingManifest).specs);
       }
@@ -826,7 +831,8 @@ export function registerTriggersRoutes(): void {
       });
 
       if (result.status === 'queued') {
-        await markGitTriggerFired(projectId, slug, now);
+        // Not run yet: its delivery ends an alert streak, not this handoff (KRTX-1742).
+        await markGitTriggerFired(projectId, slug, now, 'fired', { endsAlert: false });
         return c.json(
           {
             status: 'queued' as const,
@@ -842,8 +848,12 @@ export function registerTriggersRoutes(): void {
         const error = result.error ?? 'Failed to fire trigger';
         // Recorded like a failed cron fire, so the trigger says it failed (KRTX-1743).
         await markGitTriggerAttemptFailed(projectId, slug, now, error).catch(() => {});
-        // The first failure of a streak alerts the watchers, not only the firer (KRTX-1742).
-        await raiseTriggerAlert({ projectId, accountId: loaded.row.accountId, slug, source: 'fire', error });
+        // The first failure of a streak alerts the watchers, not only the firer
+        // (KRTX-1742). A create that went back to the queue alerts from the
+        // drain only if it dead-letters.
+        if (!result.requeued) {
+          await raiseTriggerAlert({ projectId, accountId: loaded.row.accountId, slug, source: 'fire', error });
+        }
         return c.json({ error }, 500);
       }
       await markGitTriggerFired(projectId, slug, now);

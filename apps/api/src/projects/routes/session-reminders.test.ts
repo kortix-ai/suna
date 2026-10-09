@@ -18,6 +18,8 @@ const AGENT_USER_ID = '7a500000-0000-4000-a000-000000000001';
 
 let credential: Record<string, unknown> = {};
 let followed: Array<Record<string, unknown>> = [];
+let inserted = 0;
+let followFailures = 0;
 
 mock.module('../lib/access', () => ({
   ...realAccess,
@@ -35,12 +37,19 @@ mock.module('../lib/agent-access', () => ({
 mock.module('../lib/session-reminders', () => ({
   ...realReminders,
   countActiveSessionReminders: async () => 0,
-  insertSessionReminderWithinCaps: async (input: { spec: { slug: string } }) => ({ row: { slug: input.spec.slug } }),
+  insertSessionReminderWithinCaps: async (input: { spec: { slug: string } }) => {
+    inserted += 1;
+    return { row: { slug: input.spec.slug } };
+  },
   serializeSessionReminder: (row: { slug: string }) => ({ id: row.slug }),
 }));
 mock.module('../lib/trigger-watchers', () => ({
   ...realWatchers,
   upsertTriggerWatcher: async (ref: Record<string, unknown>) => {
+    if (followFailures > 0) {
+      followFailures -= 1;
+      throw new Error('connection terminated');
+    }
     followed.push(ref);
   },
 }));
@@ -65,6 +74,8 @@ async function createReminder(): Promise<{ status: number; id: string }> {
 
 beforeEach(() => {
   followed = [];
+  inserted = 0;
+  followFailures = 0;
 });
 
 describe('a new reminder', () => {
@@ -90,6 +101,15 @@ describe('a new reminder', () => {
     credential = { userId: ACCOUNT_ID, authType: 'apiKey' };
     expect((await createReminder()).status).toBe(201);
 
+    expect(followed).toEqual([]);
+  });
+
+  test('is created once, though recording its follower fails', async () => {
+    credential = { userId: PERSON_ID, authType: 'supabase', sessionId: '7a600000-0000-4000-a000-000000000001' };
+    followFailures = 1;
+    expect((await createReminder()).status).toBe(201);
+
+    expect(inserted).toBe(1);
     expect(followed).toEqual([]);
   });
 });

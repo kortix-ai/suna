@@ -15,6 +15,7 @@ import { deleteFromView, insertIntoView } from '../__tests__/helpers/compat-view
 import { removeSeeded, seedProject, seedSession, type SeededProject } from '../__tests__/helpers/integration-fixtures';
 import {
   filterVisibleNotificationRows,
+  INBOX_PAGE_SCAN_BATCHES,
   INBOX_UNREAD_SCAN,
   listInbox,
   markInboxRead,
@@ -242,6 +243,44 @@ withDb('notification inbox read', () => {
 
     expect(await unreadCount(MEMBER)).toBe(INBOX_UNREAD_SCAN - 1);
     expect((await listInbox(MEMBER, { limit: 5 })).unread_count).toBe(INBOX_UNREAD_SCAN - 1);
+  });
+
+  // KRTX-1742 review: the access filter ran after LIMIT, so a deleted busy
+  // session filled the bell's only page with hidden rows: an empty list under
+  // an unread badge, and the older visible rows out of reach.
+  test('hidden rows newer than a full page do not empty it: the page reads older batches', async () => {
+    const live = await projectSession(CREATOR);
+    const gone = await projectSession(CREATOR, { deletedAt: '2026-10-09T10:00:00.000Z' });
+    const liveRows: string[] = [];
+    for (let i = 0; i < 3; i++) liveRows.push(await seedRow(MEMBER, { sessionId: live }));
+    const bulk = (n: number) =>
+      Array.from({ length: n }, () => ({
+        userId: MEMBER,
+        accountId: project.account_id,
+        projectId: project.project_id,
+        sessionId: gone,
+        kind: 'turn_done',
+        title: 'Hidden',
+      }));
+    await db.insert(notifications).values(bulk(60));
+
+    const page = await listInbox(MEMBER, { limit: 50 });
+    expect(page.notifications.map((n) => n.id)).toEqual([...liveRows].reverse());
+    expect(page.unread_count).toBe(3);
+    expect(page.next_before).toBeNull();
+
+    // A scan stops after its batches: a short page still points further back.
+    await db.insert(notifications).values(bulk(INBOX_PAGE_SCAN_BATCHES * 10));
+    const capped = await listInbox(MEMBER, { limit: 10 });
+    expect(capped.notifications).toEqual([]);
+    expect(capped.next_before).not.toBeNull();
+    const rest = await listInbox(MEMBER, { limit: 10, before: capped.next_before });
+    expect(rest.notifications).toEqual([]);
+    expect(rest.next_before).not.toBeNull();
+    // No gap: the walk reaches the visible rows, then ends.
+    const last = await listInbox(MEMBER, { limit: 10, before: rest.next_before });
+    expect(last.notifications.map((n) => n.id)).toEqual([...liveRows].reverse());
+    expect(last.next_before).toBeNull();
   });
 
   test('pages walk back by notification id with no gap and no repeat', async () => {

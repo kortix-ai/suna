@@ -414,6 +414,8 @@ An alert is a [notification](/docs/work/notifications) about a trigger that stop
 - **The people who wrote the trigger.** That is the person who created it, and each person who edited it later, through the web app, the API, the SDK, or the CLI (`kortix triggers add --apply`, `kortix triggers set`). An agent that creates or edits a trigger with its session token counts as the person it acts for. An API key and a service account count as nobody.
 - **The project managers**, when none of those people can still read the project's triggers: the account owners, the account admins, and the people assigned the project's **Manager** role directly, not through a group.
 
+A reminder alert goes only to people who can open the reminder's session. The person who set the reminder gets it. When that person can no longer get it, the project managers who can open the session get it. When the session is deleted, only the person who set the reminder can get it.
+
 A trigger with no recorded writer alerts the project managers. That is a trigger added by editing `kortix.yaml` and running `kortix ship`, or a trigger created before alerts existed. The next person who edits it through the API becomes a recipient. Deleting a trigger deletes its recipients.
 
 ### When an alert fires
@@ -422,10 +424,12 @@ Kortix tracks two kinds of failure. A trigger has at most one open alert. Only a
 
 | Failure | Starts the alert | Sends the recovery alert |
 | --- | --- | --- |
-| A fire fails | A fire that fails for good, for example a session that cannot be created because the account is out of credits. | The next fire that succeeds. |
+| A fire fails | A fire that fails for good, for example a session that cannot be created because the account is out of credits. | The next fire that reaches a session. A fire that queues its prompt or its session create ends the alert when the queued work is delivered. |
 | A run fails | A session the trigger started ends its turn with an error. See [Failed runs](#failed-runs). | The next run that finishes. |
 
-Kortix retries a cron fire, a reminder, and a monitor event before it gives up. It alerts when it gives up, never on a retried attempt. A manual, webhook, or app event fire does not retry, so its first failure alerts.
+Kortix retries a cron fire, a reminder, and a monitor event before it gives up. It alerts when it gives up, never on a retried attempt. A session create that Kortix puts back in its queue alerts only when its retries run out.
+
+A manual or webhook fire alerts on its first failure, because Kortix cannot know whether the sender retries. An app event fire alerts on its first failure only when a retry cannot help, for example when the account is out of credits. For a failure that a retry can fix, the app sends the event again, and Kortix alerts when the third delivery of the same event fails.
 
 Kortix emails the `automation_failed` alert at once, when the deployment can send email. The `automation_recovered` alert gets a push only, unless you turn its **Email** switch on.
 

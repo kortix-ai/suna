@@ -141,6 +141,21 @@ function announce(
   void run.finally(() => inFlight.delete(run));
 }
 
+/**
+ * The trigger whose fire a lifecycle command carried, or null. The drain uses
+ * it on both edges: a dead letter starts a streak, a queued create that
+ * reached its session ends one.
+ */
+export function commandTriggerSlug(row: { commandType: string; source: string; payload: unknown }): string | null {
+  const payload = (row.payload ?? {}) as { triggerSlug?: unknown; metadata?: { trigger_kind?: unknown; trigger_slug?: unknown } };
+  if (row.commandType === 'continue_session') {
+    return typeof payload.triggerSlug === 'string' ? payload.triggerSlug : null;
+  }
+  if (row.commandType !== 'create_session' || !row.source.startsWith('trigger:')) return null;
+  const slug = payload.metadata?.trigger_slug;
+  return payload.metadata?.trigger_kind === 'git' && typeof slug === 'string' && slug ? slug : null;
+}
+
 async function accountOf(projectId: string): Promise<string | null> {
   const [row] = await db
     .select({ accountId: projects.accountId })

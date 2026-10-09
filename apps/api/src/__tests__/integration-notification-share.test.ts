@@ -90,7 +90,11 @@ afterAll(async () => {
   await db.execute(sql`DELETE FROM auth.users WHERE id IN (${sql.join(users.map((id) => sql`${id}::uuid`), sql`, `)})`);
 });
 
-async function seedSession(grants: Array<{ principalType: 'member' | 'group'; principalId: string }> = [], createdBy = SHARER) {
+async function seedSession(
+  grants: Array<{ principalType: 'member' | 'group'; principalId: string }> = [],
+  createdBy = SHARER,
+  visibility: 'private' | 'project' | 'restricted' = grants.length ? 'restricted' : 'private',
+) {
   const sessionId = crypto.randomUUID();
   await db.insert(projectSessions).values({
     sessionId,
@@ -98,7 +102,7 @@ async function seedSession(grants: Array<{ principalType: 'member' | 'group'; pr
     projectId: project.project_id,
     branchName: `session/${sessionId}`,
     createdBy,
-    visibility: grants.length ? 'restricted' : 'private',
+    visibility,
     metadata: { name: 'Quarterly report' },
   });
   if (grants.length) await db.insert(projectSessionGrants).values(grants.map((g) => ({ sessionId, ...g })));
@@ -108,9 +112,23 @@ async function seedSession(grants: Array<{ principalType: 'member' | 'group'; pr
 /** What the PUT sharing route runs: capture, replace, emit. */
 async function share(sessionId: string, intent: SharingIntent, sharerId = SHARER, now = TODAY, creatorId: string | null = SHARER) {
   const priorGrants = (await loadSessionGrants([sessionId])).get(sessionId) ?? [];
+  const [prior] = await db
+    .select({ visibility: projectSessions.visibility })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, sessionId));
   await setSessionSharing(sessionId, intent);
   return notifySessionShared(
-    { accountId: project.account_id, projectId: project.project_id, sessionId, sharerId, creatorId, priorGrants, intent, now },
+    {
+      accountId: project.account_id,
+      projectId: project.project_id,
+      sessionId,
+      sharerId,
+      creatorId,
+      priorGrants,
+      priorVisibility: prior!.visibility,
+      intent,
+      now,
+    },
     send,
   );
 }
@@ -170,6 +188,13 @@ describe('shared with you', () => {
     await share(sessionId, { mode: 'private', ownerId: SHARER });
     await share(sessionId, { mode: 'members', memberIds: [NEW_MEMBER] }, SHARER, new Date('2026-10-10T00:00:01.000Z'));
     expect(await sharedRows(sessionId)).toHaveLength(2);
+  });
+
+  // KRTX-1742 review: narrowing took access away and told the people who kept it.
+  test('a project-visible session narrowed to named members tells nobody: they could open it already', async () => {
+    const sessionId = await seedSession([], SHARER, 'project');
+    expect(await share(sessionId, { mode: 'members', memberIds: [NEW_MEMBER, EARLIER_MEMBER], groupIds: [REVIEWERS] })).toEqual([]);
+    expect(await sharedRows(sessionId)).toEqual([]);
   });
 
   test('a project-wide or private share tells nobody', async () => {

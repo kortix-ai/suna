@@ -18,6 +18,7 @@ import {
   projectSessions,
   projectTriggerExecutions,
   projectTriggerRuntime,
+  serviceAccounts,
   sessionLifecycleCommands,
   triggerWatchers,
 } from '@kortix/db';
@@ -26,8 +27,9 @@ import { config } from '../config';
 import { checkBillingAdmission } from '../billing/services/billing-gate';
 import type { NotificationKindName } from '@kortix/shared/notification-kinds';
 import { db } from '../shared/db';
+import { assignRole, SYSTEM_ACTOR } from '../iam/assignments';
 import { insertIntoView } from './helpers/compat-views';
-import { removeSeeded, seedProject, type SeededProject } from './helpers/integration-fixtures';
+import { removeSeeded, seedProject, seedSession, type SeededProject } from './helpers/integration-fixtures';
 
 // Every create this suite drives is refused by the real billing gate, before
 // any git, model or sandbox step; the `transient-refusal` trigger's by a busy
@@ -49,8 +51,8 @@ const { drainTriggerExecutionQueue } = await import('../projects/lib/trigger-sch
 const { drainSessionLifecycleQueue } = await import('../projects/session-lifecycle');
 const { markGitTriggerFired } = await import('../projects/lib/trigger-fire');
 const { recordTriggerRunEnd } = await import('../projects/lib/trigger-run-outcome');
-const { setTriggerAlertNotifierForTest, settleTriggerAlerts } = await import('../projects/lib/trigger-alerts');
-const { upsertTriggerWatcher } = await import('../projects/lib/trigger-watchers');
+const { raiseTriggerAlert, setTriggerAlertNotifierForTest, settleTriggerAlerts } = await import('../projects/lib/trigger-alerts');
+const { resolveTriggerWatchers, upsertTriggerWatcher } = await import('../projects/lib/trigger-watchers');
 const { markCommandFailed } = await import('../projects/session-lifecycle/command-transitions');
 const { markTriggerRuntimeDelivered } = await import('../projects/trigger-execution-store');
 
@@ -85,6 +87,11 @@ function cronSpec(slug: string, name: string) {
     filter: null,
     reminder: null,
   };
+}
+
+/** A reminder on `sessionId`, as POST .../reminders writes it. */
+function reminderSpec(slug: string, name: string, sessionId: string) {
+  return { ...cronSpec(slug, name), sessionMode: 'pinned', pinnedSessionId: sessionId, reminder: { createdAt: new Date().toISOString() } };
 }
 
 async function seedTrigger(slug: string, spec: Record<string, unknown> = cronSpec(slug, `Trigger ${slug}`), ownerUserId: string | null = null) {
@@ -293,6 +300,73 @@ describe('who an alert reaches', () => {
 
     expect(await alertRows(slug)).toMatchObject([{ userId: MEMBER, kind: 'automation_failed', title: 'Reminder' }]);
   });
+
+  test('a reminder a service account set alerts the managers who can open its session, never the service account', async () => {
+    const slug = 'reminder.5a5a5a5a5a5a';
+    const serviceAccountId = crypto.randomUUID();
+    await db.insert(serviceAccounts).values({
+      serviceAccountId,
+      accountId: project.account_id,
+      name: `backend-${serviceAccountId}`,
+      secretHash: `sa-${serviceAccountId}`,
+      publicPrefix: 'kortix_sa_alerts',
+      createdBy: OWNER,
+    });
+    // A project role: the service account itself may read the project's triggers.
+    await assignRole(SYSTEM_ACTOR, project.account_id, {
+      principal: { type: 'service_account', id: serviceAccountId },
+      roleKey: 'member',
+      scope: { type: 'project', id: project.project_id },
+    });
+    const sessionId = await seedSession(project, OWNER);
+    await db.update(projectSessions).set({ visibility: 'project' }).where(eq(projectSessions.sessionId, sessionId));
+    await seedTrigger(slug, reminderSpec(slug, 'Check the backend job', sessionId), serviceAccountId);
+    await raiseTriggerAlert({ projectId: project.project_id, accountId: project.account_id, slug, source: 'fire', error: 'The session runtime did not answer' });
+    await settleTriggerAlerts();
+
+    expect(usersOf(await alertRows(slug))).toEqual([ADMIN, MANAGER, OWNER].sort());
+  });
+
+  test("a reminder on a private session reaches nobody who cannot open that session", async () => {
+    const slug = 'reminder.7b7b7b7b7b7b';
+    // Its creator lost the project, so nobody follows it any more.
+    const sessionId = await seedSession(project, DEMOTED);
+    await seedTrigger(slug, reminderSpec(slug, 'Follow up on the synthetic topic', sessionId), DEMOTED);
+    await raiseTriggerAlert({ projectId: project.project_id, accountId: project.account_id, slug, source: 'fire', error: 'The session runtime did not answer' });
+    await settleTriggerAlerts();
+
+    // The managers may read the triggers, but not the private session the name describes.
+    expect(await alertRows(slug)).toEqual([]);
+    const [runtime] = await db.select().from(projectTriggerRuntime).where(and(eq(projectTriggerRuntime.projectId, project.project_id), eq(projectTriggerRuntime.slug, slug)));
+    expect(runtime!.alertFailingSince).not.toBeNull();
+  });
+
+  test("a caller's recipient filter decides the watchers, the muted check and the manager fallback", async () => {
+    const slug = 'filtered-watchers';
+    await seedTrigger(slug);
+    await upsertTriggerWatcher({ accountId: project.account_id, projectId: project.project_id, slug, userId: MEMBER });
+    const ref = { accountId: project.account_id, projectId: project.project_id, slug };
+    // As an ask in a run session: only the people who may open the session.
+    const onlyManager = async (ids: readonly string[]) => ids.filter((id) => id === MANAGER);
+
+    expect(await resolveTriggerWatchers(ref)).toEqual([MEMBER]);
+    expect(await resolveTriggerWatchers(ref, onlyManager)).toEqual([MANAGER]);
+    // A muted watcher the filter rejects does not silence the fallback.
+    await db.update(triggerWatchers).set({ muted: true }).where(and(eq(triggerWatchers.slug, slug), eq(triggerWatchers.userId, MEMBER)));
+    expect(await resolveTriggerWatchers(ref, onlyManager)).toEqual([MANAGER]);
+    // A muted watcher the filter admits does.
+    await db.insert(triggerWatchers).values({ projectId: project.project_id, slug, userId: MANAGER, muted: true });
+    expect(await resolveTriggerWatchers(ref, onlyManager)).toEqual([]);
+  });
+
+  test('a reminder whose session is gone never falls back to the managers', async () => {
+    const slug = 'reminder.8c8c8c8c8c8c';
+    await seedTrigger(slug, reminderSpec(slug, 'Follow up on the synthetic topic', crypto.randomUUID()), DEMOTED);
+    await raiseTriggerAlert({ projectId: project.project_id, accountId: project.account_id, slug, source: 'fire', error: 'The reminder session is deleted or failed, so the reminder is now paused' });
+    await settleTriggerAlerts();
+
+    expect(await alertRows(slug)).toEqual([]);
+  });
 });
 
 describe('a failure the cron retries', () => {
@@ -349,6 +423,47 @@ describe('dead letters outside the cron attempt', () => {
     const rows = await alertRows(slug);
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ userId: MEMBER, kind: 'automation_failed' });
+  });
+
+  test('a queued trigger create the drain completes ends the fire streak once', async () => {
+    const slug = 'queued-create-recovers';
+    await seedTrigger(slug);
+    await upsertTriggerWatcher({ accountId: project.account_id, projectId: project.project_id, slug, userId: MEMBER });
+    await raiseTriggerAlert({ projectId: project.project_id, accountId: project.account_id, slug, source: 'fire', error: 'The sandbox provider is busy' });
+    // The fire that queued the create ends nothing: no session ran yet.
+    await markGitTriggerFired(project.project_id, slug, new Date(), 'queued');
+    // The create already made its session (an earlier attempt): the drain finishes it.
+    const sessionId = await seedSession(project, OWNER);
+    await db.insert(sessionLifecycleCommands).values({
+      commandType: 'create_session',
+      source: 'trigger:cron',
+      status: 'queued',
+      projectId: project.project_id,
+      accountId: project.account_id,
+      sessionId,
+      actorUserId: OWNER,
+      payload: {
+        body: { initial_prompt: 'Write the nightly report.' },
+        requestingPrincipalType: 'human',
+        visibility: 'private',
+        metadata: { trigger_source: 'cron', trigger_kind: 'git', trigger_slug: slug, trigger_type: 'cron' },
+      },
+      availableAt: new Date(Date.now() - 1_000),
+    });
+    await drainSessionLifecycleQueue({ workerId: 'trigger-alerts-test', limit: 10 });
+    await settleTriggerAlerts();
+
+    const [command] = await db
+      .select({ status: sessionLifecycleCommands.status })
+      .from(sessionLifecycleCommands)
+      .where(sql`${sessionLifecycleCommands.payload} -> 'metadata' ->> 'trigger_slug' = ${slug}`);
+    expect(command).toEqual({ status: 'succeeded' });
+    const [runtime] = await db.select().from(projectTriggerRuntime).where(and(eq(projectTriggerRuntime.projectId, project.project_id), eq(projectTriggerRuntime.slug, slug)));
+    expect(runtime).toMatchObject({ alertFailingSince: null, alertSource: null });
+    expect((await alertRows(slug)).map((row) => [row.userId, row.kind]).sort()).toEqual([
+      [MEMBER, 'automation_failed'],
+      [MEMBER, 'automation_recovered'],
+    ]);
   });
 
   test("a trigger prompt the drain gives up on alerts; the next delivered prompt recovers", async () => {

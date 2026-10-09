@@ -65,6 +65,10 @@ const alertCalls: Array<{ kind: 'raise' | 'clear'; input: Record<string, unknown
 const watcherCalls: Array<{ kind: 'follow' | 'drop'; ref: Record<string, unknown> }> = [];
 /** The credential kind the mocked auth reports; unset by default, as before. */
 let testAuthType: string | undefined;
+/** Set to make that seam throw: the provider pick, the model defaults read, a watcher write. */
+let providerFailure: Error | null = null;
+let modelDefaultsFailure: Error | null = null;
+let watcherFailure: Error | null = null;
 let provisioningSessionCount = 0;
 let secretRows: Array<typeof projectSecrets.$inferSelect>;
 let manifestReadCalls = 0;
@@ -130,6 +134,9 @@ function resetState() {
   alertCalls.length = 0;
   watcherCalls.length = 0;
   testAuthType = undefined;
+  providerFailure = null;
+  modelDefaultsFailure = null;
+  watcherFailure = null;
 }
 
 function sign(rawBody: string, secret: string) {
@@ -340,7 +347,10 @@ mock.module('../platform/services/session-sandbox', () => ({
 }));
 
 mock.module('../platform/services/provider-balancer', () => ({
-  selectProvider: async () => 'daytona',
+  selectProvider: async () => {
+    if (providerFailure) throw providerFailure;
+    return 'daytona';
+  },
 }));
 
 const mockedProjectLlmGatewayEnabled = (metadata: unknown) =>
@@ -819,9 +829,11 @@ const realTriggerWatchers = await import('../projects/lib/trigger-watchers');
 mock.module('../projects/lib/trigger-watchers', () => ({
   ...realTriggerWatchers,
   upsertTriggerWatcher: async (ref: Record<string, unknown>) => {
+    if (watcherFailure) throw watcherFailure;
     watcherCalls.push({ kind: 'follow', ref });
   },
   deleteTriggerWatchers: async (ref: Record<string, unknown>) => {
+    if (watcherFailure) throw watcherFailure;
     watcherCalls.push({ kind: 'drop', ref });
   },
 }));
@@ -829,7 +841,10 @@ mock.module('../projects/lib/trigger-watchers', () => ({
 const realModelPreferences = await import('../repositories/model-preferences');
 mock.module('../repositories/model-preferences', () => ({
   ...realModelPreferences,
-  getAccountModelDefaults: async () => modelDefaults,
+  getAccountModelDefaults: async () => {
+    if (modelDefaultsFailure) throw modelDefaultsFailure;
+    return modelDefaults;
+  },
 }));
 
 const realDefaultModel = await import('../llm-gateway/resolution/default-model');
@@ -960,11 +975,13 @@ function webhookEntry(opts: {
   secretEnv: string;
   agent?: string;
   enabled?: boolean;
+  sessionMode?: string;
   prompt: string;
 }): string {
   const lines = [`  - slug: ${JSON.stringify(opts.slug)}`];
   if (opts.name !== undefined) lines.push(`    name: ${JSON.stringify(opts.name)}`);
   lines.push('    type: webhook');
+  if (opts.sessionMode !== undefined) lines.push(`    session_mode: ${opts.sessionMode}`);
   if (opts.agent !== undefined) lines.push(`    agent: ${JSON.stringify(opts.agent)}`);
   if (opts.enabled !== undefined) lines.push(`    enabled: ${opts.enabled}`);
   lines.push(`    secret_env: ${JSON.stringify(opts.secretEnv)}`);
@@ -1139,6 +1156,8 @@ describe('git-backed triggers — runtime fire paths', () => {
     expect(runtimeRows[0]!.lastStatus).toBe('fired');
     expect(runtimeRows[0]!.lastFiredAt).toBeTruthy();
     expect(sandboxProvisionCalls).toBe(0);
+    // Shown as fired, but the prompt has not run: its delivery ends a streak (KRTX-1742).
+    expect(alertCalls.filter((call) => call.kind === 'clear')).toEqual([]);
   });
 
   test('a cron slot refused for an empty wallet dead-letters at once and raises the fire alert once', async () => {
@@ -1417,4 +1436,134 @@ describe('git-backed triggers — runtime fire paths', () => {
     expect(lifecycleCommandRows[0]!.sessionId).toBeTruthy();
   });
 
+  describe('automation alerts (KRTX-1742)', () => {
+    const fireAlert = (input: Record<string, unknown>) => ({ projectId: PROJECT_ID, slug: 'hook', source: 'fire', ...input });
+
+    async function postHook(deliveryId: string) {
+      seedManifest(webhookEntry({ slug: 'hook', name: 'Hook', secretEnv: 'HOOK_SECRET', prompt: 'New {{ body.action }}' }));
+      secretValues.set('HOOK_SECRET', 'shhh');
+      const rawBody = JSON.stringify({ action: 'opened' });
+      return createApp().request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Kortix-Signature': sign(rawBody, 'shhh'),
+          'X-Kortix-Delivery-Id': deliveryId,
+        },
+        body: rawBody,
+      });
+    }
+
+    test('a webhook create queued under backpressure ends no streak; its drained create does', async () => {
+      provisioningSessionCount = 3;
+      const res = await postHook('queued-alert-1');
+      expect(res.status).toBe(202);
+      expect((await res.json()).status).toBe('queued');
+      expect(runtimeRows[0]).toMatchObject({ lastStatus: 'fired' });
+      expect(alertCalls).toEqual([]);
+
+      provisioningSessionCount = 0;
+      await drainSessionLifecycleQueue({ workerId: 'test-worker', limit: 1 });
+      expect(lifecycleCommandRows[0]!.status).toBe('succeeded');
+      expect(alertCalls).toEqual([{ kind: 'clear', input: fireAlert({ accountId: ACCOUNT_ID }) }]);
+    });
+
+    test('a webhook prompt queued into the reused session ends no streak', async () => {
+      seedManifest(webhookEntry({ slug: 'hook', name: 'Hook', secretEnv: 'HOOK_SECRET', sessionMode: 'reuse', prompt: 'New {{ body.action }}' }));
+      secretValues.set('HOOK_SECRET', 'shhh');
+      sessionRows.push({
+        ...sessionRowsTemplate(),
+        sessionId: 'sess-hook-reuse',
+        metadata: { trigger_slug: 'hook', trigger_kind: 'git' },
+      });
+      const rawBody = JSON.stringify({ action: 'opened' });
+      const res = await createApp().request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Kortix-Signature': sign(rawBody, 'shhh'), 'X-Kortix-Delivery-Id': 'reuse-alert-1' },
+        body: rawBody,
+      });
+      expect(res.status).toBe(202);
+      expect(await res.json()).toMatchObject({ status: 'queued', reason: 'prompt queued for delivery', session_id: 'sess-hook-reuse' });
+      expect(runtimeRows[0]).toMatchObject({ lastStatus: 'fired' });
+      expect(alertCalls.filter((call) => call.kind === 'clear')).toEqual([]);
+    });
+
+    test('a manual fire that only queues ends no streak', async () => {
+      seedManifest(cronEntry({ slug: 'manual', name: 'Manual', cron: '* * * * * *', prompt: 'Report' }));
+      provisioningSessionCount = 3;
+      const res = await createApp().request(`/v1/projects/${PROJECT_ID}/triggers/manual/fire`, { method: 'POST' });
+      expect(res.status).toBe(202);
+      expect((await res.json()).status).toBe('queued');
+      expect(alertCalls).toEqual([]);
+    });
+
+    test('a webhook create that throws goes back to the queue and alerts nobody yet', async () => {
+      providerFailure = new Error('git clone timed out after 90000ms');
+      const res = await postHook('throwing-delivery-1');
+      expect(res.status).toBe(500);
+      expect(lifecycleCommandRows.map((row) => row.status)).toEqual(['queued']);
+      expect(alertCalls).toEqual([]);
+    });
+
+    test('a webhook create that answers 503 is not requeued, so it alerts', async () => {
+      projectRow.metadata = { experimental: { llm_gateway: true } };
+      modelDefaultsFailure = new Error('model defaults unavailable');
+      const res = await postHook('503-delivery-1');
+      expect(res.status).toBe(500);
+      expect(lifecycleCommandRows.map((row) => row.status)).toEqual(['dead_lettered']);
+      expect(alertCalls).toEqual([
+        { kind: 'raise', input: fireAlert({ accountId: ACCOUNT_ID, error: 'The session default model could not be resolved' }) },
+      ]);
+    });
+
+    test('a failed watcher write does not fail the trigger create or delete', async () => {
+      seedManifest();
+      testAuthType = 'supabase';
+      watcherFailure = new Error('connection terminated');
+      const app = createApp();
+      const created = await app.request(`/v1/projects/${PROJECT_ID}/triggers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Nightly', type: 'cron', cron: '0 0 2 * * *', prompt_template: 'Report' }),
+      });
+      expect(created.status).toBe(201);
+      const deleted = await app.request(`/v1/projects/${PROJECT_ID}/triggers/nightly`, { method: 'DELETE' });
+      expect(deleted.status).toBe(200);
+      expect(repoFiles.get(MANIFEST_PATH)).not.toContain('nightly');
+    });
+  });
+
 });
+
+/** A stopped session row the trigger created earlier; override what the test needs. */
+function sessionRowsTemplate(): typeof projectSessions.$inferSelect {
+  return {
+    labels: [],
+    sessionId: 'sess-template',
+    accountId: ACCOUNT_ID,
+    projectId: PROJECT_ID,
+    branchName: 'main',
+    baseRef: 'main',
+    sandboxProvider: 'daytona',
+    sandboxId: null,
+    sandboxUrl: null,
+    runtimeSessionId: null,
+    agentName: 'default',
+    status: 'stopped',
+    error: null,
+    createdBy: USER_ID,
+    visibility: 'private',
+    origin: 'system',
+    originRef: null,
+    parentSessionId: null,
+    initiatorType: null,
+    initiatorId: null,
+    secretsAllowlist: null,
+    requiredConnectors: null,
+    connectorBindingsInheritUnbound: false,
+    connectorBindingsConfigured: false,
+    metadata: {},
+    createdAt: new Date('2026-01-01T00:00:00Z'),
+    updatedAt: new Date('2026-01-01T00:00:00Z'),
+  };
+}

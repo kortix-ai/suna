@@ -196,7 +196,9 @@ async function recordTriggerExecutionResult(
           sessionId: result.sessionId,
           commandId: result.commandId,
         }),
-        markGitTriggerFired(row.projectId, row.slug, completedAt, runtimeStatus),
+        // The handoff shows as `fired`, but only a fire that reached a session
+        // ends an alert streak; the prompt's delivery ends it (KRTX-1742).
+        markGitTriggerFired(row.projectId, row.slug, completedAt, runtimeStatus, { endsAlert: result.status === 'fired' }),
       ]);
       return result.status;
     }

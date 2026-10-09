@@ -6,6 +6,7 @@ import type { QuestionInfo } from '../../channels/slack-webhook';
 import { relayTurnQuestion } from '../../channels/turn-relay';
 import { channelOfSessionMetadata, releaseChannelQuestion } from '../../channels/question-release';
 import { PROJECT_ACTIONS } from '../../iam';
+import { logger } from '../../lib/logger';
 import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
@@ -217,7 +218,12 @@ export function registerTurnQuestionsRoutes(): void {
       // A session with no channel has nothing to post to. That is not an error now
       // that the question is durable: it is the ordinary web case, and failing here
       // would make the relay look broken for every non-Slack session.
-      const result = await relayTurnQuestion(sessionId, questions);
+      // A relay that throws (a DB read before anything is posted) must not cost
+      // the stored question its notification: the daemon never retries it.
+      const result = await relayTurnQuestion(sessionId, questions).catch((err): { ok: false; error: string } => {
+        logger.warn('[turn-question] relay failed', { sessionId, error: err instanceof Error ? err.message : String(err) });
+        return { ok: false, error: 'relay_failed' };
+      });
 
       // Release the runtime's BLOCKING `question` call for a chat-channel session
       // — see channels/question-release.ts. Keyed on the session's own metadata,

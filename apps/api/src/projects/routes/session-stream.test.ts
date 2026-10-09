@@ -95,15 +95,18 @@ mock.module('../../shared/pg-broadcast', () => ({
 }));
 
 let presenceRenewals: Array<{ userId: string; sessionId: string; tabId: string; extendDeadline: boolean }> = [];
-let presenceExpiries: Array<{ userId: string; sessionId: string; tabId: string }> = [];
+let presenceExpiries: Array<{ userId: string; sessionId: string; tabId: string; wroteUntil: Date }> = [];
+const LEASE_WRITTEN_UNTIL = new Date('2026-10-09T12:01:30.000Z');
+/** What a renewal stored: the lease's new expiry, or null when the tab has no lease. */
+let renewResult: Date | null = LEASE_WRITTEN_UNTIL;
 mock.module('../lib/session-presence', () => ({
   PRESENCE_RENEW_MS: 30_000,
   renewSessionPresence: async (userId: string, sessionId: string, tabId: string, opts: { extendDeadline: boolean }) => {
     presenceRenewals.push({ userId, sessionId, tabId, extendDeadline: opts.extendDeadline });
-    return true;
+    return renewResult;
   },
-  expireSessionPresence: async (userId: string, sessionId: string, tabId: string) => {
-    presenceExpiries.push({ userId, sessionId, tabId });
+  expireSessionPresence: async (userId: string, sessionId: string, tabId: string, wroteUntil: Date) => {
+    presenceExpiries.push({ userId, sessionId, tabId, wroteUntil });
   },
 }));
 /** Whether the caller holds `project.session.start` (may keep the computer awake). */
@@ -276,6 +279,7 @@ beforeEach(() => {
   reachability = [];
   presenceRenewals = [];
   presenceExpiries = [];
+  renewResult = LEASE_WRITTEN_UNTIL;
   mayStartSession = true;
   healthReads = 0;
   nextHealth = () => ({
@@ -881,6 +885,23 @@ describe('R5.3: a visible tab keeps its presence through the stream, not a 30 s 
 
     await reader.cancel();
     for (let i = 0; i < 20 && presenceExpiries.length === 0; i++) await Bun.sleep(5);
-    expect(presenceExpiries).toEqual([{ userId: USER_ID, sessionId: SESSION_ID, tabId: TAB }]);
+    // Only the expiry this stream wrote: a newer stream's renewal survives.
+    expect(presenceExpiries).toEqual([{ userId: USER_ID, sessionId: SESSION_ID, tabId: TAB, wroteUntil: LEASE_WRITTEN_UNTIL }]);
+  });
+
+  // KRTX-1742 review: a stream that never wrote the lease expired the one a
+  // newer stream of the same tab had just renewed.
+  test('a stream that renewed no lease expires nothing when it ends', async () => {
+    loadedProject = { ...loadedProject!, actor: { credential: { kind: 'jwt' } } } as never;
+    sandboxRow = { externalId: 'box-1', status: 'stopped' };
+    renewResult = null;
+    const response = await openStream(`?tab_id=${TAB}`);
+    const reader = response.body!.getReader();
+    await reader.read();
+    expect(presenceRenewals).toHaveLength(1);
+
+    await reader.cancel();
+    await Bun.sleep(50);
+    expect(presenceExpiries).toEqual([]);
   });
 });

@@ -175,6 +175,8 @@ function harness(opts: {
   session?: SessionAccessRow | null;
   watching?: SessionWatchers;
   mayOpen?: (userId: string) => boolean;
+  /** Whether the id is a member of the account; default yes. */
+  isPerson?: (userId: string) => boolean;
   failDeliver?: boolean;
 } = {}) {
   const delivered: DeliverInput[] = [];
@@ -183,6 +185,7 @@ function harness(opts: {
     loadSession: async () => (opts.session === undefined ? sessionRow() : opts.session),
     watchers: async () => opts.watching ?? watchers(),
     mayOpen: async (_session, userIds) => userIds.filter((id) => opts.mayOpen?.(id) ?? true),
+    personsAmong: async (_accountId, ids) => ids.filter((id) => opts.isPerson?.(id) ?? true),
     deliver: async (input) => {
       if (opts.failDeliver) throw new Error('db down');
       delivered.push(input);
@@ -257,6 +260,19 @@ describe('createSessionNotifier', () => {
   test('a recipient who may not open the session is dropped; the others are still told', async () => {
     const h = harness({ mayOpen: (id) => id !== CREATOR });
     expect(await h.notify(event())).toEqual({ reason: 'delivered', recipients: [PROMPTER] });
+  });
+
+  // KRTX-1742 review: a backend's service account prompted, and the row named it.
+  test('a prompter who is not a person (a service account) is not named the actor', async () => {
+    const SERVICE_ACCOUNT = 'sa-backend';
+    const h = harness({ isPerson: (id) => id !== SERVICE_ACCOUNT });
+    await h.notify(event({ prompterUserId: SERVICE_ACCOUNT }));
+    expect(h.delivered[0]!.actorUserId).toBeNull();
+
+    const muted = harness({ watching: watchers([CREATOR], [PROMPTER]) });
+    await muted.notify(event());
+    // A muted person prompter is still the actor of the rows the others get.
+    expect(muted.delivered[0]).toMatchObject({ actorUserId: PROMPTER, recipients: [CREATOR] });
   });
 
   test('nobody may open it → no delivery, reason no_access', async () => {

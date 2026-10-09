@@ -11,15 +11,24 @@
 //   - session: `isProjectSessionVisibleTo` — owner, project-visible, named or
 //     group grants, the trigger-run manager override, account oversight.
 //   - a soft-deleted session (`metadata.deletedAt`) is never visible.
+// A recipient is also always a person: a member of the account
+// (`personsAmong`). A service account or any other non-person id that the IAM
+// lets in is never told.
 import { projectSessions } from '@kortix/db';
 import { inArray } from 'drizzle-orm';
 import { PROJECT_ACTIONS } from '../iam/actions';
 import { listAccessible, type Accessible } from '../iam/authorize';
 import { groupIdsOfUser } from '../iam/group-read';
+import { accountMembersAmong } from '../iam/membership-read';
 import { hasAccountSessionOversight } from '../iam/session-oversight';
 import { isProjectSessionVisibleTo, loadSessionGrants, type SecretGrant, type SessionVisibility } from '../connectors/share';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
+import { mapWithConcurrency } from '../shared/map-with-concurrency';
+import { isUuid } from '../shared/validate';
+
+/** Recipient checks in flight at once: one check is up to ~7 queries on a 5-connection pool. */
+const RECIPIENT_CHECK_CONCURRENCY = 4;
 
 export interface SessionAccessRow {
   sessionId: string;
@@ -123,11 +132,28 @@ export async function maySeeSessions(userId: string, rows: readonly SessionAcces
   return visible;
 }
 
-/** The users among `userIds` who may open `session` now. */
+/**
+ * The people among `ids`, in order, once each: the members of the account.
+ * One query. Never throws: a failed read means nobody.
+ */
+export async function personsAmong(accountId: string, ids: readonly string[]): Promise<string[]> {
+  const unique = [...new Set(ids.filter(isUuid))];
+  if (unique.length === 0) return [];
+  try {
+    const members = new Set((await accountMembersAmong(accountId, unique)).map((row) => row.userId));
+    return unique.filter((id) => members.has(id));
+  } catch (err) {
+    logger.warn('[notify] member check failed', { error: err instanceof Error ? err.message : String(err) });
+    return [];
+  }
+}
+
+/** The people among `userIds` who may open `session` now. */
 export async function filterSessionRecipients(session: SessionAccessRow, userIds: readonly string[]): Promise<string[]> {
-  const unique = [...new Set(userIds.filter(Boolean))];
-  const results = await Promise.all(unique.map(async (userId) => (await maySeeSessions(userId, [session])).has(session.sessionId)));
-  return unique.filter((_, i) => results[i]);
+  const people = await personsAmong(session.accountId, userIds);
+  const results = await mapWithConcurrency(people, RECIPIENT_CHECK_CONCURRENCY, async (userId) =>
+    (await maySeeSessions(userId, [session])).has(session.sessionId));
+  return people.filter((_, i) => results[i]);
 }
 
 /** The projects among `projectIds` in `accountId` whose triggers `userId` may read now. */
@@ -143,13 +169,14 @@ export async function mayReadProjectTriggers(
   return out;
 }
 
-/** The users among `userIds` who may read the triggers of one project now. */
+/** The people among `userIds` who may read the triggers of one project now. */
 export async function filterTriggerRecipients(
   accountId: string,
   projectId: string,
   userIds: readonly string[],
 ): Promise<string[]> {
-  const unique = [...new Set(userIds.filter(Boolean))];
-  const results = await Promise.all(unique.map(async (userId) => (await mayReadProjectTriggers(userId, accountId, [projectId])).has(projectId)));
-  return unique.filter((_, i) => results[i]);
+  const people = await personsAmong(accountId, userIds);
+  const results = await mapWithConcurrency(people, RECIPIENT_CHECK_CONCURRENCY, async (userId) =>
+    (await mayReadProjectTriggers(userId, accountId, [projectId])).has(projectId));
+  return people.filter((_, i) => results[i]);
 }

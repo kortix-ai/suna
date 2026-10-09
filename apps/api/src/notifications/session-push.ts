@@ -10,7 +10,7 @@
 import type { NotificationKindName } from '@kortix/shared/notification-kinds';
 import { logger } from '../lib/logger';
 import { ABORT_END_ERROR_NAMES, type SandboxTurnCompletionOutcome } from '../projects/session-turn-ledger';
-import { filterSessionRecipients, loadSessionAccessRows, type SessionAccessRow } from './access';
+import { filterSessionRecipients, loadSessionAccessRows, personsAmong, type SessionAccessRow } from './access';
 import { clip, INBOX_BODY_MAX_CHARS } from './inbox-store';
 import { deliver, type DeliverInput, type NotifierDeps } from './notifier';
 import { sessionWatchersOf, type SessionWatchers } from './watchers';
@@ -136,8 +136,10 @@ function dedupeKeyOf(event: SessionPushEvent): string | null {
 export interface SessionNotifierDeps {
   loadSession(sessionId: string): Promise<SessionAccessRow | null>;
   watchers(sessionId: string, createdBy: string | null): Promise<SessionWatchers>;
-  /** The users among `userIds` who may open the session now. */
+  /** The people (account members) among `userIds` who may open the session now. */
   mayOpen(session: SessionAccessRow, userIds: readonly string[]): Promise<string[]>;
+  /** The people among `ids`: the members of the account. */
+  personsAmong(accountId: string, ids: readonly string[]): Promise<string[]>;
   deliver(input: DeliverInput): Promise<unknown>;
   logger: Pick<Console, 'warn'>;
 }
@@ -153,6 +155,9 @@ export function createSessionNotifier(deps: SessionNotifierDeps) {
       // no title and no question text (KRTX-1722, session level since KRTX-1742).
       const recipients = await deps.mayOpen(session, audience.recipients);
       if (recipients.length === 0) return { reason: 'no_access', recipients: [] };
+      // Only a person is named the actor, never a service account.
+      const prompter = event.prompterUserId;
+      const [actorUserId = null] = prompter ? await deps.personsAmong(session.accountId, [prompter]) : [];
       await deps.deliver({
         kind: KIND[event.type],
         accountId: session.accountId,
@@ -160,7 +165,7 @@ export function createSessionNotifier(deps: SessionNotifierDeps) {
         sessionId: session.sessionId,
         title: sessionTitleOf(session.metadata) ?? '',
         body: bodyOf(event),
-        actorUserId: event.prompterUserId ?? null,
+        actorUserId,
         dedupeKey: dedupeKeyOf(event),
         recipients,
         pushAllowed: audience.pushAllowed,
@@ -186,6 +191,7 @@ export function notifySessionEvent(event: SessionPushEvent, notifierDeps?: Notif
     loadSession: async (sessionId) => (await loadSessionAccessRows([sessionId])).get(sessionId) ?? null,
     watchers: sessionWatchersOf,
     mayOpen: filterSessionRecipients,
+    personsAmong,
     deliver: (input) => deliver(input, notifierDeps),
     logger,
   })(event);
