@@ -137,7 +137,7 @@ General rules for every component:
 |---|---|---|---|---|
 | 1 | `Stack` | `children[]`, `direction: row\|col` | ≤ 12 children, nesting ≤ 4 levels | Children separated by blank lines |
 | 2 | `Card` | `title`, `subtitle?`, `image?`, `body?`, `badges?[]`, `link?`, `children?` | body ≤ 600 chars | `### title`, subtitle, body |
-| 3 | `Stat` | `label`, `value`, `delta?`, `trend?: up\|down\|flat`, `unit?` | — | `**label:** value (delta)` |
+| 3 | `Stat` | `label`, `value`, `delta?`, `trend?: up\|down\|flat`, `unit?` | delta ≤ 24 chars | `**label:** value (delta)` |
 | 4 | `StatRow` | `stats: Stat[]` | 2–4 | Bullet list |
 | 5 | `Table` | `columns[]`, `rows[][]`, `caption?` | ≤ 8 columns, ≤ 50 rows | GFM table |
 | 6 | `Compare` | `items[{name, specs{}, pros[], cons[]}]`, `winner?` | 2–4 items | Spec table plus pros and cons bullets |
@@ -145,7 +145,7 @@ General rules for every component:
 | 8 | `BarChart` | `categories[]`, `series[{name, values[]}]`, `unit?`, `source` | ≤ 24 categories, ≤ 4 series | Value table plus `Source:` |
 | 9 | `LineChart` | `x[]`, `series[{name, values[]}]`, `unit?`, `source` | ≤ 365 points, ≤ 4 series | Value table plus `Source:` |
 | 10 | `PieChart` | `slices[{label, value}]`, `unit?`, `source` | ≤ 6 slices | List with percentages plus `Source:` |
-| 11 | `Map` | `markers[{lat, lng, label, description?}]`, `route?[[lat,lng]]`, `center?`, `zoom?`, `source` | ≤ 25 markers, ≤ 500 route points | Marker list, each with an OpenStreetMap link |
+| 11 | `Map` | `markers[{lat, lng, label, description?}]`, `source`, `zoom?` (1–18), `route?[[lat,lng]]` (argument order: markers, source, zoom, route) | ≤ 25 markers, ≤ 500 route points | Marker list, each with an OpenStreetMap link |
 | 12 | `Tabs` | `tabs[{label, children[]}]`, `default?` | 2–5 tabs | Each tab as a `####` heading, all expanded |
 | 13 | `Accordion` | `items[{title, children[]}]`, `open?[]` | ≤ 10 items | Each item as a `####` heading, all expanded |
 | 14 | `Badge` | `label`, `tone: neutral\|good\|warn\|bad` | label ≤ 24 chars | `[label]` |
