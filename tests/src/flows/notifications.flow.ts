@@ -788,12 +788,21 @@ flow(
         if ((await watching(a)) !== false) throw new Error('mute did not read back');
       });
 
+      const followerRows = (row: InboxRow) => row.session_id === turn.sessionId && row.kind === 'turn_done';
       await ctx.step('a turn no person prompted ends: the follower gets turn_done; the muted creator gets nothing', async () => {
-        await turn.startTurn('msg_notif7');
-        await turn.endTurn('msg_notif7');
-        await waitForInbox(ctx, w, (row) => row.session_id === turn.sessionId && row.kind === 'turn_done');
+        await turn.startTurn('msg_notif7_unprompted');
+        await turn.endTurn('msg_notif7_unprompted');
+        await waitForInbox(ctx, w, followerRows);
         await settle();
         expectCount(await storedCount(db, a.userId!, { sessionId: turn.sessionId }), 0, "the muted creator's rows");
+      });
+
+      await ctx.step('a turn the muted creator prompted ends: the follower gets a second row; mute covers the turns you prompt', async () => {
+        await turn.startTurn('msg_notif7_prompted', a.userId!);
+        await turn.endTurn('msg_notif7_prompted');
+        await waitForInbox(ctx, w, followerRows, 2);
+        await settle();
+        expectCount(await storedCount(db, a.userId!, { sessionId: turn.sessionId }), 0, "the muted prompter's rows");
       });
 
       await ctx.step('the creator unmutes it → watching reads back true', async () => {
