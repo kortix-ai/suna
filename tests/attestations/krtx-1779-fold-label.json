@@ -1,18 +1,21 @@
 {
-  "source_hash": "9db79309ebc4c05ce074e18ab8561d69ce3b476d1ce9af314ee581b687ff0401",
+  "source_hash": "fba9a3bddbe4071c512cf6ae3ef5e851b4615b74bc012bdbc0bc79f917cccca5",
   "diff_files": [
+    "apps/api/src/backends/hosts.integration.test.ts",
+    "apps/api/src/backends/provision.integration.test.ts",
     "apps/web/src/app/[locale]/(system)/debug/tools/page.tsx",
     "apps/web/src/features/session/action-panel/easy/outputs-card.test.tsx",
     "apps/web/src/features/session/action-panel/easy/outputs-card.tsx",
-    "apps/web/src/features/session/action-panel/shared/output-priority.ts"
+    "apps/web/src/features/session/action-panel/shared/output-priority.ts",
+    "apps/web/src/lib/seo/content-timestamps.json"
   ],
-  "diff_hash": "cabc51c3277ef4d453d644e7b325836caba1b54d330be2067b02ccaa9688115b",
-  "head": "ad01dc355bc0f4541b6dea424ba1889f6dd068fd",
+  "diff_hash": "d5c227042ee9180d263f52c63009e9051d7f527f040bf85d21d7862c813501c7",
+  "head": "846ba0a334fd4729517e0404bc92564c68a65593",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-08T07:06:20.283Z"
+  "at": "2026-10-09T14:05:41.806Z"
 }
