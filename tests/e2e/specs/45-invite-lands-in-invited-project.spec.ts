@@ -86,6 +86,10 @@ test('45 — accepting a project invite lands in the invited project, not the re
     await expect(page).toHaveURL(new RegExp(`/projects/${scratch.id}`));
 
     await page.goto(`/invites/${invited.invite_id}`, { waitUntil: 'domcontentloaded' });
+    // The page names the project and the role, not "a team" (KRTX-1731).
+    await expect(page.getByText(`Website ${runId}`).first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(/invited you to a project|You have been invited to a project/)).toBeVisible();
+    await expect(page.getByText(`You'll join Website ${runId} as a member.`)).toBeVisible();
     const accepted = page.waitForResponse(
       (r) => r.request().method() === 'POST' && r.url().includes(`/v1/account-invites/${invited.invite_id}/accept`),
     );

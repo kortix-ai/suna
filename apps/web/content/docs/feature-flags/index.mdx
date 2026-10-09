@@ -12,11 +12,12 @@ another project, and nothing for other accounts.
 
 <CardGroup>
   <Card icon="app-window" title="Apps" href="/docs/feature-flags/apps">Deploy static sites, bundles, Dockerfiles, and OCI images to stable URLs.</Card>
+  <Card icon="database" title="Backends" href="/docs/feature-flags/backends">Give a project a database, server functions, realtime queries, files, and schedules, powered by Convex.</Card>
 </CardGroup>
 
 ## Turn a flag on
 
-1. Open **Settings → Experimental**. The tab lists every flag the platform
+1. Open **Settings → Feature flags**. The tab lists every flag the platform
    supports.
 2. Read the row: the flag name, its stability badge, one sentence of
    description, and its origin — `Default on`, `Default off`, or
@@ -31,11 +32,11 @@ You need the project's `project.settings.write` permission. The route answers
 The same switches are available to scripts and agents through `kortix projects features`:
 
 ```bash
-kortix projects features            # every flag: key, state, origin, stability
-kortix projects features enable apps
+kortix projects features                # every flag: key, state, origin
+kortix projects features enable reminders
 kortix projects features disable reminders
-kortix projects features reset apps  # drop the override; follow the platform default
-kortix projects features --json      # the full catalog as JSON
+kortix projects features reset reminders  # drop the override; follow the platform default
+kortix projects features --json          # the full catalog as JSON
 ```
 
 Add `--project <id>` to act on a project other than the linked/default one. A
@@ -61,11 +62,12 @@ Each flag has two gates. They answer different questions.
 AND-gated by `available`. `enabled` therefore always implies `available`.
 
 `available` is an operator decision, made by the environment the API runs in.
-Two flags read it from configuration; every other flag is always available:
+Some flags read it from configuration; every other flag is always available:
 
 | Flag | Available when |
 |---|---|
 | `llm_gateway` | `LLM_GATEWAY_ENABLED` is on |
+| `backends` | `PLATINUM_API_KEY` is set |
 | `monitors` | `PLATINUM_API_KEY` is set |
 
 ## Stability badges
@@ -93,7 +95,7 @@ A `routes` rejection is identical everywhere:
 
 ```json
 {
-  "error": "Apps is not enabled for this project. Enable it in Settings → Feature flags.",
+  "error": "Apps is not enabled for this project. Contact Kortix to enable it.",
   "code": "feature_disabled",
   "feature": "apps"
 }
@@ -110,6 +112,33 @@ this.
 
 Registry order — the same order **Settings → Feature flags** shows.
 
+### Internal-only flags: `apps` and `backends`
+
+`apps` and `backends` start billable machines, so Kortix turns them on per
+project on request.
+
+- **Off:** Settings and `kortix projects features` do not list the flag. Its
+  routes answer `403` `feature_disabled` with "Contact Kortix to enable it."
+- **On:** the catalog lists the flag with `operator_only: true`. Settings shows
+  it as **Managed by Kortix** with a locked switch. `kortix projects features`
+  shows origin `kortix`, and `kortix projects info` prints a `by kortix` line.
+  Agents read either one, or `experimental.<flag>` in `kortix projects info --json`.
+- **Writes:** `PATCH /v1/projects/:id/features` refuses the flag to every
+  caller except a Kortix platform operator. A project admin or an agent gets:
+
+```json
+{
+  "error": "Backends is managed by Kortix. Contact Kortix to change it.",
+  "code": "feature_operator_only",
+  "feature": "backends"
+}
+```
+
+Kortix operators set the flag with
+`PUT /v1/admin/api/projects/:id/features` `{ "feature": "backends", "enabled": true }`
+(`null` clears it). The audit log records `admin.project.feature.set` on the
+project.
+
 | Key | Name | Stability | Default | Enforcement |
 |---|---|---|---|---|
 | `marketplace` | Marketplace | Beta | On | `routes` |
@@ -118,6 +147,7 @@ Registry order — the same order **Settings → Feature flags** shows.
 | `llm_gateway` | LLM Gateway | Experimental | On (operator can default off) | `behavioral` |
 | `meta_agent` | Meta Agent | Experimental | Off | `behavioral` |
 | `apps` | Apps | Stable | Off | `routes` |
+| `backends` | Backends | Experimental | Off | `routes` |
 | `monitors` | Monitors | Experimental | Off | `routes` |
 | `reminders` | Reminders | Beta | Off | `routes` |
 | `warm_sessions` | Warm Sessions | Beta | On | `routes` |
@@ -145,6 +175,9 @@ refs). An explicit project choice always wins.
   manages specialized sessions.
 - **`apps`** — deploy static sites, bundles, Dockerfiles, and OCI images to
   stable serverless URLs. See [Apps](/docs/feature-flags/apps).
+- **`backends`** — give a project up to 3 full backends: a database, server
+  functions, realtime queries, file storage, and schedules, powered by Convex.
+  See [Backends](/docs/feature-flags/backends).
 - **`monitors`** — run 24/7 watchers from your repo that fire trigger events
   into sessions. See [Triggers](/docs/connect/triggers).
 - **`reminders`** — scheduled check-ins that re-prompt one session, once or

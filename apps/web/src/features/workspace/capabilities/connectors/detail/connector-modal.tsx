@@ -14,6 +14,7 @@ import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
@@ -52,7 +53,8 @@ import { connectorDisplayName } from '@/features/workspace/capabilities/connecto
 import { isManagedConnectorProvider } from '@/features/workspace/capabilities/connectors/provider-label';
 import { ConnectorAccounts } from './connector-accounts';
 import { ConnectorSettings } from './connector-settings';
-import { CONNECTOR_TAB_LABEL, type ConnectorTab, connectorTabs } from './connector-tabs';
+import { ConnectorTriggers, useConnectorEventTriggers } from './connector-triggers';
+import { CONNECTOR_TAB_LABEL_KEY, type ConnectorTab, connectorTabs } from './connector-tabs';
 import { ConnectorTools } from './connector-tools';
 
 export interface ConnectorModalProps {
@@ -78,7 +80,7 @@ export interface ConnectorModalProps {
  * Connector detail — header identity + tab nav + content pane.
  *
  * Header: icon, name, description, primary connect action.
- * Left: Accounts / Tools / Settings nav.
+ * Left: Accounts / Tools / Triggers / Settings nav.
  * Right: the active tab.
  *
  * `ConnectorModalBody` is keyed on `connector.slug` so picking a different card
@@ -185,7 +187,8 @@ function ConnectorModalBody({
   const isComputer = connector.provider === 'computer';
   const displayName = connectorDisplayName(connector);
 
-  const tabs = connectorTabs(connector, { canWrite });
+  const eventTriggers = useConnectorEventTriggers(projectId, connector);
+  const tabs = connectorTabs(connector, { canWrite, hasEvents: eventTriggers.hasEvents });
   const [selectedTab, setSelectedTab] = useState<ConnectorTab>('accounts');
   // Bumped by the header's Connect: the Accounts tab opens its Add account
   // dialog, where the caller names the account and picks who may use it.
@@ -479,7 +482,12 @@ function ConnectorModalBody({
                 value={value}
                 className="w-fit flex-none gap-2 px-3 py-2.5 active:scale-[0.98] lg:w-full"
               >
-                {CONNECTOR_TAB_LABEL[value]}
+                {tI18nComplete.raw(CONNECTOR_TAB_LABEL_KEY[value])}
+                {value === 'triggers' ? (
+                  <Badge variant="secondary" size="sm">
+                    {eventTriggers.rows.length}
+                  </Badge>
+                ) : null}
               </TabsTrigger>
             ))}
           </TabsList>
@@ -528,6 +536,14 @@ function ConnectorModalBody({
                 canWrite={canWrite}
                 disabled={false}
                 onChanged={onChanged}
+              />
+            </TabsContent>
+
+            <TabsContent value="triggers">
+              <ConnectorTriggers
+                projectId={projectId}
+                connector={connector}
+                displayName={displayName}
               />
             </TabsContent>
 

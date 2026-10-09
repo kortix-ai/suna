@@ -96,7 +96,6 @@ export const REMAINING_UI_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   Bundle: 'textf2daa18861b5',
   Bundles: 'textff042b6ded4e',
   Cancelled: 'textd353a99eb455',
-  'Canonical path returned by list_public_content, such as /docs or /pricing.': 'text87e3eca29ea9',
   Careers: 'text7e658675b5ca',
   'Careers at Kortix – Open positions': 'text47f57c0ab829',
   'Categorizes, prioritizes and routes inbound tickets, drafting an empathetic first reply.':

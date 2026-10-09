@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { constants, existsSync } from 'node:fs'
-import { chmod, mkdir, open, readFile, readdir, readlink, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, mkdir, open, readFile, readdir, readlink, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { gunzipSync } from 'node:zlib'
 import * as tar from 'tar'
@@ -72,7 +72,7 @@ export interface ReleaseManifest {
   /** The OpenCode config dir inside the release, or null when the repository has none. */
   config_dir: string | null
   config_tree_id: string
-  /** The API path of the archive, to rebuild a tampered copy. */
+  /** The API path of the archive, to rebuild a tampered copy. '' when the release has none (v3, over the cap). */
   archive_url: string
   archive_bytes: number
   files: ConfigReleaseFile[]
@@ -360,13 +360,43 @@ export async function materializeRelease(input: {
   prepare?: (stagedDir: string) => Promise<void>
   managedSkillsDir?: string
 }): Promise<{ dir: string }> {
+  return install(input, 'archive', (staged) => extractConfigArchive(input.archive, input.manifest.files, staged))
+}
+
+/**
+ * Build `<root>/<release_id>` from a directory that holds the release's files
+ * at their repository paths: the session's own checkout (`copy`), or an
+ * extracted project snapshot (`move`). Only the listed files are taken, and
+ * each is verified against its blob ID where it lands, so a dirty checkout or
+ * a snapshot with extra entries (`.git`, paths the release leaves out) never
+ * becomes the release. Neither source has a size cap of its own.
+ */
+export async function materializeReleaseFromTree(input: {
+  root?: string
+  manifest: ReleaseManifest
+  source: string
+  take: 'copy' | 'move'
+  prepare?: (stagedDir: string) => Promise<void>
+  managedSkillsDir?: string
+}): Promise<{ dir: string }> {
+  return install(input, input.take === 'copy' ? 'workspace' : 'snapshot', (staged) =>
+    stageFromTree(input.source, input.manifest.files, staged, input.take),
+  )
+}
+
+/** Stage, prepare, seal, rename into place, write the manifest. */
+async function install(
+  input: { root?: string; manifest: ReleaseManifest; prepare?: (stagedDir: string) => Promise<void>; managedSkillsDir?: string },
+  transport: 'archive' | 'workspace' | 'snapshot',
+  stage: (staged: string) => Promise<void>,
+): Promise<{ dir: string }> {
   const root = input.root ?? bootConfigRoot()
   const { manifest } = input
   const dir = releaseDir(root, manifest.release_id)
   await mkdir(root, { recursive: true })
   const staged = `${dir}.${randomUUID()}.tmp`
   try {
-    await extractConfigArchive(input.archive, manifest.files, staged)
+    await stage(staged)
     // The overlay injected by `prepare` and the names `seal` skips must be the same set.
     await withReleaseStoreLock(async () => {
       await input.prepare?.(staged)
@@ -388,8 +418,78 @@ export async function materializeRelease(input: {
     sourceCommit: manifest.source_commit,
     dir,
     files: manifest.files.length,
+    transport,
   })
   return { dir }
+}
+
+/** The Git blob ID of a regular file, streamed. Null when `path` is not a regular file (a symlink is never followed). */
+async function fileBlobId(path: string, idLength: number): Promise<string | null> {
+  let fh
+  try {
+    fh = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW)
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ELOOP') return null
+    throw err
+  }
+  try {
+    const stat = await fh.stat()
+    if (!stat.isFile()) return null
+    const hash = createHash(idLength === 64 ? 'sha256' : 'sha1')
+    hash.update(`blob ${stat.size}\0`)
+    const chunk = Buffer.allocUnsafe(1024 * 1024)
+    let read = 0
+    while (true) {
+      const { bytesRead } = await fh.read(chunk, 0, chunk.length, read)
+      if (bytesRead === 0) break
+      hash.update(chunk.subarray(0, bytesRead))
+      read += bytesRead
+    }
+    return read === stat.size ? hash.digest('hex') : null
+  } finally {
+    await fh.close()
+  }
+}
+
+/**
+ * Take every listed file from `source` into `staged` and verify it there.
+ * Hashing the staged copy, not the source, leaves no gap between the check
+ * and the use: nothing else writes into a staging directory.
+ */
+async function stageFromTree(
+  source: string,
+  files: readonly ConfigReleaseFile[],
+  staged: string,
+  take: 'copy' | 'move',
+): Promise<void> {
+  assertFileList(files)
+  await mkdir(staged, { recursive: true })
+  const symlinks: Array<[string, string]> = []
+  for (const [path, mode, blob] of files) {
+    const from = join(source, path)
+    const target = join(staged, path)
+    await mkdir(dirname(target), { recursive: true })
+    if (mode === '120000') {
+      const link = await readlink(from).catch(() => null)
+      if (link === null || gitBlobId(Buffer.from(link), blob.length) !== blob) {
+        throw new Error(`boot config: ${path} does not match its blob ID in ${source}`)
+      }
+      symlinks.push([target, link])
+      continue
+    }
+    try {
+      if (take === 'move') await rename(from, target)
+      else await copyFile(from, target, constants.COPYFILE_FICLONE)
+    } catch (err) {
+      throw new Error(`boot config: ${path} is not in ${source}: ${(err as Error).message}`)
+    }
+    if ((await fileBlobId(target, blob.length)) !== blob) {
+      throw new Error(`boot config: ${path} does not match its blob ID in ${source}`)
+    }
+    await chmod(target, mode === '100755' ? 0o755 : 0o644)
+  }
+  // Last, so no written file can pass through a link.
+  for (const [target, link] of symlinks) await symlink(link, target)
 }
 
 /**

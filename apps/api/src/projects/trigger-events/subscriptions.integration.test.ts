@@ -9,20 +9,37 @@ import {
   projectTriggerRuntime,
   projects,
 } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
 import { clearAuthorizeCaches } from '../../iam/authorize';
 import type { GitTriggerSpec } from '../trigger-types';
 
 const fires: Array<Record<string, any>> = [];
-let fireStatus: 'fired' | 'failed' | 'deduped' = 'fired';
+let fireStatus: 'fired' | 'failed' | 'deduped' | 'throws' = 'fired';
 const actualTriggers = await import('../lib/triggers');
 mock.module('../lib/triggers', () => ({
   ...actualTriggers,
   fireGitTrigger: async (input: Record<string, any>) => {
     fires.push(input);
     if (fireStatus === 'failed') return { status: 'failed', error: 'boom' };
+    if (fireStatus === 'throws') throw new Error('sandbox unavailable');
     return { status: 'fired', sessionId: 'sess_synthetic', deduped: fireStatus === 'deduped' };
+  },
+}));
+
+// The connect route's finalize, stubbed: it lands the provider account id like the real one does.
+const finalizeCalls: unknown[][] = [];
+mock.module('../../connectors/db-deps', () => ({
+  dbConnectorRouterDeps: {
+    connectorFinalize: async (...args: unknown[]) => {
+      finalizeCalls.push(args);
+      const selector = args[3] as { connectionId: string };
+      await testDb()
+        .update(connectorConnections)
+        .set({ metadata: { connected_account_id: 'ca_activated' } })
+        .where(eq(connectorConnections.connectionId, selector.connectionId));
+      return { provider: 'composio', connected: true };
+    },
   },
 }));
 
@@ -44,6 +61,7 @@ const ACCOUNT_ID = '00000000-0000-4000-a000-000000009821';
 const PROJECT_ID = '00000000-0000-4000-a000-000000009822';
 const CONNECTOR_ID = '00000000-0000-4000-a000-000000009823';
 const CONNECTION_ID = '00000000-0000-4000-a000-000000009824';
+const SECOND_CONNECTION_ID = '00000000-0000-4000-a000-000000009826';
 
 let integrationDb: Database | null = null;
 function testDb(): Database {
@@ -121,6 +139,14 @@ const catalog = async (s: GitTriggerSpec) =>
     scheduleSpec: s as unknown as Record<string, unknown>,
   });
 const status = async (slug: string) => (await store.get(PROJECT_ID, slug))?.status;
+/** The trigger's own row: what the triggers API reports as last_status / last_error. */
+const runtime = async (slug: string) => {
+  const [row] = await testDb()
+    .select()
+    .from(projectTriggerRuntime)
+    .where(and(eq(projectTriggerRuntime.projectId, PROJECT_ID), eq(projectTriggerRuntime.slug, slug)));
+  return row;
+};
 
 describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
   beforeEach(async () => {
@@ -170,6 +196,12 @@ describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
     expect(calls).toEqual(['subscribe:EXAMPLE_NEW_MESSAGE']);
   });
 
+  test('a connector named after its slug is named by its app in the status text', async () => {
+    await testDb().update(connectors).set({ name: 'inbox' }).where(eq(connectors.connectorId, CONNECTOR_ID));
+    await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('a')]);
+    expect((await store.get(PROJECT_ID, 'a'))?.lastError).toBe('Connect a shared example account to activate this trigger.');
+  });
+
   test('a private member account never activates a trigger', async () => {
     await connect({ ownerType: 'member', ownerId: '00000000-0000-4000-a000-000000009899' });
     await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('a')]);
@@ -192,6 +224,68 @@ describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
     expect((await store.get(PROJECT_ID, 'a'))?.lastError).toContain('shared with specific people only');
     expect(calls).toEqual([]);
     clearAuthorizeCaches();
+  });
+
+  describe('account selection (two shared accounts on one connector)', () => {
+    const onAccount = (slug: string, account?: string) =>
+      spec(slug, { event: { connector: 'inbox', ...(account ? { account } : {}), type: 'EXAMPLE_NEW_MESSAGE', config: {} } });
+    beforeEach(async () => {
+      await connect({ label: 'ops-bot', isDefault: true, metadata: { connected_account_id: 'ca_ops', connected_as: 'ops@example.test' } });
+      await connect({ connectionId: SECOND_CONNECTION_ID, label: 'acme-bot', metadata: { connected_account_id: 'ca_acme' } });
+    });
+
+    test('omitted account runs on the default shared account', async () => {
+      await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [onAccount('a')]);
+      expect((await store.get(PROJECT_ID, 'a'))?.connectionId).toBe(CONNECTION_ID);
+    });
+
+    test('a named account runs on the account with that label, default or not', async () => {
+      await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [onAccount('a', 'acme-bot'), onAccount('b', 'ops-bot')]);
+      expect((await store.get(PROJECT_ID, 'a'))?.connectionId).toBe(SECOND_CONNECTION_ID);
+      expect((await store.get(PROJECT_ID, 'b'))?.connectionId).toBe(CONNECTION_ID);
+      expect(await status('a')).toBe('active');
+    });
+
+    test('switching the label resubscribes on the other account and releases the old instance', async () => {
+      await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [onAccount('a', 'ops-bot')]);
+      const before = (await store.get(PROJECT_ID, 'a'))?.desiredHash;
+      calls.length = 0;
+      await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [onAccount('a', 'acme-bot')]);
+      const row = await store.get(PROJECT_ID, 'a');
+      expect(row?.connectionId).toBe(SECOND_CONNECTION_ID);
+      expect(row?.desiredHash).not.toBe(before);
+      expect(calls).toEqual(['subscribe:EXAMPLE_NEW_MESSAGE']);
+    });
+
+    test('an unknown label is needs_connection with the label and connector in the text', async () => {
+      await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [onAccount('a', 'nobody')]);
+      expect(await status('a')).toBe('needs_connection');
+      expect((await store.get(PROJECT_ID, 'a'))?.lastError).toBe('Connect a shared Inbox account labelled "nobody" on inbox.');
+      expect(calls).toEqual([]);
+    });
+
+    test('a private account with the label never feeds a trigger', async () => {
+      await testDb().delete(connectorConnections).where(eq(connectorConnections.connectionId, SECOND_CONNECTION_ID));
+      await connect({ connectionId: SECOND_CONNECTION_ID, label: 'acme-bot', ownerType: 'member', ownerId: '00000000-0000-4000-a000-000000009899' });
+      await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [onAccount('a', 'acme-bot')]);
+      expect(await status('a')).toBe('needs_connection');
+    });
+
+    test('a named account narrowed to people is needs_connection, not an error', async () => {
+      const groupId = '00000000-0000-4000-a000-000000009825';
+      await testDb().insert(accountGroups).values({ groupId, accountId: ACCOUNT_ID, name: 'Narrowed audience' });
+      await assignRole(SYSTEM_ACTOR, ACCOUNT_ID, {
+        principal: { type: 'group', id: groupId },
+        roleKey: 'agent-user',
+        scope: { type: 'project', id: PROJECT_ID },
+        object: { type: 'connection', id: SECOND_CONNECTION_ID },
+      });
+      clearAuthorizeCaches();
+      await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [onAccount('a', 'acme-bot')]);
+      expect(await status('a')).toBe('needs_connection');
+      expect(calls).toEqual([]);
+      clearAuthorizeCaches();
+    });
   });
 
   test('the catalog path activates a pending trigger after a connection appears', async () => {
@@ -263,6 +357,24 @@ describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
     expect(fires).toHaveLength(0);
   });
 
+  test('an activation notice finalizes the shared account and the trigger goes live by itself', async () => {
+    finalizeCalls.length = 0;
+    await connect({ metadata: {} });
+    await catalog(spec('a'));
+    subscribeError = new (await import('./types')).EventConnectionNotReadyError('not ready');
+    await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('a')]);
+    expect(await status('a')).toBe('needs_connection');
+    subscribeError = null;
+
+    await applyNotices('composio', [{ kind: 'connection_activated', connectionId: CONNECTION_ID }]);
+    expect(finalizeCalls).toEqual([[PROJECT_ID, 'inbox', '', { connectionId: CONNECTION_ID }, 'project']]);
+    expect(await status('a')).toBe('active');
+
+    // Another environment's connection is not ours: nothing happens.
+    await applyNotices('composio', [{ kind: 'connection_activated', connectionId: '00000000-0000-4000-a000-0000000099ff' }]);
+    expect(finalizeCalls).toHaveLength(1);
+  });
+
   test('a connection the provider cannot use yet reads needs_connection, not error', async () => {
     const { EventConnectionNotReadyError } = await import('./types');
     await connect({ metadata: {} });
@@ -292,6 +404,43 @@ describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
     setEventSourceForTest('composio', { ...fake, configured: () => false });
     await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('b')]);
     expect((await store.get(PROJECT_ID, 'b'))?.lastError).toContain('COMPOSIO_API_KEY');
+  });
+
+  describe('source', () => {
+    const withSource = (source: string) => spec('a', { event: { connector: 'inbox', source, type: 'EXAMPLE_NEW_MESSAGE', config: {} } });
+
+    test('a source equal to the connector provider activates like the default derivation', async () => {
+      await connect();
+      await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [withSource('composio'), spec('b')]);
+      expect(await status('a')).toBe('active');
+      expect(await status('b')).toBe('active');
+      expect((await store.get(PROJECT_ID, 'a'))?.provider).toBe('composio');
+    });
+
+    test('a source that needs another connector provider is status error naming both', async () => {
+      await connect();
+      setEventSourceForTest('other', { ...fake, id: 'other' });
+      try {
+        await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [withSource('other')]);
+        expect(await status('a')).toBe('error');
+        expect((await store.get(PROJECT_ID, 'a'))?.lastError).toBe(
+          'Connector "inbox" is a composio connector; source "other" needs a other connector.',
+        );
+        expect(calls.filter((x) => x.startsWith('subscribe'))).toEqual([]);
+      } finally {
+        setEventSourceForTest('other', undefined);
+      }
+    });
+
+    test('an unknown source is status error and a 400-grade validation problem', async () => {
+      await connect();
+      await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [withSource('nope')]);
+      expect(await status('a')).toBe('error');
+      expect((await store.get(PROJECT_ID, 'a'))?.lastError).toBe('Unknown event source "nope". Sources: composio.');
+      expect(await validateEventTrigger(PROJECT_ID, { connector: 'inbox', source: 'nope', type: 'X', config: {} })).toBe(
+        'Unknown event source "nope". Sources: composio.',
+      );
+    });
   });
 
   describe('delivery', () => {
@@ -354,10 +503,24 @@ describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
       expect((await store.get(PROJECT_ID, 'a'))?.lastEventAt).toBeNull();
     });
 
-    test('a failed fire is counted as failed', async () => {
+    test('a failed fire is counted as failed and recorded on the trigger (KRTX-1743)', async () => {
       await armed();
       fireStatus = 'failed';
       expect((await deliverEvents('composio', [delivery()])).failed).toBe(1);
+      expect(await runtime('a')).toMatchObject({ lastStatus: 'failed', lastError: 'boom', lastFiredAt: null });
+      expect((await runtime('a'))?.lastAttemptAt).toBeInstanceOf(Date);
+    });
+
+    test('a thrown fire is recorded on the trigger, and the next good fire clears it (KRTX-1743)', async () => {
+      await armed();
+      fireStatus = 'throws';
+      expect((await deliverEvents('composio', [delivery()])).failed).toBe(1);
+      expect(await runtime('a')).toMatchObject({ lastStatus: 'failed', lastError: 'sandbox unavailable' });
+
+      fireStatus = 'fired';
+      expect((await deliverEvents('composio', [delivery({ eventId: 'msg_synthetic2' })])).fired).toBe(1);
+      expect(await runtime('a')).toMatchObject({ lastStatus: 'fired', lastError: null });
+      expect((await runtime('a'))?.lastFiredAt).toBeInstanceOf(Date);
     });
 
     test('notices mark rows error with remediation text', async () => {
@@ -384,6 +547,28 @@ describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
       expect(await entry()).toEqual([['example', 'inbox', false], ['other', null, false]]);
       await connect();
       expect(await entry()).toEqual([['example', 'inbox', true], ['other', null, false]]);
+    });
+
+    test('event apps list the shared accounts of each connector with identity and default', async () => {
+      // The app list is cached per process: the test above has already filled it.
+      setEventSourceForTest('composio', {
+        ...fake,
+        connectionReady: (c: { metadata: Record<string, unknown> }) => Boolean(c.metadata.connected_account_id),
+      });
+      await connect({ label: 'ops-bot', isDefault: true, metadata: { connected_account_id: 'ca_ops', connected_as: 'ops@example.test' } });
+      await connect({ connectionId: SECOND_CONNECTION_ID, label: 'acme-bot', metadata: { connected_account_id: 'ca_acme' } });
+      await connect({ connectionId: '00000000-0000-4000-a000-000000009827', label: 'private-one', ownerType: 'member', ownerId: '00000000-0000-4000-a000-000000009899' });
+      const app = (await listEventApps(PROJECT_ID, ACCOUNT_ID)).find((a) => a.app === 'example');
+      expect(app!.connectors).toEqual([
+        {
+          slug: 'inbox',
+          name: 'Inbox',
+          accounts: [
+            { label: 'ops-bot', connectedAs: 'ops@example.test', isDefault: true, connected: true },
+            { label: 'acme-bot', connectedAs: null, isDefault: false, connected: true },
+          ],
+        },
+      ]);
     });
 
     test('validation names the bad field; an unreachable catalog skips it', async () => {

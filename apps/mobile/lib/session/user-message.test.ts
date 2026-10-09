@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { serializePromptWithPastes } from '@kortix/shared';
 
 import {
   WEB_SPACING_PX,
@@ -13,6 +14,7 @@ import {
   queuedPromptStatusLabel,
   quoteMarginBottom,
   rewindHiddenMessageIds,
+  userMessageCopyText,
   userMessageSentLabel,
   webSpace,
 } from './user-message';
@@ -414,7 +416,9 @@ describe('parseUserMessageText returns exactly what the regex version returned',
       const length = Math.floor(next() * 18);
       for (let j = 0; j < length; j++) text += tokens[Math.floor(next() * tokens.length)];
       const expected = legacyParse(text);
-      expect(parseUserMessageText(text)).toEqual(expected);
+      const { pasted, ...parsed } = parseUserMessageText(text);
+      expect(pasted).toEqual([]);
+      expect(parsed).toEqual(expected);
       if (expected.text !== text.trim()) tagged++;
     }
     expect(tagged).toBeGreaterThan(1500);
@@ -479,7 +483,7 @@ describe('parseUserMessageParts', () => {
     ];
     expect(parseUserMessageParts(parts as Parameters<typeof parseUserMessageParts>[0])).toEqual({
       rawText: 'hello\n<file path="/w/a.png" mime="image/png" filename="a.png">x</file>',
-      content: { text: 'hello', quotes: [], sessions: [], files: [{ path: '/w/a.png', mime: 'image/png', filename: 'a.png' }] },
+      content: { text: 'hello', quotes: [], sessions: [], files: [{ path: '/w/a.png', mime: 'image/png', filename: 'a.png' }], pasted: [] },
       attachments: [
         { key: 'upload:0:/w/a.png', filename: 'a.png', mime: 'image/png', src: '/w/a.png', path: '/w/a.png' },
         { key: 'file-1', filename: 'other.pdf', mime: 'application/pdf', src: 'https://example.test/file', localUri: 'file:///tmp/other.pdf' },
@@ -558,5 +562,73 @@ describe('editResendAttachments — what an edited prompt sends again (KRTX-962)
     expect(text).toContain('path="/w/b.pdf"');
     expect(text).not.toContain('a.png');
     expect(editResendAttachments([], 'hi')).toEqual({ fileParts: [], text: 'hi' });
+  });
+});
+
+// Synthetic paste only.
+const PASTE = { id: '0a1b2c3d', text: 'line one\nline two\n<file path="/w/x.png" mime="image/png" filename="x.png">x</file>' };
+
+describe('pasted text — `<pasted_content>` blocks become tiles', () => {
+  test('parseUserMessageText takes the pastes out first; a tag inside a paste stays paste text', () => {
+    const parsed = parseUserMessageText(serializePromptWithPastes('my question', [PASTE]));
+    expect(parsed.text).toBe('my question');
+    expect(parsed.pasted).toEqual([PASTE]);
+    expect(parsed.files).toEqual([]);
+  });
+
+  test('a pastes-only message has no text', () => {
+    const parsed = parseUserMessageText(serializePromptWithPastes('', [PASTE]));
+    expect(parsed).toMatchObject({ text: '', pasted: [PASTE] });
+  });
+
+  test('a tag the user typed (neutralized on send) stays text, not a tile', () => {
+    const parsed = parseUserMessageText(serializePromptWithPastes('<pasted_content id="x" chars="1">\na\n</pasted_content>', []));
+    expect(parsed.pasted).toEqual([]);
+    expect(parsed.text).toBe('<pasted_content id="x" chars="1">\na\n</pasted_content>');
+  });
+
+  test('a typed tag shows as typed and resends escaped, with or without pastes', () => {
+    const typed = '<pasted_content id="abcd1234" chars="3">abc</pasted_content> hello';
+    expect(parseUserMessageText(serializePromptWithPastes(typed, [])).text).toBe(typed);
+    expect(parseUserMessageText(serializePromptWithPastes(typed, [PASTE])).text).toBe(typed);
+    expect(editResendAttachments([], typed).text).toBe(serializePromptWithPastes(typed, []));
+    expect(userMessageCopyText(typed, [PASTE])).toBe(`${PASTE.text}\n\n${typed}`);
+  });
+
+  test('parseUserMessageParts draws each paste as a tile ahead of the files', () => {
+    const text = `${serializePromptWithPastes('hi', [PASTE])}\n\n<file path="/w/a.png" mime="image/png" filename="a.png">x</file>`;
+    const { content, attachments } = parseUserMessageParts([{ type: 'text', text }] as unknown as Parameters<typeof parseUserMessageParts>[0]);
+    expect(content.text).toBe('hi');
+    expect(attachments.map((a) => a.key)).toEqual(['pasted:0a1b2c3d', 'upload:0:/w/a.png']);
+    expect(attachments[0]).toEqual({ key: 'pasted:0a1b2c3d', filename: 'Pasted text', pasted: PASTE });
+  });
+
+  test('a paste repeated (a command template repeats its args) is one tile, sent once on edit', () => {
+    const block = serializePromptWithPastes('', [PASTE]);
+    const text = `${block}\n\nrun it\n\n${block}`;
+    const { content, attachments } = parseUserMessageParts([{ type: 'text', text }] as unknown as Parameters<typeof parseUserMessageParts>[0]);
+    expect(content.pasted).toEqual([PASTE]);
+    expect(attachments.map((a) => a.key)).toEqual(['pasted:0a1b2c3d']);
+    expect(editResendAttachments(attachments, 'run it').text).toBe(serializePromptWithPastes('run it', [PASTE]));
+  });
+
+  test('Copy writes each paste as its text, then the typed text', () => {
+    expect(userMessageCopyText('my question', [PASTE])).toBe(`${PASTE.text}\n\nmy question`);
+    expect(userMessageCopyText('', [PASTE])).toBe(PASTE.text);
+    expect(userMessageCopyText('plain', [])).toBe('plain');
+  });
+
+  test('an edit resends a kept paste as its block ahead of the text; a removed one is gone', () => {
+    const tile = { key: 'pasted:0a1b2c3d', filename: 'Pasted text', pasted: PASTE };
+    expect(editResendAttachments([tile], 'edited')).toEqual({
+      fileParts: [],
+      text: serializePromptWithPastes('edited', [PASTE]),
+    });
+    expect(editResendAttachments([], 'edited').text).toBe('edited');
+  });
+
+  test('a command body never shows the paste XML', () => {
+    const result = commandMessageText('review', serializePromptWithPastes('run it', [PASTE]));
+    expect(result).toEqual({ body: 'run it', prompt: '/review run it' });
   });
 });

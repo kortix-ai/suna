@@ -248,6 +248,11 @@ export interface AccountStateResponse {
     enabled: boolean;
     threshold: number;
     amount: number;
+    /** Why a failed charge turned auto top-up off (KRTX-1718). */
+    disabled_reason: string | null;
+    /** The decline code or failure text of the last failed charge. */
+    last_failure_reason: string | null;
+    last_failure_at: string | null;
   };
   instances: Array<{
     sandbox_id: string;

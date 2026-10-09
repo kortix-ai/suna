@@ -78,17 +78,24 @@ export function prepareConfig(
     if (f.type === 'number' || f.type === 'integer') {
       const n = v.trim() === '' ? Number.NaN : Number(v);
       if (!Number.isFinite(n) || (f.type === 'integer' && !Number.isInteger(n))) {
-        errors.push(`${f.name} must be ${f.type === 'integer' ? 'an integer' : 'a number'} (got "${v}")${describe(f)}`);
+        errors.push(
+          `${f.name} must be ${f.type === 'integer' ? 'an integer' : 'a number'} (got "${v}")${describe(f)}`,
+        );
       } else out[f.name] = n;
     } else if (f.type === 'boolean') {
       if (v === 'true' || v === 'false') out[f.name] = v === 'true';
       else errors.push(`${f.name} must be true or false (got "${v}")${describe(f)}`);
     } else if (f.type === 'array') {
-      const parts = v.split(',').map((x) => x.trim()).filter(Boolean);
+      const parts = v
+        .split(',')
+        .map((x) => x.trim())
+        .filter(Boolean);
       const itemType = typeOf(props[f.name]?.items);
       const items = itemType === 'number' || itemType === 'integer' ? parts.map(Number) : parts;
       if (items.some((x) => typeof x === 'number' && !Number.isFinite(x))) {
-        errors.push(`${f.name} must be a comma-separated list of numbers (got "${v}")${describe(f)}`);
+        errors.push(
+          `${f.name} must be a comma-separated list of numbers (got "${v}")${describe(f)}`,
+        );
       } else out[f.name] = items;
     }
   }
@@ -119,7 +126,9 @@ export async function lookupEvent(
   const found = resp.event_types.find((e) => e.type === event);
   return found
     ? { event: found }
-    : { error: `Unknown event ${event} for ${connector}. Run \`kortix triggers events --connector ${connector}\`.` };
+    : {
+        error: `Unknown event ${event} for ${connector}. Run \`kortix triggers events --connector ${connector}\`.`,
+      };
 }
 
 /**
@@ -155,7 +164,10 @@ export async function quietCatalogContext(
 }
 
 /** Status word + the exact next step for an event trigger. */
-export function eventNextStep(t: ProjectTrigger, eventName?: string): { word: string; lines: string[] } {
+export function eventNextStep(
+  t: ProjectTrigger,
+  eventName?: string,
+): { word: string; lines: string[] } {
   const e = t.event;
   if (!e) return { word: '—', lines: [] };
   switch (e.status) {
@@ -165,20 +177,35 @@ export function eventNextStep(t: ProjectTrigger, eventName?: string): { word: st
       return {
         word: 'needs connection',
         lines: [
-          `Needs a project-shared ${e.app ?? e.connector} account. A person must open the link: kortix connectors connect ${e.connector} --owner project`,
+          e.account
+            ? `Needs a project-shared ${e.app ?? e.connector} account labelled "${e.account}" on ${e.connector}. A person must open the link: kortix connectors connect ${e.connector} --owner project  (label it "${e.account}": kortix connectors rename <id> ${e.account})`
+            : `Needs a project-shared ${e.app ?? e.connector} account. A person must open the link: kortix connectors connect ${e.connector} --owner project`,
           'It goes live when the account is connected.',
         ],
       };
-    case 'error':
+    case 'error': {
+      // No provider: the connector is undeclared. A provider other than the
+      // source: the connector cannot serve that adapter. Neither is a config fix.
+      const connectorFix = !e.provider
+        ? '<slug>'
+        : e.source && e.source !== e.provider
+          ? `<a ${e.source} connector>`
+          : null;
       return {
         word: 'error',
         lines: [
           `Error: ${e.error ?? 'the provider rejected the subscription'}`,
-          `Fix the settings: kortix triggers set ${t.slug} --config <key>=<value>  (fields: kortix triggers events --connector ${e.connector} --event ${e.type})`,
+          connectorFix
+            ? `Pick a connector that serves it: kortix triggers set ${t.slug} --connector ${connectorFix}  (connectors with events: kortix triggers events --apps)`
+            : `Fix the settings: kortix triggers set ${t.slug} --config <key>=<value>  (fields: kortix triggers events --connector ${e.connector} --event ${e.type})`,
         ],
       };
+    }
     default:
-      return { word: 'pending', lines: [`Subscribing. Check again: kortix triggers info ${t.slug}`] };
+      return {
+        word: 'pending',
+        lines: [`Subscribing. Check again: kortix triggers info ${t.slug}`],
+      };
   }
 }
 
@@ -200,14 +227,21 @@ export async function triggersEvents(
     const resp = await ctx.client.get<TriggerEventTypesResponse>(
       eventTypesPath(ctx.projectId, args.connector as string),
     );
-    return args.event ? printEvent(resp, args.event, json) : printEvents(resp, json);
+    return args.event
+      ? printEvent(resp, args.event, json, args.connector as string)
+      : printEvents(resp, json);
   } catch (err) {
     return surfaceApiError(err);
   }
 }
 
-async function printApps(ctx: { client: ApiClient; projectId: string }, json: boolean): Promise<number> {
-  const resp = await ctx.client.get<TriggerEventAppsResponse>(`/projects/${ctx.projectId}/triggers/event-apps`);
+async function printApps(
+  ctx: { client: ApiClient; projectId: string },
+  json: boolean,
+): Promise<number> {
+  const resp = await ctx.client.get<TriggerEventAppsResponse>(
+    `/projects/${ctx.projectId}/triggers/event-apps`,
+  );
   if (json) {
     emitJson(resp);
     return 0;
@@ -216,21 +250,46 @@ async function printApps(ctx: { client: ApiClient; projectId: string }, json: bo
     process.stdout.write(`  ${C.dim}No app can trigger events on this deployment.${C.reset}\n`);
     return 0;
   }
-  const appW = Math.max(...resp.apps.map((a) => a.app.length), 3);
-  const connW = Math.max(...resp.apps.map((a) => (a.connector ?? '—').length), 9);
-  process.stdout.write(`\n  ${C.dim}${pad('APP', appW)}   EVENTS   ${pad('CONNECTOR', connW)}   STATE${C.reset}\n`);
-  for (const a of resp.apps) {
+  const out = process.stdout;
+  out.write('\n');
+  const withConnector = resp.apps
+    .filter((a) => (a.connectors?.length ?? 0) > 0)
+    .sort((a, b) => (a.source ?? a.provider).localeCompare(b.source ?? b.provider));
+  let lastSource = '';
+  for (const a of withConnector) {
+    const source = a.source ?? a.provider;
+    if (source !== lastSource) {
+      out.write(`${lastSource ? '\n' : ''}  ${C.dim}source: ${source}${C.reset}\n`);
+      lastSource = source;
+    }
     const state = a.connected
       ? `${C.green}connected${C.reset}`
-      : a.connector
-        ? `${C.yellow}needs account${C.reset}`
-        : `${C.faded}no connector${C.reset}`;
-    process.stdout.write(
-      `  ${pad(a.app, appW)}   ${pad(String(a.event_count), 6)}   ${pad(a.connector ?? '—', connW)}   ${state}\n`,
+      : `${C.yellow}needs account${C.reset}`;
+    out.write(
+      `  ${C.bold}${a.app}${C.reset}  ${C.dim}${a.event_count} events${C.reset}  ${state}\n`,
+    );
+    for (const c of a.connectors ?? []) {
+      out.write(
+        `    ${C.cyan}${c.slug}${C.reset}${c.accounts.length === 0 ? `  ${C.yellow}no shared account${C.reset}` : ''}\n`,
+      );
+      const labelW = Math.max(...c.accounts.map((x) => x.label.length), 5);
+      for (const x of c.accounts) {
+        const as = x.connected_as ? `as ${x.connected_as}` : '';
+        const flags = [x.is_default ? 'default' : '', x.connected ? '' : 'not connected']
+          .filter(Boolean)
+          .join(', ');
+        out.write(`      ${pad(x.label, labelW)}  ${pad(as, 24)} ${C.faded}${flags}${C.reset}\n`);
+      }
+    }
+  }
+  const rest = resp.apps.filter((a) => (a.connectors?.length ?? 0) === 0);
+  if (rest.length > 0) {
+    out.write(
+      `\n  ${C.dim}No connector yet (${rest.length}): ${rest.map((a) => `${a.app} (${a.event_count}${a.new_connector_slug && a.new_connector_slug !== a.app ? `, add as ${a.new_connector_slug}` : ''})`).join(', ')}${C.reset}\n`,
     );
   }
-  process.stdout.write(
-    `\n  ${C.dim}${resp.apps.length} apps. List an app's events: kortix triggers events --connector <slug>.\n  No connector yet: kortix connectors add <slug> --provider composio --app <app> --apply${C.reset}\n\n`,
+  out.write(
+    `\n  ${C.dim}${resp.apps.length} apps. List a connector's events: kortix triggers events --connector <slug>.\n  Add a connector: kortix connectors add <slug> --provider composio --app <app> --apply\n  Pick an account: kortix triggers add … --connector <slug> --account <label> (omit it for the default).\n  See every app event trigger: kortix triggers ls --type event  (one connector: kortix triggers ls --connector <slug>).${C.reset}\n\n`,
   );
   return 0;
 }
@@ -246,19 +305,26 @@ function printEvents(resp: TriggerEventTypesResponse, json: boolean): number {
   }
   const typeW = Math.max(...resp.event_types.map((e) => e.type.length), 4);
   const nameW = Math.max(...resp.event_types.map((e) => e.name.length), 4);
-  process.stdout.write(`\n  ${C.dim}${pad('TYPE', typeW)}   ${pad('NAME', nameW)}   DELIVERY${C.reset}\n`);
+  process.stdout.write(
+    `\n  ${C.dim}${pad('TYPE', typeW)}   ${pad('NAME', nameW)}   DELIVERY${C.reset}\n`,
+  );
   for (const e of resp.event_types) {
     process.stdout.write(
       `  ${pad(e.type, typeW)}   ${pad(e.name, nameW)}   ${C.faded}${e.delivery ?? '—'}${C.reset}\n`,
     );
   }
   process.stdout.write(
-    `\n  ${C.dim}${resp.event_types.length} event type${resp.event_types.length === 1 ? '' : 's'} on ${resp.app} (${resp.provider}). Details: kortix triggers events --connector <slug> --event <TYPE>${C.reset}\n\n`,
+    `\n  ${C.dim}${resp.event_types.length} event type${resp.event_types.length === 1 ? '' : 's'} on ${resp.app} (${resp.source ?? resp.provider}). Details: kortix triggers events --connector <slug> --event <TYPE>${C.reset}\n\n`,
   );
   return 0;
 }
 
-function printEvent(resp: TriggerEventTypesResponse, type: string, json: boolean): number {
+function printEvent(
+  resp: TriggerEventTypesResponse,
+  type: string,
+  json: boolean,
+  connector: string,
+): number {
   const e = resp.event_types.find((x) => x.type === type);
   if (!e) {
     process.stderr.write(
@@ -272,7 +338,8 @@ function printEvent(resp: TriggerEventTypesResponse, type: string, json: boolean
   }
   const out = process.stdout;
   out.write(`\n  ${C.bold}${e.type}${C.reset}  ${e.name}\n`);
-  if (e.description) out.write(`  ${C.dim}${e.description.replace(/\s+/g, ' ').trim()}${C.reset}\n`);
+  if (e.description)
+    out.write(`  ${C.dim}${e.description.replace(/\s+/g, ' ').trim()}${C.reset}\n`);
   out.write(`  ${C.dim}delivery${C.reset} ${e.delivery ?? 'unknown'}\n`);
   const fields = configFields(e.config_schema);
   out.write(`\n  ${C.dim}Config (--config <key>=<value>)${C.reset}\n`);
@@ -288,14 +355,18 @@ function printEvent(resp: TriggerEventTypesResponse, type: string, json: boolean
     out.write(`    ${C.cyan}${f.name}${C.reset} (${meta})${describe(f)}\n`);
   }
   out.write(`\n  ${C.dim}Prompt variables${C.reset}\n`);
-  out.write('    {{ event.id }} {{ event.type }} {{ event.app }} {{ event.connector }} {{ event.occurred_at }}\n');
+  out.write(
+    '    {{ event.id }} {{ event.type }} {{ event.app }} {{ event.connector }} {{ event.occurred_at }}\n',
+  );
   const payload = Object.entries(((e.payload_schema ?? {}) as Schema).properties ?? {});
   for (const [name, p] of payload) {
-    out.write(`    {{ event.data.${name} }}${typeof p?.description === 'string' ? ` — ${p.description}` : ''}\n`);
+    out.write(
+      `    {{ event.data.${name} }}${typeof p?.description === 'string' ? ` — ${p.description}` : ''}\n`,
+    );
   }
   if (payload.length === 0) out.write('    {{ event.data.<field> }} — the provider payload\n');
   out.write(
-    `\n  ${C.dim}Add it: kortix triggers add <slug> --type event --connector <slug> --event ${e.type} --prompt "…" --apply${C.reset}\n\n`,
+    `\n  ${C.dim}Add it: kortix triggers add <slug> --type event --connector ${connector} --event ${e.type} --prompt "…" --apply${C.reset}\n\n`,
   );
   return 0;
 }

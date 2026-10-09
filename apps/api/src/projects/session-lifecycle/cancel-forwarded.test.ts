@@ -218,3 +218,55 @@ describe('cancelForwardedPrompt — a steer pi has not read (R10)', () => {
     expect(await cancelForwardedPrompt(SESSION_ID, PROMPT_ID)).toEqual({ outcome: 'unreachable' });
   });
 });
+
+describe('cancelForwardedPrompt — a daemon that serves the retract (R7.1)', () => {
+  const RUNNING = wireId(T - 5_000, 'RUNNINGRUNNIN');
+  // pi admitted the target behind a running turn: the turn's newer step is
+  // parented on ITS prompt, so the target is in the transcript and unread.
+  const tipBody = {
+    messages: [
+      { info: { id: RUNNING, role: 'user', time: { created: T - 5_000 } }, parts: [{ id: 'prt_r' }] },
+      { info: { id: TARGET, role: 'user', time: { created: T } }, parts: [{ id: 'prt_u' }] },
+      { info: { id: wireId(T + 3_000, 'STEPSTEPSTEPS'), role: 'assistant', parentID: RUNNING, time: { created: T + 3_000 } }, parts: [] },
+    ],
+    has_more: false,
+  };
+  const calls: string[] = [];
+  function box(retract: () => Response) {
+    globalThis.fetch = (async (url: string | URL, init?: RequestInit) => {
+      const target = decodeURIComponent(String(url));
+      if (target.endsWith('/kortix/health')) return Response.json({ capabilities: ['runtime.turns.v1', 'runtime.retract.v1'] });
+      const method = init?.method ?? 'GET';
+      if (method !== 'GET') calls.push(`${method} ${target.replace(`https://box.test/p/${EXTERNAL_ID}/8000`, '')}`);
+      if (target.endsWith('/retract')) return retract();
+      if (method === 'DELETE') throw new Error('a daemon with the retract gets no delete');
+      return Response.json(tipBody);
+    }) as unknown as typeof fetch;
+  }
+  const verb = (status: number, body: unknown) =>
+    Response.json(body, { status, headers: { 'X-Kortix-Turn-Verb': '1' } });
+
+  beforeEach(async () => {
+    calls.length = 0;
+    (await import('./runtime-fetch')).__resetRuntimeTurnVerbsMemo();
+  });
+
+  test('an unread prompt queued behind the running turn is retracted and the row goes', async () => {
+    box(() => verb(200, { retracted: true }));
+    expect((await cancelForwardedPrompt(SESSION_ID, PROMPT_ID)).outcome).toBe('cancelled');
+    expect(calls).toEqual([`POST /kortix/runtime/messages/${OC_SESSION_ID}/${TARGET}/retract`]);
+    expect(closedTurns).toEqual([TARGET]);
+  });
+
+  test('a retract answered message_read means a model call read it: answered, the row stays', async () => {
+    box(() => verb(409, { code: 'message_read', error: 'a model call read this message' }));
+    expect(await cancelForwardedPrompt(SESSION_ID, PROMPT_ID)).toEqual({ outcome: 'answered' });
+    expect(closedTurns).toEqual([]);
+  });
+
+  test('a refused retract is unreachable', async () => {
+    box(() => verb(503, { code: 'RUNTIME_NOT_READY' }));
+    expect(await cancelForwardedPrompt(SESSION_ID, PROMPT_ID)).toEqual({ outcome: 'unreachable' });
+    expect(closedTurns).toEqual([]);
+  });
+});

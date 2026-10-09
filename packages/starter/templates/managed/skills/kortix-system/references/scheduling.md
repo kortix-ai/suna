@@ -31,7 +31,7 @@ Rules: `kortix-yaml.md` → `imports:`.
 | To follow up on **this** task later ("remind me at 4pm", "check tomorrow whether they replied", "keep checking hourly until the deploy is green") | **session reminder** | `kortix remind "<what to do>" --at <ISO> \| --in 24h [--every 1h]` — no `kortix.yaml` change |
 | A one-time project job not tied to this session ("send the launch email tomorrow 9am") | **cron trigger, one-off** | `type: cron` + `run_at: "<ISO-8601>"` |
 | Something to repeat ("every weekday morning", "daily digest", "check hourly") | **cron trigger, recurring** | `type: cron` + `cron: "<6-field>"` + `timezone` |
-| To react to an event **in a connected app** ("when a PR opens", "when an email arrives", "when an issue changes", "when a calendar event is created", "when a Slack message is posted") | **event trigger** | `type: event` + `connector` + `event` — see [App event triggers](#app-event-triggers) |
+| To react to an event **in a connected app** ("when a PR opens", "when an email arrives", "when an issue changes", "when a calendar event is created", "when a Slack message is posted") | **event trigger** | `type: event` + `connector` + `event` (optional `source`) — see [App event triggers](#app-event-triggers) |
 | To react to a system that has **no app connector** ("when our in-house tool calls us") | **webhook trigger** | `type: webhook` + `secret_env` |
 | To **pause mid-task and resume later with full context** | **session reminder** | See [Pausing mid-task](#pausing-mid-task) |
 
@@ -201,19 +201,46 @@ minutes), a plain `sleep` in the run is fine.
 Kortix creates the subscription for you. You wire no webhook, secret, or
 signature. Use a webhook trigger only for a system with no app connector.
 
+### See every event trigger
+
+- `kortix triggers ls --type event` lists only app events, grouped by app
+  (`github (2)`, `gmail (1)`), with each status word.
+- `kortix triggers ls --connector <slug>` keeps the app events on one
+  connector (profile). `--type` and `--connector` combine. `--json` returns
+  the filtered list. `--type` also takes `cron`, `webhook` and `monitor`.
+- Web: **Triggers** has the filter `All · Schedules · App events · Webhooks`
+  with counts, kept in the URL as `?type=event`. **App events** groups the
+  rows by app and lists every app with events below them. A connector's
+  detail window has a **Triggers** tab with the app events on it.
+
 ### Autonomous setup recipe
+
+Terms: an **app** is the service (`github`). A **connector** is a profile,
+a `connectors:` entry. Several connectors can share one app (`github`,
+`github-work`). An **account** is one connected login under a connector.
+Only a **shared** account (project-owned, open to the whole project) can
+feed a trigger.
 
 Run these in order. Each step prints what the next step needs.
 
-1. **Find the app.** `kortix triggers events --apps`. The table shows `APP`,
-   `EVENTS`, `CONNECTOR`, `STATE`. `STATE` is `connected`, `needs account`,
-   or `no connector`.
+1. **Find the app.** `kortix triggers events --apps`. Each app prints its
+   `EVENTS` count and `STATE` (`connected` or `needs account`). Under it, each
+   connector (profile) lists its shared accounts: label, `as <identity>`,
+   `default`, `not connected`. Apps with no connector collapse into one
+   `No connector yet` line.
 2. **No connector?** `kortix connectors add <slug> --provider composio --app <app> --apply`.
    It commits the connector to `kortix.yaml` on main and syncs it.
+   Use the slug `triggers events --apps` suggests when it prints `add as <slug>`
+   (for example `slack` → `slack-events`: `slack` is the built-in Slack channel).
 3. **Not connected?** `kortix connectors connect <slug> --owner project`.
    Give the link to the person and ask them to open it. Use the shared
    (`project`) account. Never use a member's private account: event
-   triggers cannot use it. You cannot finish this step yourself.
+   triggers cannot use it. You cannot finish this step yourself. To add a
+   second account to the same connector, run the same command again; then
+   label it (`kortix connectors rename <id> <label>`). When the
+   person finishes, Kortix picks the account up by itself. If the trigger
+   still says `needs connection` a minute later, run
+   `kortix connectors connect-finalize <slug> --owner project`.
 4. **Pick the event.** `kortix triggers events --connector <slug>` lists the
    events. Then `kortix triggers events --connector <slug> --event <TYPE>`
    shows the config fields and the `{{ event.data.* }}` variables.
@@ -226,17 +253,29 @@ Run these in order. Each step prints what the next step needs.
      --config repo=acme/api \
      --prompt "Review {{ event.data.html_url }}" --apply
    ```
+   `--connector` names the profile. Add `--account <label>` only when that
+   connector has several shared accounts and the trigger must use one that is
+   not the default. Without `--account` the trigger uses the connector's
+   default shared account. Change it later with
+   `kortix triggers set <slug> --account <label>`; `--default-account` clears
+   it. Switching the account resubscribes the trigger.
+   `--source <adapter>` names the event source. Omit it: the default is the
+   connector's provider (`composio`). Composio is one adapter, and the event
+   id belongs to it; Kortix has no event ids of its own. A source that does
+   not match the connector's provider reads `error`. `kortix triggers info`
+   shows the `source`.
    Without `--apply` the CLI writes the block to the local `kortix.yaml`; then
    run `kortix ship`. A bad config exits 2 and lists every missing or invalid
    field.
-6. **Check it.** `kortix triggers info pr-review`. Repeat until it prints
-   `live`. Act on the status:
+6. **Check it.** `kortix triggers info pr-review`. It shows `source`, `connector`, `account`
+   (the label, or `default`) and `connected as` (the identity that feeds the
+   trigger). Repeat until it prints `live`. Act on the status:
 
    | CLI status | Do |
    | --- | --- |
    | `live` | Done. It fires on the next matching event. |
    | `pending` | Wait a moment and check again. |
-   | `needs connection` | Ask a person to open the `--owner project` link (step 3). It goes live by itself after. |
+   | `needs connection` | Ask a person to open the `--owner project` link (step 3). It goes live by itself after. If `info` shows an `account`, the text reads `Connect a shared <App> account labelled "<label>" on <connector>.` Connect that account, then label it with `kortix connectors rename <id> <label>`. |
    | `error` | Read the error. Fix the config: `kortix triggers set <slug> --config <k>=<v>`. If the error says the account is shared with specific people only, ask a person to share it with the whole project. |
 
 Change a live trigger with `kortix triggers set <slug> --config k=v` (merge)

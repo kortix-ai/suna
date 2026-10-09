@@ -74,6 +74,29 @@ export function composioErrorMessage(error: unknown): string {
   }
 }
 
+const KORTIX_CONNECTION = /^kortix-connection:([0-9a-f-]{36})$/;
+
+/** The Kortix connection id inside any string value of a payload, or null. */
+export function kortixConnectionIn(value: unknown): string | null {
+  if (typeof value === 'string') return KORTIX_CONNECTION.exec(value)?.[1] ?? null;
+  if (value && typeof value === 'object') {
+    for (const child of Object.values(value)) {
+      const found = kortixConnectionIn(child);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+async function connectionOfAccount(accountId: string): Promise<string | null> {
+  try {
+    const account = (await getComposioRuntime().connectedAccounts?.get(accountId)) as Record<string, unknown> | null | undefined;
+    return kortixConnectionIn(account?.user_id ?? account?.userId);
+  } catch {
+    return null;
+  }
+}
+
 export const composioEventSource: EventSourceProvider = {
   id: 'composio',
   configured: () => composioConfigured(),
@@ -104,10 +127,13 @@ export const composioEventSource: EventSourceProvider = {
   async listApps() {
     const toolkits = getComposioRuntime().toolkits;
     if (!toolkits) throw new Error('Composio toolkit catalogue is unavailable');
+    // Offer only apps a project can connect: the connectors catalog's own hidden set.
+    const { composioHiddenToolkits } = await import('../../connectors/composio-catalog-search');
+    const hidden = await composioHiddenToolkits();
     const apps: EventApp[] = [];
     for (const t of await toolkits.get({ limit: 1000 })) {
       const eventCount = t.meta?.triggersCount ?? t.meta?.triggers_count ?? 0;
-      if (eventCount > 0) apps.push({ app: t.slug, name: t.name, logo: t.meta?.logo ?? null, eventCount });
+      if (eventCount > 0 && !hidden.has(t.slug.toLowerCase())) apps.push({ app: t.slug, name: t.name, logo: t.meta?.logo ?? null, eventCount });
     }
     return apps.sort((a, b) => a.name.localeCompare(b.name));
   },
@@ -164,6 +190,14 @@ export const composioEventSource: EventSourceProvider = {
       case 'composio.trigger.disabled': {
         const externalId = str(meta.trigger_id) || str(data.trigger_id) || str(data.id);
         if (externalId) notices.push({ kind: 'subscription_disabled', externalId, reason: str(data.reason) || str(data.message) || 'Composio disabled the trigger.' });
+        break;
+      }
+      case 'composio.connected_account.activated': {
+        // The account's user id is `kortix-connection:<connection_id>` (composioUserId).
+        // Its place in the payload is undocumented, so find it anywhere, else read the account.
+        const accountId = str(meta.connected_account_id) || str(data.connected_account_id) || str(data.id);
+        const connectionId = kortixConnectionIn(body) ?? (accountId ? await connectionOfAccount(accountId) : null);
+        if (connectionId) notices.push({ kind: 'connection_activated', connectionId });
         break;
       }
       case 'composio.connected_account.expired': {

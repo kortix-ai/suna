@@ -38,6 +38,31 @@ export interface RuntimeStateDoc {
  * until the next trigger; the API's pull-through path remains the backstop.
  */
 
+/**
+ * apps/api keeps each session's list of runtime conversations (ids, parents,
+ * titles) from the stored projection, so both adapters push when that list
+ * changes. The returned check is true for a frame that adds a session, removes
+ * one, or changes a title — not for the `session.updated` OpenCode sends on
+ * every step, which would push once per step.
+ */
+export function createSessionTreeWatch(): (event: { type?: string; properties?: unknown }) => boolean {
+  const titles = new Map<string, string | null>()
+  return (event) => {
+    const props = (event.properties ?? {}) as { sessionID?: unknown; info?: { id?: unknown; title?: unknown } }
+    const id = typeof props.info?.id === 'string' ? props.info.id : typeof props.sessionID === 'string' ? props.sessionID : null
+    if (!id) return false
+    if (event.type === 'session.deleted') {
+      titles.delete(id)
+      return true
+    }
+    if (event.type !== 'session.created' && event.type !== 'session.updated') return false
+    const title = typeof props.info?.title === 'string' ? props.info.title : null
+    if (titles.has(id) && titles.get(id) === title) return false
+    titles.set(id, title)
+    return true
+  }
+}
+
 /** The server's decompressed-body cap (PROJECTION_MAX_BYTES on the API side). */
 const PROJECTION_RELAY_MAX_BYTES = 256 * 1024
 

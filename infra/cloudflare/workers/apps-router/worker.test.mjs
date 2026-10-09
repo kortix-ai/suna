@@ -83,6 +83,23 @@ describe('Kortix Apps Cloudflare router', () => {
     expect(response.headers.get('x-frame-options')).toBeNull();
   });
 
+  test('a client with no User-Agent reaches the API with one; a client User-Agent passes through', async () => {
+    // The API zone refuses a request without a User-Agent (403). Node's `ws`
+    // (the Convex CLI and every server-side Convex client) sends none.
+    const forwarded = [];
+    globalThis.fetch = async (request) => {
+      forwarded.push(request);
+      return new Response('ok', { status: 200 });
+    };
+    await worker.fetch(new Request('https://dev-convex-0123456789abcdef.apps.kortix.com/version'), env);
+    await worker.fetch(new Request('https://dev-convex-0123456789abcdef.apps.kortix.com/version', {
+      headers: { 'user-agent': 'node-fetch/3' },
+    }), env);
+
+    expect(forwarded[0].headers.get('user-agent')).toBe('kortix-apps-router');
+    expect(forwarded[1].headers.get('user-agent')).toBe('node-fetch/3');
+  });
+
   test('replaces upstream framing restrictions and preserves other CSP directives', async () => {
     globalThis.fetch = async () => new Response('hello', {
       status: 200,

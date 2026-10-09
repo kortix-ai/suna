@@ -57,7 +57,9 @@ import {
   validateDefaultAgentV2,
   validateHarnessesV2,
   validateRuntimeV2,
+  validateToolsV2,
   validateTriggerAgentRefsV2,
+  warnUnknownAgentTools,
 } from './index.v2';
 
 /**
@@ -89,6 +91,7 @@ export {
   MEMORY_DIR,
   OPENCODE_CONFIG_DIR,
   SKILLS_DIR,
+  TOOL_FILE_PATTERN,
   agentFileCandidates,
   defaultAgentFile,
   legacyConfigDir,
@@ -96,6 +99,7 @@ export {
   opencodeConfigDirCandidates,
   piConfigDirCandidates,
   safeAgentFile,
+  safeToolFile,
   safeRepoPath,
   skillDirs,
 } from './layout';
@@ -193,6 +197,12 @@ export {
   SANDBOX_DISK_BOUNDS,
   SANDBOX_MEMORY_BOUNDS,
   SLUG_RE,
+  HARNESS_TOOL_NAMES,
+  KORTIX_TOOL_NAMES,
+  KORTIX_TOOL_PREFIX,
+  kortixToolRef,
+  selectedKortixTools,
+  TOOL_NAME_RE,
   TRIGGER_TYPES,
   V2_RUNTIME_VALUES,
   WORKSPACE_MODES_V2,
@@ -213,12 +223,14 @@ export {
   type PermissionConfigObjectV2,
   type PermissionConfigV2,
   type GrantSetV2,
+  type AgentToolsV2,
   type AgentBlockV2,
   type AppBlockV2,
   type AppResourcesV2,
   type ManifestV2,
   type HarnessesV2,
   type PiPackageEntryV2,
+  resolveAgentTools,
   resolveGrantSet,
   validatePermissionConfig,
   validateAgentMdFrontmatter,
@@ -381,7 +393,9 @@ function validateManifestBodyV2(
   rejectChannelsV2(parsed.channels, 'channels', issues);
   validateRuntimeV2(parsed.runtime, 'runtime', issues);
   validateHarnessesV2(parsed.harnesses, 'harnesses', issues);
+  validateToolsV2(parsed.tools, 'tools', issues);
   const { names: agentNames, disabledNames } = validateAgentsV2(parsed.agents, 'agents', issues, parsed.kortix_version === 3);
+  warnUnknownAgentTools(parsed.agents, parsed.tools, issues);
   validateDefaultAgentV2(parsed.default_agent, 'default_agent', agentNames, disabledNames, issues);
   validateTriggerAgentRefsV2(parsed.triggers, 'triggers', agentNames, issues);
 }
@@ -941,8 +955,10 @@ const APP_TYPES = new Set(['static', 'bundle', 'dockerfile', 'oci_image']);
 const APP_KEYS = new Set([
   'path', 'type', 'image', 'dockerfile', 'command', 'port', 'root', 'output_dir',
   'install_command', 'build_command', 'spa', 'readiness_path', 'idle_timeout_seconds',
-  'always_on', 'monthly_budget_usd', 'resources', 'env', 'secrets',
+  'always_on', 'monthly_budget_usd', 'backends', 'resources', 'env', 'secrets',
 ]);
+/** A Kortix Backend name, as `kortix backends create` accepts it. */
+const BACKEND_NAME = /^[a-z][a-z0-9-]{0,62}$/;
 
 function validateAppStringMap(
   node: unknown,
@@ -1043,6 +1059,21 @@ function validateAppsV2(node: unknown, path: string, issues: ManifestIssue[]): v
     if (value.monthly_budget_usd !== undefined &&
         (typeof value.monthly_budget_usd !== 'number' || value.monthly_budget_usd < 0)) {
       issues.push({ path: `${where}.monthly_budget_usd`, message: 'must be a non-negative number.', severity: 'error' });
+    }
+    if (value.backends !== undefined) {
+      if (!Array.isArray(value.backends)) {
+        issues.push({ path: `${where}.backends`, message: 'must be a list of backend names.', severity: 'error' });
+      } else {
+        value.backends.forEach((name: unknown, index: number) => {
+          if (typeof name !== 'string' || !BACKEND_NAME.test(name)) {
+            issues.push({
+              path: `${where}.backends[${index}]`,
+              message: 'must be a backend name: lowercase letters, digits and dashes, starting with a letter.',
+              severity: 'error',
+            });
+          }
+        });
+      }
     }
     if (value.resources !== undefined) {
       if (!isTable(value.resources)) {
@@ -1192,7 +1223,10 @@ function validateMonitorTrigger(
  * `type: event` — the fourth trigger type: "when <app event> happens on
  * <connected app>, run the agent". `connector` names a declared connector,
  * `event` is the provider's event type id, `config` is the provider event
- * config (validated by the provider at subscribe time, not here). Wiring for
+ * config (validated by the provider at subscribe time, not here). `account`
+ * optionally names one shared account of that connector by label. `source`
+ * optionally names the event source adapter (default: the connector's
+ * provider); event ids belong to that adapter. Wiring for
  * the other three types is hard-rejected — a manifest must not claim a
  * schedule the event source never reads.
  *
@@ -1218,6 +1252,20 @@ function validateEventTrigger(
     issues.push({
       path: `${where}.config`,
       message: 'config must be an object.',
+      severity: 'error',
+    });
+  }
+  if (entry.account !== undefined && (typeof entry.account !== 'string' || !entry.account.trim())) {
+    issues.push({
+      path: `${where}.account`,
+      message: 'account must be the label of a shared account on the connector.',
+      severity: 'error',
+    });
+  }
+  if (entry.source !== undefined && (typeof entry.source !== 'string' || !entry.source.trim())) {
+    issues.push({
+      path: `${where}.source`,
+      message: 'source must be the event source adapter id, such as "composio".',
       severity: 'error',
     });
   }
@@ -1388,7 +1436,7 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], 
       validateEventTrigger(entry, where, issues);
     }
     if (type && type !== 'event' && (TRIGGER_TYPES as readonly string[]).includes(type)) {
-      for (const key of ['connector', 'event', 'config']) {
+      for (const key of ['connector', 'account', 'source', 'event', 'config']) {
         if (entry[key] !== undefined) {
           issues.push({
             path: `${where}.${key}`,

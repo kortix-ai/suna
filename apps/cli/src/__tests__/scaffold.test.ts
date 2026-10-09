@@ -14,7 +14,7 @@ const REQUIRED_BASE_PATHS = [
   // `kortix-cli` is the only managed skill scaffolded into a repo; the rest of
   // the `kortix-*` family lives in templates/managed/ and is injected at boot.
   'skills/kortix-cli/SKILL.md',
-  'harnesses/opencode/tools/show.ts',
+  'harnesses/opencode/plugins/pty.ts',
   'README.md',
   'kortix.yaml',
 ];

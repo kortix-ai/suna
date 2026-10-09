@@ -1735,6 +1735,60 @@ export const projectMonitorBoxes = kortixSchema.table(
 );
 
 /**
+ * Kortix Backends: one self-hosted Convex backend per row, each in its own
+ * persistent Platinum machine. A project owns any number of them, named
+ * uniquely among its live rows.
+ */
+export const projectBackends = kortixSchema.table(
+  'project_backends',
+  {
+    backendId: uuid('backend_id').defaultRandom().primaryKey().notNull(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    accountId: uuid('account_id').notNull(),
+    name: varchar('name', { length: 63 }).notNull(),
+    status: varchar('status', { length: 20 }).default('provisioning').notNull(),
+    provider: varchar('provider', { length: 32 }).notNull(),
+    /** The provider's sandbox id. Null until the create call returns. */
+    externalId: text('external_id'),
+    /** Convex client URL (CONVEX_CLOUD_ORIGIN). Null until provisioned. */
+    url: text('url'),
+    /** Convex HTTP-actions URL (CONVEX_SITE_ORIGIN). */
+    siteUrl: text('site_url'),
+    /** Convex admin key, sealed with the project secret envelope. */
+    adminKeyEnc: text('admin_key_enc'),
+    /** ES256 private key that signs Kortix sign-in tokens for this backend, sealed like the admin key. */
+    authKeyEnc: text('auth_key_enc'),
+    /**
+     * The `iss` of this backend's sign-in tokens: `<public API origin>/v1/backends/<id>`,
+     * fixed at creation. Null on a backend that still uses the old placeholder
+     * issuer until `moveBackendIssuers` moves it.
+     */
+    authIssuer: text('auth_issuer'),
+    /** The backend image the machine boots, by template id. */
+    template: text('template'),
+    cpu: integer('cpu').notNull(),
+    memoryGb: integer('memory_gb').notNull(),
+    diskGb: integer('disk_gb').notNull(),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    metadata: jsonb('metadata').default({}).notNull().$type<Record<string, unknown>>(),
+  },
+  (table) => [
+    check(
+      'project_backends_status_check',
+      sql`${table.status} IN ('provisioning', 'running', 'error', 'deleted')`,
+    ),
+    uniqueIndex('project_backends_live_name_uniq')
+      .on(table.projectId, table.name)
+      .where(sql`${table.deletedAt} IS NULL`),
+  ],
+);
+
+/**
  * Durable execution queue for materialized cron slots.
  *
  * A unique project/slug/revision/slot key prevents duplicate execution across
@@ -3712,6 +3766,19 @@ export const gatewayRequestLogs = kortixSchema.table(
     index('idx_gateway_logs_project_session_time')
       .on(table.projectId, table.sessionId, table.createdAt)
       .where(sql`${table.sessionId} is not null`),
+    // Covering index for the account+window cost aggregates (cost-summary,
+    // cost-by-project, session-costs llmAggregateSubquery): index-only scan by
+    // (account_id, created_at) that never touches the wide request/response
+    // jsonb heap rows. Built CONCURRENTLY with INCLUDE (session_id,
+    // project_id, provider, resolved_model, billing_mode, ok,
+    // final_cost_precise, upstream_cost_precise, input_tokens,
+    // output_tokens, cached_tokens, cache_write_tokens) — not expressible in
+    // drizzle-orm 0.45's index builder; the schema contract checks relation
+    // + uniqueness only, so the declaration here (without INCLUDE) is enough
+    // to keep it in sync, the same pattern as
+    // idx_gateway_logs_project_failed_time — by
+    // 20261008012757000_gateway_logs_account_time_covering.concurrent.ts.
+    index('idx_gateway_logs_account_time_covering').on(table.accountId, table.createdAt),
   ],
 );
 
@@ -4099,7 +4166,9 @@ export const sandboxComputeSessions = kortixSchema.table(
       'sandbox_compute_sessions_workload_type_check',
       // 'monitor' = the per-project monitor box. Its `sandbox_id` IS
       // `project_monitor_boxes.box_id`; it needs no dedicated join column.
-      sql`${table.workloadType} IN ('session', 'app', 'monitor')`,
+      // 'backend' = a Kortix Backend machine. Its `sandbox_id` IS
+      // `project_backends.backend_id`.
+      sql`${table.workloadType} IN ('session', 'app', 'monitor', 'backend')`,
     ),
     index('idx_sandbox_compute_sessions_account_time').on(table.accountId, table.startedAt),
     index('idx_sandbox_compute_sessions_provider_time').on(table.provider, table.startedAt),
@@ -4171,6 +4240,11 @@ export const apps = kortixSchema.table(
     monthlyBudgetUsd: numeric('monthly_budget_usd', { precision: 12, scale: 2 })
       .default('5.00')
       .notNull(),
+    /**
+     * The Kortix Backends (by name, in this App's project) this App may mint a
+     * viewer token for at `/_kortix/backend-token`. Empty (the default): none.
+     */
+    backends: text('backends').array().default(sql`'{}'::text[]`).notNull(),
     /**
      * false: the budget is the derived default (an always-on App's 24/7 estimate
      * for its size) and follows size changes. true: a person set it. Rows that
@@ -6729,6 +6803,10 @@ export const pushDeviceTokens = kortixSchema.table('push_device_tokens', {
   onQuestion: boolean('on_question').default(true).notNull(),
   onPermission: boolean('on_permission').default(true).notNull(),
   playSound: boolean('play_sound').default(true).notNull(),
+  /** The sign-in (`auth.sessions.id`) that registered the token. A push goes
+   *  only while that sign-in exists. NULL: registered with a personal token,
+   *  or before this column existed. */
+  authSessionId: uuid('auth_session_id'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [

@@ -46,6 +46,8 @@ const cases = [
   ['service to lib', 'src/services/config-provider/config-provider.ts', "import '@/lib/git/git';", true],
   ['service to types', 'src/services/runtime-assets/runtime-truth.ts', "import type { ConfigReleaseReport } from '@/types/config-release';", true],
   ['service to a declared service', 'src/services/runtime-assets/runtime-assets.ts', "import '../config-release/boot-config';", true],
+  ['config-release to the snapshot transport', 'src/services/config-release/obtain.ts', "import '../config-provider/s3/s3-config-provider';", true],
+  ['config-provider to config-release', 'src/services/config-provider/config-provider.ts', "import '../config-release/obtain';", false],
   ['service to an undeclared service', 'src/services/static-web/static-web.ts', "import '../egress-shim';", false],
   ['service to the harness resolver', 'src/services/static-web/static-web.ts', "import '@/harness/harness';", false],
   ['service to a harness type', 'src/services/runtime-assets/runtime-assets.ts', "import type { HarnessService } from '@/harness/harness';", false],

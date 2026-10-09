@@ -21,6 +21,7 @@ import {
   toDescriptor,
   type ConfigReleaseAgentRepoint,
   type ConfigReleaseDescriptor,
+  type ConfigReleaseFormat,
   type ConfigReleaseVariant,
 } from './builder';
 import { loadAgentRosterAtCommit } from './agent-roster';
@@ -65,6 +66,14 @@ export interface DesiredReleaseInput {
    * request, so a human read decides and reports without writing.
    */
   persistRepoint?: (from: string, to: string) => Promise<boolean>;
+  /**
+   * The descriptor format the caller reads. Default v3: every caller that
+   * compares a box's running release against this one (`GET /config`, the
+   * turn gate, admission) must agree with a v3 box about a tree over the
+   * archive cap. Only the descriptor route serves v2, to a daemon that did not
+   * ask for v3.
+   */
+  format?: ConfigReleaseFormat;
 }
 
 export interface DesiredRelease {
@@ -175,7 +184,8 @@ export async function resolveDesiredRelease(
   const variant = releaseVariantFor(agent, input.repositoryAccess);
 
   const base = await deps.build(input.project, baseSha, variant);
-  let descriptor = toDescriptor(base, { repositoryAccess: input.repositoryAccess, agentRepoint });
+  const shape = { repositoryAccess: input.repositoryAccess, agentRepoint, format: input.format };
+  let descriptor = toDescriptor(base, shape);
   let quarantinedReleaseId: string | null = null;
   let fallbackReason: string | null = null;
   const variantKey = ledgerVariant(variant, input.repositoryAccess);
@@ -201,7 +211,7 @@ export async function resolveDesiredRelease(
       const fallback = await deps.ledger.lastProven(projectId, variantKey, PROJECT_QUARANTINE_SESSIONS);
       if (fallback && fallback.releaseId !== descriptor.release_id) {
         const rebuilt = await deps.build(input.project, fallback.sourceCommit, variant);
-        const candidate = toDescriptor(rebuilt, { repositoryAccess: input.repositoryAccess, agentRepoint });
+        const candidate = toDescriptor(rebuilt, shape);
         // Assign the fallback only when the rebuild reproduces the proven ID.
         if (candidate.release_id === fallback.releaseId) {
           quarantinedReleaseId = descriptor.release_id;

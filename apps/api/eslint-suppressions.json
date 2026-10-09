@@ -1913,11 +1913,6 @@
       "count": 4
     }
   },
-  "src/projects/opencode-session-snapshot.ts": {
-    "kortix-api/replica-local": {
-      "count": 1
-    }
-  },
   "src/projects/prompt-attachment-cleanup.ts": {
     "no-console": {
       "count": 1
@@ -2286,9 +2281,6 @@
     }
   },
   "src/projects/routes/project-settings.ts": {
-    "no-console": {
-      "count": 1
-    },
     "no-restricted-imports": {
       "count": 2
     },
@@ -2777,7 +2769,7 @@
       "count": 4
     },
     "no-restricted-syntax": {
-      "count": 4
+      "count": 3
     }
   },
   "src/runtime-assets/index.ts": {
@@ -2851,7 +2843,7 @@
   },
   "src/sandbox-proxy/forward/turn-start.ts": {
     "kortix-api/projects-surface": {
-      "count": 10
+      "count": 9
     },
     "no-console": {
       "count": 6
@@ -2880,7 +2872,7 @@
   },
   "src/sandbox-proxy/pre-prompt-env-sync.ts": {
     "kortix-api/projects-surface": {
-      "count": 7
+      "count": 6
     },
     "no-console": {
       "count": 3

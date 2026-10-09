@@ -9,8 +9,11 @@
 
 import type { UiTranslator } from '@/i18n/translator';
 import type {
+  ProjectTrigger,
   ProjectTriggerEvent,
+  ProjectTriggerEventAccount,
   ProjectTriggerEventApp,
+  ProjectTriggerEventConnector,
   ProjectTriggerEventType,
 } from '@kortix/sdk';
 
@@ -47,6 +50,36 @@ export function describeEventWhen(event: ProjectTriggerEvent | null): string {
     event.type.toLowerCase().startsWith(prefix) ? event.type.slice(prefix.length) : event.type
   ).replace(/_(trigger|event)$/i, '');
   return `${humanizeEventType(type || event.type)} on ${appLabel(event.app, event.connector)}`;
+}
+
+/** Display names of the event source adapters: the one place a source id becomes a name. */
+const EVENT_SOURCE_NAMES: Record<string, string> = { composio: 'Composio' };
+
+/** `composio` -> `Composio`; null when the event names no source. */
+export function eventSourceName(event: { source?: string | null; provider?: string | null }): string | null {
+  const id = event.source ?? event.provider;
+  return id ? (EVENT_SOURCE_NAMES[id] ?? appLabel(id, id)) : null;
+}
+
+/**
+ * Where an event comes from, as one line: `Github · github-work · acme-bot · via Composio`.
+ * The connector shows only when it is not just the app's own name, and the
+ * account is the declared label, else the identity the default account runs as.
+ * The last part names the event source adapter.
+ */
+export function describeEventSource(event: ProjectTriggerEvent, tI18nComplete: UiTranslator): string {
+  const app = appLabel(event.app, event.connector);
+  const parts = [app];
+  const same = (a: string, b: string) =>
+    a.toLowerCase().replace(/[^a-z0-9]/g, '') === b.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (!same(event.connector, event.app ?? '') && !same(event.connector, app)) {
+    parts.push(event.connector);
+  }
+  const account = event.account ?? event.connected_as ?? null;
+  if (account) parts.push(account);
+  const source = eventSourceName(event);
+  if (source) parts.push(tI18nComplete('text12a4656bfd2a', { source }));
+  return parts.join(' · ');
 }
 
 /* ─── Status ────────────────────────────────────────────────────────────── */
@@ -302,6 +335,63 @@ export function groupEventApps(
     .filter((a) => !a.connector)
     .sort((a, b) => rank(a) - rank(b) || byName(a, b));
   return { yours, more };
+}
+
+/* ─── Connectors and accounts ───────────────────────────────────────────── */
+
+/** The connector profiles of an app. An API without `connectors` yields the one profile it names. */
+export function appConnectors(app: EventApp): ProjectTriggerEventConnector[] {
+  if (app.connectors && app.connectors.length > 0) return app.connectors;
+  return app.connector ? [{ slug: app.connector, name: app.name, accounts: [] }] : [];
+}
+
+/** The project has a connected shared account on this connector of the app. */
+export function profileConnected(app: EventApp, connector: string): boolean {
+  const profile = appConnectors(app).find((c) => c.slug === connector);
+  if (profile && profile.accounts.length > 0) return profile.accounts.some((a) => a.connected);
+  return app.connector === connector && app.connected;
+}
+
+/** The account a trigger runs on when it names none. */
+export function defaultAccount(
+  connector: ProjectTriggerEventConnector,
+): ProjectTriggerEventAccount | null {
+  return connector.accounts.find((a) => a.is_default) ?? null;
+}
+
+/** The label the form highlights: the declared one, else the connector default's. */
+export function selectedAccountLabel(
+  connector: ProjectTriggerEventConnector,
+  account: string | null,
+): string | null {
+  return account ?? defaultAccount(connector)?.label ?? null;
+}
+
+/**
+ * The `account` a trigger stores for a picked label. The connector default is
+ * stored as null, so `kortix.yaml` names an account only when it differs.
+ */
+export function accountToStore(
+  connector: ProjectTriggerEventConnector,
+  label: string | null,
+): string | null {
+  if (!label || defaultAccount(connector)?.label === label) return null;
+  return label;
+}
+
+/** An account row: who it runs as, and its label when that differs. */
+export function describeAccount(account: ProjectTriggerEventAccount): {
+  title: string;
+  detail: string | null;
+} {
+  const identity = account.connected_as?.trim();
+  if (identity && identity !== account.label) return { title: identity, detail: account.label };
+  return { title: account.label, detail: null };
+}
+
+/** The app-event triggers that run on one connector, in list order. */
+export function eventTriggersOn(triggers: ProjectTrigger[], connector: string): ProjectTrigger[] {
+  return triggers.filter((t) => t.type === 'event' && t.event?.connector === connector);
 }
 
 /** The connector slug for a new app: the app slug, or one with a suffix when taken. */

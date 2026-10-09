@@ -272,6 +272,8 @@ export const GRANTABLE_KORTIX_PERMISSIONS: readonly string[] = [
   'project.app.read',
   'project.app.write',
   'project.app.deploy',
+  'project.backend.read',
+  'project.backend.write',
   'project.review.read',
   'project.review.submit',
   'project.review.act',
@@ -380,3 +382,59 @@ export const PI_PACKAGE_NPM_RE = /^npm:(@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9
 export const PI_PACKAGE_PATH_RE = /^\.\/(?!.*(^|\/)\.\.(\/|$))[^\s:]+$/;
 /** An npm package name without a version (`pi-web-access`, `@scope/name`): what an agent's `exclude` lists. */
 export const PI_PACKAGE_NAME_RE = /^(@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
+
+// ─── Tools ──────────────────────────────────────────────────────────────────
+
+/** A tool name: what the model calls. Snake case, as every model API accepts. */
+export const TOOL_NAME_RE = /^[a-z][a-z0-9_]{0,63}$/;
+/**
+ * Tools the harnesses implement themselves (OpenCode's and pi's native tool
+ * ids). A project tool cannot take one of these names, nor a `pty_` name
+ * (the shell plugin's). An agent's `tools` access may name them.
+ */
+export const HARNESS_TOOL_NAMES = [
+  'bash',
+  'read',
+  'write',
+  'edit',
+  'apply_patch',
+  'glob',
+  'grep',
+  'list',
+  'task',
+  'question',
+  'todowrite',
+  'webfetch',
+  'websearch',
+  'skill',
+  'lsp',
+  // OpenCode internals: the unknown-tool fallback, code mode, plan mode.
+  'invalid',
+  'execute',
+  'plan_exit',
+] as const;
+/**
+ * The Kortix tools (apps/kortix-sandbox-agent-server `src/services/tools/kortix/`).
+ * A project lists one in `tools:` as `<name>: kortix:<name>`, or replaces it
+ * with its own module under the same name.
+ */
+export const KORTIX_TOOL_NAMES = ['web_search', 'image_search', 'scrape_webpage', 'memory', 'show'] as const;
+/** A `tools:` value that keeps a Kortix tool: `kortix:<name>`. */
+export const KORTIX_TOOL_PREFIX = 'kortix:';
+
+/** The name a `kortix:<name>` value refers to, or null for any other value. */
+export function kortixToolRef(value: unknown): string | null {
+  return typeof value === 'string' && value.startsWith(KORTIX_TOOL_PREFIX) ? value.slice(KORTIX_TOOL_PREFIX.length) : null;
+}
+
+/**
+ * The Kortix tools a project's sessions get. With no `tools` key (`undefined`):
+ * all of them, so a project that never lists them keeps them. With a `tools`
+ * key, even an empty one: only the ones it lists, as `kortix:<name>` or as a
+ * module that replaces the tool.
+ */
+export function selectedKortixTools(tools: unknown): string[] {
+  if (tools === undefined) return [...KORTIX_TOOL_NAMES];
+  const listed = tools && typeof tools === 'object' && !Array.isArray(tools) ? tools : {};
+  return KORTIX_TOOL_NAMES.filter((name) => Object.hasOwn(listed, name));
+}

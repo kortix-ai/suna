@@ -13,8 +13,11 @@ export function CopyButton({
   className,
   size,
   hintSide = 'bottom',
+  label,
 }: {
   code: string;
+  /** The button's accessible name. Defaults to "Copy code". */
+  label?: string;
   className?: string;
   size?: 'sm' | 'md' | 'lg';
   hintSide?: 'top' | 'bottom' | 'left' | 'right';
@@ -41,7 +44,7 @@ export function CopyButton({
       <button
         type="button"
         onClick={handleCopy}
-        aria-label={copied ? 'Copied' : tI18nComplete.raw('text49a0053f3b0d')}
+        aria-label={copied ? 'Copied' : (label ?? tI18nComplete.raw('text49a0053f3b0d'))}
         className={cn(
           'inline-flex items-center justify-center rounded-md',
           'text-foreground hover:text-foreground hover:bg-muted-foreground/10',

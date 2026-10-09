@@ -634,11 +634,9 @@ function HtmlPreview({
 }
 
 /**
- * Text Preview Component
+ * Text Preview Component. Also the "Pasted text" sheet's body (`PastedTextSheet`).
  */
-
-
-function TextPreview({ content }: { content: string }) {
+export function TextPreview({ content }: { content: string }) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const bottomInset = React.useContext(FilePreviewBottomInsetContext);

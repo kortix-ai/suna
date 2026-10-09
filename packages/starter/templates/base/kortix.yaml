@@ -13,6 +13,7 @@
 #   agents/<name>.md          one file per agent (`agents.<name>.file`)
 #   skills/<name>/SKILL.md    skills, loaded by every harness
 #   memory/                   the project brain (the `kortix-memory` skill)
+#   tools/<name>.ts           project tools, loaded by every harness (`tools:` below)
 #   harnesses/opencode/       files only OpenCode reads (`opencode.config_dir`)
 #   harnesses/pi/             files only pi reads (`pi.config_dir`); create it when needed
 kortix_version: 2
@@ -68,11 +69,27 @@ env:
 #   default: python
 
 # Files only OpenCode reads: `opencode.jsonc` (plugins, MCP servers,
-# providers, runtime defaults), `plugins/`, `tools/`, `commands/`. The agent
+# providers, runtime defaults), `plugins/`, `commands/`. The agent
 # daemon launches opencode with OPENCODE_CONFIG_DIR pointed here. Agents and
 # skills do NOT live here — they sit at the root and serve every harness.
 opencode:
   config_dir: harnesses/opencode
+
+# ─── Tools ───────────────────────────────────────────────────────────────
+# The tools every agent of this project gets, on every harness (OpenCode, pi).
+# `kortix:<name>` is a tool Kortix maintains and updates. A path is your own
+# module, in any folder (https://kortix.com/docs/project/tools).
+#   - Delete a line to remove that tool from every agent.
+#   - Run `kortix tools eject <name>` to own and change a Kortix tool.
+#   - Use `agents.<name>.tools` to limit one agent.
+# `kortix tools ls` lists what a session gets.
+tools:
+  web_search: kortix:web_search      # maintained by Kortix, updated automatically
+  image_search: kortix:image_search
+  scrape_webpage: kortix:scrape_webpage
+  memory: kortix:memory
+  show: kortix:show
+  # lookup_order: tools/lookup_order.ts   # your own tool: a module in your repo
 
 # ─── Agents ──────────────────────────────────────────────────────────────
 # One map per project, GOVERNANCE ONLY — connectors/secrets/kortix_permissions/
@@ -92,6 +109,9 @@ agents:
     secrets: all
     kortix_permissions: all
     skills: all
+    # Tools this agent may use (harness, Kortix and project tools). Default: all.
+    # tools: [read, grep, web_search, lookup_order]   # only these
+    # tools: { exclude: [bash] }                      # every tool but these
     # sandbox: python # Must name an available project template, or "default".
 
   harness-reflector:

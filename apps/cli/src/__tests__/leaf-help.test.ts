@@ -21,6 +21,7 @@ const GROUPS = [
   'agents',
   'apps',
   'audit',
+  'backends',
   'billing',
   'channels',
   'connectors',
@@ -43,6 +44,7 @@ const GROUPS = [
   'secrets',
   'sessions',
   'tokens',
+  'tools',
   'triggers',
 ] as const;
 

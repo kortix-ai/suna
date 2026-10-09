@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { serializePromptWithPastes } from '@kortix/shared';
 import { planComposerSend } from './send-plan';
 
 const base = {
@@ -61,4 +62,10 @@ describe('planComposerSend', () => {
     expect(planComposerSend({ ...base, allowEmpty: true })).toBe('send');
     expect(planComposerSend({ ...base, allowEmpty: true, modelUnavailable: true })).toBe('connect-model');
   });
+});
+
+test('a pastes-only draft sends, and queues while busy: pastes are inline text, not files', () => {
+  const text = serializePromptWithPastes('', [{ id: 'abcd1234', text: 'x'.repeat(1000) }]);
+  expect(planComposerSend({ ...base, text })).toBe('send');
+  expect(planComposerSend({ ...base, text, isBusy: true })).toBe('queue');
 });

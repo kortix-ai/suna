@@ -429,6 +429,90 @@ channels:
       'kortix_version: 1\ntriggers:\n  - slug: t\n    type: event\n    connector: github\n    event: GITHUB_PULL_REQUEST_EVENT\n    secret_env: HOOK_SECRET\n    prompt: go\n',
   },
   {
+    name: 'event: account label is valid',
+    format: 'yaml',
+    valid: true,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: event\n    connector: github\n    event: GITHUB_PULL_REQUEST_EVENT\n    account: acme-bot\n    prompt: go\n',
+  },
+  {
+    name: 'event: empty account is rejected',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: event\n    connector: github\n    event: GITHUB_PULL_REQUEST_EVENT\n    account: ""\n    prompt: go\n',
+  },
+  {
+    name: 'event: non-string account is rejected',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: event\n    connector: github\n    event: GITHUB_PULL_REQUEST_EVENT\n    account: 7\n    prompt: go\n',
+  },
+  {
+    name: 'cron: account is rejected (event only)',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    cron: "0 9 * * *"\n    account: acme-bot\n    prompt: go\n',
+  },
+  {
+    name: 'webhook: account is rejected (event only)',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: webhook\n    secret_env: S\n    account: acme-bot\n    prompt: go\n',
+  },
+  {
+    name: 'monitor: account is rejected (event only)',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: monitor\n    run: ./m.ts\n    mode: stream\n    account: acme-bot\n    prompt: go\n',
+  },
+  {
+    name: 'event: source adapter is valid',
+    format: 'yaml',
+    valid: true,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: event\n    connector: github\n    event: GITHUB_PULL_REQUEST_EVENT\n    source: composio\n    prompt: go\n',
+  },
+  {
+    name: 'event: empty source is rejected',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: event\n    connector: github\n    event: GITHUB_PULL_REQUEST_EVENT\n    source: ""\n    prompt: go\n',
+  },
+  {
+    name: 'event: non-string source is rejected',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: event\n    connector: github\n    event: GITHUB_PULL_REQUEST_EVENT\n    source: 7\n    prompt: go\n',
+  },
+  {
+    name: 'cron: source is rejected (event only)',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: cron\n    cron: "0 9 * * *"\n    source: composio\n    prompt: go\n',
+  },
+  {
+    name: 'webhook: source is rejected (event only)',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: webhook\n    secret_env: S\n    source: composio\n    prompt: go\n',
+  },
+  {
+    name: 'monitor: source is rejected (event only)',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 1\ntriggers:\n  - slug: t\n    type: monitor\n    run: ./m.ts\n    mode: stream\n    source: composio\n    prompt: go\n',
+  },
+  {
     name: 'cron: event keys on cron are rejected',
     format: 'yaml',
     valid: false,
@@ -977,6 +1061,31 @@ connectors:
     format: 'yaml',
     valid: false,
     input: 'kortix_version: 3\ndefault_agent: w\nagents:\n  w:\n    prompt: [bad]\n',
+  },
+  {
+    name: 'v2: tools mixes kortix:<name> and module paths',
+    format: 'yaml',
+    valid: true,
+    input:
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\ntools:\n  web_search: kortix:web_search\n  memory: tools/memory.ts\n  lookup_order: tools/lookup_order.ts\n',
+  },
+  {
+    name: 'v2: a tools key with every line deleted (null) is accepted',
+    format: 'yaml',
+    valid: true,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\ntools:\n',
+  },
+  {
+    name: 'v2: kortix:<name> under another Kortix tool name rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\ntools:\n  web_search: kortix:image_search\n',
+  },
+  {
+    name: 'v2: kortix:<name> for a name that is no Kortix tool rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\ntools:\n  web_serch: kortix:web_serch\n',
   },
   {
     name: 'v2: Kortix Apps map is accepted',

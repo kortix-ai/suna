@@ -41,6 +41,7 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { copyToClipboard } from '@/lib/utils/clipboard';
 import type { ProjectTrigger } from '@kortix/sdk';
+import { Fragment, type ReactNode } from 'react';
 import type { TriggerControls } from './trigger-controls';
 import {
   CopyIcon,
@@ -55,7 +56,7 @@ import {
   WebhooksLogoIcon,
 } from '@phosphor-icons/react';
 
-import { describeEventStatus } from './event-trigger-copy';
+import { describeEventSource, describeEventStatus } from './event-trigger-copy';
 import {
   describeLastRun,
   describeSecurity,
@@ -89,6 +90,8 @@ export interface ScheduleTableProps {
   onDelete: (trigger: ProjectTrigger) => void;
   /** Opens the connect flow for an app-event trigger that needs an account. */
   onConnect?: (trigger: ProjectTrigger) => void;
+  /** Rows under a heading row each, e.g. the App events view by app. Replaces `triggers`' order. */
+  groups?: { key: string; heading: ReactNode; triggers: ProjectTrigger[] }[];
 }
 
 /** A mixed list of schedules and webhooks — the type comes off each row's
@@ -104,8 +107,23 @@ export function ScheduleTable({
   onToggle,
   onDelete,
   onConnect,
+  groups,
 }: ScheduleTableProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const renderRow = (trigger: ProjectTrigger) => (
+    <ScheduleTableRow
+      key={trigger.slug}
+      trigger={trigger}
+      controls={controls}
+      running={runningSlug === trigger.slug}
+      toggling={togglingSlug === trigger.slug}
+      onOpen={() => onOpen(trigger)}
+      onRun={() => onRun(trigger)}
+      onToggle={() => onToggle(trigger)}
+      onDelete={() => onDelete(trigger)}
+      onConnect={onConnect ? () => onConnect(trigger) : undefined}
+    />
+  );
   return (
     <Table>
       <TableHeader>
@@ -126,20 +144,18 @@ export function ScheduleTable({
         </TableRow>
       </TableHeader>
       <TableBody>
-        {triggers.map((trigger) => (
-          <ScheduleTableRow
-            key={trigger.slug}
-            trigger={trigger}
-            controls={controls}
-            running={runningSlug === trigger.slug}
-            toggling={togglingSlug === trigger.slug}
-            onOpen={() => onOpen(trigger)}
-            onRun={() => onRun(trigger)}
-            onToggle={() => onToggle(trigger)}
-            onDelete={() => onDelete(trigger)}
-            onConnect={onConnect ? () => onConnect(trigger) : undefined}
-          />
-        ))}
+        {groups
+          ? groups.map((group) => (
+              <Fragment key={group.key}>
+                <TableRow className="bg-muted/30 hover:bg-muted/30">
+                  <TableCell colSpan={5} className="py-2">
+                    {group.heading}
+                  </TableCell>
+                </TableRow>
+                {group.triggers.map(renderRow)}
+              </Fragment>
+            ))
+          : triggers.map(renderRow)}
       </TableBody>
     </Table>
   );
@@ -217,6 +233,11 @@ function ScheduleTableRow({
               {name}
             </button>
             <span className="text-muted-foreground block truncate text-xs sm:hidden">{when}</span>
+            {kind === 'event' && trigger.event ? (
+              <span className="text-muted-foreground block truncate text-xs sm:hidden">
+                {describeEventSource(trigger.event, tI18nComplete)}
+              </span>
+            ) : null}
             {failed ? (
               <span className="text-muted-foreground hidden text-xs sm:block">
                 {tTriggers('runFailed.label')}
@@ -233,6 +254,11 @@ function ScheduleTableRow({
       <TableCell className="hidden max-w-[14rem] align-middle sm:table-cell">
         <div className="min-w-0 space-y-1">
           <p className="text-foreground truncate text-sm">{when}</p>
+          {kind === 'event' && trigger.event ? (
+            <p className="text-muted-foreground truncate text-xs">
+              {describeEventSource(trigger.event, tI18nComplete)}
+            </p>
+          ) : null}
           {kind === 'cron' && !trigger.run_at ? (
             <p className="text-muted-foreground truncate text-xs">{trigger.timezone}</p>
           ) : kind === 'webhook' ? (

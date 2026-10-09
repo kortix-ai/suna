@@ -148,6 +148,9 @@ export default {
     headers.set('x-kortix-app-signature', await signAppRequest(request, timestamp, edgeSecret));
     headers.set('x-forwarded-host', url.host);
     headers.set('x-forwarded-proto', 'https');
+    // The API zone refuses a request with no User-Agent (403). Node's `ws`
+    // client sends none, so the Convex CLI and server-side clients need one.
+    if (!headers.get('user-agent')) headers.set('user-agent', 'kortix-apps-router');
     // One stored variant per encoding: ask the API for exactly that encoding.
     if (edge) headers.set('accept-encoding', edge.encoding);
 
