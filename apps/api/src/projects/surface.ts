@@ -61,6 +61,8 @@ export { isAlreadyNotRunning } from './reaping/policy';
 // Nested `projects.metadata` writes (consumed by ../feature-flags/write).
 export { metadataClearSubtreeKey, metadataMergeSubtree } from './lib/metadata-merge';
 
+// Whether any app-event adapter is configured (consumed by ../feature-flags/registry).
+
 // App-event subscriptions (consumed by connector sync/connect and account
 // deletion). Loaded on first call: their import chain reaches back into
 // connectors/, which imports this file, and an eager re-export closes that cycle

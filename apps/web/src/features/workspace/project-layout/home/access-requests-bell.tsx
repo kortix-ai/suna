@@ -1,6 +1,6 @@
 'use client';
 
-import { UserPlusIcon } from '@phosphor-icons/react';
+import { BellIcon, UserPlusIcon } from '@phosphor-icons/react';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 
 import { HubLink } from '@/features/accounts/hub/account-hub-location';
@@ -12,9 +12,10 @@ import { cn } from '@/lib/utils';
 
 /**
  * The pending-access-requests control, floated over the hero's top-right
- * corner. Its glyph is a person with a plus, not a bell: the bell is the
- * notification inbox (KRTX-1742), and two bells on one screen would read as
- * one control.
+ * corner. With the project's `notification_center` flag on, its glyph is a
+ * person with a plus, not a bell: the bell is then the notification inbox
+ * (KRTX-1742), and two bells on one screen would read as one control. With
+ * the flag off there is no inbox bell, and the glyph stays the bell.
  *
  * ## One button, not two
  *
@@ -36,20 +37,24 @@ import { cn } from '@/lib/utils';
 export function AccessRequestsBell({
   count,
   to,
+  notificationCenter = false,
   className,
 }: {
   count: number;
   /** The account hub's Access › Projects pane, scoped to this project.
    *  `null` while `account_id` is still loading — the bell renders inert. */
   to: HubTarget | null;
+  /** The project's `notification_center` flag: on, the inbox owns the bell glyph. */
+  notificationCenter?: boolean;
   className?: string;
 }) {
   const reduceMotion = useReducedMotion();
   const label = `${count} pending access request${count === 1 ? '' : 's'}`;
+  const Glyph = notificationCenter ? UserPlusIcon : BellIcon;
 
   const body = (
     <>
-      <UserPlusIcon className="size-4" />
+      <Glyph className="size-4" />
       <Badge size="xs" variant="new" className="absolute -top-1 -right-1 min-w-5 px-1 tabular-nums">
         {count}
       </Badge>

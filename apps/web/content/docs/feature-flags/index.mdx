@@ -153,6 +153,8 @@ project.
 | `warm_sessions` | Warm Sessions | Beta | On | `routes` |
 | `secrets_egress` | Network-Enforced Secrets | Experimental | On | `behavioral` |
 | `pi_harness` | Pi Harness (in-sandbox) | Experimental | Off | `behavioral` |
+| `event_triggers` | App event triggers | Beta | Off | `routes` |
+| `notification_center` | Notification Center | Beta | Off | `routes` |
 
 `llm_gateway` reads its per-project default from
 `LLM_GATEWAY_DEFAULT_ENABLED`, which defaults to on. Turning the flag off per
@@ -180,6 +182,12 @@ refs). An explicit project choice always wins.
   See [Backends](/docs/feature-flags/backends).
 - **`monitors`** — run 24/7 watchers from your repo that fire trigger events
   into sessions. See [Triggers](/docs/connect/triggers).
+- **`event_triggers`** — start an agent when something happens in a connected
+  app: a new email, a pull request, a calendar event. Off, the event catalog
+  routes and the creation of an event trigger answer `feature_disabled`, and a
+  `type: event` trigger in `kortix.yaml` is not subscribed (status `error`).
+  Turning it off removes every event subscription; turning it on subscribes
+  the declared triggers. See [App event triggers](/docs/connect/triggers#app-event-triggers).
 - **`reminders`** — scheduled check-ins that re-prompt one session, once or
   on repeat. Off, the reminder routes answer `feature_disabled` and existing
   reminders do not fire. See [Reminders](/docs/connect/reminders).
@@ -202,6 +210,11 @@ refs). An explicit project choice always wins.
   see [`harnesses:`](/docs/project/manifest#harnesses). pi does not serve every
   session feature OpenCode does: see the matrix in
   [Harnesses](/docs/work/harnesses#what-each-harness-supports).
+- **`notification_center`** — tell the people a session concerns, not only its
+  creator: the bell, browser push, email, follow and mute per session, and
+  trigger and reminder alerts. Off: only the session creator's phone gets a
+  push, as before, and the session watch routes answer `feature_disabled`. See
+  [Notifications](/docs/work/notifications#turn-notifications-on).
 
 ### Graduated flags
 

@@ -122,11 +122,12 @@ describe('watchHumanPresence', () => {
 
 // KRTX-1742: a closing tab must end its lease at once. Otherwise the lease
 // outlives the tab by up to 90 s and suppresses the phone and Web Push.
+// Only with `pageExit` on: the project's `notification_center` flag.
 describe('watchHumanPresence on pagehide', () => {
   test('pagehide reports absent once, and the page stays absent until it is shown or used', () => {
     const f = fakeEnv();
     const sent: boolean[] = [];
-    watchHumanPresence(f.env, (a) => sent.push(a), () => false);
+    watchHumanPresence(f.env, (a) => sent.push(a), () => false, () => true);
     f.fire('pagehide');
     f.fire('pagehide');
     expect(sent).toEqual([true, false]);
@@ -140,9 +141,31 @@ describe('watchHumanPresence on pagehide', () => {
   test('a hidden tab that then unloads sends absent only once', () => {
     const f = fakeEnv();
     const sent: boolean[] = [];
-    watchHumanPresence(f.env, (a) => sent.push(a), () => true);
+    watchHumanPresence(f.env, (a) => sent.push(a), () => true, () => true);
     f.doc.hidden = true;
     f.fire('visibilitychange');
+    f.fire('pagehide');
+    expect(sent).toEqual([true, false]);
+  });
+
+  test('without pageExit, pagehide reports nothing: the lease lives to its expiry', () => {
+    const f = fakeEnv();
+    const sent: boolean[] = [];
+    watchHumanPresence(f.env, (a) => sent.push(a), () => false);
+    f.fire('pagehide');
+    f.advance(4 * PRESENCE_CHECK_MS);
+    // Still present: the down-stream renewals continue as before.
+    expect(sent.every(Boolean)).toBe(true);
+  });
+
+  test('pageExit is read when the page hides, so a later change applies without a restart', () => {
+    const f = fakeEnv();
+    const sent: boolean[] = [];
+    let pageExit = false;
+    watchHumanPresence(f.env, (a) => sent.push(a), () => true, () => pageExit);
+    f.fire('pagehide');
+    expect(sent).toEqual([true]);
+    pageExit = true;
     f.fire('pagehide');
     expect(sent).toEqual([true, false]);
   });

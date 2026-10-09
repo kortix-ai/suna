@@ -154,6 +154,21 @@ export async function checkEventConfig(
   return { config: result.config, eventName: found.event.name };
 }
 
+/**
+ * Print an API error for an event-trigger command. The `event_triggers` flag gate
+ * (403 `feature_disabled`) gets the one actionable line; every other error is generic.
+ */
+export function surfaceEventTriggerError(err: unknown): number {
+  const body = (err as { body?: { code?: unknown; feature?: unknown } } | null)?.body;
+  if (body?.code === 'feature_disabled' && body.feature === 'event_triggers') {
+    process.stderr.write(
+      `${status.err('App event triggers are off for this project. Turn them on: kortix projects features enable event_triggers')}\n`,
+    );
+    return 1;
+  }
+  return surfaceApiError(err);
+}
+
 /** A project context for the catalog, or null when not logged in / no project (local mode stays offline-capable). */
 export async function quietCatalogContext(
   opts: CtxOpts,
@@ -184,6 +199,13 @@ export function eventNextStep(
         ],
       };
     case 'error': {
+      // The project flag is off: the fix is the flag, not the trigger's settings.
+      if (e.error?.startsWith('App event triggers are off')) {
+        return {
+          word: 'error',
+          lines: [`Error: ${e.error}`, 'Turn them on: kortix projects features enable event_triggers'],
+        };
+      }
       // No provider: the connector is undeclared. A provider other than the
       // source: the connector cannot serve that adapter. Neither is a config fix.
       const connectorFix = !e.provider
@@ -212,26 +234,31 @@ export function eventNextStep(
 const eventTypesPath = (projectId: string, connector: string): string =>
   `/projects/${projectId}/triggers/event-types?connector=${encodeURIComponent(connector)}`;
 
+const appEventTypesPath = (projectId: string, app: string, source?: string): string =>
+  `/projects/${projectId}/triggers/event-types?app=${encodeURIComponent(app)}${source ? `&source=${encodeURIComponent(source)}` : ''}`;
+
 export async function triggersEvents(
-  args: { apps: boolean; connector?: string; event?: string },
+  args: { apps: boolean; connector?: string; app?: string; source?: string; event?: string },
   opts: CtxOpts,
   json = false,
 ): Promise<number> {
-  if (!args.apps && !args.connector) {
-    return missing('--connector <slug> (or --apps to list event-capable apps)');
+  if (!args.apps && !args.connector && !args.app) {
+    return missing('--app <app> or --connector <slug> (or --apps to list event-capable apps)');
   }
+  if (args.connector && args.app) return missing('only one of --app and --connector');
   const ctx = await resolveProjectContext(opts);
   if (!ctx) return 1;
   try {
     if (args.apps) return await printApps(ctx, json);
     const resp = await ctx.client.get<TriggerEventTypesResponse>(
-      eventTypesPath(ctx.projectId, args.connector as string),
+      args.app
+        ? appEventTypesPath(ctx.projectId, args.app, args.source)
+        : eventTypesPath(ctx.projectId, args.connector as string),
     );
-    return args.event
-      ? printEvent(resp, args.event, json, args.connector as string)
-      : printEvents(resp, json);
+    const via = args.app ? { app: args.app } : { connector: args.connector as string };
+    return args.event ? printEvent(resp, args.event, json, via) : printEvents(resp, json, via);
   } catch (err) {
-    return surfaceApiError(err);
+    return surfaceEventTriggerError(err);
   }
 }
 
@@ -289,12 +316,15 @@ async function printApps(
     );
   }
   out.write(
-    `\n  ${C.dim}${resp.apps.length} apps. List a connector's events: kortix triggers events --connector <slug>.\n  Add a connector: kortix connectors add <slug> --provider composio --app <app> --apply\n  Pick an account: kortix triggers add … --connector <slug> --account <label> (omit it for the default).\n  See every app event trigger: kortix triggers ls --type event  (one connector: kortix triggers ls --connector <slug>).${C.reset}\n\n`,
+    `\n  ${C.dim}${resp.apps.length} apps. List an app's events (no connector needed): kortix triggers events --app <app>. A connector's: --connector <slug>.\n  Add a connector: kortix connectors add <slug> --provider composio --app <app> --apply\n  Pick an account: kortix triggers add … --connector <slug> --account <label> (omit it for the default).\n  See every app event trigger: kortix triggers ls --type event  (one connector: kortix triggers ls --connector <slug>).${C.reset}\n\n`,
   );
   return 0;
 }
 
-function printEvents(resp: TriggerEventTypesResponse, json: boolean): number {
+type EventsVia = { connector: string } | { app: string };
+const viaFlag = (via: EventsVia): string => ('app' in via ? `--app ${via.app}` : `--connector ${via.connector}`);
+
+function printEvents(resp: TriggerEventTypesResponse, json: boolean, via: EventsVia): number {
   if (json) {
     emitJson(resp);
     return 0;
@@ -314,7 +344,7 @@ function printEvents(resp: TriggerEventTypesResponse, json: boolean): number {
     );
   }
   process.stdout.write(
-    `\n  ${C.dim}${resp.event_types.length} event type${resp.event_types.length === 1 ? '' : 's'} on ${resp.app} (${resp.source ?? resp.provider}). Details: kortix triggers events --connector <slug> --event <TYPE>${C.reset}\n\n`,
+    `\n  ${C.dim}${resp.event_types.length} event type${resp.event_types.length === 1 ? '' : 's'} on ${resp.app} (${resp.source ?? resp.provider}). Details: kortix triggers events ${viaFlag(via)} --event <TYPE>${C.reset}\n\n`,
   );
   return 0;
 }
@@ -323,12 +353,12 @@ function printEvent(
   resp: TriggerEventTypesResponse,
   type: string,
   json: boolean,
-  connector: string,
+  via: EventsVia,
 ): number {
   const e = resp.event_types.find((x) => x.type === type);
   if (!e) {
     process.stderr.write(
-      `${status.err(`Unknown event ${type} for ${resp.app}. Run \`kortix triggers events --connector <slug>\`.`)}\n`,
+      `${status.err(`Unknown event ${type} for ${resp.app}. Run \`kortix triggers events ${viaFlag(via)}\`.`)}\n`,
     );
     return 1;
   }
@@ -366,7 +396,9 @@ function printEvent(
   }
   if (payload.length === 0) out.write('    {{ event.data.<field> }} — the provider payload\n');
   out.write(
-    `\n  ${C.dim}Add it: kortix triggers add <slug> --type event --connector ${connector} --event ${e.type} --prompt "…" --apply${C.reset}\n\n`,
+    'app' in via
+      ? `\n  ${C.dim}Add it: kortix connectors add <slug> --provider composio --app ${via.app} --apply, then kortix triggers add <slug> --type event --connector <slug> --event ${e.type} --prompt "…" --apply${C.reset}\n\n`
+      : `\n  ${C.dim}Add it: kortix triggers add <slug> --type event --connector ${via.connector} --event ${e.type} --prompt "…" --apply${C.reset}\n\n`,
   );
   return 0;
 }

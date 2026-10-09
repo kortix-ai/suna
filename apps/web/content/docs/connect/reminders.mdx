@@ -75,6 +75,8 @@ Every fire is a model turn. Remove a recurring reminder as soon as its condition
 
 ## Failure alerts
 
+Failure alerts need the project's `notification_center` flag. See [Turn notifications on](/docs/work/notifications#turn-notifications-on). With it off, a failing reminder sends no alert.
+
 When a reminder fire fails for good, Kortix sends one alert to the person who set the reminder, and one more when a fire works again. This includes a fire that pauses the reminder because its session is gone. When an agent sets a reminder from its session, the person the agent acts for gets the alerts. When that person can no longer get them, the project managers who can open the reminder's session get them instead. When the session is deleted, only the person who set the reminder can get them.
 
 An alert is a [notification](/docs/work/notifications). It opens the project's **Reminders** page. Reminders follow the trigger rules for when an alert fires and how to stop it. See [Triggers → Alerts](/docs/connect/triggers#alerts).

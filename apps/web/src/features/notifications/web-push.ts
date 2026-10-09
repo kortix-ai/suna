@@ -3,8 +3,10 @@
  * the push subscription, and its record on the API.
  *
  * `NotificationHost` calls `syncWebPush` whenever browser notifications are
- * turned on or off; sign-out calls `stopWebPush`. Nothing here toasts: a
- * failure is logged once, and the bell and in-page notifications still work.
+ * turned on or off: it subscribes only while the `notification_center` flag is
+ * on, and unsubscribes on any page. Sign-out calls `stopWebPush`. Nothing here
+ * toasts: a failure is logged once, and the bell and in-page notifications
+ * still work.
  */
 
 import { isDesktop } from '@/lib/desktop';
