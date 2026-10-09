@@ -1,6 +1,10 @@
 {
-  "source_hash": "7faa24ac4b87935087eb57588b6e428d42fa52a042fb8cfacc709cefa1b6aa1b",
+  "source_hash": "b55c8f00f41d91f5d085afe1d26501c742cdb164c063c96ea4f0331045a5e4e1",
   "diff_files": [
+    ".agents/skills/contributing/SKILL.md",
+    ".agents/skills/kortix-release/SKILL.md",
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-08T172344Z-default-every-linux-job-in-a-public-repo-to-a-free-github-ho.md",
     ".agents/skills/testing/SKILL.md",
     ".github/actionlint.yaml",
     ".github/workflows/activate-prod-us-east-2-writers.yml",
@@ -39,18 +43,23 @@
     ".github/workflows/tests-release.yml",
     ".github/workflows/tests.yml",
     "AGENTS.md",
+    "CONTRIBUTING.md",
+    "apps/api/src/__tests__/unit-ci-api-suite-runs.test.ts",
+    "apps/api/src/backends/maintenance.integration.test.ts",
+    "apps/web/src/test-report-artifact.test.ts",
     "tests/README.md",
+    "tests/bin/package-quality.ts",
     "tests/playwright.config.ts",
     "tests/unit/image-build-speed-workflow.test.ts",
     "tests/unit/sandbox-workflow.test.ts"
   ],
-  "diff_hash": "0c6e760b042733b99cae6fd69098a9021f5db582617219821ae5f16153949415",
-  "head": "cce41650fbada0e76b0f39318a9cff08143bc5b1",
+  "diff_hash": "0b7d6f26401a25404c8ab54a3051b2c19dde57b99f8ec95eec26bd01f4e0d58b",
+  "head": "3e647ddf626a06051b315e99565ff5226cdbae44",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-08T16:52:59.362Z"
+  "at": "2026-10-09T14:35:06.618Z"
 }
