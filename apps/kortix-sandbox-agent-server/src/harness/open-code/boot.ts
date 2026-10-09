@@ -19,10 +19,6 @@ import {
   configureGitCredentialHelper,
   configureGlobalGitIdentity,
   configureRepoCredentialHelper,
-  materializeRepo,
-  materializeScaffoldSeed,
-  materializeProjectSeed,
-  scheduleHistoryBackfill,
 } from '@/lib/git/git'
 import { logger } from '@/lib/log/logger'
 import {
@@ -39,7 +35,8 @@ import {
   type Opencode,
 } from './lifecycle'
 import { relayBootTimelineToApi } from '../shared/boot-timeline-relay'
-import { materializeProject } from '@/services/workspace-provider/workspace-provider'
+import { scheduleHistoryBackfill } from '@/services/workspace-provider/git'
+import { backfillAfterHydration, provideWorkspace } from '@/services/workspace-provider/workspace-provider'
 import { createSessionTreeWatch, registerRuntimeStateReader, scheduleRuntimeProjectionPush } from '../shared/projection-relay'
 import { ConvergeBusyError } from '@/services/config-provider/release'
 import { convergeConfigRelease } from './config-release'
@@ -274,15 +271,15 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
   // long-pole, so the fetch costs no critical-path time.
   startManagedModelsPrefetch(process.env.KORTIX_LLM_BASE_URL, process.env.KORTIX_TOKEN)
 
-  // Fresh-boot acquisition goes through the config-provider coordinator
-  // (git | prefer-s3 | require-s3, see src/services/config-provider). In `git` mode this
-  // is materializeRepo's exact behaviour, split across the coordinator's warm
+  // Fresh-boot acquisition goes through the workspace provider
+  // (git | prefer-s3 | require-s3, see src/services/workspace-provider). In `git` mode this
+  // is materializeRepo's exact behaviour, split across the provider's warm
   // check and the Git transport.
   const repoMaterializePromise: Promise<string | null> = cfg.autoClone
-    ? materializeProject(cfg, {
+    ? provideWorkspace(cfg, {
         bootMark,
         onSummary: (summary) => {
-          bootState.configProvider = summary
+          bootState.workspaceProvider = summary
         },
       })
         .then(async (result) => {
@@ -290,17 +287,8 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
           // optional history backfill waits for real readiness (see
           // runDeferredHistoryBackfill) instead of competing with the runtime
           // spawn for CPU and the proxied Git path.
-          if (result.provider === 's3') {
-            // …and after the blob-pack import has settled, so the two never
-            // write packs into the same object store at once.
-            const hydration = result.hydration ?? Promise.resolve()
-            bootState.deferredHistoryBackfill = () => {
-              void hydration.then(
-                () => scheduleHistoryBackfill(cfg, cfg.projectTarget),
-                () => scheduleHistoryBackfill(cfg, cfg.projectTarget),
-              )
-            }
-          }
+          // …and after the blob-pack import has settled (backfillAfterHydration).
+          if (result.provider === 's3') bootState.deferredHistoryBackfill = backfillAfterHydration(cfg, result)
           bootMark('repo-materialized')
           // Pin the credential helper repo-locally now the repo exists, so
           // `git push` authenticates whatever the invoking shell's HOME is.

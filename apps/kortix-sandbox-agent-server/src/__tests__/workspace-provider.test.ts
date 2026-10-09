@@ -1,5 +1,6 @@
 /**
- * Config provider (src/services/config-provider): S3 acquisition of the two-object
+ * Workspace provider (src/services/workspace-provider) and the project snapshot
+ * it reads (src/lib/project-snapshot): S3 acquisition of the two-object
  * snapshot (boot tree + blob pack), classified failures, bounded fallback to
  * Git, strict mode, cancellation, denial, the archive safety guards, native
  * vs in-process extraction, and the post-activation blob hydration — driven
@@ -22,17 +23,13 @@ import * as tar from 'tar'
 
 import type { Config } from '@/lib/config/config'
 import { loadConfig } from '@/harness/harness'
-import { materializeProject } from '@/services/workspace-provider/workspace-provider'
-import {
-  PROJECT_SNAPSHOT_FORMAT,
-  buildProjectSnapshotDescriptorUrl,
-  downloadAndExtractProjectSnapshot,
-  makeEntryGuard,
-  parseProjectSnapshotPin,
-  type ProjectSnapshotDescriptor,
-} from '@/services/workspace-provider/s3/s3-config-provider'
-import { ConfigProviderError } from '@/services/workspace-provider/types'
-import { __setScaffoldRepoPathForTests, readRepoInfo } from '@/lib/git/git'
+import { provideWorkspace } from '@/services/workspace-provider/workspace-provider'
+import { downloadAndExtractProjectSnapshot, makeEntryGuard } from '@/lib/project-snapshot/archive'
+import { PROJECT_SNAPSHOT_FORMAT, parseProjectSnapshotPin, type ProjectSnapshotDescriptor } from '@/lib/project-snapshot/contract'
+import { buildProjectSnapshotDescriptorUrl } from '@/lib/project-snapshot/descriptor'
+import { ProjectSnapshotError } from '@/lib/project-snapshot/errors'
+import { __setScaffoldRepoPathForTests } from '@/services/workspace-provider/git'
+import { readRepoInfo } from '@/lib/git/git'
 
 const PROJECT_ID = '11111111-1111-4111-8111-111111111111'
 const EXTERNAL_ID = '424242'
@@ -334,7 +331,7 @@ let archive: Snapshot
 let api: FakeApi
 
 beforeEach(async () => {
-  root = tmp('kortix-config-provider-')
+  root = tmp('kortix-workspace-provider-')
   source = makeSourceRepo(root)
   archive = await makeSnapshot(root, source)
   api = startFakeApi(archive)
@@ -402,11 +399,11 @@ describe('pin + descriptor url', () => {
     expect(buildProjectSnapshotDescriptorUrl('https://user:pw@api.kortix.test/v1/git/p.git', 'c'.repeat(40))).toBe(
       `https://api.kortix.test/v1/git/p.git/project-snapshot?sha=${'c'.repeat(40)}`,
     )
-    expect(() => buildProjectSnapshotDescriptorUrl('file:///tmp/repo.git', 'c'.repeat(40))).toThrow(ConfigProviderError)
+    expect(() => buildProjectSnapshotDescriptorUrl('file:///tmp/repo.git', 'c'.repeat(40))).toThrow(ProjectSnapshotError)
   })
 })
 
-describe('materializeProject — prefer-s3', () => {
+describe('provideWorkspace — prefer-s3', () => {
   test('acquires the pinned boot object, activates a blob-less partial clone, then hydrates the blobs off the boot path', async () => {
     const target = join(root, 'ws')
     const cfg = makeConfig(api, target, archive.sha)
@@ -420,7 +417,7 @@ describe('materializeProject — prefer-s3', () => {
       const entries = stageDirs(target)
       return { files: entries.filter((n) => n.endsWith('.tgz')), dirs: entries.filter((n) => !n.endsWith('.tgz')) }
     })
-    const result = await materializeProject(cfg, { bootMark: (l) => marks.push(l) })
+    const result = await provideWorkspace(cfg, { bootMark: (l) => marks.push(l) })
     const observed = await midway
 
     expect(result.provider).toBe('s3')
@@ -468,7 +465,7 @@ describe('materializeProject — prefer-s3', () => {
     const cfg = makeConfig(api, target, archive.sha)
     api.blobsMode = 'missing'
     const marks: string[] = []
-    const result = await materializeProject(cfg, { bootMark: (l) => marks.push(l) })
+    const result = await provideWorkspace(cfg, { bootMark: (l) => marks.push(l) })
     expect(result.provider).toBe('s3')
     const hydration = await result.hydration!
     expect(hydration).toMatchObject({ status: 'failed', reason: 'missing', attempts: 1 })
@@ -487,7 +484,7 @@ describe('materializeProject — prefer-s3', () => {
     // The first blob-pack request is refused (403); the daemon re-fetches the
     // descriptor and the store accepts the second request.
     api.blobsMode = 'forbidden-once'
-    const result = await materializeProject(cfg)
+    const result = await provideWorkspace(cfg)
     const hydration = await result.hydration!
     expect(hydration.status).toBe('ok')
     expect(hydration.attempts).toBe(2)
@@ -501,7 +498,7 @@ describe('materializeProject — prefer-s3', () => {
       KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR: envDescriptor(descriptorFor(api, archive.sha)),
     })
     let summary: { s3_descriptor: 'env' | 'proxy' | null } | undefined
-    const result = await materializeProject(cfg, { onSummary: (s) => (summary = s) })
+    const result = await provideWorkspace(cfg, { onSummary: (s) => (summary = s) })
     expect(result.provider).toBe('s3')
     expect(result.s3?.descriptorSource).toBe('env')
     expect(summary?.s3_descriptor).toBe('env')
@@ -522,7 +519,7 @@ describe('materializeProject — prefer-s3', () => {
   ])('an env descriptor %s is ignored: the proxy is asked, once', async (_name, descriptor) => {
     const target = join(root, 'ws')
     const cfg = makeConfig(api, target, archive.sha, { KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR: descriptor() })
-    const result = await materializeProject(cfg)
+    const result = await provideWorkspace(cfg)
     expect(result.provider).toBe('s3')
     expect(result.s3?.descriptorSource).toBe('proxy')
     expect(result.s3?.attempts).toBe(1)
@@ -536,7 +533,7 @@ describe('materializeProject — prefer-s3', () => {
     const cfg = makeConfig(api, target, archive.sha, {
       KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR: envDescriptor(descriptorFor(api, archive.sha)),
     })
-    const result = await materializeProject(cfg)
+    const result = await provideWorkspace(cfg)
     expect(result.provider).toBe('s3')
     expect(result.fallback).toBeUndefined()
     expect(result.s3?.attempts).toBe(2)
@@ -549,7 +546,7 @@ describe('materializeProject — prefer-s3', () => {
   test('falls back to the in-process extractor when no tar binary is usable', async () => {
     const target = join(root, 'ws')
     const cfg = makeConfig(api, target, archive.sha)
-    const result = await materializeProject(cfg, { tarBinary: join(root, 'no-such-tar') })
+    const result = await provideWorkspace(cfg, { tarBinary: join(root, 'no-such-tar') })
     expect(result.provider).toBe('s3')
     expect(result.s3?.extractor).toBe('node-tar')
     await result.hydration
@@ -563,7 +560,7 @@ describe('materializeProject — prefer-s3', () => {
     const cfg = makeConfig(api, target, archive.sha)
     api.descriptorStatus = 404
     const marks: string[] = []
-    const result = await materializeProject(cfg, { bootMark: (l) => marks.push(l) })
+    const result = await provideWorkspace(cfg, { bootMark: (l) => marks.push(l) })
     expect(result.provider).toBe('git')
     expect(result.fallback).toMatchObject({ from: 's3', stage: 'descriptor', reason: 'missing', attempts: 1 })
     expect(result.summary).toMatchObject({ s3_attempted: true, s3_failed: true, s3_reason: 'missing', fallback: true, sha_matches: true, hydration: null })
@@ -577,7 +574,7 @@ describe('materializeProject — prefer-s3', () => {
     const target = join(root, 'ws')
     const cfg = makeConfig(api, target, archive.sha)
     api.archiveMode = 'cut'
-    const result = await materializeProject(cfg, { deadlineMs: 20_000, inactivityTimeoutMs: 500 })
+    const result = await provideWorkspace(cfg, { deadlineMs: 20_000, inactivityTimeoutMs: 500 })
     expect(result.provider).toBe('git')
     expect(result.fallback).toMatchObject({ from: 's3', reason: 'unavailable', attempts: 3 })
     // One GET per provider attempt on Bun 1.4; Bun 1.3 (the sandbox agent's
@@ -593,7 +590,7 @@ describe('materializeProject — prefer-s3', () => {
     const cfg = makeConfig(api, target, archive.sha)
     api.archiveMode = 'stall'
     const started = Date.now()
-    const result = await materializeProject(cfg, { deadlineMs: 1_500 })
+    const result = await provideWorkspace(cfg, { deadlineMs: 1_500 })
     expect(Date.now() - started).toBeLessThan(6_000)
     expect(result.provider).toBe('git')
     expect(result.fallback?.reason).toBe('timeout')
@@ -604,7 +601,7 @@ describe('materializeProject — prefer-s3', () => {
     const target = join(root, 'ws')
     const cfg = makeConfig(api, target, archive.sha)
     api.archiveMode = 'corrupt'
-    const result = await materializeProject(cfg)
+    const result = await provideWorkspace(cfg)
     expect(result.provider).toBe('git')
     expect(result.fallback?.reason).toBe('digest-mismatch')
     expect(result.fallback?.attempts).toBe(1)
@@ -620,7 +617,7 @@ describe('materializeProject — prefer-s3', () => {
     const cfg = makeConfig(api, target, archive.sha, {
       KORTIX_PROJECT_SNAPSHOT_PIN: `${archive.sha}:${other.sha256}:${other.bytes.byteLength}`,
     })
-    const result = await materializeProject(cfg)
+    const result = await provideWorkspace(cfg)
     expect(result.provider).toBe('git')
     expect(result.fallback).toMatchObject({ stage: 'verify', reason: 'revision-mismatch', attempts: 1 })
     await expectWorkspaceAtSha(target, archive.sha, cfg.repoUrl!)
@@ -630,7 +627,7 @@ describe('materializeProject — prefer-s3', () => {
     const target = join(root, 'ws')
     const cfg = makeConfig(api, target, archive.sha)
     api.archiveMode = 'forbidden'
-    const result = await materializeProject(cfg)
+    const result = await provideWorkspace(cfg)
     expect(result.provider).toBe('git')
     expect(result.fallback).toMatchObject({ stage: 'download', reason: 'expired-authorization', attempts: 1 })
   })
@@ -639,7 +636,7 @@ describe('materializeProject — prefer-s3', () => {
     const target = join(root, 'ws')
     const cfg = makeConfig(api, target, archive.sha, { KORTIX_PROJECT_SNAPSHOT_PIN: '' })
     const marks: string[] = []
-    const result = await materializeProject(cfg, { bootMark: (l) => marks.push(l) })
+    const result = await provideWorkspace(cfg, { bootMark: (l) => marks.push(l) })
     expect(result.provider).toBe('git')
     expect(result.fallback).toBeUndefined()
     expect(result.summary).toMatchObject({ s3_attempted: false, s3_failed: false, s3_skipped: true, s3_stage: 'precondition', s3_reason: 'no-pin', fallback: false })
@@ -661,7 +658,7 @@ describe('materializeProject — prefer-s3', () => {
     const target = join(root, 'ws')
     const cfg = makeConfig(api, target, archive.sha, overrides)
     let summary: unknown = null
-    await materializeProject(cfg, { onSummary: (s) => (summary = s) }).catch(() => undefined)
+    await provideWorkspace(cfg, { onSummary: (s) => (summary = s) }).catch(() => undefined)
     expect(summary).toMatchObject({ s3_attempted: false, s3_skipped: true, s3_reason: reason })
     expect(api.requests.filter((r) => r.path.endsWith('/project-snapshot'))).toHaveLength(0)
   })
@@ -671,7 +668,7 @@ describe('materializeProject — prefer-s3', () => {
     const cfg = makeConfig(api, target, archive.sha)
     api.descriptorStatus = 403
     let summary: unknown = null
-    await expect(materializeProject(cfg, { onSummary: (s) => (summary = s) })).rejects.toMatchObject({ reason: 'denied', stage: 'descriptor' })
+    await expect(provideWorkspace(cfg, { onSummary: (s) => (summary = s) })).rejects.toMatchObject({ reason: 'denied', stage: 'descriptor' })
     expect(summary).toMatchObject({ outcome: 'error', s3_reason: 'denied', fallback: false })
     expect(existsSync(join(target, '.git'))).toBe(false)
     expect(stageDirs(target)).toEqual([])
@@ -683,7 +680,7 @@ describe('materializeProject — prefer-s3', () => {
     api.archiveMode = 'slow'
     const controller = new AbortController()
     void api.firstHalfSent.then(() => controller.abort(new Error('boot cancelled')))
-    await expect(materializeProject(cfg, { signal: controller.signal })).rejects.toMatchObject({ reason: 'cancelled' })
+    await expect(provideWorkspace(cfg, { signal: controller.signal })).rejects.toMatchObject({ reason: 'cancelled' })
     expect(existsSync(join(target, '.git'))).toBe(false)
     expect(stageDirs(target)).toEqual([])
     expect(api.requests.filter((r) => r.path.startsWith('/tree/'))).toHaveLength(1)
@@ -695,7 +692,7 @@ describe('materializeProject — prefer-s3', () => {
     git(root, 'clone', '-q', `file://${source.checkout}`, target)
     const cfg = makeConfig(api, target, archive.sha)
     const marks: string[] = []
-    const result = await materializeProject(cfg, { bootMark: (l) => marks.push(l) })
+    const result = await provideWorkspace(cfg, { bootMark: (l) => marks.push(l) })
     expect(result.provider).toBe('git')
     expect(result.summary.s3_attempted).toBe(false)
     expect(marks).toContain('config-provider:warm')
@@ -704,12 +701,12 @@ describe('materializeProject — prefer-s3', () => {
   })
 })
 
-describe('materializeProject — require-s3 and git', () => {
+describe('provideWorkspace — require-s3 and git', () => {
   test('require-s3 fails closed on a missing archive instead of cloning', async () => {
     const target = join(root, 'ws')
     const cfg = makeConfig(api, target, archive.sha, { KORTIX_PROJECT_SNAPSHOT_MODE: 'require-s3' })
     api.descriptorStatus = 404
-    await expect(materializeProject(cfg)).rejects.toMatchObject({ reason: 'missing' })
+    await expect(provideWorkspace(cfg)).rejects.toMatchObject({ reason: 'missing' })
     expect(existsSync(join(target, '.git'))).toBe(false)
     expect(stageDirs(target)).toEqual([])
   })
@@ -717,7 +714,7 @@ describe('materializeProject — require-s3 and git', () => {
   test('git mode never contacts the snapshot endpoint (legacy parity, zero S3 traffic)', async () => {
     const target = join(root, 'ws')
     const cfg = makeConfig(api, target, archive.sha, { KORTIX_PROJECT_SNAPSHOT_MODE: 'git' })
-    const result = await materializeProject(cfg)
+    const result = await provideWorkspace(cfg)
     expect(result.provider).toBe('git')
     expect(result.summary).toMatchObject({ mode: 'git', s3_attempted: false, fallback: false, sha_matches: true })
     expect(api.requests).toHaveLength(0)
@@ -728,7 +725,7 @@ describe('materializeProject — require-s3 and git', () => {
     // The production default, through loadConfig: a box the API gives no mode.
     const target = join(root, 'ws')
     const cfg = makeConfig(api, target, archive.sha, { KORTIX_PROJECT_SNAPSHOT_MODE: undefined })
-    const result = await materializeProject(cfg)
+    const result = await provideWorkspace(cfg)
     expect(result.provider).toBe('git')
     expect(api.requests).toHaveLength(0)
   })
@@ -857,7 +854,7 @@ describe('archive safety guards', () => {
       KORTIX_PROJECT_SNAPSHOT_MODE: 'require-s3',
       KORTIX_PROJECT_SNAPSHOT_PIN: `${archive.sha}:${api.archive.sha256}:${packed.bytes.byteLength}`,
     })
-    await expect(materializeProject(cfg)).rejects.toMatchObject({
+    await expect(provideWorkspace(cfg)).rejects.toMatchObject({
       stage: 'verify',
       reason: 'malformed',
       message: expect.stringContaining(`forbidden setting: ${named}`),
@@ -882,7 +879,7 @@ describe('archive safety guards', () => {
       KORTIX_PROJECT_SNAPSHOT_MODE: 'require-s3',
       KORTIX_PROJECT_SNAPSHOT_PIN: `${archive.sha}:${api.archive.sha256}:${packed.bytes.byteLength}`,
     })
-    await expect(materializeProject(cfg)).rejects.toMatchObject({ stage: 'verify', reason: 'malformed' })
+    await expect(provideWorkspace(cfg)).rejects.toMatchObject({ stage: 'verify', reason: 'malformed' })
     expect(existsSync(join(target, '.git'))).toBe(false)
   })
 })

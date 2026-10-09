@@ -1,70 +1,16 @@
 /**
- * Shared contract between the config-provider coordinator and its two
- * transports (git, s3). Acquisition only: a provider lands the project at
+ * Shared contract between `provideWorkspace` (workspace-provider.ts) and its
+ * two transports, git and s3 (acquire.ts). A transport lands the project at
  * `target` (or a private stage under it); selection, fallback, telemetry and
- * activation belong to `config-provider.ts`.
+ * activation belong to the provider.
  */
 import type { Config } from '@/lib/config/config'
+import type { S3FailureReason, S3Stage } from '@/lib/project-snapshot/errors'
+import type { SnapshotHydrationSummary } from '@/lib/project-snapshot/hydrate'
+import type { S3AcquisitionMetrics } from '@/lib/project-snapshot/stage'
 
-export type ConfigProviderName = 'git' | 's3'
-
-export type S3Stage =
-  | 'precondition'
-  | 'descriptor'
-  | 'download'
-  | 'extract'
-  | 'verify'
-  | 'activate'
-  /** The post-activation blob-pack import (never on the boot path). */
-  | 'hydrate'
-
-/**
- * Why an S3 acquisition did not complete. Classified so the coordinator can
- * decide fallback vs. hard failure and so the telemetry names the cause.
- *
- *   retryable (within the total deadline): unavailable, timeout
- *   fallback-able, never retried:          missing, expired-authorization,
- *                                          malformed, digest-mismatch,
- *                                          revision-mismatch, limit-exceeded,
- *                                          no-pin, no-sha, pin-mismatch, not-fresh
- *   never fallback:                        denied (authorization is a denial),
- *                                          cancelled (the caller stopped boot)
- */
-export type S3FailureReason =
-  | 'not-fresh'
-  | 'no-sha'
-  | 'no-pin'
-  | 'pin-mismatch'
-  | 'not-configured'
-  | 'missing'
-  | 'denied'
-  | 'expired-authorization'
-  | 'unavailable'
-  | 'timeout'
-  | 'malformed'
-  | 'digest-mismatch'
-  | 'revision-mismatch'
-  | 'limit-exceeded'
-  | 'cancelled'
-
-export const S3_RETRYABLE_REASONS: ReadonlySet<S3FailureReason> = new Set(['unavailable', 'timeout'])
-export const S3_NO_FALLBACK_REASONS: ReadonlySet<S3FailureReason> = new Set(['denied', 'cancelled'])
-
-export class ConfigProviderError extends Error {
-  constructor(
-    readonly stage: S3Stage,
-    readonly reason: S3FailureReason,
-    message: string,
-    readonly attempts = 0,
-    options?: { cause?: unknown },
-  ) {
-    super(message, options)
-    this.name = 'ConfigProviderError'
-  }
-  get retryable(): boolean {
-    return S3_RETRYABLE_REASONS.has(this.reason)
-  }
-}
+/** The transport that delivered the checkout. `provider` on the wire (`/kortix/health`). */
+export type WorkspaceTransport = 'git' | 's3'
 
 export interface MaterializeRequest {
   cfg: Config
@@ -80,38 +26,8 @@ export interface MaterializeRequest {
   deadlineMs: number
 }
 
-export interface S3AcquisitionMetrics {
-  attempts: number
-  bytes: number
-  entries: number
-  descriptorMs: number
-  /** Transfer of the boot object into the stage file (hash + header guard run on the stream). */
-  downloadMs: number
-  /** Extraction of the verified file into the stage directory. */
-  extractMs: number
-  verifyMs: number
-  /** Which extractor unpacked the tree: the system `tar` or the in-process fallback. */
-  extractor: 'tar' | 'node-tar'
-  /** Where the descriptor that succeeded came from: the session env (presigned at create) or the Git proxy. */
-  descriptorSource: 'env' | 'proxy'
-}
-
-/**
- * The blob-pack import that follows activation. `pending` while it runs;
- * `failed` leaves a valid partial clone that fetches blobs lazily through the
- * Git proxy (slower, never broken). Never on the boot path.
- */
-export interface SnapshotHydrationSummary {
-  status: 'pending' | 'ok' | 'failed'
-  attempts: number
-  bytes: number
-  ms: number
-  reason: S3FailureReason | null
-  error: string | null
-}
-
 export interface MaterializedProject {
-  provider: ConfigProviderName
+  provider: WorkspaceTransport
   /** HEAD after activation, read back from the workspace. */
   sha: string | null
   expectedSha: string | null
@@ -132,9 +48,9 @@ export interface MaterializedProject {
 }
 
 /** Health-visible, low-cardinality summary of what this boot's acquisition did. */
-export interface ConfigProviderSummary {
+export interface WorkspaceProviderSummary {
   mode: NonNullable<Config['projectSnapshotMode']>
-  provider: ConfigProviderName | null
+  provider: WorkspaceTransport | null
   expected_sha: string | null
   actual_sha: string | null
   sha_matches: boolean | null

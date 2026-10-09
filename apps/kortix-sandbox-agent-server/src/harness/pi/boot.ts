@@ -26,13 +26,13 @@ import {
   relayTurnEnd,
 } from '../shared/turn-relay'
 import { resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-dir'
-import { materializeProject } from '@/services/workspace-provider/workspace-provider'
+import { scheduleHistoryBackfill } from '@/services/workspace-provider/git'
+import { backfillAfterHydration, provideWorkspace } from '@/services/workspace-provider/workspace-provider'
 import { startEgressShim } from '@/services/egress-shim'
 import {
   configureGitCredentialHelper,
   configureGlobalGitIdentity,
   configureRepoCredentialHelper,
-  scheduleHistoryBackfill,
 } from '@/lib/git/git'
 import type { HarnessBootContext } from '../harness'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
@@ -165,26 +165,18 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
     }
   }
 
-  // Fresh-boot acquisition goes through the config-provider coordinator
+  // Fresh-boot acquisition goes through the workspace provider
   // (git | prefer-s3 | require-s3), exactly as the OpenCode boot does.
   if (cfg.autoClone) bootState.workspaceReady = false
   const checkout: Promise<string | null> = cfg.autoClone
-    ? materializeProject(cfg, {
+    ? provideWorkspace(cfg, {
         bootMark,
         onSummary: (summary) => {
-          bootState.configProvider = summary
+          bootState.workspaceProvider = summary
         },
       })
         .then((result) => {
-          if (result.provider === 's3') {
-            const hydration = result.hydration ?? Promise.resolve()
-            bootState.deferredHistoryBackfill = () => {
-              void hydration.then(
-                () => scheduleHistoryBackfill(cfg, cfg.projectTarget),
-                () => scheduleHistoryBackfill(cfg, cfg.projectTarget),
-              )
-            }
-          }
+          if (result.provider === 's3') bootState.deferredHistoryBackfill = backfillAfterHydration(cfg, result)
           return null
         })
         .catch((err) => {

@@ -1,51 +1,45 @@
 /**
- * Config provider coordinator — the ONE entry point for fresh-boot project
- * acquisition. Owns selection, bounded fallback, telemetry and activation;
- * the transports (git/, s3/) own acquisition only.
+ * Workspace provider — the ONE entry point that provides `/workspace` on a
+ * boot. It decides which workspace the session gets and owns the telemetry
+ * and the health summary; `acquire` (acquire.ts) decides how a fresh
+ * checkout arrives (Git or S3).
  *
- *   mode `git`         warm adoption → Git (compiled / scaffold+delta / clone)
- *   mode `prefer-s3`   warm adoption → S3 (pinned archive) → on failure: Git
- *   mode `require-s3`  warm adoption → S3, no fallback
+ *   warm adoption → acquire: mode `git`         Git (compiled / scaffold+delta / clone)
+ *                            mode `prefer-s3`   S3 (pinned archive) → on failure: Git
+ *                            mode `require-s3`  S3, no fallback
  *
  * The expected revision is pinned ONCE from KORTIX_BASE_SHA and preserved into
  * the Git fallback request. A fallback is never silent: the S3 failure is
  * logged as `config_provider_s3_failed`, the transition as
  * `config_provider_fallback`, and both stay visible on `/kortix/health`
  * (`config_provider`) and in the boot timeline the daemon relays at readiness.
+ * Those wire names (events, health key, `config-provider:*` boot marks) predate
+ * this service's rename and stay unchanged; dashboards and stored timelines
+ * read them.
  *
- * Never recurses between providers, never mixes a partial S3 stage with a Git
+ * Never recurses between transports, never mixes a partial S3 stage with a Git
  * checkout (the stage is private and removed on failure; the target is
  * cleared before Git runs), and never falls back on cancellation or an
  * authorization denial.
  */
 import type { Config, ProjectSnapshotMode } from '@/lib/config/config'
-import { adoptOrClearBakedCheckout, clearDirContents, finalizeSnapshotStage, readRepoInfo } from '@/lib/git/git'
+import { readRepoInfo } from '@/lib/git/git'
 import { logger } from '@/lib/log/logger'
-import { materializeViaGit } from './git/git-config-provider'
-import {
-  checkS3Eligibility,
-  hydrateProjectSnapshotBlobs,
-  materializeFromS3,
-  refreshSnapshotIndex,
-} from './s3/s3-config-provider'
-import {
-  ConfigProviderError,
-  S3_NO_FALLBACK_REASONS,
-  type ConfigProviderSummary,
-  type MaterializeRequest,
-  type MaterializedProject,
-  type SnapshotHydrationSummary,
-} from './types'
+import type { SnapshotHydrationSummary } from '@/lib/project-snapshot/hydrate'
+import { acquire, type S3Attempt } from './acquire'
+import { adoptOrClearBakedCheckout } from './checkout'
+import { scheduleHistoryBackfill } from './git'
+import type { MaterializeRequest, MaterializedProject, WorkspaceProviderSummary } from './types'
 
 /** Total S3 budget (descriptor + download + extract + verify, all retries). */
 export const DEFAULT_S3_DEADLINE_MS = 45_000
 
-export interface MaterializeProjectOptions {
+export interface ProvideWorkspaceOptions {
   signal?: AbortSignal
   bootMark?: (label: string) => void
   deadlineMs?: number
   /** Receives the health-visible summary on success AND on failure. */
-  onSummary?: (summary: ConfigProviderSummary) => void
+  onSummary?: (summary: WorkspaceProviderSummary) => void
   /** Test seam for the S3 transport's HTTP. */
   fetchImpl?: typeof fetch
   /** Stall detector for the archive transfer; see DEFAULT_INACTIVITY_TIMEOUT_MS. */
@@ -54,7 +48,7 @@ export interface MaterializeProjectOptions {
   tarBinary?: string
 }
 
-export type MaterializeProjectResult = MaterializedProject & { summary: ConfigProviderSummary }
+export type ProvideWorkspaceResult = MaterializedProject & { summary: WorkspaceProviderSummary }
 
 function trustedSha(cfg: Config): string | null {
   const sha = (cfg.baseSha ?? '').trim().toLowerCase()
@@ -66,14 +60,9 @@ function summarize(
   mode: ProjectSnapshotMode,
   started: number,
   result: Partial<MaterializedProject> & { timings: Record<string, number> },
-  s3: {
-    attempted: boolean
-    attempts: number
-    error: ConfigProviderError | null
-    skipped: ConfigProviderError | null
-  },
+  s3: S3Attempt,
   outcome: { ok: true } | { ok: false; error: string },
-): ConfigProviderSummary {
+): WorkspaceProviderSummary {
   const expected = trustedSha(cfg)
   const actual = result.sha ?? null
   return {
@@ -99,10 +88,10 @@ function summarize(
   }
 }
 
-export async function materializeProject(
+export async function provideWorkspace(
   cfg: Config,
-  opts: MaterializeProjectOptions = {},
-): Promise<MaterializeProjectResult> {
+  opts: ProvideWorkspaceOptions = {},
+): Promise<ProvideWorkspaceResult> {
   const started = Date.now()
   const timings: Record<string, number> = {}
   const mark = opts.bootMark ?? (() => {})
@@ -116,16 +105,11 @@ export async function materializeProject(
     signal: opts.signal,
     deadlineMs: opts.deadlineMs ?? DEFAULT_S3_DEADLINE_MS,
   }
-  const s3State = {
-    attempted: false,
-    attempts: 0,
-    error: null as ConfigProviderError | null,
-    skipped: null as ConfigProviderError | null,
-  }
+  const s3State: S3Attempt = { attempted: false, attempts: 0, error: null, skipped: null }
 
-  const finish = (result: MaterializedProject): MaterializeProjectResult => {
+  const finish = (result: MaterializedProject): ProvideWorkspaceResult => {
     const summary = summarize(cfg, mode, started, result, s3State, { ok: true })
-    logger.info('[config-provider] complete', {
+    logger.info('[workspace-provider] complete', {
       event: 'config_provider_complete',
       provider: result.provider,
       mode: mode,
@@ -140,7 +124,7 @@ export async function materializeProject(
     if (summary.sha_matches === false) {
       // Loud, not fatal: the legacy clone can also land on a newer tip when the
       // branch moved between session create and boot. Never silent.
-      logger.warn('[config-provider] checkout SHA differs from the session pin', {
+      logger.warn('[workspace-provider] checkout SHA differs from the session pin', {
         event: 'config_provider_sha_drift',
         provider: result.provider,
         expectedSha,
@@ -170,87 +154,20 @@ export async function materializeProject(
       })
     }
 
-    if (mode === 'git') {
-      const git = await materializeViaGit(req)
-      return finish({ ...git, timings: { ...timings, ...git.timings } })
-    }
-
-    // prefer-s3 / require-s3 — eligibility first. An ineligible boot is a
-    // Git-only start with a RECORDED reason, never "a failed S3 attempt": a
-    // resumed/replacement runtime (`not-fresh`) keeps its remote-branch restore
-    // path in every mode; a session the API could not pin (`no-pin`, a cache
-    // miss) never becomes a pinned S3 attempt and is fatal only under
-    // require-s3, where "no prepared archive" is exactly what must surface.
-    try {
-      checkS3Eligibility(req)
-    } catch (err) {
-      const skip =
-        err instanceof ConfigProviderError
-          ? err
-          : new ConfigProviderError('precondition', 'not-configured', (err as Error)?.message ?? String(err))
-      if (mode === 'require-s3' && skip.reason !== 'not-fresh') throw skip
-      s3State.skipped = skip
-      logger.info('[config-provider] s3 skipped; git-only start', {
-        event: 'config_provider_s3_skipped',
-        mode,
-        reason: skip.reason,
-        expectedSha,
-      })
-      mark(`config-provider:s3:skipped:${skip.reason}`)
-      const git = await materializeViaGit(req)
-      return finish({ ...git, timings: { ...timings, ...git.timings } })
-    }
-    s3State.attempted = true
-    const s3Started = Date.now()
-    try {
-      const acquired = await materializeFromS3(req, {
-        fetchImpl: opts.fetchImpl,
-        inactivityTimeoutMs: opts.inactivityTimeoutMs,
-        tarBinary: opts.tarBinary,
-      })
-      s3State.attempts = acquired.metrics.attempts
-      timings.s3_acquire = Date.now() - s3Started
-      const a0 = Date.now()
-      try {
-        await finalizeSnapshotStage(cfg, acquired.stage)
-      } catch (err) {
-        throw new ConfigProviderError('activate', 'malformed', `snapshot activation failed: ${(err as Error)?.message ?? String(err)}`, acquired.metrics.attempts, { cause: err })
-      }
-      timings.s3_activate = Date.now() - a0
-      const info = await readRepoInfo(cfg.projectTarget)
-
-      // The boot path ends here. Two things follow OFF it, concurrently with
-      // the runtime spawn: the one-time index refresh (so the agent's first
-      // `git status` is instant; it takes the index lock, so it goes first)
-      // and then the blob-pack import. Neither gates readiness; a failed
-      // import leaves a valid partial clone.
-      const hydration = refreshSnapshotIndex(cfg.projectTarget)
-        .then(
-          (ms) => logger.info('[config-provider] snapshot index refreshed', { ms }),
-          (err) => logger.warn('[config-provider] snapshot index refresh errored', { err: (err as Error)?.message ?? String(err) }),
-        )
-        .then(() =>
-          hydrateProjectSnapshotBlobs(cfg, cfg.projectTarget, acquired.descriptor, {
-            fetchImpl: opts.fetchImpl,
-            inactivityTimeoutMs: opts.inactivityTimeoutMs,
-            signal: opts.signal,
-          }),
-        )
-      const finished = finish({
-        provider: 's3',
-        sha: info?.commit ?? null,
-        expectedSha,
-        workspacePath: cfg.projectTarget,
-        timings: { ...timings },
-        s3: acquired.metrics,
-        hydration,
-      })
+    const acquired = await acquire(req, { mode, mark, timings, s3: s3State }, {
+      fetchImpl: opts.fetchImpl,
+      inactivityTimeoutMs: opts.inactivityTimeoutMs,
+      tarBinary: opts.tarBinary,
+    })
+    const finished = finish(acquired)
+    const hydration = acquired.hydration
+    if (hydration) {
       const pending: SnapshotHydrationSummary = { status: 'pending', attempts: 0, bytes: 0, ms: 0, reason: null, error: null }
       finished.summary.hydration = pending
       void hydration.then((h) => {
         finished.summary.hydration = h
         finished.summary.timings.s3_hydrate = h.ms
-        ;(h.status === 'ok' ? logger.info : logger.warn).call(logger, '[config-provider] snapshot hydration settled', {
+        ;(h.status === 'ok' ? logger.info : logger.warn).call(logger, '[workspace-provider] snapshot hydration settled', {
           event: 'config_provider_hydration',
           status: h.status,
           attempts: h.attempts,
@@ -263,62 +180,12 @@ export async function materializeProject(
         mark(`config-provider:hydrate:${h.status}`)
         opts.onSummary?.(finished.summary)
       })
-      return finished
-    } catch (err) {
-      const failure =
-        err instanceof ConfigProviderError
-          ? err
-          : new ConfigProviderError('download', 'unavailable', (err as Error)?.message ?? String(err))
-      s3State.error = failure
-      s3State.attempts = Math.max(s3State.attempts, failure.attempts)
-      const s3DurationMs = Date.now() - s3Started
-      timings.s3_failed = s3DurationMs
-      logger.warn('[config-provider] s3 acquisition failed', {
-        event: 'config_provider_s3_failed',
-        mode: mode,
-        projectId: cfg.projectId,
-        sessionId: cfg.branchName,
-        expectedSha,
-        stage: failure.stage,
-        reason: failure.reason,
-        attempts: failure.attempts,
-        durationMs: s3DurationMs,
-        error: failure.message.slice(0, 300),
-      })
-      mark(`config-provider:s3:failed:${failure.reason}`)
-      if (S3_NO_FALLBACK_REASONS.has(failure.reason) || mode === 'require-s3') {
-        throw failure
-      }
-      logger.warn('[config-provider] falling back to git', {
-        event: 'config_provider_fallback',
-        from: 's3',
-        to: 'git',
-        reason: failure.reason,
-        stage: failure.stage,
-        expectedSha,
-      })
-      mark('config-provider:fallback')
-      // ONE coordinated transition: the S3 stage is already gone; make sure no
-      // partial activation survives either, then hand the SAME pinned request
-      // to Git.
-      await clearDirContents(cfg.projectTarget).catch(() => {})
-      const git = await materializeViaGit(req)
-      return finish({
-        ...git,
-        timings: { ...timings, ...git.timings },
-        fallback: {
-          from: 's3',
-          stage: failure.stage,
-          reason: failure.reason,
-          attempts: failure.attempts,
-          durationMs: s3DurationMs,
-        },
-      })
     }
+    return finished
   } catch (err) {
     const message = (err as Error)?.message ?? String(err)
     const summary = summarize(cfg, mode, started, { timings }, s3State, { ok: false, error: message })
-    logger.error('[config-provider] materialization failed', {
+    logger.error('[workspace-provider] materialization failed', {
       event: 'config_provider_complete',
       outcome: 'error',
       mode: mode,
@@ -330,5 +197,18 @@ export async function materializeProject(
     })
     opts.onSummary?.(summary)
     throw err
+  }
+}
+
+/**
+ * The history backfill of an S3 start, for the harness to run after readiness:
+ * it waits for the blob-pack import to settle, so the two never write packs
+ * into the same object store at once.
+ */
+export function backfillAfterHydration(cfg: Config, result: ProvideWorkspaceResult): () => void {
+  const hydration = result.hydration ?? Promise.resolve()
+  const backfill = () => scheduleHistoryBackfill(cfg, cfg.projectTarget)
+  return () => {
+    void hydration.then(backfill, backfill)
   }
 }

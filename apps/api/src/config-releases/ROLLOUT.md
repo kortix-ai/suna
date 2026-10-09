@@ -11,7 +11,7 @@ drops the plugin entry files its manifest does not select.
 Both session runtimes apply them: OpenCode swaps in a proven replacement
 process, pi reloads the release in place. Full contract:
 `apps/api/src/config-releases/`,
-`apps/kortix-sandbox-agent-server/src/services/config-release/`,
+`apps/kortix-sandbox-agent-server/src/services/config-provider/`,
 `apps/kortix-sandbox-agent-server/src/harness/open-code/config-release.ts`,
 `apps/kortix-sandbox-agent-server/src/harness/pi/config-release.ts`.
 
@@ -113,7 +113,7 @@ request. The store is a cache; the Git mirror is always the source of truth.
 ## Limits
 
 - A box takes a release from the first source that holds it
-  (`apps/kortix-sandbox-agent-server/src/services/config-release/obtain.ts`):
+  (`apps/kortix-sandbox-agent-server/src/services/config-provider/obtain.ts`):
   the intact copy on disk, the session's checkout when its HEAD is the
   release commit, the project snapshot of the commit (descriptor `snapshot`,
   v3), then the API archive. Every source is verified file by file against
