@@ -35,7 +35,7 @@ export function genuiBlockToMarkdown(code: string, version: number = GENUI_SCHEM
  * Text without a generative-UI fence is returned unchanged (same string).
  */
 export function genuiToMarkdown(text: string): string {
-  if (!text.includes('openui')) return text;
+  if (!/openui/i.test(text)) return text;
   const segments = splitGenui(text);
   if (!segments.some((segment) => segment.kind === 'genui')) return text;
   return segments

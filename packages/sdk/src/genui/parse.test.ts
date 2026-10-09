@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import { GENUI_MAX_NODES } from './catalog';
 import { createGenuiParser, parseGenui } from './parse';
 import { HOTEL } from './test-fixtures';
 
@@ -113,8 +114,22 @@ describe('parse + validate', () => {
       ticks++;
     }
     const perTick = (performance.now() - started) / ticks;
-    console.log(`bytes=${big.length} ticks=${ticks} ms/tick=${perTick.toFixed(3)}`);
     expect(big.length).toBeGreaterThan(4000);
     expect(perTick).toBeLessThan(2);
+  });
+
+  test('reference fan-out is capped by the node budget', () => {
+    const twelve = (name: string) => Array.from({ length: 12 }, () => name).join(', ');
+    const block = `root = Stack([${twelve('a')}])\na = Stack([${twelve('b')}])\nb = Stack([${twelve('c')}])\nc = Badge("x")`;
+    const started = performance.now();
+    const result = parseGenui(block);
+    const elapsed = performance.now() - started;
+    const count = (node: { props: Record<string, unknown> } | null): number =>
+      node === null
+        ? 0
+        : 1 + ((node.props.children as { props: Record<string, unknown> }[] | undefined) ?? []).reduce((sum, child) => sum + count(child), 0);
+    expect(count(result.root)).toBeLessThanOrEqual(GENUI_MAX_NODES);
+    expect(result.issues.filter((issue) => issue.code === 'too-many-nodes')).toHaveLength(1);
+    expect(elapsed).toBeLessThan(50);
   });
 });

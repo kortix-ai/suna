@@ -9,6 +9,8 @@ describe('safeUrl', () => {
     expect(safeUrl('data:text/html,<b>')).toBeNull();
     expect(safeUrl('/relative')).toBeNull();
     expect(safeUrl(42)).toBeNull();
+    expect(safeUrl('https://google.com@evil.example/x')).toBeNull();
+    expect(safeUrl('https://user:pass@example.com/')).toBeNull();
     expect(safeUrl(`https://e.com/${'a'.repeat(3000)}`)).toBeNull();
   });
 });

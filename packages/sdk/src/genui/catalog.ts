@@ -461,3 +461,6 @@ export const GENUI_LIBRARY: Library<string> = createLibrary({
 
 /** Maximum container nesting (Stack, Tabs, Accordion) inside one block. */
 export const GENUI_MAX_DEPTH = 4;
+
+/** Maximum nodes in one block after references expand. A reference re-materializes its target at every use. */
+export const GENUI_MAX_NODES = 500;

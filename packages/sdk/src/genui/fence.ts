@@ -3,6 +3,7 @@ import type { GenuiSegment } from './types';
 /** v1 fence tags. `openui-lang` is the tag OpenUI's own docs teach, so models also write it. */
 const V1_TAGS = new Set(['openui', 'openui-lang']);
 const OPEN_FENCE = /^ {0,3}(`{3,}|~{3,})[ \t]*([^\s`]*)[^`]*$/;
+const CLOSE_FENCE = /^ {0,3}(`{3,}|~{3,})\s*$/;
 
 /** Schema version for a fence language tag, or null when the fence is not generative UI. */
 export function genuiVersionOf(tag: string): number | null {
@@ -47,11 +48,8 @@ export function splitGenui(text: string): GenuiSegment[] {
       else flushMarkdown();
       continue;
     }
-    const trimmed = line.trim();
-    const closes =
-      trimmed.length >= fence.marker.length &&
-      trimmed[0] === fence.marker[0] &&
-      /^(`+|~+)$/.test(trimmed);
+    const close = CLOSE_FENCE.exec(line);
+    const closes = close !== null && close[1]![0] === fence.marker[0] && close[1]!.length >= fence.marker.length;
     if (!closes) {
       if (fence.version === null) markdown.push(line);
       else fence.body.push(line);

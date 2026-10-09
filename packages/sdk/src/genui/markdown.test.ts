@@ -51,6 +51,10 @@ describe('markdown fallback', () => {
     );
   });
 
+  test('a capitalized fence tag is still a block', () => {
+    expect(genuiToMarkdown('Hi\n\n```OpenUI\nroot = Stack([b])\nb = Badge("x")\n```')).toBe('Hi\n\n[x]');
+  });
+
   test('a newer version yields the unsupported note', () => {
     expect(genuiToMarkdown('```openui-v2\nroot = Stack([])\n```')).toBe('*This content needs a newer version of Kortix.*');
   });

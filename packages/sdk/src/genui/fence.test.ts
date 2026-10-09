@@ -27,6 +27,13 @@ describe('fence', () => {
     expect(splitGenui(text)).toEqual([{ kind: 'markdown', text }]);
   });
 
+  test('a closing fence indented 4+ spaces does not close the block', () => {
+    const text = '```openui\nroot = Stack([b])\n    ```\nb = Badge("x")\n```';
+    expect(splitGenui(text)).toEqual([
+      { kind: 'genui', code: 'root = Stack([b])\n    ```\nb = Badge("x")', version: 1, closed: true },
+    ]);
+  });
+
   test('an unclosed block is still streaming', () => {
     expect(splitGenui('Hi\n```openui\nroot = Sta')).toEqual([
       { kind: 'markdown', text: 'Hi' },

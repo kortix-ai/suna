@@ -1,6 +1,6 @@
 import type { ElementNode } from '@openuidev/lang-core';
 
-import { GENUI_MAX_DEPTH, GENUI_SPECS } from './catalog';
+import { GENUI_MAX_DEPTH, GENUI_MAX_NODES, GENUI_SPECS } from './catalog';
 import type { GenuiIssue, GenuiNode } from './types';
 import { safeUrl } from './urls';
 
@@ -12,7 +12,8 @@ const isElement = (value: unknown): value is ElementNode =>
  *
  * lang-core checks types, enums, and required props only. This pass adds what it skips:
  * zod limits (lengths, counts, ranges), slot membership, nesting depth, URL safety, and
- * unique React keys. A node that fails is dropped and recorded in `issues`; its siblings render.
+ * unique React keys, and a total node budget (`GENUI_MAX_NODES`: one reference used many times
+ * re-materializes its subtree each time). A node that fails is dropped and recorded in `issues`; its siblings render.
  */
 export function sanitizeTree(
   root: ElementNode | null,
@@ -27,6 +28,7 @@ export function sanitizeTree(
 ): { root: GenuiNode | null; issues: GenuiIssue[] } {
   const issues: GenuiIssue[] = [];
   const usedIds = new Map<string, number>();
+  let nodeCount = 0;
   const uniqueId = (base: string): string => {
     const seen = usedIds.get(base) ?? 0;
     usedIds.set(base, seen + 1);
@@ -58,6 +60,15 @@ export function sanitizeTree(
       issues.push({ code: 'depth', component: typeName, statementId, message: `Nesting deeper than ${GENUI_MAX_DEPTH}` });
       return null;
     }
+
+    // Reserve a slot before visiting children, so the budget bounds the work as well as the output.
+    if (nodeCount >= GENUI_MAX_NODES) {
+      if (!issues.some((issue) => issue.code === 'too-many-nodes')) {
+        issues.push({ code: 'too-many-nodes', message: `Block expands to more than ${GENUI_MAX_NODES} nodes; the rest is dropped` });
+      }
+      return null;
+    }
+    nodeCount++;
 
     // The stream is over and this statement never finished: drop it instead of waiting forever.
     if (partial && !options.streaming) {

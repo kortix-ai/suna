@@ -23,7 +23,9 @@ export type GenuiIssueCode =
   /** The stream ended inside this statement (turn aborted or failed). */
   | 'cut-off'
   /** Query, Mutation, or $state: not supported before Phase 4; never executed. */
-  | 'unsupported-statement';
+  | 'unsupported-statement'
+  /** The block expands to more than `GENUI_MAX_NODES` nodes (reference fan-out); the rest is dropped. */
+  | 'too-many-nodes';
 
 export interface GenuiIssue {
   code: GenuiIssueCode;
