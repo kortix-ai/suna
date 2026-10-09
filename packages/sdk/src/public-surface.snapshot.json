@@ -1726,10 +1726,16 @@
     "writeStartStash"
   ],
   "./genui": [
+    "GENUI_CUT_OFF_NOTE",
     "GENUI_PROMPT_VERSION",
     "GENUI_SCHEMA_VERSION",
+    "GENUI_UNSUPPORTED_NOTE",
     "buildGenuiPrompt",
     "createGenuiParser",
+    "genuiA11yText",
+    "genuiBlockToMarkdown",
+    "genuiNodeToMarkdown",
+    "genuiToMarkdown",
     "genuiVersionFromClassName",
     "genuiVersionOf",
     "parseGenui",
