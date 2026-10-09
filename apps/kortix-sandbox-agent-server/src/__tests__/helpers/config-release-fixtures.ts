@@ -226,9 +226,9 @@ export function startFakeApi(token = 'sandbox-token'): FakeApi {
 }
 
 /**
- * The API's answer when the `config_releases` feature flag is off for the
- * project, or platform-wide (spec, "Feature flag"). Exactly what
- * `requireFeatureFlag` emits.
+ * The answer of an API from before config releases graduated, with the
+ * `config_releases` flag off for the project. Exactly what that API's
+ * `requireFeatureFlag` emitted.
  */
 export const FEATURE_DISABLED = {
   status: 403,
