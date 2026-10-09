@@ -55,6 +55,9 @@ mock.module('@/components/ui/tabs', () => ({
   TabsContent: host('tabs-content'),
 }));
 mock.module('@/components/kortix/kortix-loader', () => ({ KortixLoader: host('loader') }));
+// The Map's list rows and its full-screen WebView sheet load native modules; genui-map.test.tsx covers them.
+mock.module('@/components/kortix/settings-list', () => ({ SettingsGroup: host('settings-group'), SettingsRow: host('settings-row') }));
+mock.module('./map/map-sheet', () => ({ MapSheet: host('map-sheet') }));
 mock.module('@/components/markdown/markdown-image', () => ({ MarkdownImage: host('markdown-image') }));
 mock.module('@/components/markdown/markdown-text', () => ({ openExternalLink: (href: unknown) => opened.push(href) }));
 mock.module('@/lib/icons', () => ({
@@ -66,6 +69,8 @@ mock.module('@/lib/icons', () => ({
   CheckCircleIcon: 'check-circle',
   CaretDownIcon: 'caret-down',
   CaretRightIcon: 'caret-right',
+  MapPinIcon: 'map-pin',
+  MapTrifoldIcon: 'map-trifold',
 }));
 
 let GenuiMessageBlock: typeof import('./genui-message-block').GenuiMessageBlock;

@@ -1202,6 +1202,9 @@
     "pick": "おすすめ",
     "source": "出典: {{source}}",
     "showData": "データを表示",
-    "hideData": "データを非表示"
+    "hideData": "データを非表示",
+    "openMap": "地図を開く",
+    "map": "地図",
+    "mapUnavailable": "地図を表示できません"
   }
 }

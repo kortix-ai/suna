@@ -5,10 +5,10 @@ import { GenuiChart } from './charts';
 import { GenuiCompare, GenuiRankedList, GenuiStat, GenuiStatRow, GenuiTable } from './data';
 import { GenuiBadge, GenuiCallout, GenuiImage, GenuiLink } from './inline';
 import { GenuiCard, GenuiStack, GenuiTabs } from './layout';
+import { GenuiMap } from './map';
 
 export { GenuiPending } from './pending';
 
-/** Map is not mapped yet: the SDK renders a missing entry as its markdown. */
 export const mobileGenuiComponents: GenuiComponentMap = {
   Stack: GenuiStack,
   Card: GenuiCard,
@@ -22,6 +22,7 @@ export const mobileGenuiComponents: GenuiComponentMap = {
   BarChart: GenuiChart,
   LineChart: GenuiChart,
   PieChart: GenuiChart,
+  Map: GenuiMap,
   Badge: GenuiBadge,
   Callout: GenuiCallout,
   Image: GenuiImage,

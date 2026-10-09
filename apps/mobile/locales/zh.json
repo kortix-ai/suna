@@ -1202,6 +1202,9 @@
     "pick": "推荐",
     "source": "来源：{{source}}",
     "showData": "显示数据",
-    "hideData": "隐藏数据"
+    "hideData": "隐藏数据",
+    "openMap": "打开地图",
+    "map": "地图",
+    "mapUnavailable": "地图不可用"
   }
 }

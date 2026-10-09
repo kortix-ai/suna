@@ -1202,6 +1202,9 @@
     "pick": "Recommandé",
     "source": "Source : {{source}}",
     "showData": "Afficher les données",
-    "hideData": "Masquer les données"
+    "hideData": "Masquer les données",
+    "openMap": "Ouvrir la carte",
+    "map": "Carte",
+    "mapUnavailable": "Carte indisponible"
   }
 }

@@ -1204,6 +1204,9 @@
     "pick": "Pick",
     "source": "Source: {{source}}",
     "showData": "Show data",
-    "hideData": "Hide data"
+    "hideData": "Hide data",
+    "openMap": "Open map",
+    "map": "Map",
+    "mapUnavailable": "Map unavailable"
   }
 }

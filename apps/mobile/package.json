@@ -124,6 +124,7 @@
     "@types/react-test-renderer": "19.1.0",
     "babel-preset-expo": "~56.0.20",
     "canvaskit-wasm": "^0.42.0",
+    "maplibre-gl": "5.24.0",
     "mermaid": "11.17.2",
     "patch-package": "^8.0.0",
     "prettier": "^3.6.2",
