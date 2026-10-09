@@ -207,6 +207,7 @@ describe('runInstall', () => {
       name: 'Resend',
       provider: 'composio',
       app: 'resend',
+      authorization_strategy: 'user',
       account: 'default',
       create_only: true,
     });
@@ -365,6 +366,25 @@ describe('runInstall', () => {
       slug: 'resend-zzz999',
       connectionId: 'mine-1',
     });
+  });
+
+  test('an "Only you" install creates no "Everyone in project" account', async () => {
+    for (const target of [mcp(false), managed]) {
+      const { deps, drafts } = fakeDeps();
+      await runInstall(deps, { projectId: 'p1', target, audience: 'private', connectors: [] });
+      expect(drafts[0]?.authorization_strategy).toBe('user');
+    }
+  });
+
+  test('an "Everyone" install keeps the shared project account', async () => {
+    const { deps, drafts } = fakeDeps();
+    await runInstall(deps, {
+      projectId: 'p1',
+      target: mcp(false),
+      audience: 'project',
+      connectors: [],
+    });
+    expect(drafts[0]?.authorization_strategy).toBeUndefined();
   });
 
   test('a sync failure on a managed install also reports, and the window flow ends', async () => {

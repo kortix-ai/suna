@@ -204,7 +204,13 @@ export async function runInstall(
     const slugs = connectors.map((connector) => connector.slug);
     const slug = proposeConnectorConnectionSlug(target.appName, slugs, deps.random);
     const name = proposeConnectorConnectionName(target.appName, slugs);
-    const result = await deps.createConnector(projectId, target.buildDraft({ slug, name }));
+    // "Only you" creates the connector as member-authorized: sync then adds no
+    // shared "Everyone in project" account, which would sit there unsigned.
+    const draft = target.buildDraft({ slug, name });
+    const result = await deps.createConnector(
+      projectId,
+      audience === 'private' ? { ...draft, authorization_strategy: 'user' } : draft,
+    );
     const syncError = connectorSyncErrorForSlug(result, slug);
     if (syncError && target.provider === 'mcp' && isAuthChallenge(syncError)) {
       signInPending = true;
