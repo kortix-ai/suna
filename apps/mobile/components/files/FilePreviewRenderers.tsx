@@ -4,9 +4,13 @@
  */
 
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { View, Image, ScrollView, Platform, useWindowDimensions } from 'react-native';
+import { View, Image, ScrollView, Platform, useWindowDimensions, type StyleProp, type ViewStyle } from 'react-native';
 import { WebView } from 'react-native-webview';
-import type { ShouldStartLoadRequest } from 'react-native-webview/lib/WebViewTypes';
+import type {
+  ShouldStartLoadRequest,
+  WebViewErrorEvent,
+  WebViewHttpErrorEvent,
+} from 'react-native-webview/lib/WebViewTypes';
 import { MermaidBlock } from '@/components/markdown/mermaid/MermaidBlock';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
@@ -21,9 +25,7 @@ import { log } from '@/lib/logger';
 import { MONO_FONT_FAMILY } from '@/lib/utils/mono-font';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import {
-  HTML_SANITIZER_SCRIPT,
   decidePreviewNavigation,
-  escapeForInlineScript,
   type PreviewNavigationOptions,
 } from '@/lib/utils/html-embed';
 import {
@@ -33,7 +35,17 @@ import {
   previewDecision,
   truncateForPreview,
 } from '@/lib/files/preview-limits';
+import { generateHighlightedCodeHtml, generatePdfJsHtml, generateDocxHtml } from './file-preview-html';
+import {
+  FilePreviewType,
+  getFilePreviewType,
+  getLanguageFromFilename,
+} from '@/lib/files/preview-type';
 import { openLink } from '@/lib/utils/open-link';
+
+// Classification moved to `@/lib/files/preview-type`; callers import it from
+// here (`./FilePreviewRenderers`) as before.
+export { FilePreviewType, getFilePreviewType, getLanguageFromFilename } from '@/lib/files/preview-type';
 
 /**
  * Constructs a preview URL for HTML files in the sandbox environment.
@@ -62,121 +74,6 @@ function constructHtmlPreviewUrl(
 }
 
 // File preview type enum
-export enum FilePreviewType {
-  IMAGE = 'image',
-  PDF = 'pdf',
-  MARKDOWN = 'markdown',
-  MERMAID = 'mermaid',
-  CSV = 'csv',
-  XLSX = 'xlsx',
-  DOCX = 'docx',
-  HTML = 'html',
-  JSON = 'json',
-  CODE = 'code',
-  TEXT = 'text',
-  BINARY = 'binary',
-  OTHER = 'other',
-}
-
-// Helper to get file preview type
-export function getFilePreviewType(filename: string): FilePreviewType {
-  const ext = filename.split('.').pop()?.toLowerCase() || '';
-
-  const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'ico', 'heic', 'heif', 'tiff'];
-  const documentExtensions = ['pdf'];
-  const markdownExtensions = ['md', 'markdown', 'mdx'];
-  const csvExtensions = ['csv', 'tsv'];
-  const xlsxExtensions = ['xlsx', 'xls'];
-  const docxExtensions = ['docx'];
-  const htmlExtensions = ['html', 'htm'];
-  const jsonExtensions = ['json', 'jsonc', 'json5'];
-  const codeExtensions = [
-    'js', 'jsx', 'ts', 'tsx', 'py', 'pyi', 'pyx', 'pyw',
-    'java', 'c', 'cpp', 'cc', 'cxx', 'h', 'hpp', 'hxx', 'm', 'mm',
-    'cs', 'rb', 'erb', 'go', 'rs', 'php', 'swift', 'kt', 'kts', 'scala',
-    'r', 'rmd', 'hs', 'lhs', 'lua', 'perl', 'pl', 'pm',
-    'sql', 'sh', 'bash', 'zsh', 'fish', 'ps1', 'bat', 'cmd',
-    'css', 'scss', 'sass', 'less', 'styl',
-    'yaml', 'yml', 'toml', 'ini', 'conf', 'config', 'cfg', 'properties',
-    'xml', 'xsl', 'xslt', 'wsdl',
-    'dart', 'vim', 'dockerfile', 'makefile',
-    'vue', 'svelte',
-    'proto', 'graphql', 'gql',
-    'gradle', 'groovy', 'clj', 'cljs', 'ex', 'exs',
-    'f90', 'f95', 'f03', 'for',
-    'zig', 'nim', 'v', 'cr', 'jl',
-    'env', 'gitignore', 'editorconfig',
-  ];
-  const textExtensions = ['txt', 'log', 'rtf', 'tex', 'rst', 'org', 'nfo', 'info'];
-  const binaryExtensions = ['zip', 'tar', 'gz', 'rar', '7z', 'exe', 'dmg', 'pkg', 'deb', 'rpm'];
-
-  // SVG is never drawn on mobile (Jay, 2026-09-22, `lib/files/svg-policy`):
-  // it reads as its markup, so Copy works, and Download hands the real file to
-  // the device. The `SvgXml` renderer that briefly lived here is gone.
-  if (ext === 'mmd' || ext === 'mermaid') return FilePreviewType.MERMAID;
-  if (ext === 'svg') return FilePreviewType.TEXT;
-  if (imageExtensions.includes(ext)) return FilePreviewType.IMAGE;
-  if (documentExtensions.includes(ext)) return FilePreviewType.PDF;
-  if (markdownExtensions.includes(ext)) return FilePreviewType.MARKDOWN;
-  if (csvExtensions.includes(ext)) return FilePreviewType.CSV;
-  if (xlsxExtensions.includes(ext)) return FilePreviewType.XLSX;
-  if (docxExtensions.includes(ext)) return FilePreviewType.DOCX;
-  if (htmlExtensions.includes(ext)) return FilePreviewType.HTML;
-  if (jsonExtensions.includes(ext)) return FilePreviewType.JSON;
-  if (codeExtensions.includes(ext)) return FilePreviewType.CODE;
-  if (textExtensions.includes(ext)) return FilePreviewType.TEXT;
-  if (binaryExtensions.includes(ext)) return FilePreviewType.BINARY;
-
-  return FilePreviewType.OTHER;
-}
-
-// Helper to get language for syntax highlighting
-export function getLanguageFromFilename(filename: string): string {
-  const ext = filename.split('.').pop()?.toLowerCase() || '';
-
-  const languageMap: Record<string, string> = {
-    'js': 'javascript', 'jsx': 'javascript', 'mjs': 'javascript', 'cjs': 'javascript',
-    'ts': 'typescript', 'tsx': 'typescript',
-    'py': 'python', 'pyi': 'python', 'pyx': 'python', 'pyw': 'python',
-    'rb': 'ruby', 'erb': 'ruby', 'gemspec': 'ruby',
-    'java': 'java',
-    'c': 'c', 'h': 'c', 'm': 'objectivec',
-    'cpp': 'cpp', 'cc': 'cpp', 'cxx': 'cpp', 'hpp': 'cpp', 'hxx': 'cpp', 'mm': 'objectivec',
-    'cs': 'csharp',
-    'go': 'go',
-    'rs': 'rust',
-    'php': 'php',
-    'swift': 'swift',
-    'kt': 'kotlin', 'kts': 'kotlin',
-    'scala': 'scala',
-    'r': 'r', 'rmd': 'r',
-    'hs': 'haskell', 'lhs': 'haskell',
-    'lua': 'lua',
-    'perl': 'perl', 'pl': 'perl', 'pm': 'perl',
-    'sql': 'sql',
-    'sh': 'bash', 'bash': 'bash', 'zsh': 'bash', 'fish': 'bash',
-    'ps1': 'powershell', 'bat': 'dos', 'cmd': 'dos',
-    'css': 'css', 'scss': 'scss', 'sass': 'scss', 'less': 'less',
-    'html': 'html', 'htm': 'html',
-    'xml': 'xml', 'xsl': 'xml', 'xslt': 'xml', 'wsdl': 'xml',
-    'yaml': 'yaml', 'yml': 'yaml',
-    'toml': 'ini', 'ini': 'ini', 'conf': 'ini', 'cfg': 'ini', 'properties': 'properties',
-    'json': 'json', 'jsonc': 'json', 'json5': 'json',
-    'md': 'markdown', 'mdx': 'markdown',
-    'dart': 'dart',
-    'vim': 'vim',
-    'vue': 'xml', 'svelte': 'xml',
-    'proto': 'protobuf', 'graphql': 'graphql', 'gql': 'graphql',
-    'gradle': 'gradle', 'groovy': 'groovy',
-    'clj': 'clojure', 'cljs': 'clojure',
-    'ex': 'elixir', 'exs': 'elixir',
-    'jl': 'julia',
-    'zig': 'zig', 'nim': 'nim',
-    'dockerfile': 'dockerfile', 'makefile': 'makefile',
-  };
-
-  return languageMap[ext] || 'plaintext';
-}
 
 /**
  * Space the host keeps clear at the bottom of a preview, for controls that float
@@ -230,6 +127,67 @@ function usePreviewNavigationGuard({
 /**
  * Image Preview Component
  */
+
+/**
+ * The preview WebView, minus the properties every preview sets identically.
+ * Callers keep only their own source, guard and loading/error UI.
+ */
+function PreviewWebView({
+  source,
+  onShouldStartLoadWithRequest,
+  scrollEnabled,
+  showsVerticalScrollIndicator,
+  scalesPageToFit,
+  bounces,
+  allowFileAccess,
+  mixedContentMode,
+  domStorageEnabled,
+  style,
+  contentInset,
+  loading,
+  onError,
+  onHttpError,
+}: {
+  source: { uri: string } | { html: string };
+  onShouldStartLoadWithRequest: (request: ShouldStartLoadRequest) => boolean;
+  /** Scroll props pass straight through; `undefined` keeps the WebView default. */
+  scrollEnabled?: boolean;
+  showsVerticalScrollIndicator?: boolean;
+  scalesPageToFit?: boolean;
+  bounces?: boolean;
+  allowFileAccess?: boolean;
+  mixedContentMode?: 'compatibility';
+  domStorageEnabled?: boolean;
+  /** The HTML preview uses an opaque page background and an iOS-only inset. */
+  style?: StyleProp<ViewStyle>;
+  contentInset?: { top?: number; bottom?: number; left?: number; right?: number };
+  loading: React.ReactElement;
+  onError?: (event: WebViewErrorEvent) => void;
+  onHttpError?: (event: WebViewHttpErrorEvent) => void;
+}) {
+  return (
+    <WebView
+      source={source}
+      style={[{ flex: 1, backgroundColor: 'transparent' }, style]}
+      originWhitelist={['*']}
+      onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
+      javaScriptEnabled
+      domStorageEnabled={domStorageEnabled}
+      allowFileAccess={allowFileAccess}
+      mixedContentMode={mixedContentMode}
+      contentInset={contentInset}
+      scrollEnabled={scrollEnabled}
+      showsVerticalScrollIndicator={showsVerticalScrollIndicator}
+      scalesPageToFit={scalesPageToFit}
+      bounces={bounces}
+      startInLoadingState
+      renderLoading={() => loading}
+      onError={onError}
+      onHttpError={onHttpError}
+    />
+  );
+}
+
 function ImagePreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string }) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -323,192 +281,6 @@ function MarkdownPreview({ content }: { content: string }) {
 }
 
 /**
- * JSON Preview Component with syntax highlighting
- */
-function JsonPreview({ content }: { content: string }) {
-  const bottomInset = React.useContext(FilePreviewBottomInsetContext);
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  const insets = useSafeAreaInsets();
-
-  const onShouldStartLoadWithRequest = usePreviewNavigationGuard();
-
-  // Format JSON for better readability. Large documents are shown as-is:
-  // parse + stringify runs synchronously on the JS thread.
-  const formattedJson = useMemo(() => {
-    if (content.length >= JSON_PRETTY_PRINT_MAX_CHARS) return content;
-    try {
-      const parsed = JSON.parse(content);
-      return JSON.stringify(parsed, null, 2);
-    } catch {
-      return content;
-    }
-  }, [content]);
-
-  const html = useMemo(
-    () => generateHighlightedCodeHtml(formattedJson, 'json', isDark, bottomInset),
-    [formattedJson, isDark, bottomInset],
-  );
-
-  return (
-    <View className="flex-1" style={{ backgroundColor: isDark ? THEME.dark.card : THEME.light.card }}>
-      <WebView
-        source={{ html }}
-        style={{ flex: 1, backgroundColor: 'transparent' }}
-        originWhitelist={['*']}
-        onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
-        javaScriptEnabled
-        scrollEnabled
-        showsVerticalScrollIndicator
-        scalesPageToFit={false}
-        bounces={false}
-        startInLoadingState
-        renderLoading={() => (
-          <View
-            className="absolute inset-0 items-center justify-center"
-            style={{ backgroundColor: isDark ? THEME.dark.card : THEME.light.card }}
-          >
-            <KortixLoader size="small" />
-          </View>
-        )}
-      />
-      {/* Language badge at bottom. Hidden under a host's floating controls. */}
-      {bottomInset === 0 ? (
-        <View
-          className="px-4 pt-2 border-t"
-          style={{
-            borderTopColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06),
-            backgroundColor: isDark ? THEME.dark.background : THEME.light.background,
-            paddingBottom: Math.max(insets.bottom, 8),
-          }}
-        >
-          <Text
-            className="text-xs font-roobert-medium"
-            style={{
-              color: isDark ? withAlpha(THEME.dark.foreground, 0.4) : withAlpha(THEME.light.foreground, 0.4),
-            }}
-          >
-            JSON
-          </Text>
-        </View>
-      ) : null}
-    </View>
-  );
-}
-
-/**
- * Generates HTML with highlight.js for syntax-highlighted code rendering.
- */
-function generateHighlightedCodeHtml(
-  code: string,
-  language: string,
-  isDark: boolean,
-  bottomInset = 0,
-): string {
-  const bgColor = isDark ? THEME.dark.card : THEME.light.card;
-  const theme = isDark ? 'github-dark' : 'github';
-  const lineNumColor = withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, 0.2);
-  const lineNumBorder = withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, 0.06);
-
-  return `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/${theme}.min.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body {
-    background: ${bgColor};
-    font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
-    font-size: 13px;
-    line-height: 20px;
-    -webkit-text-size-adjust: none;
-  }
-  body { padding-bottom: ${bottomInset}px; }
-  .code-wrapper {
-    position: relative;
-    display: flex;
-    flex-direction: row;
-    min-height: 100%;
-  }
-  .gutter {
-    position: sticky;
-    left: 0;
-    z-index: 2;
-    background: ${bgColor};
-    flex-shrink: 0;
-    padding: 12px 0;
-    border-right: 1px solid ${lineNumBorder};
-    user-select: none;
-    -webkit-user-select: none;
-  }
-  .gutter-line {
-    display: block;
-    padding: 0 14px 0 16px;
-    text-align: right;
-    color: ${lineNumColor};
-    font-size: 12px;
-    line-height: 20px;
-    min-width: 54px;
-  }
-  .code-area {
-    flex: 1;
-    padding: 12px 16px;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-  .code-line {
-    display: block;
-    line-height: 20px;
-    min-height: 20px;
-    white-space: pre;
-  }
-</style>
-</head>
-<body>
-<div class="code-wrapper">
-  <div class="gutter" id="gutter"></div>
-  <div class="code-area" id="code-area"></div>
-</div>
-<script>
-  var codeStr = ${escapeForInlineScript(JSON.stringify(code))};
-  var lang = ${escapeForInlineScript(JSON.stringify(language))};
-  var highlighted;
-  try {
-    var result = hljs.highlight(codeStr, { language: lang, ignoreIllegals: true });
-    highlighted = result.value;
-  } catch(e) {
-    highlighted = codeStr
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
-  }
-
-  var lines = highlighted.split('\\n');
-  if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
-
-  var gutter = document.getElementById('gutter');
-  var codeArea = document.getElementById('code-area');
-
-  for (var i = 0; i < lines.length; i++) {
-    var num = document.createElement('span');
-    num.className = 'gutter-line';
-    num.textContent = String(i + 1);
-    gutter.appendChild(num);
-
-    var line = document.createElement('span');
-    line.className = 'code-line';
-    line.innerHTML = lines[i] || ' ';
-    codeArea.appendChild(line);
-  }
-</script>
-</body>
-</html>`;
-}
-
-/**
  * Code Preview Component with syntax highlighting via highlight.js WebView.
  */
 function CodePreview({ content, fileName }: { content: string; fileName: string }) {
@@ -527,25 +299,21 @@ function CodePreview({ content, fileName }: { content: string; fileName: string 
   return (
     <View className="flex-1" style={{ backgroundColor: isDark ? THEME.dark.card : THEME.light.card }}>
       {/* Highlighted code */}
-      <WebView
+      <PreviewWebView
         source={{ html }}
-        style={{ flex: 1, backgroundColor: 'transparent' }}
-        originWhitelist={['*']}
         onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
-        javaScriptEnabled
         scrollEnabled
         showsVerticalScrollIndicator
         scalesPageToFit={false}
         bounces={false}
-        startInLoadingState
-        renderLoading={() => (
+        loading={
           <View
             className="absolute inset-0 items-center justify-center"
             style={{ backgroundColor: isDark ? THEME.dark.card : THEME.light.card }}
           >
             <KortixLoader size="small" />
           </View>
-        )}
+        }
       />
       {/* Language badge at bottom. Hidden under a host's floating controls. */}
       {bottomInset === 0 ? (
@@ -573,6 +341,24 @@ function CodePreview({ content, fileName }: { content: string; fileName: string 
 /**
  * HTML Preview Component with Daytona iframe
  */
+/**
+ * JSON: pretty-printed below the pretty-print size limit, raw at or above it.
+ * Otherwise the code preview: highlight.js with the `json` language and the
+ * same language badge.
+ */
+function JsonPreview({ content, fileName }: { content: string; fileName: string }) {
+  const formattedJson = useMemo(() => {
+    if (content.length >= JSON_PRETTY_PRINT_MAX_CHARS) return content;
+    try {
+      const parsed = JSON.parse(content);
+      return JSON.stringify(parsed, null, 2);
+    } catch {
+      return content;
+    }
+  }, [content]);
+  return <CodePreview content={formattedJson} fileName={fileName} />;
+}
+
 function HtmlPreview({
   content,
   filePath,
@@ -603,17 +389,14 @@ function HtmlPreview({
       // Android has no `contentInset`: the WebView ends above the host's
       // floating controls instead, so the page's end is never under them.
       <View className="flex-1" style={Platform.OS === 'android' ? { paddingBottom: bottomInset } : undefined}>
-        <WebView
+        <PreviewWebView
           source={{ uri: htmlPreviewUrl }}
           // iOS only: the page's end rests above a host's floating controls.
           contentInset={{ bottom: bottomInset }}
-          style={{ flex: 1, backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}
-          originWhitelist={['*']}
+          domStorageEnabled
+          style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}
           onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
-          javaScriptEnabled={true}
-          domStorageEnabled={true}
-          startInLoadingState={true}
-          renderLoading={() => (
+          loading={
             <View className="flex-1 items-center justify-center">
               <KortixLoader size="small" />
               <Text
@@ -623,7 +406,7 @@ function HtmlPreview({
                 Loading preview...
               </Text>
             </View>
-          )}
+          }
         />
       </View>
     );
@@ -750,119 +533,6 @@ function CsvPreview({ content }: { content: string }) {
 }
 
 /**
- * Generates HTML with embedded pdf.js for rendering PDFs on Android
- * Android WebView doesn't support native PDF rendering, so we use pdf.js
- */
-function generatePdfJsHtml(base64Data: string, isDark: boolean): string {
-  const bgColor = isDark ? THEME.dark.background : THEME.light.background;
-  const textColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
-  const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
-  
-  return `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=3.0, user-scalable=yes">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { 
-      width: 100%; 
-      height: 100%; 
-      background: ${bgColor};
-      overflow-x: hidden;
-    }
-    #container {
-      width: 100%;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 8px;
-      gap: 8px;
-    }
-    canvas {
-      max-width: 100%;
-      height: auto;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.15); /* hex-allowlist: fixed black drop-shadow, theme-independent (matches app's shadowColor:'#000' convention) */
-      background: white; /* hex-allowlist: rendered PDF page is always paper-white, independent of app theme */
-    }
-    #loading, #error {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      text-align: center;
-      color: ${textColor};
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      font-size: 14px;
-    }
-    #error { color: ${destructiveColor}; display: none; }
-    .page-num {
-      color: ${isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5)};
-      font-size: 12px;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      margin-top: 4px;
-      margin-bottom: 12px;
-    }
-  </style>
-</head>
-<body>
-  <div id="loading">Loading PDF...</div>
-  <div id="error">Failed to load PDF</div>
-  <div id="container"></div>
-  <script>
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-    
-    async function renderPDF() {
-      try {
-        const base64 = '${base64Data}';
-        const binaryData = atob(base64);
-        const bytes = new Uint8Array(binaryData.length);
-        for (let i = 0; i < binaryData.length; i++) {
-          bytes[i] = binaryData.charCodeAt(i);
-        }
-        
-        // isEvalSupported: false stops font data from compiling to JS (CVE-2024-4367).
-        const pdf = await pdfjsLib.getDocument({ data: bytes, isEvalSupported: false }).promise;
-        document.getElementById('loading').style.display = 'none';
-        
-        const container = document.getElementById('container');
-        const containerWidth = window.innerWidth - 16;
-        
-        for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-          const page = await pdf.getPage(pageNum);
-          const viewport = page.getViewport({ scale: 1 });
-          const scale = Math.min(containerWidth / viewport.width, 2.5);
-          const scaledViewport = page.getViewport({ scale });
-          
-          const canvas = document.createElement('canvas');
-          const context = canvas.getContext('2d');
-          canvas.width = scaledViewport.width;
-          canvas.height = scaledViewport.height;
-          
-          await page.render({ canvasContext: context, viewport: scaledViewport }).promise;
-          container.appendChild(canvas);
-          
-          const pageLabel = document.createElement('div');
-          pageLabel.className = 'page-num';
-          pageLabel.textContent = 'Page ' + pageNum + ' of ' + pdf.numPages;
-          container.appendChild(pageLabel);
-        }
-      } catch (err) {
-        console.error('PDF render error:', err);
-        document.getElementById('loading').style.display = 'none';
-        document.getElementById('error').style.display = 'block';
-      }
-    }
-    
-    renderPDF();
-  </script>
-</body>
-</html>`;
-}
-
-/**
  * PDF Preview Component using WebView
  * - iOS: Uses native WebView PDF support with file:// URLs
  * - Android: Uses pdf.js for rendering since Android WebView lacks native PDF support
@@ -985,24 +655,18 @@ function PdfPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string 
   if (isAndroid && pdfHtml) {
     return (
       <View className="flex-1" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
-        <WebView
+        <PreviewWebView
           source={{ html: pdfHtml }}
-          style={{ flex: 1, backgroundColor: 'transparent' }}
-          originWhitelist={['*']}
           onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
-          javaScriptEnabled={true}
-          domStorageEnabled={true}
+          allowFileAccess
           mixedContentMode="compatibility"
-          allowFileAccess={true}
-          startInLoadingState={true}
-          renderLoading={() => (
-            <View className="absolute inset-0 items-center justify-center" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
+          domStorageEnabled
+          loading={            <View className="absolute inset-0 items-center justify-center" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
               <KortixLoader size="small" />
               <Text className="text-sm text-muted-foreground mt-4">
                 Rendering PDF...
               </Text>
-            </View>
-          )}
+            </View>}
           onError={(e) => {
             log.error('WebView PDF error (Android):', e.nativeEvent);
             setHasError(true);
@@ -1015,23 +679,17 @@ function PdfPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string 
   // iOS: Use native file:// URL rendering
   return (
     <View className="flex-1" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
-      <WebView
+      <PreviewWebView
         source={{ uri: pdfFileUri! }}
-        style={{ flex: 1, backgroundColor: 'transparent' }}
-        originWhitelist={['*']}
         onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
-        javaScriptEnabled={true}
-        domStorageEnabled={true}
-        allowFileAccess={true}
-        startInLoadingState={true}
-        renderLoading={() => (
-          <View className="absolute inset-0 items-center justify-center" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
-            <KortixLoader size="small" />
-            <Text className="text-sm text-muted-foreground mt-4">
-              Rendering PDF...
-            </Text>
-          </View>
-        )}
+        allowFileAccess
+        domStorageEnabled
+        loading={            <View className="absolute inset-0 items-center justify-center" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
+              <KortixLoader size="small" />
+              <Text className="text-sm text-muted-foreground mt-4">
+                Rendering PDF...
+              </Text>
+            </View>}
         onError={(e) => {
           log.error('WebView PDF error (iOS):', e.nativeEvent);
           setHasError(true);
@@ -1045,226 +703,6 @@ function PdfPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string 
   );
 }
 
-/**
- * Generates HTML with embedded mammoth.js for rendering DOCX files
- * mammoth.js works reliably in WebView and converts DOCX to clean HTML
- */
-function generateDocxHtml(base64Data: string, isDark: boolean): string {
-  const bgColor = isDark ? THEME.dark.background : THEME.light.background;
-  const textColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
-  const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
-  const borderColor = isDark ? THEME.dark.border : THEME.light.border;
-  const mutedBgColor = isDark ? THEME.dark.muted : THEME.light.muted;
-  const mutedForegroundColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
-  const zebraStripeColor = withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, isDark ? 0.03 : 0.02);
-
-  return `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=3.0, user-scalable=yes">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body {
-      width: 100%;
-      min-height: 100%;
-      background: ${bgColor};
-      color: ${textColor};
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-      font-size: 15px;
-      line-height: 1.6;
-      -webkit-font-smoothing: antialiased;
-    }
-    #loading {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      text-align: center;
-      font-size: 14px;
-    }
-    #error {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      text-align: center;
-      color: ${destructiveColor};
-      display: none;
-      padding: 20px;
-    }
-    #container {
-      padding: 20px;
-      max-width: 100%;
-    }
-    /* Document styling to match Word appearance */
-    #container h1 {
-      font-size: 2em;
-      font-weight: bold;
-      margin: 0.67em 0;
-      color: ${textColor};
-    }
-    #container h2 {
-      font-size: 1.5em;
-      font-weight: bold;
-      margin: 0.83em 0;
-      color: ${textColor};
-    }
-    #container h3 {
-      font-size: 1.17em;
-      font-weight: bold;
-      margin: 1em 0;
-      color: ${textColor};
-    }
-    #container h4 {
-      font-size: 1em;
-      font-weight: bold;
-      margin: 1.33em 0;
-      color: ${textColor};
-    }
-    #container p {
-      margin: 1em 0;
-    }
-    #container ul, #container ol {
-      margin: 1em 0;
-      padding-left: 2em;
-    }
-    #container li {
-      margin: 0.5em 0;
-    }
-    #container table {
-      border-collapse: collapse;
-      margin: 1em 0;
-      width: 100%;
-      font-size: 14px;
-    }
-    #container th, #container td {
-      border: 1px solid ${borderColor};
-      padding: 10px 12px;
-      text-align: left;
-      vertical-align: top;
-    }
-    #container th {
-      background: ${mutedBgColor};
-      font-weight: 600;
-    }
-    #container tr:nth-child(even) {
-      background: ${zebraStripeColor};
-    }
-    #container img {
-      max-width: 100%;
-      height: auto;
-      margin: 1em 0;
-    }
-    #container a {
-      color: ${THEME.accent.blue};
-      text-decoration: underline;
-    }
-    #container blockquote {
-      border-left: 4px solid ${borderColor};
-      padding-left: 1em;
-      margin: 1em 0;
-      color: ${mutedForegroundColor};
-      font-style: italic;
-    }
-    #container strong, #container b {
-      font-weight: 600;
-    }
-    #container em, #container i {
-      font-style: italic;
-    }
-    #container u {
-      text-decoration: underline;
-    }
-    #container code {
-      background: ${mutedBgColor};
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-family: ui-monospace, monospace;
-      font-size: 0.9em;
-    }
-    #container pre {
-      background: ${mutedBgColor};
-      padding: 12px;
-      border-radius: 6px;
-      overflow-x: auto;
-      margin: 1em 0;
-    }
-    #container hr {
-      border: none;
-      border-top: 1px solid ${borderColor};
-      margin: 2em 0;
-    }
-  </style>
-</head>
-<body>
-  <div id="loading">Loading document...</div>
-  <div id="error">Failed to load document</div>
-  <div id="container"></div>
-  <script>
-    ${HTML_SANITIZER_SCRIPT}
-
-    async function renderDocx() {
-      try {
-        const base64 = '${base64Data}';
-        const binaryString = atob(base64);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
-
-        const result = await mammoth.convertToHtml(
-          { arrayBuffer: bytes.buffer },
-          {
-            styleMap: [
-              "p[style-name='Heading 1'] => h1:fresh",
-              "p[style-name='Heading 2'] => h2:fresh",
-              "p[style-name='Heading 3'] => h3:fresh",
-              "p[style-name='Heading 4'] => h4:fresh",
-              "r[style-name='Strong'] => strong",
-              "r[style-name='Emphasis'] => em",
-            ]
-          }
-        );
-
-        // Parse into an inert document, sanitize, then move the nodes into the
-        // page. Nothing from the file runs or loads before sanitizing.
-        const parsed = new DOMParser().parseFromString(result.value, 'text/html');
-        sanitizeUntrustedHtml(parsed.body);
-        const container = document.getElementById('container');
-        while (parsed.body.firstChild) {
-          container.appendChild(document.adoptNode(parsed.body.firstChild));
-        }
-        document.getElementById('loading').style.display = 'none';
-      } catch (err) {
-        console.error('DOCX render error:', err);
-        document.getElementById('loading').style.display = 'none';
-        document.getElementById('error').style.display = 'block';
-        document.getElementById('error').textContent = 'Failed to load document: ' + (err.message || err);
-      }
-    }
-
-    // Wait for mammoth to load
-    if (typeof mammoth !== 'undefined') {
-      renderDocx();
-    } else {
-      document.getElementById('loading').textContent = 'Loading library...';
-      window.onload = function() {
-        if (typeof mammoth !== 'undefined') {
-          renderDocx();
-        } else {
-          document.getElementById('loading').style.display = 'none';
-          document.getElementById('error').style.display = 'block';
-          document.getElementById('error').textContent = 'Failed to load document library';
-        }
-      };
-    }
-  </script>
-</body>
-</html>`;
-}
 
 /**
  * DOCX Preview Component using WebView and mammoth.js
@@ -1351,23 +789,17 @@ function DocxPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string
 
   return (
     <View className="flex-1" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
-      <WebView
+      <PreviewWebView
         source={{ html: docxHtml }}
-        style={{ flex: 1, backgroundColor: 'transparent' }}
-        originWhitelist={['*']}
         onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
-        javaScriptEnabled={true}
-        domStorageEnabled={true}
         mixedContentMode="compatibility"
-        startInLoadingState={true}
-        renderLoading={() => (
-          <View className="absolute inset-0 items-center justify-center" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
+        domStorageEnabled
+        loading={          <View className="absolute inset-0 items-center justify-center" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
             <KortixLoader size="small" />
             <Text className="text-sm text-muted-foreground mt-4">
               Rendering document...
             </Text>
-          </View>
-        )}
+          </View>}
         onError={(e) => {
           log.error('[DocxPreview] WebView error:', e.nativeEvent);
           setHasError(true);
@@ -1460,7 +892,7 @@ function TextContentPreview({
       return <HtmlPreview content={content} filePath={filePath} sandboxUrl={sandboxUrl} />;
 
     case FilePreviewType.JSON:
-      return <JsonPreview content={content} />;
+      return <JsonPreview content={content} fileName={fileName} />;
 
     case FilePreviewType.CODE:
       return <CodePreview content={content} fileName={fileName} />;
