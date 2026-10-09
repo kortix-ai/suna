@@ -1,0 +1,31 @@
+{
+  "source_hash": "ae4363780b55e1f39bb3db2c1835c61ec1d6333b85c50359b5c021256b4459a8",
+  "diff_files": [
+    "apps/api/src/projects/git/merge-diff.test.ts",
+    "apps/api/src/projects/git/merge.ts",
+    "apps/api/src/projects/git/types.ts",
+    "apps/api/src/projects/routes/change-requests.ts",
+    "apps/web/src/features/changes/change-vocabulary.test.ts",
+    "apps/web/src/features/changes/change-vocabulary.ts",
+    "apps/web/src/features/review-center/change-files.tsx",
+    "apps/web/translations/de.json",
+    "apps/web/translations/en.json",
+    "apps/web/translations/es.json",
+    "apps/web/translations/fr.json",
+    "apps/web/translations/it.json",
+    "apps/web/translations/ja.json",
+    "apps/web/translations/pt.json",
+    "apps/web/translations/sr.json",
+    "apps/web/translations/zh.json",
+    "packages/sdk/src/core/rest/projects-client/change-requests.ts"
+  ],
+  "diff_hash": "70e9a39ec2c35613f399338705c61e604dfc5fe8687a086fe291db3bff8383c0",
+  "head": "b8cde7229ad2200e7073f1293e2abc957432d796",
+  "passed": false,
+  "lanes": {
+    "core": "pass",
+    "packages": "fail",
+    "db-suites": "fail"
+  },
+  "at": "2026-10-09T17:04:31.748Z"
+}

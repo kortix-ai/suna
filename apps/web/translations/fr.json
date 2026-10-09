@@ -775,7 +775,7 @@
       "enableDescriptionPush": "Affiche les notifications dans ce navigateur, même lorsque tous les onglets Kortix sont fermés.",
       "enableDescriptionDesktop": "Affiche les notifications de l'application de bureau tant que sa fenêtre est ouverte.",
       "enableDescriptionBrowser": "Affiche les notifications dans ce navigateur tant qu'un onglet Kortix est ouvert.",
-      "notificationTypesDescription": "Ces choix s'appliquent sur chaque téléphone et dans chaque navigateur. La cloche liste toutes les notifications.",
+      "notificationTypesDescription": "Ces choix s'appliquent sur chaque téléphone et dans chaque navigateur. Un téléphone a aussi son propre interrupteur pour Tour terminé, Tour en échec, Question et Demande d'autorisation. Il ne les reçoit que si les deux sont activés. La cloche liste toutes les notifications des projets où Centre de notifications est activé.",
       "push": "Push",
       "email": "E-mail",
       "channelSwitch": "{kind} : {channel}",
@@ -1197,7 +1197,7 @@
         },
         "notification_center": {
           "name": "Centre de notifications",
-          "description": "Prévient les personnes concernées par une session (l'auteur du prompt, son créateur et ses abonnés) par une boîte de réception avec cloche, des notifications push du navigateur et des e-mails, et signale les déclencheurs et rappels en échec. Désactivé : seul le téléphone du créateur de la session reçoit un push."
+          "description": "Prévient les personnes concernées par une session (l'auteur du prompt, son créateur et ses abonnés) par une boîte de réception avec cloche, des notifications push du navigateur et des e-mails, et signale les déclencheurs et rappels en échec. Désactivé : seul le téléphone du créateur de la session reçoit son push, et le téléphone d'un propriétaire du compte en reçoit un quand un déclencheur commence à échouer."
         },
         "event_triggers": {
           "name": "Déclencheurs d'événements d'app",

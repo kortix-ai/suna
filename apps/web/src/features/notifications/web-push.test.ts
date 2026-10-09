@@ -106,7 +106,10 @@ Object.defineProperty(globalThis, 'navigator', {
 const {
   base64UrlToBytes,
   deliverable,
+  detectWebPush,
+  ensureWebPush,
   hasWebPushSubscription,
+  reregisterWebPush,
   stopWebPush,
   subscriptionInput,
   syncWebPush,
@@ -247,5 +250,102 @@ describe('syncWebPush', () => {
     current = fakeSubscription('https://fcm.googleapis.com/fcm/send/old', KEY.slice().buffer);
     await stopWebPush();
     expect(calls.map((call) => call.op)).toEqual(['browser-unsubscribe', 'unregister']);
+  });
+});
+
+/** Module state outlives a test: start each from an unsubscribed browser. */
+async function fresh() {
+  await syncWebPush(false);
+  calls.length = 0;
+}
+
+/**
+ * KRTX-1742 review: `NotificationHost` mounts its gated part again after a
+ * flag-off page. An unchanged subscription is registered once per person and
+ * page load, as when the host mounted once.
+ */
+describe('ensureWebPush', () => {
+  test('registers once per person; a remount sends nothing', async () => {
+    await fresh();
+    await ensureWebPush('user-1');
+    expect(calls.map((call) => call.op)).toEqual(['sw-register', 'browser-subscribe', 'register']);
+    calls.length = 0;
+    await ensureWebPush('user-1');
+    expect(calls).toEqual([]);
+    expect(hasWebPushSubscription()).toBe(true);
+  });
+
+  test('another person, or a subscription removed since, registers again', async () => {
+    await fresh();
+    await ensureWebPush('user-1');
+    calls.length = 0;
+    await ensureWebPush('user-2');
+    expect(calls.map((call) => call.op)).toEqual(['sw-register', 'register']);
+    await syncWebPush(false);
+    calls.length = 0;
+    await ensureWebPush('user-2');
+    expect(calls.map((call) => call.op)).toEqual(['sw-register', 'browser-subscribe', 'register']);
+  });
+
+  test('a failed registration is tried again on the next mount', async () => {
+    await fresh();
+    failRegister = new Error('503');
+    await ensureWebPush('user-1');
+    failRegister = null;
+    calls.length = 0;
+    await ensureWebPush('user-1');
+    expect(calls.map((call) => call.op)).toEqual(['sw-register', 'register']);
+    expect(hasWebPushSubscription()).toBe(true);
+  });
+});
+
+/** KRTX-1742 review: the MFA step-up, from the host that every signed-in page mounts. */
+describe('reregisterWebPush', () => {
+  test('without a subscription it sends nothing and subscribes nothing', async () => {
+    await fresh();
+    await reregisterWebPush();
+    expect(calls).toEqual([]);
+    expect(hasWebPushSubscription()).toBe(false);
+  });
+
+  test('an existing subscription is sent again', async () => {
+    await fresh();
+    current = fakeSubscription('https://fcm.googleapis.com/fcm/send/old', KEY.slice().buffer);
+    await reregisterWebPush();
+    expect(calls.map((call) => call.op)).toEqual(['sw-register', 'register']);
+    expect(calls[1].arg).toEqual({
+      endpoint: 'https://fcm.googleapis.com/fcm/send/old',
+      keys: { p256dh: 'BPublicKey', auth: 'authSecret' },
+    });
+  });
+});
+
+/**
+ * KRTX-1742 review: a tab on a flag-off page never mounts the gated part, so
+ * it learns from the browser alone whether a subscription exists. Its copy of
+ * a flag-on project's notification then goes through the service worker.
+ */
+describe('detectWebPush', () => {
+  test('reads the browser only: a deliverable subscription counts, none or a refused host does not', async () => {
+    await fresh();
+    await detectWebPush();
+    expect(hasWebPushSubscription()).toBe(false);
+    current = fakeSubscription('https://fcm.googleapis.com/fcm/send/old', KEY.slice().buffer);
+    await detectWebPush();
+    expect(hasWebPushSubscription()).toBe(true);
+    current = fakeSubscription('https://push.example.test/send/old', KEY.slice().buffer);
+    await detectWebPush();
+    expect(hasWebPushSubscription()).toBe(false);
+    expect(calls).toEqual([]);
+  });
+
+  test('a registration in this page load wins', async () => {
+    await fresh();
+    endpointForNext = 'https://push.example.test/send/abc';
+    await ensureWebPush('user-1');
+    expect(hasWebPushSubscription()).toBe(false);
+    current = fakeSubscription('https://fcm.googleapis.com/fcm/send/old', KEY.slice().buffer);
+    await detectWebPush();
+    expect(hasWebPushSubscription()).toBe(false);
   });
 });

@@ -989,8 +989,12 @@ export interface UseSessionOptions {
   presenceAlerts?: boolean;
   /**
    * End the presence lease when the page closes or enters the back/forward
-   * cache (`pagehide`), so a turn that ends right after the tab closes still
-   * notifies. Default false: the lease lives to its 90 s expiry. Pass the
+   * cache, so a turn that ends right after the tab closes still notifies:
+   * `pagehide` reports absent, and every absent report is sent with
+   * `keepalive`, so it outlives the page. Default false, the presence before
+   * KRTX-1742: no `pagehide` report and no `keepalive`. A closing tab still
+   * turns hidden and reports absent, but the browser may cancel that request
+   * as the page unloads; the lease then lives to its 90 s expiry. Pass the
    * project's `notification_center` flag. A change applies at once, with no
    * new report. Needs `browserPresence`.
    */
@@ -1121,8 +1125,11 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     if (!browserPresence || !presenceTabId || !projectId || !sessionId) return;
     const tab_id = presenceTabId;
     const handle = createKortix(platformConfig()).session(projectId, sessionId);
+    // Without page exit, an absent PUT goes without `keepalive`, as before
+    // KRTX-1742: a closing page may cancel it, and the lease then expires.
     const reporter = presenceReporter(({ active, alerts }) => {
-      void handle.presence({ tab_id, active, alerts }).catch(() => {});
+      const keepalive = !active && presencePageExitRef.current;
+      void handle.presence({ tab_id, active, alerts }, { keepalive }).catch(() => {});
     }, presenceAlertsRef.current);
     presenceReporterRef.current = reporter;
     const stop = watchHumanPresence(
