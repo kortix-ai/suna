@@ -377,6 +377,7 @@ describe('GET /_kortix/token and the bindings mount on the App gate', () => {
     beforeAll(() => {
       machine = Bun.serve({
         port: 0,
+        hostname: '127.0.0.1',
         fetch: async (req) => {
           const url = new URL(req.url);
           upstream.push({
@@ -392,6 +393,7 @@ describe('GET /_kortix/token and the bindings mount on the App gate', () => {
       // The fake control plane exposes the machine of `main` (sbx-synthetic) privately.
       platinum = Bun.serve({
         port: 0,
+        hostname: '127.0.0.1',
         fetch: (req) => {
           const [, , , id, sub] = new URL(req.url).pathname.split('/');
           if (sub !== 'expose') return Response.json({ id, state: 'running' });

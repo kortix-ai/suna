@@ -19463,6 +19463,7 @@
       "text51035b5b67dc": "Filtrar por tipo",
       "text12a4656bfd2a": "via {source}",
       "textfd26b2373251": "Eventos via {source}",
+      "texte3d92a0125e7": "Esta alteração é grande demais para ser exibida em linha. A lista de arquivos continua precisa.",
       "text18ae226f8a22": "Quando seu aplicativo chama o webhook, {agent} executa sua instrução.",
       "text8ebeeead4672": "Quando “{event}” acontece em {app}, {agent} executa sua instrução.",
       "text922ecdf9cffc": "{when}, {agent} executa sua instrução.",

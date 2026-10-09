@@ -19463,6 +19463,7 @@
       "text51035b5b67dc": "Filtra per tipo",
       "text12a4656bfd2a": "tramite {source}",
       "textfd26b2373251": "Eventi tramite {source}",
+      "texte3d92a0125e7": "Questa modifica è troppo grande per essere mostrata in linea. L'elenco dei file resta accurato.",
       "text18ae226f8a22": "Quando la tua app chiama il webhook, {agent} esegue la tua istruzione.",
       "text8ebeeead4672": "Quando “{event}” avviene in {app}, {agent} esegue la tua istruzione.",
       "text922ecdf9cffc": "{when}, {agent} esegue la tua istruzione.",
