@@ -771,7 +771,16 @@
         }
       },
       "testNotificationTitle": "Notification de test",
-      "testNotificationBody": "Les notifications fonctionnent correctement !"
+      "testNotificationBody": "Les notifications fonctionnent correctement !",
+      "enableDescriptionPush": "Affiche les notifications dans ce navigateur, même lorsque tous les onglets Kortix sont fermés.",
+      "enableDescriptionDesktop": "Affiche les notifications de l'application de bureau tant que sa fenêtre est ouverte.",
+      "enableDescriptionBrowser": "Affiche les notifications dans ce navigateur tant qu'un onglet Kortix est ouvert.",
+      "notificationTypesDescription": "Ces choix s'appliquent sur chaque téléphone et dans chaque navigateur. La cloche liste toutes les notifications.",
+      "push": "Push",
+      "email": "E-mail",
+      "channelSwitch": "{kind} : {channel}",
+      "preferencesLoadError": "Impossible de charger vos paramètres de notification",
+      "retry": "Réessayer"
     },
     "git": {
       "updateFailed": "Impossible de mettre à jour le dépôt",
@@ -1181,10 +1190,6 @@
         "pi_harness": {
           "name": "Harness Pi (dans le bac à sable)",
           "description": "Exécute les sessions avec le harness Pi dans le bac à sable de la session au lieu d'OpenCode. Désactivé, `runtime: pi` dans le manifeste sélectionne toujours Pi."
-        },
-        "config_releases": {
-          "name": "Versions de configuration",
-          "description": "Exécute les sessions avec la configuration d'agent actuelle de la branche de base, servie en lecture seule, afin qu'un agent, un skill ou un outil fusionné atteigne chaque session en cours. Désactivé, une session lit son propre dossier de configuration dans le workspace."
         },
         "mcp": {
           "name": "Serveur MCP",
@@ -2561,7 +2566,50 @@
     "settingsFailed": "Échec de la mise à jour des préférences de notification",
     "enableAll": "Activer Toutes",
     "disableAll": "Désactiver Toutes",
-    "saveChanges": "Sauvegarder"
+    "saveChanges": "Sauvegarder",
+    "kind": {
+      "turn_done": "Tour terminé",
+      "turn_error": "Tour en échec",
+      "question": "Question",
+      "permission": "Demande d'autorisation",
+      "shared": "Partagée avec vous",
+      "automation_failed": "Alerte d'échec",
+      "automation_recovered": "Alerte de rétablissement"
+    },
+    "kindDescription": {
+      "turn_done": "Un tour se termine.",
+      "turn_error": "Un tour se termine par une erreur.",
+      "question": "L'agent pose une question et attend la réponse.",
+      "permission": "L'agent demande l'autorisation d'exécuter un outil.",
+      "shared": "Quelqu'un partage une session avec vous.",
+      "automation_failed": "Un déclencheur ou un rappel commence à échouer.",
+      "automation_recovered": "Un déclencheur ou un rappel en échec fonctionne de nouveau."
+    },
+    "bell": {
+      "label": "Notifications",
+      "unreadLabel": "Notifications : {count} non lues",
+      "markAllRead": "Tout marquer comme lu",
+      "empty": "Les notifications s'afficheront ici",
+      "loadError": "Impossible de charger les notifications",
+      "retry": "Réessayer",
+      "unread": "Non lue",
+      "promptPush": "Être notifié quand Kortix est fermé",
+      "promptBackground": "Être notifié quand Kortix est en arrière-plan",
+      "turnOn": "Activer",
+      "dismiss": "Ignorer"
+    },
+    "arrival": {
+      "inProject": "{kind} dans {project}",
+      "openSession": "Ouvrir la session",
+      "openReminders": "Ouvrir les rappels",
+      "openTriggers": "Ouvrir les déclencheurs"
+    },
+    "session": {
+      "mute": "Mettre les notifications en sourdine",
+      "unmute": "Réactiver les notifications",
+      "muted": "Notifications en sourdine",
+      "unmuted": "Notifications réactivées"
+    }
   },
   "modes": {
     "samplePrompts": "Exemples de prompts",

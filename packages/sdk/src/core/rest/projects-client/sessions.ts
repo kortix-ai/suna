@@ -459,6 +459,32 @@ export async function getSessionParticipants(projectId: string, sessionId: strin
   );
 }
 
+/**
+ * Is the caller notified about this session (KRTX-1742)? The creator and
+ * everyone who prompted it watch it until they mute it; `watching` is false
+ * after a mute. A failed read does not call the host's error handler.
+ */
+export async function getSessionWatch(projectId: string, sessionId: string) {
+  return unwrap(
+    await backendApi.get<{ watching: boolean }>(`/projects/${projectId}/sessions/${sessionId}/watch`, {
+      showErrors: false,
+    }),
+  );
+}
+
+/**
+ * Watch (`true`) or mute (`false`) a session for the caller. A mute holds
+ * until the caller watches again: prompting the session does not undo it.
+ * Needs a person's credential; an agent token gets 403.
+ */
+export async function setSessionWatch(projectId: string, sessionId: string, watching: boolean) {
+  return unwrap(
+    await backendApi.put<{ watching: boolean }>(`/projects/${projectId}/sessions/${sessionId}/watch`, {
+      watching,
+    }),
+  );
+}
+
 export interface SessionPreviewCandidate {
   id: string;
   label: string;

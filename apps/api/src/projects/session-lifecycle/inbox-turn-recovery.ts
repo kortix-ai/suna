@@ -1,6 +1,6 @@
 import { sessionSandboxes } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { notifyClosedTurn } from '../../notifications/session-push';
+import { notifyClosedTurn } from '../lib/closed-turn-notification';
 import { getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
 import { clearSandboxTurn } from '../sandbox-turn-lifecycle';
@@ -62,6 +62,10 @@ function failedTokens(settled: readonly ClosedInboxTurn[]): string[] {
   return settled.filter((turn) => turn.reason === 'failed').map((turn) => turn.token);
 }
 
+function settledTokens(settled: readonly ClosedInboxTurn[]): string[] {
+  return settled.map((turn) => turn.token);
+}
+
 const recoveryInFlight = new Set<string>();
 
 /** True when a queued prompt was promoted: the session keeps running. */
@@ -99,7 +103,7 @@ export function scheduleSessionTurnRecovery(
       try {
         promoted = await wake(box.sessionId);
       } finally {
-        void notify({ sessionId: box.sessionId, reason: 'completed', promoted });
+        void notify({ sessionId: box.sessionId, reason: 'completed', promoted, turnTokens: settledTokens(settled) });
       }
     })
     .catch((error) => console.warn('[session-turn] terminal recovery failed', error))

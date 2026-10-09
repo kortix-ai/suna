@@ -7,6 +7,8 @@
  * - `requestPushPermissionOnce()`: after the first successful send. Asks the
  *   OS once per install, then registers on grant.
  * - `syncPushPreferences()`: re-posts preferences after a toggle.
+ * - Both first move the per-kind switches an app from before KRTX-1742
+ *   stored into the user's record, once (`migrateLegacyKinds`).
  * - `unregisterPushOnSignOut()`: deletes this device's row before the auth
  *   session is cleared. Bounded, never throws.
  *
@@ -18,8 +20,13 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import { isRunningInExpoGo } from 'expo';
 import { log } from '@/lib/logger';
-import { registerDeviceToken, unregisterDeviceToken } from '@kortix/sdk';
-import { serverPreferences, SIGN_OUT_UNREGISTER_TIMEOUT_MS, type ServerPreferences } from '@/lib/notifications/push';
+import { registerDeviceToken, unregisterDeviceToken, updateNotificationPreferences } from '@kortix/sdk';
+import {
+  legacyKindPatch,
+  serverPreferences,
+  SIGN_OUT_UNREGISTER_TIMEOUT_MS,
+  type ServerPreferences,
+} from '@/lib/notifications/push';
 import { withDeadline } from '@/lib/utils/with-deadline';
 import { useNotificationStore } from '@/stores/notification-store';
 import { usePushStore } from '@/stores/push-store';
@@ -97,6 +104,31 @@ function postedKey(token: string, prefs: ReturnType<typeof serverPreferences>): 
 }
 
 /**
+ * Moves the kinds this phone turned off before KRTX-1742 into the user's
+ * record, once. A failure leaves the flag off: the device row keeps the stored
+ * values (`serverPreferences`), and the next sync tries again. Before the
+ * store loads from disk it holds defaults, so nothing moves and nothing is
+ * marked; the bridge re-posts once it loads.
+ */
+async function migrateLegacyKinds(): Promise<void> {
+  const store = useNotificationStore;
+  if (!store.persist.hasHydrated() || store.getState().legacyKindsMigrated) return;
+  const patch = legacyKindPatch(store.getState().preferences);
+  try {
+    if (patch) await updateNotificationPreferences(patch);
+    store.getState().markLegacyKindsMigrated();
+  } catch (error) {
+    log.warn('[PUSH] Legacy kind migration failed:', error);
+  }
+}
+
+async function currentServerPreferences(): Promise<ServerPreferences> {
+  await migrateLegacyKinds();
+  const { preferences, legacyKindsMigrated } = useNotificationStore.getState();
+  return serverPreferences(preferences, legacyKindsMigrated);
+}
+
+/**
  * Registers this device when OS permission is already granted. The caller
  * guarantees a signed-in user. Returns the token, or null.
  */
@@ -125,7 +157,7 @@ async function runSync(): Promise<string | null> {
   if (!(await permissionGranted(Notifications))) return null;
   const token = await fetchExpoPushToken(Notifications);
   if (!token) return null;
-  const prefs = serverPreferences(useNotificationStore.getState().preferences);
+  const prefs = await currentServerPreferences();
   try {
     await register(token, prefs);
     lastPosted = postedKey(token, prefs);
@@ -145,7 +177,7 @@ async function runSync(): Promise<string | null> {
 export async function syncPushPreferences(): Promise<void> {
   const token = usePushStore.getState().token;
   if (!token || !remotePushSupported()) return;
-  const prefs = serverPreferences(useNotificationStore.getState().preferences);
+  const prefs = await currentServerPreferences();
   const key = postedKey(token, prefs);
   if (key === lastPosted) return;
   try {

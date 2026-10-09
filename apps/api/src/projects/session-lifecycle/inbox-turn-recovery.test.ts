@@ -1,6 +1,20 @@
 import { describe, expect, test } from 'bun:test';
-import { notifyClosedTurn, type SessionPushEvent } from '../../notifications/session-push';
+import type { SessionPushEvent } from '../../notifications/session-push';
+import { notifyClosedTurn } from '../lib/closed-turn-notification';
 import { reconcileInboxTurn, settleCompletedInboxTurns, scheduleSessionTurnRecovery } from './inbox-turn-recovery';
+
+/** A synthetic closed-turn session row: no prompter, no message id. */
+const closedTurnRow = (row: { projectId: string; childSession: boolean; endErrorNames?: (string | null)[] }) => ({
+  sessionId: 'session-synthetic',
+  accountId: '00000000-0000-4000-8000-0000000000aa',
+  metadata: {},
+  origin: 'user',
+  turnMessageId: null,
+  errorMessage: null,
+  endErrorNames: [] as (string | null)[],
+  ...row,
+});
+const noContext = async () => ({});
 
 const turn = { token: 'token-1', state: 'active', runtimeSessionId: 'ses-1', messageId: 'msg-1', startedAtMs: 1 };
 const box = { sessionId: 'session-1', sandboxId: 'box-1', externalId: 'ext-1', provider: 'platinum' as const, metadata: { activeTurns: { 'token-1': turn } } };
@@ -93,8 +107,9 @@ describe('a recovered turn close pushes once', () => {
   const realNotify = (childSession: boolean, events: SessionPushEvent[], endErrorNames: (string | null)[] = []) =>
     (input: Parameters<typeof notifyClosedTurn>[0]) =>
       notifyClosedTurn(input, {
-        loadSession: async () => ({ projectId: PROJECT, childSession, endErrorNames }),
-        notify: async (event) => { events.push(event); return { sent: 0, reason: 'no_devices' }; },
+        loadSession: async () => closedTurnRow({ projectId: PROJECT, childSession, endErrorNames }),
+        context: noContext,
+        notify: async (event) => { events.push(event); return { reason: 'no_recipient', recipients: [] }; },
       });
   const flush = async () => { for (let i = 0; i < 5; i++) await Bun.sleep(0); };
 
@@ -103,7 +118,7 @@ describe('a recovered turn close pushes once', () => {
       const events: SessionPushEvent[] = [];
       scheduleSessionTurnRecovery(freshBox(), settle(endReason), async () => false, realNotify(false, events));
       await flush();
-      expect(events).toEqual([{ type, sessionId: 'session-1', projectId: PROJECT }]);
+      expect(events).toMatchObject([{ type, sessionId: 'session-1', projectId: PROJECT }]);
     });
   }
 
@@ -125,7 +140,7 @@ describe('a recovered turn close pushes once', () => {
     const events: SessionPushEvent[] = [];
     scheduleSessionTurnRecovery(freshBox(), settle('failed'), async () => true, realNotify(false, events));
     await flush();
-    expect(events).toEqual([{ type: 'error', sessionId: 'session-1', projectId: PROJECT }]);
+    expect(events).toMatchObject([{ type: 'error', sessionId: 'session-1', projectId: PROJECT }]);
   });
 
   test('a child session sends nothing', async () => {
@@ -139,7 +154,7 @@ describe('a recovered turn close pushes once', () => {
     const events: SessionPushEvent[] = [];
     scheduleSessionTurnRecovery(freshBox(), settle('failed'), async () => { throw new Error('drain down'); }, realNotify(false, events));
     await flush();
-    expect(events).toEqual([{ type: 'error', sessionId: 'session-1', projectId: PROJECT }]);
+    expect(events).toMatchObject([{ type: 'error', sessionId: 'session-1', projectId: PROJECT }]);
   });
 
   test('a wake that throws sends no completion: promotion is unknown', async () => {
@@ -149,7 +164,7 @@ describe('a recovered turn close pushes once', () => {
     scheduleSessionTurnRecovery(freshBox(), settle('completed'), async () => { throw new Error('promote down'); },
       async (input) => { calls.push(input); await notify(input); });
     await flush();
-    expect(calls).toEqual([{ sessionId: 'session-1', reason: 'completed', promoted: true }]);
+    expect(calls).toEqual([{ sessionId: 'session-1', reason: 'completed', promoted: true, turnTokens: ['token-1'] }]);
     expect(events).toEqual([]);
   });
 
@@ -173,7 +188,7 @@ describe('a recovered turn close pushes once', () => {
     const events: SessionPushEvent[] = [];
     scheduleSessionTurnRecovery(freshBox(), settle('failed'), async () => false, realNotify(false, events, ['APIError']));
     await flush();
-    expect(events).toEqual([{ type: 'error', sessionId: 'session-1', projectId: PROJECT }]);
+    expect(events).toMatchObject([{ type: 'error', sessionId: 'session-1', projectId: PROJECT }]);
   });
 
   test('the completion push waits for the wake', async () => {
@@ -211,8 +226,9 @@ describe('admission reconcile pushes for the turns it closes', () => {
       notify: async (input) => {
         calls.push(input);
         await notifyClosedTurn(input, {
-          loadSession: async () => ({ projectId: PROJECT, childSession: opts.child ?? false }),
-          notify: async (event) => { events.push(event); return { sent: 0, reason: 'no_devices' }; },
+          loadSession: async () => closedTurnRow({ projectId: PROJECT, childSession: opts.child ?? false }),
+          context: noContext,
+          notify: async (event) => { events.push(event); return { reason: 'no_recipient', recipients: [] }; },
         });
       },
     });
@@ -221,7 +237,7 @@ describe('admission reconcile pushes for the turns it closes', () => {
 
   test('a failed turn sends one error push', async () => {
     const { events } = await run('failed');
-    expect(events).toEqual([{ type: 'error', sessionId: 'session-1', projectId: PROJECT }]);
+    expect(events).toMatchObject([{ type: 'error', sessionId: 'session-1', projectId: PROJECT }]);
   });
   test('a completed turn sends no completion: the queued head prompt runs next', async () => {
     const { calls, events } = await run('completed');

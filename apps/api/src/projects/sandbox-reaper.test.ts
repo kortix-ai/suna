@@ -4,7 +4,21 @@ import * as realComputeMetering from '../billing/services/compute-metering';
 import * as realProviders from '../platform/providers';
 import { mockConfigModule } from './reaping/test-support/mock-config';
 import { __resetProbeBackoffForTests } from './reaping/box-reaper';
-import { notifyClosedTurn, type SessionPushEvent } from '../notifications/session-push';
+import type { SessionPushEvent } from '../notifications/session-push';
+import { notifyClosedTurn } from './lib/closed-turn-notification';
+
+/** A synthetic closed-turn session row: no prompter, no message id. */
+const closedTurnRow = (row: { projectId: string; childSession: boolean; endErrorNames?: (string | null)[] }) => ({
+  sessionId: 'session-synthetic',
+  accountId: '00000000-0000-4000-8000-0000000000aa',
+  metadata: {},
+  origin: 'user',
+  turnMessageId: null,
+  errorMessage: null,
+  endErrorNames: [] as (string | null)[],
+  ...row,
+});
+const noContext = async () => ({});
 
 // ── mock state ──────────────────────────────────────────────────────────────
 let candidates: any[] = [];
@@ -2239,9 +2253,10 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
           notifyClosedTurn(input, {
             loadSession: async (_sessionId, turnTokens) => {
               loadedTokens.push(turnTokens);
-              return { projectId: 'project-1', childSession: false, endErrorNames: [name] };
+              return closedTurnRow({ projectId: 'project-1', childSession: false, endErrorNames: [name] });
             },
-            notify: async (event) => { events.push(event); return { sent: 0, reason: 'no_devices' }; },
+            context: noContext,
+            notify: async (event) => { events.push(event); return { reason: 'no_recipient', recipients: [] }; },
           });
 
         await reapAndReconcileSandboxes(NOW);

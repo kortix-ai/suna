@@ -39,7 +39,7 @@ import { invalidateProviderCache } from '../../sandbox-proxy';
 import { isDaytonaRateLimitError } from '../../shared/daytona-rate-limit';
 import { isDaytonaTransientProviderError } from '../../shared/daytona-transient';
 import { logger } from '../../lib/logger';
-import { notifyClosedTurn } from '../../notifications/session-push';
+import { notifyClosedTurn } from '../lib/closed-turn-notification';
 import { sandboxBelongsToThisInstance } from '../instance-scope';
 import { scheduleLegacyRuntimeBootstrap } from '../lib/legacy-runtime-bootstrap-wiring';
 import { ORPHANED_PROMPT_MIN_AGE_MS, REAP_CONCURRENCY } from '../reaper-constants';

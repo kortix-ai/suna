@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 745,
+  "count": 754,
   "routes": [
     {
       "method": "GET",
@@ -1271,12 +1271,40 @@
       "path": "/v1/mcp"
     },
     {
+      "method": "GET",
+      "path": "/v1/notifications"
+    },
+    {
       "method": "POST",
       "path": "/v1/notifications/device-token"
     },
     {
       "method": "DELETE",
       "path": "/v1/notifications/device-token/:token"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/notifications/preferences"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/notifications/preferences"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/notifications/read"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/notifications/web-push/key"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/notifications/web-push/subscriptions"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/notifications/web-push/subscriptions"
     },
     {
       "method": "GET",
@@ -2501,6 +2529,14 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/turn"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/watch"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/watch"
     },
     {
       "method": "POST",

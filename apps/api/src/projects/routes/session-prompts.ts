@@ -21,6 +21,9 @@ import { normalizeString } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
 import { readJsonObject } from '../../shared/http-body';
 import { annotateAuditEvent } from '../../shared/audit-scope';
+import { autoWatchSession } from '../../notifications/watchers';
+import { logger } from '../../lib/logger';
+import { personUserId } from './session-watch';
 import {
   deleteInboxPrompt,
   editInboxPrompt,
@@ -373,6 +376,15 @@ export function registerSessionPromptsRoutes(): void {
         undefined,
         sendState.then((state) => state.held),
       );
+
+      // KRTX-1742: a person who prompts a session follows its notifications
+      // from now on. Never un-mutes; the creator follows without a row.
+      const prompter = personUserId(c, loaded);
+      if (prompter && prompter !== visible.row.createdBy) {
+        void autoWatchSession(projectId, sessionId, prompter).catch((err) =>
+          logger.warn('[notify] auto-watch failed', { sessionId, error: err instanceof Error ? err.message : String(err) }),
+        );
+      }
 
       const stored = (enqueued.row.payload ?? {}) as Record<string, unknown>;
       const response = {

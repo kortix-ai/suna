@@ -12,17 +12,17 @@ import { createHash } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
-import { pointBootLink, readBootConfigPointer, readBootLinkTarget, readQuarantine, releaseDir } from '@/services/config-release/boot-config'
-import type { ConfigReleaseApi } from '@/services/config-release/api-client'
+import { pointBootLink, readBootConfigPointer, readBootLinkTarget, readQuarantine, releaseDir } from '@/services/config-provider/boot-config'
+import type { ConfigReleaseApi } from '@/services/config-provider/api-client'
 import type { OpenCodeConfig } from '@/harness/open-code/config'
-import { CONFIG_RELEASE_NOTICE_PATH, clearConfigReleaseNotice, writeConfigReleaseNotice } from '@/services/config-release/notice'
+import { CONFIG_RELEASE_NOTICE_PATH, clearConfigReleaseNotice, writeConfigReleaseNotice } from '@/services/config-provider/notice'
 import { releaseSourcePaths } from '@/harness/open-code/project-layout'
 import {
   __setDaemonShuttingDownForTests,
   isDaemonShuttingDown,
   resetDaemonShutdownStateForTests,
 } from '@/lib/shutdown-state'
-import { ConvergeBusyError } from '@/services/config-release/release'
+import { ConvergeBusyError } from '@/services/config-provider/release'
 import {
   configReleaseReport,
   convergeConfigRelease,
@@ -1034,7 +1034,9 @@ describe('an unexpected conflict is an ordinary failure', () => {
 })
 
 /**
- * The `config_releases` feature flag, off (spec, "Feature flag").
+ * An API from before config releases graduated, with the `config_releases`
+ * flag off for the project. A current API never answers this; the daemon keeps
+ * handling it so a rolled-back or older API still gets a working box.
  *
  * The API answers `403 feature_disabled`. The box must then do what it did
  * before config releases existed: OpenCode reads the session's workspace
@@ -1042,7 +1044,7 @@ describe('an unexpected conflict is an ordinary failure', () => {
  * this very convergence and clears its boot pointer, so a later reboot does
  * not come back on the release. Nothing is quarantined, nothing retries.
  */
-describe('config_releases off: the box reverts to its workspace config dir', () => {
+describe('an API with config releases off: the box reverts to its workspace config dir', () => {
   test('a box on a release reverts, clears the pointer, and quarantines nothing', async () => {
     const release = baseRelease()
     serveRelease(api, release)
@@ -1199,7 +1201,7 @@ describe('the session is told which commit it runs', () => {
     // every spawn, so the note survives the restart the convergence performs.
     const lifecycle = readFileSync(join(import.meta.dir, '..', 'harness', 'open-code', 'lifecycle.ts'), 'utf8')
     expect(lifecycle).toContain('configReleaseNoticePath: configReleaseNoticePath()')
-    expect(lifecycle).toContain("import { configReleaseNoticePath } from '@/services/config-release/notice'")
+    expect(lifecycle).toContain("import { configReleaseNoticePath } from '@/services/config-provider/notice'")
     expect(noteFor({ source_commit: 'a'.repeat(40), config_dir: DIR })).toBe('written')
     expect(readNotice()).toContain('kortix sessions reload ses-1')
   })

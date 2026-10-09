@@ -41,26 +41,26 @@ import {
   verifyRelease,
   verifyReleaseDetail,
   type ReleaseManifest,
-} from '@/services/config-release/boot-config'
+} from '@/services/config-provider/boot-config'
 import {
   configReleaseApiFrom,
   fetchConfigReleaseDescriptor,
   isFeatureDisabledError,
   type ConfigReleaseApi,
-} from '@/services/config-release/api-client'
-import type { ConfigReleaseDescriptor } from '@/services/config-release/descriptor'
+} from '@/services/config-provider/api-client'
+import type { ConfigReleaseDescriptor } from '@/services/config-provider/descriptor'
 import {
   CONFIG_RELEASE_NOTICE_PATH,
   clearConfigReleaseNotice,
   writeConfigReleaseNotice,
-} from '@/services/config-release/notice'
-import { checkoutMayHold, obtainRelease } from '@/services/config-release/obtain'
+} from '@/services/config-provider/notice'
+import { checkoutMayHold, obtainRelease } from '@/services/config-provider/obtain'
 import {
   ConvergeBusyError,
   deliverGovernance,
   effectiveReleaseId,
   manifestFromDescriptor,
-} from '@/services/config-release/release'
+} from '@/services/config-provider/release'
 import { sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
 import { logger } from '@/lib/log/logger'
 import type { Config } from '@/lib/config/config'
@@ -298,7 +298,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
   // ── Boot ─────────────────────────────────────────────────────────────────
 
   async function chooseBootConfig(mark?: (label: string) => void, workspace?: Promise<string | null>): Promise<void> {
-    // 1. The descriptor request IS this boot's flag evaluation.
+    // 1. The descriptor request decides whether this boot runs a release.
     let descriptor: ConfigReleaseDescriptor | null = null
     let disabled: string | null = api
       ? null
@@ -315,7 +315,8 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
       }
     }
 
-    // 2. Flag off, or no API: the pre-release behaviour — the working tree.
+    // 2. `403 feature_disabled` (an API from before config releases
+    // graduated), or no API: the pre-release behaviour — the working tree.
     if (disabled) {
       clearNotice()
       setCurrent({ ...WORKSPACE, proven: true })

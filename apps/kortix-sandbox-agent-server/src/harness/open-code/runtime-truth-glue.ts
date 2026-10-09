@@ -1,5 +1,5 @@
 import { requireOpenCodeConfig, type OpenCodeConfig } from './config'
-import { ConvergeBusyError } from '@/services/config-release/release'
+import { ConvergeBusyError } from '@/services/config-provider/release'
 import { configReleaseReport, convergeConfigRelease } from './config-release'
 import {
   applyCatalogIfIdle,

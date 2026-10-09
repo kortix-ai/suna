@@ -771,7 +771,16 @@
         }
       },
       "testNotificationTitle": "Testbenachrichtigung",
-      "testNotificationBody": "Benachrichtigungen funktionieren korrekt!"
+      "testNotificationBody": "Benachrichtigungen funktionieren korrekt!",
+      "enableDescriptionPush": "Zeigt Benachrichtigungen in diesem Browser, auch wenn alle Kortix-Tabs geschlossen sind.",
+      "enableDescriptionDesktop": "Zeigt Benachrichtigungen der Desktop-App, solange ihr Fenster geöffnet ist.",
+      "enableDescriptionBrowser": "Zeigt Benachrichtigungen in diesem Browser, solange ein Kortix-Tab geöffnet ist.",
+      "notificationTypesDescription": "Diese Einstellungen gelten auf jedem Telefon und in jedem Browser. Die Glocke listet jede Benachrichtigung.",
+      "push": "Push",
+      "email": "E-Mail",
+      "channelSwitch": "{kind}: {channel}",
+      "preferencesLoadError": "Deine Benachrichtigungseinstellungen konnten nicht geladen werden",
+      "retry": "Erneut versuchen"
     },
     "git": {
       "updateFailed": "Repository konnte nicht aktualisiert werden",
@@ -1181,10 +1190,6 @@
         "pi_harness": {
           "name": "Pi-Harness (in der Sandbox)",
           "description": "Sitzungen mit dem Pi-Harness in der Sitzungs-Sandbox statt mit OpenCode ausführen. Bei Aus wählt `runtime: pi` im Manifest weiterhin Pi."
-        },
-        "config_releases": {
-          "name": "Config-Releases",
-          "description": "Sitzungen mit der aktuellen Agent-Konfiguration des Basis-Branch ausführen, schreibgeschützt bereitgestellt, damit ein gemergter Agent, Skill oder Tool jede laufende Sitzung erreicht. Bei Aus liest eine Sitzung ihren eigenen Workspace-Konfigurationsordner."
         },
         "mcp": {
           "name": "MCP-Server",
@@ -2561,7 +2566,50 @@
     "settingsFailed": "Benachrichtigungseinstellungen konnten nicht aktualisiert werden",
     "enableAll": "Alle aktivieren",
     "disableAll": "Alle deaktivieren",
-    "saveChanges": "Änderungen speichern"
+    "saveChanges": "Änderungen speichern",
+    "kind": {
+      "turn_done": "Durchlauf beendet",
+      "turn_error": "Durchlauf fehlgeschlagen",
+      "question": "Frage",
+      "permission": "Berechtigungsanfrage",
+      "shared": "Mit dir geteilt",
+      "automation_failed": "Fehleralarm",
+      "automation_recovered": "Entwarnung"
+    },
+    "kindDescription": {
+      "turn_done": "Ein Durchlauf endet.",
+      "turn_error": "Ein Durchlauf endet mit einem Fehler.",
+      "question": "Der Agent stellt eine Frage und wartet auf die Antwort.",
+      "permission": "Der Agent bittet um die Erlaubnis, ein Tool auszuführen.",
+      "shared": "Jemand teilt eine Sitzung mit dir.",
+      "automation_failed": "Ein Trigger oder eine Erinnerung schlägt fehl.",
+      "automation_recovered": "Ein fehlschlagender Trigger oder eine Erinnerung funktioniert wieder."
+    },
+    "bell": {
+      "label": "Benachrichtigungen",
+      "unreadLabel": "Benachrichtigungen: {count} ungelesen",
+      "markAllRead": "Alle als gelesen markieren",
+      "empty": "Benachrichtigungen erscheinen hier",
+      "loadError": "Benachrichtigungen konnten nicht geladen werden",
+      "retry": "Erneut versuchen",
+      "unread": "Ungelesen",
+      "promptPush": "Benachrichtigt werden, wenn Kortix geschlossen ist",
+      "promptBackground": "Benachrichtigt werden, wenn Kortix im Hintergrund läuft",
+      "turnOn": "Einschalten",
+      "dismiss": "Schließen"
+    },
+    "arrival": {
+      "inProject": "{kind} in {project}",
+      "openSession": "Sitzung öffnen",
+      "openReminders": "Erinnerungen öffnen",
+      "openTriggers": "Trigger öffnen"
+    },
+    "session": {
+      "mute": "Benachrichtigungen stummschalten",
+      "unmute": "Stummschaltung aufheben",
+      "muted": "Benachrichtigungen stummgeschaltet",
+      "unmuted": "Stummschaltung aufgehoben"
+    }
   },
   "modes": {
     "samplePrompts": "Beispiel-Prompts",

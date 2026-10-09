@@ -3,27 +3,39 @@
  * (components/notifications/PushNotificationsBridge.tsx,
  * lib/notifications/registration.ts).
  *
- * The server sends `data = { type, projectId, sessionId }`, an iOS `sound`,
- * and an Android `channelId` (apps/api/src/notifications/session-push.ts).
+ * The server sends `data = { notificationId, kind, type, projectId,
+ * sessionId, triggerSlug, url }`, an iOS `sound`, and an Android `channelId`
+ * (apps/api/src/notifications/push-payload.ts). `kind` is one of the 7 inbox
+ * kinds (KRTX-1742); `type` keeps the pre-inbox name of the 4 session kinds
+ * (`completion`, `error`, `question`, `permission`), which a server from
+ * before the inbox sends alone, with no `notificationId`. An automation alert
+ * has no session: its tap opens the project.
  * This file holds the matching client side: the Android channels, the
- * kind → channel/sound map, the payload parser, the tap route, the
- * foreground rule, and the preference wire format.
+ * kind → channel/sound map, the payload parser, the foreground rule, and
+ * the preference wire format.
  *
  * Pure: no React, React Native, or expo imports (unit-tested under bun test).
  */
 
-import type { NotificationPreferences } from '@/stores/notification-store';
-import { projectHref, type ProjectHref } from '@/lib/projects/switcher';
+import { INBOX_NOTIFICATION_KINDS, type InboxNotificationKind, type NotificationPreferencesPatch } from '@kortix/sdk';
+import type { DeviceNotificationPreferences } from '@/stores/notification-store';
 
-/** The event a push reports. Same values as the server's `data.type`. */
-export const NOTIFICATION_KINDS = ['completion', 'error', 'question', 'permission'] as const;
-export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
+/** The pre-inbox `type` of the 4 session kinds (`LEGACY_PUSH_TYPE` on the server). */
+const LEGACY_PUSH_TYPES: ReadonlyMap<string, InboxNotificationKind> = new Map([
+  ['completion', 'turn_done'],
+  ['error', 'turn_error'],
+  ['question', 'question'],
+  ['permission', 'permission'],
+]);
 
-/** The `data` object of a Kortix session push. */
+/** The `data` object of a Kortix push, as the tap and foreground rules read it. */
 export interface PushData {
-  type: NotificationKind;
+  kind: InboxNotificationKind;
   projectId: string;
-  sessionId: string;
+  /** The session to open. Null for an alert about the project (an automation): the tap opens the project. */
+  sessionId: string | null;
+  /** The inbox row the push reports, marked read on tap. Null from a server before the inbox. */
+  notificationId: string | null;
 }
 
 /** Android channel ids. A channel's sound cannot change after creation. */
@@ -49,21 +61,27 @@ export const ANDROID_CHANNELS: readonly AndroidChannelSpec[] = [
 ];
 
 /**
- * The Android channel and iOS sound for one event kind. With `playSound`
- * false: the silent channel and no iOS sound. Mirrors the server's choice.
+ * The Android channel and iOS sound for one kind. With `playSound` false: the
+ * silent channel and no iOS sound. Mirrors the server's choice
+ * (`buildExpoMessages`). The 3 kinds added with the inbox reuse the 4
+ * existing channels: a new channel or sound needs a native build, and this
+ * ships over the air.
  */
 export function deliveryForKind(
-  kind: NotificationKind,
+  kind: InboxNotificationKind,
   playSound: boolean
 ): { channelId: string; iosSound: string | null } {
   if (!playSound) return { channelId: CHANNEL_SILENT, iosSound: null };
   switch (kind) {
-    case 'completion':
+    case 'turn_done':
+    case 'automation_recovered':
       return { channelId: CHANNEL_COMPLETE, iosSound: 'kortix_complete.wav' };
-    case 'error':
+    case 'turn_error':
+    case 'automation_failed':
       return { channelId: CHANNEL_ERROR, iosSound: 'kortix_error.wav' };
     case 'question':
     case 'permission':
+    case 'shared':
       return { channelId: CHANNEL_ATTENTION, iosSound: 'kortix_attention.wav' };
   }
 }
@@ -72,27 +90,33 @@ function nonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
-/** The session push in a notification's `data`, or null for any other payload. */
-export function parsePushData(raw: unknown): PushData | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const data = raw as Record<string, unknown>;
-  if (!(NOTIFICATION_KINDS as readonly unknown[]).includes(data.type)) return null;
-  if (!nonEmptyString(data.projectId) || !nonEmptyString(data.sessionId)) return null;
-  return {
-    type: data.type as NotificationKind,
-    projectId: data.projectId,
-    sessionId: data.sessionId,
-  };
+function isInboxKind(value: unknown): value is InboxNotificationKind {
+  return (INBOX_NOTIFICATION_KINDS as readonly unknown[]).includes(value);
+}
+
+/** `kind`, else `type` (a new kind's `type` is its kind), else the legacy `type`. */
+function kindOf(data: Record<string, unknown>): InboxNotificationKind | null {
+  if (isInboxKind(data.kind)) return data.kind;
+  if (isInboxKind(data.type)) return data.type;
+  return typeof data.type === 'string' ? (LEGACY_PUSH_TYPES.get(data.type) ?? null) : null;
 }
 
 /**
- * Where a tap goes: the project route, plus the project session to open in
- * it. The session is not a route param: a session opens through
- * ProjectScreen's open-by-id path (the push store's `pendingOpen`), the same
- * path as the Sessions page.
+ * The Kortix push in a notification's `data`, or null for any other payload.
+ * A tap opens `sessionId` in `projectId` (ProjectScreen's open-by-id path, the
+ * push store's `pendingOpen`), or the project when the push has no session.
  */
-export function routeForNotification(data: PushData): { href: ProjectHref; sessionId: string } {
-  return { href: projectHref(data.projectId), sessionId: data.sessionId };
+export function parsePushData(raw: unknown): PushData | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const data = raw as Record<string, unknown>;
+  const kind = kindOf(data);
+  if (!kind || !nonEmptyString(data.projectId)) return null;
+  return {
+    kind,
+    projectId: data.projectId,
+    sessionId: nonEmptyString(data.sessionId) ? data.sessionId : null,
+    notificationId: nonEmptyString(data.notificationId) ? data.notificationId : null,
+  };
 }
 
 /**
@@ -106,7 +130,7 @@ export function shouldPresentInForeground(input: {
   viewingSessionId: string | null;
 }): boolean {
   const data = parsePushData(input.data);
-  if (!data || !input.appActive) return true;
+  if (!data?.sessionId || !input.appActive) return true;
   return input.viewingSessionId !== data.sessionId;
 }
 
@@ -147,14 +171,46 @@ export interface ServerPreferences {
   play_sound: boolean;
 }
 
-/** The local preferences in the wire format of `POST /notifications/device-token`. */
-export function serverPreferences(prefs: NotificationPreferences): ServerPreferences {
+/** The per-kind switches a phone stored before KRTX-1742, and the inbox kind each one decided. */
+const LEGACY_KINDS = {
+  onCompletion: 'turn_done',
+  onError: 'turn_error',
+  onQuestion: 'question',
+  onPermission: 'permission',
+} as const satisfies Record<string, InboxNotificationKind>;
+type LegacyKindKey = keyof typeof LEGACY_KINDS;
+
+/** This phone's switches as persisted: an app from before KRTX-1742 also stored the per-kind ones. */
+type StoredPreferences = DeviceNotificationPreferences & Partial<Record<LegacyKindKey, boolean>>;
+
+/**
+ * The kinds this phone turned off before KRTX-1742, as a patch for the user's
+ * record (`updateNotificationPreferences`). Null when it turned none off. The
+ * patch applies to the whole user: every device and Web Push.
+ */
+export function legacyKindPatch(prefs: StoredPreferences): NotificationPreferencesPatch | null {
+  const kinds: NotificationPreferencesPatch['kinds'] = {};
+  for (const key of Object.keys(LEGACY_KINDS) as LegacyKindKey[]) {
+    if (prefs[key] === false) kinds[LEGACY_KINDS[key]] = { push: false };
+  }
+  return Object.keys(kinds).length ? { kinds } : null;
+}
+
+/**
+ * This phone's switches in the wire format of `POST /notifications/device-token`.
+ * After `legacyMigrated`, the per-kind columns are always on: the user's record
+ * (Settings → Notifications, `useNotificationPreferences`) decides each kind on
+ * every device (KRTX-1742). Before it, a kind this phone turned off stays off
+ * on its device row, so the opt-out holds until the record has it.
+ */
+export function serverPreferences(prefs: StoredPreferences, legacyMigrated: boolean): ServerPreferences {
+  const legacy: Partial<Record<LegacyKindKey, boolean>> = legacyMigrated ? {} : prefs;
   return {
     enabled: prefs.enabled,
-    on_completion: prefs.onCompletion,
-    on_error: prefs.onError,
-    on_question: prefs.onQuestion,
-    on_permission: prefs.onPermission,
+    on_completion: legacy.onCompletion ?? true,
+    on_error: legacy.onError ?? true,
+    on_question: legacy.onQuestion ?? true,
+    on_permission: legacy.onPermission ?? true,
     play_sound: prefs.playSound,
   };
 }
