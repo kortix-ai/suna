@@ -27,6 +27,8 @@ interface PendingConfirmDialogProps {
   /** Renders the description in the destructive color (an error message). */
   descriptionError?: boolean;
   confirmLabel: string;
+  /** Overrides the default 'Cancel' (callers pass their translated label). */
+  cancelLabel?: string;
   confirmVariant?: 'default' | 'destructive';
   onConfirm: () => void;
 }
@@ -39,6 +41,7 @@ export function PendingConfirmDialog({
   description,
   descriptionError,
   confirmLabel,
+  cancelLabel = 'Cancel',
   confirmVariant = 'default',
   onConfirm,
 }: PendingConfirmDialogProps) {
@@ -60,7 +63,7 @@ export function PendingConfirmDialog({
         <AlertDialogFooter>
           <AlertDialogCancel asChild disabled={pending}>
             <Button variant="secondary" size="lg" className="rounded-full">
-              <Text>Cancel</Text>
+              <Text>{cancelLabel}</Text>
             </Button>
           </AlertDialogCancel>
           <Button

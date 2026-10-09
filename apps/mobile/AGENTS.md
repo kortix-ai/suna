@@ -223,7 +223,7 @@ sheet's Rename and Share (Jay, 2026-09-23). Do not hand-roll a title
 row inside a sheet's content.
 
 `components/kortix/sheet.tsx` also gives:
-1. `<Sheet>` + `SheetHeader`/`SheetBody`/`SheetFooter` — a ready-made wrapper
+1. `<Sheet>` + `SheetHeader`/`SheetBody` — a ready-made wrapper
    (built on `KortixBottomSheetModal`) for a new sheet that doesn't scroll.
    Prefer this for new sheets.
 2. The chrome `KortixBottomSheetModal` applies: `SheetBackdrop`,

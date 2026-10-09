@@ -13,6 +13,7 @@ import * as Haptics from 'expo-haptics';
 import type { SandboxFile } from '@/api/types';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import { fileIcon } from '@/components/files/file-icons';
+import { FolderIcon } from '@/lib/icons';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -47,7 +48,8 @@ export const FileItem = React.memo(function FileItem({ file, onPress, onLongPres
     onLongPress?.(file);
   };
 
-  const icon = fileIcon(file.name);
+  // Directories keep the closed folder icon (the row never shows an open state).
+  const icon = file.type === 'directory' ? FolderIcon : fileIcon(file.name);
 
   return (
     <AnimatedPressable

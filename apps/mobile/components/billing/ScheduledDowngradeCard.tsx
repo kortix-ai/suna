@@ -95,6 +95,7 @@ export function ScheduledDowngradeCard({ scheduledChange, onCancel }: ScheduledD
               })
         }
         descriptionError={failed}
+        cancelLabel={t('common.cancel', 'Cancel')}
         confirmLabel={
           cancelChange.isPending
             ? t('billing.keepingPlan', 'Keeping plan…')

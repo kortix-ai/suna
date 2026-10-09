@@ -192,10 +192,6 @@ function SelectSeparator({
  * @platform Web only
  * Returns null on native platforms
  */
-/**
- * @platform Web only
- * Returns null on native platforms
- */
 function SelectScrollButton({
   Primitive,
   icon,

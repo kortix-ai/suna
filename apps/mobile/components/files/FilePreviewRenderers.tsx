@@ -280,8 +280,6 @@ function MarkdownPreview({ content }: { content: string }) {
   );
 }
 
-
-
 /**
  * Code Preview Component with syntax highlighting via highlight.js WebView.
  */
@@ -533,7 +531,6 @@ function CsvPreview({ content }: { content: string }) {
     </ScrollView>
   );
 }
-
 
 /**
  * PDF Preview Component using WebView
