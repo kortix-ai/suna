@@ -95,11 +95,15 @@ mock.module('../../shared/pg-broadcast', () => ({
 }));
 
 let presenceRenewals: Array<{ userId: string; sessionId: string; tabId: string; extendDeadline: boolean }> = [];
+let presenceExpiries: Array<{ userId: string; sessionId: string; tabId: string }> = [];
 mock.module('../lib/session-presence', () => ({
   PRESENCE_RENEW_MS: 30_000,
   renewSessionPresence: async (userId: string, sessionId: string, tabId: string, opts: { extendDeadline: boolean }) => {
     presenceRenewals.push({ userId, sessionId, tabId, extendDeadline: opts.extendDeadline });
     return true;
+  },
+  expireSessionPresence: async (userId: string, sessionId: string, tabId: string) => {
+    presenceExpiries.push({ userId, sessionId, tabId });
   },
 }));
 /** Whether the caller holds `project.session.start` (may keep the computer awake). */
@@ -271,6 +275,7 @@ beforeEach(() => {
   runtimeTurnEnds = [];
   reachability = [];
   presenceRenewals = [];
+  presenceExpiries = [];
   mayStartSession = true;
   healthReads = 0;
   nextHealth = () => ({
@@ -861,5 +866,21 @@ describe('R5.3: a visible tab keeps its presence through the stream, not a 30 s 
     loadedProject = { ...loadedProject!, actor: { credential: { kind: 'jwt' } } } as never;
     await readFrames(await openStream('?tab_id=not-a-uuid'), 2, 200);
     expect(presenceRenewals).toEqual([]);
+    expect(presenceExpiries).toEqual([]);
+  });
+
+  // KRTX-1742: a closed tab's lease held back the phone and Web Push for up to 90 s.
+  test('the stream ending expires that tab lease at once; an open stream expires nothing', async () => {
+    loadedProject = { ...loadedProject!, actor: { credential: { kind: 'jwt' } } } as never;
+    sandboxRow = { externalId: 'box-1', status: 'stopped' };
+    const response = await openStream(`?tab_id=${TAB}`);
+    const reader = response.body!.getReader();
+    await reader.read();
+    expect(presenceRenewals).toHaveLength(1);
+    expect(presenceExpiries).toEqual([]);
+
+    await reader.cancel();
+    for (let i = 0; i < 20 && presenceExpiries.length === 0; i++) await Bun.sleep(5);
+    expect(presenceExpiries).toEqual([{ userId: USER_ID, sessionId: SESSION_ID, tabId: TAB }]);
   });
 });

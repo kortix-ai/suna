@@ -48,6 +48,7 @@ import { isUniqueViolation } from '../../shared/postgres-errors';
 import { tryGetProvider } from '../../platform/providers';
 import { KORTIX_REMOVAL_INTENT_KEY } from '../../projects/runtime-identity';
 import { deleteAccountBackends } from '../../backends/lifecycle';
+import { deleteUserNotificationData } from '../../notifications/cleanup';
 import {
   isAlreadyNotRunning,
   reconcileSandboxRemovedByExternalId,
@@ -168,6 +169,9 @@ async function runAccountDeletion(accountId: string, userId?: string, requestId?
     await clearLegacyAuthUserReferences(requester);
     // A device token is the person's data; it has no foreign key to cascade.
     await db.delete(pushDeviceTokens).where(eq(pushDeviceTokens.userId, requester));
+    // So are their notifications, watcher rows, preferences and browser push
+    // subscriptions, in every account (KRTX-1742).
+    await deleteUserNotificationData(requester);
     const { error } = await getSupabase().auth.admin.deleteUser(requester);
     // A user the auth schema no longer has (an admin-side delete, or a retry
     // after step 3 already ran) is the state this step produces.

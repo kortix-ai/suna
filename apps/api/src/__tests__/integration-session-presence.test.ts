@@ -11,7 +11,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:tes
 import { sql } from 'drizzle-orm';
 
 const { db } = await import('../shared/db');
-const { renewSessionPresence } = await import('../projects/lib/session-presence');
+const { deleteSessionPresence, expireSessionPresence, renewSessionPresence, upsertSessionPresence } = await import('../projects/lib/session-presence');
+const { loadSessionPresence } = await import('../notifications/notifier');
 const { idleGraceMs } = await import('../projects/sandbox-deadline');
 
 const SANDBOX_ID = crypto.randomUUID();
@@ -97,6 +98,47 @@ describe('renewSessionPresence', () => {
     await db.execute(sql`DELETE FROM kortix.session_presence_leases WHERE session_id = ${SESSION_ID}`);
     expect(await renewSessionPresence(USER_ID, SESSION_ID, TAB_ID, { extendDeadline: true })).toBe(false);
     expect(await secondsLeft()).toBeLessThanOrEqual(60);
+  });
+});
+
+/** The tab's lease: whether it alerts, and whether it is live now. */
+async function lease(tabId = TAB_ID): Promise<{ alerts: boolean; live: boolean } | null> {
+  const row = first(await db.execute(sql`
+    SELECT alerts, expires_at > now() AS live FROM kortix.session_presence_leases
+     WHERE user_id = ${USER_ID}::uuid AND session_id = ${SESSION_ID} AND tab_id = ${tabId}::uuid`));
+  return row ? { alerts: row.alerts === true, live: row.live === true } : null;
+}
+
+// KRTX-1742: only a tab that raises its own OS notification holds back the
+// phone and Web Push, and a closed tab stops holding them back at once.
+describe('the lease says whether the tab alerts, and a closed stream expires it', () => {
+  test('alerts is stored on insert and on every refresh', async () => {
+    await db.execute(sql`DELETE FROM kortix.session_presence_leases WHERE session_id = ${SESSION_ID}`);
+    await upsertSessionPresence(USER_ID, SESSION_ID, TAB_ID, true);
+    expect(await lease()).toEqual({ alerts: true, live: true });
+    await upsertSessionPresence(USER_ID, SESSION_ID, TAB_ID, false);
+    expect(await lease()).toEqual({ alerts: false, live: true });
+    await upsertSessionPresence(USER_ID, SESSION_ID, TAB_ID, true);
+    expect(await lease()).toEqual({ alerts: true, live: true });
+    expect(await loadSessionPresence(SESSION_ID, [USER_ID])).toEqual(new Map([[USER_ID, { alerting: true }]]));
+  });
+
+  test('an ended stream expires the lease now; the reconnecting stream renews it back', async () => {
+    await upsertSessionPresence(USER_ID, SESSION_ID, TAB_ID, true);
+    await expireSessionPresence(USER_ID, SESSION_ID, TAB_ID);
+    expect(await lease()).toEqual({ alerts: true, live: false });
+    expect((await loadSessionPresence(SESSION_ID, [USER_ID])).size).toBe(0);
+
+    expect(await renewSessionPresence(USER_ID, SESSION_ID, TAB_ID, { extendDeadline: false })).toBe(true);
+    expect(await lease()).toEqual({ alerts: true, live: true });
+  });
+
+  test('a hidden tab drops only its own lease', async () => {
+    const otherTab = crypto.randomUUID();
+    await upsertSessionPresence(USER_ID, SESSION_ID, otherTab, false);
+    await deleteSessionPresence(USER_ID, SESSION_ID, TAB_ID);
+    expect(await lease()).toBeNull();
+    expect(await lease(otherTab)).toEqual({ alerts: false, live: true });
   });
 });
 
