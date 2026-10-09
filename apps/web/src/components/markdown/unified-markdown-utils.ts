@@ -2,14 +2,15 @@ import { holdPendingSetupLink } from '@/components/setup-links/util';
 import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 import { looksLikeFilePath as sharedLooksLikeFilePath } from '@/lib/utils/path-detection';
 import { autoLinkUrls } from '@kortix/shared';
-import { prepareMarkdownForKatex } from '@kortix/shared/markdown-math';
+import { prepareMarkdownForMath } from '@kortix/shared/markdown-math';
 
 // Pure, deterministic helpers used by the unified markdown renderer. Extracted
 // so they can be unit-tested without pulling in React / Shiki / Streamdown.
 
 /**
  * The text Streamdown parses: KaTeX delimiters normalised, system tags removed,
- * bare URLs linked.
+ * bare URLs linked. Currency escaping skips code, so a fence (a generative UI
+ * block's `"$10"`, a shell `$1`) reaches its renderer as written.
  *
  * While the message streams, a setup link whose URL is still arriving is held
  * as a pending card first (`holdPendingSetupLink`), so the reader never sees
@@ -17,7 +18,7 @@ import { prepareMarkdownForKatex } from '@kortix/shared/markdown-math';
  * never held.
  */
 export function prepareMarkdownSource(content: string, isStreaming: boolean): string {
-  const prepared = stripKortixSystemTags(prepareMarkdownForKatex(content));
+  const prepared = stripKortixSystemTags(prepareMarkdownForMath(content));
   return autoLinkUrls(isStreaming ? holdPendingSetupLink(prepared) : prepared);
 }
 
