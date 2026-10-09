@@ -5,39 +5,50 @@ import { parseGenui } from '@kortix/sdk/genui';
 
 import type { GenuiNode } from '../sdk';
 import { ChartView } from './charts';
+import { GenuiPending } from './pending';
 
 /** The first block inside `root = Stack([...])`. */
 const node = (code: string) => (parseGenui(code).root!.props.children as GenuiNode[])[0]!;
 const render = (chart: GenuiNode) =>
   renderToStaticMarkup(<ChartView node={chart} props={chart.props} renderChild={() => null} streaming={false} />);
+const legend = (html: string) => html.match(/<ul[^>]*>[\s\S]*?<\/ul>/)?.[0] ?? null;
 
 describe('ChartView', () => {
-  test('bar chart: accessible label, reserved height, source, and a Show data table', () => {
+  test('bar chart: accessible label, source with unit, and a Show data table', () => {
     const html = render(
       node('root = Stack([c])\nc = BarChart(["Q1", "Q2"], [s], "billing export", "USD")\ns = Series("Revenue", [120, 1500])'),
     );
     expect(html).toContain('aria-label="Bar chart: Revenue. Source: billing export"');
-    expect(html).toContain('h-[220px]');
-    expect(html).toContain('Source: billing export');
+    expect(html).toMatch(/<figcaption[^>]*>Source: billing export · USD<\/figcaption>/);
     expect(html).toMatch(/<details[^>]*><summary[^>]*>[\s\S]*Show data<\/summary>/);
-    expect(html).toMatch(/<th[^>]*>Revenue \(USD\)<\/th>/);
+    expect(html).toMatch(/<th[^>]*sr-only[^>]*>Label<\/th><th[^>]*>Revenue \(USD\)<\/th>/);
     expect(html).toMatch(/<td[^>]*>Q1<\/td><td[^>]*>120<\/td>/);
     expect(html).toMatch(/<td[^>]*>1,500<\/td>/);
   });
 
-  test('line chart: one legend entry per series, each with its own palette slot', () => {
+  test('one series draws no legend; two series draw one entry each in palette order', () => {
+    const single = render(node('root = Stack([c])\nc = BarChart(["A", "B"], [s], "survey")\ns = Series("Votes", [1, 2])'));
+    expect(legend(single)).toBeNull();
+    expect(single).toMatch(/<figcaption[^>]*>Source: survey<\/figcaption>/);
+
     const html = render(
       node(
-        'root = Stack([c])\nc = LineChart(["Mon", "Tue"], [a, b], "status page")\na = Series("p50", [1, 2])\nb = Series("p95", [3, 4])',
+        'root = Stack([c])\nc = LineChart(["Mon", "Tue"], [a, b, d], "status page")\na = Series("p50", [1, 2])\nb = Series("p95", [3, 4])\nd = Series("p99", [5, 6])',
       ),
     );
-    expect(html).toContain('aria-label="Line chart: p50, p95. Source: status page"');
+    expect(html).toContain('aria-label="Line chart: p50, p95, p99. Source: status page"');
+    expect(legend(html)).toMatch(/<li[^>]*>[\s\S]*?p50<\/li><li[^>]*>[\s\S]*?p95<\/li><li[^>]*>[\s\S]*?p99<\/li>/);
     expect(html).toContain('--color-s0: var(--chart-3)');
     expect(html).toContain('--color-s1: var(--chart-5)');
-    expect(html).toMatch(/<li[^>]*>[\s\S]*?p50<\/li><li[^>]*>[\s\S]*?p95<\/li>/);
+    expect(html).toContain('--color-s2: var(--foreground)');
   });
 
-  test('pie chart: six slices get six distinct colors and the table shows each share', () => {
+  test('a series shorter than its categories shows a dash, never an invented zero', () => {
+    const html = render(node('root = Stack([c])\nc = BarChart(["A", "B", "C"], [s], "log")\ns = Series("Hits", [4, 5])'));
+    expect(html).toMatch(/<td[^>]*>C<\/td><td[^>]*>—<\/td>/);
+  });
+
+  test('pie chart: six slices get six distinct colors; the table has a Value column and each share', () => {
     const html = render(
       node(
         'root = Stack([c])\nc = PieChart([a, b, d, e, f, g], "survey")\n' +
@@ -48,6 +59,18 @@ describe('ChartView', () => {
     const colors = new Map([...html.matchAll(/--color-(p\d): ([^;]+);/g)].map((match) => [match[1], match[2]]));
     expect(colors.size).toBe(6);
     expect(new Set(colors.values()).size).toBe(6);
+    expect(html).toMatch(/<th[^>]*>Value<\/th><th[^>]*>%<\/th>/);
     expect(html).toMatch(/<td[^>]*>North a<\/td><td[^>]*>50<\/td><td[^>]*>50%<\/td>/);
+  });
+
+  test('the pending block reserves the settled figure height, with no border, for every chart type', () => {
+    const settled = render(node('root = Stack([c])\nc = BarChart(["A"], [s], "x")\ns = Series("S", [1])'));
+    const figureHeight = settled.match(/<figure[^>]*class="[^"]*(min-h-\[\d+px\])/)?.[1];
+    expect(figureHeight).toBe('min-h-[299px]');
+    for (const type of ['BarChart', 'LineChart', 'PieChart']) {
+      const pending = renderToStaticMarkup(<>{GenuiPending({ id: 'c', type, props: {}, partial: true })}</>);
+      expect(pending).toContain(figureHeight!);
+      expect(pending).not.toMatch(/\bborder\b/);
+    }
   });
 });
