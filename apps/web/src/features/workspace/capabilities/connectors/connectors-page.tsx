@@ -12,7 +12,7 @@ import { MagnifyingGlassIcon, PlugIcon } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import dynamic from 'next/dynamic';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { PoliciesPanel } from '@/components/projects/policies-panel';
 import { Button } from '@/components/ui/button';
@@ -30,17 +30,17 @@ import {
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
-import {
-  Sheet,
-  SheetBody,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  SplitSheet,
+  SplitSheetBody,
+  SplitSheetContent,
+  SplitSheetDescription,
+  SplitSheetHeader,
+  SplitSheetMain,
+  SplitSheetTitle,
+} from '@/components/ui/split-sheet';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import {
   connectorConnectionQueryKeys,
@@ -57,14 +57,11 @@ import {
 import { providerLabel } from './provider-label';
 
 import { ComputerConnectModal } from '@/features/tunnel/computer-connect';
-import { DiscoverAddFlow } from '@/features/workspace/capabilities/connectors/add/discover-add-flow';
-import { EasyConnectAddFlow } from '@/features/workspace/capabilities/connectors/add/easy-connect-add-flow';
 import {
   connectedCatalogKeys,
   type CatalogEntry,
 } from '@/features/workspace/capabilities/connectors/catalog/catalog-entry';
 import { ConnectorBrowse } from '@/features/workspace/capabilities/connectors/catalog/connector-browse';
-import { ALL_CATEGORIES } from '@/features/workspace/capabilities/connectors/catalog/connector-categories';
 import {
   useCatalog,
   useConnectProviderStatus,
@@ -74,44 +71,32 @@ import { CatalogCard } from '@/features/workspace/capabilities/shared/catalog/ca
 import { catalogEmptyKind } from '@/features/workspace/capabilities/shared/catalog/catalog-empty';
 import { CatalogNoMatch } from '@/features/workspace/capabilities/shared/catalog/catalog-empty-state';
 import { CatalogGrid } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
-import { detailSelection } from '@/features/workspace/capabilities/shared/detail-selection';
 import { useTunnelConnections } from '@/hooks/tunnel/use-tunnel';
-import { catalogSource } from './catalog/catalog-source';
 import {
   connectorDisplayName,
   connectorSummary,
   filterConnectors,
   type ConnectorScope,
 } from './connector-filter';
+import { appHref, appRefFromEntry, connectorHref, legacyDetailRedirect } from './connector-routes';
+import type { InstallAudience } from './install/install';
+import { useInstall } from './install/use-install';
 
 /**
- * The two click-gated surfaces, split out of this route's initial chunk.
+ * The click-gated Add form, split out of this route's initial chunk.
  *
- * Both reach `customize/sections/connectors-view.tsx` — 5,075 lines whose own
+ * It lives in `customize/sections/connectors-view.tsx` — 5,075 lines whose own
  * import list pulls `@pipedream/sdk/browser`, `HighlightedCode` (shiki),
  * `PoliciesPanel`, `DiscoverCatalogue` and `ConnectorConnectionModal`. An ES
- * module is all-or-nothing to the bundler, so two `import` lines put that
+ * module is all-or-nothing to the bundler, so one `import` line puts that
  * entire graph in front of a page that paints a grid of cards.
  * `connector-identity.tsx` was lifted out of that file for exactly this
- * reason; these were the two edges that put it straight back.
+ * reason; a static import here is the edge that puts it straight back.
  *
- *   • `ConnectorModal` reaches it via `connector-accounts.tsx`
- *     (`ConnectionRoster`/`ConnectionSection`/…) and its own
- *     `SetCredentialModal`, and owns the account connection flow on the route.
- *   • `CustomConnectorForm` is the Add modal's body.
- *
- * Neither can render before a click, so neither needs to be parsed before
- * one. `ssr: false` keeps them out of the server bundle too — a closed modal
- * has no markup worth streaming.
+ * `CustomConnectorForm` is the Add modal's body. It cannot render before a
+ * click, so it need not be parsed before one. `ssr: false` keeps it out of the
+ * server bundle too — a closed modal has no markup worth streaming.
  */
-const ConnectorModal = dynamic(
-  () =>
-    import('@/features/workspace/capabilities/connectors/detail/connector-modal').then(
-      (m) => m.ConnectorModal,
-    ),
-  { ssr: false },
-);
-
 const CustomConnectorForm = dynamic(
   () =>
     import('@/features/workspace/customize/sections/connectors-view').then(
@@ -133,12 +118,12 @@ function ModalFormFallback() {
  * The Channels scope's body — Slack / Teams / email install and the
  * per-channel bindings — lifted here from its own retired top-level tab.
  *
- * `dynamic` for the same reason the two above are, and more urgently: its
+ * `dynamic` for the same reason the form above is, and more urgently: its
  * `EmailConnectForm` import reaches `customize/sections/connectors-view.tsx`,
  * the same 5,075-line module the Add modal's form lives in. A static import
  * would put that whole graph — `@pipedream/sdk/browser`, shiki, `PoliciesPanel`
  * — in front of the catalogue grid for every visitor, including the ones who
- * never open this tab. Discovery is the landing scope, so this is click-gated
+ * never open this tab. All is the landing scope, so this is click-gated
  * in the common case; a deep link (`?scope=channels`) pays one chunk fetch and
  * gets `ChannelsFallback` while it lands.
  */
@@ -168,36 +153,28 @@ function ChannelsFallback() {
 }
 
 /**
- * Tab order is deliberate, and so is the landing tab: Discovery leads and is
- * always what opens, for every project. The project's own list sits last —
- * reachable in one click, but never in the way of adding something.
+ * Tab order is deliberate, and so is the landing tab: All leads and is always
+ * what opens, for every project. The project's own list follows — reachable
+ * in one click, but never in the way of adding something.
  *
- * There is no Available tab. It showed the catalogue minus what the project
- * already had, which is the same catalogue with a handful of cards deleted
- * from it — and the cards it deleted were exactly the ones already marked `✓`
- * on the other two tabs. Removing a card the user can already see is connected
- * is not a filter worth a tab; it just made "where did Slack go?" a question
- * the page could provoke.
+ * There is no Discovery tab. It was the same catalogue cut into category
+ * sections; the flat grid plus server-side search covers the same ground
+ * without a second presentation of one list. There is no Available tab either:
+ * it showed the catalogue minus what the project already had.
  *
  * Channels sits LAST and outside that reasoning, because it is not a narrower
  * view of the same list — it is the other direction of the same job (who can
- * reach the agent, rather than what the agent can reach). Last is where a
- * reader stops expecting the strip to keep filtering one thing.
+ * reach the agent, rather than what the agent can reach).
  *
- * Discovery and All are dropped entirely on a deployment with no catalogue —
- * see `catalogueAvailable`. They are two views of ONE catalogue, and without
- * `connectors_api_discover` that catalogue is Pipedream's, which answers `501`
- * on every request unless three env vars are set. They are removed rather
- * than disabled: a disabled tab still asserts that the feature exists and is
- * merely out of reach for now, which is not what "this deployment does not
- * have Pipedream" means. Connected and Channels stay either way — every
- * deployment has its own connectors and its own inbound channels, catalogue
- * or not.
+ * All is dropped entirely on a deployment with no catalogue — see
+ * `catalogueAvailable`. Without `connectors_api_discover` the catalogue is the
+ * managed provider's, which answers `501` on every request unless it is
+ * configured. The tab is removed rather than disabled: a disabled tab still
+ * asserts that the feature exists. Connected and Channels stay either way.
  */
-const SCOPES: readonly ConnectorScope[] = ['discover', 'all', 'connected', 'channels'];
+const SCOPES: readonly ConnectorScope[] = ['all', 'connected', 'channels'];
 
 const SCOPE_LABEL: Record<ConnectorScope, string> = {
-  discover: 'Discovery',
   all: 'All',
   connected: 'Connected',
   channels: 'Channels',
@@ -210,13 +187,12 @@ const SCOPE_LABEL: Record<ConnectorScope, string> = {
  * but not under one sentence that describes only half of it.
  */
 const SCOPE_DESCRIPTION: Record<ConnectorScope, string> = {
-  discover: 'Give agents access to outside tools and data.',
   all: 'Give agents access to outside tools and data.',
   connected: 'Give agents access to outside tools and data.',
   channels: 'Reach your agent from the tools your team already uses.',
 };
 
-/** `?scope=` is user-editable text; anything that is not a scope is Discovery. */
+/** `?scope=` is user-editable text; anything that is not a scope is All. */
 function parseScope(value: string | null): ConnectorScope | null {
   return SCOPES.find((scope) => scope === value) ?? null;
 }
@@ -231,13 +207,12 @@ type Panel = 'custom';
  * the same key `ConnectorsMasterDetail` uses, so the two surfaces cannot
  * disagree about what a project has.
  *
- * **Four tabs.** Three are one list each: Discovery is the catalogue in
- * category sections, each expandable in place; All is the same catalogue flat;
- * Connected is the project's own connectors. There is no Needs-attention tab —
- * see `connector-filter.ts` for why it became a sort key instead — and no
- * Available tab, see `SCOPES` below.
+ * **Three tabs.** Two are one list each: All is the catalogue, flat; Connected
+ * is the project's own connectors. There is no Needs-attention tab — see
+ * `connector-filter.ts` for why it became a sort key instead — and no
+ * Discovery or Available tab, see `SCOPES` below.
  *
- * The fourth is Channels, and it is a different kind of thing: the inbound
+ * The third is Channels, and it is a different kind of thing: the inbound
  * side — Slack, Microsoft Teams and email reaching the agent — which was its
  * own top-level Customize tab until it folded in here. The two REST namespaces
  * stay separate (`…/channels/*` vs `…/connectors/*`) and no data model was
@@ -248,7 +223,7 @@ type Panel = 'custom';
  *
  * `?scope=` is the tab, so every scope is linkable — which is what lets the
  * retired `/projects/<id>/channels` route redirect to a real destination
- * instead of a page that lands on Discovery and hides what was asked for.
+ * instead of a page that lands on All and hides what was asked for.
  *
  * **What Add opens.** Only the custom-connector form (OpenAPI / Postman /
  * GraphQL / MCP / HTTP). Everything the Add-connector modal used to hide
@@ -256,13 +231,11 @@ type Panel = 'custom';
  * catalogue cards, Channels as catalogue entries alongside them. A modal is
  * the right home for a form; it was the wrong home for a catalogue.
  *
- * `?c=<slug>` still owns which connector's detail is open, and that is
- * load-bearing rather than cosmetic. `SetCredentialModal` starts an OAuth 2.0
- * authorization-code grant by sending the browser to the provider with
- * `success_redirect_uri = window.location.href` minus the two `oauth2*`
- * params. The user comes back through a full page load, so any React state
- * saying "this connector's modal was open" is gone — but `?c=` survives,
- * because the redirect URL is built from the current one.
+ * A connector's detail is its own page
+ * (`/customize/connectors/<app>/<connector>`), and a catalogue card links to
+ * its app's page. `?c=<slug>` is the old spelling of "this connector is open";
+ * `legacyDetailRedirect` forwards it, so an OAuth grant that started before
+ * the change still lands on the right connector.
  */
 export function ConnectorsPage({ projectId }: { projectId: string }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
@@ -278,18 +251,20 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
 
   const [query, setQuery] = useState('');
-  const [category, setCategory] = useState<string>(ALL_CATEGORIES);
   const [panel, setPanel] = useState<Panel | null>(null);
-  const [catalogTarget, setCatalogTarget] = useState<CatalogEntry | null>(null);
-  const [pendingDetail, setPendingDetail] = useState<{
-    slug: string;
-    dataUpdatedAt: number;
-  } | null>(null);
+  const [computerOpen, setComputerOpen] = useState(false);
+  const tSharing = useI18nTranslations('accessSharing');
 
   const search = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const detailSlug = search?.get('c') ?? null;
+
+  // `?c=<slug>` named the open connector before connectors had pages, and an
+  // OAuth grant started then returns to that URL. Forward it, result intact.
+  const legacyHref = legacyDetailRedirect(projectId, search);
+  useEffect(() => {
+    if (legacyHref) router.replace(legacyHref);
+  }, [legacyHref, router]);
 
   const replaceParams = useCallback(
     (mutate: (params: URLSearchParams) => void) => {
@@ -301,12 +276,6 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
     [pathname, router, search],
   );
 
-  const setDetailSlug = useCallback(
-    (slug: string | null) =>
-      replaceParams((params) => (slug ? params.set('c', slug) : params.delete('c'))),
-    [replaceParams],
-  );
-
   // Which scope the strip is on, held in the URL rather than in state.
   //
   // It has to be addressable: `/projects/<id>/channels` was a real route until
@@ -314,35 +283,21 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   // pointing at it now redirects to `?scope=channels`. A tab that only local
   // state can reach is a tab nothing can link to.
   //
-  // Discovery is the landing scope and writes NO param — see the `SCOPES`
+  // All is the landing scope and writes NO param — see the `SCOPES`
   // block for why it is constant rather than derived. Omitting it keeps the
   // bare URL bare, so the common case still shares as `…/connectors`.
   const setScope = useCallback(
     (next: ConnectorScope) =>
       replaceParams((params) =>
-        next === 'discover' ? params.delete('scope') : params.set('scope', next),
+        next === 'all' ? params.delete('scope') : params.set('scope', next),
       ),
     [replaceParams],
   );
 
-  // Both params in ONE `replaceParams`, and that is load-bearing. Each call
-  // builds its `URLSearchParams` from the `search` snapshot it closed over, so
-  // two calls in the same tick both start from the pre-change URL and the
-  // second `router.replace` silently discards the first's param.
-  const showConnected = useCallback(
-    (slug: string) =>
-      replaceParams((params) => {
-        params.set('scope', 'connected');
-        params.set('c', slug);
-      }),
-    [replaceParams],
-  );
-
   // Global rules — project-wide connector approval policy. Held in `?rules=1`
-  // rather than component state for the same reason `?c=` is: this is the one
-  // deep-linkable surface on the page (`proj-connectors-policies` in
-  // `menu-registry.ts` navigates straight to it), and a URL survives the full
-  // page load an OAuth return puts the user through.
+  // rather than component state: this is the one deep-linkable surface on the
+  // page (`proj-connectors-policies` in `menu-registry.ts` navigates straight
+  // to it).
   const rulesOpen = search?.get('rules') === '1';
   const setRulesOpen = useCallback(
     (open: boolean) =>
@@ -362,8 +317,40 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   });
 
   const connectors = useMemo(() => connectorsQuery.data?.connectors ?? [], [connectorsQuery.data]);
-  const existingSlugs = useMemo(() => connectors.map((c) => c.slug), [connectors]);
   const connectedKeys = useMemo(() => connectedCatalogKeys(connectors), [connectors]);
+
+  const canShare =
+    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE, { accountId })
+      .allowed === true;
+  const { installEntry, pendingKey } = useInstall(projectId);
+  const projectName = projectQuery.data?.project?.name ?? '';
+  const everyoneLabel = projectName
+    ? tSharing('everyone', { project: projectName })
+    : tSharing('visibilityEveryone');
+  const catalogInstall = useMemo(
+    () => ({
+      // `connectors` is `[]` until the list loads, and an install run against
+      // that creates a second connector for an app the project already has.
+      ready: connectorsQuery.isSuccess,
+      canWrite,
+      canShare,
+      onlyYou: tSharing('onlyYou'),
+      everyone: everyoneLabel,
+      pendingKey,
+      onInstall: (entry: CatalogEntry, audience: InstallAudience) =>
+        installEntry(entry, audience, connectors),
+    }),
+    [
+      canShare,
+      canWrite,
+      connectors,
+      connectorsQuery.isSuccess,
+      everyoneLabel,
+      installEntry,
+      pendingKey,
+      tSharing,
+    ],
+  );
 
   // What the card actually shows, handed to the search so typing a word the
   // user can read on screen matches the card carrying it.
@@ -379,13 +366,11 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const discoverEnabled = useFeatureFlag(projectId, 'connectors_api_discover').enabled;
   const emailChannelEnabled = useFeatureFlag(projectId, 'agentmail_email').enabled;
 
-  // Managed remains the landing source even after direct discovery is enabled.
-  // Keep the provider probe independent of the active scope so an absent
-  // provider cannot oscillate the catalog between enabled and disabled.
-  const directSelected =
-    catalogSource(search?.get('source') ?? null, discoverEnabled) === 'discover';
-  const connectStatus = useConnectProviderStatus(!directSelected);
-  const catalogueAvailable = directSelected || connectStatus.state !== 'absent';
+  // One catalogue: managed apps for browsing, plus API/MCP apps in search
+  // (`useCatalog`). The probe is independent of the active scope so an absent
+  // provider cannot oscillate the catalogue between enabled and disabled.
+  const connectStatus = useConnectProviderStatus(true);
+  const catalogueAvailable = discoverEnabled || connectStatus.state !== 'absent';
 
   const authorizationQueryKeys = useMemo(
     () => connectorConnectionQueryKeys(projectId),
@@ -396,24 +381,6 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
       void queryClient.invalidateQueries({ queryKey: key });
     }
   }, [authorizationQueryKeys, queryClient]);
-
-  // The OAuth 2.0 return leg. The provider bounces the user back here with
-  // `?oauth2=connected|error`. Confirm, refetch every authorization-derived
-  // query, then strip only the two `oauth2*` params — `?c=` is deliberately
-  // left in place, so the detail modal reopens on the connector just
-  // authorized.
-  const oauth2Result = search?.get('oauth2');
-  const oauth2Error = search?.get('oauth2_error');
-  useEffect(() => {
-    if (oauth2Result !== 'connected' && oauth2Result !== 'error') return;
-    if (oauth2Result === 'connected') successToast(tI18nComplete.raw('text75586c42e862'));
-    else errorToast(oauth2Error || tI18nComplete.raw('texta6fac795d6d6'));
-    invalidate();
-    replaceParams((params) => {
-      params.delete('oauth2');
-      params.delete('oauth2_error');
-    });
-  }, [invalidate, oauth2Error, oauth2Result, replaceParams, tI18nComplete]);
 
   // Both queries gate what this page can offer, so both have to be able to
   // report a failure and both have to be retried.
@@ -438,7 +405,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   // derived from a query, so making it appear a beat late bought nothing.
   const settled = !connectorsQuery.isLoading && !projectQuery.isLoading;
 
-  // Discovery, always — never derived from what the project already has.
+  // All, always — never derived from what the project already has.
   // `defaultConnectorScope` used to open a project with connectors on its own
   // list, which put the least useful tab in front of the user most often: a
   // returning user opening this page is far more likely to be adding a
@@ -447,17 +414,17 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   // page could settle onto a different tab than it first rendered.
   //
   // Unless the requested scope needs a catalogue that is not there: `?scope=`
-  // outlives the answer it was read under, and `?c=` returns the user to this
-  // page after an OAuth round trip with the same param still in the URL.
-  // Reading it blindly would strand them on a tab the strip no longer renders.
+  // outlives the answer it was read under (a bookmark, a shared link).
+  // Reading it blindly would strand the user on a tab the strip no longer
+  // renders.
   // Connected and Channels never need the catalogue, so they are honored
   // either way.
-  const requestedScope: ConnectorScope = parseScope(search?.get('scope') ?? null) ?? 'discover';
+  const requestedScope: ConnectorScope = parseScope(search?.get('scope') ?? null) ?? 'all';
   const scope: ConnectorScope =
     catalogueAvailable || requestedScope === 'connected' || requestedScope === 'channels'
       ? requestedScope
       : 'connected';
-  const catalogActive = scope === 'discover' || scope === 'all';
+  const catalogActive = scope === 'all';
   // Channels replaces the connector list rather than narrowing it, so the
   // controls that only make sense over that list come off with it: the search
   // box searches the connector catalogue, and Add opens a custom-CONNECTOR
@@ -466,225 +433,133 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   // a list that is not there.
   const channelsActive = scope === 'channels';
 
-  // The scopes the strip actually offers. Filters out Discovery/All when
+  // The scopes the strip actually offers. Filters out All when
   // there is no catalogue to browse — see `catalogueAvailable` above and this
   // component's header comment. Connected and Channels are never filtered:
   // every deployment has its own connectors and its own inbound channels.
-  const visibleScopes =
-    catalogueAvailable
-      ? SCOPES
-      : SCOPES.filter((s) => s !== 'discover' && s !== 'all');
-
-  // The category the catalogue should FILTER by, server-side. `null` while
-  // browsing everything and while a search runs — the search is server-side
-  // across every category, so narrowing one would contradict the grid.
-  //
-  // Read off `query`, not `catalog.activeQuery`: this is an input to the hook
-  // that produces `catalog`, so it cannot depend on its output. The 300ms
-  // debounce difference only means the filter clears one tick earlier, which
-  // is the right direction.
-  const focusCategory =
-    catalogActive && category !== ALL_CATEGORIES && query.trim().length === 0 ? category : null;
+  const visibleScopes = catalogueAvailable ? SCOPES : SCOPES.filter((s) => s !== 'all');
 
   // The machine list answers 503 on a deployment with computers disabled, so
   // the Computer card shows only where a computer can be connected.
   const computersEnabled = useTunnelConnections({ refetchInterval: false }).isSuccess;
   const catalog = useCatalog(projectId, query, {
     enabled: catalogActive,
-    discoverEnabled: directSelected,
-    focusCategory,
+    discoverEnabled,
     computers: computersEnabled,
   });
-
-  // A category is a key in ONE catalogue's vocabulary. When `discoverEnabled`
-  // resolves and the source flips, every entry is replaced and the open
-  // category is a token from a namespace that no longer exists — so
-  // `focusCategory` above would filter the new source by a key it has never
-  // published, and the grid would be empty with nothing on screen explaining
-  // why.
-  //
-  // Adjusted during render, not in an effect. React re-runs this component
-  // before committing, so the reset lands in the same paint and `useCatalog`'s
-  // own effects never observe the stale value. The effect version was one
-  // render late by construction — which is exactly long enough to schedule the
-  // first wasted page — and cost a second commit to do it.
-  const [categorySource, setCategorySource] = useState(catalog.source);
-  if (categorySource !== catalog.source) {
-    setCategorySource(catalog.source);
-    setCategory(ALL_CATEGORIES);
-  }
-
-  // Typing clears the category. The `Select` hides while a search runs (a
-  // catalogue search is server-side across every category, so showing
-  // "Finance" over unfiltered results would be a lie), and a filter the user
-  // cannot see is a filter they cannot undo — clearing the search used to snap
-  // the grid back to a category picked minutes earlier with nothing on screen
-  // explaining it. Done in the handler rather than an effect: starting a search
-  // is an event, and an effect watching `query` would also fire on mount and
-  // on every unrelated re-render.
-  const onQueryChange = useCallback((next: string) => {
-    setQuery(next);
-    if (next.trim().length > 0) setCategory(ALL_CATEGORIES);
-  }, []);
 
   const filtered = useMemo(
     () => filterConnectors(connectors, { query, describe: describeConnector }),
     [connectors, query, describeConnector],
   );
 
-  // Looked up against the unfiltered list, never `filtered` — searching or
-  // switching scope while the modal is open must not yank it shut.
-  //
-  // `detailSelection` then keeps the modal's `open` on `?c=` alone. Deriving
-  // it from this lookup is what made the modal animate itself open a beat
-  // after an OAuth return (list still loading, so the lookup missed) and
-  // vanish mid-edit whenever one of `invalidate()`'s four refetches failed.
-  const detail = detailSelection({
-    selection: detailSlug,
-    record: connectors.find((c) => c.slug === detailSlug),
-    // A catalogue create returns before the invalidated connector list has
-    // refetched. Its previous successful result is stale but still reports
-    // `isSuccess`, so treating it as authoritative closes the detail we just
-    // opened. Wait until one newer successful list result has landed.
-    isSuccess:
-      connectorsQuery.isSuccess &&
-      (!pendingDetail ||
-        pendingDetail.slug !== detailSlug ||
-        connectorsQuery.dataUpdatedAt > pendingDetail.dataUpdatedAt),
-  });
-
-  // The one honest auto-close: the list came back, and this connector is not
-  // in it. That is a deletion — by this user in another tab, or by a teammate.
-  useEffect(() => {
-    if (detail.isMissing) setDetailSlug(null);
-  }, [detail.isMissing, setDetailSlug]);
-
-  // The detail chunk is lazy (see the `dynamic` block above), so it must not
-  // mount until something is selected — otherwise every page load pays for it.
-  // Once mounted it STAYS mounted: unmounting on close would cut Radix's exit
-  // animation, and the chunk is already in memory by then anyway.
-  // Seeded from the FIRST render, not an effect: `?c=<slug>` is already in the
-  // URL on a deep link and on every OAuth return, and mounting a frame later
-  // would put the modal on screen one paint after the page behind it.
-  const [detailMounted, setDetailMounted] = useState(() => detailSlug !== null);
-  useEffect(() => {
-    if (detail.open) setDetailMounted(true);
-  }, [detail.open]);
-
   const emptyKind = catalogEmptyKind(connectors.length, filtered.length);
 
-  // The Computer card opens the existing computer connector's accounts once
-  // there is one: adding a computer is adding an account to it.
+  // The Computer card opens the existing computer connector once there is
+  // one: adding a computer is adding an account to it.
   const computerConnector = connectors.find((connector) => connector.provider === 'computer');
-  const selectCatalogEntry = useCallback(
+  const catalogHref = useCallback(
     (entry: CatalogEntry) => {
-      if (entry.source === 'computer' && computerConnector) setDetailSlug(computerConnector.slug);
-      else setCatalogTarget(entry);
+      const app = appRefFromEntry(entry);
+      if (app) return appHref(projectId, app);
+      return computerConnector ? connectorHref(projectId, computerConnector.slug) : null;
     },
-    [computerConnector, setDetailSlug],
+    [computerConnector, projectId],
   );
+  // Stable, like `catalogHref`: the browse cards are `memo`'d, and an inline
+  // arrow here would re-render every one of them on each page render.
+  const openComputer = useCallback(() => setComputerOpen(true), []);
 
-  const onCatalogAdded = useCallback(
-    (slug?: string) => {
-      setCatalogTarget(null);
-      if (slug) {
-        setPendingDetail({ slug, dataUpdatedAt: connectorsQuery.dataUpdatedAt });
-        showConnected(slug);
-      }
-      invalidate();
-    },
-    [connectorsQuery.dataUpdatedAt, invalidate, showConnected],
-  );
+  // The search field is the page's main control: focused on arrival, and "/"
+  // jumps back to it from anywhere on the page except another text field.
+  const searchRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (channelsActive) return;
+    searchRef.current?.focus({ preventScroll: true });
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return;
+      event.preventDefault();
+      searchRef.current?.focus();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [channelsActive]);
 
   return (
-    <CapabilityPageShell
-      title={tI18nComplete.raw('textc3d2e79ebdd0')}
-      description={SCOPE_DESCRIPTION[scope]}
-      search={
-        channelsActive ? undefined : (
-          <InputGroupSearch>
-            <InputGroupSearchIcon>
-              <MagnifyingGlassIcon />
-            </InputGroupSearchIcon>
-            <InputGroupSearchInput
-              placeholder={tI18nComplete.raw('textc386cb852691')}
-              value={query}
-              onChange={(event) => onQueryChange(event.target.value)}
-              variant="popover"
-              size="sm"
-            />
-          </InputGroupSearch>
-        )
-      }
-      action={
-        /* The page's one header action, and it carries its label: a bare `+`
+    // Global rules open in a SplitSheet: the page narrows to make room instead
+    // of being covered. `PoliciesPanel` is a long CRUD list whose save bar
+    // sticks to the body's bottom edge, so the body is the only scroller.
+    <SplitSheet open={rulesOpen} onOpenChange={setRulesOpen} size="lg" className="flex-1">
+      <SplitSheetMain>
+        <CapabilityPageShell
+          title={tI18nComplete.raw('textc3d2e79ebdd0')}
+          description={SCOPE_DESCRIPTION[scope]}
+          search={
+            channelsActive ? undefined : (
+              <InputGroupSearch>
+                <InputGroupSearchIcon>
+                  <MagnifyingGlassIcon />
+                </InputGroupSearchIcon>
+                <InputGroupSearchInput
+                  ref={searchRef}
+                  placeholder={tI18nComplete.raw('textc386cb852691')}
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  variant="popover"
+                  size="sm"
+                />
+              </InputGroupSearch>
+            )
+          }
+          action={
+            /* The page's one header action, and it carries its label: a bare `+`
            square made the reader guess, and what it opens — a custom-connector
            form, not the catalogue — is not guessable from a glyph. Default
            size (`h-9`), so it stays the tallest thing in the header group and
            lines up with the search field beside it. `aria-label` keeps the
            full sentence for screen readers; it opens with the visible "Add",
            so the accessible name still contains the visible label. */
-        canWrite && !channelsActive ? (
-          <NewEntityMenu
-            label={tI18nComplete.raw('text18fdd549b2ed')}
-            pending={configure.pending}
-            onChat={() => configure.start(newConfigPrompt('connector'))}
-            manual={{
-              label: tI18nComplete.raw('text90ccaee30bdc'),
-              description: tI18nComplete.raw('textb0fbe9dc1fcc'),
-              onSelect: () => setPanel('custom'),
-            }}
-          />
-        ) : undefined
-      }
-      filters={
-        // A strip of one tab is not a choice, so it collapses to no strip at
-        // all when only one scope is reachable — `CapabilityPageShell` drops
-        // the whole row when this is `undefined`, which is why it must not be
-        // a bare fragment. With Channels in the mix a catalogue-less
-        // deployment still has two real destinations (Connected, Channels),
-        // so the strip survives losing Discovery and All; it only disappears
-        // entirely for the narrower case of neither existing.
-        visibleScopes.length > 1 ? (
-          <>
-            {/* Rendered immediately, not behind `settled`. The strip used to
+            canWrite && !channelsActive ? (
+              <NewEntityMenu
+                label={tI18nComplete.raw('text18fdd549b2ed')}
+                pending={configure.pending}
+                onChat={() => configure.start(newConfigPrompt('connector'))}
+                manual={{
+                  label: tI18nComplete.raw('text90ccaee30bdc'),
+                  description: tI18nComplete.raw('textb0fbe9dc1fcc'),
+                  onSelect: () => setPanel('custom'),
+                }}
+              />
+            ) : undefined
+          }
+          filters={
+            // A strip of one tab is not a choice, so it collapses to no strip at
+            // all when only one scope is reachable — `CapabilityPageShell` drops
+            // the whole row when this is `undefined`, which is why it must not be
+            // a bare fragment. With Channels in the mix a catalogue-less
+            // deployment still has two real destinations (Connected, Channels),
+            // so the strip survives losing All; it only disappears
+            // entirely for the narrower case of neither existing.
+            visibleScopes.length > 1 ? (
+              <>
+                {/* Rendered immediately, not behind `settled`. The strip used to
                 wait for both queries because the landing tab was derived from
                 one of them and Connected carried a count off the other; neither
                 is true now, so waiting only meant an empty 28px slot on every
                 load followed by the tabs popping in. Static labels over a
                 scope read out of the URL have nothing to wait for. */}
-            <Tabs value={scope} onValueChange={(value) => setScope(value as ConnectorScope)}>
-              <TabsList>
-                {visibleScopes.map((value) => (
-                  <TabsTrigger key={value} value={value}>
-                    {SCOPE_LABEL[value]}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
-            {discoverEnabled && !channelsActive && (
-              <Tabs
-                value={directSelected ? 'direct' : 'managed'}
-                onValueChange={(value) =>
-                  replaceParams((params) => {
-                    if (value === 'direct') params.set('source', value);
-                    else params.delete('source');
-                    params.delete('scope');
-                  })
-                }
-                aria-label={tI18nComplete.raw('connectorSourceLabel')}
-              >
-                <TabsList>
-                  <TabsTrigger value="managed">
-                    {tI18nComplete.raw('connectorSourceManaged')}
-                  </TabsTrigger>
-                  <TabsTrigger value="direct">
-                    {tI18nComplete.raw('connectorSourceDirect')}
-                  </TabsTrigger>
-                </TabsList>
-              </Tabs>
-            )}
-            {/* Global rules — connector approval policy, so it belongs on this
+                <Tabs value={scope} onValueChange={(value) => setScope(value as ConnectorScope)}>
+                  <TabsList>
+                    {visibleScopes.map((value) => (
+                      <TabsTrigger key={value} value={value}>
+                        {SCOPE_LABEL[value]}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </Tabs>
+                {/* Global rules — connector approval policy, so it belongs on this
                 page and not on the shared capability bar, which also rides over
                 Agents, Skills and Triggers.
 
@@ -704,188 +579,142 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
 
                 Not gated on `canWrite` — anyone who can open the page can read
                 the project's approval policy. */}
-            <Button
-              type="button"
-              variant="text"
-              size="sm"
-              onClick={() => setRulesOpen(true)}
-              className="ml-auto px-0 transition-colors"
-            >
-              {tI18nComplete.raw('text1d59a5e09714')}
-            </Button>
-            {/* The category filter is NOT here. It is a rail of chips rendered
-                by `ConnectorBrowse` directly above the grid it filters — this
-                row is too narrow for it, and the rail has to sit next to its
-                content for the lit chip to read as "this is why you are seeing
-                these". */}
-          </>
-        ) : undefined
-      }
-    >
-      {channelsActive ? (
-        /* The whole of what used to be `/projects/<id>/channels`, minus the
-           shell it used to bring — this page's `CapabilityPageShell` is the
-           one column, the one heading and the one scroll container now. */
-        <ChannelsSection projectId={projectId} />
-      ) : catalogActive ? (
-        <ConnectorBrowse
-          state={catalog}
-          connectedKeys={connectedKeys}
-          mode={scope === 'discover' ? 'sectioned' : 'flat'}
-          category={category}
-          onCategoryChange={setCategory}
-          onSelect={selectCatalogEntry}
-          emptyTitle={tI18nComplete.raw('text3a63271cafc1')}
-          emptyDescription={tI18nComplete.raw('textf652a621153e')}
-        />
-      ) : (
-        <CatalogGrid
-          // `!settled`, not `connectorsQuery.isLoading`: the empty state's
-          // wording depends on `projectQuery` too. Same gate as the filter row.
-          isLoading={!settled}
-          isError={isError}
-          error={connectorsQuery.error ?? projectQuery.error}
-          onRetry={retry}
-          isEmpty={emptyKind !== null}
-          empty={
-            emptyKind === 'no-match' ? (
-              <CatalogNoMatch query={query} />
-            ) : (
-              <EmptyState
-                icon={PlugIcon}
-                size="sm"
-                title={tI18nComplete.raw('text51ae0a7e3783')}
-                description={tI18nComplete.raw('texta3487dfc2132')}
-                // The CTA goes with the tab it opens. With no catalogue on this
-                // deployment it would be a button to a tab that is not there;
-                // `+` is the remaining way in, and it is already in the header.
-                action={
-                  catalogueAvailable ? (
-                    <Button size="sm" variant="secondary" onClick={() => setScope('discover')}>
-                      {tI18nComplete.raw('text45bfe4f17af7')}
-                    </Button>
-                  ) : undefined
-                }
-              />
-            )
+                <Button
+                  type="button"
+                  variant="text"
+                  size="sm"
+                  onClick={() => setRulesOpen(true)}
+                  className="ml-auto px-0 transition-colors"
+                >
+                  {tI18nComplete.raw('text1d59a5e09714')}
+                </Button>
+              </>
+            ) : undefined
           }
         >
-          {filtered.map((connector) => (
-            <CatalogCard
-              key={connector.slug}
-              leading={<ConnectorAppIcon connector={connector} size="lg" />}
-              title={connectorDisplayName(connector)}
-              description={describeConnector(connector)}
-              badges={<ConnectorStatusBadge connector={connector} />}
-              trailing={
-                connectorSetupStatus(connector) === 'connected' ? (
-                  <ConnectorConnectedMark />
-                ) : undefined
-              }
-              onClick={() => setDetailSlug(connector.slug)}
+          {channelsActive ? (
+            /* The whole of what used to be `/projects/<id>/channels`, minus the
+           shell it used to bring — this page's `CapabilityPageShell` is the
+           one column, the one heading and the one scroll container now. */
+            <ChannelsSection projectId={projectId} />
+          ) : catalogActive ? (
+            <ConnectorBrowse
+              state={catalog}
+              connectedKeys={connectedKeys}
+              hrefFor={catalogHref}
+              onOpen={openComputer}
+              install={catalogInstall}
+              emptyTitle={tI18nComplete.raw('text3a63271cafc1')}
+              emptyDescription={tI18nComplete.raw('textf652a621153e')}
             />
-          ))}
-        </CatalogGrid>
-      )}
+          ) : (
+            <CatalogGrid
+              dense
+              // `!settled`, not `connectorsQuery.isLoading`: the empty state's
+              // wording depends on `projectQuery` too. Same gate as the filter row.
+              isLoading={!settled}
+              isError={isError}
+              error={connectorsQuery.error ?? projectQuery.error}
+              onRetry={retry}
+              isEmpty={emptyKind !== null}
+              empty={
+                emptyKind === 'no-match' ? (
+                  <CatalogNoMatch query={query} />
+                ) : (
+                  <EmptyState
+                    icon={PlugIcon}
+                    size="sm"
+                    title={tI18nComplete.raw('text51ae0a7e3783')}
+                    description={tI18nComplete.raw('texta3487dfc2132')}
+                    // The CTA goes with the tab it opens. With no catalogue on this
+                    // deployment it would be a button to a tab that is not there;
+                    // `+` is the remaining way in, and it is already in the header.
+                    action={
+                      catalogueAvailable ? (
+                        <Button size="sm" variant="secondary" onClick={() => setScope('all')}>
+                          {tI18nComplete.raw('text45bfe4f17af7')}
+                        </Button>
+                      ) : undefined
+                    }
+                  />
+                )
+              }
+            >
+              {filtered.map((connector) => (
+                <CatalogCard
+                  key={connector.slug}
+                  // The All tab's card: logo and title on the page, one quiet line.
+                  variant="plain"
+                  leading={<ConnectorAppIcon connector={connector} size="lg" />}
+                  title={connectorDisplayName(connector)}
+                  subtitle={
+                    <span className="text-muted-foreground text-xs">
+                      {describeConnector(connector)}
+                    </span>
+                  }
+                  badges={<ConnectorStatusBadge connector={connector} />}
+                  trailing={
+                    connectorSetupStatus(connector) === 'connected' ? (
+                      <ConnectorConnectedMark />
+                    ) : undefined
+                  }
+                  href={connectorHref(projectId, connector.slug)}
+                />
+              ))}
+            </CatalogGrid>
+          )}
 
-      {/* One target, two add flows. `CatalogEntry` is a discriminated union, so
-          the source that produced the card decides which flow opens — a
-          Discover entry cannot be handed to Pipedream's connection modal, and
-          vice versa. Each receives `null` unless the target is its own kind,
-          which is also what keeps them closed. */}
-      <DiscoverAddFlow
-        projectId={projectId}
-        connector={catalogTarget?.source === 'discover' ? catalogTarget.connector : null}
-        existingSlugs={existingSlugs}
-        canWrite={canWrite}
-        onClose={() => setCatalogTarget(null)}
-        onAdded={onCatalogAdded}
-      />
-      <EasyConnectAddFlow
-        projectId={projectId}
-        app={catalogTarget?.source === 'easy-connect' ? catalogTarget.app : null}
-        existingSlugs={existingSlugs}
-        canWrite={canWrite}
-        onClose={() => setCatalogTarget(null)}
-        onAdded={onCatalogAdded}
-      />
-      {/* Computers are accounts, not profiles: the card pairs the caller's own
+          {/* Computers are accounts, not profiles: the card pairs the caller's own
           machine. The `computer` connector is built into every project, so
           the card opens it when listed and pairs a machine otherwise. */}
-      <ComputerConnectModal
-        projectId={projectId}
-        open={catalogTarget?.source === 'computer'}
-        onOpenChange={(open) => !open && setCatalogTarget(null)}
-        onConnected={(connection) => onCatalogAdded(connection.connector_alias)}
-      />
+          <ComputerConnectModal
+            projectId={projectId}
+            open={computerOpen}
+            onOpenChange={setComputerOpen}
+            onConnected={(connection) => {
+              invalidate();
+              router.push(connectorHref(projectId, connection.connector_alias));
+            }}
+          />
 
-      {/* Custom upload only. `CustomConnectorForm` prints no heading of its
+          {/* Custom upload only. `CustomConnectorForm` prints no heading of its
           own, so unlike the `AddAppPanel` this replaced it gets a real visible
           `ModalHeader` rather than a `VisuallyHidden` title — the dialog needs
           an accessible name and the user needs to know what the form is for.
           That is why `@radix-ui/react-visually-hidden` is no longer imported
           on this page. */}
-      <Modal open={panel === 'custom'} onOpenChange={(open) => !open && setPanel(null)}>
-        <ModalContent className="lg:max-w-3xl">
-          <ModalHeader>
-            <ModalTitle>{tI18nComplete.raw('text90ccaee30bdc')}</ModalTitle>
-            <ModalDescription>{tI18nComplete.raw('textd2f3be0047c4')}</ModalDescription>
-          </ModalHeader>
-          <ModalBody className="max-h-[75vh] overflow-y-auto">
-            <CustomConnectorForm
-              projectId={projectId}
-              emailChannelEnabled={emailChannelEnabled}
-              onAdded={(slug) => {
-                invalidate();
-                if (slug) {
-                  setPanel(null);
-                  showConnected(slug);
-                }
-              }}
-            />
-          </ModalBody>
-        </ModalContent>
-      </Modal>
-
-      {/* A Sheet, not a Modal: `PoliciesPanel` is a long CRUD list that wants a
-          persistent side surface, and its save bar sticks to the body's bottom
-          edge — so the body has to be the only scroller. */}
-      <Sheet open={rulesOpen} onOpenChange={setRulesOpen}>
-        <SheetContent
-          side="right"
-          className="flex w-full flex-col gap-0 p-0 sm:max-w-xl md:max-w-2xl"
-        >
-          {/* `pr-12` clears the sheet's own close button, which is absolutely
-              positioned at `top-4 right-4`. */}
-          <SheetHeader className="border-border shrink-0 space-y-1 border-b px-5 py-4 pr-12 text-left">
-            <SheetTitle className="text-base font-medium">
-              {tI18nComplete.raw('text1d59a5e09714')}
-            </SheetTitle>
-            <SheetDescription className="text-xs text-pretty">
-              {tI18nComplete.raw('text014d10bd3c64')}
-            </SheetDescription>
-          </SheetHeader>
-          <SheetBody className="min-h-0 gap-0 px-5 py-5">
-            <PoliciesPanel projectId={projectId} />
-          </SheetBody>
-        </SheetContent>
-      </Sheet>
-
-      {detailMounted ? (
-        <ConnectorModal
-          projectId={projectId}
-          connector={detail.record}
-          canWrite={canWrite}
-          open={detail.open}
-          isResolving={detail.isResolving}
-          onOpenChange={(open) => !open && setDetailSlug(null)}
-          onChanged={invalidate}
-          onRemoved={() => {
-            invalidate();
-            setDetailSlug(null);
-          }}
-        />
-      ) : null}
-    </CapabilityPageShell>
+          <Modal open={panel === 'custom'} onOpenChange={(open) => !open && setPanel(null)}>
+            <ModalContent className="lg:max-w-3xl">
+              <ModalHeader>
+                <ModalTitle>{tI18nComplete.raw('text90ccaee30bdc')}</ModalTitle>
+                <ModalDescription>{tI18nComplete.raw('textd2f3be0047c4')}</ModalDescription>
+              </ModalHeader>
+              <ModalBody className="max-h-[75vh] overflow-y-auto">
+                <CustomConnectorForm
+                  projectId={projectId}
+                  emailChannelEnabled={emailChannelEnabled}
+                  onAdded={(slug) => {
+                    invalidate();
+                    if (slug) {
+                      setPanel(null);
+                      router.push(connectorHref(projectId, slug));
+                    }
+                  }}
+                />
+              </ModalBody>
+            </ModalContent>
+          </Modal>
+        </CapabilityPageShell>
+      </SplitSheetMain>
+      <SplitSheetContent>
+        <SplitSheetHeader>
+          <SplitSheetTitle>{tI18nComplete.raw('text1d59a5e09714')}</SplitSheetTitle>
+          <SplitSheetDescription>{tI18nComplete.raw('text014d10bd3c64')}</SplitSheetDescription>
+        </SplitSheetHeader>
+        <SplitSheetBody>
+          <PoliciesPanel projectId={projectId} />
+        </SplitSheetBody>
+      </SplitSheetContent>
+    </SplitSheet>
   );
 }

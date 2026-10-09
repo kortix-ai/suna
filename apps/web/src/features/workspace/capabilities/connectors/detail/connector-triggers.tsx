@@ -6,19 +6,19 @@ import { LightningIcon, PlusIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useState } from 'react';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Skeleton } from '@/components/ui/skeleton';
 import {
   appConnectors,
   describeEventSource,
   describeEventStatus,
   eventTriggersOn,
 } from '@/components/projects/schedule/event-trigger-copy';
-import { ScheduleCreateModal } from '@/components/projects/schedule/schedule-create-modal';
 import { triggerName } from '@/components/projects/schedule/schedule-copy';
+import { ScheduleCreateModal } from '@/components/projects/schedule/schedule-create-modal';
 import { useTriggerControls } from '@/components/projects/schedule/trigger-controls';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useTranslations } from '@/i18n/use-translations';
 
 /** Whether the connector's app has events, and the project's event triggers on it. Shared by the tab and its count. */
@@ -52,20 +52,26 @@ export function ConnectorTriggers({
   displayName: string;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('connectorPages');
   const { rows, isLoading, isError } = useConnectorEventTriggers(projectId, connector);
   const controls = useTriggerControls(projectId);
   const [creating, setCreating] = useState(false);
   if (isError) return null;
 
   return (
-    <section className="space-y-2">
+    <section className="space-y-3">
       <div className="flex items-center justify-between gap-3">
-        <Label>{tI18nComplete.raw('textea56119b98e2')}</Label>
+        <div className="min-w-0 space-y-0.5">
+          <Label>{tI18nComplete.raw('textea56119b98e2')}</Label>
+          <p className="text-muted-foreground text-xs text-pretty">
+            {t('triggersHelp', { name: displayName })}
+          </p>
+        </div>
         {controls.canCreate ? (
           <Button
             size="sm"
-            variant="secondary"
-            className="gap-1.5"
+            variant="outline"
+            className="shrink-0 gap-1.5"
             onClick={() => setCreating(true)}
           >
             <PlusIcon className="size-4 shrink-0" />
@@ -76,13 +82,13 @@ export function ConnectorTriggers({
       {isLoading ? (
         <Skeleton className="h-14 rounded-md" />
       ) : rows.length === 0 ? (
-        <p className="text-muted-foreground text-xs text-pretty">
+        <p className="text-muted-foreground rounded-md border border-dashed px-4 py-3 text-xs text-pretty">
           {tI18nComplete('text974e43358191', {
             name: displayName,
           })}
         </p>
       ) : (
-        <ul className="space-y-2">
+        <ul className="bg-popover divide-border divide-y rounded-md border">
           {rows.map((trigger) => {
             const status = trigger.event
               ? trigger.enabled
@@ -90,11 +96,13 @@ export function ConnectorTriggers({
                 : null
               : null;
             return (
-              <li
-                key={trigger.slug}
-                className="bg-popover flex items-center gap-3 rounded-md border px-4 py-2"
-              >
-                <LightningIcon className="text-muted-foreground size-4 shrink-0" weight="fill" />
+              <li key={trigger.slug} className="flex items-center gap-3 px-4 py-3">
+                <span
+                  aria-hidden
+                  className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md"
+                >
+                  <LightningIcon className="size-4" weight="fill" />
+                </span>
                 <span className="min-w-0 flex-1">
                   <Link
                     href={`/projects/${projectId}/customize/triggers?t=${encodeURIComponent(trigger.slug)}`}

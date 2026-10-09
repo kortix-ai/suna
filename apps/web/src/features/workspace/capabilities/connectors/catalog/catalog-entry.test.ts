@@ -3,11 +3,14 @@ import { describe, expect, test } from 'bun:test';
 
 import { testUiTranslator } from '@/i18n/test-translator';
 import {
+  catalogEntryConnectors,
   catalogEntryFromDiscover,
   catalogEntryFromEasyConnect,
+  catalogEntryKindLabel,
   computersCatalogEntry,
   connectedCatalogKeys,
   isCatalogEntryConnected,
+  type CatalogEntry,
 } from './catalog-entry';
 
 const connector = (over: Partial<DiscoverConnector> = {}): DiscoverConnector =>
@@ -158,5 +161,56 @@ describe('connected join', () => {
     expect(keys.has('github')).toBe(false);
     expect(keys.has('gmail')).toBe(true);
     expect(keys.has('provider:composio')).toBe(true);
+  });
+});
+
+describe('catalogEntryConnectors', () => {
+  const connector = (slug: string, name: string, over: Partial<AdminConnector> = {}) =>
+    ({ slug, name, provider: 'mcp', status: 'active', actions: [], ...over }) as AdminConnector;
+  const entry = (slug: string, name: string) =>
+    ({ source: 'discover', slug, name, key: `discover:${slug}` }) as unknown as CatalogEntry;
+
+  test('lists a default-named connector and its numbered sibling', () => {
+    const connectors = [
+      connector('resend-abc123', 'Resend'),
+      connector('resend-def456', 'Resend 2'),
+      connector('linear-ghi789', 'Linear'),
+    ];
+    expect(
+      catalogEntryConnectors(connectors, entry('resend', 'Resend')).map((c) => c.slug),
+    ).toEqual(['resend-abc123', 'resend-def456']);
+  });
+
+  test('includes a connector that still needs an account', () => {
+    const connectors = [connector('resend-abc123', 'Resend', { status: 'needs_auth' })];
+    expect(catalogEntryConnectors(connectors, entry('resend', 'Resend'))).toHaveLength(1);
+  });
+
+  test('a short app name does not claim longer names that start with it', () => {
+    const connectors = [connector('github-abc123', 'GitHub')];
+    expect(catalogEntryConnectors(connectors, entry('git', 'Git'))).toEqual([]);
+  });
+
+  test('the computer entry lists the computer connector', () => {
+    const connectors = [connector('computer', 'Computer', { provider: 'computer' })];
+    expect(
+      catalogEntryConnectors(connectors, { source: 'computer' } as unknown as CatalogEntry),
+    ).toHaveLength(1);
+  });
+});
+
+describe('catalogEntryKindLabel', () => {
+  const discover = (kind: string) =>
+    ({ source: 'discover', connector: { kind } }) as unknown as CatalogEntry;
+
+  test('says how each entry connects', () => {
+    expect(catalogEntryKindLabel(discover('mcp'))).toBe('MCP');
+    expect(catalogEntryKindLabel(discover('openapi'))).toBe('API');
+    expect(catalogEntryKindLabel(discover('graphql'))).toBe('GraphQL');
+    expect(catalogEntryKindLabel(discover('cli'))).toBe('CLI');
+    expect(catalogEntryKindLabel({ source: 'easy-connect' } as unknown as CatalogEntry)).toBe(
+      'App',
+    );
+    expect(catalogEntryKindLabel({ source: 'computer' } as unknown as CatalogEntry)).toBe('Native');
   });
 });

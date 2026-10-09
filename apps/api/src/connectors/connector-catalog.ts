@@ -304,6 +304,48 @@ function boundedCount(value: number | undefined, fallback: number, max: number):
   return value && value > 0 ? Math.min(Math.floor(value), max) : fallback;
 }
 
+/** The surface an app's card stands for: MCP first, as Install picks it. */
+const SURFACE_RANK: Record<ConnectorCatalogKind, number> = { mcp: 0, openapi: 1, graphql: 2, cli: 3 };
+
+/**
+ * One record per app (domain), at the position of the app's first record, and
+ * represented by its best surface.
+ */
+function onePerApp(items: ConnectorCatalogItem[]): ConnectorCatalogItem[] {
+  const order: string[] = [];
+  const best = new Map<string, ConnectorCatalogItem>();
+  for (const item of items) {
+    const current = best.get(item.domain);
+    if (!current) {
+      order.push(item.domain);
+      best.set(item.domain, item);
+    } else if (SURFACE_RANK[item.kind] < SURFACE_RANK[current.kind]) {
+      best.set(item.domain, item);
+    }
+  }
+  return order.map((domain) => best.get(domain)!);
+}
+
+/**
+ * Search results by how well the NAME matches: exact, then prefix, then the
+ * domain, then any other field. Stable inside each tier, so the index order
+ * (popularity) breaks ties.
+ */
+function rankByName(items: ConnectorCatalogItem[], query: string): ConnectorCatalogItem[] {
+  const tier = (item: ConnectorCatalogItem) => {
+    const name = item.name.toLowerCase();
+    if (name === query) return 0;
+    if (name.startsWith(query)) return 1;
+    if (item.domain.toLowerCase().startsWith(query)) return 2;
+    if (name.includes(query)) return 3;
+    return 4;
+  };
+  return items
+    .map((item, index) => ({ item, index, rank: tier(item) }))
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .map((entry) => entry.item);
+}
+
 export function createConnectorCatalog(options: CatalogOptions = {}) {
   const fetchImpl = options.fetch ?? fetch;
   const ttlMs = options.ttlMs ?? DEFAULT_TTL_MS;
@@ -418,12 +460,17 @@ export function createConnectorCatalog(options: CatalogOptions = {}) {
               .some((value) => String(value).toLowerCase().includes(query)),
           )
         : items;
-      const filtered = category
+      const scoped = category
         ? sortByPicks(
             category,
             searched.filter((item) => sectionKeysForEntry(item.categories).has(category)),
           )
-        : searched;
+        : query
+          ? rankByName(searched, query)
+          : searched;
+      // The feed has one record per surface (MCP, OpenAPI, CLI). A card is an
+      // app: its page lists every surface, so a list shows each app once.
+      const filtered = onePerApp(scoped);
       const parsedOffset = Number.parseInt(input.cursor ?? '0', 10);
       const offset = Number.isFinite(parsedOffset) && parsedOffset >= 0 ? parsedOffset : 0;
       const limit = Math.min(
@@ -490,6 +537,25 @@ export function createConnectorCatalog(options: CatalogOptions = {}) {
       };
     },
 
+    /**
+     * Icon lookups across the whole index, keyed by domain and by app name.
+     * A connector that stores no icon shows the icon of the domain that owns
+     * the host it calls, else the icon of the app it is named after
+     * (`connector-icon.ts`). Keys are lower case; the first record wins.
+     */
+    async icons(): Promise<{ byDomain: Map<string, string>; byName: Map<string, string> }> {
+      const byDomain = new Map<string, string>();
+      const byName = new Map<string, string>();
+      for (const item of await loadIndex()) {
+        if (!item.icon) continue;
+        const domain = item.domain.toLowerCase();
+        const name = item.name.toLowerCase();
+        if (!byDomain.has(domain)) byDomain.set(domain, item.icon);
+        if (!byName.has(name)) byName.set(name, item.icon);
+      }
+      return { byDomain, byName };
+    },
+
     async detail(id: string): Promise<ConnectorCatalogDetail> {
       const items = await loadIndex();
       const item = items.find((candidate) => candidate.id === id);
@@ -508,3 +574,4 @@ const catalog = createConnectorCatalog();
 export const listConnectorCatalog = catalog.list;
 export const connectorCatalogSections = catalog.sections;
 export const getConnectorCatalogDetail = catalog.detail;
+export const connectorCatalogIcons = catalog.icons;

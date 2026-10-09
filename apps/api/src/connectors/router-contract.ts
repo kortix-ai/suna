@@ -109,6 +109,12 @@ export interface AdminConnectorView extends CatalogConnector {
   sensitive: boolean;
   /** Whether the shared credential is set. */
   secretSet: boolean;
+  /**
+   * Why the last attempt to load this connector's tools failed, or null.
+   * Meaningful when `status` is `error`. Passed through
+   * `safeConnectorLastError`: no URL query, credential, or bearer value.
+   */
+  lastError: string | null;
 }
 
 export interface SyncResult {

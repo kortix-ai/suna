@@ -36,6 +36,8 @@ const CONNECTOR_NONE = crypto.randomUUID();
 // (`metadata.connected_account_id`), never in connection_credentials. Two
 // member-owned accounts, both authorized, no shared account at all.
 const CONNECTOR_GMAIL = crypto.randomUUID();
+// A connector whose last sync failed: `status: error` plus a stored reason.
+const CONNECTOR_BROKEN = crypto.randomUUID();
 const GMAIL_A1 = crypto.randomUUID();
 const GMAIL_A2 = crypto.randomUUID();
 
@@ -82,6 +84,18 @@ beforeAll(async () => {
       // hosted OAuth handshake recorded on the connection row, so this is the
       // shape `materialize` writes — and the shape the status check must read.
       config: { app: 'gmail' },
+    },
+    {
+      connectorId: CONNECTOR_BROKEN,
+      accountId: ACCOUNT,
+      projectId: PROJECT,
+      slug: 'broken',
+      name: 'Broken',
+      providerType: 'openapi',
+      config: { spec: 'https://broken.example.test/openapi.json' },
+      status: 'error',
+      lastError:
+        'failed to fetch spec at https://broken.example.test/openapi.json?api_key=synthetic-key-123: HTTP 401 Unauthorized',
     },
   ]);
   await db.insert(connectorConnections).values([
@@ -185,6 +199,19 @@ describe('admin connector list matches per-caller reachability, not just the sha
     if (!none) throw new Error('no_accounts connector missing from admin list');
     expect(none.status).toBe('needs_auth');
     expect(none.secretSet).toBe(false);
+  });
+});
+
+describe('the admin connector list carries the stored sync error', () => {
+  test('an error row returns its reason without the URL query; a healthy row returns null', async () => {
+    const list = await dbConnectorRouterDeps.listConnectors(PROJECT, USER_A);
+    const broken = list.find((c) => c.slug === 'broken');
+    if (!broken) throw new Error('broken connector missing from admin list');
+    expect(broken.status).toBe('error');
+    expect(broken.lastError).toBe(
+      'failed to fetch spec at https://broken.example.test/openapi.json?[REDACTED] HTTP 401 Unauthorized',
+    );
+    expect((await crmView(USER_A)).lastError).toBeNull();
   });
 });
 

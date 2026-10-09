@@ -204,7 +204,7 @@ describe('MCP catalog materialization', () => {
     ).toBe(false);
   });
 
-  test('only project-default credential updates can rematerialize the shared MCP catalog', async () => {
+  test('a project default forces its token, a member sign-in re-syncs, a non-default project account never publishes', async () => {
     const calls: Array<{
       projectId: string;
       accountId: string;
@@ -253,6 +253,8 @@ describe('MCP catalog materialization', () => {
         sync,
       ),
     ).toBeUndefined();
+    // A member's sign-in re-syncs, but never forces its own token: the catalog
+    // credential resolver still prefers the project account's.
     expect(
       await rematerializeCatalogAfterCredentialUpdate(
         {
@@ -266,7 +268,7 @@ describe('MCP catalog materialization', () => {
         },
         sync,
       ),
-    ).toBeUndefined();
+    ).toEqual({ synced: 1, errors: [] });
     expect(
       await rematerializeCatalogAfterCredentialUpdate(
         {
@@ -288,6 +290,7 @@ describe('MCP catalog materialization', () => {
         force: true,
         credential: 'connection-access-token',
       },
+      { projectId: 'project-1', accountId: 'account-1', force: true, credential: undefined },
     ]);
   });
 
@@ -309,6 +312,22 @@ describe('MCP catalog materialization', () => {
       'project-default-token',
     );
     expect(fallbackCalls).toBe(1);
+  });
+
+  test('with no project credential, the first signed-in member account loads the catalog', async () => {
+    const none = async () => null;
+    expect(
+      await resolveMcpCatalogCredential('connector-1', undefined, none, async () => 'member-token'),
+    ).toBe('member-token');
+    // The project account still wins when it has a credential.
+    expect(
+      await resolveMcpCatalogCredential(
+        'connector-1',
+        undefined,
+        async () => 'project-default-token',
+        async () => 'member-token',
+      ),
+    ).toBe('project-default-token');
   });
 
   test('credential-resolution errors retain safe OAuth codes and redact unknown messages', () => {

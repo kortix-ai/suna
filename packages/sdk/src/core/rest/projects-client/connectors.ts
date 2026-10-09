@@ -488,6 +488,11 @@ export interface AdminConnector {
   /** Where the connector currently obtains its server-side credential. */
   credentialSource?: 'none' | 'stored' | 'project_secret' | 'platform';
   secretSet: boolean;
+  /**
+   * Why the last attempt to load this connector's tools failed. Set when
+   * `status` is `error`. Absent on older servers.
+   */
+  lastError?: string | null;
 }
 
 export interface ConnectorsResponse {

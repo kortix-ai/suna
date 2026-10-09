@@ -15,8 +15,11 @@ import {
   listEntitledConnectorConnectionsBatch,
   resolveSessionConnectorConnectionOutcome,
 } from '../projects/lib/session-connector-bindings';
+import { config } from '../config';
 import { db } from '../shared/db';
 import { hideSupersededSlack } from './channel-rules';
+import { resolveFallbackIcons } from './connector-icon';
+import { connectorCatalogIcons } from './connector-catalog';
 import { buildAdminConnectorViews } from './connector-list';
 import {
   connectorIdsWithSharedCredentials,
@@ -463,6 +466,19 @@ export async function listConnectors(
     }
   }
   for (const slug of authorizedComposioSlugs) connectedSlugs.add(slug);
+  const fallbackIcons = await resolveFallbackIcons(
+    conns.map((row) => ({
+      slug: row.slug,
+      name: row.name,
+      provider: row.providerType,
+      config: row.config,
+    })),
+    {
+      composioLogo: async (app) =>
+        config.COMPOSIO_API_KEY ? (await import('./composio')).composioToolkitLogo(app) : null,
+      catalogIcons: connectorCatalogIcons,
+    },
+  );
   const candidates = conns.map((row) => {
     const { auth, hasAuth } = authOf(row);
     const config = row.config as {
@@ -474,7 +490,10 @@ export async function listConnectors(
       name: row.name,
       provider: row.providerType,
       platform: channelPlatform(row.config),
-      iconUrl: typeof config?.icon_url === 'string' ? config.icon_url : null,
+      iconUrl:
+        typeof config?.icon_url === 'string' && config.icon_url
+          ? config.icon_url
+          : (fallbackIcons.get(row.slug) ?? null),
       // A composio connector whose authorization never completed reports
       // `needs_auth` rather than the stored `active`. The gateway already
       // refuses every call on such a connector, so reporting `active` made the
@@ -528,6 +547,7 @@ export async function listConnectors(
               : ('none' as const),
       accounts: accountsByConnector.get(row.connectorId) ?? [],
       defaultAccount: accountsByConnector.get(row.connectorId)?.[0]?.label ?? null,
+      lastError: row.lastError,
     };
   });
   return buildAdminConnectorViews(candidates, connectedSlugs);

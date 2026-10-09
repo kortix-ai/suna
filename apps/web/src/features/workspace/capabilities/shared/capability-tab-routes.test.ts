@@ -107,6 +107,20 @@ describe('activeCapabilityTab', () => {
     expect(activeCapabilityTab('/projects/p1/customize/skills/foo')).toBeNull();
     expect(activeCapabilityTab('/projects/p1/customize/agents/a/b')).toBeNull();
   });
+  test('lights Connectors on an app page and a connector page, and no deeper', () => {
+    expect(activeCapabilityTab('/projects/p1/customize/connectors/resend')).toBe('connectors');
+    expect(activeCapabilityTab('/projects/p1/customize/connectors/connected/resend-abc123')).toBe(
+      'connectors',
+    );
+    expect(activeCapabilityTab('/projects/p1/customize/connectors/connected/resend-abc123/')).toBe(
+      'connectors',
+    );
+    expect(
+      activeCapabilityTab('/projects/p1/customize/connectors/connected/resend-abc123/x'),
+    ).toBeNull();
+    // Only `connectors` earns the six-segment match.
+    expect(activeCapabilityTab('/projects/p1/customize/skills/a/b')).toBeNull();
+  });
   test('matches the tab segment', () => {
     expect(activeCapabilityTab('/projects/p1/customize/agents')).toBe('agent');
     expect(activeCapabilityTab('/projects/p1/customize/connectors')).toBe('connectors');

@@ -32,6 +32,7 @@ import {
   type CatalogSource,
 } from './catalog-entry';
 import { CATEGORY_ROW_CAP, localizedSectionTitle } from './connector-categories';
+import { mergeSearchEntries } from './merge-search';
 
 /** Apps per request. One page fills several rows of the widest grid, so a
  *  scroll-triggered fetch is felt as the grid growing rather than as a jump. */
@@ -221,7 +222,7 @@ export async function listConnectCatalogPage(input: {
 }
 
 /**
- * The catalogue behind the Discovery and All tabs, from whichever of the two
+ * The catalogue behind the All tab, from whichever of the two
  * sources this project actually has.
  *
  * **Why two sources.** `connectors_api_discover` resolves to `false` by
@@ -258,6 +259,7 @@ export function useCatalog(
   query: string,
   opts: {
     enabled: boolean;
+    /** The API/MCP catalogue is on for this project (`connectors_api_discover`). */
     discoverEnabled: boolean;
     /** The category the grid is filtered to, or `null` for everything. */
     focusCategory?: string | null;
@@ -267,17 +269,20 @@ export function useCatalog(
 ): CatalogState {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { debouncedValue: activeQuery } = useDebounce(query.trim(), 300);
-  const source: CatalogSource = opts.discoverEnabled ? 'discover' : 'easy-connect';
   const category = opts.focusCategory ?? null;
   const computers = opts.computers === true;
   const searching = activeQuery.length > 0;
 
-  // Probed whenever Easy Connect is the source, whether or not the catalogue is
-  // `enabled`. `ConnectorsPage` turns Discovery and All OFF when this answers
-  // `absent`, which turns `enabled` off with them — a probe gated on `enabled`
-  // would then have nothing left to keep it answered, and the tabs would
-  // oscillate. It is one cached request either way.
-  const connectStatus = useConnectProviderStatus(source === 'easy-connect');
+  // Always probed, whether or not the catalogue is `enabled`: the answer picks
+  // the source, and `ConnectorsPage` turns the All tab OFF when it is `absent`
+  // with no API/MCP catalogue either. It is one cached request.
+  const connectStatus = useConnectProviderStatus(true);
+  // One catalogue, no source toggle. Managed apps drive browsing; a search also
+  // asks the API/MCP catalogue (below). With no managed provider on this
+  // deployment, the API/MCP catalogue is the whole catalogue.
+  const source: CatalogSource =
+    opts.discoverEnabled && connectStatus.state === 'absent' ? 'discover' : 'easy-connect';
+  const searchDirect = opts.discoverEnabled && source === 'easy-connect' && searching;
 
   // `unknown` proceeds: the probe failed, and refusing to load a catalogue that
   // may well exist is the worse of the two mistakes.
@@ -302,7 +307,7 @@ export function useCatalog(
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => (last.hasMore ? last.nextCursor : undefined),
     staleTime: 5 * 60_000,
-    enabled: opts.enabled && source === 'discover',
+    enabled: opts.enabled && (source === 'discover' || searchDirect),
     placeholderData: keepPreviousData,
   });
 
@@ -364,12 +369,16 @@ export function useCatalog(
         ),
       );
     }
-    return nativeEntries.concat(
-      (easyConnectQuery.data?.pages ?? []).flatMap((page) =>
-        page.apps.map(catalogEntryFromEasyConnect),
-      ),
+    const managed = (easyConnectQuery.data?.pages ?? []).flatMap((page) =>
+      page.apps.map(catalogEntryFromEasyConnect),
     );
+    if (!searchDirect) return nativeEntries.concat(managed);
+    // ponytail: only the API/MCP catalogue's first page joins a search; its
+    // ranking puts the matches there. Page it too if users miss results.
+    const direct = (discoverQuery.data?.pages[0]?.items ?? []).map(catalogEntryFromDiscover);
+    return nativeEntries.concat(mergeSearchEntries(managed, direct));
   }, [
+    searchDirect,
     tI18nComplete,
     computers,
     category,

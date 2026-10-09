@@ -54,7 +54,11 @@ import {
   attachComputerConnection,
   computerCatalog,
 } from './computers';
-import { ensureDefaultConnection, resolveCredentialValue } from './credentials';
+import {
+  ensureDefaultConnection,
+  resolveCredentialValue,
+  resolveFirstMemberCredential,
+} from './credentials';
 import { listMcpTools, type FetchImpl } from './call';
 import { assertConnectorEndpointUrl, connectorEgressFetch } from './egress';
 import type { ProjectPolicySpec } from '../projects/policies';
@@ -118,14 +122,16 @@ export async function rematerializeCatalogAfterCredentialUpdate(
   },
   sync: typeof syncProjectConnectors = syncProjectConnectors,
 ): Promise<SyncResult | undefined> {
-  // connectorActions is one project-wide catalog. Only its canonical shared
-  // credential may write it. A member-owned or non-default connection can have
-  // tenant-specific tools and must never publish those tools to other users.
-  if (input.provider !== 'mcp' || input.ownerType !== 'project' || !input.isDefault) {
-    return undefined;
-  }
+  // connectorActions is one project-wide catalog. A project default account
+  // forces its own token. A member account's sign-in only re-syncs:
+  // `resolveMcpCatalogCredential` still prefers the project account, and uses
+  // a member token only when no project account has one. A non-default project
+  // account never publishes.
+  if (input.provider !== 'mcp') return undefined;
+  const projectDefault = input.ownerType === 'project' && input.isDefault;
+  if (input.ownerType === 'project' && !input.isDefault) return undefined;
   const mcpCredentialOverrides =
-    input.connectorId && input.credential
+    projectDefault && input.connectorId && input.credential
       ? new Map([[input.connectorId, input.credential]])
       : undefined;
   return sync(input.projectId, input.accountId, {
@@ -156,12 +162,21 @@ export function mcpCatalogCredentialError(error: unknown): string {
   return 'MCP catalog credential resolution failed';
 }
 
+/**
+ * The credential an MCP catalog is fetched with: an explicit override, else
+ * the project account's, else the earliest signed-in member account's (a
+ * product decision, 2026-10-09: an app signed in only "for you" must still
+ * load its tools).
+ */
 export async function resolveMcpCatalogCredential(
   connectorId: string,
   overrides: ReadonlyMap<string, string> | undefined,
   resolve: typeof resolveCredentialValue = resolveCredentialValue,
+  resolveMember: typeof resolveFirstMemberCredential = resolveFirstMemberCredential,
 ): Promise<string | null> {
-  return overrides?.get(connectorId) ?? resolve(connectorId, null);
+  const override = overrides?.get(connectorId);
+  if (override) return override;
+  return (await resolve(connectorId, null)) ?? resolveMember(connectorId);
 }
 
 /**
@@ -775,7 +790,9 @@ class SupersededConnectorSyncError extends Error {
 
 /** Open a sync's write fence: the database time the sync starts. */
 export async function openConnectorSyncFence(projectId: string): Promise<ConnectorSyncFence> {
-  const rows = (await db.execute(sql`select clock_timestamp()::text as started_at`)) as unknown as Array<{
+  const rows = (await db.execute(
+    sql`select clock_timestamp()::text as started_at`,
+  )) as unknown as Array<{
     started_at: string;
   }>;
   const startedAt = rows[0]?.started_at;
@@ -906,7 +923,9 @@ async function upsertConnector(
         ...(currentId ? {} : LEGACY_EMPTY_COMPUTER_PROFILE),
         ...((stored?.config as Record<string, unknown> | null) ?? {}),
         ...resolvedConfig,
-        ...((stored?.config as { sensitive?: unknown } | null)?.sensitive === true ? { sensitive: true } : {}),
+        ...((stored?.config as { sensitive?: unknown } | null)?.sensitive === true
+          ? { sensitive: true }
+          : {}),
       };
     }
 
@@ -1065,7 +1084,11 @@ async function existingComputerConnectorSpecs(
   return rows
     .filter((row) => !declaredSlugs.has(row.slug))
     .map((row) =>
-      computerConnectorSpec({ slug: row.slug, name: row.name, sensitive: storedSensitive(row.config) }),
+      computerConnectorSpec({
+        slug: row.slug,
+        name: row.name,
+        sensitive: storedSensitive(row.config),
+      }),
     );
 }
 
@@ -1135,7 +1158,10 @@ export async function ensureComputerConnector(
  * this project, or one revoked by unpairing, never comes back by itself.
  * `userId` null (API keys, service accounts) ensures only the connector.
  */
-export async function ensureProjectComputer(projectId: string, userId: string | null): Promise<void> {
+export async function ensureProjectComputer(
+  projectId: string,
+  userId: string | null,
+): Promise<void> {
   // An operator acting as a customer (impersonation) must never write their
   // own machines, or anything else, into the customer's project: the grant
   // allows reads, and the rows would outlive it.
@@ -1151,7 +1177,8 @@ export async function ensureProjectComputer(projectId: string, userId: string | 
     .orderBy(sql`${connectors.slug} = ${COMPUTER_SLUG} desc`, connectors.createdAt)
     .limit(1);
   if (!project) return;
-  const connectorId = project.existing ?? (await ensureComputerConnector(projectId, project.accountId));
+  const connectorId =
+    project.existing ?? (await ensureComputerConnector(projectId, project.accountId));
   if (!userId) return;
 
   type Reader = Pick<typeof db, 'select'>;
@@ -1169,7 +1196,10 @@ export async function ensureProjectComputer(projectId: string, userId: string | 
           eq(connectorConnections.connectorId, connectorId),
           eq(connectorConnections.tunnelId, tunnelId),
           or(
-            and(eq(connectorConnections.ownerType, 'member'), eq(connectorConnections.ownerId, userId)),
+            and(
+              eq(connectorConnections.ownerType, 'member'),
+              eq(connectorConnections.ownerId, userId),
+            ),
             eq(connectorConnections.status, 'active'),
           ),
         ),
@@ -1179,7 +1209,10 @@ export async function ensureProjectComputer(projectId: string, userId: string | 
       .select({ tunnelId: tunnelConnections.tunnelId, name: tunnelConnections.name })
       .from(tunnelConnections)
       .where(
-        and(eq(tunnelConnections.ownerUserId, userId), notExists(held(reader, tunnelConnections.tunnelId))),
+        and(
+          eq(tunnelConnections.ownerUserId, userId),
+          notExists(held(reader, tunnelConnections.tunnelId)),
+        ),
       )
       .orderBy(tunnelConnections.createdAt);
   if ((await missing(db)).length === 0) return;
@@ -1357,7 +1390,9 @@ async function loadSourceText(project: GitBackedProject, spec: string): Promise<
         },
       });
       if (!res.ok) {
-        throw new SpecLoadError(`failed to fetch spec at ${spec}: HTTP ${res.status} ${res.statusText}`);
+        throw new SpecLoadError(
+          `failed to fetch spec at ${spec}: HTTP ${res.status} ${res.statusText}`,
+        );
       }
       raw = await res.text();
     } catch (e) {
