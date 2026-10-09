@@ -20,7 +20,6 @@ import { listResolvedProjectSecrets } from '../projects/secrets';
 import { downloadAppArtifact, extractAppArchive } from './artifacts';
 import { resolveAppRuntimeEnvironment } from './environment';
 import { appRuntimeIdentityEnv } from './viewer';
-import { appAuthEnv } from './tokens';
 import { createBuildLog } from './build-log';
 import { AppHostingProvider } from './hosting';
 import { normalizeAppBuild, type AppSourceSpec } from './spec';
@@ -922,7 +921,9 @@ async function provisionDeploymentRuntime(input: {
     envVars: {
       ...runtimeEnvironment.env,
       ...appRuntimeIdentityEnv(context.app),
-      ...(await appAuthEnv(context.app)),
+      // Loaded on use: the App gate imports this module, and its hot path (and every
+      // hand-written module mock of it) does not need the token machinery.
+      ...(await (await import('./tokens')).appAuthEnv(context.app)),
     },
   });
   state.runtimeExternalId = handle.externalId;
