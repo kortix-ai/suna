@@ -45,7 +45,11 @@ describe('connector catalogue search', () => {
 
   test('ranks an exact name match first, then names that start with the query', async () => {
     const page = await catalog().list({ q: 'stripe' });
-    expect(page.items.map((entry) => entry.name)).toEqual(['Stripe', 'Stripe Sync', 'useautumn.com']);
+    expect(page.items.map((entry) => entry.name)).toEqual([
+      'Stripe',
+      'Stripe Sync',
+      'useautumn.com',
+    ]);
   });
 
   test('browsing without a query also shows each app once, in index order', async () => {
@@ -55,5 +59,31 @@ describe('connector catalogue search', () => {
       'stripe.com',
       'stripesync.example',
     ]);
+  });
+});
+
+describe('connector catalogue sections', () => {
+  test('a section heading counts apps, the same number its category filter returns', async () => {
+    const cat = createConnectorCatalog({
+      fetch: (async () =>
+        new Response(
+          JSON.stringify({
+            data: [
+              { ...item('a-mcp', 'mcp', 'A', 'a.example'), categories: ['cloud'] },
+              { ...item('a-api', 'openapi', 'A', 'a.example'), categories: ['cloud'] },
+              { ...item('a-cli', 'cli', 'A', 'a.example'), categories: ['cloud'] },
+              { ...item('b-mcp', 'mcp', 'B', 'b.example'), categories: ['cloud'] },
+            ],
+          }),
+          { headers: { 'content-type': 'application/json' } },
+        )) as unknown as typeof fetch,
+    });
+    const { sections, categories } = await cat.sections({});
+    const cloud = sections.find((section) => section.key === 'cloud');
+    if (!cloud) throw new Error('cloud section missing');
+    const page = await cat.list({ category: 'cloud' });
+    expect(cloud.total).toBe(2);
+    expect(page.total).toBe(cloud.total);
+    expect(categories.find((category) => category.key === 'cloud')?.count).toBe(2);
   });
 });

@@ -141,9 +141,7 @@ function normalizeItem(value: unknown): ConnectorCatalogItem | null {
   };
 }
 
-function authTemplate(
-  surface: Record<string, unknown>,
-): ConnectorTemplate['auth'] | undefined {
+function authTemplate(surface: Record<string, unknown>): ConnectorTemplate['auth'] | undefined {
   const auth = surface.auth as Record<string, unknown> | undefined;
   if (!auth || auth.status === 'none' || auth.status === 'optional') return undefined;
   if (auth.status !== 'required') return undefined;
@@ -155,8 +153,7 @@ function authTemplate(
       : [];
     for (const use of uses) {
       const mechanics = (use as Record<string, unknown>)?.mechanics as
-        | Record<string, unknown>
-        | undefined;
+        Record<string, unknown> | undefined;
       if (!mechanics) continue;
       const scheme = nullableString(mechanics.scheme)?.toLowerCase();
       const headerName = nullableString(mechanics.headerName);
@@ -304,8 +301,18 @@ function boundedCount(value: number | undefined, fallback: number, max: number):
   return value && value > 0 ? Math.min(Math.floor(value), max) : fallback;
 }
 
+/** How many apps (domains) a set of records covers: what a list of it shows. */
+function appCount(items: ConnectorCatalogItem[]): number {
+  return new Set(items.map((item) => item.domain)).size;
+}
+
 /** The surface an app's card stands for: MCP first, as Install picks it. */
-const SURFACE_RANK: Record<ConnectorCatalogKind, number> = { mcp: 0, openapi: 1, graphql: 2, cli: 3 };
+const SURFACE_RANK: Record<ConnectorCatalogKind, number> = {
+  mcp: 0,
+  openapi: 1,
+  graphql: 2,
+  cli: 3,
+};
 
 /**
  * One record per app (domain), at the position of the app's first record, and
@@ -503,8 +510,8 @@ export function createConnectorCatalog(options: CatalogOptions = {}) {
       const groups = groupIntoSections(items, (item) => item.categories);
       // The feed publishes one record per surface (`stripe-com`,
       // `stripe-com-openapi`, `stripe-com-cli`). A card resolves every surface
-      // for its domain, so a slice shows one card per domain. `total` still
-      // counts every record, because that is what "View all" lists.
+      // for its domain, so a slice shows one card per domain. `total` counts
+      // apps (domains), because \"View all\" (`list`) shows each app once.
       const onePerDomain = (candidates: ConnectorCatalogItem[]) => {
         const seen = new Set<string>();
         const distinct: ConnectorCatalogItem[] = [];
@@ -526,13 +533,13 @@ export function createConnectorCatalog(options: CatalogOptions = {}) {
         sections: groups.slice(0, maxCategories).map((group) => ({
           key: group.category,
           label: sectionTitle(group.category),
-          total: group.items.length,
+          total: appCount(group.items),
           items: onePerDomain(sortByPicks(group.category, group.items)),
         })),
         categories: groups.map((group) => ({
           key: group.category,
           label: sectionTitle(group.category),
-          count: group.items.length,
+          count: appCount(group.items),
         })),
       };
     },
