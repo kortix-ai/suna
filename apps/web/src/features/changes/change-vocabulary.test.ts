@@ -313,6 +313,30 @@ describe('splitting a whole-change patch', () => {
       expect([...splitUnifiedPatch(renamed).keys()]).toEqual(['plans/plan.md']);
     });
 
+    // The header heuristic cannot split an unquoted rename whose NEW path
+    // itself contains " b/": the last-" b/" cut lands inside the new path.
+    // The `rename to` line names it exactly.
+    test('a pure rename whose NEW path contains " b/" keys by the exact new path', () => {
+      const renamed = [
+        'diff --git a/plan b/x.md b/plans/plan b/x.md',
+        'similarity index 100%',
+        'rename from plan b/x.md',
+        'rename to plans/plan b/x.md',
+      ].join('\n');
+      expect([...splitUnifiedPatch(renamed).keys()]).toEqual(['plans/plan b/x.md']);
+    });
+
+    test('a pure rename with a quoted rename-to keys by the decoded new path', () => {
+      const name = 'новая папка/файл.txt';
+      const renamed = [
+        `diff --git "a/stara/стар файл.txt" "b/${quoted(name)}"`,
+        'similarity index 100%',
+        'rename from stara/стар файл.txt',
+        `rename to "${quoted(name)}"`,
+      ].join('\n');
+      expect([...splitUnifiedPatch(renamed).keys()]).toEqual([name]);
+    });
+
     // The renderer's own parser (@pierre/diffs) only understands the unquoted
     // `--- a/…` / `+++ b/…` / `diff --git a/… b/…` forms: a quoted header both
     // crashes its parser and shows git's octal escapes as the file name. The

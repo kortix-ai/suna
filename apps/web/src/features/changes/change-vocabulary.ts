@@ -290,6 +290,12 @@ function patchChunkPath(chunk: string): string | null {
     return stripBPrefixed(unquoteGitPath(plusLine));
   }
 
+  // A pure rename carries no +++ line, and the header heuristic mis-splits
+  // when the NEW path itself contains ` b/`. The `rename to <path>` line
+  // names the new path exactly (no `b/` prefix, maybe C-quoted) — use it.
+  const renameTo = chunk.match(/^rename to (.+)$/m)?.[1];
+  if (renameTo) return unquoteGitPath(renameTo.trim());
+
   const header = chunk.match(/^diff --git (.+)$/m)?.[1];
   if (!header) return null;
   if (header.startsWith('"')) {
