@@ -37,3 +37,23 @@ describe('summarize', () => {
     expect(fail.go).toBe(false);
   });
 });
+
+describe('empty replies', () => {
+  const UI_TWO: EvalCase = { id: 'u2', expect: 'ui', prompt: 'Compare C and D' };
+
+  test('an empty or whitespace reply is an error, not prose', () => {
+    expect(scoreReply(PROSE, '  \n')).toMatchObject({ error: 'empty reply', issues: ['empty reply'], overuse: false });
+    expect(scoreReply(UI, '').underuse).toBe(false);
+  });
+
+  test('errored cases leave the overuse and underuse denominators', () => {
+    const result = summarize('m', [UI, UI_TWO], [scoreReply(UI, 'Just text.'), scoreReply(UI_TWO, '')], [100]);
+    expect(result.underuseRate).toBe(1);
+    expect(result.errorCount).toBe(1);
+  });
+
+  test('any errored case fails the gate even when every rate passes', () => {
+    const result = summarize('m', [UI, PROSE], [scoreReply(UI, GOOD), scoreReply(PROSE, '')], [100]);
+    expect(result).toMatchObject({ errorCount: 1, validRate: 1, overuseRate: 0, underuseRate: 0, go: false });
+  });
+});

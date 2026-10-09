@@ -20,6 +20,8 @@ export interface CaseScore {
   underuse: boolean;
   forbidden: string[];
   issues: string[];
+  /** Set when the reply carries no usable content. An errored case is excluded from the rates. */
+  error?: string;
 }
 
 function collect(node: { type: string; props: Record<string, unknown> } | null, into: Set<string>): Set<string> {
@@ -37,6 +39,20 @@ function collect(node: { type: string; props: Record<string, unknown> } | null, 
 
 /** Score one model reply against its case. Pure: no network, no clock. */
 export function scoreReply(testCase: EvalCase, reply: string): CaseScore {
+  // A 200 with no content is a gateway fault, not a prose answer.
+  if (reply.trim() === '') {
+    return {
+      id: testCase.id,
+      blocks: 0,
+      validBlocks: 0,
+      components: [],
+      overuse: false,
+      underuse: false,
+      forbidden: [],
+      issues: ['empty reply'],
+      error: 'empty reply',
+    };
+  }
   const blocks = splitGenui(reply).filter((segment) => segment.kind === 'genui');
   const components = new Set<string>();
   const issues: string[] = [];
@@ -70,6 +86,8 @@ export interface ModelSummary {
   underuseRate: number;
   forbiddenCount: number;
   medianCompletionTokens: number;
+  /** Cases whose reply was empty. Any error fails the gate. */
+  errorCount: number;
   go: boolean;
 }
 
@@ -77,24 +95,29 @@ export interface ModelSummary {
 export const GATE = { validRate: 0.97, overuseRate: 0.1, underuseRate: 0.25, forbiddenCount: 1 } as const;
 
 export function summarize(model: string, cases: EvalCase[], scores: CaseScore[], completionTokens: number[]): ModelSummary {
+  const expectOf = new Map(cases.map((c) => [c.id, c.expect]));
+  const scored = scores.filter((s) => !s.error);
+  const prose = scored.filter((s) => expectOf.get(s.id) === 'prose');
+  const ui = scored.filter((s) => expectOf.get(s.id) === 'ui');
+  const rate = (hits: number, of: number) => (of === 0 ? 0 : hits / of);
   const blocks = scores.reduce((sum, s) => sum + s.blocks, 0);
   const valid = scores.reduce((sum, s) => sum + s.validBlocks, 0);
-  const proseCases = cases.filter((c) => c.expect === 'prose').length;
-  const uiCases = cases.filter((c) => c.expect === 'ui').length;
   const sorted = [...completionTokens].sort((a, b) => a - b);
   const summary = {
     model,
     cases: scores.length,
     blocks,
     validRate: blocks === 0 ? 0 : valid / blocks,
-    overuseRate: proseCases === 0 ? 0 : scores.filter((s) => s.overuse).length / proseCases,
-    underuseRate: uiCases === 0 ? 0 : scores.filter((s) => s.underuse).length / uiCases,
+    overuseRate: rate(prose.filter((s) => s.overuse).length, prose.length),
+    underuseRate: rate(ui.filter((s) => s.underuse).length, ui.length),
     forbiddenCount: scores.reduce((sum, s) => sum + s.forbidden.length, 0),
     medianCompletionTokens: sorted.length === 0 ? 0 : sorted[Math.floor(sorted.length / 2)]!,
+    errorCount: scores.length - scored.length,
   };
   return {
     ...summary,
     go:
+      summary.errorCount === 0 &&
       summary.validRate >= GATE.validRate &&
       summary.overuseRate <= GATE.overuseRate &&
       summary.underuseRate <= GATE.underuseRate &&
