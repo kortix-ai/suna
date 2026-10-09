@@ -56,7 +56,7 @@ const SHIMMER_BASE = {
   dark: 'hsl(240 3.8% 46.1%)', // hex-allowlist: web text-shimmer `#71717a` (zinc-500) = hsl(240 3.8% 46.1%)
 } as const;
 
-export type TextShimmerTone = 'default' | 'muted';
+type TextShimmerTone = 'default' | 'muted';
 
 type TextVariant = ComponentProps<typeof Text>['variant'];
 

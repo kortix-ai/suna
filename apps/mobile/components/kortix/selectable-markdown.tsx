@@ -109,7 +109,7 @@ function noop() {}
 const ANDROID_LINK_TAPS: Partial<TextProps> =
   Platform.OS === 'android' ? { onPress: noop, accessibilityRole: 'text' } : {};
 
-export interface SelectableMarkdownTextProps {
+interface SelectableMarkdownTextProps {
   /** The markdown text content to render */
   children: string;
   /** Accepted for compatibility; the markdown renderer does not apply it. */

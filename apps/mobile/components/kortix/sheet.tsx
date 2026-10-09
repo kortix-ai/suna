@@ -121,7 +121,7 @@ export function useSheetBackground(): string {
  * `hideClose` drops the button and keeps the title centred. `titleTrailing`
  * puts one icon button at the far right of that row.
  */
-export const SHEET_DEFAULTS = {
+const SHEET_DEFAULTS = {
   /** Top corner radius. */
   radius: 32,
   /** Side padding of the title row: the project edge. */
@@ -205,7 +205,7 @@ export function SheetTitleRow({
   );
 }
 
-export interface KortixBottomSheetModalProps extends BottomSheetModalProps {
+interface KortixBottomSheetModalProps extends BottomSheetModalProps {
   /** Centred title in the handle area, with a close button at the far left. */
   title?: string;
   /** A titled sheet without the close button. */

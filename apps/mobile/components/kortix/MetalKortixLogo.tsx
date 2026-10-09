@@ -118,7 +118,7 @@ interface MetalKortixLogoProps {
 }
 
 /** How long a style switch takes to crossfade. */
-export const LOGO_STYLE_CROSSFADE_MS = 260;
+const LOGO_STYLE_CROSSFADE_MS = 260;
 
 export function MetalKortixLogo(props: MetalKortixLogoProps) {
   const { size, style } = props;
