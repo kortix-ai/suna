@@ -15,7 +15,7 @@ describe('queue terminal recovery', () => {
         observe: async (...args) => { observed.push(args); return { observation: 'terminal', endReason, daemonAnswered: true, orphanedPrompt: false }; },
         clear: async (...args) => { cleared.push(args); return true; },
       });
-      expect(settled).toEqual([endReason]);
+      expect(settled).toEqual([{ token: 'token-1', reason: endReason }]);
       expect(observed[0]?.[3]).toMatchObject(turn);
       expect(cleared).toEqual([['box-1', 'token-1', undefined, endReason]]);
     });
@@ -58,7 +58,7 @@ test('concurrent turn readers share one recovery without waiting for the runtime
 
 test('a recovered completion wakes its session immediately and does not impose a cooldown', async () => {
   const calls: string[] = [];
-  const recover = async () => { calls.push('recover'); return ['completed' as const]; };
+  const recover = async () => { calls.push('recover'); return [{ token: 'token-1', reason: 'completed' as const }]; };
   const wake = async (sessionId: string) => { calls.push(sessionId); return false; };
   const recoveredBox = { ...box, sandboxId: 'handoff-box' };
   scheduleSessionTurnRecovery(recoveredBox, recover, wake, async () => {});
@@ -90,10 +90,10 @@ describe('a recovered turn close pushes once', () => {
       clear: async () => won,
     });
   // The real notifier rule with a synthetic session row.
-  const realNotify = (childSession: boolean, events: SessionPushEvent[]) =>
+  const realNotify = (childSession: boolean, events: SessionPushEvent[], endErrorNames: (string | null)[] = []) =>
     (input: Parameters<typeof notifyClosedTurn>[0]) =>
       notifyClosedTurn(input, {
-        loadSession: async () => ({ projectId: PROJECT, childSession }),
+        loadSession: async () => ({ projectId: PROJECT, childSession, endErrorNames }),
         notify: async (event) => { events.push(event); return { sent: 0, reason: 'no_devices' }; },
       });
   const flush = async () => { for (let i = 0; i < 5; i++) await Bun.sleep(0); };
@@ -162,6 +162,20 @@ describe('a recovered turn close pushes once', () => {
     expect(order).toEqual(['push:failed', 'wake']);
   });
 
+  test('a Stop the user asked for, closed here as failed, sends nothing', async () => {
+    const events: SessionPushEvent[] = [];
+    scheduleSessionTurnRecovery(freshBox(), settle('failed'), async () => false, realNotify(false, events, ['UserStop']));
+    await flush();
+    expect(events).toEqual([]);
+  });
+
+  test('a real failure closed here still sends its error', async () => {
+    const events: SessionPushEvent[] = [];
+    scheduleSessionTurnRecovery(freshBox(), settle('failed'), async () => false, realNotify(false, events, ['APIError']));
+    await flush();
+    expect(events).toEqual([{ type: 'error', sessionId: 'session-1', projectId: PROJECT }]);
+  });
+
   test('the completion push waits for the wake', async () => {
     const order: string[] = [];
     scheduleSessionTurnRecovery(freshBox(), settle('completed'),
@@ -173,9 +187,12 @@ describe('a recovered turn close pushes once', () => {
 
   test('two cleared turns send one push, error when either failed', async () => {
     const calls: unknown[] = [];
-    scheduleSessionTurnRecovery(freshBox(), async () => ['completed', 'failed'], async () => false, async (input) => { calls.push(input); });
+    scheduleSessionTurnRecovery(freshBox(), async () => [
+      { token: 'token-a', reason: 'completed' },
+      { token: 'token-b', reason: 'failed' },
+    ], async () => false, async (input) => { calls.push(input); });
     await flush();
-    expect(calls).toEqual([{ sessionId: 'session-1', reason: 'failed' }]);
+    expect(calls).toEqual([{ sessionId: 'session-1', reason: 'failed', turnTokens: ['token-b'] }]);
   });
 });
 

@@ -128,13 +128,30 @@ describe('closedTurnPushType — a turn the control plane closed', () => {
   });
 });
 
+describe('closedTurnPushType — a requested stop is not a failure', () => {
+  test('a failed turn whose every end error is a stop or an abort sends nothing', () => {
+    for (const name of ['UserStop', 'QueueInterrupt', 'MessageAbortedError', 'AbortError']) {
+      expect(closedTurnPushType({ reason: 'failed', endErrorNames: [name] })).toBeNull();
+    }
+    expect(closedTurnPushType({ reason: 'failed', endErrorNames: ['UserStop', 'AbortError'] })).toBeNull();
+  });
+  test('a real failure still sends its error', () => {
+    expect(closedTurnPushType({ reason: 'failed', endErrorNames: ['APIError'] })).toBe('error');
+    expect(closedTurnPushType({ reason: 'failed', endErrorNames: [null] })).toBe('error');
+    expect(closedTurnPushType({ reason: 'failed', endErrorNames: [] })).toBe('error');
+    expect(closedTurnPushType({ reason: 'failed', endErrorNames: ['UserStop', 'APIError'] })).toBe('error');
+  });
+});
+
 describe('notifyClosedTurn', () => {
-  function harness(session: { projectId: string; childSession: boolean } | null | Error) {
+  function harness(session: { projectId: string; childSession: boolean; endErrorNames?: (string | null)[] } | null | Error) {
     const loads: string[] = [];
+    const loadedTokens: unknown[] = [];
     const events: unknown[] = [];
     const deps = {
-      loadSession: async (sessionId: string) => {
+      loadSession: async (sessionId: string, turnTokens: readonly string[]) => {
         loads.push(sessionId);
+        loadedTokens.push(turnTokens);
         if (session instanceof Error) throw session;
         return session;
       },
@@ -143,7 +160,7 @@ describe('notifyClosedTurn', () => {
         return { sent: 1, reason: 'sent' as const, result: { tickets: [], invalidTokens: [] } as never };
       },
     };
-    return { loads, events, deps };
+    return { loads, loadedTokens, events, deps };
   }
 
   test('a completed turn notifies the session project once', async () => {
@@ -154,6 +171,17 @@ describe('notifyClosedTurn', () => {
   test('a failed turn sends an error even when a prompt was promoted', async () => {
     const h = harness({ projectId: PROJECT, childSession: false });
     await notifyClosedTurn({ sessionId: SESSION, reason: 'failed', promoted: true }, h.deps);
+    expect(h.events).toEqual([{ type: 'error', sessionId: SESSION, projectId: PROJECT }]);
+  });
+  test('a requested stop the control plane closed as failed sends nothing', async () => {
+    const h = harness({ projectId: PROJECT, childSession: false, endErrorNames: ['UserStop'] });
+    await notifyClosedTurn({ sessionId: SESSION, reason: 'failed', turnTokens: ['token-1'] }, h.deps);
+    expect(h.loadedTokens).toEqual([['token-1']]);
+    expect(h.events).toEqual([]);
+  });
+  test('a real failure with a named error still sends its error', async () => {
+    const h = harness({ projectId: PROJECT, childSession: false, endErrorNames: ['APIError'] });
+    await notifyClosedTurn({ sessionId: SESSION, reason: 'failed', turnTokens: ['token-1'] }, h.deps);
     expect(h.events).toEqual([{ type: 'error', sessionId: SESSION, projectId: PROJECT }]);
   });
   test('a child session sends nothing', async () => {

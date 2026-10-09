@@ -265,18 +265,23 @@ async function releaseQueuedPromptAfterTerminalTurn(
 }
 
 /**
- * Push for a turn this pass closed. Only `completed`/`failed` notify, and
- * never a pass that requeued the prompt: the user still waits on it.
+ * Push for a turn this pass closed. Only `completed`/`failed` notify.
+ *
+ * The `requeued` gate is defense-in-depth: today `redeliverAbandonedPrompt`
+ * requeues only for `abandoned`/`runtime_gone`/`unknown`, which never push.
+ * If that set ever grows, a pass that gave the prompt back must still stay
+ * silent: the user is still waiting on it.
  */
 function notifyReaperClosedTurn(
   dependencies: SandboxReaperDependencies,
   sessionId: string,
+  turnToken: string,
   reason: SessionTurnEndReason,
   promoted: boolean,
   requeued: boolean,
 ): void {
   if ((reason !== 'completed' && reason !== 'failed') || requeued) return;
-  void dependencies.notifyClosedTurn({ sessionId, reason, promoted });
+  void dependencies.notifyClosedTurn({ sessionId, reason, promoted, turnTokens: [turnToken] });
 }
 
 export interface SandboxReaperScope {
@@ -896,7 +901,7 @@ async function actOnTurnObservation(
       // The acceptance write and the relay's `end` were both lost: when
       // this pass won the clear, its push is the only one.
       if (clearWon && endReason) {
-        notifyReaperClosedTurn(dependencies, row.sessionId, endReason, promoted, requeued);
+        notifyReaperClosedTurn(dependencies, row.sessionId, turn.token, endReason, promoted, requeued);
       }
     } else if (
       reconciliation === 'deferred' &&
@@ -1028,7 +1033,7 @@ async function settleTerminalTurn(
   if (cleared) {
     const promoted = await releaseQueuedPromptAfterTerminalTurn(dependencies, row, turn);
     // The relay's `end` was lost, so this close is the only one that can notify.
-    notifyReaperClosedTurn(dependencies, row.sessionId, clearReason, promoted, requeued);
+    notifyReaperClosedTurn(dependencies, row.sessionId, turn.token, clearReason, promoted, requeued);
   }
 }
 

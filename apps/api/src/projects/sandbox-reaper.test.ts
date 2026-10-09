@@ -4,6 +4,7 @@ import * as realComputeMetering from '../billing/services/compute-metering';
 import * as realProviders from '../platform/providers';
 import { mockConfigModule } from './reaping/test-support/mock-config';
 import { __resetProbeBackoffForTests } from './reaping/box-reaper';
+import { notifyClosedTurn, type SessionPushEvent } from '../notifications/session-push';
 
 // ── mock state ──────────────────────────────────────────────────────────────
 let candidates: any[] = [];
@@ -88,7 +89,9 @@ let queuedPromptWaiting = true;
 /** True = `promoteNextInboxRow` throws. */
 let promoteThrows = false;
 /** Every push the pass asked for after it closed a turn. */
-let closedTurnPushes: Array<{ sessionId: string; reason: string; promoted?: boolean }> = [];
+let closedTurnPushes: Array<{ sessionId: string; reason: string; promoted?: boolean; turnTokens?: readonly string[] }> = [];
+/** Replaces the push recorder: a test runs the real `notifyClosedTurn` rule. */
+let closedTurnNotifier: ((input: Parameters<typeof notifyClosedTurn>[0]) => Promise<void>) | null = null;
 let clearedTurnCauses: Array<string | null> = [];
 let clearedTurnPastDeadlineOnly: boolean[] = [];
 let ledgerSettleStatements: string[] = [];
@@ -493,8 +496,9 @@ const reapAndReconcileSandboxes = (
       if (promoteThrows) throw new Error('queue down');
       return queuedPromptWaiting ? `prompt:${sessionId}` : null;
     },
-    notifyClosedTurn: async (input: { sessionId: string; reason: string; promoted?: boolean }) => {
+    notifyClosedTurn: async (input: { sessionId: string; reason: string; promoted?: boolean; turnTokens?: readonly string[] }) => {
       closedTurnPushes.push(input);
+      if (closedTurnNotifier) await closedTurnNotifier(input as Parameters<typeof notifyClosedTurn>[0]);
     },
     observeTurnWaiting: async (_externalId: string, runtimeSessionId: string) => {
       turnWaitingCalls.push(runtimeSessionId);
@@ -555,6 +559,7 @@ beforeEach(() => {
   queuedPromptWaiting = true;
   promoteThrows = false;
   closedTurnPushes = [];
+  closedTurnNotifier = null;
   clearedTurnCauses = [];
   clearedTurnPastDeadlineOnly = [];
   unconfirmedTurnDrips = [];
@@ -2122,7 +2127,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
 
         await reapAndReconcileSandboxes(NOW);
 
-        expect(closedTurnPushes).toEqual([{ sessionId: 'sess-1', reason, promoted: false }]);
+        expect(closedTurnPushes).toEqual([{ sessionId: 'sess-1', reason, promoted: false, turnTokens: ['active-token'] }]);
       });
     }
 
@@ -2134,7 +2139,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
 
       await reapAndReconcileSandboxes(NOW);
 
-      expect(closedTurnPushes).toEqual([{ sessionId: 'sess-1', reason: 'completed', promoted: true }]);
+      expect(closedTurnPushes).toEqual([{ sessionId: 'sess-1', reason: 'completed', promoted: true, turnTokens: ['active-token'] }]);
     });
 
     test('a husk the reaper force-closed is a failure push', async () => {
@@ -2146,7 +2151,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
 
       await reapAndReconcileSandboxes(NOW);
 
-      expect(closedTurnPushes).toEqual([{ sessionId: 'sess-1', reason: 'failed', promoted: false }]);
+      expect(closedTurnPushes).toEqual([{ sessionId: 'sess-1', reason: 'failed', promoted: false, turnTokens: ['active-token'] }]);
     });
 
     test('an unknown or abandoned close sends nothing', async () => {
@@ -2193,7 +2198,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
         },
       });
 
-    test('a pass that redelivers an orphaned prompt sends nothing', async () => {
+    test('an orphaned prompt with no turn_end closes unknown and sends nothing', async () => {
       // No turn_end: the reason falls back to unknown and the prompt is requeued.
       candidates = [orphanedCandidate()];
       statusByExternal['ext-1'] = 'running';
@@ -2218,8 +2223,33 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       await reapAndReconcileSandboxes(NOW);
 
       expect(promptRedeliveries).toEqual([]);
-      expect(closedTurnPushes).toEqual([{ sessionId: 'sess-1', reason: 'failed', promoted: false }]);
+      expect(closedTurnPushes).toEqual([{ sessionId: 'sess-1', reason: 'failed', promoted: false, turnTokens: ['active-token'] }]);
     });
+
+    for (const [name, sent] of [['UserStop', 0], ['QueueInterrupt', 0], ['APIError', 1]] as const) {
+      test(`a failed close whose ledger names ${name} sends ${sent} push`, async () => {
+        candidates = [activeTurnCandidate(new Date(NOW.getTime() + HOUR))];
+        statusByExternal['ext-1'] = 'running';
+        deliveringTurnObservationBySandbox['sb-1'] = 'terminal';
+        daemonTurnEndBySandbox['sb-1'] = 'failed';
+        queuedPromptWaiting = false;
+        const events: SessionPushEvent[] = [];
+        const loadedTokens: unknown[] = [];
+        closedTurnNotifier = (input) =>
+          notifyClosedTurn(input, {
+            loadSession: async (_sessionId, turnTokens) => {
+              loadedTokens.push(turnTokens);
+              return { projectId: 'project-1', childSession: false, endErrorNames: [name] };
+            },
+            notify: async (event) => { events.push(event); return { sent: 0, reason: 'no_devices' }; },
+          });
+
+        await reapAndReconcileSandboxes(NOW);
+
+        expect(loadedTokens).toEqual([['active-token']]);
+        expect(events).toHaveLength(sent);
+      });
+    }
 
     test('a queue promotion that throws is unknown: treated as promoted', async () => {
       candidates = [activeTurnCandidate(new Date(NOW.getTime() + HOUR))];
@@ -2230,7 +2260,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
 
       await reapAndReconcileSandboxes(NOW);
 
-      expect(closedTurnPushes).toEqual([{ sessionId: 'sess-1', reason: 'completed', promoted: true }]);
+      expect(closedTurnPushes).toEqual([{ sessionId: 'sess-1', reason: 'completed', promoted: true, turnTokens: ['active-token'] }]);
     });
 
     const deliveringCandidate = () =>
@@ -2258,7 +2288,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
 
         await reapAndReconcileSandboxes(NOW);
 
-        expect(closedTurnPushes).toEqual([{ sessionId: 'sess-1', reason, promoted: false }]);
+        expect(closedTurnPushes).toEqual([{ sessionId: 'sess-1', reason, promoted: false, turnTokens: ['delivery-token'] }]);
       });
     }
 

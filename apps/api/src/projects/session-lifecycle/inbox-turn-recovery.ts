@@ -9,12 +9,17 @@ import { observeSandboxTurn } from '../sandbox-turn-observation';
 
 type Box = Pick<typeof sessionSandboxes.$inferSelect, 'sessionId' | 'sandboxId' | 'externalId' | 'provider' | 'metadata'>;
 
-/** The end reasons of the turns THIS call closed (its `clear` won). */
+export interface ClosedInboxTurn {
+  token: string;
+  reason: 'completed' | 'failed';
+}
+
+/** The turns THIS call closed (its `clear` won), with their end reasons. */
 export async function settleCompletedInboxTurns(
   box: Box,
   deps = { observe: observeSandboxTurn, clear: clearSandboxTurn, provider: getProvider },
-): Promise<('completed' | 'failed')[]> {
-  const settled: ('completed' | 'failed')[] = [];
+): Promise<ClosedInboxTurn[]> {
+  const settled: ClosedInboxTurn[] = [];
   if (!box.externalId) return settled;
   for (const turn of storedSandboxTurns(box.metadata)) {
     // Never infer completion from a reservation or a missing/unanswered prompt.
@@ -23,7 +28,9 @@ export async function settleCompletedInboxTurns(
     if (reading.observation === 'terminal' &&
         (reading.endReason === 'completed' || reading.endReason === 'failed')) {
       // Token-scoped CAS cannot erase a newer turn that started during the read.
-      if (await deps.clear(box.sandboxId, turn.token, undefined, reading.endReason)) settled.push(reading.endReason);
+      if (await deps.clear(box.sandboxId, turn.token, undefined, reading.endReason)) {
+        settled.push({ token: turn.token, reason: reading.endReason });
+      }
     }
   }
   return settled;
@@ -45,7 +52,14 @@ export async function reconcileInboxTurn(
   const settled = await deps.settle(box);
   if (settled.length === 0) return;
   // The queued head prompt runs next, so only an error notifies.
-  void deps.notify({ sessionId, reason: settled.includes('failed') ? 'failed' : 'completed', promoted: true });
+  const failed = failedTokens(settled);
+  void deps.notify(failed.length > 0
+    ? { sessionId, reason: 'failed', turnTokens: failed }
+    : { sessionId, reason: 'completed', promoted: true });
+}
+
+function failedTokens(settled: readonly ClosedInboxTurn[]): string[] {
+  return settled.filter((turn) => turn.reason === 'failed').map((turn) => turn.token);
 }
 
 const recoveryInFlight = new Set<string>();
@@ -75,8 +89,9 @@ export function scheduleSessionTurnRecovery(
       // This read closed the turn, so the relay's late `end` gets
       // `already_closed` and sends nothing: the push is ours. One per
       // settle. An error ignores promotion, so it goes out first.
-      if (settled.includes('failed')) {
-        void notify({ sessionId: box.sessionId, reason: 'failed' });
+      const failed = failedTokens(settled);
+      if (failed.length > 0) {
+        void notify({ sessionId: box.sessionId, reason: 'failed', turnTokens: failed });
         return wake(box.sessionId);
       }
       // Unknown until the wake answers: a wake that throws sends no completion.

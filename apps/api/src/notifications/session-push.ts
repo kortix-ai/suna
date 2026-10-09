@@ -1,15 +1,22 @@
 // Session push notifications: the server tells the session creator's devices
 // that a turn completed, failed, or needs an answer. The app may be closed, so
-// the API detects the event (routes/turn-stream.ts, routes/turn-questions.ts)
-// and sends through Expo. Callers fire and forget: `notifySessionEvent` never
+// the API detects the event and sends through Expo. Event sources:
+//   - the daemon's turn-end relay (routes/turn-stream-handlers.ts),
+//   - turn questions and permissions (routes/turn-questions.ts),
+//   - turn recovery on a turn read and inbox admission's reconcile
+//     (session-lifecycle/inbox-turn-recovery.ts),
+//   - the reaper (reaping/box-reaper.ts).
+// A turn close notifies only from the caller that won it (see
+// `notifyClosedTurn`). Callers fire and forget: `notifySessionEvent` never
 // throws and never runs on the relay's response path.
-import { projectSessions, sessionPresenceLeases } from '@kortix/db';
-import { and, eq, gt, sql } from 'drizzle-orm';
+import { projectSessions, sessionPresenceLeases, sessionTurns } from '@kortix/db';
+import { and, eq, gt, inArray, sql } from 'drizzle-orm';
 import { config } from '../config';
 import {
   ABORT_END_ERROR_NAMES,
   type SandboxTurnCompletionOutcome,
   type SessionTurnEndReason,
+  isRequestedStopName,
 } from '../projects/session-turn-ledger';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
@@ -152,20 +159,34 @@ export function closedTurnPushType(input: {
   childSession?: boolean;
   /** A queued prompt was promoted by this close: the session keeps running. */
   promoted?: boolean;
+  /**
+   * The closed turns' `session_turns.end_error` names. A Stop or a queue
+   * interrupt ends as OpenCode's abort, which the daemon reports `failed`;
+   * the stop mark (`markTurnStopRequested`) is what says it was asked for.
+   */
+  endErrorNames?: readonly (string | null)[];
 }): 'completion' | 'error' | null {
   if (input.childSession) return null;
   if (input.reason === 'completed') return input.promoted ? null : 'completion';
-  if (input.reason === 'failed') return 'error';
-  return null;
+  if (input.reason !== 'failed') return null;
+  const names = input.endErrorNames ?? [];
+  const stopped = (name: string | null) => isRequestedStopName(name) || ABORT_END_ERROR_NAMES.includes(name ?? '');
+  return names.length > 0 && names.every(stopped) ? null : 'error';
 }
 
 export interface ClosedTurnPushDeps {
-  loadSession(sessionId: string): Promise<{ projectId: string; childSession: boolean } | null>;
+  loadSession(
+    sessionId: string,
+    turnTokens: readonly string[],
+  ): Promise<{ projectId: string; childSession: boolean; endErrorNames?: (string | null)[] } | null>;
   notify(event: SessionPushEvent): Promise<SessionPushOutcome>;
 }
 
-/** The session's project, and the relay's child test (routes/turn-stream.ts). */
-async function loadClosedTurnSession(sessionId: string) {
+/**
+ * The session's project, the relay's child test (routes/turn-stream.ts), and
+ * the closed turns' end error names (`session_turns` is keyed by turn token).
+ */
+async function loadClosedTurnSession(sessionId: string, turnTokens: readonly string[]) {
   const [row] = await db
     .select({ projectId: projectSessions.projectId, metadata: projectSessions.metadata })
     .from(projectSessions)
@@ -173,18 +194,34 @@ async function loadClosedTurnSession(sessionId: string) {
     .limit(1);
   if (!row) return null;
   const meta = (row.metadata ?? {}) as Record<string, unknown>;
-  return { projectId: row.projectId, childSession: typeof meta.spawned_by_session === 'string' };
+  const turns = turnTokens.length === 0 ? [] : await db
+    .select({ endError: sessionTurns.endError })
+    .from(sessionTurns)
+    .where(and(eq(sessionTurns.sessionId, sessionId), inArray(sessionTurns.turnToken, [...turnTokens])));
+  return {
+    projectId: row.projectId,
+    childSession: typeof meta.spawned_by_session === 'string',
+    endErrorNames: turns.map((turn) => turn.endError?.name ?? null),
+  };
 }
 
-/** Push for a turn this caller closed (see `closedTurnPushType`). Never throws. */
+/**
+ * Push for a turn this caller closed (see `closedTurnPushType`). Pass the
+ * closed `failed` turns' tokens so a requested stop stays silent. Never throws.
+ */
 export async function notifyClosedTurn(
-  input: { sessionId: string; reason: SessionTurnEndReason; promoted?: boolean },
+  input: { sessionId: string; reason: SessionTurnEndReason; promoted?: boolean; turnTokens?: readonly string[] },
   deps: ClosedTurnPushDeps = { loadSession: loadClosedTurnSession, notify: notifySessionEvent },
 ): Promise<void> {
   if (!closedTurnPushType(input)) return;
   try {
-    const session = await deps.loadSession(input.sessionId);
-    const type = session && closedTurnPushType({ ...input, childSession: session.childSession });
+    // Only a failure can be a requested stop, so only a failure reads the turns.
+    const session = await deps.loadSession(input.sessionId, input.reason === 'failed' ? input.turnTokens ?? [] : []);
+    const type = session && closedTurnPushType({
+      ...input,
+      childSession: session.childSession,
+      endErrorNames: session.endErrorNames,
+    });
     if (session && type) await deps.notify({ type, sessionId: input.sessionId, projectId: session.projectId });
   } catch (err) {
     logger.warn('[push] closed-turn notification failed', {
