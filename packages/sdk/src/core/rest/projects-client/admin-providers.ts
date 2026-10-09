@@ -96,16 +96,21 @@ export function setAdminProviderFallback<T = unknown>(enabled: boolean): Promise
     .then((response) => unwrap(response));
 }
 
-// ── session boot modes ───────────────────────────────────────────────────────
+// ── Volumes (the master switch) and session boot modes ───────────────────────
 export type AdminBootMode = 'standard' | 'artifacts' | 'volume';
 export interface AdminBootModeRule {
   mode: AdminBootMode;
   standardFallback: boolean;
 }
+export interface AdminVolumesPolicy {
+  enabled: boolean;
+  percent: number;
+  orgs: Record<string, boolean>;
+}
 export interface AdminBootModePolicy {
+  volumes: AdminVolumesPolicy;
   killSwitch: boolean;
   default: AdminBootModeRule;
-  rollout: (AdminBootModeRule & { percent: number }) | null;
   orgs: Record<string, AdminBootModeRule>;
   fallback: { volumeAttempts: number; artifactsAttempts: number };
   artifacts: string | null;
@@ -113,7 +118,7 @@ export interface AdminBootModePolicy {
 export interface AdminBootModes {
   stored: boolean;
   policy: AdminBootModePolicy;
-  orgs: Array<AdminBootModeRule & { accountId: string; name: string | null }>;
+  orgs: Array<{ accountId: string; name: string | null; volumes: boolean | null; rule: AdminBootModeRule | null }>;
   env: { bootArtifacts: string | null; volumeOff: boolean; driveSync: boolean };
   providers: { allowed: string[]; default: string; volumeProvider: string; volumeProviderConfigured: boolean };
   stats:

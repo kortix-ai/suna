@@ -24,7 +24,9 @@ export function featureDisabledBody(key: FeatureFlagKey): {
 } {
   const def = featureFlagDef(key);
   return {
-    error: `${def?.name ?? key} is not enabled for this project. Enable it in Settings → Feature flags.`,
+    error: def?.derivedFrom
+      ? `${def.name} is not enabled for this organization.`
+      : `${def?.name ?? key} is not enabled for this project. Enable it in Settings → Feature flags.`,
     code: FEATURE_DISABLED_CODE,
     feature: key,
   };
@@ -38,7 +40,9 @@ export function requireFeatureFlag(
   c: Context,
   metadata: unknown,
   key: FeatureFlagKey,
+  /** The project's organization; flags derived from Volumes need it. */
+  accountId?: string | null,
 ): Response | null {
-  if (resolveFeatureFlag(metadata, key)) return null;
+  if (resolveFeatureFlag(metadata, key, accountId)) return null;
   return c.json(featureDisabledBody(key), 403);
 }

@@ -68,6 +68,7 @@
  * entry names the release and the spec section that ends it.
  */
 import { config } from '../config';
+import { volumesEnabledFor } from '../platform/services/boot-mode-setting';
 import { platinumUsRegion } from '../shared/platinum-region';
 import type { FeatureFlagKey, FeatureFlagStability } from '@kortix/api-contract';
 
@@ -111,6 +112,12 @@ export interface FeatureFlagDef {
    * next release.
    */
   catalogHidden?: true;
+  /**
+   * The flag is not a project choice: it follows the organization's Volumes
+   * switch (Admin → Volumes, platform/services/boot-mode.ts). A project
+   * override is ignored, and the flag is never offered as a toggle.
+   */
+  derivedFrom?: 'volumes';
 }
 
 /**
@@ -357,17 +364,17 @@ const FLAGS: readonly FeatureFlagDef[] = [
     // Every drive is a Platinum volume; without Platinum there is nothing to
     // store files in.
     available: () => Boolean(config.PLATINUM_API_KEY),
-    // Explicit opt-in: turning it on starts mounting drives into every new
-    // Platinum session of the project.
+    // Follows the organization's Volumes switch; not a project toggle.
     platformDefault: () => false,
+    derivedFrom: 'volumes',
+    catalogHidden: true,
     enforcement: 'routes',
     enforcementNote:
       'Mixed, and both halves are enforced. ROUTES: GET /v1/drives?projectId= answers ' +
-      '403 `feature_disabled` when off (drives/routes.ts). BEHAVIORAL: session ' +
-      'provisioning mounts no folder when off (drives/service.ts sessionVolumeMounts). ' +
-      'Routes addressed by drive id stay reachable so Files keeps its contents when a ' +
-      'project turns the flag off, and GET /projects/:id/sessions/:id/drives keeps ' +
-      'reporting what a running sandbox actually mounted.',
+      '403 `feature_disabled` when off, and so does every route addressed by drive id ' +
+      '(drives/routes.ts). BEHAVIORAL: session provisioning mounts no folder when off ' +
+      '(drives/service.ts sessionVolumeMounts). The files stay on the volume, so turning ' +
+      'Volumes back on shows them again.',
   },
   {
     key: 'ephemeral_sandboxes',
@@ -375,9 +382,12 @@ const FLAGS: readonly FeatureFlagDef[] = [
     description:
       'A stopped session keeps its files and conversation on a volume and gives up its computer. Waking it starts a new computer from the newest image. Running processes do not survive a stop.',
     stability: 'experimental',
-    // The session state lives on a Platinum volume.
+    // The session state lives on a Platinum volume. Follows the organization's
+    // Volumes switch (the boot mode decides which sessions are ephemeral).
     available: () => Boolean(config.PLATINUM_API_KEY),
     platformDefault: () => false,
+    derivedFrom: 'volumes',
+    catalogHidden: true,
     enforcement: 'behavioral',
     enforcementNote:
       'BEHAVIORAL only. Session provisioning mounts the session volume and sets ' +
@@ -426,16 +436,27 @@ function explicitOverride(metadata: unknown, key: FeatureFlagKey): boolean | und
  * operator default, AND-gated by platform availability. An unavailable flag
  * is never enabled regardless of what a project chose.
  */
-export function resolveFeatureFlag(metadata: unknown, key: FeatureFlagKey): boolean {
+export function resolveFeatureFlag(
+  metadata: unknown,
+  key: FeatureFlagKey,
+  /** The project's organization: required for flags derived from Volumes (absent ⇒ off). */
+  accountId?: string | null,
+): boolean {
   const def = FLAG_BY_KEY[key];
   if (!def || !def.available()) return false;
+  if (def.derivedFrom === 'volumes') return volumesEnabledFor(accountId);
   return explicitOverride(metadata, key) ?? def.platformDefault();
 }
 
+/** Is this flag derived from an organization switch (and so not a project choice)? */
+export function isDerivedFeatureFlag(key: FeatureFlagKey): boolean {
+  return Boolean(FLAG_BY_KEY[key]?.derivedFrom);
+}
+
 /** Effective enablement for every flag, keyed by flag id. */
-export function resolveFeatureFlags(metadata: unknown): Record<FeatureFlagKey, boolean> {
+export function resolveFeatureFlags(metadata: unknown, accountId?: string | null): Record<FeatureFlagKey, boolean> {
   return Object.fromEntries(
-    FLAGS.map((f) => [f.key, resolveFeatureFlag(metadata, f.key)]),
+    FLAGS.map((f) => [f.key, resolveFeatureFlag(metadata, f.key, accountId)]),
   ) as Record<FeatureFlagKey, boolean>;
 }
 
@@ -461,14 +482,14 @@ export interface FeatureFlagView {
  * writable through `PATCH /projects/:id/features`, they are simply not offered
  * as a toggle (see "Hidden flags" in this file's header).
  */
-export function buildFeatureFlagCatalog(metadata: unknown): FeatureFlagView[] {
+export function buildFeatureFlagCatalog(metadata: unknown, accountId?: string | null): FeatureFlagView[] {
   return FLAGS.filter((f) => !f.catalogHidden).map((f) => ({
     key: f.key,
     name: f.name,
     description: f.description,
     stability: f.stability,
     available: f.available(),
-    enabled: resolveFeatureFlag(metadata, f.key),
+    enabled: resolveFeatureFlag(metadata, f.key, accountId),
     overridden: explicitOverride(metadata, f.key) !== undefined,
   }));
 }

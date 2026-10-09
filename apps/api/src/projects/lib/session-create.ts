@@ -752,7 +752,10 @@ export async function createProjectSession(input: {
   const providerLocked = sessionProviderIsLocked(picked);
   // A persistent machine boots from a Platinum root volume: it takes Platinum
   // unless the request or the project pinned another provider.
-  const persistentMachine = body.persistent_machine === true;
+  // Only for an organization with Volumes on; otherwise the option does not exist.
+  const persistentMachine =
+    body.persistent_machine === true &&
+    (await import('../../platform/services/boot-mode-setting')).volumesEnabledFor(accountId);
   if (persistentMachine && platformMetaAgent) {
     return {
       error: { status: 400, body: { error: 'The meta agent cannot run on a persistent machine', code: 'PERSISTENT_MACHINE_UNSUPPORTED' } },

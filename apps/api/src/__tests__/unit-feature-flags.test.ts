@@ -23,7 +23,9 @@ function findCatalogFlag(key: string) {
 
 /** Registered but deliberately not offered as a toggle — see "Hidden flags" in
  *  the registry header. */
-const HIDDEN_KEYS = REGISTERED_FEATURE_FLAGS.filter((f) => f.catalogHidden).map((f) => f.key);
+// Flags derived from the organization's Volumes switch are hidden too, but are
+// not project choices at all: they are covered by platform/services/boot-mode.test.ts.
+const HIDDEN_KEYS = REGISTERED_FEATURE_FLAGS.filter((f) => f.catalogHidden && !f.derivedFrom).map((f) => f.key);
 
 describe('registry ↔ contract', () => {
   // Compared as sets: the registry's order is the Settings display order and is
@@ -34,7 +36,11 @@ describe('registry ↔ contract', () => {
       buildFeatureFlagCatalog({})
         .map((f) => f.key)
         .sort(),
-    ).toEqual([...FEATURE_FLAG_KEYS].filter((key) => !HIDDEN_KEYS.includes(key)).sort());
+    ).toEqual(
+      [...FEATURE_FLAG_KEYS]
+        .filter((key) => !REGISTERED_FEATURE_FLAGS.find((f) => f.key === key)?.catalogHidden)
+        .sort(),
+    );
   });
 
   test('every registered flag declares a complete, valid definition', () => {
@@ -341,7 +347,9 @@ describe('featureDisabledBody', () => {
       expect(body.code).toBe('feature_disabled');
       expect(body.feature).toBe(key);
       expect(typeof body.error).toBe('string');
-      expect(body.error).toContain('Settings');
+      // A flag derived from the organization's Volumes switch has no Settings row.
+      const derived = REGISTERED_FEATURE_FLAGS.find((f) => f.key === key)?.derivedFrom;
+      expect(body.error).toContain(derived ? 'organization' : 'Settings');
     }
   });
 });

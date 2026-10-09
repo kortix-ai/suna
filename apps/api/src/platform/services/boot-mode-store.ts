@@ -7,52 +7,33 @@
  */
 import { projects, projectSessions } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
-import { config } from '../../config';
-import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { db } from '../../shared/db';
 import { isPlatinumConfigured } from '../../shared/platinum';
 import {
-  parseBootModePolicy,
   parseSessionBootRecord,
   resolveBootMode,
   type BootModeDecision,
-  type BootModePolicy,
   type SessionBootRecord,
 } from './boot-mode';
-import { createCachedPlatformSetting } from './platform-setting-cache';
+import { bootModePolicy } from './boot-mode-setting';
 
-export const BOOT_MODE_SETTING_KEY = 'session_boot_modes';
+export {
+  BOOT_MODE_SETTING_KEY,
+  bootModePolicy,
+  refreshBootModePolicy,
+  saveBootModePolicy,
+  volumesEnabledFor,
+  volumesFor,
+  __setBootModePolicyForTests,
+} from './boot-mode-setting';
+
 /** project_sessions.metadata key holding the session's SessionBootRecord. */
 export const SESSION_BOOT_KEY = 'bootMode';
 
-const envArtifactsSet = (): boolean => Boolean((config.KORTIX_BOOT_ARTIFACTS ?? '').trim());
-
-const setting = createCachedPlatformSetting<{ stored: boolean; policy: BootModePolicy }>(
-  BOOT_MODE_SETTING_KEY,
-  (value) => ({
-    stored: value !== undefined && value !== null,
-    policy: parseBootModePolicy(value, envArtifactsSet()),
-  }),
-);
-
-export function bootModePolicy(): { stored: boolean; policy: BootModePolicy } {
-  return setting.read();
-}
-
-export async function refreshBootModePolicy(): Promise<{ stored: boolean; policy: BootModePolicy }> {
-  await setting.refresh();
-  return setting.read();
-}
-
-export async function saveBootModePolicy(policy: BootModePolicy): Promise<void> {
-  await setting.write(policy);
-}
-
-export function __setBootModePolicyForTests(value: unknown): void {
-  setting.__setForTests(value);
-}
-
-/** KORTIX_EPHEMERAL_SANDBOXES=off: no new volume boxes. */
+/**
+ * KORTIX_EPHEMERAL_SANDBOXES=off: no new volume boxes. An operator emergency
+ * override, not the product switch (that is Volumes, Admin → Volumes).
+ */
 export function envVolumeOff(): boolean {
   const raw = (process.env.KORTIX_EPHEMERAL_SANDBOXES ?? '').trim().toLowerCase();
   return raw === '0' || raw === 'off' || raw === 'false' || raw === 'no';
@@ -67,20 +48,17 @@ export async function resolveProjectBootMode(input: {
 }): Promise<BootModeDecision> {
   const volumeProvider = input.provider === 'platinum' && isPlatinumConfigured();
   let accountId = input.accountId ?? null;
-  let metadata = input.projectMetadata;
-  if (volumeProvider && (!accountId || metadata === undefined)) {
+  if (volumeProvider && !accountId) {
     const [row] = await db
-      .select({ accountId: projects.accountId, metadata: projects.metadata })
+      .select({ accountId: projects.accountId })
       .from(projects)
       .where(eq(projects.projectId, input.projectId))
       .limit(1);
-    accountId = accountId ?? row?.accountId ?? null;
-    if (metadata === undefined) metadata = row?.metadata;
+    accountId = row?.accountId ?? null;
   }
   return resolveBootMode(bootModePolicy().policy, {
     accountId: accountId ?? '',
     volumeProvider,
-    projectVolumeFlag: volumeProvider && resolveFeatureFlag(metadata, 'ephemeral_sandboxes'),
     envVolumeOff: envVolumeOff(),
   });
 }

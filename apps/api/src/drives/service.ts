@@ -623,13 +623,16 @@ export async function sessionVolumeMounts(input: {
   return out;
 }
 
-/** Files mount in this project's sessions: storage configured, the operator switch on, the project flag on. */
+/** Files mount in this project's sessions: storage configured, the operator override not set, Volumes on for the organization. */
 export async function sessionDrivesEnabled(projectId: string): Promise<boolean> {
   if (!sessionDriveMountEnabled()) return false;
   return projectFeatureFlagEnabled(projectId, 'drives');
 }
 
-/** Operator kill switch: KORTIX_DRIVES_SESSION_MOUNT=off boots every session without files. */
+/**
+ * Operator emergency override: KORTIX_DRIVES_SESSION_MOUNT=off boots every
+ * session without files. The product switch is Volumes (Admin → Volumes).
+ */
 export function sessionDriveMountEnabled(): boolean {
   if (!driveStorageAvailable()) return false;
   const raw = (process.env.KORTIX_DRIVES_SESSION_MOUNT ?? '').trim().toLowerCase();

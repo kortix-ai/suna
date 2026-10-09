@@ -1,5 +1,19 @@
 /**
- * Session boot modes: how a new session box boots, decided in one place.
+ * Volumes: the one switch for the whole volumes feature, and how a new session
+ * box boots, decided in one place.
+ *
+ * Volumes (per organization) gates everything built on volumes: Files over the
+ * project drive, drive mounts and sync, session volumes (ephemeral boxes), boot
+ * artifacts and persistent machines. Off, an organization sees the product as
+ * it was before volumes: Files is the repo browser and sessions boot from the
+ * image alone. Targeting, first match wins:
+ *
+ *   1. a per-organization on/off.
+ *   2. the global switch.
+ *   3. the percentage rollout, bucketed deterministically by organization id.
+ *   4. off.
+ *
+ * Boot modes, for an organization with Volumes on:
  *
  *   standard  — the image alone.
  *   artifacts — the image plus the read-only boot-artifacts volume (the
@@ -7,29 +21,30 @@
  *   volume    — an ephemeral box whose session state lives on its own volume,
  *               plus the artifacts. A stop retires the box (ephemeral-sandbox.ts).
  *
- * The policy is one `kortix.platform_settings` row, edited from the admin
- * console (Admin → Boot modes). Targeting, first match wins:
+ *   1. volume provider? Anything else boots `standard`.
+ *   2. Volumes off for the organization → `standard`.
+ *   3. the policy's kill switch → `standard` for every new box.
+ *   4. a per-organization mode rule.
+ *   5. the default rule (`volume` until an admin picks another).
  *
- *   1. volume provider? Anything else boots `standard` (drive sync still
- *      applies when it is on; that is a drives concern, not a boot mode).
- *   2. the policy's kill switch → `standard` for every new box.
- *   3. a per-organization rule.
- *   4. the project's `ephemeral_sandboxes` flag → `volume` (the older,
- *      per-project switch keeps working).
- *   5. the percentage rollout, bucketed deterministically by organization id.
- *   6. the default rule.
+ * A session whose state already lives on a volume keeps it whatever the
+ * switch says (session-sandbox.ts): booting it without the volume would lose
+ * its files.
  *
- * `KORTIX_EPHEMERAL_SANDBOXES=off` (env) still stops new volume boxes: a rule
- * that asks for `volume` gets `artifacts`.
+ * Operator emergency overrides (env, not the product switch):
+ * `KORTIX_EPHEMERAL_SANDBOXES=off` stops new volume boxes (a rule that asks for
+ * `volume` gets `artifacts`); `KORTIX_DRIVES_SESSION_MOUNT=off` boots sessions
+ * without drive mounts.
  *
  * Fallback: a session whose boots keep failing in one mode steps down
  * volume → artifacts → standard. Failures are counted per session and per mode
  * (on the session row), so a session that degraded stays degraded. The last
  * step can be turned off per rule. A session whose state already lives on a
- * volume never steps off it: booting it without the volume would lose its
- * files.
+ * volume never steps off it.
  *
- * Pure: no database, no config. The store lives in boot-mode-store.ts.
+ * The policy is one `kortix.platform_settings` row (`session_boot_modes`),
+ * edited from Admin → Volumes. Pure: no database, no config. The store lives
+ * in boot-mode-setting.ts and boot-mode-store.ts.
  */
 import { createHash } from 'node:crypto';
 
@@ -42,20 +57,37 @@ export interface BootModeRule {
   standardFallback: boolean;
 }
 
+/** The Volumes master switch. */
+export interface VolumesPolicy {
+  /** On for every organization without an explicit off. */
+  enabled: boolean;
+  /** With the global switch off: organizations whose bucket is below this get Volumes. */
+  percent: number;
+  /** Per-organization (account id) on/off; wins over the global switch and the rollout. */
+  orgs: Record<string, boolean>;
+}
+
 export interface BootModePolicy {
+  volumes: VolumesPolicy;
   /** Forces `standard` for every new box. */
   killSwitch: boolean;
+  /** The boot mode of an organization with Volumes on and no rule of its own. */
   default: BootModeRule;
-  /** Orgs not named in `orgs` whose bucket is below `percent` get this rule. */
-  rollout: (BootModeRule & { percent: number }) | null;
-  /** Per-organization (account id) rules. */
+  /** Per-organization (account id) boot mode rules. */
   orgs: Record<string, BootModeRule>;
   fallback: { volumeAttempts: number; artifactsAttempts: number };
   /** `<volume>@<tag>`; null uses KORTIX_BOOT_ARTIFACTS. */
   artifacts: string | null;
 }
 
-export type BootModeSource = 'provider' | 'kill_switch' | 'org' | 'project_flag' | 'rollout' | 'default';
+export type BootModeSource = 'provider' | 'volumes_off' | 'kill_switch' | 'org' | 'default' | 'session_volume';
+
+export type VolumesSource = 'org' | 'global' | 'rollout' | 'off';
+
+export interface VolumesDecision {
+  enabled: boolean;
+  source: VolumesSource;
+}
 
 export interface BootModeDecision {
   mode: BootMode;
@@ -69,8 +101,6 @@ export interface BootModeTarget {
   accountId: string;
   /** Does this boot run on the provider that mounts volumes? */
   volumeProvider: boolean;
-  /** The project's own `ephemeral_sandboxes` switch is on. */
-  projectVolumeFlag: boolean;
   /** KORTIX_EPHEMERAL_SANDBOXES=off */
   envVolumeOff: boolean;
 }
@@ -93,12 +123,15 @@ function parseRule(v: unknown, dflt: BootModeRule | null): BootModeRule | null {
   return { mode: r.mode, standardFallback: r.standardFallback !== false };
 }
 
-/** The policy in effect before anyone saved one: today's env-driven behavior. */
-export function defaultBootModePolicy(envArtifactsSet: boolean): BootModePolicy {
+/**
+ * The policy in effect before anyone saved one: Volumes off for everyone, and
+ * `volume` (with fallback) for an organization once it is turned on.
+ */
+export function defaultBootModePolicy(_envArtifactsSet = false): BootModePolicy {
   return {
+    volumes: { enabled: false, percent: 0, orgs: {} },
     killSwitch: false,
-    default: { mode: envArtifactsSet ? 'artifacts' : 'standard', standardFallback: true },
-    rollout: null,
+    default: { mode: 'volume', standardFallback: true },
     orgs: {},
     fallback: { volumeAttempts: DEFAULT_FALLBACK_ATTEMPTS, artifactsAttempts: DEFAULT_FALLBACK_ATTEMPTS },
     artifacts: null,
@@ -110,9 +143,13 @@ export function parseBootModePolicy(value: unknown, envArtifactsSet: boolean): B
   const base = defaultBootModePolicy(envArtifactsSet);
   const v = value as Record<string, unknown> | null | undefined;
   if (!v || typeof v !== 'object') return base;
-  const rolloutRaw = v.rollout as Record<string, unknown> | null | undefined;
-  const rolloutRule = parseRule(rolloutRaw, null);
-  const percent = clampInt(rolloutRaw?.percent, 0, 100, 0);
+  const vol = (v.volumes ?? {}) as Record<string, unknown>;
+  const volumeOrgs: Record<string, boolean> = {};
+  if (vol.orgs && typeof vol.orgs === 'object') {
+    for (const [id, on] of Object.entries(vol.orgs as Record<string, unknown>)) {
+      if (typeof on === 'boolean' && /^[0-9a-f-]{36}$/i.test(id)) volumeOrgs[id.toLowerCase()] = on;
+    }
+  }
   const orgs: Record<string, BootModeRule> = {};
   if (v.orgs && typeof v.orgs === 'object') {
     for (const [id, rule] of Object.entries(v.orgs as Record<string, unknown>)) {
@@ -123,9 +160,9 @@ export function parseBootModePolicy(value: unknown, envArtifactsSet: boolean): B
   const fb = (v.fallback ?? {}) as Record<string, unknown>;
   const artifacts = typeof v.artifacts === 'string' && v.artifacts.trim() ? v.artifacts.trim() : null;
   return {
+    volumes: { enabled: vol.enabled === true, percent: clampInt(vol.percent, 0, 100, 0), orgs: volumeOrgs },
     killSwitch: v.killSwitch === true,
     default: parseRule(v.default, base.default)!,
-    rollout: rolloutRule && percent > 0 ? { ...rolloutRule, percent } : null,
     orgs,
     fallback: {
       volumeAttempts: clampInt(fb.volumeAttempts, 1, 10, DEFAULT_FALLBACK_ATTEMPTS),
@@ -141,30 +178,43 @@ export function rolloutBucket(accountId: string): number {
   return digest.readUInt32BE(0) % 100;
 }
 
+/** Is Volumes on for this organization? */
+export function resolveVolumes(policy: Pick<BootModePolicy, 'volumes'>, accountId: string | null | undefined): VolumesDecision {
+  const id = (accountId ?? '').toLowerCase();
+  if (!id) return { enabled: false, source: 'off' };
+  const explicit = policy.volumes.orgs[id];
+  if (typeof explicit === 'boolean') return { enabled: explicit, source: explicit ? 'org' : 'off' };
+  if (policy.volumes.enabled) return { enabled: true, source: 'global' };
+  if (policy.volumes.percent > 0 && rolloutBucket(id) < policy.volumes.percent) return { enabled: true, source: 'rollout' };
+  return { enabled: false, source: 'off' };
+}
+
 /** Which mode a NEW box of this organization's session asks for. */
 export function resolveBootMode(policy: BootModePolicy, target: BootModeTarget): BootModeDecision {
   if (!target.volumeProvider) return { mode: 'standard', source: 'provider', standardFallback: true };
-  if (policy.killSwitch) return { mode: 'standard', source: 'kill_switch', standardFallback: true };
-  let rule: BootModeRule;
-  let source: BootModeSource;
-  const org = policy.orgs[target.accountId.toLowerCase()];
-  if (org) {
-    rule = org;
-    source = 'org';
-  } else if (target.projectVolumeFlag) {
-    rule = { mode: 'volume', standardFallback: policy.default.standardFallback };
-    source = 'project_flag';
-  } else if (policy.rollout && rolloutBucket(target.accountId) < policy.rollout.percent) {
-    rule = policy.rollout;
-    source = 'rollout';
-  } else {
-    rule = policy.default;
-    source = 'default';
+  if (!resolveVolumes(policy, target.accountId).enabled) {
+    return { mode: 'standard', source: 'volumes_off', standardFallback: true };
   }
+  if (policy.killSwitch) return { mode: 'standard', source: 'kill_switch', standardFallback: true };
+  const org = policy.orgs[target.accountId.toLowerCase()];
+  const rule: BootModeRule = org ?? policy.default;
+  const source: BootModeSource = org ? 'org' : 'default';
   if (rule.mode === 'volume' && target.envVolumeOff) {
     return { mode: 'artifacts', source, standardFallback: rule.standardFallback, capped: 'env_volume_off' };
   }
   return { mode: rule.mode, source, standardFallback: rule.standardFallback };
+}
+
+/**
+ * The decision for one session. A session whose state already lives on a
+ * volume keeps booting on it when Volumes is turned off for its organization:
+ * never strand a session's files.
+ */
+export function sessionBootDecision(decision: BootModeDecision, volumeLocked: boolean): BootModeDecision {
+  if (volumeLocked && decision.source === 'volumes_off') {
+    return { mode: 'volume', source: 'session_volume', standardFallback: decision.standardFallback };
+  }
+  return decision;
 }
 
 export type BootModeFailures = Partial<Record<BootMode, number>>;

@@ -295,8 +295,8 @@ export function serializeProject(
     // on/off map; `experimental_features` is the self-describing catalog the UI
     // renders from. Both wire names are historical and STABLE; do not rename
     // them. SoT = ../../feature-flags/registry.
-    experimental: resolveFeatureFlags(row.metadata),
-    experimental_features: buildFeatureFlagCatalog(row.metadata),
+    experimental: resolveFeatureFlags(row.metadata, row.accountId),
+    experimental_features: buildFeatureFlagCatalog(row.metadata, row.accountId),
     // Per-project sandbox-provider override (Customize → Settings). `default_sandbox_provider`
     // is the current pin (null = follow the platform default/distribution);
     // `available_sandbox_providers` is the enabled set the picker offers

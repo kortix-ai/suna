@@ -57,7 +57,14 @@ import {
   type SandboxImageSpec,
 } from '../../snapshots/builder';
 import { config } from '../../config';
-import { attemptsLeft, bootFailureReason, modeAfterFailures, type BootMode, type SessionBootRecord } from './boot-mode';
+import {
+  attemptsLeft,
+  bootFailureReason,
+  modeAfterFailures,
+  sessionBootDecision,
+  type BootMode,
+  type SessionBootRecord,
+} from './boot-mode';
 import * as bootModeStore from './boot-mode-store';
 import { claimParkedPiWorkerBox, maintainPiWorkerPool } from './pi-worker-pool';
 import { providerFallbackSetting } from './runtime-settings';
@@ -720,7 +727,7 @@ export async function provisionSessionSandbox(opts: {
       // Off the volume provider there is nothing to choose: the image boots.
       if (!bootStore || forProvider !== 'platinum') return;
       try {
-        const decision = await bootStore.resolveProjectBootMode({
+        let decision = await bootStore.resolveProjectBootMode({
           accountId,
           projectId,
           provider: forProvider,
@@ -731,6 +738,8 @@ export async function provisionSessionSandbox(opts: {
         // State already on a volume (a box booted with it, or a session from before
         // boot modes): it never steps off the volume.
         bootVolumeLocked = Boolean(stateVolume) && (record ? record.volumeBooted === true : true);
+        // Volumes turned off after this session's state moved onto a volume: it keeps that volume.
+        decision = sessionBootDecision(decision, bootVolumeLocked);
         const failures = record?.failures ?? {};
         bootStandardFallback = decision.standardFallback;
         bootMode = persistentMachine
