@@ -601,7 +601,7 @@
       "enableDescriptionPush": "Shows notifications in this browser, also with every Kortix tab closed.",
       "enableDescriptionDesktop": "Shows notifications from the desktop app while its window is open.",
       "enableDescriptionBrowser": "Shows notifications in this browser while a Kortix tab is open.",
-      "notificationTypesDescription": "These choices apply on every phone and in every browser. The bell lists every notification.",
+      "notificationTypesDescription": "These choices apply on every phone and in every browser. A phone also has its own switch for Turn finished, Turn failed, Question, and Permission request. It gets these only while both are on. The bell lists every notification of a project with Notification Center on.",
       "push": "Push",
       "email": "Email",
       "channelSwitch": "{kind}: {channel}",
@@ -1031,7 +1031,7 @@
         },
         "notification_center": {
           "name": "Notification Center",
-          "description": "Tell the people a session concerns (its prompter, its creator and its followers) through a bell inbox, browser push and email, and alert on failing triggers and reminders. Off: only the session creator's phone gets a push."
+          "description": "Tell the people a session concerns (its prompter, its creator and its followers) through a bell inbox, browser push and email, and alert on failing triggers and reminders. Off: only the session creator's phone gets a session push, and an account owner's phone gets one when a trigger starts failing."
         }
       }
     },

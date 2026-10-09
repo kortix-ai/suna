@@ -775,7 +775,7 @@
       "enableDescriptionPush": "Приказује обавештења у овом прегледачу, чак и кад су све картице Kortix затворене.",
       "enableDescriptionDesktop": "Приказује обавештења десктоп апликације док је њен прозор отворен.",
       "enableDescriptionBrowser": "Приказује обавештења у овом прегледачу док је картица Kortix отворена.",
-      "notificationTypesDescription": "Ова подешавања важе на сваком телефону и у сваком прегледачу. Звонце приказује свако обавештење.",
+      "notificationTypesDescription": "Ова подешавања важе на сваком телефону и у сваком прегледачу. Телефон има и свој прекидач за „Потез завршен“, „Потез није успео“, „Питање“ и „Захтев за дозволу“. Добија их само док су оба укључена. Звонце приказује свако обавештење пројеката са укљученим Центром за обавештења.",
       "push": "Push",
       "email": "Имејл",
       "channelSwitch": "{kind}: {channel}",
@@ -1204,8 +1204,8 @@
           "description": "Покрените нове сесије овог пројекта у региону Исток САД. Сесија која је у току задржава свој регион до поновног покретања."
         },
         "notification_center": {
-          "name": "Centar za obaveštenja",
-          "description": "Obaveštava ljude kojih se sesija tiče (ko je poslao prompt, ko ju je napravio i ko je prati) preko prijemnog sandučeta sa zvoncem, push obaveštenja u pregledaču i e-pošte, i upozorava na okidače i podsetnike koji ne uspevaju. Isključeno: push dobija samo telefon osobe koja je napravila sesiju."
+          "name": "Центар за обавештења",
+          "description": "Обавештава људе којих се сесија тиче (ко је послао промпт, ко ју је направио и ко је прати) преко пријемног сандучета са звонцем, push обавештења у прегледачу и е-поште, и упозорава на окидаче и подсетнике који не успевају. Искључено: push сесије добија само телефон особе која ју је направила, а телефон власника налога добија један push кад окидач почне да не успева."
         }
       }
     },

@@ -775,7 +775,7 @@
       "enableDescriptionPush": "Mostra le notifiche in questo browser, anche con tutte le schede di Kortix chiuse.",
       "enableDescriptionDesktop": "Mostra le notifiche dell'app desktop finché la sua finestra è aperta.",
       "enableDescriptionBrowser": "Mostra le notifiche in questo browser finché una scheda di Kortix è aperta.",
-      "notificationTypesDescription": "Queste scelte valgono su ogni telefono e in ogni browser. La campanella elenca ogni notifica.",
+      "notificationTypesDescription": "Queste scelte valgono su ogni telefono e in ogni browser. Un telefono ha anche un proprio interruttore per Turno terminato, Turno non riuscito, Domanda e Richiesta di autorizzazione. Li riceve solo quando entrambi sono attivi. La campanella elenca ogni notifica dei progetti con Centro notifiche attivo.",
       "push": "Push",
       "email": "Email",
       "channelSwitch": "{kind}: {channel}",
@@ -1205,7 +1205,7 @@
         },
         "notification_center": {
           "name": "Centro notifiche",
-          "description": "Avvisa le persone a cui una sessione interessa (chi ha inviato il prompt, chi l’ha creata e chi la segue) con una casella con campanella, notifiche push del browser ed email, e segnala trigger e promemoria che falliscono. Disattivato: solo il telefono di chi ha creato la sessione riceve un push."
+          "description": "Avvisa le persone a cui una sessione interessa (chi ha inviato il prompt, chi l’ha creata e chi la segue) con una casella con campanella, notifiche push del browser ed email, e segnala trigger e promemoria che falliscono. Disattivato: solo il telefono di chi ha creato la sessione riceve il suo push, e il telefono di un proprietario dell’account ne riceve uno quando un trigger inizia a fallire."
         }
       }
     },

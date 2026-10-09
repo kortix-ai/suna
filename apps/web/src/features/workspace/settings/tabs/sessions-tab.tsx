@@ -151,7 +151,7 @@ export const DEFAULT_SESSIONS_TAB_COPY: SessionsTabCopy = {
   permissionDefault: 'Will request browser permission when enabled',
   notificationTypes: 'Notification types',
   notificationTypesDescription:
-    'These choices apply on every phone and in every browser. The bell lists every notification.',
+    'These choices apply on every phone and in every browser. A phone also has its own switch for Turn finished, Turn failed, Question, and Permission request. It gets these only while both are on. The bell lists every notification of a project with Notification Center on.',
   notificationTypesCopy: {
     onCompletion: { label: 'Task completions', description: 'When a session finishes its task' },
     onError: { label: 'Errors', description: 'When a session encounters an error' },

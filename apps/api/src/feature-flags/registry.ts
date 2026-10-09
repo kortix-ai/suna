@@ -340,7 +340,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'notification_center',
     name: 'Notification Center',
     description:
-      "Tell the people a session concerns (its prompter, its creator and its followers) through a bell inbox, browser push and email, and alert on failing triggers and reminders. Off: only the session creator's phone gets a push, as before.",
+      "Tell the people a session concerns (its prompter, its creator and its followers) through a bell inbox, browser push and email, and alert on failing triggers and reminders. Off, as before: only the session creator's phone gets a session push, and an account owner's phone gets one when a trigger starts failing.",
     stability: 'beta',
     available: () => true,
     // KRTX-1742 ships dark: a project opts in from Settings → Feature flags.
