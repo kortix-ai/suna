@@ -17,7 +17,7 @@ import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
 import { Avatar } from '@/components/kortix/avatar';
 import { Sheet, type SheetRef } from '@/components/kortix/sheet';
-import { PendingConfirmDialog } from '@/components/ui/pending-confirm-dialog';
+import { PendingConfirmDialog } from '@/components/kortix/pending-confirm-dialog';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import { useToast } from '@/components/kortix/toast-provider';
 import { haptics } from '@/lib/haptics';

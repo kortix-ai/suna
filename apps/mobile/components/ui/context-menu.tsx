@@ -17,7 +17,7 @@ import {
   View,
   type ViewStyle,
 } from 'react-native';
-import { FullWindowOverlay } from '@/components/ui/full-window-overlay';
+import { FullWindowOverlay } from '@/components/kortix/full-window-overlay';
 import { FadeIn, ReduceMotion } from 'react-native-reanimated';
 
 const ContextMenu = ContextMenuPrimitive.Root;

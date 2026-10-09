@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils/index';
 import * as PopoverPrimitive from '@rn-primitives/popover';
 import * as React from 'react';
 import { Platform, StyleSheet } from 'react-native';
-import { FullWindowOverlay } from '@/components/ui/full-window-overlay';
+import { FullWindowOverlay } from '@/components/kortix/full-window-overlay';
 import { FadeIn, FadeOut, ReduceMotion } from 'react-native-reanimated';
 
 const Popover = PopoverPrimitive.Root;

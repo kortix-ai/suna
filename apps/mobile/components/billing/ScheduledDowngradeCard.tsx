@@ -9,7 +9,7 @@
 import * as React from 'react';
 import { ArrowsLeftRightIcon as ArrowRightLeft, CalendarDotsIcon as CalendarClock, ArrowUUpLeftIcon as Undo2 } from '@/lib/icons';
 
-import { PendingConfirmDialog } from '@/components/ui/pending-confirm-dialog';
+import { PendingConfirmDialog } from '@/components/kortix/pending-confirm-dialog';
 import { Text } from '@/components/ui/text';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import { useLanguage } from '@/contexts';

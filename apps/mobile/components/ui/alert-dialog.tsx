@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils/index';
 import * as AlertDialogPrimitive from '@rn-primitives/alert-dialog';
 import * as React from 'react';
 import { Platform, View, type ViewProps } from 'react-native';
-import { FullWindowOverlay } from '@/components/ui/full-window-overlay';
+import { FullWindowOverlay } from '@/components/kortix/full-window-overlay';
 import { FadeIn, FadeOut, ReduceMotion } from 'react-native-reanimated';
 
 const AlertDialog = AlertDialogPrimitive.Root;

@@ -12,7 +12,7 @@ styling inline. If a primitive is missing a capability, extend the primitive
 
 `components/ui/` is unmodified React Native Reusables (RNR) registry output —
 19 files, no barrel, no capitalized filenames. `components/kortix/` is
-Kortix-specific: 34 files, built on top of `components/ui/`. **There is no
+Kortix-specific: 37 files, built on top of `components/ui/`. **There is no
 `@/components/ui` barrel.** Import direct paths only, e.g.
 `@/components/ui/button`, `@/components/kortix/avatar`.
 
@@ -40,7 +40,7 @@ Kortix-specific: 34 files, built on top of `components/ui/`. **There is no
 | Native-only animated wrapper | `@/components/ui/native-only-animated-view` → `<NativeOnlyAnimatedView>` | animating a view that must also render inertly on web |
 | Context menu (long press, anchored to its trigger) | `@/components/ui/context-menu` → `<ContextMenu relativeTo="trigger">` + `ContextMenuTrigger` / `ContextMenuContent` / `ContextMenuItem` / `ContextMenuLabel` (the user message menu, `turn/user-message.tsx`) | a bottom sheet for a short action list on one element; `react-native-context-menu-view` (native module, absent in Expo Go) |
 
-## Kortix-specific components — `components/kortix/` (34 files)
+## Kortix-specific components — `components/kortix/` (37 files)
 
 | File | Purpose |
 | --- | --- |
@@ -48,6 +48,8 @@ Kortix-specific: 34 files, built on top of `components/ui/`. **There is no
 | `sheet.tsx` | `<Sheet>` bottom-sheet wrapper + `SheetHeader`/`SheetBody`, and the shared gorhom chrome — `SheetBackdrop`, `sheetHandleIndicatorStyle(isDark)`, `useSheetBackground()`. See **Bottom sheets** invariant below. |
 | `SheetInput.tsx` | Canonical pill text field for inside a bottom sheet (wraps gorhom's `BottomSheetTextInput`). |
 | `pill-input.tsx` | `PillInput` — the same pill on a plain `TextInput`, for full screens outside a sheet (the auth forms). Forwards its ref. Exports `usePillInputStyle`, the one source of the pill's look for both fields. |
+| `pending-confirm-dialog.tsx` | `PendingConfirmDialog` — a confirm dialog that stays open while its action is in flight: Cancel and the system dismiss are disabled until the mutation settles, and the caller decides title/description (an error replaces the question). Used by the project's archive/cancel dialogs and the scheduled plan-change card. |
+| `full-window-overlay.tsx` | `FullWindowOverlay` — gorhom's iOS full-window overlay, `React.Fragment` elsewhere. The registry overlays (dialog, alert-dialog, context-menu, popover, select) render inside it on iOS so their content clears native bars. |
 | `settings-list.tsx` | `SettingsHeader` / `SettingsPage` / `SettingsGroup` / `SettingsRow` / `AppearanceToggle` — the only layout for settings-style screens ((settings) stack, Account page, Accounts, Billing): back-button header (optional centred + transparent variant), page with an optional full-bleed `hero` above a rounded sheet, sentence-case group title, borderless `rounded-2xl` card, full-width separators, icon · label · trailing rows, `AppearanceRow` (opens a System/Light/Dark dialog with a check on the active mode). Inside a sheet, a group's rows take `SHEET_ROW_SURFACE` (`bg-secondary dark:bg-background`) from `SurfaceContext` (`surface-context.ts`) automatically — never pass a row fill there. See `design.md` → Settings screens. |
 | `search-header.tsx` | `SearchHeader` — iOS-style search mode for a screen header: filled 40pt pill (magnifier, auto-focused field, round clear button) + Cancel. A screen swaps its header row for it (projects header search). |
 | `platform-button.tsx` | `PlatformButton` — native SwiftUI button (`@expo/ui`, plain style on the `secondary` fill; no Liquid Glass, its shadow clips) on iOS, design-system `Button` with `rounded-full` on Android. Used for the projects "New" button and the settings Go back button. Same file: `PlatformFullWidthButton` — a full-width pill (label centred, `leading` React Native element pinned to the left edge) drawn natively on iOS in the design-system variant's tokens (`default` / `outline`, `size` `lg` / `xl`), design-system `Button` elsewhere; used by the auth welcome screen's three sign-in pills. Both fall back to the design-system button when the running binary lacks the `ExpoUI` native module (OTA-safe). |

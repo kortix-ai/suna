@@ -6,7 +6,7 @@ import * as SelectPrimitive from '@rn-primitives/select';
 import { CheckIcon as Check, CaretDownIcon as ChevronDown, CaretUpIcon as ChevronUpIcon } from '@/lib/icons';
 import * as React from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
-import { FullWindowOverlay } from '@/components/ui/full-window-overlay';
+import { FullWindowOverlay } from '@/components/kortix/full-window-overlay';
 import { FadeIn, FadeOut, ReduceMotion } from 'react-native-reanimated';
 
 type Option = SelectPrimitive.Option;
