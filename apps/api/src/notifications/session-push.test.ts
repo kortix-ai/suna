@@ -1,77 +1,40 @@
-// Session push decisions with injected session loader, token store, and sender
-// (DI, no mock.module): which turn ends notify, who receives, preference
-// filtering, the exact Spec §4 content, and sound / channel selection.
+// Session events (KRTX-1742 design §3.1) with injected collaborators (DI, no
+// mock.module): which turn ends notify, who is told for each origin class and
+// kind, mutes, the access filter, the inbox row's text and dedupe key, and the
+// Expo copy of the 4 session kinds. The real queries run in the DB suites
+// (__tests__/integration-notification-recipients.test.ts).
 import { describe, expect, test } from 'bun:test';
+import type { SessionAccessRow } from './access';
 import type { PushDeviceTokenRow } from './device-tokens';
-import type { ExpoPushMessage } from './expo-push';
+import type { DeliverInput } from './notifier';
+import { buildExpoMessages, buildPushContent } from './push-payload';
 import {
-  buildSessionPushMessages,
   createSessionNotifier,
-  truncateQuestion,
+  sessionEventAudience,
   turnEndPushType,
-  type SessionPushDeps,
-  type SessionPushTarget,
+  type SessionPushEvent,
 } from './session-push';
+import type { SessionWatchers } from './watchers';
 
-const USER = '00000000-0000-4000-8000-00000000000a';
 const PROJECT = '00000000-0000-4000-8000-000000000001';
+const ACCOUNT = '00000000-0000-4000-8000-000000000002';
 const SESSION = 'session-synthetic-1';
+const CREATOR = 'user-creator';
+const PROMPTER = 'user-prompter';
+const WATCHER = 'user-watcher';
 
-function row(token: string, overrides: Partial<PushDeviceTokenRow> = {}): PushDeviceTokenRow {
-  const now = new Date(0);
-  return {
-    token,
-    userId: USER,
-    platform: 'ios',
-    provider: 'expo',
-    enabled: true,
-    onCompletion: true,
-    onError: true,
-    onQuestion: true,
-    onPermission: true,
-    playSound: true,
-    authSessionId: null,
-    createdAt: now,
-    updatedAt: now,
-    ...overrides,
-  };
-}
+const watchers = (watching: string[] = [CREATOR], muted: string[] = []): SessionWatchers => ({
+  watching,
+  muted: new Set(muted),
+});
 
-function harness(opts: {
-  session?: SessionPushTarget | null;
-  rows?: PushDeviceTokenRow[];
-  enabled?: boolean;
-  isPresent?: SessionPushDeps['isPresent'];
-  mayReceive?: SessionPushDeps['mayReceive'];
-  send?: SessionPushDeps['send'];
-}) {
-  const sent: ExpoPushMessage[][] = [];
-  const listed: string[] = [];
-  const warnings: unknown[][] = [];
-  const deps: SessionPushDeps = {
-    enabled: opts.enabled ?? true,
-    isPresent: opts.isPresent,
-    mayReceive: opts.mayReceive,
-    logger: { warn: (...args: unknown[]) => void warnings.push(args) },
-    loadSession: async () => (opts.session === undefined ? { createdBy: USER, title: 'Fix the build' } : opts.session),
-    store: {
-      async listByUser(userId) {
-        listed.push(userId);
-        return opts.rows ?? [row('ExponentPushToken[a]')];
-      },
-      async deleteTokens(tokens) {
-        return tokens.length;
-      },
-    },
-    send:
-      opts.send ??
-      (async (messages) => {
-        sent.push(messages);
-        return { tickets: [], removedTokens: [], failedMessages: 0 };
-      }),
-  };
-  return { notify: createSessionNotifier(deps), sent, listed, warnings };
-}
+const event = (overrides: Partial<SessionPushEvent> = {}): SessionPushEvent => ({
+  type: 'completion',
+  sessionId: SESSION,
+  projectId: PROJECT,
+  prompterUserId: PROMPTER,
+  ...overrides,
+});
 
 describe('turnEndPushType — only a turn this call closed notifies', () => {
   test('closed + idle → completion', () => {
@@ -96,195 +59,300 @@ describe('turnEndPushType — only a turn this call closed notifies', () => {
     expect(turnEndPushType({ outcome: 'closed', status: 'idle', promoted: false })).toBe('completion');
   });
   test('an error end still notifies when a queued prompt was promoted', () => {
-    expect(turnEndPushType({ outcome: 'closed', status: 'error', errorName: 'APIError', promoted: true })).toBe(
-      'error',
-    );
+    expect(turnEndPushType({ outcome: 'closed', status: 'error', errorName: 'APIError', promoted: true })).toBe('error');
   });
   test('a coordinator-spawned child session sends nothing', () => {
     expect(turnEndPushType({ outcome: 'closed', status: 'idle', childSession: true })).toBeNull();
   });
 });
 
-describe('content (Spec §4)', () => {
-  test('completion', () => {
-    const [m] = buildSessionPushMessages(
-      { type: 'completion', sessionId: SESSION, projectId: PROJECT },
-      'Fix the build',
-      [row('ExponentPushToken[a]')],
-    );
-    expect(m).toEqual({
-      to: 'ExponentPushToken[a]',
-      title: 'Fix the build',
-      body: 'Session complete. Tap to see the result.',
-      data: { type: 'completion', projectId: PROJECT, sessionId: SESSION },
-      sound: 'kortix_complete.wav',
-      channelId: 'session-complete',
-      priority: 'high',
-    });
-  });
+describe('sessionEventAudience — who is told (design §3.1)', () => {
+  const sorted = (ids: string[]) => [...ids].sort();
 
-  test('error', () => {
-    const [m] = buildSessionPushMessages({ type: 'error', sessionId: SESSION, projectId: PROJECT }, 'T', [row('t')]);
-    expect(m).toMatchObject({
-      body: 'The session stopped with an error.',
-      sound: 'kortix_error.wav',
-      channelId: 'session-error',
-      data: { type: 'error', projectId: PROJECT, sessionId: SESSION },
-    });
-  });
-
-  test('question', () => {
-    const [m] = buildSessionPushMessages(
-      { type: 'question', sessionId: SESSION, projectId: PROJECT, question: 'Which branch should I deploy?' },
-      'T',
-      [row('t')],
-    );
-    expect(m).toMatchObject({
-      body: 'Kortix has a question: Which branch should I deploy?',
-      sound: 'kortix_attention.wav',
-      channelId: 'session-attention',
-    });
-  });
-
-  test('permission', () => {
-    const [m] = buildSessionPushMessages({ type: 'permission', sessionId: SESSION, projectId: PROJECT }, 'T', [row('t')]);
-    expect(m).toMatchObject({
-      body: 'Kortix needs your approval to continue.',
-      sound: 'kortix_attention.wav',
-      channelId: 'session-attention',
-    });
-  });
-
-  test('title falls back to "Kortix" when the session has no title', () => {
-    for (const title of [null, '', '   ']) {
-      const [m] = buildSessionPushMessages({ type: 'completion', sessionId: SESSION, projectId: PROJECT }, title, [row('t')]);
-      expect(m!.title).toBe('Kortix');
+  test('attended turn end: the prompter and every watcher, with push', () => {
+    for (const type of ['completion', 'error'] as const) {
+      const out = sessionEventAudience(event({ type }), watchers([CREATOR, WATCHER]));
+      expect(sorted(out.recipients)).toEqual(sorted([PROMPTER, CREATOR, WATCHER]));
+      expect(out.pushAllowed).toBe(true);
     }
   });
 
-  test('the question text is cut to 140 characters', () => {
-    const long = 'x'.repeat(300);
-    const cut = truncateQuestion(long);
-    expect([...cut]).toHaveLength(140);
-    expect(cut.endsWith('…')).toBe(true);
-    expect(truncateQuestion('x'.repeat(140))).toBe('x'.repeat(140));
-    expect(truncateQuestion('  two\n\nlines  ')).toBe('two lines');
+  test('channel turn end: the prompter only, inbox row only (the thread carried it)', () => {
+    const out = sessionEventAudience(event({ originClass: 'channel' }), watchers([CREATOR, WATCHER]));
+    expect(out).toEqual({ recipients: [PROMPTER], pushAllowed: false });
   });
 
-  test('play_sound false → no sound, silent channel', () => {
-    for (const type of ['completion', 'error', 'question', 'permission'] as const) {
-      const [m] = buildSessionPushMessages({ type, sessionId: SESSION, projectId: PROJECT, question: 'q' }, 'T', [
-        row('t', { playSound: false }),
-      ]);
-      expect(m).toMatchObject({ sound: null, channelId: 'session-silent', priority: 'high' });
+  test('channel turn end with no person prompter: nobody (not the owner stand-in)', () => {
+    const out = sessionEventAudience(event({ originClass: 'channel', prompterUserId: null }), watchers());
+    expect(out.recipients).toEqual([]);
+  });
+
+  test('unattended turn end: the prompter only, with push (run failures are automation alerts)', () => {
+    const out = sessionEventAudience(
+      event({ type: 'error', originClass: 'unattended', triggerWatcherIds: [WATCHER] }),
+      watchers([CREATOR]),
+    );
+    expect(out).toEqual({ recipients: [PROMPTER], pushAllowed: true });
+  });
+
+  test('a child session turn end tells nobody', () => {
+    expect(sessionEventAudience(event({ isChild: true }), watchers()).recipients).toEqual([]);
+  });
+
+  test('attended and child asks: the prompter and every watcher (the creator launched the child)', () => {
+    for (const type of ['question', 'permission'] as const) {
+      for (const isChild of [false, true]) {
+        const out = sessionEventAudience(event({ type, isChild }), watchers([CREATOR]));
+        expect(sorted(out.recipients)).toEqual(sorted([PROMPTER, CREATOR]));
+        expect(out.pushAllowed).toBe(true);
+      }
     }
   });
-});
 
-describe('preference filtering', () => {
-  const rows = [
-    row('all-on'),
-    row('disabled', { enabled: false }),
-    row('no-completion', { onCompletion: false }),
-    row('no-error', { onError: false }),
-    row('no-question', { onQuestion: false }),
-    row('no-permission', { onPermission: false }),
-  ];
-  const tokensFor = (type: 'completion' | 'error' | 'question' | 'permission') =>
-    buildSessionPushMessages({ type, sessionId: SESSION, projectId: PROJECT, question: 'q' }, 'T', rows).map(
-      (m) => m.to,
+  test('channel ask the thread could not carry: the prompter and every watcher, with push', () => {
+    for (const type of ['question', 'permission'] as const) {
+      const out = sessionEventAudience(event({ type, originClass: 'channel', prompterUserId: null }), watchers([CREATOR]));
+      expect(out).toEqual({ recipients: [CREATOR], pushAllowed: true });
+    }
+  });
+
+  test('channel question the thread posted: the prompter only, inbox row only', () => {
+    const out = sessionEventAudience(
+      event({ type: 'question', originClass: 'channel', threadCarriesAsk: true }),
+      watchers([CREATOR]),
     );
+    expect(out).toEqual({ recipients: [PROMPTER], pushAllowed: false });
+  });
 
-  test('each event type honors its own switch and the master switch', () => {
-    expect(tokensFor('completion')).toEqual(['all-on', 'no-error', 'no-question', 'no-permission']);
-    expect(tokensFor('error')).toEqual(['all-on', 'no-completion', 'no-question', 'no-permission']);
-    expect(tokensFor('question')).toEqual(['all-on', 'no-completion', 'no-error', 'no-permission']);
-    expect(tokensFor('permission')).toEqual(['all-on', 'no-completion', 'no-error', 'no-question']);
+  test('unattended ask: the prompter and the trigger watchers, not the session watchers', () => {
+    const out = sessionEventAudience(
+      event({ type: 'question', originClass: 'unattended', triggerWatcherIds: [WATCHER] }),
+      watchers([CREATOR]),
+    );
+    expect(sorted(out.recipients)).toEqual(sorted([PROMPTER, WATCHER]));
+    expect(out.pushAllowed).toBe(true);
+  });
+
+  test('a muted user is removed: creator, prompter, trigger watcher, explicit recipient', () => {
+    expect(sessionEventAudience(event(), watchers([], [CREATOR])).recipients).toEqual([PROMPTER]);
+    expect(sessionEventAudience(event(), watchers([CREATOR], [PROMPTER])).recipients).toEqual([CREATOR]);
+    expect(
+      sessionEventAudience(
+        event({ type: 'permission', originClass: 'unattended', triggerWatcherIds: [WATCHER] }),
+        watchers([], [WATCHER]),
+      ).recipients,
+    ).toEqual([PROMPTER]);
+    expect(sessionEventAudience(event({ recipients: [CREATOR, WATCHER] }), watchers([], [WATCHER])).recipients).toEqual([CREATOR]);
+  });
+
+  test('explicit recipients replace the computed set', () => {
+    const out = sessionEventAudience(event({ type: 'error', originClass: 'unattended', recipients: [WATCHER] }), watchers());
+    expect(out).toEqual({ recipients: [WATCHER], pushAllowed: true });
+  });
+
+  test('duplicates collapse; no prompter adds nobody', () => {
+    const out = sessionEventAudience(event({ prompterUserId: CREATOR }), watchers([CREATOR]));
+    expect(out.recipients).toEqual([CREATOR]);
+    expect(sessionEventAudience(event({ prompterUserId: null }), watchers([])).recipients).toEqual([]);
   });
 });
+
+function sessionRow(overrides: Partial<SessionAccessRow> = {}): SessionAccessRow {
+  return {
+    sessionId: SESSION,
+    accountId: ACCOUNT,
+    projectId: PROJECT,
+    createdBy: CREATOR,
+    visibility: 'project',
+    metadata: { name: 'Fix the build' },
+    origin: 'user',
+    initiatorType: 'member',
+    ...overrides,
+  };
+}
+
+function harness(opts: {
+  session?: SessionAccessRow | null;
+  watching?: SessionWatchers;
+  mayOpen?: (userId: string) => boolean;
+  failDeliver?: boolean;
+} = {}) {
+  const delivered: DeliverInput[] = [];
+  const warnings: unknown[][] = [];
+  const notify = createSessionNotifier({
+    loadSession: async () => (opts.session === undefined ? sessionRow() : opts.session),
+    watchers: async () => opts.watching ?? watchers(),
+    mayOpen: async (_session, userIds) => userIds.filter((id) => opts.mayOpen?.(id) ?? true),
+    deliver: async (input) => {
+      if (opts.failDeliver) throw new Error('db down');
+      delivered.push(input);
+      return [];
+    },
+    logger: { warn: (...args: unknown[]) => void warnings.push(args) },
+  });
+  return { notify, delivered, warnings };
+}
 
 describe('createSessionNotifier', () => {
-  const event = { type: 'completion' as const, sessionId: SESSION, projectId: PROJECT };
-
-  test('suppresses only the present creator session', async () => {
-    const h = harness({ isPresent: async (user, session) => user === USER && session === SESSION });
-    expect(await h.notify(event)).toEqual({ sent: 0, reason: 'present' });
-    expect(h.sent).toHaveLength(0);
-    expect(h.listed).toHaveLength(0);
-  });
-
-  test('sends to every allowed device of the session creator', async () => {
-    const h = harness({ rows: [row('a'), row('b', { platform: 'android', playSound: false })] });
-    const outcome = await h.notify(event);
-    expect(outcome.reason).toBe('sent');
-    expect(outcome.sent).toBe(2);
-    expect(h.listed).toEqual([USER]);
-    expect(h.sent[0]!.map((m) => [m.to, m.channelId])).toEqual([
-      ['a', 'session-complete'],
-      ['b', 'session-silent'],
+  test('a turn end becomes one turn_done delivery, deduped per turn', async () => {
+    const h = harness();
+    const outcome = await h.notify(event({ turnMessageId: 'msg_1' }));
+    expect(outcome).toEqual({ reason: 'delivered', recipients: [PROMPTER, CREATOR] });
+    expect(h.delivered).toEqual([
+      {
+        kind: 'turn_done',
+        accountId: ACCOUNT,
+        projectId: PROJECT,
+        sessionId: SESSION,
+        title: 'Fix the build',
+        body: '',
+        actorUserId: PROMPTER,
+        dedupeKey: `turn:${SESSION}:msg_1`,
+        recipients: [PROMPTER, CREATOR],
+        pushAllowed: true,
+      },
     ]);
   });
 
-  test('recipients replace the creator: each present one is skipped', async () => {
-    const h = harness({ isPresent: async (user) => user === 'user-present' });
-    const outcome = await h.notify({ type: 'question', sessionId: SESSION, projectId: PROJECT, question: 'Which region?', recipients: ['user-a', 'user-present'] });
-    expect(outcome.reason).toBe('sent');
-    expect(h.listed).toEqual(['user-a']);
-    expect(h.sent[0]![0]!.body).toBe('Kortix has a question: Which region?');
+  test('the custom name wins over the generated title; no title stays empty', async () => {
+    const named = harness({ session: sessionRow({ metadata: { name: 'Generated', custom_name: 'Mine' } }) });
+    await named.notify(event());
+    expect(named.delivered[0]!.title).toBe('Mine');
+    const untitled = harness({ session: sessionRow({ metadata: {} }) });
+    await untitled.notify(event());
+    expect(untitled.delivered[0]!.title).toBe('');
   });
 
-  // KRTX-1722: removal stopped the sign-in, and the removed member's phone
-  // kept getting the session titles and questions of teammates' turns.
-  test('a recipient who left the account gets nothing; the others still do', async () => {
-    const h = harness({ mayReceive: async (user) => user !== 'user-left' });
-    const outcome = await h.notify({ ...event, recipients: ['user-a', 'user-left'] });
-    expect(outcome.reason).toBe('sent');
-    expect(h.listed).toEqual(['user-a']);
+  test('an error carries its message; a turn end with no message id has no dedupe key', async () => {
+    const h = harness();
+    await h.notify(event({ type: 'error', errorMessage: '  Payment Required:\n Insufficient credits.  ' }));
+    expect(h.delivered[0]).toMatchObject({
+      kind: 'turn_error',
+      body: 'Payment Required: Insufficient credits.',
+      dedupeKey: null,
+    });
   });
 
-  test('a creator who left the account → no push, reason no_access', async () => {
-    const h = harness({ mayReceive: async () => false });
-    expect(await h.notify(event)).toEqual({ sent: 0, reason: 'no_access' });
-    expect(h.listed).toHaveLength(0);
-    expect(h.sent).toHaveLength(0);
+  test('a question carries its text, cut to 140 characters, deduped per request', async () => {
+    const h = harness();
+    await h.notify(event({ type: 'question', question: 'x'.repeat(300), requestId: 'que_1' }));
+    const body = h.delivered[0]!.body!;
+    expect([...body]).toHaveLength(140);
+    expect(body.endsWith('…')).toBe(true);
+    expect(h.delivered[0]).toMatchObject({ kind: 'question', dedupeKey: `question:${SESSION}:que_1` });
   });
 
-  test('every recipient present → no push', async () => {
-    const h = harness({ isPresent: async () => true });
-    expect(await h.notify({ ...event, recipients: ['user-a', 'user-b'] })).toEqual({ sent: 0, reason: 'present' });
+  test('a permission is deduped per request', async () => {
+    const h = harness();
+    await h.notify(event({ type: 'permission', requestId: 'per_1' }));
+    expect(h.delivered[0]).toMatchObject({ kind: 'permission', body: '', dedupeKey: `permission:${SESSION}:per_1` });
   });
 
-  test('kill switch: nothing is loaded or sent', async () => {
-    const h = harness({ enabled: false });
-    expect(await h.notify(event)).toEqual({ sent: 0, reason: 'disabled' });
-    expect(h.listed).toEqual([]);
-    expect(h.sent).toEqual([]);
+  test('a channel turn end is delivered as an inbox row without push', async () => {
+    const h = harness();
+    await h.notify(event({ originClass: 'channel' }));
+    expect(h.delivered[0]).toMatchObject({ recipients: [PROMPTER], pushAllowed: false });
   });
 
-  test('no created_by → no push', async () => {
-    const h = harness({ session: { createdBy: null, title: 'T' } });
-    expect(await h.notify(event)).toEqual({ sent: 0, reason: 'no_recipient' });
-    expect(h.sent).toEqual([]);
+  test('a recipient who may not open the session is dropped; the others are still told', async () => {
+    const h = harness({ mayOpen: (id) => id !== CREATOR });
+    expect(await h.notify(event())).toEqual({ reason: 'delivered', recipients: [PROMPTER] });
   });
 
-  test('unknown session → no push', async () => {
-    const h = harness({ session: null });
-    expect(await h.notify(event)).toEqual({ sent: 0, reason: 'no_session' });
+  test('nobody may open it → no delivery, reason no_access', async () => {
+    const h = harness({ mayOpen: () => false });
+    expect(await h.notify(event())).toEqual({ reason: 'no_access', recipients: [] });
+    expect(h.delivered).toEqual([]);
   });
 
-  test('every device opted out → no request', async () => {
-    const h = harness({ rows: [row('a', { onCompletion: false })] });
-    expect(await h.notify(event)).toEqual({ sent: 0, reason: 'no_devices' });
-    expect(h.sent).toEqual([]);
+  test('nobody to tell → no delivery, reason no_recipient', async () => {
+    const h = harness({ watching: watchers([]) });
+    expect(await h.notify(event({ prompterUserId: null }))).toEqual({ reason: 'no_recipient', recipients: [] });
+    expect(h.delivered).toEqual([]);
+  });
+
+  test('unknown session, or a session of another project → no delivery', async () => {
+    expect(await harness({ session: null }).notify(event())).toEqual({ reason: 'no_session', recipients: [] });
+    const other = harness({ session: sessionRow({ projectId: '00000000-0000-4000-8000-0000000000ff' }) });
+    expect(await other.notify(event())).toEqual({ reason: 'no_session', recipients: [] });
+    expect(other.delivered).toEqual([]);
   });
 
   test('a failing dependency never throws to the caller', async () => {
-    const h = harness({
-      send: async () => {
-        throw new Error('boom');
-      },
-    });
-    expect(await h.notify(event)).toEqual({ sent: 0, reason: 'failed' });
+    const h = harness({ failDeliver: true });
+    expect(await h.notify(event())).toEqual({ reason: 'failed', recipients: [] });
     expect(h.warnings).toHaveLength(1);
+  });
+});
+
+// The Expo copy of the 4 session kinds is unchanged by KRTX-1742: an installed
+// app keeps showing the same text and routing on the same `type`.
+describe('Expo copy of the session kinds (Spec §4)', () => {
+  function device(token: string, overrides: Partial<PushDeviceTokenRow> = {}): PushDeviceTokenRow {
+    const now = new Date(0);
+    return {
+      token,
+      userId: CREATOR,
+      platform: 'ios',
+      provider: 'expo',
+      enabled: true,
+      onCompletion: true,
+      onError: true,
+      onQuestion: true,
+      onPermission: true,
+      playSound: true,
+      authSessionId: null,
+      createdAt: now,
+      updatedAt: now,
+      ...overrides,
+    };
+  }
+  const content = (kind: 'turn_done' | 'turn_error' | 'question' | 'permission', body = '') =>
+    buildPushContent({ notificationId: 'n1', kind, title: 'Fix the build', body, projectId: PROJECT, sessionId: SESSION, triggerSlug: null });
+
+  test('body, sound, channel and legacy type per kind', () => {
+    const cases = [
+      ['turn_done', '', 'Session complete. Tap to see the result.', 'kortix_complete.wav', 'session-complete', 'completion'],
+      ['turn_error', 'boom', 'The session stopped with an error.', 'kortix_error.wav', 'session-error', 'error'],
+      ['question', 'Which branch should I deploy?', 'Kortix has a question: Which branch should I deploy?', 'kortix_attention.wav', 'session-attention', 'question'],
+      ['question', '', 'Kortix has a question.', 'kortix_attention.wav', 'session-attention', 'question'],
+      ['permission', '', 'Kortix needs your approval to continue.', 'kortix_attention.wav', 'session-attention', 'permission'],
+    ] as const;
+    for (const [kind, detail, body, sound, channelId, type] of cases) {
+      const [message] = buildExpoMessages(content(kind, detail), [device('t')]);
+      expect(message).toMatchObject({ to: 't', title: 'Fix the build', body, sound, channelId, priority: 'high' });
+      expect(message!.data).toMatchObject({ type, kind, projectId: PROJECT, sessionId: SESSION });
+    }
+  });
+
+  test('play_sound false → no sound, silent channel', () => {
+    for (const kind of ['turn_done', 'turn_error', 'question', 'permission'] as const) {
+      const [message] = buildExpoMessages(content(kind, 'q'), [device('t', { playSound: false })]);
+      expect(message).toMatchObject({ sound: null, channelId: 'session-silent', priority: 'high' });
+    }
+  });
+
+  test('each kind honors its own device switch and the master switch', () => {
+    const rows = [
+      device('all-on'),
+      device('disabled', { enabled: false }),
+      device('no-completion', { onCompletion: false }),
+      device('no-error', { onError: false }),
+      device('no-question', { onQuestion: false }),
+      device('no-permission', { onPermission: false }),
+    ];
+    const tokensFor = (kind: 'turn_done' | 'turn_error' | 'question' | 'permission') =>
+      buildExpoMessages(content(kind, 'q'), rows).map((m) => m.to);
+    expect(tokensFor('turn_done')).toEqual(['all-on', 'no-error', 'no-question', 'no-permission']);
+    expect(tokensFor('turn_error')).toEqual(['all-on', 'no-completion', 'no-question', 'no-permission']);
+    expect(tokensFor('question')).toEqual(['all-on', 'no-completion', 'no-error', 'no-permission']);
+    expect(tokensFor('permission')).toEqual(['all-on', 'no-completion', 'no-error', 'no-question']);
+  });
+
+  test('title falls back to "Kortix" when the session has no title', () => {
+    for (const title of ['', '   ']) {
+      const pushed = buildPushContent({ notificationId: 'n1', kind: 'turn_done', title, body: '', projectId: PROJECT, sessionId: SESSION, triggerSlug: null });
+      expect(pushed.title).toBe('Kortix');
+    }
   });
 });

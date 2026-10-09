@@ -1,19 +1,28 @@
-// Session push notifications: the server tells the session creator's devices
-// that a turn completed, failed, or needs an answer. The app may be closed, so
-// the API detects the event (routes/turn-stream.ts, routes/turn-questions.ts)
-// and sends through Expo. Callers fire and forget: `notifySessionEvent` never
-// throws and never runs on the relay's response path.
-import { projectSessions, sessionPresenceLeases } from '@kortix/db';
-import { and, eq, gt, sql } from 'drizzle-orm';
-import { config } from '../config';
+// Session events → the notifier (KRTX-1742 design §3.1). A turn completed or
+// failed, or the agent asks a question or a permission: decide who is told,
+// then hand it to `deliver` (notifier.ts), which writes one inbox row per
+// recipient and sends push and email by their preferences.
+//
+// What only projects/ can read — the person who prompted the turn, the
+// session's origin class, the trigger watchers — is resolved there
+// (projects/lib/notification-recipients.ts) and travels on the event. Callers
+// fire and forget: `notifySessionEvent` never throws.
+import type { NotificationKindName } from '@kortix/shared/notification-kinds';
+import { logger } from '../lib/logger';
 import { ABORT_END_ERROR_NAMES, type SandboxTurnCompletionOutcome } from '../projects/session-turn-ledger';
-import { db } from '../shared/db';
-import { PROJECT_ACTIONS } from '../iam/actions';
-import { listAccessible } from '../iam/authorize';
-import { pushDeviceTokenStore, type PushDeviceTokenRow, type PushDeviceTokenStore } from './device-tokens';
-import { sendExpoPushMessages, type ExpoPushMessage, type ExpoPushResult } from './expo-push';
+import { filterSessionRecipients, loadSessionAccessRows, type SessionAccessRow } from './access';
+import { clip, INBOX_BODY_MAX_CHARS } from './inbox-store';
+import { deliver, type DeliverInput, type NotifierDeps } from './notifier';
+import { sessionWatchersOf, type SessionWatchers } from './watchers';
 
 export type SessionPushEventType = 'completion' | 'error' | 'question' | 'permission';
+
+/**
+ * - `attended`: a person runs it from Kortix (web, mobile, CLI, SDK).
+ * - `channel`: Slack, Teams, email or Telegram; the thread is the conversation.
+ * - `unattended`: a trigger or schedule runs it.
+ */
+export type SessionOriginClass = 'attended' | 'channel' | 'unattended';
 
 export interface SessionPushEvent {
   type: SessionPushEventType;
@@ -21,97 +30,40 @@ export interface SessionPushEvent {
   projectId: string;
   /** First question text, for `question` events. */
   question?: string;
-  /** Notify these users instead of the session creator. */
-  recipients?: string[];
+  /** The error message, for `error` events. */
+  errorMessage?: string | null;
+  /** The ask's request id: one row per recipient per question or permission. */
+  requestId?: string | null;
+  /** The ended turn's message id: one row per recipient per turn. */
+  turnMessageId?: string | null;
+  /** The person whose prompt started the turn; null for a channel, trigger or agent prompt. */
+  prompterUserId?: string | null;
+  /** Defaults to `attended`. */
+  originClass?: SessionOriginClass;
+  /** A coordinator-spawned worker session. */
+  isChild?: boolean;
+  /** The Slack/Teams thread posted the question itself. */
+  threadCarriesAsk?: boolean;
+  /** Who follows the trigger, for an ask in an unattended session. */
+  triggerWatcherIds?: readonly string[];
+  /** Tell exactly these users instead of the computed set. Muted users are still removed. */
+  recipients?: readonly string[];
 }
 
-export interface SessionPushTarget {
-  createdBy: string | null;
-  title: string | null;
-  /** The session's account: a recipient must still be a member of it. */
-  accountId?: string | null;
-  /** The session's project: a recipient must still be allowed into it. */
-  projectId?: string | null;
-}
+export type SessionPushOutcome = {
+  reason: 'no_session' | 'no_recipient' | 'no_access' | 'failed' | 'delivered';
+  recipients: string[];
+};
 
-export interface SessionPushDeps {
-  enabled: boolean;
-  loadSession(sessionId: string, projectId: string): Promise<SessionPushTarget | null>;
-  isPresent?(userId: string, sessionId: string): Promise<boolean>;
-  /** False for a recipient who no longer has access to the session's account. */
-  mayReceive?(userId: string, session: SessionPushTarget): Promise<boolean>;
-  store: Pick<PushDeviceTokenStore, 'listByUser' | 'deleteTokens'>;
-  send(messages: ExpoPushMessage[], store: Pick<PushDeviceTokenStore, 'deleteTokens'>): Promise<ExpoPushResult>;
-  /** Receives failure warnings. Defaults to `console`. */
-  logger?: Pick<Console, 'warn'>;
-}
+const KIND: Record<SessionPushEventType, NotificationKindName> = {
+  completion: 'turn_done',
+  error: 'turn_error',
+  question: 'question',
+  permission: 'permission',
+};
 
-export type SessionPushOutcome =
-  | { sent: 0; reason: 'disabled' | 'no_session' | 'no_recipient' | 'no_access' | 'no_devices' | 'present' | 'failed' }
-  | { sent: number; reason: 'sent'; result: ExpoPushResult };
-
-export const DEFAULT_PUSH_TITLE = 'Kortix';
+/** The push body keeps today's 140-character question line. */
 export const QUESTION_TEXT_MAX_CHARS = 140;
-
-const BODIES: Record<Exclude<SessionPushEventType, 'question'>, string> = {
-  completion: 'Session complete. Tap to see the result.',
-  permission: 'Kortix needs your approval to continue.',
-  error: 'The session stopped with an error.',
-};
-
-const SOUNDS: Record<SessionPushEventType, { sound: string; channelId: string }> = {
-  completion: { sound: 'kortix_complete.wav', channelId: 'session-complete' },
-  question: { sound: 'kortix_attention.wav', channelId: 'session-attention' },
-  permission: { sound: 'kortix_attention.wav', channelId: 'session-attention' },
-  error: { sound: 'kortix_error.wav', channelId: 'session-error' },
-};
-const SILENT_CHANNEL_ID = 'session-silent';
-
-const PREFERENCE: Record<SessionPushEventType, keyof PushDeviceTokenRow> = {
-  completion: 'onCompletion',
-  error: 'onError',
-  question: 'onQuestion',
-  permission: 'onPermission',
-};
-
-/** Collapse whitespace and cut to `QUESTION_TEXT_MAX_CHARS` characters. */
-export function truncateQuestion(text: string): string {
-  const flat = text.replace(/\s+/g, ' ').trim();
-  const chars = [...flat];
-  if (chars.length <= QUESTION_TEXT_MAX_CHARS) return flat;
-  return `${chars.slice(0, QUESTION_TEXT_MAX_CHARS - 1).join('').trimEnd()}…`;
-}
-
-export function pushBody(type: SessionPushEventType, question?: string): string {
-  if (type === 'question') {
-    const text = question ? truncateQuestion(question) : '';
-    return text ? `Kortix has a question: ${text}` : 'Kortix has a question.';
-  }
-  return BODIES[type];
-}
-
-/** Rows whose stored preferences allow `type`. */
-export function devicesForEvent(rows: readonly PushDeviceTokenRow[], type: SessionPushEventType) {
-  return rows.filter((row) => row.provider === 'expo' && row.enabled && row[PREFERENCE[type]] === true);
-}
-
-export function buildSessionPushMessages(
-  event: SessionPushEvent,
-  title: string | null,
-  rows: readonly PushDeviceTokenRow[],
-): ExpoPushMessage[] {
-  const heading = title?.trim() || DEFAULT_PUSH_TITLE;
-  const body = pushBody(event.type, event.question);
-  const data = { type: event.type, projectId: event.projectId, sessionId: event.sessionId };
-  return devicesForEvent(rows, event.type).map((row) => ({
-    to: row.token,
-    title: heading,
-    body,
-    data,
-    ...(row.playSound ? SOUNDS[event.type] : { sound: null, channelId: SILENT_CHANNEL_ID }),
-    priority: 'high',
-  }));
-}
 
 /**
  * Which push a sandbox turn end earns. Only an end that closed a turn in this
@@ -136,94 +88,105 @@ export function turnEndPushType(input: {
   return 'error';
 }
 
-export function createSessionNotifier(deps: SessionPushDeps) {
+/** `metadata.custom_name`, else the generated `metadata.name`, else null. */
+export function sessionTitleOf(metadata: unknown): string | null {
+  const meta = (metadata && typeof metadata === 'object' ? metadata : {}) as Record<string, unknown>;
+  return [meta.custom_name, meta.name].find((value): value is string => typeof value === 'string') ?? null;
+}
+
+/**
+ * Who is told, before the access check (design §3.1). `watchers.watching` is
+ * the creator (unless muted) plus every unmuted row; muted users are always
+ * removed. `pushAllowed` is false when a channel thread already carried the
+ * event: the inbox row is the record, with no push and no email.
+ */
+export function sessionEventAudience(
+  event: SessionPushEvent,
+  watchers: SessionWatchers,
+): { recipients: string[]; pushAllowed: boolean } {
+  const origin = event.isChild ? 'child' : (event.originClass ?? 'attended');
+  const ask = event.type === 'question' || event.type === 'permission';
+  const prompter = event.prompterUserId ? [event.prompterUserId] : [];
+  const everyone = [...prompter, ...watchers.watching];
+  const quiet = origin === 'channel' && (!ask || event.threadCarriesAsk === true);
+  let named: readonly string[];
+  if (event.recipients) named = event.recipients;
+  else if (!ask) named = origin === 'child' ? [] : origin === 'attended' ? everyone : prompter;
+  else if (origin === 'unattended') named = [...prompter, ...(event.triggerWatcherIds ?? [])];
+  else named = quiet ? prompter : everyone;
+  return {
+    recipients: [...new Set(named)].filter((id) => !!id && !watchers.muted.has(id)),
+    pushAllowed: !quiet,
+  };
+}
+
+function bodyOf(event: SessionPushEvent): string {
+  if (event.type === 'question') return clip(event.question ?? '', QUESTION_TEXT_MAX_CHARS);
+  if (event.type === 'error') return clip(event.errorMessage ?? '', INBOX_BODY_MAX_CHARS);
+  return '';
+}
+
+function dedupeKeyOf(event: SessionPushEvent): string | null {
+  if (event.type === 'question' || event.type === 'permission') {
+    return event.requestId ? `${event.type}:${event.sessionId}:${event.requestId}` : null;
+  }
+  return event.turnMessageId ? `turn:${event.sessionId}:${event.turnMessageId}` : null;
+}
+
+export interface SessionNotifierDeps {
+  loadSession(sessionId: string): Promise<SessionAccessRow | null>;
+  watchers(sessionId: string, createdBy: string | null): Promise<SessionWatchers>;
+  /** The users among `userIds` who may open the session now. */
+  mayOpen(session: SessionAccessRow, userIds: readonly string[]): Promise<string[]>;
+  deliver(input: DeliverInput): Promise<unknown>;
+  logger: Pick<Console, 'warn'>;
+}
+
+export function createSessionNotifier(deps: SessionNotifierDeps) {
   return async function notify(event: SessionPushEvent): Promise<SessionPushOutcome> {
     try {
-      if (!deps.enabled) return { sent: 0, reason: 'disabled' };
-      const session = await deps.loadSession(event.sessionId, event.projectId);
-      if (!session) return { sent: 0, reason: 'no_session' };
-      const named = event.recipients ?? (session.createdBy ? [session.createdBy] : []);
-      if (named.length === 0) return { sent: 0, reason: 'no_recipient' };
-      // A member who left keeps the sessions they created, and teammates keep
-      // running them. Their phone must not keep getting the titles and the
-      // agent's questions (KRTX-1722).
-      const recipients: string[] = [];
-      for (const userId of named) {
-        if (!deps.mayReceive || (await deps.mayReceive(userId, session))) recipients.push(userId);
-      }
-      if (recipients.length === 0) return { sent: 0, reason: 'no_access' };
-      const messages: ExpoPushMessage[] = [];
-      let present = 0;
-      for (const userId of recipients) {
-        if (await deps.isPresent?.(userId, event.sessionId)) { present += 1; continue; }
-        messages.push(...buildSessionPushMessages(event, session.title, await deps.store.listByUser(userId)));
-      }
-      if (present === recipients.length) return { sent: 0, reason: 'present' };
-      if (messages.length === 0) return { sent: 0, reason: 'no_devices' };
-      const result = await deps.send(messages, deps.store);
-      return { sent: messages.length, reason: 'sent', result };
+      const session = await deps.loadSession(event.sessionId);
+      if (!session || session.projectId !== event.projectId) return { reason: 'no_session', recipients: [] };
+      const audience = sessionEventAudience(event, await deps.watchers(session.sessionId, session.createdBy));
+      if (audience.recipients.length === 0) return { reason: 'no_recipient', recipients: [] };
+      // A member who left, lost the project, or lost a share keeps nothing:
+      // no title and no question text (KRTX-1722, session level since KRTX-1742).
+      const recipients = await deps.mayOpen(session, audience.recipients);
+      if (recipients.length === 0) return { reason: 'no_access', recipients: [] };
+      await deps.deliver({
+        kind: KIND[event.type],
+        accountId: session.accountId,
+        projectId: session.projectId,
+        sessionId: session.sessionId,
+        title: sessionTitleOf(session.metadata) ?? '',
+        body: bodyOf(event),
+        actorUserId: event.prompterUserId ?? null,
+        dedupeKey: dedupeKeyOf(event),
+        recipients,
+        pushAllowed: audience.pushAllowed,
+      });
+      return { reason: 'delivered', recipients };
     } catch (err) {
-      (deps.logger ?? console).warn('[push] session notification failed', {
+      deps.logger.warn('[notify] session event failed', {
         type: event.type,
         sessionId: event.sessionId,
         error: err instanceof Error ? err.message : String(err),
       });
-      return { sent: 0, reason: 'failed' };
+      return { reason: 'failed', recipients: [] };
     }
   };
 }
 
-async function loadSessionTarget(sessionId: string, projectId: string): Promise<SessionPushTarget | null> {
-  const [row] = await db
-    .select({ createdBy: projectSessions.createdBy, metadata: projectSessions.metadata, accountId: projectSessions.accountId })
-    .from(projectSessions)
-    .where(and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)))
-    .limit(1);
-  if (!row) return null;
-  // `metadata.name` is the session title (owned by session-title-generate.ts).
-  const meta = (row.metadata ?? {}) as Record<string, unknown>;
-  const title = [meta.custom_name, meta.name].find((v): v is string => typeof v === 'string');
-  return { createdBy: row.createdBy, title: title ?? null, accountId: row.accountId, projectId };
-}
-
 /**
- * May `userId` still be told about this session (KRTX-1722)? A member who left
- * the account, or who lost the project while staying in the account, keeps the
- * sessions they created, and teammates keep running them. Their phone must not
- * keep getting the titles and the agent's questions.
- *
- * The project-list rule (`listAccessible`): account membership plus the project
- * grant, owners and admins on every project, and SSO-only enforcement. It skips
- * the MFA step-up on purpose: a push is not a sign-in. Today's recipients are
- * the session's creator, who sees their own session wherever they may read the
- * project, and the account's automation owner, an implicit manager.
+ * Tell the people a session event is for. Never throws. `notifierDeps`
+ * replaces the delivery wiring (DB suites inject the senders only).
  */
-export async function mayReceiveSessionPush(userId: string, session: SessionPushTarget): Promise<boolean> {
-  if (!session.accountId || !session.projectId) return false;
-  const accessible = await listAccessible(
-    { userId, accountId: session.accountId, credential: { kind: 'jwt' }, ctx: {} },
-    PROJECT_ACTIONS.PROJECT_SESSION_READ,
-    'project',
-  );
-  return accessible.mode === 'all' || (accessible.mode === 'allow_only' && accessible.allowed.has(session.projectId));
-}
-
-let defaultNotifier: ReturnType<typeof createSessionNotifier> | null = null;
-
-/** Notify the session creator's devices. Never throws. */
-export function notifySessionEvent(event: SessionPushEvent): Promise<SessionPushOutcome> {
-  defaultNotifier ??= createSessionNotifier({
-    enabled: config.PUSH_NOTIFICATIONS_ENABLED,
-    loadSession: loadSessionTarget,
-    mayReceive: mayReceiveSessionPush,
-    isPresent: async (userId, sessionId) => {
-      const rows = await db.select({ tabId: sessionPresenceLeases.tabId }).from(sessionPresenceLeases)
-        .where(and(eq(sessionPresenceLeases.userId, userId), eq(sessionPresenceLeases.sessionId, sessionId), gt(sessionPresenceLeases.expiresAt, sql`now()`))).limit(1);
-      return rows.length > 0;
-    },
-    store: pushDeviceTokenStore(),
-    send: (messages, store) =>
-      sendExpoPushMessages(messages, { accessToken: config.EXPO_ACCESS_TOKEN || undefined, store }),
-  });
-  return defaultNotifier(event);
+export function notifySessionEvent(event: SessionPushEvent, notifierDeps?: NotifierDeps): Promise<SessionPushOutcome> {
+  return createSessionNotifier({
+    loadSession: async (sessionId) => (await loadSessionAccessRows([sessionId])).get(sessionId) ?? null,
+    watchers: sessionWatchersOf,
+    mayOpen: filterSessionRecipients,
+    deliver: (input) => deliver(input, notifierDeps),
+    logger,
+  })(event);
 }

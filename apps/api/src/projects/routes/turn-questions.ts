@@ -28,6 +28,7 @@ import { callerKortixSessionId } from '../../middleware/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import { readJsonObject } from '../../shared/http-body';
 import { notifySessionEvent } from '../../notifications/session-push';
+import { askNotificationContext } from '../lib/notification-recipients';
 
 export function registerTurnQuestionsRoutes(): void {
   // POST /v1/projects/:projectId/turn-question
@@ -119,7 +120,12 @@ export function registerTurnQuestionsRoutes(): void {
       }
 
       const [turnQuestionSession] = await db
-        .select({ sessionId: projectSessions.sessionId, metadata: projectSessions.metadata })
+        .select({
+          sessionId: projectSessions.sessionId,
+          accountId: projectSessions.accountId,
+          origin: projectSessions.origin,
+          metadata: projectSessions.metadata,
+        })
         .from(projectSessions)
         .where(
           and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)),
@@ -178,12 +184,14 @@ export function registerTurnQuestionsRoutes(): void {
       // alive by reporting "still waiting" is the self-renewal this design
       // deleted.
       const resolvedAccountId = (c as any).get('accountId') as string | undefined;
+      const pendingRequestId = body.request_id?.trim() || `q-${sessionId}`;
+      let notify = false;
       if (resolvedAccountId) {
         const recorded = await recordPendingQuestion({
           accountId: resolvedAccountId,
           projectId,
           sessionId,
-          requestId: body.request_id?.trim() || `q-${sessionId}`,
+          requestId: pendingRequestId,
           opencodeSessionId: body.runtime_session_id ?? null,
           questions,
         }).catch((err) => {
@@ -192,18 +200,12 @@ export function registerTurnQuestionsRoutes(): void {
           console.warn('[turn-question] could not persist pending question:', err);
           return null;
         });
-        // Push once per request id: a daemon retry of the same request updates
-        // the stored row (`inserted` false) and sends nothing. Fire-and-forget.
-        if (recorded?.inserted) {
-          void notifySessionEvent({
-            type: 'question',
-            sessionId,
-            projectId,
-            question: questions[0]?.question,
-          }).catch((err) =>
-            console.warn('[push] question notification failed', err instanceof Error ? err.message : err),
-          );
-        }
+        // Notify once per request id: a daemon retry of the same request
+        // updates the stored row (`inserted` false) and sends nothing. Only the
+        // session's own sandbox notifies (KRTX-1742): a person's token may
+        // store a question, but its text must never reach other people's
+        // inbox, phone and email.
+        notify = recorded?.inserted === true && callerSandboxSessionId !== null;
       }
 
       // Non-blocking: post the question(s) into the thread and return immediately
@@ -223,6 +225,35 @@ export function registerTurnQuestionsRoutes(): void {
       // `q-<session>` fallback above names nothing the runtime can answer.
       // A dashboard session is left alone; its UI answers the question itself.
       const channel = channelOfSessionMetadata(turnQuestionSession.metadata);
+
+      // Tell the person who prompted the running turn and the session's (or
+      // the trigger's) watchers. A Slack/Teams thread that showed the question
+      // is the notification for its channel: the inbox row stays the record.
+      // Fire-and-forget, after the relay so its result is known.
+      if (notify) {
+        void askNotificationContext({
+          sessionId,
+          projectId,
+          accountId: turnQuestionSession.accountId,
+          metadata: turnQuestionSession.metadata,
+          origin: turnQuestionSession.origin,
+        })
+          .then((context) =>
+            notifySessionEvent({
+              type: 'question',
+              sessionId,
+              projectId,
+              question: questions[0]?.question,
+              requestId: pendingRequestId,
+              threadCarriesAsk: channel !== null && result.ok,
+              ...context,
+            }),
+          )
+          .catch((err) =>
+            console.warn('[push] question notification failed', err instanceof Error ? err.message : err),
+          );
+      }
+
       const runtimeRequestId = body.request_id?.trim();
       if (channel && runtimeRequestId) {
         await releaseChannelQuestion({
