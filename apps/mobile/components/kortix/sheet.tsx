@@ -547,8 +547,6 @@ function Header({
   onClose?: () => void;
   hideClose?: boolean;
   leading?: React.ReactNode;
-  /** @deprecated The row owns its padding (`SHEET_DEFAULTS`). Ignored. */
-  className?: string;
 }) {
   const { dismiss } = useBottomSheetModal();
   return (
@@ -563,10 +561,4 @@ function Header({
 function Body({ children, className }: { children: React.ReactNode; className?: string }) {
   return <View className={cn('px-5 pb-6', className)}>{children}</View>;
 }
-function Footer({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <View className={cn('flex-row gap-3 px-5 pb-8 pt-2', className)}>{children}</View>;
-}
-(Sheet as any).Header = Header;
-(Sheet as any).Body = Body;
-(Sheet as any).Footer = Footer;
-export { Header as SheetHeader, Body as SheetBody, Footer as SheetFooter };
+export { Header as SheetHeader, Body as SheetBody };

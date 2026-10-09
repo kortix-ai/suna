@@ -14,7 +14,7 @@ import { THEME } from '@/lib/utils/theme';
 import { useThemePalette } from '@/lib/utils/use-theme-palette';
 
 /** Matches `Button size="lg"` (h-11, 44pt), so fields and buttons stack flush. */
-export const PILL_INPUT_HEIGHT = 44;
+const PILL_INPUT_HEIGHT = 44;
 
 /**
  * Input text: one size, one family, one weight for every text field in the
@@ -46,7 +46,7 @@ export function usePillInputStyle({ height, mono }: { height: number; mono?: boo
   return { style, placeholderTextColor: c.mutedForeground };
 }
 
-export type PillInputProps = Omit<React.ComponentProps<typeof TextInput>, 'ref'>;
+type PillInputProps = Omit<React.ComponentProps<typeof TextInput>, 'ref'>;
 
 export const PillInput = React.forwardRef<TextInput, PillInputProps>(function PillInput(
   { style, placeholderTextColor, ...props },

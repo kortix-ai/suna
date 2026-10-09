@@ -19,7 +19,7 @@ import { INPUT_FONT_FAMILY, INPUT_FONT_SIZE } from '@/components/kortix/pill-inp
 import { haptics } from '@/lib/haptics';
 import { useThemePalette } from '@/lib/utils/use-theme-palette';
 
-export interface SearchHeaderProps {
+interface SearchHeaderProps {
   value: string;
   onChangeText: (text: string) => void;
   /** Leave search mode. The screen clears its query and restores the header. */

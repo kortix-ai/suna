@@ -20,7 +20,7 @@ import {
   previewFetchKind,
 } from '@/lib/files/preview-type';
 
-export interface FilePreviewDataOptions {
+interface FilePreviewDataOptions {
   /**
    * `false`: nothing is fetched. The session's file preview sheet passes it for
    * a file it does not render (a PDF, an Office file, an archive, media).

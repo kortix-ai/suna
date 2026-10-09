@@ -31,7 +31,7 @@ import {
 import { createWebCreateRunner, type WebCreateOutcome } from '@/lib/projects/web-create';
 import { WEB_CREATE_RETURN_URL } from '@/lib/projects/web-project-links';
 
-export type WebCreateResult = WebCreateOutcome<KortixAccount, KortixProject>;
+type WebCreateResult = WebCreateOutcome<KortixAccount, KortixProject>;
 
 export function useWebCreateHandoff() {
   const queryClient = useQueryClient();

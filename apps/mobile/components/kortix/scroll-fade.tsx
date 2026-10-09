@@ -41,7 +41,7 @@ import { useThemePalette } from '@/lib/utils/use-theme-palette';
 /** The bottom gradient's height above the safe-area inset. */
 export const BOTTOM_FADE_HEIGHT = 56;
 /** The top gradient's height, and the scroll distance over which it comes in. */
-export const TOP_FADE_HEIGHT = 24;
+const TOP_FADE_HEIGHT = 24;
 
 /** The scroll handler for an `Animated.ScrollView`, and the top fade's style. */
 export function useScrollFade() {

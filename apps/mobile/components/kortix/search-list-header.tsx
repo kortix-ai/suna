@@ -12,7 +12,7 @@ import { Icon } from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
 import { SearchPill } from '@/components/kortix/search-pill';
 
-export interface SearchListHeaderProps {
+interface SearchListHeaderProps {
   value: string;
   onChangeText: (next: string) => void;
   placeholder?: string;
