@@ -130,7 +130,7 @@ describe('ExperimentalTabView', () => {
   });
 
   test('an operator_only flag shows "Managed by Kortix" and a disabled, checked switch even for a manager', () => {
-    const managed: FeatureFlagView = { ...experimentalFeature, key: 'backends', name: 'Backends', enabled: true, overridden: true, operator_only: true };
+    const managed: FeatureFlagView = { ...experimentalFeature, key: 'apps', name: 'Apps', enabled: true, overridden: true, operator_only: true };
     const out = renderToStaticMarkup(<ExperimentalTabView features={[managed]} canManage />);
     expect(out).toContain('Managed by Kortix');
     expect(out).not.toContain('Overridden for this project');

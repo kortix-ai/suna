@@ -9,6 +9,7 @@ import type {
   AppDeployment,
   AppHostingProvider,
   AppSource,
+  KortixProject,
   ProjectHandle,
 } from '@kortix/sdk';
 import ignore from 'ignore';
@@ -109,6 +110,7 @@ export function commandArg(value: string | undefined): string[] | undefined {
 export async function context(options: ContextOptions): Promise<{
   projectId: string;
   auth: NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>['auth'];
+  project: KortixProject;
   apps: AppsHandle;
 } | null> {
   const resolved = await resolveProjectContext(options);
@@ -129,6 +131,7 @@ export async function context(options: ContextOptions): Promise<{
   return {
     projectId: resolved.projectId,
     auth: resolved.auth,
+    project,
     apps: kortix.project(resolved.projectId).apps,
   };
 }
@@ -231,10 +234,19 @@ export function deployFlags(rest: string[]): DeployFlags {
   };
 }
 
-interface ManifestAppDefaults {
+export interface ManifestAppDefaults {
   name: string;
   root: string;
   block: AppBlockV2;
+}
+
+/** Every `apps.<name>` block of the v2 kortix.yaml above `cwd`, or null. */
+export function loadManifestApps(cwd: string): { root: string; blocks: Record<string, AppBlockV2> } | null {
+  const manifest = loadLocalManifest(cwd);
+  if (!manifest || manifest.data.kortix_version !== 2) return null;
+  const rawApps = manifest.data.apps;
+  if (!rawApps || typeof rawApps !== 'object' || Array.isArray(rawApps)) return null;
+  return { root: dirname(manifest.path), blocks: rawApps as Record<string, AppBlockV2> };
 }
 
 export function loadManifestAppDefaults(
@@ -242,11 +254,9 @@ export function loadManifestAppDefaults(
   requestedName?: string,
   allowSingleDefault = false,
 ): ManifestAppDefaults | null {
-  const manifest = loadLocalManifest(cwd);
-  if (!manifest || manifest.data.kortix_version !== 2) return null;
-  const rawApps = manifest.data.apps;
-  if (!rawApps || typeof rawApps !== 'object' || Array.isArray(rawApps)) return null;
-  const entries = Object.entries(rawApps as Record<string, AppBlockV2>);
+  const loaded = loadManifestApps(cwd);
+  if (!loaded) return null;
+  const entries = Object.entries(loaded.blocks);
   const selected = requestedName
     ? entries.find(([name]) => name === requestedName)
     : allowSingleDefault && entries.length === 1
@@ -256,7 +266,7 @@ export function loadManifestAppDefaults(
     if (requestedName) throw new Error(`kortix.yaml has no apps.${requestedName} block`);
     return null;
   }
-  return { name: selected[0], root: dirname(manifest.path), block: selected[1] };
+  return { name: selected[0], root: loaded.root, block: selected[1] };
 }
 
 /**
@@ -428,16 +438,17 @@ export async function provisionDeployApp(
         ? { monthly_budget_usd: manifestBlock.monthly_budget_usd }
         : {}),
       ...flagSettings,
-      // The backends the App may mint viewer tokens for; the manifest's list replaces the App's.
-      ...(manifestBlock?.backends !== undefined ? { backends: manifestBlock.backends } : {}),
+      // The Apps this App uses; the manifest's list replaces the App's.
+      ...(manifestBlock?.uses !== undefined ? { uses: manifestBlock.uses } : {}),
     };
-    return existing
-      ? apps.update(existing.app_id, settings)
-      : apps.create({
-          slug: manifestSlug,
-          name: flags.name ?? manifestDefaults.name,
-          ...settings,
-        });
+    if (existing) return apps.update(existing.app_id, settings);
+    return apps.create({
+      slug: manifestSlug,
+      name: flags.name ?? manifestDefaults.name,
+      // The kind is fixed at create; a later manifest change does not convert an App.
+      ...(manifestBlock?.kind ? { kind: manifestBlock.kind } : {}),
+      ...settings,
+    });
   }
   const inferred = flags.image
     ? flags.image.split('/').pop()!.split(':')[0]!

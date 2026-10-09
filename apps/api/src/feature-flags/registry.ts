@@ -71,7 +71,7 @@
  * that makes it the default, delete it in the next one. The comment on the
  * entry names the release and the spec section that ends it.
  *
- * The same state also serves an INTERNAL-ONLY surface (`apps`, `backends`):
+ * The same state also serves an INTERNAL-ONLY surface (`apps`):
  * not offered in Settings, enabled per project by a Kortix operator on
  * request. Its 403 says "contact Kortix" instead of naming a toggle the caller
  * cannot see (gate.ts).
@@ -203,27 +203,13 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'apps',
     name: 'Apps',
     description:
-      'Deploy static sites, JavaScript bundles, Dockerfiles, and OCI images to stable serverless URLs. Apps answer to the same machine limits, account entitlement, and per-account quotas sessions do.',
+      'Deploy static sites, JavaScript bundles, Dockerfiles, and OCI images to stable serverless URLs, and run backends (kind `convex`: a database, server functions, realtime queries, file storage, scheduling and search in an always-on machine, where Platinum is configured). Apps answer to the same machine limits, account entitlement, and per-account quotas sessions do.',
     stability: 'stable',
     available: () => true,
     platformDefault: () => false,
     enforcement: 'routes',
-    // Internal-only (2026-10-06, kortix-backends PR): not offered in Settings.
+    // Internal-only (2026-10-06): not offered in Settings.
     // Projects already on keep it; Kortix enables others on request.
-    catalogHidden: true,
-  },
-  {
-    key: 'backends',
-    name: 'Backends',
-    description:
-      'Give the project full backends: a database, server functions, realtime queries, file storage, scheduling, and search. Each backend is a self-hosted Convex instance in its own machine. Agents create one with `kortix backends create` and deploy to it with the Convex CLI.',
-    stability: 'experimental',
-    // A backend is a persistent per-backend machine. Only Platinum runs one
-    // (same reason as `monitors` below), so the surface stays dark without it.
-    available: () => Boolean(config.PLATINUM_API_KEY),
-    platformDefault: () => false,
-    enforcement: 'routes',
-    // Internal-only dark launch: Kortix enables it per project on request.
     catalogHidden: true,
   },
   {

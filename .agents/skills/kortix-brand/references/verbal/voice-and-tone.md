@@ -77,7 +77,7 @@ capitalized only at the start of a sentence or as a UI label.
 | channel | A chat surface where a bot starts sessions: Slack, Microsoft Teams, email. | "Add Kortix to Slack." | integration, "Telegram channel" |
 | trigger | A cron schedule or a signed webhook that starts sessions. | "A trigger starts a session." | automation (as the noun for one trigger) |
 | reminder | A prompt that re-prompts one existing session later, once or on repeat. Stored in the database, not in `kortix.yaml`. | "Set a reminder." | trigger (they differ) |
-| backend | A full backend for the project: a database, server functions, realtime queries, file storage and schedules, powered by Convex. CLI: `kortix backends`. | "Create a backend." | database, DB, Convex project, app backend |
+| backend | What an App of kind `convex` is: a database, server functions, realtime queries, file storage and schedules, powered by Convex. The web app labels the kind "Backend". CLI: `kortix apps create <slug> --kind convex` (D13). | "Create a backend." | database, DB, Convex project, app backend |
 | computer | A person's own machine connected to Kortix. Name no machine class (laptop, desktop, server) and no operating system (Q20). Not a sandbox. | "Connect your computer." | sandbox or "cloud computer" as a synonym |
 | memory | The living company brain. Plain files today. | "company memory" | vector database (external copy) |
 | `kortix-sandbox-agent-server` | The daemon a sandbox boots with: it clones the repo, cuts the branch, loads config into a live runtime, and exposes prompting, streaming, files and terminal. Internal: do not use it in customer copy. | `kortix-sandbox-agent-server` in mono, in engineering text only | "agent server", "runtime" |
