@@ -27,6 +27,7 @@ describe('the capture finds a sub-agent session exactly as the SDK does', () => 
     ['task, error-only child', call('task', { status: 'error', error: 'Subagent failed (task_id: ses_failed1)' })],
     ['task, metadata wins over error', call('task', { status: 'error', metadata: { sessionId: 'ses_meta1' }, error: 'Subagent failed (task_id: ses_failed1)' })],
     ['task, error excludes legacy title', call('task', { status: 'error', error: 'Request failed', title: 'Delegated to ses_title1' })],
+    ['task, error absent, legacy title ignored', call('task', { status: 'error', title: 'Delegated to ses_title1' })],
     ['task, unrelated error mention', call('task', { status: 'error', error: 'Parent ses_parent failed' })],
     ['bash, task-id error', call('bash', { status: 'error', error: 'task_id: ses_notachild' })],
     ['task, nothing', call('task', { status: 'completed', metadata: {} })],

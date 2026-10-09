@@ -571,8 +571,12 @@ export function childSessionIdOf(part: unknown): string | undefined {
   if (SUBAGENT_TOOLS.has(tool)) {
     const fromMetadata = isRecord(state?.metadata) ? state.metadata.sessionId : undefined;
     if (typeof fromMetadata === 'string' && fromMetadata) return fromMetadata;
-    if (tool === 'task' && state?.status === 'error' && typeof state.error === 'string') {
-      return state.error.match(/\btask_id:\s*(ses_[A-Za-z0-9]+)/)?.[1];
+    if (tool === 'task' && state?.status === 'error') {
+      // An errored task names its child only in the error text (the SDK's
+      // rule); the legacy title/output fallbacks never apply once it errored.
+      return typeof state.error === 'string'
+        ? state.error.match(/\btask_id:\s*(ses_[A-Za-z0-9]+)/)?.[1]
+        : undefined;
     }
     if (typeof state?.title === 'string' && state.title) {
       const match = state.title.match(SESSION_ID_IN_TEXT);
