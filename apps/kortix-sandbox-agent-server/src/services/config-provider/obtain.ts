@@ -3,7 +3,7 @@ import { rm } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { runGit } from '@/lib/git/git'
 import { logger } from '@/lib/log/logger'
-import { downloadAndExtractProjectSnapshot } from '../config-provider/s3/s3-config-provider'
+import { downloadAndExtractProjectSnapshot } from '@/lib/project-snapshot/archive'
 import { downloadConfigArchive, type ConfigReleaseApi } from './api-client'
 import {
   materializeRelease,

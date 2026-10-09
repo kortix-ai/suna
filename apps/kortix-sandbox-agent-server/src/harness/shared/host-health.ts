@@ -99,11 +99,12 @@ export async function readHostHealth(context: HarnessDiagnosticsContext, catalog
     // the two; this is only the box's own answer. A pure read — never
     // triggers a reconcile attempt, so polling health cannot itself cause work.
     runtime_truth: await runtimeTruthReport(),
-    // Which config provider delivered the project this boot (git | s3), the
+    // Which transport delivered the project this boot (git | s3), the
     // expected vs actual SHA, and — when S3 was attempted and Git delivered
     // instead — the classified reason. A successful fallback keeps the S3
     // failure visible here; the same facts go to the boot timeline relay.
-    config_provider: bootState.configProvider ?? null,
+    // The wire name predates the workspace-provider rename; health readers use it.
+    config_provider: bootState.workspaceProvider ?? null,
     // In-container boot timeline (ms since process start) so the dashboard can
     // attribute the post-create boot latency (clone vs runtime vs proxy).
     boot_timeline: bootState.timeline,

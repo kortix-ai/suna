@@ -374,17 +374,21 @@ export interface ProjectTriggerEventTypes {
 }
 
 /**
- * The app events a connector can trigger on. Throws 404 for an unknown
- * connector and 409 `event_source_unavailable` when its provider has no event source.
+ * The app events a connector, or an app with no connector, can trigger on.
+ * Throws 404 for an unknown connector (`app_not_found` for an app with no
+ * events), 400 for an unknown `source`, and 409 `event_source_unavailable`
+ * when no event source serves it.
  */
 export async function listProjectTriggerEventTypes(
   projectId: string,
-  params: { connector: string },
+  params: { connector: string } | { app: string; source?: string },
 ) {
+  const query =
+    'connector' in params
+      ? `connector=${encodeURIComponent(params.connector)}`
+      : `app=${encodeURIComponent(params.app)}${params.source ? `&source=${encodeURIComponent(params.source)}` : ''}`;
   return unwrap(
-    await backendApi.get<ProjectTriggerEventTypes>(
-      `/projects/${projectId}/triggers/event-types?connector=${encodeURIComponent(params.connector)}`,
-    ),
+    await backendApi.get<ProjectTriggerEventTypes>(`/projects/${projectId}/triggers/event-types?${query}`),
   );
 }
 

@@ -2,7 +2,8 @@
  * GET/PUT /v1/projects/:projectId/sessions/:sessionId/watch (KRTX-1742): a
  * person who may see a session follows or mutes its notifications. The
  * access layer and the watcher store are stubbed; their SQL runs against real
- * Postgres in `notifications/session-watch.integration.test.ts`.
+ * Postgres in `notifications/session-watch.integration.test.ts`. Both routes
+ * need the project's `notification_center` flag.
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
@@ -15,6 +16,7 @@ const ACCOUNT_ID = '44444444-4444-4444-8444-444444444444';
 const USER_ID = '11111111-1111-4111-8111-111111111111';
 const CREATOR = '22222222-2222-4222-8222-222222222222';
 const SESSION_ID = '55555555-5555-4555-8555-555555555555';
+const FLAG_ON = { experimental: { notification_center: true } };
 
 let loaded: Record<string, unknown> | null = null;
 let guard: Record<string, unknown> = { ok: true };
@@ -71,7 +73,7 @@ function request(method: 'GET' | 'PUT', caller: Caller, body?: unknown, sessionI
 }
 
 beforeEach(() => {
-  loaded = { row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID }, userId: USER_ID };
+  loaded = { row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID, metadata: FLAG_ON }, userId: USER_ID };
   guard = { ok: true, session: { row: { sessionId: SESSION_ID, createdBy: CREATOR } } };
   guardNeeds = [];
   capabilityChecks = [];
@@ -133,6 +135,28 @@ describe('who may not', () => {
     expect((await request('GET', browser)).status).toBe(404);
     expect(watchReads).toEqual([]);
     expect(watchWrites).toEqual([]);
+  });
+
+  for (const [name, metadata] of [
+    ['the flag off', { experimental: { notification_center: false } }],
+    ['no flag set (off by default)', {}],
+  ] as const) {
+    test(`a project with ${name} → 403 feature_disabled, before any access check, read or write`, async () => {
+      loaded = { row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID, metadata }, userId: USER_ID };
+      for (const res of [await request('GET', browser), await request('PUT', browser, { watching: false })]) {
+        expect(res.status).toBe(403);
+        expect(await res.json()).toMatchObject({ code: 'feature_disabled', feature: 'notification_center' });
+      }
+      expect(capabilityChecks).toEqual([]);
+      expect(guardNeeds).toEqual([]);
+      expect(watchReads).toEqual([]);
+      expect(watchWrites).toEqual([]);
+    });
+  }
+
+  test('a project the caller cannot read → 404, not the flag answer', async () => {
+    loaded = null;
+    expect((await request('PUT', browser, { watching: true })).status).toBe(404);
   });
 
   test('a non-uuid project id → 400', async () => {

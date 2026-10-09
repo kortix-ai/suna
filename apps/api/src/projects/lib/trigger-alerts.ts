@@ -13,12 +13,17 @@
 // The edge write is awaited. The fan-out (watchers, inbox rows, push, email)
 // runs in the background, so a scheduler tick or a route never waits on it.
 // Nothing here throws.
+//
+// Alerts are behind the project's `notification_center` flag. Off, a raise
+// writes no edge, so a project that turns the flag on starts clean, and a
+// clear ends an edge left from an on period without a word.
 import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { projectTriggerRuntime, projects } from '@kortix/db';
 import type { NotificationKindName } from '@kortix/shared/notification-kinds';
 import { logger } from '../../lib/logger';
 import { clip, INBOX_BODY_MAX_CHARS } from '../../notifications/inbox-store';
+import { projectNotificationsEnabled } from '../../notifications/enabled';
 import { deliver, liveNotifierDeps, type NotifierDeps } from '../../notifications/notifier';
 import { db } from '../../shared/db';
 import { resolveTriggerWatchers } from './trigger-watchers';
@@ -66,16 +71,23 @@ function reason(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/** Start a failure streak and alert the watchers. True when this call started it. */
-export async function raiseTriggerAlert(input: TriggerAlertInput & { error: string }): Promise<boolean> {
+/**
+ * Start a failure streak and alert the watchers. True when this call started
+ * it. `notificationCenter`: the project's flag when the caller already read
+ * it; absent, one primary-key read.
+ */
+export async function raiseTriggerAlert(
+  input: TriggerAlertInput & { error: string; notificationCenter?: boolean },
+): Promise<boolean> {
   try {
+    if (!(input.notificationCenter ?? (await projectNotificationsEnabled(input.projectId)))) return false;
     const [row] = await db
       .update(projectTriggerRuntime)
       .set({ alertFailingSince: sql`now()`, alertSource: input.source })
       .where(and(runtimeRow(input), isNull(projectTriggerRuntime.alertFailingSince)))
       .returning({ since: projectTriggerRuntime.alertFailingSince, name: triggerName, reminder: isReminder });
     if (!row?.since) return false;
-    announce('automation_failed', input, alertTitle(input.slug, row), `automation:${input.projectId}:${input.slug}:${row.since.getTime()}`, input.error);
+    announce('automation_failed', input, alertTitle(input.slug, row), `automation:${input.projectId}:${input.slug}:${row.since.getTime()}`, input.error, true);
     return true;
   } catch (err) {
     logger.warn('[trigger-alerts] raise failed', { projectId: input.projectId, slug: input.slug, error: reason(err) });
@@ -102,7 +114,7 @@ export async function clearTriggerAlert(input: TriggerAlertInput): Promise<boole
       ))
       .returning({ since: previous.alertFailingSince, name: triggerName, reminder: isReminder });
     if (!row?.since) return false;
-    announce('automation_recovered', input, alertTitle(input.slug, row), `recovered:${input.projectId}:${input.slug}:${row.since.getTime()}`, '');
+    announce('automation_recovered', input, alertTitle(input.slug, row), `recovered:${input.projectId}:${input.slug}:${row.since.getTime()}`, '', false);
     return true;
   } catch (err) {
     logger.warn('[trigger-alerts] clear failed', { projectId: input.projectId, slug: input.slug, error: reason(err) });
@@ -110,14 +122,17 @@ export async function clearTriggerAlert(input: TriggerAlertInput): Promise<boole
   }
 }
 
+/** `flagChecked`: the caller already read the flag as on (a raise). */
 function announce(
   kind: NotificationKindName,
   input: TriggerAlertInput,
   title: string,
   dedupeKey: string,
   body: string,
+  flagChecked: boolean,
 ): void {
   const run = (async () => {
+    if (!flagChecked && !(await projectNotificationsEnabled(input.projectId))) return;
     const accountId = input.accountId ?? (await accountOf(input.projectId));
     if (!accountId) return;
     const recipients = await resolveTriggerWatchers({ accountId, projectId: input.projectId, slug: input.slug });

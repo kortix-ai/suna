@@ -6,7 +6,14 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## Unreleased
 
 ### Added
-- Notifications (KRTX-1742). The caller's inbox: `listNotifications({ limit?,
+- `FeatureFlagKey` gains `notification_center` (also in `FEATURE_FLAG_KEYS`
+  and `KortixProject.experimental`). Off by default. It gates the KRTX-1742
+  notification entries below per project. Turn it on with
+  `updateFeatureFlag(projectId, 'notification_center', true)`.
+- Notifications (KRTX-1742), behind the `notification_center` project flag,
+  off by default. While it is off, the server writes no inbox row and sends
+  no Web Push and no email for that project, and the session watch routes
+  answer `403` `feature_disabled`. The caller's inbox: `listNotifications({ limit?,
   before? })` → `InboxNotificationPage` (`notifications`, `unread_count`,
   `next_before`) and `markNotificationsRead({ ids } | { all: true } |
   { sessionId })`. Push and email choices per kind:
@@ -28,12 +35,17 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (optimistic `update`), `useSessionWatch({ userId, projectId, sessionId })`
   (optimistic `setWatching`), `notificationInboxQueryOptions`, and the
   `qk.notifications` key family (`scope`, `inbox`, `preferences`,
-  `sessionWatch`, keyed by user).
+  `sessionWatch`, keyed by user). Each hook takes `enabled`; a host passes
+  `useFeatureFlag(projectId, 'notification_center').enabled`.
 - `session(pid, sid).presence()` accepts `alerts?: boolean`, and
-  `useSession({ presenceAlerts })` sends it: the server skips the phone and
-  Web Push only while an alerting tab is in use. A change is sent at once,
-  without dropping the lease. An absent report is sent with `keepalive`, and
-  `pagehide` reports absent, so a closed tab ends its lease at once.
+  `useSession({ presenceAlerts })` sends it: with `notification_center` on,
+  the server skips the phone and Web Push only while an alerting tab is in
+  use. A change is sent at once, without dropping the lease. An absent report
+  is sent with `keepalive`.
+- `useSession({ presencePageExit })`, default `false`: `pagehide` reports
+  absent, so a closed tab ends its lease at once. Off, the lease lives to its
+  90 s expiry, as before. Pass the project's `notification_center` flag. A
+  change applies without a new presence report.
 - `ConnectorPageLimitError` (`code: 'max_pages_exceeded'`, `connector`,
   `action`, `maxPages`, `nextArgs`): `paginateConnector` and
   `connector(slug).paginate` throw it when `maxPages` (default 100) ends a

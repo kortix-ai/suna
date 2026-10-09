@@ -338,9 +338,10 @@ describe('SettingsPanelShell — real tab content gating', () => {
    * (`RailTriggerBody` renders the label too, so the heading is matched as the
    * `h2` `SettingsTabHeader` emits).
    *
-   * Sessions (Notifications) left this list deliberately with KRTX-1742: its
-   * "Notification types" section reads the person's server record through
-   * `useNotificationPreferences`, so it is query-backed like the rest.
+   * Sessions (Notifications) left this list deliberately with KRTX-1742: it
+   * reads the `notification_center` flag (`useNotificationCenter`) and the
+   * person's server record (`useNotificationPreferences`), so it is
+   * query-backed like the rest.
    */
   const STORE_ONLY_TABS = ['appearance'] as const;
   const QUERY_BACKED_TABS = SETTINGS_TABS.filter(

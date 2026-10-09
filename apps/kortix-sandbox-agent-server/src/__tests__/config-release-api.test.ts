@@ -13,8 +13,8 @@ import {
   downloadConfigArchive,
   fetchConfigReleaseDescriptor,
     type ConfigReleaseApi,
-} from '@/services/config-release/api-client'
-import { MAX_CONFIG_ARCHIVE_BYTES, parseConfigReleaseDescriptor } from '@/services/config-release/descriptor'
+} from '@/services/config-provider/api-client'
+import { MAX_CONFIG_ARCHIVE_BYTES, parseConfigReleaseDescriptor } from '@/services/config-provider/descriptor'
 import {
   SESSION_TOKEN_DEAD_TRIP_THRESHOLD,
   resetSessionTokenHealthForTests,

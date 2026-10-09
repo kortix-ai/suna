@@ -2264,6 +2264,12 @@ nativeBrowserTest?.(
         name: "Desktop header geometry",
         databaseUrl,
       });
+      // The titlebar row below carries the notification bell, which renders
+      // only with the project's `notification_center` flag on (KRTX-1742).
+      await api(session.access_token, "PATCH", `/projects/${project.id}/features`, {
+        feature: "notification_center",
+        enabled: true,
+      });
       app = await launchDesktop(baseURL!, profile);
       const main = app
         .windows()
@@ -2295,7 +2301,8 @@ nativeBrowserTest?.(
       const switcher = projectRow.locator("[data-sidebar='menu-button']");
       const projectSearch = projectRow.getByRole("button", { name: /Search/i });
       const projectCollapse = projectRow.getByRole("button", { name: "Collapse sidebar" });
-      // KRTX-1742: the notification bell joined the row, before search.
+      // KRTX-1742: the notification bell joined the row, before search (the
+      // flag is on for this project, above).
       const projectBell = projectRow.getByRole("button", { name: /^Notifications/ });
       for (const control of [projectRow, switcher, projectBell, projectSearch, projectCollapse]) {
         await expect(control).toBeVisible();

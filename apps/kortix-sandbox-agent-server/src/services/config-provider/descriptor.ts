@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { ProjectSnapshotDescriptor } from '@/lib/project-snapshot/contract'
 
 /**
  * The config release contract between the API and this daemon.
@@ -46,7 +47,9 @@ const FileEntry = z.tuple([
  * The project snapshot of `source_commit`: the commit's working tree plus a
  * blobless `.git`, as `tar.gz`, behind a presigned URL that takes no
  * credential. Its digest and size come from the API; the box keeps only the
- * listed files and verifies each against its blob ID.
+ * listed files and verifies each against its blob ID. The shape is the
+ * project snapshot's boot object (`lib/project-snapshot`), checked at compile
+ * time so the two cannot drift.
  */
 const SnapshotRef = z.object({
   url: z.string().regex(/^https?:\/\//, 'snapshot.url must be an http(s) URL'),
@@ -54,7 +57,7 @@ const SnapshotRef = z.object({
   bytes: z.number().int().positive(),
   entries: z.number().int().nonnegative(),
   expires_at: z.string(),
-})
+}) satisfies z.ZodType<ProjectSnapshotDescriptor['tree']>
 
 /** What this daemon asks the API for. A v3 tree release may come with no archive. */
 export const ACCEPTED_FORMATS = ['config-release-v3'] as const
