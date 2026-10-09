@@ -39,10 +39,9 @@ describe('parseFeedbackInvocation', () => {
   });
 
   test('an explicit --context merges with the ambient ids', () => {
-    const inv = parseFeedbackInvocation(
-      ['m', '--context', '{"sandbox_id":"sbx-1"}'],
-      { KORTIX_SESSION_ID: 'sess-abc' },
-    );
+    const inv = parseFeedbackInvocation(['m', '--context', '{"sandbox_id":"sbx-1"}'], {
+      KORTIX_SESSION_ID: 'sess-abc',
+    });
     expect(inv).toMatchObject({
       context: { sandbox_id: 'sbx-1', session_id: 'sess-abc' },
     });
