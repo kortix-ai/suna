@@ -3,6 +3,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { projectTriggerRuntime, projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { mutateManifestWithRetry } from '../../connectors/manifest-mutation';
+import { loadProjectAgents } from '../agents';
 import { assertMayRunAgent } from '../lib/agent-access';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json, lenientBody } from '../../openapi';
@@ -11,6 +12,7 @@ import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { OkSchema, TriggerFireResultSchema, TriggerListSchema, projectsApp } from '../lib/app';
 import { guardSession } from '../lib/http-session-access';
 import { withProjectGitAuth } from '../lib/git';
+import { resolveSessionAgentName } from '../lib/session-create';
 import { metadataMerge } from '../lib/metadata-merge';
 import { requestAuditContext } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
@@ -739,15 +741,26 @@ export function registerTriggersRoutes(): void {
         PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE,
       );
 
-      const spec = await findProjectTriggerBySlug(await withProjectGitAuth(loaded.row), slug);
+      const gitProject = await withProjectGitAuth(loaded.row);
+      const spec = await findProjectTriggerBySlug(gitProject, slug);
       if (!spec) return c.json({ error: 'Not found' }, 404);
       // Agents as principals (spec 2026-09-22 §2.2, closes V2): the fired run
       // acts as the trigger's agent, so the FIRER must be allowed to run that
-      // agent. `default` selects the project's default agent; ask about that one.
+      // agent. `default` is resolved exactly as session creation resolves it
+      // (KRTX-1720): the manifest's default first; the metadata mirror, which
+      // can lag a git push, only for a v1 manifest that declares none.
+      // Asking about the mirror instead refused a member allowed to run the
+      // real default, and admitted one allowed to run only the stale name.
       const mirroredDefault = (loaded.row.metadata as Record<string, unknown> | null)?.default_agent;
       const firedAgent =
-        spec.agent === 'default' && typeof mirroredDefault === 'string' && mirroredDefault.trim()
-          ? mirroredDefault.trim()
+        spec.agent === 'default'
+          ? resolveSessionAgentName({
+              requestedAgent: null,
+              manifestDefaultAgent:
+                (await loadProjectAgents(gitProject, { forceRefresh: 'tip-proof' })).defaultAgent?.trim() || null,
+              mirroredDefaultAgent:
+                typeof mirroredDefault === 'string' && mirroredDefault.trim() ? mirroredDefault.trim() : null,
+            })
           : spec.agent;
       await assertMayRunAgent(
         c,
