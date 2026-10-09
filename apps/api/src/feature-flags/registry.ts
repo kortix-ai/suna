@@ -331,8 +331,6 @@ const FLAGS: readonly FeatureFlagDef[] = [
     enforcement: 'behavioral',
     enforcementNote:
       'Read at session provisioning (projects/lib/genui-env.ts → KORTIX_GENUI). An in-place restart keeps the sandbox env, so a running or restarted session keeps its prompt until a new session starts. The API kill switch GENUI_ENABLED=false forces it off for every project.',
-    // Hidden until web renders blocks (plan-4 Task 8 removes this line).
-    catalogHidden: true,
   },
   {
     key: 'config_releases',

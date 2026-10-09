@@ -298,8 +298,8 @@ describe('buildFeatureFlagCatalog', () => {
  * break (d) and take the operator lever with it.
  */
 describe('catalogHidden', () => {
-  test('only these surfaces are hidden: apps, backends (internal-only) and genui (until web renders blocks)', () => {
-    expect(HIDDEN_KEYS).toEqual(['apps', 'backends', 'genui']);
+  test('only the internal-only surfaces are hidden: apps and backends', () => {
+    expect(HIDDEN_KEYS).toEqual(['apps', 'backends']);
   });
 
   for (const key of HIDDEN_KEYS) {

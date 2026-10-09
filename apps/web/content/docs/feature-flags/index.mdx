@@ -153,7 +153,7 @@ project.
 | `warm_sessions` | Warm Sessions | Beta | On | `routes` |
 | `secrets_egress` | Network-Enforced Secrets | Experimental | On | `behavioral` |
 | `pi_harness` | Pi Harness (in-sandbox) | Experimental | Off | `behavioral` |
-| `genui` | Generative UI | Experimental | Off (hidden) | `behavioral` |
+| `genui` | Generative UI | Experimental | Off | `behavioral` |
 
 `llm_gateway` reads its per-project default from
 `LLM_GATEWAY_DEFAULT_ENABLED`, which defaults to on. Turning the flag off per
@@ -207,10 +207,8 @@ refs). An explicit project choice always wins.
 - **`genui`** — let the agent answer with cards, comparisons, charts, maps,
   and tabs instead of long text. On: every new, restarted, or resumed session
   of this project teaches the agent the Kortix generative UI catalog. Off: the
-  agent writes markdown only; blocks already in a transcript still render. The
-  flag is hidden like `apps` and `backends`: Settings does not list it while
-  it is off, and only a Kortix operator can set it. A running session keeps
-  its prompt until it is restarted or resumed.
+  agent writes markdown only; blocks already in a transcript still render. A
+  running session keeps its prompt until it is restarted or resumed.
 
 ### Graduated flags
 
