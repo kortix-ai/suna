@@ -5,12 +5,12 @@
     "packages/db/scripts/user-roles-policy-role-scope.integration.test.ts"
   ],
   "diff_hash": "269f8620d8b1aeffcb300dcc9e014044f65ff4c1e58d7fb126963a2a57dfbc7b",
-  "head": "b382a6f7c6debd707f7ff10174a78954451917e6",
-  "passed": false,
+  "head": "808d73b86d0cb11e1a13fbf4b871e0bf85ed5d3f",
+  "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "fail"
+    "db-suites": "pass"
   },
-  "at": "2026-10-09T02:50:06.544Z"
+  "at": "2026-10-09T03:34:56.198Z"
 }
