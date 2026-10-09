@@ -93,10 +93,10 @@ export function GenuiCompare({ props }: GenuiComponentProps) {
       </TableHeader>
       <TableBody>
         {specs.map((spec, i) => (
-          <TableRow key={spec}>
+          <TableRow key={i}>
             <TableCell className="text-muted-foreground">{spec}</TableCell>
             {items.map((item) => (
-              <TableCell key={item.id}>{(item.props.values as string[])[i] ?? '—'}</TableCell>
+              <TableCell key={item.id}>{strings(item.props.values)[i] ?? '—'}</TableCell>
             ))}
           </TableRow>
         ))}

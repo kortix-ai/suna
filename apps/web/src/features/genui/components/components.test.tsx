@@ -1,8 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
 import { GenuiBlock } from '../sdk';
 import { GenuiPending, webGenuiComponents } from './index';
+
+Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true });
 
 const md = (markdown: string) => <pre data-fallback="">{markdown}</pre>;
 const render = (code: string) =>
@@ -39,6 +42,60 @@ link = Link("Book", "https://example.com/book")`);
       expect(html).toContain(text);
     }
     expect(html).not.toContain('data-fallback');
+  });
+
+  test('badges are informational status chips: hue on the tint, label in ink', () => {
+    const html = render(`root = Stack([bad, good, plain])
+bad = Badge("Sold out", "bad")
+good = Badge("Top pick", "good")
+plain = Badge("Hotel")`);
+    const chip = (label: string) => html.match(new RegExp(`<span[^>]*>${label}</span>`))?.[0] ?? '';
+    expect(chip('Sold out')).toContain('data-slot="status-badge"');
+    expect(chip('Sold out')).toContain('bg-kortix-red/15');
+    expect(chip('Sold out')).toContain('text-foreground');
+    expect(chip('Sold out')).not.toContain('text-destructive');
+    expect(chip('Top pick')).toContain('bg-kortix-green/15');
+    expect(chip('Hotel')).toContain('data-slot="status-badge"');
+    expect(chip('Hotel')).not.toContain('kortix-');
+  });
+
+  test('an image renders through the markdown image policy with its caption', () => {
+    const html = render(`root = Stack([pic])
+pic = Image("https://example.com/venue.jpg", "Venue entrance", "The north door")`);
+    expect(html).toContain('Venue entrance');
+    expect(html).toContain('<figcaption');
+    expect(html).toContain('The north door');
+    expect(html).not.toContain('data-fallback');
+  });
+
+  test('compare keys spec rows by position, so repeated labels do not collide', async () => {
+    // Only a client render reports duplicate keys; the server renderer stays silent.
+    const errors: string[] = [];
+    const original = console.error;
+    console.error = (...args: unknown[]) => errors.push(args.map(String).join(' '));
+    let renderer!: ReactTestRenderer;
+    try {
+      await act(async () => {
+        renderer = create(
+          <GenuiBlock
+            code={`root = Stack([cmp])
+cmp = Compare([x, y], ["Price", "Price"])
+x = CompareItem("X", ["$10", "$11"])
+y = CompareItem("Y", ["$20", "$21"])`}
+            streaming={false}
+            components={webGenuiComponents}
+            renderMarkdown={md}
+            renderPending={GenuiPending}
+          />,
+        );
+      });
+      const text = JSON.stringify(renderer.toJSON());
+      for (const value of ['$10', '$11', '$20', '$21']) expect(text).toContain(value);
+      await act(async () => renderer.unmount());
+    } finally {
+      console.error = original;
+    }
+    expect(errors.filter((error) => error.includes('same key'))).toEqual([]);
   });
 
   test('pending heavy nodes reserve height; pending text nodes render nothing', () => {

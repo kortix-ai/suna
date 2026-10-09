@@ -3,13 +3,13 @@
 import { CheckCircleIcon, InfoIcon, WarningIcon } from '@phosphor-icons/react';
 
 import { MarkdownImage, MarkdownLink } from '@/components/markdown/unified-markdown';
-import { Badge } from '@/components/ui/badge';
 import { InfoBanner } from '@/components/ui/info-banner';
+import { StatusBadge } from '@/components/ui/status';
 
 import type { GenuiComponentProps } from '../sdk';
 
-// One hue per state (color.md D5): good = green, warn = orange, bad = red. Neutral takes no hue.
-const BADGE_VARIANT = { neutral: 'default', good: 'success', warn: 'warning', bad: 'destructive' } as const;
+// An informational chip: the hue is the /15 tint, the label stays ink (color.md D5). Neutral takes no hue.
+const BADGE_TONE = { neutral: 'neutral', good: 'success', warn: 'warning', bad: 'destructive' } as const;
 const CALLOUT = {
   info: { tone: 'info', icon: InfoIcon },
   warn: { tone: 'warning', icon: WarningIcon },
@@ -17,7 +17,7 @@ const CALLOUT = {
 } as const;
 
 export function GenuiBadge({ props }: GenuiComponentProps) {
-  return <Badge variant={BADGE_VARIANT[(props.tone ?? 'neutral') as keyof typeof BADGE_VARIANT]}>{props.label}</Badge>;
+  return <StatusBadge tone={BADGE_TONE[(props.tone ?? 'neutral') as keyof typeof BADGE_TONE]}>{props.label}</StatusBadge>;
 }
 
 export function GenuiCallout({ props }: GenuiComponentProps) {
