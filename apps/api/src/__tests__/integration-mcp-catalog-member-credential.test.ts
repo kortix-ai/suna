@@ -12,6 +12,7 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import {
+  accountMemberships,
   accounts,
   connectionCredentials,
   connectorConnections,
@@ -35,6 +36,10 @@ const MEMBER_B = crypto.randomUUID();
 const WITH_PROJECT = crypto.randomUUID();
 const PROJECT_CONN = crypto.randomUUID();
 const MEMBER_C = crypto.randomUUID();
+// Older credentials that must never publish: an agent-owned account, and a
+// member who has since left the account.
+const AGENT_CONN = crypto.randomUUID();
+const DEPARTED = crypto.randomUUID();
 // Nobody signed in: an unsigned project account only.
 const UNSIGNED = crypto.randomUUID();
 const UNSIGNED_CONN = crypto.randomUUID();
@@ -51,10 +56,17 @@ const mcp = (connectorId: string, slug: string) => ({
   lastError: 'MCP tools/list failed: HTTP 401',
 });
 
+// Owner ids: members of the account, except the departed one.
+const OWNER = new Map<string, string>();
+const ownerOf = (connectionId: string) => {
+  if (!OWNER.has(connectionId)) OWNER.set(connectionId, crypto.randomUUID());
+  return OWNER.get(connectionId)!;
+};
+
 const connection = (
   connectionId: string,
   connectorId: string,
-  ownerType: 'project' | 'member',
+  ownerType: 'project' | 'member' | 'agent',
   status: 'active' | 'revoked' = 'active',
 ) => ({
   connectionId,
@@ -62,7 +74,7 @@ const connection = (
   projectId: PROJECT,
   connectorId,
   ownerType,
-  ownerId: ownerType === 'project' ? null : crypto.randomUUID(),
+  ownerId: ownerType === 'project' ? null : ownerOf(connectionId),
   status,
   label: connectionId.slice(0, 8),
 });
@@ -92,7 +104,9 @@ beforeAll(async () => {
   await db
     .insert(connectorConnections)
     .values([
-      connection(REVOKED, MEMBER_ONLY, 'member', 'revoked'),
+      connection(AGENT_CONN, MEMBER_ONLY, 'agent'),
+    connection(DEPARTED, MEMBER_ONLY, 'member'),
+    connection(REVOKED, MEMBER_ONLY, 'member', 'revoked'),
       connection(MEMBER_A, MEMBER_ONLY, 'member'),
       connection(MEMBER_B, MEMBER_ONLY, 'member'),
       connection(PROJECT_CONN, WITH_PROJECT, 'project'),
@@ -100,8 +114,15 @@ beforeAll(async () => {
       connection(UNSIGNED_CONN, UNSIGNED, 'project'),
     ]);
   await db
+    .insert(accountMemberships)
+    .values(
+      [REVOKED, MEMBER_A, MEMBER_B, MEMBER_C].map((id) => ({ accountId: ACCOUNT, userId: ownerOf(id) })),
+    );
+  await db
     .insert(connectionCredentials)
     .values([
+      credential(MEMBER_ONLY, AGENT_CONN, 'agent-token', '2026-09-01T00:00:00Z'),
+      credential(MEMBER_ONLY, DEPARTED, 'departed-token', '2026-09-02T00:00:00Z'),
       credential(MEMBER_ONLY, REVOKED, 'revoked-token', '2026-10-01T00:00:00Z'),
       credential(MEMBER_ONLY, MEMBER_A, 'member-a-token', '2026-10-02T00:00:00Z'),
       credential(MEMBER_ONLY, MEMBER_B, 'member-b-token', '2026-10-03T00:00:00Z'),
@@ -120,7 +141,7 @@ afterAll(async () => {
 });
 
 describe('MCP catalog credential', () => {
-  test('signed in only by members: the earliest ACTIVE member account loads the tools', async () => {
+  test('signed in only by members: the earliest active account of a CURRENT member loads the tools', async () => {
     expect(await resolveFirstMemberCredential(MEMBER_ONLY)).toBe('member-a-token');
     expect(await resolveMcpCatalogCredential(MEMBER_ONLY, undefined)).toEqual({
       value: 'member-a-token',

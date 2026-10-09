@@ -210,6 +210,7 @@ describe('MCP catalog materialization', () => {
       accountId: string;
       force?: boolean;
       credential?: string;
+      only?: string;
     }> = [];
     const sync = async (
       projectId: string,
@@ -217,6 +218,7 @@ describe('MCP catalog materialization', () => {
       options: {
         force?: boolean;
         mcpCredentialOverrides?: ReadonlyMap<string, string>;
+        onlyConnectorId?: string;
       } = {},
     ) => {
       calls.push({
@@ -224,6 +226,7 @@ describe('MCP catalog materialization', () => {
         accountId,
         force: options.force,
         credential: options.mcpCredentialOverrides?.get('connector-1'),
+        ...(options.onlyConnectorId ? { only: options.onlyConnectorId } : {}),
       });
       return { synced: 1, errors: [] };
     };
@@ -290,7 +293,13 @@ describe('MCP catalog materialization', () => {
         force: true,
         credential: 'connection-access-token',
       },
-      { projectId: 'project-1', accountId: 'account-1', force: true, credential: undefined },
+      {
+        projectId: 'project-1',
+        accountId: 'account-1',
+        force: true,
+        credential: undefined,
+        only: 'connector-1',
+      },
     ]);
   });
 

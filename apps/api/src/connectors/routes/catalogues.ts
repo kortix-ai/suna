@@ -149,8 +149,8 @@ async function withCatalogTwins(
   result: unknown,
 ): Promise<unknown> {
   if (!deps.catalogDirectIds) return result;
-  if (!(await deps.featureFlagEnabled(projectId, 'connectors_api_discover'))) return result;
   try {
+    if (!(await deps.featureFlagEnabled(projectId, 'connectors_api_discover'))) return result;
     return withDirectIds(result, await deps.catalogDirectIds());
   } catch {
     return result;

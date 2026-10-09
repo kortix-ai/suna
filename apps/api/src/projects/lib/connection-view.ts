@@ -1,4 +1,5 @@
 /** The public `Connection` view shared by the connection routes. */
+import { connectionSignedIn } from '../../connectors/credentials';
 import { ConnectionSchema, type ComputerMachineStatus } from '@kortix/api-contract';
 import { tunnelConnections } from '@kortix/db';
 import { inArray } from 'drizzle-orm';
@@ -33,23 +34,8 @@ export function serializeConnection(row: {
   };
 }
 
-/**
- * Whether an account is signed in: it holds a credential, or (Composio) its
- * row carries the connected account or the no-auth marker. The same rule as
- * `connectorAccountLandedSince` (`connectors/credentials.ts`).
- */
-export function connectionAuthorized(
-  metadata: Record<string, unknown> | null,
-  hasCredential: boolean,
-): boolean {
-  if (hasCredential) return true;
-  const meta = metadata ?? {};
-  return (
-    typeof meta.connected_account_id === 'string' ||
-    meta.is_no_auth === true ||
-    meta.is_no_auth === 'true'
-  );
-}
+/** Whether an account is signed in (`connectionSignedIn`, `connectors/credentials.ts`). */
+export const connectionAuthorized = connectionSignedIn;
 
 /** Live status of each paired machine, by tunnel id. One query. */
 export async function loadComputerMachines(

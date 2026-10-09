@@ -25,6 +25,9 @@ const PROJECT = crypto.randomUUID();
 const PERSONAL = crypto.randomUUID();
 const SHARED = crypto.randomUUID();
 const OWNER_CONNECTION = crypto.randomUUID();
+// The unsigned "Everyone in project" account an older connector carries:
+// every member reaches it, and it must NOT unlock a personal catalog.
+const EMPTY_SHARED = crypto.randomUUID();
 const OWNER = crypto.randomUUID();
 const OTHER = crypto.randomUUID();
 
@@ -56,16 +59,28 @@ beforeAll(async () => {
   await db
     .insert(connectors)
     .values([mcp(PERSONAL, 'personal', { catalog_source: 'member' }), mcp(SHARED, 'shared', {})]);
-  await db.insert(connectorConnections).values({
-    connectionId: OWNER_CONNECTION,
-    accountId: ACCOUNT,
-    projectId: PROJECT,
-    connectorId: PERSONAL,
-    ownerType: 'member',
-    ownerId: OWNER,
-    status: 'active',
-    label: 'Personal',
-  });
+  await db.insert(connectorConnections).values([
+    {
+      connectionId: OWNER_CONNECTION,
+      accountId: ACCOUNT,
+      projectId: PROJECT,
+      connectorId: PERSONAL,
+      ownerType: 'member',
+      ownerId: OWNER,
+      status: 'active',
+      label: 'Personal',
+    },
+    {
+      connectionId: EMPTY_SHARED,
+      accountId: ACCOUNT,
+      projectId: PROJECT,
+      connectorId: PERSONAL,
+      ownerType: 'project',
+      ownerId: null,
+      status: 'active',
+      label: 'personal',
+    },
+  ]);
   await db.insert(connectionCredentials).values({
     connectorId: PERSONAL,
     connectionId: OWNER_CONNECTION,
@@ -93,7 +108,7 @@ describe('a member-published tool catalog', () => {
     expect(await actionsFor(OWNER, 'personal')).toEqual(['personal.list_boards']);
   });
 
-  test('another member sees the connector without its tool names', async () => {
+  test('another member sees the connector without its tool names, even with the empty shared account', async () => {
     expect(await actionsFor(OTHER, 'personal')).toEqual([]);
   });
 

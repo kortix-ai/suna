@@ -546,12 +546,20 @@ export function registerConnectionActionsRoutes(): void {
   }
 }
 
-/** `name`, or `name 2`, `name 3`… : the first one no label in `taken` uses. */
+/** Longest account label the column holds (`connector_connections.label`). */
+const MAX_LABEL = 255;
+
+/**
+ * `name`, or `name 2`, `name 3`… : the first one no label in `taken` uses,
+ * trimmed so the suffix still fits the label column.
+ */
 export function freeAccountLabel(name: string, taken: readonly string[]): string {
   const used = new Set(taken.map((label) => label.trim().toLowerCase()));
-  const base = name.trim();
+  const base = name.trim().slice(0, MAX_LABEL);
   if (!used.has(base.toLowerCase())) return base;
   for (let n = 2; ; n += 1) {
-    if (!used.has(`${base} ${n}`.toLowerCase())) return `${base} ${n}`;
+    const suffix = ` ${n}`;
+    const candidate = `${base.slice(0, MAX_LABEL - suffix.length).trimEnd()}${suffix}`;
+    if (!used.has(candidate.toLowerCase())) return candidate;
   }
 }

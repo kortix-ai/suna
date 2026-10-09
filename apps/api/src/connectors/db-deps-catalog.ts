@@ -22,6 +22,8 @@ import { resolveFallbackIcons } from './connector-icon';
 import { connectorCatalogIcons } from './connector-catalog';
 import { buildAdminConnectorViews } from './connector-list';
 import {
+  connectionIdsWithCredentials,
+  connectionSignedIn,
   connectorIdsWithSharedCredentials,
   connectorIdsWithReachableMemberCredential,
 } from './credentials';
@@ -392,6 +394,22 @@ export async function listConnectors(
               ),
             ),
     ]);
+  // A catalog fetched with one member's personal account
+  // (`config.catalog_source: 'member'`) is listed only to a caller with a
+  // SIGNED-IN account on the connector. Reaching an unsigned account, such as
+  // an empty "Everyone in project" row, does not count. One query.
+  const memberPublished = conns.filter(
+    (row) => (row.config as { catalog_source?: unknown } | null)?.catalog_source === 'member',
+  );
+  const credentialedEntitled = await connectionIdsWithCredentials(
+    memberPublished.flatMap((row) =>
+      (entitledByConnector.get(row.connectorId) ?? []).map((c) => c.connectionId),
+    ),
+  );
+  const catalogVisible = (connectorId: string) =>
+    (entitledByConnector.get(connectorId) ?? []).some((c) =>
+      connectionSignedIn(c.metadata, credentialedEntitled.has(c.connectionId)),
+    );
   const accountsByConnector = new Map<string, CatalogAccount[]>(
     conns.map((row) => [
       row.connectorId,
@@ -525,8 +543,7 @@ export async function listConnectors(
       sensitive: config?.sensitive === true,
       // A catalog fetched with one member's personal account is listed only to
       // people with an account on the connector (`resolveMcpCatalogCredential`).
-      actions: (config?.catalog_source === 'member' &&
-      (entitledByConnector.get(row.connectorId) ?? []).length === 0
+      actions: (config?.catalog_source === 'member' && !catalogVisible(row.connectorId)
         ? []
         : (actionsByConnector.get(row.connectorId) ?? [])
       ).map((a) => ({

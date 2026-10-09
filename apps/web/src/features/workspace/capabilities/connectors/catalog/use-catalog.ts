@@ -280,8 +280,12 @@ export function useCatalog(
   // One catalogue, no source toggle. Managed apps drive browsing; a search also
   // asks the API/MCP catalogue (below). With no managed provider on this
   // deployment, the API/MCP catalogue is the whole catalogue.
+  // `unknown` (the probe failed) falls back to the API/MCP catalogue too, as
+  // before the merge of the two.
   const source: CatalogSource =
-    opts.discoverEnabled && connectStatus.state === 'absent' ? 'discover' : 'easy-connect';
+    opts.discoverEnabled && (connectStatus.state === 'absent' || connectStatus.state === 'unknown')
+      ? 'discover'
+      : 'easy-connect';
   const searchDirect = opts.discoverEnabled && source === 'easy-connect' && searching;
 
   // `unknown` proceeds: the probe failed, and refusing to load a catalogue that

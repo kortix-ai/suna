@@ -1,4 +1,9 @@
-import { connectorConnections, connectors, connectionCredentials } from '@kortix/db';
+import {
+  accountMemberships,
+  connectorConnections,
+  connectors,
+  connectionCredentials,
+} from '@kortix/db';
 import type { OAuth2ClientCredentials } from '@kortix/api-contract';
 /**
  * Connector credentials. A connector is project-wide visible — the only
@@ -143,10 +148,19 @@ export async function resolveFirstMemberCredential(connectorId: string): Promise
       connectorConnections,
       eq(connectorConnections.connectionId, connectionCredentials.connectionId),
     )
+    // Only a person still in the account: a member who left publishes nothing.
+    .innerJoin(
+      accountMemberships,
+      and(
+        eq(accountMemberships.accountId, connectors.accountId),
+        sql`${accountMemberships.userId}::text = ${connectorConnections.ownerId}`,
+      ),
+    )
     .where(
       and(
         eq(connectionCredentials.connectorId, connectorId),
-        sql`${connectorConnections.ownerType} <> 'project'`,
+        // A member's own account: never an agent, embedded-user or shared one.
+        eq(connectorConnections.ownerType, 'member'),
         eq(connectorConnections.status, 'active'),
       ),
     )
@@ -249,6 +263,24 @@ export async function connectorAccountLandedSince(
       .limit(1),
   ]);
   return !!credential || !!connection;
+}
+
+/**
+ * Whether an account is signed in: it holds a credential, or (Composio) its
+ * row carries the connected account or the no-auth marker. The same rule as
+ * `connectorAccountLandedSince`.
+ */
+export function connectionSignedIn(
+  metadata: Record<string, unknown> | null,
+  hasCredential: boolean,
+): boolean {
+  if (hasCredential) return true;
+  const meta = metadata ?? {};
+  return (
+    typeof meta.connected_account_id === 'string' ||
+    meta.is_no_auth === true ||
+    meta.is_no_auth === 'true'
+  );
 }
 
 /** Which of these accounts hold a credential row. One query. */

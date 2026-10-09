@@ -137,6 +137,8 @@ export async function rematerializeCatalogAfterCredentialUpdate(
   return sync(input.projectId, input.accountId, {
     force: true,
     ...(mcpCredentialOverrides ? { mcpCredentialOverrides } : {}),
+    // A member's update refreshes only its own connector.
+    ...(!projectDefault && input.connectorId ? { onlyConnectorId: input.connectorId } : {}),
   });
 }
 
@@ -411,6 +413,10 @@ export interface SyncOptions {
   force?: boolean;
   /** Exact connection credentials used only for this in-memory MCP refresh. */
   mcpCredentialOverrides?: ReadonlyMap<string, string>;
+  /** Re-fetch only this connector. A member's credential update refreshes its
+   *  own connector, not the whole project, so repeated saves cannot fan out
+   *  into every connector's catalog fetch. */
+  onlyConnectorId?: string;
 }
 
 interface ResolvedCatalog {
@@ -563,6 +569,12 @@ async function syncProjectConnectorsFenced(
 
   let synced = 0;
   for (const sourceSpec of specs) {
+    if (
+      opts.onlyConnectorId &&
+      existingBySlug.get(sourceSpec.slug)?.connectorId !== opts.onlyConnectorId
+    ) {
+      continue;
+    }
     try {
       let spec = sourceSpec;
       if (sourceSpec.authAuto) {
