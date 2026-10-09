@@ -1726,7 +1726,10 @@
     "writeStartStash"
   ],
   "./genui": [
-    "GENUI_SCHEMA_VERSION"
+    "GENUI_SCHEMA_VERSION",
+    "genuiVersionFromClassName",
+    "genuiVersionOf",
+    "splitGenui"
   ],
   "./genui/react": [],
   "./server": [

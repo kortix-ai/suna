@@ -3198,7 +3198,10 @@
     "GenuiIssueCode",
     "GenuiNode",
     "GenuiParseResult",
-    "GenuiSegment"
+    "GenuiSegment",
+    "genuiVersionFromClassName",
+    "genuiVersionOf",
+    "splitGenui"
   ],
   "./genui/react": [],
   "./server": [

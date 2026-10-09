@@ -6,3 +6,4 @@ export {
   type GenuiParseResult,
   type GenuiSegment,
 } from './types';
+export { genuiVersionFromClassName, genuiVersionOf, splitGenui } from './fence';
