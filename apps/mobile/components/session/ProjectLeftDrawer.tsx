@@ -15,7 +15,8 @@
  *   (→ /projects/[id]/files), Review (→ the Review page, a trailing count
  *   pill while items wait), Notifications (→ /projects/[id]/inbox, the
  *   caller's notifications across every project, a trailing count pill while
- *   one is unread; KRTX-1742), and Apps (→ the Apps page, the project's
+ *   one is unread; KRTX-1742, only while the project's `notification_center`
+ *   flag is on), and Apps (→ the Apps page, the project's
  *   deployed apps). Connectors moved to project Settings → Customize
  *   (KRTX-249): a "Customize in the web app" hand-off sheet, not a drawer row.
  * - Three sections of top-level sessions, by who started the run (KRTX-639):
@@ -181,6 +182,8 @@ export interface ProjectLeftDrawerProps {
   activeParentSessionId?: string | null;
   /** Items that wait for the user — the Review row's trailing count pill. */
   reviewNeedsYouCount?: number;
+  /** The project's `notification_center` flag is on: the Notifications row shows (KRTX-1742). */
+  notificationsEnabled?: boolean;
   /**
    * The caller's unread notifications across every project — the
    * Notifications row's trailing count pill. ProjectScreen reads the inbox
@@ -246,6 +249,7 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
   activeRuntimeSessionId = null,
   activeParentSessionId = null,
   reviewNeedsYouCount = 0,
+  notificationsEnabled = false,
   notificationsUnreadCount = 0,
   needsYouBySession = EMPTY_NEEDS_YOU,
   onNewSession,
@@ -695,15 +699,17 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
             onPress={goToReview}
             trailing={<CountPill count={reviewNeedsYouCount} />}
           />
-          <NavPill
-            icon={BellIcon}
-            label="Notifications"
-            accessibilityLabel={
-              notificationsUnreadCount > 0 ? `Notifications, ${notificationsUnreadCount} unread` : 'Notifications'
-            }
-            onPress={goToNotifications}
-            trailing={<CountPill count={notificationsUnreadCount} />}
-          />
+          {notificationsEnabled ? (
+            <NavPill
+              icon={BellIcon}
+              label="Notifications"
+              accessibilityLabel={
+                notificationsUnreadCount > 0 ? `Notifications, ${notificationsUnreadCount} unread` : 'Notifications'
+              }
+              onPress={goToNotifications}
+              trailing={<CountPill count={notificationsUnreadCount} />}
+            />
+          ) : null}
           <NavPill icon={SquaresFourIcon} label="Apps" onPress={goToApps} />
         </View>
         {needsYouSessions.length > 0 ? (
@@ -736,6 +742,7 @@ export const ProjectLeftDrawer = React.memo(function ProjectLeftDrawer({
       goToNotifications,
       goToApps,
       reviewNeedsYouCount,
+      notificationsEnabled,
       notificationsUnreadCount,
       needsYouSessions,
       needsYouBySession,

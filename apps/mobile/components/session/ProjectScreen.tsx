@@ -100,6 +100,7 @@ import {
 } from '@kortix/sdk';
 import { KortixProjectProvider, useNotificationInbox } from '@kortix/sdk/react';
 import { NOTIFICATION_INBOX_LIMIT } from '@/lib/notifications/inbox';
+import { carryOverLegacyKinds } from '@/lib/notifications/registration';
 import { useSavedCopy } from '@/hooks/useSavedCopy';
 import type { ProjectSession } from '@/lib/projects/projects-client';
 import { getSandboxUrl } from '@/lib/platform/client';
@@ -210,6 +211,15 @@ export function ProjectScreen() {
   // open and the app is in the foreground, so a home send skips the sandbox
   // boot. Gated by the project's `warm_sessions` flag (billed compute).
   useWarmProjectSession(projectId, project?.experimental?.warm_sessions === true);
+  // KRTX-1742 (the inbox, its drawer pill, reading a session's notifications)
+  // is behind the project's `notification_center` flag, off by default.
+  // Unknown while the project loads: off.
+  const notificationCenterOn = project?.experimental?.notification_center === true;
+  // This phone's opt-outs reach the user's record once, only for a user who
+  // opens such a project.
+  useEffect(() => {
+    if (notificationCenterOn) void carryOverLegacyKinds();
+  }, [notificationCenterOn]);
   // Opening a session any other way uses it: a held warm session with that id
   // is no longer a candidate, so drop it and keep one ready.
   const releaseWarmSession = useCallback((sessionId: string) => {
@@ -260,8 +270,12 @@ export function ProjectScreen() {
   // The caller's notifications across every project (KRTX-1742): the drawer's
   // Notifications count. The Notifications page reads the same query (same
   // limit). It polls every 60 s while the app is in the foreground, and not
-  // while a root screen covers the project.
-  const inbox = useNotificationInbox({ userId, limit: NOTIFICATION_INBOX_LIMIT, enabled: isFocused });
+  // while a root screen covers the project or the flag is off.
+  const inbox = useNotificationInbox({
+    userId,
+    limit: NOTIFICATION_INBOX_LIMIT,
+    enabled: isFocused && notificationCenterOn,
+  });
   const notificationsUnreadCount = inbox.unreadCount;
   const inboxRef = useRef(inbox);
   inboxRef.current = inbox;
@@ -384,12 +398,15 @@ export function ProjectScreen() {
   // refetch). Known to have nothing unread: no request. Keyed by the newest
   // unread row (the inbox lists newest first): a failed read restores the same
   // row, and that row is not sent again, so a failing server sees no loop.
+  // Flag off: no read (the disabled inbox is not `isSuccess`, so the check
+  // below would send one).
   const shownUnreadRowId = shownSessionId
     ? (inbox.data?.notifications.find((row) => !row.read && row.session_id === shownSessionId)?.id ?? null)
     : null;
   const readSessionRef = useRef<string | null>(null);
   const readSentRef = useRef<string | null>(null);
   useEffect(() => {
+    if (!notificationCenterOn) return;
     const opened = readSessionRef.current !== shownSessionId;
     readSessionRef.current = shownSessionId;
     if (!shownSessionId || (!opened && !shownUnreadRowId)) return;
@@ -399,7 +416,7 @@ export function ProjectScreen() {
     if (isSuccess && unreadCount === 0) return;
     readSentRef.current = sent;
     markSessionRead(shownSessionId).catch(() => {});
-  }, [shownSessionId, shownUnreadRowId]);
+  }, [notificationCenterOn, shownSessionId, shownUnreadRowId]);
 
   // A tapped notification for this project (a push, or a Notifications row):
   // open its session, the same path as the Sessions page. The session already
@@ -476,6 +493,7 @@ export function ProjectScreen() {
         activeRuntimeSessionId={shownRuntimeId}
         activeParentSessionId={activeParentSessionId}
         reviewNeedsYouCount={reviewNeedsYouCount}
+        notificationsEnabled={notificationCenterOn}
         notificationsUnreadCount={notificationsUnreadCount}
         needsYouBySession={needsYouSessions}
         // New session opens project home: its composer starts the session.
@@ -496,6 +514,7 @@ export function ProjectScreen() {
       activeParentSessionId,
       drawerOpen,
       reviewNeedsYouCount,
+      notificationCenterOn,
       notificationsUnreadCount,
       needsYouSessions,
       returnHome,

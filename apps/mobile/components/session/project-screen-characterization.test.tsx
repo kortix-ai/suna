@@ -26,6 +26,7 @@ let actionsSheet: any;
 let inbox: any;
 let inboxOptions: any;
 let pendingOpen: any;
+let project: any;
 let tree: ReactTestRenderer | undefined;
 let ProjectScreen: typeof import('./ProjectScreen').ProjectScreen;
 
@@ -57,7 +58,7 @@ const moduleMocks: Record<string, Record<string, any>> = {
   '@/stores/last-project-store': { useLastProjectStore: { getState: () => ({ remember() {} }) } },
   '@/stores/push-store': { usePushStore: Object.assign((selector: any) => selector({ pendingOpen }), { getState: () => ({ setViewingSessionId() {}, takeOpen: (projectId: string) => { const open = pendingOpen?.projectId === projectId ? pendingOpen : null; if (open) pendingOpen = null; return open; } }) }) },
   '@/stores/upgrade-sheet-store': { useUpgradeSheetStore: (selector: any) => selector(upgradeStore) },
-  '@/lib/projects/hooks': { useProject: () => ({ data: null }), useAccounts: () => ({ data: [] }), useProjectSessions: () => ({ data: [] }), useCreateProjectSession: () => ({ mutateAsync: async () => ({ session_id: 'fresh-1' }) }), projectKeys: { projectSessions: () => [], projectSessionsPaged: () => [] } },
+  '@/lib/projects/hooks': { useProject: () => ({ data: project }), useAccounts: () => ({ data: [] }), useProjectSessions: () => ({ data: [] }), useCreateProjectSession: () => ({ mutateAsync: async () => ({ session_id: 'fresh-1' }) }), projectKeys: { projectSessions: () => [], projectSessionsPaged: () => [] } },
   '@tanstack/react-query': { useQueryClient: () => queryClient },
   '@/lib/review/use-review': { useReviewItems: () => ({ data: reviewData }) },
   '@/lib/session/needs-you': { needsYouBySession: (items: any[]) => new Map(items.map((item) => [item.session_id, item])) },
@@ -77,7 +78,7 @@ const moduleMocks: Record<string, Record<string, any>> = {
   '@/lib/notifications/inbox': { NOTIFICATION_INBOX_LIMIT: 50 },
   '@/hooks/useSavedCopy': { useSavedCopy: () => ({ messages: undefined, empty: false }) },
   '@/lib/session/session-store': { addOptimisticMessage: spy('optimistic'), markOptimisticAccepted() {}, sessionMessageIds: () => [], sessionRows: () => [], sessionStatus: () => undefined, setLocalSessionStatus() {} },
-  '@/lib/notifications/registration': { requestPushPermissionOnce() {} },
+  '@/lib/notifications/registration': { requestPushPermissionOnce() {}, carryOverLegacyKinds: async () => { spy('carryOver')(); } },
   '@/stores/composer-draft-store': { clearComposerDraftIfSent: spy('clearDraft') },
   '@/lib/session/create-session': { createSessionCommitted: async () => 'fresh-1' },
   '@/lib/session/new-session-input': { newSessionCreateInput: () => ({}) },
@@ -116,6 +117,8 @@ beforeEach(() => {
   reviewData = [];
   route = drawer = home = connecting = back = stackListener = thread = actionsSheet = inboxOptions = pendingOpen = undefined;
   inbox = { isSuccess: true, unreadCount: 2, markSessionRead: async (sessionId: string) => { spy('markSessionRead')(sessionId); } };
+  // KRTX-1742 cases run with the project's `notification_center` flag on; the flag-off cases say so.
+  project = { project_id: 'project-1', experimental: { notification_center: true } };
   tab = { activeSessionId: null, activePageId: null, setScope: spy('scope'), navigateToSession: spy('navigateSession') };
   routes = [{ key: 'home-key', name: 'index', params: { id: 'project-1' } }];
   response = async () => ({ stage: 'ready', retriable: false, failure: null, opencode_session_id: 'oc-1', sandbox: { status: 'active', external_id: 'box-1', sandbox_id: 'box-1' } });
@@ -271,8 +274,42 @@ describe('ProjectScreen connect and stack', () => {
 
   test('the drawer gets the unread notification count from the inbox', async () => {
     await renderHook();
-    expect(inboxOptions).toMatchObject({ limit: 50 });
+    expect(inboxOptions).toMatchObject({ limit: 50, enabled: true });
+    expect(drawer.notificationsEnabled).toBe(true);
     expect(drawer.notificationsUnreadCount).toBe(2);
+  });
+
+  test("a flag-on project carries this phone's opt-outs into the user's record", async () => {
+    await renderHook();
+    expect(seen('carryOver')).toHaveLength(1);
+  });
+
+  test('notification_center off: no inbox poll, no drawer pill, no read, no carry-over', async () => {
+    project = { project_id: 'project-1', experimental: { notification_center: false } };
+    // The disabled query is not `isSuccess`.
+    inbox = { ...inbox, isSuccess: false, unreadCount: 0 };
+    await renderHook();
+    expect(inboxOptions).toMatchObject({ enabled: false });
+    expect(drawer.notificationsEnabled).toBe(false);
+    await act(async () => drawer.onOpenProjectSession({ session_id: 'ps-1' }));
+    expect(seen('markSessionRead')).toHaveLength(0);
+    expect(seen('carryOver')).toHaveLength(0);
+  });
+
+  test('while the project loads the flag reads off; once it loads on, the session on screen is read', async () => {
+    project = undefined;
+    inbox = { ...inbox, isSuccess: false, unreadCount: 0 };
+    response = () => new Promise(() => {});
+    await renderHook();
+    expect(inboxOptions).toMatchObject({ enabled: false });
+    expect(drawer.notificationsEnabled).toBe(false);
+    await act(async () => drawer.onOpenProjectSession({ session_id: 'ps-1' }));
+    expect(seen('markSessionRead')).toHaveLength(0);
+    project = { project_id: 'project-1', experimental: { notification_center: true } };
+    await rerender();
+    expect(drawer.notificationsEnabled).toBe(true);
+    expect(seen('markSessionRead').map((call) => call.args)).toEqual([['ps-1']]);
+    expect(seen('carryOver')).toHaveLength(1);
   });
 
   test('opening a session marks its notifications read', async () => {

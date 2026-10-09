@@ -37,6 +37,17 @@ describe('PUT sharing → shared with you', () => {
     expect(src.slice(emitAt)).toContain('priorVisibility: visible.row.visibility');
   });
 
+  // KRTX-1742 is behind the project's notification_center flag: off, a share
+  // tells nobody, as before.
+  test('emits only with the project`s notification_center flag on', () => {
+    const gateAt = src.indexOf('if (notificationsEnabled(loaded.row.metadata)) {');
+    const emitAt = src.indexOf('void notifySessionShared({');
+    expect(gateAt).toBeGreaterThan(src.indexOf('await setSessionSharing(sessionId, intent);'));
+    expect(emitAt).toBeGreaterThan(gateAt);
+    // Nothing but the emission sits between the gate and the call.
+    expect(src.slice(gateAt, emitAt).trim()).toBe('if (notificationsEnabled(loaded.row.metadata)) {');
+  });
+
   test('names the caller as the sharer and the session row`s creator', () => {
     const emit = src.slice(src.indexOf('void notifySessionShared({'));
     expect(emit).toContain('sharerId: loaded.userId');

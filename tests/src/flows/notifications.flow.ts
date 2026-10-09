@@ -3,6 +3,10 @@
  * tokens. NOTIF-1..8 (KRTX-1742): the inbox, preferences, Web Push, session
  * watch, and who a session event, a share and a failing trigger reach.
  *
+ * KRTX-1742 is the per-project `notification_center` flag, off by default.
+ * Every NOTIF flow except NOTIF-4 (no project) turns it on first; NOTIF-9
+ * owns the flag-off contract.
+ *
  * Every NOTIF flow notifies only fresh run-scoped users with no device token
  * and no Web Push subscription, so no push leaves the target. A delivery runs
  * after the request that caused it answers: a flow polls the bell for the
@@ -11,13 +15,15 @@
  */
 import { createECDH, randomBytes, randomUUID } from 'node:crypto';
 import type { Client as PgClient } from 'pg';
+import type { Client } from '../core/client';
 import { flow } from '../core/flow';
 import { sleep, waitFor } from '../core/poll';
 import type { FlowContext, Principal } from '../core/types';
 import { createDatabaseSession } from '../fixtures/database-project';
 import { mailpitMessagesTo, waitForMailpit } from '../fixtures/mailpit';
 import { PASSWORD } from '../fixtures/principals';
-import { openFlowDb, seedTurnSession } from '../fixtures/turn-end';
+import { mintWireMessageId } from '../fixtures/session-run';
+import { openFlowDb, seedTurnSession, type TurnSession } from '../fixtures/turn-end';
 
 flow(
   'PUSH-1',
@@ -227,10 +233,26 @@ function expectCount(actual: number, expected: number, what: string): void {
   if (actual !== expected) throw new Error(`${what}: expected ${expected}, got ${actual}`);
 }
 
-/** A team project, its creator A and a second member B, both able to open project sessions. */
-async function teamWithTwoMembers(ctx: FlowContext) {
+/**
+ * The project OWNER sets the `notification_center` flag and the response reads
+ * it back. `null` clears the override: the project follows the default, off.
+ */
+async function setNotificationCenter(ctx: FlowContext, projectId: string, enabled: boolean | null): Promise<void> {
+  const r = await ctx.client
+    .as(ctx.P.OWNER)
+    .patch('/v1/projects/:projectId/features', { feature: 'notification_center', enabled }, { params: { projectId } });
+  r.status(200).body().has('$.experimental.notification_center', enabled ?? false);
+}
+
+/**
+ * A team project, its creator A and a second member B, both able to open
+ * project sessions. The project has `notification_center` on unless the
+ * caller asks for the default.
+ */
+async function teamWithTwoMembers(ctx: FlowContext, opts: { notificationCenter?: boolean } = {}) {
   const team = await ctx.fixtures.team();
   const project = await team.project();
+  if (opts.notificationCenter !== false) await setNotificationCenter(ctx, project.id, true);
   const a = await team.addMember('member');
   const b = await team.addMember('member');
   await team.grantProjectRole(project.id, a.userId!, 'member');
@@ -239,6 +261,48 @@ async function teamWithTwoMembers(ctx: FlowContext) {
 }
 
 const watchRoute = '/v1/projects/:projectId/sessions/:sessionId/watch';
+const QUESTION = 'Which region should the service deploy to?';
+
+/** The daemon relays an agent question for the session (the sandbox credential unless `who` is given). */
+function relayQuestion(turn: TurnSession, projectId: string, requestId: string, who: Client = turn.sandbox) {
+  return who.post(
+    '/v1/projects/:projectId/turn-question',
+    {
+      session_id: turn.sessionId,
+      request_id: requestId,
+      runtime_session_id: 'ses_root',
+      questions: [{ question: QUESTION, header: 'Region', options: [{ label: 'eu-west-1' }, { label: 'us-east-1' }] }],
+    },
+    { params: { projectId } },
+  );
+}
+
+/** The daemon relays a tool permission request for the session. */
+function relayPermission(turn: TurnSession, projectId: string, requestId: string, who: Client = turn.sandbox) {
+  return who.post(
+    '/v1/projects/:projectId/turn-permission',
+    { session_id: turn.sessionId, request_id: requestId, permission: 'bash', patterns: ['git push origin main'] },
+    { params: { projectId } },
+  );
+}
+
+/**
+ * BILL-17: a paid tier with no credit left, so a trigger fire fails → 500.
+ * Session creation refuses it before any sandbox on a deployed target; the
+ * local profile refuses one step earlier, at the sandbox callback check (no
+ * public KORTIX_URL).
+ */
+async function exhaustCredit(db: PgClient, accountId: string): Promise<void> {
+  await db.query(
+    `INSERT INTO kortix.credit_accounts
+       (account_id, balance, balance_precise, non_expiring_credits, non_expiring_credits_precise, tier)
+     VALUES ($1, 0, 0, 0, 0, 'tier_2_20')
+     ON CONFLICT (account_id) DO UPDATE SET
+       balance = 0, balance_precise = 0, non_expiring_credits = 0, non_expiring_credits_precise = 0,
+       expiring_credits = 0, expiring_credits_precise = 0, tier = 'tier_2_20'`,
+    [accountId],
+  );
+}
 
 // NOTIF-1 — the inbox and the preferences routes, read and written by one person.
 flow(
@@ -247,6 +311,7 @@ flow(
     domain: 'notifications',
     requires: ['database'],
     routes: [
+      'PATCH /v1/projects/:projectId/features',
       'GET /v1/notifications',
       'POST /v1/notifications/read',
       'GET /v1/notifications/preferences',
@@ -256,6 +321,8 @@ flow(
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const project = await team.project();
+    // The bell lists no row of a project with the flag off (NOTIF-9).
+    await setNotificationCenter(ctx, project.id, true);
     const reader = await team.addMember('member');
     const other = await team.addMember('member');
     await team.grantProjectRole(project.id, reader.userId!, 'member');
@@ -421,6 +488,7 @@ flow(
     domain: 'notifications',
     requires: ['database'],
     routes: [
+      'PATCH /v1/projects/:projectId/features',
       'POST /v1/accounts/tokens',
       'POST /v1/projects/:projectId/turn-stream',
       'PUT /v1/projects/:projectId/sessions/:sessionId/watch',
@@ -480,11 +548,16 @@ flow(
   {
     domain: 'notifications',
     requires: ['database'],
-    routes: ['PUT /v1/projects/:projectId/sessions/:sessionId/sharing', 'GET /v1/notifications'],
+    routes: [
+      'PATCH /v1/projects/:projectId/features',
+      'PUT /v1/projects/:projectId/sessions/:sessionId/sharing',
+      'GET /v1/notifications',
+    ],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const project = await team.project();
+    await setNotificationCenter(ctx, project.id, true);
     const c = await team.addMember('member');
     await team.grantProjectRole(project.id, c.userId!, 'member');
     const outsider = ctx.P.NONMEMBER;
@@ -612,6 +685,7 @@ flow(
     domain: 'notifications',
     requires: ['database'],
     routes: [
+      'PATCH /v1/projects/:projectId/features',
       'POST /v1/projects/:projectId/triggers',
       'POST /v1/projects/:projectId/triggers/:slug/fire',
       'GET /v1/notifications',
@@ -622,6 +696,8 @@ flow(
     const db = await openFlowDb(ctx.env);
     try {
       const project = await team.project({ managedGit: true });
+      // The published route, not a database write: this flow runs on deployed targets too.
+      await setNotificationCenter(ctx, project.id, true);
       const creator = await team.addMember('member');
       await team.grantProjectRole(project.id, creator.userId!, 'manager');
       const slug = 'notif-digest';
@@ -645,18 +721,7 @@ flow(
       });
 
       await ctx.step('a manual fire on the account with no credit fails → 500', async () => {
-        // BILL-17: a paid tier with no credit left. Session creation refuses it
-        // before any sandbox on a deployed target; the local profile refuses
-        // one step earlier, at the sandbox callback check (no public KORTIX_URL).
-        await db.query(
-          `INSERT INTO kortix.credit_accounts
-             (account_id, balance, balance_precise, non_expiring_credits, non_expiring_credits_precise, tier)
-           VALUES ($1, 0, 0, 0, 0, 'tier_2_20')
-           ON CONFLICT (account_id) DO UPDATE SET
-             balance = 0, balance_precise = 0, non_expiring_credits = 0, non_expiring_credits_precise = 0,
-             expiring_credits = 0, expiring_credits_precise = 0, tier = 'tier_2_20'`,
-          [team.id],
-        );
+        await exhaustCredit(db, team.id);
         (await fire()).status(500);
       });
 
@@ -706,7 +771,12 @@ flow(
   {
     domain: 'notifications',
     requires: ['database'],
-    routes: ['POST /v1/accounts/tokens', 'POST /v1/projects/:projectId/turn-stream', 'GET /v1/notifications'],
+    routes: [
+      'PATCH /v1/projects/:projectId/features',
+      'POST /v1/accounts/tokens',
+      'POST /v1/projects/:projectId/turn-stream',
+      'GET /v1/notifications',
+    ],
   },
   async (ctx) => {
     const { team, project, a, b } = await teamWithTwoMembers(ctx);
@@ -749,6 +819,7 @@ flow(
     domain: 'notifications',
     requires: ['database'],
     routes: [
+      'PATCH /v1/projects/:projectId/features',
       'GET /v1/projects/:projectId/sessions/:sessionId/watch',
       'PUT /v1/projects/:projectId/sessions/:sessionId/watch',
       'POST /v1/accounts/tokens',
@@ -834,6 +905,7 @@ flow(
     domain: 'notifications',
     requires: ['database'],
     routes: [
+      'PATCH /v1/projects/:projectId/features',
       'POST /v1/accounts/tokens',
       'PUT /v1/projects/:projectId/sessions/:sessionId/watch',
       'POST /v1/projects/:projectId/turn-question',
@@ -853,24 +925,8 @@ flow(
     });
     const sessionId = turn.sessionId;
     const params = { projectId: project.id };
-    const QUESTION = 'Which region should the service deploy to?';
-    const ask = (requestId: string, who = turn.sandbox) =>
-      who.post(
-        '/v1/projects/:projectId/turn-question',
-        {
-          session_id: sessionId,
-          request_id: requestId,
-          runtime_session_id: 'ses_root',
-          questions: [{ question: QUESTION, header: 'Region', options: [{ label: 'eu-west-1' }, { label: 'us-east-1' }] }],
-        },
-        { params },
-      );
-    const askPermission = (who = turn.sandbox) =>
-      who.post(
-        '/v1/projects/:projectId/turn-permission',
-        { session_id: sessionId, request_id: 'per_notif8', permission: 'bash', patterns: ['git push origin main'] },
-        { params },
-      );
+    const ask = (requestId: string, who?: Client) => relayQuestion(turn, project.id, requestId, who);
+    const askPermission = (who?: Client) => relayPermission(turn, project.id, 'per_notif8', who);
     try {
       await turn.startTurn('msg_notif8', b.userId!);
       await ctx.step('A, the creator, mutes the session; member W follows it; B prompted its running turn', async () => {
@@ -919,6 +975,198 @@ flow(
         (await askPermission(ctx.client.as(b))).status(403);
       });
     } finally {
+      await turn.cleanup();
+      await db.end();
+    }
+  },
+);
+
+// NOTIF-9 — `notification_center` is off by default, and a project with it
+// off behaves as before KRTX-1742. Its only delivery is the session creator's
+// phone push (not observable here: nobody has a device token). No request
+// writes an inbox row, a watcher row or an alert edge, and the bell hides
+// every row of the project. Turning the flag on shows the hidden row; clearing
+// the override hides it again.
+flow(
+  'NOTIF-9',
+  {
+    domain: 'notifications',
+    requires: ['database'],
+    routes: [
+      'GET /v1/projects/:projectId',
+      'PATCH /v1/projects/:projectId/features',
+      'GET /v1/projects/:projectId/sessions/:sessionId/watch',
+      'PUT /v1/projects/:projectId/sessions/:sessionId/watch',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'POST /v1/accounts/tokens',
+      'POST /v1/projects/:projectId/turn-stream',
+      'POST /v1/projects/:projectId/turn-question',
+      'POST /v1/projects/:projectId/turn-permission',
+      'PUT /v1/projects/:projectId/sessions/:sessionId/sharing',
+      'POST /v1/projects/:projectId/triggers',
+      'POST /v1/projects/:projectId/triggers/:slug/fire',
+      'GET /v1/notifications',
+    ],
+  },
+  async (ctx) => {
+    const { team, project, a, b } = await teamWithTwoMembers(ctx, { notificationCenter: false });
+    const db = await openFlowDb(ctx.env);
+    const turn = await seedTurnSession(ctx, db, { projectId: project.id, accountId: team.id, creator: a }).catch(async (error) => {
+      await db.end();
+      throw error;
+    });
+    const watchParams = { projectId: project.id, sessionId: turn.sessionId };
+    const creatorWatch = () => ctx.client.as(a).get(watchRoute, { params: watchParams });
+    const watcherRows = async (sessionId: string) =>
+      (await db.query('SELECT count(*)::int AS n FROM kortix.notification_watchers WHERE session_id = $1', [sessionId])).rows[0]
+        .n as number;
+    /** After the delivery settles, neither A nor B has a row for the turn session. */
+    const expectNoRows = async (after: string) => {
+      await settle();
+      for (const [name, who] of [['A', a], ['B', b]] as const) {
+        expectCount(await storedCount(db, who.userId!, { sessionId: turn.sessionId }), 0, `${name}'s rows ${after}`);
+      }
+    };
+    const extraSessions: string[] = [];
+    let storedId = '';
+    const listsStored = (page: InboxPage) => page.notifications.some((row) => row.id === storedId);
+    try {
+      await ctx.step('a project that made no choice reads experimental.notification_center:false, not overridden', async () => {
+        const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId', { params: { projectId: project.id } });
+        r.status(200).body().has('$.experimental.notification_center', false);
+        const row = r
+          .json<{ experimental_features: Array<{ key: string; enabled: boolean; overridden: boolean }> }>()
+          .experimental_features.find((flag) => flag.key === 'notification_center');
+        if (!row || row.enabled !== false || row.overridden !== false) throw new Error(`catalog row ${JSON.stringify(row)}`);
+      });
+
+      await ctx.step('a member reading or setting watch → 403 feature_disabled, and nothing is stored; ANON → 401', async () => {
+        const denied = [await creatorWatch(), await ctx.client.as(b).put(watchRoute, { watching: true }, { params: watchParams })];
+        for (const r of denied) r.status(403).body().has('$.code', 'feature_disabled').has('$.feature', 'notification_center');
+        expectCount(await watcherRows(turn.sessionId), 0, 'watcher rows after a refused PUT');
+        (await ctx.client.as(ctx.P.ANON).get(watchRoute, { params: watchParams })).status(401);
+      });
+
+      await ctx.step("B's prompt in A's project-visible session → 2xx, and B follows nothing: no watcher row", async () => {
+        const sessionId = await createDatabaseSession(ctx.env, {
+          projectId: project.id,
+          accountId: team.id,
+          userId: a.userId!,
+          visibility: 'project',
+        });
+        extraSessions.push(sessionId);
+        const prompt = {
+          client_message_id: randomUUID(),
+          message_id: mintWireMessageId(),
+          remint_on_delivery: false,
+          parts: [{ type: 'text', text: 'Summarize the open issues.' }],
+        };
+        (await ctx.client.as(b).post('/v1/projects/:projectId/sessions/:sessionId/prompts', prompt, { params: { projectId: project.id, sessionId } }))
+          .status([200, 202]);
+        await settle();
+        expectCount(await watcherRows(sessionId), 0, 'watcher rows after a non-creator prompt');
+      });
+
+      await ctx.step("B's turn in A's session ends → closed; neither A nor B gets a row", async () => {
+        await turn.startTurn('msg_notif9_end', b.userId!);
+        await turn.endTurn('msg_notif9_end');
+        await expectNoRows('after a turn end');
+      });
+
+      await ctx.step("during B's next turn the sandbox relays a question → persisted and a permission request → notified; nobody gets a row", async () => {
+        await turn.startTurn('msg_notif9_ask', b.userId!);
+        (await relayQuestion(turn, project.id, 'que_notif9_off')).status(200).body().has('$.persisted', true);
+        (await relayPermission(turn, project.id, 'per_notif9')).status(200).body().has('$.notified', true);
+        await expectNoRows('after a question and a permission request');
+      });
+
+      await ctx.step('OWNER shares a private session with B → 200; B gets no shared row', async () => {
+        const sessionId = await createDatabaseSession(ctx.env, {
+          projectId: project.id,
+          accountId: team.id,
+          userId: ctx.P.OWNER.userId!,
+          metadata: { name: 'Launch checklist' },
+        });
+        extraSessions.push(sessionId);
+        (await ctx.client
+          .as(ctx.P.OWNER)
+          .put('/v1/projects/:projectId/sessions/:sessionId/sharing', { mode: 'members', memberIds: [b.userId] }, { params: { projectId: project.id, sessionId } }))
+          .status(200);
+        await settle();
+        expectCount(await storedCount(db, b.userId!, { sessionId }), 0, "B's rows for the shared session");
+      });
+
+      await ctx.step("a row stored for B in this project is neither listed nor counted in B's bell", async () => {
+        const r = await db.query(
+          `INSERT INTO kortix.notifications (user_id, account_id, project_id, session_id, kind, title, body)
+           VALUES ($1, $2, $3, $4, 'turn_done', 'Stored while off', '') RETURNING notification_id`,
+          [b.userId, team.id, project.id, turn.sessionId],
+        );
+        storedId = r.rows[0].notification_id as string;
+        const page = await readInbox(ctx, b);
+        if (listsStored(page)) throw new Error('a row of a flag-off project is listed');
+        expectCount(page.unread_count, 0, "B's unread_count");
+      });
+
+      // A second flag-off project: the trigger needs a git repository.
+      const triggers = await team.project({ managedGit: true });
+      await team.grantProjectRole(triggers.id, a.userId!, 'manager');
+      const slug = 'notif-off-digest';
+      const name = `Nightly digest ${randomUUID().slice(0, 8)}`;
+
+      await ctx.step('a project manager creates a cron trigger in a second flag-off project → 201; no trigger_watchers row', async () => {
+        (await ctx.client
+          .as(a)
+          .post(
+            '/v1/projects/:projectId/triggers',
+            { name, slug, type: 'cron', cron: '0 0 9 * * *', timezone: 'UTC', prompt_template: 'Summarize the day.' },
+            { params: { projectId: triggers.id } },
+          ))
+          .status(201);
+        const r = await db.query('SELECT count(*)::int AS n FROM kortix.trigger_watchers WHERE project_id = $1', [triggers.id]);
+        expectCount(r.rows[0].n as number, 0, 'trigger_watchers rows');
+      });
+
+      await ctx.step('a manual fire on the account with no credit fails → 500: the failure is recorded, and no alert edge, alert row or alert email follows', async () => {
+        await exhaustCredit(db, team.id);
+        (await ctx.client.as(a).post('/v1/projects/:projectId/triggers/:slug/fire', {}, { params: { projectId: triggers.id, slug } })).status(500);
+        await settle();
+        const runtime = await db.query(
+          'SELECT last_status, alert_failing_since FROM kortix.project_trigger_runtime WHERE project_id = $1 AND slug = $2',
+          [triggers.id, slug],
+        );
+        if (runtime.rows[0]?.last_status !== 'failed' || runtime.rows[0].alert_failing_since !== null) {
+          throw new Error(`trigger runtime ${JSON.stringify(runtime.rows)}`);
+        }
+        for (const [label, who] of [['A', a], ['OWNER', ctx.P.OWNER]] as const) {
+          expectCount(await storedCount(db, who.userId!, { projectId: triggers.id }), 0, `${label}'s rows for the trigger project`);
+          if (!ctx.env.mailpitUrl) continue; // the row count above already proves it: an alert email follows its row
+          const mails = await mailpitMessagesTo(ctx.env.mailpitUrl, who.email!);
+          expectCount(mails.filter((m) => m.Subject === `Automation failing: ${name}`).length, 0, `${label}'s alert emails`);
+        }
+      });
+
+      await ctx.step('OWNER turns the flag on: watch → 200, the stored row lists and counts, and a new question reaches B', async () => {
+        await setNotificationCenter(ctx, project.id, true);
+        (await creatorWatch()).status(200).body().has('$.watching', true);
+        const page = await readInbox(ctx, b);
+        if (!listsStored(page)) throw new Error('the stored row is not listed with the flag on');
+        expectCount(page.unread_count, 1, "B's unread_count with the flag on");
+        (await relayQuestion(turn, project.id, 'que_notif9_on')).status(200).body().has('$.persisted', true);
+        await waitForInbox(ctx, b, (row) => row.session_id === turn.sessionId && row.kind === 'question');
+      });
+
+      await ctx.step("OWNER clears the override (enabled:null): watch → 403 again, and B's bell lists and counts no row of the project", async () => {
+        await setNotificationCenter(ctx, project.id, null);
+        (await creatorWatch()).status(403).body().has('$.code', 'feature_disabled');
+        const page = await readInbox(ctx, b);
+        if (page.notifications.some((row) => row.project_id === project.id)) throw new Error(`listed after the flag went off: ${JSON.stringify(page)}`);
+        expectCount(page.unread_count, 0, "B's unread_count after the flag went off");
+      });
+    } finally {
+      for (const table of ['notifications', 'notification_watchers', 'session_lifecycle_commands', 'project_sessions']) {
+        await db.query(`DELETE FROM kortix.${table} WHERE session_id = ANY($1)`, [extraSessions]).catch(() => {});
+      }
       await turn.cleanup();
       await db.end();
     }

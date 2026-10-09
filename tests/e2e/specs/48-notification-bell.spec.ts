@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { type Page, expect, test } from "@playwright/test";
+import { type Page, type Request, expect, test } from "@playwright/test";
 
 import { loadEnv } from "../../src/core/env";
 import { createDatabaseSession } from "../../src/fixtures/database-project";
@@ -25,6 +25,12 @@ import { dismissOnboarding, dismissWelcomeCard, openSettingsTab } from "../helpe
  * opens that session and marks the row read. Settings > Notifications shows
  * one Push switch per kind, and a switch saves to the person's record.
  *
+ * All of it sits behind the per-project `notification_center` flag, off by
+ * default. The first project turns it on through the owner's
+ * `PATCH /projects/:id/features`. A second project keeps the default: no bell,
+ * no `/v1/notifications` request, and the four per-browser switches in
+ * Settings > Notifications, as before the notification center.
+ *
  * Local only: the notification row is written straight into the database.
  */
 
@@ -40,6 +46,20 @@ const WAITING_TITLE = "Quarterly report draft";
 const QUESTION = "Should the report include the March numbers?";
 
 /** Every session stays in boot: the page under test is the shell around it. */
+/** Every request this page sends to `/v1/notifications/*`, as `METHOD path`. */
+function recordNotificationRequests(page: Page) {
+  const seen: string[] = [];
+  const onRequest = (request: Request) => {
+    const path = new URL(request.url()).pathname;
+    if (path.startsWith("/v1/notifications")) seen.push(`${request.method()} ${path}`);
+  };
+  page.on("request", onRequest);
+  return {
+    seen,
+    stop: () => page.off("request", onRequest),
+  };
+}
+
 async function holdSessionsInBoot(page: Page, projectId: string) {
   const start = new RegExp(`^/v1/projects/${projectId}/sessions/[^/]+/start$`);
   await page.route("**/*", async (route) => {
@@ -72,6 +92,7 @@ test("48 — the bell opens another session's notification and the settings save
   if (!databaseUrl) throw new Error("KE2E_DATABASE_URL is required");
   const user = await createAuthUser(`e2e-notification-bell-${randomUUID()}@example.test`, authOptions);
   let project: ManifestProject | undefined;
+  let flagOffProject: ManifestProject | undefined;
 
   try {
     const auth = await signIn(user.email!, authOptions);
@@ -90,6 +111,11 @@ test("48 — the bell opens another session's notification and the settings save
       databaseUrl,
     });
     const projectId = project.id;
+    // Before sign-in: the first page load already reads the flag.
+    await api(auth.access_token, "PATCH", `/projects/${projectId}/features`, {
+      feature: "notification_center",
+      enabled: true,
+    });
     const openSessionId = await createDatabaseSession(env, {
       projectId,
       accountId,
@@ -206,6 +232,48 @@ test("48 — the bell opens another session's notification and the settings save
         })
         .toBe(false);
     });
+
+    await test.step("a project with the flag off has no bell, no inbox request, and the four browser switches", async () => {
+      flagOffProject = await createManifestProject({
+        api,
+        accessToken: auth.access_token,
+        accountId,
+        userId: user.id,
+        name: `Notification bell off ${Date.now()}`,
+        databaseUrl,
+      });
+      const offProjectId = flagOffProject.id;
+      // "Enable notifications" asks the browser; grant it so the switch turns on.
+      await page.context().grantPermissions(["notifications"], {
+        origin: new URL(page.url()).origin,
+      });
+      // Leave the flag-on project first, so none of its requests are counted.
+      await page.goto("about:blank");
+      const requests = recordNotificationRequests(page);
+      const detail = page.waitForResponse(
+        (response) => new URL(response.url()).pathname === `/v1/projects/${offProjectId}/detail`,
+      );
+      await page.goto(`/projects/${offProjectId}`, { waitUntil: "domcontentloaded" });
+      await dismissOnboarding(page);
+      expect((await detail).status()).toBe(200);
+      await expect(page.getByRole("button", { name: /Search/i }).first()).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByRole("button", { name: /^Notifications/ })).toHaveCount(0);
+
+      const panel = await openSettingsTab(page, "Notifications");
+      const enable = panel.getByRole("switch", { name: "Enable notifications", exact: true });
+      // The pre-notification-center line: the browser permission, not where Web Push reaches.
+      await expect(panel.getByText("Browser permission granted", { exact: true })).toBeVisible();
+      if (!(await enable.isChecked())) await enable.click();
+      await expect(enable).toBeChecked();
+      for (const kind of ["Task completions", "Errors", "Questions", "Permission requests"]) {
+        await expect(panel.getByRole("switch", { name: kind, exact: true })).toBeChecked();
+      }
+      await expect(panel.getByRole("heading", { name: "Notification types", exact: true })).toHaveCount(0);
+      await expect(panel.getByRole("switch", { name: "Turn finished: Push", exact: true })).toHaveCount(0);
+
+      requests.stop();
+      expect(requests.seen).toEqual([]);
+    });
   } finally {
     await runDatabaseSql(
       `DELETE FROM kortix.notifications WHERE user_id = $1::uuid`,
@@ -218,6 +286,7 @@ test("48 — the bell opens another session's notification and the settings save
       databaseUrl,
     ).catch(() => undefined);
     await project?.dispose().catch(() => undefined);
+    await flagOffProject?.dispose().catch(() => undefined);
     await deleteAuthUser(user.id, authOptions).catch(() => undefined);
   }
 });

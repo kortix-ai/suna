@@ -82,6 +82,7 @@ import { projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { isUuid } from '../../shared/validate';
 import { isPgBroadcastListening, waitForSessionChange } from '../../shared/pg-broadcast';
+import { notificationsEnabled } from '../../notifications/enabled';
 import { PRESENCE_RENEW_MS, expireSessionPresence, renewSessionPresence } from '../lib/session-presence';
 import {
   CONTROL_EPOCH,
@@ -281,6 +282,9 @@ export function registerSessionStreamRoutes(): void {
           ? {
               userId: String(loaded.userId),
               tabId: presenceTabId,
+              // KRTX-1742, only with the `notification_center` flag on: the
+              // stream end expires the lease. Off, it lives to its expiry.
+              expireOnClose: notificationsEnabled(loaded.row.metadata),
               extendDeadline: await projectCapabilityAllowed(
                 c,
                 String(loaded.userId),
@@ -458,7 +462,7 @@ export function registerSessionStreamRoutes(): void {
               // of its lease. Only the expiry this stream wrote: a newer stream
               // of the same tab (a reconnect, a control-to-runtime upgrade) may
               // have renewed it since. A reconnecting stream's renewal restores it.
-              if (leaseWrittenUntil) {
+              if (presenceRenewal.expireOnClose && leaseWrittenUntil) {
                 void expireSessionPresence(
                   presenceRenewal.userId,
                   sessionId,

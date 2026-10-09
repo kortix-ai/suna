@@ -1,8 +1,9 @@
 /**
  * POST /v1/projects/:projectId/sessions/:sessionId/reminders records who hears
  * when the reminder fails (KRTX-1742): the person who set it, or the person an
- * agent session acts for; never an API key. Driven through the real route;
- * access, agent authorization and the reminder store are stubbed.
+ * agent session acts for; never an API key; nobody while the project has the
+ * `notification_center` flag off. Driven through the real route; access, agent
+ * authorization and the reminder store are stubbed.
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import * as realAccess from '../lib/access';
@@ -20,12 +21,13 @@ let credential: Record<string, unknown> = {};
 let followed: Array<Record<string, unknown>> = [];
 let inserted = 0;
 let followFailures = 0;
+let projectFlags: Record<string, boolean> = {};
 
 mock.module('../lib/access', () => ({
   ...realAccess,
   loadProjectForUser: async (c: { get(key: string): unknown }) => ({
     userId: c.get('userId'),
-    row: { projectId: PROJECT_ID, accountId: ACCOUNT_ID, metadata: { experimental: { reminders: true } } },
+    row: { projectId: PROJECT_ID, accountId: ACCOUNT_ID, metadata: { experimental: { reminders: true, ...projectFlags } } },
   }),
   assertProjectCapability: async () => undefined,
   loadVisibleSession: async () => ({ row: { sessionId: SESSION_ID, agentName: 'default', metadata: {} } }),
@@ -76,6 +78,7 @@ beforeEach(() => {
   followed = [];
   inserted = 0;
   followFailures = 0;
+  projectFlags = { notification_center: true };
 });
 
 describe('a new reminder', () => {
@@ -101,6 +104,18 @@ describe('a new reminder', () => {
     credential = { userId: ACCOUNT_ID, authType: 'apiKey' };
     expect((await createReminder()).status).toBe(201);
 
+    expect(followed).toEqual([]);
+  });
+
+  test('with the notification_center flag off, is created and followed by nobody', async () => {
+    projectFlags = {};
+    credential = { userId: PERSON_ID, authType: 'supabase', sessionId: '7a600000-0000-4000-a000-000000000001' };
+    expect((await createReminder()).status).toBe(201);
+    projectFlags = { notification_center: false };
+    credential = { userId: AGENT_USER_ID, authType: 'pat', sessionId: SESSION_ID, onBehalfOfUserId: PERSON_ID };
+    expect((await createReminder()).status).toBe(201);
+
+    expect(inserted).toBe(2);
     expect(followed).toEqual([]);
   });
 
