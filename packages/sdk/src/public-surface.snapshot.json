@@ -1725,6 +1725,10 @@
     "writeProjectNameOptimistically",
     "writeStartStash"
   ],
+  "./genui": [
+    "GENUI_SCHEMA_VERSION"
+  ],
+  "./genui/react": [],
   "./server": [
     "APP_VIEWER_HEADER",
     "APP_VIEWER_SECRET_ENV",

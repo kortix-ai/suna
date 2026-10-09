@@ -3192,6 +3192,15 @@
     "writeProjectNameOptimistically",
     "writeStartStash"
   ],
+  "./genui": [
+    "GENUI_SCHEMA_VERSION",
+    "GenuiIssue",
+    "GenuiIssueCode",
+    "GenuiNode",
+    "GenuiParseResult",
+    "GenuiSegment"
+  ],
+  "./genui/react": [],
   "./server": [
     "APP_VIEWER_HEADER",
     "APP_VIEWER_SECRET_ENV",

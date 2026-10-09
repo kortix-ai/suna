@@ -173,6 +173,7 @@ interface Subpath {
 
 const SUBPATH_TIERS: Subpath[] = [
   { name: './server', file: 'node/server.ts', tier: 'node-allowed' },
+  { name: './genui', file: 'genui/index.ts', tier: 'isomorphic-core' },
 
   // The ./internal/* stores — apps/web's zustand machinery, outside semver.
   { name: './internal/sync-store', file: 'internal/sync-store.ts', tier: 'browser-only' },
@@ -211,11 +212,13 @@ const SUBPATH_TIERS: Subpath[] = [
   { name: './turns', file: 'deprecated/turns.ts', tier: 'isomorphic-core' },
 ];
 
-test('SUBPATH_TIERS matches package.json exports (minus "." and "./react")', () => {
+test('SUBPATH_TIERS matches package.json exports (minus ".", "./react", "./genui/react")', () => {
   const pkg = JSON.parse(readFileSync(join(SRC_ROOT, '..', 'package.json'), 'utf8')) as {
     exports: Record<string, string>;
   };
-  const exportedSubpaths = Object.keys(pkg.exports).filter((k) => k !== '.' && k !== './react');
+  const exportedSubpaths = Object.keys(pkg.exports).filter(
+    (k) => k !== '.' && k !== './react' && k !== './genui/react',
+  );
   expect(new Set(SUBPATH_TIERS.map((s) => s.name))).toEqual(new Set(exportedSubpaths));
 
   // And every entry file must match what package.json actually points at.

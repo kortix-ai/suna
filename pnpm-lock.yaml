@@ -1565,6 +1565,9 @@ importers:
         specifier: ^5.0.3
         version: 5.0.15(@types/react@19.2.18)(react@19.3.0)(use-sync-external-store@1.7.0)
     devDependencies:
+      '@openuidev/lang-core':
+        specifier: 0.3.1
+        version: 0.3.1(zod@3.25.76)
       '@tanstack/react-query':
         specifier: ^5.75.2
         version: 5.103.0(react@19.3.0)
@@ -1595,6 +1598,9 @@ importers:
       typescript:
         specifier: ^5.4.0
         version: 5.9.3
+      zod:
+        specifier: 3.25.76
+        version: 3.25.76
 
   packages/shared:
     devDependencies:
@@ -7984,6 +7990,20 @@ packages:
       - typescript
       - web-tree-sitter
     dev: false
+
+  /@openuidev/lang-core@0.3.1(zod@3.25.76):
+    resolution: {integrity: sha512-lya0jEt6MXYDJT14ZBxysRSg8AWxvcJLyMmqgl/IJ3Ci+D8rdRXPHGeHD5XxJmxqgdX+P1UxhLp9cQ+ml8diYw==}
+    requiresBuild: true
+    peerDependencies:
+      '@modelcontextprotocol/sdk': '>=1.0.0'
+      zod: ^3.25.0 || ^4.0.0
+    peerDependenciesMeta:
+      '@modelcontextprotocol/sdk':
+        optional: true
+    dependencies:
+      ci-info: 4.4.0
+      zod: 3.25.76
+    dev: true
 
   /@orama/orama@3.1.18:
     resolution: {integrity: sha512-a61ljmRVVyG5MC/698C8/FfFDw5a8LOIvyOLW5fztgUXqUpc1jOfQzOitSCbge657OgXXThmY3Tk8fpiDb4UcA==}
@@ -17327,7 +17347,6 @@ packages:
   /ci-info@4.4.0:
     resolution: {integrity: sha512-77PSwercCZU2Fc4sX94eF8k8Pxte6JAwL4/ICZLFjJLqegs7kCuAsqqj/70NQF6TvDpgFjkubQB2FW2ZZddvQg==}
     engines: {node: '>=8'}
-    dev: false
 
   /citty@0.1.6:
     resolution: {integrity: sha512-tskPPKEs8D2KPafUypv2gxwJP8h/OaJmC82QQGGDQcHvXX43xF2VDACcJVmZ0EuSxkpO9Kc4MlrA3q0+FG58AQ==}
