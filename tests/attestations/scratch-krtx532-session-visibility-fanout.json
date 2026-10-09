@@ -1,5 +1,5 @@
 {
-  "source_hash": "33482d35f11b66da557c2082da6a06f5493bf67f4691b703cc1e761aaf7dd46f",
+  "source_hash": "461dbdb8633ab74353c58725169d7ab7a98df42f2f976c6bf45e0bcb42b4cc22",
   "diff_files": [
     "apps/api/src/__tests__/integration-session-presence.test.ts",
     "apps/api/src/backends/hosts.integration.test.ts",
@@ -9,13 +9,13 @@
     "apps/api/src/projects/routes/session-reminders.ts",
     "apps/web/src/lib/seo/content-timestamps.json"
   ],
-  "diff_hash": "fe84d2237c481cf29a40bcf62ff247871b12fc2e576c6f747710c1a62ea7db69",
-  "head": "c9f106e448ebfa4068c1328c0d16ca6082de18bb",
+  "diff_hash": "22133bd9f766975d5c8beac5bbf399ba2c65fb12d615ba45ce30319e95f5d301",
+  "head": "677fa698faf0ee29eff6261c92fbf9c7d1233a44",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-09T13:02:04.320Z"
+  "at": "2026-10-09T14:15:41.667Z"
 }
