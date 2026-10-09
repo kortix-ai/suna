@@ -88,7 +88,6 @@ interface HarnessApi {
  */
 function GuardedHarness({ crashOpens, api }: { crashOpens: number; api: HarnessApi }) {
   const [open, setOpen] = useState(true);
-  console.log('DBG harness render open=', open);
   const guard = useDialogCrashGuard({ onOpenChange: setOpen });
 
   useEffect(() => {
