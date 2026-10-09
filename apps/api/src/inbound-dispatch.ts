@@ -59,7 +59,7 @@ export async function dispatchInbound(
   // ── Subdomain preview routing ──────────────────────────────────────
   // Matches `p{port}-{sandboxId}.localhost:{apiPort}` regardless of path.
   // Same per-request long-poll/SSE timeout posture as /v1/p/.
-  // A Kortix Backend's hosts on the Apps domain: its Convex API (sync
+  // The hosts of an App of kind `convex` on the Apps domain: its Convex API (sync
   // WebSocket included), its HTTP actions, and its Convex dashboard.
   const backendHost = resolveBackendRequest(req, url);
   if (backendHost) {

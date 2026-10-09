@@ -119,7 +119,7 @@ const patchFeatureFlagHandler = async (c: any) => {
   // Archived projects are read-only: reject BEFORE the write. The old order
   // (update, then 404 on archived) committed the metadata mutation anyway.
   if (loaded.row.status === 'archived') return c.json({ error: 'Not found' }, 404);
-  // An internal-only flag (`apps`, `backends`) starts billable machines, so
+  // An internal-only flag (`apps`) starts billable machines, so
   // Kortix decides it: only a platform operator writes it, never a project
   // admin and never an agent session. An operator acting in a customer
   // project through impersonation passes (`userId` stays the operator's).

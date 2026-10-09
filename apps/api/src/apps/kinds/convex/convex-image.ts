@@ -1,11 +1,11 @@
 /**
- * The machine image every Kortix Backend boots: the self-hosted Convex backend,
+ * The machine image every App of kind `convex` boots: the self-hosted Convex backend,
  * pinned by digest, plus a supervisor.
  *
  * Sent inline on create (Platinum's `image` spec). Platinum hashes the spec and
  * builds it once per region; every later create with the same spec reuses the
  * build, so no environment needs a manual template step. Changing anything
- * here (the digest, the script) is a new image: existing backends keep theirs.
+ * here (the digest, the script) is a new image: existing Apps keep theirs.
  *
  * Verified on Platinum 2026-10-06 (create → healthy 2.65 s, RSS 127 MB after a
  * deploy, data intact across stop, auto-resume and cold boot).
@@ -17,7 +17,7 @@ export const CONVEX_BACKEND_IMAGE =
 
 /**
  * The `convex` npm CLI that matches CONVEX_BACKEND_IMAGE: the newest release
- * published before the backend's 2026-09-28 build. `kortix backends deploy`
+ * published before the backend's 2026-09-28 build. `kortix apps deploy`
  * runs this version when the project has no `convex` installed, so a newer CLI
  * that needs newer backend APIs never breaks a deploy. Bump it with the image.
  */

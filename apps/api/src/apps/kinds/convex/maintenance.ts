@@ -1,5 +1,6 @@
 /**
- * The backends sweep of the project maintenance tick (every 5 min).
+ * The `convex` App sweep of the project maintenance tick (every 5 min), run
+ * through the kind module (../index.ts maintainAppKinds).
  *
  * 1. Resume: a `provisioning` row whose heartbeat stopped lost its API process
  *    (a deploy, an OOM). Provisioning runs again: the create replays with the
@@ -9,7 +10,7 @@
  *    stopped is recovered: the machine is started if it is down, the admin key
  *    is re-sealed, the size is read back, and `last_operation_error` says it
  *    was interrupted.
- * 3. Park and unpark (./lifecycle.ts): the backends of an archived project
+ * 3. Park and unpark (./lifecycle.ts): the machines of an archived project
  *    stop, those of a project that is active again come back.
  * 4. Move: a backend that still stores its Platinum URLs moves to its Kortix
  *    hosts (./hosts.ts): new Convex origins, private ports, new URLs.
@@ -24,7 +25,7 @@
  *    recorded; a machine that is not running has its window closed.
  * 5. Snapshots: every running backend of an active project gets a daily
  *    automatic snapshot (kept 7 days), and expired automatic and resize
- *    snapshots are deleted (./operations.ts), on parked backends too. At most SNAPSHOT_JOBS_PER_TICK
+ *    snapshots are deleted (./operations.ts), on parked machines too. At most SNAPSHOT_JOBS_PER_TICK
  *    start per tick, each under the `snapshotting` lock.
  * 6. Orphans (./lifecycle.ts): retry failed machine deletes; once an hour,
  *    delete machines no App references; purge deleted Apps whose retention
