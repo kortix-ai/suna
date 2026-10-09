@@ -2,7 +2,7 @@
  * Always-on Apps against a real PostgreSQL: the idle reaper leaves them
  * running; keep-alive asks the provider about each one, stamps compute
  * liveness, restarts a dead one through the wake gate, stops an App whose
- * account cannot pay or whose budget is spent, and queues supervisor
+ * account cannot pay or an on-demand App whose budget is spent, and queues supervisor
  * refreshes at a bounded rate without re-queuing a failed one. Provider
  * calls and the billing admission answer are recorded fakes; the deployment
  * queue is real.
@@ -177,19 +177,29 @@ withDb('always-on Apps', () => {
     expect(wakes).toEqual([box(ALWAYS)]);
   });
 
-  test('a running App at its monthly budget is stopped, whatever its mode, and the stop is recorded on its deployment', async () => {
+  test('a running on-demand App at its monthly budget is stopped and the stop is recorded; an always-on App has no budget and keeps running', async () => {
+    await seed(DEMAND, { alwaysOn: false, status: 'running', budget: '0.00', idleDeadlineAt: new Date(Date.now() + 600_000) });
     await seed(ALWAYS, { alwaysOn: true, status: 'running', budget: '0.00' });
 
     const result = await runAppKeepAlive(new Date(), true);
 
     expect(result?.budgetStopped).toBe(1);
-    expect(await status(ALWAYS.rt)).toBe('stopped');
-    expect(stops).toEqual([box(ALWAYS)]);
+    expect(await status(DEMAND.rt)).toBe('stopped');
+    expect(await status(ALWAYS.rt)).toBe('running');
+    expect(stops).toEqual([box(DEMAND)]);
     const events = await db.select({ type: appDeploymentEvents.type, level: appDeploymentEvents.level })
-      .from(appDeploymentEvents).where(eq(appDeploymentEvents.deploymentId, ALWAYS.dep));
+      .from(appDeploymentEvents).where(eq(appDeploymentEvents.deploymentId, DEMAND.dep));
     expect(events).toEqual([{ type: 'app_stopped_budget', level: 'warn' }]);
-    // The gate refuses the restart, so it stays stopped.
-    expect(wakes).toEqual([]);
+    expect(await db.select().from(appDeploymentEvents).where(eq(appDeploymentEvents.deploymentId, ALWAYS.dep))).toEqual([]);
+  });
+
+  test('a stopped always-on App at a spent budget is started again: the wake gate checks no budget for it', async () => {
+    await seed(ALWAYS, { alwaysOn: true, status: 'stopped', budget: '0.00' });
+
+    const result = await runAppKeepAlive(new Date(), true);
+
+    expect(result?.started).toBe(1);
+    expect(wakes).toEqual([box(ALWAYS)]);
   });
 });
 

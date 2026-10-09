@@ -31,11 +31,12 @@ import { rollBackActiveDeployment } from './retention';
 import { ensureAppRuntimeRunning, loadPublicApp } from './public-proxy';
 import { type AppSourceSpec } from './spec';
 import { appPublicUrl } from './hostnames';
-import { AppBudgetExceededError, alwaysOnBudgetWarning, defaultAppBudgetUsd } from './budget';
+import { AppBudgetExceededError, DEFAULT_APP_MONTHLY_BUDGET_USD } from './budget';
 import {
   APP_MACHINE_LIMITS,
   AppAccountUnfundedError,
   AppLimitError,
+  assertAppBudgetApplies,
   assertAppBudgetWithinLimits,
   assertAppMachineWithinLimits,
   assertAppAccountFunded,
@@ -348,7 +349,12 @@ async function createConvexApp(
   let size: ReturnType<typeof newConvexSize>;
   try {
     size = newConvexSize({ cpu: body.cpu, memoryGb: body.memory_gb, diskGb: body.disk_gb });
-    assertAppBudgetWithinLimits(body.monthly_budget_usd);
+    assertAppBudgetApplies(
+      body.monthly_budget_usd,
+      { cpuCores: size.cpu, memoryGb: size.memoryGb, diskGb: size.diskGb, kind: 'convex', alwaysOn: true },
+      'convex',
+      'platinum',
+    );
     await assertAppQuotaAvailable(accountId);
     // The machine bills its reserved size from its first second.
     await assertAppAccountFunded(accountId);
@@ -357,8 +363,6 @@ async function createConvexApp(
     if (refusal) return refusal;
     throw error;
   }
-  const budget = body.monthly_budget_usd
-    ?? defaultAppBudgetUsd({ cpuCores: size.cpu, memoryGb: size.memoryGb, diskGb: size.diskGb, alwaysOn: true }, 'platinum');
   let created: Awaited<ReturnType<typeof insertConvexApp>>;
   try {
     created = await insertConvexApp({
@@ -368,8 +372,6 @@ async function createConvexApp(
       slug: body.slug,
       name: body.name.trim(),
       size,
-      monthlyBudgetUsd: budget.toFixed(2),
-      monthlyBudgetExplicit: body.monthly_budget_usd !== undefined,
     });
   } catch (error) {
     if (inspectDatabaseError(error)?.pgCode === '23505') return c.json({ error: 'An App with this slug already exists' }, 409);
@@ -454,6 +456,8 @@ export function registerAppsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'get', path: '/{projectId}/apps', tags: ['apps'], summary: 'List Apps', ...auth,
+      description: 'Only the Apps the caller may open under each App\'s access policy (a project manager: every App). ' +
+        'An App left out answers 404 on GET, the same as a missing one.',
       request: { params: z.object({ projectId: z.string().uuid() }) },
       responses: { 200: json(z.object({ apps: z.array(AppObject) }), 'Apps'), ...errors(403, 404) },
     }),
@@ -464,9 +468,12 @@ export function registerAppsRoutes(): void {
       const rows = await db.select().from(apps)
         .where(and(eq(apps.projectId, projectId), isNull(apps.deletedAt)))
         .orderBy(desc(apps.createdAt));
+      // Only the Apps the caller may see AND open: no card that is listed and
+      // then refuses to open. An App left out answers 404 on GET, never 403.
       const visible = await filterAppsVisibleToUser(rows, loaded.userId);
       const openable = await appsOpenableByUser(visible, loaded.userId);
-      return c.json({ apps: await appsJson(visible, loaded.userId, openable) });
+      const accessible = visible.filter((row) => openable.has(row.appId));
+      return c.json({ apps: await appsJson(accessible, loaded.userId, openable) });
     },
   );
 
@@ -626,7 +633,9 @@ export function registerAppsRoutes(): void {
         `disk ${BACKEND_MACHINE_LIMITS.diskGb.min}-${BACKEND_MACHINE_LIMITS.diskGb.max} GB): it answers 201 with ` +
         '`instance.status: "provisioning"`; poll the App until it is `running` or `error` (seconds; the first in a ' +
         'region builds the image). At most 3 `convex` Apps per project and 10 per account (409 `app_kind_limit`). ' +
-        'A `convex` App needs a funded account (402) and a deployment with Platinum (409 `app_kind_unavailable`).',
+        'A `convex` App needs a funded account (402) and a deployment with Platinum (409 `app_kind_unavailable`). ' +
+        '`monthly_budget_usd` (default $5) applies only to an on-demand server App (`always_on: false`); an ' +
+        'always-on or `convex` App costs its size 24/7 and answers 400 `app_budget_not_applicable` to a budget.',
       request: {
         params: z.object({ projectId: z.string().uuid() }),
         body: { content: { 'application/json': { schema: z.object({
@@ -655,6 +664,12 @@ export function registerAppsRoutes(): void {
       try {
         assertAppMachineWithinLimits(machine);
         assertAppBudgetWithinLimits(body.monthly_budget_usd);
+        assertAppBudgetApplies(
+          body.monthly_budget_usd,
+          { cpuCores: machine.cpu, memoryGb: machine.memoryGb, diskGb: machine.diskGb, kind: 'web', alwaysOn: body.always_on ?? config.KORTIX_APPS_DEFAULT_ALWAYS_ON },
+          null,
+          config.getDefaultProvider(),
+        );
         await assertAppQuotaAvailable(loaded.row.accountId);
       } catch (error) {
         const refusal = appLimitResponse(c, error);
@@ -664,8 +679,8 @@ export function registerAppsRoutes(): void {
       let row: typeof apps.$inferSelect;
       try {
         const alwaysOn = body.always_on ?? config.KORTIX_APPS_DEFAULT_ALWAYS_ON;
-        const budget = body.monthly_budget_usd
-          ?? defaultAppBudgetUsd({ cpuCores: machine.cpu, memoryGb: machine.memoryGb, diskGb: machine.diskGb, alwaysOn }, config.getDefaultProvider());
+        // Only an on-demand App has a budget (assertAppBudgetApplies refused one on an always-on App).
+        const budget = body.monthly_budget_usd ?? DEFAULT_APP_MONTHLY_BUDGET_USD;
         [row] = (await db.insert(apps).values({
           accountId: loaded.row.accountId, projectId, slug, name: body.name.trim(),
           routeKey: randomBytes(8).toString('hex'), createdBy: loaded.userId,
@@ -689,8 +704,7 @@ export function registerAppsRoutes(): void {
         await db.delete(apps).where(eq(apps.appId, row.appId));
         return linked;
       }
-      const warning = alwaysOnBudgetWarning(row, config.getDefaultProvider());
-      return c.json({ ...(await appJson(row, loaded.userId)), warnings: warning ? [warning] : [] }, 201);
+      return c.json({ ...(await appJson(row, loaded.userId)), warnings: [] }, 201);
     },
   );
 
@@ -785,7 +799,10 @@ export function registerAppsRoutes(): void {
         '`uses` replaces the Apps (by slug) this App uses; each must be a live App of the project the caller can see (400 `app_not_found` otherwise, the same for a missing App and a hidden one). A refused PATCH changes nothing. ' +
         'A `convex` App resizes in the background: the answer carries `instance.operation: "resizing"` and the new ' +
         'size shows when it is applied (seconds of downtime, a `resize` snapshot first; disk only grows; 409 `app_busy` ' +
-        'while another operation runs). It always runs: `always_on: false` answers 400.',
+        'while another operation runs). It always runs: `always_on: false` answers 400. ' +
+        '`monthly_budget_usd` applies only to an on-demand server App (`always_on: false`); on an always-on, static ' +
+        'or `convex` App it answers 400 `app_budget_not_applicable` (its cost is fixed: `estimated_monthly_usd`). ' +
+        'Switching to on demand sets the given budget or $5; switching to always on clears it.',
       request: {
         params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
         body: { content: { 'application/json': { schema: z.object({
@@ -810,21 +827,31 @@ export function registerAppsRoutes(): void {
       if (convex && body.always_on === false) {
         return c.json({ error: 'A convex App always runs; always_on cannot be false.', code: 'app_always_on_required' }, 400);
       }
-      try {
-        if (!convex) assertAppMachineWithinLimits({ cpu: body.cpu, memoryGb: body.memory_gb, diskGb: body.disk_gb });
-        assertAppBudgetWithinLimits(body.monthly_budget_usd);
-      } catch (error) {
-        const refusal = appLimitResponse(c, error);
-        if (refusal) return refusal;
-        throw error;
-      }
-      // A budget nobody set follows the machine and run mode; one a person set never moves.
       const nextMachine = {
         cpuCores: body.cpu ?? current.cpuCores,
         memoryGb: body.memory_gb ?? current.memoryGb,
         diskGb: body.disk_gb ?? current.diskGb,
         alwaysOn: body.always_on ?? current.alwaysOn,
       };
+      const [active] = current.activeDeploymentId
+        ? await db.select({ hostingType: appDeployments.hostingType, hostingProvider: appDeployments.hostingProvider })
+            .from(appDeployments).where(eq(appDeployments.deploymentId, current.activeDeploymentId)).limit(1)
+        : [];
+      try {
+        if (!convex) assertAppMachineWithinLimits({ cpu: body.cpu, memoryGb: body.memory_gb, diskGb: body.disk_gb });
+        assertAppBudgetWithinLimits(body.monthly_budget_usd);
+        // Only an on-demand server App has a budget; judged on the run mode this PATCH leaves.
+        assertAppBudgetApplies(
+          body.monthly_budget_usd,
+          { ...nextMachine, kind: current.kind },
+          convex ? 'convex' : (active?.hostingType ?? null),
+          convex ? 'platinum' : ((active?.hostingProvider as SandboxProviderName | null) ?? config.getDefaultProvider()),
+        );
+      } catch (error) {
+        const refusal = appLimitResponse(c, error);
+        if (refusal) return refusal;
+        throw error;
+      }
       const sizeChanged = nextMachine.cpuCores !== current.cpuCores || nextMachine.memoryGb !== current.memoryGb
         || nextMachine.diskGb !== current.diskGb;
       // Every refusal comes before any write: the links resolve (400), the
@@ -836,10 +863,14 @@ export function registerAppsRoutes(): void {
         const resized = await startConvexResize(c, projectId, current, nextMachine);
         if (resized) return resized;
       }
-      const machineChanged = [body.cpu, body.memory_gb, body.disk_gb, body.always_on].some((value) => value !== undefined);
-      const derivedBudget = body.monthly_budget_usd === undefined && !current.monthlyBudgetExplicit && machineChanged
-        ? defaultAppBudgetUsd(nextMachine, convex ? 'platinum' : config.getDefaultProvider())
-        : undefined;
+      // Entering on demand: the given budget, else the default. Entering always
+      // on: the budget is cleared (back to the default, unused while always on).
+      const modeChanged = !convex && body.always_on !== undefined && body.always_on !== current.alwaysOn;
+      const budget = body.monthly_budget_usd !== undefined
+        ? { monthlyBudgetUsd: body.monthly_budget_usd.toFixed(2), monthlyBudgetExplicit: true }
+        : modeChanged
+          ? { monthlyBudgetUsd: DEFAULT_APP_MONTHLY_BUDGET_USD.toFixed(2), monthlyBudgetExplicit: false }
+          : {};
       const [row] = await db.transaction(async (tx) => {
         if (links) await writeAppLinks(tx, appId, links);
         return tx.update(apps).set({
@@ -850,23 +881,12 @@ export function registerAppsRoutes(): void {
           ...(body.disk_gb !== undefined && !convex ? { diskGb: body.disk_gb } : {}),
           ...(body.idle_timeout_seconds !== undefined ? { idleTimeoutSeconds: body.idle_timeout_seconds } : {}),
           ...(body.always_on !== undefined ? { alwaysOn: body.always_on } : {}),
-          ...(body.monthly_budget_usd !== undefined ? { monthlyBudgetUsd: body.monthly_budget_usd.toFixed(2), monthlyBudgetExplicit: true } : {}),
-          ...(derivedBudget !== undefined ? { monthlyBudgetUsd: derivedBudget.toFixed(2) } : {}),
+          ...budget,
           updatedAt: new Date(),
         }).where(and(eq(apps.appId, appId), eq(apps.projectId, projectId), isNull(apps.deletedAt))).returning();
       });
       if (!row) return c.json({ error: 'Not found' }, 404);
-      // Warn only when this change touched the run mode, the machine or the budget.
-      const costChanged = [body.always_on, body.monthly_budget_usd, body.cpu, body.memory_gb, body.disk_gb]
-        .some((value) => value !== undefined);
-      const [active] = row.activeDeploymentId
-        ? await db.select({ hostingType: appDeployments.hostingType, hostingProvider: appDeployments.hostingProvider })
-            .from(appDeployments).where(eq(appDeployments.deploymentId, row.activeDeploymentId)).limit(1)
-        : [];
-      const warning = costChanged && !convex && active?.hostingType !== 'static'
-        ? alwaysOnBudgetWarning(row, (active?.hostingProvider as SandboxProviderName | null) ?? config.getDefaultProvider())
-        : null;
-      return c.json({ ...(await appJson(row, loaded.userId)), warnings: warning ? [warning] : [] });
+      return c.json({ ...(await appJson(row, loaded.userId)), warnings: [] });
     },
   );
 

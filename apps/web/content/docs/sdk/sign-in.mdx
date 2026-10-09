@@ -171,6 +171,12 @@ const member = await verifyKortixToken(bearer, {
 requireKortixMember(member, { roles: ['owner', 'admin'] });
 ```
 
+In a server App, Kortix injects `KORTIX_AUTH_ISSUER` (the project issuer),
+`KORTIX_AUTH_AUDIENCE` (the App's own id) and `KORTIX_AUTH_JWKS` (the project
+key set, as a `data:` URI), so `verifyKortixToken(bearer)` needs no options.
+Do not set `KORTIX_AUTH_*` yourself: the `KORTIX_` prefix is reserved and
+`kortix validate` rejects it.
+
 `verifyKortixToken` refuses a token when no audience is set (the option or
 `KORTIX_AUTH_AUDIENCE`): one project key signs the tokens of every App in the
 project, so `aud` is what keeps another App's token out. Pass

@@ -41,7 +41,6 @@ import {
   mergeManifestDefaults,
   positiveInteger,
   positiveNumber,
-  alwaysOnBudgetNotice,
   runCostLine,
   provisionDeployApp,
   resolveApp,
@@ -74,10 +73,10 @@ Subcommands:
     --always-on | --on-demand       Run 24/7, or stop when idle and wake on the
                                     next request. A static App has no runtime
                                     and ignores both. A convex App always runs.
-    --budget <usd>                  Monthly compute budget. Default: the 24/7
-                                    estimate for an always-on App, 5 on demand.
-                                    A convex App alerts at 80 % and 100 %; it
-                                    never stops.
+    --budget <usd>                  Monthly compute budget of an on-demand App
+                                    (default 5). It stops at the budget.
+                                    Always-on and convex Apps have none: they
+                                    cost their size.
     --uses <slugs>                  Apps this App uses (it may bind to them and
                                     mint their sign-in tokens), comma-separated.
     --no-wait                       Return before a convex App runs.
@@ -114,10 +113,10 @@ Subcommands:
     --groups <ids>                  Comma-separated group ids for restricted access.
     --always-on | --on-demand       Server Apps: run 24/7 (default), or stop when
                                     idle. Static Apps run no server.
-    --budget <usd>                  Monthly compute budget. A server App stops at
-                                    it. Default for a new always-on App: its 24/7
-                                    estimate (about $73/month on the default
-                                    machine). Deploy warns when it is lower.
+    --budget <usd>                  Monthly compute budget of an on-demand App
+                                    (default 5). It stops at the budget.
+                                    Always-on and convex Apps have none: they
+                                    cost their size.
     --no-wait                       Return after the deployment is queued.
     --wait-seconds <seconds>        Default: 1200.
   set <id|slug>                     Change an existing App. Only the flags you
@@ -132,7 +131,8 @@ Subcommands:
     --disk-gb <gb>                  Alias: --disk.
     --idle-timeout <seconds>        120-86400.
     --always-on | --on-demand       Run 24/7, or stop when idle.
-    --budget <usd>                  Monthly compute budget.
+    --budget <usd>                  Monthly compute budget of an on-demand App
+                                    (default 5). Always-on and convex Apps have none.
     --uses <slugs>                  Replace the Apps this App uses. Comma-
                                     separated; --uses= clears the list.
     --no-wait                       Return before a resize ends.
@@ -378,8 +378,18 @@ async function createCommand(
   });
   printWarnings(app);
   if (json) emitJson(app);
-  else process.stdout.write(`\n  ${status.ok(`created ${app.slug}`)}\n${appLines(app)}${costBlock(app)}\n`);
+  else process.stdout.write(`\n  ${status.ok(`created ${app.slug}`)}\n${appLines(app)}\n`);
   return 0;
+}
+
+/** Fixed monthly cost (always-on, convex) or budget (on demand); a static App has neither. */
+function costRows(app: App): string {
+  const row = (label: string, value: string) => `  ${C.dim}${pad(label, 14)}${C.reset}${value}\n`;
+  if (typeof app.monthly_budget_usd === 'number') return row('budget', `$${app.monthly_budget_usd}/month`);
+  const estimate = app.estimated_monthly_usd;
+  return estimate
+    ? row('cost', `about $${Math.round(estimate)}/month (${app.machine.cpu} vCPU · ${app.machine.memory_gb} GB, 24/7)`)
+    : '';
 }
 
 /** The facts `show`, `create` and `set` print about an App. */
@@ -394,13 +404,13 @@ function appLines(app: App): string {
     row('uses', app.uses?.length ? app.uses.join(', ') : 'none') +
     row('used by', app.used_by?.length ? app.used_by.join(', ') : null) +
     row('machine', `${app.machine.cpu} vCPU · ${app.machine.memory_gb} GB · ${app.machine.disk_gb} GB disk`) +
+    costRows(app) +
     (instance
       ? row('site url', instance.site_url) +
         row('health', instance.health ? (instance.health.ok ? 'ok' : `unhealthy: ${instance.health.error ?? instance.health.machine_state ?? 'unknown'}`) : null) +
         row('operation', instance.operation) +
         row('last error', instance.last_operation_error) +
         row('error', instance.error) +
-        row('budget alert', instance.budget_alert ? `${instance.budget_alert.percent} % of $${instance.budget_alert.budget_usd} in ${instance.budget_alert.month}` : null) +
         row('purge after', instance.purge_after ? formatTime(instance.purge_after) : null)
       : '')
   );
@@ -479,9 +489,7 @@ async function setCommand(rest: string[], options: ContextOptions, json: boolean
     process.stdout.write(
       `  ${C.dim}${pad('idle timeout', 14)}${C.reset}${app.idle_timeout_seconds}s\n`,
     );
-    process.stdout.write(
-      `  ${C.dim}${pad('budget', 14)}${C.reset}$${app.monthly_budget_usd}/mo\n${costBlock(app)}`,
-    );
+    process.stdout.write(costRows(app));
     process.stdout.write(`  ${C.dim}${pad('uses', 14)}${C.reset}${app.uses?.length ? app.uses.join(', ') : 'none'}\n\n`);
   }
   return 0;
@@ -601,8 +609,6 @@ async function deployOne(
       if (flags.wait)
         deployment = await waitForDeployment(ctx.apps, app.app_id, deployment, flags.waitSeconds);
       const currentApp = flags.wait ? await ctx.apps.get(app.app_id) : app;
-      const budgetNotice = staged.source.kind === 'static' ? null : alwaysOnBudgetNotice(currentApp);
-      if (budgetNotice) process.stderr.write(`${status.warn(budgetNotice)}\n`);
       results.push({ app: currentApp, deployment });
       if (!json) {
         process.stdout.write(
@@ -633,11 +639,11 @@ async function showCommand(
   else {
     const app = result.app;
     const hosting = app.instance
-      ? `${app.kind} · ${app.instance.operation ?? app.instance.status} · always on · budget $${app.monthly_budget_usd}/mo`
+      ? `${app.kind} · ${app.instance.operation ?? app.instance.status} · always on`
       : app.hosting_type === 'static'
         ? 'static · served from storage, no runtime'
         : app.hosting_type === 'sandbox'
-          ? `server · ${app.always_on ? 'always on' : 'on demand'} · ${app.desired_state} · budget $${app.monthly_budget_usd}/mo`
+          ? `server · ${app.always_on ? 'always on' : 'on demand'} · ${app.desired_state}`
           : 'not deployed';
     process.stdout.write(`\n  ${C.bold}${app.name}${C.reset}\n  ${C.dim}${hosting}${C.reset}\n${appLines(app)}`);
     for (const deployment of result.deployments) {
