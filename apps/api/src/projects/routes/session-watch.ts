@@ -2,12 +2,15 @@
 // implicitly and a prompter starts following; any person who may see the
 // session can mute or unmute it for themselves. A project route, so
 // `guardSession` applies the session visibility rule and audits an oversight
-// read.
+// read. Both routes answer 403 `feature_disabled` while the project has the
+// `notification_center` flag off.
 import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import { auth, errors, json } from '../../openapi';
 import { PROJECT_ACTIONS } from '../../iam';
+import { requireFeatureFlag } from '../../feature-flags/gate';
 import { callerKortixSessionId } from '../../middleware/caller-session';
+import { NOTIFICATION_CENTER_FLAG } from '../../notifications/enabled';
 import { isWatchingSession, setSessionWatch } from '../../notifications/watchers';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
@@ -36,12 +39,14 @@ const WatchSchema = z
 /** The person and the visible session, or the refusal to send. */
 async function resolveWatcher(c: Context, projectId: string, sessionId: string) {
   const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return { ok: false as const, status: 404 as const, error: 'Not found' };
+  if (!loaded) return { ok: false as const, response: c.json({ error: 'Not found' }, 404) };
+  const disabled = requireFeatureFlag(c, loaded.row.metadata, NOTIFICATION_CENTER_FLAG);
+  if (disabled) return { ok: false as const, response: disabled };
   const userId = personUserId(c, loaded);
-  if (!userId) return { ok: false as const, status: 403 as const, error: 'Only a person can follow a session' };
+  if (!userId) return { ok: false as const, response: c.json({ error: 'Only a person can follow a session' }, 403) };
   await assertProjectCapability(c, userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
   const guard = await guardSession(c, loaded, sessionId, 'read');
-  if (!guard.ok) return guard;
+  if (!guard.ok) return { ok: false as const, response: c.json({ error: guard.error }, guard.status) };
   return { ok: true as const, userId, createdBy: guard.session.row.createdBy ?? null };
 }
 
@@ -56,7 +61,7 @@ export function registerSessionWatchRoutes(): void {
   }), async (c) => {
     const { projectId, sessionId } = c.req.valid('param');
     const watcher = await resolveWatcher(c, projectId, sessionId);
-    if (!watcher.ok) return c.json({ error: watcher.error }, watcher.status);
+    if (!watcher.ok) return watcher.response;
     return c.json({ watching: await isWatchingSession(sessionId, watcher.userId, watcher.createdBy) }, 200);
   });
 
@@ -71,7 +76,7 @@ export function registerSessionWatchRoutes(): void {
     const { projectId, sessionId } = c.req.valid('param');
     const { watching } = c.req.valid('json');
     const watcher = await resolveWatcher(c, projectId, sessionId);
-    if (!watcher.ok) return c.json({ error: watcher.error }, watcher.status);
+    if (!watcher.ok) return watcher.response;
     await setSessionWatch(projectId, sessionId, watcher.userId, watching);
     return c.json({ watching }, 200);
   });

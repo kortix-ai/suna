@@ -164,7 +164,8 @@ export async function sweepAppRetention(keep = config.KORTIX_APPS_RETAINED_DEPLO
     .select({ appId: appDeployments.appId })
     .from(appDeployments)
     .innerJoin(apps, eq(apps.appId, appDeployments.appId))
-    .where(and(eq(appDeployments.status, 'ready'), sql`${apps.deletedAt} is null`))
+    // A `convex` App's deployments are history, not rollback targets: none is retired.
+    .where(and(eq(appDeployments.status, 'ready'), sql`${apps.deletedAt} is null`, sql`${apps.kind} <> 'convex'`))
     .groupBy(appDeployments.appId)
     .having(sql`count(*) > ${keep + 1}`)
     .limit(SWEEP_APPS);

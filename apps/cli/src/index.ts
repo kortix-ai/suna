@@ -4,7 +4,6 @@ import { runAccess } from './commands/access.ts';
 import { runAccounts } from './commands/accounts.ts';
 import { runAgents } from './commands/agents.ts';
 import { runApps } from './commands/apps.ts';
-import { runBackends } from './commands/backends.ts';
 import { runAudit } from './commands/audit.ts';
 import { runBilling } from './commands/billing.ts';
 import { runChannels } from './commands/channels.ts';
@@ -235,7 +234,6 @@ const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
   env: (rest) => runEnv(rest),
   gateway: (rest) => runGateway(rest),
   apps: (rest) => runApps(rest),
-  backends: (rest) => runBackends(rest),
   channels: (rest) => runChannels(rest),
   sandboxes: (rest) => runSandboxes(rest),
   marketplace: (rest) => runMarketplace(rest),

@@ -238,6 +238,18 @@ person has one inbox, one preference record, and Web Push subscriptions for
 their browsers. Every method needs a person's credential: a service account
 gets `403`.
 
+:::info[Notifications is a feature flag]
+Kortix writes inbox rows, Web Push, and email only for projects with the
+`notification_center` flag on. It is off by default. `list()` leaves out rows
+from projects with the flag off. `session(pid, sid).watch()` and `.setWatch()`
+answer `403` with `{ error, code: "feature_disabled", feature: "notification_center" }`
+while it is off; use `isFeatureDisabledError(error)` to branch on it.
+Preferences, Web Push subscriptions, and device tokens are per person and work
+either way. With the flag off, the session creator's phone still gets a push
+when a turn ends, fails, asks a question, or asks for permission. See
+[Feature flags](/docs/feature-flags) and [Notifications](/docs/work/notifications).
+:::
+
 ```ts
 const page = await kortix.notifications.list({ limit: 20 });
 await kortix.notifications.markRead({ ids: [page.notifications[0].id] });
@@ -280,7 +292,7 @@ The session handle carries the caller's watch on one session:
 | --- | --- |
 | `session(pid, sid).watch()` | `{ watching }`: is the caller notified about this session |
 | `session(pid, sid).setWatch(watching)` | `false` mutes the session for the caller, `true` watches it again. Prompting a session watches it, but never undoes a mute. |
-| `session(pid, sid).presence({ tab_id, active, alerts? })` | this tab's presence lease. `alerts: true` says the tab shows its own notifications: the server skips the phone and Web Push only while an alerting tab is in use. An absent report is sent with `keepalive`. |
+| `session(pid, sid).presence({ tab_id, active, alerts? })` | this tab's presence lease. `alerts: true` says the tab shows its own notifications: with `notification_center` on, the server skips the phone and Web Push only while an alerting tab is in use. With it off, `alerts` is ignored and any present tab holds back the phone push. An absent report is sent with `keepalive`. |
 
 ### The project handle — `kortix.project(id)`
 
@@ -321,15 +333,16 @@ project access.
 | --- | --- |
 | `requestSecret(input)` · `requestConnector(input)` | link to collect a secret · connect an app |
 
-#### `p.backends` — self-hosted Convex backends
+#### `p.apps` — Apps of every kind
 
-Behind the `backends` project feature. Guide: [Backends](/docs/sdk/backends).
+Behind the `apps` project feature. Guide: [SDK → Apps](/docs/sdk/apps).
 
 | method | what |
 | --- | --- |
-| `list()` · `get(backendId)` | list · read one backend |
-| `create({ name })` · `remove(backendId)` | boot a backend (synchronous) · delete it |
-| `credentials(backendId)` | `url`, `site_url`, `admin_key`, and the Convex CLI `env` |
+| `list()` · `get(appId)` · `create(input)` · `update(appId, input)` · `remove(appId, { confirm? })` | inventory and lifecycle; `create` takes `kind` (`web`, `convex`) and `uses` |
+| `deployments.*` · `artifacts.*` · `access.*` · `rollback` · `start` · `stop` | deployments, artifacts, the access policy, traffic and runtime |
+| `waitUntilReady(appId)` | poll until a `convex` App's instance runs with no operation in flight |
+| `snapshots.list/create/delete/restore` · `credentials` · `rotateCredentials` · `token` · `log` | capability calls; `409 app_capability_unsupported` when the App lacks the capability |
 
 #### `p.secrets` — project secrets
 

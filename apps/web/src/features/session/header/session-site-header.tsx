@@ -40,6 +40,7 @@ import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggl
 import { useRenameSession } from '@/features/workspace/project-sidebar/modal/use-rename-session';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
+import { useNotificationCenter } from '@/features/notifications/use-notification-center';
 import { useAuth } from '@/features/providers/auth-provider';
 import { getSessionDisplayTitle } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import { useReloadSessionConfig } from '@/hooks/projects/use-session-config-freshness';
@@ -169,14 +170,17 @@ export function SessionSiteHeader({
   });
   // Mute: the caller's watch on this session (KRTX-1742). Anyone who can open
   // it may mute it; unmuting a session you never watched makes you a watcher.
+  // Only with the project's `notification_center` flag on: off, the watch
+  // routes answer 403 and the item does not exist.
   const { user } = useAuth();
+  const notificationCenter = useNotificationCenter(projectId);
   const sessionWatch = useSessionWatch({
     userId: user?.id,
     projectId,
     sessionId: projectSessionId,
-    enabled: isProjectSession && !parent,
+    enabled: isProjectSession && !parent && notificationCenter,
   });
-  const watching = sessionWatch.data?.watching;
+  const watching = notificationCenter ? sessionWatch.data?.watching : undefined;
   const toggleWatch = () => {
     if (watching === undefined) return;
     sessionWatch

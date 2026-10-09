@@ -529,6 +529,13 @@ const nextConfig = (): NextConfig => ({
         destination: '/projects/:id/customize/:tab',
         permanent: false,
       },
+      // Backends became Apps of kind `convex` (2026-10-09), and a migrated
+      // App keeps its backend's id. The retired Backends pages and the
+      // Customize tab land on the Apps page, the one with an id opening that App.
+      ...['/projects/:id/backends', '/projects/:id/customize/backends'].flatMap((retired) => [
+        { source: `${retired}/:appId`, destination: '/projects/:id/apps?app=:appId', permanent: false },
+        { source: retired, destination: '/projects/:id/apps', permanent: false },
+      ]),
       // Decks moved from the single /presentation route to the /presentations
       // framework (index + one route per registered deck). The old paths were
       // shared in Slack and calendar invites, so they keep working.

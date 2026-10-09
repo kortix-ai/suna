@@ -743,35 +743,43 @@ apps:
     expect(v2.issues.filter((issue) => issue.severity === 'error')).toEqual([]);
   });
 
-  test('a v2 App lists the backends it may mint viewer tokens for, by backend name', () => {
-    const ok = validateManifest(
+  test('a v2 App names its kind and the Apps it uses, by slug', () => {
+    const errors = (yaml: string) =>
+      validateManifest(`kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\napps:\n${yaml}`, 'yaml')
+        .issues.filter((issue) => issue.severity === 'error');
+    expect(errors('  db:\n    kind: convex\n    path: db\n    resources: { cpu: 2 }\n  crm:\n    kind: web\n    path: apps/crm\n    uses: [db, billing-db]')).toEqual([]);
+    expect(errors('  crm:\n    kind: lambda').map((issue) => issue.path)).toEqual(['apps.crm.kind']);
+    expect(errors('  crm:\n    uses: [Main, ""]').map((issue) => issue.path)).toEqual(['apps.crm.uses[0]', 'apps.crm.uses[1]']);
+    expect(errors('  crm:\n    uses: db').map((issue) => issue.path)).toEqual(['apps.crm.uses']);
+    expect(errors('  crm:\n    uses: [crm]').map((issue) => issue.path)).toEqual(['apps.crm.uses[0]']);
+  });
+
+  test('a convex App takes no build or runtime fields and always runs', () => {
+    const result = validateManifest(
       `kortix_version: 2
 default_agent: w
 agents:
   w: {}
 apps:
-  crm:
-    path: apps/crm
-    backends: [main, billing]`,
+  db:
+    kind: convex
+    type: static
+    port: 3000
+    always_on: false`,
       'yaml',
     );
-    expect(ok.issues.filter((issue) => issue.severity === 'error')).toEqual([]);
-    const bad = validateManifest(
-      `kortix_version: 2
-default_agent: w
-agents:
-  w: {}
-apps:
-  crm:
-    backends: [Main, ""]`,
-      'yaml',
-    );
-    expect(bad.issues.filter((issue) => issue.severity === 'error').map((issue) => issue.path)).toEqual([
-      'apps.crm.backends[0]',
-      'apps.crm.backends[1]',
+    expect(result.issues.filter((issue) => issue.severity === 'error').map((issue) => issue.path)).toEqual([
+      'apps.db.type',
+      'apps.db.port',
+      'apps.db.always_on',
     ]);
-    const notList = validateManifest('kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\napps:\n  crm:\n    backends: main', 'yaml');
-    expect(notList.issues.filter((issue) => issue.severity === 'error').map((issue) => issue.path)).toEqual(['apps.crm.backends']);
+  });
+
+  test('the retired `backends` field names its replacement', () => {
+    const result = validateManifest('kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\napps:\n  crm:\n    backends: [main]', 'yaml');
+    const issue = result.issues.find((entry) => entry.path === 'apps.crm.backends');
+    expect(issue?.severity).toBe('error');
+    expect(issue?.message).toContain('uses');
   });
 
   test('rejects invalid v2 App ports, commands, resources, and secret mappings', () => {
