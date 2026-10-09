@@ -670,11 +670,15 @@ flow(
       });
 
       await ctx.step('the alert is emailed at once: one email to the creator, none to OWNER', async () => {
-        const stamped = await db.query(
-          `SELECT emailed_at FROM kortix.notifications WHERE user_id = $1 AND project_id = $2 AND kind = 'automation_failed'`,
-          [creator.userId, project.id],
+        // The notifier stamps emailed_at after the send, behind the inbox row: poll it.
+        await waitFor(
+          () =>
+            db.query(
+              `SELECT emailed_at FROM kortix.notifications WHERE user_id = $1 AND project_id = $2 AND kind = 'automation_failed'`,
+              [creator.userId, project.id],
+            ),
+          { until: (r) => !!r.rows[0]?.emailed_at, timeoutMs: 15_000, intervalMs: 300, description: 'emailed_at on the automation_failed row' },
         );
-        if (!stamped.rows[0]?.emailed_at) throw new Error(`emailed_at not stamped: ${JSON.stringify(stamped.rows)}`);
         const mailpit = ctx.env.mailpitUrl;
         if (!mailpit && ctx.env.target === 'local') throw new Error('the local profile always has Mailpit: KE2E_MAILPIT_URL is missing');
         if (!mailpit) return; // a deployed target without Mailpit proves the send by the stamp alone
@@ -712,7 +716,10 @@ flow(
       try {
         await turn.startTurn(`msg_notif6_${source}`, b.userId!);
         await turn.endTurn(`msg_notif6_${source}`);
-        await waitForInbox(ctx, b, (row) => row.session_id === turn.sessionId && row.kind === 'turn_done');
+        const turnDone = (row: InboxRow) => row.session_id === turn.sessionId && row.kind === 'turn_done';
+        await waitForInbox(ctx, b, turnDone);
+        // A positive row is polled; settle() only fronts an absence or an exact count.
+        if (source === 'ui') await waitForInbox(ctx, a, turnDone);
         await settle();
         return await storedCount(db, a.userId!, { sessionId: turn.sessionId });
       } finally {
@@ -819,7 +826,8 @@ flow(
 );
 
 // NOTIF-8 — an agent's question and permission request reach the prompter of
-// the running turn, once per request, and never a muted watcher.
+// the running turn and the session's watchers, once per request, and never a
+// muted watcher.
 flow(
   'NOTIF-8',
   {
@@ -835,6 +843,9 @@ flow(
   },
   async (ctx) => {
     const { team, project, a, b } = await teamWithTwoMembers(ctx);
+    // W, an unmuted follower, is the positive control for "never a muted watcher".
+    const w = await team.addMember('member');
+    await team.grantProjectRole(project.id, w.userId!, 'member');
     const db = await openFlowDb(ctx.env);
     const turn = await seedTurnSession(ctx, db, { projectId: project.id, accountId: team.id, creator: a }).catch(async (error) => {
       await db.end();
@@ -862,14 +873,20 @@ flow(
       );
     try {
       await turn.startTurn('msg_notif8', b.userId!);
-      await ctx.step('A, the creator, mutes the session; B prompted its running turn', async () => {
+      await ctx.step('A, the creator, mutes the session; member W follows it; B prompted its running turn', async () => {
         (await ctx.client.as(a).put(watchRoute, { watching: false }, { params: { ...params, sessionId } })).status(200);
+        (await ctx.client.as(w).put(watchRoute, { watching: true }, { params: { ...params, sessionId } }))
+          .status(200)
+          .body()
+          .has('$.watching', true);
       });
 
-      await ctx.step('the sandbox relays a question → 200 persisted; B gets one question row whose body is the question', async () => {
+      await ctx.step('the sandbox relays a question → 200 persisted; B and the follower W each get one question row whose body is the question', async () => {
         (await ask('que_notif8')).status(200).body().has('$.persisted', true);
         const [row] = await waitForInbox(ctx, b, (r) => r.session_id === sessionId && r.kind === 'question');
         if (row.body !== QUESTION) throw new Error(JSON.stringify(row));
+        const [wRow] = await waitForInbox(ctx, w, (r) => r.session_id === sessionId && r.kind === 'question');
+        if (wRow.body !== QUESTION) throw new Error(JSON.stringify(wRow));
       });
 
       await ctx.step('the muted creator A gets no question row; a daemon retry of the same request adds none', async () => {
@@ -877,20 +894,24 @@ flow(
         await settle();
         expectCount(await storedCount(db, a.userId!, { sessionId }), 0, "muted A's rows");
         expectCount(await storedCount(db, b.userId!, { sessionId, kind: 'question' }), 1, "B's question rows after a retry");
+        expectCount(await storedCount(db, w.userId!, { sessionId, kind: 'question' }), 1, "W's question rows after a retry");
       });
 
       await ctx.step("a person's token may store a question, and it notifies nobody", async () => {
         (await ask('que_notif8_person', ctx.client.as(b))).status(200).body().has('$.persisted', true);
         await settle();
         expectCount(await storedCount(db, b.userId!, { sessionId, kind: 'question' }), 1, "B's question rows after a person's relay");
+        expectCount(await storedCount(db, w.userId!, { sessionId, kind: 'question' }), 1, "W's question rows after a person's relay");
       });
 
-      await ctx.step('the sandbox relays one permission request twice → notified true, then false; B has exactly one permission row', async () => {
+      await ctx.step('the sandbox relays one permission request twice → notified true, then false; B and W each have exactly one permission row', async () => {
         (await askPermission()).status(200).body().has('$.notified', true);
         (await askPermission()).status(200).body().has('$.notified', false);
         await waitForInbox(ctx, b, (r) => r.session_id === sessionId && r.kind === 'permission');
+        await waitForInbox(ctx, w, (r) => r.session_id === sessionId && r.kind === 'permission');
         await settle();
         expectCount(await storedCount(db, b.userId!, { sessionId, kind: 'permission' }), 1, "B's permission rows");
+        expectCount(await storedCount(db, w.userId!, { sessionId, kind: 'permission' }), 1, "W's permission rows");
         expectCount(await storedCount(db, a.userId!, { sessionId }), 0, "muted A's rows");
       });
 

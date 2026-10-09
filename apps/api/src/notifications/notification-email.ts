@@ -6,6 +6,7 @@ import { config } from '../config';
 import { actionButton, renderEmail, renderText, S } from '../lib/email/template';
 import type { EmailMessage } from '../lib/email/types';
 import { escapeHtml } from '../shared/html';
+import { opensRemindersPage } from './push-payload';
 
 export type RenderedEmail = Pick<EmailMessage, 'subject' | 'html' | 'text'>;
 
@@ -90,7 +91,7 @@ function message(parts: {
  * are emailed only in the digest.
  */
 export function renderImmediateNotificationEmail(item: NotificationEmailItem): RenderedEmail | null {
-  const cta = { url: absoluteAppUrl(item.url), label: 'Open automations' };
+  const cta = { url: absoluteAppUrl(item.url), label: opensRemindersPage(item.url) ? 'Open reminders' : 'Open automations' };
   // True for the creator, the last editor, a reminder's owner and a project
   // manager who gets the alert because nobody else can read the trigger.
   const note = 'You get this email because you created or edited this automation, or you manage its project.';

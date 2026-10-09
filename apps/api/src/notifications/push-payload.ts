@@ -41,6 +41,13 @@ export function pushBodyFor(kind: NotificationKindName, detail: string): string 
   return detail || 'Open Kortix to see it.';
 }
 
+/**
+ * Reminder ids are `reminder.<hex>` (`newReminderId`, projects/lib/session-reminders.ts).
+ * Reminders share the trigger table with kortix.yaml triggers, whose slugs have no `.`.
+ * The constant lives here because the notifications layer may not import projects/lib.
+ */
+export const REMINDER_ID_PREFIX = 'reminder.';
+
 /** The web path a notification opens. `notification=` lets the page mark it read. */
 export function notificationUrl(input: {
   notificationId: string;
@@ -53,10 +60,17 @@ export function notificationUrl(input: {
     return `/projects/${encodeURIComponent(input.projectId)}/sessions/${encodeURIComponent(input.sessionId)}${query}`;
   }
   if (input.projectId && input.triggerSlug) {
-    return `/projects/${encodeURIComponent(input.projectId)}/customize/triggers${query}`;
+    // The Triggers page lists kortix.yaml triggers only; reminders are runtime rows.
+    const page = input.triggerSlug.startsWith(REMINDER_ID_PREFIX) ? 'reminders' : 'customize/triggers';
+    return `/projects/${encodeURIComponent(input.projectId)}/${page}${query}`;
   }
   if (input.projectId) return `/projects/${encodeURIComponent(input.projectId)}${query}`;
   return `/projects${query}`;
+}
+
+/** True when a `notificationUrl` result opens a project's Reminders page. */
+export function opensRemindersPage(url: string): boolean {
+  return /^\/projects\/[^/?]+\/reminders\?/.test(url);
 }
 
 export function buildPushContent(input: {
