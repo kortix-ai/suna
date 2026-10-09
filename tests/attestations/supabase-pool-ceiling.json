@@ -1,0 +1,21 @@
+{
+  "source_hash": "f5bd9dc74a83c50eb0cf5ffab24997aaf9c77bed3bc7b7d641759c395d80c9c8",
+  "diff_files": [
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-09T100152Z-raise-one-database-pool-at-a-time-inside-the-rolling-fleet-b.md",
+    "apps/api/src/ensure-schema.test.ts",
+    "apps/api/src/ensure-schema.ts",
+    "apps/api/src/shared/database-capacity.test.ts",
+    "apps/api/src/shared/database-capacity.ts",
+    "packages/db/src/connection-defaults.ts"
+  ],
+  "diff_hash": "96d50e5fb3471c53bf847e713c82fc64e98842343d088cf4302a7f6b1cecbd27",
+  "head": "20a6ef227eb672e7474d9c65f29e96a8199db8f7",
+  "passed": false,
+  "lanes": {
+    "core": "fail",
+    "packages": "fail",
+    "db-suites": "fail"
+  },
+  "at": "2026-10-09T11:00:50.370Z"
+}

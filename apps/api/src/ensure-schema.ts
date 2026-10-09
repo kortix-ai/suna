@@ -9,9 +9,9 @@
  */
 
 import { join } from 'node:path';
-import postgres from 'postgres';
+import { sql } from 'drizzle-orm';
 import { config } from './config';
-import { SCHEMA_CHECK_POOL_MAX } from './shared/database-capacity';
+import { db } from './shared/db';
 
 export async function ensureSchema(): Promise<void> {
   if (!config.DATABASE_URL) {
@@ -65,10 +65,14 @@ export async function ensureSchema(): Promise<void> {
 }
 
 /**
- * When KORTIX_SKIP_ENSURE_SCHEMA=1 is set, probe a small set of
- * IAM-critical tables and log a single grouped warning if any are
- * missing. Operators usually set the flag to manage migrations
- * out-of-band; this helps them spot "I forgot to apply migration N"
+ * Drift probe on every deployed boot (warn-only — the deploy pipeline owns
+ * migrations). It runs on the SHARED request pool (`./shared/db`), not its own
+ * client: the rolling-deployment ceiling counts every pool a boot can open,
+ * and a transient probe client would cost one extra connection per starting
+ * task (the KRTX-2020 raise spends exactly that headroom on the pool itself).
+ *
+ * It probes a small set of IAM-critical tables and logs a single grouped
+ * warning if any are missing, so "I forgot to apply migration N" surfaces
  * before the first 500 hits a route.
  */
 async function warnIfCriticalTablesMissing(): Promise<void> {
@@ -88,23 +92,26 @@ async function warnIfCriticalTablesMissing(): Promise<void> {
     'project_secrets',
     'projects',
   ];
-  const db = postgres(config.DATABASE_URL, { max: SCHEMA_CHECK_POOL_MAX });
   try {
-    const rows = (await db`
+    const rows = await db.execute<{ table_name: string }>(sql`
       SELECT table_name
       FROM information_schema.tables
-      WHERE table_schema = 'kortix' AND table_name IN ${db(required)}
-    `) as Array<{ table_name: string }>;
-    const present = new Set(rows.map((r) => r.table_name));
+      WHERE table_schema = 'kortix'
+        AND table_name IN (${sql.join(
+          required.map((table) => sql`${table}`),
+          sql`, `,
+        )})
+    `);
+    const present = new Set(
+      Array.from(rows as unknown as Array<{ table_name: string }>).map((r) => r.table_name),
+    );
     const missing = required.filter((n) => !present.has(n));
     if (missing.length > 0) {
-      console.warn('[schema] ⚠ KORTIX_SKIP_ENSURE_SCHEMA=1 but critical tables are missing:');
+      console.warn('[schema] ⚠ critical tables are missing:');
       for (const m of missing) console.warn(`[schema]   • kortix.${m}`);
       console.warn('[schema] Run `pnpm migrate` or remove the env flag to auto-apply.');
     }
   } catch (err) {
     console.warn('[schema] could not verify table presence:', (err as Error).message ?? err);
-  } finally {
-    await db.end();
   }
 }
