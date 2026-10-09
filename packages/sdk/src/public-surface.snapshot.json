@@ -1729,6 +1729,7 @@
     "GENUI_SCHEMA_VERSION",
     "genuiVersionFromClassName",
     "genuiVersionOf",
+    "safeUrl",
     "splitGenui"
   ],
   "./genui/react": [],

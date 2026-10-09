@@ -3201,6 +3201,7 @@
     "GenuiSegment",
     "genuiVersionFromClassName",
     "genuiVersionOf",
+    "safeUrl",
     "splitGenui"
   ],
   "./genui/react": [],
