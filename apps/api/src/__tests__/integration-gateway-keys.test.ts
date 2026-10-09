@@ -130,11 +130,16 @@ describe('validateGatewayKey', () => {
   test('stamps lastUsedAt on a successful validation (fire-and-forget)', async () => {
     const { secretKey, keyId } = await seedKey({});
     expect(await validateGatewayKey(secretKey)).not.toBeNull();
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    const [row] = await db
-      .select({ lastUsedAt: gatewayApiKeys.lastUsedAt })
-      .from(gatewayApiKeys)
-      .where(eq(gatewayApiKeys.keyId, keyId));
-    expect(row?.lastUsedAt).toBeTruthy();
+    // The stamp is fire-and-forget (`void db.update…`), so poll for it instead of racing a fixed sleep.
+    let lastUsedAt: Date | null = null;
+    for (let waited = 0; waited < 3000 && !lastUsedAt; waited += 50) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const [row] = await db
+        .select({ lastUsedAt: gatewayApiKeys.lastUsedAt })
+        .from(gatewayApiKeys)
+        .where(eq(gatewayApiKeys.keyId, keyId));
+      lastUsedAt = row?.lastUsedAt ?? null;
+    }
+    expect(lastUsedAt).toBeTruthy();
   });
 });
