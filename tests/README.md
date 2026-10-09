@@ -95,7 +95,7 @@ The run is ten lanes in parallel, each natively on one free GitHub-hosted
 runner (`CI_RUNNER_L`, default `ubuntu-24.04`, 4 vCPU / 16 GB). Core and
 package lanes run `pnpm test` and `pnpm test -- --packages-only`. Eight browser
 lanes run shards `1/8` through `8/8` with one Playwright worker each
-(`E2E_BROWSER_WORKERS=1`) via
+(`E2E_BROWSER_WORKERS=1`, exported in browser lanes only) via
 `pnpm test -- --browser-only --browser-shard=CURRENT/TOTAL`, which maps straight
 to Playwright's native `--shard`. The ten lanes are the parallel equivalent of
 `pnpm test -- --full`; `tests.yml` records their measured times. Each lane checks out the

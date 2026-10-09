@@ -108,8 +108,6 @@ jobs:
       TEST_LANE: ${{ matrix.lane }}
       TEST_ARGS: ${{ matrix.args }}
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
-      # One worker per browser shard on a 4 vCPU / 16 GB runner (see the matrix).
-      E2E_BROWSER_WORKERS: "1"
     steps:
       - uses: actions/checkout@v7
         with:
@@ -219,6 +217,12 @@ jobs:
           # binding `packages` lane as short as it can be.
           if [[ "$TEST_LANE" == "packages" ]]; then
             export KORTIX_PACKAGE_SKIP_SDK_TESTS=1
+          fi
+          # One Playwright worker per browser shard on a 4 vCPU / 16 GB
+          # runner (see the matrix). Browser lanes only: the core lane's unit
+          # tests assert the default of two.
+          if [[ "$TEST_LANE" == browser-* ]]; then
+            export E2E_BROWSER_WORKERS=1
           fi
           echo "[ci] lane=$TEST_LANE sha=$TEST_SHA command=pnpm test -- $TEST_ARGS"
           # shellcheck disable=SC2086 # TEST_ARGS is a matrix literal, split on purpose

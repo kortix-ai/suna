@@ -33,7 +33,10 @@ describe('native test-lane workflow', () => {
       expect(testWorkflow).toContain(`args: --browser-only --browser-shard=${n}/8`);
     }
     expect(testWorkflow).not.toContain('--browser-shard=1/4');
-    expect(testWorkflow).toContain('E2E_BROWSER_WORKERS: "1"');
+    expect(testWorkflow).toContain('if [[ "$TEST_LANE" == browser-* ]]; then');
+    expect(testWorkflow).toContain('export E2E_BROWSER_WORKERS=1');
+    // Never job-wide: the core lane's runner unit tests assert the default.
+    expect(testWorkflow).not.toContain('E2E_BROWSER_WORKERS: "1"');
     expect(testWorkflow).toContain('args: --packages-only');
     // The unchanged root command is the whole lane.
     expect(testWorkflow).toContain('if [[ -n "$TEST_ARGS" ]]; then pnpm test -- $TEST_ARGS; else pnpm test; fi');
