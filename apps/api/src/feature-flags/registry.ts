@@ -321,6 +321,20 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'selectSessionHarness). A running session keeps its harness until it is restarted or resumed.',
   },
   {
+    key: 'genui',
+    name: 'Generative UI',
+    description:
+      'The agent may answer with cards, comparisons, charts, maps, and tabs instead of long text. On ⇒ every new, restarted, or resumed session of this project teaches the agent the Kortix generative UI catalog (KORTIX_GENUI=1 in kortixd). Off ⇒ the agent writes markdown only; blocks already in a transcript still render.',
+    stability: 'experimental',
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'behavioral',
+    enforcementNote:
+      'Read at session provisioning (projects/lib/genui-env.ts → KORTIX_GENUI). A running session keeps its prompt until it is restarted or resumed. The API kill switch GENUI_ENABLED=false forces it off for every project.',
+    // Hidden until web renders blocks (plan-4 Task 8 removes this line).
+    catalogHidden: true,
+  },
+  {
     key: 'config_releases',
     name: 'Config Releases',
     description:

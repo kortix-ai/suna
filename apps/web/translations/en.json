@@ -1008,6 +1008,10 @@
           "name": "Pi Harness (in-sandbox)",
           "description": "Run sessions on the pi harness inside the session sandbox instead of OpenCode. Off, `runtime: pi` in the manifest still selects pi."
         },
+        "genui": {
+          "name": "Generative UI",
+          "description": "The agent may answer with cards, comparisons, charts, maps, and tabs instead of long text."
+        },
         "config_releases": {
           "name": "Config Releases",
           "description": "Run sessions on the base branch's current agent config, served read-only, so a merged agent, skill, or tool reaches every running session. Off, a session reads its own workspace config folder."
