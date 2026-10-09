@@ -570,7 +570,7 @@ export async function provisionSessionSandbox(opts: {
     return claimed ? [claimed] : [];
   };
 
-  const [sandboxRows, sessionToken] = await Promise.all([
+  const [rowResult, tokenResult] = await Promise.allSettled([
     createOrClaimSandboxRow(),
     // Resolve the per-agent grant and mint the sole sandbox credential. Token
     // minting is fail-closed: a sandbox without its session identity cannot
@@ -584,6 +584,27 @@ export async function provisionSessionSandbox(opts: {
       gitProject: opts.gitProject,
     }),
   ]);
+  if (rowResult.status === 'rejected') throw rowResult.reason;
+  if (tokenResult.status === 'rejected') {
+    // The row exists and no box ever will. Close it as a failed provision so
+    // /start reports a retriable failure now, instead of a row that sits in
+    // `provisioning` until the stuck-session reaper finds it.
+    const [inserted] = rowResult.value;
+    if (inserted) {
+      const message =
+        tokenResult.reason instanceof Error ? tokenResult.reason.message : String(tokenResult.reason);
+      await transitionSandbox('failProvisioning', inserted.sandboxId, {
+        metadata: sandboxInitMetadataPatch(inserted.metadata as Record<string, unknown> | null, {
+          initStatus: 'failed',
+          errorMessage: 'This session could not get its credential. Try again.',
+          lastProvisioningError: message.slice(0, 500),
+        }),
+      }).catch(() => null);
+    }
+    throw tokenResult.reason;
+  }
+  const sandboxRows = rowResult.value;
+  const sessionToken = tokenResult.value;
   const [sandbox] = sandboxRows;
   if (!sandbox) throw new RuntimeIdentityConflictError(sandboxId);
   // A WARM-POOL box is the one box the control plane can never observe again

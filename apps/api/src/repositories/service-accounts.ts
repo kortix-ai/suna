@@ -3,7 +3,7 @@
 // via principal_type='token' with principal_id = service_account_id so
 // the existing IAM engine token-path handles authorisation unchanged.
 
-import { and, asc, eq, inArray, isNull, isNotNull } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, isNotNull, sql } from 'drizzle-orm';
 import { serviceAccounts, roleAssignments } from '@kortix/db';
 import { db } from '../shared/db';
 import { createLastUsedTracker } from '../shared/throttled-last-used';
@@ -178,24 +178,28 @@ export async function ensureAgentServiceAccount(args: {
   const { secret, publicPrefix } = generateServiceAccountSecret();
   const secretHash = hashSecretKey(secret); // plaintext `secret` intentionally discarded — identity-only
   const name = (args.displayName ?? args.agentName).slice(0, 128);
-  try {
-    const [row] = await db
-      .insert(serviceAccounts)
-      .values({
-        accountId: args.accountId,
-        projectId: args.projectId,
-        agentName: args.agentName,
-        name,
-        secretHash,
-        publicPrefix,
-        createdBy: null,
-      })
-      .returning({ id: serviceAccounts.serviceAccountId });
-    if (row) return row.id;
-  } catch (err) {
-    // Lost a concurrent create race (unique violation) — fall through to re-read.
-    if ((err as { code?: string })?.code !== '23505') throw err;
-  }
+  // Two first sessions in a fresh project race here: both read nothing, both
+  // insert. ON CONFLICT on the (account, project, agent) partial unique index
+  // makes the loser a no-op instead of a unique violation, and the re-read
+  // below hands it the winner's identity. The insert never throws on the race,
+  // so the session-credential guard never sees a missing account.
+  const [row] = await db
+    .insert(serviceAccounts)
+    .values({
+      accountId: args.accountId,
+      projectId: args.projectId,
+      agentName: args.agentName,
+      name,
+      secretHash,
+      publicPrefix,
+      createdBy: null,
+    })
+    .onConflictDoNothing({
+      target: [serviceAccounts.accountId, serviceAccounts.projectId, serviceAccounts.agentName],
+      where: sql`agent_name IS NOT NULL`,
+    })
+    .returning({ id: serviceAccounts.serviceAccountId });
+  if (row) return row.id;
   const [winner] = await db
     .select({ id: serviceAccounts.serviceAccountId })
     .from(serviceAccounts)
