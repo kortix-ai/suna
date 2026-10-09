@@ -474,7 +474,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   // jumps back to it from anywhere on the page except another text field.
   const searchRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    if (channelsActive) return;
+    if (channelsActive || typeof window === 'undefined') return;
     searchRef.current?.focus({ preventScroll: true });
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return;
