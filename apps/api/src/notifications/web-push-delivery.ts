@@ -1,4 +1,4 @@
-// Web Push delivery for one recipient (KRTX-1742). Placeholder until the Web
+// Web Push delivery for one recipient (KRTX-1742). STUB(KRTX-1742 WP-C): placeholder until the Web
 // Push sender lands: it sends nothing. The notifier calls it through
 // `liveNotifierDeps().sendWebPush`, so replacing this body wires the channel.
 import type { NotificationPushContent } from './push-payload';

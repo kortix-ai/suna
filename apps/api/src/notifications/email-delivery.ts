@@ -1,4 +1,4 @@
-// Email delivery for notifications (KRTX-1742). Placeholder until the email
+// Email delivery for notifications (KRTX-1742). STUB(KRTX-1742 WP-C): placeholder until the email
 // channel lands: it sends nothing. The notifier calls it through
 // `liveNotifierDeps().sendEmailNow`, so replacing these bodies wires email.
 import type { NotificationKindName } from '@kortix/shared/notification-kinds';
