@@ -775,7 +775,7 @@
       "enableDescriptionPush": "Zeigt Benachrichtigungen in diesem Browser, auch wenn alle Kortix-Tabs geschlossen sind.",
       "enableDescriptionDesktop": "Zeigt Benachrichtigungen der Desktop-App, solange ihr Fenster geöffnet ist.",
       "enableDescriptionBrowser": "Zeigt Benachrichtigungen in diesem Browser, solange ein Kortix-Tab geöffnet ist.",
-      "notificationTypesDescription": "Diese Einstellungen gelten auf jedem Telefon und in jedem Browser. Die Glocke listet jede Benachrichtigung.",
+      "notificationTypesDescription": "Diese Einstellungen gelten auf jedem Telefon und in jedem Browser. Ein Telefon hat zusätzlich einen eigenen Schalter für „Durchlauf beendet“, „Durchlauf fehlgeschlagen“, „Frage“ und „Berechtigungsanfrage“. Es erhält diese nur, wenn beide an sind. Die Glocke listet jede Benachrichtigung eines Projekts mit aktivierter Benachrichtigungszentrale.",
       "push": "Push",
       "email": "E-Mail",
       "channelSwitch": "{kind}: {channel}",
@@ -1205,7 +1205,7 @@
         },
         "notification_center": {
           "name": "Benachrichtigungszentrale",
-          "description": "Informiert die Personen, die eine Sitzung betrifft (wer den Prompt sendete, wer sie erstellte und wer ihr folgt), über eine Glocke, Browser-Push und E-Mail, und meldet fehlschlagende Trigger und Erinnerungen. Aus: Nur das Telefon der Person, die die Sitzung erstellt hat, erhält einen Push."
+          "description": "Informiert die Personen, die eine Sitzung betrifft (wer den Prompt sendete, wer sie erstellte und wer ihr folgt), über eine Glocke, Browser-Push und E-Mail, und meldet fehlschlagende Trigger und Erinnerungen. Aus: Den Push einer Sitzung erhält nur das Telefon der Person, die sie erstellt hat, und das Telefon eines Kontoinhabers erhält einen Push, wenn ein Trigger anfängt fehlzuschlagen."
         }
       }
     },

@@ -200,6 +200,27 @@ test('session presence carries alerts, and an absent report survives the page un
   expect(inits.map((init) => init.keepalive === true)).toEqual([false, true, false]);
 });
 
+// `useSession` sends an absent report without `keepalive` while the project's
+// `notification_center` flag is off, as before KRTX-1742.
+test('session presence takes an explicit keepalive, and the body stays the report', async () => {
+  const inits: RequestInit[] = [];
+  globalThis.fetch = mock(async (_url: unknown, init: RequestInit = {}) => {
+    inits.push(init);
+    return Response.json({ ok: true });
+  }) as unknown as typeof fetch;
+  const tabId = '00000000-0000-4000-8000-000000000003';
+  const handle = kortix.session('PID123', 'SID456');
+  await handle.presence({ tab_id: tabId, active: false }, { keepalive: false });
+  await handle.presence({ tab_id: tabId, active: false }, { keepalive: true });
+  await handle.presence({ tab_id: tabId, active: false }, {});
+  expect(inits.map((init) => init.keepalive === true)).toEqual([false, true, true]);
+  expect(inits.map((init) => JSON.parse(String(init.body)))).toEqual([
+    { tab_id: tabId, active: false },
+    { tab_id: tabId, active: false },
+    { tab_id: tabId, active: false },
+  ]);
+});
+
 test('session(projectId, sessionId).cost binds project scope without starting the runtime', async () => {
   await kortix.session('PID123', 'SID456').cost();
 

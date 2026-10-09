@@ -258,7 +258,8 @@ describe('SessionsTabView with the notification center', () => {
 
   test('while the record loads the rows show, without switches', () => {
     const out = center({ notificationKindsState: 'loading' });
-    expect(out).toContain('Turn finished');
+    // The row's own description: the section description also names the kinds.
+    expect(out).toContain('A turn ends.');
     expect(switchCount(out)).toBe(1);
   });
 
@@ -266,6 +267,6 @@ describe('SessionsTabView with the notification center', () => {
     const out = center({ notificationKindsState: 'error' });
     expect(out).toContain('Could not load your notification settings');
     expect(out).toContain('Try again');
-    expect(out).not.toContain('Turn finished');
+    expect(out).not.toContain('A turn ends.');
   });
 });
