@@ -4,6 +4,7 @@ import { INBOX_NOTIFICATION_KINDS } from '@kortix/sdk';
 import {
   ANDROID_CHANNELS,
   deliveryForKind,
+  legacyKindPatch,
   notificationOpenMove,
   parsePushData,
   serverPreferences,
@@ -194,9 +195,34 @@ describe('notificationOpenMove', () => {
   });
 });
 
+describe('legacyKindPatch', () => {
+  test('a kind this phone turned off before KRTX-1742 becomes push off in the user record', () => {
+    expect(
+      legacyKindPatch({ enabled: true, playSound: true, onCompletion: false, onError: true, onQuestion: false })
+    ).toEqual({ kinds: { turn_done: { push: false }, question: { push: false } } });
+    expect(legacyKindPatch({ enabled: true, playSound: true, onError: false, onPermission: false })).toEqual({
+      kinds: { turn_error: { push: false }, permission: { push: false } },
+    });
+  });
+
+  test('nothing turned off (every key on, or a fresh install with none) → null', () => {
+    expect(
+      legacyKindPatch({
+        enabled: true,
+        playSound: true,
+        onCompletion: true,
+        onError: true,
+        onQuestion: true,
+        onPermission: true,
+      })
+    ).toBeNull();
+    expect(legacyKindPatch({ enabled: false, playSound: false })).toBeNull();
+  });
+});
+
 describe('serverPreferences', () => {
-  test("sends this phone's switches; every per-kind column on, so the user's record decides", () => {
-    expect(serverPreferences({ enabled: true, playSound: false })).toEqual({
+  test("after the migration: this phone's switches; every per-kind column on, so the user's record decides", () => {
+    expect(serverPreferences({ enabled: true, playSound: false }, true)).toEqual({
       enabled: true,
       on_completion: true,
       on_error: true,
@@ -204,8 +230,30 @@ describe('serverPreferences', () => {
       on_permission: true,
       play_sound: false,
     });
-    expect(serverPreferences({ enabled: false, playSound: true })).toEqual({
+    expect(serverPreferences({ enabled: false, playSound: true, onCompletion: false }, true)).toEqual({
       enabled: false,
+      on_completion: true,
+      on_error: true,
+      on_question: true,
+      on_permission: true,
+      play_sound: true,
+    });
+  });
+
+  test('before the migration: the kinds this phone turned off stay off on its device row', () => {
+    expect(
+      serverPreferences({ enabled: true, playSound: true, onCompletion: false, onPermission: false }, false)
+    ).toEqual({
+      enabled: true,
+      on_completion: false,
+      on_error: true,
+      on_question: true,
+      on_permission: false,
+      play_sound: true,
+    });
+    // A fresh install has no stored kinds: every column on.
+    expect(serverPreferences({ enabled: true, playSound: true }, false)).toEqual({
+      enabled: true,
       on_completion: true,
       on_error: true,
       on_question: true,

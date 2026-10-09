@@ -302,6 +302,47 @@ describe('ProjectScreen connect and stack', () => {
     expect(seen('markSessionRead')).toHaveLength(2);
   });
 
+  test('a failed read that restores the same unread row is not sent again', async () => {
+    response = () => new Promise(() => {});
+    const row = { id: 'n-1', session_id: 'ps-1', read: false };
+    inbox = { ...inbox, data: { notifications: [row] }, markSessionRead: async (sessionId: string) => { spy('markSessionRead')(sessionId); throw new Error('503'); } };
+    await renderHook();
+    await act(async () => drawer.onOpenProjectSession({ session_id: 'ps-1' }));
+    expect(seen('markSessionRead')).toHaveLength(1);
+    // The SDK writes the row read before the POST, then restores it when the POST fails.
+    for (let cycle = 0; cycle < 3; cycle++) {
+      inbox = { ...inbox, data: { notifications: [{ ...row, read: true }] } };
+      await rerender();
+      inbox = { ...inbox, data: { notifications: [row] } };
+      await rerender();
+    }
+    expect(seen('markSessionRead')).toHaveLength(1);
+  });
+
+  test('after a failed read, a new unread row of the session on screen is sent once', async () => {
+    response = () => new Promise(() => {});
+    const row = { id: 'n-1', session_id: 'ps-1', read: false };
+    inbox = { ...inbox, data: { notifications: [row] }, markSessionRead: async (sessionId: string) => { spy('markSessionRead')(sessionId); throw new Error('503'); } };
+    await renderHook();
+    await act(async () => drawer.onOpenProjectSession({ session_id: 'ps-1' }));
+    inbox = { ...inbox, data: { notifications: [{ ...row, read: true }] } };
+    await rerender();
+    inbox = { ...inbox, data: { notifications: [row] } };
+    await rerender();
+    expect(seen('markSessionRead')).toHaveLength(1);
+    // A push arrived and the inbox refetched: a newer row of ps-1, listed first.
+    const newer = { id: 'n-2', session_id: 'ps-1', read: false };
+    inbox = { ...inbox, data: { notifications: [newer, row] } };
+    await rerender();
+    expect(seen('markSessionRead').map((call) => call.args)).toEqual([['ps-1'], ['ps-1']]);
+    // That read fails too and restores both rows: nothing more is sent.
+    inbox = { ...inbox, data: { notifications: [{ ...newer, read: true }, { ...row, read: true }] } };
+    await rerender();
+    inbox = { ...inbox, data: { notifications: [newer, row] } };
+    await rerender();
+    expect(seen('markSessionRead')).toHaveLength(2);
+  });
+
   test('with nothing unread, opening a session sends no read', async () => {
     inbox = { ...inbox, unreadCount: 0 };
     await renderHook();

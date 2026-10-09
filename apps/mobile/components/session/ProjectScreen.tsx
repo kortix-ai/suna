@@ -381,19 +381,25 @@ export function ProjectScreen() {
   // session comes on screen (a drawer row, the Sessions page, a push tap, a
   // Notifications row), and again when the inbox shows a new unread row of it
   // (a push that arrived while the app was open or in the background, then a
-  // refetch). Known to have nothing unread: no request.
-  const shownSessionUnread =
-    !!shownSessionId &&
-    (inbox.data?.notifications.some((row) => !row.read && row.session_id === shownSessionId) ?? false);
+  // refetch). Known to have nothing unread: no request. Keyed by the newest
+  // unread row (the inbox lists newest first): a failed read restores the same
+  // row, and that row is not sent again, so a failing server sees no loop.
+  const shownUnreadRowId = shownSessionId
+    ? (inbox.data?.notifications.find((row) => !row.read && row.session_id === shownSessionId)?.id ?? null)
+    : null;
   const readSessionRef = useRef<string | null>(null);
+  const readSentRef = useRef<string | null>(null);
   useEffect(() => {
     const opened = readSessionRef.current !== shownSessionId;
     readSessionRef.current = shownSessionId;
-    if (!shownSessionId || (!opened && !shownSessionUnread)) return;
+    if (!shownSessionId || (!opened && !shownUnreadRowId)) return;
+    const sent = `${shownSessionId}:${shownUnreadRowId ?? ''}`;
+    if (!opened && readSentRef.current === sent) return;
     const { isSuccess, unreadCount, markSessionRead } = inboxRef.current;
     if (isSuccess && unreadCount === 0) return;
+    readSentRef.current = sent;
     markSessionRead(shownSessionId).catch(() => {});
-  }, [shownSessionId, shownSessionUnread]);
+  }, [shownSessionId, shownUnreadRowId]);
 
   // A tapped notification for this project (a push, or a Notifications row):
   // open its session, the same path as the Sessions page. The session already

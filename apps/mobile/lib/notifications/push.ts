@@ -17,7 +17,7 @@
  * Pure: no React, React Native, or expo imports (unit-tested under bun test).
  */
 
-import { INBOX_NOTIFICATION_KINDS, type InboxNotificationKind } from '@kortix/sdk';
+import { INBOX_NOTIFICATION_KINDS, type InboxNotificationKind, type NotificationPreferencesPatch } from '@kortix/sdk';
 import type { DeviceNotificationPreferences } from '@/stores/notification-store';
 
 /** The pre-inbox `type` of the 4 session kinds (`LEGACY_PUSH_TYPE` on the server). */
@@ -171,19 +171,46 @@ export interface ServerPreferences {
   play_sound: boolean;
 }
 
+/** The per-kind switches a phone stored before KRTX-1742, and the inbox kind each one decided. */
+const LEGACY_KINDS = {
+  onCompletion: 'turn_done',
+  onError: 'turn_error',
+  onQuestion: 'question',
+  onPermission: 'permission',
+} as const satisfies Record<string, InboxNotificationKind>;
+type LegacyKindKey = keyof typeof LEGACY_KINDS;
+
+/** This phone's switches as persisted: an app from before KRTX-1742 also stored the per-kind ones. */
+type StoredPreferences = DeviceNotificationPreferences & Partial<Record<LegacyKindKey, boolean>>;
+
+/**
+ * The kinds this phone turned off before KRTX-1742, as a patch for the user's
+ * record (`updateNotificationPreferences`). Null when it turned none off. The
+ * patch applies to the whole user: every device and Web Push.
+ */
+export function legacyKindPatch(prefs: StoredPreferences): NotificationPreferencesPatch | null {
+  const kinds: NotificationPreferencesPatch['kinds'] = {};
+  for (const key of Object.keys(LEGACY_KINDS) as LegacyKindKey[]) {
+    if (prefs[key] === false) kinds[LEGACY_KINDS[key]] = { push: false };
+  }
+  return Object.keys(kinds).length ? { kinds } : null;
+}
+
 /**
  * This phone's switches in the wire format of `POST /notifications/device-token`.
- * The per-kind columns are always on: the user's record (Settings →
- * Notifications, `useNotificationPreferences`) decides each kind on every
- * device (KRTX-1742). An app from before keeps posting its own values.
+ * After `legacyMigrated`, the per-kind columns are always on: the user's record
+ * (Settings → Notifications, `useNotificationPreferences`) decides each kind on
+ * every device (KRTX-1742). Before it, a kind this phone turned off stays off
+ * on its device row, so the opt-out holds until the record has it.
  */
-export function serverPreferences(prefs: DeviceNotificationPreferences): ServerPreferences {
+export function serverPreferences(prefs: StoredPreferences, legacyMigrated: boolean): ServerPreferences {
+  const legacy: Partial<Record<LegacyKindKey, boolean>> = legacyMigrated ? {} : prefs;
   return {
     enabled: prefs.enabled,
-    on_completion: true,
-    on_error: true,
-    on_question: true,
-    on_permission: true,
+    on_completion: legacy.onCompletion ?? true,
+    on_error: legacy.onError ?? true,
+    on_question: legacy.onQuestion ?? true,
+    on_permission: legacy.onPermission ?? true,
     play_sound: prefs.playSound,
   };
 }
