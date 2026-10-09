@@ -1491,6 +1491,12 @@ export const projectTriggerRuntime = kortixSchema.table(
     // While set, a fire or a delivery keeps `last_status = 'failed'`, and the
     // owner is pushed only when it goes from null to set.
     runFailingSince: timestamp('run_failing_since', { withTimezone: true }),
+    // When the trigger's watchers were last told it is failing (KRTX-1742).
+    // Set by the first terminal failure, cleared by the recovery that matches
+    // `alert_source` ('fire': the next good fire; 'run': the next finished
+    // run). One `automation_failed` and one `automation_recovered` per streak.
+    alertFailingSince: timestamp('alert_failing_since', { withTimezone: true }),
+    alertSource: varchar('alert_source', { length: 8 }),
     // Account-local sharing policy for sessions created by this trigger. The
     // portable manifest cannot contain member/group ids from one account.
     sessionAccessMode: varchar('session_access_mode', { length: 16 }).default('private').notNull(),
@@ -6767,6 +6773,9 @@ export const sessionPresenceLeases = kortixSchema.table('session_presence_leases
   sessionId: text('session_id').notNull(),
   tabId: uuid('tab_id').notNull(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  /** The tab raises its own OS notification for this session, so a push
+   *  would duplicate it. Only an alerting tab holds back the phone push. */
+  alerts: boolean('alerts').default(false).notNull(),
 }, (table) => [
   primaryKey({ columns: [table.userId, table.sessionId, table.tabId] }),
   // Named: drizzle's default is 65 chars, past Postgres's 63-char limit.
@@ -6812,4 +6821,105 @@ export const pushDeviceTokens = kortixSchema.table('push_device_tokens', {
 }, (table) => [
   index('idx_push_device_tokens_user').on(table.userId),
   check('push_device_tokens_platform', sql`${table.platform} in ('ios', 'android')`),
+]);
+
+/**
+ * The notification inbox (KRTX-1742): one row per recipient per event, with
+ * read state. The bell, the mobile inbox, pushes and emails all start from a
+ * row. `user_id` has no foreign key (like push_device_tokens): erasure deletes
+ * by user. Rows older than 90 days are swept by the notification worker.
+ */
+export const notifications = kortixSchema.table('notifications', {
+  notificationId: uuid('notification_id').default(sql`kortix.uuid_v7()`).primaryKey(),
+  userId: uuid('user_id').notNull(),
+  accountId: uuid('account_id').notNull(),
+  projectId: uuid('project_id'),
+  // No FK: a soft-deleted session keeps its row; the read filter hides it.
+  sessionId: text('session_id'),
+  triggerSlug: text('trigger_slug'),
+  kind: text('kind').notNull(),
+  title: text('title').notNull(),
+  body: text('body').default('').notNull(),
+  actorUserId: uuid('actor_user_id'),
+  dedupeKey: text('dedupe_key'),
+  readAt: timestamp('read_at', { withTimezone: true }),
+  // Set at insert only when this kind gets a digest email for this user.
+  emailDueAt: timestamp('email_due_at', { withTimezone: true }),
+  emailedAt: timestamp('emailed_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.accountId], foreignColumns: [accounts.accountId], name: 'notifications_account_fk' }).onDelete('cascade'),
+  foreignKey({ columns: [table.projectId], foreignColumns: [projects.projectId], name: 'notifications_project_fk' }).onDelete('cascade'),
+  unique('notifications_user_dedupe').on(table.userId, table.dedupeKey),
+  index('idx_notifications_user_id').on(table.userId, table.notificationId.desc()),
+  index('idx_notifications_user_unread').on(table.userId).where(sql`${table.readAt} IS NULL`),
+  index('idx_notifications_email_due').on(table.emailDueAt).where(sql`${table.emailedAt} IS NULL AND ${table.emailDueAt} IS NOT NULL`),
+  index('idx_notifications_account').on(table.accountId),
+  index('idx_notifications_project').on(table.projectId),
+  index('idx_notifications_created').on(table.createdAt),
+  check('notifications_kind', sql`${table.kind} IN ('turn_done', 'turn_error', 'question', 'permission', 'shared', 'automation_failed', 'automation_recovered')`),
+]);
+
+/** One record per user: partial overrides of the default notification preferences. */
+export const notificationPreferences = kortixSchema.table('notification_preferences', {
+  userId: uuid('user_id').primaryKey(),
+  settings: jsonb('settings').$type<Record<string, unknown>>().default({}).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+/**
+ * Who follows a session besides its creator (an implicit watcher). A prompter
+ * becomes a watcher; `muted` stops every notification for that user, the
+ * creator included.
+ */
+export const notificationWatchers = kortixSchema.table('notification_watchers', {
+  projectId: uuid('project_id').notNull(),
+  sessionId: text('session_id').notNull(),
+  userId: uuid('user_id').notNull(),
+  muted: boolean('muted').default(false).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.sessionId, table.userId] }),
+  foreignKey({ columns: [table.projectId], foreignColumns: [projects.projectId], name: 'notification_watchers_project_fk' }).onDelete('cascade'),
+  index('idx_notification_watchers_user').on(table.userId),
+  index('idx_notification_watchers_project').on(table.projectId),
+]);
+
+/**
+ * Who gets a trigger's failure and recovery alerts: the person who created or
+ * last edited it through the API. No FK to project_trigger_runtime, so a
+ * catalog prune never drops them.
+ */
+export const triggerWatchers = kortixSchema.table('trigger_watchers', {
+  projectId: uuid('project_id').notNull(),
+  slug: text('slug').notNull(),
+  userId: uuid('user_id').notNull(),
+  muted: boolean('muted').default(false).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.projectId, table.slug, table.userId] }),
+  foreignKey({ columns: [table.projectId], foreignColumns: [projects.projectId], name: 'trigger_watchers_project_fk' }).onDelete('cascade'),
+  index('idx_trigger_watchers_user').on(table.userId),
+]);
+
+/**
+ * A browser's Web Push subscription. Bound to the sign-in that registered it:
+ * a push goes only while that sign-in lives, like push_device_tokens.
+ */
+export const webPushSubscriptions = kortixSchema.table('web_push_subscriptions', {
+  endpoint: text('endpoint').primaryKey(),
+  userId: uuid('user_id').notNull(),
+  p256dh: text('p256dh').notNull(),
+  auth: text('auth').notNull(),
+  authSessionId: uuid('auth_session_id').notNull(),
+  // The registering sign-in's assurance level: an aal1 browser gets no push
+  // for an account that requires MFA.
+  aal: varchar('aal', { length: 8 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('idx_web_push_subscriptions_user').on(table.userId),
+  index('idx_web_push_subscriptions_auth_session').on(table.authSessionId),
 ]);
