@@ -1172,10 +1172,16 @@ for (const runtime of runtimes) {
         await page.unroute(promptsUrl);
         // The local box reports no active turn, so the steer waits and stays a
         // steer (`admitSteer` → turn_active), drawn as "Read at next step".
-        // A real deployed box is mid-turn and reads the steer at once: it leaves
-        // the Queue List and lands in the transcript (gate 37963866893).
+        // A real deployed box is mid-turn and may read the steer before this
+        // check: then it has left the Queue List and is in the transcript
+        // (gate 37963866893 read it first; gate 37953042131 saw it waiting).
         if (isDeployedTarget()) {
-          await expect(page.getByRole("log").getByText(transcriptText, { exact: true })).toBeVisible();
+          await expect(
+            pending
+              .locator("[data-queued-delivery]")
+              .filter({ hasText: "Read at next step" })
+              .or(page.getByRole("log").getByText(transcriptText, { exact: true })),
+          ).toBeVisible();
         } else {
           await expect(pending.locator("[data-queued-delivery]")).toHaveText("Read at next step");
         }
