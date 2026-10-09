@@ -5,6 +5,8 @@
 //   volume whose owner row is gone (a drive, a session's state volume). A
 //   trigger fills it on every delete path, cascades included; this drains it.
 //   A volume still held by a sandbox answers 409 and is retried with backoff.
+// - the revocation retry: a session sandbox whose folder access narrowed but
+//   whose detach did not land is brought in line again until it does.
 
 import { platinumVolumeDeletions } from '@kortix/db';
 import { asc, eq, lte, sql } from 'drizzle-orm';
@@ -20,7 +22,12 @@ const MAX_BACKOFF_MS = 60 * 60_000;
 
 let scanTimer: ReturnType<typeof setInterval> | null = null;
 let drainTimer: ReturnType<typeof setInterval> | null = null;
+let revocationTimer: ReturnType<typeof setInterval> | null = null;
 let draining = false;
+let retryingRevocations = false;
+
+/** How often a revocation whose detach did not land is tried again (each row backs off on its own). */
+const REVOCATION_TICK_MS = 15_000;
 
 /** Queue a volume for deletion (idempotent). `delayMs` lets a box that still holds it go first. */
 export async function queueVolumeDeletion(volumeName: string, reason: string, delayMs = 0): Promise<void> {
@@ -68,6 +75,19 @@ export async function drainVolumeDeletions(limit = 20): Promise<{ deleted: numbe
   return { deleted, deferred };
 }
 
+/** One pass over the revocations whose mounts are not in line yet (see drives/service.ts). */
+export async function retryPendingRevocations(): Promise<void> {
+  if (retryingRevocations) return;
+  retryingRevocations = true;
+  try {
+    const { retryMountRevocations } = await import('../drives/service');
+    const { retried, failed } = await retryMountRevocations();
+    if (retried) console.info(`[drives] revocation retry: ${retried} sandbox(es), ${failed} still pending`);
+  } finally {
+    retryingRevocations = false;
+  }
+}
+
 export function startDriveWorkers(): void {
   if (!driveStorageAvailable()) return;
   if (!scanTimer) {
@@ -84,11 +104,20 @@ export function startDriveWorkers(): void {
       );
     }, DRAIN_MS);
   }
+  if (!revocationTimer) {
+    revocationTimer = setInterval(() => {
+      runWorkerTick('drive-mount-revocations', retryPendingRevocations).catch((err) =>
+        console.warn('[drives] revocation retry pass failed:', err),
+      );
+    }, REVOCATION_TICK_MS);
+  }
 }
 
 export function stopDriveWorkers(): void {
   if (scanTimer) clearInterval(scanTimer);
   if (drainTimer) clearInterval(drainTimer);
+  if (revocationTimer) clearInterval(revocationTimer);
   scanTimer = null;
   drainTimer = null;
+  revocationTimer = null;
 }

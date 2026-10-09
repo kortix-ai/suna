@@ -307,6 +307,25 @@ describe('drive sync data safety', () => {
     expect(fake.read(DRIVE, copy)).toBe('mine')
   })
 
+  test('a drive edit landing between the listing and a delete from here is kept, not deleted', async () => {
+    fake.write(DRIVE, '/report.md', 'v1')
+    const sync = mount()
+    await sync.cycle()
+    unlinkSync(local('report.md'))
+    // Someone edits the file on the drive after this box listed it, right
+    // before its delete reaches the API.
+    fake.beforeWrite = (driveId, path) => {
+      if (path !== '/report.md') return
+      fake.write(driveId, path, 'v2 from the web')
+      fake.beforeWrite = null
+    }
+    const stats = await sync.cycle()
+    expect(stats.deletedRemote).toBe(0)
+    expect(fake.read(DRIVE, '/report.md')).toBe('v2 from the web')
+    // The drive's newer version comes back here instead of being lost.
+    expect(read('report.md')).toBe('v2 from the web')
+  })
+
   test('the same race on a block upload is refused at commit, and both versions are kept', async () => {
     const big = new Uint8Array(9 * 1024 * 1024).fill(7)
     fake.write(DRIVE, '/big.bin', big)

@@ -389,8 +389,19 @@ export class MountSync {
         }
         if (!l && r) {
           if (m && !there && writable) {
-            // Deleted here, untouched on the drive.
-            await this.opts.remote.remove(this.remotePath(rel))
+            // Deleted here, untouched on the drive: conditional on the version
+            // both sides last agreed on. A change that lands on the drive after
+            // the listing is refused by the API (409) and pulled back: a change
+            // wins over a delete.
+            try {
+              await this.opts.remote.remove(this.remotePath(rel), m.rv)
+            } catch (err) {
+              if (!(err instanceof RemoteChanged)) throw err
+              await this.refreshRemote(true)
+              const now = this.remoteFiles.get(rel)
+              if (now && (await this.pull(rel, now, null))) stats.pulled++
+              continue
+            }
             remote.delete(rel)
             this.manifest.delete(rel)
             stats.deletedRemote++

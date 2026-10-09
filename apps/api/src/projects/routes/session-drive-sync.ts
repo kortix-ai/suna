@@ -1,15 +1,15 @@
 import { sessionSandboxes } from '@kortix/db';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { normalizeDrivePath } from '../../drives/access';
 import { noteDriveWrite } from '../../drives/conflicts';
 import {
   type DriveRow,
   type RecordedDriveMount,
+  authorizedSyncMounts,
   getDrive,
   openVolumeFor,
   readDriveVolume,
-  recordedDriveMounts,
   sessionDriveNotes,
   writeDriveVolume,
 } from '../../drives/service';
@@ -38,6 +38,12 @@ import { projectsApp } from '../lib/app';
 // is live, only for the drives recorded on its row, only inside the folder
 // each one covers, and a write only through a read-write drive. The box never
 // sees the storage credential: these routes call storage for it.
+//
+// What a sandbox recorded is not the last word: while a revocation has not
+// reached its mounts (drives/service.ts authorizedSyncMounts), only what the
+// session may use now is honored. A block upload is authorized by the paths
+// its plan named, kept on the sandbox row, and every one is checked again at
+// each block and at the commit.
 
 const MAX_PUT_BYTES = 64 * 1024 * 1024;
 const BLOCK_BYTES = 1024 * 1024;
@@ -51,6 +57,53 @@ interface SyncScope {
   accountId: string;
   mounts: RecordedDriveMount[];
   synced: boolean;
+  uploads: Record<string, UploadPlanRecord>;
+}
+
+/** session_sandboxes metadata: the block uploads this box planned, by upload id. */
+const SYNC_UPLOADS_KEY = 'driveSyncUploads';
+/** A plan never committed (a box that died mid-upload) is dropped after this. */
+const UPLOAD_PLAN_TTL_MS = 24 * 60 * 60_000;
+
+interface UploadPlanRecord {
+  driveId: string;
+  paths: string[];
+  at: string;
+}
+
+function uploadPlans(metadata: unknown): Record<string, UploadPlanRecord> {
+  const raw = (metadata as Record<string, unknown> | null | undefined)?.[SYNC_UPLOADS_KEY];
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const out: Record<string, UploadPlanRecord> = {};
+  for (const [id, v] of Object.entries(raw as Record<string, unknown>)) {
+    const r = v as Partial<UploadPlanRecord> | null;
+    if (r && typeof r.driveId === 'string' && Array.isArray(r.paths) && r.paths.every((p) => typeof p === 'string')) {
+      out[id] = { driveId: r.driveId, paths: r.paths as string[], at: typeof r.at === 'string' ? r.at : '' };
+    }
+  }
+  return out;
+}
+
+/** Record a plan on the sandbox row, in one statement (concurrent plans keep each other), dropping expired ones. */
+async function rememberUploadPlan(sandboxId: string, uploadId: string, plan: UploadPlanRecord): Promise<void> {
+  const live = sql`(
+    SELECT coalesce(jsonb_object_agg(e.key, e.value), '{}'::jsonb)
+      FROM jsonb_each(coalesce(${sessionSandboxes.metadata} -> ${SYNC_UPLOADS_KEY}, '{}'::jsonb)) e
+     WHERE (e.value ->> 'at') > ${new Date(Date.now() - UPLOAD_PLAN_TTL_MS).toISOString()}
+  )`;
+  await db
+    .update(sessionSandboxes)
+    .set({
+      metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || jsonb_build_object(${SYNC_UPLOADS_KEY}::text, ${live} || ${JSON.stringify({ [uploadId]: plan })}::jsonb)`,
+    })
+    .where(eq(sessionSandboxes.sandboxId, sandboxId));
+}
+
+async function forgetUploadPlan(sandboxId: string, uploadId: string): Promise<void> {
+  await db
+    .update(sessionSandboxes)
+    .set({ metadata: sql`${sessionSandboxes.metadata} #- ${`{${SYNC_UPLOADS_KEY},${uploadId}}`}::text[]` })
+    .where(eq(sessionSandboxes.sandboxId, sandboxId));
 }
 
 function refuse(c: Ctx, status: 400 | 403 | 404 | 413, error: string): Response {
@@ -69,6 +122,8 @@ async function scopeOf(c: Ctx): Promise<SyncScope | Response> {
   const [row] = await db
     .select({
       sandboxId: sessionSandboxes.sandboxId,
+      sessionId: sessionSandboxes.sessionId,
+      projectId: sessionSandboxes.projectId,
       provider: sessionSandboxes.provider,
       metadata: sessionSandboxes.metadata,
     })
@@ -86,8 +141,9 @@ async function scopeOf(c: Ctx): Promise<SyncScope | Response> {
   return {
     sandboxId: row.sandboxId,
     accountId,
-    mounts: recordedDriveMounts(row.metadata),
+    mounts: await authorizedSyncMounts({ ...row, accountId }),
     synced: isDriveSyncBox(row),
+    uploads: uploadPlans(row.metadata),
   };
 }
 
@@ -163,17 +219,27 @@ async function conditionalWrite<T>(
   });
 }
 
-/** The drive, when the session writes any part of it (the block and commit calls of a checked plan). */
-async function anyWritable(c: Ctx): Promise<DriveRow | Response> {
+/**
+ * The block upload this box planned on this drive, with every path it writes
+ * checked again against what the session may write now: a mount turned
+ * read-only, or a folder taken away, since the plan refuses its blocks and its commit.
+ */
+async function planFor(c: Ctx): Promise<{ scope: SyncScope; drive: DriveRow; plan: UploadPlanRecord } | Response> {
   const scope = await scopeOf(c);
   if (scope instanceof Response) return scope;
   const driveId = param(c, 'driveId');
-  if (!scope.synced || !isUuid(driveId) || !scope.mounts.some((m) => m.driveId === driveId && !m.readOnly)) {
-    return refuse(c, 403, 'This drive is read-only in this session');
+  const plan = scope.uploads[param(c, 'uploadId')];
+  if (!scope.synced || !isUuid(driveId) || !plan || plan.driveId !== driveId) {
+    return refuse(c, 404, 'Upload not found');
+  }
+  for (const path of plan.paths) {
+    if (!syncMountAllows(scope.mounts, driveId, path, 'write')) {
+      return refuse(c, 403, 'This drive is read-only in this session');
+    }
   }
   const drive = await getDrive(driveId);
   if (!drive || drive.accountId !== scope.accountId) return refuse(c, 404, 'Drive not found');
-  return drive;
+  return { scope, drive, plan };
 }
 
 export function registerSessionDriveSyncRoutes(): void {
@@ -182,7 +248,12 @@ export function registerSessionDriveSyncRoutes(): void {
     const scope = await scopeOf(c);
     if (scope instanceof Response) return scope;
     if (!scope.synced) return c.json({ ready: false, mounts: [], notes: null });
-    const { mounts, text } = await sessionDriveNotes(param(c, 'sessionId'));
+    const { mounts: recorded, text } = await sessionDriveNotes(param(c, 'sessionId'));
+    // Only what the session may use now: a revoked folder leaves the box's sync at once.
+    const mounts = recorded.flatMap((m) => {
+      const allowed = scope.mounts.find((a) => a.mountPath === m.mountPath);
+      return allowed ? [{ ...m, readOnly: allowed.readOnly }] : [];
+    });
     return c.json({
       ready: true,
       mounts: mounts.map((m) => ({
@@ -285,15 +356,25 @@ export function registerSessionDriveSyncRoutes(): void {
       target = got;
     }
     const drive = target!.drive;
+    const scope = await scopeOf(c);
+    if (scope instanceof Response) return scope;
     const r = await storage(c, async () => planVolumeUpload(await openVolumeFor(drive), { ...plan, overwrite: true }));
     if (r instanceof Response) return r;
+    const uploadId = (r as { upload_id?: unknown }).upload_id;
+    if (typeof uploadId !== 'string' || !uploadId) return refuse(c, 400, 'Invalid upload plan');
+    await rememberUploadPlan(scope.sandboxId, uploadId, {
+      driveId: drive.driveId,
+      paths: plan.files.map((f) => f.path as string),
+      at: new Date().toISOString(),
+    });
     return c.json(r as Record<string, unknown>);
   });
 
   projectsApp.put(`${base}/:driveId/files/upload/:uploadId/blocks/:sha`, async (c: Ctx) => {
-    // The plan checked every path; a block only lands for a plan of this drive.
-    const drive = await anyWritable(c);
-    if (drive instanceof Response) return drive;
+    // A block lands only for a plan this box made, while every path it writes is still writable.
+    const planned = await planFor(c);
+    if (planned instanceof Response) return planned;
+    const { drive } = planned;
     const sha = param(c, 'sha');
     if (!/^[0-9a-f]{64}$/.test(sha)) return refuse(c, 400, 'Invalid block');
     const body = new Uint8Array(await c.req.arrayBuffer());
@@ -304,22 +385,26 @@ export function registerSessionDriveSyncRoutes(): void {
   });
 
   projectsApp.post(`${base}/:driveId/files/upload/:uploadId/commit`, async (c: Ctx) => {
-    const drive = await anyWritable(c);
-    if (drive instanceof Response) return drive;
+    const planned = await planFor(c);
+    if (planned instanceof Response) return planned;
+    const { drive, plan, scope } = planned;
     // `path` + `expect`: the file the plan writes and the version it was based on.
     const target = c.req.query('path');
     let path: string | null = null;
     if (target !== undefined) {
-      const got = await driveFor(c, 'write', target);
-      if (got instanceof Response) return got;
-      path = got.path;
+      path = normalizeDrivePath(target);
+      if (!path || !plan.paths.includes(path)) return refuse(c, 400, 'The upload plan does not write this path');
     }
-    const commit = () => commitVolumeUpload(drive.platinumVolumeName, param(c, 'uploadId'));
+    const uploadId = param(c, 'uploadId');
+    const commit = () => commitVolumeUpload(drive.platinumVolumeName, uploadId);
     const r = await storage(c, () =>
       path ? conditionalWrite(drive, path, c.req.query('expect'), commit) : commit(),
     );
     if (r instanceof Response) return r;
     if (r === REMOTE_CHANGED) return remoteChanged(c);
+    await forgetUploadPlan(scope.sandboxId, uploadId).catch((err) =>
+      console.warn(`[drive-sync] forgetting upload ${uploadId} failed:`, err instanceof Error ? err.message : err),
+    );
     noteDriveWrite(drive.driveId);
     return c.json(r as Record<string, unknown>);
   });
@@ -341,10 +426,15 @@ export function registerSessionDriveSyncRoutes(): void {
     const got = await driveFor(c, 'write', c.req.query('path'));
     if (got instanceof Response) return got;
     if (got.path === '/') return refuse(c, 400, 'The drive root cannot be removed');
+    // `expect`: the version the box saw when it decided to delete. A change on
+    // the drive since then is kept: the delete answers 409 and the box pulls it back.
     const r = await storage(c, () =>
-      readDriveVolume(got.drive, (volume) => removeVolumeFile(volume, got.path, c.req.query('recursive') === 'true'), () => undefined),
+      conditionalWrite(got.drive, got.path, c.req.query('expect'), () =>
+        readDriveVolume(got.drive, (volume) => removeVolumeFile(volume, got.path, c.req.query('recursive') === 'true'), () => undefined),
+      ),
     );
     if (r instanceof Response) return r;
+    if (r === REMOTE_CHANGED) return remoteChanged(c);
     noteDriveWrite(got.drive.driveId);
     return c.json({ ok: true });
   });

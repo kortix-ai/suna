@@ -34,7 +34,11 @@ export interface DriveRemote {
    * moved. Returns the version storage gave it, when it says.
    */
   upload(path: string, src: string, expect: string): Promise<{ version: string | null; sha256: string }>
-  remove(path: string): Promise<void>
+  /**
+   * Delete `path` only if the drive's file is still `expect` ("size:mtime");
+   * throws {@link RemoteChanged} when it changed since this box read it.
+   */
+  remove(path: string, expect: string): Promise<void>
   move(src: string, dst: string): Promise<void>
 }
 
@@ -222,8 +226,8 @@ export function createHttpDriveSyncApi(opts: {
         }
         return { version: null, sha256: whole.digest('hex') }
       },
-      async remove(path) {
-        await req(`${d}/files${q({ path, recursive: 'false' })}`, { method: 'DELETE' }, [404])
+      async remove(path, expect) {
+        await req(`${d}/files${q({ path, recursive: 'false', expect })}`, { method: 'DELETE' }, [404])
       },
       async move(src, dst) {
         await req(`${d}/files/move`, {

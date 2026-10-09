@@ -39,6 +39,7 @@ import {
 import {
   type DriveRow,
   driveStats,
+  type EnforceProgress,
   enforceDriveMounts,
   ensurePersonalFolder,
   ensureProjectDrive,
@@ -144,6 +145,8 @@ const DriveVersionSchema = z
   .openapi('DriveVersion');
 
 const DriveParams = z.object({ driveId: z.string() });
+/** Sessions whose mounts a sharing change has not reached yet (see enforceProject). */
+const PendingSchema = z.object({ pendingSessions: z.number() });
 const PathQuery = z.object({ path: z.string().optional() });
 
 function fail(status: 400 | 403 | 404 | 409 | 413 | 503, message: string, code?: string): never {
@@ -295,11 +298,27 @@ function versionAuthor(commit: VolumeCommit): z.infer<typeof DriveVersionSchema>
   return 'system';
 }
 
-/** Running sessions of the project pick up a sharing change at once, and stopped ones never come back with more. */
-function enforceProject(drive: DriveRow): void {
-  void enforceDriveMounts({ projectId: drive.projectId! }).catch((err) =>
-    console.error('[drives] enforcing folder access failed:', err),
-  );
+/** How long a sharing change waits for running sessions before it answers. */
+const ENFORCE_ANSWER_BUDGET_MS = 10_000;
+
+/**
+ * Running sessions of the project pick up a sharing change at once, and
+ * stopped ones never come back with more. Answers with how many sessions are
+ * not in line yet: those are recorded, fenced at the API and retried by the
+ * drive worker, so a caller is never told a revocation landed when it did not.
+ */
+async function enforceProject(drive: DriveRow): Promise<number> {
+  const progress: EnforceProgress = { total: 0, done: 0, failed: 0 };
+  const run = enforceDriveMounts({ projectId: drive.projectId! }, { progress }).catch((err) => {
+    console.error('[drives] enforcing folder access failed:', err);
+    return null;
+  });
+  const finished = await Promise.race([
+    run.then(() => true),
+    new Promise<false>((resolve) => setTimeout(() => resolve(false), ENFORCE_ANSWER_BUDGET_MS).unref?.()),
+  ]);
+  if (finished) return progress.failed;
+  return progress.failed + Math.max(0, progress.total - progress.done) || 1;
 }
 
 /** The agents a project declares that start sessions (subagents never own one). Best effort. */
@@ -575,7 +594,10 @@ drivesApp.openapi(
       params: DriveParams,
       body: { required: true, content: { 'application/json': { schema: z.object({ from: z.string(), to: z.string() }) } } },
     },
-    responses: { 200: json(z.object({ from: z.string(), to: z.string() }), 'Moved'), ...errors(400, 401, 403, 404, 409, 503) },
+    responses: {
+      200: json(z.object({ from: z.string(), to: z.string(), pendingSessions: z.number().optional() }), 'Moved'),
+      ...errors(400, 401, 403, 404, 409, 503),
+    },
   }),
   async (c: any) => {
     const caller = await loadDrive(c);
@@ -590,9 +612,9 @@ drivesApp.openapi(
     // Moving a shared folder changes who can reach it: only someone who may change its sharing.
     if (caller.grants.some((g) => g.source !== 'system' && pathWithinFolder(g.path, from))) need(caller, from, 'manage');
     await withStorage(() => readDriveVolume(caller.drive, (volume) => moveVolumeFile(volume, from, to), notFound));
-    if (await moveGrants(caller.drive, from, to)) enforceProject(caller.drive);
+    const pendingSessions = (await moveGrants(caller.drive, from, to)) ? await enforceProject(caller.drive) : 0;
     noteDriveWrite(caller.drive.driveId);
-    return c.json({ from, to });
+    return c.json({ from, to, ...(pendingSessions ? { pendingSessions } : {}) });
   },
 );
 
@@ -606,7 +628,11 @@ drivesApp.openapi(
     description: 'A folder with contents needs `recursive=true`. Its sharing goes with it.',
     ...auth,
     request: { params: DriveParams, query: z.object({ path: z.string(), recursive: z.string().optional() }) },
-    responses: { 204: { description: 'Deleted' }, ...errors(400, 401, 403, 404, 409, 503) },
+    responses: {
+      204: { description: 'Deleted' },
+      202: json(PendingSchema, 'Deleted; running sessions not yet in line with its sharing'),
+      ...errors(400, 401, 403, 404, 409, 503),
+    },
   }),
   async (c: any) => {
     const caller = await loadDrive(c);
@@ -618,8 +644,9 @@ drivesApp.openapi(
     const recursive = c.req.query('recursive') === 'true' || c.req.query('recursive') === '1';
     await withStorage(() => readDriveVolume(caller.drive, (volume) => removeVolumeFile(volume, path, recursive), notFound));
     for (const g of shared) await removeFolderGrant(caller.drive, g.grantId!);
-    if (shared.length) enforceProject(caller.drive);
+    const pendingSessions = shared.length ? await enforceProject(caller.drive) : 0;
     noteDriveWrite(caller.drive.driveId);
+    if (pendingSessions) return c.json({ pendingSessions }, 202);
     return c.body(null, 204);
   },
 );
@@ -712,7 +739,10 @@ drivesApp.openapi(
       'Running sessions pick the change up at once.',
     ...auth,
     request: { params: DriveParams, body: { required: true, content: { 'application/json': { schema: ShareBody } } } },
-    responses: { 200: json(z.object({ grantId: z.string() }), 'Shared'), ...errors(400, 401, 403, 404) },
+    responses: {
+      200: json(z.object({ grantId: z.string(), pendingSessions: z.number().optional() }), 'Shared'),
+      ...errors(400, 401, 403, 404),
+    },
   }),
   async (c: any) => {
     const caller = await loadDrive(c);
@@ -757,8 +787,8 @@ drivesApp.openapi(
       level: body.level,
       grantedBy: caller.userId,
     });
-    enforceProject(drive);
-    return c.json({ grantId });
+    const pendingSessions = await enforceProject(drive);
+    return c.json({ grantId, ...(pendingSessions ? { pendingSessions } : {}) });
   },
 );
 
@@ -772,7 +802,11 @@ drivesApp.openapi(
     description: 'Running sessions that no longer reach the folder lose it at once; later ones never mount it.',
     ...auth,
     request: { params: z.object({ driveId: z.string(), grantId: z.string() }) },
-    responses: { 204: { description: 'Removed' }, ...errors(400, 401, 403, 404) },
+    responses: {
+      204: { description: 'Removed' },
+      202: json(PendingSchema, 'Removed; running sessions not yet in line'),
+      ...errors(400, 401, 403, 404),
+    },
   }),
   async (c: any) => {
     const caller = await loadDrive(c);
@@ -784,7 +818,10 @@ drivesApp.openapi(
     }
     need(caller, grant.path, 'manage');
     await removeFolderGrant(caller.drive, grantId);
-    enforceProject(caller.drive);
+    const pendingSessions = await enforceProject(caller.drive);
+    // 202: the grant is gone, but a running session still mounts the folder
+    // until its detach lands (retried by the drive worker, refused at the API meanwhile).
+    if (pendingSessions) return c.json({ pendingSessions }, 202);
     return c.body(null, 204);
   },
 );

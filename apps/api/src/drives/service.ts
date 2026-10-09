@@ -12,8 +12,8 @@
 // folders it was given (a mount cannot hide part of itself from a box whose
 // agent can become root).
 
-import { accountMembers, driveConflicts, drives, iamRoles, projectSessions, roleAssignments, serviceAccounts, sessionSandboxes } from '@kortix/db';
-import { and, asc, count, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
+import { accountMembers, driveConflicts, driveMountRevocations, drives, iamRoles, projectSessions, roleAssignments, serviceAccounts, sessionSandboxes } from '@kortix/db';
+import { and, asc, count, eq, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
 import { SYSTEM_ACTOR, assignRole, revokeAssignment } from '../iam/assignments';
 import { resolvePrincipal } from '../iam/authorize';
@@ -869,6 +869,8 @@ export async function reconcileSessionDrives(sessionId: string): Promise<void> {
       agentName: row.agentName,
       driveId: drive.driveId,
     });
+    const box = await sessionSandboxRow(sessionId);
+    if (box) await clearMountRevocation(box.sandboxId);
     await refreshDriveNotes(sessionId);
   } catch (err) {
     console.warn(`[drives] reconciling the files of session ${sessionId} failed:`, err instanceof Error ? err.message : err);
@@ -1018,7 +1020,8 @@ const ENFORCE_CONCURRENCY = 4;
  * Never throws; failures are logged loudly and counted, and the next resume reconciles again.
  */
 export async function enforceDriveMounts(
-  scope: { driveIds: string[] } | { accountId: string } | { projectId: string },
+  scope: { driveIds: string[] } | { accountId: string } | { projectId: string } | { sandboxIds: string[] },
+  opts: { progress?: EnforceProgress } = {},
 ): Promise<{ sessions: number; failed: number }> {
   let rows: Array<{
     sandboxId: string;
@@ -1034,7 +1037,11 @@ export async function enforceDriveMounts(
   }>;
   try {
     const where =
-      'driveIds' in scope
+      'sandboxIds' in scope
+        ? scope.sandboxIds.length
+          ? inArray(sessionSandboxes.sandboxId, scope.sandboxIds)
+          : sql`false`
+        : 'driveIds' in scope
         ? scope.driveIds.length
           ? or(
               ...scope.driveIds.map(
@@ -1073,10 +1080,31 @@ export async function enforceDriveMounts(
       .where(where);
   } catch (err) {
     console.error('[drives] finding the sessions to bring in line with folder access failed:', err);
+    if (opts.progress) opts.progress.failed++;
     return { sessions: 0, failed: 1 };
   }
+  if (opts.progress) opts.progress.total = rows.length;
   let failed = 0;
-  const one = async (row: (typeof rows)[number]) => {
+  // A row is either brought in line (its pending revocation, if any, cleared)
+  // or recorded as pending: fenced at the API and retried by the drive worker.
+  const one = async (row: (typeof rows)[number]): Promise<void> => {
+    const before = failed;
+    try {
+      await bringInLine(row);
+    } catch (err) {
+      failed++;
+      console.error(`[drives] REVOCATION: session ${row.sessionId} failed:`, err);
+    }
+    const rowFailed = failed > before;
+    if (opts.progress) {
+      opts.progress.done++;
+      if (rowFailed) opts.progress.failed++;
+    }
+    await (rowFailed ? recordMountRevocation(row.sandboxId, 'mounts not brought in line') : clearMountRevocation(row.sandboxId)).catch(
+      (err) => console.error(`[drives] REVOCATION: recording the state of ${row.sandboxId} failed:`, err),
+    );
+  };
+  const bringInLine = async (row: (typeof rows)[number]): Promise<void> => {
     if (!(await sessionDrivesEnabled(row.projectId))) return;
     const base = {
       accountId: row.accountId,
@@ -1094,7 +1122,7 @@ export async function enforceDriveMounts(
       } catch (err) {
         failed++;
         console.error(
-          `[drives] REVOCATION: folders could not be brought in line in running session ${row.sessionId}; it reconciles on the next resume:`,
+          `[drives] REVOCATION: folders could not be brought in line in running session ${row.sessionId}; retried by the drive worker:`,
           err instanceof Error ? err.message : err,
         );
       }
@@ -1126,15 +1154,113 @@ export async function enforceDriveMounts(
   const queue = [...rows];
   await Promise.all(
     Array.from({ length: Math.min(ENFORCE_CONCURRENCY, queue.length) }, async () => {
-      for (let row = queue.shift(); row; row = queue.shift()) {
-        await one(row).catch((err) => {
-          failed++;
-          console.error(`[drives] REVOCATION: session ${row!.sessionId} failed:`, err);
-        });
-      }
+      for (let row = queue.shift(); row; row = queue.shift()) await one(row);
     }),
   );
   return { sessions: rows.length, failed };
+}
+
+/** Live progress of one {@link enforceDriveMounts} pass, for a caller that answers before it ends. */
+export interface EnforceProgress {
+  total: number;
+  done: number;
+  failed: number;
+}
+
+const REVOCATION_RETRY_MS = 15_000;
+const REVOCATION_MAX_BACKOFF_MS = 10 * 60_000;
+
+/** Record that this sandbox still mounts more than its session may use now. */
+async function recordMountRevocation(sandboxId: string, error: string): Promise<void> {
+  await db
+    .insert(driveMountRevocations)
+    .values({ sandboxId, lastError: error.slice(0, 500), notBefore: new Date(Date.now() + REVOCATION_RETRY_MS) })
+    .onConflictDoUpdate({
+      target: driveMountRevocations.sandboxId,
+      set: {
+        attempts: sql`${driveMountRevocations.attempts} + 1`,
+        lastError: error.slice(0, 500),
+        notBefore: sql`now() + least(${REVOCATION_MAX_BACKOFF_MS}::int, ${REVOCATION_RETRY_MS}::int * power(2, least(${driveMountRevocations.attempts}, 10))::int) * interval '1 millisecond'`,
+      },
+    });
+}
+
+async function clearMountRevocation(sandboxId: string): Promise<void> {
+  await db.delete(driveMountRevocations).where(eq(driveMountRevocations.sandboxId, sandboxId));
+}
+
+/** True while this sandbox has a revocation that has not reached its mounts. */
+export async function mountRevocationPending(sandboxId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ sandboxId: driveMountRevocations.sandboxId })
+    .from(driveMountRevocations)
+    .where(eq(driveMountRevocations.sandboxId, sandboxId))
+    .limit(1);
+  return !!row;
+}
+
+/**
+ * Run the due revocation retries: each sandbox is brought in line again, and
+ * stays recorded (with backoff) until that lands. Scheduler leader only.
+ */
+export async function retryMountRevocations(limit = 20): Promise<{ retried: number; failed: number }> {
+  const due = await db
+    .select({ sandboxId: driveMountRevocations.sandboxId })
+    .from(driveMountRevocations)
+    .where(lte(driveMountRevocations.notBefore, new Date()))
+    .orderBy(asc(driveMountRevocations.notBefore))
+    .limit(limit);
+  if (!due.length) return { retried: 0, failed: 0 };
+  const sandboxIds = due.map((d) => d.sandboxId);
+  const result = await enforceDriveMounts({ sandboxIds });
+  // A sandbox with nothing left to enforce (no mounts, gone) is in line.
+  if (result.sessions < sandboxIds.length) {
+    const rows = await db
+      .select({ sandboxId: sessionSandboxes.sandboxId })
+      .from(sessionSandboxes)
+      .where(inArray(sessionSandboxes.sandboxId, sandboxIds));
+    const present = new Set(rows.map((r) => r.sandboxId));
+    for (const id of sandboxIds) if (!present.has(id)) await clearMountRevocation(id);
+  }
+  return { retried: sandboxIds.length, failed: result.failed };
+}
+
+/**
+ * The recorded mounts the sync routes may honor for this sandbox. Normally
+ * what it mounted; while a revocation is pending, only what the session may
+ * still use now (and read-only where it lost write), so a detach that has not
+ * landed yet grants nothing through the API.
+ */
+export async function authorizedSyncMounts(row: {
+  sandboxId: string;
+  sessionId: string;
+  accountId: string;
+  projectId: string;
+  metadata: unknown;
+}): Promise<RecordedDriveMount[]> {
+  const mounts = recordedDriveMounts(row.metadata);
+  if (!mounts.length || !(await mountRevocationPending(row.sandboxId))) return mounts;
+  const [session] = await db
+    .select({ createdBy: projectSessions.createdBy, agentName: projectSessions.agentName })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, row.sessionId))
+    .limit(1);
+  if (!session) return [];
+  const plan = await planSessionDrives({
+    accountId: row.accountId,
+    projectId: row.projectId,
+    sessionId: row.sessionId,
+    bootingUserId: session.createdBy,
+    agentName: session.agentName,
+    slots: Number.MAX_SAFE_INTEGER,
+  });
+  const out: RecordedDriveMount[] = [];
+  for (const m of mounts) {
+    const still = plan.mounts.filter((w) => w.path === (m.subdir ?? '/'));
+    if (!still.length) continue;
+    out.push(m.readOnly || still.some((w) => !w.readOnly) ? m : { ...m, readOnly: true });
+  }
+  return out;
 }
 
 /**

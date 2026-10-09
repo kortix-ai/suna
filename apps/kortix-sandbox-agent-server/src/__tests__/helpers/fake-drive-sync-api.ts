@@ -161,6 +161,7 @@ export function startFakeDriveSyncApi(): FakeDriveSyncApi {
         return Response.json({ path, size: f.data.byteLength, version: f.version })
       }
       if (sub === '/files' && req.method === 'DELETE') {
+        if (stale(path)) return changed()
         d.files.delete(path)
         d.head++
         return Response.json({ ok: true })

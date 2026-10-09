@@ -55,6 +55,7 @@ const WORKERS: Record<string, string> = {
   'teams-turn-gc': 'workers/teams-turn-gc-worker.ts',
   'drive-conflict-scan': 'workers/drive-worker.ts',
   'volume-deletions': 'workers/drive-worker.ts',
+  'drive-mount-revocations': 'workers/drive-worker.ts',
   'notification-digest': 'workers/notification-worker.ts',
 };
 
