@@ -780,7 +780,9 @@ export function registerTriggersRoutes(): void {
       },
       responses: {
         202: json(TriggerFireResultSchema, 'Queued or fired'),
-        ...errors(403, 404, 500),
+        // 402: the account has no usable model — the fire gates instead of
+        // minting a session that would fail on its first turn.
+        ...errors(402, 403, 404, 500),
       },
     }),
     async (c) => {
@@ -890,6 +892,11 @@ export function registerTriggersRoutes(): void {
         // drain only if it dead-letters.
         if (!result.requeued) {
           await raiseTriggerAlert({ projectId, accountId: loaded.row.accountId, slug, source: 'fire', error });
+        }
+        // The model gate is account state, not a server fault: answer the
+        // billing gate's convention (402 + a machine-readable code).
+        if (result.errorCode === 'no_usable_model') {
+          return c.json({ error, code: 'no_usable_model' }, 402);
         }
         return c.json({ error }, 500);
       }
