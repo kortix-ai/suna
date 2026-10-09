@@ -1,5 +1,5 @@
 {
-  "source_hash": "ae4363780b55e1f39bb3db2c1835c61ec1d6333b85c50359b5c021256b4459a8",
+  "source_hash": "215f75c665332472e0521ce43a62d992042a55fa0233a556456666cc760111ba",
   "diff_files": [
     "apps/api/src/projects/git/merge-diff.test.ts",
     "apps/api/src/projects/git/merge.ts",
@@ -19,13 +19,13 @@
     "apps/web/translations/zh.json",
     "packages/sdk/src/core/rest/projects-client/change-requests.ts"
   ],
-  "diff_hash": "70e9a39ec2c35613f399338705c61e604dfc5fe8687a086fe291db3bff8383c0",
-  "head": "b8cde7229ad2200e7073f1293e2abc957432d796",
-  "passed": false,
+  "diff_hash": "ffc2ad27582c0177a80077fbf38a049576fb81622007853b42e7854294221421",
+  "head": "7ce825a0b4cac5d252c608026490122c884d9957",
+  "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "fail",
-    "db-suites": "fail"
+    "packages": "pass",
+    "db-suites": "pass"
   },
-  "at": "2026-10-09T17:04:31.748Z"
+  "at": "2026-10-09T18:44:22.556Z"
 }
