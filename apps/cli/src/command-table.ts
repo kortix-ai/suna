@@ -168,6 +168,11 @@ export const TIERS: readonly CommandTier[] = [
             blurb: 'Default agent, per-agent model pin, scope and full configuration',
           },
           {
+            name: 'tools',
+            args: '<subcommand>',
+            blurb: "List the project's tools (ls); copy a Kortix tool to change it (eject)",
+          },
+          {
             name: 'models',
             args: '<subcommand>',
             blurb: 'Choose which models this project offers, and its default model',

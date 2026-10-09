@@ -437,7 +437,7 @@ export class PiRuntime {
         retryPlan: (message) => retryStatus(this.turnRetry?.plan(message)),
         recovers: (message) => this.recovers(message),
       })
-      const hosted = await loadTools(this.projectRoot(), this.compiled?.project_tools)
+      const hosted = await loadTools(this.projectRoot(), this.compiled)
       this.workspaceTools = createWorkspaceTools(this.workspace, hosted.tools, () => ({ sessionId: this.sessionId, agent: this.agentName }))
       // The root agent runs parallel-capable; every built-in tool pins its batch to sequential,
       // so only a batch made entirely of parallel tools (task calls) runs concurrently.

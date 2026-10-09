@@ -141,7 +141,7 @@ flow(
       read.status(200).body().has('$.provider.domain_verified', true).exists('$.provider.domain_verified_at');
     });
 
-    await ctx.step('on the verified domain SSO is enforced: check-email says sso, password and email-code sign-in → 403', async () => {
+    await ctx.step('on the verified domain SSO is enforced: check-email says sso, password and email-code sign-in and a new sign-up → 403', async () => {
       const mode = await checkEmailMode(ctx, email);
       if (mode !== 'sso') throw new Error(`expected sso for a verified enforced domain, got ${mode}`);
       (await ctx.client.as(ctx.P.ANON).post('/v1/auth/sign-in/password', { email, password }))
@@ -149,6 +149,11 @@ flow(
         .body()
         .has('$.error', 'sso_required');
       (await ctx.client.as(ctx.P.ANON).post('/v1/auth/sign-in/magic-link', { email, create_user: false }))
+        .status(403)
+        .body()
+        .has('$.error', 'sso_required');
+      // KRTX-1716: the API sign-up door follows the same rule as the web form.
+      (await ctx.client.as(ctx.P.ANON).post('/v1/auth/signup', { email: `newcomer@${domain}`, password }))
         .status(403)
         .body()
         .has('$.error', 'sso_required');

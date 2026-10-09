@@ -9,16 +9,16 @@
 
 import * as React from 'react';
 import { TextInput, type TextStyle } from 'react-native';
-import { useColorScheme } from 'nativewind';
 import { MONO_FONT_FAMILY } from '@/lib/utils/mono-font';
 import { THEME } from '@/lib/utils/theme';
+import { useThemePalette } from '@/lib/utils/use-theme-palette';
 
 /** Matches `Button size="lg"` (h-11, 44pt), so fields and buttons stack flush. */
-export const PILL_INPUT_HEIGHT = 44;
+const PILL_INPUT_HEIGHT = 44;
 
 /**
  * Input text: one size, one family, one weight for every text field in the
- * app (`Input`, `PillInput`, `SheetTextInput`, `SearchHeader`, `SearchBar`).
+ * app (`Input`, `PillInput`, `SheetTextInput`, `SearchHeader`)
  * 16pt — the iOS body size, and the size below which mobile browsers zoom a
  * focused field. `Roobert-Regular` is the loaded font name; the bare family
  * name 'Roobert' does not resolve on Android and fell back to the system font.
@@ -33,8 +33,7 @@ export const INPUT_FONT_FAMILY = 'Roobert-Regular';
  * Read from THEME because neither host input receives NativeWind `className`.
  */
 export function usePillInputStyle({ height, mono }: { height: number; mono?: boolean }) {
-  const { colorScheme } = useColorScheme();
-  const c = colorScheme === 'dark' ? THEME.dark : THEME.light;
+  const c = useThemePalette();
   const style: TextStyle = {
     height,
     borderRadius: 9999,
@@ -47,7 +46,7 @@ export function usePillInputStyle({ height, mono }: { height: number; mono?: boo
   return { style, placeholderTextColor: c.mutedForeground };
 }
 
-export type PillInputProps = Omit<React.ComponentProps<typeof TextInput>, 'ref'>;
+type PillInputProps = Omit<React.ComponentProps<typeof TextInput>, 'ref'>;
 
 export const PillInput = React.forwardRef<TextInput, PillInputProps>(function PillInput(
   { style, placeholderTextColor, ...props },

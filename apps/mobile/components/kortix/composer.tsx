@@ -66,6 +66,11 @@ import { useDictation } from '@/hooks/useDictation';
  */
 export const COMPOSER_CONTROL_HIT_SLOP = 4;
 
+/** The composer's 36pt round icon controls: `icon-md`, round, 44pt touch target. */
+function ControlButton(props: React.ComponentProps<typeof Button>) {
+  return <Button size="icon-md" className="rounded-full" hitSlop={COMPOSER_CONTROL_HIT_SLOP} {...props} />;
+}
+
 /**
  * The composer card's surface: corners, hairline border, page colour, inset.
  * A view that takes the composer's slot (the session failure card) uses it so
@@ -274,24 +279,18 @@ export function Composer({
               exiting={ROW_OUT}
               style={ROW_LAYER}
               className="flex-row items-center gap-2">
-              <Button
+              <ControlButton
                 variant="secondary"
-                size="icon-md"
-                className="rounded-full"
-                hitSlop={COMPOSER_CONTROL_HIT_SLOP}
                 onPress={dictation.cancel}
                 accessibilityLabel="Cancel dictation">
                 <Icon as={X} size={18} />
-              </Button>
+              </ControlButton>
               <DictationWaveform
                 levels={dictation.levels}
                 listening={dictation.state === 'listening'}
               />
-              <Button
+              <ControlButton
                 variant="default"
-                size="icon-md"
-                className="rounded-full"
-                hitSlop={COMPOSER_CONTROL_HIT_SLOP}
                 onPress={dictation.finish}
                 disabled={dictation.state === 'stopping'}
                 accessibilityLabel="Done dictating">
@@ -300,7 +299,7 @@ export function Composer({
                 ) : (
                   <Icon as={Check} size={18} />
                 )}
-              </Button>
+              </ControlButton>
             </Animated.View>
           ) : (
             <Animated.View
@@ -310,16 +309,13 @@ export function Composer({
               style={ROW_LAYER}
               className="flex-row items-center gap-2">
               {onAttach ? (
-                <Button
+                <ControlButton
                   variant="secondary"
-                  size="icon-md"
-                  className="rounded-full"
-                  hitSlop={COMPOSER_CONTROL_HIT_SLOP}
                   onPress={onAttach}
                   disabled={disabled}
                   accessibilityLabel={attachLabel}>
                   <Icon as={Plus} size={18} />
-                </Button>
+                </ControlButton>
               ) : null}
               {chip ? (
                 <Button
@@ -342,39 +338,30 @@ export function Composer({
               {accessory}
               <View className="flex-1" />
               {showMic ? (
-                <Button
+                <ControlButton
                   variant="ghost"
-                  size="icon-md"
-                  className="rounded-full"
-                  hitSlop={COMPOSER_CONTROL_HIT_SLOP}
                   onPress={dictation.start}
                   disabled={disabled}
                   accessibilityLabel="Dictate">
                   <Icon as={Microphone} size={18} />
-                </Button>
+                </ControlButton>
               ) : null}
               {busy ? (
-                <Button
+                <ControlButton
                   variant="secondary"
-                  size="icon-md"
-                  className="rounded-full"
-                  hitSlop={COMPOSER_CONTROL_HIT_SLOP}
                   onPress={onStop}
                   accessibilityLabel="Stop">
                   <StopIcon size={12} className="text-foreground" />
-                </Button>
+                </ControlButton>
               ) : null}
               {busy && !canSend ? null : (
-                <Button
+                <ControlButton
                   variant={canSend ? 'default' : 'secondary'}
-                  size="icon-md"
-                  className="rounded-full"
-                  hitSlop={COMPOSER_CONTROL_HIT_SLOP}
                   onPress={onSubmit}
                   disabled={!canSend || sending}
                   accessibilityLabel="Send">
                   {sending ? <KortixLoader size="small" /> : <Icon as={ArrowUp} size={18} />}
-                </Button>
+                </ControlButton>
               )}
             </Animated.View>
           )}

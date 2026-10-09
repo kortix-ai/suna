@@ -9,19 +9,20 @@ import {
   projectTriggerRuntime,
   projects,
 } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
 import { clearAuthorizeCaches } from '../../iam/authorize';
 import type { GitTriggerSpec } from '../trigger-types';
 
 const fires: Array<Record<string, any>> = [];
-let fireStatus: 'fired' | 'failed' | 'deduped' = 'fired';
+let fireStatus: 'fired' | 'failed' | 'deduped' | 'throws' = 'fired';
 const actualTriggers = await import('../lib/triggers');
 mock.module('../lib/triggers', () => ({
   ...actualTriggers,
   fireGitTrigger: async (input: Record<string, any>) => {
     fires.push(input);
     if (fireStatus === 'failed') return { status: 'failed', error: 'boom' };
+    if (fireStatus === 'throws') throw new Error('sandbox unavailable');
     return { status: 'fired', sessionId: 'sess_synthetic', deduped: fireStatus === 'deduped' };
   },
 }));
@@ -138,6 +139,14 @@ const catalog = async (s: GitTriggerSpec) =>
     scheduleSpec: s as unknown as Record<string, unknown>,
   });
 const status = async (slug: string) => (await store.get(PROJECT_ID, slug))?.status;
+/** The trigger's own row: what the triggers API reports as last_status / last_error. */
+const runtime = async (slug: string) => {
+  const [row] = await testDb()
+    .select()
+    .from(projectTriggerRuntime)
+    .where(and(eq(projectTriggerRuntime.projectId, PROJECT_ID), eq(projectTriggerRuntime.slug, slug)));
+  return row;
+};
 
 describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
   beforeEach(async () => {
@@ -494,10 +503,24 @@ describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
       expect((await store.get(PROJECT_ID, 'a'))?.lastEventAt).toBeNull();
     });
 
-    test('a failed fire is counted as failed', async () => {
+    test('a failed fire is counted as failed and recorded on the trigger (KRTX-1743)', async () => {
       await armed();
       fireStatus = 'failed';
       expect((await deliverEvents('composio', [delivery()])).failed).toBe(1);
+      expect(await runtime('a')).toMatchObject({ lastStatus: 'failed', lastError: 'boom', lastFiredAt: null });
+      expect((await runtime('a'))?.lastAttemptAt).toBeInstanceOf(Date);
+    });
+
+    test('a thrown fire is recorded on the trigger, and the next good fire clears it (KRTX-1743)', async () => {
+      await armed();
+      fireStatus = 'throws';
+      expect((await deliverEvents('composio', [delivery()])).failed).toBe(1);
+      expect(await runtime('a')).toMatchObject({ lastStatus: 'failed', lastError: 'sandbox unavailable' });
+
+      fireStatus = 'fired';
+      expect((await deliverEvents('composio', [delivery({ eventId: 'msg_synthetic2' })])).fired).toBe(1);
+      expect(await runtime('a')).toMatchObject({ lastStatus: 'fired', lastError: null });
+      expect((await runtime('a'))?.lastFiredAt).toBeInstanceOf(Date);
     });
 
     test('notices mark rows error with remediation text', async () => {

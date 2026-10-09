@@ -155,6 +155,18 @@ describe('pi config releases: boot', () => {
     expect(api.storageRequests).toEqual([])
   })
 
+  test('a box with no base pin builds a release with no archive from its checkout', async () => {
+    const one = release('deploy', 'from the checkout, no pin')
+    api.respond({ status: 200, json: { ...one.descriptor, format: 'config-release-v3', archive: null, snapshot: null } })
+    const { releases } = create(undefined, {}, { projectTarget: repo })
+
+    await releases.boot(undefined, Promise.resolve(null))
+
+    expect(releases.report()).toMatchObject({ release_id: one.descriptor.release_id, source: 'release', proven: true, fallback_reason: null })
+    expect(api.archiveRequests).toEqual([])
+    expect(api.storageRequests).toEqual([])
+  })
+
   test('a release over the archive cap (v3, no archive) boots from the project snapshot', async () => {
     const one = release('deploy', 'from the snapshot')
     api.respond({
@@ -456,6 +468,37 @@ describe('pi config releases: convergence', () => {
     // So is the declaration itself.
     write(repo, 'README.md', 'still unrelated\n')
     const four = buildRelease(repo, commitAll(repo, 'no tools'), DIR, { projectId: 'proj-1', governance: governance('one') })
+    serveRelease(api, four)
+    expect((await releases.converge(runtime)).outcome).toBe('applied')
+    expect(runtime.state).toMatchObject({ reconfigures: 1, restarts: 2 })
+  })
+
+  test('a change to the Kortix tool list restarts the runtime; the same list reconfigures', async () => {
+    const withKortix = (prompt: string, kortixTools?: string[]) =>
+      JSON.stringify({ ...JSON.parse(governance(prompt)), ...(kortixTools ? { kortix_tools: kortixTools } : {}) })
+    const all = ['web_search', 'image_search', 'scrape_webpage', 'memory', 'show']
+    write(repo, 'README.md', 'all five\n')
+    const one = buildRelease(repo, commitAll(repo, 'all five'), DIR, { projectId: 'proj-1', governance: withKortix('one', all) })
+    serveRelease(api, one)
+    const { releases } = create()
+    await releases.boot()
+    const runtime = fakeRuntime()
+
+    write(repo, 'README.md', 'prompt only\n')
+    const two = buildRelease(repo, commitAll(repo, 'prompt only'), DIR, { projectId: 'proj-1', governance: withKortix('two', all) })
+    serveRelease(api, two)
+    expect((await releases.converge(runtime)).outcome).toBe('applied')
+    expect(runtime.state).toMatchObject({ reconfigures: 1, restarts: 0 })
+
+    write(repo, 'README.md', 'show removed\n')
+    const three = buildRelease(repo, commitAll(repo, 'no show'), DIR, { projectId: 'proj-1', governance: withKortix('two', all.slice(0, 4)) })
+    serveRelease(api, three)
+    expect((await releases.converge(runtime)).outcome).toBe('applied')
+    expect(runtime.state).toMatchObject({ reconfigures: 1, restarts: 1 })
+
+    // No list (a config compiled without a `tools` key) is a change too: every Kortix tool loads again.
+    write(repo, 'README.md', 'tools key removed\n')
+    const four = buildRelease(repo, commitAll(repo, 'no tools key'), DIR, { projectId: 'proj-1', governance: withKortix('two') })
     serveRelease(api, four)
     expect((await releases.converge(runtime)).outcome).toBe('applied')
     expect(runtime.state).toMatchObject({ reconfigures: 1, restarts: 2 })

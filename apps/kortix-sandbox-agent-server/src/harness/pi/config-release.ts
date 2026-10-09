@@ -54,7 +54,7 @@ import {
   clearConfigReleaseNotice,
   writeConfigReleaseNotice,
 } from '@/services/config-release/notice'
-import { obtainRelease } from '@/services/config-release/obtain'
+import { checkoutMayHold, obtainRelease } from '@/services/config-release/obtain'
 import {
   ConvergeBusyError,
   deliverGovernance,
@@ -176,18 +176,24 @@ function piDirIn(releaseRoot: string): Promise<string | null> {
 
 /**
  * What only a runtime start reads from a release: everything in pi's own
- * config dir except its skills, and the project tools (their declaration in
- * the governance, and every file in the folder of each tool module).
+ * config dir except its skills, and the tools (the project tools and the
+ * Kortix tool list in the governance, and every file in the folder of each
+ * tool module).
  */
 function startOnlyFiles(release: Pick<ReleaseManifest, 'files' | 'compiled_governance'> | null, releaseRoot: string | null, piDir: string | null): string {
   if (!releaseRoot || !release) return ''
   const pi = piDir ? `${relative(releaseRoot, piDir)}/` : null
-  const declared = parseCompiledAgentConfig(release.compiled_governance ?? undefined)?.project_tools ?? {}
+  const governance = parseCompiledAgentConfig(release.compiled_governance ?? undefined)
+  const declared = governance?.project_tools ?? {}
   const toolDirs = Object.values(declared).map((path) => path.slice(0, path.lastIndexOf('/') + 1) || path)
   const startOnly = (path: string) =>
     (pi !== null && path.startsWith(pi) && !path.startsWith(`${pi}skills/`)) || toolDirs.some((dir) => path.startsWith(dir))
   const files = (release.files ?? []).filter(([path]) => startOnly(path!)).map(([path, , blob]) => `${path}:${blob}`).sort()
-  return [...(toolDirs.length > 0 ? [`tools:${JSON.stringify(declared)}`] : []), ...files].join('\n')
+  return [
+    ...(toolDirs.length > 0 ? [`tools:${JSON.stringify(declared)}`] : []),
+    ...(governance?.kortix_tools ? [`kortix_tools:${JSON.stringify(governance.kortix_tools)}`] : []),
+    ...files,
+  ].join('\n')
 }
 
 /** A release's compiled governance must parse to a config object. Null governance keeps the running one. */
@@ -359,9 +365,9 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
           await quarantineRelease(root, desiredId, problem)
         } else {
           try {
-            // The checkout is the release when the box checked out its commit.
+            // The checkout is the release when the box checked out its commit (obtain.ts).
             const checkout =
-              cfg.baseSha === manifest.source_commit && workspace && (await workspace) === null ? cfg.projectTarget : null
+              checkoutMayHold(cfg.baseSha, descriptor) && workspace && (await workspace) === null ? cfg.projectTarget : null
             const dir = await materialize(manifest, descriptor, checkout)
             mark?.('config-release-extracted')
             await useRelease(desiredId, desiredId, manifest, dir, reasons, null)
