@@ -110,6 +110,7 @@ describe('sign-in issuer', () => {
     const envWrites: unknown[] = [];
     const ok = Bun.serve({
       port: 0,
+      hostname: '127.0.0.1',
       fetch: async (req) => {
         envWrites.push({
           path: new URL(req.url).pathname,
@@ -120,15 +121,16 @@ describe('sign-in issuer', () => {
         return new Response(null, { status: 200 });
       },
     });
-    const down = Bun.serve({ port: 0, fetch: () => new Response('boom', { status: 500 }) });
+    const down = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: () => new Response('boom', { status: 500 }) });
     // Kortix reaches a machine through its private Platinum exposure: the fake
     // control plane exposes machine `sbx-ok` at `ok` and `sbx-down` at `down`.
     const platinum = Bun.serve({
       port: 0,
+      hostname: '127.0.0.1',
       fetch: (req) => {
         const [, , , id, sub] = new URL(req.url).pathname.split('/');
         if (sub !== 'expose') return Response.json({ id, state: 'running' });
-        const origin = id!.endsWith('-ok') ? ok.url.origin : down.url.origin;
+        const origin = id!.endsWith('-ok') ? `http://127.0.0.1:${ok.port}` : `http://127.0.0.1:${down.port}`;
         return Response.json({ port: 3210, public: false, url: `${origin}/?t=synthetic-edge-token` });
       },
     });
