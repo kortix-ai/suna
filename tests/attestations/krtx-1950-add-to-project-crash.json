@@ -1,0 +1,19 @@
+{
+  "source_hash": "651369319b314f7476500d005a5810bd0d5da0d315a82eb668f82c64e9b0c589",
+  "diff_files": [
+    "apps/web/src/features/marketplace/add-to-project-dialog-guard.test.tsx",
+    "apps/web/src/features/marketplace/add-to-project-dialog-guard.tsx",
+    "apps/web/src/features/marketplace/marketplace-detail.tsx",
+    "apps/web/src/lib/env-config.test.ts",
+    "apps/web/src/lib/env-config.ts"
+  ],
+  "diff_hash": "25487cf0d73ca163d8e10390283e37286b6c2b0a9263f4909f90954fa86353f4",
+  "head": "0d43efe7a7683189eacea65e930cc9cf0dd2ba96",
+  "passed": false,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "fail"
+  },
+  "at": "2026-10-09T20:35:50.106Z"
+}
