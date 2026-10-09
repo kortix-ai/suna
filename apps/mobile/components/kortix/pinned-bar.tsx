@@ -24,11 +24,11 @@ import { withAlpha } from '@/lib/utils/theme';
 import { cn } from '@/lib/utils/utils';
 
 /** Gap between the controls and the safe-area edge. */
-export const PINNED_BAR_BOTTOM_GAP = 16;
+const PINNED_BAR_BOTTOM_GAP = 16;
 /** How far the fade reaches above the controls. */
-export const PINNED_BAR_FADE_ABOVE = 36;
+const PINNED_BAR_FADE_ABOVE = 36;
 /** Space between the content's last row and the controls. */
-export const PINNED_BAR_CONTENT_GAP = 16;
+const PINNED_BAR_CONTENT_GAP = 16;
 
 /** Bottom padding for the content under a `PinnedBar` with controls this tall. */
 export function usePinnedBarInset(controlHeight: number): number {
@@ -36,7 +36,7 @@ export function usePinnedBarInset(controlHeight: number): number {
   return insets.bottom + PINNED_BAR_BOTTOM_GAP + controlHeight + PINNED_BAR_CONTENT_GAP;
 }
 
-export interface PinnedBarProps {
+interface PinnedBarProps {
   /** Height of the tallest control: 40 for `Button` default, 44 for `lg`. */
   controlHeight: number;
   /** The surface colour under the bar. */

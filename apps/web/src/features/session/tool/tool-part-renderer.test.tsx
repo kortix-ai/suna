@@ -71,6 +71,97 @@ const UNREGISTERED = {
   },
 } as unknown as ToolPart;
 
+
+// ── KRTX-1746: a failed subagent dispatch keeps its thread reachable ────────
+//
+// The reporter's session (screenshot in the Slack thread): the task tool
+// failed — "Subagent failed (task_id: ses_…): This model does not support
+// assistant message prefill. The conversation must end with a user message." —
+// and the row collapsed into the generic error card, whose trigger has no way
+// into the child session. The child's transcript survived (OpenCode keeps it;
+// the part's `state.metadata.sessionId` names it), so the row must stay a
+// dispatch row. The errored-part shape below is the runtime's, read off
+// opencode 1.18.23 in a reproduction.
+const FAILED_TASK = {
+  id: 'part_failed_task',
+  sessionID: 'ses_root',
+  messageID: 'msg_root',
+  type: 'tool',
+  tool: 'task',
+  callID: 'call-task-1',
+  state: {
+    status: 'error',
+    input: {
+      description: 'Report on the widget',
+      prompt: 'Write the quarterly report on the widget.',
+      subagent_type: 'general',
+    },
+    metadata: { parentSessionId: 'ses_root', sessionId: 'ses_ee95c107bffe49S04KWqZ5tjcc' },
+    error:
+      'Subagent failed (task_id: ses_ee95c107bffe49S04KWqZ5tjcc): This model does not support assistant message prefill. The conversation must end with a user message.',
+    time: { start: 1, end: 2 },
+  },
+} satisfies ToolPart;
+
+describe('an errored task dispatch renders as a dispatch row, not a dead error card', () => {
+  test('the child thread stays openable and the failure reason stays visible', () => {
+    const html = renderPanel(FAILED_TASK);
+    // TaskTool's full-view affordance — the way into the child session — lives
+    // on the trigger, so it is there even on the closed row.
+    expect(html).toContain('aria-label="Open full view"');
+    // The row carries the dispatch's own identity again, not "Task failed".
+    expect(html).toContain('Report on the widget');
+    // And the failure reason is still on the row, as it was on the old card.
+    const open = renderPanel(FAILED_TASK, { defaultOpen: true });
+    expect(open).toContain('assistant message prefill');
+    expect(open).toContain('aria-label="Open full view"');
+  });
+
+  test('a task_id in the error keeps the child thread openable without metadata', () => {
+    const part: ToolPart = {
+      id: 'part-error-only',
+      sessionID: 'ses_root',
+      messageID: 'msg_root',
+      type: 'tool',
+      tool: 'task',
+      callID: 'call-error-only',
+      state: {
+        status: 'error',
+        input: { description: 'Inspect the widget', subagent_type: 'general' },
+        error: 'Subagent failed (task_id: ses_failed123): provider rejected the request',
+        time: { start: 1, end: 2 },
+      },
+    };
+    const html = renderPanel(part, { defaultOpen: true });
+    expect(html).toContain('aria-label="Open full view"');
+    expect(html).toContain('provider rejected the request');
+  });
+
+  test('an errored task without a child id keeps the generic error card', () => {
+    const orphan = {
+      ...FAILED_TASK,
+      state: {
+        ...FAILED_TASK.state,
+        metadata: {},
+        error: 'Unknown agent type: nope',
+      },
+    } satisfies ToolPart;
+    const html = renderPanel(orphan);
+    expect(html).not.toContain('Open full view');
+    // The generic card's own trigger: humanized tool name + "failed".
+    expect(html).toContain('>Task</span>');
+    expect(html).toContain('title="failed"');
+  });
+
+  test('an errored bash call keeps the generic error card (no child thread)', () => {
+    const html = renderPanel(THROWN);
+    expect(html).not.toContain('Open full view');
+    expect(html).toContain('>Bash</span>');
+    const open = renderPanel(THROWN, { defaultOpen: true });
+    expect(open).toContain('ENOENT: no such file or directory');
+  });
+});
+
 describe('ToolPartRenderer forwards the open props to every branch', () => {
   test('a thrown error opens with defaultOpen — the error text IS the content', () => {
     const html = renderPanel(THROWN, { defaultOpen: true });
