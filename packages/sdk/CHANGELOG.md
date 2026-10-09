@@ -229,6 +229,12 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   unknown until the probe answers, as before.
 
 ### Deprecated
+- The `config_releases` member of `FeatureFlagKey`. Config releases graduated
+  out of the flag system: every session runs its base branch's config release.
+  It is absent from `FEATURE_FLAG_KEYS` and `KortixProject.experimental`, and
+  `useFeatureFlag(id, 'config_releases')` reports `enabled: true`.
+  `updateFeatureFlag(id, 'config_releases', …)` answers `400`. Removed in the
+  next major.
 - `createCheckoutSession`, `confirmCheckoutSession` and `scheduleDowngrade`
   (and the facade's `kortix.billing.checkout.{createSession,confirmSession}`
   and `kortix.billing.subscription.scheduleDowngrade`). The API retired their

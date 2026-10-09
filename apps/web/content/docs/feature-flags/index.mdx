@@ -234,6 +234,13 @@ A graduated feature is on for every project and has no switch.
   `PATCH /v1/projects/:id/features` answers `400` `Unknown feature flag`. A
   stored override from before graduation has no effect. See
   [Microsoft Teams](/docs/connect/teams).
+- **Config releases** graduated out of the flag system. Every session runs
+  the config release of its base branch: a merged agent, skill, or tool
+  reaches every running session, on OpenCode and on pi. `config_releases` is
+  no longer a flag key: `PATCH /v1/projects/:id/features` answers `400`
+  `Unknown feature flag`. A stored override from before graduation has no
+  effect; a stored `false` no longer sends a session back to its `/workspace`
+  config. See [Config convergence](/docs/work/runtime#config-convergence).
 
 ## Side effects of a toggle
 
