@@ -746,8 +746,29 @@ mock.module('../shared/db', () => ({
     execute: async (query: unknown) =>
       authUsersRows(query, () => ({ email: 'contract@example.test' })) ?? [],
     select: (fields?: Record<string, unknown>) => ({
-      from: (table: unknown) => ({
-        where: (predicate?: unknown) => ({
+      from: (table: unknown) => {
+        // The `/start` prologue and every long-poll tick read session + sandbox
+        // in ONE joined statement (KRTX-2018). Answer that shape when the select
+        // asks for it (`sandbox: sessionSandboxes` in the field map); every
+        // other caller keeps the plain per-table branches below.
+        const pairRows = () =>
+          table === projectSessions && fields?.sandbox === sessionSandboxes
+            ? sessionRow
+              ? [{ ...sessionRow, sandbox: sessionSandboxRows.slice(0, 1)[0] ?? null }]
+              : []
+            : [];
+        return {
+          leftJoin: (_joined: unknown) => ({
+            where: (_predicate?: unknown) => ({
+              then: (
+                resolve: (value: unknown[]) => unknown,
+                reject?: (reason: unknown) => unknown,
+              ) => Promise.resolve(pairRows()).then(resolve, reject),
+              limit: async () => pairRows(),
+            }),
+            limit: async () => pairRows(),
+          }),
+          where: (predicate?: unknown) => ({
           then: (resolve: (value: unknown[]) => unknown, reject?: (reason: unknown) => unknown) => {
             Promise.resolve(table === projectSecrets ? secretRows : []).then(resolve, reject);
           },
@@ -795,7 +816,8 @@ mock.module('../shared/db', () => ({
           if (table === projectSecrets) return secretRows;
           return [];
         },
-      }),
+        };
+      },
     }),
     insert: (table: unknown) => ({
       values: (values: any) => ({
