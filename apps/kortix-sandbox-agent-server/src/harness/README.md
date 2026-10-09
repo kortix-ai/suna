@@ -185,24 +185,25 @@ packages and extensions stay the ones the session booted with.
 
 ### Config releases
 
-With the project's `config_releases` flag on, pi runs the base branch's
-current config release, exactly as OpenCode does (`pi/config-release.ts`,
-contract in `services/config-release/`). A release is a checkout of the base
-branch under `/opt/kortix/config/<release_id>`, with the repository's own
-layout, verified against its Git blob IDs and sealed read-only. pi reads from
-it what it reads from `/workspace`: the compiled governance
-(`KORTIX_COMPILED_AGENT_CONFIG`, the agents), `skills/` (and the legacy
-`.kortix/opencode/skills`), the root `AGENTS.md` (else `CLAUDE.md`), and its
-own config dir (`pi.config_dir`, else `harnesses/pi`, else `.kortix/pi`:
-skills, extensions, prompts, `settings.json`), resolved inside the release by
-`resolvePiProjectConfigDir`.
+pi runs the base branch's current config release, exactly as OpenCode does
+(`pi/config-release.ts`, contract in `services/config-provider/`). A release is
+a checkout of the base branch under `/opt/kortix/config/<release_id>`, with
+the repository's own layout, verified against its Git blob IDs and sealed
+read-only. pi reads from it what it reads from `/workspace`: the compiled
+governance (`KORTIX_COMPILED_AGENT_CONFIG`, the agents), `skills/` (and the
+legacy `.kortix/opencode/skills`), the root `AGENTS.md` (else `CLAUDE.md`),
+and its own config dir (`pi.config_dir`, else `harnesses/pi`, else
+`.kortix/pi`: skills, extensions, prompts, `settings.json`), resolved inside
+the release by `resolvePiProjectConfigDir`.
 OpenCode's files (`harnesses/opencode`) are not pi's, so a commit that breaks
 only those files is a working config on pi.
 
 - **Boot.** `runPi` starts the choice beside the repository checkout, and
   `lifecycle.start()` waits for it: the desired release, then the last release
   this box proved (`current.json`), then the image default (managed skills and
-  the provisioned governance). `/workspace` is read only while the flag is off.
+  the provisioned governance). `/workspace` is read only when the box has no
+  Kortix API, or an API from before config releases graduated answers `403
+  feature_disabled`.
 - **Convergence** (`POST /kortix/config/converge`, the 60 s runtime-truth tick,
   one pass after ready). pi applies a release in place: the governance goes
   into the runtime's env, the skill directories and the `AGENTS.md` root
@@ -365,16 +366,20 @@ the action they had; the compiled `tools` key is dropped, because OpenCode's
 own reading turns `true` into `allow` and lets the agent's `permission`
 re-open a removed tool.
 
-## Config provider is a host service, not harness logic
+## The workspace and config providers are host services, not harness logic
 
-`src/services/config-provider/` (the `git` / `prefer-s3` / `require-s3` project
-acquisition coordinator, #7221) stays outside `src/harness/`. It
-depends only on `src/lib/` (`config`, `git`, `logger`) and knows nothing about
-any harness. Both `open-code/boot.ts` and `pi/boot.ts` call
-`materializeProject(cfg, { bootMark, onSummary })` at the point where the cold
-boot acquires the workspace. `contract/boot-state.ts` carries the outcome:
-`configProvider` (reported in `/kortix/health` as `config_provider`) and
-`deferredHistoryBackfill`.
+`src/services/workspace-provider/` (the `git` / `prefer-s3` / `require-s3`
+project acquisition, #7221) and `src/services/config-provider/` (the config
+release a boot needs) stay outside `src/harness/`. Each depends only on
+`src/lib/` and knows nothing about any harness or about the other: both read
+the S3 project snapshot through `src/lib/project-snapshot/`. The harness
+composes them. Both `open-code/boot.ts` and `pi/boot.ts` call
+`provideWorkspace(cfg, { bootMark, onSummary })` at the point where the cold
+boot acquires the workspace, then hand the checkout to the config release
+boot. The warm-seed adoption and monitor mode call the same function in `git`
+mode. `contract/boot-state.ts` carries the outcome: `workspaceProvider`
+(reported in `/kortix/health` as `config_provider`, its pre-rename wire name)
+and `deferredHistoryBackfill` (`backfillAfterHydration` for an S3 start).
 
 ## OpenCode instance guard
 

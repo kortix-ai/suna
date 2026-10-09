@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 745,
+  "count": 749,
   "routes": [
     {
       "method": "GET",
@@ -832,14 +832,6 @@
     },
     {
       "method": "GET",
-      "path": "/v1/backends/:backendId/.well-known/openid-configuration"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/backends/:backendId/jwks.json"
-    },
-    {
-      "method": "GET",
       "path": "/v1/billing/account-state"
     },
     {
@@ -1271,12 +1263,40 @@
       "path": "/v1/mcp"
     },
     {
+      "method": "GET",
+      "path": "/v1/notifications"
+    },
+    {
       "method": "POST",
       "path": "/v1/notifications/device-token"
     },
     {
       "method": "DELETE",
       "path": "/v1/notifications/device-token/:token"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/notifications/preferences"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/notifications/preferences"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/notifications/read"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/notifications/web-push/key"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/notifications/web-push/subscriptions"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/notifications/web-push/subscriptions"
     },
     {
       "method": "GET",
@@ -1464,6 +1484,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/.well-known/openid-configuration"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/access"
     },
     {
@@ -1572,6 +1596,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/apps/:appId/credentials"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/apps/:appId/deployments"
     },
     {
@@ -1591,8 +1619,32 @@
       "path": "/v1/projects/:projectId/apps/:appId/deployments/:deploymentId/logs"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/apps/:appId/logs"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/restore"
+    },
+    {
       "method": "POST",
       "path": "/v1/projects/:projectId/apps/:appId/rollback"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/rotate-credentials"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/apps/:appId/snapshots"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/snapshots"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/apps/:appId/snapshots/:snapshotId"
     },
     {
       "method": "POST",
@@ -1601,6 +1653,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/apps/:appId/stop"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/token"
     },
     {
       "method": "POST",
@@ -1629,58 +1685,6 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/audit"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/backends"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/backends"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/projects/:projectId/backends/:backendId"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/backends/:backendId"
-    },
-    {
-      "method": "PATCH",
-      "path": "/v1/projects/:projectId/backends/:backendId"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/backends/:backendId/backups"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/backends/:backendId/credentials"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/backends/:backendId/logs"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/backends/:backendId/restore"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/backends/:backendId/rotate-admin-key"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/backends/:backendId/snapshots"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/projects/:projectId/backends/:backendId/snapshots/:snapshotId"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/backends/:backendId/token"
     },
     {
       "method": "GET",
@@ -2120,6 +2124,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/jwks.json"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/llm-catalog"
     },
     {
@@ -2501,6 +2509,14 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/turn"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/watch"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/watch"
     },
     {
       "method": "POST",

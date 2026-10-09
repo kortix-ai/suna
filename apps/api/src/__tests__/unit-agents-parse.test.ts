@@ -40,8 +40,8 @@ describe('[[agents]] — grantable enum drift guard', () => {
   // either side is caught even if it happens to keep the two sides equal to
   // EACH OTHER but wrong in absolute terms (both sides sourced from the same
   // stale copy-paste, say).
-  test('50 grantable project actions (all of PROJECT_ACTIONS)', () => {
-    expect(GRANTABLE_KORTIX_PERMISSIONS.size).toBe(50);
+  test('49 grantable project actions (all of PROJECT_ACTIONS)', () => {
+    expect(GRANTABLE_KORTIX_PERMISSIONS.size).toBe(49);
   });
 
   // The git ref leaves are grantable on purpose: a project that WANTS an agent

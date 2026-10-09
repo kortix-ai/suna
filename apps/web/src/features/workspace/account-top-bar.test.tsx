@@ -63,3 +63,28 @@ describe('AccountTopBar menu rows', () => {
     expect(code.indexOf('actions.settings')).toBeLessThan(code.indexOf('onSelect={onLogOut}'));
   });
 });
+
+/**
+ * KRTX-1742: the notification bell sits in the trailing group, before the
+ * account menu, on `/projects` and `/new`. It loads client-only, so the
+ * static renders of those pages (project-selector.test.tsx) need no query
+ * client or auth provider.
+ */
+describe('AccountTopBar notification bell', () => {
+  const source = async () => {
+    const text = await Bun.file(new URL('./account-top-bar.tsx', import.meta.url)).text();
+    return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+  };
+
+  test('the bell renders before the account menu', async () => {
+    const code = await source();
+    expect(code).toContain('<NotificationBell />');
+    expect(code.indexOf('<NotificationBell />')).toBeLessThan(code.indexOf('<DropdownMenu>'));
+  });
+
+  test('the bell is a client-only chunk', async () => {
+    const code = await source();
+    expect(code).toContain("import('@/features/notifications/notification-bell')");
+    expect(code).toContain('{ ssr: false }');
+  });
+});

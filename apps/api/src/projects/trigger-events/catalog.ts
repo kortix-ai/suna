@@ -21,27 +21,38 @@ const eventTypeCache = new Map<string, { expires: number; items: EventTypeInfo[]
 export type EventTypeCatalog =
   | { kind: 'ok'; provider: string; app: string; items: EventTypeInfo[] }
   | { kind: 'connector_not_found' }
+  | { kind: 'app_not_found' }
   | { kind: 'unavailable' }
   | { kind: 'provider_error'; message: string };
+
+/** One adapter's events for one app, through the shared cache. No connector needed. */
+export async function listAppEventTypes(source: string, app: string): Promise<EventTypeCatalog> {
+  const provider = eventSourceFor(source);
+  if (!provider || !provider.configured() || !app) return { kind: 'unavailable' };
+  const key = `${provider.id}:${app}`;
+  let cached = eventTypeCache.get(key);
+  if (!cached || cached.expires < Date.now()) {
+    try {
+      cached = { expires: Date.now() + EVENT_TYPE_CACHE_MS, items: await provider.listEventTypes(app) };
+    } catch (error) {
+      return { kind: 'provider_error', message: error instanceof Error ? error.message : String(error) };
+    }
+    eventTypeCache.set(key, cached);
+  }
+  // An app the adapter offers no event for is not an event app.
+  if (cached.items.length === 0) return { kind: 'app_not_found' };
+  return { kind: 'ok', provider: provider.id, app, items: cached.items };
+}
 
 export async function listConnectorEventTypes(projectId: string, connectorSlug: string, source?: string | null): Promise<EventTypeCatalog> {
   const connector = await connectorInfo(projectId, connectorSlug);
   if (!connector.found) return { kind: 'connector_not_found' };
   // A source that is not the connector's provider has no catalog here: the reconciler reports the mismatch.
   if (source && source !== connector.provider) return { kind: 'unavailable' };
-  const provider = eventSourceFor(connector.provider);
-  if (!provider || !provider.configured() || !connector.app) return { kind: 'unavailable' };
-  const key = `${provider.id}:${connector.app}`;
-  let cached = eventTypeCache.get(key);
-  if (!cached || cached.expires < Date.now()) {
-    try {
-      cached = { expires: Date.now() + EVENT_TYPE_CACHE_MS, items: await provider.listEventTypes(connector.app) };
-    } catch (error) {
-      return { kind: 'provider_error', message: error instanceof Error ? error.message : String(error) };
-    }
-    eventTypeCache.set(key, cached);
-  }
-  return { kind: 'ok', provider: provider.id, app: connector.app, items: cached.items };
+  if (!connector.app) return { kind: 'unavailable' };
+  const catalog = await listAppEventTypes(connector.provider, connector.app);
+  // A connector whose app has no events keeps answering with an empty list.
+  return catalog.kind === 'app_not_found' ? { kind: 'ok', provider: connector.provider, app: connector.app, items: [] } : catalog;
 }
 
 /** A trigger's event and config problem, or null. Skips when the catalog cannot answer: the reconciler still reports. */

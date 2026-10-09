@@ -174,6 +174,53 @@ async function transferProviderConnections(
   }
 }
 
+/**
+ * Move the source's notification rows in this account to the target
+ * (KRTX-1742): inbox rows, and session and trigger watcher rows. A row the
+ * target already holds (same dedupe key, same session, same trigger) wins;
+ * the source's leftovers are deleted.
+ */
+async function moveNotificationRows(accountId: string, sourceUserId: string, targetUserId: string): Promise<void> {
+  await db.execute(sql`
+    UPDATE kortix.notifications source SET user_id=${targetUserId}::uuid
+    WHERE source.account_id=${accountId}::uuid AND source.user_id=${sourceUserId}::uuid
+      AND NOT EXISTS (
+        SELECT 1 FROM kortix.notifications target
+        WHERE target.user_id=${targetUserId}::uuid AND target.dedupe_key=source.dedupe_key
+      )
+  `);
+  await db.execute(sql`
+    DELETE FROM kortix.notifications
+    WHERE account_id=${accountId}::uuid AND user_id=${sourceUserId}::uuid
+  `);
+  await db.execute(sql`
+    INSERT INTO kortix.notification_watchers (project_id, session_id, user_id, muted, created_at, updated_at)
+    SELECT watcher.project_id, watcher.session_id, ${targetUserId}::uuid, watcher.muted, watcher.created_at, now()
+    FROM kortix.notification_watchers watcher
+    JOIN kortix.projects project_row ON project_row.project_id=watcher.project_id
+    WHERE project_row.account_id=${accountId}::uuid AND watcher.user_id=${sourceUserId}::uuid
+    ON CONFLICT (session_id, user_id) DO NOTHING
+  `);
+  await db.execute(sql`
+    DELETE FROM kortix.notification_watchers watcher USING kortix.projects project_row
+    WHERE project_row.project_id=watcher.project_id AND project_row.account_id=${accountId}::uuid
+      AND watcher.user_id=${sourceUserId}::uuid
+  `);
+  await db.execute(sql`
+    INSERT INTO kortix.trigger_watchers (project_id, slug, user_id, muted, created_at, updated_at)
+    SELECT watcher.project_id, watcher.slug, ${targetUserId}::uuid, watcher.muted, watcher.created_at, now()
+    FROM kortix.trigger_watchers watcher
+    JOIN kortix.projects project_row ON project_row.project_id=watcher.project_id
+    WHERE project_row.account_id=${accountId}::uuid AND watcher.user_id=${sourceUserId}::uuid
+    ON CONFLICT (project_id, slug, user_id) DO NOTHING
+  `);
+  await db.execute(sql`
+    DELETE FROM kortix.trigger_watchers watcher USING kortix.projects project_row
+    WHERE project_row.project_id=watcher.project_id AND project_row.account_id=${accountId}::uuid
+      AND watcher.user_id=${sourceUserId}::uuid
+  `);
+}
+
 async function reconcileOneAccountIdentity(
   accountId: string,
   sourceUserId: string,
@@ -337,6 +384,7 @@ async function reconcileOneAccountIdentity(
       AND participant.user_id=${sourceUserId}::uuid
   `);
 
+  await moveNotificationRows(accountId, sourceUserId, targetUserId);
   await transferProviderConnections(sourceUserId, targetUserId, accountId);
   await db.execute(sql`
     UPDATE kortix.connection_credentials credential SET user_id=${targetUserId}::uuid, updated_at=now()

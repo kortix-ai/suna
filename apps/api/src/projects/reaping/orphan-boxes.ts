@@ -22,7 +22,7 @@
  */
 
 import { isNotNull } from 'drizzle-orm';
-import { appRuntimes, projectBackends, projectMonitorBoxes, sessionSandboxes } from '@kortix/db';
+import { appConvexInstances, appRuntimes, projectMonitorBoxes, sessionSandboxes } from '@kortix/db';
 import { config } from '../../config';
 import { db } from '../../shared/db';
 import { getProvider, type ProviderName } from '../../platform/providers';
@@ -101,9 +101,9 @@ export async function reapOrphanProviderBoxes(now = new Date()): Promise<OrphanR
       .from(projectMonitorBoxes)
       .where(isNotNull(projectMonitorBoxes.externalId)),
     db
-      .select({ provider: projectBackends.provider, externalId: projectBackends.externalId })
-      .from(projectBackends)
-      .where(isNotNull(projectBackends.externalId)),
+      .select({ provider: appConvexInstances.provider, externalId: appConvexInstances.externalId })
+      .from(appConvexInstances)
+      .where(isNotNull(appConvexInstances.externalId)),
   ]);
   const keepRows = [...sessionKeepRows, ...appKeepRows, ...monitorKeepRows, ...backendKeepRows];
   const keep = new Set(

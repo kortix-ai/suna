@@ -32,6 +32,9 @@ ID, and the branch name are the same value. See
 | `s.delete()` | `DELETE …/sessions/:sid` | Deletes the session |
 | `s.setSharing(intent)` | `PUT …/sharing` | Sets sharing and visibility |
 | `s.participants()` | `GET …/sessions/:sid/participants` | Reads who can open the session and who sent each prompt |
+| `s.watch()` | `GET …/sessions/:sid/watch` | Reads whether you get this session's [notifications](/docs/work/notifications). Needs `notification_center`; `403` `feature_disabled` while it is off |
+| `s.setWatch(watching)` | `PUT …/sessions/:sid/watch` | Follows (`true`) or mutes (`false`) the session's notifications for you. Needs `notification_center`; `403` `feature_disabled` while it is off |
+| `s.presence({ tab_id, active, alerts? })` | `PUT …/sessions/:sid/presence` | Reports an open tab. `alerts: true` says the tab shows its own notifications, so the phone push is held back. With `notification_center` off, any present tab holds it back |
 | `s.cost()` | `GET /usage/session-costs/:sid` | Reads finalized LLM and compute cost without starting the runtime |
 | `s.scope()` | `GET …/sessions/:sid/scope` | Reads stored secret narrowing and materialized connection bindings |
 | `s.rescope(input)` | `PUT …/sessions/:sid/scope` | Replaces supplied scope fields for the next prompt or tool call |

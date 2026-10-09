@@ -33,15 +33,15 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const llmGateway = useFeatureFlag(projectId, 'llm_gateway');
   const metaAgent = useFeatureFlag(projectId, 'meta_agent');
   const apps = useFeatureFlag(projectId, 'apps');
-  const backends = useFeatureFlag(projectId, 'backends');
   const monitors = useFeatureFlag(projectId, 'monitors');
   const reminders = useFeatureFlag(projectId, 'reminders');
   const warmSessions = useFeatureFlag(projectId, 'warm_sessions');
   const secretsEgress = useFeatureFlag(projectId, 'secrets_egress');
   const pooledProviderSecrets = useFeatureFlag(projectId, 'pooled_provider_secrets');
   const piHarness = useFeatureFlag(projectId, 'pi_harness');
-  const configReleases = useFeatureFlag(projectId, 'config_releases');
   const usRegion = useFeatureFlag(projectId, 'us_region');
+  const eventTriggers = useFeatureFlag(projectId, 'event_triggers');
+  const notificationCenter = useFeatureFlag(projectId, 'notification_center');
 
   return {
     flags: {
@@ -51,17 +51,17 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       llm_gateway: llmGateway.enabled,
       meta_agent: metaAgent.enabled,
       apps: apps.enabled,
-      backends: backends.enabled,
       monitors: monitors.enabled,
       reminders: reminders.enabled,
       warm_sessions: warmSessions.enabled,
       secrets_egress: secretsEgress.enabled,
       pooled_provider_secrets: pooledProviderSecrets.enabled,
       pi_harness: piHarness.enabled,
-      config_releases: configReleases.enabled,
       us_region: usRegion.enabled,
+      event_triggers: eventTriggers.enabled,
+      notification_center: notificationCenter.enabled,
     },
     // The trailing hook's loading state — keep this on the LAST hook above.
-    isLoading: usRegion.isLoading,
+    isLoading: notificationCenter.isLoading,
   };
 }

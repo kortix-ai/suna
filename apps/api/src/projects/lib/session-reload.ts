@@ -45,7 +45,6 @@ import {
   resolveCompiledAgentConfigForSession,
   resolveSelectedAgentConfigForSession,
 } from './compile-agent-config';
-import { projectConfigReleasesEnabled } from '../../config-releases/enabled';
 import { recordDaemonConfigReport } from '../../config-releases/quarantine';
 import { pushSessionAgentConfigToSandbox } from './sandbox-env-sync';
 import {
@@ -380,8 +379,6 @@ export interface SessionReloadDeps {
   sleep: (ms: number) => Promise<void>;
   /** Record a daemon's failed and proven releases for the project quarantine. */
   recordReport: typeof recordDaemonConfigReport;
-  /** The project's `config_releases` flag. False ⇒ the pre-release path. */
-  configReleasesEnabled: (projectId: string) => Promise<boolean>;
   /**
    * Repair the turn a config swap took with it.
    *
@@ -403,7 +400,6 @@ function defaultReloadDeps(): SessionReloadDeps {
     latestEtag: latestAgentConfigEtag,
     sleep: Bun.sleep,
     recordReport: recordDaemonConfigReport,
-    configReleasesEnabled: projectConfigReleasesEnabled,
     repairOrphanedTurn: repairTurnOrphanedBySwap,
   };
 }
@@ -759,17 +755,12 @@ export async function reloadSessionConfig(input: {
     };
   }
 
-  // CHOKEPOINT — the `config_releases` flag for the reload path. Off ⇒ the daemon's own
-  // capability is ignored and this reload takes the pre-release path: the
-  // plain refresh plus the compiled-governance push, an etag-based result,
-  // and no `release` block for the CLI or the web to render. Nothing is
-  // recorded in the quarantine ledger either, because no release is assigned.
-  const releasesEnabled = await deps.configReleasesEnabled(input.projectId);
-  const capable = releasesEnabled && before.configReleases;
+  // A daemon with `config.release.v1` converges itself. One without it takes
+  // the pre-release path: the plain refresh plus the compiled-governance push,
+  // an etag-based result, and no `release` block for the CLI or the web.
+  const capable = before.configReleases;
 
-  if (releasesEnabled) {
-    await deps.recordReport({ projectId: input.projectId, sessionId: input.sessionId, report: before.release });
-  }
+  await deps.recordReport({ projectId: input.projectId, sessionId: input.sessionId, report: before.release });
   // Present for a daemon with `config.release.v1`: the state it reported
   // before this reload.
   const releaseBefore = capable && before.release ? toSessionConfigRelease(before.release) : null;
@@ -878,8 +869,7 @@ export async function reloadSessionConfig(input: {
   }
 
   // ── The pre-release path ────────────────────────────────────────────────
-  // Reached two ways: a daemon without `config.release.v1`, and a project
-  // whose `config_releases` flag is OFF (spec, "Feature flag"). OpenCode reads
+  // Reached only by a daemon without `config.release.v1`. OpenCode reads
   // the agent files in the session's checkout here, so the refresh also brings
   // the base branch's config dir into it (`base_config=1`). Without that, a fix
   // merged to base never reached a live session (prod 2026-09-30).

@@ -76,7 +76,6 @@ function fakeDaemon(reload: unknown) {
     latestEtag: async () => 'ffff',
     sleep: async () => {},
     recordReport: async () => {},
-    configReleasesEnabled: async () => true,
     repairOrphanedTurn: async (input) => {
       repairs.push(input);
     },
