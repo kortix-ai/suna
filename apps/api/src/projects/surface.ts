@@ -45,7 +45,7 @@ export {
   commitManifest,
 } from './lib/triggers';
 
-// Project access, the route app and the secret envelope (consumed by ../backends).
+// Project access, the route app and the secret envelope (consumed by ../apps/kinds/convex).
 export { assertProjectCapability, loadProjectForUser } from './lib/access';
 export { projectsApp } from './lib/app';
 export { decryptProjectSecret, encryptProjectSecret } from './secrets/envelope';

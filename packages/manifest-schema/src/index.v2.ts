@@ -250,6 +250,10 @@ export interface AppResourcesV2 {
 
 /** Local deployment defaults. The server remains the App control plane. */
 export interface AppBlockV2 {
+  /** Fixed at create. `web` (default): built from `path`. `convex`: `path` deploys with the Convex CLI. */
+  kind?: 'web' | 'convex';
+  /** The Apps, by slug, this App uses: it may bind to them and mint their sign-in tokens. */
+  uses?: string[];
   path?: string;
   type?: 'static' | 'bundle' | 'dockerfile' | 'oci_image';
   image?: string;
@@ -266,8 +270,6 @@ export interface AppBlockV2 {
   /** Run 24/7 (cron jobs, workers, websockets) instead of stopping when idle. */
   always_on?: boolean;
   monthly_budget_usd?: number;
-  /** Kortix Backends, by name, the App may mint viewer tokens for. Default: none. */
-  backends?: string[];
   resources?: AppResourcesV2;
   env?: Record<string, string>;
   secrets?: Record<string, string>;

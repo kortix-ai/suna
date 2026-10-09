@@ -292,7 +292,7 @@ The session handle carries the caller's watch on one session:
 | --- | --- |
 | `session(pid, sid).watch()` | `{ watching }`: is the caller notified about this session |
 | `session(pid, sid).setWatch(watching)` | `false` mutes the session for the caller, `true` watches it again. Prompting a session watches it, but never undoes a mute. |
-| `session(pid, sid).presence({ tab_id, active, alerts? })` | this tab's presence lease. `alerts: true` says the tab shows its own notifications: with `notification_center` on, the server skips the phone and Web Push only while an alerting tab is in use. With it off, `alerts` is ignored and any present tab holds back the phone push. An absent report is sent with `keepalive`. |
+| `session(pid, sid).presence({ tab_id, active, alerts? }, { keepalive? })` | this tab's presence lease. `alerts: true` says the tab shows its own notifications: with `notification_center` on, the server skips the phone and Web Push only while an alerting tab is in use. With it off, `alerts` is ignored and any present tab holds back the phone push. `keepalive` lets the request outlive a closing page. Default: on for an absent report, off for a present one. `useSession` sends `keepalive` only with `presencePageExit`. |
 
 ### The project handle — `kortix.project(id)`
 
@@ -333,15 +333,16 @@ project access.
 | --- | --- |
 | `requestSecret(input)` · `requestConnector(input)` | link to collect a secret · connect an app |
 
-#### `p.backends` — self-hosted Convex backends
+#### `p.apps` — Apps of every kind
 
-Behind the `backends` project feature. Guide: [Backends](/docs/sdk/backends).
+Behind the `apps` project feature. Guide: [SDK → Apps](/docs/sdk/apps).
 
 | method | what |
 | --- | --- |
-| `list()` · `get(backendId)` | list · read one backend |
-| `create({ name })` · `remove(backendId)` | boot a backend (synchronous) · delete it |
-| `credentials(backendId)` | `url`, `site_url`, `admin_key`, and the Convex CLI `env` |
+| `list()` · `get(appId)` · `create(input)` · `update(appId, input)` · `remove(appId, { confirm? })` | inventory and lifecycle; `create` takes `kind` (`web`, `convex`) and `uses` |
+| `deployments.*` · `artifacts.*` · `access.*` · `rollback` · `start` · `stop` | deployments, artifacts, the access policy, traffic and runtime |
+| `waitUntilReady(appId)` | poll until a `convex` App's instance runs with no operation in flight |
+| `snapshots.list/create/delete/restore` · `credentials` · `rotateCredentials` · `token` · `log` | capability calls; `409 app_capability_unsupported` when the App lacks the capability |
 
 #### `p.secrets` — project secrets
 

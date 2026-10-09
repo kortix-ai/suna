@@ -207,12 +207,12 @@ triggers on that PR.
 ### Step 8 — release gate triage
 
 `tests-release.yml`'s `full suite + quality gates` job is the only *required*
-check in the repository (on the PR into `prod`). Staging's API and its database
-run in different AWS regions today (`us-west-2` API, `eu-west-2` DB — PR #7844
-merged the colocation fix but it is not yet applied to the live staging infra),
-so a `503 request_deadline` (55 s) or a flow timeout on the release gate is
-**environmental**, not a product regression (owner decision, 2026-09-29).
-Classify it as such in a PR comment and move on. Every other failure is fixed on
+check in the repository (on the PR into `prod`). Until 2026-10-06 staging's API
+ran in `us-west-2` and its database in `eu-west-2`, so the owner decision of
+2026-09-29 classified a `503 request_deadline` (55 s) or a flow timeout on the
+release gate as **environmental**. Since 2026-10-06 both run in `eu-west-2`, so
+that cross-region reason no longer holds: confirm with the owner before you
+classify a timeout as environmental. Every other failure is fixed on
 `main` and re-promoted through Steps 2–7 (a new staging SHA means the release
 PR must be re-dispatched too). Rerun a failed job once; a shard that
 never gets past its own bootstrap gives no signal, so rerun it rather than
@@ -327,8 +327,9 @@ no `vX.Y.Z` Release.
    API host.
    1. Generate a random 32-byte key. Never print it.
    2. Add `KORTIX_INTERNAL_EDGE_KEY` to the env's Secrets Manager blob
-      `kortix-<env>-env` (needs an MFA session) and to `apps/api/.env.<env>` with
-      `dotenvx set`.
+      `kortix-<env>-env` in its primary region (the **dotenvx-secrets** skill,
+      "Which region to edit"; needs an MFA session) and to
+      `apps/api/.env.<env>` with `dotenvx set`.
    3. Redeploy the gateway (new ECS deployment). Confirm it sends the header:
       gateway `GET /v1/models` with a PAT still returns 200.
    4. Only then `wrangler secret put INTERNAL_EDGE_KEY --env <env>` on the
