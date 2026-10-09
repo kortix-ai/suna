@@ -65,7 +65,6 @@ const AREA_COPY: Record<string, { label: string; hint?: string; note?: string }>
     note: 'Push access also grants Files, Customize and Triggers edit — a push rewrites those.',
   },
   apps: { label: 'Apps', hint: 'Kortix Apps and what their public hostname serves.' },
-  backends: { label: 'Backends', hint: 'Self-hosted Convex backends and their admin credentials.' },
   spend: { label: 'Spend & gateway', hint: 'Model spend, request logs, budgets and BYOK keys.' },
   members: { label: 'Members', hint: 'Who has access.' },
   account: { label: 'Account', hint: 'Account name, settings, and deleting the account.' },

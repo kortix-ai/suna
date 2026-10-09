@@ -100,8 +100,9 @@ describe.if(hasDatabase)('canonical RBAC seed == the code it replaces', () => {
     // split `project.customize.*` (20261003235127508: settings.write,
     // sandbox.write, model.read, model.write). The two retired customize rows
     // stay until the contract migration; the API no longer lists them. Then
-    // `project.backend.read` / `.write` (20261006180000000).
-    expect(seeded).toHaveLength(81);
+    // `project.app.admin` (20261009115640000, which also removed the two
+    // `project.backend.*` leaves #9264 had added).
+    expect(seeded).toHaveLength(80);
     // The decisions, stated positively so a regression is unambiguous.
     expect(seeded).not.toContain('project.cr.open');
     expect(seeded).not.toContain('project.cr.merge');
@@ -155,8 +156,8 @@ describe.if(hasDatabase)('canonical RBAC seed == the code it replaces', () => {
     const manager = await systemRoleActions('manager', 'project');
     const member = await systemRoleActions('member', 'project');
     // Manager: +4 topic leaves from the customize split (agent.write it held),
-    // +2 backend leaves. Member: +1 (project.backend.read, mirrors project.app.read).
-    expect([manager.length, member.length]).toEqual([52, 16]);
+    // +1 project.app.admin (mirrors project.app.write). Member: unchanged.
+    expect([manager.length, member.length]).toEqual([51, 15]);
     expect(member.filter((a) => !manager.includes(a))).toEqual([]);
     // The floor role is read + RUN: it starts sessions and fires triggers, and
     // holds project.agent.read (a grant cannot ADD a permission, so without this
@@ -208,7 +209,7 @@ describe.if(hasDatabase)('canonical RBAC seed == the code it replaces', () => {
       PROJECT_ACTIONS.PROJECT_GITOPS_MERGE,
       PROJECT_ACTIONS.PROJECT_SECRET_WRITE,
       PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
-      PROJECT_ACTIONS.PROJECT_BACKEND_WRITE,
+      PROJECT_ACTIONS.PROJECT_APP_ADMIN,
     ];
     // Reads the floor member role keeps. project.agent.read is one of them:
     // "member = read + run" is only true if the role can reach an agent at all,
@@ -219,7 +220,7 @@ describe.if(hasDatabase)('canonical RBAC seed == the code it replaces', () => {
       PROJECT_ACTIONS.PROJECT_COMMAND_READ,
       PROJECT_ACTIONS.PROJECT_GITOPS_READ,
       PROJECT_ACTIONS.PROJECT_AGENT_READ,
-      PROJECT_ACTIONS.PROJECT_BACKEND_READ,
+      PROJECT_ACTIONS.PROJECT_APP_READ,
     ];
     // Sensitive reads that are manager-tier: files, secrets, the
     // Connectors/Skills surface, and model routing. Those object types stay

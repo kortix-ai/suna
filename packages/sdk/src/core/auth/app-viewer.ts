@@ -71,10 +71,10 @@ interface CacheEntry {
 
 const cache = new Map<string, CacheEntry>();
 
-/** Drop the cached viewer and backend tokens (sign-out, or an App that just changed who it acts as). */
+/** Drop the cached viewer and sign-in tokens (sign-out, or an App that just changed who it acts as). */
 export function clearKortixAppViewerCache(): void {
   cache.clear();
-  backendTokens.clear();
+  appTokens.clear();
 }
 
 async function load(
@@ -140,37 +140,44 @@ export function kortixAppViewerToken(
   });
 }
 
-// ── Backend tokens ───────────────────────────────────────────────────────────
+// ── Sign-in tokens for Apps ──────────────────────────────────────────────────
 
-export interface KortixAppBackendTokenOptions {
-  /** Where the gate answers. Default `/_kortix/backend-token` (same origin). */
+export interface KortixTokenOptions {
+  /**
+   * The App the token is for, by slug or id: this App itself (the default) or
+   * an App it uses (`uses`). Any other App answers `403 app_not_linked`.
+   */
+  audience?: string;
+  /** Where the gate answers. Default `/_kortix/token` (same origin). */
   path?: string;
   fetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 }
 
-const backendTokens = new Map<string, { token: string; refreshAt: number } | Promise<string | null>>();
+/** A token fetcher: the shape realtime clients take as their auth callback. */
+export type KortixTokenFetcher = (args?: { forceRefreshToken?: boolean }) => Promise<string | null>;
 
-async function loadBackendToken(
+const appTokens = new Map<string, { token: string; refreshAt: number } | Promise<string | null>>();
+
+async function loadAppToken(
   url: string,
-  fetchImpl: NonNullable<KortixAppBackendTokenOptions['fetch']>,
+  fetchImpl: NonNullable<KortixTokenOptions['fetch']>,
 ): Promise<string | null> {
   try {
     const res = await fetchImpl(url, { credentials: 'same-origin', headers: { accept: 'application/json' } });
-    // 401 nobody signed in, 403 an agent viewer or a backend this App does not
-    // list, 404 no such backend, 409 a backend without sign-in: all "no
-    // token", none of them a crash. The unlisted backend is a setup mistake
-    // the developer must see, so it is the one that warns.
+    // 401 nobody signed in, 403 an agent viewer or an App this App does not
+    // use, 404 viewer identity off: all "no token", none of them a crash. The
+    // unlinked App is a setup mistake the developer must see, so it warns.
     if (!res.ok) {
       if (res.status === 403) {
         const refusal = (await res.json().catch(() => null)) as { error?: unknown; error_description?: unknown } | null;
-        if (refusal?.error === 'backend_not_listed') console.warn(`[kortix] ${String(refusal.error_description)}`);
+        if (refusal?.error === 'app_not_linked') console.warn(`[kortix] ${String(refusal.error_description)}`);
       }
       return null;
     }
     const body = (await res.json().catch(() => null)) as { token?: unknown; expires_at?: unknown } | null;
     if (!body || typeof body.token !== 'string') return null;
     const expiry = typeof body.expires_at === 'string' ? Date.parse(body.expires_at) : Number.NaN;
-    backendTokens.set(url, {
+    appTokens.set(url, {
       token: body.token,
       refreshAt: Number.isFinite(expiry) ? expiry - REFRESH_SKEW_MS : Date.now() + REFRESH_SKEW_MS,
     });
@@ -181,38 +188,69 @@ async function loadBackendToken(
 }
 
 /**
- * A token fetcher for one of the project's Kortix Backends, naming this App's
- * viewer. Hand it to the backend's client as its auth callback; the backend
- * reads the viewer with `readKortixMember` / `requireKortixMember`.
+ * A 15-minute Kortix sign-in token naming this App's viewer, from the App's
+ * own origin. `aud` is the App the token is for; its server reads the viewer
+ * with `verifyKortixToken`, or `readKortixMember` / `requireKortixMember` on
+ * claims its runtime already verified.
  *
  * ```ts
- * client.setAuth(kortixAppBackendToken('main'));
- * fetch(url, { headers: { authorization: `Bearer ${await kortixAppBackendToken('main')()}` } });
+ * const token = kortixToken();                    // for this App itself
+ * client.setAuth(kortixToken({ audience: 'db' })); // for an App this App uses
  * ```
  *
- * The App must list the backend (the App's `backends`, e.g. `kortix apps set
- * <app> --backends main`). For a backend it does not list the gate answers
- * `403 backend_not_listed`: this yields `null` and warns in the console.
- *
  * Cached until shortly before expiry; concurrent callers share one request;
- * `{ forceRefreshToken: true }` always asks the gate again. Yields `null` when
- * there is no signed-in viewer, never throws.
+ * `{ forceRefreshToken: true }` always asks the gate again. Yields `null`
+ * when there is no signed-in viewer, never throws. An App this App does not
+ * use yields `null` and one console warning that names the fix.
  */
-export function kortixAppBackendToken(
-  backend = 'main',
-  options: KortixAppBackendTokenOptions = {},
-): (args?: { forceRefreshToken?: boolean }) => Promise<string | null> {
-  const url = `${options.path ?? '/_kortix/backend-token'}?backend=${encodeURIComponent(backend)}`;
+export function kortixToken(options: KortixTokenOptions = {}): KortixTokenFetcher {
+  const base = options.path ?? '/_kortix/token';
+  const url = options.audience === undefined ? base : `${base}?audience=${encodeURIComponent(options.audience)}`;
   const fetchImpl = options.fetch ?? ((input, init) => fetch(input, init));
   return async (args = {}) => {
-    const entry = backendTokens.get(url);
+    const entry = appTokens.get(url);
     if (entry instanceof Promise) return entry;
     if (entry && !args.forceRefreshToken && entry.refreshAt > Date.now()) return entry.token;
-    const inflight = loadBackendToken(url, fetchImpl).then((token) => {
-      if (token === null) backendTokens.delete(url);
+    const inflight = loadAppToken(url, fetchImpl).then((token) => {
+      if (token === null) appTokens.delete(url);
       return token;
     });
-    backendTokens.set(url, inflight);
+    appTokens.set(url, inflight);
     return inflight;
+  };
+}
+
+export interface KortixBindingOptions {
+  /** This App's origin. Default: the page's `location.origin`. */
+  origin?: string;
+  fetch?: KortixTokenOptions['fetch'];
+}
+
+/** An App this App uses, reached through this App's own origin. */
+export interface KortixBinding {
+  /** `<origin>/_kortix/apps/<slug>`: the used App's endpoint, HTTP and WebSocket. */
+  url: string;
+  /** Sign-in tokens for the used App, naming this App's viewer. */
+  token: KortixTokenFetcher;
+}
+
+/**
+ * An App this App uses (`uses`), on this App's own origin: no cross-origin
+ * request, no CORS. A used App whose kind has no endpoint answers
+ * `409 app_binding_unsupported`; an App this App does not use answers
+ * `403 app_not_linked`.
+ *
+ * ```ts
+ * const db = kortixBinding('db');
+ * const client = new ConvexReactClient(db.url);
+ * client.setAuth(db.token);
+ * ```
+ */
+export function kortixBinding(slug: string, options: KortixBindingOptions = {}): KortixBinding {
+  const origin = options.origin ?? (globalThis as { location?: { origin?: string } }).location?.origin;
+  if (!origin) throw new Error('kortixBinding needs the App origin: pass { origin } outside a browser.');
+  return {
+    url: `${origin.replace(/\/+$/, '')}/_kortix/apps/${encodeURIComponent(slug)}`,
+    token: kortixToken({ audience: slug, fetch: options.fetch }),
   };
 }

@@ -109,7 +109,7 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(resolveFeatureFlag({}, 'apps')).toBe(false);
     expect(resolveFeatureFlag({ experimental: { apps: true } }, 'apps')).toBe(true);
     expect(resolveFeatureFlag({ experimental: { apps: false } }, 'apps')).toBe(false);
-    // Internal-only since the kortix-backends PR: resolvable, never offered in Settings.
+    // Internal-only since 2026-10-06: resolvable, never offered in Settings.
     expect(REGISTERED_FEATURE_FLAGS.find((f) => f.key === 'apps')).toMatchObject({
       name: 'Apps',
       stability: 'stable',
@@ -325,8 +325,8 @@ describe('buildFeatureFlagCatalog', () => {
  * break (d) and take the operator lever with it.
  */
 describe('catalogHidden', () => {
-  test('only the internal-only surfaces are hidden: apps and backends', () => {
-    expect(HIDDEN_KEYS).toEqual(['apps', 'backends']);
+  test('only the internal-only surface is hidden: apps (it gates every App kind)', () => {
+    expect(HIDDEN_KEYS).toEqual(['apps']);
   });
 
   for (const key of HIDDEN_KEYS) {
@@ -363,7 +363,7 @@ describe('catalogHidden', () => {
     test(`${key}: (d) is a known key, writable only by a platform operator`, () => {
       // The route validates the body with `isFeatureFlagKey`, then refuses an
       // operator-only flag to anyone but a platform operator
-      // (project-settings.ts patchFeatureFlagHandler). Flows BKD-1 and
+      // (project-settings.ts patchFeatureFlagHandler). Flows APP-CVX-1 and
       // AGP-3 cover the HTTP round trip.
       expect(isFeatureFlagKey(key)).toBe(true);
       expect(isOperatorOnlyFeatureFlag(key)).toBe(true);
