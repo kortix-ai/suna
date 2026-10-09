@@ -12,7 +12,8 @@ import { sql } from 'drizzle-orm';
 import { PgClient } from './helpers/pg-client';
 
 const { db } = await import('../shared/db');
-const { renewSessionPresence } = await import('../projects/lib/session-presence');
+const { deleteSessionPresence, expireSessionPresence, renewSessionPresence, upsertSessionPresence } = await import('../projects/lib/session-presence');
+const { loadSessionPresence } = await import('../notifications/notifier');
 const { idleGraceMs } = await import('../projects/sandbox-deadline');
 
 const SANDBOX_ID = crypto.randomUUID();
@@ -82,25 +83,86 @@ afterAll(async () => {
 
 describe('renewSessionPresence', () => {
   test('a person who may start the session keeps the box for the idle grace, not 30 minutes', async () => {
-    expect(await renewSessionPresence(USER_ID, SESSION_ID, TAB_ID, { extendDeadline: true })).toBe(true);
+    expect(await renewSessionPresence(USER_ID, SESSION_ID, TAB_ID, { extendDeadline: true })).toBeInstanceOf(Date);
     const secs = await secondsLeft();
     expect(Math.abs(secs - idleGraceMs() / 1000)).toBeLessThanOrEqual(5);
     expect(await leaseSecondsLeft()).toBeGreaterThan(60);
   });
 
   test('a viewer who may not start the session keeps the lease and leaves the deadline alone', async () => {
-    expect(await renewSessionPresence(USER_ID, SESSION_ID, TAB_ID, { extendDeadline: false })).toBe(true);
+    expect(await renewSessionPresence(USER_ID, SESSION_ID, TAB_ID, { extendDeadline: false })).toBeInstanceOf(Date);
     expect(await secondsLeft()).toBeLessThanOrEqual(60);
     expect(await leaseSecondsLeft()).toBeGreaterThan(60);
   });
 
   test('a tab with no lease (idle, or hidden) renews nothing and extends nothing', async () => {
     await db.execute(sql`DELETE FROM kortix.session_presence_leases WHERE session_id = ${SESSION_ID}`);
-    expect(await renewSessionPresence(USER_ID, SESSION_ID, TAB_ID, { extendDeadline: true })).toBe(false);
+    expect(await renewSessionPresence(USER_ID, SESSION_ID, TAB_ID, { extendDeadline: true })).toBeNull();
     expect(await secondsLeft()).toBeLessThanOrEqual(60);
   });
 });
 
+/** The tab's lease: whether it alerts, and whether it is live now. */
+async function lease(tabId = TAB_ID): Promise<{ alerts: boolean; live: boolean } | null> {
+  const row = first(await db.execute(sql`
+    SELECT alerts, expires_at > now() AS live FROM kortix.session_presence_leases
+     WHERE user_id = ${USER_ID}::uuid AND session_id = ${SESSION_ID} AND tab_id = ${tabId}::uuid`));
+  return row ? { alerts: row.alerts === true, live: row.live === true } : null;
+}
+
+// KRTX-1742: only a tab that raises its own OS notification holds back the
+// phone and Web Push, and a closed tab stops holding them back at once.
+describe('the lease says whether the tab alerts, and a closed stream expires it', () => {
+  test('alerts is stored on insert and on every refresh', async () => {
+    await db.execute(sql`DELETE FROM kortix.session_presence_leases WHERE session_id = ${SESSION_ID}`);
+    await upsertSessionPresence(USER_ID, SESSION_ID, TAB_ID, true);
+    expect(await lease()).toEqual({ alerts: true, live: true });
+    await upsertSessionPresence(USER_ID, SESSION_ID, TAB_ID, false);
+    expect(await lease()).toEqual({ alerts: false, live: true });
+    await upsertSessionPresence(USER_ID, SESSION_ID, TAB_ID, true);
+    expect(await lease()).toEqual({ alerts: true, live: true });
+    expect(await loadSessionPresence(SESSION_ID, [USER_ID])).toEqual(new Map([[USER_ID, { alerting: true }]]));
+  });
+
+  test('an ended stream expires the lease now; the reconnecting stream renews it back', async () => {
+    await upsertSessionPresence(USER_ID, SESSION_ID, TAB_ID, true);
+    const wrote = await renewSessionPresence(USER_ID, SESSION_ID, TAB_ID, { extendDeadline: false });
+    await expireSessionPresence(USER_ID, SESSION_ID, TAB_ID, wrote!);
+    expect(await lease()).toEqual({ alerts: true, live: false });
+    expect((await loadSessionPresence(SESSION_ID, [USER_ID])).size).toBe(0);
+
+    expect(await renewSessionPresence(USER_ID, SESSION_ID, TAB_ID, { extendDeadline: false })).toBeInstanceOf(Date);
+    expect(await lease()).toEqual({ alerts: true, live: true });
+  });
+
+  // KRTX-1742 review: an old stream of the tab ended after a new stream of the
+  // same tab renewed, and set the lease to expired: the person looked absent
+  // for up to 30 s and got a push for the session they were looking at.
+  test('an ended stream expires only the lease it wrote, never a newer stream`s renewal', async () => {
+    await upsertSessionPresence(USER_ID, SESSION_ID, TAB_ID, true);
+    const a = await renewSessionPresence(USER_ID, SESSION_ID, TAB_ID, { extendDeadline: false });
+    await Bun.sleep(5);
+    const b = await renewSessionPresence(USER_ID, SESSION_ID, TAB_ID, { extendDeadline: false });
+    expect(b!.getTime()).toBeGreaterThan(a!.getTime());
+
+    await expireSessionPresence(USER_ID, SESSION_ID, TAB_ID, a!);
+    expect(await lease()).toEqual({ alerts: true, live: true });
+    expect(await loadSessionPresence(SESSION_ID, [USER_ID])).toEqual(new Map([[USER_ID, { alerting: true }]]));
+
+    await expireSessionPresence(USER_ID, SESSION_ID, TAB_ID, b!);
+    expect(await lease()).toEqual({ alerts: true, live: false });
+  });
+
+  test('a hidden tab drops only its own lease', async () => {
+    const otherTab = crypto.randomUUID();
+    await upsertSessionPresence(USER_ID, SESSION_ID, otherTab, false);
+    await deleteSessionPresence(USER_ID, SESSION_ID, TAB_ID);
+    expect(await lease()).toBeNull();
+    expect(await lease(otherTab)).toEqual({ alerts: false, live: true });
+  });
+});
+
+/** A provider run that started `hours` ago. The anchor trigger pins `active_since`; bypass it here. */
 /** A provider run that started `hours` ago. The anchor trigger pins `active_since`;
  *  bypass it here on the superuser fixture client — the API's own role may not
  *  SET session_replication_role (the audit-reconciliation suites do the same). */
@@ -160,7 +222,7 @@ describe('presence alone keeps a box at most 2 h past its latest turn', () => {
 
   test('a turn that ended 3 h ago: presence extends nothing, and the lease still renews', async () => {
     await lastTurnEndedMinutesAgo(180);
-    expect(await renewSessionPresence(USER_ID, SESSION_ID, TAB_ID, { extendDeadline: true })).toBe(true);
+    expect(await renewSessionPresence(USER_ID, SESSION_ID, TAB_ID, { extendDeadline: true })).toBeInstanceOf(Date);
     expect(await secondsLeft()).toBeLessThanOrEqual(60);
     expect(await leaseSecondsLeft()).toBeGreaterThan(60);
   });

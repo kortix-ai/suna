@@ -9,11 +9,17 @@ export function bindSessionLifecycleResources(ctx: SessionBindingContext) {
     // ── lifecycle (Kortix REST) ──────────────────────────────────────────
     get: (opts?: { showErrors?: boolean }) =>
       P.getProjectSession(ctx.projectId, ctx.sessionId, opts),
-    presence: (input: { tab_id: string; active: boolean }) =>
+    /**
+     * This tab's presence lease. `alerts: true` says the tab shows its own
+     * notifications, so the server skips the phone and Web Push while the
+     * person is here (KRTX-1742). An absent report is sent with `keepalive`,
+     * so it still arrives when the page is closing.
+     */
+    presence: (input: { tab_id: string; active: boolean; alerts?: boolean }) =>
       backendApi.put<{ ok: boolean }>(
         `/projects/${ctx.projectId}/sessions/${ctx.sessionId}/presence`,
         input,
-        { showErrors: false },
+        { showErrors: false, keepalive: !input.active },
       ),
     /** Unified finalized LLM and compute cost for this session. */
     cost: () => P.getSessionCostRecord(ctx.sessionId, { projectId: ctx.projectId }),
@@ -63,6 +69,10 @@ export function bindSessionLifecycleResources(ctx: SessionBindingContext) {
       P.setProjectSessionSharing(ctx.projectId, ctx.sessionId, intent),
     previews: () => P.getSessionPreviewCandidates(ctx.projectId, ctx.sessionId),
     participants: () => P.getSessionParticipants(ctx.projectId, ctx.sessionId),
+    /** Is the caller notified about this session? */
+    watch: () => P.getSessionWatch(ctx.projectId, ctx.sessionId),
+    /** Watch (`true`) or mute (`false`) this session for the caller. */
+    setWatch: (watching: boolean) => P.setSessionWatch(ctx.projectId, ctx.sessionId, watching),
     commit: (input?: Parameters<typeof P.commitSessionChanges>[2]) =>
       P.commitSessionChanges(ctx.projectId, ctx.sessionId, input),
     publicShares: {

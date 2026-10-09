@@ -17,6 +17,9 @@ import { assertProjectCapability, loadProjectForUser, loadVisibleSession, loadVi
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../../middleware/caller-session';
+import { getRequestOnBehalfOf } from '../../middleware/on-behalf-of';
+import { triggerWatcherOf, upsertTriggerWatcher } from '../lib/trigger-watchers';
+import { logger } from '../../lib/logger';
 import { serializeSession } from '../lib/serializers';
 import { sessionIsTombstoned } from '../lib/access';
 import {
@@ -219,6 +222,20 @@ export function registerSessionRemindersRoutes(): void {
         now,
       });
       if ('error' in inserted) return c.json({ error: inserted.error }, 409);
+      // The person who set the reminder hears when it fails (KRTX-1742); an
+      // agent's reminder goes to the person the agent acts for.
+      const watcher = triggerWatcherOf({
+        authType: c.get('authType'),
+        userId: c.get('userId'),
+        sessionId: c.get('sessionId'),
+        onBehalfOfUserId: getRequestOnBehalfOf(c),
+      });
+      // Best-effort: the reminder is already stored, so a failed write must not
+      // fail the route (a retry would set a second reminder).
+      if (watcher) {
+        await upsertTriggerWatcher({ accountId: loaded.row.accountId, projectId, slug: spec.slug, userId: watcher })
+          .catch((err) => logger.warn('[trigger-watchers] reminder follow failed', { projectId, slug: spec.slug, error: err instanceof Error ? err.message : String(err) }));
+      }
       return c.json(serializeSessionReminder(inserted.row), 201);
     },
   );
