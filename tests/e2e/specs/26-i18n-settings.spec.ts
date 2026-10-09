@@ -105,6 +105,11 @@ function productSurfaceRoutes(projectId: string, accountId: string): string[] {
 
 interface LocaleMessages {
   common: { close: string };
+  // KRTX-1742: the per-kind rows of Settings > Notifications read these.
+  notifications: {
+    kind: Record<string, string>;
+    kindDescription: Record<string, string>;
+  };
   projectOnboarding: {
     progress: string;
     company: {
@@ -171,7 +176,7 @@ interface LocaleMessages {
       notificationTypes: string;
       behavior: string;
       sendTestNotification: string;
-      types: Record<string, { label: string; description: string }>;
+      push: string;
       notificationBehavior: Record<
         string,
         { label: string; description: string }
@@ -648,14 +653,18 @@ test.describe("26 — Settings localization", () => {
             await notificationSwitch.click();
           }
           await expect(notificationSwitch).toBeChecked();
+          // KRTX-1742 changed this list deliberately: the four per-browser kind
+          // switches (`settings.sessions.types`) are gone. "Notification types"
+          // is the person's server record: one row per kind, with a Push
+          // column. The Email column shows only where the deployment sends
+          // email, so this census does not count on it.
           for (const notificationText of [
             copy.settings.sessions.notificationTypes,
             copy.settings.sessions.behavior,
             copy.settings.sessions.sendTestNotification,
-            ...Object.values(copy.settings.sessions.types).flatMap((item) => [
-              item.label,
-              item.description,
-            ]),
+            copy.settings.sessions.push,
+            ...Object.values(copy.notifications.kind),
+            ...Object.values(copy.notifications.kindDescription),
             ...Object.values(
               copy.settings.sessions.notificationBehavior,
             ).flatMap((item) => [item.label, item.description]),

@@ -400,10 +400,42 @@ When a run that a trigger started ends with an error, Kortix records it on the t
 
 - `last_status` becomes `failed` and `last_error` holds the reason, for example `Out of credits: Payment Required: Insufficient credits.`
 - The Schedule page marks the trigger "Last run didn’t finish" and shows the reason in its panel.
-- The account owner gets one mobile push when the first run fails. A later failed run updates the reason without another push.
+- The trigger's [alert recipients](#alerts) get one alert when the first run fails. A later failed run updates the reason without another alert.
 - The trigger stays `failed` while it keeps firing. A new fire does not prove that its run works.
 
-The next run that finishes clears the failure. A run you stop yourself, a subagent, and a retried model call are not run outcomes. A fire that fails before a run starts, for example a session that cannot be created, clears on the next fire that succeeds.
+The next run that finishes clears the failure and sends one recovery alert. A run you stop yourself, a subagent, and a retried model call are not run outcomes. A fire that fails before a run starts, for example a session that cannot be created, clears on the next fire that succeeds.
+
+## Alerts
+
+An alert is a [notification](/docs/work/notifications) about a trigger that stops working. Kortix sends one `automation_failed` alert when a trigger starts failing, and one `automation_recovered` alert when it works again. Failures in between send nothing new. An alert names the trigger, carries the error text, and opens the project's **Triggers** page. A reminder's alert opens the **Reminders** page.
+
+### Who gets alerts
+
+- **The people who wrote the trigger.** That is the person who created it, and each person who edited it later, through the web app, the API, the SDK, or the CLI (`kortix triggers add --apply`, `kortix triggers set`). An agent that creates or edits a trigger with its session token counts as the person it acts for. An API key and a service account count as nobody.
+- **The project managers**, when none of those people can still read the project's triggers: the account owners, the account admins, and the people assigned the project's **Manager** role directly, not through a group.
+
+A reminder alert goes only to people who can open the reminder's session. The person who set the reminder gets it. When that person can no longer get it, the project managers who can open the session get it. When the session is deleted, only the person who set the reminder can get it.
+
+A trigger with no recorded writer alerts the project managers. That is a trigger added by editing `kortix.yaml` and running `kortix ship`, or a trigger created before alerts existed. The next person who edits it through the API becomes a recipient. Deleting a trigger deletes its recipients.
+
+### When an alert fires
+
+Kortix tracks two kinds of failure. A trigger has at most one open alert. Only a success of the same kind ends it.
+
+| Failure | Starts the alert | Sends the recovery alert |
+| --- | --- | --- |
+| A fire fails | A fire that fails for good, for example a session that cannot be created because the account is out of credits. | The next fire that reaches a session. A fire that queues its prompt or its session create ends the alert when the queued work is delivered. |
+| A run fails | A session the trigger started ends its turn with an error. See [Failed runs](#failed-runs). | The next run that finishes. |
+
+Kortix retries a cron fire, a reminder, and a monitor event before it gives up. It alerts when it gives up, never on a retried attempt. A session create that Kortix puts back in its queue alerts only when its retries run out.
+
+A manual or webhook fire alerts on its first failure, because Kortix cannot know whether the sender retries. An app event fire alerts on its first failure only when a retry cannot help, for example when the account is out of credits. For a failure that a retry can fix, the app sends the event again, and Kortix alerts when the third delivery of the same event fails.
+
+Kortix emails the `automation_failed` alert at once, when the deployment can send email. The `automation_recovered` alert gets a push only, unless you turn its **Email** switch on.
+
+### Stop alerts
+
+Open **Settings → Notifications** and turn off **Push** and **Email** for the two automation kinds, failed and recovered. This applies to every trigger and reminder. The bell still lists each alert. You cannot turn alerts off for one trigger only.
 
 ## Session access
 
@@ -481,7 +513,7 @@ Fires on `POST /v1/webhooks/projects/{projectId}/{slug}`. Kortix checks the requ
 | `GET /v1/projects/{projectId}/triggers` | `project.trigger.read` | Lists triggers, runtime state (`last_fired_at`, `last_status`, `last_error`, `last_attempt_at`), and manifest parse errors. A bad entry appears in `errors[]`; it does not break the other triggers. |
 | `POST /v1/projects/{projectId}/triggers` | `project.trigger.create` | Creates a trigger. Commits to the manifest directly. |
 | `PATCH /v1/projects/{projectId}/triggers/{slug}` | `project.trigger.update` | Partial update, merged onto the current entry. |
-| `DELETE /v1/projects/{projectId}/triggers/{slug}` | `project.trigger.delete` | Also clears the trigger's runtime state. |
+| `DELETE /v1/projects/{projectId}/triggers/{slug}` | `project.trigger.delete` | Also clears the trigger's runtime state and its [alert recipients](#alerts). |
 | `PATCH /v1/projects/{projectId}/triggers/activation` | `project.trigger.update` | Body `{ paused: boolean }`. See [Pause and resume](#pause-and-resume). |
 | `POST /v1/projects/{projectId}/triggers/{slug}/fire` | `project.trigger.fire` | Manual fire. The built-in project `member` role holds `project.trigger.fire`, so an ordinary member can fire a trigger. |
 | `POST /v1/webhooks/projects/{projectId}/{slug}` | signature or token | Public URL, gated by the webhook secret. |
@@ -493,7 +525,7 @@ A project-level switch stops every trigger in the project at once, independent o
 ## Limits and reliability
 
 - The scheduler polls roughly every second (default 1,000 ms; configurable via `KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS`). A cron run does not start exactly on its slot: each trigger gets a fixed offset of up to a quarter of its period, at most 30 minutes, so many triggers on the same minute do not start at once. The trigger's detail and `GET /triggers` (`next_fire_at`) show the time the next run starts. Self-host operators can set `KORTIX_TRIGGER_SCHEDULE_JITTER_WINDOW_MS=0` to run on the slot.
-- A manual or webhook fire that fails sets the trigger's last status to failed, with the error, as a failed cron fire does.
+- A fire that fails sets the trigger's last status to failed, with the error. This holds for every source: cron, manual, webhook, app event and monitor. The next fire that succeeds clears a failed fire. A failed run clears as [Failed runs](#failed-runs) describes.
 - Each project allows 3 triggered sessions provisioning at once, by default. A fire past that returns `queued` (`202`) instead of failing, and runs once one of them finishes provisioning. There is no cap on how many sessions run at once.
 - A manual or webhook fire has a 45-second timeout. Loading the manifest has a 30-second timeout.
 - A cron fire is keyed on the due schedule slot, so a fire that timed out but actually landed does not duplicate on retry.

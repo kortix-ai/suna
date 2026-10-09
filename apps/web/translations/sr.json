@@ -771,7 +771,16 @@
         }
       },
       "testNotificationTitle": "Пробно обавештење",
-      "testNotificationBody": "Обавештења раде исправно!"
+      "testNotificationBody": "Обавештења раде исправно!",
+      "enableDescriptionPush": "Приказује обавештења у овом прегледачу, чак и кад су све картице Kortix затворене.",
+      "enableDescriptionDesktop": "Приказује обавештења десктоп апликације док је њен прозор отворен.",
+      "enableDescriptionBrowser": "Приказује обавештења у овом прегледачу док је картица Kortix отворена.",
+      "notificationTypesDescription": "Ова подешавања важе на сваком телефону и у сваком прегледачу. Звонце приказује свако обавештење.",
+      "push": "Push",
+      "email": "Имејл",
+      "channelSwitch": "{kind}: {channel}",
+      "preferencesLoadError": "Учитавање подешавања обавештења није успело",
+      "retry": "Покушај поново"
     },
     "git": {
       "updateFailed": "Складиште није могло да се ажурира",
@@ -2557,7 +2566,50 @@
     "settingsFailed": "Ажурирање подешавања обавештења није успело",
     "enableAll": "Омогући све",
     "disableAll": "Онемогући све",
-    "saveChanges": "Сачувај промене"
+    "saveChanges": "Сачувај промене",
+    "kind": {
+      "turn_done": "Потез завршен",
+      "turn_error": "Потез није успео",
+      "question": "Питање",
+      "permission": "Захтев за дозволу",
+      "shared": "Подељено са вама",
+      "automation_failed": "Упозорење о грешци",
+      "automation_recovered": "Обавештење о опоравку"
+    },
+    "kindDescription": {
+      "turn_done": "Потез се завршава.",
+      "turn_error": "Потез се завршава грешком.",
+      "question": "Агент поставља питање и чека одговор.",
+      "permission": "Агент тражи дозволу да покрене алат.",
+      "shared": "Неко дели сесију са вама.",
+      "automation_failed": "Окидач или подсетник почиње да не успева.",
+      "automation_recovered": "Окидач или подсетник који није успевао поново ради."
+    },
+    "bell": {
+      "label": "Обавештења",
+      "unreadLabel": "Обавештења: непрочитаних {count}",
+      "markAllRead": "Означи све као прочитано",
+      "empty": "Обавештења ће се појавити овде",
+      "loadError": "Учитавање обавештења није успело",
+      "retry": "Покушај поново",
+      "unread": "Непрочитано",
+      "promptPush": "Добијајте обавештења кад је Kortix затворен",
+      "promptBackground": "Добијајте обавештења кад је Kortix у позадини",
+      "turnOn": "Укључи",
+      "dismiss": "Одбаци"
+    },
+    "arrival": {
+      "inProject": "{kind} у пројекту {project}",
+      "openSession": "Отвори сесију",
+      "openReminders": "Отвори подсетнике",
+      "openTriggers": "Отвори окидаче"
+    },
+    "session": {
+      "mute": "Утишај обавештења",
+      "unmute": "Поново укључи обавештења",
+      "muted": "Обавештења су утишана",
+      "unmuted": "Обавештења су поново укључена"
+    }
   },
   "modes": {
     "samplePrompts": "Узорак упита",

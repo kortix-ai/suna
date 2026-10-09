@@ -62,6 +62,19 @@ describe("ke2e local profile", () => {
     });
   });
 
+  it("hands the flows the local Mailpit only when Supabase reports one", () => {
+    const supabase = {
+      API_URL: "http://127.0.0.1:54321",
+      DB_URL: "postgresql://postgres:postgres@127.0.0.1:54322/postgres",
+      ANON_KEY: "anon",
+      SERVICE_ROLE_KEY: "service-role",
+    };
+    expect(
+      localEnvironmentOverrides({ supabase: { ...supabase, MAILPIT_URL: "http://127.0.0.1:54324" } }).KE2E_MAILPIT_URL,
+    ).toBe("http://127.0.0.1:54324");
+    expect(localEnvironmentOverrides({ supabase })).not.toHaveProperty("KE2E_MAILPIT_URL");
+  });
+
   it("uses the Next development server's canonical localhost origin", () => {
     expect(localWebUrl(24000)).toBe("http://localhost:24000");
   });

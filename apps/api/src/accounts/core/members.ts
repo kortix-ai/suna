@@ -25,6 +25,7 @@ import {
   type Writer,
 } from '../../iam/assignments';
 import { revokeAllAccountTokensForUser } from '../../repositories/account-tokens';
+import { deleteMemberNotificationData } from '../../notifications/cleanup';
 import { db } from '../../shared/db';
 import { registerInviteRoutes, registerMemberInviteRoute } from './invites';
 import { grantAccountRole } from './member-role-write';
@@ -368,6 +369,8 @@ export function registerMemberRoutes(): void {
       await deleteProjectScopeAssignments(accountId, targetUserId);
       await deleteAccountScopeAssignments(accountId, targetUserId);
       await deleteAccountGroupMemberships(accountId, targetUserId);
+      // KRTX-1742: their inbox and watcher rows here would keep naming sessions.
+      await deleteMemberNotificationData(accountId, targetUserId);
       await db
         .delete(accountMemberships)
         .where(
@@ -548,6 +551,7 @@ export function registerMemberRoutes(): void {
       await deleteProjectScopeAssignments(accountId, userId);
       await deleteAccountScopeAssignments(accountId, userId);
       await deleteAccountGroupMemberships(accountId, userId);
+      await deleteMemberNotificationData(accountId, userId);
       await db
         .delete(accountMemberships)
         .where(

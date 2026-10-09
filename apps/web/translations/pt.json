@@ -771,7 +771,16 @@
         }
       },
       "testNotificationTitle": "Notificação de teste",
-      "testNotificationBody": "As notificações estão funcionando corretamente!"
+      "testNotificationBody": "As notificações estão funcionando corretamente!",
+      "enableDescriptionPush": "Mostra notificações neste navegador, mesmo com todas as abas do Kortix fechadas.",
+      "enableDescriptionDesktop": "Mostra notificações do aplicativo desktop enquanto a janela dele estiver aberta.",
+      "enableDescriptionBrowser": "Mostra notificações neste navegador enquanto uma aba do Kortix estiver aberta.",
+      "notificationTypesDescription": "Estas escolhas valem em todos os celulares e navegadores. O sino lista todas as notificações.",
+      "push": "Push",
+      "email": "E-mail",
+      "channelSwitch": "{kind}: {channel}",
+      "preferencesLoadError": "Não foi possível carregar suas configurações de notificação",
+      "retry": "Tentar novamente"
     },
     "git": {
       "updateFailed": "Não foi possível atualizar o repositório",
@@ -2557,7 +2566,50 @@
     "settingsFailed": "Falha ao atualizar preferências de notificação",
     "enableAll": "Ativar Todas",
     "disableAll": "Desativar Todas",
-    "saveChanges": "Salvar Mudanças"
+    "saveChanges": "Salvar Mudanças",
+    "kind": {
+      "turn_done": "Turno concluído",
+      "turn_error": "Turno com falha",
+      "question": "Pergunta",
+      "permission": "Pedido de permissão",
+      "shared": "Compartilhada com você",
+      "automation_failed": "Alerta de falha",
+      "automation_recovered": "Alerta de recuperação"
+    },
+    "kindDescription": {
+      "turn_done": "Um turno termina.",
+      "turn_error": "Um turno termina com um erro.",
+      "question": "O agente faz uma pergunta e aguarda a resposta.",
+      "permission": "O agente pede permissão para executar uma ferramenta.",
+      "shared": "Alguém compartilha uma sessão com você.",
+      "automation_failed": "Um trigger ou lembrete começa a falhar.",
+      "automation_recovered": "Um trigger ou lembrete que falhava volta a funcionar."
+    },
+    "bell": {
+      "label": "Notificações",
+      "unreadLabel": "Notificações: {count} não lidas",
+      "markAllRead": "Marcar tudo como lido",
+      "empty": "As notificações aparecerão aqui",
+      "loadError": "Não foi possível carregar as notificações",
+      "retry": "Tentar novamente",
+      "unread": "Não lida",
+      "promptPush": "Receba notificações quando o Kortix estiver fechado",
+      "promptBackground": "Receba notificações quando o Kortix estiver em segundo plano",
+      "turnOn": "Ativar",
+      "dismiss": "Dispensar"
+    },
+    "arrival": {
+      "inProject": "{kind} em {project}",
+      "openSession": "Abrir sessão",
+      "openReminders": "Abrir lembretes",
+      "openTriggers": "Abrir triggers"
+    },
+    "session": {
+      "mute": "Silenciar notificações",
+      "unmute": "Reativar notificações",
+      "muted": "Notificações silenciadas",
+      "unmuted": "Notificações reativadas"
+    }
   },
   "modes": {
     "samplePrompts": "Prompts de exemplo",
