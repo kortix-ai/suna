@@ -1,5 +1,5 @@
 {
-  "source_hash": "c2195a07829e893f781db218d72f27ec27d19c74b4eeff179606f22c44b3c297",
+  "source_hash": "3ac2154f5386485cabdb24fe24ee9eca3749c8446ae5c95cda1dca6c060fec8d",
   "diff_files": [
     "apps/api/src/__tests__/integration-notification-recipients.test.ts",
     "apps/api/src/__tests__/integration-session-push-recipients.test.ts",
@@ -113,13 +113,13 @@
     "tests/spec/end-to-end.md",
     "tests/src/flows/notifications.flow.ts"
   ],
-  "diff_hash": "c611b6c04af7266199719a01b533ea59039f083cd26c2b222bf50b890c3f3921",
-  "head": "1938bea3bbfc0c25f5c5944879c73063158d0992",
+  "diff_hash": "13b32c5ba77648b86633fd1f23a842007a528cf9e75419f9c4bb4fdb476fc284",
+  "head": "4a215cb5fb0b6f7a6efa5b7ed815f49c7b39d739",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-09T15:01:37.586Z"
+  "at": "2026-10-09T15:14:31.505Z"
 }
