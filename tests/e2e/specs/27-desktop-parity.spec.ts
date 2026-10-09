@@ -551,16 +551,28 @@ for (const runtime of runtimes) {
         // mounted may still be revalidating its cached connectors (and the
         // Customize prefetch warms that entry), and that response arrives after
         // the reload with its body already discarded.
-        const reloadStartedAt = Date.now();
-        const response = page.waitForResponse(
-          (response) =>
-            isConnectorList(response) &&
-            response.request().timing().startTime >= reloadStartedAt,
-        );
+        // Read the body in a route handler: a response object loses its body
+        // when the document navigates, and a start-time filter still lets one
+        // through (gates 37548429782 and 37953042131).
+        const listPath = `/v1/connectors/projects/${project!.id}/connectors`;
+        const reloadedLists: Array<{ status: number; body: unknown }> = [];
+        let reloaded = false;
+        const captureList = async (route: import("@playwright/test").Route) => {
+          if (route.request().method() !== "GET" || new URL(route.request().url()).pathname !== listPath) {
+            return route.fallback();
+          }
+          const fetched = await route.fetch();
+          const body = await fetched.json().catch(() => undefined);
+          if (reloaded) reloadedLists.push({ status: fetched.status(), body });
+          await route.fulfill({ response: fetched, json: body }).catch(() => {});
+        };
+        await page.route(`**${listPath}*`, captureList);
+        reloaded = true;
         await page.reload();
-        const connectorResponse = await response;
-        expect(connectorResponse.status()).toBe(200);
-        expect(await connectorResponse.json()).toMatchObject({
+        await expect.poll(() => reloadedLists.length, { timeout: 30_000 }).toBeGreaterThan(0);
+        await page.unroute(`**${listPath}*`, captureList);
+        expect(reloadedLists[0].status).toBe(200);
+        expect(reloadedLists[0].body).toMatchObject({
           connectors: expect.any(Array),
         });
         await expect(
@@ -1160,7 +1172,19 @@ for (const runtime of runtimes) {
         await page.unroute(promptsUrl);
         // The local box reports no active turn, so the steer waits and stays a
         // steer (`admitSteer` → turn_active), drawn as "Read at next step".
-        await expect(pending.locator("[data-queued-delivery]")).toHaveText("Read at next step");
+        // A real deployed box is mid-turn and may read the steer before this
+        // check: then it has left the Queue List and is in the transcript
+        // (gate 37963866893 read it first; gate 37953042131 saw it waiting).
+        if (isDeployedTarget()) {
+          await expect(
+            pending
+              .locator("[data-queued-delivery]")
+              .filter({ hasText: "Read at next step" })
+              .or(page.getByRole("log").getByText(transcriptText, { exact: true })),
+          ).toBeVisible();
+        } else {
+          await expect(pending.locator("[data-queued-delivery]")).toHaveText("Read at next step");
+        }
         await expectThinkingMatchesStop(page);
         if (!isDeployedTarget()) {
           await expect(page.getByText(/This session is idle/)).toHaveCount(0);

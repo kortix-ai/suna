@@ -2357,7 +2357,14 @@ flow(
           params: { projectId: project.id, grantId },
         });
       del.status(200);
-      const agents = await visibleAgents(member);
+      // The principal cache (15 s) is cleared only on the replica that took the
+      // DELETE; another replica serves the old grant until its TTL ends
+      // (release gate 37953042131). Poll for 20 s.
+      let agents = await visibleAgents(member);
+      for (const deadline = Date.now() + 20_000; agents.includes(AGENT) && Date.now() < deadline; ) {
+        await new Promise((resolve) => setTimeout(resolve, 1_000));
+        agents = await visibleAgents(member);
+      }
       assert({
         kind: 'body',
         description: 'member no longer sees the agent',

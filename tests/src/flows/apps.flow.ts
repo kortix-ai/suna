@@ -717,6 +717,14 @@ flow(
   {
     domain: "apps",
     requires: ["appHost"],
+    // Same staging Apps edge fault as AGP-13: the gate cannot set
+    // KE2E_CAP_APP_HOST, so an unquarantined skip fails --require-all.
+    ...(process.env.KE2E_TARGET === "staging"
+      ? {
+          quarantine:
+            "staging Apps edge: *.apps.kortix.com staging hosts return Cloudflare 530 (apps-router STAGING_API_ORIGIN resolves to a dead tunnel) — quarantined 2026-10-09 until the apps-router staging origin is fixed",
+        }
+      : {}),
     timeoutMs: 180_000,
     routes: [
       "PATCH /v1/projects/:projectId/features",
