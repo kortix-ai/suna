@@ -6,10 +6,11 @@
  * What these assert is the contract, not the implementation:
  *   C2 "proven" is OpenCode answering its session API on the candidate dir.
  *   C3 the readiness gate opens only after a proof, never before.
- *   C4 `/workspace` is never a candidate while `config_releases` is on.
+ *   C4 `/workspace` is never a candidate while the API serves releases.
  *   C6 no timer decides the config: the release is waited for.
  *   C7 valve A (present but does not load) and valve B (store/API unreachable).
- *   C8 flag off is one early return to the pre-release behaviour.
+ *   C8 `403 feature_disabled` (an API from before config releases graduated)
+ *      is one early return to the pre-release behaviour.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { spawnSync } from 'node:child_process'

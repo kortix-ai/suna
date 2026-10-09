@@ -158,6 +158,17 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     expect(config).not.toHaveProperty('TEAMS_CHANNEL_ENABLED');
   });
 
+  test('config_releases graduated: every session runs a config release and a stored override is inert', () => {
+    // A project that turned config releases on or off while they were a flag
+    // keeps the value in metadata. It must not resurface as a key, a catalog
+    // row, or a gate: a stored `false` no longer sends a session back to its
+    // workspace config dir.
+    expect(isFeatureFlagKey('config_releases')).toBe(false);
+    const metadata = { experimental: { config_releases: false } };
+    expect(Object.keys(resolveFeatureFlags(metadata))).not.toContain('config_releases');
+    expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain('config_releases');
+  });
+
   test('connectors_api_discover requires explicit opt-in', () => {
     expect(resolveFeatureFlag({}, 'connectors_api_discover')).toBe(false);
     expect(
