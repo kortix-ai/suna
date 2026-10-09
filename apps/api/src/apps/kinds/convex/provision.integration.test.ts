@@ -127,7 +127,11 @@ describe('sign-in issuer', () => {
 
   test('maintenance moves an App off another issuer: all three KORTIX_AUTH_* written; a failed write is retried, a moved App is left alone', async () => {
     const envWrites: Array<{ path: string; auth: string | null; edgeToken: string | null; body: unknown }> = [];
+    // The stubs bind 127.0.0.1 (see hosts.integration.test.ts): this process
+    // fetches its own stubs, and `localhost` is not resolvable inside Bun's
+    // fetcher where /etc/hosts is unreadable.
     const ok = Bun.serve({
+      hostname: '127.0.0.1',
       port: 0,
       fetch: async (req) => {
         envWrites.push({
@@ -139,10 +143,11 @@ describe('sign-in issuer', () => {
         return new Response(null, { status: 200 });
       },
     });
-    const down = Bun.serve({ port: 0, fetch: () => new Response('boom', { status: 500 }) });
+    const down = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: () => new Response('boom', { status: 500 }) });
     // Kortix reaches a machine through its private Platinum exposure: the fake
     // control plane exposes a machine whose id ends in `-ok` at `ok`, any other at `down`.
     const platinum = Bun.serve({
+      hostname: '127.0.0.1',
       port: 0,
       fetch: (req) => {
         const [, , , id, sub] = new URL(req.url).pathname.split('/');

@@ -24,7 +24,12 @@ const seen: Array<{ port: string; method: string; path: string; token: string | 
 
 // Fake Convex: `/<port>/<path>` on one server, the port standing in for the
 // machine port Platinum's edge would route to. No token, no answer.
+// The stubs bind 127.0.0.1, never the `localhost` name: this process fetches
+// its own stubs, and a sandbox without a readable /etc/hosts cannot resolve
+// `localhost` inside Bun's fetcher (a numeric loopback origin resolves
+// everywhere).
 const convex = Bun.serve({
+  hostname: '127.0.0.1',
   port: 0,
   async fetch(req) {
     const url = new URL(req.url);
@@ -47,6 +52,7 @@ const convex = Bun.serve({
 });
 const exposed: string[] = [];
 const platinum = Bun.serve({
+  hostname: '127.0.0.1',
   port: 0,
   async fetch(req) {
     const [, , , id, sub] = new URL(req.url).pathname.split('/');
