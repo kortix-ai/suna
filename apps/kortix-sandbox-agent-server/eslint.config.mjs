@@ -61,6 +61,9 @@ const API_CONTRACT = [`${apiContract}/**`, at('../../packages/api-contract/src/*
 // The SDK's import-free message-id codec, reached the same way (pi mints ids with it).
 const SDK_WIRE_MESSAGE_ID_FILE = 'packages/sdk/src/core/session/wire-message-id.ts'
 const SDK_WIRE_MESSAGE_ID = [resolve(import.meta.dirname, '../..', SDK_WIRE_MESSAGE_ID_FILE).split(sep).join('/'), at(`../../${SDK_WIRE_MESSAGE_ID_FILE}`)]
+// The SDK's generative-UI prompt (`@kortix/sdk/genui`), reached the same way: sandbox-env writes it.
+const SDK_GENUI_FILE = 'packages/sdk/src/genui/index.ts'
+const SDK_GENUI = [resolve(import.meta.dirname, '../..', SDK_GENUI_FILE).split(sep).join('/'), at(`../../${SDK_GENUI_FILE}`)]
 /** @type {Record<string, string[]>} */
 const SERVICE_EXTERNALS = {
   'egress-shim': [...pkg('node-forge'), ...API_CONTRACT],
@@ -70,6 +73,8 @@ const SERVICE_EXTERNALS = {
   'runtime-assets': API_CONTRACT,
   // The agent env file a tool's `context.env` reads (`@kortix/api-contract/sandbox-layout`).
   tools: API_CONTRACT,
+  // The generative-UI prompt written for OpenCode (`@kortix/sdk/genui`).
+  'sandbox-env': SDK_GENUI,
 }
 /** Harness adapters and the packages only they may load. @type {Record<string, string[]>} */
 export const ADAPTERS = {
@@ -112,6 +117,7 @@ const independentModules = createIndependentModules({
       '@/*': [at('src/*')],
       '@kortix/api-contract/*': [at('../../packages/api-contract/src/*')],
       '@kortix/sdk/wire-message-id': [at(`../../${SDK_WIRE_MESSAGE_ID_FILE}`)],
+      '@kortix/sdk/genui': [at(`../../${SDK_GENUI_FILE}`)],
     },
   },
   reusableImportPatterns: { sharedLayer: [lib, types] },

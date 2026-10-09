@@ -16,7 +16,7 @@ export function genuiVersionOf(tag: string): number | null {
 /** Same as `genuiVersionOf`, for a markdown renderer's `language-…` class name. */
 export function genuiVersionFromClassName(className: string | undefined): number | null {
   const match = /(?:^|\s)language-([\w-]+)/.exec(className ?? '');
-  return match ? genuiVersionOf(match[1]) : null;
+  return match?.[1] ? genuiVersionOf(match[1]) : null;
 }
 
 /**

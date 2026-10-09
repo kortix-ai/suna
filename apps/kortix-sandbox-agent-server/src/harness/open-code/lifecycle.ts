@@ -121,6 +121,7 @@ import {
   SECRET_CAPABILITIES_ENV_NAME,
   writeSecretCapabilitiesInstruction,
 } from '@/services/sandbox-env/secret-capabilities'
+import { writeGenuiInstruction } from '@/services/sandbox-env/genui-instruction'
 import { configReleaseNoticePath } from '@/services/config-release/notice'
 import { bootLinkPath, readBootLinkTarget, releaseRootOf } from '@/services/config-release/boot-config'
 import { writeReleaseInstructionsPlugin } from './release-instructions'
@@ -373,6 +374,8 @@ export async function buildOpencodeConfigContent(
     /** The project root's `skills/`, only while OpenCode serves the working tree. */
     projectSkillsDir?: string | null
     secretCapabilitiesInstructionPath?: string | null
+    /** The generative-UI catalog prompt, when the project has it on (sandbox-env/genui-instruction.ts). */
+    genuiInstructionPath?: string | null
     /** The config-release notice, when one exists (config-release/notice.ts). */
     configReleaseNoticePath?: string | null
     /** OpenCode serves a config release: load the release instructions plugin (release-instructions.ts). */
@@ -421,6 +424,8 @@ export async function buildOpencodeConfigContent(
     opts.secretCapabilitiesInstructionPath && existsSync(opts.secretCapabilitiesInstructionPath)
       ? opts.secretCapabilitiesInstructionPath
       : null
+  const genuiInstructionPath =
+    opts.genuiInstructionPath && existsSync(opts.genuiInstructionPath) ? opts.genuiInstructionPath : null
   // Native mode (no gateway): the session's model pin still has to reach
   // opencode's config — without an explicit `model`, opencode's default is
   // catalog-order-dependent (Provider.defaultModel walks the models.dev map in
@@ -483,7 +488,7 @@ export async function buildOpencodeConfigContent(
 
   // Instruction files the platform contributes. Appended, never clobbering
   // what the project's own config declares.
-  for (const instructionPath of [secretCapabilitiesInstructionPath, opts.configReleaseNoticePath]) {
+  for (const instructionPath of [secretCapabilitiesInstructionPath, opts.configReleaseNoticePath, genuiInstructionPath]) {
     if (!instructionPath) continue
     const instructions = Array.isArray(out.instructions)
       ? out.instructions.filter((item): item is string => typeof item === 'string')
@@ -999,6 +1004,7 @@ export async function writeKortixOpencodeConfig(
     injectedSkillsDir?: string | null
     projectSkillsDir?: string | null
     secretCapabilitiesInstructionPath?: string | null
+    genuiInstructionPath?: string | null
     configReleaseNoticePath?: string | null
     servesRelease?: boolean
     /** Write the hosted tools' bridge plugin (tool-bridge.ts) for this daemon and checkout. */
@@ -1018,6 +1024,7 @@ export async function writeKortixOpencodeConfig(
     injectedSkillsDir: opts.injectedSkillsDir,
     projectSkillsDir: opts.projectSkillsDir,
     secretCapabilitiesInstructionPath: opts.secretCapabilitiesInstructionPath,
+    genuiInstructionPath: opts.genuiInstructionPath,
     configReleaseNoticePath: opts.configReleaseNoticePath,
     servesRelease: opts.servesRelease,
     toolBridgeSpec,
@@ -2070,6 +2077,14 @@ export function createOpencodeLifecycle(
         err: err instanceof Error ? err.message : String(err),
       })
     }
+    let genuiInstructionPath: string | null = null
+    try {
+      genuiInstructionPath = writeGenuiInstruction(baseEnv)
+    } catch (err) {
+      logger.warn('[opencode] genui instruction write failed; sessions start without generative UI', {
+        err: err instanceof Error ? err.message : String(err),
+      })
+    }
     // The project root's `skills/` joins whenever the boot link names a config
     // dir inside a project checkout: the working tree (config releases off), or
     // a release, which is a checkout of the base branch with the same layout.
@@ -2082,6 +2097,7 @@ export function createOpencodeLifecycle(
       projectSkillsDir: servesProject ? join(projectRoot, SKILLS_DIR) : null,
       servesRelease: !!served && releaseRootOf(served) !== null,
       secretCapabilitiesInstructionPath,
+      genuiInstructionPath,
       configReleaseNoticePath: configReleaseNoticePath(),
       toolBridge: { daemonPort: currentCfg.servicePort, projectRoot: servesProject ? projectRoot : null, configDir: served },
     })
