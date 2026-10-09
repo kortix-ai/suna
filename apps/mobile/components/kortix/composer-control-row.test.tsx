@@ -62,7 +62,7 @@ mock.module('@/components/ui/button', () => ({
     return React.createElement('button', props, children);
   },
 }));
-mock.module('@/components/ui/icon', () => ({ Icon: ({ as, ...props }: HostProps & { as?: unknown }) => React.createElement('icon', { icon: as?.name, ...props }) }));
+mock.module('@/components/ui/icon', () => ({ Icon: ({ as, ...props }: HostProps & { as?: { name?: string } }) => React.createElement('icon', { icon: as?.name, ...props }) }));
 mock.module('@/components/ui/text', () => ({ Text: host('text'), TextClassContext: React.Fragment }));
 mock.module('@/components/kortix/pill-input', () => ({ INPUT_FONT_FAMILY: 'roobert', INPUT_FONT_SIZE: 16, PillInput: host('pill-input') }));
 mock.module('@/components/kortix/kortix-loader', () => ({ KortixLoader: host('loader') }));

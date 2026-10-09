@@ -49,7 +49,6 @@ import {
   Platform,
   type TextProps,
 } from 'react-native';
-import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import Animated, { Easing, Keyframe } from 'react-native-reanimated';
 import Markdown, { MarkdownIt, type MarkdownProps } from 'react-native-markdown-display';
 import { useColorScheme } from 'nativewind';
@@ -66,7 +65,6 @@ import { MermaidBlock } from '@/components/markdown/mermaid/MermaidBlock';
 import { mathPlugin } from '@/lib/markdown/math-plugin';
 import { markdownPalette, type MarkdownPalette } from '@/components/markdown/markdown-theme';
 import { isMarkdownSeparatorBlock, splitMarkdown } from '@/lib/markdown/split-blocks';
-import { isSafeExternalLink } from '@/lib/markdown/safe-link';
 import { groupImageBlocks, imageSourceKey } from '@/lib/markdown/markdown-image';
 import { MarkdownImage, MarkdownImageGallery, MarkdownImagesContext, type MarkdownRemoteImages } from '@/components/markdown/markdown-image';
 import {
