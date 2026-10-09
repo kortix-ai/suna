@@ -1,0 +1,25 @@
+{
+  "source_hash": "587241e5e8323cbef0dc47c39eaad75ce7109be8e6ff4f31afe08a9918b838d2",
+  "diff_files": [
+    "apps/api/src/projects/lib/session-transcript-children.test.ts",
+    "apps/api/src/projects/lib/session-transcript-mirror.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/turn-auto-resume.test.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/open-code/turn-auto-resume.ts",
+    "apps/web/src/app/[locale]/(system)/debug/subagent-failure/page.tsx",
+    "apps/web/src/features/session/tool/tool-part-renderer.test.tsx",
+    "apps/web/src/features/session/tool/tool-part-renderer.tsx",
+    "apps/web/src/features/session/tool/tools/task-tool.test.tsx",
+    "apps/web/src/features/session/tool/tools/task-tool.tsx",
+    "packages/sdk/src/core/turns/parts.ts",
+    "packages/sdk/src/core/turns/turns.test.ts"
+  ],
+  "diff_hash": "035a4f63fd189c4bcae23387d8743ec66794013bfb02ae3d2cf31d3554a4a632",
+  "head": "5fd249c9e299e9d09641e266d78eea72bc9df83a",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-09T08:38:27.307Z"
+}
