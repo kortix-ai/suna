@@ -69,6 +69,7 @@ export type FeatureFlagKey =
   | 'agent_principal'
   | 'us_region'
   | 'event_triggers'
+  | 'notification_center'
   /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'human_messaging';
 
@@ -106,6 +107,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'pi_harness',
   'us_region',
   'event_triggers',
+  'notification_center',
 ] as const;
 
 /**

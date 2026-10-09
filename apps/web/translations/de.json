@@ -1203,6 +1203,10 @@
           "name": "US-Region",
           "description": "Neue Sitzungen dieses Projekts in der Region US-Ost ausführen. Eine laufende Sitzung behält ihre Region bis zum Neustart."
         },
+        "notification_center": {
+          "name": "Benachrichtigungszentrale",
+          "description": "Informiert die Personen, die eine Sitzung betrifft (wer den Prompt sendete, wer sie erstellte und wer ihr folgt), über eine Glocke, Browser-Push und E-Mail, und meldet fehlschlagende Trigger und Erinnerungen. Aus: Nur das Telefon der Person, die die Sitzung erstellt hat, erhält einen Push."
+        },
         "event_triggers": {
           "name": "App-Ereignis-Trigger",
           "description": "Starte einen Agenten, wenn in einer verbundenen App etwas passiert: eine neue E-Mail, ein Pull Request, ein Kalendertermin."

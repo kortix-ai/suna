@@ -36,6 +36,7 @@ import { markGitTriggerAttemptFailed } from '../lib/trigger-fire';
 import { raiseTriggerAlert } from '../lib/trigger-alerts';
 import { deleteTriggerWatchers, triggerWatcherOf, upsertTriggerWatcher } from '../lib/trigger-watchers';
 import { getRequestOnBehalfOf } from '../../middleware/on-behalf-of';
+import { notificationsEnabled } from '../../notifications/enabled';
 import { logger } from '../../lib/logger';
 import type { AppEnv } from '../../types';
 import { validateWebhookSecretConfiguration } from '../lib/webhook-secret-policy';
@@ -58,9 +59,16 @@ import {
 
 /**
  * The person who created or edited a trigger follows its alerts (KRTX-1742).
- * Never an API key or a service account: they name no person.
+ * Never an API key or a service account: they name no person. Only with the
+ * project's `notification_center` flag on.
  */
-async function followTrigger(c: Context<AppEnv>, accountId: string, projectId: string, slug: string): Promise<void> {
+async function followTrigger(
+  c: Context<AppEnv>,
+  project: { accountId: string; metadata: unknown },
+  projectId: string,
+  slug: string,
+): Promise<void> {
+  if (!notificationsEnabled(project.metadata)) return;
   const userId = triggerWatcherOf({
     authType: c.get('authType'),
     userId: c.get('userId'),
@@ -69,7 +77,7 @@ async function followTrigger(c: Context<AppEnv>, accountId: string, projectId: s
   });
   if (!userId) return;
   // Best-effort: the manifest is already committed, so a failed write must not fail the route.
-  await upsertTriggerWatcher({ accountId, projectId, slug, userId }).catch((err) =>
+  await upsertTriggerWatcher({ accountId: project.accountId, projectId, slug, userId }).catch((err) =>
     logger.warn('[trigger-watchers] follow failed', { projectId, slug, error: err instanceof Error ? err.message : String(err) }));
 }
 
@@ -446,7 +454,7 @@ export function registerTriggersRoutes(): void {
         access: parsedAccess.access,
         pinnedSessionId: draft.pinnedSessionId,
       });
-      await followTrigger(c, loaded.row.accountId, projectId, draft.slug);
+      await followTrigger(c, loaded.row, projectId, draft.slug);
 
       return c.json(await loadTriggersForResponse(projectId, loaded.row), 201);
     },
@@ -680,7 +688,7 @@ export function registerTriggersRoutes(): void {
           pinnedSessionId: effectivePinnedSessionId,
         });
       }
-      await followTrigger(c, loaded.row.accountId, projectId, slug);
+      await followTrigger(c, loaded.row, projectId, slug);
 
       return c.json(await loadTriggersForResponse(projectId, loaded.row));
     },

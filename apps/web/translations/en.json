@@ -1029,6 +1029,10 @@
           "name": "US Region",
           "description": "Run this project's new sessions in the US East region. A running session keeps its region until it restarts."
         },
+        "notification_center": {
+          "name": "Notification Center",
+          "description": "Tell the people a session concerns (its prompter, its creator and its followers) through a bell inbox, browser push and email, and alert on failing triggers and reminders. Off: only the session creator's phone gets a push."
+        },
         "event_triggers": {
           "name": "App event triggers",
           "description": "Start an agent when something happens in a connected app: a new email, a pull request, a calendar event."

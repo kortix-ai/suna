@@ -3,7 +3,8 @@
 /**
  * The bell (KRTX-1742): the person's notification inbox, across projects.
  *
- * It sits in the project sidebar header and in `AccountTopBar`. The badge is
+ * It sits in the project sidebar header and in `AccountTopBar`, only while the
+ * `notification_center` flag is on (`useNotificationCenter`). The badge is
  * the server's unread count, clamped at 99+. A row opens its session (or the
  * Triggers page for an alert) and marks itself read. When this browser shows
  * no notifications yet, the panel's footer offers to turn them on.
@@ -41,6 +42,7 @@ import {
 } from '@phosphor-icons/react';
 import { useState } from 'react';
 import { badgeCount, withoutNotificationParam } from './notification-rows';
+import { useNotificationCenter } from './use-notification-center';
 import { webPushSupported } from './web-push';
 
 /** The glyph names the kind by shape; the hue reports the state (color.md, D5). */
@@ -187,20 +189,29 @@ export function NotificationPanel({
 }
 
 /**
- * The bell and its popover. Renders nothing while signed out. `onNavigate`
- * runs when a row opens its subject (the mobile sidebar closes its sheet).
+ * The bell and its popover. Renders nothing, and reads no inbox, while signed
+ * out or while the flag is off for `projectId` (without one: for every cached
+ * project). `onNavigate` runs when a row opens its subject (the mobile sidebar
+ * closes its sheet).
  */
-export function NotificationBell({ onNavigate }: { onNavigate?: () => void }) {
+export function NotificationBell({
+  projectId,
+  onNavigate,
+}: {
+  projectId?: string;
+  onNavigate?: () => void;
+}) {
   const t = useTranslations('notifications');
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
-  const inbox = useNotificationInbox({ userId: user?.id });
+  const notificationCenter = useNotificationCenter(projectId);
+  const inbox = useNotificationInbox({ userId: user?.id, enabled: notificationCenter });
   const notificationsOn = useWebNotificationStore((s) => s.preferences.enabled);
   const permission = useWebNotificationStore((s) => s.permission);
   const promptDismissed = useWebNotificationStore((s) => s.promptDismissed);
   const toggleEnabled = useWebNotificationStore((s) => s.toggleEnabled);
   const dismissPrompt = useWebNotificationStore((s) => s.dismissPrompt);
-  if (!user) return null;
+  if (!user || !notificationCenter) return null;
 
   const count = inbox.unreadCount;
   const label = count > 0 ? t('bell.unreadLabel', { count }) : t('bell.label');

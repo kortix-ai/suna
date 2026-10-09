@@ -314,7 +314,7 @@ mock.module('../session-lifecycle', () => ({
   },
 }));
 
-let loadedProject: { row: { accountId: string; projectId: string }; userId: string } | null = null;
+let loadedProject: { row: { accountId: string; projectId: string; metadata?: unknown }; userId: string } | null = null;
 let visibleSession: Record<string, unknown> | null = null;
 let loadProjectCalls: Array<{ projectId: string; action: string }> = [];
 let capabilityCalls: string[] = [];
@@ -691,7 +691,21 @@ describe('POST .../prompts', () => {
       loadedProject = { ...loadedProject!, actor: { credential: { kind } } } as never;
     };
     beforeEach(() => {
+      loadedProject = {
+        row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID, metadata: { experimental: { notification_center: true } } },
+        userId: USER_ID,
+      };
       visibleSession = { row: { sessionId: SESSION_ID, metadata: {}, createdBy: OTHER_CREATOR } };
+    });
+
+    test('with the notification_center flag off, the prompt is accepted and nobody follows', async () => {
+      for (const metadata of [{}, { experimental: { notification_center: false } }]) {
+        loadedProject = { row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID, metadata }, userId: USER_ID };
+        asCredential('supabase', 'jwt');
+        expect((await post({ ...validBody, client_message_id: `off_${enqueued.length}` })).status).toBe(202);
+      }
+      expect(enqueued).toHaveLength(2);
+      expect(autoWatches).toEqual([]);
     });
 
     test('a browser sign-in and a personal CLI token start following the session', async () => {
