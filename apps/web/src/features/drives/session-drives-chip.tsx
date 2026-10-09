@@ -5,6 +5,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { warningToast } from '@/components/ui/toast';
 import { useSessionDrives } from '@/hooks/drives/use-drives';
 import { useTranslations } from '@/i18n/use-translations';
+import { capabilityTabHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import { cn } from '@/lib/utils';
 import { useFeatureFlag } from '@kortix/sdk/react';
 import { FolderIcon, HouseIcon, WarningIcon } from '@phosphor-icons/react';
@@ -88,7 +89,7 @@ export function SessionDrivesChip({ projectId, sessionId }: { projectId: string;
         </ul>
         <div className="border-t px-1.5 py-1.5">
           <Button asChild variant="ghost" size="sm" className="w-full justify-start">
-            <Link href={`/projects/${projectId}/drive`}>{t('openDrive')}</Link>
+            <Link href={capabilityTabHref(projectId, 'files')}>{t('openDrive')}</Link>
           </Button>
         </div>
       </PopoverContent>

@@ -16,7 +16,7 @@ import { GitBranchIcon } from '@phosphor-icons/react';
 
 /**
  * Top-level Repo entry (the project's git repository; the shared folders are
- * Files, `project-drive-nav.tsx`). Hidden when the caller lacks `project.file.read`: that
+ * Files, a tab under Customize). Hidden when the caller lacks `project.file.read`: that
  * leaf is editor-tier (IAM v1 moved the sensitive file/secret reads off the
  * floor `member` role), so showing it to a plain member would just land them on
  * a page whose every read 403s. Optimistic while the probe loads — the entry
