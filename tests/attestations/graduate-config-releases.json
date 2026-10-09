@@ -1,5 +1,5 @@
 {
-  "source_hash": "8520bb552049bdd5462d262c45bf115487a525681b2635ff6acf8a8349d23545",
+  "source_hash": "1b01280db479a68245d479be5238c576db9a8d760c3439388d22ff7dd0bc2766",
   "diff_files": [
     ".agents/skills/learnings/MEMORY.md",
     ".agents/skills/learnings/entries/2026-10-08T224239Z-bring-the-base-config-dir-into-the-checkout-on-every-reload.md",
@@ -64,13 +64,13 @@
     "tests/spec/end-to-end.md",
     "tests/src/flows/config-releases.flow.ts"
   ],
-  "diff_hash": "fd9711c40e512558f519505063a2692c91312a359dbed71b14274c692d0759e9",
-  "head": "4c7fabf28cd9bf8eaadd5eaa7cc5c7cff90555c1",
+  "diff_hash": "9ed4f7cf5b1f719ba05555ea9eee956056da3300f06e440b6a4ebfe9edfc2a38",
+  "head": "652500786c7e6e5d6148f844c0e0aefa4d3527b6",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-08T23:20:48.920Z"
+  "at": "2026-10-09T13:18:55.845Z"
 }
