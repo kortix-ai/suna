@@ -110,6 +110,10 @@ describe('sign-in issuer', () => {
     const envWrites: unknown[] = [];
     const ok = Bun.serve({
       port: 0,
+      // Explicit loopback: Bun's default bind reports a `localhost` origin, and
+      // a fetch to `localhost` tries ::1 first — on hosts without a ::1 listener
+      // it refuses instead of falling back to IPv4, which fails the test spuriously.
+      hostname: '127.0.0.1',
       fetch: async (req) => {
         envWrites.push({
           path: new URL(req.url).pathname,
@@ -120,11 +124,12 @@ describe('sign-in issuer', () => {
         return new Response(null, { status: 200 });
       },
     });
-    const down = Bun.serve({ port: 0, fetch: () => new Response('boom', { status: 500 }) });
+    const down = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: () => new Response('boom', { status: 500 }) });
     // Kortix reaches a machine through its private Platinum exposure: the fake
     // control plane exposes machine `sbx-ok` at `ok` and `sbx-down` at `down`.
     const platinum = Bun.serve({
       port: 0,
+      hostname: '127.0.0.1',
       fetch: (req) => {
         const [, , , id, sub] = new URL(req.url).pathname.split('/');
         if (sub !== 'expose') return Response.json({ id, state: 'running' });

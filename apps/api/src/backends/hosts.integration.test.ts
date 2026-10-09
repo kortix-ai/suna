@@ -24,6 +24,10 @@ const seen: Array<{ port: string; method: string; path: string; token: string | 
 // machine port Platinum's edge would route to. No token, no answer.
 const convex = Bun.serve({
   port: 0,
+  // Explicit loopback: Bun's default bind reports a `localhost` origin, and a
+  // fetch to `localhost` tries ::1 first — on hosts without a ::1 listener it
+  // refuses instead of falling back to IPv4, which fails the test spuriously.
+  hostname: '127.0.0.1',
   async fetch(req) {
     const url = new URL(req.url);
     const [, port, ...rest] = url.pathname.split('/');
@@ -46,6 +50,7 @@ const convex = Bun.serve({
 const exposed: string[] = [];
 const platinum = Bun.serve({
   port: 0,
+  hostname: '127.0.0.1',
   async fetch(req) {
     const [, , , id, sub] = new URL(req.url).pathname.split('/');
     if (sub === 'expose') {
