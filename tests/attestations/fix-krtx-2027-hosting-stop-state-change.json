@@ -1,0 +1,16 @@
+{
+  "source_hash": "dba9ac8086e430521430a96acb4c9a6e1aed65217369bf44019bbbf5d0e38a00",
+  "diff_files": [
+    "apps/api/src/apps/hosting.test.ts",
+    "apps/api/src/apps/hosting.ts"
+  ],
+  "diff_hash": "1282bf62a6ae9f2f975246d2a8f27a652cd7331d5b94b1084942cdf535aef2ec",
+  "head": "ffe20bd2c69945cd63b1d114f270536f76d60788",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-09T21:59:12.076Z"
+}

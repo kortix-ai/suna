@@ -31,7 +31,7 @@ import { AppBudgetModal } from './app-budget';
 import { AppConnectDialog } from './app-connect';
 import { AppDashboard } from './app-dashboard';
 import { AppSnapshotsDialog, ResizeAppDialog, instanceOperationError } from './app-instance-dialogs';
-import { localizedAppCopy, appCan, appCommand, appHost, appKindLabel, appSizeLabel, appStatus, deployNotice, DeployCommand } from './app-shared';
+import { localizedAppCopy, appCan, appCommand, appCostLabel, appHasBudget, appHost, appKindLabel, appSizeLabel, appStatus, deployNotice, DeployCommand } from './app-shared';
 
 /**
  * The App, full screen, with its controls above it.
@@ -277,11 +277,11 @@ export function AppDetailModal({
                         <ArrowsOutSimpleIcon className="size-3.5 shrink-0" />
                         {tI18nComplete.raw('text5ad9ba3657f2')}
                         <span className="text-muted-foreground ml-auto pl-3 text-xs tabular-nums">
-                          {appSizeLabel(app, tI18nComplete)}
+                          {[appCostLabel(app, tI18nComplete), appSizeLabel(app, tI18nComplete)].filter(Boolean).join(' · ')}
                         </span>
                       </DropdownMenuItem>
                     ) : null}
-                    {canWrite && (canSleep || instance) ? (
+                    {canWrite && appHasBudget(app) ? (
                       <DropdownMenuItem onClick={() => setOverlay('budget')}>
                         <CurrencyDollarIcon className="size-3.5 shrink-0" />
                         {tI18nComplete.raw('textc247593b2c0f')}
@@ -410,9 +410,7 @@ export function AppDetailModal({
                       : instance
                         ? tI18nComplete.raw('text044ba8a9ae43')
                         : null,
-                    isServer || instance
-                      ? tI18nComplete('text89ea53a8d7ac', { value0: app.monthly_budget_usd })
-                      : null,
+                    appHasBudget(app) ? tI18nComplete('text89ea53a8d7ac', { value0: app.monthly_budget_usd }) : appCostLabel(app, tI18nComplete),
                     instance ? appSizeLabel(app, tI18nComplete) : null,
                     appCan(app, 'rollback') && app.retained_deployments !== undefined
                       ? tI18nComplete('text04957fa46a70', { value0: app.retained_deployments })

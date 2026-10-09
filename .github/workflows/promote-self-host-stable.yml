@@ -29,7 +29,7 @@ concurrency:
 jobs:
   mark-stable:
     name: Promote v${{ inputs.version }} → :stable
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     permissions:
       contents: read
       id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)

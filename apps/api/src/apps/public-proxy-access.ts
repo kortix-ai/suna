@@ -480,10 +480,49 @@ export async function appTokenResponse(
     { appId: audienceAppId, projectId: app.projectId, accountId: app.accountId },
     { userId: viewer.userId, ...identity },
   );
+  const renewed = renewedAppAccessCookie(request, url, app, viewer.userId);
   return Response.json(
     { token: minted.token, expires_at: minted.expiresAt.toISOString(), audience: audienceAppId },
-    { headers: noStore },
+    { headers: renewed ? { ...noStore, 'set-cookie': renewed } : noStore },
   );
+}
+
+const APP_SESSION_SECONDS = 8 * 60 * 60;
+
+/**
+ * Sliding gate session. An App open in a tab fetches a sign-in token about
+ * every 14 minutes; when its `kortix` gate cookie has under half its 8 h left,
+ * the token response renews it. Without this the cookie ran out after 8 h, the
+ * App's backend connection could no longer sign in, and it retried forever.
+ * Only the same viewer's cookie at the App's current access revision renews,
+ * so an access change still ends the session.
+ */
+export function renewedAppAccessCookie(
+  request: Request,
+  url: URL,
+  app: { appId: string; accessRevision: number },
+  userId: string,
+  now = new Date(),
+): string | null {
+  const localHttp = url.protocol === 'http:' && url.hostname.endsWith('.apps.localhost');
+  const raw = cookieValue(request, appAccessCookieName(localHttp));
+  if (!raw) return null;
+  const payload = verifyAppAccessToken(raw, app.appId, appAccessSecret(), now);
+  if (!payload || payload.kind !== 'kortix' || payload.userId !== userId || payload.revision !== app.accessRevision) {
+    return null;
+  }
+  if (payload.exp - Math.floor(now.getTime() / 1000) > APP_SESSION_SECONDS / 2) return null;
+  const token = createAppAccessToken(
+    {
+      appId: app.appId,
+      kind: 'kortix',
+      userId,
+      revision: app.accessRevision,
+      expiresAt: new Date(now.getTime() + APP_SESSION_SECONDS * 1000),
+    },
+    appAccessSecret(),
+  );
+  return appAccessCookie(token, APP_SESSION_SECONDS, localHttp);
 }
 
 /** `GET /_kortix/viewer` — the App asks the gate who is looking, and for a token to act with. */
