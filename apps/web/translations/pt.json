@@ -19927,6 +19927,7 @@
     "statusError": "Erro",
     "statusNeedsSetup": "Requer configuração",
     "statusPending": "Pendente",
+    "managedSurfaceLabel": "App do {name}",
     "noticeSignInTitle": "Entrar no {name}",
     "noticeSignInBody": "O Kortix adicionou {name}. Conclua o login para que os agentes possam usar as ferramentas.",
     "noticeSignInAction": "Entrar",

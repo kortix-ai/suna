@@ -213,4 +213,20 @@ describe('catalogEntryKindLabel', () => {
     );
     expect(catalogEntryKindLabel({ source: 'computer' } as unknown as CatalogEntry)).toBe('Native');
   });
+
+  test('an app with both ways to connect names both', () => {
+    expect(
+      catalogEntryKindLabel({
+        source: 'easy-connect',
+        app: { directId: 'mcp/linear' },
+      } as unknown as CatalogEntry),
+    ).toBe('App · MCP');
+    expect(
+      catalogEntryKindLabel({
+        source: 'discover',
+        connector: { kind: 'mcp' },
+        alsoApp: true,
+      } as unknown as CatalogEntry),
+    ).toBe('MCP · App');
+  });
 });

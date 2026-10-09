@@ -87,3 +87,11 @@ describe('connector catalogue sections', () => {
     expect(categories.find((category) => category.key === 'cloud')?.count).toBe(2);
   });
 });
+
+describe('connector catalogue direct ids', () => {
+  test('one id per app by join key, its MCP surface first', async () => {
+    const ids = await catalog().directIds();
+    expect(ids.get('stripe')).toBe('stripe-mcp');
+    expect(ids.get('stripesync')).toBe('stripe-sync');
+  });
+});

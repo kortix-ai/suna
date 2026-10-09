@@ -19927,6 +19927,7 @@
     "statusError": "Fehler",
     "statusNeedsSetup": "Einrichtung nötig",
     "statusPending": "Ausstehend",
+    "managedSurfaceLabel": "{name}-App",
     "noticeSignInTitle": "Bei {name} anmelden",
     "noticeSignInBody": "Kortix hat {name} hinzugefügt. Schließe die Anmeldung ab, damit Agenten die Tools nutzen können.",
     "noticeSignInAction": "Anmelden",

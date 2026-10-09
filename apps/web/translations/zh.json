@@ -19927,6 +19927,7 @@
     "statusError": "错误",
     "statusNeedsSetup": "需要设置",
     "statusPending": "待处理",
+    "managedSurfaceLabel": "{name} 应用",
     "noticeSignInTitle": "登录 {name}",
     "noticeSignInBody": "Kortix 已添加 {name}。完成登录后，智能体即可使用其工具。",
     "noticeSignInAction": "登录",

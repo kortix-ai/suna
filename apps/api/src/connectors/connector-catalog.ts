@@ -1,3 +1,4 @@
+import { appNameKey } from './connect-direct-twins';
 import {
   groupIntoSections,
   sectionKeysForEntry,
@@ -563,6 +564,20 @@ export function createConnectorCatalog(options: CatalogOptions = {}) {
       return { byDomain, byName };
     },
 
+    /**
+     * Each app's catalogue id by its join key (`appNameKey`), its MCP surface
+     * first. Managed listings use it to name the same app's API/MCP entry.
+     */
+    async directIds(): Promise<Map<string, string>> {
+      const best = new Map<string, ConnectorCatalogItem>();
+      for (const item of await loadIndex()) {
+        const key = appNameKey(item.name);
+        const current = best.get(key);
+        if (!current || SURFACE_RANK[item.kind] < SURFACE_RANK[current.kind]) best.set(key, item);
+      }
+      return new Map([...best].map(([key, item]) => [key, item.id]));
+    },
+
     async detail(id: string): Promise<ConnectorCatalogDetail> {
       const items = await loadIndex();
       const item = items.find((candidate) => candidate.id === id);
@@ -582,3 +597,4 @@ export const listConnectorCatalog = catalog.list;
 export const connectorCatalogSections = catalog.sections;
 export const getConnectorCatalogDetail = catalog.detail;
 export const connectorCatalogIcons = catalog.icons;
+export const connectorCatalogDirectIds = catalog.directIds;

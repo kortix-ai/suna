@@ -1,6 +1,4 @@
-import type { CatalogEntry } from './catalog-entry';
-
-const appKey = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '');
+import { appNameKey as appKey, type CatalogEntry } from './catalog-entry';
 
 /**
  * One search result list from both catalogues.
@@ -24,7 +22,7 @@ export function mergeSearchEntries(
     const twin = directByName.get(appKey(entry.name));
     if (!twin || used.has(twin)) return entry;
     used.add(twin);
-    return { ...twin, icon: entry.icon ?? twin.icon };
+    return { ...twin, icon: entry.icon ?? twin.icon, alsoApp: true };
   });
   return merged.concat(direct.filter((entry) => !used.has(entry)));
 }

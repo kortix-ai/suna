@@ -36,7 +36,12 @@ interface CatalogEntryFields {
  * back to the matching add flow without a lookup.
  */
 export type CatalogEntry =
-  | (CatalogEntryFields & { source: 'discover'; connector: DiscoverConnector })
+  | (CatalogEntryFields & {
+      source: 'discover';
+      connector: DiscoverConnector;
+      /** The managed catalogue lists the same app too (`mergeSearchEntries`). */
+      alsoApp?: boolean;
+    })
   | (CatalogEntryFields & {
       source: 'easy-connect';
       app: PipedreamApp & { provider?: 'composio' | 'pipedream' };
@@ -92,9 +97,24 @@ export function catalogEntryFromEasyConnect(
  * nouns, shown as the card's quiet line under the title — every card gets
  * one, so the rows scan as a consistent column.
  */
+/**
+ * One key per app across both catalogues: lower case, letters and digits only,
+ * a trailing "MCP" dropped, so `Linear`, `Linear MCP` and `linear` match. The
+ * API joins managed apps to API/MCP entries with the same rule
+ * (`apps/api/src/connectors/connect-direct-twins.ts`).
+ */
+export function appNameKey(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '')
+    .replace(/(mcp|mcpserver)$/, '');
+}
+
 export function catalogEntryKindLabel(entry: CatalogEntry): string {
   if (entry.source === 'computer') return 'Native';
-  if (entry.source === 'easy-connect') return 'App';
+  // An app with both ways to connect names both.
+  if (entry.source === 'easy-connect') return entry.app?.directId ? 'App · MCP' : 'App';
+  if (entry.alsoApp && entry.connector.kind === 'mcp') return 'MCP · App';
   switch (entry.connector.kind) {
     case 'mcp':
       return 'MCP';

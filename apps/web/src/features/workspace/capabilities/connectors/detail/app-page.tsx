@@ -21,6 +21,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import {
+  appNameKey,
   catalogEntryConnectors,
   type CatalogEntry,
 } from '@/features/workspace/capabilities/connectors/catalog/catalog-entry';
@@ -120,17 +121,8 @@ export function AppPage({ projectId, appSegment }: { projectId: string; appSegme
     ? tSharing('everyone', { project: projectName })
     : tSharing('visibilityEveryone');
 
-  // Same key as the install hook and the old surface modal: one fetch.
-  const discoverId = app?.source === 'discover' ? app.id : null;
-  const discoverQuery = useQuery({
-    queryKey: ['discover-connector-detail', projectId, discoverId],
-    queryFn: () => getDiscoverConnector(projectId, discoverId ?? ''),
-    enabled: discoverId !== null,
-    staleTime: 15 * 60_000,
-  });
-
   const managedSlug = app?.source === 'easy-connect' ? app.slug : null;
-  const connectStatus = useConnectProviderStatus(managedSlug !== null);
+  const connectStatus = useConnectProviderStatus(true);
   const provider = connectStatus.provider ?? 'composio';
   // `absent`: this deployment has no managed provider, so the app cannot exist.
   // `unknown` proceeds, as the catalogue does (`useCatalog`).
@@ -145,23 +137,66 @@ export function AppPage({ projectId, appSegment }: { projectId: string; appSegme
     staleTime: 5 * 60_000,
   });
 
+  // One app, both ways to connect. A managed app names its API/MCP twin
+  // (`directId`); an API/MCP app finds its managed twin by name below.
+  // Same key as the install hook and the old surface modal: one fetch.
+  const discoverId =
+    app?.source === 'discover' ? app.id : (managedQuery.data?.directId ?? null);
+  const discoverQuery = useQuery({
+    queryKey: ['discover-connector-detail', projectId, discoverId],
+    queryFn: () => getDiscoverConnector(projectId, discoverId ?? ''),
+    enabled: discoverId !== null,
+    staleTime: 15 * 60_000,
+  });
+  const twinName = app?.source === 'discover' ? (discoverQuery.data?.item.name ?? null) : null;
+  const managedTwinQuery = useQuery({
+    queryKey: ['easy-connect-twin', projectId, provider, twinName],
+    queryFn: async () => {
+      const page = await listConnectCatalogPage({
+        projectId,
+        provider,
+        q: twinName ?? '',
+        limit: 10,
+      });
+      const key = appNameKey(twinName ?? '');
+      return page.apps.find((candidate) => appNameKey(candidate.name) === key) ?? null;
+    },
+    enabled:
+      twinName !== null &&
+      (connectStatus.state === 'configured' || connectStatus.state === 'unknown'),
+    staleTime: 5 * 60_000,
+  });
+
   const { install, pendingKey } = useInstall(projectId);
   // Which of this page's Install controls started the running install, so only
   // that one shows progress; the others are disabled until it ends.
   const [pendingControl, setPendingControl] = useState<string | null>(null);
 
   // The query that resolves this app, or `null` when nothing can.
-  const appQuery = discoverId !== null ? discoverQuery : managedRunnable ? managedQuery : null;
+  const appQuery =
+    app?.source === 'discover' ? discoverQuery : managedRunnable ? managedQuery : null;
   const waiting = managedSlug !== null && connectStatus.state === 'asking';
 
   const detail = discoverId !== null ? discoverQuery.data : undefined;
-  const managed = managedRunnable ? managedQuery.data : undefined;
+  const managed =
+    (managedRunnable ? managedQuery.data : managedTwinQuery.data) ?? undefined;
+  // The managed App as one more way to connect, after the API/MCP surfaces.
+  const managedSurface = managed
+    ? {
+        key: `managed:${managed.slug}`,
+        label: t('managedSurfaceLabel', { name: managed.name }),
+        kind: 'App',
+        target: easyConnectInstallTarget(managed),
+      }
+    : null;
   const resolved: ResolvedApp | null = detail
     ? {
-        name: detail.item.name,
-        description: detail.item.description,
-        icon: detail.item.icon,
-        surfaces: installableVariants(detail.variants).map((variant, index) => ({
+        name: managed?.name ?? detail.item.name,
+        description: detail.item.description ?? managed?.description ?? null,
+        // The managed logo is sharp where the catalogue's favicon is not.
+        icon: managed?.imgSrc ?? detail.item.icon,
+        surfaces: [
+          ...installableVariants(detail.variants).map((variant, index) => ({
           key: `${variant.kind}:${variant.id}`,
           label: variant.name,
           kind: surfaceLabel(variant.kind),
@@ -169,7 +204,9 @@ export function AppPage({ projectId, appSegment }: { projectId: string; appSegme
             surfaceInstallName(detail.item.name, variant, index),
             variant,
           ),
-        })),
+          })),
+          ...(managedSurface ? [managedSurface] : []),
+        ],
         references: detail.variants
           .filter((variant) => !variant.connector)
           .map((variant) => ({
@@ -184,14 +221,7 @@ export function AppPage({ projectId, appSegment }: { projectId: string; appSegme
           name: managed.name,
           description: managed.description,
           icon: managed.imgSrc,
-          surfaces: [
-            {
-              key: `managed:${managed.slug}`,
-              label: providerLabel(provider),
-              kind: null,
-              target: easyConnectInstallTarget(managed),
-            },
-          ],
+          surfaces: managedSurface ? [managedSurface] : [],
           references: [],
         }
       : null;
@@ -298,13 +328,18 @@ export function AppPage({ projectId, appSegment }: { projectId: string; appSegme
     labelAddon?: ReactNode;
     value: ReactNode;
   }> = [];
-  if (managed) {
+  // The Provider cell follows the primary way to connect: the app itself for
+  // its API/MCP server, Kortix for a managed-only app.
+  const managedOnly = managed && !detail;
+  const managedBy = managedOnly ? connectorRunsOver(provider) : null;
+  if (primary)
     infoCells.push({
       key: 'provider',
       label: t('infoRunsThrough'),
-      labelAddon: <ProviderInfo appName={resolved.name} managedBy={connectorRunsOver(provider)} />,
-      value: providerName(resolved.name, connectorRunsOver(provider)),
+      labelAddon: <ProviderInfo appName={resolved.name} managedBy={managedBy} />,
+      value: providerName(resolved.name, managedBy),
     });
+  if (managed) {
     const signIn = managedSignIn(managed.authType);
     if (signIn) infoCells.push({ key: 'auth', label: t('infoSignsInWith'), value: t(signIn) });
     const category = managed.categories[0];
@@ -317,13 +352,6 @@ export function AppPage({ projectId, appSegment }: { projectId: string; appSegme
     if (managed.hasTriggers)
       infoCells.push({ key: 'events', label: t('infoAppEvents'), value: t('infoAppEventsYes') });
   }
-  if (!managed && primary)
-    infoCells.push({
-      key: 'provider',
-      label: t('infoRunsThrough'),
-      labelAddon: <ProviderInfo appName={resolved.name} managedBy={null} />,
-      value: providerName(resolved.name, null),
-    });
   if (primary?.kind) infoCells.push({ key: 'runs', label: t('infoRunsOver'), value: primary.kind });
   if (waysCount > 1)
     infoCells.push({ key: 'ways', label: t('waysToConnect'), value: String(waysCount) });
@@ -361,7 +389,7 @@ export function AppPage({ projectId, appSegment }: { projectId: string; appSegme
             </h1>
           </div>
           {primary ? (
-            <div className="shrink-0">
+            <div className="shrink-0">a
               {installMenu('header', primary.target, 'default', resolved.name)}
             </div>
           ) : null}

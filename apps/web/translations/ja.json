@@ -19927,6 +19927,7 @@
     "statusError": "エラー",
     "statusNeedsSetup": "設定が必要",
     "statusPending": "保留中",
+    "managedSurfaceLabel": "{name} アプリ",
     "noticeSignInTitle": "{name} にサインイン",
     "noticeSignInBody": "Kortix は {name} を追加しました。エージェントがツールを使えるよう、サインインを完了してください。",
     "noticeSignInAction": "サインイン",

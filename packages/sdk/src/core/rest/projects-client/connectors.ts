@@ -1557,6 +1557,8 @@ export interface PipedreamApp {
   hasTriggers: boolean;
   /** Pipedream's promotion weight. The catalogue's resting sort key. */
   featuredWeight: number;
+  /** The same app's API/MCP catalogue id (`ConnectToolkit.directId`). */
+  directId?: string | null;
 }
 
 /** A category facet: the key to filter by, and its true size in the catalogue. */
@@ -1674,6 +1676,9 @@ export interface ConnectToolkit {
   categories?: string[];
   isNoAuth: boolean;
   connected: boolean;
+  /** The same app's API/MCP catalogue id, when the project has that catalogue
+   *  on and it lists the app. The app page offers both ways to connect. */
+  directId?: string | null;
 }
 
 export interface ConnectToolkitsPage {

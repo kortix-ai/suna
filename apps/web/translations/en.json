@@ -19927,6 +19927,7 @@
     "statusError": "Error",
     "statusNeedsSetup": "Needs setup",
     "statusPending": "Pending",
+    "managedSurfaceLabel": "{name} app",
     "noticeSignInTitle": "Sign in to {name}",
     "noticeSignInBody": "Kortix added {name}. Finish signing in so agents can use its tools.",
     "noticeSignInAction": "Sign in",

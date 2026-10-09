@@ -19927,6 +19927,7 @@
     "statusError": "Error",
     "statusNeedsSetup": "Requiere configuración",
     "statusPending": "Pendiente",
+    "managedSurfaceLabel": "App de {name}",
     "noticeSignInTitle": "Inicia sesión en {name}",
     "noticeSignInBody": "Kortix añadió {name}. Termina de iniciar sesión para que los agentes puedan usar sus herramientas.",
     "noticeSignInAction": "Iniciar sesión",

@@ -19927,6 +19927,7 @@
     "statusError": "Грешка",
     "statusNeedsSetup": "Потребно подешавање",
     "statusPending": "Na čekanju",
+    "managedSurfaceLabel": "{name} aplikacija",
     "noticeSignInTitle": "Prijavi se na {name}",
     "noticeSignInBody": "Kortix je dodao {name}. Završi prijavu da bi agenti mogli da koriste njegove alate.",
     "noticeSignInAction": "Prijavi se",

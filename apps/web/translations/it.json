@@ -19927,6 +19927,7 @@
     "statusError": "Errore",
     "statusNeedsSetup": "Da configurare",
     "statusPending": "In attesa",
+    "managedSurfaceLabel": "App {name}",
     "noticeSignInTitle": "Accedi a {name}",
     "noticeSignInBody": "Kortix ha aggiunto {name}. Completa l'accesso perché gli agenti possano usarne gli strumenti.",
     "noticeSignInAction": "Accedi",
