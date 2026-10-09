@@ -72,14 +72,24 @@ export async function ephemeralSandboxesEnabled(projectId: string, provider: str
 /** project_sessions metadata: the session's state lives on this volume (set once, never cleared). */
 export const SESSION_STATE_SESSION_KEY = 'ephemeral_state_volume';
 
+/**
+ * The session's state volume, when it has one. Its name is derived from the
+ * session id; the metadata only records that one was made. A recorded value
+ * that is not this session's own volume is ignored: no caller can point the
+ * session (or its deletion) at another volume.
+ */
+export function ownSessionStateVolume(sessionId: string, metadata: unknown): string | null {
+  const v = (metadata as Record<string, unknown> | null | undefined)?.[SESSION_STATE_SESSION_KEY];
+  return v === sessionStateVolumeName(sessionId) ? v : null;
+}
+
 async function sessionStateVolumeOf(sessionId: string): Promise<string | null> {
   const [row] = await db
     .select({ metadata: projectSessions.metadata })
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, sessionId))
     .limit(1);
-  const v = (row?.metadata as Record<string, unknown> | null | undefined)?.[SESSION_STATE_SESSION_KEY];
-  return typeof v === 'string' && v ? v : null;
+  return ownSessionStateVolume(sessionId, row?.metadata);
 }
 
 async function recordSessionStateVolume(sessionId: string, volume: string): Promise<void> {
@@ -583,8 +593,10 @@ export async function claimRetiredEphemeralRow(
  * is gone (the delete of the box is asynchronous). Detached and best effort:
  * a volume left behind is storage, never a correctness problem.
  */
-export function scheduleSessionStateVolumeDelete(sessionId: string): void {
-  void (async () => {
+export function scheduleSessionStateVolumeDelete(sessionId: string): Promise<void> {
+  return (async () => {
+    // Only this session's own volume (kss-<session id>), and only when the
+    // session recorded that it has one.
     const volume = await sessionStateVolumeOf(sessionId);
     if (!volume) return;
     // Durable: the drive worker retries while the removed box still holds it.

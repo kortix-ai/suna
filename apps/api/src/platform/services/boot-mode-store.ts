@@ -73,10 +73,10 @@ export async function readSessionBoot(
     .where(eq(projectSessions.sessionId, sessionId))
     .limit(1);
   const md = (row?.metadata ?? {}) as Record<string, unknown>;
-  const vol = md.ephemeral_state_volume;
+  const { ownSessionStateVolume } = await import('./ephemeral-sandbox');
   return {
     record: parseSessionBootRecord(md[SESSION_BOOT_KEY]),
-    stateVolume: typeof vol === 'string' && vol ? vol : null,
+    stateVolume: ownSessionStateVolume(sessionId, md),
   };
 }
 

@@ -173,7 +173,7 @@ export async function deleteSession(input: {
   }
 
   // Ephemeral sandboxes: the session's state volume ends with the session.
-  scheduleSessionStateVolumeDelete(sessionId);
+  void scheduleSessionStateVolumeDelete(sessionId);
 
   // Keyed by SANDBOX id — `getOpenComputeSession` matches on
   // sandbox_compute_sessions.sandbox_id, so the sessionId this used to pass
