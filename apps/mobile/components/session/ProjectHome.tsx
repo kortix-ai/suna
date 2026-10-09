@@ -45,7 +45,8 @@ import {
   splitPastedContent,
   type PastedContent,
 } from '@kortix/shared';
-import { Keyboard, Pressable, View } from 'react-native';
+import { Keyboard, Pressable, View, type TextInput } from 'react-native';
+import { useIsFocused } from 'expo-router';
 import {
   KeyboardAvoidingView,
   useReanimatedKeyboardAnimation,
@@ -68,7 +69,7 @@ import { openPastedText } from '@/stores/pasted-text-store';
 import { useComposerModels, useProjectDetail } from '@/lib/projects/hooks';
 import type { AttachedFile } from '@/lib/session/attachments';
 import { uploadErrorMessage } from '@/lib/session/composer-uploads';
-import { takeComposerFocus } from '@/lib/onboarding/composer-handoff';
+import { subscribeComposerFocus, takeComposerFocus } from '@/lib/onboarding/composer-handoff';
 import { draftKey } from '@/lib/session/composer-draft';
 import { useComposerDraft } from '@/lib/session/use-composer-draft';
 import { isModelUnavailable, sessionModelRef, selectComposerModel } from '@/lib/session/composer-model';
@@ -110,6 +111,12 @@ export interface ProjectHomeSubmit {
   agent: string | null;
 }
 
+/**
+ * The composer focus retries after New session, in ms: past the drawer's
+ * close and the stack's pop (~350 ms on iOS), which can each drop a focus.
+ */
+const COMPOSER_FOCUS_RETRY_MS = [150, 400, 700];
+
 export interface ProjectHomeProps {
   projectId: string;
   /** A send is in flight: the composer keeps its content and locks. */
@@ -143,9 +150,40 @@ export function ProjectHome({
   const toast = useToast();
   // One read at mount: the text seeds the draft, the files seed the uploads.
   const [initialDraft] = React.useState(() => takeInitialDraft?.() ?? { text: '', files: [] });
-  // The first project, just created on `/new` (COR-161): open with the
-  // keyboard up. One-shot, read once at mount.
+  // The first project, just created on `/new` (COR-161), or the drawer's New
+  // session before home mounted: open with the keyboard up. One-shot, read
+  // once at mount.
   const [focusComposer] = React.useState(() => takeComposerFocus(projectId));
+  // The drawer's New session while home is mounted (under the drawer or a
+  // covering route): focus once home is the screen on top, so the keyboard
+  // never opens behind a route that is still popping. Home is "on top" from
+  // the start of the pop, and the drawer is still closing then: a focus in
+  // that window can be dropped, so it is retried until the field has it.
+  const composerInputRef = React.useRef<TextInput>(null);
+  const isScreenFocused = useIsFocused();
+  const [focusRequest, setFocusRequest] = React.useState(0);
+  const handledFocusRequest = React.useRef(0);
+  React.useEffect(
+    () =>
+      subscribeComposerFocus((requested) => {
+        if (requested === projectId && takeComposerFocus(projectId)) setFocusRequest((n) => n + 1);
+      }),
+    [projectId],
+  );
+  React.useEffect(() => {
+    if (!isScreenFocused || focusRequest === handledFocusRequest.current) return;
+    handledFocusRequest.current = focusRequest;
+    const focusUnlessFocused = () => {
+      const input = composerInputRef.current;
+      if (input && !input.isFocused()) input.focus();
+    };
+    const frame = requestAnimationFrame(focusUnlessFocused);
+    const retries = COMPOSER_FOCUS_RETRY_MS.map((ms) => setTimeout(focusUnlessFocused, ms));
+    return () => {
+      cancelAnimationFrame(frame);
+      retries.forEach(clearTimeout);
+    };
+  }, [focusRequest, isScreenFocused]);
   const attachments = useComposerAttachments(projectId, { initialFiles: initialDraft.files });
   useRecoverPendingPick(attachments.add);
   const files = attachments.files;
@@ -384,6 +422,7 @@ export function ProjectHome({
               initialText={initialDraft.text}
               onSubmit={submitNow}
               autoFocus={focusComposer}
+              inputRef={composerInputRef}
               disabled={isSending}
               sending={isSending}
               attachments={files}
@@ -437,6 +476,7 @@ function HomeComposer({
   onSubmit: (draft: string, pastes: PastedContent[]) => Promise<void>;
   onPasteFile: (files: AttachedFile[]) => void;
   autoFocus: boolean;
+  inputRef: React.Ref<TextInput>;
   disabled: boolean;
   sending: boolean;
   attachments: AttachedFile[];

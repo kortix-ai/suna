@@ -2,7 +2,9 @@ import { writeFileSync, readFileSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { logger } from '@/lib/log/logger'
 import { writeAgentEnvFile } from '../shared/agent-env-file'
-import { configureGlobalGitIdentity, configureGitCredentialHelper, configureRepoCredentialHelper, materializeRepo, materializeProjectSeed, materializeScaffoldSeed, scheduleHistoryBackfill } from '@/lib/git/git'
+import { configureGlobalGitIdentity, configureGitCredentialHelper, configureRepoCredentialHelper } from '@/lib/git/git'
+import { materializeProjectSeed, materializeScaffoldSeed, scheduleHistoryBackfill } from '@/services/workspace-provider/git'
+import { provideWorkspace } from '@/services/workspace-provider/workspace-provider'
 import { loadOpenCodeConfig as loadConfig, type OpenCodeConfig as Config } from './config'
 import { bakedCatalogPath, waitForOpencodeReady, refreshGatewayCatalogFile } from './lifecycle'
 import { bootOpenCodeConfig } from './boot-config-path'
@@ -267,11 +269,12 @@ export async function runWarmSeedMode(
       try { await configureGitCredentialHelper(cfg2, OPENCODE_HOME) } catch {}
       if (cfg2.autoClone) {
         // Clear any seed-clone failure so this retries cleanly. When the seed
-        // pre-cloned the project, materializeRepo hits the baked-checkout fast
-        // path: set remote + local `git checkout -B <session>` from the cloned
-        // base, no network re-clone. Otherwise it clones now.
+        // pre-cloned the project, the warm adoption hits the baked-checkout
+        // fast path: set remote + local `git checkout -B <session>` from the
+        // cloned base, no network re-clone. Otherwise it clones now. Git only:
+        // a seed fork has never taken the S3 transport.
         bootState.repoMaterializationError = null
-        await materializeRepo(cfg2).catch((err) => {
+        await provideWorkspace({ ...cfg2, projectSnapshotMode: 'git' }).catch((err) => {
           bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
           logger.error('[seed] repo materialization failed', err)
         })
@@ -370,8 +373,8 @@ export async function runWarmSeedMode(
 
 
 // Adopt a forked session inside a warm-seed clone. The repo is already baked —
-// materializeRepo() takes its local-only branch (remote set-url + `checkout -B
-// <session>`), so adoption is ~100ms.
+// the warm adoption (provideWorkspace, Git only) takes its local-only branch
+// (remote set-url + `checkout -B <session>`), so adoption is ~100ms.
 // Trigger: KORTIX_SESSION_ID appearing in /etc/pt-env (the seed's own env
 // never contains it — platinum-seed.ts strips it from captureEnv).
 export function armSeedAdoption(
@@ -398,7 +401,7 @@ export function armSeedAdoption(
       try { await configureGlobalGitIdentity(cfg2, OPENCODE_HOME) } catch {}
       try { await configureGitCredentialHelper(cfg2, OPENCODE_HOME) } catch {}
       if (cfg2.autoClone) {
-        await materializeRepo(cfg2).catch((err) => {
+        await provideWorkspace({ ...cfg2, projectSnapshotMode: 'git' }).catch((err) => {
           bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
           logger.error('[seed] repo adoption failed', err)
         })

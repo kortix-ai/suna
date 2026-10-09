@@ -27,12 +27,14 @@ export interface HumanPresenceEnv {
 /**
  * Report presence through `send` on every change, and every check while the
  * stream is down (the renewal the stream does while it is up). Returns stop,
- * which reports absent.
+ * which reports absent. `pageExit` is read on each `pagehide`: true reports
+ * absent at once, false leaves the lease to its expiry.
  */
 export function watchHumanPresence(
   env: HumanPresenceEnv,
   send: (active: boolean) => void,
   streamConnected: () => boolean,
+  pageExit: () => boolean = () => false,
 ): () => void {
   const now = env.now ?? Date.now;
   // Opening the view is input.
@@ -58,6 +60,7 @@ export function watchHumanPresence(
   // when the 90 s lease expires (KRTX-1742). Showing or using it again
   // reports present.
   const onPageHide = () => {
+    if (!pageExit()) return;
     lastInput = -Infinity;
     report();
   };

@@ -25,6 +25,7 @@ import type { AttachmentSubmission } from '@/features/session/composer/attachmen
 import { contract, qk, type Command } from '@kortix/sdk/react';
 import { META_SANDBOX_SLUG, isMetaAgentName } from '@kortix/shared';
 import { AccessRequestsBell } from './home/access-requests-bell';
+import { notificationCenterOn } from '@/features/notifications/use-notification-center';
 import { FirstChat } from './home/first-chat';
 import { SandboxPicker } from './home/sandbox-picker';
 import { ProjectHomeWallpaper, ProjectHomeWelcomeBody } from './home/welcome-body';
@@ -263,7 +264,11 @@ export function ProjectHome({
     <div className="bg-background relative flex min-h-0 flex-1 flex-col overflow-hidden lg:px-4.5">
       <ProjectHomeWallpaper />
       <SidebarToggle placement="floating" />
-      <AccessRequestsBell count={pendingAccessCount} to={accessRequestsTo} />
+      <AccessRequestsBell
+        count={pendingAccessCount}
+        to={accessRequestsTo}
+        notificationCenter={notificationCenterOn(projectDetailQuery.data?.project)}
+      />
 
       {/* No bubble or "Thinking" row is painted here on send. The page stays
           the welcome screen with the sentence held in the composer until the

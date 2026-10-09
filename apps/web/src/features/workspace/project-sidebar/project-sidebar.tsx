@@ -130,11 +130,12 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
         data-peek={peek ? '' : undefined}
       >
         {/* Offcanvas everywhere: the whole panel slides, so the header keeps a
-            single layout. Four controls on one 240px row, all 32px tall: the
-            merged brand/switcher control, the notification bell, search, and
-            the panel's own collapse toggle — so the collapse control sits
-            inside the thing it collapses and the session header no longer has
-            to carry a toggle while the panel is docked open.
+            single layout. Up to four controls on one 240px row, all 32px
+            tall: the merged brand/switcher control, the notification bell
+            (only with the `notification_center` flag on), search, and the
+            panel's own collapse toggle — so the collapse control sits inside
+            the thing it collapses and the session header no longer has to
+            carry a toggle while the panel is docked open.
 
             ONE control answers "who am I / where am I / where can I go". It was
             three: a `<Link>` carrying the Kortix mark fused to a separate
@@ -155,9 +156,11 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             <WorkspaceSwitcher projectId={projectId} />
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-0.5">
-            {/* The inbox (KRTX-1742), first. The switcher shrinks before any
+            {/* The inbox (KRTX-1742), first, while this project has the
+                `notification_center` flag on. The switcher shrinks before any
                 of the three icon buttons, so the row fits the 208px floor. */}
             <NotificationBell
+              projectId={projectId}
               onNavigate={() => {
                 if (isMobile) setOpenMobile(false);
               }}

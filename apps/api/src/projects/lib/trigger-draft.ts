@@ -5,6 +5,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { config } from '../../config';
 import { db } from '../../shared/db';
 import * as store from '../trigger-events/store';
+import { EVENT_TRIGGERS_OFF_MESSAGE, eventTriggersOffForProject } from '../trigger-events/flag';
 import { connectionIdentity } from '../trigger-events/subscriptions';
 import { ensureProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { validateTriggerCron, validateTriggerTimezone } from '../trigger-schedule';
@@ -67,6 +68,7 @@ export async function loadTriggersForResponse(
   const subscriptionBySlug = new Map(
     specs.some((spec) => spec.event) ? (await store.listByProject(projectId)).map((r) => [r.slug, r]) : [],
   );
+  const eventsOff = eventTriggersOffForProject(project.metadata);
   const connectedAsBySlug = await loadConnectedAs([...subscriptionBySlug.values()]);
   const runtimeBySlug = new Map(runtimeRows.map((row) => [row.slug, row]));
   const sessionAccessBySlug =
@@ -101,7 +103,7 @@ export async function loadTriggersForResponse(
             source: spec.event.source ?? eventConnectors.get(spec.event.connector)?.provider ?? null,
             provider: eventConnectors.get(spec.event.connector)?.provider ?? null,
             app: eventConnectors.get(spec.event.connector)?.app ?? null,
-            ...eventStatusFor(subscriptionBySlug.get(spec.slug)),
+            ...eventStatusFor(subscriptionBySlug.get(spec.slug), eventsOff),
           }
         : null,
       prompt_template: spec.promptTemplate,
@@ -158,11 +160,13 @@ async function loadEventConnectorInfo(
 }
 
 /** Subscription state of one event trigger for the list response; `pending` = no subscription row yet. */
-export function eventStatusFor(row: store.EventSubscriptionRow | undefined): {
+export function eventStatusFor(row: store.EventSubscriptionRow | undefined, flagOff = false): {
   status: 'active' | 'needs_connection' | 'error' | 'pending';
   error: string | null;
   last_event_at: string | null;
 } {
+  // Flag off: no subscription is live, whatever a stale row says.
+  if (flagOff) return { status: 'error', error: EVENT_TRIGGERS_OFF_MESSAGE, last_event_at: row?.lastEventAt?.toISOString() ?? null };
   return {
     status: (row?.status as store.EventSubscriptionStatus | undefined) ?? 'pending',
     error: row?.lastError ?? null,
