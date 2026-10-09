@@ -54,16 +54,51 @@ export function watchHumanPresence(
     if (!env.doc.hidden) lastInput = now();
     report();
   };
+  // The page is closing or entering the back/forward cache: absent now, not
+  // when the 90 s lease expires (KRTX-1742). Showing or using it again
+  // reports present.
+  const onPageHide = () => {
+    lastInput = -Infinity;
+    report();
+  };
 
   report();
   const interval = env.win.setInterval(() => report(present() && !streamConnected()), PRESENCE_CHECK_MS);
   // Capture: scroll and focus do not bubble, and a page may stop propagation.
   for (const type of INPUT_EVENTS) env.win.addEventListener(type, onInput, { capture: true, passive: true });
+  env.win.addEventListener('pagehide', onPageHide);
   env.doc.addEventListener('visibilitychange', onVisibility);
   return () => {
     env.win.clearInterval(interval);
     for (const type of INPUT_EVENTS) env.win.removeEventListener(type, onInput, { capture: true });
+    env.win.removeEventListener('pagehide', onPageHide);
     env.doc.removeEventListener('visibilitychange', onVisibility);
     send(false);
+  };
+}
+
+/**
+ * The presence reports of one view (KRTX-1742). Each report carries the
+ * current `alerts` flag: this tab shows its own notifications, so the server
+ * skips the phone and Web Push while the person is here. A flag change while
+ * present is sent at once as another present report. It never reports absent
+ * first: that deletes the lease, and the present report after it can arrive
+ * first.
+ */
+export function presenceReporter(
+  put: (report: { active: boolean; alerts: boolean }) => void,
+  alerts: boolean,
+) {
+  let present = false;
+  return {
+    report(active: boolean) {
+      present = active;
+      put({ active, alerts });
+    },
+    setAlerts(next: boolean) {
+      if (next === alerts) return;
+      alerts = next;
+      if (present) put({ active: true, alerts });
+    },
   };
 }

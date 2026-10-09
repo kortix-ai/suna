@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { PRESENCE_CHECK_MS, PRESENCE_INPUT_WINDOW_MS, watchHumanPresence } from './human-presence';
+import { PRESENCE_CHECK_MS, PRESENCE_INPUT_WINDOW_MS, presenceReporter, watchHumanPresence } from './human-presence';
 
 /** A document and window stand-in: listeners by event name, one interval. */
 function fakeEnv() {
@@ -117,5 +117,71 @@ describe('watchHumanPresence', () => {
     expect(sent).toEqual([true, false]);
     expect(f.listenerCount()).toBe(0);
     expect(f.ticking()).toBe(false);
+  });
+});
+
+// KRTX-1742: a closing tab must end its lease at once. Otherwise the lease
+// outlives the tab by up to 90 s and suppresses the phone and Web Push.
+describe('watchHumanPresence on pagehide', () => {
+  test('pagehide reports absent once, and the page stays absent until it is shown or used', () => {
+    const f = fakeEnv();
+    const sent: boolean[] = [];
+    watchHumanPresence(f.env, (a) => sent.push(a), () => false);
+    f.fire('pagehide');
+    f.fire('pagehide');
+    expect(sent).toEqual([true, false]);
+    f.advance(4 * PRESENCE_CHECK_MS);
+    expect(sent).toEqual([true, false]);
+    // A back/forward-cache restore shows the page again.
+    f.fire('visibilitychange');
+    expect(sent).toEqual([true, false, true]);
+  });
+
+  test('a hidden tab that then unloads sends absent only once', () => {
+    const f = fakeEnv();
+    const sent: boolean[] = [];
+    watchHumanPresence(f.env, (a) => sent.push(a), () => true);
+    f.doc.hidden = true;
+    f.fire('visibilitychange');
+    f.fire('pagehide');
+    expect(sent).toEqual([true, false]);
+  });
+});
+
+// KRTX-1742: `alerts` tells the server this tab shows its own notifications.
+// A change must reach the lease at once, and must never drop the lease: a
+// stop-then-start would race an absent PUT against a present PUT.
+describe('presenceReporter', () => {
+  test('every report carries the current alerts flag', () => {
+    const puts: Array<{ active: boolean; alerts: boolean }> = [];
+    const reporter = presenceReporter((p) => puts.push(p), false);
+    reporter.report(true);
+    reporter.report(false);
+    expect(puts).toEqual([
+      { active: true, alerts: false },
+      { active: false, alerts: false },
+    ]);
+  });
+
+  test('a flag change while present re-sends present with the new flag, once', () => {
+    const puts: Array<{ active: boolean; alerts: boolean }> = [];
+    const reporter = presenceReporter((p) => puts.push(p), false);
+    reporter.report(true);
+    reporter.setAlerts(true);
+    reporter.setAlerts(true);
+    expect(puts).toEqual([
+      { active: true, alerts: false },
+      { active: true, alerts: true },
+    ]);
+  });
+
+  test('a flag change while absent sends nothing; the next present report carries it', () => {
+    const puts: Array<{ active: boolean; alerts: boolean }> = [];
+    const reporter = presenceReporter((p) => puts.push(p), true);
+    reporter.report(false);
+    reporter.setAlerts(false);
+    expect(puts).toEqual([{ active: false, alerts: true }]);
+    reporter.report(true);
+    expect(puts.at(-1)).toEqual({ active: true, alerts: false });
   });
 });

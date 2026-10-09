@@ -2,7 +2,7 @@ import type { FeatureFlagView } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { DEFAULT_EXPERIMENTAL_COPY, ExperimentalTabView, filterFeatures } from './experimental-tab';
+import { DEFAULT_EXPERIMENTAL_COPY, ExperimentalTabView, filterFeatures, localizeFeatureFlag } from './experimental-tab';
 
 const betaFeature: FeatureFlagView = {
   key: 'meta_agent',
@@ -284,5 +284,36 @@ describe('filterFeatures', () => {
 
   test('no match returns empty rather than falling back to everything', () => {
     expect(filterFeatures(all, 'zzz')).toEqual([]);
+  });
+});
+
+describe('localizeFeatureFlag', () => {
+  const messages: Record<string, string> = {
+    'flags.meta_agent.name': 'Мета агент',
+    'flags.meta_agent.description': 'Координишите сесије агената.',
+  };
+  const t = Object.assign((key: string) => messages[key] ?? key, {
+    has: (key: string) => key in messages,
+  });
+
+  test('a flag the catalogs translate gets the translated name and description', () => {
+    const view = localizeFeatureFlag(betaFeature, t);
+    expect(view.name).toBe('Мета агент');
+    expect(view.description).toBe('Координишите сесије агената.');
+  });
+
+  test('a flag the catalogs do not translate keeps the name and description the API sent', () => {
+    // During a deploy a page can hold a catalog from the previous API that
+    // still lists a flag this web build no longer translates (a graduated
+    // flag). The row must read as words, never as a raw message key.
+    const graduated: FeatureFlagView = {
+      ...experimentalFeature,
+      key: 'config_releases',
+      name: 'Config Releases',
+      description: "Sessions run the base branch's current config.",
+    };
+    const view = localizeFeatureFlag(graduated, t);
+    expect(view.name).toBe('Config Releases');
+    expect(view.description).toBe("Sessions run the base branch's current config.");
   });
 });

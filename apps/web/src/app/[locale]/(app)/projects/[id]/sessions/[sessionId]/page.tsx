@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { ErrorState } from '@/features/layout/section/error-state';
+import { useOpenSessionRead } from '@/features/notifications/use-open-session-read';
 import { useAuth } from '@/features/providers/auth-provider';
 import { InstantSessionShell } from '@/features/session/instant-session-shell';
 import { resolvePinnedRootSessionId } from '@/features/session/pinned-root-session';
@@ -100,6 +101,7 @@ import {
   useSessionSwitchStore,
 } from '@/stores/session-switch-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
+import { useWebNotificationStore } from '@/stores/web-notification-store';
 import {
   clearSessionFresh,
   formatRuntimeError,
@@ -238,8 +240,14 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // replayStartStash:false — the web has its own pending-prompt hand-off (below).
   // The default chat engine stays enabled. This hook owns message sync and the
   // question and permission recovery pollers for the root session.
+  // A tab that shows its own OS notification tells the server so, and the
+  // server then holds back the phone push and Web Push for this session
+  // (KRTX-1742).
+  const notificationsOn = useWebNotificationStore((s) => s.preferences.enabled);
+  const notificationPermission = useWebNotificationStore((s) => s.permission);
   const session = useSession(projectId, sessionId, {
     browserPresence: !!user,
+    presenceAlerts: notificationsOn && notificationPermission === 'granted',
     enabled: canPollSessionStart({ hasUser: !!user, billingBlocked }),
     replayStartStash: false,
     initialRuntimeSessionId,
@@ -248,6 +256,9 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     // re-renders the transcript only, not this whole page.
     subscribeMessages: false,
   });
+  // The presence write marks this session's notifications read on the server;
+  // this clears them from the bell at once.
+  useOpenSessionRead(user?.id, sessionId);
   // `/start` no longer refuses a session created before a repository
   // replacement, so there is no error to detect and no mode to flip into: the
   // session starts, gets the project's current config release, and converges

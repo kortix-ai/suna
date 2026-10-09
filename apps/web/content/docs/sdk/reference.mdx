@@ -231,6 +231,57 @@ which installs an item onto a project.
 | `marketplaces()` · `featured()` | all · featured marketplaces |
 | `sources.list()` · `sources.add(input)` · `sources.remove(id)` | list · add · remove a source |
 
+### Notifications — `kortix.notifications`
+
+The caller's notifications, across every account and project. Each signed-in
+person has one inbox, one preference record, and Web Push subscriptions for
+their browsers. Every method needs a person's credential: a service account
+gets `403`.
+
+```ts
+const page = await kortix.notifications.list({ limit: 20 });
+await kortix.notifications.markRead({ ids: [page.notifications[0].id] });
+await kortix.notifications.updatePreferences({ kinds: { turn_done: { push: false } } });
+```
+
+| method | what |
+| --- | --- |
+| `list({ limit?, before? }, { signal? })` | the newest page: `{ notifications, unread_count, next_before }`. `limit` is 1 to 50 (default 20). Pass `next_before` as `before` for the next page. Rows the caller can no longer see are left out. A failure does not call the host error handler. |
+| `markRead({ ids })` · `markRead({ all: true })` · `markRead({ sessionId })` | mark 1 to 100 rows, every row, or every row of one session read. Changes only the caller's rows. Returns `{ updated, unread_count }`. |
+| `preferences()` · `updatePreferences({ kinds })` | read · change the push and email choice per kind. Returns `{ kinds, email_available }`. A patch changes only the kinds and channels it names. |
+| `webPushPublicKey()` | `{ public_key }`: the `applicationServerKey` for `pushManager.subscribe` |
+| `registerWebPushSubscription({ endpoint, keys })` | deliver push to this browser. Needs a browser sign-in: a personal token gets `403`. An endpoint on an unknown push service gets `400`. |
+| `unregisterWebPushSubscription(endpoint, { signal? })` | stop push to this browser. Returns `{ deleted }`. |
+| `registerDeviceToken(input)` · `unregisterDeviceToken(token, { signal? })` | register · remove a native app's Expo push token |
+
+Kinds (`InboxNotificationKind`, listed in `INBOX_NOTIFICATION_KINDS`):
+
+| kind | sent when | push | email (default) |
+| --- | --- | --- | --- |
+| `turn_done` | a turn you prompted or watch ended | on | off |
+| `turn_error` | that turn ended with an error | on | on, in a digest |
+| `question` | the agent asks a question | on | on, in a digest |
+| `permission` | the agent asks for permission | on | off |
+| `shared` | someone shared a session with you | on | on, in a digest |
+| `automation_failed` | an automation you watch started to fail | on | on, at once |
+| `automation_recovered` | that automation works again | on | off |
+
+`DEFAULT_NOTIFICATION_PREFERENCES` holds these defaults. The inbox row is
+always written; the preferences decide only push and email. A digest email
+lists the rows still unread 15 minutes after they arrived, at most one digest
+per hour. Hide the email column when `email_available` is `false`.
+
+Each row's `url` opens its subject. Its `?notification=<id>` query lets the
+page mark the row read.
+
+The session handle carries the caller's watch on one session:
+
+| method | what |
+| --- | --- |
+| `session(pid, sid).watch()` | `{ watching }`: is the caller notified about this session |
+| `session(pid, sid).setWatch(watching)` | `false` mutes the session for the caller, `true` watches it again. Prompting a session watches it, but never undoes a mute. |
+| `session(pid, sid).presence({ tab_id, active, alerts? })` | this tab's presence lease. `alerts: true` says the tab shows its own notifications: the server skips the phone and Web Push only while an alerting tab is in use. An absent report is sent with `keepalive`. |
+
 ### The project handle — `kortix.project(id)`
 
 Binds the project id; every sub-resource hangs off it.

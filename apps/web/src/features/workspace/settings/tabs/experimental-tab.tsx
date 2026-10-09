@@ -130,6 +130,31 @@ function originLabel(feature: FeatureFlagView, copy: ExperimentalCopy): string {
   return feature.enabled ? copy.defaultOn : copy.defaultOff;
 }
 
+/** The translator surface {@link localizeFeatureFlag} reads. */
+export interface FeatureFlagTranslator {
+  (key: string): string;
+  has(key: string): boolean;
+}
+
+/**
+ * A catalog row with its display copy in the reader's language.
+ *
+ * The catalogs name and describe every flag key this build knows. A page can
+ * still hold a catalog from the previous API during a deploy, listing a flag
+ * this build no longer translates (a graduated flag). That row keeps the
+ * English `name` and `description` the API sent, so it reads as words and
+ * never as a raw message key.
+ */
+export function localizeFeatureFlag<T extends FeatureFlagView>(feature: T, t: FeatureFlagTranslator): T {
+  const nameKey = `flags.${feature.key}.name`;
+  const descriptionKey = `flags.${feature.key}.description`;
+  return {
+    ...feature,
+    name: t.has(nameKey) ? t(nameKey) : feature.name,
+    description: t.has(descriptionKey) ? t(descriptionKey) : feature.description,
+  };
+}
+
 /**
  * Filter the flag list by a search term.
  *
@@ -429,11 +454,7 @@ export function ExperimentalTab({ projectId }: { projectId: string }) {
 
   const rawFeatures = (project?.experimental_features ?? [])
     .filter((f) => f.available)
-    .map((feature) => ({
-      ...feature,
-      name: t(`flags.${feature.key}.name` as never),
-      description: t(`flags.${feature.key}.description` as never),
-    }));
+    .map((feature) => localizeFeatureFlag(feature, t as unknown as FeatureFlagTranslator));
   const withPending = rawFeatures.map((f) => ({
     ...f,
     enabled: pendingValues[f.key] ?? f.enabled,
