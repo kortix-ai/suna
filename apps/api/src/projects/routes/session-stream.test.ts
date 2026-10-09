@@ -873,9 +873,11 @@ describe('R5.3: a visible tab keeps its presence through the stream, not a 30 s 
     expect(presenceExpiries).toEqual([]);
   });
 
+  const FLAG_ON = { experimental: { notification_center: true } };
+
   // KRTX-1742: a closed tab's lease held back the phone and Web Push for up to 90 s.
   test('the stream ending expires that tab lease at once; an open stream expires nothing', async () => {
-    loadedProject = { ...loadedProject!, actor: { credential: { kind: 'jwt' } } } as never;
+    loadedProject = { ...loadedProject!, row: { ...loadedProject!.row, metadata: FLAG_ON }, actor: { credential: { kind: 'jwt' } } } as never;
     sandboxRow = { externalId: 'box-1', status: 'stopped' };
     const response = await openStream(`?tab_id=${TAB}`);
     const reader = response.body!.getReader();
@@ -892,7 +894,7 @@ describe('R5.3: a visible tab keeps its presence through the stream, not a 30 s 
   // KRTX-1742 review: a stream that never wrote the lease expired the one a
   // newer stream of the same tab had just renewed.
   test('a stream that renewed no lease expires nothing when it ends', async () => {
-    loadedProject = { ...loadedProject!, actor: { credential: { kind: 'jwt' } } } as never;
+    loadedProject = { ...loadedProject!, row: { ...loadedProject!.row, metadata: FLAG_ON }, actor: { credential: { kind: 'jwt' } } } as never;
     sandboxRow = { externalId: 'box-1', status: 'stopped' };
     renewResult = null;
     const response = await openStream(`?tab_id=${TAB}`);
@@ -902,6 +904,22 @@ describe('R5.3: a visible tab keeps its presence through the stream, not a 30 s 
 
     await reader.cancel();
     await Bun.sleep(50);
+    expect(presenceExpiries).toEqual([]);
+  });
+
+  // The notification_center flag off (the default): the lease lives to its
+  // expiry after the stream ends, as before KRTX-1742.
+  test('with the notification_center flag off, the stream ending expires nothing', async () => {
+    for (const metadata of [{}, { experimental: { notification_center: false } }]) {
+      loadedProject = { ...loadedProject!, row: { ...loadedProject!.row, metadata }, actor: { credential: { kind: 'jwt' } } } as never;
+      sandboxRow = { externalId: 'box-1', status: 'stopped' };
+      const response = await openStream(`?tab_id=${TAB}`);
+      const reader = response.body!.getReader();
+      await reader.read();
+      await reader.cancel();
+    }
+    await Bun.sleep(50);
+    expect(presenceRenewals).toHaveLength(2);
     expect(presenceExpiries).toEqual([]);
   });
 });

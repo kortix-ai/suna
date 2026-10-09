@@ -154,9 +154,24 @@ const {
   setServerPushPreferences,
 } = await import('./web-notifications');
 const { DEFAULT_NOTIFICATION_PREFERENCES } = await import('@kortix/sdk');
+const { qk } = await import('@kortix/sdk/react');
+const { QueryClient } = await import('@tanstack/react-query');
+const { registerQueryClient } = await import('@/lib/query-client-singleton');
 const { useWebNotificationStore } = await import('@/stores/web-notification-store');
 const { useTabStore } = await import('@/stores/tab-store');
 const { useTurnAttentionStore } = await import('@/stores/turn-attention-store');
+
+/**
+ * The app's query client, as `web-notifications.ts` reads it. A project's
+ * `notification_center` flag comes from its cached detail (KRTX-1742).
+ */
+const queryClient = new QueryClient();
+registerQueryClient(queryClient);
+function setNotificationCenter(projectId: string, on: boolean) {
+  queryClient.setQueryData(qk.project.detail(projectId), {
+    project: { experimental: { notification_center: on } },
+  });
+}
 
 /** The shipped preferences — what a customer who never opened the settings has. */
 function defaultPreferences() {
@@ -194,6 +209,7 @@ beforeEach(() => {
   webPushOn = false;
   workerShown.length = 0;
   workerOnScreen.clear();
+  queryClient.clear();
 });
 
 afterEach(() => {
@@ -334,15 +350,78 @@ describe('sendWebNotification — turn signals reach a customer watching another
 });
 
 /**
- * KRTX-1742: the per-browser per-kind switches (`onCompletion` …) are retired.
- * The person's Push choice per kind, saved on the server, gates the OS
- * notification instead — the same choice that gates Web Push and the phone.
+ * KRTX-1742, `notification_center` off (the default): the per-browser per-kind
+ * switches gate the OS notification, as before the notification center. The
+ * server Push choice does nothing here.
+ */
+describe('sendWebNotification — flag off: the per-browser switch gates each kind', () => {
+  function enabledAndHidden() {
+    setPreferences({ enabled: true });
+    FakeNotification.permission = 'granted';
+    visibility = { hidden: true, hasFocus: false };
+  }
+
+  test('a kind whose local switch is off shows no OS notification, but still toasts', () => {
+    enabledAndHidden();
+    setPreferences({ enabled: true, onCompletion: false });
+
+    sendWebNotification(completionPayload());
+
+    expect(notificationInstances).toHaveLength(0);
+    expect(toastCalls).toHaveLength(1);
+  });
+
+  test('the server Push choice does not apply', () => {
+    enabledAndHidden();
+    setNotificationCenter('proj1', false);
+    setServerPushPreferences({
+      ...DEFAULT_NOTIFICATION_PREFERENCES,
+      turn_done: { push: false, email: false },
+    });
+
+    sendWebNotification(completionPayload());
+
+    expect(notificationInstances).toHaveLength(1);
+  });
+
+  test('a project not in the cache takes this path (fail-closed)', () => {
+    enabledAndHidden();
+    setServerPushPreferences({
+      ...DEFAULT_NOTIFICATION_PREFERENCES,
+      turn_done: { push: false, email: false },
+    });
+
+    sendWebNotification(completionPayload());
+    setPreferences({ enabled: true, onCompletion: false });
+    sendWebNotification(completionPayload());
+
+    expect(notificationInstances).toHaveLength(1);
+  });
+
+  test('with a Web Push subscription the tab still shows its own notification', async () => {
+    enabledAndHidden();
+    webPushOn = true;
+
+    sendWebNotification(completionPayload());
+    await settle();
+
+    expect(notificationInstances).toHaveLength(1);
+    expect(workerShown).toHaveLength(0);
+  });
+});
+
+/**
+ * KRTX-1742, `notification_center` on: the per-browser per-kind switches
+ * (`onCompletion` …) are retired. The person's Push choice per kind, saved on
+ * the server, gates the OS notification instead — the same choice that gates
+ * Web Push and the phone.
  */
 describe('sendWebNotification — the server Push choice gates each kind', () => {
   function enabledAndHidden() {
     setPreferences({ enabled: true });
     FakeNotification.permission = 'granted';
     visibility = { hidden: true, hasFocus: false };
+    setNotificationCenter('proj1', true);
   }
 
   test('a kind whose Push is off shows no OS notification, but still toasts', () => {
@@ -371,6 +450,7 @@ describe('sendWebNotification — the server Push choice gates each kind', () =>
       body: '"dogfood-1": continue?',
       tag: 'question:sess1',
       sessionId: 'sess1',
+      projectId: 'proj1',
     });
 
     expect(notificationInstances).toHaveLength(1);
@@ -386,6 +466,22 @@ describe('sendWebNotification — the server Push choice gates each kind', () =>
     expect(notificationInstances).toHaveLength(1);
   });
 
+  test('an inbox row follows the server choice even when its project is not cached', () => {
+    enabledAndHidden();
+    queryClient.clear();
+    setPreferences({ enabled: true, onCompletion: false });
+
+    sendWebNotification({ ...completionPayload(), projectId: 'proj2', fromInbox: true });
+    expect(notificationInstances).toHaveLength(1);
+
+    setServerPushPreferences({
+      ...DEFAULT_NOTIFICATION_PREFERENCES,
+      turn_done: { push: false, email: false },
+    });
+    sendWebNotification({ ...completionPayload(), projectId: 'proj2', fromInbox: true });
+    expect(notificationInstances).toHaveLength(1);
+  });
+
   test('an automation alert has no session: its toast and its OS notification open its href', () => {
     enabledAndHidden();
 
@@ -396,6 +492,7 @@ describe('sendWebNotification — the server Push choice gates each kind', () =>
       tag: 'automation_failed:nightly-report',
       href: '/projects/proj1/customize/triggers',
       actionLabel: 'Open triggers',
+      fromInbox: true,
     });
 
     expect(toastCalls[0].kind).toBe('error');
@@ -443,6 +540,7 @@ describe('sendWebNotification — with a Web Push subscription the worker shows 
     setPreferences({ enabled: true });
     FakeNotification.permission = 'granted';
     visibility = { hidden: true, hasFocus: false };
+    setNotificationCenter('proj1', true);
   }
 
   test('the worker shows it with the push tag and the session url, and no in-page notification', async () => {

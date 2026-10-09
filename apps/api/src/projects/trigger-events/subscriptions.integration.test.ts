@@ -174,11 +174,13 @@ describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
     setEventSourceForTest('composio', fake);
     const db = testDb();
     await db.insert(accounts).values({ accountId: ACCOUNT_ID, name: 'Event reconcile proof' });
+    // Event-trigger alerts need the notification_center flag (KRTX-1742).
     await db.insert(projects).values({
       projectId: PROJECT_ID,
       accountId: ACCOUNT_ID,
       name: 'Event reconcile proof',
       repoUrl: 'https://example.test/event-reconcile.git',
+      metadata: { experimental: { notification_center: true } },
     });
     await db.insert(connectors).values({
       connectorId: CONNECTOR_ID,
@@ -594,6 +596,34 @@ describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
         leftCommand = null;
         expect((await deliverEvents('composio', [delivery()])).failed).toBe(1);
         expect(await runtime('a')).toMatchObject({ alertSource: 'fire' });
+        await settleTriggerAlerts();
+      });
+    });
+
+    describe('with the notification_center flag off (KRTX-1742)', () => {
+      beforeEach(async () => {
+        await testDb().update(projects).set({ metadata: {} }).where(eq(projects.projectId, PROJECT_ID));
+      });
+
+      test('a failure no redelivery can fix is recorded on the trigger but opens no alert', async () => {
+        await armed();
+        fireStatus = 'failed';
+        expect((await deliverEvents('composio', [delivery()])).failed).toBe(1);
+        expect(await runtime('a')).toMatchObject({ lastStatus: 'failed', lastError: 'boom', alertSource: null, alertFailingSince: null });
+        await settleTriggerAlerts();
+      });
+
+      test('the third failed delivery of one event opens no alert either', async () => {
+        await armed();
+        fireStatus = 'retryable';
+        leftCommand = 'dead_lettered';
+        for (const attempt of [1, 2, 3]) {
+          expect({ attempt, failed: (await deliverEvents('composio', [delivery()])).failed }).toEqual({ attempt, failed: 1 });
+        }
+        fireStatus = 'throws';
+        leftCommand = null;
+        expect((await deliverEvents('composio', [delivery()])).failed).toBe(1);
+        expect(await runtime('a')).toMatchObject({ lastStatus: 'failed', alertSource: null, alertFailingSince: null });
         await settleTriggerAlerts();
       });
     });

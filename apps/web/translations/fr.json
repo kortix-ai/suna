@@ -1202,6 +1202,10 @@
         "us_region": {
           "name": "Région États-Unis",
           "description": "Exécutez les nouvelles sessions de ce projet dans la région Est des États-Unis. Une session en cours garde sa région jusqu’à son redémarrage."
+        },
+        "notification_center": {
+          "name": "Centre de notifications",
+          "description": "Prévient les personnes concernées par une session (l'auteur du prompt, son créateur et ses abonnés) par une boîte de réception avec cloche, des notifications push du navigateur et des e-mails, et signale les déclencheurs et rappels en échec. Désactivé : seul le téléphone du créateur de la session reçoit un push."
         }
       }
     },

@@ -153,6 +153,7 @@ project.
 | `warm_sessions` | Warm Sessions | Beta | On | `routes` |
 | `secrets_egress` | Network-Enforced Secrets | Experimental | On | `behavioral` |
 | `pi_harness` | Pi Harness (in-sandbox) | Experimental | Off | `behavioral` |
+| `notification_center` | Notification Center | Beta | Off | `routes` |
 
 `llm_gateway` reads its per-project default from
 `LLM_GATEWAY_DEFAULT_ENABLED`, which defaults to on. Turning the flag off per
@@ -202,6 +203,11 @@ refs). An explicit project choice always wins.
   see [`harnesses:`](/docs/project/manifest#harnesses). pi does not serve every
   session feature OpenCode does: see the matrix in
   [Harnesses](/docs/work/harnesses#what-each-harness-supports).
+- **`notification_center`** — tell the people a session concerns, not only its
+  creator: the bell, browser push, email, follow and mute per session, and
+  trigger and reminder alerts. Off: only the session creator's phone gets a
+  push, as before, and the session watch routes answer `feature_disabled`. See
+  [Notifications](/docs/work/notifications#turn-notifications-on).
 
 ### Graduated flags
 

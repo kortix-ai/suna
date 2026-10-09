@@ -520,14 +520,22 @@ describe('SessionSiteHeader Fork', () => {
 /**
  * KRTX-1742: the session menu mutes and unmutes this session's notifications
  * for the caller. The item waits for the watch read, so it never shows the
- * wrong verb, and a subsession (whose row is its parent's) has none.
+ * wrong verb, and a subsession (whose row is its parent's) has none. With the
+ * project's `notification_center` flag off there is no read and no item.
  */
 describe('SessionSiteHeader mute notifications', () => {
   const menu = source.slice(source.indexOf('const sessionActionItems = ('));
 
   test('the watch is read for the project session, never for a subsession', () => {
     expect(source).toContain('useSessionWatch({');
-    expect(source).toContain('enabled: isProjectSession && !parent,');
+    expect(source).toContain('enabled: isProjectSession && !parent && notificationCenter,');
+  });
+
+  test('the flag gates the read and the item', () => {
+    expect(source).toContain('const notificationCenter = useNotificationCenter(projectId);');
+    expect(source).toContain(
+      'const watching = notificationCenter ? sessionWatch.data?.watching : undefined;',
+    );
   });
 
   test('the item shows once the watch is known, and names the next state', () => {

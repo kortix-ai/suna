@@ -400,14 +400,16 @@ When a run that a trigger started ends with an error, Kortix records it on the t
 
 - `last_status` becomes `failed` and `last_error` holds the reason, for example `Out of credits: Payment Required: Insufficient credits.`
 - The Schedule page marks the trigger "Last run didn’t finish" and shows the reason in its panel.
-- The trigger's [alert recipients](#alerts) get one alert when the first run fails. A later failed run updates the reason without another alert.
+- With [alerts](#alerts) on, the trigger's alert recipients get one alert when the first run fails. A later failed run updates the reason without another alert.
 - The trigger stays `failed` while it keeps firing. A new fire does not prove that its run works.
 
-The next run that finishes clears the failure and sends one recovery alert. A run you stop yourself, a subagent, and a retried model call are not run outcomes. A fire that fails before a run starts, for example a session that cannot be created, clears on the next fire that succeeds.
+The next run that finishes clears the failure and, with alerts on, sends one recovery alert. A run you stop yourself, a subagent, and a retried model call are not run outcomes. A fire that fails before a run starts, for example a session that cannot be created, clears on the next fire that succeeds.
 
 ## Alerts
 
 An alert is a [notification](/docs/work/notifications) about a trigger that stops working. Kortix sends one `automation_failed` alert when a trigger starts failing, and one `automation_recovered` alert when it works again. Failures in between send nothing new. An alert names the trigger, carries the error text, and opens the project's **Triggers** page. A reminder's alert opens the **Reminders** page.
+
+Alerts are on when the project's `notification_center` flag is on. See [Turn notifications on](/docs/work/notifications#turn-notifications-on). With the flag off, Kortix still records each failure on the trigger, but sends no alert. An owner of the account gets one mobile push when a trigger's runs start failing. A failed fire and a recovery send nothing. A person who writes a trigger while the flag is off is not recorded as its writer. Once the flag is on, that trigger follows the rule for a trigger with no recorded writer, below, until someone edits it.
 
 ### Who gets alerts
 

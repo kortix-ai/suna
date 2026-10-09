@@ -27,19 +27,24 @@ function target() {
       listeners.get(type)!.add(fn);
     },
     removeEventListener: (type: string, fn: Listener) => listeners.get(type)?.delete(fn),
+    fire: (type: string) => {
+      for (const fn of listeners.get(type) ?? []) fn();
+    },
   };
 }
 
 let puts: Array<{ body: { tab_id: string; active: boolean; alerts?: boolean }; keepalive: boolean }>;
 let renderer: ReactTestRenderer | null = null;
 let queryClient: QueryClient;
+let win: ReturnType<typeof target>;
 const globals = globalThis as { document?: unknown; window?: unknown };
 const saved = { document: globals.document, window: globals.window };
 
 beforeEach(() => {
   puts = [];
   globals.document = { hidden: false, ...target() };
-  globals.window = { ...target(), setInterval: () => 1, clearInterval: () => {} };
+  win = target();
+  globals.window = { ...win, setInterval: () => 1, clearInterval: () => {} };
   configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
   globalThis.fetch = mock(async (url: unknown, init: RequestInit = {}) => {
     if (String(url).endsWith('/presence')) {
@@ -58,15 +63,20 @@ afterEach(() => {
   globals.window = saved.window;
 });
 
-function Host({ presenceAlerts }: { presenceAlerts?: boolean }) {
+function Host({ presenceAlerts, presencePageExit }: { presenceAlerts?: boolean; presencePageExit?: boolean }) {
   useSession(PROJECT_ID, SESSION_ID, {
     enabled: false,
     replayStartStash: false,
     chatEngine: false,
     browserPresence: true,
     presenceAlerts,
+    presencePageExit,
   });
   return null;
+}
+
+function mount(props: { presenceAlerts?: boolean; presencePageExit?: boolean }) {
+  return createElement(QueryClientProvider, { client: queryClient }, createElement(Host, props));
 }
 
 async function flush() {
@@ -119,5 +129,49 @@ describe('useSession presence alerts', () => {
       [true, false],
       [false, true],
     ]);
+  });
+});
+
+/**
+ * `presencePageExit` follows the project's `notification_center` flag. Off is
+ * the presence before KRTX-1742: a closing page sends no absent PUT, and the
+ * lease lives to its 90 s expiry. On, `pagehide` ends the lease at once.
+ */
+describe('useSession presence page exit', () => {
+  test('by default, pagehide sends no absent PUT', async () => {
+    act(() => {
+      renderer = create(mount({}));
+    });
+    await flush();
+    act(() => win.fire('pagehide'));
+    await flush();
+    expect(puts.map((p) => p.body.active)).toEqual([true]);
+  });
+
+  test('with presencePageExit, pagehide sends absent with keepalive', async () => {
+    act(() => {
+      renderer = create(mount({ presencePageExit: true }));
+    });
+    await flush();
+    act(() => win.fire('pagehide'));
+    await flush();
+    expect(puts.map((p) => [p.body.active, p.keepalive])).toEqual([
+      [true, false],
+      [false, true],
+    ]);
+  });
+
+  test('turning presencePageExit on after mount applies without an absent PUT', async () => {
+    act(() => {
+      renderer = create(mount({ presencePageExit: false }));
+    });
+    await flush();
+    act(() => renderer!.update(mount({ presencePageExit: true })));
+    await flush();
+    expect(puts.map((p) => p.body.active)).toEqual([true]);
+    act(() => win.fire('pagehide'));
+    await flush();
+    expect(puts.map((p) => p.body.active)).toEqual([true, false]);
+    expect(new Set(puts.map((p) => p.body.tab_id)).size).toBe(1);
   });
 });

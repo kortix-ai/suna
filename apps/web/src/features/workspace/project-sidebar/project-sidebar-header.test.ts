@@ -98,6 +98,8 @@ describe('project sidebar header', () => {
   test('the notification bell leads the trailing group, before search', () => {
     const trailing = header.slice(header.indexOf('className="ml-auto flex shrink-0 items-center gap-0.5"'));
     expect(trailing).toContain('<NotificationBell');
+    // The bell reads this project's `notification_center` flag.
+    expect(trailing).toMatch(/<NotificationBell\s+projectId=\{projectId\}/);
     expect(trailing.indexOf('<NotificationBell')).toBeLessThan(trailing.indexOf("aria-label={t('search')}"));
     const beforeBell = header.slice(0, header.indexOf('<NotificationBell'));
     expect(beforeBell).not.toContain('{!isMobile && !peek && (');

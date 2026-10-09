@@ -63,6 +63,7 @@ export const FeatureFlagMapSchema = z.object({
   pooled_provider_secrets: z.boolean(),
   pi_harness: z.boolean(),
   us_region: z.boolean(),
+  notification_center: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 

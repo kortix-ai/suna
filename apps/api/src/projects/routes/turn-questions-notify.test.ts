@@ -8,6 +8,11 @@
  * member's phone. One notification per request id; the thread relay's result
  * says whether a Slack/Teams thread already showed it.
  *
+ * All of that needs the project's notification_center flag (read from the
+ * session select's project join). Off, the route keeps its pre-KRTX-1742
+ * contract: any caller's new question pushes the creator before the relay,
+ * and a relay that throws fails the request.
+ *
  * Collaborators are mocked (the database, the store, the relay, the notifier):
  * this pins the route's branching. The recipient SQL runs in
  * `__tests__/integration-notification-recipients.test.ts`.
@@ -22,26 +27,34 @@ const ACCOUNT_ID = '44444444-4444-4444-8444-444444444444';
 const USER_ID = '11111111-1111-4111-8111-111111111111';
 const SESSION_ID = '55555555-5555-4555-8555-555555555555';
 
+const FLAG_ON = { experimental: { notification_center: true } };
+
 let sessionMetadata: Record<string, unknown> = {};
+let projectMetadata: Record<string, unknown> = FLAG_ON;
 let inserted = true;
 let relayOk = false;
 let relayThrows = false;
 const notified: Array<Record<string, unknown>> = [];
 const contexts: Array<Record<string, unknown>> = [];
+const legacyPushed: Array<Record<string, unknown>> = [];
+/** What happened, in order: the legacy push and the relay. */
+const order: string[] = [];
 
 mock.module('../../shared/db', () => ({
   hasDatabase: true,
   db: {
-    select: (projection: Record<string, unknown> = {}) => ({
-      from: () => ({
-        where: () => ({
-          limit: async () =>
-            'sandboxId' in projection
-              ? [{ sandboxId: SESSION_ID, sessionId: SESSION_ID }]
-              : [{ sessionId: SESSION_ID, accountId: ACCOUNT_ID, origin: 'user', metadata: sessionMetadata }],
-        }),
-      }),
-    }),
+    select: (projection: Record<string, unknown> = {}) => {
+      const query = {
+        from: () => query,
+        innerJoin: () => query,
+        where: () => query,
+        limit: async () =>
+          'sandboxId' in projection
+            ? [{ sandboxId: SESSION_ID, sessionId: SESSION_ID }]
+            : [{ sessionId: SESSION_ID, accountId: ACCOUNT_ID, origin: 'user', metadata: sessionMetadata, projectMetadata }],
+      };
+      return query;
+    },
   },
 }));
 
@@ -59,6 +72,7 @@ mock.module('../lib/pending-questions', () => ({
 
 mock.module('../../channels/turn-relay', () => ({
   relayTurnQuestion: async () => {
+    order.push('relay');
     if (relayThrows) throw new Error('db down');
     return relayOk ? { ok: true, answers: [['x']] } : { ok: false, error: 'no_channel' };
   },
@@ -77,9 +91,21 @@ mock.module('../lib/notification-recipients', () => ({
   },
 }));
 
+// The real notifySessionEvent resolves the context only for a flag-on project.
 mock.module('../../notifications/session-push', () => ({
-  notifySessionEvent: async (event: Record<string, unknown>) => {
-    notified.push(event);
+  notifySessionEvent: async (
+    event: Record<string, unknown>,
+    options: { notificationCenter?: boolean; context?: () => Promise<Record<string, unknown>> } = {},
+  ) => {
+    const context = options.notificationCenter && options.context ? await options.context() : {};
+    notified.push({ ...event, ...context });
+  },
+}));
+
+mock.module('../../notifications/session-push-legacy', () => ({
+  notifySessionPushLegacy: async (event: Record<string, unknown>) => {
+    order.push('legacy');
+    legacyPushed.push(event);
   },
 }));
 
@@ -113,11 +139,14 @@ async function ask(ctx: Record<string, unknown>, requestId: string | null = 'que
 
 beforeEach(() => {
   sessionMetadata = {};
+  projectMetadata = FLAG_ON;
   inserted = true;
   relayOk = false;
   relayThrows = false;
   notified.length = 0;
   contexts.length = 0;
+  legacyPushed.length = 0;
+  order.length = 0;
 });
 
 describe('POST /turn-question — who is notified', () => {
@@ -127,6 +156,7 @@ describe('POST /turn-question — who is notified', () => {
     expect(contexts).toEqual([
       { sessionId: SESSION_ID, projectId: PROJECT_ID, accountId: ACCOUNT_ID, metadata: {}, origin: 'user' },
     ]);
+    expect(legacyPushed).toEqual([]);
     expect(notified).toEqual([
       {
         type: 'question',
@@ -185,5 +215,44 @@ describe('POST /turn-question — who is notified', () => {
   test('a question without a runtime request id is deduped on the stored fallback id', async () => {
     await ask(sandboxCtx, null);
     expect(notified[0]).toMatchObject({ requestId: `q-${SESSION_ID}` });
+  });
+});
+
+describe('POST /turn-question — notification_center flag off (the pre-KRTX-1742 contract)', () => {
+  beforeEach(() => {
+    projectMetadata = {};
+  });
+
+  const pushed = { type: 'question', sessionId: SESSION_ID, projectId: PROJECT_ID, question: 'Which region?' };
+
+  test('the session`s own sandbox: the creator`s push, before the relay, with no context lookup', async () => {
+    const response = await ask(sandboxCtx);
+    expect(response.status).toBe(200);
+    expect(legacyPushed).toEqual([pushed]);
+    expect(order).toEqual(['legacy', 'relay']);
+    expect(contexts).toEqual([]);
+    expect(notified).toEqual([]);
+  });
+
+  test('a person`s token pushes the creator too, as before KRTX-1742', async () => {
+    const response = await ask(personCtx);
+    expect(response.status).toBe(200);
+    expect(legacyPushed).toEqual([pushed]);
+    expect(notified).toEqual([]);
+  });
+
+  test('a daemon retry of the same request id pushes nothing', async () => {
+    inserted = false;
+    await ask(sandboxCtx);
+    expect(legacyPushed).toEqual([]);
+  });
+
+  test('a relay that throws fails the request; the push already went out', async () => {
+    sessionMetadata = { source: 'slack' };
+    relayThrows = true;
+    const response = await ask(sandboxCtx);
+    expect(response.status).toBe(500);
+    expect(legacyPushed).toEqual([pushed]);
+    expect(notified).toEqual([]);
   });
 });

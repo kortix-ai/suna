@@ -6,26 +6,31 @@
 import { permissionPushClaims } from '@kortix/db';
 import { logger as defaultLogger } from '../lib/logger';
 import { db } from '../shared/db';
-import { notifySessionEvent, type SessionPushEvent } from './session-push';
+import {
+  notifySessionEvent,
+  type NotifySessionEventOptions,
+  type SessionEventContext,
+  type SessionPushEvent,
+} from './session-push';
 
 /** Who the ask is for, beyond the session itself (projects/lib/notification-recipients.ts). */
-export type PermissionAskContext = Pick<
-  SessionPushEvent,
-  'prompterUserId' | 'originClass' | 'isChild' | 'triggerWatcherIds'
->;
+export type PermissionAskContext = SessionEventContext;
 
 export interface PermissionPushRequest {
   sessionId: string;
   projectId: string;
   requestId: string;
-  /** Resolved only after this call wins the claim, off the relay's response path. */
+  /**
+   * Handed to the notifier, which resolves it only when the project's
+   * `notification_center` flag is on. Never on the relay's response path.
+   */
   context?: () => Promise<PermissionAskContext>;
 }
 
 export interface PermissionPushGateDeps {
   /** True when this call is the first for (session, request id). */
   claim?: (sessionId: string, requestId: string) => Promise<boolean>;
-  notify?: (event: SessionPushEvent) => Promise<unknown>;
+  notify?: (event: SessionPushEvent, options: Pick<NotifySessionEventOptions, 'context'>) => Promise<unknown>;
   logger?: Pick<Console, 'warn'>;
 }
 
@@ -48,10 +53,10 @@ export function createPermissionPushGate(deps: PermissionPushGateDeps = {}) {
      *  Resolves true when this call dispatched the notification. */
     async notify(req: PermissionPushRequest): Promise<boolean> {
       if (!(await claim(req.sessionId, req.requestId))) return false;
-      void (async () => {
-        const context = req.context ? await req.context() : {};
-        await notify({ type: 'permission', sessionId: req.sessionId, projectId: req.projectId, requestId: req.requestId, ...context });
-      })().catch((err) =>
+      void notify(
+        { type: 'permission', sessionId: req.sessionId, projectId: req.projectId, requestId: req.requestId },
+        { context: req.context },
+      ).catch((err) =>
         logger.warn('[push] permission notification failed', err instanceof Error ? err.message : err),
       );
       return true;

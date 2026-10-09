@@ -1,19 +1,24 @@
 // Session events (KRTX-1742 design §3.1) with injected collaborators (DI, no
 // mock.module): which turn ends notify, who is told for each origin class and
-// kind, mutes, the access filter, the inbox row's text and dedupe key, and the
-// Expo copy of the 4 session kinds. The real queries run in the DB suites
-// (__tests__/integration-notification-recipients.test.ts).
+// kind, mutes, the access filter, the inbox row's text and dedupe key, the
+// Expo copy of the 4 session kinds, and the notification_center flag routing
+// (off: the pre-KRTX-1742 push, session-push-legacy.ts). The real queries run
+// in the DB suites (__tests__/integration-notification-recipients.test.ts,
+// __tests__/integration-session-push-recipients.test.ts).
 import { describe, expect, test } from 'bun:test';
 import type { SessionAccessRow } from './access';
 import type { PushDeviceTokenRow } from './device-tokens';
+import type { ExpoPushMessage } from './expo-push';
 import type { DeliverInput } from './notifier';
 import { buildExpoMessages, buildPushContent, opensRemindersPage } from './push-payload';
 import {
   createSessionNotifier,
+  notifySessionEvent,
   sessionEventAudience,
   turnEndPushType,
   type SessionPushEvent,
 } from './session-push';
+import type { LegacySessionPushDeps } from './session-push-legacy';
 import type { SessionWatchers } from './watchers';
 
 const PROJECT = '00000000-0000-4000-8000-000000000001';
@@ -157,6 +162,26 @@ describe('sessionEventAudience — who is told (design §3.1)', () => {
   });
 });
 
+function deviceRow(userId: string, token: string, overrides: Partial<PushDeviceTokenRow> = {}): PushDeviceTokenRow {
+  const now = new Date(0);
+  return {
+    token,
+    userId,
+    platform: 'ios',
+    provider: 'expo',
+    enabled: true,
+    onCompletion: true,
+    onError: true,
+    onQuestion: true,
+    onPermission: true,
+    playSound: true,
+    authSessionId: null,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  };
+}
+
 function sessionRow(overrides: Partial<SessionAccessRow> = {}): SessionAccessRow {
   return {
     sessionId: SESSION,
@@ -299,30 +324,135 @@ describe('createSessionNotifier', () => {
     expect(await h.notify(event())).toEqual({ reason: 'failed', recipients: [] });
     expect(h.warnings).toHaveLength(1);
   });
+
+  test('the recipient context is resolved inside the notifier; its fields override the event`s', async () => {
+    const h = harness();
+    let resolved = 0;
+    const context = async () => {
+      resolved += 1;
+      return { prompterUserId: WATCHER, originClass: 'attended' as const, isChild: false };
+    };
+    const outcome = await h.notify(event({ prompterUserId: null, turnMessageId: 'msg_1' }), context);
+    expect(resolved).toBe(1);
+    expect(outcome).toEqual({ reason: 'delivered', recipients: [WATCHER, CREATOR] });
+    expect(h.delivered[0]).toMatchObject({ actorUserId: WATCHER, dedupeKey: `turn:${SESSION}:msg_1` });
+  });
+
+  test('a failing context lookup never throws to the caller', async () => {
+    const h = harness();
+    const outcome = await h.notify(event(), async () => {
+      throw new Error('db down');
+    });
+    expect(outcome).toEqual({ reason: 'failed', recipients: [] });
+    expect(h.delivered).toEqual([]);
+    expect(h.warnings).toHaveLength(1);
+  });
+});
+
+// KRTX-1742 is behind the project's notification_center flag, off by default.
+// Off, notifySessionEvent sends the pre-KRTX-1742 push: the creator's phones,
+// no context lookup, no inbox row. The flag read itself runs in the DB suites.
+describe('notifySessionEvent with the notification_center flag off', () => {
+  function legacy(overrides: Partial<LegacySessionPushDeps> = {}) {
+    const loaded: Array<[string, string]> = [];
+    const listed: string[] = [];
+    const sent: ExpoPushMessage[] = [];
+    const deps: Partial<LegacySessionPushDeps> = {
+      enabled: true,
+      loadSession: async (sessionId, projectId) => {
+        loaded.push([sessionId, projectId]);
+        return { createdBy: CREATOR, title: 'Fix the build', accountId: ACCOUNT, projectId };
+      },
+      mayReceive: async () => true,
+      isPresent: async () => false,
+      store: {
+        listByUser: async (userId) => {
+          listed.push(userId);
+          return [deviceRow(userId, `ExponentPushToken[${userId === CREATOR ? 'creator' : userId}]`)];
+        },
+        deleteTokens: async (tokens) => tokens.length,
+      },
+      send: async (messages) => {
+        sent.push(...messages);
+        return { tickets: [], removedTokens: [], failedMessages: 0 };
+      },
+      ...overrides,
+    };
+    return { deps, loaded, listed, sent };
+  }
+  const unresolved = async () => {
+    throw new Error('the context must not be resolved with the flag off');
+  };
+
+  test('a turn end pushes only the creator`s phones, with the pre-KRTX-1742 payload', async () => {
+    const h = legacy();
+    const outcome = await notifySessionEvent(
+      event({ type: 'error', turnMessageId: 'msg_1', errorMessage: 'Payment Required' }),
+      { notificationCenter: false, context: unresolved, legacyDeps: h.deps },
+    );
+    expect(outcome).toMatchObject({ sent: 1, reason: 'sent' });
+    expect(h.loaded).toEqual([[SESSION, PROJECT]]);
+    expect(h.listed).toEqual([CREATOR]);
+    expect(h.sent).toEqual([
+      {
+        to: 'ExponentPushToken[creator]',
+        title: 'Fix the build',
+        body: 'The session stopped with an error.',
+        data: { type: 'error', projectId: PROJECT, sessionId: SESSION },
+        sound: 'kortix_error.wav',
+        channelId: 'session-error',
+        priority: 'high',
+      },
+    ]);
+  });
+
+  test('a question carries its text; a permission its fixed line', async () => {
+    const question = legacy();
+    await notifySessionEvent(event({ type: 'question', question: 'Which region?', requestId: 'que_1' }), {
+      notificationCenter: false,
+      legacyDeps: question.deps,
+    });
+    expect(question.sent.map((m) => [m.body, m.data])).toEqual([
+      ['Kortix has a question: Which region?', { type: 'question', projectId: PROJECT, sessionId: SESSION }],
+    ]);
+    const permission = legacy();
+    await notifySessionEvent(event({ type: 'permission', requestId: 'per_1' }), {
+      notificationCenter: false,
+      legacyDeps: permission.deps,
+    });
+    expect(permission.sent.map((m) => m.body)).toEqual(['Kortix needs your approval to continue.']);
+  });
+
+  test('any live tab of the creator holds the push back, alerting or not', async () => {
+    const h = legacy({ isPresent: async (userId) => userId === CREATOR });
+    expect(await notifySessionEvent(event(), { notificationCenter: false, legacyDeps: h.deps })).toEqual({
+      sent: 0,
+      reason: 'present',
+    });
+    expect(h.sent).toEqual([]);
+  });
+
+  test('explicit recipients replace the creator', async () => {
+    const h = legacy();
+    await notifySessionEvent(event({ recipients: [WATCHER] }), { notificationCenter: false, legacyDeps: h.deps });
+    expect(h.listed).toEqual([WATCHER]);
+  });
+
+  test('the kill switch stops everything, before any read', async () => {
+    const h = legacy({ enabled: false });
+    expect(await notifySessionEvent(event(), { notificationCenter: false, context: unresolved, legacyDeps: h.deps })).toEqual({
+      sent: 0,
+      reason: 'disabled',
+    });
+    expect(h.loaded).toEqual([]);
+    expect(h.sent).toEqual([]);
+  });
 });
 
 // The Expo copy of the 4 session kinds is unchanged by KRTX-1742: an installed
 // app keeps showing the same text and routing on the same `type`.
 describe('Expo copy of the session kinds (Spec §4)', () => {
-  function device(token: string, overrides: Partial<PushDeviceTokenRow> = {}): PushDeviceTokenRow {
-    const now = new Date(0);
-    return {
-      token,
-      userId: CREATOR,
-      platform: 'ios',
-      provider: 'expo',
-      enabled: true,
-      onCompletion: true,
-      onError: true,
-      onQuestion: true,
-      onPermission: true,
-      playSound: true,
-      authSessionId: null,
-      createdAt: now,
-      updatedAt: now,
-      ...overrides,
-    };
-  }
+  const device = (token: string, overrides: Partial<PushDeviceTokenRow> = {}) => deviceRow(CREATOR, token, overrides);
   const content = (kind: 'turn_done' | 'turn_error' | 'question' | 'permission', body = '') =>
     buildPushContent({ notificationId: 'n1', kind, title: 'Fix the build', body, projectId: PROJECT, sessionId: SESSION, triggerSlug: null });
 

@@ -336,6 +336,28 @@ const FLAGS: readonly FeatureFlagDef[] = [
     // create. Off ⇒ no region is sent and Platinum places in its home region.
     enforcement: 'behavioral',
   },
+  {
+    key: 'notification_center',
+    name: 'Notification Center',
+    description:
+      "Tell the people a session concerns (its prompter, its creator and its followers) through a bell inbox, browser push and email, and alert on failing triggers and reminders. Off: only the session creator's phone gets a push, as before.",
+    stability: 'beta',
+    available: () => true,
+    // KRTX-1742 ships dark: a project opts in from Settings → Feature flags.
+    platformDefault: () => false,
+    enforcement: 'routes',
+    enforcementNote:
+      'Mixed, and both halves are enforced. ROUTES: GET/PUT ' +
+      '/projects/:id/sessions/:id/watch answer 403 `feature_disabled` ' +
+      '(routes/session-watch.ts). BEHAVIORAL: notifySessionEvent and the ' +
+      'question relay take the pre-KRTX-1742 creator-only Expo path ' +
+      '(notifications/session-push-legacy.ts), recordTriggerRunEnd pushes the ' +
+      'account owner as before, and share notices, trigger and reminder alerts, ' +
+      'prompt auto-follow, trigger follow, presence mark-read and stream-end ' +
+      'lease expiry do not run. The inbox list, unread count and digest drop ' +
+      'rows of a project with the flag off (notifications/inbox-read.ts). The ' +
+      'per-person /v1/notifications/* routes carry no project and stay ungated.',
+  },
 ];
 
 const FLAG_BY_KEY: Record<FeatureFlagKey, FeatureFlagDef> = Object.fromEntries(

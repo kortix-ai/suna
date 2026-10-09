@@ -1,6 +1,6 @@
 /** Agent questions: the sandbox `turn-question` relay and the session question read/answer routes. */
 import { createRoute, z } from '@hono/zod-openapi';
-import { projectSessions, sessionSandboxes } from '@kortix/db';
+import { projectSessions, projects, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { QuestionInfo } from '../../channels/slack-webhook';
 import { relayTurnQuestion } from '../../channels/turn-relay';
@@ -28,7 +28,9 @@ import { AnyObject, projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import { readJsonObject } from '../../shared/http-body';
+import { notificationsEnabled } from '../../notifications/enabled';
 import { notifySessionEvent } from '../../notifications/session-push';
+import { notifySessionPushLegacy } from '../../notifications/session-push-legacy';
 import { askNotificationContext } from '../lib/notification-recipients';
 
 export function registerTurnQuestionsRoutes(): void {
@@ -126,8 +128,10 @@ export function registerTurnQuestionsRoutes(): void {
           accountId: projectSessions.accountId,
           origin: projectSessions.origin,
           metadata: projectSessions.metadata,
+          projectMetadata: projects.metadata,
         })
         .from(projectSessions)
+        .innerJoin(projects, eq(projects.projectId, projectSessions.projectId))
         .where(
           and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)),
         )
@@ -135,6 +139,11 @@ export function registerTurnQuestionsRoutes(): void {
       if (!turnQuestionSession) {
         return c.json({ error: 'Not found' }, 404);
       }
+      // KRTX-1742 is behind the project's notification_center flag. Off, this
+      // route keeps its earlier contract: any caller's new question pushes the
+      // session creator before the relay, and a relay that throws fails the
+      // request.
+      const notificationCenter = notificationsEnabled(turnQuestionSession.projectMetadata);
 
       if (!Array.isArray(body.questions) || body.questions.length === 0) {
         return c.json({ error: 'at least one question is required' }, 400);
@@ -206,7 +215,13 @@ export function registerTurnQuestionsRoutes(): void {
         // session's own sandbox notifies (KRTX-1742): a person's token may
         // store a question, but its text must never reach other people's
         // inbox, phone and email.
-        notify = recorded?.inserted === true && callerSandboxSessionId !== null;
+        notify = notificationCenter && recorded?.inserted === true && callerSandboxSessionId !== null;
+        // Flag off: the session creator's phones, for any caller, before the relay.
+        if (!notificationCenter && recorded?.inserted) {
+          void notifySessionPushLegacy({ type: 'question', sessionId, projectId, question: questions[0]?.question }).catch(
+            (err) => logger.warn('[push] question notification failed', { sessionId, error: err instanceof Error ? err.message : String(err) }),
+          );
+        }
       }
 
       // Non-blocking: post the question(s) into the thread and return immediately
@@ -220,10 +235,13 @@ export function registerTurnQuestionsRoutes(): void {
       // would make the relay look broken for every non-Slack session.
       // A relay that throws (a DB read before anything is posted) must not cost
       // the stored question its notification: the daemon never retries it.
-      const result = await relayTurnQuestion(sessionId, questions).catch((err): { ok: false; error: string } => {
-        logger.warn('[turn-question] relay failed', { sessionId, error: err instanceof Error ? err.message : String(err) });
-        return { ok: false, error: 'relay_failed' };
-      });
+      // Flag off, the push went out above and a throw fails the request.
+      const result = notificationCenter
+        ? await relayTurnQuestion(sessionId, questions).catch((err): { ok: false; error: string } => {
+            logger.warn('[turn-question] relay failed', { sessionId, error: err instanceof Error ? err.message : String(err) });
+            return { ok: false, error: 'relay_failed' };
+          })
+        : await relayTurnQuestion(sessionId, questions);
 
       // Release the runtime's BLOCKING `question` call for a chat-channel session
       // — see channels/question-release.ts. Keyed on the session's own metadata,
@@ -237,27 +255,29 @@ export function registerTurnQuestionsRoutes(): void {
       // is the notification for its channel: the inbox row stays the record.
       // Fire-and-forget, after the relay so its result is known.
       if (notify) {
-        void askNotificationContext({
-          sessionId,
-          projectId,
-          accountId: turnQuestionSession.accountId,
-          metadata: turnQuestionSession.metadata,
-          origin: turnQuestionSession.origin,
-        })
-          .then((context) =>
-            notifySessionEvent({
-              type: 'question',
-              sessionId,
-              projectId,
-              question: questions[0]?.question,
-              requestId: pendingRequestId,
-              threadCarriesAsk: channel !== null && result.ok,
-              ...context,
-            }),
-          )
-          .catch((err) =>
-            console.warn('[push] question notification failed', err instanceof Error ? err.message : err),
-          );
+        void notifySessionEvent(
+          {
+            type: 'question',
+            sessionId,
+            projectId,
+            question: questions[0]?.question,
+            requestId: pendingRequestId,
+            threadCarriesAsk: channel !== null && result.ok,
+          },
+          {
+            notificationCenter: true,
+            context: () =>
+              askNotificationContext({
+                sessionId,
+                projectId,
+                accountId: turnQuestionSession.accountId,
+                metadata: turnQuestionSession.metadata,
+                origin: turnQuestionSession.origin,
+              }),
+          },
+        ).catch((err) =>
+          console.warn('[push] question notification failed', err instanceof Error ? err.message : err),
+        );
       }
 
       const runtimeRequestId = body.request_id?.trim();
