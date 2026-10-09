@@ -1197,5 +1197,8 @@
     "showMoreSubsessions_other": "{{count}} weitere anzeigen",
     "showMoreSubsessionsLabel_one": "{{count}} weitere Untersitzung von {{title}} anzeigen",
     "showMoreSubsessionsLabel_other": "{{count}} weitere Untersitzungen von {{title}} anzeigen"
+  },
+  "genui": {
+    "pick": "Empfehlung"
   }
 }

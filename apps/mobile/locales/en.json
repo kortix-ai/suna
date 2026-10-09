@@ -1199,5 +1199,8 @@
     "showMoreSubsessions_other": "Show {{count}} more",
     "showMoreSubsessionsLabel_one": "Show {{count}} more sub-session of {{title}}",
     "showMoreSubsessionsLabel_other": "Show {{count}} more sub-sessions of {{title}}"
+  },
+  "genui": {
+    "pick": "Pick"
   }
 }

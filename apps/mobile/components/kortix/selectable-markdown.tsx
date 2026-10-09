@@ -15,6 +15,8 @@
  * (`lib/markdown/math-plugin.ts`), which pair dollars the way web's remark-math
  * does. Mermaid fences, and unlabelled fences that start with a diagram type,
  * render as diagrams (`components/markdown/mermaid/MermaidBlock.tsx`).
+ * ```openui fences (`openui-lang`, `openui-vN`) render as generative UI
+ * (`components/genui/genui-message-block.tsx`).
  *
  * Selection is native on both platforms: long press selects a range, and the
  * handles extend it within one block (a paragraph, heading, list item, or
@@ -55,6 +57,7 @@ import { MOTION } from '@/lib/utils/theme';
 import { FONT_FAMILY } from '@/lib/utils/fonts';
 import { Text } from '@/components/ui/text';
 import { isMathFenceLanguage, isMermaidCode, prepareMarkdownForMath } from '@kortix/shared';
+import { genuiVersionOf } from '@kortix/sdk/genui/fence';
 import { CodeBlock, fenceCode, fenceLanguage } from '@/components/markdown/code-block';
 import { InlineCode } from '@/components/markdown/inline-code';
 import { BlockMath, InlineMath } from '@/components/markdown/math';
@@ -85,6 +88,7 @@ import {
   type AstNode,
 } from '@/components/markdown/markdown-table';
 import { IOSSelectableMarkdown } from '@/components/markdown/ios-selection-fallback';
+import { GenuiMessageBlock } from '@/components/genui/genui-message-block';
 
 
 // Suppress known warning from react-native-markdown-display library
@@ -179,9 +183,38 @@ function hasParent(parents: AstNode[], type: string): boolean {
   return parents.some((parent) => parent.type === type);
 }
 
-/** Web's `MarkdownCode` routing: Mermaid first, then math fences, then code. */
+/**
+ * A generative-UI block's markdown fallback, under the message's remote-image
+ * policy. `GenuiBlock` needs a stable renderer, so there is one per theme.
+ */
+function GenuiFallback({ markdown, isDark }: { markdown: string; isDark: boolean }) {
+  const remoteImages = useContext(MarkdownImagesContext);
+  return (
+    <SelectableMarkdownText isDark={isDark} remoteImages={remoteImages}>
+      {markdown}
+    </SelectableMarkdownText>
+  );
+}
+const genuiFallback = (isDark: boolean) => (markdown: string) =>
+  markdown ? <GenuiFallback markdown={markdown} isDark={isDark} /> : null;
+const GENUI_FALLBACK_LIGHT = genuiFallback(false);
+const GENUI_FALLBACK_DARK = genuiFallback(true);
+
+/** Web's `MarkdownCode` routing: generative UI, then Mermaid, then math fences, then code. */
 function FencedCode({ node, isDark }: { node: AstNode; isDark: boolean }) {
   const isStreaming = useContext(OpenFenceContext);
+  // The raw first word of the info string: `fenceLanguage` may normalize `openui-lang` away.
+  const genuiVersion = genuiVersionOf((node.sourceInfo ?? '').trim().split(/\s+/)[0] ?? '');
+  if (genuiVersion !== null) {
+    return (
+      <GenuiMessageBlock
+        code={fenceCode(node.content)}
+        version={genuiVersion}
+        isStreaming={isStreaming}
+        renderMarkdown={isDark ? GENUI_FALLBACK_DARK : GENUI_FALLBACK_LIGHT}
+      />
+    );
+  }
   const code = fenceCode(node.content);
   const language = fenceLanguage(node.sourceInfo);
   if (isMermaidCode(language, code)) {

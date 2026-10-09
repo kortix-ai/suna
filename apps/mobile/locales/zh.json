@@ -1197,5 +1197,8 @@
     "showMoreSubsessions_other": "再显示 {{count}} 个",
     "showMoreSubsessionsLabel_one": "再显示 {{title}} 的 {{count}} 个子会话",
     "showMoreSubsessionsLabel_other": "再显示 {{title}} 的 {{count}} 个子会话"
+  },
+  "genui": {
+    "pick": "推荐"
   }
 }

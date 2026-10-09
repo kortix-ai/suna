@@ -79,6 +79,7 @@ mock.module('@/components/markdown/code-block', () => ({ CodeBlock: none, fenceC
 mock.module('@/components/markdown/inline-code', () => ({ InlineCode: host('inline-code') }));
 mock.module('@/components/markdown/math', () => ({ BlockMath: none, InlineMath: host('inline-math') }));
 mock.module('@/components/markdown/mermaid/MermaidBlock', () => ({ MermaidBlock: none }));
+mock.module('@/components/genui/genui-message-block', () => ({ GenuiMessageBlock: none }));
 mock.module('@/components/markdown/markdown-image', () => ({
   MarkdownImage: none,
   MarkdownImageGallery: none,

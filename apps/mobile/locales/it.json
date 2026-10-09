@@ -1197,5 +1197,8 @@
     "showMoreSubsessions_other": "Mostra altre {{count}}",
     "showMoreSubsessionsLabel_one": "Mostra {{count}} altra sotto-sessione di {{title}}",
     "showMoreSubsessionsLabel_other": "Mostra altre {{count}} sotto-sessioni di {{title}}"
+  },
+  "genui": {
+    "pick": "Consigliato"
   }
 }
