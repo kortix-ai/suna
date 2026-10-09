@@ -40,7 +40,6 @@ const TARGET = {
   repoUrl: '/tmp/repo.git',
   defaultBranch: 'main',
   manifestPath: 'kortix.yaml',
-  projectMetadata: {},
   baseRef: 'main',
   agentName: 'kortix',
   sessionMetadata: {},
@@ -69,7 +68,6 @@ function deps(over: Partial<TurnStartConvergenceDeps> = {}): TurnStartConvergenc
       convergeCalls += 1;
       return 'converged';
     },
-    releasesEnabled: () => true,
     now: () => (clock += 1),
     ...over,
   };
@@ -90,13 +88,6 @@ describe('a box that is already current pays nothing', () => {
     const result = await convergeBeforeTurnStart(SESSION, deps());
     expect(result.decision).toBe('current');
     expect(result.outcome).toBeNull();
-    expect(convergeCalls).toBe(0);
-  });
-
-  test('the flag OFF costs not even a desired-release resolve', async () => {
-    const result = await convergeBeforeTurnStart(SESSION, deps({ releasesEnabled: () => false }));
-    expect(result.decision).toBe('skipped');
-    expect(desiredCalls).toBe(0);
     expect(convergeCalls).toBe(0);
   });
 
