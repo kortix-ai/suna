@@ -759,9 +759,9 @@ flow(
     const setWatch = (who: Principal, value: boolean) =>
       ctx.client.as(who).put(watchRoute, { watching: value }, { params }).then((r) => r.status(200).body().has('$.watching', value));
     try {
-      await ctx.step('ANON → 401; a user outside the account → 404', async () => {
+      await ctx.step('ANON → 401; a user outside the account → 403', async () => {
         (await ctx.client.as(ctx.P.ANON).get(watchRoute, { params })).status(401);
-        (await ctx.client.as(ctx.P.NONMEMBER).get(watchRoute, { params })).status(404);
+        (await ctx.client.as(ctx.P.NONMEMBER).get(watchRoute, { params })).status(403);
       });
 
       await ctx.step('the creator watches by default (true); a member who never wrote in it does not (false)', async () => {
@@ -843,7 +843,11 @@ flow(
         { params },
       );
     const askPermission = (who = turn.sandbox) =>
-      who.post('/v1/projects/:projectId/turn-permission', { session_id: sessionId, request_id: 'per_notif8' }, { params });
+      who.post(
+        '/v1/projects/:projectId/turn-permission',
+        { session_id: sessionId, request_id: 'per_notif8', permission: 'bash', patterns: ['git push origin main'] },
+        { params },
+      );
     try {
       await turn.startTurn('msg_notif8', b.userId!);
       await ctx.step('A, the creator, mutes the session; B prompted its running turn', async () => {
