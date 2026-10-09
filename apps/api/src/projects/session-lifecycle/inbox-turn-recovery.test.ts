@@ -153,11 +153,29 @@ describe('a recovered turn close pushes once', () => {
     expect(events).toEqual([]);
   });
 
+  test('the error push goes out before the wake', async () => {
+    const order: string[] = [];
+    scheduleSessionTurnRecovery(freshBox(), settle('failed'),
+      async () => { order.push('wake'); return false; },
+      async (input) => { order.push(`push:${input.reason}`); });
+    await flush();
+    expect(order).toEqual(['push:failed', 'wake']);
+  });
+
+  test('the completion push waits for the wake', async () => {
+    const order: string[] = [];
+    scheduleSessionTurnRecovery(freshBox(), settle('completed'),
+      async () => { order.push('wake'); return false; },
+      async (input) => { order.push(`push:${input.reason}`); });
+    await flush();
+    expect(order).toEqual(['wake', 'push:completed']);
+  });
+
   test('two cleared turns send one push, error when either failed', async () => {
     const calls: unknown[] = [];
     scheduleSessionTurnRecovery(freshBox(), async () => ['completed', 'failed'], async () => false, async (input) => { calls.push(input); });
     await flush();
-    expect(calls).toEqual([{ sessionId: 'session-1', reason: 'failed', promoted: false }]);
+    expect(calls).toEqual([{ sessionId: 'session-1', reason: 'failed' }]);
   });
 });
 

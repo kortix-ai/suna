@@ -443,12 +443,14 @@ export async function reconcileSandboxTurnDelivery(
   token: string,
   observation: SandboxTurnObservation,
   reason: SessionTurnEndReason = 'abandoned',
+  /** Runs only when THIS call's terminal clear won the token CAS. */
+  onCleared?: () => void,
 ): Promise<SandboxTurnDeliveryReconciliation> {
   if (observation === 'active') {
     return (await acceptSandboxTurn({ sandboxId }, token)) ? 'active' : 'inactive';
   }
   if (observation === 'terminal') {
-    await clearSandboxTurn(sandboxId, token, undefined, reason);
+    if (await clearSandboxTurn(sandboxId, token, undefined, reason)) onCleared?.();
     return 'inactive';
   }
   // Unknown evidence cannot extend authority. The delivery grace was persisted

@@ -85,6 +85,8 @@ let clearedTurnReasons: Array<string | undefined> = [];
 let clearSandboxTurnWins = true;
 /** False = `promoteNextInboxRow` finds no queued prompt. */
 let queuedPromptWaiting = true;
+/** True = `promoteNextInboxRow` throws. */
+let promoteThrows = false;
 /** Every push the pass asked for after it closed a turn. */
 let closedTurnPushes: Array<{ sessionId: string; reason: string; promoted?: boolean }> = [];
 let clearedTurnCauses: Array<string | null> = [];
@@ -435,8 +437,10 @@ const reapAndReconcileSandboxes = (
       token: string,
       observation: 'active' | 'terminal' | 'unknown',
       reason?: string,
+      onCleared?: () => void,
     ) => {
       deliveringTurnRecoveryCalls.push({ sandboxId, token, observation, reason });
+      if (observation === 'terminal' && clearSandboxTurnWins) onCleared?.();
       return observation === 'active'
         ? 'active'
         : observation === 'terminal'
@@ -486,6 +490,7 @@ const reapAndReconcileSandboxes = (
     },
     promoteNextInboxRow: async (sessionId: string) => {
       promotedQueueSessions.push(sessionId);
+      if (promoteThrows) throw new Error('queue down');
       return queuedPromptWaiting ? `prompt:${sessionId}` : null;
     },
     notifyClosedTurn: async (input: { sessionId: string; reason: string; promoted?: boolean }) => {
@@ -548,6 +553,7 @@ beforeEach(() => {
   clearedTurnReasons = [];
   clearSandboxTurnWins = true;
   queuedPromptWaiting = true;
+  promoteThrows = false;
   closedTurnPushes = [];
   clearedTurnCauses = [];
   clearedTurnPastDeadlineOnly = [];
@@ -2171,31 +2177,111 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
       expect(closedTurnPushes).toEqual([]);
     });
 
-    test('a pass that gives an orphaned prompt back sends nothing', async () => {
-      candidates = [
-        candidate({
-          deadlineAt: new Date(NOW.getTime() + HOUR),
-          metadata: {
-            activeTurns: {
-              'active-token': {
-                token: 'active-token',
-                state: 'active',
-                opencodeSessionId: 'ses_root',
-                messageId: 'msg_turn_1',
-                startedAtMs: NOW.getTime() - 120_000,
-              },
+    const orphanedCandidate = () =>
+      candidate({
+        deadlineAt: new Date(NOW.getTime() + HOUR),
+        metadata: {
+          activeTurns: {
+            'active-token': {
+              token: 'active-token',
+              state: 'active',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+              startedAtMs: NOW.getTime() - 120_000,
             },
           },
-        }),
-      ];
+        },
+      });
+
+    test('a pass that redelivers an orphaned prompt sends nothing', async () => {
+      // No turn_end: the reason falls back to unknown and the prompt is requeued.
+      candidates = [orphanedCandidate()];
       statusByExternal['ext-1'] = 'running';
       deliveringTurnObservationBySandbox['sb-1'] = 'terminal';
-      daemonTurnEndBySandbox['sb-1'] = 'completed';
       orphanedPromptByToken['active-token'] = true;
 
       await reapAndReconcileSandboxes(NOW);
 
-      expect(clearedTurnReasons).toEqual(['completed']);
+      expect(promptRedeliveries).toHaveLength(1);
+      expect(closedTurnPushes).toEqual([]);
+    });
+
+    test('a failed turn with the orphan flag still sends its error: nothing is redelivered', async () => {
+      // A hard model error before any assistant message.
+      candidates = [orphanedCandidate()];
+      statusByExternal['ext-1'] = 'running';
+      deliveringTurnObservationBySandbox['sb-1'] = 'terminal';
+      daemonTurnEndBySandbox['sb-1'] = 'failed';
+      orphanedPromptByToken['active-token'] = true;
+      queuedPromptWaiting = false;
+
+      await reapAndReconcileSandboxes(NOW);
+
+      expect(promptRedeliveries).toEqual([]);
+      expect(closedTurnPushes).toEqual([{ sessionId: 'sess-1', reason: 'failed', promoted: false }]);
+    });
+
+    test('a queue promotion that throws is unknown: treated as promoted', async () => {
+      candidates = [activeTurnCandidate(new Date(NOW.getTime() + HOUR))];
+      statusByExternal['ext-1'] = 'running';
+      deliveringTurnObservationBySandbox['sb-1'] = 'terminal';
+      daemonTurnEndBySandbox['sb-1'] = 'completed';
+      promoteThrows = true;
+
+      await reapAndReconcileSandboxes(NOW);
+
+      expect(closedTurnPushes).toEqual([{ sessionId: 'sess-1', reason: 'completed', promoted: true }]);
+    });
+
+    const deliveringCandidate = () =>
+      candidate({
+        deadlineAt: new Date(NOW.getTime() - 1),
+        metadata: {
+          activeTurns: {
+            'delivery-token': {
+              token: 'delivery-token',
+              state: 'delivering',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+            },
+          },
+        },
+      });
+
+    for (const reason of ['completed', 'failed'] as const) {
+      test(`a delivering record the daemon says ${reason} asks for one push when this pass wins the clear`, async () => {
+        candidates = [deliveringCandidate()];
+        statusByExternal['ext-1'] = 'running';
+        deliveringTurnObservationBySandbox['sb-1'] = 'terminal';
+        daemonTurnEndBySandbox['sb-1'] = reason;
+        queuedPromptWaiting = false;
+
+        await reapAndReconcileSandboxes(NOW);
+
+        expect(closedTurnPushes).toEqual([{ sessionId: 'sess-1', reason, promoted: false }]);
+      });
+    }
+
+    test('a delivering record whose clear another caller won sends nothing', async () => {
+      candidates = [deliveringCandidate()];
+      statusByExternal['ext-1'] = 'running';
+      deliveringTurnObservationBySandbox['sb-1'] = 'terminal';
+      daemonTurnEndBySandbox['sb-1'] = 'completed';
+      clearSandboxTurnWins = false;
+
+      await reapAndReconcileSandboxes(NOW);
+
+      expect(closedTurnPushes).toEqual([]);
+    });
+
+    test('a delivering record the daemon never explained is redelivered, not pushed', async () => {
+      candidates = [deliveringCandidate()];
+      statusByExternal['ext-1'] = 'running';
+      deliveringTurnObservationBySandbox['sb-1'] = 'terminal';
+
+      await reapAndReconcileSandboxes(NOW);
+
+      expect(promptRedeliveries).toHaveLength(1);
       expect(closedTurnPushes).toEqual([]);
     });
   });

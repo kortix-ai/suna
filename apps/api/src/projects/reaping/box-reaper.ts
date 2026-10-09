@@ -184,14 +184,14 @@ async function redeliverAbandonedPrompt(
   row: { sessionId: string | null; sandboxId: string },
   turn: { token: string; messageId: string | null },
   endReason: SessionTurnEndReason,
-): Promise<void> {
-  if (!row.sessionId || !turn.messageId) return;
+): Promise<boolean> {
+  if (!row.sessionId || !turn.messageId) return false;
   // The end reason is a GATE, not a label. `completed`/`failed` are the daemon
   // saying the turn RAN — a `delivering` record survives both, because the
   // acceptance write is a separate statement that can lose while OpenCode
   // answers the prompt to the end. `requeueAbandonedPrompt` refuses those too;
   // refusing here as well keeps the reaper's own log honest about what it did.
-  if (!PROMPT_NEVER_RAN_END_REASONS.has(endReason)) return;
+  if (!PROMPT_NEVER_RAN_END_REASONS.has(endReason)) return false;
   try {
     const outcome = await dependencies.requeueAbandonedPrompt({
       sessionId: row.sessionId,
@@ -207,6 +207,7 @@ async function redeliverAbandonedPrompt(
         endReason,
       });
     }
+    return outcome === 'requeued';
   } catch (error) {
     console.warn('[reaper] prompt redelivery failed', {
       sandboxId: row.sandboxId,
@@ -214,12 +215,14 @@ async function redeliverAbandonedPrompt(
       turnToken: turn.token,
       error: error instanceof Error ? error.message : String(error),
     });
+    return false;
   }
 }
 
 /**
  * Release one durable queue row after terminal evidence removed turn authority.
- * True when a prompt was promoted: the session keeps running.
+ * True when a prompt was promoted (the session keeps running), or when the
+ * promotion threw and nobody can say.
  */
 async function releaseQueuedPromptAfterTerminalTurn(
   dependencies: SandboxReaperDependencies,
@@ -257,8 +260,23 @@ async function releaseQueuedPromptAfterTerminalTurn(
       turnToken: turn.token,
       error: error instanceof Error ? error.message : String(error),
     });
-    return false;
+    return true;
   }
+}
+
+/**
+ * Push for a turn this pass closed. Only `completed`/`failed` notify, and
+ * never a pass that requeued the prompt: the user still waits on it.
+ */
+function notifyReaperClosedTurn(
+  dependencies: SandboxReaperDependencies,
+  sessionId: string,
+  reason: SessionTurnEndReason,
+  promoted: boolean,
+  requeued: boolean,
+): void {
+  if ((reason !== 'completed' && reason !== 'failed') || requeued) return;
+  void dependencies.notifyClosedTurn({ sessionId, reason, promoted });
 }
 
 export interface SandboxReaperScope {
@@ -840,6 +858,7 @@ async function actOnTurnObservation(
     }
   }
   if (turn.state === 'delivering') {
+    let clearWon = false;
     const reconciliation = await dependencies.reconcileSandboxTurnDelivery(
       row.sandboxId,
       turn.token,
@@ -848,6 +867,7 @@ async function actOnTurnObservation(
       // never have received; with no word from it the delivery was
       // never confirmed, which is what `abandoned` names.
       endReason ?? undefined,
+      () => { clearWon = true; },
     );
     if (reconciliation === 'active') {
       return true;
@@ -871,8 +891,13 @@ async function actOnTurnObservation(
       // `completed`/`failed`; only silence (no `turn_end` at all)
       // falls back to `abandoned`, which is what "the delivery was
       // never confirmed by anyone" means.
-      await redeliverAbandonedPrompt(dependencies, row, turn, endReason ?? 'abandoned');
-      await releaseQueuedPromptAfterTerminalTurn(dependencies, row, turn);
+      const requeued = await redeliverAbandonedPrompt(dependencies, row, turn, endReason ?? 'abandoned');
+      const promoted = await releaseQueuedPromptAfterTerminalTurn(dependencies, row, turn);
+      // The acceptance write and the relay's `end` were both lost: when
+      // this pass won the clear, its push is the only one.
+      if (clearWon && endReason) {
+        notifyReaperClosedTurn(dependencies, row.sessionId, endReason, promoted, requeued);
+      }
     } else if (
       reconciliation === 'deferred' &&
       // The same delivery-scoped bound as the grace above, for the
@@ -991,19 +1016,19 @@ async function settleTerminalTurn(
   // legacy `activeTurn`) can prove no age at all, so it never
   // qualifies.
   const turnAgeMs = turn.startedAtMs === null ? null : now.getTime() - turn.startedAtMs;
-  const redeliversPrompt =
-    orphanedPrompt && !huskFinalized && turnAgeMs !== null && turnAgeMs >= ORPHANED_PROMPT_MIN_AGE_MS;
-  if (redeliversPrompt) {
-    await redeliverAbandonedPrompt(dependencies, row, turn, endReason ?? 'abandoned');
+  let requeued = false;
+  if (
+    orphanedPrompt &&
+    !huskFinalized &&
+    turnAgeMs !== null &&
+    turnAgeMs >= ORPHANED_PROMPT_MIN_AGE_MS
+  ) {
+    requeued = await redeliverAbandonedPrompt(dependencies, row, turn, endReason ?? 'abandoned');
   }
   if (cleared) {
     const promoted = await releaseQueuedPromptAfterTerminalTurn(dependencies, row, turn);
-    // The relay's `end` was lost, so this close is the only one that can
-    // notify. A daemon that also reports the prompt orphaned did not answer
-    // the user: no push for that pass.
-    if ((clearReason === 'completed' || clearReason === 'failed') && !redeliversPrompt) {
-      void dependencies.notifyClosedTurn({ sessionId: row.sessionId, reason: clearReason, promoted });
-    }
+    // The relay's `end` was lost, so this close is the only one that can notify.
+    notifyReaperClosedTurn(dependencies, row.sessionId, clearReason, promoted, requeued);
   }
 }
 

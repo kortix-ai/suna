@@ -72,14 +72,19 @@ export function scheduleSessionTurnRecovery(
   void recover(box)
     .then(async (settled) => {
       if (settled.length === 0) return;
+      // This read closed the turn, so the relay's late `end` gets
+      // `already_closed` and sends nothing: the push is ours. One per
+      // settle. An error ignores promotion, so it goes out first.
+      if (settled.includes('failed')) {
+        void notify({ sessionId: box.sessionId, reason: 'failed' });
+        return wake(box.sessionId);
+      }
       // Unknown until the wake answers: a wake that throws sends no completion.
       let promoted = true;
       try {
         promoted = await wake(box.sessionId);
       } finally {
-        // This read closed the turn, so the relay's late `end` gets
-        // `already_closed` and sends nothing: the push is ours. One per settle.
-        void notify({ sessionId: box.sessionId, reason: settled.includes('failed') ? 'failed' : 'completed', promoted });
+        void notify({ sessionId: box.sessionId, reason: 'completed', promoted });
       }
     })
     .catch((error) => console.warn('[session-turn] terminal recovery failed', error))

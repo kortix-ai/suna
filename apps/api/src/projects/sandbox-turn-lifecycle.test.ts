@@ -880,6 +880,18 @@ describe('session_turns ledger dual-write', () => {
     expect(executed[1]).not.toContain('abandoned');
   });
 
+  test('a terminal delivery reports the clear only to the caller that won it', async () => {
+    let won = 0;
+    executeResults = [[{ ...OWNER, cleared: true }]];
+    expect(await reconcileSandboxTurnDelivery('sb-1', 'turn-token', 'terminal', 'completed', () => { won += 1; })).toBe('inactive');
+    expect(won).toBe(1);
+
+    executed = [];
+    executeResults = [[]];
+    expect(await reconcileSandboxTurnDelivery('sb-1', 'turn-token', 'terminal', 'completed', () => { won += 1; })).toBe('inactive');
+    expect(won).toBe(1);
+  });
+
   test('clearSandboxTurn keeps graceMs as its third positional argument', async () => {
     executeResults = [[{ cleared: true }]];
     await clearSandboxTurn('sb-1', 'turn-token', 60_000);
