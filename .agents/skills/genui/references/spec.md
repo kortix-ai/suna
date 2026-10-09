@@ -77,7 +77,7 @@ Kortix serves about 500k users on web and mobile, and third parties build their 
 
 - `zod`, `@openuidev/lang-core`, and the renderer libraries are **optional** `peerDependencies`. An SDK user who never imports `/genui` installs nothing new and ships 0 bytes.
 - Only `@kortix/sdk/genui` imports `@openuidev/*`. One adapter module wraps it. If OpenUI breaks or dies, we replace that module, and saved transcripts stay valid.
-- `@openuidev/lang-core` is pinned to an exact version. It is 0.x: 0.2.16 through 0.3.2 shipped in recent weeks, and 0.3.2 was published 2026-10-08.
+- `@openuidev/lang-core` is pinned to an exact version. It is 0.x: 0.2.16 through 0.3.1 shipped in recent weeks, and 0.3.1 was published 2026-10-08.
 - Every new export follows the **sdk** skill: test-first, three synchronized edits, and exported names (including types) treated as public API.
 - `apps/web` and `apps/mobile` pass their own design-system components into the renderer. Default components exist for third-party hosts.
 
@@ -278,7 +278,7 @@ A fixed 2,000-token assistant reply, replayed through the real SDK store into ea
 | Parse time per tick for a 4 KB block | ≤ 2 ms (target, to be measured) | ≤ 4 ms (target, to be measured) |
 | Main-bundle size increase | 0 bytes (all lazy) | — |
 
-`@openuidev/lang-core` 0.3.2 measures 147.7 KB raw / 39.9 KB gzip, unminified (`dist/index.mjs`). It is loaded only when the first block appears.
+`@openuidev/lang-core` 0.3.1 measures 147.7 KB raw / 39.9 KB gzip, unminified (`dist/index.mjs`). It is loaded only when the first block appears.
 
 ## 9. Phase 4: interactivity (designed now, built after Phase 3)
 

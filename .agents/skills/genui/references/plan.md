@@ -6,7 +6,7 @@
 
 **Architecture:** The agent writes an ` ```openui ` fenced block inside its normal text part. `@kortix/sdk/genui` (framework-free) owns the catalog, prompt, streaming parse, Kortix validation, structural sharing, and markdown fallback, wrapping `@openuidev/lang-core` behind one adapter. `@kortix/sdk/genui/react` is a headless React renderer: each host passes its own component map, so the same renderer serves `apps/web` (DOM), `apps/mobile` (React Native), and third-party hosts (bundled unbranded defaults). A project flag decides whether the agent is taught the catalog at all.
 
-**Tech Stack:** TypeScript 5.9, `@openuidev/lang-core` 0.3.2 (MIT, exact pin), zod 3.25.76 through `zod/v4`, React 19, Bun test, Streamdown (web markdown), react-native-markdown-display (mobile markdown), recharts (web charts), react-native-svg (mobile charts), mapcn + maplibre-gl 6 (web map), maplibre-gl in react-native-webview (mobile map).
+**Tech Stack:** TypeScript 5.9, `@openuidev/lang-core` 0.3.1 (MIT, exact pin), zod 3.25.76 through `zod/v4`, React 19, Bun test, Streamdown (web markdown), react-native-markdown-display (mobile markdown), recharts (web charts), react-native-svg (mobile charts), mapcn + maplibre-gl 6 (web map), maplibre-gl in react-native-webview (mobile map).
 
 **Spec:** `.agents/skills/genui/references/spec.md` — every executor reads it before its first task.
 
@@ -25,7 +25,7 @@
 
 Every task's requirements include this section.
 
-- `@openuidev/lang-core` pinned to exactly `0.3.2`. Only files under `packages/sdk/src/genui/` import `@openuidev/*`.
+- `@openuidev/lang-core` pinned to exactly `0.3.1`. Only files under `packages/sdk/src/genui/` import `@openuidev/*`.
 - zod is imported as `import { z } from 'zod/v4'` in genui code (the monorepo resolves `zod@3.25.76`; lang-core needs v4 types).
 - `zod` and `@openuidev/lang-core` are **optional** `peerDependencies` of `@kortix/sdk`. Never `dependencies`. An SDK user who never imports `/genui` installs neither.
 - `@kortix/sdk` root (`.`) never imports `./genui`. All three genui subpaths go in `NOT_ROOT_REACHABLE` (`packages/sdk/src/root-canonical.test.ts`).

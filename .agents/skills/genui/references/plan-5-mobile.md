@@ -43,7 +43,7 @@ See `plan.md`. Specific to this plan:
 
 - [ ] **Step 1: Add dependencies**
 
-Add to `apps/mobile/package.json` dependencies: `"@openuidev/lang-core": "0.3.2"`, `"zod": "3.25.76"`. Run `pnpm install --filter kortix` (the `name` in `apps/mobile/package.json`).
+Add to `apps/mobile/package.json` dependencies: `"@openuidev/lang-core": "0.3.1"`, `"zod": "3.25.76"`. Run `pnpm install --filter kortix` (the `name` in `apps/mobile/package.json`).
 
 - [ ] **Step 2: Prove Metro resolves the new subpaths**
 

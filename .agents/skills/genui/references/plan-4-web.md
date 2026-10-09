@@ -31,7 +31,7 @@ See `plan.md`. Specific to this plan:
 ### Task 1: Route ```` ```openui ```` fences to the generative UI block
 
 **Files:**
-- Modify: `apps/web/package.json` (dependency `"@openuidev/lang-core": "0.3.2"`)
+- Modify: `apps/web/package.json` (dependency `"@openuidev/lang-core": "0.3.1"`)
 - Modify: `apps/web/src/components/markdown/code/markdown-code.tsx`
 - Modify: `apps/web/src/components/markdown/unified-markdown.tsx` (context value gains `trust`; `code` renderer passes it; export `useMarkdownRenderContext`, `MarkdownImage`, `MarkdownLink`)
 - Create: `apps/web/src/features/genui/genui-message-block.tsx` (minimal in this task; Task 2 completes it)
@@ -75,7 +75,7 @@ Expected: FAIL — the openui cases render the Shiki code card containing `root 
 
 - [ ] **Step 3: Add the dependency and the context field**
 
-Add `"@openuidev/lang-core": "0.3.2"` to `apps/web/package.json` dependencies (zod 3.25.76 is already there); `pnpm install --filter Kortix-Computer-Frontend` (the `name` in `apps/web/package.json`).
+Add `"@openuidev/lang-core": "0.3.1"` to `apps/web/package.json` dependencies (zod 3.25.76 is already there); `pnpm install --filter Kortix-Computer-Frontend` (the `name` in `apps/web/package.json`).
 
 In `unified-markdown.tsx`:
 

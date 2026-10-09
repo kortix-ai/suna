@@ -230,7 +230,7 @@ then spread it in the returned object after `...sessionContextEnv,`:
     ...genuiEnv,
 ```
 
-Add to `apps/api/package.json` dependencies: `"@openuidev/lang-core": "0.3.2"`, and change `"zod": "^3.23.0"` to `"zod": "^3.25.0"` (`zod/v4` exists from 3.25; the lockfile already resolves 3.25.76). Run `pnpm install --filter kortix-api`.
+Add to `apps/api/package.json` dependencies: `"@openuidev/lang-core": "0.3.1"`, and change `"zod": "^3.23.0"` to `"zod": "^3.25.0"` (`zod/v4` exists from 3.25; the lockfile already resolves 3.25.76). Run `pnpm install --filter kortix-api`.
 
 - [ ] **Step 6: Run tests to verify they pass**
 
@@ -371,7 +371,7 @@ export function writeGenuiInstruction(
 }
 ```
 
-Add to `apps/kortix-sandbox-agent-server/package.json` dependencies: `"@kortix/sdk": "workspace:*"` and `"@openuidev/lang-core": "0.3.2"` (zod is already a dependency). Run `pnpm install --filter kortixd`.
+Add to `apps/kortix-sandbox-agent-server/package.json` dependencies: `"@kortix/sdk": "workspace:*"` and `"@openuidev/lang-core": "0.3.1"` (zod is already a dependency). Run `pnpm install --filter kortixd`.
 
 - [ ] **Step 4: Thread the option through the OpenCode config**
 
@@ -601,7 +601,7 @@ In `apps/cli/src/commands/sessions-chat.ts` `partToText`, replace `return (part 
 
 and add `import { genuiToMarkdown } from '@kortix/sdk/genui';` next to the other `@kortix/sdk` imports. `messageToJson` (`--json`, ~L763) keeps raw text: JSON output is for programs, which can call `genuiToMarkdown` themselves.
 
-Add to `apps/cli/package.json` dependencies: `"@openuidev/lang-core": "0.3.2"`, `"zod": "^3.25.0"`. Run `pnpm install --filter @kortix/cli`.
+Add to `apps/cli/package.json` dependencies: `"@openuidev/lang-core": "0.3.1"`, `"zod": "^3.25.0"`. Run `pnpm install --filter @kortix/cli`.
 
 - [ ] **Step 4: Run tests to verify they pass**
 

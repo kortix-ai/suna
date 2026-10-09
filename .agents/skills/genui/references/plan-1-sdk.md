@@ -6,7 +6,7 @@
 
 **Architecture:** `src/genui/` wraps `@openuidev/lang-core` in one adapter: a 24-component catalog (17 blocks + 7 sub-items) built from zod schemas, a prompt builder, a streaming parser that adds Kortix validation (`validate.ts`) and structural sharing (`share.ts`), and a deterministic markdown fallback. `src/genui/react/` renders a parse result through a host-supplied component map, memoized per node, with one error boundary per block.
 
-**Tech Stack:** TypeScript 5.9, `@openuidev/lang-core` 0.3.2, `zod/v4` from zod 3.25.76, React 19, Bun test, `react-test-renderer`, `react-dom/server`.
+**Tech Stack:** TypeScript 5.9, `@openuidev/lang-core` 0.3.1, `zod/v4` from zod 3.25.76, React 19, Bun test, `react-test-renderer`, `react-dom/server`.
 
 **Spec:** `.agents/skills/genui/references/spec.md` (§5, §6, §8.1 R-SDK-1, R-STREAM-1, R-SEC-1). Master plan: `plan.md` (Global Constraints, contracts, deltas D1–D4).
 
@@ -14,7 +14,7 @@
 
 ## Global Constraints
 
-See `plan.md` § Global Constraints. The ones this plan must not break: optional peers only; root never imports `./genui`; `zod/v4`; lang-core pinned `0.3.2`; `safeUrl()` on every URL; never bump `version`.
+See `plan.md` § Global Constraints. The ones this plan must not break: optional peers only; root never imports `./genui`; `zod/v4`; lang-core pinned `0.3.1`; `safeUrl()` on every URL; never bump `version`.
 
 ## Review Focus
 
@@ -62,7 +62,7 @@ In `packages/sdk/package.json`:
 
 ```json
 "peerDependencies": {
-  "@openuidev/lang-core": "0.3.2",
+  "@openuidev/lang-core": "0.3.1",
   "@tanstack/react-query": "^5.75.2",
   "react": ">=18",
   "zod": "^3.25.0 || ^4.0.0"
@@ -75,7 +75,7 @@ In `packages/sdk/package.json`:
 },
 ```
 
-Add to `devDependencies`: `"@openuidev/lang-core": "0.3.2"` and `"zod": "3.25.76"`.
+Add to `devDependencies`: `"@openuidev/lang-core": "0.3.1"` and `"zod": "3.25.76"`.
 
 Replace `scripts.test` so `.tsx` tests run (today only `*.test.ts` runs):
 
@@ -84,7 +84,7 @@ Replace `scripts.test` so `.tsx` tests run (today only `*.test.ts` runs):
 ```
 
 Run: `pnpm install --filter @kortix/sdk`
-Expected: lockfile gains `@openuidev/lang-core@0.3.2` (its postinstall does not run: root `.npmrc` has `ignore-scripts=true`).
+Expected: lockfile gains `@openuidev/lang-core@0.3.1` (its postinstall does not run: root `.npmrc` has `ignore-scripts=true`).
 
 - [ ] **Step 4: Create the types and the two barrels**
 
@@ -2423,7 +2423,7 @@ Expected: the diff only adds keys under `./genui` and `./genui/react`. If any ex
 
 - [ ] **Step 3: Extend the install smoke**
 
-In `packages/sdk/scripts/smoke-install.mjs`, add `'zod@3.25.76'` and `'@openuidev/lang-core@0.3.2'` to the package list installed next to `react@19` and `@tanstack/react-query@5` (~L81-82), and add this check after the existing subpath imports (~L91-94):
+In `packages/sdk/scripts/smoke-install.mjs`, add `'zod@3.25.76'` and `'@openuidev/lang-core@0.3.1'` to the package list installed next to `react@19` and `@tanstack/react-query@5` (~L81-82), and add this check after the existing subpath imports (~L91-94):
 
 ```js
 const genui = await import('@kortix/sdk/genui');
@@ -2466,7 +2466,7 @@ if (version !== null) {
 
 A host that renders no UI (email, a chat bot, a CLI) converts a reply with `genuiToMarkdown(text)`.
 
-Install the optional peers: `npm i zod @openuidev/lang-core@0.3.2`. `@openuidev/lang-core`
+Install the optional peers: `npm i zod @openuidev/lang-core@0.3.1`. `@openuidev/lang-core`
 sends one pseudonymous PostHog event at install time; set `OPENUI_TELEMETRY_DISABLED=1` or
 `DO_NOT_TRACK=1` to turn it off. Runtime telemetry is off unless you opt in.
 ````
