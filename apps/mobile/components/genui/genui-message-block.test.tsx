@@ -14,6 +14,7 @@ const flatten = (style: unknown): Record<string, unknown> =>
   Array.isArray(style) ? Object.assign({}, ...style.map(flatten)) : ((style ?? {}) as Record<string, unknown>);
 
 const opened: unknown[] = [];
+const motion = { reduced: false, timings: [] as unknown[] };
 
 mock.module('react-native', () => ({
   StyleSheet: { flatten, create: (s: unknown) => s },
@@ -23,6 +24,14 @@ mock.module('react-native', () => ({
   ScrollView: host('scroll'),
   Image: host('image'),
   Platform: { OS: 'ios', select: (o: Record<string, unknown>) => o.ios },
+}));
+mock.module('react-native-reanimated', () => ({
+  default: { View: host('animated-view') },
+  Easing: { bezier: () => 'ease-out' },
+  useReducedMotion: () => motion.reduced,
+  useSharedValue: <T,>(value: T) => React.useRef({ value }).current,
+  useAnimatedStyle: (style: () => unknown) => style(),
+  withTiming: (to: unknown, config: unknown) => (motion.timings.push(config), to),
 }));
 mock.module('react-native-gesture-handler', () => ({ ScrollView: host('gh-scroll') }));
 mock.module('nativewind', () => ({ useColorScheme: () => ({ colorScheme: 'light' }) }));
@@ -47,6 +56,7 @@ mock.module('@/lib/icons', () => ({
   InfoIcon: 'info',
   WarningIcon: 'warning',
   CheckCircleIcon: 'check-circle',
+  CaretDownIcon: 'caret-down',
 }));
 
 let GenuiMessageBlock: typeof import('./genui-message-block').GenuiMessageBlock;
@@ -65,6 +75,8 @@ afterEach(() => {
   act(() => tree?.unmount());
   tree = undefined;
   opened.length = 0;
+  motion.reduced = false;
+  motion.timings.length = 0;
   act(() => {
     useGenuiStore.getState().setEnabled(true);
   });
@@ -117,6 +129,18 @@ b2 = Badge("second")
 note = Callout("warn", "Check the dates", "Note")
 pic = Image("https://example.com/venue.jpg", "Venue entrance", "The north door")
 link = Link("Book", "https://example.com/book")`;
+
+const ACCORDION = `root = Stack([acc])
+acc = Accordion([a1, a2])
+a1 = AccordionItem("Details", [b1])
+a2 = AccordionItem("Policies", [b2])
+b1 = Badge("first")
+b2 = Badge("second")`;
+const triggers = (root: ReactTestInstance) =>
+  all(root, 'pressable').filter((n) => n.props.accessibilityRole === 'button');
+const press = (n: ReactTestInstance) => act(() => (n.props.onPress as () => void)());
+const caretTurn = (root: ReactTestInstance, index: number) =>
+  (flatten(all(root, 'animated-view')[index]!.props.style).transform as { rotate: string }[])[0]!.rotate;
 
 describe('mobile genui components', () => {
   test('every layout, data, and inline component renders from real source without falling back', () => {
@@ -318,6 +342,46 @@ b2 = Badge("second")`;
     act(() => tree!.update(view([tab('t1', 'One', 'first')], true)));
     act(() => tree!.update(view([tab('t1', 'One', 'first'), tab('t2', 'Two', 'second')], false)));
     expect(all(tree!.root, 'tabs')[0]!.props.value).toBe('t1');
+  });
+
+  test('an accordion shows every item title collapsed, with its content hidden until pressed', () => {
+    const root = render(ACCORDION);
+    expect(all(root, 'fallback')).toHaveLength(0);
+    const rows = triggers(root);
+    expect(rows.map((row) => texts(row).join(''))).toEqual(['Details', 'Policies']);
+    expect(rows.map((row) => row.props.accessibilityState)).toEqual([{ expanded: false }, { expanded: false }]);
+    expect(texts(root)).not.toContain('first');
+    expect(texts(root)).not.toContain('second');
+    expect(all(root, 'separator')).toHaveLength(1);
+  });
+
+  test('pressing an accordion item toggles its content and expanded state; items open independently', () => {
+    const root = render(ACCORDION);
+    press(triggers(root)[0]!);
+    expect(triggers(root).map((row) => row.props.accessibilityState)).toEqual([{ expanded: true }, { expanded: false }]);
+    expect(texts(root)).toContain('first');
+    expect(texts(root)).not.toContain('second');
+    press(triggers(root)[1]!);
+    expect(texts(root)).toContain('second');
+    press(triggers(root)[0]!);
+    expect(triggers(root)[0]!.props.accessibilityState).toEqual({ expanded: false });
+    expect(texts(root)).not.toContain('first');
+  });
+
+  test('the accordion caret turns 180° in a 200 ms ease-out; under Reduce Motion it snaps', () => {
+    const root = render(ACCORDION);
+    expect(caretTurn(root, 0)).toBe('0deg');
+    expect(all(root, 'icon').map((n) => n.props.as)).toEqual(['caret-down', 'caret-down']);
+    press(triggers(root)[0]!);
+    expect(caretTurn(root, 0)).toBe('180deg');
+    expect(motion.timings).toEqual([{ duration: 200, easing: 'ease-out' }]);
+    act(() => tree!.unmount());
+    motion.reduced = true;
+    motion.timings.length = 0;
+    const still = render(ACCORDION);
+    press(triggers(still)[0]!);
+    expect(caretTurn(still, 0)).toBe('180deg');
+    expect(motion.timings).toEqual([]);
   });
 
   test('pending heavy nodes hold their final height with the Kortix loader; pending text nodes render nothing', () => {
