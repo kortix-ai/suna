@@ -25,6 +25,7 @@ import {
   LifebuoyIcon as LifeBuoy,
   SignOutIcon as LogOut,
   SpeakerHighIcon as Volume2,
+  SquaresFourIcon as SquaresFour,
 } from '@/lib/icons';
 
 import {
@@ -40,6 +41,7 @@ import Constants from 'expo-constants';
 import { useColorScheme } from 'nativewind';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
+import { Switch } from '@/components/ui/switch';
 import { Text } from '@/components/ui/text';
 import { Avatar } from '@/components/kortix/avatar';
 import { KortixLogo } from '@/components/kortix/KortixLogo';
@@ -63,6 +65,7 @@ import { useActivePlanName } from '@/hooks/useActivePlanName';
 import { haptics } from '@/lib/haptics';
 import { openLink } from '@/lib/utils/open-link';
 import { LANGUAGE_PICKER_ENABLED } from '@/lib/utils/locale-config';
+import { useGenuiStore } from '@/stores/genui-store';
 
 export interface AccountPageProps {
   /** `project`: a route in the project stack, with the hamburger header. */
@@ -96,6 +99,9 @@ export function AccountPage({
   const { account: activeAccount } = useActiveAccount();
   // Plan of the active account, shown as the plan badge next to its name.
   const planName = useActivePlanName();
+  // Rich answers: render generative UI blocks as UI, or as their markdown.
+  const genuiEnabled = useGenuiStore((s) => s.enabled);
+  const setGenuiEnabled = useGenuiStore((s) => s.setEnabled);
 
   const { data: deletionStatus } = useAccountDeletionStatus({ enabled: !!user });
   // Hidden when the backend endpoint is unsupported (web parity).
@@ -206,6 +212,11 @@ export function AccountPage({
         <SettingsGroup title={t('account.preferences', 'Preferences')}>
           <AppearanceRow />
           <SettingsRow icon={Volume2} label={t('account.sounds', 'Sounds')} onPress={() => go('/(settings)/sounds')} />
+          <SettingsRow
+            icon={SquaresFour}
+            label={t('account.richAnswers', 'Rich answers')}
+            right={<Switch checked={genuiEnabled} onCheckedChange={setGenuiEnabled} />}
+          />
           <SettingsRow
             icon={Bell}
             label={t('notifications.title', 'Notifications')}

@@ -18,6 +18,7 @@ const flatten = (style: unknown): Record<string, unknown> =>
 const pressables: Array<Record<string, unknown>> = [];
 const markdownInputs: Array<Record<string, unknown>> = [];
 const presented: number[] = [];
+const copied: string[] = [];
 
 mock.module('react-native', () => ({
   StyleSheet: { flatten, create: (s: unknown) => s, absoluteFill: {} },
@@ -53,7 +54,7 @@ mock.module('@expensify/react-native-live-markdown/src/MarkdownTextInput', () =>
   },
 }));
 mock.module('expo-haptics', () => ({ impactAsync: noop, notificationAsync: noop, ImpactFeedbackStyle: { Medium: 'medium' }, NotificationFeedbackType: { Success: 'success' } }));
-mock.module('expo-clipboard', () => ({ setStringAsync: async () => {} }));
+mock.module('expo-clipboard', () => ({ setStringAsync: async (text: string) => void copied.push(text) }));
 mock.module('nativewind', () => ({ useColorScheme: () => ({ colorScheme: 'light' }) }));
 mock.module('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 mock.module('@/lib/icons', () => ({ CopyIcon: none }));
@@ -102,6 +103,7 @@ afterEach(() => {
   pressables.length = 0;
   markdownInputs.length = 0;
   presented.length = 0;
+  copied.length = 0;
 });
 
 const render = (text: string) =>
@@ -160,5 +162,20 @@ describe('the iOS selection fallback (no RNUITextView in the binary)', () => {
     });
     expect(texts(tree!)).toContain('Select Text');
     expect(markdownInputs.length).toBeGreaterThanOrEqual(1);
+  });
+
+  test('a reply with a generative UI block shows and copies its markdown, not OpenUI source', async () => {
+    render('Done.\n\n```openui\nroot = Stack([b])\nb = Badge("shipped")\n```');
+    const press = tapTarget();
+    act(() => {
+      press?.();
+      press?.();
+    });
+    expect(markdownInputs[markdownInputs.length - 1].value).toBe('Done.\n\n[shipped]');
+    const copyAll = tree!.root.findByType('bs-touchable' as never);
+    await act(async () => {
+      await (copyAll.props.onPress as () => Promise<void>)();
+    });
+    expect(copied).toEqual(['Done.\n\n[shipped]']);
   });
 });
