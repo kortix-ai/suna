@@ -974,6 +974,7 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'pooled_provider_secrets',
     'pi_harness',
     'us_region',
+    'event_triggers',
     'warm_sessions',
     'notification_center',
   ];

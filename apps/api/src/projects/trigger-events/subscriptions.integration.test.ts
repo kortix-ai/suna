@@ -60,6 +60,7 @@ mock.module('../../connectors/db-deps', () => ({
 const { reconcileEventSubscriptions, reconcileEventSubscriptionsFromCatalog } = await import('./subscriptions');
 const { applyNotices, deliverEvents } = await import('./deliver');
 const { setEventSourceForTest } = await import('./registry');
+const { runFeatureFlagToggleEffects } = await import('../../feature-flags/toggle-effects');
 const { listEventApps, validateEventTrigger } = await import('./catalog');
 const store = await import('./store');
 const { settleTriggerAlerts } = await import('../lib/trigger-alerts');
@@ -180,7 +181,7 @@ describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
       accountId: ACCOUNT_ID,
       name: 'Event reconcile proof',
       repoUrl: 'https://example.test/event-reconcile.git',
-      metadata: { experimental: { notification_center: true } },
+      metadata: { experimental: { event_triggers: true, notification_center: true } },
     });
     await db.insert(connectors).values({
       connectorId: CONNECTOR_ID,
@@ -424,6 +425,62 @@ describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
     expect((await store.get(PROJECT_ID, 'b'))?.lastError).toContain('COMPOSIO_API_KEY');
   });
 
+  describe('event_triggers flag', () => {
+    const setFlag = (on: boolean | null) =>
+      testDb().update(projects).set({ metadata: on === null ? {} : { experimental: { event_triggers: on } } }).where(eq(projects.projectId, PROJECT_ID));
+    const delivery = { externalId: 'ti_EXAMPLE_NEW_MESSAGE_{}', eventId: 'msg_flag', type: 'EXAMPLE_NEW_MESSAGE', occurredAt: new Date().toISOString(), data: {} };
+
+    test('flag off: the trigger reads error, nothing subscribes, the other triggers still apply', async () => {
+      await connect();
+      await setFlag(false);
+      await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('a')]);
+      const row = await store.get(PROJECT_ID, 'a');
+      expect(row?.status).toBe('error');
+      expect(row?.lastError).toBe('App event triggers are off for this project. Turn them on in Settings → Feature flags.');
+      expect(calls).toEqual([]);
+    });
+
+    test('flag unset (platform default off) behaves like off', async () => {
+      await connect();
+      await setFlag(null);
+      await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('a')]);
+      expect(await status('a')).toBe('error');
+      expect(calls).toEqual([]);
+    });
+
+    test('toggle off releases every subscription and no delivery fires; toggle on reconciles from the catalog', async () => {
+      await connect();
+      await catalog(spec('a'));
+      await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('a')]);
+      expect(await status('a')).toBe('active');
+
+      await setFlag(false);
+      calls.length = 0;
+      await runFeatureFlagToggleEffects({ key: 'event_triggers', projectId: PROJECT_ID, accountId: ACCOUNT_ID, metadata: { experimental: { event_triggers: false } } });
+      expect(calls).toEqual(['unsubscribe:ti_EXAMPLE_NEW_MESSAGE_{}']);
+      expect(await store.listByProject(PROJECT_ID)).toEqual([]);
+
+      await setFlag(true);
+      calls.length = 0;
+      await runFeatureFlagToggleEffects({ key: 'event_triggers', projectId: PROJECT_ID, accountId: ACCOUNT_ID, metadata: { experimental: { event_triggers: true } } });
+      expect(calls).toEqual(['subscribe:EXAMPLE_NEW_MESSAGE']);
+      expect(await status('a')).toBe('active');
+    });
+
+    test('deliverEvents never fires for a project with the flag off, even with an active row', async () => {
+      await connect();
+      await catalog(spec('a'));
+      await reconcileEventSubscriptions(PROJECT_ID, ACCOUNT_ID, [spec('a')]);
+      expect(await status('a')).toBe('active');
+      await setFlag(false);
+      const tally = await deliverEvents('composio', [delivery]);
+      expect(tally).toEqual({ fired: 0, skipped: 1, ignored: 0, failed: 0 });
+      expect(fires).toHaveLength(0);
+      await setFlag(true);
+      expect((await deliverEvents('composio', [{ ...delivery, eventId: 'msg_on' }])).fired).toBe(1);
+    });
+  });
+
   describe('source', () => {
     const withSource = (source: string) => spec('a', { event: { connector: 'inbox', source, type: 'EXAMPLE_NEW_MESSAGE', config: {} } });
 
@@ -602,7 +659,8 @@ describeWithDb('event subscriptions — real PostgreSQL, fake provider', () => {
 
     describe('with the notification_center flag off (KRTX-1742)', () => {
       beforeEach(async () => {
-        await testDb().update(projects).set({ metadata: {} }).where(eq(projects.projectId, PROJECT_ID));
+        // Only notification_center goes off: event_triggers stays on so the deliveries still run.
+        await testDb().update(projects).set({ metadata: { experimental: { event_triggers: true } } }).where(eq(projects.projectId, PROJECT_ID));
       });
 
       test('a failure no redelivery can fix is recorded on the trigger but opens no alert', async () => {

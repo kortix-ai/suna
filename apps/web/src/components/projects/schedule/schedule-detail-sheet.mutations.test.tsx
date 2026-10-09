@@ -1,19 +1,20 @@
 /**
- * Characterization tests for the detail sheet's trigger-update mutations.
+ * Characterization tests for the detail sheet's one save.
  *
- * Every assertion goes through the running component, not its source. Each of the eight
- * editable-panel mutations (WhatItDoes, WhenItRuns, Address, Conditions,
- * Agent ×2, Memory, Access) is driven through the payload it actually sends,
- * plus the shared lifecycle semantics: pending controls, one invalidation on
- * success, a failure toast without invalidation, and the timing editor that
- * closes only after success.
+ * Every assertion goes through the running component, not its source. The
+ * sheet edits a draft; "Save changes" sends ONE PATCH holding only the fields
+ * that changed, and "Discard" restores the saved values. Each field family
+ * (name and instruction, schedule, webhook secret, conditions, agent and
+ * model, run location, session access, event settings) is driven through the
+ * payload it actually sends, plus the shared lifecycle semantics: a pending
+ * footer, one invalidation on success, a failure toast without invalidation.
  *
  * The harness mounts the real sheet under react-test-renderer. Only the
- * portal-based shells (`Sheet`, the dropdown, the selects) and the two heavy
- * selectors are stubbed — those are collaborators, not the subject. The
- * transport is the real SDK: `updateProjectTrigger` runs against a
- * `configureKortix` fetch override, so every payload below is the body that
- * would hit `PATCH /projects/:id/triggers/:slug`.
+ * portal-based shells (`Sheet`, the dropdown, the selects), the heavy
+ * selectors and the connector hook are stubbed — those are collaborators, not
+ * the subject. The transport is the real SDK: `updateProjectTrigger` runs
+ * against a `configureKortix` fetch override, so every payload below is the
+ * body that would hit `PATCH /projects/:id/triggers/:slug`.
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
@@ -23,15 +24,12 @@ import { type ReactNode, createElement } from 'react';
 import { type ReactTestInstance, type ReactTestRenderer, act, create } from 'react-test-renderer';
 
 import { Button } from '@/components/ui/button';
-import { Select } from '@/components/ui/select';
-import { PanelSection, SaveButton } from './schedule-fields';
 
 type ComponentPropsLike = Record<string, unknown>;
 
 const toastCalls: { kind: 'success' | 'error'; message: string }[] = [];
 const realToast = await import('@/components/ui/toast');
 const realSdkReact = await import('@kortix/sdk/react');
-const realFields = await import('./schedule-fields');
 
 const selectors: {
   agentSelectors: ComponentPropsLike[];
@@ -57,6 +55,7 @@ mock.module('@/components/ui/sheet', () => ({
   SheetHeader: Passthrough,
   SheetTitle: Passthrough,
 }));
+mock.module('@/components/ui/hint', () => ({ default: Passthrough }));
 mock.module('@/components/ui/dropdown-menu', () => ({
   DropdownMenu: Passthrough,
   DropdownMenuContent: Passthrough,
@@ -89,6 +88,7 @@ mock.module('@/features/session/session-chat-input', () => ({
     return createElement('div', { 'data-testid': 'agent-selector-stub' });
   },
   flattenModels: () => [],
+  agentDisplayLabel: (_agents: unknown, slug: string | null) => slug ?? 'Agent',
 }));
 mock.module('@/features/workspace/shared/sharing-picker', () => ({
   SharingPicker: (props: ComponentPropsLike) => {
@@ -96,15 +96,37 @@ mock.module('@/features/workspace/shared/sharing-picker', () => ({
     return createElement('div', { 'data-testid': 'sharing-picker-stub' });
   },
 }));
+const catalog: { types: unknown; apps: unknown } = { types: undefined, apps: undefined };
 mock.module('@kortix/sdk/react', () => ({
   ...realSdkReact,
   useVisibleAgents: () => [],
   useRuntimeProviders: () => ({ data: undefined }),
   useFeatureFlag: () => ({ enabled: false, isLoading: false }),
+  // A null project id keeps the real hooks idle; so do these.
+  useProjectTriggerEventTypes: (projectId: string | null) => ({
+    data: projectId ? catalog.types : undefined,
+    isLoading: false,
+  }),
+  useProjectTriggerEventApps: (projectId: string | null) => ({
+    data: projectId ? catalog.apps : undefined,
+    isLoading: false,
+  }),
+}));
+mock.module('./event-account-picker', () => ({
+  EventAccountRows: (props: ComponentPropsLike) => createElement('div', { 'data-testid': 'account-rows-stub', ...props }),
+}));
+mock.module('./use-event-app-connect', () => ({
+  useEventAppConnect: () => ({
+    add: async () => 'github-events',
+    connect: () => {},
+    connecting: null,
+    canConnect: true,
+  }),
 }));
 
 const { ScheduleDetailSheet } = await import('./schedule-detail-sheet');
 
+const mountedRenderers: ReactTestRenderer[] = [];
 const calls: { url: string; method: string; body: unknown }[] = [];
 let failFetch = false;
 let hangFetch = false;
@@ -122,6 +144,8 @@ beforeEach(() => {
   failFetch = false;
   hangFetch = false;
   releaseHang = null;
+  catalog.types = undefined;
+  catalog.apps = undefined;
   configureKortix({
     backendUrl: 'http://api.test/v1',
     getToken: async () => 'token',
@@ -135,7 +159,7 @@ beforeEach(() => {
         await new Promise<void>((resolve) => {
           releaseHang = resolve;
         });
-      return new Response(JSON.stringify({ slug: 'triage' }), {
+      return new Response(JSON.stringify(init.method === 'PATCH' ? { slug: 'triage' } : []), {
         status: failFetch ? 500 : 200,
         headers: { 'content-type': 'application/json' },
       });
@@ -144,6 +168,9 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  act(() => {
+    for (const r of mountedRenderers.splice(0)) r.unmount();
+  });
   hangFetch = false;
   releaseHang?.();
   releaseHang = null;
@@ -161,8 +188,13 @@ function at<T>(items: T[], index = 0): T {
   return item;
 }
 
+
+function patches() {
+  return calls.filter((c) => c.method === 'PATCH');
+}
+
 function expectPatch(body: unknown) {
-  expect(calls).toEqual([
+  expect(patches()).toEqual([
     {
       url: 'http://api.test/v1/projects/proj-1/triggers/triage',
       method: 'PATCH',
@@ -209,16 +241,25 @@ const baseTrigger: ProjectTrigger = {
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 10));
 
-type SaveButtonProps = { dirty: boolean; pending: boolean; onSave: () => void };
+const deepText = (node: ReactTestInstance | string): string =>
+  typeof node === 'string' ? node : node.children.map(deepText).join(' ');
+
+const textOf = (children: unknown): string => {
+  if (typeof children === 'string') return children;
+  if (typeof children === 'number') return String(children);
+  if (Array.isArray(children)) return children.map(textOf).join('');
+  return '';
+};
 
 type Mounted = {
   renderer: ReactTestRenderer;
   onMutated: () => number;
-  sectionBy: (predicate: (section: ReactTestInstance) => boolean) => ReactTestInstance;
-  saveButtonOf: (section: ReactTestInstance) => SaveButtonProps;
-  buttonsWithin: (section: ReactTestInstance | null, text: string) => ReactTestInstance[];
+  buttonsWithin: (text: string) => ReactTestInstance[];
   inputById: (id: string) => ReactTestInstance;
-  stubCount: (testId: string) => number;
+  withProps: (key: string) => ReactTestInstance;
+  instruction: () => ReactTestInstance;
+  openOptions: () => Promise<void>;
+  save: () => Promise<void>;
   flush: () => Promise<void>;
 };
 
@@ -226,6 +267,7 @@ function mountSheet(
   triggerOverrides: TriggerOverrides = {},
   canWrite = true,
   controls?: { canCreate: boolean; canFire: boolean; canUpdate: boolean; canDelete: boolean },
+  eventsEnabled = false,
 ): Mounted {
   const queryClient = new QueryClient();
   let mutated = 0;
@@ -239,6 +281,7 @@ function mountSheet(
           projectId: 'proj-1',
           trigger: { ...baseTrigger, ...triggerOverrides },
           controls: controls ?? { canCreate: canWrite, canFire: canWrite, canUpdate: canWrite, canDelete: canWrite },
+          eventsEnabled,
           open: true,
           onOpenChange: () => {},
           onRun: () => {},
@@ -253,442 +296,390 @@ function mountSheet(
   });
   if (!mounted) throw new Error('Sheet did not mount');
   const renderer = mounted;
-  const textOf = (children: unknown): string => {
-    if (typeof children === 'string') return children;
-    if (typeof children === 'number') return String(children);
-    if (Array.isArray(children)) return children.map(textOf).join('');
-    return '';
-  };
-  const sections = () => renderer.root.findAll((n) => n.type === PanelSection);
-  return {
+  mountedRenderers.push(renderer);
+  const buttonsWithin = (text: string) =>
+    renderer.root.findAll((n) => n.type === Button && textOf(n.props.children) === text);
+  const sheet: Mounted = {
     renderer,
     onMutated: () => mutated,
-    sectionBy: (predicate) => {
-      const matches = sections().filter(predicate);
-      expect(matches.length).toBe(1);
-      return at(matches);
-    },
-    saveButtonOf: (section: ReactTestInstance) => {
-      const buttons = section.findAll((n) => n.type === SaveButton);
-      expect(buttons.length).toBe(1);
-      const props: ComponentPropsLike = at(buttons).props;
-      if (
-        typeof props.dirty !== 'boolean' ||
-        typeof props.pending !== 'boolean' ||
-        typeof props.onSave !== 'function'
-      )
-        throw new Error('Invalid SaveButton props');
-      return { dirty: props.dirty, pending: props.pending, onSave: () => call(props, 'onSave') };
-    },
-    buttonsWithin: (section: ReactTestInstance | null, text: string) =>
-      (section
-        ? section.findAll((n) => n.type === Button)
-        : renderer.root.findAll((n) => n.type === Button)
-      ).filter((b) => textOf(b.props.children) === text),
+    buttonsWithin,
     inputById: (id: string) => {
       const inputs = renderer.root.findAll((n) => n.type === 'input' && n.props?.id === id);
       expect(inputs.length).toBe(1);
       return at(inputs);
     },
-    stubCount: (testId: string) =>
-      renderer.root.findAll((n) => n.props?.['data-testid'] === testId).length,
+    // The one element that takes `key` as a prop: a composer piece like ConditionsEditor or RunLocationFields.
+    withProps: (key: string) => {
+      const matches = renderer.root.findAll((n) => typeof n.type !== 'string' && n.props?.[key] !== undefined);
+      expect(matches.length).toBeGreaterThan(0);
+      return at(matches);
+    },
+    instruction: () => {
+      const areas = renderer.root.findAll(
+        (n) => typeof n.type !== 'string' && n.props?.['aria-label'] === 'Instruction',
+      );
+      return at(areas);
+    },
+    // "Options" is a folded block: its pieces mount when the fold opens.
+    openOptions: async () => {
+      const fold = renderer.root.findAll(
+        (n) => n.type === 'button' && textOf(n.props.children).startsWith('Options'),
+      );
+      await act(async () => call(at(fold, 0).props, 'onClick', { preventDefault() {} }));
+    },
+    save: async () => {
+      const button = buttonsWithin('Save changes');
+      expect(button).toHaveLength(1);
+      await act(async () => call(at(button).props, 'onClick'));
+    },
     flush: async () => {
       await act(async () => {
         await settle();
       });
     },
   };
+  return sheet;
 }
 
-const whatItDoesSection = (sheet: Mounted) =>
-  sheet.sectionBy(
-    (s) => s.findAll((n) => n.type === 'input' && n.props?.id === 'schedule-name').length > 0,
-  );
-const whenItRunsReadSection = (sheet: Mounted) =>
-  sheet.sectionBy((s) => s.findAll((n) => n.type === realFields.PropertyList).length > 0);
-const whenItRunsEditSection = (sheet: Mounted) =>
-  sheet.sectionBy(
-    (s) => s.findAll((n) => n.props?.['data-testid'] === 'schedule-builder-stub').length > 0,
-  );
-const addressSection = (sheet: Mounted) =>
-  sheet.sectionBy(
-    (s) => s.findAll((n) => n.type === 'input' && n.props?.id === 'webhook-signing-key').length > 0,
-  );
-const conditionsSection = (sheet: Mounted) =>
-  sheet.sectionBy(
-    (s) =>
-      s.findAll((n) => typeof n.props?.onChange === 'function' && Array.isArray(n.props?.rows))
-        .length > 0,
-  );
-const agentSection = (sheet: Mounted) =>
-  sheet.sectionBy(
-    (s) => s.findAll((n) => n.props?.['data-testid'] === 'agent-selector-stub').length > 0,
-  );
-const memorySection = (sheet: Mounted) =>
-  sheet.sectionBy(
-    (s) => s.findAll((n) => typeof n.props?.onSessionKeyChange === 'function').length > 0,
-  );
-const accessSection = (sheet: Mounted) =>
-  sheet.sectionBy(
-    (s) => s.findAll((n) => n.props?.['data-testid'] === 'sharing-picker-stub').length > 0,
-  );
+const type = async (node: ReactTestInstance, value: string) =>
+  act(async () => node.props.onChange({ target: { value } }));
 
-describe('what-it-does panel update', () => {
-  test('sends the trimmed name and the instruction, then toasts and invalidates once', async () => {
+describe('name and instruction', () => {
+  test('one PATCH holds both changed fields, trimmed; then it toasts and invalidates once', async () => {
     const sheet = mountSheet();
-    const name = sheet.inputById('schedule-name');
-    await act(async () => name.props.onChange({ target: { value: '  Inbox triage v2 ' } }));
-    const save = sheet.saveButtonOf(whatItDoesSection(sheet));
-    expect(save.dirty).toBe(true);
-    await act(async () => save.onSave());
+    await type(sheet.inputById('trigger-name'), '  Inbox triage v2 ');
+    await type(sheet.instruction(), 'Triage and label the inbox');
+    await sheet.save();
     await sheet.flush();
-    expectPatch({ name: 'Inbox triage v2', prompt_template: 'Triage the inbox' });
+    expectPatch({ name: 'Inbox triage v2', prompt_template: 'Triage and label the inbox' });
     success('Saved');
     expect(sheet.onMutated()).toBe(1);
+  });
+
+  test('only the changed field travels', async () => {
+    const sheet = mountSheet();
+    await type(sheet.instruction(), 'Different words');
+    await sheet.save();
+    await sheet.flush();
+    expectPatch({ prompt_template: 'Different words' });
+  });
+
+  test('nothing changed: no footer, no request', () => {
+    const sheet = mountSheet();
+    expect(sheet.buttonsWithin('Save changes')).toHaveLength(0);
+    expect(sheet.buttonsWithin('Discard')).toHaveLength(0);
+    expect(patches()).toHaveLength(0);
+  });
+
+  test('Discard restores the saved values and hides the footer', async () => {
+    const sheet = mountSheet();
+    await type(sheet.inputById('trigger-name'), 'Renamed');
+    expect(sheet.inputById('trigger-name').props.value).toBe('Renamed');
+    await act(async () => call(at(sheet.buttonsWithin('Discard')).props, 'onClick'));
+    expect(sheet.inputById('trigger-name').props.value).toBe('Inbox triage');
+    expect(sheet.instruction().props.value).toBe('Triage the inbox');
+    expect(sheet.buttonsWithin('Save changes')).toHaveLength(0);
+    expect(patches()).toHaveLength(0);
+  });
+
+  test('an empty name blocks the save and shows why', async () => {
+    const sheet = mountSheet();
+    await type(sheet.inputById('trigger-name'), '   ');
+    await sheet.save();
+    await sheet.flush();
+    expect(patches()).toHaveLength(0);
+    expect(sheet.renderer.root.findAll((n) => n.props?.role === 'alert').length).toBeGreaterThan(0);
   });
 
   test('a failed save toasts the error and never invalidates', async () => {
     failFetch = true;
     const sheet = mountSheet();
-    const name = sheet.inputById('schedule-name');
-    await act(async () => name.props.onChange({ target: { value: 'Renamed' } }));
-    const save = sheet.saveButtonOf(whatItDoesSection(sheet));
-    await act(async () => save.onSave());
+    await type(sheet.inputById('trigger-name'), 'Renamed');
+    await sheet.save();
     await sheet.flush();
-    expect(calls).toHaveLength(1);
+    expect(patches()).toHaveLength(1);
     expect(toastCalls.map((t) => t.kind)).toEqual(['error']);
     expect(at(toastCalls, 0).message.length).toBeGreaterThan(0);
     expect(sheet.onMutated()).toBe(0);
   });
 
-  test('the save control reports pending while the request is in flight', async () => {
+  test('the footer reports pending while the request is in flight', async () => {
     hangFetch = true;
     const sheet = mountSheet();
-    const name = sheet.inputById('schedule-name');
-    await act(async () => name.props.onChange({ target: { value: 'Renamed' } }));
-    await act(async () => {
-      sheet.saveButtonOf(whatItDoesSection(sheet)).onSave();
-      await settle();
-      // React-query batches observer notifications; wait for the pending render.
-      let save = sheet.saveButtonOf(whatItDoesSection(sheet));
-      for (let i = 0; !save.pending && i < 50; i++) {
-        await settle();
-        save = sheet.saveButtonOf(whatItDoesSection(sheet));
-      }
-      expect(save.pending).toBe(true);
-      expect(save.dirty).toBe(true);
-      // Nothing resolved while the request hangs.
-      expect(toastCalls).toEqual([]);
-      expect(sheet.onMutated()).toBe(0);
-    });
+    await type(sheet.inputById('trigger-name'), 'Renamed');
+    await sheet.save();
+    const pendingNow = () => at(sheet.buttonsWithin('Save changes')).props.disabled === true;
+    for (let i = 0; !pendingNow() && i < 50; i++) await sheet.flush();
+    expect(pendingNow()).toBe(true);
+    expect(at(sheet.buttonsWithin('Discard')).props.disabled).toBe(true);
+    expect(toastCalls).toEqual([]);
+    expect(sheet.onMutated()).toBe(0);
   });
 });
 
-describe('when-it-runs panel update', () => {
-  const enterEditing = async (sheet: Mounted) => {
-    const edit = sheet.buttonsWithin(whenItRunsReadSection(sheet), 'Edit');
-    expect(edit.length).toBe(1);
-    await act(async () => call(at(edit, 0).props, 'onClick'));
-    expect(selectors.scheduleBuilders.length).toBe(1);
-  };
-  const saveButton = (sheet: Mounted) => {
-    const section = whenItRunsEditSection(sheet);
-    return sheet.buttonsWithin(section, 'Save');
-  };
-
-  test('sends the cron expression with run_at cleared, then closes the editor', async () => {
+describe('schedule', () => {
+  test('a new cron expression is sent with run_at cleared', async () => {
     const sheet = mountSheet();
-    await enterEditing(sheet);
-    await act(async () => call(at(selectors.scheduleBuilders, 0), 'onChange', '0 0 11 * * *'));
-    const buttons = saveButton(sheet);
-    expect(buttons.length).toBe(1);
-    await act(async () => call(at(buttons, 0).props, 'onClick'));
+    await act(async () => call(at(selectors.scheduleBuilders, 0), 'onChange', '0 0 8 * * *'));
+    await sheet.save();
     await sheet.flush();
-    expectPatch({ cron: '0 0 11 * * *', run_at: null, timezone: 'UTC' });
-    expect(sheet.stubCount('schedule-builder-stub')).toBe(0);
-    success('Schedule updated');
+    expectPatch({ cron: '0 0 8 * * *', run_at: null, timezone: 'UTC' });
     expect(sheet.onMutated()).toBe(1);
   });
 
   test('a one-off run time is sent with cron cleared', async () => {
     const sheet = mountSheet();
-    await enterEditing(sheet);
     await act(async () =>
-      call(at(selectors.scheduleBuilders, 0), 'onRunAtChange', '2026-12-01T09:00:00Z'),
+      call(at(selectors.scheduleBuilders, 0), 'onRunAtChange', '2031-01-02T09:00:00.000Z'),
     );
-    const buttons = saveButton(sheet);
-    await act(async () => call(at(buttons, 0).props, 'onClick'));
+    await sheet.save();
     await sheet.flush();
-    expectPatch({ run_at: '2026-12-01T09:00:00Z', cron: null, timezone: 'UTC' });
-    success('Schedule updated');
-    expect(sheet.onMutated()).toBe(1);
-  });
-
-  test('the editor stays open while the save is pending and closes once it succeeds', async () => {
-    hangFetch = true;
-    const sheet = mountSheet();
-    await enterEditing(sheet);
-    await act(async () => call(at(selectors.scheduleBuilders, 0), 'onChange', '0 0 11 * * *'));
-    const buttons = saveButton(sheet);
-    await act(async () => call(at(buttons, 0).props, 'onClick'));
-    expect(sheet.stubCount('schedule-builder-stub')).toBe(1);
-    expect(sheet.onMutated()).toBe(0);
-    releaseHang?.();
-    await sheet.flush();
-    expect(sheet.stubCount('schedule-builder-stub')).toBe(0);
-    success('Schedule updated');
-    expect(sheet.onMutated()).toBe(1);
-  });
-
-  test('a failed save keeps the editor open', async () => {
-    failFetch = true;
-    const sheet = mountSheet();
-    await enterEditing(sheet);
-    await act(async () => call(at(selectors.scheduleBuilders, 0), 'onChange', '0 0 11 * * *'));
-    const buttons = saveButton(sheet);
-    await act(async () => call(at(buttons, 0).props, 'onClick'));
-    await sheet.flush();
-    expect(sheet.stubCount('schedule-builder-stub')).toBe(1);
-    expect(sheet.onMutated()).toBe(0);
-    expect(toastCalls.map((t) => t.kind)).toEqual(['error']);
+    expectPatch({ run_at: '2031-01-02T09:00:00.000Z', cron: null, timezone: 'UTC' });
   });
 });
 
-describe('address panel update', () => {
-  test('sends the trimmed signing key name', async () => {
-    const sheet = mountSheet({ type: 'webhook', secret_env: 'WEBHOOK_OLD' });
-    const secretInput = sheet.inputById('webhook-signing-key');
-    expect(secretInput.props.value).toBe('WEBHOOK_OLD');
-    await act(async () => secretInput.props.onChange({ target: { value: 'webhook_new ' } }));
-    const save = sheet.saveButtonOf(addressSection(sheet));
-    expect(save.dirty).toBe(true);
-    await act(async () => save.onSave());
+describe('webhook', () => {
+  test('shows its address and sends the trimmed signing key name', async () => {
+    const sheet = mountSheet({ type: 'webhook', cron: null, secret_env: 'WEBHOOK_OLD' });
+    const text = JSON.stringify(sheet.renderer.toJSON());
+    expect(text).toContain('https://api.test/v1/webhooks/triage');
+    await type(sheet.inputById('webhook-signing-key'), 'WEBHOOK_NEW');
+    await sheet.save();
     await sheet.flush();
     expectPatch({ secret_env: 'WEBHOOK_NEW' });
-    success('Signing key updated');
-    expect(sheet.onMutated()).toBe(1);
   });
 });
 
-describe('conditions panel update', () => {
-  test('sends the rows converted back to the filter object', async () => {
-    const sheet = mountSheet({ type: 'webhook', filter: { 'message.source': 'github' } });
-    const section = conditionsSection(sheet);
-    const editor = at(
-      section.findAll(
-        (n) => typeof n.props?.onChange === 'function' && Array.isArray(n.props?.rows),
-      ),
-    );
-    expect(editor).toBeDefined();
+describe('options', () => {
+  test('conditions are sent as the filter object', async () => {
+    const sheet = mountSheet({ type: 'webhook', cron: null });
+    await sheet.openOptions();
     await act(async () =>
-      call(editor.props, 'onChange', [
-        { path: 'message.source', value: 'github' },
-        { path: 'event', value: 'push' },
-      ]),
+      call(at(sheet.renderer.root.findAll((n) => typeof n.type !== 'string' && Array.isArray(n.props?.rows))).props, 'onChange', [{ path: 'event', value: 'push' }]),
     );
-    const save = sheet.saveButtonOf(conditionsSection(sheet));
-    expect(save.dirty).toBe(true);
-    await act(async () => save.onSave());
+    await sheet.save();
     await sheet.flush();
-    expectPatch({ filter: { 'message.source': 'github', event: 'push' } });
-    success('Conditions saved');
-    expect(sheet.onMutated()).toBe(1);
-  });
-});
-
-describe('agent panel updates', () => {
-  test('selecting an agent sends { agent }', async () => {
-    const sheet = mountSheet();
-    const agentSelector = at(selectors.agentSelectors, 0);
-    await act(async () => call(agentSelector, 'onSelect', 'support-agent'));
-    await sheet.flush();
-    expectPatch({ agent: 'support-agent' });
-    success('Agent updated');
-    expect(sheet.onMutated()).toBe(1);
+    expectPatch({ filter: { event: 'push' } });
   });
 
-  test('selecting a model sends its wire form; clearing sends null', async () => {
+  test('a schedule has no conditions', async () => {
     const sheet = mountSheet();
-    const modelSelector = at(selectors.modelSelectors, 0);
-    const key = { providerID: 'openai', modelID: 'gpt-5' };
-    await act(async () => call(modelSelector, 'onSelect', key));
-    await sheet.flush();
-    expect(calls).toHaveLength(1);
-    expect(at(calls, 0).body).toEqual({ model: 'openai/gpt-5' });
-    success('Model updated');
-    expect(sheet.onMutated()).toBe(1);
-    await act(async () => call(at(selectors.modelSelectors, 0), 'onSelect', null));
-    await sheet.flush();
-    expect(at(calls, 1).body).toEqual({ model: null });
-    success('Model updated', 2);
-    expect(sheet.onMutated()).toBe(2);
+    await sheet.openOptions();
+    expect(sheet.renderer.root.findAll((n) => Array.isArray(n.props?.rows))).toHaveLength(0);
   });
-});
 
-describe('memory panel updates', () => {
-  test('pinning a session sends the pinned mode with the id', async () => {
+  test('a grouping key is sent with the keyed mode and no session id', async () => {
     const sheet = mountSheet();
-    const fields = at(
-      memorySection(sheet).findAll((n) => typeof n.props?.onPinnedSessionChange === 'function'),
+    await sheet.openOptions();
+    const fields = sheet.withProps('onModeChange').props;
+    await act(async () => call(fields, 'onModeChange', 'keyed'));
+    await act(async () =>
+      call(sheet.withProps('onSessionKeyChange').props, 'onSessionKeyChange', ' team-a '),
     );
-    expect(fields).toBeDefined();
-    await act(async () => call(fields.props, 'onPinnedSessionChange', 'sess-1'));
-    await sheet.flush();
-    expectPatch({ session_mode: 'pinned', session_id: 'sess-1', session_key: null });
-    success('Updated');
-    expect(sheet.onMutated()).toBe(1);
-  });
-
-  test('saving a grouping key sends the keyed mode with the key', async () => {
-    const sheet = mountSheet();
-    // The grouping input and its save action only render in the keyed view.
-    const modeSelect = at(memorySection(sheet).findAll((n) => n.type === Select));
-    await act(async () => call(modeSelect.props, 'onValueChange', 'keyed'));
-    const fields = at(
-      memorySection(sheet).findAll((n) => typeof n.props?.onSessionKeyChange === 'function'),
-    );
-    await act(async () => call(fields.props, 'onSessionKeyChange', 'team-a'));
-    const save = sheet.saveButtonOf(memorySection(sheet));
-    expect(save.dirty).toBe(true);
-    await act(async () => save.onSave());
+    await sheet.save();
     await sheet.flush();
     expectPatch({ session_mode: 'keyed', session_key: 'team-a', session_id: null });
-    success('Updated');
-    expect(sheet.onMutated()).toBe(1);
   });
 
-  test('switching to a standalone mode saves immediately and clears the staged values', async () => {
+  test('pinning a session sends the pinned mode with the id', async () => {
     const sheet = mountSheet();
-    const modeSelect = at(memorySection(sheet).findAll((n) => n.type === Select));
-    expect(modeSelect).toBeDefined();
-    await act(async () => call(modeSelect.props, 'onValueChange', 'private'));
+    await sheet.openOptions();
+    await act(async () => call(sheet.withProps('onModeChange').props, 'onModeChange', 'pinned'));
+    await act(async () =>
+      call(sheet.withProps('onPinnedSessionChange').props, 'onPinnedSessionChange', 'sess-1'),
+    );
+    await sheet.save();
     await sheet.flush();
-    expectPatch({ session_mode: 'private', session_id: null, session_key: null });
-    success('Updated');
-    expect(sheet.onMutated()).toBe(1);
+    expectPatch({ session_mode: 'pinned', session_id: 'sess-1', session_key: null });
   });
-});
 
-describe('access panel update', () => {
-  test('a sharing selection is staged, then saved as session_access', async () => {
+  test('a standalone mode clears the staged values', async () => {
+    const sheet = mountSheet({ session_mode: 'keyed', session_key: 'x' });
+    await sheet.openOptions();
+    await act(async () => call(sheet.withProps('onModeChange').props, 'onModeChange', 'fresh'));
+    await sheet.save();
+    await sheet.flush();
+    expectPatch({ session_mode: 'fresh', session_id: null, session_key: null });
+  });
+
+  test('a sharing selection is sent as session_access', async () => {
     const sheet = mountSheet();
-    const picker = at(selectors.sharingPickers, 0);
+    await sheet.openOptions();
+    const picker = at(selectors.sharingPickers, selectors.sharingPickers.length - 1);
     await act(async () =>
       call(picker, 'onChange', { mode: 'members', memberIds: ['user-1'], groupIds: ['group-1'] }),
     );
-    const save = sheet.saveButtonOf(accessSection(sheet));
-    expect(save.dirty).toBe(true);
-    await act(async () => save.onSave());
+    await sheet.save();
     await sheet.flush();
     expectPatch({
       session_access: { mode: 'members', memberIds: ['user-1'], groupIds: ['group-1'] },
     });
-    success('Session access updated');
-    expect(sheet.onMutated()).toBe(1);
   });
 });
 
-// Each case drives the real panel callback; only selectors and portal shells are stubs.
-const lifecycleCases: {
-  name: string;
-  section: (sheet: Mounted) => ReactTestInstance;
-  change: (sheet: Mounted) => void;
-  immediate?: boolean;
-}[] = [
-  {
-    name: 'Address',
-    section: addressSection,
-    change: (sheet) =>
-      call(sheet.inputById('webhook-signing-key').props, 'onChange', {
-        target: { value: 'WEBHOOK_NEW' },
-      }),
-  },
-  {
-    name: 'Conditions',
-    section: conditionsSection,
-    change: (sheet) =>
-      call(
-        at(conditionsSection(sheet).findAll((n) => Array.isArray(n.props.rows))).props,
-        'onChange',
-        [{ path: 'event', value: 'push' }],
-      ),
-  },
-  {
-    name: 'Agent selection',
-    section: agentSection,
-    immediate: true,
-    change: () => call(at(selectors.agentSelectors), 'onSelect', 'support-agent'),
-  },
-  {
-    name: 'Model selection',
-    section: agentSection,
-    immediate: true,
-    change: () =>
-      call(at(selectors.modelSelectors), 'onSelect', { providerID: 'openai', modelID: 'gpt-5' }),
-  },
-  {
-    name: 'Memory',
-    section: memorySection,
-    change: (sheet) =>
-      call(
-        at(memorySection(sheet).findAll((n) => typeof n.props.onSessionKeyChange === 'function'))
-          .props,
-        'onSessionKeyChange',
-        'team-a',
-      ),
-  },
-  {
-    name: 'Access',
-    section: accessSection,
-    change: () =>
-      call(at(selectors.sharingPickers), 'onChange', {
-        mode: 'members',
-        memberIds: ['user-1'],
-        groupIds: [],
-      }),
-  },
-];
+describe('agent and model', () => {
+  test('selecting an agent sends { agent }', async () => {
+    const sheet = mountSheet();
+    await act(async () => call(at(selectors.agentSelectors, 0), 'onSelect', 'support-agent'));
+    await sheet.save();
+    await sheet.flush();
+    expectPatch({ agent: 'support-agent' });
+  });
 
-for (const panel of lifecycleCases) {
-  for (const outcome of ['pending', 'failure']) {
-    test(`${panel.name}: ${outcome} does not invalidate`, async () => {
-      hangFetch = outcome === 'pending';
-      failFetch = outcome === 'failure';
-      const sheet = mountSheet({ type: 'webhook', session_mode: 'keyed', model: 'openai/gpt-4' });
-      await act(async () => panel.change(sheet));
-      if (!panel.immediate) {
-        expect(sheet.saveButtonOf(panel.section(sheet)).dirty).toBe(true);
-        await act(async () => sheet.saveButtonOf(panel.section(sheet)).onSave());
-      }
-      const pending = () => {
-        if (panel.name === 'Agent selection')
-          return at(selectors.agentSelectors, selectors.agentSelectors.length - 1).disabled;
-        if (panel.name === 'Model selection') {
-          return at(sheet.buttonsWithin(panel.section(sheet), "Use the agent's usual model")).props
-            .disabled;
-        }
-        return sheet.saveButtonOf(panel.section(sheet)).pending;
-      };
-      await sheet.flush();
-      if (outcome === 'pending') {
-        for (let i = 0; !pending() && i < 50; i++) await sheet.flush();
-        expect(pending()).toBe(true);
-        expect(toastCalls).toEqual([]);
-      } else {
-        expect(toastCalls.map((toast) => toast.kind)).toEqual(['error']);
-        expect(at(toastCalls).message.length).toBeGreaterThan(0);
-      }
-      expect(calls).toHaveLength(1);
-      expect(sheet.onMutated()).toBe(0);
-      await act(async () => sheet.renderer.unmount());
+  test('selecting a model sends its wire form; clearing sends null', async () => {
+    const sheet = mountSheet();
+    await act(async () =>
+      call(at(selectors.modelSelectors, 0), 'onSelect', { providerID: 'openai', modelID: 'gpt-5' }),
+    );
+    await sheet.save();
+    await sheet.flush();
+    expectPatch({ model: 'openai/gpt-5' });
+
+    calls.length = 0;
+    toastCalls.length = 0;
+    const pinned = mountSheet({ model: 'openai/gpt-4' });
+    const latest = at(selectors.modelSelectors, selectors.modelSelectors.length - 1);
+    await act(async () => call(latest, 'onSelect', null));
+    await pinned.save();
+    await pinned.flush();
+    expectPatch({ model: null });
+  });
+});
+
+describe('an app event', () => {
+  const eventTypes = {
+    provider: 'composio',
+    app: 'github',
+    event_types: [
+      {
+        type: 'GITHUB_COMMIT_EVENT',
+        name: 'Commit Event',
+        description: 'A commit lands',
+        app: 'github',
+        delivery: 'poll',
+        config_schema: {
+          type: 'object',
+          required: ['repo'],
+          properties: { repo: { type: 'string' } },
+        },
+        payload_schema: { properties: { commit_sha: { description: 'The sha' } } },
+      },
+      {
+        type: 'GITHUB_BRANCH_CREATED_TRIGGER',
+        name: 'New Branch Created',
+        description: 'A branch is created',
+        app: 'github',
+        delivery: 'push',
+        config_schema: { type: 'object', properties: {} },
+        payload_schema: null,
+      },
+    ],
+  };
+  const accounts = (extra = {}) => [
+    { label: 'Project connection', connected_as: 'acme-org', is_default: true, connected: true, ...extra },
+    { label: 'acme-bot', connected_as: null, is_default: false, connected: true },
+  ];
+  const apps = {
+    apps: [
+      {
+        source: 'composio',
+        provider: 'composio',
+        app: 'github',
+        name: 'GitHub',
+        logo: null,
+        event_count: 2,
+        new_connector_slug: 'github-events',
+        connector: 'github-work',
+        connected: true,
+        connectors: [
+          { slug: 'github-work', name: 'GitHub work', accounts: accounts() },
+          { slug: 'github', name: 'github', accounts: [] },
+        ],
+      },
+    ],
+  };
+  const eventOverrides: TriggerOverrides = {
+    type: 'event',
+    cron: null,
+    prompt_template: 'Look at the commit',
+    event: {
+      connector: 'github-work',
+      account: null,
+      type: 'GITHUB_COMMIT_EVENT',
+      config: { repo: 'acme/api' },
+      provider: 'composio',
+      app: 'github',
+      status: 'active',
+      error: null,
+      last_event_at: null,
+    },
+  };
+  const mountEvent = (over: TriggerOverrides = {}, eventsEnabled = true) => {
+    catalog.types = eventTypes;
+    catalog.apps = apps;
+    return mountSheet({ ...eventOverrides, ...over }, true, undefined, eventsEnabled);
+  };
+
+  test('changing the instruction and the account sends one PATCH with both fields', async () => {
+    const sheet = mountEvent();
+    await type(sheet.instruction(), 'Review {{ event.data.commit_sha }}');
+    await act(async () => call(sheet.withProps('connector').props, 'onChange', 'acme-bot'));
+    await sheet.save();
+    await sheet.flush();
+    expectPatch({ prompt_template: 'Review {{ event.data.commit_sha }}', event_account: 'acme-bot' });
+    expect(sheet.onMutated()).toBe(1);
+  });
+
+  test('changing the event sends the new type with its fresh config', async () => {
+    const sheet = mountEvent();
+    await act(async () => call(at(sheet.buttonsWithin('Change')).props, 'onClick'));
+    const pick = sheet.renderer.root.findAll(
+      (n) => n.type === 'button' && deepText(n).includes('New Branch Created'),
+    );
+    expect(pick.length).toBeGreaterThan(0);
+    await act(async () => call(at(pick, 0).props, 'onClick'));
+    await sheet.save();
+    await sheet.flush();
+    expectPatch({ event: 'GITHUB_BRANCH_CREATED_TRIGGER', event_config: {} });
+  });
+
+  test('another connector is sent with its account, so the old one never carries over', async () => {
+    const sheet = mountEvent();
+    const select = sheet.renderer.root.findAll(
+      (n) => typeof n.type !== 'string' && typeof n.props?.onValueChange === 'function' && n.props?.value === 'github-work',
+    );
+    await act(async () => call(at(select, 0).props, 'onValueChange', 'github'));
+    await sheet.save();
+    await sheet.flush();
+    expectPatch({ connector: 'github', event_account: null });
+  });
+
+  test('a trigger that needs a connection offers to connect it', () => {
+    const sheet = mountEvent({
+      event: { ...(eventOverrides.event as NonNullable<ProjectTrigger['event']>), status: 'needs_connection' },
     });
-  }
-}
+    expect(sheet.buttonsWithin('Connect github').length + sheet.buttonsWithin('Connect GitHub').length).toBe(1);
+  });
+
+  test('events off: the catalog is not used, the saved event is shown and other fields still save', async () => {
+    const sheet = mountEvent(
+      { event: { ...(eventOverrides.event as NonNullable<ProjectTrigger['event']>), status: 'error', error: 'App event triggers are off for this project.' } },
+      false,
+    );
+    const text = JSON.stringify(sheet.renderer.toJSON());
+    expect(text).toContain('App event triggers are off');
+    expect(sheet.buttonsWithin('Change')).toHaveLength(0);
+    await type(sheet.instruction(), 'Still editable');
+    await sheet.save();
+    await sheet.flush();
+    expectPatch({ prompt_template: 'Still editable' });
+  });
+});
 
 describe('the header toggle', () => {
   test('pausing sends { enabled: false } and invalidates once', async () => {
     const sheet = mountSheet();
-    const pause = sheet.buttonsWithin(null, 'Pause');
+    const pause = sheet.buttonsWithin('Pause');
     expect(pause.length).toBe(1);
     await act(async () => call(at(pause, 0).props, 'onClick'));
     await sheet.flush();
@@ -704,19 +695,21 @@ describe('header controls follow one leaf each', () => {
 
   test('a member who may only fire gets Run now, and no Pause', () => {
     const sheet = mountSheet({}, false, { ...none, canFire: true });
-    expect(sheet.buttonsWithin(null, 'Run now')).toHaveLength(1);
-    expect(sheet.buttonsWithin(null, 'Pause')).toHaveLength(0);
+    expect(sheet.buttonsWithin('Run now')).toHaveLength(1);
+    expect(sheet.buttonsWithin('Pause')).toHaveLength(0);
   });
 
   test('an update-only role gets Pause, and no Run now', () => {
     const sheet = mountSheet({}, false, { ...none, canUpdate: true });
-    expect(sheet.buttonsWithin(null, 'Pause')).toHaveLength(1);
-    expect(sheet.buttonsWithin(null, 'Run now')).toHaveLength(0);
+    expect(sheet.buttonsWithin('Pause')).toHaveLength(1);
+    expect(sheet.buttonsWithin('Run now')).toHaveLength(0);
   });
 
-  test('no leaf: no header control at all', () => {
+  test('no leaf: no header control at all, and the body is read-only', () => {
     const sheet = mountSheet({}, false, none);
-    expect(sheet.buttonsWithin(null, 'Run now')).toHaveLength(0);
-    expect(sheet.buttonsWithin(null, 'Pause')).toHaveLength(0);
+    expect(sheet.buttonsWithin('Run now')).toHaveLength(0);
+    expect(sheet.buttonsWithin('Pause')).toHaveLength(0);
+    expect(sheet.renderer.root.findAll((n) => n.type === 'input' && n.props?.id === 'trigger-name')).toHaveLength(0);
+    expect(JSON.stringify(sheet.renderer.toJSON())).toContain('Triage the inbox');
   });
 });

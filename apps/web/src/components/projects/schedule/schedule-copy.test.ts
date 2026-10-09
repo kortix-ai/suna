@@ -16,6 +16,7 @@ import {
   matchesQuery,
   isCustomerTrigger,
   isTriggerKind,
+  triggerBadgeState,
   triggerName,
   triggerStatus,
 } from './schedule-copy';
@@ -95,8 +96,11 @@ describe('app event triggers in the copy layer', () => {
   });
 
   test('reads as the app event, in the list sentence and as the fallback name', () => {
-    expect(describeWhen(event)).toBe('Pull request on Github');
-    expect(triggerName(event)).toBe('Pull request on Github');
+    expect(describeWhen(event)).toBe('Pull Request');
+    expect(triggerName(event)).toBe('Pull Request');
+    expect(describeWhen(event, new Map([['GITHUB_PULL_REQUEST_EVENT', 'Pull Request Opened']]))).toBe(
+      'Pull Request Opened',
+    );
   });
 });
 
@@ -189,20 +193,16 @@ describe('triggerName', () => {
 });
 
 describe('triggerStatus — what it is, not what you can do to it', () => {
-  test('enabled reads Active and tints green', () => {
+  test('enabled reads Active', () => {
     const status = triggerStatus(true, testUiTranslator);
     expect(status.label).toBe('Active');
     expect(status.active).toBe(true);
-    expect(status.tileClassName).toContain('kortix-green');
-    expect(status.iconClassName).toContain('kortix-green');
   });
 
-  test('disabled reads Paused and stays neutral', () => {
+  test('disabled reads Paused', () => {
     const status = triggerStatus(false, testUiTranslator);
     expect(status.label).toBe('Paused');
     expect(status.active).toBe(false);
-    expect(status.tileClassName).not.toContain('kortix-');
-    expect(status.iconClassName).not.toContain('kortix-');
   });
 });
 
@@ -341,5 +341,38 @@ describe('describeNextRun', () => {
     expect(describeNextRun(trigger({ type: 'webhook', enabled: true, next_fire_at: null }))).toBeNull();
     expect(describeNextRun(trigger({ type: 'cron', enabled: false, next_fire_at: '2026-10-08T09:12:00.000Z' }))).toBeNull();
     expect(describeNextRun(trigger({ type: 'cron', enabled: true }))).toBeNull();
+  });
+});
+
+describe('triggerBadgeState: the one status every surface shows', () => {
+  const ev = (status: 'active' | 'needs_connection' | 'error' | 'pending') =>
+    ({
+      connector: 'github',
+      type: 'T',
+      config: {},
+      provider: 'composio',
+      app: 'github',
+      status,
+      error: null,
+      last_event_at: null,
+    }) as ProjectTrigger['event'];
+
+  test('a healthy schedule or webhook is live', () => {
+    expect(triggerBadgeState(trigger())).toBe('live');
+    expect(triggerBadgeState(trigger({ type: 'webhook' }))).toBe('live');
+  });
+  test('paused outranks every other state, even an event in error', () => {
+    expect(triggerBadgeState(trigger({ enabled: false }))).toBe('paused');
+    expect(triggerBadgeState(trigger({ type: 'event', enabled: false, event: ev('error') }))).toBe('paused');
+  });
+  test('an event trigger shows its subscription state', () => {
+    for (const status of ['needs_connection', 'error', 'pending'] as const) {
+      expect(triggerBadgeState(trigger({ type: 'event', event: ev(status) }))).toBe(status);
+    }
+    expect(triggerBadgeState(trigger({ type: 'event', event: ev('active') }))).toBe('live');
+  });
+  test('a failed last run is an error, whatever the kind', () => {
+    expect(triggerBadgeState(trigger({ last_status: 'failed' }))).toBe('error');
+    expect(triggerBadgeState(trigger({ type: 'event', event: ev('active'), last_status: 'failed' }))).toBe('error');
   });
 });

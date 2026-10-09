@@ -51,10 +51,13 @@ export function useEventAppConnect(projectId: string) {
   const canAdd =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE, { accountId }).allowed ===
     true;
-  // Same key and fetch as the Connectors page, so the two share one cache entry.
+  // Same key and fetch as the Connectors page, so the two share one cache entry. Only `add`
+  // reads it (to pick a free slug), and the route asserts connector read: a person who cannot
+  // add a connector never sends it.
   const connectors = useQuery({
     queryKey: qk.project.connectors(projectId),
     queryFn: () => listConnectors(projectId, { includeSchemas: false }),
+    enabled: canAdd,
     ...contract('inventory'),
   });
   const [connecting, setConnecting] = useState<string | null>(null);
@@ -70,7 +73,10 @@ export function useEventAppConnect(projectId: string) {
 
   const takenSlugs = () => (connectors.data?.connectors ?? []).map((c) => c.slug);
 
-  /** Adds the connector for an app the project does not have yet; resolves to its slug. */
+  /**
+   * Adds the connector for an app the project does not have yet, without signing in;
+   * resolves to its slug. The trigger composer calls it from Create, never while browsing.
+   */
   const add = useCallback(
     async (target: EventAppTarget): Promise<string> => {
       if (target.connector) return target.connector;
