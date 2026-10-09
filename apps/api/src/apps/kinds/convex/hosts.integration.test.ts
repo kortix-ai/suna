@@ -24,10 +24,10 @@ const seen: Array<{ port: string; method: string; path: string; token: string | 
 
 // Fake Convex: `/<port>/<path>` on one server, the port standing in for the
 // machine port Platinum's edge would route to. No token, no answer.
-// Explicit loopback for the fake servers: `server.url.origin` is a `localhost`
-// URL, and fetching it depends on the host resolving `localhost`, which some
-// environments (containers without a hosts entry) do not. `127.0.0.1` needs no
-// name resolution, here or anywhere.
+// Explicit IPv4 loopback for the fake servers: a `localhost` URL needs name
+// resolution (some containers have no hosts entry) and can resolve to ::1,
+// where the fake servers are unreachable (hermetic-test contract). `127.0.0.1`
+// needs no name resolution, here or anywhere.
 const convex = Bun.serve({
   port: 0,
   hostname: '127.0.0.1',
@@ -53,6 +53,9 @@ const convex = Bun.serve({
 const exposed: string[] = [];
 const platinum = Bun.serve({
   port: 0,
+  // Explicit IPv4 loopback: `localhost` can resolve to ::1, where the fake
+  // servers are unreachable (hermetic-test contract).
+  hostname: '127.0.0.1',
   async fetch(req) {
     const [, , , id, sub] = new URL(req.url).pathname.split('/');
     if (sub === 'expose') {

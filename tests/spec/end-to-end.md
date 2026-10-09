@@ -1190,13 +1190,14 @@ project read then lists `apps` with `enabled: true, operator_only: true`. A
 project writer creates a unique lower-case slug and machine policy; list/get
 return the stable public URL and active deployment pointer; every App carries
 `estimated_monthly_usd` (its machine 24/7 at list compute rates, `73.48` for
-1 vCPU / 2 GiB / 10 GiB); an always-on create or a run-mode, machine or budget
-patch with a budget below that estimate succeeds with
-`warnings[0].code = 'app_budget_below_always_on'`, and `warnings: []`
-otherwise; a create without `monthly_budget_usd` gets a derived budget: the
-24/7 estimate rounded up to a whole dollar (`74` for 1 vCPU / 2 GiB) when the
-App is always on, `5` on demand; a derived budget follows later machine and
-run-mode patches, a budget a person sent never moves; patch updates mutable policy; delete is soft and removes the App
+1 vCPU / 2 GiB / 10 GiB). Cost shape decides the budget: only an on-demand
+server App (`always_on: false`) has `monthly_budget_usd` (default `5`, the
+value sent otherwise, unmoved by a machine patch); an always-on App reports
+`monthly_budget_usd: null`, and a create or patch that sends a budget for it →
+`400 {code:'app_budget_not_applicable'}` with the 24/7 cost in the message;
+a patch to `always_on: false` sets the sent budget or `5`, a patch back to
+`always_on: true` clears it to `null`; `warnings: []` on every create and
+patch; patch updates mutable policy; delete is soft and removes the App
 from subsequent reads.
 A new App lists no backends (`backends: []`); patch sets the list by name,
 deduplicated, and get reads it back; an invalid backend name → 400.
@@ -1235,7 +1236,11 @@ not disclose that a teammate's private App exists); their `PATCH …/:appId` is
 **403** because a member holds no `project.app.write` at all, which discloses
 nothing either. Switching the
 policy to `project` puts the App in that teammate's list and makes it readable;
-`restricted` with their `member_ids` keeps them in; returning to `private` puts
+`restricted` with their `member_ids` keeps them in. A second App `restricted`
+to the owner alone is absent from the teammate's list and 404 on their get,
+while the owner lists both; every App in a list answers
+`viewer_can_access: true` (the list holds only Apps the caller may open, a
+project manager every App). Returning to `private` puts
 them back out. `password` is a PUBLIC-traffic control and stays team-visible.
 A `NONMEMBER` remains 403 on the whole surface.
 
@@ -1646,9 +1651,10 @@ Delete: without `confirm=<slug>` → `400 confirmation_required`; with it, a
 `final` snapshot is taken, the machine is stopped and kept 7 days
 (`retained_until`), the hosts answer 410, the sweep and the orphan reaper leave
 the machine alone, and the purge after retention deletes machine, snapshots and
-row. Budget: 80 % and 100 % of the monthly budget each alert once per month
-(`instance.budget_alert`, audit `app.budget.alert`) and the machine keeps
-running. Not asserted locally: a provisioned machine and the
+row. No budget: a `convex` App reports `monthly_budget_usd: null` and
+`instance.budget_alert: null`, a budget on create or patch →
+`400 app_budget_not_applicable`, and the sweep never stops the machine for its
+spend. Not asserted locally: a provisioned machine and the
 `app.credentials.read` audit row; they are verified on a deployed environment.
 
 `APP-10` Sign-in tokens and the bindings mount, black-box on a local App host.

@@ -6,7 +6,7 @@ description: "Build, deploy and operate Kortix Apps through the pre-authenticate
 # Kortix Apps
 
 A Kortix App is one project-scoped thing with a stable URL, an access policy,
-a size and a monthly budget. Every App has one `kind`, fixed at create:
+a size. An on-demand server App also has a monthly budget. Every App has one `kind`, fixed at create:
 
 | Kind | What it is | Capabilities |
 | --- | --- | --- |
@@ -208,7 +208,8 @@ Every session downloads the whole repository, so keep it small. Create
    (`npm create vite@latest apps/crm -- --template react-ts`),
    `npm install convex @kortix/sdk`. Wire `src/convex.ts` exactly as
    references/sign-in.md, "The browser", shows and wrap the app in
-   `ConvexProvider`. Import the API types from `apps/db/convex/_generated/api`
+   `ConvexProvider`. Read the signed-in member with a `members:me` query
+   (references/sign-in.md, "The browser"), never `useConvexAuth()`. Import the API types from `apps/db/convex/_generated/api`
    with a relative path.
 7. **Quality bar.** It must feel like a product, not a demo:
    - navigation for every entity; create, edit, delete for each; confirmation
@@ -289,10 +290,14 @@ data, not a screenshot alone.
 ## Cost
 
 - A static App costs nothing.
-- A server App bills its machine while it runs; a new always-on App gets its
-  24/7 estimate as its monthly budget and stops at it (references/web-server.md).
-- A `convex` App is always on, about $59 a month at the default size. Its
-  budget alerts at 80 % and 100 % and never stops it (references/convex.md).
+- An on-demand server App bills its machine while it runs and stops at its
+  monthly budget (default $5; references/web-server.md).
+- An always-on server App has no budget. It costs its machine 24/7: about $73 a
+  month at the default size (`estimated_monthly_usd`).
+- A `convex` App is always on, about $59 a month at the default size. It has no
+  budget and no alerts (references/convex.md).
+- `--budget` on an always-on or `convex` App answers
+  `400 app_budget_not_applicable`.
 
 Tell the user the cost of each App before you hand over.
 
