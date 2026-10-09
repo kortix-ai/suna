@@ -51,6 +51,13 @@ export { projectsApp } from './lib/app';
 export { decryptProjectSecret, encryptProjectSecret } from './secrets/envelope';
 export { currentInstanceId } from './instance-scope';
 
+// What account erasure deletes outside the database (consumed by
+// ../billing/services/account-deletion): each project's session files and its
+// Kortix-managed repo.
+export { sessionAttachmentStore } from './lib/session-attachments';
+export { deleteManagedProjectRepo } from './lib/project-deletion';
+export { isAlreadyNotRunning } from './reaping/policy';
+
 // Nested `projects.metadata` writes (consumed by ../feature-flags/write).
 export { metadataClearSubtreeKey, metadataMergeSubtree } from './lib/metadata-merge';
 

@@ -68,10 +68,16 @@ mock.module('../../../shared/ttl-memo', () => ({
       const key = opts.keyFn(...args);
       const hit = cache.get(key);
       if (hit) return hit;
-      const entry = opts.loader(...args).then((value: unknown) => {
-        if (opts.shouldCache && !opts.shouldCache(value, ...args)) cache.delete(key);
-        return value;
-      });
+      const entry = opts.loader(...args).then(
+        (value: unknown) => {
+          if (opts.shouldCache && !opts.shouldCache(value, ...args)) cache.delete(key);
+          return value;
+        },
+        (err: unknown) => {
+          cache.delete(key); // rejections are never cached — the next caller retries
+          throw err;
+        },
+      );
       cache.set(key, entry);
       return entry;
     };
