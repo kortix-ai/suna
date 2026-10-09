@@ -5,8 +5,7 @@ description: "Generative UI for Kortix: the agent writes typed UI blocks (cards,
 
 # Generative UI (`genui`)
 
-**Status: spec and implementation plan written (2026-10-09), awaiting Jay's review of the plan
-and its spec deltas (`references/plan.md` § Spec deltas). No product code exists yet.**
+**Status: SDK layer shipped (`@kortix/sdk/genui`, `/genui/react`). Runtime, web, mobile: see references/plan.md.**
 
 | Path | What it is |
 | --- | --- |

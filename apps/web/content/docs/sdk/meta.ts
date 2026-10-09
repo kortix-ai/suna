@@ -12,6 +12,7 @@ export default defineMeta({
     'backends',
     'connectors',
     'react',
+    'genui',
     'reference',
   ],
 });

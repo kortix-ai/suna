@@ -1,0 +1,40 @@
+---
+title: Generative UI
+description: Render the agent's cards, comparisons, charts, maps, and tabs in your own app.
+---
+
+The agent answers in markdown. When a project turns on **Generative UI**, the agent may add
+` ```openui ` blocks for structured content: a ranked recommendation, a comparison, a chart from
+tool data, places on a map. Prose stays the default; the agent uses a block only when the content
+has structure.
+
+## Render blocks
+
+`@kortix/sdk/genui/react` exports `GenuiBlock`, a headless renderer. You pass a component for each
+block name, or `defaultGenuiComponents` for unbranded HTML defaults.
+
+| Prop | Meaning |
+|---|---|
+| `code` | The fence body so far |
+| `version` | `genuiVersionFromClassName(className)` or `genuiVersionOf(tag)` |
+| `streaming` | The message is still streaming |
+| `components` | Block name → your component (`GenuiComponentProps`) |
+| `renderMarkdown` | Your markdown renderer, used for fallbacks |
+| `enabled` | `false` renders the block as markdown (a viewer setting) |
+| `onSettled` | One event per block: outcome, component names, timing. Never content |
+
+## Plain text hosts
+
+`genuiToMarkdown(text)` replaces every block with deterministic markdown. Charts become tables with a
+`Source:` line; maps become place lists; tabs and accordions expand.
+
+## Blocks
+
+Stack, Card, Stat, StatRow, Table, Compare, RankedList, BarChart, LineChart, PieChart, Map, Tabs,
+Accordion, Badge, Callout, Image, Link. Limits (counts, lengths) are enforced by the SDK; a block that
+breaks a limit is dropped and its siblings still render.
+
+## Safety
+
+Blocks hold data, never code. Every link and image URL must be absolute `http` or `https`. Generated
+UI cannot run tools or change state.

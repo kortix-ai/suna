@@ -80,6 +80,8 @@ try {
       tarballPath,
       'react@19',
       '@tanstack/react-query@5',
+      'zod@3.25.76',
+      '@openuidev/lang-core@0.3.1',
     ],
     workdir,
   );
@@ -112,6 +114,10 @@ try {
       "if (typeof k.billing.sessionCosts.list !== 'function') throw new Error('sessionCosts.list missing');",
       "if (typeof k.billing.sessionCosts.get !== 'function') throw new Error('sessionCosts.get missing');",
       "if (typeof k.session('project', 'session').cost !== 'function') throw new Error('session.cost missing');",
+      "const genui = await import('@kortix/sdk/genui');",
+      "if (genui.GENUI_SCHEMA_VERSION !== 1) throw new Error('genui: wrong schema version');",
+      "if (genui.genuiToMarkdown('```openui\\nroot = Stack([b])\\nb = Badge(\\\"ok\\\")\\n```') !== '[ok]') throw new Error('genui: markdown fallback broken in the published build');",
+      "await import('@kortix/sdk/genui/react');",
       "console.log('OK: @kortix/sdk imports and constructs from the packed tarball');",
     ].join('\n'),
   );
