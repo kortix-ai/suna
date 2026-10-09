@@ -33,6 +33,8 @@ flow(
     routes: [
       "PUT /v1/admin/api/projects/:id/features",
       "POST /v1/projects/:projectId/apps",
+      "GET /v1/projects/:projectId/apps/:appId",
+      "DELETE /v1/projects/:projectId/apps/:appId",
       "GET /v1/projects/:projectId/apps/:appId/snapshots",
       "POST /v1/projects/:projectId/apps/:appId/snapshots",
       "DELETE /v1/projects/:projectId/apps/:appId/snapshots/:snapshotId",
@@ -50,6 +52,8 @@ flow(
     const owner = ctx.client.as(ctx.P.OWNER);
     const projectParams = { projectId: project.id };
     let webAppId = "";
+    let convexAppId = "";
+    const convexSlug = `cvx-${ctx.fixtures.name("main").toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 40)}`.replace(/-+$/, "");
 
     await ctx.step("apps flag off: a convex create and every capability route answer 403 feature_disabled", async () => {
       await setFeatureAsOperator(ctx, project.id, "apps", null);
@@ -93,13 +97,14 @@ flow(
         .exists("$.code");
       const create = await owner.post(
         "/v1/projects/:projectId/apps",
-        { kind: "convex", slug: "main", name: "main", uses: [] },
+        { kind: "convex", slug: convexSlug, name: "main", uses: [] },
         { params: projectParams },
       );
       create.status([201, 409]);
       if (create.statusCode === 409) {
         create.body().has("$.code", "app_kind_unavailable");
       } else {
+        convexAppId = create.json<{ app_id: string }>().app_id;
         create
           .body()
           .has("$.kind", "convex")
@@ -156,6 +161,20 @@ flow(
       ).status(404);
       (await anon.get("/v1/backends/:backendId/jwks.json", { params: { backendId: UNKNOWN_ID } })).status(404);
       (await anon.get("/v1/backends/:backendId/jwks.json", { params: { backendId: "not-a-uuid" } })).status(400);
+    });
+
+    await ctx.step("a convex App delete needs its typed slug (400 confirmation_required), then answers 200 with retained_until", async () => {
+      if (!convexAppId) return;
+      const params = { ...projectParams, appId: convexAppId };
+      (await owner.del("/v1/projects/:projectId/apps/:appId", { params }))
+        .status(400)
+        .body()
+        .has("$.code", "confirmation_required");
+      (await owner.del("/v1/projects/:projectId/apps/:appId", { params, query: { confirm: convexSlug } }))
+        .status(200)
+        .body()
+        .exists("$.retained_until");
+      (await owner.get("/v1/projects/:projectId/apps/:appId", { params })).status(404);
     });
 
     await ctx.step("cleanup: delete the web App, clear the flag override", async () => {
