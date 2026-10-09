@@ -384,8 +384,10 @@ export function noteRunningConfig(
 }
 
 /**
- * `config_releases` is OFF for this project — per project, or platform-wide
- * through the operator kill switch. The API answered `403 feature_disabled`.
+ * Config releases are OFF for this project: the API answered `403
+ * feature_disabled`. A current API never does — config releases graduated out
+ * of the flag system in 2026-10 — so this is an API from before graduation (a
+ * self-host on an older release, or a rollback).
  *
  * This is the transition, and it must not strand a box that already runs a
  * release:
@@ -495,8 +497,8 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
   try {
     descriptor = await fetchConfigReleaseDescriptor(api)
   } catch (err) {
-    // Config releases are switched off for this project (spec, "Feature
-    // flag"). Not a failure: revert to the pre-release behaviour.
+    // An API from before config releases graduated has them off for this
+    // project. Not a failure: revert to the pre-release behaviour.
     if (isFeatureDisabledError(err)) return revertToPreReleaseConfig(deps, root, err.message)
     // API unreachable or older than the spec: the running config stays.
     return respond('failed', null, (err as Error).message)
@@ -657,8 +659,8 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
         : (staged) => prepareRelease(staged, manifest.config_dir, deps.managedSkillsDir),
     })
   } catch (err) {
-    // The archive route gates on the feature flag too, and it can be turned
-    // off between the two calls.
+    // An API from before graduation gates the archive route on the flag too,
+    // and it can be turned off between the two calls.
     if (isFeatureDisabledError(err)) return revertToPreReleaseConfig(deps, root, err.message)
     // Transport, disk or verification failure: nothing is wrong with the
     // release itself, so it is not quarantined. The next trigger retries.

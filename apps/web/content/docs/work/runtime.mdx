@@ -178,9 +178,11 @@ The `@kortix/sdk` type for `release` is `SessionConfigRelease`.
 
 The checkout pull is fast-forward only, on the session's own branch, so it discards nothing. Pass `--no-repo` on the CLI to skip it. To bring the CODE of `base_ref` into the session branch, use **Ask agent to sync**.
 
-#### Turning it off
+#### Try a config change before it merges
 
-Config releases are a per-project feature flag, **Config Releases**, in **Settings → Feature flags**. It is off by default. With the flag off, a session reads its config from `/workspace`: OpenCode reads the config directory there, and pi reads `skills/` there. No release is built, and the session header shows the earlier, etag-based state. The change takes effect at the next boot or start of each session's box; a running session keeps working until then. Turning it back on converges each session again at its next boot or start.
+Config releases are on for every project, and there is no switch to turn them off. A session runs the config of its own `base_ref`, so an edit in `/workspace` reaches it only through that branch. To try an agent, skill, or tool change before it merges, push it to a branch and create a session whose `base_ref` is that branch (`POST /v1/projects/:projectId/sessions` with `{"base_ref": "<branch>"}`). That session runs the branch's config. Sessions on the default branch keep running the default branch's config.
+
+Config releases were a per-project feature flag, **Config Releases**, until 2026-10. A value a project stored for it then has no effect.
 
 ## Layout inside the sandbox
 

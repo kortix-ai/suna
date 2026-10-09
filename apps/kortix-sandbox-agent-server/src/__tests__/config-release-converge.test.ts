@@ -1034,7 +1034,9 @@ describe('an unexpected conflict is an ordinary failure', () => {
 })
 
 /**
- * The `config_releases` feature flag, off (spec, "Feature flag").
+ * An API from before config releases graduated, with the `config_releases`
+ * flag off for the project. A current API never answers this; the daemon keeps
+ * handling it so a rolled-back or older API still gets a working box.
  *
  * The API answers `403 feature_disabled`. The box must then do what it did
  * before config releases existed: OpenCode reads the session's workspace
@@ -1042,7 +1044,7 @@ describe('an unexpected conflict is an ordinary failure', () => {
  * this very convergence and clears its boot pointer, so a later reboot does
  * not come back on the release. Nothing is quarantined, nothing retries.
  */
-describe('config_releases off: the box reverts to its workspace config dir', () => {
+describe('an API with config releases off: the box reverts to its workspace config dir', () => {
   test('a box on a release reverts, clears the pointer, and quarantines nothing', async () => {
     const release = baseRelease()
     serveRelease(api, release)
