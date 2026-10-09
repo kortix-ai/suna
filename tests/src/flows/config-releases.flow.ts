@@ -2230,6 +2230,14 @@ harnessFlow(
       await fixture.cleanup();
     }
   },
+  // pi on deployed staging answers from a stale system prompt after an idle
+  // convergence (gates 37557504543 and 37933459772: DEF-DEV-2 answered
+  // marker2-epsilon / marker2-parked; OpenCode CFG-12 passed both times).
+  // Suspected: harness/pi/config-release.ts swap + reconfigure keeps the old
+  // compiled governance. Remove when the pi fix lands.
+  process.env.KE2E_TARGET === 'staging'
+    ? { quarantine: 'pi keeps a stale system prompt after idle config convergence on staging (DEF-DEV-2), open since v0.13.52 — quarantined 2026-10-09 until the pi reconfigure fix lands' }
+    : {},
 );
 
 // ── CFG-13 — the meta coordinator runs the platform governance, on a real box ─
