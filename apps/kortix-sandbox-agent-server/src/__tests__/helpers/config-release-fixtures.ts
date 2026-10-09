@@ -9,7 +9,7 @@ import { createHash } from 'node:crypto'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { ConfigReleaseDescriptor, ConfigReleaseFile, ConfigReleaseSnapshot } from '@/services/config-release/descriptor'
+import type { ConfigReleaseDescriptor, ConfigReleaseFile, ConfigReleaseSnapshot } from '@/services/config-provider/descriptor'
 
 export function git(cwd: string, ...args: string[]): string {
   const r = spawnSync('git', args, { cwd, encoding: 'utf8' })
@@ -226,9 +226,9 @@ export function startFakeApi(token = 'sandbox-token'): FakeApi {
 }
 
 /**
- * The API's answer when the `config_releases` feature flag is off for the
- * project, or platform-wide (spec, "Feature flag"). Exactly what
- * `requireFeatureFlag` emits.
+ * The answer of an API from before config releases graduated, with the
+ * `config_releases` flag off for the project. Exactly what that API's
+ * `requireFeatureFlag` emitted.
  */
 export const FEATURE_DISABLED = {
   status: 403,

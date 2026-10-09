@@ -13,7 +13,7 @@ Every row in the [audit log](/docs/accounts#audit-log) carries an `action`: `dom
 - A route with two actions (`secret.strategy.update` or `secret.strategy.changed`) records the second when its handler records that event, for example only for a real change. That event, with its before and after state, is then the request's row.
 - Rows written before 2026-09-24 carry `METHOD /template` as their action. The web app and the CLI show them with the same titles.
 
-This page lists 724 route actions and 65 other events.
+This page lists 733 route actions and 65 other events.
 
 ## `account.`
 
@@ -563,6 +563,13 @@ This page lists 724 route actions and 65 other events.
 | --- | --- | --- |
 | `notification.device_token.delete` | Removed push notification device | `DELETE /v1/notifications/device-token/:token` |
 | `notification.device_token.register` | Registered push notification device | `POST /v1/notifications/device-token` |
+| `notification.inbox.list` | Viewed notifications | `GET /v1/notifications` |
+| `notification.inbox.mark_read` | Marked notifications read | `POST /v1/notifications/read` |
+| `notification.preferences.read` | Viewed notification preferences | `GET /v1/notifications/preferences` |
+| `notification.preferences.update` | Changed notification preferences | `PUT /v1/notifications/preferences` |
+| `notification.web_push.subscribe` | Registered browser for push notifications | `POST /v1/notifications/web-push/subscriptions` |
+| `notification.web_push.unsubscribe` | Removed browser push subscription | `DELETE /v1/notifications/web-push/subscriptions` |
+| `notification.web_push_key.read` | Read browser push key | `GET /v1/notifications/web-push/key` |
 
 ## `oauth.`
 
@@ -828,6 +835,8 @@ This page lists 724 route actions and 65 other events.
 | `session.update` | Updated session | `PATCH /v1/projects/:projectId/sessions/:sessionId` |
 | `session.warm.claim` | Claimed warm session sandbox | `POST /v1/projects/:projectId/sessions/warm/claim` |
 | `session.warm.create` | Warmed session sandbox | `POST /v1/projects/:projectId/sessions/warm` |
+| `session.watch.read` | Viewed session notification setting | `GET /v1/projects/:projectId/sessions/:sessionId/watch` |
+| `session.watch.update` | Changed session notification setting | `PUT /v1/projects/:projectId/sessions/:sessionId/watch` |
 
 ## `setup.`
 

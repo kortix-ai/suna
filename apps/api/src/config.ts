@@ -979,9 +979,9 @@ function validateEnv(): z.infer<typeof envSchema> {
   }
 
   // ── Config archives → the ONE object store ──────────────────────────────
-  // A project that turns on `config_releases` publishes config archives
-  // through the API's one object store (src/object-store/s3.ts); there is no
-  // second store and no fallback path that quietly writes somewhere else.
+  // Every project publishes config archives through the API's one object
+  // store (src/object-store/s3.ts); there is no second store and no fallback
+  // path that quietly writes somewhere else.
   // Unset ⇒ every archive request rebuilds from the Git mirror, every time,
   // for every box. A warning, not an error: the store is a cache, and a
   // container with a stale env block must still boot.

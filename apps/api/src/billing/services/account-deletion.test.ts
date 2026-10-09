@@ -114,6 +114,15 @@ const liveness = await import('../../shared/jwt-liveness');
 // The external stores (parked boxes, session files, managed repos) have their
 // own real-DB suite; here they would read the sandbox rows the fake db serves.
 mock.module('./account-erasure-stores', () => ({ deleteAccountExternalStores: async () => undefined }));
+// KRTX-1742: the requester's notification rows have their own real-DB suite
+// (notifications/cleanup.integration.test.ts); here only the call is observed.
+let notificationDataDeleted: Array<{ userId: string; authUserAlreadyDeleted: boolean }> = [];
+mock.module('../../notifications/cleanup', () => ({
+  deleteUserNotificationData: async (userId: string) => {
+    notificationDataDeleted.push({ userId, authUserAlreadyDeleted: deletedUsers.includes(userId) });
+  },
+  deleteMemberNotificationData: async () => undefined,
+}));
 mock.module('../../shared/supabase', () => ({
   getSupabase: () => ({
     auth: { admin: { deleteUser: async (id: string) => {
@@ -320,6 +329,7 @@ beforeEach(() => {
   scheduledRequests = [];
   completedRequests = [];
   deleteUserError = null;
+  notificationDataDeleted = [];
   liveness.__setJwtLivenessLoaderForTests(null);
 });
 
@@ -535,6 +545,12 @@ describe('deleteAccountImmediately — account data deletion', () => {
     expect(deletedUsers).toEqual([ME]);
   });
 
+  test("the requester's notification rows go with their login, before it", async () => {
+    await deleteAccountImmediately(ME, ME);
+    expect(notificationDataDeleted).toEqual([{ userId: ME, authUserAlreadyDeleted: false }]);
+    expect(deletedUsers).toEqual([ME]);
+  });
+
   test('a failed sweep aborts the deletion without dropping the auth identity', async () => {
     deleteError = new Error('sweep failed');
 
@@ -607,6 +623,7 @@ describe("deleting an account that is not the requester's personal account", () 
 
     expect(whereParams(swept(accounts))).toContain('acct-1');
     expect(deletedUsers).toEqual([]);
+    expect(notificationDataDeleted).toEqual([]);
     expect(whereParams(sandboxWhereArg)).toEqual(expect.arrayContaining(['acct-1']));
     expect(whereParams(sandboxWhereArg)).not.toContain(ME);
     expect(whereParams(sandboxWhereArg)).not.toContain('acct-2');

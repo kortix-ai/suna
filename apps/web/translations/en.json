@@ -597,7 +597,16 @@
         }
       },
       "testNotificationTitle": "Test Notification",
-      "testNotificationBody": "Notifications are working correctly!"
+      "testNotificationBody": "Notifications are working correctly!",
+      "enableDescriptionPush": "Shows notifications in this browser, also with every Kortix tab closed.",
+      "enableDescriptionDesktop": "Shows notifications from the desktop app while its window is open.",
+      "enableDescriptionBrowser": "Shows notifications in this browser while a Kortix tab is open.",
+      "notificationTypesDescription": "These choices apply on every phone and in every browser. The bell lists every notification.",
+      "push": "Push",
+      "email": "Email",
+      "channelSwitch": "{kind}: {channel}",
+      "preferencesLoadError": "Could not load your notification settings",
+      "retry": "Try again"
     },
     "git": {
       "updateFailed": "Failed to update repository",
@@ -1007,10 +1016,6 @@
         "pi_harness": {
           "name": "Pi Harness (in-sandbox)",
           "description": "Run sessions on the pi harness inside the session sandbox instead of OpenCode. Off, `runtime: pi` in the manifest still selects pi."
-        },
-        "config_releases": {
-          "name": "Config Releases",
-          "description": "Run sessions on the base branch's current agent config, served read-only, so a merged agent, skill, or tool reaches every running session. Off, a session reads its own workspace config folder."
         },
         "mcp": {
           "name": "MCP server",
@@ -2572,7 +2577,50 @@
     "settingsFailed": "Failed to update notification preferences",
     "enableAll": "Enable All",
     "disableAll": "Disable All",
-    "saveChanges": "Save Changes"
+    "saveChanges": "Save Changes",
+    "kind": {
+      "turn_done": "Turn finished",
+      "turn_error": "Turn failed",
+      "question": "Question",
+      "permission": "Permission request",
+      "shared": "Shared with you",
+      "automation_failed": "Failure alert",
+      "automation_recovered": "Recovery alert"
+    },
+    "kindDescription": {
+      "turn_done": "A turn ends.",
+      "turn_error": "A turn ends with an error.",
+      "question": "The agent asks a question and waits for the answer.",
+      "permission": "The agent asks for permission to run a tool.",
+      "shared": "Someone shares a session with you.",
+      "automation_failed": "A trigger or a reminder starts failing.",
+      "automation_recovered": "A failing trigger or reminder works again."
+    },
+    "bell": {
+      "label": "Notifications",
+      "unreadLabel": "Notifications: {count} unread",
+      "markAllRead": "Mark all as read",
+      "empty": "Notifications will show up here",
+      "loadError": "Could not load notifications",
+      "retry": "Try again",
+      "unread": "Unread",
+      "promptPush": "Get notified when Kortix is closed",
+      "promptBackground": "Get notified when Kortix is in the background",
+      "turnOn": "Turn on",
+      "dismiss": "Dismiss"
+    },
+    "arrival": {
+      "inProject": "{kind} in {project}",
+      "openSession": "Open session",
+      "openReminders": "Open reminders",
+      "openTriggers": "Open triggers"
+    },
+    "session": {
+      "mute": "Mute notifications",
+      "unmute": "Unmute notifications",
+      "muted": "Notifications muted",
+      "unmuted": "Notifications unmuted"
+    }
   },
   "modes": {
     "samplePrompts": "Sample prompts",
