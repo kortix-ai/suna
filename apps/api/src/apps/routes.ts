@@ -17,6 +17,7 @@ import { pauseComputeSession } from '../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../config';
 import { db } from '../shared/db';
 import { inspectDatabaseError } from '../shared/database-errors';
+import { readJsonObject } from '../shared/http-body';
 import {
   AppArtifactStorageUnavailableError,
   createAppArtifactUploadUrl,
@@ -404,8 +405,8 @@ async function startConvexResize(
 async function deleteConvexApp(c: Context<AppEnv>, projectId: string, app: typeof apps.$inferSelect): Promise<Response> {
   const admin = await authorizedProject(c, projectId, 'admin');
   if (admin instanceof Response) return admin;
-  const body = await c.req.json().catch(() => ({}));
-  const confirm = c.req.query('confirm') ?? (typeof body?.confirm === 'string' ? body.confirm : undefined);
+  const body = await readJsonObject(c);
+  const confirm = c.req.query('confirm') ?? (typeof body.confirm === 'string' ? body.confirm : undefined);
   if (confirm !== app.slug) {
     return c.json({
       error: `This App holds data. Type its slug to delete it: confirm=${app.slug}.`,

@@ -135,7 +135,10 @@ export async function parkAndUnparkBackends(projectId?: string): Promise<{ parke
  * keeps its data.
  */
 export async function deleteAccountBackends(accountId: string): Promise<number> {
-  const rows = await selectConvexRows().where(eq(apps.accountId, accountId));
+  // Two plain reads, no join: the account-deletion unit suites mock `db` with select/from/where only.
+  const owned = await db.select({ appId: apps.appId }).from(apps).where(and(eq(apps.accountId, accountId), eq(apps.kind, 'convex')));
+  if (owned.length === 0) return 0;
+  const rows = await selectConvexRows().where(inArray(appConvexInstances.appId, owned.map((app) => app.appId)));
   // `force`: the account goes whatever runs; the mark stops new operations.
   for (const row of rows) {
     if (row.status === 'deleted') await deleteBackend(row);
