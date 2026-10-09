@@ -26,6 +26,7 @@
 
 import React, { useState, useCallback, useMemo, useRef, useEffect, useLayoutEffect } from 'react';
 import { useProjectSessionConnect } from '@/lib/session/project-connect';
+import { markComposerFocus } from '@/lib/onboarding/composer-handoff';
 import { useProjectHomeSend } from '@/components/session/use-project-home-send';
 import { useProjectStack } from '@/components/session/use-project-stack';
 import { View } from 'react-native';
@@ -479,6 +480,13 @@ export function ProjectScreen() {
     [openThreadFromDrawer]
   );
 
+  // New session (the drawer's button, the Sessions page's pinned one): project
+  // home with the keyboard up, so the next thing is typing the prompt.
+  const startNewSession = useCallback(() => {
+    if (projectId) markComposerFocus(projectId);
+    returnHome();
+  }, [projectId, returnHome]);
+
   // The open session's parent: that parent's children start open in the drawer.
   const activeParentSessionId = activeProjectSession ? sessionParentId(activeProjectSession) : null;
 
@@ -497,7 +505,7 @@ export function ProjectScreen() {
         notificationsUnreadCount={notificationsUnreadCount}
         needsYouBySession={needsYouSessions}
         // New session opens project home: its composer starts the session.
-        onNewSession={returnHome}
+        onNewSession={startNewSession}
         onOpenProjectSession={openSessionFromDrawer}
         onOpenSubsession={openSubsessionFromDrawer}
         onNavigateRoute={navigateProjectRoute}
@@ -517,7 +525,7 @@ export function ProjectScreen() {
       notificationCenterOn,
       notificationsUnreadCount,
       needsYouSessions,
-      returnHome,
+      startNewSession,
       openSessionFromDrawer,
       openSubsessionFromDrawer,
       navigateProjectRoute,
@@ -815,7 +823,7 @@ export function ProjectScreen() {
       viewKey,
       homeKey,
       goHome,
-      newSession: returnHome,
+      newSession: startNewSession,
       onViewCovered: handleViewCovered,
       projectId,
       // Stable: a useCallback whose only dependency is a zustand store action.
@@ -833,7 +841,7 @@ export function ProjectScreen() {
       viewKey,
       homeKey,
       goHome,
-      returnHome,
+      startNewSession,
       handleViewCovered,
       projectId,
       handleOpenProjectSession,
