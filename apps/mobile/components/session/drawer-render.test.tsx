@@ -214,13 +214,29 @@ describe('ProjectLeftDrawer renders', () => {
     expect(selected[0]).toStartWith('Child 6, sub-session of ');
   });
 
-  test('the Notifications pill shows the unread count and opens the inbox', async () => {
-    navigated.length = 0;
+  test('notification_center off: the pills from before KRTX-1742, no Notifications', async () => {
     await act(async () => {
       tree = create(
         React.createElement(Drawer.ProjectLeftDrawer, { projectId: 'proj', ...handlers, open: true, notificationsUnreadCount: 3 })
       );
     });
+    expect([...new Set(navPills.map((props) => props.label))]).toEqual(['Search', 'Files', 'Review', 'Apps']);
+  });
+
+  test('the Notifications pill shows the unread count and opens the inbox', async () => {
+    navigated.length = 0;
+    await act(async () => {
+      tree = create(
+        React.createElement(Drawer.ProjectLeftDrawer, {
+          projectId: 'proj',
+          ...handlers,
+          open: true,
+          notificationsEnabled: true,
+          notificationsUnreadCount: 3,
+        })
+      );
+    });
+    expect([...new Set(navPills.map((props) => props.label))]).toEqual(['Search', 'Files', 'Review', 'Notifications', 'Apps']);
     const pill = navPills.filter((props) => props.label === 'Notifications').at(-1);
     expect(pill.accessibilityLabel).toBe('Notifications, 3 unread');
     expect(pill.trailing.props.count).toBe(3);
@@ -230,7 +246,9 @@ describe('ProjectLeftDrawer renders', () => {
 
   test('with nothing unread the pill reads its name alone', async () => {
     await act(async () => {
-      tree = create(React.createElement(Drawer.ProjectLeftDrawer, { projectId: 'proj', ...handlers, open: true }));
+      tree = create(
+        React.createElement(Drawer.ProjectLeftDrawer, { projectId: 'proj', ...handlers, open: true, notificationsEnabled: true })
+      );
     });
     const pill = navPills.filter((props) => props.label === 'Notifications').at(-1);
     expect(pill.accessibilityLabel).toBe('Notifications');

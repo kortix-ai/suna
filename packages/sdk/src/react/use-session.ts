@@ -987,6 +987,18 @@ export interface UseSessionOptions {
    * sent at once. Needs `browserPresence`.
    */
   presenceAlerts?: boolean;
+  /**
+   * End the presence lease when the page closes or enters the back/forward
+   * cache, so a turn that ends right after the tab closes still notifies:
+   * `pagehide` reports absent, and every absent report is sent with
+   * `keepalive`, so it outlives the page. Default false, the presence before
+   * KRTX-1742: no `pagehide` report and no `keepalive`. A closing tab still
+   * turns hidden and reports absent, but the browser may cancel that request
+   * as the page unloads; the lease then lives to its 90 s expiry. Pass the
+   * project's `notification_center` flag. A change applies at once, with no
+   * new report. Needs `browserPresence`.
+   */
+  presencePageExit?: boolean;
   /** Long-poll budget (ms) the client requests on `/start`; the server clamps it. */
   waitMs?: number;
   /**
@@ -1096,6 +1108,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     subscribeMessages = true,
     browserPresence = false,
     presenceAlerts = false,
+    presencePageExit = false,
   } = options;
 
   // One presence id per mounted view. The session stream carries it, and the
@@ -1106,19 +1119,24 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // The flag rides on the reporter, not on the effect's deps: a dep change
   // would stop the watcher (an absent PUT) and start it again (KRTX-1742).
   const presenceAlertsRef = useRef(presenceAlerts);
+  const presencePageExitRef = useRef(presencePageExit);
   const presenceReporterRef = useRef<ReturnType<typeof presenceReporter> | null>(null);
   useEffect(() => {
     if (!browserPresence || !presenceTabId || !projectId || !sessionId) return;
     const tab_id = presenceTabId;
     const handle = createKortix(platformConfig()).session(projectId, sessionId);
+    // Without page exit, an absent PUT goes without `keepalive`, as before
+    // KRTX-1742: a closing page may cancel it, and the lease then expires.
     const reporter = presenceReporter(({ active, alerts }) => {
-      void handle.presence({ tab_id, active, alerts }).catch(() => {});
+      const keepalive = !active && presencePageExitRef.current;
+      void handle.presence({ tab_id, active, alerts }, { keepalive }).catch(() => {});
     }, presenceAlertsRef.current);
     presenceReporterRef.current = reporter;
     const stop = watchHumanPresence(
       { doc: document, win: window },
       reporter.report,
       () => sessionStreamConnected(projectId, sessionId),
+      () => presencePageExitRef.current,
     );
     return () => {
       presenceReporterRef.current = null;
@@ -1129,6 +1147,9 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     presenceAlertsRef.current = presenceAlerts;
     presenceReporterRef.current?.setAlerts(presenceAlerts);
   }, [presenceAlerts]);
+  useEffect(() => {
+    presencePageExitRef.current = presencePageExit;
+  }, [presencePageExit]);
 
   // 1. Drive /start until the runtime is ready (the server long-polls each tick).
   const startEnabled = enabled && !!projectId && !!sessionId;

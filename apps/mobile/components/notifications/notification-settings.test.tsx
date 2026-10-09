@@ -4,10 +4,12 @@ import React from 'react';
 import { act, create } from 'react-test-renderer';
 import { readFileSync } from 'node:fs';
 
-// Settings → Notifications (app/(settings)/notifications.tsx, KRTX-1742): this
-// phone's two switches stay on the phone; the 7 Push switches are the user's
-// record on the server; no Email switch on mobile. Real: the kinds, the kind
-// labels, this phone's store. Every other import is a stub.
+// Settings → Notifications (app/(settings)/notifications.tsx, KRTX-1742).
+// Without a `notification_center` project: the page from before KRTX-1742,
+// this phone's switches only, no request. With one: this phone's two switches,
+// then the 7 Push switches from the user's record (a session kind ANDed with
+// this phone's switch); no Email switch on mobile. Real: the kinds, the kind
+// labels, the push rules, this phone's store. Every other import is a stub.
 
 const SCREEN = `${import.meta.dir}/../../app/(settings)/notifications.tsx`;
 const source = readFileSync(SCREEN, 'utf8');
@@ -16,6 +18,7 @@ const Empty = () => null;
 
 let record: any;
 let recordOptions: any;
+let centerOn = false;
 let rows: any[] = [];
 let groups: string[] = [];
 const calls: { name: string; args: unknown[] }[] = [];
@@ -50,8 +53,16 @@ const fakes: Record<string, Record<string, unknown>> = {
   '@/components/kortix/toast-provider': { useToast: () => ({ error: spy('toastError') }) },
   '@/contexts': { useAuthContext: () => ({ user: { id: 'user-1' } }) },
   '@/lib/haptics': { haptics: { tap() {}, selection() {} } },
+  '@/lib/notifications/registration': { carryOverLegacyKinds: async () => spy('carryOver')() },
+  '@/lib/projects/hooks': { useHasNotificationCenterProject: () => centerOn },
 };
-const real = new Set(['react', '@kortix/sdk', '@/lib/notifications/inbox', '@/stores/notification-store']);
+const real = new Set([
+  'react',
+  '@kortix/sdk',
+  '@/lib/notifications/inbox',
+  '@/lib/notifications/push',
+  '@/stores/notification-store',
+]);
 for (const [, names, name] of source.matchAll(/import\s+(?:type\s+)?(?:\w+\s*,\s*)?\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/gs)) {
   if (real.has(name)) continue;
   const values: Record<string, unknown> = { ...fakes[name] };
@@ -89,13 +100,17 @@ function recordWith(extra: Record<string, unknown> = {}) {
   };
 }
 
+const PHONE = { enabled: true, onCompletion: true, onError: true, onQuestion: true, onPermission: true, playSound: true };
+
 let tree: any;
 beforeEach(() => {
   calls.length = 0;
   rows = [];
   groups = [];
   record = recordWith();
-  useNotificationStore.setState({ preferences: { enabled: true, playSound: true } });
+  recordOptions = undefined;
+  centerOn = true;
+  useNotificationStore.setState({ preferences: PHONE });
 });
 afterEach(async () => {
   if (tree) await act(async () => tree.unmount());
@@ -111,10 +126,60 @@ async function render() {
 }
 const row = (label: string) => rows.filter((props) => props.label === label).at(-1);
 
-describe('Settings → Notifications', () => {
+describe('Settings → Notifications without a notification_center project', () => {
+  beforeEach(() => {
+    centerOn = false;
+  });
+
+  test("the page from before KRTX-1742: this phone's 4 per-kind switches, no request", async () => {
+    useNotificationStore.setState({ preferences: { ...PHONE, onError: false } });
+    await render();
+    expect(recordOptions).toBeUndefined();
+    expect(seen('carryOver')).toEqual([]);
+    expect(groups).toEqual(['General', 'Notification types', 'This device']);
+    expect(rows.map((props) => props.label)).toEqual([
+      'Notifications',
+      'Play sound',
+      'Task completions',
+      'Errors',
+      'Questions',
+      'Permission requests',
+      'Device settings',
+    ]);
+    expect(row('Errors').right.props.checked).toBe(false);
+    expect(row('Questions').right.props.checked).toBe(true);
+  });
+
+  test('a switch changes this phone only', async () => {
+    await render();
+    await act(async () => row('Questions').right.props.onCheckedChange(false));
+    await act(async () => row('Play sound').right.props.onCheckedChange(false));
+    expect(useNotificationStore.getState().preferences).toEqual({ ...PHONE, onQuestion: false, playSound: false });
+    expect(seen('update')).toEqual([]);
+  });
+
+  test('with this phone off, Play sound and the per-kind switches hide', async () => {
+    useNotificationStore.setState({ preferences: { ...PHONE, enabled: false } });
+    await render();
+    expect(groups).toEqual(['General', 'This device']);
+    expect(rows.map((props) => props.label)).toEqual(['Notifications', 'Device settings']);
+  });
+
+  test('a flag-on project appears: the page switches to the record', async () => {
+    await render();
+    expect(groups).toEqual(['General', 'Notification types', 'This device']);
+    centerOn = true;
+    await render();
+    expect(groups).toEqual(['General', 'Push', 'This device']);
+    expect(recordOptions).toEqual({ userId: 'user-1' });
+  });
+});
+
+describe('Settings → Notifications with a notification_center project', () => {
   test("this phone's switches, then one Push switch per kind from the user's record, no Email", async () => {
     await render();
     expect(recordOptions).toEqual({ userId: 'user-1' });
+    expect(seen('carryOver')).toHaveLength(1);
     expect(groups).toEqual(['General', 'Push', 'This device']);
     expect(rows.map((props) => props.label)).toEqual([
       'Notifications',
@@ -133,11 +198,31 @@ describe('Settings → Notifications', () => {
     expect(row('Recovery alert').right.props.checked).toBe(false);
   });
 
-  test('a Push switch saves that kind on the server', async () => {
+  test("a session kind shows on only when the record and this phone's switch are both on", async () => {
+    useNotificationStore.setState({ preferences: { ...PHONE, onQuestion: false, onError: false } });
+    await render();
+    // Record on, phone off.
+    expect(row('Question').right.props.checked).toBe(false);
+    // Record off, phone off.
+    expect(row('Turn failed').right.props.checked).toBe(false);
+    // Record on, phone on.
+    expect(row('Turn finished').right.props.checked).toBe(true);
+    // A new kind has no phone switch: the record alone.
+    expect(row('Shared with you').right.props.checked).toBe(true);
+  });
+
+  test("a session-kind switch saves the record and this phone's switch; a new kind saves the record", async () => {
+    useNotificationStore.setState({ preferences: { ...PHONE, onError: false } });
     await render();
     await act(async () => row('Turn failed').right.props.onCheckedChange(true));
     await act(async () => row('Turn finished').right.props.onCheckedChange(false));
-    expect(seen('update')).toEqual([[{ kinds: { turn_error: { push: true } } }], [{ kinds: { turn_done: { push: false } } }]]);
+    await act(async () => row('Recovery alert').right.props.onCheckedChange(true));
+    expect(seen('update')).toEqual([
+      [{ kinds: { turn_error: { push: true } } }],
+      [{ kinds: { turn_done: { push: false } } }],
+      [{ kinds: { automation_recovered: { push: true } } }],
+    ]);
+    expect(useNotificationStore.getState().preferences).toEqual({ ...PHONE, onCompletion: false });
     expect(seen('toastError')).toEqual([]);
   });
 
@@ -155,14 +240,14 @@ describe('Settings → Notifications', () => {
   test("this phone's switches stay on the phone", async () => {
     await render();
     await act(async () => row('Play sound').right.props.onCheckedChange(false));
-    expect(useNotificationStore.getState().preferences).toEqual({ enabled: true, playSound: false });
+    expect(useNotificationStore.getState().preferences).toEqual({ ...PHONE, playSound: false });
     await act(async () => row('Notifications').right.props.onCheckedChange(false));
     expect(useNotificationStore.getState().preferences.enabled).toBe(false);
     expect(seen('update')).toEqual([]);
   });
 
   test('with this phone off, Play sound and the Push switches hide', async () => {
-    useNotificationStore.setState({ preferences: { enabled: false, playSound: true } });
+    useNotificationStore.setState({ preferences: { ...PHONE, enabled: false } });
     await render();
     expect(groups).toEqual(['General', 'This device']);
     expect(rows.map((props) => props.label)).toEqual(['Notifications', 'Device settings']);

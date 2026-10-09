@@ -1,13 +1,14 @@
 // Reading the notification inbox on PostgreSQL (KRTX-1742): a row shows only
-// while its reader may still open what it names (share, project role, account
-// membership, MFA step-up, tombstone, trigger read); the session title is the
-// live one; the unread count covers the newest 100 unread rows after the
-// filter; pages walk back by notification id; marking read never reaches
-// another user's rows. Real: the account and project roles, the IAM project
-// list rule, the session grants.
+// while its project has the `notification_center` flag on and its reader may
+// still open what it names (share, project role, account membership, MFA
+// step-up, tombstone, trigger read); the session title is the live one; the
+// unread count covers the newest 100 unread rows after the filter; pages walk
+// back by notification id; marking read never reaches another user's rows.
+// Real: the account and project roles, the IAM project list rule, the session
+// grants, the project flag.
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
-import { accountMembers, accounts, notifications, projectMembers, projectSessions } from '@kortix/db';
-import { and, eq, sql } from 'drizzle-orm';
+import { accountMembers, accounts, notifications, projectMembers, projectSessions, projects } from '@kortix/db';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { setSessionSharing } from '../connectors/share';
 import { clearAuthorizeCaches } from '../iam/authorize';
 import { db } from '../shared/db';
@@ -35,8 +36,11 @@ const CREATOR = crypto.randomUUID();
 const MEMBER = crypto.randomUUID();
 const ACCOUNT_ONLY = crypto.randomUUID();
 const users = [OWNER, CREATOR, MEMBER, ACCOUNT_ONLY];
+const FLAG_ON = { experimental: { notification_center: true } };
 
 let project: SeededProject;
+/** Same account and members, `notification_center` never turned on. */
+let flagOffProject: SeededProject;
 
 async function seedRow(userId: string, values: Partial<typeof notifications.$inferInsert> = {}): Promise<string> {
   const [row] = await db
@@ -53,8 +57,8 @@ async function seedRow(userId: string, values: Partial<typeof notifications.$inf
   return row!.id;
 }
 
-async function projectSession(createdBy: string, metadata: Record<string, unknown> = {}): Promise<string> {
-  const sessionId = await seedSession(project, createdBy);
+async function projectSession(createdBy: string, metadata: Record<string, unknown> = {}, inProject = project): Promise<string> {
+  const sessionId = await seedSession(inProject, createdBy);
   await db.update(projectSessions).set({ visibility: 'project', metadata }).where(eq(projectSessions.sessionId, sessionId));
   return sessionId;
 }
@@ -66,7 +70,8 @@ async function readAtOf(id: string): Promise<Date | null> {
 
 withDb('notification inbox read', () => {
   beforeAll(async () => {
-    project = await seedProject(`inbox-${crypto.randomUUID().slice(0, 8)}`);
+    project = await seedProject(`inbox-${crypto.randomUUID().slice(0, 8)}`, { metadata: FLAG_ON });
+    flagOffProject = await seedProject(`inbox-off-${crypto.randomUUID().slice(0, 8)}`, { accountId: project.account_id });
     const user = (id: string) =>
       sql`(${id}::uuid, ${`inbox-${id.slice(0, 8)}@example.test`}, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated')`;
     await db.execute(sql`
@@ -81,6 +86,8 @@ withDb('notification inbox read', () => {
     await insertIntoView(db, projectMembers, [
       { accountId: project.account_id, projectId: project.project_id, userId: CREATOR, projectRole: 'member' },
       { accountId: project.account_id, projectId: project.project_id, userId: MEMBER, projectRole: 'member' },
+      { accountId: project.account_id, projectId: flagOffProject.project_id, userId: CREATOR, projectRole: 'member' },
+      { accountId: project.account_id, projectId: flagOffProject.project_id, userId: MEMBER, projectRole: 'member' },
     ]);
   }, 20_000);
 
@@ -92,8 +99,51 @@ withDb('notification inbox read', () => {
   afterAll(async () => {
     if (!project) return;
     await db.delete(notifications).where(eq(notifications.accountId, project.account_id));
-    await removeSeeded([project]);
+    await removeSeeded([project, flagOffProject]);
     await db.execute(sql`DELETE FROM auth.users WHERE id IN (${sql.join(users.map((id) => sql`${id}::uuid`), sql`, `)})`);
+  });
+
+  test('a row of a project with the notification_center flag off is not listed, counted or digested', async () => {
+    const onSession = await projectSession(CREATOR);
+    const offSession = await projectSession(CREATOR, {}, flagOffProject);
+    const shown = await seedRow(MEMBER, { sessionId: onSession });
+    const hidden = [
+      await seedRow(MEMBER, { projectId: flagOffProject.project_id, sessionId: offSession }),
+      await seedRow(MEMBER, { projectId: flagOffProject.project_id, kind: 'automation_failed', triggerSlug: 'nightly' }),
+    ];
+
+    const page = await listInbox(MEMBER, { limit: 20 });
+    expect(page.notifications.map((n) => n.id)).toEqual([shown]);
+    expect(page.unread_count).toBe(1);
+    expect(await unreadCount(MEMBER)).toBe(1);
+    expect((await markInboxRead(MEMBER, { ids: [shown] })).unread_count).toBe(0);
+    // The digest's filter: no MFA step-up, same flag rule.
+    const stored = await db.select().from(notifications).where(inArray(notifications.notificationId, hidden));
+    expect(stored).toHaveLength(2);
+    expect(await filterVisibleNotificationRows(MEMBER, stored, { skipMfaGate: true })).toEqual([]);
+  });
+
+  test('turning the notification_center flag off hides the project\'s rows; turning it on shows them again', async () => {
+    const sessionId = await projectSession(CREATOR);
+    const sessionRow = await seedRow(MEMBER, { sessionId });
+    const automationRow = await seedRow(MEMBER, { kind: 'automation_failed', triggerSlug: 'nightly' });
+    const newestFirst = [sessionRow, automationRow].sort().reverse();
+    expect((await listInbox(MEMBER, { limit: 20 })).notifications.map((n) => n.id)).toEqual(newestFirst);
+
+    await db.update(projects).set({ metadata: { experimental: { notification_center: false } } }).where(eq(projects.projectId, project.project_id));
+    try {
+      const page = await listInbox(MEMBER, { limit: 20 });
+      expect(page.notifications).toEqual([]);
+      expect(page.unread_count).toBe(0);
+      expect(page.next_before).toBeNull();
+      expect(await unreadCount(MEMBER)).toBe(0);
+    } finally {
+      await db.update(projects).set({ metadata: FLAG_ON }).where(eq(projects.projectId, project.project_id));
+    }
+    // Hidden, never deleted or marked read.
+    const page = await listInbox(MEMBER, { limit: 20 });
+    expect(page.notifications.map((n) => n.id)).toEqual(newestFirst);
+    expect(page.unread_count).toBe(2);
   });
 
   test('a revoked share hides the row from the list and the unread count', async () => {

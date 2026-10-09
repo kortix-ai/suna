@@ -214,15 +214,21 @@ mock.module('../lib/trigger-run-outcome', () => ({
 }));
 
 const notified: Array<Record<string, unknown>> = [];
+// The real notifier resolves the context thunk only for a flag-on project
+// (notifications/session-push.ts); this stand-in always resolves it.
 mock.module('../../notifications/session-push', () => ({
   turnEndPushType: () => pushType,
-  notifySessionEvent: async (event: Record<string, unknown>) => {
+  notifySessionEvent: async (
+    event: Record<string, unknown>,
+    options: { context?: () => Promise<Record<string, unknown>> } = {},
+  ) => {
     order.push('notify');
-    notified.push(event);
+    notified.push({ ...event, ...(options.context ? await options.context() : {}) });
   },
 }));
 
-// KRTX-1742: the turn end resolves who prompted the turn before it notifies.
+// KRTX-1742: the turn end hands the notifier a thunk that resolves who
+// prompted the turn.
 const contextLookups: Array<{ session: Record<string, unknown>; turnMessageId: string | null }> = [];
 mock.module('../lib/notification-recipients', () => ({
   turnEndNotificationContext: async (session: Record<string, unknown>, turnMessageId: string | null) => {

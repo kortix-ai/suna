@@ -9,7 +9,7 @@ import { AppAccountUnfundedError, AppLimitError } from './limits';
 import { AppHostingProvider } from './hosting';
 import { enqueueCurrentAppRuntime } from './deployment-worker';
 import { authorizeAppRequest, resolveAppViewerUserId, bindAppViewerSession, appViewerEndpointResponse,
-  appBackendTokenResponse, appViewerContextHeader } from './public-proxy-access';
+  appTokenResponse, appViewerContextHeader } from './public-proxy-access';
 import { resolveAppRequest, verifyAppEdgeRequest } from './public-proxy-edge';
 import { appPublicStatusResponse, publicDeploymentStatus, appPublicBudgetResponse, appPublicUnavailableResponse, appProviderStoppedResponse, appColdStartUpstreamResponse } from './public-proxy-status';
 import { loadPublicAppState, loadPublicApp, ensureAppRuntimeRunning, appRuntimeNeedsWake } from './public-proxy-runtime';
@@ -101,8 +101,13 @@ async function routeAppPublicRequest(
   if (url.pathname === '/_kortix/viewer') {
     return appViewerEndpointResponse(request, url, gateApp);
   }
-  if (url.pathname === '/_kortix/backend-token') {
-    return appBackendTokenResponse(request, url, gateApp);
+  if (url.pathname === '/_kortix/token') {
+    return appTokenResponse(request, url, gateApp);
+  }
+  // The bindings mount: an App it uses (./bindings.ts). Loaded on use, like the links graph.
+  if (url.pathname.startsWith('/_kortix/apps/')) {
+    const { appBindingResponse } = await import('./bindings');
+    return appBindingResponse(request, url, matched.publicHost, gateApp);
   }
   if (forwardApi && url.pathname.startsWith(`${APP_API_PROXY_PREFIX}/`)) {
     return appApiProxyResponse(request, url, matched.publicHost, gateApp, forwardApi);

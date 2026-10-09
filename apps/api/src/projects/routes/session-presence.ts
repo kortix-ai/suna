@@ -2,6 +2,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { auth, errors, json } from '../../openapi';
 import { PROJECT_ACTIONS } from '../../iam';
 import { callerKortixSessionId } from '../../middleware/caller-session';
+import { notificationsEnabled } from '../../notifications/enabled';
 import { markSessionNotificationsRead } from '../../notifications/inbox-read';
 import { assertProjectCapability, loadProjectForUser, loadVisibleSession, projectCapabilityAllowed, sessionIsTombstoned } from '../lib/access';
 import { projectsApp } from '../lib/app';
@@ -20,7 +21,7 @@ export function registerSessionPresenceRoutes(): void {
   projectsApp.openapi(createRoute({
     method: 'put', path: '/{projectId}/sessions/{sessionId}/presence', tags: ['sessions'],
     summary: 'Renew a browser tab presence lease', ...auth,
-    description: 'active=true holds a 90 s lease for this tab and marks the caller\'s notifications of this session read; active=false drops the lease.',
+    description: 'active=true holds a 90 s lease for this tab and, with the project\'s notification_center flag on, marks the caller\'s notifications of this session read; active=false drops the lease.',
     request: { params: z.object({ projectId: z.string().uuid(), sessionId: z.string() }), body: { required: true, content: { 'application/json': { schema: PresenceBody } } } },
     responses: { 200: json(z.object({ ok: z.boolean() }), 'Presence updated'), ...errors(400, 403, 404) },
   }), async (c) => {
@@ -35,7 +36,8 @@ export function registerSessionPresenceRoutes(): void {
     if (active) {
       await upsertSessionPresence(loaded.userId, sessionId, tabId, alerts === true);
       // KRTX-1742: a person looking at the session has seen what it notified.
-      await markSessionNotificationsRead(loaded.userId, sessionId);
+      // Only with the `notification_center` flag on.
+      if (notificationsEnabled(loaded.row.metadata)) await markSessionNotificationsRead(loaded.userId, sessionId);
       // KRTX-1729: a person who may start the session keeps its computer awake,
       // by the idle grace. A read-only viewer's lease only routes pushes.
       if (await projectCapabilityAllowed(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_START)) {

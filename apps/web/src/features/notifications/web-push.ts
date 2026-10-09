@@ -2,9 +2,13 @@
  * Web Push for this browser (KRTX-1742): the service worker (`public/sw.js`),
  * the push subscription, and its record on the API.
  *
- * `NotificationHost` calls `syncWebPush` whenever browser notifications are
- * turned on or off; sign-out calls `stopWebPush`. Nothing here toasts: a
- * failure is logged once, and the bell and in-page notifications still work.
+ * `NotificationHost` drives it. While the `notification_center` flag is on it
+ * subscribes (`ensureWebPush`). On any page it unsubscribes when browser
+ * notifications are turned off (`syncWebPush(false)`), reads whether this
+ * browser holds a subscription (`detectWebPush`), and registers it again after
+ * the MFA step-up (`reregisterWebPush`). Sign-out calls `stopWebPush`. Nothing
+ * here toasts: a failure is logged once, and the bell and in-page
+ * notifications still work.
  */
 
 import { isDesktop } from '@/lib/desktop';
@@ -75,10 +79,16 @@ function sameKey(current: ArrayBuffer | null | undefined, key: Uint8Array): bool
 }
 
 let subscribed = false;
+/**
+ * The person this page load registered the subscription for. A remount of the
+ * host then sends nothing. Null before, after an unsubscribe, or after a failure.
+ */
+let registeredFor: string | null = null;
 
 /**
- * True while the API holds this browser's subscription. A renderer without one
- * (the desktop app, a browser without Web Push) raises its own OS notifications
+ * True while this browser holds a subscription the API accepts: registered in
+ * this page load, or found by `detectWebPush`. A renderer without one (the
+ * desktop app, a browser without Web Push) raises its own OS notifications
  * for new inbox rows instead.
  */
 export function hasWebPushSubscription(): boolean {
@@ -143,7 +153,55 @@ let queue: Promise<void> = Promise.resolve();
  * a time, in call order. Never rejects.
  */
 export function syncWebPush(want: boolean): Promise<void> {
+  if (!want) registeredFor = null;
   queue = queue.then(want ? subscribe : unsubscribe).catch(warnOnce);
+  return queue;
+}
+
+/**
+ * Subscribe this browser for `userId`, once per person and page load: a
+ * remount of the host for the same person sends nothing.
+ */
+export function ensureWebPush(userId: string): Promise<void> {
+  if (registeredFor === userId) return queue;
+  registeredFor = userId;
+  queue = queue.then(subscribe).catch((error: unknown) => {
+    registeredFor = null;
+    warnOnce(error);
+  });
+  return queue;
+}
+
+/**
+ * The MFA step-up: register this browser's existing subscription again, now
+ * at aal2. A browser that never subscribed sends nothing.
+ */
+export function reregisterWebPush(): Promise<void> {
+  queue = queue
+    .then(async () => {
+      const registration = await navigator.serviceWorker.getRegistration();
+      if (await registration?.pushManager.getSubscription()) await subscribe();
+    })
+    .catch(warnOnce);
+  return queue;
+}
+
+/**
+ * Whether this browser holds a deliverable subscription, read from the
+ * browser alone (no request). A tab on a flag-off page never registers, but
+ * its copy of a flag-on project's notification must still go through the
+ * service worker. A registration in this page load wins.
+ */
+export function detectWebPush(): Promise<void> {
+  queue = queue
+    .then(async () => {
+      if (registeredFor !== null) return;
+      const registration = await navigator.serviceWorker.getRegistration();
+      const subscription = await registration?.pushManager.getSubscription();
+      const input = subscription ? subscriptionInput(subscription.toJSON()) : null;
+      subscribed = input !== null && deliverable(input);
+    })
+    .catch(warnOnce);
   return queue;
 }
 
