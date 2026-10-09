@@ -1,4 +1,4 @@
-# Convex patterns for Kortix backends
+# Convex patterns for convex Apps
 
 Short, correct patterns. `convex/_generated/ai/guidelines.md` (from
 `npx convex ai-files install`) is the full rulebook; read it first.
@@ -109,8 +109,7 @@ export const move = mutation({
 
 When Kortix has a connector for the system (Gmail, a CRM, an OpenAPI or MCP
 server), call it through `@kortix/sdk` instead of a raw API key: the gateway
-applies the project's policy, approvals and audit (SKILL.md, "Call Kortix and
-connectors from the backend"). Use a raw `fetch` with a key only for an API
+applies the project's policy, approvals and audit (connectors.md). Use a raw `fetch` with a key only for an API
 that has no connector:
 
 ```ts
@@ -134,8 +133,8 @@ export const enrich = action({
 ```
 
 Set the variables with `npx convex env set NAME` and the value on stdin
-(after `eval "$(kortix backends env main)"`). Record the names, never the
-values, in the backend's README.
+(after `eval "$(kortix apps credentials db)"`). Record the names, never the
+values, in the App's README.
 
 ## HTTP actions (webhooks, public APIs)
 
@@ -158,7 +157,7 @@ http.route({
 export default http;
 ```
 
-The route answers on the backend's `site_url` (`kortix backends get <name>`).
+The route answers on the App's `instance.site_url` (`kortix apps show <app> --json`).
 It is public: authenticate inside the handler.
 
 ## Scheduling
