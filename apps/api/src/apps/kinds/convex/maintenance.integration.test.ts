@@ -1042,7 +1042,10 @@ describe('delete: typed slug, final snapshot, retention, purge', () => {
   test('while the delete runs, no snapshot can claim the App', async () => {
     const row = await runningBackend('delete-race', { snapshots: ['dr-1'], snapshotListDelayMs: 800 });
     const deleting = del(row.appId, 'delete-race');
-    await new Promise((r) => setTimeout(r, 300));
+    // Wait for the delete's mark, not a fixed delay: on a 4 vCPU CI runner the
+    // route had not marked the row 300 ms in. The 800 ms snapshot list keeps
+    // the delete running after the mark lands.
+    await eventually(() => read(row.appId), (r) => meta(r).deleting !== undefined);
     expect(await claimOperation(row.appId, 'snapshotting')).toBe(false);
     expect((await deleting).status).toBe(200);
     expect((await read(row.appId)).status).toBe('deleted');

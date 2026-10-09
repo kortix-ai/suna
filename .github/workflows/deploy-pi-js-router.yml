@@ -41,7 +41,7 @@ concurrency:
 
 jobs:
   deploy:
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 10
     # The `pi-js` environment stays as the deploy gate. The credentials live
     # in the AWS Secrets Manager blob kortix-ci-env (.github/actions/aws-env).
