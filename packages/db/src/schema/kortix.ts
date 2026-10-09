@@ -4177,8 +4177,9 @@ export const apps = kortixSchema.table(
     idleTimeoutSeconds: integer('idle_timeout_seconds').default(300).notNull(),
     /**
      * Run 24/7 instead of stopping after `idle_timeout_seconds`: kept running
-     * by maintenance (cron jobs, workers and websockets keep working), still
-     * capped by `monthly_budget_usd`. A static App has no runtime and ignores it.
+     * by maintenance (cron jobs, workers and websockets keep working). Its
+     * cost is its size, so `monthly_budget_usd` does not apply. A static App
+     * has no runtime and ignores it.
      */
     alwaysOn: boolean('always_on').default(false).notNull(),
     /**
@@ -4196,13 +4197,17 @@ export const apps = kortixSchema.table(
     viewerTokenScope: varchar('viewer_token_scope', { length: 16 })
       .default('identity')
       .notNull(),
+    /**
+     * The monthly compute cap of an on-demand `web` App: it stops at the cap.
+     * Ignored (and reported as null) for an always-on, static or `convex` App,
+     * whose cost is fixed by its size (apps/api/src/apps/budget.ts appHasBudget).
+     */
     monthlyBudgetUsd: numeric('monthly_budget_usd', { precision: 12, scale: 2 })
       .default('5.00')
       .notNull(),
     /**
-     * false: the budget is the derived default (an always-on App's 24/7 estimate
-     * for its size) and follows size changes. true: a person set it. Rows that
-     * predate the column are true, so no existing budget moves.
+     * true: a person set `monthly_budget_usd`. false: it is the default ($5).
+     * Informational: nothing derives a budget from the size any more.
      */
     monthlyBudgetExplicit: boolean('monthly_budget_explicit').default(true).notNull(),
     lastRequestAt: timestamp('last_request_at', { withTimezone: true }),

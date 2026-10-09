@@ -97,6 +97,7 @@ export function appConnectSnippets(target: AppConnectTarget): AppConnectSnippet[
         `const ${binding} = kortixBinding(${JSON.stringify(slug)});`,
         `export const convex = new ConvexReactClient(${binding}.url);`,
         `convex.setAuth(${binding}.token);`,
+        '// Read the signed-in member with a members:me query (useQuery(api.members.me)), not useConvexAuth().',
       ].join('\n'),
     },
     {

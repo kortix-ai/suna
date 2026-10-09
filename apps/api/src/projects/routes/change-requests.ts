@@ -703,6 +703,7 @@ export function registerChangeRequestsRoutes(): void {
           additions: diff.additions,
           deletions: diff.deletions,
           patch: diff.patch,
+          patch_truncated: diff.patch_truncated,
         });
       } catch (error) {
         return c.json(

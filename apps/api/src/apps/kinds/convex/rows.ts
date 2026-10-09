@@ -15,7 +15,6 @@ export type ConvexRow = typeof appConvexInstances.$inferSelect & {
   cpu: number;
   memoryGb: number;
   diskGb: number;
-  monthlyBudgetUsd: string;
   deletedAt: Date | null;
 };
 
@@ -27,7 +26,6 @@ export const CONVEX_ROW = {
   cpu: apps.cpuCores,
   memoryGb: apps.memoryGb,
   diskGb: apps.diskGb,
-  monthlyBudgetUsd: apps.monthlyBudgetUsd,
   deletedAt: apps.deletedAt,
 };
 

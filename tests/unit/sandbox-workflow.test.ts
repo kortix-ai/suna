@@ -17,25 +17,26 @@ const laneStep = (name: string): string => {
 };
 
 describe('native test-lane workflow', () => {
-  test('runs six root lanes natively on Blacksmith at the pull request head SHA', () => {
+  test('runs ten root lanes natively on GitHub-hosted runners at the pull request head SHA', () => {
     // Since 2026-08-26 the lanes run on the runner itself. The old
     // sandbox-worker path failed on ~every third lane the day before.
     expect(testWorkflow).toContain(
       'TEST_SHA: ${{ github.event.pull_request.head.sha || github.sha }}',
     );
-    expect(testWorkflow).toContain("runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}");
+    expect(testWorkflow).toContain("runs-on: ${{ vars.CI_RUNNER_L || 'ubuntu-24.04' }}");
     expect(testWorkflow).toContain('- lane: core');
-    expect(testWorkflow).toContain('- lane: browser-1');
-    expect(testWorkflow).toContain('- lane: browser-2');
     expect(testWorkflow).toContain('- lane: packages');
-    // Four browser shards since 2026-09-18: 10m19s -> 8m17s. `packages`
-    // (8m01s) is now the binding lane, so a fifth shard buys nothing.
-    expect(testWorkflow).toContain('- lane: browser-3');
-    expect(testWorkflow).toContain('- lane: browser-4');
-    for (const n of [1, 2, 3, 4]) {
-      expect(testWorkflow).toContain(`args: --browser-only --browser-shard=${n}/4`);
+    // Eight one-worker browser shards since 2026-10-08: four two-worker
+    // shards overran a 16 GB GitHub-hosted runner (run 37812339796).
+    for (const n of [1, 2, 3, 4, 5, 6, 7, 8]) {
+      expect(testWorkflow).toContain(`- lane: browser-${n}`);
+      expect(testWorkflow).toContain(`args: --browser-only --browser-shard=${n}/8`);
     }
-    expect(testWorkflow).not.toContain('--browser-shard=1/2');
+    expect(testWorkflow).not.toContain('--browser-shard=1/4');
+    expect(testWorkflow).toContain('if [[ "$TEST_LANE" == browser-* ]]; then');
+    expect(testWorkflow).toContain('export E2E_BROWSER_WORKERS=1');
+    // Never job-wide: the core lane's runner unit tests assert the default.
+    expect(testWorkflow).not.toContain('E2E_BROWSER_WORKERS: "1"');
     expect(testWorkflow).toContain('args: --packages-only');
     // The unchanged root command is the whole lane.
     expect(testWorkflow).toContain('if [[ -n "$TEST_ARGS" ]]; then pnpm test -- $TEST_ARGS; else pnpm test; fi');
@@ -46,9 +47,9 @@ describe('native test-lane workflow', () => {
     expect(testWorkflow).not.toContain('TEST_MODE');
     expect(testWorkflow).toContain('pnpm install --frozen-lockfile');
     expect(testWorkflow).toContain('bun-version: 1.3.14');
-    // A hang detector, sized from 57 runs (packages p50 370s, max 570s). A hung
+    // A hang detector, ~2x the slowest lane measured on a free runner. A hung
     // lane used to burn 60 min before the trunk verdict could fire.
-    expect(testWorkflow).toMatch(/^ {4}timeout-minutes: 20$/m);
+    expect(testWorkflow).toMatch(/^ {4}timeout-minutes: 40$/m);
     expect(testWorkflow).not.toMatch(/^ {4}timeout-minutes: 60$/m);
   });
 

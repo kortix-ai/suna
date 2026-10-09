@@ -206,6 +206,22 @@ describe('convex App routes', () => {
     expect((await res.json()).code).toBe('app_always_on_required');
   });
 
+  test('a convex App has no budget: the App reads null, and a budget on create or update answers 400 app_budget_not_applicable', async () => {
+    const read = await (await call('GET', `/${RUNNING}`)).json();
+    expect(read).toMatchObject({ always_on: true, monthly_budget_usd: null });
+    expect(read.estimated_monthly_usd).toBeGreaterThan(0);
+    expect(read.instance.budget_alert).toBeNull();
+    const created = await call('POST', '', { kind: 'convex', slug: 'budgeted', name: 'budgeted', monthly_budget_usd: 50 });
+    expect(created.status).toBe(400);
+    const refusal = await created.json();
+    expect(refusal.code).toBe('app_budget_not_applicable');
+    expect(refusal.error).toContain('A convex App has no monthly budget');
+    const updated = await call('PATCH', `/${RUNNING}`, { monthly_budget_usd: 50 });
+    expect(updated.status).toBe(400);
+    expect((await updated.json()).code).toBe('app_budget_not_applicable');
+    expect((await db.select().from(apps).where(eq(apps.slug, 'budgeted'))).length).toBe(0);
+  });
+
   test('a web App: capabilities name no convex capability; every convex capability route answers 409 app_capability_unsupported', async () => {
     const created = await call('POST', '', { slug: 'site', name: 'site' });
     expect(created.status).toBe(201);
@@ -375,9 +391,6 @@ describe('GET /_kortix/token and the bindings mount on the App gate', () => {
     const saved = { url: config.PLATINUM_API_URL };
 
     beforeAll(() => {
-      // Bind the fake explicitly: a default-bind Bun.serve reports its origin as
-      // `localhost`, and a fetch to `localhost` tries ::1 first — on hosts without a
-      // ::1 listener it refuses instead of falling back to IPv4, failing spuriously.
       machine = Bun.serve({
         port: 0,
         hostname: '127.0.0.1',
