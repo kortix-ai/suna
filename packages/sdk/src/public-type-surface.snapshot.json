@@ -3215,7 +3215,15 @@
     "safeUrl",
     "splitGenui"
   ],
-  "./genui/react": [],
+  "./genui/react": [
+    "GenuiBlock",
+    "GenuiBlockEvent",
+    "GenuiBlockProps",
+    "GenuiComponentMap",
+    "GenuiComponentProps",
+    "GenuiOutcome",
+    "useGenuiParse"
+  ],
   "./server": [
     "APP_VIEWER_HEADER",
     "APP_VIEWER_SECRET_ENV",
