@@ -2,9 +2,10 @@ import { afterEach, beforeAll, beforeEach, describe, expect, mock, spyOn, test }
 
 import { storage } from '@/stores/in-memory-async-storage';
 
-// The per-kind switches an app from before KRTX-1742 stored on the phone move
-// into the user's record once. Until that write succeeds, the device row keeps
-// the stored values, so a phone's old opt-out holds through any deploy order.
+// The device row always carries this phone's switches: a project with the
+// `notification_center` flag off reads them alone, as before KRTX-1742. The
+// kinds this phone turned off reach the user's record only through
+// `carryOverLegacyKinds()`, once, for a user with a flag-on project.
 // Real: the push rules, the notification store, the push store. The native
 // modules and the SDK's requests are stubs.
 
@@ -43,16 +44,20 @@ beforeAll(async () => {
   useNotificationStore = (await import('@/stores/notification-store')).useNotificationStore;
 });
 
-/** Loads the store as an app from before KRTX-1742 left it: per-kind switches, no migration flag. */
-async function loadStored(preferences: Record<string, boolean> | null) {
-  useNotificationStore.setState({ preferences: { enabled: true, playSound: true }, legacyKindsMigrated: false });
+const ALL_ON_PREFS = { enabled: true, onCompletion: true, onError: true, onQuestion: true, onPermission: true, playSound: true };
+
+/** Loads the store from what an earlier app left on disk (null: a fresh install). */
+async function loadStored(state: Record<string, unknown> | null) {
+  useNotificationStore.setState({ preferences: ALL_ON_PREFS, legacyKindsMigrated: false });
   storage.clear();
-  if (preferences) storage.set(STORE_KEY, JSON.stringify({ state: { preferences }, version: 0 }));
+  if (state) storage.set(STORE_KEY, JSON.stringify({ state, version: 0 }));
   await useNotificationStore.persist.rehydrate();
 }
 
-const LEGACY = { enabled: true, onCompletion: false, onError: true, onQuestion: false, onPermission: true, playSound: true };
+const STORED = { enabled: true, onCompletion: false, onError: true, onQuestion: false, onPermission: true, playSound: true };
+const STORED_WIRE = { enabled: true, on_completion: false, on_error: true, on_question: false, on_permission: true, play_sound: true };
 const ALL_ON = { enabled: true, on_completion: true, on_error: true, on_question: true, on_permission: true, play_sound: true };
+const OPT_OUTS = { kinds: { turn_done: { push: false }, question: { push: false } } };
 
 function storedFlag(): unknown {
   return JSON.parse(storage.get(STORE_KEY) ?? '{}').state?.legacyKindsMigrated;
@@ -66,58 +71,97 @@ beforeEach(() => {
 // Sign-out clears the last posted key, so each test posts from scratch.
 afterEach(() => registration.unregisterPushOnSignOut());
 
-describe('legacy per-kind switches', () => {
-  test('a kind this phone turned off moves to the user record once; then every column posts on', async () => {
-    await loadStored(LEGACY);
+describe("the device row carries this phone's switches", () => {
+  test('a sync posts the stored per-kind switches and writes no record', async () => {
+    await loadStored({ preferences: STORED });
     expect(await registration.syncPushRegistration()).toBe('ExponentPushToken[test]');
-    expect(patches).toEqual([{ kinds: { turn_done: { push: false }, question: { push: false } } }]);
-    expect(registered.at(-1)?.preferences).toEqual(ALL_ON);
-    expect(storedFlag()).toBe(true);
+    expect(registered.at(-1)?.preferences).toEqual(STORED_WIRE);
+    expect(patches).toHaveLength(0);
+    expect(useNotificationStore.getState().legacyKindsMigrated).toBe(false);
 
-    useNotificationStore.getState().setPreference('playSound', false);
+    useNotificationStore.getState().setPreference('onQuestion', true);
     await registration.syncPushPreferences();
+    expect(registered.at(-1)?.preferences).toEqual({ ...STORED_WIRE, on_question: true });
+    expect(patches).toHaveLength(0);
+  });
+
+  test('after the carry-over the columns still post the stored values', async () => {
+    await loadStored({ preferences: STORED });
+    await registration.carryOverLegacyKinds();
     await registration.syncPushRegistration();
-    expect(patches).toHaveLength(1);
+    expect(registered.at(-1)?.preferences).toEqual(STORED_WIRE);
+  });
+
+  test('a phone that ran the first KRTX-1742 build posts its stored switches again', async () => {
+    // That build marked the move done and posted every column on.
+    await loadStored({ preferences: STORED, legacyKindsMigrated: true });
+    await registration.syncPushRegistration();
+    expect(registered.at(-1)?.preferences).toEqual(STORED_WIRE);
+    expect(patches).toHaveLength(0);
+  });
+
+  test('an install from the first KRTX-1742 build stored no per-kind switches: they load as on', async () => {
+    await loadStored({ preferences: { enabled: true, playSound: false }, legacyKindsMigrated: true });
+    expect(useNotificationStore.getState().preferences).toEqual({ ...ALL_ON_PREFS, playSound: false });
+    await registration.syncPushRegistration();
     expect(registered.at(-1)?.preferences).toEqual({ ...ALL_ON, play_sound: false });
   });
 
-  test('a failed move keeps posting the stored values, and the next sync retries it', async () => {
-    await loadStored(LEGACY);
-    patchFails = true;
+  test('a fresh install posts every column on', async () => {
+    await loadStored(null);
     await registration.syncPushRegistration();
+    expect(registered.at(-1)?.preferences).toEqual(ALL_ON);
+  });
+});
+
+describe('carryOverLegacyKinds', () => {
+  test("moves the kinds this phone turned off into the user's record once", async () => {
+    await loadStored({ preferences: STORED });
+    await Promise.all([registration.carryOverLegacyKinds(), registration.carryOverLegacyKinds()]);
+    expect(patches).toEqual([OPT_OUTS]);
+    expect(storedFlag()).toBe(true);
+
+    await registration.carryOverLegacyKinds();
     expect(patches).toHaveLength(1);
-    expect(registered.at(-1)?.preferences).toEqual({ ...ALL_ON, on_completion: false, on_question: false });
+  });
+
+  test('a failed write leaves the marker off; the next call retries it', async () => {
+    await loadStored({ preferences: STORED });
+    patchFails = true;
+    await registration.carryOverLegacyKinds();
+    expect(patches).toHaveLength(1);
     expect(useNotificationStore.getState().legacyKindsMigrated).toBe(false);
 
     patchFails = false;
-    await registration.syncPushPreferences();
-    expect(patches).toHaveLength(2);
-    expect(registered.at(-1)?.preferences).toEqual(ALL_ON);
+    await registration.carryOverLegacyKinds();
+    expect(patches).toEqual([OPT_OUTS, OPT_OUTS]);
     expect(useNotificationStore.getState().legacyKindsMigrated).toBe(true);
   });
 
-  test('before the stored switches load, nothing moves and nothing is marked', async () => {
-    await loadStored(LEGACY);
+  test('before the stored switches load, it waits for them', async () => {
+    await loadStored({ preferences: STORED });
     const hydrated = spyOn(useNotificationStore.persist, 'hasHydrated').mockReturnValue(false);
+    let done = false;
     try {
-      await registration.syncPushRegistration();
+      const pending = registration.carryOverLegacyKinds().then(() => {
+        done = true;
+      });
+      await Promise.resolve();
+      expect(done).toBe(false);
+      expect(patches).toHaveLength(0);
+      await useNotificationStore.persist.rehydrate();
+      await pending;
     } finally {
       hydrated.mockRestore();
     }
-    expect(patches).toHaveLength(0);
-    expect(useNotificationStore.getState().legacyKindsMigrated).toBe(false);
-
-    // Loaded: the next sync (the bridge re-posts after the store changes) moves them.
-    await registration.syncPushPreferences();
-    expect(patches).toEqual([{ kinds: { turn_done: { push: false }, question: { push: false } } }]);
-    expect(registered.at(-1)?.preferences).toEqual(ALL_ON);
+    expect(patches).toEqual([OPT_OUTS]);
+    expect(useNotificationStore.getState().legacyKindsMigrated).toBe(true);
   });
 
-  test('a fresh install moves nothing, marks the move done, and posts every column on', async () => {
+  test('nothing turned off: no write, marked done', async () => {
     await loadStored(null);
-    await registration.syncPushRegistration();
+    await registration.carryOverLegacyKinds();
     expect(patches).toHaveLength(0);
-    expect(registered.at(-1)?.preferences).toEqual(ALL_ON);
     expect(storedFlag()).toBe(true);
   });
 });

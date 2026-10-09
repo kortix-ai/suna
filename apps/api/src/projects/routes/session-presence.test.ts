@@ -25,11 +25,12 @@ let leaseValues: Array<Record<string, unknown>> = [];
 let leaseUpdates: Array<Record<string, unknown>> = [];
 let sessionsMarkedRead: Array<{ userId: string; sessionId: string }> = [];
 let extensions: Array<{ target: unknown; grantMs: number }> = [];
+let projectMetadata: Record<string, unknown> = {};
 
 mock.module('../lib/access', () => ({
   ...realAccess,
   loadProjectForUser: async () => ({
-    row: { accountId: '44444444-4444-4444-8444-444444444444' },
+    row: { accountId: '44444444-4444-4444-8444-444444444444', metadata: projectMetadata },
     userId: USER_ID,
     actor: { credential: { kind: 'jwt' } },
   }),
@@ -104,6 +105,7 @@ beforeEach(() => {
   leaseUpdates = [];
   sessionsMarkedRead = [];
   extensions = [];
+  projectMetadata = { experimental: { notification_center: true } };
 });
 
 describe('PUT .../presence', () => {
@@ -141,6 +143,16 @@ describe('PUT .../presence', () => {
   test('an active tab marks the caller\'s notifications of this session read', async () => {
     expect((await put({ tab_id: TAB_ID, active: true })).status).toBe(200);
     expect(sessionsMarkedRead).toEqual([{ userId: USER_ID, sessionId: SESSION_ID }]);
+  });
+
+  test('with the notification_center flag off, an active tab holds its lease and marks nothing read', async () => {
+    for (const metadata of [{}, { experimental: { notification_center: false } }]) {
+      projectMetadata = metadata;
+      expect((await put({ tab_id: TAB_ID, active: true })).status).toBe(200);
+    }
+    expect(leaseWrites).toBe(2);
+    expect(extensions).toHaveLength(2);
+    expect(sessionsMarkedRead).toEqual([]);
   });
 
   test('a missing body or a non-boolean alerts → 400 and nothing is written', async () => {

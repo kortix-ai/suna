@@ -547,11 +547,15 @@ export * from './transcript';
 export {
   fetchKortixAppViewer,
   kortixAppViewerToken,
-  kortixAppBackendToken,
+  kortixToken,
+  kortixBinding,
   clearKortixAppViewerCache,
   type KortixAppViewerSession,
   type KortixAppViewerOptions,
-  type KortixAppBackendTokenOptions,
+  type KortixTokenOptions,
+  type KortixTokenFetcher,
+  type KortixBinding,
+  type KortixBindingOptions,
 } from './core/auth/app-viewer';
 
 /**
@@ -562,12 +566,12 @@ export {
 export {
   readKortixMember,
   requireKortixMember,
-  verifyKortixMemberToken,
+  verifyKortixToken,
   KortixMemberError,
   type KortixMember,
   type KortixMemberRequirement,
   type KortixMemberKeySet,
-  type VerifyKortixMemberTokenOptions,
+  type VerifyKortixTokenOptions,
 } from './core/auth/kortix-member';
 
 /**

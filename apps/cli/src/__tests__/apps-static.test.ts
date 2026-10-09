@@ -145,9 +145,9 @@ describe('kortix apps: a static App', () => {
     const config = writeConfig(startServer());
     const r = await runCli(['apps', 'ls', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(r.stdout).toMatch(/storefront\s+static\s+https:/);
-    expect(r.stdout).toMatch(/api-server\s+running\s+https:/);
-    expect(r.stdout).toMatch(/draft\s+undeployed\s+https:/);
+    expect(r.stdout).toMatch(/storefront\s+web\s+static\s+https:/);
+    expect(r.stdout).toMatch(/api-server\s+web\s+running\s+https:/);
+    expect(r.stdout).toMatch(/draft\s+web\s+undeployed\s+https:/);
   });
 
   test('show names the hosting type', async () => {

@@ -82,6 +82,11 @@ Subcommands:
   events --apps [--json]   List apps that can trigger events: each app's
                            connectors (profiles) and their shared accounts
                            (label, connected as, default).
+  events --app <app> [--source <adapter>] [--json]
+                           List the events an app can trigger on. No connector
+                           needed: browse before you connect anything.
+  events --app <app> --event <TYPE> [--json]
+                           One event in full, with no connector.
   events --connector <slug> [--json]
                            List the events a connector can trigger on.
   events --connector <slug> --event <TYPE> [--json]
@@ -129,7 +134,7 @@ event.connector, and event.occurred_at.
 Online, \`add\` and \`set\` check the config against the catalog and list every
 missing or invalid field with its description. \`add --apply\` then prints the
 trigger status and the next step. Autonomous setup:
-  1. kortix triggers events --apps
+  1. kortix triggers events --apps   (one app's events: kortix triggers events --app <app>)
   2. kortix connectors add <slug> --provider composio --app <app> --apply
   3. kortix connectors connect <slug> --owner project   (a person opens the link)
   4. kortix triggers events --connector <slug> --event <TYPE>
@@ -192,6 +197,7 @@ export async function runTriggers(argv: string[]): Promise<number> {
   let configPairs: string[] = [];
   let configJson: string | undefined;
   let apps = false;
+  let eventsApp: string | undefined;
   try {
     json = takeFlagBool(rest, ['--json']);
     applyRemote = takeFlagBool(rest, ['--apply']);
@@ -211,6 +217,7 @@ export async function runTriggers(argv: string[]): Promise<number> {
     configJson = takeFlagValue(rest, ['--config-json']);
     apps = takeFlagBool(rest, ['--apps']);
     tf.connector = takeFlagValue(rest, ['--connector']);
+    eventsApp = takeFlagValue(rest, ['--app']);
     tf.account = takeFlagValue(rest, ['--account']);
     tf.source = takeFlagValue(rest, ['--source']);
     if (takeFlagBool(rest, ['--default-account'])) tf.defaultAccount = '1';
@@ -279,7 +286,7 @@ export async function runTriggers(argv: string[]): Promise<number> {
     case 'resume':
       return triggersActivation(ctxOpts, false);
     case 'events':
-      return triggersEvents({ apps, connector: tf.connector, event: tf.event }, ctxOpts, json);
+      return triggersEvents({ apps, app: eventsApp, source: tf.source, connector: tf.connector, event: tf.event }, ctxOpts, json);
     case 'info':
     case 'show':
       return triggersInfo(positional[0], ctxOpts, json);

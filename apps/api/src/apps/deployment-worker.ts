@@ -105,6 +105,9 @@ export async function enqueueCurrentAppRuntime(
   // way a stale supervisor is replaced: one queued redeploy of the same
   // artifact, activated only once it is ready.
   const toStatic = staticHostingEnabled() && deployment.sourceKind === 'static' && deployment.hostingType === 'sandbox';
+  // A deployment with no artifact (a `convex` App's record) has no runtime to refresh.
+  const artifactId = deployment.artifactId;
+  if (!artifactId) return false;
   const imageKey = appRuntimeImageKey(APP_RUNTIME_VERSION);
   if (appRuntimeImageKey(deployment.runtimeVersion) === imageKey && !toStatic) return false;
   const inserted = await db.transaction(async (tx) => {
@@ -127,7 +130,7 @@ export async function enqueueCurrentAppRuntime(
       .from(appDeployments)
       .where(and(
         eq(appDeployments.appId, app.appId),
-        eq(appDeployments.artifactId, deployment.artifactId),
+        eq(appDeployments.artifactId, artifactId),
         eq(appDeployments.actorType, 'system'),
       ))
       .orderBy(desc(appDeployments.version))
@@ -305,6 +308,7 @@ async function deploymentContext(deploymentId: string) {
   if (!deployment) throw new PermanentAppDeploymentError('Deployment no longer exists', 'not_found');
   const [app] = await db.select().from(apps).where(eq(apps.appId, deployment.appId)).limit(1);
   if (!app || app.deletedAt) throw new PermanentAppDeploymentError('App no longer exists', 'not_found');
+  if (!deployment.artifactId) throw new PermanentAppDeploymentError('Deployment has no artifact', 'artifact_missing');
   const [artifact] = await db
     .select()
     .from(appArtifacts)

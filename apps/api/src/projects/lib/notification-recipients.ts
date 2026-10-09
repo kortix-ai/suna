@@ -11,7 +11,7 @@ import { accountMembersAmong } from '../../iam/membership-read';
 import { logger } from '../../lib/logger';
 import { filterSessionRecipients, loadSessionAccessRows, personsAmong } from '../../notifications/access';
 import { deliver, type DeliverInput } from '../../notifications/notifier';
-import { sessionTitleOf, type SessionOriginClass, type SessionPushEvent } from '../../notifications/session-push';
+import { sessionTitleOf, type SessionEventContext, type SessionOriginClass } from '../../notifications/session-push';
 import { db } from '../../shared/db';
 import { isUuid } from '../../shared/validate';
 import { newestStoredTurn } from '../session-lifecycle/inbox-admission';
@@ -102,8 +102,6 @@ export interface NotificationSessionRef {
   origin: string | null | undefined;
 }
 
-type EventContext = Pick<SessionPushEvent, 'prompterUserId' | 'originClass' | 'isChild' | 'triggerWatcherIds'>;
-
 async function orFallback<T>(read: () => Promise<T>, fallback: T, what: string, sessionId: string): Promise<T> {
   try {
     return await read();
@@ -113,11 +111,11 @@ async function orFallback<T>(read: () => Promise<T>, fallback: T, what: string, 
   }
 }
 
-/** The recipients' context of a turn end that names `turnMessageId`. */
+/** The recipients' context of a turn end that names `turnMessageId`. Read only with the flag on. */
 export async function turnEndNotificationContext(
   session: NotificationSessionRef,
   turnMessageId: string | null,
-): Promise<EventContext> {
+): Promise<SessionEventContext> {
   const { originClass, isChild } = classifySession(session.metadata, session.origin);
   const prompterUserId = await orFallback(
     () => personPrompterOf(session.sessionId, session.accountId, turnMessageId),
@@ -128,8 +126,8 @@ export async function turnEndNotificationContext(
   return { prompterUserId, originClass, isChild };
 }
 
-/** The recipients' context of a question or permission ask of the running turn. */
-export async function askNotificationContext(session: NotificationSessionRef): Promise<EventContext> {
+/** The recipients' context of a question or permission ask of the running turn. Read only with the flag on. */
+export async function askNotificationContext(session: NotificationSessionRef): Promise<SessionEventContext> {
   const { originClass, isChild, triggerSlug } = classifySession(session.metadata, session.origin);
   const [prompterUserId, triggerWatcherIds] = await Promise.all([
     orFallback(() => runningTurnPrompter(session.sessionId, session.accountId), null, 'running_turn_prompter', session.sessionId),
@@ -176,7 +174,8 @@ export interface SessionShareChange {
  * project-visible session narrowed to named members tells nobody: every
  * project member could already open it.
  * One row per person per session per UTC day, so toggling a share cannot
- * flood anyone. Returns the users told.
+ * flood anyone. Returns the users told. The share route calls it only with the
+ * project's notification_center flag on (routes/project-sessions.ts).
  */
 export async function notifySessionShared(
   change: SessionShareChange,

@@ -4,6 +4,8 @@ import type { Context } from 'hono';
 import { projectTriggerRuntime, projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { mutateManifestWithRetry } from '../../connectors/manifest-mutation';
+import { featureDisabledBody, requireFeatureFlag } from '../../feature-flags/gate';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { loadProjectAgents } from '../agents';
 import { assertMayRunAgent } from '../lib/agent-access';
 import { PROJECT_ACTIONS } from '../../iam';
@@ -34,12 +36,14 @@ import { markGitTriggerAttemptFailed } from '../lib/trigger-fire';
 import { raiseTriggerAlert } from '../lib/trigger-alerts';
 import { deleteTriggerWatchers, triggerWatcherOf, upsertTriggerWatcher } from '../lib/trigger-watchers';
 import { getRequestOnBehalfOf } from '../../middleware/on-behalf-of';
+import { notificationsEnabled } from '../../notifications/enabled';
 import { logger } from '../../lib/logger';
 import type { AppEnv } from '../../types';
 import { validateWebhookSecretConfiguration } from '../lib/webhook-secret-policy';
 import { reconcileProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { connectorInfo, eventPayload } from '../trigger-events/deliver';
-import { listConnectorEventTypes, listEventApps, validateEventTrigger } from '../trigger-events/catalog';
+import { unknownSourceMessage } from '../trigger-events/registry';
+import { listAppEventTypes, listConnectorEventTypes, listEventApps, validateEventTrigger } from '../trigger-events/catalog';
 import { reconcileEventSubscriptions } from '../trigger-events/subscriptions';
 import {
   PRIVATE_TRIGGER_SESSION_ACCESS,
@@ -55,9 +59,16 @@ import {
 
 /**
  * The person who created or edited a trigger follows its alerts (KRTX-1742).
- * Never an API key or a service account: they name no person.
+ * Never an API key or a service account: they name no person. Only with the
+ * project's `notification_center` flag on.
  */
-async function followTrigger(c: Context<AppEnv>, accountId: string, projectId: string, slug: string): Promise<void> {
+async function followTrigger(
+  c: Context<AppEnv>,
+  project: { accountId: string; metadata: unknown },
+  projectId: string,
+  slug: string,
+): Promise<void> {
+  if (!notificationsEnabled(project.metadata)) return;
   const userId = triggerWatcherOf({
     authType: c.get('authType'),
     userId: c.get('userId'),
@@ -66,7 +77,7 @@ async function followTrigger(c: Context<AppEnv>, accountId: string, projectId: s
   });
   if (!userId) return;
   // Best-effort: the manifest is already committed, so a failed write must not fail the route.
-  await upsertTriggerWatcher({ accountId, projectId, slug, userId }).catch((err) =>
+  await upsertTriggerWatcher({ accountId: project.accountId, projectId, slug, userId }).catch((err) =>
     logger.warn('[trigger-watchers] follow failed', { projectId, slug, error: err instanceof Error ? err.message : String(err) }));
 }
 
@@ -191,7 +202,7 @@ export function registerTriggersRoutes(): void {
           }),
           'Event-capable apps',
         ),
-        ...errors(404),
+        ...errors(403, 404),
       },
     }),
     async (c) => {
@@ -205,6 +216,8 @@ export function registerTriggersRoutes(): void {
         projectId,
         PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
       );
+      const disabled = requireFeatureFlag(c, loaded.row.metadata, 'event_triggers');
+      if (disabled) return disabled;
       const apps = await listEventApps(projectId, loaded.row.accountId);
       return c.json({
         apps: apps.map((a) => ({
@@ -227,7 +240,7 @@ export function registerTriggersRoutes(): void {
     },
   );
 
-  // GET /v1/projects/:projectId/triggers/event-types?connector=<slug>
+  // GET /v1/projects/:projectId/triggers/event-types?connector=<slug>  |  ?app=<app>[&source=<adapter>]
   //
   // ⚠️ Keep registered BEFORE the `…/triggers/{slug}` routes (see `activation` below).
   projectsApp.openapi(
@@ -235,11 +248,16 @@ export function registerTriggersRoutes(): void {
       method: 'get',
       path: '/{projectId}/triggers/event-types',
       tags: ['triggers'],
-      summary: 'List the app events a connector can trigger on',
+      summary: 'List the app events a connector or an app can trigger on',
+      description: 'Send `connector` (a project connector slug) or `app` (an app of an event source, no connector needed) with an optional `source`, not both.',
       ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
-        query: z.object({ connector: z.string().min(1).openapi({ description: 'Connector slug.' }) }),
+        query: z.object({
+          connector: z.string().min(1).optional().openapi({ description: 'Connector slug. Exclusive with `app`.' }),
+          app: z.string().min(1).optional().openapi({ description: 'App slug of an event source, such as `github`. Exclusive with `connector`.' }),
+          source: z.string().min(1).optional().openapi({ description: 'Event source adapter id for `app`. Default `composio`.' }),
+        }),
       },
       responses: {
         200: json(
@@ -259,7 +277,7 @@ export function registerTriggersRoutes(): void {
           }),
           'Event types of the connector app',
         ),
-        ...errors(400, 404, 409, 502),
+        ...errors(400, 403, 404, 409, 502),
       },
     }),
     async (c) => {
@@ -273,10 +291,17 @@ export function registerTriggersRoutes(): void {
         projectId,
         PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
       );
+      const disabled = requireFeatureFlag(c, loaded.row.metadata, 'event_triggers');
+      if (disabled) return disabled;
       const slug = c.req.query('connector')?.trim();
-      if (!slug) return c.json({ error: 'connector is required' }, 400);
-      const catalog = await listConnectorEventTypes(projectId, slug);
+      const app = c.req.query('app')?.trim();
+      if (!slug === !app) return c.json({ error: 'Send exactly one of connector or app' }, 400);
+      const source = c.req.query('source')?.trim() || 'composio';
+      const unknownSource = app ? unknownSourceMessage(source) : null;
+      if (unknownSource) return c.json({ error: unknownSource }, 400);
+      const catalog = app ? await listAppEventTypes(source, app) : await listConnectorEventTypes(projectId, slug as string);
       if (catalog.kind === 'connector_not_found') return c.json({ error: `Connector "${slug}" not found` }, 404);
+      if (catalog.kind === 'app_not_found') return c.json({ error: 'app_not_found' }, 404);
       if (catalog.kind === 'unavailable') return c.json({ error: 'event_source_unavailable' }, 409);
       if (catalog.kind === 'provider_error') return c.json({ error: `Could not list events: ${catalog.message}` }, 502);
       return c.json({
@@ -337,7 +362,7 @@ export function registerTriggersRoutes(): void {
       },
       responses: {
         201: json(TriggerListSchema, 'Every trigger after the create'),
-        ...errors(400, 404, 409, 502),
+        ...errors(400, 403, 404, 409, 502),
       },
     }),
     async (c) => {
@@ -356,6 +381,10 @@ export function registerTriggersRoutes(): void {
         PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE,
       );
 
+      if (body.type === 'event') {
+        const disabled = requireFeatureFlag(c, loaded.row.metadata, 'event_triggers');
+        if (disabled) return disabled;
+      }
       const draft = parseTriggerDraft(body, { existingSlug: null });
       if ('error' in draft) return c.json({ error: draft.error }, 400);
       if (draft.event) {
@@ -425,7 +454,7 @@ export function registerTriggersRoutes(): void {
         access: parsedAccess.access,
         pinnedSessionId: draft.pinnedSessionId,
       });
-      await followTrigger(c, loaded.row.accountId, projectId, draft.slug);
+      await followTrigger(c, loaded.row, projectId, draft.slug);
 
       return c.json(await loadTriggersForResponse(projectId, loaded.row), 201);
     },
@@ -533,7 +562,7 @@ export function registerTriggersRoutes(): void {
       },
       responses: {
         200: json(TriggerListSchema, 'Every trigger after the update'),
-        ...errors(400, 404, 409, 502),
+        ...errors(400, 403, 404, 409, 502),
       },
     }),
     async (c) => {
@@ -596,6 +625,9 @@ export function registerTriggersRoutes(): void {
           if ('connector' in body && !('event_source' in body)) delete base.event_source;
           const draft = parseTriggerDraft({ ...base, ...body, slug: slug }, { existingSlug: slug });
           if ('error' in draft) return { ok: false, error: draft.error, status: 400 };
+          if (draft.type === 'event' && !resolveFeatureFlag(loaded.row.metadata, 'event_triggers')) {
+            return { ok: false, error: featureDisabledBody('event_triggers').error, status: 403, code: 'feature_disabled' };
+          }
           if (draft.event && (body.type === 'event' || EVENT_BODY_KEYS.some((k) => k in body))) {
             const problem = await validateEventTrigger(projectId, draft.event);
             if (problem) return { ok: false, error: problem, status: 400 };
@@ -631,6 +663,7 @@ export function registerTriggersRoutes(): void {
         },
       );
       if (!result.ok) {
+        if (result.code === 'feature_disabled') return c.json(featureDisabledBody('event_triggers'), 403);
         return c.json(
           {
             error: result.error,
@@ -655,7 +688,7 @@ export function registerTriggersRoutes(): void {
           pinnedSessionId: effectivePinnedSessionId,
         });
       }
-      await followTrigger(c, loaded.row.accountId, projectId, slug);
+      await followTrigger(c, loaded.row, projectId, slug);
 
       return c.json(await loadTriggersForResponse(projectId, loaded.row));
     },
@@ -747,7 +780,7 @@ export function registerTriggersRoutes(): void {
       },
       responses: {
         202: json(TriggerFireResultSchema, 'Queued or fired'),
-        ...errors(404, 500),
+        ...errors(403, 404, 500),
       },
     }),
     async (c) => {
@@ -771,6 +804,10 @@ export function registerTriggersRoutes(): void {
       const gitProject = await withProjectGitAuth(loaded.row);
       const spec = await findProjectTriggerBySlug(gitProject, slug);
       if (!spec) return c.json({ error: 'Not found' }, 404);
+      if (spec.type === 'event') {
+        const disabled = requireFeatureFlag(c, loaded.row.metadata, 'event_triggers');
+        if (disabled) return disabled;
+      }
       // Agents as principals (spec 2026-09-22 §2.2, closes V2): the fired run
       // acts as the trigger's agent, so the FIRER must be allowed to run that
       // agent. `default` is resolved exactly as session creation resolves it

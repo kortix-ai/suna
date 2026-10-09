@@ -18,7 +18,7 @@
     "./sandbox": "./src/sandbox/index.ts",
     "./sandbox-runtime-artifact": "./src/sandbox-runtime-artifact.ts",
     "./connector-sections": "./src/connector-sections.ts",
-    "./backend-connect": "./src/backend-connect.ts",
+    "./app-connect": "./src/app-connect.ts",
     "./code-language": "./src/code-language.ts",
     "./preview-state-page": "./src/preview-state-page.ts",
     "./markdown-math": "./src/markdown-math.ts",
