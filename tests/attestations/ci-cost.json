@@ -1,5 +1,5 @@
 {
-  "source_hash": "b3dba1f357e4884ef0be532fa1027cea507d28bb791eb3412198e53726250385",
+  "source_hash": "6f5ba2c5e2f0cd370e85dc1aa1a63dc9d54f6e4a58ea59449c6d188fd6b2b249",
   "diff_files": [
     ".agents/skills/contributing/SKILL.md",
     ".agents/skills/kortix-release/SKILL.md",
@@ -45,8 +45,8 @@
     "AGENTS.md",
     "CONTRIBUTING.md",
     "apps/api/src/__tests__/unit-ci-api-suite-runs.test.ts",
+    "apps/api/src/apps/kinds/convex/maintenance.integration.test.ts",
     "apps/api/src/apps/static-site.test.ts",
-    "apps/api/src/backends/maintenance.integration.test.ts",
     "apps/web/src/test-report-artifact.test.ts",
     "tests/README.md",
     "tests/bin/package-quality.ts",
@@ -54,13 +54,13 @@
     "tests/unit/image-build-speed-workflow.test.ts",
     "tests/unit/sandbox-workflow.test.ts"
   ],
-  "diff_hash": "1924e12d4d518d2f177e11c873f80484f0794aa9833e2c8c81397c9c073f7abb",
-  "head": "93039a1107b162dfc90b3e3e72a497f551fdfbab",
+  "diff_hash": "7569b5c6b238f8aae58690751ad9ef06ea6718b6949677bbcaf0d72083faa645",
+  "head": "81e2642768d763e86247f61cdd661bdac064c6d9",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-09T21:23:58.860Z"
+  "at": "2026-10-09T21:40:18.452Z"
 }
