@@ -1,0 +1,17 @@
+{
+  "source_hash": "51bbc8b887936e421de4055589546bbc834d07ca979f613aa4034dd58bd67b50",
+  "diff_files": [
+    "apps/api/src/projects/routes/triggers.ts",
+    "tests/spec/end-to-end.md",
+    "tests/src/flows/agent-principals.flow.ts"
+  ],
+  "diff_hash": "92b38b667f4c46c977bb1aa54b0a16097e404f8547d8682d1efe8d5e0b8a4745",
+  "head": "7df7b7e76cd3b4c70e92aacda4c73ddb651efa8f",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-09T05:04:14.353Z"
+}

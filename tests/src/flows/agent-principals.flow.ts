@@ -1367,3 +1367,74 @@ flow(
   },
 );
 
+// ── AGP-14 — a trigger with no agent fires as the MANIFEST default, not the mirror ──
+// KRTX-1720. The fire route asked about `projects.metadata.default_agent`, a read
+// mirror that lags a git push, while session creation runs the manifest's
+// `default_agent`. A stale mirror refused a member allowed to run the real
+// default, and admitted a member allowed to run only the stale name.
+flow(
+  'AGP-14',
+  {
+    domain: 'agent-principals',
+    requires: ['database'],
+    timeoutMs: 240_000,
+    routes: ['POST /v1/projects/:projectId/triggers/:slug/fire'],
+  },
+  async (ctx) => {
+    const { team, project, world } = await governedWorld(ctx);
+    const nightlyRunner = await projectMember(team, project.id);
+    const decoyRunner = await projectMember(team, project.id);
+    const permissions = JSON.stringify(['project.file.read', 'project.session.read']);
+    try {
+      await world.fund();
+      const { randomUUID } = await import('node:crypto');
+      // Pinned to a minted run, so an accepted fire queues a prompt (202)
+      // without a sandbox; the local profile provisions none.
+      const pinnedSessionId = randomUUID();
+      let run!: AgentSession;
+      await ctx.step('commit default_agent `nightly` and a trigger that names no agent, pinned to a run of it', async () => {
+        await world.writeManifest(
+          'kortix_version: 2\nproject:\n  name: example-org-agp\ndefault_agent: nightly\nagents:\n  kortix: {}\n'
+            + `  nightly:\n    kortix_permissions: ${permissions}\n`
+            + `  decoy:\n    kortix_permissions: ${permissions}\n`
+            + 'triggers:\n  - slug: agp-default\n    type: cron\n    cron: "0 9 * * *"\n    prompt: summarize open work\n'
+            + `    session_mode: pinned\n    session_id: ${pinnedSessionId}\n`,
+        );
+        run = await world.mintAgentSession({ agent: 'nightly', launcher: null, sessionId: pinnedSessionId });
+        await world.grantRun('nightly', nightlyRunner);
+        await world.grantRun('decoy', decoyRunner);
+      });
+
+      // The mirror lags a git push; make it name the other agent before each fire.
+      const staleMirror = () =>
+        world.db.query(
+          `UPDATE kortix.projects SET metadata = coalesce(metadata, '{}'::jsonb) || '{"default_agent":"decoy"}'::jsonb
+            WHERE project_id = $1`,
+          [project.id],
+        );
+      const fire = (who: Principal) =>
+        ctx.client.as(who).post('/v1/projects/:projectId/triggers/:slug/fire', {},
+          { params: { projectId: project.id, slug: 'agp-default' } });
+
+      const queued = async () =>
+        (await world.db.query(
+          "SELECT command_id FROM kortix.session_lifecycle_commands WHERE session_id = $1 AND source LIKE 'trigger:%'",
+          [run.sessionId],
+        )).rows.length;
+
+      await ctx.step('a member allowed to run the manifest default fires it → 202, one prompt queued', async () => {
+        await staleMirror();
+        (await fire(nightlyRunner)).status(202).body().has('$.session_id', run.sessionId);
+        if ((await queued()) !== 1) throw new Error(`expected 1 queued trigger prompt, got ${await queued()}`);
+      });
+
+      await ctx.step('a member allowed to run only the stale mirror name → 403 agent_not_accessible, nothing queued', async () => {
+        await staleMirror();
+        assertDenial(await fire(decoyRunner), 'agent_not_accessible');
+        if ((await queued()) !== 1) throw new Error(`a denied fire queued a prompt: ${await queued()} rows`);
+      });
+    } finally {
+      await world.close();
+    }
+  },
+);
