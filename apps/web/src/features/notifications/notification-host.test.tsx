@@ -30,14 +30,15 @@ mock.module('@kortix/sdk/react', () => ({
       },
     };
   },
-  useNotificationPreferences: () => ({ data: undefined }),
+  useNotificationPreferences: () => ({ data: preferences }),
 }));
+let preferences: { kinds: Record<string, { push: boolean; email: boolean }> } | undefined;
 
 /** The `notification_center` flag, and the project id the host asked about. */
 let center = true;
 const centerAsked: (string | null | undefined)[] = [];
 mock.module('./use-notification-center', () => ({
-  useNotificationCenter: (projectId?: string | null) => {
+  useNotificationHostGate: (projectId?: string | null) => {
     centerAsked.push(projectId);
     return center;
   },
@@ -53,13 +54,17 @@ const supabase = {
     },
   },
 };
+let user: { id: string } | null = { id: 'user-1' };
 mock.module('@/features/providers/auth-provider', () => ({
-  useAuth: () => ({ user: { id: 'user-1' }, supabase }),
+  useAuth: () => ({ user, supabase }),
 }));
 
 let supported = true;
 let subscribed = false;
 const syncCalls: boolean[] = [];
+const ensureCalls: string[] = [];
+let reregisters = 0;
+let detects = 0;
 mock.module('./web-push', () => ({
   webPushSupported: () => supported,
   hasWebPushSubscription: () => subscribed,
@@ -67,6 +72,15 @@ mock.module('./web-push', () => ({
     input.supported && input.enabled && input.permission === 'granted',
   syncWebPush: async (want: boolean) => {
     syncCalls.push(want);
+  },
+  ensureWebPush: async (userId: string) => {
+    ensureCalls.push(userId);
+  },
+  reregisterWebPush: async () => {
+    reregisters += 1;
+  },
+  detectWebPush: async () => {
+    detects += 1;
   },
 }));
 
@@ -169,6 +183,11 @@ beforeEach(() => {
   supported = true;
   subscribed = false;
   syncCalls.length = 0;
+  ensureCalls.length = 0;
+  reregisters = 0;
+  detects = 0;
+  user = { id: 'user-1' };
+  preferences = undefined;
   toasts.length = 0;
   intervals.length = 0;
   visibilityState = 'hidden';
@@ -185,17 +204,32 @@ afterEach(async () => {
 });
 
 describe('NotificationHost', () => {
-  test('the MFA step-up registers this browser for Web Push again', async () => {
+  test('the MFA step-up registers the existing subscription again', async () => {
     await mount();
-    expect(syncCalls).toEqual([true]);
+    expect(ensureCalls).toEqual(['user-1']);
     await act(async () => {
       for (const listener of authListeners) listener('TOKEN_REFRESHED');
     });
-    expect(syncCalls).toEqual([true]);
+    expect(reregisters).toBe(0);
     await act(async () => {
       for (const listener of authListeners) listener('MFA_CHALLENGE_VERIFIED');
     });
-    expect(syncCalls).toEqual([true, true]);
+    expect(reregisters).toBe(1);
+    expect(ensureCalls).toEqual(['user-1']);
+    expect(syncCalls).toEqual([]);
+  });
+
+  test('with browser notifications off the step-up registers nothing', async () => {
+    await mount();
+    await act(async () => {
+      useWebNotificationStore.setState({
+        preferences: { ...useWebNotificationStore.getState().preferences, enabled: false },
+      });
+    });
+    await act(async () => {
+      for (const listener of authListeners) listener('MFA_CHALLENGE_VERIFIED');
+    });
+    expect(reregisters).toBe(0);
   });
 
   test('without Web Push support nothing listens for the step-up', async () => {
@@ -203,6 +237,8 @@ describe('NotificationHost', () => {
     await mount();
     expect(authListeners.size).toBe(0);
     expect(syncCalls).toEqual([]);
+    expect(ensureCalls).toEqual([]);
+    expect(detects).toBe(0);
   });
 
   test('a hidden window without Web Push checks the inbox every 60 s', async () => {
@@ -270,12 +306,27 @@ describe('NotificationHost — the notification_center flag', () => {
 
   test('flag off: no inbox, no subscription, no clock, no worker listener', async () => {
     center = false;
+    preferences = { kinds: { turn_done: { push: false, email: false } } };
     await mount();
     expect(inboxReads).toBe(0);
     expect(syncCalls).toEqual([]);
+    expect(ensureCalls).toEqual([]);
     expect(intervals).toHaveLength(0);
     expect(workerListeners.size).toBe(0);
-    expect(mirrored).toEqual([]);
+    expect(mirrored).toStrictEqual([]);
+    // It only reads whether this browser already holds a subscription.
+    expect(detects).toBe(1);
+  });
+
+  test('flag off: the MFA step-up still registers a subscription made on a flag-on project', async () => {
+    center = false;
+    await mount();
+    await act(async () => {
+      for (const listener of authListeners) listener('MFA_CHALLENGE_VERIFIED');
+    });
+    expect(reregisters).toBe(1);
+    expect(ensureCalls).toEqual([]);
+    expect(syncCalls).toEqual([]);
   });
 
   test('flag off: turning browser notifications off still removes the subscription', async () => {
@@ -289,15 +340,52 @@ describe('NotificationHost — the notification_center flag', () => {
     expect(syncCalls).toEqual([false]);
   });
 
-  test('leaving a flag-on project for a flag-off one keeps the subscription', async () => {
+  test('leaving a flag-on project for a flag-off one keeps the subscription and the Push mirror', async () => {
+    const kinds = { turn_done: { push: false, email: false } };
+    preferences = { kinds };
     await mount();
-    expect(syncCalls).toEqual([true]);
+    expect(ensureCalls).toEqual(['user-1']);
+    expect(mirrored).toStrictEqual([kinds]);
     center = false;
     pathname = '/projects/p2';
     await rerender();
-    expect(syncCalls).toEqual([true]);
-    // The Push mirror is cleared with the part that filled it.
-    expect(mirrored.at(-1)).toBeUndefined();
+    expect(syncCalls).toEqual([]);
+    // A flag-on project's payload in this tab still obeys the saved choice.
+    expect(mirrored).toStrictEqual([kinds]);
+  });
+
+  test('a mirror stays while the preferences load again', async () => {
+    const kinds = { turn_done: { push: false, email: false } };
+    preferences = { kinds };
+    await mount();
+    center = false;
+    await rerender();
+    preferences = undefined;
+    center = true;
+    await rerender();
+    expect(mirrored).toStrictEqual([kinds]);
+  });
+
+  test('sign-out and a change of person clear the Push mirror', async () => {
+    const kinds = { turn_done: { push: false, email: false } };
+    preferences = { kinds };
+    await mount();
+    user = { id: 'user-2' };
+    await rerender();
+    expect(mirrored).toStrictEqual([kinds, undefined, kinds]);
+    user = null;
+    await rerender();
+    expect(mirrored).toStrictEqual([kinds, undefined, kinds, undefined]);
+  });
+
+  test('the gated part asks for the subscription on each mount; web-push.ts skips an unchanged one', async () => {
+    await mount();
+    center = false;
+    await rerender();
+    center = true;
+    await rerender();
+    expect(ensureCalls).toEqual(['user-1', 'user-1']);
+    expect(syncCalls).toEqual([]);
   });
 
   test('an arrival shown as an OS notification is marked as an inbox row', async () => {
