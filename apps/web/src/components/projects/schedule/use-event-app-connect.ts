@@ -70,7 +70,10 @@ export function useEventAppConnect(projectId: string) {
 
   const takenSlugs = () => (connectors.data?.connectors ?? []).map((c) => c.slug);
 
-  /** Adds the connector for an app the project does not have yet; resolves to its slug. */
+  /**
+   * Adds the connector for an app the project does not have yet, without signing in;
+   * resolves to its slug. The trigger composer calls it from Create, never while browsing.
+   */
   const add = useCallback(
     async (target: EventAppTarget): Promise<string> => {
       if (target.connector) return target.connector;

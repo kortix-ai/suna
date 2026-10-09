@@ -15,22 +15,26 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { connectorConnectionQueryKeys } from '@/features/workspace/customize/sections/connector-connection-form';
 import { usePipedreamConnectProject } from '@/hooks/connectors/use-pipedream-connect-project';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
+import { cn } from '@/lib/utils';
 import type { ProjectTriggerEventConnector } from '@kortix/sdk';
 import { projectTriggerEventAppsKey, qk } from '@kortix/sdk/react';
 import { PlusIcon } from '@phosphor-icons/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
-import { accountToStore, describeAccount, selectedAccountLabel } from './event-trigger-copy';
+import { accountToStore, selectedAccountLabel } from './event-trigger-copy';
 
 /** "Connect another account": asks for a label, then signs in as a new shared account on the connector. */
 function ConnectAnotherAccount({
   projectId,
   connector,
+  first = false,
   onConnected,
 }: {
   projectId: string;
   connector: ProjectTriggerEventConnector;
+  /** The connector has no account yet: the button says "Connect an account". */
+  first?: boolean;
   onConnected: (label: string) => void;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
@@ -60,7 +64,7 @@ function ConnectAnotherAccount({
         onClick={() => setOpen(true)}
       >
         <PlusIcon className="size-3.5 shrink-0" />
-        {tI18nComplete.raw('text261b28a3c6bf')}
+        {first ? tI18nComplete.raw('textefeac437f989') : tI18nComplete.raw('text261b28a3c6bf')}
       </Button>
     );
   }
@@ -112,18 +116,21 @@ function ConnectAnotherAccount({
         </Button>
       </div>
       {taken ? (
-        <p className="text-destructive text-xs">
-          {tI18nComplete.raw('texta8f89bda4dfc')}
-        </p>
+        <p className="text-destructive text-xs">{tI18nComplete.raw('texta8f89bda4dfc')}</p>
       ) : null}
     </form>
   );
 }
 
+/** Sentence-case status chip: the badge's mono uppercase reads as code, not status. */
+const STATUS_BADGE = 'font-sans normal-case';
+
 /**
- * The shared accounts of one connector as radio rows. `value` is the account a
- * trigger declares (null = the connector default). `onChange` gets the value to
- * store: null for the default, else the label.
+ * The shared accounts of ONE connector (profile) as radio rows. `value` is the
+ * account a trigger declares (null = the connector default, which is selected
+ * when none is chosen). `onChange` gets the value to store: null for the
+ * default, else the label. A connector with no account shows one line and
+ * "Connect an account", never an empty list.
  */
 export function EventAccountRows({
   projectId,
@@ -132,7 +139,6 @@ export function EventAccountRows({
   onChange,
   canConnect,
   disabled,
-  active = true,
 }: {
   projectId: string;
   connector: ProjectTriggerEventConnector;
@@ -140,11 +146,28 @@ export function EventAccountRows({
   onChange: (account: string | null) => void;
   canConnect: boolean;
   disabled?: boolean;
-  /** False when another connector holds the pick: no radio here is checked. */
-  active?: boolean;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
-  const selected = active ? (selectedAccountLabel(connector, value) ?? '') : '';
+  const selected = selectedAccountLabel(connector, value) ?? '';
+  const connectButton =
+    canConnect && !disabled ? (
+      <ConnectAnotherAccount
+        projectId={projectId}
+        connector={connector}
+        first={connector.accounts.length === 0}
+        onConnected={(label) => onChange(label)}
+      />
+    ) : null;
+  if (connector.accounts.length === 0) {
+    return (
+      <div className="space-y-1.5">
+        <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
+          {tI18nComplete('textf4d17716fd3b', { name: connector.name })}
+        </p>
+        {connectButton}
+      </div>
+    );
+  }
   return (
     <div className="space-y-1.5">
       <RadioGroup
@@ -154,7 +177,7 @@ export function EventAccountRows({
         disabled={disabled}
       >
         {connector.accounts.map((account) => {
-          const { title, detail } = describeAccount(account);
+          const identity = account.connected_as?.trim();
           return (
             <RadioGroupItem
               key={account.label}
@@ -162,32 +185,30 @@ export function EventAccountRows({
               size="sm"
               variant="outline"
               label={
-                <span className="flex flex-wrap items-center gap-2">
-                  <span className="truncate">{title}</span>
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="truncate">{account.label}</span>
                   {account.is_default ? (
-                    <Badge variant="outline" size="xs">
+                    <Badge variant="outline" size="xs" className={STATUS_BADGE}>
                       {tI18nComplete.raw('text21b111cbfe6e')}
                     </Badge>
                   ) : null}
-                  {account.connected ? null : (
-                    <Badge variant="warning" size="xs">
-                      {tI18nComplete.raw('text0303e1824670')}
-                    </Badge>
-                  )}
+                  <Badge
+                    variant={account.connected ? 'success' : 'outline'}
+                    size="xs"
+                    className={cn(STATUS_BADGE, 'ml-auto')}
+                  >
+                    {account.connected
+                      ? tI18nComplete.raw('text22965568d22a')
+                      : tI18nComplete.raw('text0303e1824670')}
+                  </Badge>
                 </span>
               }
-              description={detail ?? undefined}
+              description={identity && identity !== account.label ? identity : undefined}
             />
           );
         })}
       </RadioGroup>
-      {canConnect && !disabled ? (
-        <ConnectAnotherAccount
-          projectId={projectId}
-          connector={connector}
-          onConnected={(label) => onChange(label)}
-        />
-      ) : null}
+      {connectButton}
     </div>
   );
 }

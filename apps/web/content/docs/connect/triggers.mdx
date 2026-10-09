@@ -106,17 +106,18 @@ An event comes from an **event source**: an adapter that delivers the events of 
 
 ### Set up in the web app
 
-1. Open the project, then **Triggers** and **New trigger**.
-2. Choose **App event**.
-3. Pick an app. Under it, pick a connector and one of its shared accounts, or connect another account. The account marked **Default** is used unless you pick another.
-4. Pick an event. The form for the event's settings, such as the repository, appears below it.
-5. Write the prompt and save.
+1. Open the project, then **Triggers**, **New trigger** and **Set up manually**. One window shows the whole trigger: **When**, **Then**, the name and the options. The line under the title sums up the trigger as you set it.
+2. Under **When**, choose **App event**.
+3. Browse the apps. Your project's apps come first, then every app with events. Pick one to see its events. You do not need a connector for this: nothing is created while you browse.
+4. Pick an event. The form for the event's settings, such as the repository, appears below it. Under **Connection**, pick a connector and one of its shared accounts, or connect another account. The account marked **Default** is used unless you pick another. If your project has no connector for the app, Kortix adds one when you create the trigger.
+5. Under **Then**, write the instruction, and pick the agent and the model. The name follows the event until you type your own. **Options** holds the run location, who can open the sessions, conditions, a custom ID, and starting paused.
+6. Choose **Create trigger**. A missing or wrong value shows under its field, and nothing is created until it is fixed.
 
 The trigger is live as soon as its badge reads **Live**. The other badges are **Activating**, **Needs connection**, and **Error**. They match the `pending`, `needs_connection`, and `error` statuses below.
 
 ### See every app event trigger
 
-In the web app, open **Triggers** and choose **App events**. The filter row reads **All**, **Schedules**, **App events**, and **Webhooks**, each with a count. The choice is kept in the address as `?type=event`, so you can link to it. The rows are grouped by app. Below them, **Apps with events** lists every app that can start an agent, the apps your project already uses first. Choose one to open the new trigger form on that app.
+In the web app, open **Triggers** and choose **App events**. The filter row reads **All**, **Schedules**, **App events**, and **Webhooks**, each with a count. The choice is kept in the address as `?type=event`, so you can link to it. The rows are grouped by app. Below them, **Apps with events** lists every app that can start an agent, the apps your project already uses first. Choose one to open the new trigger window on that app's events.
 
 A connector's window has a **Triggers** tab with the app events on that connector. The tab appears only for an app that has events.
 

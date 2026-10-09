@@ -16,7 +16,7 @@ import {
   describeEventStatus,
   eventTriggersOn,
 } from '@/components/projects/schedule/event-trigger-copy';
-import { ScheduleCreateModal } from '@/components/projects/schedule/schedule-create-modal';
+import { TriggerComposer } from '@/components/projects/schedule/trigger-composer';
 import { triggerName } from '@/components/projects/schedule/schedule-copy';
 import { useTriggerControls } from '@/components/projects/schedule/trigger-controls';
 import { useTranslations } from '@/i18n/use-translations';
@@ -116,7 +116,7 @@ export function ConnectorTriggers({
           })}
         </ul>
       )}
-      <ScheduleCreateModal
+      <TriggerComposer
         projectId={projectId}
         open={creating}
         onOpenChange={setCreating}

@@ -56,7 +56,10 @@ export function describeEventWhen(event: ProjectTriggerEvent | null): string {
 const EVENT_SOURCE_NAMES: Record<string, string> = { composio: 'Composio' };
 
 /** `composio` -> `Composio`; null when the event names no source. */
-export function eventSourceName(event: { source?: string | null; provider?: string | null }): string | null {
+export function eventSourceName(event: {
+  source?: string | null;
+  provider?: string | null;
+}): string | null {
   const id = event.source ?? event.provider;
   return id ? (EVENT_SOURCE_NAMES[id] ?? appLabel(id, id)) : null;
 }
@@ -67,7 +70,10 @@ export function eventSourceName(event: { source?: string | null; provider?: stri
  * account is the declared label, else the identity the default account runs as.
  * The last part names the event source adapter.
  */
-export function describeEventSource(event: ProjectTriggerEvent, tI18nComplete: UiTranslator): string {
+export function describeEventSource(
+  event: ProjectTriggerEvent,
+  tI18nComplete: UiTranslator,
+): string {
   const app = appLabel(event.app, event.connector);
   const parts = [app];
   const same = (a: string, b: string) =>
@@ -121,6 +127,18 @@ export function describeEventStatus(
 export function connectorHref(projectId: string, connector?: string | null): string {
   const base = `/projects/${projectId}/customize/connectors`;
   return connector ? `${base}?c=${encodeURIComponent(connector)}` : base;
+}
+
+/**
+ * An event description as one line of plain text: list bullets and emphasis
+ * marks go, and line breaks and runs of spaces collapse to one space.
+ */
+export function oneLineDescription(text: string): string {
+  return text
+    .replace(/^\s*[-*•]\s+/gm, '')
+    .replace(/\*\*|`/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 /* ─── Config schema -> form fields ──────────────────────────────────────── */

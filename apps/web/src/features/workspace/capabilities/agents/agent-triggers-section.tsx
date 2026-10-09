@@ -27,7 +27,7 @@ import {
   triggerName,
   type TriggerKind,
 } from '@/components/projects/schedule/schedule-copy';
-import { ScheduleCreateModal } from '@/components/projects/schedule/schedule-create-modal';
+import { TriggerComposer } from '@/components/projects/schedule/trigger-composer';
 import { ScheduleDetailSheet } from '@/components/projects/schedule/schedule-detail-sheet';
 import { useTriggerControls } from '@/components/projects/schedule/trigger-controls';
 import { Badge } from '@/components/ui/badge';
@@ -240,7 +240,7 @@ export function AgentTriggersSection({
       </div>
 
       {canCreate ? (
-        <ScheduleCreateModal
+        <TriggerComposer
           projectId={projectId}
           open={createOpen}
           onOpenChange={setCreateOpen}

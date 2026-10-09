@@ -74,6 +74,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useMemo, useState } from 'react';
 
+import { EventAppsStrip } from './schedule/event-apps-strip';
+import { appLabel } from './schedule/event-trigger-copy';
 import {
   type TriggerKind,
   describeWhen,
@@ -84,12 +86,9 @@ import {
   matchesQuery,
   triggerName,
 } from './schedule/schedule-copy';
-import { EventAppsStrip } from './schedule/event-apps-strip';
-import { type EventApp, appLabel } from './schedule/event-trigger-copy';
-import { useEventAppConnect } from './schedule/use-event-app-connect';
-import { ScheduleCreateModal } from './schedule/schedule-create-modal';
 import { ScheduleDetailSheet } from './schedule/schedule-detail-sheet';
 import { ScheduleTable } from './schedule/schedule-table';
+import { TriggerComposer } from './schedule/trigger-composer';
 import { useTriggerControls } from './schedule/trigger-controls';
 import {
   TRIGGER_FILTERS,
@@ -99,6 +98,7 @@ import {
   parseTriggerFilter,
   triggerCounts,
 } from './schedule/trigger-filter';
+import { useEventAppConnect } from './schedule/use-event-app-connect';
 
 /** Tab label per filter: the three kinds reuse the page's existing words. */
 const FILTER_LABEL_KEY: Record<TriggerFilter, string> = {
@@ -269,17 +269,11 @@ export function ScheduleView({ projectId }: { projectId: string }) {
   const [createOpen, setCreateOpen] = useState(false);
   // The empty state's "App event" button opens the form past the type step.
   const [createKind, setCreateKind] = useState<TriggerKind | null>(null);
-  // The app picked in the "Apps with events" strip, already a connector of the project.
-  const [createConnector, setCreateConnector] = useState<{ slug: string; name: string } | null>(
-    null,
-  );
-  const [addingApp, setAddingApp] = useState(false);
-  const openCreate = (
-    kind: TriggerKind | null = null,
-    connector: { slug: string; name: string } | null = null,
-  ) => {
+  // The app picked in the "Apps with events" strip. The composer lists its events and sends no request.
+  const [createApp, setCreateApp] = useState<{ app: string } | null>(null);
+  const openCreate = (kind: TriggerKind | null = null, app: { app: string } | null = null) => {
     setCreateKind(kind);
-    setCreateConnector(connector);
+    setCreateApp(app);
     setCreateOpen(true);
   };
   const eventConnect = useEventAppConnect(projectId);
@@ -407,27 +401,6 @@ export function ScheduleView({ projectId }: { projectId: string }) {
     [filter, filtered, eventApps.data],
   );
 
-  /** A click in the strip: open the form on that app, adding its connector first when the project has none. */
-  async function pickApp(app: EventApp) {
-    let connector = app.connector ? { slug: app.connector, name: app.name } : null;
-    if (!connector && eventConnect.canAdd) {
-      setAddingApp(true);
-      try {
-        const slug = await eventConnect.add({ app: app.app, name: app.name, connector: null, newConnectorSlug: app.new_connector_slug });
-        connector = { slug, name: app.name };
-      } catch (error) {
-        errorToast(
-          error instanceof Error
-            ? error.message
-            : tI18nComplete('textf5dd6c3bc8a9', { name: app.name }),
-        );
-        return;
-      } finally {
-        setAddingApp(false);
-      }
-    }
-    openCreate('event', connector);
-  }
   const showFilter = showContent && (triggers.length > 0 || filter !== 'all');
   const selected = triggers.find((t) => t.slug === selectedSlug) ?? null;
   const parseErrors = triggersQuery.data?.errors ?? [];
@@ -510,7 +483,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
             icon={WarningIcon}
             title={tI18nComplete.raw('textb18b93a52cd2')}
           >
-            {tI18nComplete.raw('text3bc554b5c290')}
+            {tI18nComplete.raw('text3bc554b5c290')}{' '}
             {copy.createLabel}.
           </InfoBanner>
         )}
@@ -614,8 +587,8 @@ export function ScheduleView({ projectId }: { projectId: string }) {
         {showContent && filter === 'event' ? (
           <EventAppsStrip
             projectId={projectId}
-            disabled={!canWrite || addingApp}
-            onPick={(app) => void pickApp(app)}
+            disabled={!canWrite}
+            onPick={(app) => openCreate('event', { app: app.app })}
           />
         ) : null}
 
@@ -636,12 +609,12 @@ export function ScheduleView({ projectId }: { projectId: string }) {
         )}
       </div>
 
-      <ScheduleCreateModal
+      <TriggerComposer
         projectId={projectId}
         open={createOpen}
         onOpenChange={setCreateOpen}
         initialKind={createKind}
-        initialConnector={createConnector}
+        initialApp={createApp}
         onCreated={(slug) => {
           setCreateOpen(false);
           invalidate();
