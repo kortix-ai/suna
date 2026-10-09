@@ -775,7 +775,7 @@
       "enableDescriptionPush": "Mostra notificações neste navegador, mesmo com todas as abas do Kortix fechadas.",
       "enableDescriptionDesktop": "Mostra notificações do aplicativo desktop enquanto a janela dele estiver aberta.",
       "enableDescriptionBrowser": "Mostra notificações neste navegador enquanto uma aba do Kortix estiver aberta.",
-      "notificationTypesDescription": "Estas escolhas valem em todos os celulares e navegadores. O sino lista todas as notificações.",
+      "notificationTypesDescription": "Estas escolhas valem em todos os celulares e navegadores. Um celular também tem a própria chave para Turno concluído, Turno com falha, Pergunta e Pedido de permissão. Ele só os recebe quando as duas estão ligadas. O sino lista todas as notificações dos projetos com a Central de notificações ligada.",
       "push": "Push",
       "email": "E-mail",
       "channelSwitch": "{kind}: {channel}",
@@ -1197,7 +1197,7 @@
         },
         "notification_center": {
           "name": "Central de notificações",
-          "description": "Avisa as pessoas a quem uma sessão diz respeito (quem enviou o prompt, quem a criou e quem a segue) com uma caixa de entrada com sino, push do navegador e e-mail, e alerta sobre gatilhos e lembretes que falham. Desligado: só o telefone de quem criou a sessão recebe um push."
+          "description": "Avisa as pessoas a quem uma sessão diz respeito (quem enviou o prompt, quem a criou e quem a segue) com uma caixa de entrada com sino, push do navegador e e-mail, e alerta sobre gatilhos e lembretes que falham. Desligado: só o telefone de quem criou a sessão recebe o push dela, e o telefone de um proprietário da conta recebe um quando um gatilho começa a falhar."
         },
         "event_triggers": {
           "name": "Gatilhos de eventos do app",

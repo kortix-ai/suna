@@ -384,6 +384,21 @@ describe('sendWebNotification — flag off: the per-browser switch gates each ki
     expect(notificationInstances).toHaveLength(1);
   });
 
+  test('a cached project list with the flag off takes this path too', () => {
+    enabledAndHidden();
+    queryClient.setQueryData(qk.projects.list('acc-1'), [
+      { project_id: 'proj1', experimental: { notification_center: false } },
+    ]);
+    setServerPushPreferences({
+      ...DEFAULT_NOTIFICATION_PREFERENCES,
+      turn_done: { push: false, email: false },
+    });
+
+    sendWebNotification(completionPayload());
+
+    expect(notificationInstances).toHaveLength(1);
+  });
+
   test('a project not in the cache takes this path (fail-closed)', () => {
     enabledAndHidden();
     setServerPushPreferences({
@@ -464,6 +479,23 @@ describe('sendWebNotification — the server Push choice gates each kind', () =>
     sendWebNotification(completionPayload());
 
     expect(notificationInstances).toHaveLength(1);
+  });
+
+  test('a project whose detail is not cached follows its cached project list', () => {
+    enabledAndHidden();
+    queryClient.clear();
+    queryClient.setQueryData(qk.projects.list('acc-1'), [
+      { project_id: 'proj1', experimental: { notification_center: true } },
+    ]);
+    setServerPushPreferences({
+      ...DEFAULT_NOTIFICATION_PREFERENCES,
+      turn_done: { push: false, email: false },
+    });
+
+    sendWebNotification(completionPayload());
+
+    expect(notificationInstances).toHaveLength(0);
+    expect(toastCalls).toHaveLength(1);
   });
 
   test('an inbox row follows the server choice even when its project is not cached', () => {
@@ -623,7 +655,7 @@ describe('notifyTaskComplete — completions reach tabs that cannot hear the str
     visibility = { hidden: true, hasFocus: false };
     broadcastHub.posted.length = 0;
 
-    notifyTaskCompleteFor('sess1', 'dogfood-1', t, 'proj1');
+    notifyTaskCompleteFor({ sessionId: 'sess1', sessionTitle: 'dogfood-1', projectId: 'proj1' }, t);
 
     expect(broadcastHub.posted).toHaveLength(0);
     expect(toastCalls).toHaveLength(1);
@@ -637,17 +669,123 @@ describe('notifyTaskComplete — completions reach tabs that cannot hear the str
 
     // The publishing tab was not on a project page: null must not be
     // reinterpreted as THIS tab's project (the click-time fallback rule).
-    notifyTaskCompleteFor('sess1', 'dogfood-1', t, null);
+    notifyTaskCompleteFor({ sessionId: 'sess1', sessionTitle: 'dogfood-1', projectId: null }, t);
     const noProject = toastCalls[0]?.opts?.button as { props: { onClick: () => void } };
     noProject.props.onClick();
     expect(softNavigateCalls).toHaveLength(0);
 
     // A real projectId reaches the deep link unchanged.
-    notifyTaskCompleteFor('sess2', 'dogfood-2', t, 'proj9');
+    notifyTaskCompleteFor({ sessionId: 'sess2', sessionTitle: 'dogfood-2', projectId: 'proj9' }, t);
     const withProject = toastCalls[1]?.opts?.button as { props: { onClick: () => void } };
     withProject.props.onClick();
     expect(softNavigateCalls).toHaveLength(1);
     expect(softNavigateCalls[0]).toContain('proj9');
     expect(softNavigateCalls[0]).toContain('sess2');
+  });
+});
+
+/**
+ * KRTX-1742 review: a turn completion relayed to another tab. The receiving
+ * tab often has no cached detail of the project (it sits on `/projects` or on
+ * another project), so the publishing tab, which shows the session, sends its
+ * own `notification_center` answer with the message.
+ */
+describe('relayed completions carry the publishing tab answer', () => {
+  const t = Object.assign((key: string) => `t:${key}`, {
+    raw: (key: string) => `raw:${key}`,
+  }) as unknown as Parameters<typeof notifyTaskComplete>[2];
+  const win = world.window as { location: { pathname: string } };
+
+  function enabledAndHidden() {
+    setPreferences({ enabled: true });
+    FakeNotification.permission = 'granted';
+    visibility = { hidden: true, hasFocus: false };
+  }
+
+  /** Publishes from a tab on the session page; returns the message the other tabs receive. */
+  async function publish(answer: boolean | null) {
+    const before = win.location.pathname;
+    win.location.pathname = '/projects/proj1/sessions/sess1';
+    if (answer !== null) setNotificationCenter('proj1', answer);
+    broadcastHub.posted.length = 0;
+    notifyTaskComplete('sess1', 'dogfood-1', t);
+    win.location.pathname = before;
+    await settle();
+    // Only what the receiving tab does counts below.
+    notificationInstances.length = 0;
+    toastCalls.length = 0;
+    workerShown.length = 0;
+    workerOnScreen.clear();
+    // The receiving tab never opened the project.
+    queryClient.clear();
+    return broadcastHub.posted[0] as Parameters<typeof notifyTaskCompleteFor>[0];
+  }
+
+  test('the message holds the answer, or nothing when the publishing tab has none', async () => {
+    setPreferences({});
+    expect(await publish(true)).toMatchObject({ sessionId: 'sess1', projectId: 'proj1', notificationCenter: true });
+    expect(await publish(false)).toMatchObject({ notificationCenter: false });
+    expect((await publish(null)).notificationCenter).toBeUndefined();
+  });
+
+  test("flag on: a tab without the project cached follows the person's Push choice", async () => {
+    enabledAndHidden();
+    const msg = await publish(true);
+    setServerPushPreferences({
+      ...DEFAULT_NOTIFICATION_PREFERENCES,
+      turn_done: { push: false, email: false },
+    });
+
+    notifyTaskCompleteFor(msg, t);
+
+    expect(notificationInstances).toHaveLength(0);
+    expect(toastCalls).toHaveLength(1);
+  });
+
+  test('flag on: with a Web Push subscription the copy goes to the service worker', async () => {
+    enabledAndHidden();
+    webPushOn = true;
+    const msg = await publish(true);
+
+    notifyTaskCompleteFor(msg, t);
+    await settle();
+
+    expect(notificationInstances).toHaveLength(0);
+    expect(workerShown).toHaveLength(1);
+    expect(workerShown[0].options.tag).toBe('completion:sess1');
+  });
+
+  test("flag off: the browser switch decides, even where this tab's cache says on", async () => {
+    enabledAndHidden();
+    webPushOn = true;
+    const msg = await publish(false);
+    setNotificationCenter('proj1', true);
+    setServerPushPreferences({
+      ...DEFAULT_NOTIFICATION_PREFERENCES,
+      turn_done: { push: false, email: false },
+    });
+
+    notifyTaskCompleteFor(msg, t);
+    await settle();
+    expect(notificationInstances).toHaveLength(1);
+    expect(workerShown).toHaveLength(0);
+
+    setPreferences({ enabled: true, onCompletion: false });
+    notifyTaskCompleteFor(msg, t);
+    expect(notificationInstances).toHaveLength(1);
+  });
+
+  test("no answer in the message: this tab's cache decides", async () => {
+    enabledAndHidden();
+    const msg = await publish(null);
+    setNotificationCenter('proj1', true);
+    setServerPushPreferences({
+      ...DEFAULT_NOTIFICATION_PREFERENCES,
+      turn_done: { push: false, email: false },
+    });
+
+    notifyTaskCompleteFor(msg, t);
+
+    expect(notificationInstances).toHaveLength(0);
   });
 });

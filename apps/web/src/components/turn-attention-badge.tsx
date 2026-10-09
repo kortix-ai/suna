@@ -136,7 +136,7 @@ export function TurnAttentionBadge() {
   const receiveTurnComplete = useMemo(
     () =>
       createTurnCompleteGate(isViewingSession, (msg: TurnCompleteMsg) =>
-        notifyTaskCompleteFor(msg.sessionId, msg.sessionTitle, tI18nComplete, msg.projectId),
+        notifyTaskCompleteFor(msg, tI18nComplete),
       ),
     [tI18nComplete],
   );

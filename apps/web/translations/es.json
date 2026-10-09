@@ -775,7 +775,7 @@
       "enableDescriptionPush": "Muestra notificaciones en este navegador, incluso con todas las pestañas de Kortix cerradas.",
       "enableDescriptionDesktop": "Muestra notificaciones de la app de escritorio mientras su ventana esté abierta.",
       "enableDescriptionBrowser": "Muestra notificaciones en este navegador mientras haya una pestaña de Kortix abierta.",
-      "notificationTypesDescription": "Estas opciones se aplican en cada teléfono y en cada navegador. La campana muestra todas las notificaciones.",
+      "notificationTypesDescription": "Estas opciones se aplican en cada teléfono y en cada navegador. Un teléfono también tiene su propio interruptor para Turno terminado, Turno fallido, Pregunta y Solicitud de permiso. Solo los recibe mientras ambos están activados. La campana muestra todas las notificaciones de los proyectos con Centro de notificaciones activado.",
       "push": "Push",
       "email": "Correo",
       "channelSwitch": "{kind}: {channel}",
@@ -1197,7 +1197,7 @@
         },
         "notification_center": {
           "name": "Centro de notificaciones",
-          "description": "Avisa a las personas a las que concierne una sesión (quien envió el prompt, quien la creó y quien la sigue) con una bandeja con campana, notificaciones push del navegador y correo, y alerta cuando fallan disparadores y recordatorios. Desactivado: solo el teléfono de quien creó la sesión recibe un push."
+          "description": "Avisa a las personas a las que concierne una sesión (quien envió el prompt, quien la creó y quien la sigue) con una bandeja con campana, notificaciones push del navegador y correo, y alerta cuando fallan disparadores y recordatorios. Desactivado: solo el teléfono de quien creó la sesión recibe su push, y el teléfono de un propietario de la cuenta recibe uno cuando un disparador empieza a fallar."
         },
         "event_triggers": {
           "name": "Disparadores de eventos de app",
