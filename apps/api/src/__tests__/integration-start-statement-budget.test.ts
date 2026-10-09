@@ -153,9 +153,9 @@ function dbStatementCount(res: Response): number {
   return Number(match[1]);
 }
 
-function startSession(waitMs?: number): Promise<Response> {
+async function startSession(waitMs?: number): Promise<Response> {
   const query = waitMs ? `?wait_ms=${waitMs}` : '';
-  return app.request(
+  return await app.request(
     `/v1/projects/${fixture!.project.project_id}/sessions/${fixture!.sessionId}/start${query}`,
     {
       method: 'POST',

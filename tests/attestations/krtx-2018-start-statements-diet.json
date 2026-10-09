@@ -1,0 +1,20 @@
+{
+  "source_hash": "976fb69f66a2aa6bc1fd143c2d43265841a8eed4c334d812d040f1ce56bf18d0",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-start-statement-budget.test.ts",
+    "apps/api/src/__tests__/unit-session-runtime-guards.test.ts",
+    "apps/api/src/projects/lib/heal-session-token.ts",
+    "apps/api/src/projects/session-lifecycle/start-session.ts",
+    "apps/api/src/projects/session-open/session-open-context.ts",
+    "apps/api/src/projects/session-open/session-open.ts"
+  ],
+  "diff_hash": "b364a63f43b7d806d6d66f9ae57be776003e5858a12910c08e6550c2d6559c97",
+  "head": "ef82c2629f7251683221002e0bd85b6161b4b1dd",
+  "passed": false,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "fail"
+  },
+  "at": "2026-10-09T17:58:39.879Z"
+}
