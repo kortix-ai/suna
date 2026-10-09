@@ -22,6 +22,9 @@ root = Stack([summary, list])
 \`\`\``;
 
 const RULES = [
+  'Arguments are positional only. Write Stat("Users", "900"), never Stat(label: "Users", value: "900") and never Stat("Users", "900", unit="k"). To set a later optional argument, fill every earlier one.',
+  'Children of Stack, Tab, and AccordionItem are component references, never plain strings. Put text in a Callout or a Card body.',
+  'Respect argument order and limits: Map(markers, source, route?, zoom?), so Map zoom is the 4th argument. Stat delta is at most 16 characters. Table takes exactly columns, rows, caption?.',
   'Write at least one sentence of prose before the first block.',
   'At most 3 blocks per reply.',
   'Charts and maps use only data from tool results, files, or the user. Never invent numbers or coordinates. Always fill source.',
