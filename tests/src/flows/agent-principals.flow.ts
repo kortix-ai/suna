@@ -352,7 +352,13 @@ flow(
 
       await ctx.step('a system role is a working ceiling, not a trap: project.read 200 and sessions (inside `member`) 200', async () => {
         (await run.client.get('/v1/projects/:projectId', { params: { projectId: project.id } })).status(200);
-        (await sessionsOf()).status(200);
+        // The principal cache (15 s) is invalidated only on the replica that
+        // took the write, so another replica can still see the binding without
+        // its role until its own entry expires.
+        await eventually('sessions inside the `member` ceiling', async () => {
+          const r = await sessionsOf();
+          return { ok: r.statusCode === 200, detail: `${r.statusCode} ${r.text().slice(0, 200)}` };
+        });
       });
 
       await ctx.step('the admin removes the binding; files returns to 200', async () => {
@@ -540,7 +546,10 @@ flow(
           return { ok: r.statusCode === 403, detail: `${r.statusCode} ${r.text().slice(0, 200)}` };
         });
         assertDenial(await filesOf(run, project.id), 'agent_ceiling_insufficient', 'project.file.read');
-        (await run.client.get('/v1/projects/:projectId/sessions', { params: { projectId: project.id } })).status(200);
+        await eventually('sessions inside the `member` ceiling', async () => {
+          const r = await run.client.get('/v1/projects/:projectId/sessions', { params: { projectId: project.id } });
+          return { ok: r.statusCode === 200, detail: `${r.statusCode} ${r.text().slice(0, 200)}` };
+        });
       });
     } finally {
       await world.close();

@@ -136,7 +136,8 @@ flow('SESS-30', {
       descriptorBody.attachment_id !== attachmentId ||
       descriptorBody.part_index !== 1 ||
       descriptorBody.filename !== 'eager.txt' ||
-      descriptorBody.mime !== 'text/plain' ||
+      // The upload maps every non-model-native MIME to octet-stream (#8229).
+      descriptorBody.mime !== 'application/octet-stream' ||
       descriptorBody.size_bytes !== bytes.length ||
       !String(descriptorBody.target_path).endsWith(`/1-eager.txt`) ||
       !String(descriptorBody.download_url).startsWith('http') ||

@@ -185,13 +185,19 @@ test.describe("20 — Workspace switching", () => {
       await test.step("account branding changes the document and restores on removal", async () => {
         const accountRoute = "**/v1/accounts";
         await page.route(accountRoute, async (route) => {
-          const response = await route.fetch();
-          const rows = await response.json();
-          await route.fulfill({ response, json: rows.map((row: AccountSummary) => ({
-            ...row,
-            branding: row.account_id === account.account_id
-              ? { app_name: "Synthetic Brand", favicon_url: "/favicon.png?brand=synthetic" } : null,
-          })) });
+          // A reload or goto can settle this route while route.fetch() waits on
+          // the deployed API. The request is gone then, so drop the late fulfill.
+          try {
+            const response = await route.fetch();
+            const rows = await response.json();
+            await route.fulfill({ response, json: rows.map((row: AccountSummary) => ({
+              ...row,
+              branding: row.account_id === account.account_id
+                ? { app_name: "Synthetic Brand", favicon_url: "/favicon.png?brand=synthetic" } : null,
+            })) });
+          } catch (error) {
+            if (!/already handled|Target page, context or browser has been closed|Request context disposed/i.test(String(error))) throw error;
+          }
         });
         await page.reload({ waitUntil: "domcontentloaded" });
         await expect(page).toHaveTitle(/Synthetic Brand/);
