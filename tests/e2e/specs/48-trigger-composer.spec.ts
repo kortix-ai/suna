@@ -83,7 +83,8 @@ test('48 — the trigger composer shows the whole trigger, flags problems in pla
       await expect(dialog.getByRole('button', { name: 'Next' })).toHaveCount(0);
       await expect(dialog.getByRole('button', { name: 'Back' })).toHaveCount(0);
       await expect(dialog.getByRole('tab', { name: 'Schedule' })).toHaveAttribute('aria-selected', 'true');
-      await expect(dialog.getByText('Every day at 09:00 (UTC), default runs your instruction.')).toBeVisible();
+      // The agent reads as the picker shows it (the default agent is "Kortix").
+      await expect(dialog.getByText('Every day at 09:00 (UTC), Kortix runs your instruction.')).toBeVisible();
     });
 
     await test.step('Create with no instruction flags it under the field and sends nothing', async () => {
@@ -95,7 +96,7 @@ test('48 — the trigger composer shows the whole trigger, flags problems in pla
     await test.step('switching to Webhook keeps the instruction and changes the summary', async () => {
       await dialog.getByLabel('Instruction').fill(INSTRUCTION);
       await dialog.getByRole('tab', { name: 'Webhook' }).click();
-      await expect(dialog.getByText('When your app calls the webhook, default runs your instruction.')).toBeVisible();
+      await expect(dialog.getByText('When your app calls the webhook, Kortix runs your instruction.')).toBeVisible();
       await expect(dialog.getByLabel('Instruction')).toHaveValue(INSTRUCTION);
       await expect(dialog.getByLabel('Signing key')).toBeVisible();
       await expect(dialog.getByLabel('Name', { exact: true })).toHaveValue('Webhook');

@@ -206,6 +206,18 @@ describe('status and links', () => {
     );
   });
 
+  test("needs_connection uses the catalog name over the server's slug text, unless an account is named", () => {
+    const index = indexEventApps([{ app: 'github', name: 'GitHub' } as ProjectTriggerEventApp]);
+    const generic = event('needs_connection', 'Finish connecting the shared github account to activate this trigger.');
+    expect(describeEventStatus(generic, testUiTranslator, index).detail).toBe(
+      'Connect a shared GitHub account to activate this trigger.',
+    );
+    const labelled = { ...event('needs_connection', 'Connect a shared GitHub account labelled "acme-bot" on github-work.'), account: 'acme-bot' };
+    expect(describeEventStatus(labelled, testUiTranslator, index).detail).toBe(
+      'Connect a shared GitHub account labelled "acme-bot" on github-work.',
+    );
+  });
+
   test('needs_connection tells the person what to connect', () => {
     expect(describeEventStatus(event('needs_connection'), testUiTranslator).detail).toBe(
       'Connect a shared github account to activate this trigger.',

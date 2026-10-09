@@ -55,7 +55,8 @@ async function openTriggerAccess(page: Page, projectId: string) {
   await expect(sheet).toBeVisible();
   // Session access sits in the folded Options block of the sheet's form.
   await sheet.getByRole('button', { name: 'Options' }).click();
-  const section = sheet.locator('section', { hasText: 'Session access' });
+  // Options is itself a section that holds this one: the innermost match is the field.
+  const section = sheet.locator('section', { hasText: 'Session access' }).last();
   await expect(section).toBeVisible();
   await expect(section.getByText('Session access', { exact: true })).toBeVisible();
   return { panel, section, sheet };

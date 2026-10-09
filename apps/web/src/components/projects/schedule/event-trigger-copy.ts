@@ -147,8 +147,11 @@ export function describeEventStatus(
       return {
         label: tI18nComplete.raw('textd919fde889e9'),
         variant: 'warning',
+        // The server names the app by slug ("github"); say it with the catalog name unless the
+        // text carries a named account the person must connect.
         detail:
-          event.error ?? tI18nComplete('text2a78b60b1056', { app: eventAppName(event, index) }),
+          (event.account ? event.error : null) ??
+          tI18nComplete('text2a78b60b1056', { app: eventAppName(event, index) }),
       };
     case 'error':
       return {
