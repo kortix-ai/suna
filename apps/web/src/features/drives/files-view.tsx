@@ -6,7 +6,6 @@ import { createFilesStore, useFilesStore } from '@/features/file-browser/store/f
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { DriveExplorer, FileExplorerSourceProvider, FilesStoreProvider } from '@/features/project-files';
-import { ProjectPageHeader } from '@/features/workspace/project-layout/project-page-header';
 import { useDriveAvailability, useDriveFolder, useProjectDrive } from '@/hooks/drives/use-drives';
 import { useTranslations } from '@/i18n/use-translations';
 import {
@@ -23,9 +22,11 @@ import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { DriveConflictsBar } from './drive-conflicts-bar';
 import { DriveFilesProvider, driveExplorerSource, parentDrivePath, toDrivePath } from './drive-explorer-source';
 import { FolderAccessDialog } from './folder-access-dialog';
+import { FolderAccessPanel } from './folder-access-panel';
 
 /**
- * /projects/[id]/drive — the project's Files: one folder tree everyone in the
+ * /projects/[id]/customize/files — the project's Files, a Customize tab (the
+ * tab bar is its header): one folder tree everyone in the
  * project works in, in the same explorer as Repo. What each person sees and
  * may change follows folder access; their own folder (`Users/<name>`) is
  * private until they share it and is the desktop of their sessions.
@@ -65,18 +66,17 @@ export function FilesView({ projectId }: { projectId: string }) {
       />
     );
   } else {
-    body = <FilesBrowser drive={drive.data} />;
+    body = <FilesBrowser drive={drive.data} projectId={projectId} />;
   }
 
   return (
     <div className="bg-background flex h-full min-h-0 flex-1 flex-col">
-      <ProjectPageHeader title={t('files')} href={`/projects/${projectId}/drive`} />
       {body}
     </div>
   );
 }
 
-function FilesBrowser({ drive }: { drive: Drive }) {
+function FilesBrowser({ drive, projectId }: { drive: Drive; projectId: string }) {
   // The explorer's store starts at the top of Files, not at a sandbox path.
   const store = useMemo(() => {
     const s = createFilesStore();
@@ -88,13 +88,13 @@ function FilesBrowser({ drive }: { drive: Drive }) {
   return (
     <DriveFilesProvider driveId={drive.driveId}>
       <FilesStoreProvider store={store}>
-        <FilesExplorer drive={drive} />
+        <FilesExplorer drive={drive} projectId={projectId} />
       </FilesStoreProvider>
     </DriveFilesProvider>
   );
 }
 
-function FilesExplorer({ drive }: { drive: Drive }) {
+function FilesExplorer({ drive, projectId }: { drive: Drive; projectId: string }) {
   const t = useTranslations('drives');
   const currentPath = useFilesStore((s) => s.currentPath);
   const navigateToPath = useFilesStore((s) => s.navigateToPath);
@@ -167,14 +167,27 @@ function FilesExplorer({ drive }: { drive: Drive }) {
 
   return (
     <FileExplorerSourceProvider value={source}>
-      <div className="relative flex min-h-0 flex-1 flex-col">
-        <DriveExplorer leading={leading} rootLabel={t('files')} />
-        <DriveConflictsBar
-          driveId={drive.driveId}
-          onOpenFolder={(p) => navigateToPath(p.replace(/^\//, ''))}
-        />
+      <div className="flex min-h-0 flex-1">
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+          <DriveExplorer leading={leading} rootLabel={t('files')} />
+          <DriveConflictsBar
+            driveId={drive.driveId}
+            onOpenFolder={(p) => navigateToPath(p.replace(/^\//, ''))}
+          />
+        </div>
+        {/* Who can open the folder in view, beside it: the same section an
+            agent's page shows for who can use the agent. */}
+        <aside className="hidden w-80 shrink-0 overflow-y-auto border-l p-4 lg:block">
+          <FolderAccessPanel driveId={drive.driveId} path={path} onManage={() => setSharing(true)} />
+        </aside>
       </div>
-      <FolderAccessDialog driveId={drive.driveId} path={path} open={sharing} onOpenChange={setSharing} />
+      <FolderAccessDialog
+        driveId={drive.driveId}
+        projectId={projectId}
+        path={path}
+        open={sharing}
+        onOpenChange={setSharing}
+      />
     </FileExplorerSourceProvider>
   );
 }
