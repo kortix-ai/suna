@@ -206,6 +206,8 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'PUT /v1/admin/api/provider-distribution': { action: 'admin.sandbox_provider.distribution.update', title: 'Updated sandbox provider distribution' },
   'GET /v1/admin/api/provider-fallback': { action: 'admin.sandbox_provider.fallback.read', title: 'Viewed sandbox provider fallback' },
   'PUT /v1/admin/api/provider-fallback': { action: 'admin.sandbox_provider.fallback.update', title: 'Updated sandbox provider fallback' },
+  'GET /v1/admin/api/boot-modes': { action: 'admin.session_boot_modes.read', title: 'Viewed session boot modes' },
+  'PUT /v1/admin/api/boot-modes': { action: 'admin.session_boot_modes.update', title: 'Updated session boot modes' },
   'GET /v1/admin/api/sandboxes': { action: 'admin.sandbox.list', title: 'Listed all platform sandboxes' },
   'POST /v1/admin/api/sandboxes/:sessionId/migrate': { action: 'admin.sandbox.migrate', title: 'Migrated sandbox to another provider' },
   'GET /v1/approval-links/:token': { action: 'approval.link.read', title: 'Viewed approval link' },
