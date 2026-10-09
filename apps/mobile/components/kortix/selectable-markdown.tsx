@@ -38,13 +38,12 @@
  * placeholder that opens the source in the browser on tap.
  */
 
-import React, { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   StyleSheet,
   TextStyle,
   View,
   Text as RNText,
-  Pressable,
   LogBox,
   Platform,
   type TextProps,
@@ -54,8 +53,6 @@ import Markdown, { MarkdownIt, type MarkdownProps } from 'react-native-markdown-
 import { useColorScheme } from 'nativewind';
 import { MOTION } from '@/lib/utils/theme';
 import { FONT_FAMILY } from '@/lib/utils/fonts';
-import { Button } from '@/components/ui/button';
-import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { isMathFenceLanguage, isMermaidCode, prepareMarkdownForMath } from '@kortix/shared';
 import { CodeBlock, fenceCode, fenceLanguage } from '@/components/markdown/code-block';
@@ -72,7 +69,6 @@ import {
   collapsedGap,
   kindOfNode,
   orderedListGutter,
-  RADIUS,
   TYPE,
   web,
   type BlockKind,
