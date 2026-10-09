@@ -4,6 +4,7 @@ import { and, eq } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import {
   fireGitTrigger,
+  markGitTriggerAttemptFailed,
   markGitTriggerFired,
   renderPromptTemplate,
   triggerFilterMatches,
@@ -124,7 +125,10 @@ async function deliverToRow(
       idempotencyKey,
     });
     if (result.status === 'failed') {
-      logger.warn('[trigger-events] fire failed', { projectId: row.projectId, slug: row.slug, error: result.error });
+      const error = result.error ?? 'Failed to fire trigger';
+      logger.warn('[trigger-events] fire failed', { projectId: row.projectId, slug: row.slug, error });
+      // Recorded like a failed cron fire, so the trigger says it failed (KRTX-1743).
+      await markGitTriggerAttemptFailed(row.projectId, row.slug, new Date(), error).catch(() => {});
       return 'failed';
     }
     // A duplicate ran nothing: it leaves last_fired_at and last_event_at alone.
@@ -133,11 +137,9 @@ async function deliverToRow(
     await store.touchLastEvent(row.projectId, row.slug);
     return 'fired';
   } catch (error) {
-    logger.warn('[trigger-events] fire threw', {
-      projectId: row.projectId,
-      slug: row.slug,
-      error: error instanceof Error ? error.message : String(error),
-    });
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn('[trigger-events] fire threw', { projectId: row.projectId, slug: row.slug, error: message });
+    await markGitTriggerAttemptFailed(row.projectId, row.slug, new Date(), message).catch(() => {});
     return 'failed';
   }
 }
