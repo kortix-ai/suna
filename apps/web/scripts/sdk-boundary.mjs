@@ -38,6 +38,11 @@ const TEST_FILE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
  *                            module load. The import carries an inline eslint
  *                            disable (the `@kortix/sdk/*` gitignore pattern
  *                            cannot re-include a path under `genui/`).
+ *  - `@kortix/sdk/genui/react` — the generative UI renderer. One import, in
+ *                            `features/genui/sdk.ts`, a feature that
+ *                            `markdown-code.tsx` reaches only through `lazy()`,
+ *                            so `@openuidev/*` and `zod` stay out of the main
+ *                            bundle. The import carries an inline eslint disable.
  */
 const CANONICAL_SDK_ENTRIES = new Set([
   '@kortix/sdk',
@@ -48,6 +53,7 @@ const CANONICAL_SDK_ENTRIES = new Set([
   '@kortix/sdk/internal/diagnostics-store',
   '@kortix/sdk/internal/managed-storage',
   '@kortix/sdk/genui/fence',
+  '@kortix/sdk/genui/react',
 ]);
 
 const FORBIDDEN_IMPORTS = [
