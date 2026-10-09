@@ -7,8 +7,12 @@
  *   that session (the live stream's in-app cue plays instead).
  * - Registers the token on sign-in when OS permission is already granted.
  *   It never asks: requestPushPermissionOnce() asks after the first send.
- * - Re-posts the Notifications preferences 500 ms after a change.
- * - Opens the tapped session, also for the tap that cold-started the app.
+ * - Re-posts this phone's Notifications switches 500 ms after a change.
+ * - Opens the tapped session, or its project for an automation alert, also
+ *   for the tap that cold-started the app. The tap marks its inbox row read
+ *   (KRTX-1742), fire and forget.
+ * - A push that arrives while the app is open refetches the inbox: the
+ *   drawer's count, and ProjectScreen reads the row of the session on screen.
  */
 
 import { useEffect, useRef } from 'react';
@@ -16,6 +20,9 @@ import { AppState, Platform } from 'react-native';
 import { useGlobalSearchParams, useNavigationContainerRef, useRouter, useSegments } from 'expo-router';
 import { StackActions } from 'expo-router/react-navigation';
 import type { NotificationResponse } from 'expo-notifications';
+import { useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { markNotificationsRead } from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
 import { useAuthContext } from '@/contexts';
 import { log } from '@/lib/logger';
 import {
@@ -23,7 +30,6 @@ import {
   notificationOpenMove,
   parsePushData,
   PREFERENCE_SYNC_DEBOUNCE_MS,
-  routeForNotification,
   shouldPresentInForeground,
 } from '@/lib/notifications/push';
 import {
@@ -43,7 +49,14 @@ const PUSH_RESUME_DELAY_MS = 600;
 /** Tapped notification ids already handled (the listener and the cold-start read can both see one). */
 const handledResponses = new Set<string>();
 
-function handleResponse(response: NotificationResponse | null) {
+/** Mark inbox rows read, then refetch the inbox. Fire and forget: a failure leaves the rows unread. */
+function markRead(ids: string[], queryClient: QueryClient) {
+  markNotificationsRead({ ids })
+    .then(() => queryClient.invalidateQueries({ queryKey: qk.notifications.scope() }))
+    .catch((error: unknown) => log.warn('[PUSH] Mark read failed:', error));
+}
+
+function handleResponse(response: NotificationResponse | null, queryClient: QueryClient) {
   const Notifications = getNotifications();
   if (!response || !Notifications) return;
   if (response.actionIdentifier !== Notifications.DEFAULT_ACTION_IDENTIFIER) return;
@@ -52,9 +65,10 @@ function handleResponse(response: NotificationResponse | null) {
   handledResponses.add(id);
   const data = parsePushData(response.notification.request.content.data);
   if (!data) return;
-  const { sessionId } = routeForNotification(data);
-  usePushStore.getState().requestOpen(data.projectId, sessionId);
+  if (data.notificationId) markRead([data.notificationId], queryClient);
+  usePushStore.getState().requestOpen(data.projectId, data.sessionId);
 }
+
 
 let setupDone = false;
 
@@ -101,26 +115,36 @@ export function PushNotificationsBridge() {
   const segments = useSegments() as string[];
   const { id: routeProjectId } = useGlobalSearchParams<{ id?: string }>();
   const pendingOpen = usePushStore((s) => s.pendingOpen);
+  const queryClient = useQueryClient();
 
   const signedInRef = useRef(signedIn);
   signedInRef.current = signedIn;
 
-  // Channels, handler, and the tap listener. The last response covers a tap
-  // that launched the app before this listener existed.
+  // Channels, handler, and the tap and arrival listeners. The last response
+  // covers a tap that launched the app before this listener existed.
   useEffect(() => {
     setUpNotifications();
     const Notifications = getNotifications();
     if (!Notifications) return;
-    let subscription: { remove: () => void } | undefined;
+    const subscriptions: { remove: () => void }[] = [];
     try {
-      subscription = Notifications.addNotificationResponseReceivedListener(handleResponse);
-      handleResponse(Notifications.getLastNotificationResponse());
+      subscriptions.push(
+        Notifications.addNotificationResponseReceivedListener((response) => handleResponse(response, queryClient)),
+        // A push that arrived while the app is open: refetch the inbox. A row
+        // of the session on screen is then read (ProjectScreen).
+        Notifications.addNotificationReceivedListener(() => {
+          void queryClient.invalidateQueries({ queryKey: qk.notifications.scope() });
+        })
+      );
+      handleResponse(Notifications.getLastNotificationResponse(), queryClient);
       Notifications.clearLastNotificationResponse();
     } catch (error) {
-      log.warn('[PUSH] Tap listener not set:', error);
+      log.warn('[PUSH] Notification listeners not set:', error);
     }
-    return () => subscription?.remove();
-  }, []);
+    return () => {
+      for (const subscription of subscriptions) subscription.remove();
+    };
+  }, [queryClient]);
 
   // Sign-in: register when permission is already granted. Back in the
   // foreground without a token: the user may have allowed it in Settings.
@@ -135,7 +159,7 @@ export function PushNotificationsBridge() {
     }, PUSH_RESUME_DELAY_MS);
   }, [signedIn]);
 
-  // Preference toggles → server, debounced.
+  // This phone's switches → server, debounced.
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const unsubscribe = useNotificationStore.subscribe((state, prev) => {
@@ -151,7 +175,8 @@ export function PushNotificationsBridge() {
     };
   }, []);
 
-  // A tapped session: move to its project; ProjectScreen opens the session.
+  // A tapped notification: move to its project; ProjectScreen opens the
+  // session, or project home for an alert without one.
   const rootSegment = segments[0] ?? '';
   const currentProjectId =
     rootSegment === 'projects' && segments[1] === '[id]' && typeof routeProjectId === 'string'
