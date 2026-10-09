@@ -155,18 +155,16 @@ function dbStatementCount(res: Response): number {
 
 function startSession(waitMs?: number): Promise<Response> {
   const query = waitMs ? `?wait_ms=${waitMs}` : '';
-  return Promise.resolve(
-    app.request(
-      `/v1/projects/${fixture!.project.project_id}/sessions/${fixture!.sessionId}/start${query}`,
-      {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          authorization: `Bearer ${fixture!.token}`,
-        },
-        body: JSON.stringify({}),
+  return app.request(
+    `/v1/projects/${fixture!.project.project_id}/sessions/${fixture!.sessionId}/start${query}`,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${fixture!.token}`,
       },
-    ),
+      body: JSON.stringify({}),
+    },
   );
 }
 
