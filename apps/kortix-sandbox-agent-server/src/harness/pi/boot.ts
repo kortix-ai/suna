@@ -26,7 +26,7 @@ import {
   relayTurnEnd,
 } from '../shared/turn-relay'
 import { resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-dir'
-import { materializeProject } from '@/services/config-provider/config-provider'
+import { materializeProject } from '@/services/workspace-provider/workspace-provider'
 import { startEgressShim } from '@/services/egress-shim'
 import {
   configureGitCredentialHelper,
@@ -42,7 +42,7 @@ import { runSandboxOnBoot } from '../shared/on-boot'
 import { createProjectEnvStore } from '@/services/sandbox-env/project-env'
 import { configureRuntimeConvergence, scheduleRuntimeAssetsReconcile } from '@/services/runtime-assets/runtime-assets'
 import { configureRuntimeTruth, startRuntimeTruthTicker } from '@/services/runtime-assets/runtime-truth'
-import { ConvergeBusyError } from '@/services/config-release/release'
+import { ConvergeBusyError } from '@/services/config-provider/release'
 import type { PiBootState } from './boot-state'
 import type { PiConfig } from './config'
 import type { PiRuntimeHooks } from './runtime'

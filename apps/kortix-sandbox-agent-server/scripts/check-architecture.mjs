@@ -42,12 +42,12 @@ const cases = [
   ['types to a package', 'src/types/config-release.ts', "import type { z } from 'zod';", false],
 
   // services/<name>/ — own folder, the shared layer and declared services
-  ['service to own folder', 'src/services/config-provider/config-provider.ts', "import './types';", true],
-  ['service to lib', 'src/services/config-provider/config-provider.ts', "import '@/lib/git/git';", true],
+  ['service to own folder', 'src/services/workspace-provider/workspace-provider.ts', "import './types';", true],
+  ['service to lib', 'src/services/workspace-provider/workspace-provider.ts', "import '@/lib/git/git';", true],
   ['service to types', 'src/services/runtime-assets/runtime-truth.ts', "import type { ConfigReleaseReport } from '@/types/config-release';", true],
   ['service to a declared service', 'src/services/runtime-assets/runtime-assets.ts', "import '../config-release/boot-config';", true],
-  ['config-release to the snapshot transport', 'src/services/config-release/obtain.ts', "import '../config-provider/s3/s3-config-provider';", true],
-  ['config-provider to config-release', 'src/services/config-provider/config-provider.ts', "import '../config-release/obtain';", false],
+  ['config-release to the snapshot transport', 'src/services/config-provider/obtain.ts', "import '../config-provider/s3/s3-config-provider';", true],
+  ['config-provider to config-release', 'src/services/workspace-provider/workspace-provider.ts', "import '../config-release/obtain';", false],
   ['service to an undeclared service', 'src/services/static-web/static-web.ts', "import '../egress-shim';", false],
   ['service to the harness resolver', 'src/services/static-web/static-web.ts', "import '@/harness/harness';", false],
   ['service to a harness type', 'src/services/runtime-assets/runtime-assets.ts', "import type { HarnessService } from '@/harness/harness';", false],
@@ -67,7 +67,7 @@ const cases = [
   ['adapter to own nested folder', 'src/harness/pi/runtime.ts', "import './extensions/host';", true],
   ['adapter to the contract', 'src/harness/pi/boot.ts', "import type { SandboxBootState } from '../contract/boot-state';", true],
   ['adapter to shared', 'src/harness/pi/boot.ts', "import '../shared/on-boot';", true],
-  ['adapter to a service', 'src/harness/pi/boot.ts', "import '@/services/config-provider/config-provider';", true],
+  ['adapter to a service', 'src/harness/pi/boot.ts', "import '@/services/workspace-provider/workspace-provider';", true],
   ['adapter to types', 'src/harness/pi/boot.ts', "import type { InitialTurnClaim } from '@/types/control-plane';", true],
   ['adapter to another adapter', 'src/harness/pi/boot.ts', "import '../open-code/boot';", false],
   ['adapter to another adapter, type-only', 'src/harness/pi/boot.ts', "import type { Opencode } from '../open-code/lifecycle';", false],
@@ -142,8 +142,8 @@ test('architecture: a file outside every layer is rejected', async () => {
 // src/, relative inside one (kortixd/import-style).
 const styleCases = [
   ['relative inside one folder', 'src/harness/pi/boot.ts', "import '../shared/on-boot';", null],
-  ['@/ across folders', 'src/harness/pi/boot.ts', "import '@/services/config-provider/config-provider';", null],
-  ['relative across folders', 'src/harness/pi/boot.ts', "import '../../services/config-provider/config-provider';", 'useAlias'],
+  ['@/ across folders', 'src/harness/pi/boot.ts', "import '@/services/workspace-provider/workspace-provider';", null],
+  ['relative across folders', 'src/harness/pi/boot.ts', "import '../../services/workspace-provider/workspace-provider';", 'useAlias'],
   ['@/ inside one folder', 'src/harness/pi/boot.ts', "import '@/harness/shared/on-boot';", 'useRelative'],
   ['main.ts is its own folder', 'src/main.ts', "import './app/server';", 'useAlias'],
   ['a type-only import across folders', 'src/lib/log/logger.ts', "import type { InitialTurnClaim } from '../../types/control-plane';", 'useAlias'],

@@ -19,7 +19,7 @@
  * /opt/kortix/scaffold.git.
  */
 import { loadConfig } from '../src/lib/config/config'
-import { materializeProject } from '../src/services/config-provider/config-provider'
+import { materializeProject } from '../src/services/workspace-provider/workspace-provider'
 import { __setScaffoldRepoPathForTests } from '../src/lib/git/git'
 
 const scaffold = process.env.KORTIX_BENCH_SCAFFOLD_GIT?.trim()

@@ -1,4 +1,4 @@
-import type { ConfigProviderSummary } from '@/services/config-provider/types'
+import type { ConfigProviderSummary } from '@/services/workspace-provider/types'
 
 export type { BootMark } from '@kortix/api-contract/runtime-relay'
 import type { BootMark } from '@kortix/api-contract/runtime-relay'

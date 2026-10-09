@@ -39,9 +39,9 @@ import {
   type Opencode,
 } from './lifecycle'
 import { relayBootTimelineToApi } from '../shared/boot-timeline-relay'
-import { materializeProject } from '@/services/config-provider/config-provider'
+import { materializeProject } from '@/services/workspace-provider/workspace-provider'
 import { createSessionTreeWatch, registerRuntimeStateReader, scheduleRuntimeProjectionPush } from '../shared/projection-relay'
-import { ConvergeBusyError } from '@/services/config-release/release'
+import { ConvergeBusyError } from '@/services/config-provider/release'
 import { convergeConfigRelease } from './config-release'
 import { bootOpenCodeConfig } from './boot-config-path'
 import { OPENCODE_HOME } from './paths'

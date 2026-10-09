@@ -22,7 +22,7 @@ import * as tar from 'tar'
 
 import type { Config } from '@/lib/config/config'
 import { loadConfig } from '@/harness/harness'
-import { materializeProject } from '@/services/config-provider/config-provider'
+import { materializeProject } from '@/services/workspace-provider/workspace-provider'
 import {
   PROJECT_SNAPSHOT_FORMAT,
   buildProjectSnapshotDescriptorUrl,
@@ -30,8 +30,8 @@ import {
   makeEntryGuard,
   parseProjectSnapshotPin,
   type ProjectSnapshotDescriptor,
-} from '@/services/config-provider/s3/s3-config-provider'
-import { ConfigProviderError } from '@/services/config-provider/types'
+} from '@/services/workspace-provider/s3/s3-config-provider'
+import { ConfigProviderError } from '@/services/workspace-provider/types'
 import { __setScaffoldRepoPathForTests, readRepoInfo } from '@/lib/git/git'
 
 const PROJECT_ID = '11111111-1111-4111-8111-111111111111'
