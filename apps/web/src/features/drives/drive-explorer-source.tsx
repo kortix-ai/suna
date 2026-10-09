@@ -185,6 +185,12 @@ function useDriveMutation<TArgs>(run: (driveId: string, args: TArgs) => Promise<
   return useMutation({
     mutationFn: (args: TArgs) => run(driveId, args),
     onSettled: invalidate,
+    // A create, move or delete is not idempotent: retrying one the server
+    // already applied answers "already exists" / "not found" for a success.
+    retry: false,
+    // Every explorer call site toasts its own outcome; the app-wide fallback
+    // toast would add a second, generic one.
+    onError: () => undefined,
   });
 }
 

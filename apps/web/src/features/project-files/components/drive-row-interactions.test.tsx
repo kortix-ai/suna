@@ -81,6 +81,21 @@ for (const View of [DriveGridView, DriveListView]) {
           });
         }
       }
+      test('Enter and the blur that follows rename once; Escape then blur renames nothing', () => {
+        const s = setup(); s.start();
+        act(() => s.input().props.onChange({ target: { value: 'changed' } }));
+        const { onKeyDown, onBlur } = s.input().props;
+        act(() => onKeyDown({ key: 'Enter', nativeEvent: { isComposing: false } }));
+        act(() => onBlur());
+        expect(s.rename.mock.calls).toEqual([[node, 'changed']]);
+
+        s.start();
+        act(() => s.input().props.onChange({ target: { value: 'other' } }));
+        const cancel = s.input().props;
+        act(() => cancel.onKeyDown({ key: 'Escape', nativeEvent: { isComposing: false } }));
+        act(() => cancel.onBlur());
+        expect(s.rename).toHaveBeenCalledTimes(1);
+      });
       test('IME Enter does not commit; Escape has the existing layout-specific IME guard', () => {
         const s = setup(); s.start();
         act(() => s.input().props.onChange({ target: { value: 'changed' } }));

@@ -68,6 +68,17 @@ export function pathWithinFolder(path: string, folder: string): boolean {
   return path === folder || path.startsWith(`${folder}/`);
 }
 
+/**
+ * A folder the tree holds before anything was written to it: `/Users`,
+ * `/Company`, a granted folder (a new person's own folder exists only as their
+ * grant until a session or an upload writes into it), or a folder on the way
+ * to one. Listing it answers empty instead of "not found".
+ */
+export function folderKnownToTree(path: string, grants: readonly Pick<FolderGrant, 'path'>[]): boolean {
+  if (path === '/' || path === USERS_DIR || path === COMPANY_DIR) return true;
+  return grants.some((g) => pathWithinFolder(g.path, path));
+}
+
 /** `/Users/ana` for any path inside it, else null. */
 export function personalFolderOf(path: string): string | null {
   const parts = path.split('/').filter(Boolean);

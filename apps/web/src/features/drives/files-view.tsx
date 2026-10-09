@@ -14,7 +14,7 @@ import { useRouter } from 'next/navigation';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 
 import { DriveConflictsBanner } from './drive-conflicts-banner';
-import { DriveFilesProvider, driveExplorerSource, toDrivePath } from './drive-explorer-source';
+import { DriveFilesProvider, driveExplorerSource, parentDrivePath, toDrivePath } from './drive-explorer-source';
 import { FolderAccessDialog } from './folder-access-dialog';
 
 /**
@@ -72,7 +72,9 @@ function FilesBrowser({ drive }: { drive: Drive }) {
   // The explorer's store starts at the top of Files, not at a sandbox path.
   const store = useMemo(() => {
     const s = createFilesStore();
-    s.setState({ currentPath: '/', rootPath: null, expandedDirs: new Set() });
+    // Held to `/`, so "home" (the root crumb, an empty path) is the top of
+    // Files and never the sandbox default `/workspace`, which Files has not.
+    s.setState({ currentPath: '/', rootPath: '/', expandedDirs: new Set() });
     return s;
   }, []);
   return (
@@ -93,6 +95,14 @@ function FilesExplorer({ drive }: { drive: Drive }) {
   const access = folder.data?.access ?? 'none';
   const canWrite = access === 'write' || access === 'manage';
   const [sharing, setSharing] = useState(false);
+
+  // A folder that is gone (deleted, moved, or never there) is not an error
+  // page: step up to the nearest folder that lists.
+  const missing = folder.isError && path !== '/' && (folder.error as { status?: number } | null)?.status === 404;
+  useEffect(() => {
+    if (!missing) return;
+    navigateToPath(parentDrivePath(path).replace(/^\//, '') || '/');
+  }, [missing, path, navigateToPath]);
 
   // Upload, new folder, rename and delete only where the caller may write;
   // the API refuses the rest anyway.

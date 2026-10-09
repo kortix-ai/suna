@@ -33,6 +33,7 @@ import {
   grantableFolder,
   grantsCovering,
   pathWithinFolder,
+  folderKnownToTree,
   personalFolderOf,
 } from './folders';
 import {
@@ -338,7 +339,20 @@ drivesApp.openapi(
     const { drive, grants, subject } = caller;
     const path = drivePath(c.req.query('path'), { allowRoot: true });
     if (path !== '/') need(caller, path, 'read');
-    const raw = await withStorage(() => readDriveVolume(drive, (volume) => listVolumeFiles(volume, path, false), () => []));
+    const raw = await withStorage(() =>
+      readDriveVolume(
+        drive,
+        (volume) =>
+          listVolumeFiles(volume, path, false).catch((err) => {
+            // A person's own folder, or a shared one, before its first write.
+            if (err instanceof DriveStorageError && err.status === 404 && err.code !== 'volume_not_found' && folderKnownToTree(path, grants)) {
+              return [];
+            }
+            throw err;
+          }),
+        () => [],
+      ),
+    );
     const entries = raw
       .filter((e) => !(e.type === 'file' && baseName(e.path) === FOLDER_MARKER && Number(e.size) === 0))
       .filter((e) => !(e.type === 'dir' && e.path === '/lost+found'))
