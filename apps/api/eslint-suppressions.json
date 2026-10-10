@@ -1619,11 +1619,6 @@
       "count": 1
     }
   },
-  "src/platform/services/provision-timeline.ts": {
-    "no-console": {
-      "count": 1
-    }
-  },
   "src/platform/services/session-sandbox.ts": {
     "kortix-api/projects-surface": {
       "count": 14

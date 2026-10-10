@@ -185,20 +185,53 @@ async function readFileRaw(filePath: string, fallbackMime?: string, baseUrl?: st
   return blob;
 }
 
+// ─── Raw-read concurrency bound ─────────────────────────────────────────────
+//
+// A host transcript can show hundreds of binary file cards, and the live event
+// stream refetches every mounted card at once — `binaryBlobKeys.all` is
+// invalidated on each `file.edited` event and at turn end
+// (`use-opencode-events/handle-event.ts`). Unbounded, that fan-out saturates a
+// box's dial path: on 2026-10-10 one web client fired 649 `GET /file/raw` in one
+// minute at a single box and the route's p95 reached 20 s (Linear KRTX-471).
+// Eight concurrent reads keep every request fast and still drain a 700-card
+// refetch in seconds; the proxy's 15 s per-attempt connect cap never engages.
+const MAX_CONCURRENT_RAW_READS = 8;
+let rawReadsActive = 0;
+const rawReadWaiters: Array<() => void> = [];
+
+async function acquireRawReadSlot(): Promise<void> {
+  if (rawReadsActive < MAX_CONCURRENT_RAW_READS) {
+    rawReadsActive++;
+    return;
+  }
+  await new Promise<void>((release) => rawReadWaiters.push(release));
+  rawReadsActive++;
+}
+
+function releaseRawReadSlot(): void {
+  rawReadsActive--;
+  rawReadWaiters.shift()?.();
+}
+
 /** Read a file as a Blob — prefers `/file/raw`, falls back to base64 `/file/content`. */
 export async function readBlob(filePath: string, baseUrl?: string): Promise<Blob> {
-  // Resolve BEFORE the try: an unresolved runtime must surface as
-  // `RuntimeNotReadyError`, not be swallowed into the base64 fallback path.
-  const base = requireBaseUrl(baseUrl);
+  await acquireRawReadSlot();
   try {
-    return await readFileRaw(filePath, undefined, base);
-  } catch { /* fall back to JSON content endpoint */ }
-  const result = await readFile(filePath, base);
-  if (result.encoding === 'base64' && result.content) {
-    const bytes = Uint8Array.from(atob(result.content), (c) => c.charCodeAt(0));
-    return new Blob([bytes], { type: result.mimeType || 'application/octet-stream' });
+    // Resolve BEFORE the try: an unresolved runtime must surface as
+    // `RuntimeNotReadyError`, not be swallowed into the base64 fallback path.
+    const base = requireBaseUrl(baseUrl);
+    try {
+      return await readFileRaw(filePath, undefined, base);
+    } catch { /* fall back to JSON content endpoint */ }
+    const result = await readFile(filePath, base);
+    if (result.encoding === 'base64' && result.content) {
+      const bytes = Uint8Array.from(atob(result.content), (c) => c.charCodeAt(0));
+      return new Blob([bytes], { type: result.mimeType || 'application/octet-stream' });
+    }
+    return new Blob([result.content ?? ''], { type: result.mimeType || 'text/plain;charset=utf-8' });
+  } finally {
+    releaseRawReadSlot();
   }
-  return new Blob([result.content ?? ''], { type: result.mimeType || 'text/plain;charset=utf-8' });
 }
 
 /** Git file status — uncommitted changes. Daemon `GET /file/status`. */

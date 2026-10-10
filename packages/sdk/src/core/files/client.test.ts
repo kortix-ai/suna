@@ -831,3 +831,40 @@ test('createFile in a folder that does not exist yet creates it', async () => {
   expect(await F.createFile('/workspace/new/a.md')).toEqual([{ path: '/workspace/new/a.md', size: 0 }]);
   expect(calls.some((c) => c.url === 'http://sbx.test/file/mkdir')).toBe(true);
 });
+
+test('concurrent readBlob calls keep the raw reads in flight bounded', async () => {
+  // One web transcript shows hundreds of binary file cards, and the turn-end /
+  // file.edited invalidation refetches every mounted card at once. Unbounded,
+  // that fan-out saturated one box's dial path (649 GETs in one minute, route
+  // p95 20 s) and drove reads into the proxy's 15 s connect-timeout cap. The
+  // SDK's read funnel must keep the concurrent reads bounded instead of firing
+  // all of them at the box simultaneously.
+  let inFlight = 0;
+  let maxInFlight = 0;
+  let releaseAll: () => void = () => {};
+  const hold = new Promise<void>((release) => {
+    releaseAll = release;
+  });
+  globalThis.fetch = mock(async () => {
+    inFlight++;
+    maxInFlight = Math.max(maxInFlight, inFlight);
+    await hold;
+    inFlight--;
+    return new Response(JSON.stringify({ bytes: 'raw' }), {
+      status: 200,
+      headers: { 'content-type': 'application/octet-stream' },
+    });
+  }) as unknown as typeof fetch;
+
+  const reads = Array.from({ length: 30 }, (_, i) => F.readBlob(`/workspace/card-${i}.png`));
+  // Let every read reach the funnel: exactly the 8 slots fetch and hold; the
+  // rest wait in the queue (a broken limiter that never fetches cannot pass —
+  // maxInFlight would stay 0).
+  await Bun.sleep(20);
+  expect(maxInFlight).toBe(8);
+  releaseAll();
+  const blobs = await Promise.all(reads);
+  expect(blobs).toHaveLength(30);
+  expect(maxInFlight).toBe(8);
+  expect(inFlight).toBe(0);
+});
