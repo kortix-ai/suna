@@ -24,6 +24,9 @@ import {
   uploadAppArtifactArchive,
   type App,
   type AppDeployment,
+  type AppDeployStrategy,
+  type AppReleaseConfig,
+  type AppRollback,
   type AppImageRelease,
   type CreateAppInput,
   type UpdateAppInput,
@@ -83,6 +86,21 @@ test('AppDeployment exposes the immutable deploying actor', () => {
   expect(deployment.created_by).toBe('user-1');
   expect(deployment.source_session_id).toBe('session-1');
   expect(deployment.actor_type).toBe('agent');
+});
+
+test('AppDeployment is a release: its resolved config, strategy and release command outcome', () => {
+  const config: Equal<AppDeployment['config'], AppReleaseConfig | null> = true;
+  const strategy: Equal<AppDeployment['strategy'], AppDeployStrategy | null> = true;
+  const releaseCommand: Equal<AppDeployment['release_command_status'], 'running' | 'succeeded' | 'failed' | null> = true;
+  expect([config, strategy, releaseCommand]).toEqual([true, true, true]);
+});
+
+test('rollbackApp resolves with the App and the NEW release it queued', async () => {
+  const shape: Equal<Awaited<ReturnType<typeof rollbackApp>>, AppRollback> = true;
+  expect(shape).toBe(true);
+  responses.push({ body: { app_id: 'app-1', deployment: { deployment_id: 'deployment-4', version: 4, status: 'queued' } } });
+  const rolled = await rollbackApp('project-1', 'app-1', 'deployment-1');
+  expect(rolled.deployment).toMatchObject({ deployment_id: 'deployment-4', version: 4, status: 'queued' });
 });
 
 test('Apps hosting excludes the retired same-machine provider', () => {

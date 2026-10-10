@@ -64,7 +64,10 @@ call itself (`requireMember`, sign-in.md): its own URL is public.
 | Answer on `/_kortix/apps/<slug>/…` | Cause | Fix |
 | --- | --- | --- |
 | `403 app_not_linked` | The App does not use `<slug>` | `kortix apps link <app> --uses <slug>` |
-| `409 app_binding_unsupported` | The used App has no endpoint to bind | Only a `convex` App has one (its Convex client API). Call a web App on its own URL. |
+| `409 app_binding_unsupported` | The used App is static: it runs no server | Fetch a static App's files on its own URL. |
+| `403 app_binding_forbidden` | The service is `access: admins` | An admins-only service is never bound. |
+| `404 app_service_not_found` | `<slug>--<service>` names no service | Check `kortix apps show <slug> --json` → `services`. |
+| `503 app_binding_unavailable` | The used App has no running release | Deploy it, or start it. |
 | `401 app_auth_required` | The viewer did not pass the App's access gate | Open the App through Kortix or an access link. |
 
 ## What stays on the used App's own host

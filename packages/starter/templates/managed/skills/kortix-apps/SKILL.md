@@ -83,7 +83,7 @@ apps:
     http_service:
       internal_port: 3000
       access: app                  # public | app (the App's policy) | admins
-      auto_stop_machines: stop     # off | stop | suspend
+      auto_stop_machines: stop     # off | stop (suspend: like stop, today)
       min_machines_running: 0
       checks: [{ type: http, path: /health }]
     services:

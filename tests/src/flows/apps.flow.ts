@@ -1478,7 +1478,7 @@ flow(
           .status(400).body().has("$.code", "volume_name_invalid");
       });
 
-      await ctx.step("a project member (no deploy, no admin) is refused every write: 403 on scale, exec, machine start, volume create, extend, snapshot, restore, fork and destroy", async () => {
+      await ctx.step("a project member (no deploy, no admin) is refused every write: 403 on scale, exec, machine start, volume create, extend, snapshot, restore, fork, destroy and App delete", async () => {
         const refusals = [
           await member.put("/v1/projects/:projectId/apps/:appId/scale", { count: { app: 1 } }, { params: app() }),
           await member.post("/v1/projects/:projectId/apps/:appId/exec", { command: ["true"] }, { params: app() }),
@@ -1489,6 +1489,7 @@ flow(
           await member.post("/v1/projects/:projectId/apps/:appId/volumes/:volumeId/restore", { snapshot_id: "manual-20261010" }, { params: vol() }),
           await member.post("/v1/projects/:projectId/apps/:appId/volumes/:volumeId/fork", { name: "copy" }, { params: vol() }),
           await member.del("/v1/projects/:projectId/apps/:appId/volumes/:volumeId", { params: vol(), query: { confirm: "data" } }),
+          await member.del("/v1/projects/:projectId/apps/:appId", { params: app() }),
         ];
         refusals.forEach((response) => response.status(403));
         (await owner.get("/v1/projects/:projectId/apps/:appId/volumes", { params: app() })).status(200).body().has("$.volumes[0].size_gb", 20);

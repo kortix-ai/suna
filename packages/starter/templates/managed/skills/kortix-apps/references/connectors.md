@@ -10,9 +10,9 @@ full recipes and error answers are in the `kortix-connectors` skill
 | --- | --- | --- |
 | An App in the browser | `createKortix({ backendUrl: '/_kortix/api/v1', getToken: kortixAppViewerToken() })`, App set to `--viewer api` | The viewer's shared and private accounts |
 | An App's server | `createAppViewerKortix(request, { backendUrl })` from `@kortix/sdk/server`, per request | The same |
-| A `convex` App's action, an App job with no viewer | A service account bearer (`kortix_sa_…`) in an environment variable | Shared accounts nobody narrowed; never a private one |
+| A Convex backend App's action, an App job with no viewer | A service account bearer (`kortix_sa_…`) in an environment variable | Shared accounts nobody narrowed; never a private one |
 
-## A service account for a `convex` App
+## A service account for a Convex backend App
 
 **The credential is a human step.** Kortix does not mint a credential for App
 code. Ask the user to run:
@@ -50,6 +50,6 @@ export const syncDeals = internalAction({
 ```
 
 Anyone with the backend's admin key reads the bearer from the Convex
-environment. To start an agent from a `convex` App, POST the project's
+environment. To start an agent from a Convex backend App, POST the project's
 webhook trigger from an action, with its secret in a Convex environment
 variable (kortix-system, scheduling).

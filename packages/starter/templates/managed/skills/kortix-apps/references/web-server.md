@@ -3,7 +3,7 @@
 A server App (a Dockerfile or an OCI image) runs in its own machine. It has a
 run mode (always on or on demand). Use one only
 when the App needs its own server process, native packages, or custom
-runtime behavior. Data and server logic for a UI belong in a `convex` App
+runtime behavior. Data and server logic for a UI belong in a Convex backend App
 (convex.md), not here.
 
 | Source | Deploy |
@@ -43,7 +43,7 @@ A server App runs in one of two modes. Choose the mode on the first deploy:
 - **Always on** (the default for a new App): runs 24/7, and keep-alive
   restarts it within 5 minutes if it stops. Use it only for an App that holds
   websockets open or runs its own background loop. Scheduled jobs and queues
-  of an App that uses a `convex` App belong in the `convex` App.
+  of an App that uses a Convex backend App belong in the backend App.
 
 Apps have no monthly budget. Both modes stop when the account can no longer
 pay (event `app_stopped_unfunded`). The run mode decides the cost:

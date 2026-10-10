@@ -17,6 +17,7 @@ import {
   validateAppAccessPrincipals,
 } from './access';
 import { authorizeAppRequest } from './public-proxy';
+import { authorizeServiceRequest } from './public-proxy-access';
 import { invalidateIamCacheForUser } from '../iam/cache-invalidation';
 import { deleteFromView, insertIntoView } from '../__tests__/helpers/compat-views';
 
@@ -234,6 +235,35 @@ describeWithDb('App access persistence — real PostgreSQL', () => {
       principalType: 'group',
       principalId: FOREIGN_GROUP_ID,
     });
+  });
+
+  test('an admins service lets an App admin in and refuses a member who passes the App policy', async () => {
+    const app = await seedApp();
+    await testDb().update(apps).set({ accessMode: 'public' }).where(eq(apps.appId, APP_ID));
+    const publicApp = { ...app, accessMode: 'public' };
+    await insertIntoView(testDb(), accountMembers, { accountId: ACCOUNT_ID, userId: OWNER_ID, accountRole: 'owner' });
+    await insertIntoView(testDb(), accountMembers, { accountId: ACCOUNT_ID, userId: MEMBER_ID, accountRole: 'member' });
+    const asUser = (userId: string) => {
+      const token = createAppAccessToken({
+        appId: APP_ID,
+        kind: 'kortix',
+        userId,
+        revision: app.accessRevision,
+        expiresAt: new Date(Date.now() + 60_000),
+      });
+      return new Request('https://dev-access-test-bbbbbbbbbbbbbbbb--dash.apps.kortix.com/', {
+        headers: { cookie: `__Host-kortix_app_access=${token}` },
+      });
+    };
+    const owner = asUser(OWNER_ID);
+    expect(await authorizeServiceRequest(owner, new URL(owner.url), publicApp, 'admins')).toBeNull();
+    const member = asUser(MEMBER_ID);
+    expect(await authorizeServiceRequest(member, new URL(member.url), publicApp, 'app')).toBeNull();
+    const refused = await authorizeServiceRequest(member, new URL(member.url), publicApp, 'admins');
+    expect(refused?.status).toBe(403);
+    expect(((await refused?.json()) as { code: string }).code).toBe('app_service_admins_only');
+    const anonymous = new Request('https://dev-access-test-bbbbbbbbbbbbbbbb--dash.apps.kortix.com/');
+    expect((await authorizeServiceRequest(anonymous, new URL(anonymous.url), publicApp, 'admins'))?.status).toBe(403);
   });
 
   test('Kortix App cookies stop working after account access is revoked', async () => {

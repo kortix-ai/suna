@@ -66,6 +66,10 @@ describe('appReleaseConfigIssues', () => {
     expect(paths({ port: 1, mounts: [{ source: 'Data-1', destination: '/data' }] })).toEqual(['mounts[0].source']);
   });
 
+  test('a tcp service is refused until the proxy serves one', () => {
+    expect(paths({ port: 3000, services: [{ name: 'pg', internal_port: 5432, protocol: 'tcp' }] })).toEqual(['services[0].protocol']);
+  });
+
   test('a worker-only App (no service) is valid; VM bounds hold', () => {
     expect(paths({ processes: { worker: 'run' } })).toEqual([]);
     expect(paths({ port: 1, vm: { cpu: 64 } })).toEqual(['vm[0].cpu']);

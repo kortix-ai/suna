@@ -394,9 +394,18 @@ export interface AppDeployment {
   source_session_id: string | null;
   /** Immutable caller class recorded when the deployment was created. */
   actor_type: 'human' | 'agent' | 'service_account' | 'system';
+  /** The release's resolved config (Fly model); `null` for a release made before releases carried one. */
+  config: AppReleaseConfig | null;
+  /** How this release rolls out; `null` before the worker resolves it. */
+  strategy: AppDeployStrategy | null;
+  /** The `deploy.release_command` outcome; `null` when the release has none. */
+  release_command_status: 'running' | 'succeeded' | 'failed' | null;
   created_at: string;
   updated_at: string;
 }
+
+/** What `rollbackApp` resolves with: the App and the NEW release it queued from the target's artifact and config. */
+export type AppRollback = App & { deployment: AppDeployment };
 
 export interface AppDeploymentEvent {
   event_id: string;
@@ -730,9 +739,9 @@ export async function rollbackApp(
   projectId: string,
   appId: string,
   deploymentId: string,
-): Promise<App> {
+): Promise<AppRollback> {
   return unwrap(
-    await backendApi.post<App>(`/projects/${projectId}/apps/${appId}/rollback`, {
+    await backendApi.post<AppRollback>(`/projects/${projectId}/apps/${appId}/rollback`, {
       deployment_id: deploymentId,
     }),
     'Failed to roll back App',

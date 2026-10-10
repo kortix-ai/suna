@@ -523,9 +523,14 @@ interface TeamScopedApp {
   createdBy: string | null;
 }
 
-/** May this user manage the App's project (the `admins` service access)? */
-export async function isAppProjectManager(app: { accountId: string; projectId: string }, userId: string): Promise<boolean> {
-  return projectManager(app.accountId, app.projectId, userId);
+/** Is this user an App admin of the project (`project.app.admin`: the `admins` service access, like exec)? */
+export async function isAppAdmin(app: { accountId: string; projectId: string }, userId: string): Promise<boolean> {
+  const verdict = await authorize(
+    await actorForToken(userId, app.accountId, undefined),
+    PROJECT_ACTIONS.PROJECT_APP_ADMIN,
+    { type: 'project', id: app.projectId },
+  );
+  return verdict.allowed;
 }
 
 async function projectManager(

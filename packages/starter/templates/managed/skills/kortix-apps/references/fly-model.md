@@ -72,7 +72,8 @@ services:
   `<env>-<slug>-<route key>--<name>` (local: `<route key>--<name>.apps.localhost`).
   `app.services[].url` has each URL.
 - `access` gates the service's host. `public`: no gate. `app`: the App's access
-  policy. `admins`: the App's policy, then project admins only.
+  policy. `admins`: the App's policy, then project admins (`project.app.admin`)
+  only.
 - The proxy spreads requests over the group's running machines. With
   `auto_stop_machines: stop`, an idle machine stops and the next request starts
   one; `min_machines_running` keeps that many up. `always_on: true` is the
@@ -94,8 +95,8 @@ mounts:
 - One machine writes a volume at a time. A release with a mount deploys
   `rolling`: stop the old machine, commit and detach the volume, mount it on
   the new machine. Seconds of downtime; no acknowledged write lost.
-- Snapshots: Kortix takes one every day and keeps it `snapshot_retention_days`
-  (default 5, at most 60). `volumes snapshot` takes one now; `volumes restore`
+- Snapshots: Kortix takes one every day. Daily and manual snapshots are kept
+  `snapshot_retention_days` (default 5, at most 60). `volumes snapshot` takes one now; `volumes restore`
   makes a snapshot the volume's contents again (a new version; nothing is
   lost); `volumes fork` makes an instant, unattached copy; `volumes extend`
   grows the allotment (it never shrinks; at most 100 GB).
@@ -128,6 +129,6 @@ images and config, nothing the platform runs specially.
 | --- | --- | --- |
 | `convex` | A self-hosted Convex backend + an admins-only dashboard | convex.md |
 
-Not yet: TCP services (a Postgres or Redis client protocol) and private
-networking between Apps. Until then a database that speaks raw TCP can only be
+Not yet: TCP services (a Postgres or Redis client protocol; `protocol: tcp` is
+refused) and private networking between Apps. Until then a database that speaks raw TCP can only be
 reached from inside its own machine (`kortix apps exec`).

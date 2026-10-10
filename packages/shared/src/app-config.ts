@@ -228,6 +228,7 @@ export function appReleaseConfigIssues(config: AppReleaseConfig): AppConfigIssue
     if (service.name === PRIMARY_SERVICE && index !== 0) issues.push({ path: `${path}.name`, message: '"http" is the primary service: declare it as http_service.' });
     if (names.has(service.name)) issues.push({ path: `${path}.name`, message: `"${service.name}" is declared twice.` });
     names.add(service.name);
+    if (service.protocol !== 'http') issues.push({ path: `${path}.protocol`, message: 'only http services are served today; tcp is not supported yet.' });
     if (!inRange(service.internal_port, 1, 65535)) issues.push({ path: `${path}.internal_port`, message: 'must be a port from 1 to 65535.' });
     if ((RESERVED_APP_PORTS as readonly number[]).includes(service.internal_port)) {
       issues.push({ path: `${path}.internal_port`, message: `${service.internal_port} is reserved by the App supervisor.` });

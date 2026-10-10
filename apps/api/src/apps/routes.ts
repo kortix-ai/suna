@@ -27,7 +27,7 @@ import { AppHostingProvider } from './hosting';
 import { deploymentEventsAsLogs } from './logs';
 import { releaseDeploymentImage, releaseDeploymentImages, teardownAppRuntimes } from './images';
 import { ReleaseConfigSchema, resolveDeployConfig } from './release-config';
-import { appVolumesSupported, destroyAppVolumes } from './volumes';
+import { appVolumesSupported, destroyAppVolumes, listAppVolumes } from './volumes';
 import { ensureAppRuntimeRunning, loadPublicApp } from './public-proxy';
 import { type AppSourceSpec } from './spec';
 import { appPublicUrl } from './hostnames';
@@ -648,7 +648,8 @@ export function registerAppsRoutes(): void {
     createRoute({
       method: 'delete', path: '/{projectId}/apps/{appId}', tags: ['apps'], summary: 'Delete an App', ...auth,
       description:
-        'The App stops serving at once; its runtimes and images go.',
+        'The App stops serving at once; its machines and images go. An App with volumes needs `project.app.admin`: ' +
+        'each volume keeps a final snapshot for 7 days, then Kortix purges it.',
       request: {
         params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
       },
@@ -663,6 +664,11 @@ export function registerAppsRoutes(): void {
       if (loaded instanceof Response) return loaded;
       const row = await visibleApp(projectId, appId, loaded.userId);
       if (!row) return c.json({ error: 'Not found' }, 404);
+      // Deleting an App destroys its volumes: the same power as `volumes destroy`.
+      if ((await listAppVolumes(appId)).length > 0) {
+        const admin = await authorizedProject(c, projectId, 'admin');
+        if (admin instanceof Response) return admin;
+      }
       // Delete first, tear down second. A deleted App stops routing and leaves
       // the idle reaper at once; if this request dies mid-teardown, project
       // maintenance (`reclaimAppDeploymentImages`) removes what it left behind.

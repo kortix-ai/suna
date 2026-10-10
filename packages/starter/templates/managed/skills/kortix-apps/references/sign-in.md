@@ -92,7 +92,7 @@ convex.setAuth(async () => {
 });
 ```
 
-## A `convex` App: accept the token
+## A Convex backend App: accept the token
 
 Convex reads three deployment variables: `KORTIX_AUTH_ISSUER` (the project
 issuer), `KORTIX_AUTH_AUDIENCE` (the App id) and `KORTIX_AUTH_JWKS` (the key
@@ -118,7 +118,7 @@ export default {
 };
 ```
 
-## A `convex` App: require a member
+## A Convex backend App: require a member
 
 ```ts
 // convex/lib/auth.ts
@@ -198,7 +198,7 @@ export const me = query({ args: {}, handler: async (ctx) => await requireMember(
 
 ## The browser: send the token
 
-An App reaches a `convex` App it uses through its bindings mount
+An App reaches a Convex backend App it uses through its bindings mount
 (bindings.md). `kortixBinding` returns the URL and a token fetcher for that
 App:
 
@@ -298,12 +298,12 @@ Call the route the App calls, from the App's origin, and read the code:
 
 Kortix sign-in stays the sign-in for the project's own people. When an App
 also serves customers or the public, add **Convex Auth** (password, magic
-link, OTP or OAuth) as a second provider in the same `convex` App. Members
+link, OTP or OAuth) as a second provider in the same backend App. Members
 keep Kortix sign-in; customers get their own accounts in the App; the issuer
 tells them apart. Convex's CLI does not set Convex Auth up on a self-hosted
 deployment, so follow these manual steps (from labs.convex.dev/auth/setup/manual).
 
-1. Install, in the `convex` App's directory:
+1. Install, in the backend App's directory:
 
    ```sh
    npm i @convex-dev/auth @auth/core@^0.41.1
