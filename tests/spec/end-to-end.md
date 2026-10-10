@@ -1202,7 +1202,9 @@ return the stable public URL and active deployment pointer; every App carries
 1 vCPU / 2 GiB / 10 GiB). Apps have no budget: no App response carries
 `monthly_budget_usd`, and a create or patch that still sends one (an older
 client) succeeds and ignores it; a patch switches `always_on` both ways;
-`warnings: []` on every create and patch; patch updates mutable policy; delete is soft and removes the App
+`warnings: []` on every create and patch. A new App has `labels: []`,
+`services: []` and the capabilities `deployments`, `rollback`, `preview`,
+`member_tokens`, and no `kind` or `instance`. Patch updates mutable policy; delete is soft and removes the App
 from subsequent reads.
 A new App uses no App (`uses: []`); patch sets the list by slug, an unknown
 slug → `400 app_not_found`, a malformed one → 400.
@@ -1318,15 +1320,16 @@ hostname behind the access gate. `GET /` → **200** HTML with
 immutable`; a page navigation to an unknown path → the SPA shell; a missing
 asset → **404**; `If-None-Match` with the ETag → **304**. A redeploy of one
 changed file logs `(1 new, 2 unchanged)` and serves the new page at once.
-`POST /projects/:projectId/apps/:appId/rollback` to v1 → **200** and v1 is
-served (no runtime starts). `GET /projects/:projectId/apps` lists the App
+`POST /projects/:projectId/apps/:appId/rollback` to v1 → **202** with a NEW
+release v3 from v1's artifact (the Fly model); it is `ready` within 60 s with
+`hosting_type: "static"` and v1's page is served (no runtime starts). `GET /projects/:projectId/apps` lists the App
 with `hosting_type: "static"`, `estimated_monthly_usd: 0` and
 `retained_deployments: 5`. `POST …/start` and `POST …/stop` → **409**
 `static_app_no_runtime`; `kortix apps stop` exits 1 with that explanation,
 `kortix apps ls` prints `static` in the STATE column, and the App keeps
-serving. After 8 deploys the deployment list holds exactly
-v3–v8 `ready` (the active one and the 5 newest others,
-`KORTIX_APPS_RETAINED_DEPLOYMENTS`); v1 and v2 are retired. The local profile
+serving. After 6 more deploys (v4–v9) the deployment list holds exactly
+v4–v9 `ready` (the active one and the 5 newest others,
+`KORTIX_APPS_RETAINED_DEPLOYMENTS`); v1–v3 are retired. The local profile
 runs the worker with `KORTIX_APPS_WORKER_ENABLED=static`, so static
 deployments complete while sandbox deployments stay `queued` for APP-7.
 `apps/api/src/apps/static-site.integration.test.ts` proves deduplication,
@@ -1627,6 +1630,27 @@ app_not_linked` for App B of the same project that A does not use and for an
 App of another project. The bindings mount answers `403 app_not_linked` for B
 and `503 app_binding_unavailable` for C, which A uses but which has no
 running release.
+
+`APP-11` Machines, scale, exec and volumes (the Fly model) on an App with no
+server release. `GET …/machines` and `GET …/volumes` → **200** with empty
+lists. `PUT …/scale` and `POST …/exec` → **409** `app_no_machines`;
+`kortix apps scale count <app> 2` exits 1 with "deploy a server release first".
+`start`, `stop`, `restart` and `DELETE` of an unknown machine → **404**
+`machine_not_found`. `POST …/volumes` refuses a bad name (**400**
+`volume_name_invalid`) and a size of 0 or 101 GB (**400**
+`volume_size_invalid`). Every volume route on an unknown volume → **404**
+`volume_not_found`. A volume row seeded in PostgreSQL (the local profile has
+no Platinum) lists with `size_gb: 10`, `attached: false`, `process_group: app`
+and `snapshot_retention_days: 5`, adds `volumes` and `snapshots` to the App's
+`capabilities`, and `kortix apps volumes <app>` prints it. `PATCH` refuses a
+shrink (**400** `volume_shrink_refused`), 101 GB and a retention of 61 days,
+and accepts 20 GB with 7 days (read back). `DELETE` without the matching
+`?confirm=<name>` → **400** `confirmation_required`; `restore` and `fork` with
+an unknown snapshot → **400** `snapshot_invalid`. A project member without
+deploy or admin gets **403** on every write; a `NONMEMBER` gets 403/404 and
+an `ANON` caller 401. `apps/api/src/apps/machines.integration.test.ts` proves
+rollouts, strategies, the release command, scale and the single-writer volume
+handover on PostgreSQL with a fake provider.
 
 ---
 

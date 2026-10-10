@@ -34,7 +34,7 @@ Every App response carries the three values a verifier needs:
 | --- | --- | --- |
 | A person in an App | `kortixToken({ audience: "<slug>" })` in the browser. It calls `GET /_kortix/token?audience=<slug or id>` on the App's own origin. | The audience is the App itself (the default) or an App it uses (bindings.md). Needs a signed-in viewer: access `private`, `project` or `restricted`, and `--viewer` not `off`. |
 | You (an agent), a script, the CLI | `kortix apps token <app>` · `POST /v1/projects/<project_id>/apps/<app_id>/token` | A person's own credential: names that person, with groups and role. An agent session: names the agent (`kind: "agent"`), never the person who started the session. |
-| Admin tooling on a `convex` App | `npx convex run --identity '{"subject":"…","issuer":"<KORTIX_AUTH_ISSUER>","groups":["Finance"]}' fn args` | Admin credentials only. Use it to test auth rules. |
+| Admin tooling on a Convex backend App | `npx convex run --identity '{"subject":"…","issuer":"<KORTIX_AUTH_ISSUER>","groups":["Finance"]}' fn args` | Admin credentials only. Use it to test auth rules. |
 
 An agent session never gets a token that names the person who launched it.
 `/_kortix/token` called with the session's own Kortix token answers
@@ -94,10 +94,14 @@ convex.setAuth(async () => {
 
 ## A `convex` App: accept the token
 
-Kortix writes three variables into every `convex` App's environment:
-`KORTIX_AUTH_ISSUER` (the project issuer), `KORTIX_AUTH_AUDIENCE` (the App
-id) and `KORTIX_AUTH_JWKS` (the key set, inline: Convex fetches nothing).
-`instance.auth_env` in `kortix apps show <app> --json` shows the same values.
+Convex reads three deployment variables: `KORTIX_AUTH_ISSUER` (the project
+issuer), `KORTIX_AUTH_AUDIENCE` (the App id) and `KORTIX_AUTH_JWKS` (the key
+set, inline as a `data:` URL: Convex fetches nothing). Set them once per
+backend App:
+
+```sh
+kortix apps auth-env db | while IFS='=' read -r k v; do printf '%s' "$v" | npx convex env set "$k"; done
+```
 
 ```ts
 // convex/auth.config.ts — copy as is
@@ -203,7 +207,7 @@ App:
 import { ConvexReactClient } from "convex/react";
 import { kortixBinding } from "@kortix/sdk";
 
-const db = kortixBinding("db");                 // the convex App's slug
+const db = kortixBinding("db");                 // the backend App's slug
 export const convex = new ConvexReactClient(db.url);
 convex.setAuth(db.token);
 ```
@@ -288,7 +292,7 @@ Call the route the App calls, from the App's origin, and read the code:
 | `404 viewer_disabled` | The App's viewer is `off` | `kortix apps access <app> --viewer identity`. |
 | `200`, but `getUserIdentity()` is `null` | `convex/auth.config.ts` is not deployed, or its env names are wrong | Deploy `auth.config.ts` as above; `npx convex env list --names-only` must list the three `KORTIX_AUTH_*` names. |
 | `200`, but `requireMember` throws `unauthenticated` | The identity's issuer is not `KORTIX_AUTH_ISSUER` | A token from another provider, or an `--identity` without `"issuer"`. |
-| `200`, but Convex answers `401` | The `convex` App still trusts an older issuer | Compare `npx convex env get KORTIX_AUTH_ISSUER` with `auth.issuer` in `kortix apps show <app> --json`. Kortix rewrites the three variables within minutes. Wait, then retry. |
+| `200`, but Convex answers `401` or `InvalidAuthConfig` | The backend trusts other values than the App's | Compare `npx convex env get KORTIX_AUTH_ISSUER` with `auth.issuer` in `kortix apps show <app> --json`, then run the `kortix apps auth-env` line above again. |
 
 ## People who are not Kortix members
 
@@ -377,7 +381,7 @@ deployment, so follow these manual steps (from labs.convex.dev/auth/setup/manual
 
 6. The customer UI is its own App with access `public`, wrapped in
    `ConvexAuthProvider` from `@convex-dev/auth/react` (Convex's `convex-auth`
-   skill), on the `convex` App's own `instance.url`. Do not call
+   skill), on the backend App's own URL. Do not call
    `kortixToken` there. Keep the staff UI a separate App with Kortix sign-in.
 
 A customer token never passes `requireMember`, and a member token never
@@ -386,7 +390,7 @@ passes `requireCustomer`. Test both directions before you ship.
 ## Test it
 
 ```sh
-eval "$(kortix apps credentials db)" && cd apps/db
+cd apps/db                          # CONVEX_SELF_HOSTED_URL and _ADMIN_KEY loaded (convex.md, step 2)
 ISS=$(npx convex env get KORTIX_AUTH_ISSUER)
 npx convex run tasks:list '{}'      # admin, no identity → your function must reject
 npx convex run --identity "{\"subject\":\"u1\",\"issuer\":\"$ISS\",\"email\":\"a@example.com\",\"name\":\"A\",\"groups\":[\"Finance\"]}" tasks:create '{"title":"x"}'

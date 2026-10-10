@@ -1,10 +1,13 @@
 # Kortix Apps
 
-Kortix Apps deploy static sites, HTTP applications and Convex backends
-(kind `convex`) from a project. The `kortix-apps` system skill covers the
-`convex` kind, sign-in tokens and bindings. Each App
-has one stable URL. Each deployment is immutable. The active deployment pointer
-changes only after the new deployment is ready.
+Kortix Apps deploy static sites, HTTP servers, workers and backends from a
+project, on the Fly.io model. Each App has one stable URL. Each deploy creates
+an immutable release (`vN`): the artifact plus its resolved config. Traffic
+moves to a release only after its machines pass their checks. A server App
+runs machines per process group; a machine may mount a volume that outlives
+every release. The `kortix-apps` system skill covers releases, machines,
+volumes, services, templates (`convex`), sign-in tokens and bindings
+(`references/fly-model.md` there).
 
 Apps is off by default and enabled per project by Kortix (it is not listed in
 Project Settings → Feature flags; the user contacts Kortix). The API returns `403`, the
@@ -38,7 +41,7 @@ the active deployment's `hosting_type` (`null` before the first deploy).
 **Static.** Kortix stores each file once per account under its SHA-256 and
 serves the active deployment's files itself, after the App's access gate.
 There is no machine, no cold start, and no compute bill. A deploy publishes
-only changed files, and a rollback switches traffic at once.
+only changed files, and a rollback republishes stored files in seconds.
 
 - Limits: 20,000 files per deployment, 50 MiB per file. A larger site fails
   with `invalid_site`.
@@ -61,8 +64,10 @@ only changed files, and a rollback switches traffic at once.
   deployment. Delete the App to take it offline.
 
 **Server.** `bundle`, `dockerfile`, and `oci_image` build an image and run it
-in one machine on a Kortix sandbox provider. Kortix chooses the provider. A
-server App has a run mode and a machine.
+in machines on a Kortix sandbox provider: one per process group by default,
+`kortix apps scale count` for more. Kortix chooses the provider. A server App
+has a run mode, a machine size per group (`vm`) and optional volumes
+(`mounts`).
 
 Deployments with the same build inputs share one image: the artifact (archive
 digest, or an OCI reference pinned with `@sha256:`), source settings,
@@ -100,11 +105,11 @@ account billing gate (`402`, for example `app_account_unfunded`) is the only
 cost gate.
 
 - On-demand server App: billed only while it is awake.
-- Always-on server App and every `convex` App: the cost is fixed: the machine
-  24/7, `estimated_monthly_usd` (about 73.48 USD for 1 vCPU / 2 GB / 10 GB;
-  about 59.29 USD for the `convex` default 1 vCPU / 1 GB / 10 GB). The CLI
-  prints `Runs 24/7 on 1 vCPU / 2 GB: about $73/month`. Tell the user this
-  cost.
+- Always-on server App: the cost is fixed: every machine 24/7,
+  `estimated_monthly_usd` (about 73.48 USD for 1 vCPU / 2 GB / 10 GB; about
+  59.29 USD for 1 vCPU / 1 GB / 10 GB, the `convex` template's backend). The
+  estimate is the live release's `vm` times its scale. The CLI prints
+  `Runs 24/7 on 1 vCPU / 2 GB: about $73/month`. Tell the user this cost.
 - Static App: no machine. `always_on` is `false`, `estimated_monthly_usd` is
   `0`.
 - `--budget` is retired. The CLI prints `--budget is ignored: Apps have no
@@ -112,7 +117,8 @@ cost gate.
   smaller machine.
 
 A run-mode change through `kortix apps set` takes effect within 5
-minutes, without a redeploy. A machine change applies to the next deployment.
+minutes, without a redeploy. A machine size change applies to the next
+release: a new release with a new `vm` resizes without an image rebuild.
 
 **Provider.** On Platinum (Kortix Cloud), an always-on App's VM is persistent.
 On Daytona and E2B (self-host), the VM keeps the provider's idle backstop and
@@ -194,14 +200,43 @@ kortix apps deploy --manifest-app storefront
 
 When the manifest declares exactly one App, bare `kortix apps deploy` selects
 it. CLI flags override manifest fields. A deploy with `--manifest-app` writes
-the block's `resources`, `idle_timeout_seconds`, and
-`always_on` to the App.
+the block's `resources`, `idle_timeout_seconds`, `always_on` and `labels` to
+the App and sends the release config (`processes`, `http_service`,
+`services`, `mounts`, `vm`, `deploy`). `kortix validate` refuses the same
+config the API refuses.
+
+A server App with a worker group, a second service and a volume:
+
+```yaml
+apps:
+  api:
+    path: services/api
+    type: dockerfile
+    command: ["node", "server.js"]
+    labels: [backend]
+    processes:
+      app: ""                       # the image's own command
+      worker: "node worker.js"
+    http_service:
+      internal_port: 3000
+      access: app                   # public | app | admins
+      processes: [app]
+      checks: [{ type: http, path: /health }]
+    services:
+      - { name: admin, internal_port: 3001, access: admins }
+    mounts:
+      - { source: data, destination: /data, initial_size_gb: 10, processes: [app] }
+    vm:
+      - { cpu: 1, memory_gb: 2 }
+      - { cpu: 1, memory_gb: 1, processes: [worker] }
+    deploy:
+      release_command: "node migrate.js"
+```
 
 ### Manifest fields
 
 | Field | Meaning |
 | --- | --- |
-| `kind` | `web` (default) or `convex`. Fixed at create. A `convex` block deploys `path` (a `convex/` directory) with the Convex CLI. |
 | `uses` | Apps of the project, by slug, this App uses: it may bind to them and mint their sign-in tokens. Replaces the App's list on every deploy. |
 | `path` | Source path relative to the manifest. Default `.`. |
 | `type` | `static`, `bundle`, `dockerfile`, or `oci_image`. |
@@ -220,6 +255,16 @@ the block's `resources`, `idle_timeout_seconds`, and
 | `resources` | Server Apps: `cpu`, `memory_gb`, and `disk_gb`. Defaults `1`, `2`, and `10`. |
 | `env` | Server Apps: non-secret runtime key/value pairs. |
 | `secrets` | Server Apps: runtime environment key to project secret **identifier** mapping. |
+| `labels` | Free-form tags (for example `backend`). They group and filter Apps; no behavior depends on them. |
+| `processes` | Process group name → shell command (`""` runs the image's own command). Default: one group, `app`. |
+| `http_service` | The primary service: `internal_port`, `access` (`public`, `app`, `admins`), `auto_stop_machines` (`off`, `stop`, `suspend`), `auto_start_machines`, `min_machines_running`, `processes`, `checks`. `port` is the shorthand for `internal_port`. |
+| `services` | More HTTP services, each `{ name, internal_port, access, processes }`, on `<App host>--<name>`. |
+| `mounts` | Volumes: `{ source, destination, initial_size_gb, snapshot_retention_days, processes }`. At most 100 GB; not under a system directory. |
+| `vm` | Machine size per group: `{ cpu, memory_gb, disk_gb, processes }` or a list of them. Overrides `resources`. |
+| `deploy` | `strategy` (`bluegreen`, `rolling`, `immediate`, `canary`; default `rolling` with a mount, else `bluegreen`) and `release_command`. |
+
+`kind` is retired: the validator warns, and an App's shape comes from its
+config. `kortix apps launch --template convex` writes a ready-made backend.
 
 ## Secrets and environment
 
@@ -397,14 +442,16 @@ site error, and at most once an hour after a provider error.
 ## Versions and rollback
 
 ```sh
-kortix apps show storefront
-kortix apps rollback storefront <deployment-id>
+kortix apps releases storefront
+kortix apps rollback storefront v3
 ```
 
-Rollback accepts only a `ready` deployment. For a static App it changes the
-active pointer at once. For a server App, Kortix starts and checks the target
-runtime first. It then changes the active pointer and stops the previous
-runtime. A target start failure leaves the previous deployment active.
+Rollback accepts only a `ready` release. It creates a NEW release (the next
+version) from the target's artifact and config and rolls it out like a deploy
+(`202`). A static App's new release publishes in seconds: its files are already
+stored. A server App's new release rolls out on its strategy; volumes keep
+their data. A new release that never gets healthy is abandoned: the previous
+release keeps serving.
 
 Retention: an App keeps its active deployment and the 5 newest other ready
 deployments (`KORTIX_APPS_RETAINED_DEPLOYMENTS`). After each deploy, Kortix
@@ -447,9 +494,10 @@ Common failures:
 
 ## Current boundaries
 
-A server App supports one public HTTP port and one runtime per deployment. Its
-process must answer HTTP at `readiness_path`: a process with no HTTP listener
-never becomes ready. Apps do not support replicas, autoscaling, regions, UDP,
-persistent volumes, private registry credentials, or custom domains.
+A server App supports HTTP services (each on its own host), process groups,
+up to 20 machines per group and one volume per machine (at most 100 GB). A group
+with no service is a worker and is never idle-stopped. Apps do not support
+TCP or UDP services, private networking between Apps, autoscaling, regions,
+private registry credentials, or custom domains.
 The hosting provider is an infrastructure policy. Do not encode provider logic
 in application code or the manifest.

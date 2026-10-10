@@ -27,9 +27,9 @@ In `kortix.yaml`, `uses` in the App's block replaces its list on every
 
 ```yaml
 apps:
-  db:
-    path: apps/db
-    kind: convex
+  db:                    # the Convex template (convex.md): image, volume, services
+    type: oci_image
+    image: ghcr.io/get-convex/convex-backend@sha256:…
   crm:
     path: apps/crm/dist
     type: static
@@ -69,12 +69,15 @@ call itself (`requireMember`, sign-in.md): its own URL is public.
 
 ## What stays on the used App's own host
 
-The binding is for App code in the browser. These keep the `convex` App's own
-`instance.url` and `instance.site_url`:
+The binding is for App code in the browser. `/_kortix/apps/<slug>/*` reaches
+the used App's `http` service and `/_kortix/apps/<slug>--<service>/*` another of
+its services; a service with `access: admins` is never bound
+(`403 app_binding_forbidden`). These keep the used App's own URLs
+(`app.services[].url`):
 
-- The Convex CLI (`npx convex …`, after `eval "$(kortix apps credentials <slug>)"`).
+- The Convex CLI (`npx convex …` with `CONVEX_SELF_HOSTED_URL` = the App URL).
 - File storage URLs that Convex makes (`ctx.storage.getUrl`): they name the
   App's own host.
-- HTTP actions (`convex/http.ts`): they answer on `instance.site_url`.
+- HTTP actions (`convex/http.ts`): they answer on the `site` service's URL.
 - Scripts, servers and other clients outside an App (sign-in.md, "Who gets a
   token").

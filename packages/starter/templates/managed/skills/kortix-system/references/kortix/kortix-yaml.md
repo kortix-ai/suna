@@ -95,16 +95,31 @@ harnesses:
 # ─── Apps ─────────────────────────────────────────────────────────
 # Local, repeatable deployment defaults. `kortix apps deploy` remains the
 # explicit deployment action; merging this file does not auto-deploy.
-# A `convex` App (kind: convex) is a Convex backend in an always-on machine.
+# Each block is the App's fly.toml: a deploy creates an immutable release of
+# its artifact and this config (processes, http_service, services, mounts, vm,
+# deploy). `kortix apps launch --template convex --name db` writes a block like
+# `db` below (a self-hosted Convex backend) plus an admins-only `db-dashboard`.
 # `kortix apps deploy` with no arguments deploys every block, used Apps first.
 # A static App (files, no machine) ignores run mode, resources, env
 # and secrets. A server App runs always on (default) or on demand; always on
 # costs about 73 USD/month on the default machine. Apps have no budget:
-# `monthly_budget_usd` is retired and ignored (the validator warns).
+# `monthly_budget_usd` is retired and `kind` is retired (the validator warns).
 apps:
   db:
-    path: apps/db              # a package.json + convex/ directory
-    kind: convex               # fixed at create; `web` is the default
+    type: oci_image
+    image: ghcr.io/get-convex/convex-backend@sha256:<digest>   # pinned by the template
+    command: ["sh", "-c", "cd /convex && CONVEX_CLOUD_ORIGIN=$KORTIX_APP_URL CONVEX_SITE_ORIGIN=$KORTIX_SERVICE_URL_SITE exec ./run_backend.sh"]
+    labels: [backend]          # tags only; no behavior depends on them
+    always_on: true
+    vm: { cpu: 1, memory_gb: 1, disk_gb: 10 }
+    mounts:                    # a volume: outlives every release and machine
+      - { source: data, destination: /convex/data, initial_size_gb: 10 }
+    http_service:              # the App's own host
+      internal_port: 3210
+      access: public           # public | app (the App's policy) | admins
+      checks: [{ type: http, path: /version }]
+    services:                  # more ports, each on <App host>--<name>
+      - { name: site, internal_port: 3211, access: public }
   storefront:
     path: web/dist             # build first; deploy the output directory
     type: static
@@ -117,6 +132,12 @@ apps:
     port: 3000
     readiness_path: /health
     always_on: false           # on demand: stops when idle, wakes on request
+    processes:                 # process groups; default: one group, `app`
+      app: ""                  # "" runs the image's own command
+      worker: "node worker.js" # no service: a worker, never idle-stopped
+    deploy:
+      strategy: bluegreen      # rolling | immediate | bluegreen | canary
+      release_command: "node migrate.js"   # once per release; a failure aborts it
     idle_timeout_seconds: 300
     resources:
       cpu: 1

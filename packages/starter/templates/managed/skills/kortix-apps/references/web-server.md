@@ -80,6 +80,23 @@ cold start (on demand), or in a keep-alive pass (always on). Traffic stays on
 the active deployment until the replacement passes readiness. A release that
 changes only the API rebuilds nothing.
 
+## Process groups, services, volumes
+
+A server App is a release + machines (fly-model.md). Beyond one process:
+
+- **Process groups:** `processes: { app: "", worker: "node worker.js" }`, one
+  machine per group by default; `kortix apps scale count <slug> 3 --process
+  worker`. A group with no service is a worker.
+- **More services:** `services: [{ name: admin, internal_port: 9000, access:
+  admins }]` answers on `<host>--admin`.
+- **State:** never on the root disk (each release replaces it). Mount a volume:
+  `mounts: [{ source: data, destination: /data }]`. The release then deploys
+  `rolling` and keeps the data (fly-model.md, Volumes).
+- **Migrations:** `deploy: { release_command: "node migrate.js" }` runs once
+  before machines change; a failure leaves the live release serving.
+- **Debug:** `kortix apps machines <slug>`, then `kortix apps exec <slug> --
+  <command>` (project admins).
+
 ## Verify
 
 Run web-static.md, Verify, steps 2 and 5 first (`hosting_type` is `sandbox`
@@ -100,6 +117,7 @@ chose. Then:
    deployment to be `ready`, `actor_type: system`, `source_session_id: null`,
    and to reuse the prior `artifact_id`, `source_kind`, and
    `hosting_provider`. Those fields identify a background runtime refresh.
+4. `kortix apps machines <slug>`: every machine `started` on the live release.
 
 ## Diagnose
 
