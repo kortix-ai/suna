@@ -1,19 +1,20 @@
 {
-  "source_hash": "bda65af84697b5ed0f107694dc15a843cd9419b60d1e15f43ff595c0de191886",
+  "source_hash": "313f7727886b7f6dee78a73d199f938c82aaa629185e64817babbcefb53ff4d2",
   "diff_files": [
     "apps/web/src/features/marketplace/add-to-project-dialog-guard.test.tsx",
     "apps/web/src/features/marketplace/add-to-project-dialog-guard.tsx",
     "apps/web/src/features/marketplace/marketplace-detail.tsx",
+    "apps/web/src/lib/auth/sign-out-actions.ts",
     "apps/web/src/lib/env-config.test.ts",
     "apps/web/src/lib/env-config.ts"
   ],
-  "diff_hash": "25487cf0d73ca163d8e10390283e37286b6c2b0a9263f4909f90954fa86353f4",
-  "head": "fb7f5d4742001df6c12019e4812ee0522c61e325",
+  "diff_hash": "5cd225f05869ede9ee2aa59bd46bc4ff55714601312887c63894abee7c91a232",
+  "head": "51cdc5cb121c6b94eaa89f79a01025109b80d34f",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-10T05:58:03.329Z"
+  "at": "2026-10-10T09:28:53.903Z"
 }
