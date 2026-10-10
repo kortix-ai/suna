@@ -17,6 +17,7 @@
 import { projectWebhooksApp, projectsApp } from './lib/app';
 import { registerProjectsRoutes } from './routes/projects';
 import { registerTriggerWebhooksRoutes } from './routes/trigger-webhooks';
+import { registerEventIngressRoutes } from './trigger-events/routes';
 import { registerProjectGitRoutes } from './routes/project-git';
 import { registerGithubInstallationsRoutes } from './routes/github-installations';
 import { registerGithubRepositoriesRoutes } from './routes/github-repositories';
@@ -66,8 +67,11 @@ import { registerSessionScopeRoutes } from './routes/session-scope';
 import { registerSessionConfigRoutes } from './routes/session-config';
 import { registerConfigReleaseRoutes } from '../config-releases/routes';
 import { registerPublicSharesRoutes } from './routes/public-shares';
+import { registerSessionDrivesRoutes } from './routes/session-drives';
+import { registerSessionDriveSyncRoutes } from './routes/session-drive-sync';
 import { registerSessionRuntimeRoutes } from './routes/session-runtime';
 import { registerSessionPresenceRoutes } from './routes/session-presence';
+import { registerSessionWatchRoutes } from './routes/session-watch';
 import { registerSessionParticipantsRoutes } from './routes/session-participants';
 import { registerSessionPromptsRoutes } from './routes/session-prompts';
 import { registerSessionRemindersRoutes } from './routes/session-reminders';
@@ -96,6 +100,7 @@ export function registerAllProjectRoutes(): void {
   // middleware first (its first statement), then the remaining route groups.
   registerProjectsRoutes();
   registerTriggerWebhooksRoutes();
+  registerEventIngressRoutes();
   registerProjectGitRoutes();
   registerGithubInstallationsRoutes();
   registerGithubRepositoriesRoutes();
@@ -145,8 +150,11 @@ export function registerAllProjectRoutes(): void {
   registerSessionConfigRoutes();
   registerConfigReleaseRoutes();
   registerPublicSharesRoutes();
+  registerSessionDrivesRoutes();
+  registerSessionDriveSyncRoutes();
   registerSessionRuntimeRoutes();
   registerSessionPresenceRoutes();
+  registerSessionWatchRoutes();
   registerSessionParticipantsRoutes();
   registerSessionPromptsRoutes();
   registerSessionRemindersRoutes();

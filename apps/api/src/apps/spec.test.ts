@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { normalizeAppBuild } from './spec';
@@ -85,5 +85,18 @@ describe('normalizeAppBuild', () => {
     await expect(normalizeAppBuild({
       kind: 'oci_image', image: 'nginx:latest', port: 80,
     })).rejects.toThrow(/require command/);
+  });
+
+  test('a dockerfile path through a symlink that leaves the source is refused before it is read', async () => {
+    const outside = await mkdtemp(join(tmpdir(), 'kortix-spec-outside-'));
+    const source = await mkdtemp(join(tmpdir(), 'kortix-spec-source-'));
+    cleanup.push(outside, source);
+    await mkdir(join(outside, 'etc'));
+    await writeFile(join(outside, 'etc', 'Dockerfile'), 'FROM host-secret');
+    await symlink(outside, join(source, 'link'));
+    await expect(normalizeAppBuild(
+      { kind: 'dockerfile', dockerfile: 'link/etc/Dockerfile', command: ['node'], port: 3000 },
+      source,
+    )).rejects.toThrow(/escapes the source directory/);
   });
 });

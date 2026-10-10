@@ -29,6 +29,34 @@ import { isAuthApiError, isAuthSessionMissingError } from '@supabase/supabase-js
 export function isDefinitiveSessionRejection(error: unknown): boolean {
   if (!error) return false;
   if (isAuthSessionMissingError(error)) return true;
-  if (isAuthApiError(error)) return error.status === 401 || error.status === 403;
+  if (isAuthApiError(error)) {
+    if (error.status === 401 && isMissingBearerRejection(error)) return false;
+    return error.status === 401 || error.status === 403;
+  }
   return false;
+}
+
+/**
+ * GoTrue's "the request carried no Bearer at all" verdict: 401 with code
+ * `no_authorization`, message "This endpoint requires a valid Bearer token"
+ * (message matched too — an older server/SDK mix may leave the code absent).
+ *
+ * `AuthProvider` only calls `getUser()` after `getSession()` returned a
+ * session, so auth-js DID attach the bearer — this verdict means the header
+ * vanished in transit, not that the JWT was rejected. KRTX-1693 (dev,
+ * 2026-10-07): a probe harness stored the dev-gate Basic credentials as
+ * browser httpCredentials; GoTrue/Kong's 401s carry a Basic challenge, so
+ * every Supabase request went out `Authorization: Basic <dev-gate>` and the
+ * provider signed out — and wiped the cookie of — a perfectly valid session:
+ * "dev sign-in doesn't persist". Privacy extensions and stripping proxies
+ * produce the same verdict. Keeping the session is safe: the cookie and
+ * in-memory session are untouched and the next load retries `getUser()`.
+ */
+function isMissingBearerRejection(error: { code?: string; message?: string }): boolean {
+  if (error.code === 'no_authorization') return true;
+  return (
+    !error.code &&
+    !!error.message &&
+    error.message.toLowerCase().includes('requires a valid bearer token')
+  );
 }

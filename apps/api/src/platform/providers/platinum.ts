@@ -58,6 +58,7 @@ import { createHash } from 'node:crypto';
 import { SANDBOX_VERSION, config } from '../../config';
 import { currentInstanceId } from '../../projects/instance-scope';
 import { isOpencodePort } from '../../shared/opencode-ports';
+import { logger } from '../../lib/logger';
 import { platinumJson, platinumJsonResponse, type PlatinumHttpError } from '../../shared/platinum';
 import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
 import { serviceKeyForExternalId } from '../service-key';
@@ -143,6 +144,8 @@ interface PlatinumSandboxPage {
   rows?: PlatinumSandbox[];
   total?: number;
   has_more?: boolean;
+  /** Present on a merged multi-region list: the peers asked and the ones that did not answer. */
+  regions?: { asked?: string[]; unavailable?: Array<{ region: string; error?: string }> };
 }
 /**
  * A box created before `auto_resume: false` shipped (see create) still lets any
@@ -236,7 +239,19 @@ type PlatinumExecResponse = {
  * a name-boot fallback.
  */
 function isDefinitiveTemplateNotFound(error: unknown): boolean {
-  return platinumHttp(error).status === 404;
+  // A 404 about a volume in the create body is not a missing template.
+  return platinumHttp(error).status === 404 && !isVolumeRejection(error);
+}
+
+/**
+ * Platinum refused a create because of its `volumes` (a volume it cannot
+ * find, no host that can mount volumes, a mount limit): a definite refusal,
+ * so no box exists, and the same body can never succeed.
+ */
+function isVolumeRejection(error: unknown): boolean {
+  const { status, code, body } = platinumHttp(error);
+  if (typeof status !== 'number' || !((status >= 400 && status < 500) || status === 503)) return false;
+  return /volume|mount/i.test(`${code ?? ''} ${body ?? ''}`);
 }
 
 /** The `status`, `code` and `body` of the `PlatinumHttpError` `platinumJson` throws. */
@@ -487,6 +502,22 @@ export class PlatinumProvider implements SandboxProvider {
     if (dedup) {
       createBody.name = dedup.name;
     }
+    if (opts.volumes && Object.keys(opts.volumes).length > 0) {
+      createBody.volumes = opts.volumes;
+    }
+    if (opts.rootVolume) {
+      // A persistent machine (services/persistent-machine.ts): the root disk
+      // is a volume of its own, kept in object storage while the box runs, so
+      // a whole-box backup would only copy it again.
+      createBody.root_volume = true;
+      createBody.backup_interval_min = 0;
+    }
+    if (opts.volumesRequired) {
+      // An ephemeral session box: its state lives on the session volume and a
+      // stop deletes the box, so Platinum's periodic whole-box backup only
+      // uploads a disposable disk (and holds up the delete while it runs).
+      createBody.backup_interval_min = 0;
+    }
     const createBodyJson = JSON.stringify(createBody);
     const CREATE_PATH = '/v1/sandboxes?wait_for_state=running&wait_timeout_ms=60000';
     // This asks Platinum to long-poll server-side for up to 60s
@@ -510,6 +541,28 @@ export class PlatinumProvider implements SandboxProvider {
     try {
       sandbox = await postCreate();
     } catch (err) {
+      if (opts.rootVolume) {
+        const { status, body } = platinumHttp(err);
+        // The org cannot boot from a root volume: say so, never boot without it.
+        if (status === 404 && /root volume/i.test(body ?? '')) {
+          throw new Error(
+            '[persistent-machine] Persistent machines are not available for this workspace (storage refused the root disk). The session did not start.',
+          );
+        }
+        // The template's root disk image is still being prepared: transient.
+        if (status === 503 && /root volume image/i.test(body ?? '')) {
+          throw new Error(`[persistent-machine] the machine's disk image is being prepared; retrying (${(body ?? '').slice(0, 200)})`);
+        }
+      }
+      // A full fleet stays a capacity error (retried, "try again in a minute").
+      if (createBody.volumes && isVolumeRejection(err) && !/no capacity/i.test(platinumHttp(err).body ?? '')) {
+        // Mounts a session cannot run without (its drives, its state): fail
+        // loudly, never boot without them.
+        const reason = (platinumHttp(err).body ?? '').slice(0, 300);
+        throw new Error(
+          `[drives] This session’s drives could not be mounted (storage refused: ${reason}). The session did not start without them.`,
+        );
+      }
       const notYetInRegion = regionalTemplateNotReady(err, template);
       if (notYetInRegion) throw notYetInRegion;
       if (!dedup || !isNameTakenConflict(err)) throw err;
@@ -910,13 +963,24 @@ export class PlatinumProvider implements SandboxProvider {
   > {
     const owner = await sandboxOwnershipMarker();
     const out: Array<{ externalId: string; createdAt: Date | null }> = [];
-    const limit = 100;
+    const limit = 200; // Platinum's maximum page size.
+    // `state=running` keeps the scan to the running set (tens of rows). An
+    // unfiltered list holds every archived box too (10k+ in the shared org),
+    // sorts newest first, and hid any running box past the page cap.
+    // `regions=all` merges every region; a merged scan above row 10000 is
+    // refused (`pagination_limit`), which the running set never reaches.
     // Bounded page count as well as page size: a paginator that never reports
     // `has_more: false` must not spin this sweep forever.
     for (let offset = 0, page = 0; page < 50; offset += limit, page++) {
       const body = await platinumJson<PlatinumSandboxPage>(
-        `/v1/sandboxes?paginated=true&limit=${limit}&offset=${offset}`,
+        `/v1/sandboxes?paginated=true&limit=${limit}&offset=${offset}&state=running&regions=all`,
       );
+      const unavailable = body.regions?.unavailable ?? [];
+      if (unavailable.length) {
+        logger.warn(
+          `[platinum] running-box scan missed regions: ${unavailable.map((r) => r.region).join(',')}`,
+        );
+      }
       const rows = body.rows ?? [];
       for (const sandbox of rows) {
         if (!sandbox.id) continue;

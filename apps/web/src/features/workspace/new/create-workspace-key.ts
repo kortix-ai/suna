@@ -1,3 +1,4 @@
+import { randomUUID } from '@/lib/utils/random-uuid';
 /**
  * A stable `idempotency_key` for one create attempt on `/new`.
  *
@@ -64,7 +65,7 @@ export function resetAttemptKeyMemoryFallbackForTests(): void {
 }
 
 function mint(): string {
-  return crypto.randomUUID();
+  return randomUUID();
 }
 
 export function attemptKeyFor(fingerprint: string, now: number): string {

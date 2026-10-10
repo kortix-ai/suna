@@ -239,7 +239,10 @@ export function parseSystemNotifications(text: string): {
   notifications: SystemNotification[];
 } {
   const notifications: SystemNotification[] = [];
-  const cleanText = replaceSpans(text, xmlBlocks(text), ({ tag, body: rawBody }) => {
+  // A `<pasted_content>` block is the user's own paste, never a notification.
+  // One the tile parser did not claim (`splitPastedContent`) stays text.
+  const blocks = xmlBlocks(text).filter((block) => block.tag.toLowerCase() !== 'pasted_content');
+  const cleanText = replaceSpans(text, blocks, ({ tag, body: rawBody }) => {
     const fields: [string, string][] = [];
     const bodyLines: string[] = [];
     let pastHeader = false;

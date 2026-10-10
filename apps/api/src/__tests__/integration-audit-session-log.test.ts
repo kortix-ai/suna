@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { auditEvents } from '@kortix/db';
-import pg from 'pg';
+import { PgClient } from './helpers/pg-client';
 import { parseAuditSessionCursor, readSessionAuditEvents } from '../shared/audit-query';
 import { db } from '../shared/db';
 
@@ -15,7 +15,7 @@ const LEGACY = [
   { id: 'c7200000-0000-4000-8000-0000000000f2', sequence: 2 },
 ];
 
-let client: pg.Client | null = null;
+let client: PgClient | null = null;
 
 async function readAll(limit: number): Promise<string[]> {
   const ids: string[] = [];
@@ -34,7 +34,7 @@ describe.skipIf(!databaseUrl)('session audit log order — migrated PostgreSQL',
   let fresh: string[] = [];
 
   beforeAll(async () => {
-    client = new pg.Client({ connectionString: databaseUrl });
+    client = new PgClient({ connectionString: databaseUrl });
     await client.connect();
     await client.query(`SET kortix.audit_maintenance = 'on'`);
     await client.query(`DELETE FROM kortix.audit_events WHERE account_id = $1`, [ACCOUNT]);

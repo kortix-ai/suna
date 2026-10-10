@@ -471,6 +471,83 @@ adminApp.openapi(
   },
 );
 
+// ── Set a project's feature flag (operator) ─────────────────────────────────
+// The operator lever for internal-only flags (`apps`): Kortix turns
+// them on per project on request. `PATCH /v1/projects/:id/features` refuses
+// those flags for everyone but a platform operator, and this route needs no
+// project membership. Any flag key works here. Audited on the project.
+adminApp.openapi(
+  createRoute({
+    method: 'put',
+    path: '/api/projects/{id}/features',
+    tags: ['admin'],
+    summary: "Set or clear a project's feature flag (operator)",
+    ...auth,
+    request: {
+      params: z.object({ id: z.string() }),
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({
+              feature: z.string().openapi({ description: 'Flag key, for example `apps`.' }),
+              enabled: z.boolean().nullable().openapi({ description: '`true`/`false` sets the override; `null` clears it.' }),
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: json(
+        z.object({
+          project_id: z.string(),
+          feature: z.string(),
+          override: z.boolean().nullable(),
+          enabled: z.boolean().openapi({ description: 'Effective state after the write.' }),
+        }),
+        'Updated flag',
+      ),
+      ...errors(400, 401, 403, 404),
+    },
+  }),
+  async (c) => {
+    const { id: projectId } = c.req.valid('param');
+    const { feature, enabled } = c.req.valid('json');
+    const { isFeatureFlagKey, resolveFeatureFlag } = await import('../feature-flags/registry');
+    if (!isFeatureFlagKey(feature)) return c.json({ error: `Unknown feature flag '${feature}'` }, 400);
+    if (!isUuid(projectId)) return c.json({ error: 'Not found' }, 404);
+    const before = await findProject(projectId);
+    if (!before || before.status === 'archived') return c.json({ error: 'Not found' }, 404);
+    const { writeProjectFeatureFlag } = await import('../feature-flags/write');
+    const row = await writeProjectFeatureFlag(projectId, feature, enabled);
+    if (!row) return c.json({ error: 'Not found' }, 404);
+    const override = (row.metadata as { experimental?: Record<string, unknown> } | null)?.experimental?.[feature];
+    const { recordAuditEvent } = await import('../shared/audit');
+    await recordAuditEvent({
+      accountId: row.accountId,
+      projectId,
+      actorUserId: c.get('userId') ?? null,
+      action: 'admin.project.feature.set',
+      resourceType: 'project',
+      resourceId: projectId,
+      before: { [feature]: (before.metadata as { experimental?: Record<string, unknown> } | null)?.experimental?.[feature] ?? null },
+      after: { [feature]: enabled },
+      ip: requestClientIp(c),
+      userAgent: c.req.header('user-agent') || null,
+    }).catch(() => {
+      /* audit is best-effort, as on the other admin writes */
+    });
+    return c.json(
+      {
+        project_id: projectId,
+        feature,
+        override: typeof override === 'boolean' ? override : null,
+        enabled: resolveFeatureFlag(row.metadata, feature),
+      },
+      200,
+    );
+  },
+);
+
 // ── Credit ledger ────────────────────────────────────────────────────────────
 adminApp.openapi(
   createRoute({
@@ -1372,6 +1449,97 @@ adminApp.openapi(
     invalidateRuntimeSettings();
     await refreshRuntimeSettings();
     return c.json({ ok: true, ...value });
+  },
+);
+
+// ── Volumes + session boot modes (one policy row; platform/services/boot-mode.ts) ─
+async function bootModesView(): Promise<Record<string, unknown>> {
+  const { config } = await import('../config');
+  const { db } = await import('../shared/db');
+  const { accounts } = await import('@kortix/db');
+  const { inArray } = await import('drizzle-orm');
+  const { isPlatinumConfigured } = await import('../shared/platinum');
+  const { driveSyncEnabled } = await import('../drives/sync');
+  const { properAccountName } = await import('../accounts/core/app');
+  const store = await import('../platform/services/boot-mode-store');
+  const { stored, policy } = await store.refreshBootModePolicy();
+  // Organizations named by either a Volumes on/off or a boot mode rule.
+  const ids = [...new Set([...Object.keys(policy.volumes.orgs), ...Object.keys(policy.orgs)])];
+  const names = new Map<string, string>();
+  if (ids.length) {
+    const rows = await db
+      .select({ accountId: accounts.accountId, name: accounts.name })
+      .from(accounts)
+      .where(inArray(accounts.accountId, ids));
+    for (const r of rows) names.set(r.accountId, properAccountName(r.name) ?? r.name);
+  }
+  const stats = await store.bootModeStats(24).catch((e) => ({ error: adminErrorMessage(e) }));
+  return {
+    stored,
+    policy,
+    orgs: ids.map((id) => ({
+      accountId: id,
+      name: names.get(id) ?? null,
+      volumes: policy.volumes.orgs[id] ?? null,
+      rule: policy.orgs[id] ?? null,
+    })),
+    env: {
+      bootArtifacts: config.KORTIX_BOOT_ARTIFACTS || null,
+      volumeOff: store.envVolumeOff(),
+      driveSync: driveSyncEnabled(),
+    },
+    providers: {
+      allowed: config.ALLOWED_SANDBOX_PROVIDERS,
+      default: config.getDefaultProvider(),
+      volumeProvider: 'platinum',
+      volumeProviderConfigured: isPlatinumConfigured(),
+    },
+    stats,
+  };
+}
+
+adminApp.openapi(
+  createRoute({
+    method: 'get', path: '/api/boot-modes', tags: ['admin'],
+    summary: 'Get the Volumes switch, the session boot mode policy and 24h counts', ...auth,
+    responses: { 200: json(z.record(z.string(), z.any()), 'policy'), ...errors(401, 403) },
+  }),
+  async (c) => c.json(await bootModesView()),
+);
+
+adminApp.openapi(
+  createRoute({
+    method: 'put', path: '/api/boot-modes', tags: ['admin'],
+    summary: 'Set the Volumes switch and the session boot mode policy', ...auth,
+    request: { body: { content: { 'application/json': { schema: z.record(z.string(), z.any()) } } } },
+    responses: { 200: json(z.record(z.string(), z.any()), 'policy'), ...errors(400, 401, 403) },
+  }),
+  async (c) => {
+    const body = await readJsonObject(c);
+    const { config } = await import('../config');
+    const { parseBootModePolicy } = await import('../platform/services/boot-mode');
+    const { parseBootArtifacts } = await import('../platform/services/boot-artifacts');
+    const store = await import('../platform/services/boot-mode-store');
+    const policy = parseBootModePolicy(body, Boolean((config.KORTIX_BOOT_ARTIFACTS ?? '').trim()));
+    if (policy.artifacts && !parseBootArtifacts(policy.artifacts)) {
+      return c.json({ error: 'artifacts must look like <volume>@<tag>' }, 400);
+    }
+    const ids = [...new Set([...Object.keys(policy.orgs), ...Object.keys(policy.volumes.orgs)])];
+    if (ids.length) {
+      const { db } = await import('../shared/db');
+      const { accounts } = await import('@kortix/db');
+      const { inArray } = await import('drizzle-orm');
+      const known = new Set(
+        (await db.select({ id: accounts.accountId }).from(accounts).where(inArray(accounts.accountId, ids))).map((r) => r.id),
+      );
+      for (const id of ids) {
+        if (known.has(id)) continue;
+        delete policy.orgs[id];
+        delete policy.volumes.orgs[id];
+      }
+    }
+    await store.saveBootModePolicy(policy);
+    return c.json(await bootModesView());
   },
 );
 

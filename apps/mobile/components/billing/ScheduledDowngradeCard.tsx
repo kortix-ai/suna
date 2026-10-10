@@ -9,16 +9,7 @@
 import * as React from 'react';
 import { ArrowsLeftRightIcon as ArrowRightLeft, CalendarDotsIcon as CalendarClock, ArrowUUpLeftIcon as Undo2 } from '@/lib/icons';
 
-import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Button } from '@/components/ui/button';
+import { PendingConfirmDialog } from '@/components/kortix/pending-confirm-dialog';
 import { Text } from '@/components/ui/text';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import { useLanguage } from '@/contexts';
@@ -89,47 +80,29 @@ export function ScheduledDowngradeCard({ scheduledChange, onCancel }: ScheduledD
         />
       </SettingsGroup>
 
-      <AlertDialog
+      <PendingConfirmDialog
         open={open}
-        onOpenChange={(next) => {
-          // Keep the dialog up until an in-flight cancel settles.
-          if (!cancelChange.isPending) setOpen(next);
-        }}>
-        <AlertDialogContent className="rounded-3xl">
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {t('billing.keepPlanTitle', { defaultValue: 'Keep {{plan}}?', plan: currentPlan })}
-            </AlertDialogTitle>
-            <AlertDialogDescription className={failed ? 'text-destructive' : undefined}>
-              {failed
-                ? t('billing.keepPlanFailed', 'Could not cancel the change. Try again.')
-                : t('billing.keepPlanDescription', {
-                    defaultValue: 'The change to {{plan}} on {{date}} is cancelled.',
-                    plan: targetPlan,
-                    date,
-                  })}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel asChild disabled={cancelChange.isPending}>
-              <Button variant="secondary" size="lg" className="rounded-full">
-                <Text>{t('common.cancel', 'Cancel')}</Text>
-              </Button>
-            </AlertDialogCancel>
-            <Button
-              size="lg"
-              className="rounded-full"
-              disabled={cancelChange.isPending}
-              onPress={keepPlan}>
-              <Text>
-                {cancelChange.isPending
-                  ? t('billing.keepingPlan', 'Keeping plan…')
-                  : t('billing.keepPlan', 'Keep plan')}
-              </Text>
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        onOpenChange={setOpen}
+        pending={cancelChange.isPending}
+        title={t('billing.keepPlanTitle', { defaultValue: 'Keep {{plan}}?', plan: currentPlan })}
+        description={
+          failed
+            ? t('billing.keepPlanFailed', 'Could not cancel the change. Try again.')
+            : t('billing.keepPlanDescription', {
+                defaultValue: 'The change to {{plan}} on {{date}} is cancelled.',
+                plan: targetPlan,
+                date,
+              })
+        }
+        descriptionError={failed}
+        cancelLabel={t('common.cancel', 'Cancel')}
+        confirmLabel={
+          cancelChange.isPending
+            ? t('billing.keepingPlan', 'Keeping plan…')
+            : t('billing.keepPlan', 'Keep plan')
+        }
+        onConfirm={keepPlan}
+      />
     </>
   );
 }

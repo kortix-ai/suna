@@ -36,6 +36,12 @@ export interface Capabilities {
    * direct-edge mode, so `x-kortix-app-host` cannot stand in for it).
    */
   appHost: boolean;
+  /**
+   * The target's API publishes project snapshots (`KORTIX_PROJECT_SNAPSHOT_S3_*`),
+   * so a config release over the archive cap reaches a box through one. Dev,
+   * staging and prod do. The local profile and a preview do not.
+   */
+  projectSnapshots: boolean;
 }
 
 export interface Env {
@@ -72,6 +78,12 @@ export interface Env {
   capabilities: Capabilities;
   /** Email domain for synthetic principal accounts. */
   testEmailDomain: string;
+  /**
+   * Mailpit HTTP origin that receives the target's email (local stack, preview).
+   * Null on a target without one. Deliberately not a capability: a capability
+   * staging lacks would fail `--require-all` on the prod release gate.
+   */
+  mailpitUrl: string | null;
 }
 
 function pick(...names: string[]): string | null {
@@ -166,6 +178,7 @@ export function loadEnv(): Env {
     internalCron: internalServiceKey != null,
     funded: pick('KE2E_CAP_FUNDED') === '1',
     appHost: pick('KE2E_CAP_APP_HOST') === '1' || inferTarget(apiUrl) === 'local',
+    projectSnapshots: pick('KE2E_CAP_PROJECT_SNAPSHOTS') !== '0',
   };
 
   cached = {
@@ -186,6 +199,7 @@ export function loadEnv(): Env {
     target,
     capabilities,
     testEmailDomain: pick('KE2E_EMAIL_DOMAIN') || 'ke2e.kortix.test',
+    mailpitUrl: pick('KE2E_MAILPIT_URL', 'E2E_MAILPIT_URL'),
   };
   return cached;
 }

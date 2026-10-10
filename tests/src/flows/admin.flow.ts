@@ -1165,6 +1165,10 @@ flow(
       "DELETE /v1/admin/api/impersonate/:grantId",
       "GET /v1/admin/api/impersonate/active",
       "POST /v1/accounts/:accountId/members",
+      "POST /v1/account/request-deletion",
+      "POST /v1/account/cancel-deletion",
+      "DELETE /v1/account/delete-immediately",
+      "GET /v1/account/deletion-status",
     ],
   },
   async (ctx) => {
@@ -1279,6 +1283,23 @@ flow(
         { params: { accountId: victim.id }, ...acting() },
       );
       r.status(403).body().has("$.code", "impersonation_invalid");
+    });
+
+    // Account deletion runs as the REAL caller. Inside the customer's account
+    // the operator became the requester: the request named the operator, and
+    // the deletion would sweep the operator's own accounts and delete the
+    // operator's login.
+    await ctx.step("acting-as CANNOT request, cancel or run account deletion", async () => {
+      const request = await admin.post("/v1/account/request-deletion", { reason: "imp1-should-fail" }, acting());
+      request.status(403).body().has("$.code", "impersonation_invalid");
+      const run = await admin.del("/v1/account/delete-immediately", acting());
+      run.status(403).body().has("$.code", "impersonation_invalid");
+      const cancel = await admin.post("/v1/account/cancel-deletion", {}, acting());
+      cancel.status(403).body().has("$.code", "impersonation_invalid");
+    });
+    await ctx.step("acting-as, the deletion status read stays open and shows nothing scheduled", async () => {
+      const r = await admin.get("/v1/account/deletion-status", acting());
+      r.status(200).body().has("$.has_pending_deletion", false);
     });
 
     await ctx.step("a grant id nobody holds → 403, never a fall-back to own account", async () => {

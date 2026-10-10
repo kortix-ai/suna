@@ -8,6 +8,7 @@ import type { GitTriggerSpec } from '../triggers';
 import { drainMonitorEvents } from './monitor-observer';
 import { renderPromptTemplate } from './trigger-payload';
 import { fireGitTrigger, markGitTriggerAttemptFailed, markGitTriggerFired } from './trigger-fire';
+import { raiseTriggerAlert } from './trigger-alerts';
 import { runProjectConnectorSweep } from './trigger-connector-sweep';
 import { schedulerHealth, triggerFireTimeoutMs, triggerScheduleClaimLimit, triggerExecutionConcurrency, connectorSweepIntervalMs, initialCatalogBackfillIncomplete, mapWithConcurrency, schedulerSweepIsStale, triggersPausedForProject, withTimeout } from './trigger-scheduler-state';
 
@@ -163,6 +164,7 @@ async function executeTriggerExecution(
     const message = error instanceof Error ? error.message : String(error);
     const state = await markTriggerExecutionFailed({ row, failedAt, error: message });
     await markGitTriggerAttemptFailed(row.projectId, row.slug, failedAt, message).catch(() => {});
+    if (state === 'dead_lettered') await raiseTriggerAlert({ projectId: row.projectId, slug: row.slug, source: 'fire', error: message });
     return state === 'queued' ? 'queued' : 'failed';
   }
 }
@@ -194,7 +196,9 @@ async function recordTriggerExecutionResult(
           sessionId: result.sessionId,
           commandId: result.commandId,
         }),
-        markGitTriggerFired(row.projectId, row.slug, completedAt, runtimeStatus),
+        // The handoff shows as `fired`, but only a fire that reached a session
+        // ends an alert streak; the prompt's delivery ends it (KRTX-1742).
+        markGitTriggerFired(row.projectId, row.slug, completedAt, runtimeStatus, { endsAlert: result.status === 'fired' }),
       ]);
       return result.status;
     }
@@ -208,10 +212,16 @@ async function recordTriggerExecutionResult(
     const terminal = result.errorCode === 'insufficient_credits'
       || result.errorCode === 'subscription_required'
       || result.errorCode === 'no_account'
+      // The model gate fails identically on every retry until the account
+      // gains a usable model; retrying only delays the terminal state the
+      // same way a billing rejection does.
+      || result.errorCode === 'no_usable_model'
       // The fire already paused the reminder; a retry cannot bring the session back.
       || result.errorCode === 'reminder_session_gone';
     const state = await markTriggerExecutionFailed({ row, failedAt: completedAt, error, terminal });
     await markGitTriggerAttemptFailed(row.projectId, row.slug, completedAt, error);
+    // Only the dead letter alerts the watchers: a retried attempt may still work.
+    if (state === 'dead_lettered') await raiseTriggerAlert({ projectId: row.projectId, slug: row.slug, source: 'fire', error });
     return state === 'queued' ? 'queued' : 'failed';
 }
 

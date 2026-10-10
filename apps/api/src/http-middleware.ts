@@ -131,6 +131,17 @@ installFetchTiming(config.SUPABASE_URL);
 // Request logger — uses Hono's built-in logger for stdout (Docker captures these)
 app.use('*', logger());
 
+/**
+ * `X-Kortix-Upstream-Status` as a number, or null when the header is absent,
+ * empty, or not a positive status (`Number('')` is 0, so the `> 0` guard is
+ * what separates "absent" from a real status — there is no HTTP status 0).
+ * Same parse as the SDK's `getSessionHealth`.
+ */
+function parseUpstreamStatusHeader(value: string | null): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 // ── Never emit 502/504 to a client that reaches us through Cloudflare ────────
 // Cloudflare REPLACES the body of an origin 502/504 with its own HTML "Bad
 // gateway" page and drops our headers with it — including
@@ -208,6 +219,7 @@ app.use('*', async (c, next) => {
       status,
       durationMs: duration,
       proxyHop: c.res.headers.get(PROXY_HOP_HEADER)?.toLowerCase() ?? null,
+      upstreamStatus: parseUpstreamStatusHeader(c.res.headers.get(PROXY_UPSTREAM_STATUS_HEADER)),
     }) ||
     // Suppress only SUCCESSFUL probes (a non-2xx still logs, so a
     // failing/degraded probe stays fully visible).

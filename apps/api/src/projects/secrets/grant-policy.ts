@@ -111,14 +111,6 @@ export function resolveGrantedSecretSelection(
   return { env, identifiers: allowed.map((r) => r.identifier), selected };
 }
 
-export function resolveGrantedSecretEnv(
-  rows: ResolvedProjectSecret[],
-  grant: string[] | 'all' | undefined,
-): { env: Record<string, string>; identifiers: string[] } {
-  const { env, identifiers } = resolveGrantedSecretSelection(rows, grant);
-  return { env, identifiers };
-}
-
 // Single source of truth in @kortix/api-contract (route-contract validation);
 // re-exported here so internal callers keep the same import site.
 export { SESSION_SECRETS_ALLOWLIST_MAX_KEYS };

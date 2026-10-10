@@ -17,9 +17,7 @@
  */
 
 import { isOpencodePort } from '../shared/opencode-ports';
-import { classifyRuntimeRequest, stripInBoxProxyPrefix } from '../sandbox-proxy/runtime-request';
-
-export { stripInBoxProxyPrefix };
+import { classifyRuntimeRequest } from '../sandbox-proxy/runtime-request';
 
 /** The in-box agent that reverse-proxies to the runtime. */
 const AGENT_PORT = 8000;

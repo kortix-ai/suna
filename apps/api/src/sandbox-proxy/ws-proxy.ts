@@ -19,7 +19,9 @@
 // the opencode process is loopback-bound and direct public exposure would bypass
 // the sandbox agent's signed user-context auth. The resolver therefore keeps
 // Daytona on 4096 and sends Platinum PTY upgrades through the agent bridge on
-// 8000.
+// 8000. A box whose runtime is not OpenCode (pi) has no `/pty/`: that upgrade
+// is refused with `409`. Every first-party terminal uses the daemon's own PTY,
+// `/kortix/pty/{id}/connect` on 8000, which works on every harness.
 // ════════════════════════════════════════════════════════════════════════════
 
 import { authenticatePreviewPrincipalDetailed } from './preview-auth';
@@ -27,7 +29,7 @@ import { bindPreviewResource, bindPreviewSession } from './preview-audit';
 import { resolvePreviewWsUpstream } from './forward';
 import { classifyPtyWebSocketPath } from '../platform/providers/pty-ingress';
 import { OPENCODE_PRIMARY_PORT, isOpencodePort } from '../shared/opencode-ports';
-import { healthRuntimePort } from '@kortix/api-contract/runtime-relay';
+import { healthHarnessId, healthRuntimePort } from '@kortix/api-contract/runtime-relay';
 import { invalidatePreviewLink, resolveSandboxIngress } from './backend';
 import { establishPreviewSession, resolvePreviewRequest, sessionFromCookies } from './preview-origin';
 
@@ -51,11 +53,13 @@ const AGENT_PORT = 8000;
  * reintroduce the dead-socket bug it was meant to avoid. A PTY connect is a
  * human opening a terminal — rare enough to afford one short round-trip.
  *
- * Falls back to 4096 on anything unexpected: an older daemon that does not
- * report the field, an unreachable box, a slow one. That is the previous
- * behaviour, so this can only improve on it.
+ * `{ harness }` when the box names a runtime that is not OpenCode: no port of
+ * the pair answers there (R7.5). Falls back to 4096 on anything unexpected: an
+ * older daemon that does not report the field, an unreachable box, a slow one.
+ * That is the previous behaviour, so this can only improve on it.
  */
-async function resolveLiveOpencodePort(sandboxId: string): Promise<number> {
+async function resolveLiveOpencodePort(sandboxId: string): Promise<{ port: number } | { harness: string }> {
+  const fallback = { port: OPENCODE_FALLBACK_PORT };
   try {
     const { url, headers } = await resolveSandboxIngress(sandboxId, {
       port: AGENT_PORT,
@@ -65,16 +69,17 @@ async function resolveLiveOpencodePort(sandboxId: string): Promise<number> {
       headers,
       signal: AbortSignal.timeout(2_000),
     });
-    if (!res.ok) return OPENCODE_FALLBACK_PORT;
-    const port = healthRuntimePort((await res.json().catch(() => null)) as Record<string, unknown> | null);
+    if (!res.ok) return fallback;
+    const health = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+    const harness = healthHarnessId(health);
+    if (harness !== null && harness !== 'opencode') return { harness };
+    const port = healthRuntimePort(health);
     // Must be one of the pair. A daemon reporting anything else is either
     // misconfigured or not the daemon, and following it blindly would let a
     // response body redirect the PTY at an arbitrary port inside the sandbox.
-    return port !== null && isOpencodePort(port)
-      ? port
-      : OPENCODE_FALLBACK_PORT;
+    return port !== null && isOpencodePort(port) ? { port } : fallback;
   } catch {
-    return OPENCODE_FALLBACK_PORT;
+    return fallback;
   }
 }
 
@@ -271,12 +276,21 @@ async function resolveUpgradeForPrincipal(input: {
 > {
   const { sandboxId, port, remainingPath, userId, callerSessionId } = input;
 
-  // opencode PTY (and any other opencode endpoint) must reach opencode directly
-  // on 4096 — the daemon on 8000 can't carry a WebSocket. Everything else is
-  // proxied against the port the client addressed.
-  const ptyKind = classifyPtyWebSocketPath(remainingPath);
-  const upstreamPort =
-    ptyKind === 'opencode' ? await resolveLiveOpencodePort(sandboxId) : port;
+  // opencode PTY must reach opencode directly on its live port. Everything
+  // else, the daemon's own `/kortix/pty` included, is proxied against the port
+  // the client addressed.
+  let upstreamPort = port;
+  if (classifyPtyWebSocketPath(remainingPath) === 'opencode') {
+    const live = await resolveLiveOpencodePort(sandboxId);
+    if ('harness' in live) {
+      return {
+        ok: false,
+        status: 409,
+        message: `pty_unsupported_runtime: this session runs ${live.harness}, which serves no OpenCode PTY. Open /kortix/pty/:id/connect on port 8000.`,
+      };
+    }
+    upstreamPort = live.port;
+  }
 
   // Strip our own auth credentials before forwarding — opencode authenticates
   // via the Daytona preview token header, not our query params.

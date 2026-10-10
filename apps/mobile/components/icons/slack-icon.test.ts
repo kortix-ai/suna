@@ -24,7 +24,7 @@ describe('the mobile Slack mark', () => {
 
   test('the channel card draws it, and its label is not tinted pink', () => {
     expect(userMessage).not.toContain('339.6 82.2% 51.6%');
-    expect(userMessage).toMatch(/platform === 'Slack' \? <SlackIcon size=\{size\} \/>/);
+    expect(userMessage).toMatch(/platform === 'Slack'\)? (\?|return) <SlackIcon size=\{size\} \/>/);
   });
 
   test('the session starter line draws it for a Slack-started session', () => {

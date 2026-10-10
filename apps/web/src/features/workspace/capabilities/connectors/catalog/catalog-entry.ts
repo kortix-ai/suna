@@ -5,10 +5,10 @@ import { POPULAR_SECTION } from './connector-categories';
 
 /**
  * Which catalogue an entry came from. This is not cosmetic — it decides which
- * add flow the card opens. A `discover` entry goes to `DiscoverAddFlow`
- * (template -> connector draft); an `easy-connect` entry goes to
- * `ConnectorConnectionModal` (managed OAuth via Pipedream). The two build
- * different drafts and cannot be swapped.
+ * install the app page's Install runs. A `discover` entry installs from its
+ * template (`discoverInstallTarget`); an `easy-connect` entry installs as a
+ * managed OAuth app via Pipedream (`easyConnectInstallTarget`). The two build
+ * different connectors and cannot be swapped.
  */
 export type CatalogSource = 'discover' | 'easy-connect';
 
@@ -36,7 +36,12 @@ interface CatalogEntryFields {
  * back to the matching add flow without a lookup.
  */
 export type CatalogEntry =
-  | (CatalogEntryFields & { source: 'discover'; connector: DiscoverConnector })
+  | (CatalogEntryFields & {
+      source: 'discover';
+      connector: DiscoverConnector;
+      /** The managed catalogue lists the same app too (`mergeSearchEntries`). */
+      alsoApp?: boolean;
+    })
   | (CatalogEntryFields & {
       source: 'easy-connect';
       app: PipedreamApp & { provider?: 'composio' | 'pipedream' };
@@ -85,6 +90,41 @@ export function catalogEntryFromEasyConnect(
     categories: app.categories,
     popularity: null,
   };
+}
+
+/**
+ * The one fact that varies between cards: HOW this entry connects. Short
+ * nouns, shown as the card's quiet line under the title — every card gets
+ * one, so the rows scan as a consistent column.
+ */
+/**
+ * One key per app across both catalogues: lower case, letters and digits only,
+ * a trailing "MCP" dropped, so `Linear`, `Linear MCP` and `linear` match. The
+ * API joins managed apps to API/MCP entries with the same rule
+ * (`apps/api/src/connectors/connect-direct-twins.ts`).
+ */
+export function appNameKey(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '')
+    .replace(/(mcp|mcpserver)$/, '');
+}
+
+export function catalogEntryKindLabel(entry: CatalogEntry): string {
+  if (entry.source === 'computer') return 'Native';
+  // An app with both ways to connect names both.
+  if (entry.source === 'easy-connect') return entry.app?.directId ? 'App · MCP' : 'App';
+  if (entry.alsoApp && entry.connector.kind === 'mcp') return 'MCP · App';
+  switch (entry.connector.kind) {
+    case 'mcp':
+      return 'MCP';
+    case 'graphql':
+      return 'GraphQL';
+    case 'cli':
+      return 'CLI';
+    default:
+      return 'API';
+  }
 }
 
 /**
@@ -150,6 +190,43 @@ export function isCatalogEntryConnected(
 ): boolean {
   if (entry.source === 'computer') return connectedKeys.has('provider:computer');
   return connectedKeys.has(foldKey(entry.slug)) || connectedKeys.has(foldKey(entry.name));
+}
+
+/**
+ * A connector token names an entry when it equals the entry's token, or starts
+ * with it. The prefix pass exists because a default add is named `<App>` then
+ * `<App> 2`, and its slug is `<app>-<random>`: neither equals the app's token.
+ * It only counts for entry tokens of 4+ characters, so "Git" cannot claim
+ * "GitHub".
+ */
+function tokenIdentifiesEntry(connectorToken: string, entryToken: string): boolean {
+  if (!entryToken || !connectorToken) return false;
+  if (connectorToken === entryToken) return true;
+  return entryToken.length >= 4 && connectorToken.startsWith(entryToken);
+}
+
+/**
+ * Every project connector that reads as created from this catalogue entry:
+ * the app page's "In this project" list. It does not skip `needs_auth` rows —
+ * this is "what exists", and the row's status line says what is missing.
+ *
+ * DISPLAY ONLY. It is lenient, so a wrong answer is a wrong row in a list.
+ * Install reuse must not use it: see `connectorInstalledFrom` in
+ * `install/install.ts`.
+ */
+export function catalogEntryConnectors(
+  connectors: readonly AdminConnector[],
+  entry: CatalogEntry,
+): AdminConnector[] {
+  if (entry.source === 'computer') {
+    return connectors.filter((connector) => connector.provider === 'computer');
+  }
+  const tokens = [foldKey(entry.slug), foldKey(entry.name)].filter(Boolean);
+  return connectors.filter((connector) =>
+    [foldKey(connector.slug), foldKey(connector.name ?? '')].some((connectorToken) =>
+      tokens.some((token) => tokenIdentifiesEntry(connectorToken, token)),
+    ),
+  );
 }
 
 /** The synthetic first browse section. Not a catalogue category — see

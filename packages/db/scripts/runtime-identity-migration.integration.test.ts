@@ -110,7 +110,7 @@ describe.skipIf(!dockerAvailable)('runtime identity migration — real PostgreSQ
   }, 30_000);
 
   afterAll(() => {
-    Bun.spawnSync(['docker', 'rm', '-f', container], {
+    Bun.spawnSync(['docker', 'rm', '-f', '-v', container], {
       stdout: 'ignore',
       stderr: 'ignore',
     });

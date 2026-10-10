@@ -1,6 +1,6 @@
 ---
 name: web-publishing-and-deployments
-description: "Publish a website or web app from the sandbox to a public URL, and deploy to cloud providers — get a live link to share, ship a static site or SPA, put a built site online, or deploy a framework app / container. Use when the user says 'publish this', 'deploy it', 'put it online', 'give me a live URL', 'host this', 'share a preview link', or wants to make a site/app they (or you) just built reachable on the web. Covers the zero-account instant path (Cloudflare) and permanent hosting (Vercel, incl. any Dockerfile). Also owns the publish GUARDRAILS: never publish unprompted, how to honestly take a site down, the runtime-dependency and data-persistence checks, and the mandatory pre-publish security review. Points at kortix-marketplace for other providers and deeper provider-specific skills."
+description: "Publish a website or web app from the sandbox to a public URL, and deploy to cloud providers — get a live link to share, ship a static site or SPA, put a built site online, or deploy a framework app / container. Use when the user says 'publish this', 'deploy it', 'put it online', 'give me a live URL', 'host this', 'share a preview link', or wants to make a site/app they (or you) just built reachable on the web. Covers the zero-account instant path (Cloudflare) and permanent hosting (Vercel, incl. any Dockerfile). Also owns the publish GUARDRAILS: never publish unprompted, how to honestly take a site down, the runtime-dependency and data-persistence checks, and the mandatory pre-publish security review. Prefers Kortix Apps (a stable Kortix URL behind Kortix sign-in) when the project has Apps on. Points at kortix-marketplace for other providers and deeper provider-specific skills."
 defaultProjectInstall: true
 ---
 
@@ -38,7 +38,9 @@ overwriting the site with a blank page, a placeholder, or a redirect — that
 leaves confusing, half-broken state and is not a real unpublish. Point the user
 at the real control (their deploy platform's dashboard, or stopping the shared
 sandbox preview), leave the project files untouched, and say plainly that a
-shared preview URL is public-by-link if they asked for privacy.
+shared preview URL is public-by-link if they asked for privacy. For a Kortix
+App, the real controls are `kortix apps access <slug> --mode private` and
+`kortix apps delete <slug> --yes`; run them only when the user asks.
 
 ## Before you publish
 
@@ -108,7 +110,17 @@ final output directory (`dist/`, `out/`, `build/`, `.next/`, …), not source.
 
 ## Which one?
 
-**First, check whether the project already answers this.** If the repo targets a
+**Kortix Apps first.** Run `kortix apps ls`. When it exits `0`, the project has
+Kortix Apps: deploy with the `kortix-apps` system skill
+(`kortix system-skills get kortix-apps`). It gives a stable Kortix URL that
+stays up, private to the user by default, with Kortix sign-in for the project
+or selected people, and no user account on another host. A built static site
+or SPA deploys in seconds as a static App with no compute cost. Use another
+host only when `kortix apps ls` answers `feature_disabled`, when the user names
+Cloudflare, Vercel, or another host, or when the repo already deploys to one
+(next paragraph).
+
+**Then check whether the project already answers this.** If the repo targets a
 host — a Vercel or Cloudflare config, a Dockerfile, a CI deploy step — use that
 exact workflow. Don't invent a competing one. The table below is for projects
 with no deploy target of their own.

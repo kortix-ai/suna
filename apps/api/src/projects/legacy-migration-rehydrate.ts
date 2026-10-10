@@ -1,9 +1,11 @@
 /**
  * Restore a migrated session's chat into its sandbox DURING provisioning, before
  * the sandbox is marked active — re-land of the module removed in 0d8c2cbe97
- * (#4592). Suna-account migrations (suna-migration-phases.ts) still write the
- * `legacy_migration` metadata + upload the opencode archive this module ships;
- * without it every migrated session opens with an empty chat.
+ * (#4592). Suna-account migrations (deleted in R6.5: prod logged no migration
+ * worker activity in the 30 days to 2026-10-07) wrote the `legacy_migration`
+ * metadata and uploaded the opencode archive this module ships; without it
+ * every migrated session opens with an empty chat. Prod still ran this restore
+ * on 2026-10-06, so it stays.
  *
  * Why before-active: the frontend, once it sees `active`, calls `ensure-opencode`
  * (opencode-mapping.ts) — the authoritative writer of opencode_session_id. It
