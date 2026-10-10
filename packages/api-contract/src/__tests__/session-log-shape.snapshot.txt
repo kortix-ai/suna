@@ -9,13 +9,13 @@ AdapterCapabilitiesSchema = {
 
 AttachmentBlockSchema = {
   type: literal("attachment")
-  id: string(non-empty)
+  id: string(min1)
   ref: string
   mime: string
   name: string | absent
   label: string | absent
   source_path: string | absent
-  bytes: number
+  bytes: number(int)(min0)
   sha256: string | absent
   ext: ExtSchema | absent
 }
@@ -35,7 +35,7 @@ CapabilityFeaturesSchema = {
 
 CompactionBlockSchema = {
   type: literal("compaction")
-  id: string(non-empty)
+  id: string(min1)
   summary: string | null
   opaque: boolean | absent
   first_kept_message_id: string | null
@@ -66,9 +66,9 @@ ExtSchema = record({
 
 HarnessBlockSchema = {
   type: literal("harness")
-  id: string(non-empty)
-  harness: string
-  kind: string
+  id: string(min1)
+  harness: string(min1)
+  kind: string(min1)
   data: unknown
   model_visible: boolean
   fallback_text: string | absent
@@ -77,7 +77,7 @@ HarnessBlockSchema = {
 ModelRefSchema = {
   provider: string
   model: string
-  api: string | absent
+  api: string(min1) | absent
   variant: string | absent
   reasoning_effort: string | absent
 }
@@ -91,14 +91,14 @@ PendingSchema = {
 }
 
 ProducerSchema = {
-  harness: string
+  harness: string(min1)
   harness_version: string
   adapter_version: string
 }
 
 ReasoningBlockSchema = {
   type: literal("reasoning")
-  id: string(non-empty)
+  id: string(min1)
   text: string
   summary: array(string) | absent
   redacted: boolean | absent
@@ -118,7 +118,7 @@ SessionLogBlockSchema = union(
 
 SessionLogMessageSchema = {
   schema: literal("kortix.session/2")
-  v: number(int)(min)
+  v: number(int)(min0)
   message_id: string
   thread_id: string
   seq: number(int)
@@ -136,7 +136,7 @@ SessionLogMessageSchema = {
   usage: UsageSchema | null
   finish: enum(stop | tool_calls | length | error | aborted) | null
   error: {
-    code: string
+    code: string(min1)
     message: string
   } | null
   created_at: string
@@ -149,15 +149,15 @@ SessionLogMessageSchema = {
 
 SessionLogSchema = {
   schema: literal("kortix.session/2")
-  v: number(int)(min)
+  v: number(int)(min0)
   session_id: string
   title: string | null
   created_at: string
   restore_grade: enum(native | converted | partial)
   grade_counts: {
-    tool_input: number(int)(min)
-    cut_point: number(int)(min)
-    attachment: number(int)(min)
+    tool_input: number(int)(min0)
+    cut_point: number(int)(min0)
+    attachment: number(int)(min0)
   } | absent
   harness: {
     current: string
@@ -183,7 +183,7 @@ SessionLogSchema = {
 
 SessionLogThreadSchema = {
   schema: literal("kortix.session/2")
-  v: number(int)(min)
+  v: number(int)(min0)
   thread_id: string
   parent_thread_id: string | null
   spawned_by: {
@@ -202,14 +202,14 @@ SessionLogThreadSchema = {
 
 StepBlockSchema = {
   type: literal("step")
-  id: string(non-empty)
+  id: string(min1)
   phase: enum(start | finish)
   ext: ExtSchema | absent
 }
 
 SubtaskBlockSchema = {
   type: literal("subtask")
-  id: string(non-empty)
+  id: string(min1)
   thread_id: string
   agent: string
   description: string
@@ -219,12 +219,12 @@ SubtaskBlockSchema = {
 
 TextBlockSchema = {
   type: literal("text")
-  id: string(non-empty)
+  id: string(min1)
   text: string
   model_text: string | absent
   synthetic: boolean | absent
   ref: string | absent
-  bytes: number(int)(min) | absent
+  bytes: number(int)(min0) | absent
   ext: ExtSchema | absent
 }
 
@@ -243,7 +243,7 @@ TodoSchema = {
 
 ToolCallBlockSchema = {
   type: literal("tool_call")
-  id: string(non-empty)
+  id: string(min1)
   call_id: string
   name: string
   kind: ToolKindSchema
@@ -255,7 +255,7 @@ ToolCallBlockSchema = {
     model_content: array(ToolResultContentSchema) | absent
     is_error: boolean
     error: {
-      code: string | absent
+      code: string(min1) | absent
       message: string
     } | absent
     exit_code: number | absent
@@ -269,7 +269,7 @@ ToolCallBlockSchema = {
   ext: ExtSchema | absent
 }
 
-ToolKindSchema = string(non-empty)
+ToolKindSchema = string(min1)
 
 ToolResultContentSchema = union(
   | {

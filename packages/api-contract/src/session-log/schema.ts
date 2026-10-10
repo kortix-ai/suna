@@ -12,14 +12,15 @@ import { SESSION_LOG_SCHEMA } from './types';
 const str = z.string();
 const nullableStr = str.nullable();
 const count = z.number().int().nonnegative();
+const nonEmpty = str.min(1); // pass-through strings and lookup keys: any non-empty value
 const id = str.min(1); // F1: block id, unique within its message (checked on the message)
 
 export const ExtSchema = z.record(z.object({ version: str, native_id: str.optional(), data: z.unknown() }));
-export const ProducerSchema = z.object({ harness: str, harness_version: str, adapter_version: str });
+export const ProducerSchema = z.object({ harness: nonEmpty, harness_version: str, adapter_version: str });
 export const ModelRefSchema = z.object({
   provider: str,
   model: str,
-  api: str.optional(), // 'anthropic-messages' | 'openai-chat' | 'openai-responses' | any other dialect
+  api: nonEmpty.optional(), // 'anthropic-messages' | 'openai-chat' | 'openai-responses' | any other dialect
   variant: str.optional(),
   reasoning_effort: str.optional(),
 });
@@ -55,7 +56,7 @@ export const TextBlockSchema = z.object({
   model_text: str.optional(),
   synthetic: z.boolean().optional(),
   ref: str.optional(), // F3
-  bytes: z.number().int().nonnegative().optional(), // F3
+  bytes: count.optional(), // F3
   ext,
 });
 export const ReasoningBlockSchema = z.object({
@@ -75,7 +76,7 @@ export const AttachmentBlockSchema = z.object({
   name: str.optional(),
   label: str.optional(),
   source_path: str.optional(),
-  bytes: z.number(),
+  bytes: count,
   sha256: str.optional(), // F5
   ext,
 });
@@ -100,7 +101,7 @@ export const ToolCallBlockSchema = z.object({
       content: z.array(ToolResultContentSchema),
       model_content: z.array(ToolResultContentSchema).optional(),
       is_error: z.boolean(),
-      error: z.object({ code: str.optional(), message: str }).optional(),
+      error: z.object({ code: nonEmpty.optional(), message: str }).optional(),
       exit_code: z.number().optional(),
       synthetic: z.boolean().optional(),
       cleared_at: str.optional(),
@@ -142,8 +143,8 @@ export const StepBlockSchema = z.object({ type: z.literal('step'), id, phase: z.
 export const HarnessBlockSchema = z.object({
   type: z.literal('harness'),
   id,
-  harness: str,
-  kind: str,
+  harness: nonEmpty,
+  kind: nonEmpty,
   data: z.unknown(),
   model_visible: z.boolean(),
   fallback_text: str.optional(),
@@ -184,7 +185,7 @@ export const SessionLogMessageSchema = z
     model: ModelRefSchema.nullable(),
     usage: UsageSchema.nullable(),
     finish: z.enum(['stop', 'tool_calls', 'length', 'error', 'aborted']).nullable(),
-    error: z.object({ code: str, message: str }).nullable(),
+    error: z.object({ code: nonEmpty, message: str }).nullable(),
     created_at: str,
     completed_at: nullableStr,
     producer: ProducerSchema,
