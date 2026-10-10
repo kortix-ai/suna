@@ -25,6 +25,10 @@ const stops: string[] = [];
 let fleet: Record<string, unknown>[] = [];
 const server = Bun.serve({
   port: 0,
+  // Bind loopback explicitly: a default-bind server reports its origin as
+  // `http://localhost:<port>`, and not every environment resolves that name
+  // (the provider client then cannot reach its own test double).
+  hostname: '127.0.0.1',
   fetch(request) {
     const url = new URL(request.url);
     if (request.method === 'GET' && url.pathname === '/v1/sandboxes') {

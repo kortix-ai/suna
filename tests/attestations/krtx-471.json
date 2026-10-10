@@ -1,0 +1,21 @@
+{
+  "source_hash": "fb1d721c0b140a4284aba620ee0e0eff72770cea3925615bb5cf467ef9c4b49c",
+  "diff_files": [
+    "apps/api/eslint-suppressions.json",
+    "apps/api/src/__tests__/integration-sandbox-ownership.test.ts",
+    "apps/api/src/platform/services/provision-timeline.test.ts",
+    "apps/api/src/platform/services/provision-timeline.ts",
+    "apps/api/src/sandbox-proxy/routes/preview-characterization.test.ts",
+    "packages/sdk/src/core/files/client.test.ts",
+    "packages/sdk/src/core/files/client.ts"
+  ],
+  "diff_hash": "47baa13efb8d9d8a82ecf8d5b769b05e8adaf9fda3a89ed61dabb1b61432bf1e",
+  "head": "3b952590386574e92718016bbfa0503875377be0",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-10T22:46:34.683Z"
+}

@@ -488,18 +488,21 @@ describe('forwardToSandbox retry and wake', () => {
     queueFetch(refused(), refused(), refused(), refused());
     // The give-up must leave its per-stage timeline behind: the stage deltas
     // (load-sandbox / ingress) are what makes a latency spike on this path
-    // attributable from the log line alone.
+    // attributable from the log line alone. The timeline ships through the api
+    // logger (`logger.info` — console.log does not reach Better Stack), so the
+    // capture spies that seam.
+    const { logger } = await import('../../lib/logger');
+    const originalInfo = logger.info;
     const logs: unknown[][] = [];
-    const originalLog = console.log;
-    console.log = (...args: unknown[]) => {
+    logger.info = ((...args: unknown[]) => {
       logs.push(args);
-      originalLog(...args);
-    };
+      originalInfo(...(args as Parameters<typeof originalInfo>));
+    }) as typeof logger.info;
     let res: Response;
     try {
       res = await forward({ port: 8000, path: '/session' });
     } finally {
-      console.log = originalLog;
+      logger.info = originalInfo;
     }
     expect(res.status).toBe(502);
     expect(await res.json()).toEqual({
