@@ -1,0 +1,19 @@
+{
+  "source_hash": "f4a3697505a48fb761e81d6d170fe8dd57cca666a34aa505d9e1c19001bd0481",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-call-connector-fanout.test.ts",
+    "apps/api/src/connectors/db-deps-rows.ts",
+    "apps/api/src/connectors/http-principal.ts",
+    "apps/api/src/projects/lib/session-connector-bindings.ts",
+    "apps/api/src/projects/lib/session-token-grant.ts"
+  ],
+  "diff_hash": "75ce5562ca9e892f07dfc0065aa7ec36709965f345897d686aae9b8f2e480347",
+  "head": "0aa5339915ac7aff8591733f7506088cc99d191a",
+  "passed": false,
+  "lanes": {
+    "core": "pass",
+    "packages": "fail",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-10T05:55:38.475Z"
+}
