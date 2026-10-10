@@ -246,3 +246,72 @@ describe('adversarial input', () => {
   });
 });
 
+/**
+ * Fan-out hidden from a pre-scan that splits statements differently from lang-core. Each shape
+ * builds `levels` statements, each a container of 12 references to the next.
+ */
+const twelve = (name: string) => Array.from({ length: 12 }, () => name).join(', ');
+const chain = (levels: number, define: (id: string, body: string) => string): string[] => {
+  const lines: string[] = [];
+  for (let i = 0; i < levels - 1; i++) lines.push(define(`p${i}`, `Stack([${twelve(`p${i + 1}`)}])`));
+  lines.push(define(`p${levels - 1}`, 'Badge("leaf")'));
+  return lines;
+};
+const top = `root = Stack([${twelve('p0')}])`;
+const plain = (id: string, body: string) => `${id} = ${body}`;
+const HIDDEN_FAN_OUT: Record<string, (levels: number) => string> = {
+  'a # comment holding a quote': (l) => [`${top} # it's here`, ...chain(l, plain)].join('\n'),
+  'a // comment holding a bracket': (l) => [`${top} // note (open`, ...chain(l, plain)].join('\n'),
+  'punctuation lang-core skips after the id': (l) => [top, ...chain(l, (id, body) => `${id} ; = ${body}`)].join('\n'),
+  'a non-ASCII letter after the id': (l) => [top, ...chain(l, (id, body) => `${id}\u00fc = ${body}`)].join('\n'),
+  'a carriage return after the id': (l) => [top, ...chain(l, (id, body) => `${id}\r = ${body}`)].join('\n'),
+  'an inner fence lang-core strips': (l) => ['w = [', '```', top, ...chain(l, plain), '```'].join('\n'),
+  'a junk line that opens a bracket': (l) => [top, 'junk junk = Stack([', ...chain(l, plain), '])'].join('\n'),
+  'ternary continuation lines': (l) => {
+    const lines: string[] = [];
+    for (let i = 0; i < l - 1; i++) lines.push(`p${i} = flag\n  ? Stack([${twelve(`p${i + 1}`)}])\n  : Stack([${twelve(`p${i + 1}`)}])`);
+    return [top, ...lines, `p${l - 1} = Badge("leaf")`, 'flag = true'].join('\n');
+  },
+  'a redefinition still streaming': (l) => [top, ...chain(l, plain), 'p0 = Badge("unfinish'].join('\n'),
+  'a reference cycle beside the fan-out': (l) => {
+    // q_i and r_i reference each other; r_i also fans out to r_(i-1).
+    const lines = [`root = Stack([${Array.from({ length: l }, (_, i) => `q${i}`).join(', ')}, ${twelve(`r${l - 1}`)}])`];
+    for (let i = 0; i < l; i++) {
+      lines.push(`q${i} = Stack([r${i}, ${i > 0 ? twelve(`r${i - 1}`) : 'leaf'}])`);
+      lines.push(`r${i} = Stack([${twelve(`q${i}`)}])`);
+    }
+    return [...lines, 'leaf = Badge("x")'].join('\n');
+  },
+  'data fan-out with no components': (l) => {
+    const lines = ['root = Stack([t])', 't = Table(["a"], [[d0]])'];
+    for (let i = 0; i < l - 1; i++) lines.push(`d${i} = [${twelve(`d${i + 1}`)}]`);
+    return [...lines, `d${l - 1} = "v"`].join('\n');
+  },
+};
+
+describe('hidden fan-out (statements split exactly as lang-core splits them)', () => {
+  for (const [shape, build] of Object.entries(HIDDEN_FAN_OUT)) {
+    test(`${shape}: levels 6 to 8 are rejected before lang-core expands them`, () => {
+      const started = performance.now();
+      for (const levels of [6, 7, 8]) {
+        const result = parseGenui(build(levels));
+        expect(result.root).toBeNull();
+        expect(result.issues.map((issue) => issue.code)).toEqual(['too-many-nodes']);
+      }
+      expect(performance.now() - started).toBeLessThan(1_000);
+    });
+  }
+
+  test('many references to a data statement are not component nodes', () => {
+    // 12 Stats x 2 references to one text statement: 24 references, 13 components.
+    const stats = Array.from({ length: 4 }, (_, i) => `s${i}`).join(', ');
+    const lines = [`root = Stack([${Array.from({ length: 3 }, (_, i) => `row${i}`).join(', ')}])`];
+    for (let r = 0; r < 3; r++) lines.push(`row${r} = StatRow([${stats}])`);
+    for (let i = 0; i < 4; i++) lines.push(`s${i} = Stat(label, value)`);
+    lines.push('label = "Users"', 'value = "900"');
+    const { root, issues } = parseGenui(lines.join('\n'));
+    expect(issues).toEqual([]);
+    expect((root?.props.children as unknown[]).length).toBe(3);
+  });
+});
+
