@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { GENUI_MAX_NODES, GENUI_MAX_SOURCE_CHARS } from './catalog';
+import { genuiBlockToMarkdown } from './markdown';
 import { createGenuiParser, parseGenui } from './parse';
 import { HOTEL } from './test-fixtures';
 
@@ -230,6 +231,18 @@ describe('adversarial input', () => {
     const { issues } = parseGenui(lines.join('\n'));
     expect(issues.length).toBe(50);
     expect(issues[0]?.code).toBe('unknown-component');
+  });
+
+  test('the cap never drops a cut-off issue: the settled cut-off note depends on it', () => {
+    const children = Array.from({ length: 12 }, (_, i) => `s${i}`).join(', ');
+    const lines = [`root = Stack([${children}, ok, c])`, 'ok = Badge("kept")'];
+    for (let i = 0; i < 12; i++) lines.push(`s${i} = Stack([${Array.from({ length: 6 }, () => 'Nope("x")').join(', ')}])`);
+    lines.push('c = Callout("info", "unfin');
+    const code = lines.join('\n');
+    const { issues } = parseGenui(code);
+    expect(issues.length).toBeLessThanOrEqual(51);
+    expect(issues.filter((issue) => issue.code === 'cut-off')).toHaveLength(1);
+    expect(genuiBlockToMarkdown(code)).toBe('[kept]\n\n*Response was cut off.*');
   });
 });
 

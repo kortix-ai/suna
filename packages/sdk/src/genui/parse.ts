@@ -34,7 +34,7 @@ export function unfinishedStatement(code: string, incomplete: boolean): string |
 /** Deepest bracket nesting plus reference chain passed to lang-core, whose recursive-descent parser has no limit. */
 const MAX_NESTING = 64;
 
-/** At most this many issues per result; the first ones are kept. */
+/** At most this many issues per result (plus a cut-off issue past the cap); the first ones are kept. */
 const MAX_ISSUES = 50;
 
 const IDENTIFIER = /[A-Za-z_$]\w*/y;
@@ -183,7 +183,11 @@ export function createGenuiParser(version: number = GENUI_SCHEMA_VERSION): Genui
       issues.push({ code: 'unsupported-statement', message: `${unsupported} Query/Mutation/state statement(s) ignored` });
     }
     if (!streaming && !shared.root) issues.push({ code: 'no-root', message: 'The block has no valid root Stack' });
-    return { root: shared.root, pending: raw.meta.unresolved, issues: issues.slice(0, MAX_ISSUES), streaming };
+    // The cap never drops the cut-off issue: the settled cut-off note depends on it.
+    const capped = issues.slice(0, MAX_ISSUES);
+    const cutOff = issues.find((issue) => issue.code === 'cut-off');
+    if (cutOff && !capped.includes(cutOff)) capped.push(cutOff);
+    return { root: shared.root, pending: raw.meta.unresolved, issues: capped, streaming };
   };
 
   return {
