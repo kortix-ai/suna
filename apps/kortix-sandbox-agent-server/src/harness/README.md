@@ -28,7 +28,7 @@ session (a restart or resume re-reads the selection).
 | Location | Responsibility |
 | --- | --- |
 | `harness.ts` | Resolution, `loadConfig`, the boot context and the union helpers every box uses |
-| `contract/` | Named host-facing operation contracts (`control`, `diagnostics`, `queries`, `proxy`, `lifecycle-contract`, `boot-state`, `server`); no router dependencies |
+| `contract/` | Named host-facing operation contracts (`control`, `diagnostics`, `queries`, `proxy`, `lifecycle-contract`, `boot-state`, `server`, `session-log`); no router dependencies |
 | `shared/` | Adapter-neutral steps both adapters call: agent env file, `on_boot`, attachment stripping, the host facts of `/kortix/health` (`host-health.ts`), and every daemon-to-API callback (see below) |
 | `../services/runtime-assets/port.ts` | Harness maintenance contract, owned by the service that consumes it |
 | `open-code/service.ts` | Composition over one lifecycle; native typed ports |
@@ -61,9 +61,31 @@ route, the body, the credential, the retries and the dead-token breaker.
 | `shared/projection-relay.ts` | `POST /platform/runtime-projection`; the adapter registers its state reader |
 | `shared/audit-relay.ts` | `POST /projects/:id/sessions/:id/audit/events`: sanitize, batch, spool; batches carry `source: 'runtime'` and the harness id. pi feeds it every frame it publishes (`PiRuntimeHooks.onFrame`), so pi sessions have a tool audit trail |
 | `shared/boot-timeline-relay.ts` | `POST /platform/boot-timeline` |
+| `shared/session-log-journal.ts` | `POST /projects/:id/sessions/:id/log/journal`: the session log (`kortix.session/2`, `@kortix/api-contract/session-log`), see below |
 
 A callback added here reaches every harness. The API accepts the pre-W3
 spellings (`opencode_session_id`, kind `opencode_session`) from older daemons.
+
+## Session log (P2.4)
+
+An adapter implements `SessionLogPort` (`contract/session-log.ts`):
+`changes(cursors)` returns the messages, tombstones, thread upserts and session
+patch since one `ExportCursor` per thread; `restore(log)` writes a session log
+into the native store before the harness starts and returns the cursors of what
+it wrote; `fingerprint()` digests the native store for the boot reconcile;
+`capabilities` is the adapter's `AdapterCapabilities`. No adapter implements it
+yet: P2.5 (pi) and P2.6 (OpenCode) do, and call `startSessionLogJournal`.
+
+The journal (`shared/session-log-journal.ts`) drops a message whose native hash
+equals its cursor's (schema rule C13), so an unchanged or restored message is
+never sent again. It posts the rest in order, in gzipped batches of at most
+1 MB, each message with its `rev`, and keeps them dirty until apps/api
+acknowledges `(message_id, rev)`. `relayTurnEnd` and the daemon shutdown flush
+it first and wait at most 3 s, or until the first failed post; a batch not
+acknowledged by then keeps retrying in the background.
+Network errors, 401, 429 and 5xx (503: the operator switch is off) back off
+like the audit relay. 404 (an older API) and 409 (a newer generation owns the
+session) turn it off for the boot. Another 4xx drops the batch.
 
 ## Health and capabilities (E19, E1)
 

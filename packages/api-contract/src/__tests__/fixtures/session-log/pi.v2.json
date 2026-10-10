@@ -4,6 +4,7 @@
   "session_id": "ses_pilive0000000000000001",
   "title": null,
   "created_at": "2026-10-09T16:56:04.468Z",
+  "restore_grade": "native",
   "harness": {
     "current": "pi",
     "history": [
@@ -62,6 +63,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "You are pi, running in a Kortix schema-restore test. Be concise.\n\n<cwd>\n/work/proto/harness/pi/live/work\n</cwd>"
             }
           ],
@@ -192,6 +194,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "Create hello.txt containing hi"
             }
           ]
@@ -230,10 +233,12 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "I'll create the file."
             },
             {
               "type": "tool_call",
+              "id": "b1",
               "call_id": "call_mv17itu96",
               "name": "bash",
               "kind": "shell",
@@ -310,6 +315,7 @@
           "blocks": [
             {
               "type": "reasoning",
+              "id": "b0",
               "text": "The file exists now.",
               "ext": {
                 "pi": {
@@ -324,6 +330,7 @@
             },
             {
               "type": "text",
+              "id": "b1",
               "text": "Done."
             }
           ],
@@ -368,10 +375,12 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "Read hello.txt and look at this image"
             },
             {
               "type": "attachment",
+              "id": "b1",
               "ref": "blob:c414cd0e204de974f73753c7e28d7638e7b3691bb8b1a2bab6b25bb7fed7ce77",
               "mime": "image/png",
               "bytes": 70,
@@ -413,6 +422,7 @@
           "blocks": [
             {
               "type": "tool_call",
+              "id": "b0",
               "call_id": "call_mv17itv59",
               "name": "read",
               "kind": "read",
@@ -488,6 +498,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "It says hi. The image is a single pixel."
             }
           ],
@@ -532,6 +543,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "Run the command `false` and report the result."
             }
           ]
@@ -573,6 +585,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "Partial answer that failed"
             }
           ],
@@ -625,6 +638,7 @@
           "blocks": [
             {
               "type": "tool_call",
+              "id": "b0",
               "call_id": "call_mv17itvad",
               "name": "bash",
               "kind": "shell",
@@ -704,6 +718,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "The command failed with exit code 1."
             }
           ],
@@ -751,6 +766,7 @@
           "blocks": [
             {
               "type": "compaction",
+              "id": "b0",
               "summary": "SUMMARY-L: the user created hello.txt containing hi and checked an image.",
               "first_kept_message_id": "da1cf7e5",
               "tokens_before": 110
@@ -906,6 +922,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "Spawn a helper to list the files"
             }
           ]
@@ -944,6 +961,7 @@
           "blocks": [
             {
               "type": "tool_call",
+              "id": "b0",
               "call_id": "call_mv17itvhh",
               "name": "task",
               "kind": "task",
@@ -981,6 +999,7 @@
             },
             {
               "type": "subtask",
+              "id": "b1",
               "thread_id": "ses_pilive0000000000000001-child1",
               "agent": "general",
               "description": "list files",
@@ -1035,6 +1054,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "The helper found hello.txt."
             }
           ],
@@ -1079,6 +1099,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "What is in hello.txt? Answer in one word."
             }
           ]
@@ -1117,6 +1138,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "hi"
             }
           ],
@@ -1183,6 +1205,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "You are a subagent working inside a Kortix sandbox. Another agent delegated one task to you."
             }
           ],
@@ -1281,6 +1304,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "List the files in the workspace"
             }
           ],
@@ -1320,6 +1344,7 @@
           "blocks": [
             {
               "type": "tool_call",
+              "id": "b0",
               "call_id": "call_mv17itvhj",
               "name": "bash",
               "kind": "shell",
@@ -1395,6 +1420,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "Found hello.txt"
             }
           ],

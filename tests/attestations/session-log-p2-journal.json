@@ -1,0 +1,37 @@
+{
+  "source_hash": "2241dc9a4cb15e0680489df53b025bd101cddc340ea72f4c0e890ea728162817",
+  "diff_files": [
+    "apps/kortix-sandbox-agent-server/src/__tests__/session-log-journal.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/shared-sources.test.ts",
+    "apps/kortix-sandbox-agent-server/src/app/shutdown.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/README.md",
+    "apps/kortix-sandbox-agent-server/src/harness/contract/session-log.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/shared/session-log-journal.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/shared/turn-relay.ts",
+    "packages/api-contract/src/__tests__/fixtures/session-log/claude-code.v2.json",
+    "packages/api-contract/src/__tests__/fixtures/session-log/codex.v2.json",
+    "packages/api-contract/src/__tests__/fixtures/session-log/golden.v2.json",
+    "packages/api-contract/src/__tests__/fixtures/session-log/golden21.v2.json",
+    "packages/api-contract/src/__tests__/fixtures/session-log/opencode-v2.v2.json",
+    "packages/api-contract/src/__tests__/fixtures/session-log/opencode.v2.json",
+    "packages/api-contract/src/__tests__/fixtures/session-log/pi.v2.json",
+    "packages/api-contract/src/__tests__/session-log-shape.snapshot.txt",
+    "packages/api-contract/src/__tests__/session-log-shape.test.ts",
+    "packages/api-contract/src/__tests__/session-log-wire.test.ts",
+    "packages/api-contract/src/__tests__/session-log.test.ts",
+    "packages/api-contract/src/sandbox-layout.ts",
+    "packages/api-contract/src/session-log/index.ts",
+    "packages/api-contract/src/session-log/schema.ts",
+    "packages/api-contract/src/session-log/types.ts",
+    "packages/api-contract/src/session-log/wire.ts"
+  ],
+  "diff_hash": "626cb566f4bb42820d5cfe09875bee3e1a842a9016741020e42ef72ecf3e63e8",
+  "head": "0b313032c017aeeda8ee96b3f214a8a956ce57aa",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-10T23:51:42.473Z"
+}

@@ -4,6 +4,7 @@
   "session_id": "ses_golden21000000000000001",
   "title": "Golden 2.1",
   "created_at": "2026-10-02T10:00:00Z",
+  "restore_grade": "native",
   "harness": {
     "current": "fixture",
     "history": [
@@ -70,6 +71,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "Create notes.txt containing hello"
             }
           ]
@@ -106,6 +108,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "Creating it."
             }
           ]
@@ -134,6 +137,7 @@
           "blocks": [
             {
               "type": "compaction",
+              "id": "b0",
               "summary": "SUMMARY-21: the user asked to create notes.txt containing hello.",
               "first_kept_message_id": null,
               "layout": [
@@ -176,6 +180,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "Patch notes.txt to say hello world"
             }
           ]
@@ -212,6 +217,7 @@
           "blocks": [
             {
               "type": "tool_call",
+              "id": "b0",
               "call_id": "call_h01",
               "name": "apply_patch",
               "kind": "patch",
@@ -257,6 +263,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "Take a screenshot of the page"
             }
           ]
@@ -293,6 +300,7 @@
           "blocks": [
             {
               "type": "tool_call",
+              "id": "b0",
               "call_id": "call_h02",
               "name": "screenshot",
               "kind": "other",
@@ -350,6 +358,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "Here is the screenshot."
             }
           ]
@@ -381,6 +390,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "Show me the big log"
             }
           ]
@@ -417,6 +427,7 @@
           "blocks": [
             {
               "type": "tool_call",
+              "id": "b0",
               "call_id": "call_h03",
               "name": "bash",
               "kind": "shell",
@@ -476,6 +487,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "The log is long."
             }
           ]
@@ -507,6 +519,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "Run the slow command"
             }
           ]
@@ -543,6 +556,7 @@
           "blocks": [
             {
               "type": "tool_call",
+              "id": "b0",
               "call_id": "call_h04",
               "name": "bash",
               "kind": "shell",
@@ -594,6 +608,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "Spawn a helper to list files"
             }
           ]
@@ -630,6 +645,7 @@
           "blocks": [
             {
               "type": "tool_call",
+              "id": "b0",
               "call_id": "call_h05",
               "name": "spawn_agent",
               "kind": "task",
@@ -650,6 +666,7 @@
             },
             {
               "type": "subtask",
+              "id": "b1",
               "thread_id": "ses_golden21000000000000002",
               "agent": "general",
               "description": "list files",
@@ -692,6 +709,7 @@
           "blocks": [
             {
               "type": "tool_call",
+              "id": "b0",
               "call_id": "call_h06",
               "name": "wait_agent",
               "kind": "task",
@@ -740,6 +758,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "<subagent_notification>Aristotle completed: Found notes.txt</subagent_notification>"
             }
           ],
@@ -777,6 +796,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "The helper found notes.txt."
             }
           ]
@@ -836,6 +856,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "List the files in the workspace"
             }
           ],
@@ -873,6 +894,7 @@
           "blocks": [
             {
               "type": "tool_call",
+              "id": "b0",
               "call_id": "call_d01",
               "name": "bash",
               "kind": "shell",
@@ -924,6 +946,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "Found notes.txt"
             }
           ]

@@ -22,6 +22,7 @@ import { logger } from '@/lib/log/logger'
 import { sandboxRelayContext, sessionChannel } from '@/lib/kortix-api/relay-context'
 import { noteControlPlaneResponse, sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
 import type { InitialTurnClaim } from '@/types/control-plane'
+import { flushSessionLogJournal } from './session-log-journal'
 
 export type TurnStreamFrame = Omit<TurnStreamRelayBody, 'session_id' | 'kind'> & { kind: DaemonTurnStreamKind }
 
@@ -286,7 +287,8 @@ function turnEndBody(frame: TurnEndFrame): TurnStreamFrame {
 
 /**
  * The ONLY signal that finalizes a turn server-side: channel output and the
- * idle deadline. 4 attempts with a linear backoff. An answer apps/api did not
+ * idle deadline. The session-log journal is flushed first (at most 3 s).
+ * 4 attempts with a linear backoff. An answer apps/api did not
  * settle (`turn_completion.outcome` other than closed, already closed or no
  * active turn) retries too, after `reread` re-observes the turn; a settled
  * answer or a non-ok status is definitive. Resolves true only when settled.
@@ -299,6 +301,9 @@ export async function relayTurnEnd(
   // A credential the API refused, repeatedly and without contradiction, cannot
   // finalize a turn: all four attempts carry the same dead token (KRTX-446).
   if (sessionTokenPresumedDead()) return false
+  // The turn's messages go to the session log first, so apps/api can mark the
+  // turn durable when it closes it. Bounded at 3 s; the journal keeps retrying.
+  await flushSessionLogJournal()
   let current = frame
   for (let attempt = 1; attempt <= 4; attempt++) {
     try {

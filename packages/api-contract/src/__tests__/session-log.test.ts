@@ -5,6 +5,7 @@ import type { z } from 'zod';
 import {
   SESSION_LOG_MINOR,
   SESSION_LOG_SCHEMA,
+  AdapterCapabilitiesSchema,
   AttachmentBlockSchema,
   CompactionBlockSchema,
   HarnessBlockSchema,
@@ -17,6 +18,7 @@ import {
   SessionLogThreadSchema,
   ToolCallBlockSchema,
   upcast,
+  type AdapterCapabilities,
   type AttachmentBlock,
   type CompactionBlock,
   type HarnessBlock,
@@ -40,6 +42,7 @@ const clone = <T>(value: T): T => structuredClone(value);
 // so output-to-type assignability is not usable).
 type SameKeys<A, B> = [keyof A] extends [keyof B] ? ([keyof B] extends [keyof A] ? true : false) : false;
 const _typesFitSchemas: z.input<typeof SessionLogSchema> = {} as SessionLog;
+const _capsFitSchema: z.input<typeof AdapterCapabilitiesSchema> = {} as AdapterCapabilities;
 const _sameKeys: [
   SameKeys<z.output<typeof SessionLogSchema>, SessionLog>,
   SameKeys<z.output<typeof SessionLogThreadSchema>, SessionLogThread>,
@@ -54,6 +57,7 @@ const _sameKeys: [
   SameKeys<z.output<typeof HarnessBlockSchema>, HarnessBlock>,
 ] = [true, true, true, true, true, true, true, true, true, true, true];
 void _typesFitSchemas;
+void _capsFitSchema;
 void _sameKeys;
 
 const EXPORTS = ['pi', 'opencode', 'opencode-v2', 'claude-code', 'codex'].map((h) => `${h}.v2.json`);
@@ -80,6 +84,7 @@ const assistant = (blocks: SessionLogMessage['blocks'], status: SessionLogMessag
 });
 const call = (patch: Partial<ToolCallBlock>): ToolCallBlock => ({
   type: 'tool_call',
+  id: 'b0',
   call_id: 'c1',
   name: 'bash',
   kind: 'shell',
@@ -104,7 +109,7 @@ describe('session-log accepts the harness exports and golden sessions', () => {
     });
   }
 
-  test('golden.v2.json is a 2.0 record (v 0): a minor 1 reader still reads it', () => {
+  test('golden.v2.json keeps v 0 (a 2.0 record, plus the required minor 1 fields id and restore_grade) and validates', () => {
     expect(load('golden.v2.json').v).toBe(0);
   });
 });
@@ -194,5 +199,166 @@ describe('upcast', () => {
 
   test('reads a record from a later minor', () => {
     expect(upcast({ ...load('golden21.v2.json'), v: SESSION_LOG_MINOR + 1 }).v).toBe(SESSION_LOG_MINOR + 1);
+  });
+});
+
+// ─── Freeze additions F1–F12 (minor 1) ───────────────────────────────────────
+
+const text = (id: string, patch: Partial<TextBlock> = {}): TextBlock => ({ type: 'text', id, text: 'hi', ...patch });
+const accepts = (message: SessionLogMessage) => SessionLogMessageSchema.safeParse(message).success;
+const withSession = (patch: Record<string, unknown>) => ({ ...clone(load('golden21.v2.json')), ...patch });
+const features = {
+  tool_error_channel: false,
+  attachments: { user: ['image/png'], tool_result: true },
+  compaction: ['summary_first_tail' as const],
+  subagents: 'sync' as const,
+  todos: false,
+  reasoning_replay: 'lowers_to_text' as const,
+  freeform_tool_input: false,
+};
+
+describe('F1/F2 block id', () => {
+  test('every block type requires a non-empty id', () => {
+    const blocks: SessionLogMessage['blocks'] = [
+      text('p1'),
+      { type: 'reasoning', id: 'p2', text: 'r' },
+      { type: 'attachment', id: 'p3', ref: 'obj:1', mime: 'image/png', bytes: 1 },
+      call({ id: 'p4', result: { content: [], is_error: false } }),
+      { type: 'compaction', id: 'p5', summary: null, first_kept_message_id: null },
+      { type: 'subtask', id: 'p6', thread_id: 't2', agent: 'a', description: 'd' },
+      { type: 'step', id: 'p7', phase: 'start' },
+      { type: 'harness', id: 'p8', harness: 'codex', kind: 'k', data: null, model_visible: false },
+    ];
+    expect(accepts(assistant(blocks))).toBe(true);
+    blocks.forEach((block, i) => {
+      const noId = clone(blocks);
+      delete (noId[i] as Partial<typeof block>).id;
+      expect(accepts(assistant(noId))).toBe(false);
+      expect(accepts(assistant(blocks.map((b, j) => (j === i ? { ...b, id: '' } : b))))).toBe(false);
+    });
+  });
+
+  test('a repeated id in one message is rejected; the same id in two messages is accepted', () => {
+    const issue = firstIssue(SessionLogMessageSchema.safeParse(assistant([text('x'), text('x')])));
+    expect(issue.path).toEqual(['blocks', 1, 'id']);
+    expect(accepts(assistant([text('x')]))).toBe(true);
+    expect(accepts({ ...assistant([text('x')]), message_id: 'm2' })).toBe(true);
+  });
+});
+
+describe('F3 large text by reference', () => {
+  test('a preview with ref and bytes is accepted; a wrong type is rejected', () => {
+    expect(accepts(assistant([text('a', { text: 'x'.repeat(16_384), ref: 'blob:abc', bytes: 300_000 })]))).toBe(true);
+    expect(accepts(assistant([text('a', { ref: 7 as never })]))).toBe(false);
+    expect(accepts(assistant([text('a', { bytes: '300000' as never })]))).toBe(false);
+    expect(accepts(assistant([text('a', { bytes: -1 })]))).toBe(false);
+  });
+});
+
+describe('F4 restore grade', () => {
+  test('requires restore_grade, one of three values', () => {
+    for (const grade of ['native', 'converted', 'partial']) expect(SessionLogSchema.safeParse(withSession({ restore_grade: grade })).success).toBe(true);
+    expect(SessionLogSchema.safeParse(withSession({ restore_grade: 'lossy' })).success).toBe(false);
+    const record: Record<string, unknown> = withSession({});
+    delete record.restore_grade;
+    expect(firstIssue(SessionLogSchema.safeParse(record)).path).toEqual(['restore_grade']);
+  });
+
+  test('grade_counts is optional and holds three counts', () => {
+    const counts = { tool_input: 2, cut_point: 1, attachment: 0 };
+    expect(SessionLogSchema.safeParse(withSession({ restore_grade: 'partial', grade_counts: counts })).success).toBe(true);
+    expect(SessionLogSchema.safeParse(withSession({ grade_counts: { tool_input: 2, cut_point: 1 } })).success).toBe(false);
+    expect(SessionLogSchema.safeParse(withSession({ grade_counts: { ...counts, attachment: -1 } })).success).toBe(false);
+  });
+});
+
+describe('F5 attachment sha256', () => {
+  const attachment = (patch: Record<string, unknown>) => assistant([{ type: 'attachment', id: 'a', ref: 'obj:old', mime: 'image/png', bytes: 1, ...patch } as never]);
+  test('is optional; a present value must be a string', () => {
+    expect(accepts(attachment({}))).toBe(true);
+    expect(accepts(attachment({ sha256: 'ab'.repeat(32) }))).toBe(true);
+    expect(accepts(attachment({ sha256: 5 }))).toBe(false);
+  });
+});
+
+describe('F6 producer kortix-v1-import', () => {
+  test('a converted row names its producer', () => {
+    const converted = { ...assistant([text('a')]), producer: { harness: 'kortix-v1-import', harness_version: '1', adapter_version: '1' } };
+    expect(accepts(converted)).toBe(true);
+    expect(accepts({ ...converted, producer: { harness: 'kortix-v1-import' } as never })).toBe(false);
+  });
+});
+
+describe('F7 layout text entry', () => {
+  test('the { text } entry carries the OpenCode v2 recent-context; { context } is not a layout entry', () => {
+    const layout = (entry: unknown) => assistant([{ type: 'compaction', id: 'c', summary: 's', first_kept_message_id: null, layout: [{ summary: true }, entry] } as never]);
+    expect(accepts(layout({ text: '[User]: kept' }))).toBe(true);
+    expect(accepts(layout({ context: '[User]: kept' }))).toBe(false);
+  });
+});
+
+describe('F8 native_agent_id', () => {
+  test('is an optional string on thread and message', () => {
+    expect(accepts({ ...assistant([text('a')]), agent: 'build', native_agent_id: 'general-purpose' })).toBe(true);
+    expect(accepts({ ...assistant([text('a')]), native_agent_id: 3 as never })).toBe(false);
+    const record = withSession({});
+    record.threads[0] = { ...record.threads[0], agent: 'build', native_agent_id: 'general-purpose' };
+    expect(SessionLogSchema.safeParse(record).success).toBe(true);
+    record.threads[0] = { ...record.threads[0], native_agent_id: 3 as never };
+    expect(firstIssue(SessionLogSchema.safeParse(record)).path).toEqual(['threads', 0, 'native_agent_id']);
+  });
+});
+
+describe('F9 capabilities split', () => {
+  const caps: AdapterCapabilities = {
+    harness: 'opencode-v2',
+    harness_versions: '>=1.18.23',
+    schema_minors: [0, 1],
+    dialects: ['openai-chat'],
+    native: { ...features, compaction: ['summary_first_tail', 'text_tail'] },
+    rendered: { ...features, compaction: ['summary_first_tail', 'text_tail', 'layout'], freeform_tool_input: true },
+  };
+  test('native and rendered are both required', () => {
+    expect(AdapterCapabilitiesSchema.safeParse(caps).success).toBe(true);
+    const { native, ...noNative } = caps;
+    void native;
+    expect(firstIssue(AdapterCapabilitiesSchema.safeParse(noNative)).path).toEqual(['native']);
+    const { rendered, ...noRendered } = caps;
+    void rendered;
+    expect(firstIssue(AdapterCapabilitiesSchema.safeParse(noRendered)).path).toEqual(['rendered']);
+  });
+  test('the old flat feature fields no longer satisfy the schema', () => {
+    expect(AdapterCapabilitiesSchema.safeParse({ harness: 'x', harness_versions: '1', schema_minors: [1], dialects: [], ...features }).success).toBe(false);
+  });
+  test('an unknown compaction mode is rejected', () => {
+    expect(AdapterCapabilitiesSchema.safeParse({ ...caps, native: { ...features, compaction: ['magic'] } }).success).toBe(false);
+  });
+});
+
+describe('F10 orphan tool result', () => {
+  test('is kept as a harness block of kind orphan_output (no dedicated field)', () => {
+    const orphan = { type: 'harness' as const, id: 'o', harness: 'codex', kind: 'orphan_output', data: { call_id: 'gone', output: 'ok' }, model_visible: false, fallback_text: 'ok' };
+    expect(accepts(assistant([orphan]))).toBe(true);
+  });
+});
+
+describe('F11 interrupted error code', () => {
+  test('a call closed with error code interrupted is accepted', () => {
+    const result = { content: [{ type: 'text' as const, text: '[interrupted]' }], is_error: true, synthetic: true, error: { code: 'interrupted', message: 'the box stopped' } };
+    expect(accepts(assistant([call({ status: 'error', result })], 'interrupted'))).toBe(true);
+  });
+  test('any other code string still validates', () => {
+    expect(accepts({ ...assistant([text('a')], 'error'), error: { code: 'rate_limit', message: 'slow down' } })).toBe(true);
+  });
+});
+
+describe('F12 tool kind passthrough', () => {
+  test('known and harness-defined kinds are accepted; an empty or non-string kind is rejected', () => {
+    for (const kind of ['shell', 'other', 'screenshot', 'x-vendor.fetch']) {
+      expect(accepts(assistant([call({ kind, result: { content: [], is_error: false } })]))).toBe(true);
+    }
+    for (const kind of ['', 7]) {
+      expect(accepts(assistant([call({ kind: kind as never, result: { content: [], is_error: false } })]))).toBe(false);
+    }
   });
 });
