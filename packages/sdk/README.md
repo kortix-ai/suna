@@ -491,6 +491,8 @@ and the runtime config document stay hidden or empty on a pi session.
 Every session saves its transcript at the end of each turn. `useSession` reads saved
 messages from the platform database while `/start` continues. It uses the
 server-validated runtime session id and lets the live read reconcile the saved messages by ID.
+A live read that returns no messages keeps the saved messages on screen: it means the computer
+lost its state, not that the conversation is empty. The first live read with messages reconciles them.
 Missing or rejected history falls back to the existing runtime path.
 
 `useSession().savedTranscript` says whether that saved conversation can show before the
