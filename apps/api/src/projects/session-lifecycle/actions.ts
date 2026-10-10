@@ -23,7 +23,7 @@ import {
   recordedSessionStateVolume,
   scheduleSessionStateVolumeDelete,
 } from '../../platform/services/ephemeral-sandbox';
-import { persistentMachineFromSessionMetadata } from '../../platform/services/persistent-machine';
+import { isRootVolumeBox, persistentMachineFromSessionMetadata } from '../../platform/services/persistent-machine';
 import {
   projectImageAllowedForSession,
   sandboxSlugFromSessionMetadata,
@@ -287,6 +287,7 @@ export async function restartSession(
           sessionId,
           externalId: existingSandbox.externalId,
           provider: existingSandbox.provider,
+          metadata: existingSandbox.metadata,
           now: new Date(),
         });
       } catch (err) {
@@ -315,7 +316,13 @@ export async function restartSession(
   // current one commits its session volume and is deleted; a box whose runtime
   // wedged (its own disk filled, a daemon stuck on a boot error) does not come
   // back with it, which an in-place restart of the same VM cannot promise.
-  if (existingSandbox?.externalId && recordedSessionStateVolume(existingSandbox.metadata)) {
+  // A persistent machine that mounts its session volume (after a reset) is
+  // still a persistent machine: its restart is the in-place one below.
+  if (
+    existingSandbox?.externalId &&
+    recordedSessionStateVolume(existingSandbox.metadata) &&
+    !isRootVolumeBox(existingSandbox.metadata)
+  ) {
     const { retireEphemeralOnStop } = await import('../reaping/stop-box');
     const retired = await retireEphemeralOnStop({
       sandboxId: existingSandbox.sandboxId,

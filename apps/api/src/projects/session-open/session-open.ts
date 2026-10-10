@@ -14,6 +14,7 @@ import {
   isRetiredEphemeralRow,
   recordedSessionStateVolume,
 } from '../../platform/services/ephemeral-sandbox';
+import { isRootVolumeBox } from '../../platform/services/persistent-machine';
 import { sandboxCallbackUnreachableReason } from '../lib/sessions';
 import type { StopReason } from '../stop-reason';
 import { runtimeWakeInProgress } from '../session-lifecycle/runtime-wake-fence';
@@ -148,6 +149,7 @@ async function runOpenSession(
     row.status === 'stopped' &&
     row.externalId &&
     recordedSessionStateVolume(row.metadata) &&
+    !isRootVolumeBox(row.metadata) &&
     ['runtime_boot_failed', 'runtime_wake_failed'].includes(String(sandboxMetadata(row).stopReason ?? '')) &&
     !runtimeWakeInProgress(sandboxMetadata(row), log.observedAt)
   ) {

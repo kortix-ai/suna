@@ -395,7 +395,13 @@ async function exec(externalId: string, script: string, timeoutMs: number): Prom
  * attempt left on the volume (a box that fell back to a plain stop keeps
  * working on its own disk after it).
  */
-export async function migrateBoxStateToVolume(externalId: string, sessionId: string): Promise<{ ms: number; bytes: number }> {
+export async function migrateBoxStateToVolume(
+  externalId: string,
+  sessionId: string,
+  dirs: ReadonlyArray<readonly [string, string]> = SESSION_STATE_DIRS,
+  /** Volume entries to remove after the copy: the next box seeds them from its image. */
+  discard: readonly string[] = [],
+): Promise<{ ms: number; bytes: number }> {
   const t0 = Date.now();
   const volume = await ensureSessionStateVolume(sessionId);
   const held = await awaitVolumeReleased(volume, 30_000, externalId);
@@ -415,7 +421,7 @@ export async function migrateBoxStateToVolume(externalId: string, sessionId: str
     }
   }
   const root = SESSION_STATE_MOUNT;
-  const copies = SESSION_STATE_DIRS.map(
+  const copies = dirs.map(
     ([name, src]) =>
       // Skip a directory already bound from the volume (copying it onto itself).
       `if [ -d ${src} ] && [ "$(stat -c %d ${src})" != "$(stat -c %d ${root})" ]; then rm -rf ${root}/${name}.seed && mkdir -p ${root}/${name}.seed && cp -a ${src}/. ${root}/${name}.seed/ && rm -rf ${root}/${name} && mv ${root}/${name}.seed ${root}/${name}; fi`,
@@ -425,6 +431,7 @@ export async function migrateBoxStateToVolume(externalId: string, sessionId: str
     `mountpoint -q ${root}`,
     'sync',
     copies,
+    ...discard.map((name) => `rm -rf ${root}/${name} ${root}/${name}.seed`),
     `chown -R kortix:kortix ${root}`,
     `rm -f ${root}/opencode-data/auth.json`,
     `du -sb ${root} | cut -f1`,
@@ -433,6 +440,57 @@ export async function migrateBoxStateToVolume(externalId: string, sessionId: str
   if (r.code !== 0) throw new Error(`migrating session state failed (exit ${r.code}): ${r.out.slice(-400)}`);
   const bytes = Number(r.out.trim().split('\n').pop() ?? 0) || 0;
   return { ms: Date.now() - t0, bytes };
+}
+
+/**
+ * What a persistent machine's reset keeps: the session's chat (OpenCode's data
+ * and state) and the daemon's pins. Not /workspace: a reset boots a fresh
+ * checkout of the session branch, like any re-provision.
+ */
+export const RESET_CARRIED_STATE_DIRS = SESSION_STATE_DIRS.filter(([name]) => name !== 'workspace');
+
+/**
+ * A persistent machine's reset deletes its root disk, and OpenCode keeps the
+ * session's chat on that disk. Before the delete, copy the chat and the
+ * daemon's pins onto the session volume; the next box mounts that volume and
+ * the entrypoint binds them back onto their usual paths, so the session opens
+ * on the same thread.
+ *
+ * A box that already mounts the session volume (reset before) keeps its chat
+ * there: only the workspace is dropped from the volume and the volume committed.
+ * A stopped box is started first: its disk is the only copy of the chat.
+ */
+export async function carrySessionStateAcrossReset(input: {
+  externalId: string;
+  sessionId: string;
+  boxMetadata: unknown;
+  startBox: () => Promise<void>;
+}): Promise<{ ms: number; bytes: number; started: boolean }> {
+  const t0 = Date.now();
+  const { externalId, sessionId } = input;
+  let started = false;
+  const before = await providerState(externalId);
+  if (before === 'stopped' || before.includes('archiv')) {
+    await input.startBox();
+    started = true;
+  } else if (before !== 'running') {
+    throw new Error(`box ${externalId} is ${before}`);
+  }
+  let bytes = 0;
+  if (recordedSessionStateVolume(input.boxMetadata)) {
+    const root = SESSION_STATE_MOUNT;
+    const r = await exec(
+      externalId,
+      `sudo -n bash -c ${shellQuote(`set -eu; mountpoint -q ${root}; sync; rm -rf ${root}/workspace ${root}/workspace.seed`)}`,
+      60_000,
+    );
+    if (r.code !== 0) throw new Error(`dropping the workspace from the session volume failed (exit ${r.code}): ${r.out.slice(-400)}`);
+  } else {
+    bytes = (await migrateBoxStateToVolume(externalId, sessionId, RESET_CARRIED_STATE_DIRS, ['workspace'])).bytes;
+    await recordSessionStateVolume(sessionId, sessionStateVolumeName(sessionId));
+  }
+  await commitSessionState(externalId);
+  return { ms: Date.now() - t0, bytes, started };
 }
 
 function shellQuote(s: string): string {

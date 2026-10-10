@@ -952,15 +952,17 @@ async function prepareAttemptVolumes(ctx: SessionProvisionContext, state: Sessio
   // Ephemeral sandboxes: the session's own state volume. Resolved once,
   // before the drives, whose mount slots it shares; a failure to open it fails
   // this attempt (retried by the loop) rather than booting a box that would
-  // lose the session. A persistent machine keeps everything on its root disk instead.
+  // lose the session. A persistent machine keeps everything on its root disk,
+  // except what a reset carried onto its session volume (its chat): it never
+  // gets a new one here, and mounts the one a reset made.
   state.bootModeStageReached = true;
-  if (!state.sessionStateResolved && !persistentMachine) {
+  if (!state.sessionStateResolved) {
     state.sessionState = await import('./ephemeral-sandbox').then((m) =>
       m.resolveSessionStateMount({
         projectId,
         sessionId: sandbox.sandboxId,
         provider: providerName,
-        allowNew: bootStore ? state.bootMode === 'volume' : undefined,
+        allowNew: persistentMachine ? false : bootStore ? state.bootMode === 'volume' : undefined,
       }),
     );
     state.sessionStateResolved = true;
@@ -987,9 +989,9 @@ async function prepareAttemptVolumes(ctx: SessionProvisionContext, state: Sessio
     state.bootArtifactsResolved = true;
   }
   if (!state.driveMountsResolved) {
-    // The session volume, or a persistent machine's root disk, takes a slot; so do boot artifacts.
+    // The session volume, a persistent machine's root disk and boot artifacts each take a slot.
     state.driveMounts = await planDrives(
-      (state.sessionState || persistentMachine ? 1 : 0) + (state.bootArtifacts ? 1 : 0),
+      (state.sessionState ? 1 : 0) + (persistentMachine ? 1 : 0) + (state.bootArtifacts ? 1 : 0),
     );
     state.driveMountsResolved = true;
   }
