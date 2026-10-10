@@ -343,11 +343,17 @@ test('an authoritative empty live read cannot be overwritten by late saved histo
   })).toBe(false);
 });
 
-test('an empty live transcript removes every provisional saved message', async () => {
-  const { useSyncStore } = await import('../stores/sync-store');
+test('an empty live transcript keeps every provisional saved message', async () => {
+  // An empty runtime read for the saved root is evidence of lost box state,
+  // not of an empty conversation: the saved rows stay on screen.
+  const { useSyncStore, hasOnlyCacheSourcedMessages } = await import('../stores/sync-store');
   useSyncStore.getState().clearSession(ROOT);
   useSyncStore.getState().hydrate(ROOT, mirrorMessagesForHydrate(envelope()), { source: 'cache' });
   useSyncStore.getState().hydrate(ROOT, [], { source: 'runtime' });
-  expect(useSyncStore.getState().messages[ROOT]).toEqual([]);
+  const kept = useSyncStore.getState().messages[ROOT];
+  expect(kept.map((m) => m.id)).toEqual(['msg_1', 'msg_2']);
+  // The saved envelope travels verbatim: the ended turn stays ended, never running.
+  expect((kept[1] as { time?: { completed?: number } }).time?.completed).toBe(1200);
+  expect(hasOnlyCacheSourcedMessages(ROOT)).toBe(true);
   useSyncStore.getState().clearSession(ROOT);
 });

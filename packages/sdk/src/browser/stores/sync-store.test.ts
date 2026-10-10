@@ -10,7 +10,13 @@ import type {
 import { projectWorking } from "../../core/session/working";
 import { openEventStream } from "../../core/stream/event-stream";
 import { getTurnError, groupMessagesIntoTurns } from "../../core/turns";
-import { ascendingId, Binary, sameSessionStatus, useSyncStore } from "./sync-store";
+import {
+	ascendingId,
+	Binary,
+	hasOnlyCacheSourcedMessages,
+	sameSessionStatus,
+	useSyncStore,
+} from "./sync-store";
 import { DELTA_EVENT_TAIL_LIMIT } from "./sync-store/delta-event-window";
 
 // ============================================================================
@@ -3977,7 +3983,10 @@ describe("hydrate preserves the server's page order", () => {
 });
 
 describe("hydrate reconciles provisional cache rows", () => {
-	test("an empty runtime page removes cached rows and their parts", () => {
+	test("an empty runtime page keeps cached rows and their parts, still provisional", () => {
+		// An empty runtime read is evidence that the box lost its state, not
+		// that the conversation is empty. Dropping the saved rows on it blanked
+		// the visible conversation.
 		const store = useSyncStore.getState();
 		store.hydrate("ses_1", [
 			{ info: userMessage("msg_cached"), parts: [textPart("prt_cached", "msg_cached", "draft")] },
@@ -3985,8 +3994,13 @@ describe("hydrate reconciles provisional cache rows", () => {
 
 		store.hydrate("ses_1", []);
 
-		expect(useSyncStore.getState().messages.ses_1).toEqual([]);
-		expect(useSyncStore.getState().parts.msg_cached).toBeUndefined();
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual(["msg_cached"]);
+		expect(useSyncStore.getState().parts.msg_cached?.[0]).toMatchObject({ text: "draft" });
+		// Still a saved copy: the next non-empty runtime read settles it.
+		expect(hasOnlyCacheSourcedMessages("ses_1")).toBe(true);
+		store.hydrate("ses_1", [{ info: userMessage("msg_cached"), parts: [] }]);
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual(["msg_cached"]);
+		expect(hasOnlyCacheSourcedMessages("ses_1")).toBe(false);
 	});
 
 	test("a bounded runtime tail keeps older cached history but removes a covered phantom", () => {
