@@ -143,6 +143,8 @@ describe('runTool', () => {
     expect(Buffer.byteLength(output)).toBeLessThan(50 * 1024)
     const file = /The whole output is in (\S+);/.exec(output)![1]!
     expect(readFileSync(file, 'utf8')).toBe(big)
+    // Owner-only: another user on the box cannot read a tool output.
+    expect(statSync(file).mode & 0o777).toBe(0o600)
     expect(output).toContain(`[Output truncated: ${200 * 1024} bytes, 1 lines.`)
     rmSync(file)
   })

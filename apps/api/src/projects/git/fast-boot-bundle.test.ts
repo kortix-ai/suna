@@ -15,7 +15,15 @@ function git(args: string[], cwd: string, env?: Record<string, string>): string 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const output = execFileSync('git', args, {
       cwd,
-      env: { ...process.env, ...env },
+      // A CI runner has no global git identity, and `git commit` refuses without one.
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: 'T',
+        GIT_AUTHOR_EMAIL: 't@example.invalid',
+        GIT_COMMITTER_NAME: 'T',
+        GIT_COMMITTER_EMAIL: 't@example.invalid',
+        ...env,
+      },
       encoding: 'utf8',
     }).trim();
     // A successful rev-parse always prints an object ID. Bun's child-process

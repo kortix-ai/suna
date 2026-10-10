@@ -140,9 +140,10 @@ function bounded(name: string, text: string): string {
   const lines = text.split('\n')
   if (bytes <= MAX_BYTES && lines.length <= MAX_LINES) return text
   const dir = join(tmpdir(), 'kortix-tool-output')
-  mkdirSync(dir, { recursive: true })
+  // Owner-only, and never through a file someone else created first.
+  mkdirSync(dir, { recursive: true, mode: 0o700 })
   const file = join(dir, `${name}-${Date.now()}-${randomUUID().slice(0, 8)}.txt`)
-  writeFileSync(file, text)
+  writeFileSync(file, text, { mode: 0o600, flag: 'wx' })
   const head = Buffer.from(lines.slice(0, MAX_LINES).join('\n')).subarray(0, MAX_BYTES).toString('utf8')
   return `${head}\n\n[Output truncated: ${bytes} bytes, ${lines.length} lines. The whole output is in ${file}; read it in parts or search it.]`
 }

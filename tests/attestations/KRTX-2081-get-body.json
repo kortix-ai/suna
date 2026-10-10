@@ -1,0 +1,16 @@
+{
+  "source_hash": "4bb653976c014833b431d2dbe3208af0d05f5bd5e322761720a3b7c64fc59458",
+  "diff_files": [
+    "infra/cloudflare/workers/api-router/worker.mjs",
+    "infra/cloudflare/workers/api-router/worker.test.mjs"
+  ],
+  "diff_hash": "a8fb5f057fa585790e63562170678b7f012622888e87d3ddaa79bf9569130e73",
+  "head": "11b99127d350d0ab2bdc900a96abf2a05718174a",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-10T21:23:30.657Z"
+}
