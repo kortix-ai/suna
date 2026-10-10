@@ -24,10 +24,12 @@ const seen: Array<{ port: string; method: string; path: string; token: string | 
 
 // Fake Convex: `/<port>/<path>` on one server, the port standing in for the
 // machine port Platinum's edge would route to. No token, no answer.
+// Explicit IPv4 loopback for the fake servers: a `localhost` URL needs name
+// resolution (some containers have no hosts entry) and can resolve to ::1,
+// where the fake servers are unreachable (hermetic-test contract). `127.0.0.1`
+// needs no name resolution, here or anywhere.
 const convex = Bun.serve({
   port: 0,
-  // Explicit IPv4 loopback: `localhost` can resolve to ::1, where the fake
-  // servers are unreachable (hermetic-test contract).
   hostname: '127.0.0.1',
   async fetch(req) {
     const url = new URL(req.url);
@@ -59,7 +61,6 @@ const platinum = Bun.serve({
     if (sub === 'expose') {
       const { port, public: isPublic } = (await req.json()) as { port: number; public: boolean };
       exposed.push(`${id}:${port}:${isPublic ? 'public' : 'private'}`);
-      // Loopback by address: `localhost` does not resolve on a platform sandbox, and the API fetches this URL (shared/platinum.test.ts convention).
       return Response.json({ port, public: isPublic, url: `http://127.0.0.1:${convex.port}/${port}?t=${TOKEN}` });
     }
     return Response.json({ id, state: 'running' });
@@ -161,7 +162,7 @@ describe('convex App hosts', () => {
     const prepared = await prepareBackendWsUpgrade(req, url, resolveBackendRequest(req, url)!);
     expect(prepared.ok).toBe(true);
     if (!prepared.ok) return;
-    expect(prepared.data.url).toBe(`ws://127.0.0.1:${convex.port}/3210/api/1.46.0/sync`);
+    expect(prepared.data.url).toBe(`ws://${convex.url.host}/3210/api/1.46.0/sync`);
     expect(prepared.data.headers['x-pt-preview-token']).toBe(TOKEN);
     expect(Object.keys(prepared.data.headers).filter((name) => name.startsWith('sec-websocket-'))).toEqual([]);
     expect(prepared.data.ingress).toEqual({ sandboxId: EXTERNAL, port: 3210 });

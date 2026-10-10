@@ -180,7 +180,10 @@ export interface GatewayDeps {
     slug: string,
     selector: unknown,
   ): Promise<GatewayConnector | null | 'not_computer'>;
-  loadAction(connectorId: string, relPath: string): Promise<GatewayAction | null>;
+  /** `providerType` — the loaded connector's provider, when the caller has it
+   *  in hand (the call path does), so the store skips its duplicate read of
+   *  the `connectors` row. */
+  loadAction(connectorId: string, relPath: string, providerType: string): Promise<GatewayAction | null>;
   /**
    * Resolve the credential value/binding for a connector. `userId=null` = shared;
    * set = that member's own. Receives the loaded connector so the resolver can
@@ -766,7 +769,7 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
     return { status: 'denied', reason };
   }
 
-  const action = await deps.loadAction(connector.connectorId, input.actionPath);
+  const action = await deps.loadAction(connector.connectorId, input.actionPath, connector.provider);
   if (!action) {
     await audit(deps, input, connector, 'denied', null, {
       reason: 'action_not_found',

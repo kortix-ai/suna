@@ -2716,7 +2716,7 @@
   },
   "src/router/routes/proxy/handlers.ts": {
     "no-console": {
-      "count": 7
+      "count": 5
     },
     "no-restricted-syntax": {
       "count": 5

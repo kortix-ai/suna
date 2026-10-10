@@ -1,0 +1,24 @@
+{
+  "source_hash": "b746b0a2db645829c073b0ba41777b13cf49653c955a49e3c5e57d4f81c0b067",
+  "diff_files": [
+    "apps/api/src/__tests__/helpers/local-git-upstream.ts",
+    "apps/api/src/__tests__/integration-call-connector-fanout.test.ts",
+    "apps/api/src/connectors/db-deps-gateway.ts",
+    "apps/api/src/connectors/db-deps-principal.ts",
+    "apps/api/src/connectors/gateway.ts",
+    "apps/api/src/connectors/http-principal.ts",
+    "apps/api/src/connectors/share.ts",
+    "apps/api/src/projects/lib/session-token-grant-provenance.test.ts",
+    "apps/api/src/projects/lib/session-token-grant-reconcile.test.ts",
+    "apps/api/src/projects/lib/session-token-grant.ts"
+  ],
+  "diff_hash": "0706c093e11e02032850fdf520946073d9f883edef216c2409fb2f392f33cd7d",
+  "head": "2a8042cdc0c4aca33c5ea98d8afcb07a8427dbdb",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-10T00:46:45.115Z"
+}

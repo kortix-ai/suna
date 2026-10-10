@@ -413,7 +413,6 @@ describe('GET /_kortix/token and the bindings mount on the App gate', () => {
         fetch: (req) => {
           const [, , , id, sub] = new URL(req.url).pathname.split('/');
           if (sub !== 'expose') return Response.json({ id, state: 'running' });
-          // Loopback by address: `localhost` does not resolve on a platform sandbox, and the API fetches this URL (shared/platinum.test.ts convention).
           return Response.json({ port: 3210, public: false, url: `http://127.0.0.1:${machine.port}/?t=synthetic-edge-token` });
         },
       });
