@@ -1,5 +1,7 @@
 import { appReleaseInputFromBlock } from '@kortix/manifest-schema';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { APP_TEMPLATES, appTemplate } from '@kortix/shared/app-templates';
+import { parseDocument } from 'yaml';
 import { resolve } from 'node:path';
 import type { App, AppDeployment, CreateAppInput, UpdateAppInput } from '@kortix/sdk';
 
@@ -61,6 +63,12 @@ Subcommands:
                                     and ignores both.
     --uses <slugs>                  Apps this App uses (it may bind to them and
                                     mint their sign-in tokens), comma-separated.
+  launch --template <name>          Add a ready-made App to kortix.yaml and deploy it
+                                    (Fly launch). Templates: convex (a self-hosted
+                                    Convex backend: data on a volume, the client and
+                                    HTTP-action services, an admins-only dashboard).
+    --name <slug>                   Default: the template name.
+    --no-deploy                     Write kortix.yaml only.
   deploy [path]                     Deploy a directory or .tar.gz archive. With no
                                     path and a kortix.yaml of several apps,
                                     deploys every App in link order: each after
@@ -245,6 +253,8 @@ export async function runApps(argv: string[]): Promise<number> {
       case 'set':
       case 'update':
         return await setCommand(rest, common.options, common.json);
+      case 'launch':
+        return await launchCommand(rest, common.options, common.json);
       case 'deploy':
         return await deployCommand(rest, common.options, common.json);
       case 'link':
@@ -432,6 +442,43 @@ async function setCommand(rest: string[], options: ContextOptions, json: boolean
     );
     process.stdout.write(costRows(app));
     process.stdout.write(`  ${C.dim}${pad('uses', 14)}${C.reset}${app.uses?.length ? app.uses.join(', ') : 'none'}\n\n`);
+  }
+  return 0;
+}
+
+/**
+ * `kortix apps launch --template <name> [--name <slug>] [--no-deploy]` (Fly
+ * `launch`): write a template's `apps` blocks into ./kortix.yaml (comments
+ * kept; a slug already there is refused), deploy them in order, and print the
+ * commands that finish the setup.
+ */
+async function launchCommand(rest: string[], options: ContextOptions, json: boolean): Promise<number> {
+  const templateName = takeFlagValue(rest, ['--template']);
+  const slugFlag = takeFlagValue(rest, ['--name', '--slug']);
+  const noDeploy = takeFlagBool(rest, ['--no-deploy']);
+  const provider = takeFlagValue(rest, ['--provider']);
+  if (!templateName) return fail(`launch needs --template (${Object.keys(APP_TEMPLATES).join(', ')})`);
+  const template = appTemplate(templateName);
+  if (!template) return fail(`no template "${templateName}"; there is ${Object.keys(APP_TEMPLATES).join(', ')}`);
+  const slug = slugFrom(slugFlag ?? template.name);
+  const path = resolve(process.cwd(), 'kortix.yaml');
+  const doc = existsSync(path) ? parseDocument(readFileSync(path, 'utf8')) : parseDocument('kortix_version: 2\n');
+  if (!doc.has('apps')) doc.set('apps', doc.createNode({}));
+  const blocks = template.blocks(slug);
+  const taken = Object.keys(blocks).filter((name) => doc.hasIn(['apps', name]));
+  if (taken.length > 0) return fail(`kortix.yaml already has apps.${taken.join(', apps.')}; pick another --name`);
+  for (const [name, block] of Object.entries(blocks)) doc.setIn(['apps', name], doc.createNode(block));
+  writeFileSync(path, String(doc));
+  if (!json) process.stdout.write(`\n  ${status.ok(`added ${Object.keys(blocks).map((name) => `apps.${name}`).join(', ')} to kortix.yaml`)}\n`);
+  if (!noDeploy) {
+    for (const name of template.deployOrder(slug)) {
+      const code = await deployCommand(['--manifest-app', name, ...(provider ? ['--provider', provider] : [])], options, json);
+      if (code !== 0) return code;
+    }
+  }
+  if (json) emitJson({ template: template.name, apps: Object.keys(blocks), next_steps: template.nextSteps(slug) });
+  else {
+    process.stdout.write(`\n  Next:\n${template.nextSteps(slug).map((line) => `    ${line}\n`).join('')}\n`);
   }
   return 0;
 }

@@ -20,6 +20,7 @@
     "./connector-sections": "./src/connector-sections.ts",
     "./app-connect": "./src/app-connect.ts",
     "./app-config": "./src/app-config.ts",
+    "./app-templates": "./src/app-templates.ts",
     "./code-language": "./src/code-language.ts",
     "./preview-state-page": "./src/preview-state-page.ts",
     "./markdown-math": "./src/markdown-math.ts",
