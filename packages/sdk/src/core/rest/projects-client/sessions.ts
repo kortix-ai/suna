@@ -236,6 +236,12 @@ export interface CreateProjectSessionInput {
   /** Client-generated RFC 4122 v4 UUID for optimistic navigation. */
   session_id?: string;
   provider?: 'daytona' | 'platinum' | 'e2b';
+  /**
+   * Run on a persistent machine (Platinum): the whole root disk persists
+   * across stops. A stop ends running processes; the machine keeps its image
+   * until it is reset (`restartProjectSession(..., { reset_machine: true })`).
+   */
+  persistent_machine?: boolean;
   branch_already_created?: boolean;
   /**
    * Client metadata. Server-owned lifecycle and trigger-attribution keys are
@@ -1596,11 +1602,20 @@ export async function deleteProjectSession(projectId: string, sessionId: string)
   return result;
 }
 
-export async function restartProjectSession(projectId: string, sessionId: string) {
+/**
+ * Restart a session's sandbox. `reset_machine` (persistent machines only)
+ * discards the machine's disk and boots a fresh one from the current image;
+ * the session's branch is restored, anything else on the old disk is gone.
+ */
+export async function restartProjectSession(
+  projectId: string,
+  sessionId: string,
+  opts: { reset_machine?: boolean } = {},
+) {
   return unwrap(
     await backendApi.post<{ ok: boolean; session_id: string; status: string }>(
       `/projects/${projectId}/sessions/${sessionId}/restart`,
-      {},
+      opts.reset_machine ? { reset_machine: true } : {},
     ),
   );
 }
