@@ -57,18 +57,7 @@ const DEFAULT_PERMISSION_SCOPES: Record<string, Record<string, unknown>[]> = {
     { scope: 'files:delete', operations: ['delete'] },
   ],
   shell: [{ scope: 'shell:exec' }],
-  desktop: [
-    { scope: 'desktop:computer_use', features: ['computer_use'] },
-    { scope: 'desktop:apps', features: ['apps', 'windows'] },
-    {
-      scope: 'desktop:observe',
-      features: ['screenshot', 'windows', 'accessibility'],
-    },
-    {
-      scope: 'desktop:input',
-      features: ['mouse', 'keyboard', 'accessibility'],
-    },
-  ],
+  desktop: [{ scope: 'desktop' }],
 };
 
 /** Permissive device-auth request row shape, as persisted + serialized. */

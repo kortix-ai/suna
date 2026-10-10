@@ -14,6 +14,7 @@ import { connectorActions, connectorConnections, connectors, tunnelConnections }
 import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '../shared/db';
 import type { ActionBinding, NormalizedAction, Risk } from './types';
+import cuaDriverTools from './cua-driver-tools.generated.json';
 
 /** Default name of a project's computer connector. */
 export const COMPUTER_CONNECTOR_NAME = 'Computers';
@@ -36,10 +37,9 @@ interface ComputerActionDef {
 }
 
 /**
- * The computer catalog. `fs.*` + `shell.exec` are fully typed; the high-value
- * `desktop.cua.*` methods are typed too, and `desktop.cua.call` is a generic
- * passthrough to ANY of the ~45 desktop methods (like Pipedream's `request`), so
- * the long tail is reachable without hand-maintaining every schema.
+ * The computer catalog. `fs.*` + `shell.exec` are typed here; the desktop
+ * tools come from the pinned driver (CUA_ACTIONS), and `desktop.cua.call`
+ * reaches ANY tool the installed driver has.
  */
 const COMPUTER_ACTIONS: ComputerActionDef[] = [
   {
@@ -152,115 +152,6 @@ const COMPUTER_ACTIONS: ComputerActionDef[] = [
     },
     required: ['command'],
   },
-  // ── desktop (computer use) — curated; desktop.cua.call covers the long tail ─
-  {
-    path: 'desktop.cua.get_screen_size',
-    method: 'desktop.cua.get_screen_size',
-    name: 'Get screen size',
-    description: 'Return the display resolution of the machine.',
-    risk: 'read',
-    properties: {},
-    required: [],
-  },
-  {
-    path: 'desktop.cua.list_apps',
-    method: 'desktop.cua.list_apps',
-    name: 'List apps',
-    description: 'List running/installed applications on the machine.',
-    risk: 'read',
-    properties: {},
-    required: [],
-  },
-  {
-    path: 'desktop.cua.list_windows',
-    method: 'desktop.cua.list_windows',
-    name: 'List windows',
-    description: 'List open windows on the machine.',
-    risk: 'read',
-    properties: {},
-    required: [],
-  },
-  {
-    path: 'desktop.cua.get_accessibility_tree',
-    method: 'desktop.cua.get_accessibility_tree',
-    name: 'Get accessibility tree',
-    description:
-      'Read the accessibility tree of the focused window — the elements you can interact with.',
-    risk: 'read',
-    properties: {},
-    required: [],
-  },
-  {
-    path: 'desktop.cua.launch_app',
-    method: 'desktop.cua.launch_app',
-    name: 'Launch app',
-    description: 'Launch an application on the machine. Provide the app `name`.',
-    risk: 'write',
-    properties: {
-      name: { type: 'string', description: 'Application name to launch.' },
-    },
-    required: ['name'],
-  },
-  {
-    path: 'desktop.cua.click',
-    method: 'desktop.cua.click',
-    name: 'Click',
-    description: 'Click at a screen coordinate. Provide `x` and `y`.',
-    risk: 'write',
-    properties: {
-      x: { type: 'number', description: 'X coordinate.' },
-      y: { type: 'number', description: 'Y coordinate.' },
-    },
-    required: ['x', 'y'],
-  },
-  {
-    path: 'desktop.cua.type_text',
-    method: 'desktop.cua.type_text',
-    name: 'Type text',
-    description: 'Type text on the machine. Provide `text`.',
-    risk: 'write',
-    properties: {
-      text: { type: 'string', description: 'Text to type.' },
-    },
-    required: ['text'],
-  },
-  {
-    path: 'desktop.cua.press_key',
-    method: 'desktop.cua.press_key',
-    name: 'Press key',
-    description: 'Press a single key. Provide `key` (e.g. "Enter", "Escape").',
-    risk: 'write',
-    properties: {
-      key: { type: 'string', description: 'Key name to press.' },
-    },
-    required: ['key'],
-  },
-  {
-    path: 'desktop.cua.hotkey',
-    method: 'desktop.cua.hotkey',
-    name: 'Hotkey',
-    description: 'Press a key combination. Provide `keys` (e.g. ["cmd","c"]).',
-    risk: 'write',
-    properties: {
-      keys: {
-        type: 'array',
-        description: 'Keys to press together, e.g. ["cmd","c"].',
-      },
-    },
-    required: ['keys'],
-  },
-  {
-    path: 'desktop.cua.scroll',
-    method: 'desktop.cua.scroll',
-    name: 'Scroll',
-    description: 'Scroll the screen. Provide `dx`/`dy` deltas.',
-    risk: 'write',
-    properties: {
-      dx: { type: 'number', description: 'Horizontal scroll delta.' },
-      dy: { type: 'number', description: 'Vertical scroll delta.' },
-    },
-    required: [],
-  },
   {
     path: 'desktop.cua.list_tools',
     method: 'desktop.cua.list_tools',
@@ -291,13 +182,55 @@ const COMPUTER_ACTIONS: ComputerActionDef[] = [
     properties: {
       tool: {
         type: 'string',
-        description: 'Computer-use tool name (e.g. "double_click", "drag", "zoom").',
+        description: 'Computer-use tool name (e.g. "zoom", "clipboard_read", "browser_navigate").',
       },
       args: { type: 'object', description: 'Arguments for the tool.' },
     },
     required: ['tool'],
   },
 ];
+
+/**
+ * Driver tools with their own action, in the order agents use them. Their
+ * descriptions and input schemas are the pinned driver's own
+ * (`cua-driver-tools.generated.json`, from apps/desktop-electron/scripts/dump-cua-tools.js),
+ * so `pid`, `window_id` and `element_token` are never missing from a schema.
+ * Each relays as `desktop.cua.call`; that action reaches every other tool.
+ */
+const CUA_ACTIONS: { tool: keyof typeof cuaDriverTools.tools; name: string; risk: Risk }[] = [
+  { tool: 'health_report', name: 'Desktop health report', risk: 'read' },
+  { tool: 'list_apps', name: 'List apps', risk: 'read' },
+  { tool: 'list_windows', name: 'List windows', risk: 'read' },
+  { tool: 'get_window_state', name: 'Get window state (screenshot + elements)', risk: 'read' },
+  { tool: 'get_desktop_state', name: 'Screenshot the screen', risk: 'read' },
+  { tool: 'get_screen_size', name: 'Get screen size', risk: 'read' },
+  { tool: 'get_accessibility_tree', name: 'Desktop snapshot (apps and windows)', risk: 'read' },
+  { tool: 'launch_app', name: 'Launch app', risk: 'write' },
+  { tool: 'click', name: 'Click', risk: 'write' },
+  { tool: 'double_click', name: 'Double-click', risk: 'write' },
+  { tool: 'right_click', name: 'Right-click', risk: 'write' },
+  { tool: 'type_text', name: 'Type text', risk: 'write' },
+  { tool: 'press_key', name: 'Press key', risk: 'write' },
+  { tool: 'hotkey', name: 'Hotkey', risk: 'write' },
+  { tool: 'scroll', name: 'Scroll', risk: 'write' },
+  { tool: 'drag', name: 'Drag', risk: 'write' },
+  { tool: 'set_value', name: 'Set value', risk: 'write' },
+];
+
+function cuaAction(def: (typeof CUA_ACTIONS)[number]): NormalizedAction {
+  const tool = cuaDriverTools.tools[def.tool];
+  const schema = tool.input_schema as Record<string, unknown>;
+  const hasInput = Object.keys((schema.properties as Record<string, unknown> | undefined) ?? {}).length > 0;
+  return {
+    path: `desktop.cua.${def.tool}`,
+    name: def.name,
+    description: tool.description,
+    inputSchema: hasInput ? schema : null,
+    outputSchema: null,
+    risk: def.risk,
+    binding: { kind: 'tunnel', method: `desktop.cua.${def.tool}` },
+  };
+}
 
 function toAction(def: ComputerActionDef): NormalizedAction {
   const binding: ActionBinding = { kind: 'tunnel', method: def.method };
@@ -321,7 +254,7 @@ function toAction(def: ComputerActionDef): NormalizedAction {
 
 /** The fixed catalog of every computer connector. */
 export function computerCatalog(): NormalizedAction[] {
-  return COMPUTER_ACTIONS.map(toAction);
+  return [...COMPUTER_ACTIONS.map(toAction), ...CUA_ACTIONS.map(cuaAction)];
 }
 
 type ActionRow = typeof connectorActions.$inferSelect;
