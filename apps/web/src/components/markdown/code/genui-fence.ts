@@ -10,7 +10,7 @@ export interface OpenGenuiFence {
   /**
    * Its body so far, as the markdown code node holds it (the opener's indentation removed).
    * Null for a fence inside a blockquote or opened on a list-marker line: the SDK splitter counts
-   * top-level fences only, so the host cannot tell which block it is.
+   * top-level fences only, so its body is unknown.
    */
   code: string | null;
   /** The line that closes it inside the same container: its prefix and marker. */
@@ -57,4 +57,31 @@ function openNestedFence(text: string): OpenGenuiFence | null {
   // Inside the same container: a quote keeps its `>`, a list marker becomes the content indent.
   const prefix = open.prefix.replace(/[-*+]|\d{1,9}[.)]/g, (marker) => ' '.repeat(marker.length));
   return { code: null, closer: `\n${prefix}${open.marker}` };
+}
+
+// The last body line `closeOpenGenuiFence` adds. U+2063 (invisible separator) keeps it from
+// colliding with a line the model writes; `readGenuiOpenMark` removes it before anything renders.
+const OPEN_MARK = { streaming: '⁣openui:streaming', 'cut-off': '⁣openui:cut-off' } as const;
+
+/** How an open fence ended: the model is still writing it, or the reply ended inside it. */
+export type GenuiOpenState = keyof typeof OPEN_MARK;
+
+/**
+ * `text` with its open fence closed in its own container, and a last body line that carries the
+ * fence's state. Streamdown commits a streaming tick's blocks one render after the text changes, so
+ * a block must read its state from its own text: a value beside the text would be a tick ahead.
+ */
+export function closeOpenGenuiFence(text: string, fence: OpenGenuiFence, state: GenuiOpenState): string {
+  const prefix = fence.closer.slice(1).replace(/[`~]+$/, '');
+  return `${text}\n${prefix}${OPEN_MARK[state]}${fence.closer}`;
+}
+
+/** A fence body without the state line `closeOpenGenuiFence` added, and that state (null: the fence is closed). */
+export function readGenuiOpenMark(code: string): { code: string; open: GenuiOpenState | null } {
+  for (const state of Object.keys(OPEN_MARK) as GenuiOpenState[]) {
+    const mark = OPEN_MARK[state];
+    if (code === mark) return { code: '', open: state };
+    if (code.endsWith(`\n${mark}`)) return { code: code.slice(0, -mark.length - 1), open: state };
+  }
+  return { code, open: null };
 }

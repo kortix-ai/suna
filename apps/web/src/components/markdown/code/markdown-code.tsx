@@ -15,7 +15,7 @@ import React, { lazy, Suspense, useContext, useEffect, useState } from 'react';
 
 import { childrenToText } from './children-text';
 import { CodeBlock, HighlightedCode } from './code-block';
-import { genuiVersionFromClassName } from './genui-fence';
+import { genuiVersionFromClassName, readGenuiOpenMark } from './genui-fence';
 import { ClickableInlineCode } from './inline-code';
 
 // Mermaid pulls in a multi-hundred-KB renderer; load it only once a diagram exists.
@@ -103,10 +103,6 @@ export interface MarkdownCodeProps {
   variant?: MarkdownVariant;
   /** ```openui fences render as generative UI. Off, they are ordinary code blocks. */
   genui?: boolean;
-  /** Body of the generative UI fence still open at the end of the message (`openGenuiFence`). */
-  genuiOpenCode?: string | null;
-  /** That open fence is nested (blockquote, list-marker line), so its block cannot be told apart. */
-  genuiOpenNested?: boolean;
 }
 
 // Code — Mermaid and KaTeX fences render their own chrome; everything else goes
@@ -119,24 +115,22 @@ export function MarkdownCode({
   trust,
   variant = 'message',
   genui = false,
-  genuiOpenCode = null,
-  genuiOpenNested = false,
 }: MarkdownCodeProps) {
   const match = /language-(\w+)/.exec(codeClassName || '');
   const language = match ? match[1] : '';
   const code = childrenToText(children).replace(/\n$/, '');
   const genuiVersion = genui ? genuiVersionFromClassName(codeClassName) : null;
   if (genuiVersion !== null) {
-    // Only the last block's fence can be open. A block streams while it is open and the turn
-    // works, so a block the model has closed settles at once (tabs click, strict parse). A nested
-    // open fence cannot be matched to its block: then every block streams with the turn.
-    const open = genuiOpenCode !== null && genuiOpenCode.trimEnd() === code.trimEnd();
+    // A block streams while its fence is open, so a block the model has closed settles at once
+    // (tabs click, strict parse). The open state is the last line of its own text
+    // (`closeOpenGenuiFence`): only the fence still open at the end of the reply carries one.
+    const fence = readGenuiOpenMark(code);
     return (
       <GenuiFence
-        code={code}
+        code={fence.code}
         version={genuiVersion}
-        streaming={Boolean(isStreaming) && (open || genuiOpenNested)}
-        cutOff={!isStreaming && open}
+        streaming={fence.open === 'streaming'}
+        cutOff={fence.open === 'cut-off'}
         turnStreaming={Boolean(isStreaming)}
         trust={trust ?? 'untrusted'}
         variant={variant}

@@ -82,6 +82,33 @@ describe('a block streams only while its own fence is open', () => {
   });
 });
 
+describe('a block streams across ticks', () => {
+  // Streamdown commits a new tick's blocks in a transition, one render after the text changes.
+  // A block must read its open state from its own text, not from the newer text of that render.
+  test('every tick of an open fence streams, and the block reports once, when its fence closes', async () => {
+    const reply = fenced(BLOCK);
+    const fenceEnd = reply.lastIndexOf('\n```');
+    const scoped = (content: string) => (
+      <GenuiTelemetryContext.Provider value={{ scope: 'turn-ticks-1' }}>
+        <UnifiedMarkdown trust="agent" genui isStreaming content={content} />
+      </GenuiTelemetryContext.Provider>
+    );
+    const renderer = await mount(scoped(reply.slice(0, reply.indexOf('root =') + 12)));
+    const tick = () => act(async () => new Promise((resolve) => setTimeout(resolve, 10)));
+    for (let cut = reply.indexOf('root =') + 20; cut < fenceEnd; cut += 9) {
+      await act(async () => renderer.update(scoped(reply.slice(0, cut))));
+      for (let i = 0; i < 3; i++) await tick();
+      expect(trackSpy).not.toHaveBeenCalled();
+      expect(textOf(renderer)).not.toContain('cut off');
+    }
+    await act(async () => renderer.update(scoped(`${reply}\n\nMore`)));
+    for (let i = 0; i < 5; i++) await tick();
+    expect(trackSpy).toHaveBeenCalledTimes(1);
+    expect(trackSpy.mock.calls[0]![1]).toMatchObject({ outcome: 'rendered', cut_off: false, issue_count: 0 });
+    expect(textOf(renderer)).toContain('Book by Friday');
+  });
+});
+
 describe('genui_block telemetry', () => {
   const scope: GenuiTelemetryScope = { scope: 'turn-telemetry-1', model: 'model-a' };
   const withScope = (node: ReactElement, value: GenuiTelemetryScope = scope) => (

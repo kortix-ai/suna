@@ -4,7 +4,7 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { ClickablePath, wrapChildrenWithPaths } from '@/components/common/clickable-path';
 import { MarkdownCode } from '@/components/markdown/code';
-import { openGenuiFence } from '@/components/markdown/code/genui-fence';
+import { closeOpenGenuiFence, openGenuiFence } from '@/components/markdown/code/genui-fence';
 import { parseFileLinkHref, remarkWorkspaceFileLinks } from '@/components/markdown/file-links';
 import { InsideLinkContext } from '@/components/markdown/code/inside-link-context';
 import {
@@ -66,10 +66,6 @@ interface MarkdownRenderContextValue {
   variant: MarkdownVariant;
   /** ```openui fences render as generative UI (see `UnifiedMarkdownProps.genui`). */
   genui: boolean;
-  /** Body of the generative UI fence still open at the end of the text, or null. */
-  genuiOpenCode: string | null;
-  /** The open fence sits in a blockquote or on a list-marker line: every block streams with the turn. */
-  genuiOpenNested: boolean;
 }
 
 const MarkdownRenderContext = React.createContext<MarkdownRenderContextValue>({
@@ -79,8 +75,6 @@ const MarkdownRenderContext = React.createContext<MarkdownRenderContextValue>({
   trust: 'untrusted',
   variant: 'message',
   genui: false,
-  genuiOpenCode: null,
-  genuiOpenNested: false,
 });
 
 export function MarkdownLink({ href, children }: { href?: string; children?: React.ReactNode }) {
@@ -262,7 +256,7 @@ const MARKDOWN_COMPONENTS = {
   // Every fence kind and inline code resolve in one shared place; see
   // components/markdown/code.
   code: function MarkdownCodeRenderer(props: { children?: React.ReactNode; className?: string }) {
-    const { isStreaming, policy, trust, variant, genui, genuiOpenCode, genuiOpenNested } = useContext(MarkdownRenderContext);
+    const { isStreaming, policy, trust, variant, genui } = useContext(MarkdownRenderContext);
     return (
       <MarkdownCode
         {...props}
@@ -271,8 +265,6 @@ const MARKDOWN_COMPONENTS = {
         trust={trust}
         variant={variant}
         genui={genui}
-        genuiOpenCode={genuiOpenCode}
-        genuiOpenNested={genuiOpenNested}
       />
     );
   },
@@ -488,14 +480,14 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
     const safeContent = typeof content === 'string' ? content : content ? String(content) : '';
 
     // A generative UI fence still open at the end streams (the model is writing it) or was cut
-    // off. Its block reads that from here; the fence is closed below so nothing after it, such
-    // as Streamdown's completion of unfinished markdown, lands inside the block.
+    // off. It is closed here, so nothing after it, such as Streamdown's completion of unfinished
+    // markdown, lands inside the block, and its last line tells the block which of the two it is.
+    // A nested fence (`code === null`) in history may be one its container already closed: closing
+    // it again would render an extra empty code block, so it is closed only while streaming.
     const genuiOpen = useMemo(() => (genui ? openGenuiFence(safeContent) : null), [genui, safeContent]);
-    const genuiOpenCode = genuiOpen?.code ?? null;
-    const genuiOpenNested = genuiOpen !== null && genuiOpen.code === null;
     const renderContext = useMemo(
-      () => ({ isStreaming, proxy, policy, trust, variant, genui, genuiOpenCode, genuiOpenNested }),
-      [isStreaming, proxy, policy, trust, variant, genui, genuiOpenCode, genuiOpenNested],
+      () => ({ isStreaming, proxy, policy, trust, variant, genui }),
+      [isStreaming, proxy, policy, trust, variant, genui],
     );
 
     // Whole-string rewrites (KaTeX prep, system-tag strip, the pending setup
@@ -504,13 +496,14 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
     // for the full length of the answer. Memoising on the string collapses
     // that to once per distinct value. It sits ABOVE the empty-content early
     // return so the hook order stays fixed.
-    // A nested fence (`code === null`) in history may be one its container already closed: its
-    // closer would render an extra empty code block, so it is appended only while streaming.
-    const genuiCloser = genuiOpen && (genuiOpen.code !== null || isStreaming) ? genuiOpen.closer : '';
-    const finalContent = useMemo(
-      () => (safeContent ? prepareMarkdownSource(safeContent + genuiCloser, isStreaming) : ''),
-      [safeContent, genuiCloser, isStreaming],
-    );
+    const finalContent = useMemo(() => {
+      if (!safeContent) return '';
+      const closed =
+        genuiOpen && (genuiOpen.code !== null || isStreaming)
+          ? closeOpenGenuiFence(safeContent, genuiOpen, isStreaming ? 'streaming' : 'cut-off')
+          : safeContent;
+      return prepareMarkdownSource(closed, isStreaming);
+    }, [safeContent, genuiOpen, isStreaming]);
 
     if (!safeContent) {
       return (
