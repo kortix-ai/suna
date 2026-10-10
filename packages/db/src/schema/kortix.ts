@@ -923,6 +923,29 @@ export const projectSecrets = kortixSchema.table(
   ],
 );
 
+/**
+ * Tombstones for DELETED shared project secrets, keyed by secret NAME (the env
+ * var key a setup link asks for). Setup-link tokens are stateless — they carry
+ * only their mint time (`iat`) — so the public intake submit cannot otherwise
+ * tell a "request a missing secret" link from one whose target the owner
+ * removed after minting, and a submit on the latter silently resurrected the
+ * secret (`writeSharedProjectSecret` upserts). The unset route writes a row in
+ * the delete's transaction; both public intake routes reject when a tombstone
+ * for a requested name is newer than the token's `iat`. Rows older than the
+ * longest link TTL can never invalidate a live link and are pruned on unset.
+ */
+export const projectSecretTombstones = kortixSchema.table(
+  'project_secret_tombstones',
+  {
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 64 }).notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.projectId, table.name] })],
+);
+
 /** Account-owned secret resource. Member grants, rather than a user or project
  * binding, authorize use. The value stays encrypted in the API data plane. */
 export const accountSecretResources = kortixSchema.table('account_secret_resources', {
