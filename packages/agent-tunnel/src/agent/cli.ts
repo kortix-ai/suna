@@ -18,12 +18,12 @@ import {
   requestDeviceAuthorization,
 } from './device-auth';
 import { collapseRepeatedLines, isShellStartupNoise } from './log-format';
-import { anyFlag, isInteractiveTerminal, isTruthyFlag, promptYesNo } from './prompts';
+import { anyFlag, isInteractiveTerminal, isTruthyFlag } from './prompts';
 import {
-  DEFAULT_INSTALL_BACKGROUND_SERVICE,
   agentTunnelHome,
   getServicePaths,
   getServiceStatus,
+  installedAppRunner,
   rotateServiceLogs,
   serviceLogFiles,
 } from './service';
@@ -34,6 +34,7 @@ import {
   describeService,
   renderServiceAction,
 } from './service-control';
+import { watchForRestart } from './self-restart';
 import { readAgentState, writeAgentState } from './state-file';
 import { blankLine, c, clearScreen, field, glyph, stripAnsi } from './terminal';
 import { agentTunnelVersion } from './version';
@@ -90,7 +91,17 @@ function startAgent(config: TunnelConfig, options: { service?: boolean } = {}): 
     process.stdout.write = process.stderr.write.bind(process.stderr) as typeof process.stdout.write;
     options = { ...options, service: true };
   }
-  const registry = createEnabledCapabilityRegistry(config);
+  let agent: TunnelAgent | null = null;
+  const restart = options.service
+    ? watchForRestart((reason) => {
+        process.stdout.write(`[agent-tunnel] restarting: ${reason}\n`);
+        agent?.disconnect();
+        process.exit(0);
+      })
+    : null;
+  const registry = createEnabledCapabilityRegistry(config, undefined, {
+    onPermissionMissing: restart?.permissionMissing,
+  });
   if (config.enabledCapabilities?.includes('desktop') && !registry.has('desktop')) {
     console.error(
       '[agent-tunnel] Computer Use is approved but unavailable: install the trusted cua-driver locally, then restart Agent Tunnel.',
@@ -111,7 +122,7 @@ function startAgent(config: TunnelConfig, options: { service?: boolean } = {}): 
 
   // A service never stops on its own (R2): a refused credential waits in
   // `rejected` and re-reads config.json, so pairing again heals it.
-  const agent = new TunnelAgent(
+  agent = new TunnelAgent(
     config,
     registry,
     // The agent passes the credential it uses NOW: a re-pair picked up by a
@@ -126,7 +137,7 @@ function startAgent(config: TunnelConfig, options: { service?: boolean } = {}): 
 
   const shutdown = () => {
     if (!options.service) console.log(`\n${c.dim}  Shutting down…${c.reset}`);
-    agent.disconnect();
+    agent?.disconnect();
     process.exit(0);
   };
   process.on('SIGTERM', shutdown);
@@ -135,26 +146,38 @@ function startAgent(config: TunnelConfig, options: { service?: boolean } = {}): 
 
 // ── pairing ──────────────────────────────────────────────────────────────────
 
-async function chooseBackgroundMode(flags: Flags): Promise<boolean> {
+/**
+ * A person at a terminal gets what the desktop app gives: a background
+ * connection, no question asked, and the exact commands that pause, resume,
+ * and remove it. `--foreground` keeps it in this terminal only. A script
+ * (no TTY) or `--json` keeps the foreground default it always had.
+ */
+function chooseBackgroundMode(flags: Flags): boolean {
   if (anyFlag(flags, BACKGROUND_FLAGS)) return true;
   if (anyFlag(flags, FOREGROUND_FLAGS)) return false;
-  if (jsonMode || !isInteractiveTerminal()) return false;
+  return !jsonMode && isInteractiveTerminal();
+}
 
+function printServiceControls(): void {
+  const npx = 'npx @kortix/agent-tunnel@latest';
+  console.log(`  ${c.dim}Runs in the background: starts at login, restarts after failures, keeps running after this terminal closes.${c.reset}`);
+  if (installedAppRunner()) {
+    console.log(`  ${c.dim}It runs on the Kortix app on this Mac: same connection, same macOS permissions. Control it from Your computer in the app.${c.reset}`);
+  }
   blankLine();
-  console.log(`  ${glyph.warn} ${c.bold}Security note${c.reset}`);
-  console.log(`  ${c.dim}Background mode starts at login, continues after this terminal closes, and restarts after failures.${c.reset}`);
-  console.log(`  ${c.dim}The computer must remain powered on, awake, and connected to the internet.${c.reset}`);
+  field('Pause', `${c.white}${npx} stop${c.reset}`);
+  field('Resume', `${c.white}${npx} start${c.reset}`);
+  field('Disconnect', `${c.white}${npx} logout${c.reset}`);
   blankLine();
-
-  return promptYesNo('  Install the background service now?', DEFAULT_INSTALL_BACKGROUND_SERVICE);
 }
 
 /** Starts the agent the way the caller asked for, and returns. */
 async function launch(config: TunnelConfig, flags: Flags, lease?: { serviceWasActive: boolean }): Promise<void> {
-  if (await chooseBackgroundMode(flags)) {
+  if (chooseBackgroundMode(flags)) {
     saveCredentials(config.tunnelId, config.token, config.apiUrl);
     if (!jsonMode) {
       renderServiceAction('install', SERVICE_ACTIONS.install.run());
+      printServiceControls();
       return;
     }
     // Return instead of process.exit(): an exit can cut off a piped stdout.
