@@ -29,6 +29,8 @@ export interface FakeDriveSyncApi {
   beforeWrite: ((driveId: string, path: string) => void) | null
   /** Blocks uploaded through the block protocol, by sha. */
   blocks: Map<string, Uint8Array>
+  /** The next whole-file read sends only this many bytes (a dropped connection), then clears. */
+  cutNextRead: number | null
   write(driveId: string, path: string, content: string | Uint8Array): void
   read(driveId: string, path: string): string | null
   remove(driveId: string, path: string): void
@@ -68,6 +70,7 @@ export function startFakeDriveSyncApi(): FakeDriveSyncApi {
     ready: true,
     notes: '# Drives in this session\n',
     blocks: new Map(),
+    cutNextRead: null,
     beforeWrite: null,
     write: (driveId, path, content) => {
       put(driveId, path, typeof content === 'string' ? new TextEncoder().encode(content) : content)
@@ -143,7 +146,11 @@ export function startFakeDriveSyncApi(): FakeDriveSyncApi {
             headers: { 'content-range': `bytes ${from}-${f.data.byteLength - 1}/${f.data.byteLength}` },
           })
         }
-        return new Response(f.data, { headers: { 'content-length': String(f.data.byteLength) } })
+        const cut = api.cutNextRead
+        api.cutNextRead = null
+        return new Response(cut === null ? f.data : f.data.slice(0, cut), {
+          headers: { 'content-length': String(f.data.byteLength), 'x-pt-content-length': String(f.data.byteLength) },
+        })
       }
       // The API's conditional write: `expect` must still be the drive's version.
       const stale = (p: string) => {
