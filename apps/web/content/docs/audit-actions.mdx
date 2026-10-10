@@ -225,8 +225,10 @@ This page lists 801 route actions and 72 other events.
 | `capture.export.list` | Listed Capture exports | `GET /v1/accounts/:accountId/capture/exports` |
 | `capture.export.read` | Viewed a Capture export | `GET /v1/accounts/:accountId/capture/exports/:exportId` |
 | `capture.frame.read` or `capture.member_view` or `capture.account_view` or `capture.agent_read` | Viewed a capture frame | `GET /v1/accounts/:accountId/capture/frames/:frameId` |
-| `capture.frame.read` or `capture.agent_read` | Viewed a capture frame | `GET /v1/capture/me/frames/:frameId` |
 | `capture.intelligence.run` | Ran the Capture pipelines | `POST /v1/accounts/:accountId/capture/intelligence/run` |
+| `capture.me.frame.read` or `capture.agent_read` | Viewed own capture frame | `GET /v1/capture/me/frames/:frameId` |
+| `capture.me.search` or `capture.agent_read` | Searched own capture timeline | `GET /v1/capture/me/search` |
+| `capture.me.timeline.read` or `capture.agent_read` | Viewed own capture timeline | `GET /v1/capture/me/timeline` |
 | `capture.media.read` or `capture.member_view` or `capture.account_view` or `capture.agent_read` | Opened capture media | `GET /v1/accounts/:accountId/capture/chunks/:chunkId/media` |
 | `capture.member.list` or `capture.account_view` | Listed Capture roles | `GET /v1/accounts/:accountId/capture/members` |
 | `capture.member.update` or `capture.member_role` | Changed a Capture role | `PUT /v1/accounts/:accountId/capture/members/:userId` |
@@ -239,12 +241,10 @@ This page lists 801 route actions and 72 other events.
 | `capture.range.process` or `capture.member_view` | Reprocessed a capture range | `POST /v1/accounts/:accountId/capture/ranges/:rangeId/process` |
 | `capture.range.read` or `capture.member_view` or `capture.account_view` or `capture.agent_read` | Viewed a capture range | `GET /v1/accounts/:accountId/capture/ranges/:rangeId` |
 | `capture.search` or `capture.member_view` or `capture.account_view` or `capture.agent_read` | Searched a capture timeline | `GET /v1/accounts/:accountId/capture/search` |
-| `capture.search` or `capture.agent_read` | Searched a capture timeline | `GET /v1/capture/me/search` |
 | `capture.skill.draft` | Drafted a skill from a Capture workflow | `POST /v1/accounts/:accountId/capture/workflows/:workflowId/skill-draft` |
 | `capture.skill.publish` | Published a skill from a Capture workflow | `POST /v1/accounts/:accountId/capture/workflows/:workflowId/skill` |
 | `capture.timeline.items.read` or `capture.member_view` or `capture.account_view` or `capture.agent_read` | Viewed capture timeline items | `GET /v1/accounts/:accountId/capture/timeline/items` |
 | `capture.timeline.read` or `capture.member_view` or `capture.account_view` or `capture.agent_read` | Viewed a capture timeline | `GET /v1/accounts/:accountId/capture/timeline` |
-| `capture.timeline.read` or `capture.agent_read` | Viewed a capture timeline | `GET /v1/capture/me/timeline` |
 | `capture.workflow.list` or `capture.account_view` | Listed Capture workflows | `GET /v1/accounts/:accountId/capture/workflows` |
 | `capture.workflow.read` or `capture.account_view` | Viewed a Capture workflow | `GET /v1/accounts/:accountId/capture/workflows/:workflowId` |
 | `capture.workflow.review` | Reviewed a Capture workflow | `POST /v1/accounts/:accountId/capture/workflows/:workflowId/review` |
@@ -1046,7 +1046,7 @@ Sandboxes, background jobs, database triggers, and handlers record these for som
 | `auth.session.first_sight` | Started authenticated session |
 | `billing.trial.converted` | Converted trial to paid plan |
 | `capture.account_view` | Viewed the capture data of an account |
-| `capture.agent_read` | An agent read the capture timeline of the person it acts for |
+| `capture.agent_read` | Read a capture timeline as an agent |
 | `capture.disable` | Turned Capture off |
 | `capture.enable` | Turned Capture on |
 | `capture.member_role` | Changed a Capture role |

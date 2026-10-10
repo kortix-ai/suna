@@ -28,7 +28,7 @@ export const AUDIT_EVENT_LABELS: Readonly<Record<string, string>> = {
   'capture.enable': 'Turned Capture on',
   'capture.disable': 'Turned Capture off',
   'capture.member_role': 'Changed a Capture role',
-  'capture.agent_read': 'An agent read the capture timeline of the person it acts for',
+  'capture.agent_read': 'Read a capture timeline as an agent',
   'auth.login.success': 'Signed in',
   'auth.login.fail': 'Failed to sign in',
   'auth.session.first_sight': 'Started authenticated session',
