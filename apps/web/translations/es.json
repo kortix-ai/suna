@@ -20041,6 +20041,7 @@
     "noticeSignInBody": "Kortix añadió {name}. Termina de iniciar sesión para que los agentes puedan usar sus herramientas.",
     "noticeSignInAction": "Iniciar sesión",
     "connectAccount": "Conectar",
+    "notSignedIn": "Sin iniciar sesión",
     "infoRunsOver": "Se ejecuta sobre",
     "waysToConnect": "Formas de conectar",
     "recommended": "Recomendado",

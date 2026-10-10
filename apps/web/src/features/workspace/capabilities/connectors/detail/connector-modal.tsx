@@ -35,13 +35,11 @@ import { cn } from '@/lib/utils';
 import { ButtonGroup } from '@/components/ui/button-group';
 import { Close } from '@/features/icon/icons/close';
 import { foldKey } from '@/features/workspace/capabilities/connectors/catalog/catalog-entry';
-import { InstallMenu } from '@/features/workspace/capabilities/connectors/install/install-menu';
-import { useAddAccount } from '@/hooks/connectors/use-add-account';
 import { ConnectorAccounts } from './connector-accounts';
 import { ConnectorSettings } from './connector-settings';
-import { ConnectorTriggers, useConnectorEventTriggers } from './connector-triggers';
 import { CONNECTOR_TAB_LABEL_KEY, type ConnectorTab, connectorTabs } from './connector-tabs';
 import { ConnectorTools } from './connector-tools';
+import { ConnectorTriggers, useConnectorEventTriggers } from './connector-triggers';
 import { useConnectorDetail } from './use-connector-detail';
 
 export interface ConnectorModalProps {
@@ -187,13 +185,8 @@ function ConnectorModalBody({
     setComputerOpen,
   } = useConnectorDetail({ projectId, connector, canWrite, onChanged });
   const tSharing = useTranslations('accessSharing');
-  const addAccount = useAddAccount({
-    projectId,
-    connector,
-    displayName,
-    onAdded: refreshAccounts,
-    onCredential: setCredentialTarget,
-  });
+  // Opens the account list's "Add account" dialog: name and who may use it.
+  const [addRequest, setAddRequest] = useState(0);
   const projectDetailQuery = useQuery({
     queryKey: qk.project.detail(projectId),
     queryFn: () => getProjectDetail(projectId),
@@ -235,18 +228,18 @@ function ConnectorModalBody({
       {tI18nComplete.raw('text1a2303ede074')}
     </Button>
   ) : (
-    <InstallMenu
-      label={tSharing('addAccount')}
-      variant="default"
-      canShare={canManageConnections}
-      onlyYou={tSharing('onlyYou')}
-      everyone={everyoneLabel}
-      onInstall={(audience) => {
+    <Button
+      size="sm"
+      className="gap-1.5"
+      onClick={() => {
         setSelectedTab('accounts');
-        addAccount.add(audience);
+        setAddRequest((n) => n + 1);
       }}
-      pending={addAccount.pending || connectPending}
-    />
+      disabled={connectPending}
+    >
+      <PlusIcon className="size-4 shrink-0" weight="bold" />
+      {tSharing('addAccount')}
+    </Button>
   );
 
   return (
@@ -413,6 +406,8 @@ function ConnectorModalBody({
                   onChanged={onChanged}
                   onRemoved={onRemoved}
                   onStartSession={startPrivateSession}
+                  addRequest={addRequest}
+                  onAddRequestHandled={() => setAddRequest(0)}
                 />
               )}
             </TabsContent>
