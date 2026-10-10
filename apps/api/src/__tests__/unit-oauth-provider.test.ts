@@ -68,7 +68,7 @@ const fake = createFakeDb({
     // `clientActive`, which the token table itself does not store.
     if (table === oauthAccessTokens) {
       if (join === oauthClients) {
-        return accessTokens.map((t) => ({ ...t, clientActive: Boolean(clients[t.clientId as string]?.active) }));
+        return accessTokens.map((t) => ({ ...t, clientActive: Boolean(clients[String(t.clientId)]?.active) }));
       }
       return accessTokens;
     }
