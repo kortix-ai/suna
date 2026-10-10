@@ -46,7 +46,7 @@ function fakeClock() {
   };
 }
 
-function setup(initial = '') {
+function setup(initial = '', initialStreaming = false) {
   const t = fakeClock();
   const shown: string[] = [];
   const settles: number[] = [];
@@ -58,6 +58,7 @@ function setup(initial = '') {
     },
     initial,
     t.clock,
+    initialStreaming,
   );
   return { ...t, shown, settles, pacer, last: () => shown[shown.length - 1] };
 }
@@ -83,6 +84,16 @@ describe('revealCut', () => {
 
   test('backs off past a syntax-only word that would end the visible text', () => {
     expect(revealCut('intro ## Head', 0, 100, false)).toBe(6);
+  });
+
+  test('reveals a link destination as it arrives: it renders as its label or its card, never as half a word', () => {
+    const text = 'Here is the link: [Connect Outlook](https://x.test/connect/ksl_ab';
+    expect(revealCut(text, 0, Infinity, false)).toBe(text.length);
+    expect(revealCut(`${text}c)`, 0, Infinity, false)).toBe(text.length + 2);
+    // A label word that is still arriving waits like any other word.
+    expect(revealCut('Here is the link: [Connect Out', 0, Infinity, false)).toBe(
+      'Here is the link: [Connect '.length,
+    );
   });
 
   test('a budget under one char reveals nothing', () => {
@@ -220,6 +231,21 @@ describe('createStreamPacer', () => {
     const p = setup('first answer');
     p.pacer.push('rewritten', true);
     expect(p.last()).toBe('rewritten');
+  });
+
+  test('text present at mount while streaming settles when the stream ends with no new text', () => {
+    // A refresh or tab switch mid-answer mounts the whole text at once. When the
+    // turn then ends without another chunk, the message must still settle.
+    const p = setup('already here ', true);
+    p.pacer.push('already here ', true);
+    p.advance(500);
+    expect(p.settles).toEqual([]);
+    const endAt = p.clock.now();
+    p.pacer.push('already here ', false);
+    p.advance(STREAM_FADE_MS + 40);
+    expect(p.settles.length).toBe(1);
+    expect(p.settles[0] - endAt).toBeGreaterThanOrEqual(STREAM_FADE_MS);
+    expect(p.pending()).toBe(0);
   });
 
   test('a value that was never streamed shows at once', () => {

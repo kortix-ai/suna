@@ -2395,9 +2395,9 @@ export const sessionTranscriptMirrors = kortixSchema.table(
     sessionId: text('session_id').primaryKey(),
     projectId: uuid('project_id').notNull(),
     accountId: uuid('account_id').notNull(),
-    // The OpenCode root the captured messages belong to. A re-pin (a restarted
-    // box adopting a different root) makes the previous rows unreachable, so
-    // the writer clears them when this changes.
+    // The OpenCode root the newest capture read. A re-pin (a restarted box
+    // adopting a different root) keeps the previous root's rows: they stay
+    // under their own `opencode_session_id`, and a root read serves this root.
     runtimeSessionId: text('opencode_session_id'),
     // TRUE only when a capture proved it had seen the session's FIRST message
     // (the box returned fewer messages than the capture window). This is the
