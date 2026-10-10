@@ -40,7 +40,9 @@ export function registerTriggerWebhooksRoutes(): void {
     responses: {
       200: json(z.object({ status: z.literal('skipped'), reason: z.string() }), 'Accepted, not fired'),
       202: json(TriggerFireResultSchema, 'Queued or fired'),
-      ...errors(400, 401, 500),
+      // 402: the account has no usable model (no plan-covered managed model, no
+      // connected provider key) — the fire gates instead of minting a doomed session.
+      ...errors(400, 401, 402, 500),
     },
   }), async (c) => {
     const projectId = c.req.param('projectId');
@@ -207,6 +209,11 @@ export function registerTriggerWebhooksRoutes(): void {
       // back to the queue alerts from the drain only if it dead-letters.
       if (!result.requeued) {
         await raiseTriggerAlert({ projectId: project.projectId, accountId: project.accountId, slug: spec.slug, source: 'fire', error });
+      }
+      // The model gate is account state, not a server fault: answer the billing
+      // gate's convention (402 + a machine-readable code) so the sender can act.
+      if (result.errorCode === 'no_usable_model') {
+        return c.json({ error, code: 'no_usable_model' }, 402);
       }
       return c.json({ error }, 500);
     }

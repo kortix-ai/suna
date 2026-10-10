@@ -45,7 +45,7 @@ export const appSnapshotsKey = (
 
 const SETTLED_DEPLOYMENT = new Set(['ready', 'failed', 'cancelled']);
 
-/** Project App inventory and lifecycle mutations. */
+/** Project App inventory (only the Apps the caller may open; a project manager: every App) and lifecycle mutations. */
 export function useProjectApps(projectId: string | null | undefined) {
   const queryClient = useQueryClient();
   const queryKey = projectAppsKey(projectId);

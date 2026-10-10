@@ -48,7 +48,7 @@ function app(overrides: Record<string, unknown> = {}) {
     active_deployment_id: null,
     machine: { cpu: 1, memory_gb: 2, disk_gb: 10 },
     idle_timeout_seconds: 300,
-    monthly_budget_usd: 5,
+    monthly_budget_usd: null,
     last_request_at: null,
     created_at: '2026-01-01T00:00:00.000Z',
     updated_at: '2026-01-01T00:00:00.000Z',
@@ -155,6 +155,7 @@ describe('kortix apps: a static App', () => {
     const r = await runCli(['apps', 'show', 'storefront', '--project', PROJECT], config);
     expect(r.code).toBe(0);
     expect(r.stdout).toContain('static · served from storage, no runtime');
+    expect(r.stdout).not.toMatch(/budget|cost/);
   });
 
   test('stop exits 1 and prints the server explanation', async () => {

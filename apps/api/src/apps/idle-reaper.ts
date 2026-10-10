@@ -119,9 +119,9 @@ export interface AppKeepAliveResult {
  * The always-on lifecycle, every 5 minutes. It runs beside the idle reaper,
  * not inside it, so a slow start never holds up idle stops.
  *   1. Cost: a running App (either mode) is stopped when its account can no
- *      longer pay (the same check session create runs) or when its
- *      month-to-date compute reached `monthly_budget_usd`. An App that never
- *      sleeps never passes the wake gate again, so the check runs here.
+ *      longer pay (the same check session create runs). An on-demand App is
+ *      also stopped when its month-to-date compute reached
+ *      `monthly_budget_usd`. An always-on App has no budget: it costs its size.
  *   2. Refresh: an always-on App never cold-starts, so its stale supervisor
  *      (or its static App still on a sandbox) is queued for the rebuild a cold
  *      start would queue, at most `KEEP_ALIVE_REFRESHES_PER_PASS` per pass.
@@ -129,8 +129,8 @@ export interface AppKeepAliveResult {
  *      database records as running. Running: compute liveness is stamped, so
  *      billing continues without inbound traffic, and on Daytona and E2B the
  *      provider's idle timer is renewed. Not running: the row is corrected and
- *      the App is started through the wake gate (entitlement, concurrency,
- *      budget), like an App whose row already said stopped.
+ *      the App is started through the wake gate (entitlement, concurrency),
+ *      like an App whose row already said stopped.
  */
 export async function runAppKeepAlive(now = new Date(), force = false): Promise<AppKeepAliveResult | null> {
   if (keepAliveRunning) return null;
@@ -163,7 +163,7 @@ async function forEachPage<T>(
 }
 
 async function stopUnaffordableRuntimes(hosting: AppHostingProvider, now: Date) {
-  const { assertAppBudgetAvailable, AppBudgetExceededError } = await import('./budget');
+  const { appHasBudget, assertAppBudgetAvailable, AppBudgetExceededError } = await import('./budget');
   const { assertAppAccountFunded, AppAccountUnfundedError } = await import('./limits');
   // One entitlement check per account per pass, however many Apps it runs.
   const funding = new Map<string, Promise<string | null>>();
@@ -203,7 +203,8 @@ async function stopUnaffordableRuntimes(hosting: AppHostingProvider, now: Date) 
           logger.warn('[apps] App stopped: its account cannot pay for compute', { appId: app.appId });
           return;
         }
-        await assertAppBudgetAvailable(app.appId, Number(app.monthlyBudgetUsd), now);
+        // A budget stops only an on-demand App; an always-on App costs its size and keeps running.
+        if (appHasBudget(app)) await assertAppBudgetAvailable(app.appId, Number(app.monthlyBudgetUsd), now);
       } catch (error) {
         if (!(error instanceof AppBudgetExceededError)) {
           logger.error('[apps] cost check failed', { appId: app.appId, error: String(error) });
@@ -308,7 +309,7 @@ async function keepAlwaysOnAppsRunning(hosting: AppHostingProvider, now: Date) {
         try {
           await keepRunning(app, deployment);
         } catch (error) {
-          // Over budget, unfunded, at the account's App cap, or a provider
+          // Unfunded, at the account's App cap, or a provider
           // failure: it stays stopped and the next pass tries again.
           logger.warn('[apps] always-on App could not be kept running', {
             appId: app.appId,

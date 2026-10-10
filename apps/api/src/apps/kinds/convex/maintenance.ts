@@ -35,20 +35,16 @@
  * 6. Orphans (./lifecycle.ts): retry failed machine deletes; once an hour,
  *    delete machines no App references; purge deleted Apps whose retention
  *    (`metadata.purgeAfter`) ran out.
- * 7. Budget: the App's monthly budget alerts at 80 % and at 100 % (once per
- *    month each): an audit event `app.budget.alert`, `metadata.budgetAlert`
- *    (the API's `instance.budget_alert`) and a warn log. It never stops the
- *    machine: a stopped database breaks every client.
+ * There is no budget step: a `convex` App runs a fixed-size machine 24/7, so
+ * its cost is its size (`estimated_monthly_usd`), not a cap.
  *
  * Steps 1, 2 and 5 and the repairs in step 4 run detached: they heartbeat, so a
  * later tick never starts a second copy, and a process that dies mid-way is
  * taken over again.
  */
 
-import { appConvexInstances, apps, projects, sandboxComputeSessions } from '@kortix/db';
-import { and, eq, gte, inArray, isNotNull, sql } from 'drizzle-orm';
-import { monthStartUtc, monthlyComputeColumns, sumMonthlyComputeCost } from '../../../billing/services/compute-accrual';
-import { recordAuditEvent } from '../../../shared/audit';
+import { appConvexInstances, apps, projects } from '@kortix/db';
+import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { logger } from '../../../lib/logger';
 import { db } from '../../../shared/db';
 import { isPlatinumConfigured, platinumJson } from '../../../shared/platinum';
@@ -134,8 +130,6 @@ export interface BackendSweepResult {
   movedIssuers: number;
   /** Deleted Apps whose stopped machine and snapshots were purged after retention. */
   purged: number;
-  /** Budget alerts recorded (80 % or 100 % of the monthly budget). */
-  budgetAlerts: number;
   errors: number;
 }
 
@@ -452,7 +446,6 @@ export const EMPTY_BACKEND_SWEEP: BackendSweepResult = {
   movedToHosts: 0,
   movedIssuers: 0,
   purged: 0,
-  budgetAlerts: 0,
   errors: 0,
 };
 
@@ -472,70 +465,10 @@ async function orphanStep(result: BackendSweepResult): Promise<void> {
   result.errors += retried.errors + reaped.errors + purged.errors;
 }
 
-/** Budget shares (percent) at which a `convex` App alerts, once per month each. */
-export const BUDGET_ALERT_PERCENTS = [80, 100] as const;
-
-/** This month's metered compute of a `convex` App (its windows: `sandbox_id` = the App id). */
-export async function convexMonthlyComputeCost(appId: string, now = new Date()): Promise<number> {
-  const rows = await db
-    .select(monthlyComputeColumns)
-    .from(sandboxComputeSessions)
-    .where(
-      and(
-        eq(sandboxComputeSessions.sandboxId, appId),
-        eq(sandboxComputeSessions.workloadType, 'backend'),
-        gte(sandboxComputeSessions.startedAt, monthStartUtc(now).toISOString()),
-      ),
-    );
-  return sumMonthlyComputeCost(rows, now);
-}
-
-/** The highest alert percent `spent` reached that this month has not alerted yet, or null. */
-export function budgetAlertDue(
-  row: Pick<ConvexRow, 'metadata'>,
-  spentUsd: number,
-  budgetUsd: number,
-  now = new Date(),
-): number | null {
-  if (budgetUsd <= 0) return null;
-  const percent = (spentUsd / budgetUsd) * 100;
-  const reached = BUDGET_ALERT_PERCENTS.filter((p) => percent >= p).pop();
-  if (reached === undefined) return null;
-  const month = now.toISOString().slice(0, 7);
-  const last = (row.metadata as { budgetAlert?: { month?: string; percent?: number } }).budgetAlert;
-  return last?.month === month && (last.percent ?? 0) >= reached ? null : reached;
-}
-
-/** 7. Budget alerts for every running `convex` App. */
-async function budgetStep(result: BackendSweepResult): Promise<void> {
-  const now = new Date();
-  for (const { row } of await runningBackends()) {
-    const budgetUsd = Number(row.monthlyBudgetUsd);
-    const spentUsd = await convexMonthlyComputeCost(row.appId, now);
-    const percent = budgetAlertDue(row, spentUsd, budgetUsd, now);
-    if (percent === null) continue;
-    const alert = { month: now.toISOString().slice(0, 7), percent, spentUsd: Math.round(spentUsd * 100) / 100, budgetUsd, at: now.toISOString() };
-    await db
-      .update(appConvexInstances)
-      .set({ metadata: sql`coalesce(${appConvexInstances.metadata}, '{}'::jsonb) || ${JSON.stringify({ budgetAlert: alert })}::jsonb` })
-      .where(eq(appConvexInstances.appId, row.appId));
-    await recordAuditEvent({
-      accountId: row.accountId,
-      projectId: row.projectId,
-      action: 'app.budget.alert',
-      resourceType: 'app',
-      resourceId: row.appId,
-      metadata: { percent, spent_usd: alert.spentUsd, budget_usd: budgetUsd, month: alert.month },
-    }).catch((error) => logger.warn('[apps:convex] budget alert audit failed', { appId: row.appId, error: String(error) }));
-    logger.warn('[apps:convex] App reached its monthly budget share; it keeps running', { appId: row.appId, ...alert });
-    result.budgetAlerts += 1;
-  }
-}
-
 export async function sweepBackends(): Promise<BackendSweepResult> {
   const result = { ...EMPTY_BACKEND_SWEEP };
   if (!isPlatinumConfigured()) return result;
-  for (const step of [resumeProvisions, takeOverOperations, parkStep, moveHostsStep, issuerStep, probeRunning, snapshotStep, orphanStep, budgetStep]) {
+  for (const step of [resumeProvisions, takeOverOperations, parkStep, moveHostsStep, issuerStep, probeRunning, snapshotStep, orphanStep]) {
     await step(result).catch((error) => {
       result.errors += 1;
       logger.warn('[apps:convex] sweep step failed', { step: step.name, error: String(error) });

@@ -365,14 +365,16 @@ on capabilities, never on kind.
   React, or exported Next.js App here and deploy its output directory.
 - A **server App** (`--type dockerfile`, or `--image`) runs in its own machine.
   It runs **always on** (the default for a new App, 24/7) or **on demand**
-  (`--on-demand`: stops when idle, wakes on the next request). It stops at its
-  monthly compute budget (default 5 USD). 24/7 on the default machine costs
-  about 73 USD a month, so an always-on App needs `--budget`.
+  (`--on-demand`: stops when idle, wakes on the next request). Only an
+  on-demand App has a monthly budget (default 5 USD): it stops at the cap. An
+  always-on App has no budget. Its cost is fixed: the machine 24/7, about 73
+  USD a month on the default machine (`estimated_monthly_usd`).
+  `--budget` on an always-on App answers `400 app_budget_not_applicable`.
 - A **`convex` App** (`kortix apps create <slug> --kind convex`) is a full
   backend: database, server functions, realtime queries, file storage,
   schedules and search, powered by self-hosted Convex with built-in Kortix
-  sign-in. One always-on machine each, up to 3 per project and 10 per
-  account. Its code usually lives in `apps/<slug>/convex/` and ships with
+  sign-in. One always-on machine each (about 59 USD a month on the default
+  size, no budget), up to 3 per project and 10 per account. Its code usually lives in `apps/<slug>/convex/` and ships with
   `kortix apps deploy apps/<slug> --app <slug>`.
 
 Apps is off by default and enabled per project by Kortix (it is not listed in
@@ -389,7 +391,7 @@ Use the CLI from the source directory:
 ```sh
 kortix apps deploy ./dist --type static --spa
 kortix apps deploy . --type dockerfile --on-demand --command '["bun","run","start"]' --port 3000
-kortix apps deploy . --type dockerfile --always-on --budget 80 --command '["bun","run","start"]' --port 3000
+kortix apps deploy . --type dockerfile --always-on --command '["bun","run","start"]' --port 3000
 kortix apps deploy --image ghcr.io/acme/api:1.4.2 --command '["/app/server"]' --port 8081
 kortix apps access storefront --mode restricted --members <member-id> --groups <group-id>
 kortix apps ls --json

@@ -134,6 +134,8 @@ export {
   notificationWatchers,
   triggerWatchers,
   webPushSubscriptions,
+  // Product feedback (POST /v1/feedback)
+  feedback,
   // Billing v2 — per-seat + compute metering + per-member YOLO
   sandboxComputeSessions,
   apps,
