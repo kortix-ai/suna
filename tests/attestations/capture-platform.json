@@ -1,5 +1,5 @@
 {
-  "source_hash": "3f179cc82e5cb2915821b4f2f2237ee1cd18e80ced29bc420ba17a151c75f8c6",
+  "source_hash": "da5b30c850d9718b15228551246072c6f98be44894793ca841e31822b3534794",
   "diff_files": [
     ".agents/skills/worktree/SKILL.md",
     ".agents/skills/worktree/references/capture-local-store.md",
@@ -238,13 +238,13 @@
     "tests/src/flows/capture.flow.ts",
     "tests/unit/desktop-build-bun.test.ts"
   ],
-  "diff_hash": "4f3428fc345ad1635d336bb2976e9e4a1c1cee3f304273c6dff39e081b0c6669",
-  "head": "2bff4cd3e71ae7b4cfaa326917a343855f95d729",
+  "diff_hash": "58f7913ae6953f4ce297c2adc5848d40acfc4df0cd81be8a0ceaa2ec94080745",
+  "head": "be9dff8443d8e6047ab1ced1f0de1b08be2d00eb",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-10T22:32:26.786Z"
+  "at": "2026-10-10T22:48:18.443Z"
 }
