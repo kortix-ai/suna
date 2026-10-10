@@ -1213,15 +1213,15 @@ async function runConnectorAction(
       const misfire = result.ok && channelWrite ? channelWrite.misfire(result.data) : null;
       if (misfire) {
         const undone = misfire.undo
-          ? await executeCall({
+          ? await withDeadline(executeCall({
               binding: { kind: 'http', method: 'POST', path: misfire.undo.path },
               baseUrl: connector.baseUrl,
               auth: connector.auth,
               headers: connector.headers,
               secret: executionSecret,
               args: misfire.undo.args,
-              fetchImpl: deps.fetchImpl,
-            })
+              fetchImpl: (url, init) => deps.fetchImpl(url, { ...init, signal }),
+            }))
               .then((undo) => mapChannelEnvelope(undo).ok)
               .catch(() => false)
           : false;
