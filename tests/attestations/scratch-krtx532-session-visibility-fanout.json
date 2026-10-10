@@ -1,21 +1,18 @@
 {
-  "source_hash": "35c42489233c2a70e717f8c34e939d5ab0c425a93a1fbc49aa1d62e90d36f986",
+  "source_hash": "a7a49b2bc0c3c07b10664ead932be2d784f2f92f2c40e12635dc5115fc6f91e4",
   "diff_files": [
     "apps/api/src/__tests__/integration-session-presence.test.ts",
-    "apps/api/src/apps/kinds/convex/hosts.integration.test.ts",
-    "apps/api/src/apps/kinds/convex/provision.integration.test.ts",
-    "apps/api/src/apps/kinds/convex/routes.integration.test.ts",
     "apps/api/src/projects/lib/__tests__/session-visibility-list.test.ts",
     "apps/api/src/projects/lib/session-visibility.ts",
     "apps/api/src/projects/routes/session-reminders.ts"
   ],
-  "diff_hash": "e6a342604614d611816b1cac0c95b6c0aaab2ff0bf4f2df2e9902cde03ed23e1",
-  "head": "05e34eadf1f5fa39475d36c1b932f212da158096",
+  "diff_hash": "5ae58ea33704edce31ab01af0a9b255d8775dedc0d4f3b5582ecf3db90be0eea",
+  "head": "dc4adf6d9378018c1eef046a3946761eae159b39",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-09T20:00:48.391Z"
+  "at": "2026-10-10T22:17:46.732Z"
 }
