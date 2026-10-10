@@ -2579,7 +2579,10 @@ flow(
           retryable: true,
         },
         {
-          label: 'a stored E2B placement error is upgraded to the capacity contract',
+          // A placement error is transient: /start re-provisions it itself
+          // (#9489). Seeded past the 6 automatic retries, it answers the
+          // exhausted contract on every profile, with or without a provider.
+          label: 'a stored E2B placement error past its automatic retries answers the capacity contract with Restart',
           provider: 'e2b',
           metadata: {
             initStatus: 'failed',
@@ -2588,9 +2591,10 @@ flow(
             failureCategory: 'sandbox-provider',
             errorMessage: 'The sandbox provider could not start this session. Try again.',
             lastProvisioningError: '500: Failed to place sandbox',
+            transientRetryCount: 6,
           },
           category: 'provider-capacity',
-          message: 'The sandbox provider is at capacity right now. Try again in a minute.',
+          message: 'The sandbox provider could not start this session after 7 attempts. Restart the session to try again.',
           retryable: true,
         },
         {

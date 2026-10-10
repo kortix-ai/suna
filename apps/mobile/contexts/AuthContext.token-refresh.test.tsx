@@ -50,8 +50,10 @@ mock.module('expo-linking', empty);
 mock.module('expo-auth-session/build/QueryParams', empty);
 mock.module('@/lib/billing/provider', () => ({ shouldUseRevenueCat: () => false }));
 mock.module('@/lib/auth/callback-state', () => ({
+  clearWebRegistrationHandoff: async () => {},
   consumeAuthCallbackState: async () => true,
   createAuthCallbackRedirect: async () => 'kortix://auth/callback',
+  grantWebRegistrationHandoff: async () => {},
 }));
 mock.module('@/lib/auth/mobile-admission', () => ({ admitMobileOAuthSession: async () => true }));
 mock.module('@/lib/auth/session-expiry-monitor', () => ({ sessionExpiry: { disarm: noop } }));
