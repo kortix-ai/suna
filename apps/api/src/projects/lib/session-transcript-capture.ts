@@ -455,20 +455,19 @@ async function captureSessionTranscript(
 
         // Each sub-agent read whole replaces its saved transcript: what it no
         // longer holds is deleted, the rest merged. A partial read writes
-        // nothing, so a saved sub-agent is always whole.
+        // nothing, so a saved sub-agent is always whole. An EMPTY read writes
+        // nothing either: a box that does not know the session (a kept old
+        // root named by a tool part) can answer complete and empty.
         for (const child of read.children ?? []) {
           if (child.complete !== true) continue;
           const childRows = mirrorRowsFromOpencodePayload(child.payload);
+          if (childRows.length === 0) continue;
           const childIds = childRows.map((row) => String(row.info.id));
           await tx.execute(
-            childIds.length > 0
-              ? sql`DELETE FROM kortix.session_transcript_messages
-                     WHERE session_id = ${sessionId}
-                       AND opencode_session_id = ${child.opencodeSessionId}
-                       AND NOT (message_id = ANY(${sql.param(childIds)}::text[]))`
-              : sql`DELETE FROM kortix.session_transcript_messages
-                     WHERE session_id = ${sessionId}
-                       AND opencode_session_id = ${child.opencodeSessionId}`,
+            sql`DELETE FROM kortix.session_transcript_messages
+                 WHERE session_id = ${sessionId}
+                   AND opencode_session_id = ${child.opencodeSessionId}
+                   AND NOT (message_id = ANY(${sql.param(childIds)}::text[]))`,
           );
           await upsertMirrorRows(tx, sessionId, child.opencodeSessionId, childRows, now);
         }
@@ -636,7 +635,7 @@ export function backfillSessionTranscriptMirrorOnWake(
         row.headComplete &&
         row.mirrorRoot &&
         row.mirrorRoot === row.root &&
-        !(await mirrorHoldsStrippedRows(sessionId))
+        !(await mirrorHoldsStrippedRows(sessionId, row.root))
       ) {
         return settle();
       }
