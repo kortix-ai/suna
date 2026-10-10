@@ -133,13 +133,18 @@ describe('anchor dates', () => {
 describe('labels', () => {
   test('range label via Intl in the locale', () => {
     // Week: 7 days from the first visible day, which need not be a Monday.
-    expect(rangeLabel(local(2026, 10, 7), 'week', 'en-GB')).toBe('7 – 13 October 2026');
+    // The label comes straight from Intl.formatRange: the spacing around the
+    // en dash is ICU's choice and moves across ICU builds (some render
+    // "7 – 13 October 2026", others "7–13 October 2026"), so pin the parts the
+    // code owns — the start day, the dash, and the full end date.
+    expect(rangeLabel(local(2026, 10, 7), 'week', 'en-GB')).toMatch(/^7\s*[–-]\s*13 October 2026$/);
     expect(rangeLabel(local(2026, 10, 7), 'month', 'en-GB')).toBe('October 2026');
     expect(rangeLabel(local(2026, 10, 7), 'month', 'de')).toBe('Oktober 2026');
     // Month: the top week's month, not the Monday's.
     expect(rangeLabel(local(2026, 9, 28), 'month', 'en-GB')).toBe('October 2026');
-    // Day: the one day in view, in full.
-    expect(rangeLabel(local(2026, 10, 14), 'day', 'en-GB')).toBe('Wednesday, 14 October 2026');
+    // Day: the one day in view, in full. The comma after the weekday is also
+    // ICU's choice (en-GB builds differ on it).
+    expect(rangeLabel(local(2026, 10, 14), 'day', 'en-GB')).toMatch(/^Wednesday,?\s*14 October 2026$/);
   });
 
   test('clock time is 24-hour; relative time scales minute → hour → day', () => {
