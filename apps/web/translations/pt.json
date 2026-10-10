@@ -19562,7 +19562,18 @@
       "text296c9b4ea201": "Viu quem tem acesso a uma pasta",
       "text59fd4dcb9848": "Compartilhou uma pasta",
       "text937cfd737699": "Parou de compartilhar uma pasta",
-      "text1a5e0afbc2ab": "Listou com quem uma pasta pode ser compartilhada"
+      "text92e898220ea4": "Candidatos à partilha de pasta listados",
+      "text806194e831e2": "Drives sincronizados de uma sessão listados",
+      "text4c17ea4a1bab": "Drive sincronizado verificado quanto a alterações",
+      "text52faea499e28": "Pasta do drive listada a partir de uma sessão",
+      "textb7eb5a2b50ce": "Ficheiro do drive verificado a partir de uma sessão",
+      "text78b45f97d82f": "Ficheiro do drive transferido para uma sessão",
+      "texte9bd330e4306": "Ficheiro do drive carregado a partir de uma sessão",
+      "text1cb255699e75": "Carregamento para o drive planeado a partir de uma sessão",
+      "texta20614e291e2": "Bloco de ficheiro do drive carregado",
+      "text9a1abd40b71f": "Carregamento para o drive confirmado a partir de uma sessão",
+      "text2f0e4bb00f98": "Ficheiro do drive movido a partir de uma sessão",
+      "text55dd1dcbbed0": "Ficheiro do drive eliminado a partir de uma sessão"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

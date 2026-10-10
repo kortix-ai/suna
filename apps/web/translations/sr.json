@@ -19562,7 +19562,18 @@
       "text296c9b4ea201": "Pregledao ko ima pristup fascikli",
       "text59fd4dcb9848": "Podelio fasciklu",
       "text937cfd737699": "Prestao da deli fasciklu",
-      "text1a5e0afbc2ab": "Izlistao s kim se fascikla može podeliti"
+      "text92e898220ea4": "Izlistani kandidati za deljenje fascikle",
+      "text806194e831e2": "Izlistani sinhronizovani drajvovi sesije",
+      "text4c17ea4a1bab": "Sinhronizovani drajv proveren za izmene",
+      "text52faea499e28": "Fascikla drajva izlistana iz sesije",
+      "textb7eb5a2b50ce": "Datoteka drajva proverena iz sesije",
+      "text78b45f97d82f": "Datoteka drajva preuzeta u sesiju",
+      "texte9bd330e4306": "Datoteka drajva otpremljena iz sesije",
+      "text1cb255699e75": "Otpremanje na drajv zakazano iz sesije",
+      "texta20614e291e2": "Blok datoteke drajva otpremljen",
+      "text9a1abd40b71f": "Otpremanje na drajv potvrđeno iz sesije",
+      "text2f0e4bb00f98": "Datoteka drajva premeštena iz sesije",
+      "text55dd1dcbbed0": "Datoteka drajva obrisana iz sesije"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",

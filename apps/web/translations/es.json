@@ -19562,7 +19562,18 @@
       "text296c9b4ea201": "Vio quién tiene acceso a una carpeta",
       "text59fd4dcb9848": "Compartió una carpeta",
       "text937cfd737699": "Dejó de compartir una carpeta",
-      "text1a5e0afbc2ab": "Listó con quién se puede compartir una carpeta"
+      "text92e898220ea4": "Candidatos para compartir carpeta listados",
+      "text806194e831e2": "Drives sincronizados de una sesión listados",
+      "text4c17ea4a1bab": "Drive sincronizado revisado en busca de cambios",
+      "text52faea499e28": "Carpeta de drive listada desde una sesión",
+      "textb7eb5a2b50ce": "Archivo de drive revisado desde una sesión",
+      "text78b45f97d82f": "Archivo de drive descargado en una sesión",
+      "texte9bd330e4306": "Archivo de drive subido desde una sesión",
+      "text1cb255699e75": "Subida al drive planificada desde una sesión",
+      "texta20614e291e2": "Bloque de archivo de drive subido",
+      "text9a1abd40b71f": "Subida al drive confirmada desde una sesión",
+      "text2f0e4bb00f98": "Archivo de drive movido desde una sesión",
+      "text55dd1dcbbed0": "Archivo de drive eliminado desde una sesión"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

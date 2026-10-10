@@ -19562,7 +19562,18 @@
       "text296c9b4ea201": "Angesehen, wer Zugriff auf einen Ordner hat",
       "text59fd4dcb9848": "Einen Ordner geteilt",
       "text937cfd737699": "Freigabe eines Ordners beendet",
-      "text1a5e0afbc2ab": "Aufgelistet, mit wem ein Ordner geteilt werden kann"
+      "text92e898220ea4": "Freigabekandidaten für Ordner aufgelistet",
+      "text806194e831e2": "Synchronisierte Drives einer Sitzung aufgelistet",
+      "text4c17ea4a1bab": "Synchronisiertes Drive auf Änderungen geprüft",
+      "text52faea499e28": "Drive-Ordner aus einer Sitzung aufgelistet",
+      "textb7eb5a2b50ce": "Drive-Datei aus einer Sitzung geprüft",
+      "text78b45f97d82f": "Drive-Datei in eine Sitzung heruntergeladen",
+      "texte9bd330e4306": "Drive-Datei aus einer Sitzung hochgeladen",
+      "text1cb255699e75": "Drive-Upload aus einer Sitzung geplant",
+      "texta20614e291e2": "Block einer Drive-Datei hochgeladen",
+      "text9a1abd40b71f": "Drive-Upload aus einer Sitzung abgeschlossen",
+      "text2f0e4bb00f98": "Drive-Datei aus einer Sitzung verschoben",
+      "text55dd1dcbbed0": "Drive-Datei aus einer Sitzung gelöscht"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

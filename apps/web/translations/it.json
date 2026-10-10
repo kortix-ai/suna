@@ -19562,7 +19562,18 @@
       "text296c9b4ea201": "Ha visto chi ha accesso a una cartella",
       "text59fd4dcb9848": "Ha condiviso una cartella",
       "text937cfd737699": "Ha smesso di condividere una cartella",
-      "text1a5e0afbc2ab": "Ha elencato con chi si può condividere una cartella"
+      "text92e898220ea4": "Destinatari possibili della cartella elencati",
+      "text806194e831e2": "Drive sincronizzati di una sessione elencati",
+      "text4c17ea4a1bab": "Drive sincronizzato controllato per modifiche",
+      "text52faea499e28": "Cartella del drive elencata da una sessione",
+      "textb7eb5a2b50ce": "File del drive controllato da una sessione",
+      "text78b45f97d82f": "File del drive scaricato in una sessione",
+      "texte9bd330e4306": "File del drive caricato da una sessione",
+      "text1cb255699e75": "Caricamento sul drive pianificato da una sessione",
+      "texta20614e291e2": "Blocco di file del drive caricato",
+      "text9a1abd40b71f": "Caricamento sul drive confermato da una sessione",
+      "text2f0e4bb00f98": "File del drive spostato da una sessione",
+      "text55dd1dcbbed0": "File del drive eliminato da una sessione"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",
