@@ -1,4 +1,5 @@
 import { shredAgentEnvFile } from '@/harness/shared/agent-env-file'
+import { stopSessionLogJournal } from '@/harness/shared/session-log-journal'
 import { flushDriveSyncOnShutdown } from '@/services/drive-sync/drive-sync'
 import { stopEgressShim } from '@/services/egress-shim'
 import { logger } from '@/lib/log/logger'
@@ -26,8 +27,10 @@ export function installShutdownHandlers(
     stopEgressShim()
 
     void (async () => {
-      // Drive changes not yet on the drive go up before anything stops.
-      await flushDriveSyncOnShutdown().catch(() => {})
+      // Drive changes not yet on the drive, and session-log changes not yet
+      // acknowledged (at most 3 s), go up before anything stops: the journal
+      // reads the harness's native store, so it runs before harness.stop().
+      await Promise.all([flushDriveSyncOnShutdown().catch(() => {}), stopSessionLogJournal().catch(() => {})])
       try {
         await proxy.stop()
       } catch (err) {
