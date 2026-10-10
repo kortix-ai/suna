@@ -237,8 +237,7 @@ type ManifestFormat = 'yaml' | 'toml'
 /**
  * Read the project manifest, preferring the canonical `kortix.yaml` (schema v2)
  * and falling back to the legacy `kortix.toml` (v1) — the same resolution order
- * the API and CLI use. Returns null when neither file exists. The daemon has no
- * TOML/YAML parser dependency, so callers regex the returned body per `format`.
+ * the API and CLI use. Returns null when neither file exists.
  */
 export async function readProjectManifest(
   fs: typeof import('node:fs/promises'),
@@ -282,18 +281,16 @@ export function extractNestedString(
     const value = keyMatch?.[1]?.trim()
     return value && value.length > 0 ? value : null
   }
-  // YAML: a top-level `section:` mapping whose block is the indented lines that
-  // follow, up to the next non-indented (non-blank) line or EOF.
-  const sectionMatch = body.match(
-    new RegExp(`^${section}:\\s*$([\\s\\S]*?)(?=^\\S|(?![\\s\\S]))`, 'm'),
-  )
-  const sectionBody = sectionMatch?.[1]
-  if (!sectionBody) return null
-  const keyMatch = sectionBody.match(
-    new RegExp(`^\\s+${key}\\s*:\\s*(?:['"]([^'"]+)['"]|([^\\s#][^#\\n]*?))\\s*(?:#.*)?$`, 'm'),
-  )
-  const value = (keyMatch?.[1] ?? keyMatch?.[2])?.trim()
-  return value && value.length > 0 ? value : null
+  let parsed: unknown
+  try {
+    parsed = Bun.YAML.parse(body)
+  } catch {
+    return null
+  }
+  const value = (parsed as Record<string, Record<string, unknown>> | null)?.[section]?.[key]
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
 }
 
 /**

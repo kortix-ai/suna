@@ -15,7 +15,8 @@ mount verification and was archived. Its resumed Platinum VM retained dead
 SSHFS mountpoints, so file access returned `EIO` while the status file still
 reported every share mounted. The live reproduction also found that the daemon
 ran as `kortix` but opened its hook log under `/var/log`. The failed log open
-prevented the hook process from starting.
+prevented the hook process from starting. The daemon's YAML regex also parsed a
+multiline `sandbox.on_boot` value as `|`, so the shell rejected the hook.
 
 **Enforcement:** `apps/api/src/projects/lib/__tests__/sandbox-runtime-refresh.test.ts`
 requires the resume refresh to request `on_boot=1` and retry a concurrent
@@ -23,3 +24,7 @@ refresh. `apps/kortix-sandbox-agent-server/src/__tests__/refresh-route-guards.te
 requires direct service authentication before the daemon launches the hook.
 `apps/kortix-sandbox-agent-server/src/__tests__/on-boot.test.ts` requires the
 hook to run even when its log file cannot be opened.
+`apps/kortix-sandbox-agent-server/src/__tests__/config.test.ts` requires YAML
+block scalars to resolve to their complete command. The real Platinum proof
+requires `/mnt/kortix-session` to be mounted and `/workspace` to use its device
+before and after a stop/resume cycle.
