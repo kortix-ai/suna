@@ -1,3 +1,4 @@
+import { appReleaseInputFromBlock } from '@kortix/manifest-schema';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { App, AppDeployment, CreateAppInput, UpdateAppInput } from '@kortix/sdk';
@@ -12,6 +13,7 @@ import {
 } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 import { accessCommand, accessLinkCommand } from './apps-access.ts';
+import { execCommand, labelsCommand, machinesCommand, releasesCommand, scaleCommand, volumesCommand } from './apps-fleet.ts';
 import { connectCommand, deployOrder, linkCommand, tokenCommand, usesList } from './apps-capabilities.ts';
 import {
   type ContextOptions,
@@ -20,6 +22,7 @@ import {
   csv,
   deployFlags,
   loadManifestAppDefaults,
+  matchingManifestApp,
   loadManifestApps,
   mergeManifestDefaults,
   positiveInteger,
@@ -37,9 +40,14 @@ import {
 
 const HELP = help`Usage: kortix apps <subcommand> [options]
 
-Deploy and operate Kortix Apps. Each App owns one stable URL: a site or a
-server built from its deployments. What an App supports is its capabilities
-(kortix apps show). <app> is an App id or slug.
+Deploy and operate Kortix Apps on the Fly.io model: immutable releases,
+replaceable machines, persistent volumes. Each App owns one stable URL: a site
+or a server. A server App runs machines per process group; a machine may mount
+a volume that outlives every release (databases, uploads, a Convex or Postgres
+backend). Configure it in kortix.yaml apps.<name> (≈ fly.toml): processes,
+http_service, services, mounts, vm, deploy (strategy, release_command), labels.
+What an App supports is its capabilities (kortix apps show). <app> is an App id
+or slug.
 
 Subcommands:
   list | ls                         List Apps. --json.
@@ -59,12 +67,16 @@ Subcommands:
                                     deploys every App in link order: each after
                                     the Apps it uses, then by name.
     --manifest-app <name>           Use one apps.<name> block from kortix.yaml.
+                                    Default: the block named by --app, or the
+                                    block whose path is the deployed path.
     --app <id|slug>                 Existing App. Omit to create one.
     --slug <slug> --name <name>     New App identity.
     --type static|bundle|dockerfile Source type. Auto-detected for directories.
     --image <oci-reference>         Deploy a public OCI image instead of a path.
     --command <json|string>         Process argv. JSON array is unambiguous.
-    --port <port>                   Required for Dockerfile and OCI deployments.
+    --port <port>                   The primary service port (or http_service.
+                                    internal_port in kortix.yaml). Omit for a
+                                    worker-only App (processes, no service).
     --dockerfile <path>             Default: Dockerfile.
     --root <path>                   Static root inside the archive.
     --output-dir <path>             Bundle output. Default: dist.
@@ -103,7 +115,36 @@ Subcommands:
   logs <id|slug> [deployment-id]    Read runtime logs. --after N --limit N.
   start <id|slug>                   Permit requests and start the App.
   stop <id|slug>                    Suspend now. The next authorized request wakes it.
-  rollback <id|slug> <id|vN>        Move traffic to a ready deployment.
+  rollback <id|slug> <id|vN>        Roll back: a NEW release from that release's artifact
+                                    and config, rolled out like a deploy. Volumes keep their
+                                    data. Waits unless --no-wait.
+  releases <id|slug>                List releases (vN, status, strategy); marks the live one.
+  machines [ls] <id|slug>           List machines: id, process group, state, release, size, volume.
+  machines start|stop|restart <id|slug> <machine>
+  machines destroy <id|slug> <machine>
+                                    Destroy one machine. Its volume stays; its group runs
+                                    one machine fewer.
+  scale count <id|slug> <n>         Machines for a process group (0-20). --process <group>
+                                    (default app). A group with a mount gets one new, empty
+                                    volume per new machine.
+  scale show <id|slug>              Machines per process group.
+  exec <id|slug> -- <command…>      Run one command in a running machine and print its
+                                    output (admins). --machine <id>, --timeout <s> (≤ 300).
+  volumes [ls] <id|slug>            Volumes: name, group, size, attached, retention.
+  volumes create <id|slug> <name> --size <gb> [--process <group>]
+  volumes extend <id|slug> <volume> --size <gb>
+                                    Grow a volume (it never shrinks).
+  volumes snapshots <id|slug> <volume>
+                                    Daily snapshots (kept snapshot_retention_days), manual
+                                    ones and the final one of a destroyed volume.
+  volumes snapshot <id|slug> <volume>
+  volumes restore <id|slug> <volume> <snapshot>
+                                    Restore (admins): its machine stops and comes back on it.
+  volumes fork <id|slug> <volume> <name> [--snapshot <id>]
+                                    A new, unattached copy (instant).
+  volumes destroy <id|slug> <volume> --yes
+                                    Admins. A final snapshot is kept 7 days.
+  labels <id|slug> [a,b]            Show or replace labels (e.g. backend). --clear.
   access <id|slug>                  Read or update access. --mode, --password, --members, --groups.
     --viewer off|identity|api       What the App is told about its viewer. api = a token
                                     that acts as them on the Kortix API (their role caps it).
@@ -189,7 +230,10 @@ export async function runApps(argv: string[]): Promise<number> {
   const helpCode = splitHelp(argv, HELP);
   if (helpCode !== null) return helpCode;
   const subcommand = argv[0];
-  const rest = argv.slice(1);
+  // Everything after `--` is the command `exec` runs, never a kortix flag.
+  const dashdash = argv.indexOf('--');
+  const rest = dashdash === -1 ? argv.slice(1) : argv.slice(1, dashdash);
+  const passthrough = dashdash === -1 ? [] : argv.slice(dashdash + 1);
   try {
     const common = takeCommon(rest);
     switch (subcommand) {
@@ -221,6 +265,20 @@ export async function runApps(argv: string[]): Promise<number> {
         return await stateCommand(subcommand, rest, common.options, common.json);
       case 'rollback':
         return await rollbackCommand(rest, common.options, common.json);
+      case 'releases':
+        return await releasesCommand(rest, common.options, common.json);
+      case 'machines':
+      case 'machine':
+        return await machinesCommand(rest, common.options, common.json);
+      case 'scale':
+        return await scaleCommand(rest, common.options, common.json);
+      case 'exec':
+        return await execCommand(rest, passthrough, common.options, common.json);
+      case 'volumes':
+      case 'volume':
+        return await volumesCommand(rest, common.options, common.json);
+      case 'labels':
+        return await labelsCommand(rest, common.options, common.json);
       case 'access':
         return await accessCommand(rest, common.options, common.json);
       case 'access-link':
@@ -424,7 +482,9 @@ async function deployOne(
   json: boolean,
   results: unknown[],
 ): Promise<number> {
-  const manifestDefaults = loadManifestAppDefaults(process.cwd(), parsed.manifestApp, !pathArgument && !parsed.image);
+  // `--manifest-app`, else the block named by `--app` or declaring this path, else the only block.
+  const manifestName = parsed.manifestApp ?? matchingManifestApp(process.cwd(), { app: parsed.app, path: pathArgument });
+  const manifestDefaults = loadManifestAppDefaults(process.cwd(), manifestName, !pathArgument && !parsed.image);
   const manifestBlock = manifestDefaults?.block;
   const flags = mergeManifestDefaults(parsed, manifestBlock);
   if (flags.image && pathArgument) throw new Error('Use a source path or --image, not both');
@@ -449,6 +509,11 @@ async function deployOne(
       app = await ctx.apps.get(app.app_id);
     }
 
+    if (manifestBlock?.labels && JSON.stringify(manifestBlock.labels) !== JSON.stringify(app.labels ?? [])) {
+      app = await ctx.apps.update(app.app_id, { labels: manifestBlock.labels });
+    }
+    const releaseConfig = appReleaseInputFromBlock(manifestBlock);
+
     let cleanup: (() => Promise<void>) | undefined;
     try {
       const staged = await stageArtifact(ctx.apps, flags, sourcePath, json);
@@ -459,6 +524,8 @@ async function deployOne(
         ...(flags.provider ? { provider: flags.provider } : {}),
         ...(manifestBlock?.env ? { environment: manifestBlock.env } : {}),
         ...(manifestBlock?.secrets ? { secrets: manifestBlock.secrets } : {}),
+        // The release config (Fly model): processes, services, mounts, vm, deploy.
+        ...(releaseConfig ? { config: releaseConfig } : {}),
       });
       if (flags.wait)
         deployment = await waitForDeployment(ctx.apps, app.app_id, deployment, flags.waitSeconds);
@@ -565,18 +632,28 @@ async function rollbackCommand(
   options: ContextOptions,
   json: boolean,
 ): Promise<number> {
+  const wait = !takeFlagBool(rest, ['--no-wait']);
   const positional = rest.filter((value) => !value.startsWith('-'));
-  if (!positional[0] || !positional[1]) return fail('rollback needs an App and deployment id');
+  if (!positional[0] || !positional[1]) return fail('rollback needs an App and a release (vN or its id)');
   const ctx = await context(options);
   if (!ctx) return 1;
-  const app = await scoped(ctx, async () => {
+  const result = await scoped(ctx, async () => {
     const found = await resolveApp(ctx.apps, positional[0]!);
-    const deployment = resolveDeploymentTarget(await ctx.apps.deployments.list(found.app_id), positional[1]!);
-    return ctx.apps.rollback(found.app_id, deployment.deployment_id);
+    const target = resolveDeploymentTarget(await ctx.apps.deployments.list(found.app_id), positional[1]!);
+    // A NEW release from the target's artifact and config (Fly verbatim). A server
+    // from before this answered the App alone, with traffic already moved.
+    const app = (await ctx.apps.rollback(found.app_id, target.deployment_id)) as App & { deployment?: AppDeployment };
+    const release = app.deployment && wait
+      ? await waitForDeployment(ctx.apps, found.app_id, app.deployment, 1200)
+      : app.deployment;
+    return { app, target, release };
   });
-  if (json) emitJson(app);
-  else
-    process.stdout.write(`\n  ${status.ok(`traffic moved to ${positional[1]}`)}\n  ${app.url}\n\n`);
+  if (json) emitJson(result);
+  else if (result.release) {
+    process.stdout.write(
+      `\n  ${status.ok(`v${result.release.version} ${result.release.status}: a rollback to v${result.target.version}`)}\n  ${result.app.url}\n\n`,
+    );
+  } else process.stdout.write(`\n  ${status.ok(`traffic moved to v${result.target.version}`)}\n  ${result.app.url}\n\n`);
   return 0;
 }
 

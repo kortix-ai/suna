@@ -171,6 +171,9 @@ function startServer(): string {
       if (path === `/v1/projects/${PROJECT}/apps/${APP_ID}` && req.method === 'GET') {
         return Response.json(app());
       }
+      if (path === `/v1/projects/${PROJECT}/apps/${APP_ID}` && req.method === 'PATCH') {
+        return Response.json(app(body as Record<string, unknown>));
+      }
       return Response.json({ error: 'not found' }, { status: 404 });
     },
   });
@@ -274,9 +277,54 @@ describe('kortix apps deploy (characterization)', () => {
       source: { kind: 'bundle', output_dir: 'build' },
       environment: { NODE_ENVIRONMENT: 'production' },
       secrets: { DATABASE_URL: 'database-primary' },
+      // The block's release config (Fly model): here only its machine size.
+      config: { resources: { cpu: 2, memory_gb: 4 } },
     });
     expect(r.stdout).toContain('deployment ready');
     expect(r.stdout).toContain('storefront.kortix.test');
+  });
+
+  test('an explicit path still uses the matching kortix.yaml block (spa, mounts, services, labels reach the deploy)', async () => {
+    mkdirSync(join(tmp, 'apps', 'web', 'dist'), { recursive: true });
+    writeFileSync(join(tmp, 'apps', 'web', 'dist', 'index.html'), '<!doctype html>');
+    mkdirSync(join(tmp, 'db'), { recursive: true });
+    writeFileSync(join(tmp, 'db', 'Dockerfile'), 'FROM busybox\n');
+    writeFileSync(join(tmp, 'kortix.yaml'), [
+      'kortix_version: 2',
+      'apps:',
+      '  web:',
+      '    path: apps/web/dist',
+      '    type: static',
+      '    spa: true',
+      '  api:',
+      '    path: db',
+      '    type: dockerfile',
+      '    command: ["/start.sh"]',
+      '    labels: [backend]',
+      '    http_service: { internal_port: 3210, access: public }',
+      '    services:',
+      '      - { name: site, internal_port: 3211, access: public }',
+      '    mounts:',
+      '      - { source: data, destination: /data, initial_size_gb: 10 }',
+      '',
+    ].join('\n'));
+    const config = writeConfig(startServer());
+    // The fieldops agent did exactly this and lost `spa: true`.
+    const web = await runCli(['apps', 'deploy', 'apps/web/dist', '--project', PROJECT], config);
+    expect(web.code).toBe(0);
+    expect((deploymentCall()?.body as { source: { spa?: boolean } }).source.spa).toBe(true);
+    calls = [];
+    // The path `db` is the `api` block's path: the block applies.
+    const api = await runCli(['apps', 'deploy', 'db', '--project', PROJECT], config);
+    expect(api.code).toBe(0);
+    const body = deploymentCall()?.body as { source: Record<string, unknown>; config: Record<string, unknown> };
+    expect(body.source).toMatchObject({ kind: 'dockerfile', command: ['/start.sh'], port: 3210 });
+    expect(body.config).toEqual({
+      http_service: { internal_port: 3210, access: 'public' },
+      services: [{ name: 'site', internal_port: 3211, access: 'public' }],
+      mounts: [{ source: 'data', destination: '/data', initial_size_gb: 10 }],
+    });
+    expect(calls.find((c) => c.method === 'PATCH')?.body).toEqual({ labels: ['backend'] });
   });
 
   test('a directory source is archived and inferred as a bundle from package.json', async () => {

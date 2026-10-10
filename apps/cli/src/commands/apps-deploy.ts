@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { mkdtemp, open, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, resolve as resolvePath } from 'node:path';
 import type { AppBlockV2 } from '@kortix/manifest-schema';
 import type {
   App,
@@ -190,6 +190,8 @@ interface DeployFlags {
   groupIds?: string[];
   /** `--always-on` / `--on-demand`: applied to a new App, or to the existing one. */
   alwaysOn?: boolean;
+  /** A worker-only App (process groups, no http service): no port. */
+  workerOnly?: boolean;
 }
 
 export function deployFlags(rest: string[]): DeployFlags {
@@ -256,6 +258,22 @@ export function loadManifestApps(cwd: string): { root: string; blocks: Record<st
   return { root: dirname(manifest.path), blocks: rawApps as Record<string, AppBlockV2> };
 }
 
+/**
+ * The `apps.<name>` block a deploy targets when no `--manifest-app` names one:
+ * the block named by `--app`, else the block whose `path` is the source path.
+ * Without it, `kortix apps deploy apps/web --app web` ignored the block (its
+ * `spa: true` among others).
+ */
+export function matchingManifestApp(cwd: string, input: { app?: string; path?: string }): string | undefined {
+  const loaded = loadManifestApps(cwd);
+  if (!loaded) return undefined;
+  if (input.app && loaded.blocks[input.app]) return input.app;
+  if (!input.path) return undefined;
+  const wanted = resolvePath(cwd, input.path);
+  return Object.entries(loaded.blocks)
+    .find(([, block]) => resolvePath(loaded.root, block.path ?? '.') === wanted)?.[0];
+}
+
 export function loadManifestAppDefaults(
   cwd: string,
   requestedName?: string,
@@ -289,7 +307,6 @@ export function mergeManifestDefaults(
     type: flags.type ?? manifestBlock?.type,
     image: flags.image ?? manifestBlock?.image,
     command: flags.command ?? manifestBlock?.command,
-    port: flags.port ?? manifestBlock?.port,
     dockerfile: flags.dockerfile ?? manifestBlock?.dockerfile,
     root: flags.root ?? manifestBlock?.root,
     outputDir: flags.outputDir ?? manifestBlock?.output_dir,
@@ -297,6 +314,10 @@ export function mergeManifestDefaults(
     buildCommand: flags.buildCommand ?? manifestBlock?.build_command,
     readinessPath: flags.readinessPath ?? manifestBlock?.readiness_path,
     spa: flags.spa ?? manifestBlock?.spa,
+    // The primary service's port: `port`, else `http_service.internal_port`.
+    port: flags.port ?? manifestBlock?.port ?? (manifestBlock?.http_service?.internal_port as number | undefined),
+    // Process groups without an http service: a worker-only App serves no port.
+    workerOnly: Boolean(manifestBlock?.processes) && manifestBlock?.port === undefined && !manifestBlock?.http_service,
   };
 }
 
@@ -331,13 +352,13 @@ function buildSource(kind: 'static' | 'bundle' | 'dockerfile', flags: DeployFlag
       ...(flags.readinessPath ? { readiness_path: flags.readinessPath } : {}),
     };
   }
-  if (!flags.command || !flags.port) {
-    throw new Error('Dockerfile deployments require --command and --port');
+  if (!flags.command || (!flags.port && !flags.workerOnly)) {
+    throw new Error('Dockerfile deployments require --command and --port (or http_service.internal_port)');
   }
   return {
     kind,
     command: flags.command,
-    port: flags.port,
+    ...(flags.port ? { port: flags.port } : {}),
     ...(flags.dockerfile ? { dockerfile: flags.dockerfile } : {}),
     ...(flags.readinessPath ? { readiness_path: flags.readinessPath } : {}),
   };
@@ -482,8 +503,8 @@ export async function stageArtifact(
   json: boolean,
 ): Promise<{ artifactId: string; source: AppSource; cleanup?: () => Promise<void> }> {
   if (flags.image) {
-    if (!flags.command || !flags.port)
-      throw new Error('OCI deployments require --command and --port');
+    if (!flags.command || (!flags.port && !flags.workerOnly))
+      throw new Error('OCI deployments require --command and --port (or http_service.internal_port)');
     const registered = await apps.artifacts.register({ kind: 'oci_image', image: flags.image });
     return {
       artifactId: registered.artifact.artifact_id,
@@ -491,7 +512,7 @@ export async function stageArtifact(
         kind: 'oci_image',
         image: flags.image,
         command: flags.command,
-        port: flags.port,
+        ...(flags.port ? { port: flags.port } : {}),
         ...(flags.readinessPath ? { readiness_path: flags.readinessPath } : {}),
       },
     };

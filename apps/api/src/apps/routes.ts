@@ -121,7 +121,8 @@ const SourceSchema = z.discriminatedUnion('kind', [
     kind: z.literal('dockerfile'),
     dockerfile: z.string().optional(),
     command: z.array(z.string()).min(1),
-    port: z.number().int(),
+    /** The primary service's port; omitted for a worker-only App (process groups, no service). */
+    port: z.number().int().optional(),
     readiness_path: z.string().optional(),
     restart_limit: z.number().int().optional(),
   }),
@@ -129,7 +130,8 @@ const SourceSchema = z.discriminatedUnion('kind', [
     kind: z.literal('oci_image'),
     image: z.string(),
     command: z.array(z.string()).min(1),
-    port: z.number().int(),
+    /** The primary service's port; omitted for a worker-only App (process groups, no service). */
+    port: z.number().int().optional(),
     readiness_path: z.string().optional(),
     restart_limit: z.number().int().optional(),
   }),

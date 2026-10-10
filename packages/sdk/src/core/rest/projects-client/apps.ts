@@ -329,7 +329,8 @@ export interface DockerfileAppSource extends BaseAppSource {
   kind: 'dockerfile';
   dockerfile?: string;
   command: string[];
-  port: number;
+  /** The primary service's port; omitted for a worker-only App. */
+  port?: number;
   restart_limit?: number;
 }
 
@@ -337,7 +338,8 @@ export interface OciImageAppSource extends BaseAppSource {
   kind: 'oci_image';
   image: string;
   command: string[];
-  port: number;
+  /** The primary service's port; omitted for a worker-only App. */
+  port?: number;
   restart_limit?: number;
 }
 
