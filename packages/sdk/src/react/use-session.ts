@@ -1159,6 +1159,12 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const startEnabled = enabled && !!projectId && !!sessionId;
   // Read by `/start`'s refetch interval, which runs outside render.
   const streamConnectedRef = useRef(false);
+  // The session a Stop in THIS tab stopped. Until something else brings the
+  // box back (a restart, a new message), every `/start` this hook sends is a
+  // keep-alive poll: it reports the stop, it never undoes it. Without this, a
+  // session stopped before it was ever `ready` went on polling as an open, and
+  // the first poll after the stop woke it again.
+  const stoppedByUserRef = useRef<string | null>(null);
   const start = useQuery({
     queryKey: sessionStartKey(projectId, sessionId),
     // Once live, only a lifecycle fact leaves live (hold-live-start.ts).
@@ -1166,20 +1172,26 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       const previous = queryClient.getQueryData<SessionStartResult | null>(
         sessionStartKey(projectId, sessionId),
       );
-      const mode = liveStartPollMode(previous, typeof document !== 'undefined' && document.hidden);
+      const heldByStop = stoppedByUserRef.current === sessionId;
+      const mode = heldByStop
+        ? 'keep-stopped'
+        : liveStartPollMode(previous, typeof document !== 'undefined' && document.hidden);
       // A background tab that shows the session ready does not poll: the poll
       // only keeps a box alive for nobody. The next visible fetch revalidates.
       if (mode === 'skip' && previous) return previous;
-      return holdLiveStart(
-        previous,
-        await startProjectSession(projectId, sessionId, {
-          waitMs,
-          repositoryMode,
-          // The keep-alive poll must report a user Stop or an idle park, never
-          // undo it. An open (no ready answer cached yet) wakes the box as before.
-          keepStopped: mode === 'keep-stopped',
-        }),
-      );
+      const next = await startProjectSession(projectId, sessionId, {
+        waitMs,
+        repositoryMode,
+        // The keep-alive poll must report a user Stop or an idle park, never
+        // undo it. An open (no ready answer cached yet) wakes the box as before.
+        keepStopped: mode === 'keep-stopped',
+      });
+      // Anything but `stopped` means the box is coming back by an explicit
+      // action elsewhere (a restart, a sent message): this tab follows it.
+      if (heldByStop && next && next.stage !== 'stopped' && stoppedByUserRef.current === sessionId) {
+        stoppedByUserRef.current = null;
+      }
+      return holdLiveStart(previous, next);
     },
     enabled: startEnabled,
     retry: (failureCount, error) => shouldRetrySessionStart(failureCount, error, sessionId),
@@ -1202,6 +1214,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     if (!startEnabled) return;
     return onSessionStopped((stoppedId) => {
       if (stoppedId !== sessionId) return;
+      stoppedByUserRef.current = sessionId;
       void queryClient.invalidateQueries({ queryKey: sessionStartKey(projectId, sessionId) });
     });
   }, [startEnabled, projectId, sessionId, queryClient]);
@@ -2025,6 +2038,8 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     removePermission,
     /** Force a re-poll of /start (e.g. a Retry button on the boot screen). */
     retry: () => {
+      // An explicit retry is an open, whatever this tab stopped before.
+      stoppedByUserRef.current = null;
       void start.refetch();
     },
   };
