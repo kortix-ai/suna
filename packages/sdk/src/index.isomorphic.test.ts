@@ -133,6 +133,19 @@ test('root export graph pulls no react/next/zustand/react-query code', () => {
   }
 });
 
+/** Optional peers of `./genui` only. A host that never imports `./genui` never installs them. */
+const OPTIONAL_PEER = /^(?:@openuidev\/|zod(?:\/|$))/;
+
+test('root `.` and `./react` graphs never reach the genui optional peers (zod, @openuidev/*)', () => {
+  for (const entry of ['index.ts', 'react/index.ts']) {
+    const { externals } = collectGraph(join(SRC_ROOT, entry));
+    const leaks = [...externals]
+      .filter(([spec]) => OPTIONAL_PEER.test(spec))
+      .map(([spec, importers]) => `${entry}: "${spec}" imported by ${importers.join(', ')}`);
+    expect(leaks).toEqual([]);
+  }
+});
+
 test("root export graph has no 'use client' directives", () => {
   const { files } = collectRootGraph();
   for (const file of files) {
