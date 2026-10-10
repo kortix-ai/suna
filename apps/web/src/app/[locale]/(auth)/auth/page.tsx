@@ -23,7 +23,12 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { type FormEvent, Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { EmailLinkStep } from './email-link-step';
 import { resolveAuthMode } from './actions';
-import { submitAuthForm } from '@/lib/auth/submit-auth';
+import {
+  AUTH_NETWORK_MESSAGE,
+  AUTH_TIMEOUT_MESSAGE,
+  AUTH_UNEXPECTED_MESSAGE,
+  submitAuthForm,
+} from '@/lib/auth/submit-auth';
 import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -261,13 +266,19 @@ function AuthCardForm({
   };
 
   // A bounded submit's failure notice: server-provided copy for server
-  // rejections, translated copy for the local failure modes.
-  const noticeFor = (failure: { reason: string; message: string }) =>
-    failure.reason === 'timeout'
-      ? t('errors.submitTimedOut')
-      : failure.reason === 'network'
-        ? t('errors.networkFailed')
-        : failure.message;
+  // rejections, translated copy for the local failure modes. The bounded
+  // layers answer with submit-auth's English sentinel messages (a 20 s GoTrue
+  // bound inside an action, the route's 25 s fallback, a 403/500 body) — map
+  // each sentinel back to its translated key so the visitor reads the notice
+  // in their language whichever layer fired.
+  const noticeFor = (failure: { reason: string; message: string }) => {
+    if (failure.reason === 'timeout') return t('errors.submitTimedOut');
+    if (failure.reason === 'network') return t('errors.networkFailed');
+    if (failure.message === AUTH_TIMEOUT_MESSAGE) return t('errors.submitTimedOut');
+    if (failure.message === AUTH_NETWORK_MESSAGE) return t('errors.networkFailed');
+    if (failure.message === AUTH_UNEXPECTED_MESSAGE) return t('errors.unexpected');
+    return failure.message;
+  };
 
   const goToEntry = () => {
     clearNotices();

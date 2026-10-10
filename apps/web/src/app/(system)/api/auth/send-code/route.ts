@@ -32,7 +32,8 @@ export async function POST(req: NextRequest) {
       message: AUTH_TIMEOUT_MESSAGE,
     }));
     return NextResponse.json(result);
-  } catch {
+  } catch (err) {
+    console.error('[api/auth/send-code] POST error:', err);
     return NextResponse.json({ message: AUTH_UNEXPECTED_MESSAGE }, { status: 500 });
   }
 }

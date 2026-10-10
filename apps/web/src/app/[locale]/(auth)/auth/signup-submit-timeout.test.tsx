@@ -43,6 +43,9 @@ const hangResolvers: ((outcome: Outcome) => void)[] = [];
 
 mock.module('@/lib/auth/submit-auth', () => ({
   AUTH_SUBMIT_TIMEOUT_MS: 30_000,
+  AUTH_TIMEOUT_MESSAGE: 'This is taking longer than expected. Please try again.',
+  AUTH_NETWORK_MESSAGE: 'The request could not be sent. Please try again.',
+  AUTH_UNEXPECTED_MESSAGE: 'Something went wrong. Please try again.',
   submitAuthForm: async (path: string, body: FormData) => {
     submits.push({ path, body });
     if (hangSubmits) {
@@ -128,5 +131,34 @@ test('a submit in flight blocks a second submission until it settles', async () 
     hangSubmits = false;
     hangResolvers.length = 0;
     await act(async () => root.unmount());
+  }
+});
+
+test('a server-side timeout answers in the visitor\'s language, not the English sentinel', async () => {
+  // The bounded layers behind the route (a 20 s GoTrue bound inside the
+  // action, the route's own 25 s fallback, a 403/500 body) answer with
+  // submit-auth's English sentinel message — the page must map it to the
+  // translated key. Assert against a non-English locale so the mapping itself
+  // is what the assertion observes: the en copy equals the sentinel and would
+  // pass either way.
+  const deMessages = (await import('../../../../../translations/de.json')).default;
+  outcomes = [{ ok: false, message: 'This is taking longer than expected. Please try again.' }];
+  let root: NonNullable<ReturnType<typeof create>> | undefined;
+  await act(async () => {
+    root = create(
+      createElement(NextIntlClientProvider, { locale: 'de', messages: deMessages }, createElement(AuthPage)),
+    );
+  });
+  try {
+    const email = root!.root.findByProps({ autoComplete: 'email' });
+    await act(async () => email.props.onChange({ target: { value: 'synthetic@example.test' } }));
+    await act(async () => root!.root.findByType('form').props.onSubmit({ preventDefault() {} }));
+    const text = JSON.stringify(root!.toJSON());
+    expect(text).toContain('Das dauert länger als erwartet. Bitte versuche es erneut.');
+    expect(text).not.toContain('This is taking longer than expected');
+    const submit = root!.root.findByProps({ type: 'submit' });
+    expect(submit.props.disabled).toBe(false);
+  } finally {
+    await act(async () => root!.unmount());
   }
 });

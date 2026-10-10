@@ -136,7 +136,7 @@ test('an action that never settles still answers within the route bound', async 
   expect(String(body.message).toLowerCase()).toContain('try again');
 });
 
-test('an action that throws answers 500 with a JSON error, never a hung response', async () => {
+test('an action that throws answers 500 with a JSON error, never a hung response, and leaves a trace', async () => {
   // Deferred so the route attaches its catch before the rejection fires —
   // an immediately-rejected promise would be flagged unhandled and poison
   // sibling suites running in the same process.
@@ -144,8 +144,20 @@ test('an action that throws answers 500 with a JSON error, never a hung response
     new Promise((_resolve, reject) => {
       setTimeout(() => reject(new Error('boom')), 5);
     });
-  const res = await sendCodePost(sendCodeRequest('http://localhost:13000'));
-  expect(res.status).toBe(500);
-  const body = await res.json() as { message?: string };
-  expect(body.message).toBeTruthy();
+  // The 500 must not swallow the cause: an unexpected throw in the auth
+  // actions needs a server-side log line to be diagnosable.
+  const errors: unknown[][] = [];
+  const originalError = console.error;
+  console.error = (...args: unknown[]) => {
+    errors.push(args);
+  };
+  try {
+    const res = await sendCodePost(sendCodeRequest('http://localhost:13000'));
+    expect(res.status).toBe(500);
+    const body = await res.json() as { message?: string };
+    expect(body.message).toBeTruthy();
+    expect(errors.some((args) => String(args[0]).includes('[api/auth/send-code]') && String(args[1]).includes('boom'))).toBe(true);
+  } finally {
+    console.error = originalError;
+  }
 });
