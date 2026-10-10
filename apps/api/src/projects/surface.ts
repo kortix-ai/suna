@@ -77,3 +77,6 @@ export const releaseProjectEventSubscriptions: typeof import('./trigger-events/s
 
 // Drive sync's last push before a synced box loses a writable folder (consumed by drives/service.ts).
 export { flushDriveSyncBeforeStop } from './reaping/stop-box';
+
+// The transcript mirror's rewind marker (consumed by ../sandbox-proxy).
+export { setTranscriptRewindMarker } from './lib/session-transcript-mirror';

@@ -2409,6 +2409,12 @@ export const sessionTranscriptMirrors = kortixSchema.table(
     capturedAt: timestamp('captured_at', { withTimezone: true }).defaultNow().notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    // The message an OpenCode rewind (`POST /session/:id/revert`, seen by the
+    // sandbox proxy) points at. Set on the revert, cleared on `unrevert`.
+    // The ONLY licence a capture has to delete a stored row: a read that
+    // lacks this message deletes the rows from it onward that the read
+    // lacks, then clears it. Without it every read merges.
+    rewindMessageId: text('rewind_message_id'),
   },
   (table) => [
     // Named explicitly: the drizzle-derived name

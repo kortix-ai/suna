@@ -15,7 +15,9 @@ import { STRIP_FORWARD_HEADERS, clientResponseHeaders } from '../preview-respons
 import { EFFECTIVE_MESSAGE_ID_HEADER } from '../prompt-wire-id-repair';
 import { proxyAttemptTimeoutMs } from '../preview-retry-budget';
 import { releasePromptDelivery } from '../prompt-dedupe';
-import { classifyRuntimeRequest } from '../runtime-request';
+import { classifyRuntimeRequest, revertBodyMessageId } from '../runtime-request';
+import { carriesSessionData } from '../session-data-ports';
+import { logger } from '../../lib/logger';
 import { recordSseStreamEnd, trackSseBytes } from '../sse-stall';
 import type { ForwardRequest, ForwardState } from './context';
 
@@ -254,6 +256,7 @@ export async function respondFromUpstream(
     // second header — see that module's doc for why.
     recordTurnStageMarks(summary.marks);
   }
+  await recordAcceptedRewind(req, state, upstream);
   // A HUMAN IS USING THIS BOX'S PREVIEW. The turn-start observation already
   // happened before the forward (see above); this is the other
   // control-plane-observed signal: an authenticated account member driving
@@ -414,4 +417,31 @@ export async function respondFromUpstream(
     statusText: upstream.statusText,
     headers: respHeaders,
   });
+}
+
+/**
+ * A rewind OpenCode ACCEPTED: record (`revert`) or clear (`unrevert`) the
+ * transcript mirror's rewind marker, the only licence a capture has to delete
+ * saved rows. Awaited before the client hears the answer, so the capture of
+ * the prompt that commits the rewind already sees it; the marker lives in
+ * Postgres, so every API replica sees it. pi answers 501: nothing recorded.
+ */
+async function recordAcceptedRewind(req: ForwardRequest, state: ForwardState, upstream: Response): Promise<void> {
+  if (!upstream.ok || !carriesSessionData(req.upstreamPort)) return;
+  const rewind = classifyRuntimeRequest(req.method, req.remainingPath);
+  if (rewind.kind !== 'revert' && rewind.kind !== 'unrevert') return;
+  const messageId = rewind.kind === 'revert' ? revertBodyMessageId(state.requestBody) : null;
+  if (rewind.kind === 'revert' && !messageId) return;
+  try {
+    const { setTranscriptRewindMarker } = await import('../../projects/surface');
+    await setTranscriptRewindMarker(req.record.sessionId, rewind.runtimeSessionId, messageId);
+  } catch (err) {
+    // The rewind itself succeeded. A missing marker only keeps the rewound
+    // rows in saved history; it never deletes one.
+    logger.warn('[transcript-mirror] rewind marker not recorded', {
+      session_id: req.record.sessionId,
+      kind: rewind.kind,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 }

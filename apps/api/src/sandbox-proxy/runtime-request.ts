@@ -26,12 +26,15 @@ export type RuntimeRequest =
     }
   | { kind: 'abort'; runtimeSessionId: string; prefix: string }
   | { kind: 'message-list'; runtimeSessionId: string; prefix: string }
+  /** OpenCode's rewind: `revert` stages one, `unrevert` undoes it. */
+  | { kind: 'revert' | 'unrevert'; runtimeSessionId: string; prefix: string }
   | { kind: 'other' };
 
 const OTHER: RuntimeRequest = { kind: 'other' };
 const PREFIX = /^\/proxy\/\d+(?=\/)/;
 const KORTIX = /^\/kortix\/(?:runtime|opencode)\/sessions\/([^/?#]+)\/(prompt|abort)\/?$/;
 const NATIVE = /^\/session\/([^/?#]+)\/(prompt_async|message|command|summarize|abort)(?=$|[/?#])(.*)$/;
+const REWIND = /^\/session\/([^/?#]+)\/(revert|unrevert)\/?(?:$|[?#])/;
 
 /**
  * Drop the in-box dynamic-port nesting a client may address through, so one
@@ -62,6 +65,13 @@ export function classifyRuntimeRequest(method: string, path: string): RuntimeReq
     return kortix[2] === 'prompt'
       ? { kind: 'turn-start', verb: 'prompt', runtimeSessionId, prefix }
       : { kind: 'abort', runtimeSessionId, prefix };
+  }
+
+  const rewind = REWIND.exec(bare);
+  if (rewind) {
+    const runtimeSessionId = decodeSegment(rewind[1]!);
+    if (verb !== 'POST' || !runtimeSessionId) return OTHER;
+    return { kind: rewind[2] === 'revert' ? 'revert' : 'unrevert', runtimeSessionId, prefix };
   }
 
   const native = NATIVE.exec(bare);
@@ -98,5 +108,17 @@ export function turnStartBodyFields(body: ArrayBuffer | undefined): {
     };
   } catch {
     return { messageId: null, noReply: false };
+  }
+}
+
+/** The message a `POST /session/:id/revert` body rewinds to (`messageID`). */
+export function revertBodyMessageId(body: ArrayBuffer | undefined): string | null {
+  if (!body?.byteLength) return null;
+  try {
+    const parsed = JSON.parse(new TextDecoder().decode(body)) as { messageID?: unknown } | null;
+    const id = parsed?.messageID;
+    return typeof id === 'string' && id.trim() ? id.trim() : null;
+  } catch {
+    return null;
   }
 }
