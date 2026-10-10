@@ -37,6 +37,15 @@ export function positiveNumber(value: string | undefined, label: string): number
   return number;
 }
 
+/**
+ * `--budget <usd>` is retired: Apps have no budget. Consume it, so its value
+ * is never read as a path or an App id, and say it was ignored.
+ */
+export function dropRetiredBudgetFlag(rest: string[]): void {
+  if (takeFlagValue(rest, ['--budget']) === undefined) return;
+  process.stderr.write('  ! --budget is ignored: Apps have no budget. Account credits pay for App compute.\n');
+}
+
 export function positiveInteger(value: string | undefined, label: string): number | undefined {
   const number = positiveNumber(value, label);
   if (number !== undefined && !Number.isInteger(number))
@@ -181,11 +190,10 @@ interface DeployFlags {
   groupIds?: string[];
   /** `--always-on` / `--on-demand`: applied to a new App, or to the existing one. */
   alwaysOn?: boolean;
-  /** `--budget <usd>`: the monthly compute budget, applied like `alwaysOn`. */
-  budget?: number;
 }
 
 export function deployFlags(rest: string[]): DeployFlags {
+  dropRetiredBudgetFlag(rest);
   const provider = takeFlagValue(rest, ['--provider']) as AppHostingProvider | undefined;
   if (provider && !['daytona', 'platinum', 'e2b'].includes(provider)) {
     throw new Error('--provider must be daytona, platinum, or e2b');
@@ -230,7 +238,6 @@ export function deployFlags(rest: string[]): DeployFlags {
     memberIds: csv(takeFlagValue(rest, ['--members'])),
     groupIds: csv(takeFlagValue(rest, ['--groups'])),
     alwaysOn: alwaysOn ? true : onDemand ? false : undefined,
-    budget: positiveNumber(takeFlagValue(rest, ['--budget']), '--budget'),
   };
 }
 
@@ -397,27 +404,6 @@ export async function readAppArchive(source: string): Promise<Uint8Array> {
 }
 
 /**
- * A manifest budget applies only to an on-demand server App. On an always-on
- * or convex App the cost is fixed (size × 24/7), so the API refuses a budget;
- * an older kortix.yaml that still sets one deploys with a notice instead of failing.
- */
-export function manifestBudget(
-  block: ManifestAppDefaults['block'] | undefined,
-  existing: App | undefined,
-  flags: DeployFlags,
-): number | undefined {
-  const budget = block?.monthly_budget_usd;
-  if (budget === undefined) return undefined;
-  const kind = block?.kind ?? existing?.kind ?? 'web';
-  const alwaysOn = flags.alwaysOn ?? block?.always_on ?? existing?.always_on ?? true;
-  if (kind === 'web' && alwaysOn === false) return budget;
-  process.stderr.write(
-    `  ! monthly_budget_usd in kortix.yaml is ignored: a ${kind === 'convex' ? 'convex' : 'always-on'} App has a fixed monthly cost. Remove it, or set always_on: false for a budget.\n`,
-  );
-  return undefined;
-}
-
-/**
  * Resolve or create the App a deployment targets: an explicit --app, else the
  * manifest block's identity (updating an existing slug in place), else one
  * derived from the image reference or source path.
@@ -430,13 +416,10 @@ export async function provisionDeployApp(
 ): Promise<App> {
   const flagSettings = {
     ...(flags.alwaysOn === undefined ? {} : { always_on: flags.alwaysOn }),
-    ...(flags.budget === undefined ? {} : { monthly_budget_usd: flags.budget }),
   };
   if (flags.app) {
     const app = await resolveApp(apps, flags.app);
-    const changed =
-      (flags.alwaysOn !== undefined && app.always_on !== flags.alwaysOn) ||
-      (flags.budget !== undefined && app.monthly_budget_usd !== flags.budget);
+    const changed = flags.alwaysOn !== undefined && app.always_on !== flags.alwaysOn;
     return changed ? apps.update(app.app_id, flagSettings) : app;
   }
   if (manifestDefaults) {
@@ -455,9 +438,6 @@ export async function provisionDeployApp(
         ? { idle_timeout_seconds: manifestBlock.idle_timeout_seconds }
         : {}),
       ...(manifestBlock?.always_on !== undefined ? { always_on: manifestBlock.always_on } : {}),
-      ...(manifestBudget(manifestBlock, existing, flags) !== undefined
-        ? { monthly_budget_usd: manifestBudget(manifestBlock, existing, flags) }
-        : {}),
       ...flagSettings,
       // The Apps this App uses; the manifest's list replaces the App's.
       ...(manifestBlock?.uses !== undefined ? { uses: manifestBlock.uses } : {}),
@@ -479,12 +459,12 @@ export async function provisionDeployApp(
 }
 
 /**
- * What a server App costs: "Runs 24/7 on 1 vCPU / 2 GB: about $73/month".
+ * What an always-on App costs: "Runs 24/7 on 1 vCPU / 2 GB: about $73/month".
  * Null for an on-demand or static App, or when the server predates the estimate.
  */
 export function runCostLine(app: App): string | null {
   const estimate = app.estimated_monthly_usd;
-  if (typeof app.monthly_budget_usd === 'number' || !estimate || app.hosting_type === 'static') return null;
+  if (app.always_on === false || !estimate || app.hosting_type === 'static') return null;
   return (
     `Runs 24/7 on ${app.machine.cpu} vCPU / ${app.machine.memory_gb} GB: ` +
     `about $${Math.round(estimate)}/month`

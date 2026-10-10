@@ -782,6 +782,14 @@ apps:
     expect(issue?.message).toContain('uses');
   });
 
+  test('the retired `monthly_budget_usd` field warns and still validates: Apps have no budget', () => {
+    const result = validateManifest('kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\napps:\n  api:\n    always_on: false\n    monthly_budget_usd: 5', 'yaml');
+    expect(result.issues.filter((entry) => entry.severity === 'error')).toEqual([]);
+    const issue = result.issues.find((entry) => entry.path === 'apps.api.monthly_budget_usd');
+    expect(issue?.severity).toBe('warning');
+    expect(issue?.message).toContain('no budget');
+  });
+
   test('rejects invalid v2 App ports, commands, resources, and secret mappings', () => {
     const result = validateManifest(
       `kortix_version: 2

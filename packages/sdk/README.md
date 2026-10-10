@@ -422,9 +422,9 @@ const browserSession = await apps.access.session(app.app_id);
 
 Access modes are `private`, `project`, `restricted`, `public`, and `password`. An access session exchanges a five-minute URL for an eight-hour, host-only cookie. A stopped or idle App resumes on the same public request. Transient machine requests receive `202 app_starting` and `Retry-After: 3`.
 
-Every App has a `kind`, fixed at create: `web` (the default: a site or a server built from its deployments) or `convex` (a self-hosted Convex backend in its own always-on machine, with no budget). Branch on `app.capabilities`, never on the kind. A call for a capability the App lacks answers `409 app_capability_unsupported`.
+Every App has a `kind`, fixed at create: `web` (the default: a site or a server built from its deployments) or `convex` (a self-hosted Convex backend in its own always-on machine). Branch on `app.capabilities`, never on the kind. A call for a capability the App lacks answers `409 app_capability_unsupported`.
 
-`apps.list()` returns only the Apps the caller may open under each App's access policy (a project manager sees all), so `viewer_can_access` is `true` on every listed App. A `get` of an App the caller cannot open answers `404`. Only an on-demand server App has a `monthly_budget_usd`; an always-on or `convex` App has `null` and a fixed `estimated_monthly_usd`, and a budget on one answers `400 app_budget_not_applicable`.
+`apps.list()` returns only the Apps the caller may open under each App's access policy (a project manager sees all), so `viewer_can_access` is `true` on every listed App. A `get` of an App the caller cannot open answers `404`. Apps have no budget: account credits pay for App compute. `estimated_monthly_usd` is the machine's 24/7 monthly cost: the fixed cost of an always-on or `convex` App, the most an on-demand one can cost.
 
 ```ts
 const db = await apps.create({ slug: 'db', name: 'Database', kind: 'convex' });

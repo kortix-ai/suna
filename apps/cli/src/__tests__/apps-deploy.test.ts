@@ -53,7 +53,6 @@ function app(overrides: Record<string, unknown> = {}) {
     active_deployment_id: null,
     machine: { cpu: 1, memory_gb: 2, disk_gb: 10 },
     idle_timeout_seconds: 300,
-    monthly_budget_usd: 5,
     last_request_at: null,
     created_at: '2026-01-01T00:00:00.000Z',
     updated_at: '2026-01-01T00:00:00.000Z',
@@ -387,16 +386,16 @@ describe('kortix apps deploy (characterization)', () => {
     expect(r.stderr).toContain('kortix.yaml has no apps.nope block');
   });
 
-  test('--budget is sent to the server, which decides; no budget warning is printed', async () => {
+  test('the retired --budget flag is ignored with a notice: its value is never read as the path, and nothing sends a budget', async () => {
     appFields = { always_on: true, estimated_monthly_usd: 73.48 };
     mkdirSync(join(tmp, 'site'), { recursive: true });
     writeFileSync(join(tmp, 'site', 'package.json'), '{"name":"site"}\n');
     const config = writeConfig(startServer());
-    const r = await runCli(['apps', 'deploy', 'site', '--budget', '20', '--project', PROJECT], config);
+    const r = await runCli(['apps', 'deploy', '--budget', '20', 'site', '--project', PROJECT], config);
     expect(r.code).toBe(0);
     const create = calls.find((c) => c.method === 'POST' && c.path === `/v1/projects/${PROJECT}/apps`);
-    expect(create?.body).toEqual({ slug: 'site', name: 'site', monthly_budget_usd: 20 });
-    expect(r.stderr).not.toContain('monthly budget');
+    expect(create?.body).toEqual({ slug: 'site', name: 'site' });
+    expect(r.stderr).toContain('--budget is ignored: Apps have no budget');
     expect(r.stdout).toContain('deployment ready');
   });
 
@@ -407,7 +406,7 @@ describe('kortix apps deploy (characterization)', () => {
     const staticRun = await runCli(['apps', 'deploy', 'bundle.tar.gz', '--project', PROJECT], config);
     expect(staticRun.code).toBe(0);
     expect(staticRun.stderr).not.toContain('runs 24/7');
-    appFields = { always_on: true, estimated_monthly_usd: 73.48, monthly_budget_usd: null };
+    appFields = { always_on: true, estimated_monthly_usd: 73.48 };
     mkdirSync(join(tmp, 'site'), { recursive: true });
     writeFileSync(join(tmp, 'site', 'package.json'), '{"name":"site"}\n');
     const serverRun = await runCli(['apps', 'deploy', 'site', '--project', PROJECT], config);
@@ -416,7 +415,7 @@ describe('kortix apps deploy (characterization)', () => {
   });
 
   test('a server deploy prints the 24/7 cost line; a static deploy and an on-demand App do not', async () => {
-    appFields = { always_on: true, estimated_monthly_usd: 73.48, monthly_budget_usd: null };
+    appFields = { always_on: true, estimated_monthly_usd: 73.48 };
     writeFileSync(join(tmp, 'bundle.tar.gz'), new Uint8Array([0x1f, 0x8b, 8, 0]));
     mkdirSync(join(tmp, 'site'), { recursive: true });
     writeFileSync(join(tmp, 'site', 'package.json'), '{"name":"site"}\n');
@@ -429,13 +428,6 @@ describe('kortix apps deploy (characterization)', () => {
     appFields = { always_on: false, estimated_monthly_usd: 73.48 };
     const onDemand = await runCli(['apps', 'deploy', 'site', '--project', PROJECT], config);
     expect(onDemand.stdout).not.toContain('Runs 24/7');
-  });
-
-  test('--budget must be a positive number', async () => {
-    const config = writeConfig(startServer());
-    const r = await runCli(['apps', 'deploy', 'site', '--budget', 'lots', '--project', PROJECT], config);
-    expect(r.code).toBe(1);
-    expect(r.stderr).toContain('--budget must be positive');
   });
 
   test('an unknown deploy flag is rejected', async () => {

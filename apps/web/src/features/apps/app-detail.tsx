@@ -21,17 +21,16 @@ import { relativeTime } from '@/lib/relative-time';
 import { cn } from '@/lib/utils';
 import { type App, type AppDeployment } from '@kortix/sdk';
 import { useAppAccess, useAppDeployment, useAppDeployments, useProjectApps } from '@kortix/sdk/react';
-import { ArrowSquareOutIcon, ArrowsOutSimpleIcon, CaretDownIcon, CaretRightIcon, ClockCounterClockwiseIcon, CurrencyDollarIcon, DotsThreeIcon, KeyIcon, LockKeyIcon, PauseIcon, PlayIcon, PlugsConnectedIcon, ArchiveIcon, TrashIcon, XIcon } from '@phosphor-icons/react';
+import { ArrowSquareOutIcon, ArrowsOutSimpleIcon, CaretDownIcon, CaretRightIcon, ClockCounterClockwiseIcon, DotsThreeIcon, KeyIcon, LockKeyIcon, PauseIcon, PlayIcon, PlugsConnectedIcon, ArchiveIcon, TrashIcon, XIcon } from '@phosphor-icons/react';
 
 import { useState } from 'react';
 
 import { AppPreview } from './app-preview';
 import { AppAccessModal } from './app-access';
-import { AppBudgetModal } from './app-budget';
 import { AppConnectDialog } from './app-connect';
 import { AppDashboard } from './app-dashboard';
 import { AppSnapshotsDialog, ResizeAppDialog, instanceOperationError } from './app-instance-dialogs';
-import { localizedAppCopy, appCan, appCommand, appCostLabel, appHasBudget, appHost, appKindLabel, appSizeLabel, appStatus, deployNotice, DeployCommand } from './app-shared';
+import { localizedAppCopy, appCan, appCommand, appCostLabel, appHost, appKindLabel, appSizeLabel, appStatus, deployNotice, DeployCommand } from './app-shared';
 
 /**
  * The App, full screen, with its controls above it.
@@ -77,7 +76,7 @@ export function AppDetailModal({
   // The deployment whose events and build log are unfolded in the version drawer.
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [overlay, setOverlay] = useState<
-    'access' | 'delete' | 'budget' | 'resize' | 'snapshots' | 'connect' | 'rotate' | null
+    'access' | 'delete' | 'resize' | 'snapshots' | 'connect' | 'rotate' | null
   >(null);
   // An App with snapshots holds data: its delete needs project.app.admin and
   // the slug typed back (the API answers 400 `confirmation_required` without it).
@@ -281,15 +280,6 @@ export function AppDetailModal({
                         </span>
                       </DropdownMenuItem>
                     ) : null}
-                    {canWrite && appHasBudget(app) ? (
-                      <DropdownMenuItem onClick={() => setOverlay('budget')}>
-                        <CurrencyDollarIcon className="size-3.5 shrink-0" />
-                        {tI18nComplete.raw('textc247593b2c0f')}
-                        <span className="text-muted-foreground ml-auto pl-3 text-xs tabular-nums">
-                          ${app.monthly_budget_usd}
-                        </span>
-                      </DropdownMenuItem>
-                    ) : null}
                     {canWrite && canSleep ? (
                       <DropdownMenuCheckboxItem
                         checked={app.always_on === true}
@@ -410,7 +400,7 @@ export function AppDetailModal({
                       : instance
                         ? tI18nComplete.raw('text044ba8a9ae43')
                         : null,
-                    appHasBudget(app) ? tI18nComplete('text89ea53a8d7ac', { value0: app.monthly_budget_usd }) : appCostLabel(app, tI18nComplete),
+                    appCostLabel(app, tI18nComplete),
                     instance ? appSizeLabel(app, tI18nComplete) : null,
                     appCan(app, 'rollback') && app.retained_deployments !== undefined
                       ? tI18nComplete('text04957fa46a70', { value0: app.retained_deployments })
@@ -537,14 +527,6 @@ export function AppDetailModal({
           app={app}
           canAdmin={canAdmin}
           onOpenChange={(next) => setOverlay(next ? 'connect' : null)}
-        />
-      ) : null}
-      {overlay === 'budget' ? (
-        <AppBudgetModal
-          projectId={projectId}
-          app={app}
-          open
-          onOpenChange={(next) => setOverlay(next ? 'budget' : null)}
         />
       ) : null}
       {overlay === 'access' ? (

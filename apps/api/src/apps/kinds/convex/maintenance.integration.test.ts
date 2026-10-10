@@ -46,8 +46,8 @@ import { sandboxOwnershipMarker } from '../../../platform/sandbox-ownership';
 // a running backend is metered (D11), and snapshots keep their kind, cap and
 // expiry, run under the operation lock, and restore only once Platinum has
 // restored (D22, H5, N2, N3). A delete keeps the stopped machine and a `final`
-// snapshot until the retention ends, then purges it; the budget alerts once
-// per threshold per month and never stops the machine.
+// snapshot until the retention ends, then purges it; no spend ever stops the
+// machine (Apps have no budget).
 
 type Machine = {
   state: string;

@@ -109,18 +109,6 @@ export interface AppInstance {
   auth_env: Record<string, string> | null;
   /** The client CLI version that matches the machine, e.g. `npx convex@<version> deploy`. */
   client_version: string;
-  /**
-   * Always `null`: a `convex` App has no monthly budget (its cost is its size,
-   * 24/7), so no alert is raised. Kept for wire compatibility.
-   * @deprecated Read `App.estimated_monthly_usd` for the monthly cost.
-   */
-  budget_alert: {
-    month: string;
-    percent: number;
-    spent_usd: number;
-    budget_usd: number;
-    at: string;
-  } | null;
   /** On a deleted App: when Kortix purges the kept machine and its final snapshot. */
   purge_after: string | null;
 }
@@ -166,14 +154,6 @@ export interface App {
    */
   always_on?: boolean;
   /**
-   * The monthly compute budget of an on-demand server App (`always_on: false`):
-   * the App stops when it is reached. `null` for an always-on, static or
-   * `convex` App: its cost is fixed by its size (`estimated_monthly_usd`) or
-   * zero, and no budget stops it. Setting one on such an App answers
-   * `400 app_budget_not_applicable`.
-   */
-  monthly_budget_usd: number | null;
-  /**
    * What the App's machine costs running 24/7 for one month at list compute
    * rates (USD): the monthly cost of an always-on or `convex` App, the most an
    * on-demand one can cost. `0` for a static App, which runs no machine.
@@ -193,11 +173,7 @@ export interface App {
    * targets. Older ones are retired. Optional for wire compatibility.
    */
   retained_deployments?: number;
-  /**
-   * Set on the create and update responses only. Empty today: the
-   * `app_budget_below_always_on` warning is gone, because an always-on App
-   * has no budget.
-   */
+  /** Set on the create and update responses only. Empty today. */
   warnings?: Array<{ code: string; message: string }>;
   last_request_at: string | null;
   /**
@@ -237,8 +213,6 @@ export interface CreateAppInput {
   idle_timeout_seconds?: number;
   /** Run 24/7. Defaults to the server's setting (Kortix Cloud: `true`). */
   always_on?: boolean;
-  /** On-demand server Apps only (default `5`); `400 app_budget_not_applicable` for an always-on or `convex` App. */
-  monthly_budget_usd?: number;
   /** The Apps, by slug, this App uses. Each must exist. Default: none. */
   uses?: string[];
 }
@@ -249,10 +223,7 @@ export interface UpdateAppInput {
   memory_gb?: number;
   disk_gb?: number;
   idle_timeout_seconds?: number;
-  /** `false` sets the budget to `monthly_budget_usd` or `5`; `true` clears it (`null`). */
   always_on?: boolean;
-  /** On-demand server Apps only; `400 app_budget_not_applicable` for an always-on, static or `convex` App. */
-  monthly_budget_usd?: number;
   /** Replaces the Apps this App uses. `[]` removes every link. */
   uses?: string[];
 }

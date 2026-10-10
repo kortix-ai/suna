@@ -7,7 +7,7 @@ machine. Kortix provisions it, holds its admin key, and signs members in to
 it (sign-in.md).
 
 It is an App like any other: the same `kortix apps` commands, access
-settings, size and budget fields. Its capabilities differ:
+settings, and size fields. Its capabilities differ:
 `deployments`, `snapshots`, `restore`, `admin_credentials`, `dashboard`,
 `logs` and `member_tokens`. It has no `preview`, `rollback` or `sleep`:
 `start`, `stop`, `rollback` and `access-link` answer
@@ -274,16 +274,15 @@ kortix apps restore db <snapshot-id> --yes     # roll back; later changes are lo
   since that backup is lost). `instance.operation: recovering` shows while it
   does.
 
-## Cost, budget and limits
+## Cost and limits
 
 - A `convex` App is billed like a sandbox: reserved CPU, memory and disk × the
   time the machine runs. The default size costs about $59 for a 30-day month
   at list price. It is always on: `always_on: false` answers
   `400 app_always_on_required`.
-- A `convex` App has no budget and no budget alert: `monthly_budget_usd` is
-  `null` and `instance.budget_alert` is always `null`. A budget answers
-  `400 app_budget_not_applicable`. The machine never stops for cost: a stopped
-  database breaks every client. To lower the cost, shrink the machine.
+- Apps have no monthly budget, and a `convex` App carries no budget alert. No
+  cost cap stops the machine: a stopped database breaks every client. To lower
+  the cost, shrink the machine.
 - Up to 3 `convex` Apps per project and 10 per account.
 - `instance.url` and `instance.site_url` are Kortix hosts. They never change
   while the App lives. Kortix proxies them, WebSocket included; the machine

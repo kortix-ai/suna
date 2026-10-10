@@ -82,7 +82,7 @@ flow(
       response.status(400);
     });
 
-    await ctx.step("create returns stable App policy and URL; an always-on App has no budget and refuses one", async () => {
+    await ctx.step("create returns stable App policy and URL, its 24/7 cost and no budget; a budget sent by an old client is ignored", async () => {
       const slug = ctx.fixtures
         .name("app")
         .toLowerCase()
@@ -110,7 +110,6 @@ flow(
         .has("$.desired_state", "running")
         .has("$.always_on", true)
         .has("$.estimated_monthly_usd", 73.48)
-        .has("$.monthly_budget_usd", null)
         .has("$.warnings", [])
         // Kind web by default; clients branch on capabilities. Uses no App until it lists one.
         .has("$.kind", "web")
@@ -118,16 +117,17 @@ flow(
         .has("$.instance", null)
         .has("$.uses", []);
       appId = response.json<any>().app_id;
+      if ("monthly_budget_usd" in response.json<any>()) throw new Error(`an App carries a budget: ${response.text()}`);
 
-      const refused = await owner.post(
+      // Apps have no budget: an on-demand App sent with one by an old client is created without one.
+      const legacy = await owner.post(
         "/v1/projects/:projectId/apps",
-        { slug: `${slug.slice(0, 55)}-budget`, name: "ke2e App", always_on: true, monthly_budget_usd: 5 },
+        { slug: `${slug.slice(0, 55)}-budget`, name: "ke2e App", always_on: false, monthly_budget_usd: 5 },
         { params: projectParams },
       );
-      refused.status(400).body().has("$.code", "app_budget_not_applicable").has("$.estimated_monthly_usd", 73.48);
-      if (!String(refused.json<any>().error).includes("about $73.48 a month")) {
-        throw new Error(`the refusal does not name the 24/7 cost: ${refused.text()}`);
-      }
+      legacy.status(201).body().has("$.always_on", false);
+      if ("monthly_budget_usd" in legacy.json<any>()) throw new Error(`an App carries a budget: ${legacy.text()}`);
+      (await owner.del("/v1/projects/:projectId/apps/:appId", { params: { ...projectParams, appId: legacy.json<any>().app_id } })).status(200);
     });
 
     await ctx.step("get and patch read back the same App", async () => {
@@ -149,26 +149,14 @@ flow(
         .has("$.idle_timeout_seconds", 420)
         .has("$.warnings", []);
 
-      // An always-on App costs its size: a budget is refused and nothing changes.
-      const refused = await owner.patch(
-        "/v1/projects/:projectId/apps/:appId",
-        { monthly_budget_usd: 100 },
-        { params },
-      );
-      refused.status(400).body().has("$.code", "app_budget_not_applicable");
-      // On demand: the default budget, then the one sent; back to always on clears it.
-      (await owner.patch("/v1/projects/:projectId/apps/:appId", { always_on: false }, { params }))
-        .status(200).body().has("$.always_on", false).has("$.monthly_budget_usd", 5).has("$.warnings", []);
-      (await owner.patch("/v1/projects/:projectId/apps/:appId", { monthly_budget_usd: 20 }, { params }))
-        .status(200).body().has("$.monthly_budget_usd", 20);
-      (await owner.patch("/v1/projects/:projectId/apps/:appId", { always_on: true }, { params }))
-        .status(200).body().has("$.always_on", true).has("$.monthly_budget_usd", null);
+      // The run mode switches both ways; a budget an old client sends is ignored, never refused.
       (await owner.patch("/v1/projects/:projectId/apps/:appId", { always_on: false, monthly_budget_usd: 12 }, { params }))
-        .status(200).body().has("$.monthly_budget_usd", 12);
-      (await owner.patch("/v1/projects/:projectId/apps/:appId", { always_on: true, monthly_budget_usd: 12 }, { params }))
-        .status(400).body().has("$.code", "app_budget_not_applicable");
-      (await owner.get("/v1/projects/:projectId/apps/:appId", { params }))
-        .status(200).body().has("$.always_on", false).has("$.monthly_budget_usd", 12);
+        .status(200).body().has("$.always_on", false).has("$.warnings", []);
+      (await owner.patch("/v1/projects/:projectId/apps/:appId", { always_on: true }, { params }))
+        .status(200).body().has("$.always_on", true);
+      const reread = await owner.get("/v1/projects/:projectId/apps/:appId", { params });
+      reread.status(200).body().has("$.always_on", true).has("$.estimated_monthly_usd", 73.48);
+      if ("monthly_budget_usd" in reread.json<any>()) throw new Error(`an App carries a budget: ${reread.text()}`);
 
       // `uses` names live Apps of the project by slug: an unknown one → 400 app_not_found, a malformed one → 400.
       const unknown = await owner.patch(
@@ -182,34 +170,6 @@ flow(
         .status(200)
         .body()
         .has("$.uses", []);
-    });
-
-    await ctx.step("an on-demand App gets $5 or the budget sent, and a machine change never moves it", async () => {
-      let counter = 0;
-      const slugFor = (label: string) =>
-        `${ctx.fixtures.name(label).toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 50)}-${++counter}`;
-      const create = async (body: Record<string, unknown>) => {
-        const response = await owner.post(
-          "/v1/projects/:projectId/apps",
-          { slug: slugFor("bd"), name: "ke2e budget", ...body },
-          { params: projectParams },
-        );
-        response.status(201);
-        return response.json<any>() as { app_id: string; monthly_budget_usd: number | null };
-      };
-      const patch = (id: string, body: Record<string, unknown>) =>
-        owner.patch("/v1/projects/:projectId/apps/:appId", body, { params: { ...projectParams, appId: id } });
-
-      const defaulted = await create({ always_on: false });
-      if (defaulted.monthly_budget_usd !== 5) throw new Error(`on-demand default budget is ${defaulted.monthly_budget_usd}, want 5`);
-      (await patch(defaulted.app_id, { cpu: 2 })).status(200).body().has("$.monthly_budget_usd", 5);
-
-      const explicit = await create({ always_on: false, monthly_budget_usd: 200 });
-      if (explicit.monthly_budget_usd !== 200) throw new Error(`explicit budget is ${explicit.monthly_budget_usd}, want 200`);
-      (await patch(explicit.app_id, { memory_gb: 1 })).status(200).body().has("$.monthly_budget_usd", 200);
-      for (const id of [defaulted.app_id, explicit.app_id]) {
-        (await owner.del("/v1/projects/:projectId/apps/:appId", { params: { ...projectParams, appId: id } })).status(200);
-      }
     });
 
     await ctx.step(

@@ -31,13 +31,10 @@ import { rollBackActiveDeployment } from './retention';
 import { ensureAppRuntimeRunning, loadPublicApp } from './public-proxy';
 import { type AppSourceSpec } from './spec';
 import { appPublicUrl } from './hostnames';
-import { AppBudgetExceededError, DEFAULT_APP_MONTHLY_BUDGET_USD } from './budget';
 import {
   APP_MACHINE_LIMITS,
   AppAccountUnfundedError,
   AppLimitError,
-  assertAppBudgetApplies,
-  assertAppBudgetWithinLimits,
   assertAppMachineWithinLimits,
   assertAppAccountFunded,
   assertAppQuotaAvailable,
@@ -87,14 +84,6 @@ function appLimitResponse(c: any, error: unknown): Response | null {
   }
   if (error instanceof AppAccountUnfundedError) {
     return c.json({ error: error.message, code: error.reason, ...error.detail }, 402);
-  }
-  if (error instanceof AppBudgetExceededError) {
-    return c.json({
-      error: error.message,
-      code: 'app_budget_exceeded',
-      spent_usd: error.spentUsd,
-      budget_usd: error.budgetUsd,
-    }, 402);
   }
   return null;
 }
@@ -336,7 +325,7 @@ async function linkOrRefuse(c: Context<AppEnv>, app: typeof apps.$inferSelect, u
 async function createConvexApp(
   c: Context<AppEnv>,
   loaded: { userId: string; row: { accountId: string; metadata: unknown } },
-  body: { slug: string; name: string; cpu?: number; memory_gb?: number; disk_gb?: number; always_on?: boolean; monthly_budget_usd?: number; uses: string[] },
+  body: { slug: string; name: string; cpu?: number; memory_gb?: number; disk_gb?: number; always_on?: boolean; uses: string[] },
 ): Promise<Response> {
   const projectId = c.req.param('projectId')!;
   const accountId = loaded.row.accountId;
@@ -349,12 +338,6 @@ async function createConvexApp(
   let size: ReturnType<typeof newConvexSize>;
   try {
     size = newConvexSize({ cpu: body.cpu, memoryGb: body.memory_gb, diskGb: body.disk_gb });
-    assertAppBudgetApplies(
-      body.monthly_budget_usd,
-      { cpuCores: size.cpu, memoryGb: size.memoryGb, diskGb: size.diskGb, kind: 'convex', alwaysOn: true },
-      'convex',
-      'platinum',
-    );
     await assertAppQuotaAvailable(accountId);
     // The machine bills its reserved size from its first second.
     await assertAppAccountFunded(accountId);
@@ -634,8 +617,7 @@ export function registerAppsRoutes(): void {
         '`instance.status: "provisioning"`; poll the App until it is `running` or `error` (seconds; the first in a ' +
         'region builds the image). At most 3 `convex` Apps per project and 10 per account (409 `app_kind_limit`). ' +
         'A `convex` App needs a funded account (402) and a deployment with Platinum (409 `app_kind_unavailable`). ' +
-        '`monthly_budget_usd` (default $5) applies only to an on-demand server App (`always_on: false`); an ' +
-        'always-on or `convex` App costs its size 24/7 and answers 400 `app_budget_not_applicable` to a budget.',
+        'Account credits pay for App compute: there is no per-App budget.',
       request: {
         params: z.object({ projectId: z.string().uuid() }),
         body: { content: { 'application/json': { schema: z.object({
@@ -646,7 +628,6 @@ export function registerAppsRoutes(): void {
           disk_gb: DiskSchema.optional(),
           idle_timeout_seconds: z.number().int().min(120).max(86400).default(300),
           always_on: z.boolean().optional(),
-          monthly_budget_usd: z.number().min(0).max(100000).optional(),
           uses: UsesSchema.default([]),
         }) } } },
       },
@@ -663,13 +644,6 @@ export function registerAppsRoutes(): void {
       const machine = { cpu: body.cpu ?? 1, memoryGb: body.memory_gb ?? 2, diskGb: body.disk_gb ?? 10 };
       try {
         assertAppMachineWithinLimits(machine);
-        assertAppBudgetWithinLimits(body.monthly_budget_usd);
-        assertAppBudgetApplies(
-          body.monthly_budget_usd,
-          { cpuCores: machine.cpu, memoryGb: machine.memoryGb, diskGb: machine.diskGb, kind: 'web', alwaysOn: body.always_on ?? config.KORTIX_APPS_DEFAULT_ALWAYS_ON },
-          null,
-          config.getDefaultProvider(),
-        );
         await assertAppQuotaAvailable(loaded.row.accountId);
       } catch (error) {
         const refusal = appLimitResponse(c, error);
@@ -679,16 +653,12 @@ export function registerAppsRoutes(): void {
       let row: typeof apps.$inferSelect;
       try {
         const alwaysOn = body.always_on ?? config.KORTIX_APPS_DEFAULT_ALWAYS_ON;
-        // Only an on-demand App has a budget (assertAppBudgetApplies refused one on an always-on App).
-        const budget = body.monthly_budget_usd ?? DEFAULT_APP_MONTHLY_BUDGET_USD;
         [row] = (await db.insert(apps).values({
           accountId: loaded.row.accountId, projectId, slug, name: body.name.trim(),
           routeKey: randomBytes(8).toString('hex'), createdBy: loaded.userId,
           cpuCores: machine.cpu, memoryGb: machine.memoryGb, diskGb: machine.diskGb,
           idleTimeoutSeconds: body.idle_timeout_seconds,
           alwaysOn,
-          monthlyBudgetUsd: budget.toFixed(2),
-          monthlyBudgetExplicit: body.monthly_budget_usd !== undefined,
         }).returning()) as [typeof apps.$inferSelect];
       } catch (error) {
         // Drizzle wraps the postgres.js error, so the SQLSTATE lives on
@@ -799,16 +769,13 @@ export function registerAppsRoutes(): void {
         '`uses` replaces the Apps (by slug) this App uses; each must be a live App of the project the caller can see (400 `app_not_found` otherwise, the same for a missing App and a hidden one). A refused PATCH changes nothing. ' +
         'A `convex` App resizes in the background: the answer carries `instance.operation: "resizing"` and the new ' +
         'size shows when it is applied (seconds of downtime, a `resize` snapshot first; disk only grows; 409 `app_busy` ' +
-        'while another operation runs). It always runs: `always_on: false` answers 400. ' +
-        '`monthly_budget_usd` applies only to an on-demand server App (`always_on: false`); on an always-on, static ' +
-        'or `convex` App it answers 400 `app_budget_not_applicable` (its cost is fixed: `estimated_monthly_usd`). ' +
-        'Switching to on demand sets the given budget or $5; switching to always on clears it.',
+        'while another operation runs). It always runs: `always_on: false` answers 400. ',
       request: {
         params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
         body: { content: { 'application/json': { schema: z.object({
           name: z.string().min(1).max(200).optional(), cpu: CpuSchema.optional(),
           memory_gb: MemorySchema.optional(), disk_gb: DiskSchema.optional(),
-          idle_timeout_seconds: z.number().int().min(120).max(86400).optional(), always_on: z.boolean().optional(), monthly_budget_usd: z.number().min(0).max(100000).optional(),
+          idle_timeout_seconds: z.number().int().min(120).max(86400).optional(), always_on: z.boolean().optional(),
           uses: UsesSchema.optional(),
         }) } } },
       },
@@ -833,20 +800,8 @@ export function registerAppsRoutes(): void {
         diskGb: body.disk_gb ?? current.diskGb,
         alwaysOn: body.always_on ?? current.alwaysOn,
       };
-      const [active] = current.activeDeploymentId
-        ? await db.select({ hostingType: appDeployments.hostingType, hostingProvider: appDeployments.hostingProvider })
-            .from(appDeployments).where(eq(appDeployments.deploymentId, current.activeDeploymentId)).limit(1)
-        : [];
       try {
         if (!convex) assertAppMachineWithinLimits({ cpu: body.cpu, memoryGb: body.memory_gb, diskGb: body.disk_gb });
-        assertAppBudgetWithinLimits(body.monthly_budget_usd);
-        // Only an on-demand server App has a budget; judged on the run mode this PATCH leaves.
-        assertAppBudgetApplies(
-          body.monthly_budget_usd,
-          { ...nextMachine, kind: current.kind },
-          convex ? 'convex' : (active?.hostingType ?? null),
-          convex ? 'platinum' : ((active?.hostingProvider as SandboxProviderName | null) ?? config.getDefaultProvider()),
-        );
       } catch (error) {
         const refusal = appLimitResponse(c, error);
         if (refusal) return refusal;
@@ -863,14 +818,6 @@ export function registerAppsRoutes(): void {
         const resized = await startConvexResize(c, projectId, current, nextMachine);
         if (resized) return resized;
       }
-      // Entering on demand: the given budget, else the default. Entering always
-      // on: the budget is cleared (back to the default, unused while always on).
-      const modeChanged = !convex && body.always_on !== undefined && body.always_on !== current.alwaysOn;
-      const budget = body.monthly_budget_usd !== undefined
-        ? { monthlyBudgetUsd: body.monthly_budget_usd.toFixed(2), monthlyBudgetExplicit: true }
-        : modeChanged
-          ? { monthlyBudgetUsd: DEFAULT_APP_MONTHLY_BUDGET_USD.toFixed(2), monthlyBudgetExplicit: false }
-          : {};
       const [row] = await db.transaction(async (tx) => {
         if (links) await writeAppLinks(tx, appId, links);
         return tx.update(apps).set({
@@ -881,7 +828,6 @@ export function registerAppsRoutes(): void {
           ...(body.disk_gb !== undefined && !convex ? { diskGb: body.disk_gb } : {}),
           ...(body.idle_timeout_seconds !== undefined ? { idleTimeoutSeconds: body.idle_timeout_seconds } : {}),
           ...(body.always_on !== undefined ? { alwaysOn: body.always_on } : {}),
-          ...budget,
           updatedAt: new Date(),
         }).where(and(eq(apps.appId, appId), eq(apps.projectId, projectId), isNull(apps.deletedAt))).returning();
       });

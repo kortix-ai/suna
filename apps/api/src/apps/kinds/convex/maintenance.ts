@@ -35,8 +35,6 @@
  * 6. Orphans (./lifecycle.ts): retry failed machine deletes; once an hour,
  *    delete machines no App references; purge deleted Apps whose retention
  *    (`metadata.purgeAfter`) ran out.
- * There is no budget step: a `convex` App runs a fixed-size machine 24/7, so
- * its cost is its size (`estimated_monthly_usd`), not a cap.
  *
  * Steps 1, 2 and 5 and the repairs in step 4 run detached: they heartbeat, so a
  * later tick never starts a second copy, and a process that dies mid-way is

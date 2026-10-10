@@ -269,7 +269,6 @@ export interface AppBlockV2 {
   idle_timeout_seconds?: number;
   /** Run 24/7 (cron jobs, workers, websockets) instead of stopping when idle. */
   always_on?: boolean;
-  monthly_budget_usd?: number;
   resources?: AppResourcesV2;
   env?: Record<string, string>;
   secrets?: Record<string, string>;

@@ -6,7 +6,6 @@ process.env.KORTIX_APPS_ALLOW_LOCAL_EDGE = 'true';
 
 const {
   appPublicUnavailableResponse,
-  appPublicBudgetResponse,
   appPublicResponseHeaders,
   appPublicStatusResponse,
   appColdStartUpstreamResponse,
@@ -447,32 +446,6 @@ describe('Apps public edge', () => {
     });
   });
 
-  test('renders a stable budget state without exposing account billing details', async () => {
-    const browser = appPublicBudgetResponse(
-      new Request('https://dev-store-aaaaaaaaaaaaaaaa.apps.kortix.com/', {
-        headers: { accept: 'text/html' },
-      }),
-      { name: 'Storefront' },
-    );
-    expect(browser.status).toBe(402);
-    expect(browser.headers.get('retry-after')).toBeNull();
-    const html = await browser.text();
-    expect(html).toContain('App paused');
-    expect(html).toContain('monthly compute limit');
-    expect(html).not.toContain('http-equiv="refresh"');
-
-    const machine = appPublicBudgetResponse(
-      new Request('https://dev-store-aaaaaaaaaaaaaaaa.apps.kortix.com/'),
-      { name: 'Storefront' },
-    );
-    expect(machine.status).toBe(402);
-    expect(await machine.json()).toEqual({
-      error: 'App compute budget reached',
-      code: 'app_budget_exceeded',
-      status: 'budget',
-    });
-  });
-
   test('renders an auto-refreshing boot page instead of unavailable JSON for browser requests', async () => {
     const response = appPublicUnavailableResponse(
       new Request('https://dev-store-aaaaaaaaaaaaaaaa.apps.kortix.com/', {
@@ -615,7 +588,6 @@ describe('Apps public edge', () => {
       ['checking', 'Checking readiness', 202, true],
       ['ready', 'Activating your App', 202, true],
       ['starting', 'Starting Storefront', 202, true],
-      ['budget', 'App paused', 402, false],
       ['failed', 'Deployment failed', 503, false],
       ['cancelled', 'Deployment cancelled', 503, false],
     ] as const;

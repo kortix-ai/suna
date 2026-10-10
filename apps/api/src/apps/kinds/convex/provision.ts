@@ -23,7 +23,6 @@
  * Billing: a running machine is metered like a sandbox, reserved spec × wall
  * clock (workload_type `backend`); ./maintenance.ts opens the window and
  * records liveness. Snapshot storage is not billed yet.
- * The App has no monthly budget: its cost is its size, 24/7.
  * The caps (3 per project, 10 per account) and the wallet gate on create and
  * resize bound the spend.
  * ponytail: always on (`persistent`). Platinum does not count an open

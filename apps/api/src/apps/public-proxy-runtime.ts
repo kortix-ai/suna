@@ -178,8 +178,7 @@ export async function ensureAppRuntimeRunning(
   if (loaded.runtime.status === 'deleted') {
     throw new Error('App runtime cannot wake from deleted');
   }
-  // Account entitlement, account App-concurrency, then this App's own monthly
-  // budget. The runtime being woken is excluded from the concurrency count —
+  // Account entitlement, then account App-concurrency. The runtime being woken is excluded from the concurrency count —
   // it already holds its own live row, and counting it would stop an account at
   // exactly the cap from waking the very App it owns.
   await assertAppComputeAllowed(app, { excludeRuntimeId: loaded.runtime.runtimeId });

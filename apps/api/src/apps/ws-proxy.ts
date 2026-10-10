@@ -6,7 +6,6 @@ import { db } from '../shared/db';
 import { AppHostingProvider } from './hosting';
 import { enqueueCurrentAppRuntime } from './deployment-worker';
 import { ingressTargetUrl } from '../platform/providers/ingress-url';
-import { AppBudgetExceededError } from './budget';
 import type { PreviewWsData } from '../sandbox-proxy/ws-proxy';
 import {
   appRuntimeNeedsWake,
@@ -122,10 +121,7 @@ export async function prepareAppWsUpgrade(
         idleTimeoutSeconds: loaded.app.idleTimeoutSeconds,
       },
     };
-  } catch (error) {
-    if (error instanceof AppBudgetExceededError) {
-      return { ok: false, status: 402, message: 'App compute budget exceeded' };
-    }
+  } catch {
     return { ok: false, status: 202, message: 'App is starting' };
   }
 }

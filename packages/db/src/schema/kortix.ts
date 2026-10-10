@@ -4221,17 +4221,14 @@ export const apps = kortixSchema.table(
       .default('identity')
       .notNull(),
     /**
-     * The monthly compute cap of an on-demand `web` App: it stops at the cap.
-     * Ignored (and reported as null) for an always-on, static or `convex` App,
-     * whose cost is fixed by its size (apps/api/src/apps/budget.ts appHasBudget).
+     * Unused: Apps have no monthly budget (account credits pay for App
+     * compute). Kept until a contract migration drops it, so an API task that
+     * still reads it during a rolling deploy never meets a missing column.
      */
     monthlyBudgetUsd: numeric('monthly_budget_usd', { precision: 12, scale: 2 })
       .default('5.00')
       .notNull(),
-    /**
-     * true: a person set `monthly_budget_usd`. false: it is the default ($5).
-     * Informational: nothing derives a budget from the size any more.
-     */
+    /** Unused, like `monthlyBudgetUsd`; dropped by the same contract migration. */
     monthlyBudgetExplicit: boolean('monthly_budget_explicit').default(true).notNull(),
     lastRequestAt: timestamp('last_request_at', { withTimezone: true }),
     createdBy: uuid('created_by'),

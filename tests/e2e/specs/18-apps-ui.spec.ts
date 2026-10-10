@@ -503,7 +503,7 @@ test.describe('18 — Kortix Apps UI', () => {
         instance: {
           status: 'running', url: 'https://synthetic-db.example.test', site_url: 'https://synthetic-site.example.test',
           dashboard_url: new URL('/synthetic-app-dashboard', page.url()).href, error: null, operation: null,
-          last_operation_error: null, health: null, auth_env: null, client_version: '1.0.0', budget_alert: null, purge_after: null,
+          last_operation_error: null, health: null, auth_env: null, client_version: '1.0.0', purge_after: null,
         },
       };
       const convexApi = `${appApi}/${convexApp.app_id}`;

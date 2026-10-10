@@ -1608,10 +1608,6 @@
           "always_on": {
             "type": "boolean"
           },
-          "monthly_budget_usd": {
-            "type": "number",
-            "minimum": 0
-          },
           "kind": {
             "type": "string",
             "enum": [

@@ -26,7 +26,7 @@ Auto-detection selects `dockerfile` when `Dockerfile` exists. It selects
 `--type` to override detection.
 
 Prefer a local build deployed as `static` over `bundle`. A `bundle` App runs in
-a machine and a run mode. An on-demand App also has a budget. Its build on Kortix never sees `.env*`
+a machine and a run mode. Its build on Kortix never sees `.env*`
 files, because the CLI never uploads them, so a build-time value such as
 `VITE_*` in `.env.production` is missing from the result.
 
@@ -54,7 +54,7 @@ only changed files, and a rollback switches traffic at once.
   stay reachable by exact URL for up to 1 hour. Responses of a non-public App
   are `private` to shared caches.
 - A static App ignores `env`, `secrets`, `resources`, `idle_timeout_seconds`,
-  `always_on`, and `monthly_budget_usd`. A deploy that sets `env` or `secrets`
+  and `always_on`. A deploy that sets `env` or `secrets`
   records an `environment_ignored` event.
 - `kortix apps start` and `kortix apps stop` answer
   `409 static_app_no_runtime`. A static App serves while it has an active
@@ -62,7 +62,7 @@ only changed files, and a rollback switches traffic at once.
 
 **Server.** `bundle`, `dockerfile`, and `oci_image` build an image and run it
 in one machine on a Kortix sandbox provider. Kortix chooses the provider. A
-server App has a run mode and a machine. An on-demand server App has a monthly budget.
+server App has a run mode and a machine.
 
 Deployments with the same build inputs share one image: the artifact (archive
 digest, or an OCI reference pinned with `@sha256:`), source settings,
@@ -88,34 +88,30 @@ otherwise (operator default `KORTIX_APPS_DEFAULT_ALWAYS_ON`).
 Every 5 minutes a keep-alive pass:
 
 1. Stops every running server App (either mode) whose account can no longer
-   pay for compute (`app_stopped_unfunded` event) or, when on demand, whose
-   month-to-date compute reached `monthly_budget_usd` (`app_stopped_budget`
-   event). A budget never stops an always-on App.
+   pay for compute (`app_stopped_unfunded` event).
 2. Asks the provider about each always-on App. A running App is billed for
    every hour it runs, with or without traffic. A stopped one is started again
    through the same entitlement and concurrency checks as a cold start.
 3. Rebuilds at most 5 always-on Apps per pass whose App supervisor image is
    out of date.
 
-**Budget and cost.** The cost shape decides:
+**Cost.** Apps have no monthly budget. Account credits pay for compute. The
+account billing gate (`402`, for example `app_account_unfunded`) is the only
+cost gate.
 
-- On-demand server App: a monthly budget. Default `5`. The App stops at the cap
-  (`app_stopped_budget`).
-- Always-on server App and every `convex` App: no budget. `monthly_budget_usd`
-  is `null`. The cost is fixed: the machine 24/7, `estimated_monthly_usd` (about
-  73.48 USD for 1 vCPU / 2 GB / 10 GB; about 59.29 USD for the `convex`
-  default 1 vCPU / 1 GB / 10 GB). The CLI prints `Runs 24/7 on 1 vCPU / 2 GB:
-  about $73/month`. Tell the user this cost.
-- A budget on an always-on or `convex` App (`--budget`, `monthly_budget_usd`)
-  answers `400 app_budget_not_applicable`. The message names the monthly cost.
-  Do not retry with another value. To cap the cost, use `--on-demand` or a
+- On-demand server App: billed only while it is awake.
+- Always-on server App and every `convex` App: the cost is fixed: the machine
+  24/7, `estimated_monthly_usd` (about 73.48 USD for 1 vCPU / 2 GB / 10 GB;
+  about 59.29 USD for the `convex` default 1 vCPU / 1 GB / 10 GB). The CLI
+  prints `Runs 24/7 on 1 vCPU / 2 GB: about $73/month`. Tell the user this
+  cost.
+- Static App: no machine. `always_on` is `false`, `estimated_monthly_usd` is
+  `0`.
+- `--budget` is retired. The CLI prints `--budget is ignored: Apps have no
+  budget.` and sends nothing. To lower the cost, use `--on-demand` or a
   smaller machine.
-- Static App: no machine. `always_on` is `false`, `monthly_budget_usd` is
-  `null`, `estimated_monthly_usd` is `0`.
-- Switching to on demand sets the budget you pass, or `5`. Switching to always
-  on clears the budget.
 
-A run-mode or budget change through `kortix apps set` takes effect within 5
+A run-mode change through `kortix apps set` takes effect within 5
 minutes, without a redeploy. A machine change applies to the next deployment.
 
 **Provider.** On Platinum (Kortix Cloud), an always-on App's VM is persistent.
@@ -166,7 +162,6 @@ apps:
     readiness_path: /health
     always_on: false
     idle_timeout_seconds: 300
-    monthly_budget_usd: 10
     resources:
       cpu: 1
       memory_gb: 2
@@ -177,8 +172,9 @@ apps:
       DATABASE_URL: database-primary
 ```
 
-An always-on server App takes no `monthly_budget_usd`. A budget answers
-`400 app_budget_not_applicable`:
+`monthly_budget_usd` is retired. The validator warns `is retired and ignored:
+Apps have no budget. Remove it.` and the deploy ignores it. An always-on server
+App:
 
 ```yaml
 apps:
@@ -198,8 +194,8 @@ kortix apps deploy --manifest-app storefront
 
 When the manifest declares exactly one App, bare `kortix apps deploy` selects
 it. CLI flags override manifest fields. A deploy with `--manifest-app` writes
-the block's `resources`, `idle_timeout_seconds`, `always_on`, and
-`monthly_budget_usd` to the App.
+the block's `resources`, `idle_timeout_seconds`, and
+`always_on` to the App.
 
 ### Manifest fields
 
@@ -221,7 +217,6 @@ the block's `resources`, `idle_timeout_seconds`, `always_on`, and
 | `readiness_path` | Server Apps: HTTP path polled before activation. Default `/`. |
 | `always_on` | Server Apps: `true` runs 24/7, `false` runs on demand. Default `true` for a new App. |
 | `idle_timeout_seconds` | On-demand server Apps: stop after no traffic. Minimum `120`; default `300`. |
-| `monthly_budget_usd` | On-demand server Apps only: monthly compute budget, default `5`. An always-on or `convex` App has none (`400 app_budget_not_applicable`). |
 | `resources` | Server Apps: `cpu`, `memory_gb`, and `disk_gb`. Defaults `1`, `2`, and `10`. |
 | `env` | Server Apps: non-secret runtime key/value pairs. |
 | `secrets` | Server Apps: runtime environment key to project secret **identifier** mapping. |
@@ -381,7 +376,7 @@ renew the lease until the response ends. WebSocket connections renew it while
 the socket remains open.
 
 Browser navigation shows a Kortix lifecycle page during queued, validating,
-building, provisioning, checking, starting, failed, cancelled, and budget
+building, provisioning, checking, starting, failed, and cancelled
 states. Machine clients receive `202 app_starting` with `Retry-After: 3` during
 a transient cold start. A healthy App never exposes `app_stopped` or an
 unavailable cold-start state.
@@ -445,8 +440,6 @@ Common failures:
 | `digest_mismatch` / `size_mismatch` | Re-upload the archive. Do not reuse corrupted bytes. |
 | `provider_disabled` | Omit `--provider` or select an enabled provider. |
 | Readiness timeout | Make the process bind the declared port and return success at `readiness_path`. |
-| `402 app_budget_exceeded` | An on-demand App reached its budget. Increase it (`kortix apps set <app> --budget <usd>`) or wait for the next monthly period. |
-| `400 app_budget_not_applicable` | The App is always on or `convex`. It has no budget. Remove the budget, or switch to `--on-demand`. |
 | `402 app_account_unfunded` | The account cannot pay for compute. The App starts again once it can. |
 | `429 app_concurrency_limit` | The account runs its maximum number of App runtimes. Stop another App. |
 | `409 static_app_no_runtime` | A static App has nothing to start or stop. Delete the App to take it offline. |

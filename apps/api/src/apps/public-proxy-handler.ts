@@ -4,14 +4,13 @@ import { markComputeSessionAlive } from '../billing/services/compute-metering';
 import { type SandboxProviderName } from '../config';
 import { db } from '../shared/db';
 import { ingressTargetUrl } from '../platform/providers/ingress-url';
-import { AppBudgetExceededError } from './budget';
 import { AppAccountUnfundedError, AppLimitError } from './limits';
 import { AppHostingProvider } from './hosting';
 import { enqueueCurrentAppRuntime } from './deployment-worker';
 import { authorizeAppRequest, resolveAppViewerUserId, bindAppViewerSession, appViewerEndpointResponse,
   appTokenResponse, appViewerContextHeader } from './public-proxy-access';
 import { resolveAppRequest, verifyAppEdgeRequest } from './public-proxy-edge';
-import { appPublicStatusResponse, publicDeploymentStatus, appPublicBudgetResponse, appPublicUnavailableResponse, appProviderStoppedResponse, appColdStartUpstreamResponse } from './public-proxy-status';
+import { appPublicStatusResponse, publicDeploymentStatus, appPublicUnavailableResponse, appProviderStoppedResponse, appColdStartUpstreamResponse } from './public-proxy-status';
 import { loadPublicAppState, loadPublicApp, ensureAppRuntimeRunning, appRuntimeNeedsWake } from './public-proxy-runtime';
 import { appUpstreamHeaders, appPublicResponseHeaders } from './public-proxy-headers';
 import { serveStaticDeployment } from './static-site';
@@ -161,7 +160,6 @@ async function proxyRunningApp(
   try {
     runtime = await ensureAppRuntimeRunning(loaded, hosting);
   } catch (error) {
-    if (error instanceof AppBudgetExceededError) return appPublicBudgetResponse(request, loaded.app);
     // An unfunded account or an account at its App-concurrency cap is a paused
     // App, not a broken one. Say so instead of showing an endless spinner.
     if (error instanceof AppAccountUnfundedError) {

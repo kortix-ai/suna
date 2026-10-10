@@ -5,6 +5,14 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Removed
+- Apps have no monthly budget. `App.monthly_budget_usd`,
+  `CreateAppInput.monthly_budget_usd` and `UpdateAppInput.monthly_budget_usd`
+  are gone: account credits pay for App compute, and the billing `402` is the
+  only cost gate. A server that still sends the field is ignored; a client
+  that still sends it gets `200` and the server ignores it. Read
+  `App.estimated_monthly_usd` for the machine's 24/7 monthly cost.
+
 ### Added
 - `FeatureFlagKey` gains `notification_center` (also in `FEATURE_FLAG_KEYS`
   and `KortixProject.experimental`). Off by default. It gates the KRTX-1742

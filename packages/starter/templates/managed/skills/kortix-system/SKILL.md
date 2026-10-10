@@ -365,16 +365,15 @@ on capabilities, never on kind.
   React, or exported Next.js App here and deploy its output directory.
 - A **server App** (`--type dockerfile`, or `--image`) runs in its own machine.
   It runs **always on** (the default for a new App, 24/7) or **on demand**
-  (`--on-demand`: stops when idle, wakes on the next request). Only an
-  on-demand App has a monthly budget (default 5 USD): it stops at the cap. An
-  always-on App has no budget. Its cost is fixed: the machine 24/7, about 73
-  USD a month on the default machine (`estimated_monthly_usd`).
-  `--budget` on an always-on App answers `400 app_budget_not_applicable`.
+  (`--on-demand`: stops when idle, wakes on the next request). Apps have no
+  monthly budget: account credits pay for compute. An always-on App costs the
+  machine 24/7, about 73 USD a month on the default machine
+  (`estimated_monthly_usd`). `--budget` is retired and ignored.
 - A **`convex` App** (`kortix apps create <slug> --kind convex`) is a full
   backend: database, server functions, realtime queries, file storage,
   schedules and search, powered by self-hosted Convex with built-in Kortix
   sign-in. One always-on machine each (about 59 USD a month on the default
-  size, no budget), up to 3 per project and 10 per account. Its code usually lives in `apps/<slug>/convex/` and ships with
+  size), up to 3 per project and 10 per account. Its code usually lives in `apps/<slug>/convex/` and ships with
   `kortix apps deploy apps/<slug> --app <slug>`.
 
 Apps is off by default and enabled per project by Kortix (it is not listed in
@@ -427,7 +426,7 @@ Kortix can enable it.
 Load the `kortix-apps` system skill before you deploy or operate an App, and
 before you write Convex code.
 **Full reference:** `references/kortix/apps.md` — workload selection, manifest
-fields, every lifecycle command, run modes and budget, ignore rules, secrets,
+fields, every lifecycle command, run modes and cost, ignore rules, secrets,
 cold starts, rollback, retention, limits, and failure handling.
 </apps>
 
@@ -865,7 +864,7 @@ to see the full enum.
 <reference path="references/kortix/apps.md">
   Kortix Apps deployment and operations reference. Covers static hosting and
   server Apps (bundle, Dockerfile, and OCI workloads); always-on and on-demand
-  run modes and the monthly budget; the v2 manifest `apps:` map; archive
+  run modes and cost; the v2 manifest `apps:` map; archive
   ignore rules; environment and secret mappings; stable URLs; cold wake and
   idle stop; lifecycle commands; rollback and retention; resource limits; and
   current boundaries. Load before deploying or operating an App.

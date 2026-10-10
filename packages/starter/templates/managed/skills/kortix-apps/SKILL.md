@@ -6,7 +6,7 @@ description: "Build, deploy and operate Kortix Apps through the pre-authenticate
 # Kortix Apps
 
 A Kortix App is one project-scoped thing with a stable URL, an access policy,
-a size. An on-demand server App also has a monthly budget. Every App has one `kind`, fixed at create:
+a size. Apps have no monthly budget: account credits pay for compute. Every App has one `kind`, fixed at create:
 
 | Kind | What it is | Capabilities |
 | --- | --- | --- |
@@ -290,14 +290,16 @@ data, not a screenshot alone.
 ## Cost
 
 - A static App costs nothing.
-- An on-demand server App bills its machine while it runs and stops at its
-  monthly budget (default $5; references/web-server.md).
-- An always-on server App has no budget. It costs its machine 24/7: about $73 a
-  month at the default size (`estimated_monthly_usd`).
-- A `convex` App is always on, about $59 a month at the default size. It has no
-  budget and no alerts (references/convex.md).
-- `--budget` on an always-on or `convex` App answers
-  `400 app_budget_not_applicable`.
+- Apps have no monthly budget. Account credits pay for compute. The account
+  billing gate (`402`, for example `app_account_unfunded`) is the only cost
+  gate.
+- An on-demand server App bills its machine only while it is awake.
+- An always-on server App costs its machine 24/7: about $73 a month at the
+  default size (`estimated_monthly_usd`).
+- A `convex` App is always on, about $59 a month at the default size
+  (references/convex.md).
+- `--budget` is retired. The CLI prints `--budget is ignored: Apps have no
+  budget.` and sends nothing.
 
 Tell the user the cost of each App before you hand over.
 
@@ -316,7 +318,7 @@ days, then deletes every document and file (references/convex.md, Delete).
 ## References
 
 - references/web-static.md — static sources, build rules, caching, verify.
-- references/web-server.md — Dockerfile and OCI Apps, run mode, budget, wake, diagnose.
+- references/web-server.md — Dockerfile and OCI Apps, run mode, wake, diagnose.
 - references/convex.md — `convex` Apps: the six-step loop, commands, durability, backups, cost, delete.
 - references/convex-patterns.md — schema, queries, mutations, actions, HTTP actions, crons, files, search.
 - references/sign-in.md — tokens, `kortixToken`, `verifyKortixToken`, `requireKortixMember`, troubleshooting, customers.

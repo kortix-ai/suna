@@ -82,7 +82,6 @@ async function seedStoppedRuntime(desiredState: 'running' | 'stopped' = 'running
     routeKey: ROUTE_KEY,
     desiredState,
     idleTimeoutSeconds: 300,
-    monthlyBudgetUsd: '5.00',
   });
   await db.insert(appArtifacts).values({
     artifactId: ARTIFACT_ID,

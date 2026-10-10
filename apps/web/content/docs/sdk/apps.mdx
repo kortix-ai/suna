@@ -30,7 +30,7 @@ on it. See [Feature flags](/docs/feature-flags).
 | `apps.list()` | `GET /projects/:pid/apps` | Lists the Apps the caller may open (a project manager sees all) |
 | `apps.create(input)` | `POST …/apps` | Creates an App and assigns its stable URL |
 | `apps.get(appId)` | `GET …/apps/:id` | Reads one App |
-| `apps.update(appId, input)` | `PATCH …/apps/:id` | Renames it or changes machine, idle timeout, run mode (`always_on`), or budget. Run mode and budget apply within 5 minutes; a machine change applies to the next deployment |
+| `apps.update(appId, input)` | `PATCH …/apps/:id` | Renames it or changes machine, idle timeout, or run mode (`always_on`). Run mode applies within 5 minutes; a machine change applies to the next deployment |
 | `apps.remove(appId, { confirm? })` | `DELETE …/apps/:id` | Deletes the App, its runtimes, and every deployment image; returns `images: {released, pending}`. An App with `snapshots` needs `confirm` (its slug) and answers `retained_until` and `final_snapshot_id` |
 | `apps.waitUntilReady(appId, options?)` | polls `GET …/apps/:id` | Resolves when the App's `instance` runs with no operation in flight; at once for an App without an instance. Default timeout 15 minutes |
 | `apps.start(appId)` | `POST …/apps/:id/start` | Sets `desired_state` to `running` and warms the runtime. A static App answers `409 static_app_no_runtime` |
@@ -99,20 +99,17 @@ const deployment = await apps.deployments.create(app.app_id, {
 console.log(app.url, deployment.status); // https://…apps.kortix.com  queued
 ```
 
-`create` accepts the machine and budget fields too: `cpu`, `memory_gb`,
-`disk_gb`, `idle_timeout_seconds`, `always_on`, and `monthly_budget_usd`. Omit
-them for the defaults. Only an on-demand server App has a monthly budget:
-default 5 USD, and the App stops at the cap. An always-on server App and every
-`convex` App have no budget: their cost is fixed (`estimated_monthly_usd`), and
-`monthly_budget_usd` is `null`. `always_on: true` runs a server App 24/7
+`create` accepts the machine fields too: `cpu`, `memory_gb`,
+`disk_gb`, `idle_timeout_seconds`, and `always_on`. Omit them for the defaults.
+Apps have no monthly budget: account credits pay for compute. An always-on
+server App and every `convex` App have a fixed cost (`estimated_monthly_usd`).
+`always_on: true` runs a server App 24/7
 (websockets, background loops); `false` stops it after `idle_timeout_seconds`
 and wakes it on the next request. A static App has no runtime: `always_on` is
-`false`, `monthly_budget_usd` is `null`, and `estimated_monthly_usd` is `0`.
+`false` and `estimated_monthly_usd` is `0`.
 
-Sending `monthly_budget_usd` for an always-on or `convex` App, on `create` or
-`update`, answers `400` with `code: 'app_budget_not_applicable'`. The message
-names the monthly cost. `update` to on demand sets the budget you send or 5;
-`update` to always on clears it.
+The API ignores `monthly_budget_usd` if an older client sends it (`200`, no
+error). No App response carries it.
 
 `kind` is `web` (the default) or `convex`. `uses` lists the Apps, by slug,
 this App may get sign-in tokens for and reach through its bindings mount; the
@@ -122,12 +119,11 @@ default is none, and `update(appId, { uses })` replaces the list (see
 `estimated_monthly_usd` is what the App's machine costs running 24/7 for a
 month at list compute rates: about 73.48 for 1 vCPU / 2 GB / 10 GB, and about
 59.29 for the `convex` default of 1 vCPU / 1 GB / 10 GB. `create` and `update`
-return `warnings`, which is now always `[]`: the `app_budget_below_always_on`
-warning is gone.
+return `warnings`, which is always `[]`.
 
 ```ts
 const app = await kortix.project(projectId).apps.create({ slug: 'worker', name: 'Worker', always_on: true });
-console.log(app.always_on, app.monthly_budget_usd, app.estimated_monthly_usd); // true null 73.48
+console.log(app.always_on, app.estimated_monthly_usd); // true 73.48
 ```
 
 Wait for the deployment by polling its status:
@@ -504,10 +500,10 @@ Every type below is exported from `@kortix/sdk`.
 
 | Type | What it holds |
 |---|---|
-| `App` | Identity, `kind`, `capabilities`, `uses`, `used_by`, `auth`, `instance`, `url`, `access_mode`, `access_revision`, `desired_state`, `active_deployment_id`, `hosting_type` (of the active deployment: `static`, `sandbox`, `convex`, or `null` before the first deploy), `machine`, `idle_timeout_seconds`, `always_on`, `monthly_budget_usd` (`null` unless the App is an on-demand server App), `estimated_monthly_usd` (`0` for a static App), `retained_deployments`, `warnings` (create and update only; always `[]`), `last_request_at`, `viewer_can_access` |
+| `App` | Identity, `kind`, `capabilities`, `uses`, `used_by`, `auth`, `instance`, `url`, `access_mode`, `access_revision`, `desired_state`, `active_deployment_id`, `hosting_type` (of the active deployment: `static`, `sandbox`, `convex`, or `null` before the first deploy), `machine`, `idle_timeout_seconds`, `always_on`, `estimated_monthly_usd` (`0` for a static App), `retained_deployments`, `warnings` (create and update only; always `[]`), `last_request_at`, `viewer_can_access` |
 | `AppKind` · `AppCapability` | `'web' \| 'convex'` · `'deployments' \| 'rollback' \| 'preview' \| 'sleep' \| 'static' \| 'snapshots' \| 'restore' \| 'admin_credentials' \| 'dashboard' \| 'logs' \| 'member_tokens'` |
 | `AppAuth` | `issuer`, `audience` (the App id), `jwks_uri`: the public values that verify the App's sign-in tokens |
-| `AppInstance` | The machine of a `convex` App (`null` on a `web` App): `status` (`AppInstanceStatus`), `url`, `site_url`, `dashboard_url`, `error`, `operation` (`AppInstanceOperation`), `last_operation_error`, `health` (`AppInstanceHealth`), `auth_env`, `client_version`, `budget_alert` (always `null`: deprecated, the budget alerts are removed), `purge_after` |
+| `AppInstance` | The machine of a `convex` App (`null` on a `web` App): `status` (`AppInstanceStatus`), `url`, `site_url`, `dashboard_url`, `error`, `operation` (`AppInstanceOperation`), `last_operation_error`, `health` (`AppInstanceHealth`), `auth_env`, `client_version`, `purge_after` |
 | `AppInstanceStatus` · `AppInstanceOperation` | `'provisioning' \| 'running' \| 'error' \| 'deleted'` · `'resizing' \| 'rotating_key' \| 'recovering' \| 'snapshotting' \| 'restoring'` |
 | `AppInstanceHealth` | `ok`, `checked_at`, `machine_state`, `failures`, `error`, `disk_used_pct`, `repair` |
 | `AppSnapshots` · `AppSnapshot` · `AppSnapshotKind` | `automatic`, `snapshots`, `snapshot_limit`, `snapshot_schedule` · `snapshot_id`, `created_at`, `size_bytes`, `kind`, `expires_at` · `'manual' \| 'automatic' \| 'resize' \| 'final'` |
@@ -660,9 +656,7 @@ try {
 Other answers you should handle:
 
 - `409` for a duplicate slug, `402` with `app_quota_exceeded` when the account
-  is at its App limit, and `400` with `app_machine_out_of_range` or
-  `app_budget_out_of_range` for a spec outside its bounds, and `400
-  app_budget_not_applicable` for a budget on an always-on or `convex` App.
+  is at its App limit, and `400` with `app_machine_out_of_range` for a spec outside its bounds.
 - `409 app_capability_unsupported` (`capability`, `kind`) for a call the App's
   kind does not offer.
 - A `convex` create: `409 app_kind_unavailable` where Platinum is not

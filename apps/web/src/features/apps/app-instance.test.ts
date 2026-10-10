@@ -22,7 +22,7 @@ const t = Object.assign((key: string) => key, { raw: (key: string) => key }) as 
 const instance = (overrides: Partial<AppInstance> = {}): AppInstance => ({
   status: 'running', url: 'https://api.example.test', site_url: 'https://site.example.test',
   dashboard_url: 'https://dash.example.test', error: null, operation: null, last_operation_error: null,
-  health: null, auth_env: null, client_version: '1.0.0', budget_alert: null, purge_after: null,
+  health: null, auth_env: null, client_version: '1.0.0', purge_after: null,
   ...overrides,
 });
 const convexApp = (overrides: Partial<App> = {}): App => ({
@@ -30,7 +30,7 @@ const convexApp = (overrides: Partial<App> = {}): App => ({
   capabilities: ['deployments', 'snapshots', 'restore', 'admin_credentials', 'dashboard', 'logs', 'member_tokens'],
   url: 'https://api.example.test', access_mode: 'project', access_revision: 1, desired_state: 'running',
   active_deployment_id: null, machine: { cpu: 1, memory_gb: 1, disk_gb: 10 }, idle_timeout_seconds: 300,
-  monthly_budget_usd: 5, last_request_at: null, instance: instance(),
+  last_request_at: null, instance: instance(),
   created_at: '2026-10-09T00:00:00.000Z', updated_at: '2026-10-09T00:00:00.000Z',
   ...overrides,
 });

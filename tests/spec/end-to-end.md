@@ -1199,17 +1199,13 @@ project read then lists `apps` with `enabled: true, operator_only: true`. A
 project writer creates a unique lower-case slug and machine policy; list/get
 return the stable public URL and active deployment pointer; every App carries
 `estimated_monthly_usd` (its machine 24/7 at list compute rates, `73.48` for
-1 vCPU / 2 GiB / 10 GiB). Cost shape decides the budget: only an on-demand
-server App (`always_on: false`) has `monthly_budget_usd` (default `5`, the
-value sent otherwise, unmoved by a machine patch); an always-on App reports
-`monthly_budget_usd: null`, and a create or patch that sends a budget for it →
-`400 {code:'app_budget_not_applicable'}` with the 24/7 cost in the message;
-a patch to `always_on: false` sets the sent budget or `5`, a patch back to
-`always_on: true` clears it to `null`; `warnings: []` on every create and
-patch; patch updates mutable policy; delete is soft and removes the App
+1 vCPU / 2 GiB / 10 GiB). Apps have no budget: no App response carries
+`monthly_budget_usd`, and a create or patch that still sends one (an older
+client) succeeds and ignores it; a patch switches `always_on` both ways;
+`warnings: []` on every create and patch; patch updates mutable policy; delete is soft and removes the App
 from subsequent reads.
-A new App lists no backends (`backends: []`); patch sets the list by name,
-deduplicated, and get reads it back; an invalid backend name → 400.
+A new App uses no App (`uses: []`); patch sets the list by slug, an unknown
+slug → `400 app_not_found`, a malformed one → 400.
 Invalid slugs → 400; `NONMEMBER` → 403.
 
 `APP-2` Artifact and deployment boundaries —
@@ -1660,9 +1656,8 @@ Delete: without `confirm=<slug>` → `400 confirmation_required`; with it, a
 `final` snapshot is taken, the machine is stopped and kept 7 days
 (`retained_until`), the hosts answer 410, the sweep and the orphan reaper leave
 the machine alone, and the purge after retention deletes machine, snapshots and
-row. No budget: a `convex` App reports `monthly_budget_usd: null` and
-`instance.budget_alert: null`, a budget on create or patch →
-`400 app_budget_not_applicable`, and the sweep never stops the machine for its
+row. No budget: a `convex` App carries no `monthly_budget_usd` and no
+`instance.budget_alert`, and the sweep never stops the machine for its
 spend. Not asserted locally: a provisioned machine and the
 `app.credentials.read` audit row; they are verified on a deployed environment.
 

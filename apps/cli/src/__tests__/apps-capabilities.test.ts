@@ -40,7 +40,6 @@ function instance(overrides: Record<string, unknown> = {}) {
     health: null,
     auth_env: null,
     client_version: '1.46.0',
-    budget_alert: null,
     purge_after: null,
     ...overrides,
   };
@@ -63,7 +62,6 @@ function baseApp(id: string, slug: string, kind: string, extra: Record<string, u
     machine: { cpu: 1, memory_gb: 1, disk_gb: 10 },
     idle_timeout_seconds: 300,
     always_on: kind === 'convex',
-    monthly_budget_usd: null,
     estimated_monthly_usd: kind === 'convex' ? 59 : 0,
     hosting_type: kind === 'convex' ? 'convex' : 'static',
     auth: { issuer: ISSUER, audience: id, jwks_uri: `${ISSUER}/jwks.json` },

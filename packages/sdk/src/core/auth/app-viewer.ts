@@ -241,9 +241,10 @@ export interface KortixBinding {
  * `403 app_not_linked`.
  *
  * ```ts
- * const db = kortixBinding('db');
- * const client = new ConvexReactClient(db.url);
- * client.setAuth(db.token);
+ * const api = kortixBinding('api');
+ * const res = await fetch(`${api.url}/orders`, {
+ *   headers: { authorization: `Bearer ${await api.token()}` },
+ * });
  * ```
  */
 export function kortixBinding(slug: string, options: KortixBindingOptions = {}): KortixBinding {

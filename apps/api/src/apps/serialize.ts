@@ -10,7 +10,7 @@ import { appDeployments, apps } from '@kortix/db';
 import { inArray } from 'drizzle-orm';
 import { config } from '../config';
 import { db } from '../shared/db';
-import { appHasBudget, appMonthlyEstimateUsd } from './budget';
+import { appMonthlyEstimateUsd } from './cost';
 import { appPublicUrl } from './hostnames';
 import type { AppAccessMode } from './access';
 import { type AppHostingType, appCapabilities } from './kinds';
@@ -71,12 +71,6 @@ function serializeApp(
     idle_timeout_seconds: row.idleTimeoutSeconds,
     /** False for a static App: it runs no machine, so there is nothing to keep on. */
     always_on: hostingType === 'static' && row.kind !== 'convex' ? false : row.alwaysOn,
-    /**
-     * The monthly compute cap of an on-demand server App, which stops at it.
-     * null for an always-on, static or `convex` App: its cost is fixed
-     * (`estimated_monthly_usd`) or zero, and no budget stops it.
-     */
-    monthly_budget_usd: appHasBudget(row, hostingType) ? Number(row.monthlyBudgetUsd) : null,
     /** Verifies the Kortix sign-in tokens minted for this App (`aud` = app_id), for any kind. */
     auth: { issuer, audience: row.appId, jwks_uri: `${issuer}/jwks.json` },
     uses: links.uses,
@@ -85,7 +79,7 @@ function serializeApp(
     hosting_type: row.kind === 'convex' ? 'convex' : hostingType,
     /** Ready deployments kept besides the active one (rollback targets). */
     retained_deployments: config.KORTIX_APPS_RETAINED_DEPLOYMENTS,
-    /** The App's machine running 24/7 for a month at list compute rates: the monthly cost of an always-on or `convex` App, the ceiling of an on-demand one. A static App runs none: 0. */
+    /** The App's machine running 24/7 for a month at list compute rates: the monthly cost of an always-on or `convex` App, the most an on-demand one can cost. A static App runs none: 0. */
     estimated_monthly_usd: row.kind === 'convex'
       ? appMonthlyEstimateUsd(row, 'platinum')
       : hostingType === 'static' ? 0 : appMonthlyEstimateUsd(row, config.getDefaultProvider()),

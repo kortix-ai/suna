@@ -955,7 +955,7 @@ const APP_TYPES = new Set(['static', 'bundle', 'dockerfile', 'oci_image']);
 const APP_KEYS = new Set([
   'path', 'type', 'image', 'dockerfile', 'command', 'port', 'root', 'output_dir',
   'install_command', 'build_command', 'spa', 'readiness_path', 'idle_timeout_seconds',
-  'always_on', 'monthly_budget_usd', 'kind', 'uses', 'resources', 'env', 'secrets',
+  'always_on', 'kind', 'uses', 'resources', 'env', 'secrets',
 ]);
 const APP_KINDS = new Set(['web', 'convex']);
 /** An App slug as the Apps API accepts it (`uses` entries name live Apps). */
@@ -1015,6 +1015,8 @@ function validateAppsV2(node: unknown, path: string, issues: ManifestIssue[]): v
     for (const key of Object.keys(value)) {
       if (key === 'backends') {
         issues.push({ path: `${where}.backends`, message: 'is retired: list the Apps this App uses in `uses`.', severity: 'error' });
+      } else if (key === 'monthly_budget_usd') {
+        issues.push({ path: `${where}.monthly_budget_usd`, message: 'is retired and ignored: Apps have no budget. Remove it.', severity: 'warning' });
       } else if (!APP_KEYS.has(key)) {
         issues.push({ path: `${where}.${key}`, message: 'is not a supported App field.', severity: 'error' });
       }
@@ -1089,10 +1091,6 @@ function validateAppsV2(node: unknown, path: string, issues: ManifestIssue[]): v
     expectBoundedIntOrAbsent(value.idle_timeout_seconds, `${where}.idle_timeout_seconds`, { min: 120, max: 86400 }, issues);
     if (value.always_on !== undefined && typeof value.always_on !== 'boolean') {
       issues.push({ path: `${where}.always_on`, message: 'must be true or false.', severity: 'error' });
-    }
-    if (value.monthly_budget_usd !== undefined &&
-        (typeof value.monthly_budget_usd !== 'number' || value.monthly_budget_usd < 0)) {
-      issues.push({ path: `${where}.monthly_budget_usd`, message: 'must be a non-negative number.', severity: 'error' });
     }
     if (value.resources !== undefined) {
       if (!isTable(value.resources)) {

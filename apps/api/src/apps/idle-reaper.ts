@@ -105,7 +105,6 @@ type RuntimeRow = typeof appRuntimes.$inferSelect;
 type AppRow = typeof apps.$inferSelect;
 
 export interface AppKeepAliveResult {
-  budgetStopped: number;
   unfundedStopped: number;
   started: number;
   refreshed: number;
@@ -119,9 +118,7 @@ export interface AppKeepAliveResult {
  * The always-on lifecycle, every 5 minutes. It runs beside the idle reaper,
  * not inside it, so a slow start never holds up idle stops.
  *   1. Cost: a running App (either mode) is stopped when its account can no
- *      longer pay (the same check session create runs). An on-demand App is
- *      also stopped when its month-to-date compute reached
- *      `monthly_budget_usd`. An always-on App has no budget: it costs its size.
+ *      longer pay (the same check session create runs).
  *   2. Refresh: an always-on App never cold-starts, so its stale supervisor
  *      (or its static App still on a sandbox) is queued for the rebuild a cold
  *      start would queue, at most `KEEP_ALIVE_REFRESHES_PER_PASS` per pass.
@@ -139,7 +136,7 @@ export async function runAppKeepAlive(now = new Date(), force = false): Promise<
   keepAliveRunning = true;
   try {
     const hosting = new AppHostingProvider();
-    const cost = await stopUnaffordableRuntimes(hosting, now);
+    const cost = await stopUnaffordableRuntimes(hosting);
     const alwaysOn = await keepAlwaysOnAppsRunning(hosting, now);
     return { ...cost, ...alwaysOn };
   } finally {
@@ -162,8 +159,7 @@ async function forEachPage<T>(
   }
 }
 
-async function stopUnaffordableRuntimes(hosting: AppHostingProvider, now: Date) {
-  const { appHasBudget, assertAppBudgetAvailable, AppBudgetExceededError } = await import('./budget');
+async function stopUnaffordableRuntimes(hosting: AppHostingProvider) {
   const { assertAppAccountFunded, AppAccountUnfundedError } = await import('./limits');
   // One entitlement check per account per pass, however many Apps it runs.
   const funding = new Map<string, Promise<string | null>>();
@@ -178,7 +174,6 @@ async function stopUnaffordableRuntimes(hosting: AppHostingProvider, now: Date) 
     }
     return verdict;
   };
-  let budgetStopped = 0;
   let unfundedStopped = 0;
   await forEachPage(
     (after) => db
@@ -197,30 +192,16 @@ async function stopUnaffordableRuntimes(hosting: AppHostingProvider, now: Date) 
     (rows) => mapWithConcurrency(rows, KEEP_ALIVE_CONCURRENCY, async ({ runtime, app }) => {
       try {
         const unfundedReason = await unfunded(app.accountId);
-        if (unfundedReason) {
-          await stopForCost(hosting, runtime, 'app_stopped_unfunded', `Stopped: ${unfundedReason}`);
-          unfundedStopped += 1;
-          logger.warn('[apps] App stopped: its account cannot pay for compute', { appId: app.appId });
-          return;
-        }
-        // A budget stops only an on-demand App; an always-on App costs its size and keeps running.
-        if (appHasBudget(app)) await assertAppBudgetAvailable(app.appId, Number(app.monthlyBudgetUsd), now);
+        if (!unfundedReason) return;
+        await stopForCost(hosting, runtime, 'app_stopped_unfunded', `Stopped: ${unfundedReason}`);
+        unfundedStopped += 1;
+        logger.warn('[apps] App stopped: its account cannot pay for compute', { appId: app.appId });
       } catch (error) {
-        if (!(error instanceof AppBudgetExceededError)) {
-          logger.error('[apps] cost check failed', { appId: app.appId, error: String(error) });
-          return;
-        }
-        try {
-          await stopForCost(hosting, runtime, 'app_stopped_budget', `Stopped: ${error.message}`);
-          budgetStopped += 1;
-          logger.warn('[apps] App stopped at its monthly budget', { appId: app.appId, budgetUsd: app.monthlyBudgetUsd });
-        } catch (stopError) {
-          logger.error('[apps] budget stop failed', { appId: app.appId, error: String(stopError) });
-        }
+        logger.error('[apps] cost check failed', { appId: app.appId, error: String(error) });
       }
     }).then(() => undefined),
   );
-  return { budgetStopped, unfundedStopped };
+  return { unfundedStopped };
 }
 
 async function stopForCost(hosting: AppHostingProvider, runtime: RuntimeRow, type: string, message: string) {

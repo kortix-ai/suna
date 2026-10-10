@@ -40,7 +40,7 @@ import {
   loadManifestApps,
   mergeManifestDefaults,
   positiveInteger,
-  positiveNumber,
+  dropRetiredBudgetFlag,
   runCostLine,
   provisionDeployApp,
   resolveApp,
@@ -73,10 +73,6 @@ Subcommands:
     --always-on | --on-demand       Run 24/7, or stop when idle and wake on the
                                     next request. A static App has no runtime
                                     and ignores both. A convex App always runs.
-    --budget <usd>                  Monthly compute budget of an on-demand App
-                                    (default 5). It stops at the budget.
-                                    Always-on and convex Apps have none: they
-                                    cost their size.
     --uses <slugs>                  Apps this App uses (it may bind to them and
                                     mint their sign-in tokens), comma-separated.
     --no-wait                       Return before a convex App runs.
@@ -113,10 +109,6 @@ Subcommands:
     --groups <ids>                  Comma-separated group ids for restricted access.
     --always-on | --on-demand       Server Apps: run 24/7 (default), or stop when
                                     idle. Static Apps run no server.
-    --budget <usd>                  Monthly compute budget of an on-demand App
-                                    (default 5). It stops at the budget.
-                                    Always-on and convex Apps have none: they
-                                    cost their size.
     --no-wait                       Return after the deployment is queued.
     --wait-seconds <seconds>        Default: 1200.
   set <id|slug>                     Change an existing App. Only the flags you
@@ -124,15 +116,13 @@ Subcommands:
                                     A web machine change applies to the next
                                     deployment; a convex App resizes now (seconds
                                     of downtime) and the command waits. A run-mode
-                                    or budget change applies within 5 minutes.
+                                    change applies within 5 minutes.
     --name <name>
     --cpu <cores>
     --memory-gb <gb>                Alias: --memory.
     --disk-gb <gb>                  Alias: --disk.
     --idle-timeout <seconds>        120-86400.
     --always-on | --on-demand       Run 24/7, or stop when idle.
-    --budget <usd>                  Monthly compute budget of an on-demand App
-                                    (default 5). Always-on and convex Apps have none.
     --uses <slugs>                  Replace the Apps this App uses. Comma-
                                     separated; --uses= clears the list.
     --no-wait                       Return before a resize ends.
@@ -342,6 +332,7 @@ async function createCommand(
   options: ContextOptions,
   json: boolean,
 ): Promise<number> {
+  dropRetiredBudgetFlag(rest);
   const kind = takeFlagValue(rest, ['--kind']);
   if (kind !== undefined && kind !== 'web' && kind !== 'convex') return fail('--kind must be web or convex');
   const wait = !takeFlagBool(rest, ['--no-wait']);
@@ -362,7 +353,6 @@ async function createCommand(
       takeFlagValue(rest, ['--idle-timeout']),
       '--idle-timeout',
     ),
-    monthly_budget_usd: positiveNumber(takeFlagValue(rest, ['--budget']), '--budget'),
     ...(uses ? { uses } : {}),
     ...runMode(rest),
   };
@@ -382,14 +372,12 @@ async function createCommand(
   return 0;
 }
 
-/** Fixed monthly cost (always-on, convex) or budget (on demand); a static App has neither. */
+/** The fixed monthly cost of an always-on or convex App; none for on-demand (usage) or static Apps. */
 function costRows(app: App): string {
-  const row = (label: string, value: string) => `  ${C.dim}${pad(label, 14)}${C.reset}${value}\n`;
-  if (typeof app.monthly_budget_usd === 'number') return row('budget', `$${app.monthly_budget_usd}/month`);
   const estimate = app.estimated_monthly_usd;
-  return estimate
-    ? row('cost', `about $${Math.round(estimate)}/month (${app.machine.cpu} vCPU · ${app.machine.memory_gb} GB, 24/7)`)
-    : '';
+  if (!estimate || app.always_on === false) return '';
+  const value = `about $${Math.round(estimate)}/month (${app.machine.cpu} vCPU · ${app.machine.memory_gb} GB, 24/7)`;
+  return `  ${C.dim}${pad('cost', 14)}${C.reset}${value}\n`;
 }
 
 /** The facts `show`, `create` and `set` print about an App. */
@@ -446,12 +434,12 @@ async function setCommand(rest: string[], options: ContextOptions, json: boolean
   // Flags are consumed BEFORE the positional is picked, so a flag VALUE
   // (`--cpu 2`) is never mistaken for the App id when the id is missing.
   const input: UpdateAppInput = {};
+  dropRetiredBudgetFlag(rest);
   const name = takeFlagValue(rest, ['--name']);
   const cpu = positiveInteger(takeFlagValue(rest, ['--cpu']), '--cpu');
   const memory = positiveInteger(takeFlagValue(rest, ['--memory-gb', '--memory']), '--memory-gb');
   const disk = positiveInteger(takeFlagValue(rest, ['--disk-gb', '--disk']), '--disk-gb');
   const idle = positiveInteger(takeFlagValue(rest, ['--idle-timeout']), '--idle-timeout');
-  const budget = positiveNumber(takeFlagValue(rest, ['--budget']), '--budget');
   const uses = usesList(takeFlagValue(rest, ['--uses']));
   const wait = !takeFlagBool(rest, ['--no-wait']);
   Object.assign(input, runMode(rest));
@@ -462,11 +450,10 @@ async function setCommand(rest: string[], options: ContextOptions, json: boolean
   if (memory !== undefined) input.memory_gb = memory;
   if (disk !== undefined) input.disk_gb = disk;
   if (idle !== undefined) input.idle_timeout_seconds = idle;
-  if (budget !== undefined) input.monthly_budget_usd = budget;
   if (uses !== undefined) input.uses = uses;
   if (Object.keys(input).length === 0) {
     return fail(
-      'set needs at least one of --name, --cpu, --memory-gb, --disk-gb, --idle-timeout, --always-on, --on-demand, --budget, --uses',
+      'set needs at least one of --name, --cpu, --memory-gb, --disk-gb, --idle-timeout, --always-on, --on-demand, --uses',
     );
   }
   const ctx = await context(options);

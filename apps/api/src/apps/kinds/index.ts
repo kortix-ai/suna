@@ -1,12 +1,12 @@
 /**
  * App kinds. Every App has one `kind`, fixed at create. The App core (routes,
- * access, budget fields, deletion) is the same for every kind; a kind module
+ * access, size, deletion) is the same for every kind; a kind module
  * owns what differs: the capabilities it offers and its own maintenance pass.
  *
  *   web     a site or a server built from a deployment: static files served
  *           from storage, or a runtime sandbox that sleeps when idle (../*.ts).
  *   convex  a self-hosted Convex backend in its own always-on machine
- *           (./convex/). It never sleeps; its budget alerts and never stops it;
+ *           (./convex/). It never sleeps;
  *           a delete keeps the stopped machine and a `final` snapshot 7 days.
  *
  * Clients branch on `capabilities`, never on `kind`. A route that needs a

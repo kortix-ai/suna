@@ -25,7 +25,6 @@ import { AppHostingProvider } from './hosting';
 import { normalizeAppBuild, type AppSourceSpec } from './spec';
 import { publishStaticSite, staticHostingEnabled } from './static-site';
 import { retireSupersededDeployments } from './retention';
-import { AppBudgetExceededError } from './budget';
 import { AppAccountUnfundedError, AppLimitError, assertAppComputeAllowed } from './limits';
 import { appRuntimeArtifactDigest } from './runtime-artifacts';
 import { appDeploymentFailureDisposition } from './deployment-failures';
@@ -75,8 +74,8 @@ export function appRuntimeImageKey(runtimeVersion: string | null): string {
 
 /**
  * Failures a rebuild of the same artifact on the same image key repeats
- * exactly. Any other failure (provider, quota, timeout, a budget or
- * concurrency refusal) may pass on a later try.
+ * exactly. Any other failure (provider, quota, timeout, an
+ * entitlement or concurrency refusal) may pass on a later try.
  */
 const DETERMINISTIC_REFRESH_FAILURES = new Set([
   'invalid_site', 'invalid_spec', 'invalid_environment', 'artifact_missing', 'artifact_not_uploaded',
@@ -736,16 +735,13 @@ async function resolveDeploymentBuild(context: DeploymentContext, sourceDir: str
 }
 
 async function assertDeploymentComputeAllowed(context: DeploymentContext): Promise<void> {
-  // Entitlement, concurrency and (on demand) budget, before a build burns
-  // provider time. A refusal here is permanent: the operator must fund the
-  // account, stop an App, or raise the budget and then deploy again.
+  // Entitlement and concurrency, before a build burns provider time. A
+  // refusal here is permanent: the operator must fund the account or stop an
+  // App and then deploy again.
   // Retrying three times on a 30s backoff would only restate the same answer.
   try {
     await assertAppComputeAllowed(context.app);
   } catch (error) {
-    if (error instanceof AppBudgetExceededError) {
-      throw new PermanentAppDeploymentError(error.message, 'app_budget_exceeded');
-    }
     if (error instanceof AppAccountUnfundedError) {
       throw new PermanentAppDeploymentError(error.message, 'account_unfunded');
     }

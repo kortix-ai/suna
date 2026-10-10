@@ -130,7 +130,6 @@ test('Apps CRUD uses the project-scoped API contract', async () => {
     active_deployment_id: null,
     machine: { cpu: 1, memory_gb: 2, disk_gb: 10 },
     idle_timeout_seconds: 300,
-    monthly_budget_usd: 5,
     last_request_at: null,
     created_at: '2026-08-07T00:00:00.000Z',
     updated_at: '2026-08-07T00:00:00.000Z',
@@ -202,7 +201,6 @@ test('an App carries its kind, capabilities, sign-in values and instance; create
       health: null,
       auth_env: null,
       client_version: '1.46.0',
-      budget_alert: { month: '2026-10', percent: 80, spent_usd: 4, budget_usd: 5, at: '2026-10-09T00:00:00.000Z' },
       purge_after: null,
     },
   } as App;
@@ -441,7 +439,7 @@ test('an App runs always-on or on demand: create and update send always_on, and 
     app_id: 'app-1', account_id: 'account-1', project_id: 'project-1', slug: 'demo', name: 'Demo',
     url: 'https://demo.apps.kortix.com', access_mode: 'private', access_revision: 1, desired_state: 'running',
     active_deployment_id: null, machine: { cpu: 1, memory_gb: 2, disk_gb: 10 }, idle_timeout_seconds: 300,
-    always_on: false, monthly_budget_usd: 5, last_request_at: null,
+    always_on: false, last_request_at: null,
     created_at: '2026-10-07T00:00:00.000Z', updated_at: '2026-10-07T00:00:00.000Z',
   };
   responses.push({ status: 201, body: { ...app, always_on: true } }, { body: app });
@@ -451,29 +449,24 @@ test('an App runs always-on or on demand: create and update send always_on, and 
   expect(last().body).toEqual({ always_on: false });
 });
 
-test('only an on-demand App has a budget: an always-on App reads monthly_budget_usd null and its monthly cost', async () => {
-  const app: import('./apps').App = {
+test('Apps have no budget: no App, create, update or instance type carries one, and an always-on App reads its monthly cost', async () => {
+  type Has<T, K extends string> = K extends keyof T ? true : false;
+  const appBudget: Has<App, 'monthly_budget_usd'> = false;
+  const createBudget: Has<CreateAppInput, 'monthly_budget_usd'> = false;
+  const updateBudget: Has<UpdateAppInput, 'monthly_budget_usd'> = false;
+  const instanceAlert: Has<AppInstance, 'budget_alert'> = false;
+  expect([appBudget, createBudget, updateBudget, instanceAlert]).toEqual([false, false, false, false]);
+  const app: App = {
     app_id: 'app-1', account_id: 'account-1', project_id: 'project-1', slug: 'demo', name: 'Demo',
     url: 'https://demo.apps.kortix.com', access_mode: 'private', access_revision: 1, desired_state: 'running',
     active_deployment_id: null, machine: { cpu: 1, memory_gb: 2, disk_gb: 10 }, idle_timeout_seconds: 300,
-    always_on: true, monthly_budget_usd: null, estimated_monthly_usd: 73.48, last_request_at: null, warnings: [],
+    always_on: true, estimated_monthly_usd: 73.48, last_request_at: null, warnings: [],
     created_at: '2026-10-07T00:00:00.000Z', updated_at: '2026-10-07T00:00:00.000Z',
   };
-  const budget: Equal<App['monthly_budget_usd'], number | null> = true;
-  expect(budget).toBe(true);
-  responses.push({ status: 201, body: app }, { body: { ...app, always_on: false, monthly_budget_usd: 5 } });
+  responses.push({ status: 201, body: app });
   const created = await createApp('project-1', { slug: 'demo', name: 'Demo' });
-  expect(created.monthly_budget_usd).toBeNull();
   expect(created.estimated_monthly_usd).toBe(73.48);
-  expect((await updateApp('project-1', 'app-1', { always_on: false })).monthly_budget_usd).toBe(5);
-});
-
-test('a budget on an always-on App: the server answers 400 app_budget_not_applicable and the SDK rejects with it', async () => {
-  responses.push({
-    status: 400,
-    body: { error: 'An always-on App has no monthly budget: it runs 24/7 at a fixed cost (about $73.48 a month).', code: 'app_budget_not_applicable', estimated_monthly_usd: 73.48 },
-  });
-  await expect(updateApp('project-1', 'app-1', { monthly_budget_usd: 50 })).rejects.toMatchObject({ status: 400 });
+  expect(last().body).toEqual({ slug: 'demo', name: 'Demo' });
 });
 
 test('an App says how its active deployment is hosted: hosting_type', async () => {
@@ -481,7 +474,7 @@ test('an App says how its active deployment is hosted: hosting_type', async () =
     app_id: 'app-1', account_id: 'account-1', project_id: 'project-1', slug: 'site', name: 'Site',
     url: 'https://site.apps.kortix.com', access_mode: 'public', access_revision: 1, desired_state: 'stopped',
     active_deployment_id: 'deployment-1', machine: { cpu: 1, memory_gb: 2, disk_gb: 10 }, idle_timeout_seconds: 300,
-    monthly_budget_usd: 5, estimated_monthly_usd: 0, hosting_type: 'static', retained_deployments: 5, last_request_at: null,
+    estimated_monthly_usd: 0, hosting_type: 'static', retained_deployments: 5, last_request_at: null,
     created_at: '2026-10-07T00:00:00.000Z', updated_at: '2026-10-07T00:00:00.000Z',
   } satisfies import('./apps').App;
   responses.push({ body: { apps: [app] } });
