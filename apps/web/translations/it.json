@@ -20043,6 +20043,7 @@
     "noticeSignInBody": "Kortix ha aggiunto {name}. Completa l'accesso perché gli agenti possano usarne gli strumenti.",
     "noticeSignInAction": "Accedi",
     "connectAccount": "Connetti",
+    "notSignedIn": "Accesso non effettuato",
     "infoRunsOver": "Funziona su",
     "waysToConnect": "Modi per connettersi",
     "recommended": "Consigliato",

@@ -20043,6 +20043,7 @@
     "noticeSignInBody": "O Kortix adicionou {name}. Conclua o login para que os agentes possam usar as ferramentas.",
     "noticeSignInAction": "Entrar",
     "connectAccount": "Conectar",
+    "notSignedIn": "Sem login",
     "infoRunsOver": "Executa sobre",
     "waysToConnect": "Formas de conectar",
     "recommended": "Recomendado",

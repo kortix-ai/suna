@@ -20043,6 +20043,7 @@
     "noticeSignInBody": "Kortix 已添加 {name}。完成登录后，智能体即可使用其工具。",
     "noticeSignInAction": "登录",
     "connectAccount": "连接",
+    "notSignedIn": "未登录",
     "infoRunsOver": "运行方式",
     "waysToConnect": "连接方式",
     "recommended": "推荐",

@@ -20043,6 +20043,7 @@
     "noticeSignInBody": "Kortix hat {name} hinzugefügt. Schließe die Anmeldung ab, damit Agenten die Tools nutzen können.",
     "noticeSignInAction": "Anmelden",
     "connectAccount": "Verbinden",
+    "notSignedIn": "Nicht angemeldet",
     "infoRunsOver": "Läuft über",
     "waysToConnect": "Verbindungsarten",
     "recommended": "Empfohlen",

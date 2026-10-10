@@ -20043,6 +20043,7 @@
     "noticeSignInBody": "Kortix je dodao {name}. Završi prijavu da bi agenti mogli da koriste njegove alate.",
     "noticeSignInAction": "Prijavi se",
     "connectAccount": "Poveži",
+    "notSignedIn": "Nije prijavljeno",
     "infoRunsOver": "Ради преко",
     "waysToConnect": "Начини повезивања",
     "recommended": "Препоручено",

@@ -158,9 +158,12 @@ function PasswordInput({
 function AuthCardForm({
   returnUrl,
   mobileCallbackState,
+  mobileSsoEmail,
 }: {
   returnUrl: string;
   mobileCallbackState: string | null;
+  /** Address the mobile app sent with `sso=1`: SSO starts for it on mount. */
+  mobileSsoEmail: string | null;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('auth.unified');
@@ -444,8 +447,8 @@ function AuthCardForm({
    * falling through to magic link — an invisible fall-through here reads as
    * "SSO is broken".
    */
-  const handleSsoContinue = async () => {
-    const trimmed = email.trim();
+  const handleSsoContinue = async (address: string = email) => {
+    const trimmed = address.trim();
     if (!trimmed) {
       clearNotices();
       setInfo(t('sso.enterWorkEmail'));
@@ -467,6 +470,19 @@ function AuthCardForm({
       setPendingAction(null);
     }
   };
+
+  // The mobile app collected the address natively and opened this page with
+  // `sso=1&email=…`: prefill it and run the explicit SSO action once, so the
+  // user does not retype it. The ref keeps Strict Mode's effect re-run from
+  // starting a second IdP navigation.
+  const hasStartedMobileSso = useRef(false);
+  useEffect(() => {
+    if (!mobileSsoEmail || hasStartedMobileSso.current) return;
+    hasStartedMobileSso.current = true;
+    setEmail(mobileSsoEmail);
+    void handleSsoContinue(mobileSsoEmail);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot on the handoff address
+  }, [mobileSsoEmail]);
 
   const handleEntryContinue = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -964,6 +980,10 @@ function AuthContent() {
   );
   const mobileCallbackState =
     searchParams.get('mobile_callback') === '1' ? searchParams.get('state') : null;
+  const mobileSsoEmail =
+    mobileCallbackState && searchParams.get('sso') === '1'
+      ? searchParams.get('email')?.trim() || null
+      : null;
   const hasStartedMobileHandoff = useRef(false);
   const hasResumedPkceCode = useRef(false);
 
@@ -1117,7 +1137,13 @@ function AuthContent() {
   // safety-net timeout) also lands here — never a dead shell.
   return (
     <AuthFrame footerVariant="continue">
-      <AuthCardForm returnUrl={returnUrl} mobileCallbackState={mobileCallbackState} />
+      <AuthCardForm
+        returnUrl={returnUrl}
+        mobileCallbackState={mobileCallbackState}
+        // Wait for the session check: an existing session goes to the app
+        // through the handoff effect above, not through a fresh SSO round trip.
+        mobileSsoEmail={isLoading ? null : mobileSsoEmail}
+      />
     </AuthFrame>
   );
 }
