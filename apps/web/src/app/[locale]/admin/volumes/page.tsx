@@ -33,6 +33,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import type { AdminBootMode, AdminBootModePolicy, AdminBootModeRule } from '@kortix/sdk';
 
@@ -44,21 +45,41 @@ import { AdminPanel, AdminSection } from '../_components/admin-panel';
 import { AdminSearch } from '../_components/admin-table';
 import { StatGrid, StatGridSkeleton, StatTile } from '../_components/stat-tile';
 
-const MODES: { value: AdminBootMode; label: string; detail: string }[] = [
-  { value: 'standard', label: 'Image', detail: 'The session image alone.' },
-  { value: 'artifacts', label: 'Image + artifacts', detail: 'Plus the boot-artifacts volume for the latest runtime.' },
-  { value: 'volume', label: 'Volume', detail: 'Ephemeral box, session state on a volume, plus artifacts.' },
-];
-const modeLabel = (m: string) => MODES.find((x) => x.value === m)?.label ?? m;
+type Translate = ReturnType<typeof useI18nTranslations>;
 
-const REASONS: Record<string, string> = {
-  session_volume: 'Session volume',
-  artifacts_volume: 'Artifacts volume',
-  volume_mount: 'Volume mount',
-  timeout: 'Timed out',
-  boot_health: 'Box never became ready',
-  other: 'Other',
-};
+function modes(tI18nHardcoded: Translate): { value: AdminBootMode; label: string; detail: string; requested: (count: number) => string }[] {
+  return [
+    {
+      value: 'standard',
+      label: tI18nHardcoded('appAdminVolumesPage.modeImage'),
+      detail: tI18nHardcoded('appAdminVolumesPage.modeImageDetail'),
+      requested: (count) => tI18nHardcoded('appAdminVolumesPage.modeImageRequested', { count }),
+    },
+    {
+      value: 'artifacts',
+      label: tI18nHardcoded('appAdminVolumesPage.modeArtifacts'),
+      detail: tI18nHardcoded('appAdminVolumesPage.modeArtifactsDetail'),
+      requested: (count) => tI18nHardcoded('appAdminVolumesPage.modeArtifactsRequested', { count }),
+    },
+    {
+      value: 'volume',
+      label: tI18nHardcoded('appAdminVolumesPage.modeVolume'),
+      detail: tI18nHardcoded('appAdminVolumesPage.modeVolumeDetail'),
+      requested: (count) => tI18nHardcoded('appAdminVolumesPage.modeVolumeRequested', { count }),
+    },
+  ];
+}
+
+function reasons(tI18nHardcoded: Translate): Record<string, string> {
+  return {
+    session_volume: tI18nHardcoded('appAdminVolumesPage.reasonSessionVolume'),
+    artifacts_volume: tI18nHardcoded('appAdminVolumesPage.reasonArtifactsVolume'),
+    volume_mount: tI18nHardcoded('appAdminVolumesPage.reasonVolumeMount'),
+    timeout: tI18nHardcoded('appAdminVolumesPage.reasonTimeout'),
+    boot_health: tI18nHardcoded('appAdminVolumesPage.reasonBootHealth'),
+    other: tI18nHardcoded('appAdminVolumesPage.reasonOther'),
+  };
+}
 
 function ModeSelect({
   value,
@@ -69,13 +90,14 @@ function ModeSelect({
   onChange: (mode: AdminBootMode) => void;
   className?: string;
 }) {
+  const tI18nHardcoded = useI18nTranslations('hardcodedUi');
   return (
     <Select value={value} onValueChange={(v) => onChange(v as AdminBootMode)}>
       <SelectTrigger className={cn('w-48', className)} size="sm">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        {MODES.map((m) => (
+        {modes(tI18nHardcoded).map((m) => (
           <SelectItem key={m.value} value={m.value}>
             {m.label}
           </SelectItem>
@@ -93,6 +115,7 @@ function FallbackSwitch({
   rule: AdminBootModeRule;
   onChange: (on: boolean) => void;
 }) {
+  const tI18nHardcoded = useI18nTranslations('hardcodedUi');
   const reachable = rule.mode !== 'standard';
   return (
     <label className={cn('flex items-center gap-2 text-xs', !reachable && 'opacity-50')}>
@@ -100,9 +123,9 @@ function FallbackSwitch({
         checked={rule.standardFallback}
         disabled={!reachable}
         onCheckedChange={onChange}
-        aria-label="Fall back to the image"
+        aria-label={tI18nHardcoded('appAdminVolumesPage.fallBackToTheImage')}
       />
-      <span className="text-muted-foreground">Fall back to image</span>
+      <span className="text-muted-foreground">{tI18nHardcoded('appAdminVolumesPage.fallBackToImage')}</span>
     </label>
   );
 }
@@ -122,6 +145,10 @@ function Row({ title, detail, children }: { title: string; detail?: string; chil
 const clampAttempts = (v: string) => Math.min(10, Math.max(1, Math.round(Number(v) || 1)));
 
 export default function AdminVolumesPage() {
+  const tI18nHardcoded = useI18nTranslations('hardcodedUi');
+  const MODES = modes(tI18nHardcoded);
+  const REASONS = reasons(tI18nHardcoded);
+  const modeLabel = (m: string) => MODES.find((x) => x.value === m)?.label ?? m;
   const q = useAdminBootModes();
   const [draft, setDraft] = useState<AdminBootModePolicy | null>(null);
   const [picked, setPicked] = useState<Record<string, string>>({});
@@ -143,8 +170,8 @@ export default function AdminVolumesPage() {
   }, [picked, q.data]);
 
   const save = useSetAdminBootModes({
-    onSuccess: () => successToast('Volumes saved'),
-    onError: (e) => errorToast(e.message || 'Could not save Volumes'),
+    onSuccess: () => successToast(tI18nHardcoded('appAdminVolumesPage.saved')),
+    onError: (e) => errorToast(e.message || tI18nHardcoded('appAdminVolumesPage.saveFailed')),
   });
 
   const dirty = Boolean(q.data && draft && JSON.stringify(draft) !== JSON.stringify(q.data.policy));
@@ -189,19 +216,19 @@ export default function AdminVolumesPage() {
 
   return (
     <AdminPageShell
-      title="Volumes"
-      description="One switch for Files, drive mounts, session volumes and boot artifacts, per organization. Off, an organization sees the product without volumes. Changes reach every API process within 30 seconds."
+      title={tI18nHardcoded('appAdminVolumesPage.title')}
+      description={tI18nHardcoded('appAdminVolumesPage.description')}
       action={
         <>
           <AdminRefreshButton busy={q.isFetching} onRefresh={() => void q.refetch()} />
           {dirty && draft ? (
             <>
               <Button variant="ghost" onClick={() => setDraft(structuredClone(data!.policy))}>
-                Discard
+                {tI18nHardcoded('appAdminVolumesPage.discard')}
               </Button>
               <Button onClick={() => save.mutate(draft, { onSuccess: (saved) => setDraft(structuredClone(saved.policy)) })} disabled={save.isPending} className="gap-1.5">
                 {save.isPending ? <Loading className="size-4 shrink-0" /> : null}
-                Save
+                {tI18nHardcoded('appAdminVolumesPage.save')}
               </Button>
             </>
           ) : null}
@@ -217,29 +244,29 @@ export default function AdminVolumesPage() {
       ) : (
         <div className="space-y-8">
           <AdminSection
-            title="Volumes"
-            description="On: Files is the project drive and the repo browser is Repo, sessions mount their folders and boot on a volume. Off: Files is the repo browser and sessions boot from the image. A session whose files already live on a volume keeps its volume when its organization is turned off."
+            title={tI18nHardcoded('appAdminVolumesPage.volumesTitle')}
+            description={tI18nHardcoded('appAdminVolumesPage.volumesDescription')}
           >
             <AdminPanel className="space-y-5">
               <Row
-                title="On for every organization"
-                detail="Organizations turned off below stay off."
+                title={tI18nHardcoded('appAdminVolumesPage.everyOrganizationTitle')}
+                detail={tI18nHardcoded('appAdminVolumesPage.everyOrganizationDetail')}
               >
                 <Switch
                   checked={everyone}
                   onCheckedChange={(on) => setVolumes({ enabled: on })}
-                  aria-label="Volumes for every organization"
+                  aria-label={tI18nHardcoded('appAdminVolumesPage.everyOrganizationLabel')}
                 />
               </Row>
               <div className="border-t" />
               <Row
-                title="Rollout"
+                title={tI18nHardcoded('appAdminVolumesPage.rolloutTitle')}
                 detail={
                   everyone
-                    ? 'Not used while Volumes is on for every organization.'
+                    ? tI18nHardcoded('appAdminVolumesPage.rolloutUnused')
                     : draft.volumes.percent > 0
-                      ? `${draft.volumes.percent}% of the organizations without a setting of their own, picked by a stable hash of the organization id.`
-                      : 'Turn Volumes on for a share of the organizations without a setting of their own.'
+                      ? tI18nHardcoded('appAdminVolumesPage.rolloutPercentDetail', { percent: draft.volumes.percent })
+                      : tI18nHardcoded('appAdminVolumesPage.rolloutOffDetail')
                 }
               >
                 <span className={cn('text-muted-foreground flex items-center gap-1.5 text-xs', everyone && 'opacity-50')}>
@@ -253,7 +280,7 @@ export default function AdminVolumesPage() {
                       setVolumes({ percent: Math.min(100, Math.max(0, Math.round(Number(e.target.value) || 0))) })
                     }
                     className="h-8 w-20"
-                    aria-label="Rollout percent"
+                    aria-label={tI18nHardcoded('appAdminVolumesPage.rolloutPercentLabel')}
                   />
                   %
                 </span>
@@ -262,11 +289,11 @@ export default function AdminVolumesPage() {
           </AdminSection>
 
           <AdminSection
-            title="Organizations"
-            description="An organization's own setting wins over the switch and the rollout. Its boot mode applies while Volumes is on for it."
+            title={tI18nHardcoded('appAdminVolumesPage.organizationsTitle')}
+            description={tI18nHardcoded('appAdminVolumesPage.organizationsDescription')}
             action={
               <div className="w-full sm:w-72">
-                <AdminSearch value={search} onChange={setSearch} placeholder="Find an organization" />
+                <AdminSearch value={search} onChange={setSearch} placeholder={tI18nHardcoded('appAdminVolumesPage.findOrganization')} />
               </div>
             }
           >
@@ -279,7 +306,7 @@ export default function AdminVolumesPage() {
                     </div>
                   ) : candidates.length === 0 ? (
                     <p className="text-muted-foreground p-3 text-xs">
-                      No other organization matches “{search}”. Organizations already listed below are not repeated.
+                      {tI18nHardcoded('appAdminVolumesPage.noOtherOrganization', { search })}
                     </p>
                   ) : (
                     <ul className="divide-y">
@@ -305,7 +332,7 @@ export default function AdminVolumesPage() {
                               }}
                             >
                               <PlusIcon className="size-3.5" />
-                              Add
+                              {tI18nHardcoded('appAdminVolumesPage.add')}
                             </Button>
                           </li>
                         );
@@ -319,10 +346,10 @@ export default function AdminVolumesPage() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Organization</TableHead>
-                        <TableHead>Volumes</TableHead>
-                        <TableHead>Boot mode</TableHead>
-                        <TableHead className="hidden sm:table-cell">Last step</TableHead>
+                        <TableHead>{tI18nHardcoded('appAdminVolumesPage.columnOrganization')}</TableHead>
+                        <TableHead>{tI18nHardcoded('appAdminVolumesPage.columnVolumes')}</TableHead>
+                        <TableHead>{tI18nHardcoded('appAdminVolumesPage.columnBootMode')}</TableHead>
+                        <TableHead className="hidden sm:table-cell">{tI18nHardcoded('appAdminVolumesPage.columnLastStep')}</TableHead>
                         <TableHead className="w-10" />
                       </TableRow>
                     </TableHeader>
@@ -334,7 +361,7 @@ export default function AdminVolumesPage() {
                         return (
                           <TableRow key={id} className="group">
                             <TableCell className="max-w-56">
-                              <div className="truncate text-sm">{names[id] ?? 'Organization'}</div>
+                              <div className="truncate text-sm">{names[id] ?? tI18nHardcoded('appAdminVolumesPage.organizationFallbackName')}</div>
                               <div className="text-muted-foreground truncate font-mono text-xs">{id}</div>
                             </TableCell>
                             <TableCell>
@@ -342,9 +369,9 @@ export default function AdminVolumesPage() {
                                 <Switch
                                   checked={on}
                                   onCheckedChange={(v) => setOrgVolumes(id, v)}
-                                  aria-label={`Volumes for ${names[id] ?? id}`}
+                                  aria-label={tI18nHardcoded('appAdminVolumesPage.organizationVolumesLabel', { name: names[id] ?? id })}
                                 />
-                                <span className="text-muted-foreground">{on ? 'On' : 'Off'}</span>
+                                <span className="text-muted-foreground">{on ? tI18nHardcoded('appAdminVolumesPage.on') : tI18nHardcoded('appAdminVolumesPage.off')}</span>
                               </label>
                             </TableCell>
                             <TableCell>
@@ -362,7 +389,9 @@ export default function AdminVolumesPage() {
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  <SelectItem value={INHERIT}>Default ({modeLabel(draft.default.mode)})</SelectItem>
+                                  <SelectItem value={INHERIT}>
+                                    {tI18nHardcoded('appAdminVolumesPage.defaultModeOption', { mode: modeLabel(draft.default.mode) })}
+                                  </SelectItem>
                                   {MODES.map((m) => (
                                     <SelectItem key={m.value} value={m.value}>
                                       {m.label}
@@ -382,7 +411,7 @@ export default function AdminVolumesPage() {
                                 size="icon"
                                 className="opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
                                 onClick={() => removeOrg(id)}
-                                aria-label="Remove organization"
+                                aria-label={tI18nHardcoded('appAdminVolumesPage.removeOrganization')}
                               >
                                 <XIcon className="size-4" />
                               </Button>
@@ -394,17 +423,17 @@ export default function AdminVolumesPage() {
                   </Table>
                 </AdminPanel>
               ) : (
-                <p className="text-muted-foreground text-xs">No organization has a setting of its own.</p>
+                <p className="text-muted-foreground text-xs">{tI18nHardcoded('appAdminVolumesPage.noOrganizations')}</p>
               )}
             </div>
           </AdminSection>
 
           <AdminSection
-            title="Boot mode"
-            description="How new sessions of an organization with Volumes on boot, unless the organization has a mode of its own."
+            title={tI18nHardcoded('appAdminVolumesPage.bootModeTitle')}
+            description={tI18nHardcoded('appAdminVolumesPage.bootModeDescription')}
           >
             <AdminPanel className="space-y-5">
-              <Row title="Default mode" detail={MODES.find((m) => m.value === draft.default.mode)?.detail}>
+              <Row title={tI18nHardcoded('appAdminVolumesPage.defaultModeTitle')} detail={MODES.find((m) => m.value === draft.default.mode)?.detail}>
                 <ModeSelect value={draft.default.mode} onChange={(mode) => set({ default: { ...draft.default, mode } })} />
                 <FallbackSwitch
                   rule={draft.default}
@@ -413,21 +442,21 @@ export default function AdminVolumesPage() {
               </Row>
               <div className="border-t" />
               <Row
-                title="Kill switch: boot every new session from the image"
-                detail="Overrides every mode at once; Files and drives stay as they are. A session whose files already live on a volume keeps its volume."
+                title={tI18nHardcoded('appAdminVolumesPage.killSwitchTitle')}
+                detail={tI18nHardcoded('appAdminVolumesPage.killSwitchDetail')}
               >
                 <Switch
                   checked={draft.killSwitch}
                   onCheckedChange={(on) => set({ killSwitch: on })}
-                  aria-label="Kill switch"
+                  aria-label={tI18nHardcoded('appAdminVolumesPage.killSwitchLabel')}
                 />
               </Row>
             </AdminPanel>
           </AdminSection>
 
           <AdminSection
-            title="Last 24 hours"
-            description="Sessions that booted in each mode, and the fallbacks they took. Counted on the volume provider."
+            title={tI18nHardcoded('appAdminVolumesPage.last24HoursTitle')}
+            description={tI18nHardcoded('appAdminVolumesPage.last24HoursDescription')}
           >
             {stats ? (
               <div className="space-y-3">
@@ -439,7 +468,7 @@ export default function AdminVolumesPage() {
                         key={m.value}
                         label={m.label}
                         value={row?.booted ?? 0}
-                        hint={`${row?.requested ?? 0} asked for ${m.label.toLowerCase()}`}
+                        hint={m.requested(row?.requested ?? 0)}
                       />
                     );
                   })}
@@ -449,10 +478,10 @@ export default function AdminVolumesPage() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Fallback</TableHead>
-                          <TableHead>Reason</TableHead>
-                          <TableHead className="text-right">Count</TableHead>
-                          <TableHead className="hidden md:table-cell">Latest error</TableHead>
+                          <TableHead>{tI18nHardcoded('appAdminVolumesPage.columnFallback')}</TableHead>
+                          <TableHead>{tI18nHardcoded('appAdminVolumesPage.columnReason')}</TableHead>
+                          <TableHead className="text-right">{tI18nHardcoded('appAdminVolumesPage.columnCount')}</TableHead>
+                          <TableHead className="hidden md:table-cell">{tI18nHardcoded('appAdminVolumesPage.columnLatestError')}</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -472,25 +501,27 @@ export default function AdminVolumesPage() {
                     </Table>
                   </AdminPanel>
                 ) : (
-                  <p className="text-muted-foreground text-xs">No fallbacks in the last 24 hours.</p>
+                  <p className="text-muted-foreground text-xs">{tI18nHardcoded('appAdminVolumesPage.noFallbacks')}</p>
                 )}
               </div>
             ) : (
               <p className="text-destructive text-xs">
-                Counts unavailable: {'error' in data.stats ? data.stats.error : 'unknown error'}
+                {tI18nHardcoded('appAdminVolumesPage.countsUnavailable', {
+                  error: 'error' in data.stats ? data.stats.error : tI18nHardcoded('appAdminVolumesPage.unknownError'),
+                })}
               </p>
             )}
           </AdminSection>
 
           <AdminSection
-            title="Fallback"
-            description="A session whose boots keep failing steps down, once per session; it stays on the mode it reached. A session whose files already live on a volume never leaves it."
+            title={tI18nHardcoded('appAdminVolumesPage.fallbackTitle')}
+            description={tI18nHardcoded('appAdminVolumesPage.fallbackDescription')}
           >
             <AdminPanel>
               <div className="flex flex-wrap items-center gap-2 text-sm">
-                <Badge variant="outline">Volume</Badge>
+                <Badge variant="outline">{modeLabel('volume')}</Badge>
                 <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
-                  after
+                  {tI18nHardcoded('appAdminVolumesPage.after')}
                   <Input
                     type="number"
                     min={1}
@@ -500,14 +531,14 @@ export default function AdminVolumesPage() {
                       set({ fallback: { ...draft.fallback, volumeAttempts: clampAttempts(e.target.value) } })
                     }
                     className="h-7 w-14"
-                    aria-label="Volume attempts"
+                    aria-label={tI18nHardcoded('appAdminVolumesPage.volumeAttemptsLabel')}
                   />
-                  failed boots
+                  {tI18nHardcoded('appAdminVolumesPage.failedBoots')}
                   <ArrowRightIcon className="size-3" />
                 </span>
-                <Badge variant="outline">Image + artifacts</Badge>
+                <Badge variant="outline">{modeLabel('artifacts')}</Badge>
                 <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
-                  after
+                  {tI18nHardcoded('appAdminVolumesPage.after')}
                   <Input
                     type="number"
                     min={1}
@@ -517,52 +548,54 @@ export default function AdminVolumesPage() {
                       set({ fallback: { ...draft.fallback, artifactsAttempts: clampAttempts(e.target.value) } })
                     }
                     className="h-7 w-14"
-                    aria-label="Artifacts attempts"
+                    aria-label={tI18nHardcoded('appAdminVolumesPage.artifactsAttemptsLabel')}
                   />
-                  failed boots
+                  {tI18nHardcoded('appAdminVolumesPage.failedBoots')}
                   <ArrowRightIcon className="size-3" />
                 </span>
-                <Badge variant="outline">Image</Badge>
-                <span className="text-muted-foreground text-xs">(on unless a rule turns the last step off)</span>
+                <Badge variant="outline">{modeLabel('standard')}</Badge>
+                <span className="text-muted-foreground text-xs">{tI18nHardcoded('appAdminVolumesPage.lastStepNote')}</span>
               </div>
             </AdminPanel>
           </AdminSection>
 
           <AdminSection
-            title="Where modes apply"
-            description="Providers and deployment switches come from the server's environment. The artifacts volume can be set here; empty uses the environment's."
+            title={tI18nHardcoded('appAdminVolumesPage.whereModesApplyTitle')}
+            description={tI18nHardcoded('appAdminVolumesPage.whereModesApplyDescription')}
           >
             <AdminPanel className="space-y-4 text-sm">
               <Row
-                title={`Volume provider: ${volumeProvider}`}
+                title={tI18nHardcoded('appAdminVolumesPage.volumeProviderTitle', { provider: volumeProvider })}
                 detail={
                   data.providers.volumeProviderConfigured
-                    ? 'Configured. Sessions on it boot in the mode their rule picks.'
-                    : 'Not configured: every session boots from the image.'
+                    ? tI18nHardcoded('appAdminVolumesPage.volumeProviderConfigured')
+                    : tI18nHardcoded('appAdminVolumesPage.volumeProviderNotConfigured')
                 }
               >
                 <Badge variant={data.providers.volumeProviderConfigured ? 'default' : 'destructive'}>
-                  {data.providers.volumeProviderConfigured ? 'Ready' : 'Off'}
+                  {data.providers.volumeProviderConfigured ? tI18nHardcoded('appAdminVolumesPage.ready') : tI18nHardcoded('appAdminVolumesPage.off')}
                 </Badge>
               </Row>
               {otherProviders.length ? (
                 <Row
-                  title={`Other providers: ${otherProviders.join(', ')}`}
+                  title={tI18nHardcoded('appAdminVolumesPage.otherProvidersTitle', { providers: otherProviders.join(', ') })}
                   detail={
                     data.env.driveSync
-                      ? 'Always boot from the image. Drives reach them through drive sync.'
-                      : 'Always boot from the image. Drive sync is off, so drive projects stay on the volume provider.'
+                      ? tI18nHardcoded('appAdminVolumesPage.otherProvidersDriveSync')
+                      : tI18nHardcoded('appAdminVolumesPage.otherProvidersNoDriveSync')
                   }
                 >
-                  <Badge variant="muted">Image only</Badge>
+                  <Badge variant="muted">{tI18nHardcoded('appAdminVolumesPage.imageOnly')}</Badge>
                 </Row>
               ) : null}
               <Row
-                title="Artifacts volume"
+                title={tI18nHardcoded('appAdminVolumesPage.artifactsVolumeTitle')}
                 detail={
                   artifactsSource
-                    ? `Sessions in Image + artifacts or Volume mount ${artifactsSource}${draft.artifacts ? '' : ' (from the environment)'}.`
-                    : 'None set: artifacts modes boot as if the image were alone.'
+                    ? draft.artifacts
+                      ? tI18nHardcoded('appAdminVolumesPage.artifactsVolumeSet', { source: artifactsSource })
+                      : tI18nHardcoded('appAdminVolumesPage.artifactsVolumeFromEnvironment', { source: artifactsSource })
+                    : tI18nHardcoded('appAdminVolumesPage.artifactsVolumeNone')
                 }
               >
                 <Input
@@ -570,17 +603,17 @@ export default function AdminVolumesPage() {
                   placeholder={data.env.bootArtifacts ?? 'volume@tag'}
                   onChange={(e) => set({ artifacts: e.target.value.trim() || null })}
                   className="h-8 w-64 font-mono text-xs"
-                  aria-label="Artifacts volume and tag"
+                  aria-label={tI18nHardcoded('appAdminVolumesPage.artifactsVolumeLabel')}
                 />
               </Row>
               {data.env.volumeOff ? (
                 <p className="text-destructive text-xs">
-                  KORTIX_EPHEMERAL_SANDBOXES is off in this deployment: rules that ask for Volume boot Image + artifacts.
+                  {tI18nHardcoded('appAdminVolumesPage.ephemeralSandboxesOff', { variable: 'KORTIX_EPHEMERAL_SANDBOXES' })}
                 </p>
               ) : null}
               {!data.stored ? (
                 <p className="text-muted-foreground text-xs">
-                  Nothing saved yet: Volumes is off for every organization.
+                  {tI18nHardcoded('appAdminVolumesPage.nothingSaved')}
                 </p>
               ) : null}
             </AdminPanel>
