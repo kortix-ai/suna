@@ -75,7 +75,7 @@ export const DEFAULT_APPEARANCE_TAB_COPY: AppearanceTabCopy = {
     'How much detail the agent shows in the conversation while it works.',
   richAnswers: 'Rich answers',
   richAnswersDescription:
-    'Show comparisons, tables, charts, and maps as visuals in answers. When off, answers show the same content as text.',
+    'Show comparisons, tables, charts, and maps as visuals in answers. When off, the same content appears as text.',
   wallpaper: 'Wallpaper',
   wallpaperDescription: 'The background behind your workspace.',
   defaultWallpaper: 'Default',

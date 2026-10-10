@@ -56,6 +56,8 @@ describe('transcript export with generative UI', () => {
       return null;
     }
     await act(async () => void create(<Probe />));
+    // The converter is a dynamic import of the SDK barrel: give it a few turns of the event loop.
+    for (let i = 0; i < 20 && !seen.at(-1); i++) await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
     expect(seen[0]).toBe('');
     const exported = seen.at(-1)!;
     expect(exported).toContain('[shipped]');

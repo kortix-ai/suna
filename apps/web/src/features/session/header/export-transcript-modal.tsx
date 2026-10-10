@@ -108,6 +108,7 @@ export function ExportTranscriptModal({
   onOpenChange,
 }: ExportTranscriptModalProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const tGenui = useTranslations('genui');
   const [options, setOptions] = useState<TranscriptOptions>(DEFAULT_TRANSCRIPT_OPTIONS);
   const [copied, setCopied] = useState(false);
 
@@ -157,10 +158,8 @@ export function ExportTranscriptModal({
 
   // Generative UI blocks become markdown before copy or download. While the
   // converter loads, `transcript` is '' and both actions stay disabled.
-  const onConvertError = useCallback(
-    () => errorToast(tHardcodedUi.raw('i18nComplete.textb5b83b18d54b')),
-    [tHardcodedUi],
-  );
+  // The converter (a lazy chunk) failed to load: nothing was copied yet, so say what failed.
+  const onConvertError = useCallback(() => errorToast(tGenui('convertFailed')), [tGenui]);
   const transcript = useGenuiCopyText(rawTranscript, onConvertError);
 
   const filename = useMemo(() => {
