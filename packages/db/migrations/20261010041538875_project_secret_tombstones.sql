@@ -1,6 +1,6 @@
 -- Migration: project_secret_tombstones
 --
--- SAFETY HEADER (house rules -- see packages/db/MIGRATIONS.md#zero-downtime-rules).
+-- SAFETY HEADER (house rules -- see packages/db/MIGRATIONS.md#zero-downtime-rules-checklist).
 -- Tune these down further for large/hot tables; raise statement_timeout only
 -- for an operation you've deliberately reasoned about (e.g. a NOT VALID
 -- constraint's later VALIDATE, or a batched backfill with its own paging).

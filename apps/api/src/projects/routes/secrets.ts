@@ -23,6 +23,7 @@ import {
   encryptProjectSecret,
   identifierKeyConflicts,
   isValidIdentifier,
+  isValidSecretName,
   recordProjectSecretTombstone,
 } from '../secrets';
 import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
@@ -627,6 +628,15 @@ export function registerSecretsRoutes(): void {
           : 'human';
       await runAuditedTransaction(
         async (tx) => {
+          // The tombstone write takes the project row's lock FIRST — the same
+          // order the public intake submit uses — so a concurrent submit on
+          // this secret never deadlocks against the delete below (KRTX-2056).
+          // The tombstone is what the public intake submit checks against the
+          // token's mint time: any intake link minted before this moment must
+          // not resurrect the secret it asked for. Same transaction as the
+          // delete, so a link can never observe the secret gone and still
+          // submit.
+          await recordProjectSecretTombstone(projectId, existing.name, tx);
           await tx
             .delete(projectSecrets)
             .where(and(
@@ -634,12 +644,6 @@ export function registerSecretsRoutes(): void {
               eq(projectSecrets.identifier, identifier),
               isNull(projectSecrets.ownerUserId),
             ));
-          // Any intake link minted before this moment must not resurrect the
-          // secret it asked for (KRTX-2056): the tombstone is what the public
-          // intake submit checks against the token's mint time. Same
-          // transaction as the delete, so a link can never observe the secret
-          // gone and still submit.
-          await recordProjectSecretTombstone(projectId, existing.name, tx);
         },
         () => ({
           accountId: loaded.row.accountId,
@@ -668,13 +672,19 @@ export function registerSecretsRoutes(): void {
       // The unset may also be the agent cancelling a request nobody has filled
       // yet: the row does not exist, but the outstanding link for this name
       // does, and a submit on it would create the secret the agent just asked
-      // to remove. Tombstone the name so that link dies too (KRTX-2056). A
-      // submission that was already in flight keeps its value — it read no
-      // tombstone and holds the project row's lock first — but every later
-      // use of the link is refused.
-      await db.transaction(async (tx) => {
-        await recordProjectSecretTombstone(projectId, identifier, tx);
-      });
+      // to remove. Tombstone the name so that link dies too (KRTX-2056). Only
+      // names a link can actually carry are tombstoned — intake fields are
+      // always SECRET_NAME-valid (uppercase, ≤ 64 chars) — anything else can
+      // never be a link's target and must not overflow the tombstone column.
+      // Not audited: nothing was deleted — this records an intent, and the
+      // tombstone row itself is the record. A submission already in flight
+      // keeps its value — it read no tombstone and holds the project row's
+      // lock first — but every later use of the link is refused.
+      if (isValidSecretName(identifier)) {
+        await db.transaction(async (tx) => {
+          await recordProjectSecretTombstone(projectId, identifier, tx);
+        });
+      }
     }
 
     void propagateProjectSecretsToActiveSandboxes(projectId, {

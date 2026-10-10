@@ -1,5 +1,5 @@
 {
-  "source_hash": "e519538d0937fea352b11a8d8e17525b4bbc3061ba95e0f29334203030f2adc0",
+  "source_hash": "f5d1c26464fe4327fbec6ae8a1722cc1376e12dae570fa672b4622ad9ee69383",
   "diff_files": [
     "apps/api/src/__tests__/unit-project-secret-strategy-route.test.ts",
     "apps/api/src/projects/routes/secrets.ts",
@@ -9,15 +9,16 @@
     "packages/db/migrations/20261010041538875_project_secret_tombstones.sql",
     "packages/db/src/index.ts",
     "packages/db/src/schema/kortix.ts",
-    "tests/spec/end-to-end.md"
+    "tests/spec/end-to-end.md",
+    "tests/src/flows/secrets.flow.ts"
   ],
-  "diff_hash": "a1e00c6ad415ed99b2d03af3a08c7fe9241174fad070b9ac03e0e8856526c86c",
-  "head": "d4d14638d302f4787b4987a3ec07ed6f2a4d12c0",
+  "diff_hash": "5789cf58b02cd3911b140a1b9d4bd4807354d7497b79a0f73e7261b4465f87ff",
+  "head": "723d71bfb46da500b8c6fd03de5e888c9e683416",
   "passed": false,
   "lanes": {
-    "core": "fail",
-    "packages": "pass",
+    "core": "pass",
+    "packages": "fail",
     "db-suites": "pass"
   },
-  "at": "2026-10-10T05:35:01.707Z"
+  "at": "2026-10-10T06:44:27.010Z"
 }
