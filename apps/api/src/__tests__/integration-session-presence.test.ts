@@ -9,6 +9,7 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
+import { PgClient } from './helpers/pg-client';
 
 const { db } = await import('../shared/db');
 const { deleteSessionPresence, expireSessionPresence, renewSessionPresence, upsertSessionPresence } = await import('../projects/lib/session-presence');
@@ -162,13 +163,26 @@ describe('the lease says whether the tab alerts, and a closed stream expires it'
 });
 
 /** A provider run that started `hours` ago. The anchor trigger pins `active_since`; bypass it here. */
+/** A provider run that started `hours` ago. The anchor trigger pins `active_since`;
+ *  bypass it here on the superuser fixture client — the API's own role may not
+ *  SET session_replication_role (the audit-reconciliation suites do the same). */
 async function runStartedHoursAgo(hours: number) {
-  await db.transaction(async (tx) => {
-    await tx.execute(sql`SET LOCAL session_replication_role = replica`);
-    await tx.execute(sql`
-      UPDATE kortix.session_sandboxes SET active_since = now() - make_interval(hours => ${hours})
-       WHERE sandbox_id = ${SANDBOX_ID}::uuid`);
-  });
+  const client = new PgClient({ connectionString: process.env.TEST_DATABASE_SUPERUSER_URL ?? process.env.TEST_DATABASE_URL });
+  await client.connect();
+  try {
+    await client.query(`SET session_replication_role = 'replica'`);
+    try {
+      await client.query(
+        `UPDATE kortix.session_sandboxes SET active_since = now() - make_interval(hours => $1)
+          WHERE sandbox_id = $2::uuid`,
+        [hours, SANDBOX_ID],
+      );
+    } finally {
+      await client.query(`SET session_replication_role = 'origin'`);
+    }
+  } finally {
+    await client.end();
+  }
 }
 
 /** The session's latest turn ended `minutes` ago (or none, with null). */
