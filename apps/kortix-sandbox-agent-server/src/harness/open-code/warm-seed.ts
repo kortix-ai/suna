@@ -28,7 +28,7 @@ import type { DaemonServer } from '../contract/server'
  *  that has no session env file. */
 const ptEnvFile = () => process.env.KORTIX_PT_ENV_PATH ?? '/etc/pt-env'
 
-export function reloadSessionEnv(paths: string[] = ['/etc/pt-env']): void {
+export function reloadSessionEnv(paths: string[] = [ptEnvFile()]): void {
   for (const path of paths) {
     let txt: string
     try { txt = readFileSync(path, 'utf8') } catch { continue }
