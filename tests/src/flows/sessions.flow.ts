@@ -2579,7 +2579,7 @@ flow(
           retryable: true,
         },
         {
-          label: 'a stored E2B placement error is classified provider-capacity; the re-attempt contract answers the give-up where it cannot allocate',
+          label: 'a stored E2B placement error is transient: /start re-provisions it, and when it cannot allocate it answers the exhausted contract instead of replaying',
           provider: 'e2b',
           metadata: {
             initStatus: 'failed',
@@ -2589,13 +2589,6 @@ flow(
             errorMessage: 'The sandbox provider could not start this session. Try again.',
             lastProvisioningError: '500: Failed to place sandbox',
           },
-          // "failed to place sandbox" is in CAPACITY_PATTERN, so the row is
-          // transient (sandbox-provisioning-error.ts) and #9489's re-attempt
-          // owns it: /start no longer replays the stored text. The local
-          // profile cannot allocate (KORTIX_URL is loopback, so the callback
-          // gate fails), which lands on the bounded give-up answer
-          // (transient-provision-retry.test.ts): the category is still the
-          // capacity upgrade, the message says Restart, retryable stays true.
           category: 'provider-capacity',
           message: 'The sandbox provider could not start this session after 1 attempts. Restart the session to try again.',
           retryable: true,

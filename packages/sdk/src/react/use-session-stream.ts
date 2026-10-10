@@ -34,6 +34,7 @@ import {
   setRuntimeHealth,
   setSandboxStatus,
 } from '../browser/stores/sandbox-connection-store';
+import { noteSessionStopped } from '../core/http/session-stopped';
 import { sessionStartKey } from '../core/rest/projects-client';
 import {
   openSessionStream,
@@ -131,6 +132,12 @@ export function applySessionControlFrame(
       payload?.stop_reason ?? null,
     ]);
     if (memory.runtimeKey !== undefined && memory.runtimeKey !== runtimeKey) {
+      // A user Stop made elsewhere (another tab, the API) reaches this tab
+      // here. It counts as this tab's own Stop: from now on its `/start`
+      // polls report the stop instead of waking the box again.
+      if (payload?.sandbox_status === 'stopped' && payload?.stop_reason === 'manual') {
+        noteSessionStopped(sessionId);
+      }
       void queryClient.invalidateQueries({ queryKey: sessionStartKey(projectId, sessionId) });
     }
     memory.runtimeKey = runtimeKey;
