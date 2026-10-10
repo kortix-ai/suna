@@ -413,7 +413,7 @@ describe('GET /_kortix/token and the bindings mount on the App gate', () => {
         fetch: (req) => {
           const [, , , id, sub] = new URL(req.url).pathname.split('/');
           if (sub !== 'expose') return Response.json({ id, state: 'running' });
-          return Response.json({ port: 3210, public: false, url: `${machine.url.origin}/?t=synthetic-edge-token` });
+          return Response.json({ port: 3210, public: false, url: `http://127.0.0.1:${machine.port}/?t=synthetic-edge-token` });
         },
       });
       config.PLATINUM_API_URL = `http://127.0.0.1:${platinum.port}`;

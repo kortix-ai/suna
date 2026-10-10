@@ -15,6 +15,7 @@ The installer downloads a prebuilt binary for macOS and Linux. Windows is not su
 
 | Command | Effect |
 | --- | --- |
+| `kortix feedback "<message>" [--kind bug\|idea\|friction] [--source cli\|agent\|web] [--context <json>] [--host <name>] [--json]` | File product feedback for the team. Inside a Kortix session it files as `agent` and tags the session and project ids automatically. Prints the stored receipt id. |
 | `kortix update` | Re-run the install script and pull the latest binary. |
 | `kortix uninstall [-y\|--yes] [--keep-auth] [--keep-home]` | Remove the binary, the `/usr/local/bin` shim, and the stored token. `--keep-auth` keeps the token. `--keep-home` keeps `~/.kortix`. |
 | `kortix version` | Print the CLI version. |

@@ -1564,7 +1564,13 @@ a trigger run. Every denial is `403 {code, action}` (spec §4).
 `AGP-12` Denial bodies. Each denial carries `code` and `action`: `project_role_insufficient` (member JWT, files), `agent_scope_insufficient` (secrets outside the list), `agent_ceiling_insufficient` (files under a `member` ceiling), `agent_not_accessible` (spawning an agent the human may not run). The real CLI chooses its hint from the code: `kortix secrets ls` names `agents.scoped.kortix_permissions` and `project.secret.read`; `kortix files ls` under the ceiling asks an admin, names `capped`, and does not name `kortix_permissions`.
 `AGP-14` Trigger fire with no agent. The manifest names `default_agent: nightly`, and the metadata mirror is stale (`decoy`). The trigger names no agent and is pinned to a minted `nightly` run. A member with `run(nightly)` fires it → 202 and one prompt is queued for that run. A member with only `run(decoy)` → 403 `agent_not_accessible` and nothing more is queued. The fire route authorizes the agent session creation will run.
 
-## 33. Retired routes
+## 33. Feedback
+
+Product feedback filed by agents and people through one route and one CLI command. One append-only row per submission; the triage surface reads it newest first.
+
+`FB-1` `POST /v1/feedback {source?: cli|agent|web = cli, kind: bug|idea|friction, message: 1..4000 chars, context?: {≤8 keys of ≤128 chars → ≤256 chars}}` → `201 {id, source, kind, created_at}`; the row stores the caller's user id and the account the credential resolves. ANON → 401. Unknown `kind`, unknown `source`, empty or > 4000-char `message`, oversized context values, more than 8 context keys → 400. The route is rate limited per user; a flood inside the window answers `429` with `Retry-After`, and another identity still files successfully. `kortix feedback "<message>" [--kind …] [--source …] [--context <json>] [--json]` runs the real CLI process: inside a session (`KORTIX_SESSION_ID`) it files `source: agent` with the session and project ids merged into the context, outside it files `source: cli`; it prints the stored receipt and exits 0, and maps an API refusal to a nonzero exit.
+
+## 34. Retired routes
 
 `RET-1` Every route the API retired answers `410` with `{ error, code: "ENDPOINT_RETIRED" }` for any caller, anonymous included, and runs no handler: the legacy router LLM and search routes, the `/billing/account/*` deletion mirror (use `/account/*`), `POST /billing/deduct` · `deduct-usage` · `sync-seat-quantity` · `create-checkout-session` · `confirm-checkout-session` · `schedule-downgrade`, `GET /generation`, `POST /prewarm`, and `/projects/suna-migration/*`. The table is `RETIRED_ROUTES` in `apps/api/src/routes/retired.ts`.
 
