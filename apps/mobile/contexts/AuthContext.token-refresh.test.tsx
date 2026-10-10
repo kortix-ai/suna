@@ -52,9 +52,8 @@ mock.module('@/lib/billing/provider', () => ({ shouldUseRevenueCat: () => false 
 mock.module('@/lib/auth/callback-state', () => ({
   consumeAuthCallbackState: async () => true,
   createAuthCallbackRedirect: async () => 'kortix://auth/callback',
-  grantWebRegistrationHandoff: async () => {},
-  consumeWebRegistrationHandoff: async () => false,
   clearWebRegistrationHandoff: async () => {},
+  grantWebRegistrationHandoff: async () => {},
 }));
 mock.module('@/lib/auth/mobile-admission', () => ({ admitMobileOAuthSession: async () => true }));
 mock.module('@/lib/auth/session-expiry-monitor', () => ({ sessionExpiry: { disarm: noop } }));

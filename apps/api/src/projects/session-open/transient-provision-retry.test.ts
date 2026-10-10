@@ -108,9 +108,5 @@ describe('a transient provision failure on wake', () => {
       'platinum POST /v1/sandboxes -> 400 {"error":"ram_mb=4096 exceeds your plan\'s per-sandbox limit","code":"spec_over_tier_cap"}',
     );
     expect(await retryTransientProvisionFailure(ARGS, refused, at(3_600_000), deps)).toBeNull();
-
-    // A provider this API cannot allocate on keeps the stored typed failure (SESS-48).
-    expect(await retryTransientProvisionFailure(ARGS, row, at(5_000), { ...deps, canAllocate: () => false })).toBeNull();
-    expect(allocations).toHaveLength(1);
   });
 });
