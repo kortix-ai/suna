@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
+import { closeSync, constants, existsSync, fstatSync, openSync, readFileSync, realpathSync } from 'node:fs'
 import { join, sep } from 'node:path'
 import { readProjectManifest, extractNestedString } from '@/lib/config/config'
 import { z } from 'zod'
@@ -162,8 +162,16 @@ export function readProjectInstructions(root: string, source: ProjectInstruction
       const real = realpathSync(path)
       // A symlink to a host file (`/proc/self/environ`) would put that file in the prompt.
       if (!real.startsWith(`${realpathSync(root)}${sep}`)) throw new Error('it resolves outside the project root')
-      if (!statSync(real).isFile()) throw new Error('it is not a regular file')
-      const raw = readFileSync(real)
+      // Check and read through one descriptor: a file swapped for a symlink after
+      // realpath is refused by O_NOFOLLOW, not read; O_NONBLOCK keeps a FIFO from hanging the open.
+      const fd = openSync(real, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
+      let raw: Buffer
+      try {
+        if (!fstatSync(fd).isFile()) throw new Error('it is not a regular file')
+        raw = readFileSync(fd)
+      } finally {
+        closeSync(fd)
+      }
       const text = raw.toString('utf8').trim()
       if (!text) return null
       const loaded = { source, path, bytes: raw.length, sha: createHash('sha256').update(raw).digest('hex').slice(0, 12) }

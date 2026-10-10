@@ -5,6 +5,7 @@ import { safeSetItem } from '@/lib/storage/managed-storage';
 import {
   type SessionTranscriptSyncEnvelope,
   createPersistedQueryCache,
+  createSavedCopyStore,
   currentSavedCopyStore,
 } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
@@ -35,12 +36,13 @@ const session = memoryStorage();
 const entries = local.entries;
 /** The IndexedDB the saved copies go to, as an asynchronous key-value store. */
 const indexed = new Map<string, string>();
+const indexedStorage = {
+  getItem: async (key: string) => indexed.get(key) ?? null,
+  setItem: async (key: string, value: string) => void indexed.set(key, value),
+  removeItem: async (key: string) => void indexed.delete(key),
+};
 mock.module('@kortix/sdk/internal/idb-sync-cache', () => ({
-  indexedDBKeyValueStorage: () => ({
-    getItem: async (key: string) => indexed.get(key) ?? null,
-    setItem: async (key: string, value: string) => void indexed.set(key, value),
-    removeItem: async (key: string) => void indexed.delete(key),
-  }),
+  indexedDBKeyValueStorage: () => indexedStorage,
 }));
 const { adoptDeviceCaches, clearDeviceCaches, sweepRetiredDeviceCaches, WEB_QUERY_CACHE_MAX_BYTES } =
   await import('./device-caches');
@@ -225,6 +227,49 @@ describe('device caches', () => {
     pageWindow.dispatchEvent(new Event('pagehide'));
     await settle();
     expect(entries.has(STORAGE_KEY)).toBe(false);
+  });
+});
+
+describe('the session a page load opens on', () => {
+  const user = 'user-reload';
+  const opensOn = (pathname: string) => Object.assign(pageWindow, { location: { pathname } });
+
+  test('its saved copy is read at sign-in, and the first read answers from memory', async () => {
+    await createSavedCopyStore({ storage: indexedStorage, userId: user }).write('project-1', 'session-1', envelope());
+    opensOn('/projects/project-1/sessions/session-1');
+    adoptDeviceCaches(user);
+    await settle();
+
+    const first = currentSavedCopyStore()!.read('project-1', 'session-1');
+    expect(first).not.toBeInstanceOf(Promise);
+    expect((first as SessionTranscriptSyncEnvelope).messages).toHaveLength(1);
+    // Answered once: a later read asks IndexedDB, which another tab may have changed.
+    expect(currentSavedCopyStore()!.read('project-1', 'session-1')).toBeInstanceOf(Promise);
+    await clearDeviceCaches();
+  });
+
+  test('a write before the first read drops the copy in memory', async () => {
+    await createSavedCopyStore({ storage: indexedStorage, userId: user }).write('project-1', 'session-1', envelope());
+    opensOn('/projects/project-1/sessions/session-1');
+    adoptDeviceCaches(user);
+    await settle();
+
+    await currentSavedCopyStore()!.write('project-1', 'session-1', {
+      ...envelope(),
+      captured_at: '2026-10-07T00:00:00.000Z',
+    });
+    expect(currentSavedCopyStore()!.read('project-1', 'session-1')).toBeInstanceOf(Promise);
+    await clearDeviceCaches();
+  });
+
+  test('a page that is not a session reads every copy from IndexedDB', async () => {
+    await createSavedCopyStore({ storage: indexedStorage, userId: user }).write('project-1', 'session-1', envelope());
+    opensOn('/projects/project-1');
+    adoptDeviceCaches(user);
+    await settle();
+
+    expect(currentSavedCopyStore()!.read('project-1', 'session-1')).toBeInstanceOf(Promise);
+    await clearDeviceCaches();
   });
 });
 
