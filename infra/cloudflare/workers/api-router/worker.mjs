@@ -401,10 +401,19 @@ export default {
     ) {
       originHeaders.set('User-Agent', SCIM_RELAY_USER_AGENT);
     }
+    // The Workers runtime throws inside `new Request` when a GET or HEAD
+    // carries a body, and this construction sits outside the try/catch: the
+    // client got Cloudflare's bare "error code: 1101" 500 before the origin
+    // ever ran (reproduced on workerd at this construction). GET and HEAD
+    // bodies have no defined semantics; drop the body and the content-length
+    // that frames it, so the request reaches the origin and answers as a
+    // normal GET/HEAD.
+    const dropBody = request.method === 'GET' || request.method === 'HEAD';
+    if (dropBody) originHeaders.delete('content-length');
     const modifiedRequest = new Request(targetUrl, {
       method: request.method,
       headers: originHeaders,
-      body: request.body,
+      body: dropBody ? null : request.body,
       redirect: 'manual',
     });
 
