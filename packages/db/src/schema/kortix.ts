@@ -4626,8 +4626,10 @@ export const appRuntimes = kortixSchema.table(
     ),
     index('app_runtimes_deployment_idx').on(table.deploymentId, table.createdAt),
     index('app_runtimes_external_idx').on(table.provider, table.externalId),
-    uniqueIndex('app_runtimes_one_live_per_deployment')
-      .on(table.deploymentId)
+    // One live instance per machine of a release (a release runs many machines).
+    // A row from before machines has no machine id: its runtime id stands in.
+    uniqueIndex('app_runtimes_one_live_per_machine')
+      .on(table.deploymentId, sql`coalesce(${table.machineId}, ${table.runtimeId})`)
       .where(sql`${table.status} IN ('provisioning', 'starting', 'running', 'stopping')`),
   ],
 );

@@ -783,7 +783,8 @@ async function buildDeploymentImage(input: {
     source,
     dockerfile: normalized.dockerfile,
     runtimeSpec: normalized.runtimeSpec,
-    machine: requestedMachine,
+    // Platinum sizes each machine at create: a resize never rebuilds the image.
+    ...(provider === 'platinum' ? {} : { machine: requestedMachine }),
     runtimeImageKey: appRuntimeImageKey(APP_RUNTIME_VERSION),
   });
   await setDeploymentStatus(claimed.deploymentId, owner, 'building', {

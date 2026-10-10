@@ -29,6 +29,19 @@ export interface AppMachineSpec {
   diskGb: number;
 }
 
+/**
+ * A Platinum App template carries these minimal defaults; each machine passes
+ * its own size at create (Platinum enforces the template's as a floor), so a
+ * resize never rebuilds the image. Daytona and E2B size the box from the
+ * template, so there the template keeps the App's size.
+ */
+export const APP_TEMPLATE_MACHINE: AppMachineSpec = { cpuCores: 1, memoryGb: 1, diskGb: 1 };
+
+/** The size an App image is built with on this provider. */
+export function appTemplateMachine(provider: SandboxProviderName, machine: AppMachineSpec): AppMachineSpec {
+  return provider === 'platinum' ? APP_TEMPLATE_MACHINE : machine;
+}
+
 export interface BuildAppImageInput {
   provider: SandboxProviderName;
   snapshotName: string;
@@ -51,6 +64,8 @@ export interface StartAppRuntimeInput {
   envVars?: Record<string, string>;
   /** An always-on App: the provider must never auto-stop it (Platinum: auto_stop_minutes 0). */
   alwaysOn?: boolean;
+  /** Volumes mounted at create, keyed by guest path (Platinum volume names). */
+  volumes?: Record<string, { volume: string }>;
 }
 
 export interface AppRuntimeHandle extends ProvisionResult {
@@ -116,11 +131,9 @@ export class AppHostingProvider {
       {
         snapshotName: input.snapshotName,
         userDockerfile: input.dockerfile,
-        spec: {
-          cpu: input.machine.cpuCores,
-          memoryGb: input.machine.memoryGb,
-          diskGb: input.machine.diskGb,
-        },
+        spec: (({ cpuCores, memoryGb, diskGb }) => ({ cpu: cpuCores, memoryGb, diskGb }))(
+          appTemplateMachine(input.provider, input.machine),
+        ),
         slug: input.slug,
         runtimeProfile: 'app',
         appContext: {
@@ -144,6 +157,7 @@ export class AppHostingProvider {
       resourceSpec: input.machine,
       publishedPorts: [APP_CONTROL_PORT, APP_INGRESS_PORT],
       envVars: { ...input.envVars, KORTIX_APPD_TOKEN: token },
+      ...(input.volumes && Object.keys(input.volumes).length > 0 ? { volumes: input.volumes, volumesRequired: true } : {}),
       // On-demand Apps keep the provider's idle backstop. An always-on App opts
       // out of it on Platinum, where 0 means persistent. Daytona clamps 0 to a
       // 1-minute stop and E2B ignores it, so there it keeps the backstop and

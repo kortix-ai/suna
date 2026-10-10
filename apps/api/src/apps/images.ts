@@ -129,7 +129,8 @@ export interface AppImageInputs {
   source: unknown;
   dockerfile: string;
   runtimeSpec: unknown;
-  machine: { cpuCores: number; memoryGb: number; diskGb: number };
+  /** The size baked into the template. Platinum sizes each machine at create, so there it is not an input. */
+  machine?: { cpuCores: number; memoryGb: number; diskGb: number };
   /** `appRuntimeImageKey(APP_RUNTIME_VERSION)`: the supervisor digest layered into the image. */
   runtimeImageKey: string;
 }
