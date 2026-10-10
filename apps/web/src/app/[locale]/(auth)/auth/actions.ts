@@ -25,6 +25,7 @@ import { createClient } from '@/lib/supabase/server';
 import { checkAccessEmail, submitAccessRequest } from '@kortix/sdk';
 import { getTranslations } from '@/i18n/get-translations';
 import type { UiTranslator } from '@/i18n/translator';
+import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
 import { cookies, headers } from 'next/headers';
 
 /**
@@ -237,10 +238,24 @@ export async function sendEmailCode(prevState: any, formData: FormData) {
     return authFailure(error, 'Could not send the link', tI18nComplete);
   }
 
+  // Hand the PKCE verifier to the browser in the RESULT, not only as a
+  // Set-Cookie header: on the prod edge deployment the action's cookie writes
+  // never reached the browser (a successful send left the jar empty —
+  // KRTX-2095), so the mailed link's exchange failed
+  // `pkce_code_verifier_not_found`. The page seeds the cookie from this value
+  // — the same pattern `signInWithPassword` already uses for the session
+  // tokens; no new exposure, `@supabase/ssr` stores the verifier
+  // non-httpOnly by design. The value is the ssr-encoded `base64-` payload
+  // under the fixed unchunked `-code-verifier` cookie; the page writes it
+  // back byte-identical.
+  const codeVerifier =
+    (await cookies()).get(`${KORTIX_SUPABASE_AUTH_COOKIE}-code-verifier`)?.value ?? null;
+
   return {
     success: true,
     message: tI18nComplete.raw('textd7eb7cdcff7d'),
     email: normalizedEmail,
+    codeVerifier,
   };
 }
 

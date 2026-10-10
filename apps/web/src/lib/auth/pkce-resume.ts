@@ -109,6 +109,42 @@ function loadStashedVerifier(): string | null {
 }
 
 /**
+ * Write the verifier cookie exactly the way the server action's ssr write does:
+ * host-only, path=/, SameSite=Lax, `secure` on https — mirroring
+ * `lib/supabase/client.ts`; a `Secure` cookie write is dropped on the http
+ * local stack. The value must already carry the ssr encoding (`base64-` +
+ * base64url of JSON) — both callers pass it through unchanged.
+ */
+function writePkceVerifierCookie(encoded: string): void {
+  const secure = window.location.protocol === 'https:' ? '; secure' : '';
+  document.cookie = `${PKCE_VERIFIER_COOKIE}=${encoded}; path=/; SameSite=Lax${secure}`;
+}
+
+/**
+ * Seed the verifier cookie from the sendEmailCode action's RESULT — the value
+ * the action read back from the cookie it just wrote server-side.
+ *
+ * The action's own Set-Cookie does not always reach the browser: on the prod
+ * edge deployment a successful send left the cookie jar empty (captured live:
+ * the response carried no usable Set-Cookie), so the callback's exchange failed
+ * `pkce_code_verifier_not_found` and every magic-link sign-in silently returned
+ * to the form. The page now writes the cookie itself from the returned value —
+ * the same pattern `signInWithPassword` already uses for the session tokens.
+ * The verifier is not a secret from this browser (`@supabase/ssr` stores it
+ * non-httpOnly by design), so carrying it in the action result adds no
+ * exposure. Returns false when there is nothing to seed.
+ */
+export function seedBrowserPkceVerifier(encodedVerifier: string): boolean {
+  if (typeof window === 'undefined' || !encodedVerifier) return false;
+  try {
+    writePkceVerifierCookie(encodedVerifier);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Re-seed the verifier cookie from the snapshot (or the cookie itself, when the
  * snapshot is gone but the cookie answered the read all along). Returns false
  * when there is nothing to seed — the caller then owes the visitor the resend
@@ -128,11 +164,7 @@ export function seedPkceVerifierForResume(): boolean {
       .replace(/\+/g, '-')
       .replace(/\//g, '_')
       .replace(/=+$/, '')}`;
-    // Host-only cookie, same path/scope the client writes its cookies with;
-    // `secure` only on https, mirroring `lib/supabase/client.ts` — a `Secure`
-    // cookie write is dropped on the http local stack.
-    const secure = window.location.protocol === 'https:' ? '; secure' : '';
-    document.cookie = `${PKCE_VERIFIER_COOKIE}=${encoded}; path=/; SameSite=Lax${secure}`;
+    writePkceVerifierCookie(encoded);
     return true;
   } catch {
     return false;
