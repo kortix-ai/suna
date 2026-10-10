@@ -185,7 +185,8 @@ function hasParent(parents: AstNode[], type: string): boolean {
 
 /**
  * false inside a generative-UI fallback: an ```openui fence there renders as
- * code, so a fallback can never re-enter `GenuiBlock`.
+ * code, so a fallback can never re-enter `GenuiBlock`, and the fallback adds
+ * no second iOS selection Pressable inside the message's own.
  */
 const GenuiRoutingContext = createContext(true);
 
@@ -675,6 +676,8 @@ export const SelectableMarkdownText: React.FC<SelectableMarkdownTextProps> = mem
   function SelectableMarkdownText({ children, isDark: isDarkProp, isStreaming, remoteImages = 'placeholder', surface }: SelectableMarkdownTextProps) {
     const { colorScheme } = useColorScheme();
     const isDark = isDarkProp ?? colorScheme === 'dark';
+    // A generative-UI fallback sits inside its message: the message's double tap covers it.
+    const isOutermost = useContext(GenuiRoutingContext);
 
     // Trailing whitespace would add empty space below the last block.
     const text = typeof children === 'string' ? children.trimEnd() : String(children || '').trimEnd();
@@ -682,7 +685,7 @@ export const SelectableMarkdownText: React.FC<SelectableMarkdownTextProps> = mem
     return (
       <MarkdownImagesContext.Provider value={remoteImages}>
         <MarkdownSurfaceContext.Provider value={surface}>
-          {Platform.OS === 'ios' && !IOS_TEXT_VIEW ? (
+          {Platform.OS === 'ios' && !IOS_TEXT_VIEW && isOutermost ? (
             <IOSSelectableMarkdown text={text} isDark={isDark} isStreaming={isStreaming}>
               <MarkdownBlocks text={text} isDark={isDark} isStreaming={isStreaming} />
             </IOSSelectableMarkdown>
