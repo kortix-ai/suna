@@ -28,7 +28,93 @@ export type AppCapability =
   | 'preview'
   | 'sleep'
   | 'static'
-  | 'member_tokens';
+  | 'member_tokens'
+  | 'machines'
+  | 'scale'
+  | 'exec'
+  | 'volumes'
+  | 'snapshots';
+
+/* ─── The release config (the Fly.io model; kortix.yaml `apps.<name>` ≈ fly.toml) ─── */
+
+export type AppDeployStrategy = 'rolling' | 'immediate' | 'bluegreen' | 'canary';
+export type AppAutoStop = 'off' | 'stop' | 'suspend';
+/** `public`: no gate (the service checks sign-in itself). `app`: the App's access policy. `admins`: project admins. */
+export type AppServiceAccess = 'public' | 'app' | 'admins';
+
+export interface AppCheck {
+  type: 'http' | 'tcp';
+  port?: number;
+  path?: string;
+  interval_s: number;
+  timeout_s: number;
+  grace_period_s: number;
+}
+
+export interface AppServiceConfig {
+  /** `http` is the primary service, on the App's own host. */
+  name: string;
+  internal_port: number;
+  protocol: 'http' | 'tcp';
+  access: AppServiceAccess;
+  auto_stop_machines: AppAutoStop;
+  auto_start_machines: boolean;
+  min_machines_running: number;
+  processes: string[];
+  checks: AppCheck[];
+}
+
+export interface AppMountConfig {
+  source: string;
+  destination: string;
+  initial_size_gb: number;
+  snapshot_retention_days: number;
+  processes: string[];
+}
+
+export interface AppVmConfig {
+  cpu: number;
+  memory_gb: number;
+  disk_gb: number;
+  processes: string[];
+}
+
+/** A release's resolved config: what the platform runs. */
+export interface AppReleaseConfig {
+  processes: Record<string, string>;
+  services: AppServiceConfig[];
+  mounts: AppMountConfig[];
+  vm: AppVmConfig[];
+  deploy: { strategy: AppDeployStrategy; release_command: string | null };
+}
+
+type Partial2<T> = { [K in keyof T]?: T[K] extends Array<infer U> ? Array<Partial<U>> : T[K] };
+
+/** The authored config a deploy sends: every field optional, plus the shorthands. */
+export interface AppReleaseConfigInput {
+  processes?: Record<string, string>;
+  http_service?: Partial2<Omit<AppServiceConfig, 'name'>>;
+  services?: Array<Partial2<AppServiceConfig>>;
+  mounts?: Array<Partial<AppMountConfig>>;
+  vm?: Partial<AppVmConfig> | Array<Partial<AppVmConfig>>;
+  deploy?: { strategy?: AppDeployStrategy; release_command?: string | null };
+  port?: number;
+  command?: string;
+  readiness_path?: string;
+  always_on?: boolean;
+  resources?: { cpu?: number; memory_gb?: number; disk_gb?: number };
+}
+
+/** A service of the active release as an App lists it, with its URL. */
+export interface AppServiceSummary {
+  name: string;
+  protocol: 'http' | 'tcp';
+  access: AppServiceAccess;
+  internal_port: number;
+  processes: string[];
+  /** Null for a TCP service, or when the host label would be too long (reach it through a binding). */
+  url: string | null;
+}
 
 /**
  * The public values that verify the Kortix sign-in tokens minted for an App:
@@ -122,6 +208,18 @@ export interface App {
   used_by?: string[];
   /** Verifies the sign-in tokens minted for this App. Optional for wire compatibility. */
   auth?: AppAuth;
+  /** Free-form labels (e.g. `backend`): they group and filter, nothing more. Optional for wire compatibility. */
+  labels?: string[];
+  /** Machines per process group; a group not listed runs one. Optional for wire compatibility. */
+  scale?: Record<string, number>;
+  /** The active release's services and their URLs. Optional for wire compatibility. */
+  services?: AppServiceSummary[];
+  /** Machine counts. Optional for wire compatibility. */
+  machines?: { total: number; running: number; stopped: number };
+  /** Volume count and allotted size. Optional for wire compatibility. */
+  volumes?: { count: number; size_gb: number };
+  /** The active release's config, or null (static App, never deployed). Optional for wire compatibility. */
+  config?: AppReleaseConfig | null;
   created_at: string;
   updated_at: string;
 }
@@ -148,6 +246,8 @@ export interface UpdateAppInput {
   always_on?: boolean;
   /** Replaces the Apps this App uses. `[]` removes every link. */
   uses?: string[];
+  /** Replaces the App's labels (each `^[a-z0-9][a-z0-9-]{0,30}$`, at most 10). */
+  labels?: string[];
 }
 
 /**
@@ -259,6 +359,12 @@ export interface CreateAppBuildInput {
   environment?: Record<string, string>;
   /** Runtime environment key -> project secret identifier. */
   secrets?: Record<string, string>;
+  /**
+   * The release config (Fly.io model). Omitted: one `app` process group on the
+   * source port, sized like the App. Invalid: `400 app_config_invalid` with
+   * `issues: [{path, message}]`.
+   */
+  config?: AppReleaseConfigInput;
 }
 
 export interface AppDeployment {

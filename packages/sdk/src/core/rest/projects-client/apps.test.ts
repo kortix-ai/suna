@@ -188,8 +188,8 @@ test('an App carries its capabilities and sign-in values; no kind, no instance',
   expect(auth?.audience).toBe('app-2');
 });
 
-test('AppCapability is exactly the generic capabilities', () => {
-  const exact: Equal<AppCapability, 'deployments' | 'rollback' | 'preview' | 'sleep' | 'static' | 'member_tokens'> = true;
+test('AppCapability is exactly the generic capabilities (Fly model: machines, scale, exec, volumes, snapshots)', () => {
+  const exact: Equal<AppCapability, 'deployments' | 'rollback' | 'preview' | 'sleep' | 'static' | 'member_tokens' | 'machines' | 'scale' | 'exec' | 'volumes' | 'snapshots'> = true;
   expect(exact).toBe(true);
 });
 
