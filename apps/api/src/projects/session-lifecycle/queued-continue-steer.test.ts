@@ -8,6 +8,7 @@ const realRuntimeClient = await import('./runtime-client');
 const realDeliver = await import('./deliver');
 const realStore = await import('./store');
 const realTransitions = await import('./command-transitions');
+const realPlacement = await import('./inbox-placement');
 
 let awake: { externalId: string; opencodeSessionId: string; stage: string } | null = null;
 let answer: () => Promise<string> = async () => 'accepted';
@@ -16,6 +17,7 @@ const forwarded: Array<{ wireMessageId: string; opts: unknown }> = [];
 const fallbacks: string[] = [];
 const requeues: string[] = [];
 const failures: string[] = [];
+let remints = 0;
 
 mock.module('./deliver', () => ({ ...realDeliver, awakeDeliveryTarget: async () => awake }));
 mock.module('./inbox-delivery-hold', () => ({
@@ -28,6 +30,14 @@ mock.module('./runtime-client', () => ({
   postPrompt: async (_e: string, _s: string, _t: string, _u: string, _sid: string, key: string, opts: Record<string, unknown>) => {
     posts.push({ key, opts });
     return answer();
+  },
+  readInboxTranscriptState: async () => ({ newest: null, answered: false, read: true, tip: [] }),
+}));
+mock.module('./inbox-placement', () => ({
+  ...realPlacement,
+  remintWireMessageId: async () => {
+    remints += 1;
+    return 'msg_reminted';
   },
 }));
 mock.module('./command-transitions', () => ({
@@ -78,6 +88,7 @@ beforeEach(() => {
   awake = { externalId: 'box-1', opencodeSessionId: 'ses_1', stage: 'ready' };
   answer = async () => 'accepted';
   for (const list of [posts, forwarded, fallbacks, requeues, failures]) list.length = 0;
+  remints = 0;
 });
 
 describe('deliverSteer', () => {
@@ -87,6 +98,18 @@ describe('deliverSteer', () => {
     expect(posts[0]!.key).toBe('cmd-steer-1:steer');
     expect(posts[0]!.opts).toMatchObject({ steer: true, wireMessageId: 'msg_steer1', parts: payload.parts });
     expect(forwarded).toEqual([{ wireMessageId: 'msg_steer1', opts: { steeredIntoMessageId: 'msg_turn1' } }]);
+    expect(remints).toBe(0);
+  });
+
+  test('an id its producer could not place is re-minted above the live transcript before the POST', async () => {
+    // A server-minted id is dated 2 min back, and a row that waited behind the
+    // turn holds an id the turn's own steps have since passed. Posted as is,
+    // the message sorts above the turn it was read in.
+    const unplaced = { ...payload, remintOnDelivery: true };
+    expect(await deliverSteer(row, unplaced, unplaced.text, 'msg_turn1', new ProvisionTimeline('t', 'deliver'))).toBe('succeeded');
+    expect(remints).toBe(1);
+    expect(posts[0]!.opts).toMatchObject({ steer: true, wireMessageId: 'msg_reminted' });
+    expect(forwarded).toEqual([{ wireMessageId: 'msg_reminted', opts: { steeredIntoMessageId: 'msg_turn1' } }]);
   });
 
   test('no awake box: nothing is posted, the row falls back turn_ended and is requeued', async () => {
