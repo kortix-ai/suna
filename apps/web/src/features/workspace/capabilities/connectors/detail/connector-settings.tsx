@@ -1,16 +1,21 @@
 'use client';
 
 import { useTranslations } from '@/i18n/use-translations';
-import { type AdminConnector, deleteConnector } from '@kortix/sdk';
+import { type AdminConnector, deleteConnector, setConnectorName } from '@kortix/sdk';
 import { TrashIcon } from '@phosphor-icons/react';
 import { useMutation } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { ConnectionSection } from '@/features/workspace/customize/sections/connectors-view';
 import { isManagedConnectorProvider } from '../provider-label';
+import { connectorRunsOver } from './connector-status';
 
 export interface ConnectorSettingsProps {
   projectId: string;
@@ -21,8 +26,8 @@ export interface ConnectorSettingsProps {
 }
 
 /**
- * Settings — the transport config for a direct provider, then removing the
- * connector.
+ * Settings — the connector's name, the transport config for a direct
+ * provider, then removing the connector.
  *
  * `connectorTabs` already restricts this tab to writers.
  *
@@ -43,7 +48,8 @@ export interface ConnectorSettingsProps {
  * a `user`-mode connector had no connect flow anywhere. Ownership is now a
  * property of each account — see the Accounts tab.
  *
- * Renaming is not here — it lives in the modal header (`HeaderName`).
+ * The name is edited here, in a field with a Save button. It used to be a
+ * pencil beside the title, which made the heading itself an input.
  */
 export function ConnectorSettings({
   projectId,
@@ -52,8 +58,10 @@ export function ConnectorSettings({
   onChanged,
   onRemoved,
 }: ConnectorSettingsProps) {
+  const t = useTranslations('connectorPages');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const isChannel = connector.provider === 'channel';
+  const managed = isManagedConnectorProvider(connector.provider);
   const isComputer = connector.provider === 'computer';
   const isDirectProvider =
     !isManagedConnectorProvider(connector.provider) && !isChannel && !isComputer;
@@ -68,8 +76,76 @@ export function ConnectorSettings({
     onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('text1d0486014da5')),
   });
 
+  const nameId = useId();
+  // `null` until the user types, so the field follows a rename made elsewhere.
+  const [nameDraft, setNameDraft] = useState<string | null>(null);
+  const name = nameDraft ?? displayName;
+  const nameChanged = name.trim().length > 0 && name.trim() !== displayName;
+  const rename = useMutation({
+    mutationFn: () => setConnectorName(projectId, connector.slug, name.trim()),
+    onSuccess: () => {
+      successToast(tI18nComplete.raw('text05487af3f074'));
+      setNameDraft(null);
+      onChanged();
+    },
+    onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('text8fcf8ce07dcf')),
+  });
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-8">
+      <div className="bg-popover divide-y rounded-md border">
+        <div className="flex items-center justify-between gap-4 px-4 py-3">
+          <div className="min-w-0">
+            <Label htmlFor={nameId} className="text-sm font-medium">
+              {t('nameLabel')}
+            </Label>
+            <p className="text-muted-foreground mt-0.5 text-xs text-pretty">{t('nameHelp')}</p>
+          </div>
+          <form
+            className="flex w-56 shrink-0 items-center gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (nameChanged) rename.mutate();
+            }}
+          >
+            <Input
+              id={nameId}
+              value={name}
+              onChange={(event) => setNameDraft(event.target.value)}
+              variant="popover"
+              maxLength={255}
+              className="min-w-0 flex-1"
+              disabled={rename.isPending}
+            />
+            <Button
+              type="submit"
+              size="sm"
+              variant="secondary"
+              className="shrink-0 gap-1.5"
+              disabled={!nameChanged || rename.isPending}
+            >
+              {rename.isPending ? <Loading className="size-4 shrink-0" /> : null}
+              {tI18nComplete.raw('text1509f561f241')}
+            </Button>
+          </form>
+        </div>
+        <div className="flex items-center justify-between gap-4 px-4 py-3">
+          <div className="min-w-0">
+            <p className="text-foreground text-sm font-medium">
+              {managed ? t('signInLabel') : t('infoRunsOver')}
+            </p>
+            <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
+              {managed
+                ? t('signInManagedHelp', { provider: connectorRunsOver(connector.provider) })
+                : t('runsOverDirectHelp', { name: displayName })}
+            </p>
+          </div>
+          <Badge variant="outline" size="sm" className="shrink-0">
+            {connectorRunsOver(connector.provider)}
+          </Badge>
+        </div>
+      </div>
+
       {isDirectProvider ? (
         <ConnectionSection
           projectId={projectId}
@@ -88,10 +164,10 @@ export function ConnectorSettings({
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0">
               <p className="text-foreground text-sm font-medium">
-                {tI18nComplete.raw('textbf30cc3b0697')}
+                {t('removeTitle', { name: displayName })}
               </p>
               <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
-                {tI18nComplete.raw('text460806f58b7b')}
+                {t('removeHelp')}
               </p>
             </div>
             <Button
