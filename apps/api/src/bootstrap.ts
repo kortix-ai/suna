@@ -229,6 +229,9 @@ async function startSingletonWorkers() {
   // OAuth housekeeping: expired authorization requests, abandoned self-registered clients.
   const { startOAuthSweeper } = await import('./workers/oauth-sweep-worker');
   startOAuthSweeper();
+  // Kortix Drive: conflict-copy scanner + the volume deletion queue.
+  const { startDriveWorkers } = await import('./workers/drive-worker');
+  startDriveWorkers();
   // Hourly trial expiry + credit rotations. Idempotent per account and month,
   // so a leadership flap that runs one twice costs a scan, not money.
   startBillingRotation();
@@ -260,6 +263,8 @@ async function stopSingletonWorkers() {
   stopGrantExpirySweeper();
   const { stopOAuthSweeper } = await import('./workers/oauth-sweep-worker');
   stopOAuthSweeper();
+  const { stopDriveWorkers } = await import('./workers/drive-worker');
+  stopDriveWorkers();
   stopBillingRotation();
   stopSlackTurnGc();
   stopTeamsTurnGc();

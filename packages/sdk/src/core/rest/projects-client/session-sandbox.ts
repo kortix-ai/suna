@@ -41,7 +41,8 @@ export interface SessionStartFailure {
     | 'sandbox-provider'
     | 'unsupported-secret-delivery'
     | 'invalid-secret-boundary-policy'
-    | 'snapshot-too-large';
+    | 'snapshot-too-large'
+    | 'drives-unavailable';
   message: string;
   /** A user action can retry. Automatic polling must still stop. */
   retryable: boolean;

@@ -54,6 +54,8 @@ export async function allocateRuntimeOnOpen(
   },
   projectId: string,
   sessionId: string,
+  /** Extra keys for the new sandbox row (an ephemeral wake carries its create attempt). */
+  extraRuntimeMetadata?: Record<string, unknown>,
 ): Promise<void> {
   const providerName = session.sandboxProvider as SandboxProviderName;
   if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(providerName)) return;
@@ -61,7 +63,7 @@ export async function allocateRuntimeOnOpen(
   await transitionSession('provision', sessionId, { error: null });
   const opencodeModel =
     typeof session.metadata?.opencode_model === 'string' ? session.metadata.opencode_model : null;
-  const runtimeMetadata = { opened_at: new Date().toISOString() };
+  const runtimeMetadata = { opened_at: new Date().toISOString(), ...(extraRuntimeMetadata ?? {}) };
   const sessionMetadata = { ...(session.metadata ?? {}), ...runtimeMetadata };
   const rehydrate = legacyRehydrateSpec(session.metadata, loaded.row.metadata, loaded.row.projectId);
 

@@ -9,6 +9,14 @@ import { and, eq } from 'drizzle-orm';
 import { type SandboxStatus, getProvider } from '../../platform/providers';
 import { type SandboxProviderName } from '../../config';
 import { db } from '../../shared/db';
+import {
+  claimRetiredEphemeralRow,
+  isRetiredEphemeralRow,
+  recordedSessionStateVolume,
+} from '../../platform/services/ephemeral-sandbox';
+import { sandboxCallbackUnreachableReason } from '../lib/sessions';
+import type { StopReason } from '../stop-reason';
+import { runtimeWakeInProgress } from '../session-lifecycle/runtime-wake-fence';
 import { inspectSandboxRuntime } from '../runtime-inspection';
 import { createStartCallLog, withStartEnvelope, type StartCallLog } from '../session-lifecycle/start-envelope';
 import type {
@@ -16,6 +24,7 @@ import type {
   OpenSessionRowWithExternalId,
 } from './session-open-context';
 import {
+  allocateRuntimeOnOpen,
   openProvisioningRowAnswer,
   openRecoveryClaimAnswer,
   openStaleProvisioningRow,
@@ -30,6 +39,7 @@ import { openNotRunningBox, openRemovedBox, syncRecoveredRunningRow } from './se
 import { enforceAdmission, enforceRuntimeGuarantee } from './session-open-guarantee';
 import { keepStoppedRefusesWake, resumeHibernatedOnOpen } from './resume-stopped-sandbox';
 import {
+  sandboxMetadata,
   serializeSandboxRow,
   sessionRuntimeUrlPath,
   stoppedWakeResult,
@@ -126,6 +136,59 @@ async function runOpenSession(
           )
           .limit(1);
 
+  // Ephemeral sandboxes: a stop deleted the box and left its state on the
+  // session volume. Waking is a fresh box from the current image with that
+  // volume mounted. The claim is an atomic delete of the retired row, so of
+  // concurrent polls exactly one allocates; the rest report provisioning.
+  // An ephemeral box that parked after its runtime failed to start (or to
+  // wake) is not worth waking again: its state is on the volume, so retire it
+  // and let the branch below boot a fresh one.
+  if (
+    row &&
+    row.status === 'stopped' &&
+    row.externalId &&
+    recordedSessionStateVolume(row.metadata) &&
+    ['runtime_boot_failed', 'runtime_wake_failed'].includes(String(sandboxMetadata(row).stopReason ?? '')) &&
+    !runtimeWakeInProgress(sandboxMetadata(row), log.observedAt)
+  ) {
+    const { retireEphemeralOnStop } = await import('../reaping/stop-box');
+    const retired = await retireEphemeralOnStop({
+      sandboxId: row.sandboxId,
+      sessionId: row.sessionId,
+      externalId: row.externalId,
+      stopReason: sandboxMetadata(row).stopReason as StopReason,
+      now: new Date(),
+      metadata: { retiredAfterFailedStart: true },
+    });
+    if (retired === 'retired') {
+      const [fresh] = await db.select().from(sessionSandboxes).where(eq(sessionSandboxes.sandboxId, row.sandboxId)).limit(1);
+      if (fresh) row = fresh;
+    }
+  }
+
+  if (row && isRetiredEphemeralRow(row)) {
+    // Stop intent is read BEFORE the claim: the claim deletes the retired row
+    // and allocates a fresh box, so a keep-alive poll that reached it would
+    // undo the stop it was only meant to observe. Only an explicit open wakes.
+    if (keepStoppedRefusesWake(args.keepStopped, row)) return keptStoppedAnswer(visible.row.agentName);
+    const claim = sandboxCallbackUnreachableReason() ? null : await claimRetiredEphemeralRow(row.sandboxId);
+    if (claim) {
+      await allocateRuntimeOnOpen(args.loaded, visible.row, projectId, sessionId, {
+        platinumCreateAttempt: claim.nextCreateAttempt,
+        ephemeralWakeAt: new Date().toISOString(),
+      });
+      log.did('provisioned');
+    }
+    return {
+      stage: 'provisioning',
+      agent_name: visible.row.agentName ?? 'default',
+      retriable: true,
+      sandbox: null,
+      opencode_session_id: null,
+      reason: 'ephemeral_wake',
+    };
+  }
+
   // Gate browser polling before any provider call. A live wake coalesces behind
   // its durable claim. A failed wake returns one terminal cooldown payload.
   // Reversing this order issues another provider start on every `/start` poll.
@@ -140,15 +203,10 @@ async function runOpenSession(
     return existingWake;
   }
 
-  if (row?.status === 'stopped' && row.externalId && keepStoppedRefusesWake(args.keepStopped, row)) {
-    return {
-      stage: 'stopped',
-      agent_name: visible.row.agentName ?? 'default',
-      retriable: false,
-      sandbox: null,
-      opencode_session_id: null,
-      failure: null,
-    };
+  // Every stopped row, with or without a box: a stopped row with no external
+  // id would otherwise fall through to `openUnusableRow`, which allocates.
+  if (row?.status === 'stopped' && keepStoppedRefusesWake(args.keepStopped, row)) {
+    return keptStoppedAnswer(visible.row.agentName);
   }
 
   ({ row, stoppedProviderStatus } = await resumeHibernatedOnOpen(log, row));
@@ -190,6 +248,18 @@ async function runOpenSession(
   if (notRunning) return notRunning;
 
   return stageRunningOpen(args, log, establishedRow);
+}
+
+/** A keep-alive poll's answer for a deliberately stopped session: report it, never wake it. */
+function keptStoppedAnswer(agentName: string | null): SessionStartResult {
+  return {
+    stage: 'stopped',
+    agent_name: agentName ?? 'default',
+    retriable: false,
+    sandbox: null,
+    opencode_session_id: null,
+    failure: null,
+  };
 }
 
 /**
