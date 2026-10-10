@@ -214,7 +214,9 @@ On React Native, pass AsyncStorage as `storage`. `restore` then returns a promis
 
 The saved-copy store keeps only server captures: the transcript mirror that the API
 writes when a turn ends. The live transcript is never written to the device, so a
-stopped turn cannot come back as a running one.
+stopped turn cannot come back as a running one. A runtime read that returns no messages
+keeps the saved messages on screen: it means the computer lost its state, not that the
+conversation is empty. The first runtime read with messages reconciles them.
 
 ## Sign-out and account switching
 
