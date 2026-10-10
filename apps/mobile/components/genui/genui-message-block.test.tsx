@@ -408,7 +408,7 @@ b2 = Badge("second")`;
     expect(motion.timings).toEqual([]);
   });
 
-  test('a chart is a figure carrying the SDK screen-reader text, with a legend for 2+ series and its source line', () => {
+  test('a chart is a figure carrying the SDK screen-reader text, with a legend naming each series and its source line', () => {
     const root = render(BARS);
     expect(all(root, 'fallback')).toHaveLength(0);
     const figure = all(root, 'view').filter((n) => n.props.accessibilityRole === 'image');
@@ -417,7 +417,7 @@ b2 = Badge("second")`;
     expect(all(root, 'view').filter((n) => n.props.accessible)).toHaveLength(1);
     const shown = texts(root);
     for (const text of ['Revenue', 'Cost', 'Q1', 'Q2']) expect(shown).toContain(text);
-    // The unit rides on the source line, so a single-series chart (no legend) still states it.
+    // The unit rides on the source line, not in the legend.
     expect(shown).toContain('Source: billing export · USD');
   });
 
@@ -476,12 +476,13 @@ s = Series("Revenue", [10, 20, 30])`);
     expect(shown).toContain('No 0%');
   });
 
-  test('a single-series chart has no legend: the title names it', () => {
+  test('a single-series chart names its series in the legend', () => {
     const root = render(`root = Stack([c])
 c = LineChart(["Mon", "Tue", "Wed"], [s], "app logs")
 s = Series("Visits", [3, 5, 4])`);
     layOut(root, 300);
-    expect(texts(root)).not.toContain('Visits');
+    // The catalog has no chart title: the legend is the only visible name of the series.
+    expect(texts(root)).toContain('Visits');
     // A line labels the ends of its x axis, where its first and last points sit.
     expect(texts(root)).toEqual(expect.arrayContaining(['Mon', 'Wed']));
     expect(texts(root)).not.toContain('Tue');

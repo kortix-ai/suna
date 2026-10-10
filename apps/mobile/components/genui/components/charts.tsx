@@ -6,9 +6,10 @@
  * `--chart-2`. Adjacent slots pass the dataviz CVD and normal-vision checks; a
  * monochrome ink ramp failed the normal-vision floor (ΔE 13.8 < 15). The ink slot
  * sits between the ramp's darkest step and its lightest, so the pale `--chart-1`
- * is never series 2. Ramp limit: `--chart-3` is 2.91:1 on the light card, so color
- * is never the only carrier: 2+ series get a legend in ink, the unit rides on the
- * source line, and Show data lists every value.
+ * is never series 2. Ramp limits against the card (WCAG ratio): light `--chart-3`
+ * 2.91:1, `--chart-2` 1.94:1, `--chart-1` 1.31:1; dark `--chart-5` 2.60:1. So color
+ * is never the only carrier: every series is named in a legend in ink, the unit
+ * rides on the source line, and Show data lists every value.
  * Native renderers get the comma form (`withAlpha(token, 1)`, design.md §9).
  *
  * MOTION: none. A chart answers a question; it is not a moment. No touch
@@ -90,7 +91,8 @@ export function GenuiChart({ node, props }: GenuiComponentProps) {
     // The plot draws one point per label; the table below keeps every value.
     const values = all.map((v) => v.slice(0, labels.length));
     const names = series.map((s) => String(s.props.name));
-    legend = series.length > 1 ? names : [];
+    // The catalog has no chart title, so even one series is named here (its name is required).
+    legend = names;
     head = ['', ...names.map((name) => (unit ? `${name} (${unit})` : name))];
     // A value past the last label gets a row numbered by position. A missing value stays a gap, never a made-up zero.
     const length = Math.max(labels.length, ...all.map((v) => v.length));
