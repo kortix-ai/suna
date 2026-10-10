@@ -11,9 +11,9 @@ import {
   type ReactNode,
 } from 'react';
 
+import { genuiResultToMarkdown } from '../markdown';
 import {
   createGenuiParser,
-  genuiBlockToMarkdown,
   genuiNodeToMarkdown,
   GENUI_CUT_OFF_NOTE,
   GENUI_SCHEMA_VERSION,
@@ -113,17 +113,19 @@ function collectTypes(node: GenuiNode | null, into: Set<string>): Set<string> {
   return into;
 }
 
-/** The block as markdown. A memoized component: the full parse runs only when the fallback renders, and only when code or version change. */
+/**
+ * The block as markdown, from the block's own incremental parse result. Memoized on the result,
+ * which the parser keeps identical for identical input. While streaming, the unfinished statement
+ * is left out and no cut-off note shows.
+ */
 const BlockFallback = memo(function BlockFallback({
-  code,
-  version,
+  result,
   renderMarkdown,
 }: {
-  code: string;
-  version: number;
+  result: GenuiParseResult;
   renderMarkdown: (markdown: string) => ReactNode;
 }) {
-  const markdown = useMemo(() => genuiBlockToMarkdown(code, version), [code, version]);
+  const markdown = useMemo(() => genuiResultToMarkdown(result), [result]);
   return <>{markdown ? renderMarkdown(markdown) : null}</>;
 });
 
@@ -147,12 +149,12 @@ export function GenuiBlock({
   enabled = true,
   onSettled,
 }: GenuiBlockProps) {
-  // A disabled block renders markdown only: skip the parse (hooks stay unconditional).
-  const result = useGenuiParse(enabled ? code : '', version, streaming);
+  // A disabled block parses too: its markdown comes from the same incremental result.
+  const result = useGenuiParse(code, version, streaming);
   const mountedAt = useRef(performance.now());
   const firstPaint = useRef<number | null>(null);
   const renderError = useRef(false);
-  if (result.root && firstPaint.current === null) firstPaint.current = performance.now() - mountedAt.current;
+  if (enabled && result.root && firstPaint.current === null) firstPaint.current = performance.now() - mountedAt.current;
 
   const context = useMemo<RenderContextValue>(
     () => ({ components, renderMarkdown, renderPending, streaming }),
@@ -173,24 +175,24 @@ export function GenuiBlock({
             : 'parse_error';
     onSettled({
       outcome,
-      components: [...collectTypes(result.root, new Set())].sort(),
+      // A disabled block renders no UI: it reports no components and no issues.
+      components: enabled ? [...collectTypes(result.root, new Set())].sort() : [],
       msToFirstPaint: firstPaint.current === null ? null : Math.round(firstPaint.current),
-      // A disabled block parses '' internally; its empty-source issue is not the block's.
       issueCount: enabled ? result.issues.length : 0,
     });
     // Fires when streaming settles; later re-renders of a settled block do not re-fire.
   }, [streaming]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (unsupported) return <>{renderMarkdown(`*${GENUI_UNSUPPORTED_NOTE}*`)}</>;
-  if (!enabled) return <BlockFallback code={code} version={version} renderMarkdown={renderMarkdown} />;
-  if (!result.root) return streaming ? null : <BlockFallback code={code} version={version} renderMarkdown={renderMarkdown} />;
+  if (!enabled) return <BlockFallback result={result} renderMarkdown={renderMarkdown} />;
+  if (!result.root) return streaming ? null : <BlockFallback result={result} renderMarkdown={renderMarkdown} />;
 
   return (
     <BlockBoundary
       // A throw while streaming gets one fresh try when the stream settles.
       // Settling remounts the node views once: host state such as an active tab resets.
       key={streaming ? 'live' : 'settled'}
-      fallback={<BlockFallback code={code} version={version} renderMarkdown={renderMarkdown} />}
+      fallback={<BlockFallback result={result} renderMarkdown={renderMarkdown} />}
       onError={() => (renderError.current = !streaming)}
     >
       <RenderContext.Provider value={context}>

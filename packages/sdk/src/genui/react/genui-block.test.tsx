@@ -192,9 +192,9 @@ describe('GenuiBlock', () => {
     ]);
   });
 
-  test('a disabled block does not parse', () => {
+  test('a disabled block reports no components and no first paint', () => {
     const events: GenuiBlockEvent[] = [];
-    // Valid source would report its component names and a first-paint time if it were parsed.
+    // The block parses (its markdown comes from the result), but it renders no UI.
     mount(
       <GenuiBlock
         code={CODE}
@@ -221,7 +221,7 @@ describe('GenuiBlock', () => {
         onSettled={(e) => events.push(e)}
       />,
     );
-    // The disabled path parses '' internally, which would report one empty-source issue.
+    // Issues describe rendered UI; a disabled block renders none.
     expect(events[0]?.issueCount).toBe(0);
   });
 
@@ -241,4 +241,15 @@ describe('GenuiBlock', () => {
     act(() => renderer.update(<GenuiBlock {...props} code={CODE} streaming />));
     expect(markdownCalls).toBe(3);
   });
+
+  test('20,000 nested Stack([ never throws, enabled or disabled', () => {
+    const code = `root = ${'Stack(['.repeat(20_000)}Badge("x")${'])'.repeat(20_000)}`;
+    for (const enabled of [true, false]) {
+      const renderer = mount(
+        <GenuiBlock code={code} streaming={false} enabled={enabled} components={COMPONENTS} renderMarkdown={renderMarkdown} />,
+      );
+      expect(renderer.toJSON()).toBeNull();
+    }
+  });
 });
+
