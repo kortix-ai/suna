@@ -1,8 +1,6 @@
 {
-  "source_hash": "e84b4bbbd939d2a452751da655b51b3cc8eb8fa59f9d58f98cff8da254a5084d",
+  "source_hash": "fd553b5ef9c8b413e3d5360671fdf6361685ec55c2b39a3600a8c8a3e3217880",
   "diff_files": [
-    ".agents/skills/learnings/MEMORY.md",
-    ".agents/skills/learnings/entries/2026-10-10T214735Z-guard-the-opencode-boot-root-s-claimed-pin-fallback-with-a-t.md",
     "apps/api/src/__tests__/integration-session-transcript-capture.test.ts",
     "apps/api/src/projects/lib/session-transcript-capture.ts",
     "apps/api/src/projects/lib/session-transcript-mirror.ts",
@@ -10,22 +8,18 @@
     "apps/api/src/sandbox-proxy/forward/upstream.ts",
     "apps/api/src/sandbox-proxy/runtime-request.test.ts",
     "apps/api/src/sandbox-proxy/runtime-request.ts",
-    "apps/kortix-sandbox-agent-server/src/__tests__/initial-session-claimed-pin.test.ts",
-    "apps/kortix-sandbox-agent-server/src/harness/open-code/boot.ts",
-    "apps/kortix-sandbox-agent-server/src/harness/open-code/initial-session.ts",
-    "apps/web/src/lib/seo/content-timestamps.json",
     "packages/db/drizzle/meta/20261010223320_snapshot.json",
     "packages/db/drizzle/meta/_journal.json",
     "packages/db/migrations/20261010223320238_session_transcript_rewind_marker.sql",
     "packages/db/src/schema/kortix.ts"
   ],
-  "diff_hash": "67ba732fea7e899ac3115059cd1a924ac7c8a375af48edb6b402e27127a6cf06",
-  "head": "c9aa1e19937465d5f56494423f886974c327d382",
+  "diff_hash": "04c728ec8290ecdc9c5de4fcccd59beda790736d7299dd4166c27f6ddea53263",
+  "head": "21021c15fcd1e5d4a4c0dc12daf305e8a8497335",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-10T23:28:31.301Z"
+  "at": "2026-10-10T23:42:50.875Z"
 }
