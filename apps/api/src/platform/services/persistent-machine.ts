@@ -8,16 +8,19 @@
  *           kept on the host. The box and its volume stay.
  *   start = Platinum's start: a cold boot of the volume's head on any host.
  *           Running processes and memory do not survive a stop.
- *   reset = delete the box (its root volume goes with it) and boot a fresh one
- *           from the current image. The session's branch is restored like any
- *           re-provision; anything else on the old disk is gone.
+ *   reset = carry the session's chat (OpenCode's data and state) and the
+ *           daemon's pins onto the session volume, delete the box (its root
+ *           volume goes with it) and boot a fresh one from the current image
+ *           with that volume mounted. The chat continues; the session's branch
+ *           is restored like any re-provision; anything else on the old disk
+ *           is gone. Drives are their own volumes and are untouched.
  *   delete = the session's delete removes the box; Platinum deletes the root
  *           volume with it.
  *
  * The root volume belongs to the box (Platinum `root_volume: true`), so the
- * box is never retired on stop the way an ephemeral box is, and it never gets
- * a session state volume: the root disk already keeps /workspace. Drives still
- * mount; the root disk takes one of the sandbox's mount slots.
+ * box is never retired on stop the way an ephemeral box is. It gets a session
+ * state volume only from a reset, which is where the chat survives the disk.
+ * Drives still mount; the root disk takes one of the sandbox's mount slots.
  *
  * Image upgrades: a persistent machine keeps booting the image it was created
  * from. Only a reset moves it to the current image.
