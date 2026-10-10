@@ -160,7 +160,7 @@ General rules for every component:
 
 ### 6.2 Map
 - **Web:** mapcn (MIT, built on MapLibre GL, installed through the shadcn registry into `apps/web/src/components/ui/`). It loads only when a map block appears. maplibre-gl is large, so it never enters the main bundle.
-- **Mobile:** maplibre-gl inside `react-native-webview` (13.16.1, installed), the same pattern as `MermaidBlock.tsx`. It ships over the air. A native MapLibre module would change `runtimeVersion` (`1.4.4` in `apps/mobile/app.json`) and need a store release, so it is P2.
+- **Mobile:** maplibre-gl inside `react-native-webview` (13.16.1, installed), the same pattern as `MermaidBlock.tsx`. It ships over the air. A native MapLibre module would change `runtimeVersion` (`1.5.0` in `apps/mobile/app.json` since the Expo SDK 57 upgrade; `1.4.4` when this spec was written) and need a store release, so it is P2.
 - **Tiles: CARTO cannot be the provider.** mapcn defaults to CARTO basemaps, and their README says commercial use requires a CARTO Enterprise license. Candidates: OpenFreeMap, self-hosted Protomaps PMTiles, MapTiler, Stadia. Decision needed (Q1).
 - **Privacy:** each tile request tells the tile host the viewer's IP address and the area they are looking at. Self-hosting or proxying tiles removes that (Q2).
 - **Interaction:** pan and zoom only. A tap on a marker shows its label and description. No geolocation and no permission prompts.
@@ -221,7 +221,7 @@ The Phase 0 evaluation set includes negative cases, where the correct answer is 
 
 **R-MOB-1. Mobile renderer**
 - [ ] Renders all 17 components with mobile primitives (`apps/mobile/design.md`, `AGENTS.md`).
-- [ ] Ships over the air on `runtimeVersion` 1.4.4 with no new native module.
+- [ ] Ships over the air on the current `runtimeVersion` (`1.5.0` after the Expo SDK 57 merge; `1.4.4` when this spec was written) with no new native module.
 - [ ] Android matches iOS.
 - [ ] Builds older than the OTA show the raw fence. This is accepted, and the OTA reaches them on next launch (`checkAutomatically: ON_LOAD`).
 

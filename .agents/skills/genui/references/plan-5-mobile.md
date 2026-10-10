@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. ALSO REQUIRED before writing any component: `apps/mobile/AGENTS.md` and `apps/mobile/design.md` (§2 Spacing, §8 the show card, §9 Colour and theme).
 
-**Goal:** Assistant messages on iOS and Android render ```` ```openui ```` blocks with mobile-native components while streaming, ship over the air on runtime `1.4.4` with no native module, and fall back to markdown when the viewer turns the feature off.
+**Goal:** Assistant messages on iOS and Android render ```` ```openui ```` blocks with mobile-native components while streaming, ship over the air on the current runtime (`1.4.4` when written, `1.5.0` after the Expo SDK 57 merge) with no native module, and fall back to markdown when the viewer turns the feature off.
 
 **Architecture:** `FencedCode` in `selectable-markdown.tsx` detects the fence and renders `GenuiMessageBlock`, which passes `mobileGenuiComponents` to the same SDK `GenuiBlock` the web uses. Components compose the app's primitives (`Text`, `Badge`, `Tabs`, `Separator`, a new minimal `Accordion`) on borderless `rounded-2xl` surfaces. Charts draw with `react-native-svg` from pure, tested geometry. The map follows design.md §8 (no embedded viewer that fights the transcript gesture): the transcript shows the place list with an "Open map" row, and the interactive MapLibre map opens fullscreen in a WebView, like the Mermaid fullscreen dialog.
 
@@ -1378,7 +1378,7 @@ Record Jay's result in the PR. Any failure goes back into the task that owns it.
 
 - [ ] **Step 3: Publish the OTA (needs Jay's explicit approval)**
 
-Find the OTA process: `rg -n "eas update" .github/workflows apps/mobile/package.json | head`. Publishing to the production channel reaches every installed app; ask Jay before running it (release gate). After publishing, record the update ID and the runtime version (`1.4.4`) in the PR.
+Find the OTA process: `rg -n "eas update" .github/workflows apps/mobile/package.json | head`. Publishing to the production channel reaches every installed app; ask Jay before running it (release gate). After publishing, record the update ID and the runtime version (`1.5.0` after the Expo SDK 57 merge) in the PR.
 
 - [ ] **Step 4: Old-build check**
 

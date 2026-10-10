@@ -16,21 +16,23 @@ installed app on the channel and needs Jay's explicit approval.
    `/v1`).
 2. Turn the flag on for one test project. Use one of:
    - web: Project settings → Feature flags → Generative UI;
-   - CLI: `kortix projects features enable genui`.
+   - CLI: `kortix projects features enable genui --project <project_id>`
+     (without `--project`, the linked or default project).
    The flag applies to **new** sessions. Start a new session after you turn it
-   on. A running or restarted session keeps its old prompt.
-3. Start Metro from the worktree:
-   ```bash
-   cd /Users/jay/root/kortix/suna-genui/apps/mobile
-   cp ../../../suna/apps/mobile/.env .env   # gitignored; edit EXPO_PUBLIC_BACKEND_URL if needed
-   pnpm dev                                  # expo start -c
-   ```
+   on. A running or restarted session keeps its old prompt. A warm session the
+   web client created before the flag change also keeps the old prompt: start
+   the session from the phone.
+3. Start Metro from the `genui` worktree's `apps/mobile` directory. Copy
+   `apps/mobile/.env` from the primary checkout first (the file is gitignored;
+   edit `EXPO_PUBLIC_BACKEND_URL` if needed), then run `pnpm dev`
+   (`expo start -c`).
    `EXPO_PUBLIC_*` values are compiled into the bundle. After you change one,
    stop Metro and run `pnpm dev` again (`-c` clears the cache).
-4. Expo SDK: branch `genui` is on Expo SDK 56. `origin/dev` moved to Expo
-   SDK 57 in `94d2c8d558`. Expo Go runs one SDK. If Expo Go on the device is
-   already on SDK 57, merge `origin/dev` into `genui` first, or use the dev
-   build.
+4. Expo SDK: branch `genui` includes `dev` up to the merge `09dd34b035`, so it
+   is on Expo SDK 57 (`expo` `~57.0.27`) and runtime `1.5.0`
+   (`apps/mobile/app.json`). Use Expo Go for SDK 57 or a `1.5.0` dev build.
+   Expo Go and any binary without the `react-native-uitextview` native module
+   use the iOS double-tap selection sheet (step 8).
 5. Settings → Rich answers is on (the default).
 
 Record for each step: pass or fail, device model, OS, theme. A failure goes
@@ -52,8 +54,10 @@ stream does OpenUI source text appear in the transcript.
 ### 2. Bar chart, legend, source, Show data
 
 - Prompt: `Show me revenue by quarter: Q1 120, Q2 150, Q3 170.`
-- Expected: a bar chart with three bars (Q1, Q2, Q3), a legend, and a
-  `Source: ...` line under it. Tap **Show data**: a table with the same three
+- Expected: a bar chart with three bars (Q1, Q2, Q3), a one-entry legend
+  above the plot with the series name (for example `Revenue`), and a
+  `Source: ...` line under it. A chart with 2 or more series has one legend
+  entry per series. Tap **Show data**: a table with the same three
   values appears and the button reads **Hide data**. Tap again: the table
   closes.
 
@@ -83,20 +87,31 @@ Prompt for both runs:
 
 a. `EXPO_PUBLIC_GENUI_MAP_STYLE_URL` empty (the default in `.env.example`):
    - Expected: one row per stop with a pin icon, then a `Source: ...` line.
-     There is no **Open map** row. Tap a stop: the browser opens
-     openstreetmap.org at that point. No map draws in the transcript.
+     A stop the model gave a description shows it as a second, muted line
+     under the name (one line, truncated). There is no **Open map** row.
+     Tap a stop: the browser opens openstreetmap.org at that point. No map
+     draws in the transcript.
 
 b. Set `EXPO_PUBLIC_GENUI_MAP_STYLE_URL="https://tiles.openfreemap.org/styles/liberty"`
    in `apps/mobile/.env`, restart Metro with `pnpm dev`, and send the prompt in
    a new session:
    - Expected: the first row is **Open map**, then the stop rows. Tap
      **Open map**: a full-screen dialog shows a loader, then the map with four
-     markers and the route line. The attribution control shows in compact
-     form. Pan and pinch move only the map. Close the dialog.
+     markers and the route line (when the model includes a route). The
+     attribution control is the compact one: an `i` button that expands to
+     the attribution text. Pan and pinch move only the map. Tap a marker: its
+     popup shows the name, and the description when there is one. Expand the
+     attribution if it is collapsed, then tap its `OpenStreetMap` link: the
+     browser opens the link and the app stays on the dialog. Close the
+     dialog.
    - Scroll the transcript up and down over the map block: the transcript
      scrolls. No map moves, because no map renders in the transcript.
-   - Turn on airplane mode, then tap **Open map**: the dialog shows
-     `Map unavailable` or the loader, and the app does not crash.
+   - Turn on airplane mode, then tap **Open map** again: the dialog opens and
+     the map area stays empty (the dialog surface with the zoom buttons),
+     because the style and tiles cannot load. The app does not crash. The
+     MapLibre files are read once per app run, so this open does not need the
+     network for them. `Map unavailable` shows only when that read fails (for
+     example, the first open of an app run with Metro unreachable).
 
 ### 6. Rich answers switch
 
@@ -123,8 +138,13 @@ b. Set `EXPO_PUBLIC_GENUI_MAP_STYLE_URL="https://tiles.openfreemap.org/styles/li
 - On the turn from step 2, tap the turn's **Copy** action. Paste into Notes.
 - Expected: the pasted text contains a markdown table with rows Q1, Q2, Q3
   and a `Source: ...` line. It never contains `root =` or OpenUI calls.
-- iOS: long-press the reply text to open the selection sheet. Expected: the
-  sheet shows the markdown version of the block, not OpenUI source.
+- iOS selection sheet: only on a binary without the `react-native-uitextview`
+  native module (Expo Go, or an older store build). Double-tap the reply text,
+  or the block inside it: the **Select Text** sheet opens. Expected: the sheet
+  shows the markdown version of the whole reply, including the block, never
+  OpenUI source. With Rich answers off, a double tap on the block's markdown
+  opens the same whole-reply sheet. Builds with the native module have no
+  sheet: a long-press selects text in place, and there is nothing to check.
 
 ### 9. Light, dark, Android, iOS
 
@@ -137,10 +157,17 @@ b. Set `EXPO_PUBLIC_GENUI_MAP_STYLE_URL="https://tiles.openfreemap.org/styles/li
 - Open the Expo dev menu → **Toggle performance monitor**.
 - Prompt: `Which laptop is best for a student? Laptop 1: 899, 16 GB, 1.3 kg, 12 h. Laptop 2: 1199, 16 GB, 1.1 kg, 15 h. Laptop 3: 649, 8 GB, 1.6 kg, 9 h. Laptop 4: 999, 32 GB, 1.8 kg, 10 h.`
   (eval case `ui-four-products`).
-- Run it once with Rich answers on and once with Rich answers off, in new
-  sessions on the same device. Note the lowest JS FPS during each stream.
-- Expected: the on run is no more than 5 fps below the off run. Record the
-  device model. Prefer a low-end Android device.
+- Spec §8.4 compares against `dev`, not against Rich answers off. Run the
+  prompt twice on the same device and the same backend, each in a new
+  session of the test project:
+  1. the `genui` bundle (Metro from the `genui` worktree), Rich answers on;
+  2. a `dev` bundle (Metro from a checkout of `dev` without genui). The reply
+     carries the same `openui` fence, which `dev` renders as a code block.
+- Note the lowest JS FPS during each stream.
+- Expected: the `genui` run's lowest JS FPS is at least 95% of the `dev`
+  run's. Record both values and the device model. Prefer a low-end Android
+  device.
+- Optional second data point: the `genui` bundle with Rich answers off.
 
 ## Publishing the OTA
 
@@ -184,10 +211,11 @@ build ("Rebuild required"), or when nothing under `apps/mobile`,
 
 ### Runtime version and native modules
 
-- Branch `genui` keeps `runtimeVersion` `1.4.4` in `apps/mobile/app.json`,
-  the same value as its merge base `1c2fefe8b3`.
+- Branch `genui` has `runtimeVersion` `1.5.0` in `apps/mobile/app.json`
+  (Expo SDK 57), the same value as `dev` at its merge base `0e10275083`.
 - The branch adds no native module. Its `apps/mobile/package.json` diff
-  against the merge base adds only:
+  against the merge base (`git diff 0e10275083...genui --
+  apps/mobile/package.json`) adds only:
   - `@openuidev/lang-core` `0.3.1` (dependency): JavaScript only; its one
     dependency is `ci-info`; no `ios/`, `android/`, podspec, or
     `expo-module.config.json`;
@@ -196,15 +224,13 @@ build ("Rebuild required"), or when nothing under `apps/mobile`,
     script and stylesheet ship as `.webjs` assets.
 - The native packages the branch uses already exist at the merge base:
   `react-native-webview` `13.16.1`, `react-native-svg` `15.15.4`,
-  `expo-clipboard` `~56.0.4`. The `webjs` asset extension already exists in
+  `expo-clipboard` `~57.0.2`. The `webjs` asset extension already exists in
   `apps/mobile/metro.config.js`.
 - The branch changes nothing under `apps/mobile/ios`, `apps/mobile/android`,
   or `apps/mobile/patches`, and does not change `apps/mobile/app.json`.
-- **Runtime after the merge:** `origin/dev` is at runtime `1.5.0` (Expo SDK 57,
-  `94d2c8d558`). After `genui` merges into `dev`, the update carries runtime
-  `1.5.0` and reaches only `1.5.0` binaries. `1.4.4` binaries keep the old
-  bundle (see the old-build check below) until the user installs a `1.5.0`
-  store build.
+- **Who gets the update:** it carries runtime `1.5.0` and reaches only
+  `1.5.0` binaries. `1.4.4` binaries never receive it and keep the raw fence
+  until the user installs a `1.5.0` store build.
 
 ### What the map adds to the update
 
@@ -237,8 +263,9 @@ runtime version, and the channel. Confirm with
 
 ## Old-build check (spec R-MOB-1)
 
-1. On a build without the update (or with updates disabled), open the
-   session from checklist step 1.
+1. On a `1.5.0` build without the update (or with updates disabled), open
+   the session from checklist step 1. A `1.4.4` build never receives the
+   update, so it cannot do step 3.
 2. Expected: the reply shows a code block with the OpenUI source. This is
    accepted (spec R-MOB-1).
 3. Open the app, close it, and open it again with the update available. A

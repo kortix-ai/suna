@@ -5,7 +5,7 @@ description: "Generative UI for Kortix: the agent writes typed UI blocks (cards,
 
 # Generative UI (`genui`)
 
-**Status: SDK layer shipped (`@kortix/sdk/genui`, `/genui/react`). Runtime, web, mobile: see references/plan.md.**
+**Status (2026-10-10): built on branch `genui`, not merged to `dev`.** SDK (`@kortix/sdk/genui`, `/genui/react`), runtime (`genui` flag, prompt on OpenCode and pi, channel guards), web, and mobile are implemented. Plans 1, 2, 3 and 5: every task complete. Plan 4: tasks 1–7 complete; task 8 (full `pnpm test` attestation, browser checks) open. Mobile: Jay's device check and the OTA publish are open (`references/mobile-device-check.md`).
 
 Phase 0 (provisional, local stand-in models): GO (2026-10-09, prompt 00a9030e). Valid: deepseek-v4.1-flash 100.0%, glm-5.3-flash 100.0%, gate 97.0%; kimi-k3 unavailable (503); Jay's 4 models untested. See `references/eval-results.md`.
 
@@ -18,6 +18,11 @@ Phase 0 (provisional, local stand-in models): GO (2026-10-09, prompt 00a9030e). 
 | `references/plan-3-runtime.md` | `genui` flag, `GENUI_ENABLED` kill switch, prompt on OpenCode and pi, channel guards (5 tasks) |
 | `references/plan-4-web.md` | Web and desktop renderer, components, charts, map, settings, copy/export, telemetry, verification (8 tasks) |
 | `references/plan-5-mobile.md` | Mobile renderer, components, charts, map, settings, copy, device check, OTA (7 tasks) |
+| `references/eval-results.md` | Phase 0 results: one summary table per eval run, appended by `scripts/eval.ts` |
+| `references/mobile-device-check.md` | On-device checklist for mobile (Jay runs it), the OTA publish procedure, the old-build check |
+| `scripts/eval.ts` | Phase 0 runner: every case against each model through the LLM gateway; writes `output/genui-eval/` and appends `eval-results.md` |
+| `scripts/eval-prompts.json` | The 46 synthetic eval cases: prompt, optional tool result (`context`), expected UI use (`expect`), forbidden components (`forbid`) |
+| `scripts/score.ts`, `scripts/score.test.ts` | Scores one reply (valid blocks, overuse, underuse, forbidden components) and applies the go/no-go gate |
 
 ## Rules that already hold
 

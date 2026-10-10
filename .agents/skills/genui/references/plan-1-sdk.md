@@ -20,7 +20,7 @@ See `plan.md` § Global Constraints. The ones this plan must not break: optional
 
 See `plan.md` § Review Focus items 1, 2, 3, 5 — their tests are in Tasks 2, 5, and 7 of this plan.
 
-All commands run from the worktree root `/Users/jay/root/kortix/suna-genui`.
+All commands run from the root of the `genui` worktree (`suna-genui`, next to the primary checkout).
 
 ---
 
