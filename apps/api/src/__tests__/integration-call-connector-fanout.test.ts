@@ -52,15 +52,14 @@ import {
  * The statement budget one /call request may spend. Above this, the request is
  * the fan-out KRTX-2017 named; below it, the duplicated reads are gone.
  *
- * The lane runs unmemoized (ttlMemo stays off under NODE_ENV=test, so a suite
- * that seeds policies mid-file keeps enforcing them), so this pins the
- * per-call WORST case — every read the request itself performs, no cache
- * credit. 22 = token + sandbox liveness + account/project/session rows, ONE
- * git-project row + ONE manifest load for the grant reconcile, connector +
- * connection + binding + credential reads, the policy reads, and the audit
- * insert. The pre-fix request spent 24 on the same fixture; the memoized
- * warm path production serves spends less still (measured on the local
- * stack: db n=15 per call).
+ * The lane runs unmemoized — the policy/share loaders read fresh on every
+ * call (CONN-32 pins that a policy seeded between two calls is enforced by
+ * the second one) — so this pins the per-call WORST case: every read the
+ * request itself performs. 22 = token + sandbox liveness +
+ * account/project/session rows, ONE git-project row + ONE manifest load for
+ * the grant reconcile, connector + connection + binding + credential reads,
+ * the policy reads, and the audit insert. The pre-fix request spent 24 on
+ * the same fixture.
  */
 const CALL_STATEMENT_BUDGET = 22;
 

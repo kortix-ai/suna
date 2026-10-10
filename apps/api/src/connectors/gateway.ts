@@ -183,7 +183,7 @@ export interface GatewayDeps {
   /** `providerType` — the loaded connector's provider, when the caller has it
    *  in hand (the call path does), so the store skips its duplicate read of
    *  the `connectors` row. */
-  loadAction(connectorId: string, relPath: string, providerType?: string): Promise<GatewayAction | null>;
+  loadAction(connectorId: string, relPath: string, providerType: string): Promise<GatewayAction | null>;
   /**
    * Resolve the credential value/binding for a connector. `userId=null` = shared;
    * set = that member's own. Receives the loaded connector so the resolver can

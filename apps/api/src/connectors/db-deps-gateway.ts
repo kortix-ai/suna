@@ -346,26 +346,16 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
     },
     loadAction: async (connectorId, relPath, providerType) => {
       // The call path already holds the connector row (it loaded it to
-      // authorize the call) and passes its provider; only callers without it
-      // pay the duplicate `connectors` read.
-      const [[stored], [owner]] = await Promise.all([
-        db
-          .select()
-          .from(connectorActions)
-          .where(
-            and(eq(connectorActions.connectorId, connectorId), eq(connectorActions.path, relPath)),
-          )
-          .limit(1),
-        providerType !== undefined
-          ? Promise.resolve([{ providerType }])
-          : db
-              .select({ providerType: connectors.providerType })
-              .from(connectors)
-              .where(eq(connectors.connectorId, connectorId))
-              .limit(1),
-      ]);
+      // authorize the call) and passes its provider.
+      const [stored] = await db
+        .select()
+        .from(connectorActions)
+        .where(
+          and(eq(connectorActions.connectorId, connectorId), eq(connectorActions.path, relPath)),
+        )
+        .limit(1);
       const a =
-        owner?.providerType === 'computer'
+        providerType === 'computer'
           ? withComputerCatalog(connectorId, 'computer', []).find((row) => row.path === relPath)
           : stored;
       if (!a) return null;
