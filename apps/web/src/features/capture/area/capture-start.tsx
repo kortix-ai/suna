@@ -8,6 +8,7 @@ import { useEffect } from 'react';
 
 import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
 import { useAccountsList } from '@/hooks/account/use-accounts-list';
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 
 import { captureHref, lastCaptureAccount } from './use-capture-area';
 
@@ -44,7 +45,7 @@ export function CaptureStart() {
 
   useEffect(() => {
     if (target) router.replace(captureHref(target));
-    else if (accounts.isSuccess && list.length === 0) router.replace('/projects');
+    else if (accounts.isSuccess && list.length === 0) router.replace(PROJECT_LANDING_PATH);
   }, [target, accounts.isSuccess, list.length, router]);
 
   return <ProjectPendingScreen />;
