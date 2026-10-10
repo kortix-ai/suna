@@ -105,6 +105,11 @@ ReasoningBlockSchema = {
   ext: ExtSchema | absent
 }
 
+SessionLogAckSchema = {
+  message_id: string(non-empty)
+  rev: number(int)(min)
+}
+
 SessionLogBlockSchema = union(
   | TextBlockSchema
   | ReasoningBlockSchema
@@ -115,6 +120,29 @@ SessionLogBlockSchema = union(
   | StepBlockSchema
   | HarnessBlockSchema
 )
+
+SessionLogJournalConflictSchema = {
+  generation: number(int)(min)
+}
+
+SessionLogJournalRequestSchema = {
+  generation: number(int)(min)
+  puts: array(SessionLogPutSchema)
+  tombstones: array(SessionLogTombstoneSchema)
+  threads: array(SessionLogThreadUpsertSchema)
+  session: SessionLogSessionPatchSchema | absent
+}
+
+SessionLogJournalResponseSchema = {
+  acked: array(SessionLogAckSchema)
+}
+
+SessionLogManifestSchema = {
+  messages: array({
+    message_id: string(non-empty)
+    content_hash: string(non-empty)
+  })
+}
 
 SessionLogMessageSchema = {
   schema: literal("kortix.session/2")
@@ -146,6 +174,11 @@ SessionLogMessageSchema = {
   context_ref: string | absent
   ext: ExtSchema | absent
 } + refine
+
+SessionLogPutSchema = {
+  rev: number(int)(min)
+  message: SessionLogMessageSchema
+}
 
 SessionLogSchema = {
   schema: literal("kortix.session/2")
@@ -181,6 +214,39 @@ SessionLogSchema = {
   ext: ExtSchema | absent
 }
 
+SessionLogSessionPatchSchema = {
+  schema: literal("kortix.session/2") | absent
+  v: number(int)(min) | absent
+  session_id: string | absent
+  title: string | null | absent
+  created_at: string | absent
+  restore_grade: enum(native | converted | partial) | absent
+  grade_counts: {
+    tool_input: number(int)(min)
+    cut_point: number(int)(min)
+    attachment: number(int)(min)
+  } | absent | absent
+  harness: {
+    current: string
+    history: array({
+      harness: string
+      version: string
+      from_seq: number
+      at: string
+    })
+  } | absent
+  selection: {
+    agent: string | null
+    model: ModelRefSchema | null
+  } | absent
+  todos: array(TodoSchema) | absent
+  pending: {
+    questions: array(PendingSchema)
+    permissions: array(PendingSchema)
+  } | absent
+  ext: ExtSchema | absent | absent
+}
+
 SessionLogThreadSchema = {
   schema: literal("kortix.session/2")
   v: number(int)(min)
@@ -198,6 +264,29 @@ SessionLogThreadSchema = {
   created_at: string
   messages: array(SessionLogMessageSchema)
   ext: ExtSchema | absent
+}
+
+SessionLogThreadUpsertSchema = {
+  schema: literal("kortix.session/2")
+  v: number(int)(min)
+  thread_id: string
+  parent_thread_id: string | null
+  spawned_by: {
+    message_id: string
+    call_id: string
+  } | null
+  interactions: array(ThreadInteractionSchema) | absent
+  agent: string | null
+  native_agent_id: string | absent
+  nickname: string | null | absent
+  title: string | null
+  created_at: string
+  ext: ExtSchema | absent
+}
+
+SessionLogTombstoneSchema = {
+  message_id: string(non-empty)
+  rev: number(int)(min)
 }
 
 StepBlockSchema = {
