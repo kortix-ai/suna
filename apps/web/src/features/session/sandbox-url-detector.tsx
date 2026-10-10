@@ -32,6 +32,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 interface SandboxUrlDetectorProps {
   content: string;
   isStreaming?: boolean;
+  /** Session transcript assistant text: ```openui fences render as generative UI. */
+  genui?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -385,6 +387,7 @@ export function CodeBlockEndpoints({ content, className }: CodeBlockEndpointsPro
 export const SandboxUrlDetector: React.FC<SandboxUrlDetectorProps> = ({
   content,
   isStreaming = false,
+  genui = false,
 }) => {
   // Strip kortix_system XML tags before any processing/rendering.
   // These tags contain internal/system content injected by OpenCode plugins
@@ -392,5 +395,5 @@ export const SandboxUrlDetector: React.FC<SandboxUrlDetectorProps> = ({
   const rawContent = typeof content === 'string' ? content : content ? String(content) : '';
   const safeContent = stripKortixSystemTags(rawContent);
 
-  return <UnifiedMarkdown content={safeContent} trust="agent" isStreaming={isStreaming} />;
+  return <UnifiedMarkdown content={safeContent} trust="agent" isStreaming={isStreaming} genui={genui} />;
 };

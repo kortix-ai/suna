@@ -32,8 +32,8 @@ const TEST_FILE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
  *                            Each import carries an inline eslint disable. The other four zustand
  *                            stores under `internal/` stay forbidden.
  *  - `@kortix/sdk/genui/fence` — OpenUI fence detection for the markdown
- *                            code renderer (`components/markdown/code/
- *                            markdown-code.tsx`). It never loads `@openuidev/*`
+ *                            renderers (`components/markdown/code/
+ *                            genui-fence.ts`). It never loads `@openuidev/*`
  *                            or `zod`, which the `./genui` barrel does at
  *                            module load. The import carries an inline eslint
  *                            disable (the `@kortix/sdk/*` gitignore pattern
@@ -57,7 +57,8 @@ const TEST_FILE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
  * so a static import of it belongs only in lazily loaded genui code. Copy and
  * transcript export (in the main session chunk) reach it through the dynamic
  * `import()` in `features/genui/to-markdown.ts`, which runs only for text that
- * contains "openui". Neither this scan nor the eslint rule inspects `import()`.
+ * contains "openui", and so does a block's error fallback (`genuiBlockText`).
+ * Neither this scan nor the eslint rule inspects `import()`.
  */
 const CANONICAL_SDK_ENTRIES = new Set([
   '@kortix/sdk',

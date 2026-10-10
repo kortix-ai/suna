@@ -13,6 +13,12 @@ export async function genuiCopyText(text: string): Promise<string> {
   return genuiToMarkdown(text);
 }
 
+/** One block as markdown, for a host that cannot render it (`GenuiFenceBoundary`). Same lazy barrel. */
+export async function genuiBlockText(code: string, version: number, options: { streaming: boolean }): Promise<string> {
+  const { genuiBlockToMarkdown } = await import('@kortix/sdk/genui');
+  return genuiBlockToMarkdown(code, version, options);
+}
+
 /**
  * True when `text` may hold a generative UI block, the only case `genuiCopyText`
  * changes. The regex mirrors the early return of `genuiToMarkdown` in

@@ -27,7 +27,7 @@ export function GenuiCard({ props, renderChild }: GenuiComponentProps) {
     <Card className="border-border bg-background rounded-md border">
       {props.image ? (
         <div className="px-4">
-          <MarkdownImage src={props.image} alt="" />
+          <MarkdownImage src={props.image} alt="" flush />
         </div>
       ) : null}
       <CardHeader>
@@ -51,13 +51,16 @@ export function GenuiTabs({ props, renderChild, streaming }: GenuiComponentProps
   const value = streaming ? tabs[tabs.length - 1]!.id : undefined;
   return (
     <Tabs defaultValue={tabs[0]!.id} value={value} className="gap-3">
-      <TabsList>
-        {tabs.map((tab) => (
-          <TabsTrigger key={tab.id} value={tab.id}>
-            {String(tab.props.label)}
-          </TabsTrigger>
-        ))}
-      </TabsList>
+      {/* Long labels: each truncates (full text on hover) and the row scrolls inside the message column. */}
+      <div className="max-w-full overflow-x-auto">
+        <TabsList>
+          {tabs.map((tab) => (
+            <TabsTrigger key={tab.id} value={tab.id} title={String(tab.props.label)}>
+              <span className="max-w-48 truncate">{String(tab.props.label)}</span>
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </div>
       {tabs.map((tab) => (
         <TabsContent key={tab.id} value={tab.id} className="flex flex-col gap-4">
           {kids(tab.props.children).map(renderChild)}

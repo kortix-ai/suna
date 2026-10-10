@@ -14,6 +14,7 @@ import { isQuestionTool } from '../session-activity-groups';
 
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { detectCommandFromText } from '@/features/session/detect-command';
+import { GenuiTelemetryContext } from '@/features/genui/block-telemetry';
 import { copyGenuiText } from '@/features/genui/to-markdown';
 import { useTranslations } from '@/i18n/use-translations';
 import { type SessionMessageAuthor, type SessionPrompt, type SessionPromptViewer, groupShowSegments, isCompactionPart, isPatchPart, isSnapshotPart, isStepPart, sessionPromptActions, toolKind } from '@kortix/sdk';
@@ -1856,7 +1857,7 @@ function TurnInlineContent({
                   {isStreaming ? (
                     <ThrottledMarkdown content={text} isStreaming />
                   ) : (
-                    <SandboxUrlDetector content={text} isStreaming={false} />
+                    <SandboxUrlDetector content={text} isStreaming={false} genui />
                   )}
                 </div>
               );
@@ -1911,14 +1912,14 @@ function TurnSettledResponse({
                   fadeClassName="from-secondary"
                   contentClassName="px-4 py-3 text-sm"
                 >
-                  <SandboxUrlDetector content={response} isStreaming={false} />
+                  <SandboxUrlDetector content={response} isStreaming={false} genui />
                 </ExpandableOutput>
               </div>
               <CodeBlockEndpoints content={response} />
             </div>
           ) : (
             <div className="text-sm">
-              <SandboxUrlDetector content={response} isStreaming={false} />
+              <SandboxUrlDetector content={response} isStreaming={false} genui />
             </div>
           ))}
 
@@ -2196,6 +2197,15 @@ function SessionTurnImpl(props: SessionTurnProps) {
     () => (isCompaction ? compactionTurnInfo(turn) : null),
     [isCompaction, turn],
   );
+  // genui_block telemetry: one scope per turn, shared by the streaming and the settled render.
+  // Keyed on strings, not on `turn`, so a streaming frame does not re-render every block of the turn.
+  const lastAssistant = turn.assistantMessages.at(-1)?.info;
+  const genuiModel = lastAssistant?.role === 'assistant' ? lastAssistant.modelID : undefined;
+  const genuiScope = turn.userMessage.info.id;
+  const genuiTelemetry = useMemo(
+    () => ({ scope: genuiScope, ...(genuiModel ? { model: genuiModel } : {}) }),
+    [genuiScope, genuiModel],
+  );
 
   if (shellModePart) {
     return (
@@ -2224,8 +2234,10 @@ function SessionTurnImpl(props: SessionTurnProps) {
   return (
     <div className="group/turn text-factor-[2] space-y-2.5">
       <TurnUserBlock {...props} model={model} queueTone={queueTone} userContent={userContent} />
-      <TurnToolBlocks {...props} model={model} segments={segments} conversationDensity={conversationDensity} />
-      <TurnAssistantBlock {...props} model={model} answered={answered} userContent={userContent} tHardcodedUi={tHardcodedUi} />
+      <GenuiTelemetryContext.Provider value={genuiTelemetry}>
+        <TurnToolBlocks {...props} model={model} segments={segments} conversationDensity={conversationDensity} />
+        <TurnAssistantBlock {...props} model={model} answered={answered} userContent={userContent} tHardcodedUi={tHardcodedUi} />
+      </GenuiTelemetryContext.Provider>
       <TurnFooter {...props} model={model} errors={errors} answered={answered} status={status} retry={retry} meta={meta} tHardcodedUi={tHardcodedUi} connectProviderOpen={connectProviderOpen} onConnectProviderOpenChange={setConnectProviderOpen} />
     </div>
   );

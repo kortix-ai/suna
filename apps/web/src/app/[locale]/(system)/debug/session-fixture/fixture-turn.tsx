@@ -316,7 +316,7 @@ export function FixtureTurn({
       )}
       {!working && !hasSteps && response && (
         <div className="text-sm">
-          <SandboxUrlDetector content={response} isStreaming={false} />
+          <SandboxUrlDetector content={response} isStreaming={false} genui />
         </div>
       )}
 

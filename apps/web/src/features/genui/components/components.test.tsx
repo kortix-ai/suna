@@ -68,6 +68,40 @@ pic = Image("https://example.com/venue.jpg", "Venue entrance", "The north door")
     expect(html).not.toContain('data-fallback');
   });
 
+  test('the compare pick is named in text, not only by weight', () => {
+    const html = render(`root = Stack([cmp])
+cmp = Compare([x, y], ["Price"], "Y")
+x = CompareItem("X", ["$10"])
+y = CompareItem("Y", ["$20"])`);
+    expect(html).toMatch(/<th[^>]*>Y<span[^>]*>Pick<\/span><\/th>/);
+    expect(html).toMatch(/<th[^>]*>X<\/th>/);
+  });
+
+  test('table and compare text cells wrap; numbers stay on one line', () => {
+    const html = render(`root = Stack([table, cmp])
+table = Table(["Note", "Count"], [["a long note that should wrap inside the message column", 1]])
+cmp = Compare([x, y], ["Seat"])
+x = CompareItem("X", ["a long value that wraps"])
+y = CompareItem("Y", ["short"])`);
+    const cell = (text: string) => html.match(new RegExp(`<td[^>]*>${text}</td>`))?.[0] ?? '';
+    expect(cell('a long note that should wrap inside the message column')).toContain('whitespace-normal');
+    expect(cell('a long value that wraps')).toContain('whitespace-normal');
+    expect(cell('1')).not.toContain('whitespace-normal');
+  });
+
+  test('tab labels truncate with the full label on hover, in a row that scrolls', () => {
+    const label = 'Quarterly revenue split';
+    const html = render(`root = Stack([tabs])
+tabs = Tabs([t1, t2])
+t1 = Tab("${label}", [b1])
+t2 = Tab("Two", [b2])
+b1 = Badge("first")
+b2 = Badge("second")`);
+    expect(html).toContain(`title="${label}"`);
+    expect(html).toMatch(new RegExp(`<span class="[^"]*truncate[^"]*">${label}</span>`));
+    expect(html).toContain('overflow-x-auto');
+  });
+
   test('compare keys spec rows by position, so repeated labels do not collide', async () => {
     // Only a client render reports duplicate keys; the server renderer stays silent.
     const errors: string[] = [];

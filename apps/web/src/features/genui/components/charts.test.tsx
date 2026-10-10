@@ -5,7 +5,7 @@ import { parseGenui } from '@kortix/sdk/genui';
 
 import type { GenuiNode } from '../sdk';
 import { ChartView } from './charts';
-import { GenuiPending } from './pending';
+import { CHART_FIGURE_HEIGHT, GenuiPending } from './pending';
 
 /** The first block inside `root = Stack([...])`. */
 const node = (code: string) => (parseGenui(code).root!.props.children as GenuiNode[])[0]!;
@@ -34,10 +34,13 @@ describe('ChartView', () => {
     expect(html).toMatch(/<td[^>]*>1,500<\/td>/);
   });
 
-  test('one series draws no legend; two series draw one entry each in palette order', () => {
+  test('the legend names every series, one included (the catalog has no chart title); the figure keeps its reserved height', () => {
     const single = render(node('root = Stack([c])\nc = BarChart(["A", "B"], [s], "survey")\ns = Series("Votes", [1, 2])'));
-    expect(legend(single)).toBeNull();
+    expect(legend(single)).toMatch(/<li[^>]*>[\s\S]*?Votes<\/li>/);
     expect(single).toMatch(/<figcaption[^>]*>Source: survey<\/figcaption>/);
+    // The plot block is fixed: the legend takes its row from the chart, never from the figure.
+    expect(single).toContain(CHART_FIGURE_HEIGHT);
+    expect(single).toContain('h-[244px]');
 
     const html = render(
       node(

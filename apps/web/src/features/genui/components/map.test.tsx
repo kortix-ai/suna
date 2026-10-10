@@ -76,6 +76,21 @@ describe('genui map', () => {
     expect(pending).toMatch(/class="[^"]*\bh-\[280px\][^"]*\bborder\b/);
   });
 
+  test('with a style, a streaming map holds the reserved box until its block settles, whatever its markers', () => {
+    process.env[STYLE_ENV] = 'https://tiles.example.test/style.json';
+    // Streamed top-down, the Map statement completes before its Marker lines: 0 markers.
+    const empty: GenuiNode = { ...map, props: { ...map.props, markers: [] } };
+    for (const streamed of [empty, map]) {
+      const html = renderToStaticMarkup(
+        <GenuiMapView node={streamed} props={streamed.props} renderChild={() => null} streaming styleUrl="https://tiles.example.test/style.json" />,
+      );
+      // The pending block: same figure height, the spinner, no canvas and no place list yet.
+      expect(html).toContain('min-h-[304px]');
+      expect(html).toContain('aria-busy="true"');
+      expect(html).not.toContain('<figcaption');
+    }
+  });
+
   test('without a style, a pending map waits invisibly, like text: the place list has no fixed height to reserve', () => {
     delete process.env[STYLE_ENV];
     expect(renderToStaticMarkup(<>{GenuiPending({ id: 'm', type: 'Map', props: {}, partial: true })}</>)).toBe('');

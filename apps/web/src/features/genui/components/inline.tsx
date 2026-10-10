@@ -32,7 +32,7 @@ export function GenuiCallout({ props }: GenuiComponentProps) {
 export function GenuiImage({ props }: GenuiComponentProps) {
   return (
     <figure className="flex flex-col gap-1">
-      <MarkdownImage src={props.src} alt={props.alt} />
+      <MarkdownImage src={props.src} alt={props.alt} flush />
       {props.caption ? <figcaption className="text-muted-foreground text-xs text-pretty">{props.caption}</figcaption> : null}
     </figure>
   );

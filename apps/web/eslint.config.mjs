@@ -100,12 +100,12 @@ const eslintConfig = [
               // re-include a path under an excluded directory. There is
               // therefore no pattern that allows `@kortix/sdk/internal/
               // idb-sync-cache` while banning its four zustand neighbours.
-              // The three deliberate exceptions carry an inline disable
-              // instead, where it is visible in review: `idb-sync-cache` in
+              // The deliberate exceptions carry an inline disable instead,
+              // where it is visible in review: `idb-sync-cache` in
               // `lib/device-caches.ts` and `lib/utils/reset-client-state.ts`,
               // `diagnostics-store` in `stores/diagnostics-store.ts`,
               // `managed-storage` in `lib/storage/managed-storage.ts`,
-              // `genui/fence` in `components/markdown/code/markdown-code.tsx`,
+              // `genui/fence` in `components/markdown/code/genui-fence.ts`,
               // `genui/react` in `features/genui/sdk.ts`, `genui` in
               // `features/genui/components/charts.tsx` and
               // `features/genui/components/map.tsx`. Mirrors CANONICAL_SDK_ENTRIES

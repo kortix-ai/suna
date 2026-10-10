@@ -668,7 +668,7 @@
       "conversationDensity": "Densità della conversazione",
       "conversationDensityDescription": "Scegli quanti dettagli mostra l'agente nella conversazione mentre lavora.",
       "richAnswers": "Risposte arricchite",
-      "richAnswersDescription": "Mostra confronti, tabelle, grafici e mappe come elementi visivi nelle risposte. Se disattivato, le risposte mostrano lo stesso contenuto come testo.",
+      "richAnswersDescription": "Mostra confronti, tabelle, grafici e mappe come elementi visivi nelle risposte. Se l'opzione è disattivata, lo stesso contenuto appare come testo.",
       "wallpaper": "Sfondo",
       "wallpaperDescription": "Lo sfondo dietro l'progetto.",
       "defaultWallpaper": "Predefinito",
@@ -20478,6 +20478,8 @@
     "map": "Mappa",
     "zoomIn": "Aumenta zoom",
     "zoomOut": "Riduci zoom",
-    "mapTwoFingers": "Usa due dita per spostare la mappa"
+    "mapTwoFingers": "Usa due dita per spostare la mappa",
+    "pick": "Scelta",
+    "convertFailed": "Impossibile preparare la trascrizione. Riprova."
   }
 }

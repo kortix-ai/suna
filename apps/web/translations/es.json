@@ -20478,6 +20478,8 @@
     "map": "Mapa",
     "zoomIn": "Acercar",
     "zoomOut": "Alejar",
-    "mapTwoFingers": "Usa dos dedos para mover el mapa"
+    "mapTwoFingers": "Usa dos dedos para mover el mapa",
+    "pick": "Elección",
+    "convertFailed": "No se pudo preparar la transcripción. Inténtalo de nuevo."
   }
 }

@@ -83,9 +83,11 @@ export default function GenuiMapCanvas({
 }) {
   const t = useTranslations('genui');
   const { resolvedTheme } = useTheme();
-  const [routeColor] = useState(() => (route ? routeRgb() : null));
+  // No document in a server render (the share page): the client computes it when it hydrates.
+  const [routeColor] = useState(() => (route && typeof document !== 'undefined' ? routeRgb() : null));
 
   // Frame every place and every route point. A zoom from the model keeps that frame's center.
+  // MapLibre reads the view once, at creation; `map.tsx` mounts this only once the block settles.
   const frame = [...places, ...(route ?? []).map(([lng, lat]) => ({ lat, lng }))];
   const [[west, south], [east, north]] = mapBounds(frame);
   const view =

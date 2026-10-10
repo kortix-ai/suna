@@ -15,7 +15,7 @@ const CODE = 'root = Stack([a, b])\na = Stat("Revenue", "12k")\nb = Callout("inf
 let mounted: ReactTestRenderer | null = null;
 async function render(): Promise<ReactTestRenderer> {
   await act(async () => {
-    mounted = create(<GenuiMessageBlock code={CODE} version={1} isStreaming={false} trust="agent" />);
+    mounted = create(<GenuiMessageBlock code={CODE} version={1} streaming={false} cutOff={false} trust="agent" variant="message" />);
   });
   return mounted!;
 }

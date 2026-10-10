@@ -2,8 +2,10 @@
 
 import { ArrowDownRightIcon, ArrowUpRightIcon, MinusIcon } from '@phosphor-icons/react';
 
-import { MarkdownLink } from '@/components/markdown/unified-markdown';
+import { MarkdownImage, MarkdownLink } from '@/components/markdown/unified-markdown';
+import { StatusBadge } from '@/components/ui/status';
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 
 import type { GenuiComponentProps } from '../sdk';
@@ -64,7 +66,8 @@ export function GenuiTable({ props }: GenuiComponentProps) {
         {rows.map((row, r) => (
           <TableRow key={r}>
             {columns.map((_, c) => (
-              <TableCell key={c} className={cn(numeric[c] && 'text-right tabular-nums')}>
+              // Text wraps (a cell holds up to 200 characters); numbers stay on one line.
+              <TableCell key={c} className={cn(numeric[c] ? 'text-right tabular-nums' : 'min-w-32 whitespace-normal')}>
                 {String(row[c] ?? '')}
               </TableCell>
             ))}
@@ -76,6 +79,7 @@ export function GenuiTable({ props }: GenuiComponentProps) {
 }
 
 export function GenuiCompare({ props }: GenuiComponentProps) {
+  const t = useTranslations('genui');
   const items = kids(props.items);
   const specs = strings(props.specs);
   const hasNotes = items.some((item) => strings(item.props.pros).length + strings(item.props.cons).length > 0);
@@ -87,6 +91,12 @@ export function GenuiCompare({ props }: GenuiComponentProps) {
           {items.map((item) => (
             <TableHead key={item.id} className={cn(props.winner === item.props.name && 'text-foreground font-medium')}>
               {String(item.props.name)}
+              {/* The pick is named in text too: weight alone reaches no screen reader. */}
+              {props.winner === item.props.name ? (
+                <StatusBadge tone="success" className="ml-2">
+                  {t('pick')}
+                </StatusBadge>
+              ) : null}
             </TableHead>
           ))}
         </TableRow>
@@ -96,7 +106,9 @@ export function GenuiCompare({ props }: GenuiComponentProps) {
           <TableRow key={i}>
             <TableCell className="text-muted-foreground">{spec}</TableCell>
             {items.map((item) => (
-              <TableCell key={item.id}>{strings(item.props.values)[i] ?? '—'}</TableCell>
+              <TableCell key={item.id} className="min-w-32 whitespace-normal">
+                {strings(item.props.values)[i] ?? '—'}
+              </TableCell>
             ))}
           </TableRow>
         ))}
@@ -139,6 +151,11 @@ export function GenuiRankedList({ props }: GenuiComponentProps) {
             </div>
             <span className="text-muted-foreground text-sm text-pretty">{String(item.props.reason)}</span>
           </div>
+          {item.props.image ? (
+            <div className="w-20 shrink-0">
+              <MarkdownImage src={String(item.props.image)} alt="" flush />
+            </div>
+          ) : null}
         </li>
       ))}
     </ol>

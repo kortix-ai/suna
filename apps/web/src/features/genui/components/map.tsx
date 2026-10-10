@@ -11,6 +11,11 @@
  *
  * HEIGHT: the canvas figure is `MAP_FIGURE_HEIGHT` (arithmetic in `pending.tsx`),
  * the same box the pending block reserves. The place list reserves nothing.
+ *
+ * STREAMING: with a style, the map holds the pending box until its block settles
+ * (its fence closes). The prompt writes `Map([a, b])` before its markers, so a
+ * streamed map has 0, then 1, then n markers: holding the box keeps the height
+ * still, and MapLibre is created once, framing every marker and the route.
  */
 
 // eslint-disable-next-line no-restricted-imports -- screen-reader text for the figure; this module is reached only through lazy()
@@ -26,7 +31,7 @@ import { cn } from '@/lib/utils';
 import type { GenuiComponentProps, GenuiNode } from '../sdk';
 import { kids } from './layout';
 import { inRange, osmLink, routeCoordinates, type MapPlace } from './map-geo';
-import { MAP_BOX, MAP_FIGURE_HEIGHT } from './pending';
+import { GenuiPending, MAP_BOX, MAP_FIGURE_HEIGHT } from './pending';
 
 const MapCanvas = lazy(() => import('./map-canvas'));
 
@@ -65,10 +70,12 @@ function PlaceList({ places }: { places: MapPlace[] }) {
 export function GenuiMapView({
   node,
   props,
+  streaming,
   styleUrl,
   styleUrlDark,
 }: GenuiComponentProps & { styleUrl: string | undefined; styleUrlDark?: string }) {
   const t = useTranslations('genui');
+  if (styleUrl && streaming) return <>{GenuiPending(node)}</>;
   const all = places(kids(props.markers));
   const source = t('source', { source: String(props.source) });
   const label = genuiA11yText(node) ?? undefined;

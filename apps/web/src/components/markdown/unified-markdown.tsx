@@ -4,6 +4,7 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { ClickablePath, wrapChildrenWithPaths } from '@/components/common/clickable-path';
 import { MarkdownCode } from '@/components/markdown/code';
+import { openGenuiFence } from '@/components/markdown/code/genui-fence';
 import { parseFileLinkHref, remarkWorkspaceFileLinks } from '@/components/markdown/file-links';
 import { InsideLinkContext } from '@/components/markdown/code/inside-link-context';
 import {
@@ -62,6 +63,11 @@ interface MarkdownRenderContextValue {
   proxy: (url: string | undefined) => string | undefined;
   policy: Readonly<MarkdownPolicy>;
   trust: MarkdownTrust;
+  variant: MarkdownVariant;
+  /** ```openui fences render as generative UI (see `UnifiedMarkdownProps.genui`). */
+  genui: boolean;
+  /** Body of the generative UI fence still open at the end of the text, or null. */
+  genuiOpenCode: string | null;
 }
 
 const MarkdownRenderContext = React.createContext<MarkdownRenderContextValue>({
@@ -69,12 +75,10 @@ const MarkdownRenderContext = React.createContext<MarkdownRenderContextValue>({
   proxy: (url) => url,
   policy: markdownPolicy('untrusted'),
   trust: 'untrusted',
+  variant: 'message',
+  genui: false,
+  genuiOpenCode: null,
 });
-
-/** For components rendered inside markdown (generative UI): the same policy, proxy, and trust. */
-export function useMarkdownRenderContext(): MarkdownRenderContextValue {
-  return useContext(MarkdownRenderContext);
-}
 
 export function MarkdownLink({ href, children }: { href?: string; children?: React.ReactNode }) {
   const { proxy, policy } = useContext(MarkdownRenderContext);
@@ -149,7 +153,8 @@ export function MarkdownLink({ href, children }: { href?: string; children?: Rea
   );
 }
 
-export function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
+/** `flush`: no vertical margin, for an image inside a generative UI block that spaces its own children. */
+export function MarkdownImage({ src, alt, flush = false }: { src?: string; alt?: string; flush?: boolean }) {
   const { proxy, policy } = useContext(MarkdownRenderContext);
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [loadRequested, setLoadRequested] = useState(false);
@@ -176,7 +181,7 @@ export function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
     );
   }
   return (
-    <span className="my-5 block">
+    <span className={cn('block', !flush && 'my-5')}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={resolvedSrc}
@@ -254,8 +259,18 @@ const MARKDOWN_COMPONENTS = {
   // Every fence kind and inline code resolve in one shared place; see
   // components/markdown/code.
   code: function MarkdownCodeRenderer(props: { children?: React.ReactNode; className?: string }) {
-    const { isStreaming, policy, trust } = useContext(MarkdownRenderContext);
-    return <MarkdownCode {...props} isStreaming={isStreaming} setupLinks={policy.setupLinks} trust={trust} />;
+    const { isStreaming, policy, trust, variant, genui, genuiOpenCode } = useContext(MarkdownRenderContext);
+    return (
+      <MarkdownCode
+        {...props}
+        isStreaming={isStreaming}
+        setupLinks={policy.setupLinks}
+        trust={trust}
+        variant={variant}
+        genui={genui}
+        genuiOpenCode={genuiOpenCode}
+      />
+    );
   },
   // `code` returns the fully-styled block; collapse the default `<pre>` wrapper.
   pre: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
@@ -432,6 +447,11 @@ export interface UnifiedMarkdownProps {
   variant?: MarkdownVariant;
   className?: string;
   isStreaming?: boolean;
+  /**
+   * Render ```openui fences as generative UI. Only session transcript assistant text sets it
+   * (the transcript and the share view); everywhere else such a fence is an ordinary code block.
+   */
+  genui?: boolean;
 }
 
 /**
@@ -448,15 +468,11 @@ const STREAMING_REHYPE_PLUGINS_NO_RAW = [...katexRehypePluginsNoRaw, rehypeStrea
 // Single source of truth for markdown rendering across the app — clean, minimal,
 // readable in both themes.
 export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
-  ({ content, trust, variant = 'message', className, isStreaming = false }) => {
+  ({ content, trust, variant = 'message', className, isStreaming = false, genui = false }) => {
     const tHardcodedUi = useTranslations('hardcodedUi');
     const { proxyUrl } = useSandboxProxy();
     const proxy = useCallback((url: string | undefined) => proxyUrl(url), [proxyUrl]);
     const policy = markdownPolicy(trust, variant);
-    const renderContext = useMemo(
-      () => ({ isStreaming, proxy, policy, trust }),
-      [isStreaming, proxy, policy, trust],
-    );
 
     // Streamdown renders streaming text block by block and settled text as one
     // document: two different React trees. Switching trees when the turn ends
@@ -467,6 +483,16 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
 
     const safeContent = typeof content === 'string' ? content : content ? String(content) : '';
 
+    // A generative UI fence still open at the end streams (the model is writing it) or was cut
+    // off. Its block reads that from here; the fence is closed below so nothing after it, such
+    // as Streamdown's completion of unfinished markdown, lands inside the block.
+    const genuiOpen = useMemo(() => (genui ? openGenuiFence(safeContent) : null), [genui, safeContent]);
+    const genuiOpenCode = genuiOpen?.code ?? null;
+    const renderContext = useMemo(
+      () => ({ isStreaming, proxy, policy, trust, variant, genui, genuiOpenCode }),
+      [isStreaming, proxy, policy, trust, variant, genui, genuiOpenCode],
+    );
+
     // Whole-string rewrites (KaTeX prep, system-tag strip, the pending setup
     // link, autolink). Run bare, they re-ran on EVERY render of this component
     // — including every render caused by something other than a new token —
@@ -474,8 +500,11 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
     // that to once per distinct value. It sits ABOVE the empty-content early
     // return so the hook order stays fixed.
     const finalContent = useMemo(
-      () => (safeContent ? prepareMarkdownSource(safeContent, isStreaming) : ''),
-      [safeContent, isStreaming],
+      () =>
+        safeContent
+          ? prepareMarkdownSource(genuiOpen ? safeContent + genuiOpen.closer : safeContent, isStreaming)
+          : '',
+      [safeContent, genuiOpen, isStreaming],
     );
 
     if (!safeContent) {

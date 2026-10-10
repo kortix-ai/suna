@@ -12,7 +12,8 @@
  * - 2 and 3 series: every pair ΔE ≥ 19.6 in both themes; light contrast all ≥ 3:1.
  * - Limits the ramp keeps: chart-5 is 2.78:1 on dark (from 2 series), and
  *   chart-1 is 1.45:1 on light (from the 4th series). The legend names every
- *   series in ink and the Show data table carries every value as text.
+ *   series in ink, a single one included, and the Show data table carries
+ *   every value as text.
  * - Pie slices 5 and 6 take chart-4 and chart-2; adjacent slices pass
  *   (ΔE ≥ 19.6) and sit on a 2px surface gap.
  * Mobile uses the same order.
@@ -133,9 +134,10 @@ export function ChartView({ node, props }: GenuiComponentProps) {
   const source = t('source', { source: String(props.source) });
   return (
     <figure className={cn(CHART_FIGURE_HEIGHT, 'flex flex-col gap-2')} aria-label={genuiA11yText(node) ?? undefined}>
-      {/* Fixed plot block: the chart takes what the legend leaves (220px under a one-line legend). */}
+      {/* Fixed plot block: the chart takes what the legend leaves (220px under a one-line legend).
+          The catalog has no chart title, so a bar or line chart names even one series here. */}
       <div className="flex h-[244px] flex-col gap-2">
-        {entries.length > 1 ? (
+        {entries.length > 1 || (entries.length === 1 && node.type !== 'PieChart') ? (
           <ul className="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 text-xs">
             {entries.map(({ key, label, color }) => (
               <li key={key} className="flex items-center gap-1.5">

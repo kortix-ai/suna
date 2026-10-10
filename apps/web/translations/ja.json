@@ -20478,6 +20478,8 @@
     "map": "地図",
     "zoomIn": "拡大",
     "zoomOut": "縮小",
-    "mapTwoFingers": "2本の指で地図を動かします"
+    "mapTwoFingers": "2本の指で地図を動かします",
+    "pick": "おすすめ",
+    "convertFailed": "トランスクリプトを準備できませんでした。もう一度お試しください。"
   }
 }

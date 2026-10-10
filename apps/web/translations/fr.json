@@ -668,7 +668,7 @@
       "conversationDensity": "Densité de la conversation",
       "conversationDensityDescription": "Choisissez le niveau de détail affiché par l'agent dans la conversation pendant son travail.",
       "richAnswers": "Réponses enrichies",
-      "richAnswersDescription": "Affiche les comparaisons, tableaux, graphiques et cartes sous forme visuelle dans les réponses. Si désactivé, les réponses affichent le même contenu en texte.",
+      "richAnswersDescription": "Affiche les comparaisons, tableaux, graphiques et cartes sous forme visuelle dans les réponses. Si l'option est désactivée, le même contenu apparaît en texte.",
       "wallpaper": "Fond d'écran",
       "wallpaperDescription": "L'arrière-plan de votre projet.",
       "defaultWallpaper": "Par défaut",
@@ -20478,6 +20478,8 @@
     "map": "Carte",
     "zoomIn": "Augmenter le zoom",
     "zoomOut": "Réduire le zoom",
-    "mapTwoFingers": "Utilisez deux doigts pour déplacer la carte"
+    "mapTwoFingers": "Utilisez deux doigts pour déplacer la carte",
+    "pick": "Choix",
+    "convertFailed": "Impossible de préparer la transcription. Réessayez."
   }
 }
