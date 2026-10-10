@@ -1,14 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import { appDeployments, appRuntimes, apps, projects } from '@kortix/db';
-import { and, desc, eq, isNull, lt, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, lt, notInArray, or, sql } from 'drizzle-orm';
 import { pauseComputeSession, startComputeSession } from '../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../config';
 import { db } from '../shared/db';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { assertAppComputeAllowed } from './limits';
-import { AppHostingProvider } from './hosting';
+import { AppHostingProvider, instanceMachine } from './hosting';
 import { appWakeSupersededResponse } from './public-proxy-status';
 import { logger } from '../lib/logger';
+import { releaseConfigOf, servingGroups } from './release-config';
 const WAKE_LEASE_MS = 2 * 60_000;
 
 /**
@@ -36,11 +37,9 @@ export async function loadPublicAppState(routeKey: string) {
       .orderBy(desc(appDeployments.createdAt))
       .limit(1);
   }
-  const [runtime] = deployment?.status === 'ready' && deployment.hostingType !== 'static'
-    ? await db.select().from(appRuntimes)
-        .where(eq(appRuntimes.deploymentId, deployment.deploymentId))
-        .orderBy(desc(appRuntimes.createdAt)).limit(1)
-    : [];
+  const runtime = deployment && releaseServes(deployment, app.activeDeploymentId) && deployment.hostingType !== 'static'
+    ? await pickServingInstance(app, deployment)
+    : null;
   return {
     app,
     deployment: deployment ?? null,
@@ -50,12 +49,47 @@ export async function loadPublicAppState(routeKey: string) {
   };
 }
 
+/**
+ * Does this release take traffic? A ready one, and the active one while a
+ * rolling release is still replacing machines (traffic moves with its first
+ * healthy machine).
+ */
+export function releaseServes(
+  deployment: Pick<typeof appDeployments.$inferSelect, 'deploymentId' | 'status'>,
+  activeDeploymentId: string | null,
+): boolean {
+  return deployment.status === 'ready'
+    || (deployment.status === 'checking' && deployment.deploymentId === activeDeploymentId);
+}
+
+/**
+ * The instance a request goes to: one of the release's machines in the group
+ * that serves the App's host. A running one first, the least recently used
+ * of those (requests spread over the machines); else a stopped one to wake.
+ */
+async function pickServingInstance(app: typeof apps.$inferSelect, deployment: typeof appDeployments.$inferSelect) {
+  const groups = servingGroups(releaseConfigOf(deployment, app));
+  const [runtime] = await db.select().from(appRuntimes)
+    .where(and(
+      eq(appRuntimes.deploymentId, deployment.deploymentId),
+      inArray(appRuntimes.processGroup, groups),
+      notInArray(appRuntimes.status, ['deleted', 'error']),
+    ))
+    .orderBy(
+      sql`case ${appRuntimes.status} when 'running' then 0 when 'starting' then 1 when 'provisioning' then 1 else 2 end`,
+      sql`${appRuntimes.lastRequestAt} asc nulls first`,
+      desc(appRuntimes.createdAt),
+    )
+    .limit(1);
+  return runtime ?? null;
+}
+
 export async function loadPublicApp(routeKey: string) {
   const state = await loadPublicAppState(routeKey);
   if (
     !state?.app.activeDeploymentId ||
     state.deployment?.deploymentId !== state.app.activeDeploymentId ||
-    state.deployment.status !== 'ready' ||
+    !releaseServes(state.deployment, state.app.activeDeploymentId) ||
     !state.runtime
   ) return null;
   return {
@@ -148,11 +182,7 @@ async function publishWake(app: App, loaded: LoadedApp, leased: Runtime, owner: 
   if (!running) throw new Error('App wake lease was lost after provider start');
   await startComputeSession({
     sandboxId: running.runtimeId, accountId: running.accountId, provider,
-    spec: {
-      ...hosting.effectiveMachine(provider, {
-        cpuCores: app.cpuCores, memoryGb: app.memoryGb, diskGb: app.diskGb,
-      }), gpuCount: 0,
-    },
+    spec: { ...hosting.effectiveMachine(provider, instanceMachine(running, app)), gpuCount: 0 },
     workloadType: 'app', appRuntimeId: running.runtimeId,
     metadata: { appId: app.appId, deploymentId: loaded.deployment.deploymentId },
   });

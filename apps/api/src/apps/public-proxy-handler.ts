@@ -11,7 +11,7 @@ import { authorizeAppRequest, resolveAppViewerUserId, bindAppViewerSession, appV
   appTokenResponse, appViewerContextHeader } from './public-proxy-access';
 import { resolveAppRequest, verifyAppEdgeRequest } from './public-proxy-edge';
 import { appPublicStatusResponse, publicDeploymentStatus, appPublicUnavailableResponse, appProviderStoppedResponse, appColdStartUpstreamResponse } from './public-proxy-status';
-import { loadPublicAppState, loadPublicApp, ensureAppRuntimeRunning, appRuntimeNeedsWake } from './public-proxy-runtime';
+import { loadPublicAppState, loadPublicApp, ensureAppRuntimeRunning, appRuntimeNeedsWake, releaseServes } from './public-proxy-runtime';
 import { appUpstreamHeaders, appPublicResponseHeaders } from './public-proxy-headers';
 import { serveStaticDeployment } from './static-site';
 import { APP_API_PROXY_PREFIX, appApiProxyResponse } from './public-proxy-api';
@@ -131,7 +131,7 @@ async function routeAppPublicRequest(
   if (
     !state.app.activeDeploymentId ||
     state.deployment?.deploymentId !== state.app.activeDeploymentId ||
-    state.deployment.status !== 'ready' ||
+    !releaseServes(state.deployment, state.app.activeDeploymentId) ||
     !state.runtime
   ) {
     return appPublicStatusResponse(request, state.app, publicDeploymentStatus(state.deployment));

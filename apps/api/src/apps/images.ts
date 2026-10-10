@@ -61,6 +61,7 @@ import { getProvider, type SandboxProvider } from '../platform/providers';
 import { db } from '../shared/db';
 import { mapWithConcurrency } from '../shared/map-with-concurrency';
 import { getSandboxProvider } from '../snapshots/providers';
+import { releaseVolumesOf } from './volumes';
 import { SnapshotInUseError } from '../snapshots/providers/errors';
 import { PLATINUM_BUILD_FAILED_RE } from '../snapshots/providers/platinum-templates';
 import {
@@ -518,9 +519,11 @@ export async function removeAppRuntime(
   }
 }
 
-/** Mark removed runtimes `deleted` and close their compute meter. */
+/** Mark removed runtimes `deleted`, give back their volumes and close their compute meter. */
 export async function markAppRuntimesDeleted(runtimeIds: string[], now = new Date()): Promise<void> {
   if (runtimeIds.length === 0) return;
+  // The box is gone (its delete committed the mount): its single-writer lock goes with it.
+  await releaseVolumesOf(runtimeIds);
   await db.update(appRuntimes)
     .set({
       status: 'deleted',

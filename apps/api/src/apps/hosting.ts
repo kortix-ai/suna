@@ -37,6 +37,15 @@ export interface AppMachineSpec {
  */
 export const APP_TEMPLATE_MACHINE: AppMachineSpec = { cpuCores: 1, memoryGb: 1, diskGb: 1 };
 
+/** An instance's machine size for the meter: recorded at create, else the App's (a row from before machines). */
+export function instanceMachine(
+  instance: { metadata: unknown },
+  app: { cpuCores: number; memoryGb: number; diskGb: number },
+): AppMachineSpec {
+  const recorded = (instance.metadata as { machine?: AppMachineSpec } | null)?.machine;
+  return recorded ?? { cpuCores: app.cpuCores, memoryGb: app.memoryGb, diskGb: app.diskGb };
+}
+
 /** The size an App image is built with on this provider. */
 export function appTemplateMachine(provider: SandboxProviderName, machine: AppMachineSpec): AppMachineSpec {
   return provider === 'platinum' ? APP_TEMPLATE_MACHINE : machine;
@@ -80,6 +89,9 @@ export interface AppdStatus {
   started_at?: string;
   restarts?: number;
   last_exit?: string;
+  /** Why the supervisor failed, e.g. `mount_missing` (a volume is not mounted in the guest). */
+  reason?: string;
+  checks?: Array<{ name: string; type: string; port: number; path?: string; status: string; output?: string; checked_at?: string }>;
 }
 
 interface HostingDependencies {
@@ -296,6 +308,13 @@ export class AppHostingProvider {
     await runtimeProvider.remove(externalId);
   }
 
+  /** Run one command in the box through the provider's own channel (the release command). */
+  async exec(provider: SandboxProviderName, externalId: string, command: string[], timeoutMs: number) {
+    const runtimeProvider = this.dependencies.runtimeProvider(provider);
+    if (!runtimeProvider.exec) throw new Error(`The ${provider} provider cannot run a command in a machine`);
+    return runtimeProvider.exec(externalId, command, { timeoutMs });
+  }
+
   async ingress(
     provider: SandboxProviderName,
     externalId: string,
@@ -356,7 +375,7 @@ export class AppHostingProvider {
         const status = await this.status(provider, externalId, runtimeId);
         if (status.ready && status.status === 'running') return status;
         if (status.status === 'failed') {
-          throw new Error(`kortix-appd failed${status.last_exit ? `: ${status.last_exit}` : ''}`);
+          throw new Error(`kortix-appd failed${status.reason ? ` (${status.reason})` : ''}${status.last_exit ? `: ${status.last_exit}` : ''}`);
         }
         lastError = `status=${status.status} ready=${status.ready}`;
       } catch (error) {
