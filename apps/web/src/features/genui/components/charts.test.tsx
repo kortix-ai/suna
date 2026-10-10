@@ -1,7 +1,12 @@
 import { describe, expect, test } from 'bun:test';
+import { Children, isValidElement, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import { XAxis, YAxis } from 'recharts';
 // eslint-disable-next-line no-restricted-imports -- the test parses real OpenUI source into chart nodes
 import { parseGenui } from '@kortix/sdk/genui';
+
+import { ChartContainer } from '@/components/ui/chart';
 
 import type { GenuiNode } from '../sdk';
 import { ChartView } from './charts';
@@ -73,6 +78,28 @@ describe('ChartView', () => {
     expect(html).toMatch(/<th[^>]*><span class="sr-only">Label<\/span><\/th><th[^>]*>Value<\/th><th[^>]*>%<\/th>/);
     expectAlignedTable(html);
     expect(html).toMatch(/<td[^>]*>North a<\/td><td[^>]*>50<\/td><td[^>]*>50%<\/td>/);
+  });
+
+  test('axis ticks use the muted foreground token, so they follow the theme', async () => {
+    Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true });
+    for (const code of [
+      'root = Stack([c])\nc = BarChart(["A", "B"], [s], "survey")\ns = Series("Votes", [1, 2])',
+      'root = Stack([c])\nc = LineChart(["Mon", "Tue"], [s], "status page")\ns = Series("p50", [1, 2])',
+    ]) {
+      const chart = node(code);
+      let tree!: ReactTestRenderer;
+      await act(async () => {
+        tree = create(<ChartView node={chart} props={chart.props} renderChild={() => null} streaming={false} />);
+      });
+      // ResponsiveContainer renders nothing without a measured size: read the chart element it was given.
+      const figure = tree.root.findByType(ChartContainer).props.children as ReactElement<{ children: ReactNode }>;
+      const axes = Children.toArray(figure.props.children).filter(
+        (child): child is ReactElement<{ tick: unknown }> => isValidElement(child) && (child.type === XAxis || child.type === YAxis),
+      );
+      expect(axes).toHaveLength(2);
+      for (const axis of axes) expect(axis.props.tick).toEqual({ fill: 'var(--muted-foreground)' });
+      await act(async () => tree.unmount());
+    }
   });
 
   test('the pending block reserves the settled figure height, with no border, for every chart type', () => {

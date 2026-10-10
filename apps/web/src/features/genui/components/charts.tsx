@@ -38,6 +38,9 @@ import type { GenuiComponentProps, GenuiNode } from '../sdk';
 import { kids } from './layout';
 import { CHART_FIGURE_HEIGHT } from './pending';
 
+// Recharts 3 draws tick text outside `.recharts-cartesian-axis-tick`, so ChartContainer's tick class
+// misses it and the text keeps Recharts' fixed #666 in both themes.
+const AXIS_TICK = { fill: 'var(--muted-foreground)' };
 const PALETTE = ['var(--chart-3)', 'var(--chart-5)', 'var(--foreground)', 'var(--chart-1)', 'var(--chart-4)', 'var(--chart-2)'];
 
 type Entry = { key: string; label: string; color: string };
@@ -107,8 +110,15 @@ export function ChartView({ node, props }: GenuiComponentProps) {
     figure = (
       <Chart data={data} margin={{ top: 4, right: 4, left: 0, bottom: 0 }} barGap={2} maxBarSize={48}>
         <CartesianGrid vertical={false} />
-        <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} minTickGap={24} />
-        <YAxis tickLine={false} axisLine={false} tickMargin={8} width={40} tickFormatter={(value: number) => compact.format(value)} />
+        <XAxis dataKey="label" tick={AXIS_TICK} tickLine={false} axisLine={false} tickMargin={8} minTickGap={24} />
+        <YAxis
+          tick={AXIS_TICK}
+          tickLine={false}
+          axisLine={false}
+          tickMargin={8}
+          width={40}
+          tickFormatter={(value: number) => compact.format(value)}
+        />
         <ChartTooltip isAnimationActive={false} content={tooltip} />
         {entries.map(({ key, label }) =>
           line ? (
