@@ -29,12 +29,12 @@ permissions:
   id-token: write
 
 env:
-  AWS_REGION: us-west-2
+  AWS_REGION: eu-west-2
   NAMESPACE: kortix-staging
   STAGING_SUPABASE_REF: ujzsbwvurfyeuerxxeaz
   API_APP: kortix-api
   GATEWAY_APP: kortix-gateway
-  API_HOST: staging-api-ecs-fargate.kortix.com
+  API_HOST: staging-api-euw2.kortix.com
   GATEWAY_HOST: gateway-staging.kortix.com
   PUBLIC_API_HOST: staging-api.kortix.com
   WEB_HOST: staging.kortix.com
@@ -44,13 +44,13 @@ jobs:
   preflight:
     name: Resolve staging ref
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     outputs:
       sha: ${{ steps.ref.outputs.sha }}
       sha8: ${{ steps.ref.outputs.sha8 }}
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: staging
           fetch-depth: 0
@@ -83,7 +83,7 @@ jobs:
           : "${ma:=0}"; : "${mi:=0}"; : "${pa:=0}"
           next="${ma}.${mi}.$((pa + 1))"
           echo "version=${next}-staging.${SOURCE_SHA::8}" >> "$GITHUB_OUTPUT"
-      - uses: docker/setup-buildx-action@v4
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Assert staging images exist
         env:
           SHA8: ${{ steps.ref.outputs.sha8 }}
@@ -108,8 +108,8 @@ jobs:
       id-token: write
     uses: ./.github/workflows/terraform-apply.yml
     with:
-      tf_root: infra/terraform/environments/staging
-      aws_region: us-west-2
+      tf_root: infra/terraform/environments/staging-eu-west-2
+      aws_region: eu-west-2
       role_arn: ${{ vars.TF_APPLY_ROLE_ARN_STAGING }}
       github_environment: staging
       trusted_branch: staging
@@ -127,8 +127,8 @@ jobs:
       id-token: write
     uses: ./.github/workflows/terraform-apply.yml
     with:
-      tf_root: infra/terraform/environments/staging-web
-      aws_region: us-west-2
+      tf_root: infra/terraform/environments/staging-web-eu-west-2
+      aws_region: eu-west-2
       role_arn: ${{ vars.TF_APPLY_ROLE_ARN_STAGING }}
       github_environment: staging
       trusted_branch: staging
@@ -138,11 +138,11 @@ jobs:
   sync-secret:
     name: Sync staging secret bundle
     needs: preflight
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     env:
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
     steps:
-      - uses: aws-actions/configure-aws-credentials@v6
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ env.ROLE }}
           aws-region: ${{ env.AWS_REGION }}
@@ -286,23 +286,23 @@ jobs:
   migrate-db:
     name: Apply DB migrations to staging
     needs: [preflight, sync-secret]
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.preflight.outputs.sha }}
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: latest
+          bun-version: 1.3.14
       - run: corepack enable pnpm
       - run: pnpm install --frozen-lockfile --filter "@kortix/db..." --filter "kortix"
         env:
           npm_config_engine_strict: "false"
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -339,12 +339,12 @@ jobs:
         && needs.sync-secret.result == 'success'
         && needs.migrate-db.result == 'success'
         && (needs.terraform-staging.result == 'success' || needs.terraform-staging.result == 'skipped') }}
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     permissions:
       id-token: write # OIDC → ECS deploy role
       contents: read
     env:
-      AWS_REGION: us-west-2
+      AWS_REGION: eu-west-2
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
       SHA8: ${{ needs.preflight.outputs.sha8 }}
       VERSION: ${{ needs.preflight.outputs.version }}
@@ -376,22 +376,22 @@ jobs:
       # infra/terraform/modules/project-snapshots-bucket): that role has NO
       # s3:DeleteObject, and expiry is safe because the archive is a cache the
       # API rebuilds from its Git mirror.
-      KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PROJECT_SNAPSHOT_S3_BUCKET":"kortix-staging-project-snapshots","KORTIX_PROJECT_SNAPSHOT_S3_REGION":"us-west-2","AUDIT_ARCHIVE_BUCKET":"kortix-staging-audit-archive","AUDIT_ARCHIVE_REGION":"us-west-2","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-staging-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"us-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0"}'
+      KORTIX_ECS_ENV_OVERRIDES: '{"KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PROJECT_SNAPSHOT_S3_BUCKET":"kortix-staging-euw2-project-snapshots","KORTIX_PROJECT_SNAPSHOT_S3_REGION":"eu-west-2","AUDIT_ARCHIVE_BUCKET":"kortix-staging-euw2-audit-archive","AUDIT_ARCHIVE_REGION":"eu-west-2","KORTIX_CONFIG_ARCHIVE_S3_BUCKET":"kortix-staging-euw2-project-snapshots","KORTIX_CONFIG_ARCHIVE_S3_REGION":"eu-west-2","KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT":"0"}'
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ env.ROLE }}
           aws-region: ${{ env.AWS_REGION }}
       - name: Roll staging ECS (api + gateway) from the staging-env blob
         run: |
-          bash infra/scripts/ecs-deploy.sh staging "kortix/kortix-api:staging-${SHA8}" --version "${VERSION}"
-          bash infra/scripts/ecs-deploy.sh staging "kortix/kortix-gateway:staging-${SHA8}" --service gateway --version "${VERSION}"
+          bash infra/scripts/ecs-deploy.sh staging-euw2 "kortix/kortix-api:staging-${SHA8}" --version "${VERSION}"
+          bash infra/scripts/ecs-deploy.sh staging-euw2 "kortix/kortix-gateway:staging-${SHA8}" --service gateway --version "${VERSION}"
 
   wire-cloudflare:
     name: Wire Cloudflare staging DNS and Worker
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     # Non-blocking: deploy-web-vercel, verify, and promote-staging-channel
     # `needs:` this job, and a Cloudflare auth failure (403 since 2026-08-18)
     # silently skipped every staging web deploy for a week — the suite then
@@ -404,11 +404,11 @@ jobs:
       CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID || 'af378d3df4e4dd5052a1fcbf263b685d' }}
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || '9785405a992435bb0c7bd19f9b6d26d5' }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: staging
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -476,10 +476,12 @@ jobs:
             main_module: "worker.mjs",
             compatibility_date: "2026-06-01",
             bindings: ([
-              {type:"plain_text", name:"ACTIVE_BACKEND", text:"ecs-fargate"},
+              {type:"plain_text", name:"ACTIVE_BACKEND", text:"eu-west-2"},
               {type:"plain_text", name:"BACKEND_ECS_FARGATE", text:"https://staging-api-ecs-fargate.kortix.com"},
-              {type:"plain_text", name:"GATEWAY_ACTIVE_BACKEND", text:"ecs-fargate"},
-              {type:"plain_text", name:"GATEWAY_BACKEND_ECS_FARGATE", text:"https://gateway-staging-ecs-fargate.kortix.com"}
+              {type:"plain_text", name:"BACKEND_EU_WEST_2", text:"https://staging-api-euw2.kortix.com"},
+              {type:"plain_text", name:"GATEWAY_ACTIVE_BACKEND", text:"eu-west-2"},
+              {type:"plain_text", name:"GATEWAY_BACKEND_ECS_FARGATE", text:"https://gateway-staging-ecs-fargate.kortix.com"},
+              {type:"plain_text", name:"GATEWAY_BACKEND_EU_WEST_2", text:"https://gateway-staging-euw2.kortix.com"}
             ] + $ci)
           }')"
           curl -fsS -X PUT \
@@ -534,26 +536,26 @@ jobs:
         && needs.preflight.result == 'success'
         && needs.deploy-ecs.result == 'success'
         && (needs.terraform-staging-web.result == 'success' || needs.terraform-staging-web.result == 'skipped') }}
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     permissions:
       id-token: write
       contents: read
     env:
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.preflight.outputs.sha }}
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ env.ROLE }}
           aws-region: ${{ env.AWS_REGION }}
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -580,7 +582,7 @@ jobs:
           VERSION: ${{ needs.preflight.outputs.version }}
         run: |
           bash infra/scripts/ecs-deploy.sh \
-            staging \
+            staging-euw2 \
             "kortix/kortix-frontend:staging-${SHA8}" \
             --service web \
             --version "${VERSION}"
@@ -588,21 +590,21 @@ jobs:
   publish-web-ecs-dns:
     name: Publish staging FE-ECS DNS
     needs: [deploy-web-ecs]
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     permissions:
       id-token: write
       contents: read
     env:
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v6
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ env.ROLE }}
           aws-region: ${{ env.AWS_REGION }}
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -618,7 +620,7 @@ jobs:
         run: |
           set -euo pipefail
           alb="$(aws elbv2 describe-load-balancers \
-            --names kortix-staging-web-alb \
+            --names kortix-staging-euw2-web-alb \
             --query 'LoadBalancers[0].DNSName' \
             --output text)"
           node infra/scripts/sync-web-dns.mjs staging "$alb"
@@ -627,19 +629,19 @@ jobs:
     name: Deploy staging web to Vercel
     # deploy-ecs gates the staging rollout: a failed ECS roll can't pass silently.
     needs: [preflight, wire-cloudflare, deploy-ecs]
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.preflight.outputs.sha }}
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
           sparse-checkout: .github/actions
           persist-credentials: false
-      - name: Read credentials from AWS Secrets Manager
+      - name: Read Vercel credentials and staging Supabase values from AWS Secrets Manager
         uses: ./.aws-env/.github/actions/aws-env
         with:
           keys: |
@@ -648,7 +650,7 @@ jobs:
             VERCEL_TEAM_ID
             NEXT_PUBLIC_SUPABASE_URL=kortix-staging-env:SUPABASE_URL
             NEXT_PUBLIC_SUPABASE_ANON_KEY=kortix-staging-env:SUPABASE_ANON_KEY
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
       - name: Deploy and alias staging.kortix.com
@@ -716,13 +718,13 @@ jobs:
   verify:
     name: Verify live staging on ECS and Vercel
     needs: [preflight, wire-cloudflare, deploy-web-vercel, publish-web-ecs-dns]
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     steps:
       # staging.kortix.com sits behind Vercel deployment protection (SSO);
       # VERCEL_BYPASS lets the web verification reach the app, not the Vercel
       # login wall. The API host is the ALB and needs no bypass.
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -733,7 +735,7 @@ jobs:
         with:
           keys: |
             VERCEL_BYPASS=kortix-ci-env:VERCEL_AUTOMATION_BYPASS_SECRET
-            WEB_PROTECTION_PASSWORD=kortix-staging-web-env:WEB_PROTECTION_PASSWORD
+            WEB_PROTECTION_PASSWORD=kortix-staging-euw2-web-env:WEB_PROTECTION_PASSWORD
       - name: Verify API and both web deployment paths
         env:
           EXPECTED_COMMIT: ${{ needs.preflight.outputs.sha }}
@@ -826,11 +828,11 @@ jobs:
   promote-staging-channel:
     name: Move :staging → staging-${{ needs.preflight.outputs.sha8 }}
     needs: [preflight, verify]
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     steps:
-      - uses: docker/setup-buildx-action@v4
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -842,7 +844,7 @@ jobs:
           keys: |
             DOCKERHUB_USERNAME
             DOCKERHUB_TOKEN
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
           password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}

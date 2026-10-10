@@ -135,7 +135,7 @@ export function planCommandAttachments(
     kind: 'refuse',
     message: tI18nComplete.raw('text01ec8eaf8ffa'),
     description: one
-      ? '1 file stays attached. Remove it to run the command, or remove the command to send the file as a message.'
-      : `${attachmentCount} files stay attached. Remove them to run the command, or remove the command to send them as a message.`,
+      ? tI18nComplete.raw('text2eb91a6f88aa')
+      : tI18nComplete('text807f9beb34b1', { count: attachmentCount }),
   };
 }

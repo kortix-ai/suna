@@ -10,15 +10,11 @@ import { db } from '../shared/db';
 import { accountMembersAmong } from '../iam/membership-read';
 import { accountGroupsAmong } from '../iam/group-read';
 import { resolveAgentRunAttribution } from './session-lifecycle/actor';
-import {
-  PRIVATE_TRIGGER_SESSION_ACCESS,
-  triggerSessionAccessToVisibility,
-} from './trigger-session-access-policy';
+import { triggerSessionAccessToVisibility } from './trigger-session-access-policy';
 
 export {
   PRIVATE_TRIGGER_SESSION_ACCESS,
   parseTriggerSessionAccess,
-  triggerSessionAccessToVisibility,
 } from './trigger-session-access-policy';
 
 function publicMode(mode: string): TriggerSessionAccess['mode'] {
@@ -57,43 +53,6 @@ export async function validateTriggerSessionAccessPrincipals(
   const unknownGroup = access.groupIds.find((id) => !foundGroups.has(id));
   if (unknownGroup) return `Session access group ${unknownGroup} does not belong to this account`;
   return null;
-}
-
-export async function loadTriggerSessionAccess(
-  projectId: string,
-  slug: string,
-): Promise<TriggerSessionAccess> {
-  const [runtime] = await db
-    .select({ sessionAccessMode: projectTriggerRuntime.sessionAccessMode })
-    .from(projectTriggerRuntime)
-    .where(
-      and(eq(projectTriggerRuntime.projectId, projectId), eq(projectTriggerRuntime.slug, slug)),
-    )
-    .limit(1);
-  if (!runtime) return PRIVATE_TRIGGER_SESSION_ACCESS;
-  const grants = await db
-    .select({
-      principalType: projectTriggerSessionAccessGrants.principalType,
-      principalId: projectTriggerSessionAccessGrants.principalId,
-    })
-    .from(projectTriggerSessionAccessGrants)
-    .where(
-      and(
-        eq(projectTriggerSessionAccessGrants.projectId, projectId),
-        eq(projectTriggerSessionAccessGrants.slug, slug),
-      ),
-    );
-  const mode = publicMode(runtime.sessionAccessMode);
-  if (mode !== 'members') return { mode, memberIds: [], groupIds: [] };
-  return {
-    mode,
-    memberIds: grants
-      .filter((grant) => grant.principalType === 'member')
-      .map((grant) => grant.principalId),
-    groupIds: grants
-      .filter((grant) => grant.principalType === 'group')
-      .map((grant) => grant.principalId),
-  };
 }
 
 export async function loadTriggerSessionAccessMap(

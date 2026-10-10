@@ -15,6 +15,7 @@ export type SessionInvocationSource =
   | 'trigger:cron'
   | 'trigger:manual'
   | 'trigger:monitor'
+  | 'trigger:event'
   | 'trigger:reminder'
   | 'system:sandbox-build-fix'
   | 'system:approval-resume'
@@ -178,6 +179,10 @@ export interface StartSessionCommand {
    *  learns `ready` the instant it flips instead of on its own poll tick.
    *  Bounded server-side (START_AWAIT_MAX_MS); omit/0 = original one-shot. */
   waitMs?: number;
+  /** Keep-alive poll (`?keep_stopped=1`): report a deliberately stopped box, never wake it. */
+  keepStopped?: boolean;
+  /** Aborts the long-poll when the caller disconnects. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -246,6 +251,8 @@ export interface SessionLifecycleResult {
   delivery?: SessionDeliveryOutcome;
   deduped?: boolean;
   retryable?: boolean;
+  /** The command row went back to the queue: the drain owns the outcome. */
+  requeued?: boolean;
   reason?: string;
   error?: SessionCreateError;
 }

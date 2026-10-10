@@ -26,49 +26,41 @@
  * of a dead-end code prompt.
  */
 
-import {
-  ShieldCheckIcon as ShieldCheck,
-  ShieldWarningIcon as ShieldWarning,
-} from '@phosphor-icons/react';
+import { ShieldWarningIcon as ShieldWarning } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import { SessionDotMatrix } from '@/components/ui/dot-matrix/session-dot-matrix';
 import { InfoBanner } from '@/components/ui/info-banner';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { KortixLogo } from '@/components/ui/kortix-logo';
 import Loading from '@/components/ui/loading';
-import { errorToast, successToast } from '@/components/ui/toast';
+import { successToast } from '@/components/ui/toast';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { invalidateTokenCache } from '@/lib/auth-token';
 import { mfaChallengeRequired, supabaseMFAService } from '@/lib/supabase/mfa';
+import { cn } from '@/lib/utils';
 import { useAuth } from '@/features/providers/auth-provider';
 import { MFA_AAL_QUERY_KEY, MFA_FACTORS_QUERY_KEY } from '@/hooks/account/use-mfa';
 import { useTranslations } from '@/i18n/use-translations';
 
+import { MFA_VERIFIED_EVENT, armPendingMfaAction, clearPendingMfaAction } from './mfa-pending-action';
+
 export const MFA_REQUIRED_EVENT = 'kortix:mfa-required';
-export const MFA_VERIFIED_EVENT = 'kortix:mfa-verified';
+export { MFA_VERIFIED_EVENT };
 
 /**
  * Run `action` now, or — while this session still owes a TOTP challenge — open
- * the step-up dialog first and run `action` once the code verifies. Same
- * contract as `chat-identity-connect`: the action stays armed if the dialog is
- * cancelled and runs at the next verified session.
+ * the step-up dialog first and run `action` once the code verifies. One action
+ * is armed at a time (the latest wins) and cancelling the dialog drops it.
  */
 export function requestMfaStepUp(challengeRequired: boolean, action: () => void): void {
   if (!challengeRequired) {
     action();
     return;
   }
-  window.addEventListener(MFA_VERIFIED_EVENT, () => action(), { once: true });
+  armPendingMfaAction(action);
   window.dispatchEvent(new CustomEvent(MFA_REQUIRED_EVENT));
 }
 
@@ -86,7 +78,7 @@ interface MfaChallengeDialogProps {
 }
 
 export function MfaChallengeDialog({ open, dismissible, onDismiss, onVerified }: MfaChallengeDialogProps) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('mfaStepUp');
   const [code, setCode] = useState('');
   const queryClient = useQueryClient();
 
@@ -115,7 +107,7 @@ export function MfaChallengeDialog({ open, dismissible, onDismiss, onVerified }:
       // Invalidate so every caller (and the MfaGate's AAL answer, which is what
       // releases the gate) reads the aal2 token.
       invalidateTokenCache();
-      successToast(tI18nComplete.raw('text4f7838402f37'));
+      successToast(t('verified'));
       setCode('');
       // Refetch active queries so reads that failed while the session was aal1
       // recover on their own — the screen the user was on repopulates without a
@@ -125,8 +117,8 @@ export function MfaChallengeDialog({ open, dismissible, onDismiss, onVerified }:
       onVerified?.();
       window.dispatchEvent(new CustomEvent(MFA_VERIFIED_EVENT));
     },
-    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('texte7307911656c')),
   });
+  const canVerify = code.length === 6 && !verify.isPending;
 
   return (
     <Dialog
@@ -137,71 +129,161 @@ export function MfaChallengeDialog({ open, dismissible, onDismiss, onVerified }:
         onDismiss?.();
       }}
     >
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <ShieldCheck className="text-kortix-green size-4" />
-            {tI18nComplete.raw('text4d8f4755ac09')}
-          </DialogTitle>
-          <DialogDescription>{tI18nComplete.raw('text3ba20a470a12')}</DialogDescription>
-        </DialogHeader>
+      {/* Full screen: the challenge replaces the page instead of floating on a
+          dimmed one. Radix still owns focus, Escape and the a11y tree. */}
+      <DialogContent
+        showOverlay={false}
+        hideCloseButton
+        className="bg-background inset-0 flex h-dvh max-w-none translate-x-0 translate-y-0 items-center justify-center overflow-y-auto rounded-none border-0 p-6 shadow-none data-[state=closed]:zoom-out-100 data-[state=open]:zoom-in-100 sm:max-w-none sm:rounded-none"
+      >
+        <div className="flex w-full max-w-sm flex-col">
+          {/* The mark above the title, as on the (auth) pages. */}
+          <KortixLogo variant="icon" size={22} className="text-foreground" />
+          <DialogTitle className="mt-6 text-xl font-medium tracking-tight">{t('title')}</DialogTitle>
+          <DialogDescription className="text-muted-foreground mt-3 text-sm text-pretty">
+            {dismissible ? t('actionDescription') : t('gateDescription')}
+          </DialogDescription>
 
-        {factorsQuery.isLoading ? (
-          <div className="py-2">
-            <Loading className="size-4" />
-          </div>
-        ) : factor ? (
-          <div className="space-y-1.5 py-1">
-            <Label className="text-xs">{tI18nComplete.raw('text0d1fa0dfcc9e')}</Label>
-            <Input
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              placeholder="123456"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              autoFocus
-              className="w-36 font-mono tracking-widest"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && code.length === 6 && !verify.isPending) verify.mutate();
+          {factorsQuery.isLoading ? (
+            <div className="mt-8">
+              <Loading className="size-4" />
+            </div>
+          ) : factor ? (
+            <form
+              className="mt-8 flex flex-col"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (canVerify) verify.mutate();
               }}
-            />
-          </div>
-        ) : (
-          <InfoBanner
-            tone="warning"
-            icon={ShieldWarning}
-            title={tI18nComplete.raw('text669350bd2952')}
-          >
-            {tI18nComplete.raw('textf3a4ff3c0ae3')}
-          </InfoBanner>
-        )}
-
-        <DialogFooter>
-          {dismissible ? (
-            <Button variant="ghost" onClick={() => onDismiss?.()}>
-              {tI18nComplete.raw('text19766ed6ccb2')}
-            </Button>
-          ) : (
-            // Escape hatch for a lost authenticator: the same sign-out every
-            // in-app control runs. Without it the non-dismissible gate would be
-            // a lockout with no way back to /auth.
-            <Button variant="ghost" onClick={() => void performSignOut()}>
-              {tI18nComplete.raw('text48f0d3d397d4')}
-            </Button>
-          )}
-          {factor && (
-            <Button
-              onClick={() => verify.mutate()}
-              disabled={code.length !== 6 || verify.isPending}
-              className="gap-1.5"
             >
-              {verify.isPending && <Loading className="size-4" />}
-              {tI18nComplete.raw('texteea2745e2867')}
-            </Button>
+              <label htmlFor="mfa-code" className="text-sm font-medium">
+                {t('codeLabel')}
+              </label>
+              <CodeCells
+                code={code}
+                invalid={verify.isError}
+                onChange={(next) => {
+                  if (verify.isError) verify.reset();
+                  setCode(next);
+                }}
+              />
+              {verify.isError ? (
+                <p role="alert" className="text-destructive mt-2 text-sm">
+                  {t('invalidCode')}
+                </p>
+              ) : null}
+              <div className="mt-10 flex items-center justify-between">
+                {dismissible ? (
+                  <Button type="button" variant="secondary" onClick={() => onDismiss?.()}>
+                    {t('cancel')}
+                  </Button>
+                ) : (
+                  // Escape hatch for a lost authenticator: the same sign-out every
+                  // in-app control runs. Without it the non-dismissible gate would be
+                  // a lockout with no way back to /auth.
+                  <Button type="button" variant="secondary" onClick={() => void performSignOut()}>
+                    {t('signOut')}
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  onClick={() => {
+                    if (canVerify) verify.mutate();
+                  }}
+                  disabled={!canVerify}
+                  className="gap-1.5"
+                >
+                  {verify.isPending ? <SessionDotMatrix size={14} className="shrink-0" /> : null}
+                  {t('verify')}
+                </Button>
+              </div>
+            </form>
+          ) : (
+            <div className="mt-8 flex flex-col gap-5">
+              <InfoBanner tone="warning" icon={ShieldWarning} title={t('noFactorTitle')}>
+                {t('noFactorDescription')}
+              </InfoBanner>
+              {dismissible ? (
+                <Button type="button" variant="secondary" className="self-start" onClick={() => onDismiss?.()}>
+                  {t('cancel')}
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="self-start"
+                  onClick={() => void performSignOut()}
+                >
+                  {t('signOut')}
+                </Button>
+              )}
+            </div>
           )}
-        </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+const CELLS = [0, 1, 2, 3, 4, 5] as const;
+
+/**
+ * Six digit cells in two groups of three. One real input sits on top of them,
+ * transparent, so typing, paste, and the OS one-time-code autofill all behave
+ * like a plain text field; the cells only draw its value.
+ */
+function CodeCells({
+  code,
+  invalid,
+  onChange,
+}: {
+  code: string;
+  invalid: boolean;
+  onChange: (code: string) => void;
+}) {
+  const [focused, setFocused] = useState(false);
+  const active = focused ? Math.min(code.length, 5) : -1;
+  const group = (cells: readonly number[]) => (
+    <div
+      className={cn(
+        'flex overflow-hidden rounded-lg border transition-colors',
+        invalid
+          ? 'border-destructive'
+          : cells.includes(active)
+            ? 'border-ring  ring-ring/15  ring-3'
+            : 'border-ring',
+      )}
+    >
+      {cells.map((i) => (
+        <span
+          key={i}
+          className="border-border flex h-15 w-13 items-center justify-center border-r font-mono text-2xl last:border-r-0"
+        >
+          {code[i] ?? (i === active ? <span className="bg-foreground h-6 w-px animate-pulse motion-reduce:animate-none" /> : null)}
+        </span>
+      ))}
+    </div>
+  );
+
+  return (
+    <div className="relative mt-2 flex items-center gap-3 self-start">
+      {group(CELLS.slice(0, 3))}
+      <span aria-hidden className="bg-muted-foreground/60 h-px w-2.5" />
+      {group(CELLS.slice(3))}
+      <input
+        id="mfa-code"
+        value={code}
+        onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, 6))}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        inputMode="numeric"
+        autoComplete="one-time-code"
+        maxLength={6}
+        autoFocus
+        aria-invalid={invalid || undefined}
+        className="absolute inset-0 cursor-text opacity-0"
+      />
+    </div>
   );
 }
 
@@ -220,7 +302,10 @@ export function MfaStepUpProvider({ children }: { children?: React.ReactNode }) 
       <MfaChallengeDialog
         open={open}
         dismissible
-        onDismiss={() => setOpen(false)}
+        onDismiss={() => {
+          clearPendingMfaAction();
+          setOpen(false);
+        }}
         onVerified={() => setOpen(false)}
       />
     </>

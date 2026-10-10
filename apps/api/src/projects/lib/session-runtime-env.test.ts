@@ -176,8 +176,8 @@ describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
   });
 
   test('sends fresh-session and base-tip hints for a fresh session', () => {
-    // 2026-08-27: the fresh-session fast path is the default boot
-    // (KORTIX_FAST_GIT_BOOT_ENABLED, decided at create).
+    // 2026-08-27: the fresh-session fast path is the default boot (decided at
+    // create).
     const env = buildSessionRuntimeEnv({
       ...BASE_INPUT,
       freshSession: true,

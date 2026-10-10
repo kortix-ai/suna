@@ -14,8 +14,7 @@ export const fileListKeys = {
 /**
  * Fetch the directory listing for a path on the active project.
  *
- * Uses GET /v1/projects/:projectId/files (recursive list, filtered client-side
- * down to immediate children of `dirPath`).
+ * Uses GET /v1/projects/:projectId/files?depth=1: one folder level, complete.
  */
 export function useFileList(dirPath: string, options?: { enabled?: boolean }) {
   const ctx = useProjectContext();

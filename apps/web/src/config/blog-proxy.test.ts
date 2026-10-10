@@ -4,14 +4,17 @@ import { readFileSync } from 'node:fs';
 
 import { middleware } from '../middleware';
 
+import { resolveBlogOrigin } from './blog-origin';
+
 // The blog is a separate app (kortix-ai/marketing, basePath /blog) served at
 // kortix.com/blog. `bun test` cannot execute next.config.ts (see
 // security-headers.test.ts), so its rules are pinned on the source.
 const nextConfig = readFileSync(new URL('../../next.config.ts', import.meta.url), 'utf8');
 
 describe('/blog is served by the blog app', () => {
-  test('next.config rewrites /blog and everything under it to KORTIX_BLOG_ORIGIN', () => {
-    expect(nextConfig).toContain("process.env.KORTIX_BLOG_ORIGIN?.replace(/\\/+$/, '')");
+  test('next.config resolves the origin through the shared resolver', () => {
+    expect(nextConfig).toContain("import { BLOG_ORIGIN } from './src/config/blog-origin'");
+    expect(nextConfig).not.toContain('KORTIX_BLOG_ORIGIN?.replace');
     expect(nextConfig).toContain("{ source: '/blog', destination: `${BLOG_ORIGIN}/blog` }");
     expect(nextConfig).toContain(
       "{ source: '/blog/:path*', destination: `${BLOG_ORIGIN}/blog/:path*` }",
@@ -64,5 +67,20 @@ describe('/blog is served by the blog app', () => {
       expect(response.headers.get('x-middleware-request-cookie'), path).toBeNull();
       expect(response.headers.get('x-middleware-request-authorization'), path).toBeNull();
     }
+  });
+});
+
+describe('resolveBlogOrigin', () => {
+  test('an unset KORTIX_BLOG_ORIGIN falls back to the canonical origin, so /blog exists everywhere', () => {
+    expect(resolveBlogOrigin(undefined)).toBe('https://kortix.com');
+  });
+
+  test('an explicit origin is used with trailing slashes stripped', () => {
+    expect(resolveBlogOrigin('https://blog.example.com/')).toBe('https://blog.example.com');
+    expect(resolveBlogOrigin('https://blog.example.com///')).toBe('https://blog.example.com');
+  });
+
+  test('an explicit empty value keeps /blog unserved', () => {
+    expect(resolveBlogOrigin('')).toBeUndefined();
   });
 });

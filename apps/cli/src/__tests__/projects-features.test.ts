@@ -36,14 +36,17 @@ function writeConfig(apiBase: string): string {
 
 function catalog(overrides: Record<string, boolean | null> = {}) {
   const defs = [
-    { key: 'apps', name: 'Apps', stability: 'experimental', available: true, def: false },
+    { key: 'reminders', name: 'Reminders', stability: 'experimental', available: true, def: false },
+    // Internal-only: listed only while on, written only by a Kortix operator.
+    { key: 'apps', name: 'Apps', stability: 'experimental', available: true, def: false, operatorOnly: true },
     { key: 'marketplace', name: 'Marketplace', stability: 'beta', available: true, def: true },
     { key: 'monitors', name: 'Monitors', stability: 'experimental', available: false, def: false },
   ];
-  return defs.map((d) => {
+  return defs.flatMap((d) => {
     const o = overrides[d.key];
     const enabled = d.available && (o === undefined || o === null ? d.def : o);
-    return {
+    if (d.operatorOnly && !enabled) return [];
+    return [{
       key: d.key,
       name: d.name,
       description: `${d.name} description`,
@@ -51,7 +54,8 @@ function catalog(overrides: Record<string, boolean | null> = {}) {
       available: d.available,
       enabled,
       overridden: o !== undefined && o !== null,
-    };
+      operator_only: d.operatorOnly === true,
+    }];
   });
 }
 
@@ -72,8 +76,8 @@ function project(overrides: Record<string, boolean | null> = {}) {
   };
 }
 
-function startServer(): string {
-  const state: Record<string, boolean | null> = {};
+function startServer(initial: Record<string, boolean | null> = {}): string {
+  const state: Record<string, boolean | null> = { ...initial };
   server = Bun.serve({
     port: 0,
     fetch: async (req) => {
@@ -84,7 +88,13 @@ function startServer(): string {
       if (url.pathname === `/v1/projects/${PROJECT}/features` && req.method === 'PATCH') {
         const body = (await req.json()) as { feature: string; enabled: boolean | null };
         patches.push({ path: url.pathname, body });
-        if (!['apps', 'marketplace', 'monitors'].includes(body.feature)) {
+        if (body.feature === 'apps') {
+          return Response.json(
+            { error: 'Apps is managed by Kortix. Contact Kortix to change it.', code: 'feature_operator_only', feature: 'apps' },
+            { status: 403 },
+          );
+        }
+        if (!['reminders', 'marketplace', 'monitors'].includes(body.feature)) {
           return Response.json({ error: `Unknown feature flag '${body.feature}'` }, { status: 400 });
         }
         if (body.enabled === null) delete state[body.feature];
@@ -151,26 +161,26 @@ describe('kortix projects features', () => {
     const config = writeConfig(startServer());
     const r = await runCli(['projects', 'features', 'ls', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(r.stdout).toContain('apps');
-    expect(r.stdout).toMatch(/apps\s+off\s+default/);
+    expect(r.stdout).toContain('reminders');
+    expect(r.stdout).toMatch(/reminders\s+off\s+default/);
     expect(r.stdout).toMatch(/marketplace\s+on\s+default/);
     expect(r.stdout).toMatch(/monitors\s+n\/a\s+unavailable/);
 
     const j = await runCli(['projects', 'features', '--project', PROJECT, '--json'], config);
     expect(j.code).toBe(0);
     const rows = JSON.parse(j.stdout) as Array<{ key: string; enabled: boolean }>;
-    expect(rows.map((x) => x.key)).toEqual(['apps', 'marketplace', 'monitors']);
+    expect(rows.map((x) => x.key)).toEqual(['reminders', 'marketplace', 'monitors']);
   });
 
   test('enable PATCHes /features {feature, enabled:true} and reports the effective state', async () => {
     const config = writeConfig(startServer());
-    const r = await runCli(['projects', 'features', 'enable', 'apps', '--project', PROJECT], config);
+    const r = await runCli(['projects', 'features', 'enable', 'reminders', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(patches).toEqual([{ path: `/v1/projects/${PROJECT}/features`, body: { feature: 'apps', enabled: true } }]);
-    expect(r.stdout).toContain('apps enabled — effective: on');
+    expect(patches).toEqual([{ path: `/v1/projects/${PROJECT}/features`, body: { feature: 'reminders', enabled: true } }]);
+    expect(r.stdout).toContain('reminders enabled — effective: on');
 
     const ls = await runCli(['projects', 'features', '--project', PROJECT], config);
-    expect(ls.stdout).toMatch(/apps\s+on\s+override/);
+    expect(ls.stdout).toMatch(/reminders\s+on\s+override/);
   });
 
   test('disable then reset clears the override (enabled:null)', async () => {
@@ -195,6 +205,32 @@ describe('kortix projects features', () => {
     const bad = await runCli(['projects', 'features', 'enable', 'nope', '--project', PROJECT], config);
     expect(bad.code).toBe(1);
     expect(bad.stderr).toContain("Unknown feature flag 'nope'");
+  });
+
+  test('an operator-only flag that is on lists read-only with origin kortix; info names it; enable is refused', async () => {
+    const config = writeConfig(startServer({ apps: true }));
+    const ls = await runCli(['projects', 'features', '--project', PROJECT], config);
+    expect(ls.code).toBe(0);
+    expect(ls.stdout).toMatch(/apps\s+on\s+kortix/);
+    expect(ls.stdout).toContain('Contact Kortix to change it.');
+
+    const j = await runCli(['projects', 'features', '--project', PROJECT, '--json'], config);
+    const rows = JSON.parse(j.stdout) as Array<{ key: string; enabled: boolean; operator_only?: boolean }>;
+    expect(rows.find((x) => x.key === 'apps')).toMatchObject({ enabled: true, operator_only: true });
+
+    const info = await runCli(['projects', 'info', PROJECT], config);
+    expect(info.code).toBe(0);
+    expect(info.stdout).toMatch(/by kortix\s+apps/);
+
+    const off = await runCli(['projects', 'features', 'disable', 'apps', '--project', PROJECT], config);
+    expect(off.code).toBe(1);
+    expect(off.stderr).toContain('managed by Kortix');
+  });
+
+  test('an operator-only flag that is off is not listed', async () => {
+    const config = writeConfig(startServer());
+    const j = await runCli(['projects', 'features', '--project', PROJECT, '--json'], config);
+    expect((JSON.parse(j.stdout) as Array<{ key: string }>).map((x) => x.key)).not.toContain('apps');
   });
 
   test('enable without a flag exits 2 with usage', async () => {

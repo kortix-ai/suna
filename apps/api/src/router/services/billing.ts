@@ -3,38 +3,9 @@ import { config, getToolCost } from '../../config';
 
 import { creditGateExemptEnv } from './credit-gate-env';
 
-import { InsufficientCreditsError } from '../../errors';
-import { wallet, type LedgerDebitType } from '../../billing/wallet';
-import type { BillingCheckResult, BillingDeductResult } from '../../types';
-
-/** Check if account has sufficient credits. */
-export async function checkCredits(
-  accountId: string,
-  minimumRequired: number = 0.01,
-  options?: { skipDevCheck?: boolean }
-): Promise<BillingCheckResult> {
-  // When billing is disabled (self-host/dev), all checks pass — no Stripe, no
-  // real subscriptions, and gating on a $0 balance just stalls everything.
-  if (!config.KORTIX_BILLING_INTERNAL_ENABLED || creditGateExemptEnv()) {
-    return { hasCredits: true, balance: 0, message: 'Credits check skipped (billing disabled)' };
-  }
-
-  const current = await wallet.balance(accountId).catch((err) => {
-    console.error('checkCredits error:', err);
-    return null;
-  });
-  if (!current) {
-    return { hasCredits: false, balance: 0, message: 'No credit account found' };
-  }
-  if (current.balance < minimumRequired) {
-    return {
-      hasCredits: false,
-      balance: current.balance,
-      message: `Insufficient credits. Balance: $${current.balance.toFixed(4)}`,
-    };
-  }
-  return { hasCredits: true, balance: current.balance, message: 'OK' };
-}
+import { InsufficientCreditsError, WalletUnavailableError } from '../../errors';
+import type { LedgerDebitType } from '../../billing/wallet';
+import type { BillingDeductResult } from '../../types';
 
 /**
  * Admission debit for a router call. A refusal is a result, not a throw: the
@@ -45,12 +16,13 @@ async function debitForRouter(
   amount: number,
   description: string,
   kind: LedgerDebitType,
-): Promise<{ ok: true; amount: number; balance: number; transactionId: string } | { ok: false; error: string }> {
+): Promise<{ ok: true; amount: number; balance: number; transactionId: string } | { ok: false; error: string; retryable?: boolean }> {
   try {
     const result = await debitAndCheckAutoTopup({ accountId, amount, description, kind, key: null });
     return { ok: true, ...result };
   } catch (err) {
     if (err instanceof InsufficientCreditsError) return { ok: false, error: err.reason };
+    if (err instanceof WalletUnavailableError) return { ok: false, error: err.message, retryable: true };
     console.error('[BILLING] router debit failed:', err);
     return { ok: false, error: 'Deduction error' };
   }
@@ -92,7 +64,7 @@ export async function deductToolCredits(
   const result = await debitForRouter(accountId, cost, deductDescription, 'usage');
 
   if (!result.ok) {
-    return { success: false, cost: 0, newBalance: 0, error: result.error };
+    return { success: false, cost: 0, newBalance: 0, error: result.error, retryable: result.retryable };
   }
 
   console.info(`[BILLING] Deducted $${cost.toFixed(4)}. New balance: $${result.balance.toFixed(2)}`);
@@ -100,49 +72,6 @@ export async function deductToolCredits(
   return {
     success: true,
     cost: result.amount || cost,
-    newBalance: result.balance || 0,
-    transactionId: result.transactionId,
-  };
-}
-
-/** Deduct credits for LLM usage. */
-export async function deductLLMCredits(
-  accountId: string,
-  model: string,
-  inputTokens: number,
-  outputTokens: number,
-  calculatedCost: number,
-  sessionId?: string
-): Promise<BillingDeductResult> {
-  if (calculatedCost <= 0) {
-    return { success: true, cost: 0, newBalance: 0 };
-  }
-
-  // Skip deduction when billing is disabled (see deductToolCredits for rationale).
-  if (!config.KORTIX_BILLING_INTERNAL_ENABLED || creditGateExemptEnv()) {
-    return { success: true, cost: 0, newBalance: 0 };
-  }
-
-  const baseDescription = `LLM: ${model} (${inputTokens}/${outputTokens} tokens)`;
-  const description = sessionId ? `${baseDescription} [session:${sessionId}]` : baseDescription;
-
-  console.info(`[BILLING] Deducting $${calculatedCost.toFixed(6)} for ${model} (direct DB)`);
-
-  // 'llm_debit' so this spend lands in the usage breakdown's LLM bucket. It is
-  // real LLM spend and was already charged; before migration 20260730012238065
-  // it bound an overload that stamped no ledger_type, so the breakdown reported
-  // $0 LLM for every router-path request.
-  const result = await debitForRouter(accountId, calculatedCost, description, 'llm_debit');
-
-  if (!result.ok) {
-    return { success: false, cost: 0, newBalance: 0, error: result.error };
-  }
-
-  console.info(`[BILLING] Deducted $${calculatedCost.toFixed(6)}. New balance: $${result.balance.toFixed(2)}`);
-
-  return {
-    success: true,
-    cost: result.amount || calculatedCost,
     newBalance: result.balance || 0,
     transactionId: result.transactionId,
   };

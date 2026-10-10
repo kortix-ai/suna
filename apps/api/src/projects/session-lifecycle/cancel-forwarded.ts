@@ -1,18 +1,16 @@
 /**
- * Cancelling a prompt that is already AT OpenCode but not yet reached.
+ * Cancelling a prompt that is already AT the runtime but not yet reached.
  *
  * "Forwarded" used to be the point of no return: `DELETE .../prompts/:id`
  * answered 409 the moment the drain handed the message over, which — with the
  * drain forwarding within ~1 s of Enter — meant the queue's Remove button
  * existed for about a second per prompt. But a forwarded prompt the loop has
- * not READ is still only text in the runtime's transcript, and it can be
- * taken back out:
- *
- *  - box idle → `DELETE /session/:id/message/:mid` removes it whole;
- *  - box mid-turn → that route is refused (`assertNotBusy`), but
- *    `DELETE …/part/:pid` is not, and a user message with ZERO parts is
- *    skipped by `toModelMessages` (`if (msg.parts.length === 0) continue`) —
- *    the model never sees it, the loop's id-order bookkeeping is untouched.
+ * not READ is still only text in the runtime's transcript, and the runtime's
+ * retract (`POST /kortix/runtime/messages/:id/:mid/retract`) takes it back
+ * out. pi removes it from its own queue. OpenCode removes it whole while
+ * idle; mid-turn it empties the message, and its loop skips a user message
+ * with no parts. A daemon built before the retract gets the same two steps
+ * as delete calls (`retractRuntimeMessage`).
  *
  * A prompt the loop HAS reached (an assistant answers it, or a step parented
  * on it/newer read it) stays: that is "already being answered", and the 409
@@ -25,9 +23,7 @@ import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { isPgBroadcastListening, waitForLifecycleCommandSettle } from '../../shared/pg-broadcast';
 import { closeSandboxTurnByMessageId } from '../sandbox-turn-lifecycle';
-import { readSessionMessageTip, removeRuntimeMessage, resolveSessionOpencodeEndpoint } from './runtime-client';
-import { sessionRuntimeFetch } from './runtime-fetch';
-import { legacyRuntimePaths } from './legacy-runtime-rest';
+import { readSessionMessageTip, resolveSessionOpencodeEndpoint, retractRuntimeMessage, type RetractOutcome } from './runtime-client';
 import { reachedPlacement, strandedPlacement, type PlacementTipMessage } from './forwarded-placement';
 import { deleteInboxRowsWithAttachmentGrace, inboxScope } from './inbox-rows';
 import { wireMessageIdMatches } from './wire-id-match';
@@ -137,36 +133,35 @@ export async function cancelForwardedPrompt(
     if (!verdict.stranded && reachedPlacement(tip, id)) return { outcome: 'answered' };
   }
 
-  // Take the copies out. Whole-message first (works while idle); when the
-  // loop is busy that route is refused — empty the message part by part
-  // instead, which the model then never sees.
-  for (const message of present) {
-    let removed = false;
+  // Take the copies out with the runtime's retract, which removes a message no
+  // model call has read on every harness. A STEER pi has not read is in no
+  // transcript: kortixd holds it in front of the turn, and the retract takes
+  // it back from there (R10).
+  const copies =
+    present.length === 0 && typeof result.steered_into_message_id === 'string'
+      ? targetIds.map((id) => ({ id, partIds: [] as string[] }))
+      : present.map((message) => ({ id: message.id, partIds: message.partIds ?? [] }));
+  for (const copy of copies) {
+    let retracted: RetractOutcome;
     try {
-      removed = await removeRuntimeMessage(resolved, message.id);
-    } catch {
-      removed = false;
+      retracted = await retractRuntimeMessage(resolved, copy.id, copy.partIds);
+    } catch (err) {
+      logger.warn('[cancel-forwarded] retract threw', {
+        session_id: sessionId,
+        message_id: copy.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return { outcome: 'unreachable' };
     }
-    if (removed) continue;
-    for (const partId of message.partIds ?? []) {
-      try {
-        const res = await sessionRuntimeFetch(
-          resolved.endpoint,
-          'DELETE',
-          legacyRuntimePaths.part(resolved.opencodeSessionId, message.id, partId),
-        );
-        if (!res.ok && res.status !== 404) {
-          logger.warn('[cancel-forwarded] part delete refused', {
-            session_id: sessionId,
-            message_id: message.id,
-            part_id: partId,
-            upstream_status: res.status,
-          });
-          return { outcome: 'unreachable' };
-        }
-      } catch {
-        return { outcome: 'unreachable' };
-      }
+    if (retracted.outcome === 'read') return { outcome: 'answered' };
+    if (retracted.outcome === 'refused') {
+      logger.warn('[cancel-forwarded] retract refused', {
+        session_id: sessionId,
+        message_id: copy.id,
+        upstream_status: retracted.status,
+        detail: retracted.detail,
+      });
+      return { outcome: 'unreachable' };
     }
   }
 

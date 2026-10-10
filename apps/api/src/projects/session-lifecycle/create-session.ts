@@ -32,7 +32,7 @@ import type {
   SessionLifecyclePostCreateAction,
   SessionLifecycleResult,
 } from './types';
-import { continueSession } from './continue-session';
+import { deliverThroughQueue } from './follow-up-delivery';
 import { drainSessionLifecycleQueue } from './drain';
 
 export async function createSession(
@@ -180,7 +180,7 @@ async function runInlineCreate(
     // immediately, and the row is queued for backoff / dead-lettered per the
     // normal 5-attempt budget rather than left dangling on a lease.
     const message = err instanceof Error ? err.message : String(err);
-    await markCommandFailed(row, message, {
+    const outcome = await markCommandFailed(row, message, {
       retryable: true,
       attempts: row.attempts + 1,
     });
@@ -188,6 +188,8 @@ async function runInlineCreate(
       status: 'failed',
       commandId: row.commandId,
       retryable: true,
+      // A lost lease means another owner holds the row.
+      requeued: outcome !== 'dead_lettered',
       error: { status: 503, body: { error: message } },
     };
   }
@@ -199,7 +201,7 @@ async function runInlineCreate(
       commandId: row.commandId,
     });
     if (!postCreate.ok) {
-      await markCommandFailed(row, postCreate.error, {
+      const outcome = await markCommandFailed(row, postCreate.error, {
         retryable: true,
         attempts: row.attempts + 1,
         sessionId: result.sessionId,
@@ -216,6 +218,7 @@ async function runInlineCreate(
         sessionId: result.sessionId,
         row: result.row,
         retryable: true,
+        requeued: outcome !== 'dead_lettered',
         error: { status: 500, body: { error: postCreate.error } },
       };
     }
@@ -332,6 +335,15 @@ export async function executeQueuedCreate(
 async function executeCreateSession(
   command: CreateSessionCommand,
 ): Promise<SessionLifecycleResult> {
+  // A deleted workspace starts no session (KRTX-1714). Every create path meets
+  // here, and the chat channels load the project by id with no status filter.
+  if (command.project.status === 'archived') {
+    return {
+      status: 'failed',
+      retryable: false,
+      error: { status: 404, body: { error: 'This workspace was deleted', code: 'project_archived' } },
+    };
+  }
   const metadata = {
     source: command.source,
     ...(command.metadata ?? {}),
@@ -383,12 +395,8 @@ export async function applyPostCreateActions(input: {
   projectId: string;
   sessionId: string;
   actions?: SessionLifecyclePostCreateAction[];
-  // F2: the CREATE command's own commandId, when this create can be retried
-  // against the same row (the idempotency-key and queued-create paths — see
-  // call sites). Forwarded to `continueSession` so `postPrompt`'s
-  // `Idempotency-Key` stays stable across those retries. Omitted by the
-  // one-shot, non-retryable create path, which falls back to a fresh
-  // `randomUUID()` per call inside `continueSession`.
+  // ponytail: unused since `deliver_prompt` is a queue row keyed by the session
+  // (`post-create:<sessionId>`); drop it with its two call sites.
   commandId?: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!input.actions?.length) return { ok: true };
@@ -403,16 +411,15 @@ export async function applyPostCreateActions(input: {
           sessionId: input.sessionId,
         });
       } else if (action.type === 'deliver_prompt') {
-        const outcome = await continueSession(
-          {
-            source: action.source,
-            sessionId: input.sessionId,
-            text: action.text,
-            userId: action.userId ?? undefined,
-          },
-          input.commandId,
-        );
-        if (outcome !== 'delivered') {
+        // One initial prompt per session: a retried create dedupes on the key.
+        const outcome = await deliverThroughQueue({
+          source: action.source,
+          idempotencyKey: `post-create:${input.sessionId}`,
+          sessionId: input.sessionId,
+          text: action.text,
+          userId: action.userId ?? undefined,
+        });
+        if (outcome !== 'delivered' && outcome !== 'queued') {
           return { ok: false, error: `initial prompt delivery ${outcome}` };
         }
       } else if (action.type === 'apply_trigger_session_access') {

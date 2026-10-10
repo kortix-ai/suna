@@ -1,10 +1,12 @@
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { createHash } from 'node:crypto'
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
+import { join, sep } from 'node:path'
 import { readProjectManifest, extractNestedString } from '@/lib/config/config'
 import { z } from 'zod'
 import type { Config as HostConfig } from '@/lib/config/config'
 import { resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-dir'
-import { managedSkillsDir } from '@/services/skills/managed-skills'
+import { logger } from '@/lib/log/logger'
+import { managedSkillsDir } from '@/lib/config/managed-skills-dir'
 
 /** First backoff of a transient model-error retry (transient-retry.ts): 2, 4, 8, 16, 30 s. */
 const TURN_RETRY_DEFAULT_BASE_MS = 2_000
@@ -39,6 +41,8 @@ const EnvironmentSchema = z.object({
   // First backoff of a transient model-error retry (transient-retry.ts). Tests shorten it.
   KORTIX_PI_TURN_RETRY_BASE_MS: z.coerce.number().int().positive().optional(),
   KORTIX_PI_NO_PROGRESS_MS: z.coerce.number().int().positive().optional(),
+  // pi compacts a context past this many tokens, whatever the model window (model.ts `compactionSettings`).
+  KORTIX_PI_COMPACT_AT_TOKENS: z.coerce.number().int().positive().optional(),
 })
 
 export interface PiEnvironment {
@@ -51,6 +55,7 @@ export interface PiEnvironment {
   piPackagesDir: string
   piTurnRetryBaseMs: number
   piNoProgressMs: number
+  piCompactAtTokens: number
 }
 
 export const DEFAULT_PI_AGENT_DIR = '/opt/kortix/pi-agent'
@@ -66,6 +71,7 @@ export function loadPiEnvironment(env: NodeJS.ProcessEnv): PiEnvironment {
     KORTIX_PI_PACKAGES_DIR: env.KORTIX_PI_PACKAGES_DIR,
     KORTIX_PI_TURN_RETRY_BASE_MS: env.KORTIX_PI_TURN_RETRY_BASE_MS?.trim() || undefined,
     KORTIX_PI_NO_PROGRESS_MS: env.KORTIX_PI_NO_PROGRESS_MS?.trim() || undefined,
+    KORTIX_PI_COMPACT_AT_TOKENS: env.KORTIX_PI_COMPACT_AT_TOKENS?.trim() || undefined,
   })
   return {
     piStateDir: parsed.KORTIX_PI_STATE_DIR?.trim() || join(resolveKortixRuntimeStateDirectory(env), 'pi'),
@@ -77,6 +83,8 @@ export function loadPiEnvironment(env: NodeJS.ProcessEnv): PiEnvironment {
     piPackagesDir: parsed.KORTIX_PI_PACKAGES_DIR?.trim() || join(resolveKortixRuntimeStateDirectory(env), 'pi-packages'),
     piTurnRetryBaseMs: parsed.KORTIX_PI_TURN_RETRY_BASE_MS ?? TURN_RETRY_DEFAULT_BASE_MS,
     piNoProgressMs: parsed.KORTIX_PI_NO_PROGRESS_MS ?? 10 * 60_000,
+    // Every request re-sends the whole context: a 1M window left to fill costs ~6x a 160k one per turn.
+    piCompactAtTokens: parsed.KORTIX_PI_COMPACT_AT_TOKENS ?? 160_000,
   }
 }
 
@@ -125,4 +133,46 @@ export function resolvePiSkillDirectories(
   // The layout is packages/manifest-schema/src/layout.ts `skillDirs`; pi may not
   // import the OpenCode adapter's copy (harness/open-code/project-layout.ts).
   return [managedSkillsDir(), join(workspace, 'skills'), ...piSkills, join(workspace, '.kortix', 'opencode', 'skills')]
+}
+
+/** The project's root instructions file, as the system prompt renders it and health reports it. */
+export interface ProjectInstructions {
+  source: 'release' | 'workspace'
+  path: string
+  bytes: number
+  /** The first 12 hex characters of the file's sha256. */
+  sha: string
+  /** `AGENTS.md`, or `CLAUDE.md` when the root has no `AGENTS.md`. */
+  name: string
+  text: string
+}
+
+/**
+ * The root `AGENTS.md` of `root`, else its `CLAUDE.md`: the first name that
+ * exists wins, as on OpenCode 1.18.23 (`session/instruction.ts`). Only the
+ * root: no ancestor directory, no nested file, no agent-dir file. Null when
+ * there is none or it is empty. Null and one warning when it is not a regular
+ * file, resolves out of `root`, or cannot be read.
+ */
+export function readProjectInstructions(root: string, source: ProjectInstructions['source']): ProjectInstructions | null {
+  for (const name of ['AGENTS.md', 'CLAUDE.md']) {
+    const path = join(root, name)
+    if (!existsSync(path)) continue
+    try {
+      const real = realpathSync(path)
+      // A symlink to a host file (`/proc/self/environ`) would put that file in the prompt.
+      if (!real.startsWith(`${realpathSync(root)}${sep}`)) throw new Error('it resolves outside the project root')
+      if (!statSync(real).isFile()) throw new Error('it is not a regular file')
+      const raw = readFileSync(real)
+      const text = raw.toString('utf8').trim()
+      if (!text) return null
+      const loaded = { source, path, bytes: raw.length, sha: createHash('sha256').update(raw).digest('hex').slice(0, 12) }
+      logger.info('[pi] AGENTS.md loaded', loaded)
+      return { ...loaded, name, text }
+    } catch (err) {
+      logger.warn('[pi] AGENTS.md not loaded', { path, reason: err instanceof Error ? err.message : String(err) })
+      return null
+    }
+  }
+  return null
 }

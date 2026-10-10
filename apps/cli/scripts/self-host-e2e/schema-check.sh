@@ -158,7 +158,7 @@ ok "API healthy"
 
 section "Bootstrap Owner + Authenticated Read"
 BODY=$(printf '{"email":"%s","password":"%s"}' "$EMAIL" "$PASSWORD")
-BO=$(curl -fsS -X POST "http://localhost:$API_PORT/v1/setup/bootstrap-owner" -H 'content-type: application/json' -d "$BODY")
+BO=$(curl -fsS -X POST "http://localhost:$API_PORT/v1/setup/bootstrap-owner" -H 'content-type: application/json' -H "X-Kortix-Internal-Key: $INTERNAL_SERVICE_KEY" -d "$BODY")
 printf '%s' "$BO" | python3 -c 'import json,sys; sys.exit(0 if json.load(sys.stdin).get("success") else 1)' || die "bootstrap-owner failed: $BO"
 ok "owner bootstrapped"
 

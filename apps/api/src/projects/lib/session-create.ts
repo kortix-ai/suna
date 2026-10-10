@@ -20,6 +20,7 @@ import {
 } from '../../connectors/share';
 import { setContextField } from '../../lib/request-context';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
+import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
 import {
   isModelServableForAccount,
   resolveEffectiveModel,
@@ -29,7 +30,6 @@ import {
   toOpencodeModelRef,
 } from '../../llm-gateway/resolution/effective';
 
-import { sandboxFrontendBaseUrl } from '../../platform/sandbox-frontend-url';
 import { selectProvider } from '../../platform/services/provider-balancer';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { provisionSessionSandbox } from '../../platform/services/session-sandbox';
@@ -95,7 +95,7 @@ import {
   resolveProjectSnapshotPinForSession,
 } from '../../git-proxy/project-snapshot';
 
-import { buildSessionSandboxEnvVars, deriveKortixApiBase } from './session-sandbox-env-build';
+import { buildSessionSandboxEnvVars } from './session-sandbox-env-build';
 import { sandboxCallbackUnreachableReason, sandboxCallbackDeadTunnelReason } from './session-callback-probe';
 /** Every status a failed create answers with. Routes that create a session
  *  declare these, so the published spec lists them. */
@@ -653,9 +653,14 @@ async function resolveSessionModel(params: {
         freeModelsOnly,
         providerSecretPools,
       });
+      // The platform default is servable for every tier (KRTX-1067), so a
+      // fresh free account boots pinned to it instead of to nothing — an
+      // unpinned session was exactly the dead composer of the bug report.
       const concreteModel =
         resolved.model ??
-        (!freeModelsOnly ? config.LLM_GATEWAY_DEFAULT_MODEL : null);
+        (freeModelsOnly
+          ? platformDefaultModelId() || null
+          : config.LLM_GATEWAY_DEFAULT_MODEL);
       if (concreteModel) {
         opencodeModel = toOpencodeModelRef(concreteModel);
         opencodeModelSource = resolved.model ? resolved.source : 'platform';
@@ -754,10 +759,16 @@ async function resolveSessionSandboxPlacement(params: {
   agentName: string;
   loadedAgents: LoadedProjectAgents;
   platformMetaAgent: boolean;
+  accountId: string;
 }): Promise<
-  SessionCreateStep<{ sandboxSlug: string; providerLocked: boolean; providerName: SandboxProviderName }>
+  SessionCreateStep<{
+    sandboxSlug: string;
+    providerLocked: boolean;
+    providerName: SandboxProviderName;
+    persistentMachine: boolean;
+  }>
 > {
-  const { project, body, agentName, loadedAgents, platformMetaAgent } = params;
+  const { project, body, agentName, loadedAgents, platformMetaAgent, accountId } = params;
   // Explicit request wins. The selected agent environment is next. The
   // project default and platform default remain the final fallbacks.
   const projectDefaultSandboxSlug = normalizeString(
@@ -809,10 +820,31 @@ async function resolveSessionSandboxPlacement(params: {
     };
   }
   const providerLocked = sessionProviderIsLocked(picked);
+  // A persistent machine boots from a Platinum root volume: it takes Platinum
+  // unless the request or the project pinned another provider.
+  // Only for an organization with Volumes on; otherwise the option does not exist.
+  const persistentMachine =
+    body.persistent_machine === true &&
+    (await import('../../platform/services/boot-mode-setting')).volumesEnabledFor(accountId);
+  if (persistentMachine && platformMetaAgent) {
+    return {
+      error: { status: 400, body: { error: 'The meta agent cannot run on a persistent machine', code: 'PERSISTENT_MACHINE_UNSUPPORTED' } },
+    };
+  }
   const providerName: SandboxProviderName = providerLocked
     ? (picked as { provider: string }).provider as SandboxProviderName
-    : await selectProvider();
-  return { sandboxSlug, providerLocked, providerName };
+    : persistentMachine && config.isProviderEnabled('platinum' as SandboxProviderName)
+      ? ('platinum' as SandboxProviderName)
+      : await selectProvider();
+  if (persistentMachine && providerName !== 'platinum') {
+    return {
+      error: {
+        status: 400,
+        body: { error: 'A persistent machine needs the Platinum sandbox provider', code: 'PERSISTENT_MACHINE_UNSUPPORTED' },
+      },
+    };
+  }
+  return { sandboxSlug, providerLocked, providerName, persistentMachine };
 }
 
 /** A non-default sandbox template must exist in the project before the session row does. */
@@ -954,6 +986,7 @@ function buildSessionCreateMetadata(params: {
   parentSession: ParentSession;
   repositoryAccess: boolean;
   sandboxSlug: string;
+  persistentMachine: boolean;
 }) {
   const {
     input,
@@ -973,6 +1006,7 @@ function buildSessionCreateMetadata(params: {
     parentSession,
     repositoryAccess,
     sandboxSlug,
+    persistentMachine,
   } = params;
   const { project, userId, body } = input;
   // A name supplied at create is an EXPLICIT, user-chosen name — the same thing
@@ -1063,6 +1097,7 @@ function buildSessionCreateMetadata(params: {
     // Rollback compatibility: older API replicas must also enforce this restriction.
     workspace_mode: repositoryAccess ? 'branch' : 'runtime',
     sandbox_slug: sandboxSlug,
+    ...(persistentMachine ? { persistent_machine: true } : {}),
     audit_v2: {
       actor_type: auditAttribution.actorType,
       authoritative_source: auditAttribution.authoritativeSource,
@@ -1386,29 +1421,25 @@ async function provisionCreatedSession(params: {
     // the hint is omitted → daemon delta-fetches as before. Runs CONCURRENTLY
     // with gitAuth (folded into the env-build chain, not awaited inline).
     let fastBootHintTimeout: ReturnType<typeof setTimeout> | undefined;
-    // Default on (KORTIX_FAST_GIT_BOOT_ENABLED): the hint is what lets the
-    // daemon boot with ZERO proxied git requests (scaffold + delta) and spawn
-    // OpenCode before the checkout. Bounded by the 2 s race below; a miss
+    // The hint is what lets the daemon boot with ZERO proxied git requests
+    // (scaffold + delta) and spawn OpenCode before the checkout. Bounded by the 2 s race below; a miss
     // just means the daemon's fetch fallback.
-    const fastBootGitHintPromise =
-      config.KORTIX_FAST_GIT_BOOT_ENABLED
-      ? Promise.race([
-          projectWithGitAuthPromise
-            .then((projectWithGitAuth) =>
-              resolveFastBootGitHintWithCache(
-                projectWithGitAuth,
-                baseRef,
-                project.metadata,
-              ),
-            )
-            .catch(() => undefined),
-          new Promise<undefined>((resolve) => {
-            fastBootHintTimeout = setTimeout(() => resolve(undefined), 2_000);
-          }),
-        ]).finally(() => {
-          if (fastBootHintTimeout) clearTimeout(fastBootHintTimeout);
-        })
-      : Promise.resolve(undefined);
+    const fastBootGitHintPromise = Promise.race([
+      projectWithGitAuthPromise
+        .then((projectWithGitAuth) =>
+          resolveFastBootGitHintWithCache(
+            projectWithGitAuth,
+            baseRef,
+            project.metadata,
+          ),
+        )
+        .catch(() => undefined),
+      new Promise<undefined>((resolve) => {
+        fastBootHintTimeout = setTimeout(() => resolve(undefined), 2_000);
+      }),
+    ]).finally(() => {
+      if (fastBootHintTimeout) clearTimeout(fastBootHintTimeout);
+    });
     const envPromise = fastBootGitHintPromise
       .then((fastBootGitHint) =>
         resolveCreatedSessionProjectSnapshot({ project, projectId, sessionId, baseRef, tl }, fastBootGitHint),
@@ -1639,10 +1670,11 @@ export async function createProjectSession(input: {
     agentName,
     loadedAgents,
     platformMetaAgent,
+    accountId,
   });
   if (placement.error) return { error: placement.error };
   let { sandboxSlug } = placement;
-  const { providerLocked, providerName } = placement;
+  const { providerLocked, providerName, persistentMachine } = placement;
 
   const callbackUnreachable =
     sandboxCallbackUnreachableReason() ?? (await sandboxCallbackDeadTunnelReason());
@@ -1687,6 +1719,7 @@ export async function createProjectSession(input: {
     parentSession,
     repositoryAccess,
     sandboxSlug,
+    persistentMachine,
   });
 
   let sessionRow: ProjectSessionRow | null = null;

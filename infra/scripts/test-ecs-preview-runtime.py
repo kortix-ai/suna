@@ -91,7 +91,7 @@ class PreviewApproval(unittest.TestCase):
 
     def test_preview_label_approves_one_exact_sha(self):
         self.assertIn("pull_request_target:", WORKFLOW)
-        self.assertIn("branches: [main]", WORKFLOW)
+        self.assertIn("branches: [dev]", WORKFLOW)
         self.assertIn("github.event.action == 'labeled'", WORKFLOW)
         self.assertIn("github.event.label.name == 'preview'", WORKFLOW)
         # Automatic previews on open/synchronize would deploy unreviewed code.

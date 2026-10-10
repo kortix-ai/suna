@@ -351,6 +351,23 @@ describe('TaskTool — the row expands in place', () => {
   });
 });
 
+// ── KRTX-1746: the errored part keeps its row — the failure reason travels ──
+//
+// The renderer used to collapse an errored dispatch into its generic error
+// card, and TaskTool never drew `state.error`, so the fix routes errored task
+// parts back here AND draws the error. Both halves are pinned.
+test('a failed dispatch draws the error and keeps the view affordance', () => {
+  childMessages = undefined; // the child transcript need not be resident
+  const failed = taskPart({ status: 'error' }) as ToolPart & {
+    state: { error?: string };
+  };
+  failed.state.error =
+    'Subagent failed (task_id: ses_ee95c107bffe49S04KWqZ5tjcc): This model does not support assistant message prefill. The conversation must end with a user message.';
+  const markup = render(failed as ToolPart, { open: true });
+  expect(markup).toContain('aria-label="Open full view"');
+  expect(markup).toContain('assistant message prefill');
+});
+
 describe('the never-rendered rightAccessory prop is gone, not merely unused', () => {
   // `ToolHeaderRow` never rendered `rightAccessory`, so all four call sites were
   // silent no-ops. The prop is deleted rather than implemented: none of the four

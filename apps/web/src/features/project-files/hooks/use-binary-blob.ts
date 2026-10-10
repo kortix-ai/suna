@@ -1,25 +1,10 @@
 'use client';
 
-import { useMemo } from 'react';
-
-/**
- * Binary blob loader — stubbed for project-files (read-only).
- *
- * `GET /projects/:id/files/content` returns JSON `{content: string}` built
- * from `git show` stdout (apps/api `git/files.ts` → `getFileAtRef`), so bytes
- * that are not valid UTF-8 are already lossy by the time they reach the
- * client. There is no raw-bytes read for a project file: `/files/archive`
- * streams real bytes but runs `git archive --format=zip <ref>:<path>`, which
- * needs a TREE and fails for a single file.
- *
- * So every binary category is unpreviewable on this surface — PDF, image,
- * docx, video, and (since archives became browsable) zip. Consumers see the
- * message below rather than a mangled text render.
- *
- * TODO: add `GET /projects/:id/files/raw` (git cat-file blob) + its audit
- * label and routes.generated.json entry, an SDK fetch, and swap this stub for
- * it. That one endpoint unblocks every category above at once.
- */
+import { useEffect, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { fetchProjectFileRaw } from '@kortix/sdk';
+import { useProjectContext } from '../context';
+import { toRepoRelative } from '../api/runtime-files';
 
 export const binaryBlobKeys = {
   all: ['project-files', 'binary-blob'] as const,
@@ -27,21 +12,76 @@ export const binaryBlobKeys = {
     ['project-files', 'binary-blob', projectId, ref, filePath] as const,
 };
 
-export function useBinaryBlob(_filePath: string | null): {
+/**
+ * Load a project file as a Blob of its exact bytes, via React Query.
+ *
+ * This used to be a stub: `GET /projects/:id/files/content` carries `git show`
+ * stdout as a UTF-8 string, so bytes that are not valid UTF-8 were already
+ * lossy by the time they reached the client and every binary category — PDF,
+ * image, docx, video, zip — was unpreviewable on the project files page (and
+ * in a parked session, which reads the same git mirror). `GET /files/raw`
+ * streams the real bytes now, so this fetches them.
+ *
+ * Returns both a blob URL (for <video>, <audio>, PdfRenderer) and the raw Blob
+ * (for DocxRenderer, PptxRenderer). The Blob URL is derived per-mount and
+ * revoked on unmount or when the underlying Blob changes; the raw Blob stays
+ * in the React Query cache. A committed git ref is immutable, so there is no
+ * turn-end invalidation here — nothing to keep fresh.
+ */
+export function useBinaryBlob(filePath: string | null): {
   blobUrl: string | null;
   blob: Blob | null;
   isLoading: boolean;
   error: string | null;
 } {
+  const ctx = useProjectContext();
+  const projectId = ctx?.projectId ?? '';
+  const ref = ctx?.ref ?? '';
+
+  const query = useQuery<Blob>({
+    queryKey: filePath ? binaryBlobKeys.file(projectId, ref, filePath) : [],
+    queryFn: async ({ signal }) => {
+      const blob = await fetchProjectFileRaw(projectId, toRepoRelative(filePath!), ref, signal ? { signal } : undefined);
+      if (blob.size === 0) {
+        throw new Error('File is empty (0 bytes).');
+      }
+      return blob;
+    },
+    enabled: !!projectId && !!ref && !!filePath,
+    staleTime: 5 * 60_000,
+    gcTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+    retry: (failureCount, error: Error) => {
+      const msg = error.message.toLowerCase();
+      if (msg.includes('404') || msg.includes('not found') || msg.includes('403')) return false;
+      return failureCount < 3;
+    },
+    retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 5000),
+  });
+
+  const cachedBlob = query.data ?? null;
+
+  // Blob URL — derived per-mount, revoked on unmount or when the Blob changes.
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!cachedBlob) {
+      setBlobUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(cachedBlob);
+    setBlobUrl(url);
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  }, [cachedBlob]);
+
   return useMemo(
     () => ({
-      blobUrl: null,
-      blob: null,
-      isLoading: false,
-      // User-facing: this string is rendered verbatim as the viewer's error
-      // body, and Download is a real control in the toolbar beside it.
-      error: "This file can't be previewed here yet — download it to open it.",
+      blobUrl,
+      blob: cachedBlob,
+      isLoading: query.isLoading,
+      error: query.error?.message ?? null,
     }),
-    [],
+    [blobUrl, cachedBlob, query.isLoading, query.error?.message],
   );
 }

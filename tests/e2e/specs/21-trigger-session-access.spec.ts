@@ -53,9 +53,12 @@ async function openTriggerAccess(page: Page, projectId: string) {
   await panel.getByRole('button', { name: 'Access policy UI', exact: true }).click();
   const sheet = page.getByRole('dialog', { name: 'Access policy UI', exact: true });
   await expect(sheet).toBeVisible();
-  const section = sheet.locator('section', { hasText: 'Session access' });
+  // Session access sits in the folded Options block of the sheet's form.
+  await sheet.getByRole('button', { name: 'Options' }).click();
+  // Options is itself a section that holds this one: the innermost match is the field.
+  const section = sheet.locator('section', { hasText: 'Session access' }).last();
   await expect(section).toBeVisible();
-  await expect(section.getByRole('heading', { name: 'Session access', exact: true })).toBeVisible();
+  await expect(section.getByText('Session access', { exact: true })).toBeVisible();
   return { panel, section, sheet };
 }
 
@@ -231,7 +234,8 @@ test.describe('21 — Session access UI', () => {
           response.request().method() === 'PATCH' &&
           response.url().endsWith(`/v1/projects/${projectId}/triggers/access-policy-ui`),
       );
-      await section.getByRole('button', { name: 'Save', exact: true }).click();
+      // One footer saves the whole form: only the changed field travels.
+      await page.getByRole('dialog', { name: 'Access policy UI', exact: true }).getByRole('button', { name: 'Save changes' }).click();
       expect((await patchRequest).postDataJSON()).toEqual({
         session_access: {
           mode: 'members',
@@ -330,7 +334,8 @@ test.describe('21 — Session access UI', () => {
         await page.goto(`/projects/${projectId}/customize/triggers`, { waitUntil: 'domcontentloaded' });
         await dismissOnboarding(page);
         const row = page.getByRole('row', { name: /Inbox triage/ });
-        await expect(row.getByText('Last run didn’t finish', { exact: true })).toBeVisible();
+        // The row carries the Error badge; the reason is in the sheet's callout.
+        await expect(row.getByText('Error', { exact: true })).toBeVisible();
         await row.getByRole('button', { name: 'Inbox triage', exact: true }).click();
         const sheet = page.getByRole('dialog', { name: 'Inbox triage', exact: true });
         await expect(sheet.getByText('Last run didn’t finish', { exact: true })).toBeVisible();
@@ -518,7 +523,7 @@ test.describe('21 — Session access UI', () => {
     } finally {
       if (project) await project.dispose().catch(() => {});
       if (accountId) {
-        await api(ownerSession.access_token, 'DELETE', '/billing/account/delete-immediately', {
+        await api(ownerSession.access_token, 'DELETE', '/account/delete-immediately', {
           account_id: accountId,
         }).catch(() => {});
       }

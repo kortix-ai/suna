@@ -41,5 +41,3 @@ export function sanitizeSandboxEnv(env: Record<string, string>): {
   }
   return { env: out, names: Object.keys(out).sort() };
 }
-
-export { RESERVED_SANDBOX_ENV_NAMES };

@@ -1,11 +1,13 @@
 import { sessionSandboxes } from '@kortix/db';
+import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { type SandboxProviderName, config } from '../../config';
 import { getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
 import { isAlreadyNotRunning, isLifecycleTransitionInProgress } from '../reaping/policy';
 import { applyStoppedState } from '../reaping/sandbox-state-sync';
-import { abortLiveTurnBeforeStop } from '../reaping/stop-box';
+import { claimManualSandboxStop, releaseSandboxStopClaim } from '../reaping/box-queries';
+import { abortLiveTurnBeforeStop, flushDriveSyncBeforeStop, retireEphemeralOnStop } from '../reaping/stop-box';
 import { RUNTIME_WAKE_LATE_START_GUARD_MS, runtimeWakeInProgress } from './runtime-wake-fence';
 
 /**
@@ -111,6 +113,17 @@ export async function stopSession(input: {
       now,
     });
   }
+  // Claim the row BEFORE the abort. The abort, the transcript tail and
+  // provider.stop span 3 to 7 s, and a prompt that lands in that window (a
+  // second tab, a trigger, a channel message) would otherwise start a turn the
+  // power-off then kills with no requeue. While the claim is live,
+  // `beginSandboxTurn` refuses new prompts; `applyStoppedState` strips it.
+  // `cancellingWake` rows are already `stopped`: nothing to claim.
+  const claimToken = randomUUID();
+  if (!cancellingWake && !(await claimManualSandboxStop(sandbox.sandboxId, claimToken, now))) {
+    // Another stop (the idle reaper's, or a second click) owns the row.
+    return { status: 200, body: { ok: true, session_id: sessionId, status: 'stopping' } };
+  }
   // Close the live turn before powering the box off, but only when the box is
   // actually running one: `cancellingWake` means the row is already stopped
   // (a wake was mid-flight), so there is no live opencode process to abort.
@@ -120,6 +133,12 @@ export async function stopSession(input: {
       externalId: sandbox.externalId,
       userId,
     });
+    // Drive sync: the daemon's final push, inside the request budget. Past it
+    // the stop goes ahead; the daemon still pushes on SIGTERM.
+    await within(
+      flushDriveSyncBeforeStop({ ...sandbox, externalId: sandbox.externalId }),
+      Math.max(0, budgetEndsAt - Date.now()),
+    );
     // The turn-end relay can still be in flight. Persist the transcript before
     // powering off the only live reader; capture failures never prevent stop.
     //
@@ -140,6 +159,33 @@ export async function stopSession(input: {
   }
 
   const settle = async (): Promise<{ status: number; body: Record<string, unknown> }> => {
+    try {
+      return await settleStop();
+    } catch (err) {
+      if (!cancellingWake) await releaseSandboxStopClaim(sandbox.sandboxId, claimToken);
+      throw err;
+    }
+  };
+  const settleStop = async (): Promise<{ status: number; body: Record<string, unknown> }> => {
+    // An ephemeral box commits its session volume and is deleted instead of
+    // stopped; its state lives on the volume.
+    if (!cancellingWake) {
+      const retired = await retireEphemeralOnStop({
+        sandboxId: sandbox.sandboxId,
+        sessionId,
+        externalId,
+        stopReason: 'manual',
+        now,
+        metadata: { stoppedBy: userId },
+      });
+      if (retired === 'retired') {
+        return { status: 200, body: { ok: true, session_id: sessionId, status: 'stopped' } };
+      }
+      if (retired === 'error') {
+        await releaseSandboxStopClaim(sandbox.sandboxId, claimToken);
+        return { status: 502, body: { error: 'Failed to stop sandbox' } };
+      }
+    }
     // A transient provider failure gets ONE bounded retry (KRTX-520). The user
     // is holding a Stop button. A degraded platform edge intermittently answers
     // the stop request with a 502/503/504 (an HTML error page), and a backlog
@@ -162,6 +208,7 @@ export async function stopSession(input: {
         const message = err instanceof Error ? err.message : String(err);
         console.warn(`[stop] provider.stop failed for sandbox ${sandbox.sandboxId}: ${message}`);
         if (attempt > 1) {
+          if (!cancellingWake) await releaseSandboxStopClaim(sandbox.sandboxId, claimToken);
           return {
             status: 502,
             body: { error: err instanceof Error ? err.message : 'Failed to stop sandbox' },

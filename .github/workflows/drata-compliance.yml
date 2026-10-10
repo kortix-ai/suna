@@ -18,7 +18,7 @@ on:
     paths:
       - "infra/**"
       - ".github/workflows/drata-compliance.yml"
-  # No push to `main` (Actions minutes, 2026-10-03): the daily schedule scans it.
+  # No push to `dev` (Actions minutes, 2026-10-03): the daily schedule scans it.
   schedule:
     - cron: "37 6 * * *" # 06:37 UTC daily
   pull_request:
@@ -40,13 +40,13 @@ jobs:
   drata-iac-results:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.results_run_id != '' }}
     name: sanitized-finding-details
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     permissions:
       contents: read
       id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
     steps:
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -93,19 +93,19 @@ jobs:
 
   drata-iac-scan:
     name: compliance-as-code-action
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     permissions:
       contents: read
       id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Fork and Dependabot pull requests cannot mint an OIDC token: skip the
       # read there, like GitHub withheld the secret before.
       - name: Check out the aws-env action
         if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -123,7 +123,7 @@ jobs:
         # Blocking. Every finding that is correct by design has a Drata
         # exclusion with its rationale (infra/terraform/compliance-monitoring/
         # README.md, "Drata IaC exclusions"); a new critical finding fails.
-        uses: drata/compliance-as-code-action@v1.0.0
+        uses: drata/compliance-as-code-action@a3085e633f315132c8fe1b5e7e9c40be1c01964c # v1.0.0
         env:
           DRATA_API_TOKEN: ${{ env.DRATA_API_TOKEN || secrets.DRATA_IAC_PIPELINE_KEY }}
           GITHUB_REPOSITORY: ${{ github.repository }}

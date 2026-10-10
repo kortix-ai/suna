@@ -4,9 +4,14 @@ import { useQueries } from '@tanstack/react-query';
 import { probeEffectivePermission, type KortixAccount } from '@kortix/sdk';
 import { useAuth } from '@/features/providers/auth-provider';
 import { permissionProbeKey } from '@kortix/sdk/react';
-import { filterCreatableAccounts } from './new-workspace-form';
+import { canCreateInAccount, filterCreatableAccounts } from './new-workspace-form';
 
-/** Project creation is an account-scoped IAM leaf, not an account-role label. */
+/**
+ * Project creation is an account-scoped IAM leaf, not an account-role label:
+ * the settled probe verdict decides, and `canCreateInAccount` falls back to
+ * the role only while the probe has not answered yet (KRTX-1700 — otherwise a
+ * fresh owner's first /projects render says "ask an admin").
+ */
 export function useCreatableAccounts(accounts: KortixAccount[]): KortixAccount[] {
   const { user } = useAuth();
   const verdicts = useQueries({
@@ -19,6 +24,8 @@ export function useCreatableAccounts(accounts: KortixAccount[]): KortixAccount[]
   });
   return filterCreatableAccounts(
     accounts,
-    Object.fromEntries(accounts.map((account, i) => [account.account_id, verdicts[i]?.data?.allowed === true])),
+    Object.fromEntries(
+      accounts.map((account, i) => [account.account_id, canCreateInAccount(account, verdicts[i]?.data?.allowed)]),
+    ),
   );
 }

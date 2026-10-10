@@ -24,8 +24,12 @@ import {
 import type { SandboxRecord } from '../../sandbox-proxy/backend';
 import { forwardToSandbox } from '../../sandbox-proxy/forward';
 import { sandboxOpencodeEndpoint } from '../opencode-mapping';
+import { MESSAGE_READ_CODE, STEER_NO_ACTIVE_TURN_CODE } from '@kortix/api-contract/runtime-relay';
+import { KORTIX_SERVICE_CALL_HEADER } from '../../shared/kortix-user-context';
 import {
   WORKSPACE,
+  forgetRuntimeCapabilities,
+  runtimeServesRetract,
   runtimeServesTurnVerbs,
   turnVerbMissing,
   runtimeVerbPaths,
@@ -254,19 +258,6 @@ export async function readSessionMessageTip(
   return parsePlacementTip(await res.json().catch(() => null));
 }
 
-/**
- * Delete one message from a session's root transcript. `true` on a confirmed
- * 2xx or a 404 (already gone). A transport failure throws; the caller's catch
- * keeps its own log.
- */
-export async function removeRuntimeMessage(
-  session: ResolvedSessionRuntime,
-  messageId: string,
-): Promise<boolean> {
-  const res = await deleteRuntimeMessage(session, messageId);
-  return res.ok || res.status === 404;
-}
-
 /** `DELETE` one message: 2xx removed, 404 already gone, 409 the loop is running. */
 async function deleteRuntimeMessage(session: ResolvedSessionRuntime, messageId: string): Promise<Response> {
   if (await servesTurnVerbs(session)) {
@@ -274,6 +265,84 @@ async function deleteRuntimeMessage(session: ResolvedSessionRuntime, messageId: 
     if (!turnVerbMissing(session.externalId, res)) return res;
   }
   return sessionRuntimeFetch(session.endpoint, 'DELETE', legacyRuntimePaths.message(session.opencodeSessionId, messageId));
+}
+
+/** What a retract did to one user message of the root transcript. */
+export type RetractOutcome =
+  /** Taken back now: no model call read it. */
+  | { outcome: 'retracted' }
+  /** Not on record: already taken back, or never there. */
+  | { outcome: 'gone' }
+  /** A model call read it (its turn runs or ran), so it stays. */
+  | { outcome: 'read' }
+  /** The runtime refused for any other reason. */
+  | { outcome: 'refused'; status: number; detail: string };
+
+async function refusal(res: Response): Promise<RetractOutcome> {
+  return { outcome: 'refused', status: res.status, detail: (await res.text().catch(() => '')).slice(0, 200) };
+}
+
+/**
+ * Take back one user message no model call has read. A daemon with
+ * `runtime.retract.v1` decides on every harness (pi from its own queue,
+ * OpenCode by removing or emptying the message). An older daemon gets the
+ * delete spelling: the whole message, then `partIds` one by one when the
+ * whole delete is refused, because an OpenCode loop skips a user message with
+ * no parts. Its `409` (the loop runs) reads as `read`, as it always has. A
+ * transport failure throws; the caller's catch keeps its own log.
+ */
+export async function retractRuntimeMessage(
+  session: ResolvedSessionRuntime,
+  messageId: string,
+  partIds: readonly string[] = [],
+): Promise<RetractOutcome> {
+  if (await runtimeServesRetract(session.externalId, async () => session.endpoint)) {
+    const res = await sessionRuntimeFetch(session.endpoint, 'POST', runtimeVerbPaths.retract(session.opencodeSessionId, messageId));
+    if (!turnVerbMissing(session.externalId, res)) {
+      if (res.ok) return { outcome: 'retracted' };
+      if (res.status === 404) return { outcome: 'gone' };
+      if (res.status === 409) {
+        const body = (await res.clone().json().catch(() => null)) as { code?: unknown } | null;
+        if (body?.code === MESSAGE_READ_CODE) return { outcome: 'read' };
+      }
+      return refusal(res);
+    }
+  }
+  const whole = await deleteRuntimeMessage(session, messageId);
+  if (whole.ok) return { outcome: 'retracted' };
+  if (whole.status === 404) return { outcome: 'gone' };
+  if (partIds.length === 0) return whole.status === 409 ? { outcome: 'read' } : refusal(whole);
+  for (const partId of partIds) {
+    const res = await sessionRuntimeFetch(
+      session.endpoint,
+      'DELETE',
+      legacyRuntimePaths.part(session.opencodeSessionId, messageId, partId),
+    );
+    if (!res.ok && res.status !== 404) return refusal(res);
+  }
+  return { outcome: 'retracted' };
+}
+
+/**
+ * Retract one message of a session's root transcript, as the session's
+ * creator. `true` when it is gone (retracted now or not on record). A message
+ * a model call read answers false; any other refusal is logged under
+ * `caller`. A transport failure throws.
+ */
+export async function retractSessionMessage(sessionId: string, messageId: string, caller: string): Promise<boolean> {
+  const resolved = await resolveSessionOpencodeEndpoint(sessionId);
+  if (!resolved) return false;
+  const retracted = await retractRuntimeMessage(resolved, messageId);
+  if (retracted.outcome === 'retracted' || retracted.outcome === 'gone') return true;
+  if (retracted.outcome === 'refused') {
+    logger.warn(`[${caller}] message retract refused`, {
+      session_id: sessionId,
+      message_id: messageId,
+      upstream_status: retracted.status,
+      detail: retracted.detail,
+    });
+  }
+  return false;
 }
 
 /**
@@ -327,31 +396,31 @@ export async function readInboxTranscriptState(
 }
 
 /**
- * Delete a stranded user message from the root transcript, so the re-placed
- * copy is the only one OpenCode — and the model — holds. `true` only on a
- * confirmed 2xx (or a 404: already gone).
+ * Retract a stranded user message from the root transcript, so the re-placed
+ * copy is the only one the runtime — and the model — holds. `true` when it is
+ * gone. A message a model call read stays and answers false: turn-end
+ * reconciliation decides about it. Any other refusal is logged.
  */
-export async function removeStrandedOpencodeMessage(
+export async function retractStrandedMessage(
   row: SessionLifecycleCommandRow,
   wireMessageId: string,
 ): Promise<boolean> {
   try {
     const resolved = await resolveSessionOpencodeEndpoint(row.sessionId, row.actorUserId);
     if (!resolved) return false;
-    const res = await deleteRuntimeMessage(resolved, wireMessageId);
-    if (res.ok || res.status === 404) return true;
-    // 409 = the loop is running (`assertNotBusy`); expected mid-turn.
-    if (res.status !== 409) {
-      console.warn('[session-lifecycle] stranded message delete refused', {
+    const retracted = await retractRuntimeMessage(resolved, wireMessageId);
+    if (retracted.outcome === 'retracted' || retracted.outcome === 'gone') return true;
+    if (retracted.outcome === 'refused') {
+      console.warn('[session-lifecycle] stranded message retract refused', {
         sessionId: row.sessionId,
         commandId: row.commandId,
-        status: res.status,
-        body: (await res.text().catch(() => '')).slice(0, 200),
+        status: retracted.status,
+        body: retracted.detail,
       });
     }
     return false;
   } catch (err) {
-    console.warn('[session-lifecycle] stranded message delete threw', {
+    console.warn('[session-lifecycle] stranded message retract threw', {
       sessionId: row.sessionId,
       commandId: row.commandId,
       error: err instanceof Error ? err.message : String(err),
@@ -484,6 +553,19 @@ export class PromptNeverLandedError extends Error {
   }
 }
 
+/**
+ * Thrown out of a `steer` POST that no running turn took. `turn_ended`: the
+ * daemon answered `409 no_active_turn` (it stored nothing). `unsupported`: the
+ * daemon cannot steer (`501`, or no Kortix turn routes). The caller sends the
+ * row as a Queue List prompt. Not a failed attempt.
+ */
+export class SteerNotTaken extends Error {
+  constructor(readonly reason: 'turn_ended' | 'unsupported') {
+    super(`steer not taken: ${reason}`);
+    this.name = 'SteerNotTaken';
+  }
+}
+
 export async function readLegacyRuntimeMessage(
   input: LegacyRuntimePartTarget & { messageId: string },
 ): Promise<LegacyRuntimeMessage | null> {
@@ -505,9 +587,10 @@ export async function readLegacyRuntimeMessage(
   return (await response.json()) as LegacyRuntimeMessage;
 }
 
+/** `unsupported` when the runtime edits no parts: `501` (pi). Any other refusal throws. */
 export async function updateLegacyRuntimePart(
   input: LegacyRuntimePartTarget & { messageId: string; partId: string; text: string },
-): Promise<void> {
+): Promise<'updated' | 'unsupported'> {
   const body = new TextEncoder().encode(
     JSON.stringify({
       id: input.partId,
@@ -528,9 +611,11 @@ export async function updateLegacyRuntimePart(
     body.buffer as ArrayBuffer,
     config.KORTIX_URL ?? '',
   );
+  if (response.status === 501) return 'unsupported';
   if (!response.ok) {
     throw new Error(`legacy attachment part update failed (${response.status})`);
   }
+  return 'updated';
 }
 
 /**
@@ -589,6 +674,9 @@ export async function postPrompt(
     onBodyBytes?: (bytes: number) => void;
     /** The target's sandbox row, when the delivery already read it. */
     sandboxRecord?: SandboxRecord;
+    /** Hand the message to the RUNNING turn (`POST .../steer`) instead of
+     *  starting one. Kortix route only; throws {@link SteerNotTaken}. */
+    steer?: boolean;
   },
 ): Promise<'accepted' | 'deduplicated' | 'failed' | 'unreachable'> {
   const parts: PromptPartWire[] =
@@ -646,9 +734,14 @@ export async function postPrompt(
   // A daemon that serves the Kortix turn routes gets the Kortix prompt; an
   // older one gets OpenCode's `prompt_async` (legacy-runtime-rest.ts).
   const kortixRoute = await runtimeServesTurnVerbs(externalId, () => sandboxOpencodeEndpoint(externalId, userId));
+  // OpenCode's own REST has no steer verb.
+  if (prompt?.steer && !kortixRoute) throw new SteerNotTaken('unsupported');
   const send = (kortix: boolean) => {
     const target = kortix
-      ? { path: runtimeVerbPaths.prompt(opencodeSessionId), query: '' }
+      ? {
+          path: prompt?.steer ? runtimeVerbPaths.steer(opencodeSessionId) : runtimeVerbPaths.prompt(opencodeSessionId),
+          query: '',
+        }
       : legacyRuntimePaths.prompt(opencodeSessionId, directory);
     const body = new TextEncoder().encode(
       JSON.stringify(
@@ -673,6 +766,10 @@ export async function postPrompt(
       ),
     );
     prompt?.onBodyBytes?.(body.byteLength);
+    // A steer goes to the box DIRECTLY with the service-call mark: kortixd
+    // refuses `/steer` without it, and the user-facing proxy strips it, so no
+    // member can steer around admission's prompter check (D9.3).
+    if (prompt?.steer) return postSteerDirect(externalId, userId, target.path, new TextDecoder().decode(body));
     return forwardToSandbox(
       externalId,
       DAEMON_PORT,
@@ -717,7 +814,11 @@ export async function postPrompt(
   };
   try {
     let res = await send(kortixRoute);
-    if (kortixRoute && turnVerbMissing(externalId, res)) res = await send(false);
+    if (kortixRoute && turnVerbMissing(externalId, res)) {
+      if (prompt?.steer) throw new SteerNotTaken('unsupported');
+      res = await send(false);
+    }
+    if (prompt?.steer) await throwIfSteerNotTaken(externalId, res);
     if (res.ok || res.status === 204) {
       if (res.status === 200) {
         const result = (await res.json().catch(() => null)) as {
@@ -738,7 +839,7 @@ export async function postPrompt(
     if (res.status === 502 || res.status === 503 || res.status === 504) return 'unreachable';
     return 'failed';
   } catch (err) {
-    if (err instanceof PromptDeliveryRefused) throw err;
+    if (err instanceof PromptDeliveryRefused || err instanceof SteerNotTaken) throw err;
     // A connection refused/reset while the sandbox finishes resuming — treat as a
     // retryable miss (the deliver loop will heal + retry) instead of letting it
     // bubble up and silently drop the turn.
@@ -747,4 +848,22 @@ export async function postPrompt(
     // reasoning as the 502/503/504 branch above.
     return 'unreachable';
   }
+}
+
+/** The two steer answers that mean "send it as a prompt instead". */
+async function throwIfSteerNotTaken(externalId: string, res: Response): Promise<void> {
+  if (res.status === 501) {
+    forgetRuntimeCapabilities(externalId);
+    throw new SteerNotTaken('unsupported');
+  }
+  if (res.status !== 409) return;
+  const body = (await res.clone().json().catch(() => null)) as { code?: unknown } | null;
+  if (body?.code === STEER_NO_ACTIVE_TURN_CODE) throw new SteerNotTaken('turn_ended');
+}
+
+/** `POST .../steer` straight to the box, as the platform (see `postPrompt`). No endpoint: 503. */
+async function postSteerDirect(externalId: string, userId: string, path: string, body: string): Promise<Response> {
+  const endpoint = await sandboxOpencodeEndpoint(externalId, userId);
+  if (!endpoint) return new Response(null, { status: 503 });
+  return sessionRuntimeFetch(endpoint, 'POST', path, { headers: { [KORTIX_SERVICE_CALL_HEADER]: '1' }, body }, 30_000);
 }

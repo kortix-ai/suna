@@ -18,20 +18,6 @@ export interface LiveTurn {
   originatingEvent: SlackEvent;
 }
 
-export interface PendingAsk {
-  askId: string;
-  questions: QuestionInfo[];
-  resolve: (answers: string[][]) => void;
-  expiry: number;
-  channel: string;
-  messageTs: string | null;
-  token: string;
-  sessionId: string;
-  projectId: string;
-  teamId: string;
-  originatingEvent: SlackEvent;
-}
-
 export type ProjectResolution =
   | { kind: 'project'; projectId: string }
   | { kind: 'ambiguous'; projectIds: string[] }
@@ -61,7 +47,7 @@ export interface SlashCtx {
   projectScopedProjectId?: string;
 }
 
-export type EventClass = 'mention' | 'dm' | 'follow_up' | 'ignore';
+export type EventClass = 'mention' | 'dm' | 'ignore';
 
 export interface HomeProjectRow { projectId: string; name: string; repoUrl: string }
 export interface HomeRecentRow { projectId: string; lastMessageAt: Date; threadId: string }

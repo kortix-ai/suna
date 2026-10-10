@@ -8,7 +8,6 @@ import {
 } from './runtime-prompt-file';
 export {
   buildPromptAttachmentReference,
-  type PromptAttachmentReference,
 } from './prompt-attachment-reference';
 import { buildPromptAttachmentReference } from './prompt-attachment-reference';
 

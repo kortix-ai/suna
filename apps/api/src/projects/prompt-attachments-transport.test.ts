@@ -187,9 +187,12 @@ test('begin in direct mode returns a public-origin signed upload URL', async () 
   expect(JSON.stringify(handle)).not.toContain('supabase-kong');
 });
 
-test('begin stores unsupported MIME as binary and preserves native image/PDF types', async () => {
+test('begin stores unsupported MIME as binary and preserves native image/PDF and text/plain types', async () => {
   for (const [declared, expected] of [
     ['text/html', 'application/octet-stream'],
+    ['text/plain', 'text/plain'],
+    ['text/plain; charset=utf-8', 'text/plain'],
+    ['text/markdown', 'application/octet-stream'],
     ['image/svg+xml', 'application/octet-stream'],
     ['image/png; charset=binary', 'image/png'],
     ['application/pdf', 'application/pdf'],

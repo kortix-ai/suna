@@ -76,9 +76,6 @@ mock.module('../../projects/lib/turn-start-convergence', () => ({
   // network, same reasoning as `convergeBeforeTurnStart` above.
   convergeModelCatalogForTurnStart: async () => ({ decision: 'skipped' }),
 }));
-mock.module('../../projects/opencode-session-snapshot', () => ({
-  scheduleOpencodeSnapshotSync: () => {},
-}));
 const realTurnLifecycle = await import('../../projects/sandbox-turn-lifecycle');
 // The ledger identity the proxy begins the turn under.
 let begunTurns: Array<{ runtimeSessionId: string; messageId: string | null }> = [];
@@ -305,6 +302,46 @@ describe('forwardToSandbox — a sandbox-down 400 on the LAST attempt releases t
     expect(fetchCalls).toBe(1);
     expect(retry.status).toBe(200);
     expect(await retry.json()).not.toEqual({ status: 'duplicate', deduplicated: true });
+  });
+});
+
+describe('forwardToSandbox — every definitive non-delivery releases the dedupe claim (05#2)', () => {
+  const retryReaches = async (key: string, first: () => Response) => {
+    const args = [
+      'sb-1', 8000, principal, 'POST', '/session/sess-1/message', '', jsonHeaders({ 'idempotency-key': key }),
+      PROMPT_BODY, 'http://app.local',
+    ] as const;
+    queueFetch(first());
+    const firstRes = await forwardToSandbox(...args);
+    queueFetch(new Response('{"ok":true}', { status: 200 }));
+    const retry = await forwardToSandbox(...args);
+    return { firstRes, retry, retryFetches: fetchCalls };
+  };
+
+  test('a daemon 4xx: the same-key retry reaches the sandbox, not a bogus duplicate', async () => {
+    const { firstRes, retry, retryFetches } = await retryReaches('rel-4xx', () => new Response('{"error":"bad"}', { status: 422 }));
+    expect(firstRes.status).toBe(422);
+    expect(retryFetches).toBe(1);
+    expect(await retry.json()).not.toEqual({ status: 'duplicate', deduplicated: true });
+  });
+
+  test('a 3xx: the same-key retry reaches the sandbox', async () => {
+    const { retryFetches, retry } = await retryReaches('rel-3xx', () => new Response(null, { status: 302, headers: { location: '/x' } }));
+    expect(retryFetches).toBe(1);
+    expect(await retry.json()).not.toEqual({ status: 'duplicate', deduplicated: true });
+  });
+
+  test('a rejected signed user context (401): the same-key retry reaches the sandbox', async () => {
+    const { firstRes, retryFetches, retry } = await retryReaches('rel-401', () => new Response('no', { status: 401 }));
+    expect(firstRes.status).toBe(502);
+    expect(retryFetches).toBe(1);
+    expect(await retry.json()).not.toEqual({ status: 'duplicate', deduplicated: true });
+  });
+
+  test('an ambiguous 5xx keeps the claim: the retry is still deduped', async () => {
+    const { retryFetches, retry } = await retryReaches('keep-5xx', () => new Response('bad gateway', { status: 502 }));
+    expect(retryFetches).toBe(0);
+    expect(await retry.json()).toEqual({ status: 'duplicate', deduplicated: true });
   });
 });
 

@@ -109,6 +109,9 @@ export async function notifyConnectorSession(
     // `enqueueContinueSessionCommand` de-dupes on this key with
     // onConflictDoNothing, so the race is settled in the database rather than by
     // hoping only one caller wins.
+    const idempotencyKey = account
+      ? `connector-connected:${sessionId}:${slug}:${account.connectionId}`
+      : `connector-connected:${sessionId}:${slug}`;
     await enqueueContinueSessionCommand({
       source: 'system:connector-connected',
       projectId,
@@ -118,11 +121,10 @@ export async function notifyConnectorSession(
       text: connectorConnectedPrompt(slug, app, account),
       // Per account when one is named: a second account on the same connector
       // is a new event, not a duplicate of the first.
-      idempotencyKey: account
-        ? `connector-connected:${sessionId}:${slug}:${account.connectionId}`
-        : `connector-connected:${sessionId}:${slug}`,
+      idempotencyKey,
     });
-    drainSessionLifecycleQueue({ limit: 1 }).catch(() => {});
+    // Targeted: an untargeted kick delivers whichever row is oldest-due.
+    drainSessionLifecycleQueue({ idempotencyKey, burst: false }).catch(() => {});
     console.info('[connectors] connector connected, session notified', { sessionId, slug });
   } catch (err) {
     console.warn('[connectors] failed to notify session of connector connect:', err);

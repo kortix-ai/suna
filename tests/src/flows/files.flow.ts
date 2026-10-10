@@ -58,6 +58,16 @@ flow(
         r.status(200).body().has("$.path", firstFile.path).exists("$.content");
       });
     }
+    await ctx.step("a path the repository does not hold → 404 File not found, never a 500", async () => {
+      (await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/files/content", { params: { projectId: p.id }, query: { path: "ke2e-no-such-file.txt" } }))
+        .status(404).body().has("$.error", "File not found");
+    });
+    await ctx.step("absolute and traversal paths → 404 File not found", async () => {
+      for (const path of ["/workspace/AGENTS.md", "../etc/passwd"]) {
+        (await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/files/content", { params: { projectId: p.id }, query: { path } }))
+          .status(404).body().has("$.error", "File not found");
+      }
+    });
     await ctx.step("ANON → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
@@ -148,11 +158,15 @@ flow(
   { domain: "files", routes: ["GET /v1/projects/:projectId/files/archive"] },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
-    await ctx.step("repo archive (no path) → 200 zip stream", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/files/archive", { params: { projectId: p.id } });
-      r.status([200, 400]);
+    await ctx.step("repo archive (no path) → 200 workspace.zip", async () => {
+      (await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/files/archive", { params: { projectId: p.id } }))
+        .status(200)
+        .headerEquals("content-type", "application/zip")
+        .headerEquals("content-disposition", 'attachment; filename="workspace.zip"');
+    });
+    await ctx.step("an absolute archive path → 400 Invalid path", async () => {
+      (await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/files/archive", { params: { projectId: p.id }, query: { path: "/workspace" } }))
+        .status(400).body().has("$.error", "Invalid path");
     });
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client
@@ -295,12 +309,12 @@ flow(
   "FILE-11",
   {
     domain: "files",
-    routes: ["GET /v1/projects/:projectId/files", "GET /v1/projects/:projectId/files/content"],
+    routes: ["GET /v1/projects/:projectId/files", "GET /v1/projects/:projectId/files/content", "GET /v1/projects/:projectId/files/archive"],
   },
   async (ctx) => {
     if (ctx.env.target !== "local") return; // deployed pushes go through the git proxy; local pushes hit the bare repo
     const { execFileSync } = await import("node:child_process");
-    const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
+    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");
     const { join } = await import("node:path");
     const { Client: PgClient } = await import("pg");
@@ -322,6 +336,8 @@ flow(
         git("clone", "-q", "--branch", base, repoUrl, ".");
         git("checkout", "-q", "-b", branch);
         writeFileSync(join(work, "fresh.txt"), "pushed just now\n");
+        mkdirSync(join(work, "docs"));
+        writeFileSync(join(work, "docs/guide.md"), "guide\n");
         git("add", "-A");
         git("-c", "user.name=KE2E", "-c", "user.email=ke2e@kortix.invalid", "commit", "-qm", "fresh");
         git("push", "-q", "origin", `HEAD:refs/heads/${branch}`);
@@ -334,6 +350,16 @@ flow(
         list.status(200);
         if (!list.json<Array<{ path: string }>>().some((e) => e.path === "fresh.txt")) throw new Error("fresh.txt missing from the branch listing");
       });
+      await ctx.step("list and archive a subtree at that ref → only its files; a zip named after the folder", async () => {
+        const list = await owner.get("/v1/projects/:projectId/files", { params: { projectId: p.id }, query: { ref: branch, path: "docs" } });
+        list.status(200);
+        const paths = list.json<Array<{ path: string }>>().map((e) => e.path);
+        if (!paths.some((x) => x.endsWith("guide.md")) || paths.some((x) => x.endsWith("fresh.txt"))) throw new Error(`subtree listing: ${JSON.stringify(paths)}`);
+        (await owner.get("/v1/projects/:projectId/files/archive", { params: { projectId: p.id }, query: { ref: branch, path: "docs" } }))
+          .status(200)
+          .headerEquals("content-type", "application/zip")
+          .headerEquals("content-disposition", 'attachment; filename="docs.zip"');
+      });
       await ctx.step("an unknown branch → 404", async () => {
         const r = await owner.get("/v1/projects/:projectId/files/content", {
           params: { projectId: p.id },
@@ -345,5 +371,137 @@ flow(
       rmSync(work, { recursive: true, force: true });
       await db.end();
     }
+  },
+);
+
+flow(
+  "FILE-12",
+  { domain: "files", routes: ["GET /v1/projects/:projectId/files/raw"] },
+  async (ctx) => {
+    const p = await ctx.fixtures.sharedProject();
+    const tree = await ctx.client
+      .as(ctx.P.OWNER)
+      .get("/v1/projects/:projectId/files", { params: { projectId: p.id } });
+    const entries = tree.json<Array<{ path: string; type?: string }>>() ?? [];
+    const firstFile = entries.find((e) => e && e.type !== "tree" && e.type !== "dir" && e.path);
+
+    await ctx.step("absent path param → 400", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/files/raw", { params: { projectId: p.id } });
+      r.status(400);
+    });
+    if (firstFile) {
+      await ctx.step("known file path → 200 whose bytes decode to the content read", async () => {
+        const raw = await ctx.client
+          .as(ctx.P.OWNER)
+          .get("/v1/projects/:projectId/files/raw", {
+            params: { projectId: p.id },
+            query: { path: firstFile.path },
+          });
+        raw.status(200);
+        const text = await ctx.client
+          .as(ctx.P.OWNER)
+          .get("/v1/projects/:projectId/files/content", {
+            params: { projectId: p.id },
+            query: { path: firstFile.path },
+          });
+        text.status(200);
+        // The byte route and the string route answer the same text file.
+        if (raw.text() !== text.json<{ content: string }>().content) {
+          throw new Error("raw bytes do not match the content read");
+        }
+      });
+    }
+    await ctx.step("a missing path → 404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get("/v1/projects/:projectId/files/raw", {
+          params: { projectId: p.id },
+          query: { path: "ke2e-no-such-file.bin" },
+        });
+      r.status(404);
+    });
+    await ctx.step("ANON → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/projects/:projectId/files/raw", {
+          params: { projectId: p.id },
+          query: { path: "README.md" },
+        });
+      r.status(401);
+    });
+  },
+);
+
+/**
+ * FILE-13 — the Files tree lists every folder, however many files sort before
+ * it (KRTX-1723). The recursive list stops at 1,000 files, and the tree built
+ * from it lost every folder past file 1,000. `depth=1` lists one level,
+ * complete; the recursive list says when it is cut.
+ */
+flow(
+  "FILE-13",
+  { domain: "files", requires: ["database"], routes: ["GET /v1/projects/:projectId/files"] },
+  async (ctx) => {
+    if (ctx.env.target !== "local") return;
+    const { mkdtemp, mkdir, rm, writeFile } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { execFileSync } = await import("node:child_process");
+    const { Client: PgClient } = await import("pg");
+    const project = await ctx.fixtures.project({ managedGit: true });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { projectId: project.id };
+
+    await ctx.step("the repository holds 1,200 files under a/ and one under z/", async () => {
+      const databaseUrl = ctx.env.databaseUrl!;
+      const db = new PgClient({
+        connectionString: databaseUrl,
+        ssl: /localhost|127\.0\.0\.1/.test(databaseUrl) ? false : { rejectUnauthorized: false },
+      });
+      await db.connect();
+      const { rows } = await db.query("SELECT repo_url, default_branch FROM kortix.projects WHERE project_id = $1", [project.id]);
+      await db.end();
+      const work = await mkdtemp(join(tmpdir(), "ke2e-file13-"));
+      try {
+        const git = (...args: string[]) => execFileSync("git", args, { cwd: work, stdio: "pipe" });
+        git("clone", "-q", "--branch", rows[0].default_branch || "main", rows[0].repo_url, ".");
+        await mkdir(join(work, "a"));
+        await mkdir(join(work, "z"));
+        for (let i = 0; i < 1200; i++) await writeFile(join(work, "a", `f${String(i).padStart(4, "0")}.txt`), `${i}\n`);
+        await writeFile(join(work, "z", "last.txt"), "last\n");
+        git("add", "-A");
+        git("-c", "user.name=KE2E", "-c", "user.email=ke2e@kortix.invalid", "commit", "-qm", "1,201 files");
+        git("push", "-q", "origin", `HEAD:refs/heads/${rows[0].default_branch || "main"}`);
+      } finally {
+        await rm(work, { recursive: true, force: true });
+      }
+    });
+
+    await ctx.step("depth=1 at the root lists every top-level folder and file", async () => {
+      const r = await owner.get("/v1/projects/:projectId/files", { params, query: { depth: "1" } });
+      r.status(200).body().has("$.truncated", false);
+      const entries = r.json<{ entries: Array<{ path: string; type: string }> }>().entries;
+      const want = [{ path: "a", type: "directory" }, { path: "z", type: "directory" }, { path: "README.md", type: "file" }];
+      for (const entry of want) {
+        if (!entries.some((e) => e.path === entry.path && e.type === entry.type)) throw new Error(`root lacks ${entry.path}`);
+      }
+    });
+
+    await ctx.step("depth=1 lists a 1,200-file folder whole, and the folder that sorts after it", async () => {
+      const a = await owner.get("/v1/projects/:projectId/files", { params, query: { path: "a", depth: "1" } });
+      a.status(200).body().has("$.truncated", false);
+      if (a.json<{ entries: unknown[] }>().entries.length !== 1200) throw new Error("a/ is not complete");
+      const z = await owner.get("/v1/projects/:projectId/files", { params, query: { path: "z", depth: "1" } });
+      z.status(200).body().has("$.entries[0].path", "z/last.txt");
+    });
+
+    await ctx.step("the recursive list is cut at 1,000 and says so", async () => {
+      const r = await owner.get("/v1/projects/:projectId/files", { params });
+      r.status(200);
+      if (r.json<unknown[]>().length !== 1000) throw new Error(`recursive list returned ${r.json<unknown[]>().length}`);
+      if (r.header("x-kortix-truncated") !== "1") throw new Error("the cut list carries no X-Kortix-Truncated");
+    });
   },
 );

@@ -18,6 +18,7 @@ import {
   sessionUsesCurrentRepository,
 } from '../lib/repository-generation';
 import { backfillSessionTranscriptMirrorOnWake } from '../lib/session-transcript-capture';
+import { readJsonObject } from '../../shared/http-body';
 import { isUuid } from '../../shared/validate';
 import { restartSession, startSession, stopSession } from '../session-lifecycle';
 import { START_AWAIT_MAX_MS } from '../session-lifecycle/await-stage';
@@ -45,6 +46,7 @@ export function registerSessionRuntimeRoutes(): void {
         query: z.object({
           wait_ms: z.string().optional(),
           repository_mode: z.enum(['previous']).optional(),
+          keep_stopped: z.enum(['1']).optional(),
         }),
       },
       responses: {
@@ -158,6 +160,8 @@ export function registerSessionRuntimeRoutes(): void {
         projectId,
         sessionId,
         waitMs,
+        keepStopped: c.req.query('keep_stopped') === '1',
+        signal: c.req.raw.signal,
       });
       stl.mark(`open-session:${result.start.stage}`);
       // THE RUNTIME IS UP — mirror what is already in it, once.
@@ -201,6 +205,18 @@ export function registerSessionRuntimeRoutes(): void {
       ...auth,
       request: {
         params: z.object({ projectId: z.string(), sessionId: z.string() }),
+        body: {
+          required: false,
+          content: {
+            'application/json': {
+              schema: z.object({
+                // Persistent machines only: discard the disk and boot a fresh box
+                // from the current image (the session's branch is restored).
+                reset_machine: z.boolean().optional(),
+              }),
+            },
+          },
+        },
       },
       responses: {
         202: json(z.any(), 'OK'),
@@ -231,11 +247,13 @@ export function registerSessionRuntimeRoutes(): void {
           403,
         );
       }
+      const body = await readJsonObject(c);
       const result = await restartSession({
         loaded,
         session: visible.row,
         projectId,
         sessionId,
+        resetMachine: body.reset_machine === true,
       });
       return c.json(result.body, result.status as any);
     },

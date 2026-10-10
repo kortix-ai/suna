@@ -229,7 +229,7 @@ export const KORTIX_PERMISSIONS_CATALOG: { group: string; actions: string[] }[] 
   },
   {
     group: 'Apps',
-    actions: ['project.app.read', 'project.app.write', 'project.app.deploy'],
+    actions: ['project.app.read', 'project.app.write', 'project.app.deploy', 'project.app.admin'],
   },
   {
     group: 'Review',

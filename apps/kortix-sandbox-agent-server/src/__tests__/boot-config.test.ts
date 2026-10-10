@@ -40,7 +40,7 @@ import {
   releaseDir,
   verifyRelease,
   type ReleaseManifest,
-} from '@/services/config-release/boot-config'
+} from '@/services/config-provider/boot-config'
 import { buildRelease, commitAll, git, initRepo, write, type BuiltRelease } from './helpers/config-release-fixtures'
 
 const REL = '.kortix/opencode'

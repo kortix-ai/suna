@@ -20,6 +20,7 @@ const source = readFileSync(join(import.meta.dir, 'connector-modal.tsx'), 'utf8'
 const TAB_COMPONENT: Record<ConnectorTab, string> = {
   accounts: 'ConnectorAccounts',
   tools: 'ConnectorTools',
+  triggers: 'ConnectorTriggers',
   settings: 'ConnectorSettings',
 };
 

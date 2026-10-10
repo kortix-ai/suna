@@ -3,11 +3,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
-import {
-  SPILL_THRESHOLD_BYTES,
-  jsonShape,
-  spillLargeResult,
-} from '../connector-gateway/result-spill';
+import { jsonShape } from '../connector-gateway/result-spill';
 
 /**
  * A large connector result must reach the model as a path plus a summary.
@@ -77,65 +73,6 @@ describe('jsonShape', () => {
     expect(jsonShape({ a: { b: { c: { d: { e: 1, f: 2 } } } } })).toEqual({
       a: { b: { c: { d: '{e,f}' } } },
     });
-  });
-});
-
-describe('spillLargeResult', () => {
-  let root: string;
-  beforeAll(() => {
-    root = mkdtempSync(join(tmpdir(), 'kortix-spill-'));
-  });
-  afterAll(() => rmSync(root, { recursive: true, force: true }));
-
-  test('a result at or under the threshold is returned untouched', async () => {
-    const small = issuesPage(2);
-    expect(JSON.stringify(small, null, 2).length).toBeLessThan(SPILL_THRESHOLD_BYTES);
-    expect(await spillLargeResult(small, { connector: 'linear', action: 'issues', workspaceRoot: root })).toBe(small);
-    expect(readdirSync(root)).toEqual([]);
-  });
-
-  test('a large result is saved in full and replaced by a compact summary', async () => {
-    const big = issuesPage(400);
-    const text = JSON.stringify(big, null, 2);
-    expect(text.length).toBeGreaterThan(80_000);
-
-    const compact = (await spillLargeResult(big, {
-      connector: 'linear',
-      action: 'graphql.issues',
-      workspaceRoot: root,
-    })) as Record<string, unknown>;
-
-    const dir = join(root, '.kortix', 'state', 'connector-results');
-    expect(compact.saved_to).toStartWith(`${dir}/`);
-    expect(compact.saved_to).toMatch(/-linear-graphql\.issues-[0-9a-f]{8}\.json$/);
-    expect(JSON.parse(readFileSync(compact.saved_to as string, 'utf8'))).toEqual(big);
-    expect(compact.bytes).toBe(Buffer.byteLength(text));
-    // The envelope survives; only `data` is replaced.
-    expect(compact).toMatchObject({ ok: true, status: 'ok', risk: 'read', account: big.account });
-    expect(compact.data).toBeUndefined();
-    expect(compact.shape).toEqual({
-      issues: {
-        nodes: 'array(400) of {id,identifier,title,state}',
-        pageInfo: { hasNextPage: true, endCursor: 'cursor-400' },
-      },
-    });
-    expect((compact.preview as string).length).toBeLessThanOrEqual(2048);
-    expect(JSON.stringify(big)).toStartWith(compact.preview as string);
-    expect(compact.hint).toContain(`jq`);
-    expect(compact.hint).toContain(compact.saved_to as string);
-    expect(JSON.stringify(compact).length).toBeLessThan(4096);
-    // The results dir ignores itself so a spill never dirties the git tree.
-    expect(readFileSync(join(dir, '.gitignore'), 'utf8')).toBe('*\n');
-  });
-
-  test('an unwritable root falls back to the full inline result', async () => {
-    const big = issuesPage(400);
-    const result = await spillLargeResult(big, {
-      connector: 'linear',
-      action: 'issues',
-      workspaceRoot: '/dev/null/not-a-dir',
-    });
-    expect(result).toBe(big);
   });
 });
 
@@ -222,49 +159,5 @@ describe('real processes against a stub gateway', () => {
     const { code, stdout } = await run(['connectors', 'call', 'linear.issues', '--project', PROJECT_ID]);
     expect(code).toBe(0);
     expect(JSON.parse(stdout)).toEqual(payload);
-  });
-
-  async function mcpCall() {
-    const requests = [
-      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
-      {
-        jsonrpc: '2.0',
-        id: 2,
-        method: 'tools/call',
-        params: { name: 'call', arguments: { connector: 'linear', action: 'issues' } },
-      },
-    ];
-    const { stdout } = await run(
-      ['connectors', 'mcp'],
-      `${requests.map((r) => JSON.stringify(r)).join('\n')}\n`,
-    );
-    const response = stdout
-      .split('\n')
-      .filter((line) => line.trim())
-      .map((line) => JSON.parse(line))
-      .find((entry) => entry.id === 2);
-    return {
-      text: response.result.content[0].text as string,
-      isError: response.result.isError as boolean,
-    };
-  }
-
-  test('MCP: a large call result comes back as saved_to + shape + preview', async () => {
-    payload = issuesPage(400);
-    const { text, isError } = await mcpCall();
-
-    expect(isError).toBe(false);
-    expect(text.length).toBeLessThan(4096);
-    const compact = JSON.parse(text);
-    expect(compact.saved_to).toStartWith(join(workspace, '.kortix', 'state', 'connector-results'));
-    expect(JSON.parse(readFileSync(compact.saved_to, 'utf8'))).toEqual(payload);
-    expect(compact.shape.issues.nodes).toBe('array(400) of {id,identifier,title,state}');
-  });
-
-  test('MCP: a small call result is returned inline, unchanged', async () => {
-    payload = issuesPage(2);
-    const { text, isError } = await mcpCall();
-    expect(isError).toBe(false);
-    expect(JSON.parse(text)).toEqual(payload);
   });
 });

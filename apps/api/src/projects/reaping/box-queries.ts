@@ -138,6 +138,23 @@ export async function countReapCandidates(
   }
 }
 
+function stopClaimSet(token: string, now: Date) {
+  return {
+    metadata: sql`jsonb_set(
+        CASE
+          WHEN jsonb_typeof(${sessionSandboxes.metadata}) = 'object'
+            THEN ${sessionSandboxes.metadata}
+          ELSE '{}'::jsonb
+        END,
+        '{lifecycleStopClaim}',
+        jsonb_build_object(
+          'token', ${token}::text,
+          'claimedAtMs', ${now.getTime()}::bigint),
+        true)`,
+    updatedAt: now,
+  };
+}
+
 /**
  * Linearize an idle stop against prompt delivery.
  *
@@ -152,20 +169,7 @@ export async function claimExpiredSandboxStop(
 ): Promise<boolean> {
   const [claimed] = await db
     .update(sessionSandboxes)
-    .set({
-      metadata: sql`jsonb_set(
-        CASE
-          WHEN jsonb_typeof(${sessionSandboxes.metadata}) = 'object'
-            THEN ${sessionSandboxes.metadata}
-          ELSE '{}'::jsonb
-        END,
-        '{lifecycleStopClaim}',
-        jsonb_build_object(
-          'token', ${token}::text,
-          'claimedAtMs', ${now.getTime()}::bigint),
-        true)`,
-      updatedAt: now,
-    })
+    .set(stopClaimSet(token, now))
     .where(
       and(
         eq(sessionSandboxes.sandboxId, sandboxId),
@@ -181,6 +185,32 @@ export async function claimExpiredSandboxStop(
                 END) entry
                WHERE entry.key = entry.value->>'token'
                  AND entry.value->>'state' IN ('delivering', 'active'))`,
+      ),
+    )
+    .returning({ sandboxId: sessionSandboxes.sandboxId });
+  return Boolean(claimed);
+}
+
+/**
+ * The user's Stop claims the row before it aborts the turn. Unlike the idle
+ * claim it ignores the deadline and live turns: a human chose to end them. It
+ * still refuses a row another stop already claims. Once it commits,
+ * `beginSandboxTurn` refuses a new prompt, so none lands between the abort and
+ * `provider.stop`.
+ */
+export async function claimManualSandboxStop(
+  sandboxId: string,
+  token: string,
+  now = new Date(),
+): Promise<boolean> {
+  const [claimed] = await db
+    .update(sessionSandboxes)
+    .set(stopClaimSet(token, now))
+    .where(
+      and(
+        eq(sessionSandboxes.sandboxId, sandboxId),
+        eq(sessionSandboxes.status, 'active'),
+        noLiveStopClaim(now),
       ),
     )
     .returning({ sandboxId: sessionSandboxes.sandboxId });

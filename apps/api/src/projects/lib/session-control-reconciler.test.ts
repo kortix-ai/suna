@@ -10,7 +10,7 @@
  * instance means the DB load FALLS as tabs are added; a per-connection timer
  * would make it rise, which is the opposite of the polling it replaces.
  */
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, setSystemTime, test } from 'bun:test';
 
 let turnState: unknown = { turns: [], last_ended: null };
 let inboxRows: unknown[] = [];
@@ -29,10 +29,49 @@ let auditLatestResolvedAt: Date | null = null;
 // which index the read can use.
 const auditWhere: string[] = [];
 let sessionProjectId: string | null = 'project-owner';
+let sessionTitleMetadata: Record<string, unknown> = { name: 'Synthetic title' };
+const ladderWrites: unknown[] = [];
+let secretCount = 2;
 const { PgDialect } = await import('drizzle-orm/pg-core');
+
+const ladderSteps: Array<{ step: string; sessionId: string; userId: string }> = [];
+let billingOk = true;
+mock.module('../session-lifecycle/start-session', () => ({
+  startSession: async (command: { sessionId: string; loaded: { userId: string } }) => {
+    ladderSteps.push({ step: 'retry-start', sessionId: command.sessionId, userId: command.loaded.userId });
+    return { status: 'pending' };
+  },
+}));
+mock.module('../session-lifecycle/actions', () => ({
+  restartSession: async (input: { sessionId: string; loaded: { userId: string } }) => {
+    ladderSteps.push({ step: 'restart', sessionId: input.sessionId, userId: input.loaded.userId });
+    return { status: 202, body: {} };
+  },
+}));
+mock.module('../../billing/services/billing-gate', () => ({
+  checkBillingAdmission: async () => ({ ok: billingOk }),
+}));
 
 mock.module('../../shared/db', () => ({
   db: {
+    transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
+      fn({
+        select: () => ({
+          from: () => ({
+            where: () => ({
+              for: () => ({ limit: async () => (sandboxRow ? [sandboxRow] : []) }),
+            }),
+          }),
+        }),
+        update: () => ({
+          set: (values: { metadata: unknown }) => ({
+            where: async () => {
+              ladderWrites.push(values);
+            },
+          }),
+        }),
+      }),
+    update: () => ({ set: () => ({ where: async () => {} }) }),
     select: (projection: Record<string, unknown>) => ({
       from: (_table: unknown) => {
         // Distinguish the reads by the PROJECTION they ask for, not the table
@@ -40,6 +79,10 @@ mock.module('../../shared/db', () => ({
         // name-based branch was dead. The projection is unambiguous per read.
         const rows = () => {
           if ('projectId' in projection) return sessionProjectId ? [{ projectId: sessionProjectId }] : [];
+          if ('sessionMetadata' in projection)
+            return [{ sessionMetadata: sessionTitleMetadata, sessionProjectId: sessionProjectId }];
+          if ('secretCount' in projection)
+            return [{ secretCount, secretsUpdatedAt: new Date('2026-10-06T10:00:00.000Z') }];
           if ('pending' in projection) return [{ pending: auditPending }];
           if ('latest' in projection)
             return [{ latest: auditLatestAt, latestResolved: auditLatestResolvedAt }];
@@ -84,11 +127,16 @@ mock.module('../session-lifecycle/runtime-wake-fence', () => ({
     Boolean(metadata?.runtimeWakeId),
 }));
 
+import type { ControlEvent } from './session-control-events';
 const { __resetControlEventsForTests, subscribeControlEvents, controlChannelState } =
   await import('./session-control-events');
-const { acquireControlReconciler, __resetControlReconcilersForTests } = await import(
-  './session-control-reconciler'
-);
+const {
+  acquireControlReconciler,
+  pokeControlReconciler,
+  __resetControlReconcilersForTests,
+  CONTROL_RECONCILE_MS,
+  CONTROL_REFRESH_MS,
+} = await import('./session-control-reconciler');
 
 const SESSION = 'sess-reconcile';
 
@@ -104,6 +152,12 @@ beforeEach(() => {
   auditPending = 0;
   auditLatestAt = null;
   auditLatestResolvedAt = null;
+  sessionTitleMetadata = { name: 'Synthetic title' };
+  secretCount = 2;
+  ladderSteps.length = 0;
+  ladderWrites.length = 0;
+  billingOk = true;
+  setSystemTime();
 });
 
 afterEach(() => {
@@ -122,6 +176,7 @@ describe('emission', () => {
       'kortix.control.runtime',
       'kortix.control.mirror',
       'kortix.control.audit',
+      'kortix.control.session',
     ]);
     handle.release();
   });
@@ -178,7 +233,7 @@ describe('emission', () => {
     const handle = acquireControlReconciler(SESSION);
     await handle.ready();
     const head = controlChannelState(SESSION).head_cseq;
-    expect(head).toBe(5);
+    expect(head).toBe(6);
 
     handle.poke();
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -195,7 +250,8 @@ describe('emission', () => {
 
     const received: string[] = [];
     const sub = subscribeControlEvents(SESSION, {}, (event) => received.push(event.type));
-    inboxRows = [{ id: 'p2', state: 'delivering' }];
+    // A held row: the queue moves, `working` (in the turn frame) does not.
+    inboxRows = [{ id: 'p2', state: 'waiting', reason: 'held' }];
     handle.poke();
     await new Promise((resolve) => setTimeout(resolve, 20));
 
@@ -329,6 +385,18 @@ describe('the runtime control snapshot', () => {
       waking: true,
       wake_provider_status: 'starting',
       deadline_at: '2026-08-27T00:00:00.000Z',
+      wake_started_at: null,
+      wake_progress_at: null,
+      stop_reason: null,
+      wake_ladder_budget: { retried: false, restarts: 0, last_action_ms: null },
+      // R5.2: a wake nobody answered yet is one the server ladder watches.
+      wake_ladder: {
+        status: 'waking',
+        retried: false,
+        restarts: 0,
+        max_restarts: 2,
+        silent_since: expect.any(String),
+      },
     });
     handle.release();
   });
@@ -381,7 +449,7 @@ describe('reference counting', () => {
     const first = acquireControlReconciler(`${SESSION}-reconnect`);
     await first.ready();
     const head = controlChannelState(`${SESSION}-reconnect`).head_cseq;
-    expect(head).toBe(5);
+    expect(head).toBe(6);
     first.release();
 
     const second = acquireControlReconciler(`${SESSION}-reconnect`);
@@ -389,7 +457,7 @@ describe('reference counting', () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(controlChannelState(`${SESSION}-reconnect`).head_cseq).toBe(head);
     // And the reconnecting stream still has the full snapshot to open with.
-    expect(second.snapshot().map((event) => event.cseq)).toEqual([1, 2, 3, 4, 5]);
+    expect(second.snapshot().map((event) => event.cseq)).toEqual([1, 2, 3, 4, 5, 6]);
     second.release();
   });
 
@@ -399,7 +467,7 @@ describe('reference counting', () => {
     const head = controlChannelState(`${SESSION}-moved`).head_cseq;
     first.release();
 
-    inboxRows = [{ id: 'p9', state: 'queued' }];
+    inboxRows = [{ id: 'p9', state: 'waiting', reason: 'held' }];
     const second = acquireControlReconciler(`${SESSION}-moved`);
     await second.ready();
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -414,5 +482,375 @@ describe('reference counting', () => {
     const readsAtRelease = turnReads;
     await new Promise((resolve) => setTimeout(resolve, 60));
     expect(turnReads).toBe(readsAtRelease);
+  });
+});
+
+describe('a prompts-changed notification', () => {
+  /** Holds every inbox read open until `open()`, so a test can act DURING a tick. */
+  function gateInboxReads(): { open: () => void } {
+    let release = () => {};
+    let gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    mock.module('../session-lifecycle/inbox-rows', () => ({
+      listInboxPrompts: async () => {
+        inboxReads += 1;
+        await gate;
+        return inboxRows;
+      },
+    }));
+    return {
+      open: () => {
+        release();
+        gate = Promise.resolve();
+      },
+    };
+  }
+
+  function restoreInboxReads(): void {
+    mock.module('../session-lifecycle/inbox-rows', () => ({
+      listInboxPrompts: async () => {
+        inboxReads += 1;
+        return inboxRows;
+      },
+    }));
+  }
+
+  test('re-reads a watched session now and publishes the changed queue', async () => {
+    const handle = acquireControlReconciler(`${SESSION}-notify`);
+    await handle.ready();
+    const reads = inboxReads;
+    const received: string[] = [];
+    const sub = subscribeControlEvents(`${SESSION}-notify`, {}, (event) => received.push(event.type));
+
+    inboxRows = [{ id: 'p-notify', state: 'queued' }];
+    pokeControlReconciler(`${SESSION}-notify`);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(inboxReads).toBe(reads + 1);
+    // The queued row also makes the session work (pending delivery): the turn
+    // frame carries that verdict on the same pass.
+    expect(received).toEqual(['kortix.control.turn', 'kortix.control.queue']);
+    sub.unsubscribe();
+    handle.release();
+  });
+
+  test('reads nothing for a session this replica does not watch', async () => {
+    pokeControlReconciler(`${SESSION}-unwatched`);
+    const handle = acquireControlReconciler(`${SESSION}-released`);
+    await handle.ready();
+    handle.release();
+    const reads = inboxReads;
+
+    pokeControlReconciler(`${SESSION}-released`);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(inboxReads).toBe(reads);
+  });
+
+  test('a burst during a tick runs ONE follow-up tick, and that tick sees the last write', async () => {
+    const handle = acquireControlReconciler(`${SESSION}-burst`);
+    await handle.ready();
+    const gate = gateInboxReads();
+    try {
+      const reads = inboxReads;
+      pokeControlReconciler(`${SESSION}-burst`);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      expect(inboxReads).toBe(reads + 1);
+
+      // Three writes land while the first read is still open. The read
+      // started before them, so it cannot report them.
+      inboxRows = [{ id: 'p-late', state: 'queued' }];
+      pokeControlReconciler(`${SESSION}-burst`);
+      pokeControlReconciler(`${SESSION}-burst`);
+      pokeControlReconciler(`${SESSION}-burst`);
+      expect(inboxReads).toBe(reads + 1);
+
+      gate.open();
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      // One follow-up, not three, and not zero.
+      expect(inboxReads).toBe(reads + 2);
+      const queue = handle.snapshot().find((event) => event.type === 'kortix.control.queue');
+      expect((queue!.payload as { prompts: unknown[] }).prompts).toEqual([{ id: 'p-late', state: 'queued' }]);
+    } finally {
+      restoreInboxReads();
+      handle.release();
+    }
+  });
+
+  test('no follow-up runs once the last stream has gone', async () => {
+    const handle = acquireControlReconciler(`${SESSION}-gone`);
+    await handle.ready();
+    const gate = gateInboxReads();
+    try {
+      const reads = inboxReads;
+      pokeControlReconciler(`${SESSION}-gone`);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      pokeControlReconciler(`${SESSION}-gone`);
+      handle.release();
+      gate.open();
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(inboxReads).toBe(reads + 1);
+    } finally {
+      restoreInboxReads();
+    }
+  });
+});
+
+describe('queue-only holders (`?channels=control`)', () => {
+  test('a queue-only pass reads the queue and nothing else', async () => {
+    auditWhere.length = 0;
+    const handle = acquireControlReconciler(`${SESSION}-q`, 'project-owner', 'queue');
+    await handle.ready();
+    expect(inboxReads).toBe(1);
+    expect(turnReads).toBe(0);
+    expect(auditWhere).toHaveLength(0);
+    expect(handle.snapshot().map((event) => event.type)).toEqual(['kortix.control.queue']);
+
+    pokeControlReconciler(`${SESSION}-q`);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(inboxReads).toBe(2);
+    expect(turnReads).toBe(0);
+    handle.release();
+  });
+
+  test('a full holder joining a queue-only session reads every subsystem at once', async () => {
+    const queueOnly = acquireControlReconciler(`${SESSION}-mixed`, 'project-owner', 'queue');
+    await queueOnly.ready();
+    auditWhere.length = 0;
+    const full = acquireControlReconciler(`${SESSION}-mixed`, 'project-owner');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(turnReads).toBe(1);
+    expect(auditWhere).toHaveLength(2);
+    expect(full.snapshot().map((event) => event.type).sort()).toEqual([
+      'kortix.control.audit',
+      'kortix.control.mirror',
+      'kortix.control.queue',
+      'kortix.control.runtime',
+      'kortix.control.session',
+      'kortix.control.turn',
+    ]);
+
+    // Mixed holders: every pass still reads everything.
+    pokeControlReconciler(`${SESSION}-mixed`);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(turnReads).toBe(2);
+    full.release();
+
+    // The last full holder left: back to the queue alone.
+    pokeControlReconciler(`${SESSION}-mixed`);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(turnReads).toBe(2);
+    queueOnly.release();
+  });
+
+  test('the cadence is 5 s with a full holder and 20 s without one', async () => {
+    const realSetInterval = globalThis.setInterval;
+    const cadences: number[] = [];
+    globalThis.setInterval = ((handler: () => void, ms?: number) => {
+      cadences.push(ms ?? 0);
+      return realSetInterval(handler, ms);
+    }) as typeof setInterval;
+    try {
+      const queueOnly = acquireControlReconciler(`${SESSION}-cadence`, 'project-owner', 'queue');
+      expect(cadences).toEqual([CONTROL_REFRESH_MS]);
+      const full = acquireControlReconciler(`${SESSION}-cadence`, 'project-owner');
+      expect(cadences).toEqual([CONTROL_REFRESH_MS, CONTROL_RECONCILE_MS]);
+      // A second queue holder changes nothing.
+      const second = acquireControlReconciler(`${SESSION}-cadence`, 'project-owner', 'queue');
+      expect(cadences).toHaveLength(2);
+      full.release();
+      expect(cadences).toEqual([CONTROL_REFRESH_MS, CONTROL_RECONCILE_MS, CONTROL_REFRESH_MS]);
+      second.release();
+      queueOnly.release();
+      expect(cadences).toHaveLength(3);
+      expect([CONTROL_RECONCILE_MS, CONTROL_REFRESH_MS]).toEqual([5_000, 20_000]);
+    } finally {
+      globalThis.setInterval = realSetInterval;
+    }
+  });
+});
+
+describe('R5.2: the server owns session state', () => {
+  const liveTurn = {
+    turn_token: 't1',
+    state: 'active',
+    message_id: null,
+    runtime_session_id: 'ses_root',
+    opencode_session_id: 'ses_root',
+    started_at: '2026-10-06T10:00:00.000Z',
+    accepted_at: null,
+  };
+
+  test('the turn frame carries the server working state', async () => {
+    turnState = { turns: [liveTurn] };
+    const handle = acquireControlReconciler(SESSION, 'project-owner');
+    await handle.ready();
+    const frame = handle.snapshot().find((event) => event.type === 'kortix.control.turn');
+    expect((frame!.payload as { working: unknown }).working).toEqual({
+      state: 'working',
+      since: '2026-10-06T10:00:00.000Z',
+      turn_token: 't1',
+      pending_delivery: false,
+    });
+    handle.release();
+  });
+
+  test('a queued prompt with no turn is working with pending delivery', async () => {
+    inboxRows = [{ prompt_id: 'p1', state: 'queued', reason: null, client_sent_at_ms: null }];
+    const handle = acquireControlReconciler(SESSION, 'project-owner');
+    await handle.ready();
+    const frame = handle.snapshot().find((event) => event.type === 'kortix.control.turn');
+    expect((frame!.payload as { working: { pending_delivery: boolean } }).working.pending_delivery).toBe(true);
+    handle.release();
+  });
+
+  test('a runtime turn end publishes idle at once, with no read', async () => {
+    turnState = { turns: [liveTurn] };
+    const handle = acquireControlReconciler(SESSION, 'project-owner');
+    await handle.ready();
+    const reads = turnReads;
+    const frames: ControlEvent[] = [];
+    const sub = subscribeControlEvents(SESSION, {}, (event) => frames.push(event));
+    handle.noteRuntimeTurnEnd('ses_root', Date.parse('2026-10-06T10:00:09.000Z'));
+    expect(turnReads).toBe(reads);
+    const turnFrame = frames.find((event) => event.type === 'kortix.control.turn');
+    expect((turnFrame!.payload as { working: { state: string } }).working.state).toBe('idle');
+    sub.unsubscribe();
+    handle.release();
+  });
+
+  test('the session frame carries the title and a secrets version, never a name', async () => {
+    sessionTitleMetadata = { name: 'Generated', custom_name: 'Mine' };
+    const handle = acquireControlReconciler(SESSION, 'project-owner');
+    await handle.ready();
+    const frame = handle.snapshot().find((event) => event.type === 'kortix.control.session');
+    expect(frame!.payload).toEqual({
+      known: true,
+      title: 'Mine',
+      secrets_rev: '2:2026-10-06T10:00:00.000Z',
+    });
+    handle.release();
+  });
+
+  test('a connected provider moves the secrets version', async () => {
+    const handle = acquireControlReconciler(SESSION, 'project-owner');
+    await handle.ready();
+    secretCount = 3;
+    handle.poke();
+    await Bun.sleep(20);
+    const frame = handle.snapshot().find((event) => event.type === 'kortix.control.session');
+    expect((frame!.payload as { secrets_rev: string }).secrets_rev).toBe('3:2026-10-06T10:00:00.000Z');
+    handle.release();
+  });
+});
+
+describe('R5.2: the server wake ladder', () => {
+  const authorized = {
+    loaded: { row: { projectId: 'project-owner', accountId: 'account-1' }, userId: 'user-owner' },
+    visible: { row: { status: 'active', sandboxProvider: 'platinum', baseRef: null, agentName: null, runtimeSessionId: null, accountId: 'account-1' } },
+  };
+  let authorizeCalls = 0;
+  let stillAllowed = true;
+  // Re-asked right before every step (Strix CWE-863): never a snapshot.
+  const actor = {
+    authorize: async () => {
+      authorizeCalls += 1;
+      return stillAllowed ? authorized : null;
+    },
+  } as never;
+  const wakingRow = () => ({
+    status: 'active',
+    externalId: 'box-wake',
+    provider: 'platinum',
+    metadata: { runtimeWakeId: 'wake-1', runtimeWakeStartedAt: '2026-10-06T10:00:00.000Z' },
+    deadlineAt: new Date('2026-10-06T11:00:00.000Z'),
+  });
+
+  async function quietFor(handle: { poke(): void }, ms: number): Promise<void> {
+    setSystemTime(new Date(Date.now() + ms));
+    handle.poke();
+    await Bun.sleep(30);
+  }
+
+  test('a wake that stays quiet for 75 s is re-driven, as the watcher who may restart it', async () => {
+    sandboxRow = wakingRow();
+    const handle = acquireControlReconciler(`${SESSION}-ladder`, 'project-owner', 'full', actor);
+    await handle.ready();
+    await quietFor(handle, 60_000);
+    expect(ladderSteps).toEqual([]);
+    await quietFor(handle, 16_000);
+    expect(ladderSteps).toEqual([{ step: 'retry-start', sessionId: `${SESSION}-ladder`, userId: 'user-owner' }]);
+    expect(ladderWrites).toHaveLength(1);
+    handle.release();
+  });
+
+  test('the next step after a re-drive is a restart, then the ladder is exhausted', async () => {
+    sandboxRow = {
+      ...wakingRow(),
+      metadata: { ...wakingRow().metadata, wakeLadder: { retried: true, restarts: 1, last_action_ms: 0 } },
+    };
+    const handle = acquireControlReconciler(`${SESSION}-ladder2`, 'project-owner', 'full', actor);
+    await handle.ready();
+    await quietFor(handle, 76_000);
+    expect(ladderSteps.map((entry) => entry.step)).toEqual(['restart']);
+
+    sandboxRow = {
+      ...wakingRow(),
+      metadata: { ...wakingRow().metadata, wakeLadder: { retried: true, restarts: 2, last_action_ms: 0 } },
+    };
+    await quietFor(handle, 76_000);
+    expect(ladderSteps).toHaveLength(1);
+    const runtime = handle.snapshot().find((event) => event.type === 'kortix.control.runtime');
+    expect((runtime!.payload as { wake_ladder: { status: string } }).wake_ladder.status).toBe('exhausted');
+    handle.release();
+  });
+
+  test('a read-only viewer sees the ladder but never triggers it', async () => {
+    sandboxRow = wakingRow();
+    const handle = acquireControlReconciler(`${SESSION}-viewer`, 'project-owner', 'full');
+    await handle.ready();
+    await quietFor(handle, 200_000);
+    expect(ladderSteps).toEqual([]);
+    const runtime = handle.snapshot().find((event) => event.type === 'kortix.control.runtime');
+    expect((runtime!.payload as { wake_ladder: { status: string } }).wake_ladder.status).toBe('waking');
+    handle.release();
+  });
+
+  test('a runtime that answered is never restarted, even when it drops later', async () => {
+    sandboxRow = wakingRow();
+    const handle = acquireControlReconciler(`${SESSION}-answered`, 'project-owner', 'full', actor);
+    await handle.ready();
+    handle.noteRuntimeReachability(true);
+    handle.noteRuntimeReachability(false, 'stream_ended');
+    await quietFor(handle, 200_000);
+    expect(ladderSteps).toEqual([]);
+    const runtime = handle.snapshot().find((event) => event.type === 'kortix.control.runtime');
+    expect((runtime!.payload as { wake_ladder: { status: string } }).wake_ladder.status).toBe('idle');
+    handle.release();
+  });
+
+  test('a watcher whose access was revoked after the stream opened never triggers a step', async () => {
+    stillAllowed = false;
+    authorizeCalls = 0;
+    sandboxRow = wakingRow();
+    const handle = acquireControlReconciler(`${SESSION}-revoked`, 'project-owner', 'full', actor);
+    await handle.ready();
+    await quietFor(handle, 200_000);
+    expect(authorizeCalls).toBeGreaterThan(0);
+    expect(ladderSteps).toEqual([]);
+    expect(ladderWrites).toEqual([]);
+    stillAllowed = true;
+    handle.release();
+  });
+
+  test('a billing-blocked account is never woken by the ladder', async () => {
+    billingOk = false;
+    sandboxRow = wakingRow();
+    const handle = acquireControlReconciler(`${SESSION}-billing`, 'project-owner', 'full', actor);
+    await handle.ready();
+    await quietFor(handle, 200_000);
+    expect(ladderSteps).toEqual([]);
+    expect(ladderWrites).toEqual([]);
+    handle.release();
   });
 });

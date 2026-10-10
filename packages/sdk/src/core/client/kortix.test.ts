@@ -51,6 +51,30 @@ test('project(id) handle binds the id and hits the right endpoint', async () => 
   expect(last().method).toBe('GET');
 });
 
+test('project(id).apps binds the project id on every capability call', async () => {
+  const apps = kortix.project('PID123').apps;
+  await apps.snapshots.list('A1').catch(() => undefined);
+  expect(last()).toMatchObject({ method: 'GET', url: 'http://test.local/projects/PID123/apps/A1/snapshots' });
+  await apps.snapshots.create('A1').catch(() => undefined);
+  expect(last()).toMatchObject({ method: 'POST', url: 'http://test.local/projects/PID123/apps/A1/snapshots' });
+  await apps.snapshots.delete('A1', 'S1').catch(() => undefined);
+  expect(last()).toMatchObject({ method: 'DELETE', url: 'http://test.local/projects/PID123/apps/A1/snapshots/S1' });
+  await apps.snapshots.restore('A1', 'S1').catch(() => undefined);
+  expect(last()).toMatchObject({ method: 'POST', url: 'http://test.local/projects/PID123/apps/A1/restore', body: { snapshot_id: 'S1' } });
+  await apps.credentials('A1').catch(() => undefined);
+  expect(last().url).toBe('http://test.local/projects/PID123/apps/A1/credentials');
+  await apps.rotateCredentials('A1').catch(() => undefined);
+  expect(last().url).toBe('http://test.local/projects/PID123/apps/A1/rotate-credentials');
+  await apps.token('A1').catch(() => undefined);
+  expect(last()).toMatchObject({ method: 'POST', url: 'http://test.local/projects/PID123/apps/A1/token' });
+  await apps.log('A1', { lines: 50 }).catch(() => undefined);
+  expect(last().url).toBe('http://test.local/projects/PID123/apps/A1/logs?lines=50');
+  await apps.remove('A1', { confirm: 'db' }).catch(() => undefined);
+  expect(last()).toMatchObject({ method: 'DELETE', url: 'http://test.local/projects/PID123/apps/A1?confirm=db' });
+  expect(typeof apps.waitUntilReady).toBe('function');
+  expect('backends' in kortix.project('PID123')).toBe(false);
+});
+
 test('project(id).apps exposes the complete App lifecycle with the project id bound', async () => {
   const apps = kortix.project('PID123').apps;
 
@@ -154,6 +178,49 @@ test('session presence writes a tab-scoped lease through the authenticated backe
     method: 'PUT',
     body: { tab_id: tabId, active: true },
   });
+});
+
+// KRTX-1742: `alerts` says this tab shows its own notifications, so the server
+// skips the phone push only for an alerting tab. Leaving is sent with
+// `keepalive`, so the lease ends even when the tab is closing.
+test('session presence carries alerts, and an absent report survives the page unloading', async () => {
+  const inits: RequestInit[] = [];
+  globalThis.fetch = mock(async (_url: unknown, init: RequestInit = {}) => {
+    inits.push(init);
+    return Response.json({ ok: true });
+  }) as unknown as typeof fetch;
+  const tabId = '00000000-0000-4000-8000-000000000002';
+  const handle = kortix.session('PID123', 'SID456');
+  await handle.presence({ tab_id: tabId, active: true, alerts: true });
+  await handle.presence({ tab_id: tabId, active: false, alerts: true });
+  await handle.presence({ tab_id: tabId, active: true });
+  expect(inits.map((init) => JSON.parse(String(init.body)))).toEqual([
+    { tab_id: tabId, active: true, alerts: true },
+    { tab_id: tabId, active: false, alerts: true },
+    { tab_id: tabId, active: true },
+  ]);
+  expect(inits.map((init) => init.keepalive === true)).toEqual([false, true, false]);
+});
+
+// `useSession` sends an absent report without `keepalive` while the project's
+// `notification_center` flag is off, as before KRTX-1742.
+test('session presence takes an explicit keepalive, and the body stays the report', async () => {
+  const inits: RequestInit[] = [];
+  globalThis.fetch = mock(async (_url: unknown, init: RequestInit = {}) => {
+    inits.push(init);
+    return Response.json({ ok: true });
+  }) as unknown as typeof fetch;
+  const tabId = '00000000-0000-4000-8000-000000000003';
+  const handle = kortix.session('PID123', 'SID456');
+  await handle.presence({ tab_id: tabId, active: false }, { keepalive: false });
+  await handle.presence({ tab_id: tabId, active: false }, { keepalive: true });
+  await handle.presence({ tab_id: tabId, active: false }, {});
+  expect(inits.map((init) => init.keepalive === true)).toEqual([false, true, true]);
+  expect(inits.map((init) => JSON.parse(String(init.body)))).toEqual([
+    { tab_id: tabId, active: false },
+    { tab_id: tabId, active: false },
+    { tab_id: tabId, active: false },
+  ]);
 });
 
 test('session(projectId, sessionId).cost binds project scope without starting the runtime', async () => {
@@ -747,18 +814,21 @@ test('project(id).gateway.playground posts prompt + models', async () => {
   expect(last().method).toBe('POST');
 });
 
-test('kortix.billing.checkout covers create + confirm session', async () => {
-  await kortix.billing.checkout.createSession({
-    tierKey: 'pro',
-    successUrl: 'https://app.example.com/success',
-    cancelUrl: 'https://app.example.com/cancel',
-  });
-  expect(last().url).toContain('/billing/create-checkout-session');
-  expect(last().method).toBe('POST');
+test('kortix.billing.checkout rejects with ENDPOINT_RETIRED and sends no request', async () => {
+  const create = await kortix.billing.checkout
+    .createSession({
+      tierKey: 'pro',
+      successUrl: 'https://app.example.com/success',
+      cancelUrl: 'https://app.example.com/cancel',
+    })
+    .catch((e: unknown) => e);
+  expect(create).toBeInstanceOf(ApiError);
+  expect((create as ApiError).code).toBe('ENDPOINT_RETIRED');
 
-  await kortix.billing.checkout.confirmSession('cs_123');
-  expect(last().url).toContain('/billing/confirm-checkout-session');
-  expect(last().method).toBe('POST');
+  const confirm = await kortix.billing.checkout.confirmSession('cs_123').catch((e: unknown) => e);
+  expect(confirm).toBeInstanceOf(ApiError);
+  expect((confirm as ApiError).code).toBe('ENDPOINT_RETIRED');
+  expect(calls).toEqual([]);
 });
 
 test('kortix.billing.subscription covers portal/cancel/reactivate/downgrade/proration', async () => {
@@ -772,8 +842,8 @@ test('kortix.billing.subscription covers portal/cancel/reactivate/downgrade/pror
   await kortix.billing.subscription.reactivate();
   expect(last().url).toContain('/billing/reactivate-subscription');
 
-  await kortix.billing.subscription.scheduleDowngrade('starter');
-  expect(last().url).toContain('/billing/schedule-downgrade');
+  const downgrade = await kortix.billing.subscription.scheduleDowngrade('starter').catch((e: unknown) => e);
+  expect((downgrade as ApiError).code).toBe('ENDPOINT_RETIRED');
 
   await kortix.billing.subscription.cancelScheduledChange();
   expect(last().url).toContain('/billing/cancel-scheduled-change');

@@ -394,7 +394,7 @@ describe('a create claim', () => {
 
 describe('markCommandFailed decides retry or dead-letter', () => {
   /** Run `fn` and record which logger level each dead-letter line used. */
-  async function logLevels(fn: () => Promise<void>): Promise<Array<{ level: string; context: Row }>> {
+  async function logLevels(fn: () => Promise<unknown>): Promise<Array<{ level: string; context: Row }>> {
     const seen: Array<{ level: string; context: Row }> = [];
     const { warn, error } = logger;
     logger.warn = (message: string, context?: Row) => {

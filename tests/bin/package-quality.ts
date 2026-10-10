@@ -81,21 +81,21 @@ async function runAll(tasks: Promise<unknown>[]): Promise<void> {
 }
 
 async function rejectFocusedTests(): Promise<void> {
+  // git grep, never rg: GitHub's runner images ship no ripgrep. It searches
+  // tracked and untracked files minus .gitignore (no node_modules), and exits
+  // 1 on no match, like rg.
+  // A pathspec `*` crosses directories, so `apps/*.test.ts` is recursive.
+  const extensions = ['spec.ts', 'test.ts', 'test.tsx', 'test.mts', 'test.js'];
   const child = Bun.spawn(
     [
-      'rg',
+      'git',
+      'grep',
+      '--untracked',
       '-n',
-      String.raw`\b(describe|test|it)\.only\(`,
-      'apps',
-      'packages',
-      '-g',
-      '*.test.ts',
-      '-g',
-      '*.test.tsx',
-      '-g',
-      '*.test.mts',
-      '-g',
-      '*.test.js',
+      '-E',
+      String.raw`(^|[^A-Za-z0-9_$.])(describe|test|it)\.only\(`,
+      '--',
+      ...['apps', 'packages', 'tests'].flatMap((dir) => extensions.map((ext) => `${dir}/*.${ext}`)),
     ],
     { cwd: root, stdout: 'pipe', stderr: 'inherit' },
   );
@@ -227,6 +227,13 @@ await runAll([
 // agent server sequential. Concurrent isolated Bun workers can spin indefinitely.
 await runAll([
   runWorkspaceTests(['kortix-api'], 1),
+  // Bun runs TypeScript without checking types, so the API and CLI unit tests
+  // pass with type errors. tsc is single-threaded (~105 s API, ~18 s CLI of
+  // CPU), so it rides inside this wave next to the two test chains instead of
+  // adding a wave. apps/web is not here: its `tsc` has a documented baseline of
+  // known `@types/bun` errors and needs a baseline filter first.
+  run(['pnpm', '--filter', 'kortix-api', 'typecheck']),
+  run(['pnpm', '--filter', '@kortix/cli', 'typecheck']),
   (async () => {
     await runWorkspaceTests(['@kortix/cli'], 1);
     await runWorkspaceTests(['kortixd'], 1);

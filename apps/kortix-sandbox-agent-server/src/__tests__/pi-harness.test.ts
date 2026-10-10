@@ -9,8 +9,9 @@
  * SDK parses, the sequenced event stream and the control-plane probes the API
  * polls.
  */
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
+import { createHash } from 'node:crypto'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -26,7 +27,9 @@ import { signTestUserContext } from './helpers/open-code-harness'
 import { readHostHealth } from '@/harness/shared/host-health'
 import { sanitizeRuntimeEvent } from '@/harness/shared/audit-relay'
 import { AGENT_ENV_SH } from '@/harness/shared/agent-env-file'
+import { logger } from '@/lib/log/logger'
 import type { PiRuntimeHooks } from '@/harness/pi/runtime'
+import { MessageIdClock } from '@/harness/pi/message-id'
 import { spawnSync } from 'node:child_process'
 import { registerHarnessAssets, resetHarnessAssetsForTests } from '@/services/runtime-assets/runtime-assets'
 import {
@@ -1283,6 +1286,81 @@ describe('pi project config', () => {
   })
 })
 
+describe('project tools on pi', () => {
+  // A harness-neutral tool module (services/tools/tool.ts): no import, a plain default export.
+  const LOOKUP = `export default {
+  description: 'Look up an order by id.',
+  parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+  async execute(args, context) {
+    return { order: args.id, status: 'shipped', agent: context.agent, directory: context.directory, session: context.sessionId }
+  },
+}
+`
+  const compiled = (projectTools: Record<string, string>, tools?: Record<string, boolean>) =>
+    JSON.stringify({ agent: { build: tools ? { tools } : {} }, project_tools: projectTools })
+  const write = (workspace: string, path: string, source: string) => {
+    mkdirSync(dirname(join(workspace, path)), { recursive: true })
+    writeFileSync(join(workspace, path), source)
+  }
+  const ids = async (r: Rig) => (await r.user('/tool/ids').then((res) => res.json())) as string[]
+  const page = async (r: Rig) => (await r.bearer(`/kortix/runtime/messages/${r.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
+
+  test('a tool declared in kortix.yaml runs with the call context, beside the Kortix tools', async () => {
+    const r = await boot({
+      script: [{ tool: 'lookup_order', args: { id: '42' } }, { text: 'done' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: compiled({ lookup_order: 'integrations/orders/lookup.ts' }) },
+      prepare: (workspace) => write(workspace, 'integrations/orders/lookup.ts', LOOKUP),
+    })
+    expect(await ids(r)).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'show', 'lookup_order', 'question', 'task'])
+    await promptAndSettle(r, 'look up order 42')
+    const part = toolParts(await page(r), 'lookup_order')[0]!
+    expect(part.state.status).toBe('completed')
+    expect(JSON.parse(part.state.output)).toEqual({ order: '42', status: 'shipped', agent: 'build', directory: r.workspace, session: 'sess-pi-test' })
+  })
+
+  test('a project tool replaces the Kortix tool of its name; a module that does not load is left out', async () => {
+    const r = await boot({
+      script: [{ tool: 'memory', args: { command: 'view', path: 'memory' } }, { text: 'done' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: compiled({ memory: 'tools/memory.ts', broken: 'tools/broken.ts', missing: 'tools/missing.ts' }) },
+      prepare: (workspace) => {
+        write(workspace, 'tools/memory.ts', `export default { description: 'Team memory.', parameters: { type: 'object', properties: {} }, execute: () => 'the project memory' }\n`)
+        write(workspace, 'tools/broken.ts', `export default { description: 'No execute.' }\n`)
+      },
+    })
+    const listed = await ids(r)
+    expect(listed).toContain('memory')
+    expect(listed).not.toContain('broken')
+    expect(listed).not.toContain('missing')
+    await promptAndSettle(r, 'view memory')
+    expect(toolParts(await page(r), 'memory')[0]!.state.output).toBe('the project memory')
+  })
+
+  test('a Kortix tool the project does not list is not offered, and a call to it is refused', async () => {
+    const r = await boot({
+      script: [{ tool: 'show', args: { action: 'show', type: 'text', content: 'hi' } }, { tool: 'memory', args: { command: 'view', path: 'memory' } }, { text: 'done' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ agent: { build: {} }, kortix_tools: ['web_search', 'image_search', 'scrape_webpage', 'memory'] }) },
+    })
+    expect(await ids(r)).toEqual(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'web_search', 'image_search', 'scrape_webpage', 'memory', 'question', 'task'])
+    await promptAndSettle(r, 'show hi, then view memory')
+    const show = toolParts(await page(r), 'show')[0]!
+    expect(show.state.status).toBe('error')
+    expect(String(show.state.error)).toBe('Tool show not found')
+    expect(toolParts(await page(r), 'memory')[0]!.state.status).toBe('completed')
+  })
+
+  test("an agent's tool list allows only the tools it names; any other call is denied", async () => {
+    const r = await boot({
+      script: [{ tool: 'bash', args: { command: 'touch ran.txt' } }, { text: 'done' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: compiled({ lookup_order: 'tools/lookup.ts' }, { '*': false, read: true, lookup_order: true }) },
+      prepare: (workspace) => write(workspace, 'tools/lookup.ts', LOOKUP),
+    })
+    expect(await ids(r)).toEqual(['read', 'lookup_order'])
+    await promptAndSettle(r, 'run a command')
+    expect(toolParts(await page(r), 'bash')[0]!.state.status).toBe('error')
+    expect(existsSync(join(r.workspace, 'ran.txt'))).toBe(false)
+  })
+})
+
 describe('pi extensions', () => {
   test('a tool_call handler blocks a tool and a tool_result handler patches another', async () => {
     const r = await boot({
@@ -1845,6 +1923,114 @@ describe('pi subagents extension', () => {
   })
 })
 
+/** The project's root instructions as pi renders them: pi's own context-file format. */
+const projectRules = (text: string, name = 'AGENTS.md') => `<project_instructions path="${name}">\n${text}\n</project_instructions>`
+const sha12 = (text: string) => createHash('sha256').update(text).digest('hex').slice(0, 12)
+const agentsMdOf = async (r: Rig) => ((await r.bearer('/kortix/health').then((res) => res.json())) as Record<string, any>).harness.details.agentsMd
+
+// A rig with no API reads the working tree (releases are not in play).
+describe('pi AGENTS.md', () => {
+  afterEach(() => mock.restore())
+
+  /** The system prompt of the next turn's first model request. */
+  const nextSystem = async (r: Rig) => {
+    const index = gateway.sent.length
+    await promptAndSettle(r, 'hi')
+    return systemSent(gateway.sent[index]!)
+  }
+  const notLoaded = (warn: { mock: { calls: unknown[][] } }) => warn.mock.calls.filter(([message]) => message === '[pi] AGENTS.md not loaded')
+
+  test('a task subagent gets the same AGENTS.md section as the root', async () => {
+    const r = await boot({
+      script: [{ tool: 'task', args: { description: 'Check', prompt: 'check it', subagent_type: 'general' } }, { text: 'child done' }, { text: 'parent done' }],
+      prepare: (workspace) => writeFileSync(join(workspace, 'AGENTS.md'), 'SHARED-RULES\n'),
+    })
+    const index = gateway.sent.length
+    await promptAndSettle(r, 'delegate it')
+    const [root, child] = gateway.sent.slice(index).map(systemSent)
+    expect(root).toContain(projectRules('SHARED-RULES'))
+    // Only a child prompt carries the working directory as text.
+    expect(child).toContain('Working directory:')
+    expect(child).toContain(projectRules('SHARED-RULES'))
+  })
+
+  test('no AGENTS.md: no section, no log, and health reports null', async () => {
+    const warn = spyOn(logger, 'warn')
+    const r = await boot({ script: [{ text: 'ok' }] })
+    expect(await nextSystem(r)).not.toContain('<project_instructions')
+    expect(await agentsMdOf(r)).toBeNull()
+    expect(notLoaded(warn)).toEqual([])
+  })
+
+  test('a whitespace-only AGENTS.md adds no section, and its CLAUDE.md stays unread', async () => {
+    const r = await boot({
+      script: [{ text: 'ok' }],
+      prepare: (workspace) => {
+        writeFileSync(join(workspace, 'AGENTS.md'), ' \n\t\n')
+        writeFileSync(join(workspace, 'CLAUDE.md'), 'CLAUDE-RULES\n')
+      },
+    })
+    expect(await nextSystem(r)).not.toContain('<project_instructions')
+    expect(await agentsMdOf(r)).toBeNull()
+  })
+
+  test('an AGENTS.md symlink out of the root adds no section and warns once; a symlink inside the root loads', async () => {
+    const outside = mkdtempSync(join(tmpdir(), 'pi-outside-'))
+    writeFileSync(join(outside, 'secret.md'), 'OUTSIDE-SECRET\n')
+    const warn = spyOn(logger, 'warn')
+    try {
+      const r = await boot({ script: [{ text: 'one' }, { text: 'two' }], prepare: (workspace) => symlinkSync(join(outside, 'secret.md'), join(workspace, 'AGENTS.md')) })
+      expect(await nextSystem(r)).not.toContain('OUTSIDE-SECRET')
+      expect(await agentsMdOf(r)).toBeNull()
+      expect(notLoaded(warn)).toHaveLength(1)
+
+      mkdirSync(join(r.workspace, 'docs'))
+      writeFileSync(join(r.workspace, 'docs', 'rules.md'), 'INSIDE-RULES\n')
+      rmSync(join(r.workspace, 'AGENTS.md'))
+      symlinkSync('docs/rules.md', join(r.workspace, 'AGENTS.md'))
+      await r.service.runtime()!.reconfigure()
+      expect(await nextSystem(r)).toContain(projectRules('INSIDE-RULES'))
+    } finally {
+      rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  test('an AGENTS.md that is not a regular file adds no section and warns once', async () => {
+    const warn = spyOn(logger, 'warn')
+    const r = await boot({ script: [{ text: 'ok' }], prepare: (workspace) => mkdirSync(join(workspace, 'AGENTS.md')) })
+    expect(await nextSystem(r)).not.toContain('<project_instructions')
+    expect(await agentsMdOf(r)).toBeNull()
+    expect(notLoaded(warn)).toHaveLength(1)
+  })
+
+  // root reads a mode-000 file, so the read error cannot happen there.
+  test.skipIf(process.getuid?.() === 0)('an AGENTS.md that cannot be read adds no section, warns once, and the runtime still starts', async () => {
+    const warn = spyOn(logger, 'warn')
+    const r = await boot({
+      script: [{ text: 'ok' }],
+      prepare: (workspace) => {
+        writeFileSync(join(workspace, 'AGENTS.md'), 'UNREADABLE\n')
+        chmodSync(join(workspace, 'AGENTS.md'), 0o000)
+      },
+    })
+    expect(r.service.runtime()!.getState()).toBe('ok')
+    expect(await nextSystem(r)).not.toContain('UNREADABLE')
+    expect(notLoaded(warn)).toHaveLength(1)
+  })
+
+  test('without an AGENTS.md the root CLAUDE.md loads, as on OpenCode; an AGENTS.md takes precedence', async () => {
+    const r = await boot({ script: [{ text: 'one' }, { text: 'two' }], prepare: (workspace) => writeFileSync(join(workspace, 'CLAUDE.md'), 'CLAUDE-RULES\n') })
+    expect(await nextSystem(r)).toContain(projectRules('CLAUDE-RULES', 'CLAUDE.md'))
+    expect(await agentsMdOf(r)).toMatchObject({ source: 'workspace', path: join(r.workspace, 'CLAUDE.md') })
+
+    writeFileSync(join(r.workspace, 'AGENTS.md'), 'AGENTS-RULES\n')
+    await r.service.runtime()!.reconfigure()
+    const system = await nextSystem(r)
+    expect(system).toContain(projectRules('AGENTS-RULES'))
+    expect(system).not.toContain('CLAUDE-RULES')
+  })
+})
+
 describe('config releases on pi', () => {
   const PROVISIONED = JSON.stringify({ default_agent: 'build', agent: { build: { prompt: 'PROVISIONED: the prompt compiled at provision.' } } })
   let api: FakeApi
@@ -1884,7 +2070,7 @@ describe('config releases on pi', () => {
     })
   }
 
-  const bootOnReleases = (script: Step[]) =>
+  const bootOnReleases = (script: Step[], prepare?: (workspace: string) => void) =>
     boot({
       script,
       env: { KORTIX_API_URL: api.url, KORTIX_COMPILED_AGENT_CONFIG: PROVISIONED },
@@ -1895,6 +2081,7 @@ describe('config releases on pi', () => {
           mkdirSync(join(workspace, 'skills', name), { recursive: true })
           writeFileSync(join(workspace, 'skills', name, 'SKILL.md'), `---\nname: ${name}\ndescription: ${description}\n---\nBody.\n`)
         }
+        prepare?.(workspace)
       },
     })
 
@@ -2030,6 +2217,117 @@ describe('config releases on pi', () => {
     const system = await ask(r, 'hello')
     expect(system).toContain('PROVISIONED')
     expect(system).not.toContain("This session's agent config")
+  })
+
+  // AGENTS.md follows the skills: the release while one runs, the working tree only while releases are off.
+  test('config releases off: the working tree AGENTS.md is one section after the agent prompt, re-read with the skills', async () => {
+    api.respond(FEATURE_DISABLED)
+    const info = spyOn(logger, 'info')
+    const text = 'WORKSPACE-RULES: cite the ticket.\n'
+    const r = await bootOnReleases([{ text: 'one' }, { text: 'two' }, { text: 'three' }], (workspace) => writeFileSync(join(workspace, 'AGENTS.md'), text))
+    const path = join(r.workspace, 'AGENTS.md')
+    const loaded = { source: 'workspace', path, bytes: Buffer.byteLength(text), sha: sha12(text) }
+    try {
+      await ask(r, 'first')
+      expect(systemSent(gateway.sent.at(-1)!)).toContain(`PROVISIONED: the prompt compiled at provision.\n\n${projectRules('WORKSPACE-RULES: cite the ticket.')}\n\n`)
+      expect(await agentsMdOf(r)).toEqual(loaded)
+      expect(info.mock.calls.filter(([message]) => message === '[pi] AGENTS.md loaded')).toEqual([['[pi] AGENTS.md loaded', loaded]])
+
+      // No read per turn: an edit waits for the next re-read of the skills (here a reconfigure).
+      writeFileSync(path, 'WORKSPACE-EDIT\n')
+      expect(await ask(r, 'second')).not.toContain('WORKSPACE-EDIT')
+      await r.service.runtime()!.reconfigure()
+      const third = await ask(r, 'third')
+      expect(third).toContain('WORKSPACE-EDIT')
+      expect(third).not.toContain('WORKSPACE-RULES')
+    } finally {
+      info.mockRestore()
+    }
+  })
+
+  test("config releases on: the release's AGENTS.md is in the prompt, and the working tree's never is", async () => {
+    // The root layout: agents, skills and AGENTS.md at the repository root.
+    write(repo, 'harnesses/opencode/opencode.json', '{}\n')
+    write(repo, 'skills/deploy/SKILL.md', '---\nname: deploy\ndescription: deploy from the base branch\n---\nBody.\n')
+    write(repo, 'AGENTS.md', 'RELEASED-RULES\n')
+    const one = buildRelease(repo, commitAll(repo, 'root layout'), 'harnesses/opencode', {
+      projectId: 'proj-pi-test',
+      governance: JSON.stringify({ default_agent: 'build', agent: { build: { prompt: 'RELEASE-ONE' } } }),
+    })
+    serveRelease(api, one)
+    const r = await bootOnReleases([{ text: 'first' }, { text: 'second' }], (workspace) => writeFileSync(join(workspace, 'AGENTS.md'), 'WORKSPACE-RULES\n'))
+    const first = await ask(r, 'first')
+    expect(first).toContain('RELEASED-RULES')
+    expect(first).not.toContain('WORKSPACE-RULES')
+    // The session notice tells the agent its working-copy edit waits for the base branch.
+    expect(first).toContain('`/workspace/skills` or `/workspace/AGENTS.md` does NOT change the config')
+    expect(await agentsMdOf(r)).toEqual({
+      source: 'release',
+      path: join(dir, 'store', one.descriptor.release_id!, 'AGENTS.md'),
+      bytes: Buffer.byteLength('RELEASED-RULES\n'),
+      sha: sha12('RELEASED-RULES\n'),
+    })
+
+    // The working copy is the agent's: an edit there never reaches the prompt, not even through a reconfigure.
+    writeFileSync(join(r.workspace, 'AGENTS.md'), 'WORKSPACE-EDIT\n')
+    await r.service.runtime()!.reconfigure()
+    const second = await ask(r, 'second')
+    expect(second).toContain('RELEASED-RULES')
+    expect(second).not.toContain('WORKSPACE-')
+  })
+
+  test('config releases on with no release tree (the image default): no AGENTS.md, as no working-tree skill', async () => {
+    api.respond({
+      status: 200,
+      json: {
+        format: 'config-release-v2',
+        release_id: null,
+        mode: 'follow-base',
+        source_commit: null,
+        config_dir: null,
+        config_tree_id: null,
+        archive: null,
+        files: null,
+        compiled_governance: PROVISIONED,
+        compiled_governance_etag: '0123456789abcdef',
+        reason: null,
+      },
+    })
+    const r = await bootOnReleases([{ text: 'ok' }], (workspace) => writeFileSync(join(workspace, 'AGENTS.md'), 'WORKSPACE-RULES\n'))
+    expect(((await r.bearer('/kortix/health').then((res) => res.json())) as Record<string, any>).config.source).toBe('image-default')
+    expect(await ask(r, 'hello')).not.toContain('WORKSPACE-RULES')
+    expect(await agentsMdOf(r)).toBeNull()
+  })
+
+  test('a base move that changes AGENTS.md reaches the next turn in place: same root, same transcript, no restart', async () => {
+    write(repo, 'AGENTS.md', 'BASE-RULES-ONE\n')
+    serveRelease(api, releaseWith('deploy', 'RELEASE-ONE'))
+    const r = await bootOnReleases([{ text: 'first' }, { text: 'second' }])
+    const runtime = r.service.runtime()!
+    const root = runtime.rootId
+    const restart = spyOn(runtime, 'restart')
+    expect(await ask(r, 'first question')).toContain('BASE-RULES-ONE')
+
+    write(repo, 'AGENTS.md', 'BASE-RULES-TWO\n')
+    const two = releaseWith('deploy', 'RELEASE-ONE')
+    serveRelease(api, two)
+    const converged = await r.bearer('/kortix/config/converge', { method: 'POST' }).then((res) => res.json())
+    expect(converged).toMatchObject({ ok: true, outcome: 'applied', reload: null, config: { release_id: two.descriptor.release_id, source: 'release' } })
+    expect(restart).not.toHaveBeenCalled()
+    expect(r.service.runtime()).toBe(runtime)
+    expect(runtime.rootId).toBe(root)
+
+    const second = await ask(r, 'second question')
+    expect(second).toContain('BASE-RULES-TWO')
+    expect(second).not.toContain('BASE-RULES-ONE')
+    expect(await agentsMdOf(r)).toEqual({
+      source: 'release',
+      path: join(dir, 'store', two.descriptor.release_id!, 'AGENTS.md'),
+      bytes: Buffer.byteLength('BASE-RULES-TWO\n'),
+      sha: sha12('BASE-RULES-TWO\n'),
+    })
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+    expect(page.messages.filter((m) => m.info.role === 'user')).toHaveLength(2)
   })
 
   test('refresh with repo=0 leaves the checkout exactly as it is', async () => {
@@ -2195,6 +2493,32 @@ describe('pi compaction', () => {
     expect(page.messages.filter((m) => m.info.error)).toEqual([])
   })
 
+  test('KORTIX_PI_COMPACT_AT_TOKENS compacts a context far below the model window', async () => {
+    // Window 64,000: pi alone waits until 47,616. A 30,000 context stays put without the budget...
+    const plain = await boot({ script: [{ text: 'first answer' }, { text: 'big answer', promptTokens: 30_000 }], prepare: compactEverything })
+    await promptAndSettle(plain, 'ALPHA question')
+    await promptAndSettle(plain, 'BETA question')
+    await waitFor(() => plain.service.runtime()!.idle())
+    const plainPage = (await plain.bearer(`/kortix/runtime/messages/${plain.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
+    expect(compactionTurns(plainPage)).toEqual([])
+
+    // ...and compacts by itself once the budget (20,000) is below it.
+    const r = await boot({
+      script: [{ text: 'first answer' }, { text: 'big answer', promptTokens: 30_000 }, ...SUMMARY],
+      prepare: compactEverything,
+      env: { KORTIX_PI_COMPACT_AT_TOKENS: '20000' },
+    })
+    const root = r.service.runtime()!.rootId
+    await promptAndSettle(r, 'ALPHA question')
+    await promptAndSettle(r, 'BETA question')
+    await waitFor(() => r.service.runtime()!.idle())
+    const page = (await r.bearer(`/kortix/runtime/messages/${root}`).then((res) => res.json())) as WirePage
+    const [turn] = compactionTurns(page)
+    expect(turn!.part).toMatchObject({ type: 'compaction', auto: true })
+    // The transcript keeps the history before the cut.
+    expect(JSON.stringify(page.messages)).toContain('ALPHA question')
+  })
+
   test('a context overflow compacts and retries: the turn completes with no error on the wire', async () => {
     const overflow = { status: 400, message: "This model's maximum context length is 64000 tokens. However, your messages resulted in 70000 tokens." }
     const r = await boot({ script: [{ text: 'first answer' }, overflow, ...SUMMARY, { text: 'answer after compaction' }], prepare: compactEverything })
@@ -2310,5 +2634,461 @@ describe('pi slash commands', () => {
     expect(((await res.json()) as { error: string }).error).toContain('deploy')
     expect(gateway.requests.length).toBe(calls)
     expect((await command(r, root, { arguments: 'x' })).status).toBe(400)
+  })
+})
+
+describe('pi steering', () => {
+  const post = (r: Rig, path: string, body: unknown) =>
+    r.user(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  /** As apps/api sends it: the service bearer plus the service-call mark the user proxy strips. */
+  const service = (r: Rig, path: string, body: unknown) =>
+    r.bearer(path, { method: 'POST', headers: { 'content-type': 'application/json', 'X-Kortix-Service-Call': '1' }, body: JSON.stringify(body) })
+  const steer = (r: Rig, messageId: string, text: string) =>
+    service(r, `/kortix/runtime/sessions/${r.service.runtime()!.rootId}/steer`, { message_id: messageId, parts: [{ type: 'text', text }] })
+  const page = async (r: Rig) =>
+    (await r.bearer(`/kortix/runtime/messages/${r.service.runtime()!.rootId}`).then((res) => res.json())) as WirePage
+  /** An id the client mints at send time: above every id it has seen, as the SDK does. */
+  const sendTimeId = async (r: Rig) => {
+    const clock = new MessageIdClock()
+    for (const message of (await page(r)).messages) clock.observe(String(message.info.id))
+    return clock.mint(Date.now())
+  }
+  const sentText = (index: number) => JSON.stringify(gateway.sent[index])
+  /** Hooks that record the turn and steer relays the boot would send. */
+  const relays = () => {
+    const seen = { begins: [] as string[], ends: [] as string[], reads: [] as string[] }
+    const hooks: PiRuntimeHooks = {
+      onTurnBegin: ({ messageId }) => void seen.begins.push(messageId),
+      onTurnEnd: ({ messageId }) => void seen.ends.push(messageId),
+      onSteerRead: ({ messageId }) => void seen.reads.push(messageId),
+    }
+    return { seen, hooks }
+  }
+  const TURN = 'msg_0198e2a4b0c3STEERTURN00001'
+
+  test('health lists session.steer', async () => {
+    const r = await boot({ script: [] })
+    const health = (await r.bearer('/kortix/health').then((res) => res.json())) as { capabilities: string[] }
+    expect(health.capabilities).toContain('session.steer')
+  })
+
+  test('a message steered during a tool call is read at the next step of the same turn', async () => {
+    const { seen, hooks } = relays()
+    const r = await boot({ script: [{ tool: 'bash', args: { command: 'sleep 0.6; echo tool-done' } }, { text: 'Checked the note too.' }], hooks })
+    const root = r.service.runtime()!.rootId
+    const before = gateway.sent.length
+    expect((await post(r, `/kortix/runtime/sessions/${root}/prompt`, { message_id: TURN, parts: [{ type: 'text', text: 'run the tool' }] })).status).toBe(202)
+    await waitForRunningTool(r, root)
+    const steered = await sendTimeId(r)
+    const accepted = await steer(r, steered, 'STEER-ONE also check the note')
+    expect(accepted.status).toBe(202)
+    expect(await accepted.json()).toEqual({ message_id: steered, steered: true })
+    // Not on the wire before the turn reads it.
+    expect((await page(r)).messages.some((m) => m.info.id === steered)).toBe(false)
+    await waitFor(() => seen.ends.length === 1)
+
+    // One turn, two model requests; the second carries the steered text, the first does not.
+    expect(seen.begins).toEqual([TURN])
+    expect(seen.ends).toEqual([TURN])
+    expect(gateway.sent.length - before).toBe(2)
+    expect(sentText(before)).not.toContain('STEER-ONE')
+    expect(sentText(before + 1)).toContain('STEER-ONE')
+    expect(seen.reads).toEqual([steered])
+
+    // The wire shows it after the tool step, and the reply answers it.
+    const messages = (await page(r)).messages
+    expect(messages.map((m) => [m.info.role, m.info.parentID ?? null])).toEqual([
+      ['user', null],
+      ['assistant', TURN],
+      ['user', null],
+      ['assistant', steered],
+    ])
+    expect(messages[2]!.info.id).toBe(steered)
+    expect(messages[2]!.parts[0]).toMatchObject({ type: 'text', text: 'STEER-ONE also check the note' })
+    expect(messages[1]!.parts.find((p) => p.type === 'tool')!.state.status).toBe('completed')
+
+    // pi's session store holds it, so the dump a restart restores has it.
+    const dump = JSON.parse(readFileSync(join(r.workspace, '.state', 'sess-pi-test.json'), 'utf8')) as { entries: unknown[] }
+    expect(JSON.stringify(dump.entries)).toContain('STEER-ONE')
+    // Read: it cannot be withdrawn any more.
+    const removed = await r.user(`/kortix/runtime/messages/${root}/${steered}`, { method: 'DELETE' })
+    expect(removed.status).toBe(409)
+    expect(await removed.json()).toEqual({ code: 'message_read', error: 'a model call read this message' })
+  })
+
+  test('two messages steered before one boundary arrive together, in send order', async () => {
+    const { seen, hooks } = relays()
+    const r = await boot({ script: [{ tool: 'bash', args: { command: 'sleep 0.6' } }, { text: 'Both handled.' }], hooks })
+    const root = r.service.runtime()!.rootId
+    const before = gateway.sent.length
+    expect((await post(r, `/kortix/runtime/sessions/${root}/prompt`, { message_id: TURN, parts: [{ type: 'text', text: 'go' }] })).status).toBe(202)
+    await waitForRunningTool(r, root)
+    const first = await sendTimeId(r)
+    expect((await steer(r, first, 'STEER-A')).status).toBe(202)
+    await Bun.sleep(2)
+    const second = await sendTimeId(r)
+    expect((await steer(r, second, 'STEER-B')).status).toBe(202)
+    await waitFor(() => seen.ends.length === 1)
+    expect(gateway.sent.length - before).toBe(2)
+    const next = sentText(before + 1)
+    expect(next.indexOf('STEER-A')).toBeGreaterThan(-1)
+    expect(next.indexOf('STEER-B')).toBeGreaterThan(next.indexOf('STEER-A'))
+    expect(seen.reads).toEqual([first, second])
+    expect((await page(r)).messages.map((m) => m.info.role)).toEqual(['user', 'assistant', 'user', 'user', 'assistant'])
+  })
+
+  test('a steered message withdrawn before the boundary never reaches the model', async () => {
+    const { seen, hooks } = relays()
+    const r = await boot({ script: [{ tool: 'bash', args: { command: 'sleep 0.6' } }, { text: 'Only one.' }], hooks })
+    const root = r.service.runtime()!.rootId
+    const before = gateway.sent.length
+    expect((await post(r, `/kortix/runtime/sessions/${root}/prompt`, { message_id: TURN, parts: [{ type: 'text', text: 'go' }] })).status).toBe(202)
+    await waitForRunningTool(r, root)
+    const withdrawn = await sendTimeId(r)
+    expect((await steer(r, withdrawn, 'STEER-GONE')).status).toBe(202)
+    await Bun.sleep(2)
+    const kept = await sendTimeId(r)
+    expect((await steer(r, kept, 'STEER-KEPT')).status).toBe(202)
+    const removed = await r.user(`/kortix/runtime/messages/${root}/${withdrawn}`, { method: 'DELETE' })
+    expect(removed.status).toBe(200)
+    await waitFor(() => seen.ends.length === 1)
+    expect(sentText(before + 1)).toContain('STEER-KEPT')
+    expect(sentText(before + 1)).not.toContain('STEER-GONE')
+    expect(seen.reads).toEqual([kept])
+    expect((await page(r)).messages.some((m) => m.info.id === withdrawn)).toBe(false)
+    expect((await r.user(`/kortix/runtime/messages/${root}/${withdrawn}`, { method: 'DELETE' })).status).toBe(404)
+  })
+
+  test('a message steered after the last step starts the next turn when the turn ends', async () => {
+    const { seen, hooks } = relays()
+    const r = await boot({
+      script: [{ text: 'first reply' }, { text: 'second reply' }],
+      hooks,
+      // Holds the turn open after its last model step: the window a late steer lands in.
+      prepare: (workspace) =>
+        void repoExtension(workspace, 'settle-late', `export default function (pi) {\n  pi.on('agent_settled', () => new Promise((resolve) => setTimeout(resolve, 800)))\n}\n`),
+    })
+    const rt = r.service.runtime()!
+    const before = gateway.sent.length
+    expect((await post(r, `/kortix/runtime/sessions/${rt.rootId}/prompt`, { message_id: TURN, parts: [{ type: 'text', text: 'go' }] })).status).toBe(202)
+    await waitFor(() => !rt.busy() && rt.activeTurnMessageId() === TURN && gateway.sent.length - before === 1)
+    await Bun.sleep(100)
+    const late = await sendTimeId(r)
+    expect((await steer(r, late, 'STEER-LATE')).status).toBe(202)
+    await waitFor(() => seen.ends.length === 2)
+    expect(seen.begins).toEqual([TURN, late])
+    expect(seen.ends).toEqual([TURN, late])
+    expect(seen.reads).toEqual([late])
+    expect(gateway.sent.length - before).toBe(2)
+    expect(sentText(before + 1)).toContain('STEER-LATE')
+    const messages = (await page(r)).messages
+    expect(messages.map((m) => [m.info.role, m.info.parentID ?? null])).toEqual([
+      ['user', null],
+      ['assistant', TURN],
+      ['user', null],
+      ['assistant', late],
+    ])
+    expect(messages[2]!.info.id).toBe(late)
+  })
+
+  test('a stopped turn drops its unread steered messages and starts nothing', async () => {
+    const { seen, hooks } = relays()
+    const r = await boot({ script: [{ tool: 'bash', args: { command: 'sleep 20' } }, { text: 'unreachable' }, { text: 'next turn' }], hooks })
+    const root = r.service.runtime()!.rootId
+    expect((await post(r, `/kortix/runtime/sessions/${root}/prompt`, { message_id: TURN, parts: [{ type: 'text', text: 'wait' }] })).status).toBe(202)
+    await waitForRunningTool(r, root)
+    const dropped = await sendTimeId(r)
+    expect((await steer(r, dropped, 'STEER-DROPPED')).status).toBe(202)
+    expect((await post(r, `/kortix/runtime/sessions/${root}/abort`, {})).status).toBe(200)
+    await waitFor(() => seen.ends.length === 1)
+    await Bun.sleep(150)
+    expect(seen.begins).toEqual([TURN])
+    expect(seen.reads).toEqual([])
+    expect((await page(r)).messages.some((m) => m.info.id === dropped)).toBe(false)
+    // Nothing is left in pi's queue: the next turn's model does not get it.
+    const before = gateway.sent.length
+    expect((await post(r, `/kortix/runtime/sessions/${root}/prompt`, { message_id: await sendTimeId(r), parts: [{ type: 'text', text: 'again' }] })).status).toBe(202)
+    await waitFor(() => seen.ends.length === 2)
+    expect(sentText(before)).not.toContain('STEER-DROPPED')
+  })
+
+  test('an idle session refuses a steer with no_active_turn and stores nothing; a repeated id is deduplicated', async () => {
+    const { seen, hooks } = relays()
+    const r = await boot({ script: [{ tool: 'bash', args: { command: 'sleep 0.6' } }, { text: 'done' }, { text: 'idle prompt' }], hooks })
+    const root = r.service.runtime()!.rootId
+    expect((await service(r, `/kortix/runtime/sessions/${root}/steer`, { parts: [{ type: 'text', text: 'no id' }] })).status).toBe(400)
+    // Only the platform may steer (D9.3 is checked there): a user through the
+    // proxy, and the bearer without the service-call mark, are refused.
+    const body = { message_id: await sendTimeId(r), parts: [{ type: 'text', text: 'around admission' }] }
+    expect((await post(r, `/kortix/runtime/sessions/${root}/steer`, body)).status).toBe(403)
+    const unmarked = await r.bearer(`/kortix/runtime/sessions/${root}/steer`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    expect(unmarked.status).toBe(403)
+    expect(await unmarked.json()).toMatchObject({ code: 'STEER_SERVICE_ONLY' })
+
+    const idle = await sendTimeId(r)
+    const refused = await steer(r, idle, 'nobody reads this')
+    expect(refused.status).toBe(409)
+    expect(refused.headers.get('X-Kortix-Turn-Verb')).toBe('1')
+    expect(await refused.json()).toEqual({ code: 'no_active_turn' })
+    expect((await page(r)).messages).toEqual([])
+
+    expect((await post(r, `/kortix/runtime/sessions/${root}/prompt`, { message_id: TURN, parts: [{ type: 'text', text: 'go' }] })).status).toBe(202)
+    await waitForRunningTool(r, root)
+    // The running turn's own id, a steered id twice, and a prompt under a steered id.
+    expect(await steer(r, TURN, 'dup').then((res) => res.json())).toEqual({ deduplicated: true })
+    const steered = await sendTimeId(r)
+    expect((await steer(r, steered, 'STEER-ONCE')).status).toBe(202)
+    const again = await steer(r, steered, 'STEER-ONCE')
+    expect(again.status).toBe(200)
+    expect(await again.json()).toEqual({ deduplicated: true })
+    const asPrompt = await post(r, `/kortix/runtime/sessions/${root}/prompt`, { message_id: steered, parts: [{ type: 'text', text: 'STEER-ONCE' }] })
+    expect(asPrompt.status).toBe(200)
+    await waitFor(() => seen.ends.length === 1)
+    expect(seen.reads).toEqual([steered])
+    // The refused id stored nothing, so it may now be sent as a prompt.
+    expect((await post(r, `/kortix/runtime/sessions/${root}/prompt`, { message_id: idle, parts: [{ type: 'text', text: 'now a prompt' }] })).status).toBe(202)
+    await waitFor(() => seen.ends.length === 2)
+  })
+})
+
+describe('pi retract (R7.1)', () => {
+  const post = (r: Rig, path: string, body: unknown) =>
+    r.user(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  const root = (r: Rig) => r.service.runtime()!.rootId
+  const send = (r: Rig, messageId: string, text: string, extra: Record<string, unknown> = {}) =>
+    post(r, `/kortix/runtime/sessions/${root(r)}/prompt`, { message_id: messageId, parts: [{ type: 'text', text }], ...extra })
+  const retract = (r: Rig, messageId: string) => post(r, `/kortix/runtime/messages/${root(r)}/${messageId}/retract`, {})
+  const page = async (r: Rig) =>
+    (await r.bearer(`/kortix/runtime/messages/${root(r)}`).then((res) => res.json())) as WirePage
+  const sendTimeId = async (r: Rig) => {
+    const clock = new MessageIdClock()
+    for (const message of (await page(r)).messages) clock.observe(String(message.info.id))
+    return clock.mint(Date.now())
+  }
+  const turnRelays = () => {
+    const seen = { begins: [] as string[], ends: [] as string[] }
+    const hooks: PiRuntimeHooks = {
+      onTurnBegin: ({ messageId }) => void seen.begins.push(messageId),
+      onTurnEnd: ({ messageId }) => void seen.ends.push(messageId),
+    }
+    return { seen, hooks }
+  }
+  const TURN = 'msg_0198e2a4b0c3RETRACTTURN001'
+
+  test('health lists runtime.retract.v1', async () => {
+    const r = await boot({ script: [] })
+    const health = (await r.bearer('/kortix/health').then((res) => res.json())) as { capabilities: string[] }
+    expect(health.capabilities).toContain('runtime.retract.v1')
+  })
+
+  test('a prompt queued behind the running turn is retracted: it leaves the wire, never runs, and may be sent again', async () => {
+    const { seen, hooks } = turnRelays()
+    const r = await boot({ script: [{ tool: 'bash', args: { command: 'sleep 0.6; echo done' } }, { text: 'first done' }, { text: 'resent answer' }], hooks })
+    const before = gateway.sent.length
+    expect((await send(r, TURN, 'run the tool')).status).toBe(202)
+    await waitForRunningTool(r, root(r))
+    const queued = await sendTimeId(r)
+    expect((await send(r, queued, 'QUEUED-GONE')).status).toBe(202)
+    expect((await page(r)).messages.some((m) => m.info.id === queued)).toBe(true)
+
+    const retracted = await retract(r, queued)
+    expect(retracted.status).toBe(200)
+    expect(retracted.headers.get('X-Kortix-Turn-Verb')).toBe('1')
+    expect(await retracted.json()).toEqual({ retracted: true })
+    expect((await page(r)).messages.some((m) => m.info.id === queued)).toBe(false)
+    expect((await retract(r, queued)).status).toBe(404)
+
+    await waitFor(() => seen.ends.length === 1)
+    await Bun.sleep(150)
+    // Only the running turn ran, and no model request carried the retracted text.
+    expect(seen.begins).toEqual([TURN])
+    expect(gateway.sent.slice(before).some((messages) => JSON.stringify(messages).includes('QUEUED-GONE'))).toBe(false)
+
+    // A retracted id is not on record: a release may send it again.
+    expect((await send(r, queued, 'QUEUED-AGAIN')).status).toBe(202)
+    await waitFor(() => seen.ends.length === 2)
+    expect(seen.begins).toEqual([TURN, queued])
+  })
+
+  test('the running turn and an answered message are read; an unknown id is 404', async () => {
+    const { seen, hooks } = turnRelays()
+    const r = await boot({ script: [{ tool: 'bash', args: { command: 'sleep 0.6; echo done' } }, { text: 'done' }], hooks })
+    expect((await send(r, TURN, 'run the tool')).status).toBe(202)
+    await waitForRunningTool(r, root(r))
+    const running = await retract(r, TURN)
+    expect(running.status).toBe(409)
+    expect(await running.json()).toEqual({ code: 'message_read', error: 'a model call read this message' })
+    await waitFor(() => seen.ends.length === 1)
+    expect((await retract(r, TURN)).status).toBe(409)
+    expect((await retract(r, 'msg_0198e2a4b0c3UNKNOWNMSG0001')).status).toBe(404)
+    expect((await page(r)).messages.some((m) => m.info.id === TURN)).toBe(true)
+  })
+
+  test('a no_reply message starts no turn; retracted before a turn reads it, no model call ever gets it', async () => {
+    const { seen, hooks } = turnRelays()
+    const r = await boot({ script: [{ text: 'answered the second' }, { text: 'answered the third' }], hooks })
+    const silent = await sendTimeId(r)
+    expect((await send(r, silent, 'NOREPLY-GONE', { no_reply: true })).status).toBe(202)
+    await waitFor(() => (r.service.runtime()!.idle()))
+    expect((await page(r)).messages.some((m) => m.info.id === silent)).toBe(true)
+    // `no_reply` on the Kortix route persists the message and runs nothing.
+    await Bun.sleep(100)
+    expect(seen.begins).toEqual([])
+
+    expect(await retract(r, silent).then((res) => res.json())).toEqual({ retracted: true })
+    expect((await page(r)).messages.some((m) => m.info.id === silent)).toBe(false)
+
+    const kept = await sendTimeId(r)
+    expect((await send(r, kept, 'NOREPLY-KEPT', { no_reply: true })).status).toBe(202)
+    const before = gateway.sent.length
+    const next = await sendTimeId(r)
+    expect((await send(r, next, 'the second')).status).toBe(202)
+    await waitFor(() => seen.ends.length === 1)
+    const sent = JSON.stringify(gateway.sent[before])
+    expect(sent).toContain('NOREPLY-KEPT')
+    expect(sent).not.toContain('NOREPLY-GONE')
+    // The turn read the kept one: it can no longer be taken back.
+    expect((await retract(r, kept)).status).toBe(409)
+  })
+
+  test('the DELETE verb an older API sends retracts a queued prompt too', async () => {
+    const { seen, hooks } = turnRelays()
+    const r = await boot({ script: [{ tool: 'bash', args: { command: 'sleep 0.6; echo done' } }, { text: 'first done' }], hooks })
+    expect((await send(r, TURN, 'run the tool')).status).toBe(202)
+    await waitForRunningTool(r, root(r))
+    const queued = await sendTimeId(r)
+    expect((await send(r, queued, 'QUEUED-DELETED')).status).toBe(202)
+    expect((await r.user(`/kortix/runtime/messages/${root(r)}/${queued}`, { method: 'DELETE' })).status).toBe(200)
+    const legacy = await sendTimeId(r)
+    expect((await send(r, legacy, 'QUEUED-LEGACY')).status).toBe(202)
+    expect((await r.user(`/session/${root(r)}/message/${legacy}`, { method: 'DELETE' })).status).toBe(200)
+    await waitFor(() => seen.ends.length === 1)
+    await Bun.sleep(150)
+    expect(seen.begins).toEqual([TURN])
+  })
+})
+
+describe('pi per-prompt agent (R7.2)', () => {
+  const post = (r: Rig, path: string, body: unknown) =>
+    r.user(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  const root = (r: Rig) => r.service.runtime()!.rootId
+  const page = async (r: Rig) =>
+    (await r.bearer(`/kortix/runtime/messages/${root(r)}`).then((res) => res.json())) as WirePage
+  const sendTimeId = async (r: Rig) => {
+    const clock = new MessageIdClock()
+    for (const message of (await page(r)).messages) clock.observe(String(message.info.id))
+    return clock.mint(Date.now())
+  }
+  const send = async (r: Rig, text: string, agent?: string) => {
+    const messageId = await sendTimeId(r)
+    const res = await post(r, `/kortix/runtime/sessions/${root(r)}/prompt`, { message_id: messageId, parts: [{ type: 'text', text }], ...(agent ? { agent } : {}) })
+    expect(res.status).toBe(202)
+    return messageId
+  }
+  /** The system text the model was sent on request `index`: every system message, in order. */
+  const systemOf = (index: number) =>
+    gateway.sent[index]!.filter((m) => m.role === 'system').map((m) => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content))).join('\n')
+  const agents = {
+    default_agent: 'coder',
+    agent: {
+      coder: { mode: 'primary', prompt: 'PROMPT-OF-CODER' },
+      writer: { mode: 'primary', prompt: 'PROMPT-OF-WRITER', permission: { bash: 'deny' } },
+      reviewer: { mode: 'subagent', prompt: 'PROMPT-OF-REVIEWER' },
+      retired: { mode: 'primary', disable: true, prompt: 'PROMPT-OF-RETIRED' },
+    },
+  }
+
+  test('a prompt that picks an agent runs on that agent; one that picks none runs on the session agent', async () => {
+    const ends: string[] = []
+    const r = await boot({
+      script: [{ tool: 'bash', args: { command: 'echo writer-ran-bash' } }, { text: 'writer done' }, { text: 'coder done' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify(agents) },
+      hooks: { onTurnEnd: ({ messageId }) => void ends.push(messageId) },
+    })
+    const first = gateway.sent.length
+    const writerTurn = await send(r, 'as the writer, run a command', 'writer')
+    await waitFor(() => ends.length === 1)
+    // The writer's prompt reached the model, and its `bash: deny` refused the call.
+    expect(systemOf(first)).toContain('PROMPT-OF-WRITER')
+    let messages = (await page(r)).messages
+    const writerMessages = messages.filter((m) => m.info.id === writerTurn || m.info.parentID === writerTurn)
+    expect(writerMessages.map((m) => m.info.agent)).toEqual(['writer', 'writer', 'writer'])
+    const tool = writerMessages.flatMap((m) => m.parts).find((p) => p.type === 'tool')!
+    expect(tool.state.status).toBe('error')
+    expect(existsSync(join(r.workspace, 'writer-ran-bash'))).toBe(false)
+
+    const before = gateway.sent.length
+    const coderTurn = await send(r, 'and now with no pick')
+    await waitFor(() => ends.length === 2)
+    const system = systemOf(before)
+    expect(system.lastIndexOf('PROMPT-OF-CODER')).toBeGreaterThan(system.lastIndexOf('PROMPT-OF-WRITER'))
+    messages = (await page(r)).messages
+    expect(messages.filter((m) => m.info.id === coderTurn || m.info.parentID === coderTurn).map((m) => m.info.agent)).toEqual(['coder', 'coder'])
+    // The state document still names the session's agent as the default.
+    const state = (await r.bearer('/kortix/runtime/state').then((res) => res.json())) as { config: { value: { default_agent: string } } }
+    expect(state.config.value.default_agent).toBe('coder')
+  })
+
+  // #9410's per-agent tool access follows the turn's agent, not the boot agent.
+  test('a picked agent\'s tool list governs its turn; the next unpicked turn has the session agent\'s tools again', async () => {
+    const ends: string[] = []
+    const r = await boot({
+      script: [
+        { tool: 'bash', args: { command: 'touch picked-ran.txt' } }, { text: 'reader done' },
+        { tool: 'bash', args: { command: 'touch session-ran.txt' } }, { text: 'coder done' },
+      ],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ default_agent: 'coder', agent: { coder: { mode: 'primary' }, reader: { mode: 'primary', tools: { '*': false, read: true } } } }) },
+      hooks: { onTurnEnd: ({ messageId }) => void ends.push(messageId) },
+    })
+    const first = gateway.sent.length
+    await send(r, 'run a command', 'reader')
+    await waitFor(() => ends.length === 1)
+    expect(existsSync(join(r.workspace, 'picked-ran.txt'))).toBe(false)
+    // The reader's request offers `read` alone.
+    expect(gateway.sampling[first]!.tools).toBe(1)
+    const second = gateway.sampling.length
+    await send(r, 'run a command')
+    await waitFor(() => ends.length === 2)
+    expect(gateway.sampling[second]!.tools).toBeGreaterThan(1)
+    expect(existsSync(join(r.workspace, 'session-ran.txt'))).toBe(true)
+  })
+
+  // Strix finding on #9391 (CWE-863): `__proto__` and `constructor` resolve
+  // through the prototype chain, and their undefined `permission` compiled to an
+  // empty policy that allows every tool.
+  test('a pick named after an Object prototype key keeps the session agent and its permission policy', async () => {
+    for (const pick of ['__proto__', 'constructor']) {
+      const ends: string[] = []
+      const marker = `proto-${pick.replace(/_/g, '')}-ran.txt`
+      const r = await boot({
+        script: [{ tool: 'bash', args: { command: `touch ${marker}` } }, { text: 'done' }],
+        env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({ default_agent: 'locked', agent: { locked: { mode: 'primary', prompt: 'PROMPT-OF-LOCKED', permission: { bash: 'deny' } } } }) },
+        hooks: { onTurnEnd: ({ messageId }) => void ends.push(messageId) },
+      })
+      const id = await send(r, 'run the command', pick)
+      await waitFor(() => ends.length === 1)
+      const messages = (await page(r)).messages.filter((m) => m.info.id === id || m.info.parentID === id)
+      expect({ pick, agents: messages.map((m) => m.info.agent) }).toEqual({ pick, agents: ['locked', 'locked', 'locked'] })
+      const tool = messages.flatMap((m) => m.parts).find((p) => p.type === 'tool')!
+      expect({ pick, status: tool.state.status }).toEqual({ pick, status: 'error' })
+      expect({ pick, ran: existsSync(join(r.workspace, marker)) }).toEqual({ pick, ran: false })
+    }
+  })
+
+  test('a subagent, a disabled agent and an unknown name are not run as the session agent', async () => {
+    const ends: string[] = []
+    const r = await boot({
+      script: [{ text: 'one' }, { text: 'two' }, { text: 'three' }],
+      env: { KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify(agents) },
+      hooks: { onTurnEnd: ({ messageId }) => void ends.push(messageId) },
+    })
+    for (const [index, pick] of ['reviewer', 'retired', 'nobody'].entries()) {
+      const before = gateway.sent.length
+      const id = await send(r, `pick ${pick}`, pick)
+      await waitFor(() => ends.length === index + 1)
+      const system = systemOf(before)
+      expect({ pick, coder: system.includes('PROMPT-OF-CODER'), other: /PROMPT-OF-(REVIEWER|RETIRED)/.test(system) }).toEqual({ pick, coder: true, other: false })
+      expect((await page(r)).messages.find((m) => m.info.id === id)!.info.agent).toBe('coder')
+    }
   })
 })
