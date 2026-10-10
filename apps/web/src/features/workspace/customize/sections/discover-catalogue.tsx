@@ -67,12 +67,12 @@ type DiscoverConnectorTarget =
  * public catalogue plus Pipedream's OAuth apps.
  *
  * ── Known duplication, read before changing this file ──────────────────────
- * `features/workspace/capabilities/connectors/discover-add-flow.tsx` runs the
- * same add journey (surface picker -> `ConnectorConnectionModal` ->
- * `createConnector`) for the Connectors page's Browse scope. The two are
- * separate implementations of one journey and must stay behaviourally
- * consistent; a fix here very likely belongs there too. That file's header
- * records why they were not unified.
+ * The app page's Install
+ * (`features/workspace/capabilities/connectors/install/install.ts`) runs the
+ * same add journey (pick a surface -> `createConnector` -> credential entry)
+ * for the Connectors page's catalogue. The two are separate implementations
+ * of one journey and must stay behaviourally consistent; a fix here very
+ * likely belongs there too.
  */
 export function DiscoverCatalogue({
   projectId,
