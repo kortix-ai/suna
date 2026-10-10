@@ -71,7 +71,9 @@ export function bindAccountCapture(accountId: string) {
 
 /** `kortix.capture` — the account handle, the device sign-in approval, and the agent's own reads. */
 export const captureClient = {
-  account: bindAccountCapture,
+  // An arrow, not `bindAccountCapture` itself: `typeof bindAccountCapture` names this
+  // internal module, and a consumer's declaration emit fails with TS2742.
+  account: (accountId: string) => bindAccountCapture(accountId),
   deviceGrant: C.getCaptureDeviceGrant,
   approveDevice: C.approveCaptureDeviceGrant,
   denyDevice: C.denyCaptureDeviceGrant,
