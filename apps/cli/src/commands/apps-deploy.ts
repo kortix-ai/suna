@@ -446,8 +446,6 @@ export async function provisionDeployApp(
     return apps.create({
       slug: manifestSlug,
       name: flags.name ?? manifestDefaults.name,
-      // The kind is fixed at create; a later manifest change does not convert an App.
-      ...(manifestBlock?.kind ? { kind: manifestBlock.kind } : {}),
       ...settings,
     });
   }

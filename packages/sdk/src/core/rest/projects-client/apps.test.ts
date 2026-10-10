@@ -33,21 +33,8 @@ import {
   type UpdateAppAccessInput,
   type AppAuth,
   type AppCapability,
-  type AppInstance,
-  type AppKind,
-  type AppSnapshots,
-  type AppCredentials,
   type AppToken,
-  type DeleteAppResult,
-  createAppSnapshot,
   createAppToken,
-  deleteAppSnapshot,
-  getAppCredentials,
-  getAppLog,
-  listAppSnapshots,
-  restoreAppSnapshot,
-  rotateAppCredentials,
-  waitForApp,
 } from './apps';
 
 type Equal<A, B> =
@@ -179,49 +166,35 @@ test('an App names the Apps it uses and the Apps that use it; create and update 
   expect(last()).toMatchObject({ method: 'PATCH', url: 'http://backend.test/v1/projects/project-1/apps/app-1', body: { uses: [] } });
 });
 
-test('an App carries its kind, capabilities, sign-in values and instance; create sends the kind', async () => {
+test('an App carries its capabilities and sign-in values; no kind, no instance', () => {
+  type Has<T, K extends string> = K extends keyof T ? true : false;
+  const kind: Has<App, 'kind'> = false;
+  const instance: Has<App, 'instance'> = false;
+  const createKind: Has<CreateAppInput, 'kind'> = false;
+  expect([kind, instance, createKind]).toEqual([false, false, false]);
   const app = {
     app_id: 'app-2',
-    kind: 'convex',
-    capabilities: ['deployments', 'snapshots', 'restore', 'admin_credentials', 'dashboard', 'logs', 'member_tokens'],
+    capabilities: ['deployments', 'rollback', 'preview', 'sleep', 'member_tokens'],
     auth: {
       issuer: 'https://api.test/v1/projects/project-1',
       audience: 'app-2',
       jwks_uri: 'https://api.test/v1/projects/project-1/jwks.json',
     },
-    hosting_type: 'convex',
-    instance: {
-      status: 'running',
-      url: 'https://db.apps.test',
-      site_url: 'https://db-site.apps.test',
-      dashboard_url: 'https://db-dashboard.apps.test',
-      error: null,
-      operation: null,
-      last_operation_error: null,
-      health: null,
-      auth_env: null,
-      client_version: '1.46.0',
-      purge_after: null,
-    },
+    hosting_type: 'sandbox',
   } as App;
-  responses.push({ status: 201, body: app });
-
-  const kind: AppKind | undefined = app.kind;
   const capabilities: AppCapability[] | undefined = app.capabilities;
-  const instance: AppInstance | null | undefined = app.instance;
   const auth: AppAuth | undefined = app.auth;
-  expect(kind).toBe('convex');
-  expect(capabilities).toContain('snapshots');
-  expect(instance?.status).toBe('running');
+  expect(capabilities).toContain('member_tokens');
   expect(auth?.audience).toBe('app-2');
-
-  const created = await createApp('project-1', { slug: 'db', name: 'db', kind: 'convex', cpu: 2 });
-  expect(last()).toMatchObject({ method: 'POST', body: { slug: 'db', name: 'db', kind: 'convex', cpu: 2 } });
-  expect(created.instance?.url).toBe('https://db.apps.test');
 });
 
-test('AppKind is exactly web or convex', () => {
-  const exact: Equal<AppKind, 'web' | 'convex'> = true;
+test('AppCapability is exactly the generic capabilities', () => {
+  const exact: Equal<AppCapability, 'deployments' | 'rollback' | 'preview' | 'sleep' | 'static' | 'member_tokens'> = true;
+  expect(exact).toBe(true);
+});
+
+test('a deployment source is a build: static, bundle, dockerfile or oci_image', () => {
+  const exact: Equal<import('./apps').AppSourceKind, 'static' | 'bundle' | 'dockerfile' | 'oci_image'> = true;
   expect(exact).toBe(true);
 });
 
@@ -449,13 +422,12 @@ test('an App runs always-on or on demand: create and update send always_on, and 
   expect(last().body).toEqual({ always_on: false });
 });
 
-test('Apps have no budget: no App, create, update or instance type carries one, and an always-on App reads its monthly cost', async () => {
+test('Apps have no budget: no App, create or update type carries one, and an always-on App reads its monthly cost', async () => {
   type Has<T, K extends string> = K extends keyof T ? true : false;
   const appBudget: Has<App, 'monthly_budget_usd'> = false;
   const createBudget: Has<CreateAppInput, 'monthly_budget_usd'> = false;
   const updateBudget: Has<UpdateAppInput, 'monthly_budget_usd'> = false;
-  const instanceAlert: Has<AppInstance, 'budget_alert'> = false;
-  expect([appBudget, createBudget, updateBudget, instanceAlert]).toEqual([false, false, false, false]);
+  expect([appBudget, createBudget, updateBudget]).toEqual([false, false, false]);
   const app: App = {
     app_id: 'app-1', account_id: 'account-1', project_id: 'project-1', slug: 'demo', name: 'Demo',
     url: 'https://demo.apps.kortix.com', access_mode: 'private', access_revision: 1, desired_state: 'running',
@@ -490,145 +462,10 @@ test('a static deployment says so: hosting_type static', () => {
   expect(hosting).toBe('static');
 });
 
-test('deleteApp sends the typed slug and reads what a retained delete keeps', async () => {
-  const kept: DeleteAppResult = {
-    ok: true,
-    images: { released: 0, pending: 0 },
-    retained_until: '2026-10-16T00:00:00.000Z',
-    final_snapshot_id: 'snap-final',
-  };
-  responses.push({ body: kept });
-
-  const result = await deleteApp('project-1', 'app-1', { confirm: 'my db' });
-
-  expect(last()).toMatchObject({
-    method: 'DELETE',
-    url: 'http://backend.test/v1/projects/project-1/apps/app-1?confirm=my%20db',
-  });
-  expect(result).toEqual(kept);
-});
-
-test('a deployment without an artifact records what the client CLI deployed', async () => {
-  responses.push({ status: 201, body: { deployment_id: 'deployment-9', artifact_id: null, source_kind: 'convex', hosting_type: 'convex' } });
-
-  const deployment = await createAppDeployment('project-1', 'app-1', { source: { kind: 'convex', revision: 'abc123' } });
-
-  expect(last()).toMatchObject({
-    method: 'POST',
-    url: 'http://backend.test/v1/projects/project-1/apps/app-1/deployments',
-    body: { source: { kind: 'convex', revision: 'abc123' } },
-  });
-  const artifact: string | null = deployment.artifact_id;
-  expect(artifact).toBeNull();
-  expect(deployment.source_kind).toBe('convex');
-  expect(deployment.hosting_type).toBe('convex');
-});
-
-test('snapshots: list, take, delete and restore use the App capability routes', async () => {
-  const listed: AppSnapshots = {
-    automatic: { state: 'ok', last_backup_at: null, size_bytes: null, interval_minutes: 60 },
-    snapshots: [{ snapshot_id: 'snap/1', created_at: '2026-10-09T00:00:00.000Z', size_bytes: 10, kind: 'final', expires_at: '2026-10-16T00:00:00.000Z' }],
-    snapshot_limit: 10,
-    snapshot_schedule: { automatic_interval_hours: 24, automatic_retention_days: 7, resize_retention_hours: 24, last_automatic_at: null },
-  };
-  responses.push(
-    { body: listed },
-    { status: 201, body: listed.snapshots[0] },
-    { status: 204, body: null },
-    { body: { app_id: 'app-1', kind: 'convex' } },
-  );
-
-  expect(await listAppSnapshots('project-1', 'app-1')).toEqual(listed);
-  expect(last()).toMatchObject({ method: 'GET', url: 'http://backend.test/v1/projects/project-1/apps/app-1/snapshots' });
-
-  const taken = await createAppSnapshot('project-1', 'app-1');
-  expect(last()).toMatchObject({ method: 'POST', url: 'http://backend.test/v1/projects/project-1/apps/app-1/snapshots' });
-  expect(taken.kind).toBe('final');
-
-  await deleteAppSnapshot('project-1', 'app-1', 'snap/1');
-  expect(last()).toMatchObject({ method: 'DELETE', url: 'http://backend.test/v1/projects/project-1/apps/app-1/snapshots/snap%2F1' });
-
-  const restored = await restoreAppSnapshot('project-1', 'app-1', 'snap/1');
-  expect(last()).toMatchObject({
-    method: 'POST',
-    url: 'http://backend.test/v1/projects/project-1/apps/app-1/restore',
-    body: { snapshot_id: 'snap/1' },
-  });
-  expect(restored.app_id).toBe('app-1');
-});
-
-test('admin credentials: read and rotate', async () => {
-  const credentials: AppCredentials = {
-    url: 'https://db.apps.test',
-    site_url: 'https://db-site.apps.test',
-    admin_key: 'synthetic-admin-key',
-    env: { CONVEX_SELF_HOSTED_URL: 'https://db.apps.test', CONVEX_SELF_HOSTED_ADMIN_KEY: 'synthetic-admin-key' },
-  };
-  responses.push({ body: credentials }, { body: { app_id: 'app-1' } });
-
-  expect(await getAppCredentials('project-1', 'app-1')).toEqual(credentials);
-  expect(last()).toMatchObject({ method: 'GET', url: 'http://backend.test/v1/projects/project-1/apps/app-1/credentials' });
-
-  const rotated = await rotateAppCredentials('project-1', 'app-1');
-  expect(last()).toMatchObject({ method: 'POST', url: 'http://backend.test/v1/projects/project-1/apps/app-1/rotate-credentials' });
-  expect(rotated.app_id).toBe('app-1');
-});
-
 test('createAppToken mints a sign-in token for the App naming the caller', async () => {
   const minted: AppToken = { token: 'header.payload.signature', expires_at: '2026-10-09T00:15:00.000Z' };
   responses.push({ body: minted });
 
   expect(await createAppToken('project-1', 'app-1')).toEqual(minted);
   expect(last()).toMatchObject({ method: 'POST', url: 'http://backend.test/v1/projects/project-1/apps/app-1/token' });
-});
-
-test('getAppLog reads the end of the App process log', async () => {
-  responses.push({ body: { log: 'line 1\nline 2\n' } }, { body: { log: '' } });
-
-  expect(await getAppLog('project-1', 'app-1', { lines: 50 })).toBe('line 1\nline 2\n');
-  expect(last()).toMatchObject({ method: 'GET', url: 'http://backend.test/v1/projects/project-1/apps/app-1/logs?lines=50' });
-  await getAppLog('project-1', 'app-1');
-  expect(last().url).toBe('http://backend.test/v1/projects/project-1/apps/app-1/logs?lines=200');
-});
-
-const instanceApp = (instance: Partial<AppInstance> | null) => ({
-  app_id: 'app-1',
-  slug: 'db',
-  instance: instance && { status: 'running', operation: null, last_operation_error: null, error: null, ...instance },
-});
-
-test('waitForApp resolves once the instance runs with no operation in flight', async () => {
-  responses.push(
-    { body: instanceApp({ status: 'provisioning' }) },
-    { body: instanceApp({ operation: 'resizing' }) },
-    { body: instanceApp({}) },
-  );
-
-  const app = await waitForApp('project-1', 'app-1', { intervalMs: 1 });
-
-  expect(calls).toHaveLength(3);
-  expect(calls.every((call) => call.url === 'http://backend.test/v1/projects/project-1/apps/app-1')).toBe(true);
-  expect(app.instance?.status).toBe('running');
-});
-
-test('waitForApp resolves at once for an App without an instance', async () => {
-  responses.push({ body: instanceApp(null) });
-  expect((await waitForApp('project-1', 'app-1', { intervalMs: 1 })).app_id).toBe('app-1');
-  expect(calls).toHaveLength(1);
-});
-
-test('waitForApp rejects with the instance error and with a new operation error', async () => {
-  responses.push({ body: instanceApp({ status: 'error', error: 'image build failed' }) });
-  await expect(waitForApp('project-1', 'app-1', { intervalMs: 1 })).rejects.toThrow('image build failed');
-
-  responses.push(
-    { body: instanceApp({ operation: 'resizing', last_operation_error: 'old failure' }) },
-    { body: instanceApp({ last_operation_error: 'resize failed: disk' }) },
-  );
-  await expect(waitForApp('project-1', 'app-1', { intervalMs: 1 })).rejects.toThrow('resize failed: disk');
-});
-
-test('waitForApp rejects after its timeout while the instance is still busy', async () => {
-  for (let i = 0; i < 20; i++) responses.push({ body: instanceApp({ status: 'provisioning' }) });
-  await expect(waitForApp('project-1', 'app-1', { intervalMs: 1, timeoutMs: 5 })).rejects.toThrow('db is still provisioning');
 });

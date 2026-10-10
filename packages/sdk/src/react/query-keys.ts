@@ -440,7 +440,6 @@ export const qk = {
     appDeployments: (id: string, appId: string) =>
       [...qk.project.apps(id), appId, 'deployments'] as const,
     /** Snapshots of one App (capability `snapshots`). */
-    appSnapshots: (id: string, appId: string) => [...qk.project.apps(id), appId, 'snapshots'] as const,
     /** One deployment and its events (build log included). */
     appDeployment: (id: string, appId: string, deploymentId: string) =>
       [...qk.project.appDeployments(id, appId), deploymentId] as const,

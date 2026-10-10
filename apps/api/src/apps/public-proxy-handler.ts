@@ -147,7 +147,7 @@ async function routeAppPublicRequest(
   return proxyRunningApp(request, url, matched.publicHost, viewer, loaded, hosting, coldStart);
 }
 
-async function proxyRunningApp(
+export async function proxyRunningApp(
   request: Request,
   url: URL,
   publicHost: string,

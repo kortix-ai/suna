@@ -250,8 +250,6 @@ export interface AppResourcesV2 {
 
 /** Local deployment defaults. The server remains the App control plane. */
 export interface AppBlockV2 {
-  /** Fixed at create. `web` (default): built from `path`. `convex`: `path` deploys with the Convex CLI. */
-  kind?: 'web' | 'convex';
   /** The Apps, by slug, this App uses: it may bind to them and mint their sign-in tokens. */
   uses?: string[];
   path?: string;

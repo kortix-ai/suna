@@ -743,36 +743,25 @@ apps:
     expect(v2.issues.filter((issue) => issue.severity === 'error')).toEqual([]);
   });
 
-  test('a v2 App names its kind and the Apps it uses, by slug', () => {
+  test('a v2 App names the Apps it uses, by slug', () => {
     const errors = (yaml: string) =>
       validateManifest(`kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\napps:\n${yaml}`, 'yaml')
         .issues.filter((issue) => issue.severity === 'error');
-    expect(errors('  db:\n    kind: convex\n    path: db\n    resources: { cpu: 2 }\n  crm:\n    kind: web\n    path: apps/crm\n    uses: [db, billing-db]')).toEqual([]);
-    expect(errors('  crm:\n    kind: lambda').map((issue) => issue.path)).toEqual(['apps.crm.kind']);
+    expect(errors('  db:\n    path: db\n    resources: { cpu: 2 }\n  crm:\n    path: apps/crm\n    uses: [db, billing-db]')).toEqual([]);
     expect(errors('  crm:\n    uses: [Main, ""]').map((issue) => issue.path)).toEqual(['apps.crm.uses[0]', 'apps.crm.uses[1]']);
     expect(errors('  crm:\n    uses: db').map((issue) => issue.path)).toEqual(['apps.crm.uses']);
     expect(errors('  crm:\n    uses: [crm]').map((issue) => issue.path)).toEqual(['apps.crm.uses[0]']);
   });
 
-  test('a convex App takes no build or runtime fields and always runs', () => {
-    const result = validateManifest(
-      `kortix_version: 2
-default_agent: w
-agents:
-  w: {}
-apps:
-  db:
-    kind: convex
-    type: static
-    port: 3000
-    always_on: false`,
-      'yaml',
-    );
-    expect(result.issues.filter((issue) => issue.severity === 'error').map((issue) => issue.path)).toEqual([
-      'apps.db.type',
-      'apps.db.port',
-      'apps.db.always_on',
-    ]);
+  test('the retired `kind` field warns and still validates: an App\'s shape comes from its config', () => {
+    for (const kind of ['convex', 'web', 'lambda']) {
+      const result = validateManifest(`kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\napps:\n  db:\n    kind: ${kind}\n    type: static`, 'yaml');
+      expect(result.issues.filter((entry) => entry.severity === 'error').map((entry) => entry.path)).toEqual([]);
+      const issue = result.issues.find((entry) => entry.path === 'apps.db.kind');
+      expect(issue?.severity).toBe('warning');
+      expect(issue?.message).toContain('retired');
+      expect(issue?.message).toContain('kortix-apps skill templates');
+    }
   });
 
   test('the retired `backends` field names its replacement', () => {

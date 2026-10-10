@@ -236,7 +236,7 @@ export interface KortixBinding {
 
 /**
  * An App this App uses (`uses`), on this App's own origin: no cross-origin
- * request, no CORS. A used App whose kind has no endpoint answers
+ * request, no CORS. A used static App answers
  * `409 app_binding_unsupported`; an App this App does not use answers
  * `403 app_not_linked`.
  *
