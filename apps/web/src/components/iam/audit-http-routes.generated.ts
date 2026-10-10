@@ -295,6 +295,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "POST|v1|connectors|webhook|pipedream",
   "GET|v1|docs",
   "GET|v1|edge|tls-check",
+  "POST|v1|feedback",
   "GET|v1|generation",
   "GET|v1|git|:project|fast-boot-bundle",
   "POST|v1|git|:project|git-receive-pack",
