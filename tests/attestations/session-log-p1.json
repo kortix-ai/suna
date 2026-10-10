@@ -1,0 +1,26 @@
+{
+  "source_hash": "824c4b48987c6d1e3fdfda055d3a2036f5570eece82b13d1d3fe5e2a9fbb96be",
+  "diff_files": [
+    "packages/api-contract/package.json",
+    "packages/api-contract/src/__tests__/fixtures/session-log/claude-code.v2.json",
+    "packages/api-contract/src/__tests__/fixtures/session-log/codex.v2.json",
+    "packages/api-contract/src/__tests__/fixtures/session-log/golden.v2.json",
+    "packages/api-contract/src/__tests__/fixtures/session-log/golden21.v2.json",
+    "packages/api-contract/src/__tests__/fixtures/session-log/opencode-v2.v2.json",
+    "packages/api-contract/src/__tests__/fixtures/session-log/opencode.v2.json",
+    "packages/api-contract/src/__tests__/fixtures/session-log/pi.v2.json",
+    "packages/api-contract/src/__tests__/session-log.test.ts",
+    "packages/api-contract/src/session-log/index.ts",
+    "packages/api-contract/src/session-log/schema.ts",
+    "packages/api-contract/src/session-log/types.ts"
+  ],
+  "diff_hash": "31f2ac8350eb5b136739f40f2bfcc1ee5ce1e73ade4a681e6b800c9ea1b96cba",
+  "head": "3afbf67259db050186ab9d61098a999613deb708",
+  "passed": true,
+  "lanes": {
+    "packages": "pass",
+    "core": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-10T22:05:05.564Z"
+}
