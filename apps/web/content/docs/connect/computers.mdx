@@ -38,7 +38,14 @@ the command it shows on the computer:
 npx --yes @kortix/agent-tunnel@latest connect --api-url <api-url>/tunnel --project-id <project-id>
 ```
 
-The command prints a code and opens the approval page. On the approval page:
+The command prints a code and opens the approval page. After approval it
+keeps the computer connected in the background, like the app, and prints the
+commands that pause (`stop`), resume (`start`), and disconnect (`logout`) it.
+On a Mac with the Kortix app installed, the command uses the app's own
+connection, so both ways of connecting are the same: one entry, one set of
+macOS permissions for Kortix, and **Your computer** controls it.
+
+On the approval page:
 
 1. Check that the code matches the one on the computer.
 2. Name the computer. The name becomes the account label.
@@ -181,6 +188,7 @@ A call fails with a named reason instead of guessing:
 | `computer_offline` | The computer is paired but not connected right now. | Wake the computer, or resume access in the desktop app. |
 | `computer_unpaired` | The account points at a machine that was disconnected. | Connect the computer again. |
 | `computer_capability_not_approved` | The computer was approved without this capability. | Connect the computer again and select the capability. |
+| `computer_desktop_permission_missing` | macOS has not given Kortix Accessibility or Screen Recording on that computer. | Open the Kortix app → **Your computer** → **Allow all**. Kortix applies the grant within 30 seconds. |
 | `computer_access_pending` | The owner has not answered the prompt on the computer yet. | Answer the prompt on the computer, then ask the agent to continue. |
 | `computer_access_denied` | The owner chose **Deny**. | Allow access from the menu-bar icon or **Your computer**. |
 | `computer_access_off` | The owner set access to **Off**. | Change **Access** on the computer. |
