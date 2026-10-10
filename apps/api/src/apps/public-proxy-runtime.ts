@@ -19,7 +19,12 @@ const WAKE_LEASE_MS = 2 * 60_000;
  * runtime. The App row is never cached: an access change, a rollback and a
  * delete take effect on the next request on every replica.
  */
-export async function loadPublicAppState(routeKey: string) {
+/**
+ * The App behind a host and the machine that serves it. `service`: the host's
+ * service; its process groups choose the machine. `service` is null when the
+ * active release has no such service.
+ */
+export async function loadPublicAppState(routeKey: string, serviceName = 'http') {
   const [loaded] = await db
     .select({ app: apps, projectMetadata: projects.metadata, active: appDeployments })
     .from(apps)
@@ -37,13 +42,18 @@ export async function loadPublicAppState(routeKey: string) {
       .orderBy(desc(appDeployments.createdAt))
       .limit(1);
   }
+  const releaseConfig = deployment && deployment.hostingType !== 'static' ? releaseConfigOf(deployment, app) : null;
+  const service = releaseConfig?.services.find((entry) => entry.name === serviceName) ?? null;
+  const groups = service ? service.processes : releaseConfig ? servingGroups(releaseConfig) : [];
   const runtime = deployment && releaseServes(deployment, app.activeDeploymentId) && deployment.hostingType !== 'static'
-    ? await pickServingInstance(app, deployment)
+    && (service || serviceName === 'http')
+    ? await pickServingInstance(deployment, groups)
     : null;
   return {
     app,
     deployment: deployment ?? null,
     runtime: runtime ?? null,
+    service,
     /** A governed agent is judged as itself (§2.5); there is no off switch. */
     agentPrincipal: true,
   };
@@ -67,8 +77,7 @@ export function releaseServes(
  * that serves the App's host. A running one first, the least recently used
  * of those (requests spread over the machines); else a stopped one to wake.
  */
-async function pickServingInstance(app: typeof apps.$inferSelect, deployment: typeof appDeployments.$inferSelect) {
-  const groups = servingGroups(releaseConfigOf(deployment, app));
+async function pickServingInstance(deployment: typeof appDeployments.$inferSelect, groups: string[]) {
   const [runtime] = await db.select().from(appRuntimes)
     .where(and(
       eq(appRuntimes.deploymentId, deployment.deploymentId),
@@ -84,8 +93,8 @@ async function pickServingInstance(app: typeof apps.$inferSelect, deployment: ty
   return runtime ?? null;
 }
 
-export async function loadPublicApp(routeKey: string) {
-  const state = await loadPublicAppState(routeKey);
+export async function loadPublicApp(routeKey: string, service = 'http') {
+  const state = await loadPublicAppState(routeKey, service);
   if (
     !state?.app.activeDeploymentId ||
     state.deployment?.deploymentId !== state.app.activeDeploymentId ||
@@ -96,6 +105,7 @@ export async function loadPublicApp(routeKey: string) {
     app: state.app,
     deployment: state.deployment,
     runtime: state.runtime,
+    service: state.service,
     agentPrincipal: state.agentPrincipal,
   };
 }
@@ -139,7 +149,7 @@ export function appRuntimeNeedsWake(
   return Boolean(runtime.idleDeadlineAt && runtime.idleDeadlineAt.getTime() <= now.getTime());
 }
 
-type LoadedApp = Omit<NonNullable<Awaited<ReturnType<typeof loadPublicApp>>>, 'agentPrincipal'>;
+type LoadedApp = Omit<NonNullable<Awaited<ReturnType<typeof loadPublicApp>>>, 'agentPrincipal' | 'service'>;
 type Runtime = LoadedApp['runtime'];
 type App = LoadedApp['app'];
 

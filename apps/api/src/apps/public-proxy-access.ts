@@ -4,7 +4,7 @@ import { validateAccountToken, validateAccountTokenById } from '../repositories/
 import { validateServiceAccountToken } from '../repositories/service-accounts';
 import { isAccountToken, isServiceAccountToken } from '../shared/crypto';
 import { annotateAuditEvent, bindAuditPrincipal } from '../shared/audit-scope';
-import { appAccessibleToAgentSession, appAccessibleToUser, appAccessCookie, appAccessCookieName, appAccessSecret, cookieValue, createAppAccessToken, isAppAgentAssertion, verifyAppAccessToken, verifyAppAgentAssertion, type AppAccessMode, type AppAgentSessionPrincipal } from './access';
+import { isAppProjectManager, appAccessibleToAgentSession, appAccessibleToUser, appAccessCookie, appAccessCookieName, appAccessSecret, cookieValue, createAppAccessToken, isAppAgentAssertion, verifyAppAccessToken, verifyAppAgentAssertion, type AppAccessMode, type AppAgentSessionPrincipal } from './access';
 import { escapeHtml } from '../shared/html';
 import { appBrowserNavigation, appFrameAncestors, PROXY_PAGE_SYMBOL, PROXY_PAGE_TOKENS } from './public-proxy-status';
 import { appViewerSecret, encodeAppViewerContext, mintAppViewerToken, normalizeViewerTokenScope, resolveAppViewerIdentity } from './viewer';
@@ -643,6 +643,29 @@ async function passwordAccessResponse(
     app,
     true,
     safeAppReturnTo(String(form?.get('return_to') ?? '/')),
+  );
+}
+
+/**
+ * The gate of one App service. `public`: no gate (the service enforces its
+ * own sign-in, like a backend whose functions call requireKortixMember).
+ * `app`: the App's access policy. `admins`: the App's policy, then a project
+ * manager only.
+ */
+export async function authorizeServiceRequest(
+  request: Request,
+  url: URL,
+  app: AppAccessRow,
+  access: 'public' | 'app' | 'admins',
+): Promise<Response | null> {
+  if (access === 'public') return null;
+  const refused = await authorizeAppRequest(request, url, app);
+  if (refused || access !== 'admins') return refused;
+  const userId = resolveAppViewerUserId(request, url, app);
+  if (userId && await isAppProjectManager(app, userId)) return null;
+  return Response.json(
+    { error: 'Only project admins may open this service.', code: 'app_service_admins_only' },
+    { status: 403, headers: { 'cache-control': 'no-store' } },
   );
 }
 

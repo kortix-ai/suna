@@ -523,6 +523,11 @@ interface TeamScopedApp {
   createdBy: string | null;
 }
 
+/** May this user manage the App's project (the `admins` service access)? */
+export async function isAppProjectManager(app: { accountId: string; projectId: string }, userId: string): Promise<boolean> {
+  return projectManager(app.accountId, app.projectId, userId);
+}
+
 async function projectManager(
   accountId: string,
   projectId: string,

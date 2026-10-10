@@ -348,6 +348,7 @@ describe('Apps public edge', () => {
       expect(resolveAppRequest(direct, new URL(direct.url))).toEqual({
         routeKey: 'bbbbbbbbbbbbbbbb',
         local: false,
+        service: 'http',
         publicHost: spoofed,
       });
     } finally {
@@ -359,16 +360,17 @@ describe('Apps public edge', () => {
     expect(resolveAppRequest(request, url)).toEqual({
       routeKey: 'bbbbbbbbbbbbbbbb',
       local: false,
+      service: 'http',
       publicHost: spoofed,
     });
   });
 
   test('resolves local and environment-scoped production hostnames', () => {
     expect(resolveAppHost('aaaaaaaaaaaaaaaa.apps.localhost')).toEqual({
-      routeKey: 'aaaaaaaaaaaaaaaa', local: true,
+      routeKey: 'aaaaaaaaaaaaaaaa', local: true, service: 'http',
     });
     expect(resolveAppHost('dev-hello-world-aaaaaaaaaaaaaaaa.apps.kortix.com')).toEqual({
-      routeKey: 'aaaaaaaaaaaaaaaa', local: false,
+      routeKey: 'aaaaaaaaaaaaaaaa', local: false, service: 'http',
     });
     expect(resolveAppHost('prod-hello-aaaaaaaaaaaaaaaa.apps.kortix.com')).toBeNull();
     expect(resolveAppHost('anything.example.com')).toBeNull();
@@ -410,6 +412,7 @@ describe('Apps public edge', () => {
     expect(resolved).toEqual({
       routeKey: 'aaaaaaaaaaaaaaaa',
       local: false,
+      service: 'http',
       publicHost,
     });
     expect(verifyAppEdgeRequest(

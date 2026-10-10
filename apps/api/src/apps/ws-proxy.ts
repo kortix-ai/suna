@@ -1,3 +1,4 @@
+import { authorizeServiceRequest } from './public-proxy-access';
 import { appRuntimes } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { type SandboxProviderName } from '../config';
@@ -85,12 +86,16 @@ export async function prepareAppWsUpgrade(
     return { ok: false, status: 403, message: 'Invalid App edge signature' };
   }
   if (url.pathname.startsWith('/_kortix/apps/')) return prepareBindingWsUpgrade(request, url, matched);
-  const loaded = await dependencies.loadPublicApp(matched.routeKey);
+  const loaded = await dependencies.loadPublicApp(matched.routeKey, matched.service);
   if (!loaded) return { ok: false, status: 404, message: 'App not found' };
-  const accessResponse = await dependencies.authorizeAppRequest(request, url, {
-    ...loaded.app,
-    agentPrincipal: loaded.agentPrincipal ?? false,
-  });
+  if (matched.service !== 'http' && !loaded.service) return { ok: false, status: 404, message: 'Service not found' };
+  const gateApp = { ...loaded.app, agentPrincipal: loaded.agentPrincipal ?? false };
+  const access = loaded.service?.access ?? 'app';
+  const accessResponse = access === 'public'
+    ? null
+    : access === 'admins'
+      ? await authorizeServiceRequest(request, url, gateApp, 'admins')
+      : await dependencies.authorizeAppRequest(request, url, gateApp);
   if (accessResponse) {
     return { ok: false, status: accessResponse.status, message: 'App authentication required' };
   }
@@ -108,6 +113,7 @@ export async function prepareAppWsUpgrade(
       runtime.provider as SandboxProviderName,
       runtime.externalId,
       'websocket',
+      matched.service !== 'http' ? loaded.service?.internal_port : undefined,
     );
     const headers = appUpstreamHeaders(request, ingress.headers, matched.publicHost);
     const headerObject = Object.fromEntries(headers.entries());

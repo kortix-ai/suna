@@ -7,7 +7,7 @@ import { ingressTargetUrl } from '../platform/providers/ingress-url';
 import { AppAccountUnfundedError, AppLimitError } from './limits';
 import { AppHostingProvider } from './hosting';
 import { enqueueCurrentAppRuntime } from './deployment-worker';
-import { authorizeAppRequest, resolveAppViewerUserId, bindAppViewerSession, appViewerEndpointResponse,
+import { authorizeAppRequest, authorizeServiceRequest, resolveAppViewerUserId, bindAppViewerSession, appViewerEndpointResponse,
   appTokenResponse, appViewerContextHeader } from './public-proxy-access';
 import { resolveAppRequest, verifyAppEdgeRequest } from './public-proxy-edge';
 import { appPublicStatusResponse, publicDeploymentStatus, appPublicUnavailableResponse, appProviderStoppedResponse, appColdStartUpstreamResponse } from './public-proxy-status';
@@ -16,7 +16,7 @@ import { appUpstreamHeaders, appPublicResponseHeaders } from './public-proxy-hea
 import { serveStaticDeployment } from './static-site';
 import { APP_API_PROXY_PREFIX, appApiProxyResponse } from './public-proxy-api';
 const ACTIVITY_LEASE_MS = 60_000;
-type LoadedApp = Omit<NonNullable<Awaited<ReturnType<typeof loadPublicApp>>>, 'agentPrincipal'>;
+type LoadedApp = Omit<NonNullable<Awaited<ReturnType<typeof loadPublicApp>>>, 'agentPrincipal' | 'service'>;
 
 const ACTIVITY_WRITE_EVERY_MS = 10_000;
 // replica-local: a write throttle only. Each replica records a runtime's
@@ -88,10 +88,14 @@ async function routeAppPublicRequest(
   if (!verifyAppEdgeRequest(request, url, matched.local, matched.publicHost)) {
     return Response.json({ error: 'Invalid App edge signature' }, { status: 403 });
   }
-  const state = await loadPublicAppState(matched.routeKey);
+  const state = await loadPublicAppState(matched.routeKey, matched.service);
   if (!state) return Response.json({ error: 'App not found' }, { status: 404 });
+  // A named service the active release does not declare.
+  if (matched.service !== 'http' && !state.service) {
+    return Response.json({ error: 'Service not found', code: 'app_service_not_found' }, { status: 404 });
+  }
   const gateApp = { ...state.app, agentPrincipal: state.agentPrincipal };
-  const accessResponse = await authorizeAppRequest(request, url, gateApp);
+  const accessResponse = await authorizeServiceRequest(request, url, gateApp, state.service?.access ?? 'app');
   if (accessResponse) return accessResponse;
   const sessionViewer = resolveAppViewerUserId(request, url, gateApp);
   if (sessionViewer) bindAppViewerSession(sessionViewer);
@@ -138,13 +142,15 @@ async function routeAppPublicRequest(
   }
   const loaded = { app: state.app, deployment: state.deployment, runtime: state.runtime };
   const hosting = new AppHostingProvider();
+  // A named service goes straight to its own port; `http` through the supervisor's ingress.
+  const servicePort = matched.service !== 'http' ? state.service?.internal_port : undefined;
   const coldStart = appRuntimeNeedsWake(state.runtime, new Date(), state.app.alwaysOn);
   if (coldStart) {
     await enqueueCurrentAppRuntime(state.app, state.deployment).catch((error) => {
       console.warn(`[apps] runtime refresh queue failed for ${state.app.appId}:`, error);
     });
   }
-  return proxyRunningApp(request, url, matched.publicHost, viewer, loaded, hosting, coldStart);
+  return proxyRunningApp(request, url, matched.publicHost, viewer, loaded, hosting, coldStart, servicePort);
 }
 
 export async function proxyRunningApp(
@@ -155,6 +161,7 @@ export async function proxyRunningApp(
   loaded: LoadedApp,
   hosting: AppHostingProvider,
   coldStart: boolean,
+  servicePort?: number,
 ): Promise<Response> {
   let runtime: typeof loaded.runtime;
   try {
@@ -174,7 +181,7 @@ export async function proxyRunningApp(
 
   const replayableRequest = request.method === 'GET' || request.method === 'HEAD';
   const fetchUpstream = async () => {
-    const ingress = await hosting.ingress(runtime.provider as SandboxProviderName, runtime.externalId);
+    const ingress = await hosting.ingress(runtime.provider as SandboxProviderName, runtime.externalId, 'http', servicePort);
     const upstreamUrl = ingressTargetUrl(ingress, `${url.pathname}${url.search}`);
     return fetch(upstreamUrl, {
       method: request.method,

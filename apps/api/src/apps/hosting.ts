@@ -319,11 +319,10 @@ export class AppHostingProvider {
     provider: SandboxProviderName,
     externalId: string,
     transport: 'http' | 'websocket' = 'http',
+    /** A named service's own port; default the supervisor's ingress (the `http` service). */
+    port: number = APP_INGRESS_PORT,
   ): Promise<ResolvedSandboxIngress> {
-    return this.dependencies.runtimeProvider(provider).resolveIngress(externalId, {
-      port: APP_INGRESS_PORT,
-      transport,
-    });
+    return this.dependencies.runtimeProvider(provider).resolveIngress(externalId, { port, transport });
   }
 
   async status(
