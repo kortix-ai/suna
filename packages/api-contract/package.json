@@ -10,6 +10,7 @@
     "./secret-relay": "./src/secret-relay.ts",
     "./runtime-relay": "./src/runtime-relay.ts",
     "./transcript": "./src/transcript.ts",
+    "./session-log": "./src/session-log/index.ts",
     "./fallback-models": "./src/fallback-models.ts",
     "./egress-shim-rules": "./src/egress-shim-rules.ts",
     "./sandbox-layout": "./src/sandbox-layout.ts"
