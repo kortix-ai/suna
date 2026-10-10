@@ -1,5 +1,5 @@
 {
-  "source_hash": "3b8c01a9067dec76427aeaed4b2944ba6c8b0d111b3a3a277602cbfbd698aedc",
+  "source_hash": "365c0e0ee722cd227876c2e864decadbf32ed01c0b0b0835b91b11965867d355",
   "diff_files": [
     ".agents/skills/learnings/MEMORY.md",
     ".agents/skills/learnings/entries/2026-10-10T164414Z-a-background-agent-must-exit-when-its-own-binary-changes-on.md",
@@ -8,14 +8,11 @@
     "apps/api/src/connectors/cua-driver-tools.generated.json",
     "apps/api/src/connectors/gateway.ts",
     "apps/api/src/connectors/routes/gateway.ts",
-    "apps/api/src/projects/session-open/session-open-provision.ts",
-    "apps/api/src/projects/session-open/transient-provision-retry.test.ts",
     "apps/api/src/tunnel/core/permission-checker.ts",
     "apps/api/src/tunnel/core/rpc-core.ts",
     "apps/api/src/tunnel/relay-persistence.ts",
     "apps/api/src/tunnel/routes/device-auth.ts",
     "apps/desktop-electron/scripts/dump-cua-tools.js",
-    "apps/mobile/contexts/AuthContext.token-refresh.test.tsx",
     "apps/web/content/docs/connect/computers.mdx",
     "packages/agent-tunnel/README.md",
     "packages/agent-tunnel/src/agent/agent.ts",
@@ -36,13 +33,13 @@
     "packages/starter/src/embedded.generated.json",
     "packages/starter/templates/managed/skills/kortix-computer/SKILL.md"
   ],
-  "diff_hash": "9afe96b1ade5c6984fbc5ad71aaa0c611d28007fd811fb029173ad0707c20fc2",
-  "head": "11ab207e2ce5059c2f51dfdb177bde41c081072d",
+  "diff_hash": "70e2c45db121ab0b768d8b0cd9f37b58b6143f95b8b4c40625869db6ebb0cff0",
+  "head": "048b827d493b2939481fa7656c693524b14c422e",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-10T21:52:21.588Z"
+  "at": "2026-10-10T22:31:55.720Z"
 }
