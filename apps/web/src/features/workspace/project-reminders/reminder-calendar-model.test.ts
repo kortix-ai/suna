@@ -132,14 +132,27 @@ describe('anchor dates', () => {
 
 describe('labels', () => {
   test('range label via Intl in the locale', () => {
+    // The contract is the Intl mapping — range → option set, locale passed
+    // through — not one ICU build's rendering: the spacing around the en
+    // dash in formatRange and the comma in en-GB full dates both vary by
+    // ICU/CLDR build. So compare against the same Intl calls the
+    // implementation must make.
+    const intl = (locale: string, options: Intl.DateTimeFormatOptions, ...dates: Date[]) =>
+      dates.length === 1
+        ? new Intl.DateTimeFormat(locale, options).format(dates[0]!)
+        : new Intl.DateTimeFormat(locale, options).formatRange(dates[0]!, dates[1]!);
     // Week: 7 days from the first visible day, which need not be a Monday.
-    expect(rangeLabel(local(2026, 10, 7), 'week', 'en-GB')).toBe('7 – 13 October 2026');
+    expect(rangeLabel(local(2026, 10, 7), 'week', 'en-GB')).toBe(
+      intl('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }, local(2026, 10, 7), local(2026, 10, 13)),
+    );
     expect(rangeLabel(local(2026, 10, 7), 'month', 'en-GB')).toBe('October 2026');
     expect(rangeLabel(local(2026, 10, 7), 'month', 'de')).toBe('Oktober 2026');
     // Month: the top week's month, not the Monday's.
     expect(rangeLabel(local(2026, 9, 28), 'month', 'en-GB')).toBe('October 2026');
     // Day: the one day in view, in full.
-    expect(rangeLabel(local(2026, 10, 14), 'day', 'en-GB')).toBe('Wednesday, 14 October 2026');
+    expect(rangeLabel(local(2026, 10, 14), 'day', 'en-GB')).toBe(
+      intl('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }, local(2026, 10, 14)),
+    );
   });
 
   test('clock time is 24-hour; relative time scales minute → hour → day', () => {

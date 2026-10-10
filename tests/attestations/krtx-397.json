@@ -1,11 +1,22 @@
 {
-  "source_hash": "ed204e66fb1cd4566aae7943abc072e1a3149bfc49a93b944154393bdcd51895",
-  "head": "2ee88d461b0fa336133da9c99010b89d38d42f6e",
+  "source_hash": "bf0fba574245dc42558a9efdb9c698e523812ebdeec1b51052c426f70599050e",
+  "diff_files": [
+    "apps/api/src/__tests__/unit-request-log-suppression-wiring.test.ts",
+    "apps/api/src/http-middleware.ts",
+    "apps/api/src/lib/request-log-level.test.ts",
+    "apps/api/src/lib/request-log-level.ts",
+    "apps/api/src/sandbox-proxy/forward/retry.ts",
+    "apps/api/src/sandbox-proxy/preview-response.ts",
+    "apps/api/src/sandbox-proxy/routes/preview-characterization.test.ts",
+    "apps/api/src/sandbox-proxy/routes/preview.test.ts"
+  ],
+  "diff_hash": "35d2c2d043e11b1de683fc18dca3bfe9f3a70b43b66b8ce677370d14b074fb18",
+  "head": "631c4bf878b299f1ae9c88f206ba80b729296a80",
   "passed": true,
   "lanes": {
-    "packages": "pass",
     "core": "pass",
+    "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-10T16:57:30.069Z"
+  "at": "2026-10-10T19:57:24.024Z"
 }
