@@ -36,6 +36,7 @@ import { AppHostingProvider, type AppMachineSpec } from './hosting';
 import { teardownAppRuntimes } from './images';
 import { groupAlwaysOn, groupScale, releaseConfigOf } from './release-config';
 import { appRuntimeIdentityEnv } from './viewer';
+import { appServiceUrl } from './hostnames';
 import { acquireVolume, detachVolume, ensureMachineVolume, releaseVolume } from './volumes';
 
 type AppRow = typeof apps.$inferSelect;
@@ -60,6 +61,21 @@ export interface ReleaseEnvironment {
   environmentKeys: string[];
 }
 
+/**
+ * Where the App answers, for code that must know its own URL (a backend that
+ * advertises its origin): `KORTIX_APP_SLUG`, `KORTIX_APP_URL` (the `http`
+ * service) and `KORTIX_SERVICE_URL_<NAME>` for every other service (`-` → `_`).
+ */
+export function appUrlEnv(app: AppRow, config: AppReleaseConfig): Record<string, string> {
+  const env: Record<string, string> = { KORTIX_APP_SLUG: app.slug, KORTIX_APP_URL: appServiceUrl(app, 'http') ?? '' };
+  for (const service of config.services) {
+    if (service.name === 'http' || service.protocol !== 'http') continue;
+    const url = appServiceUrl(app, service.name);
+    if (url) env[`KORTIX_SERVICE_URL_${service.name.toUpperCase().replace(/-/g, '_')}`] = url;
+  }
+  return env;
+}
+
 /** Everything a machine of this release runs with: its env, its secrets and the App's identity. */
 export async function releaseEnvironment(app: AppRow, deployment: DeploymentRow): Promise<ReleaseEnvironment> {
   const buildSpec = deployment.buildSpec as { environment?: Record<string, string>; secrets?: Record<string, string> };
@@ -70,7 +86,12 @@ export async function releaseEnvironment(app: AppRow, deployment: DeploymentRow)
   });
   return {
     // `KORTIX_*` is reserved from user env, so the identity cannot be shadowed.
-    env: { ...resolved.env, ...appRuntimeIdentityEnv(app), ...(await (await import('./tokens')).appAuthEnv(app)) },
+    env: {
+      ...resolved.env,
+      ...appRuntimeIdentityEnv(app),
+      ...(await (await import('./tokens')).appAuthEnv(app)),
+      ...appUrlEnv(app, releaseConfigOf(deployment, app)),
+    },
     secretIdentifiers: resolved.secretIdentifiers,
     environmentKeys: Object.keys(resolved.env).sort(),
   };
@@ -153,7 +174,12 @@ export async function createInstance(input: {
       snapshotName: deployment.providerBuildId,
       machine,
       alwaysOn: groupAlwaysOn(app, config, group),
-      envVars: { ...env.env, ...(spec ? { KORTIX_APP_SPEC: JSON.stringify(spec) } : {}) },
+      envVars: {
+        ...env.env,
+        KORTIX_MACHINE_ID: machineId,
+        KORTIX_PROCESS_GROUP: group,
+        ...(spec ? { KORTIX_APP_SPEC: JSON.stringify(spec) } : {}),
+      },
       ...(volume && mount ? { volumes: { [mount.destination]: { volume: volume.externalId } } } : {}),
     });
   } catch (error) {

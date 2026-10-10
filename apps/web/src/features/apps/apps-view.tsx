@@ -87,6 +87,8 @@ export function AppsView({ projectId }: { projectId: string }) {
   // render the controls.
   const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_APP_WRITE).allowed === true;
   const canDeploy = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_APP_DEPLOY).allowed === true;
+  // Exec, a volume restore or destroy: project.app.admin.
+  const canAdmin = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_APP_ADMIN).allowed === true;
   // Which App the detail modal is showing. Held by id, not by object, so a
   // refetch (a lifecycle toggle, a rollback) re-renders the modal against the
   // fresh row instead of a stale copy captured at click time. `?app=<id>`
@@ -199,6 +201,7 @@ export function AppsView({ projectId }: { projectId: string }) {
           app={openApp}
           canWrite={canWrite}
           canDeploy={canDeploy}
+          canAdmin={canAdmin}
           onOpenLinked={(slug) => {
             const linked = apps.data?.find((item) => item.slug === slug);
             if (linked) setOpenAppId(linked.app_id);

@@ -9,6 +9,7 @@ import Hint from '@/components/ui/hint';
 
 import Loading from '@/components/ui/loading';
 import { Modal, ModalContent } from '@/components/ui/modal';
+import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
 
 import { successToast } from '@/components/ui/toast';
 
@@ -27,6 +28,7 @@ import { useState } from 'react';
 import { AppPreview } from './app-preview';
 import { AppAccessModal } from './app-access';
 import { AppConnectDialog } from './app-connect';
+import { AppMachinesPanel, AppServices, AppVolumesPanel } from './app-fleet';
 import { localizedAppCopy, appCan, appCommand, appCostLabel, appHost, appStatus, deployNotice, DeployCommand } from './app-shared';
 
 /**
@@ -45,6 +47,7 @@ export function AppDetailModal({
   app,
   canWrite,
   canDeploy,
+  canAdmin = false,
   onOpenLinked,
   open,
   onOpenChange,
@@ -53,6 +56,8 @@ export function AppDetailModal({
   app: App;
   canWrite: boolean;
   canDeploy: boolean;
+  /** project.app.admin: restore a volume. */
+  canAdmin?: boolean;
   /** Open another App of the project by slug: the uses / used-by links in the header. */
   onOpenLinked: (slug: string) => void;
   open: boolean;
@@ -66,6 +71,8 @@ export function AppDetailModal({
   const canAccess = app.viewer_can_access !== false;
   const access = useAppAccess(projectId, app.app_id, { policy: canWrite, session: canAccess && preview });
   const [versionsOpen, setVersionsOpen] = useState(false);
+  /** The bottom panel's tab: releases, or (by capability) machines and volumes. */
+  const [panelTab, setPanelTab] = useState<'releases' | 'machines' | 'volumes'>('releases');
   // The deployment whose events and build log are unfolded in the version drawer.
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [overlay, setOverlay] = useState<
@@ -167,6 +174,11 @@ export function AppDetailModal({
                   that use it. Each slug opens that App. */}
               <AppLinks label={tI18nComplete.raw('text9e6151acb057')} slugs={app.uses} onOpen={onOpenLinked} />
               <AppLinks label={tI18nComplete.raw('text681bf81aba87')} slugs={app.used_by} onOpen={onOpenLinked} />
+              {/* Its other services (each on its own host) and its labels. */}
+              <AppServices app={app} />
+              {(app.labels ?? []).map((label) => (
+                <Badge key={label} variant="secondary" size="xs" className="hidden shrink-0 md:inline-flex">{label}</Badge>
+              ))}
             </div>
 
             {/* Two registers, and the gap is what separates them: the App's own
@@ -358,41 +370,58 @@ export function AppDetailModal({
                     .join(' · ')}
                 </span>
               </div>
-              {deployments.isLoading ? (
-                <Loading className="text-muted-foreground" />
-              ) : deployments.data?.length ? (
-                <div className="space-y-1">
-                  {deployments.data.map((deployment) => (
-                    <DeploymentRow
-                      key={deployment.deployment_id}
-                      projectId={projectId}
-                      deployment={deployment}
-                      expanded={expandedId === deployment.deployment_id}
-                      onToggle={() =>
-                        setExpandedId((current) =>
-                          current === deployment.deployment_id ? null : deployment.deployment_id,
-                        )
-                      }
-                      active={deployment.deployment_id === app.active_deployment_id}
-                      canDeploy={canDeploy && appCan(app, 'rollback')}
-                      rollbackPending={deployments.rollback.isPending}
-                      onRollback={async () => {
-                        try {
-                          await deployments.rollback.mutateAsync(deployment.deployment_id);
-                          successToast(
-                            tI18nComplete('text94c0f4d10610', { value0: deployment.version }),
-                          );
-                        } catch {
-                          // Failure is already toasted by the query client's global mutations.onError.
-                        }
-                      }}
-                    />
-                  ))}
-                </div>
+              {appCan(app, 'machines') || appCan(app, 'volumes') ? (
+                <Tabs value={panelTab} onValueChange={(value) => setPanelTab(value as typeof panelTab)} className="mb-2">
+                  <TabsListCompact>
+                    <TabsTriggerCompact value="releases">{tI18nComplete.raw('text1a6f7cae06cc')}</TabsTriggerCompact>
+                    {appCan(app, 'machines') ? <TabsTriggerCompact value="machines">{tI18nComplete.raw('textc061da196eae')}</TabsTriggerCompact> : null}
+                    {appCan(app, 'volumes') ? <TabsTriggerCompact value="volumes">{tI18nComplete.raw('text53a480e304c0')}</TabsTriggerCompact> : null}
+                  </TabsListCompact>
+                </Tabs>
+              ) : null}
+              {panelTab === 'machines' && appCan(app, 'machines') ? (
+                <AppMachinesPanel projectId={projectId} app={app} canDeploy={canDeploy} />
+              ) : panelTab === 'volumes' && appCan(app, 'volumes') ? (
+                <AppVolumesPanel projectId={projectId} app={app} canDeploy={canDeploy} canAdmin={canAdmin} />
               ) : (
-                <p className="text-muted-foreground text-xs">
-                  {tI18nComplete.raw('textf1fc77ca3b24')}
-                </p>
+                <>
+                {deployments.isLoading ? (
+                  <Loading className="text-muted-foreground" />
+                ) : deployments.data?.length ? (
+                  <div className="space-y-1">
+                    {deployments.data.map((deployment) => (
+                      <DeploymentRow
+                        key={deployment.deployment_id}
+                        projectId={projectId}
+                        deployment={deployment}
+                        expanded={expandedId === deployment.deployment_id}
+                        onToggle={() =>
+                          setExpandedId((current) =>
+                            current === deployment.deployment_id ? null : deployment.deployment_id,
+                          )
+                        }
+                        active={deployment.deployment_id === app.active_deployment_id}
+                        canDeploy={canDeploy && appCan(app, 'rollback')}
+                        rollbackPending={deployments.rollback.isPending}
+                        onRollback={async () => {
+                          try {
+                            await deployments.rollback.mutateAsync(deployment.deployment_id);
+                            successToast(
+                              tI18nComplete('text94c0f4d10610', { value0: deployment.version }),
+                            );
+                          } catch {
+                            // Failure is already toasted by the query client's global mutations.onError.
+                          }
+                        }}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground text-xs">
+                    {tI18nComplete.raw('textf1fc77ca3b24')}
+                  </p>
+                )}
+                </>
               )}
             </div>
           ) : null}
