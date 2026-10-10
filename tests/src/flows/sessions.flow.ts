@@ -2579,7 +2579,7 @@ flow(
           retryable: true,
         },
         {
-          label: 'a stored E2B placement error is transient: /start answers the re-provision retry contract, not the stale replay',
+          label: 'a stored E2B placement error is transient: /start re-provisions it, and when it cannot allocate it answers the exhausted contract instead of replaying',
           provider: 'e2b',
           metadata: {
             initStatus: 'failed',
