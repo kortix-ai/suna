@@ -40,4 +40,23 @@ describe('fence', () => {
       { kind: 'genui', code: 'root = Sta', version: 1, closed: false },
     ]);
   });
+
+  test('long fence-like lines split in linear time', () => {
+    const started = performance.now();
+    const open = `\`\`\`${'a'.repeat(40_000)}\``;
+    expect(splitGenui(open)).toEqual([{ kind: 'markdown', text: open }]);
+    const close = `${'`'.repeat(40_000)}x`;
+    expect(splitGenui(`\`\`\`openui\n${close}`)).toEqual([{ kind: 'genui', code: close, version: 1, closed: false }]);
+    expect(performance.now() - started).toBeLessThan(200);
+  });
+
+  test('a backtick in the info string means no fence, for both markers', () => {
+    const backtick = '```openui `x`\nroot = Stack([])\n```';
+    expect(splitGenui(backtick)).toEqual([{ kind: 'markdown', text: backtick }]);
+    expect(splitGenui('~~~openui `x`')).toEqual([{ kind: 'markdown', text: '~~~openui `x`' }]);
+    expect(splitGenui('~~~ openui extra\nroot = Stack([])\n~~~')).toEqual([
+      { kind: 'genui', code: 'root = Stack([])', version: 1, closed: true },
+    ]);
+  });
 });
+
