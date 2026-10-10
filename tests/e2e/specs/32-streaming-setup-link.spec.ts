@@ -104,9 +104,11 @@ test.describe('32 — A setup link while its turn streams', () => {
     });
 
     // The label is still arriving. remend closes it for display; the reader
-    // sees the words, never Streamdown's placeholder or a blocked marker.
+    // sees the words, never Streamdown's placeholder or a blocked marker. The
+    // pacer (#9420) shows whole words only, so the half-arrived "Out" waits.
     let replay = await openReplay(page, until('[Connect Out'));
-    await expect(replay).toContainText('Connect Out');
+    await expect(replay).toContainText('Connect');
+    await expect(replay).not.toContainText('Connect Out');
     await expect(replay).not.toContainText('[blocked]');
     await expect(replay).not.toContainText('](');
     await expect(replay.locator('a')).toHaveCount(0);
