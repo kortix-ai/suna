@@ -4,6 +4,7 @@ import { and, eq } from 'drizzle-orm';
 import { type SandboxProviderName, config } from '../../config';
 import { getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
+import { logger } from '../../lib/logger';
 import { isAlreadyNotRunning, isLifecycleTransitionInProgress } from '../reaping/policy';
 import { applyStoppedState } from '../reaping/sandbox-state-sync';
 import { claimManualSandboxStop, releaseSandboxStopClaim } from '../reaping/box-queries';
@@ -132,7 +133,10 @@ export async function stopSession(input: {
   // parked prompt resumed and un-archived a stopped box 8 min later). The next
   // message the user sends releases the hold (`enqueueReleasingHold`).
   await holdInboxPrompts(sessionId, true).catch((err) =>
-    console.warn(`[stop] holding queued prompts failed for session ${sessionId}:`, err),
+    logger.warn('[stop] holding queued prompts failed', {
+      sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    }),
   );
   // Close the live turn before powering the box off, but only when the box is
   // actually running one: `cancellingWake` means the row is already stopped
