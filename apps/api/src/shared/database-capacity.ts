@@ -29,8 +29,16 @@ export const PROD_DB_USABLE_CONNECTIONS = 237;
 /** ECS can autoscale the production API service to 10 tasks. */
 export const PROD_API_MAX_TASKS = 10;
 
-/** ECS permits a 200% rolling deployment: 10 old tasks plus 10 new tasks. */
-export const ROLLING_TASK_OVERLAP = 2;
+/**
+ * Prod pins the ECS rolling deployment at 100% (one replacement task at a
+ * time): the prod API fleet holds the largest per-task DB budget, and the
+ * old-plus-new overlap window is when `SQLSTATE 53300` bursts happen (the
+ * 2026-09-27 incident). One extra task at the peak keeps the envelope at
+ * half of the two-task overlap — see the Terraform cross-check in
+ * `database-capacity.test.ts`. Dev and staging keep the module's 200% default
+ * for faster deploys; their DB budgets are separate.
+ */
+export const ROLLING_TASK_OVERLAP = 1;
 
 /**
  * Slots reserved for Supabase, operators, migrations, and request-scoped probes.

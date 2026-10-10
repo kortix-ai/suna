@@ -147,15 +147,20 @@ module "api" {
   alb_ingress_cidrs = local.cloudflare_ip_ranges
 
   # prod sizing: bigger tasks, HA floor of 2, no spot, insights on
-  task_cpu           = 1024
-  task_memory        = 4096
-  desired_count      = 3
-  min_capacity       = 3
-  max_capacity       = 10
-  use_fargate_spot   = false
-  container_insights = true
-  cpu_target         = 55
-  memory_target      = 65
+  task_cpu      = 1024
+  task_memory   = 4096
+  desired_count = 3
+  min_capacity  = 3
+  max_capacity  = 10
+  # One replacement task at a time. Ten extra API tasks at the rolling peak
+  # would nearly exhaust the production PostgreSQL connection budget (the
+  # 2026-09-27 SQLSTATE 53300 deploy burst); the envelope in
+  # apps/api/src/shared/database-capacity.ts is pinned to this value.
+  deployment_maximum_percent = 100
+  use_fargate_spot           = false
+  container_insights         = true
+  cpu_target                 = 55
+  memory_target              = 65
   # Load-proportional scaling. CPU/mem alone left the service flat during the
   # 2026-06-08 DB-contention incident. ~200 req/min/target is normal and peaks
   # ~256; 600 only scales out on a genuine sustained surge (no flapping). Tune
