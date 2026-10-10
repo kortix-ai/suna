@@ -4230,6 +4230,10 @@ export const apps = kortixSchema.table(
       .notNull(),
     /** Unused, like `monthlyBudgetUsd`; dropped by the same contract migration. */
     monthlyBudgetExplicit: boolean('monthly_budget_explicit').default(true).notNull(),
+    /** Free-form labels (e.g. `backend`). They group and filter Apps; nothing derives behavior from them. */
+    labels: text('labels').array().default(sql`'{}'::text[]`).notNull(),
+    /** Machines per process group (`fly scale count`). An absent group runs one machine. */
+    scale: jsonb('scale').default({}).notNull(),
     lastRequestAt: timestamp('last_request_at', { withTimezone: true }),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -4420,6 +4424,12 @@ export const appDeployments = kortixSchema.table(
     providerBuildId: text('provider_build_id'),
     runtimeSpec: jsonb('runtime_spec').default({}).notNull(),
     buildSpec: jsonb('build_spec').default({}).notNull(),
+    /** The resolved release config (`@kortix/shared/app-config` AppReleaseConfig). Null on a release from before it. */
+    config: jsonb('config'),
+    /** The deploy strategy this release ran with: rolling, immediate, bluegreen or canary. */
+    strategy: varchar('strategy', { length: 16 }),
+    /** The release command's outcome: null (none), running, succeeded or failed. */
+    releaseCommandStatus: varchar('release_command_status', { length: 16 }),
     runtimeVersion: text('runtime_version').notNull(),
     errorCode: text('error_code'),
     error: text('error'),
@@ -4531,6 +4541,50 @@ export const appSiteBlobs = kortixSchema.table(
 );
 
 /** Provider sandbox executing one deployment. */
+/**
+ * A persistent volume of an App (Fly volumes, on Platinum volumes). It outlives
+ * every machine: a release swap detaches it from the old instance and attaches
+ * it to the new one. At most one instance mounts it read-write at a time
+ * (`attached_runtime_id` is that lock).
+ */
+export const appVolumes = kortixSchema.table(
+  'app_volumes',
+  {
+    volumeId: uuid('volume_id').defaultRandom().primaryKey().notNull(),
+    appId: uuid('app_id')
+      .notNull()
+      .references(() => apps.appId, { onDelete: 'cascade' }),
+    accountId: uuid('account_id').notNull(),
+    /** The mount `source`: one per machine, so several volumes of a scaled group share it. */
+    name: varchar('name', { length: 30 }).notNull(),
+    processGroup: varchar('process_group', { length: 32 }).default('app').notNull(),
+    /** The machine this volume belongs to (Fly pins a volume to one machine). */
+    machineId: uuid('machine_id'),
+    sizeGb: integer('size_gb').notNull(),
+    provider: varchar('provider', { length: 32 }).default('platinum').notNull(),
+    /** The provider's volume name. */
+    externalId: text('external_id').notNull(),
+    status: varchar('status', { length: 16 }).default('creating').notNull(),
+    attachedRuntimeId: uuid('attached_runtime_id'),
+    snapshotRetentionDays: integer('snapshot_retention_days').default(5).notNull(),
+    error: text('error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    metadata: jsonb().default({}).notNull(),
+  },
+  (table) => [
+    check('app_volumes_status_check', sql`${table.status} IN ('creating', 'ready', 'destroying', 'destroyed', 'error')`),
+    check('app_volumes_size_check', sql`${table.sizeGb} BETWEEN 1 AND 500`),
+    check('app_volumes_retention_check', sql`${table.snapshotRetentionDays} BETWEEN 1 AND 60`),
+    index('app_volumes_app_idx').on(table.appId, table.name),
+    uniqueIndex('app_volumes_external_unique').on(table.provider, table.externalId),
+    uniqueIndex('app_volumes_machine_live_unique')
+      .on(table.machineId)
+      .where(sql`${table.deletedAt} IS NULL AND ${table.machineId} IS NOT NULL`),
+  ],
+);
+
 export const appRuntimes = kortixSchema.table(
   'app_runtimes',
   {
@@ -4545,6 +4599,15 @@ export const appRuntimes = kortixSchema.table(
     controlPort: integer('control_port').default(7331).notNull(),
     ingressPort: integer('ingress_port').default(8080).notNull(),
     controlTokenHash: text('control_token_hash').notNull(),
+    /**
+     * The Fly machine id: stable across instances. Each release swap is a new row
+     * (a new instance, its own box) with the same machine id. Null on a row from
+     * before machines: the runtime id stands in.
+     */
+    machineId: uuid('machine_id'),
+    processGroup: varchar('process_group', { length: 32 }).default('app').notNull(),
+    /** The volume this instance mounts (single writer: app_volumes.attached_runtime_id). */
+    volumeId: uuid('volume_id'),
     idleDeadlineAt: timestamp('idle_deadline_at', { withTimezone: true }),
     activityLeaseUntil: timestamp('activity_lease_until', { withTimezone: true }),
     wakeLeaseOwner: text('wake_lease_owner'),
