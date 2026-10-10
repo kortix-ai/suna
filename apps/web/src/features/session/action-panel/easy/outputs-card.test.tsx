@@ -124,6 +124,25 @@ describe('OutputRows folds scaffolding behind "more files" (W16)', () => {
     expect(html).toContain('a.json');
     expect(html).toContain('b.json');
   });
+
+  // The fold hides rows of any kind — a video or a deck past row 8 is not a
+  // file, and "N more files" would misname it. An all-file fold keeps the
+  // pinned "N more files" wording; a mixed one says items.
+  test('a fold hiding non-file rows says "items", not "files"', () => {
+    const files = Array.from({ length: 8 }, (_, i) => out({ name: `report-${i}.pdf` }));
+    // One video past the fold: singular.
+    expect(
+      renderOutputRows([...files, { callID: 'v1', name: 'clip.mp4', kind: 'video' }]),
+    ).toContain('1 more item');
+    // A video and a deck past the fold: plural.
+    expect(
+      renderOutputRows([
+        ...files,
+        { callID: 'v1', name: 'clip.mp4', kind: 'video' },
+        { callID: 'd1', name: 'Deck', kind: 'presentation' },
+      ]),
+    ).toContain('2 more items');
+  });
 });
 
 describe('OutputRows rhythm matches the Context card (W5)', () => {
@@ -241,8 +260,12 @@ describe('OutputRows kind-group headers on the expanded list (Task 9)', () => {
   test('the collapsed pre-fold view of the same fixture stays a flat list — no group headers', () => {
     const html = renderOutputRows(MIXED_KIND_FIXTURE); // initialShowAll defaults to false
     expect(html).not.toMatch(/<p class="[^"]*text-muted-foreground[^"]*">/);
-    // Fold semantics are untouched: 8 visible, 4 behind "N more files".
-    expect(html).toContain('4 more files');
+    // Fold semantics are untouched: 8 visible, 4 behind the fold — one video
+    // and three decks, none of them files, so the fold's noun is "items", not
+    // "files". (This fixture's own order puts the three decks after the
+    // videos, so the fold's tail here is clip3.mp4 and the three decks;
+    // production sorts by rank instead — see sortOutputs.)
+    expect(html).toContain('4 more items');
   });
 
   test('an expanded list under the threshold (<=10) stays flat, even with mixed kinds', () => {
