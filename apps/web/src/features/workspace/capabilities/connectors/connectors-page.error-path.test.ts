@@ -66,24 +66,25 @@ describe('connectors page error path', () => {
     expect(source).not.toContain('?.experimental?.');
   });
 
-  test('both add journeys end in the same handler shape', () => {
-    // A flow omits the slug when the manifest write succeeded but the sync did
-    // not. `DiscoverAddFlow` used to pass it anyway, so one partial failure
-    // opened the detail modal from the catalogue and not from the custom form.
-    // Both handlers now guard: `onCatalogAdded` and the custom form's own.
-    // Matched without the brace: `onCatalogAdded`'s guard is a single
-    // statement (`if (slug) showConnected(slug);`), the custom form's is a
-    // block. What must hold is that BOTH guard, not how each is punctuated.
-    expect(source.match(/if \(slug\)/g)).toHaveLength(2);
+  test('a card links to a page; the page opens no connector modal', () => {
+    // The whole point of the change. If a detail modal comes back here, a
+    // connector is again a thing with no URL.
+    expect(source).not.toContain('<ConnectorModal');
+    expect(source).not.toContain('<DiscoverAddFlow');
+    expect(source).not.toContain('<EasyConnectAddFlow');
+    expect(source).toContain('href={connectorHref(projectId, connector.slug)}');
   });
 
-  test('a newly created connector waits for a fresh list before missing-detail cleanup', () => {
-    expect(source).toContain('const [pendingDetail, setPendingDetail] = useState<');
-    expect(source).toContain(
-      'setPendingDetail({ slug, dataUpdatedAt: connectorsQuery.dataUpdatedAt });',
-    );
-    expect(source).toContain('connectorsQuery.dataUpdatedAt > pendingDetail.dataUpdatedAt');
-    expect(source).toContain('pendingDetail.slug !== detailSlug');
+  test('the old ?c= link still reaches its connector', () => {
+    expect(source).toContain('legacyDetailRedirect(projectId, search)');
+    expect(source).toContain('router.replace(legacyHref)');
+  });
+
+  test('Install on a card waits for the connector list', () => {
+    // `connectors` is `[]` while the list loads or after it failed. An install
+    // run against that creates a second connector for an app the project
+    // already has, instead of adding an account to the first.
+    expect(source).toContain('ready: connectorsQuery.isSuccess');
   });
 
   test('the plus button opens the custom form only', () => {
@@ -99,14 +100,5 @@ describe('connectors page error path', () => {
     expect(source).not.toContain('<AddAppPanel');
     expect(source).toContain("setPanel('custom')");
     expect(source).toContain('<CustomConnectorForm');
-  });
-
-  test('a catalogue card can only open the flow that made it', () => {
-    // `CatalogEntry` is a discriminated union precisely so a Discover entry
-    // cannot be handed to Pipedream's connection modal. Dropping either guard
-    // would pass the wrong raw item to a flow that cannot build a draft
-    // from it.
-    expect(source).toContain("catalogTarget?.source === 'discover' ? catalogTarget.connector");
-    expect(source).toContain("catalogTarget?.source === 'easy-connect' ? catalogTarget.app");
   });
 });

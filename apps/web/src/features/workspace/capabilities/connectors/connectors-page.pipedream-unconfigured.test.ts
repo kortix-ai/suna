@@ -81,7 +81,7 @@ describe('connectors page without a Connect provider', () => {
     // and All off when it answers `absent`, which turns `enabled` off with
     // them; a probe that then stopped answering would reopen the tabs, which
     // would re-enable the probe — a strip that flickers forever.
-    expect(catalog).toContain("useConnectProviderStatus(source === 'easy-connect')");
+    expect(catalog).toContain('useConnectProviderStatus(true)');
     expect(catalog).not.toContain('useConnectProviderStatus(opts.enabled');
   });
 
