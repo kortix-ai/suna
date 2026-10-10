@@ -161,6 +161,31 @@ describeWithDb('App access persistence — real PostgreSQL', () => {
       .where(eq(appAccessGrants.appId, APP_ID))).toHaveLength(0);
   });
 
+  test('an unchanged policy keeps the revision, so a redeploy signs nobody out', async () => {
+    const app = await seedApp();
+    const restricted = await persistAppAccessPolicy(app, {
+      mode: 'restricted', memberIds: [MEMBER_ID], groupIds: [GROUP_ID],
+    });
+    expect(restricted.accessRevision).toBe(2);
+    // The same grants, repeated and reordered: no change.
+    const same = await persistAppAccessPolicy(restricted, {
+      mode: 'restricted', groupIds: [GROUP_ID], memberIds: [MEMBER_ID, MEMBER_ID],
+    });
+    expect(same.accessRevision).toBe(2);
+    // A grant removed: changed.
+    const fewer = await persistAppAccessPolicy(same, { mode: 'restricted', memberIds: [MEMBER_ID] });
+    expect(fewer.accessRevision).toBe(3);
+    const password = await persistAppAccessPolicy(fewer, { mode: 'password', password: 'correct-horse-battery-staple' });
+    expect(password.accessRevision).toBe(4);
+    // The same password mode with no new password keeps the stored hash and the revision.
+    const kept = await persistAppAccessPolicy(password, { mode: 'password' });
+    expect(kept.accessRevision).toBe(4);
+    expect(kept.accessPasswordHash).toBe(password.accessPasswordHash);
+    const scope = await persistAppAccessPolicy(kept, { mode: 'password', viewerTokenScope: 'api' });
+    expect(scope.accessRevision).toBe(5);
+    expect((await persistAppAccessPolicy(scope, { mode: 'password', viewerTokenScope: 'api' })).accessRevision).toBe(5);
+  });
+
   test('restricted principals must belong to the App account', async () => {
     await seedApp();
     const database = testDb();
