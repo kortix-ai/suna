@@ -19584,7 +19584,9 @@
       "texta20614e291e2": "Uploaded a drive file block",
       "text9a1abd40b71f": "Committed a drive upload from a session",
       "text2f0e4bb00f98": "Moved a drive file from a session",
-      "text55dd1dcbbed0": "Deleted a drive file from a session"
+      "text55dd1dcbbed0": "Deleted a drive file from a session",
+      "text5d1ac5e7432c": "Shared files",
+      "text991f9b694b39": "files folders drive shared company my folder access share"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
