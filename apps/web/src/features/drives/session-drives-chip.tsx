@@ -12,6 +12,9 @@ import { FolderIcon, HouseIcon, WarningIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useEffect, useRef } from 'react';
 
+/** Where the person's own folder also appears in the box: a path, not prose. */
+const DESKTOP_PATH = '~/Desktop';
+
 /**
  * Composer chip: the folders of the project's Files this session mounts, and
  * where the agent sees them. What mounts follows folder access: share a folder
@@ -77,7 +80,7 @@ export function SessionDrivesChip({ projectId, sessionId }: { projectId: string;
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm">{row.role === 'me' ? t('sessionDesktop') : row.name}</p>
                   <p className="text-muted-foreground truncate font-mono text-xs">
-                    {row.role === 'me' ? `${row.mountPath} · ~/Desktop` : row.mountPath}
+                    {row.role === 'me' ? [row.mountPath, DESKTOP_PATH].join(' · ') : row.mountPath}
                   </p>
                 </div>
                 <span className="text-muted-foreground shrink-0 text-xs">

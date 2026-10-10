@@ -19573,7 +19573,20 @@
       "text296c9b4ea201": "Viewed who has access to a folder",
       "text59fd4dcb9848": "Shared a folder",
       "text937cfd737699": "Stopped sharing a folder",
-      "text1a5e0afbc2ab": "Listed who a folder can be shared with"
+      "text92e898220ea4": "Listed folder sharing candidates",
+      "text806194e831e2": "Listed a session's synced drives",
+      "text4c17ea4a1bab": "Checked a synced drive for changes",
+      "text52faea499e28": "Listed a drive folder from a session",
+      "textb7eb5a2b50ce": "Checked a drive file from a session",
+      "text78b45f97d82f": "Downloaded a drive file to a session",
+      "texte9bd330e4306": "Uploaded a drive file from a session",
+      "text1cb255699e75": "Planned a drive upload from a session",
+      "texta20614e291e2": "Uploaded a drive file block",
+      "text9a1abd40b71f": "Committed a drive upload from a session",
+      "text2f0e4bb00f98": "Moved a drive file from a session",
+      "text55dd1dcbbed0": "Deleted a drive file from a session",
+      "text5d1ac5e7432c": "Shared files",
+      "text991f9b694b39": "files folders drive shared company my folder access share"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
