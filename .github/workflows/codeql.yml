@@ -20,7 +20,7 @@ concurrency:
 jobs:
   analyze:
     name: Analyze (javascript-typescript)
-    runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_L || 'ubuntu-24.04' }}
     timeout-minutes: 30
     permissions:
       security-events: write

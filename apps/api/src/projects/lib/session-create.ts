@@ -759,10 +759,16 @@ async function resolveSessionSandboxPlacement(params: {
   agentName: string;
   loadedAgents: LoadedProjectAgents;
   platformMetaAgent: boolean;
+  accountId: string;
 }): Promise<
-  SessionCreateStep<{ sandboxSlug: string; providerLocked: boolean; providerName: SandboxProviderName }>
+  SessionCreateStep<{
+    sandboxSlug: string;
+    providerLocked: boolean;
+    providerName: SandboxProviderName;
+    persistentMachine: boolean;
+  }>
 > {
-  const { project, body, agentName, loadedAgents, platformMetaAgent } = params;
+  const { project, body, agentName, loadedAgents, platformMetaAgent, accountId } = params;
   // Explicit request wins. The selected agent environment is next. The
   // project default and platform default remain the final fallbacks.
   const projectDefaultSandboxSlug = normalizeString(
@@ -814,10 +820,31 @@ async function resolveSessionSandboxPlacement(params: {
     };
   }
   const providerLocked = sessionProviderIsLocked(picked);
+  // A persistent machine boots from a Platinum root volume: it takes Platinum
+  // unless the request or the project pinned another provider.
+  // Only for an organization with Volumes on; otherwise the option does not exist.
+  const persistentMachine =
+    body.persistent_machine === true &&
+    (await import('../../platform/services/boot-mode-setting')).volumesEnabledFor(accountId);
+  if (persistentMachine && platformMetaAgent) {
+    return {
+      error: { status: 400, body: { error: 'The meta agent cannot run on a persistent machine', code: 'PERSISTENT_MACHINE_UNSUPPORTED' } },
+    };
+  }
   const providerName: SandboxProviderName = providerLocked
     ? (picked as { provider: string }).provider as SandboxProviderName
-    : await selectProvider();
-  return { sandboxSlug, providerLocked, providerName };
+    : persistentMachine && config.isProviderEnabled('platinum' as SandboxProviderName)
+      ? ('platinum' as SandboxProviderName)
+      : await selectProvider();
+  if (persistentMachine && providerName !== 'platinum') {
+    return {
+      error: {
+        status: 400,
+        body: { error: 'A persistent machine needs the Platinum sandbox provider', code: 'PERSISTENT_MACHINE_UNSUPPORTED' },
+      },
+    };
+  }
+  return { sandboxSlug, providerLocked, providerName, persistentMachine };
 }
 
 /** A non-default sandbox template must exist in the project before the session row does. */
@@ -959,6 +986,7 @@ function buildSessionCreateMetadata(params: {
   parentSession: ParentSession;
   repositoryAccess: boolean;
   sandboxSlug: string;
+  persistentMachine: boolean;
 }) {
   const {
     input,
@@ -978,6 +1006,7 @@ function buildSessionCreateMetadata(params: {
     parentSession,
     repositoryAccess,
     sandboxSlug,
+    persistentMachine,
   } = params;
   const { project, userId, body } = input;
   // A name supplied at create is an EXPLICIT, user-chosen name — the same thing
@@ -1068,6 +1097,7 @@ function buildSessionCreateMetadata(params: {
     // Rollback compatibility: older API replicas must also enforce this restriction.
     workspace_mode: repositoryAccess ? 'branch' : 'runtime',
     sandbox_slug: sandboxSlug,
+    ...(persistentMachine ? { persistent_machine: true } : {}),
     audit_v2: {
       actor_type: auditAttribution.actorType,
       authoritative_source: auditAttribution.authoritativeSource,
@@ -1452,6 +1482,15 @@ async function provisionCreatedSession(params: {
     const extraEnvVars = envPromise.then((env) => {
       return mergeSessionSandboxEnv(env, input.extraEnvVars);
     });
+    // KRTX-2064: extraEnvVars is the end of the env-build chain and the only
+    // link that can sit unconsumed — if anything throws between here and
+    // provisionSessionSandbox attaching its own catch, a later env-build
+    // failure (fail-closed secret grant on a git auth error) would surface as
+    // an unhandled rejection, which on Bun is process-fatal. The real error is
+    // still owned by the provisioner's catch and the catch below; this only
+    // detaches the no-consumer case (same pattern as the guard inside
+    // provisionSessionSandbox).
+    extraEnvVars.catch(() => undefined);
 
     const provisionPromise = provisionSessionSandbox({
       sandboxId: sessionId,
@@ -1640,10 +1679,11 @@ export async function createProjectSession(input: {
     agentName,
     loadedAgents,
     platformMetaAgent,
+    accountId,
   });
   if (placement.error) return { error: placement.error };
   let { sandboxSlug } = placement;
-  const { providerLocked, providerName } = placement;
+  const { providerLocked, providerName, persistentMachine } = placement;
 
   const callbackUnreachable =
     sandboxCallbackUnreachableReason() ?? (await sandboxCallbackDeadTunnelReason());
@@ -1688,6 +1728,7 @@ export async function createProjectSession(input: {
     parentSession,
     repositoryAccess,
     sandboxSlug,
+    persistentMachine,
   });
 
   let sessionRow: ProjectSessionRow | null = null;

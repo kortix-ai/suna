@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { connectors, projectSecrets, projectSessionSecretHandles, roleAssignments } from '@kortix/db';
+import { connectors, projectSecrets, projectSecretTombstones, projectSessionSecretHandles, projects, roleAssignments } from '@kortix/db';
 import type { SecretEgressPolicy } from '@kortix/db';
 import { Hono } from 'hono';
 import * as realAccess from '../projects/lib/access';
@@ -142,6 +142,14 @@ const databaseMock = {
       }
       // Secret audiences (secret-audience.ts): this project narrows none.
       if (table === roleAssignments) return { where: async () => [] };
+      // The unset tombstone's project-row lock (`recordProjectSecretTombstone`).
+      if (table === projects) {
+        return {
+          where: () => ({
+            limit: () => Object.assign(Promise.resolve([{ status: 'active' }]), { for: async () => [{ status: 'active' }] }),
+          }),
+        };
+      }
       if (table !== projectSecrets) throw new Error('unexpected table');
       // The destination-collision query is the only projectSecrets select that
       // asks for identifier + policy and no secretId, and the only one that
@@ -173,6 +181,11 @@ const databaseMock = {
     };
   },
   insert: (table: unknown) => {
+    // The unset tombstone write (KRTX-2056): recorded, not asserted here —
+    // its behavior is covered by the integration test.
+    if (table === projectSecretTombstones) {
+      return { values: () => ({ onConflictDoUpdate: async () => undefined }) };
+    }
     if (table !== projectSecrets) throw new Error('unexpected table');
     return {
       values: (values: Record<string, unknown>) => {
@@ -190,6 +203,7 @@ const databaseMock = {
     };
   },
   delete: (table: unknown) => {
+    if (table === projectSecretTombstones) return { where: async () => undefined };
     if (table !== projectSecrets) throw new Error('unexpected table');
     return {
       where: async () => {

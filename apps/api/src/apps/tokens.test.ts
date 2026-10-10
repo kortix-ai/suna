@@ -102,6 +102,22 @@ describe('the token carries the whole member, and the SDK reads it', () => {
     expect(member).toEqual({ ...subject, accountId: 'acct-1', projectId: PROJECT });
     expect(requireKortixMember(member, { groups: ['Finance'], roles: ['admin'] }).userId).toBe('user-1');
   });
+
+  test('a server App runtime holds that env (deployment-worker), so verifyKortixToken() needs no options', async () => {
+    const signer = generateSigner();
+    const env = authEnv(ISSUER, APP, signer);
+    const saved = Object.fromEntries(Object.keys(env).map((key) => [key, process.env[key]]));
+    Object.assign(process.env, env);
+    try {
+      expect(await verifyKortixToken(signToken(signer, target(), subject).token)).toMatchObject({ userId: 'user-1' });
+      await expect(verifyKortixToken(signToken(signer, target(OTHER_APP), subject).token)).rejects.toThrow();
+    } finally {
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
 });
 
 describe('issuer discovery', () => {

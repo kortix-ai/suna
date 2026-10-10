@@ -23,6 +23,7 @@ import type {
   HarnessAssetsService,
 } from './port'
 import { logger } from '@/lib/log/logger'
+import { bootArtifactSkills } from './boot-artifacts'
 import { fetchArtifactByChunks } from './runtime-asset-chunks'
 import { localDigest, localCliSha } from './runtime-assets-bake'
 export { bakeRuntimeAssetsState } from './runtime-assets-bake'
@@ -636,12 +637,14 @@ export async function reconcileRuntimeAssets(
       if (overlayPresent && state.managed_skills_hash === skillsHash) {
         skills = 'current'
       } else {
-        const payload = await fetchJson<{ hash: string; files: OverlayFile[] }>(
-          fetchImpl,
-          `${base}/managed-skills`,
-          token,
-          DOWNLOAD_TIMEOUT_MS,
-        )
+        const payload =
+          (await bootArtifactSkills<{ hash: string; files: OverlayFile[] }>(skillsHash)) ??
+          (await fetchJson<{ hash: string; files: OverlayFile[] }>(
+            fetchImpl,
+            `${base}/managed-skills`,
+            token,
+            DOWNLOAD_TIMEOUT_MS,
+          ))
         if (!payload || !Array.isArray(payload.files)) {
           skills = 'failed'
         } else if (overlayHash(payload.files) !== skillsHash) {
