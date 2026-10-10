@@ -37,13 +37,13 @@ interface ServerWs {
   close: (code?: number, reason?: string) => void;
 }
 
-function websocketUrl(httpUrl: string): string {
+export function websocketUrl(httpUrl: string): string {
   const url = new URL(httpUrl);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   return url.toString();
 }
 
-async function stampActivity(runtimeId: string, idleTimeoutSeconds: number): Promise<void> {
+export async function stampActivity(runtimeId: string, idleTimeoutSeconds: number): Promise<void> {
   const now = new Date();
   await Promise.all([
     db.update(appRuntimes).set({
@@ -134,7 +134,7 @@ async function prepareBindingWsUpgrade(
   request: Request,
   url: URL,
   matched: NonNullable<ReturnType<typeof resolveAppRequest>>,
-): Promise<{ ok: true; data: PreviewWsData } | { ok: false; status: number; message: string }> {
+): Promise<{ ok: true; data: AppWsData | PreviewWsData } | { ok: false; status: number; message: string }> {
   const { loadPublicAppState } = await import('./public-proxy-runtime');
   const state = await loadPublicAppState(matched.routeKey);
   if (!state) return { ok: false, status: 404, message: 'App not found' };

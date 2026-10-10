@@ -955,16 +955,10 @@ const APP_TYPES = new Set(['static', 'bundle', 'dockerfile', 'oci_image']);
 const APP_KEYS = new Set([
   'path', 'type', 'image', 'dockerfile', 'command', 'port', 'root', 'output_dir',
   'install_command', 'build_command', 'spa', 'readiness_path', 'idle_timeout_seconds',
-  'always_on', 'kind', 'uses', 'resources', 'env', 'secrets',
+  'always_on', 'uses', 'resources', 'env', 'secrets',
 ]);
-const APP_KINDS = new Set(['web', 'convex']);
 /** An App slug as the Apps API accepts it (`uses` entries name live Apps). */
 const APP_SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
-/** Fields a `convex` App ignores: it deploys with its own client CLI and always runs. */
-const CONVEX_APP_IGNORED = [
-  'type', 'image', 'dockerfile', 'command', 'port', 'root', 'output_dir', 'install_command',
-  'build_command', 'spa', 'readiness_path', 'idle_timeout_seconds', 'env', 'secrets',
-] as const;
 
 function validateAppStringMap(
   node: unknown,
@@ -1017,21 +1011,14 @@ function validateAppsV2(node: unknown, path: string, issues: ManifestIssue[]): v
         issues.push({ path: `${where}.backends`, message: 'is retired: list the Apps this App uses in `uses`.', severity: 'error' });
       } else if (key === 'monthly_budget_usd') {
         issues.push({ path: `${where}.monthly_budget_usd`, message: 'is retired and ignored: Apps have no budget. Remove it.', severity: 'warning' });
+      } else if (key === 'kind') {
+        issues.push({
+          path: `${where}.kind`,
+          message: "is retired: an App's shape comes from its config; see the kortix-apps skill templates.",
+          severity: 'warning',
+        });
       } else if (!APP_KEYS.has(key)) {
         issues.push({ path: `${where}.${key}`, message: 'is not a supported App field.', severity: 'error' });
-      }
-    }
-    if (value.kind !== undefined && (typeof value.kind !== 'string' || !APP_KINDS.has(value.kind))) {
-      issues.push({ path: `${where}.kind`, message: 'must be web or convex.', severity: 'error' });
-    }
-    if (value.kind === 'convex') {
-      for (const key of CONVEX_APP_IGNORED) {
-        if (value[key] !== undefined) {
-          issues.push({ path: `${where}.${key}`, message: 'does not apply to a convex App.', severity: 'error' });
-        }
-      }
-      if (value.always_on === false) {
-        issues.push({ path: `${where}.always_on`, message: 'must be true: a convex App always runs.', severity: 'error' });
       }
     }
     if (value.uses !== undefined) {

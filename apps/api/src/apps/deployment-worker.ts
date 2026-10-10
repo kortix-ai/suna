@@ -104,7 +104,7 @@ export async function enqueueCurrentAppRuntime(
   // way a stale supervisor is replaced: one queued redeploy of the same
   // artifact, activated only once it is ready.
   const toStatic = staticHostingEnabled() && deployment.sourceKind === 'static' && deployment.hostingType === 'sandbox';
-  // A deployment with no artifact (a `convex` App's record) has no runtime to refresh.
+  // A deployment with no artifact (a historic record) has no runtime to refresh.
   const artifactId = deployment.artifactId;
   if (!artifactId) return false;
   const imageKey = appRuntimeImageKey(APP_RUNTIME_VERSION);

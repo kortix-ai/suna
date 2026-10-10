@@ -3,32 +3,24 @@
  * `kortix apps connect <app>` prints. One source, so both stay the same.
  *
  * The App's `capabilities` choose the tabs: `member_tokens` adds the outside
- * tab (sign-in tokens, HTTP calls, verification), `admin_credentials` the
- * admin tab. The code targets an App whose endpoint speaks the Convex client
- * protocol, the one kind with an endpoint today.
+ * tab (sign-in tokens, HTTP calls, verification). Every snippet is generic:
+ * an App is an http service, whatever it runs.
  *
- * Pure and secret-free. The admin key never goes in: the web reveals it on an
- * explicit click and the CLI prints it with `kortix apps credentials`, both
- * through the audited credentials route.
+ * Pure and secret-free.
  */
 
-export type AppConnectTab = 'app' | 'outside' | 'admin';
+export type AppConnectTab = 'app' | 'outside';
 
 /** Stable ids. Hosts title each snippet by its id; the CLI uses `title`. */
 export type AppConnectSnippetId =
-  | 'app-install'
   | 'app-uses'
   | 'app-client'
-  | 'server-auth-config'
-  | 'server-function'
+  | 'server-verify'
   | 'outside-token-cli'
   | 'outside-token-sdk'
-  | 'outside-query'
-  | 'outside-mutation'
-  | 'outside-http-action'
+  | 'outside-request'
   | 'outside-verify'
-  | 'outside-verify-env'
-  | 'admin-cli';
+  | 'outside-verify-env';
 
 export interface AppConnectSnippet {
   id: AppConnectSnippetId;
@@ -46,15 +38,14 @@ export interface AppConnectTarget {
   app_id: string;
   project_id: string;
   slug: string;
-  /** The App's endpoint. `null` until it runs. */
+  /** The App's public URL. */
   url: string | null;
   capabilities?: string[];
   /** The values that verify the App's sign-in tokens. Absent on older APIs. */
   auth?: { issuer: string; audience: string; jwks_uri: string } | null;
-  instance?: { site_url: string | null } | null;
 }
 
-export const APP_CONNECT_TABS: AppConnectTab[] = ['app', 'outside', 'admin'];
+export const APP_CONNECT_TABS: AppConnectTab[] = ['app', 'outside'];
 
 /** A JS identifier for the binding variable: `my-db` → `myDb`. */
 function bindingName(slug: string): string {
@@ -65,17 +56,8 @@ export function appConnectSnippets(target: AppConnectTarget): AppConnectSnippet[
   const { slug, app_id: appId, project_id: projectId } = target;
   const can = (capability: string) => target.capabilities?.includes(capability) ?? false;
   const url = target.url ?? '<url>';
-  const siteUrl = target.instance?.site_url ?? '<site_url>';
   const binding = bindingName(slug);
   const snippets: AppConnectSnippet[] = [
-    {
-      id: 'app-install',
-      tab: 'app',
-      title: 'Install the Convex client and the Kortix SDK in the App that uses this one',
-      file: 'terminal',
-      language: 'sh',
-      code: 'npm i convex @kortix/sdk',
-    },
     {
       id: 'app-uses',
       tab: 'app',
@@ -87,53 +69,30 @@ export function appConnectSnippets(target: AppConnectTarget): AppConnectSnippet[
     {
       id: 'app-client',
       tab: 'app',
-      title: "Bind it on the App's own origin and send the viewer's Kortix sign-in token",
-      file: 'src/convex.ts',
+      title: "Call it on the App's own origin with the viewer's Kortix sign-in token",
+      file: 'src/client.ts',
       language: 'ts',
       code: [
-        'import { ConvexReactClient } from "convex/react";',
         'import { kortixBinding } from "@kortix/sdk";',
         '',
         `const ${binding} = kortixBinding(${JSON.stringify(slug)});`,
-        `export const convex = new ConvexReactClient(${binding}.url);`,
-        `convex.setAuth(${binding}.token);`,
-        '// Read the signed-in member with a members:me query (useQuery(api.members.me)), not useConvexAuth().',
-      ].join('\n'),
-    },
-    {
-      id: 'server-auth-config',
-      tab: 'app',
-      title: 'Accept Kortix sign-in tokens in this App (Kortix sets these variables)',
-      file: 'convex/auth.config.ts',
-      language: 'ts',
-      code: [
-        'export default {',
-        '  providers: [',
-        '    {',
-        '      type: "customJwt",',
-        '      issuer: process.env.KORTIX_AUTH_ISSUER!,',
-        '      applicationID: process.env.KORTIX_AUTH_AUDIENCE!,',
-        '      jwks: process.env.KORTIX_AUTH_JWKS!,',
-        '      algorithm: "ES256",',
-        '    },',
-        '  ],',
-        '};',
-      ].join('\n'),
-    },
-    {
-      id: 'server-function',
-      tab: 'app',
-      title: 'Require a signed-in member in every function that reads or writes private data',
-      file: 'convex/members.ts',
-      language: 'ts',
-      code: [
-        'import { query } from "./_generated/server";',
-        'import { requireKortixMember } from "@kortix/sdk";',
-        '',
-        'export const me = query({',
-        '  args: {},',
-        '  handler: async (ctx) => requireKortixMember(await ctx.auth.getUserIdentity()),',
+        `const response = await fetch(\`\${${binding}.url}/\`, {`,
+        `  headers: { authorization: \`Bearer \${await ${binding}.token()}\` },`,
         '});',
+      ].join('\n'),
+    },
+    {
+      id: 'server-verify',
+      tab: 'app',
+      title: 'Require a signed-in member in every request this App serves (Kortix sets the KORTIX_AUTH_* variables)',
+      file: 'server.ts',
+      language: 'ts',
+      code: [
+        'import { verifyKortixToken } from "@kortix/sdk";',
+        '',
+        '// Reads KORTIX_AUTH_ISSUER, KORTIX_AUTH_AUDIENCE and KORTIX_AUTH_JWKS.',
+        'const bearer = request.headers.get("authorization")?.replace(/^Bearer /, "") ?? "";',
+        'const member = await verifyKortixToken(bearer);',
       ].join('\n'),
     },
   ];
@@ -164,38 +123,12 @@ export function appConnectSnippets(target: AppConnectTarget): AppConnectSnippet[
         ].join('\n'),
       },
       {
-        id: 'outside-query',
+        id: 'outside-request',
         tab: 'outside',
-        title: 'Call a query over HTTP',
+        title: 'Call the App over HTTP with the token',
         file: 'terminal',
         language: 'sh',
-        code: [
-          `curl -s ${url}/api/query \\`,
-          '  -H "Authorization: Bearer $TOKEN" \\',
-          '  -H "Content-Type: application/json" \\',
-          `  -d '{"path":"members:me","args":{},"format":"json"}'`,
-        ].join('\n'),
-      },
-      {
-        id: 'outside-mutation',
-        tab: 'outside',
-        title: 'Call a mutation over HTTP',
-        file: 'terminal',
-        language: 'sh',
-        code: [
-          `curl -s ${url}/api/mutation \\`,
-          '  -H "Authorization: Bearer $TOKEN" \\',
-          '  -H "Content-Type: application/json" \\',
-          `  -d '{"path":"tasks:create","args":{"title":"Hello"},"format":"json"}'`,
-        ].join('\n'),
-      },
-      {
-        id: 'outside-http-action',
-        tab: 'outside',
-        title: 'Call an HTTP action (a route in convex/http.ts)',
-        file: 'terminal',
-        language: 'sh',
-        code: `curl -s ${siteUrl}/hello -H "Authorization: Bearer $TOKEN"`,
+        code: `curl -s ${url}/ -H "Authorization: Bearer $TOKEN"`,
       },
       {
         id: 'outside-verify',
@@ -227,27 +160,6 @@ export function appConnectSnippets(target: AppConnectTarget): AppConnectSnippet[
         ].join('\n'),
       });
     }
-  }
-  if (can('admin_credentials')) {
-    snippets.push({
-      id: 'admin-cli',
-      tab: 'admin',
-      title: 'Deploy, then use any Convex CLI command with the admin credentials',
-      file: 'terminal',
-      language: 'sh',
-      code: [
-        `kortix apps deploy <dir> --app ${slug}`,
-        '',
-        '# Admin URL and key in this shell only. Kortix audits every read.',
-        `eval "$(kortix apps credentials ${slug})"`,
-        'npx convex function-spec',
-        'npx convex data',
-        'npx convex env list',
-        'npx convex logs',
-        '',
-        `kortix apps dashboard ${slug} --open`,
-      ].join('\n'),
-    });
   }
   return snippets;
 }

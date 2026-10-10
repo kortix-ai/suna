@@ -428,7 +428,7 @@ export function appNotLinkedResponse(name: string): Response {
  * do with. A used App also answers 403 `app_not_linked` when the viewer may
  * not open it themselves (its own access policy, as for this App), so a link
  * never lends a viewer an App they could not reach directly. The App's client
- * sends it (a Convex client: `client.setAuth`), and the audience App verifies
+ * sends it (`kortixToken` in the App's client code), and the audience App verifies
  * it with its `auth` values. Same viewer rules as `/_kortix/viewer`.
  */
 export async function appTokenResponse(

@@ -44,7 +44,6 @@ export const DENY_SUBCOMMANDS: { path: [string, string]; denial: Denial }[] = [
   { path: ['env', 'push'], denial: { reason: 'it reads a local file', use: '`secrets set KEY=value`' } },
   { path: ['apps', 'deploy'], denial: { reason: 'it deploys a local directory, and this server has none', use: 'run_command in a session sandbox, where the source lives: `kortix apps deploy <path>` there' } },
   { path: ['apps', 'token'], denial: { reason: 'it prints a sign-in token for an App into this conversation', use: 'run_command in a session sandbox: `kortix apps token <app>` there' } },
-  { path: ['apps', 'credentials'], denial: { reason: 'it prints an App admin key into this conversation', use: 'run_command in a session sandbox: `eval "$(kortix apps credentials <app>)"` keeps the key in the shell' } },
   ...['connect', 'attach', 'shell', 'terminal', 'ssh', 'forward', 'ports'].flatMap((sub) =>
     ['sessions', 'session'].map((cmd) => ({ path: [cmd, sub] as [string, string], denial: { reason: 'it needs an interactive terminal or a long-lived connection', use: 'start_session, send_message, read_session, run_command' } })),
   ),

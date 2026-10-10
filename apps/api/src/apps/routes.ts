@@ -17,7 +17,6 @@ import { pauseComputeSession } from '../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../config';
 import { db } from '../shared/db';
 import { inspectDatabaseError } from '../shared/database-errors';
-import { readJsonObject } from '../shared/http-body';
 import {
   AppArtifactStorageUnavailableError,
   createAppArtifactUploadUrl,
@@ -36,13 +35,10 @@ import {
   AppAccountUnfundedError,
   AppLimitError,
   assertAppMachineWithinLimits,
-  assertAppAccountFunded,
   assertAppQuotaAvailable,
 } from './limits';
 import { callerKortixSessionId } from '../middleware/caller-session';
 import { projectsApp } from '../projects/lib/app';
-import { resolveSessionSandboxRegion } from '../platform/services/sandbox-region';
-import { isPlatinumConfigured } from '../shared/platinum';
 import { logger } from '../lib/logger';
 import { readAgentsGrantingApp } from './agent-grants';
 import {
@@ -54,21 +50,10 @@ import {
   serializeAppAccessPolicy,
   validateAppAccessPrincipals,
 } from './access';
-import { APP_KINDS, type AppHostingType } from './kinds';
 import { authorizedProject, capabilityRefusal, visibleApp } from './route-access';
 import { AppObject, appJson, appsJson } from './serialize';
 import { UnknownLinkedAppError, resolveAppLinks, writeAppLinks } from './links';
 import { registerAppCapabilityRoutes } from './capability-routes';
-import {
-  BACKEND_MACHINE_LIMITS,
-  BackendLimitError,
-  getLiveConvexApp,
-  insertConvexApp,
-  newConvexSize,
-  provisionBackend,
-} from './kinds/convex/provision';
-import { CONVEX_CLI_VERSION } from './kinds/convex/convex-image';
-import { BackendOperationError, backendOperation, beginResize, backendProviderFailure, retireConvexApp, runResize } from './kinds/convex/operations';
 
 /** The machine bounds an App shares with a session sandbox. Stated here so the
  *  published OpenAPI schema carries the real ceiling instead of a number the
@@ -147,12 +132,6 @@ const SourceSchema = z.discriminatedUnion('kind', [
     restart_limit: z.number().int().optional(),
   }),
 ]);
-
-/** What a `convex` App records after the client CLI deployed its functions. */
-const ConvexSourceSchema = z.object({
-  kind: z.literal('convex'),
-  revision: z.string().max(200).optional().openapi({ description: 'What was deployed, e.g. a git commit. Shown in the history.' }),
-});
 
 function sourceFromWire(input: z.infer<typeof SourceSchema>): AppSourceSpec {
   switch (input.kind) {
@@ -248,48 +227,6 @@ const AppAccessSchema = z.object({
 export { agentsGrantingApp } from './agent-grants';
 
 /**
- * Records a deployment of a `convex` App: the client CLI already deployed the
- * functions with the admin credentials, so the row is `ready` at once. It is
- * history, not routing: `active_deployment_id` does not move.
- */
-async function recordConvexDeployment(c: Context<AppEnv>, appId: string, userId: string, revision: string | null) {
-  return db.transaction(async (tx) => {
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${appId}))`);
-    const [versionRow] = await tx.select({ value: max(appDeployments.version) }).from(appDeployments)
-      .where(eq(appDeployments.appId, appId));
-    const now = new Date();
-    const [row] = await tx.insert(appDeployments).values({
-      appId,
-      artifactId: null,
-      version: Number(versionRow?.value ?? 0) + 1,
-      status: 'ready',
-      sourceKind: 'convex',
-      hostingType: 'convex',
-      createdBy: userId,
-      sourceSessionId: callerKortixSessionId(c),
-      actorType: appDeploymentActorType(c),
-      runtimeVersion: CONVEX_CLI_VERSION,
-      buildSpec: { source: { kind: 'convex', revision } },
-      runtimeSpec: {},
-      startedAt: now,
-      readyAt: now,
-    }).returning();
-    return row!;
-  });
-}
-
-/** A `convex` refusal (cap, size) or provider failure as its documented answer; null for anything else. */
-function convexRefusal(c: Context<AppEnv>, error: unknown): Response | null {
-  if (error instanceof BackendLimitError || error instanceof BackendOperationError) {
-    return c.json({ error: error.message, code: error.code }, error.status);
-  }
-  const known = backendProviderFailure(error);
-  if (!known) return null;
-  logger.warn('[apps] provider call failed', { path: c.req.path, code: known.code, error: String(error) });
-  return c.json({ error: known.message, code: known.code }, known.status);
-}
-
-/**
  * The Apps `uses` names, resolved among the live Apps of the project that
  * `userId` can see; the 400 `app_not_found` to answer for any other slug
  * (a missing App and one the caller cannot see answer alike). Writes nothing.
@@ -314,124 +251,6 @@ async function linkOrRefuse(c: Context<AppEnv>, app: typeof apps.$inferSelect, u
   if (found instanceof Response) return found;
   await db.transaction((tx) => writeAppLinks(tx, app.appId, found));
   return null;
-}
-
-/**
- * Create, kind `convex`: claim the slug (App + machine row, capped per project
- * and account), link it, then provision the machine in the background. A
- * failure lands on the row as `instance.status: "error"`; the provision
- * heartbeats, so maintenance resumes it if this process dies.
- */
-async function createConvexApp(
-  c: Context<AppEnv>,
-  loaded: { userId: string; row: { accountId: string; metadata: unknown } },
-  body: { slug: string; name: string; cpu?: number; memory_gb?: number; disk_gb?: number; always_on?: boolean; uses: string[] },
-): Promise<Response> {
-  const projectId = c.req.param('projectId')!;
-  const accountId = loaded.row.accountId;
-  if (!isPlatinumConfigured()) {
-    return c.json({ error: 'This deployment cannot run convex Apps: it has no Platinum machine provider.', code: 'app_kind_unavailable' }, 409);
-  }
-  if (body.always_on === false) {
-    return c.json({ error: 'A convex App always runs; always_on cannot be false.', code: 'app_always_on_required' }, 400);
-  }
-  let size: ReturnType<typeof newConvexSize>;
-  try {
-    size = newConvexSize({ cpu: body.cpu, memoryGb: body.memory_gb, diskGb: body.disk_gb });
-    await assertAppQuotaAvailable(accountId);
-    // The machine bills its reserved size from its first second.
-    await assertAppAccountFunded(accountId);
-  } catch (error) {
-    const refusal = appLimitResponse(c, error) ?? convexRefusal(c, error);
-    if (refusal) return refusal;
-    throw error;
-  }
-  let created: Awaited<ReturnType<typeof insertConvexApp>>;
-  try {
-    created = await insertConvexApp({
-      projectId,
-      accountId,
-      userId: loaded.userId,
-      slug: body.slug,
-      name: body.name.trim(),
-      size,
-    });
-  } catch (error) {
-    if (inspectDatabaseError(error)?.pgCode === '23505') return c.json({ error: 'An App with this slug already exists' }, 409);
-    const refusal = convexRefusal(c, error);
-    if (refusal) return refusal;
-    throw error;
-  }
-  const linked = body.uses.length ? await linkOrRefuse(c, created.app, body.uses, loaded.userId) : null;
-  if (linked) {
-    // Nothing runs yet: the App and its machine row go (cascade).
-    await db.delete(apps).where(eq(apps.appId, created.app.appId));
-    return linked;
-  }
-  void provisionBackend(created.row, resolveSessionSandboxRegion(loaded.row.metadata as Record<string, unknown>)).catch((error) =>
-    logger.error('[apps] convex provision failed', { projectId, appId: created.app.appId, error: String(error) }),
-  );
-  return c.json({ ...(await appJson(created.app, loaded.userId)), warnings: [] }, 201);
-}
-
-/**
- * Starts the resize of a `convex` App: the wallet gate when it grows, the
- * operation claim (409 `app_busy`), then the resize in the background (its
- * result lands on the machine row; it heartbeats, so maintenance recovers the
- * App if this process dies). Null when started, else the Response to answer.
- */
-async function startConvexResize(
-  c: Context<AppEnv>,
-  projectId: string,
-  app: typeof apps.$inferSelect,
-  next: { cpuCores: number; memoryGb: number; diskGb: number },
-): Promise<Response | null> {
-  const row = await getLiveConvexApp(projectId, app.appId);
-  if (!row) return c.json({ error: 'Not found' }, 404);
-  const grows = next.cpuCores > row.cpu || next.memoryGb > row.memoryGb || next.diskGb > row.diskGb;
-  try {
-    if (grows) await assertAppAccountFunded(row.accountId);
-    const size = await beginResize(row, { cpu: next.cpuCores, memoryGb: next.memoryGb, diskGb: next.diskGb });
-    void runResize(row, size);
-  } catch (error) {
-    const refusal = appLimitResponse(c, error) ?? convexRefusal(c, error);
-    if (refusal) return refusal;
-    throw error;
-  }
-  return null;
-}
-
-/** Delete, kind `convex`: project.app.admin, the typed slug, then a retained delete (kinds/convex/operations.ts retireConvexApp). */
-async function deleteConvexApp(c: Context<AppEnv>, projectId: string, app: typeof apps.$inferSelect): Promise<Response> {
-  const admin = await authorizedProject(c, projectId, 'admin');
-  if (admin instanceof Response) return admin;
-  const body = await readJsonObject(c);
-  const confirm = c.req.query('confirm') ?? (typeof body.confirm === 'string' ? body.confirm : undefined);
-  if (confirm !== app.slug) {
-    return c.json({
-      error: `This App holds data. Type its slug to delete it: confirm=${app.slug}.`,
-      code: 'confirmation_required',
-    }, 400);
-  }
-  const row = await getLiveConvexApp(projectId, app.appId);
-  if (!row) return c.json({ error: 'Not found' }, 404);
-  let retired: Awaited<ReturnType<typeof retireConvexApp>>;
-  try {
-    retired = await retireConvexApp(row);
-  } catch (error) {
-    logger.error('[apps] convex delete failed', { projectId, appId: app.appId, error: String(error) });
-    return c.json({ error: 'The App machine could not be stopped. Try again.', code: 'app_delete_failed' }, 502);
-  }
-  if (!retired) {
-    const busy = backendOperation(row) ?? 'running another operation';
-    return c.json({ error: `the App is ${busy}; delete it when that finishes`, code: 'app_busy' }, 409);
-  }
-  return c.json({
-    ok: true,
-    images: { released: 0, pending: 0 },
-    retained_until: retired.purgeAfter,
-    final_snapshot_id: retired.finalSnapshotId,
-  });
 }
 
 export function registerAppsRoutes(): void {
@@ -583,7 +402,7 @@ export function registerAppsRoutes(): void {
       if (loaded instanceof Response) return loaded;
       const row = await visibleApp(projectId, appId, loaded.userId);
       if (!row) return c.json({ error: 'Not found' }, 404);
-      const refusal = capabilityRefusal(c, row, 'preview');
+      const refusal = capabilityRefusal(c, 'preview');
       if (refusal) return refusal;
       if (row.accessMode !== 'public' && row.accessMode !== 'password' && !(await appAccessibleToUser(row, loaded.userId))) {
         return c.json({ error: 'App access denied' }, 403);
@@ -609,20 +428,11 @@ export function registerAppsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post', path: '/{projectId}/apps', tags: ['apps'], summary: 'Create an App', ...auth,
-      description:
-        '`kind` (default `web`) is fixed for the App\'s life. A `web` App serves what its deployments build. A ' +
-        '`convex` App is a self-hosted Convex backend in its own always-on machine (default 1 CPU, 1 GB, 10 GB; ' +
-        `CPU ${BACKEND_MACHINE_LIMITS.cpu.min}-${BACKEND_MACHINE_LIMITS.cpu.max}, memory ${BACKEND_MACHINE_LIMITS.memoryGb.min}-${BACKEND_MACHINE_LIMITS.memoryGb.max} GB, ` +
-        `disk ${BACKEND_MACHINE_LIMITS.diskGb.min}-${BACKEND_MACHINE_LIMITS.diskGb.max} GB): it answers 201 with ` +
-        '`instance.status: "provisioning"`; poll the App until it is `running` or `error` (seconds; the first in a ' +
-        'region builds the image). At most 3 `convex` Apps per project and 10 per account (409 `app_kind_limit`). ' +
-        'A `convex` App needs a funded account (402) and a deployment with Platinum (409 `app_kind_unavailable`). ' +
-        'Account credits pay for App compute: there is no per-App budget.',
+      description: 'Account credits pay for App compute: there is no per-App budget.',
       request: {
         params: z.object({ projectId: z.string().uuid() }),
         body: { content: { 'application/json': { schema: z.object({
           slug: z.string().min(1).max(63), name: z.string().min(1).max(200),
-          kind: z.enum(APP_KINDS).default('web'),
           cpu: CpuSchema.optional(),
           memory_gb: MemorySchema.optional(),
           disk_gb: DiskSchema.optional(),
@@ -640,7 +450,6 @@ export function registerAppsRoutes(): void {
       const body = c.req.valid('json');
       const slug = body.slug.toLowerCase();
       if (!APP_SLUG.test(slug)) return c.json({ error: 'slug must contain lowercase letters, numbers, and single hyphens' }, 400);
-      if (body.kind === 'convex') return createConvexApp(c, loaded, { ...body, slug });
       const machine = { cpu: body.cpu ?? 1, memoryGb: body.memory_gb ?? 2, diskGb: body.disk_gb ?? 10 };
       try {
         assertAppMachineWithinLimits(machine);
@@ -766,10 +575,7 @@ export function registerAppsRoutes(): void {
     createRoute({
       method: 'patch', path: '/{projectId}/apps/{appId}', tags: ['apps'], summary: 'Update an App', ...auth,
       description:
-        '`uses` replaces the Apps (by slug) this App uses; each must be a live App of the project the caller can see (400 `app_not_found` otherwise, the same for a missing App and a hidden one). A refused PATCH changes nothing. ' +
-        'A `convex` App resizes in the background: the answer carries `instance.operation: "resizing"` and the new ' +
-        'size shows when it is applied (seconds of downtime, a `resize` snapshot first; disk only grows; 409 `app_busy` ' +
-        'while another operation runs). It always runs: `always_on: false` answers 400. ',
+        '`uses` replaces the Apps (by slug) this App uses; each must be a live App of the project the caller can see (400 `app_not_found` otherwise, the same for a missing App and a hidden one). A refused PATCH changes nothing. ',
       request: {
         params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
         body: { content: { 'application/json': { schema: z.object({
@@ -790,10 +596,6 @@ export function registerAppsRoutes(): void {
         return c.json({ error: 'Not found' }, 404);
       }
       const body = c.req.valid('json');
-      const convex = current.kind === 'convex';
-      if (convex && body.always_on === false) {
-        return c.json({ error: 'A convex App always runs; always_on cannot be false.', code: 'app_always_on_required' }, 400);
-      }
       const nextMachine = {
         cpuCores: body.cpu ?? current.cpuCores,
         memoryGb: body.memory_gb ?? current.memoryGb,
@@ -801,7 +603,7 @@ export function registerAppsRoutes(): void {
         alwaysOn: body.always_on ?? current.alwaysOn,
       };
       try {
-        if (!convex) assertAppMachineWithinLimits({ cpu: body.cpu, memoryGb: body.memory_gb, diskGb: body.disk_gb });
+        assertAppMachineWithinLimits({ cpu: body.cpu, memoryGb: body.memory_gb, diskGb: body.disk_gb });
       } catch (error) {
         const refusal = appLimitResponse(c, error);
         if (refusal) return refusal;
@@ -814,18 +616,13 @@ export function registerAppsRoutes(): void {
       // links and the row, so a refused PATCH changes nothing.
       const links = body.uses === undefined ? undefined : await resolveLinksOrRefuse(c, current, body.uses, loaded.userId);
       if (links instanceof Response) return links;
-      if (convex && sizeChanged) {
-        const resized = await startConvexResize(c, projectId, current, nextMachine);
-        if (resized) return resized;
-      }
       const [row] = await db.transaction(async (tx) => {
         if (links) await writeAppLinks(tx, appId, links);
         return tx.update(apps).set({
           ...(body.name !== undefined ? { name: body.name.trim() } : {}),
-          // A `convex` App's size is written when the resize applies (kinds/convex/operations.ts runResize).
-          ...(body.cpu !== undefined && !convex ? { cpuCores: body.cpu } : {}),
-          ...(body.memory_gb !== undefined && !convex ? { memoryGb: body.memory_gb } : {}),
-          ...(body.disk_gb !== undefined && !convex ? { diskGb: body.disk_gb } : {}),
+          ...(body.cpu !== undefined ? { cpuCores: body.cpu } : {}),
+          ...(body.memory_gb !== undefined ? { memoryGb: body.memory_gb } : {}),
+          ...(body.disk_gb !== undefined ? { diskGb: body.disk_gb } : {}),
           ...(body.idle_timeout_seconds !== undefined ? { idleTimeoutSeconds: body.idle_timeout_seconds } : {}),
           ...(body.always_on !== undefined ? { alwaysOn: body.always_on } : {}),
           updatedAt: new Date(),
@@ -840,22 +637,12 @@ export function registerAppsRoutes(): void {
     createRoute({
       method: 'delete', path: '/{projectId}/apps/{appId}', tags: ['apps'], summary: 'Delete an App', ...auth,
       description:
-        'A `web` App stops serving at once; its runtimes and images go. A `convex` App holds data, so its delete needs ' +
-        'project.app.admin and the typed slug: `confirm=<slug>` as a query parameter or `{ "confirm": "<slug>" }` as ' +
-        'the body (400 `confirmation_required` otherwise). Kortix takes a `final` snapshot, stops the machine and keeps ' +
-        'both 7 days (`retained_until`); its hosts answer 410 meanwhile. 409 `app_busy` while a resize, restore, ' +
-        'snapshot or credential rotation runs.',
+        'The App stops serving at once; its runtimes and images go.',
       request: {
         params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
-        query: z.object({ confirm: z.string().max(63).optional() }),
       },
       responses: {
-        200: json(z.object({
-          ok: z.boolean(),
-          images: ImageReleaseObject,
-          retained_until: z.string().nullable().optional(),
-          final_snapshot_id: z.string().nullable().optional(),
-        }), 'Deleted'),
+        200: json(z.object({ ok: z.boolean(), images: ImageReleaseObject }), 'Deleted'),
         ...errors(400, 403, 404, 409, 502),
       },
     }),
@@ -865,7 +652,6 @@ export function registerAppsRoutes(): void {
       if (loaded instanceof Response) return loaded;
       const row = await visibleApp(projectId, appId, loaded.userId);
       if (!row) return c.json({ error: 'Not found' }, 404);
-      if (row.kind === 'convex') return deleteConvexApp(c, projectId, row);
       // Delete first, tear down second. A deleted App stops routing and leaves
       // the idle reaper at once; if this request dies mid-teardown, project
       // maintenance (`reclaimAppDeploymentImages`) removes what it left behind.
@@ -917,21 +703,18 @@ export function registerAppsRoutes(): void {
     createRoute({
       method: 'post', path: '/{projectId}/apps/{appId}/deployments', tags: ['apps'], summary: 'Deploy an App', ...auth,
       description:
-        'A `web` App: queue a build of an uploaded artifact (`artifact_id` + `source`); answers 202. A `convex` App: ' +
-        'the client CLI deploys the functions itself, then records the deployment here with `source: { kind: "convex", ' +
-        'revision? }` and no artifact; answers 201 with a `ready` deployment, so the history shows who deployed what.',
+        'Queue a build of an uploaded artifact (`artifact_id` + `source`); answers 202.',
       request: {
         params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
         body: { content: { 'application/json': { schema: z.object({
           artifact_id: z.string().uuid().optional(),
-          source: z.union([SourceSchema, ConvexSourceSchema]),
+          source: SourceSchema,
           provider: z.enum(['daytona', 'platinum', 'e2b']).optional(),
           environment: EnvironmentSchema.optional(),
           secrets: SecretMappingsSchema.optional(),
         }) } } },
       },
       responses: {
-        201: json(DeploymentObject, 'Deployment recorded (convex)'),
         202: json(DeploymentObject, 'Deployment queued'),
         ...errors(400, 403, 404, 409),
       },
@@ -943,19 +726,6 @@ export function registerAppsRoutes(): void {
       const app = await visibleApp(projectId, appId, loaded.userId);
       if (!app) return c.json({ error: 'Not found' }, 404);
       const body = c.req.valid('json');
-      if ((app.kind === 'convex') !== (body.source.kind === 'convex')) {
-        return c.json({
-          error: app.kind === 'convex'
-            ? 'A convex App records its deployments with source.kind "convex".'
-            : 'source.kind "convex" deploys only to a convex App.',
-          code: 'source_kind_mismatch',
-        }, 400);
-      }
-      if (body.source.kind === 'convex') {
-        if (body.artifact_id) return c.json({ error: 'A convex deployment has no artifact.', code: 'source_kind_mismatch' }, 400);
-        const recorded = await recordConvexDeployment(c, appId, loaded.userId, body.source.revision ?? null);
-        return c.json(serializeDeployment(recorded), 201);
-      }
       if (!body.artifact_id) return c.json({ error: 'artifact_id is required' }, 400);
       const [artifact] = await db.select().from(appArtifacts).where(and(
         eq(appArtifacts.artifactId, body.artifact_id), eq(appArtifacts.projectId, projectId),
@@ -1192,9 +962,6 @@ export function registerAppsRoutes(): void {
         if (loaded instanceof Response) return loaded;
         const app = await visibleApp(projectId, appId, loaded.userId);
         if (!app) return c.json({ error: 'Not found' }, 404);
-        // A kind that never sleeps (`convex`) has nothing to start or stop.
-        const refusal = app.kind === 'web' ? null : capabilityRefusal(c, app, 'sleep');
-        if (refusal) return refusal;
         if (!app.activeDeploymentId) return c.json({ error: 'App has no active deployment' }, 409);
         const [active] = await db.select({ hostingType: appDeployments.hostingType }).from(appDeployments)
           .where(eq(appDeployments.deploymentId, app.activeDeploymentId)).limit(1);
@@ -1263,7 +1030,7 @@ export function registerAppsRoutes(): void {
       if (loaded instanceof Response) return loaded;
       const app = await visibleApp(projectId, appId, loaded.userId);
       if (!app) return c.json({ error: 'Not found' }, 404);
-      const refusal = capabilityRefusal(c, app, 'rollback');
+      const refusal = capabilityRefusal(c, 'rollback');
       if (refusal) return refusal;
       const { deployment_id: deploymentId } = c.req.valid('json');
       const [deployment] = await db.select().from(appDeployments).where(and(eq(appDeployments.deploymentId, deploymentId), eq(appDeployments.appId, appId), eq(appDeployments.status, 'ready'))).limit(1);

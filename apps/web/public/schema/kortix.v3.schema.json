@@ -1738,13 +1738,6 @@
           "always_on": {
             "type": "boolean"
           },
-          "kind": {
-            "type": "string",
-            "enum": [
-              "web",
-              "convex"
-            ]
-          },
           "uses": {
             "type": "array",
             "items": {
