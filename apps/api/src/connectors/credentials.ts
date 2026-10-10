@@ -428,26 +428,19 @@ export async function upsertConnectionCredential(input: {
     .limit(1);
   if (!connection) throw new Error('Connection not found');
   const valueEnc = encryptProjectSecret(input.projectId, input.value);
-  const [existing] = await db
-    .select({ credentialId: connectionCredentials.credentialId })
-    .from(connectionCredentials)
-    .where(eq(connectionCredentials.connectionId, input.connectionId))
-    .limit(1);
-  if (existing) {
-    await db
-      .update(connectionCredentials)
-      .set({ valueEnc, kind: input.kind ?? 'secret', updatedAt: new Date() })
-      .where(eq(connectionCredentials.credentialId, existing.credentialId));
-  } else {
-    await db.insert(connectionCredentials).values({
-      connectorId: input.connectorId,
-      connectionId: input.connectionId,
-      userId: null,
-      kind: input.kind ?? 'secret',
-      valueEnc,
-      createdBy: input.createdBy ?? null,
-    });
-  }
+  await db.insert(connectionCredentials).values({
+    connectorId: input.connectorId,
+    connectionId: input.connectionId,
+    userId: null,
+    kind: input.kind ?? 'secret',
+    valueEnc,
+    createdBy: input.createdBy ?? null,
+  }).onConflictDoUpdate({
+    // One atomic write — the partial index is the arbiter, so its predicate must be named.
+    target: connectionCredentials.connectionId,
+    targetWhere: sql`${connectionCredentials.connectionId} is not null`,
+    set: { valueEnc, kind: input.kind ?? 'secret', updatedAt: new Date() },
+  });
   await db
     .update(connectorConnections)
     .set({ status: 'active', updatedAt: new Date() })
