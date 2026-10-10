@@ -4,6 +4,7 @@ let staticFileUrl = '';
 
 mock.module('@kortix/sdk/react', () => ({
   getActiveStaticFilePreviewUrl: () => staticFileUrl,
+  sessionDrivesQueryOptions: () => ({}),
 }));
 
 const { isBrowserViewable, openFileInNewTab, RuntimeNotBoundError, uniqueZipNames } =

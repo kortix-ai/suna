@@ -1778,8 +1778,10 @@ async function failSessionSandboxProvisioning(
   // for E2B, Daytona, Platinum, and future providers.
   // A project with drives runs on Platinum only: when Platinum cannot be
   // reached at all, say that, instead of a generic provider failure.
+  const platinumUnreachable =
+    ctx.drivesRequirePlatinum && !ctx.drivesSyncAllowed && PLATINUM_UNREACHABLE.test(bgMessage);
   const failure = classifySandboxProvisioningFailure(
-    ctx.drivesRequirePlatinum && !ctx.drivesSyncAllowed && PLATINUM_UNREACHABLE.test(bgMessage)
+    platinumUnreachable
       ? new Error(
           '[drives] Platinum, which runs this project’s sessions and their drives, is not reachable right now. ' +
             'The session did not start. Try again in a minute.',
@@ -1788,9 +1790,12 @@ async function failSessionSandboxProvisioning(
   );
   const { isCapacity, isGitAuth, userMessage } = failure;
   const failureCategory = failure.category;
+  // Transient: the next `/start` re-attempts with backoff (session-open
+  // `retryTransientProvisionFailure`); the session's volume is untouched.
+  const failureTransient = failure.transient || platinumUnreachable;
   if (isCapacity) {
     console.warn(
-      `[session-sandbox] provider at capacity for ${sandbox.sandboxId} — stopping automatic provisioning:`,
+      `[session-sandbox] provider at capacity for ${sandbox.sandboxId} — the next /start retries with backoff:`,
       bgMessage.slice(0, 200),
     );
   } else if (isGitAuth) {
@@ -1824,6 +1829,7 @@ async function failSessionSandboxProvisioning(
         errorMessage: userMessage,
         lastProvisioningError: bgMessage.slice(0, 500),
         ...(failureCategory ? { failureCategory } : {}),
+        failureTransient,
       }),
     });
     await transitionSession('fail', sandbox.sandboxId, { error: userMessage }).catch((sessionErr) =>
