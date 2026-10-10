@@ -22,8 +22,11 @@ async function mount(node: ReactElement): Promise<ReactTestRenderer> {
   await act(async () => {
     mounted = create(node);
   });
-  // The block chunk is lazy: let the import and Streamdown's block effect settle.
-  for (let i = 0; i < 5; i++) await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  // The block chunk is lazy: wait for it (up to 5 s on a loaded machine), then let Streamdown's block effect settle.
+  const tick = () => act(async () => new Promise((resolve) => setTimeout(resolve, 10)));
+  const loaded = () => mounted!.root.findAll((node) => node.props['data-genui-block'] !== undefined).length > 0;
+  for (let i = 0; i < 500 && !loaded(); i++) await tick();
+  for (let i = 0; i < 5; i++) await tick();
   return mounted!;
 }
 async function unmount() {
@@ -137,4 +140,28 @@ pic = Image("https://example.com/venue.jpg", "Venue entrance", "The north door")
     expect(images.map((node) => node.props.src)).toEqual(['https://example.com/first.jpg', 'https://example.com/venue.jpg']);
     for (const image of images) expect(String(image.parent?.props.className)).not.toContain('my-5');
   });
+});
+
+describe('a fence inside a list item or a blockquote streams like a top-level one', () => {
+  // The tick ends mid-statement: a settled parse would add "Response was cut off." and drop the relaxed StatRow.
+  const body = `${RELAXED}\nz = Badge("tr`;
+  const indent = (prefix: string) => body.split('\n').map((line) => `${prefix}${line}`).join('\n');
+  const shapes: [string, string][] = [
+    ['an indented fence in a numbered list', `1. First step\n\n   \`\`\`openui\n${indent('   ')}`],
+    ['a fence on the list marker line', `- \`\`\`openui\n${indent('  ')}`],
+    ['a fence in a blockquote', `> \`\`\`openui\n${indent('> ')}`],
+  ];
+  for (const [name, content] of shapes) {
+    test(name, async () => {
+      const renderer = await mount(
+        <GenuiTelemetryContext.Provider value={{ scope: `turn-nested-${name}` }}>
+          <UnifiedMarkdown trust="agent" genui isStreaming content={content} />
+        </GenuiTelemetryContext.Provider>,
+      );
+      expect(textOf(renderer)).toContain('Revenue');
+      expect(textOf(renderer)).not.toContain('cut off');
+      expect(textOf(renderer)).not.toContain('root = Stack');
+      expect(trackSpy).not.toHaveBeenCalled();
+    });
+  }
 });

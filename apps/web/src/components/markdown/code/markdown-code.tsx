@@ -105,6 +105,8 @@ export interface MarkdownCodeProps {
   genui?: boolean;
   /** Body of the generative UI fence still open at the end of the message (`openGenuiFence`). */
   genuiOpenCode?: string | null;
+  /** That open fence is nested (blockquote, list-marker line), so its block cannot be told apart. */
+  genuiOpenNested?: boolean;
 }
 
 // Code — Mermaid and KaTeX fences render their own chrome; everything else goes
@@ -118,6 +120,7 @@ export function MarkdownCode({
   variant = 'message',
   genui = false,
   genuiOpenCode = null,
+  genuiOpenNested = false,
 }: MarkdownCodeProps) {
   const match = /language-(\w+)/.exec(codeClassName || '');
   const language = match ? match[1] : '';
@@ -125,13 +128,14 @@ export function MarkdownCode({
   const genuiVersion = genui ? genuiVersionFromClassName(codeClassName) : null;
   if (genuiVersion !== null) {
     // Only the last block's fence can be open. A block streams while it is open and the turn
-    // works, so a block the model has closed settles at once (tabs click, strict parse).
+    // works, so a block the model has closed settles at once (tabs click, strict parse). A nested
+    // open fence cannot be matched to its block: then every block streams with the turn.
     const open = genuiOpenCode !== null && genuiOpenCode.trimEnd() === code.trimEnd();
     return (
       <GenuiFence
         code={code}
         version={genuiVersion}
-        streaming={Boolean(isStreaming) && open}
+        streaming={Boolean(isStreaming) && (open || genuiOpenNested)}
         cutOff={!isStreaming && open}
         turnStreaming={Boolean(isStreaming)}
         trust={trust ?? 'untrusted'}

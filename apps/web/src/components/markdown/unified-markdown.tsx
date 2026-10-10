@@ -68,6 +68,8 @@ interface MarkdownRenderContextValue {
   genui: boolean;
   /** Body of the generative UI fence still open at the end of the text, or null. */
   genuiOpenCode: string | null;
+  /** The open fence sits in a blockquote or on a list-marker line: every block streams with the turn. */
+  genuiOpenNested: boolean;
 }
 
 const MarkdownRenderContext = React.createContext<MarkdownRenderContextValue>({
@@ -78,6 +80,7 @@ const MarkdownRenderContext = React.createContext<MarkdownRenderContextValue>({
   variant: 'message',
   genui: false,
   genuiOpenCode: null,
+  genuiOpenNested: false,
 });
 
 export function MarkdownLink({ href, children }: { href?: string; children?: React.ReactNode }) {
@@ -259,7 +262,7 @@ const MARKDOWN_COMPONENTS = {
   // Every fence kind and inline code resolve in one shared place; see
   // components/markdown/code.
   code: function MarkdownCodeRenderer(props: { children?: React.ReactNode; className?: string }) {
-    const { isStreaming, policy, trust, variant, genui, genuiOpenCode } = useContext(MarkdownRenderContext);
+    const { isStreaming, policy, trust, variant, genui, genuiOpenCode, genuiOpenNested } = useContext(MarkdownRenderContext);
     return (
       <MarkdownCode
         {...props}
@@ -269,6 +272,7 @@ const MARKDOWN_COMPONENTS = {
         variant={variant}
         genui={genui}
         genuiOpenCode={genuiOpenCode}
+        genuiOpenNested={genuiOpenNested}
       />
     );
   },
@@ -488,9 +492,10 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
     // as Streamdown's completion of unfinished markdown, lands inside the block.
     const genuiOpen = useMemo(() => (genui ? openGenuiFence(safeContent) : null), [genui, safeContent]);
     const genuiOpenCode = genuiOpen?.code ?? null;
+    const genuiOpenNested = genuiOpen !== null && genuiOpen.code === null;
     const renderContext = useMemo(
-      () => ({ isStreaming, proxy, policy, trust, variant, genui, genuiOpenCode }),
-      [isStreaming, proxy, policy, trust, variant, genui, genuiOpenCode],
+      () => ({ isStreaming, proxy, policy, trust, variant, genui, genuiOpenCode, genuiOpenNested }),
+      [isStreaming, proxy, policy, trust, variant, genui, genuiOpenCode, genuiOpenNested],
     );
 
     // Whole-string rewrites (KaTeX prep, system-tag strip, the pending setup

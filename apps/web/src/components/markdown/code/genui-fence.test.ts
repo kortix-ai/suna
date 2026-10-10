@@ -31,3 +31,22 @@ describe('openGenuiFence', () => {
     expect(openGenuiFence(text)?.code).toBe('root = Table(');
   });
 });
+
+describe('openGenuiFence inside a list or a quote', () => {
+  test('an indented fence in a list item: the body loses the indentation, as the code node does', () => {
+    expect(openGenuiFence('1. First\n\n   ```openui\n   root = Stack([a])\n   a = Stat("Rev')).toEqual({
+      code: 'root = Stack([a])\na = Stat("Rev',
+      closer: '\n   ```',
+    });
+  });
+
+  test('a fence the top-level splitter does not count is open but unmatched, closed in its container', () => {
+    expect(openGenuiFence('- ```openui\n  root = Stack([a])')).toEqual({ code: null, closer: '\n  ```' });
+    expect(openGenuiFence('> ```openui\n> root = Stack([a])')).toEqual({ code: null, closer: '\n> ```' });
+  });
+
+  test('a closed nested fence, or an openui example inside another fence, is not open', () => {
+    expect(openGenuiFence('> ```openui\n> root = Stack([])\n> ```\n\nDone')).toBeNull();
+    expect(openGenuiFence('````md\n- ```openui\n  root = Stack([])')).toBeNull();
+  });
+});
