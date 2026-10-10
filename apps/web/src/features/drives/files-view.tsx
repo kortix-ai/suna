@@ -3,7 +3,6 @@
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { createFilesStore, useFilesStore } from '@/features/file-browser/store/files-store';
-import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { DriveExplorer, FileExplorerSourceProvider, FilesStoreProvider } from '@/features/project-files';
 import { useDriveAvailability, useDriveFolder, useProjectDrive } from '@/hooks/drives/use-drives';
@@ -15,8 +14,11 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { FolderSimpleIcon, HardDrivesIcon, HouseIcon, ShareNetworkIcon, UsersThreeIcon } from '@phosphor-icons/react';
-import type { Drive } from '@kortix/sdk';
+import { FolderSimpleIcon, HouseIcon, ShareNetworkIcon, UsersThreeIcon } from '@phosphor-icons/react';
+import { type Drive, getProjectDetail } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
+import { useQuery } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 
 import { DriveConflictsBar } from './drive-conflicts-bar';
@@ -35,6 +37,20 @@ export function FilesView({ projectId }: { projectId: string }) {
   const t = useTranslations('drives');
   const availability = useDriveAvailability(projectId);
   const drive = useProjectDrive(projectId, availability.enabled);
+  const router = useRouter();
+  // Volumes off for the organization: there is no drive page; Files is the repo browser.
+  // Trust only a fresh answer: a cached one may predate a switch flip.
+  const detail = useQuery({
+    queryKey: qk.project.detail(projectId),
+    queryFn: () => getProjectDetail(projectId),
+    ...contract('config'),
+    refetchOnWindowFocus: false,
+  });
+  const settled = detail.isFetchedAfterMount || (detail.isSuccess && !detail.isStale);
+  const off = settled && !detail.isFetching && !availability.enabled;
+  useEffect(() => {
+    if (off) router.replace(`/projects/${projectId}/files`);
+  }, [off, projectId, router]);
 
   let body: ReactNode;
   if (availability.isLoading || (availability.enabled && drive.isLoading)) {
@@ -45,14 +61,7 @@ export function FilesView({ projectId }: { projectId: string }) {
       </div>
     );
   } else if (!availability.enabled) {
-    body = (
-      <EmptyState
-        className="h-full"
-        icon={HardDrivesIcon}
-        title={t('unavailableTitle')}
-        description={t('unavailableDescription')}
-      />
-    );
+    body = null;
   } else if (drive.isError || !drive.data) {
     body = (
       <ErrorState
