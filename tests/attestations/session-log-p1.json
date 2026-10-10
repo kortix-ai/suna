@@ -1,8 +1,7 @@
 {
-  "source_hash": "895f7da71afa5357c0e1587e227178d56556ba754a127f354cfbcd259d4bfc9b",
+  "source_hash": "1404fc695b1130a797511fe9e3bb32984c487f498f7d91d357e5215b2dab689d",
   "diff_files": [
-    ".gitattributes",
-    "packages/api-contract/package.json",
+    "apps/web/src/lib/seo/content-timestamps.json",
     "packages/api-contract/src/__tests__/fixtures/session-log/claude-code.v2.json",
     "packages/api-contract/src/__tests__/fixtures/session-log/codex.v2.json",
     "packages/api-contract/src/__tests__/fixtures/session-log/golden.v2.json",
@@ -10,18 +9,19 @@
     "packages/api-contract/src/__tests__/fixtures/session-log/opencode-v2.v2.json",
     "packages/api-contract/src/__tests__/fixtures/session-log/opencode.v2.json",
     "packages/api-contract/src/__tests__/fixtures/session-log/pi.v2.json",
+    "packages/api-contract/src/__tests__/session-log-shape.snapshot.txt",
+    "packages/api-contract/src/__tests__/session-log-shape.test.ts",
     "packages/api-contract/src/__tests__/session-log.test.ts",
-    "packages/api-contract/src/session-log/index.ts",
     "packages/api-contract/src/session-log/schema.ts",
     "packages/api-contract/src/session-log/types.ts"
   ],
-  "diff_hash": "ba66a4cc6332e8f75678553e4d11a042dcaf0f66458963b5aac6b7e52b291773",
-  "head": "29ef73497e9ff401e96d02e1524776b51df09ccd",
+  "diff_hash": "856b0c38d3243a885a2553250fbbcc8df3264f78a74a1717a1c763584721e6cb",
+  "head": "a6398fae6796ccec8a6703d0e272a01aabc8967f",
   "passed": true,
   "lanes": {
-    "packages": "pass",
     "core": "pass",
+    "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-10T22:36:02.706Z"
+  "at": "2026-10-10T23:07:49.524Z"
 }
