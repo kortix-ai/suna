@@ -1,5 +1,5 @@
 {
-  "source_hash": "412bdd53775204b7851b457e4b1e8d77137ef5ad85fbff010a40f12b99aee31c",
+  "source_hash": "40962f0370f6308066635002ca637f3fe83fc68e0a08a95f212c634e5ac0d34a",
   "diff_files": [
     "apps/web/src/app/(system)/api/auth/password/route.ts",
     "apps/web/src/app/(system)/api/auth/send-code/route.ts",
@@ -22,13 +22,13 @@
     "apps/web/translations/sr.json",
     "apps/web/translations/zh.json"
   ],
-  "diff_hash": "e530ac32cbeb8d2ec7986d725bdfd6622f10d58af264bee88392a7726d76b523",
-  "head": "0f3c67ec7251d179acd2a7486376569ec451444e",
+  "diff_hash": "b13c37d199f5b00f615da6f354bb7a5f84c6d50e9b3ec9f95f4032cc7f057ebd",
+  "head": "02541af86461a332d380131f4c93f74980aed401",
   "passed": false,
   "lanes": {
     "core": "pass",
-    "packages": "fail",
+    "packages": "pass",
     "db-suites": "fail"
   },
-  "at": "2026-10-10T20:55:16.948Z"
+  "at": "2026-10-10T22:51:57.547Z"
 }
