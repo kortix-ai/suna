@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import type { ProjectConfigSummary } from '@kortix/sdk';
 
 const CLI_ROOT = resolve(import.meta.dir, '..', '..');
 const CLI_ENTRY = join(CLI_ROOT, 'src', 'index.ts');
@@ -48,15 +49,9 @@ const REVIEWER_BLOCK = {
   opencode: { description: 'Reviews diffs', mode: 'primary', prompt: 'You review code.' },
 };
 
-/** The two agents the shared fake project has always declared. */
-type FakeAgent = {
-  name: string;
-  path: string;
-  description: string | null;
-  mode: string | null;
-  model?: string;
-  enabled?: boolean;
-};
+/** The fake server serves exactly the /detail shape the API does, so the agent
+ *  rows are the SDK's own detail-agent type, not a hand-rolled copy. */
+type FakeAgent = ProjectConfigSummary['agents'][number];
 
 const DEFAULT_AGENTS: FakeAgent[] = [
   {
@@ -70,23 +65,12 @@ const DEFAULT_AGENTS: FakeAgent[] = [
     path: '.kortix/opencode/agents/reviewer.md',
     description: 'Reviews diffs',
     mode: 'primary',
+    model: 'kortix/deepseek-v4.1-flash',
   },
 ];
 
 const THREE_AGENTS: FakeAgent[] = [
-  {
-    name: 'default',
-    path: '.kortix/opencode/agents/default.md',
-    description: null,
-    mode: 'primary',
-  },
-  {
-    name: 'reviewer',
-    path: '.kortix/opencode/agents/reviewer.md',
-    description: 'Reviews diffs',
-    mode: 'primary',
-    model: 'kortix/deepseek-v4.1-flash',
-  },
+  ...DEFAULT_AGENTS,
   {
     name: 'watcher',
     path: '.kortix/opencode/agents/watcher.md',
