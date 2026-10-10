@@ -12,7 +12,7 @@ styling inline. If a primitive is missing a capability, extend the primitive
 
 `components/ui/` is unmodified React Native Reusables (RNR) registry output —
 19 files, no barrel, no capitalized filenames. `components/kortix/` is
-Kortix-specific: 38 files, built on top of `components/ui/`. **There is no
+Kortix-specific: 39 files, built on top of `components/ui/`. **There is no
 `@/components/ui` barrel.** Import direct paths only, e.g.
 `@/components/ui/button`, `@/components/kortix/avatar`.
 
@@ -40,7 +40,7 @@ Kortix-specific: 38 files, built on top of `components/ui/`. **There is no
 | Native-only animated wrapper | `@/components/ui/native-only-animated-view` → `<NativeOnlyAnimatedView>` | animating a view that must also render inertly on web |
 | Context menu (long press, anchored to its trigger) | `@/components/ui/context-menu` → `<ContextMenu relativeTo="trigger">` + `ContextMenuTrigger` / `ContextMenuContent` / `ContextMenuItem` / `ContextMenuLabel` (the user message menu, `turn/user-message.tsx`) | a bottom sheet for a short action list on one element; `react-native-context-menu-view` (native module, absent in Expo Go) |
 
-## Kortix-specific components — `components/kortix/` (38 files)
+## Kortix-specific components — `components/kortix/` (39 files)
 
 | File | Purpose |
 | --- | --- |

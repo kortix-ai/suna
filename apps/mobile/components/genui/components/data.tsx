@@ -90,7 +90,7 @@ export function GenuiTable({ props }: GenuiComponentProps) {
               {r > 0 ? <Separator /> : null}
               <View className="flex-row">
                 {columns.map((_, c) => (
-                  <Text key={c} style={cellStyle(c)} className={`${CELL} text-sm ${numeric[c] ? 'text-right tabular-nums' : ''}`}>
+                  <Text key={c} style={cellStyle(c)} className={`${CELL} ${numeric[c] ? 'text-right tabular-nums' : ''}`}>
                     {String(row[c] ?? '')}
                   </Text>
                 ))}
