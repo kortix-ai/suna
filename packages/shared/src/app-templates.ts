@@ -60,7 +60,9 @@ export const APP_TEMPLATES: Record<string, AppTemplate> = {
     nextSteps: (name) => [
       `kortix apps exec ${name} -- sh -c "cd /convex && ./generate_admin_key.sh"   # the admin key (project admins)`,
       `kortix secrets set CONVEX_SELF_HOSTED_ADMIN_KEY=<key>   # keep it as a project secret`,
-      `CONVEX_SELF_HOSTED_URL=<${name} URL> CONVEX_SELF_HOSTED_ADMIN_KEY=<key> npx convex@${CONVEX_CLI_VERSION} deploy   # push your functions`,
+      `export CONVEX_SELF_HOSTED_URL=<${name} URL> CONVEX_SELF_HOSTED_ADMIN_KEY=<key>   # in apps/${name}, for the convex CLI`,
+      `kortix apps auth-env ${name} | while IFS='=' read -r k v; do printf '%s' "$v" | npx convex env set "$k"; done   # Kortix sign-in`,
+      `npx convex@${CONVEX_CLI_VERSION} deploy   # push your functions (convex/auth.config.ts: the kortix-apps skill, sign-in)`,
       `kortix apps access-link ${name}-dashboard   # a browser link to the dashboard (project admins); log in with the admin key`,
     ],
   },

@@ -15,7 +15,7 @@ import {
 } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 import { accessCommand, accessLinkCommand } from './apps-access.ts';
-import { execCommand, labelsCommand, machinesCommand, releasesCommand, scaleCommand, volumesCommand } from './apps-fleet.ts';
+import { authEnvCommand, execCommand, labelsCommand, machinesCommand, releasesCommand, scaleCommand, volumesCommand } from './apps-fleet.ts';
 import { connectCommand, deployOrder, linkCommand, tokenCommand, usesList } from './apps-capabilities.ts';
 import {
   type ContextOptions,
@@ -152,6 +152,9 @@ Subcommands:
   volumes destroy <id|slug> <volume> --yes
                                     Admins. A final snapshot is kept 7 days.
   labels <id|slug> [a,b]            Show or replace labels (e.g. backend). --clear.
+  auth-env <id|slug>                What verifies the App's sign-in tokens offline, as
+                                    dotenv lines: KORTIX_AUTH_ISSUER, _AUDIENCE, _JWKS
+                                    (inline). Public values. --json.
   access <id|slug>                  Read or update access. --mode, --password, --members, --groups.
     --viewer off|identity|api       What the App is told about its viewer. api = a token
                                     that acts as them on the Kortix API (their role caps it).
@@ -286,6 +289,8 @@ export async function runApps(argv: string[]): Promise<number> {
       case 'volumes':
       case 'volume':
         return await volumesCommand(rest, common.options, common.json);
+      case 'auth-env':
+        return await authEnvCommand(rest, common.options, common.json);
       case 'labels':
         return await labelsCommand(rest, common.options, common.json);
       case 'access':
