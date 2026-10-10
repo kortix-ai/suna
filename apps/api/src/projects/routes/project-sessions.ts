@@ -47,6 +47,7 @@ import { DEFAULT_AGENT_SENTINEL } from '../agents';
 import { admitSessionSharingChange } from '../lib/session-model-keys';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { callerKortixSessionId } from '../../middleware/caller-session';
+import { peekSessionListPollEtag, storeSessionListPollEtag } from '../lib/session-list-poll-memo';
 import type { ProjectSessionListScope } from '../lib/session-inventory';
 import { loadProjectSessionInventory, sessionRowMatchesSearch } from '../lib/session-list';
 import { SESSION_PAGE_MAX_LIMIT } from '../lib/session-inventory';
@@ -281,6 +282,35 @@ export function registerProjectSessionsRoutes(): void {
     const query = c.req.valid('query');
     const scope = (query.scope ?? 'visible') as ProjectSessionListScope;
 
+    // The poll memo: an If-None-Match repeat of the same (viewer, query) within
+    // the short window is a 304 with no DB work at all. The ETag below is only
+    // known after the full multi-op inventory, so without this every poll paid
+    // 6-14 connection-pool round trips to learn the page was unchanged — and a
+    // poll burst queued its own operations into the p95 (KRTX-468). The key is
+    // built entirely from values the auth middleware already resolved, before
+    // any DB read; the first successful response seeds it, so a burst pays
+    // once and every repeat within the window is free.
+    const pollMemoKey = [
+      c.get('userId'),
+      c.get('iamTokenId'),
+      c.get('authType'),
+      callerKortixSessionId(c),
+      c.req.header('x-kortix-admin-bypass') === '1' ? 'bypass' : '',
+      projectId,
+      c.req.url.split('?')[1] ?? '',
+    ].join('|');
+    const ifNoneMatch = c.req.header('if-none-match');
+    if (ifNoneMatch) {
+      const memoed = peekSessionListPollEtag(pollMemoKey, ifNoneMatch);
+      if (memoed) {
+        c.header('Cache-Control', 'private, no-cache');
+        c.header('ETag', memoed.etag);
+        if (memoed.nextCursor) c.header('X-Next-Cursor', memoed.nextCursor);
+        c.header('Access-Control-Expose-Headers', 'X-Next-Cursor');
+        return c.body(null, 304);
+      }
+    }
+
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
@@ -364,6 +394,7 @@ export function registerProjectSessionsRoutes(): void {
     // client already parses — adding an envelope would have broken all of them.
     if (inventory.nextCursor) c.header('X-Next-Cursor', inventory.nextCursor);
     c.header('Access-Control-Expose-Headers', 'X-Next-Cursor');
+    storeSessionListPollEtag(pollMemoKey, { etag, nextCursor: inventory.nextCursor });
     if (c.req.header('if-none-match') === etag) return c.body(null, 304);
     c.header('Content-Type', 'application/json');
     return c.body(serialized, 200);
