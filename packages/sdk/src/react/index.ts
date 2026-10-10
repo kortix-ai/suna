@@ -223,6 +223,7 @@ export * from './use-notifications';
 export * from './session-cache-write';
 export * from './invalidate-project';
 export * from './use-feature-flag';
+export * from './use-project-files';
 
 // "Sign in with Kortix" — the browser half of `createKortixAuth`
 // (`@kortix/sdk/server`): the viewer hook and the sign-in link.

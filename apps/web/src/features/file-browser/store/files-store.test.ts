@@ -42,3 +42,13 @@ test('revealPath expands every ancestor of a non-workspace file', () => {
   expect(store.getState().expandedDirs.has('/tmp')).toBe(true);
   expect(store.getState().expandedDirs.has('/tmp/screens')).toBe(true);
 });
+
+test('a store held to `/` (Files) opens any folder, and home is `/`, never /workspace', () => {
+  const store = createFilesStore();
+  store.getState().setRootPath('/');
+  expect(isWithinRoot('Users/ana', '/')).toBe(true);
+  store.getState().navigateToPath('Users/ana');
+  expect(store.getState().currentPath).toBe('Users/ana');
+  store.getState().navigateToPath('');
+  expect(store.getState().currentPath).toBe('/');
+});

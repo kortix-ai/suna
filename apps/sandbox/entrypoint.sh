@@ -71,6 +71,167 @@ if [ "${HOME:-/}" = "/" ]; then
 fi
 
 WORKSPACE="${KORTIX_WORKSPACE:-/workspace}"
+
+# ---------------------------------------------------------------------------
+# Kortix Drive ownership.
+#
+# Drive volumes mount root:root, and files the Kortix web app writes into a
+# drive arrive root-owned (0644 files, 0755 folders). The runtime user must be
+# able to change them without sudo. A small root helper follows every
+# read-write mount under /drives (drives can be attached at any time) and
+# hands each new or changed entry to the runtime user. Read-only mounts are
+# left alone. It never blocks the boot: a failure leaves drives root-owned,
+# exactly as before.
+# ---------------------------------------------------------------------------
+start_drive_owner() {
+  local py=/home/kortix/.local/bin/python3
+  [ -x "${py}" ] || py=$(command -v python3 || true)
+  [ -n "${py}" ] || return 0
+  local as_root=()
+  [ "$(id -u)" -eq 0 ] || as_root=(sudo -n)
+  "${as_root[@]}" setsid -f "${py}" - >/tmp/kortix-drive-owner.log 2>&1 <<'KORTIX_DRIVE_OWNER_PY'
+"""Keep every writable Kortix Drive mount owned by the sandbox runtime user.
+
+Drive volumes come up root:root, and every file the Kortix web app writes into
+a drive lands root-owned (0644 files, 0755 folders). The agent runs as the
+runtime user without sudo in its normal flow, so without this it could not
+change an uploaded file or write into an uploaded folder.
+
+Runs as root, started by the entrypoint. Every few seconds it looks for
+read-write mounts under /drives (a drive can be attached at any time), fixes
+ownership once, then follows the mount with inotify and fixes each new or
+changed entry as it appears. Read-only mounts are left alone. stdlib only.
+"""
+
+import ctypes
+import os
+import pwd
+import struct
+import sys
+import time
+
+ROOT = "/drives"
+USER = os.environ.get("KORTIX_DRIVE_OWNER", "kortix")
+IN_ATTRIB, IN_MOVED_TO, IN_CREATE = 0x4, 0x80, 0x100
+IN_DELETE_SELF, IN_UNMOUNT, IN_IGNORED, IN_ISDIR, IN_Q_OVERFLOW = 0x400, 0x2000, 0x8000, 0x40000000, 0x4000
+MASK = IN_ATTRIB | IN_MOVED_TO | IN_CREATE | IN_DELETE_SELF
+SKIP = {"lost+found"}
+
+libc = ctypes.CDLL("libc.so.6", use_errno=True)
+pw = pwd.getpwnam(USER)
+UID, GID = pw.pw_uid, pw.pw_gid
+
+
+def own(path):
+    try:
+        st = os.lstat(path)
+        if st.st_uid != UID or st.st_gid != GID:
+            os.lchown(path, UID, GID)
+    except OSError:
+        pass
+
+
+def rw_mounts():
+    out = []
+    with open("/proc/mounts") as f:
+        for line in f:
+            parts = line.split()
+            if len(parts) < 4:
+                continue
+            mnt = parts[1].replace("\\040", " ")
+            if mnt.startswith(ROOT + "/") and "rw" in parts[3].split(","):
+                out.append(mnt)
+    return out
+
+
+class Watcher:
+    def __init__(self):
+        self.fd = libc.inotify_init1(os.O_NONBLOCK | os.O_CLOEXEC)
+        if self.fd < 0:
+            raise OSError(ctypes.get_errno(), "inotify_init1")
+        self.paths = {}  # wd -> dir
+        self.mounts = set()
+
+    def add_tree(self, top):
+        for dirpath, dirnames, filenames in os.walk(top):
+            dirnames[:] = [d for d in dirnames if not (dirpath == top and d in SKIP)]
+            own(dirpath)
+            for name in filenames:
+                own(os.path.join(dirpath, name))
+            wd = libc.inotify_add_watch(self.fd, dirpath.encode(), MASK)
+            if wd >= 0:
+                self.paths[wd] = dirpath
+
+    def sync_mounts(self):
+        live = set(rw_mounts())
+        for mnt in sorted(live - self.mounts):
+            self.add_tree(mnt)
+        self.mounts = live
+
+    def drain(self):
+        try:
+            buf = os.read(self.fd, 1 << 16)
+        except BlockingIOError:
+            return
+        i = 0
+        while i + 16 <= len(buf):
+            wd, mask, _cookie, length = struct.unpack_from("iIII", buf, i)
+            name = buf[i + 16 : i + 16 + length].split(b"\0", 1)[0].decode(errors="surrogateescape")
+            i += 16 + length
+            if mask & IN_Q_OVERFLOW:
+                # Missed events: walk every mount again.
+                self.mounts = set()
+                continue
+            if mask & (IN_IGNORED | IN_UNMOUNT | IN_DELETE_SELF):
+                self.paths.pop(wd, None)
+                continue
+            base = self.paths.get(wd)
+            if not base:
+                continue
+            path = os.path.join(base, name) if name else base
+            if mask & IN_ISDIR and mask & (IN_CREATE | IN_MOVED_TO):
+                self.add_tree(path)
+            else:
+                own(path)
+
+
+def main():
+    w = Watcher()
+    last = 0.0
+    while True:
+        now = time.monotonic()
+        if now - last >= 3:
+            try:
+                w.sync_mounts()
+            except Exception as err:  # never die: the next pass retries
+                print(f"drive-owner: {err}", file=sys.stderr, flush=True)
+            last = now
+        w.drain()
+        time.sleep(0.2)
+
+
+if __name__ == "__main__":
+    main()
+KORTIX_DRIVE_OWNER_PY
+}
+# Only a session with drives (the API sets KORTIX_DRIVES=1): every other box
+# boots exactly as it did before drives, with no helper process.
+if [ "${KORTIX_DRIVES:-}" = "1" ]; then
+  start_drive_owner || true
+fi
+
+# Kortix Drive off Platinum (KORTIX_DRIVE_SYNC=1): no volume mounts here; the
+# daemon copies the session's drives into /drives and keeps them in sync, as
+# the runtime user, so /drives must be that user's.
+if [ "${KORTIX_DRIVE_SYNC:-}" = "1" ]; then
+  if [ "$(id -u)" -eq 0 ]; then
+    mkdir -p /drives && chown "$(id -u):$(id -g)" /drives || true
+  else
+    { sudo -n mkdir -p /drives && sudo -n chown "$(id -u):$(id -g)" /drives; } 2>/dev/null \
+      || echo "[entrypoint] drive sync: cannot hand /drives to $(id -un) (no passwordless sudo); the daemon syncs into ~/drives" >&2
+  fi
+fi
+
 DEADLINE_S=120
 # Require 2 consecutive clean probes at a tight 0.25s cadence (~0.5s on the
 # common path where the dir is stable immediately) instead of 4×0.5s=2s. The
