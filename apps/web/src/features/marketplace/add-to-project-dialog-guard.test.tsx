@@ -84,15 +84,23 @@ interface HarnessApi {
  * The production wiring: the guard hook feeds a keyed `ClientErrorBoundary`
  * whose fallback is the crash-recovery component, exactly like `ItemActions`.
  * Opens and closes go through the guard's `handleOpenChange`, the same path
- * the modal's own `onOpenChange` takes in the app.
+ * the modal's own `onOpenChange` takes in the app. The harness publishes the
+ * handle through a registration callback — the caller's holder object is
+ * mutated in that plain callback, never inside the hook scope.
  */
-function GuardedHarness({ crashOpens, api }: { crashOpens: number; api: HarnessApi }) {
+function GuardedHarness({
+  crashOpens,
+  register,
+}: {
+  crashOpens: number;
+  register: (changeOpen: (open: boolean) => void) => void;
+}) {
   const [open, setOpen] = useState(true);
   const guard = useDialogCrashGuard({ onOpenChange: setOpen });
 
   useEffect(() => {
-    api.changeOpen = guard.handleOpenChange;
-  }, [api, guard.handleOpenChange]);
+    register(guard.handleOpenChange);
+  }, [register, guard.handleOpenChange]);
 
   return (
     <div>
@@ -163,7 +171,7 @@ describe('Add-to-project dialog mount crash (KRTX-1950)', () => {
     openMounts = 0;
     const { host, root } = await renderHost(
       <TopBoundary>
-        <GuardedHarness crashOpens={1} api={{}} />
+        <GuardedHarness crashOpens={1} register={() => {}} />
       </TopBoundary>,
     );
     await settle();
@@ -181,7 +189,7 @@ describe('Add-to-project dialog mount crash (KRTX-1950)', () => {
     const api: HarnessApi = {};
     const { host, root } = await renderHost(
       <TopBoundary>
-        <GuardedHarness crashOpens={999} api={api} />
+        <GuardedHarness crashOpens={999} register={(fn) => { api.changeOpen = fn; }} />
       </TopBoundary>,
     );
     await settle();
@@ -210,7 +218,7 @@ describe('Add-to-project dialog mount crash (KRTX-1950)', () => {
     const api: HarnessApi = {};
     const { host, root } = await renderHost(
       <TopBoundary>
-        <GuardedHarness crashOpens={1} api={api} />
+        <GuardedHarness crashOpens={1} register={(fn) => { api.changeOpen = fn; }} />
       </TopBoundary>,
     );
     await settle();
