@@ -3,7 +3,11 @@ import { autoClose, parseExpression, split, tokenize, walkAST, type ASTNode, typ
 import { GENUI_MAX_NODES, GENUI_MAX_SOURCE_CHARS } from './catalog';
 import type { GenuiIssue } from './types';
 
-/** Deepest nesting (brackets plus reference hops) passed to lang-core, whose recursive parser and materializer have no limit. */
+/**
+ * Deepest nesting (brackets plus reference hops) passed to lang-core, whose recursive parser and
+ * materializer have no limit. Bracket-free operator chains (`!!!…`) are not counted: a stack
+ * overflow there is caught in parse.ts and reported as `parse-failed`.
+ */
 const MAX_NESTING = 64;
 
 /**
@@ -141,17 +145,19 @@ function bracketDepth(text: string): number {
 }
 
 /**
- * Statement id → expression AST and bracket depth, as `createStreamingParser` would build them for
+ * Statement id → expression AST and tokens, as `createStreamingParser` would build them for
  * this full text: `preprocess`, completed statements cut at a newline at depth 0 (with ternary
  * continuation), each cut through lang-core's own `split(tokenize(…))`, then the pending tail
  * auto-closed. A later definition replaces an earlier one; a pending, incomplete redefinition of a
- * completed statement is ignored. Nothing is materialized.
+ * completed statement is ignored (a repeated id within the pending tail still replaces). Nothing is materialized.
  */
 function statementsOf(cleaned: string): Map<string, { ast: ASTNode; tokens: Token[] }> {
   const statements = new Map<string, { ast: ASTNode; tokens: Token[] }>();
-  const add = (text: string, skipKnown: boolean) => {
+  const add = (text: string, skipCompleted: boolean) => {
+    // lang-core skips only ids of completed statements; a repeated id inside the same text replaces.
+    const completed = skipCompleted ? new Set(statements.keys()) : null;
     for (const raw of split(tokenize(text))) {
-      if (skipKnown && statements.has(raw.id)) continue;
+      if (completed?.has(raw.id)) continue;
       statements.set(raw.id, { ast: parseExpression(raw.tokens), tokens: raw.tokens });
     }
   };
@@ -272,9 +278,19 @@ export function expansionIssue(code: string): GenuiIssue | null {
     return size;
   };
 
+  // lang-core materializes the entry statement and, separately, every `$state` statement: the
+  // `$state` sizes add up. Total work stays within twice the caps (the entry plus the sum).
+  let stateElements = 0;
+  let stateValues = 0;
   for (const id of own.keys()) {
     const size = measure(id);
+    if (id.startsWith('$')) {
+      stateElements = Math.min(nodeCap, stateElements + size.elements);
+      stateValues = Math.min(valueCap, stateValues + size.values);
+    }
     if (cycle) return tooMany('Block references form a cycle');
+    if (stateElements >= nodeCap) return tooMany(`$state statements expand to more than ${GENUI_MAX_NODES} components`);
+    if (stateValues >= valueCap) return tooMany(`$state statements expand to more than ${MAX_EXPANDED_VALUES} values`);
     if (size.depth > MAX_NESTING) return tooDeep;
     if (size.elements >= nodeCap) return tooMany(`Block expands to more than ${GENUI_MAX_NODES} components`);
     if (size.values >= valueCap) return tooMany(`Block expands to more than ${MAX_EXPANDED_VALUES} values`);

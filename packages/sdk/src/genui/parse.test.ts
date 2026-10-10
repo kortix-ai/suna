@@ -223,6 +223,25 @@ describe('adversarial input', () => {
     expect(root?.type).toBe('Stack');
   });
 
+  test('many $state statements that reference one large data statement are rejected', () => {
+    // leaf: 1 value; row: 1 + 40 refs + 40 x 1 = 81; table: 1 + 590 refs + 590 x 81 = 48,381 values.
+    const lines = ['root = Stack([b])', 'b = Badge("x")', 'leaf = "v"'];
+    lines.push(`row = [${Array.from({ length: 40 }, () => 'leaf').join(', ')}]`);
+    lines.push(`table = [${Array.from({ length: 590 }, () => 'row').join(', ')}]`);
+    for (let i = 0; i < 1_000; i++) lines.push(`$v${i} = table`);
+    const started = performance.now();
+    const result = parseGenui(lines.join('\n'));
+    expect(result.issues.map((issue) => issue.code)).toEqual(['too-many-nodes']);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
+  test('a block with ordinary $state statements still parses', () => {
+    const code = 'root = Stack([t])\nt = Tabs([x, y])\nx = Tab("One", [b1])\ny = Tab("Two", [b2])\nb1 = Badge("first")\nb2 = Badge("second")\n$tab = "One"\n$open = false\n$items = ["a", "b"]';
+    const { root, issues } = parseGenui(code);
+    expect(root?.type).toBe('Stack');
+    expect(issues.map((issue) => issue.code)).toEqual(['unsupported-statement']);
+  });
+
   test('the issue list is capped at 50, first issues kept', () => {
     const children = Array.from({ length: 12 }, (_, i) => `s${i}`).join(', ');
     const lines = [`root = Stack([${children}, ok])`, 'ok = Badge("kept")'];
@@ -271,6 +290,13 @@ const HIDDEN_FAN_OUT: Record<string, (levels: number) => string> = {
     const lines: string[] = [];
     for (let i = 0; i < l - 1; i++) lines.push(`p${i} = flag\n  ? Stack([${twelve(`p${i + 1}`)}])\n  : Stack([${twelve(`p${i + 1}`)}])`);
     return [top, ...lines, `p${l - 1} = Badge("leaf")`, 'flag = true'].join('\n');
+  },
+  'a duplicated id inside an incomplete pending tail': (l) => {
+    // The junk line leaves a bracket open, so every later line is one incomplete pending tail.
+    // Each statement is written small, then heavy: lang-core keeps the later definition.
+    const lines = [top, 'junk junk = Stack(['];
+    for (let i = 0; i < l - 1; i++) lines.push(`p${i} = Badge("small")`, `p${i} = Stack([${twelve(`p${i + 1}`)}])`);
+    return [...lines, `p${l - 1} = Badge("leaf")`].join('\n');
   },
   'a redefinition still streaming': (l) => [top, ...chain(l, plain), 'p0 = Badge("unfinish'].join('\n'),
   'a reference cycle beside the fan-out': (l) => {
