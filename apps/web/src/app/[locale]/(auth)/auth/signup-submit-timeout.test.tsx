@@ -61,7 +61,7 @@ async function renderPage() {
   let root: ReturnType<typeof create> | undefined;
   await act(async () => {
     root = create(
-      createElement(NextIntlClientProvider, { locale: 'en', messages }, createElement(AuthPage)),
+      createElement(NextIntlClientProvider, { locale: 'en', messages, children: createElement(AuthPage) }),
     );
   });
   if (!root) throw new Error('Auth page did not render');
@@ -146,7 +146,7 @@ test('a server-side timeout answers in the visitor\'s language, not the English 
   let root: NonNullable<ReturnType<typeof create>> | undefined;
   await act(async () => {
     root = create(
-      createElement(NextIntlClientProvider, { locale: 'de', messages: deMessages }, createElement(AuthPage)),
+      createElement(NextIntlClientProvider, { locale: 'de', messages: deMessages, children: createElement(AuthPage) }),
     );
   });
   try {
