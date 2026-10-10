@@ -391,11 +391,7 @@ describe('GET /_kortix/token and the bindings mount on the App gate', () => {
     const saved = { url: config.PLATINUM_API_URL };
 
     beforeAll(() => {
-      // The stubs bind 127.0.0.1 (see hosts.integration.test.ts): this process
-      // fetches its own stubs, and `localhost` is not resolvable inside Bun's
-      // fetcher where /etc/hosts is unreadable.
       machine = Bun.serve({
-        hostname: '127.0.0.1',
         port: 0,
         hostname: '127.0.0.1',
         fetch: async (req) => {
@@ -412,7 +408,6 @@ describe('GET /_kortix/token and the bindings mount on the App gate', () => {
       });
       // The fake control plane exposes the machine of `main` (sbx-synthetic) privately.
       platinum = Bun.serve({
-        hostname: '127.0.0.1',
         port: 0,
         hostname: '127.0.0.1',
         fetch: (req) => {
