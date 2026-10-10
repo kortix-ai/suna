@@ -55,7 +55,6 @@ export const FeatureFlagMapSchema = z.object({
   llm_gateway: z.boolean(),
   meta_agent: z.boolean(),
   apps: z.boolean(),
-  backends: z.boolean(),
   monitors: z.boolean(),
   reminders: z.boolean(),
   warm_sessions: z.boolean(),
@@ -63,8 +62,11 @@ export const FeatureFlagMapSchema = z.object({
   pooled_provider_secrets: z.boolean(),
   pi_harness: z.boolean(),
   genui: z.boolean(),
-  config_releases: z.boolean(),
   us_region: z.boolean(),
+  event_triggers: z.boolean(),
+  notification_center: z.boolean(),
+  drives: z.boolean(),
+  ephemeral_sandboxes: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 
@@ -973,6 +975,13 @@ export const SessionCreateInputSchema = z
       )
       .optional(),
     provider: SandboxProviderSchema.optional(),
+    /**
+     * Run the session on a persistent machine: its whole root disk persists
+     * across stops (installed packages, config, files). Platinum only. A stop
+     * keeps the disk and ends running processes; the machine stays on the
+     * image it was created from until it is reset.
+     */
+    persistent_machine: z.boolean().optional(),
     branch_already_created: z.boolean().optional(),
     metadata: SessionMetadataInputSchema.optional(),
     runtime_context: SessionRuntimeContextSchema.optional(),
@@ -1220,6 +1229,9 @@ export const SessionStartFailureSchema = z
       // ceiling (Daytona caps at 10 GB). Permanent until the image is slimmed,
       // so never retryable.
       'snapshot-too-large',
+      // Kortix Drive: the session's drives did not mount (storage down, or a
+      // project with drives and no Platinum), so the session did not start.
+      'drives-unavailable',
       'sandbox-provider',
     ]),
     message: z.string(),

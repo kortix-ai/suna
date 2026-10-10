@@ -129,11 +129,15 @@ If none resolve, the command errors with a pointer to `projects link`.
 
 ### Apps — serverless application deployments
 
-Apps have stable URLs and immutable deployment versions. A static App is files
-that Kortix serves: no machine, nothing to start or stop. A server App
-(`dockerfile`, `oci_image`, `bundle`) runs in one machine, always on or on
-demand, and stops at its monthly budget. An authorized request wakes a stopped
-server App.
+Apps have stable URLs and immutable deployment versions. Every App has a
+`kind`, fixed at create, and lists its `capabilities`. A `web` App is static
+(files that Kortix serves: no machine, nothing to start or stop) or a server
+(`dockerfile`, `oci_image`, `bundle`: one machine, always on or on demand; an
+on-demand App stops at its monthly budget and an authorized request wakes it;
+an always-on App has a fixed monthly cost and no budget). A `convex` App is a
+self-hosted Convex backend in one always-on machine, also with no budget. A subcommand for a
+capability the App lacks exits `1` with
+`App <slug> (kind <kind>) does not support <capability>.`
 
 Apps is internal-only: Kortix enables it per project on request, and only
 Kortix can change it. When it is on, `kortix projects features` lists
@@ -143,21 +147,28 @@ When it is off, every `kortix apps` command answers `feature_disabled`
 
 | Command | Effect |
 | --- | --- |
-| `kortix apps ls [--json]` | List the project's Apps, state (`static` for a static App), and stable URL. |
-| `kortix apps create <slug> [--name …]` | Create an App identity without deploying source. Flags: `--cpu`, `--memory`, `--disk`, `--idle-timeout`, `--always-on\|--on-demand`, `--budget`. |
+| `kortix apps ls [--json]` | List the Apps you may open (a project manager sees all) with their kind, state (`static` for a static App), and stable URL. |
+| `kortix apps create <slug> [--name …]` | Create an App identity without deploying source. Flags: `--kind web\|convex`, `--uses <slugs>`, `--cpu`, `--memory`, `--disk`, `--idle-timeout`, `--always-on\|--on-demand`, `--budget`, `--no-wait`. A `convex` App waits until its machine runs. |
 | `kortix apps deploy [path]` | Upload and deploy a directory or `.tar.gz`. Auto-detects static, bundle, or Dockerfile source; pass `--type`. Waits until ready by default. |
-| `kortix apps deploy … --always-on\|--on-demand --budget <usd>` | Server Apps: set the run mode and the monthly compute budget (default: the 24/7 estimate of the machine, rounded up, when always on; 5 USD on demand). Prints the cost. Warns on stderr (`app_budget_below_always_on`) when an always-on App's budget is below its 24/7 estimate. |
-| `kortix apps deploy --manifest-app <name>` | Use one v2 `kortix.yaml` `apps.<name>` block. A sole App block is selected automatically for bare `deploy`. |
+| `kortix apps deploy … --always-on\|--on-demand --budget <usd>` | Server Apps: set the run mode. `--budget` sets the monthly compute budget of an on-demand App (default 5 USD). On an always-on or `convex` App, `--budget` is refused with `400 app_budget_not_applicable`. Prints the cost. |
+| `kortix apps deploy --manifest-app <name>` | Use one v2 `kortix.yaml` `apps.<name>` block. A sole App block is selected automatically for bare `deploy`; with several, bare `deploy` deploys every App, each after the Apps it uses. |
+| `kortix apps deploy <dir> --app <slug> [-- <args>]` | A `convex` App: run `convex deploy` with its credentials, then record the deployment with the git commit. |
 | `kortix apps deploy --image <ref> --command <argv> --port <n>` | Deploy a public OCI image. `--command` accepts a JSON string array or shell-like string. |
-| `kortix apps set <id-or-slug>` | Change an App: `--name`, `--cpu`, `--memory-gb`, `--disk-gb`, `--idle-timeout`, `--always-on\|--on-demand`, `--budget`. Run mode and budget apply within 5 minutes; a machine change applies to the next deployment. |
-| `kortix apps show <id-or-slug> [--json]` | Show an App (`hosting_type`, `always_on`, `monthly_budget_usd`, `estimated_monthly_usd`) and its deployment history. |
-| `kortix apps logs <id-or-slug> [deployment-id]` | Read supervisor, Caddy, and user-process logs; a static App prints its deployment events. Supports `--after` and `--limit`. |
+| `kortix apps set <id-or-slug>` | Change an App: `--name`, `--cpu`, `--memory-gb`, `--disk-gb`, `--idle-timeout`, `--always-on\|--on-demand`, `--budget`, `--uses <slugs>`. Run mode and budget apply within 5 minutes; a web machine change applies to the next deployment; a `convex` App resizes now. |
+| `kortix apps link\|unlink <id-or-slug> --uses <slugs>` | Add or remove Apps this App uses (bindings and sign-in tokens). |
+| `kortix apps show <id-or-slug> [--json]` | Show an App (`kind`, `capabilities`, `uses`, `used_by`, `instance`, `hosting_type`, `always_on`, `monthly_budget_usd`, `estimated_monthly_usd`) and its deployment history. A cost line shows `about $N/month` for an always-on or `convex` App and `budget $N/month` for an on-demand App. |
+| `kortix apps logs <id-or-slug> [deployment-id]` | Read supervisor, Caddy, and user-process logs; a static App prints its deployment events. Supports `--after` and `--limit`. An App with the `logs` capability prints its process log (`--lines 1-1000`). |
 | `kortix apps start <id-or-slug>` | Server Apps: permit traffic and start the active deployment now. A static App answers `409 static_app_no_runtime`. |
 | `kortix apps stop <id-or-slug>` | Server Apps: suspend compute now. The next authorized request wakes it. A static App answers `409 static_app_no_runtime`. |
 | `kortix apps rollback <id-or-slug> <deployment-id>` | Move traffic to a ready deployment. A server App starts the target first, then stops the previous runtime. |
 | `kortix apps access <id-or-slug>` | Read or change access: `--mode private\|project\|restricted\|public\|password`, `--members`, `--groups`, `--password`, `--viewer off\|identity\|api`. |
 | `kortix apps access-link <id-or-slug> [--json]` | Create a five-minute authenticated browser URL. Treat it as a secret. |
-| `kortix apps delete <id-or-slug> --yes` | Delete the App, every runtime, and every deployment image. |
+| `kortix apps connect <id-or-slug> [--json]` | Print how to reach the App from code. No secret. |
+| `kortix apps token <id-or-slug> [--json]` | A 15-minute sign-in token for the App; in a session it names the agent. |
+| `kortix apps credentials <id-or-slug> [--format shell\|dotenv\|json]` · `rotate-credentials <id-or-slug> --yes` | Capability `admin_credentials`: read (audited) or replace the admin key. |
+| `kortix apps dashboard <id-or-slug> [--open]` | Capability `dashboard`: the Kortix page that opens the App's dashboard. |
+| `kortix apps snapshots\|snapshot <id-or-slug>` · `delete-snapshot <id-or-slug> <id> --yes` · `restore <id-or-slug> <id> --yes` | Capabilities `snapshots` and `restore`. |
+| `kortix apps delete <id-or-slug> --yes` | Delete the App, every runtime, and every deployment image. An App with `snapshots` needs `--confirm <slug>`: Kortix keeps a `final` snapshot and the stopped machine 7 days. |
 | `kortix apps delete <id-or-slug> --deployment <id\|vN> --yes` | Delete one deployment. The live deployment answers `409 deployment_live`. |
 
 Deploy options include `--type static|bundle|dockerfile`, `--root`, `--spa`,
@@ -337,7 +348,8 @@ the same state.
 | `kortix triggers fire <slug>` | Manually fire a trigger now. |
 | `kortix triggers enable <slug>` | Set `enabled = true`. |
 | `kortix triggers disable <slug>` | Set `enabled = false`. |
-| `kortix triggers events --apps [--json]` | List apps that can trigger events: event count and state (`connected`, `needs account`). Under each app, every connector (profile) with its shared accounts: label, `as <connected_as>`, `default`, `not connected`. Apps with no connector print as one `No connector yet` line. |
+| `kortix triggers events --apps [--json]` (all `triggers events` forms and `triggers add|set --type event` need the project flag `event_triggers`: off prints `App event triggers are off for this project. Turn them on: kortix projects features enable event_triggers`, exit 1) | List apps that can trigger events: event count and state (`connected`, `needs account`). Under each app, every connector (profile) with its shared accounts: label, `as <connected_as>`, `default`, `not connected`. Apps with no connector print as one `No connector yet` line. |
+| `kortix triggers events --app <app> [--source <adapter>] [--event <TYPE>] [--json]` | List an app's events, or one event's fields, with no connector: browse before you add a connector. `--source` defaults to `composio`. |
 | `kortix triggers events --connector <slug> [--json]` | List the events a connector offers: `TYPE`, `NAME`, `DELIVERY`. |
 | `kortix triggers events --connector <slug> --event <TYPE> [--json]` | One event in full: config fields (type, required, default, allowed values, description) and the `{{ event.data.* }}` prompt variables. |
 | `kortix triggers add <slug> --type event --connector <slug> --event <TYPE> --config <k>=<v> [--account <label>] --prompt "…" [--apply]` | Add an event trigger. `--connector` is the profile. `--account` names one shared account of it; omit it for the connector's default shared account. Without `--apply` it writes a `triggers:` block to the local `kortix.yaml` (`kortix ship` applies it). With `--apply` it creates the trigger now and prints its status and the next step. Online, the config is checked against the event catalog; every missing or invalid field is listed with its description. |

@@ -91,6 +91,9 @@ function startServer(): string {
         if (typeof patch.idle_timeout_seconds === 'number' && patch.idle_timeout_seconds < 120) {
           return Response.json({ error: 'idle_timeout_seconds must be >= 120' }, { status: 400 });
         }
+        if (patch.always_on === true && patch.monthly_budget_usd !== undefined) {
+          return Response.json({ code: 'app_budget_not_applicable', error: 'An always-on App has no monthly budget: it runs 24/7 at a fixed cost (about $73.48 a month). Run it on demand (always_on: false) to cap its cost with a budget.' }, { status: 400 });
+        }
         return Response.json(
           app({
             name: (patch.name as string) ?? 'Storefront',
@@ -101,10 +104,7 @@ function startServer(): string {
             },
             idle_timeout_seconds: (patch.idle_timeout_seconds as number) ?? 300,
             monthly_budget_usd: (patch.monthly_budget_usd as number) ?? 5,
-            backends: (patch.backends as string[]) ?? [],
-            ...(patch.always_on === true && patch.monthly_budget_usd === undefined
-              ? { warnings: [{ code: 'app_budget_below_always_on', message: 'This App runs 24/7 and stops at its $5.00 budget.' }] }
-              : { warnings: [] }),
+            uses: (patch.uses as string[]) ?? [],
           }),
         );
       }
@@ -202,25 +202,32 @@ describe('kortix apps set', () => {
     }
   });
 
-  test('set --backends sends the list (deduplicated, trimmed) and prints it; `--backends=` clears it', async () => {
+  test('show prints the budget of an on-demand App', async () => {
     const config = writeConfig(startServer());
-    const r = await runCli(['apps', 'set', 'storefront', '--project', PROJECT, '--backends', 'main, crm,main'], config);
+    const r = await runCli(['apps', 'show', 'storefront', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(patchCall()?.body).toEqual({ backends: ['main', 'crm'] });
-    expect(r.stdout).toMatch(/backends\s+main, crm/);
-
-    calls = [];
-    const cleared = await runCli(['apps', 'set', 'storefront', '--project', PROJECT, '--backends='], config);
-    expect(cleared.code).toBe(0);
-    expect(patchCall()?.body).toEqual({ backends: [] });
-    expect(cleared.stdout).toMatch(/backends\s+none/);
+    expect(r.stdout).toMatch(/budget\s+\$5\/month/);
   });
 
-  test('set refuses a backend name the API would refuse, before any request', async () => {
+  test('set --uses sends the list (deduplicated, trimmed) and prints it; `--uses=` clears it', async () => {
     const config = writeConfig(startServer());
-    const r = await runCli(['apps', 'set', 'storefront', '--project', PROJECT, '--backends', 'Main'], config);
+    const r = await runCli(['apps', 'set', 'storefront', '--project', PROJECT, '--uses', 'db, crm,db'], config);
+    expect(r.code).toBe(0);
+    expect(patchCall()?.body).toEqual({ uses: ['db', 'crm'] });
+    expect(r.stdout).toMatch(/uses\s+db, crm/);
+
+    calls = [];
+    const cleared = await runCli(['apps', 'set', 'storefront', '--project', PROJECT, '--uses='], config);
+    expect(cleared.code).toBe(0);
+    expect(patchCall()?.body).toEqual({ uses: [] });
+    expect(cleared.stdout).toMatch(/uses\s+none/);
+  });
+
+  test('set refuses an App slug the API would refuse, before any request', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['apps', 'set', 'storefront', '--project', PROJECT, '--uses', 'Main'], config);
     expect(r.code).toBe(1);
-    expect(r.stderr).toContain('--backends');
+    expect(r.stderr).toContain('--uses');
     expect(patchCall()).toBeUndefined();
   });
 
@@ -298,15 +305,11 @@ describe('kortix apps set', () => {
     expect(both.stderr).toContain('not both');
   });
 
-  test('set prints the server\'s budget warning on stderr and keeps --json stdout parseable', async () => {
+  test('set --budget on an always-on App prints the server\'s refusal verbatim', async () => {
     const config = writeConfig(startServer());
-    const r = await runCli(['apps', 'set', 'storefront', '--project', PROJECT, '--always-on', '--json'], config);
-    expect(r.code).toBe(0);
-    expect(r.stderr).toContain('This App runs 24/7 and stops at its $5.00 budget.');
-    expect(JSON.parse(r.stdout).warnings[0].code).toBe('app_budget_below_always_on');
-    const raised = await runCli(['apps', 'set', 'storefront', '--project', PROJECT, '--always-on', '--budget', '100'], config);
-    expect(raised.code).toBe(0);
-    expect(raised.stderr).not.toContain('runs 24/7');
+    const r = await runCli(['apps', 'set', 'storefront', '--project', PROJECT, '--always-on', '--budget', '100'], config);
+    expect(r.code).not.toBe(0);
+    expect(r.stderr).toContain('An always-on App has no monthly budget: it runs 24/7 at a fixed cost (about $73.48 a month). Run it on demand (always_on: false) to cap its cost with a budget.');
   });
 
   test('set with no field flags exits 2 and sends nothing', async () => {

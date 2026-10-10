@@ -95,14 +95,21 @@ harnesses:
 # ─── Apps ─────────────────────────────────────────────────────────
 # Local, repeatable deployment defaults. `kortix apps deploy` remains the
 # explicit deployment action; merging this file does not auto-deploy.
+# A `convex` App (kind: convex) is a Convex backend in an always-on machine.
+# `kortix apps deploy` with no arguments deploys every block, used Apps first.
 # A static App (files, no machine) ignores run mode, budget, resources, env
 # and secrets. A server App runs always on (default) or on demand; always on
-# costs about 73 USD/month on the default machine, so set its budget.
+# costs about 73 USD/month on the default machine and takes no budget.
+# Only an on-demand server App takes `monthly_budget_usd`.
 apps:
+  db:
+    path: apps/db              # a package.json + convex/ directory
+    kind: convex               # fixed at create; `web` is the default
   storefront:
     path: web/dist             # build first; deploy the output directory
     type: static
     spa: true
+    uses: [db]                 # may bind to db and mint its sign-in tokens
   api:
     path: services/api
     type: dockerfile
@@ -111,7 +118,7 @@ apps:
     readiness_path: /health
     always_on: false           # on demand: stops when idle, wakes on request
     idle_timeout_seconds: 300
-    monthly_budget_usd: 10
+    monthly_budget_usd: 10     # on-demand server Apps only
     resources:
       cpu: 1
       memory_gb: 2

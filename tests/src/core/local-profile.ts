@@ -81,6 +81,8 @@ export function localEnvironmentOverrides(input: LocalProfileInput): Record<stri
     KE2E_API_WORKERS: String(localWorkerCount()),
     KE2E_SANDBOX_WORKERS: "1",
     KE2E_TEARDOWN_WORKERS: String(Math.min(8, localWorkerCount())),
+    // The local API sends email to this Mailpit (core/local-stack.ts EMAIL_URL).
+    ...(supabase.MAILPIT_URL ? { KE2E_MAILPIT_URL: supabase.MAILPIT_URL } : {}),
   };
 }
 

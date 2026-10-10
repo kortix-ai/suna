@@ -36,8 +36,6 @@ import { sandboxTokenMayActOnSession } from '../projects/lib/sandbox-token-sessi
 import { repositoryAccessFromSessionMetadata } from '../projects/lib/session-sandbox-metadata';
 import { isUuid } from '../shared/validate';
 import { db } from '../shared/db';
-import { requireFeatureFlag } from '../feature-flags/gate';
-import { CONFIG_RELEASES_FLAG } from './enabled';
 import { CONFIG_RELEASE_FORMAT_V2, CONFIG_RELEASE_FORMAT_V3, type ConfigReleaseFormat } from './builder';
 import { BaseRefUnresolvedError, resolveDesiredRelease } from './desired';
 import { ownerMayUseAgent, repointSessionAgentToDeclaredDefault } from './repoint';
@@ -52,19 +50,6 @@ interface ProjectRow {
   repoUrl: string;
   defaultBranch: string;
   manifestPath: string | null;
-  metadata: unknown;
-}
-
-/**
- * CHOKEPOINT — the `config_releases` flag for both routes of this file. Off ⇒ `403`
- * `feature_disabled`, so no release is built, no archive is stored, and no
- * `kortix.config_releases` row is written. Always AFTER authz, so a
- * non-member learns nothing from the answer. The daemon reads this exact
- * `code` and reverts to its workspace config dir
- * (`isFeatureDisabledError`, harness/open-code/config-release.ts).
- */
-function configReleasesGate(c: Context, project: ProjectRow): Response | null {
-  return requireFeatureFlag(c, project.metadata, CONFIG_RELEASES_FLAG);
 }
 
 interface SessionRow {
@@ -133,7 +118,6 @@ async function sandboxSession(
       repoUrl: projects.repoUrl,
       defaultBranch: projects.defaultBranch,
       manifestPath: projects.manifestPath,
-      projectMetadata: projects.metadata,
       projectStatus: projects.status,
     })
     .from(sessionSandboxes)
@@ -163,7 +147,7 @@ async function sandboxSession(
     ok: true,
     value: {
       sessionId: row.sessionId ?? sandboxId,
-      project: { ...row, metadata: row.projectMetadata },
+      project: row,
       session: {
         baseRef: row.baseRef,
         agentName: row.agentName,
@@ -230,9 +214,6 @@ export function registerConfigReleaseRoutes(): void {
           PROJECT_ACTIONS.PROJECT_FILE_READ,
         );
       }
-
-      const disabled = configReleasesGate(c, project);
-      if (disabled) return disabled;
 
       // The request has no inputs. The desired release is the base branch's
       // current tip for this session's variant, full stop: nothing the caller
@@ -339,9 +320,6 @@ export function registerConfigReleaseRoutes(): void {
         );
         project = loaded.row;
       }
-
-      const disabled = configReleasesGate(c, project);
-      if (disabled) return disabled;
 
       const repo = gitProject(project);
       return serveConfigArchive(

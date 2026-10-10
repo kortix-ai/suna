@@ -106,7 +106,7 @@ try {
       "if (maxWireIdClock([BigInt('0xfffff8ad0000'), BigInt('0x000007530000')]) !== BigInt('0x000007530000')) throw new Error('maxWireIdClock is not ring-ordered');",
       "if (typeof listSessionCosts !== 'function') throw new Error('listSessionCosts missing');",
       "const sdk = await import('@kortix/sdk');",
-      "for (const name of ['readKortixMember', 'requireKortixMember', 'verifyKortixMemberToken', 'kortixAppBackendToken', 'KortixMemberError']) if (typeof sdk[name] !== 'function') throw new Error(`${name} missing`);",
+      "for (const name of ['readKortixMember', 'requireKortixMember', 'verifyKortixToken', 'kortixToken', 'kortixBinding', 'KortixMemberError', 'listAppSnapshots', 'createAppToken']) if (typeof sdk[name] !== 'function') throw new Error(`${name} missing`);",
       "if (sdk.readKortixMember({ sub: 'u1', groups: ['Finance'] })?.groups[0] !== 'Finance') throw new Error('readKortixMember broken in the tarball');",
       "if (!(new ApiError('x') instanceof Error)) throw new Error('ApiError is not an Error');",
       "const k = createKortix({ backendUrl: 'http://smoke.test/v1', getToken: async () => null });",

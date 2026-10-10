@@ -54,6 +54,7 @@ import {
 } from '../core/rest/projects-client';
 import { RuntimeNotReadyError, getClient } from '../core/runtime/client';
 import { setCurrentRuntime } from '../core/session/current-runtime';
+import { onRuntimeGone } from '../core/session/runtime-gone';
 import { openSessionBundle } from '../core/session/open-bundle';
 import { messagesBeforeRewind } from '../core/session/rewind';
 import { extractGatewayErrorDetails, unwrapError } from '../core/turns/errors';
@@ -67,7 +68,7 @@ import type { ModelKey } from './use-model-store';
 import { useRuntimeEventStream } from './use-opencode-events';
 import { useSessionStream } from './use-session-stream';
 import { sessionStreamConnected } from '../core/session/control-stream';
-import { watchHumanPresence } from './human-presence';
+import { presenceReporter, watchHumanPresence } from './human-presence';
 import { formatModelString } from './use-opencode-local';
 import {
   type AbortSettlement,
@@ -451,6 +452,9 @@ export function computeStartSettled(input: {
  * to `stopped` on the very next look.
  */
 export const SESSION_START_FRESH_MS = 30_000;
+
+/** At most one `/start` re-read per this window when the proxy reports the box gone. */
+const RUNTIME_GONE_REFETCH_MIN_MS = 3_000;
 
 /**
  * OUTCOME-AWARE `staleTime` for the `/start` query (TanStack's function
@@ -979,6 +983,26 @@ export async function answerPermission(
 export interface UseSessionOptions {
   /** Hold this browser tab's presence lease while the signed-in view is visible and used (input in the last 10 min). */
   browserPresence?: boolean;
+  /**
+   * This tab shows its own notifications (the host's browser notifications
+   * are on and permitted). Sent on the presence lease, so the server skips the
+   * phone and Web Push only while an ALERTING tab is in use. Default false: a
+   * present tab that does not alert leaves the phone push on. A change is
+   * sent at once. Needs `browserPresence`.
+   */
+  presenceAlerts?: boolean;
+  /**
+   * End the presence lease when the page closes or enters the back/forward
+   * cache, so a turn that ends right after the tab closes still notifies:
+   * `pagehide` reports absent, and every absent report is sent with
+   * `keepalive`, so it outlives the page. Default false, the presence before
+   * KRTX-1742: no `pagehide` report and no `keepalive`. A closing tab still
+   * turns hidden and reports absent, but the browser may cancel that request
+   * as the page unloads; the lease then lives to its 90 s expiry. Pass the
+   * project's `notification_center` flag. A change applies at once, with no
+   * new report. Needs `browserPresence`.
+   */
+  presencePageExit?: boolean;
   /** Long-poll budget (ms) the client requests on `/start`; the server clamps it. */
   waitMs?: number;
   /**
@@ -1087,6 +1111,8 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     initialRuntimeSessionId = options.initialOpenCodeSessionId ?? null,
     subscribeMessages = true,
     browserPresence = false,
+    presenceAlerts = false,
+    presencePageExit = false,
   } = options;
 
   // One presence id per mounted view. The session stream carries it, and the
@@ -1094,18 +1120,40 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // only while a person used the page recently, not while a tab is merely
   // visible (KRTX-1729, `human-presence.ts`).
   const [presenceTabId] = useState(() => (browserPresence ? crypto.randomUUID() : null));
+  // The flag rides on the reporter, not on the effect's deps: a dep change
+  // would stop the watcher (an absent PUT) and start it again (KRTX-1742).
+  const presenceAlertsRef = useRef(presenceAlerts);
+  const presencePageExitRef = useRef(presencePageExit);
+  const presenceReporterRef = useRef<ReturnType<typeof presenceReporter> | null>(null);
   useEffect(() => {
     if (!browserPresence || !presenceTabId || !projectId || !sessionId) return;
     const tab_id = presenceTabId;
     const handle = createKortix(platformConfig()).session(projectId, sessionId);
-    return watchHumanPresence(
+    // Without page exit, an absent PUT goes without `keepalive`, as before
+    // KRTX-1742: a closing page may cancel it, and the lease then expires.
+    const reporter = presenceReporter(({ active, alerts }) => {
+      const keepalive = !active && presencePageExitRef.current;
+      void handle.presence({ tab_id, active, alerts }, { keepalive }).catch(() => {});
+    }, presenceAlertsRef.current);
+    presenceReporterRef.current = reporter;
+    const stop = watchHumanPresence(
       { doc: document, win: window },
-      (active) => {
-        void handle.presence({ tab_id, active }).catch(() => {});
-      },
+      reporter.report,
       () => sessionStreamConnected(projectId, sessionId),
+      () => presencePageExitRef.current,
     );
+    return () => {
+      presenceReporterRef.current = null;
+      stop();
+    };
   }, [browserPresence, presenceTabId, projectId, sessionId]);
+  useEffect(() => {
+    presenceAlertsRef.current = presenceAlerts;
+    presenceReporterRef.current?.setAlerts(presenceAlerts);
+  }, [presenceAlerts]);
+  useEffect(() => {
+    presencePageExitRef.current = presencePageExit;
+  }, [presencePageExit]);
 
   // 1. Drive /start until the runtime is ready (the server long-polls each tick).
   const startEnabled = enabled && !!projectId && !!sessionId;
@@ -1273,14 +1321,20 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   });
 
   // 2. Point the SDK's runtime at this session's sandbox once ready. Track WHICH
-  // sandbox we switched to (not a bare bool) so navigating between sessions (this
+  // box we switched to (not a bare bool) so navigating between sessions (this
   // hook instance is reused) re-gates instead of binding the new session to the
   // previous sandbox. One active session at a time is the supported model, so the
   // whole chat path (SSE, sync, send) rides this single global switch — there is no
   // separate per-session client to keep in sync.
-  const [switchedSandboxId, setSwitchedSandboxId] = useState<string | null>(null);
+  //
+  // Keyed on the box (`external_id`), not on `sandbox_id`: an ephemeral session
+  // keeps its `sandbox_id` (= the session id) across a stop that deletes its box
+  // and a wake that boots a new one. Keyed on `sandbox_id`, the switch never
+  // re-ran for the new box, and every read stayed on the deleted one until a
+  // reload ("Lost contact with this session's computer").
+  const [switchedBoxId, setSwitchedBoxId] = useState<string | null>(null);
   useEffect(() => {
-    if (!startReady || !sandbox?.external_id || switchedSandboxId === sandbox.sandbox_id) return;
+    if (!startReady || !sandbox?.external_id || switchedBoxId === sandbox.external_id) return;
     // Point the app's runtime at THIS session's box — no global "switch", just set
     // the current runtime url. Every read (getClient, the SSE stream, files/
     // terminal/git) resolves through it. `stage==='ready'` is server-proven, so the
@@ -1290,12 +1344,12 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       sandbox.external_id,
       sandbox.sandbox_id,
     );
-    setSwitchedSandboxId(sandbox.sandbox_id);
-  }, [startReady, sandbox, switchedSandboxId]);
+    setSwitchedBoxId(sandbox.external_id);
+  }, [startReady, sandbox, switchedBoxId]);
   // Clear the current runtime when this session view unmounts.
   useEffect(() => () => setCurrentRuntime(null), []);
 
-  const switched = startReady && !!sandbox && switchedSandboxId === sandbox.sandbox_id;
+  const switched = startReady && !!sandbox?.external_id && switchedBoxId === sandbox.external_id;
 
   // 3. Keep the connection store healthy from server-truth while switched, with NO
   // poller. If the box later dies mid-session the SSE's own disconnect/heartbeat
@@ -1311,7 +1365,26 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       getSandboxUrlForExternalId(sandbox.external_id),
       startData?.capabilities,
     );
-  }, [switched]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [switched, switchedBoxId]);
+
+  // 3b. The proxy says the box behind our runtime URL is gone (deleted by an
+  // ephemeral stop; another tab or the send path may already have woken the
+  // session on a new box). The URL can never answer again, so ask `/start`
+  // now instead of waiting out its once-a-minute recheck.
+  const refetchStart = start.refetch;
+  useEffect(() => {
+    if (!startEnabled || !switchedBoxId) return;
+    const switchedUrl = getSandboxUrlForExternalId(switchedBoxId);
+    let lastAt = 0;
+    return onRuntimeGone((runtimeUrl) => {
+      if (runtimeUrl !== switchedUrl) return;
+      const now = Date.now();
+      if (now - lastAt < RUNTIME_GONE_REFETCH_MIN_MS) return;
+      lastAt = now;
+      void refetchStart();
+    });
+  }, [startEnabled, switchedBoxId, refetchStart]);
 
   // 4. Open the live SSE stream. This was a provider component (RuntimeEvent
   // StreamProvider); calling the underlying hook here means the host mounts

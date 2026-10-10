@@ -44,7 +44,6 @@ import {
   GitBranchIcon as FolderGit2,
   FolderOpenIcon as FolderOpen,
   GitDiffIcon as GitCompareArrows,
-  DatabaseIcon as Database,
   GlobeIcon as Globe,
   KeyIcon as KeyRound,
   StackIcon as Layers,
@@ -738,6 +737,20 @@ export const menuRegistry: MenuItemDef[] = [
     keywords: 'files repository drive browser explorer',
   },
   {
+    // The project's shared folders: the Files tab under Customize. Only for
+    // projects with the `drives` flag on, like the tab itself.
+    id: 'proj-shared-files',
+    label: 'Shared files',
+    icon: FolderOpen,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/files',
+    requiresProject: true,
+    requiresFlag: 'drives',
+    keywords: 'files folders drive shared company my folder access share',
+  },
+  {
     id: 'proj-apps',
     label: 'Apps',
     icon: Globe,
@@ -748,18 +761,6 @@ export const menuRegistry: MenuItemDef[] = [
     requiresProject: true,
     requiresFlag: 'apps',
     keywords: 'apps deploy deployments serverless docker static hosting urls',
-  },
-  {
-    id: 'proj-backends',
-    label: 'Backends',
-    icon: Database,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/projects/{projectId}/customize/backends',
-    requiresProject: true,
-    requiresFlag: 'backends',
-    keywords: 'backends convex database realtime server functions storage schedules',
   },
   // `proj-config-general`, `proj-config-sandbox`, `proj-config-feature-flags`
   // are gone with `/projects/<id>/config` (retired 2026-09-02). General,

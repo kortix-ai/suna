@@ -152,7 +152,8 @@ export function FilePreviewModal({
   const isMarkdownFile = ['markdown', 'mermaid'].includes(getLanguageFromExt(fileName));
   // Markdown alone also exports to PDF. Only its text is read here — the query
   // `FileContentRenderer` already runs for the same path, so no second fetch.
-  const exportsPdf = getLanguageFromExt(fileName) === 'markdown';
+  // The PDF export renders through a session's sandbox; a bytes-only source has none.
+  const exportsPdf = getLanguageFromExt(fileName) === 'markdown' && !source.bytesOnly;
   const { data: pdfSource } = source.useFileContent(exportsPdf ? selectedFilePath : null);
   const shareInput = useMemo(() => {
     if (!selectedFilePath || !shareContext) return null;

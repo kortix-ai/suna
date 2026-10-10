@@ -19,7 +19,7 @@ import { serializeProject } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
 import { isPlainObject } from '../../shared/json';
 import { metadataMerge, metadataMergeSubtree } from '../lib/metadata-merge';
-import { featureFlagDef, isFeatureFlagKey, isOperatorOnlyFeatureFlag } from '../../feature-flags/registry';
+import { featureFlagDef, isDerivedFeatureFlag, isFeatureFlagKey, isOperatorOnlyFeatureFlag } from '../../feature-flags/registry';
 import { FEATURE_OPERATOR_ONLY_CODE } from '../../feature-flags/gate';
 import { writeProjectFeatureFlag } from '../../feature-flags/write';
 import { isPlatformAdmin } from '../../shared/platform-roles';
@@ -113,13 +113,16 @@ const patchFeatureFlagHandler = async (c: any) => {
   if (!isFeatureFlagKey(feature)) {
     return c.json({ error: `Unknown feature flag '${feature}'` }, 400);
   }
+  if (isDerivedFeatureFlag(feature)) {
+    return c.json({ error: `'${feature}' follows the organization's Volumes setting and cannot be set per project` }, 400);
+  }
   if (enabled !== null && typeof enabled !== 'boolean') {
     return c.json({ error: 'enabled must be a boolean or null' }, 400);
   }
   // Archived projects are read-only: reject BEFORE the write. The old order
   // (update, then 404 on archived) committed the metadata mutation anyway.
   if (loaded.row.status === 'archived') return c.json({ error: 'Not found' }, 404);
-  // An internal-only flag (`apps`, `backends`) starts billable machines, so
+  // An internal-only flag (`apps`) starts billable machines, so
   // Kortix decides it: only a platform operator writes it, never a project
   // admin and never an agent session. An operator acting in a customer
   // project through impersonation passes (`userId` stays the operator's).
@@ -264,13 +267,17 @@ export function registerProjectSettingsRoutes(): void {
       .returning();
 
     if (!row) return c.json({ error: 'Not found' }, 404);
-    // Stop the project's Kortix Backends now (data kept, no auto-resume). The
-    // maintenance tick parks any this misses.
-    void import('../../backends/lifecycle')
+    // Stop the machines of the project's `convex` Apps now (data kept, no
+    // auto-resume). The maintenance tick parks any this misses.
+    void import('../../apps/kinds/convex/lifecycle')
       .then(({ parkAndUnparkBackends }) => parkAndUnparkBackends(projectId))
-      .catch((error) => logger.warn('[projects] could not park the backends', { projectId, error: String(error) }));
+      .catch((error) => logger.warn('[projects] could not park the convex Apps', { projectId, error: String(error) }));
     // An archived project fires nothing: release its app-event provider instances.
     await releaseProjectEventSubscriptions(projectId);
+    // Its sessions' state volumes go with it (durable queue, retried while a box still mounts one).
+    await import('../../platform/services/ephemeral-sandbox')
+      .then(({ queueProjectSessionStateVolumes }) => queueProjectSessionStateVolumes(projectId))
+      .catch((error) => logger.warn('[projects] could not queue the session state volumes', { projectId, error: String(error) }));
     return c.json({ ok: true, archived: true, repo_deleted: repoDeleted });
   },
   );

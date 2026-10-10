@@ -122,8 +122,8 @@ import {
   writeSecretCapabilitiesInstruction,
 } from '@/services/sandbox-env/secret-capabilities'
 import { writeGenuiInstruction } from '@/services/sandbox-env/genui-instruction'
-import { configReleaseNoticePath } from '@/services/config-release/notice'
-import { bootLinkPath, readBootLinkTarget, releaseRootOf } from '@/services/config-release/boot-config'
+import { configReleaseNoticePath } from '@/services/config-provider/notice'
+import { bootLinkPath, readBootLinkTarget, releaseRootOf } from '@/services/config-provider/boot-config'
 import { writeReleaseInstructionsPlugin } from './release-instructions'
 import { applyAgentToolAccess } from './tool-access'
 import { writeToolBridge } from './tool-bridge'
@@ -376,7 +376,7 @@ export async function buildOpencodeConfigContent(
     secretCapabilitiesInstructionPath?: string | null
     /** The generative-UI catalog prompt, when the project has it on (sandbox-env/genui-instruction.ts). */
     genuiInstructionPath?: string | null
-    /** The config-release notice, when one exists (config-release/notice.ts). */
+    /** The config-release notice, when one exists (config-provider/notice.ts). */
     configReleaseNoticePath?: string | null
     /** OpenCode serves a config release: load the release instructions plugin (release-instructions.ts). */
     servesRelease?: boolean

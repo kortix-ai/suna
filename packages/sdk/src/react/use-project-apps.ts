@@ -5,12 +5,17 @@ import {
   createApp,
   createAppAccessSession,
   createAppDeployment,
+  createAppSnapshot,
   deleteApp,
+  deleteAppSnapshot,
   getAppAccess,
   getAppDeployment,
   listAppDeployments,
+  listAppSnapshots,
   listApps,
+  restoreAppSnapshot,
   rollbackApp,
+  rotateAppCredentials,
   startApp,
   stopApp,
   updateApp,
@@ -33,9 +38,14 @@ export const appDeploymentKey = (
   deploymentId: string | null | undefined,
 ) => qk.project.appDeployment(projectId ?? '', appId ?? '', deploymentId ?? '');
 
+export const appSnapshotsKey = (
+  projectId: string | null | undefined,
+  appId: string | null | undefined,
+) => qk.project.appSnapshots(projectId ?? '', appId ?? '');
+
 const SETTLED_DEPLOYMENT = new Set(['ready', 'failed', 'cancelled']);
 
-/** Project App inventory and lifecycle mutations. */
+/** Project App inventory (only the Apps the caller may open; a project manager: every App) and lifecycle mutations. */
 export function useProjectApps(projectId: string | null | undefined) {
   const queryClient = useQueryClient();
   const queryKey = projectAppsKey(projectId);
@@ -44,6 +54,11 @@ export function useProjectApps(projectId: string | null | undefined) {
     queryFn: () => listApps(projectId as string),
     enabled: !!projectId,
     ...contract('inventory'),
+    // Poll while an App's instance provisions or runs an operation (resize, restore, rotation, recovery).
+    refetchInterval: (q: { state: { data?: Array<{ instance?: { status: string; operation: string | null } | null }> } }) =>
+      q.state.data?.some((app) => app.instance && (app.instance.status === 'provisioning' || app.instance.operation))
+        ? 2_000
+        : false,
   });
   const invalidate = () => queryClient.invalidateQueries({ queryKey });
 
@@ -65,11 +80,20 @@ export function useProjectApps(projectId: string | null | undefined) {
     onSuccess: invalidate,
   });
   const remove = useMutation({
-    mutationFn: (appId: string) => deleteApp(projectId as string, appId),
+    /** An App with `snapshots` needs `confirm`: its slug, typed by the person deleting it. */
+    mutationFn: (target: string | { appId: string; confirm?: string }) =>
+      typeof target === 'string'
+        ? deleteApp(projectId as string, target)
+        : deleteApp(projectId as string, target.appId, { confirm: target.confirm }),
+    onSuccess: invalidate,
+  });
+  /** Capability `admin_credentials`: replaces the admin key. */
+  const rotateCredentials = useMutation({
+    mutationFn: (appId: string) => rotateAppCredentials(projectId as string, appId),
     onSuccess: invalidate,
   });
 
-  return { ...query, create, update, start, stop, remove };
+  return { ...query, create, update, start, stop, remove, rotateCredentials };
 }
 
 /** Immutable deployment history and deployment-specific mutations. */
@@ -187,4 +211,41 @@ export function useAppAccess(
     },
   });
   return { policy, session, update };
+}
+
+/**
+ * Capability `snapshots`: one App's snapshots, automatic backup and schedule,
+ * plus create, delete and restore mutations. A restore also refreshes the App
+ * list (the instance runs an operation).
+ */
+export function useAppSnapshots(
+  projectId: string | null | undefined,
+  appId: string | null | undefined,
+  enabled = true,
+) {
+  const queryClient = useQueryClient();
+  const queryKey = appSnapshotsKey(projectId, appId);
+  const query = useQuery({
+    queryKey,
+    queryFn: () => listAppSnapshots(projectId as string, appId as string),
+    enabled: !!projectId && !!appId && enabled,
+    ...contract('inventory'),
+  });
+  const invalidate = () => queryClient.invalidateQueries({ queryKey });
+  const create = useMutation({
+    mutationFn: () => createAppSnapshot(projectId as string, appId as string),
+    onSuccess: invalidate,
+  });
+  const remove = useMutation({
+    mutationFn: (snapshotId: string) => deleteAppSnapshot(projectId as string, appId as string, snapshotId),
+    onSuccess: invalidate,
+  });
+  const restore = useMutation({
+    mutationFn: (snapshotId: string) => restoreAppSnapshot(projectId as string, appId as string, snapshotId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey });
+      void queryClient.invalidateQueries({ queryKey: projectAppsKey(projectId) });
+    },
+  });
+  return { ...query, create, delete: remove, restore };
 }

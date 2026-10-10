@@ -246,7 +246,7 @@ describe('kortix apps deploy (characterization)', () => {
         '    path: web',
         '    type: bundle',
         '    output_dir: dist',
-        '    backends: [main]',
+        '    uses: [db]',
         '    resources:',
         '      cpu: 2',
         '      memory_gb: 4',
@@ -268,7 +268,7 @@ describe('kortix apps deploy (characterization)', () => {
     const create = calls.find(
       (c) => c.method === 'POST' && c.path === `/v1/projects/${PROJECT}/apps`,
     );
-    expect(create?.body).toEqual({ slug: 'storefront', name: 'storefront', cpu: 2, memory_gb: 4, backends: ['main'] });
+    expect(create?.body).toEqual({ slug: 'storefront', name: 'storefront', cpu: 2, memory_gb: 4, uses: ['db'] });
     // --output-dir wins over the manifest's output_dir; env and secrets pass through.
     expect(deploymentCall()?.body).toEqual({
       artifact_id: 'art-1',
@@ -387,7 +387,7 @@ describe('kortix apps deploy (characterization)', () => {
     expect(r.stderr).toContain('kortix.yaml has no apps.nope block');
   });
 
-  test('--budget sets the new App\'s monthly budget; a server App below its 24/7 estimate is warned on stderr', async () => {
+  test('--budget is sent to the server, which decides; no budget warning is printed', async () => {
     appFields = { always_on: true, estimated_monthly_usd: 73.48 };
     mkdirSync(join(tmp, 'site'), { recursive: true });
     writeFileSync(join(tmp, 'site', 'package.json'), '{"name":"site"}\n');
@@ -396,19 +396,18 @@ describe('kortix apps deploy (characterization)', () => {
     expect(r.code).toBe(0);
     const create = calls.find((c) => c.method === 'POST' && c.path === `/v1/projects/${PROJECT}/apps`);
     expect(create?.body).toEqual({ slug: 'site', name: 'site', monthly_budget_usd: 20 });
-    // The fake server answers with the default $5 budget.
-    expect(r.stderr).toContain('runs 24/7, about $73.48/month at list compute rates, but its monthly budget is $5.00');
+    expect(r.stderr).not.toContain('monthly budget');
     expect(r.stdout).toContain('deployment ready');
   });
 
-  test('a static deploy and an App whose budget covers 24/7 are not warned', async () => {
+  test('a static deploy and an always-on App print no budget warning', async () => {
     appFields = { always_on: true, estimated_monthly_usd: 73.48 };
     writeFileSync(join(tmp, 'bundle.tar.gz'), new Uint8Array([0x1f, 0x8b, 8, 0]));
     const config = writeConfig(startServer());
     const staticRun = await runCli(['apps', 'deploy', 'bundle.tar.gz', '--project', PROJECT], config);
     expect(staticRun.code).toBe(0);
     expect(staticRun.stderr).not.toContain('runs 24/7');
-    appFields = { always_on: true, estimated_monthly_usd: 73.48, monthly_budget_usd: 100 };
+    appFields = { always_on: true, estimated_monthly_usd: 73.48, monthly_budget_usd: null };
     mkdirSync(join(tmp, 'site'), { recursive: true });
     writeFileSync(join(tmp, 'site', 'package.json'), '{"name":"site"}\n');
     const serverRun = await runCli(['apps', 'deploy', 'site', '--project', PROJECT], config);
@@ -417,13 +416,14 @@ describe('kortix apps deploy (characterization)', () => {
   });
 
   test('a server deploy prints the 24/7 cost line; a static deploy and an on-demand App do not', async () => {
-    appFields = { always_on: true, estimated_monthly_usd: 73.48, monthly_budget_usd: 74 };
+    appFields = { always_on: true, estimated_monthly_usd: 73.48, monthly_budget_usd: null };
     writeFileSync(join(tmp, 'bundle.tar.gz'), new Uint8Array([0x1f, 0x8b, 8, 0]));
     mkdirSync(join(tmp, 'site'), { recursive: true });
     writeFileSync(join(tmp, 'site', 'package.json'), '{"name":"site"}\n');
     const config = writeConfig(startServer());
     const server = await runCli(['apps', 'deploy', 'site', '--project', PROJECT], config);
-    expect(server.stdout).toContain('Runs 24/7 on 1 vCPU / 2 GB: about $73/month (budget $74)');
+    expect(server.stdout).toContain('Runs 24/7 on 1 vCPU / 2 GB: about $73/month');
+    expect(server.stdout).not.toContain('budget');
     const staticRun = await runCli(['apps', 'deploy', 'bundle.tar.gz', '--project', PROJECT], config);
     expect(staticRun.stdout).not.toContain('Runs 24/7');
     appFields = { always_on: false, estimated_monthly_usd: 73.48 };

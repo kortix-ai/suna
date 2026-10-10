@@ -215,12 +215,7 @@ export const TIERS: readonly CommandTier[] = [
           {
             name: 'apps',
             args: '<subcommand>',
-            blurb: 'Experimental: deploy serverless Apps with stable Kortix URLs',
-          },
-          {
-            name: 'backends',
-            args: '<subcommand>',
-            blurb: 'Experimental: self-hosted Convex backends; deploy with kortix backends deploy',
+            blurb: 'Experimental: deploy Apps (web sites and servers, Convex backends) with stable Kortix URLs',
           },
           {
             name: 'marketplace',
@@ -290,6 +285,11 @@ export const TIERS: readonly CommandTier[] = [
       {
         title: '',
         commands: [
+          {
+            name: 'feedback',
+            args: '"<message>" [--kind bug|idea|friction]',
+            blurb: 'File product feedback for the team (from a shell or an agent session)',
+          },
           { name: 'update', blurb: 'Pull the latest CLI from kortix.com/install' },
           { name: 'uninstall', blurb: 'Remove the Kortix CLI from this machine' },
           { name: 'help', blurb: 'Show this help' },

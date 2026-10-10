@@ -1,17 +1,23 @@
 ---
 name: kortix-apps
-description: "Deploy and operate Kortix Apps through the pre-authenticated CLI or SDK. Use when the user asks to publish, host, deploy, preview, inspect, wake, suspend, roll back, debug, or remove HTML/CSS/JavaScript, a static SPA, Vite or React source, Next.js, a Dockerfile service, or an OCI image on a stable Kortix URL, or asks what an App costs or how it runs."
+description: "Build, deploy and operate Kortix Apps through the pre-authenticated CLI or SDK: static sites and SPAs, Dockerfile or OCI servers, and `convex` Apps (self-hosted Convex: database, server functions, realtime queries, file storage, crons, search) with built-in Kortix sign-in. Use when the user asks to publish, host, deploy, preview, inspect, wake, suspend, roll back, debug, or remove an App; asks for a database, an API, a backend, a data model, auth, or 'store this'; asks for an internal tool, business app, CRM, tracker, dashboard, portal, or any app the team logs in to; before writing any Convex code; or asks what an App costs or how it runs."
 ---
 
 # Kortix Apps
 
-Kortix Apps turns one directory or image into an immutable deployment with a
-stable URL. There are two kinds:
+A Kortix App is one project-scoped thing with a stable URL, an access policy,
+a size. An on-demand server App also has a monthly budget. Every App has one `kind`, fixed at create:
 
-- A **static App** is files. Kortix stores them and serves them itself: no
-  machine, no cold start, no compute bill, instant rollback.
-- A **server App** (a Dockerfile or an OCI image) runs in its own machine. It
-  has a run mode (always on or on demand) and a monthly compute budget.
+| Kind | What it is | Capabilities |
+| --- | --- | --- |
+| `web`, static | Files Kortix serves itself: no machine, no cold start, no compute bill. | `deployments`, `rollback`, `preview`, `member_tokens`, `static` |
+| `web`, server | A Dockerfile or OCI image in its own machine, always on or on demand. | `deployments`, `rollback`, `preview`, `member_tokens`, `sleep` |
+| `convex` | A self-hosted Convex backend in its own always-on machine: data, server functions, realtime, files, crons, search. | `deployments`, `snapshots`, `restore`, `admin_credentials`, `dashboard`, `logs`, `member_tokens` |
+
+`app.capabilities` in every App response is the only thing to branch on. A
+command that needs a capability the App lacks answers
+`409 app_capability_unsupported` (for example `kortix apps stop` on a
+`convex` App, or `kortix apps snapshot` on a web App).
 
 Kortix chooses and operates the provider. Never select Cloudflare, Vercel, or
 another host for an App. Omit `--provider` unless an operator asks for one.
@@ -21,93 +27,48 @@ another host for an App. Omit `--provider` unless an operator asks for one.
 1. Run `pwd` and inspect the intended source directory before deploying.
 2. Run `kortix projects info --json` to confirm the selected project. Read its
    identifier from `project_id`.
-3. If Apps is disabled, stop and tell the user to contact Kortix: Kortix
-   enables Apps per project, and Settings does not list it.
-4. Do not create an empty App identity first. `kortix apps deploy` creates the
-   identity when `--app` is omitted.
-5. Never run `kortix apps deploy` from an uninspected workspace root. It can
+3. If `experimental.apps` is not `true`, Apps is off. **Do not stop.** Build
+   what the user asked for with the project's own storage and code, and tell
+   the user once that Kortix enables Apps per project on request. Do not
+   repeat it, and do not wait for an answer.
+4. A `convex` App needs Platinum machines. Where Kortix runs none, a create
+   answers `409 app_kind_unavailable`. Then build without it and say so once.
+5. Do not create an empty web App identity first. `kortix apps deploy`
+   creates it when `--app` is omitted.
+6. Never run `kortix apps deploy` from an uninspected workspace root. It can
    publish unrelated files as a static App.
-6. New Apps are private. Choose another access mode only when the user asks.
+7. New Apps are private. Choose another access mode only when the user asks.
 
-## Select the source type
+## Choose what to build
 
-Default to static. Use a server App only when the App needs its own server
-process.
+| The user wants | Build | Reference |
+| --- | --- | --- |
+| A website or UI with no stored data | One static App | references/web-static.md |
+| An app with data, login or realtime (an internal tool, a CRM, a tracker) | A `convex` App for data and logic + a static App for the UI that uses it | "Internal apps" below, references/convex.md |
+| A database or an API only | A `convex` App | references/convex.md |
+| A process that must run its own server (SSR, native packages, a custom service) | A server App | references/web-server.md |
+| A call to an external system from an App | The connector gateway | references/connectors.md |
 
-| Source | Preferred deployment |
-| --- | --- |
-| HTML, CSS, JavaScript | `--type static` |
-| Prebuilt Vite or React `dist/` | deploy `dist/ --type static --spa` |
-| Vite or React source | build it here (`npm run build`), then deploy `dist/ --type static --spa` |
-| Next.js static export | set `output: 'export'`, build, then deploy `out/ --type static --spa` |
-| Next.js server runtime | Dockerfile, command, and port `3000` |
-| Any custom HTTP service | Dockerfile, command, and target port |
-| Existing public container image | `--image`, command, and target port |
-
-A frontend that talks to a Kortix Backend is static. Use a Dockerfile only when
-the App needs a server process, native packages, or custom runtime behavior.
-
-Build here, then deploy the output directory itself as the path
-(`kortix apps deploy ./dist`):
-
-- The CLI reads `.gitignore`, `.dockerignore`, and `.kortixignore` only from the
-  directory it uploads. A repository `.gitignore` that lists `dist/` does not
-  hide `./dist` when `./dist` is the path.
-- The CLI never uploads `.env*` files. A build-time value (`VITE_*` or
-  `NEXT_PUBLIC_*` in `.env.production`) reaches the App only through a build
-  you ran here, before the deploy.
-- Keep `dist/` and `out/` in the repository's `.gitignore`. Committed build
-  output bloats the repository every session clones (`kortix validate` warns).
-- A static App holds at most 20,000 files of at most 50 MiB each. A larger
-  site fails with `invalid_site`.
-- A static publish never serves `.git/`, `.env*` or `.DS_Store`, at any depth,
-  even when an SDK or API upload contains them. The `site_published` log line
-  counts what it left out.
-- A symlink in the upload that resolves outside it fails the deploy
-  (`escapes the build context`). Links inside the upload are kept.
-
-Static caching: HTML and every other file revalidate on each request (ETag,
-`304`). Build output with a content hash in its name is immutable for a year:
-`_next/static/`, and files under `assets/` or `static/js|css|media/` named like
-`index-D8j1YYcB.js`. Never overwrite such a file in place; let the bundler
-rename it. A public App's immutable files are also cached at the Kortix edge.
-After a switch to private or a delete, edge copies stay reachable by exact URL
-for up to 1 hour. A directory URL without its slash (`/docs`) redirects `308`
-to `/docs/`, so relative links in `docs/index.html` resolve. Files over 4 MiB
-are served uncompressed and support `Range` requests.
-
-Before building generated output, inspect `package.json` and the lockfile. Run
-the declared `build` script with the repository's package manager. Do not assume
-`pnpm` when the project uses npm, Yarn, or Bun.
+Default to static for every UI. Every piece of server logic for a UI —
+queries, writes, webhooks, integrations, schedules — lives in a `convex` App,
+not in a server App.
 
 ## Deploy
 
-Deploy a new App and block until its stable URL is ready:
-
 ```bash
 kortix apps deploy ./dist --slug storefront --name Storefront --type static --spa
-```
-
-Deploy a Dockerfile service that only answers requests (choose the run mode
-and budget on the first deploy; see Lifecycle):
-
-```bash
+kortix apps create db --kind convex && kortix apps deploy apps/db --app db
 kortix apps deploy . --slug api --type dockerfile --on-demand \
   --command '["node","server.js"]' --port 3000 --readiness-path /health
 ```
 
-Deploy an OCI image:
+The command waits for `ready` for up to 1200 seconds. Use `--no-wait` only
+when another process owns status tracking. Use `--app <slug>` for every later
+version of the same App. Never create a new slug for a normal update.
 
-```bash
-kortix apps deploy --image nginx:1.27-alpine --slug nginx \
-  --command '["nginx","-g","daemon off;"]' --port 80
-```
-
-The command waits for `ready` for up to 1200 seconds. Use `--no-wait` only when
-another process owns status tracking.
-
-Use `--app <id-or-slug>` for every later immutable version of the same App.
-Never create a new slug for a normal update.
+For a repeatable setup, declare the Apps in `kortix.yaml` (kortix-system,
+`references/kortix/kortix-yaml.md`). `kortix apps deploy` with no arguments
+deploys every block, used Apps first.
 
 ## Access
 
@@ -126,11 +87,25 @@ kortix apps access <app> --mode public
 - `password` allows anyone who knows the App password.
 - `public` requires no authentication.
 
-Use the equivalent `--access`, `--members`, `--groups`, and `--password` flags
-on the first deploy when the user requested non-default access. Never write a
-password into `kortix.yaml`, source, logs, or a command shown to another user.
-Kortix stores only an Argon2id hash. A policy update revokes existing App
-browser sessions.
+For a `convex` App the mode decides who may administer it. Its endpoint is
+public; its functions enforce sign-in (references/sign-in.md).
+
+Use the equivalent `--access`, `--members`, `--groups`, and `--password`
+flags on the first deploy when the user requested non-default access. Never
+write a password into `kortix.yaml`, source, logs, or a command shown to
+another user. Kortix stores only an Argon2id hash. A policy update revokes
+existing App browser sessions.
+
+Create a short-lived authenticated browser link without changing the policy:
+
+```bash
+kortix apps access-link <app> --json
+```
+
+Read the signed URL and expiry from `access_session.url` and
+`access_session.expires_at`. It is valid for five minutes. Treat it as a
+password: do not publish, commit, or log it. The first request exchanges it
+for an eight-hour App-host cookie.
 
 ## Acting as the viewer
 
@@ -147,227 +122,203 @@ kortix apps access <app> --viewer api
   neither.
 - On the App's server, build one client per request:
   `createAppViewerKortix(request, { backendUrl })` from `@kortix/sdk/server`.
-  Do not store the token across requests.
-- In the browser (a static App has no server), call the API through the gate
-  on the App's own origin:
+- In the browser, call the API through the gate on the App's own origin:
   `createKortix({ backendUrl: '/_kortix/api/v1', getToken: kortixAppViewerToken() })`
   from `@kortix/sdk`. Never use `https://api.kortix.com/v1` from the browser:
   the API refuses an App origin's CORS preflight. The gate path needs
   `--viewer api` and answers `403 viewer_api_disabled` without it.
-- Never give the App a personal PAT or API key to run every viewer's sessions.
-  Kortix records each session as the credential's owner, so every viewer's
-  chat becomes that one person's private session.
+- Never give the App a personal PAT or API key to run every viewer's
+  sessions: Kortix records each session as the credential's owner.
 - The token holds the viewer's own role. On a project with agent permissions,
   grant viewers the agent the App starts, or session creation answers
   `403 no_agent_access`.
-- Never log the viewer headers. Kortix already leaves request headers out of
-  `kortix apps logs`.
+- Never log the viewer headers.
 
-Create a short-lived authenticated browser link without changing the policy:
+## Apps that use other Apps
 
-```bash
-kortix apps access-link <app> --json
+`kortix apps link <app> --uses <other>` lets an App get sign-in tokens for
+the other App and reach it through `/_kortix/apps/<other>/*` on its own
+origin. In code: `kortixBinding("<other>")` from `@kortix/sdk` gives the URL
+and a token fetcher. A new App uses none: any other audience answers
+`403 app_not_linked`. Details: references/bindings.md. Sign-in for every
+kind: references/sign-in.md.
+
+## Internal apps: a `convex` App + a static UI
+
+An internal app is a `convex` App for data and logic plus a static App for
+the UI. Kortix signs the team in: the UI knows who is looking, and every
+function knows who is calling. You ship both from the project repo, and you
+verify the deployed app yourself before you report.
+
+```text
+member's browser ──▶ App "crm" (static UI, access: project)
+      │                 └─ /_kortix/token?audience=db  ──▶ token naming the member + groups
+      └──── /_kortix/apps/db (HTTP + websocket) ──▶ App "db" (convex)  ── requireKortixMember
 ```
 
-Read the stable URL from `app.url`. Read the signed URL and expiry from
-`access_session.url` and `access_session.expires_at`. The signed URL is valid for
-five minutes. Treat it as a password until it expires. Do not publish it, commit
-it, or put it in logs. The first request exchanges it for an eight-hour
-App-host cookie and redirects to the same path without the token. Create a fresh
-link for each independent browser profile or cookie jar.
+### Layout (project repo)
 
-## With a Kortix Backend (data, logic, sign-in)
+```text
+apps/db/                       # convex App "db" (references/convex.md)
+  package.json                 # "convex", "@kortix/sdk"
+  convex/schema.ts
+  convex/auth.config.ts        # Kortix sign-in (references/sign-in.md)
+  convex/lib/auth.ts           # requireMember()
+  convex/<domain>.ts           # queries + mutations per domain
+  convex/seed.ts               # internal seed, demo data only
+apps/crm/                      # static App "crm"
+  package.json                 # vite, react, convex, @kortix/sdk
+  src/convex.ts                # kortixBinding("db") + ConvexReactClient
+memory/crm.md                  # what you built, URLs, how to redeploy
+kortix.yaml                    # apps.db (kind: convex), apps.crm (uses: [db])
+.gitignore                     # **/node_modules and apps/*/dist: never commit them
+```
 
-When the App needs a database, server logic or live updates, give it a Kortix
-Backend (load `kortix-backends`; for a whole internal app load
-`kortix-internal-apps`).
+Every session downloads the whole repository, so keep it small. Create
+`.gitignore` before the first `npm install`.
 
-- **Backend URL:** public. A static or SPA App reads it at **build time**:
-  commit `VITE_CONVEX_URL=<url>` (Vite) or `NEXT_PUBLIC_CONVEX_URL=<url>`
-  (Next.js) in the App's `.env.production`, build, deploy the built directory
-  (`--type static --spa`). `kortix apps deploy` has no flag for build-time
-  variables. A server-rendered App reads `CONVEX_URL` from `env` in
-  `kortix.yaml` at runtime.
-- **Sign-in:** `convex.setAuth(kortixAppBackendToken("<name>"))` from
-  `@kortix/sdk`. It fetches `GET /_kortix/backend-token?backend=<name>` on the
-  App's own origin: a 15-minute token naming the viewer, with their Kortix
-  groups and role, refreshed before it expires. **The App must list the
-  backend:** `kortix apps set <app> --backends <name>` (or `backends: [<name>]`
-  in its `kortix.yaml` block); otherwise `403 backend_not_listed`. Needs a signed-in viewer:
-  access `private`, `project` or `restricted`, and `--viewer` not `off`. A
-  `public` or `password` App gets `401`.
-- **Who is looking, without a backend:** `fetchKortixAppViewer()` returns the
-  viewer's id, name, picture, groups and role from `/_kortix/viewer`;
-  `readKortixMember(viewer)` gives the same member shape a backend sees.
-- **Never** put the backend admin key in an App, a bundle or App `env`.
+### Build it, in this order
 
-## Verify
-
-Do not stop at a `ready` status.
-
-1. Read the App and deployment ledger:
-
-   ```bash
-   kortix apps show <slug> --json
+1. **Model the domain.** Turn the request into tables, fields, relations and
+   the 5–10 actions people take. Write it down in `memory/<app>.md` first.
+2. **`convex` App scaffold.** Steps 1 and 2 of the six-step loop in
+   references/convex.md (install, connect). Read
+   `convex/_generated/ai/guidelines.md`.
+3. **Schema + sign-in.** `convex/schema.ts` with indexes for every filter,
+   `convex/auth.config.ts` and `convex/lib/auth.ts` from
+   references/sign-in.md. Store `me.userId` as owner/author ids. Use Kortix
+   roles (`{ roles: ["owner", "admin"] }`) or groups
+   (`{ groups: ["Finance"] }`) for who may do what. Groups need the Enterprise
+   plan: without it the `groups` claim is empty and a group rule refuses
+   everyone, so use roles. Do not build a user or role table the team already
+   has in Kortix.
+4. **Functions.** Every public query and mutation calls `requireMember(ctx)`
+   first. Put multi-row changes (move a card, close a deal) in one mutation so
+   they are atomic. Add an `internal` seed.
+5. **Deploy and test the data layer.**
+   ```sh
+   kortix apps deploy apps/db --app db
+   eval "$(kortix apps credentials db)" && cd apps/db
+   npx convex run seed:run
+   npx convex run <domain>:list '{}'     # must FAIL: no identity
+   ISS=$(npx convex env get KORTIX_AUTH_ISSUER)
+   npx convex run --identity "{\"subject\":\"test-user\",\"issuer\":\"$ISS\",\"name\":\"Test\"}" <domain>:create '{…}'
    ```
+6. **UI.** Vite + React + TypeScript
+   (`npm create vite@latest apps/crm -- --template react-ts`),
+   `npm install convex @kortix/sdk`. Wire `src/convex.ts` exactly as
+   references/sign-in.md, "The browser", shows and wrap the app in
+   `ConvexProvider`. Read the signed-in member with a `members:me` query
+   (references/sign-in.md, "The browser"), never `useConvexAuth()`. Import the API types from `apps/db/convex/_generated/api`
+   with a relative path.
+7. **Quality bar.** It must feel like a product, not a demo:
+   - navigation for every entity; create, edit, delete for each; confirmation
+     before destructive actions;
+   - loading, empty and error states for every list;
+   - the signed-in member's name visible; author/assignee shown where it
+     matters; "mine" filters where people expect them;
+   - realtime by default (`useQuery` re-renders on change), no reload buttons;
+   - every input has a `<label>`, every icon button an `aria-label`, so people
+     and test agents can drive it;
+   - every drag-and-drop action also has a click path: `agent-browser drag`
+     does not fire native HTML5 drag events;
+   - responsive down to a laptop at 1280 px; consistent spacing and type.
+8. **Build, deploy and link the UI.**
+   ```sh
+   (cd apps/crm && npm run build)
+   kortix apps deploy ./apps/crm/dist --slug crm --name "CRM" --type static --spa --access project
+   kortix apps link crm --uses db       # the UI gets tokens and the binding only for Apps it uses
+   ```
+   `--access project` lets every project member in. Use `restricted` with
+   `--members/--groups` for a smaller audience. Never `public` for internal
+   data: a public App has no signed-in member, so sign-in fails by design.
+9. **Integrations** (only when the app calls other systems): from a `convex`
+   App action through Kortix connectors, never with a raw API key
+   (references/connectors.md). The service account it needs is a human step:
+   ask for it, and build everything else meanwhile.
+10. **Ship**, once every check in Verify below passed. Commit both Apps,
+    `kortix.yaml` and `memory/<app>.md`, push the session branch, and open a
+    change request (kortix-system, `<change-requests>`). Never merge your own
+    CR.
 
-   `hosting_type` is `static` for a static App and `sandbox` for a server App.
-   For a server App, confirm `always_on` and `monthly_budget_usd` are the values
-   you chose. When `always_on` is `true`, `monthly_budget_usd` should be at least
-   `estimated_monthly_usd` (the default already is).
+### Redeploy after a change
 
-Every App:
+Take `kortix apps snapshot db` before a risky change (a schema migration, a
+bulk import, a destructive backfill). A schema change that existing rows
+violate fails the deploy: add new fields as `v.optional(...)` and backfill
+(references/convex-patterns.md). Keep every data-layer change compatible with
+the UI build that is live now: add before you remove. Then each half rolls
+back alone:
 
-2. Read the stable URL from `app.url` in the `deploy`, `show`, or `access-link`
-   JSON result. Fetch it. For a private App, create an authenticated link with
-   `kortix apps access-link <slug> --json`, follow redirects, and retain the
-   response cookie. Assert status `200`, the expected body marker, and the
-   content type.
-3. For generated static output, discover an actual `src` or stylesheet `href`
-   in the returned HTML. Resolve the relative URL against the stable App URL and
-   fetch that hashed JavaScript or CSS asset. Assert status `200` and its content
-   type. Do not guess the hashed filename.
-4. For an SPA, fetch a client route. Confirm it returns the same root marker and
-   hashed entry asset as `/`. Byte equality is also valid when the server does
-   not inject per-request content.
-5. For non-public Apps, fetch the stable URL without credentials and confirm it
-   returns `401` before testing authorized access.
+| What broke | Undo |
+| --- | --- |
+| The UI | `kortix apps rollback crm <deployment-id>` (ids in `kortix apps show crm --json`) |
+| Convex code | `git checkout <good-sha> -- apps/db/convex`, then `kortix apps deploy apps/db --app db`, then commit |
+| Data | `kortix apps restore db <snapshot-id> --yes`, only with the user's consent: it drops every later change |
 
-A static App is verified here: it has no runtime to stop or wake. A server App
-continues:
+## Verify before you report (mandatory)
 
-6. Fetch its readiness endpoint and one real application route.
-7. Run `kortix apps stop <slug> --json`. The command returns only after the
-   provider stop call and runtime-state write complete. Confirm
-   `desired_state` is `stopped`. Request the stable URL with the existing
-   App-host cookie without running `start`.
-   Poll for up to 120 seconds until the final response is `200`. A machine
-   response can return `202` with `Retry-After: 3` while the provider resumes.
-   A browser navigation receives the same `202` with branded HTML and a
-   three-second refresh. The body must never expose `app_stopped`, `App not
-   found`, `temporarily unavailable`, or `App is temporarily unavailable`.
-8. Re-read `kortix apps show <slug> --json`. Confirm the active deployment did
-   not change during a normal wake. If it changed, require the new active
-   deployment to be `ready`, `actor_type: system`, `source_session_id: null`,
-   and to reuse the prior `artifact_id`, `source_kind`, and `hosting_provider`.
-   Those fields identify a background runtime refresh.
+Do not stop at a `ready` status. Report nothing as done until each check
+passed. Paste the evidence.
 
-Only when the user asks to see the App inside Kortix:
+1. **Every App:** `kortix apps show <slug> --json`. Fetch `app.url` as
+   references/web-static.md, Verify, describes. A server App also runs
+   references/web-server.md, Verify.
+2. **A `convex` App:** an anonymous `npx convex run <domain>:list` fails; the
+   same call with `--identity` succeeds; a call with `kortix apps token`
+   answers `"status":"success"` (references/convex.md, step 5).
+3. **The deployed UI as a member:**
+   ```sh
+   kortix apps access-link <app> --json      # → access_session.url (5 min)
+   ```
+   `agent-browser` is installed in the sandbox: load its guide with
+   `agent-browser skills get core`. Open `access_session.url` with it. Drive
+   the main flow through the UI: create, edit, move or close, delete. Assert
+   the visible result after each step, and that the signed-in name appears.
+4. **Realtime:** open a second `agent-browser` session on a fresh access
+   link, change something in the first, and assert the second shows it
+   without a reload.
+5. **Report** the App URL, the CR link, the flows you ran, and anything you
+   could not verify. If the App URL does not resolve from your sandbox, say
+   so and give the user the flows to click.
 
-9. Reuse a browser profile that is already signed in to Kortix as the App user.
-   If none exists, sign in through `/auth`; in repository E2E tests, use the
-   shared authenticated-browser helper. Do not open the Apps page yet. Attach
-   App-host response capture first. Stop the App and confirm the JSON state.
-   Then open `/projects/<project-id>/apps`. The Apps page calls the SDK access
-   session endpoint, assigns its signed URL to the iframe, and exchanges it for
-   an App-host cookie in that browser profile. Target the cross-origin frame
-   through frame-aware browser automation. Confirm the page shows the live
-   preview and active version in both light and dark mode. For App document
-   responses, allow `202` while starting and require the final response to be
-   `200`; reject every `5xx`. Assert the iframe body marker. Inspect every
-   captured lifecycle body for the forbidden strings from step 7. Do not accept
-   a screenshot without DOM and network assertions.
+Only when the user asks to see an App inside Kortix: open
+`/projects/<project-id>/apps` in a signed-in browser. A web App shows its
+live preview; a `convex` App shows its dashboard. Assert DOM and network
+data, not a screenshot alone.
 
-## Diagnose
+## Cost
 
-Use the immutable deployment id from `kortix apps show <slug> --json`:
+- A static App costs nothing.
+- An on-demand server App bills its machine while it runs and stops at its
+  monthly budget (default $5; references/web-server.md).
+- An always-on server App has no budget. It costs its machine 24/7: about $73 a
+  month at the default size (`estimated_monthly_usd`).
+- A `convex` App is always on, about $59 a month at the default size. It has no
+  budget and no alerts (references/convex.md).
+- `--budget` on an always-on or `convex` App answers
+  `400 app_budget_not_applicable`.
 
-```bash
-kortix apps logs <slug> <deployment-id> --limit 200
-```
+Tell the user the cost of each App before you hand over.
 
-A server App's logs come from its runtime (`app`, `appd`, `caddy`). A static
-App has no runtime: the same command prints its deployment events, one per
-line, for example `<time> kortix  [site_published] Published 12 files (12 new,
-0 unchanged)`. A failed static deploy names its cause in the deployment's
-`error_code` (`invalid_site` for a missing root, an empty root, too many files,
-or a file that is too large). An `environment_ignored` event means `env` or
-`secrets` were set: a static App runs no server and never reads them.
-
-The stable App URL displays branded queued, validating, building, provisioning,
-checking, starting, failed, cancelled, and budget pages while no active version
-can serve traffic. Browser lifecycle pages refresh automatically. Machine
-clients receive typed JSON and `Retry-After` for transient states. A stopped
-healthy App does not expose `app_stopped`, `App not found`, or a temporary
-unavailable state.
-
-If a source build fails, inspect the deployment error and build events. Do not
-hide a server-build failure by claiming the source type passed. You can deploy a
-verified local build as static for immediate delivery, then fix and retest the
-source-build path separately.
-
-`--wait-seconds` bounds deployment polling after a deployment id exists. It does
-not currently bound context resolution, App creation, packing, upload, or the
-deployment-create request. If a command exceeds this duration without printing
-a deployment id, record the last visible phase and inspect `kortix apps ls`.
-Do not attribute that state to provider throttling without a deployment record
-and provider event. Keep blocking deployment as the default; use `--no-wait`
-only when another process owns status tracking.
-
-## Lifecycle
-
-```bash
-kortix apps start <slug>
-kortix apps stop <slug>
-kortix apps rollback <slug> <deployment-id>
-kortix apps delete <slug> --yes
-```
-
-A static App has no runtime. `start` and `stop` answer
-`409 static_app_no_runtime`, `kortix apps ls` prints `static` as its state, and
-it serves while it has an active deployment. Delete it to take it offline. Run
-mode, machine, and budget do not apply to it.
-
-A server App runs in one of two modes. Choose the mode on the first deploy:
-
-- **On demand** (`--on-demand`): stops after the idle timeout (default 300
-  seconds) and wakes on the next authorized request. That request waits for
-  the cold start. Use it for every App that only answers requests.
-- **Always on** (the default for a new App): runs 24/7, and keep-alive restarts
-  it within 5 minutes if it stops. Use it only for an App that holds
-  websockets open or runs its own background loop. Scheduled jobs and queues of
-  an App with a Kortix Backend belong in the backend.
-
-Both modes stop at the App's monthly compute budget, and when the account can
-no longer pay. The URL then shows the budget or paused page until the next
-month or until the user raises the budget. A new always-on App with no
-`--budget` gets its 24/7 estimate (`estimated_monthly_usd`) rounded up to a whole
-dollar: 74 USD for the default machine of about 73 USD a month. An on-demand App
-gets 5 USD. The CLI prints a line such as `Runs 24/7 on 1 vCPU / 2 GB: about
-$73/month (budget $74)`; tell the user that cost. A budget you pass always wins
-and never changes by itself. To spend less, use `--on-demand` or a smaller
-machine (`--memory-gb 1` is about 59 USD a month).
-
-To set an explicit budget on the first deploy:
+## Delete
 
 ```bash
-kortix apps deploy . --slug api --type dockerfile --always-on --budget 80 \
-  --command '["node","server.js"]' --port 3000
+kortix apps delete <slug> --yes                         # a web App
+kortix apps delete <slug> --deployment <id|vN> --yes    # one web deployment (not the live one)
+kortix apps delete <slug> --confirm <slug>              # an App with snapshots (convex): the typed slug
 ```
 
-Change either later without a redeploy:
-`kortix apps set <slug> --on-demand|--always-on` or
-`kortix apps set <slug> --budget <usd>`. Keep-alive applies the change within 5
-minutes. `always_on` and `monthly_budget_usd` in `kortix.yaml` do the same on
-the next `kortix apps deploy --manifest-app <name>`. `deploy`, `create`, and
-`set` print an `app_budget_below_always_on` warning on stderr when an
-always-on App's budget is below its estimate. Tell the user. Never leave the
-warning unreported.
+A web App delete removes the identity, its runtimes and every image it built.
+A `convex` App delete takes a `final` snapshot, keeps the stopped machine 7
+days, then deletes every document and file (references/convex.md, Delete).
 
-On Daytona and E2B (self-host), an always-on App can be unreachable for up to 5
-minutes when the provider stops its VM. On Kortix Cloud the VM is persistent.
+## References
 
-`stop` suspends a server App's compute immediately, and keep-alive leaves it
-stopped. The next authorized request, or `kortix apps start`, wakes it.
-
-An App keeps its active deployment and the 5 newest other ready ones for
-rollback. Kortix retires older ones after each deploy and frees their files,
-images, and build logs. Rollback accepts only a ready deployment. A static
-rollback switches traffic at once. A server rollback starts the target runtime
-first. Delete is destructive and removes the stable identity and its runtimes.
-
-When a Kortix release changes the App supervisor image, Kortix rebuilds a
-server App's runtime from the same artifact in the background: on its next
-cold start (on demand), or in a keep-alive pass (always on). Traffic stays on
-the active deployment until the replacement passes readiness. A release that
-changes only the API rebuilds nothing.
+- references/web-static.md — static sources, build rules, caching, verify.
+- references/web-server.md — Dockerfile and OCI Apps, run mode, budget, wake, diagnose.
+- references/convex.md — `convex` Apps: the six-step loop, commands, durability, backups, cost, delete.
+- references/convex-patterns.md — schema, queries, mutations, actions, HTTP actions, crons, files, search.
+- references/sign-in.md — tokens, `kortixToken`, `verifyKortixToken`, `requireKortixMember`, troubleshooting, customers.
+- references/bindings.md — `uses` links and the `/_kortix/apps/<slug>` mount.
+- references/connectors.md — calling connectors from an App.

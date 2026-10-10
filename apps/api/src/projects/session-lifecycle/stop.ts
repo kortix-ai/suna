@@ -7,7 +7,7 @@ import { db } from '../../shared/db';
 import { isAlreadyNotRunning, isLifecycleTransitionInProgress } from '../reaping/policy';
 import { applyStoppedState } from '../reaping/sandbox-state-sync';
 import { claimManualSandboxStop, releaseSandboxStopClaim } from '../reaping/box-queries';
-import { abortLiveTurnBeforeStop } from '../reaping/stop-box';
+import { abortLiveTurnBeforeStop, flushDriveSyncBeforeStop, retireEphemeralOnStop } from '../reaping/stop-box';
 import { RUNTIME_WAKE_LATE_START_GUARD_MS, runtimeWakeInProgress } from './runtime-wake-fence';
 
 /**
@@ -133,6 +133,12 @@ export async function stopSession(input: {
       externalId: sandbox.externalId,
       userId,
     });
+    // Drive sync: the daemon's final push, inside the request budget. Past it
+    // the stop goes ahead; the daemon still pushes on SIGTERM.
+    await within(
+      flushDriveSyncBeforeStop({ ...sandbox, externalId: sandbox.externalId }),
+      Math.max(0, budgetEndsAt - Date.now()),
+    );
     // The turn-end relay can still be in flight. Persist the transcript before
     // powering off the only live reader; capture failures never prevent stop.
     //
@@ -161,6 +167,25 @@ export async function stopSession(input: {
     }
   };
   const settleStop = async (): Promise<{ status: number; body: Record<string, unknown> }> => {
+    // An ephemeral box commits its session volume and is deleted instead of
+    // stopped; its state lives on the volume.
+    if (!cancellingWake) {
+      const retired = await retireEphemeralOnStop({
+        sandboxId: sandbox.sandboxId,
+        sessionId,
+        externalId,
+        stopReason: 'manual',
+        now,
+        metadata: { stoppedBy: userId },
+      });
+      if (retired === 'retired') {
+        return { status: 200, body: { ok: true, session_id: sessionId, status: 'stopped' } };
+      }
+      if (retired === 'error') {
+        await releaseSandboxStopClaim(sandbox.sandboxId, claimToken);
+        return { status: 502, body: { error: 'Failed to stop sandbox' } };
+      }
+    }
     // A transient provider failure gets ONE bounded retry (KRTX-520). The user
     // is holding a Stop button. A degraded platform edge intermittently answers
     // the stop request with a 502/503/504 (an HTML error page), and a backlog

@@ -3,9 +3,12 @@ title: Apps
 description: Create, deploy, and control Kortix Apps from the SDK and from React.
 ---
 
-Apps are project-scoped serverless deployments. This page covers the SDK
-surface: the `apps` facade on a project handle, the artifact and deployment
-calls, the access calls, the exported types, and the React hooks.
+Apps are project-scoped deployments with one stable URL each. Every App has a
+`kind`, fixed at create: `web` (a site or a server) or `convex` (a
+self-hosted Convex backend). Branch on `app.capabilities`, never on the kind.
+This page covers the SDK surface: the `apps` facade on a project handle, the
+artifact, deployment and capability calls, sign-in tokens, the exported
+types, and the React hooks.
 
 For what an App is, the source kinds, the CLI, the stable URL, and cold-wake
 behavior, read [Apps](/docs/feature-flags/apps).
@@ -24,11 +27,12 @@ on it. See [Feature flags](/docs/feature-flags).
 
 | Method | Wraps | What it does |
 |---|---|---|
-| `apps.list()` | `GET /projects/:pid/apps` | Lists the project's Apps |
+| `apps.list()` | `GET /projects/:pid/apps` | Lists the Apps the caller may open (a project manager sees all) |
 | `apps.create(input)` | `POST …/apps` | Creates an App and assigns its stable URL |
 | `apps.get(appId)` | `GET …/apps/:id` | Reads one App |
 | `apps.update(appId, input)` | `PATCH …/apps/:id` | Renames it or changes machine, idle timeout, run mode (`always_on`), or budget. Run mode and budget apply within 5 minutes; a machine change applies to the next deployment |
-| `apps.remove(appId)` | `DELETE …/apps/:id` | Deletes the App, its runtimes, and every deployment image; returns `images: {released, pending}` |
+| `apps.remove(appId, { confirm? })` | `DELETE …/apps/:id` | Deletes the App, its runtimes, and every deployment image; returns `images: {released, pending}`. An App with `snapshots` needs `confirm` (its slug) and answers `retained_until` and `final_snapshot_id` |
+| `apps.waitUntilReady(appId, options?)` | polls `GET …/apps/:id` | Resolves when the App's `instance` runs with no operation in flight; at once for an App without an instance. Default timeout 15 minutes |
 | `apps.start(appId)` | `POST …/apps/:id/start` | Sets `desired_state` to `running` and warms the runtime. A static App answers `409 static_app_no_runtime` |
 | `apps.stop(appId)` | `POST …/apps/:id/stop` | Suspends compute now; the next request resumes it. A static App answers `409 static_app_no_runtime`: it has no runtime and serves while it has an active deployment |
 | `apps.rollback(appId, deploymentId)` | `POST …/apps/:id/rollback` | Moves traffic to a ready deployment |
@@ -50,6 +54,20 @@ Deployments are immutable and numbered:
 | `apps.deployments.get(appId, deploymentId)` | `GET …/deployments/:did` | Reads one deployment plus its events |
 | `apps.deployments.logs(appId, deploymentId, options?)` | `GET …/deployments/:did/logs` | Reads runtime logs with a cursor |
 | `apps.deployments.remove(appId, deploymentId)` | `DELETE …/deployments/:did` | Deletes one deployment and its image; `409` for the live deployment or an in-progress build. Returns `image: 'released' \| 'pending' \| 'none'` |
+
+Capability calls answer `409 app_capability_unsupported` when the App lacks
+the capability:
+
+| Method | Wraps | Capability | What it does |
+|---|---|---|---|
+| `apps.snapshots.list(appId)` | `GET …/apps/:id/snapshots` | `snapshots` | The automatic backup, the snapshot schedule and the snapshots, newest first |
+| `apps.snapshots.create(appId)` | `POST …/apps/:id/snapshots` | `snapshots` | A manual snapshot, kept until deleted |
+| `apps.snapshots.delete(appId, snapshotId)` | `DELETE …/snapshots/:sid` | `snapshots` | Deletes one snapshot of any kind |
+| `apps.snapshots.restore(appId, snapshotId)` | `POST …/apps/:id/restore` | `restore` | Rolls the App back to a snapshot; resolves with the App once it runs it |
+| `apps.credentials(appId)` | `GET …/apps/:id/credentials` | `admin_credentials` | `url`, `site_url`, `admin_key`, `env`. Audited |
+| `apps.rotateCredentials(appId)` | `POST …/apps/:id/rotate-credentials` | `admin_credentials` | Replaces the admin key; resolves with the App |
+| `apps.token(appId)` | `POST …/apps/:id/token` | `member_tokens` | A 15-minute sign-in token for the App, naming the caller |
+| `apps.log(appId, { lines? })` | `GET …/apps/:id/logs` | `logs` | The last `lines` (1 to 1000, default 200) of the process log, as one string |
 
 Access is the App's own authorization policy:
 
@@ -83,27 +101,33 @@ console.log(app.url, deployment.status); // https://…apps.kortix.com  queued
 
 `create` accepts the machine and budget fields too: `cpu`, `memory_gb`,
 `disk_gb`, `idle_timeout_seconds`, `always_on`, and `monthly_budget_usd`. Omit
-them for the defaults. Without `monthly_budget_usd`, an always-on App gets its
-`estimated_monthly_usd` rounded up to a whole dollar and an on-demand App gets
-5. That derived budget follows later `update` calls that change the machine or
-`always_on`; a budget you send is never changed. `always_on: true` runs a server App 24/7 (websockets,
-background loops); `false` stops it after `idle_timeout_seconds` and wakes it
-on the next request. Both stop at the monthly budget. A static App has no
-runtime and ignores both.
+them for the defaults. Only an on-demand server App has a monthly budget:
+default 5 USD, and the App stops at the cap. An always-on server App and every
+`convex` App have no budget: their cost is fixed (`estimated_monthly_usd`), and
+`monthly_budget_usd` is `null`. `always_on: true` runs a server App 24/7
+(websockets, background loops); `false` stops it after `idle_timeout_seconds`
+and wakes it on the next request. A static App has no runtime: `always_on` is
+`false`, `monthly_budget_usd` is `null`, and `estimated_monthly_usd` is `0`.
 
-`backends` lists the Kortix Backends, by name, the App may mint viewer tokens
-for; the default is none, and `update(appId, { backends })` replaces the list
-(see [Backends an App may use](/docs/feature-flags/apps#backends-an-app-may-use)).
+Sending `monthly_budget_usd` for an always-on or `convex` App, on `create` or
+`update`, answers `400` with `code: 'app_budget_not_applicable'`. The message
+names the monthly cost. `update` to on demand sets the budget you send or 5;
+`update` to always on clears it.
+
+`kind` is `web` (the default) or `convex`. `uses` lists the Apps, by slug,
+this App may get sign-in tokens for and reach through its bindings mount; the
+default is none, and `update(appId, { uses })` replaces the list (see
+[Apps an App uses](/docs/feature-flags/apps#apps-an-app-uses-sign-in-tokens-and-bindings)).
 
 `estimated_monthly_usd` is what the App's machine costs running 24/7 for a
-month at list compute rates. `create` and `update` return `warnings`: an
-always-on App whose `monthly_budget_usd` is below that estimate gets
-`app_budget_below_always_on`. The call still succeeds; the App stops when the
-budget is spent.
+month at list compute rates: about 73.48 for 1 vCPU / 2 GB / 10 GB, and about
+59.29 for the `convex` default of 1 vCPU / 1 GB / 10 GB. `create` and `update`
+return `warnings`, which is now always `[]`: the `app_budget_below_always_on`
+warning is gone.
 
 ```ts
 const app = await kortix.project(projectId).apps.create({ slug: 'worker', name: 'Worker', always_on: true });
-for (const warning of app.warnings ?? []) console.warn(warning.code, warning.message);
+console.log(app.always_on, app.monthly_budget_usd, app.estimated_monthly_usd); // true null 73.48
 ```
 
 Wait for the deployment by polling its status:
@@ -173,6 +197,101 @@ Each entry carries `cursor`, `time`, `source` (`app`, `appd`, `caddy`), and
 `line`. A `caddy` line is the access log: method, URI, status, duration and
 response headers. It never contains request headers, because those carry the
 gate's credentials (the viewer token and identity, the provider ingress token).
+
+## A `convex` App
+
+A `convex` App is a self-hosted Convex backend in its own always-on machine
+([Kind `convex`](/docs/feature-flags/apps#kind-convex-a-convex-backend)). Its
+code deploys with the Convex CLI against the App's admin credentials; Kortix
+records each deploy.
+
+```ts
+const apps = kortix.project(projectId).apps;
+
+const db = await apps.create({ slug: 'db', name: 'Database', kind: 'convex' });
+await apps.waitUntilReady(db.app_id);           // instance.status 'running', no operation in flight
+
+const { env } = await apps.credentials(db.app_id);
+// env.CONVEX_SELF_HOSTED_URL, env.CONVEX_SELF_HOSTED_ADMIN_KEY: run `npx convex deploy` with them
+
+await apps.deployments.create(db.app_id, { source: { kind: 'convex', revision: gitSha } }); // 201, ready
+await apps.update(site.app_id, { uses: ['db'] }); // the site may mint db tokens and bind to it
+```
+
+`create` answers at once with `instance.status: 'provisioning'`. Boot takes a
+few seconds, and up to 10 minutes on a region's first image build. Call
+`waitUntilReady` before you read credentials: `credentials` answers
+`409 app_not_running` until the App runs. Pin the Convex CLI to
+`instance.client_version`: a newer CLI can need server APIs this deployment
+lacks. From a terminal, `kortix apps deploy <dir> --app db` does all of this.
+The admin key grants full access to the App. Do not log it or ship it to a
+browser.
+
+### Resize, snapshot, restore
+
+```ts
+await apps.update(db.app_id, { cpu: 2, memory_gb: 4 });
+const resized = await apps.waitUntilReady(db.app_id);    // restarts on the new size
+
+const snapshot = await apps.snapshots.create(db.app_id);
+const { automatic, snapshots, snapshot_schedule } = await apps.snapshots.list(db.app_id);
+
+// Every change after the snapshot is lost.
+await apps.snapshots.restore(db.app_id, snapshot.snapshot_id);
+
+// Free a manual slot.
+await apps.snapshots.delete(db.app_id, snapshots.at(-1)!.snapshot_id);
+```
+
+Limits: `cpu` 1 to 16, `memory_gb` 1 to 32, `disk_gb` 10 to 100. A disk grows
+but never shrinks. While a resize runs, `instance.operation` is `'resizing'`.
+When it fails, `operation` clears and `instance.last_operation_error` holds
+the reason.
+
+| `kind` | Who takes it | Kept |
+|---|---|---|
+| `manual` | A member or agent, with `snapshots.create` | Until deleted. An App holds 10; the 11th answers `409 snapshot_limit` |
+| `automatic` | Kortix, once a day | 7 days |
+| `resize` | Kortix, before a resize | 24 hours, or until the next resize replaces it |
+| `final` | Kortix, when the App is deleted | 7 days |
+
+`expires_at` is `null` for a `manual` snapshot. Snapshot calls answer
+`409 app_busy` while another operation runs. `restore` answers
+`409 snapshot_predates_resize` for a snapshot taken before an applied resize,
+and `502 restore_unhealthy` when the restored machine does not answer.
+
+### Rotate credentials, read the log, check health
+
+```ts
+await apps.rotateCredentials(db.app_id);               // old keys now get 401
+const { admin_key } = await apps.credentials(db.app_id);
+
+const log = await apps.log(db.app_id, { lines: 500 });
+
+const { instance } = await apps.get(db.app_id);
+if (instance?.health && !instance.health.ok) console.warn(instance.health.machine_state, instance.health.error);
+```
+
+Rotation keeps documents, files, functions and environment variables. After a
+restore of an App whose key was ever rotated, Kortix rotates it again: read
+the key again. `instance.health` is the last probe (every 5 minutes).
+
+`instance.dashboard_url` is Convex's dashboard on a Kortix host. Frame it in
+an `<iframe>`. The dashboard posts `{ type: 'dashboard-credentials-request' }`
+to its parent. Check `event.origin` against the dashboard URL's origin, then
+answer with `{ type: 'dashboard-credentials', adminKey, deploymentUrl,
+deploymentName }`, read with `apps.credentials(appId)`. Post only to that
+origin.
+
+### Delete
+
+```ts
+const { retained_until, final_snapshot_id } = await apps.remove(db.app_id, { confirm: 'db' });
+```
+
+An App with `snapshots` holds data. Without `confirm` (its slug) the delete
+answers `400 confirmation_required`. Kortix takes a `final` snapshot, keeps
+the stopped machine until `retained_until` (7 days), and then deletes it.
 
 ## Your App already knows who is looking
 
@@ -277,30 +396,55 @@ front of it — use [Sign in with Kortix](/docs/sdk/sign-in) there instead.
 ## One member, on every runtime
 
 Kortix vouches for the same person in three places: the browser asks the gate
-(`/_kortix/viewer`), the App's server reads the signed header, and a
-[Kortix Backend](/docs/feature-flags/backends) receives a Kortix-signed token.
-`readKortixMember` turns each of those shapes into one `KortixMember`, and
-`requireKortixMember` decides who may proceed. No framework and no dependency:
-the same code runs in a browser, Node, Bun, a Worker and a Convex function.
+(`/_kortix/viewer`), the App's server reads the signed header, and an App that
+verifies sign-in tokens (a `convex` App, or your own server) receives a
+Kortix-signed token. `readKortixMember` turns each of those shapes into one
+`KortixMember`, and `requireKortixMember` decides who may proceed. No
+framework and no dependency: the same code runs in a browser, Node, Bun, a
+Worker and a Convex function.
 
 ```ts
 import {
-  readKortixMember, requireKortixMember, verifyKortixMemberToken,
-  kortixAppBackendToken, fetchKortixAppViewer, KortixMemberError,
+  readKortixMember, requireKortixMember, verifyKortixToken,
+  kortixToken, kortixBinding, fetchKortixAppViewer, KortixMemberError,
 } from '@kortix/sdk';
 
 // Browser: who is looking (null when nobody).
 const me = readKortixMember(await fetchKortixAppViewer());
 
-// Browser → backend: a token fetcher for a client's auth callback.
-convex.setAuth(kortixAppBackendToken('main'));
+// Browser → an App this App uses, on the same origin: its URL and a token fetcher.
+const db = kortixBinding('db');
+const convex = new ConvexReactClient(db.url);
+convex.setAuth(db.token);
+// React: read the member with useQuery(api.members.me), never useConvexAuth() (see below).
 
-// Backend function: the runtime verified the token; enforce the rules.
+// Browser: a token for this App itself, or for an App it uses.
+const token = await kortixToken()();
+const dbToken = kortixToken({ audience: 'db' });
+
+// A Convex function: the runtime verified the token; enforce the rules.
 const member = requireKortixMember(await ctx.auth.getUserIdentity(), { groups: ['Finance'] });
 
-// Any other server: verify the bearer here. No options = the KORTIX_AUTH_* env.
-const caller = await verifyKortixMemberToken(bearer);
+// A server App: verify the bearer. No options = the KORTIX_AUTH_* env Kortix injects.
+// Any other server: pass the App's `auth` values.
+const caller = await verifyKortixToken(bearer, { issuer: app.auth.issuer, audience: app.auth.audience, jwks: app.auth.jwks_uri });
 ```
+
+In React, do not call `useConvexAuth()`: it throws under a plain
+`ConvexProvider` (it needs `ConvexProviderWithAuth`, and `kortixBinding` is not
+verified with that provider). Read the signed-in member with a query:
+
+```ts
+// convex/members.ts
+export const me = query({ args: {}, handler: async (ctx) => readKortixMember(await ctx.auth.getUserIdentity()) });
+```
+
+```tsx
+const me = useQuery(api.members.me);   // undefined: loading. null: signed out. Otherwise the member.
+```
+
+`readKortixMember` returns `null` for an anonymous caller. Use
+`requireKortixMember` only where the function must throw.
 
 | Field | Value |
 |---|---|
@@ -308,23 +452,32 @@ const caller = await verifyKortixMemberToken(bearer);
 | `email`, `name`, `picture` | From the member's profile. `null` when unknown. |
 | `groups`, `groupIds` | The member's Kortix groups in this account, by name and by id. |
 | `role` | Account role: `owner`, `admin` or `member`. |
-| `accountId`, `projectId` | Where the App or backend lives. |
+| `accountId`, `projectId` | Where the App lives. |
 
 `requireKortixMember(claims, { groups, roles })` returns the member or throws
 `KortixMemberError` with `code` `unauthenticated` (nobody, or a token that
 failed a check) or `forbidden` (outside the groups or roles). Each list means
 "any one of these"; a group matches by name or id; an empty list admits nobody.
 
-`verifyKortixMemberToken` checks the ES256 signature, expiry (60 s skew),
-issuer and audience. It takes the key set as an object, JSON text, the `data:`
-URI Kortix writes into `KORTIX_AUTH_JWKS`, or an https URL. A backend's key
-set URL is `<KORTIX_AUTH_ISSUER>/jwks.json`, public and named by
-`<issuer>/.well-known/openid-configuration`. Every failure, including a missing
-key set, throws: nothing passes unchecked.
+### Sign-in tokens
 
-Backend tokens last 15 minutes and carry `sub`, `email`, `name`, `picture`,
-`groups`, `group_ids`, `role`, `account_id` and `project_id`. A member you
-remove from the project or a group loses backend access within one token
+One issuer per project signs every App's tokens: `iss` =
+`<API origin>/v1/projects/<projectId>`, `aud` = the id of the App the token is
+for, 15 minutes. Its key set is public at `<issuer>/jwks.json`, named by
+`<issuer>/.well-known/openid-configuration`. Every App carries the values that
+verify its tokens: `app.auth.issuer`, `app.auth.audience`, `app.auth.jwks_uri`.
+A token carries `sub`, `email`, `name`, `picture`, `groups`, `group_ids`,
+`role`, `account_id` and `project_id`; an agent's token carries
+`kind: 'agent'` and no groups or role.
+
+| Function | What it does |
+|---|---|
+| `kortixToken({ audience? })` | A token fetcher (the shape realtime clients take as their auth callback) for the App itself (default) or an App it uses. Reads `/_kortix/token` on the App's own origin. Cached until shortly before expiry; `{ forceRefreshToken: true }` asks again. Yields `null` without a signed-in viewer, and `null` plus one console warning for an App it does not use (`403 app_not_linked`). Never throws. |
+| `kortixBinding(slug, { origin? })` | `{ url, token }` for an App this App uses: `url` = `<origin>/_kortix/apps/<slug>` (HTTP and WebSocket, same origin, no CORS), `token` = `kortixToken({ audience: slug })`. |
+| `verifyKortixToken(bearer, { issuer?, audience?, jwks? })` | Checks the ES256 signature, expiry (60 s skew), issuer and audience. Defaults: `KORTIX_AUTH_ISSUER`, `KORTIX_AUTH_AUDIENCE`, `KORTIX_AUTH_JWKS`. Kortix injects all three into every server App's runtime (issuer: the project; audience: the App's own id; key set: a `data:` URI), so `verifyKortixToken(bearer)` works there with no options. Never set `KORTIX_AUTH_*` in a server App's `env`: the `KORTIX_` prefix is reserved and `kortix validate` rejects it. The key set is an object, JSON text, a `data:` URI, or an https URL (`auth.jwks_uri`, fetched once per process). Every failure throws `KortixMemberError`, a missing key set or a missing audience included: one project key signs every App's tokens, so `aud` is what keeps another App's token out. `audience: false` accepts a token for any App of the project. |
+| `apps.token(appId)` | A token naming the caller, from the API (`POST …/apps/:id/token`). An agent session gets one naming its agent. |
+
+A member you remove from the project or a group loses access within one token
 lifetime; the App gate refuses them on the next page load. Kortix groups need
 the Enterprise plan; roles work on every plan.
 
@@ -351,7 +504,16 @@ Every type below is exported from `@kortix/sdk`.
 
 | Type | What it holds |
 |---|---|
-| `App` | Identity, `url`, `access_mode`, `access_revision`, `desired_state`, `active_deployment_id`, `hosting_type` (of the active deployment: `static`, `sandbox`, or `null` before the first deploy), `machine`, `idle_timeout_seconds`, `always_on`, `monthly_budget_usd`, `estimated_monthly_usd` (`0` for a static App), `retained_deployments`, `backends`, `warnings` (create and update only), `last_request_at`, `viewer_can_access` |
+| `App` | Identity, `kind`, `capabilities`, `uses`, `used_by`, `auth`, `instance`, `url`, `access_mode`, `access_revision`, `desired_state`, `active_deployment_id`, `hosting_type` (of the active deployment: `static`, `sandbox`, `convex`, or `null` before the first deploy), `machine`, `idle_timeout_seconds`, `always_on`, `monthly_budget_usd` (`null` unless the App is an on-demand server App), `estimated_monthly_usd` (`0` for a static App), `retained_deployments`, `warnings` (create and update only; always `[]`), `last_request_at`, `viewer_can_access` |
+| `AppKind` · `AppCapability` | `'web' \| 'convex'` · `'deployments' \| 'rollback' \| 'preview' \| 'sleep' \| 'static' \| 'snapshots' \| 'restore' \| 'admin_credentials' \| 'dashboard' \| 'logs' \| 'member_tokens'` |
+| `AppAuth` | `issuer`, `audience` (the App id), `jwks_uri`: the public values that verify the App's sign-in tokens |
+| `AppInstance` | The machine of a `convex` App (`null` on a `web` App): `status` (`AppInstanceStatus`), `url`, `site_url`, `dashboard_url`, `error`, `operation` (`AppInstanceOperation`), `last_operation_error`, `health` (`AppInstanceHealth`), `auth_env`, `client_version`, `budget_alert` (always `null`: deprecated, the budget alerts are removed), `purge_after` |
+| `AppInstanceStatus` · `AppInstanceOperation` | `'provisioning' \| 'running' \| 'error' \| 'deleted'` · `'resizing' \| 'rotating_key' \| 'recovering' \| 'snapshotting' \| 'restoring'` |
+| `AppInstanceHealth` | `ok`, `checked_at`, `machine_state`, `failures`, `error`, `disk_used_pct`, `repair` |
+| `AppSnapshots` · `AppSnapshot` · `AppSnapshotKind` | `automatic`, `snapshots`, `snapshot_limit`, `snapshot_schedule` · `snapshot_id`, `created_at`, `size_bytes`, `kind`, `expires_at` · `'manual' \| 'automatic' \| 'resize' \| 'final'` |
+| `AppCredentials` · `AppToken` | `url`, `site_url`, `admin_key`, `env` · `token`, `expires_at` |
+| `DeleteAppOptions` · `DeleteAppResult` · `GetAppLogOptions` · `WaitForAppOptions` | `confirm` · `ok`, `images`, `retained_until`, `final_snapshot_id` · `lines` · `timeoutMs`, `intervalMs` |
+| `KortixTokenOptions` · `KortixTokenFetcher` · `KortixBinding` · `VerifyKortixTokenOptions` | The sign-in token helpers above |
 | `AppDeployment` | `version`, `status`, `source_kind`, `hosting_type` (`static`: served from storage, no runtime; `sandbox`: its own machine), `hosting_provider`, `runtime_spec`, `build_spec`, `error_code`, `attempt_count`, `created_by`, `actor_type`, `source_session_id` |
 | `AppDeploymentDetail` | One `deployment` plus its `events`: lifecycle events and the build log (`build_log` lines, and one `log_truncated` event when the build printed more than 5,000 lines) |
 | `AppAccessConfig` | `mode`, `revision`, `member_ids`, `group_ids`, `password_configured` |
@@ -360,11 +522,13 @@ Every type below is exported from `@kortix/sdk`.
 | `AppArtifact` | `kind`, `status`, `sha256`, `size_bytes`, `image_reference` |
 | `AppLogEntry` · `AppLogsResponse` | One log line, and one page plus `next_cursor` |
 
-`viewer_can_access` answers whether the caller may OPEN the App, which is not
-the same as whether they can see it listed. A project manager sees every App in
-the project so a private one stays manageable when its creator leaves. Check
-this field before asking for an access session. Treat `undefined` as unknown,
-not as denied.
+`apps.list()` and `useProjectApps` return only the Apps the caller may open
+under each App's access policy (private: the creator; restricted: the listed
+members and groups; project, password and public: the project team). A project
+manager sees every App, so a private one stays manageable when its creator
+leaves. `viewer_can_access` is therefore `true` on every listed App. A `get` of
+an App the caller cannot open answers `404`, not `403`. Treat `undefined` as
+unknown, not as denied.
 
 `AppAccessMode` is a per-resource visibility setting on top of the role model,
 not a role. `restricted` names users and groups — the same principal types the
@@ -376,11 +540,11 @@ role model uses. See
 
 ## React hooks
 
-`@kortix/sdk/react` exports four hooks for Apps.
+`@kortix/sdk/react` exports five hooks for Apps.
 
 ### useProjectApps(projectId)
 
-The project's App inventory plus its lifecycle mutations. Every mutation
+The Apps the caller may open, plus its lifecycle mutations. Every mutation
 invalidates the inventory on success.
 
 ```tsx
@@ -403,8 +567,9 @@ function AppList({ projectId }: { projectId: string }) {
 }
 ```
 
-It returns the query fields plus `create`, `update`, `start`, `stop`, and
-`remove`.
+It returns the query fields plus `create`, `update`, `start`, `stop`,
+`remove`, and `rotateCredentials`. The list refetches every 2 seconds while
+an App's `instance` provisions or runs an operation.
 
 ### useAppDeployments(projectId, appId)
 
@@ -459,11 +624,24 @@ await access.update.mutateAsync({ mode: 'project' });
 | Option | Default | Use `false` when |
 |---|---|---|
 | `policy` | `true` | The surface only previews the App. `GET …/access` is an administrative read and answers `403` for a caller without project-manager permissions. |
-| `session` | `true` | The caller may see the App but not open it. Pass `app.viewer_can_access`. |
+| `session` | `true` | The caller may not open the App. Pass `app.viewer_can_access` (always `true` for a listed App). |
 
 A grid of Apps that leaves both options at `true` fires one policy read and one
 session mint per App, and each is a `403` for a member who may not open that
 App.
+
+### useAppSnapshots(projectId, appId, enabled?)
+
+The automatic backup state and the snapshots of one App (capability
+`snapshots`), plus `create`, `delete` (`snapshotId`) and `restore`
+(`snapshotId`) mutations. Each refreshes the query; `restore` also refreshes
+the App inventory. `appSnapshotsKey(projectId, appId)` is the query key.
+
+```tsx
+const backups = useAppSnapshots(projectId, app.app_id, app.capabilities.includes('snapshots'));
+await backups.create.mutateAsync();
+await backups.restore.mutateAsync(snapshotId);
+```
 
 ## Errors
 
@@ -479,7 +657,24 @@ try {
 }
 ```
 
-Other answers you should handle: `409` for a duplicate slug, `402` with
-`app_quota_exceeded` when the account is at its App limit, and `400` with
-`app_machine_out_of_range` or `app_budget_out_of_range` for a spec outside its
-bounds.
+Other answers you should handle:
+
+- `409` for a duplicate slug, `402` with `app_quota_exceeded` when the account
+  is at its App limit, and `400` with `app_machine_out_of_range` or
+  `app_budget_out_of_range` for a spec outside its bounds, and `400
+  app_budget_not_applicable` for a budget on an always-on or `convex` App.
+- `409 app_capability_unsupported` (`capability`, `kind`) for a call the App's
+  kind does not offer.
+- A `convex` create: `409 app_kind_unavailable` where Platinum is not
+  configured, `409 app_kind_limit` (3 per project, 10 per account), `400
+  app_always_on_required` for `always_on: false`, `400 app_not_found` for an
+  unknown slug in `uses`.
+- `400 confirmation_required` for a delete of an App with `snapshots` without
+  `confirm`.
+- A `convex` App's capability calls: `409 app_not_running`,
+  `app_machine_missing` or `app_busy`; `503 app_provider_busy` (no capacity,
+  retry in minutes), `app_provider_timeout` or `app_provider_unavailable`;
+  `502 app_provider_error`. The `error` text is a short reason. It never
+  carries provider internals.
+
+`credentials()` and `token()` answer with `Cache-Control: no-store`.

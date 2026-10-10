@@ -37,7 +37,7 @@ jobs:
   # full suite (the `|| github.event_name != 'pull_request'` guard on each job).
   changes:
     name: Detect changes
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 5
     outputs:
       api: ${{ steps.filter.outputs.api }}
@@ -113,7 +113,7 @@ jobs:
     name: API typecheck
     needs: changes
     if: needs.changes.outputs.api == 'true' || github.event_name != 'pull_request'
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -147,7 +147,7 @@ jobs:
     name: Frontend build
     needs: changes
     if: needs.changes.outputs.frontend == 'true' || github.event_name != 'pull_request'
-    runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_L || 'ubuntu-24.04' }}
     timeout-minutes: 20
     steps:
       - name: Checkout
@@ -224,7 +224,7 @@ jobs:
     name: Sandbox agent build
     needs: changes
     if: needs.changes.outputs.sandbox_agent == 'true' || github.event_name != 'pull_request'
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -271,7 +271,7 @@ jobs:
     name: Sandbox image apt packages
     needs: changes
     if: needs.changes.outputs.sandbox_image == 'true' || github.event_name != 'pull_request'
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -284,7 +284,7 @@ jobs:
     name: CLI binary smoke
     needs: changes
     if: needs.changes.outputs.cli == 'true' || github.event_name != 'pull_request'
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -332,7 +332,7 @@ jobs:
     name: Self-host schema bootstrap
     needs: changes
     if: needs.changes.outputs.self_host == 'true' || github.event_name != 'pull_request'
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -358,16 +358,13 @@ jobs:
         env:
           npm_config_engine_strict: "false"
 
-      - name: Set up Docker builder (Blacksmith sticky-disk layer cache)
-        # Same cache-key as the dev/staging/preview API image builds, so this
-        # smoke build starts warm from layers those workflows already built.
-        uses: useblacksmith/setup-docker-builder@v2
-        with:
-          cache-key: apps/api/Dockerfile:linux/amd64
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Build API image
-        # --load: the Blacksmith builder is a separate buildkitd, so the result
+        # --load: the buildx builder is a separate buildkitd, so the result
         # must be exported into the local daemon for the compose stack below.
-        run: docker build --load --build-arg SERVICE=apps/api -f apps/api/Dockerfile -t kortix/kortix-api:selfhost-local .
+        # The dev image's registry cache warms it (read-only).
+        run: docker build --load --cache-from type=registry,ref=kortix/kortix-api:dev-buildcache --build-arg SERVICE=apps/api -f apps/api/Dockerfile -t kortix/kortix-api:selfhost-local .
 
       - name: Self-host schema-bootstrap check (fresh DB)
         run: bash apps/cli/scripts/self-host-e2e/schema-check.sh
@@ -380,7 +377,7 @@ jobs:
     # still cover the full signed release artifacts.
     needs: changes
     if: needs.changes.outputs.desktop == 'true' || github.event_name != 'pull_request'
-    runs-on: ${{ vars.CI_RUNNER_M_2204 || 'blacksmith-4vcpu-ubuntu-2204' }}
+    runs-on: ${{ vars.CI_RUNNER_M_2204 || 'ubuntu-22.04' }}
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -423,7 +420,7 @@ jobs:
 
   dependency-scan:
     name: Dependency + secret scan
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

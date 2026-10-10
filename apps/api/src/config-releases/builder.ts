@@ -81,7 +81,7 @@ type ConfigMode = 'follow-base';
  * commit and variant) nor of `release_id`.
  *
  * LANE D / daemon: render `reason` verbatim into the session notice
- * (`config-release/notice.ts`, composed into OpenCode `instructions` at
+ * (`config-provider/notice.ts` in kortixd, composed into OpenCode `instructions` at
  * `lifecycle.ts:399-407`). It is written as a finished sentence for the agent
  * and the user; the daemon adds no wording of its own.
  */

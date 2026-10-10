@@ -43,9 +43,8 @@ export const DENY_SUBCOMMANDS: { path: [string, string]; denial: Denial }[] = [
   { path: ['env', 'pull'], denial: { reason: 'it writes a local file', use: '`secrets ls` and `secrets set`' } },
   { path: ['env', 'push'], denial: { reason: 'it reads a local file', use: '`secrets set KEY=value`' } },
   { path: ['apps', 'deploy'], denial: { reason: 'it deploys a local directory, and this server has none', use: 'run_command in a session sandbox, where the source lives: `kortix apps deploy <path>` there' } },
-  { path: ['backends', 'deploy'], denial: { reason: 'it deploys a local directory, and this server has none', use: 'run_command in a session sandbox, where the source lives: `kortix backends deploy <name> --dir <path>` there' } },
-  { path: ['backends', 'token'], denial: { reason: 'it prints a sign-in token for a backend into this conversation', use: 'run_command in a session sandbox: `kortix backends token <name>` there' } },
-  { path: ['backends', 'env'], denial: { reason: 'it prints a backend admin key into this conversation', use: 'run_command in a session sandbox: `eval "$(kortix backends env <name>)"` keeps the key in the shell' } },
+  { path: ['apps', 'token'], denial: { reason: 'it prints a sign-in token for an App into this conversation', use: 'run_command in a session sandbox: `kortix apps token <app>` there' } },
+  { path: ['apps', 'credentials'], denial: { reason: 'it prints an App admin key into this conversation', use: 'run_command in a session sandbox: `eval "$(kortix apps credentials <app>)"` keeps the key in the shell' } },
   ...['connect', 'attach', 'shell', 'terminal', 'ssh', 'forward', 'ports'].flatMap((sub) =>
     ['sessions', 'session'].map((cmd) => ({ path: [cmd, sub] as [string, string], denial: { reason: 'it needs an interactive terminal or a long-lived connection', use: 'start_session, send_message, read_session, run_command' } })),
   ),
@@ -55,8 +54,8 @@ export const DENY_SUBCOMMANDS: { path: [string, string]; denial: Denial }[] = [
 export const CLI_ALLOWED = [
   'whoami', 'doctor', 'validate', 'schema', 'accounts', 'members', 'groups', 'tokens', 'billing', 'projects',
   'sessions', 'session', 'chat', 'files', 'cr', 'review', 'triggers', 'reminders', 'remind', 'connectors',
-  'secrets', 'providers', 'env', 'gateway', 'apps', 'backends', 'channels', 'sandboxes', 'marketplace', 'system-skills',
-  'skills', 'registry', 'agents', 'models', 'access', 'roles', 'permissions', 'perms', 'audit', 'grants', 'help', 'version',
+  'secrets', 'providers', 'env', 'gateway', 'apps', 'channels', 'sandboxes', 'marketplace', 'system-skills',
+  'skills', 'registry', 'agents', 'models', 'access', 'roles', 'permissions', 'perms', 'audit', 'grants', 'feedback', 'help', 'version',
 ];
 
 export function denial(args: string[]): Denial | null {

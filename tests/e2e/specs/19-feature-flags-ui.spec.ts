@@ -103,7 +103,7 @@ function flagRow(panel: Locator, page: Page, name: string): Locator {
 
 /** The origin line under a flag (`originLabel` in experimental-tab.tsx). */
 function originLabel(flag: FeatureFlagView): string {
-  // `apps`/`backends` while on: listed read-only, only a Kortix operator writes them.
+  // `apps` while on: listed read-only, only a Kortix operator writes it.
   if (flag.operator_only) return "Managed by Kortix";
   if (flag.overridden) return "Overridden for this project";
   return flag.enabled ? "Default on" : "Default off";

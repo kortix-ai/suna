@@ -94,8 +94,9 @@ export interface StartComputeOpts {
   spec: SandboxSpec;
   metadata?: Record<string, unknown>;
   /**
-   * `backend` is a Kortix Backend machine: its `sandbox_id` IS
-   * `project_backends.backend_id`, opened and observed by the backends probe.
+   * `backend` is the machine of an App of kind `convex`: its `sandbox_id` IS
+   * the App id (`app_convex_instances.app_id`), opened and observed by the
+   * convex health probe (apps/kinds/convex/maintenance.ts).
    *
    * `monitor` is the per-project monitor box. It has no `session_sandboxes` and
    * no `app_runtimes` row — its `sandbox_id` IS `project_monitor_boxes.box_id`,

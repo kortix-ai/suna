@@ -295,6 +295,17 @@ test('listProjectTriggerEventTypes GETs event-types with the connector query and
   expect(catalog.event_types[0]!.delivery).toBe('push');
 });
 
+test('listProjectTriggerEventTypes with { app, source } GETs event-types?app= and needs no connector', async () => {
+  nextResponse = { status: 200, body: { source: 'composio', provider: 'composio', app: 'github', event_types: [] } };
+
+  await listProjectTriggerEventTypes('P1', { app: 'git hub' });
+  expect(last().url).toContain('/projects/P1/triggers/event-types?app=git%20hub');
+  expect(last().url).not.toContain('connector');
+
+  await listProjectTriggerEventTypes('P1', { app: 'github', source: 'composio' });
+  expect(last().url).toContain('/projects/P1/triggers/event-types?app=github&source=composio');
+});
+
 test('listProjectTriggerEventApps GETs event-apps and returns connector and connection state', async () => {
   nextResponse = {
     status: 200,

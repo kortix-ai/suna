@@ -1,6 +1,8 @@
 # Kortix Apps
 
-Kortix Apps deploy static sites and HTTP applications from a project. Each App
+Kortix Apps deploy static sites, HTTP applications and Convex backends
+(kind `convex`) from a project. The `kortix-apps` system skill covers the
+`convex` kind, sign-in tokens and bindings. Each App
 has one stable URL. Each deployment is immutable. The active deployment pointer
 changes only after the new deployment is ready.
 
@@ -24,7 +26,7 @@ Auto-detection selects `dockerfile` when `Dockerfile` exists. It selects
 `--type` to override detection.
 
 Prefer a local build deployed as `static` over `bundle`. A `bundle` App runs in
-a machine, with a run mode and a budget. Its build on Kortix never sees `.env*`
+a machine and a run mode. An on-demand App also has a budget. Its build on Kortix never sees `.env*`
 files, because the CLI never uploads them, so a build-time value such as
 `VITE_*` in `.env.production` is missing from the result.
 
@@ -60,7 +62,7 @@ only changed files, and a rollback switches traffic at once.
 
 **Server.** `bundle`, `dockerfile`, and `oci_image` build an image and run it
 in one machine on a Kortix sandbox provider. Kortix chooses the provider. A
-server App has a run mode, a machine, and a monthly budget.
+server App has a run mode and a machine. An on-demand server App has a monthly budget.
 
 Deployments with the same build inputs share one image: the artifact (archive
 digest, or an OCI reference pinned with `@sha256:`), source settings,
@@ -86,26 +88,32 @@ otherwise (operator default `KORTIX_APPS_DEFAULT_ALWAYS_ON`).
 Every 5 minutes a keep-alive pass:
 
 1. Stops every running server App (either mode) whose account can no longer
-   pay for compute (`app_stopped_unfunded` event) or whose month-to-date
-   compute reached `monthly_budget_usd` (`app_stopped_budget` event).
+   pay for compute (`app_stopped_unfunded` event) or, when on demand, whose
+   month-to-date compute reached `monthly_budget_usd` (`app_stopped_budget`
+   event). A budget never stops an always-on App.
 2. Asks the provider about each always-on App. A running App is billed for
    every hour it runs, with or without traffic. A stopped one is started again
-   through the same entitlement, concurrency, and budget checks as a cold
-   start.
+   through the same entitlement and concurrency checks as a cold start.
 3. Rebuilds at most 5 always-on Apps per pass whose App supervisor image is
    out of date.
 
-**Budget.** A new always-on App with no `monthly_budget_usd` gets its
-24/7 estimate rounded up to a whole dollar (74 for the default machine: 1 vCPU,
-2 GiB, 10 GiB disk, about 73 USD a month at list compute rates). A derived
-budget follows later machine and run-mode changes; one you set never changes.
-An on-demand App gets `5`. The CLI prints `Runs 24/7 on 1 vCPU / 2 GB: about
-$73/month (budget $74)`. The App object reports `estimated_monthly_usd`: its machine
-running 24/7 for a month (`0` for a static App). When an always-on App's budget
-is below that estimate, `create`, `set`, and `deploy` warn with
-`app_budget_below_always_on` (stderr in the CLI, and a deployment event) and do
-not refuse. Set the budget with `--budget <usd>` on `deploy` or `set`, or with
-`monthly_budget_usd` in the manifest.
+**Budget and cost.** The cost shape decides:
+
+- On-demand server App: a monthly budget. Default `5`. The App stops at the cap
+  (`app_stopped_budget`).
+- Always-on server App and every `convex` App: no budget. `monthly_budget_usd`
+  is `null`. The cost is fixed: the machine 24/7, `estimated_monthly_usd` (about
+  73.48 USD for 1 vCPU / 2 GB / 10 GB; about 59.29 USD for the `convex`
+  default 1 vCPU / 1 GB / 10 GB). The CLI prints `Runs 24/7 on 1 vCPU / 2 GB:
+  about $73/month`. Tell the user this cost.
+- A budget on an always-on or `convex` App (`--budget`, `monthly_budget_usd`)
+  answers `400 app_budget_not_applicable`. The message names the monthly cost.
+  Do not retry with another value. To cap the cost, use `--on-demand` or a
+  smaller machine.
+- Static App: no machine. `always_on` is `false`, `monthly_budget_usd` is
+  `null`, `estimated_monthly_usd` is `0`.
+- Switching to on demand sets the budget you pass, or `5`. Switching to always
+  on clears the budget.
 
 A run-mode or budget change through `kortix apps set` takes effect within 5
 minutes, without a redeploy. A machine change applies to the next deployment.
@@ -169,7 +177,8 @@ apps:
       DATABASE_URL: database-primary
 ```
 
-An always-on server App sets a budget at or above its `estimated_monthly_usd`:
+An always-on server App takes no `monthly_budget_usd`. A budget answers
+`400 app_budget_not_applicable`:
 
 ```yaml
 apps:
@@ -179,7 +188,6 @@ apps:
     command: ["node", "server.js"]
     port: 3000
     always_on: true
-    monthly_budget_usd: 80
 ```
 
 Deploy one block:
@@ -197,6 +205,8 @@ the block's `resources`, `idle_timeout_seconds`, `always_on`, and
 
 | Field | Meaning |
 | --- | --- |
+| `kind` | `web` (default) or `convex`. Fixed at create. A `convex` block deploys `path` (a `convex/` directory) with the Convex CLI. |
+| `uses` | Apps of the project, by slug, this App uses: it may bind to them and mint their sign-in tokens. Replaces the App's list on every deploy. |
 | `path` | Source path relative to the manifest. Default `.`. |
 | `type` | `static`, `bundle`, `dockerfile`, or `oci_image`. |
 | `image` | Public OCI image reference. Required for `oci_image`. |
@@ -211,7 +221,7 @@ the block's `resources`, `idle_timeout_seconds`, `always_on`, and
 | `readiness_path` | Server Apps: HTTP path polled before activation. Default `/`. |
 | `always_on` | Server Apps: `true` runs 24/7, `false` runs on demand. Default `true` for a new App. |
 | `idle_timeout_seconds` | On-demand server Apps: stop after no traffic. Minimum `120`; default `300`. |
-| `monthly_budget_usd` | Server Apps: monthly compute budget. Default: the 24/7 estimate rounded up to a whole dollar when always on, `5` on demand. |
+| `monthly_budget_usd` | On-demand server Apps only: monthly compute budget, default `5`. An always-on or `convex` App has none (`400 app_budget_not_applicable`). |
 | `resources` | Server Apps: `cpu`, `memory_gb`, and `disk_gb`. Defaults `1`, `2`, and `10`. |
 | `env` | Server Apps: non-secret runtime key/value pairs. |
 | `secrets` | Server Apps: runtime environment key to project secret **identifier** mapping. |
@@ -259,6 +269,12 @@ kortix apps access storefront --mode password --password '<value>'
 | `restricted` | The selected project members and groups. |
 | `public` | Anyone. |
 | `password` | Anyone who supplies the App password. |
+
+`kortix apps ls`, the Apps list API (`GET /v1/projects/:projectId/apps`), the SDK
+and the web grid list only the Apps the caller may open. Private: the creator.
+Restricted: the listed members and groups. Other modes: the project team. A
+project manager sees every App. `viewer_can_access` is `true` on every listed
+App. A `GET` of an App the caller cannot open answers `404`.
 
 `kortix apps deploy` accepts the same `--access`, `--password`, `--members`,
 and `--groups` flags. Never store a password in `kortix.yaml` or a source file.
@@ -429,8 +445,8 @@ Common failures:
 | `digest_mismatch` / `size_mismatch` | Re-upload the archive. Do not reuse corrupted bytes. |
 | `provider_disabled` | Omit `--provider` or select an enabled provider. |
 | Readiness timeout | Make the process bind the declared port and return success at `readiness_path`. |
-| `402 app_budget_exceeded` | Increase the App budget (`kortix apps set <app> --budget <usd>`) or wait for the next monthly period. |
-| `app_budget_below_always_on` warning | The always-on App will stop at its budget. Raise the budget to at least `estimated_monthly_usd`, or switch to `--on-demand`. |
+| `402 app_budget_exceeded` | An on-demand App reached its budget. Increase it (`kortix apps set <app> --budget <usd>`) or wait for the next monthly period. |
+| `400 app_budget_not_applicable` | The App is always on or `convex`. It has no budget. Remove the budget, or switch to `--on-demand`. |
 | `402 app_account_unfunded` | The account cannot pay for compute. The App starts again once it can. |
 | `429 app_concurrency_limit` | The account runs its maximum number of App runtimes. Stop another App. |
 | `409 static_app_no_runtime` | A static App has nothing to start or stop. Delete the App to take it offline. |

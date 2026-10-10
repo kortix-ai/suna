@@ -1388,8 +1388,10 @@ flow(
     });
 
     await ctx.step('a manual fire that fails is recorded on the trigger: last_status failed, with the error', async () => {
+      // KRTX-1505: the account has no usable model here, so the fire is gated
+      // with 402 no_usable_model — recorded like any other failed fire.
       const fired = await owner.post('/v1/projects/:projectId/triggers/:slug/fire', {}, { params: { ...params, slug: 'digest' } });
-      fired.status(500);
+      fired.status(402);
       const error = fired.json<{ error?: string }>()?.error ?? '';
       const after = await digest();
       if (after?.last_status !== 'failed') throw new Error(`last_status is ${String(after?.last_status)}`);
@@ -1422,6 +1424,14 @@ flow(
     const p = await ctx.fixtures.project({ managedGit: true });
     const owner = ctx.client.as(ctx.P.OWNER);
     const params = { projectId: p.id };
+    // A BYOK provider key gives the account a usable model, so the fires
+    // reach the backpressure path this flow exists to prove (KRTX-1505:
+    // without it the no-usable-model gate 402s before queuing).
+    (await owner.post(
+      '/v1/projects/:projectId/secrets',
+      { name: 'ANTHROPIC_API_KEY', value: 'sk-ant-ke2e-backpressure', strategy: 'broker', consumer: 'llm_gateway' },
+      { params },
+    )).status(200);
     const secret = `ke2e-hook-${crypto.randomUUID()}`;
     (await owner.post(
       '/v1/projects/:projectId/triggers',
@@ -1714,6 +1724,20 @@ flow(
   },
 );
 
+/** App event triggers sit behind the per-project `event_triggers` flag (off by default): turn it on. */
+async function enableEventTriggers(
+  ctx: { step: (name: string, fn: () => Promise<void>) => Promise<void> },
+  owner: { patch: (path: string, body: unknown, opts: { params: Record<string, string> }) => Promise<any> },
+  projectId: string,
+): Promise<void> {
+  await ctx.step('turn the event_triggers flag on → 200 and it reads enabled', async () => {
+    const r = await owner.patch('/v1/projects/:projectId/features', { feature: 'event_triggers', enabled: true }, { params: { projectId } });
+    r.status(200);
+    const row = r.json().experimental_features.find((f: { key: string }) => f.key === 'event_triggers') as { enabled: boolean } | undefined;
+    if (!row?.enabled) throw new Error(`event_triggers did not turn on: ${JSON.stringify(row)}`);
+  });
+}
+
 type EventTriggerRow = TriggerRow & {
   type: string;
   event: { connector: string; type: string; config: Record<string, unknown>; status: string; error: string | null } | null;
@@ -1734,6 +1758,7 @@ flow(
     const p = await ctx.fixtures.project({ managedGit: true });
     const owner = ctx.client.as(ctx.P.OWNER);
     const params = { projectId: p.id };
+    await enableEventTriggers(ctx, owner, p.id);
     const eventOf = (body: { triggers: EventTriggerRow[] }) => {
       const row = body.triggers.find((t) => t.slug === 'new-mail');
       if (!row) throw new Error(`trigger "new-mail" missing; got ${JSON.stringify(body.triggers.map((t) => t.slug))}`);
@@ -1789,6 +1814,7 @@ flow(
     const p = await ctx.fixtures.project();
     const owner = ctx.client.as(ctx.P.OWNER).withTransientGatewayRetries();
     const params = { projectId: p.id };
+    await enableEventTriggers(ctx, owner, p.id);
     const base = { name: 'x', prompt_template: 'x' };
     const cases: Array<[string, Record<string, unknown>]> = [
       ['event without connector', { ...base, type: 'event', event: 'EXAMPLE_EVENT' }],
@@ -1826,6 +1852,7 @@ flow(
   async (ctx) => {
     const p = await ctx.fixtures.project();
     const params = { projectId: p.id };
+    await enableEventTriggers(ctx, ctx.client.as(ctx.P.OWNER), p.id);
     await ctx.step('ANON → 401', async () => {
       (await ctx.client.as(ctx.P.ANON).get('/v1/projects/:projectId/triggers/event-types', { params, query: { connector: 'inbox' } })).status(401);
     });
@@ -1844,6 +1871,7 @@ flow(
   async (ctx) => {
     const p = await ctx.fixtures.project();
     const params = { projectId: p.id };
+    await enableEventTriggers(ctx, ctx.client.as(ctx.P.OWNER), p.id);
     await ctx.step('ANON → 401', async () => {
       (await ctx.client.as(ctx.P.ANON).get('/v1/projects/:projectId/triggers/event-apps', { params })).status(401);
     });
@@ -1869,6 +1897,7 @@ flow(
     const p = await ctx.fixtures.project({ managedGit: true });
     const owner = ctx.client.as(ctx.P.OWNER);
     const params = { projectId: p.id };
+    await enableEventTriggers(ctx, owner, p.id);
     type AccountRow = { slug: string; event: { connector: string; account: string | null; connected_as: string | null } | null };
     const eventOf = (body: { triggers: AccountRow[] }) => {
       const row = body.triggers.find((t) => t.slug === 'acct-mail');
@@ -1929,6 +1958,7 @@ flow(
     const p = await ctx.fixtures.project({ managedGit: true });
     const owner = ctx.client.as(ctx.P.OWNER);
     const params = { projectId: p.id };
+    await enableEventTriggers(ctx, owner, p.id);
     type SourceRow = { slug: string; event: { source?: string | null } | null };
     const sourceOf = (body: { triggers: SourceRow[] }) => {
       const row = body.triggers.find((t) => t.slug === 'src-mail');
@@ -1970,6 +2000,94 @@ flow(
         { params },
       );
       r.status(400);
+    });
+  },
+);
+
+flow(
+  'TRG-28',
+  { domain: 'triggers', routes: ['GET /v1/projects/:projectId/triggers/event-types'] },
+  async (ctx) => {
+    const p = await ctx.fixtures.project();
+    const params = { projectId: p.id };
+    const owner = ctx.client.as(ctx.P.OWNER);
+    await enableEventTriggers(ctx, owner, p.id);
+    const url = '/v1/projects/:projectId/triggers/event-types';
+    await ctx.step('?app= with no connector → 200 (provider configured) or 409 event_source_unavailable (local profile)', async () => {
+      const r = await owner.get(url, { params, query: { app: 'github' } });
+      r.status([200, 409, 404, 502]);
+      if (r.json<{ error?: string }>().error === 'connector is required') throw new Error('app must not need a connector');
+    });
+    await ctx.step('unknown source → 400 naming the sources', async () => {
+      const r = await owner.get(url, { params, query: { app: 'github', source: 'nope' } });
+      r.status(400);
+      if (!JSON.stringify(r.json()).includes('Unknown event source \\"nope\\". Sources: composio.')) throw new Error(`error text missing: ${JSON.stringify(r.json())}`);
+    });
+    await ctx.step('connector and app together → 400', async () => {
+      (await owner.get(url, { params, query: { connector: 'inbox', app: 'github' } })).status(400);
+    });
+  },
+);
+
+flow(
+  'TRG-29',
+  {
+    domain: 'triggers',
+    routes: [
+      'GET /v1/projects/:projectId/triggers/event-types',
+      'GET /v1/projects/:projectId/triggers/event-apps',
+      'POST /v1/projects/:projectId/triggers',
+      'GET /v1/projects/:projectId/triggers',
+      'PATCH /v1/projects/:projectId/triggers/:slug',
+      'DELETE /v1/projects/:projectId/triggers/:slug',
+      'PATCH /v1/projects/:projectId/features',
+    ],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project({ managedGit: true });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { projectId: p.id };
+    const types = '/v1/projects/:projectId/triggers/event-types';
+    const apps = '/v1/projects/:projectId/triggers/event-apps';
+    const eventBody = { name: 'Gated mail', type: 'event', connector: 'inbox', event: 'EXAMPLE_NEW_MESSAGE', prompt_template: 'x' };
+    const cronBody = { name: 'Gated cron', type: 'cron', cron: '0 0 3 * * *', timezone: 'UTC', prompt_template: 'x' };
+    const denied = (r: { status: (s: number) => { body: () => { has: (path: string, value: unknown) => unknown } } }) => {
+      r.status(403).body().has('$.code', 'feature_disabled');
+    };
+    const setFlag = async (enabled: boolean) => {
+      (await owner.patch('/v1/projects/:projectId/features', { feature: 'event_triggers', enabled }, { params })).status(200);
+    };
+
+    await ctx.step('flag off (the default): event-types by connector and by app, and event-apps → 403 feature_disabled', async () => {
+      denied(await owner.get(types, { params, query: { connector: 'inbox' } }));
+      denied(await owner.get(types, { params, query: { app: 'github' } }));
+      const r = await owner.get(apps, { params });
+      denied(r);
+      r.body().has('$.feature', 'event_triggers');
+    });
+    await ctx.step('flag off: POST of an event trigger → 403 and nothing is committed; a cron POST is still 201', async () => {
+      denied(await owner.post('/v1/projects/:projectId/triggers', eventBody, { params }));
+      (await owner.post('/v1/projects/:projectId/triggers', cronBody, { params })).status(201);
+      const listed = (await owner.get('/v1/projects/:projectId/triggers', { params })).json<{ triggers: EventTriggerRow[] }>();
+      if (listed.triggers.some((t) => t.type === 'event')) throw new Error('a refused event trigger was committed');
+      if (!listed.triggers.some((t) => t.slug === 'gated-cron')) throw new Error('the cron trigger is missing');
+    });
+    await enableEventTriggers(ctx, owner, p.id);
+    await ctx.step('the flag is on → the same calls pass the gate (404 unknown connector, 200 apps, 201 create)', async () => {
+      (await owner.get(types, { params, query: { connector: 'inbox' } })).status(404);
+      (await owner.get(apps, { params })).status(200);
+      (await owner.post('/v1/projects/:projectId/triggers', eventBody, { params })).status(201);
+    });
+    await ctx.step('flag off again: the declared event trigger reads status error with the off text; PATCH of it → 403; cron PATCH → 200; DELETE → 200', async () => {
+      await setFlag(false);
+      const listed = (await owner.get('/v1/projects/:projectId/triggers', { params })).json<{ triggers: EventTriggerRow[] }>();
+      const row = listed.triggers.find((t) => t.slug === 'gated-mail');
+      if (row?.event?.status !== 'error' || !/App event triggers are off for this project/.test(row.event.error ?? '')) {
+        throw new Error(`expected status error with the off text — got ${JSON.stringify(row?.event)}`);
+      }
+      denied(await owner.patch('/v1/projects/:projectId/triggers/:slug', { name: 'Renamed' }, { params: { ...params, slug: 'gated-mail' } }));
+      (await owner.patch('/v1/projects/:projectId/triggers/:slug', { name: 'Gated cron 2' }, { params: { ...params, slug: 'gated-cron' } })).status(200);
+      (await owner.del('/v1/projects/:projectId/triggers/:slug', { params: { ...params, slug: 'gated-mail' } })).status(200);
     });
   },
 );

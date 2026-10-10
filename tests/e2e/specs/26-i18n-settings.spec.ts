@@ -648,6 +648,10 @@ test.describe("26 — Settings localization", () => {
             await notificationSwitch.click();
           }
           await expect(notificationSwitch).toBeChecked();
+          // This project keeps the `notification_center` flag off (the
+          // default, KRTX-1742), so the pane is the one from before the
+          // notification center: the four per-browser kind switches
+          // (`settings.sessions.types`). Spec 48 covers the flag-on pane.
           for (const notificationText of [
             copy.settings.sessions.notificationTypes,
             copy.settings.sessions.behavior,
@@ -983,8 +987,12 @@ test.describe('public capability helpers and presentation decks', () => {
       for (const slug of ['security', 'platform', 'sales']) {
         await page.goto(`/presentations/${slug}`);
         await expect(page.getByRole('button', { name: 'Previous', exact: true })).toBeDisabled();
-        await page.keyboard.press('ArrowRight');
-        await expect(page.getByRole('button', { name: 'Previous', exact: true })).toBeEnabled();
+        // The deck's keydown listener attaches on hydration, which can land
+        // after `load`; a key pressed before it is lost. Press until it lands.
+        await expect(async () => {
+          await page.keyboard.press('ArrowRight');
+          await expect(page.getByRole('button', { name: 'Previous', exact: true })).toBeEnabled({ timeout: 1_000 });
+        }).toPass();
         await page.keyboard.press('Home');
         await expect(page.getByRole('button', { name: 'Previous', exact: true })).toBeDisabled();
         await page.keyboard.press('End');

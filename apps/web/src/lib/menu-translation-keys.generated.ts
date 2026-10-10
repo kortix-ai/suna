@@ -17,7 +17,6 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Agent Browser': 'text75417b282302',
   Agents: 'text279b44d2ab4b',
   Apps: 'text89dd748442c1',
-  Backends: 'text26cbb889e198',
   'Ask Agent: Sync Branch & Reload': 'textc2d5fe56d856',
   Changelog: 'textead07c84baac',
   Channels: 'text4c8906cf76f5',
@@ -56,6 +55,7 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Settings · General': 'textaf7dbdd174f2',
   'Settings · Sandbox templates': 'text56c63e70bc99',
   'Settings · Upgrades': 'text8938f078dd1e',
+  'Shared files': 'text5d1ac5e7432c',
   Skills: 'text66d0f523a379',
   Support: 'textbe91940b79f4',
   'Switch to Advanced View': 'text5f7c8d97889a',
@@ -73,7 +73,6 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
     'textcb97e7f77a44',
   'agents subagents ai': 'text2cda01a9e9be',
   'apps deploy deployments serverless docker static hosting urls': 'textd49230a2e007',
-  'backends convex database realtime server functions storage schedules': 'textbf8026b9f2ff',
   'audit governed actions approvals trail session': 'textdc4cbd66fe2d',
   'audit log logs events history trail compliance': 'text67f332ec4359',
   'billing payment credit card subscription manage wallet tier plan limits overview spend':
@@ -92,6 +91,7 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'desktop selkies novnc full screen xfce sandbox vnc remote': 'text3ae19e194379',
   'easy advanced simple panel session detail mode view': 'text726d0a8ba362',
   'files explorer workspace session': 'text9a1647988c99',
+  'files folders drive shared company my folder access share': 'text991f9b694b39',
   'files repository drive browser explorer': 'text6fdcee27400f',
   'general organization org company name sign in rules teams manage security mfa danger zone rename delete':
     'text2f13c3b24e4f',

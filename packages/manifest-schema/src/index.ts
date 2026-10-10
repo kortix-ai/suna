@@ -955,10 +955,16 @@ const APP_TYPES = new Set(['static', 'bundle', 'dockerfile', 'oci_image']);
 const APP_KEYS = new Set([
   'path', 'type', 'image', 'dockerfile', 'command', 'port', 'root', 'output_dir',
   'install_command', 'build_command', 'spa', 'readiness_path', 'idle_timeout_seconds',
-  'always_on', 'monthly_budget_usd', 'backends', 'resources', 'env', 'secrets',
+  'always_on', 'monthly_budget_usd', 'kind', 'uses', 'resources', 'env', 'secrets',
 ]);
-/** A Kortix Backend name, as `kortix backends create` accepts it. */
-const BACKEND_NAME = /^[a-z][a-z0-9-]{0,62}$/;
+const APP_KINDS = new Set(['web', 'convex']);
+/** An App slug as the Apps API accepts it (`uses` entries name live Apps). */
+const APP_SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+/** Fields a `convex` App ignores: it deploys with its own client CLI and always runs. */
+const CONVEX_APP_IGNORED = [
+  'type', 'image', 'dockerfile', 'command', 'port', 'root', 'output_dir', 'install_command',
+  'build_command', 'spa', 'readiness_path', 'idle_timeout_seconds', 'env', 'secrets',
+] as const;
 
 function validateAppStringMap(
   node: unknown,
@@ -1007,8 +1013,36 @@ function validateAppsV2(node: unknown, path: string, issues: ManifestIssue[]): v
       continue;
     }
     for (const key of Object.keys(value)) {
-      if (!APP_KEYS.has(key)) {
+      if (key === 'backends') {
+        issues.push({ path: `${where}.backends`, message: 'is retired: list the Apps this App uses in `uses`.', severity: 'error' });
+      } else if (!APP_KEYS.has(key)) {
         issues.push({ path: `${where}.${key}`, message: 'is not a supported App field.', severity: 'error' });
+      }
+    }
+    if (value.kind !== undefined && (typeof value.kind !== 'string' || !APP_KINDS.has(value.kind))) {
+      issues.push({ path: `${where}.kind`, message: 'must be web or convex.', severity: 'error' });
+    }
+    if (value.kind === 'convex') {
+      for (const key of CONVEX_APP_IGNORED) {
+        if (value[key] !== undefined) {
+          issues.push({ path: `${where}.${key}`, message: 'does not apply to a convex App.', severity: 'error' });
+        }
+      }
+      if (value.always_on === false) {
+        issues.push({ path: `${where}.always_on`, message: 'must be true: a convex App always runs.', severity: 'error' });
+      }
+    }
+    if (value.uses !== undefined) {
+      if (!Array.isArray(value.uses)) {
+        issues.push({ path: `${where}.uses`, message: 'must be a list of App slugs.', severity: 'error' });
+      } else {
+        value.uses.forEach((used: unknown, index: number) => {
+          if (typeof used !== 'string' || !APP_SLUG_RE.test(used)) {
+            issues.push({ path: `${where}.uses[${index}]`, message: 'must be an App slug: lowercase letters, numbers and single hyphens.', severity: 'error' });
+          } else if (used === slug) {
+            issues.push({ path: `${where}.uses[${index}]`, message: 'an App cannot use itself.', severity: 'error' });
+          }
+        });
       }
     }
     const type = value.type;
@@ -1059,21 +1093,6 @@ function validateAppsV2(node: unknown, path: string, issues: ManifestIssue[]): v
     if (value.monthly_budget_usd !== undefined &&
         (typeof value.monthly_budget_usd !== 'number' || value.monthly_budget_usd < 0)) {
       issues.push({ path: `${where}.monthly_budget_usd`, message: 'must be a non-negative number.', severity: 'error' });
-    }
-    if (value.backends !== undefined) {
-      if (!Array.isArray(value.backends)) {
-        issues.push({ path: `${where}.backends`, message: 'must be a list of backend names.', severity: 'error' });
-      } else {
-        value.backends.forEach((name: unknown, index: number) => {
-          if (typeof name !== 'string' || !BACKEND_NAME.test(name)) {
-            issues.push({
-              path: `${where}.backends[${index}]`,
-              message: 'must be a backend name: lowercase letters, digits and dashes, starting with a letter.',
-              severity: 'error',
-            });
-          }
-        });
-      }
     }
     if (value.resources !== undefined) {
       if (!isTable(value.resources)) {

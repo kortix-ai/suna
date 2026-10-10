@@ -1,7 +1,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
+import { Field, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import { Modal, ModalBody, ModalContent, ModalDescription, ModalFooter, ModalHeader, ModalTitle } from '@/components/ui/modal';
@@ -17,7 +17,10 @@ import { useState } from 'react';
 /** The API ceiling for `monthly_budget_usd` (apps/api/src/apps/routes.ts). */
 const MAX_BUDGET_USD = 100_000;
 
-/** Edit a server App's monthly compute budget. */
+/**
+ * Edit an on-demand server App's monthly compute budget: it stops at the
+ * budget. Always-on and Convex Apps have a fixed cost and no budget.
+ */
 export function AppBudgetModal({
   projectId,
   app,
@@ -31,10 +34,9 @@ export function AppBudgetModal({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const apps = useProjectApps(projectId);
-  const [value, setValue] = useState(String(app.monthly_budget_usd));
+  const [value, setValue] = useState(String(app.monthly_budget_usd ?? ''));
   const budget = Number(value);
   const valid = value.trim() !== '' && Number.isFinite(budget) && budget >= 0 && budget <= MAX_BUDGET_USD;
-  const estimate = app.estimated_monthly_usd;
 
   const save = async () => {
     try {
@@ -51,7 +53,9 @@ export function AppBudgetModal({
       <ModalContent className="lg:max-w-md">
         <ModalHeader>
           <ModalTitle>{tI18nComplete.raw('textc247593b2c0f')}</ModalTitle>
-          <ModalDescription>{tI18nComplete.raw('texted76c66b7a8d')}</ModalDescription>
+          <ModalDescription>
+            {tI18nComplete.raw('texted76c66b7a8d')}
+          </ModalDescription>
         </ModalHeader>
         <ModalBody>
           <Field>
@@ -69,11 +73,6 @@ export function AppBudgetModal({
                 if (event.key === 'Enter' && valid) void save();
               }}
             />
-            {estimate !== undefined && estimate > 0 ? (
-              <FieldDescription>
-                {tI18nComplete('text51f92f318c20', { value0: estimate.toFixed(2) })}
-              </FieldDescription>
-            ) : null}
           </Field>
         </ModalBody>
         <ModalFooter className="sm:justify-between">

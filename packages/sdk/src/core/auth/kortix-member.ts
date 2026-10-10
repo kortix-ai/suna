@@ -8,26 +8,28 @@
  *     `fetchKortixAppViewer`).
  *   - An App's server reads the gate's signed header (`createKortixAppGuard`
  *     in `@kortix/sdk/server`).
- *   - A backend, or any server holding a Kortix key set, receives a short-lived
- *     ES256 token that Kortix signed for that one audience.
+ *   - An App's own server, an App it uses, or any server holding the project's
+ *     key set receives a short-lived ES256 token that Kortix signed for one
+ *     App (`aud` = the App id).
  *
  * `readKortixMember` turns any of those shapes into one `KortixMember`, and
  * `requireKortixMember` enforces who may proceed. Group-based access uses the
  * same Kortix groups that decide who may open the App, so a person added to a
- * group in Kortix gains the matching rights in every App and backend, with no
- * user table of the App's own.
+ * group in Kortix gains the matching rights in every App, with no user table
+ * of the App's own.
  *
  * Where the claims come from is the caller's choice:
  *
  * ```ts
- * // A runtime that verified the token already (a database's server
- * // functions, JWT middleware): pass what it verified.
+ * // A runtime that verified the token already (an App's server functions,
+ * // JWT middleware): pass what it verified.
  * const me = requireKortixMember(await ctx.auth.getUserIdentity(), { groups: ['Finance'] });
  *
  * // A plain server: verify the bearer here. With no options, the key set,
- * // issuer and audience come from KORTIX_AUTH_JWKS / _ISSUER / _AUDIENCE,
- * // which Kortix sets on every backend.
- * const me = await verifyKortixMemberToken(bearer);
+ * // issuer and audience come from KORTIX_AUTH_JWKS / _ISSUER / _AUDIENCE.
+ * // Kortix sets them on an App kind that runs its own machine; elsewhere copy
+ * // them from the App's `auth` (`jwks_uri` is a valid KORTIX_AUTH_JWKS).
+ * const me = await verifyKortixToken(bearer);
  * ```
  *
  * No dependency and no framework: WebCrypto only, so it runs in a browser,
@@ -100,7 +102,7 @@ function list(value: unknown): string[] {
  * `pictureUrl`), the App gate's answer (`user_id`), and a server-side viewer
  * from `readAppViewer` or `createKortixAppGuard` (`userId`). Never verifies a
  * signature: pass only claims something already verified, or use
- * `verifyKortixMemberToken`.
+ * `verifyKortixToken`.
  */
 export function readKortixMember(claims: unknown): KortixMember | null {
   if (!claims || typeof claims !== 'object') return null;
@@ -142,13 +144,18 @@ export function requireKortixMember(claims: unknown, requirement: KortixMemberRe
 /** A JSON Web Key Set, as an object, JSON text, a `data:` URI or an https URL. */
 export type KortixMemberKeySet = { keys: JsonWebKey[] } | string;
 
-export interface VerifyKortixMemberTokenOptions {
+export interface VerifyKortixTokenOptions {
   /** Default: `KORTIX_AUTH_JWKS`. */
   jwks?: KortixMemberKeySet;
   /** Default: `KORTIX_AUTH_ISSUER`. */
   issuer?: string;
-  /** Default: `KORTIX_AUTH_AUDIENCE`. */
-  audience?: string;
+  /**
+   * The App id the token must name (`aud`). Default: `KORTIX_AUTH_AUDIENCE`.
+   * Required: one project key signs the tokens of every App in the project,
+   * so `aud` is what keeps a token for another App out. With neither set the
+   * token is refused. `false` accepts any App of the key set's project.
+   */
+  audience?: string | false;
   fetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 }
 
@@ -167,7 +174,7 @@ function base64UrlJson(value: string): Claims {
 
 async function loadKeySet(
   source: KortixMemberKeySet,
-  fetchImpl: NonNullable<VerifyKortixMemberTokenOptions['fetch']>,
+  fetchImpl: NonNullable<VerifyKortixTokenOptions['fetch']>,
 ): Promise<{ keys: JsonWebKey[] }> {
   if (typeof source !== 'string') return source;
   if (source.startsWith('data:')) {
@@ -198,12 +205,12 @@ async function loadKeySet(
 /**
  * Verifies a Kortix-signed member token (ES256) and returns the member. Checks
  * the signature, `exp` (60 s skew), the issuer and the audience. Every failure,
- * including a missing key set, is a `KortixMemberError` with code
- * `unauthenticated`: nothing is ever accepted unchecked.
+ * including a missing key set or a missing audience, is a `KortixMemberError`
+ * with code `unauthenticated`: nothing is ever accepted unchecked.
  */
-export async function verifyKortixMemberToken(
+export async function verifyKortixToken(
   token: string,
-  options: VerifyKortixMemberTokenOptions = {},
+  options: VerifyKortixTokenOptions = {},
 ): Promise<KortixMember> {
   const refuse = (why: string): never => {
     throw new KortixMemberError('unauthenticated', `Kortix sign-in token refused: ${why}.`);
@@ -212,6 +219,9 @@ export async function verifyKortixMemberToken(
   const issuer = options.issuer ?? safeEnv('KORTIX_AUTH_ISSUER');
   const audience = options.audience ?? safeEnv('KORTIX_AUTH_AUDIENCE');
   if (!jwks) return refuse('no key set configured (KORTIX_AUTH_JWKS)');
+  if (audience !== false && !audience) {
+    return refuse('no audience configured (KORTIX_AUTH_AUDIENCE, or `audience: false` to accept any App)');
+  }
 
   const parts = typeof token === 'string' ? token.split('.') : [];
   if (parts.length !== 3) return refuse('malformed');

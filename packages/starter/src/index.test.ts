@@ -293,11 +293,10 @@ describe('KORTIX_MANAGED_SKILL_NAMES', () => {
     expect([...KORTIX_MANAGED_SKILL_NAMES]).toEqual([
       'kortix-cli',
       'kortix-apps',
-      'kortix-backends',
       'kortix-computer',
       'kortix-connectors',
+      'kortix-drives',
       'kortix-harness-refinement',
-      'kortix-internal-apps',
       'kortix-marketplace',
       'kortix-memory',
       'kortix-onboarding',

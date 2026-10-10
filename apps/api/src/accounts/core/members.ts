@@ -25,6 +25,7 @@ import {
   type Writer,
 } from '../../iam/assignments';
 import { revokeAllAccountTokensForUser } from '../../repositories/account-tokens';
+import { deleteMemberNotificationData } from '../../notifications/cleanup';
 import { db } from '../../shared/db';
 import { registerInviteRoutes, registerMemberInviteRoute } from './invites';
 import { grantAccountRole } from './member-role-write';
@@ -368,6 +369,8 @@ export function registerMemberRoutes(): void {
       await deleteProjectScopeAssignments(accountId, targetUserId);
       await deleteAccountScopeAssignments(accountId, targetUserId);
       await deleteAccountGroupMemberships(accountId, targetUserId);
+      // KRTX-1742: their inbox and watcher rows here would keep naming sessions.
+      await deleteMemberNotificationData(accountId, targetUserId);
       await db
         .delete(accountMemberships)
         .where(
@@ -409,6 +412,10 @@ export function registerMemberRoutes(): void {
         // No seat reconciler exists: a failure here leaves the Stripe seat count
         // (and the member's YOLO token) wrong until the next member change.
         logger.error('[billing] seat sync FAILED after member removed', { accountId: accountId, userId: targetUserId, error: err instanceof Error ? err.message : String(err) }),
+      );
+      // Their personal drives in this account pass to an owner.
+      await import('../../drives/service').then(({ releaseMemberDrives }) =>
+        releaseMemberDrives(accountId, targetUserId),
       );
 
       return c.json({ ok: true });
@@ -499,6 +506,11 @@ export function registerMemberRoutes(): void {
         await deleteProjectScopeAssignments(accountId, targetUserId);
       }
       invalidateIamCacheForUser(targetUserId);
+      if (newRole === 'member') {
+        // An owner or admin reached every company drive; as a member they reach
+        // only what is granted, and drives they attached by role leave now.
+        await import('../../drives/service').then(({ enforceDriveMounts }) => enforceDriveMounts({ accountId }));
+      }
 
       return c.json({
         user_id: targetUserId,
@@ -548,6 +560,7 @@ export function registerMemberRoutes(): void {
       await deleteProjectScopeAssignments(accountId, userId);
       await deleteAccountScopeAssignments(accountId, userId);
       await deleteAccountGroupMemberships(accountId, userId);
+      await deleteMemberNotificationData(accountId, userId);
       await db
         .delete(accountMemberships)
         .where(
@@ -569,6 +582,10 @@ export function registerMemberRoutes(): void {
         // No seat reconciler exists: a failure here leaves the Stripe seat count
         // (and the member's YOLO token) wrong until the next member change.
         logger.error('[billing] seat sync FAILED after member removed', { accountId: accountId, userId: userId, error: err instanceof Error ? err.message : String(err) }),
+      );
+      // Their personal drives in this account pass to an owner.
+      await import('../../drives/service').then(({ releaseMemberDrives }) =>
+        releaseMemberDrives(accountId, userId),
       );
 
       return c.json({ ok: true });

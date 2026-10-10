@@ -81,6 +81,9 @@ the run stays blocked. Use `answerQuestion`, `rejectQuestion`, or
 | `enabled` | `true` | Set `false` to delay the hook, for example until a billing check passes. |
 | `chatEngine` | `true` | Set `false` if your app mounts its own chat surface for this session, to avoid syncing messages twice. |
 | `initialRuntimeSessionId` | `null` | A runtime session pin your server already holds for this session. The transcript renders from it while `/start` runs; the `/start` answer stays authoritative. `initialOpenCodeSessionId` is its deprecated name. |
+| `browserPresence` | `false` | Hold this tab's presence lease while a signed-in person uses the page (input in the last 10 minutes). The lease keeps the session's computer awake. |
+| `presenceAlerts` | `false` | This tab shows its own notifications. Sent on the presence lease: the server skips the phone and Web Push only while an alerting tab is in use. A change is sent at once. Pass `true` only when the project's `notification_center` flag is on; the server ignores it otherwise. Needs `browserPresence`. |
+| `presencePageExit` | `false` | End the presence lease when the page closes or enters the back/forward cache, so a turn that ends right after the tab closes still notifies. On, `pagehide` reports absent, and every absent report is sent with `keepalive`, so it outlives the page. Off: no `pagehide` report and no `keepalive`. A closing tab still turns hidden and reports absent, but the browser can cancel that request as the page unloads; the lease then lives to its 90 s expiry. Pass the project's `notification_center` flag. A change applies at once, with no new presence report. Needs `browserPresence`. |
 | `repositoryMode` | — | Telemetry only. A session created before a repository replacement starts and runs the project's current config without it. Only its `/workspace` clone still comes from the old repository, so a push from it needs a rebase first. |
 
 Sending is optimistic. `send` shows your message right away, then stream
@@ -111,7 +114,19 @@ need a running session. Each mirrors a method on the
 | `useProjectTriggerEventTypes(projectId, connector)` | The app events a connector can trigger on. Idle until `connector` is set. |
 | `useChangeRequests(projectId, status?)` | Change requests: list, open, merge, close, request changes. |
 | `useRuntimeSupports(capability)` | Whether the open session's runtime serves a feature (`session.rewind`, `session.compact`, …), from the `/kortix/health` answers the runtime-reconnect poller reads. `true` until the first answer. See [What the runtime supports](/docs/sdk/sessions#what-the-runtime-supports). |
+| `useNotificationInbox({ userId, limit?, enabled? })` | The caller's newest inbox page (`limit` default 20), `unreadCount`, and `markRead(ids)`, `markAllRead()`, `markSessionRead(sessionId)`. Polls every 60 s while the page is visible and refetches on focus. A write changes the cache at once, restores it on failure, then refetches every inbox entry. No request without `userId`. |
+| `useNotificationPreferences({ userId, enabled? })` | The caller's push and email choice per kind, `email_available`, and `update(patch)` (optimistic). |
+| `useSessionWatch({ userId, projectId, sessionId, enabled? })` | `{ watching }` for one session, and `setWatching(watching)` (optimistic) to mute or watch it. |
 | `resetRuntimeQueries(queryClient)` | Not a hook. Drops every cached runtime query (sessions, messages, agents, commands, diffs). Call it after the session's runtime is replaced by a restart or a config reload, so the next read comes from the new runtime. |
+
+The three notification hooks key their cache by `userId` (`qk.notifications`),
+so a user switch in the same tab never shows the previous user's inbox. Pass
+the signed-in user's id.
+
+Notifications are behind the per-project `notification_center`
+[feature flag](/docs/feature-flags), off by default. Gate each hook with
+`enabled: useFeatureFlag(projectId, 'notification_center').enabled`, so a
+project with the flag off sends no notification request.
 
 ## Connector setup links
 

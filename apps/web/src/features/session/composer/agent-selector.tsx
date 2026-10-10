@@ -32,6 +32,22 @@ import { composerSelectableAgents } from './composer-agent-access';
  */
 const SEARCH_MIN_AGENTS = 7;
 
+/**
+ * The agent a selector shows: the selected one, even before the roster has it,
+ * else the first selectable agent. One rule for the trigger and the chat composer.
+ */
+function resolveDisplayedAgentName(primaryAgents: Agent[], selectedAgent: string | null) {
+  const current = primaryAgents.find((a) => a.name === selectedAgent);
+  return current?.name ?? selectedAgent ?? primaryAgents[0]?.name;
+}
+
+/** The label `AgentSelector` shows for a selection (null = nothing picked). Other surfaces that name the agent reuse it. */
+export function agentDisplayLabel(agents: Agent[], selectedAgent: string | null): string {
+  const name = resolveDisplayedAgentName(composerSelectableAgents(agents), selectedAgent);
+  if (!name) return 'Agent';
+  return isMetaAgentName(name) ? META_AGENT_DISPLAY_NAME : capitalizeWords(name);
+}
+
 export function AgentSelector({
   agents,
   selectedAgent,
@@ -99,13 +115,8 @@ export function AgentSelector({
   // happens to be first in someone else's list. The `primaryAgents[0]`
   // fallback stays only for a truly unresolved selection (no name at all),
   // matching the resolver's own first-accessible pre-selection.
-  const currentAgent = primaryAgents.find((a) => a.name === selectedAgent);
-  const displayedName = currentAgent?.name ?? selectedAgent ?? primaryAgents[0]?.name;
-  const displayName = displayedName
-    ? isMetaAgentName(displayedName)
-      ? META_AGENT_DISPLAY_NAME
-      : capitalizeWords(displayedName)
-    : 'Agent';
+  const displayedName = resolveDisplayedAgentName(primaryAgents, selectedAgent);
+  const displayName = agentDisplayLabel(agents, selectedAgent);
   const metaSelected = isMetaAgentName(displayedName);
 
   /**

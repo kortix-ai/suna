@@ -13,6 +13,7 @@ import { requestAuditContext } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
 import { releaseWebhookDeliveryKey, webhookDeliveryKey } from '../lib/webhook-delivery';
 import { markGitTriggerAttemptFailed } from '../lib/trigger-fire';
+import { raiseTriggerAlert } from '../lib/trigger-alerts';
 import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggerFilterMatches, triggersPausedForProject, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
 import {
   validateWebhookSecretConfiguration,
@@ -39,7 +40,9 @@ export function registerTriggerWebhooksRoutes(): void {
     responses: {
       200: json(z.object({ status: z.literal('skipped'), reason: z.string() }), 'Accepted, not fired'),
       202: json(TriggerFireResultSchema, 'Queued or fired'),
-      ...errors(400, 401, 500),
+      // 402: the account has no usable model (no plan-covered managed model, no
+      // connected provider key) — the fire gates instead of minting a doomed session.
+      ...errors(400, 401, 402, 500),
     },
   }), async (c) => {
     const projectId = c.req.param('projectId');
@@ -185,8 +188,10 @@ export function registerTriggerWebhooksRoutes(): void {
     });
 
     // A duplicate ran nothing: it answers `deduped` and leaves last_fired_at alone.
+    // A queued prompt or create has not run yet: its delivery ends an alert
+    // streak, not this handoff (KRTX-1742).
     if (result.status === 'queued') {
-      if (!result.deduped) await markGitTriggerFired(project.projectId, spec.slug, new Date());
+      if (!result.deduped) await markGitTriggerFired(project.projectId, spec.slug, new Date(), 'fired', { endsAlert: false });
       return c.json({
         status: result.deduped ? ('deduped' as const) : ('queued' as const),
         command_id: result.commandId ?? null,
@@ -199,6 +204,17 @@ export function registerTriggerWebhooksRoutes(): void {
       const error = result.error ?? 'Failed to fire trigger';
       // Recorded like a failed cron fire, so the trigger says it failed (KRTX-1743).
       await markGitTriggerAttemptFailed(project.projectId, spec.slug, new Date(), error).catch(() => {});
+      // Kortix cannot know whether the sender retries on our 500, so the first
+      // failure of a streak alerts the watchers (KRTX-1742). A create that went
+      // back to the queue alerts from the drain only if it dead-letters.
+      if (!result.requeued) {
+        await raiseTriggerAlert({ projectId: project.projectId, accountId: project.accountId, slug: spec.slug, source: 'fire', error });
+      }
+      // The model gate is account state, not a server fault: answer the billing
+      // gate's convention (402 + a machine-readable code) so the sender can act.
+      if (result.errorCode === 'no_usable_model') {
+        return c.json({ error, code: 'no_usable_model' }, 402);
+      }
       return c.json({ error }, 500);
     }
     // Stamp runtime last_fired_at so the UI's "last fired N ago" matches the

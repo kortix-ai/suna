@@ -9,6 +9,7 @@ import type {
   AppDeployment,
   AppHostingProvider,
   AppSource,
+  KortixProject,
   ProjectHandle,
 } from '@kortix/sdk';
 import ignore from 'ignore';
@@ -109,6 +110,7 @@ export function commandArg(value: string | undefined): string[] | undefined {
 export async function context(options: ContextOptions): Promise<{
   projectId: string;
   auth: NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>['auth'];
+  project: KortixProject;
   apps: AppsHandle;
 } | null> {
   const resolved = await resolveProjectContext(options);
@@ -129,6 +131,7 @@ export async function context(options: ContextOptions): Promise<{
   return {
     projectId: resolved.projectId,
     auth: resolved.auth,
+    project,
     apps: kortix.project(resolved.projectId).apps,
   };
 }
@@ -231,10 +234,19 @@ export function deployFlags(rest: string[]): DeployFlags {
   };
 }
 
-interface ManifestAppDefaults {
+export interface ManifestAppDefaults {
   name: string;
   root: string;
   block: AppBlockV2;
+}
+
+/** Every `apps.<name>` block of the v2 kortix.yaml above `cwd`, or null. */
+export function loadManifestApps(cwd: string): { root: string; blocks: Record<string, AppBlockV2> } | null {
+  const manifest = loadLocalManifest(cwd);
+  if (!manifest || manifest.data.kortix_version !== 2) return null;
+  const rawApps = manifest.data.apps;
+  if (!rawApps || typeof rawApps !== 'object' || Array.isArray(rawApps)) return null;
+  return { root: dirname(manifest.path), blocks: rawApps as Record<string, AppBlockV2> };
 }
 
 export function loadManifestAppDefaults(
@@ -242,11 +254,9 @@ export function loadManifestAppDefaults(
   requestedName?: string,
   allowSingleDefault = false,
 ): ManifestAppDefaults | null {
-  const manifest = loadLocalManifest(cwd);
-  if (!manifest || manifest.data.kortix_version !== 2) return null;
-  const rawApps = manifest.data.apps;
-  if (!rawApps || typeof rawApps !== 'object' || Array.isArray(rawApps)) return null;
-  const entries = Object.entries(rawApps as Record<string, AppBlockV2>);
+  const loaded = loadManifestApps(cwd);
+  if (!loaded) return null;
+  const entries = Object.entries(loaded.blocks);
   const selected = requestedName
     ? entries.find(([name]) => name === requestedName)
     : allowSingleDefault && entries.length === 1
@@ -256,7 +266,7 @@ export function loadManifestAppDefaults(
     if (requestedName) throw new Error(`kortix.yaml has no apps.${requestedName} block`);
     return null;
   }
-  return { name: selected[0], root: dirname(manifest.path), block: selected[1] };
+  return { name: selected[0], root: loaded.root, block: selected[1] };
 }
 
 /**
@@ -387,6 +397,27 @@ export async function readAppArchive(source: string): Promise<Uint8Array> {
 }
 
 /**
+ * A manifest budget applies only to an on-demand server App. On an always-on
+ * or convex App the cost is fixed (size × 24/7), so the API refuses a budget;
+ * an older kortix.yaml that still sets one deploys with a notice instead of failing.
+ */
+export function manifestBudget(
+  block: ManifestAppDefaults['block'] | undefined,
+  existing: App | undefined,
+  flags: DeployFlags,
+): number | undefined {
+  const budget = block?.monthly_budget_usd;
+  if (budget === undefined) return undefined;
+  const kind = block?.kind ?? existing?.kind ?? 'web';
+  const alwaysOn = flags.alwaysOn ?? block?.always_on ?? existing?.always_on ?? true;
+  if (kind === 'web' && alwaysOn === false) return budget;
+  process.stderr.write(
+    `  ! monthly_budget_usd in kortix.yaml is ignored: a ${kind === 'convex' ? 'convex' : 'always-on'} App has a fixed monthly cost. Remove it, or set always_on: false for a budget.\n`,
+  );
+  return undefined;
+}
+
+/**
  * Resolve or create the App a deployment targets: an explicit --app, else the
  * manifest block's identity (updating an existing slug in place), else one
  * derived from the image reference or source path.
@@ -424,20 +455,21 @@ export async function provisionDeployApp(
         ? { idle_timeout_seconds: manifestBlock.idle_timeout_seconds }
         : {}),
       ...(manifestBlock?.always_on !== undefined ? { always_on: manifestBlock.always_on } : {}),
-      ...(manifestBlock?.monthly_budget_usd !== undefined
-        ? { monthly_budget_usd: manifestBlock.monthly_budget_usd }
+      ...(manifestBudget(manifestBlock, existing, flags) !== undefined
+        ? { monthly_budget_usd: manifestBudget(manifestBlock, existing, flags) }
         : {}),
       ...flagSettings,
-      // The backends the App may mint viewer tokens for; the manifest's list replaces the App's.
-      ...(manifestBlock?.backends !== undefined ? { backends: manifestBlock.backends } : {}),
+      // The Apps this App uses; the manifest's list replaces the App's.
+      ...(manifestBlock?.uses !== undefined ? { uses: manifestBlock.uses } : {}),
     };
-    return existing
-      ? apps.update(existing.app_id, settings)
-      : apps.create({
-          slug: manifestSlug,
-          name: flags.name ?? manifestDefaults.name,
-          ...settings,
-        });
+    if (existing) return apps.update(existing.app_id, settings);
+    return apps.create({
+      slug: manifestSlug,
+      name: flags.name ?? manifestDefaults.name,
+      // The kind is fixed at create; a later manifest change does not convert an App.
+      ...(manifestBlock?.kind ? { kind: manifestBlock.kind } : {}),
+      ...settings,
+    });
   }
   const inferred = flags.image
     ? flags.image.split('/').pop()!.split(':')[0]!
@@ -447,30 +479,15 @@ export async function provisionDeployApp(
 }
 
 /**
- * What a server App costs: "Runs 24/7 on 1 vCPU / 2 GB: about $73/month (budget $74)".
+ * What a server App costs: "Runs 24/7 on 1 vCPU / 2 GB: about $73/month".
  * Null for an on-demand or static App, or when the server predates the estimate.
  */
 export function runCostLine(app: App): string | null {
   const estimate = app.estimated_monthly_usd;
-  if (!app.always_on || !estimate || app.hosting_type === 'static') return null;
+  if (typeof app.monthly_budget_usd === 'number' || !estimate || app.hosting_type === 'static') return null;
   return (
     `Runs 24/7 on ${app.machine.cpu} vCPU / ${app.machine.memory_gb} GB: ` +
-    `about $${Math.round(estimate)}/month (budget $${app.monthly_budget_usd})`
-  );
-}
-
-/**
- * The warning for a server App that runs 24/7 on a monthly budget below what
- * its machine costs for a month: it stops at the budget until the month ends.
- * Null when it does not apply, or when the server predates the estimate.
- */
-export function alwaysOnBudgetNotice(app: App): string | null {
-  const estimate = app.estimated_monthly_usd;
-  if (!app.always_on || estimate === undefined || app.monthly_budget_usd >= estimate) return null;
-  return (
-    `${app.slug} runs 24/7, about $${estimate.toFixed(2)}/month at list compute rates, ` +
-    `but its monthly budget is $${app.monthly_budget_usd.toFixed(2)}. It stops when the budget is reached. ` +
-    'Raise it with --budget <usd>, or deploy with --on-demand.'
+    `about $${Math.round(estimate)}/month`
   );
 }
 

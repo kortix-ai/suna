@@ -1,4 +1,5 @@
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
+import { servableProjectCatalog } from '../../llm-gateway/models/servable-catalog';
 import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import type { PromptOverridesWire } from '../session-lifecycle/store';
 import { projectSessions, projectTriggerRuntime } from '@kortix/db';
@@ -14,6 +15,7 @@ import { disableSessionReminder, reminderPromptText } from './session-reminders'
 import { accountMemberRow } from '../../iam/membership-read';
 import type { TriggerFireSource } from './trigger-webhook-auth';
 import { claimTriggerCreate, releaseTriggerCreate, triggerCreateKey } from './trigger-create-claim';
+import { clearTriggerAlert } from './trigger-alerts';
 
 /**
  * Find a user we can attribute trigger-spawned sessions to. Git-backed
@@ -43,6 +45,7 @@ export async function markGitTriggerFired(
   slug: string,
   when: Date,
   status: 'fired' | 'queued' = 'fired',
+  opts: { endsAlert?: boolean } = {},
 ) {
   await db
     .insert(projectTriggerRuntime)
@@ -64,6 +67,11 @@ export async function markGitTriggerFired(
         updatedAt: when,
       },
     });
+  // Only a fire that reached a session ends a fire failure streak (KRTX-1742).
+  // A queued prompt or create has not reached one yet: its delivery ends it
+  // (markTriggerRuntimeDelivered, or the drain's create). A caller that shows
+  // a queued handoff as `fired` passes `endsAlert: false`.
+  if (opts.endsAlert ?? status === 'fired') await clearTriggerAlert({ projectId, slug, source: 'fire' });
 }
 
 /**
@@ -278,10 +286,15 @@ export async function fireGitTrigger(input: {
   commandId?: string;
   error?: string;
   /** Machine-readable failure code when `createSession` rejected the fire
-   *  (e.g. `insufficient_credits`, `subscription_required`, `no_account`). */
+   *  (e.g. `insufficient_credits`, `subscription_required`, `no_account`) or
+   *  the model gate refused it (`no_usable_model`). */
   errorCode?: string;
   reason?: string;
   deduped?: boolean;
+  /** A failed create went back to the lifecycle queue: the drain owns its outcome. */
+  requeued?: boolean;
+  /** A failed fire that a later attempt can fix (a 429 or 5xx). */
+  retryable?: boolean;
 }> {
   const { spec, project, payload } = input;
   // The session's owning identity (created_by / billing / audit). Automated runs
@@ -289,7 +302,7 @@ export async function fireGitTrigger(input: {
   // See resolveTriggerActor().
   const actor = await resolveTriggerActor(project);
   if (!actor) {
-    return { status: 'failed', error: 'No account owner available to own the session' };
+    return { status: 'failed', error: 'No account owner available to own the session', retryable: false };
   }
 
   if (spec.reminder) return fireSessionReminder(input, actor);
@@ -354,6 +367,7 @@ async function fireSessionReminder(
       status: 'failed',
       error: "The reminder's author is no longer a member of this account, so the reminder is now paused",
       errorCode: 'reminder_author_left',
+      retryable: false,
     };
   }
   const outcome = sessionId
@@ -372,6 +386,7 @@ async function fireSessionReminder(
     status: 'failed',
     error: 'The reminder session is deleted or failed, so the reminder is now paused',
     errorCode: 'reminder_session_gone',
+    retryable: false,
   };
 }
 
@@ -447,6 +462,29 @@ async function createGitTriggerSession(
   sessionKey: string | null,
 ): ReturnType<typeof fireGitTrigger> {
   const { spec, project, payload, renderedPrompt, source } = input;
+  // A fire the account cannot run mints a session that dies on its first turn
+  // ("requires a paid plan") while the caller keeps a 202 + a session id that
+  // points at nothing (dogfood journey trig-webhook). Gate on the same catalog
+  // the chat composer gates on: zero enabled models = nothing to run. Only
+  // gateway projects gate (native mode resolves models outside the gateway),
+  // and only the fresh-create path — reminders and re-prompts of an existing
+  // session keep their semantics.
+  if (projectLlmGatewayEnabled(project.metadata)) {
+    const catalog = await servableProjectCatalog({
+      projectId: project.projectId,
+      accountId: project.accountId,
+      // The run executes as this actor (the account owner), so its personal
+      // keys count exactly as the gateway will count them for the session.
+      principalUserId: actor,
+    });
+    if (!Object.values(catalog.models).some((model) => model.enabled)) {
+      return {
+        status: 'failed',
+        error: 'No usable model for this account. Connect a provider key or upgrade the plan, then fire again.',
+        errorCode: 'no_usable_model',
+      };
+    }
+  }
   const sessionResult = await createSession({
     source: `trigger:${source}`,
     project,
@@ -513,6 +551,8 @@ async function createGitTriggerSession(
       status: 'failed',
       error: String(sessionResult.error.body.error ?? 'Failed to create trigger session'),
       errorCode: code,
+      requeued: sessionResult.requeued === true,
+      retryable: sessionResult.retryable === true,
     };
   }
   const firedSessionId = sessionResult.sessionId ?? sessionResult.row?.sessionId;

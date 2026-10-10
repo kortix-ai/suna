@@ -4,7 +4,6 @@ import { runAccess } from './commands/access.ts';
 import { runAccounts } from './commands/accounts.ts';
 import { runAgents } from './commands/agents.ts';
 import { runApps } from './commands/apps.ts';
-import { runBackends } from './commands/backends.ts';
 import { runAudit } from './commands/audit.ts';
 import { runBilling } from './commands/billing.ts';
 import { runChannels } from './commands/channels.ts';
@@ -12,6 +11,7 @@ import { runConnectors } from './commands/connectors.ts';
 import { runCr } from './commands/cr.ts';
 import { runDoctor } from './commands/doctor.ts';
 import { runEnv } from './commands/env.ts';
+import { runFeedback } from './commands/feedback.ts';
 import { runFiles } from './commands/files.ts';
 import { runGateway } from './commands/gateway.ts';
 import { runGitCredential } from './commands/git-credential.ts';
@@ -235,7 +235,6 @@ const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
   env: (rest) => runEnv(rest),
   gateway: (rest) => runGateway(rest),
   apps: (rest) => runApps(rest),
-  backends: (rest) => runBackends(rest),
   channels: (rest) => runChannels(rest),
   sandboxes: (rest) => runSandboxes(rest),
   marketplace: (rest) => runMarketplace(rest),
@@ -255,6 +254,7 @@ const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
   permissions: (rest) => runPermissions(rest),
   perms: (rest) => runPermissions(rest),
   audit: (rest) => runAudit(rest),
+  feedback: (rest) => runFeedback(rest),
   grants: (rest) => runGrants(rest),
   update: (rest) => runUpdate(rest),
   uninstall: (rest) => runUninstall(rest),

@@ -1,18 +1,16 @@
 import { describe, expect, test } from 'bun:test';
 import {
   CAPABILITY_TABS,
-  FLAGGED_CAPABILITY_TABS,
   PRIMARY_TABS,
   activeCapabilityTab,
   agentHref,
-  backendHref,
   capabilityTabHref,
   channelsHref,
   reviewHref,
 } from './capability-tab-routes';
 
 describe('CAPABILITY_TABS', () => {
-  test('lists agent, skills, connectors, triggers, models, secrets, config in that order', () => {
+  test('lists agent, skills, connectors, triggers, models, secrets, files, config in that order', () => {
     // Agents lead the bar (Marko, 2026-09-01): an agent is the one object a
     // person is granted access to, so it is the object Customize is built
     // around. Skills — the other thing you BUILD — follows; the rest is what
@@ -26,6 +24,7 @@ describe('CAPABILITY_TABS', () => {
       'triggers',
       'models',
       'secrets',
+      'files',
       'config',
     ]);
   });
@@ -137,26 +136,5 @@ describe('activeCapabilityTab', () => {
     // The Settings tab's own path IS its tab; one level deeper is not.
     expect(activeCapabilityTab('/projects/p1/customize/settings')).toBe('config');
     expect(activeCapabilityTab('/projects/p1/customize/settings/general')).toBeNull();
-  });
-});
-
-describe('FLAGGED_CAPABILITY_TABS (Marko, 2026-10-07: Backends live in Customize, Apps in the sidebar)', () => {
-  test('Backends behind its flag; Apps is not a Customize tab; neither in the static bar', () => {
-    expect(FLAGGED_CAPABILITY_TABS.map((t) => [t.key, t.flag])).toEqual([['backends', 'backends']]);
-    // A flagged tab is never part of the static list: the Customize row lands
-    // on the first static tab, and almost no project has these flags on.
-    expect(CAPABILITY_TABS.map((t) => t.key)).not.toContain('apps');
-    expect(CAPABILITY_TABS.map((t) => t.key)).not.toContain('backends');
-  });
-
-  test('Backends lives under /customize and lights its tab, a backend lighting Backends', () => {
-    expect(capabilityTabHref('p1', 'backends')).toBe('/projects/p1/customize/backends');
-    expect(backendHref('p1', 'b-1')).toBe('/projects/p1/customize/backends/b-1');
-    expect(activeCapabilityTab('/projects/p1/customize/apps')).toBeNull();
-    expect(activeCapabilityTab('/projects/p1/customize/backends')).toBe('backends');
-    expect(activeCapabilityTab('/projects/p1/customize/backends/b-1')).toBe('backends');
-    // Only the Backends tab owns a deeper shape besides Agents.
-    expect(activeCapabilityTab('/projects/p1/customize/apps/a-1')).toBeNull();
-    expect(activeCapabilityTab('/projects/p1/apps')).toBeNull();
   });
 });

@@ -47,7 +47,8 @@ import { BillingError } from '../../errors';
 import { isUniqueViolation } from '../../shared/postgres-errors';
 import { tryGetProvider } from '../../platform/providers';
 import { KORTIX_REMOVAL_INTENT_KEY } from '../../projects/runtime-identity';
-import { deleteAccountBackends } from '../../backends/lifecycle';
+import { deleteAccountBackends } from '../../apps/kinds/convex/lifecycle';
+import { deleteUserNotificationData } from '../../notifications/cleanup';
 import {
   isAlreadyNotRunning,
   reconcileSandboxRemovedByExternalId,
@@ -138,7 +139,7 @@ export async function cancelAccountDeletion(accountId: string) {
  * The one deletion routine. The immediate path and the scheduled worker both
  * run it, in this order, so neither can leave a login or data behind:
  *
- *   1. `performDeletion`: sandboxes, Kortix Backends (machines and
+ *   1. `performDeletion`: sandboxes, `convex` App machines (and their
  *      snapshots), the stores outside the database (`deleteAccountExternalStores`:
  *      parked boxes, session files, Kortix-managed repos), Stripe cancel,
  *      wallet forfeit.
@@ -168,6 +169,9 @@ async function runAccountDeletion(accountId: string, userId?: string, requestId?
     await clearLegacyAuthUserReferences(requester);
     // A device token is the person's data; it has no foreign key to cascade.
     await db.delete(pushDeviceTokens).where(eq(pushDeviceTokens.userId, requester));
+    // So are their notifications, watcher rows, preferences and browser push
+    // subscriptions, in every account (KRTX-1742).
+    await deleteUserNotificationData(requester);
     const { error } = await getSupabase().auth.admin.deleteUser(requester);
     // A user the auth schema no longer has (an admin-side delete, or a retry
     // after step 3 already ran) is the state this step produces.

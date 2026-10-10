@@ -2,8 +2,9 @@ import { test, expect, beforeEach, describe } from 'bun:test';
 import {
   clearKortixAppViewerCache,
   fetchKortixAppViewer,
-  kortixAppBackendToken,
   kortixAppViewerToken,
+  kortixBinding,
+  kortixToken,
 } from './app-viewer';
 import { readKortixMember } from './kortix-member';
 
@@ -182,15 +183,15 @@ describe('the viewer carries the whole member', () => {
   });
 });
 
-describe('kortixAppBackendToken', () => {
+describe('kortixToken', () => {
   let tokens = 0;
   let status = 200;
-  const backendFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const tokenFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     calls.push(String(input));
     expect(init?.credentials).toBe('same-origin');
     if (status !== 200) return Response.json({ error: 'nope' }, { status });
     tokens += 1;
-    return Response.json({ token: `jwt-${tokens}`, expires_at: new Date(Date.now() + 900_000).toISOString() });
+    return Response.json({ token: `jwt-${tokens}`, expires_at: new Date(Date.now() + 900_000).toISOString(), audience: 'app-id' });
   }) as typeof fetch;
 
   beforeEach(() => {
@@ -198,54 +199,59 @@ describe('kortixAppBackendToken', () => {
     status = 200;
   });
 
-  test('fetches a token for the named backend from the App origin and caches it', async () => {
-    const fetchToken = kortixAppBackendToken('main', { fetch: backendFetch });
+  test('with no audience, a token for this App itself from its own origin, cached', async () => {
+    const fetchToken = kortixToken({ fetch: tokenFetch });
     expect(await fetchToken()).toBe('jwt-1');
     expect(await fetchToken()).toBe('jwt-1');
-    expect(calls).toEqual(['/_kortix/backend-token?backend=main']);
+    expect(calls).toEqual(['/_kortix/token']);
+  });
+
+  test('an audience names an App this App uses, by slug or id', async () => {
+    expect(await kortixToken({ audience: 'my db', fetch: tokenFetch })()).toBe('jwt-1');
+    expect(calls).toEqual(['/_kortix/token?audience=my%20db']);
   });
 
   test('forceRefreshToken skips the cache (the shape realtime clients call it with)', async () => {
-    const fetchToken = kortixAppBackendToken('main', { fetch: backendFetch });
+    const fetchToken = kortixToken({ audience: 'db', fetch: tokenFetch });
     await fetchToken();
     expect(await fetchToken({ forceRefreshToken: true })).toBe('jwt-2');
   });
 
-  test('one cache per backend; concurrent callers share one request', async () => {
+  test('one cache per audience; concurrent callers share one request', async () => {
     const [a, b] = await Promise.all([
-      kortixAppBackendToken('main', { fetch: backendFetch })(),
-      kortixAppBackendToken('main', { fetch: backendFetch })(),
+      kortixToken({ audience: 'db', fetch: tokenFetch })(),
+      kortixToken({ audience: 'db', fetch: tokenFetch })(),
     ]);
     expect(a).toBe(b);
-    expect(await kortixAppBackendToken('billing', { fetch: backendFetch })()).toBe('jwt-2');
-    expect(calls).toEqual(['/_kortix/backend-token?backend=main', '/_kortix/backend-token?backend=billing']);
+    expect(await kortixToken({ audience: 'billing', fetch: tokenFetch })()).toBe('jwt-2');
+    expect(calls).toEqual(['/_kortix/token?audience=db', '/_kortix/token?audience=billing']);
   });
 
-  test('nobody signed in, no such backend, an agent viewer: null, never a throw, never cached', async () => {
+  test('nobody signed in, an agent viewer, viewer identity off: null, never a throw, never cached', async () => {
     for (const code of [401, 403, 404, 409]) {
       status = code;
-      expect(await kortixAppBackendToken('main', { fetch: backendFetch })()).toBeNull();
+      expect(await kortixToken({ audience: 'db', fetch: tokenFetch })()).toBeNull();
     }
     status = 200;
-    expect(await kortixAppBackendToken('main', { fetch: backendFetch })()).toBe('jwt-1');
+    expect(await kortixToken({ audience: 'db', fetch: tokenFetch })()).toBe('jwt-1');
   });
 
-  test('a backend the App does not list: null, and one console warning that names the fix', async () => {
+  test('an App this App does not use: null, and one console warning that names the fix', async () => {
     const warnings: unknown[][] = [];
     const warn = console.warn;
     console.warn = (...args: unknown[]) => warnings.push(args);
     try {
-      const notListed = (async () =>
+      const notLinked = (async () =>
         Response.json(
-          { error: 'backend_not_listed', error_description: 'This App does not list the backend "crm".' },
+          { error: 'app_not_linked', error_description: 'This App does not use an App named "crm".' },
           { status: 403 },
         )) as unknown as typeof fetch;
-      expect(await kortixAppBackendToken('crm', { fetch: notListed })()).toBeNull();
+      expect(await kortixToken({ audience: 'crm', fetch: notLinked })()).toBeNull();
       expect(warnings).toHaveLength(1);
-      expect(String(warnings[0]![0])).toContain('This App does not list the backend "crm".');
+      expect(String(warnings[0]![0])).toContain('This App does not use an App named "crm".');
       // Another refusal (no viewer) stays silent.
       status = 401;
-      expect(await kortixAppBackendToken('main', { fetch: backendFetch })()).toBeNull();
+      expect(await kortixToken({ audience: 'db', fetch: tokenFetch })()).toBeNull();
       expect(warnings).toHaveLength(1);
     } finally {
       console.warn = warn;
@@ -258,15 +264,43 @@ describe('kortixAppBackendToken', () => {
       tokens += 1;
       return Response.json({ token: `jwt-${tokens}`, expires_at: new Date(Date.now() + 30_000).toISOString() });
     }) as typeof fetch;
-    const fetchToken = kortixAppBackendToken('main', { fetch: shortFetch });
+    const fetchToken = kortixToken({ audience: 'db', fetch: shortFetch });
     await fetchToken();
     expect(await fetchToken()).toBe('jwt-2');
   });
 
-  test('clearKortixAppViewerCache drops backend tokens too (sign-out)', async () => {
-    const fetchToken = kortixAppBackendToken('main', { fetch: backendFetch });
+  test('clearKortixAppViewerCache drops these tokens too (sign-out)', async () => {
+    const fetchToken = kortixToken({ audience: 'db', fetch: tokenFetch });
     await fetchToken();
     clearKortixAppViewerCache();
     expect(await fetchToken()).toBe('jwt-2');
+  });
+});
+
+describe('kortixBinding', () => {
+  test('the bindings mount on this App origin, and a token for the bound App', async () => {
+    let asked = '';
+    const binding = kortixBinding('db', {
+      origin: 'https://crm.apps.example.test',
+      fetch: (async (input: RequestInfo | URL) => {
+        asked = String(input);
+        return Response.json({ token: 'jwt-db', expires_at: new Date(Date.now() + 900_000).toISOString() });
+      }) as typeof fetch,
+    });
+    expect(binding.url).toBe('https://crm.apps.example.test/_kortix/apps/db');
+    expect(await binding.token()).toBe('jwt-db');
+    expect(asked).toBe('/_kortix/token?audience=db');
+  });
+
+  test('reads the origin from the page, and refuses without one', () => {
+    const location = (globalThis as { location?: unknown }).location;
+    try {
+      (globalThis as { location?: unknown }).location = { origin: 'https://site.apps.example.test' };
+      expect(kortixBinding('my-db').url).toBe('https://site.apps.example.test/_kortix/apps/my-db');
+      (globalThis as { location?: unknown }).location = undefined;
+      expect(() => kortixBinding('db')).toThrow('origin');
+    } finally {
+      (globalThis as { location?: unknown }).location = location;
+    }
   });
 });

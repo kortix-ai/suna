@@ -11,8 +11,7 @@ Flags are per project. Turning a flag on in one project changes nothing in
 another project, and nothing for other accounts.
 
 <CardGroup>
-  <Card icon="app-window" title="Apps" href="/docs/feature-flags/apps">Deploy static sites, bundles, Dockerfiles, and OCI images to stable URLs.</Card>
-  <Card icon="database" title="Backends" href="/docs/feature-flags/backends">Give a project a database, server functions, realtime queries, files, and schedules, powered by Convex.</Card>
+  <Card icon="app-window" title="Apps" href="/docs/feature-flags/apps">Deploy static sites, bundles, Dockerfiles, OCI images, and Convex backends to stable URLs.</Card>
 </CardGroup>
 
 ## Turn a flag on
@@ -67,7 +66,6 @@ Some flags read it from configuration; every other flag is always available:
 | Flag | Available when |
 |---|---|
 | `llm_gateway` | `LLM_GATEWAY_ENABLED` is on |
-| `backends` | `PLATINUM_API_KEY` is set |
 | `monitors` | `PLATINUM_API_KEY` is set |
 
 ## Stability badges
@@ -112,10 +110,10 @@ this.
 
 Registry order — the same order **Settings → Feature flags** shows.
 
-### Internal-only flags: `apps` and `backends`
+### Internal-only flag: `apps`
 
-`apps` and `backends` start billable machines, so Kortix turns them on per
-project on request.
+`apps` starts billable machines, so Kortix turns it on per project on
+request.
 
 - **Off:** Settings and `kortix projects features` do not list the flag. Its
   routes answer `403` `feature_disabled` with "Contact Kortix to enable it."
@@ -128,14 +126,14 @@ project on request.
 
 ```json
 {
-  "error": "Backends is managed by Kortix. Contact Kortix to change it.",
+  "error": "Apps is managed by Kortix. Contact Kortix to change it.",
   "code": "feature_operator_only",
-  "feature": "backends"
+  "feature": "apps"
 }
 ```
 
 Kortix operators set the flag with
-`PUT /v1/admin/api/projects/:id/features` `{ "feature": "backends", "enabled": true }`
+`PUT /v1/admin/api/projects/:id/features` `{ "feature": "apps", "enabled": true }`
 (`null` clears it). The audit log records `admin.project.feature.set` on the
 project.
 
@@ -147,13 +145,14 @@ project.
 | `llm_gateway` | LLM Gateway | Experimental | On (operator can default off) | `behavioral` |
 | `meta_agent` | Meta Agent | Experimental | Off | `behavioral` |
 | `apps` | Apps | Stable | Off | `routes` |
-| `backends` | Backends | Experimental | Off | `routes` |
 | `monitors` | Monitors | Experimental | Off | `routes` |
 | `reminders` | Reminders | Beta | Off | `routes` |
 | `warm_sessions` | Warm Sessions | Beta | On | `routes` |
 | `secrets_egress` | Network-Enforced Secrets | Experimental | On | `behavioral` |
 | `pi_harness` | Pi Harness (in-sandbox) | Experimental | Off | `behavioral` |
 | `genui` | Generative UI | Experimental | Off | `behavioral` |
+| `event_triggers` | App event triggers | Beta | Off | `routes` |
+| `notification_center` | Notification Center | Beta | Off | `routes` |
 
 `llm_gateway` reads its per-project default from
 `LLM_GATEWAY_DEFAULT_ENABLED`, which defaults to on. Turning the flag off per
@@ -175,12 +174,17 @@ refs). An explicit project choice always wins.
 - **`meta_agent`** — add a platform-owned coordinator agent that spawns and
   manages specialized sessions.
 - **`apps`** — deploy static sites, bundles, Dockerfiles, and OCI images to
-  stable serverless URLs. See [Apps](/docs/feature-flags/apps).
-- **`backends`** — give a project up to 3 full backends: a database, server
-  functions, realtime queries, file storage, and schedules, powered by Convex.
-  See [Backends](/docs/feature-flags/backends).
+  stable serverless URLs, and run up to 3 Convex backends (kind `convex`: a
+  database, server functions, realtime queries, file storage, and schedules)
+  where Platinum is configured. See [Apps](/docs/feature-flags/apps).
 - **`monitors`** — run 24/7 watchers from your repo that fire trigger events
   into sessions. See [Triggers](/docs/connect/triggers).
+- **`event_triggers`** — start an agent when something happens in a connected
+  app: a new email, a pull request, a calendar event. Off, the event catalog
+  routes and the creation of an event trigger answer `feature_disabled`, and a
+  `type: event` trigger in `kortix.yaml` is not subscribed (status `error`).
+  Turning it off removes every event subscription; turning it on subscribes
+  the declared triggers. See [App event triggers](/docs/connect/triggers#app-event-triggers).
 - **`reminders`** — scheduled check-ins that re-prompt one session, once or
   on repeat. Off, the reminder routes answer `feature_disabled` and existing
   reminders do not fire. See [Reminders](/docs/connect/reminders).
@@ -203,7 +207,12 @@ refs). An explicit project choice always wins.
   see [`harnesses:`](/docs/project/manifest#harnesses). pi does not serve every
   session feature OpenCode does: see the matrix in
   [Harnesses](/docs/work/harnesses#what-each-harness-supports).
-
+- **`notification_center`** — tell the people a session concerns, not only its
+  creator: the bell, browser push, email, follow and mute per session, and
+  trigger and reminder alerts. Off, as before: only the session creator's
+  phone gets a session push, and an account owner's phone gets one when a
+  trigger starts failing. The session watch routes answer `feature_disabled`.
+  See [Notifications](/docs/work/notifications#turn-notifications-on).
 - **`genui`** — let the agent answer with cards, comparisons, charts, maps,
   and tabs instead of long text. On: every new, restarted, or resumed session
   of this project teaches the agent the Kortix generative UI catalog. Off: the
@@ -235,6 +244,13 @@ A graduated feature is on for every project and has no switch.
   `PATCH /v1/projects/:id/features` answers `400` `Unknown feature flag`. A
   stored override from before graduation has no effect. See
   [Microsoft Teams](/docs/connect/teams).
+- **Config releases** graduated out of the flag system. Every session runs
+  the config release of its base branch: a merged agent, skill, or tool
+  reaches every running session, on OpenCode and on pi. `config_releases` is
+  no longer a flag key: `PATCH /v1/projects/:id/features` answers `400`
+  `Unknown feature flag`. A stored override from before graduation has no
+  effect; a stored `false` no longer sends a session back to its `/workspace`
+  config. See [Config convergence](/docs/work/runtime#config-convergence).
 
 ## Side effects of a toggle
 

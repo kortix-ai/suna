@@ -40,6 +40,8 @@ import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggl
 import { useRenameSession } from '@/features/workspace/project-sidebar/modal/use-rename-session';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
+import { useNotificationCenter } from '@/features/notifications/use-notification-center';
+import { useAuth } from '@/features/providers/auth-provider';
 import { getSessionDisplayTitle } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import { useReloadSessionConfig } from '@/hooks/projects/use-session-config-freshness';
 import { cn } from '@/lib/utils';
@@ -56,9 +58,12 @@ import {
   useProjectSession,
   useRuntimeSupports,
   useSessionParticipants,
+  useSessionWatch,
 } from '@kortix/sdk/react';
 import {
   ArrowsClockwiseIcon,
+  BellIcon,
+  BellSlashIcon,
   CaretDoubleLeftIcon,
   GitForkIcon,
   LinkSimpleIcon,
@@ -111,6 +116,7 @@ export function SessionSiteHeader({
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tPalette = useTranslations('commandPalette');
+  const tNotifications = useTranslations('notifications');
   const devTools = useLocalizedUiCatalog(DEV_TOOLS);
   const router = useRouter();
   const pathname = usePathname();
@@ -162,6 +168,30 @@ export function SessionSiteHeader({
   const { data: sessionParticipants } = useSessionParticipants(projectId, projectSessionId, {
     enabled: isProjectSession,
   });
+  // Mute: the caller's watch on this session (KRTX-1742). Anyone who can open
+  // it may mute it; unmuting a session you never watched makes you a watcher.
+  // Only with the project's `notification_center` flag on: off, the watch
+  // routes answer 403 and the item does not exist.
+  const { user } = useAuth();
+  const notificationCenter = useNotificationCenter(projectId);
+  const sessionWatch = useSessionWatch({
+    userId: user?.id,
+    projectId,
+    sessionId: projectSessionId,
+    enabled: isProjectSession && !parent && notificationCenter,
+  });
+  const watching = notificationCenter ? sessionWatch.data?.watching : undefined;
+  const toggleWatch = () => {
+    if (watching === undefined) return;
+    sessionWatch
+      .setWatching(!watching)
+      .then(() =>
+        successToast(
+          watching ? tNotifications('session.muted') : tNotifications('session.unmuted'),
+        ),
+      )
+      .catch(() => {});
+  };
   const canManageSharing = !!projectSession && projectSession.can_manage_sharing !== false;
   const canManageLifecycle = !!projectSession && projectSession.can_manage_lifecycle !== false;
   // The Share button's accessible name. A member who cannot change access
@@ -338,6 +368,12 @@ export function SessionSiteHeader({
             <LinkSimpleIcon />
             {tPalette('copyAction', { label: tPalette('copySessionLink') })}
           </DropdownMenuItem>
+          {watching !== undefined && (
+            <DropdownMenuItem className="cursor-pointer" onClick={toggleWatch}>
+              {watching ? <BellSlashIcon /> : <BellIcon />}
+              {watching ? tNotifications('session.mute') : tNotifications('session.unmute')}
+            </DropdownMenuItem>
+          )}
           {canFork && (
             <DropdownMenuItem
               className="cursor-pointer"

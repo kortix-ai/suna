@@ -7,7 +7,7 @@ import { PRODUCT_CATALOG_TRANSLATION_KEYS } from '@/i18n/product-catalog-transla
 import type { UiTranslator } from '@/i18n/translator';
 
 import { cn } from '@/lib/utils';
-import { type App, type AppAccessMode, type AppDeployment, type AppViewerTokenScope } from '@kortix/sdk';
+import { type App, type AppAccessMode, type AppCapability, type AppDeployment, type AppInstance, type AppInstanceOperation, type AppViewerTokenScope } from '@kortix/sdk';
 
 
 type DeploymentTone = 'success' | 'destructive' | 'warning' | 'muted';
@@ -97,6 +97,7 @@ export function appStatus(
   app: App,
   tI18nComplete: UiTranslator,
 ): { deployed: boolean; live: boolean; label: string; dot: string } {
+  if (app.instance) return instanceStatus(app.instance, tI18nComplete);
   const deployed = Boolean(app.active_deployment_id);
   // A static App has no runtime: it serves whatever `desired_state` says.
   const live = deployed && (app.desired_state === 'running' || app.hosting_type === 'static');
@@ -112,6 +113,89 @@ export function appStatus(
     // the only one that earns colour.
     dot: live ? 'bg-kortix-green' : deployed ? 'bg-muted-foreground/50' : 'bg-muted-foreground/25',
   };
+}
+
+/**
+ * The state of an App that runs its own machine (`app.instance`, kind
+ * `convex`). Its deployments never move `active_deployment_id`, so the
+ * machine, not the deployment pointer, says whether it is up. An operation in
+ * flight (resize, snapshot, restore, key rotation, recovery) wins over the
+ * machine state; a failed health probe reads as not responding.
+ */
+function instanceStatus(
+  instance: AppInstance,
+  t: UiTranslator,
+): { deployed: boolean; live: boolean; label: string; dot: string } {
+  const running = instance.status === 'running';
+  const live = running && !instance.operation && instance.health?.ok !== false;
+  const label = instance.operation
+    ? instanceOperationLabel(instance.operation, t)
+    : instance.status === 'provisioning'
+      ? t.raw('textc2b1b8e2e039')
+      : running
+        ? instance.health?.ok === false
+          ? t.raw('textd14f65e63358')
+          : t.raw('textf4ccae29e1bb')
+        : instance.status === 'error'
+          ? t.raw('text54a0e8c17ebb')
+          : t.raw('textb48ff39c2e0f');
+  return {
+    deployed: running,
+    live,
+    label,
+    dot: live ? 'bg-kortix-green' : running ? 'bg-muted-foreground/50' : 'bg-muted-foreground/25',
+  };
+}
+
+/** What an App's machine is doing right now, as a status label. */
+function instanceOperationLabel(operation: AppInstanceOperation, t: UiTranslator): string {
+  const labels: Record<AppInstanceOperation, string> = {
+    resizing: t.raw('text6f2769b24c0f'),
+    rotating_key: t.raw('text4a75e77ccc8d'),
+    recovering: t.raw('text959bdc881c93'),
+    snapshotting: t.raw('textcd08dcee6a87'),
+    restoring: t.raw('text5a4918e0201c'),
+  };
+  return labels[operation];
+}
+
+/**
+ * Does this App offer `capability`? The ONE way the Apps UI branches between
+ * kinds: the server lists what each App supports (`app.capabilities`), and a
+ * control shows only for the Apps that support it.
+ */
+export function appCan(app: App, capability: AppCapability): boolean {
+  return app.capabilities?.includes(capability) ?? false;
+}
+
+/** The kind badge on a card and in the detail header. `null` for kind `web`, the default every App reads as. */
+export function appKindLabel(app: App, t: UiTranslator): string | null {
+  return app.kind === 'convex' ? t.raw('text2fb4019a35e4') : null;
+}
+
+/** "2 vCPU · 4 GB · 20 GB": the machine size of an App. */
+export function appSizeLabel(app: App, t: UiTranslator): string {
+  return t('textce0eabb01151', {
+    value0: app.machine.cpu,
+    value1: app.machine.memory_gb,
+    value2: app.machine.disk_gb,
+  });
+}
+
+/** Only an on-demand server App has a monthly budget; every other App costs a fixed amount. */
+export function appHasBudget(app: App): boolean {
+  return (
+    (app.kind ?? 'web') === 'web' &&
+    app.always_on === false &&
+    app.hosting_type !== 'static' &&
+    typeof app.monthly_budget_usd === 'number'
+  );
+}
+
+/** "About $59 a month": the fixed cost of an always-on server App or a Convex App. `null` when none applies. */
+export function appCostLabel(app: App, t: UiTranslator): string | null {
+  if (app.hosting_type === 'static' || appHasBudget(app) || !app.estimated_monthly_usd) return null;
+  return t('texte15cb9ffae7f', { value0: Math.round(app.estimated_monthly_usd) });
 }
 
 /**
