@@ -1322,6 +1322,55 @@ describe('project session runtime guards', () => {
       provisionSyncThrow = null;
     }
   });
+  // KRTX-2064, allocator path: open/restart attach runtime through
+  // allocateSessionRuntime, which builds the same env chain and passes it
+  // into the same provisioner. The same guard the create path carries must
+  // exist here, or a rejected env build with no consumer kills the process.
+  test('an env build that rejects while the allocator provisioner dies before its env catch stays handled (KRTX-2064)', async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+    const envFailure = new Error(
+      "fatal: Authentication failed for 'https://github.com/example/example.git/'",
+    );
+    provisionSyncThrow = new Error('provisioner died before attaching its env guard');
+    try {
+      const { allocateSessionRuntime } = await import('../projects/lib/session-runtime-allocator');
+      allocateSessionRuntime({
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        userId: USER_ID,
+        project: {
+          repoUrl: `https://github.com/${TEST_GITHUB_OWNER}/contract-project.git`,
+          defaultBranch: 'main',
+          manifestPath: 'kortix.yaml',
+          metadata: projectRow.metadata,
+        },
+        providerName: 'daytona',
+        baseRef: 'main',
+        agentName: 'kortix',
+        allowProjectImage: false,
+        sessionMetadata: {},
+        buildEnvVars: () => Promise.reject(envFailure),
+        resolveGitProject: async () => ({
+          projectId: PROJECT_ID,
+          repoUrl: `https://github.com/${TEST_GITHUB_OWNER}/contract-project.git`,
+          defaultBranch: 'main',
+          manifestPath: 'kortix.yaml',
+          gitAuthToken: null,
+        }),
+      });
+      // The allocator catch marks the session failed; the env rejection must
+      // never surface as an unhandled rejection.
+      await flushUntil(() => sessionRow?.status === 'failed');
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+      provisionSyncThrow = null;
+    }
+  });
   test('a meta session with an omitted agent spawns the project default, not another meta', async () => {
     enableMetaAgent();
     sessionRow = { ...sessionRow!, agentName: 'meta' };
