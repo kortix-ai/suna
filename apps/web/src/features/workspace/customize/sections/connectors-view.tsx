@@ -76,7 +76,6 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import { ComputerConnectModal, ComputerStateDot } from '@/features/tunnel/computer-connect';
 import { connectorDisplayName } from '@/features/workspace/capabilities/connectors/connector-filter';
-import { InstallMenu } from '@/features/workspace/capabilities/connectors/install/install-menu';
 import { isManagedConnectorProvider } from '@/features/workspace/capabilities/connectors/provider-label';
 import { AccessDialog } from '@/features/workspace/shared/access/access-dialog';
 import {
@@ -124,7 +123,6 @@ import {
   pollConnectionOAuth2DeviceAuthorization,
   putConnectionOAuth2Application,
   reconcileMemberConnection,
-  registerConnectionOAuth2Client,
   renameConnection,
   revokeConnection,
   setConnectorCredential,
@@ -134,6 +132,7 @@ import {
   updateConnectionCredential,
 } from '@kortix/sdk';
 import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
+import { AddAccountFields } from './add-account-fields';
 import {
   buildEasyConnectConnectorDraft,
   buildEmailConnectorConnectionSlug,
@@ -158,16 +157,19 @@ import {
   oauth2CredentialFormValid,
 } from './connector-oauth2';
 import { OAuth2ApplicationFields } from './connector-oauth2-application-fields';
-import {
-  autoConnectPlan,
-  buildClientRegistrationInput,
-  mergeResourceDiscoveryIntoForm,
-} from './connector-oauth2-auto';
-import { startOAuth2SignIn } from './connector-oauth2-start';
+import { autoConnectPlan, mergeResourceDiscoveryIntoForm } from './connector-oauth2-auto';
 import { OAuth2CredentialFields } from './connector-oauth2-fields';
+import { startOAuth2SignIn } from './connector-oauth2-start';
 import { DiscoverCatalogue } from './discover-catalogue';
 import { AudienceText } from './view/audience-badge';
-import { accountVisibility, connectorConnectionRows } from './view/connector-connections';
+import {
+  accountVisibility,
+  connectorConnectionRows,
+  type NewAccountDraft,
+  newAccountLabelTaken,
+  newAccountReady,
+} from './view/connector-connections';
+import { randomUUID } from '@/lib/utils/random-uuid';
 
 const BUILT_IN_CHANNEL_APP_SLUGS = new Set(['slack', 'slack_v2']);
 
@@ -318,6 +320,11 @@ function ConnectionRow({
           <AudienceText visibility={visibility} labels={everyoneWithAccess} />
           {/* Listed only because the caller manages the project's connections. */}
           {connection.usable === false ? tSharing('notSharedWithYou') : null}
+          {/* An account nobody has signed in yet, such as the shared one a new
+              connector starts with: say so beside its Connect button. */}
+          {active && connection.authorized === false ? (
+            <span>{tConnectorPages('notSignedIn')}</span>
+          ) : null}
           {active ? null : (
             <span className="text-destructive">
               {connection.status === 'revoked' ? 'Disconnected' : 'Error'}
@@ -451,6 +458,12 @@ function ConnectionRow({
  * always the caller's own. Another member's private account is not visible
  * here and is not meant to be.
  */
+const EMPTY_NEW_ACCOUNT: NewAccountDraft = {
+  label: '',
+  audience: 'private',
+  picked: { memberIds: [], groupIds: [] },
+};
+
 export function ConnectionsList({
   projectId,
   connector,
@@ -462,6 +475,8 @@ export function ConnectionsList({
   onConnect,
   titleAddon,
   addVariant = 'secondary',
+  addRequest = 0,
+  onAddRequestHandled,
   disabled = false,
 }: {
   projectId: string;
@@ -479,6 +494,11 @@ export function ConnectionsList({
   onSetCredential?: (target: { connectionId: string; owner: 'project' | 'me' }) => void;
   /** Sign an unsigned account in. Omitted = no Connect on the rows. */
   onConnect?: (connection: Connection) => void;
+  /** Bumped to open "Add account" from outside the list (a header button,
+   *  or the connector page right after Install). */
+  addRequest?: number;
+  /** Called once a request has opened the dialog. */
+  onAddRequestHandled?: () => void;
   disabled?: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -531,14 +551,49 @@ export function ConnectionsList({
   const rows = connectorConnectionRows(connectionsQuery.data?.connections, connector.slug);
 
   const openCredential = onSetCredential ?? setCredentialTarget;
+  // "Add account" asks the account's name and who may use it: only you,
+  // everyone in the project, or picked people and groups. The connector
+  // profile itself is always the project's.
+  const [addOpen, setAddOpen] = useState(false);
+  const [draft, setDraft] = useState<NewAccountDraft>(EMPTY_NEW_ACCOUNT);
+  const closeAdd = () => setAddOpen(false);
   const addAccount = useAddAccount({
     projectId,
     connector,
     displayName,
-    onAdded: refresh,
+    onAdded: () => {
+      closeAdd();
+      refresh();
+    },
     onCredential: openCredential,
   });
   const adding = addAccount.pending;
+  const openAdd = () => {
+    if (isComputer) {
+      setComputerOpen(true);
+      return;
+    }
+    setDraft({ ...EMPTY_NEW_ACCOUNT, label: addAccount.proposedLabel() });
+    setAddOpen(true);
+  };
+  // Adjusted during render, not in an effect: each new request opens the
+  // dialog once, including one made before this list mounted (right after
+  // Install). The caller resets it (`onAddRequestHandled`), so a remount on a
+  // tab switch does not open it again.
+  const [seenAddRequest, setSeenAddRequest] = useState(0);
+  if (addRequest !== seenAddRequest) {
+    setSeenAddRequest(addRequest);
+    if (addRequest > 0) {
+      openAdd();
+      onAddRequestHandled?.();
+    }
+  }
+  const labelTaken = newAccountLabelTaken(draft, rows);
+  const canSubmitAdd =
+    !disabled && !adding && newAccountReady(draft, rows, { canManageConnections, accountId });
+  const submitAdd = () => {
+    if (canSubmitAdd) addAccount.submit(draft);
+  };
   const setDefault = useMutation({
     mutationFn: (connectionId: string) => setDefaultConnection(projectId, connectionId),
     onSuccess: () => {
@@ -657,16 +712,10 @@ export function ConnectionsList({
               {tSharing('addAccount')}
             </Button>
           ) : (
-            <InstallMenu
-              label={tSharing('addAccount')}
-              variant={addVariant}
-              canShare={canManageConnections}
-              onlyYou={tSharing('onlyYou')}
-              everyone={everyoneLabel}
-              onInstall={addAccount.add}
-              pending={adding}
-              disabled={disabled}
-            />
+            <Button size="sm" variant={addVariant} onClick={openAdd} disabled={disabled}>
+              <Plus className="size-4" />
+              {tSharing('addAccount')}
+            </Button>
           )}
         </div>
         {connectionsQuery.isLoading ? (
@@ -714,6 +763,50 @@ export function ConnectionsList({
           onDone={refresh}
         />
       ) : null}
+
+      <Modal
+        open={addOpen}
+        onOpenChange={(open) => {
+          if (!open && !adding) closeAdd();
+        }}
+      >
+        <ModalContent className="lg:max-w-md">
+          <ModalHeader>
+            <ModalTitle>{tSharing('addAccountTitle', { connector: displayName })}</ModalTitle>
+            <ModalDescription>{tSharing('addAccountDescription')}</ModalDescription>
+          </ModalHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              submitAdd();
+            }}
+          >
+            <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
+              <AddAccountFields
+                projectId={projectId}
+                value={draft}
+                onChange={setDraft}
+                labelTaken={labelTaken}
+                canManageConnections={canManageConnections}
+                accountId={accountId}
+                everyoneLabel={everyoneLabel}
+                hint={tI18nComplete.raw('text99953938d987')}
+                disabled={adding || disabled}
+                autoFocus
+              />
+            </ModalBody>
+            <ModalFooter className="sm:justify-between">
+              <Button type="button" variant="outline-ghost" onClick={closeAdd} disabled={adding}>
+                {tI18nComplete.raw('text19766ed6ccb2')}
+              </Button>
+              <Button type="submit" disabled={!canSubmitAdd}>
+                {adding ? <Loading className="size-4 shrink-0" /> : null}
+                {tI18nComplete.raw('text31fbef162594')}
+              </Button>
+            </ModalFooter>
+          </form>
+        </ModalContent>
+      </Modal>
 
       <Modal
         open={renameTarget !== null}
@@ -2199,7 +2292,7 @@ function AddEmailConnectionCard({
     mutationFn: async () => {
       const slug = buildEmailConnectorConnectionSlug(
         username || name,
-        globalThis.crypto.randomUUID(),
+        randomUUID(),
       );
       const result = await createConnector(
         projectId,

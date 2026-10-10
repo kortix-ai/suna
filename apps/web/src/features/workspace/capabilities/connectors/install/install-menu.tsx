@@ -1,32 +1,17 @@
 'use client';
 
-import { CaretDownIcon, LockIcon, UsersThreeIcon } from '@phosphor-icons/react';
-import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { SessionDotMatrix } from '@/components/ui/dot-matrix/session-dot-matrix';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+import { cn } from '@/lib/utils';
 
-import type { InstallAudience } from './install';
-
-export interface InstallMenuProps {
-  /** The visible label: "Install" or "Add account". */
+export interface InstallButtonProps {
+  /** The visible label: "Install". */
   label: string;
-  /** The caller may create a project-owned account. False = one plain button. */
-  canShare: boolean;
-  /** "Only you". */
-  onlyYou: string;
-  /** "Everyone in <project>". */
-  everyone: string;
-  onInstall: (audience: InstallAudience) => void;
+  onInstall: () => void;
   pending?: boolean;
   disabled?: boolean;
   variant?: 'default' | 'secondary' | 'outline';
-  /** Extra classes for the trigger button. */
+  /** Extra classes for the button. */
   className?: string;
   /** Names what is installed when a page has several of these. It must contain `label`. */
   'aria-label'?: string;
@@ -34,20 +19,12 @@ export interface InstallMenuProps {
 }
 
 /**
- * One control for "who is this account for": the caller alone, or everyone in
- * the project. It is the only question Install and Add account ask.
- *
- * Each choice is one line with the same glyph the account row uses for that
- * audience, so the menu and the row it produces read as one thing.
- *
- * A member who may not manage the project's connections cannot create a shared
- * account, so for them it is a plain button that installs a private one.
+ * Install adds the app's connector PROFILE to the project, and asks nothing
+ * else. Who may use an account is chosen per account, in "Add account" on the
+ * connector page Install opens.
  */
-export function InstallMenu({
+export function InstallButton({
   label,
-  canShare,
-  onlyYou,
-  everyone,
   onInstall,
   pending = false,
   disabled = false,
@@ -55,55 +32,24 @@ export function InstallMenu({
   className,
   'aria-label': ariaLabel,
   'data-testid': testId,
-}: InstallMenuProps) {
-  const inactive = disabled || pending;
-  const busy = pending ? <SessionDotMatrix size={14} className="shrink-0" /> : null;
-
-  if (!canShare) {
-    return (
-      <Button
-        type="button"
-        size="sm"
-        variant={variant}
-        className={className}
-        disabled={inactive}
-        aria-label={ariaLabel}
-        data-testid={testId}
-        onClick={() => onInstall('private')}
-      >
-        {busy}
-        {label}
-      </Button>
-    );
-  }
-
+}: InstallButtonProps) {
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          size="sm"
-          variant={variant}
-          className={cn(variant !== 'default' && "hover:border-ring hover:border hover:ring-ring/15 hover:ring-2 border border-transparent hit-area-y-3 hit-area-l-3 shrink-0", className)}
-          disabled={inactive}
-          aria-label={ariaLabel}
-          data-testid={testId}
-        >
-          {busy}
-          {label}
-          <CaretDownIcon className="size-3.5 shrink-0" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-48">
-        <DropdownMenuItem onSelect={() => onInstall('private')}>
-          <LockIcon className="size-4 shrink-0" />
-          {onlyYou}
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => onInstall('project')}>
-          <UsersThreeIcon className="size-4 shrink-0" />
-          {everyone}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <Button
+      type="button"
+      size="sm"
+      variant={variant}
+      className={cn(
+        variant !== 'default' &&
+          'hover:border-ring hover:ring-ring/15 hit-area-y-3 hit-area-l-3 shrink-0 border border-transparent hover:border hover:ring-2',
+        className,
+      )}
+      disabled={disabled || pending}
+      aria-label={ariaLabel}
+      data-testid={testId}
+      onClick={onInstall}
+    >
+      {pending ? <SessionDotMatrix size={14} className="shrink-0" /> : null}
+      {label}
+    </Button>
   );
 }
