@@ -265,19 +265,23 @@ function AuthCardForm({
     errorToast(msg);
   };
 
+  // The bounded layers answer with submit-auth's English sentinel messages
+  // (a 20 s GoTrue bound inside an action, the route's 25 s fallback, a
+  // 403/500 body) — map each sentinel back to its translated key so the
+  // visitor reads the notice in their language whichever layer fired.
+  const sentinelKeyFor = (message: string): string | null => {
+    if (message === AUTH_TIMEOUT_MESSAGE) return t('errors.submitTimedOut');
+    if (message === AUTH_NETWORK_MESSAGE) return t('errors.networkFailed');
+    if (message === AUTH_UNEXPECTED_MESSAGE) return t('errors.unexpected');
+    return null;
+  };
+
   // A bounded submit's failure notice: server-provided copy for server
-  // rejections, translated copy for the local failure modes. The bounded
-  // layers answer with submit-auth's English sentinel messages (a 20 s GoTrue
-  // bound inside an action, the route's 25 s fallback, a 403/500 body) — map
-  // each sentinel back to its translated key so the visitor reads the notice
-  // in their language whichever layer fired.
+  // rejections, translated copy for the local failure modes.
   const noticeFor = (failure: { reason: string; message: string }) => {
     if (failure.reason === 'timeout') return t('errors.submitTimedOut');
     if (failure.reason === 'network') return t('errors.networkFailed');
-    if (failure.message === AUTH_TIMEOUT_MESSAGE) return t('errors.submitTimedOut');
-    if (failure.message === AUTH_NETWORK_MESSAGE) return t('errors.networkFailed');
-    if (failure.message === AUTH_UNEXPECTED_MESSAGE) return t('errors.unexpected');
-    return failure.message;
+    return sentinelKeyFor(failure.message) ?? failure.message;
   };
 
   const goToEntry = () => {
@@ -383,7 +387,9 @@ function AuthCardForm({
         // false "expired" screen.
         stashBrowserPkceVerifier();
       } else if ('message' in result) {
-        failWith(result.message as string);
+        // A 200 body can still carry a bounded layer's sentinel (the action's
+        // 20 s bound answers through the route as {message}) — translate it.
+        failWith(sentinelKeyFor(result.message as string) ?? (result.message as string));
       }
     } catch (err: any) {
       failWith(err?.message || t('errors.unexpected'));
@@ -658,7 +664,7 @@ function AuthCardForm({
           {
             mode: credMode,
             code: failureCode,
-            fallback: result.message as string,
+            fallback: sentinelKeyFor(result.message as string) ?? (result.message as string),
           },
           tI18nComplete,
         );

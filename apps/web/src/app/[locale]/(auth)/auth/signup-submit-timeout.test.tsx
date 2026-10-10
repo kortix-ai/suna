@@ -61,7 +61,9 @@ async function renderPage() {
   let root: ReturnType<typeof create> | undefined;
   await act(async () => {
     root = create(
-      createElement(NextIntlClientProvider, { locale: 'en', messages, children: createElement(AuthPage) }),
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <AuthPage />
+      </NextIntlClientProvider>,
     );
   });
   if (!root) throw new Error('Auth page did not render');
@@ -142,22 +144,38 @@ test('a server-side timeout answers in the visitor\'s language, not the English 
   // is what the assertion observes: the en copy equals the sentinel and would
   // pass either way.
   const deMessages = (await import('../../../../../translations/de.json')).default;
-  outcomes = [{ ok: false, message: 'This is taking longer than expected. Please try again.' }];
+  // Both real server-side shapes carry the sentinel: the action's 20 s bound
+  // answers through the route as a 200 body {message} (submitAuthForm's
+  // ok:true branch), and a 403/500 body becomes the ok:false 'server' shape.
+  // Drive the page through both — one submit each — so the mapping is proven
+  // on the primary timeout path, not only on the transport's failure branch.
+  outcomes = [
+    { ok: true, result: { message: 'This is taking longer than expected. Please try again.' } },
+    { ok: false, message: 'This is taking longer than expected. Please try again.' },
+  ];
   let root: NonNullable<ReturnType<typeof create>> | undefined;
   await act(async () => {
     root = create(
-      createElement(NextIntlClientProvider, { locale: 'de', messages: deMessages, children: createElement(AuthPage) }),
+      <NextIntlClientProvider locale="de" messages={deMessages}>
+        <AuthPage />
+      </NextIntlClientProvider>,
     );
   });
   try {
     const email = root!.root.findByProps({ autoComplete: 'email' });
     await act(async () => email.props.onChange({ target: { value: 'synthetic@example.test' } }));
     await act(async () => root!.root.findByType('form').props.onSubmit({ preventDefault() {} }));
-    const text = JSON.stringify(root!.toJSON());
+    let text = JSON.stringify(root!.toJSON());
     expect(text).toContain('Das dauert länger als erwartet. Bitte versuche es erneut.');
     expect(text).not.toContain('This is taking longer than expected');
     const submit = root!.root.findByProps({ type: 'submit' });
     expect(submit.props.disabled).toBe(false);
+    // The retry consumes the second shape (a non-200 body the transport maps
+    // to ok:false 'server') — still translated, still retryable.
+    await act(async () => root!.root.findByType('form').props.onSubmit({ preventDefault() {} }));
+    text = JSON.stringify(root!.toJSON());
+    expect(text).toContain('Das dauert länger als erwartet. Bitte versuche es erneut.');
+    expect(text).not.toContain('This is taking longer than expected');
   } finally {
     await act(async () => root!.unmount());
   }
