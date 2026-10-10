@@ -1,5 +1,5 @@
 {
-  "source_hash": "40962f0370f6308066635002ca637f3fe83fc68e0a08a95f212c634e5ac0d34a",
+  "source_hash": "211d7721fc096ca6c5e7a79dec8310fbae4122487790c418d799a18114dcdf3f",
   "diff_files": [
     "apps/web/src/app/(system)/api/auth/password/route.ts",
     "apps/web/src/app/(system)/api/auth/send-code/route.ts",
@@ -8,6 +8,7 @@
     "apps/web/src/app/[locale]/(auth)/auth/auth-submit-timeout.test.ts",
     "apps/web/src/app/[locale]/(auth)/auth/entry-password-default.test.tsx",
     "apps/web/src/app/[locale]/(auth)/auth/page-link-flow.test.tsx",
+    "apps/web/src/app/[locale]/(auth)/auth/page-pkce-seed.test.tsx",
     "apps/web/src/app/[locale]/(auth)/auth/page.tsx",
     "apps/web/src/app/[locale]/(auth)/auth/signup-submit-timeout.test.tsx",
     "apps/web/src/lib/auth/submit-auth.test.ts",
@@ -22,13 +23,13 @@
     "apps/web/translations/sr.json",
     "apps/web/translations/zh.json"
   ],
-  "diff_hash": "b13c37d199f5b00f615da6f354bb7a5f84c6d50e9b3ec9f95f4032cc7f057ebd",
-  "head": "02541af86461a332d380131f4c93f74980aed401",
-  "passed": false,
+  "diff_hash": "9efe02178fbfd1ee036f9fa49e90a665279db49be5313b7cd5125fee89032ddb",
+  "head": "b5bb0d0e1a077d653da744d72aca074ffbbbb16c",
+  "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
-    "db-suites": "fail"
+    "db-suites": "pass"
   },
-  "at": "2026-10-10T22:51:57.547Z"
+  "at": "2026-10-10T23:19:34.897Z"
 }
