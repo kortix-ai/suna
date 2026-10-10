@@ -25,7 +25,7 @@ import { AppHostingProvider } from './hosting';
 import { normalizeAppBuild, type AppSourceSpec } from './spec';
 import { publishStaticSite, staticHostingEnabled } from './static-site';
 import { retireSupersededDeployments } from './retention';
-import { AppBudgetExceededError, alwaysOnBudgetWarning } from './budget';
+import { AppBudgetExceededError } from './budget';
 import { AppAccountUnfundedError, AppLimitError, assertAppComputeAllowed } from './limits';
 import { appRuntimeArtifactDigest } from './runtime-artifacts';
 import { appDeploymentFailureDisposition } from './deployment-failures';
@@ -540,17 +540,6 @@ export async function driveAppDeployment(
       runtimeId,
       data: { previousDeploymentId: previous },
     });
-    const budgetWarning = alwaysOnBudgetWarning(
-      { ...context.app, ...hosting.effectiveMachine(runtimeProvider, requestedMachine) },
-      runtimeProvider,
-    );
-    if (budgetWarning) {
-      await event(claimed.deploymentId, budgetWarning.code, budgetWarning.message, {
-        runtimeId,
-        level: 'warn',
-        data: { estimated_monthly_usd: budgetWarning.estimated_monthly_usd, monthly_budget_usd: budgetWarning.monthly_budget_usd },
-      });
-    }
     await auditDeploymentOutcome(auditRef, { outcome: 'activated', previousDeploymentId: previous });
     await stopPreviousRuntime(hosting, previous).catch((error) => {
       logger.error('[apps] previous runtime stop failed', {
@@ -747,10 +736,10 @@ async function resolveDeploymentBuild(context: DeploymentContext, sourceDir: str
 }
 
 async function assertDeploymentComputeAllowed(context: DeploymentContext): Promise<void> {
-  // Entitlement, concurrency and budget, before a build burns provider time.
-  // A refusal here is permanent: the operator must fund the account, stop an
-  // App, or raise the budget and then deploy again. Retrying three times on a
-  // 30s backoff would only restate the same answer.
+  // Entitlement, concurrency and (on demand) budget, before a build burns
+  // provider time. A refusal here is permanent: the operator must fund the
+  // account, stop an App, or raise the budget and then deploy again.
+  // Retrying three times on a 30s backoff would only restate the same answer.
   try {
     await assertAppComputeAllowed(context.app);
   } catch (error) {
@@ -927,9 +916,14 @@ async function provisionDeploymentRuntime(input: {
     // per App, so it is not the platform secret and rotating the platform
     // secret rotates every App's. `KORTIX_*` is reserved from user-supplied
     // env, so neither variable can be shadowed by a manifest value.
+    // KORTIX_AUTH_ISSUER / _AUDIENCE (this App) / _JWKS let
+    // `verifyKortixToken()` check the App's sign-in tokens with no options.
     envVars: {
       ...runtimeEnvironment.env,
       ...appRuntimeIdentityEnv(context.app),
+      // Loaded on use: the App gate imports this module, and its hot path (and every
+      // hand-written module mock of it) does not need the token machinery.
+      ...(await (await import('./tokens')).appAuthEnv(context.app)),
     },
   });
   state.runtimeExternalId = handle.externalId;

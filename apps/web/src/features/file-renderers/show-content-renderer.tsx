@@ -40,6 +40,7 @@ import Loading from '@/components/ui/loading';
 import { TextShimmer } from '@/components/ui/text-shimmer';
 import { framePolicy } from '@/features/file-viewer/preview-policy';
 import { useBinaryBlob } from '@/features/files/hooks/use-binary-blob';
+import { sessionDriveMountPath } from '@/features/drives/session-drive-files';
 import { useFileContent } from '@/features/files/hooks/use-file-content';
 import { useHeicBlob } from '@/hooks/use-heic-url';
 import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
@@ -125,7 +126,9 @@ export function showAspectRatioToCSS(ar: string | undefined): string | undefined
 function isLocalSandboxFilePath(value: string): boolean {
   if (!value) return false;
   if (/^(https?:|data:|blob:)/i.test(value)) return false;
-  return value.startsWith('/');
+  // `drives/me/a.gif` is the session's drive mount written relative; the file
+  // client reads it through the drive API.
+  return value.startsWith('/') || sessionDriveMountPath(value) !== null;
 }
 
 /** Types loaded via useBinaryBlob (/file/raw, direct binary fetch) */

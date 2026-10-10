@@ -52,7 +52,7 @@ afterAll(async () => {
 });
 
 const create = async (projectId: string, accountId: string, slug: string) =>
-  (await insertConvexApp({ projectId, accountId, userId: USER, slug, name: slug, monthlyBudgetUsd: '20.00', monthlyBudgetExplicit: false })).row;
+  (await insertConvexApp({ projectId, accountId, userId: USER, slug, name: slug })).row;
 
 async function liveCount(where: ReturnType<typeof eq>): Promise<number> {
   return (await db.select({ id: apps.appId }).from(apps).where(and(where, eq(apps.kind, 'convex')))).length;
@@ -90,17 +90,17 @@ describe('insertConvexApp caps', () => {
     expect(await liveCount(eq(apps.accountId, OTHER_ACCOUNT))).toBe(1);
   });
 
-  test('a convex App is created with kind convex, always on, the requested budget; its machine row waits to provision', async () => {
+  test('a convex App is created with kind convex and always on; its machine row waits to provision', async () => {
     const row = await create(SHAPE_PROJECT, OTHER_ACCOUNT, 'shape');
     const [app] = await db.select().from(apps).where(eq(apps.appId, row.appId));
-    expect(app).toMatchObject({ kind: 'convex', alwaysOn: true, monthlyBudgetUsd: '20.00', cpuCores: 1, memoryGb: 1, diskGb: 10 });
+    expect(app).toMatchObject({ kind: 'convex', alwaysOn: true, cpuCores: 1, memoryGb: 1, diskGb: 10 });
     expect(row).toMatchObject({ status: 'provisioning', provider: 'platinum', externalId: null, slug: 'shape' });
   });
 
   test('a size outside the machine limits answers BackendLimitError invalid_size before any row exists', async () => {
     const error = await insertConvexApp({
       projectId: SHAPE_PROJECT, accountId: OTHER_ACCOUNT, userId: USER, slug: 'too-big', name: 'too-big',
-      size: { cpu: 64 }, monthlyBudgetUsd: '1.00', monthlyBudgetExplicit: true,
+      size: { cpu: 64 },
     }).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(BackendLimitError);
     expect((error as BackendLimitError).code).toBe('invalid_size');
@@ -129,6 +129,7 @@ describe('sign-in issuer', () => {
     const envWrites: Array<{ path: string; auth: string | null; edgeToken: string | null; body: unknown }> = [];
     const ok = Bun.serve({
       port: 0,
+      hostname: '127.0.0.1',
       fetch: async (req) => {
         envWrites.push({
           path: new URL(req.url).pathname,
@@ -139,15 +140,16 @@ describe('sign-in issuer', () => {
         return new Response(null, { status: 200 });
       },
     });
-    const down = Bun.serve({ port: 0, fetch: () => new Response('boom', { status: 500 }) });
+    const down = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: () => new Response('boom', { status: 500 }) });
     // Kortix reaches a machine through its private Platinum exposure: the fake
     // control plane exposes a machine whose id ends in `-ok` at `ok`, any other at `down`.
     const platinum = Bun.serve({
       port: 0,
+      hostname: '127.0.0.1',
       fetch: (req) => {
         const [, , , id, sub] = new URL(req.url).pathname.split('/');
         if (sub !== 'expose') return Response.json({ id, state: 'running' });
-        const origin = id!.endsWith('-ok') ? ok.url.origin : down.url.origin;
+        const origin = id!.endsWith('-ok') ? `http://127.0.0.1:${ok.port}` : `http://127.0.0.1:${down.port}`;
         return Response.json({ port: 3210, public: false, url: `${origin}/?t=synthetic-edge-token` });
       },
     });

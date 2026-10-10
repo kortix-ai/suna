@@ -422,7 +422,9 @@ const browserSession = await apps.access.session(app.app_id);
 
 Access modes are `private`, `project`, `restricted`, `public`, and `password`. An access session exchanges a five-minute URL for an eight-hour, host-only cookie. A stopped or idle App resumes on the same public request. Transient machine requests receive `202 app_starting` and `Retry-After: 3`.
 
-Every App has a `kind`, fixed at create: `web` (the default: a site or a server built from its deployments) or `convex` (a self-hosted Convex backend in its own always-on machine). Branch on `app.capabilities`, never on the kind. A call for a capability the App lacks answers `409 app_capability_unsupported`.
+Every App has a `kind`, fixed at create: `web` (the default: a site or a server built from its deployments) or `convex` (a self-hosted Convex backend in its own always-on machine, with no budget). Branch on `app.capabilities`, never on the kind. A call for a capability the App lacks answers `409 app_capability_unsupported`.
+
+`apps.list()` returns only the Apps the caller may open under each App's access policy (a project manager sees all), so `viewer_can_access` is `true` on every listed App. A `get` of an App the caller cannot open answers `404`. Only an on-demand server App has a `monthly_budget_usd`; an always-on or `convex` App has `null` and a fixed `estimated_monthly_usd`, and a budget on one answers `400 app_budget_not_applicable`.
 
 ```ts
 const db = await apps.create({ slug: 'db', name: 'Database', kind: 'convex' });
@@ -1020,7 +1022,7 @@ const db = kortixBinding('db');                                                 
 convex = new ConvexReactClient(db.url); convex.setAuth(db.token);                // its client, signed in as the viewer
 const token = await kortixToken()();                                             // a token for this App itself
 const me = requireKortixMember(await ctx.auth.getUserIdentity(), { groups: ['Finance'] });  // a server function
-const caller = await verifyKortixToken(bearer);                                  // any server (KORTIX_AUTH_* env)
+const caller = await verifyKortixToken(bearer);                                  // a server App (Kortix injects KORTIX_AUTH_*)
 const viewer = readKortixMember(await fetchKortixAppViewer());                   // browser
 ```
 
@@ -1035,7 +1037,7 @@ reaches a used App's endpoint through `/_kortix/apps/<slug>` on the same origin.
 header, sign-in token) into one `KortixMember`: `userId`, `email`, `name`,
 `picture`, `groups`, `groupIds`, `role`, `accountId`, `projectId`.
 `requireKortixMember` throws `KortixMemberError` (`unauthenticated` |
-`forbidden`). `verifyKortixToken` takes the key set inline or as an https URL
+`forbidden`). In React, read the member with a `members:me` query (`readKortixMember(await ctx.auth.getUserIdentity())` in `convex/members.ts`, then `useQuery(api.members.me)`: `undefined` loading, `null` signed out). Never call `useConvexAuth()`: it throws under a plain `ConvexProvider`. Kortix injects `KORTIX_AUTH_ISSUER`, `KORTIX_AUTH_AUDIENCE` (the App's own id) and `KORTIX_AUTH_JWKS` into every server App, so do not set `KORTIX_AUTH_*` in its `env`. `verifyKortixToken` takes the key set inline or as an https URL
 (`auth.jwks_uri`), and refuses every token when no audience is set (option or
 `KORTIX_AUTH_AUDIENCE`): one project key signs every App's tokens, so `aud` is
 the only thing that keeps another App's token out. `audience: false` opts out. WebCrypto only; no dependency. Guide: `/docs/sdk/apps`.

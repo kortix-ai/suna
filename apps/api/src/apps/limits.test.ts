@@ -2,10 +2,11 @@ import { describe, expect, test } from 'bun:test';
 import {
   APP_MACHINE_LIMITS,
   AppLimitError,
+  assertAppBudgetApplies,
   assertAppBudgetWithinLimits,
   assertAppMachineWithinLimits,
 } from './limits';
-import { DEFAULT_APP_MONTHLY_BUDGET_USD, alwaysOnBudgetWarning, appMonthlyEstimateUsd, defaultAppBudgetUsd } from './budget';
+import { DEFAULT_APP_MONTHLY_BUDGET_USD, appHasBudget, appMonthlyEstimateUsd } from './budget';
 import { appRuntimeImageKey } from './deployment-worker';
 
 describe('App machine limits', () => {
@@ -64,15 +65,6 @@ describe('always-on cost', () => {
     expect(appMonthlyEstimateUsd({ cpuCores: 2, memoryGb: 4, diskGb: 20 })).toBe(146.96);
   });
 
-  test('warns only an always-on App whose budget is below its estimate', () => {
-    const warning = alwaysOnBudgetWarning({ ...machine, alwaysOn: true, monthlyBudgetUsd: '5.00' });
-    expect(warning).toMatchObject({
-      code: 'app_budget_below_always_on', estimated_monthly_usd: 73.48, monthly_budget_usd: 5,
-    });
-    expect(warning?.message).toContain('after about 2.1 days');
-    expect(alwaysOnBudgetWarning({ ...machine, alwaysOn: false, monthlyBudgetUsd: '5.00' })).toBeNull();
-    expect(alwaysOnBudgetWarning({ ...machine, alwaysOn: true, monthlyBudgetUsd: '73.48' })).toBeNull();
-  });
 });
 
 describe('runtime refresh key', () => {
@@ -85,30 +77,36 @@ describe('runtime refresh key', () => {
   });
 });
 
-describe('default App budget', () => {
-  const small = { cpuCores: 1, memoryGb: 1, diskGb: 10 };
-  const standard = { cpuCores: 1, memoryGb: 2, diskGb: 10 };
+describe('which App has a monthly budget (cost shape)', () => {
+  const machine = { cpuCores: 1, memoryGb: 2, diskGb: 10 };
 
-  test('an always-on App defaults to its 24/7 estimate rounded up to a whole dollar', () => {
-    for (const machine of [small, standard]) {
-      const budget = defaultAppBudgetUsd({ ...machine, alwaysOn: true });
-      expect(Number.isInteger(budget)).toBe(true);
-      expect(budget).toBe(Math.ceil(appMonthlyEstimateUsd(machine)));
-      expect(budget).toBeGreaterThanOrEqual(appMonthlyEstimateUsd(machine));
-      expect(alwaysOnBudgetWarning({ ...machine, alwaysOn: true, monthlyBudgetUsd: budget })).toBeNull();
-    }
-    expect(defaultAppBudgetUsd({ ...standard, alwaysOn: true })).toBeGreaterThan(
-      defaultAppBudgetUsd({ ...small, alwaysOn: true }),
-    );
-  });
-
-  test('an on-demand App keeps the flat default, whatever its size', () => {
+  test('only an on-demand server App has one; its default is $5', () => {
     expect(DEFAULT_APP_MONTHLY_BUDGET_USD).toBe(5);
-    expect(defaultAppBudgetUsd({ ...standard, alwaysOn: false })).toBe(5);
-    expect(defaultAppBudgetUsd({ cpuCores: 8, memoryGb: 32, diskGb: 10, alwaysOn: false })).toBe(5);
+    expect(appHasBudget({ kind: 'web', alwaysOn: false })).toBe(true);
+    expect(appHasBudget({ kind: 'web', alwaysOn: false }, 'sandbox')).toBe(true);
+    expect(appHasBudget({ kind: 'web', alwaysOn: true })).toBe(false);
+    expect(appHasBudget({ kind: 'web', alwaysOn: false }, 'static')).toBe(false);
+    expect(appHasBudget({ kind: 'convex', alwaysOn: true }, 'convex')).toBe(false);
   });
 
-  test('a derived budget never exceeds the operator maximum', () => {
-    expect(defaultAppBudgetUsd({ cpuCores: 1, memoryGb: 2, diskGb: 10, alwaysOn: true }, undefined, 50)).toBe(50);
+  test('a budget on a fixed-cost or static App is refused with app_budget_not_applicable and the reason', () => {
+    expect(() => assertAppBudgetApplies(10, { ...machine, kind: 'web', alwaysOn: false }, 'sandbox')).not.toThrow();
+    expect(() => assertAppBudgetApplies(undefined, { ...machine, kind: 'web', alwaysOn: true }, null)).not.toThrow();
+    const refusal = (app: { kind: string; alwaysOn: boolean }, hosting: string | null) => {
+      try {
+        assertAppBudgetApplies(10, { ...machine, ...app }, hosting);
+      } catch (error) {
+        return error as AppLimitError;
+      }
+      throw new Error('expected a refusal');
+    };
+    const alwaysOn = refusal({ kind: 'web', alwaysOn: true }, 'sandbox');
+    expect(alwaysOn).toMatchObject({ code: 'app_budget_not_applicable', status: 400, detail: { estimated_monthly_usd: 73.48 } });
+    expect(alwaysOn.message).toContain('about $73.48 a month');
+    expect(alwaysOn.message).toContain('always_on: false');
+    expect(refusal({ kind: 'convex', alwaysOn: true }, 'convex').message).toContain('A convex App has no monthly budget');
+    const staticApp = refusal({ kind: 'web', alwaysOn: false }, 'static');
+    expect(staticApp.message).toContain('static App runs no machine');
+    expect(staticApp.detail).toEqual({ estimated_monthly_usd: 0 });
   });
 });

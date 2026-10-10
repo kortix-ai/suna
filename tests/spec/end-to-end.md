@@ -509,6 +509,14 @@ Repo files are read-only over the project API; live edits happen in the sandbox 
 `FILE-12` `GET /projects/:id/files/raw?path=&ref=` → the file's exact bytes (`git cat-file blob`), the byte-accurate read behind binary previews and downloads. **Absent `path` param → 400**; missing path → 404; a text file's bytes decode to exactly what `files/content` returns as text; ANON → 401.
 `FILE-13` **Files lists every folder** — `GET /projects/:id/files?depth=1[&path=<dir>]` returns `{ entries: [{path, type: file|directory}], truncated }` for one folder level, complete past 1,000 entries (a 1,200-file `a/` lists whole, and `z/` after it is reachable); the recursive list (no `depth`) stays capped at 1,000 and sends `X-Kortix-Truncated: 1` when cut (KRTX-1723).
 
+
+## 10b. Files (`/v1/drives`, `combinedAuth` + `rejectSandboxTokens`; session-bound PATs → 403)
+
+A project's Files is one drive (kind `project`) backed by one storage volume. Folder access is the project's object grants (`role_assignments`, object type `folder`): `read`, `write` or `manage` on a folder and everything below it, for a person, a team, an agent or everyone in the project. Everyone has a private folder under `/Users` (project admins included get **404** on another person's folder until it is shared); project admins manage every other folder. A path the caller cannot see is **404**; one they see but may not change is **403**.
+
+`DRIVE-1` Files follows the organization's Volumes switch (the derived `drives` flag; `PATCH /projects/:id/features` refuses it with 400; a platform admin sets it with `PUT /admin/api/boot-modes`, the account owner gets 403). `GET /drives?projectId=` → 200 `{drives:[the project drive with the caller's access, personalFolder and sharedWithMe]}` (created once), 403 `feature_disabled` while the flag is off; ANON → 401; NONMEMBER → 403/404. Files (`GET /drives/:id/files?path=`, `GET|PUT …/files/content?path=` (≤ 64 MiB raw body; `If-Match` refuses a stale save with 409 `file_changed`), `POST …/files/mkdir {path}`, `POST …/files/move {from,to}`, `DELETE …/files?path=&recursive=`), `GET /drives/:id/versions`, `POST /drives/:id/restore {versionId}`: a `..` path → 400, unknown version → 404; a target without drive storage answers 503 `drive_storage_unavailable` on every write. Sharing: `GET /drives/:id/access?path=` (grants on the folder and inherited ones), `PUT /drives/:id/access {path, principalType: user|group|agent|project, principalId?, level}` → 200 `{grantId, pendingSessions?}`, `DELETE /drives/:id/access/:grantId` → 204, or 202 `{pendingSessions}` while a running session's detach has not landed (retried by the drive worker; the sync routes refuse the folder to that session meanwhile), `GET /drives/:id/principals`. A folder on the way to a shared one opens for traversal and lists only the way. Conflicts: `GET /drives/:id/conflicts` → open "(conflict …)" copies; `POST /drives/:id/conflicts/:cid/dismiss` → 204, unknown → 404.
+`DRIVE-2` `GET /projects/:id/sessions/:sid/drives` → 200 `{drives:[{driveId,name,kind,mountPath,readOnly,subdir}], personal, skipped, skippedMessage}`: the folders the session's current sandbox mounted, each at a distinct `/drives/` path, the person's own folder at `/drives/me` only in a private session they started; non-uuid session → 400, unknown → 404, NONMEMBER → 403, ANON → 401. What a session mounts follows grants only: there is no route to attach a folder to a session or change its access.
+
 ---
 
 ## 11. Change Requests (mandatory path to land branch work on main)
@@ -550,8 +558,8 @@ Specs in `[[triggers]]`; CRUD commits the manifest; runtime state and account-lo
 `TRG-2` `POST /projects/:id/triggers {name(required),slug?,type,agent?,enabled?,prompt_template,cron?,timezone?,secret_env?}` → `manage` → 201, manifest committed; `name` is required (slug derived from it when omitted); duplicate slug → 409. `webhook` requires `secret_env` (names a `project_secrets` key, regex `^[A-Z_][A-Z0-9_]*$`). `cron` requires 6-field croner expr + IANA `timezone` (default UTC). The create is one `kortix.yaml` commit `chore: add trigger <slug>` carrying the entry.
 `TRG-3` `PATCH /projects/:id/triggers/:slug` (e.g. `{enabled:false}`) → `manage`. A partial body keeps every other field of the entry.
 `TRG-4` `DELETE /projects/:id/triggers/:slug` → `manage` (also drops runtime row). The other triggers stay listed.
-`TRG-5` `POST /projects/:id/triggers/:slug/fire` → `manage` → manual fire → 202 `{status:fired,session_id}`; under backpressure → 202 `{status:queued,reason}`.
-`TRG-7` webhook fire — `POST /webhooks/projects/:id/:slug` (**public, HMAC**). Sig header `X-Kortix-Signature` or `X-Hub-Signature-256` (`sha256=` stripped), HMAC-SHA256 over raw body vs `project_secrets[secret_env]`, constant-time. Valid → 202 fired/queued; malformed UUID/slug → 400; bad sig, unknown project, missing secret and unknown/disabled/non-webhook trigger all answer the same 401 `Invalid webhook signature` (no existence oracle; the reason is logged); optional `X-Kortix-Timestamp` (epoch seconds) signs `<timestamp>.<body>` and a delivery more than 5 minutes off → 401; fire failure → 500.
+`TRG-5` `POST /projects/:id/triggers/:slug/fire` → `manage` → manual fire → 202 `{status:fired,session_id}`; under backpressure → 202 `{status:queued,reason}`; a fire the account cannot run (no usable model, LLM-gateway projects) → 402 `{error,code:'no_usable_model'}` with no session minted (KRTX-1505).
+`TRG-7` webhook fire — `POST /webhooks/projects/:id/:slug` (**public, HMAC**). Sig header `X-Kortix-Signature` or `X-Hub-Signature-256` (`sha256=` stripped), HMAC-SHA256 over raw body vs `project_secrets[secret_env]`, constant-time. Valid → 202 fired/queued; malformed UUID/slug → 400; bad sig, unknown project, missing secret and unknown/disabled/non-webhook trigger all answer the same 401 `Invalid webhook signature` (no existence oracle; the reason is logged); optional `X-Kortix-Timestamp` (epoch seconds) signs `<timestamp>.<body>` and a delivery more than 5 minutes off → 401; a fire the account cannot run (no usable model, LLM-gateway projects) → 402 `{error,code:'no_usable_model'}` with no session minted (KRTX-1505); other fire failure → 500.
 `TRG-10` `GET /projects/:id/triggers` leaf gate — a member bound to a custom (Enterprise) project role granting `project.read` but NOT `project.trigger.read` loads the project yet is rejected 403 at `GET /triggers` (the `assertProjectCapability(project.trigger.read)` fires after the read passes); a floor `user` member (built-in role carries `project.trigger.read`) still gets 200. Scoped-agent-token variant proven at the API layer in `integration-project-read-leaf-gates-http.test.ts`.
 `TRG-11` Triggers CRUD authz boundaries — `ANON → 401` on POST/PATCH/DELETE/fire/activation; a project `member` (floor role) holds `trigger.read` + `trigger.fire` but NOT `project.write` (the `manage` floor) nor `trigger.create/update/delete` → `GET 200`, `POST/PATCH/DELETE/activation 403`, `fire` unknown-slug `404` (NOT 403 — the fire leaf passes; the 404 is the slug lookup).
 `TRG-12` `POST /projects/:id/triggers` input validation — missing `name`/`type`/`prompt_template` → `400`; bad `type` (not cron/webhook/monitor/event) → `400`; a cron that fires more than once a minute (`*/30 * * * * *`: the first of 6 fields is seconds) → `400` naming the 60-second minimum (KRTX-1721); invalid `session_mode` → `400`; `pinned` without `session_id` → `400`; `pinned` with a `session_id` from another project → `400`; webhook without `secret_env` → `400`; webhook with bad `secret_env` (lowercase / leading digit, not `^[A-Z_][A-Z0-9_]*$`) → `400`; cron without `cron` AND without `run_at` → `400`; cron with non-ISO `run_at` → `400`; explicit invalid slug (uppercase / leading dash, not `^[a-z0-9][a-z0-9_-]{0,127}$`) → `400`.
@@ -674,6 +682,7 @@ DB `project_secrets` (AES-256-GCM, key bound to `projectId`, unique `(project_id
 `SEC-1` `GET /projects/:id/secrets` → `manage` → names only + manifest required/optional keys + virtual git-auth row.
 `SEC-2` `POST /projects/:id/secrets {name,value}` → `manage` → upsert (encrypt); name upper-cased; invalid name format → 400; `KORTIX_*` reserved → 400. M_EDITOR/M_VIEWER → 403.
 `SEC-3` `DELETE /projects/:id/secrets/:name` → `manage`; invalid name → 400; system secret (git-auth) → 403. No plaintext appears in the upsert response, the list, or the stored row; a human reads `agent_scope:null`; delete answers `{ok:true}`.
+`SEC-3A` Unset revokes the secret's outstanding intake links (KRTX-2056) → a setup-link token minted before the delete is dead: `GET /setup-links/secret/:token` (the page shows it instead of the form) and `POST {values}` both answer `409 This link is no longer valid: <NAME> was removed from the project after the link was issued. Ask the agent for a fresh link.`, and the submit re-creates nothing. The same holds when the secret was never filled (the agent unsets a request it minted but nobody has submitted): the unset tombstones the NAME even though no row existed. A link minted AFTER the unset still works — "request a secret that does not exist yet" is the feature. Deletion records a tombstone keyed by secret NAME in the delete's transaction (pruned once older than the longest link TTL); a token that predates `iat` and names a deleted secret is refused (unknown mint time reads as the oldest possible).
 `SEC-4` injection — `buildSessionSandboxEnvVars` decrypts only `runtime` + `sandbox` secrets authorized by the immutable agent grant and current session allowlist. Denied and reserved platform credentials do not enter the project-secret environment; an egress-enforced secret enters it as a HANDLE, never as its value.
 `SEC-6` `POST /projects/:id/secrets {identifier,name,value}` → two identifiers may share one env-var `name` (e.g. `GMAPS-primary`/`GMAPS-backup` both `GOOGLE_MAPS_API_KEY`); re-submitting an existing `identifier` with a different `name` → 409.
 `SEC-POOL-1` Account secret resource create/list/rotate/delete → two Anthropic keys have separate stable IDs; read responses omit values; a nonmember cannot list; deleting one key preserves the other.
@@ -1190,13 +1199,14 @@ project read then lists `apps` with `enabled: true, operator_only: true`. A
 project writer creates a unique lower-case slug and machine policy; list/get
 return the stable public URL and active deployment pointer; every App carries
 `estimated_monthly_usd` (its machine 24/7 at list compute rates, `73.48` for
-1 vCPU / 2 GiB / 10 GiB); an always-on create or a run-mode, machine or budget
-patch with a budget below that estimate succeeds with
-`warnings[0].code = 'app_budget_below_always_on'`, and `warnings: []`
-otherwise; a create without `monthly_budget_usd` gets a derived budget: the
-24/7 estimate rounded up to a whole dollar (`74` for 1 vCPU / 2 GiB) when the
-App is always on, `5` on demand; a derived budget follows later machine and
-run-mode patches, a budget a person sent never moves; patch updates mutable policy; delete is soft and removes the App
+1 vCPU / 2 GiB / 10 GiB). Cost shape decides the budget: only an on-demand
+server App (`always_on: false`) has `monthly_budget_usd` (default `5`, the
+value sent otherwise, unmoved by a machine patch); an always-on App reports
+`monthly_budget_usd: null`, and a create or patch that sends a budget for it →
+`400 {code:'app_budget_not_applicable'}` with the 24/7 cost in the message;
+a patch to `always_on: false` sets the sent budget or `5`, a patch back to
+`always_on: true` clears it to `null`; `warnings: []` on every create and
+patch; patch updates mutable policy; delete is soft and removes the App
 from subsequent reads.
 A new App lists no backends (`backends: []`); patch sets the list by name,
 deduplicated, and get reads it back; an invalid backend name → 400.
@@ -1235,7 +1245,11 @@ not disclose that a teammate's private App exists); their `PATCH …/:appId` is
 **403** because a member holds no `project.app.write` at all, which discloses
 nothing either. Switching the
 policy to `project` puts the App in that teammate's list and makes it readable;
-`restricted` with their `member_ids` keeps them in; returning to `private` puts
+`restricted` with their `member_ids` keeps them in. A second App `restricted`
+to the owner alone is absent from the teammate's list and 404 on their get,
+while the owner lists both; every App in a list answers
+`viewer_can_access: true` (the list holds only Apps the caller may open, a
+project manager every App). Returning to `private` puts
 them back out. `password` is a PUBLIC-traffic control and stays team-visible.
 A `NONMEMBER` remains 403 on the whole surface.
 
@@ -1559,7 +1573,13 @@ a trigger run. Every denial is `403 {code, action}` (spec §4).
 `AGP-12` Denial bodies. Each denial carries `code` and `action`: `project_role_insufficient` (member JWT, files), `agent_scope_insufficient` (secrets outside the list), `agent_ceiling_insufficient` (files under a `member` ceiling), `agent_not_accessible` (spawning an agent the human may not run). The real CLI chooses its hint from the code: `kortix secrets ls` names `agents.scoped.kortix_permissions` and `project.secret.read`; `kortix files ls` under the ceiling asks an admin, names `capped`, and does not name `kortix_permissions`.
 `AGP-14` Trigger fire with no agent. The manifest names `default_agent: nightly`, and the metadata mirror is stale (`decoy`). The trigger names no agent and is pinned to a minted `nightly` run. A member with `run(nightly)` fires it → 202 and one prompt is queued for that run. A member with only `run(decoy)` → 403 `agent_not_accessible` and nothing more is queued. The fire route authorizes the agent session creation will run.
 
-## 33. Retired routes
+## 33. Feedback
+
+Product feedback filed by agents and people through one route and one CLI command. One append-only row per submission; the triage surface reads it newest first.
+
+`FB-1` `POST /v1/feedback {source?: cli|agent|web = cli, kind: bug|idea|friction, message: 1..4000 chars, context?: {≤8 keys of ≤128 chars → ≤256 chars}}` → `201 {id, source, kind, created_at}`; the row stores the caller's user id and the account the credential resolves. ANON → 401. Unknown `kind`, unknown `source`, empty or > 4000-char `message`, oversized context values, more than 8 context keys → 400. The route is rate limited per user; a flood inside the window answers `429` with `Retry-After`, and another identity still files successfully. `kortix feedback "<message>" [--kind …] [--source …] [--context <json>] [--json]` runs the real CLI process: inside a session (`KORTIX_SESSION_ID`) it files `source: agent` with the session and project ids merged into the context, outside it files `source: cli`; it prints the stored receipt and exits 0, and maps an API refusal to a nonzero exit.
+
+## 34. Retired routes
 
 `RET-1` Every route the API retired answers `410` with `{ error, code: "ENDPOINT_RETIRED" }` for any caller, anonymous included, and runs no handler: the legacy router LLM and search routes, the `/billing/account/*` deletion mirror (use `/account/*`), `POST /billing/deduct` · `deduct-usage` · `sync-seat-quantity` · `create-checkout-session` · `confirm-checkout-session` · `schedule-downgrade`, `GET /generation`, `POST /prewarm`, and `/projects/suna-migration/*`. The table is `RETIRED_ROUTES` in `apps/api/src/routes/retired.ts`.
 
@@ -1640,9 +1660,10 @@ Delete: without `confirm=<slug>` → `400 confirmation_required`; with it, a
 `final` snapshot is taken, the machine is stopped and kept 7 days
 (`retained_until`), the hosts answer 410, the sweep and the orphan reaper leave
 the machine alone, and the purge after retention deletes machine, snapshots and
-row. Budget: 80 % and 100 % of the monthly budget each alert once per month
-(`instance.budget_alert`, audit `app.budget.alert`) and the machine keeps
-running. Not asserted locally: a provisioned machine and the
+row. No budget: a `convex` App reports `monthly_budget_usd: null` and
+`instance.budget_alert: null`, a budget on create or patch →
+`400 app_budget_not_applicable`, and the sweep never stops the machine for its
+spend. Not asserted locally: a provisioned machine and the
 `app.credentials.read` audit row; they are verified on a deployed environment.
 
 `APP-10` Sign-in tokens and the bindings mount, black-box on a local App host.

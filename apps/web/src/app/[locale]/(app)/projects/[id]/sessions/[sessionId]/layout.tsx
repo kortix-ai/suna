@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 
+import { SessionDriveFilesScope } from '@/features/drives/session-drive-files';
 import { resolveSessionTabTitle } from '@/features/session/session-tab-title-server';
 import { SessionTabTitleSync } from '@/features/session/session-tab-title-sync';
 
@@ -43,6 +44,9 @@ export default async function SessionRouteLayout({ children, params }: SessionRo
   const { id: projectId, sessionId } = await params;
   return (
     <>
+      {/* Before the page: a file under the session's drive mounts resolves
+          against this scope on its first read. */}
+      <SessionDriveFilesScope projectId={projectId} sessionId={sessionId} />
       {children}
       {/* Post-load changes only (rename, auto-title). Mounted here rather than
           in the page so the page tree gains no session-name subscriber. */}

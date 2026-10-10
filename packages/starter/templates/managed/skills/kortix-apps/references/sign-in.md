@@ -213,6 +213,31 @@ fetcher. It caches the token and fetches a new one before it expires. It
 yields `null` (anonymous) for every non-200 answer: to see why, call
 `/_kortix/token` yourself (Troubleshoot sign-in, below).
 
+### Read the signed-in member in React
+
+Do not call `useConvexAuth()`. It throws under a plain `ConvexProvider`: it
+needs `ConvexProviderWithAuth`, and `kortixBinding` is not verified with that
+provider. Read the member with a query instead. The query returns `null` when
+nobody is signed in (`readKortixMember` never throws):
+
+```ts
+// convex/members.ts
+import { query } from "./_generated/server";
+import { readKortixMember } from "@kortix/sdk";
+
+export const me = query({
+  args: {},
+  handler: async (ctx) => readKortixMember(await ctx.auth.getUserIdentity()),
+});
+```
+
+```tsx
+// src/App.tsx
+const me = useQuery(api.members.me);   // undefined: loading. null: signed out. Otherwise the member.
+```
+
+Use `requireKortixMember` only in functions that must refuse an anonymous caller.
+
 A static App without data can ask the gate directly:
 `fetchKortixAppViewer()` returns the viewer (name, picture, groups, role) from
 `/_kortix/viewer`, and `readKortixMember(viewer)` gives the member shape.
@@ -234,9 +259,13 @@ const member = await verifyKortixToken(bearer, {
 requireKortixMember(member, { groups: ["Finance"] });
 ```
 
-With no options it reads `KORTIX_AUTH_ISSUER`, `KORTIX_AUTH_AUDIENCE` and
-`KORTIX_AUTH_JWKS` from the environment: set them in the App's `env`. It
-checks the ES256 signature, the expiry (60 s skew), the issuer and the
+Kortix injects `KORTIX_AUTH_ISSUER` (the project issuer), `KORTIX_AUTH_AUDIENCE`
+(the App's own id) and `KORTIX_AUTH_JWKS` (the project key set, as a `data:`
+URI) into every server App's runtime. `verifyKortixToken(bearer)` with no
+options reads them. Do not set `KORTIX_AUTH_*` in the App's `env`: the
+`KORTIX_` prefix is reserved and `kortix validate` rejects it. A server App
+deployed before 2026-10-10 gets them on its next deployment. The check
+covers the ES256 signature, the expiry (60 s skew), the issuer and the
 audience. `KORTIX_AUTH_JWKS` takes the key set inline (JSON or a `data:`
 URI) or its URL. Every failure, a missing key set included, throws.
 
