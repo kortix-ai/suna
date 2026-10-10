@@ -464,3 +464,6 @@ export const GENUI_MAX_DEPTH = 4;
 
 /** Maximum nodes in one block after references expand. A reference re-materializes its target at every use. */
 export const GENUI_MAX_NODES = 500;
+
+/** Maximum characters in one block's source. A longer block is not parsed. */
+export const GENUI_MAX_SOURCE_CHARS = 64 * 1024;

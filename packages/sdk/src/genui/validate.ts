@@ -61,7 +61,8 @@ export function sanitizeTree(
       return null;
     }
 
-    // Reserve a slot before visiting children, so the budget bounds the work as well as the output.
+    // Reserve a slot before visiting children. This bounds the output only: lang-core has already
+    // expanded the tree, and `rejection` in parse.ts bounds that expansion before lang-core runs.
     if (nodeCount >= GENUI_MAX_NODES) {
       if (!issues.some((issue) => issue.code === 'too-many-nodes')) {
         issues.push({ code: 'too-many-nodes', message: `Block expands to more than ${GENUI_MAX_NODES} nodes; the rest is dropped` });

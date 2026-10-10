@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { GENUI_MAX_NODES } from './catalog';
+import { GENUI_MAX_NODES, GENUI_MAX_SOURCE_CHARS } from './catalog';
 import { createGenuiParser, parseGenui } from './parse';
 import { HOTEL } from './test-fixtures';
 
@@ -155,3 +155,81 @@ describe('parse + validate', () => {
     expect(elapsed).toBeLessThan(50);
   });
 });
+
+/** `levels` statements, each a Stack of 12 references to the next: 12^levels nodes once expanded. */
+const fanOut = (levels: number): string => {
+  const twelve = (name: string) => Array.from({ length: 12 }, () => name).join(', ');
+  const lines = [`root = Stack([${twelve('n0')}])`];
+  for (let i = 0; i < levels - 1; i++) lines.push(`n${i} = Stack([${twelve(`n${i + 1}`)}])`);
+  lines.push(`n${levels - 1} = Badge("x")`);
+  return lines.join('\n');
+};
+
+describe('adversarial input', () => {
+  // Generous bounds: before the pre-scan, level 6 took ~2.5 s and level 7 never finished.
+  test('reference fan-out at levels 5 to 8 is rejected before lang-core expands it', () => {
+    const started = performance.now();
+    for (const levels of [5, 6, 7, 8]) {
+      const block = fanOut(levels);
+      expect(block.length).toBeLessThan(600);
+      const result = parseGenui(block);
+      expect(result.root).toBeNull();
+      expect(result.issues.map((issue) => issue.code)).toEqual(['too-many-nodes']);
+    }
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
+  test('fan-out is rejected on every streaming tick too', () => {
+    const block = fanOut(7);
+    const parser = createGenuiParser();
+    const started = performance.now();
+    for (let i = 16; i < block.length + 16; i += 16) parser.update(block.slice(0, i), true);
+    const done = parser.update(block, false);
+    expect(done.issues.map((issue) => issue.code)).toEqual(['too-many-nodes']);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
+  test('deep nesting never throws: 5,000 levels is a depth issue, 20,000 (180 KB) is too large', () => {
+    const nested = (levels: number) => `root = ${'Stack(['.repeat(levels)}Badge("x")${'])'.repeat(levels)}`;
+    const deep = parseGenui(nested(5_000));
+    expect(deep.root).toBeNull();
+    expect(deep.issues.map((issue) => issue.code)).toEqual(['depth']);
+    expect(parseGenui(nested(20_000)).issues.map((issue) => issue.code)).toEqual(['too-large']);
+  });
+
+  test('a long chain of references is rejected as too deep', () => {
+    const lines = ['root = Stack([a0])'];
+    for (let i = 0; i < 2_000; i++) lines.push(`a${i} = a${i + 1}`);
+    lines.push('a2000 = Badge("x")');
+    const result = parseGenui(lines.join('\n'));
+    expect(result.root).toBeNull();
+    expect(result.issues.map((issue) => issue.code)).toEqual(['depth']);
+  });
+
+  test(`a block over GENUI_MAX_SOURCE_CHARS (${GENUI_MAX_SOURCE_CHARS}) is not parsed`, () => {
+    const started = performance.now();
+    const result = parseGenui(`root = Stack([c])\nc = Callout("info", "${'a'.repeat(1_000_000)}")`);
+    expect(result.root).toBeNull();
+    expect(result.issues.map((issue) => issue.code)).toEqual(['too-large']);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
+  test('legitimate nesting at the container limit still parses', () => {
+    const block =
+      'root = Stack([t])\nt = Tabs([x, y])\nx = Tab("One", [s])\ny = Tab("Two", [b])\ns = Stack([c])\nc = Table(["a", "b"], [[1, 2], [3, 4]])\nb = Badge("x")';
+    const { root, issues } = parseGenui(block);
+    expect(issues).toEqual([]);
+    expect(root?.type).toBe('Stack');
+  });
+
+  test('the issue list is capped at 50, first issues kept', () => {
+    const children = Array.from({ length: 12 }, (_, i) => `s${i}`).join(', ');
+    const lines = [`root = Stack([${children}, ok])`, 'ok = Badge("kept")'];
+    // Each Series in a Stack is a wrong-child issue; 12 statements x 5 unknown children each.
+    for (let i = 0; i < 12; i++) lines.push(`s${i} = Stack([${Array.from({ length: 6 }, () => 'Nope("x")').join(', ')}])`);
+    const { issues } = parseGenui(lines.join('\n'));
+    expect(issues.length).toBe(50);
+    expect(issues[0]?.code).toBe('unknown-component');
+  });
+});
+

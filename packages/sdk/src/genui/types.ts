@@ -25,7 +25,11 @@ export type GenuiIssueCode =
   /** Query, Mutation, or $state: not supported before Phase 4; never executed. */
   | 'unsupported-statement'
   /** The block expands to more than `GENUI_MAX_NODES` nodes (reference fan-out); the rest is dropped. */
-  | 'too-many-nodes';
+  | 'too-many-nodes'
+  /** The block source is longer than `GENUI_MAX_SOURCE_CHARS`; it is not parsed. */
+  | 'too-large'
+  /** The parser failed on this input; nothing renders. */
+  | 'parse-failed';
 
 export interface GenuiIssue {
   code: GenuiIssueCode;
