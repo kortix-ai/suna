@@ -1,0 +1,16 @@
+{
+  "source_hash": "b8864c01d08301bc22f64fb1764a3f535ed7c13709f587180b9ff08bdaedf624",
+  "diff_files": [
+    "apps/api/src/billing/services/legacy-account-migration.test.ts",
+    "apps/api/src/billing/services/legacy-account-migration.ts"
+  ],
+  "diff_hash": "9a3b7222ff1a537ba5909fc267c87b5504a5f10da11d44f5c86353eead82775d",
+  "head": "e1c828c76a50b9c7661141ba4da23e12e6f91a86",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "skipped-sandbox-image",
+    "db-suites": "skipped-no-db"
+  },
+  "at": "2026-10-10T09:24:44.609Z"
+}
