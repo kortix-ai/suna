@@ -1695,9 +1695,9 @@ async function failOverToNextProvider(
   // only — a running box is never migrated here. The new provider re-resolves
   // its own image (the snapshot is provider-specific), so we clear all image
   // state and re-enter the loop.
+  // Drives run on Platinum only: no hand-off to another provider. (With drive
+  // sync on, any provider can carry the drives; a persistent machine cannot move.)
   const next = nextFailoverProvider({
-    // Drives run on Platinum only: no hand-off to another provider. (With drive
-    // sync on, any provider can carry the drives; a persistent machine cannot move.)
     providerLocked: providerWasExplicitlySelected || (drivesRequirePlatinum && !drivesSyncAllowed) || persistentMachine,
     fallbackAttempted: state.fallbackAttempted,
     fallbackEnabled: providerFallbackSetting().enabled,
