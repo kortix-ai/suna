@@ -19,7 +19,7 @@ type BottomSheetTextInputProps = React.ComponentProps<typeof BottomSheetTextInpu
 /** The sheet field's established height. */
 const SHEET_INPUT_HEIGHT = 48;
 
-export interface SheetTextInputProps extends BottomSheetTextInputProps {
+interface SheetTextInputProps extends BottomSheetTextInputProps {
   /** Use a monospace font (for slugs / identifiers). */
   mono?: boolean;
 }

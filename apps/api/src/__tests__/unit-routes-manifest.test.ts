@@ -23,6 +23,12 @@ test('the committed route manifest equals the live route table', () => {
       SUPABASE_URL: 'https://placeholder.supabase.co',
       INTERNAL_KORTIX_ENV: 'dev',
       KORTIX_BILLING_INTERNAL_ENABLED: 'true',
+      // Billing enabled makes KORTIX_URL a hard requirement (src/config.ts:
+      // "Required when KORTIX_BILLING_INTERNAL_ENABLED=true"). The hermetic
+      // suite strips every ambient KORTIX_* var, so without this placeholder
+      // the generator exits 1 before it ever reads a route table. It is
+      // validation-only and does not change the dumped route table.
+      KORTIX_URL: 'https://placeholder.kortix.com',
       LLM_GATEWAY_ENABLED: 'true',
       FRONTEND_URL: 'https://placeholder.kortix.com',
       KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT: 'https://placeholder.storage.example',

@@ -1,6 +1,7 @@
 import { parseChannelMessage } from '@/features/session/turn/channel-message';
 import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 import { stripHtmlTags } from '@/lib/utils/strip-html-tags';
+import { splitPastedContent } from '@kortix/shared';
 import { isFilePart, isTextPart, type FilePart, type TextPart, type Turn } from '@/ui';
 
 import {
@@ -221,7 +222,9 @@ export function extractMinimapItem(turn: Turn): MinimapItem | null {
   const raw = channel
     ? [channel.userName, channel.messageText].filter(Boolean).join(': ')
     : prompt;
-  const afterReply = stripReplyContexts(raw);
+  // Pastes first, as `UserMessage` does: a ref inside a paste is paste text.
+  const { text: afterPastes, pastes } = splitPastedContent(raw);
+  const afterReply = stripReplyContexts(afterPastes);
   const { cleanText: afterFiles, files: uploads } = parseFileReferences(afterReply);
   const { cleanText: afterProjects } = parseProjectReferences(afterFiles);
   const { cleanText: afterFileMentions, files: fileMentions } =
@@ -229,10 +232,9 @@ export function extractMinimapItem(turn: Turn): MinimapItem | null {
   const { cleanText: afterAgentMentions, agents } = parseAgentMentionReferences(afterFileMentions);
   const { cleanText, sessions } = parseSessionReferences(afterAgentMentions);
 
-  const body = truncate(
-    stripHtmlTags(stripKortixSystemTags(cleanText)).replace(/\s+/g, ' ').trim(),
-    MAX_BODY_TEXT,
-  );
+  const body =
+    truncate(stripHtmlTags(stripKortixSystemTags(cleanText)).replace(/\s+/g, ' ').trim(), MAX_BODY_TEXT) ||
+    (pastes.length > 0 ? 'Pasted text' : '');
 
   const attachments = collectAttachments(fileParts, uploads, fileMentions);
   if (!body && attachments.length === 0) return null;

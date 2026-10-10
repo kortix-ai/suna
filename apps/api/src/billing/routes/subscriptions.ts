@@ -1,23 +1,19 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../../types';
 import {
-  createCheckoutSession,
   createInlineCheckout,
   confirmInlineCheckout,
   createPortalSession,
   cancelSubscription,
   reactivateSubscription,
-  scheduleDowngrade,
   cancelScheduledChange,
   syncSubscription,
   getCheckoutSessionDetails,
-  confirmCheckoutSession,
   getProrationPreview,
   createPerSeatCheckoutSession,
 } from '../services/subscriptions';
 import { resolveScopedAccountId } from '../../middleware/resolve-account';
 import { resolveBillingWriteAccountId } from '../http-require-billing-write';
-import { syncSeatQuantity } from '../services/seat-management';
 import { maybeMigrateLegacyAccount } from '../services/legacy-account-migration';
 import { makeOpenApiApp, json, auth, errors } from '../../openapi';
 import { readJsonObject } from '../../shared/http-body';
@@ -68,37 +64,6 @@ subscriptionsRouter.openapi(
   },
 );
 
-subscriptionsRouter.openapi(
-  createRoute({
-    method: 'post',
-    path: '/create-checkout-session',
-    tags: ['billing'],
-    summary: 'Create a Stripe checkout session for a subscription tier',
-    ...auth,
-    request: { body: { content: { 'application/json': { schema: AnyBody } } } },
-    responses: { 200: json(OpaqueSchema, 'Checkout session result') },
-  }),
-  async (c) => {
-    const accountId = await resolveBillingWriteAccountId(c, 'body');
-    const email = c.get('userEmail');
-    const body = await c.req.json();
-
-    const result = await createCheckoutSession({
-      accountId,
-      email,
-      tierKey: body.tier_key,
-      successUrl: body.success_url,
-      cancelUrl: body.cancel_url,
-      commitmentType: body.commitment_type,
-      locale: body.locale,
-      serverType: body.server_type,
-      location: body.location,
-    });
-
-    return c.json(result);
-  },
-);
-
 // Billing v2 — per-seat plan checkout. Quantity is derived from current
 // account_members count; Stripe handles proration on subsequent member changes.
 subscriptionsRouter.openapi(
@@ -124,26 +89,6 @@ subscriptionsRouter.openapi(
       locale: body.locale,
     });
 
-    return c.json(result);
-  },
-);
-
-// Billing v2 — manually trigger a seat-count reconciliation. The Stripe
-// webhook normally handles this on member changes; this endpoint is a manual
-// "kick" for ops / for handling cases where the webhook was dropped.
-subscriptionsRouter.openapi(
-  createRoute({
-    method: 'post',
-    path: '/sync-seat-quantity',
-    tags: ['billing'],
-    summary: 'Manually reconcile the per-seat subscription quantity',
-    ...auth,
-    request: { body: { required: false, content: { 'application/json': { schema: AnyBody } } } },
-    responses: { 200: json(OpaqueSchema, 'Seat sync result') },
-  }),
-  async (c) => {
-    const accountId = await resolveBillingWriteAccountId(c, 'body');
-    const result = await syncSeatQuantity(accountId);
     return c.json(result);
   },
 );
@@ -260,24 +205,6 @@ subscriptionsRouter.openapi(
 subscriptionsRouter.openapi(
   createRoute({
     method: 'post',
-    path: '/schedule-downgrade',
-    tags: ['billing'],
-    summary: 'Schedule a downgrade to a lower tier',
-    ...auth,
-    request: { body: { content: { 'application/json': { schema: AnyBody } } } },
-    responses: { 200: json(OpaqueSchema, 'Downgrade scheduling result') },
-  }),
-  async (c) => {
-    const accountId = await resolveBillingWriteAccountId(c, 'body');
-    const body = await c.req.json();
-    const result = await scheduleDowngrade(accountId, body.target_tier_key, body.commitment_type);
-    return c.json(result);
-  },
-);
-
-subscriptionsRouter.openapi(
-  createRoute({
-    method: 'post',
     path: '/cancel-scheduled-change',
     tags: ['billing'],
     summary: 'Cancel a scheduled subscription change',
@@ -351,33 +278,6 @@ subscriptionsRouter.openapi(
     const accountId = await resolveScopedAccountId(c, 'query');
     const sessionId = c.req.param('sessionId');
     const result = await getCheckoutSessionDetails(accountId, sessionId);
-    return c.json(result);
-  },
-);
-
-subscriptionsRouter.openapi(
-  createRoute({
-    method: 'post',
-    path: '/confirm-checkout-session',
-    tags: ['billing'],
-    summary: 'Confirm a completed checkout session',
-    ...auth,
-    request: { body: { content: { 'application/json': { schema: AnyBody } } } },
-    responses: {
-      200: json(OpaqueSchema, 'Confirmation result'),
-      ...errors(400),
-    },
-  }),
-  async (c: any) => {
-    const accountId = await resolveBillingWriteAccountId(c, 'body');
-    const body = (await c.req.json()) as { session_id?: string };
-    if (!body.session_id) return c.json({ error: 'session_id required' }, 400);
-
-    const result = await confirmCheckoutSession({
-      accountId,
-      sessionId: body.session_id,
-    });
-
     return c.json(result);
   },
 );

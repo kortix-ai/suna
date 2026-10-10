@@ -6,8 +6,9 @@ name: Mobile OTA
 #
 #   Deploy Prod succeeded  -> channel `production` (store builds), so the JS
 #                             ships with the API it was released with
-#   workflow_dispatch      -> the chosen channel: `dev` for dev-backend builds,
-#                             or a production hotfix or re-run
+#   workflow_dispatch      -> the chosen channel: `dev` ships the dev branch to
+#                             dev-backend builds; `production` ships the `prod`
+#                             branch, never unreleased dev code
 #
 # No push trigger: since 2026-10-03 a push to dev starts only cheap guards and
 # path-gated infra (tests/unit/sandbox-workflow.test.ts, Actions minutes).
@@ -40,7 +41,7 @@ jobs:
   publish:
     name: Publish ${{ github.event_name == 'workflow_run' && 'production' || inputs.channel || 'dev' }}
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     timeout-minutes: 30
     # One publish per channel at a time, never cancelled: a cancelled run can
     # leave one platform published and the other not.
@@ -51,7 +52,7 @@ jobs:
       CHANNEL: ${{ github.event_name == 'workflow_run' && 'production' || inputs.channel || 'dev' }}
     steps:
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -64,13 +65,15 @@ jobs:
           keys: |
             EXPO_TOKEN
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          # A manual production run ships `prod`, the released code, not the branch
+          # the button ran from: store builds call the production API.
+          ref: ${{ github.event.workflow_run.head_sha || (inputs.channel == 'production' && 'prod') || github.sha }}
           # The script diffs against the commit of the channel's last update.
           fetch-depth: 0
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
 

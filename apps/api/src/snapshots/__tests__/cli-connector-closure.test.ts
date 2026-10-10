@@ -11,7 +11,7 @@ import { cliConnectorRuntimeArtifacts } from '@kortix/shared/sandbox-runtime-art
 // developer-only CLI edit (`ship`, `cr`, `tunnel`, `self-host`, the scaffold
 // surface, …) re-minted every project's runtime identity and moved the non-agent
 // `swapKey`, disabling the cheap agent-swap and forcing a full rebuild. A sandbox
-// session only ever runs `kortix connectors` / `kortix connectors mcp`, so the
+// session only ever runs `kortix connectors`, so the
 // fingerprint now hashes just that command's import closure.
 //
 // This test re-derives the closure from the real import graph and asserts it is a
@@ -35,7 +35,6 @@ const ENTRYPOINTS = [
   'commands/connector-gateway.ts',
   'connector-gateway/gateway.ts',
   'connector-gateway/io.ts',
-  'connector-gateway/mcp.ts',
 ];
 
 /** Resolve a relative import specifier (from `fromFile`) to a real .ts file, or null. */

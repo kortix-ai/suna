@@ -67,20 +67,24 @@ export function useAdminSandboxes(
   });
 }
 
+/** @deprecated No replacement: only retired admin hooks use it. Removed in the next major. */
 export interface AdminSandboxDetail {
   sandbox: AdminSandbox & { config: unknown };
   provider_detail: ProviderMachineDetail | null;
   provider_error: string | null;
 }
 
+/** @deprecated No replacement: only retired admin hooks use it. Removed in the next major. */
 export type AdminInstanceLayerStatus = 'healthy' | 'degraded' | 'offline' | 'unknown';
 
+/** @deprecated No replacement: only retired admin hooks use it. Removed in the next major. */
 export interface AdminInstanceLayerAction {
   action: 'start_host' | 'reboot_host' | 'stop_host' | 'start_workload' | 'restart_workload' | 'stop_workload' | 'reinitialize' | 'restart_runtime' | 'restart_service';
   label: string;
   serviceId?: string;
 }
 
+/** @deprecated No replacement: only retired admin hooks use it. Removed in the next major. */
 export interface AdminInstanceLayerHealth {
   key: 'host' | 'workload' | 'runtime';
   label: string;
@@ -90,6 +94,7 @@ export interface AdminInstanceLayerHealth {
   details: Record<string, unknown>;
 }
 
+/** @deprecated No replacement: only retired admin hooks use it. Removed in the next major. */
 export interface AdminSandboxHealth {
   sandbox_id: string;
   overall_status: 'healthy' | 'degraded' | 'offline' | 'unknown';
@@ -102,10 +107,12 @@ export interface AdminSandboxHealth {
   };
 }
 
+/** @deprecated No replacement: only retired admin hooks use it. Removed in the next major. */
 export interface AdminSandboxHealthBatchResponse {
   items: AdminSandboxHealth[];
 }
 
+/** @deprecated No replacement: only retired admin hooks use it. Removed in the next major. */
 export interface ProviderMachineDetail {
   id: string;
   slug: string;
@@ -135,21 +142,22 @@ export interface ProviderMachineDetail {
   ssh_key?: { setup_command?: string | null; key_path?: string | null } | null;
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useAdminSandboxDetail(sandboxId: string | null) {
   return useRetiredQuery<AdminSandboxDetail>('useAdminSandboxDetail', ['admin', 'sandbox-detail', sandboxId], !!sandboxId);
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useAdminSandboxHealth(sandboxId: string | null, enabled = true) {
   return useRetiredQuery<AdminSandboxHealth>('useAdminSandboxHealth', ['admin', 'sandbox-health', sandboxId], !!sandboxId && enabled);
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useAdminSandboxHealthBatch(sandboxIds: string[], enabled = true) {
   return useRetiredQuery<AdminSandboxHealthBatchResponse>('useAdminSandboxHealthBatch', ['admin', 'sandbox-health-batch', sandboxIds], enabled && sandboxIds.length > 0);
 }
 
+/** @deprecated No replacement: only retired admin hooks use it. Removed in the next major. */
 export interface ExecResult {
   stdout?: string;
   stderr?: string;
@@ -158,11 +166,12 @@ export interface ExecResult {
   error?: string;
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useAdminSandboxExec() {
   return useRetiredMutation<ExecResult, { sandboxId: string; command: string; timeout?: number }>('useAdminSandboxExec');
 }
 
+/** @deprecated No replacement: only retired admin hooks use it. Removed in the next major. */
 export interface ProxyTokenResult {
   token: string;
   token_id: string;
@@ -171,22 +180,22 @@ export interface ProxyTokenResult {
   proxy_url: string | null;
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export async function fetchAdminSandboxProxyToken(_sandboxId: string): Promise<ProxyTokenResult> {
   throw retiredEndpointError('fetchAdminSandboxProxyToken');
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useAdminSandboxAction() {
   return useRetiredMutation<unknown, { sandboxId: string; action: 'reboot' | 'stop' | 'start' }>('useAdminSandboxAction');
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useAdminSandboxRepair() {
   return useRetiredMutation<unknown, { sandboxId: string; action: AdminInstanceLayerAction['action']; serviceId?: string }>('useAdminSandboxRepair');
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useDeleteAdminSandbox() {
   return useRetiredMutation<{ success: boolean; sandboxId: string }, string>('useDeleteAdminSandbox');
 }

@@ -90,6 +90,11 @@ export interface AccountTokenListEntry {
   name: string;
   status: string;
   projectId: string | null;
+  /** Non-null = a session connector token the runtime minted for one sandbox
+   *  (its `KORTIX_TOKEN`). Key-list surfaces filter these out the way
+   *  `listPersonalAccountTokens` does — they are session lifecycle plumbing,
+   *  not credentials a person manages. */
+  sessionId: string | null;
   expiresAt: Date | null;
   lastUsedAt: Date | null;
   createdAt: Date;
@@ -257,6 +262,7 @@ export async function listAccountTokens(
       name: accountTokens.name,
       status: accountTokens.status,
       projectId: accountTokens.projectId,
+      sessionId: accountTokens.sessionId,
       expiresAt: accountTokens.expiresAt,
       lastUsedAt: accountTokens.lastUsedAt,
       createdAt: accountTokens.createdAt,
@@ -298,6 +304,7 @@ export async function listPersonalAccountTokens(
       name: accountTokens.name,
       status: accountTokens.status,
       projectId: accountTokens.projectId,
+      sessionId: accountTokens.sessionId,
       expiresAt: accountTokens.expiresAt,
       lastUsedAt: accountTokens.lastUsedAt,
       createdAt: accountTokens.createdAt,

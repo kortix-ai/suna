@@ -1,6 +1,13 @@
 import type { QueuedDraft } from '@/stores/queued-draft-store';
-import type { SessionPrompt, SessionPromptDelivery, SessionPromptSteerFallback } from '@kortix/sdk';
+import {
+  sessionPromptActions,
+  type SessionPrompt,
+  type SessionPromptDelivery,
+  type SessionPromptSteerFallback,
+  type SessionPromptViewer,
+} from '@kortix/sdk';
 import { isOptimisticSessionPrompt } from '@kortix/sdk/react';
+import { neutralizePastedTags, splitPastedContent } from '@kortix/shared';
 import {
   parseAgentMentionReferences,
   parseFileMentionReferences,
@@ -51,8 +58,12 @@ export interface QueueRow {
   attachmentCount: number;
   state: QueueRowState;
   lastError?: string;
-  /** The server can still remove this prompt. */
+  /** The server can still remove this prompt, and this viewer may. */
   removable: boolean;
+  /** Delivery gave up and this viewer may send it again (its author). */
+  retryable: boolean;
+  /** Another member sent it: it runs as them, so only they edit or send it. */
+  fromAnotherMember?: true;
   /** The running turn reads this prompt at its next step (`delivery: 'steer'`). */
   steer?: true;
   /** Why a steer prompt waits for the turn to end instead. */
@@ -80,14 +91,29 @@ export interface QueueProjection {
 }
 
 /** A prompt's visible words: the transport blocks the send path appends
- *  (reply context, upload refs, mention refs) stripped back out. */
-export function cleanPromptText(text: string): { text: string; fileCount: number } {
-  const withoutReply = stripReplyContexts(text);
+ *  (pastes, reply context, upload refs, mention refs) stripped back out. */
+export function cleanPromptText(text: string): {
+  text: string;
+  fileCount: number;
+  /** Present when the prompt carries `<pasted_content>` blocks. */
+  pasteCount?: number;
+} {
+  const { text: withoutPastes, pastes } = splitPastedContent(text);
+  const withoutReply = stripReplyContexts(withoutPastes);
   const uploads = parseFileReferences(withoutReply);
   const withoutSessions = parseSessionReferences(uploads.cleanText).cleanText;
   const withoutFiles = parseFileMentionReferences(withoutSessions).cleanText;
   const withoutAgents = parseAgentMentionReferences(withoutFiles).cleanText;
-  return { text: withoutAgents.trim(), fileCount: uploads.files.length };
+  return {
+    text: withoutAgents.trim(),
+    fileCount: uploads.files.length,
+    ...(pastes.length > 0 ? { pasteCount: pastes.length } : {}),
+  };
+}
+
+/** A queued row's line: the visible words, or `Pasted text` for a prompt that is only pastes. */
+function rowText(cleaned: ReturnType<typeof cleanPromptText>): string {
+  return cleaned.text || (cleaned.pasteCount ? 'Pasted text' : '');
 }
 
 function onScreen(prompt: SessionPrompt, transcriptIds: ReadonlySet<string> | undefined): boolean {
@@ -109,6 +135,10 @@ export function projectQueueRows(input: {
    *  transcript (tests). */
   transcriptMessageIds?: ReadonlySet<string>;
   drafts?: readonly QueuedDraft[];
+  /** Who is looking. A prompt runs as its author, so edit, Stop and send and
+   *  retry are the author's only (`sessionPromptActions`). Omitted: every row
+   *  reads as the viewer's own. */
+  viewer?: SessionPromptViewer;
 }): QueueProjection {
   const draftsById = new Map((input.drafts ?? []).map((d) => [d.clientMessageId, d] as const));
   const rows: QueueRow[] = [];
@@ -124,7 +154,9 @@ export function projectQueueRows(input: {
     const draft = prompt.client_message_id ? draftsById.get(prompt.client_message_id) : undefined;
     const rawText = prompt.full_text ?? prompt.text;
     const cleaned = cleanPromptText(rawText);
-    const editText = cleaned.text && rawText.includes(cleaned.text) ? cleaned.text : null;
+    // `cleaned.text` shows typed tags restored; `rawText` holds them escaped.
+    const editText =
+      cleaned.text && rawText.includes(neutralizePastedTags(cleaned.text)) ? cleaned.text : null;
     const state: QueueRowState =
       prompt.state === 'failed'
         ? 'failed'
@@ -138,21 +170,27 @@ export function projectQueueRows(input: {
       : Math.max(prompt.attachments?.length ?? 0, cleaned.fileCount);
     // A server built before steering lists no `delivery`: its row is a queue row.
     const steer = prompt.delivery === 'steer';
+    const { own, removable } = input.viewer
+      ? sessionPromptActions(prompt, input.viewer)
+      : { own: true, removable: true };
 
     rows.push({
       id: prompt.prompt_id,
       clientMessageId: prompt.client_message_id,
-      text: draft?.text ?? cleaned.text,
+      text: rowText(draft ? cleanPromptText(draft.text) : cleaned),
       attachmentCount,
       state,
       ...(state === 'failed' && prompt.last_error ? { lastError: prompt.last_error } : {}),
       // A steered prompt on the wire is still unread: the server takes it back.
-      removable: state === 'queued' || state === 'failed' || (steer && state === 'delivering'),
+      removable:
+        removable && (state === 'queued' || state === 'failed' || (steer && state === 'delivering')),
+      retryable: own && state === 'failed',
+      ...(own ? {} : { fromAnotherMember: true as const }),
       ...(steer ? { steer: true as const } : {}),
       ...(prompt.steer_fallback ? { steerFallback: prompt.steer_fallback } : {}),
-      interruptible: state === 'queued',
+      interruptible: own && state === 'queued',
       // The edit changes the text in place on the server; files stay on the row.
-      takeBackEligible: state === 'queued' && editText !== null,
+      takeBackEligible: own && state === 'queued' && editText !== null,
       rawText,
       editText,
     });
@@ -165,10 +203,11 @@ export function projectQueueRows(input: {
     rows.push({
       id: `draft:${draft.clientMessageId}`,
       clientMessageId: draft.clientMessageId,
-      text: draft.text,
+      text: rowText(cleanPromptText(draft.text)),
       attachmentCount: draft.files.length,
       state: 'sending',
       removable: false,
+      retryable: false,
       ...(draft.delivery === 'steer' ? { steer: true as const } : {}),
       interruptible: false,
       takeBackEligible: false,

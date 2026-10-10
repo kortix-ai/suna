@@ -29,6 +29,7 @@ import {
   type ConnectorConnectResult,
   connectorConnect,
   connectorFinalize,
+  deleteConnectorCredential,
   pipedreamConnect,
   pipedreamConnectConnection,
   pipedreamFinalize,
@@ -419,6 +420,37 @@ test('listConnectors GETs the project connectors list', async () => {
   expect(last().url).toContain('/connectors/projects/P1/connectors');
   expect(last().method).toBe('GET');
   expect(result.connectors[0]?.requestAuthType).toBe('hmac');
+});
+
+test('listConnectors carries lastError for a connector whose status is error', async () => {
+  const connector = {
+    slug: 'weather',
+    name: 'Weather',
+    provider: 'mcp',
+    status: 'error',
+    credentialMode: 'shared',
+    authorizationStrategy: 'project',
+    sensitive: false,
+    actions: [],
+    authSecret: null,
+    secretSet: true,
+  };
+  nextResponse = {
+    status: 200,
+    body: {
+      connectors: [
+        { ...connector, lastError: 'MCP tools/list failed: HTTP 401' },
+        { ...connector, slug: 'healthy', status: 'active', lastError: null },
+        // An older server sends no `lastError` key at all.
+        { ...connector, slug: 'older-server' },
+      ],
+    },
+  };
+  const result = await listConnectors('P1');
+  const reasons: Array<string | null | undefined> = result.connectors.map(
+    (entry) => entry.lastError,
+  );
+  expect(reasons).toEqual(['MCP tools/list failed: HTTP 401', null, undefined]);
 });
 
 test('listConnectors throws on a failed response', async () => {
@@ -1477,4 +1509,32 @@ test('describeConnectorTool: a malformed tool name (no dot) resolves to null wit
   const tool = await describeConnectorTool('P1', 'not-a-tool-name');
   expect(tool).toBeNull();
   expect(calls).toHaveLength(0);
+});
+
+test('deleteConnectorCredential DELETEs the connector credential (disconnect)', async () => {
+  nextResponse = { status: 200, body: { ok: true } };
+  const result = await deleteConnectorCredential('P1', 'google sheets');
+  expect(last().url).toBe('http://test.local/connectors/projects/P1/connectors/google%20sheets/credential');
+  expect(last().method).toBe('DELETE');
+  expect(result).toEqual({ ok: true });
+});
+
+test('deleteConnectorCredential throws on a failed response', async () => {
+  nextResponse = { status: 409, body: { error: 'connector is shared' } };
+  await expect(deleteConnectorCredential('P1', 'gmail')).rejects.toBeTruthy();
+});
+
+test('connectorConnect forwards the redirect URIs the hosted flow returns to', async () => {
+  nextResponse = { status: 200, body: { connectUrl: 'https://connect.composio.dev/link/r' } };
+  await connectorConnect('P1', 'gmail', {
+    successRedirectUri: 'kortix://connect/success',
+    errorRedirectUri: 'kortix://connect/error',
+  });
+  expect(last().body).toEqual({
+    success_redirect_uri: 'kortix://connect/success',
+    error_redirect_uri: 'kortix://connect/error',
+  });
+
+  await connectorConnect('P1', 'gmail', { owner: 'project', successRedirectUri: 'kortix://ok' });
+  expect(last().body).toEqual({ owner: 'project', success_redirect_uri: 'kortix://ok' });
 });

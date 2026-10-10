@@ -1,12 +1,20 @@
 /** Local wiring checks that require files and cannot live in the portable manifest schema. */
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { type ManifestIssue, RESERVED_SLUG_PROVIDERS } from '@kortix/manifest-schema';
+import { type ManifestIssue, RESERVED_SLUG_PROVIDERS, kortixToolRef } from '@kortix/manifest-schema';
 import { agentFileCandidates, skillDirs } from '@kortix/manifest-schema/layout';
 
 export function lintWiring(manifest: Record<string, unknown> | null, root: string): ManifestIssue[] {
   if (!manifest || manifest.kortix_version !== 2) return [];
   const issues: ManifestIssue[] = [];
+  const tools = manifest.tools;
+  if (tools && typeof tools === 'object' && !Array.isArray(tools)) {
+    for (const [name, file] of Object.entries(tools)) {
+      // `kortix:<name>` is a Kortix tool, not a file in the project.
+      if (typeof file === 'string' && kortixToolRef(file) === null && !existsSync(resolve(root, file)))
+        issues.push({ path: `tools.${name}`, message: `"${file}" does not exist in the project files.`, severity: 'error' });
+    }
+  }
   const agents = manifest.agents;
   if (!agents || typeof agents !== 'object' || Array.isArray(agents)) return issues;
   const env = manifest.env as { required?: string[]; optional?: string[] } | undefined;

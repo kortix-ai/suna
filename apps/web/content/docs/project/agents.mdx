@@ -30,15 +30,16 @@ Projects created before 2026-09 keep agents and skills under
 Each agent has two parts:
 
 - **Behavior** — a markdown file, `agents/<name>.md` by default. Its
-  frontmatter sets the model, mode, and tools. Its body is the system prompt.
+  frontmatter sets the model, mode, and permission rules. Its body is the
+  system prompt.
 - **Governance** — an entry in `kortix.yaml`'s `agents` map, keyed by the agent
-  name. It sets what the agent may access on Kortix: connectors, secrets,
-  skills, Apps, and Kortix permissions. Its `file` field names the behavior
-  file.
+  name. It sets what the agent may access: connectors, secrets, skills, Apps,
+  Kortix permissions, and [tools](/docs/project/tools#who-may-use-which-tool).
+  Its `file` field names the behavior file.
   The map can live in a file the manifest lists under
   [`imports:`](/docs/project/manifest#imports); `default_agent` stays in `kortix.yaml`.
 
-The manifest never sets a prompt, mode, or tool. The `.md` file never sets
+The manifest never sets a prompt or mode. The `.md` file never sets
 platform access. See [the manifest reference](/docs/project/manifest) for
 every governance field.
 

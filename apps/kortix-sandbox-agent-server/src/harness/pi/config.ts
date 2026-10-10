@@ -1,10 +1,12 @@
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { createHash } from 'node:crypto'
+import { closeSync, constants, existsSync, fstatSync, openSync, readFileSync, realpathSync } from 'node:fs'
+import { join, sep } from 'node:path'
 import { readProjectManifest, extractNestedString } from '@/lib/config/config'
 import { z } from 'zod'
 import type { Config as HostConfig } from '@/lib/config/config'
 import { resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-dir'
-import { managedSkillsDir } from '@/services/skills/managed-skills'
+import { logger } from '@/lib/log/logger'
+import { managedSkillsDir } from '@/lib/config/managed-skills-dir'
 
 /** First backoff of a transient model-error retry (transient-retry.ts): 2, 4, 8, 16, 30 s. */
 const TURN_RETRY_DEFAULT_BASE_MS = 2_000
@@ -131,4 +133,54 @@ export function resolvePiSkillDirectories(
   // The layout is packages/manifest-schema/src/layout.ts `skillDirs`; pi may not
   // import the OpenCode adapter's copy (harness/open-code/project-layout.ts).
   return [managedSkillsDir(), join(workspace, 'skills'), ...piSkills, join(workspace, '.kortix', 'opencode', 'skills')]
+}
+
+/** The project's root instructions file, as the system prompt renders it and health reports it. */
+export interface ProjectInstructions {
+  source: 'release' | 'workspace'
+  path: string
+  bytes: number
+  /** The first 12 hex characters of the file's sha256. */
+  sha: string
+  /** `AGENTS.md`, or `CLAUDE.md` when the root has no `AGENTS.md`. */
+  name: string
+  text: string
+}
+
+/**
+ * The root `AGENTS.md` of `root`, else its `CLAUDE.md`: the first name that
+ * exists wins, as on OpenCode 1.18.23 (`session/instruction.ts`). Only the
+ * root: no ancestor directory, no nested file, no agent-dir file. Null when
+ * there is none or it is empty. Null and one warning when it is not a regular
+ * file, resolves out of `root`, or cannot be read.
+ */
+export function readProjectInstructions(root: string, source: ProjectInstructions['source']): ProjectInstructions | null {
+  for (const name of ['AGENTS.md', 'CLAUDE.md']) {
+    const path = join(root, name)
+    if (!existsSync(path)) continue
+    try {
+      const real = realpathSync(path)
+      // A symlink to a host file (`/proc/self/environ`) would put that file in the prompt.
+      if (!real.startsWith(`${realpathSync(root)}${sep}`)) throw new Error('it resolves outside the project root')
+      // Check and read through one descriptor: a file swapped for a symlink after
+      // realpath is refused by O_NOFOLLOW, not read; O_NONBLOCK keeps a FIFO from hanging the open.
+      const fd = openSync(real, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
+      let raw: Buffer
+      try {
+        if (!fstatSync(fd).isFile()) throw new Error('it is not a regular file')
+        raw = readFileSync(fd)
+      } finally {
+        closeSync(fd)
+      }
+      const text = raw.toString('utf8').trim()
+      if (!text) return null
+      const loaded = { source, path, bytes: raw.length, sha: createHash('sha256').update(raw).digest('hex').slice(0, 12) }
+      logger.info('[pi] AGENTS.md loaded', loaded)
+      return { ...loaded, name, text }
+    } catch (err) {
+      logger.warn('[pi] AGENTS.md not loaded', { path, reason: err instanceof Error ? err.message : String(err) })
+      return null
+    }
+  }
+  return null
 }

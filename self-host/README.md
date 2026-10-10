@@ -64,7 +64,13 @@ for real use) running Linux, and a domain you control.
    `logs` / `doctor` are your friends while it comes up.
 
 4. **Finish in the dashboard.** Open `https://app.example.com` and sign up
-   with the admin email from step 2, then:
+   with the admin email from step 2. Until email is configured, sign-up is
+   open and needs no email confirmation, so anyone who reaches the URL can
+   create an account for any address, the admin address included. Sign up
+   first, then close it: `kortix self-host env set EMAIL_URL=smtp://…` makes
+   new accounts confirm their email, and `kortix self-host env set
+   DISABLE_SIGNUP=true` turns self sign-up off. `kortix self-host doctor`
+   fails (`open-sign-up`) until one of them is set. Then:
    - **Settings → Git** — connect a GitHub App (or PAT) so the platform can
      create project repos. This one dashboard flow replaces the old
      env-var-only managed-git setup.
@@ -175,7 +181,7 @@ exact command, no SSH key or open port required):
 kortix self-host update            # pull the newest image on your channel now, migrate, roll forward
 kortix self-host env ls            # list every value, grouped by service (secrets masked)
 kortix self-host env set KEY=VALUE ...   # set a value (sandbox key, GitHub token, EMAIL_URL, ...); restarts affected services only
-kortix self-host env rotate KEY    # regenerate a rotatable generated secret (or --all-generated)
+kortix self-host env rotate KEY    # regenerate a rotatable generated secret (or --all-generated); API_KEY_SECRET and POSTGRES_PASSWORD are refused: a new value breaks stored data
 kortix self-host logs [service]    # tail Compose logs
 kortix self-host status            # container status
 kortix self-host uninstall         # stop + permanently delete this instance's data and config

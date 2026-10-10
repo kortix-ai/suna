@@ -9,11 +9,20 @@ export function bindSessionLifecycleResources(ctx: SessionBindingContext) {
     // ── lifecycle (Kortix REST) ──────────────────────────────────────────
     get: (opts?: { showErrors?: boolean }) =>
       P.getProjectSession(ctx.projectId, ctx.sessionId, opts),
-    presence: (input: { tab_id: string; active: boolean }) =>
+    /**
+     * This tab's presence lease. `alerts: true` says the tab shows its own
+     * notifications, so the server skips the phone and Web Push while the
+     * person is here (KRTX-1742). `keepalive` lets the request outlive a
+     * closing page. Default: on for an absent report, off for a present one.
+     */
+    presence: (
+      input: { tab_id: string; active: boolean; alerts?: boolean },
+      options?: { keepalive?: boolean },
+    ) =>
       backendApi.put<{ ok: boolean }>(
         `/projects/${ctx.projectId}/sessions/${ctx.sessionId}/presence`,
         input,
-        { showErrors: false },
+        { showErrors: false, keepalive: options?.keepalive ?? !input.active },
       ),
     /** Unified finalized LLM and compute cost for this session. */
     cost: () => P.getSessionCostRecord(ctx.sessionId, { projectId: ctx.projectId }),
@@ -27,6 +36,9 @@ export function bindSessionLifecycleResources(ctx: SessionBindingContext) {
     },
     start: (...a: DropFirst2<Parameters<typeof P.startProjectSession>>) =>
       P.startProjectSession(ctx.projectId, ctx.sessionId, ...a),
+    /** `start`, but a failed request rejects with the API error instead of yielding `null`. */
+    startOrThrow: (...a: DropFirst2<Parameters<typeof P.startProjectSessionOrThrow>>) =>
+      P.startProjectSessionOrThrow(ctx.projectId, ctx.sessionId, ...a),
     restart: () => {
       // Restart preserves the established sandbox identity, but readiness
       // and the proxy connection must still be resolved again after reboot.
@@ -60,6 +72,10 @@ export function bindSessionLifecycleResources(ctx: SessionBindingContext) {
       P.setProjectSessionSharing(ctx.projectId, ctx.sessionId, intent),
     previews: () => P.getSessionPreviewCandidates(ctx.projectId, ctx.sessionId),
     participants: () => P.getSessionParticipants(ctx.projectId, ctx.sessionId),
+    /** Is the caller notified about this session? */
+    watch: () => P.getSessionWatch(ctx.projectId, ctx.sessionId),
+    /** Watch (`true`) or mute (`false`) this session for the caller. */
+    setWatch: (watching: boolean) => P.setSessionWatch(ctx.projectId, ctx.sessionId, watching),
     commit: (input?: Parameters<typeof P.commitSessionChanges>[2]) =>
       P.commitSessionChanges(ctx.projectId, ctx.sessionId, input),
     publicShares: {

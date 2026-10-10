@@ -743,6 +743,45 @@ apps:
     expect(v2.issues.filter((issue) => issue.severity === 'error')).toEqual([]);
   });
 
+  test('a v2 App names its kind and the Apps it uses, by slug', () => {
+    const errors = (yaml: string) =>
+      validateManifest(`kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\napps:\n${yaml}`, 'yaml')
+        .issues.filter((issue) => issue.severity === 'error');
+    expect(errors('  db:\n    kind: convex\n    path: db\n    resources: { cpu: 2 }\n  crm:\n    kind: web\n    path: apps/crm\n    uses: [db, billing-db]')).toEqual([]);
+    expect(errors('  crm:\n    kind: lambda').map((issue) => issue.path)).toEqual(['apps.crm.kind']);
+    expect(errors('  crm:\n    uses: [Main, ""]').map((issue) => issue.path)).toEqual(['apps.crm.uses[0]', 'apps.crm.uses[1]']);
+    expect(errors('  crm:\n    uses: db').map((issue) => issue.path)).toEqual(['apps.crm.uses']);
+    expect(errors('  crm:\n    uses: [crm]').map((issue) => issue.path)).toEqual(['apps.crm.uses[0]']);
+  });
+
+  test('a convex App takes no build or runtime fields and always runs', () => {
+    const result = validateManifest(
+      `kortix_version: 2
+default_agent: w
+agents:
+  w: {}
+apps:
+  db:
+    kind: convex
+    type: static
+    port: 3000
+    always_on: false`,
+      'yaml',
+    );
+    expect(result.issues.filter((issue) => issue.severity === 'error').map((issue) => issue.path)).toEqual([
+      'apps.db.type',
+      'apps.db.port',
+      'apps.db.always_on',
+    ]);
+  });
+
+  test('the retired `backends` field names its replacement', () => {
+    const result = validateManifest('kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\napps:\n  crm:\n    backends: [main]', 'yaml');
+    const issue = result.issues.find((entry) => entry.path === 'apps.crm.backends');
+    expect(issue?.severity).toBe('error');
+    expect(issue?.message).toContain('uses');
+  });
+
   test('rejects invalid v2 App ports, commands, resources, and secret mappings', () => {
     const result = validateManifest(
       `kortix_version: 2
@@ -839,5 +878,37 @@ image = "ubuntu:22.04"
     const text = formatIssues(issues, { color: false });
     expect(text).toContain('error sandbox.templates[0].slug');
     expect(text).toContain('kortix_version');
+  });
+});
+
+describe('validateManifest — [[triggers]] type = "event"', () => {
+  const base = `kortix_version = 1\n[[triggers]]\nslug = "pr"\nprompt = "go"\n`;
+  const paths = (toml: string) => validateManifest(toml, 'toml').issues.map((i) => i.path);
+
+  test('connector + event (+ config table) passes', () => {
+    const toml = `${base}type = "event"\nconnector = "github"\nevent = "GITHUB_PULL_REQUEST_EVENT"\n[triggers.config]\nowner = "acme"\n`;
+    expect(validateManifest(toml, 'toml').valid).toBe(true);
+  });
+
+  test('missing connector and event are rejected', () => {
+    expect(paths(`${base}type = "event"\n`)).toEqual(
+      expect.arrayContaining(['triggers[0].connector', 'triggers[0].event']),
+    );
+  });
+
+  test('config must be an object', () => {
+    expect(paths(`${base}type = "event"\nconnector = "g"\nevent = "E"\nconfig = "x"\n`)).toContain(
+      'triggers[0].config',
+    );
+  });
+
+  test('cron/monitor wiring is rejected on an event trigger', () => {
+    const p = paths(`${base}type = "event"\nconnector = "g"\nevent = "E"\ncron = "0 9 * * *"\nmode = "poll"\n`);
+    expect(p).toEqual(expect.arrayContaining(['triggers[0].cron', 'triggers[0].mode']));
+  });
+
+  test('event keys are rejected on a cron trigger', () => {
+    const p = paths(`${base}type = "cron"\ncron = "0 9 * * *"\nconnector = "g"\nevent = "E"\n`);
+    expect(p).toEqual(expect.arrayContaining(['triggers[0].connector', 'triggers[0].event']));
   });
 });

@@ -323,8 +323,8 @@ describe('Discover browse sections', () => {
     // are three records for one product. Picks match by name, so all three
     // floated into Finance's six cards as "Stripe, Stripe, Stripe". The add
     // flow resolves every surface for a domain, so one card per domain loses
-    // nothing — and the section total still counts every record "View all"
-    // lists.
+    // nothing. The section total counts apps too, because "View all" lists
+    // each app once.
     const surface = (slug: string, domain: string, categories: string[], popularity?: number) => ({
       ...entry(slug, categories, popularity ?? null, 'Stripe'),
       domain,
@@ -336,7 +336,7 @@ describe('Discover browse sections', () => {
       entry('ledgerly', ['financial'], 50),
     ]).sections();
     const finance = result.sections.find((section) => section.key === 'finance');
-    expect(finance?.total).toBe(4);
+    expect(finance?.total).toBe(2);
     expect(finance?.items.map((item) => item.slug)).toEqual(['stripe-com', 'ledgerly']);
     expect(result.popular.map((item) => item.slug)).toEqual(['stripe-com', 'ledgerly']);
   });

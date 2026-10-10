@@ -42,6 +42,7 @@ import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
+import { connectorHref } from '@/features/workspace/capabilities/connectors/connector-routes';
 import { SolidCheckIcon } from '@/features/icon/icons/solid-check-icon';
 import { useAuth } from '@/features/providers/auth-provider';
 import {
@@ -325,10 +326,7 @@ function LocalComputerContent({ projectId, onClose }: { projectId: string; onClo
             {t('showLogs')}
           </Button>
           <Button size="sm" variant="ghost" asChild>
-            <Link
-              href={`/projects/${projectId}/customize/connectors?c=${encodeURIComponent(manageSlug)}`}
-              onClick={onClose}
-            >
+            <Link href={connectorHref(projectId, manageSlug)} onClick={onClose}>
               {t('manageInProject')}
             </Link>
           </Button>

@@ -31,7 +31,6 @@
  * `wireMessageId`), because the client is the one holding the transcript.
  */
 export {
-  WIRE_ID_BACKDATE_MS,
   WIRE_ID_CLOCK_TOLERANCE as MAX_WIRE_ID_CLOCK_CORRECTION,
   WIRE_ID_TIME_SCALE,
   WIRE_MESSAGE_ID,

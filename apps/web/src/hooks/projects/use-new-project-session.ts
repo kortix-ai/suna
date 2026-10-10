@@ -46,6 +46,7 @@ import {
   type SessionConnectorBindingsInput,
 } from '@kortix/sdk';
 import { prefetchSessionStart, qk, upsertCachedProjectSession } from '@kortix/sdk/react';
+import { randomUUID } from '@/lib/utils/random-uuid';
 
 /**
  * The shared project-session entry path. Calls without options only open the
@@ -106,6 +107,7 @@ export type NewProjectSessionOpts = {
     pending_prompt?: PendingSessionPrompt;
     connector_bindings?: SessionConnectorBindingsInput;
     inherit_unbound?: boolean;
+    persistent_machine?: boolean;
   };
 };
 
@@ -159,7 +161,7 @@ function makeTakeOrCreateSession(
           }
         }
 
-        const sessionId = crypto.randomUUID();
+        const sessionId = randomUUID();
         markSessionFresh(sessionId);
         router.prefetch(`/projects/${projectId}/sessions/${sessionId}`);
         let created: ProjectSession | undefined;

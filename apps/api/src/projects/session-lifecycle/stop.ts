@@ -4,10 +4,12 @@ import { and, eq } from 'drizzle-orm';
 import { type SandboxProviderName, config } from '../../config';
 import { getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
+import { logger } from '../../lib/logger';
 import { isAlreadyNotRunning, isLifecycleTransitionInProgress } from '../reaping/policy';
 import { applyStoppedState } from '../reaping/sandbox-state-sync';
 import { claimManualSandboxStop, releaseSandboxStopClaim } from '../reaping/box-queries';
-import { abortLiveTurnBeforeStop } from '../reaping/stop-box';
+import { abortLiveTurnBeforeStop, flushDriveSyncBeforeStop, retireEphemeralOnStop } from '../reaping/stop-box';
+import { holdInboxPrompts } from './inbox-rows';
 import { RUNTIME_WAKE_LATE_START_GUARD_MS, runtimeWakeInProgress } from './runtime-wake-fence';
 
 /**
@@ -124,6 +126,18 @@ export async function stopSession(input: {
     // Another stop (the idle reaper's, or a second click) owns the row.
     return { status: 200, body: { ok: true, session_id: sessionId, status: 'stopping' } };
   }
+  // Hold the session's queued prompts before the abort, exactly as the turn's
+  // own Stop does. Otherwise the abort's turn end promotes the next queued
+  // prompt, and a prompt parked on an unreachable runtime re-arms on its
+  // backoff: either one wakes the box the user just stopped (on the rig, a
+  // parked prompt resumed and un-archived a stopped box 8 min later). The next
+  // message the user sends releases the hold (`enqueueReleasingHold`).
+  await holdInboxPrompts(sessionId, true).catch((err) =>
+    logger.warn('[stop] holding queued prompts failed', {
+      sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    }),
+  );
   // Close the live turn before powering the box off, but only when the box is
   // actually running one: `cancellingWake` means the row is already stopped
   // (a wake was mid-flight), so there is no live opencode process to abort.
@@ -133,6 +147,12 @@ export async function stopSession(input: {
       externalId: sandbox.externalId,
       userId,
     });
+    // Drive sync: the daemon's final push, inside the request budget. Past it
+    // the stop goes ahead; the daemon still pushes on SIGTERM.
+    await within(
+      flushDriveSyncBeforeStop({ ...sandbox, externalId: sandbox.externalId }),
+      Math.max(0, budgetEndsAt - Date.now()),
+    );
     // The turn-end relay can still be in flight. Persist the transcript before
     // powering off the only live reader; capture failures never prevent stop.
     //
@@ -161,6 +181,25 @@ export async function stopSession(input: {
     }
   };
   const settleStop = async (): Promise<{ status: number; body: Record<string, unknown> }> => {
+    // An ephemeral box commits its session volume and is deleted instead of
+    // stopped; its state lives on the volume.
+    if (!cancellingWake) {
+      const retired = await retireEphemeralOnStop({
+        sandboxId: sandbox.sandboxId,
+        sessionId,
+        externalId,
+        stopReason: 'manual',
+        now,
+        metadata: { stoppedBy: userId },
+      });
+      if (retired === 'retired') {
+        return { status: 200, body: { ok: true, session_id: sessionId, status: 'stopped' } };
+      }
+      if (retired === 'error') {
+        await releaseSandboxStopClaim(sandbox.sandboxId, claimToken);
+        return { status: 502, body: { error: 'Failed to stop sandbox' } };
+      }
+    }
     // A transient provider failure gets ONE bounded retry (KRTX-520). The user
     // is holding a Stop button. A degraded platform edge intermittently answers
     // the stop request with a 502/503/504 (an HTML error page), and a backlog
@@ -208,7 +247,9 @@ export async function stopSession(input: {
         sessionId,
         externalId,
         stopReason: 'manual',
-        metadata: { stoppedBy: userId },
+        // `stoppedAt` is this request's start; a `/start` that arrived while
+        // the provider stop ran still predates the stop (`userStopFollowsIntent`).
+        metadata: { stoppedBy: userId, stopSettledAt: new Date().toISOString() },
         now,
       });
     }

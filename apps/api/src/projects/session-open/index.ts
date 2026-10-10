@@ -36,6 +36,8 @@ export {
   claimAdmissionReplacementBudget,
   preserveEstablishedRuntimeOnOpen,
   replaceRefusedRuntimeOnOpen,
+  retryTransientProvisionFailure,
+  TRANSIENT_PROVISION_MAX_RETRIES,
 } from './session-open-provision';
 
 export {

@@ -6,9 +6,10 @@
  */
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { ConfigReleaseDescriptor, ConfigReleaseFile } from '@/services/config-release/descriptor'
+import type { ConfigReleaseDescriptor, ConfigReleaseFile, ConfigReleaseSnapshot } from '@/services/config-provider/descriptor'
 
 export function git(cwd: string, ...args: string[]): string {
   const r = spawnSync('git', args, { cwd, encoding: 'utf8' })
@@ -88,12 +89,45 @@ export function buildRelease(
     compiled_governance_etag: etag,
     agent_repoint: opts.agentRepoint ?? null,
     reason: null,
+    snapshot: null,
   }
   return { descriptor, archive }
 }
 
+/**
+ * The project snapshot of `commit`, as the API's producer ships it: the
+ * checked-out working tree plus `.git`, `tar.gz`, served from the fake
+ * storage under `key`. Returns the descriptor's `snapshot` block.
+ */
+export function serveSnapshot(api: FakeApi, repo: string, commit: string, key = `snapshot-${commit}`): ConfigReleaseSnapshot {
+  const dir = mkdtempSync(join(tmpdir(), 'kortix-snapshot-'))
+  try {
+    git(tmpdir(), 'clone', '-q', `file://${repo}`, dir)
+    git(dir, 'checkout', '-q', commit)
+    // The producer ships no hooks, and the box's tar guard refuses them.
+    rmSync(join(dir, '.git', 'hooks'), { recursive: true, force: true })
+    const env = { ...process.env, COPYFILE_DISABLE: '1' }
+    const bytes = spawnSync('tar', ['-czf', '-', '-C', dir, '.'], { encoding: 'buffer', env, maxBuffer: 1 << 28 }).stdout
+    const entries = spawnSync('tar', ['-tzf', '-'], { input: bytes, encoding: 'utf8', maxBuffer: 1 << 28 })
+      .stdout.split('\n')
+      .filter(Boolean).length
+    api.archives.set(key, bytes)
+    return {
+      url: `${api.storageUrl}/snapshots/${key}?X-Amz-Signature=signed`,
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+      bytes: bytes.length,
+      entries,
+      expires_at: new Date(Date.now() + 900_000).toISOString(),
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
+
 export interface FakeApi {
   url: string
+  /** The fake object store: presigned URLs point here. */
+  storageUrl: string
   /** Every descriptor request: its body and Authorization header. */
   descriptorRequests: Array<{ body: unknown; authorization: string | null; path: string }>
   archiveRequests: Array<{ authorization: string | null; path: string }>
@@ -158,6 +192,7 @@ export function startFakeApi(token = 'sandbox-token'): FakeApi {
   })
   return {
     url: `http://127.0.0.1:${api.port}/v1`,
+    storageUrl: `http://127.0.0.1:${storage.port}`,
     get descriptorRequests() {
       return state.descriptorRequests
     },
@@ -191,9 +226,9 @@ export function startFakeApi(token = 'sandbox-token'): FakeApi {
 }
 
 /**
- * The API's answer when the `config_releases` feature flag is off for the
- * project, or platform-wide (spec, "Feature flag"). Exactly what
- * `requireFeatureFlag` emits.
+ * The answer of an API from before config releases graduated, with the
+ * `config_releases` flag off for the project. Exactly what that API's
+ * `requireFeatureFlag` emitted.
  */
 export const FEATURE_DISABLED = {
   status: 403,

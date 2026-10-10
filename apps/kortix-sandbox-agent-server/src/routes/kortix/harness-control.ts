@@ -15,7 +15,7 @@ import { createLogsRouter } from './logs'
 import { createDiagRouter } from './diag'
 import { createRuntimeRouter } from './runtime'
 import { LEGACY_RUNTIME_MOUNT } from './legacy-names'
-import { RUNTIME_TURNS_CAPABILITY } from '@kortix/api-contract/runtime-relay'
+import { RUNTIME_RETRACT_CAPABILITY, RUNTIME_TURNS_CAPABILITY } from '@kortix/api-contract/runtime-relay'
 
 export interface HarnessRouteContext {
   cfg: Config
@@ -39,7 +39,12 @@ export function createHarnessControlRouter(harness: HarnessService, context: Har
   // `config.release.v1`: the API may send POST /kortix/config/converge.
   // Advertised only by a control that implements it.
   // `runtime.turns.v1`: the Kortix turn verbs below. Both harnesses serve them.
-  const capabilities = [RUNTIME_TURNS_CAPABILITY, ...(control.convergeConfig ? ['config.release.v1'] : [])]
+  // `runtime.retract.v1`: the retract verb among them.
+  const capabilities = [
+    RUNTIME_TURNS_CAPABILITY,
+    RUNTIME_RETRACT_CAPABILITY,
+    ...(control.convergeConfig ? ['config.release.v1'] : []),
+  ]
   mount('/health', createHealthRouter(context, harness.diagnostics, capabilities))
   mount('/refresh', createRefreshRouter(context.cfg, control))
   mount('/config', createConfigRouter(context.cfg, control))

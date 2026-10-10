@@ -58,11 +58,11 @@ function nonActiveSandboxSkip(
  *
  * This reads the box's STATE (`config.release_id`), not the binary's
  * `config.release.v1` capability. The capability is compiled in and is present
- * whatever the project chose, so gating on it withheld the push from every box
- * that runs NO release — `config_releases` off for the project, or a release
- * chain that stepped down to the image default. Those boxes are exactly the
- * pre-release case the push exists for. `releaseGovernanceActive` is the same
- * `running.release_id !== null` the daemon applies on its own side.
+ * on every current daemon, so gating on it withheld the push from every box
+ * that runs NO release — one that reverted to its workspace config, or a
+ * release chain that stepped down to the image default. Those boxes are
+ * exactly the pre-release case the push exists for. `releaseGovernanceActive`
+ * is the same `running.release_id !== null` the daemon applies on its own side.
  */
 export async function daemonHasConfigReleases(
   baseUrl: string,

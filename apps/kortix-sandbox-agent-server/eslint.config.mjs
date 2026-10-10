@@ -32,25 +32,26 @@ const pkg = (...names) => names.flatMap((name) => [name, `${name}/**`])
 const RUNTIME = ['node:*', 'node:*/**', ...pkg('bun', 'zod', 'tar')]
 
 /**
- * Host services and the other services each may import. A new edge is a
- * reviewed one-line change here plus a case in scripts/check-architecture.mjs.
- * @type {Record<string, string[]>}
+ * Host services. A service imports its own folder and the shared layer, never
+ * another service: what two services both need lives in `src/lib/` or
+ * `src/types/`, and the harness composes the services. A new service is one
+ * entry here (see ARCHITECTURE.md).
  */
-export const SERVICES = {
-  'config-provider': [],
-  // managedSkillsDir(): a release is sealed against the managed skill names.
-  'config-release': ['skills'],
-  'egress-shim': [],
-  'event-bus': [],
-  'llm-proxy': [],
-  monitor: [],
-  resources: [],
-  // withReleaseStoreLock(): one queue for release-store and skills-overlay writes.
-  'runtime-assets': ['config-release'],
-  'sandbox-env': [],
-  skills: [],
-  'static-web': [],
-}
+export const SERVICES = [
+  'config-provider',
+  'drive-sync',
+  'egress-shim',
+  'event-bus',
+  'llm-proxy',
+  'monitor',
+  'resources',
+  'runtime-assets',
+  'sandbox-env',
+  'skills',
+  'static-web',
+  'tools',
+  'workspace-provider',
+]
 // The wire contract is shared with apps/api through a tsconfig path (see
 // tsconfig.json). An aliased file outside the plugin root arrives as an
 // absolute path, one inside it (pnpm layout) as a root-relative path.
@@ -66,6 +67,8 @@ const SERVICE_EXTERNALS = {
   monitor: API_CONTRACT,
   // The image-baked paths (`@kortix/api-contract/sandbox-layout`).
   'runtime-assets': API_CONTRACT,
+  // The agent env file a tool's `context.env` reads (`@kortix/api-contract/sandbox-layout`).
+  tools: API_CONTRACT,
 }
 /** Harness adapters and the packages only they may load. @type {Record<string, string[]>} */
 export const ADAPTERS = {
@@ -75,7 +78,7 @@ export const ADAPTERS = {
 
 const lib = at('src/lib/**')
 const types = at('src/types/**')
-const services = Object.keys(SERVICES).map((name) => at(`src/services/${name}/**`))
+const services = SERVICES.map((name) => at(`src/services/${name}/**`))
 const harnessCore = [at('src/harness/*.ts'), at('src/harness/contract/**'), at('src/harness/shared/**')]
 const adapters = Object.keys(ADAPTERS).map((name) => at(`src/harness/${name}/**`))
 // The shared layer is a set of folders, not a folder: every layer may import it.
@@ -142,13 +145,13 @@ const independentModules = createIndependentModules({
       [...RUNTIME, ...API_CONTRACT],
       'Harness contract and shared code never import an adapter; only harness.ts does.',
     ),
-    ...Object.entries(SERVICES).map(([name, deps]) =>
+    ...SERVICES.map((name) =>
       layer(
         `service-${name}`,
         at(`src/services/${name}/**`),
-        [at(`src/services/${name}/**`), ...deps.map((dep) => at(`src/services/${dep}/**`)), SHARED],
+        [at(`src/services/${name}/**`), SHARED],
         [...RUNTIME, ...(SERVICE_EXTERNALS[name] ?? [])],
-        `services/${name} imports its own folder, the shared layer and the services SERVICES declares for it. Never the harness.`,
+        `services/${name} imports its own folder and the shared layer. Never another service (share through lib/ or types/), never the harness.`,
       ),
     ),
     layer(

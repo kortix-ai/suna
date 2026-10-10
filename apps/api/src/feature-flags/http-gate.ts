@@ -13,7 +13,9 @@ export function requireFeatureFlag(
   c: Context,
   metadata: unknown,
   key: FeatureFlagKey,
+  /** The project's organization; flags derived from Volumes need it. */
+  accountId?: string | null,
 ) {
-  if (resolveFeatureFlag(metadata, key)) return null;
+  if (resolveFeatureFlag(metadata, key, accountId)) return null;
   return c.json(featureDisabledBody(key), 403);
 }

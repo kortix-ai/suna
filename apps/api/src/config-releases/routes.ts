@@ -3,8 +3,10 @@
  *
  * POST /v1/projects/:projectId/sessions/:sessionId/config-release
  *   The desired release descriptor for one session: always the base branch's
- *   current tip. The request carries no inputs. Callers: the session's own
- *   sandbox token, or a project member who can read that session.
+ *   current tip. The request carries no inputs that change which release is
+ *   assigned; `{"accept":["config-release-v3"]}` only picks the descriptor
+ *   format. Callers: the session's own sandbox token, or a project member who
+ *   can read that session.
  *
  * GET /v1/projects/:projectId/config-archives/:configTreeId
  *   The config archive. `302` to a signed store URL when the storage host is
@@ -34,11 +36,11 @@ import { sandboxTokenMayActOnSession } from '../projects/lib/sandbox-token-sessi
 import { repositoryAccessFromSessionMetadata } from '../projects/lib/session-sandbox-metadata';
 import { isUuid } from '../shared/validate';
 import { db } from '../shared/db';
-import { requireFeatureFlag } from '../feature-flags/gate';
-import { CONFIG_RELEASES_FLAG } from './enabled';
+import { CONFIG_RELEASE_FORMAT_V2, CONFIG_RELEASE_FORMAT_V3, type ConfigReleaseFormat } from './builder';
 import { BaseRefUnresolvedError, resolveDesiredRelease } from './desired';
 import { ownerMayUseAgent, repointSessionAgentToDeclaredDefault } from './repoint';
 import { serveConfigArchive } from './serve-archive';
+import { configReleaseSnapshot } from './snapshot';
 
 const HEX40 = /^[0-9a-f]{40}$/;
 
@@ -48,19 +50,6 @@ interface ProjectRow {
   repoUrl: string;
   defaultBranch: string;
   manifestPath: string | null;
-  metadata: unknown;
-}
-
-/**
- * CHOKEPOINT — the `config_releases` flag for both routes of this file. Off ⇒ `403`
- * `feature_disabled`, so no release is built, no archive is stored, and no
- * `kortix.config_releases` row is written. Always AFTER authz, so a
- * non-member learns nothing from the answer. The daemon reads this exact
- * `code` and reverts to its workspace config dir
- * (`isFeatureDisabledError`, harness/open-code/config-release.ts).
- */
-function configReleasesGate(c: Context, project: ProjectRow): Response | null {
-  return requireFeatureFlag(c, project.metadata, CONFIG_RELEASES_FLAG);
 }
 
 interface SessionRow {
@@ -69,6 +58,21 @@ interface SessionRow {
   metadata: unknown;
   /** `project_sessions.created_by` — whose access an agent re-point clears. */
   createdBy: string | null;
+}
+
+/**
+ * The descriptor format the caller reads: v3 only when the body says
+ * `{"accept":[..."config-release-v3"...]}`. Any other body, or none, is v2, so
+ * a daemon built before v3 keeps the exact answer it always had.
+ */
+async function requestedFormat(c: Context): Promise<ConfigReleaseFormat> {
+  try {
+    const body = (await c.req.json()) as { accept?: unknown } | null;
+    if (Array.isArray(body?.accept) && body.accept.includes(CONFIG_RELEASE_FORMAT_V3)) return CONFIG_RELEASE_FORMAT_V3;
+  } catch {
+    // Not JSON: v2.
+  }
+  return CONFIG_RELEASE_FORMAT_V2;
 }
 
 type Resolved<T> = { ok: true; value: T } | { ok: false; status: 400 | 403 | 404; error: string };
@@ -114,7 +118,6 @@ async function sandboxSession(
       repoUrl: projects.repoUrl,
       defaultBranch: projects.defaultBranch,
       manifestPath: projects.manifestPath,
-      projectMetadata: projects.metadata,
       projectStatus: projects.status,
     })
     .from(sessionSandboxes)
@@ -144,7 +147,7 @@ async function sandboxSession(
     ok: true,
     value: {
       sessionId: row.sessionId ?? sandboxId,
-      project: { ...row, metadata: row.projectMetadata },
+      project: row,
       session: {
         baseRef: row.baseRef,
         agentName: row.agentName,
@@ -212,13 +215,12 @@ export function registerConfigReleaseRoutes(): void {
         );
       }
 
-      const disabled = configReleasesGate(c, project);
-      if (disabled) return disabled;
-
       // The request has no inputs. The desired release is the base branch's
       // current tip for this session's variant, full stop: nothing the caller
-      // sends can change which config it is assigned. Any body is ignored, so a
-      // daemon built against an older shape of this route still converges.
+      // sends can change which config it is assigned. The body only picks the
+      // descriptor format; any other body is ignored, so a daemon built
+      // against an older shape of this route still converges.
+      const format = await requestedFormat(c);
       //
       // EVERY session of this project is served, including one created before
       // the project replaced its repository. A release is the project's CURRENT
@@ -253,8 +255,15 @@ export function registerConfigReleaseRoutes(): void {
           ...(isDaemon
             ? { persistRepoint: (from: string, to: string) => repointSessionAgentToDeclaredDefault(subject, from, to) }
             : {}),
+          format,
         });
-        return c.json(desired.descriptor);
+        const { descriptor } = desired;
+        if (format === CONFIG_RELEASE_FORMAT_V3) {
+          descriptor.snapshot = descriptor.files
+            ? await configReleaseSnapshot(project, baseRef, descriptor.source_commit)
+            : null;
+        }
+        return c.json(descriptor);
       } catch (error) {
         if (error instanceof BaseRefUnresolvedError) return c.json({ error: error.message }, 409);
         throw error;
@@ -311,9 +320,6 @@ export function registerConfigReleaseRoutes(): void {
         );
         project = loaded.row;
       }
-
-      const disabled = configReleasesGate(c, project);
-      if (disabled) return disabled;
 
       const repo = gitProject(project);
       return serveConfigArchive(

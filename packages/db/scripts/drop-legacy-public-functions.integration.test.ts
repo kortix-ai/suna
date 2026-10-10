@@ -153,7 +153,7 @@ describe.skipIf(!dockerAvailable)('drop legacy public functions migration — re
 
   afterAll(() => {
     if (!containerStarted) return;
-    Bun.spawnSync(['docker', 'rm', '-f', container], { stdout: 'ignore', stderr: 'ignore' });
+    Bun.spawnSync(['docker', 'rm', '-f', '-v', container], { stdout: 'ignore', stderr: 'ignore' });
   });
 
   test('lists 57 distinct signatures, none of them a function it must keep', () => {

@@ -16,8 +16,6 @@
 // exactly what five parallel endpoints made possible.
 import { propagateProjectSecretsToActiveSandboxes } from '../../projects/lib/sandbox-env-sync';
 import { createRoute, z } from '@hono/zod-openapi';
-import { and, or } from 'drizzle-orm';
-import { db } from '../../shared/db';
 import { bindableRoleRow } from '../../iam/role-read';
 import { json, errors, auth } from '../../openapi';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';

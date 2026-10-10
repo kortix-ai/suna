@@ -8,6 +8,9 @@
 
 import { backendApi } from '../../http/api-client';
 import { serverTokenGet, unwrap, type ServerTokenOptions } from './shared';
+import { retiredEndpointError } from '../../http/api/errors';
+
+const CHECKOUT_INSTEAD = 'Use createPerSeatCheckout().';
 
 /**
  * The unambiguous billing situation for an account — the SAME state the API's
@@ -196,6 +199,14 @@ export interface AccountState {
     enabled: boolean;
     threshold: number;
     amount: number;
+    /** Why auto top-up turned itself off: the decline code or failure text of
+     *  the charge that did it. Null while it is on, or after it was turned off by hand. */
+    disabled_reason?: string | null;
+    /** The decline code or failure text of the last failed charge. Null after a
+     *  successful charge or a re-enable. */
+    last_failure_reason?: string | null;
+    /** When that charge failed (ISO 8601). */
+    last_failure_at?: string | null;
   };
   instances?: Array<{
     sandbox_id: string;
@@ -615,23 +626,15 @@ export interface CheckoutSessionResult {
   [key: string]: unknown;
 }
 
-/** Create a Stripe checkout session for a subscription tier. */
+/**
+ * @deprecated The API removed `POST /billing/create-checkout-session`. Always
+ * rejects with `ENDPOINT_RETIRED` and sends no request. Use
+ * {@link createPerSeatCheckout}. Removed in the next major.
+ */
 export async function createCheckoutSession(
-  input: CreateCheckoutSessionInput,
+  _input: CreateCheckoutSessionInput,
 ): Promise<CheckoutSessionResult> {
-  return unwrap(
-    await backendApi.post<CheckoutSessionResult>('/billing/create-checkout-session', {
-      account_id: input.accountId,
-      tier_key: input.tierKey,
-      success_url: input.successUrl,
-      cancel_url: input.cancelUrl,
-      commitment_type: input.commitmentType,
-      locale: input.locale,
-      server_type: input.serverType,
-      location: input.location,
-    }),
-    'Failed to create checkout session',
-  );
+  throw retiredEndpointError('createCheckoutSession', CHECKOUT_INSTEAD);
 }
 
 export interface ConfirmCheckoutSessionResult {
@@ -639,18 +642,16 @@ export interface ConfirmCheckoutSessionResult {
   [key: string]: unknown;
 }
 
-/** Confirm a completed Stripe checkout session (post-redirect). */
+/**
+ * @deprecated The API removed `POST /billing/confirm-checkout-session`. Always
+ * rejects with `ENDPOINT_RETIRED` and sends no request. Use
+ * {@link createPerSeatCheckout}. Removed in the next major.
+ */
 export async function confirmCheckoutSession(
-  sessionId: string,
-  accountId?: string,
+  _sessionId: string,
+  _accountId?: string,
 ): Promise<ConfirmCheckoutSessionResult> {
-  return unwrap(
-    await backendApi.post<ConfirmCheckoutSessionResult>('/billing/confirm-checkout-session', {
-      account_id: accountId,
-      session_id: sessionId,
-    }),
-    'Failed to confirm checkout session',
-  );
+  throw retiredEndpointError('confirmCheckoutSession', CHECKOUT_INSTEAD);
 }
 
 export interface PortalSessionResult {
@@ -703,19 +704,19 @@ export async function reactivateSubscription(accountId?: string): Promise<Subscr
   );
 }
 
-/** Schedule a downgrade to a lower tier, effective at the current period end. */
+/**
+ * @deprecated The API removed `POST /billing/schedule-downgrade`. Always
+ * rejects with `ENDPOINT_RETIRED` and sends no request. Change the plan in the
+ * Stripe customer portal ({@link createPortalSession}). Removed in the next major.
+ */
 export async function scheduleDowngrade(
-  targetTierKey: string,
-  commitmentType?: string,
-  accountId?: string,
+  _targetTierKey: string,
+  _commitmentType?: string,
+  _accountId?: string,
 ): Promise<SubscriptionMutationResult> {
-  return unwrap(
-    await backendApi.post<SubscriptionMutationResult>('/billing/schedule-downgrade', {
-      account_id: accountId,
-      target_tier_key: targetTierKey,
-      commitment_type: commitmentType,
-    }),
-    'Failed to schedule downgrade',
+  throw retiredEndpointError(
+    'scheduleDowngrade',
+    'Change the plan in the Stripe customer portal (createPortalSession()).',
   );
 }
 
@@ -774,6 +775,14 @@ export interface AutoTopupSettings {
   enabled: boolean;
   threshold: number;
   amount: number;
+  /** Why auto top-up turned itself off: the decline code or failure text of
+   *  the charge that did it. Null while it is on, or after it was turned off by hand. */
+  disabled_reason?: string | null;
+  /** The decline code or failure text of the last failed charge. Null after a
+   *  successful charge or a re-enable. */
+  last_failure_reason?: string | null;
+  /** When that charge failed (ISO 8601). */
+  last_failure_at?: string | null;
   [key: string]: unknown;
 }
 
@@ -783,6 +792,24 @@ export async function getAutoTopupSettings(accountId?: string): Promise<AutoTopu
   return unwrap(
     await backendApi.get<AutoTopupSettings>(`/billing/auto-topup/settings${query}`),
     'Failed to load auto-topup settings',
+  );
+}
+
+export interface TopUpRequestResult {
+  /** How many owners were emailed. */
+  notified: number;
+}
+
+/**
+ * Ask the account owners to add credits: for a member blocked by an empty
+ * wallet, who cannot buy credits. Once per member and account in 24 hours.
+ * Throws `ApiError` 429 `already_requested` inside that window, and 409
+ * `can_manage_billing` for a caller who can add credits.
+ */
+export async function requestTopUp(accountId: string): Promise<TopUpRequestResult> {
+  return unwrap(
+    await backendApi.post<TopUpRequestResult>(`/accounts/${encodeURIComponent(accountId)}/top-up-requests`, {}),
+    'Failed to ask the owners for credits',
   );
 }
 

@@ -3,6 +3,7 @@ import type { SessionMessageAuthors, SessionParticipant, SessionParticipants } f
 
 import {
   messageAvatarPerson,
+  messageSessionAuthor,
   participantSheetRows,
   participantAvatarText,
   participantInitials,
@@ -133,5 +134,31 @@ describe('participantSheetRows', () => {
 
   test('no data, no rows', () => {
     expect(participantSheetRows(undefined)).toEqual({ rows: [], more: 0 });
+  });
+});
+
+describe('messageSessionAuthor', () => {
+  const coordinator = { kind: 'session', session_id: 'ses_parent', name: 'Release coordinator', agent: 'kortix' } as const;
+
+  test('a message another session sent names that session', () => {
+    const authors = { authors: { m1: coordinator }, initial_author: null } as SessionMessageAuthors;
+    expect(messageSessionAuthor(authors, ['m1'], 'm1')).toEqual({
+      session_id: 'ses_parent',
+      name: 'Release coordinator',
+      agent: 'kortix',
+    });
+  });
+
+  test('a spawned session: initial_author goes to the first unauthored message only', () => {
+    const authors = { authors: {}, initial_author: coordinator } as unknown as SessionMessageAuthors;
+    expect(messageSessionAuthor(authors, ['m1', 'm2'], 'm1')?.session_id).toBe('ses_parent');
+    expect(messageSessionAuthor(authors, ['m1', 'm2'], 'm2')).toBeNull();
+  });
+
+  test('a member author, or no author, is not a session sender', () => {
+    const member = { kind: 'member', user_id: 'u1', name: 'Dana', email: 'dana@example.test' };
+    const authors = { authors: { m1: member }, initial_author: null } as unknown as SessionMessageAuthors;
+    expect(messageSessionAuthor(authors, ['m1'], 'm1')).toBeNull();
+    expect(messageSessionAuthor(undefined, ['m1'], 'm1')).toBeNull();
   });
 });

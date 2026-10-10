@@ -1,4 +1,3 @@
-import type { SandboxProviderName } from '../config';
 import { withTimeout } from '../shared/with-timeout';
 import type { ProviderState, SandboxProviderAdapter } from './providers';
 
@@ -141,15 +140,6 @@ export function resolveRoutedTemplateState(
   if (states.some((state) => state === 'build_failed')) return 'build_failed';
   if (states.some((state) => state === 'unknown' || state === null)) return 'unknown';
   return 'missing';
-}
-
-/** Resolve the same usable explicit pin as session creation. null is Automatic. */
-export function resolveUsableProjectProviderPin(
-  metadata: Record<string, unknown> | null | undefined,
-  isProviderEnabled: (provider: SandboxProviderName) => boolean,
-): SandboxTemplateProvider | null {
-  const provider = resolveConfiguredProjectProviderPin(metadata);
-  return provider && isProviderEnabled(provider) ? provider : null;
 }
 
 /** A valid project pin remains visible even while that provider is unavailable. */

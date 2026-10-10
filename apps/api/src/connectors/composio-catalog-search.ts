@@ -11,6 +11,8 @@ interface CatalogToolkit {
   meta: {
     logo?: string | null;
     description?: string | null;
+    /** Number of app events (triggers) the toolkit offers. */
+    triggers_count?: number;
     categories?: Array<{ id: string; name: string }>;
   };
 }
@@ -255,6 +257,18 @@ async function visibleCatalog(catalogClient: ComposioCatalogClient): Promise<Cat
   const catalog = await catalogSnapshot(catalogClient);
   const hidden = await hiddenToolkits(catalogClient, catalog);
   return hidden.size === 0 ? catalog : catalog.filter((item) => !hidden.has(item.slug.toLowerCase()));
+}
+
+/** Every connectable toolkit of the cached, fully paged catalogue (hidden ones left out). */
+export async function composioVisibleToolkits(
+  catalogClient: ComposioCatalogClient = composioRestClient(),
+): Promise<CatalogToolkit[]> {
+  return visibleCatalog(catalogClient);
+}
+
+/** Test seam: replace the deployment's REST client; `null` restores the real one. */
+export function setComposioRestClientForTest(next: ComposioCatalogClient | null): void {
+  client = next ?? undefined;
 }
 
 /** The public card shape. `connected` is always false: connection state is

@@ -65,7 +65,6 @@ mock.module('../projects', () => ({
 const { gitProxyApp, __resetGitProxyMemosForTests } = await import('./index');
 
 const pkt = (s: string) => (Buffer.byteLength(s, 'utf8') + 4).toString(16).padStart(4, '0') + s;
-const ZERO = '0'.repeat(40);
 /** Stand-in tip for every ref the fake upstream advertises. */
 const REMOTE_SHA = 'c'.repeat(39) + '7';
 

@@ -69,11 +69,12 @@ export function useSandboxContext() {
 }
 
 export function SandboxProvider({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading: authLoading } = useAuthContext();
+  const { isAuthenticated, mfaRequired, isLoading: authLoading } = useAuthContext();
   const queryClient = useQueryClient();
 
-  // Only fetch sandbox when user is fully authenticated (not loading, not anonymous)
-  const shouldFetch = isAuthenticated === true && !authLoading;
+  // Only fetch sandbox when user is fully authenticated (not loading, not
+  // anonymous, no TOTP code owed)
+  const shouldFetch = isAuthenticated === true && !mfaRequired && !authLoading;
 
   const { data, isLoading, error } = useSandbox(shouldFetch);
 

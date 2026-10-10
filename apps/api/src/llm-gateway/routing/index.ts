@@ -27,6 +27,3 @@ export function resolveGatewayRoute(
 ): Promise<ModelRoutePlan> {
   return resolver(principal, input);
 }
-
-export { createGatewayRouteResolver } from './resolve-route';
-export type { GatewayRouteResolver, GatewayRouteResolverOptions } from './resolve-route';

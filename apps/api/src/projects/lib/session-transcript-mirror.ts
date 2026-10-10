@@ -255,6 +255,38 @@ function stringBudget(total: number) {
 }
 
 /**
+ * Postgres jsonb cannot store a string whose text carries U+0000 or an
+ * unpaired surrogate: the INSERT that carries one fails with
+ * `unsupported Unicode escape sequence — \u0000 cannot be converted to text.`
+ * (SQLSTATE 22P05), and the mirror write is deterministic on its content — one
+ * such message retried the same doomed transaction at every turn end (568 warn
+ * lines in one prod hour, KRTX-1701).
+ *
+ * The projection therefore makes every string it emits storable: U+0000 and a
+ * lone surrogate become U+FFFD. The test is unicode-aware (`/u`), so an astral
+ * character's surrogate halves never match — emoji and every BMP char pass
+ * through untouched. Well-formed text pays only the scan.
+ */
+const JSONB_UNSAFE = /[\0\uD800-\uDFFF]/u;
+
+const jsonbSafeText = (text: string): string =>
+  JSONB_UNSAFE.test(text) ? text.replace(/[\0\uD800-\uDFFF]/gu, '\uFFFD') : text;
+
+/** Pure: every string in a JSON value, keys included, is storable as jsonb. */
+function jsonbSafeValue(value: Record<string, unknown>): Record<string, unknown>;
+function jsonbSafeValue(value: Array<Record<string, unknown>>): Array<Record<string, unknown>>;
+function jsonbSafeValue(value: unknown): unknown {
+  if (typeof value === 'string') return jsonbSafeText(value);
+  if (Array.isArray(value)) return value.map(jsonbSafeValue);
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value)) out[jsonbSafeText(key)] = jsonbSafeValue(item);
+    return out;
+  }
+  return value;
+}
+
+/**
  * Pure: a JSON value with every `data:` URL string removed, and every other
  * string passed through `bound`. A removed array element is dropped, a removed
  * object field is deleted, and `undefined` means the value itself was bytes.
@@ -539,6 +571,13 @@ export function childSessionIdOf(part: unknown): string | undefined {
   if (SUBAGENT_TOOLS.has(tool)) {
     const fromMetadata = isRecord(state?.metadata) ? state.metadata.sessionId : undefined;
     if (typeof fromMetadata === 'string' && fromMetadata) return fromMetadata;
+    if (tool === 'task' && state?.status === 'error') {
+      // An errored task names its child only in the error text (the SDK's
+      // rule); the legacy title/output fallbacks never apply once it errored.
+      return typeof state.error === 'string'
+        ? state.error.match(/\btask_id:\s*(ses_[A-Za-z0-9]+)/)?.[1]
+        : undefined;
+    }
     if (typeof state?.title === 'string' && state.title) {
       const match = state.title.match(SESSION_ID_IN_TEXT);
       if (match) return match[0];
@@ -606,13 +645,15 @@ export function childSessionsToCapture(input: {
  * Does this session's mirror still hold a row in the old stripped format? The
  * same question as `mirrorPartsAreStripped`, asked of the database: the wake
  * backfill reads the box again for such a history, because a mirror that
- * proved its head is otherwise left alone for good.
+ * proved its head is otherwise left alone for good. Scoped to `root`: a kept
+ * old root's rows cannot be read again from the current box.
  */
-export async function mirrorHoldsStrippedRows(sessionId: string): Promise<boolean> {
+export async function mirrorHoldsStrippedRows(sessionId: string, root: string): Promise<boolean> {
   const result = await db.execute(sql`
     SELECT EXISTS (
       SELECT 1 FROM kortix.session_transcript_messages
        WHERE session_id = ${sessionId}
+         AND opencode_session_id = ${root}
          AND parts @? '$[*] ? (@.type == "tool" && (@.state.status == "completed" || @.state.status == "error") && !(exists (@.state.input)))'
     ) AS stripped
   `);
@@ -673,7 +714,7 @@ export function mirrorRowsFromOpencodePayload(payload: unknown): MirrorMessage[]
     if (!info) continue;
     const id = typeof info.id === 'string' ? info.id.trim() : '';
     if (!id) continue;
-    rows.push({ info, parts: sanitizeParts(msg.parts) });
+    rows.push({ info: jsonbSafeValue(info), parts: jsonbSafeValue(sanitizeParts(msg.parts)) });
   }
   return rows;
 }

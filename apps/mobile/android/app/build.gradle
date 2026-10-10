@@ -93,7 +93,19 @@ android {
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
-        versionName "1.4.3"
+        versionName "1.5.0"
+
+        // `APP_VARIANT=dev` (the dev-* EAS profiles) installs the build next to the
+        // store app as `com.kortix.application.dev`, labelled "Kortix (dev)" with the
+        // dev icon. An env var, not committed native code, so both builds share one
+        // fingerprint.
+        def devVariant = System.getenv('APP_VARIANT') == 'dev'
+        if (devVariant) applicationIdSuffix '.dev'
+        resValue "string", "app_name", devVariant ? "Kortix (dev)" : "Kortix"
+        manifestPlaceholders += [
+            appIcon: devVariant ? "@mipmap/ic_launcher_dev" : "@mipmap/ic_launcher",
+            appRoundIcon: devVariant ? "@mipmap/ic_launcher_dev" : "@mipmap/ic_launcher_round",
+        ]
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }

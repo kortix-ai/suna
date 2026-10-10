@@ -57,6 +57,8 @@ function render(props?: {
               promptAttachmentItems={[] as never}
               removeAttachedFile={noop}
               retryAttachedFile={noop}
+              pastes={[]}
+              removePaste={noop}
               commandAttachmentPlan={
                 (props?.commandAttachmentPlan ?? { kind: 'carry', command: null }) as never
               }

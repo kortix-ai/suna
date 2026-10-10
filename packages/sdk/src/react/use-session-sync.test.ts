@@ -59,6 +59,49 @@ test('a session with no runtime id never marks its controller busy, so no turn-e
   }
 });
 
+// Several hooks share one controller per session (the page's useSession and an
+// always-mounted export dialog). A hook that passes no `streamConnected` knows
+// nothing about the stream and must not switch the verification poll back on
+// for the hook that does: on dev the closed dialog's `false` won, and an idle
+// tab read the transcript tail every 30 s while the stream was up.
+test('a hook with no stream opinion never resets another hook\'s reliable stream', () => {
+  const sessionId = 'ses_stream_owner_and_bystander';
+  const controller = getSessionSyncController(sessionId, undefined, 'none');
+  const original = controller.setStreamReliable;
+  let reliable = false;
+  controller.setStreamReliable = (value) => {
+    reliable = value;
+  };
+  function Owner({ connected }: { connected: boolean }) {
+    useSessionSync(sessionId, { streamConnected: connected });
+    return null;
+  }
+  function Bystander() {
+    useSessionSync(sessionId);
+    return null;
+  }
+  function Page({ connected, owner }: { connected: boolean; owner: boolean }) {
+    return createElement('div', null, owner ? createElement(Owner, { connected }) : null, createElement(Bystander));
+  }
+  try {
+    let renderer: ReturnType<typeof create> | undefined;
+    act(() => {
+      renderer = create(createElement(Page, { connected: true, owner: true }));
+    });
+    expect(reliable).toBe(true);
+    act(() => renderer?.update(createElement(Page, { connected: false, owner: true })));
+    expect(reliable).toBe(false);
+    act(() => renderer?.update(createElement(Page, { connected: true, owner: true })));
+    expect(reliable).toBe(true);
+    // The stream's owner leaves: nobody vouches for the stream any more.
+    act(() => renderer?.update(createElement(Page, { connected: true, owner: false })));
+    expect(reliable).toBe(false);
+    act(() => renderer?.unmount());
+  } finally {
+    controller.setStreamReliable = original;
+  }
+});
+
 /**
  * WHICH signal switches the transcript liveness poll.
  *

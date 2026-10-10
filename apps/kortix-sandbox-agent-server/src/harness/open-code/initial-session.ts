@@ -1,5 +1,5 @@
 import { relayOrphanedTurnEndToApi } from './turn-relay'
-import { claimInitialTurn, relayRuntimeSession } from '../shared/turn-relay'
+import { claimInitialTurn, claimedRuntimeSessionPin, relayRuntimeSession } from '../shared/turn-relay'
 import { writeFileSync, readFileSync, existsSync, mkdirSync, unlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { logger } from '@/lib/log/logger'
@@ -113,7 +113,12 @@ export async function maybeCreateInitialOpencodeSession(
   const resolved = await resolveExistingRoot(
     baseUrl,
     workspace,
-    priorPin,
+    // A box whose home was rebuilt or converged from a legacy runtime has no
+    // local pin file. The control plane's pin then decides: resume it, or defer
+    // while OpenCode is slow, never adopt or create another root that the relay
+    // below writes over the durable pin (prod 2026-09-23, #8322). The local pin
+    // still wins. Delivery bookkeeping keeps using the local pin only.
+    priorPin ?? claimedRuntimeSessionPin(),
     rootListDeadlineMs,
     onListening,
   )
@@ -142,6 +147,8 @@ export async function maybeCreateInitialOpencodeSession(
       sessionId,
       alreadyDelivered,
       priorPin: priorPin !== null,
+      // `file` = this box's pin, `claim` = the control plane's (pin file missing).
+      pinSource: priorPin !== null ? 'file' : claimedRuntimeSessionPin() ? 'claim' : 'none',
       known: existing.known,
       lastTurnIncomplete: existing.lastTurnIncomplete,
       lastTurnHasError: existing.lastTurnHasError,
@@ -497,6 +504,13 @@ export async function resolveExistingRoot(
   if (roots.length === 0) return { status: 'create' }
   const pinned = priorPin ? roots.find((r) => r.id === priorPin) : undefined
   const chosen = pinned || pickMostRecentRoot(roots)
+  if (priorPin && !pinned) {
+    // The relay after boot writes `chosen` over the durable pin; say so.
+    logger.warn('[boot] pinned root is not in the OpenCode root list; falling back to the most recent root', {
+      pin: priorPin,
+      chosen: chosen?.id ?? null,
+    })
+  }
   if (!chosen) return { status: 'create' }
   const inspection = await inspectRoot(baseUrl, workspace, chosen.id)
   return {
