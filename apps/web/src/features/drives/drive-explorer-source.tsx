@@ -13,8 +13,8 @@
 import type { FileNode } from '@/features/file-browser/types';
 import type { FileContentResult, FileSource } from '@/features/file-viewer';
 import type { ExplorerQueryResult, FileExplorerSource } from '@/features/project-files/explorer-source';
-import { attachmentMime } from '@/features/session/attachment-mime';
 import { useInvalidateDrives, saveDriveFile } from '@/hooks/drives/use-drives';
+import { blobToFileContent, typedDriveBlob } from './session-drive-files';
 import {
   deleteDriveFile,
   downloadDriveFile,
@@ -81,8 +81,6 @@ function useDriveFileList(dirPath: string): ExplorerQueryResult<FileNode[]> {
   return { data, isLoading: query.isLoading, isFetching: query.isFetching, error: query.error, refetch: query.refetch };
 }
 
-const TEXT_LIMIT = 2 * 1024 * 1024;
-
 const blobKey = (driveId: string, filePath: string) => [...qk.drives.drive(driveId), 'blob', filePath] as const;
 
 /**
@@ -96,8 +94,7 @@ function useDriveBlob(filePath: string | null) {
     queryKey: blobKey(driveId, filePath ?? ''),
     queryFn: async ({ signal }) => {
       const { blob, version } = await readDriveFile(driveId, toDrivePath(filePath), signal);
-      const type = attachmentMime(blob.type === 'application/octet-stream' ? '' : blob.type, filePath ?? '');
-      return { blob: type === blob.type ? blob : new Blob([blob], { type }), version };
+      return { blob: typedDriveBlob(blob, filePath ?? ''), version };
     },
     enabled: !!filePath,
     staleTime: 5_000,
@@ -125,26 +122,9 @@ function useDriveFileContent(filePath: string | null): FileContentResult {
       setData(undefined);
       return;
     }
-    void (async () => {
-      const bytes = new Uint8Array(await b.slice(0, TEXT_LIMIT + 1).arrayBuffer());
-      let text: string | null = null;
-      if (bytes.length <= TEXT_LIMIT) {
-        try {
-          text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-        } catch {
-          text = null;
-        }
-      }
-      if (cancelled) return;
-      if (text !== null) {
-        setData({ type: 'text', content: text });
-        return;
-      }
-      const all = new Uint8Array(await b.arrayBuffer());
-      let binary = '';
-      for (let i = 0; i < all.length; i += 0x8000) binary += String.fromCharCode(...all.subarray(i, i + 0x8000));
-      if (!cancelled) setData({ type: 'binary', content: btoa(binary), encoding: 'base64', mimeType: b.type || undefined });
-    })();
+    void blobToFileContent(b).then((content) => {
+      if (!cancelled) setData(content);
+    });
     return () => {
       cancelled = true;
     };

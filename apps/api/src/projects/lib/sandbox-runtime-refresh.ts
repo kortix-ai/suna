@@ -4,6 +4,7 @@ import { logger } from '../../lib/logger';
 import { SANDBOX_SERVICE_PORT } from './sandbox-env-transport';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { db } from '../../shared/db';
+import { KORTIX_SERVICE_CALL_HEADER } from '../../shared/kortix-user-context';
 
 /**
  * Poke a live sandbox's daemon so it re-converges on this deploy's runtime
@@ -17,11 +18,10 @@ import { db } from '../../shared/db';
  * session reload, and now carries the reconcile — so the fix for both paths is
  * one call to a route that is already part of the contract.
  *
- * WHAT IT SENDS. `?restart=0` only. Deliberately NOT `base=1` (that force-resets
- * the session branch and discards its commits — see routes/refresh.ts) and not
- * `config_dir=1` (that is the reload's job). What is left is a
- * `git pull --ff-only` on the session branch, which cannot discard anything and
- * fails cleanly, plus the asset reconcile this exists for.
+ * WHAT IT SENDS. Ordinary refreshes use `?restart=0`. A provider resume also
+ * sends `repo=0&on_boot=1` with the direct-service header. The resume call
+ * leaves the checkout unchanged and reruns the project's boot hook. It never
+ * sends `base=1`, which force-resets the session branch and discards commits.
  *
  * WHY IT RETRIES. A provider reports `running` before the guest's daemon has
  * bound its port, so the first attempt after a wake routinely lands on a closed
@@ -81,6 +81,7 @@ export type SandboxRuntimeRefreshOutcome = 'refreshed' | 'unreachable' | 'no_san
 export async function refreshSandboxRuntimeAssets(
   sessionId: string,
   deps: SandboxRuntimeRefreshDeps = defaultDeps,
+  runOnBoot = false,
 ): Promise<SandboxRuntimeRefreshOutcome> {
   let sandbox: { externalId: string; serviceKey: string } | null = null;
   for (const delay of RETRY_DELAYS_MS) {
@@ -91,17 +92,22 @@ export async function refreshSandboxRuntimeAssets(
       // a lagging read just means "try again on the next tick".
       if (!sandbox) continue;
       const ingress = await deps.resolveIngress(sandbox.externalId);
+      const query = runOnBoot ? '?restart=0&repo=0&on_boot=1' : '?restart=0';
       const response = await deps.fetch(
-        `${ingress.url.replace(/\/+$/, '')}/kortix/refresh?restart=0`,
+        `${ingress.url.replace(/\/+$/, '')}/kortix/refresh${query}`,
         {
           method: 'POST',
-          headers: { ...ingress.headers, Authorization: `Bearer ${sandbox.serviceKey}` },
+          headers: {
+            ...ingress.headers,
+            Authorization: `Bearer ${sandbox.serviceKey}`,
+            ...(runOnBoot ? { [KORTIX_SERVICE_CALL_HEADER]: '1' } : {}),
+          },
           signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         },
       );
       // 409 = a refresh is already running in there, which serves the same
       // purpose. Anything else 2xx-or-409 counts as delivered.
-      if (response.ok || response.status === 409) return 'refreshed';
+      if (response.ok || (!runOnBoot && response.status === 409)) return 'refreshed';
     } catch {
       // Closed socket while the guest is still coming up. Retry.
     }
@@ -109,11 +115,21 @@ export async function refreshSandboxRuntimeAssets(
   return sandbox ? 'unreachable' : 'no_sandbox';
 }
 
+export function refreshResumedSandboxRuntimeAssets(
+  sessionId: string,
+  deps: SandboxRuntimeRefreshDeps = defaultDeps,
+): Promise<SandboxRuntimeRefreshOutcome> {
+  return refreshSandboxRuntimeAssets(sessionId, deps, true);
+}
+
 /**
  * Fire-and-forget form for the restart/resume call sites. Returns immediately.
  */
 export function scheduleSandboxRuntimeRefresh(sessionId: string, context: string): void {
-  void refreshSandboxRuntimeAssets(sessionId)
+  const refresh = context === 'resume'
+    ? refreshResumedSandboxRuntimeAssets(sessionId)
+    : refreshSandboxRuntimeAssets(sessionId);
+  void refresh
     .then((outcome) => {
       if (outcome === 'refreshed') return;
       logger.info('[projects] sandbox runtime-asset refresh not delivered', {

@@ -532,6 +532,9 @@ export const ConnectionSchema = z.object({
    * a session. Absent on older servers: treat as `true`.
    */
   usable: z.boolean().optional(),
+  /** Signed in: the account holds a credential or a connected provider
+   *  account. `false` offers Connect. Absent on older servers. */
+  authorized: z.boolean().optional(),
   /**
    * Computer accounts only: the paired machine this account reaches. `null`
    * when the machine was unpaired. Absent on every other connector.

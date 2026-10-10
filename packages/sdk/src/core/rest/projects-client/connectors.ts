@@ -488,6 +488,11 @@ export interface AdminConnector {
   /** Where the connector currently obtains its server-side credential. */
   credentialSource?: 'none' | 'stored' | 'project_secret' | 'platform';
   secretSet: boolean;
+  /**
+   * Why the last attempt to load this connector's tools failed. Set when
+   * `status` is `error`. Absent on older servers.
+   */
+  lastError?: string | null;
 }
 
 export interface ConnectorsResponse {
@@ -592,6 +597,12 @@ interface ConnectionFields {
    * a session. Absent on older servers, which means usable.
    */
   usable?: boolean;
+  /**
+   * `true` = the account is signed in: it holds a credential, or a connected
+   * provider account. `false` = it still needs a sign-in (an abandoned OAuth
+   * flow, say), so a client offers Connect. Absent on older servers.
+   */
+  authorized?: boolean;
   /**
    * The paired machine this account points at. Set only on accounts of a
    * `computer` connector; `null` once the machine was unpaired (the account is
@@ -1552,6 +1563,8 @@ export interface PipedreamApp {
   hasTriggers: boolean;
   /** Pipedream's promotion weight. The catalogue's resting sort key. */
   featuredWeight: number;
+  /** The same app's API/MCP catalogue id (`ConnectToolkit.directId`). */
+  directId?: string | null;
 }
 
 /** A category facet: the key to filter by, and its true size in the catalogue. */
@@ -1669,6 +1682,9 @@ export interface ConnectToolkit {
   categories?: string[];
   isNoAuth: boolean;
   connected: boolean;
+  /** The same app's API/MCP catalogue id, when the project has that catalogue
+   *  on and it lists the app. The app page offers both ways to connect. */
+  directId?: string | null;
 }
 
 export interface ConnectToolkitsPage {

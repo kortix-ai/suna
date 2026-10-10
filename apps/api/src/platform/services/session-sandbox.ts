@@ -952,15 +952,17 @@ async function prepareAttemptVolumes(ctx: SessionProvisionContext, state: Sessio
   // Ephemeral sandboxes: the session's own state volume. Resolved once,
   // before the drives, whose mount slots it shares; a failure to open it fails
   // this attempt (retried by the loop) rather than booting a box that would
-  // lose the session. A persistent machine keeps everything on its root disk instead.
+  // lose the session. A persistent machine keeps everything on its root disk,
+  // except what a reset carried onto its session volume (its chat): it never
+  // gets a new one here, and mounts the one a reset made.
   state.bootModeStageReached = true;
-  if (!state.sessionStateResolved && !persistentMachine) {
+  if (!state.sessionStateResolved) {
     state.sessionState = await import('./ephemeral-sandbox').then((m) =>
       m.resolveSessionStateMount({
         projectId,
         sessionId: sandbox.sandboxId,
         provider: providerName,
-        allowNew: bootStore ? state.bootMode === 'volume' : undefined,
+        allowNew: persistentMachine ? false : bootStore ? state.bootMode === 'volume' : undefined,
       }),
     );
     state.sessionStateResolved = true;
@@ -987,9 +989,9 @@ async function prepareAttemptVolumes(ctx: SessionProvisionContext, state: Sessio
     state.bootArtifactsResolved = true;
   }
   if (!state.driveMountsResolved) {
-    // The session volume, or a persistent machine's root disk, takes a slot; so do boot artifacts.
+    // The session volume, a persistent machine's root disk and boot artifacts each take a slot.
     state.driveMounts = await planDrives(
-      (state.sessionState || persistentMachine ? 1 : 0) + (state.bootArtifacts ? 1 : 0),
+      (state.sessionState ? 1 : 0) + (persistentMachine ? 1 : 0) + (state.bootArtifacts ? 1 : 0),
     );
     state.driveMountsResolved = true;
   }
@@ -1778,8 +1780,10 @@ async function failSessionSandboxProvisioning(
   // for E2B, Daytona, Platinum, and future providers.
   // A project with drives runs on Platinum only: when Platinum cannot be
   // reached at all, say that, instead of a generic provider failure.
+  const platinumUnreachable =
+    ctx.drivesRequirePlatinum && !ctx.drivesSyncAllowed && PLATINUM_UNREACHABLE.test(bgMessage);
   const failure = classifySandboxProvisioningFailure(
-    ctx.drivesRequirePlatinum && !ctx.drivesSyncAllowed && PLATINUM_UNREACHABLE.test(bgMessage)
+    platinumUnreachable
       ? new Error(
           '[drives] Platinum, which runs this project’s sessions and their drives, is not reachable right now. ' +
             'The session did not start. Try again in a minute.',
@@ -1788,9 +1792,12 @@ async function failSessionSandboxProvisioning(
   );
   const { isCapacity, isGitAuth, userMessage } = failure;
   const failureCategory = failure.category;
+  // Transient: the next `/start` re-attempts with backoff (session-open
+  // `retryTransientProvisionFailure`); the session's volume is untouched.
+  const failureTransient = failure.transient || platinumUnreachable;
   if (isCapacity) {
     console.warn(
-      `[session-sandbox] provider at capacity for ${sandbox.sandboxId} — stopping automatic provisioning:`,
+      `[session-sandbox] provider at capacity for ${sandbox.sandboxId} — the next /start retries with backoff:`,
       bgMessage.slice(0, 200),
     );
   } else if (isGitAuth) {
@@ -1824,6 +1831,7 @@ async function failSessionSandboxProvisioning(
         errorMessage: userMessage,
         lastProvisioningError: bgMessage.slice(0, 500),
         ...(failureCategory ? { failureCategory } : {}),
+        failureTransient,
       }),
     });
     await transitionSession('fail', sandbox.sandboxId, { error: userMessage }).catch((sessionErr) =>

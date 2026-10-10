@@ -1,23 +1,16 @@
 'use client';
 
 import { useTranslations } from '@/i18n/use-translations';
-import {
-  type AdminConnector,
-  type Connection,
-  listConnections,
-  listPipedreamApps,
-  setConnectorName,
-} from '@kortix/sdk';
-import { useProjectAccountId } from '@kortix/sdk/react';
-import { CheckIcon, KeyIcon, PencilSimpleIcon, PlusIcon } from '@phosphor-icons/react';
+import { type AdminConnector, getProjectDetail, listPipedreamApps } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
+import { KeyIcon, PlusIcon } from '@phosphor-icons/react';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
-import { useMutation, useQuery } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
-import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import {
   Modal,
@@ -29,33 +22,25 @@ import {
 } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { errorToast, successToast } from '@/components/ui/toast';
 import { ErrorState } from '@/features/layout/section/error-state';
-import { connectorSetupStatus } from '@/features/workspace/customize/sections/connector-connection-form';
+import { ComputerConnectModal } from '@/features/tunnel/computer-connect';
 import { SetCredentialModal } from '@/features/workspace/customize/sections/connectors-view';
-import { connectorConnectionRows } from '@/features/workspace/customize/sections/view/connector-connections';
-import { usePipedreamConnectMember } from '@/hooks/connectors/use-pipedream-connect-member';
-import { usePipedreamConnectProject } from '@/hooks/connectors/use-pipedream-connect-project';
 
 import {
   ConnectorAppIcon,
   ConnectorStatusBadge,
 } from '@/features/workspace/capabilities/connectors/connector-identity';
-import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 
 import { ButtonGroup } from '@/components/ui/button-group';
 import { Close } from '@/features/icon/icons/close';
 import { foldKey } from '@/features/workspace/capabilities/connectors/catalog/catalog-entry';
-import { connectorDisplayName } from '@/features/workspace/capabilities/connectors/connector-filter';
-import { isManagedConnectorProvider } from '@/features/workspace/capabilities/connectors/provider-label';
 import { ConnectorAccounts } from './connector-accounts';
 import { ConnectorSettings } from './connector-settings';
-import { ConnectorTriggers, useConnectorEventTriggers } from './connector-triggers';
 import { CONNECTOR_TAB_LABEL_KEY, type ConnectorTab, connectorTabs } from './connector-tabs';
 import { ConnectorTools } from './connector-tools';
+import { ConnectorTriggers, useConnectorEventTriggers } from './connector-triggers';
+import { useConnectorDetail } from './use-connector-detail';
 
 export interface ConnectorModalProps {
   projectId: string;
@@ -181,54 +166,43 @@ function ConnectorModalBody({
   onRemoved: () => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const isManagedProvider = isManagedConnectorProvider(connector.provider);
+  const {
+    displayName,
+    isManagedProvider,
+    isChannel,
+    isComputer,
+    connectionsQuery,
+    connected,
+    canManageConnections,
+    headerCta,
+    connectPending,
+    refreshAccounts,
+    replaceSoleAccount,
+    startPrivateSession,
+    credentialTarget,
+    setCredentialTarget,
+    computerOpen,
+    setComputerOpen,
+  } = useConnectorDetail({ projectId, connector, canWrite, onChanged });
+  const tSharing = useTranslations('accessSharing');
+  // Opens the account list's "Add account" dialog: name and who may use it.
+  const [addRequest, setAddRequest] = useState(0);
+  const projectDetailQuery = useQuery({
+    queryKey: qk.project.detail(projectId),
+    queryFn: () => getProjectDetail(projectId),
+    ...contract('config'),
+  });
+  const projectName = projectDetailQuery.data?.project?.name ?? '';
+  const everyoneLabel = projectName
+    ? tSharing('everyone', { project: projectName })
+    : tSharing('visibilityEveryone');
   const isPipedream = connector.provider === 'pipedream';
-  const isChannel = connector.provider === 'channel';
-  const isComputer = connector.provider === 'computer';
-  const displayName = connectorDisplayName(connector);
 
   const eventTriggers = useConnectorEventTriggers(projectId, connector);
   const tabs = connectorTabs(connector, { canWrite, hasEvents: eventTriggers.hasEvents });
   const [selectedTab, setSelectedTab] = useState<ConnectorTab>('accounts');
-  // Bumped by the header's Connect: the Accounts tab opens its Add account
-  // dialog, where the caller names the account and picks who may use it.
-  const [addAccountRequest, setAddAccountRequest] = useState(0);
   const tab = tabs.includes(selectedTab) ? selectedTab : (tabs[0] ?? 'accounts');
 
-  const [credentialTarget, setCredentialTarget] = useState<{
-    connectionId: string;
-    owner: 'project' | 'me';
-  } | null>(null);
-
-  const connectionsQuery = useQuery({
-    queryKey: ['connections', projectId],
-    queryFn: () => listConnections(projectId),
-    staleTime: 30_000,
-    enabled: !isChannel,
-  });
-  // Every account this caller can reach on the connector: the project's shared
-  // rows plus the caller's own private ones. A connector is not an account —
-  // the header must never pick "the" connection, because there may be several
-  // (Work + Personal) or none.
-  // A revoked row is history, not an account: it must not turn "connect the
-  // first account" into "finish setting up" (found 2026-09-17 on a connector
-  // whose only shared account had just been disconnected).
-  const accounts = connectorConnectionRows(
-    connectionsQuery.data?.connections,
-    connector.slug,
-  ).filter((connection) => connection.status !== 'revoked');
-  const soleAccount = accounts.length === 1 ? accounts[0]! : null;
-  // Server-computed and account-aware: `needs_auth` means no reachable account
-  // holds a usable credential, whatever the owner type.
-  const setupStatus = connectorSetupStatus(connector);
-  const connected = setupStatus === 'connected' || setupStatus === 'user_managed';
-
-  const refreshAccounts = () => {
-    void connectionsQuery.refetch();
-    onChanged();
-  };
-  const connectShared = usePipedreamConnectProject(projectId, connector.slug, refreshAccounts);
-  const connectMine = usePipedreamConnectMember(projectId, connector.slug, refreshAccounts);
   // Best-effort catalogue description. Never blocks first paint — the header
   // renders without it, then fills in. That is the main open-latency fix:
   // previously this query sat in the critical path of feeling "ready".
@@ -248,83 +222,25 @@ function ConnectorModalBody({
   });
   const appDescription = isPipedream ? (appDescriptionQuery.data ?? null) : null;
 
-  // `accountId` rides the qk.project.detail(id) cache the connectors page
-  // already filled, so the connections probe resolves on the modal's first
-  // render instead of after its own getProject round-trip.
-  const accountId = useProjectAccountId(projectId);
-  const canManageConnections =
-    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE, { accountId })
-      .allowed === true;
-
-  const newSession = useNewProjectSession(projectId);
-  /**
-   * Start a new session. Given a connection, bind it to THIS connector so the
-   * session runs as that exact account — `inherit_unbound` keeps the project
-   * default for every OTHER connector, so binding just this one doesn't null
-   * the rest. Sessions are private by default, which is what lets a
-   * member-owned binding resolve.
-   *
-   * No connection (the "not connected yet" banner) just opens a fresh private
-   * session — there is no more session-level connector requirement to carry;
-   * connecting an account already has its own direct flow on this tab.
-   */
-  const startPrivateSession = (connection?: Connection) => {
-    newSession({
-      create: connection
-        ? {
-            connector_bindings: { [connector.slug]: { connection_id: connection.connection_id } },
-            inherit_unbound: true,
-          }
-        : {},
-    });
-  };
-
-  // The "Connects as" control that used to mutate `authorization_strategy`
-  // from this modal is gone — see `connector-settings.tsx`. Ownership is now
-  // an ACCOUNT property (`owner_type`), set per connection on the Accounts tab.
-
-  // The header carries ONE action, chosen by the account picture, never by an
-  // owner mode:
-  //   connect — no account yet: create the first one (shared when the caller
-  //             may manage project connections, else their own) and authorize it;
-  //   finish  — accounts exist but none is usable: the fix is per row, on the
-  //             Accounts tab (the CTA takes you there);
-  //   replace — connected with exactly one account: re-authorize / replace THAT
-  //             credential. Two or more accounts have their own row menus.
-  //
-  // A computer is different: every member pairs their OWN machine, so the CTA
-  // needs no write access and shows until the caller can use a computer here
-  // (their own or a project-shared one; `accounts` holds only those).
-  const hasComputer = accounts.some((account) => Boolean(account.tunnel_id));
-  const headerCta: 'connect' | 'finish' | 'replace' | null = isComputer
-    ? hasComputer
-      ? null
-      : 'connect'
-    : !canWrite || isChannel || !(isManagedProvider || Boolean(connector.authSecret))
-      ? null
-      : !connected
-        ? accounts.length === 0
-          ? 'connect'
-          : 'finish'
-        : soleAccount
-          ? 'replace'
-          : null;
-  const connectPending = connectShared.isPending || connectMine.isPending;
-  const quickConnect = () => {
-    setSelectedTab('accounts');
-    setAddAccountRequest((n) => n + 1);
-  };
-  const replaceSoleAccount = () => {
-    if (!soleAccount) return;
-    const owner = soleAccount.owner_type === 'project' ? 'project' : 'me';
-    if (isManagedProvider) {
-      // Reconciling the SAME label re-points this row, never a second account.
-      if (owner === 'project') connectShared.mutate({ label: soleAccount.label });
-      else connectMine.mutate({ label: soleAccount.label });
-      return;
-    }
-    setCredentialTarget({ connectionId: soleAccount.connection_id, owner });
-  };
+  const addAccountMenu = isComputer ? (
+    <Button size="sm" className="gap-1.5" onClick={() => setComputerOpen(true)}>
+      <PlusIcon className="size-4 shrink-0" weight="bold" />
+      {tI18nComplete.raw('text1a2303ede074')}
+    </Button>
+  ) : (
+    <Button
+      size="sm"
+      className="gap-1.5"
+      onClick={() => {
+        setSelectedTab('accounts');
+        setAddRequest((n) => n + 1);
+      }}
+      disabled={connectPending}
+    >
+      <PlusIcon className="size-4 shrink-0" weight="bold" />
+      {tSharing('addAccount')}
+    </Button>
+  );
 
   return (
     <>
@@ -334,14 +250,7 @@ function ConnectorModalBody({
         </span>
         <div className="min-w-0 flex-1 space-y-0">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <HeaderName
-              projectId={projectId}
-              slug={connector.slug}
-              displayName={displayName}
-              canWrite={canWrite}
-              disabled={false}
-              onChanged={onChanged}
-            />
+            <ModalTitle className="truncate text-lg font-semibold">{displayName}</ModalTitle>
             <ConnectorStatusBadge connector={connector} />
           </div>
           {appDescription ? (
@@ -351,23 +260,7 @@ function ConnectorModalBody({
 
         <div className="flex items-center gap-2">
           <ButtonGroup className="shrink-0">
-            {headerCta === 'connect' ? (
-              <Button
-                size="sm"
-                className="gap-1.5 active:scale-[0.96]"
-                onClick={quickConnect}
-                disabled={connectPending}
-              >
-                {connectPending ? (
-                  <Loading className="size-4 shrink-0" />
-                ) : (
-                  <PlusIcon className="size-4 shrink-0" weight="bold" />
-                )}
-                {isManagedProvider || isComputer
-                  ? tI18nComplete.raw('text1a2303ede074')
-                  : tI18nComplete.raw('text2dcccf29ebf4')}
-              </Button>
-            ) : null}
+            {headerCta === 'connect' ? addAccountMenu : null}
             {headerCta === 'finish' ? (
               <Button
                 size="sm"
@@ -427,17 +320,7 @@ function ConnectorModalBody({
             className="shrink-0 rounded-none border-x-0 border-t-0"
             action={
               headerCta === 'connect' ? (
-                <Button
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={quickConnect}
-                  disabled={connectPending}
-                >
-                  {connectPending ? <Loading className="size-4 shrink-0" /> : null}
-                  {isManagedProvider
-                    ? tI18nComplete.raw('textf5e732583fb2')
-                    : tI18nComplete.raw('text2dcccf29ebf4')}
-                </Button>
+                addAccountMenu
               ) : headerCta === 'finish' ? (
                 <Button size="sm" variant="outline" onClick={() => setSelectedTab('accounts')}>
                   {isManagedProvider
@@ -523,7 +406,8 @@ function ConnectorModalBody({
                   onChanged={onChanged}
                   onRemoved={onRemoved}
                   onStartSession={startPrivateSession}
-                  addRequest={addAccountRequest}
+                  addRequest={addRequest}
+                  onAddRequestHandled={() => setAddRequest(0)}
                 />
               )}
             </TabsContent>
@@ -574,116 +458,14 @@ function ConnectorModalBody({
           refreshAccounts();
         }}
       />
-    </>
-  );
-}
-
-/**
- * Capability #1 — the connector's name, edited in place.
- *
- * `ModalTitle` stays mounted while the form is up (visually hidden) so Radix
- * keeps an accessible name for the dialog during the edit.
- */
-function HeaderName({
-  projectId,
-  slug,
-  displayName,
-  canWrite,
-  disabled,
-  onChanged,
-}: {
-  projectId: string;
-  slug: string;
-  displayName: string;
-  canWrite: boolean;
-  disabled: boolean;
-  onChanged: () => void;
-}) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(displayName);
-
-  useEffect(() => {
-    setEditing(false);
-    setDraft(displayName);
-  }, [displayName]);
-
-  const rename = useMutation({
-    mutationFn: () => setConnectorName(projectId, slug, draft.trim()),
-    onSuccess: () => {
-      successToast(tI18nComplete.raw('text05487af3f074'));
-      setEditing(false);
-      onChanged();
-    },
-    onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('text8fcf8ce07dcf')),
-  });
-
-  if (editing && canWrite) {
-    return (
-      <>
-        <VisuallyHidden asChild>
-          <ModalTitle>{displayName}</ModalTitle>
-        </VisuallyHidden>
-        <form
-          className="flex items-center gap-1.5"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (draft.trim() && draft.trim() !== displayName) rename.mutate();
-            else setEditing(false);
-          }}
-        >
-          <Input
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            className="text-foreground h-[28px] max-w-xs border-none p-0 text-base font-semibold ring-0"
-            autoFocus
-            variant="transparent"
-            disabled={disabled}
-          />
-          <Button
-            type="submit"
-            size="icon-xs"
-            variant="ghost"
-            disabled={rename.isPending || disabled}
-            aria-label={tI18nComplete.raw('textb7297226fd1f')}
-          >
-            {rename.isPending ? (
-              <Loading className="size-4 shrink-0" />
-            ) : (
-              <CheckIcon className="size-4 shrink-0" />
-            )}
-          </Button>
-          <Button
-            type="button"
-            size="icon-xs"
-            variant="ghost"
-            onClick={() => {
-              setEditing(false);
-              setDraft(displayName);
-            }}
-            disabled={rename.isPending || disabled}
-          >
-            <Close className="size-4 shrink-0" />
-          </Button>
-        </form>
-      </>
-    );
-  }
-
-  return (
-    <div className="group flex items-center gap-2">
-      <ModalTitle className="truncate text-lg font-semibold">{displayName}</ModalTitle>
-      {canWrite ? (
-        <button
-          type="button"
-          onClick={() => !disabled && setEditing(true)}
-          disabled={disabled}
-          aria-label={tI18nComplete.raw('text3064d79a295c')}
-          className="text-muted-foreground hover:text-foreground"
-        >
-          <PencilSimpleIcon className="size-3.5 shrink-0" />
-        </button>
+      {isComputer ? (
+        <ComputerConnectModal
+          projectId={projectId}
+          open={computerOpen}
+          onOpenChange={setComputerOpen}
+          onConnected={refreshAccounts}
+        />
       ) : null}
-    </div>
+    </>
   );
 }

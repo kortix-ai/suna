@@ -215,3 +215,25 @@ describe('connector connection query keys', () => {
     ]);
   });
 });
+
+describe('connectorSetupStatus: MCP sign-in still to do', () => {
+  const failing = {
+    authorizationStrategy: 'project' as const,
+    authSecret: null,
+    secretSet: false,
+    status: 'error' as const,
+    provider: 'mcp' as const,
+  };
+
+  test('an MCP server asking for sign-in is pending, not an error', () => {
+    expect(
+      connectorSetupStatus({ ...failing, lastError: 'MCP tools/list failed: HTTP 401' }),
+    ).toBe('pending');
+  });
+
+  test('any other MCP failure stays an error', () => {
+    expect(connectorSetupStatus({ ...failing, lastError: 'MCP tools/list failed: HTTP 500' })).toBe(
+      'error',
+    );
+  });
+});
