@@ -68,7 +68,7 @@ export function buildGenuiPrompt(): string {
   });
 }
 
-/** FNV-1a of the prompt text. Telemetry and evaluation results carry it, so a prompt change is visible. */
+/** FNV-1a of the prompt text. Evaluation results carry it, so a prompt change is visible. The `genui_block` telemetry event does not. */
 export const GENUI_PROMPT_VERSION: string = (() => {
   let hash = 0x811c9dc5;
   for (const char of buildGenuiPrompt()) {
