@@ -4,9 +4,14 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { manifestChangeRequiredActions } from './change-request-governance';
+import { manifestChange } from './change-request-governance';
 import { refreshMirror } from './git/mirror';
 import type { GitBackedProject } from './git/types';
+
+const manifestChangeRequiredActions = async (
+  project: GitBackedProject,
+  cr: { baseRef: string; headRef: string },
+) => (await manifestChange(project, cr)).required;
 
 // Release gate GH-17 / AGP-10 (v0.13.31): an agent session pushed its branch,
 // opened a change request, and merged it seconds later. The merge landed on an
@@ -91,7 +96,7 @@ afterEach(async () => {
   await rm(testRoot, { recursive: true, force: true });
 });
 
-describe('manifestChangeRequiredActions on a warm mirror', () => {
+describe('manifestChange(...).required on a warm mirror', () => {
   test('a branch pushed after the mirror warmed, changing only README, needs nothing extra', async () => {
     await pushBranch('session-readme', { 'README.md': '# seed\n\nagent note\n' });
     expect(await manifestChangeRequiredActions(project, { baseRef: 'main', headRef: 'session-readme' })).toEqual([]);

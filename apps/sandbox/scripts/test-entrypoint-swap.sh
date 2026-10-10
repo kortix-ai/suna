@@ -36,6 +36,7 @@ run_case() { # <name>  (expects $TMP prepared by caller)
   KORTIX_AGENT_BIN="${TMP}/bin/kortix-agent" \
   KORTIX_AGENT_STATE_DIR="${TMP}/state" \
   KORTIX_WORKSPACE="${TMP}/ws" \
+  KORTIX_BOOT_ARTIFACTS_DIR="${TMP}/art" \
     bash "${ENTRYPOINT}" >"${TMP}/out" 2>&1
   echo $?
 }
@@ -231,6 +232,27 @@ code=$(run_case)
 ! grep -q AGENT:v2 "${TMP}/log" && [ ! -f "${TMP}/state/agent.next" ] \
   && ok "pinned box refuses staged updates" \
   || no "pinned" "log=$(tr '\n' ',' < "${TMP}/log")"
+rm -rf "${TMP}"
+
+# ---------------------------------------------------------------------------
+# Boot artifacts: the release's daemon on the artifacts volume runs instead of
+# the image's; one that fails fast falls back to the image's.
+# ---------------------------------------------------------------------------
+setup
+mkdir -p "${TMP}/art/kortix"
+echo '{"release": "r1"}' > "${TMP}/art/manifest.json"
+make_agent "${TMP}/bin/kortix-agent" baked 0
+make_agent "${TMP}/art/kortix/kortix-agent" artifact 0
+code=$(run_case)
+[ "${code}" = "0" ] && grep -q AGENT:artifact "${TMP}/log" && ! grep -q AGENT:baked "${TMP}/log" \
+  && ok "boot artifacts: release daemon runs instead of the image's" \
+  || no "boot artifacts" "code=${code} log=$(tr '\n' ',' < "${TMP}/log")"
+make_agent "${TMP}/art/kortix/kortix-agent" artifact 3
+: > "${TMP}/log"
+code=$(run_case)
+[ "${code}" = "0" ] && grep -q AGENT:artifact "${TMP}/log" && grep -q AGENT:baked "${TMP}/log" \
+  && ok "boot artifacts: a failing release daemon falls back to the image's" \
+  || no "boot artifacts fallback" "code=${code} log=$(tr '\n' ',' < "${TMP}/log")"
 rm -rf "${TMP}"
 
 echo

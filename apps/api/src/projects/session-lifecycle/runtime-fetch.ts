@@ -6,7 +6,7 @@
  * fail-open default and the warning that explains it stay at the call site.
  */
 
-import { RUNTIME_TURNS_CAPABILITY } from '@kortix/api-contract/runtime-relay';
+import { RUNTIME_RETRACT_CAPABILITY, RUNTIME_TURNS_CAPABILITY } from '@kortix/api-contract/runtime-relay';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 
 /** The directory every runtime read and write is forwarded under. */
@@ -48,9 +48,14 @@ export const runtimeVerbPaths = {
     `/kortix/runtime/messages/${segment(sessionId)}?limit=${opts.limit}${opts.before ? `&before=${segment(opts.before)}` : ''}`,
   message: (sessionId: string, messageId: string) =>
     `/kortix/runtime/messages/${segment(sessionId)}/${segment(messageId)}`,
+  /** Take back a user message no model call has read (`runtime.retract.v1`). */
+  retract: (sessionId: string, messageId: string) =>
+    `/kortix/runtime/messages/${segment(sessionId)}/${segment(messageId)}/retract`,
   abort: (sessionId: string) => `/kortix/runtime/sessions/${segment(sessionId)}/abort`,
   agents: (directory: string) => `/kortix/runtime/agents?directory=${segment(directory)}`,
   prompt: (sessionId: string) => `/kortix/runtime/sessions/${segment(sessionId)}/prompt`,
+  /** Hand a message to the RUNNING turn (`session.steer`). Not a turn start. */
+  steer: (sessionId: string) => `/kortix/runtime/sessions/${segment(sessionId)}/steer`,
   state: '/kortix/runtime/state',
 } as const;
 
@@ -106,6 +111,18 @@ export async function runtimeServesTurnVerbs(
   return (await runtimeCapabilities(externalId, endpoint, now))?.includes(RUNTIME_TURNS_CAPABILITY) ?? false;
 }
 
+/**
+ * Does this sandbox's daemon serve the retract verb (`runtime.retract.v1`)?
+ * A failed read answers false, and the caller uses the delete spelling.
+ */
+export async function runtimeServesRetract(
+  externalId: string | undefined,
+  endpoint: () => Promise<{ url: string; headers: Record<string, string> } | null>,
+  now = Date.now(),
+): Promise<boolean> {
+  return (await runtimeCapabilities(externalId, endpoint, now))?.includes(RUNTIME_RETRACT_CAPABILITY) ?? false;
+}
+
 /** The header kortixd sets on every answer of a Kortix turn verb (`routes/kortix/runtime.ts`). */
 export const TURN_VERB_HEADER = 'x-kortix-turn-verb';
 
@@ -120,6 +137,11 @@ export function turnVerbMissing(externalId: string | undefined, res: Response): 
   if (res.status !== 404 || res.headers.get(TURN_VERB_HEADER)) return false;
   if (externalId) capabilitiesMemo.delete(externalId);
   return true;
+}
+
+/** Forget one sandbox's capabilities: its daemon refused a verb it listed. */
+export function forgetRuntimeCapabilities(externalId: string | undefined): void {
+  if (externalId) capabilitiesMemo.delete(externalId);
 }
 
 /** Test-only. */

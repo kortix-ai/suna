@@ -25,8 +25,6 @@ import {
 import { db } from '../shared/db';
 import { groupIdsOfUser } from '../iam/group-read';
 
-export type ShareScope = 'project' | 'restricted';
-
 export interface SecretGrant {
   principalType: 'member' | 'group';
   principalId: string;
@@ -38,55 +36,11 @@ export interface ShareSubject {
   groupIds: string[];
 }
 
-/** Pure: may this subject use a `restricted`-allow-list resource with the given
- *  scope + grants? (Despite the name, this is now generic — session visibility
- *  is the remaining caller; project secrets and connectors both dropped
- *  restricted sharing entirely — see the file doc comment.) */
-export function isSecretUsableBy(
-  shareScope: ShareScope,
-  grants: SecretGrant[],
-  subject: ShareSubject,
-): boolean {
-  if (shareScope === 'project') return true;
-  for (const g of grants) {
-    if (g.principalType === 'member' && g.principalId === subject.userId) return true;
-    if (g.principalType === 'group' && subject.groupIds.includes(g.principalId)) return true;
-  }
-  return false;
-}
-
 /** The dashboard's three sharing options, before persistence. */
 export type SharingIntent =
   | { mode: 'project' }
   | { mode: 'private'; ownerId: string }
   | { mode: 'members'; memberIds?: readonly string[]; groupIds?: readonly string[] };
-
-/** Normalize a sharing intent into a persisted (scope, grants) pair. */
-export function intentToScope(intent: SharingIntent): {
-  shareScope: ShareScope;
-  grants: SecretGrant[];
-} {
-  if (intent.mode === 'project') return { shareScope: 'project', grants: [] };
-  if (intent.mode === 'private') {
-    return { shareScope: 'restricted', grants: [{ principalType: 'member', principalId: intent.ownerId }] };
-  }
-  const grants: SecretGrant[] = [
-    ...(intent.memberIds ?? []).map((id) => ({ principalType: 'member' as const, principalId: id })),
-    ...(intent.groupIds ?? []).map((id) => ({ principalType: 'group' as const, principalId: id })),
-  ];
-  // Empty allow-list collapses to project-wide (Marko's rule).
-  if (grants.length === 0) return { shareScope: 'project', grants: [] };
-  return { shareScope: 'restricted', grants };
-}
-
-/** Inverse of intentToScope — for rendering the dashboard's current selection. */
-export function scopeToIntent(shareScope: ShareScope, grants: SecretGrant[]): SharingIntent {
-  if (shareScope === 'project') return { mode: 'project' };
-  const memberIds = grants.filter((g) => g.principalType === 'member').map((g) => g.principalId);
-  const groupIds = grants.filter((g) => g.principalType === 'group').map((g) => g.principalId);
-  if (memberIds.length === 1 && groupIds.length === 0) return { mode: 'private', ownerId: memberIds[0]! };
-  return { mode: 'members', memberIds, groupIds };
-}
 
 /**
  * Validate/normalize an untrusted sharing body into a SharingIntent. Returns
@@ -110,7 +64,11 @@ export function parseSharingIntent(body: any, fallbackOwner: string): SharingInt
 
 /* ─── DB helpers (used by the gateway + CRUD) ─────────────────────────────── */
 
-/** Resolve a user's group memberships → the subject the gateway authorizes with. */
+/** Resolve a user's group memberships → the subject the gateway authorizes with.
+ *  Read fresh on every call: a membership added between two connector calls
+ *  must authorize (or deny) the second one, and no TTL can honor that without
+ *  an invalidation hook the admin routes and the flows' direct seeds don't
+ *  share. */
 export async function resolveShareSubject(userId: string): Promise<ShareSubject> {
   const rows = await groupIdsOfUser(userId);
   return { userId, groupIds: rows.map((r) => r.groupId) };
@@ -280,9 +238,37 @@ export function isTriggerRunSession(session: { metadata: unknown; initiatorType?
 }
 
 /**
+ * An agent session's standing on one session row under the agent-principal
+ * model (spec §2). The agent acts as itself, so it owns only its own session
+ * and the sessions it spawned (`metadata.spawned_by_session`), never the
+ * launcher's other sessions. Visibility only narrows: a private or restricted
+ * session it does not own is invisible even when the launcher could see it; a
+ * project-visible session keeps the ordinary verdict (`visibleByRules`).
+ */
+export function agentSessionStanding(
+  boundCredentialSessionId: string | null,
+  row: { sessionId: string; metadata: unknown; visibility: string },
+  visibleByRules: boolean,
+): { isOwner: boolean; visible: boolean } {
+  const meta = (row.metadata ?? {}) as Record<string, unknown>;
+  const isOwner =
+    boundCredentialSessionId !== null &&
+    (row.sessionId === boundCredentialSessionId ||
+      meta.spawned_by_session === boundCredentialSessionId);
+  return { isOwner, visible: isOwner || (row.visibility === 'project' && visibleByRules) };
+}
+
+/**
  * Project-session content visibility. Project managers can open sessions that
  * triggers created. Ordinary private human sessions remain owner-only. The
  * backend sibling-session gate runs first and cannot be bypassed.
+ *
+ * A session-bound credential whose bind names the target (or its spawner) is
+ * the session's own credential and always passes, before the overrides: a
+ * trigger/schedule run attributes its row to the agent's standing service
+ * account, not to the launcher in the token, so the ownership rule below
+ * would otherwise refuse the session its own credential and the daemon-port
+ * gate would 403 every proxied runtime read from the box.
  */
 export function isProjectSessionVisibleTo(
   visibility: SessionVisibility,
@@ -304,6 +290,14 @@ export function isProjectSessionVisibleTo(
   },
 ): boolean {
   if (!isSessionTargetVisibleToCaller(ownership)) return false;
+  // The session's own credential, mint-time fact — before the overrides:
+  // neither oversight nor the manager override is needed to open yourself,
+  // and both are powers the bind must never widen into sibling reach.
+  if (agentSessionStanding(ownership.boundCredentialSessionId, {
+    sessionId: ownership.sessionId,
+    metadata: context.metadata,
+    visibility,
+  }, true).isOwner) return true;
   // Oversight is a HUMAN admin's power. A sandbox/agent token launched by an
   // admin must not read every other member's session through it, for the same
   // reason as the trigger-session manager override below.

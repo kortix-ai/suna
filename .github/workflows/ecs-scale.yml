@@ -35,35 +35,40 @@ permissions:
 jobs:
   scale:
     name: scale ${{ inputs.service }} to ${{ inputs.desired_count }}
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    # Inputs reach the shell only through env, never through `${{ }}` in `run:`.
+    env:
+      CLUSTER: ${{ inputs.cluster }}
+      SERVICE: ${{ inputs.service }}
+      DESIRED_COUNT: ${{ inputs.desired_count }}
+      REGION: ${{ inputs.region }}
     steps:
-      - name: Guard — only kortix-* clusters/services
+      - name: Guard — only kortix-* clusters/services, plain names only
         run: |
           set -euo pipefail
-          case "${{ inputs.cluster }}" in
-            kortix-*) ;;
-            *) echo "::error::refusing non-kortix cluster '${{ inputs.cluster }}'"; exit 1 ;;
-          esac
-          case "${{ inputs.service }}" in
-            kortix-*) ;;
-            *) echo "::error::refusing non-kortix service '${{ inputs.service }}'"; exit 1 ;;
-          esac
-      - uses: aws-actions/configure-aws-credentials@v4
+          for v in "$CLUSTER" "$SERVICE"; do
+            if ! [[ "$v" =~ ^kortix-[a-z0-9-]+$ ]]; then
+              echo "::error::refusing '$v': must match ^kortix-[a-z0-9-]+$"; exit 1
+            fi
+          done
+          [[ "$REGION" =~ ^[a-z]{2}-[a-z]+-[0-9]$ ]] || { echo "::error::bad region '$REGION'"; exit 1; }
+          [[ "$DESIRED_COUNT" =~ ^[0-9]+$ ]] || { echo "::error::bad desired_count '$DESIRED_COUNT'"; exit 1; }
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
         with:
           role-to-assume: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
           aws-region: ${{ inputs.region }}
       - name: Update desired count
         run: |
           set -euo pipefail
-          aws ecs update-service --region "${{ inputs.region }}" \
-            --cluster "${{ inputs.cluster }}" --service "${{ inputs.service }}" \
-            --desired-count "${{ inputs.desired_count }}" >/dev/null
-          echo "✔ ${{ inputs.service }} desired-count set to ${{ inputs.desired_count }}"
+          aws ecs update-service --region "$REGION" \
+            --cluster "$CLUSTER" --service "$SERVICE" \
+            --desired-count "$DESIRED_COUNT" >/dev/null
+          echo "✔ $SERVICE desired-count set to $DESIRED_COUNT"
       - name: Wait for stability
         run: |
           set -euo pipefail
-          aws ecs wait services-stable --region "${{ inputs.region }}" \
-            --cluster "${{ inputs.cluster }}" --services "${{ inputs.service }}"
-          aws ecs describe-services --region "${{ inputs.region }}" \
-            --cluster "${{ inputs.cluster }}" --services "${{ inputs.service }}" \
+          aws ecs wait services-stable --region "$REGION" \
+            --cluster "$CLUSTER" --services "$SERVICE"
+          aws ecs describe-services --region "$REGION" \
+            --cluster "$CLUSTER" --services "$SERVICE" \
             --query 'services[0].{desired:desiredCount,running:runningCount,pending:pendingCount}'

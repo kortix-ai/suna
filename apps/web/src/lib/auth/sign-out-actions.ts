@@ -107,7 +107,9 @@ export async function finalizeServerSignOut(): Promise<void> {
 
     if (session?.access_token) {
       // `getEnv()`, not `getServerPublicEnv()` — the two resolve `BACKEND_URL`
-      // from the same variables in the same order, but `public-env-server`
+      // from different sources: `getEnv()` prefers the absolute `BACKEND_URL`
+      // and falls back to the root-relative public value, while
+      // `getServerPublicEnv()` reads only the public values. `public-env-server`
       // carries `import 'server-only'`. This module is reachable from the
       // browser sign-out path (a client module has to import a server action to
       // get a reference to it), and that guard throws the moment anything in

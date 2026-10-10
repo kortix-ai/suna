@@ -1,16 +1,39 @@
 import { describe, expect, test } from 'bun:test';
 
+import { INBOX_NOTIFICATION_KINDS } from '@kortix/sdk';
 import {
   ANDROID_CHANNELS,
+  DEVICE_KIND_SWITCH,
   deliveryForKind,
+  legacyKindPatch,
   notificationOpenMove,
   parsePushData,
-  routeForNotification,
   serverPreferences,
   shouldPresentInForeground,
 } from './push';
 
+/** The payload of a server from before the inbox (KRTX-1742). */
 const DATA = { type: 'completion', projectId: 'proj-1', sessionId: 'sess-1' };
+/** The payload of a server with the inbox: `type` keeps the old name for installed apps. */
+const INBOX_DATA = {
+  notificationId: 'note-1',
+  kind: 'turn_done',
+  type: 'completion',
+  projectId: 'proj-1',
+  sessionId: 'sess-1',
+  triggerSlug: null,
+  url: '/projects/proj-1/sessions/sess-1?notification=note-1',
+};
+/** An automation alert: no session, the trigger's slug. */
+const ALERT_DATA = {
+  notificationId: 'note-2',
+  kind: 'automation_failed',
+  type: 'automation_failed',
+  projectId: 'proj-1',
+  sessionId: null,
+  triggerSlug: 'nightly-report',
+  url: '/projects/proj-1/customize/triggers?notification=note-2',
+};
 
 describe('ANDROID_CHANNELS', () => {
   test('are the four channels the server targets, with the bundled sounds', () => {
@@ -30,51 +53,82 @@ describe('ANDROID_CHANNELS', () => {
 });
 
 describe('deliveryForKind', () => {
-  test('maps each kind to its channel and iOS sound', () => {
-    expect(deliveryForKind('completion', true)).toEqual({
-      channelId: 'session-complete',
-      iosSound: 'kortix_complete.wav',
-    });
-    expect(deliveryForKind('error', true)).toEqual({
-      channelId: 'session-error',
-      iosSound: 'kortix_error.wav',
-    });
-    expect(deliveryForKind('question', true)).toEqual({
-      channelId: 'session-attention',
-      iosSound: 'kortix_attention.wav',
-    });
-    expect(deliveryForKind('permission', true)).toEqual({
-      channelId: 'session-attention',
-      iosSound: 'kortix_attention.wav',
-    });
+  test('maps each kind to the channel and iOS sound the server picks', () => {
+    const complete = { channelId: 'session-complete', iosSound: 'kortix_complete.wav' };
+    const attention = { channelId: 'session-attention', iosSound: 'kortix_attention.wav' };
+    const error = { channelId: 'session-error', iosSound: 'kortix_error.wav' };
+    expect(deliveryForKind('turn_done', true)).toEqual(complete);
+    expect(deliveryForKind('automation_recovered', true)).toEqual(complete);
+    expect(deliveryForKind('question', true)).toEqual(attention);
+    expect(deliveryForKind('permission', true)).toEqual(attention);
+    expect(deliveryForKind('shared', true)).toEqual(attention);
+    expect(deliveryForKind('turn_error', true)).toEqual(error);
+    expect(deliveryForKind('automation_failed', true)).toEqual(error);
   });
 
   test('sound off → silent channel, no iOS sound, for every kind', () => {
-    for (const kind of ['completion', 'error', 'question', 'permission'] as const) {
+    for (const kind of INBOX_NOTIFICATION_KINDS) {
       expect(deliveryForKind(kind, false)).toEqual({ channelId: 'session-silent', iosSound: null });
     }
   });
 
-  test('every channel id it returns exists', () => {
+  test('every kind uses an existing channel and sound: no kind needs a native build', () => {
     const ids = new Set(ANDROID_CHANNELS.map((c) => c.id));
-    for (const kind of ['completion', 'error', 'question', 'permission'] as const) {
-      expect(ids.has(deliveryForKind(kind, true).channelId)).toBe(true);
+    const sounds = new Set(ANDROID_CHANNELS.map((c) => c.sound));
+    for (const kind of INBOX_NOTIFICATION_KINDS) {
+      const delivery = deliveryForKind(kind, true);
+      expect(ids.has(delivery.channelId)).toBe(true);
+      expect(sounds.has(delivery.iosSound)).toBe(true);
       expect(ids.has(deliveryForKind(kind, false).channelId)).toBe(true);
     }
   });
 });
 
 describe('parsePushData', () => {
-  test('accepts the server payload', () => {
-    expect(parsePushData(DATA)).toEqual({ type: 'completion', projectId: 'proj-1', sessionId: 'sess-1' });
+  test('accepts the inbox payload: kind, session and inbox row', () => {
+    expect(parsePushData(INBOX_DATA)).toEqual({
+      kind: 'turn_done',
+      projectId: 'proj-1',
+      sessionId: 'sess-1',
+      notificationId: 'note-1',
+    });
+  });
+
+  test('accepts every inbox kind', () => {
+    for (const kind of INBOX_NOTIFICATION_KINDS) {
+      expect(parsePushData({ ...INBOX_DATA, kind, type: kind })?.kind).toBe(kind);
+    }
+  });
+
+  test('an automation alert has no session: the tap opens the project', () => {
+    expect(parsePushData(ALERT_DATA)).toEqual({
+      kind: 'automation_failed',
+      projectId: 'proj-1',
+      sessionId: null,
+      notificationId: 'note-2',
+    });
+  });
+
+  test('a server from before the inbox: the legacy type names the kind, no inbox row', () => {
+    expect(parsePushData(DATA)).toEqual({ kind: 'turn_done', projectId: 'proj-1', sessionId: 'sess-1', notificationId: null });
+    expect(parsePushData({ ...DATA, type: 'error' })?.kind).toBe('turn_error');
+    expect(parsePushData({ ...DATA, type: 'question' })?.kind).toBe('question');
+    expect(parsePushData({ ...DATA, type: 'permission' })?.kind).toBe('permission');
+  });
+
+  test('a payload without `kind` is read from its type', () => {
+    const { kind: _kind, ...withoutKind } = ALERT_DATA;
+    expect(parsePushData(withoutKind)?.kind).toBe('automation_failed');
   });
 
   test('drops extra fields', () => {
-    expect(parsePushData({ ...DATA, extra: 1 })).toEqual({
-      type: 'completion',
-      projectId: 'proj-1',
-      sessionId: 'sess-1',
-    });
+    expect(parsePushData({ ...INBOX_DATA, extra: 1 })).toEqual(parsePushData(INBOX_DATA));
+  });
+
+  test('a blank or non-string session or inbox row id reads as none', () => {
+    expect(parsePushData({ ...INBOX_DATA, sessionId: '  ' })?.sessionId).toBeNull();
+    expect(parsePushData({ ...INBOX_DATA, sessionId: 42 })?.sessionId).toBeNull();
+    expect(parsePushData({ ...INBOX_DATA, notificationId: '' })?.notificationId).toBeNull();
   });
 
   test('rejects anything else', () => {
@@ -83,25 +137,18 @@ describe('parsePushData', () => {
     expect(parsePushData('completion')).toBeNull();
     expect(parsePushData({})).toBeNull();
     expect(parsePushData({ ...DATA, type: 'marketing' })).toBeNull();
+    expect(parsePushData({ ...INBOX_DATA, kind: 'marketing', type: 'marketing' })).toBeNull();
+    // An inherited property name is not a kind.
+    expect(parsePushData({ ...DATA, type: 'constructor' })).toBeNull();
     expect(parsePushData({ ...DATA, projectId: '' })).toBeNull();
-    expect(parsePushData({ ...DATA, sessionId: '  ' })).toBeNull();
-    expect(parsePushData({ ...DATA, sessionId: 42 })).toBeNull();
-  });
-});
-
-describe('routeForNotification', () => {
-  test('opens the project route and names the session to open', () => {
-    const data = parsePushData({ ...DATA, type: 'question' })!;
-    expect(routeForNotification(data)).toEqual({
-      href: { pathname: '/projects/[id]', params: { id: 'proj-1' } },
-      sessionId: 'sess-1',
-    });
+    expect(parsePushData({ ...ALERT_DATA, projectId: null })).toBeNull();
   });
 });
 
 describe('shouldPresentInForeground', () => {
   test('active and viewing that session → hidden', () => {
     expect(shouldPresentInForeground({ data: DATA, appActive: true, viewingSessionId: 'sess-1' })).toBe(false);
+    expect(shouldPresentInForeground({ data: INBOX_DATA, appActive: true, viewingSessionId: 'sess-1' })).toBe(false);
   });
 
   test('active and viewing another session or none → shown', () => {
@@ -111,6 +158,10 @@ describe('shouldPresentInForeground', () => {
 
   test('not active → shown, even for the viewed session', () => {
     expect(shouldPresentInForeground({ data: DATA, appActive: false, viewingSessionId: 'sess-1' })).toBe(true);
+  });
+
+  test('an alert without a session → shown', () => {
+    expect(shouldPresentInForeground({ data: ALERT_DATA, appActive: true, viewingSessionId: null })).toBe(true);
   });
 
   test('a payload that is not a session push → shown', () => {
@@ -145,6 +196,42 @@ describe('notificationOpenMove', () => {
   });
 });
 
+const ALL_ON = {
+  enabled: true,
+  onCompletion: true,
+  onError: true,
+  onQuestion: true,
+  onPermission: true,
+  playSound: true,
+};
+
+describe('DEVICE_KIND_SWITCH', () => {
+  test("names this phone's switch for each of the 4 session kinds, and none for the 3 new kinds", () => {
+    expect(DEVICE_KIND_SWITCH).toEqual({
+      turn_done: 'onCompletion',
+      turn_error: 'onError',
+      question: 'onQuestion',
+      permission: 'onPermission',
+    });
+  });
+});
+
+describe('legacyKindPatch', () => {
+  test("a kind this phone turned off becomes push off in the user's record", () => {
+    expect(legacyKindPatch({ ...ALL_ON, onCompletion: false, onQuestion: false })).toEqual({
+      kinds: { turn_done: { push: false }, question: { push: false } },
+    });
+    expect(legacyKindPatch({ ...ALL_ON, onError: false, onPermission: false })).toEqual({
+      kinds: { turn_error: { push: false }, permission: { push: false } },
+    });
+  });
+
+  test('nothing turned off → null; the off switch and the sound are not kinds', () => {
+    expect(legacyKindPatch(ALL_ON)).toBeNull();
+    expect(legacyKindPatch({ ...ALL_ON, enabled: false, playSound: false })).toBeNull();
+  });
+});
+
 describe('serverPreferences', () => {
   test('maps every field to snake_case', () => {
     expect(
@@ -163,6 +250,17 @@ describe('serverPreferences', () => {
       on_question: false,
       on_permission: true,
       play_sound: false,
+    });
+  });
+
+  test("posts this phone's per-kind switches as they are: a project with the flag off reads them alone", () => {
+    expect(serverPreferences({ ...ALL_ON, enabled: false, onPermission: false })).toEqual({
+      enabled: false,
+      on_completion: true,
+      on_error: true,
+      on_question: true,
+      on_permission: false,
+      play_sound: true,
     });
   });
 });

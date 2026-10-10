@@ -117,7 +117,7 @@ function resolveTabsTriggerSize(
 
 const TabsActiveValueContext = React.createContext<string>('');
 const TabsListTypeContext = React.createContext<TabsListType>('default');
-const TabsAnimateContext = React.createContext<'fluid' | 'none'>('fluid');
+const TabsAnimateContext = React.createContext<'fluid' | 'none'>('none');
 const TabsSizeContext = React.createContext<TabsSize>('default');
 /** Lets `TabsTrigger` adapt to a vertical `TabsList` without every caller re-passing orientation. */
 const TabsOrientationContext = React.createContext<'horizontal' | 'vertical'>('horizontal');
@@ -183,7 +183,7 @@ function TabsList(props: TabsListProps) {
 
 function TabsListRenderer({
   className, type: typeProp = 'default', variant, size = 'default',
-  underlineSize = 'sm', animate = 'fluid', orientation, compact = false,
+  underlineSize = 'sm', animate = 'none', orientation, compact = false,
   children, ...props
 }: TabsListProps & { compact?: boolean }) {
   const activeValue = React.useContext(TabsActiveValueContext);

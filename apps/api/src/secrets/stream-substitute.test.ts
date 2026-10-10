@@ -1,5 +1,13 @@
 import { describe, expect, test } from 'bun:test';
-import { StreamSubstituter, substituteWholeBuffer, type StreamReplacement } from './stream-substitute';
+import { StreamSubstituter, type StreamReplacement } from './stream-substitute';
+
+/** The whole-buffer equivalent: the ORACLE the streaming path is fuzzed against.
+ *  The test asserts the two agree for every chunking. */
+function substituteWholeBuffer(source: Buffer, pairs: readonly StreamReplacement[]): Buffer {
+  const substituter = new StreamSubstituter(pairs);
+  const head = substituter.push(source);
+  return Buffer.concat([head, substituter.flush()]);
+}
 
 const HANDLE = 'kortix_brokered__use_kortix_fetch__KXS1abcdefghijklmnopqrstuvwxyz234567ab';
 const VALUE = 'sk_live_the_real_value';

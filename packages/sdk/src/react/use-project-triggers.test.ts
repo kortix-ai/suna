@@ -57,3 +57,38 @@ describe('useProjectTriggers (query-key stability + invalidation wiring)', () =>
     expect(a.queryKey).not.toEqual(b.queryKey);
   });
 });
+
+describe('useProjectTriggerEventTypes', () => {
+  test('keys on the connector and is enabled only when project and connector are set', async () => {
+    const { useProjectTriggerEventTypes, projectTriggerEventTypesKey } = await import('./use-project-triggers');
+    const on = useProjectTriggerEventTypes('proj-1', 'github') as any;
+    expect(on.queryKey).toEqual(projectTriggerEventTypesKey('proj-1', 'github'));
+    expect(on.queryKey).toEqual(qk.project.triggerEventTypes('proj-1', 'github'));
+    expect(on.enabled).toBe(true);
+    expect((useProjectTriggerEventTypes('proj-1', null) as any).enabled).toBe(false);
+    expect((useProjectTriggerEventTypes(undefined, 'github') as any).enabled).toBe(false);
+  });
+
+  test('an { app, source } target keys apart from any connector slug and is enabled without a connector', async () => {
+    const { useProjectTriggerEventTypes, projectTriggerEventTypesKey } = await import('./use-project-triggers');
+    const byApp = useProjectTriggerEventTypes('proj-1', { app: 'github' }) as any;
+    expect(byApp.enabled).toBe(true);
+    expect(byApp.queryKey).toEqual(projectTriggerEventTypesKey('proj-1', { app: 'github' }));
+    expect(byApp.queryKey).not.toEqual(projectTriggerEventTypesKey('proj-1', 'github'));
+    expect(projectTriggerEventTypesKey('proj-1', { app: 'github', source: 'composio' })).toEqual(
+      projectTriggerEventTypesKey('proj-1', { app: 'github' }),
+    );
+    expect((useProjectTriggerEventTypes('proj-1', { app: '' }) as any).enabled).toBe(false);
+  });
+});
+
+describe('useProjectTriggerEventApps', () => {
+  test('keys per project and is enabled only with a project', async () => {
+    const { useProjectTriggerEventApps, projectTriggerEventAppsKey } = await import('./use-project-triggers');
+    const on = useProjectTriggerEventApps('proj-1') as any;
+    expect(on.queryKey).toEqual(projectTriggerEventAppsKey('proj-1'));
+    expect(on.queryKey).toEqual(qk.project.triggerEventApps('proj-1'));
+    expect(on.enabled).toBe(true);
+    expect((useProjectTriggerEventApps(undefined) as any).enabled).toBe(false);
+  });
+});

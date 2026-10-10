@@ -11,8 +11,7 @@ This is the canonical answer to "I need an API key / I need this app connected."
 
 1. **You already HAVE the value → set it yourself, now.** The human pasted it
    in the conversation, attached it in a file, or said "use this key". Store it
-   with the `set_secret` tool (or `kortix secrets set NAME=-`, value on stdin)
-   in the same turn. Do not mint a link. Do not ask them to enter it a second
+   with `kortix secrets set NAME=-` (value on stdin) in the same turn. Do not mint a link. Do not ask them to enter it a second
    time. Do not lecture them about pasting it. Never echo the value back.
 2. **You do NOT have the value → mint a setup link** and surface the URL in your
    reply, in the same turn. Never tell the human to "open the dashboard →
@@ -20,7 +19,7 @@ This is the canonical answer to "I need an API key / I need this app connected."
    link is the better channel when you have to ask.
 
 Setting a secret needs your project's secret-write permission. A `403` from
-`set_secret` / `kortix secrets set` means your agent does not have it: fall back
+`kortix secrets set` means your agent does not have it: fall back
 to a secret link (rule 2) for the same name.
 
 When you do need a link, there are exactly two kinds, one each:
@@ -49,15 +48,8 @@ key ever touches chat or the repo.
 
 ## Setting a value you already have
 
-```
-set_secret({ values: { APOLLO_API_KEY: "<the value from the conversation>" } })
-set_secret({ values: { BILLING_API_TOKEN: "<value>" }, scope: "connector" })
-→ { ok: true, saved: ["APOLLO_API_KEY"], scope: "runtime" }
-```
-
-**Or from a shell** (equivalent — stdin keeps the value out of shell history):
-
 ```sh
+# stdin keeps the value out of shell history
 printf '%s' "$VALUE" | kortix secrets set APOLLO_API_KEY=-
 printf '%s' "$VALUE" | kortix secrets set BILLING_API_TOKEN=- --scope connector
 ```
@@ -79,16 +71,6 @@ platform mints a link the human opens to type the value in. **You never receive
 the value** — once they submit it, a `runtime`
 secret simply appears in your session env — when your agent is granted it (see
 "Set, but I can't see it" below).
-
-**Preferred — the `request_secret` tool on the `kortix-connectors` MCP:**
-
-```
-request_secret({ names: ["APOLLO_API_KEY", "SMARTLEAD_API_KEY"],
-                 descriptions: { APOLLO_API_KEY: "Settings → API in Apollo" } })
-→ { url: "https://<app>/secret-intake/ksl_…", names: [...], expires_at }
-```
-
-**Or from a shell** (equivalent):
 
 ```sh
 kortix secrets request APOLLO_API_KEY SMARTLEAD_API_KEY     # several keys, one link
@@ -139,7 +121,7 @@ account — right only when it was signed in with a shared identity, never a
 person's own login. A shared account never goes back to private. So decide the
 owner BEFORE you mint the link:
 
-- **`owner: "project"`** — the account is shared: every member's and every
+- **`--owner project`** — the account is shared: every member's and every
   agent session's calls run as it. Use this for any shared company tool
   (company inbox, calendar, Linear, Docs…). **The identity that completes the
   OAuth is the identity the whole project then acts as** — so when you surface
@@ -147,7 +129,7 @@ owner BEFORE you mint the link:
   shared identity (a team or service account the project owns, not a
   person's login)."* A personal login authorized into the shared slot makes
   every agent session silently act AS that person.
-- **`owner: "me"`** (default) — the account is private to the human you're
+- **`--owner me`** (default) — the account is private to the human you're
   talking to; only their sessions can call as it. Use this for a person's own
   login.
 
@@ -171,18 +153,16 @@ exactly why the shared slot must hold the project identity.
 3. `kortix connectors connections revoke <connection-id>` → revoke the stray
    binding (`connections ls --all` to find it).
 
-**Preferred — the `connect` tool on the `kortix-connectors` MCP:**
+**To add an account, pass `--label`:**
 
-```
-connect({ slug: "gmail", label: "Dad's Gmail" })                   # a person's own account
-connect({ slug: "gmail", owner: "project", label: "Team inbox" })  # shared: authorize as the project's own identity, not a personal login
-→ { url: "https://<app>/connect/ksl_…", app: "gmail", expires_at }
+```sh
+kortix connectors connect gmail --label "Dad's Gmail"                    # a person's own account
+kortix connectors connect gmail --owner project --label "Team inbox"     # shared: authorize as the project's own identity, not a personal login
+→ { "url": "https://<app>/connect/ksl_…", "label": "Dad's Gmail", "app": "gmail", "expires_at": … }
 ```
 
-From a shell, `kortix connectors connect <slug> [--owner project]` is NOT the
-same: it returns the provider's raw authorization URL for the connector's
-default account, and it cannot name a new one. Use the MCP `connect` tool to
-add an account.
+Without `--label`, `kortix connectors connect <slug> [--owner project]` returns
+the provider's raw authorization URL for the connector's default account.
 
 Then **surface the `url`**. The human clicks and authorizes the app on Composio's
 hosted flow. Finalize the connection when the human returns so the account
@@ -195,11 +175,11 @@ explicit completion check.
 **A connector can hold more than one account. `connect` adds one.** In the
 Kortix web app the link opens a dialog where the human:
 
-- names the new account — prefilled from your `label`, so pass one that tells
+- names the new account — prefilled from your `--label`, so pass one that tells
   it apart from the others ("Dad's Gmail", "Support inbox"), never `me`,
   `project`, or an id;
 - chooses who can use it: only them, everyone in the project, or chosen people
-  or groups. `owner: "project"` only preselects "everyone"; the human decides.
+  or groups. `--owner project` only preselects "everyone"; the human decides.
   A shared account must still be authorized as the project identity (see the
   ownership rules above);
 - signs in with the provider in a new window.
@@ -251,7 +231,7 @@ The smooth flow is:
      `KORTIX_PROJECT_SECRET_NAMES` for this: it is the list from session start
      and does not change when a value is hot-synced.
    - **Connector:** check it now appears in your usable catalog —
-     `kortix connectors ls` (the `connectors` MCP tool). Unconnected connectors are
+     `kortix connectors ls`. Unconnected connectors are
      filtered out, so its presence means the credential landed.
 
 If it isn't there yet, the human may not have finished — say so and wait.
@@ -263,7 +243,7 @@ value outside it is saved and never delivered — no env var, no row in
 `kortix secrets ls`. Never tell the human such a secret is unset. Kortix names
 this case on every surface:
 
-- `request_secret` / `kortix secrets request` return `withheld` (names you will
+- `kortix secrets request` returns `withheld` (names you will
   not receive) and a ready-to-relay fix when you mint the link.
 - The follow-up message after submission says which saved names are withheld.
 - `kortix secrets ls` shows a declared key outside your grant as
@@ -328,23 +308,21 @@ This beats the alternatives you might be tempted by:
 - ❌ "Go to the dashboard → Customize → Connectors → Connect" — the friction that
   makes the human give up. You have a one-click link; use it.
 - ❌ Minting a link for a value already in the conversation — the human gave
-  it to you. Store it with `set_secret`.
+  it to you. Store it with `kortix secrets set`.
 
 ---
 
 ## Quick reference
 
-| Goal | MCP tool | `kortix` CLI |
-| --- | --- | --- |
-| Store a secret value you already have | `set_secret` | `kortix secrets set <NAME>=- [--scope connector]` |
-| Ask the human for a secret value you lack | `request_secret` | `kortix secrets request <NAME…>` |
-| Get an app connected (Composio) | `connect` | `kortix connectors connect <slug> [--owner me\|project]` |
-| Verify a secret arrived | — | `kortix secrets ls` (`not granted` = ask the human to enable it for your agent) |
-| See who can use a value | — | `kortix secrets ls` (WHO CAN USE column; a person changes it with `kortix secrets share`) |
-| Verify a connector connected | `connectors` | `kortix connectors ls` |
-| Which/how many accounts are connected | `accounts` | `kortix connectors accounts <slug>` |
-| Pin the default account for unnamed calls | — | `kortix connectors accounts <slug> --default <label>` |
+| Goal | `kortix` CLI |
+| --- | --- |
+| Store a secret value you already have | `kortix secrets set <NAME>=- [--scope connector]` |
+| Ask the human for a secret value you lack | `kortix secrets request <NAME…>` |
+| Get an app connected (Composio) | `kortix connectors connect <slug> [--owner me\|project] [--label <name>]` |
+| Verify a secret arrived | `kortix secrets ls` (`not granted` = ask the human to enable it for your agent) |
+| See who can use a value | `kortix secrets ls` (WHO CAN USE column; a person changes it with `kortix secrets share`) |
+| Verify a connector connected | `kortix connectors ls` |
+| Which/how many accounts are connected | `kortix connectors accounts <slug>` |
+| Pin the default account for unnamed calls | `kortix connectors accounts <slug> --default <label>` |
 
-Both surfaces hit the same endpoints and return the same kind of link — use
-whichever fits your flow. The MCP tools are always loaded. The
-`kortix connectors` CLI exposes the same connector gateway for shell use.
+The `kortix` CLI is always on `$PATH` in a session.

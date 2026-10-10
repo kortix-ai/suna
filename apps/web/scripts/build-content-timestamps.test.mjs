@@ -15,7 +15,9 @@ describe('content timestamp manifest', () => {
     assert.equal(typeof timestampModule.createContentTimestampManifest, 'function');
   });
 
-  it('matches the current git history when full history is available', async () => {
+  // Walks the git history of every content file: up to ~6 s while `pnpm test`
+  // runs every lane at once, over bun's 5 s default.
+  it('matches the current git history when full history is available', { timeout: 30_000 }, async () => {
     const timestampModule = await import(`${scriptUrl.href}?test=matches-git-history`);
     const generatedManifest = timestampModule.createContentTimestampManifest();
     if (Object.keys(generatedManifest).length === 0) return;

@@ -18,11 +18,13 @@ this page says.
 A layer is a set of folders, not a folder. The shared layer is `src/lib/` plus
 `src/types/`; `eslint.config.mjs` names that set `{sharedLayer}`.
 
-Why the harness is a layer of its own: it composes the services. It imports 8
-of them (`config-release`, `runtime-assets`, `sandbox-env`, `event-bus`,
-`llm-proxy`, `resources`, `skills`, `config-provider`), and no service imports
-it. It sits above the services for the same reason the services sit above the
-shared layer.
+Why the harness is a layer of its own: it composes the services. It imports 10
+of them (`workspace-provider`, `config-provider`, `runtime-assets`,
+`sandbox-env`, `event-bus`, `llm-proxy`, `egress-shim`, `resources`, `skills`,
+`tools`), and no service imports it. It sits above the services for the same
+reason the services sit above the shared layer. It is also where two services
+meet: the boot provides the workspace first and hands its path to the config
+provider, so neither service imports the other.
 
 ## Folders
 
@@ -34,20 +36,23 @@ shared layer.
 | `src/routes/workspace/` | app | `/file`, `/find`, `/presentation`: daemon-owned access to `/workspace`, behind the user-context gate. |
 | `src/routes/proxy/` | app | `/proxy/:port`, `/web-proxy`, and the catch-all to the harness, behind the user-context gate. |
 | `src/harness/` | harness | `harness.ts` (resolver, `loadConfig`, boot context), `contract/` (ports app and routes call), `shared/` (steps both adapters run), `open-code/`, `pi/`. See its [README](src/harness/README.md). |
-| `src/services/config-provider/` | services | Project acquisition: `git`, `prefer-s3`, `require-s3`. |
-| `src/services/config-release/` | services | The config-release store outside the repository, its descriptor, notice and API calls. |
+| `src/services/workspace-provider/` | services | Provides `/workspace` on a boot. `provideWorkspace` (`workspace-provider.ts`) adopts a baked checkout or calls `acquire` (`acquire.ts`), which takes the `git` or S3 transport by mode (`git`, `prefer-s3`, `require-s3`). `git.ts` is the git transport and the warm-pool seeds; `checkout.ts` is the session checkout every transport ends with. |
+| `src/services/config-provider/` | services | Provides the config release a boot needs: the store outside the repository, its descriptor, notice and API calls. `obtain.ts` builds a release from the store, the checkout, the project snapshot (`src/lib/project-snapshot/`) or the API archive. |
 | `src/services/runtime-assets/` | services | CLI, agent, skill-overlay and harness-asset convergence (self-update); the runtime-truth ledger. `port.ts` is the contract a harness implements. |
 | `src/services/egress-shim/` | services | The in-guest egress proxy that substitutes secret handles. |
 | `src/services/llm-proxy/` | services | Localhost credential-injecting proxies to the LLM gateway and connectors; the inline-image window. |
 | `src/services/sandbox-env/` | services | The project env store and the secret-capability instruction file. |
 | `src/services/skills/` | services | Image-baked managed Kortix skills and their injection. |
 | `src/services/static-web/` | services | The static file server on port 3211. |
+| `src/services/tools/` | services | The hosted tools: the Kortix tools (`kortix/`: `web_search`, `image_search`, `scrape_webpage`, `memory`, `show`) and the project's kortix.yaml `tools`, one module each, run the same way by every harness. A project with a `tools` key gets only the Kortix tools it lists. |
 | `src/services/monitor/` | services | The monitor process runner for monitor boxes. |
 | `src/services/event-bus/` | services | The daemon event sequencer. |
 | `src/services/resources/` | services | Box resource telemetry (memory, cgroup, load, disk, RSS). |
-| `src/lib/config/` | shared | Host env parsing (`loadHostConfig`), manifest reads, the runtime state directory. |
+| `src/lib/config/` | shared | Host env parsing (`loadHostConfig`), manifest reads, the runtime state directory, the managed-skills directory. |
 | `src/lib/log/` | shared | The daemon logger and log tailing. |
-| `src/lib/git/` | shared | The git runner, identity, credential helper, project materialization and compiled checkouts. |
+| `src/lib/git/` | shared | The git runner, identity, credential helper, repo info, and the in-session git operations (commit and push, refresh, sync to base). |
+| `src/lib/project-snapshot/` | shared | The S3 project snapshot both providers read: descriptor, transfer, archive guard and extraction, verification, the retry loop and the blob hydration. |
+| `src/lib/release-store-lock.ts` | shared | The process-wide lock over the release store and the managed-skill overlay (`config-provider` and `runtime-assets`). |
 | `src/lib/kortix-api/` | shared | Control-plane contracts: relay context, `X-Kortix-User-Context` verification, the dead-token breaker. |
 | `src/lib/shutdown-state.ts` | shared | The process-wide "shutting down" flag. |
 | `src/types/` | shared | Types two modules need that may not import each other: `control-plane.ts` (`InitialTurnClaim`), `config-release.ts` (`ConfigReleaseReport`). Type declarations only. |
@@ -59,7 +64,7 @@ shared layer.
 | --- | --- | --- |
 | `src/types/**` | `src/types/**` | none, and no runtime code at all |
 | `src/lib/**` | the shared layer | none |
-| `src/services/<name>/**` | its own folder, the services `SERVICES` declares for it, the shared layer | `egress-shim`: `node-forge`, `@kortix/api-contract`. `monitor`, `runtime-assets`: `@kortix/api-contract` |
+| `src/services/<name>/**` | its own folder, the shared layer | `egress-shim`: `node-forge`, `@kortix/api-contract`. `monitor`, `runtime-assets`, `tools`: `@kortix/api-contract` |
 | `src/harness/harness.ts` | the harness, all services, the shared layer | none |
 | `src/harness/{open-code,pi}/**` | its own folder, `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `@kortix/api-contract`. `open-code`: `bun:sqlite`. `pi`: `@earendil-works/*`, `typebox`, `@kortix/sdk/wire-message-id` |
 | `src/harness/{contract,shared}/**` | `harness.ts`, `contract/`, `shared/`, all services, the shared layer | `@kortix/api-contract` (the daemon-to-API wire, `runtime-relay`) |
@@ -75,9 +80,9 @@ Consequences:
 - Hono lives only in `src/routes/` and `src/app/`.
 - pi's packages load only from `src/harness/pi/`, so an OpenCode boot never pays
   for them.
-- A service imports another service only through a declared edge. Today there
-  are two: `runtime-assets` → `config-release` (`withReleaseStoreLock`) and
-  `config-release` → `skills` (`managedSkillsDir`).
+- A service never imports another service. What two services both need lives
+  in the shared layer (`src/lib/project-snapshot/`, `src/lib/release-store-lock.ts`,
+  `src/lib/config/managed-skills-dir.ts`), and the harness composes them.
 - `src/types/` declares types and nothing that exists at runtime (no variable,
   function, class, enum, namespace, default export or statement). Importing a
   shared type never pulls code or a module graph into the importer.
@@ -92,8 +97,8 @@ Consequences:
 
 ```ts
 // src/harness/pi/boot.ts
-import { materializeProject } from '@/services/config-provider/config-provider' // another folder
-import { runSandboxOnBoot } from '../shared/on-boot'                             // same folder: harness/
+import { provideWorkspace } from '@/services/workspace-provider/workspace-provider' // another folder
+import { runSandboxOnBoot } from '../shared/on-boot'                                 // same folder: harness/
 ```
 
 The folders are `app`, `routes`, `harness`, `services`, `lib`, `types` and
@@ -182,11 +187,11 @@ same change.
 
 Change the rule, the proof and this page in the same PR:
 
-- **New service:** create `src/services/<name>/` and add `<name>: []` to
-  `SERVICES` in `eslint.config.mjs`.
-- **New service-to-service edge:** add the dependency to that service's
-  `SERVICES` entry with a comment that names the function it needs, add an
-  allowed case to `scripts/check-architecture.mjs`, and list it above.
+- **New service:** create `src/services/<name>/` and add `<name>` to `SERVICES`
+  in `eslint.config.mjs`. `scripts/check-architecture.mjs` then rejects an
+  import between it and every other service.
+- **Two services need the same code:** move it to `src/lib/` (or a type to
+  `src/types/`) and import it from both. There is no service-to-service edge.
 - **New adapter:** create `src/harness/<id>/`, add it to `ADAPTERS`, and
   register it in `resolveHarness`.
 - **New shared folder** (for example a constants folder): add it to

@@ -76,9 +76,6 @@ mock.module('../../projects/lib/session-token-grant', () => ({
   remintGrantForAgentSwitch: async () => ({ action: 'skip' }),
   SessionGrantRemintError: class SessionGrantRemintError extends Error {},
 }));
-mock.module('../../projects/opencode-session-snapshot', () => ({
-  scheduleOpencodeSnapshotSync: () => {},
-}));
 mock.module('../../projects/session-activity', () => ({
   recordSessionActivity: async () => {},
 }));

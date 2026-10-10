@@ -227,6 +227,7 @@
       "create": "Criar projeto",
       "tryAgain": "Tentar novamente",
       "upgrade": "Atualizar plano",
+      "settings": "Configurações",
       "logOut": "Sair",
       "signingOut": "Saindo",
       "back": "Voltar aos projetos"
@@ -770,7 +771,16 @@
         }
       },
       "testNotificationTitle": "Notificação de teste",
-      "testNotificationBody": "As notificações estão funcionando corretamente!"
+      "testNotificationBody": "As notificações estão funcionando corretamente!",
+      "enableDescriptionPush": "Mostra notificações neste navegador, mesmo com todas as abas do Kortix fechadas.",
+      "enableDescriptionDesktop": "Mostra notificações do aplicativo desktop enquanto a janela dele estiver aberta.",
+      "enableDescriptionBrowser": "Mostra notificações neste navegador enquanto uma aba do Kortix estiver aberta.",
+      "notificationTypesDescription": "Estas escolhas valem em todos os celulares e navegadores. Um celular também tem a própria chave para Turno concluído, Turno com falha, Pergunta e Pedido de permissão. Ele só os recebe quando as duas estão ligadas. O sino lista todas as notificações dos projetos com a Central de notificações ligada.",
+      "push": "Push",
+      "email": "E-mail",
+      "channelSwitch": "{kind}: {channel}",
+      "preferencesLoadError": "Não foi possível carregar suas configurações de notificação",
+      "retry": "Tentar novamente"
     },
     "git": {
       "updateFailed": "Não foi possível atualizar o repositório",
@@ -848,9 +858,10 @@
         "sessions": "Todas as sessões deste projeto, com arquivos, histórico e resultados",
         "automation": "Todas as execuções agendadas e gatilhos — eles param imediatamente",
         "integrations": "Todas as integrações conectadas, segredos e chaves de API deste projeto",
+        "managedRepo": "O repositório Git gerenciado pela Kortix deste projeto, com cada commit incluído",
         "access": "O acesso de toda a equipe — ninguém poderá acessar este projeto novamente"
       },
-      "reassurance": "O repositório Git conectado não é excluído. Todo código já enviado permanece no lugar.",
+      "reassurance": "Os repositórios Git que você mesmo conectou não são excluídos. Todo código já enviado permanece no lugar.",
       "keepWorkspace": "Manter projeto"
     },
     "sandbox": {
@@ -1154,7 +1165,7 @@
         },
         "apps": {
           "name": "Aplicativos",
-          "description": "Implante sites estáticos, pacotes JavaScript, Dockerfiles e imagens OCI em URLs serverless estáveis."
+          "description": "Implante sites estáticos, pacotes JavaScript, Dockerfiles e imagens OCI em URLs serverless estáveis e execute backends: um banco de dados, funções de servidor, consultas em tempo real, armazenamento de arquivos, agendamento e busca em uma máquina sempre ativa."
         },
         "monitors": {
           "name": "Monitores",
@@ -1176,14 +1187,6 @@
           "name": "Harness Pi (na sandbox)",
           "description": "Executa as sessões com o harness Pi dentro da sandbox da sessão em vez do OpenCode. Desativado, `runtime: pi` no manifesto continua a selecionar o Pi."
         },
-        "config_releases": {
-          "name": "Versões de configuração",
-          "description": "Executa as sessões com a configuração de agente atual do branch base, servida apenas para leitura, para que um agente, skill ou ferramenta integrado chegue a todas as sessões em curso. Desativado, cada sessão lê a sua própria pasta de configuração no workspace."
-        },
-        "mcp": {
-          "name": "Servidor MCP",
-          "description": "Conecte Claude, ChatGPT, Cursor, Codex ou qualquer cliente MCP a este projeto via OAuth. O cliente entra como você e chama o Kortix com as suas permissões. A URL fica em Conectar MCP, no menu do espaço de trabalho."
-        },
         "reminders": {
           "name": "Lembretes",
           "description": "Permite que agentes e pessoas agendem verificações em uma sessão, uma vez ou de forma recorrente. Cada disparo aciona essa sessão novamente. Adiciona a página Lembretes, o indicador de lembretes da sessão e `kortix remind`."
@@ -1191,6 +1194,22 @@
         "us_region": {
           "name": "Região dos EUA",
           "description": "Execute as novas sessões deste projeto na região Leste dos EUA. Uma sessão em andamento mantém a região até reiniciar."
+        },
+        "notification_center": {
+          "name": "Central de notificações",
+          "description": "Avisa as pessoas a quem uma sessão diz respeito (quem enviou o prompt, quem a criou e quem a segue) com uma caixa de entrada com sino, push do navegador e e-mail, e alerta sobre gatilhos e lembretes que falham. Desligado: só o telefone de quem criou a sessão recebe o push dela, e o telefone de um proprietário da conta recebe um quando um gatilho começa a falhar."
+        },
+        "event_triggers": {
+          "name": "Gatilhos de eventos do app",
+          "description": "Inicie um agente quando algo acontece em um app conectado: um novo e-mail, um pull request, um evento do calendário."
+        },
+        "drives": {
+          "name": "Drive",
+          "description": "Pastas compartilhadas que ficam sincronizadas com as sessões: o seu próprio drive, um por agente e os drives da empresa que um administrador vincula ao projeto. Novas sessões os veem em /drives."
+        },
+        "ephemeral_sandboxes": {
+          "name": "Sandboxes efémeras",
+          "description": "Uma sessão parada mantém os ficheiros e a conversa num volume e liberta o seu computador. Ao reativá-la arranca um computador novo com a imagem mais recente. Os processos em execução não sobrevivem a uma paragem."
         }
       }
     },
@@ -1546,6 +1565,7 @@
         "email": "E-mail",
         "scheduled": "Agendado",
         "webhook": "Webhook",
+        "event": "Evento de app",
         "manual": "Manual",
         "all": "Todos"
       },
@@ -1597,7 +1617,9 @@
       "failed": "Não foi possível salvar os rótulos",
       "tooLong": "Um rótulo tem no máximo 64 caracteres.",
       "tooMany": "Uma sessão tem no máximo 20 rótulos."
-    }
+    },
+    "drive": "Drive",
+    "repo": "Repo"
   },
   "dashboard": {
     "title": "Painel",
@@ -1953,6 +1975,13 @@
     "queuedFiles": "{count, plural, one {# arquivo} other {# arquivos}}",
     "queuedCount": "{count} na fila",
     "editingQueued": "Editando",
+    "steerNextStep": "Lido no próximo passo",
+    "queuedByAnotherMember": "Enviada por outro membro. Só essa pessoa pode editá-la ou enviá-la.",
+    "steerFallbackUnsupported": "Aguarda este turno. Esta sessão não aceita mensagens durante um turno.",
+    "steerFallbackNotPrompter": "Aguarda este turno. Outro membro o iniciou.",
+    "steerFallbackTurnEnded": "Executa como um turno próprio. O turno terminou antes.",
+    "stopAndSend": "Parar e enviar",
+    "stopAndSendFailed": "Não foi possível parar e enviar essa mensagem",
     "submitEdit": "Enviar",
     "collapseQueue": "Recolher fila",
     "expandQueue": "Expandir fila"
@@ -2026,7 +2055,9 @@
       "whenBelow": "quando o saldo ficar abaixo de",
       "thresholdLabel": "Limite da recarga em dólares",
       "save": "Salvar",
-      "paymentNeeded": "Adicione um método de pagamento para executar a recarga automática."
+      "paymentNeeded": "Adicione um método de pagamento para executar a recarga automática.",
+      "turnedOffAfterFailure": "A recarga automática foi desativada em {date}: a última cobrança falhou ({reason}). Atualize o método de pagamento e ative a recarga automática novamente.",
+      "lastChargeFailed": "A última cobrança da recarga automática falhou em {date} ({reason}). O Kortix tenta novamente; após 3 cobranças com falha seguidas, a recarga automática é desativada."
     },
     "title": "Faturação & Assinatura",
     "subscription": "Assinatura",
@@ -2192,6 +2223,12 @@
         "other": "Outro motivo"
       }
     }
+  },
+  "ssoRequired": {
+    "title": "Entrar com login único",
+    "description": "Sua organização exige login único (SSO) para esta conta. Saia e continue com seu e-mail de trabalho para entrar pelo provedor de identidade da sua empresa.",
+    "signOut": "Sair e usar SSO",
+    "notNow": "Agora não"
   },
   "auth": {
     "haveReferralCode": "Tens um código de indicação?",
@@ -2539,7 +2576,50 @@
     "settingsFailed": "Falha ao atualizar preferências de notificação",
     "enableAll": "Ativar Todas",
     "disableAll": "Desativar Todas",
-    "saveChanges": "Salvar Mudanças"
+    "saveChanges": "Salvar Mudanças",
+    "kind": {
+      "turn_done": "Turno concluído",
+      "turn_error": "Turno com falha",
+      "question": "Pergunta",
+      "permission": "Pedido de permissão",
+      "shared": "Compartilhada com você",
+      "automation_failed": "Alerta de falha",
+      "automation_recovered": "Alerta de recuperação"
+    },
+    "kindDescription": {
+      "turn_done": "Um turno termina.",
+      "turn_error": "Um turno termina com um erro.",
+      "question": "O agente faz uma pergunta e aguarda a resposta.",
+      "permission": "O agente pede permissão para executar uma ferramenta.",
+      "shared": "Alguém compartilha uma sessão com você.",
+      "automation_failed": "Um trigger ou lembrete começa a falhar.",
+      "automation_recovered": "Um trigger ou lembrete que falhava volta a funcionar."
+    },
+    "bell": {
+      "label": "Notificações",
+      "unreadLabel": "Notificações: {count} não lidas",
+      "markAllRead": "Marcar tudo como lido",
+      "empty": "As notificações aparecerão aqui",
+      "loadError": "Não foi possível carregar as notificações",
+      "retry": "Tentar novamente",
+      "unread": "Não lida",
+      "promptPush": "Receba notificações quando o Kortix estiver fechado",
+      "promptBackground": "Receba notificações quando o Kortix estiver em segundo plano",
+      "turnOn": "Ativar",
+      "dismiss": "Dispensar"
+    },
+    "arrival": {
+      "inProject": "{kind} em {project}",
+      "openSession": "Abrir sessão",
+      "openReminders": "Abrir lembretes",
+      "openTriggers": "Abrir triggers"
+    },
+    "session": {
+      "mute": "Silenciar notificações",
+      "unmute": "Reativar notificações",
+      "muted": "Notificações silenciadas",
+      "unmuted": "Notificações reativadas"
+    }
   },
   "modes": {
     "samplePrompts": "Prompts de exemplo",
@@ -4558,7 +4638,13 @@
       "invitationKicker": "Convite",
       "joinAccountDescription": "Você entrará nesta conta como {roleLabel} e verá os projetos aos quais o proprietário conceder acesso.",
       "decline": "Recusar",
-      "accept": "Aceitar"
+      "accept": "Aceitar",
+      "projectLabel": "Projeto",
+      "invitedYouToAProject": "convidou você para um projeto",
+      "youHaveBeenInvitedToAProject": "Você foi convidado para um projeto.",
+      "joinProjectDescription": "Você entrará em {projectName} como {roleLabel}.",
+      "roleManager": "gerente",
+      "signOutAndContinue": "Sair e continuar"
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – O AI Operating System de código aberto",
@@ -7139,7 +7225,12 @@
     "componentsSessionSessionErrorBanner": {
       "line58JsxAttrTitleYouRanOutOfCredits": "Você ficou sem créditos",
       "line74JsxTextEnableAutoTopUp": "Ativar recarga automática",
-      "line82JsxTextBuyCredits": "Comprar créditos"
+      "line82JsxTextBuyCredits": "Comprar créditos",
+      "askOwnerToAddCredits": "Só um proprietário da conta pode adicionar créditos. Peça a um que recarregue.",
+      "askOwnerForCredits": "Pedir a um proprietário",
+      "ownersNotified": "Proprietários avisados",
+      "alreadyAskedToday": "Já pediu hoje",
+      "askOwnerFailed": "Não foi possível avisar os proprietários. Tente novamente"
     },
     "componentsSessionSessionFilesPanel": {
       "line80JsxTextThisSessionIsItsOwnVersion": "Esta sessão é sua própria versão",
@@ -9424,7 +9515,12 @@
     "i18nComplete": {
       "authEmailRateLimit": "Não foi possível enviar o e-mail. Tente novamente em cerca de uma hora.",
       "authRequestRateLimit": "Muitas solicitações. Tente novamente em alguns minutos.",
+      "text1a9030082a20": "Criar habilidade",
       "text25ab55af92b1": "Envio do anexo iniciado",
+      "text38e64d6a8162": "Faz commit de um SKILL.md no branch padrão do projeto. Não precisa de modelo nem de chat.",
+      "text39cfc32bd12c": "Texto colado",
+      "text23d0bb29fca0": "{count, plural, one {# palavra} other {# palavras}}",
+      "text426699d5a8c0": "{count, plural, one {# caractere} other {# caracteres}}",
       "text40078a553439": "Bloco do anexo enviado",
       "text4c7f8000aabd": "Envio do anexo concluído",
       "text91420d2587c2": "Envio do anexo removido",
@@ -9577,7 +9673,7 @@
       "text04b204d5535c": "Reconhecido: chave {value0}",
       "text04b8dcba096f": "Nebula",
       "text04d35c3117b5": "Apps que autenticam usuários com o Kortix. Combine o ID e o segredo do cliente com",
-      "text04dba7c76354": "Ainda não há condições — toda solicitação inicia uma execução.",
+      "text04dba7c76354": "Ainda não há condições — toda entrega inicia uma execução.",
       "text04dfac3671b4": "Desconectado",
       "text04e2a9728af7": "Projetos",
       "text04e379c6932b": "## Etapas",
@@ -9783,7 +9879,6 @@
       "text0ad3b7155490": "Recomendado — uma URL de metadados",
       "text0ad5343c4931": "Montagem escalonada",
       "text0ad6a2a7935c": "a.lindqvist",
-      "text0aef01b447e9": "Não foi possível atualizar o agendamento",
       "text0af0954fec3f": "# Processo de renovação",
       "text0af465ef42c0": "Em caso de falha",
       "text0afbe82103f0": "Atribua os grupos apropriados ao aplicativo. Quando terminar, clique em \"Done\". Somente usuários atribuídos podem entrar por este aplicativo.",
@@ -9898,6 +9993,9 @@
       "text0e498a7ede47": "{value0} ativado",
       "text0e52f6b9d025": "Markdown",
       "text4cab70e9226b": "Salvar como PDF",
+      "text9bf06a86c934": "Nova habilidade",
+      "texta38668224f1a": "Criar com um formulário",
+      "textb25ab5d5e2a5": "Habilidade criada",
       "textce87352f1102": "Este arquivo é grande demais para salvar como PDF. Baixe o arquivo Markdown.",
       "text3b0c86f182b0": "Não foi possível preparar o PDF.",
       "text0e570ca6fabe": "Fonte",
@@ -10343,7 +10441,6 @@
       "text1bbab8923e0a": "/path/to/folder",
       "text1bc7a47dada1": "Dockerfile.ml",
       "text1bd697c45384": "Salesforce, HubSpot",
-      "text1bd739e67b5e": "Quando executar",
       "text1bda825417f9": "skills/agent-browser/SKILL.md",
       "text1bf0f5e57c1f": "mensagem do usuário · possui o plano → ocupa a coluna, com PlanCard dentro",
       "text1bf354f2b825": "Ele trabalha e envia atualizações.",
@@ -10615,7 +10712,6 @@
       "text2366b8e06afa": "A estrutura de Satya Nadella sobre fronteira e ecossistema revela a ideia estratégica mais importante da IA: toda empresa precisa construir capital humano e capital de tokens, que se multiplicam juntos.",
       "text23686ff6ba91": "Não foi possível carregar a caixa de revisão",
       "text23715dba027a": "Créditos e uso",
-      "text2371acc8f6df": "Não foi possível salvar as condições",
       "text237e26912210": "título do ponto de execução 4",
       "text237f1a28cf06": "Cada membro de um grupo selecionado também recebe esta função neste projeto.",
       "text2380f018cc45": "Pesquisar modelos…",
@@ -11631,7 +11727,6 @@
       "text41528be66c4c": "Ele para onde você mandou parar",
       "text415dcc179975": "O checkout não foi iniciado",
       "text416476d59f76": "Acesso à sessão atualizado",
-      "text416a977cfdba": "Palavras a corresponder.",
       "text416f3a19f614": "Grupo excluído",
       "text416fe8bd72df": "Log de auditoria reconciliado",
       "text417500e4ecdb": "  name: Northwind",
@@ -11799,7 +11894,6 @@
       "text45faa0a369e4": "Sem dependência de modelo",
       "text46066a3c43cc": "Executa sem perguntar",
       "text4606994a6bbe": "O trabalho chega à principal somente por meio de uma solicitação de mudança revisada e aprovada por uma pessoa. A máquina pode propor. Uma pessoa decide.",
-      "text460806f58b7b": "As atribuições, conexões salvas e regras de ferramentas também serão excluídas.",
       "text460a8b327e17": "Termos de serviço e política de privacidade da Kortix.",
       "text460b3a7da007": "Chat",
       "text460ca92c825a": "Carregando repositórios…",
@@ -11990,7 +12084,6 @@
       "text4b227777d4dd": "4",
       "text4b25aab8909e": "Eles também obtêm os segredos e conectores do agente para USAR, não para editar.",
       "text4b2a7fd0198e": "Agentes, skills e memória como arquivos git que pertencem a você",
-      "text4b2e1a2b9cbc": "Implante um site estático, pacote JavaScript, Dockerfile ou imagem OCI do diretório do projeto. Ele aparecerá aqui assim que estiver no ar.",
       "text4b2fcfb4b248": "Gerenciar → Usuários e grupos",
       "text4b303ca7f76c": "Sessão iniciada para corrigir o build do sandbox",
       "text4b36ce9864db": "Função criada",
@@ -12222,7 +12315,6 @@
       "text51464281894d": "Seu navegador não suporta notificações.",
       "text514650746440": "O Cloudflare Access fica ENTRE o Kortix e seu provedor de identidade real: autentica os usuários no seu IdP e depois se apresenta ao Kortix como um IdP SAML. Portanto, configure primeiro a conexão upstream — em Zero Trust → Settings → Authentication, adicione um método de login (Okta, Entra, Google, …) conforme a documentação do Cloudflare.",
       "text5150c9d9bb20": "Migrar sandbox",
-      "text515ebffde3e4": "Quem pode abrir sessões criadas por este gatilho.",
       "text5161cce6217e": "O que pode fazer",
       "text51621a0469f5": "O nome é gerenciado pelo seu provedor de identidade — renomeie o grupo lá. As declarações de grupo no login correspondem pelo nome, portanto renomeá-lo localmente faria seu acesso ficar órfão.",
       "text5167e9677e1f": "em construção",
@@ -12376,7 +12468,6 @@
       "text55a733d57ce1": "Abrir ações do PDF",
       "text55a834c80aa9": "Somente o proprietário",
       "text55afa51cc456": "Provisões, despesas antecipadas, receita diferida e movimentações de ativos fixos. Mecânicos, orientados por regras e recalculados a partir da fonte a cada período, em vez de uma pasta de trabalho copiada desde 2023.",
-      "text55c84320074b": "Pesquise na documentação pública e no conteúdo de produto da Kortix.",
       "text55e970c35216": "Obter código do dispositivo",
       "text55fa9981994c": "Mostrando as",
       "text56000ae371ac": ". Os aplicativos são privados por padrão.",
@@ -12718,7 +12809,6 @@
       "text5fe944615217": "A palestra vira um post, o post vira uma thread e a thread vira um email. Cada um é escrito para seu formato, em vez de colar o mesmo texto quatro vezes apenas mudando as quebras de linha.",
       "text5fe96ad52cf0": "Contas, grupos, caixas de entrada e calendários — a base da maior parte do trabalho de entrada, movimentação e saída. Ler e escrever são ações separadas, com respostas separadas.",
       "text5ffd7f0c0ff0": "Gmail e Outlook",
-      "text60049ed7a3f8": "A sessão fixada mantém suas próprias configurações de compartilhamento.",
       "text6007acbe30b2": "Aprovar",
       "text6007b5baf3f3": "Empresa como código",
       "text6007db63e18e": "Pessoa",
@@ -12975,7 +13065,6 @@
       "text6739e3688fbe": "· Em risco: Initech, Umbrella — nenhuma atividade há 14 dias",
       "text673a8d7538da": "Adicione backoff exponencial, limite a cinco tentativas e ignore completamente a nova tentativa para respostas 4xx — elas nunca terão sucesso. Vale a pena registrar também a contagem de tentativas.",
       "text673d6a594efa": "Editar mensagem e retroceder sessão",
-      "text6744f8cb9594": "A instrução enviada ao agente sempre que isso é executado.",
       "text67467eb27011": "Adicionar mapeamento de grupo",
       "text674db38d5123": "Aguardando revisão",
       "text674fe2acd0d5": "Tela cheia",
@@ -13260,7 +13349,6 @@
       "text6fb40527cfc3": "App móvel da Kortix",
       "text6fc62e5b11d6": "Execute a configuração guiada — ela cria o bearer token e orienta você passo a passo pela configuração de provisionamento do seu IdP.",
       "text6fdcee27400f": "arquivos repositório drive navegador explorador",
-      "text6ff3502ac059": "Não foi possível atualizar o modelo",
       "text6ff3bff5952a": "precisa de permissão para:",
       "text6ffb34d0baed": "git push origin HEAD",
       "text700e7474f9a9": "Link de indicação indisponível",
@@ -13272,7 +13360,6 @@
       "text7033ce3d1e7a": "Conexão de e-mail",
       "text7039b3d4be40": "Estado do turno da sessão visualizado",
       "text703a3d810fc0": "Migre o blog para MDX",
-      "text703f49b261e2": "Caminho da Kortix a partir de um resultado de pesquisa.",
       "text7040ecc689ea": "Esta prévia não pode executar comandos pelo navegador.",
       "text704aed35a6fe": "Segredo copiado",
       "text704e738861ba": "Remover projeto",
@@ -13620,7 +13707,6 @@
       "text79c6ba1d813d": "#1 Armadilha do JumpCloud: Test Connection falha porque o email do usuário de teste já existe no Kortix — deve ser um endereço totalmente novo. (E clique em \"Activate\", não em \"Save\", nessa etapa.)",
       "text79c8764339a5": "realizada por",
       "text79e4d7b87c05": "Um pico entra na fila; não é descartado",
-      "text79e527fa7dd1": "A instrução enviada ao agente a cada execução.",
       "text79ffe7bf8192": "Projeto criado",
       "text7a04f383ef22": "Uma máquina por sessão · Pré-configurada · Nada é executado no seu laptop",
       "text7a098b3b9a9d": "Falha ao abrir o portal de assinaturas. Tente novamente.",
@@ -13638,7 +13724,6 @@
       "text7a9d22da3496": "Seletor de emojis",
       "text7a9decd79093": "Abri o aplicativo SAML",
       "text7a9f6daee641": "your-company/",
-      "text7aaec6fe02f0": "Ainda não há aplicativos",
       "text7abc49dfa87b": "Entradas",
       "text7abf95c1092d": "Remover regra {value0} condição {value1}",
       "text7acb37a3030a": "Aprovar / publicar",
@@ -13821,7 +13906,6 @@
       "text7fa8aef486d8": "Como as equipes colocam uma força de trabalho de agentes de IA para funcionar — os loops que projetam, os entregáveis que enviam e as mudanças revisadas que tornam a empresa melhor todos os dias.",
       "text7fadfca18f08": "Copiar ID do modelo",
       "text7fc00a40fb11": "Kortix vs Poetic: ambos transformam workflows em código — a diferença é quem é dono do código",
-      "text7fcc18556e6e": "Quem executa",
       "text7fda2b723187": "Initech Retail",
       "text7fdf5bcb19a8": "Status do provisionamento",
       "text7fe5af1c4cdd": "__git-history-query__",
@@ -13966,7 +14050,6 @@
       "text847e3d7b2190": "O usuário de teste deve ter permissão para acessar o aplicativo — caso contrário, o IdP rejeitará o login com um erro “not assigned”.",
       "text848b62f95f33": "Preto e branco com destaque amarelo neon",
       "text848c28cd6858": "Conceder consentimento de administrador",
-      "text848f54e89660": "Execuções",
       "text84908b335467": "Três formas de iniciar a mesma sessão. Execuções agendadas ajudam mais a TI, porque o trabalho que é pulado é aquele sem prazo definido.",
       "text8493c3761028": "Sessões fixadas mantêm suas próprias configurações de compartilhamento. Esta política se aplica quando o gatilho cria uma sessão.",
       "text84a3f6a1d64e": "Perguntadas em uma conversa do Slack, respondidas a partir do documento no seu repositório com a seção citada. Se o manual não responder, ele diz isso e encaminha para uma pessoa, em vez de preencher a lacuna com uma política plausível.",
@@ -14089,7 +14172,6 @@
       "text87c5912f2cef": "Construindo",
       "text87d296ec9489": "Legenda",
       "text87d2f3386f90": "Pesquisando na web",
-      "text87e3eca29ea9": "Caminho canônico retornado por list_public_content, como /docs ou /pricing.",
       "text87e6d00bbf53": "Revogar",
       "text87e8ac388eb1": "Cada remetente é uma pessoa conhecida",
       "text87f29356aaf3": "Responsabilidade prolongada",
@@ -14454,6 +14536,7 @@
       "text895ce927db2e": "Chat pessoal",
       "text28c7d3f8b75d": "Chat em grupo",
       "text72b5b0c53de9": "Respondeu no Microsoft Teams",
+      "textedac6130dac7": "Faz commit de um SKILL.md no repositório sem uma sessão de chat.",
       "textfc73e9ad2dae": "Respondeu no Slack",
       "text8faf56a14a8d": "Respondeu no Telegram",
       "text8ccfe10f2f2d": "Publicar no seu catálogo do Teams",
@@ -14607,7 +14690,6 @@
       "text965b516df3ba": "Nada encontrado",
       "text965bc32426d7": "Resultado anterior",
       "text9665df5c23d6": "2 de 4 · 60 minutos",
-      "text966761671cbc": "Não foi possível atualizar a chave de assinatura",
       "text967458798444": "precisam de atenção",
       "text967549497036": "Desmarcar todos",
       "text9676bdc9332f": "Conectar minha conta",
@@ -15094,7 +15176,6 @@
       "texta4c9215859a8": "Membro do projeto removido",
       "texta4cf35d7f3ca": "Provisione alguns sandboxes — seu tempo e resultado aparecem aqui.",
       "texta4d51f7a060a": "Grupo IAM",
-      "texta4de16df5a99": "Quem pode abrir sessões criadas por este gatilho. Salvar também atualiza as sessões anteriores.",
       "texta4e2cf626cd3": "Modelo de sandbox usado por novas sessões e automações.",
       "texta4e5e14f93c8": "Lista de aplicativos do OneLogin com o app do conector SAML",
       "texta4ed3db2e660": "Roteando entre ferramentas conectadas",
@@ -15424,7 +15505,6 @@
       "textad60d663069e": "Configurar a sincronização do diretório",
       "textad63817393a7": "Substitui as instruções padrão deste agente.",
       "textad73038522f6": "#1 Armadilha do PingOne: tudo parece configurado, mas nenhum usuário sincroniza — o toggle de CONNECTION ainda está desativado (vem desativado por padrão), ou o PingOne está enviando o nome de usuário interno em vez do email. Ative o toggle de conexão, mapeie \"Username\" → \"Email Address\" e defina o filtro `userName eq \"%s\"`.",
-      "textad7959257d8d": "O agente e o modelo usados em cada execução.",
       "textad7fa5eb3e4e": "A questão não é o que um agente pode escrever, mas o que pode entregar. Eis a resposta exata.",
       "textad836185754c": "Conduza um incidente de produção até a resolução.",
       "textad936fcbed63": "grupo",
@@ -15689,7 +15769,6 @@
       "textb5353c3c6be9": "Entrega do webhook de auditoria reproduzida",
       "textb538bf414362": "Sequência de inicialização",
       "textb549d2890d4b": "Diga permitir, perguntar ou negar por ferramenta — até um único comando shell",
-      "textb560dc33f1db": "Você pode inserir detalhes da mensagem recebida diretamente na instrução:",
       "textb5658fc8edda": "Nesta página",
       "textb5687cf04af3": "Solicitante",
       "textb57f2c70525f": "Cada sessão Kortix recebe seu próprio computador: uma máquina Linux isolada que clona seu repositório, cria uma branch com o nome da sessão e executa o OpenCode. O trabalho chega por uma solicitação de mudança aprovada por uma pessoa.",
@@ -15966,7 +16045,7 @@
       "textbcd80dd21f3c": "Duração personalizada da avaliação em dias",
       "textbcd8cc53f40e": "Sem descrição",
       "textbcdbec03e086": "MFA exigido para a conta",
-      "textbce22443b335": "Sem condições — toda solicitação inicia uma execução.",
+      "textbce22443b335": "Sem condições — toda entrega inicia uma execução.",
       "textbce8671d3706": "Qualquer pessoa que entrar via SSO a partir do seu domínio se torna membro automaticamente.",
       "textbd02b9a7d71d": "Tarefas",
       "textbd0b7be215ce": "Fechar editor",
@@ -16293,7 +16372,6 @@
       "textc611981fab98": "Política",
       "textc614ae8886f0": "Caminho da pasta",
       "textc616e8ff6ba3": "Sessão · {value0}",
-      "textc617ab4ba83d": "Não foi possível atualizar o agente",
       "textc618a193ffe9": "terceiro",
       "textc618c6bd416a": "Autorize pelo Pipedream.",
       "textc61d3d5725a1": "Conta · Configurações",
@@ -16456,7 +16534,6 @@
       "textca9c05caf0c3": "Status do agente",
       "textca9c32c53e90": "Saindo",
       "textcaa6c42f2b7c": "$ kortix channels disconnect",
-      "textcaace11153c1": "Leia uma página pública da Kortix como Markdown.",
       "textcab94aba84f9": "Tipografia",
       "textcac616ab8697": "Suas próprias funções e vinculações de políticas granulares, além das predefinições.",
       "textcac716114be6": "Teste do webhook de auditoria enviado",
@@ -16763,7 +16840,6 @@
       "textd321c227d1d9": "Custo total — LLM + computação do sandbox",
       "textd3237eaf77bb": "Falha ao remover o acesso",
       "textd3297c00f7a2": "Hosts aprovados",
-      "textd33efef68fbd": "A sessão fixada mantém suas próprias configurações de compartilhamento. Esta política se aplica se o gatilho criar uma sessão alternativa.",
       "textd346ad20b6da": "Conectores intermediados no servidor",
       "textd353a99eb455": "Cancelado",
       "textd355044d5f9b": "O usuário de teste aparece em Members, na página Identity — isso confirma o fluxo de ida e volta.",
@@ -16883,7 +16959,6 @@
       "textd647e7a1a79d": "Valor x5t#S256 em Base64url",
       "textd649bd5b85d2": "membros agora. Conclua o login de teste na sua janela privada — assim que o usuário for provisionado, ele aparecerá aqui (verificações a cada poucos segundos).",
       "textd65407c0111d": "Não apenas encontre o trabalho. Execute-o.",
-      "textd6627a42b6b2": "Solicitações que não correspondem são ignoradas.",
       "textd668b28cfe55": "Calculado com base na função, nos grupos e nas políticas da pessoa.",
       "textd67566f60104": "Falha ao definir a demonstração empresarial",
       "textd6766fccffec": "Inicializa com",
@@ -18203,7 +18278,6 @@
       "textfc379aff8002": "Concluindo o login…",
       "textfc3fdecbf78c": "O único canal ao vivo. Faça uma pergunta sobre o fechamento em uma thread e ela será a sessão; a pasta de trabalho volta para a thread como arquivo.",
       "textfc41cd883d26": "Vinculação do segredo do conector atualizada",
-      "textfc4e84255a41": "Programação",
       "textfc4ff3e38b06": "O JumpCloud envia apenas os grupos aos quais o aplicativo está VINCULADO (aba User Groups). Vincule cada grupo que você planeja mapear no Kortix; o nome deve corresponder à declaração da etapa de conexão.",
       "textfc56800b00af": "Não foi possível iniciar",
       "textfc5fe4b93461": "kortix init · kortix ship · um repositório · qualquer modelo",
@@ -19102,9 +19176,6 @@
       "textcafd830fcf85": "Identidades de agente do projeto listadas",
       "text7f755292bf51": "Não foi possível baixar o anexo",
       "textd8b78d762ad0": "Eventos com mais de 90 dias não são listados aqui. A exportação os retorna do arquivo, até 365 dias atrás.",
-      "connectorSourceLabel": "Origem do conector",
-      "connectorSourceManaged": "Geridos",
-      "connectorSourceDirect": "API / MCP",
       "text87f9f3ba9b60": "Canal privado",
       "textcd3e16057d09": "Mensagem direta",
       "textcbe7c5d45160": "Mensagem direta em grupo",
@@ -19243,7 +19314,263 @@
       "text8f480bae8d16": "Agentes de IA para equipes de finanças",
       "text6243d930fc1c": "AI Operating System",
       "textc959682e0398": "Visualizou os dispositivos conectados",
-      "text976811d9540a": "Desconectou um dispositivo"
+      "text976811d9540a": "Desconectou um dispositivo",
+      "text6f417aa88601": "Gastos do gateway LLM por origem listados",
+      "textc96cd610ba08": "Chave de provedor compartilhada tentada novamente após o limite de uso",
+      "text044ba8a9ae43": "Sempre ativa",
+      "textb2fceee88a51": "Funciona 24/7. Só para ao atingir o orçamento mensal.",
+      "texted76c66b7a8d": "Um App de servidor para quando o processamento deste mês atinge o orçamento. Ele volta a iniciar no mês seguinte ou quando você o aumenta.",
+      "text89ea53a8d7ac": "Orçamento de ${value0} por mês",
+      "text4972b5f3b4f5": "Orçamento em USD por mês",
+      "textad954fb2accd": "Orçamento atualizado",
+      "text163de9edcec1": "Ocultar log",
+      "text04957fa46a70": "Mantém {value0} versões anteriores",
+      "textc247593b2c0f": "Orçamento mensal",
+      "text80c652c4eeec": "Ainda não há eventos.",
+      "texte15cb9ffae7f": "Cerca de ${value0} por mês",
+      "textaef7de28d529": "Servidor",
+      "text34b66838fe48": "Mostrar log",
+      "text903b49a91e18": "Site estático",
+      "text245c1e26ba4c": "Não foi possível carregar o log.",
+      "textdb4764b8b3e7": "Os apps que você publicar aparecerão aqui",
+      "texta7a8d2a5fb25": "Peça a um agente para criar um.",
+      "text42cf267578ad": "Tipos de evento de gatilho listados",
+      "text631b422403db": "Apps que podem disparar eventos listados",
+      "text5d5b7c17acf0": "Evento de app recebido",
+      "textd919fde889e9": "Requer conexão",
+      "textd7b77185afd1": "Ativando",
+      "text2a78b60b1056": "Conecte uma conta compartilhada do {app} para ativar este gatilho.",
+      "textb10983220f3e": "Precisa de conta",
+      "textf5dd6c3bc8a9": "Não foi possível adicionar {name}",
+      "textc416d056595e": "Não foi possível carregar os aplicativos com eventos",
+      "text2c4ef9cc0c30": "Ainda não há eventos de aplicativos aqui",
+      "texte558709e2278": "Os eventos de aplicativos não estão configurados neste deploy, então nenhum aplicativo pode enviá-los ainda.",
+      "texta10a36fa1098": "Pesquisar aplicativos",
+      "text13b17cc7974b": "Seus aplicativos",
+      "textf82a179f9235": "Mais aplicativos com eventos",
+      "text3d6f73990a72": "Nenhum aplicativo corresponde.",
+      "textf287f4494f4b": "Ele entra em funcionamento quando a conta do {name} for conectada. Você pode conectá-la agora ou depois de criar o gatilho.",
+      "text5550bcf169d6": "Você não pode conectar contas compartilhadas. Peça a um administrador do projeto para conectar {name}. O gatilho entra em funcionamento quando isso for feito.",
+      "textf665dfe82646": "Você não pode conectar contas compartilhadas. Peça a um administrador do projeto para conectar {app}. Este gatilho entra em funcionamento quando isso for feito.",
+      "text50a06ae2ec9e": "Este aplicativo não pode enviar eventos aqui",
+      "texta9cb192dbee2": "A fonte de eventos deste aplicativo não está disponível neste deploy, então os eventos ainda não podem ser listados.",
+      "text901abe952186": "Pesquisar eventos",
+      "textbb19f45c3461": "Este aplicativo não tem eventos para monitorar.",
+      "textd35a8ebc3a74": "Nenhum evento corresponde.",
+      "text89db19f651b1": "(obrigatório)",
+      "text0b24aed53ab6": "Escolha uma",
+      "text5914bebd5241": "Uma por linha, p. ex. {example}",
+      "text791210221e4a": "Uma por linha",
+      "text126ba406a50a": "Clique em um campo para adicioná-lo à instrução. O evento também está disponível como <code>{token}</code>.",
+      "text25a3107603e6": "O evento está disponível como <code>{token}</code>.",
+      "text6e4a170bdf81": "{count, plural, one {# evento} other {# eventos}}",
+      "text4c012b6f97ca": "Conectar {app}",
+      "text84e071180ac2": "Editar configurações",
+      "text5441e7146193": "Evento de aplicativo",
+      "text9962d69a4916": "Não foi possível carregar as credenciais",
+      "text1c41abcc2fff": "Fale com a Kortix para ativar.",
+      "textce0eabb01151": "{value0} vCPU · {value1} GB · {value2} GB",
+      "text19505ae1c4fa": "Um disco pode crescer, mas nunca diminuir.",
+      "text97b11693daf1": "Escolha um tamanho dentro dos limites.",
+      "text9d850085f763": "Este snapshot não existe mais.",
+      "textd0a4f1baaeab": "vCPUs",
+      "text94b205cadab5": "Memória (GB)",
+      "textcce9286fec89": "Disco (GB)",
+      "textb31af9a5b37a": "Redimensionamento iniciado",
+      "texta507e087427a": "Redimensionar {value0}",
+      "text6dd8cdbf8352": "{value0} a {value1}",
+      "text2956e06ac065": "Redimensionar",
+      "text9a2de8b2728e": "Snapshot criado",
+      "text3c7a3332a5a8": "Não foi possível criar o snapshot",
+      "text8103f212aba8": "Backups de {value0}",
+      "text7a306da87381": "Não foi possível carregar os backups",
+      "text3dadeedf4c21": "Backup automático",
+      "text5efa68d158fe": "Último backup {value0} · {value1}",
+      "text10f051360895": "Ainda não há backup automático.",
+      "text743f2a7e24f3": "A cada {value0} min",
+      "textf187f78e07ef": "Snapshots",
+      "text2c86d50742a1": "Criar snapshot",
+      "textdce32a8bd22e": "Ainda não há snapshots.",
+      "text4f9edcd9f991": "Restaurar snapshot",
+      "text459953ec0256": "Isso restaura {value0} para o snapshot de {value1}. Toda mudança feita depois do snapshot é perdida. Não é possível desfazer.",
+      "text6f2769b24c0f": "Redimensionando…",
+      "text5ad9ba3657f2": "Redimensionar…",
+      "textf0e800ed571e": "Backups…",
+      "textde3486cdebb5": "Flag de recurso do projeto definida como administrador",
+      "text402c230e740b": "Ou obtenha no código com uma chave de API Kortix",
+      "text8034c809dd46": "Verifique o mesmo token no seu próprio servidor",
+      "textdbbe76672da2": "Implante código e gerencie dados com a CLI do Convex. A chave de administrador controla todo o código e todos os dados.",
+      "text00739f5cd92d": "Implante e depois use qualquer comando da CLI do Convex com as credenciais de administrador",
+      "text7aaebc8b5794": "{value0} de {value1} snapshots",
+      "text5ef3580e4f2e": "CLI e administração",
+      "text8ef95f8fdadb": "Exija um membro conectado em toda função que lê ou grava dados privados",
+      "text41fa1daf731c": "Controla todo o código e todos os dados. O Kortix audita cada exibição.",
+      "textac20a57bfde0": "Ocultar",
+      "text6d82b9d57b0c": "Ambiente do seu servidor (valores públicos, não segredos)",
+      "text36b830bdb447": "Exibir",
+      "text0d04bfeb7d64": "Aplicativo",
+      "text840993da3129": "Evento de aplicativo criado",
+      "textbd3baa5c3d2c": "Escolha o aplicativo em que o evento acontece. Conecte-o aqui ou depois de criar o gatilho.",
+      "text89acd37e88bf": "Escolha o que deve iniciar o agente.",
+      "text1ca54705a9bb": "Diga o que o agente faz quando isso acontece.",
+      "texteaafc7a66ef7": "Inicie um agente quando algo acontecer em um aplicativo conectado, como um novo e-mail ou um pull request.",
+      "text6abe3b60f184": "Configurações do evento",
+      "text9f2c75e76be9": "Elas restringem quais eventos iniciam o agente.",
+      "textf4d17716fd3b": "{name} ainda não tem uma conta compartilhada. Este gatilho entra em funcionamento quando uma for conectada.",
+      "text80273a6c8918": "Já está ativo.",
+      "textd8d0bd5c5106": "Excluir programação",
+      "textf2f698118cc1": "Excluir evento de aplicativo",
+      "text2dca9f542da4": "{name} conectado",
+      "text54e2237efa16": "Os gatilhos deste aplicativo já estão em funcionamento.",
+      "text2fd655fcbaad": "Ele entra em funcionamento quando a conta for conectada.",
+      "text261b28a3c6bf": "Conectar outra conta",
+      "text19646ef1ab9d": "Rótulo da conta",
+      "text0ade71c64183": "Rótulo da conta, p. ex. acme-bot",
+      "texta8f89bda4dfc": "Este conector já tem uma conta com esse rótulo.",
+      "textea56119b98e2": "Gatilhos de eventos do app",
+      "text1ee2cf623464": "Novo evento do app",
+      "text974e43358191": "Nenhum gatilho inicia um agente com eventos de {name} ainda.",
+      "text484cb2c544a7": "Conectar a {value0}",
+      "text781613a81056": "Chame uma mutation via HTTP",
+      "text532c119fcb6b": "De fora",
+      "text28fa7e7a8a16": "Chame uma ação HTTP (uma rota em convex/http.ts)",
+      "text7364258e238a": "Scripts, serviços e seus próprios servidores. Envie um token de membro como bearer para a API HTTP ou para uma ação HTTP.",
+      "textc0e20f6d5a3a": "Conectar…",
+      "textb046e155c93a": "Chave de administrador",
+      "textfb195abf4173": "Chame uma query via HTTP",
+      "textb0f85fbe8f79": "Metadados do emissor de tokens do projeto lidos",
+      "texte24bff51ec93": "Chaves de assinatura de tokens do projeto lidas",
+      "text4a75e77ccc8d": "Rotacionando a chave…",
+      "text959bdc881c93": "Recuperando…",
+      "textd14f65e63358": "Não responde",
+      "text652d18ba46c8": "Disco {value0}% cheio",
+      "text0aeabb927ead": "Rotacionar chave de administrador",
+      "text8c62d9c111ea": "Rotacionar esta chave de administrador?",
+      "text3f2bcc63b01e": "Chave de administrador rotacionada",
+      "text6dab22ece77e": "Não foi possível rotacionar a chave de administrador",
+      "text71f6cc5e959a": "Este snapshot foi feito antes do último redimensionamento e mantém o tamanho antigo. Faça um novo snapshot ou redimensione novamente.",
+      "text819a1788de99": "Antes do redimensionamento",
+      "textbee3b293c9f6": "Mantido até ser excluído",
+      "text8c3e7e71155c": "Expira {value0}",
+      "text68f1baa5d324": "Mantido até o próximo snapshot diário",
+      "textcac5e168fd53": "O Kortix faz um snapshot a cada {value0} h e o mantém por {value1} dias. Um snapshot feito antes de um redimensionamento é mantido por {value2} h. Snapshots manuais ficam até você excluí-los, até {value3}.",
+      "text6f70f5ac2047": "Excluir este snapshot?",
+      "textc2ee618713fb": "O snapshot de {value0} de {value1} é excluído e {value0} não poderá mais ser restaurado para ele. Isso não pode ser desfeito.",
+      "textab50f27cec49": "Excluir snapshot",
+      "textedc63daf62bc": "Snapshot excluído",
+      "text4ac5e5c981cc": "Não foi possível excluir o snapshot",
+      "textcd08dcee6a87": "Criando snapshot…",
+      "text5a4918e0201c": "Restaurando…",
+      "text2eb91a6f88aa": "1 arquivo permanece anexado. Remova-o para executar o comando, ou remova o comando para enviar o arquivo como mensagem.",
+      "text807f9beb34b1": "{count, plural, other {# arquivos permanecem anexados. Remova-os para executar o comando, ou remova o comando para enviá-los como mensagem.}}",
+      "text4b4847a6fb87": "Eventos de apps",
+      "text07fb9f8661dc": "Apps com eventos",
+      "text51035b5b67dc": "Filtrar por tipo",
+      "text12a4656bfd2a": "via {source}",
+      "textfd26b2373251": "Eventos via {source}",
+      "texte3d92a0125e7": "Esta alteração é grande demais para ser exibida em linha. A lista de arquivos continua precisa.",
+      "text18ae226f8a22": "Quando seu aplicativo chama o webhook, {agent} executa sua instrução.",
+      "text8ebeeead4672": "Quando “{event}” acontece em {app}, {agent} executa sua instrução.",
+      "text922ecdf9cffc": "{when}, {agent} executa sua instrução.",
+      "text98bc0d3ce693": "Escolha o aplicativo em que o evento acontece.",
+      "textbb96443de263": "Escolha o evento que inicia o agente.",
+      "text653989c59b4b": "Escolha uma data e hora válidas.",
+      "textebfef07e2d2b": "Escolha um horário no futuro.",
+      "texta1b7270dbe34": "Escolha quando isto deve ser executado.",
+      "textc10cd37e5462": "Adicione uma chave de assinatura para que somente seu aplicativo possa iniciá-lo.",
+      "texte7cd9e292007": "Diga o que o agente deve fazer.",
+      "textb67ba8d96c42": "Dê um nome a este gatilho.",
+      "text2b8e1487be3b": "Escolha qual sessão usar.",
+      "text473d5c3c6169": "Diga pelo que agrupar as execuções, para que cada conversa tenha sua própria sessão.",
+      "text8f4597a69c3c": "Cada condição precisa de um campo e de um valor.",
+      "text01bed311e7d0": "Todos os aplicativos",
+      "text5c2f9b184974": "Trocar aplicativo",
+      "text78544011d53a": "Ao criar este gatilho, adicionamos um conector do {name}. Ele entra em funcionamento quando uma conta for conectada.",
+      "texte18bbdd15a81": "Criar gatilho",
+      "text024172a56d6f": "{count, plural, one {Mostrar # aplicativo} other {Mostrar todos os # aplicativos}}",
+      "text52940d5bb670": "{count, plural, one {Mostrar # evento} other {Mostrar todos os # eventos}}",
+      "textefeac437f989": "Conectar uma conta",
+      "textdbdf27e5db8d": "Configurando",
+      "text52f2077702ec": "Os gatilhos de eventos do app estão desativados",
+      "text9021d75ab530": "Snapshots do Kortix App listados",
+      "textaa690dbd1c27": "Snapshot do Kortix App criado",
+      "text4c29824a44da": "Snapshot do Kortix App excluído",
+      "textabcda68bd3b0": "Snapshot do Kortix App restaurado",
+      "textd1c0fc325eee": "Credenciais de administrador do Kortix App lidas",
+      "textdb26d819a2c8": "Credenciais de administrador do Kortix App rotacionadas",
+      "textc0fb28560783": "Token de login do Kortix App emitido",
+      "textfb80f12c4607": "Log do processo do Kortix App lido",
+      "text5b5b9df9db78": "Painel do Kortix App aberto",
+      "text1ff1fdcf5ef0": "O Kortix App atingiu uma parte do orçamento",
+      "texte63482b0a7dc": "API do Kortix App chamada",
+      "textc31eedf7fa7d": "WebSocket da API do Kortix App aberto",
+      "texte80235a54789": "O App já tem este tamanho.",
+      "textdffa6c4832ea": "O App está ocupado com outra operação. Tente de novo quando ela terminar.",
+      "text82d8fd7be760": "O App não está em execução.",
+      "text66a50145812d": "Este App atingiu o limite de snapshots manuais. Exclua um primeiro.",
+      "text0ea70cfac481": "O App não voltou após a restauração. Restaure-o novamente.",
+      "textdf1c5a2018d4": "Não foi possível redimensionar o App",
+      "text0ddcdc542ef9": "O App reinicia com o novo tamanho. Um disco pode crescer, mas nunca diminuir.",
+      "textf4ed8fa656b7": "Final",
+      "text38d61e78c348": "O App faz backup de si mesmo conforme uma programação. Tire um snapshot antes de uma mudança arriscada.",
+      "text50f89377e008": "App restaurado",
+      "textc7749399019b": "Não foi possível restaurar o App",
+      "textd5f5bd67e572": "Código de navegador de outro Kortix App. A origem desse App entrega o token de login do visitante a este App, e este App lê o membro.",
+      "text79a6c5c5b965": "Aceite tokens de login do Kortix neste App (o Kortix define estas variáveis)",
+      "text53cd6fcaa9d6": "Revelar a chave de administrador exige acesso de administrador a este App.",
+      "text80cf9a7c2d86": "O painel abre quando o App está em execução.",
+      "text9c36bdc2dbbf": "O painel exige acesso de administrador a este App. Peça a um gerente do projeto.",
+      "textf3adc8b63850": "Último deploy {value0}",
+      "text43ef8f25ef0e": "Nenhum deploy ainda",
+      "text9e6151acb057": "Usa",
+      "text681bf81aba87": "Usado por",
+      "textd115556499fb": "O Kortix para {value0} e mantém um snapshot final por 7 dias; depois o exclui com todos os dados. Digite {value1} para confirmar.",
+      "text90ea74fd007b": "Toda chave de administrador lida antes deixa de funcionar, inclusive em arquivos .env.local e sessões de agentes. O App reinicia por cerca de 1 segundo. Dados, arquivos e variáveis de ambiente permanecem.",
+      "text7fcc818eb01f": "Instale o cliente Convex e o Kortix SDK no App que usa este",
+      "textfa81dc800785": "Vincule-o: um App só alcança os Apps que usa e só obtém tokens de login para eles",
+      "text6851f4ca258c": "Vincule-o na própria origem do App e envie o token de login do Kortix do visitante",
+      "textbcfb13cc6799": "Obtenha um token de login de 15 minutos em seu nome",
+      "textf445afc1e6ed": "Já existe um arquivo ou pasta chamado “{value0}” aqui",
+      "text729fe0e7b138": "Drives",
+      "text6312b4b9baf1": "Drive",
+      "text6206cfda1089": "Drive anexado a uma sessão",
+      "text17e39652de9c": "Pasta do drive explorada",
+      "text17ca25e52b74": "Acesso de uma sessão ao drive alterado",
+      "textec0529740f3a": "Drive criado",
+      "text0a9ffa28699b": "Pasta do drive criada",
+      "textdda2c17f7b6a": "Drive eliminado",
+      "texta4b104856de3": "Ficheiro ou pasta do drive eliminado",
+      "text3b4597efa752": "Drive removido de uma sessão",
+      "text314417423fcc": "Aviso de conflito do drive ignorado",
+      "texta6d9086e7e87": "Ficheiro do drive transferido",
+      "text396202ae2e82": "Drive concedido",
+      "textb97ac3f6b2df": "Drives listados",
+      "textc2f20f412d9e": "Drives da sessão listados",
+      "text643a5d6f2ae7": "Ficheiro ou pasta do drive movido",
+      "text1be29249e43a": "Concessão do drive removida",
+      "text4aca630290d8": "Drive renomeado",
+      "text752bef5f7f5d": "Versão do drive restaurada",
+      "text227965956595": "Ficheiro do drive carregado",
+      "text2c4914d35c78": "Cópias em conflito do drive consultadas",
+      "text0fa1b726786e": "Versões do drive consultadas",
+      "text5e8541464418": "Concessões de um drive consultadas",
+      "text296c9b4ea201": "Viu quem tem acesso a uma pasta",
+      "text59fd4dcb9848": "Compartilhou uma pasta",
+      "text937cfd737699": "Parou de compartilhar uma pasta",
+      "text92e898220ea4": "Candidatos à partilha de pasta listados",
+      "text806194e831e2": "Drives sincronizados de uma sessão listados",
+      "text4c17ea4a1bab": "Drive sincronizado verificado quanto a alterações",
+      "text52faea499e28": "Pasta do drive listada a partir de uma sessão",
+      "textb7eb5a2b50ce": "Ficheiro do drive verificado a partir de uma sessão",
+      "text78b45f97d82f": "Ficheiro do drive transferido para uma sessão",
+      "texte9bd330e4306": "Ficheiro do drive carregado a partir de uma sessão",
+      "text1cb255699e75": "Carregamento para o drive planeado a partir de uma sessão",
+      "texta20614e291e2": "Bloco de ficheiro do drive carregado",
+      "text9a1abd40b71f": "Carregamento para o drive confirmado a partir de uma sessão",
+      "text2f0e4bb00f98": "Ficheiro do drive movido a partir de uma sessão",
+      "text55dd1dcbbed0": "Ficheiro do drive eliminado a partir de uma sessão",
+      "text5d1ac5e7432c": "Arquivos compartilhados",
+      "text991f9b694b39": "arquivos pastas drive compartilhado empresa minha pasta acesso compartilhar"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
@@ -19305,6 +19632,96 @@
       "title": "Salvo, mas {agent} ainda não consegue lê-lo",
       "grant": "{names} não {count, plural, one {está} other {estão}} nos segredos do agente {agent}. Abra Personalizar → Agentes → {agent} → Segredos e {count, plural, one {ative-o} other {ative-os}}.",
       "allowlist": "{names} {count, plural, one {está} other {estão}} fora dos segredos desta sessão. Inicie uma nova sessão para {count, plural, one {usá-lo} other {usá-los}}."
+    },
+    "appAdminVolumesPage": {
+      "modeImage": "Imagem",
+      "modeImageDetail": "Apenas a imagem da sessão.",
+      "modeImageRequested": "Imagem pedida: {count}",
+      "modeArtifacts": "Imagem + artefactos",
+      "modeArtifactsDetail": "Mais o volume de artefactos de arranque para o runtime mais recente.",
+      "modeArtifactsRequested": "Imagem + artefactos pedidos: {count}",
+      "modeVolume": "Volume",
+      "modeVolumeDetail": "Computador efémero, estado da sessão num volume, mais artefactos.",
+      "modeVolumeRequested": "Volume pedido: {count}",
+      "reasonSessionVolume": "Volume da sessão",
+      "reasonArtifactsVolume": "Volume de artefactos",
+      "reasonVolumeMount": "Montagem de volume",
+      "reasonTimeout": "Tempo esgotado",
+      "reasonBootHealth": "O computador nunca ficou pronto",
+      "reasonOther": "Outro",
+      "fallBackToTheImage": "Recorrer à imagem",
+      "fallBackToImage": "Recurso à imagem",
+      "saved": "Volumes guardados",
+      "saveFailed": "Não foi possível guardar os volumes",
+      "title": "Volumes",
+      "description": "Um único interruptor para Ficheiros, montagens de drive, volumes de sessão e artefactos de arranque, por organização. Desligado, uma organização vê o produto sem volumes. As alterações chegam a todos os processos da API em 30 segundos.",
+      "discard": "Descartar",
+      "save": "Guardar",
+      "volumesTitle": "Volumes",
+      "volumesDescription": "Ligado: Ficheiros é o drive do projeto e o navegador do repositório chama-se Repo, as sessões montam as suas pastas e arrancam num volume. Desligado: Ficheiros é o navegador do repositório e as sessões arrancam a partir da imagem. Uma sessão cujos ficheiros já estão num volume mantém o seu volume quando a sua organização é desligada.",
+      "everyOrganizationTitle": "Ligado para todas as organizações",
+      "everyOrganizationDetail": "As organizações desligadas abaixo continuam desligadas.",
+      "everyOrganizationLabel": "Volumes para todas as organizações",
+      "rolloutTitle": "Implementação gradual",
+      "rolloutUnused": "Não é usado enquanto os volumes estiverem ligados para todas as organizações.",
+      "rolloutPercentDetail": "{percent}% das organizações sem definição própria, escolhidas por um hash estável do id da organização.",
+      "rolloutOffDetail": "Ligar os volumes para uma parte das organizações sem definição própria.",
+      "rolloutPercentLabel": "Percentagem da implementação",
+      "organizationsTitle": "Organizações",
+      "organizationsDescription": "A definição própria de uma organização prevalece sobre o interruptor e a implementação gradual. O seu modo de arranque aplica-se enquanto os volumes estiverem ligados para ela.",
+      "findOrganization": "Procurar uma organização",
+      "noOtherOrganization": "Nenhuma outra organização corresponde a «{search}». As organizações já listadas abaixo não são repetidas.",
+      "add": "Adicionar",
+      "columnOrganization": "Organização",
+      "columnVolumes": "Volumes",
+      "columnBootMode": "Modo de arranque",
+      "columnLastStep": "Último passo",
+      "organizationFallbackName": "Organização",
+      "organizationVolumesLabel": "Volumes para {name}",
+      "on": "Ligado",
+      "off": "Desligado",
+      "defaultModeOption": "Predefinido ({mode})",
+      "removeOrganization": "Remover organização",
+      "noOrganizations": "Nenhuma organização tem uma definição própria.",
+      "bootModeTitle": "Modo de arranque",
+      "bootModeDescription": "Como arrancam as novas sessões de uma organização com os volumes ligados, a menos que a organização tenha um modo próprio.",
+      "defaultModeTitle": "Modo predefinido",
+      "killSwitchTitle": "Interruptor de emergência: arrancar todas as novas sessões a partir da imagem",
+      "killSwitchDetail": "Sobrepõe-se a todos os modos de uma só vez; Ficheiros e os drives ficam como estão. Uma sessão cujos ficheiros já estão num volume mantém o seu volume.",
+      "killSwitchLabel": "Interruptor de emergência",
+      "last24HoursTitle": "Últimas 24 horas",
+      "last24HoursDescription": "Sessões que arrancaram em cada modo e os recursos alternativos que usaram. Contadas no fornecedor de volumes.",
+      "columnFallback": "Recurso alternativo",
+      "columnReason": "Motivo",
+      "columnCount": "Contagem",
+      "columnLatestError": "Último erro",
+      "noFallbacks": "Nenhum recurso alternativo nas últimas 24 horas.",
+      "countsUnavailable": "Contagens indisponíveis: {error}",
+      "unknownError": "erro desconhecido",
+      "fallbackTitle": "Recurso alternativo",
+      "fallbackDescription": "Uma sessão cujos arranques continuam a falhar desce um nível, uma vez por sessão; fica no modo que atingiu. Uma sessão cujos ficheiros já estão num volume nunca o abandona.",
+      "after": "após",
+      "failedBoots": "arranques falhados",
+      "volumeAttemptsLabel": "Tentativas com volume",
+      "artifactsAttemptsLabel": "Tentativas com artefactos",
+      "lastStepNote": "(ligado, a menos que uma regra desligue o último passo)",
+      "whereModesApplyTitle": "Onde os modos se aplicam",
+      "whereModesApplyDescription": "Os fornecedores e os interruptores de implementação vêm do ambiente do servidor. O volume de artefactos pode ser definido aqui; vazio, usa o do ambiente.",
+      "volumeProviderTitle": "Fornecedor de volumes: {provider}",
+      "volumeProviderConfigured": "Configurado. As sessões nele arrancam no modo que a sua regra escolhe.",
+      "volumeProviderNotConfigured": "Não configurado: todas as sessões arrancam a partir da imagem.",
+      "ready": "Pronto",
+      "otherProvidersTitle": "Outros fornecedores: {providers}",
+      "otherProvidersDriveSync": "Arrancam sempre a partir da imagem. Os drives chegam-lhes através da sincronização de drives.",
+      "otherProvidersNoDriveSync": "Arrancam sempre a partir da imagem. A sincronização de drives está desligada, por isso os projetos com drive ficam no fornecedor de volumes.",
+      "imageOnly": "Só imagem",
+      "artifactsVolumeTitle": "Volume de artefactos",
+      "artifactsVolumeSet": "As sessões em Imagem + artefactos ou Volume montam {source}.",
+      "artifactsVolumeFromEnvironment": "As sessões em Imagem + artefactos ou Volume montam {source} (do ambiente).",
+      "artifactsVolumeNone": "Nenhum definido: os modos com artefactos arrancam como se houvesse apenas a imagem.",
+      "artifactsVolumeLabel": "Volume de artefactos e etiqueta",
+      "ephemeralSandboxesOff": "{variable} está desligado nesta implementação: as regras que pedem Volume arrancam com Imagem + artefactos.",
+      "nothingSaved": "Ainda nada guardado: os volumes estão desligados para todas as organizações."
     }
   },
   "projectOnboarding": {
@@ -19380,750 +19797,6 @@
   "personalWelcome": {
     "dismiss": "Fechar",
     "emailCopied": "Endereço de e-mail copiado"
-  },
-  "starterPrompts": {
-    "items": {
-      "company-memory": {
-        "label": "Integre seu agente",
-        "prompt": "Integre-me. Pergunte sobre minha empresa — o que fazemos, quem são nossos clientes, quem faz parte da equipe, nossos produtos e nossas principais prioridades. Salve o que aprender na memória do projeto para se lembrar disso em todas as sessões futuras e, quando terminar, abra uma solicitação de mudança para que eu possa revisar."
-      },
-      "agent-create": {
-        "label": "Crie um agente",
-        "prompt": "Crie um agente especialista para uma tarefa que minha empresa realiza com frequência. Escreva o prompt dele em `agents/`, conceda a ele apenas as permissões de que realmente precisa em `kortix.yaml` e abra uma solicitação de mudança para que eu possa lê-lo antes de entrar em produção. Escolha a tarefa que me pouparia mais tempo e diga por que a escolheu."
-      },
-      "agent-team": {
-        "label": "Monte uma equipe de agentes",
-        "prompt": "Projete uma pequena equipe de agentes para minha empresa — três ou quatro especialistas, cada um com uma função específica e uma permissão restrita — e explique como eles passam o trabalho de um para o outro. Documente tudo e abra uma única solicitação de mudança com o conjunto completo."
-      },
-      "skill-write": {
-        "label": "Escreva uma habilidade",
-        "prompt": "Transforme algo que minha empresa faz sempre da mesma maneira em uma habilidade em `skills/`, para que todas as sessões futuras já saibam como fazer. Escolha a de maior valor, escreva-a corretamente com as etapas e as armadilhas e abra uma solicitação de mudança."
-      },
-      "skill-from-runbook": {
-        "label": "Converta hábito em habilidade",
-        "prompt": "Continuo explicando o mesmo processo para você. Documente-o como uma habilidade reutilizável, com as etapas, as entradas e a aparência de uma boa saída; depois, abra uma solicitação de mudança. Pergunte-me em uma frase qual processo devo documentar se não conseguir descobrir pela memória."
-      },
-      "agent-review": {
-        "label": "Revise meus agentes",
-        "prompt": "Leia todos os agentes deste projeto — seus prompts e suas permissões — e diga quais são vagos, quais têm permissões excessivas e quais se sobrepõem. Proponha as correções em uma única solicitação de mudança."
-      },
-      "grants-audit": {
-        "label": "Audite o alcance dos agentes",
-        "prompt": "Audite `kortix.yaml`: para cada agente, liste os conectores, segredos e habilidades aos quais ele pode ter acesso e sinalize tudo o que recebeu `all` sem precisar disso. Proponha um conjunto mais restrito em uma solicitação de mudança."
-      },
-      "trigger-daily": {
-        "label": "Agende um briefing diário",
-        "prompt": "Configure um gatilho cron que seja executado todas as manhãs dos dias úteis, reúna o que mudou neste projeto e escreva um briefing curto para mim. Adicione-o a `kortix.yaml`, mantenha-o desativado e diga-me a única linha que devo alterar quando quiser ativá-lo."
-      },
-      "trigger-weekly": {
-        "label": "Agende um relatório semanal",
-        "prompt": "Configure um gatilho cron semanal que produza o relatório que, de outra forma, eu escreveria manualmente na sexta-feira. Adicione-o desativado a `kortix.yaml` e mostre exatamente o que ele teria produzido nesta semana."
-      },
-      "trigger-webhook": {
-        "label": "Inicie trabalho por webhook",
-        "prompt": "Configure um gatilho de webhook assinado para que outro sistema possa iniciar um trabalho aqui. Adicione-o a `kortix.yaml`, diga-me a URL e qual segredo contém a chave de assinatura e escreva o prompt que ele dispara."
-      },
-      "connector-setup": {
-        "label": "Conecte uma ferramenta que uso",
-        "prompt": "Diga-me qual conector vale a pena configurar primeiro para uma empresa como a minha, o que ele permitiria que você realmente fizesse depois de conectado e o que precisaria da minha aprovação."
-      },
-      "memory-curate": {
-        "label": "Organize a memória do projeto",
-        "prompt": "Leia a memória do projeto, encontre o que está desatualizado, duplicado ou vago e reescreva-a para que uma sessão nova obtenha a verdade de uma só vez. Abra uma solicitação de mudança com o diff."
-      },
-      "memory-gaps": {
-        "label": "Encontre seus pontos cegos",
-        "prompt": "Analise a memória do projeto e diga as dez coisas que você precisaria saber para fazer meu trabalho bem, mas que atualmente não sabe. Faça as perguntas em uma única lista numerada que eu possa responder em uma só mensagem."
-      },
-      "harness-improve": {
-        "label": "Melhore a si mesmo",
-        "prompt": "Analise o que as sessões recentes deste projeto realmente fizeram, encontre onde você ficou bloqueado ou repetiu trabalho e refine os prompts, as habilidades e a memória que causaram isso. Abra uma única solicitação de mudança intitulada `harness: …`."
-      },
-      "cr-open": {
-        "label": "Abra sua 1ª solicitação",
-        "prompt": "Escolha a melhoria mais útil que você pode fazer neste projeto agora, implemente-a e abra uma solicitação de mudança explicando o que mudou e por quê. Mantenha-a pequena o suficiente para que eu possa revisá-la em dois minutos."
-      },
-      "repo-tour": {
-        "label": "Explique meu próprio repositório",
-        "prompt": "Faça um tour por este projeto como ele está agora — o que está configurado, quais agentes existem, o que está conectado, o que está vazio — e me diga as três coisas que vale a pena configurar em seguida."
-      },
-      "agent-onboarder": {
-        "label": "Crie um agente de integração",
-        "prompt": "Crie um agente cuja função seja integrar novas pessoas à minha empresa: ele responde às perguntas delas com base no que sabe, indica os documentos certos e sinaliza o que não conseguiu responder. Abra uma solicitação de mudança."
-      },
-      "agent-watcher": {
-        "label": "Crie um monitor de concorrentes",
-        "prompt": "Crie um agente e um gatilho semanal que monitorem nossos concorrentes e me informem apenas o que realmente mudou. Adicione ambos ao repositório desativados e mostre uma amostra do resultado desta semana."
-      },
-      "agent-inbox": {
-        "label": "Crie um triador de inbox",
-        "prompt": "Crie um agente que faça a triagem de uma caixa de entrada — separando o que precisa de mim, o que precisa de resposta e o que pode esperar — e escreva um resumo curto. Abra uma solicitação de mudança com o agente e suas permissões."
-      },
-      "csv-dashboard": {
-        "label": "Transforme CSV em dashboard",
-        "prompt": "Estou anexando um CSV bruto. Crie um dashboard de verdade a partir dele — com os gráficos que realmente expliquem os dados, em uma página que eu possa abrir — e envie-me a URL. Se nada estiver anexado, avise-me em uma linha, em vez de ficar aguardando."
-      },
-      "csv-charts": {
-        "label": "Crie gráficos para este CSV",
-        "prompt": "Estou anexando um CSV. Escolha o gráfico certo para cada pergunta que os dados respondem, crie-os e inclua uma legenda em cada um explicando o que ele mostra. Não use gráficos de pizza, a menos que um gráfico de pizza seja realmente adequado."
-      },
-      "spreadsheet-analysis": {
-        "label": "Entenda esta planilha",
-        "prompt": "Leia a planilha que anexei, encontre os padrões e os valores fora do padrão e escreva um resumo curto do que eu realmente devo fazer a respeito. Se nada estiver anexado, avise-me em uma linha, em vez de ficar aguardando."
-      },
-      "metrics-dashboard": {
-        "label": "Crie um dashboard de métricas",
-        "prompt": "Crie um dashboard ao vivo com os números que uma empresa como a minha acompanha semanalmente, como um aplicativo web funcional, e envie-me a URL. Aproveite o que puder da memória do projeto e, ao final, liste tudo o que precisou presumir, em vez de parar para me perguntar."
-      },
-      "kpi-wall": {
-        "label": "Crie um painel de KPIs",
-        "prompt": "Crie uma única página que mostre se a empresa está no caminho certo — os cinco números que importam, cada um com sua meta e tendência. Faça um aplicativo web funcional e envie-me a URL."
-      },
-      "sheet-to-app": {
-        "label": "Transforme planilha em app",
-        "prompt": "Estou anexando uma planilha que minha equipe edita manualmente. Transforme-a em um aplicativo web adequado, com um formulário e uma tabela, para que ninguém a desconfigure novamente, e envie-me a URL."
-      },
-      "crm-lite": {
-        "label": "Crie um CRM leve",
-        "prompt": "Crie um CRM leve como um aplicativo web funcional — empresas, contatos, etapa do negócio e próxima ação — preenchido com algumas linhas realistas para que eu possa vê-lo funcionando. Envie-me a URL."
-      },
-      "task-board": {
-        "label": "Crie um quadro de tarefas",
-        "prompt": "Crie um quadro de tarefas como um aplicativo web funcional — com colunas, movimentação entre elas por arrastar e soltar, e memória do que eu fiz. Envie-me a URL."
-      },
-      "intake-form": {
-        "label": "Crie um formulário de coleta",
-        "prompt": "Crie um formulário de coleta como um aplicativo web funcional — com as perguntas que um novo cliente deve responder antes da primeira conversa — e salve as respostas em um local onde eu possa lê-las. Envie-me a URL."
-      },
-      "pricing-calculator": {
-        "label": "Crie uma calculadora de preços",
-        "prompt": "Crie uma calculadora de preços como um aplicativo web funcional para que um potencial cliente possa estimar quanto pagaria e envie-me a URL. Aproveite o que puder da memória do projeto e, ao final, liste tudo o que precisou presumir, em vez de parar para me perguntar."
-      },
-      "feedback-board": {
-        "label": "Crie um quadro de feedback",
-        "prompt": "Crie um quadro de feedback de clientes como um aplicativo web funcional — para enviar uma ideia, votar positivamente e definir um status para cada uma — e envie-me a URL."
-      },
-      "inventory-tracker": {
-        "label": "Criar um controle de estoque",
-        "prompt": "Crie um controle de estoque como um aplicativo web funcional — itens, quantidades, alertas de estoque baixo — e envie a URL."
-      },
-      "status-page": {
-        "label": "Criar uma página de status",
-        "prompt": "Crie uma página de status como um aplicativo web funcional — componentes, estado atual e histórico de incidentes — e envie a URL."
-      },
-      "clean-data": {
-        "label": "Limpar meus dados",
-        "prompt": "Estou anexando uma planilha desorganizada. Limpe-a — colunas consistentes, datas corrigidas, texto sem espaços extras e sem duplicatas — e me forneça um registro de todas as alterações feitas."
-      },
-      "runway": {
-        "label": "Calcular meu runway",
-        "prompt": "Estou anexando nossos números. Calcule nossa taxa de queima e quantos meses de runway temos, mostre os cálculos para que eu possa questioná-los e diga quais são as duas alavancas que mais influenciam esse resultado."
-      },
-      "budget-variance": {
-        "label": "Comparar orçamento e realizado",
-        "prompt": "Estou anexando nosso orçamento e os valores realizados. Mostre onde estamos acima e abaixo do previsto, classifique as diferenças por tamanho e diga quais merecem nossa atenção."
-      },
-      "cashflow-forecast": {
-        "label": "Prever nosso caixa",
-        "prompt": "Estou anexando nossas transações. Crie uma previsão de fluxo de caixa para os próximos seis meses, seja explícito sobre as premissas e sinalize o mês em que nosso caixa ficará apertado."
-      },
-      "unit-economics": {
-        "label": "Calcular a economia unitária",
-        "prompt": "Calcule quanto um cliente realmente nos custa e quanto ele vale — aquisição, entrega, suporte e retenção — e diga qual número devemos corrigir primeiro. Use o que puder da memória do projeto e, ao final, liste tudo o que precisou estimar em vez de parar para me perguntar."
-      },
-      "pricing-model": {
-        "label": "Modelar uma mudança de preço",
-        "prompt": "Modele o que acontece se mudarmos nossos preços — o empacotamento, a matemática por usuário e o efeito na receita em três níveis de adoção. Entregue a planilha e uma recomendação em um parágrafo."
-      },
-      "invoice-reconcile": {
-        "label": "Conciliar minhas faturas",
-        "prompt": "Estou anexando faturas e uma exportação bancária. Faça a correspondência entre elas, liste o que não foi correspondido em ambas as direções e diga o que parece ser uma cobrança duplicada."
-      },
-      "expense-categorise": {
-        "label": "Categorizar nossos gastos",
-        "prompt": "Estou anexando nossas despesas. Categorize-as, detalhe os gastos por categoria e por mês, descubra o que está crescendo mais rápido e indique as três despesas que devo cortar primeiro."
-      },
-      "subscription-audit": {
-        "label": "Encontrar gastos desperdiçados",
-        "prompt": "Estou anexando os extratos dos nossos cartões. Encontre todas as cobranças recorrentes, sinalize as que parecem não utilizadas ou duplicadas e totalize quanto o cancelamento delas economizaria por ano."
-      },
-      "ar-chase": {
-        "label": "Cobrar faturas em aberto",
-        "prompt": "Estou anexando nossas contas a receber. Calcule quem deve quanto e há quanto tempo, depois redija o e-mail de cobrança para cada caso — firme, mas não rude — ordenado pelo valor em risco."
-      },
-      "financial-model": {
-        "label": "Criar um modelo financeiro",
-        "prompt": "Crie um modelo financeiro simples — receita, custos, caixa e runway — orientado por uma aba de premissas que eu possa alterar, com um gráfico do caixa ao longo do tempo. Use o que puder da memória do projeto e, ao final, liste tudo o que precisou estimar em vez de parar para me perguntar."
-      },
-      "cohort-revenue": {
-        "label": "Analisar coortes de receita",
-        "prompt": "Estou anexando dados de receita dos clientes. Crie uma análise de coortes, diga em um parágrafo se a retenção está melhorando e mostre qual coorte mudou."
-      },
-      "headcount-cost": {
-        "label": "Planejar custos de contratação",
-        "prompt": "Crie um plano de contratação em uma planilha — cargo, quando contratar, custo total e o que isso viabiliza — totalizado por mês em relação ao nosso runway."
-      },
-      "margin-analysis": {
-        "label": "Encontre minhas melhores margens",
-        "prompt": "Estou anexando dados de vendas. Calcule a margem por produto, cliente e canal e diga o que deveríamos vender mais e o que está silenciosamente dando prejuízo."
-      },
-      "board-metrics": {
-        "label": "Monte métricas do conselho",
-        "prompt": "Monte o pacote de números que um conselho espera — crescimento, queima de caixa, runway, retenção e pipeline — como gráficos, com uma leitura de uma linha para cada um. Use o que puder da memória do projeto e, no final, liste tudo o que precisou presumir, em vez de parar para me perguntar."
-      },
-      "pitch-deck": {
-        "label": "Monte uma apresentação",
-        "prompt": "Monte uma apresentação de 10 slides apresentando minha empresa: o que fazemos, para quem é, o problema, como funciona e por que agora. Escreva o texto e crie os slides — não me entregue apenas um esboço. Use o que puder da memória do projeto e, no final, liste tudo o que precisou presumir, em vez de parar para me perguntar."
-      },
-      "deck-from-doc": {
-        "label": "Converta doc em apresentação",
-        "prompt": "Estou anexando um documento. Transforme-o em uma apresentação que funcione em uma reunião — uma ideia por slide, com notas do apresentador abaixo — em vez de colar os parágrafos nos slides."
-      },
-      "investor-update": {
-        "label": "Atualização para investidores",
-        "prompt": "Monte a atualização deste mês para investidores — destaques, métricas, pontos negativos e em que preciso de ajuda. Busque os números em vez de me pedir que eu os forneça. Use o que puder da memória do projeto e, no final, liste tudo o que precisou presumir, em vez de parar para me perguntar."
-      },
-      "board-deck": {
-        "label": "Apresentação para o conselho",
-        "prompt": "Monte uma apresentação para o conselho — onde estamos em relação ao plano, as três decisões que preciso do conselho e os riscos que não vou esconder. Use o que puder da memória do projeto e, no final, liste tudo o que precisou presumir, em vez de parar para me perguntar."
-      },
-      "sales-deck": {
-        "label": "Monte uma apresentação de vendas",
-        "prompt": "Monte uma apresentação de vendas para uma primeira conversa — o problema deles, nossa resposta, evidências e o próximo passo — com notas do apresentador. Use o que puder da memória do projeto e, no final, liste tudo o que precisou presumir, em vez de parar para me perguntar."
-      },
-      "data-slide": {
-        "label": "Transforme números em slides",
-        "prompt": "Estou anexando dados. Monte os três slides que contam a história deles — um gráfico por slide e uma frase de conclusão para cada um — prontos para apresentar."
-      },
-      "pdf-report": {
-        "label": "Relatório PDF profissional",
-        "prompt": "Pegue o que temos trabalhado e organize-o como um relatório PDF de verdade — capa, sumário, números de página e gráficos — que eu possa enviar a um cliente sem editar."
-      },
-      "proposal": {
-        "label": "Escreva uma proposta",
-        "prompt": "Escreva uma proposta para o cliente — o problema conforme ele o descreveu, o que faríamos, o plano e o preço, deixando o número como um placeholder. Use o que puder da memória do projeto e, no final, liste tudo o que precisou presumir, em vez de parar para me perguntar."
-      },
-      "one-pager": {
-        "label": "Escreva um one-pager",
-        "prompt": "Escreva um one-pager sobre minha empresa que eu possa enviar antes de uma reunião — o que fazemos, para quem, por que importa e o que fazer em seguida. Use o que puder da memória do projeto e, no final, liste tudo o que precisou presumir, em vez de parar para me perguntar."
-      },
-      "contract-explain": {
-        "label": "Explique um contrato",
-        "prompt": "Estou anexando um contrato. Explique-o em linguagem simples — as obrigações, o dinheiro, as condições de rescisão e as datas — e depois liste as perguntas que devo levar a um advogado. Não me diga se devo assinar."
-      },
-      "meeting-actions": {
-        "label": "Transforme anotações em ações",
-        "prompt": "Vou colar minhas anotações da reunião a seguir. Transforme-as em decisões, responsáveis e datas, e diga claramente o que ficou sem resolução."
-      },
-      "weekly-report": {
-        "label": "Escreva o relatório semanal",
-        "prompt": "Escreva o relatório da empresa desta semana — o que avançou, o que não avançou e com o que devo me preocupar — consultando o repositório e a memória em vez de me perguntar."
-      },
-      "case-study": {
-        "label": "Escreva um estudo de caso",
-        "prompt": "Escreva um estudo de caso de cliente — a situação, o que mudou e o resultado — usando um codinome se eu não tiver fornecido um cliente real. Publique-o como uma página e me envie a URL."
-      },
-      "hard-email": {
-        "label": "Escreva o e-mail difícil",
-        "prompt": "Ajude-me a escrever o e-mail que venho adiando — um aumento de preço, um atraso ou uma notícia ruim. Pergunte qual deles em uma única linha e, em seguida, dê-me três versões, da mais direta à mais delicada."
-      },
-      "competitor-teardown": {
-        "label": "Analise um concorrente a fundo",
-        "prompt": "Escolha nosso concorrente mais próximo e faça uma análise completa: posicionamento, preços, o que ele lança, o que os clientes elogiam e criticam e os dois pontos em que podemos superá-lo. Cite todas as fontes."
-      },
-      "pricing-benchmark": {
-        "label": "Compare nossos preços",
-        "prompt": "Pesquise quanto produtos comparáveis cobram, organize tudo em uma única tabela com os pacotes e o cálculo por assento e diga onde nos posicionamos e se isso é intencional."
-      },
-      "lead-list": {
-        "label": "Monte uma lista de leads",
-        "prompt": "Monte uma lista de 25 empresas que se encaixem no perfil dos nossos clientes, explicando por que cada uma se encaixa e indicando a melhor pessoa para contatar. Em uma planilha, com fontes."
-      },
-      "investor-list": {
-        "label": "Monte uma lista de investidores",
-        "prompt": "Monte uma lista de investidores que investem em empresas como a minha no nosso estágio — fundo, sócio, um investimento recente relevante e o caminho mais fácil para chegar até eles. Em uma planilha, com fontes."
-      },
-      "market-sizing": {
-        "label": "Dimensione meu mercado",
-        "prompt": "Dimensione o mercado para o qual estou vendendo, de cima para baixo e de baixo para cima, e mostre os cálculos e as fontes para que eu possa questionar os números."
-      },
-      "review-mining": {
-        "label": "Analise avaliações rivais",
-        "prompt": "Leia as avaliações públicas dos nossos concorrentes, extraia o que as pessoas elogiam e criticam repetidamente e transforme isso nas três coisas que devemos dizer no nosso site."
-      },
-      "industry-catchup": {
-        "label": "Atualize-me sobre meu setor",
-        "prompt": "Atualize-me sobre meu setor no último mês — o que foi lançado, quem captou investimento e o que mudou — depois diga quais dois itens realmente importam para nós e por quê."
-      },
-      "keyword-research": {
-        "label": "Buscas dos compradores",
-        "prompt": "Pesquise o que nossos compradores realmente buscam, agrupe por intenção e diga quais são as cinco páginas que vale a pena escrever primeiro. Em uma planilha, com fontes."
-      },
-      "buyer-research": {
-        "label": "Pesquise meus compradores",
-        "prompt": "Pesquise as pessoas que compram produtos como o meu — onde elas se reúnem, do que reclamam e quais palavras usam para descrever o problema. Cite as fontes."
-      },
-      "regulation-scan": {
-        "label": "Analise as regras aplicáveis",
-        "prompt": "Pesquise as regras e normas aplicáveis a uma empresa como a minha, resuma em linguagem simples o que cada uma exige e sinalize o que devo levar a um advogado em vez de tomar alguma medida por conta própria."
-      },
-      "events-list": {
-        "label": "Encontre eventos relevantes",
-        "prompt": "Encontre as conferências e encontros onde nossos compradores realmente estarão este ano — data, local, custo e se vale a pena participar. Em uma planilha."
-      },
-      "landing-page": {
-        "label": "Publique uma landing page",
-        "prompt": "Crie uma landing page para meu produto e publique-a. Aproveite o que puder da memória do projeto e, no final, liste tudo o que precisou presumir, em vez de parar para me perguntar. Envie-me a URL ativa quando estiver no ar."
-      },
-      "pricing-page": {
-        "label": "Publique uma página de preços",
-        "prompt": "Escreva e publique uma página de preços — os níveis, o que está incluído em cada um e as objeções que a página precisa responder. Aproveite o que puder da memória do projeto e, no final, liste tudo o que precisou presumir, em vez de parar para me perguntar."
-      },
-      "docs-site": {
-        "label": "Publique um site de documentação",
-        "prompt": "Crie e publique um pequeno site de documentação para meu produto — primeiros passos, os conceitos principais e um tutorial. Aproveite o que puder da memória do projeto e, no final, liste tudo o que precisou presumir, em vez de parar para me perguntar."
-      },
-      "changelog-page": {
-        "label": "Publique um changelog",
-        "prompt": "Crie e publique uma página de changelog e escreva as entradas recentes com base no histórico deste repositório, em vez de me perguntar o que foi lançado."
-      },
-      "comparison-page": {
-        "label": "Publique uma página comparativa",
-        "prompt": "Crie e publique uma comparação honesta entre nós e nossa alternativa mais próxima — mostrando em que cada um se destaca. Pesquise o outro lado em vez de inventar informações."
-      },
-      "seo-pass": {
-        "label": "Faça uma revisão de SEO",
-        "prompt": "Audite meu site em relação a SEO — títulos, descrições, headings, texto alternativo, links internos e sitemap — corrija o que puder e liste o que precisa de uma decisão minha."
-      },
-      "homepage-rewrite": {
-        "label": "Reescreva minha homepage",
-        "prompt": "Reescreva minha homepage para que a primeira tela diga o que fazemos, para quem é e qual é o próximo passo. Publique-a e mostre o antes e o depois lado a lado."
-      },
-      "waitlist-page": {
-        "label": "Crie página de lista de espera",
-        "prompt": "Crie e publique uma página de lista de espera para algo que estou prestes a lançar — um título, a promessa e um campo para capturar um e-mail. Aproveite o que puder da memória do projeto e, no final, liste tudo o que precisou presumir, em vez de parar para me perguntar."
-      },
-      "blog-post": {
-        "label": "Escreva e publique um post",
-        "prompt": "Escreva um post sobre algo que minha empresa realmente conhece, publique-o em nosso site e envie-me a URL. Escolha o tema mais útil para nossos compradores e explique por quê."
-      },
-      "faq-page": {
-        "label": "Escreva uma página de FAQ",
-        "prompt": "Escreva e publique uma FAQ respondendo às dez perguntas que um comprador de primeira viagem realmente faz. Aproveite o que puder da memória do projeto e, no final, liste tudo o que precisou presumir, em vez de parar para me perguntar."
-      },
-      "careers-page": {
-        "label": "Crie uma página de carreiras",
-        "prompt": "Crie e publique uma página de carreiras — como trabalhamos, para quais funções estamos contratando e como se candidatar. Aproveite o que puder da memória do projeto e, no final, liste tudo o que precisou presumir, em vez de parar para me perguntar."
-      },
-      "storefront-copy": {
-        "label": "Escreva o texto da listagem",
-        "prompt": "Escreva o texto da nossa listagem para um marketplace ou uma loja de aplicativos — o título, a apresentação curta, a descrição completa e as capturas de tela que devo fazer."
-      },
-      "cold-email": {
-        "label": "Crie uma sequência de emails",
-        "prompt": "Escreva uma sequência de quatro cold emails para nosso cliente ideal — curtos, específicos, sem bajulação — e diga o objetivo de cada um."
-      },
-      "launch-announcement": {
-        "label": "Escreva um anúncio de lançamento",
-        "prompt": "Escreva o anúncio de lançamento da nossa próxima versão em três formatos — um post, um e-mail e uma linha — todos transmitindo a mesma mensagem."
-      },
-      "newsletter": {
-        "label": "Rascunhe a newsletter",
-        "prompt": "Rascunhe a newsletter de clientes deste mês — o que foi lançado, o que aprendemos e uma coisa útil que eles podem colocar em prática."
-      },
-      "social-calendar": {
-        "label": "Planeje o conteúdo",
-        "prompt": "Planeje um mês de conteúdo — tema, peça, canal e data — em uma planilha que eu possa entregar a outra pessoa."
-      },
-      "linkedin-posts": {
-        "label": "Escreva posts para uma semana",
-        "prompt": "Escreva posts para uma semana sobre o que estamos desenvolvendo — uma ideia por post, escritos como uma pessoa, sem iscas para gerar engajamento."
-      },
-      "positioning": {
-        "label": "Aprimore nosso posicionamento",
-        "prompt": "Escreva nosso posicionamento: a categoria, para quem é, a alternativa e a única coisa que fazemos melhor. Dê-me três opções, recomende uma e explique por quê."
-      },
-      "icp-definition": {
-        "label": "Defina nosso cliente ideal",
-        "prompt": "Descreva para quem realmente somos — a empresa, a pessoa e o gatilho que faz essa pessoa procurar uma solução — e para quem devemos dizer não."
-      },
-      "objection-handling": {
-        "label": "Responda às objeções",
-        "prompt": "Liste as objeções que recebemos nas vendas e escreva a resposta honesta para cada uma — sem desconversar."
-      },
-      "win-loss": {
-        "label": "Analise ganhos e perdas",
-        "prompt": "Estou anexando nossos negócios recentes. Encontre os padrões no que ganhamos e perdemos e diga qual mudança teria maior impacto na taxa de conversão."
-      },
-      "interview-guide": {
-        "label": "Escreva perguntas para clientes",
-        "prompt": "Escreva as perguntas para uma entrevista com um cliente que realmente nos ensinem algo — abertas, sem induzir respostas — e diga o que devo observar em cada resposta."
-      },
-      "referral-program": {
-        "label": "Crie um programa de indicação",
-        "prompt": "Crie um programa de indicação para meu produto — o incentivo, a mecânica e o texto — e diga como ele poderia ser abusado."
-      },
-      "brand-voice": {
-        "label": "Escreva nosso guia de voz",
-        "prompt": "Escreva nosso guia de voz de marca — como soamos e como não soamos — com reescritas de antes e depois de textos reais do nosso site."
-      },
-      "code-review": {
-        "label": "Revise meu código",
-        "prompt": "Revise o código neste repositório como um engenheiro sênior faria — priorize a correção e depois a clareza. Forneça uma lista priorizada, começando pelo pior problema, e abra uma solicitação de alteração para as correções das quais você tem certeza."
-      },
-      "write-tests": {
-        "label": "Escreva os testes que faltam",
-        "prompt": "Encontre o código neste repositório que causaria mais problemas se quebrasse e não tem testes, escreva os testes e abra uma solicitação de alteração. Diga o que você deliberadamente não cobriu e por quê."
-      },
-      "fix-bug": {
-        "label": "Corrija um bug que vou descrever",
-        "prompt": "Vou descrever um bug. Reproduza-o primeiro neste repositório, depois corrija a causa em vez do sintoma, adicione um teste que o teria detectado e abra uma solicitação de alteração."
-      },
-      "explain-codebase": {
-        "label": "Explique este codebase",
-        "prompt": "Apresente este codebase — o que ele faz, como está organizado, onde fica a lógica importante e quais são as três coisas que confundiriam um engenheiro novo."
-      },
-      "refactor-file": {
-        "label": "Organize um arquivo confuso",
-        "prompt": "Encontre o arquivo neste repositório que está fazendo coisas demais, divida-o seguindo suas separações naturais sem alterar o comportamento e abra uma solicitação de alteração. Comprove que o comportamento não mudou usando os testes."
-      },
-      "deps-upgrade": {
-        "label": "Atualize minhas dependências",
-        "prompt": "Verifique as dependências deste repositório em busca de versões desatualizadas e vulneráveis, atualize o que for seguro, execute os testes e abra uma solicitação de alteração listando tudo que exige uma decisão humana."
-      },
-      "readme": {
-        "label": "Escreva o README",
-        "prompt": "Escreva o README que este repositório deveria ter — o que ele é, como executá-lo e como trabalhar nele — com base no código, não em suposições. Abra uma solicitação de alteração."
-      },
-      "ci-setup": {
-        "label": "Configure a CI",
-        "prompt": "Configure a integração contínua para este repositório — instalação, verificação de tipos, lint e testes — para que uma solicitação de alteração me diga se é segura antes que eu a leia. Abra isso como uma solicitação de alteração."
-      },
-      "api-client": {
-        "label": "Escreva um cliente de API",
-        "prompt": "Escreva um cliente tipado para uma API que preciso chamar, já com tratamento de erros e novas tentativas, além de um teste usando uma resposta registrada. Pergunte qual API em uma linha."
-      },
-      "security-review": {
-        "label": "Revise o código por riscos",
-        "prompt": "Revise este repositório em busca dos problemas de segurança que realmente acontecem — segredos no código-fonte, entradas não validadas, verificações de autorização ausentes — e abra uma solicitação de alteração para o que você puder corrigir com segurança."
-      },
-      "perf-audit": {
-        "label": "Encontre o que está lento",
-        "prompt": "Encontre os caminhos mais lentos deste projeto, meça em vez de supor e diga qual mudança ajudaria mais. Mostre os números antes e depois."
-      },
-      "error-handling": {
-        "label": "Adicione tratamento de erros",
-        "prompt": "Encontre onde este código falha silenciosamente ou lança algo que uma pessoa não consegue resolver, corrija para que toda falha diga o que aconteceu e o que fazer, e abra uma solicitação de alteração."
-      },
-      "db-migration": {
-        "label": "Crie uma migração de banco",
-        "prompt": "Escreva a migração de que preciso para o esquema deste projeto, incluindo o rollback, e diga o que aconteceria com as linhas existentes. Abra uma solicitação de alteração em vez de executá-la."
-      },
-      "api-docs": {
-        "label": "Documente minha API",
-        "prompt": "Documente a API deste projeto a partir do código — todas as rotas, suas entradas, respostas e erros — e publique como uma página que eu possa enviar para alguém."
-      },
-      "dead-code": {
-        "label": "Encontre código morto",
-        "prompt": "Encontre o código deste repositório que não é mais alcançado, comprove isso usando o grafo de importações em vez de apenas olhar, e abra uma solicitação de alteração para removê-lo."
-      },
-      "branch-explain": {
-        "label": "Explique o que mudou",
-        "prompt": "Leia o histórico recente deste repositório e diga o que realmente mudou e por quê, na ordem que faça sentido para alguém que estava ausente."
-      },
-      "api-to-sheet": {
-        "label": "Leve uma API para uma planilha",
-        "prompt": "Extraia de uma API os dados de que preciso e mantenha-os em uma planilha que eu consiga ler de verdade. Pergunte qual API em uma linha, depois crie tudo e mostre a primeira extração."
-      },
-      "recurring-export": {
-        "label": "Agende exportação recorrente",
-        "prompt": "Configure uma exportação que seja executada conforme uma agenda e deixe os dados onde preciso, como um gatilho em `kortix.yaml`. Mostre a saída de uma execução antes de deixá-la ativada."
-      },
-      "page-monitor": {
-        "label": "Monitore mudanças na página",
-        "prompt": "Monitore uma página importante para mim e avise apenas quando algo significativo mudar — não a cada alteração de espaço em branco. Configure isso como um gatilho agendado e mostre a diferença de hoje."
-      },
-      "scraper": {
-        "label": "Crie um scraper para mim",
-        "prompt": "Crie um scraper para um site que eu indicar, coloque os resultados em algum lugar que eu possa consultar e explique claramente o que ele fará quando a estrutura da página mudar."
-      },
-      "reconcile-systems": {
-        "label": "Concilie dois sistemas",
-        "prompt": "Estou anexando exportações de dois sistemas que deveriam estar de acordo. Encontre todas as linhas em que eles divergem, diga qual lado parece estar errado e me dê a lista para corrigir."
-      },
-      "alert-threshold": {
-        "label": "Avise-me quando um número mudar",
-        "prompt": "Configure uma verificação que monitore um número importante para mim e me avise quando ele ultrapassar um limite que eu definir — não um relatório diário que vou parar de ler. Adicione isso como um gatilho."
-      },
-      "form-to-sheet": {
-        "label": "Formulário para planilha",
-        "prompt": "Pegue as respostas de um formulário que já usamos e coloque-as automaticamente em uma planilha, sem duplicatas e com os tipos corretos."
-      },
-      "digest-sources": {
-        "label": "Resuma minhas fontes diariamente",
-        "prompt": "Escolha as poucas fontes que realmente preciso acompanhar e configure um gatilho diário que as leia e me envie apenas o que mudou e por que isso importa."
-      },
-      "job-description": {
-        "label": "Escrever uma descrição de vaga",
-        "prompt": "Escreva a descrição da vaga para a função que eu mais preciso preencher — o que a pessoa realmente fará nos primeiros 90 dias, não uma lista de habilidades desejáveis. Aproveite o que puder da memória do projeto e, no final, liste tudo o que precisou supor, em vez de parar para me fazer perguntas."
-      },
-      "cv-screen": {
-        "label": "Triar currículos para mim",
-        "prompt": "Estou anexando currículos e a descrição da vaga. Avalie cada um com base no que o trabalho realmente exige, classifique-os e diga claramente com quais dois eu devo conversar e por quê."
-      },
-      "interview-plan": {
-        "label": "Planeje as entrevistas",
-        "prompt": "Crie o processo de entrevistas para uma função — quem pergunta o quê, em que ordem e o que cada etapa pretende descobrir. Inclua as perguntas."
-      },
-      "role-scorecard": {
-        "label": "Escrever um scorecard da função",
-        "prompt": "Escreva um scorecard para uma função — os resultados pelos quais ela é responsável, como saberíamos que está indo bem e como seria uma situação de fracasso aos 90 dias. Aproveite o que puder da memória do projeto e, no final, liste tudo o que precisou supor, em vez de parar para me fazer perguntas."
-      },
-      "onboarding-plan": {
-        "label": "Crie um plano 30-60-90",
-        "prompt": "Escreva um plano de 30-60-90 dias para alguém que está entrando na minha empresa — o que essa pessoa deve ler, com quem deve se reunir e pelo que será responsável ao final de cada etapa. Aproveite o que puder da memória do projeto e, no final, liste tudo o que precisou supor, em vez de parar para me fazer perguntas."
-      },
-      "team-handbook": {
-        "label": "Escreva o manual da equipe",
-        "prompt": "Escreva o manual que uma pessoa nova lê na primeira semana — como trabalhamos, onde as coisas ficam, a quem pedir ajuda e como é um bom trabalho — com base no que já está neste repositório e na memória."
-      },
-      "reference-questions": {
-        "label": "Perguntas para referências",
-        "prompt": "Escreva as perguntas de checagem de referências que realmente me diriam algo — específicas e difíceis de responder com banalidades — além de explicar como soaria uma resposta ruim."
-      },
-      "comp-bands": {
-        "label": "Criar faixas de remuneração",
-        "prompt": "Pesquise quanto as pessoas nas nossas funções recebem no nosso mercado e crie faixas salariais honestas, com a justificativa. Cite suas fontes."
-      },
-      "review-template": {
-        "label": "Escrever um modelo de avaliação",
-        "prompt": "Escreva o modelo de avaliação de desempenho para a minha empresa — curto, específico e focado em resultados, não em personalidade — além de explicar como conduzir a conversa."
-      },
-      "offer-letter": {
-        "label": "Criar uma carta de oferta",
-        "prompt": "Crie uma carta de oferta para uma função, deixando os valores como placeholders, e sinalize quais cláusulas um advogado deveria analisar, em vez de decidir por conta própria."
-      },
-      "help-centre": {
-        "label": "Criar uma central de ajuda",
-        "prompt": "Crie e publique uma central de ajuda para o meu produto — com os artigos de que as pessoas realmente precisam, escritos com base no que está neste repositório — e envie-me a URL."
-      },
-      "canned-replies": {
-        "label": "Escreva respostas prontas",
-        "prompt": "Escreva as respostas salvas para as perguntas que respondemos repetidamente — úteis, humanas e curtas o suficiente para que alguém realmente as use."
-      },
-      "support-triage": {
-        "label": "Faça a triagem do suporte",
-        "prompt": "Estou anexando nossos tickets em aberto. Separe-os entre o que precisa de mim, o que precisa de uma resposta e o que pode ser encerrado, e crie as respostas para o segundo grupo."
-      },
-      "incident-note": {
-        "label": "Nota de incidente para clientes",
-        "prompt": "Algo deu errado e preciso avisar os clientes. Escreva a nota — o que aconteceu, quem foi afetado e o que estamos fazendo — com honestidade, sem rodeios e sem transferir a culpa."
-      },
-      "faq-from-tickets": {
-        "label": "Transformar tickets em um FAQ",
-        "prompt": "Estou anexando nossos tickets de suporte. Encontre as perguntas que continuam se repetindo, escreva as respostas uma vez e publique-as como uma página de FAQ."
-      },
-      "churn-analysis": {
-        "label": "Entenda por que as pessoas saem",
-        "prompt": "Estou anexando nossos dados de churn e quaisquer motivos de cancelamento. Encontre os padrões reais, separe-os do ruído e diga qual é a única coisa que vale a pena corrigir primeiro."
-      },
-      "nps-analysis": {
-        "label": "Analise o feedback dos clientes",
-        "prompt": "Estou anexando o feedback dos clientes. Agrupe-o por tema, diga o que as pessoas adoram e o que continuam pedindo, e cite as frases que valem a pena colocar na parede."
-      },
-      "onboarding-emails": {
-        "label": "Escreva e-mails de onboarding",
-        "prompt": "Escreva os e-mails que um novo cliente recebe nas duas primeiras semanas — cada um conquistando seu lugar ao ensinar algo, não apenas ao fazer um acompanhamento. Aproveite o que puder da memória do projeto e, ao final, liste tudo o que precisou supor, em vez de parar para me perguntar."
-      },
-      "refund-policy": {
-        "label": "Crie política de reembolso",
-        "prompt": "Elabore uma política de reembolso justa e inequívoca, publique-a e sinalize tudo o que um advogado deveria revisar antes de ela entrar no ar."
-      },
-      "vendor-list": {
-        "label": "Fornecedores e renovações",
-        "prompt": "Descubra todas as ferramentas e fornecedores pelos quais pagamos, quanto custa cada um e quando ocorre a renovação. Coloque tudo em uma planilha e sinalize as renovações dos próximos 60 dias."
-      },
-      "meeting-agenda": {
-        "label": "Escreva a pauta da reunião",
-        "prompt": "Escreva a pauta de uma próxima reunião que terei — as decisões a tomar, o material a ler antes e um tempo previsto para cada item."
-      },
-      "ops-review": {
-        "label": "Faça minha revisão semanal",
-        "prompt": "Faça minha revisão semanal: busque o que mudou neste repositório e na memória, diga o que avançou, o que atrasou e quais são as três coisas que merecem minha atenção na segunda-feira."
-      },
-      "process-map": {
-        "label": "Mapeie o fluxo do nosso trabalho",
-        "prompt": "Mapeie como o trabalho realmente flui pela minha empresa, da solicitação à entrega, identifique onde ele fica parado e proponha a única mudança que mais ajudaria. Aproveite o que puder da memória do projeto e, ao final, liste tudo o que precisou supor, em vez de parar para me perguntar."
-      },
-      "okr-draft": {
-        "label": "Elabore as metas deste trimestre",
-        "prompt": "Elabore as metas deste trimestre — três objetivos, resultados mensuráveis para cada um e o que explicitamente não faremos. Aproveite o que puder da memória do projeto e, ao final, liste tudo o que precisou supor, em vez de parar para me perguntar."
-      },
-      "decision-log": {
-        "label": "Comece um registro de decisões",
-        "prompt": "Leia o histórico e a memória deste repositório, reconstrua as decisões que de fato foram tomadas e os motivos, e registre-as em um log de decisões ao qual eu possa continuar adicionando informações."
-      },
-      "risk-register": {
-        "label": "Crie um registro de riscos",
-        "prompt": "Liste o que poderia realisticamente dar errado para uma empresa como a minha, classifique os riscos por probabilidade e impacto e indique a medida mais barata para reduzir cada um. Aproveite o que puder da memória do projeto e, ao final, liste tudo o que precisou supor, em vez de parar para me perguntar."
-      },
-      "asset-inventory": {
-        "label": "Inventarie nossas contas",
-        "prompt": "Descubra todas as contas, domínios e serviços dos quais esta empresa depende, quem controla cada um e o que deixaria de funcionar se perdêssemos o acesso. Aproveite o que puder da memória do projeto e, ao final, liste tudo o que precisou supor, em vez de parar para me perguntar."
-      },
-      "sop-library": {
-        "label": "Crie nossa biblioteca de POPs",
-        "prompt": "Transforme as tarefas que minha empresa realiza repetidamente em procedimentos escritos, organizados para que alguém encontre o procedimento certo em dez segundos. Comece pelos três de maior valor."
-      },
-      "calendar-audit": {
-        "label": "Audite como uso meu tempo",
-        "prompt": "Estou anexando a exportação do meu calendário. Diga onde meu tempo realmente vai, quais reuniões não têm um resultado claro e o que devo cortar ou encurtar."
-      },
-      "north-star": {
-        "label": "Defina nossa métrica norteadora",
-        "prompt": "Descubra o único número que melhor indica se esta empresa está funcionando, defenda-o em comparação com os dois candidatos seguintes e diga como o mediríamos. Aproveite o que puder da memória do projeto e, ao final, liste tudo o que precisou supor, em vez de parar para me perguntar."
-      },
-      "tracking-plan": {
-        "label": "Plano para rastrear eventos",
-        "prompt": "Escreva o plano de rastreamento de eventos do meu produto — os eventos que vale a pena capturar, suas propriedades e as perguntas que cada um responde. Ignore os que ninguém vai consultar."
-      },
-      "ab-test-design": {
-        "label": "Crie um teste A/B",
-        "prompt": "Crie um experimento para uma mudança que estou considerando — a hipótese, a métrica, o tamanho da amostra e por quanto tempo ele precisa rodar para que seus resultados tenham significado."
-      },
-      "experiment-analysis": {
-        "label": "Analise um experimento",
-        "prompt": "Estou anexando os resultados de um experimento. Diga-me se a diferença é real, quanto ela valeria se lançássemos a mudança e seja honesto se a resposta for inconclusiva."
-      },
-      "funnel-analysis": {
-        "label": "Encontre onde o funil vaza",
-        "prompt": "Estou anexando dados do funil. Encontre a etapa em que perdemos mais pessoas, quantifique quanto vale corrigi-la e sugira o que tentar."
-      },
-      "retention-curve": {
-        "label": "Trace nossa retenção",
-        "prompt": "Estou anexando dados de uso. Trace a retenção ao longo do tempo, diga-me se a curva se estabiliza e o que isso indica sobre termos encontrado o product-market fit."
-      },
-      "segment-analysis": {
-        "label": "Ache os melhores clientes",
-        "prompt": "Estou anexando dados de clientes. Descubra qual segmento tem a melhor retenção e paga mais, e diga-me o que eles têm em comum e que poderíamos segmentar deliberadamente."
-      },
-      "dashboard-spec": {
-        "label": "Decida o que medir",
-        "prompt": "Diga-me quais números esta empresa realmente deveria acompanhar semanalmente e quais são métricas de vaidade; depois, crie o dashboard para os que restarem."
-      },
-      "brand-palette": {
-        "label": "Escolha uma paleta de marca",
-        "prompt": "Monte uma paleta de marca e uma escala tipográfica para minha empresa — as cores, onde cada uma é usada e as taxas de contraste — como uma referência de uma página que eu possa entregar a qualquer pessoa."
-      },
-      "design-review": {
-        "label": "Revise meu design",
-        "prompt": "Analise meu site ou produto e revise o design — hierarquia, espaçamento, tipografia, cor e contraste. Dê-me uma lista priorizada, começando pelo pior problema, com o que deve ser alterado."
-      },
-      "logo-brief": {
-        "label": "Escreva um briefing de logo",
-        "prompt": "Escreva o briefing que eu entregaria a um designer para criar nosso logo — o que a empresa é, a sensação que deve transmitir, o que evitar e três direções que valem a pena explorar. Aproveite o que puder da memória do projeto e, no final, liste tudo que você precisou supor em vez de parar para me perguntar."
-      },
-      "slide-template": {
-        "label": "Crie um modelo de slides",
-        "prompt": "Crie um modelo reutilizável de slides para minha empresa — layouts de título, seção, conteúdo, métrica e citação — e salve-o para que futuras apresentações comecem a partir dele."
-      },
-      "social-templates": {
-        "label": "Crie modelos para redes sociais",
-        "prompt": "Crie os modelos de imagem que reutilizamos nas publicações das redes sociais, usando nossas próprias cores e tipografia, e salve-os para que fiquem a uma edição de estarem prontos."
-      },
-      "email-template": {
-        "label": "Crie um modelo de e-mail",
-        "prompt": "Crie o modelo de e-mail HTML que enviamos — legível no celular, com degradação elegante e sem exigir imagens para fazer sentido — e salve-o no repositório."
-      },
-      "ui-audit": {
-        "label": "Audite a consistência da UI",
-        "prompt": "Percorra nosso produto e encontre onde a mesma coisa aparece diferente em dois lugares — botões, espaçamento, texto e estados — e liste as correções começando pelas mais urgentes."
-      },
-      "icon-set": {
-        "label": "Escolha um conjunto de ícones",
-        "prompt": "Escolha um conjunto de ícones que combine com nossa marca, explique por que ele combina e mostre-o aplicado aos dez lugares em que mais usamos ícones."
-      },
-      "privacy-policy": {
-        "label": "Crie política de privacidade",
-        "prompt": "Redija uma política de privacidade que descreva o que realmente fazemos com os dados, em vez de usar texto genérico, e liste todas as afirmações que um advogado precisa confirmar antes de ela entrar em vigor."
-      },
-      "terms-of-service": {
-        "label": "Redigir termos de serviço",
-        "prompt": "Redija termos de serviço para meu produto em linguagem simples e sinalize todas as cláusulas que precisam ser avaliadas por um advogado, em vez de decidir por conta própria."
-      },
-      "security-questionnaire": {
-        "label": "Questionário de segurança",
-        "prompt": "Estou anexando um questionário de segurança de um cliente. Redija respostas honestas com base no que é realmente verdade sobre este projeto e marque claramente tudo o que eu preciso verificar por conta própria."
-      },
-      "dpa-checklist": {
-        "label": "Verifique contratos de dados",
-        "prompt": "Liste os contratos de tratamento de dados de que uma empresa como a minha normalmente precisa, o que cada um abrange e quais parecem estar faltando. Sinalize o que devo levar a um advogado."
-      },
-      "sow-draft": {
-        "label": "Redigir um escopo de trabalho",
-        "prompt": "Redija um escopo de trabalho — entregáveis, marcos, o que está fora do escopo e o que preciso do cliente. Sinalize tudo que um advogado deveria analisar. Aproveite o que puder da memória do projeto e, no final, liste tudo o que precisou presumir, em vez de parar para me perguntar."
-      },
-      "nda-explain": {
-        "label": "Explicar um NDA",
-        "prompt": "Estou anexando um NDA. Explique em linguagem simples com o que eu estaria concordando, o que há de incomum nele e quais perguntas fazer antes de assinar. Não me diga se devo assinar."
-      },
-      "plan-week": {
-        "label": "Planejar minha semana",
-        "prompt": "Veja o que realmente está acontecendo neste projeto e planeje minha semana — o que importa, o que pode esperar e ao que devo dizer não. Dê uma opinião clara."
-      },
-      "meeting-prep": {
-        "label": "Preparar-me para uma reunião",
-        "prompt": "Tenho uma reunião marcada. Pesquise com quem vou me reunir, reúna o que já sabemos sobre essa pessoa na memória e prepare um briefing de uma página com as três perguntas que devo fazer."
-      },
-      "catch-up": {
-        "label": "Dizer o que perdi",
-        "prompt": "Estive fora. Diga-me o que aconteceu neste projeto enquanto eu estava ausente, o que precisa de uma decisão minha e o que está pegando fogo — nessa ordem."
-      },
-      "draft-replies": {
-        "label": "Redigir minhas respostas",
-        "prompt": "Estou anexando mensagens às quais preciso responder. Redija cada resposta com a minha voz, começando pela versão mais curta aceitável, e sinalize as duas que devo tratar pessoalmente."
-      },
-      "summarise-thread": {
-        "label": "Resumir uma conversa longa",
-        "prompt": "Estou anexando uma conversa longa. Diga-me o que foi realmente acordado, o que continua em aberto e o que devo a alguém — e pule a conversa fiada."
-      },
-      "daily-standup": {
-        "label": "Escrever meu standup",
-        "prompt": "Leia o que realmente mudou neste projeto desde ontem e escreva meu standup com base nas evidências — concluído, fazendo, bloqueado — em vez de me perguntar."
-      },
-      "follow-ups": {
-        "label": "Cobrar meus acompanhamentos",
-        "prompt": "Revise as sessões recentes e a memória, encontre tudo que eu disse que faria e ainda não fiz e me dê a lista na ordem em que devo resolver cada item."
-      },
-      "reading-digest": {
-        "label": "Resumir o que salvei",
-        "prompt": "Estou anexando links e documentos que salvei e nunca li. Leia-os por mim, diga-me quais dois valeram a pena e faça um resumo adequado deles."
-      },
-      "explain-concept": {
-        "label": "Explicar isto à minha equipe",
-        "prompt": "Explique algo técnico à minha equipe usando uma linguagem que eles realmente consigam acompanhar — sem jargão, com um exemplo prático completo e as duas coisas que as pessoas geralmente entendem errado. Pergunte o tema em uma linha."
-      },
-      "training-course": {
-        "label": "Criar um curso de treinamento",
-        "prompt": "Crie um curso curto que ensine alguém a realizar uma tarefa na minha empresa de ponta a ponta — as lições, os exercícios e como essa pessoa saberá que aprendeu. Escolha a tarefa que traria mais benefícios."
-      },
-      "glossary": {
-        "label": "Escrever nosso glossário",
-        "prompt": "Escreva o glossário dos termos usados pela minha empresa — incluindo aqueles que usamos de forma diferente de todo mundo — com base no que já existe neste repositório e na memória."
-      },
-      "how-to-guide": {
-        "label": "Escrever um guia prático",
-        "prompt": "Escreva o guia prático para aquilo que as pessoas sempre me pedem para explicar, incluindo capturas de tela ou comandos quando forem úteis. Publique-o e envie-me a URL."
-      },
-      "runbook": {
-        "label": "Escrever um runbook",
-        "prompt": "Escreva um runbook para uma tarefa que minha empresa realiza repetidamente, passo a passo, para que outra pessoa possa executá-la sem precisar me perguntar. Escolha a de maior valor e diga por quê."
-      },
-      "onboarding-doc": {
-        "label": "Documento de integração",
-        "prompt": "Escreva o documento que uma nova pessoa contratada lê na primeira semana — como trabalhamos, onde as coisas ficam, a quem perguntar e como é um bom resultado. Aproveite o que puder da memória do projeto e, no final, liste tudo o que você precisou supor, em vez de parar para me perguntar."
-      }
-    }
   },
   "repositoryAccess": {
     "label": "Acesso ao repositório do projeto",
@@ -20338,20 +20011,109 @@
     "sharePrivateDescription": "Escolha quem mais pode usar sua conta. Ela passa a ser uma conta compartilhada, que quem gerencia as conexões do projeto também pode gerenciar.",
     "ownerMeta": "Sua conta"
   },
+  "mfaStepUp": {
+    "title": "Confirme que é você",
+    "gateDescription": "Sua conta tem a autenticação de dois fatores ativada. Digite o código de 6 dígitos do seu app autenticador para continuar.",
+    "actionDescription": "Esta ação exige autenticação de dois fatores. Digite o código de 6 dígitos do seu app autenticador para continuar.",
+    "codeLabel": "Código de 6 dígitos",
+    "verify": "Verificar",
+    "cancel": "Cancelar",
+    "signOut": "Sair",
+    "verified": "Verificado",
+    "invalidCode": "Esse código não funcionou. Confira seu app autenticador e tente novamente.",
+    "noFactorTitle": "Configure a autenticação de dois fatores",
+    "noFactorDescription": "Esta ação exige autenticação de dois fatores. Adicione um app autenticador em Configurações → Segurança e tente novamente."
+  },
+  "connectorPages": {
+    "install": "Instalar",
+    "installNamed": "Instalar {name}",
+    "added": "Adicionado",
+    "installedIn": "Instalado em {project}",
+    "installedHere": "Instalado",
+    "installedHint": "Instale novamente para adicionar outra conta a este conector.",
+    "open": "Abrir",
+    "statusWorking": "Funcionando",
+    "statusError": "Erro",
+    "statusNeedsSetup": "Requer configuração",
+    "statusPending": "Pendente",
+    "managedSurfaceLabel": "App do {name}",
+    "noticeSignInTitle": "Entrar no {name}",
+    "noticeSignInBody": "O Kortix adicionou {name}. Conclua o login para que os agentes possam usar as ferramentas.",
+    "noticeSignInAction": "Entrar",
+    "connectAccount": "Conectar",
+    "notSignedIn": "Sem login",
+    "infoRunsOver": "Executa sobre",
+    "waysToConnect": "Formas de conectar",
+    "recommended": "Recomendado",
+    "notFoundTitle": "Conector não encontrado",
+    "notFoundDescription": "Foi removido ou o link está incorreto.",
+    "backToConnectors": "Voltar aos conectores",
+    "installed": "{name} está instalado",
+    "newSession": "Nova sessão",
+    "sections": "Seções de {name}",
+    "noticeNoAccountTitle": "{name} não tem nenhuma conta",
+    "noticeNoAccountBody": "Os agentes não podem usar {name} até que uma conta seja conectada.",
+    "noticeCredentialTitle": "{name} precisa de uma credencial",
+    "noticeCredentialBody": "Existe uma conta, mas sem credencial salva. Os agentes não podem usar {name} até que você defina uma.",
+    "noticeReconnectBody": "Nenhuma conta está autorizada. Reconecte uma na aba Contas.",
+    "noticeErrorTitle": "O Kortix não conseguiu carregar {name}",
+    "noticeErrorBody": "A última tentativa de ler as ferramentas falhou. Verifique a credencial e as configurações de conexão e tente novamente.",
+    "nameLabel": "Nome",
+    "toolsEmptyBody": "{name} não informou nenhuma ferramenta. Elas aparecem aqui depois da conexão.",
+    "stripStatus": "Status",
+    "stripAccounts": "Contas",
+    "stripTools": "Ferramentas",
+    "nameHelp": "Exibido nas listas e para os agentes.",
+    "removeTitle": "Remover {name}",
+    "removeHelp": "Exclui suas contas e regras de ferramentas. As sessões perdem o acesso imediatamente.",
+    "accountInfoLabel": "Sobre contas",
+    "accountInfoTitle": "O que é uma conta?",
+    "accountInfoBody": "Um login ou chave de API para {name}. Os agentes chamam {name} como esta conta, então veem e gastam o que ela pode.",
+    "accountInfoOnlyYou": "Só você · apenas suas sessões",
+    "accountInfoEveryone": "Todos · cada sessão em {project}",
+    "accountInfoEveryoneNoProject": "Todos · cada sessão do projeto",
+    "accountInfoDefault": "Padrão · usada quando uma sessão não escolhe nenhuma",
+    "accountInfoDocs": "Ler a documentação",
+    "signInLabel": "Login",
+    "signInManagedHelp": "O {provider} guarda o login. O Kortix nunca vê uma senha ou chave.",
+    "runsOverDirectHelp": "Os agentes chamam o {name} diretamente por este protocolo.",
+    "overview": "Visão geral",
+    "infoRunsThrough": "Provedor",
+    "infoSignsInWith": "Login com",
+    "infoCategory": "Categoria",
+    "infoAppEvents": "Eventos do app",
+    "infoAppEventsYes": "Compatível",
+    "authOAuth": "Login OAuth",
+    "authApiKey": "Chave de API",
+    "authNone": "Sem login",
+    "providerInfoTitle": "Quem gerencia o quê",
+    "providerInfoLogin": "Login",
+    "providerInfoActions": "Ações",
+    "providerInfoSecrets": "Sua chave",
+    "providerInfoLoginManaged": "O Kortix guarda o login pelo {provider} e o mantém válido.",
+    "providerInfoLoginDirect": "Você entra no app; o Kortix guarda a chave ou o token.",
+    "providerInfoActionsApp": "O {name} executa cada ação que um agente pede.",
+    "providerInfoSecretsManaged": "Os agentes nunca veem senha, token ou chave.",
+    "providerInfoSecretsDirect": "O Kortix adiciona a chave a cada chamada. Os agentes nunca a veem.",
+    "providerInfoLabel": "Quem gerencia esta conexão"
+  },
   "connectMcp": {
-    "title": "Conectar o Kortix via MCP",
-    "description": "Adicione esta URL ao Claude, ChatGPT, Cursor, Codex ou a qualquer cliente MCP. Na primeira vez, o cliente pede que você entre no Kortix. Nada para instalar.",
-    "urlLabel": "URL do MCP",
-    "addToClient": "Adicione ao seu cliente",
-    "other": "Outro",
-    "claudeSteps": "No Claude (web ou desktop), abra Configurações → Conectores → Adicionar conector personalizado, cole a URL e entre.",
-    "claudeCodeHint": "Depois execute /mcp no Claude Code e entre.",
-    "otherHint": "ChatGPT (modo desenvolvedor), VS Code, Windsurf e outros clientes: adicione um servidor MCP remoto com a URL acima ou com este JSON.",
-    "addToCursor": "Adicionar ao Cursor",
-    "signInOnFirstUse": "O Cursor pede que você entre no Kortix no primeiro uso.",
-    "docs": "Documentação",
-    "done": "Concluído",
-    "copy": "Copiar"
+    "title": "Conecte o Kortix via MCP",
+    "description": "Use o Kortix no Claude, Claude Code, Cursor, Codex ou qualquer cliente MCP. Você entra uma vez. Nada para instalar.",
+    "docs": "Docs",
+    "done": "Concluir",
+    "copy": "Copiar",
+    "anyClient": "Qualquer cliente MCP",
+    "add": "Adicionar",
+    "copied": "Copiado",
+    "copyUrl": "Copiar URL",
+    "via": {
+      "claude": "Configurações → Conectores",
+      "claude-code": "Um comando no terminal",
+      "cursor": "Instalação com um clique",
+      "codex": "Dois comandos no terminal",
+      "other": "VS Code, Windsurf e mais"
+    }
   },
   "oauthConsent": {
     "unverifiedTitle": "App não verificado",
@@ -20360,30 +20122,44 @@
   },
   "reminders": {
     "title": "Lembretes",
-    "description": "Verificações agendadas que voltam a acionar uma sessão. Os agentes as criam enquanto trabalham; cada uma dispara até ser removida.",
     "docs": "Como funcionam os lembretes",
     "tabActive": "Ativos",
     "tabPaused": "Pausados",
     "tabDone": "Concluídos",
-    "emptyTitle": "Nenhum lembrete",
-    "emptyDescription": "Quando um agente ou uma pessoa define um lembrete em uma sessão, ele aparece aqui.",
-    "emptyTabDescription": "Esta lista está vazia.",
+    "emptyTitle": "Ainda não há lembretes",
+    "emptyDescription": "Peça a um agente, em qualquer sessão, para lembrar você de algo. Os lembretes dele aparecem aqui.",
     "loadFailed": "Não foi possível carregar os lembretes",
     "retry": "Tentar novamente",
     "sessionFilter": "Sessão: {name}",
     "clearFilter": "Mostrar todas as sessões",
     "untitledSession": "Sessão sem título",
+    "columnReminder": "Lembrete",
+    "columnSchedule": "Agendamento",
+    "columnSession": "Sessão",
+    "columnWhen": "Quando",
+    "columnActions": "Ações",
+    "selectAll": "Selecionar todos os lembretes",
+    "selectReminder": "Selecionar {title}",
+    "selectedCount": "{count} selecionados",
+    "clearSelection": "Limpar seleção",
+    "bulkPause": "Pausar seleção",
+    "bulkResume": "Retomar seleção",
+    "bulkRemove": "Remover seleção",
+    "bulkPaused": "{count, plural, one {# lembrete pausado} other {# lembretes pausados}}",
+    "bulkResumed": "{count, plural, one {# lembrete retomado} other {# lembretes retomados}}",
+    "bulkRemoved": "{count, plural, one {# lembrete removido} other {# lembretes removidos}}",
+    "bulkFailed": "{count, plural, one {Não foi possível alterar # lembrete} other {Não foi possível alterar # lembretes}}",
+    "bulkRemoveTitle": "{count, plural, one {Remover # lembrete?} other {Remover # lembretes?}}",
+    "bulkRemoveDescription": "Deixam de disparar e são excluídos. As sessões mantêm o histórico.",
     "once": "Uma vez",
     "every": "A cada {period}",
     "cron": "Cron {expression}",
     "nextFire": "Próximo {time}",
     "firedAt": "Disparado {time}",
     "pausedLabel": "Pausado",
-    "doneLabel": "Concluído",
     "pause": "Pausar",
     "resume": "Retomar",
     "remove": "Remover",
-    "openSession": "Abrir sessão",
     "removeTitle": "Remover este lembrete?",
     "removeDescription": "Ele deixa de disparar e é excluído. A sessão mantém o histórico.",
     "paused": "Lembrete pausado",
@@ -20397,7 +20173,46 @@
     "cardOneTime": "Uma vez",
     "cardRecurring": "Recorrente",
     "cardManage": "Gerenciar",
-    "gateDescription": "Ative Lembretes para que agentes e pessoas agendem verificações que voltam a acionar uma sessão."
+    "gateDescription": "Ative Lembretes para que agentes e pessoas agendem verificações que voltam a acionar uma sessão.",
+    "emptyActive": "Nada ativo",
+    "emptyPaused": "Nada pausado — pause um lembrete para que ele pare de disparar sem removê-lo",
+    "emptyDone": "Nada concluído ainda",
+    "allSessions": "Todas as sessões",
+    "clearSessionFilter": "Limpar filtro de sessão",
+    "filterFooter": "{count} de {total, plural, one {# lembrete} other {# lembretes}}",
+    "viewLabel": "Visualização",
+    "viewList": "Lista",
+    "viewCalendar": "Calendário",
+    "removeDescriptionNamed": "“{title}” em {session} deixa de disparar e é excluído. A sessão mantém o histórico.",
+    "calendarDay": "Dia",
+    "calendarWeek": "Semana",
+    "calendarMonth": "Mês",
+    "calendarShowDay": "Abrir {date}",
+    "calendarRangeLabel": "Intervalo do calendário",
+    "calendarToday": "Hoje",
+    "calendarPreviousDay": "Dia anterior",
+    "calendarNextDay": "Próximo dia",
+    "calendarPreviousWeek": "Semana anterior",
+    "calendarNextWeek": "Próxima semana",
+    "calendarPreviousMonth": "Mês anterior",
+    "calendarNextMonth": "Próximo mês",
+    "calendarAllWeek": "Semana toda",
+    "calendarAllDay": "Dia todo",
+    "calendarEvery": "a cada {period}",
+    "calendarSession": "Sessão",
+    "calendarEmptyWeek": "Nada é disparado nesta semana",
+    "calendarEmptyDay": "Nada é disparado neste dia",
+    "calendarEmptyMonth": "Nada é disparado neste mês",
+    "calendarGoToDay": "Ir para {date}",
+    "calendarGoToWeek": "Ir para a semana de {date}",
+    "calendarGoToMonth": "Ir para {month}",
+    "calendarBackToToday": "Voltar para hoje",
+    "calendarCronNote": "Agendamentos cron mostram apenas o próximo disparo.",
+    "calendarEstimated": "Estimado a partir do agendamento",
+    "calendarFiredSr": "Disparado",
+    "calendarFailed": "Falhou",
+    "calendarEstimatedSr": "Disparo passado, estimado a partir do agendamento",
+    "calendarUpcomingSr": "Próximo"
   },
   "computers": {
     "connectYourComputer": "Conectar seu computador",
@@ -20551,5 +20366,224 @@
     "reschedule": "Precisa de outro horário? Use o link do convite.",
     "addToCalendar": "Adicionar ao calendário",
     "done": "Concluir"
+  },
+  "drives": {
+    "title": "Drive",
+    "myDrives": "Meus drives",
+    "companyDrives": "Drives da empresa",
+    "agentDrives": "Drives de agentes",
+    "defaultDrive": "Padrão",
+    "inThisProject": "No projeto",
+    "newDrive": "Novo drive",
+    "newPersonalDrive": "Novo drive pessoal",
+    "newCompanyDrive": "Novo drive da empresa",
+    "noCompanyDrives": "Ainda não há drives da empresa.",
+    "noAgentDrives": "Cada agente recebe seu próprio drive na primeira vez que é executado neste projeto.",
+    "loadError": "Não foi possível carregar os drives",
+    "retry": "Tentar novamente",
+    "selectDrive": "Escolha um drive",
+    "files": "Arquivos",
+    "versions": "Versões",
+    "driveActions": "Ações do drive",
+    "renameDrive": "Renomear drive",
+    "deleteDrive": "Excluir drive",
+    "fileCount": "{count, plural, one {# arquivo} other {# arquivos}}",
+    "updatedAgo": "Atualizado {time}",
+    "mountedAt": "As sessões o veem em {path}",
+    "breadcrumbs": "Caminho da pasta",
+    "newFolder": "Nova pasta",
+    "upload": "Enviar",
+    "emptyDriveTitle": "Nada aqui ainda",
+    "emptyFolderTitle": "Esta pasta está vazia",
+    "emptyDriveDescription": "Solte arquivos aqui ou envie-os. As sessões que usam este drive os veem em segundos.",
+    "dropToUpload": "Solte para enviar para {folder}",
+    "filesLoadError": "Não foi possível carregar os arquivos",
+    "columnName": "Nome",
+    "columnSize": "Tamanho",
+    "columnModified": "Modificado",
+    "actions": "Ações",
+    "entryActions": "Ações para {name}",
+    "open": "Abrir",
+    "download": "Baixar",
+    "rename": "Renomear",
+    "delete": "Excluir",
+    "cancel": "Cancelar",
+    "save": "Salvar",
+    "create": "Criar",
+    "folderNameLabel": "Nome da pasta",
+    "newNameLabel": "Novo nome",
+    "driveNameLabel": "Nome do drive",
+    "invalidName": "Digite um nome sem barras.",
+    "deleteEntryTitle": "Excluir {name}?",
+    "deleteFileDescription": "O arquivo é removido deste drive e de todas as sessões que o usam.",
+    "deleteFolderDescription": "A pasta e todo o seu conteúdo são removidos deste drive e de todas as sessões que o usam.",
+    "deleteDriveTitle": "Excluir {name}?",
+    "deleteDriveDescription": "O drive, seus arquivos e seu histórico são excluídos para todos, e as sessões deixam de usá-lo. Não é possível desfazer.",
+    "uploadTooLarge": "{name} tem mais de 64 MB.",
+    "uploaded": "{count, plural, one {# arquivo enviado} other {# arquivos enviados}}",
+    "uploadFailed": "Não foi possível enviar {name}",
+    "downloadFailed": "Não foi possível baixar {name}",
+    "folderCreated": "Pasta criada",
+    "folderFailed": "Não foi possível criar a pasta",
+    "renamed": "Renomeado",
+    "renameFailed": "Não foi possível renomear",
+    "deleted": "Excluído",
+    "deleteFailed": "Não foi possível excluir",
+    "driveCreated": "Drive criado",
+    "driveCreateFailed": "Não foi possível criar o drive",
+    "driveDeleted": "Drive excluído",
+    "driveDeleteFailed": "Não foi possível excluir o drive",
+    "createPersonalTitle": "Novo drive pessoal",
+    "createPersonalDescription": "Um drive privado que só você pode abrir. Suas sessões usam seu drive padrão.",
+    "createCompanyTitle": "Novo drive da empresa",
+    "createCompanyDescription": "Um drive para o seu workspace. Os administradores escolhem quem o recebe: projetos, pessoas e agentes, só leitura ou leitura e escrita.",
+    "grantOnCreate": "As sessões deste projeto podem usá-lo imediatamente.",
+    "grantTitle": "Usar neste projeto",
+    "grantDescription": "As sessões deste projeto o veem em {path}.",
+    "grantDescriptionOff": "As sessões deste projeto não veem este drive.",
+    "accessLabel": "Acesso",
+    "accessWrite": "Leitura e gravação",
+    "accessRead": "Somente leitura",
+    "grantFailed": "Não foi possível atualizar o acesso deste projeto",
+    "versionsLoadError": "Não foi possível carregar as versões",
+    "noVersions": "Ainda não há versões",
+    "noVersionsDescription": "As alterações neste drive são salvas como versões que você pode restaurar.",
+    "today": "Hoje",
+    "yesterday": "Ontem",
+    "current": "Atual",
+    "restore": "Restaurar",
+    "restoreTitle": "Restaurar esta versão?",
+    "restoreDescription": "O drive volta ao estado de {time}. As sessões que o usam veem a alteração em segundos.",
+    "restored": "Drive restaurado",
+    "restoreFailed": "Não foi possível restaurar o drive",
+    "versionKind": {
+      "created": "Criado",
+      "edit": "Editado",
+      "sync": "Sincronizado",
+      "restore": "Restaurado"
+    },
+    "versionAuthor": {
+      "drive": "Pelo Drive",
+      "session": "Por uma sessão"
+    },
+    "versionChanged": "{count, plural, one {# arquivo alterado} other {# arquivos alterados}}",
+    "versionDeleted": "{count, plural, one {# arquivo excluído} other {# arquivos excluídos}}",
+    "sessionChipLabel": "{count, plural, one {# drive} other {# drives}}",
+    "sessionChipTitle": "Drives nesta sessão",
+    "sessionChipDescription": "Os arquivos aqui são sincronizados com o Drive em segundos.",
+    "readOnly": "Somente leitura",
+    "openDrive": "Abrir Drive",
+    "unavailableTitle": "O Drive está desativado neste projeto",
+    "unavailableDescription": "Um administrador do projeto pode ativá-lo em Configurações → Feature flags.",
+    "grantAdminOnly": "Somente o proprietário ou um administrador da conta pode alterar isso.",
+    "mountedAtPrivate": "Suas sessões privadas o veem em {path}",
+    "sharedWithMe": "Partilhados comigo",
+    "sharedBy": "Partilhado por {email}",
+    "sizeOfLimit": "{size} de {limit}",
+    "conflictCount": "{count, plural, one {# conflito} other {# conflitos}}",
+    "conflictsTitle": "{count, plural, one {# ficheiro foi alterado em dois sítios ao mesmo tempo} other {# ficheiros foram alterados em dois sítios ao mesmo tempo}}",
+    "conflictsDescription": "As duas versões foram mantidas. A outra versão está ao lado do original com «(conflict …)» no nome. Abra-a, guarde o que precisa e apague a cópia.",
+    "conflictOpenFolder": "Abrir pasta",
+    "conflictDismiss": "Ignorar",
+    "conflictDismissFailed": "Não foi possível ignorar o conflito",
+    "conflictsMore": "{count, plural, one {Mais # conflito} other {Mais # conflitos}}",
+    "conflictToast": "{count, plural, one {Um ficheiro do Drive foi alterado em dois sítios ao mesmo tempo. As duas versões foram mantidas.} other {# ficheiros do Drive foram alterados em dois sítios ao mesmo tempo. As duas versões foram mantidas.}}",
+    "share": "Partilhar",
+    "manageAccess": "Acesso",
+    "accessTitle": "Acesso a {name}",
+    "accessPersonalDescription": "Partilhe o seu drive com colegas e escolha que agentes podem escrever em todo ele nas suas sessões.",
+    "accessCompanyDescription": "Escolha os projetos, as pessoas e os agentes cujas sessões usam este drive.",
+    "accessThisProject": "Este projeto",
+    "unknownProject": "Outro projeto",
+    "accessPeople": "Pessoas",
+    "accessPeoplePersonalHint": "Veem-no em Partilhados comigo e as suas próprias sessões usam-no.",
+    "accessPeopleCompanyHint": "Todas as sessões que estas pessoas iniciarem usam este drive, em qualquer projeto.",
+    "removeAccess": "Remover o acesso de {name}",
+    "membersUnavailable": "Não consegue ver os membros deste espaço de trabalho, por isso não pode partilhar a partir daqui.",
+    "addPerson": "Adicionar uma pessoa",
+    "accessAgents": "Agentes deste projeto",
+    "accessAgentsPersonalHint": "Os agentes leem o seu drive nas suas sessões e só escrevem na pasta From agents. Ative um para que possa escrever em todo o seu drive.",
+    "accessAgentsCompanyHint": "Todas as sessões destes agentes usam este drive.",
+    "agentFullWrite": "Permitir que {name} escreva em todo o seu drive",
+    "attach": "Anexar",
+    "attachDrive": "Anexar um drive",
+    "appliesNextStart": "Guardado. Aplica-se no próximo arranque da sessão.",
+    "sessionDriveFailed": "Não foi possível alterar os drives desta sessão",
+    "sessionNoDrives": "Ainda não há drives. São montados quando a sessão arranca.",
+    "sessionDriveUpdated": "Acesso ao drive alterado",
+    "sessionDriveAttached": "Drive anexado",
+    "sessionDriveDetached": "Drive removido",
+    "detachDrive": "Remover {name}",
+    "fromAgentsHint": "Só leitura. Os agentes guardam ficheiros para si em {path}.",
+    "fullWriteOnHint": "Os agentes podem alterar qualquer ficheiro do seu drive nesta sessão.",
+    "fullWriteLabel": "Permitir que os agentes escrevam em todo o seu drive nesta sessão",
+    "fullWriteOn": "Os agentes já podem escrever em todo o seu drive nesta sessão",
+    "fullWriteOff": "O seu drive voltou a ser só de leitura nesta sessão",
+    "customizeTitle": "Drives",
+    "customizeDescription": "Os drives que as sessões e os agentes deste projeto usam. Os ficheiros estão no Drive; aqui liga-os.",
+    "customizeCompanyHint": "Ative um drive da empresa para todas as sessões deste projeto ou só para alguns agentes.",
+    "customizeAgentHint": "Cada agente guarda a sua memória e os seus resultados no seu próprio drive, em /drives/agent em todas as suas sessões.",
+    "customizePersonalHint": "O drive pessoal de cada pessoa é montado só de leitura em /drives/me nas sessões que inicia. Os agentes guardam ficheiros na pasta From agents. Os acionadores e os canais do Slack nunca recebem um drive pessoal.",
+    "customizeAllSessions": "Todas as sessões deste projeto",
+    "customizeAllSessionsOn": "Ativo para todos os agentes deste projeto.",
+    "customizeAllSessionsOff": "Desativado. Só o usam os agentes ativados abaixo.",
+    "customizeOnlyAgents": "Ou só estes agentes",
+    "agentDriveTitle": "Drive deste agente",
+    "agentDriveDescription": "A memória e os resultados que este agente mantém entre sessões. Todas as sessões do agente veem-no em /drives/agent.",
+    "agentFullWriteTitle": "Permitir que este agente escreva em todo o seu drive",
+    "agentFullWriteDescription": "Nas sessões que inicia, este agente pode alterar qualquer ficheiro do seu drive, não só a pasta From agents.",
+    "agentCardDrive": "Drive de {size}",
+    "sessionSkippedDrives": "{count, plural, one {# drive não coube nesta sessão} other {# drives não couberam nesta sessão}}: {names}. Retire um drive para liberar espaço e reinicie a sessão.",
+    "shareFolder": "Compartilhar",
+    "shareTitle": "Compartilhar {name}",
+    "shareDescription": "Pessoas, equipes e agentes que você adicionar recebem esta pasta e tudo o que há nela. Uma sessão vê uma pasta quando seu agente, seu projeto ou a pessoa que a iniciou tem acesso.",
+    "everyoneInProject": "Todos neste projeto",
+    "agentLabel": "Agente: {name}",
+    "shared": "Acesso atualizado",
+    "shareFailed": "Não foi possível alterar o acesso",
+    "inheritedFrom": "De {path}",
+    "ownFolder": "Pasta própria",
+    "level": {
+      "read": "Pode ver",
+      "write": "Pode editar",
+      "manage": "Pode compartilhar"
+    },
+    "addAccess": "Adicionar uma pessoa, equipe ou agente",
+    "notGrantable": "Esta pasta sustenta a estrutura e não pode ser compartilhada. Compartilhe uma pasta dentro dela.",
+    "viewOnlyAccess": "Somente quem pode compartilhar esta pasta pode alterar quem tem acesso.",
+    "noGrants": "Ninguém recebeu acesso aqui ainda. Os administradores do projeto podem abrir todas as pastas, exceto as pastas pessoais.",
+    "myFolder": "Minha pasta",
+    "myFolderHint": "Sua própria pasta: privada até você compartilhá-la, e sua área de trabalho nas suas sessões",
+    "sharedWithMeHint": "Pastas que outras pessoas compartilharam com você",
+    "sessionNoFolders": "Nenhuma pasta está montada nesta sessão.",
+    "sessionDesktop": "Sua pasta (área de trabalho)",
+    "folderAccessDescription": "Escolha quem pode abrir esta pasta e tudo o que há nela. Uma sessão recebe a pasta quando seu agente, seu projeto ou a pessoa que a iniciou tem acesso.",
+    "whoCanAccess": "Quem tem acesso",
+    "whoCanAccessFolder": "Quem pode acessar {name}",
+    "accessPanelDescription": "Pessoas, equipes e agentes com acesso recebem esta pasta e tudo o que há nela.",
+    "accessPanelRoot": "Abra uma pasta para escolher quem pode acessá-la. Company é compartilhada com todos no projeto; a pasta pessoal de cada pessoa é privada até que ela a compartilhe.",
+    "audienceEveryoneDescription": "Todas as pessoas que trabalham neste projeto e cada sessão nele.",
+    "audienceAdmins": "Somente administradores",
+    "audienceAdminsShort": "Os administradores do projeto podem abri-la e compartilhá-la",
+    "audienceAdminsDescription": "Os administradores do projeto podem abri-la e compartilhá-la. Nenhuma sessão a recebe até que você a compartilhe.",
+    "audienceOnlyYou": "Somente você",
+    "audienceOnlyOwner": "Somente {name}",
+    "audienceOwnerDescription": "A pasta pessoal de uma pessoa permanece privada até que ela a compartilhe. Os administradores também não podem abri-la.",
+    "audienceSpecific": "Pessoas, equipes ou agentes específicos",
+    "audienceSpecificDescription": "Somente as pessoas, equipes e agentes que você escolher, além dos administradores do projeto. Um agente recebe a pasta em cada uma de suas sessões.",
+    "inheritedEveryoneNote": "Todos neste projeto já têm acesso por meio de {path}. Altere lá para restringir.",
+    "everyoneCan": "Todos neste projeto",
+    "alsoNamed": "Dar acesso também a",
+    "peopleWithAccess": "Pessoas, equipes e agentes",
+    "agentMountsMeta": "Cada sessão deste agente",
+    "teamMeta": "Equipe",
+    "levelFor": "Acesso para {name}",
+    "inheritedTitle": "Tem acesso por uma pasta acima",
+    "resultEveryone": "Todos neste projeto podem abrir esta pasta.",
+    "resultAdmins": "Somente os administradores do projeto podem abrir esta pasta.",
+    "resultSpecific": "{count, plural, one {Somente os administradores do projeto e quem você escolheu podem abrir esta pasta.} other {Somente os administradores do projeto e os # que você escolheu podem abrir esta pasta.}}",
+    "you": "Você",
+    "manageFolderAccess": "Gerenciar acesso",
+    "viewFolderAccess": "Ver acesso"
   }
 }

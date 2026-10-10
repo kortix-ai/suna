@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { SessionStartResult } from '../core/rest/projects-client';
-import { holdLiveStart } from './hold-live-start';
+import { holdLiveStart, liveStartPollMode } from './hold-live-start';
 
 function sandbox(id: string, status = 'active') {
   return {
@@ -75,5 +75,22 @@ describe('holdLiveStart — a live session leaves live only on a lifecycle fact'
     expect(holdLiveStart(undefined, boot)).toBe(boot);
     expect(holdLiveStart(starting('not_ready'), boot)).toBe(boot);
     expect(holdLiveStart(undefined, null)).toBeNull();
+  });
+});
+
+describe('liveStartPollMode — a keep-alive poll never wakes or reads for nobody (05#1)', () => {
+  test('a ready tab that is in the foreground polls with keep_stopped', () => {
+    expect(liveStartPollMode(ready, false)).toBe('keep-stopped');
+  });
+
+  test('a ready tab in the background does not poll at all', () => {
+    expect(liveStartPollMode(ready, true)).toBe('skip');
+  });
+
+  test('every other state is an open: it may wake, and a wake in flight is finished in the background', () => {
+    expect(liveStartPollMode(null, false)).toBe('open');
+    expect(liveStartPollMode(undefined, true)).toBe('open');
+    expect(liveStartPollMode(starting('runtime_waking', null), true)).toBe('open');
+    expect(liveStartPollMode({ ...ready, stage: 'stopped' as const, sandbox: null }, false)).toBe('open');
   });
 });

@@ -16,6 +16,7 @@ import {
   beginTurn,
   claimInitialTurn,
   pinOpencodeSession,
+  readSteer,
   relayContent,
   settleTurnEnd,
 } from './turn-stream-handlers';
@@ -155,6 +156,7 @@ export function registerTurnStreamRoutes(): void {
           sessionId: projectSessions.sessionId,
           accountId: projectSessions.accountId,
           createdBy: projectSessions.createdBy,
+          origin: projectSessions.origin,
           metadata: projectSessions.metadata,
           opencodeSessionId: projectSessions.runtimeSessionId,
         })
@@ -186,6 +188,8 @@ export function registerTurnStreamRoutes(): void {
           return acceptTurn(c, body, authenticatedSandboxId);
         case 'turn_begin':
           return beginTurn(c, body, authenticatedSandboxId);
+        case 'steer_read':
+          return readSteer(c, body, sessionId, authenticatedSandboxId);
         case 'end':
         case 'turn_end':
           return settleTurnEnd(c, body, {
@@ -196,10 +200,11 @@ export function registerTurnStreamRoutes(): void {
             turnStreamSession: {
               accountId: turnStreamSession.accountId,
               createdBy: turnStreamSession.createdBy,
+              origin: turnStreamSession.origin ?? null,
             },
           });
         case 'runtime_session':
-          return pinOpencodeSession(c, body, projectId, sessionId);
+          return pinOpencodeSession(c, body, authenticatedSandboxId, projectId, sessionId);
         default:
           return relayContent(c, body, sessionId);
       }

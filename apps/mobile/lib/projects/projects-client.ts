@@ -8,63 +8,11 @@
  * (`@/lib/projects/projects-client`) keeps working unchanged — see the SDK
  * adoption report for the function-by-function mapping.
  *
- * Most functions below are thin re-exports of `@kortix/sdk`.
- * A handful are kept mobile-native because the SDK's equivalent has different
- * error/behavior semantics or doesn't cover the endpoint at all — each is
- * commented with why.
+ * Every function below is `@kortix/sdk`'s, re-exported or adapted to the
+ * argument shape mobile's callers use. No call here builds its own request.
  */
 
-import { API_URL, getAuthToken } from '@/api/config';
-import { createApiRequestError } from '@/lib/billing/upgrade-gate';
-import { backendApi } from '@kortix/sdk';
 import * as sdk from '@kortix/sdk';
-
-// ── Generic fetch helper ────────────────────────────────────────────────────
-// Kept mobile-native: this is the shared primitive for endpoints the SDK does
-// NOT cover at all (account-level IAM MFA/session-policy/PAT-policy/
-// service-accounts/audit — see lib/accounts/accounts-client.ts, which imports `apiFetch` from this file) as well as
-// the couple of functions below kept mobile-native for behavioral reasons.
-// Uses the same token source (`api/config.ts#getAuthToken`) that's wired into
-// `configureKortix({ getToken })`, so both paths share one auth story.
-
-export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = await getAuthToken();
-  const res = await fetch(`${API_URL}${path}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...init?.headers,
-    },
-  });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    let body: unknown = null;
-    try {
-      body = JSON.parse(text);
-    } catch {
-      body = text ? { message: text.slice(0, 200) } : null;
-    }
-    throw createApiRequestError(res.status, body);
-  }
-
-  if (res.status === 204) return undefined as T;
-  return res.json();
-}
-
-/** Unwrap an `@kortix/sdk` `backendApi` response for the handful of endpoints
- *  the SDK's `projects-client` doesn't cover (kept local — `unwrap` itself is
- *  an internal SDK helper, not part of its public surface). */
-function unwrapLocal<T>(
-  response: { data?: T; success: boolean; error?: Error },
-  fallbackMessage = 'Project request failed',
-): T {
-  if (!response.success || response.data === undefined) {
-    throw response.error ?? new Error(fallbackMessage);
-  }
-  return response.data;
-}
 
 // ── Accounts ─────────────────────────────────────────────────────────────────
 
@@ -135,25 +83,15 @@ export {
 export type { SessionStartStage, SessionStartResult } from '@kortix/sdk';
 
 /**
- * THE session-open call — kept MOBILE-NATIVE rather than re-exporting
- * `@kortix/sdk`'s `startProjectSession`.
- *
- * The SDK's version NEVER throws: it turns every failure (including a 402
- * billing gate) into `null`. Mobile's session-open loop needs the error:
+ * THE session-open call. Mobile's session-open loop needs the error, so it uses
+ * `startProjectSessionOrThrow`, not `startProjectSession` (which yields `null`
+ * on a transient failure):
  * - a 402 opens the upgrade sheet (`getUpgradeGate`, ProjectScreen);
  * - any other failure goes to `connectStepFromRequestError`
  *   (lib/session/connect-step.ts), which shows ONE error. A `null` here made
  *   the loop poll a broken request every 1.5 s for 4 min with no message.
  */
-export async function startProjectSession(
-  projectId: string,
-  sessionId: string,
-): Promise<sdk.SessionStartResult> {
-  return apiFetch<sdk.SessionStartResult>(
-    `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/start`,
-    { method: 'POST', body: JSON.stringify({}) },
-  );
-}
+export { startProjectSessionOrThrow as startProjectSession } from '@kortix/sdk';
 
 export type { ProjectSessionSandbox } from '@kortix/sdk';
 
@@ -209,43 +147,19 @@ export interface PipedreamAppsPage {
   hasMore: boolean;
 }
 
-/**
- * Kept MOBILE-NATIVE: `@kortix/sdk` has no
- * `disconnectConnector` — its `connectors.ts` only exposes `setConnectorCredential`
- * (PUT) with no DELETE counterpart. Same endpoint mobile always used
- * (`DELETE /connectors/projects/:id/connectors/:slug/credential`), implemented
- * directly against the SDK's `backendApi` so it still shares auth/config.
- */
-export async function disconnectConnector(projectId: string, slug: string) {
-  return unwrapLocal(
-    await backendApi.delete<{ ok: boolean }>(
-      `/connectors/projects/${encodeURIComponent(projectId)}/connectors/${encodeURIComponent(slug)}/credential`,
-    ),
-  );
-}
+/** Disconnect a connector: remove its stored credential. */
+export { deleteConnectorCredential as disconnectConnector } from '@kortix/sdk';
 
 /**
- * Kept MOBILE-NATIVE: the SDK's `pipedreamConnect(projectId, slug)` sends an
- * EMPTY body. Mobile needs `success_redirect_uri`/`error_redirect_uri` so the
- * in-app browser auto-dismisses back to the app once Pipedream's OAuth flow
- * finishes (see components/session/ConnectorAuthSheet.tsx) — swapping to the SDK's
- * version would silently drop those redirects. Same endpoint, same response
- * shape as the SDK's version; only the request body differs.
+ * Start the hosted connect flow. The redirect URIs send the in-app browser back
+ * to the app once the OAuth flow finishes (components/session/ConnectorAuthSheet.tsx).
  */
-export async function pipedreamConnect(
+export function pipedreamConnect(
   projectId: string,
   slug: string,
   redirects?: { successRedirectUri?: string; errorRedirectUri?: string },
 ) {
-  return unwrapLocal(
-    await backendApi.post<{ token?: string; app?: string; connectUrl?: string }>(
-      `/connectors/projects/${encodeURIComponent(projectId)}/connectors/${encodeURIComponent(slug)}/connect`,
-      {
-        ...(redirects?.successRedirectUri ? { success_redirect_uri: redirects.successRedirectUri } : {}),
-        ...(redirects?.errorRedirectUri ? { error_redirect_uri: redirects.errorRedirectUri } : {}),
-      },
-    ),
-  );
+  return sdk.connectorConnect(projectId, slug, redirects);
 }
 
 // ── Project access (members) — full web parity (members-view) ────────────────
@@ -369,24 +283,7 @@ export function mergeChangeRequest(projectId: string, crId: string, message?: st
   return sdk.mergeChangeRequest(projectId, crId, message ? { message } : undefined);
 }
 
-/**
- * Kept MOBILE-NATIVE: the SDK's `change-requests.ts` has no `patchChangeRequest`
- * (title/description edit) — only create/merge/close/reopen/diff/preview.
- * Same endpoint (`PATCH /projects/:id/change-requests/:crId`), implemented
- * directly against the SDK's `backendApi`.
- */
-export async function patchChangeRequest(
-  projectId: string,
-  crId: string,
-  input: { title?: string; description?: string },
-) {
-  return unwrapLocal(
-    await backendApi.patch<sdk.ChangeRequest>(
-      `/projects/${encodeURIComponent(projectId)}/change-requests/${encodeURIComponent(crId)}`,
-      input,
-    ),
-  );
-}
+export { updateChangeRequest as patchChangeRequest } from '@kortix/sdk';
 
 /** Mobile calls this with positional `(from, into)`; the SDK's `getVersionDiff`
  *  (it lives in `change-requests.ts`, not `git-history.ts`) takes `{ from, into }`. */
@@ -401,7 +298,8 @@ export type { ProjectCommit, ProjectFileHistoryResponse } from '@kortix/sdk';
 /** Mobile's name for the SDK's `ProjectCommitDiffResponse`. */
 export type { ProjectCommitDiffResponse } from '@kortix/sdk';
 
-export { listProjectFiles, getProjectFileHistory, readProjectFile } from '@kortix/sdk';
+export type { ProjectDirectoryEntry, ProjectFileSearchMatch } from '@kortix/sdk';
+export { listProjectDirectory, searchProjectFiles, getProjectFileHistory, readProjectFile } from '@kortix/sdk';
 
 /** Mobile calls this with a positional `path?: string`; the SDK's
  *  `getProjectCommitDiff` (in `git-history.ts`) takes `options?: { path? }`. */
@@ -409,15 +307,8 @@ export function getProjectCommitDiff(projectId: string, sha: string, path?: stri
   return sdk.getProjectCommitDiff(projectId, sha, path ? { path } : undefined);
 }
 
-/** Kept mobile-native: a pure URL formatter (used with expo-file-system, which
- *  wants a URL string, not the SDK's Blob-returning `fetchProjectArchive`). */
-export function projectArchiveUrl(projectId: string, ref: string, path?: string): string {
-  const params = new URLSearchParams();
-  if (ref) params.set('ref', ref);
-  if (path) params.set('path', path);
-  const qs = params.toString();
-  return `${API_URL}/projects/${encodeURIComponent(projectId)}/files/archive${qs ? `?${qs}` : ''}`;
-}
+/** The archive download as `{ url, headers }`, for expo-file-system to stream to disk. */
+export { projectArchiveRequest } from '@kortix/sdk';
 
 // ── Sandbox (web parity: customize/sections/sandbox-view) ─────────────────────
 

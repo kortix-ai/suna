@@ -5,6 +5,7 @@
 // provisioning + group sync runs in the auth middleware on every request.
 
 import { createRoute, z } from '@hono/zod-openapi';
+import type { Context } from 'hono';
 import { json, errors, auth } from '../../openapi';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { actorOf } from '../../iam/actor';
@@ -21,6 +22,7 @@ import {
   ssoDomainVerificationRecordName,
   ssoDomainVerificationRecordValue,
   upsertSsoProvider,
+  isPersonalAccount,
 } from '../../repositories/sso';
 import {
   iamRouter,
@@ -76,6 +78,23 @@ async function lookupTxt(name: string): Promise<string[]> {
   }
 }
 
+/**
+ * SAML belongs to an organization. A personal account's owner could register
+ * an IdP that asserts any address, and Supabase creates a separate SSO user
+ * for it (KRTX-1715). An existing provider keeps working; this refuses only
+ * setting one up.
+ */
+async function refusePersonalAccountSso(c: Context, accountId: string): Promise<Response | null> {
+  if (!(await isPersonalAccount(accountId))) return null;
+  return c.json(
+    {
+      error: 'Single sign-on is set up on an organization account, not a personal one.',
+      code: 'sso_personal_account',
+    },
+    403,
+  );
+}
+
 export function registerIamSsoRoutes(): void {
   iamRouter.openapi(
     createRoute({
@@ -91,7 +110,6 @@ export function registerIamSsoRoutes(): void {
       },
     }),
     async (c: any) => {
-    const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_READ);
     const p = await getSsoProvider(accountId);
@@ -117,6 +135,8 @@ export function registerIamSsoRoutes(): void {
     const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+    const personal = await refusePersonalAccountSso(c, accountId);
+    if (personal) return personal;
     const denied = await requireEntitlement(c, accountId, 'sso');
     if (denied) return denied;
 
@@ -248,6 +268,8 @@ export function registerIamSsoRoutes(): void {
       const userId = c.get('userId') as string;
       const accountId = c.req.param('accountId');
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+      const personal = await refusePersonalAccountSso(c, accountId);
+      if (personal) return personal;
       const denied = await requireEntitlement(c, accountId, 'sso');
       if (denied) return denied;
 
@@ -428,7 +450,6 @@ export function registerIamSsoRoutes(): void {
       },
     }),
     async (c: any) => {
-    const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
     // Disconnecting SSO must never 402 — an account that lost its entitlement
@@ -485,7 +506,6 @@ export function registerIamSsoRoutes(): void {
       },
     }),
     async (c: any) => {
-    const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_READ);
     const rows = await listSsoGroupMappings(accountId);
@@ -590,7 +610,6 @@ export function registerIamSsoRoutes(): void {
       },
     }),
     async (c: any) => {
-    const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     const mappingId = c.req.param('mappingId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);

@@ -1,4 +1,4 @@
-import { and, eq, lt, sql } from 'drizzle-orm';
+import { and, asc, eq, lt, sql } from 'drizzle-orm';
 import { registerSessionFailureNotifier } from '../../shared/session-failure-notifier';
 import { chatThreads, chatTurnStreams } from '@kortix/db';
 import { db } from '../../shared/db';
@@ -659,6 +659,7 @@ export async function sweepStaleTeamsTurns(): Promise<void> {
         sql`${chatTurnStreams.channelRef}->>'platform' = 'teams'`,
       ),
     )
+    .orderBy(asc(chatTurnStreams.updatedAt))
     .limit(50);
   for (const row of stale) {
     // Thirty minutes without a step is not proof of a dead run: one long
@@ -679,8 +680,6 @@ export async function sweepStaleTeamsTurns(): Promise<void> {
     await abortDeadRuntimeTurn(row.sessionId);
   }
 }
-
-export { startTeamsTurnGc, stopTeamsTurnGc } from '../../workers/teams-turn-gc-worker';
 
 /**
  * Does the runtime's turn ledger still hold a live turn for this session?

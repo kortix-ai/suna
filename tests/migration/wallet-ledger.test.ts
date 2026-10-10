@@ -104,12 +104,11 @@ suite('credit wallet ledger writes (throwaway Postgres)', () => {
   // `apps/api/src/config` validates the environment at import time.
   let wallet: typeof import('../../apps/api/src/billing/wallet').wallet;
   let database: ReturnType<typeof createDb> | undefined;
-  let router: typeof import('../../apps/api/src/router/services/billing');
   let errors: typeof import('../../apps/api/src/errors');
   let honesty: typeof import('../../apps/api/src/billing/ledger-type-honesty');
 
   beforeAll(async () => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    sh(['docker', 'rm', '-f', '-v', CONTAINER]);
     const up = sh([
       'docker', 'run', '-d', '--name', CONTAINER,
       '-e', 'POSTGRES_PASSWORD=postgres', '-e', 'POSTGRES_USER=postgres', '-e', 'POSTGRES_DB=postgres',
@@ -117,11 +116,16 @@ suite('credit wallet ledger writes (throwaway Postgres)', () => {
       'postgres:16-alpine', '-c', 'fsync=off', '-c', 'synchronous_commit=off', '-c', 'full_page_writes=off',
     ]);
     if (!up.ok) throw new Error(`could not start test container: ${up.stderr}`);
+    // Poll until ready and let the last poll be the proof: a second poll
+    // after the loop races a loaded Docker daemon (a failed exec reads as
+    // "not ready") and throws right after a successful poll.
+    let ready = false;
     for (let i = 0; i < 60; i++) {
-      if (pgReady()) break;
+      ready = pgReady();
+      if (ready) break;
       await Bun.sleep(1000);
     }
-    if (!pgReady()) throw new Error('test Postgres never became ready');
+    if (!ready) throw new Error('test Postgres never became ready');
     const code = await runMigrate(ROOT, ports);
     if (code !== 0) throw new Error('migrations failed');
 
@@ -155,14 +159,13 @@ suite('credit wallet ledger writes (throwaway Postgres)', () => {
       afterDbCommit: scoped.afterCommit,
     }));
     ({ wallet } = await import('../../apps/api/src/billing/wallet'));
-    router = await import('../../apps/api/src/router/services/billing');
     errors = await import('../../apps/api/src/errors');
     honesty = await import('../../apps/api/src/billing/ledger-type-honesty');
   }, 300_000);
 
   afterAll(async () => {
     await database?.$client.end({ timeout: 5 });
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    sh(['docker', 'rm', '-f', '-v', CONTAINER]);
   });
 
   describe('grant', () => {
@@ -430,55 +433,6 @@ suite('credit wallet ledger writes (throwaway Postgres)', () => {
       expect(ledger(id)).toEqual([]);
       expect(account(id)).toMatchObject({ balance: 10, non_expiring: 10 });
     });
-
-    test('the router debit reports a refusal as a result, not a throw', async () => {
-      const id = newAccount({ nonExpiring: 0.5 });
-      expect(await router.deductLLMCredits(id, 'model-x', 10, 20, 1)).toEqual({
-        success: false,
-        cost: 0,
-        newBalance: 0,
-        error: 'Insufficient credits',
-      });
-      expect(await router.deductLLMCredits(unknownAccount(), 'model-x', 10, 20, 1)).toMatchObject({
-        success: false,
-        error: 'No credit account found',
-      });
-      expect(ledger(id)).toEqual([]);
-    });
-
-    test('the router debit writes an llm_debit usage row', async () => {
-      const id = newAccount({ nonExpiring: 2 });
-      const result = await router.deductLLMCredits(id, 'model-x', 10, 20, 0.25);
-      expect(result).toMatchObject({ success: true, cost: 0.25, newBalance: 1.75 });
-      expect(ledger(id)).toEqual([
-        expect.objectContaining({
-          type: 'usage',
-          amount: -0.25,
-          description: 'LLM: model-x (10/20 tokens)',
-          idempotency_key: null,
-          metadata: { from_daily: 0, from_monthly: 0, from_extra: 0.25, ledger_type: 'llm_debit' },
-        }),
-      ]);
-    });
-
-    test('the router credit check reports balance and a missing account', async () => {
-      const id = newAccount({ expiring: 0.005 });
-      expect(await router.checkCredits(id)).toEqual({
-        hasCredits: false,
-        balance: 0.005,
-        message: 'Insufficient credits. Balance: $0.0050',
-      });
-      expect(await router.checkCredits(newAccount({ nonExpiring: 3 }))).toEqual({
-        hasCredits: true,
-        balance: 3,
-        message: 'OK',
-      });
-      expect(await router.checkCredits(unknownAccount())).toEqual({
-        hasCredits: false,
-        balance: 0,
-        message: 'No credit account found',
-      });
-    });
   });
 
   describe('settle', () => {
@@ -605,6 +559,20 @@ suite('credit wallet ledger writes (throwaway Postgres)', () => {
       });
       expect(row!.expires_at).not.toBeNull();
       expect(account(id)).toMatchObject({ balance: 54, expiring: 50, non_expiring: 4, daily: 1 });
+    });
+
+    // reset_expiring_credits used NUMERIC(10, 2) variables: a preserved
+    // non-expiring bucket of 12.3456 became 12.35 and a debt of -0.004 became 0.
+    test('keeps the preserved non-expiring bucket and a small debt at full precision', async () => {
+      const funded = newAccount({ expiring: 3, nonExpiring: 12.3456 });
+      await wallet.reset({ accountId: funded, amount: 50, description: 'Monthly renewal', key: { event: 'in_p1' } });
+      expect(account(funded)!.non_expiring).toBeCloseTo(12.3456, 6);
+      expect(account(funded)!.balance).toBeCloseTo(62.3456, 6);
+
+      const indebted = newAccount({ nonExpiring: -0.004 });
+      await wallet.reset({ accountId: indebted, amount: 50, description: 'Monthly renewal', key: { event: 'in_p2' } });
+      expect(account(indebted)!.non_expiring).toBeCloseTo(-0.004, 6);
+      expect(account(indebted)!.balance).toBeCloseTo(49.996, 6);
     });
 
     test('a replayed reset key is a silent no-op', async () => {

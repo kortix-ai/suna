@@ -88,6 +88,31 @@ getToken: async () =>
 The SDK calls `getToken` on every request, so a refreshed token takes effect
 automatically.
 
+### Recover from a rejected token
+
+When the API answers `401`, the SDK replays the request once with a fresh
+token. A `getToken` that caches must tell the SDK what to drop. Attach an
+`invalidate(rejectedToken)` function to it. The SDK calls it before the replay,
+and the replay then reads a new token.
+
+```ts
+const getToken = Object.assign(
+  async () => cachedSession.accessToken,
+  { invalidate: (rejected: string) => cachedSession.refreshIfCurrent(rejected) },
+);
+```
+
+Rules:
+
+- Parallel `401`s on one token call `invalidate` once and share one refresh.
+- The SDK replays a request once. A second `401` returns to the caller.
+- Without `invalidate`, the replay re-reads `getToken()`. A cached getter then
+  returns the dead token, and the replay does not happen.
+- `invalidateTokenCache()` calls `invalidate` with the last token `getToken`
+  returned. The live event stream uses it after an auth error.
+- `isAuthFailure(error)` is `true` for a `401`, a `403` or an `AuthError`. It
+  reads `status`, never the message text.
+
 ## Headless sign-in (email, password, magic link, social)
 
 Every ordinary sign-in flow is available through the Kortix API, so a CLI, a
@@ -113,7 +138,7 @@ await kortix.projects.list();                   // as that user
 
 | Call | Route | Notes |
 |---|---|---|
-| `auth.signUp({ email, password, redirect_to? })` | `POST /v1/auth/signup` | `requires_email_confirmation: true` → no session until the emailed link/code is used. |
+| `auth.signUp({ email, password, redirect_to? })` | `POST /v1/auth/signup` | `requires_email_confirmation: true` → no session until the emailed link/code is used. It applies the web form's sign-up rules: `403 sso_required` for a domain that must sign in with SSO, and `403 signup_closed` when the instance's sign-ups are closed to the address. |
 | `auth.signInWithPassword({ email, password })` | `POST /v1/auth/sign-in/password` | |
 | `auth.sendMagicLink({ email, redirect_to? })` → `auth.verifyOtp({ email, token, type: 'magiclink' })` | `/sign-in/magic-link`, `/verify-otp` | The email carries a link and a 6-digit code. |
 | `auth.signInWithProvider({ provider, redirect_to })` → `auth.exchangeCode({ code, code_verifier })` | `/sign-in/oauth`, `/oauth/exchange` | PKCE: keep `code_verifier` until the provider redirects back with `?code=`. `redirect_to` must be on the instance's redirect allow-list. |

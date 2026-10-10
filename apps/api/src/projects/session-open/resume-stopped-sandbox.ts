@@ -30,6 +30,8 @@ import {
   runtimeWakeRestoreProgressPatch,
   stampedRuntimeFailureState,
 } from '../session-lifecycle/runtime-wake-fence';
+import { STOP_CLAIM_KEY } from '../session-lifecycle/stop-claim';
+import { sandboxStopClaimLeaseMs } from '../sandbox-deadline-policy';
 import type { OpenSessionRow } from './session-open-context';
 
 /**
@@ -269,6 +271,8 @@ export async function resumeStoppedSandbox(
       // nothing on a resume re-reads the base branch. Detached, idle-gated, and
       // a no-op — no opencode restart — on a box that is already current.
       scheduleSessionConfigConvergence(row.sessionId, 'resume');
+      // Drives attached, detached or granted while the box slept.
+      void import('../../drives/service').then(({ reconcileSessionDrives }) => reconcileSessionDrives(row.sessionId));
       return true;
     },
     fail: async (reason) => {
@@ -380,6 +384,82 @@ export async function resumeStoppedSandboxByExternalId(externalId: string): Prom
     externalId: row.externalId,
     metadata: row.metadata,
   });
+}
+
+/**
+ * Stop reasons a keep-alive poll must never undo: the user pressed Stop, or
+ * Kortix's own idle policy parked the box. Only a provider-originated park
+ * (and a row with no reason) is worth waking from a poll.
+ */
+const DELIBERATE_STOP_REASONS: ReadonlySet<string> = new Set([
+  'manual',
+  'deadline_expired',
+  'run_cap',
+  'idle_grace',
+  'boot_floor_expired',
+  'wedged_backlog_remediation',
+]);
+
+/**
+ * `/start?keep_stopped=1` is the open tab's keep-alive poll. A tab left open
+ * must not wake a box the user stopped or the idle reaper parked: that kept
+ * boxes alive for as long as a tab stayed open. An ordinary open (no flag)
+ * is the explicit resume and always wakes.
+ */
+export function keepStoppedRefusesWake(
+  keepStopped: boolean | undefined,
+  row: { metadata: unknown } | undefined,
+): boolean {
+  if (!keepStopped) return false;
+  const reason = (row?.metadata as Record<string, unknown> | null | undefined)?.stopReason;
+  return typeof reason === 'string' && DELIBERATE_STOP_REASONS.has(reason);
+}
+
+/**
+ * A user Stop that landed after the caller formed its intent to wake.
+ *
+ * A `/start` long-poll that was waiting when the user pressed Stop, and a
+ * prompt an automation queued before it, are not consent to undo that Stop.
+ * Both used to wake the box: the poll's next tick claimed the retired
+ * ephemeral row ~1 s after the stop, and a parked prompt resumed (and
+ * un-archived) the box minutes later. Only an open formed after the Stop (an
+ * explicit `/start`, a new message) wakes it.
+ */
+export function userStopFollowsIntent(
+  wakeIntentAt: Date | undefined,
+  row: { status: string; metadata: unknown } | undefined,
+): boolean {
+  if (!wakeIntentAt || row?.status !== 'stopped') return false;
+  const meta = (row.metadata ?? {}) as Record<string, unknown>;
+  if (meta.stopReason !== 'manual') return false;
+  // When the stop SETTLED, not when it was asked for: a poll that arrived
+  // while the box was being stopped (or deleted) still predates the stop.
+  // `stoppedAt` is the stop request's own clock; the retire and the manual
+  // stop each stamp the moment their write landed.
+  const stopMs = Math.max(
+    ...[meta.stoppedAt, meta.ephemeralRetiredAt, meta.stopSettledAt].map((value) =>
+      typeof value === 'string' ? Date.parse(value) : Number.NaN,
+    ).filter(Number.isFinite),
+  );
+  return Number.isFinite(stopMs) && stopMs >= wakeIntentAt.getTime();
+}
+
+/**
+ * The live stop claim on an `active` row (`session-lifecycle/stop-claim.ts`),
+ * or null. While it stands the box is being powered off (or, ephemeral,
+ * deleted): no open may report it ready.
+ */
+export function liveStopClaimAtMs(
+  row: { status: string; metadata: unknown } | undefined,
+  nowMs: number,
+): number | null {
+  if (row?.status !== 'active') return null;
+  const claim = ((row.metadata ?? {}) as Record<string, unknown>)[STOP_CLAIM_KEY] as
+    | { claimedAtMs?: unknown }
+    | undefined;
+  const claimedAtMs = Number(claim?.claimedAtMs);
+  if (!Number.isFinite(claimedAtMs)) return null;
+  return claimedAtMs > nowMs - sandboxStopClaimLeaseMs() ? claimedAtMs : null;
 }
 
 export function isMissingRuntimeError(error: unknown): boolean {

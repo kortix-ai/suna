@@ -279,12 +279,8 @@ const CASES: WCase[] = [
     path: () => `/v1/projects/${PROJECT}/experimental`, body: {},
     tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_SETTINGS_WRITE],
   },
-  {
-    name: 'sandbox-provider (settings.write)',
-    leaf: A.PROJECT_SETTINGS_WRITE, method: 'PATCH',
-    path: () => `/v1/projects/${PROJECT}/sandbox-provider`, body: {},
-    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_SETTINGS_WRITE],
-  },
+  // The provider pin is a session-principal refusal, not a leaf gate — it has
+  // its own block below ("the provider pin is a person's action").
   // ── Agent scope (agent.write) ────────────────────────────────────────────
   {
     name: 'agent scope PUT (agent.write)',
@@ -302,6 +298,32 @@ const CASES: WCase[] = [
 ];
 
 describe('HTTP enforcement — project write/lifecycle leaf gates (every checkbox authoritative)', () => {
+  // The per-project sandbox-provider pin routes EVERY new session in the
+  // project, so a session principal may never flip it — whatever grant it
+  // holds (KRTX-1681: a security-audit agent pinned its whole project to
+  // daytona). Humans keep the settings.write leaf: a member PAT is denied by
+  // the leaf, a manager PAT routes the write.
+  describe('the provider pin is a person\'s action (sandbox-provider PATCH)', () => {
+    test('a session-bound agent token → refused outright (agent_session_forbidden), grant irrelevant', async () => {
+      const granted = await mint(MANAGER, [A.PROJECT_SETTINGS_WRITE]);
+      const res = await req('PATCH', `/v1/projects/${PROJECT}/sandbox-provider`, granted, {});
+      expect(res.status).toBe(403);
+      expect(await res.json()).toMatchObject({ code: 'agent_session_forbidden' });
+    });
+
+    test('plain MEMBER (lacks the manager-tier settings.write leaf) → denied', async () => {
+      const secret = await mint(MEMBER, null);
+      const res = await req('PATCH', `/v1/projects/${PROJECT}/sandbox-provider`, secret, {});
+      expect(await iamDenied(res)).toBe(true);
+    });
+
+    test('plain MANAGER (holds the leaf) → NOT denied', async () => {
+      const secret = await mint(MANAGER, null);
+      const res = await req('PATCH', `/v1/projects/${PROJECT}/sandbox-provider`, secret, {});
+      expect(await iamDenied(res)).toBe(false);
+    });
+  });
+
   for (const c of CASES) {
     describe(c.name, () => {
       test('scoped agent with an UNRELATED grant → denied by the leaf gate', async () => {

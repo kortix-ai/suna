@@ -181,6 +181,7 @@ describe('handleCall — computer (tunnel)', () => {
       expect(result).toEqual({
         status: 'ok', data: discovery.data, risk: 'read',
         account: { connection_id: 'conn-account-1', label: 'Studio Mac', owner_type: 'member' },
+        binding: 'tunnel', output: discovery.data, upstreamStatus: null,
       });
       expect(calls).toEqual([{
         tunnelId: TUNNEL, accountId: 'acct-1', actorUserId: 'u1', projectId: 'proj-1',
@@ -197,6 +198,9 @@ describe('handleCall — computer (tunnel)', () => {
       data: { content: 'hello' },
       risk: 'read',
       account: { connection_id: 'conn-account-1', label: 'Studio Mac', owner_type: 'member' },
+      binding: 'tunnel',
+      output: { content: 'hello' },
+      upstreamStatus: null,
     });
     expect(calls).toEqual([
       {
@@ -223,14 +227,14 @@ describe('handleCall — computer (tunnel)', () => {
     test(`${kind} → error reason starts with the code`, async () => {
       const { deps } = makeDeps({ ok: false, kind, message: 'detail' });
       const res = await handleCall(deps, input({ path: '/x' }));
-      expect(res).toEqual({ status: 'error', reason: `${kind}: detail` });
+      expect(res).toEqual({ status: 'error', reason: `${kind}: detail`, binding: 'tunnel' });
     });
   }
 
   test('a relay failure → error with the machine message', async () => {
     const { deps } = makeDeps({ ok: false, kind: 'error', message: 'ENOENT' });
     const res = await handleCall(deps, input({ path: '/x' }));
-    expect(res).toEqual({ status: 'error', reason: 'ENOENT' });
+    expect(res).toEqual({ status: 'error', reason: 'ENOENT', binding: 'tunnel' });
   });
 });
 

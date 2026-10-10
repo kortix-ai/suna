@@ -43,6 +43,12 @@ const BLOBS: Record<string, Record<string, unknown>> = {
     DATABASE_URL: 'postgresql://user:staging-db-password@db.example.test:5432/postgres',
     SUPABASE_URL: 'https://staging-ref.supabase.co',
   },
+  'kortix-dev-env': {
+    DATABASE_URL: 'postgresql://user:dev-db-password@db.example.test:5432/postgres',
+  },
+  'kortix-prod-env': {
+    API_KEY_SECRET: 'prod-api-key-secret-value',
+  },
 };
 
 function run(keys: string, env: Record<string, string> = {}) {
@@ -66,7 +72,6 @@ function run(keys: string, env: Record<string, string> = {}) {
       AWS_STUB_DIR: dir,
       AWS_STUB_LOG: log,
       AWS_ENV_KEYS: keys,
-      AWS_ENV_REGION: 'us-west-2',
       ...env,
     },
   });
@@ -123,7 +128,7 @@ describe('aws-env composite action — fetch.sh', () => {
     expect(parseGithubEnv(r.githubEnv)).toEqual({ DOCKERHUB_TOKEN: 'dckr_pat_value_one' });
     expect(r.stdout).toContain('DOCKERHUB_TOKEN <- kortix-ci-env:DOCKERHUB_TOKEN (18 chars)');
     expect(r.awsCalls).toHaveLength(1);
-    expect(r.awsCalls[0]).toContain('secretsmanager get-secret-value --region us-west-2 --secret-id kortix-ci-env');
+    expect(r.awsCalls[0]).toContain('secretsmanager get-secret-value --region us-east-2 --secret-id kortix-ci-env');
   });
 
   it('maps NAME=blob:KEY across several blobs with one read per distinct blob', () => {
@@ -168,9 +173,34 @@ describe('aws-env composite action — fetch.sh', () => {
   });
 
   it('fails closed when a blob cannot be read, even if every key is optional', () => {
-    const r = run('X=kortix-missing-env:X?');
+    const r = run('X=kortix-preview-env:X?');
     expect(r.status).not.toBe(0);
-    expect(r.stdout).toContain("::error::aws-env: cannot read Secrets Manager blob 'kortix-missing-env'");
+    expect(r.stdout).toContain("::error::aws-env: cannot read Secrets Manager blob 'kortix-preview-env' in us-east-2");
+    expect(r.githubEnv).toBe('');
+  });
+
+  it('reads each blob from the region of its row in the region table', () => {
+    const r = run('DOCKERHUB_TOKEN\nS=kortix-staging-env:SUPABASE_URL\nD=kortix-dev-env:DATABASE_URL\nP=kortix-prod-env:API_KEY_SECRET');
+    expect(r.status, r.stderr + r.stdout).toBe(0);
+    expect(r.awsCalls).toHaveLength(4);
+    expect(r.awsCalls).toContainEqual(expect.stringContaining('--region us-east-2 --secret-id kortix-ci-env'));
+    expect(r.awsCalls).toContainEqual(expect.stringContaining('--region eu-west-2 --secret-id kortix-prod-env'));
+    expect(r.awsCalls).toContainEqual(expect.stringContaining('--region eu-west-2 --secret-id kortix-staging-env'));
+    expect(r.awsCalls).toContainEqual(expect.stringContaining('--region us-east-2 --secret-id kortix-dev-env'));
+  });
+
+  it('maps no blob to us-west-2: that region is being removed', () => {
+    const table = readFileSync(script, 'utf8').match(/^blob_region\(\) \{[\s\S]*?^\}/m)?.[0] ?? '';
+    expect(table).toContain('esac');
+    expect(table).not.toContain('us-west-2');
+  });
+
+  it('fails before any AWS call when a blob has no row in the region table', () => {
+    // kortix-staging-web-env is the old us-west-2 copy; staging reads kortix-staging-euw2-web-env.
+    const r = run('DOCKERHUB_TOKEN\nP=kortix-staging-web-env:WEB_PROTECTION_PASSWORD');
+    expect(r.status).not.toBe(0);
+    expect(r.stdout).toContain("::error::aws-env: no region for blob 'kortix-staging-web-env'");
+    expect(r.awsCalls).toHaveLength(0);
     expect(r.githubEnv).toBe('');
   });
 
@@ -305,7 +335,8 @@ describe('aws-env composite action — fetch.sh', () => {
   it('action.yml runs one bash step with no nested action, so it has no POST step', () => {
     const action = readFileSync(resolve(actionDir, 'action.yml'), 'utf8');
     expect(action).toContain('default: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy');
-    expect(action).toContain('default: us-west-2');
+    // The region of each blob comes from the table in fetch.sh, never from the caller.
+    expect(action).not.toContain('aws-region');
     expect(action).not.toMatch(/^\s+uses:/m);
     expect(action).toContain('AWS_ENV_ROLE: ${{ inputs.role-to-assume }}');
     expect(action).toContain('shell: bash');
@@ -406,6 +437,58 @@ describe('workflows read credentials from AWS, not GitHub', () => {
     expect(bad).toEqual([]);
   });
 
+  /** The text of every aws-env step: from its `uses:` line to the next step. */
+  function awsEnvSteps(): { at: string; text: string }[] {
+    const out: { at: string; text: string }[] = [];
+    for (const { file, text } of users) {
+      let from = 0;
+      for (;;) {
+        const at = text.indexOf(USES, from);
+        if (at === -1) break;
+        from = at + USES.length;
+        const indent = at - text.lastIndexOf('\n', at) - 1;
+        const rest = text.slice(from);
+        const end = rest.search(new RegExp(`\\n {${indent - 2}}- `));
+        out.push({ at: `${file}:${text.slice(0, at).split('\n').length}`, text: end === -1 ? rest : rest.slice(0, end) });
+      }
+    }
+    return out;
+  }
+
+  it('passes no aws-region to aws-env: the region table in fetch.sh decides', () => {
+    const steps = awsEnvSteps();
+    expect(steps.length).toBeGreaterThanOrEqual(40);
+    expect(steps.filter((s) => s.text.includes('aws-region')).map((s) => s.at)).toEqual([]);
+  });
+
+  it('every blob a workflow reads through aws-env has a row in the region table', () => {
+    const blobs = new Set<string>();
+    for (const { text } of awsEnvSteps()) {
+      for (const m of text.matchAll(/=\s*(kortix-[a-z0-9-]+):[A-Za-z0-9_]+/g)) blobs.add(m[1]);
+    }
+    expect(blobs.size).toBeGreaterThanOrEqual(5);
+    // Every key optional: the run passes the region check for every line before
+    // it reads anything, so a missing row fails here and a missing blob does not.
+    const r = run([...blobs].map((blob, i) => `K${i}=${blob}:K?`).join('\n'));
+    expect(r.stdout).not.toContain('no region for blob');
+  });
+
+  it('reads no env blob with a raw get-secret-value outside aws-env, except the listed whole-blob jobs', () => {
+    // A raw read names its own region and bypasses blob_region. After #9430 moved every
+    // aws-env read, configure-preview-edge.yml still read the us-west-2 dev/staging copies.
+    // Each exception reads a whole blob in the region its blob_region row names.
+    const allowed = new Set([
+      'deploy-dev.yml', // masks every value of kortix-dev-env (job AWS_REGION us-east-2)
+      'deploy-staging.yml', // read-modify-write of kortix-staging-env in eu-west-2
+      'deploy-prod-us-east-2-shadow.yml', // copies kortix-prod-env (eu-west-2) into kortix-prod-us-east-2-env
+      'finalize-prod-us-east-2-database.yml', // the same copy at the final cut
+    ]);
+    const raw = files.filter(
+      (file) => !allowed.has(file) && readFileSync(join(workflowsDir, file), 'utf8').includes('get-secret-value'),
+    );
+    expect(raw).toEqual([]);
+  });
+
   it('never gives a deploy-preview job that checks out pull request code an OIDC token', () => {
     const text = readFileSync(join(workflowsDir, 'deploy-preview.yml'), 'utf8');
     const prJobs = jobsOf(text).filter((job) => job.text.includes('ref: ${{ needs.authorize.outputs.sha }}'));
@@ -415,7 +498,7 @@ describe('workflows read credentials from AWS, not GitHub', () => {
       expect(job.text, job.name).not.toContain('aws-env');
     }
     for (const job of jobsOf(text).filter((j) => j.text.includes(USES))) {
-      expect(job.text, job.name).toMatch(/ref: (\$\{\{ github\.event\.repository\.default_branch \}\}|main)\n/);
+      expect(job.text, job.name).toMatch(/ref: (\$\{\{ github\.event\.repository\.default_branch \}\}|dev)\n/);
     }
   });
 });

@@ -358,6 +358,23 @@ describe('getChildSessionId', () => {
     expect(getChildSessionId(part)).toBe('ses_meta1');
   });
 
+  test('reads a failed task child from its task_id error when metadata is absent', () => {
+    const part: ToolPartLike = {
+      type: 'tool',
+      tool: 'task',
+      callID: 'failed-task',
+      state: {
+        status: 'error',
+        error: 'Subagent failed (task_id: ses_failed123): provider rejected the request',
+      },
+    };
+    expect(getChildSessionId(part)).toBe('ses_failed123');
+    expect(getChildSessionId({ ...part, tool: 'bash' })).toBeUndefined();
+    expect(getChildSessionId({ ...part, tool: 'oc-task' })).toBeUndefined();
+    expect(getChildSessionId({ ...part, state: { ...part.state, metadata: { sessionId: 'ses_metadata' } } })).toBe('ses_metadata');
+    expect(getChildSessionId({ ...part, state: { status: 'error', error: 'Request for ses_unrelated failed' } })).toBeUndefined();
+  });
+
   test('falls back to title then output for agent_task tools', () => {
     const fromTitle: ToolPartLike = {
       type: 'tool',
@@ -654,10 +671,12 @@ describe('stripAnsi', () => {
   test('does not hang on many repeated unterminated OSC starts (ReDoS guard, /g multi-anchor)', () => {
     // str.replace with a /g regex retries the scan from every OSC start it finds;
     // without a bounded run length this is O(n^2) even though no single match is ambiguous.
+    // The bound only has to separate linear (~10 ms) from quadratic (minutes on 200k
+    // starts); 1 s failed on a loaded box at 1.03 s with the implementation linear.
     const malicious = '\x1b]'.repeat(200_000);
     const start = performance.now();
     stripAnsi(malicious);
-    expect(performance.now() - start).toBeLessThan(1000);
+    expect(performance.now() - start).toBeLessThan(5000);
   });
 });
 

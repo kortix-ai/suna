@@ -9,6 +9,10 @@
  *   (a name past 24 characters shows its head, then its last 10 characters),
  *   extension badge bottom-left (secondary, uppercase mono `0.8rem`);
  * - an image: the picture fills the tile (cover), no badge;
+ * - pasted text (`preview`): a page, not a file — a `w-32` square, a folded
+ *   top-right corner (`rounded-tr-xl`), `px-2.5 pt-2 pb-2.5`, the text at
+ *   11px fading out at the bottom (no ellipsis), first line title-weight, and
+ *   a `PASTED` badge; no count (the full-text view carries it);
  * - pressable only when pressing it opens something: `active:scale-[0.96]`.
  *
  * The composer adds `AttachmentRemoveButton`, `UploadProgressRing` (corner) and
@@ -20,6 +24,7 @@ import { Image, Pressable, View, type ImageSourcePropType } from 'react-native';
 import Reanimated from 'react-native-reanimated';
 import Svg, { Circle } from 'react-native-svg';
 import { useColorScheme } from 'nativewind';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
@@ -44,6 +49,14 @@ const tileSurface = 'border-border bg-popover overflow-hidden rounded-md border'
 
 /** `text-xs` (0.8125rem) with `leading-tight` (1.25). */
 const NAME_TEXT_STYLE = { fontFamily: 'Roobert-Medium', fontSize: 13, lineHeight: 16.25 } as const;
+/** Web's paste tile: `text-[11px] leading-tight`, Regular. */
+const PREVIEW_TEXT_STYLE = { fontFamily: 'Roobert-Regular', fontSize: 11, lineHeight: 13.75 } as const;
+/** The paste tile: `w-32` square on mobile (Jay, 2026-10-08: the `h-28` web height read short on the phone), `rounded-tr-xl` (14px). */
+const PASTE_WIDTH = webSpace(32);
+const PASTE_HEIGHT = webSpace(32);
+const PASTE_CORNER_RADIUS = 14;
+/** A tile shows four lines of a paste; the text node need not hold 100 kB. Web: `PASTE_PREVIEW_CHARS`. */
+const PASTE_PREVIEW_CHARS = 400;
 
 export interface AttachmentTileProps {
   filename: string;
@@ -59,7 +72,11 @@ export interface AttachmentTileProps {
   overlay?: ReactNode;
   /** Pressing the tile does this. Without it the tile is inert. */
   onPress?: () => void;
+  /** A long press on a pressable tile (a sent paste's message menu). */
+  onLongPress?: () => void;
   accessibilityLabel?: string;
+  /** Pasted text. When set, the tile shows its first lines in place of the name, and the badge reads `pasted`. */
+  preview?: string;
 }
 
 export function AttachmentTile({
@@ -71,14 +88,22 @@ export function AttachmentTile({
   corner,
   overlay,
   onPress,
+  onLongPress,
   accessibilityLabel,
+  preview,
 }: AttachmentTileProps) {
-  const { onPressIn, onPressOut, animatedStyle } = usePressScale(0.96, MOTION.duration.fast);
-  const ext = attachmentExtension(filename, mime);
+  // A paste tile does not shrink on press (Jay, 2026-10-08); file tiles do.
+  const { onPressIn, onPressOut, animatedStyle } = usePressScale(
+    preview !== undefined ? 1 : 0.96,
+    MOTION.duration.fast,
+  );
+  const ext = preview !== undefined ? 'pasted' : attachmentExtension(filename, mime);
   const split = splitFilenameForTile(filename);
   const picture = imageSource && isPreviewableImage(filename, mime) ? imageSource : null;
 
-  const body = picture ? (
+  const body = preview !== undefined ? (
+    <PastePage preview={preview} corner={corner} />
+  ) : picture ? (
     <>
       <Image
         key={imageKey}
@@ -116,7 +141,15 @@ export function AttachmentTile({
     </View>
   );
 
-  const size = { width: TILE_SIZE, height: TILE_SIZE, borderRadius: TILE_RADIUS };
+  const size =
+    preview !== undefined
+      ? {
+          width: PASTE_WIDTH,
+          height: PASTE_HEIGHT,
+          borderRadius: TILE_RADIUS,
+          borderTopRightRadius: PASTE_CORNER_RADIUS,
+        }
+      : { width: TILE_SIZE, height: TILE_SIZE, borderRadius: TILE_RADIUS };
 
   if (!onPress) {
     return (
@@ -136,6 +169,8 @@ export function AttachmentTile({
     <Reanimated.View style={animatedStyle}>
       <Pressable
         onPress={onPress}
+        onLongPress={onLongPress}
+        delayLongPress={onLongPress ? 350 : undefined}
         onPressIn={onPressIn}
         onPressOut={onPressOut}
         accessibilityRole="button"
@@ -150,15 +185,85 @@ export function AttachmentTile({
 }
 
 /**
+ * The paste page body. Web uses `::first-line` and a CSS mask; React Native
+ * has neither, so the first paragraph is the title-weight run and a
+ * popover-coloured gradient fades the bottom of the text.
+ */
+function PastePage({ preview, corner }: { preview: string; corner?: ReactNode }) {
+  const { colorScheme } = useColorScheme();
+  const popover = THEME[colorScheme === 'dark' ? 'dark' : 'light'].popover;
+  const text = preview.slice(0, PASTE_PREVIEW_CHARS);
+  const breakAt = text.indexOf('\n');
+  const head = breakAt === -1 ? text : text.slice(0, breakAt);
+  const rest = breakAt === -1 ? '' : text.slice(breakAt);
+  return (
+    <>
+      <View
+        style={{
+          flex: 1,
+          paddingHorizontal: webSpace(2.5),
+          paddingTop: webSpace(2),
+          paddingBottom: webSpace(2.5),
+          gap: webSpace(1),
+          justifyContent: 'space-between',
+        }}
+      >
+        {/* Web floats a spacer the fold's size so only the first line wraps short
+            of it; React Native has no floats, so every line keeps clear of the
+            fold: `paddingRight` = the fold (`webSpace(5)`) less the page's own
+            padding (`webSpace(2.5)`), plus a hair. */}
+        <View style={{ flex: 1, minHeight: 0, overflow: 'hidden', paddingRight: webSpace(3) }}>
+          <Text className="text-muted-foreground" style={PREVIEW_TEXT_STYLE}>
+            {/* The full style again: the `Text` primitive sets its own size,
+                which would beat the inherited 11px and make the title run big. */}
+            <Text className="text-foreground" style={{ ...PREVIEW_TEXT_STYLE, fontFamily: 'Roobert-Medium' }}>
+              {head}
+            </Text>
+            {rest}
+          </Text>
+          {/* Web: `mask-b-from-60% mask-b-to-88%`. The bottom stays solid for
+              more than one line (13.75px), so the line the box clips is fully
+              covered: no half glyph above the badge. */}
+          <LinearGradient
+            pointerEvents="none"
+            colors={[withAlpha(popover, 0), popover, popover]}
+            locations={[0, 0.55, 1]}
+            style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '45%' }}
+          />
+        </View>
+        <View className="flex-row items-end justify-between" style={{ gap: webSpace(1) }}>
+          {/* The tile's own fill, as on web (where it keeps the badge visible on hover). */}
+          <ExtensionBadge ext="pasted" fill="bg-popover" />
+          {corner ? <View className="shrink-0 flex-row">{corner}</View> : null}
+        </View>
+      </View>
+      {/* The folded corner, drawn last so it sits over the text like a dog-ear. */}
+      <View
+        pointerEvents="none"
+        className="bg-muted border-border border-b border-l"
+        style={{
+          position: 'absolute',
+          top: -1,
+          right: -1,
+          width: webSpace(5),
+          height: webSpace(5),
+          borderBottomLeftRadius: 4,
+        }}
+      />
+    </>
+  );
+}
+
+/**
  * Web: `Badge variant="secondary" size="xs"` + `uppercase` — `rounded-[5px]
  * px-1.5 py-[0.1rem] font-mono text-[0.8rem] font-medium tracking-tight
  * bg-secondary/80 ring-1 ring-inset ring-border/60`.
  */
-function ExtensionBadge({ ext }: { ext: string }) {
+function ExtensionBadge({ ext, fill = 'bg-secondary/80' }: { ext: string; fill?: string }) {
   return (
     <Badge
       variant="secondary"
-      className="bg-secondary/80 border-border/60 rounded-[5px]"
+      className={`${fill} border-border/60 rounded-[5px]`}
       style={{ paddingHorizontal: webSpace(1.5), paddingVertical: 0.1 * 16 }}
     >
       <Text

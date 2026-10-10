@@ -14,7 +14,7 @@ const TRANSPORT_REASONS: ReadonlySet<string> = new Set([
 /**
  * The one rule for a live session: once `/start` answered `ready`, only a
  * LIFECYCLE fact takes it out of live — a terminal stage, a sandbox that is no
- * longer active, a different sandbox, or a non-transport `starting` (wake,
+ * longer active, a different sandbox or box, or a non-transport `starting` (wake,
  * restore, relaunch). A failed poll (`null`) or a transport `starting` is no
  * new information, so the live answer is kept.
  *
@@ -32,7 +32,27 @@ export function holdLiveStart(
   if (next.stage !== 'starting') return next;
   if (next.sandbox) {
     if (next.sandbox.sandbox_id !== previous.sandbox?.sandbox_id) return next;
+    // An ephemeral session keeps its sandbox id across boxes: a new external id
+    // is a new box, never a transport blip on the old one.
+    if (next.sandbox.external_id !== previous.sandbox?.external_id) return next;
     if (next.sandbox.status !== 'active') return next;
   }
   return TRANSPORT_REASONS.has(next.reason ?? '') ? previous : next;
+}
+
+/**
+ * What one `/start` fetch is, given what the tab already knows.
+ *
+ * - `skip`: the tab shows the session ready and is in the background. Polling
+ *   then keeps a box alive for nobody; the next visible fetch revalidates.
+ * - `keep-stopped`: the tab shows it ready and is in the foreground. This is a
+ *   keep-alive poll: it must report a stop, never undo one.
+ * - `open`: anything else is an open (or a wake in flight) and may wake the box.
+ */
+export function liveStartPollMode(
+  previous: SessionStartResult | null | undefined,
+  documentHidden: boolean,
+): 'skip' | 'keep-stopped' | 'open' {
+  if (previous?.stage !== 'ready') return 'open';
+  return documentHidden ? 'skip' : 'keep-stopped';
 }

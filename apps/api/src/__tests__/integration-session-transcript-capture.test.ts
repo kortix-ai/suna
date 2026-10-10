@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
-import { Client } from 'pg';
+import { PgClient } from './helpers/pg-client';
 import { captureSessionTranscriptMirror } from '../projects/lib/session-transcript-capture';
 import { readSessionTranscriptMirror } from '../projects/lib/session-transcript-mirror';
 import {
@@ -12,7 +12,7 @@ import {
 } from './helpers/integration-fixtures';
 
 test('complete capture persists all pages, retries, serializes writes, and keeps history whatever the project stored', async () => {
-  const db = new Client({ connectionString: localTestDatabaseUrl() });
+  const db = new PgClient({ connectionString: localTestDatabaseUrl() });
   await db.connect();
   let project: SeededProject | undefined;
   try {
@@ -173,7 +173,7 @@ test('complete capture persists all pages, retries, serializes writes, and keeps
 }, 20_000);
 
 test('a turn writes only what changed, and only what vanished is deleted', async () => {
-  const db = new Client({ connectionString: localTestDatabaseUrl() });
+  const db = new PgClient({ connectionString: localTestDatabaseUrl() });
   await db.connect();
   let project: SeededProject | undefined;
   try {
@@ -275,7 +275,7 @@ test('a turn writes only what changed, and only what vanished is deleted', async
 }, 20_000);
 
 test("a sub-agent's transcript is saved under its own OpenCode session, and a root read never shows it", async () => {
-  const db = new Client({ connectionString: localTestDatabaseUrl() });
+  const db = new PgClient({ connectionString: localTestDatabaseUrl() });
   await db.connect();
   let project: SeededProject | undefined;
   try {
@@ -385,7 +385,7 @@ test("a sub-agent's transcript is saved under its own OpenCode session, and a ro
 }, 20_000);
 
 test('a complete read of an empty conversation is saved and served as complete and empty', async () => {
-  const db = new Client({ connectionString: localTestDatabaseUrl() });
+  const db = new PgClient({ connectionString: localTestDatabaseUrl() });
   await db.connect();
   let project: SeededProject | undefined;
   try {
@@ -418,6 +418,88 @@ test('a complete read of an empty conversation is saved and served as complete a
     });
     // It speaks for the conversation only: a sub-agent with no rows is not saved.
     expect(await readSessionTranscriptMirror({ sessionId, limit: 40, opencodeSessionId: 'ses_child' })).toBeNull();
+  } finally {
+    if (project) await removeSeeded([project]);
+    await db.end();
+  }
+}, 20_000);
+
+test('a transcript string Postgres jsonb cannot represent is made storable, not a doomed capture (KRTX-1701)', async () => {
+  /*
+    A tool output that carries U+0000 (binary bytes through a shell) makes the
+    mirror INSERT fail with `unsupported Unicode escape sequence — \u0000
+    cannot be converted to text.` (SQLSTATE 22P05). The write is deterministic
+    on its content, so every later capture of that session retried the same
+    doomed transaction and warned — 568 lines in one prod hour, one session
+    unmirrored from then on. The projection must make such a string storable.
+  */
+  const db = new PgClient({ connectionString: localTestDatabaseUrl() });
+  await db.connect();
+  let project: SeededProject | undefined;
+  try {
+    project = await seedProject('transcript-capture-jsonb-unsafe');
+    const sessionId = await seedSession(project, randomUUID());
+    const root = 'ses_jsonb_unsafe';
+    await db.query('UPDATE kortix.project_sessions SET opencode_session_id = $2 WHERE session_id = $1', [
+      sessionId,
+      root,
+    ]);
+    const messages = [
+      {
+        info: {
+          id: 'msg_bin',
+          sessionID: root,
+          role: 'assistant',
+          time: { created: 1, completed: 2 },
+        },
+        parts: [
+          {
+            id: 'prt_bin',
+            type: 'tool',
+            state: { status: 'done', input: { command: 'xxd header.bin' }, output: 'GIF89a\u0000\u0001D\u0000;' },
+          },
+        ],
+      },
+      {
+        info: {
+          id: 'msg_text',
+          sessionID: root,
+          role: 'assistant',
+          time: { created: 3, completed: 4 },
+        },
+        parts: [{ id: 'prt_text', type: 'text', text: 'clean reply' }],
+      },
+    ];
+    const result = await captureSessionTranscriptMirror(sessionId, {
+      readMessages: async () => ({
+        opencodeSessionId: root,
+        payload: messages,
+        headComplete: true,
+        complete: true,
+      }),
+    });
+    expect(result).toEqual({ captured: 2, head_complete: true });
+
+    const rows = await db.query(
+      'SELECT message_id, parts FROM kortix.session_transcript_messages WHERE session_id = $1 ORDER BY message_id',
+      [sessionId],
+    );
+    expect(rows.rowCount).toBe(2);
+    // The stored text is jsonb-legal: no U+0000 survived, the bytes around it
+    // and the clean message did.
+    expect(JSON.stringify(rows.rows)).not.toContain('\\u0000');
+    expect((rows.rows[0].parts as unknown[])[0]).toMatchObject({
+      type: 'tool',
+      state: { status: 'done', output: 'GIF89a\uFFFD\u0001D\uFFFD;' },
+    });
+    expect((rows.rows[1].parts as unknown[])[0]).toMatchObject({ type: 'text', text: 'clean reply' });
+    // The head bit advanced — the session is mirrored again, and the next turn
+    // ends an ordinary capture instead of the doomed one.
+    const mirror = await db.query(
+      'SELECT head_complete FROM kortix.session_transcript_mirrors WHERE session_id = $1',
+      [sessionId],
+    );
+    expect(mirror.rows[0].head_complete).toBe(true);
   } finally {
     if (project) await removeSeeded([project]);
     await db.end();

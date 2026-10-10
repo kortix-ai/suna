@@ -18,8 +18,13 @@
  *   - commitmentType='yearly_commitment' and commitment still active → no-op
  *   - No Stripe customer at all (free tier user) → just flip the flag, no Stripe work
  *
- * Concurrency: postgres advisory lock keyed by account_id. Concurrent sign-ins
- * from multiple devices serialize through the lock; the second sees billing_model
+ * Concurrency: the body runs inside `withAccountLock` (webhook-concurrency) —
+ * a transaction-scoped `pg_advisory_xact_lock` keyed by account id, with a
+ * `SET LOCAL lock_timeout`, held on the pooler by a real transaction so the
+ * Supabase transaction pool cannot route it away, auto-released at
+ * commit/rollback, and shared with the webhook writers so a Stripe webhook for
+ * the same account cannot interleave with the migration. Concurrent sign-ins
+ * from multiple devices serialize through it; the second sees billing_model
  * already 'per_seat' and exits.
  */
 
@@ -28,23 +33,14 @@ import Stripe from 'stripe';
 import { sandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { getStripe } from '../../shared/stripe';
-import { getCreditAccount, updateCreditAccount } from '../repositories/credit-accounts';
+import { getCreditAccount } from '../repositories/credit-accounts';
 import { listAccountStripeCustomerIds } from '../repositories/customers';
+import { applyStripeSync } from './account-write-owner';
 import { resolveLiveStripeCustomerId } from './subscriptions';
 import { countActiveMembers } from './seat-management';
 import { wallet } from '../wallet';
 import { resolvePerSeatPriceId, defaultAutoTopupForSeats, MAX_SEATS_PER_ACCOUNT, PER_SEAT_PRICE_USD } from './tiers';
-
-const ADVISORY_LOCK_NS = 'lazy_migrate';
-
-function lockKey(accountId: string): bigint {
-  let h = 14695981039346656037n;
-  for (const ch of `${ADVISORY_LOCK_NS}:${accountId}`) {
-    h ^= BigInt(ch.charCodeAt(0));
-    h = (h * 1099511628211n) & 0x7fffffffffffffffn;
-  }
-  return h;
-}
+import { withAccountLock } from './webhook-concurrency';
 
 interface MigrationResult {
   status: 'migrated' | 'skipped:already_per_seat' | 'skipped:yearly_commitment' | 'skipped:no_subs' | 'skipped:no_legacy_machine' | 'failed';
@@ -75,7 +71,7 @@ export async function maybeMigrateLegacyAccount(accountId: string): Promise<Migr
     return defaultResult('skipped:no_legacy_machine');
   }
 
-  return await withAdvisoryLock(accountId, async () => {
+  return await withAccountLock(accountId, async () => {
     const fresh = await getCreditAccount(accountId);
     if (!fresh || fresh.billingModel === 'per_seat') {
       return defaultResult('skipped:already_per_seat');
@@ -111,7 +107,10 @@ export async function maybeMigrateLegacyAccount(accountId: string): Promise<Migr
     }
 
     if (activeSubs.length === 0) {
-      await updateCreditAccount(accountId, { billingModel: 'per_seat' } as any);
+      // The write-owner chokepoint: billing_model is provider-owned, and the
+      // write must invalidate the billing cache so the next account-state read
+      // does not serve the stale legacy row for another 30 s.
+      await applyStripeSync(accountId, { billingModel: 'per_seat' }, { mode: 'update', reason: 'lazy_migration' });
       return defaultResult('skipped:no_subs');
     }
 
@@ -212,19 +211,24 @@ export async function maybeMigrateLegacyAccount(accountId: string): Promise<Migr
       }
     }
 
-    // 5. Flip billing_model + record new subscription
+    // 5. Flip billing_model + record new subscription — through the write-owner
+    //    chokepoint, so the billing cache is invalidated in the same breath.
     const seatItem = newSubscription?.items.data[0];
     const defaults = defaultAutoTopupForSeats(seatCount);
-    await updateCreditAccount(accountId, {
-      billingModel: 'per_seat',
-      seatCount,
-      seatSubscriptionItemId: seatItem?.id ?? null,
-      stripeSubscriptionId: newSubscription?.id ?? null,
-      stripeSubscriptionStatus: newSubscription?.status ?? null,
-      autoTopupEnabled: true,
-      autoTopupThreshold: String(fresh.autoTopupCustomized ? fresh.autoTopupThreshold : defaults.threshold),
-      autoTopupAmount: String(fresh.autoTopupCustomized ? fresh.autoTopupAmount : defaults.amount),
-    } as any);
+    await applyStripeSync(
+      accountId,
+      {
+        billingModel: 'per_seat',
+        seatCount,
+        seatSubscriptionItemId: seatItem?.id ?? null,
+        stripeSubscriptionId: newSubscription?.id ?? null,
+        stripeSubscriptionStatus: newSubscription?.status ?? null,
+        autoTopupEnabled: true,
+        autoTopupThreshold: String(fresh.autoTopupCustomized ? fresh.autoTopupThreshold : defaults.threshold),
+        autoTopupAmount: String(fresh.autoTopupCustomized ? fresh.autoTopupAmount : defaults.amount),
+      },
+      { mode: 'update', reason: 'lazy_migration' },
+    );
 
     // 6. Stop sandboxes beyond the seat count (keep top N by last_used_at)
     const stoppedSandboxIds = await stopSurplusSandboxes(accountId, seatCount, cancelledSubIds);
@@ -291,19 +295,6 @@ async function stopSurplusSandboxes(
     })
     .where(and(eq(sandboxes.accountId, accountId), sql`sandbox_id = ANY(${surplusIds}::uuid[])`));
   return surplusIds;
-}
-
-async function withAdvisoryLock<T>(
-  accountId: string,
-  fn: () => Promise<T>,
-): Promise<T> {
-  const key = lockKey(accountId);
-  await db.execute(sql`SELECT pg_advisory_lock(${key})`);
-  try {
-    return await fn();
-  } finally {
-    await db.execute(sql`SELECT pg_advisory_unlock(${key})`).catch(() => {});
-  }
 }
 
 function defaultResult(
