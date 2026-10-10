@@ -2592,6 +2592,7 @@ flow(
           category: 'provider-capacity',
           message: 'The sandbox provider could not start this session after 1 attempts. Restart the session to try again.',
           retryable: true,
+          reason: 'provider_transient_retries_exhausted',
         },
         {
           label: 'a protected-delivery failure is actionable and not retryable',
@@ -2605,15 +2606,19 @@ flow(
         await ctx.step(c.label, async () => {
           const sessionId = await seed('failed', { provider: c.provider, status: 'error', metadata: c.metadata });
           for (let attempt = 0; attempt < 2; attempt += 1) {
-            (await start(sessionId))
-              .status(200)
-              .body()
+            const answer = (await start(sessionId)).status(200).body();
+            answer
               .has('$.stage', 'failed')
               .has('$.retriable', false)
               .has('$.sandbox.status', 'error')
               .has('$.failure.category', c.category)
               .has('$.failure.message', c.message)
               .has('$.failure.retryable', c.retryable);
+            // The transient case runs the #9489 retry path. Its exhausted answer is
+            // the deterministic one here: the local profile's allowed providers
+            // (platinum, daytona) exclude this case's provider, so /start can never
+            // allocate and always reports the spent-retries verdict, retry after retry.
+            if ('reason' in c) answer.has('$.reason', c.reason);
           }
           const rows = await sandboxRows(sessionId);
           if (rows.length !== 1 || rows[0]!.status !== 'error' || rows[0]!.external_id !== null) throw new Error(`a terminal failure changed the row: ${JSON.stringify(rows)}`);
