@@ -11,6 +11,7 @@ import { type SandboxProviderName, config } from '../../config';
 import { type SandboxStatus, getProvider } from '../../platform/providers';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { db } from '../../shared/db';
+import { logger } from '../../lib/logger';
 import { exponentialBackoffMs } from '../../shared/backoff';
 import { endComputeSession } from '../../billing/services/compute-metering';
 import { classifySandboxProvisioningFailure } from '../../platform/services/sandbox-provisioning-error';
@@ -383,7 +384,10 @@ async function claimFailedProvisionRow(row: typeof sessionSandboxes.$inferSelect
     .returning({ sandboxId: sessionSandboxes.sandboxId });
   if (deleted.length === 0) return false;
   await endComputeSession(row.sandboxId).catch((err) =>
-    console.warn(`[session-open] closing compute for failed ${row.sandboxId} failed:`, err),
+    logger.warn('[session-open] closing compute for a failed provision failed', {
+      sandboxId: row.sandboxId,
+      error: err instanceof Error ? err.message : String(err),
+    }),
   );
   return true;
 }
