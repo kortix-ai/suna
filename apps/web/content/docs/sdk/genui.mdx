@@ -27,6 +27,8 @@ block name, or `defaultGenuiComponents` for unbranded HTML defaults.
 
 `genuiToMarkdown(text)` replaces every block with deterministic markdown. Charts become tables with a
 `Source:` line; maps become place lists; tabs and accordions expand.
+Blocks inside blockquotes and list items convert too. For a reply that is still streaming, pass
+`genuiToMarkdown(text, { streaming: true })`: the unfinished last block shows no "cut off" note.
 
 ## Blocks
 

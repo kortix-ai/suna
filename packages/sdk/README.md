@@ -1231,6 +1231,9 @@ components, or with the bundled defaults:
 import { genuiVersionFromClassName } from '@kortix/sdk/genui';
 import { GenuiBlock, defaultGenuiComponents } from '@kortix/sdk/genui/react';
 
+// A module constant: the same function on every render.
+const renderMarkdown = (md: string) => <Markdown>{md}</Markdown>;
+
 // Inside your markdown renderer's `code` override:
 const version = genuiVersionFromClassName(className);
 if (version !== null) {
@@ -1240,7 +1243,7 @@ if (version !== null) {
       version={version}
       streaming={isStreaming}
       components={defaultGenuiComponents}
-      renderMarkdown={(md) => <Markdown>{md}</Markdown>}
+      renderMarkdown={renderMarkdown}
     />
   );
 }
@@ -1249,6 +1252,8 @@ if (version !== null) {
 Pass a stable `renderMarkdown` (module constant or `useCallback`): a new function re-renders the block's markdown parts and node views.
 
 A host that renders no UI (email, a chat bot, a CLI) converts a reply with `genuiToMarkdown(text)`.
+It converts blocks inside blockquotes and list items too. For a reply that is still streaming, pass
+`genuiToMarkdown(text, { streaming: true })`: the unfinished last block shows no "cut off" note.
 
 Install the optional peers: `npm i zod @openuidev/lang-core@0.3.1`. `@openuidev/lang-core`
 sends one pseudonymous PostHog event at install time; set `OPENUI_TELEMETRY_DISABLED=1` or
