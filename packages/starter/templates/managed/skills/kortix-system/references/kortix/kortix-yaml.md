@@ -99,7 +99,8 @@ harnesses:
 # `kortix apps deploy` with no arguments deploys every block, used Apps first.
 # A static App (files, no machine) ignores run mode, budget, resources, env
 # and secrets. A server App runs always on (default) or on demand; always on
-# costs about 73 USD/month on the default machine, so set its budget.
+# costs about 73 USD/month on the default machine and takes no budget.
+# Only an on-demand server App takes `monthly_budget_usd`.
 apps:
   db:
     path: apps/db              # a package.json + convex/ directory
@@ -117,7 +118,7 @@ apps:
     readiness_path: /health
     always_on: false           # on demand: stops when idle, wakes on request
     idle_timeout_seconds: 300
-    monthly_budget_usd: 10
+    monthly_budget_usd: 10     # on-demand server Apps only
     resources:
       cpu: 1
       memory_gb: 2

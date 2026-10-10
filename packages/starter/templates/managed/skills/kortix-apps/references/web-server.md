@@ -1,7 +1,8 @@
 # Server web Apps
 
 A server App (a Dockerfile or an OCI image) runs in its own machine. It has a
-run mode (always on or on demand) and a monthly compute budget. Use one only
+run mode (always on or on demand). An on-demand App has a monthly compute
+budget. Use one only
 when the App needs its own server process, native packages, or custom
 runtime behavior. Data and server logic for a UI belong in a `convex` App
 (convex.md), not here.
@@ -14,7 +15,7 @@ runtime behavior. Data and server logic for a UI belong in a `convex` App
 
 ## Deploy
 
-Choose the run mode and budget on the first deploy (Lifecycle, below):
+Choose the run mode (and, on demand, the budget) on the first deploy (Lifecycle, below):
 
 ```bash
 kortix apps deploy . --slug api --type dockerfile --on-demand \
@@ -45,29 +46,32 @@ A server App runs in one of two modes. Choose the mode on the first deploy:
   websockets open or runs its own background loop. Scheduled jobs and queues
   of an App that uses a `convex` App belong in the `convex` App.
 
-Both modes stop at the App's monthly compute budget, and when the account can
-no longer pay. The URL then shows the budget or paused page until the next
-month or until the user raises the budget. A new always-on App with no
-`--budget` gets its 24/7 estimate (`estimated_monthly_usd`) rounded up to a
-whole dollar: 74 USD for the default machine of about 73 USD a month. An
-on-demand App gets 5 USD. The CLI prints a line such as `Runs 24/7 on 1 vCPU
-/ 2 GB: about $73/month (budget $74)`; tell the user that cost. A budget you
-pass always wins and never changes by itself. To spend less, use
-`--on-demand` or a smaller machine (`--memory-gb 1` is about 59 USD a month).
+Both modes stop when the account can no longer pay. The cost shape decides the
+budget:
+
+- **On demand:** a monthly compute budget, default 5 USD. The App stops at the
+  cap. The URL then shows the budget page until the next month or until the user
+  raises the budget (`kortix apps set <slug> --budget <usd>`).
+- **Always on:** no budget (`monthly_budget_usd` is `null`). The cost is fixed:
+  the machine 24/7, `estimated_monthly_usd` (about 73.48 USD for the default
+  machine). A budget never stops it. `--budget` answers
+  `400 app_budget_not_applicable`.
+
+The CLI prints a line such as `Runs 24/7 on 1 vCPU / 2 GB: about $73/month`;
+tell the user that cost. To spend less, use `--on-demand` or a smaller machine
+(`--memory-gb 1` is about 59 USD a month).
 
 ```bash
-kortix apps deploy . --slug api --type dockerfile --always-on --budget 80 \
+kortix apps deploy . --slug api --type dockerfile --on-demand --budget 10 \
   --command '["node","server.js"]' --port 3000
 ```
 
-Change either later without a redeploy:
-`kortix apps set <slug> --on-demand|--always-on` or
-`kortix apps set <slug> --budget <usd>`. Keep-alive applies the change within
-5 minutes. `always_on` and `monthly_budget_usd` in `kortix.yaml` do the same on
-the next `kortix apps deploy --manifest-app <name>`. `deploy`, `create`, and
-`set` print an `app_budget_below_always_on` warning on stderr when an
-always-on App's budget is below its estimate. Tell the user. Never leave the
-warning unreported.
+Change the mode later without a redeploy:
+`kortix apps set <slug> --on-demand|--always-on`. Switching to on demand sets
+the budget you pass, or 5 USD. Switching to always on clears the budget.
+Keep-alive applies the change within 5 minutes. `always_on` and (on demand)
+`monthly_budget_usd` in `kortix.yaml` do the same on the next
+`kortix apps deploy --manifest-app <name>`.
 
 On Daytona and E2B (self-host), an always-on App can be unreachable for up to
 5 minutes when the provider stops its VM. On Kortix Cloud the VM is
@@ -86,9 +90,9 @@ changes only the API rebuilds nothing.
 ## Verify
 
 Run web-static.md, Verify, steps 2 and 5 first (`hosting_type` is `sandbox`
-here, and `capabilities` lists `sleep`). Confirm `always_on` and
-`monthly_budget_usd` are the values you chose. When `always_on` is `true`,
-`monthly_budget_usd` should be at least `estimated_monthly_usd`. Then:
+here, and `capabilities` lists `sleep`). Confirm `always_on` is the value you
+chose. When `always_on` is `true`, `monthly_budget_usd` must be `null`. When
+it is `false`, `monthly_budget_usd` is the budget you chose. Then:
 
 1. Fetch its readiness endpoint and one real application route.
 2. Run `kortix apps stop <slug> --json`. Confirm `desired_state` is

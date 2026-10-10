@@ -31,6 +31,9 @@ const seen: Array<{ port: string; method: string; path: string; token: string | 
 const convex = Bun.serve({
   hostname: '127.0.0.1',
   port: 0,
+  // Explicit IPv4 loopback: `localhost` can resolve to ::1, where the fake
+  // servers are unreachable (hermetic-test contract).
+  hostname: '127.0.0.1',
   async fetch(req) {
     const url = new URL(req.url);
     const [, port, ...rest] = url.pathname.split('/');
@@ -54,6 +57,9 @@ const exposed: string[] = [];
 const platinum = Bun.serve({
   hostname: '127.0.0.1',
   port: 0,
+  // Explicit IPv4 loopback: `localhost` can resolve to ::1, where the fake
+  // servers are unreachable (hermetic-test contract).
+  hostname: '127.0.0.1',
   async fetch(req) {
     const [, , , id, sub] = new URL(req.url).pathname.split('/');
     if (sub === 'expose') {
