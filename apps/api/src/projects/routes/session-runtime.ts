@@ -213,6 +213,10 @@ export function registerSessionRuntimeRoutes(): void {
                 // Persistent machines only: discard the disk and boot a fresh box
                 // from the current image (the session's branch is restored).
                 reset_machine: z.boolean().optional(),
+                // With reset_machine: reset even when the chat cannot be saved
+                // first. Without it such a reset is refused (409
+                // reset_state_not_preserved) and nothing is deleted.
+                discard_state: z.boolean().optional(),
               }),
             },
           },
@@ -220,7 +224,7 @@ export function registerSessionRuntimeRoutes(): void {
       },
       responses: {
         202: json(z.any(), 'OK'),
-        ...errors(400, 403, 404, 503),
+        ...errors(400, 403, 404, 409, 502, 503),
       },
     }),
     async (c) => {
@@ -254,6 +258,7 @@ export function registerSessionRuntimeRoutes(): void {
         projectId,
         sessionId,
         resetMachine: body.reset_machine === true,
+        discardState: body.discard_state === true,
       });
       return c.json(result.body, result.status as any);
     },
