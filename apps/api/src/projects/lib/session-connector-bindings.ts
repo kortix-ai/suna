@@ -629,6 +629,12 @@ export async function resolveSessionConnectorConnectionOutcome(input: {
    * running "send mail as Work" against Personal is worse than not running.
    */
   account?: string | null;
+  /** The connector row the CALL path already loaded by this alias
+   *  (`loadConnectorBySlug`). When given and this alias, the project-default
+   *  fallback skips its own connectors re-select — the fan-out that re-read
+   *  the same row a second time per call. Per-request threading, not a
+   *  cache: callers that resolve without a loaded row read as before. */
+  connectorRow?: ConnectorRequirementRow | null;
 }): Promise<ResolvedConnectorConnectionOutcome> {
   const alias = canonicalConnectorAlias(input.alias);
   let actingUserId = input.actingUserId ?? '';
@@ -778,6 +784,7 @@ export async function resolveSessionConnectorConnectionOutcome(input: {
     visibility,
     account: input.account,
     agentPrincipal: input.agentPrincipal ?? null,
+    connectorRow: input.connectorRow,
   });
 }
 
@@ -836,6 +843,11 @@ export async function listEntitledConnectorConnections(input: {
   /** See `resolveSessionConnectorConnectionOutcome`. With it, the
    *  service-account probe below is skipped: the rule keys on on_behalf_of. */
   agentPrincipal?: AgentPrincipalPersonalScope | null;
+  /** The connector row the caller already holds for this alias. When given
+   *  and it answers this exact (project, alias), the re-select below is
+   *  skipped — the same row read twice per call was the resolution fan-out's
+   *  duplicate. Mismatched hints fall back to the select, byte-identical. */
+  connectorRow?: ConnectorRequirementRow | null;
 }): Promise<EntitledConnectorConnection[]> {
   const alias = canonicalConnectorAlias(input.alias);
   const actingUserId = input.actingUserId ?? '';
@@ -856,26 +868,35 @@ export async function listEntitledConnectorConnections(input: {
     actingPrincipalIsServiceAccount = serviceAccount !== undefined;
   }
 
-  const [connectorRow] = await db
-    .select({
-      connectorId: connectors.connectorId,
-      projectId: connectors.projectId,
-      slug: connectors.slug,
-      name: connectors.name,
-      providerType: connectors.providerType,
-      config: connectors.config,
-      enabled: connectors.enabled,
-      status: connectors.status,
-    })
-    .from(connectors)
-    .where(
-      and(
-        eq(connectors.accountId, input.accountId),
-        eq(connectors.projectId, input.projectId),
-        eq(connectors.slug, alias),
-      ),
-    )
-    .limit(1);
+  // The caller's already-loaded row answers the select below when it is the
+  // row that select would return (same project, same canonical alias). The
+  // enabled/status gate is applied identically either way, so a stale or
+  // mismatched hint cannot widen what the fresh select would have admitted.
+  const [connectorRow] =
+    input.connectorRow &&
+    input.connectorRow.projectId === input.projectId &&
+    input.connectorRow.slug === alias
+      ? [input.connectorRow]
+      : await db
+          .select({
+            connectorId: connectors.connectorId,
+            projectId: connectors.projectId,
+            slug: connectors.slug,
+            name: connectors.name,
+            providerType: connectors.providerType,
+            config: connectors.config,
+            enabled: connectors.enabled,
+            status: connectors.status,
+          })
+          .from(connectors)
+          .where(
+            and(
+              eq(connectors.accountId, input.accountId),
+              eq(connectors.projectId, input.projectId),
+              eq(connectors.slug, alias),
+            ),
+          )
+          .limit(1);
   if (!connectorRow || !connectorRow.enabled || connectorRow.status !== 'active') return [];
   const connector: ConnectorRequirementRow = connectorRow;
 
@@ -1218,6 +1239,9 @@ export async function resolveProjectDefaultConnectorConnectionOutcome(input: {
   /** Name or id of the account to run as. Omitted = the default. */
   account?: string | null;
   agentPrincipal?: AgentPrincipalPersonalScope | null;
+  /** See `listEntitledConnectorConnections` — the call path's already-loaded
+   *  connector row, threaded through so the fallback reads it once. */
+  connectorRow?: ConnectorRequirementRow | null;
 }): Promise<ResolvedConnectorConnectionOutcome> {
   const entitled = await listEntitledConnectorConnections(input);
   const selection = selectEntitledConnectorConnection(entitled, input.account);
