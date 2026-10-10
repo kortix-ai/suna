@@ -1,12 +1,31 @@
 /**
  * Files (`/v1/drives`). Maps to spec §10b (DRIVE-1, DRIVE-2). A team account
- * with OWNER as owner and a plain member who works in the project. Files is a
- * per-project feature flag (`drives`), off by default; the flow turns it on
- * for its own project and off again at the end. Writes need drive storage; on
- * a target without it every write answers 503 `drive_storage_unavailable`,
- * which DRIVE-1 asserts instead of the file lifecycle.
+ * with OWNER as owner and a plain member who works in the project. Files is
+ * not a project toggle: it follows the organization's Volumes switch, which a
+ * platform admin sets in the boot-mode policy. The flow turns Volumes on for
+ * its own fixture organization only and takes it off again in `finally`.
+ * Writes need drive storage; on a target without it every write answers 503
+ * `drive_storage_unavailable`, which DRIVE-1 asserts instead of the file
+ * lifecycle.
  */
 import { flow } from '../core/flow';
+import type { FlowContext } from '../core/types';
+import { asPlatformAdmin } from '../fixtures/enterprise-demo';
+
+type Policy = { volumes?: { enabled?: boolean; orgs?: Record<string, boolean> } } & Record<string, unknown>;
+
+/** Turn Volumes on or off for one organization, leaving every other entry as it is. */
+async function setOrgVolumes(ctx: FlowContext, accountId: string, enabled: boolean | null): Promise<void> {
+  const admin = asPlatformAdmin(ctx);
+  const current = (await admin.get('/v1/admin/api/boot-modes')).status(200).json<{ policy: Policy }>().policy;
+  const orgs = { ...(current.volumes?.orgs ?? {}) };
+  if (enabled === null) delete orgs[accountId];
+  else orgs[accountId] = enabled;
+  const saved = await admin.put('/v1/admin/api/boot-modes', { ...current, volumes: { ...current.volumes, orgs } });
+  saved.status(200);
+  const after = saved.json<{ policy: Policy }>().policy.volumes?.orgs?.[accountId];
+  if (enabled !== null && after !== enabled) throw new Error(`Volumes for ${accountId} reads back ${String(after)}`);
+}
 
 flow(
   'DRIVE-1',
@@ -14,6 +33,8 @@ flow(
     domain: 'drives',
     routes: [
       'PATCH /v1/projects/:projectId/features',
+      'GET /v1/admin/api/boot-modes',
+      'PUT /v1/admin/api/boot-modes',
       'GET /v1/drives',
       'GET /v1/drives/:driveId/files',
       'GET /v1/drives/:driveId/files/content',
@@ -39,8 +60,7 @@ flow(
     const owner = ctx.client.as(ctx.P.OWNER);
     const asMember = ctx.client.as(member);
     const listFiles = { query: { projectId: project.id } };
-    const setFiles = (enabled: boolean) =>
-      owner.patch('/v1/projects/:projectId/features', { feature: 'drives', enabled }, { params: { projectId: project.id } });
+    let volumesOn = false;
     let driveId = '';
     let ownerFolder = '';
     let memberFolder = '';
@@ -52,7 +72,7 @@ flow(
         (await ctx.client.as(ctx.P.ANON).get('/v1/drives', listFiles)).status(401);
       });
 
-      await ctx.step('Files is off by default: Files → 403 feature_disabled', async () => {
+      await ctx.step('Volumes off for the organization: Files → 403 feature_disabled', async () => {
         (await owner.get('/v1/drives', listFiles))
           .status(403)
           .body()
@@ -60,9 +80,18 @@ flow(
           .has('$.feature', 'drives');
       });
 
-      await ctx.step('the member cannot turn Files on → 403; OWNER turns it on → 200', async () => {
-        (await asMember.patch('/v1/projects/:projectId/features', { feature: 'drives', enabled: true }, { params: { projectId: project.id } })).status([403, 404]);
-        (await setFiles(true)).status(200).body().has('$.experimental.drives', true);
+      await ctx.step('Files is not a project toggle: the features route refuses it → 400', async () => {
+        (await owner.patch('/v1/projects/:projectId/features', { feature: 'drives', enabled: true }, { params: { projectId: project.id } })).status(400);
+        (await owner.get('/v1/drives', listFiles)).status(403);
+      });
+
+      await ctx.step('the account OWNER cannot change the Volumes policy → 403', async () => {
+        (await owner.get('/v1/admin/api/boot-modes')).status(403);
+      });
+
+      await ctx.step('a platform admin turns Volumes on for this organization only', async () => {
+        await setOrgVolumes(ctx, team.id, true);
+        volumesOn = true;
       });
 
       await ctx.step('OWNER opens Files → 200: one project drive they manage, and their own folder', async () => {
@@ -169,12 +198,13 @@ flow(
         (await asMember.del('/v1/drives/:driveId/files', { params: { driveId }, query: { path: dir, recursive: 'true' } })).status(204);
       });
 
-      await ctx.step('OWNER turns Files off again: Files → 403 feature_disabled', async () => {
-        (await setFiles(false)).status(200);
+      await ctx.step('Volumes off again: Files → 403 feature_disabled', async () => {
+        await setOrgVolumes(ctx, team.id, null);
+        volumesOn = false;
         (await owner.get('/v1/drives', listFiles)).status(403).body().has('$.code', 'feature_disabled');
       });
     } finally {
-      await setFiles(false).catch(() => undefined);
+      if (volumesOn) await setOrgVolumes(ctx, team.id, null).catch(() => undefined);
     }
   },
 );

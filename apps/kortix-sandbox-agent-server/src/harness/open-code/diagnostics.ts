@@ -127,14 +127,26 @@ async function readOpenCodeHealth(
   // callers ask: the reload gate, which must not restart the runtime out from
   // under a running turn, and the control plane's reaper, which repairs turn
   // authority a lost relay left behind.
-  const turn =
-    query.turn !== undefined
-      ? await observeRequestedTurn(
-          opencode.getInternalUrl(),
-          process.env.KORTIX_WORKSPACE || '/workspace',
-          resolveTurnObservationIdentity(query.turn.sessionId, query.turn.messageId, readOpenCodeSessionPin()),
-        )
-      : undefined
+  //
+  // Never before the boot path opens the workspace gate. The turn read is a
+  // directory-scoped request, so it builds OpenCode's Instance, and an Instance
+  // built then reads the composed config written at the early spawn: the
+  // governance the box was created with, not the release the boot path is
+  // about to serve. The boot path's reload sees no answered probe and skips the
+  // restart, so the box runs its creation-day agents while reporting the
+  // release. Measured on a persistent machine's wake: the API's reload gate
+  // asked for the turn 0.2 s before the boot link moved. Before the gate opens
+  // no turn can be running, and "could not tell" is what the gate retries on.
+  const turn: OpencodeDeliveryObservation | undefined =
+    query.turn === undefined
+      ? undefined
+      : bootState.workspaceReady === false
+        ? { inFlight: null, end: null }
+        : await observeRequestedTurn(
+            opencode.getInternalUrl(),
+            process.env.KORTIX_WORKSPACE || '/workspace',
+            resolveTurnObservationIdentity(query.turn.sessionId, query.turn.messageId, readOpenCodeSessionPin()),
+          )
 
   return {
     harness: {

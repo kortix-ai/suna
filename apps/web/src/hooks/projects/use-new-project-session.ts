@@ -106,6 +106,7 @@ export type NewProjectSessionOpts = {
     pending_prompt?: PendingSessionPrompt;
     connector_bindings?: SessionConnectorBindingsInput;
     inherit_unbound?: boolean;
+    persistent_machine?: boolean;
   };
 };
 
