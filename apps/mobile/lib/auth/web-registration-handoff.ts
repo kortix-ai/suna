@@ -7,12 +7,21 @@ const KORTIX_CALLBACK_HOSTS = new Set([
 
 /**
  * Open web auth with proof that this registration began in the installed app.
- * The opaque state is generated and persisted by callback-state.ts.
+ * The opaque state is generated and persisted by callback-state.ts. An `email`
+ * marks an enterprise SSO sign-in: web auth starts SSO for that address.
  */
-export function buildMobileRegistrationUrl(baseUrl: string, state: string): string {
+export function buildMobileRegistrationUrl(
+  baseUrl: string,
+  state: string,
+  email?: string,
+): string {
   const url = new URL('/auth', baseUrl);
   url.searchParams.set(MOBILE_CALLBACK_FLAG, '1');
   url.searchParams.set('state', state);
+  if (email) {
+    url.searchParams.set('email', email);
+    url.searchParams.set('sso', '1');
+  }
   return url.toString();
 }
 

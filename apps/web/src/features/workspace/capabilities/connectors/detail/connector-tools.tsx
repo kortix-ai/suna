@@ -12,6 +12,7 @@ import {
 } from '@kortix/sdk';
 import {
   CaretDownIcon,
+  CaretRightIcon,
   LockIcon,
   MagnifyingGlassIcon,
   PlusIcon,
@@ -54,7 +55,6 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 
-import { providerLabel } from '@/features/workspace/capabilities/connectors/provider-label';
 import {
   draftToRules,
   type PatternDraftRow,
@@ -141,6 +141,11 @@ export interface ConnectorToolsProps {
  * Everything else — the `sensitive` toggle and the pattern-rule editor — is
  * folded into **Advanced**. Both are real capabilities carried over from the
  * shipped panel; they are just not the common case.
+ *
+ * A connector that has reported no tools shows one empty state and nothing
+ * else: there is nothing to decide about tools that do not exist yet. Each
+ * group is a disclosure, open by default, so a long write list can be folded
+ * away while the read list is being set.
  */
 export function ConnectorTools({
   projectId,
@@ -150,6 +155,7 @@ export function ConnectorTools({
   disabled,
   onChanged,
 }: ConnectorToolsProps) {
+  const t = useTranslations('connectorPages');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const policySegments = useLocalizedUiCatalog(POLICY_SEGMENTS);
   const queryClient = useQueryClient();
@@ -292,7 +298,7 @@ export function ConnectorTools({
   const draftSignature = signPatternRules(draftToRules(draft));
   const advancedDirty = draftSignature !== advancedSignature;
 
-  const [advancedOpen, setAdvancedOpen] = useState(connector.actions.length === 0);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   // Reveal existing pattern rules ONCE, when they first arrive from the policies
   // query — not on every change to their count. Keyed on the count alone, this
   // re-fired whenever a rule was added or removed, so the panel sprang back open
@@ -317,34 +323,32 @@ export function ConnectorTools({
     );
   }
 
-  const providerBadge = providerLabel(connector.provider);
+  const hasTools = connector.actions.length > 0;
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="min-w-0 space-y-0.5">
-          <h3 className="text-foreground text-lg font-semibold text-balance">
-            {tI18nComplete.raw('textea93d6a262ec')}
-          </h3>
-          <p className="text-muted-foreground text-sm text-pretty">
+      {hasTools ? (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-muted-foreground min-w-0 text-sm text-pretty">
             {describeDefault(connector.sensitive === true, policiesQuery.data?.default_mode)}
           </p>
+          {connector.actions.length > SEARCH_THRESHOLD ? (
+            <InputGroupSearch className="w-full sm:max-w-64">
+              <InputGroupSearchIcon>
+                <MagnifyingGlassIcon />
+              </InputGroupSearchIcon>
+              <InputGroupSearchInput
+                placeholder={tI18nComplete.raw('textfbd165231fa1')}
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                variant="popover"
+                size="sm"
+              />
+              <InputGroupSearchClear onClick={() => setQuery('')} />
+            </InputGroupSearch>
+          ) : null}
         </div>
-        {connector.actions.length > SEARCH_THRESHOLD ? (
-          <InputGroupSearch className="w-full sm:max-w-64">
-            <InputGroupSearchIcon>
-              <MagnifyingGlassIcon />
-            </InputGroupSearchIcon>
-            <InputGroupSearchInput
-              placeholder={tI18nComplete.raw('textfbd165231fa1')}
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              variant="popover"
-            />
-            <InputGroupSearchClear onClick={() => setQuery('')} />
-          </InputGroupSearch>
-        ) : null}
-      </div>
+      ) : null}
 
       {projectLockedCount > 0 ? (
         <InfoBanner
@@ -383,7 +387,7 @@ export function ConnectorTools({
             </Button>
           }
         />
-      ) : connector.actions.length === 0 ? (
+      ) : !hasTools ? (
         // The connector exists but has reported no tools — a failed or pending
         // sync. That is a different statement from "nothing matched your
         // search", and it must not render as a blank panel.
@@ -391,7 +395,7 @@ export function ConnectorTools({
           icon={WrenchIcon}
           size="sm"
           title={tI18nComplete.raw('text99dd86336467')}
-          description={tI18nComplete('text0679d5053dda', { value0: displayName })}
+          description={t('toolsEmptyBody', { name: displayName })}
         />
       ) : groups.length === 0 ? (
         // The same line the four catalogs render, from the same component.
@@ -399,242 +403,250 @@ export function ConnectorTools({
         // 19 tools" — so a second wording for one outcome bought nothing.
         <CatalogNoMatch query={query} />
       ) : (
-        groups.map((group) => (
-          <section key={group.key} className="space-y-1">
-            <div className="flex items-center justify-between gap-2 py-1">
-              <div className="flex items-center gap-2">
-                {/* <CaretDownIcon className="text-muted-foreground size-3.5 shrink-0" /> */}
-                <Label className="text-sm font-medium">{group.label}</Label>
-                <Badge variant="secondary" size="tabular">
-                  {group.actions.length}
-                </Badge>
-              </div>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
+        <div className="space-y-2">
+          {groups.map((group) => (
+            <Disclosure key={group.key} variant="outline" className="overflow-hidden" defaultOpen>
+              <div className="flex items-center gap-2 pr-2">
+                <DisclosureTrigger variant="outline">
                   <Button
-                    size="sm"
-                    variant="secondary"
-                    disabled={frozen || busy || bulkPathsFor(group).length === 0}
+                    variant="popover"
+                    className="flex min-w-0 flex-1 items-center justify-start rounded-none"
                   >
-                    {tI18nComplete.raw('textd9d0b4384a58')}
-                    <CaretDownIcon className="size-3.5 shrink-0" />
+                    <CaretRightIcon className="text-muted-foreground size-3.5 shrink-0 transition-transform duration-(--duration-normal) ease-out group-data-[state=open]:rotate-90 motion-reduce:transition-none" />
+                    <span className="truncate text-sm font-medium">{group.label}</span>
+                    <Badge variant="secondary" size="tabular">
+                      {group.actions.length}
+                    </Badge>
                   </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="min-w-32 rounded-lg">
-                  {policySegments.map((segment) => (
-                    <DropdownMenuItem
-                      key={segment.choice}
-                      onSelect={() => setBulk({ group, choice: segment.choice })}
+                </DisclosureTrigger>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="shrink-0"
+                      disabled={frozen || busy || bulkPathsFor(group).length === 0}
                     >
-                      {segment.label}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-
-            <ul className="divide-border/60 divide-y border-y">
-              {group.actions.map((action) => {
-                const locked = isLockedByProject(action.path, effective);
-                const row = toolRowText(action);
-                return (
-                  <li
-                    key={action.path}
-                    className="flex flex-wrap items-start gap-x-4 gap-y-2 py-3.5"
-                  >
-                    <div className="min-w-0 flex-1 basis-48 space-y-1">
-                      <div className="flex min-w-0 flex-wrap items-center gap-2">
-                        <span className="text-foreground text-sm font-medium">{row.title}</span>
-                        <Badge variant="secondary" size="xs">
-                          {providerBadge}
-                        </Badge>
-                      </div>
-                      {row.description ? (
-                        <p className="text-muted-foreground line-clamp-2 text-sm text-pretty">
-                          {row.description}
-                        </p>
-                      ) : null}
-                    </div>
-                    <ToolPolicyControl
-                      label={tI18nComplete('textb34f1e3c1569', {
-                        value0: row.path ?? row.title,
-                      })}
-                      value={toolChoice(action.path, policies, effective)}
-                      onChange={(next) => setToolPolicy(action.path, next)}
-                      disabled={frozen || busy}
-                      lockedReason={locked ? LOCKED_REASON : undefined}
-                      defaultHint={describeToolDefault(
-                        connector.sensitive === true,
-                        policiesQuery.data?.default_mode,
-                        action.risk,
-                      )}
-                    />
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-        ))
+                      {tI18nComplete.raw('textd9d0b4384a58')}
+                      <CaretDownIcon className="size-3.5 shrink-0" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="min-w-32">
+                    {policySegments.map((segment) => (
+                      <DropdownMenuItem
+                        key={segment.choice}
+                        onSelect={() => setBulk({ group, choice: segment.choice })}
+                      >
+                        {segment.label}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+              <DisclosureContent variant="outline" contentClassName="border-border border-t">
+                <ul className="divide-border/60 divide-y px-4">
+                  {group.actions.map((action) => {
+                    const locked = isLockedByProject(action.path, effective);
+                    const row = toolRowText(action);
+                    return (
+                      <li
+                        key={action.path}
+                        className="flex flex-wrap items-start gap-x-4 gap-y-2 py-3"
+                      >
+                        <div className="min-w-0 flex-1 basis-48 space-y-0.5">
+                          <p className="text-foreground text-sm font-medium wrap-break-word">
+                            {row.title}
+                          </p>
+                          {row.description ? (
+                            <p className="text-muted-foreground line-clamp-2 text-xs text-pretty">
+                              {row.description}
+                            </p>
+                          ) : null}
+                        </div>
+                        <ToolPolicyControl
+                          label={tI18nComplete('textb34f1e3c1569', {
+                            value0: row.path ?? row.title,
+                          })}
+                          value={toolChoice(action.path, policies, effective)}
+                          onChange={(next) => setToolPolicy(action.path, next)}
+                          disabled={frozen || busy}
+                          lockedReason={locked ? LOCKED_REASON : undefined}
+                          defaultHint={describeToolDefault(
+                            connector.sensitive === true,
+                            policiesQuery.data?.default_mode,
+                            action.risk,
+                          )}
+                        />
+                      </li>
+                    );
+                  })}
+                </ul>
+              </DisclosureContent>
+            </Disclosure>
+          ))}
+        </div>
       )}
 
-      <Disclosure
-        variant="outline"
-        className="overflow-hidden"
-        open={advancedOpen}
-        onOpenChange={setAdvancedOpen}
-      >
-        <DisclosureTrigger variant="outline">
-          <Button variant="popover">
-            {tI18nComplete.raw('text9f088dbebd6c')}
-            {advancedRules.length > 0 ? (
-              <Badge variant="secondary" size="sm">
-                {advancedRules.length}
-              </Badge>
-            ) : null}
-            <span className="text-muted-foreground ml-auto text-xs font-normal">
-              {tI18nComplete.raw('text59da2efb2423')}
-            </span>
-          </Button>
-        </DisclosureTrigger>
-        <DisclosureContent variant="outline" contentClassName="border-border border-t">
-          <div className="space-y-5 px-4 py-5">
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <p className="text-foreground text-sm font-medium">
-                  {tI18nComplete.raw('text594bdd4c19b2')}
-                </p>
-                <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
-                  {tI18nComplete.raw('textf900377c2048')}
-                </p>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                {sensitiveMutation.isPending ? <Loading className="size-4 shrink-0" /> : null}
-                <Switch
-                  checked={connector.sensitive === true}
-                  onCheckedChange={(next) => sensitiveMutation.mutate(next)}
-                  disabled={frozen || sensitiveMutation.isPending}
-                  aria-label={tI18nComplete.raw('text594bdd4c19b2')}
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label>{tI18nComplete.raw('text380c0b05bcfc')}</Label>
-              <p className="text-muted-foreground text-xs text-pretty">
-                {tI18nComplete.raw('textde00adeaf21b')}
-                <code className="font-mono">delete_*</code>
-                {tI18nComplete.raw('text3a13855164e7')}
-                <code className="font-mono">/^send/i</code>
-                {tI18nComplete.raw('texte45481e75a5e')}
-              </p>
-              {draft.map((row) => (
-                <div key={row.id} className="flex items-center gap-2">
-                  <Input
-                    value={row.match}
-                    placeholder={tI18nComplete.raw('text74ad536dca05')}
-                    variant="popover"
-                    size="xs"
-                    className="flex-1 font-mono"
-                    aria-label={tI18nComplete.raw('text5c9c672f4cd3')}
-                    disabled={frozen}
-                    onChange={(event) =>
-                      setDraft((rows) =>
-                        rows.map((candidate) =>
-                          candidate.id === row.id
-                            ? { ...candidate, match: event.target.value }
-                            : candidate,
-                        ),
-                      )
-                    }
+      {hasTools || advancedRules.length > 0 ? (
+        <Disclosure
+          variant="outline"
+          className="overflow-hidden"
+          open={advancedOpen}
+          onOpenChange={setAdvancedOpen}
+        >
+          <DisclosureTrigger variant="outline">
+            <Button variant="popover">
+              {tI18nComplete.raw('text9f088dbebd6c')}
+              {advancedRules.length > 0 ? (
+                <Badge variant="secondary" size="sm">
+                  {advancedRules.length}
+                </Badge>
+              ) : null}
+              <span className="text-muted-foreground ml-auto text-xs font-normal">
+                {tI18nComplete.raw('text59da2efb2423')}
+              </span>
+            </Button>
+          </DisclosureTrigger>
+          <DisclosureContent variant="outline" contentClassName="border-border border-t">
+            <div className="space-y-5 px-4 py-5">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-foreground text-sm font-medium">
+                    {tI18nComplete.raw('text594bdd4c19b2')}
+                  </p>
+                  <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
+                    {tI18nComplete.raw('textf900377c2048')}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  {sensitiveMutation.isPending ? <Loading className="size-4 shrink-0" /> : null}
+                  <Switch
+                    checked={connector.sensitive === true}
+                    onCheckedChange={(next) => sensitiveMutation.mutate(next)}
+                    disabled={frozen || sensitiveMutation.isPending}
+                    aria-label={tI18nComplete.raw('text594bdd4c19b2')}
                   />
-                  <Select
-                    value={row.action}
-                    disabled={frozen}
-                    onValueChange={(next) =>
-                      setDraft((rows) =>
-                        rows.map((candidate) =>
-                          candidate.id === row.id
-                            ? { ...candidate, action: next as ConnectorPolicyAction }
-                            : candidate,
-                        ),
-                      )
-                    }
-                  >
-                    <SelectTrigger className="h-8 w-[104px] shrink-0 text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    {/* Three, not four: a stored rule always names an action.
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>{tI18nComplete.raw('text380c0b05bcfc')}</Label>
+                <p className="text-muted-foreground text-xs text-pretty">
+                  {tI18nComplete.raw('textde00adeaf21b')}
+                  <code className="font-mono">delete_*</code>
+                  {tI18nComplete.raw('text3a13855164e7')}
+                  <code className="font-mono">/^send/i</code>
+                  {tI18nComplete.raw('texte45481e75a5e')}
+                </p>
+                {draft.map((row) => (
+                  <div key={row.id} className="flex items-center gap-2">
+                    <Input
+                      value={row.match}
+                      placeholder={tI18nComplete.raw('text74ad536dca05')}
+                      variant="popover"
+                      size="xs"
+                      className="flex-1 font-mono"
+                      aria-label={tI18nComplete.raw('text5c9c672f4cd3')}
+                      disabled={frozen}
+                      onChange={(event) =>
+                        setDraft((rows) =>
+                          rows.map((candidate) =>
+                            candidate.id === row.id
+                              ? { ...candidate, match: event.target.value }
+                              : candidate,
+                          ),
+                        )
+                      }
+                    />
+                    <Select
+                      value={row.action}
+                      disabled={frozen}
+                      onValueChange={(next) =>
+                        setDraft((rows) =>
+                          rows.map((candidate) =>
+                            candidate.id === row.id
+                              ? { ...candidate, action: next as ConnectorPolicyAction }
+                              : candidate,
+                          ),
+                        )
+                      }
+                    >
+                      <SelectTrigger className="h-8 w-[104px] shrink-0 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      {/* Three, not four: a stored rule always names an action.
                         "Default" for a pattern means deleting it, which is
                         what the trash button beside this does. */}
-                    <SelectContent className="rounded-lg">
-                      {(['block', 'require_approval', 'always_run'] as ConnectorPolicyAction[]).map(
-                        (action) => (
+                      <SelectContent className="rounded-lg">
+                        {(
+                          ['block', 'require_approval', 'always_run'] as ConnectorPolicyAction[]
+                        ).map((action) => (
                           <SelectItem key={action} value={action} className="text-xs">
                             {POLICY_CHOICE_LABEL[action]}
                           </SelectItem>
-                        ),
-                      )}
-                    </SelectContent>
-                  </Select>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="hover:text-destructive size-8 shrink-0"
-                    aria-label={tI18nComplete('texte2cbd4618228', {
-                      value0: row.match || '(empty)',
-                    })}
-                    disabled={frozen}
-                    onClick={() =>
-                      setDraft((rows) => rows.filter((candidate) => candidate.id !== row.id))
-                    }
-                  >
-                    <TrashIcon className="size-3.5 shrink-0" />
-                  </Button>
-                </div>
-              ))}
-              <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-8 gap-1.5 text-xs"
-                  disabled={frozen}
-                  onClick={() =>
-                    setDraft((rows) => [
-                      ...rows,
-                      { id: nextPatternRowId(), match: '', action: 'require_approval' },
-                    ])
-                  }
-                >
-                  <PlusIcon className="size-3.5 shrink-0" />
-                  {tI18nComplete.raw('texta27cff51a2e0')}
-                </Button>
-                {advancedDirty ? (
-                  <div className="ml-auto flex items-center gap-2">
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <Button
-                      size="sm"
-                      variant="outline-ghost"
-                      className="h-8 text-xs"
-                      disabled={busy}
-                      onClick={() => setDraft(seedPatternDraft(advancedRules, nextPatternRowId))}
+                      size="icon"
+                      variant="ghost"
+                      className="hover:text-destructive size-8 shrink-0"
+                      aria-label={tI18nComplete('texte2cbd4618228', {
+                        value0: row.match || '(empty)',
+                      })}
+                      disabled={frozen}
+                      onClick={() =>
+                        setDraft((rows) => rows.filter((candidate) => candidate.id !== row.id))
+                      }
                     >
-                      {tI18nComplete.raw('texteb1a70e39274')}
-                    </Button>
-                    <Button
-                      size="sm"
-                      className="h-8 gap-1.5 text-xs"
-                      disabled={frozen || busy}
-                      onClick={savePatternRules}
-                    >
-                      {writePolicies.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
-                      {tI18nComplete.raw('texte5dbdffb8816')}
+                      <TrashIcon className="size-3.5 shrink-0" />
                     </Button>
                   </div>
-                ) : null}
+                ))}
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 gap-1.5 text-xs"
+                    disabled={frozen}
+                    onClick={() =>
+                      setDraft((rows) => [
+                        ...rows,
+                        { id: nextPatternRowId(), match: '', action: 'require_approval' },
+                      ])
+                    }
+                  >
+                    <PlusIcon className="size-3.5 shrink-0" />
+                    {tI18nComplete.raw('texta27cff51a2e0')}
+                  </Button>
+                  {advancedDirty ? (
+                    <div className="ml-auto flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline-ghost"
+                        className="h-8 text-xs"
+                        disabled={busy}
+                        onClick={() => setDraft(seedPatternDraft(advancedRules, nextPatternRowId))}
+                      >
+                        {tI18nComplete.raw('texteb1a70e39274')}
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="h-8 gap-1.5 text-xs"
+                        disabled={frozen || busy}
+                        onClick={savePatternRules}
+                      >
+                        {writePolicies.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
+                        {tI18nComplete.raw('texte5dbdffb8816')}
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </div>
-          </div>
-        </DisclosureContent>
-      </Disclosure>
+          </DisclosureContent>
+        </Disclosure>
+      ) : null}
 
       <ConfirmDialog
         open={bulk !== null}

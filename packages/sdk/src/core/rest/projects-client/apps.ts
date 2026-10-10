@@ -109,7 +109,11 @@ export interface AppInstance {
   auth_env: Record<string, string> | null;
   /** The client CLI version that matches the machine, e.g. `npx convex@<version> deploy`. */
   client_version: string;
-  /** The last monthly budget alert (80 % or 100 %). An alert never stops the App. */
+  /**
+   * Always `null`: a `convex` App has no monthly budget (its cost is its size,
+   * 24/7), so no alert is raised. Kept for wire compatibility.
+   * @deprecated Read `App.estimated_monthly_usd` for the monthly cost.
+   */
   budget_alert: {
     month: string;
     percent: number;
@@ -155,16 +159,24 @@ export interface App {
   idle_timeout_seconds: number;
   /**
    * `true`: the App runs 24/7 (cron jobs, workers, websockets keep working)
-   * until its monthly budget is reached. `false`: it stops after
-   * `idle_timeout_seconds` without requests and wakes on the next one.
-   * Ignored by a static App, which has no runtime. Optional for wire
-   * compatibility with a server that predates it.
+   * at a fixed monthly cost, `estimated_monthly_usd`. `false`: it stops after
+   * `idle_timeout_seconds` without requests and wakes on the next one. `false`
+   * for a static App, which has no runtime. Optional for wire compatibility
+   * with a server that predates it.
    */
   always_on?: boolean;
-  monthly_budget_usd: number;
+  /**
+   * The monthly compute budget of an on-demand server App (`always_on: false`):
+   * the App stops when it is reached. `null` for an always-on, static or
+   * `convex` App: its cost is fixed by its size (`estimated_monthly_usd`) or
+   * zero, and no budget stops it. Setting one on such an App answers
+   * `400 app_budget_not_applicable`.
+   */
+  monthly_budget_usd: number | null;
   /**
    * What the App's machine costs running 24/7 for one month at list compute
-   * rates (USD). It applies to a server App; a static App runs no machine.
+   * rates (USD): the monthly cost of an always-on or `convex` App, the most an
+   * on-demand one can cost. `0` for a static App, which runs no machine.
    * Optional for wire compatibility with a server that predates it.
    */
   estimated_monthly_usd?: number;
@@ -182,21 +194,16 @@ export interface App {
    */
   retained_deployments?: number;
   /**
-   * Set on the create and update responses only. `app_budget_below_always_on`:
-   * the App runs 24/7 and its monthly budget is below `estimated_monthly_usd`,
-   * so a server App stops at the budget until the month ends. Neither call
-   * refuses it.
+   * Set on the create and update responses only. Empty today: the
+   * `app_budget_below_always_on` warning is gone, because an always-on App
+   * has no budget.
    */
   warnings?: Array<{ code: string; message: string }>;
   last_request_at: string | null;
   /**
-   * May the caller OPEN this App, as opposed to merely see it listed?
-   *
-   * These are different verdicts. A project manager is shown every App in the
-   * project so a private one stays manageable when its creator leaves, which
-   * says nothing about whether they may look at it. Check this before asking
-   * for an access session; asking anyway is how a grid of Apps turns into a
-   * console full of 403s.
+   * May the caller OPEN this App? `listApps` returns only Apps the caller
+   * may open (a project manager: every App), so a listed App reads `true`;
+   * an App left out answers 404 on `getApp`.
    *
    * Optional for wire compatibility with a server that predates the field.
    * Treat `undefined` as "unknown", not as "denied".
@@ -230,6 +237,7 @@ export interface CreateAppInput {
   idle_timeout_seconds?: number;
   /** Run 24/7. Defaults to the server's setting (Kortix Cloud: `true`). */
   always_on?: boolean;
+  /** On-demand server Apps only (default `5`); `400 app_budget_not_applicable` for an always-on or `convex` App. */
   monthly_budget_usd?: number;
   /** The Apps, by slug, this App uses. Each must exist. Default: none. */
   uses?: string[];
@@ -241,7 +249,9 @@ export interface UpdateAppInput {
   memory_gb?: number;
   disk_gb?: number;
   idle_timeout_seconds?: number;
+  /** `false` sets the budget to `monthly_budget_usd` or `5`; `true` clears it (`null`). */
   always_on?: boolean;
+  /** On-demand server Apps only; `400 app_budget_not_applicable` for an always-on, static or `convex` App. */
   monthly_budget_usd?: number;
   /** Replaces the Apps this App uses. `[]` removes every link. */
   uses?: string[];
@@ -423,6 +433,7 @@ export interface AppLogsOptions {
   limit?: number;
 }
 
+/** The project's Apps the caller may open (a project manager: every App). */
 export async function listApps(projectId: string): Promise<App[]> {
   const data = unwrap(
     await backendApi.get<{ apps: App[] }>(`/projects/${projectId}/apps`),

@@ -460,6 +460,22 @@ describe('GET /messages/:sessionId', () => {
     expect(body.head_seq).toBeNull()
   })
 
+  test('a cursor read on a degraded database is a typed error, never a silently wrong page', async () => {
+    const { app } = makeRouter({ dbPath: join(root, 'absent.db') })
+    const delta = await app.request(`http://d/messages/${SESSION}?after_seq=100`, { headers: auth })
+    expect(delta.status).toBe(502)
+    const body = (await delta.json()) as any
+    expect(body.error).toBe('transcript unreadable')
+    expect(body.source).toBe('opencode-http')
+    expect(body.detail).toBe('cursor reads need the sqlite mirror; it is unavailable')
+    expect(body.db.supported).toBe(false)
+    expect(body.db.version_supported).toBe(true)
+    expect(body.messages).toBeUndefined()
+    // A message-id cursor (`?after=msg_…`) degrades the same way.
+    const after = await app.request(`http://d/messages/${SESSION}?after=msg_004`, { headers: auth })
+    expect(after.status).toBe(502)
+  })
+
   test('gzip compresses the transcript page', async () => {
     const { app } = makeRouter()
     const gz = await app.request(`http://d/messages/${SESSION}?limit=6`, { headers: { ...auth, 'Accept-Encoding': 'gzip' } })

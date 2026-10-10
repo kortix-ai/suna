@@ -451,20 +451,29 @@ test('an App runs always-on or on demand: create and update send always_on, and 
   expect(last().body).toEqual({ always_on: false });
 });
 
-test('an always-on App reads its monthly estimate, and create/update carry budget warnings', async () => {
+test('only an on-demand App has a budget: an always-on App reads monthly_budget_usd null and its monthly cost', async () => {
   const app: import('./apps').App = {
     app_id: 'app-1', account_id: 'account-1', project_id: 'project-1', slug: 'demo', name: 'Demo',
     url: 'https://demo.apps.kortix.com', access_mode: 'private', access_revision: 1, desired_state: 'running',
     active_deployment_id: null, machine: { cpu: 1, memory_gb: 2, disk_gb: 10 }, idle_timeout_seconds: 300,
-    always_on: true, monthly_budget_usd: 5, estimated_monthly_usd: 73.48, last_request_at: null,
-    warnings: [{ code: 'app_budget_below_always_on', message: 'This App runs 24/7 …' }],
+    always_on: true, monthly_budget_usd: null, estimated_monthly_usd: 73.48, last_request_at: null, warnings: [],
     created_at: '2026-10-07T00:00:00.000Z', updated_at: '2026-10-07T00:00:00.000Z',
   };
-  responses.push({ status: 201, body: app }, { body: { ...app, monthly_budget_usd: 100, warnings: [] } });
+  const budget: Equal<App['monthly_budget_usd'], number | null> = true;
+  expect(budget).toBe(true);
+  responses.push({ status: 201, body: app }, { body: { ...app, always_on: false, monthly_budget_usd: 5 } });
   const created = await createApp('project-1', { slug: 'demo', name: 'Demo' });
+  expect(created.monthly_budget_usd).toBeNull();
   expect(created.estimated_monthly_usd).toBe(73.48);
-  expect(created.warnings?.map((warning) => warning.code)).toEqual(['app_budget_below_always_on']);
-  expect((await updateApp('project-1', 'app-1', { monthly_budget_usd: 100 })).warnings).toEqual([]);
+  expect((await updateApp('project-1', 'app-1', { always_on: false })).monthly_budget_usd).toBe(5);
+});
+
+test('a budget on an always-on App: the server answers 400 app_budget_not_applicable and the SDK rejects with it', async () => {
+  responses.push({
+    status: 400,
+    body: { error: 'An always-on App has no monthly budget: it runs 24/7 at a fixed cost (about $73.48 a month).', code: 'app_budget_not_applicable', estimated_monthly_usd: 73.48 },
+  });
+  await expect(updateApp('project-1', 'app-1', { monthly_budget_usd: 50 })).rejects.toMatchObject({ status: 400 });
 });
 
 test('an App says how its active deployment is hosted: hosting_type', async () => {

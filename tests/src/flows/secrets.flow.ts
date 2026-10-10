@@ -966,6 +966,58 @@ flow(
   },
 );
 
+// SEC-3A — unset revokes the secret's outstanding intake links (the tombstone).
+// A minted link used to stay live until natural expiry and a submit on it
+// re-created the secret the owner had removed.
+flow("SEC-3A", {
+  domain: "secrets",
+  requires: ["database"],
+  routes: [
+    "DELETE /v1/projects/:projectId/secrets/:name",
+    "GET /v1/setup-links/secret/:token",
+    "POST /v1/setup-links/secret/:token",
+  ],
+}, async (ctx) => {
+  const team = await ctx.fixtures.team();
+  const project = await team.project({ seed: true, allowAllSecrets: true });
+  const owner = await team.addMember("owner");
+  await team.grantProjectRole(project.id, owner.userId!, "manager");
+  const asOwner = ctx.client.as(owner);
+  const params = { projectId: project.id };
+
+  const mint = async (name: string) => {
+    const r = await asOwner.post("/v1/projects/:projectId/secret-requests", { names: [name], scope: "runtime" }, { params });
+    r.status([200, 201]);
+    return decodeURIComponent(String(r.json<{ url: string }>().url).split("/secret-intake/")[1]!);
+  };
+  const anon = ctx.client.as(ctx.P.ANON);
+
+  await ctx.step("a live link accepts the value", async () => {
+    const token = await mint("TOMBSTONE_KEY");
+    (await anon.post("/v1/setup-links/secret/:token", { values: { TOMBSTONE_KEY: "tombstone-v1" } }, { params: { token } })).status(200);
+  });
+
+  await ctx.step("unset the secret → its outstanding link dies", async () => {
+    const token = await mint("TOMBSTONE_KEY2");
+    (await asOwner.del("/v1/projects/:projectId/secrets/:name", { params: { ...params, name: "TOMBSTONE_KEY2" } })).status(200);
+    (await anon.get("/v1/setup-links/secret/:token", { params: { token } })).status(409);
+    (await anon.post("/v1/setup-links/secret/:token", { values: { TOMBSTONE_KEY2: "resurrected" } }, { params: { token } })).status(409);
+  });
+
+  await ctx.step("the deleted secret did not come back", async () => {
+    const r = await asOwner.get("/v1/projects/:projectId/secrets", { params });
+    r.status(200);
+    if (r.json<{ items: Array<Record<string, unknown>> }>().items.some((s) => s.name === "TOMBSTONE_KEY2")) {
+      throw new Error("the link resurrected the unset secret");
+    }
+  });
+
+  await ctx.step("a link minted after the unset still works", async () => {
+    const token = await mint("TOMBSTONE_KEY2");
+    (await anon.post("/v1/setup-links/secret/:token", { values: { TOMBSTONE_KEY2: "fresh-value" } }, { params: { token } })).status(200);
+  });
+});
+
 flow(
   "SEC-6",
   { domain: "secrets", routes: ["POST /v1/projects/:projectId/secrets"] },

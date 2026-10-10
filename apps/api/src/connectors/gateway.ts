@@ -180,7 +180,10 @@ export interface GatewayDeps {
     slug: string,
     selector: unknown,
   ): Promise<GatewayConnector | null | 'not_computer'>;
-  loadAction(connectorId: string, relPath: string): Promise<GatewayAction | null>;
+  /** `providerType` — the loaded connector's provider, when the caller has it
+   *  in hand (the call path does), so the store skips its duplicate read of
+   *  the `connectors` row. */
+  loadAction(connectorId: string, relPath: string, providerType: string): Promise<GatewayAction | null>;
   /**
    * Resolve the credential value/binding for a connector. `userId=null` = shared;
    * set = that member's own. Receives the loaded connector so the resolver can
@@ -766,7 +769,7 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
     return { status: 'denied', reason };
   }
 
-  const action = await deps.loadAction(connector.connectorId, input.actionPath);
+  const action = await deps.loadAction(connector.connectorId, input.actionPath, connector.provider);
   if (!action) {
     await audit(deps, input, connector, 'denied', null, {
       reason: 'action_not_found',
@@ -1210,15 +1213,15 @@ async function runConnectorAction(
       const misfire = result.ok && channelWrite ? channelWrite.misfire(result.data) : null;
       if (misfire) {
         const undone = misfire.undo
-          ? await executeCall({
+          ? await withDeadline(executeCall({
               binding: { kind: 'http', method: 'POST', path: misfire.undo.path },
               baseUrl: connector.baseUrl,
               auth: connector.auth,
               headers: connector.headers,
               secret: executionSecret,
               args: misfire.undo.args,
-              fetchImpl: deps.fetchImpl,
-            })
+              fetchImpl: (url, init) => deps.fetchImpl(url, { ...init, signal }),
+            }))
               .then((undo) => mapChannelEnvelope(undo).ok)
               .catch(() => false)
           : false;

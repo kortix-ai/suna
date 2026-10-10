@@ -109,6 +109,12 @@ export interface AdminConnectorView extends CatalogConnector {
   sensitive: boolean;
   /** Whether the shared credential is set. */
   secretSet: boolean;
+  /**
+   * Why the last attempt to load this connector's tools failed, or null.
+   * Meaningful when `status` is `error`. Passed through
+   * `safeConnectorLastError`: no URL query, credential, or bearer value.
+   */
+  lastError: string | null;
 }
 
 export interface SyncResult {
@@ -392,7 +398,12 @@ export interface ConnectorRouterDeps extends ConnectorRouterAuth {
     sessionId: string,
   ): Promise<Array<{ slug: string; app: string; provider: string; connected: boolean }>>;
   connectStatus?(): Promise<{ configured: boolean; provider: string | null; providers?: string[] }>;
-  listConnectToolkits?(projectId: string, input: { q?: string; category?: string; cursor?: string; limit?: number }): Promise<unknown | null>;
+  /** API/MCP catalogue id by app join key, for the managed listings' `directId`. */
+  catalogDirectIds?(): Promise<ReadonlyMap<string, string>>;
+  listConnectToolkits?(
+    projectId: string,
+    input: { q?: string; category?: string; cursor?: string; limit?: number },
+  ): Promise<unknown | null>;
   /** The easy-connect browse page: a fixed top slice of each of the largest
    *  categories, each with the category's true total. `null` = no provider. */
   listConnectSections?(

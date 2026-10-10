@@ -182,6 +182,22 @@ export function appSizeLabel(app: App, t: UiTranslator): string {
   });
 }
 
+/** Only an on-demand server App has a monthly budget; every other App costs a fixed amount. */
+export function appHasBudget(app: App): boolean {
+  return (
+    (app.kind ?? 'web') === 'web' &&
+    app.always_on === false &&
+    app.hosting_type !== 'static' &&
+    typeof app.monthly_budget_usd === 'number'
+  );
+}
+
+/** "About $59 a month": the fixed cost of an always-on server App or a Convex App. `null` when none applies. */
+export function appCostLabel(app: App, t: UiTranslator): string | null {
+  if (app.hosting_type === 'static' || appHasBudget(app) || !app.estimated_monthly_usd) return null;
+  return t('texte15cb9ffae7f', { value0: Math.round(app.estimated_monthly_usd) });
+}
+
 /**
  * Who can open an App, in the words the picker shows.
  *
