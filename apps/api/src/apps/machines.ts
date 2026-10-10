@@ -29,8 +29,8 @@ import { and, asc, desc, eq, inArray, isNull, ne, notInArray, sql } from 'drizzl
 import { pauseComputeSession, startComputeSession } from '../billing/services/compute-metering';
 import { type SandboxProviderName } from '../config';
 import { logger } from '../lib/logger';
-import { listResolvedProjectSecrets } from '../projects/surface';
 import { db } from '../shared/db';
+import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { resolveAppRuntimeEnvironment } from './environment';
 import { AppHostingProvider, type AppMachineSpec } from './hosting';
 import { teardownAppRuntimes } from './images';
@@ -79,6 +79,9 @@ export function appUrlEnv(app: AppRow, config: AppReleaseConfig): Record<string,
 /** Everything a machine of this release runs with: its env, its secrets and the App's identity. */
 export async function releaseEnvironment(app: AppRow, deployment: DeploymentRow): Promise<ReleaseEnvironment> {
   const buildSpec = deployment.buildSpec as { environment?: Record<string, string>; secrets?: Record<string, string> };
+  // Loaded here, not at module load: the public proxy imports this module (through
+  // the deployment worker) and must not pull the whole projects module with it.
+  const { listResolvedProjectSecrets } = await import('../projects/surface');
   const resolved = resolveAppRuntimeEnvironment({
     environment: buildSpec.environment ?? {},
     secrets: buildSpec.secrets ?? {},
@@ -434,9 +437,9 @@ async function orphanedMachineIds(appId: string, group: string): Promise<string[
     eq(appVolumes.processGroup, group),
     isNull(appVolumes.deletedAt),
     isNull(appVolumes.attachedRuntimeId),
-    sql`${appVolumes.machineId} is not null and not exists (
+    sql`${qualifiedColumn(appVolumes.machineId)} is not null and not exists (
       select 1 from ${appRuntimes} r
-      where coalesce(r.machine_id, r.runtime_id) = ${appVolumes.machineId} and r.status not in ('deleted', 'error')
+      where coalesce(r.machine_id, r.runtime_id) = ${qualifiedColumn(appVolumes.machineId)} and r.status not in ('deleted', 'error')
     )`,
   )).orderBy(asc(appVolumes.createdAt));
   return rows.map((row) => row.machineId!);

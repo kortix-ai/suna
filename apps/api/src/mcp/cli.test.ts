@@ -49,7 +49,7 @@ describe('denial', () => {
     [['env', 'pull']],
     [['env', 'push']],
     [['apps', 'deploy', './x']],
-    [['apps', 'credentials', 'main']],
+    [['apps', 'exec', 'db', '--', 'ls']],
     [['apps', 'token', 'main']],
     [['sessions', 'shell', 'abc']],
   ])('%j is refused with a reason and an alternative', (args) => {
