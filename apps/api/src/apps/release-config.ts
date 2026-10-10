@@ -101,9 +101,11 @@ export function releaseConfigOf(
   app: AppSize,
 ): AppReleaseConfig {
   if (deployment.config) return deployment.config as AppReleaseConfig;
-  const spec = (deployment.runtimeSpec ?? {}) as { target_port?: number; static_root?: string };
-  // A static site in a machine answers on the ingress port; the number is nominal.
-  return derivedReleaseConfig(app, spec.target_port ?? (spec.static_root ? 8080 : undefined));
+  const spec = (deployment.runtimeSpec ?? {}) as { target_port?: number };
+  // Every release from before the model serves HTTP through the supervisor's
+  // ingress, so it always has a service (never a worker group). The port is
+  // nominal when the spec does not record one.
+  return derivedReleaseConfig(app, spec.target_port ?? 8080);
 }
 
 /** The groups that serve the App's own host (the `http` service), else every group. */

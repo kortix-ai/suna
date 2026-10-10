@@ -267,18 +267,18 @@ describeWithDb('App wake lifecycle races — real PostgreSQL', () => {
     expect(stored?.wakeLeaseOwner).toBeNull();
   });
 
-  test('a deleted runtime rejects wake before calling the provider', async () => {
-    await seedStoppedRuntime();
+  test('a deleted machine is never picked to serve or wake: the App resolves to no machine', async () => {
+    const loaded = await seedStoppedRuntime();
     await testDb().update(appRuntimes).set({ status: 'deleted' })
       .where(eq(appRuntimes.runtimeId, RUNTIME_ID));
-    const deleted = await loadPublicApp(ROUTE_KEY);
-    if (!deleted) throw new Error('deleted runtime did not resolve');
+    expect(await loadPublicApp(ROUTE_KEY)).toBeNull();
+    // A caller still holding the stale row is refused before the provider is called.
     let ensureCalls = 0;
     const hosting = {
       ensureRunning: async () => { ensureCalls += 1; },
     } as unknown as AppHostingProvider;
-
-    await expect(ensureAppRuntimeRunning(deleted, hosting)).rejects.toThrow('App runtime cannot wake from deleted');
+    await expect(ensureAppRuntimeRunning({ ...loaded, runtime: { ...loaded.runtime, status: 'deleted' } }, hosting))
+      .rejects.toThrow('App runtime cannot wake from deleted');
     expect(ensureCalls).toBe(0);
     const [stored] = await testDb().select().from(appRuntimes).where(eq(appRuntimes.runtimeId, RUNTIME_ID));
     expect(stored?.status).toBe('deleted');

@@ -26,7 +26,8 @@ import { APP_RUNTIME_VERSION, triggerAppDeploymentWorker } from './deployment-wo
 import { AppHostingProvider } from './hosting';
 import { deploymentEventsAsLogs } from './logs';
 import { releaseDeploymentImage, releaseDeploymentImages, teardownAppRuntimes } from './images';
-import { rollBackActiveDeployment } from './retention';
+import { ReleaseConfigSchema, resolveDeployConfig } from './release-config';
+import { appVolumesSupported } from './volumes';
 import { ensureAppRuntimeRunning, loadPublicApp } from './public-proxy';
 import { type AppSourceSpec } from './spec';
 import { appPublicUrl } from './hostnames';
@@ -703,7 +704,11 @@ export function registerAppsRoutes(): void {
     createRoute({
       method: 'post', path: '/{projectId}/apps/{appId}/deployments', tags: ['apps'], summary: 'Deploy an App', ...auth,
       description:
-        'Queue a build of an uploaded artifact (`artifact_id` + `source`); answers 202.',
+        'Queue a release of an uploaded artifact (`artifact_id` + `source`); answers 202. `config` is the release ' +
+        'config on the Fly.io model (processes, http_service, services, mounts, vm, deploy; the shorthands port, ' +
+        'command, readiness_path, always_on and resources map onto it). Without it the release runs one `app` ' +
+        'process group on the source port, sized like the App. An invalid config answers 400 `app_config_invalid` ' +
+        'with `issues: [{path, message}]`; a mount on a provider without volumes answers 400 `app_volumes_unsupported`.',
       request: {
         params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
         body: { content: { 'application/json': { schema: z.object({
@@ -712,6 +717,7 @@ export function registerAppsRoutes(): void {
           provider: z.enum(['daytona', 'platinum', 'e2b']).optional(),
           environment: EnvironmentSchema.optional(),
           secrets: SecretMappingsSchema.optional(),
+          config: ReleaseConfigSchema.optional(),
         }) } } },
       },
       responses: {
@@ -735,6 +741,19 @@ export function registerAppsRoutes(): void {
       if (artifact.kind === 'archive' && body.source.kind === 'oci_image') return c.json({ error: 'Archive artifacts cannot use an oci_image source' }, 400);
       if (body.source.kind === 'oci_image' && body.source.image !== artifact.imageReference) return c.json({ error: 'source.image must match the immutable artifact image' }, 400);
       const source = sourceFromWire(body.source);
+      // A static site runs no machine: it has no release config.
+      let releaseConfig = null;
+      if (source.kind !== 'static') {
+        const resolved = resolveDeployConfig(body.config, app, 'port' in source ? source.port : undefined);
+        if ('issues' in resolved) {
+          return c.json({ error: 'The release config is invalid', code: 'app_config_invalid', issues: resolved.issues }, 400);
+        }
+        releaseConfig = resolved.config;
+        const provider = body.provider ?? config.getDefaultProvider();
+        if (releaseConfig.mounts.length > 0 && !appVolumesSupported(provider)) {
+          return c.json({ error: `Volumes need the platinum provider, not ${provider}.`, code: 'app_volumes_unsupported' }, 400);
+        }
+      }
       const deployment = await db.transaction(async (tx) => {
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${appId}))`);
         const [versionRow] = await tx.select({ value: max(appDeployments.version) }).from(appDeployments)
@@ -753,6 +772,8 @@ export function registerAppsRoutes(): void {
             secrets: body.secrets ?? {},
           },
           runtimeSpec: {},
+          config: releaseConfig,
+          strategy: releaseConfig?.deploy.strategy ?? null,
         }).returning();
         return row!;
       });
@@ -1021,8 +1042,12 @@ export function registerAppsRoutes(): void {
   projectsApp.openapi(
     createRoute({
       method: 'post', path: '/{projectId}/apps/{appId}/rollback', tags: ['apps'], summary: 'Roll back an App', ...auth,
+      description:
+        'Roll back to an earlier release: a NEW release (the next version) from that release\'s artifact and ' +
+        'config, rolled out on its strategy like any deploy (Fly verbatim). Volumes keep their data. Answers 202 ' +
+        'with the App and the queued release in `deployment`.',
       request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }), body: { content: { 'application/json': { schema: z.object({ deployment_id: z.string().uuid() }) } } } },
-      responses: { 200: json(AppObject, 'App'), ...errors(402, 403, 404, 409, 429, 503) },
+      responses: { 202: json(AppObject, 'App'), ...errors(403, 404, 409) },
     }),
     async (c: any) => {
       const { projectId, appId } = c.req.param();
@@ -1033,65 +1058,45 @@ export function registerAppsRoutes(): void {
       const refusal = capabilityRefusal(c, 'rollback');
       if (refusal) return refusal;
       const { deployment_id: deploymentId } = c.req.valid('json');
-      const [deployment] = await db.select().from(appDeployments).where(and(eq(appDeployments.deploymentId, deploymentId), eq(appDeployments.appId, appId), eq(appDeployments.status, 'ready'))).limit(1);
-      if (!deployment) return c.json({ error: 'Only a ready deployment can receive rollback traffic' }, 409);
-      // A static deployment is served from storage: nothing to start.
-      const isStatic = deployment.hostingType === 'static';
-      const [targetRuntime] = isStatic ? [] : await db.select().from(appRuntimes)
-        .where(eq(appRuntimes.deploymentId, deploymentId))
-        .orderBy(desc(appRuntimes.createdAt))
-        .limit(1);
-      if (!isStatic && !targetRuntime) return c.json({ error: 'Rollback deployment has no runtime' }, 409);
-
-      const [runningApp] = await db.update(apps)
-        .set({ desiredState: 'running', updatedAt: new Date() })
-        .where(eq(apps.appId, appId))
-        .returning();
-      const hosting = new AppHostingProvider();
-      try {
-        if (targetRuntime) await ensureAppRuntimeRunning({ app: runningApp!, deployment, runtime: targetRuntime }, hosting);
-      } catch (error) {
-        await db.update(apps).set({ desiredState: app.desiredState, updatedAt: new Date() })
-          .where(eq(apps.appId, appId));
-        if (error instanceof Response) return c.json(await error.json(), error.status as 402 | 409 | 503);
-        const refusal = appLimitResponse(c, error);
-        if (refusal) return refusal;
-        return c.json({
-          error: 'Rollback runtime failed to start',
-          detail: error instanceof Error ? error.message : String(error),
-        }, 503);
-      }
-
-      const previousDeploymentId = app.activeDeploymentId;
-      // A concurrent delete or retention can retire the target after the ready
-      // check above. Move traffic only while the target is still ready.
-      const row = await rollBackActiveDeployment(appId, deploymentId);
-      if (!row) return c.json({ error: 'The rollback deployment was deleted' }, 409);
-      await db.insert(appDeploymentEvents).values({
-        deploymentId,
-        runtimeId: targetRuntime?.runtimeId ?? null,
-        type: 'deployment_rollback',
-        message: 'Rollback deployment is serving traffic',
-        data: { previousDeploymentId },
+      const [target] = await db.select().from(appDeployments).where(and(
+        eq(appDeployments.deploymentId, deploymentId),
+        eq(appDeployments.appId, appId),
+        eq(appDeployments.status, 'ready'),
+      )).limit(1);
+      if (!target) return c.json({ error: 'Only a ready release can be rolled back to', code: 'release_not_ready' }, 409);
+      if (!target.artifactId) return c.json({ error: 'That release has no artifact to rebuild', code: 'release_not_rebuildable' }, 409);
+      const release = await db.transaction(async (tx) => {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${appId}))`);
+        const [versionRow] = await tx.select({ value: max(appDeployments.version) }).from(appDeployments)
+          .where(eq(appDeployments.appId, appId));
+        const [row] = await tx.insert(appDeployments).values({
+          appId,
+          artifactId: target.artifactId,
+          version: Number(versionRow?.value ?? 0) + 1,
+          status: 'queued',
+          sourceKind: target.sourceKind,
+          hostingProvider: target.hostingProvider,
+          createdBy: loaded.userId,
+          sourceSessionId: callerKortixSessionId(c),
+          actorType: appDeploymentActorType(c),
+          runtimeVersion: APP_RUNTIME_VERSION,
+          buildSpec: target.buildSpec,
+          runtimeSpec: {},
+          config: target.config,
+          strategy: target.strategy,
+        }).returning();
+        await tx.update(apps).set({ desiredState: 'running', updatedAt: new Date() }).where(eq(apps.appId, appId));
+        return row!;
       });
-      if (previousDeploymentId && previousDeploymentId !== deploymentId) {
-        const [previousRuntime] = await db.select().from(appRuntimes)
-          .where(and(
-            eq(appRuntimes.deploymentId, previousDeploymentId),
-            inArray(appRuntimes.status, ['starting', 'running']),
-          ))
-          .orderBy(desc(appRuntimes.createdAt))
-          .limit(1);
-        if (previousRuntime) {
-          await hosting.stop(previousRuntime.provider as SandboxProviderName, previousRuntime.externalId);
-          const stoppedAt = new Date();
-          await db.update(appRuntimes)
-            .set({ status: 'stopped', stoppedAt, updatedAt: stoppedAt })
-            .where(eq(appRuntimes.runtimeId, previousRuntime.runtimeId));
-          await pauseComputeSession(previousRuntime.runtimeId, stoppedAt);
-        }
-      }
-      return c.json(await appJson(row!, loaded.userId));
+      await db.insert(appDeploymentEvents).values({
+        deploymentId: release.deploymentId,
+        type: 'deployment_rollback',
+        message: `Rollback to v${target.version}`,
+        data: { rollbackOf: target.deploymentId, rollbackVersion: target.version, previousDeploymentId: app.activeDeploymentId },
+      });
+      triggerAppDeploymentWorker();
+      const [row] = await db.select().from(apps).where(eq(apps.appId, appId)).limit(1);
+      return c.json({ ...(await appJson(row!, loaded.userId)), deployment: serializeDeployment(release) }, 202);
     },
   );
 }
