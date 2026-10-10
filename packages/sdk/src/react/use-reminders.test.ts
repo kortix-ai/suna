@@ -48,6 +48,36 @@ describe('useProjectReminders / useSessionReminders', () => {
     expect(invalidated).toEqual([key, key, key, key]);
   });
 
+  test('updateMany and removeMany run one batch and refresh the list once', async () => {
+    const { configureKortix } = await import('../core/http/config');
+    configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+    const calls: string[] = [];
+    globalThis.fetch = mock(async (url: unknown, opts: { method?: string } = {}) => {
+      calls.push(`${opts.method ?? 'GET'} ${String(url)}`);
+      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+    }) as unknown as typeof fetch;
+    const project = useProjectReminders('p1') as any;
+    const reminders = [
+      { sessionId: 's1', reminderId: 'reminder.a' },
+      { sessionId: 's2', reminderId: 'reminder.b' },
+    ];
+    const paused = await project.updateMany.mutationFn({ reminders, enabled: false });
+    const removed = await project.removeMany.mutationFn({ reminders });
+    expect(calls).toEqual([
+      'PATCH http://test.local/projects/p1/sessions/s1/reminders/reminder.a',
+      'PATCH http://test.local/projects/p1/sessions/s2/reminders/reminder.b',
+      'DELETE http://test.local/projects/p1/sessions/s1/reminders/reminder.a',
+      'DELETE http://test.local/projects/p1/sessions/s2/reminders/reminder.b',
+    ]);
+    expect(paused).toEqual({ done: reminders, failed: [] });
+    expect(removed).toEqual({ done: reminders, failed: [] });
+    // Settled, not succeeded: a batch with failures still changed the list.
+    project.updateMany.onSettled();
+    project.removeMany.onSettled();
+    const key = [...qk.project.reminders('p1')];
+    expect(invalidated).toEqual([key, key]);
+  });
+
   test('project mutations target the reminder session; session mutations their own session', async () => {
     const { configureKortix } = await import('../core/http/config');
     configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
