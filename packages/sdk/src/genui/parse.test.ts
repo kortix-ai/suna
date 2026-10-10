@@ -225,7 +225,7 @@ describe('adversarial input', () => {
   test('the issue list is capped at 50, first issues kept', () => {
     const children = Array.from({ length: 12 }, (_, i) => `s${i}`).join(', ');
     const lines = [`root = Stack([${children}, ok])`, 'ok = Badge("kept")'];
-    // Each Series in a Stack is a wrong-child issue; 12 statements x 5 unknown children each.
+    // 12 statements x 6 unknown components: 72 issues before the cap.
     for (let i = 0; i < 12; i++) lines.push(`s${i} = Stack([${Array.from({ length: 6 }, () => 'Nope("x")').join(', ')}])`);
     const { issues } = parseGenui(lines.join('\n'));
     expect(issues.length).toBe(50);

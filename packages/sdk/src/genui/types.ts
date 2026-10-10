@@ -24,7 +24,10 @@ export type GenuiIssueCode =
   | 'cut-off'
   /** Query, Mutation, or $state: not supported before Phase 4; never executed. */
   | 'unsupported-statement'
-  /** The block expands to more than `GENUI_MAX_NODES` nodes (reference fan-out); the rest is dropped. */
+  /**
+   * The block expands to more than `GENUI_MAX_NODES` nodes. Reference fan-out is rejected before
+   * parsing (no root); otherwise the nodes past the budget are dropped.
+   */
   | 'too-many-nodes'
   /** The block source is longer than `GENUI_MAX_SOURCE_CHARS`; it is not parsed. */
   | 'too-large'
