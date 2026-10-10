@@ -54,12 +54,13 @@ async function makeMirror(
 }
 
 describe('getBranchDiff — the diff the review page renders', () => {
-  test('a diff whose patch exceeds the git output cap reports patch_truncated and keeps the file list', async () => {
+  test('a diff whose patch exceeds the capture bound reports patch_truncated and keeps the file list', async () => {
     const { root, mirror } = await makeMirror(async (dir) => {
-      // ~14 MB of new content: `git diff --no-color` output blows the 10 MiB
-      // exec cap that runGit sets, while --name-status stays a few bytes.
+      // ~40 MB of new content: `git diff --no-color` output blows the 32 MiB
+      // capture bound that computeDiffByRange sets for the patch command,
+      // while --name-status stays a few bytes.
       const line = 'changed 00000000 abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmn\n';
-      await writeFile(join(dir, 'src', 'big.txt'), line.repeat(240000));
+      await writeFile(join(dir, 'src', 'big.txt'), line.repeat(680000));
     });
     repoPath = mirror;
     try {
@@ -69,6 +70,29 @@ describe('getBranchDiff — the diff the review page renders', () => {
       expect(diff.additions).toBeGreaterThan(0);
       expect(diff.patch).toBe('');
       expect(diff.patch_truncated).toBe(true);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('a patch in the 10-32 MiB band is captured whole: the review page gets real contents, not a truncation flag', async () => {
+    const { root, mirror } = await makeMirror(async (dir) => {
+      // ~14 MB of new content: over runGit's 10 MiB exec cap (which used to
+      // kill the patch command and ship an empty patch), under the 32 MiB
+      // capture bound the CR patch command now runs with.
+      const line = 'changed 00000000 abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmn\n';
+      await writeFile(join(dir, 'src', 'big.txt'), line.repeat(240000));
+    });
+    repoPath = mirror;
+    try {
+      const diff = await getBranchDiff(project, 'base', 'head');
+      expect(diff.files_changed).toBe(1);
+      expect(diff.files.map((f) => f.path)).toEqual(['src/big.txt']);
+      expect(diff.additions).toBeGreaterThan(0);
+      expect(diff.patch_truncated).toBe(false);
+      // The body the accordion renders: the real unified diff, not a stub.
+      expect(diff.patch).toContain('diff --git a/src/big.txt b/src/big.txt');
+      expect(diff.patch.length).toBeGreaterThan(10 * 1024 * 1024);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

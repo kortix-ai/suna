@@ -1,0 +1,18 @@
+{
+  "source_hash": "c3b58ef149837ab4f2b2c3f1631f6a5c7867fd797c956481c2a1ecfd4930e3b6",
+  "diff_files": [
+    "apps/api/src/projects/git/merge-diff.test.ts",
+    "apps/api/src/projects/git/merge.ts",
+    "apps/api/src/projects/git/mirror.ts",
+    "apps/web/src/lib/seo/content-timestamps.json"
+  ],
+  "diff_hash": "10e889220530f2af80a37beb776f1d23690199057137bf8a146361065fd2a7b1",
+  "head": "e454518454a89281feae6da1f77e567b80df9a53",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-10T05:36:10.590Z"
+}
