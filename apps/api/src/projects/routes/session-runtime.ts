@@ -47,6 +47,7 @@ export function registerSessionRuntimeRoutes(): void {
           wait_ms: z.string().optional(),
           repository_mode: z.enum(['previous']).optional(),
           keep_stopped: z.enum(['1']).optional(),
+          intent_age_ms: z.string().optional(),
         }),
       },
       responses: {
@@ -164,7 +165,7 @@ export function registerSessionRuntimeRoutes(): void {
         sessionId,
         waitMs,
         keepStopped: c.req.query('keep_stopped') === '1',
-        wakeIntentAt: receivedAt,
+        wakeIntentAt: openIntentAt(receivedAt, c.req.query('intent_age_ms')),
         signal: c.req.raw.signal,
       });
       stl.mark(`open-session:${result.start.stage}`);
@@ -397,4 +398,13 @@ export function registerSessionRuntimeRoutes(): void {
       return c.json(await readSessionTurnState(sessionId));
     },
   );
+}
+
+/** A client's open can be older than its request: the tab may have opened the
+ *  session long before this poll (`intent_age_ms`, the client's own elapsed time,
+ *  so no clock is compared across machines). Bounded to a day. */
+function openIntentAt(receivedAt: Date, intentAgeMs: string | undefined): Date {
+  const age = Number(intentAgeMs);
+  if (!Number.isFinite(age) || age <= 0) return receivedAt;
+  return new Date(receivedAt.getTime() - Math.min(age, 24 * 60 * 60 * 1000));
 }

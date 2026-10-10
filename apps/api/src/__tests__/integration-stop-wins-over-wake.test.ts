@@ -166,6 +166,17 @@ test('an open during a Stop never answers ready, and its wait ends stopped once 
   expect(rows.map((r) => [r.sandboxId, r.status])).toEqual([[sandboxId, 'stopped']]);
 }, 30_000);
 
+test('a poll from a tab that opened the session before the Stop does not wake it, however late it arrives', async () => {
+  const { sessionId, sandboxId } = await session({ status: 'provisioning', externalId: null, metadata: {} });
+  const creating = creates.length;
+  await landStop(sandboxId, new Date(Date.now() - 1_000));
+  // The tab opened the session 5 s ago; its poll reaches the API only now.
+  expect((await start(sessionId, '?intent_age_ms=5000')).stage).toBe('stopped');
+  const rows = await rowsOf(sessionId);
+  expect(rows.map((r) => [r.sandboxId, r.status])).toEqual([[sandboxId, 'stopped']]);
+  expect(creates.length).toBe(creating);
+}, 30_000);
+
 test('an open formed after the Stop still wakes the session', async () => {
   const { sessionId, sandboxId } = await session({ status: 'provisioning', externalId: null, metadata: {} });
   await landStop(sandboxId, new Date(Date.now() - 1_000));
