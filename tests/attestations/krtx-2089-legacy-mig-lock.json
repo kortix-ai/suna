@@ -5,12 +5,12 @@
     "apps/api/src/billing/services/legacy-account-migration.ts"
   ],
   "diff_hash": "9a3b7222ff1a537ba5909fc267c87b5504a5f10da11d44f5c86353eead82775d",
-  "head": "4ef444ca480fbf4e2482a11ae1f25b6f8a951e4f",
+  "head": "96ef1d13087434df4f6d3cb00ddcc41b94f9230f",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-10T10:29:33.657Z"
+  "at": "2026-10-10T12:04:20.965Z"
 }
