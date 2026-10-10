@@ -89,7 +89,7 @@ flow(
       ).status(400);
     });
 
-    await ctx.step("a convex create: 201 provisioning where Platinum is configured, else 409 app_kind_unavailable; always_on false → 400", async () => {
+    await ctx.step("a convex create: 201 provisioning where Platinum is configured, else 409 app_kind_unavailable; always_on false or a budget → 400", async () => {
       (
         await owner.post(
           "/v1/projects/:projectId/apps",
@@ -100,6 +100,14 @@ flow(
         .status([400, 409])
         .body()
         .exists("$.code");
+      // A convex App costs its size 24/7: it has no budget to set.
+      const budgeted = await owner.post(
+        "/v1/projects/:projectId/apps",
+        { kind: "convex", slug: "budgeted", name: "budgeted", monthly_budget_usd: 50 },
+        { params: projectParams },
+      );
+      budgeted.status([400, 409]);
+      budgeted.body().has("$.code", budgeted.statusCode === 400 ? "app_budget_not_applicable" : "app_kind_unavailable");
       const create = await owner.post(
         "/v1/projects/:projectId/apps",
         { kind: "convex", slug: convexSlug, name: "main", uses: [] },
@@ -114,8 +122,17 @@ flow(
           .body()
           .has("$.kind", "convex")
           .has("$.always_on", true)
+          .has("$.monthly_budget_usd", null)
+          .has("$.instance.budget_alert", null)
           .has("$.instance.status", "provisioning")
           .has("$.capabilities", ["deployments", "snapshots", "restore", "admin_credentials", "dashboard", "logs", "member_tokens"]);
+        (
+          await owner.patch(
+            "/v1/projects/:projectId/apps/:appId",
+            { monthly_budget_usd: 50 },
+            { params: { ...projectParams, appId: convexAppId } },
+          )
+        ).status(400).body().has("$.code", "app_budget_not_applicable");
       }
     });
 

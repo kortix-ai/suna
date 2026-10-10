@@ -24,7 +24,6 @@ export interface ConvexRowSeed {
   cpu?: number;
   memoryGb?: number;
   diskGb?: number;
-  monthlyBudgetUsd?: string;
   createdAt?: Date;
   deletedAt?: Date | null;
   metadata?: Record<string, unknown>;
@@ -46,7 +45,6 @@ export async function insertConvexRow(seed: ConvexRowSeed): Promise<ConvexRow> {
     cpuCores: seed.cpu ?? 1,
     memoryGb: seed.memoryGb ?? 1,
     diskGb: seed.diskGb ?? 10,
-    monthlyBudgetUsd: seed.monthlyBudgetUsd ?? '100.00',
     deletedAt: seed.deletedAt ?? null,
     ...(seed.createdAt ? { createdAt: seed.createdAt } : {}),
   });

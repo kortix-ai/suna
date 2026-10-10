@@ -558,8 +558,8 @@ Specs in `[[triggers]]`; CRUD commits the manifest; runtime state and account-lo
 `TRG-2` `POST /projects/:id/triggers {name(required),slug?,type,agent?,enabled?,prompt_template,cron?,timezone?,secret_env?}` → `manage` → 201, manifest committed; `name` is required (slug derived from it when omitted); duplicate slug → 409. `webhook` requires `secret_env` (names a `project_secrets` key, regex `^[A-Z_][A-Z0-9_]*$`). `cron` requires 6-field croner expr + IANA `timezone` (default UTC). The create is one `kortix.yaml` commit `chore: add trigger <slug>` carrying the entry.
 `TRG-3` `PATCH /projects/:id/triggers/:slug` (e.g. `{enabled:false}`) → `manage`. A partial body keeps every other field of the entry.
 `TRG-4` `DELETE /projects/:id/triggers/:slug` → `manage` (also drops runtime row). The other triggers stay listed.
-`TRG-5` `POST /projects/:id/triggers/:slug/fire` → `manage` → manual fire → 202 `{status:fired,session_id}`; under backpressure → 202 `{status:queued,reason}`.
-`TRG-7` webhook fire — `POST /webhooks/projects/:id/:slug` (**public, HMAC**). Sig header `X-Kortix-Signature` or `X-Hub-Signature-256` (`sha256=` stripped), HMAC-SHA256 over raw body vs `project_secrets[secret_env]`, constant-time. Valid → 202 fired/queued; malformed UUID/slug → 400; bad sig, unknown project, missing secret and unknown/disabled/non-webhook trigger all answer the same 401 `Invalid webhook signature` (no existence oracle; the reason is logged); optional `X-Kortix-Timestamp` (epoch seconds) signs `<timestamp>.<body>` and a delivery more than 5 minutes off → 401; fire failure → 500.
+`TRG-5` `POST /projects/:id/triggers/:slug/fire` → `manage` → manual fire → 202 `{status:fired,session_id}`; under backpressure → 202 `{status:queued,reason}`; a fire the account cannot run (no usable model, LLM-gateway projects) → 402 `{error,code:'no_usable_model'}` with no session minted (KRTX-1505).
+`TRG-7` webhook fire — `POST /webhooks/projects/:id/:slug` (**public, HMAC**). Sig header `X-Kortix-Signature` or `X-Hub-Signature-256` (`sha256=` stripped), HMAC-SHA256 over raw body vs `project_secrets[secret_env]`, constant-time. Valid → 202 fired/queued; malformed UUID/slug → 400; bad sig, unknown project, missing secret and unknown/disabled/non-webhook trigger all answer the same 401 `Invalid webhook signature` (no existence oracle; the reason is logged); optional `X-Kortix-Timestamp` (epoch seconds) signs `<timestamp>.<body>` and a delivery more than 5 minutes off → 401; a fire the account cannot run (no usable model, LLM-gateway projects) → 402 `{error,code:'no_usable_model'}` with no session minted (KRTX-1505); other fire failure → 500.
 `TRG-10` `GET /projects/:id/triggers` leaf gate — a member bound to a custom (Enterprise) project role granting `project.read` but NOT `project.trigger.read` loads the project yet is rejected 403 at `GET /triggers` (the `assertProjectCapability(project.trigger.read)` fires after the read passes); a floor `user` member (built-in role carries `project.trigger.read`) still gets 200. Scoped-agent-token variant proven at the API layer in `integration-project-read-leaf-gates-http.test.ts`.
 `TRG-11` Triggers CRUD authz boundaries — `ANON → 401` on POST/PATCH/DELETE/fire/activation; a project `member` (floor role) holds `trigger.read` + `trigger.fire` but NOT `project.write` (the `manage` floor) nor `trigger.create/update/delete` → `GET 200`, `POST/PATCH/DELETE/activation 403`, `fire` unknown-slug `404` (NOT 403 — the fire leaf passes; the 404 is the slug lookup).
 `TRG-12` `POST /projects/:id/triggers` input validation — missing `name`/`type`/`prompt_template` → `400`; bad `type` (not cron/webhook/monitor/event) → `400`; a cron that fires more than once a minute (`*/30 * * * * *`: the first of 6 fields is seconds) → `400` naming the 60-second minimum (KRTX-1721); invalid `session_mode` → `400`; `pinned` without `session_id` → `400`; `pinned` with a `session_id` from another project → `400`; webhook without `secret_env` → `400`; webhook with bad `secret_env` (lowercase / leading digit, not `^[A-Z_][A-Z0-9_]*$`) → `400`; cron without `cron` AND without `run_at` → `400`; cron with non-ISO `run_at` → `400`; explicit invalid slug (uppercase / leading dash, not `^[a-z0-9][a-z0-9_-]{0,127}$`) → `400`.
@@ -1198,13 +1198,14 @@ project read then lists `apps` with `enabled: true, operator_only: true`. A
 project writer creates a unique lower-case slug and machine policy; list/get
 return the stable public URL and active deployment pointer; every App carries
 `estimated_monthly_usd` (its machine 24/7 at list compute rates, `73.48` for
-1 vCPU / 2 GiB / 10 GiB); an always-on create or a run-mode, machine or budget
-patch with a budget below that estimate succeeds with
-`warnings[0].code = 'app_budget_below_always_on'`, and `warnings: []`
-otherwise; a create without `monthly_budget_usd` gets a derived budget: the
-24/7 estimate rounded up to a whole dollar (`74` for 1 vCPU / 2 GiB) when the
-App is always on, `5` on demand; a derived budget follows later machine and
-run-mode patches, a budget a person sent never moves; patch updates mutable policy; delete is soft and removes the App
+1 vCPU / 2 GiB / 10 GiB). Cost shape decides the budget: only an on-demand
+server App (`always_on: false`) has `monthly_budget_usd` (default `5`, the
+value sent otherwise, unmoved by a machine patch); an always-on App reports
+`monthly_budget_usd: null`, and a create or patch that sends a budget for it →
+`400 {code:'app_budget_not_applicable'}` with the 24/7 cost in the message;
+a patch to `always_on: false` sets the sent budget or `5`, a patch back to
+`always_on: true` clears it to `null`; `warnings: []` on every create and
+patch; patch updates mutable policy; delete is soft and removes the App
 from subsequent reads.
 A new App lists no backends (`backends: []`); patch sets the list by name,
 deduplicated, and get reads it back; an invalid backend name → 400.
@@ -1243,7 +1244,11 @@ not disclose that a teammate's private App exists); their `PATCH …/:appId` is
 **403** because a member holds no `project.app.write` at all, which discloses
 nothing either. Switching the
 policy to `project` puts the App in that teammate's list and makes it readable;
-`restricted` with their `member_ids` keeps them in; returning to `private` puts
+`restricted` with their `member_ids` keeps them in. A second App `restricted`
+to the owner alone is absent from the teammate's list and 404 on their get,
+while the owner lists both; every App in a list answers
+`viewer_can_access: true` (the list holds only Apps the caller may open, a
+project manager every App). Returning to `private` puts
 them back out. `password` is a PUBLIC-traffic control and stays team-visible.
 A `NONMEMBER` remains 403 on the whole surface.
 
@@ -1567,7 +1572,13 @@ a trigger run. Every denial is `403 {code, action}` (spec §4).
 `AGP-12` Denial bodies. Each denial carries `code` and `action`: `project_role_insufficient` (member JWT, files), `agent_scope_insufficient` (secrets outside the list), `agent_ceiling_insufficient` (files under a `member` ceiling), `agent_not_accessible` (spawning an agent the human may not run). The real CLI chooses its hint from the code: `kortix secrets ls` names `agents.scoped.kortix_permissions` and `project.secret.read`; `kortix files ls` under the ceiling asks an admin, names `capped`, and does not name `kortix_permissions`.
 `AGP-14` Trigger fire with no agent. The manifest names `default_agent: nightly`, and the metadata mirror is stale (`decoy`). The trigger names no agent and is pinned to a minted `nightly` run. A member with `run(nightly)` fires it → 202 and one prompt is queued for that run. A member with only `run(decoy)` → 403 `agent_not_accessible` and nothing more is queued. The fire route authorizes the agent session creation will run.
 
-## 33. Retired routes
+## 33. Feedback
+
+Product feedback filed by agents and people through one route and one CLI command. One append-only row per submission; the triage surface reads it newest first.
+
+`FB-1` `POST /v1/feedback {source?: cli|agent|web = cli, kind: bug|idea|friction, message: 1..4000 chars, context?: {≤8 keys of ≤128 chars → ≤256 chars}}` → `201 {id, source, kind, created_at}`; the row stores the caller's user id and the account the credential resolves. ANON → 401. Unknown `kind`, unknown `source`, empty or > 4000-char `message`, oversized context values, more than 8 context keys → 400. The route is rate limited per user; a flood inside the window answers `429` with `Retry-After`, and another identity still files successfully. `kortix feedback "<message>" [--kind …] [--source …] [--context <json>] [--json]` runs the real CLI process: inside a session (`KORTIX_SESSION_ID`) it files `source: agent` with the session and project ids merged into the context, outside it files `source: cli`; it prints the stored receipt and exits 0, and maps an API refusal to a nonzero exit.
+
+## 34. Retired routes
 
 `RET-1` Every route the API retired answers `410` with `{ error, code: "ENDPOINT_RETIRED" }` for any caller, anonymous included, and runs no handler: the legacy router LLM and search routes, the `/billing/account/*` deletion mirror (use `/account/*`), `POST /billing/deduct` · `deduct-usage` · `sync-seat-quantity` · `create-checkout-session` · `confirm-checkout-session` · `schedule-downgrade`, `GET /generation`, `POST /prewarm`, and `/projects/suna-migration/*`. The table is `RETIRED_ROUTES` in `apps/api/src/routes/retired.ts`.
 
@@ -1648,9 +1659,10 @@ Delete: without `confirm=<slug>` → `400 confirmation_required`; with it, a
 `final` snapshot is taken, the machine is stopped and kept 7 days
 (`retained_until`), the hosts answer 410, the sweep and the orphan reaper leave
 the machine alone, and the purge after retention deletes machine, snapshots and
-row. Budget: 80 % and 100 % of the monthly budget each alert once per month
-(`instance.budget_alert`, audit `app.budget.alert`) and the machine keeps
-running. Not asserted locally: a provisioned machine and the
+row. No budget: a `convex` App reports `monthly_budget_usd: null` and
+`instance.budget_alert: null`, a budget on create or patch →
+`400 app_budget_not_applicable`, and the sweep never stops the machine for its
+spend. Not asserted locally: a provisioned machine and the
 `app.credentials.read` audit row; they are verified on a deployed environment.
 
 `APP-10` Sign-in tokens and the bindings mount, black-box on a local App host.

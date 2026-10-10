@@ -361,6 +361,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'POST /v1/mcp': { action: 'mcp.request', title: 'Called the MCP server' },
   'GET /v1/notifications': { action: 'notification.inbox.list', title: 'Viewed notifications' },
   'POST /v1/notifications/device-token': { action: 'notification.device_token.register', title: 'Registered push notification device' },
+  'POST /v1/feedback': { action: 'feedback.create', title: 'Filed product feedback' },
   'DELETE /v1/notifications/device-token/:token': { action: 'notification.device_token.delete', title: 'Removed push notification device' },
   'GET /v1/notifications/preferences': { action: 'notification.preferences.read', title: 'Viewed notification preferences' },
   'PUT /v1/notifications/preferences': { action: 'notification.preferences.update', title: 'Changed notification preferences' },
