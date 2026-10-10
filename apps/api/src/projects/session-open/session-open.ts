@@ -37,7 +37,12 @@ import {
 } from './session-open-readiness';
 import { openNotRunningBox, openRemovedBox, syncRecoveredRunningRow } from './session-open-recovery';
 import { enforceAdmission, enforceRuntimeGuarantee } from './session-open-guarantee';
-import { keepStoppedRefusesWake, resumeHibernatedOnOpen } from './resume-stopped-sandbox';
+import {
+  keepStoppedRefusesWake,
+  liveStopClaimAtMs,
+  resumeHibernatedOnOpen,
+  userStopFollowsIntent,
+} from './resume-stopped-sandbox';
 import {
   sandboxMetadata,
   serializeSandboxRow,
@@ -170,7 +175,9 @@ async function runOpenSession(
     // Stop intent is read BEFORE the claim: the claim deletes the retired row
     // and allocates a fresh box, so a keep-alive poll that reached it would
     // undo the stop it was only meant to observe. Only an explicit open wakes.
-    if (keepStoppedRefusesWake(args.keepStopped, row)) return keptStoppedAnswer(visible.row.agentName);
+    if (keepStoppedRefusesWake(args.keepStopped, row) || userStopFollowsIntent(args.wakeIntentAt, row)) {
+      return keptStoppedAnswer(visible.row.agentName);
+    }
     const claim = sandboxCallbackUnreachableReason() ? null : await claimRetiredEphemeralRow(row.sandboxId);
     if (claim) {
       await allocateRuntimeOnOpen(args.loaded, visible.row, projectId, sessionId, {
@@ -205,8 +212,31 @@ async function runOpenSession(
 
   // Every stopped row, with or without a box: a stopped row with no external
   // id would otherwise fall through to `openUnusableRow`, which allocates.
-  if (row?.status === 'stopped' && keepStoppedRefusesWake(args.keepStopped, row)) {
+  if (
+    row?.status === 'stopped' &&
+    (keepStoppedRefusesWake(args.keepStopped, row) || userStopFollowsIntent(args.wakeIntentAt, row))
+  ) {
     return keptStoppedAnswer(visible.row.agentName);
+  }
+
+  // A box under a live stop claim is being powered off (an ephemeral one is
+  // being deleted). Answering `ready` for it hands the client a box that is
+  // gone a second later. A caller that was already waiting when the Stop
+  // began, and every keep-alive poll, learns `stopped`; an open formed after
+  // it waits for the stop to settle and then wakes the box as usual.
+  const stopClaimedAtMs = liveStopClaimAtMs(row, log.observedAt.getTime());
+  if (stopClaimedAtMs !== null) {
+    if (args.keepStopped || (args.wakeIntentAt && stopClaimedAtMs >= args.wakeIntentAt.getTime())) {
+      return keptStoppedAnswer(visible.row.agentName);
+    }
+    return {
+      stage: 'starting',
+      agent_name: visible.row.agentName ?? 'default',
+      retriable: true,
+      sandbox: null,
+      opencode_session_id: null,
+      reason: 'runtime_stopping',
+    };
   }
 
   ({ row, stoppedProviderStatus } = await resumeHibernatedOnOpen(log, row));
