@@ -207,6 +207,13 @@ t = Table(["Name", "Nights", "Note"], [["Option A", 3, "Close to the venue and t
     const nights = rows.map((row) => String(all(row, 'text')[1]!.props.className));
     for (const className of nights) expect(className).toContain('text-right');
     expect(String(all(rows[1]!, 'text')[0]!.props.className)).not.toContain('text-right');
+    // Every cell reads at 14/20 like a markdown table, through the TYPE.sm token, never a text-sm class.
+    for (const row of rows) {
+      for (const cell of all(row, 'text')) {
+        expect(flatten(cell.props.style)).toMatchObject({ fontSize: 14, lineHeight: 20 });
+        expect(String(cell.props.className)).not.toContain('text-sm');
+      }
+    }
   });
 
   test('compare cards mark the winner with the translated Pick badge and key repeated spec labels by position', () => {

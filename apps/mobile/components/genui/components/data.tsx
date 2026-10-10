@@ -9,6 +9,7 @@ import { Icon } from '@/components/ui/icon';
 import { Separator } from '@/components/ui/separator';
 import { Text } from '@/components/ui/text';
 import { ArrowDownRightIcon, ArrowUpRightIcon, MinusIcon } from '@/lib/icons';
+import { TYPE } from '@/lib/markdown/markdown-layout';
 import { tableColumnWidths } from '@/lib/markdown/table-layout';
 
 import { kids } from './layout';
@@ -72,7 +73,8 @@ export function GenuiTable({ props }: GenuiComponentProps) {
   const rows = props.rows as unknown[][];
   const numeric = numericColumns(columns, rows);
   const bases = columnBases(columns, rows);
-  const cellStyle = (c: number) => ({ flexBasis: bases[c], flexGrow: 1, flexShrink: 0 });
+  // 14/20 like a markdown table (markdown-table.tsx), through the token rather than a text-sm class.
+  const cellStyle = (c: number) => ({ flexBasis: bases[c], flexGrow: 1, flexShrink: 0, ...TYPE.sm });
   const align = (c: number) => (numeric[c] ? 'text-right' : '');
   return (
     <View className="overflow-hidden rounded-2xl bg-card">
