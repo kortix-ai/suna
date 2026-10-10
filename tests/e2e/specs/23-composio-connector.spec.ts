@@ -74,7 +74,7 @@ test.describe("23 — Composio managed connector", () => {
     if (user?.id) await deleteAuthUser(user.id, authOptions);
   });
 
-  test("short searches return matching connectors in Discovery and All", async ({
+  test("short searches return matching connectors in All", async ({
     page,
   }) => {
     const status = await api<ConnectStatus>(
@@ -109,7 +109,7 @@ test.describe("23 — Composio managed connector", () => {
       authOptions,
     );
     await selectAccountForUi(page, accountId);
-    for (const scope of ["Discovery", "All"]) {
+    for (const scope of ["All"]) {
       await page.goto(`/projects/${project.id}/customize/connectors`, {
         waitUntil: "domcontentloaded",
       });
@@ -157,7 +157,7 @@ test.describe("23 — Composio managed connector", () => {
           expect(nameMatch(items[0]), `the top result for "${q}" matches by name`).toBe(true);
         }
         await expect(
-          page.getByRole("button", { name: new RegExp(`^${name}\\b`) }).first(),
+          page.getByRole("link", { name: new RegExp(`^${name}\\b`) }).first(),
         ).toBeVisible();
         await expect(
           page.getByText("Internal server error", { exact: true }),
@@ -167,12 +167,12 @@ test.describe("23 — Composio managed connector", () => {
         }
         if (query === "sl") {
           await expect(
-            page.getByRole("button", { name: /^Gmail\b/ }),
+            page.getByRole("link", { name: /^Gmail\b/ }),
           ).toHaveCount(0);
         }
         if (query === "gm") {
           await expect(
-            page.getByRole("button", { name: /^Slack\b/ }),
+            page.getByRole("link", { name: /^Slack\b/ }),
           ).toHaveCount(0);
         }
         if (query === "a") {
@@ -197,7 +197,7 @@ test.describe("23 — Composio managed connector", () => {
       await search.fill("g");
       expect((await backspaceResponse).status()).toBe(200);
       await expect(
-        page.getByRole("button", { name: /^GitHub\b/ }).first(),
+        page.getByRole("link", { name: /^GitHub\b/ }).first(),
       ).toBeVisible();
       const emptyResponse = page.waitForResponse((value) => {
         // Only the real request: on the cross-site staging pair the Authorization
@@ -221,7 +221,7 @@ test.describe("23 — Composio managed connector", () => {
         cursor: null,
         totalPages: 0,
       });
-      await expect(page.getByRole("button", { name: /^Gmail\b/ })).toHaveCount(
+      await expect(page.getByRole("link", { name: /^Gmail\b/ })).toHaveCount(
         0,
       );
       await expect(page.locator('[data-testid="catalog-add"]')).toHaveCount(0);
@@ -275,7 +275,7 @@ test.describe("23 — Composio managed connector", () => {
 
     if (!composioConfigured) {
       await expect(
-        page.getByRole("button", { name: /Composio Search/i }),
+        page.getByRole("link", { name: /Composio Search/i }),
       ).toHaveCount(0);
       expect(pageErrors, `client errors: ${pageErrors.join(" | ")}`).toEqual(
         [],
@@ -307,10 +307,11 @@ test.describe("23 — Composio managed connector", () => {
       }),
     );
 
-    await page.getByRole("button", { name: /Composio Search/i }).click();
-    const addDialog = page.getByRole("dialog", { name: "Add Composio Search" });
-    await expect(addDialog).toBeVisible();
-
+    // Install from the card: one menu, one choice, no dialog.
+    const card = page
+      .locator("div")
+      .filter({ has: page.getByRole("link", { name: /^Composio Search\b/ }) })
+      .last();
     const createRequestPromise = page.waitForRequest(
       (request) =>
         request
@@ -318,37 +319,20 @@ test.describe("23 — Composio managed connector", () => {
           .endsWith(`/v1/connectors/projects/${project.id}/connectors`) &&
         request.method() === "POST",
     );
-    const createResponsePromise = page.waitForResponse(
-      (response) =>
-        response
-          .url()
-          .endsWith(`/v1/connectors/projects/${project.id}/connectors`) &&
-        response.request().method() === "POST",
+    const accountRequestPromise = page.waitForRequest(
+      (request) =>
+        request.url().endsWith(`/projects/${project.id}/connections`) &&
+        request.method() === "POST",
     );
-    const isConnectPost = (url: string, method: string) =>
-      method === "POST" &&
-      new RegExp(`/v1/connectors/projects/${project.id}/connectors/[^/]+/connect$`).test(url);
-    // Settled to null on timeout: an account that is already connected sends
-    // no connect POST (release gate 37557504543 on staging).
-    const connectRequestPromise = page
-      .waitForRequest((request) => isConnectPost(request.url(), request.method()))
-      .catch(() => null);
-    const connectResponsePromise = page
-      .waitForResponse((response) => isConnectPost(response.url(), response.request().method()))
-      .catch(() => null);
-    await addDialog
-      .getByRole("button", { name: "Add connector", exact: true })
-      .click();
-    const createRequest = await createRequestPromise;
-    const createBody = createRequest.postDataJSON() as Record<string, unknown>;
-    // `authorization_strategy` was a connector-level MODE that made project-
-    // owned and member-owned accounts mutually exclusive, and the add dialog
-    // carried an owner field that set it. 2bdc308a87 (PR #7326, 2026-09-16)
-    // deleted that field and the key: ownership is a property of each ACCOUNT
-    // (`owner_type` on the connection), so the draft names the account to
-    // authorize (`account: "default"`) instead of a connector-wide strategy.
-    // The route still answers the old strategy PUT as a deprecation no-op
-    // (CONN-13), but no client sends the key on create any more.
+    await card.getByTestId("catalog-add").click();
+    await page.getByRole("menuitem", { name: /^Everyone in / }).click();
+
+    const createBody = (await createRequestPromise).postDataJSON() as Record<
+      string,
+      unknown
+    >;
+    // Ownership is a property of each ACCOUNT, so the draft names the account
+    // to authorize and carries no connector-wide strategy.
     expect(createBody).toEqual(
       expect.objectContaining({
         name: "Composio Search",
@@ -359,60 +343,51 @@ test.describe("23 — Composio managed connector", () => {
       }),
     );
     expect(createBody).not.toHaveProperty("authorization_strategy");
-    // A proposed connector slug is `<app>-<6 random base36>` since 7f6b8087f3
-    // (so two connections to one app never collide). The suffix is random, so
-    // read the slug the UI actually proposed and follow it for the rest of the
-    // journey instead of asserting a fixed one.
+    // A proposed connector slug is `<app>-<6 random base36>`; read the one the
+    // UI proposed and follow it.
     expect(createBody.slug).toMatch(/^composio-search-[a-z0-9]{6}$/);
     const connectorSlug = createBody.slug as string;
     expect(JSON.stringify(createBody)).not.toMatch(
       /api[_-]?key|credential|secret/i,
     );
-    expect((await createResponsePromise).status()).toBe(200);
 
-    await expect(page).toHaveURL(new RegExp(`[?&]scope=connected(?:&|$)`));
-    await expect(page).toHaveURL(new RegExp(`[?&]c=${connectorSlug}(?:&|$)`));
-    const detail = page.getByRole("dialog", { name: "Composio Search" });
-    await expect(detail).toBeVisible();
-    // A no-auth toolkit has nothing to authorize. The header offers Connect, or
-    // the account is already connected (Reconnect) by the time the dialog
-    // opens (release gates 37548429782 and 37557504543 on staging), and then
-    // no connect POST is sent. Either way the API read-back below proves the
-    // active no-auth account (`is_no_auth`, a `trs_` session).
-    const connectButton = detail.getByRole("button", { name: "Connect", exact: true });
-    const reconnectButton = detail.getByRole("button", { name: "Reconnect", exact: true });
-    await expect(connectButton.or(reconnectButton)).toBeVisible();
-    const clickedConnect = await connectButton.isVisible();
-    if (clickedConnect) await connectButton.click();
-    const connectRequest = await connectRequestPromise;
-    if (clickedConnect) expect(connectRequest, "Connect sends one connect POST").not.toBeNull();
-    if (connectRequest) {
-      expect(connectRequest.url()).toMatch(new RegExp(`/connectors/${connectorSlug}/connect$`));
-      expect(connectRequest.postDataJSON() ?? {}).toEqual({});
-      const connectResponse = await connectResponsePromise;
-      expect(connectResponse?.status()).toBe(200);
-      const connectBody = (await connectResponse!.json()) as Record<string, unknown>;
-      expect(connectBody).toEqual(
-        expect.objectContaining({
-          provider: "composio",
-          app: "composio_search",
-          connected: true,
-          isNoAuth: true,
-        }),
-      );
-      expect(connectBody.sessionId).toEqual(expect.stringMatching(/^trs_/));
-      expect(connectBody.connectionId).toEqual(expect.any(String));
-    }
+    // The account is created for the audience the menu item named, under the
+    // connector just created, named from the app.
+    expect((await accountRequestPromise).postDataJSON()).toEqual(
+      expect.objectContaining({
+        connector_alias: connectorSlug,
+        owner_type: "project",
+        label: "Composio Search",
+      }),
+    );
 
+    // Install ends on the connector's own page, nested under its app.
+    await expect(page).toHaveURL(
+      new RegExp(
+        `/projects/${project.id}/customize/connectors/composio_search/${connectorSlug}\\?src=apps`,
+      ),
+      { timeout: 60_000 },
+    );
     await expect(
-      detail.getByRole("button", { name: "Reconnect", exact: true }),
+      page.getByRole("heading", { level: 1, name: "Composio Search" }),
     ).toBeVisible();
-    await detail.getByRole("button", { name: "Close", exact: true }).click();
-    await expect(detail).not.toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    // The status strip under the header reads "Working" once install ends.
     await expect(
-      page.getByRole("tab", { name: "Connected", exact: true }),
-    ).toHaveAttribute("aria-selected", "true");
+      page
+        .locator("dl")
+        .filter({ has: page.getByText("Status", { exact: true }) })
+        .getByText("Working", { exact: true }),
+    ).toBeVisible();
 
+    // Back goes to the app's page, which now lists this connector.
+    await page.getByRole("link", { name: "Connectors", exact: true }).click();
+    await expect(page).toHaveURL(
+      new RegExp(`/customize/connectors/composio_search\\?src=apps$`),
+    );
+    await expect(
+      page.getByRole("link", { name: /^Composio Search\b/ }),
+    ).toBeVisible();
     const connections = await api<ConnectionList>(
       session.access_token,
       "GET",
@@ -483,6 +458,10 @@ test.describe("23 — Composio managed connector", () => {
     await page.goto(
       `/projects/${project.id}/customize/connectors?scope=connected&c=${slug}`,
       { waitUntil: "domcontentloaded" },
+    );
+    await expect(page).toHaveURL(
+      new RegExp(`/customize/connectors/connected/${slug}$`),
+      { timeout: 60_000 },
     );
     await dismissOnboarding(page);
 
@@ -582,6 +561,10 @@ test.describe("23 — Composio managed connector", () => {
     await installBrowserSessionDirect(page, session, url, authOptions);
     await selectAccountForUi(page, accountId);
     await page.goto(url, { waitUntil: "domcontentloaded" });
+    await expect(page).toHaveURL(
+      new RegExp(`/customize/connectors/connected/${slug}$`),
+      { timeout: 60_000 },
+    );
     await dismissOnboarding(page);
 
     const row = page.getByRole("listitem").filter({ hasText: "Team CRM" });
@@ -681,7 +664,7 @@ test.describe("23 — Composio managed connector", () => {
     expect(pageErrors, `client errors: ${pageErrors.join(" | ")}`).toEqual([]);
   });
 
-  test("adds accounts from one Add account dialog that asks who can use each", async ({ page }) => {
+  test("adds accounts from one Add account menu that asks only who can use each", async ({ page }) => {
     // One button, one dialog: the name plus who may use the new account. The
     // visibility lands on the card. A connector with `auth: none` needs no
     // credential, so each account is ready as soon as it is created.
@@ -717,87 +700,45 @@ test.describe("23 — Composio managed connector", () => {
     await expect(page.getByRole("button", { name: "Add my own" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Connect shared account" })).toHaveCount(0);
 
-    // ── Only you: the caller's own account ───────────────────────────────
-    await addButton.click();
-    const add = page.getByRole("dialog", { name: /^Add a .* account$/ });
-    await expect(add).toBeVisible();
-    await expect(add.getByRole("radio", { name: /^Only you/ })).toBeChecked();
-    await add.getByLabel("Name").fill("Mine");
+    // ── Only you: the caller's own account, named from the connector ─────
     const mineRequest = page.waitForRequest(
       (request) =>
         request.url().endsWith(`/projects/${project.id}/connections/me`) && request.method() === "POST",
     );
-    await add.getByRole("button", { name: "Continue", exact: true }).click();
+    await addButton.click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await page.getByRole("menuitem", { name: /^Only you/ }).click();
     expect((await mineRequest).postDataJSON()).toEqual(
-      expect.objectContaining({ connector_alias: slug, label: "Mine" }),
+      expect.objectContaining({ connector_alias: slug, label: slug }),
     );
-    await expect(add).toHaveCount(0);
-    const mineRow = page.getByRole("listitem").filter({ hasText: "Mine" });
+    const mineRow = page.getByRole("listitem").filter({ has: page.getByText(slug, { exact: true }) });
     await expect(mineRow.getByTestId("account-visibility")).toHaveText("Only you");
 
-    // ── A name the owner already uses is refused before any request ───────
-    await addButton.click();
-    await add.getByLabel("Name").fill("mine");
-    await expect(add.getByRole("alert")).toHaveText("An account named mine already exists.");
-    await expect(add.getByRole("button", { name: "Continue", exact: true })).toBeDisabled();
-
-    // ── Specific people or groups: created, then narrowed ────────────────
-    await add.getByLabel("Name").fill("Sales CRM");
-    await add.getByRole("radio", { name: /^Specific people, groups, or agents/ }).click();
-    await expect(add.getByRole("button", { name: "Continue", exact: true })).toBeDisabled();
-    await add.getByRole("button", { name: groupName }).click();
+    // ── Everyone: a second account gets the next free name ───────────────
     const sharedRequest = page.waitForRequest(
       (request) =>
         request.url().endsWith(`/projects/${project.id}/connections`) && request.method() === "POST",
     );
-    const grantRequest = page.waitForRequest(
-      (request) =>
-        /\/v1\/accounts\/[^/]+\/iam\/assignments$/.test(request.url()) && request.method() === "POST",
-    );
-    await add.getByRole("button", { name: "Continue", exact: true }).click();
+    await addButton.click();
+    await page.getByRole("menuitem", { name: /^Everyone in / }).click();
     expect((await sharedRequest).postDataJSON()).toEqual(
-      expect.objectContaining({ connector_alias: slug, owner_type: "project", label: "Sales CRM" }),
+      expect.objectContaining({ connector_alias: slug, owner_type: "project", label: `${slug} 2` }),
     );
-    // The grant is sent only after the create call answered, so the row exists.
-    const grantBody = (await grantRequest).postDataJSON();
-    const salesCrm = (
-      await api<{ connections: Array<{ connection_id: string; label: string; owner_type: string }> }>(
-        session.access_token,
-        "GET",
-        `/projects/${project.id}/connections`,
-      )
-    ).connections.find((c) => c.label === "Sales CRM" && c.owner_type === "project");
-    expect(grantBody).toEqual(
-      expect.objectContaining({
-        principal_type: "group",
-        principal_id: group.group_id,
-        role_key: "agent-user",
-        object_type: "connection",
-        object_id: salesCrm?.connection_id,
-      }),
-    );
-    await expect(add).toHaveCount(0);
-    const salesRow = page.getByRole("listitem").filter({ hasText: "Sales CRM" });
-    await expect(salesRow.getByTestId("account-visibility")).toHaveText(groupName);
+    const sharedRow = page.getByRole("listitem").filter({ has: page.getByText(`${slug} 2`, { exact: true }) });
+    await expect(sharedRow.getByTestId("account-visibility")).toHaveText("Everyone in project");
 
-    // ── Read back: the API holds both accounts with the chosen audience ───
+    // ── Read back: the API holds both accounts with the chosen owner ─────
     const after = await api<{
-      connections: Array<{
-        label: string;
-        owner_type: string;
-        shared_with?: Array<{ principal_type: string; principal_id: string }>;
-      }>;
+      connections: Array<{ label: string; owner_type: string; connector_alias: string }>;
     }>(session.access_token, "GET", `/projects/${project.id}/connections`);
-    const mine = after.connections.filter((c) => c.label === "Mine");
-    expect(mine.map((c) => c.owner_type)).toEqual(["member"]);
-    const sales = after.connections.find((c) => c.label === "Sales CRM");
-    expect(sales?.shared_with).toEqual([
-      expect.objectContaining({ principal_type: "group", principal_id: group.group_id }),
-    ]);
+    const mine = after.connections.filter((c) => c.connector_alias === slug);
+    expect(mine.map((c) => `${c.label}:${c.owner_type}`).sort()).toEqual(
+      [`${slug}:member`, `${slug} 2:project`].sort(),
+    );
 
     // ── Your own private account, shared later: it becomes a shared account ──
-    await mineRow.getByRole("button", { name: "Share Mine", exact: true }).click();
-    const shareMine = page.getByRole("dialog", { name: "Share Mine", exact: true });
+    await mineRow.getByRole("button", { name: `Share ${slug}`, exact: true }).click();
+    const shareMine = page.getByRole("dialog", { name: `Share ${slug}`, exact: true });
     await expect(shareMine).toBeVisible();
     await expect(shareMine).toContainText("It becomes a shared account");
     await expect(shareMine.getByTestId("share-audience")).toContainText("Your account");
@@ -823,7 +764,7 @@ test.describe("23 — Composio managed connector", () => {
           shared_with?: Array<{ principal_type: string; principal_id: string }>;
         }>;
       }>(session.access_token, "GET", `/projects/${project.id}/connections`)
-    ).connections.find((c) => c.label === "Mine");
+    ).connections.find((c) => c.label === slug);
     expect(sharedMine?.owner_type).toBe("project");
     expect(sharedMine?.shared_with?.map((s) => s.principal_id).sort()).toEqual(
       [user.id, group.group_id].sort(),

@@ -1,7 +1,7 @@
 'use client';
 
-import type { AdminConnector, Connection } from '@kortix/sdk';
 import { useTranslations } from '@/i18n/use-translations';
+import type { AdminConnector, Connection } from '@kortix/sdk';
 
 import { Label } from '@/components/ui/label';
 import {
@@ -10,6 +10,7 @@ import {
   ConnectionsList,
 } from '@/features/workspace/customize/sections/connectors-view';
 import { isManagedConnectorProvider } from '../provider-label';
+import { AccountInfo } from './account-info';
 
 export interface ConnectorAccountsProps {
   projectId: string;
@@ -21,8 +22,12 @@ export interface ConnectorAccountsProps {
   onRemoved: () => void;
   /** Start a session bound to this exact account. */
   onStartSession: (connection: Connection) => void;
-  /** Bumped to open the Add account dialog from outside the tab. */
-  addRequest?: number;
+  /** Where credential entry opens. Omitted = the list's own dialog. */
+  onSetCredential?: (target: { connectionId: string; owner: 'project' | 'me' }) => void;
+  /** Show the ⓘ that explains accounts. The page sets it; the modal does not. */
+  showAccountInfo?: boolean;
+  /** Sign an unsigned account in (the row's Connect). */
+  onConnect?: (connection: Connection) => void;
 }
 
 /**
@@ -59,7 +64,9 @@ export function ConnectorAccounts({
   onChanged,
   onRemoved,
   onStartSession,
-  addRequest,
+  onSetCredential,
+  showAccountInfo = false,
+  onConnect,
 }: ConnectorAccountsProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const isManagedProvider = isManagedConnectorProvider(connector.provider);
@@ -88,7 +95,14 @@ export function ConnectorAccounts({
         canManageConnections={canManageConnections}
         onChanged={onChanged}
         onStartSession={onStartSession}
-        addRequest={addRequest}
+        onSetCredential={onSetCredential}
+        onConnect={onConnect}
+        addVariant="default"
+        titleAddon={
+          showAccountInfo ? (
+            <AccountInfo projectId={projectId} displayName={displayName} />
+          ) : undefined
+        }
       />
       {showRoster ? (
         <section className="space-y-2">
