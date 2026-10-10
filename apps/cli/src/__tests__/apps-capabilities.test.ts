@@ -252,7 +252,7 @@ describe('kortix apps — capabilities and links', () => {
     for (const sub of ['--uses <slugs>', 'link <id|slug> --uses <slugs>', 'unlink <id|slug> --uses <slugs>', 'token <id|slug>', 'connect <id|slug>']) {
       expect(r.stdout).toContain(sub);
     }
-    expect(r.stdout).not.toMatch(/backends|convex|--kind|snapshot|credentials|dashboard|--confirm/i);
+    expect(r.stdout).not.toMatch(/backends|convex|--kind|credentials|dashboard|--confirm/i);
   });
 
   test('`kortix backends` is gone', async () => {

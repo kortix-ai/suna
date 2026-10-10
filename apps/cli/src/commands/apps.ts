@@ -43,8 +43,7 @@ const HELP = help`Usage: kortix apps <subcommand> [options]
 Deploy and operate Kortix Apps on the Fly.io model: immutable releases,
 replaceable machines, persistent volumes. Each App owns one stable URL: a site
 or a server. A server App runs machines per process group; a machine may mount
-a volume that outlives every release (databases, uploads, a Convex or Postgres
-backend). Configure it in kortix.yaml apps.<name> (≈ fly.toml): processes,
+a volume that outlives every release (a database, uploads, any backend). Configure it in kortix.yaml apps.<name> (≈ fly.toml): processes,
 http_service, services, mounts, vm, deploy (strategy, release_command), labels.
 What an App supports is its capabilities (kortix apps show). <app> is an App id
 or slug.
