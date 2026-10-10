@@ -12,7 +12,8 @@ import { config } from '../config';
 import { db } from '../shared/db';
 import { appMonthlyEstimateUsd } from './cost';
 import { appPublicUrl, appServiceUrl } from './hostnames';
-import { releaseConfigOf } from './release-config';
+import { groupScale, releaseConfigOf, servingGroups } from './release-config';
+import { appVmFor } from '@kortix/shared/app-config';
 import type { AppAccessMode } from './access';
 import { type AppHostingType, appCapabilities } from './capabilities';
 import { type AppLinkSlugs, appLinkSlugs } from './links';
@@ -92,6 +93,7 @@ function serializeApp(
   const issuer = projectIssuer(row.projectId);
   const hostingType = release?.hostingType ?? null;
   const releaseConfig = release?.config ?? null;
+  const releaseVm = releaseConfig ? appVmFor(releaseConfig, servingGroups(releaseConfig)[0] ?? 'app') : null;
   return {
     app_id: row.appId,
     account_id: row.accountId,
@@ -104,7 +106,10 @@ function serializeApp(
     access_revision: row.accessRevision,
     desired_state: row.desiredState,
     active_deployment_id: row.activeDeploymentId,
-    machine: { cpu: row.cpuCores, memory_gb: row.memoryGb, disk_gb: row.diskGb },
+    /** The serving group's machine size in the live release (its `vm`), else the App's default size. */
+    machine: releaseVm
+      ? { cpu: releaseVm.cpu, memory_gb: releaseVm.memory_gb, disk_gb: releaseVm.disk_gb }
+      : { cpu: row.cpuCores, memory_gb: row.memoryGb, disk_gb: row.diskGb },
     idle_timeout_seconds: row.idleTimeoutSeconds,
     /** False for a static App: it runs no machine, so there is nothing to keep on. */
     always_on: hostingType === 'static' ? false : row.alwaysOn,
@@ -134,7 +139,15 @@ function serializeApp(
     /** Ready deployments kept besides the active one (rollback targets). */
     retained_deployments: config.KORTIX_APPS_RETAINED_DEPLOYMENTS,
     /** The App's machine running 24/7 for a month at list compute rates: the monthly cost of an always-on App, the most an on-demand one can cost. A static App runs none: 0. */
-    estimated_monthly_usd: hostingType === 'static' ? 0 : appMonthlyEstimateUsd(row, config.getDefaultProvider()),
+    estimated_monthly_usd: hostingType === 'static'
+      ? 0
+      : releaseConfig
+        // Every machine of every group, at its group's size, 24/7.
+        ? Math.round(Object.keys(releaseConfig.processes).reduce((sum, group) => {
+            const vm = appVmFor(releaseConfig, group);
+            return sum + groupScale(row.scale, group) * appMonthlyEstimateUsd({ cpuCores: vm.cpu, memoryGb: vm.memory_gb, diskGb: vm.disk_gb }, config.getDefaultProvider());
+          }, 0) * 100) / 100
+        : appMonthlyEstimateUsd(row, config.getDefaultProvider()),
     last_request_at: row.lastRequestAt?.toISOString() ?? null,
     viewer_can_access: viewerCanAccess,
     created_at: row.createdAt.toISOString(),

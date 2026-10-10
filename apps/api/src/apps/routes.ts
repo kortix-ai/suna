@@ -198,6 +198,10 @@ function serializeDeployment(row: typeof appDeployments.$inferSelect) {
     hosting_provider: row.hostingProvider,
     runtime_spec: row.runtimeSpec,
     build_spec: row.buildSpec,
+    /** The release config (Fly model), its deploy strategy and the release command's outcome. */
+    config: row.config,
+    strategy: row.strategy,
+    release_command_status: row.releaseCommandStatus,
     error_code: row.errorCode,
     error: row.error,
     attempt_count: row.attemptCount,

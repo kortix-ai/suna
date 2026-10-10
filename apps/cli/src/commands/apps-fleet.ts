@@ -167,7 +167,10 @@ export async function volumesCommand(rest: string[], options: ContextOptions, js
   const group = takeFlagValue(rest, ['--process', '--group']);
   const snapshotFlag = takeFlagValue(rest, ['--snapshot']);
   const yes = takeFlagBool(rest, ['--yes', '-y']);
-  const [action = 'ls', target, third, fourth] = positionals(rest);
+  const VOLUME_ACTIONS = ['ls', 'list', 'create', 'extend', 'destroy', 'rm', 'fork', 'snapshots', 'snapshot', 'restore'];
+  const words = positionals(rest);
+  // `kortix apps volumes <app>` lists, like `machines`.
+  const [action, target, third, fourth] = words[0] && VOLUME_ACTIONS.includes(words[0]) ? words : ['ls', ...words];
   if (!target) return fail(`volumes ${action} needs an App id or slug`);
   const ctx = await context(options);
   if (!ctx) return 1;
