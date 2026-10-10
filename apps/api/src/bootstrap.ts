@@ -27,8 +27,10 @@ import {
   stopAuditReconciliationWorker,
 } from './workers/audit-reconciliation-worker';
 import { startAuditWebhookWorker, stopAuditWebhookWorker } from './workers/audit-webhook-worker';
+import { startCaptureWorkers, stopCaptureWorkers } from './workers/capture-worker';
 import { startBillingRotation, stopBillingRotation } from './workers/billing-rotation-worker';
 import { startEventLoopLagSampler, stopEventLoopLagSampler } from './workers/event-loop-lag-worker';
+import { startJobWorker, stopJobWorker } from './workers/job-queue-worker';
 import { startNotificationWorker, stopNotificationWorker } from './workers/notification-worker';
 import { startProjectMaintenance, stopProjectMaintenance } from './workers/project-maintenance-worker';
 import { startProjectSnapshotWorker, stopProjectSnapshotWorker } from './workers/project-snapshot-worker';
@@ -160,6 +162,8 @@ async function startReplicaServices() {
   // trip DiskPressure evictions. Runs on all replicas (not leader-gated).
   startTmpReaper();
   startSessionLifecycleWorker();
+  // The durable job queue (Kortix Capture ingest, pipelines, exports): every replica runs jobs.
+  startJobWorker();
   // Keep the shared Teams bot token warm so the first message after a deploy
   // does not wait on login.microsoftonline.com before its live card is posted.
   startTeamsBotTokenRefresh();
@@ -221,6 +225,8 @@ async function startSingletonWorkers() {
   // Prebuilt project snapshot archives (S3 config provider). Idle unless
   // KORTIX_PROJECT_SNAPSHOT_S3_BUCKET is set; see git-proxy/project-snapshot.ts.
   startProjectSnapshotWorker();
+  // Kortix Capture: index polling, maintenance, and the SQS events reader when configured.
+  startCaptureWorkers();
   // IAM V2 time-bounded grants: tick every 60s, emit one audit event per row
   // that just transitioned to expired. Engine already filters expired rows out
   // of authorize() so correctness doesn't depend on this — it's the audit trail.
@@ -259,6 +265,7 @@ async function stopSingletonWorkers() {
   stopAuditPartitionWorker();
   stopAuditArchiveWorker();
   await stopProjectSnapshotWorker();
+  stopCaptureWorkers();
   const { stopGrantExpirySweeper } = await import('./workers/grant-expiry-worker');
   stopGrantExpirySweeper();
   const { stopOAuthSweeper } = await import('./workers/oauth-sweep-worker');
@@ -379,6 +386,7 @@ async function runShutdown(signal: string): Promise<void> {
   stopTunnelService();
   stopAccessControlCache();
   stopTmpReaper();
+  stopJobWorker();
   await handBack;
   // A build claim this task holds would block peers until its lease lapses.
   await within(import('./snapshots/build-claim').then((m) => m.releaseAllSnapshotBuilds()), 5_000, 'snapshot claims');

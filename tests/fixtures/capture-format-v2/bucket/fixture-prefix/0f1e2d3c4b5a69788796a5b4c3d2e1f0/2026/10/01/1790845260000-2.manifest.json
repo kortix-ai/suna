@@ -1,0 +1,35 @@
+{
+  "app_version": "0.1.0",
+  "created_at_ms": 1791051488430,
+  "device_id": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+  "encryption": null,
+  "end_ms": 1790845262000,
+  "frame_count": 2,
+  "height": 720,
+  "kind": "chunk",
+  "objects": {
+    "frames": {
+      "key": "0f1e2d3c4b5a69788796a5b4c3d2e1f0/2026/10/01/1790845260000-2.frames.jsonl.zst",
+      "plain_sha256": "838e22da8fde8e36c409dcd914e7106f46f3f6b5e534f3ddaeffa80ba84bd282",
+      "plain_size": 514,
+      "sha256": "838e22da8fde8e36c409dcd914e7106f46f3f6b5e534f3ddaeffa80ba84bd282",
+      "size": 514
+    },
+    "video": {
+      "key": "0f1e2d3c4b5a69788796a5b4c3d2e1f0/2026/10/01/1790845260000-2.mp4",
+      "plain_sha256": "6867693b42acd6448821076a0a1044407c996191c589422c6695b6b7c3f83f2d",
+      "plain_size": 2048,
+      "sha256": "6867693b42acd6448821076a0a1044407c996191c589422c6695b6b7c3f83f2d",
+      "size": 2048
+    }
+  },
+  "privacy": {
+    "mode": "off",
+    "redact_pii": false
+  },
+  "schema": 2,
+  "start_ms": 1790845260000,
+  "video_id": 2,
+  "video_name": "1790845260000.mp4",
+  "width": 1280
+}

@@ -37,6 +37,19 @@ import type {
   WarmProjectSessionResult,
 } from './core/rest/projects-client/sessions';
 import type { ProjectTrigger, ProjectTriggerListing } from './core/rest/projects-client/triggers';
+import type { CaptureSearchHit, CaptureSearchResult, CaptureWorkspace } from './core/rest/platform-client/capture';
+import type {
+  CaptureEpisode,
+  CaptureEpisodeDetail,
+  CaptureEpisodeList,
+  CaptureEpisodeStep,
+  CaptureExport,
+  CaptureWorkflowDetail,
+  CaptureWorkflowList,
+  CaptureWorkflowStep,
+  CaptureWorkflowSummary,
+  CaptureWorkflowVariant,
+} from './core/rest/platform-client/capture-intelligence';
 
 declare function fits<Sdk>(contract: Sdk): void;
 /** A parsed JSON body: `readonly` in a server-side type does not reach the wire. */
@@ -98,6 +111,28 @@ export function contractDrift(): void {
 
   fits<KortixAccount>(wire<C.AccountSummary>());
   noPhantom<NoPhantom<KortixAccount, C.AccountSummary>>();
+
+  // Kortix Capture data API (`/accounts/:id/capture/*`).
+  fits<CaptureWorkspace>(wire<C.CaptureWorkspace>());
+  noPhantom<NoPhantom<CaptureWorkspace, C.CaptureWorkspace>>();
+  fits<CaptureSearchResult>(wire<C.CaptureSearchResult>());
+  noPhantom<NoPhantom<CaptureSearchResult, C.CaptureSearchResult>>();
+  noPhantom<NoPhantom<CaptureSearchHit, C.CaptureSearchHit>>();
+  fits<CaptureEpisodeList>(wire<C.CaptureEpisodeList>());
+  noPhantom<NoPhantom<CaptureEpisodeList, C.CaptureEpisodeList>>();
+  noPhantom<NoPhantom<CaptureEpisode, C.CaptureEpisode>>();
+  fits<CaptureEpisodeDetail>(wire<C.CaptureEpisodeDetail>());
+  noPhantom<NoPhantom<CaptureEpisodeDetail, C.CaptureEpisodeDetail>>();
+  noPhantom<NoPhantom<CaptureEpisodeStep, C.CaptureEpisodeStep>>();
+  fits<CaptureWorkflowList>(wire<C.CaptureWorkflowList>());
+  noPhantom<NoPhantom<CaptureWorkflowList, C.CaptureWorkflowList>>();
+  noPhantom<NoPhantom<CaptureWorkflowSummary, C.CaptureWorkflowSummary>>();
+  fits<CaptureWorkflowDetail>(wire<C.CaptureWorkflowDetail>());
+  noPhantom<NoPhantom<CaptureWorkflowDetail, C.CaptureWorkflowDetail>>();
+  noPhantom<NoPhantom<CaptureWorkflowStep, C.CaptureWorkflowStep>>();
+  noPhantom<NoPhantom<CaptureWorkflowVariant, C.CaptureWorkflowVariant>>();
+  fits<CaptureExport>(wire<C.CaptureExport>());
+  noPhantom<NoPhantom<CaptureExport, C.CaptureExport>>();
 }
 
 test('the contract drift checks are a typecheck target', () => {

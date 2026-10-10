@@ -17,6 +17,8 @@ import { registerMemberRoutes } from './core/members';
 import { registerTopUpRequestRoutes } from './core/top-up-requests';
 import { registerBrandingRoutes } from './branding';
 import { registerSecretResourceRoutes } from './secret-resources';
+import { registerCaptureRoutes } from '../capture/account-routes';
+import { registerCaptureIntelligenceRoutes } from '../capture/intelligence-routes';
 import { resolveAccountId } from '../shared/resolve-account';
 
 accountsRouter.use('/*', supabaseAuth);
@@ -59,5 +61,8 @@ registerTopUpRequestRoutes();
 // Organization branding (Enterprise): /:accountId/branding + /assets/:kind.
 registerBrandingRoutes();
 registerSecretResourceRoutes();
+// Kortix Capture, account-scoped (the account is Capture's tenant).
+registerCaptureRoutes();
+registerCaptureIntelligenceRoutes();
 
 export { accountsRouter };

@@ -147,6 +147,43 @@ export {
   projectTriggerEventTypesKey,
 } from './use-project-triggers';
 export { useProjectReminders, useSessionReminders } from './use-reminders';
+export {
+  useApproveCaptureDevice,
+  useCaptureChunkMedia,
+  useCaptureDays,
+  useCaptureDeviceGrant,
+  useCaptureDevices,
+  useCaptureFrame,
+  useCaptureMembers,
+  useCapturePeople,
+  useCapturePolicy,
+  useCaptureRange,
+  useCaptureRanges,
+  useCaptureSearch,
+  useCaptureTimeline,
+  useCaptureTimelineItems,
+  useCaptureWorkspace,
+  useDenyCaptureDevice,
+  useProcessCaptureRange,
+  useRevokeCaptureDevice,
+  useSaveCaptureRange,
+  useSetCaptureEnabled,
+  useSetCaptureMemberRole,
+  useSetCapturePolicy,
+  useSyncCaptureDevice,
+} from './use-capture';
+export {
+  useCaptureEpisode,
+  useCaptureEpisodes,
+  useCaptureExport,
+  useCaptureOverview,
+  useCaptureWorkflow,
+  useCaptureWorkflows,
+  useCreateCaptureExport,
+  useDraftCaptureSkill,
+  useExportCaptureSkill,
+  useReviewCaptureWorkflow,
+} from './use-capture-intelligence';
 export { useSessionMessageAuthors } from './use-session-message-authors';
 export { useSessionModelUsage } from './use-session-model-usage';
 export { useChangeRequests, changeRequestsKey } from './use-change-requests';

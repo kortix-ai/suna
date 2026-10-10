@@ -196,4 +196,14 @@ export const FRESHNESS = {
    */
   gateway: 'inventory',
   triggers: 'config',
+  /** Live status: a device heartbeats every 30 s and counts as offline after 120 s. */
+  captureDevices: 'directory',
+  /** A timeline grows while its devices upload; no mutation of ours announces it. */
+  captureTimeline: 'inventory',
+  capturePolicy: 'config',
+  captureWorkspace: 'config',
+  captureMembers: 'directory',
+  capturePeople: 'inventory',
+  /** Workflows and episodes change when the nightly and 5-minute pipelines run. */
+  captureIntelligence: 'inventory',
 } as const satisfies Record<string, FreshnessTier>;

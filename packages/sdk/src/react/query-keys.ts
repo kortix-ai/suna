@@ -70,6 +70,36 @@ function normalizeSessionListFilters(filters?: SessionListFilters) {
 }
 
 export const qk = {
+  /** Kortix Capture, not project-scoped: a device sign-in grant, keyed by its user code. */
+  capture: {
+    deviceGrant: (userCode: string) => ['capture', 'device-grant', userCode] as const,
+    /** Kortix Capture: the prefix of every capture key of one account (Capture's tenant). */
+    account: (accountId: string) => ['capture', 'account', accountId] as const,
+    /** `getCaptureWorkspace` — the account switch and your role. */
+    workspace: (accountId: string) => [...qk.capture.account(accountId), 'workspace'] as const,
+    /** `listCaptureMembers` — Capture roles. */
+    members: (accountId: string) => [...qk.capture.account(accountId), 'members'] as const,
+    /** `listCaptureDevices` — mine, a member's, or the account's (`scope`). */
+    devices: (accountId: string, scope: string, userId: string | null) =>
+      [...qk.capture.account(accountId), 'devices', scope, userId] as const,
+    /** Everything read off one person's timeline: days, runs, items, search,
+     *  frames, ranges. A saved range or a sync invalidates this prefix. */
+    timeline: (accountId: string) => [...qk.capture.account(accountId), 'timeline'] as const,
+    timelineRead: (accountId: string, kind: string, query: unknown) =>
+      [...qk.capture.timeline(accountId), kind, query] as const,
+    /** `getCaptureRange` — one range with its outputs. */
+    range: (accountId: string, rangeId: string) => [...qk.capture.account(accountId), 'range', rangeId] as const,
+    policy: (accountId: string) => [...qk.capture.account(accountId), 'policy'] as const,
+    people: (accountId: string, query: unknown) => [...qk.capture.account(accountId), 'people', query] as const,
+    /** Intelligence: the overview, workflows, one workflow, episodes, one episode, exports. */
+    overview: (accountId: string, window: unknown) => [...qk.capture.account(accountId), 'overview', window] as const,
+    workflows: (accountId: string) => [...qk.capture.account(accountId), 'workflows'] as const,
+    workflowList: (accountId: string, query: unknown) => [...qk.capture.workflows(accountId), 'list', query] as const,
+    workflow: (accountId: string, workflowId: string) => [...qk.capture.workflows(accountId), 'one', workflowId] as const,
+    episodes: (accountId: string, query: unknown) => [...qk.capture.account(accountId), 'episodes', query] as const,
+    episode: (accountId: string, episodeId: string) => [...qk.capture.account(accountId), 'episode', episodeId] as const,
+    export: (accountId: string, exportId: string) => [...qk.capture.account(accountId), 'export', exportId] as const,
+  },
   /**
    * The account LIST — `listAccounts()`, `GET /accounts`, `KortixAccount[]`.
    *
@@ -452,6 +482,7 @@ export const qk = {
      *  and write the identical entity through `listProjectTriggers(id)`, so
      *  they must share this one key. */
     triggers: (id: string) => [...qk.project.scope(id), 'triggers'] as const,
+
 
     /** `listProjectTriggerEventTypes` — the app events one connector can trigger on. */
     triggerEventTypes: (id: string, connector: string) =>

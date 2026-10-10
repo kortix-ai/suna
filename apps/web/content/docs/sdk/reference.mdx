@@ -709,6 +709,76 @@ handle: Dockerfile/image/warm-pool templates and their snapshot builds.
 | `createTemplate(input)` · `updateTemplate(...)` · `removeTemplate(...)` · `buildTemplate(...)` | add · edit · delete · build a template |
 | `setProvider(provider)` | request a provider switch. `null` (or the platform default / the already-active provider) applies immediately; switching to a different enabled provider starts a durable prepare→verify→activate transition — the current provider keeps serving while the target warm image is built and verified, then activated. The return is a tagged union: `kind:'project'` (immediate) or `kind:'preparation'` (poll `getProjectSandboxProviderTransition()` until `activated`/`failed`) |
 
+#### `kortix.capture` — Kortix Capture
+
+Capture belongs to the Kortix account (the organization), not to a project.
+The Kortix Capture desktop app writes a member's screen (app, window title,
+URL, on-screen text), input actions and, when the policy allows, audio to the
+account's capture store in the Kortix Capture format (schema 2). Kortix indexes
+it into a timeline. An account owner or admin turns Capture on for the account
+(off by default; every call answers `403 capture_disabled` while it is off).
+
+Roles: a Capture `admin` (default for account owners and admins) reads every
+member and writes the policy and the roles; a `viewer` reads every member and
+writes nothing; a `member` reads only their own devices and timeline. A read of
+another member writes `capture.member_view`; an account-wide read
+(`devices.list({ scope: 'account' })`, `people()`) writes `capture.account_view`.
+
+`kortix.capture.account(accountId)` is bound to one account:
+
+| method | what |
+| --- | --- |
+| `workspace.get()` · `workspace.setEnabled(on)` | `{ enabled, role, can_manage }` · turn Capture on or off (account owners and admins) |
+| `members.list()` · `members.set(userId, role \| null)` | every member with their Capture role · set one (`admin`, `viewer`, `member`) or clear it back to the account-role default (Capture admins) |
+| `devices.list({ userId?, scope? })` · `devices.revoke(deviceId)` · `devices.sync(deviceId)` | devices with live status (`live.state`: `recording`, `paused`, `permission_missing`, `not_recording`, or `offline` after 120 s without a status) · revoke a device's token · read its index and status now: `enqueued` new items, `forgotten` items the device deleted (Kortix removes them and the outputs of the ranges they overlapped) |
+| `devices.setPolicy(deviceId, policy \| null)` · `devices.assetUrl(deviceId, name)` | a Capture admin's per-device policy override (null clears it) · a 5-minute signed URL of an action screenshot |
+| `policy.get()` · `policy.set(policy)` | the account policy (`layers`, `privacy`, `retention`, `recording`, `notice`); a Capture admin's write also publishes `orgs/<account_id>/policy.json` for devices |
+| `timeline.get({ day?, from?, to?, userId?, deviceId? })` · `timeline.items(query)` · `timeline.days({ tz?, userId?, deviceId? })` | activity runs (app and window), indexed items and ranges for a UTC day or a window up to 31 days · frames, actions and audio lines in a window (500 of each) · the days with recorded items, newest first |
+| `search({ q, kinds?, app?, from?, to?, limit?, userId?, scope? })` | full-text search over screen, actions and audio, newest first, one screen hit per window; each hit names its `user_id`; `scope: 'account'` searches every member (admins and viewers) |
+| `frame(frameId)` · `media(chunkId)` | one frame with its on-screen text, a 5-minute signed URL of its video chunk (`offset_ms` = `frame_index` × 1000; the chunk video is 1 fps) and `screenshot`, the nearest action screenshot within 30 s (signed URL) · signed URLs of an item's video or audio |
+| `ranges.list(query)` · `ranges.save({ start_at, end_at, title?, device_id? })` · `ranges.get(rangeId)` · `ranges.process(rangeId)` | detected activity sessions and saved spans · save your own span (at most 24 h) · a range with its outputs (`segmentation`, `transcript`, `annotation`, each with `model` and `usage.cost_usd`) · run its pipelines again |
+| `people({ day?, from?, to? })` | admins and viewers: per member, active seconds, seconds per app, ranges and devices |
+| `overview({ from?, to? })` | admins and viewers: hours recorded (and the span before), people recording, devices, workflows by status, automatable hours a week, top opportunities, new this week, a 12-week trend |
+| `workflows.list({ status?, q?, app?, userId?, sort?, limit?, offset? })` · `workflows.get(workflowId)` | admins and viewers: mined workflows with runs/week, p50/p90 duration, people, success rate, determinism and `automation_hours_per_week` (counts per status) · one with its standard path, variants (each with `name`, `note`, `question` = its condition) and people |
+| `workflows.review(workflowId, { name?, goal?, outcome?, steps? })` · `workflows.draftSkill(workflowId, { name? })` · `workflows.exportSkill(workflowId, { project_id, name, markdown })` | admins: edit and mark reviewed · a `SKILL.md` draft with `inputs`, `checks` and `workflow_updated_at` (re-draft when the workflow's `updated_at` moves past it) · commit it to `skills/<name>/SKILL.md` in a project of the account; the workflow reads `exported` |
+| `episodes.list({ scope?, userId?, deviceId?, workflowId?, from?, to?, before?, limit? })` · `episodes.get(episodeId)` | your episodes, or a member's or the account's for admins and viewers (audited), newest first, paged by `next_before` · one with its ordered steps |
+| `exports.create({ format, from?, to?, include? })` · `exports.list()` · `exports.get(exportId)` | admins: a background export; JSONL holds any of `episodes`, `steps`, `workflows`, Parquet exactly one (`400 capture_export_one_table` otherwise) · poll it; when `done`, `download.url` is valid for 1 hour |
+| `runIntelligence({ mining_only? })` | admins: queue the pipelines now; `{ episodes_queued, mining_queued }` |
+
+Beside it, not bound to an account:
+
+- the person half of the device sign-in: `kortix.capture.deviceGrant(userCode)`
+  (with `accounts`, the caller's accounts that have Capture on),
+  `kortix.capture.approveDevice(userCode, accountId?)` and
+  `kortix.capture.denyDevice(userCode)`;
+- the agent tool's reads, for the person the token acts for in the token's
+  account: `kortix.capture.me.search(query)`, `me.timeline(query)` and
+  `me.frame(frameId)`. A credential that acts for no person gets
+  `403 capture_no_human`.
+
+React: `useCaptureWorkspace`, `useSetCaptureEnabled`, `useCaptureMembers`,
+`useSetCaptureMemberRole`, `useCaptureDevices`, `useCaptureTimeline`,
+`useCaptureSearch`, `useCaptureFrame`, `useCaptureRanges`, … (each takes the
+account id first), and `useCaptureDeviceGrant`, `useApproveCaptureDevice`,
+`useDenyCaptureDevice`.
+
+Intelligence hooks: `useCaptureOverview`, `useCaptureWorkflows`,
+`useCaptureWorkflow`, `useReviewCaptureWorkflow`, `useDraftCaptureSkill`,
+`useExportCaptureSkill`, `useCaptureEpisodes`, `useCaptureEpisode`,
+`useCreateCaptureExport` and `useCaptureExport` (polls until the export is done
+or failed). Any other client reads the same routes with a Kortix API key: see
+[Capture → Kortix Capture API](/docs/capture#kortix-capture-api).
+
+React hooks for the account surface (`@kortix/sdk/react`), one per read and
+write above: `useCaptureDevices` (polls every 10 s for live status),
+`useRevokeCaptureDevice`, `useSyncCaptureDevice`, `useCaptureDays`,
+`useCaptureTimeline`, `useCaptureTimelineItems`, `useCaptureSearch`,
+`useCaptureFrame`, `useCaptureChunkMedia` (an item's signed media URLs, read again every 4 min), `useCaptureRanges`, `useCaptureRange` (polls every 5 s while
+the range's pipelines are queued or running), `useSaveCaptureRange`,
+`useProcessCaptureRange`, `useCapturePolicy`, `useSetCapturePolicy` and
+`useCapturePeople`. A `null` account, query or id sends no request. A saved
+range, a reprocess, a sync or a revoke refreshes the timeline reads.
+
 ### Platform admin hooks (`@kortix/sdk/react`)
 
 These hooks serve the admin console. The API answers them only for a platform
@@ -722,7 +792,6 @@ admin. Each mutation invalidates the `['admin', 'accounts']` queries.
 | `useAdminSetTier()` | mutation `{ accountId, tier }`: set the plan tier. |
 | `useAdminGrantTrial()` | mutation `{ accountId, tierKey, seats, durationDays, creditGrant?, note? }`: grant or replace a trial. The account behaves as `tierKey` until the window ends. `creditGrant` also adds wallet credit. |
 | `useAdminRevokeTrial()` | mutation `{ accountId }`: end an active trial now. Answers `400` when none is active. |
-
 ### Escape hatch
 
 `kortix.runtime()` returns the typed OpenCode REST client for the active

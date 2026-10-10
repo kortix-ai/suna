@@ -14,6 +14,7 @@ import { bindProjectCore } from './project-core';
 import { bindProjectOperations } from './project-operations';
 import { bindProjectPlatformResources } from './project-platform-resources';
 import { bindProjectPlatformSecurity } from './project-platform-security';
+import { captureClient } from './capture';
 /**
  * createKortix — the single opinionated entry point to the Kortix data layer.
  *
@@ -126,6 +127,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     connectStatus,
     /** Public marketplace catalog browse + sources (`/v1/marketplace/*`, not project-scoped). */
     marketplace,
+    /** Kortix Capture: `account(id)` (the tenant), the device sign-in approval, and `me` (the agent tool's reads). */
+    capture: captureClient,
     /**
      * The caller's notifications (`/v1/notifications/*`): push device tokens
      * for a native app, the inbox, per-kind push and email preferences, and

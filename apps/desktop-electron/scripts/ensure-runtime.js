@@ -31,9 +31,20 @@ if (!hasRuntime()) {
 // is impossible, so a package never ships without it.
 require('../src/computer').ensureDevAgentCli();
 
-// The Computer Use driver ships inside the macOS app (fetch-cua-driver.js).
+// The Capture service (src/capture-service.js plus the agent tunnel's service
+// drivers) as one file outside the asar, run by the OS service with this app's
+// binary as Node. Always rebuilt: ~60 KB in well under a second.
+execFileSync(
+  'bun',
+  ['build', 'src/capture-service.js', '--target=node', '--format=cjs', '--outfile', 'vendor/capture-service.js'],
+  { cwd: require('node:path').join(__dirname, '..'), stdio: 'inherit' },
+);
+
+// The Computer Use driver ships inside the macOS app (fetch-cua-driver.js);
+// the pinned Kortix Capture engine inside every app (fetch-capture-engine.js).
 require('./fetch-cua-driver')
   .fetchCuaDriver()
+  .then(() => require('./fetch-capture-engine').fetchCaptureEngine())
   .catch((error) => {
     console.error(error);
     process.exit(1);

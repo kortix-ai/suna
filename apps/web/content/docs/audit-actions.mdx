@@ -13,7 +13,7 @@ Every row in the [audit log](/docs/accounts#audit-log) carries an `action`: `dom
 - A route with two actions (`secret.strategy.update` or `secret.strategy.changed`) records the second when its handler records that event, for example only for a real change. That event, with its before and after state, is then the request's row.
 - Rows written before 2026-09-24 carry `METHOD /template` as their action. The web app and the CLI show them with the same titles.
 
-This page lists 729 route actions and 66 other events.
+This page lists 801 route actions and 72 other events.
 
 ## `account.`
 
@@ -71,6 +71,8 @@ This page lists 729 route actions and 66 other events.
 | `admin.sandbox_provider.distribution.update` | Updated sandbox provider distribution | `PUT /v1/admin/api/provider-distribution` |
 | `admin.sandbox_provider.fallback.read` | Viewed sandbox provider fallback | `GET /v1/admin/api/provider-fallback` |
 | `admin.sandbox_provider.fallback.update` | Updated sandbox provider fallback | `PUT /v1/admin/api/provider-fallback` |
+| `admin.session_boot_modes.read` | Viewed session boot modes | `GET /v1/admin/api/boot-modes` |
+| `admin.session_boot_modes.update` | Updated session boot modes | `PUT /v1/admin/api/boot-modes` |
 
 ## `agent.`
 
@@ -201,6 +203,54 @@ This page lists 729 route actions and 66 other events.
 | `billing.webhook.revenuecat.receive` | Received RevenueCat billing webhook | `POST /v1/billing/webhooks/revenuecat` (also `POST /v1/billing/webhook/revenuecat`) |
 | `billing.webhook.stripe.receive` | Received Stripe billing webhook | `POST /v1/billing/webhooks/stripe` (also `POST /v1/billing/webhook/stripe`) |
 
+## `capture.`
+
+| Action | Title | Route |
+| --- | --- | --- |
+| `capture.asset.read` or `capture.member_view` | Opened a capture screenshot | `GET /v1/accounts/:accountId/capture/devices/:deviceId/assets/:name` |
+| `capture.days.read` or `capture.member_view` or `capture.account_view` or `capture.agent_read` | Viewed the days of a capture timeline | `GET /v1/accounts/:accountId/capture/days` |
+| `capture.device.authorize` | Started a capture device sign-in | `POST /v1/capture/device/authorize` |
+| `capture.device.credentials` | Issued capture storage credentials | `POST /v1/capture/credentials` |
+| `capture.device.grant.approve` | Approved a capture device sign-in | `POST /v1/capture/device/grants/:user_code/approve` |
+| `capture.device.grant.deny` | Denied a capture device sign-in | `POST /v1/capture/device/grants/:user_code/deny` |
+| `capture.device.grant.read` | Viewed a capture device sign-in | `GET /v1/capture/device/grants/:user_code` |
+| `capture.device.list` or `capture.member_view` or `capture.account_view` | Listed capture devices | `GET /v1/accounts/:accountId/capture/devices` |
+| `capture.device.policy.update` | Updated a capture device policy | `PUT /v1/accounts/:accountId/capture/devices/:deviceId/policy` |
+| `capture.device.revoke` | Revoked a capture device | `DELETE /v1/accounts/:accountId/capture/devices/:deviceId` |
+| `capture.device.sync` | Synced a capture device | `POST /v1/accounts/:accountId/capture/devices/:deviceId/sync` |
+| `capture.device.token` | Polled a capture device sign-in | `POST /v1/capture/device/token` |
+| `capture.episode.list` or `capture.member_view` or `capture.account_view` | Listed Capture episodes | `GET /v1/accounts/:accountId/capture/episodes` |
+| `capture.episode.read` or `capture.member_view` | Viewed a Capture episode | `GET /v1/accounts/:accountId/capture/episodes/:episodeId` |
+| `capture.export.create` | Started a Capture export | `POST /v1/accounts/:accountId/capture/exports` |
+| `capture.export.list` | Listed Capture exports | `GET /v1/accounts/:accountId/capture/exports` |
+| `capture.export.read` | Viewed a Capture export | `GET /v1/accounts/:accountId/capture/exports/:exportId` |
+| `capture.frame.read` or `capture.member_view` or `capture.account_view` or `capture.agent_read` | Viewed a capture frame | `GET /v1/accounts/:accountId/capture/frames/:frameId` |
+| `capture.intelligence.run` | Ran the Capture pipelines | `POST /v1/accounts/:accountId/capture/intelligence/run` |
+| `capture.me.frame.read` or `capture.agent_read` | Viewed own capture frame | `GET /v1/capture/me/frames/:frameId` |
+| `capture.me.search` or `capture.agent_read` | Searched own capture timeline | `GET /v1/capture/me/search` |
+| `capture.me.timeline.read` or `capture.agent_read` | Viewed own capture timeline | `GET /v1/capture/me/timeline` |
+| `capture.media.read` or `capture.member_view` or `capture.account_view` or `capture.agent_read` | Opened capture media | `GET /v1/accounts/:accountId/capture/chunks/:chunkId/media` |
+| `capture.member.list` or `capture.account_view` | Listed Capture roles | `GET /v1/accounts/:accountId/capture/members` |
+| `capture.member.update` or `capture.member_role` | Changed a Capture role | `PUT /v1/accounts/:accountId/capture/members/:userId` |
+| `capture.overview.read` or `capture.account_view` | Viewed the Capture overview | `GET /v1/accounts/:accountId/capture/overview` |
+| `capture.people.read` or `capture.account_view` | Viewed the capture people summary | `GET /v1/accounts/:accountId/capture/people` |
+| `capture.policy.read` | Viewed the capture policy | `GET /v1/accounts/:accountId/capture/policy` |
+| `capture.policy.update` | Updated the capture policy | `PUT /v1/accounts/:accountId/capture/policy` |
+| `capture.range.create` | Saved a capture range | `POST /v1/accounts/:accountId/capture/ranges` |
+| `capture.range.list` or `capture.member_view` or `capture.account_view` or `capture.agent_read` | Listed capture ranges | `GET /v1/accounts/:accountId/capture/ranges` |
+| `capture.range.process` or `capture.member_view` | Reprocessed a capture range | `POST /v1/accounts/:accountId/capture/ranges/:rangeId/process` |
+| `capture.range.read` or `capture.member_view` or `capture.account_view` or `capture.agent_read` | Viewed a capture range | `GET /v1/accounts/:accountId/capture/ranges/:rangeId` |
+| `capture.search` or `capture.member_view` or `capture.account_view` or `capture.agent_read` | Searched a capture timeline | `GET /v1/accounts/:accountId/capture/search` |
+| `capture.skill.draft` | Drafted a skill from a Capture workflow | `POST /v1/accounts/:accountId/capture/workflows/:workflowId/skill-draft` |
+| `capture.skill.publish` | Published a skill from a Capture workflow | `POST /v1/accounts/:accountId/capture/workflows/:workflowId/skill` |
+| `capture.timeline.items.read` or `capture.member_view` or `capture.account_view` or `capture.agent_read` | Viewed capture timeline items | `GET /v1/accounts/:accountId/capture/timeline/items` |
+| `capture.timeline.read` or `capture.member_view` or `capture.account_view` or `capture.agent_read` | Viewed a capture timeline | `GET /v1/accounts/:accountId/capture/timeline` |
+| `capture.workflow.list` or `capture.account_view` | Listed Capture workflows | `GET /v1/accounts/:accountId/capture/workflows` |
+| `capture.workflow.read` or `capture.account_view` | Viewed a Capture workflow | `GET /v1/accounts/:accountId/capture/workflows/:workflowId` |
+| `capture.workflow.review` | Reviewed a Capture workflow | `POST /v1/accounts/:accountId/capture/workflows/:workflowId/review` |
+| `capture.workspace.read` | Viewed the Capture workspace | `GET /v1/accounts/:accountId/capture` |
+| `capture.workspace.update` or `capture.enable` or `capture.disable` | Turned Capture on or off | `PATCH /v1/accounts/:accountId/capture` |
+
 ## `change_request.`
 
 | Action | Title | Route |
@@ -324,6 +374,26 @@ This page lists 729 route actions and 66 other events.
 | `connector.setup_link.read` | Opened connector setup link | `GET /v1/setup-links/connectors/:token` |
 | `connector.setup_link.start` | Started connector setup-link authorization | `POST /v1/setup-links/connectors/:token/start` |
 | `connector.sync` | Synchronized connectors | `POST /v1/connectors/projects/:projectId/connectors/sync` |
+
+## `drive.`
+
+| Action | Title | Route |
+| --- | --- | --- |
+| `drive.access.list` | Viewed who has access to a folder | `GET /v1/drives/:driveId/access` |
+| `drive.access.principals` | Listed folder sharing candidates | `GET /v1/drives/:driveId/principals` |
+| `drive.access.revoke` | Stopped sharing a folder | `DELETE /v1/drives/:driveId/access/:grantId` |
+| `drive.access.share` | Shared a folder | `PUT /v1/drives/:driveId/access` |
+| `drive.conflict.dismiss` | Dismissed a drive conflict notice | `POST /v1/drives/:driveId/conflicts/:conflictId/dismiss` |
+| `drive.conflict.list` | Viewed drive conflict copies | `GET /v1/drives/:driveId/conflicts` |
+| `drive.file.delete` | Deleted a drive file or folder | `DELETE /v1/drives/:driveId/files` |
+| `drive.file.list` | Browsed a drive folder | `GET /v1/drives/:driveId/files` |
+| `drive.file.move` | Moved a drive file or folder | `POST /v1/drives/:driveId/files/move` |
+| `drive.file.read` | Downloaded a drive file | `GET /v1/drives/:driveId/files/content` |
+| `drive.file.write` | Uploaded a drive file | `PUT /v1/drives/:driveId/files/content` |
+| `drive.folder.create` | Created a drive folder | `POST /v1/drives/:driveId/files/mkdir` |
+| `drive.list` | Listed drives | `GET /v1/drives` |
+| `drive.version.list` | Viewed drive versions | `GET /v1/drives/:driveId/versions` |
+| `drive.version.restore` | Restored a drive version | `POST /v1/drives/:driveId/restore` |
 
 ## `feedback.`
 
@@ -782,6 +852,18 @@ This page lists 729 route actions and 66 other events.
 | `session.config_release.resolve` | Resolved session config release | `POST /v1/projects/:projectId/sessions/:sessionId/config-release` |
 | `session.create` | Created session | `POST /v1/projects/:projectId/sessions` |
 | `session.delete` | Deleted session | `DELETE /v1/projects/:projectId/sessions/:sessionId` |
+| `session.drive.list` | Listed session drives | `GET /v1/projects/:projectId/sessions/:sessionId/drives` |
+| `session.drive_sync.delete` | Deleted a drive file from a session | `DELETE /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files` |
+| `session.drive_sync.head` | Checked a synced drive for changes | `GET /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/head` |
+| `session.drive_sync.list` | Listed a drive folder from a session | `GET /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files` |
+| `session.drive_sync.mounts` | Listed a session's synced drives | `GET /v1/projects/:projectId/sessions/:sessionId/drive-sync/mounts` |
+| `session.drive_sync.move` | Moved a drive file from a session | `POST /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files/move` |
+| `session.drive_sync.read` | Downloaded a drive file to a session | `GET /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files/content` |
+| `session.drive_sync.stat` | Checked a drive file from a session | `GET /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files/stat` |
+| `session.drive_sync.upload_block` | Uploaded a drive file block | `PUT /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files/upload/:uploadId/blocks/:sha` |
+| `session.drive_sync.upload_commit` | Committed a drive upload from a session | `POST /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files/upload/:uploadId/commit` |
+| `session.drive_sync.upload_plan` | Planned a drive upload from a session | `POST /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files/upload` |
+| `session.drive_sync.write` | Uploaded a drive file from a session | `PUT /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files/content` |
 | `session.event.stream` | Streamed session events | `GET /v1/projects/:projectId/sessions/:sessionId/events` |
 | `session.git.push` | Committed and pushed session changes | `POST /v1/projects/:projectId/sessions/:sessionId/commit-push` |
 | `session.list` | Listed project sessions | `GET /v1/projects/:projectId/sessions` |
@@ -963,6 +1045,12 @@ Sandboxes, background jobs, database triggers, and handlers record these for som
 | `auth.login.success` | Signed in |
 | `auth.session.first_sight` | Started authenticated session |
 | `billing.trial.converted` | Converted trial to paid plan |
+| `capture.account_view` | Viewed the capture data of an account |
+| `capture.agent_read` | Read a capture timeline as an agent |
+| `capture.disable` | Turned Capture off |
+| `capture.enable` | Turned Capture on |
+| `capture.member_role` | Changed a Capture role |
+| `capture.member_view` | Viewed the capture data of a member |
 | `connector.*` | Ran connector call |
 | `connector.approval.approved` | Approved connector action |
 | `connector.approval.denied` | Denied connector action |

@@ -11,6 +11,7 @@ import {
 } from '../llm-gateway/gateway-keys';
 import { toWireModel } from '../llm-gateway/resolution/effective';
 import { projectLlmGatewayEnabledById } from '../llm-gateway/enablement';
+import { standaloneGatewayUrl } from '../llm-gateway/standalone-url';
 import { db } from '../shared/db';
 import { PLACEHOLDER_TITLE_SQL_PATTERN, isPlaceholderOpencodeTitle } from './lib/opencode-title';
 import type { ProjectSessionRow } from './lib/serializers';
@@ -55,22 +56,6 @@ const TITLE_SYSTEM_PROMPT =
 // minted key or a billed completion. Cross-process duplicates are left to the
 // compare-and-set in `persistTitle`.
 const inFlight = new Set<string>();
-
-function standaloneGatewayUrl(): string | null {
-  const target =
-    config.LLM_GATEWAY_PROXY_TARGET ||
-    (config.LLM_GATEWAY_PROXY_PORT
-      ? `http://127.0.0.1:${config.LLM_GATEWAY_PROXY_PORT}`
-      : '');
-  if (!target) return null;
-  try {
-    const url = new URL(target);
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
-    return `${target.replace(/\/+$/, '')}/v1/chat/completions`;
-  } catch {
-    return null;
-  }
-}
 
 /** Normalize a model-generated title: strip wrapping quotes, collapse
  *  whitespace, bound the length, and reject a placeholder-shaped result. */

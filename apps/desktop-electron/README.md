@@ -238,6 +238,251 @@ Tray icons are in `assets/tray/`: `trayTemplate.png` / `@2x` (black + alpha,
 from `apps/web/public/kortix-symbol.svg`) and `tray.png` / `tray.ico` (from
 `build/icon.png`).
 
+## Kortix Capture (the engine inside the app)
+
+Kortix Capture is its own product inside the desktop app. It is separate from
+the computer agent ("Your computer"): no Kortix Capture file imports
+`computer.js`, `computer-tray.js` or `packages/agent-tunnel`
+(`capture-service.test.js` fails if one does). A Kortix Capture device has its
+own identity (the engine's device row), and it records for a Kortix account,
+never for a project.
+
+The app bundles the Kortix Capture engine from the private repository
+`kortix-ai/capture`, so a person installs one app. The engine runs under the
+Kortix Capture service, an OS service that runs the Kortix binary itself:
+macOS attributes Screen Recording, Accessibility, Input Monitoring and the
+Microphone to Kortix, and there is one set of grants. The engine's own tray
+app (`kortix-tray`) is not shipped. Pieces:
+
+| File | Role |
+| --- | --- |
+| `src/capture.js` | Rules, parsing, supervision, tray items. Unit-tested, no Electron. |
+| `src/capture-service.js` | The OS service and its install/pause/resume/status verbs. |
+| `src/capture-os-service.js` | The supervisors: launchd, systemd, Task Scheduler. |
+| `src/capture-host.js` | The app as controller, and the `capture_*` commands. |
+| `src/capture-tray.js` | Kortix Capture's own menu bar item. |
+| `scripts/fetch-capture-engine.js` | Build-time fetch of the pinned engine. |
+
+### Bundling: `capture-engine.lock.json`
+
+The lock pins one engine release: per platform (`darwin-arm64`,
+`darwin-x64`, `win32-x64`, `linux-x64`) the release assets, their SHA-256, and
+the archive paths of the files the app ships. `scripts/ensure-runtime.js`
+(run by `pnpm build`, `pnpm pack`, `pnpm dev` and CI) calls
+`fetch-capture-engine.js`, which downloads the assets through the GitHub API,
+verifies every byte, and stages the files in `vendor/capture/<os>/`.
+electron-builder copies that directory to `Resources/capture/` and signs each
+binary and the dylib with the app identity, hardened runtime, and
+`build/entitlements.mac.plist` (`com.apple.security.device.audio-input`). The
+macOS `Info.plist` carries the Screen Recording, Microphone and Speech
+Recognition usage strings. When the lock pins both macOS arches the script
+merges them with `lipo`; with arm64 only, an Intel Mac reports Capture as not
+available.
+
+| Files shipped | macOS | Windows | Linux |
+| --- | --- | --- | --- |
+| `kortix-capture` (recorder, sync, CLI) | yes | `.exe` | when released |
+| `kortix-capture-engine` (Swift / Rust native engine) | yes | `.exe` | when released |
+| `kortix-backend` (action recorder) | yes | `.exe` (from the stealth zip) | when released |
+| ONNX runtime (local privacy masking) | `libonnxruntime.1.23.2.dylib` | `onnxruntime.dll` | — |
+
+- **Token.** The repository is private. Set `KORTIX_CAPTURE_GITHUB_TOKEN` (or
+  `CAPTURE_RELEASES_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`) to a token with read
+  access to the contents of `kortix-ai/capture`. Locally:
+  `GH_TOKEN="$(gh auth token)"`. CI reads `CAPTURE_RELEASES_TOKEN` from AWS
+  Secrets Manager (`kortix-ci-env`, the `aws-env` step of the macOS and Linux
+  desktop jobs in `desktop.yml` and `deploy-prod.yml`). Store that key before
+  you pin a release. The Windows jobs skip the `aws-env` step today, so pin
+  `win32-x64` only after that step runs on Windows too. A pinned lock without
+  a token fails the build: a build never ships without Capture by accident.
+- **Unpinned.** `"version": null`, or a platform the release lacks, stages an
+  empty directory. That build ships without Capture and the web app hides it.
+- **Local engine build.** `KORTIX_CAPTURE_ENGINE_DIR=<dir>` stages that
+  directory instead of the lock (build time) and runs it (dev runtime). The
+  directory holds the files in the table above.
+- **Pin a release.** `node scripts/fetch-capture-engine.js pin <tag>` reads the
+  release, downloads each asset, computes its SHA-256 (and refuses an asset
+  whose bytes differ from its GitHub release `digest`), checks every listed
+  file, and rewrites the lock. Commit the lock.
+
+### Releasing the engine (kortix-ai/capture)
+
+The capture repository publishes engine builds with its `On-Demand Release`
+workflow (`.github/workflows/release.yml`, `workflow_dispatch` only):
+
+```bash
+gh workflow run release.yml -R kortix-ai/capture --ref main \
+  -f tag=v0.39.0 -f prerelease=false -f draft=false -f run_tests=true
+gh run watch -R kortix-ai/capture   # macOS + Windows packages, then the release
+```
+
+It publishes `kortix-tray-<tag>-macos.zip` (an app bundle that holds every
+macOS binary), `kortix-tray-<tag>-windows-x86_64.zip` and
+`kortix-stealth-<tag>-windows-x86_64.zip`. Then, in this repository:
+
+```bash
+GH_TOKEN="$(gh auth token)" node apps/desktop-electron/scripts/fetch-capture-engine.js pin v0.39.0
+```
+
+The release builds macOS on an arm64 runner only and has no Linux build, so
+`darwin-x64` and `linux-x64` stay `null` until the capture workflow adds them.
+
+### Lifecycle: its own OS service
+
+Kortix Capture runs as its own OS service, so it keeps recording after Quit,
+after a crash of the app, and across reboots. `src/capture-service.js` is the
+service. `scripts/ensure-runtime.js` bundles it with bun (with
+`capture-os-service.js`) into `vendor/capture-service.js`, shipped outside
+the asar as `Resources/capture-service/capture-service.js`.
+
+| OS | Service | Restart | "Turn off" |
+| --- | --- | --- | --- |
+| macOS | LaunchAgent `~/Library/LaunchAgents/ai.kortix.desktop.capture.<8 hex>.plist`, `RunAtLoad` | `KeepAlive` (any exit), at most every 10 s | `launchctl disable` + `bootout` |
+| Linux | systemd user unit `~/.config/systemd/user/ai.kortix.desktop.capture.<8 hex>.service`, `WantedBy=default.target` | `Restart=always`, 5 s | `systemctl --user disable --now` |
+| Windows | Scheduled Task `ai.kortix.desktop.capture.<8 hex>` at logon, running a PowerShell loop | the loop, 5 s | `schtasks /Change /DISABLE` + `/End` |
+
+The supervisors are `src/capture-os-service.js`: label
+`ai.kortix.desktop.capture.<sha8(library)>` (never the computer agent's
+`ai.kortix.agent-tunnel*` or the standalone engine's `ai.kortix.capture.tray`),
+logs `<library>/logs/capture-service.{out,err}.log`.
+
+- **Who macOS holds responsible.** The unit runs `/bin/sh -lc "exec <Kortix
+  binary> capture-service.js run"` with `ELECTRON_RUN_AS_NODE=1`. The
+  `exec` leaves the Kortix binary as the launchd job's process, and the
+  service starts the engine as its own child. macOS attributes a child's
+  Screen Recording, Accessibility and Microphone use to the responsible
+  process, which is the app bundle of the Kortix binary: the prompts and the
+  System Settings entries name **Kortix**. It cannot be proven headlessly
+  (see [Real-device checklist](#real-device-checklist)).
+- **No prompt from a background start.** The service, the recorder and the
+  action service only check permissions (`AXIsProcessTrusted`,
+  `CGPreflight*Access`) and report `permission_needed`; the recorder checks
+  again every 30 s with a fresh engine process. The one path that asks macOS
+  is "Allow access" on the "This computer" page (`capture_grants_request`,
+  one request per click per missing permission).
+- **The service.** Every 30 s it reads `desktop.json` (the person's switches)
+  and the engine's `sync status`, then runs or stops
+  `kortix-capture record --supervised` (screen, audio, the library's sync)
+  and, while Actions is on and the account policy allows actions,
+  `kortix-backend --service` under a stdin guard. Both end when the service
+  ends. A child that exits restarts after 2 s, doubling to 60 s; a minute of
+  uptime resets the backoff; after 5 crashes in a row the status says
+  `crashed` and restarts continue. After a new macOS grant it restarts the
+  recorder and the action service once. It writes `<library>/service.json` (pid, children, last
+  probe) as its heartbeat; a second service for the same library exits.
+- **The app is the controller** (`src/capture-host.js`,
+  `capture.serviceAction`). It runs
+  `<Kortix binary> capture-service.js install|pause|resume|uninstall|status --json`:
+  - A launch or a status poll never starts what someone stopped (a disabled
+    label, a removed unit, a killed service). It only rewrites an enabled
+    unit that no longer matches this app (`upToDate: false`: an update or a
+    move). The page then shows "Stopped" and offers Start recording.
+  - A person's action (Start recording, the switches, a sign-in, Resume):
+    install when missing or out of date, resume when disabled, reinstall
+    when not running.
+  - Recording off (More ▸ Stop recording): the service is disabled; it does
+    not start at login.
+  - Pause in the menu bar item or the page: the engine's own `pause --for`;
+    the service keeps running.
+  - Sign out: the service is uninstalled, then the device token is removed.
+  - A copy that runs from a disk image or ~/Downloads never installs.
+- **Library.** `<userData>/capture/<sha8(api origin)>/` (`KORTIX_CAPTURE_DIR`):
+  one library, one sign-in and one service per Kortix instance, separate from
+  a standalone Kortix Capture install. The engine's config there sets
+  `updates.public_key` to empty: the engine never updates itself; it updates
+  with the app. The device token is a mode-0600 file in the library
+  (`KORTIX_CAPTURE_KEY_STORE=file`), not a Keychain item: a Keychain item
+  belongs to the code signature that wrote it, and every app update re-signs
+  the engine. The engine's own tray, with its LaunchAgent
+  (`ai.kortix.capture.tray`), never runs.
+- **Refusal.** A device that Kortix refuses (revoked in the web app, Kortix
+  Capture turned off for the account) stops: every 10 minutes
+  the service runs `kortix-capture sync test`, which fetches fresh
+  credentials; a 401 or 403 marks the sign-in refused, and the service stops
+  both children within 30 s. The service stays installed and idle; the page
+  shows "Signed out" and offers Sign in again.
+- **Linux AppImage.** The engine and the service file live inside the
+  AppImage mount, whose path changes per launch. Linux ships no engine yet;
+  copy both out of the mount (like the tunnel's vendored runner) before a
+  Linux engine is pinned.
+
+### Real-device checklist
+
+Run it on a signed build installed in `/Applications`, before a release that
+changes the Capture service or pins a new engine. Headless runs cannot prove
+steps 2–5 (macOS attributes permissions and keeps login items only for a real
+session and a signed app).
+
+1. App menu ▸ Kortix Capture… opens `/capture/<account>/this-computer`. Start
+   recording for an account with Kortix Capture on. Expect
+   `~/Library/LaunchAgents/ai.kortix.desktop.capture.<hex>.plist`; the page
+   shows "Recording" and a second menu bar item (the record mark) appears.
+2. "Allow access" asks once per missing permission. Screen Recording,
+   Accessibility, Input Monitoring (Actions on) and Microphone (Audio on)
+   name **Kortix**, with no "sh" or "kortix-capture" entry. No dialog
+   appears at launch or after a service restart. Recording resumes on its
+   own after you allow them.
+3. Quit Kortix. Activity Monitor still shows the Kortix service process and
+   `kortix-capture`; the device stays live on the web.
+4. Restart the Mac without opening Kortix. Recording continues.
+5. Install an app update. After the next launch the unit points at the new
+   app path; no new sign-in, no Keychain prompt.
+6. More ▸ Stop recording. The job is disabled and does not return at login.
+   Start recording: recording resumes. `launchctl disable` the label by hand:
+   launching Kortix does not enable it again.
+7. Turn Kortix Capture off for the account. Within 10 min the page says
+   "Signed out" and no `kortix-capture` runs.
+8. Sign out. The plist and the job are gone; the menu bar item goes.
+9. The page at 720×480, light and dark: no overlap with the window controls.
+10. Windows: the Scheduled Task `ai.kortix.desktop.capture.<hex>` exists;
+    steps 3, 4 and 8 behave the same.
+
+### Sign-in without a second browser trip
+
+1. The page calls `capture_sign_in_start`. The app runs
+   `kortix-capture --json sync setup --provider kortix --issuer <API origin> --no-browser`
+   and answers with the code the engine printed. While it runs,
+   `<library>/sign-in.pending` keeps the service's engine stopped.
+2. The page approves the code with the person's own session:
+   `approveCaptureDeviceGrant(userCode, accountId)` from `@kortix/sdk`
+   (`POST /v1/capture/device/grants/:user_code/approve`).
+3. The page calls `capture_sign_in_finish`. It resolves once the engine holds
+   its device token and its first credential probe passed.
+
+When step 2 fails, the page opens the approval page
+(`/capture/authorize?user_code=…`) in the browser and keeps waiting.
+`apps/web/src/features/capture/connect-desktop-capture.ts` is this
+orchestration.
+
+| `kortix:invoke` command | Result |
+| --- | --- |
+| `capture_status` | `{ available, error?, version, on, signedIn, signInRequired, accountId, deviceId, state, reason, layers, policy, pausedUntilMs, permissions, sync }` |
+| `capture_sign_in_start` / `_finish` / `_cancel` | See above. `finish` answers `{ ok, error?, status }`. |
+| `capture_set { on?, screen?, actions?, audio? }` | Changes the person's switches; answers the status. |
+| `capture_pause { minutes }` / `capture_resume` | The engine's `pause --for` / `resume`. |
+| `capture_sign_out` | Uninstalls the Capture service and forgets the device token (`sync sign-out`). The page revokes the device in Kortix first. |
+| `capture_grants_request { audio, actions }` | "Allow access": asks macOS once for each missing permission (Screen Recording, Accessibility, Input Monitoring with Actions, Microphone with Audio), then opens System Settings for any still missing. The only Kortix Capture path that prompts. |
+| `capture_open_timeline` | Opens the engine's timeline window (`kortix-capture ui`). |
+| `capture_open_permission { permission }` | Opens the System Settings pane: `screen`, `accessibility`, `microphone`, `inputMonitoring` (macOS). |
+| `capture_open_logs` | Opens `<library>/logs` (`recorder.log`, `actions.log`). |
+
+Where a person meets it:
+
+- **App menu ▸ Kortix Capture…** (macOS app menu; File elsewhere), shown when
+  the build has the engine. It sends `capture-open`; the page goes to
+  `/capture/<account>/this-computer` for the account this computer records
+  for (else the selected account).
+- **Kortix Capture's menu bar item** (`capture-tray.js`, its own icon, apart
+  from the computer agent's): status, the account's notice, Pause for 1 hour
+  or Resume recording, Open Kortix Capture…, Show logs, and Quit Kortix
+  ("Kortix Capture keeps recording" while the service will).
+- **"This computer"** (`/capture/<account>/this-computer`): status, the
+  layers the account allows, its own permission step, the account's notice,
+  Open timeline (`/capture/<account>/devices/<device>`), and one primary
+  action (Start recording, Pause, Resume, Sign in again, Try again).
+
+`capture_status` also answers `service: { installed, enabled, running, upToDate }`.
+
 ## Package
 
 ```bash
