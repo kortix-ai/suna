@@ -1,0 +1,34 @@
+{
+  "source_hash": "412bdd53775204b7851b457e4b1e8d77137ef5ad85fbff010a40f12b99aee31c",
+  "diff_files": [
+    "apps/web/src/app/(system)/api/auth/password/route.ts",
+    "apps/web/src/app/(system)/api/auth/send-code/route.ts",
+    "apps/web/src/app/[locale]/(auth)/auth/actions.ts",
+    "apps/web/src/app/[locale]/(auth)/auth/auth-submit-routes.test.ts",
+    "apps/web/src/app/[locale]/(auth)/auth/auth-submit-timeout.test.ts",
+    "apps/web/src/app/[locale]/(auth)/auth/entry-password-default.test.tsx",
+    "apps/web/src/app/[locale]/(auth)/auth/page-link-flow.test.tsx",
+    "apps/web/src/app/[locale]/(auth)/auth/page.tsx",
+    "apps/web/src/app/[locale]/(auth)/auth/signup-submit-timeout.test.tsx",
+    "apps/web/src/lib/auth/submit-auth.test.ts",
+    "apps/web/src/lib/auth/submit-auth.ts",
+    "apps/web/translations/de.json",
+    "apps/web/translations/en.json",
+    "apps/web/translations/es.json",
+    "apps/web/translations/fr.json",
+    "apps/web/translations/it.json",
+    "apps/web/translations/ja.json",
+    "apps/web/translations/pt.json",
+    "apps/web/translations/sr.json",
+    "apps/web/translations/zh.json"
+  ],
+  "diff_hash": "e530ac32cbeb8d2ec7986d725bdfd6622f10d58af264bee88392a7726d76b523",
+  "head": "0f3c67ec7251d179acd2a7486376569ec451444e",
+  "passed": false,
+  "lanes": {
+    "core": "pass",
+    "packages": "fail",
+    "db-suites": "fail"
+  },
+  "at": "2026-10-10T20:55:16.948Z"
+}
