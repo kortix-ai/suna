@@ -19,9 +19,16 @@ installed app on the channel and needs Jay's explicit approval.
    - CLI: `kortix projects features enable genui --project <project_id>`
      (without `--project`, the linked or default project).
    The flag applies to **new** sessions. Start a new session after you turn it
-   on. A running or restarted session keeps its old prompt. A warm session the
-   web client created before the flag change also keeps the old prompt: start
-   the session from the phone.
+   on. A running or restarted session keeps its old prompt. A warm session
+   keeps the prompt it was provisioned with, and both web and the phone create
+   one when they open the project (the phone also on return to the
+   foreground), then reuse it for the next new session. So do one of:
+   - turn the flag on before any client (web or phone) opens the test
+     project; or
+   - turn warm sessions off for the test project first:
+     `kortix projects features disable warm_sessions --project <project_id>`,
+     and turn them back on with `kortix projects features reset warm_sessions
+     --project <project_id>` after the check.
 3. Start Metro from the `genui` worktree's `apps/mobile` directory. Copy
    `apps/mobile/.env` from the primary checkout first (the file is gitignored;
    edit `EXPO_PUBLIC_BACKEND_URL` if needed), then run `pnpm dev`
@@ -106,12 +113,16 @@ b. Set `EXPO_PUBLIC_GENUI_MAP_STYLE_URL="https://tiles.openfreemap.org/styles/li
      dialog.
    - Scroll the transcript up and down over the map block: the transcript
      scrolls. No map moves, because no map renders in the transcript.
-   - Turn on airplane mode, then tap **Open map** again: the dialog opens and
-     the map area stays empty (the dialog surface with the zoom buttons),
-     because the style and tiles cannot load. The app does not crash. The
-     MapLibre files are read once per app run, so this open does not need the
-     network for them. `Map unavailable` shows only when that read fails (for
-     example, the first open of an app run with Metro unreachable).
+   - Turn on airplane mode, then tap **Open map** again. Verify on device:
+     the dialog opens and no tiles draw, because the style cannot load. The
+     page (`map-html.ts`) builds the zoom buttons, the attribution control
+     and one marker pin per stop without waiting for the style, so the pins
+     and the controls can still show on the empty surface; the route line
+     cannot, because it is added only after the style loads. The app does
+     not crash. The MapLibre files are read once per app run, so this open
+     does not need the network for them. `Map unavailable` shows only when
+     that read fails (for example, the first open of an app run with Metro
+     unreachable).
 
 ### 6. Rich answers switch
 
