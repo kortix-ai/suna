@@ -323,7 +323,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     platformDefault: () => false,
     enforcement: 'behavioral',
     enforcementNote:
-      'Read at session provisioning (projects/lib/genui-env.ts → KORTIX_GENUI). An in-place restart keeps the sandbox env, so a running or restarted session keeps its prompt until a new session starts. The API kill switch GENUI_ENABLED=false forces it off for every project.',
+      'Read at session provisioning (projects/lib/genui-env.ts → KORTIX_GENUI). An in-place restart keeps the sandbox env, so a running or restarted session keeps its prompt until a new session starts. A warm session (pre-created by the web client before the user types, projects/lib/warm-sessions.ts) provisioned before a flag change or the kill switch keeps its old value when the user adopts it; an unused one keeps it until it idles out. The API kill switch GENUI_ENABLED=false forces it off for every project.',
   },
   {
     key: 'us_region',

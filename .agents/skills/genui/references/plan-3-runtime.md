@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Load the **testing** skill before Task 1.
 
-**Goal:** A project owner turns on `genui`; every new, restarted, or resumed session of that project teaches the agent the catalog on both harnesses; with the flag off, nothing about a session changes; no chat channel or CLI output ever shows OpenUI source.
+**Goal:** A project owner turns on `genui`; every new session of that project (and any session rebuilt from scratch) teaches the agent the catalog on both harnesses; with the flag off, nothing about a session changes; no chat channel or CLI output ever shows OpenUI source.
 
 **Architecture:** The API resolves `genui` (project flag AND the `GENUI_ENABLED` kill switch) into one sandbox env var, `KORTIX_GENUI=1|0`, at provisioning. kortixd turns `KORTIX_GENUI=1` into the prompt text from `buildGenuiPrompt()`: on OpenCode as an instruction file appended to `instructions`, on pi as a section of the root agent's `systemPrompt()`. Slack/Teams relay text and CLI output pass through `genuiToMarkdown`.
 
@@ -17,7 +17,7 @@
 See `plan.md`. Specific to this plan:
 - `process.env` is read only in `apps/api/src/config.ts` (API lint rule).
 - The literal `KORTIX_GENUI` appears in exactly two files: `apps/api/src/projects/lib/genui-env.ts` and `apps/kortix-sandbox-agent-server/src/services/sandbox-env/genui-instruction.ts`.
-- The flag is boot-only: a running session keeps its prompt until restart or resume. Do not add `KORTIX_GENUI` to `OPENCODE_RUNTIME_ENV_NAMES` or pi `RUNTIME_ENV_NAMES`.
+- The flag is boot-only: it is read at provisioning, and an in-place restart keeps the sandbox env, so a running or restarted session keeps its prompt until a new session starts. Do not add `KORTIX_GENUI` to `OPENCODE_RUNTIME_ENV_NAMES` or pi `RUNTIME_ENV_NAMES`.
 - Flag off ⇒ the composed OpenCode config and the pi system prompt are byte-for-byte what they are on `dev` today (spec R-FLAG-1, snapshot-asserted in Tasks 3 and 4).
 
 ## Review Focus
@@ -73,13 +73,13 @@ Expected: both FAIL — the schema and `FEATURE_FLAG_KEYS` do not contain `genui
     key: 'genui',
     name: 'Generative UI',
     description:
-      'The agent may answer with cards, comparisons, charts, maps, and tabs instead of long text. On ⇒ every new, restarted, or resumed session of this project teaches the agent the Kortix generative UI catalog (KORTIX_GENUI=1 in kortixd). Off ⇒ the agent writes markdown only; blocks already in a transcript still render.',
+      'The agent may answer with cards, comparisons, charts, maps, and tabs instead of long text. On ⇒ every new session of this project (and any session rebuilt from scratch) teaches the agent the Kortix generative UI catalog (KORTIX_GENUI=1 in kortixd). Off ⇒ the agent writes markdown only; blocks already in a transcript still render.',
     stability: 'experimental',
     available: () => true,
     platformDefault: () => false,
     enforcement: 'behavioral',
     enforcementNote:
-      'Read at session provisioning (projects/lib/genui-env.ts → KORTIX_GENUI). A running session keeps its prompt until it is restarted or resumed. The API kill switch GENUI_ENABLED=false forces it off for every project.',
+      'Read at session provisioning (projects/lib/genui-env.ts → KORTIX_GENUI). An in-place restart keeps the sandbox env, so a running or restarted session keeps its prompt until a new session starts. The API kill switch GENUI_ENABLED=false forces it off for every project.',
     // Hidden until web renders blocks (plan-4 Task 8 removes this line).
     catalogHidden: true,
   },
@@ -619,7 +619,7 @@ Expected: PASS; lint clean; CLI suite (including `lint:sdk-boundary`) green.
 3. Start a session; in the sandbox, run `cat /tmp/kortix/genui.md | head -3` through the session's terminal or `kortix` CLI. Expected: the file exists and starts with `# Generative UI`.
 4. Send `Compare these two plans: Basic 10 USD with 3 projects; Pro 30 USD with unlimited projects.` Expected: the stored assistant text contains ```` ```openui ````.
 5. Send `hi`. Expected: no ```` ```openui ````.
-6. Turn the flag off, restart the session. Expected: `/tmp/kortix/genui.md` is gone; a comparison prompt returns markdown only.
+6. Turn the flag off, start a new session (an in-place restart keeps the old env). Expected: `/tmp/kortix/genui.md` does not exist; a comparison prompt returns markdown only.
 7. Repeat steps 3–5 once with the project on pi (`pi_harness` on, `llm_gateway` on).
 
 Record the commands and outputs in the PR body.
