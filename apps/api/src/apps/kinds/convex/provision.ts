@@ -1,7 +1,7 @@
 /**
  * The machine of an App of kind `convex`: one self-hosted Convex backend per
  * persistent Platinum machine. The App row (`apps`) holds the shared fields
- * (slug, name, size, budget, access, deletion); `app_convex_instances` holds
+ * (slug, name, size, access, deletion); `app_convex_instances` holds
  * the machine. A `ConvexRow` is the two joined.
  *
  * Create is two steps. `insertConvexApp` claims the slug and answers at once.
@@ -23,8 +23,7 @@
  * Billing: a running machine is metered like a sandbox, reserved spec × wall
  * clock (workload_type `backend`); ./maintenance.ts opens the window and
  * records liveness. Snapshot storage is not billed yet.
- * The App's monthly budget alerts at 80 % and 100 % and never stops the machine
- * (./maintenance.ts budgetAlerts): a stopped database breaks every client.
+ * The App has no monthly budget: its cost is its size, 24/7.
  * The caps (3 per project, 10 per account) and the wallet gate on create and
  * resize bound the spend.
  * ponytail: always on (`persistent`). Platinum does not count an open
@@ -400,8 +399,6 @@ export interface NewConvexApp {
   slug: string;
   name: string;
   size?: Partial<BackendSize>;
-  monthlyBudgetUsd: string;
-  monthlyBudgetExplicit: boolean;
 }
 
 /** The size a new `convex` App gets: the request, else BACKEND_MACHINE, inside BACKEND_MACHINE_LIMITS. */
@@ -460,8 +457,6 @@ export async function insertConvexApp(input: NewConvexApp): Promise<{ app: typeo
         memoryGb: size.memoryGb,
         diskGb: size.diskGb,
         alwaysOn: true,
-        monthlyBudgetUsd: input.monthlyBudgetUsd,
-        monthlyBudgetExplicit: input.monthlyBudgetExplicit,
       })
       .returning();
     const [instance] = await tx
@@ -482,7 +477,6 @@ export async function insertConvexApp(input: NewConvexApp): Promise<{ app: typeo
         cpu: app!.cpuCores,
         memoryGb: app!.memoryGb,
         diskGb: app!.diskGb,
-        monthlyBudgetUsd: app!.monthlyBudgetUsd,
         deletedAt: null,
       },
     };

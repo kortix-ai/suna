@@ -1,4 +1,5 @@
 import { shredAgentEnvFile } from '@/harness/shared/agent-env-file'
+import { flushDriveSyncOnShutdown } from '@/services/drive-sync/drive-sync'
 import { stopEgressShim } from '@/services/egress-shim'
 import { logger } from '@/lib/log/logger'
 import { beginDaemonShutdown } from '@/lib/shutdown-state'
@@ -25,6 +26,8 @@ export function installShutdownHandlers(
     stopEgressShim()
 
     void (async () => {
+      // Drive changes not yet on the drive go up before anything stops.
+      await flushDriveSyncOnShutdown().catch(() => {})
       try {
         await proxy.stop()
       } catch (err) {

@@ -53,6 +53,10 @@ export const convex = new ConvexReactClient(db.url);
 convex.setAuth(db.token);
 ```
 
+To read the signed-in member in React, use a `members:me` query
+(`useQuery(api.members.me)`), not `useConvexAuth()`. See sign-in.md, "The
+browser: send the token".
+
 The request passes the using App's own access gate first, so only people the
 App admits reach the bound App through it. The bound App still checks every
 call itself (`requireMember`, sign-in.md): its own URL is public.

@@ -15,6 +15,7 @@ The installer downloads a prebuilt binary for macOS and Linux. Windows is not su
 
 | Command | Effect |
 | --- | --- |
+| `kortix feedback "<message>" [--kind bug\|idea\|friction] [--source cli\|agent\|web] [--context <json>] [--host <name>] [--json]` | File product feedback for the team. Inside a Kortix session it files as `agent` and tags the session and project ids automatically. Prints the stored receipt id. |
 | `kortix update` | Re-run the install script and pull the latest binary. |
 | `kortix uninstall [-y\|--yes] [--keep-auth] [--keep-home]` | Remove the binary, the `/usr/local/bin` shim, and the stored token. `--keep-auth` keeps the token. `--keep-home` keeps `~/.kortix`. |
 | `kortix version` | Print the CLI version. |
@@ -360,13 +361,13 @@ An existing GitHub `origin` links through the Kortix GitHub App. Any other exist
 
 ### Apps
 
-Deploys and operates the project's Kortix Apps: each App has one stable URL and immutable deployments. A static App is files that Kortix serves, with no machine. A server App (Dockerfile or OCI image) runs in its own machine, always on or on demand, up to a monthly budget. Needs the `apps` project feature. Full guide: [Apps](/docs/feature-flags/apps).
+Deploys and operates the project's Kortix Apps: each App has one stable URL and immutable deployments. A static App is files that Kortix serves, with no machine. A server App (Dockerfile or OCI image) runs in its own machine, always on or on demand. Only an on-demand App has a monthly budget; an always-on or `convex` App has a fixed monthly cost. Needs the `apps` project feature. Full guide: [Apps](/docs/feature-flags/apps).
 
 | Command | Effect |
 | --- | --- |
-| `kortix apps ls [--json]` | List Apps with state (`static` for a static App) and URL. |
+| `kortix apps ls [--json]` | List the Apps you may open (a project manager sees all) with state (`static` for a static App) and URL. |
 | `kortix apps deploy <dir> --type static [--spa]` | Publish a built directory as a static App. Build first (`npm run build`), then deploy the output directory. |
-| `kortix apps deploy . --type dockerfile --command <argv> --port <n> [--always-on\|--on-demand] [--budget <usd>]` | Build and run a server App. A new App is always on. Its budget is the 24/7 estimate of its machine, rounded up to a whole dollar (74 USD by default), unless you pass `--budget`; on demand it is 5 USD. The command prints the cost, for example `Runs 24/7 on 1 vCPU / 2 GB: about $73/month (budget $74)`. |
+| `kortix apps deploy . --type dockerfile --command <argv> --port <n> [--always-on\|--on-demand] [--budget <usd>]` | Build and run a server App. A new App is always on and has no budget: it costs its machine 24/7 (about 73 USD a month by default). `--budget` applies to on-demand Apps only (default 5 USD); on an always-on App it is refused with `app_budget_not_applicable`. The command prints the cost, for example `Runs 24/7 on 1 vCPU / 2 GB: about $73/month`. |
 | `kortix apps deploy --image <ref> --command <argv> --port <n>` | Run a public OCI image as a server App. |
 | `kortix apps deploy --manifest-app <name>` | Deploy one `apps.<name>` block of a v2 `kortix.yaml`. |
 | `kortix apps set <app> [--always-on\|--on-demand] [--budget <usd>] [--cpu N] [--memory-gb N] [--disk-gb N] [--idle-timeout <s>] [--uses <slugs>]` | Change an App. Run mode and budget apply within 5 minutes; a web machine change applies to the next deployment; a `convex` App resizes now and the command waits. |
@@ -379,7 +380,7 @@ Deploys and operates the project's Kortix Apps: each App has one stable URL and 
 | `kortix apps rotate-credentials <app> --yes` | Replace the admin key; every key read before stops working. |
 | `kortix apps dashboard <app> [--open]` | Capability `dashboard`: the Kortix page that opens the App's dashboard. |
 | `kortix apps snapshots\|snapshot <app>` · `delete-snapshot <app> <id> --yes` · `restore <app> <id> --yes` | Capabilities `snapshots` and `restore`: list, take, delete, roll back. |
-| `kortix apps show <app> [--json]` | The App (`kind`, `capabilities`, `uses`, `used_by`, `instance`, `hosting_type`, `always_on`, `monthly_budget_usd`, `estimated_monthly_usd`) and its deployments. |
+| `kortix apps show <app> [--json]` | The App (`kind`, `capabilities`, `uses`, `used_by`, `instance`, `hosting_type`, `always_on`, `monthly_budget_usd`, `estimated_monthly_usd`) and its deployments. A cost line reads `about $N/month` for an always-on or `convex` App and `budget $N/month` for an on-demand App. |
 | `kortix apps logs <app> [deployment] [--after N] [--limit N] [--lines N]` | A server App's runtime logs. A static App prints its deployment events. An App with the `logs` capability prints its process log (`--lines 1-1000`). |
 | `kortix apps start\|stop <app>` | Start or suspend a server App. A static App answers `409 static_app_no_runtime`. |
 | `kortix apps rollback <app> <deployment>` | Move traffic to a ready deployment. |
@@ -387,7 +388,7 @@ Deploys and operates the project's Kortix Apps: each App has one stable URL and 
 | `kortix apps access-link <app> [--json]` | A five-minute signed browser URL. Treat it as a secret. |
 | `kortix apps delete <app> [--deployment <id\|vN>] --yes` | Delete the App, or one deployment that is not live. An App with `snapshots` needs `--confirm <slug>` instead: Kortix keeps a `final` snapshot and the stopped machine 7 days. |
 
-An always-on App of the default machine costs about 73 USD a month. When an explicit budget is lower, `deploy`, `create`, and `set` print `app_budget_below_always_on` on stderr; the App stops at the budget until the month ends.
+An always-on App of the default machine costs about 73 USD a month, and a `convex` App about 59 USD. Neither has a budget: `--budget` on one answers `400 app_budget_not_applicable` and the message names the monthly cost. To cap the cost, use `--on-demand` or a smaller machine.
 
 ### Sessions
 

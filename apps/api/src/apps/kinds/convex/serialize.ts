@@ -16,7 +16,6 @@ export function convexInstanceJson(row: ConvexRow, authEnv: Record<string, strin
     lastError?: unknown;
     lastOperationError?: unknown;
     health?: BackendHealth;
-    budgetAlert?: { month: string; percent: number; spentUsd: number; budgetUsd: number; at: string };
     purgeAfter?: string;
   };
   const lastError = status !== row.status ? 'Provisioning was interrupted. Delete this App and create it again.' : meta.lastError;
@@ -34,15 +33,8 @@ export function convexInstanceJson(row: ConvexRow, authEnv: Record<string, strin
     auth_env: live ? authEnv : null,
     /** The client CLI version that matches the machine (`npx convex@<version> deploy`). */
     client_version: CONVEX_CLI_VERSION,
-    budget_alert: meta.budgetAlert
-      ? {
-          month: meta.budgetAlert.month,
-          percent: meta.budgetAlert.percent,
-          spent_usd: meta.budgetAlert.spentUsd,
-          budget_usd: meta.budgetAlert.budgetUsd,
-          at: meta.budgetAlert.at,
-        }
-      : null,
+    /** Always null: a `convex` App has no monthly budget (fixed cost). Kept for wire compatibility. */
+    budget_alert: null,
     /** Set on a deleted App: when Kortix purges the kept machine and its final snapshot. */
     purge_after: meta.purgeAfter ?? null,
   };

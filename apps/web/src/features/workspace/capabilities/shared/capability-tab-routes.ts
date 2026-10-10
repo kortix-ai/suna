@@ -31,7 +31,7 @@
  * index cards keep their own icons in their own client files.
  */
 export interface CapabilityTab {
-  key: 'agent' | 'connectors' | 'skills' | 'triggers' | 'models' | 'secrets' | 'config';
+  key: 'agent' | 'connectors' | 'skills' | 'triggers' | 'models' | 'secrets' | 'files' | 'config';
   label: string;
 }
 
@@ -69,7 +69,9 @@ export interface CapabilityTab {
  * left Customize for its own full-height page (`reviewHref`): the inbox where
  * a person approves what agents do is a primary surface, not configuration.
  *
- * No tab is flag-gated.
+ * One tab is flag-gated: Files, the project's shared folders, shows only
+ * when the project has the `drives` feature flag on (`capability-tabs.tsx`).
+ * Every other tab is always painted.
  */
 export const CAPABILITY_TABS: readonly CapabilityTab[] = [
   { key: 'agent', label: 'Agents' },
@@ -78,6 +80,7 @@ export const CAPABILITY_TABS: readonly CapabilityTab[] = [
   { key: 'triggers', label: 'Triggers' },
   { key: 'models', label: 'Models' },
   { key: 'secrets', label: 'Secrets' },
+  { key: 'files', label: 'Files' },
   { key: 'config', label: 'Settings' },
 ];
 
@@ -105,6 +108,7 @@ export const CAPABILITY_SEGMENT: Record<CapabilityTab['key'], string> = {
   triggers: 'triggers',
   models: 'models',
   secrets: 'secrets',
+  files: 'files',
   config: 'settings',
 };
 

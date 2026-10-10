@@ -8,6 +8,8 @@ import { ProjectPageHeader } from '@/features/workspace/project-layout/project-p
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
+import { repoNavLabel } from '@/features/workspace/project-sidebar/footer/files-nav-label';
+import { useFeatureFlag } from '@kortix/sdk/react';
 import { useParams } from 'next/navigation';
 import {
   GitDiffIcon as FileDiff,
@@ -83,11 +85,14 @@ export function DriveHeader({
   offsetForSidebarToggle = false,
 }: DriveHeaderProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tSidebar = useTranslations('sidebar');
   const sidebar = useOptionalSidebar();
   const sidebarCollapsed = sidebar?.state === 'collapsed';
 
   const reviewCount = reviewsToggle.openCount ?? 0;
   const params = useParams<{ id?: string }>();
+  // Volumes on for the organization: the repo browser is Repo; off, it is Files.
+  const volumes = useFeatureFlag(params?.id, 'drives');
 
   const actions = (
     <div className="flex shrink-0 items-center gap-1">
@@ -152,7 +157,10 @@ export function DriveHeader({
   // The standalone page: the shared project page header, with the folder path
   // in its own strip below it, shown only inside a subfolder.
   if (offsetForSidebarToggle && params?.id) {
-    const title = tI18nComplete.raw('textabc7e9892806');
+    // With Volumes on, the git repository is "Repo" and "Files" is the shared
+    // folders; off, the repository keeps the title it had before volumes.
+    const title =
+      repoNavLabel(volumes.enabled) === 'repo' ? tSidebar('repo') : tI18nComplete.raw('textabc7e9892806');
     return (
       <>
         <ProjectPageHeader title={title} href={`/projects/${params.id}/files`}>

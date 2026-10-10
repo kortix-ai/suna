@@ -397,6 +397,27 @@ export async function readAppArchive(source: string): Promise<Uint8Array> {
 }
 
 /**
+ * A manifest budget applies only to an on-demand server App. On an always-on
+ * or convex App the cost is fixed (size × 24/7), so the API refuses a budget;
+ * an older kortix.yaml that still sets one deploys with a notice instead of failing.
+ */
+export function manifestBudget(
+  block: ManifestAppDefaults['block'] | undefined,
+  existing: App | undefined,
+  flags: DeployFlags,
+): number | undefined {
+  const budget = block?.monthly_budget_usd;
+  if (budget === undefined) return undefined;
+  const kind = block?.kind ?? existing?.kind ?? 'web';
+  const alwaysOn = flags.alwaysOn ?? block?.always_on ?? existing?.always_on ?? true;
+  if (kind === 'web' && alwaysOn === false) return budget;
+  process.stderr.write(
+    `  ! monthly_budget_usd in kortix.yaml is ignored: a ${kind === 'convex' ? 'convex' : 'always-on'} App has a fixed monthly cost. Remove it, or set always_on: false for a budget.\n`,
+  );
+  return undefined;
+}
+
+/**
  * Resolve or create the App a deployment targets: an explicit --app, else the
  * manifest block's identity (updating an existing slug in place), else one
  * derived from the image reference or source path.
@@ -434,8 +455,8 @@ export async function provisionDeployApp(
         ? { idle_timeout_seconds: manifestBlock.idle_timeout_seconds }
         : {}),
       ...(manifestBlock?.always_on !== undefined ? { always_on: manifestBlock.always_on } : {}),
-      ...(manifestBlock?.monthly_budget_usd !== undefined
-        ? { monthly_budget_usd: manifestBlock.monthly_budget_usd }
+      ...(manifestBudget(manifestBlock, existing, flags) !== undefined
+        ? { monthly_budget_usd: manifestBudget(manifestBlock, existing, flags) }
         : {}),
       ...flagSettings,
       // The Apps this App uses; the manifest's list replaces the App's.
@@ -458,30 +479,15 @@ export async function provisionDeployApp(
 }
 
 /**
- * What a server App costs: "Runs 24/7 on 1 vCPU / 2 GB: about $73/month (budget $74)".
+ * What a server App costs: "Runs 24/7 on 1 vCPU / 2 GB: about $73/month".
  * Null for an on-demand or static App, or when the server predates the estimate.
  */
 export function runCostLine(app: App): string | null {
   const estimate = app.estimated_monthly_usd;
-  if (!app.always_on || !estimate || app.hosting_type === 'static') return null;
+  if (typeof app.monthly_budget_usd === 'number' || !estimate || app.hosting_type === 'static') return null;
   return (
     `Runs 24/7 on ${app.machine.cpu} vCPU / ${app.machine.memory_gb} GB: ` +
-    `about $${Math.round(estimate)}/month (budget $${app.monthly_budget_usd})`
-  );
-}
-
-/**
- * The warning for a server App that runs 24/7 on a monthly budget below what
- * its machine costs for a month: it stops at the budget until the month ends.
- * Null when it does not apply, or when the server predates the estimate.
- */
-export function alwaysOnBudgetNotice(app: App): string | null {
-  const estimate = app.estimated_monthly_usd;
-  if (!app.always_on || estimate === undefined || app.monthly_budget_usd >= estimate) return null;
-  return (
-    `${app.slug} runs 24/7, about $${estimate.toFixed(2)}/month at list compute rates, ` +
-    `but its monthly budget is $${app.monthly_budget_usd.toFixed(2)}. It stops when the budget is reached. ` +
-    'Raise it with --budget <usd>, or deploy with --on-demand.'
+    `about $${Math.round(estimate)}/month`
   );
 }
 

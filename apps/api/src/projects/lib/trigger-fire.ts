@@ -1,4 +1,5 @@
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
+import { servableProjectCatalog } from '../../llm-gateway/models/servable-catalog';
 import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import type { PromptOverridesWire } from '../session-lifecycle/store';
 import { projectSessions, projectTriggerRuntime } from '@kortix/db';
@@ -285,7 +286,8 @@ export async function fireGitTrigger(input: {
   commandId?: string;
   error?: string;
   /** Machine-readable failure code when `createSession` rejected the fire
-   *  (e.g. `insufficient_credits`, `subscription_required`, `no_account`). */
+   *  (e.g. `insufficient_credits`, `subscription_required`, `no_account`) or
+   *  the model gate refused it (`no_usable_model`). */
   errorCode?: string;
   reason?: string;
   deduped?: boolean;
@@ -460,6 +462,29 @@ async function createGitTriggerSession(
   sessionKey: string | null,
 ): ReturnType<typeof fireGitTrigger> {
   const { spec, project, payload, renderedPrompt, source } = input;
+  // A fire the account cannot run mints a session that dies on its first turn
+  // ("requires a paid plan") while the caller keeps a 202 + a session id that
+  // points at nothing (dogfood journey trig-webhook). Gate on the same catalog
+  // the chat composer gates on: zero enabled models = nothing to run. Only
+  // gateway projects gate (native mode resolves models outside the gateway),
+  // and only the fresh-create path — reminders and re-prompts of an existing
+  // session keep their semantics.
+  if (projectLlmGatewayEnabled(project.metadata)) {
+    const catalog = await servableProjectCatalog({
+      projectId: project.projectId,
+      accountId: project.accountId,
+      // The run executes as this actor (the account owner), so its personal
+      // keys count exactly as the gateway will count them for the session.
+      principalUserId: actor,
+    });
+    if (!Object.values(catalog.models).some((model) => model.enabled)) {
+      return {
+        status: 'failed',
+        error: 'No usable model for this account. Connect a provider key or upgrade the plan, then fire again.',
+        errorCode: 'no_usable_model',
+      };
+    }
+  }
   const sessionResult = await createSession({
     source: `trigger:${source}`,
     project,

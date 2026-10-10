@@ -3,6 +3,7 @@ export type SandboxProvisioningFailureCategory =
   | 'git-auth'
   | 'invalid-secret-boundary-policy'
   | 'snapshot-too-large'
+  | 'drives-unavailable'
   | 'sandbox-provider';
 
 export interface SandboxProvisioningFailure {
@@ -84,6 +85,17 @@ const INVALID_SECRET_BOUNDARY_POLICY_PATTERN =
  */
 export function classifySandboxProvisioningFailure(error: unknown): SandboxProvisioningFailure {
   const rawMessage = error instanceof Error ? error.message : String(error);
+
+  // Kortix Drive: the session's drives did not mount, so it did not start.
+  // The message already says which drives and why (drives/service.ts).
+  if (rawMessage.startsWith('[drives] ')) {
+    return {
+      category: 'drives-unavailable',
+      userMessage: rawMessage.slice('[drives] '.length),
+      isCapacity: false,
+      isGitAuth: false,
+    };
+  }
   const isStorageFull = STORAGE_FULL_PATTERN.test(rawMessage);
   const isCapacity = isStorageFull || CAPACITY_PATTERN.test(rawMessage);
   const isGitAuth = !isCapacity && GIT_AUTH_PATTERN.test(rawMessage);

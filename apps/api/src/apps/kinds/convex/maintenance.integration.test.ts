@@ -16,7 +16,7 @@ import { app } from '../../../index';
 import { createAccountToken } from '../../../repositories/account-tokens';
 import { insertIntoView } from '../../../__tests__/helpers/compat-views';
 import { decryptProjectSecret, encryptProjectSecret } from '../../../projects/surface';
-import { MAX_PROVISION_ATTEMPTS, UNHEALTHY_ALERT_AFTER, budgetAlertDue, sweepBackends } from './maintenance';
+import { MAX_PROVISION_ATTEMPTS, UNHEALTHY_ALERT_AFTER, sweepBackends } from './maintenance';
 import {
   AUTOMATIC_SNAPSHOT_RETENTION_MS,
   BackendOperationError,
@@ -1042,7 +1042,10 @@ describe('delete: typed slug, final snapshot, retention, purge', () => {
   test('while the delete runs, no snapshot can claim the App', async () => {
     const row = await runningBackend('delete-race', { snapshots: ['dr-1'], snapshotListDelayMs: 800 });
     const deleting = del(row.appId, 'delete-race');
-    await new Promise((r) => setTimeout(r, 300));
+    // Wait for the delete's mark, not a fixed delay: on a 4 vCPU CI runner the
+    // route had not marked the row 300 ms in. The 800 ms snapshot list keeps
+    // the delete running after the mark lands.
+    await eventually(() => read(row.appId), (r) => meta(r).deleting !== undefined);
     expect(await claimOperation(row.appId, 'snapshotting')).toBe(false);
     expect((await deleting).status).toBe(200);
     expect((await read(row.appId)).status).toBe('deleted');
@@ -1064,40 +1067,21 @@ describe('delete: typed slug, final snapshot, retention, purge', () => {
   });
 });
 
-describe('budget (alerts, never stops)', () => {
-  const spend = async (row: ConvexRow, costUsd: string) => {
+describe('no budget: a convex App costs its size', () => {
+  test('any month-to-date spend: the sweep never stops the machine and records no budget alert', async () => {
+    const row = await runningBackend('budget-free', {});
     await db.delete(sandboxComputeSessions).where(eq(sandboxComputeSessions.sandboxId, row.appId));
     const at = new Date().toISOString();
     await db.insert(sandboxComputeSessions).values({
       accountId: row.accountId, sandboxId: row.appId, provider: 'platinum', cpuCores: 1, memoryGb: 1, diskGb: 10,
-      state: 'stopped', workloadType: 'backend', costUsd, startedAt: at, endedAt: at, lastBilledAt: at,
+      state: 'stopped', workloadType: 'backend', costUsd: '500.000000', startedAt: at, endedAt: at, lastBilledAt: at,
     });
-  };
-
-  test('budgetAlertDue: the highest share reached, once per month per threshold', () => {
-    const now = new Date('2026-10-15T00:00:00Z');
-    expect(budgetAlertDue({ metadata: {} }, 3, 5, now)).toBeNull();
-    expect(budgetAlertDue({ metadata: {} }, 4, 5, now)).toBe(80);
-    expect(budgetAlertDue({ metadata: {} }, 6, 5, now)).toBe(100);
-    expect(budgetAlertDue({ metadata: { budgetAlert: { month: '2026-10', percent: 80 } } }, 4.5, 5, now)).toBeNull();
-    expect(budgetAlertDue({ metadata: { budgetAlert: { month: '2026-10', percent: 80 } } }, 5, 5, now)).toBe(100);
-    expect(budgetAlertDue({ metadata: { budgetAlert: { month: '2026-09', percent: 100 } } }, 4, 5, now)).toBe(80);
-    expect(budgetAlertDue({ metadata: {} }, 4, 0, now)).toBeNull();
-  });
-
-  test('80 % alerts once, 100 % alerts once more, and the machine keeps running', async () => {
-    const row = await runningBackend('budget-alert', {}, { monthlyBudgetUsd: '5.00' });
-    await spend(row, '4.200000');
-    expect((await sweepBackends()).budgetAlerts).toBeGreaterThanOrEqual(1);
-    expect(meta(await read(row.appId)).budgetAlert).toMatchObject({ percent: 80, budgetUsd: 5 });
-    await sweepBackends();
-    expect(meta(await read(row.appId)).budgetAlert.percent).toBe(80);
-    await spend(row, '5.100000');
-    await sweepBackends();
-    expect(meta(await read(row.appId)).budgetAlert).toMatchObject({ percent: 100 });
-    expect(machines.get('sbx-budget-alert')!.state).toBe('running');
+    const result = await sweepBackends();
+    expect(result).not.toHaveProperty('budgetAlerts');
+    expect(meta(await read(row.appId)).budgetAlert).toBeUndefined();
+    expect(machines.get('sbx-budget-free')!.state).toBe('running');
     expect((await read(row.appId)).status).toBe('running');
-    expect(calls).not.toContain('POST /v1/sandboxes/sbx-budget-alert/stop');
+    expect(calls).not.toContain('POST /v1/sandboxes/sbx-budget-free/stop');
   });
 });
 

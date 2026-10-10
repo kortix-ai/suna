@@ -29,6 +29,7 @@ import {
   projects,
   sessionLifecycleCommands,
 } from '@kortix/db';
+import type { ServableProjectCatalog } from '../llm-gateway/models/servable-catalog';
 
 const USER_ID = '00000000-0000-4000-a000-000000000001';
 const SERVICE_ACCOUNT_ID = '00000000-0000-4000-a000-000000000002';
@@ -79,6 +80,16 @@ let modelDefaults: {
   agents: Record<string, string>;
   projects: Record<string, string>;
 };
+/** The servable catalog the fire's model gate (KRTX-1505) consults. Default:
+ *  one enabled model, so every pre-existing gateway fire keeps working. */
+const oneEnabledModelCatalog = (): ServableProjectCatalog => ({
+  models: { 'kortix/glm-5.3-flash': { name: 'glm-5.3-flash', enabled: true } },
+  modelOverrides: {},
+  defaultModel: undefined,
+  usingDefaults: true,
+});
+let catalogFixture: ServableProjectCatalog = oneEnabledModelCatalog();
+let catalogCalls: Array<Record<string, unknown>> = [];
 
 function setTestAuth(userId = USER_ID, userEmail = 'triggers@example.test') {
   (globalThis as any)[TEST_AUTH_KEY] = { userId, userEmail };
@@ -125,6 +136,8 @@ function resetState() {
   mirrorInvalidationCalls = 0;
   manifestCommitConflictsRemaining = 0;
   modelDefaults = { account: null, agents: {}, projects: {} };
+  catalogFixture = oneEnabledModelCatalog();
+  catalogCalls = [];
   projectRow.metadata = {};
   secretValues.clear();
   secretConsumerConfigurationStates.clear();
@@ -361,6 +374,18 @@ mock.module('../llm-gateway/enablement', () => ({
   // The by-id variant (secrets delivery, title generation) resolves against
   // the same fixture row this suite mutates per test.
   projectLlmGatewayEnabledById: async () => mockedProjectLlmGatewayEnabled(projectRow.metadata),
+}));
+
+// The fire's model gate (KRTX-1505) reads the servable catalog. Mocked rather
+// than served by the db shim: the gate's contract is the catalog's `enabled`
+// stamps, not the read models beneath them.
+const realServableCatalog = await import('../llm-gateway/models/servable-catalog');
+mock.module('../llm-gateway/models/servable-catalog', () => ({
+  ...realServableCatalog,
+  servableProjectCatalog: async (input: Record<string, unknown>) => {
+    catalogCalls.push(input);
+    return catalogFixture;
+  },
 }));
 
 mock.module('../shared/resolve-account', () => ({
@@ -1327,6 +1352,80 @@ describe('git-backed triggers — runtime fire paths', () => {
         },
       },
     ]);
+  });
+
+  test('a webhook fire on a gateway project with no usable model answers 402 no_usable_model and mints no session (KRTX-1505)', async () => {
+    projectRow.metadata = { experimental: { llm_gateway: true } };
+    catalogFixture = { models: {}, modelOverrides: {}, defaultModel: undefined, usingDefaults: true };
+    seedManifest(webhookEntry({ slug: 'hook', name: 'Hook', secretEnv: 'HOOK_SECRET', prompt: 'New {{ body.action }}' }));
+    secretValues.set('HOOK_SECRET', 'shhh');
+    const rawBody = JSON.stringify({ action: 'opened' });
+    const res = await createApp().request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Kortix-Signature': sign(rawBody, 'shhh'),
+        'X-Kortix-Delivery-Id': 'model-less-1',
+      },
+      body: rawBody,
+    });
+    // Account state, not a server fault: the billing gate's convention.
+    expect(res.status).toBe(402);
+    expect(await res.json()).toEqual({
+      error: 'No usable model for this account. Connect a provider key or upgrade the plan, then fire again.',
+      code: 'no_usable_model',
+    });
+    // No doomed session minted and no sandbox provisioned.
+    expect(sessionRows).toHaveLength(0);
+    expect(sandboxProvisionCalls).toBe(0);
+    // Recorded like any failed fire, so the trigger UI says why it didn't run.
+    expect(runtimeRows).toHaveLength(1);
+    expect(runtimeRows[0].lastStatus).toBe('failed');
+    expect(runtimeRows[0].lastError).toContain('No usable model');
+    expect(alertCalls).toEqual([
+      {
+        kind: 'raise',
+        input: {
+          projectId: PROJECT_ID,
+          accountId: ACCOUNT_ID,
+          slug: 'hook',
+          source: 'fire',
+          error: 'No usable model for this account. Connect a provider key or upgrade the plan, then fire again.',
+        },
+      },
+    ]);
+  });
+
+  test('the same webhook fire with one enabled model answers 202 and spawns the session (KRTX-1505)', async () => {
+    projectRow.metadata = { experimental: { llm_gateway: true } };
+    seedManifest(webhookEntry({ slug: 'hook', name: 'Hook', secretEnv: 'HOOK_SECRET', prompt: 'New {{ body.action }}' }));
+    secretValues.set('HOOK_SECRET', 'shhh');
+    const rawBody = JSON.stringify({ action: 'opened' });
+    const res = await createApp().request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Kortix-Signature': sign(rawBody, 'shhh'),
+        'X-Kortix-Delivery-Id': 'model-ok-1',
+      },
+      body: rawBody,
+    });
+    expect(res.status).toBe(202);
+    expect(await res.json()).toMatchObject({ status: 'fired' });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(sandboxProvisionCalls).toBe(1);
+    expect(sessionRows).toHaveLength(1);
+  });
+
+  test('a manual fire on a model-less gateway account answers 402 no_usable_model (KRTX-1505)', async () => {
+    projectRow.metadata = { experimental: { llm_gateway: true } };
+    catalogFixture = { models: {}, modelOverrides: {}, defaultModel: undefined, usingDefaults: true };
+    seedManifest(cronEntry({ slug: 'manual', name: 'Manual', cron: '* * * * * *', prompt: 'Report' }));
+    const res = await createApp().request(`/v1/projects/${PROJECT_ID}/triggers/manual/fire`, { method: 'POST' });
+    expect(res.status).toBe(402);
+    expect(await res.json()).toMatchObject({ code: 'no_usable_model' });
+    expect(sessionRows).toHaveLength(0);
+    expect(sandboxProvisionCalls).toBe(0);
   });
 
   test('a bad signature refreshes the manifest mirror at most once per budget window, and a missing one never reads it', async () => {
