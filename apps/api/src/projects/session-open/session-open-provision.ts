@@ -436,11 +436,7 @@ export async function retryTransientProvisionFailure(
     attempts: retries + 1,
   };
 
-  // This server cannot provision the session's provider (not allowed here, or
-  // the box could not call back): no retry is possible, so none is claimed and
-  // `/start` answers the stored failure.
-  if (!canAllocate()) return null;
-  if (retries >= TRANSIENT_PROVISION_MAX_RETRIES) {
+  if (retries >= TRANSIENT_PROVISION_MAX_RETRIES || !canAllocate()) {
     return {
       stage: 'failed',
       agent_name: visible.row.agentName ?? 'default',

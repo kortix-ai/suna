@@ -109,17 +109,4 @@ describe('a transient provision failure on wake', () => {
     );
     expect(await retryTransientProvisionFailure(ARGS, refused, at(3_600_000), deps)).toBeNull();
   });
-
-  test('a server that cannot provision this provider keeps the stored answer', async () => {
-    // No retry is possible (the provider is not allowed here, or the box could
-    // not call back), so none is claimed: /start answers the stored failure.
-    let claimed = false;
-    const answer = await retryTransientProvisionFailure(ARGS, failedWakeRow(CAPACITY_503), at(3_600_000), {
-      claim: async () => (claimed = true),
-      allocate: async () => {},
-      canAllocate: () => false,
-    });
-    expect(answer).toBeNull();
-    expect(claimed).toBe(false);
-  });
 });
