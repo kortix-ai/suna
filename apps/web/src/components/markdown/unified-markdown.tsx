@@ -504,12 +504,12 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
     // for the full length of the answer. Memoising on the string collapses
     // that to once per distinct value. It sits ABOVE the empty-content early
     // return so the hook order stays fixed.
+    // A nested fence (`code === null`) in history may be one its container already closed: its
+    // closer would render an extra empty code block, so it is appended only while streaming.
+    const genuiCloser = genuiOpen && (genuiOpen.code !== null || isStreaming) ? genuiOpen.closer : '';
     const finalContent = useMemo(
-      () =>
-        safeContent
-          ? prepareMarkdownSource(genuiOpen ? safeContent + genuiOpen.closer : safeContent, isStreaming)
-          : '',
-      [safeContent, genuiOpen, isStreaming],
+      () => (safeContent ? prepareMarkdownSource(safeContent + genuiCloser, isStreaming) : ''),
+      [safeContent, genuiCloser, isStreaming],
     );
 
     if (!safeContent) {

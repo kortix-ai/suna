@@ -165,3 +165,21 @@ describe('a fence inside a list item or a blockquote streams like a top-level on
     });
   }
 });
+
+describe('a malformed nested fence that its container already closed', () => {
+  // The model leaves the quote or list item without closing the fence. The scanner still sees the
+  // fence open; in history the appended closer must not render an extra, empty code block.
+  const block = 'root = Stack([a])\na = Stat("Revenue", "12k")';
+  const shapes: [string, string][] = [
+    ['a blockquote', `> \`\`\`openui\n${block.split('\n').map((line) => `> ${line}`).join('\n')}\n\nDone`],
+    ['a list item', `- \`\`\`openui\n${block.split('\n').map((line) => `  ${line}`).join('\n')}\n\nDone`],
+  ];
+  for (const [name, content] of shapes) {
+    test(`left in ${name}: history shows no empty code block`, () => {
+      const html = renderToStaticMarkup(<UnifiedMarkdown trust="agent" genui content={content} />);
+      expect(html).toContain('Done');
+      // The empty node renders as an empty `<code>` after "Done".
+      expect(html.slice(html.indexOf('Done'))).not.toContain('<code');
+    });
+  }
+});
