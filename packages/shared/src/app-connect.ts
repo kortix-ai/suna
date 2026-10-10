@@ -69,7 +69,7 @@ export function appConnectSnippets(target: AppConnectTarget): AppConnectSnippet[
     {
       id: 'app-client',
       tab: 'app',
-      title: "Call it on the App's own origin with the viewer's Kortix sign-in token",
+      title: "Bind it on the App's own origin and send the viewer's Kortix sign-in token",
       file: 'src/client.ts',
       language: 'ts',
       code: [
@@ -84,7 +84,7 @@ export function appConnectSnippets(target: AppConnectTarget): AppConnectSnippet[
     {
       id: 'server-verify',
       tab: 'app',
-      title: 'Require a signed-in member in every request this App serves (Kortix sets the KORTIX_AUTH_* variables)',
+      title: 'Require a signed-in member in every request this App serves',
       file: 'server.ts',
       language: 'ts',
       code: [
