@@ -14,7 +14,18 @@ export interface CatalogCardProps {
   badges?: ReactNode;
   /** A muted facts line under the description — the card's third row. */
   meta?: ReactNode;
+  /** Rendered on its own row directly under the title — a short token, not
+   *  prose. Unlike `description` it takes nodes. */
+  subtitle?: ReactNode;
+  /** `plain` drops the border and resting fill — icon and title on the bare
+   *  page, only a hover fill. The connector catalogue uses it; every other
+   *  catalogue keeps the outlined default. */
+  variant?: 'default' | 'plain';
   trailing?: ReactNode;
+  /** `trailing` holds its own control (an Install menu). With `href` the card
+   *  then renders the link and the control as siblings: a button inside an
+   *  anchor is invalid HTML and a hydration error. */
+  trailingInteractive?: boolean;
   /** A card that NAVIGATES renders as a real `next/link` — prefetched, middle-
    *  clickable, and a client transition rather than a `router.push` from a
    *  button (see the no-hard-refresh nav contract). Cards that open a modal
@@ -46,7 +57,10 @@ export function CatalogCard({
   description,
   badges,
   meta,
+  subtitle,
+  variant = 'default',
   trailing,
+  trailingInteractive,
   href,
   onIntent,
   onClick,
@@ -56,9 +70,11 @@ export function CatalogCard({
   select,
 }: CatalogCardProps) {
   const classes = cn(
-    'bg-accent/50 group border-border/60  flex w-full items-start gap-3 rounded-md border px-4 py-3.5 text-left',
-    'transition-[background-color,border-color] duration-150 ease-out',
-    'hover:bg-accent hover:border-border',
+    'group flex w-full items-start gap-3 rounded-md border text-left',
+    'transition-[background-color,border-color] duration-(--duration-normal) ease-out',
+    variant === 'plain'
+      ? 'border-transparent bg-transparent px-3 py-2.5 hover:bg-accent'
+      : 'bg-accent/50 border-border/60 hover:bg-accent hover:border-border px-4 py-3.5',
     'focus-visible:ring-ring/50 focus-visible:ring-2 focus-visible:outline-none',
     disabled && 'pointer-events-none opacity-60',
     className,
@@ -70,11 +86,12 @@ export function CatalogCard({
   const content = (
     <>
       {leading ? <span className="shrink-0">{leading}</span> : null}
-      <span className="min-w-0 flex-1 space-y-1">
+      <span className={cn('min-w-0 flex-1', variant === 'plain' ? 'space-y-0' : 'space-y-1')}>
         <span className="flex items-center gap-1.5">
           <span className="text-foreground truncate text-sm font-medium">{title}</span>
           {badges}
         </span>
+        {subtitle ? <span className="flex flex-wrap items-center gap-1.5">{subtitle}</span> : null}
         {description ? (
           <span className="text-muted-foreground line-clamp-2 text-xs text-pretty">
             {description}
@@ -118,6 +135,33 @@ export function CatalogCard({
           {content}
         </button>
         {trailingSlot}
+      </div>
+    );
+  }
+  if (href && trailingInteractive) {
+    return (
+      // The wrapper is not focusable, so `classes`' own `focus-visible` ring
+      // never paints here: `has-` draws the same ring while the link holds
+      // keyboard focus. The link's `after` covers the card, so the padding
+      // still navigates; the control is `relative` to stay above it.
+      <div
+        style={style}
+        className={cn(
+          classes,
+          'has-[a:focus-visible]:ring-ring/50 relative has-[a:focus-visible]:ring-2',
+        )}
+      >
+        <Link
+          href={href}
+          prefetch
+          aria-disabled={disabled || undefined}
+          onPointerEnter={onIntent}
+          onFocus={onIntent}
+          className="flex min-w-0 flex-1 items-start gap-3 text-left after:absolute after:inset-0 after:content-[''] focus-visible:outline-none"
+        >
+          {content}
+        </Link>
+        {trailing ? <span className="relative shrink-0">{trailing}</span> : null}
       </div>
     );
   }

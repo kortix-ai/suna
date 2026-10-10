@@ -1,10 +1,27 @@
 'use client';
 
 import { useSearchParams } from 'next/navigation';
+import { useEffect, useSyncExternalStore } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { parseAppReturnUrl } from '@/features/workspace/capabilities/shared/app-return-url';
+import {
+  parseAppReturnUrl,
+  resolveAppReturn,
+} from '@/features/workspace/capabilities/shared/app-return-url';
 import { useTranslations } from '@/i18n/use-translations';
+
+const RETURN_TO_STORAGE_KEY = 'kortix:connectors-return-to';
+
+/** `sessionStorage` sends no event to its own tab, so there is nothing to subscribe to. */
+const subscribeToNothing = () => () => {};
+
+function readRemembered(): string | null {
+  try {
+    return window.sessionStorage.getItem(RETURN_TO_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
 
 /**
  * The way back to the mobile app after its project drawer opened this page
@@ -18,13 +35,26 @@ import { useTranslations } from '@/i18n/use-translations';
  * several connectors in one trip, and only the user knows the last one. A tap
  * is also the one navigation Chrome never blocks for an app scheme.
  *
- * `return_to` survives an OAuth 2.0 connect: the authorization start builds the
- * provider's `success_redirect_uri` from the current URL, so the user comes
- * back to this page with the bar still in place.
+ * The bar remembers `return_to` for the browser tab. The list, an app and a
+ * connector are separate URLs, and the links between them do not carry the
+ * param, so the URL alone would lose the bar on the first click. A remembered
+ * value is validated again on every read, exactly like a URL one.
  */
 export function ConnectorsAppReturnBar() {
   const t = useTranslations('connectorsAppReturn');
-  const returnUrl = parseAppReturnUrl(useSearchParams().get('return_to'));
+  const fromUrl = parseAppReturnUrl(useSearchParams().get('return_to'));
+  // The server snapshot is `null`: storage does not exist there, and the
+  // hydrating render must match the server's.
+  const remembered = useSyncExternalStore(subscribeToNothing, readRemembered, () => null);
+  useEffect(() => {
+    if (!fromUrl) return;
+    try {
+      window.sessionStorage.setItem(RETURN_TO_STORAGE_KEY, fromUrl);
+    } catch {
+      // Storage is blocked (private mode): the bar lasts for this URL only.
+    }
+  }, [fromUrl]);
+  const returnUrl = resolveAppReturn(fromUrl, remembered);
 
   if (!returnUrl) return null;
 
