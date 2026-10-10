@@ -1,4 +1,9 @@
-import { connectorConnections, connectors, connectionCredentials } from '@kortix/db';
+import {
+  accountMemberships,
+  connectorConnections,
+  connectors,
+  connectionCredentials,
+} from '@kortix/db';
 import type { OAuth2ClientCredentials } from '@kortix/api-contract';
 /**
  * Connector credentials. A connector is project-wide visible — the only
@@ -70,10 +75,7 @@ async function resolveCredentialRow(
     } catch {
       return null;
     }
-    if (
-      current.kind !== 'oauth2_client_credentials' &&
-      current.kind !== 'oauth2_delegated'
-    ) {
+    if (current.kind !== 'oauth2_client_credentials' && current.kind !== 'oauth2_delegated') {
       return value;
     }
     const resolved =
@@ -108,10 +110,7 @@ export async function resolveCredentialValue(
       projectId: connectors.projectId,
     })
     .from(connectionCredentials)
-    .innerJoin(
-      connectors,
-      eq(connectors.connectorId, connectionCredentials.connectorId),
-    )
+    .innerJoin(connectors, eq(connectors.connectorId, connectionCredentials.connectorId))
     .where(
       and(
         eq(connectionCredentials.connectorId, connectorId),
@@ -127,6 +126,48 @@ export async function resolveCredentialValue(
     .limit(1);
   if (!row) return null;
   return resolveCredentialRow(row, runtime);
+}
+
+/**
+ * The earliest signed-in member account's credential on a connector. The MCP
+ * catalog falls back to it when no project account has a credential, so an app
+ * authorized only by "Only you" accounts still lists its tools. Others see the
+ * tool names; each still needs an account of their own to run them.
+ */
+export async function resolveFirstMemberCredential(connectorId: string): Promise<string | null> {
+  const [row] = await db
+    .select({
+      credentialId: connectionCredentials.credentialId,
+      kind: connectionCredentials.kind,
+      valueEnc: connectionCredentials.valueEnc,
+      projectId: connectors.projectId,
+    })
+    .from(connectionCredentials)
+    .innerJoin(connectors, eq(connectors.connectorId, connectionCredentials.connectorId))
+    .innerJoin(
+      connectorConnections,
+      eq(connectorConnections.connectionId, connectionCredentials.connectionId),
+    )
+    // Only a person still in the account: a member who left publishes nothing.
+    .innerJoin(
+      accountMemberships,
+      and(
+        eq(accountMemberships.accountId, connectors.accountId),
+        sql`${accountMemberships.userId}::text = ${connectorConnections.ownerId}`,
+      ),
+    )
+    .where(
+      and(
+        eq(connectionCredentials.connectorId, connectorId),
+        // A member's own account: never an agent, embedded-user or shared one.
+        eq(connectorConnections.ownerType, 'member'),
+        eq(connectorConnections.status, 'active'),
+      ),
+    )
+    .orderBy(connectionCredentials.createdAt)
+    .limit(1);
+  if (!row) return null;
+  return resolveCredentialRow(row);
 }
 
 export async function credentialExists(
@@ -181,7 +222,10 @@ export async function connectorAccountLandedSince(
   const reachable = memberId
     ? or(
         eq(connectorConnections.ownerType, 'project'),
-        and(eq(connectorConnections.ownerType, 'member'), eq(connectorConnections.ownerId, memberId)),
+        and(
+          eq(connectorConnections.ownerType, 'member'),
+          eq(connectorConnections.ownerId, memberId),
+        ),
       )
     : eq(connectorConnections.ownerType, 'project');
   // A credential not yet bound to a connection row is scoped by `user_id`.
@@ -219,6 +263,36 @@ export async function connectorAccountLandedSince(
       .limit(1),
   ]);
   return !!credential || !!connection;
+}
+
+/**
+ * Whether an account is signed in: it holds a credential, or (Composio) its
+ * row carries the connected account or the no-auth marker. The same rule as
+ * `connectorAccountLandedSince`.
+ */
+export function connectionSignedIn(
+  metadata: Record<string, unknown> | null,
+  hasCredential: boolean,
+): boolean {
+  if (hasCredential) return true;
+  const meta = metadata ?? {};
+  return (
+    typeof meta.connected_account_id === 'string' ||
+    meta.is_no_auth === true ||
+    meta.is_no_auth === 'true'
+  );
+}
+
+/** Which of these accounts hold a credential row. One query. */
+export async function connectionIdsWithCredentials(
+  connectionIds: readonly string[],
+): Promise<Set<string>> {
+  if (connectionIds.length === 0) return new Set();
+  const rows = await db
+    .select({ connectionId: connectionCredentials.connectionId })
+    .from(connectionCredentials)
+    .where(inArray(connectionCredentials.connectionId, [...connectionIds]));
+  return new Set(rows.map((row) => row.connectionId).filter((id): id is string => id !== null));
 }
 
 export async function connectorIdsWithSharedCredentials(
@@ -266,9 +340,7 @@ export async function connectorIdsWithSharedCredentials(
   // though nothing is pinned). Two or more unpinned project rows never count
   // here: neither disambiguates which one's credential is "the" shared one.
   const soleProjectConnector = new Set(
-    projectConnectionCounts
-      .filter((row) => Number(row.count) === 1)
-      .map((row) => row.connectorId),
+    projectConnectionCounts.filter((row) => Number(row.count) === 1).map((row) => row.connectorId),
   );
   const out = new Set<string>();
   for (const row of credentialRows) {
@@ -375,10 +447,7 @@ export async function resolveConnectionCredentialValue(
       projectId: connectors.projectId,
     })
     .from(connectionCredentials)
-    .innerJoin(
-      connectors,
-      eq(connectors.connectorId, connectionCredentials.connectorId),
-    )
+    .innerJoin(connectors, eq(connectors.connectorId, connectionCredentials.connectorId))
     .where(
       and(
         eq(connectionCredentials.connectorId, input.connectorId),
@@ -528,10 +597,7 @@ export async function ensureMemberConnection(input: {
     .select()
     .from(connectors)
     .where(
-      and(
-        eq(connectors.connectorId, input.connectorId),
-        eq(connectors.projectId, input.projectId),
-      ),
+      and(eq(connectors.connectorId, input.connectorId), eq(connectors.projectId, input.projectId)),
     )
     .limit(1);
   if (!connector) throw new Error('Connector not found while creating its member connection');
@@ -600,10 +666,7 @@ export async function ensureDefaultConnection(input: {
     .select()
     .from(connectors)
     .where(
-      and(
-        eq(connectors.connectorId, input.connectorId),
-        eq(connectors.projectId, input.projectId),
-      ),
+      and(eq(connectors.connectorId, input.connectorId), eq(connectors.projectId, input.projectId)),
     )
     .limit(1);
   if (!connector) throw new Error('Connector not found while creating its default connection');
@@ -682,7 +745,10 @@ export async function upsertCredential(opts: {
       and(
         eq(connectionCredentials.connectorId, opts.connectorId),
         userClause(opts.userId),
-        or(eq(connectionCredentials.connectionId, connectionId), isNull(connectionCredentials.connectionId)),
+        or(
+          eq(connectionCredentials.connectionId, connectionId),
+          isNull(connectionCredentials.connectionId),
+        ),
       ),
     )
     .limit(1);

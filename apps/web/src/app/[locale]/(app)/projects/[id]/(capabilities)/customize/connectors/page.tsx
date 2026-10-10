@@ -13,8 +13,8 @@ import { CapabilitiesSkeleton } from '@/features/workspace/capabilities/shared/c
  * page body.
  *
  * The `Suspense` boundary is required, not decorative: `ConnectorsPage` reads
- * `useSearchParams()` (the `?c=` detail selection and the `?oauth2=` return
- * leg), and Next refuses to prerender a route that does so unbounded. Same
+ * `useSearchParams()` (the `?scope=` tab, `?rules=1`, and the legacy `?c=`
+ * redirect), and Next refuses to prerender a route that does so unbounded. Same
  * pattern as `app/(app)/connectors/page.tsx`. The fallback is the route
  * group's own skeleton, so the boundary cannot introduce a layout jump.
  *
