@@ -22,7 +22,7 @@ import {
 } from '@/components/ui/modal';
 import { Switch } from '@/components/ui/switch';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { useGenuiCopyText } from '@/features/genui/to-markdown';
+import { useGenuiCopyMessages } from '@/features/genui/to-markdown';
 import {
   DEFAULT_TRANSCRIPT_OPTIONS,
   formatTranscript,
@@ -143,24 +143,23 @@ export function ExportTranscriptModal({
     };
   }, [open, sessionId, tHardcodedUi]);
 
-  const rawTranscript = useMemo(() => {
-    if (!session || messages.length === 0) return '';
+  // Generative UI blocks become markdown before copy or download, one message at a time. While the
+  // converter loads, `transcript` is '' and both actions stay disabled.
+  // The converter (a lazy chunk) failed to load: nothing was copied yet, so say what failed.
+  const onConvertError = useCallback(() => errorToast(tGenui('convertFailed')), [tGenui]);
+  const exportMessages = useGenuiCopyMessages(messages, onConvertError);
+  const transcript = useMemo(() => {
+    if (!session || !exportMessages || exportMessages.length === 0) return '';
     return formatTranscript(
       {
         id: session.id,
         title: session.title || session.slug || 'Untitled',
         time: session.time,
       },
-      messages,
+      exportMessages,
       options,
     );
-  }, [session, messages, options]);
-
-  // Generative UI blocks become markdown before copy or download. While the
-  // converter loads, `transcript` is '' and both actions stay disabled.
-  // The converter (a lazy chunk) failed to load: nothing was copied yet, so say what failed.
-  const onConvertError = useCallback(() => errorToast(tGenui('convertFailed')), [tGenui]);
-  const transcript = useGenuiCopyText(rawTranscript, onConvertError);
+  }, [session, exportMessages, options]);
 
   const filename = useMemo(() => {
     if (!session) return 'session.md';

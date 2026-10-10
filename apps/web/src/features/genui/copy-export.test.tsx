@@ -5,7 +5,7 @@ import { genuiToMarkdown } from '@kortix/sdk/genui';
 
 import { act, create } from 'react-test-renderer';
 
-import { copyGenuiText, genuiCopyText, mayHoldGenui, useGenuiCopyText } from './to-markdown';
+import { copyGenuiText, genuiCopyText, mayHoldGenui, useGenuiCopyMessages } from './to-markdown';
 
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true });
 
@@ -100,27 +100,49 @@ describe('copyGenuiText', () => {
   });
 });
 
-describe('useGenuiCopyText', () => {
-  function harness(raw: string) {
-    const seen: string[] = [];
+describe('useGenuiCopyMessages', () => {
+  type Message = { info: { id: string }; parts: { type: string; text?: string }[] };
+  const text = (id: string, value: string): Message => ({ info: { id }, parts: [{ type: 'text', text: value }] });
+  function harness(messages: Message[]) {
+    const seen: (Message[] | null | 'error')[] = [];
     function Probe() {
-      seen.push(useGenuiCopyText(raw, () => seen.push('error')));
+      seen.push(useGenuiCopyMessages(messages, () => seen.push('error')));
       return null;
     }
     return { seen, Probe };
   }
+  const settle = async (seen: unknown[]) => {
+    for (let i = 0; i < 20 && !seen.at(-1); i++) await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+  };
 
-  test('text without a block is ready on the first render', async () => {
-    const { seen, Probe } = harness('Plain transcript.');
+  test('messages without a block are ready on the first render, unchanged', async () => {
+    const messages = [text('m1', 'Plain transcript.')];
+    const { seen, Probe } = harness(messages);
     await act(async () => void create(<Probe />));
-    expect(seen[0]).toBe('Plain transcript.');
+    expect(seen[0]).toBe(messages);
   });
 
-  test('a transcript with a block is empty until conversion completes, then markdown', async () => {
-    const { seen, Probe } = harness(REPLY);
+  test('messages with a block are null until conversion completes, then markdown', async () => {
+    const { seen, Probe } = harness([text('m1', REPLY)]);
     await act(async () => void create(<Probe />));
-    expect(seen[0]).toBe('');
-    expect(seen.at(-1)).toBe('Done.\n\n[shipped]');
-    expect(seen.some((text) => text.includes('root ='))).toBe(false);
+    expect(seen[0]).toBeNull();
+    await settle(seen);
+    expect((seen.at(-1) as Message[])[0]!.parts[0]!.text).toBe('Done.\n\n[shipped]');
+  });
+
+  test('a fence the model never closed stays inside its own message', async () => {
+    // Converted as one transcript string, the open fence ran on into the next turn and took it.
+    const messages = [
+      text('m1', 'Here:\n\n```openui\nroot = Stack([a])\na = Badge("first")'),
+      text('m2', 'Second question'),
+      text('m3', REPLY),
+    ];
+    const { seen, Probe } = harness(messages);
+    await act(async () => void create(<Probe />));
+    await settle(seen);
+    const parts = (seen.at(-1) as Message[]).map((message) => message.parts[0]!.text!);
+    expect(parts[1]).toBe('Second question');
+    expect(parts[2]).toBe('Done.\n\n[shipped]');
+    expect(parts.some((part) => part.includes('root ='))).toBe(false);
   });
 });

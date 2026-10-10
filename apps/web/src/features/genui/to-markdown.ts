@@ -42,25 +42,46 @@ export function copyGenuiText(text: string): Promise<void> {
   return genuiCopyText(text).then((md) => navigator.clipboard.writeText(md));
 }
 
+interface CopyPart {
+  type: string;
+  text?: string;
+}
+
+const holdsGenui = (message: { parts: CopyPart[] }) =>
+  message.parts.some((part) => part.type === 'text' && mayHoldGenui(part.text ?? ''));
+
 /**
- * `raw` with every block converted to markdown, for a copy or download that must
- * be ready before the click. Text without a block is returned on the first render.
- * Text with a block is '' until the converter answers, so the caller keeps its
- * actions disabled and never writes OpenUI source. `onError` runs when the
- * converter fails to load; the result then stays ''.
+ * `messages` with every text part's blocks converted to markdown, each part on its own: a fence one
+ * message never closed ends with that message. Converted as one transcript string, it ran on into
+ * the next turn and took that turn with it. Same lazy barrel as `genuiCopyText`.
  */
-export function useGenuiCopyText(raw: string, onError: () => void): string {
-  const [converted, setConverted] = useState<{ source: string; text: string } | null>(null);
+export async function genuiCopyMessages<M extends { parts: CopyPart[] }>(messages: M[]): Promise<M[]> {
+  if (!messages.some(holdsGenui)) return messages;
+  const { genuiToMarkdown } = await import('@kortix/sdk/genui');
+  const convert = (part: CopyPart) =>
+    part.type === 'text' && part.text && mayHoldGenui(part.text) ? { ...part, text: genuiToMarkdown(part.text) } : part;
+  return messages.map((message) => (holdsGenui(message) ? { ...message, parts: message.parts.map(convert) } : message));
+}
+
+/**
+ * `messages` converted by `genuiCopyMessages`, for a copy or download that must be ready before the
+ * click. Messages without a block are returned on the first render. Messages with a block are null
+ * until the converter answers, so the caller keeps its actions disabled and never writes OpenUI
+ * source. `onError` runs when the converter fails to load; the result then stays null.
+ */
+export function useGenuiCopyMessages<M extends { parts: CopyPart[] }>(messages: M[], onError: () => void): M[] | null {
+  const [converted, setConverted] = useState<{ source: M[]; result: M[] } | null>(null);
   const onErrorRef = useRef(onError);
   useEffect(() => {
     onErrorRef.current = onError;
   });
+  const needed = messages.some(holdsGenui);
   useEffect(() => {
-    if (!mayHoldGenui(raw)) return;
+    if (!needed) return;
     let cancelled = false;
-    genuiCopyText(raw).then(
-      (text) => {
-        if (!cancelled) setConverted({ source: raw, text });
+    genuiCopyMessages(messages).then(
+      (result) => {
+        if (!cancelled) setConverted({ source: messages, result });
       },
       () => {
         if (!cancelled) onErrorRef.current();
@@ -69,7 +90,7 @@ export function useGenuiCopyText(raw: string, onError: () => void): string {
     return () => {
       cancelled = true;
     };
-  }, [raw]);
-  if (!mayHoldGenui(raw)) return raw;
-  return converted?.source === raw ? converted.text : '';
+  }, [messages, needed]);
+  if (!needed) return messages;
+  return converted?.source === messages ? converted.result : null;
 }
