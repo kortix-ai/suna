@@ -17,13 +17,13 @@ response.
 
 **Incident:** 2026-10-01 to 2026-10-10. PR #8600 (a "behavior-preserving"
 split) moved root resolution out of `boot.ts` and kept only
-`readOpenCodeSessionPin()`, undoing PR #8322. Every test stayed green: they
-covered the claim and the resolver, never the line that joins them. A box
-without its pin file again adopted the newest root and relayed it over the
-durable pin. Found by a source audit on 2026-10-10 and restored the same day;
-a real Platinum box with its pin file deleted then resumed its pinned root.
+`readOpenCodeSessionPin()`, undoing PR #8322. Tests covered the claim and the
+resolver, never the line that joins them. A box without its pin file again
+adopted the newest root and relayed it over the durable pin. Fixed in PR #9511.
 
 **Enforcement:** `apps/kortix-sandbox-agent-server/src/__tests__/initial-session-claimed-pin.test.ts`
 runs `maybeCreateInitialOpencodeSession` over a fake OpenCode and a fake API:
 no pin file resumes the claimed older root over a newer empty root; a local pin
-still wins. The 2026-09-29 entry's enforcers stay in force.
+still wins. The 2026-09-29 entry's enforcers stay in force. To build: the daemon
+has no `@typescript-eslint/no-unused-vars` or `noUnusedLocals`, so the unused
+`claimedRuntimeSessionPin` import hid for 10 days.

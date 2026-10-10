@@ -60,6 +60,7 @@ afterEach(() => {
 async function bootWithClaimedPin() {
   const relayed: string[] = []
   const created: string[] = []
+  const { promise: relayArrived, resolve: onRelay } = Promise.withResolvers<void>()
   const api = Bun.serve({
     port: 0,
     hostname: '127.0.0.1',
@@ -68,7 +69,10 @@ async function bootWithClaimedPin() {
       if (body.kind === 'initial_turn_claim') {
         return Response.json({ ok: true, initial_turn: null, runtime_session_id: 'ses_conversation' })
       }
-      if (body.kind === 'runtime_session' && body.runtime_session_id) relayed.push(body.runtime_session_id)
+      if (body.kind === 'runtime_session' && body.runtime_session_id) {
+        relayed.push(body.runtime_session_id)
+        onRelay()
+      }
       return Response.json({ ok: true })
     },
   })
@@ -100,8 +104,13 @@ async function bootWithClaimedPin() {
   } as unknown as Opencode
   const bootState = { timeline: [] } as unknown as OpenCodeBootState
   await maybeCreateInitialOpencodeSession(opencode, bootState, () => {})
-  // relayRuntimeSession is fire-and-forget; give it one turn of the loop.
-  await Bun.sleep(50)
+  // relayRuntimeSession is fire-and-forget: wait for it to reach the fake API.
+  await Promise.race([
+    relayArrived,
+    Bun.sleep(2_000).then(() => {
+      throw new Error('runtime_session relay did not arrive within 2 s')
+    }),
+  ])
   return { bootState, relayed, created }
 }
 

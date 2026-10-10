@@ -147,6 +147,8 @@ export async function maybeCreateInitialOpencodeSession(
       sessionId,
       alreadyDelivered,
       priorPin: priorPin !== null,
+      // `file` = this box's pin, `claim` = the control plane's (pin file missing).
+      pinSource: priorPin !== null ? 'file' : claimedRuntimeSessionPin() ? 'claim' : 'none',
       known: existing.known,
       lastTurnIncomplete: existing.lastTurnIncomplete,
       lastTurnHasError: existing.lastTurnHasError,
@@ -502,6 +504,13 @@ export async function resolveExistingRoot(
   if (roots.length === 0) return { status: 'create' }
   const pinned = priorPin ? roots.find((r) => r.id === priorPin) : undefined
   const chosen = pinned || pickMostRecentRoot(roots)
+  if (priorPin && !pinned) {
+    // The relay after boot writes `chosen` over the durable pin; say so.
+    logger.warn('[boot] pinned root is not in the OpenCode root list; falling back to the most recent root', {
+      pin: priorPin,
+      chosen: chosen?.id ?? null,
+    })
+  }
   if (!chosen) return { status: 'create' }
   const inspection = await inspectRoot(baseUrl, workspace, chosen.id)
   return {
