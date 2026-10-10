@@ -1,0 +1,22 @@
+{
+  "source_hash": "6d003a95e5708108010d450087a4c94b609c510116e509835f6bf60fcd8c751c",
+  "diff_files": [
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-10T214526Z-keep-saved-transcript-rows-on-an-empty-runtime-read-only-a-n.md",
+    "apps/web/content/docs/sdk/react.mdx",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "packages/sdk/README.md",
+    "packages/sdk/src/browser/session-sync/server-transcript-mirror.test.ts",
+    "packages/sdk/src/browser/stores/sync-store.test.ts",
+    "packages/sdk/src/browser/stores/sync-store.ts"
+  ],
+  "diff_hash": "1de529e77aa3cb79654ba27be9633b21ab9972486555a41595321794b68ae556",
+  "head": "325da70bad46e66272af7b1151b929baf8dc5ec1",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-10T22:42:14.381Z"
+}
