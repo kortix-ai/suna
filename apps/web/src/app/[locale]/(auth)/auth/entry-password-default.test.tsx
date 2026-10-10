@@ -35,6 +35,9 @@ mock.module('./actions', () => ({
 }));
 mock.module('@/lib/auth/submit-auth', () => ({
   AUTH_SUBMIT_TIMEOUT_MS: 30_000,
+  AUTH_TIMEOUT_MESSAGE: 'This is taking longer than expected. Please try again.',
+  AUTH_NETWORK_MESSAGE: 'The request could not be sent. Please try again.',
+  AUTH_UNEXPECTED_MESSAGE: 'Something went wrong. Please try again.',
   submitAuthForm: async (_path: string, _body: FormData) => {
     emailCodeSends += 1;
     return { ok: true, result: { success: true, email: 'synthetic@example.test' } };
