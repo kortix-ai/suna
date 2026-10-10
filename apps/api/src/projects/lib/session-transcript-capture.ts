@@ -384,12 +384,10 @@ async function captureSessionTranscript(
           });
 
         const readIds = rows.map((row) => String(row.info.id));
-        if (rootChanged) {
-          // A different OpenCode root makes every stored id unreachable.
-          await tx
-            .delete(sessionTranscriptMessages)
-            .where(eq(sessionTranscriptMessages.sessionId, sessionId));
-        } else if (completeRead) {
+        // A changed root deletes nothing. The old root's rows keep their own
+        // `opencode_session_id`, and every delete below is scoped to the root
+        // it read, so a box that lost its state cannot erase the saved copy.
+        if (completeRead) {
           /*
             DELETE WHAT DISAPPEARED, not everything.
 
