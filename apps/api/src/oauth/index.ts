@@ -35,7 +35,7 @@ import { isMcpResource, oauthAuthorizationServerMetadata, oauthIssuer } from './
 import { createOAuthClient, normalizeRedirectUris, OAuthClientInputError } from '../repositories/oauth-clients';
 import { TokenBucketRateLimiter } from '../shared/rate-limit';
 import { requestClientKey } from '../middleware/client-ip';
-import { isOAuthAccessToken, isOAuthRefreshToken, isOAuthScope, OAUTH_SCOPE_EMAIL, OAUTH_SCOPE_KORTIX, OAUTH_SCOPE_PROFILE } from './access-token';
+import { isOAuthAccessToken, isOAuthRefreshToken, isOAuthScope, OAUTH_SCOPE_EMAIL, OAUTH_SCOPE_KORTIX, OAUTH_SCOPE_PROFILE, validateOAuthAccessToken } from './access-token';
 import { isUuid } from '../shared/validate';
 import { actsAsFullIdentity } from '../accounts/core/tokens';
 import { actorOf } from '../iam/actor';
@@ -62,19 +62,18 @@ async function oauthTokenAuth(c: Context, next: Next) {
   }
   if (!token) throw new HTTPException(401, { message: 'Missing token' });
 
-  const tokenHash = await hashSecretKeyAsync(token);
-  const [row] = await db
-    .select()
-    .from(oauthAccessTokens)
-    .where(and(eq(oauthAccessTokens.tokenHash, tokenHash), isNull(oauthAccessTokens.revokedAt)))
-    .limit(1);
-  if (!row) throw new HTTPException(401, { message: 'Invalid access token' });
-  if (row.expiresAt < new Date()) throw new HTTPException(401, { message: 'Access token expired' });
+  // One validator: the canonical access-token path (client-active rejection, markTokenValidated).
+  const v = await validateOAuthAccessToken(token);
+  if (!v.isValid) {
+    // This route keeps the 401 messages it has always returned; the inactive client is the validator's verdict.
+    const message = v.error === 'OAuth access token expired' ? 'Access token expired' : v.error === 'OAuth client is inactive' ? v.error : 'Invalid access token';
+    throw new HTTPException(401, { message });
+  }
 
-  c.set('oauthUserId', row.userId);
-  c.set('oauthAccountId', row.accountId);
-  c.set('oauthClientId', row.clientId);
-  c.set('oauthScopes', row.scopes ?? []);
+  c.set('oauthUserId', v.userId);
+  c.set('oauthAccountId', v.accountId);
+  c.set('oauthClientId', v.clientId);
+  c.set('oauthScopes', v.scopes ?? []);
   await next();
 }
 
