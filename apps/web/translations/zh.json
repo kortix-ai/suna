@@ -20211,8 +20211,6 @@
     "calendarEstimated": "根据计划推算",
     "calendarFiredSr": "已触发",
     "calendarFailed": "失败",
-    "calendarOpenPanel": "在侧边栏中打开",
-    "calendarClosePanel": "关闭侧边栏",
     "calendarEstimatedSr": "过去的触发，根据计划推算",
     "calendarUpcomingSr": "即将触发"
   },

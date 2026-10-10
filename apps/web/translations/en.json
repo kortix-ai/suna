@@ -20211,8 +20211,6 @@
     "calendarEstimated": "Estimated from the schedule",
     "calendarFiredSr": "Fired",
     "calendarFailed": "Failed",
-    "calendarOpenPanel": "Open in side panel",
-    "calendarClosePanel": "Close side panel",
     "calendarEstimatedSr": "Past fire, estimated from the schedule",
     "calendarUpcomingSr": "Upcoming"
   },

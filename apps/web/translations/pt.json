@@ -20211,8 +20211,6 @@
     "calendarEstimated": "Estimado a partir do agendamento",
     "calendarFiredSr": "Disparado",
     "calendarFailed": "Falhou",
-    "calendarOpenPanel": "Abrir no painel lateral",
-    "calendarClosePanel": "Fechar o painel lateral",
     "calendarEstimatedSr": "Disparo passado, estimado a partir do agendamento",
     "calendarUpcomingSr": "Próximo"
   },

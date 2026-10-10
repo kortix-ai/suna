@@ -15,17 +15,23 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { FeatureGateScreen } from '@/features/workspace/feature-gate-screen';
 import { ProjectPageHeader } from '@/features/workspace/project-layout/project-page-header';
-import { useLocale, useTranslations } from '@/i18n/use-translations';
+import { useTranslations } from '@/i18n/use-translations';
 import type { SessionReminderState } from '@kortix/sdk';
 import { useFeatureFlag, useProjectReminders } from '@kortix/sdk/react';
 import { AlarmIcon, ArrowUpRightIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { useDeferredValue, useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react';
 import { parseDateParam } from './reminder-calendar-model';
 import { ReminderCalendarControls, ReminderCalendarTitle } from './reminder-calendar-nav';
 import { ReminderCalendarView } from './reminder-calendar-view';
-import { FireDock } from './reminder-fire-popover';
 import { ReminderList } from './reminder-list';
 import { rowsForTab } from './reminder-list-model';
 import {
@@ -44,6 +50,26 @@ import {
 } from './use-reminders-url-state';
 
 const DOCS_HREF = '/docs/connect/reminders';
+
+/** The app's mobile breakpoint (`useIsMobile`): below it the page is the List only. */
+const NARROW = '(max-width: 767px)';
+
+/**
+ * Whether the viewport is phone-width, read on the first client render. Not
+ * `useIsMobile`: that answers false until an effect runs, which would mount
+ * the whole calendar on a phone before swapping it for the List.
+ */
+function useNarrowViewport(): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      const query = window.matchMedia(NARROW);
+      query.addEventListener('change', onChange);
+      return () => query.removeEventListener('change', onChange);
+    },
+    () => window.matchMedia(NARROW).matches,
+    () => false,
+  );
+}
 
 /** The page header; `actions` (the List | Calendar switch) sit on the right. */
 function RemindersHeader({ projectId, actions }: { projectId: string; actions?: ReactNode }) {
@@ -98,16 +124,15 @@ function RemindersPage({ projectId }: { projectId: string }) {
   const t = useTranslations('reminders');
   const url = useRemindersUrlState();
   // The List | Calendar switch flips at once; the other view mounts as a
-  // background render, so its mount never holds the click.
-  const view = useDeferredValue(url.view);
+  // background render, so its mount never holds the click. A phone gets the
+  // List only: a 7-column time grid does not fit, and the switch is hidden.
+  const narrow = useNarrowViewport();
+  const deferredView = useDeferredValue(url.view);
+  const view = narrow ? 'list' : deferredView;
   const gate = useFeatureFlag(projectId, 'reminders');
   const reminders = useProjectReminders(gate.enabled ? projectId : null);
   useRefetchAfterFire(reminders.data?.reminders, reminders.refetch);
   const now = useNow();
-  const locale = useLocale();
-  // The docked fire card's context; stable for a minute like the calendar's.
-  const minute = Math.floor(now / 60_000) * 60_000;
-  const card = useMemo(() => ({ projectId, now: minute, locale }), [projectId, minute, locale]);
   const [tab, setTab] = useState<SessionReminderState>('active');
   // The calendar position: read from `?date=` once, written back as the grid settles.
   const [calendar] = useState(() => createCalendarStore(parseDateParam(url.date, now), url.set));
@@ -206,17 +231,17 @@ function RemindersPage({ projectId }: { projectId: string }) {
 
   return (
     <CalendarStoreContext.Provider value={calendar}>
-      <FireDock ctx={card} reminders={all} query={reminders}>
+      <div className="flex h-svh flex-col overflow-hidden">
         <RemindersHeader
           projectId={projectId}
           actions={
-            showsToolbar ? (
+            showsToolbar && !narrow ? (
               <ReminderViewSwitch value={url.view} onChange={(view) => url.set({ view })} />
             ) : null
           }
         />
         {body}
-      </FireDock>
+      </div>
     </CalendarStoreContext.Provider>
   );
 }

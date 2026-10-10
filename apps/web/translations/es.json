@@ -20211,8 +20211,6 @@
     "calendarEstimated": "Estimado a partir de la programación",
     "calendarFiredSr": "Activado",
     "calendarFailed": "Falló",
-    "calendarOpenPanel": "Abrir en el panel lateral",
-    "calendarClosePanel": "Cerrar el panel lateral",
     "calendarEstimatedSr": "Activación pasada, estimada a partir de la programación",
     "calendarUpcomingSr": "Próxima"
   },

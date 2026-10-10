@@ -20211,8 +20211,6 @@
     "calendarEstimated": "Estimé à partir de la planification",
     "calendarFiredSr": "Déclenché",
     "calendarFailed": "Échec",
-    "calendarOpenPanel": "Ouvrir dans le panneau latéral",
-    "calendarClosePanel": "Fermer le panneau latéral",
     "calendarEstimatedSr": "Déclenchement passé, estimé à partir de la planification",
     "calendarUpcomingSr": "À venir"
   },

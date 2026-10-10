@@ -20211,8 +20211,6 @@
     "calendarEstimated": "スケジュールからの推定",
     "calendarFiredSr": "実行済み",
     "calendarFailed": "失敗",
-    "calendarOpenPanel": "サイドパネルで開く",
-    "calendarClosePanel": "サイドパネルを閉じる",
     "calendarEstimatedSr": "過去の実行（スケジュールからの推定）",
     "calendarUpcomingSr": "予定"
   },

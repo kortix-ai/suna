@@ -125,7 +125,7 @@ export const ReminderRow = memo(function ReminderRow({
           onClick={(event) => onSelect(reminder, event.shiftKey)}
         />
       </TableCell>
-      <TableCell className="max-w-[20rem] align-middle">
+      <TableCell className="w-full max-w-0 align-middle">
         <div className="flex min-w-0 items-center gap-3">
           <span
             className={cn(
