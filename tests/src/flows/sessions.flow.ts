@@ -2579,7 +2579,7 @@ flow(
           retryable: true,
         },
         {
-          label: 'a stored E2B placement error is upgraded to the capacity contract',
+          label: 'a stored E2B placement error is a transient failure /start answers with the restart contract',
           provider: 'e2b',
           metadata: {
             initStatus: 'failed',
@@ -2589,8 +2589,13 @@ flow(
             errorMessage: 'The sandbox provider could not start this session. Try again.',
             lastProvisioningError: '500: Failed to place sandbox',
           },
+          // #9489: a capacity-suggesting stored error is transient, so /start
+          // answers from the transient-retry path, not the stored replay. In
+          // this flow's env e2b is not in ALLOWED_SANDBOX_PROVIDERS, so the
+          // retries are exhausted at once: the category still upgrades to
+          // provider-capacity, the message is the restart copy.
           category: 'provider-capacity',
-          message: 'The sandbox provider is at capacity right now. Try again in a minute.',
+          message: 'The sandbox provider could not start this session after 1 attempts. Restart the session to try again.',
           retryable: true,
         },
         {
