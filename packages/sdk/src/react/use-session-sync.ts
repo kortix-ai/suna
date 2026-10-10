@@ -256,12 +256,14 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     if (!canQueryRuntimeSession(sessionId) || !kortixSessionScope) return;
     // Already have the thread (a warm remount, or the runtime beat us): the
     // live read outranks a snapshot and must never be overwritten by one.
+    // An EMPTY runtime read is not the thread: it is lost box state, so the
+    // saved copy still paints over it.
     // An earlier SAVED copy is not a live read. The host's copy arrives in a
     // later run (`mirror` goes from null to the envelope) and reconciles
     // into it; returning here kept a reload on the device's older copy until
     // the computer woke.
     const overSavedCopy = hasOnlyCacheSourcedMessages(sessionId);
-    if (sessionId in useSyncStore.getState().messages && !overSavedCopy) return;
+    if ((useSyncStore.getState().messages[sessionId]?.length ?? 0) > 0 && !overSavedCopy) return;
     const abort = new AbortController();
     const scope = parseKortixSessionScope(kortixSessionScope);
     // A sub-agent keeps nothing on the device: the scope's slot is the
