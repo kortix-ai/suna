@@ -1,24 +1,25 @@
 {
-  "source_hash": "f5d1c26464fe4327fbec6ae8a1722cc1376e12dae570fa672b4622ad9ee69383",
+  "source_hash": "a580e79afa778ab248339bf10798b76ca26a29ef7314e6300f688d98c4103a91",
   "diff_files": [
     "apps/api/src/__tests__/unit-project-secret-strategy-route.test.ts",
     "apps/api/src/projects/routes/secrets.ts",
     "apps/api/src/projects/secrets.ts",
     "apps/api/src/setup-links/integration-unset-revokes-intake-link.test.ts",
     "apps/api/src/setup-links/public-app.ts",
+    "apps/web/src/lib/seo/content-timestamps.json",
     "packages/db/migrations/20261010041538875_project_secret_tombstones.sql",
     "packages/db/src/index.ts",
     "packages/db/src/schema/kortix.ts",
     "tests/spec/end-to-end.md",
     "tests/src/flows/secrets.flow.ts"
   ],
-  "diff_hash": "5789cf58b02cd3911b140a1b9d4bd4807354d7497b79a0f73e7261b4465f87ff",
-  "head": "723d71bfb46da500b8c6fd03de5e888c9e683416",
-  "passed": false,
+  "diff_hash": "03f9f75057722cfa26aac4a6db51dcda24cd0d4170a50cea38acc8fcbf8b4c7f",
+  "head": "0fb36d845315655d9c80c6fbb2c87ce5ba599e19",
+  "passed": true,
   "lanes": {
     "core": "pass",
-    "packages": "fail",
+    "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-10T06:44:27.010Z"
+  "at": "2026-10-10T07:39:22.374Z"
 }
