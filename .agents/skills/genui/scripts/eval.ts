@@ -58,9 +58,10 @@ async function ask(model: string, testCase: EvalCase): Promise<{ text: string; t
       };
       return { text: body.choices?.[0]?.message?.content ?? '', tokens: body.usage?.completion_tokens ?? 0 };
     }
-    // 4xx other than 429 will not fix itself: fail fast with the server's message.
+    // 4xx other than 429 will not fix itself: fail fast. The status only: the error reaches the
+    // tracked eval-results.md, and a response body can name an account or a request ID.
     if (response.status < 500 && response.status !== 429) {
-      throw new Error(`${model} ${testCase.id}: HTTP ${response.status} ${await response.text()}`);
+      throw new Error(`${model} ${testCase.id}: HTTP ${response.status}`);
     }
     lastError = `HTTP ${response.status}`;
     await Bun.sleep(2000 * attempt);
