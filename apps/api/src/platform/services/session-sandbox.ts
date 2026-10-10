@@ -765,6 +765,11 @@ async function prepareAttemptVolumes(ctx: SessionProvisionContext, state: Sessio
     const { KORTIX_DRIVE_SYNC: _sync, ...rest } = providerCreateInput.envVars;
     providerCreateInput.envVars = rest;
   }
+  // The entrypoint starts its drive-owner helper only for a session with
+  // drives; a box without them boots as it did before drives.
+  if (drivesRequirePlatinum && providerCreateInput.envVars?.KORTIX_DRIVES !== '1') {
+    providerCreateInput.envVars = { ...(providerCreateInput.envVars ?? {}), KORTIX_DRIVES: '1' };
+  }
   const planDrives = () =>
     import('../../drives/service').then(({ sessionVolumeMounts }) =>
       sessionVolumeMounts({
