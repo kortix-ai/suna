@@ -179,6 +179,7 @@ export async function deliverAfterWake(ctx: WakeDeliveryContext): Promise<Sessio
         visible: { row: fresh },
         projectId: session.projectId,
         sessionId,
+        ...(command.queuedAt ? { wakeIntentAt: command.queuedAt } : {}),
       });
     };
 

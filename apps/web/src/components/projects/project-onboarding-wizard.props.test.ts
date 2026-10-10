@@ -90,16 +90,19 @@ describe('ProjectOnboardingWizard: the skip control is opt-in', () => {
   });
 
   /**
-   * THE no-regression assertion. The project shell must keep passing neither
-   * prop, so its path stays exactly what shipped: no skip control, no
-   * completion callback, wizard simply disappears in place. If someone wires
-   * a prop here, the project-page behaviour changed without anyone deciding
-   * that it should.
+   * THE no-regression assertion (KRTX-2092 rewrote it): the project shell
+   * passes `onSkip` and nothing else. The shell's wizard is the ONLY mount
+   * left, and a fresh account's first project now reaches it unstamped (the
+   * create flow stamps only later projects), so the shell MUST offer the
+   * skip control — in the browser there is no other exit: no close button
+   * (desktop-only), Escape intercepted, outside clicks dead. The completion
+   * callback stays shell-less: both exits end in the same in-place close,
+   * so `onCompleted` remains a `/new`-host concern.
    */
-  test('project-shell renders the wizard with projectId ONLY', () => {
+  test('project-shell renders the wizard with projectId and onSkip', () => {
     expect(shellSource.length).toBeGreaterThan(0);
-    expect(shellSource).toContain('<ProjectOnboardingWizard projectId={projectId} />');
-    expect(shellSource).not.toContain('onSkip');
+    expect(shellSource).toContain('<ProjectOnboardingWizard');
+    expect(shellSource).toContain('onSkip');
     expect(shellSource).not.toContain('onCompleted');
   });
 });

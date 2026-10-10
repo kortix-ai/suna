@@ -1,5 +1,6 @@
 'use client';
 
+import { Slack } from '@/features/icon/icons/slack';
 import { useTranslations } from '@/i18n/use-translations';
 import {
   CheckIcon as Check,
@@ -15,17 +16,18 @@ import {
   MagnifyingGlassIcon as Search,
   ShareNetworkIcon,
   UsersIcon as Users,
+  UsersThreeIcon as UsersThree,
   XIcon as X,
   LightningIcon as Zap,
 } from '@phosphor-icons/react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Image from 'next/image';
-import { Slack } from '@/features/icon/icons/slack';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 
 import { HighlightedCode } from '@/components/markdown/code';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ButtonGroup, ButtonGroupSeparator } from '@/components/ui/button-group';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
@@ -59,6 +61,14 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  SplitSheetBody,
+  SplitSheetContent,
+  SplitSheetDescription,
+  SplitSheetFooter,
+  SplitSheetHeader,
+  SplitSheetTitle,
+} from '@/components/ui/split-sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
@@ -68,7 +78,6 @@ import { ComputerConnectModal, ComputerStateDot } from '@/features/tunnel/comput
 import { connectorDisplayName } from '@/features/workspace/capabilities/connectors/connector-filter';
 import { isManagedConnectorProvider } from '@/features/workspace/capabilities/connectors/provider-label';
 import { AccessDialog } from '@/features/workspace/shared/access/access-dialog';
-import { grantConnectionAccess } from '@/features/workspace/shared/access/access-dialog-share';
 import {
   type EmailInstallation,
   type EmailSenderPolicy,
@@ -84,7 +93,7 @@ import {
   useSlackMode,
   useUpdateEmailPolicy,
 } from '@/hooks/channels/use-channels-installations';
-import { useAddManagedAccount } from '@/hooks/connectors/use-add-managed-account';
+import { useAddAccount } from '@/hooks/connectors/use-add-account';
 import { useDeleteTunnelConnection } from '@/hooks/tunnel/use-tunnel';
 import { useCopy } from '@/hooks/use-copy';
 import { isConnectorsEnabled } from '@/lib/config';
@@ -113,9 +122,7 @@ import {
   type OAuth2DeviceAuthorizationStartResult,
   pollConnectionOAuth2DeviceAuthorization,
   putConnectionOAuth2Application,
-  reconcileConnection,
   reconcileMemberConnection,
-  registerConnectionOAuth2Client,
   renameConnection,
   revokeConnection,
   setConnectorCredential,
@@ -150,22 +157,18 @@ import {
   oauth2CredentialFormValid,
 } from './connector-oauth2';
 import { OAuth2ApplicationFields } from './connector-oauth2-application-fields';
-import {
-  autoConnectPlan,
-  buildClientRegistrationInput,
-  mergeResourceDiscoveryIntoForm,
-} from './connector-oauth2-auto';
+import { autoConnectPlan, mergeResourceDiscoveryIntoForm } from './connector-oauth2-auto';
 import { OAuth2CredentialFields } from './connector-oauth2-fields';
+import { startOAuth2SignIn } from './connector-oauth2-start';
 import { DiscoverCatalogue } from './discover-catalogue';
+import { AudienceText } from './view/audience-badge';
 import {
   accountVisibility,
   connectorConnectionRows,
   type NewAccountDraft,
-  newAccountGrantees,
   newAccountLabelTaken,
   newAccountReady,
 } from './view/connector-connections';
-import { AudienceBadge } from './view/audience-badge';
 
 const BUILT_IN_CHANNEL_APP_SLUGS = new Set(['slack', 'slack_v2']);
 
@@ -246,6 +249,7 @@ function ConnectionRow({
   onStartSession,
   onSetCredential,
   onShare,
+  onConnect,
   pending,
   disabled = false,
 }: {
@@ -266,12 +270,15 @@ function ConnectionRow({
   onSetCredential?: () => void;
   /** Open the share dialog: who may use this SHARED account. */
   onShare?: () => void;
+  /** Sign this account in. Shown only while it is not signed in. */
+  onConnect?: () => void;
   pending: boolean;
   disabled?: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tSharing = useTranslations('accessSharing');
   const tComputers = useTranslations('computers');
+  const tConnectorPages = useTranslations('connectorPages');
   const isProjectAuthorization = connection.owner_type === 'project';
   const active = connection.status === 'active';
   // Only the owner of a connection may change it: your own personal connection,
@@ -283,34 +290,45 @@ function ConnectionRow({
   const { copy } = useCopy({ successMessage: tI18nComplete.raw('text56ee71f3ece0') });
 
   return (
-    <li className="group bg-popover flex items-center gap-3 rounded-md border px-4 py-2.5 transition-colors">
+    <li className="flex items-center gap-3 px-4 py-3">
+      {/* Who may use it, as a glyph: neutral, so the row reads by its label. */}
       <span
-        className={cn(
-          'flex size-9 shrink-0 items-center justify-center rounded-sm',
-          isProjectAuthorization ? 'bg-kortix-blue/15' : 'bg-kortix-purple/15',
-        )}
+        aria-hidden
+        className="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md"
       >
-        {isProjectAuthorization ? (
-          <Users className="text-kortix-blue size-5" />
+        {visibility.kind === 'you' ? (
+          <Lock className="size-4" />
+        ) : visibility.kind === 'everyone' ? (
+          <UsersThree className="size-4" />
         ) : (
-          <Lock className="text-kortix-purple size-5" />
+          <Users className="size-4" />
         )}
       </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5">
+      <div className="min-w-0 flex-1 space-y-0.5">
+        <div className="flex min-w-0 items-center gap-1.5">
           <span className="truncate text-sm font-medium">{connection.label}</span>
           {connection.is_default && (
-            <Badge variant="outline" size="xs">
+            <Badge variant="secondary" size="xs">
               {tI18nComplete.raw('text21b111cbfe6e')}
             </Badge>
           )}
-          {/* Who may use this account, on every card: the list has one group. */}
-          <AudienceBadge visibility={visibility} labels={everyoneWithAccess} />
         </div>
         <InlineMeta>
+          {/* Who may use this account. Plain text: the row's one meta line,
+              not a chip beside the name. The hint lists every name. */}
+          <AudienceText visibility={visibility} labels={everyoneWithAccess} />
           {/* Listed only because the caller manages the project's connections. */}
           {connection.usable === false ? tSharing('notSharedWithYou') : null}
-          {active ? null : connection.status === 'revoked' ? 'Disconnected' : 'Error'}
+          {/* An account nobody has signed in yet, such as the shared one a new
+              connector starts with: say so beside its Connect button. */}
+          {active && connection.authorized === false ? (
+            <span>{tConnectorPages('notSignedIn')}</span>
+          ) : null}
+          {active ? null : (
+            <span className="text-destructive">
+              {connection.status === 'revoked' ? 'Disconnected' : 'Error'}
+            </span>
+          )}
           {/* A computer account: whether its machine is connected right now. */}
           {active && connection.machine ? (
             <span className="inline-flex items-center gap-1.5">
@@ -323,109 +341,111 @@ function ConnectionRow({
           {connection.connected_as && connection.connected_as !== connection.label
             ? tI18nComplete('texte9e0b20cf289', { value0: connection.connected_as })
             : null}
-          {/* Every connection carries its own id — this is what a backend passes
-              in connector_bindings to run as THIS account. Truncated to keep the
-              row readable; the row menu copies the full value. */}
-          <Hint label={tI18nComplete.raw('text48d73db2396c')}>
-            <code className="cursor-help font-mono">{connection.connection_id.slice(0, 8)}…</code>
-          </Hint>
+          {/* The connection id is not shown: it is a value for a backend, and the
+              row menu copies it. */}
         </InlineMeta>
       </div>
-      {onShare && mayMutate ? (
-        // Your own private account is shared by turning it into a shared one,
-        // which needs the same right as creating a shared account.
-        isProjectAuthorization || canManage ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="shrink-0 gap-1.5"
-            onClick={onShare}
-            disabled={pending || disabled}
-            aria-label={tSharing('shareTitle', { label: connection.label })}
-          >
-            <ShareNetworkIcon className="size-3.5 shrink-0" />
-            {tI18nComplete.raw('text29887a5ff984')}
-          </Button>
-        ) : (
-          <Hint label={tSharing('shareRequiresManage')}>
-            {/* A span, so the hint still opens over a disabled button. */}
-            <span className="inline-flex shrink-0">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="gap-1.5"
-                disabled
-                aria-label={tSharing('shareTitle', { label: connection.label })}
-              >
-                <ShareNetworkIcon className="size-3.5 shrink-0" />
-                {tI18nComplete.raw('text29887a5ff984')}
-              </Button>
-            </span>
-          </Hint>
-        )
+      {/* Share and the row menu: one control group, so the pair reads as one
+          set of actions for this account. */}
+      {/* An account that never finished signing in (an abandoned OAuth flow)
+          gets its next step on the row, not behind the menu. */}
+      {onConnect && mayMutate && connection.authorized === false ? (
+        <Button size="sm" className="shrink-0" onClick={onConnect} disabled={pending || disabled}>
+          {tConnectorPages('connectAccount')}
+        </Button>
       ) : null}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-8 shrink-0"
-            aria-label={tI18nComplete('text33da220b1a34', { value0: connection.label })}
-            disabled={pending || disabled}
-          >
-            {pending ? (
-              <Loading className="size-4 shrink-0" />
-            ) : (
-              <DotsThreeIcon className="size-4" />
+      <ButtonGroup className="shrink-0">
+        {onShare && mayMutate ? (
+          // Your own private account is shared by turning it into a shared one,
+          // which needs the same right as creating a shared account.
+          isProjectAuthorization || canManage ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              className="shrink-0 gap-1.5"
+              onClick={onShare}
+              disabled={pending || disabled}
+              aria-label={tSharing('shareTitle', { label: connection.label })}
+            >
+              <ShareNetworkIcon className="size-3.5 shrink-0" />
+              {tI18nComplete.raw('text29887a5ff984')}
+            </Button>
+          ) : (
+            <Hint label={tSharing('shareRequiresManage')}>
+              {/* A span, so the hint still opens over a disabled button. */}
+              <span className="inline-flex shrink-0">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="gap-1.5"
+                  disabled
+                  aria-label={tSharing('shareTitle', { label: connection.label })}
+                >
+                  <ShareNetworkIcon className="size-3.5 shrink-0" />
+                  {tI18nComplete.raw('text29887a5ff984')}
+                </Button>
+              </span>
+            </Hint>
+          )
+        ) : null}
+        <ButtonGroupSeparator className="bg-border" />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="secondary"
+              size="icon"
+              className="size-8 shrink-0"
+              aria-label={tI18nComplete('text33da220b1a34', { value0: connection.label })}
+              disabled={pending || disabled}
+            >
+              {pending ? (
+                <Loading className="size-4 shrink-0" />
+              ) : (
+                <DotsThreeIcon className="size-4" />
+              )}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-48">
+            <DropdownMenuItem onClick={() => copy(connection.connection_id)}>
+              {tI18nComplete.raw('text99775327d988')}
+            </DropdownMenuItem>
+            {mayMutate && (
+              <DropdownMenuItem onClick={onRename}>
+                {tI18nComplete.raw('text3064d79a295c')}
+              </DropdownMenuItem>
             )}
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="min-w-48">
-          <DropdownMenuItem onClick={() => copy(connection.connection_id)}>
-            {tI18nComplete.raw('text99775327d988')}
-          </DropdownMenuItem>
-          {mayMutate && (
-            <DropdownMenuItem onClick={onRename}>
-              {tI18nComplete.raw('text3064d79a295c')}
-            </DropdownMenuItem>
-          )}
-          {mayMutate && isMine && active && onStartSession && (
-            <DropdownMenuItem onClick={onStartSession}>
-              {tI18nComplete.raw('textfae237eed0c5')}
-            </DropdownMenuItem>
-          )}
-          {mayMutate && onSetCredential && (
-            <DropdownMenuItem onClick={onSetCredential}>
-              {tI18nComplete.raw('text3d6627454174')}
-            </DropdownMenuItem>
-          )}
-          {mayMutate && !connection.is_default && active && (
-            <DropdownMenuItem onClick={onSetDefault}>
-              {tI18nComplete.raw('texta92f66fd3d83')}
-              {isProjectAuthorization ? ` ${tI18nComplete.raw('text801a345cd406')}` : ''}
-            </DropdownMenuItem>
-          )}
-          {mayMutate && (
-            <DropdownMenuItem onClick={onDisconnect}>
-              {tI18nComplete.raw('textacfc5be785a9')}
-            </DropdownMenuItem>
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
+            {mayMutate && isMine && active && onStartSession && (
+              <DropdownMenuItem onClick={onStartSession}>
+                {tI18nComplete.raw('textfae237eed0c5')}
+              </DropdownMenuItem>
+            )}
+            {mayMutate && onSetCredential && (
+              <DropdownMenuItem onClick={onSetCredential}>
+                {tI18nComplete.raw('text3d6627454174')}
+              </DropdownMenuItem>
+            )}
+            {mayMutate && !connection.is_default && active && (
+              <DropdownMenuItem onClick={onSetDefault}>
+                {tI18nComplete.raw('texta92f66fd3d83')}
+                {isProjectAuthorization ? ` ${tI18nComplete.raw('text801a345cd406')}` : ''}
+              </DropdownMenuItem>
+            )}
+            {mayMutate && (
+              <DropdownMenuItem onClick={onDisconnect}>
+                {tI18nComplete.raw('textacfc5be785a9')}
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </ButtonGroup>
     </li>
   );
 }
 
-const EMPTY_NEW_ACCOUNT: NewAccountDraft = {
-  label: '',
-  audience: 'private',
-  picked: { memberIds: [], groupIds: [] },
-};
-
 /**
  * Every account this connector can run as, in one list. Each card states who
- * may use it (`accountVisibility`); one "Add account" asks the name and who may
- * use the new account.
+ * may use it (`accountVisibility`); one "Add account" asks only who may use the
+ * new account.
  *
  * An account is an authorized identity on the connector, owned by the project
  * (shared) or by one member (only you), and both can coexist on the same
@@ -437,6 +457,12 @@ const EMPTY_NEW_ACCOUNT: NewAccountDraft = {
  * always the caller's own. Another member's private account is not visible
  * here and is not meant to be.
  */
+const EMPTY_NEW_ACCOUNT: NewAccountDraft = {
+  label: '',
+  audience: 'private',
+  picked: { memberIds: [], groupIds: [] },
+};
+
 export function ConnectionsList({
   projectId,
   connector,
@@ -444,19 +470,34 @@ export function ConnectionsList({
   canManageConnections,
   onChanged,
   onStartSession,
+  onSetCredential,
+  onConnect,
+  titleAddon,
+  addVariant = 'secondary',
   addRequest = 0,
+  onAddRequestHandled,
   disabled = false,
 }: {
   projectId: string;
   connector: AdminConnector;
   displayName: string;
   canManageConnections: boolean;
+  /** Sits beside the "Accounts" title (the page's ⓘ). Omitted in the modal. */
+  titleAddon?: ReactNode;
+  /** Add account's button style. The connector page makes it its primary action. */
+  addVariant?: 'default' | 'secondary';
   onChanged: () => void;
   /** Start a session bound to this exact account. Omitted where that is not offered. */
   onStartSession?: (connection: Connection) => void;
-  /** Bumped by a caller outside the list (the connector header's Connect) to
-   *  open the same Add account dialog. */
+  /** Where credential entry opens. Omitted = this list's own dialog. */
+  onSetCredential?: (target: { connectionId: string; owner: 'project' | 'me' }) => void;
+  /** Sign an unsigned account in. Omitted = no Connect on the rows. */
+  onConnect?: (connection: Connection) => void;
+  /** Bumped to open "Add account" from outside the list (a header button,
+   *  or the connector page right after Install). */
   addRequest?: number;
+  /** Called once a request has opened the dialog. */
+  onAddRequestHandled?: () => void;
   disabled?: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -464,8 +505,8 @@ export function ConnectionsList({
   const tComputers = useTranslations('computers');
   // A direct provider (openapi/http/mcp/graphql/...) has no hosted OAuth: "Add"
   // creates the account and this then opens `SetCredentialModal` for it. A
-  // managed provider (Composio/Pipedream) runs hosted OAuth through
-  // `useAddManagedAccount`.
+  // managed provider (Composio/Pipedream) runs hosted OAuth. Both go through
+  // `useAddAccount`.
   // A computer account is a paired machine: "Add" pairs one (desktop one-click,
   // or download + npx) instead of asking for a credential.
   const isComputer = connector.provider === 'computer';
@@ -473,8 +514,6 @@ export function ConnectionsList({
   const [computerOpen, setComputerOpen] = useState(false);
   const { user } = useAuth();
   const viewerId = user?.id ?? null;
-  const [addOpen, setAddOpen] = useState(false);
-  const [draft, setDraft] = useState<NewAccountDraft>(EMPTY_NEW_ACCOUNT);
   const [confirmDisconnect, setConfirmDisconnect] = useState<Connection | null>(null);
   const [renameTarget, setRenameTarget] = useState<Connection | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
@@ -510,66 +549,50 @@ export function ConnectionsList({
 
   const rows = connectorConnectionRows(connectionsQuery.data?.connections, connector.slug);
 
+  const openCredential = onSetCredential ?? setCredentialTarget;
+  // "Add account" asks the account's name and who may use it: only you,
+  // everyone in the project, or picked people and groups. The connector
+  // profile itself is always the project's.
+  const [addOpen, setAddOpen] = useState(false);
+  const [draft, setDraft] = useState<NewAccountDraft>(EMPTY_NEW_ACCOUNT);
+  const closeAdd = () => setAddOpen(false);
+  const addAccount = useAddAccount({
+    projectId,
+    connector,
+    displayName,
+    onAdded: () => {
+      closeAdd();
+      refresh();
+    },
+    onCredential: openCredential,
+  });
+  const adding = addAccount.pending;
   const openAdd = () => {
     if (isComputer) {
       setComputerOpen(true);
       return;
     }
-    setDraft(EMPTY_NEW_ACCOUNT);
+    setDraft({ ...EMPTY_NEW_ACCOUNT, label: addAccount.proposedLabel() });
     setAddOpen(true);
   };
-  const closeAdd = () => setAddOpen(false);
-  // Adjusted during render, not in an effect: each new request opens the dialog once.
-  const [seenAddRequest, setSeenAddRequest] = useState(addRequest);
+  // Adjusted during render, not in an effect: each new request opens the
+  // dialog once, including one made before this list mounted (right after
+  // Install). The caller resets it (`onAddRequestHandled`), so a remount on a
+  // tab switch does not open it again.
+  const [seenAddRequest, setSeenAddRequest] = useState(0);
   if (addRequest !== seenAddRequest) {
     setSeenAddRequest(addRequest);
-    if (addRequest > 0) openAdd();
+    if (addRequest > 0) {
+      openAdd();
+      onAddRequestHandled?.();
+    }
   }
-
-  const addManaged = useAddManagedAccount(projectId, connector.slug, accountId, () => {
-    closeAdd();
-    refresh();
-  });
-  // Direct providers: create the account, narrow it before it holds a
-  // credential (so it is never open to everyone), then collect the credential.
-  const createAccount = useMutation({
-    mutationFn: async (label: string) => {
-      if (draft.audience === 'private') {
-        return reconcileMemberConnection(projectId, { connector_alias: connector.slug, label });
-      }
-      const connection = await reconcileConnection(projectId, {
-        connector_alias: connector.slug,
-        owner_type: 'project',
-        label,
-      });
-      if (draft.audience === 'members') {
-        await grantConnectionAccess(
-          accountId ?? '',
-          projectId,
-          connection.connection_id,
-          newAccountGrantees(draft.picked),
-        );
-      }
-      return connection;
-    },
-    onSuccess: (connection) => {
-      closeAdd();
-      // A connector with no auth has no credential to enter: the account is ready.
-      if (!connector.authSecret) {
-        refresh();
-        return;
-      }
-      setCredentialTarget({
-        connectionId: connection.connection_id,
-        owner: draft.audience === 'private' ? 'me' : 'project',
-      });
-    },
-    onError: (e: Error) => {
-      // A partly written account (created, then a grant refused) is listed now.
-      refresh();
-      errorToast(e.message || tI18nComplete.raw('texta2cf78785484'));
-    },
-  });
+  const labelTaken = newAccountLabelTaken(draft, rows);
+  const canSubmitAdd =
+    !disabled && !adding && newAccountReady(draft, rows, { canManageConnections, accountId });
+  const submitAdd = () => {
+    if (canSubmitAdd) addAccount.submit(draft);
+  };
   const setDefault = useMutation({
     mutationFn: (connectionId: string) => setDefaultConnection(projectId, connectionId),
     onSuccess: () => {
@@ -617,16 +640,6 @@ export function ConnectionsList({
     rename.mutate({ connectionId: renameTarget.connection_id, label });
   };
 
-  const adding = createAccount.isPending || addManaged.isPending;
-  const labelTaken = newAccountLabelTaken(draft, rows);
-  const canSubmitAdd =
-    !disabled && !adding && newAccountReady(draft, rows, { canManageConnections, accountId });
-  const submitAdd = () => {
-    if (!canSubmitAdd) return;
-    if (isDirectProvider) createAccount.mutate(draft.label.trim());
-    // The hooks toast their own errors.
-    else void addManaged.add(draft).catch(() => undefined);
-  };
   const pendingConnectionId =
     setDefault.isPending && typeof setDefault.variables === 'string'
       ? setDefault.variables
@@ -637,10 +650,10 @@ export function ConnectionsList({
           : null;
   // Re-open the credential entry for an existing direct-provider account —
   // wired from the row menu ("Set credential") and reused right after
-  // `createAccount` creates a brand new one.
+  // `useAddAccount` creates a brand new one.
   const setCredential = isDirectProvider
     ? (connection: Connection) =>
-        setCredentialTarget({
+        openCredential({
           connectionId: connection.connection_id,
           owner: connection.owner_type === 'project' ? 'project' : 'me',
         })
@@ -663,6 +676,7 @@ export function ConnectionsList({
       onRename={() => openRename(connection)}
       onStartSession={onStartSession ? () => onStartSession(connection) : undefined}
       onSetCredential={setCredential ? () => setCredential(connection) : undefined}
+      onConnect={onConnect ? () => onConnect(connection) : undefined}
       onShare={
         accountId
           ? () => {
@@ -676,13 +690,32 @@ export function ConnectionsList({
 
   return (
     <div className="space-y-6">
-      <section className="space-y-4">
+      <section className="space-y-3">
         <div className="flex items-center justify-between gap-3">
-          <Label>{tSharing('accountsTitle')}</Label>
-          <Button size="sm" variant="secondary" onClick={openAdd} disabled={disabled}>
-            <Plus className="size-4" />
-            {tSharing('addAccount')}
-          </Button>
+          {titleAddon ? (
+            <div className="flex items-center gap-1">
+              <Label>{tSharing('accountsTitle')}</Label>
+              {titleAddon}
+            </div>
+          ) : (
+            <Label>{tSharing('accountsTitle')}</Label>
+          )}
+          {isComputer ? (
+            <Button
+              size="sm"
+              variant={addVariant}
+              onClick={() => setComputerOpen(true)}
+              disabled={disabled}
+            >
+              <Plus className="size-4" />
+              {tSharing('addAccount')}
+            </Button>
+          ) : (
+            <Button size="sm" variant={addVariant} onClick={openAdd} disabled={disabled}>
+              <Plus className="size-4" />
+              {tSharing('addAccount')}
+            </Button>
+          )}
         </div>
         {connectionsQuery.isLoading ? (
           <div className="space-y-2">
@@ -697,7 +730,9 @@ export function ConnectionsList({
             description={tSharing('noAccountsDescription', { connector: displayName })}
           />
         ) : (
-          <ul className="space-y-2">{rows.map(renderRow)}</ul>
+          <ul className="bg-popover divide-border divide-y rounded-md border">
+            {rows.map(renderRow)}
+          </ul>
         )}
       </section>
 
@@ -869,7 +904,7 @@ export function ConnectionsList({
         />
       ) : null}
 
-      {isDirectProvider ? (
+      {isDirectProvider && !onSetCredential ? (
         <SetCredentialModal
           projectId={projectId}
           connector={credentialTarget ? connector : null}
@@ -3350,15 +3385,19 @@ export function SetCredentialModal({
   open,
   onOpenChange,
   onSaved,
+  shell = 'modal',
 }: {
   projectId: string;
   connector: AdminConnector | null;
   connectionId: string | null;
   /** Which owner this credential is being set for. */
   owner: 'project' | 'me';
+
   open: boolean;
   onOpenChange: (o: boolean) => void;
   onSaved: () => void;
+  /** `'split'` renders a `SplitSheetContent`; the caller's `<SplitSheet>` owns `open`. */
+  shell?: 'modal' | 'split';
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   /**
@@ -3541,21 +3580,16 @@ export function SetCredentialModal({
     mutationFn: async () => {
       if (!discovery) throw new Error('Discovery has not completed');
       const activeConnectionId = discoveryQuery.data?.connectionId ?? (await resolveConnectionId());
-      await registerConnectionOAuth2Client(
-        projectId,
-        activeConnectionId,
-        buildClientRegistrationInput(discovery),
-      );
       const redirect = new URL(window.location.href);
       redirect.searchParams.delete('oauth2');
       redirect.searchParams.delete('oauth2_error');
-      const result = await startConnectionOAuth2Authorization(projectId, activeConnectionId, {
-        ...(discovery.scopes.length ? { scopes: discovery.scopes } : {}),
-        success_redirect_uri: redirect.toString(),
-        error_redirect_uri: redirect.toString(),
-      });
-      window.location.assign(result.authorization_url);
-      return result;
+      const authorizationUrl = await startOAuth2SignIn(
+        projectId,
+        activeConnectionId,
+        discovery,
+        redirect.toString(),
+      );
+      window.location.assign(authorizationUrl);
     },
     onError: (err: Error) =>
       errorToast(err.message || tI18nHardcoded.raw('i18nComplete.text46c9f3b7520f')),
@@ -3632,279 +3666,274 @@ export function SetCredentialModal({
     onError: (err: Error) =>
       errorToast(err.message || tI18nHardcoded.raw('i18nComplete.text2c07997249ab')),
   });
-  return (
-    <Modal
-      open={open}
-      onOpenChange={(o) => {
-        if (save.isPending) return;
-        if (!o) {
-          setManualSetup(false);
-          setCredentialTypeChoice(null);
-        }
-        onOpenChange(o);
-      }}
+  const handleOpenChange = (o: boolean) => {
+    if (save.isPending) return;
+    if (!o) {
+      setManualSetup(false);
+      setCredentialTypeChoice(null);
+    }
+    onOpenChange(o);
+  };
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (
+      (credentialType === 'static' && staticValid) ||
+      (credentialType === 'oauth2' && oauth2Valid)
+    ) {
+      save.mutate();
+    }
+  };
+  const title = `${tI18nHardcoded.raw(
+    'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextSetCredential5e9704a8',
+  )} ${connector ? connectorDisplayName(connector) : ''}`;
+  const description = tI18nHardcoded.raw('i18nComplete.text8e5a984b8a84');
+  const fields = (
+    <Tabs
+      value={credentialType}
+      onValueChange={(next) => setCredentialTypeChoice(next as 'static' | 'oauth2')}
+      className="gap-4"
     >
+      <TabsList>
+        <TabsTrigger value="static">
+          {tI18nHardcoded.raw('i18nComplete.text8f0b0d462a16')}
+        </TabsTrigger>
+        <TabsTrigger value="oauth2">
+          {tI18nHardcoded.raw('i18nComplete.textaebabad39063')}
+        </TabsTrigger>
+      </TabsList>
+      <TabsContent value="static">
+        <Field>
+          <FieldLabel htmlFor="connector-static-credential">
+            {objectCredential ? tI18nHardcoded.raw('i18nComplete.textb8ce566177f1') : 'Value'}
+          </FieldLabel>
+          {objectCredential ? (
+            <Textarea
+              id="connector-static-credential"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder={credentialExample}
+              className="min-h-28 font-mono text-xs"
+              autoFocus
+            />
+          ) : (
+            <Input
+              id="connector-static-credential"
+              type="password"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder={credentialExample}
+              className="font-mono"
+              autoFocus
+            />
+          )}
+          {objectCredential && (
+            <FieldDescription>
+              {tI18nHardcoded.raw('i18nComplete.textfdf7bc860f55')} {requestAuth}{' '}
+              {tI18nHardcoded.raw('i18nComplete.text41a01f64505d')}
+            </FieldDescription>
+          )}
+        </Field>
+      </TabsContent>
+      <TabsContent value="oauth2" className="space-y-4">
+        {discoveryPending ? (
+          <InfoBanner tone="neutral" title={tI18nHardcoded.raw('i18nComplete.text1ead5326bbb8')}>
+            {tI18nHardcoded.raw('i18nComplete.textc9b1c409642d')}
+          </InfoBanner>
+        ) : plan.kind === 'no_authorization' ? (
+          <InfoBanner tone="neutral" title={tI18nHardcoded.raw('i18nComplete.text24f46f717cfa')}>
+            {tI18nHardcoded.raw('i18nComplete.text93bc06df8dd8')}
+          </InfoBanner>
+        ) : plan.kind === 'register' && !manualSetup ? (
+          <div className="space-y-3">
+            <InfoBanner tone="neutral" title={tI18nHardcoded.raw('i18nComplete.text477d50f7ddbf')}>
+              {tI18nHardcoded.raw('i18nComplete.text07fdd059f8a1')}
+              {plan.scopes.length
+                ? tI18nHardcoded('i18nComplete.text1d42883b00c1', {
+                    value0: plan.scopes.join(', '),
+                  })
+                : ''}
+            </InfoBanner>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                className="gap-1.5"
+                disabled={autoConnect.isPending}
+                onClick={() => autoConnect.mutate()}
+              >
+                {autoConnect.isPending && <Loading className="size-4 shrink-0" />}
+                {plan.label}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline-ghost"
+                onClick={() => setManualSetup(true)}
+              >
+                {tI18nHardcoded.raw('i18nComplete.texte67a6ef2363e')}
+              </Button>
+            </div>
+          </div>
+        ) : plan.kind === 'client_id_required' ? (
+          <InfoBanner tone="neutral" title={tI18nHardcoded.raw('i18nComplete.textcb7c06207756')}>
+            {tI18nHardcoded.raw('i18nComplete.text0dbb23e7febb')}
+          </InfoBanner>
+        ) : plan.kind === 'manual' && !manualSetup ? (
+          <InfoBanner
+            tone="neutral"
+            title={tI18nHardcoded.raw('i18nComplete.texteb99bb9a22f3')}
+            action={
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => setManualSetup(true)}
+              >
+                {tI18nHardcoded.raw('i18nComplete.textb1d877ab2f51')}
+              </Button>
+            }
+          >
+            {plan.reason}
+          </InfoBanner>
+        ) : (
+          <InfoBanner tone="info">{tI18nHardcoded.raw('i18nComplete.text67dc9c4395f1')}</InfoBanner>
+        )}
+        {discoveryError && (
+          <InfoBanner tone="neutral" title={tI18nHardcoded.raw('i18nComplete.textdc258e9a953b')}>
+            {discoveryError}
+          </InfoBanner>
+        )}
+        {showManualOAuth2Fields && (
+          <>
+            <Field>
+              <FieldLabel htmlFor="connector-oauth2-grant">
+                {tI18nHardcoded.raw('i18nComplete.text78b7d0379d5e')}
+              </FieldLabel>
+              <Select
+                value={application.grant}
+                onValueChange={(grant) => {
+                  setDevice(null);
+                  setApplication({
+                    ...application,
+                    grant: grant as OAuth2ApplicationForm['grant'],
+                  });
+                }}
+              >
+                <SelectTrigger id="connector-oauth2-grant">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="client_credentials">
+                    {tI18nHardcoded.raw('i18nComplete.text23c446ef2187')}
+                  </SelectItem>
+                  <SelectItem value="authorization_code">
+                    {tI18nHardcoded.raw('i18nComplete.textac806359529b')}
+                  </SelectItem>
+                  <SelectItem value="device_authorization">
+                    {tI18nHardcoded.raw('i18nComplete.text197da3e17a78')}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+            {application.grant === 'client_credentials' ? (
+              <OAuth2CredentialFields
+                value={oauth2}
+                onChange={setOauth2}
+                idPrefix="connector-oauth2"
+              />
+            ) : (
+              <OAuth2ApplicationFields
+                value={effectiveApplication}
+                onChange={setApplication}
+                idPrefix="connector-oauth2-application"
+              />
+            )}
+          </>
+        )}
+        {device && (
+          <InfoBanner
+            tone="neutral"
+            title={tI18nHardcoded('i18nComplete.textbfd271fe6ead', {
+              value0: device.user_code,
+            })}
+            action={
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  window.open(
+                    device.verification_uri_complete ?? device.verification_uri,
+                    '_blank',
+                    'noopener,noreferrer',
+                  )
+                }
+              >
+                <ExternalLink className="size-4" />
+                {tI18nHardcoded.raw('i18nComplete.text97fc3d60fab5')}
+              </Button>
+            }
+          >
+            {tI18nHardcoded.raw('i18nComplete.text9c67cc26222a')} {device.interval_seconds}{' '}
+            {tI18nHardcoded.raw('i18nComplete.text4616b90a6d94')}{' '}
+            {new Date(device.expires_at).toLocaleTimeString()}.
+          </InfoBanner>
+        )}
+      </TabsContent>
+    </Tabs>
+  );
+  const actions = (
+    <>
+      <Button
+        type="button"
+        variant="outline-ghost"
+        size="sm"
+        onClick={() => handleOpenChange(false)}
+        disabled={save.isPending}
+      >
+        {tI18nHardcoded.raw('i18nComplete.text19766ed6ccb2')}
+      </Button>
+      <Button
+        type="submit"
+        size="sm"
+        disabled={save.isPending || (credentialType === 'static' ? !staticValid : !oauth2Valid)}
+        className="gap-1.5"
+      >
+        {save.isPending && <Loading className="size-4 shrink-0" />}
+        {credentialType === 'oauth2' && application.grant === 'authorization_code'
+          ? tI18nHardcoded.raw('i18nComplete.text0c814b60fca5')
+          : credentialType === 'oauth2' && application.grant === 'device_authorization'
+            ? tI18nHardcoded.raw('i18nComplete.text55e970c35216')
+            : 'Save'}
+      </Button>
+    </>
+  );
+
+  if (shell === 'split') {
+    return (
+      <SplitSheetContent>
+        <SplitSheetHeader>
+          <SplitSheetTitle>{title}</SplitSheetTitle>
+          <SplitSheetDescription>{description}</SplitSheetDescription>
+        </SplitSheetHeader>
+        <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+          <SplitSheetBody>{fields}</SplitSheetBody>
+          <SplitSheetFooter className="justify-between">{actions}</SplitSheetFooter>
+        </form>
+      </SplitSheetContent>
+    );
+  }
+
+  return (
+    <Modal open={open} onOpenChange={handleOpenChange}>
       <ModalContent className="lg:max-w-3xl">
         <ModalHeader>
-          <ModalTitle>
-            {tI18nHardcoded.raw(
-              'autoComponentsProjectsCustomizeSectionsConnectorsViewJsxTextSetCredential5e9704a8',
-            )}{' '}
-            {connector ? connectorDisplayName(connector) : ''}
-          </ModalTitle>
-          <ModalDescription>{tI18nHardcoded.raw('i18nComplete.text8e5a984b8a84')}</ModalDescription>
+          <ModalTitle>{title}</ModalTitle>
+          <ModalDescription>{description}</ModalDescription>
         </ModalHeader>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (
-              (credentialType === 'static' && staticValid) ||
-              (credentialType === 'oauth2' && oauth2Valid)
-            ) {
-              save.mutate();
-            }
-          }}
-        >
-          <ModalBody>
-            <Tabs
-              value={credentialType}
-              onValueChange={(next) => setCredentialTypeChoice(next as 'static' | 'oauth2')}
-              className="gap-4"
-            >
-              <TabsList>
-                <TabsTrigger value="static">
-                  {tI18nHardcoded.raw('i18nComplete.text8f0b0d462a16')}
-                </TabsTrigger>
-                <TabsTrigger value="oauth2">
-                  {tI18nHardcoded.raw('i18nComplete.textaebabad39063')}
-                </TabsTrigger>
-              </TabsList>
-              <TabsContent value="static">
-                <Field>
-                  <FieldLabel htmlFor="connector-static-credential">
-                    {objectCredential
-                      ? tI18nHardcoded.raw('i18nComplete.textb8ce566177f1')
-                      : 'Value'}
-                  </FieldLabel>
-                  {objectCredential ? (
-                    <Textarea
-                      id="connector-static-credential"
-                      value={value}
-                      onChange={(e) => setValue(e.target.value)}
-                      placeholder={credentialExample}
-                      className="min-h-28 font-mono text-xs"
-                      autoFocus
-                    />
-                  ) : (
-                    <Input
-                      id="connector-static-credential"
-                      type="password"
-                      value={value}
-                      onChange={(e) => setValue(e.target.value)}
-                      placeholder={credentialExample}
-                      className="font-mono"
-                      autoFocus
-                    />
-                  )}
-                  {objectCredential && (
-                    <FieldDescription>
-                      {tI18nHardcoded.raw('i18nComplete.textfdf7bc860f55')} {requestAuth}{' '}
-                      {tI18nHardcoded.raw('i18nComplete.text41a01f64505d')}
-                    </FieldDescription>
-                  )}
-                </Field>
-              </TabsContent>
-              <TabsContent value="oauth2" className="space-y-4">
-                {discoveryPending ? (
-                  <InfoBanner
-                    tone="neutral"
-                    title={tI18nHardcoded.raw('i18nComplete.text1ead5326bbb8')}
-                  >
-                    {tI18nHardcoded.raw('i18nComplete.textc9b1c409642d')}
-                  </InfoBanner>
-                ) : plan.kind === 'no_authorization' ? (
-                  <InfoBanner
-                    tone="neutral"
-                    title={tI18nHardcoded.raw('i18nComplete.text24f46f717cfa')}
-                  >
-                    {tI18nHardcoded.raw('i18nComplete.text93bc06df8dd8')}
-                  </InfoBanner>
-                ) : plan.kind === 'register' && !manualSetup ? (
-                  <div className="space-y-3">
-                    <InfoBanner
-                      tone="neutral"
-                      title={tI18nHardcoded.raw('i18nComplete.text477d50f7ddbf')}
-                    >
-                      {tI18nHardcoded.raw('i18nComplete.text07fdd059f8a1')}
-                      {plan.scopes.length
-                        ? tI18nHardcoded('i18nComplete.text1d42883b00c1', {
-                            value0: plan.scopes.join(', '),
-                          })
-                        : ''}
-                    </InfoBanner>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="gap-1.5"
-                        disabled={autoConnect.isPending}
-                        onClick={() => autoConnect.mutate()}
-                      >
-                        {autoConnect.isPending && <Loading className="size-4 shrink-0" />}
-                        {plan.label}
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline-ghost"
-                        onClick={() => setManualSetup(true)}
-                      >
-                        {tI18nHardcoded.raw('i18nComplete.texte67a6ef2363e')}
-                      </Button>
-                    </div>
-                  </div>
-                ) : plan.kind === 'client_id_required' ? (
-                  <InfoBanner
-                    tone="neutral"
-                    title={tI18nHardcoded.raw('i18nComplete.textcb7c06207756')}
-                  >
-                    {tI18nHardcoded.raw('i18nComplete.text0dbb23e7febb')}
-                  </InfoBanner>
-                ) : plan.kind === 'manual' && !manualSetup ? (
-                  <InfoBanner
-                    tone="neutral"
-                    title={tI18nHardcoded.raw('i18nComplete.texteb99bb9a22f3')}
-                    action={
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setManualSetup(true)}
-                      >
-                        {tI18nHardcoded.raw('i18nComplete.textb1d877ab2f51')}
-                      </Button>
-                    }
-                  >
-                    {plan.reason}
-                  </InfoBanner>
-                ) : (
-                  <InfoBanner tone="info">
-                    {tI18nHardcoded.raw('i18nComplete.text67dc9c4395f1')}
-                  </InfoBanner>
-                )}
-                {discoveryError && (
-                  <InfoBanner
-                    tone="neutral"
-                    title={tI18nHardcoded.raw('i18nComplete.textdc258e9a953b')}
-                  >
-                    {discoveryError}
-                  </InfoBanner>
-                )}
-                {showManualOAuth2Fields && (
-                  <>
-                    <Field>
-                      <FieldLabel htmlFor="connector-oauth2-grant">
-                        {tI18nHardcoded.raw('i18nComplete.text78b7d0379d5e')}
-                      </FieldLabel>
-                      <Select
-                        value={application.grant}
-                        onValueChange={(grant) => {
-                          setDevice(null);
-                          setApplication({
-                            ...application,
-                            grant: grant as OAuth2ApplicationForm['grant'],
-                          });
-                        }}
-                      >
-                        <SelectTrigger id="connector-oauth2-grant">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="client_credentials">
-                            {tI18nHardcoded.raw('i18nComplete.text23c446ef2187')}
-                          </SelectItem>
-                          <SelectItem value="authorization_code">
-                            {tI18nHardcoded.raw('i18nComplete.textac806359529b')}
-                          </SelectItem>
-                          <SelectItem value="device_authorization">
-                            {tI18nHardcoded.raw('i18nComplete.text197da3e17a78')}
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                    {application.grant === 'client_credentials' ? (
-                      <OAuth2CredentialFields
-                        value={oauth2}
-                        onChange={setOauth2}
-                        idPrefix="connector-oauth2"
-                      />
-                    ) : (
-                      <OAuth2ApplicationFields
-                        value={effectiveApplication}
-                        onChange={setApplication}
-                        idPrefix="connector-oauth2-application"
-                      />
-                    )}
-                  </>
-                )}
-                {device && (
-                  <InfoBanner
-                    tone="neutral"
-                    title={tI18nHardcoded('i18nComplete.textbfd271fe6ead', {
-                      value0: device.user_code,
-                    })}
-                    action={
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() =>
-                          window.open(
-                            device.verification_uri_complete ?? device.verification_uri,
-                            '_blank',
-                            'noopener,noreferrer',
-                          )
-                        }
-                      >
-                        <ExternalLink className="size-4" />
-                        {tI18nHardcoded.raw('i18nComplete.text97fc3d60fab5')}
-                      </Button>
-                    }
-                  >
-                    {tI18nHardcoded.raw('i18nComplete.text9c67cc26222a')} {device.interval_seconds}{' '}
-                    {tI18nHardcoded.raw('i18nComplete.text4616b90a6d94')}{' '}
-                    {new Date(device.expires_at).toLocaleTimeString()}.
-                  </InfoBanner>
-                )}
-              </TabsContent>
-            </Tabs>
-          </ModalBody>
-          <ModalFooter className="sm:justify-between">
-            <Button
-              type="button"
-              variant="outline-ghost"
-              size="sm"
-              onClick={() => onOpenChange(false)}
-              disabled={save.isPending}
-            >
-              {tI18nHardcoded.raw('i18nComplete.text19766ed6ccb2')}
-            </Button>
-            <Button
-              type="submit"
-              size="sm"
-              disabled={
-                save.isPending || (credentialType === 'static' ? !staticValid : !oauth2Valid)
-              }
-              className="gap-1.5"
-            >
-              {save.isPending && <Loading className="size-4 shrink-0" />}
-              {credentialType === 'oauth2' && application.grant === 'authorization_code'
-                ? tI18nHardcoded.raw('i18nComplete.text0c814b60fca5')
-                : credentialType === 'oauth2' && application.grant === 'device_authorization'
-                  ? tI18nHardcoded.raw('i18nComplete.text55e970c35216')
-                  : 'Save'}
-            </Button>
-          </ModalFooter>
+        <form onSubmit={handleSubmit}>
+          <ModalBody>{fields}</ModalBody>
+          <ModalFooter className="sm:justify-between">{actions}</ModalFooter>
         </form>
       </ModalContent>
     </Modal>

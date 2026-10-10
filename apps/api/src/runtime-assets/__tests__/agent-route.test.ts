@@ -104,6 +104,24 @@ describe('GET /v1/runtime-assets/agent', () => {
     expect(new Bun.CryptoHasher('sha256').update(body).digest('hex')).toBe(AGENT_SHA);
   });
 
+  test('a binary rebuilt under a running API is served with the digest of the bytes on the wire', async () => {
+    const path = await stageAgent(AGENT_BYTES);
+    process.env[AGENT_BIN_ENV] = path;
+    _resetRuntimeAssetsCache();
+    const app = mountedApp();
+    const headers = { Authorization: 'Bearer kortix_pat_test' };
+    await app.request('/v1/runtime-assets/manifest', { headers });
+
+    await writeFile(path, 'rebuilt-kortix-agent-elf-with-new-code');
+    const manifest = (await (await app.request('/v1/runtime-assets/manifest', { headers })).json()) as {
+      components: { agent: { sha256: string } };
+    };
+    const body = await (await app.request('/v1/runtime-assets/agent', { headers })).arrayBuffer();
+    // A box verifies the download against the manifest digest; any gap between
+    // the two fails every box's convergence until the API restarts.
+    expect(new Bun.CryptoHasher('sha256').update(body).digest('hex')).toBe(manifest.components.agent.sha256);
+  });
+
   test('honours If-None-Match with a 304 and no body', async () => {
     process.env[AGENT_BIN_ENV] = await stageAgent(AGENT_BYTES);
     _resetRuntimeAssetsCache();

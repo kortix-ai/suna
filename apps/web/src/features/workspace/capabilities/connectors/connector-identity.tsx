@@ -2,17 +2,13 @@
 
 import type { AdminConnector } from '@kortix/sdk';
 import {
-  CubeIcon as Boxes,
   CheckIcon,
-  GlobeIcon as Globe,
-  type Icon as LucideIcon,
   ChatIcon as MessageSquare,
   MonitorIcon as Monitor,
-  PlugIcon as Plug,
-  LightningIcon as Zap,
 } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import Image from 'next/image';
+import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
@@ -30,21 +26,8 @@ import { cn } from '@/lib/utils';
  * two small components from there put that entire graph in this route's client
  * chunk — an ES module is all-or-nothing to the bundler.
  *
- * `PROVIDER_ICON` and the tile-size helper came along because nothing else in
- * the old file used them.
+ * The tile-size helper came along because nothing else in the old file used it.
  */
-
-const PROVIDER_ICON: Record<AdminConnector['provider'], LucideIcon> = {
-  composio: Plug,
-  pipedream: Zap,
-  mcp: Boxes,
-  openapi: Globe,
-  postman: Globe,
-  graphql: Globe,
-  http: Globe,
-  channel: MessageSquare,
-  computer: Monitor,
-};
 
 function appIconTileClass(size: 'sm' | 'lg'): string {
   return size === 'lg' ? 'size-10 rounded-md' : 'size-6 rounded-sm';
@@ -57,15 +40,17 @@ export function ConnectorAppIcon({
   connector: AdminConnector;
   size?: 'sm' | 'lg';
 }) {
+  const [broken, setBroken] = useState(false);
   const imgSrc = connector.iconUrl ?? null;
 
-  if (imgSrc) {
+  if (imgSrc && !broken) {
     return (
       <span
+        // The catalogue grid card's logo (`connector-browse.tsx`): the bare
+        // image, no tile, so an app looks the same on every connector surface.
         className={cn(
-          'border-border/60 bg-card flex shrink-0 items-center justify-center overflow-hidden border',
-          'relative',
-          appIconTileClass(size),
+          'relative flex shrink-0 items-center justify-center overflow-hidden rounded-sm',
+          size === 'lg' ? 'size-9' : 'size-6',
         )}
       >
         <Image
@@ -73,20 +58,23 @@ export function ConnectorAppIcon({
           alt=""
           referrerPolicy="no-referrer"
           fill
-          sizes={size === 'lg' ? '40px' : '28px'}
+          sizes={size === 'lg' ? '36px' : '24px'}
           className="object-contain"
           unoptimized
+          onError={() => setBroken(true)}
         />
       </span>
     );
   }
-  return (
-    <EntityAvatar
-      icon={PROVIDER_ICON[connector.provider] ?? Plug}
-      size={size}
-      label={connector.name}
-    />
-  );
+  // No logo: a channel or a computer keeps its own glyph, because that glyph
+  // says what it is. An app shows its first letter. A plug says only "some app".
+  const glyph =
+    connector.provider === 'channel'
+      ? MessageSquare
+      : connector.provider === 'computer'
+        ? Monitor
+        : undefined;
+  return <EntityAvatar icon={glyph} size={size} label={connector.name} />;
 }
 
 /**
@@ -113,7 +101,14 @@ export function ConnectorConnectedMark({ className }: { className?: string } = {
  */
 export function ConnectorStatusBadge({ connector }: { connector: AdminConnector }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  const tPages = useTranslations('connectorPages');
   const status = connectorSetupStatus(connector);
+  if (status === 'pending')
+    return (
+      <Badge variant="info" size="sm">
+        {tPages('statusPending')}
+      </Badge>
+    );
   if (status === 'error')
     return (
       <Badge variant="destructive" size="sm">
