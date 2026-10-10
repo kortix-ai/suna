@@ -26,6 +26,30 @@ export function formatFireTime(iso: string, locale: string, now: number): string
 }
 
 /** The soonest scheduled fire among active reminders, in ms since epoch, or null. */
+/**
+ * The fire to show when the calendar's range has none: the soonest upcoming
+ * one, else the latest that happened, else a paused reminder's next slot.
+ * Null when no reminder has a time at all.
+ */
+export function nearestFire(
+  reminders: readonly Pick<SessionReminder, 'state' | 'next_fire_at' | 'last_fired_at' | 'at'>[],
+): number | null {
+  const soonest = soonestFire(reminders);
+  if (soonest !== null) return soonest;
+  let latest: number | null = null;
+  let paused: number | null = null;
+  for (const reminder of reminders) {
+    const last = reminder.last_fired_at ? Date.parse(reminder.last_fired_at) : NaN;
+    if (Number.isFinite(last) && (latest === null || last > latest)) latest = last;
+    // A paused one-shot keeps its time in `at`; `next_fire_at` is cleared.
+    const slot = reminder.next_fire_at ?? reminder.at;
+    const next = slot ? Date.parse(slot) : NaN;
+    if (reminder.state === 'paused' && Number.isFinite(next) && (paused === null || next < paused))
+      paused = next;
+  }
+  return latest ?? paused;
+}
+
 export function soonestFire(
   reminders: readonly Pick<SessionReminder, 'state' | 'next_fire_at'>[],
 ): number | null {
@@ -48,6 +72,7 @@ export function scheduleLabel(
   reminder: Pick<SessionReminder, 'cron' | 'timezone' | 'every'>,
   t: (key: 'cron' | 'every' | 'once', values?: Record<string, string>) => string,
 ): string {
-  if (reminder.cron) return t('cron', { expression: [reminder.cron, reminder.timezone ?? ''].join(' ').trim() });
+  if (reminder.cron)
+    return t('cron', { expression: [reminder.cron, reminder.timezone ?? ''].join(' ').trim() });
   return reminder.every ? t('every', { period: reminder.every }) : t('once');
 }

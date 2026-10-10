@@ -59,7 +59,8 @@ test.describe('36 — Reminders UI', () => {
       });
       await installBrowserSessionDirect(page, session, '/favicon.png', authOptions);
       await selectAccountForUi(page, accountId);
-      await page.goto(`/projects/${projectId}/reminders`, { waitUntil: 'domcontentloaded' });
+      // The page opens on Calendar; the List is `?view=list`.
+      await page.goto(`/projects/${projectId}/reminders?view=list`, { waitUntil: 'domcontentloaded' });
       await dismissOnboarding(page);
       await expect(page.getByRole('heading', { name: 'Reminders', exact: true })).toBeVisible();
       await expect(page.getByText('Turn on Reminders to let agents and people schedule check-ins')).toBeVisible();
@@ -137,7 +138,7 @@ test.describe('36 — Reminders UI', () => {
       await page.getByRole('link', { name: 'Manage reminders' }).click();
       await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/reminders\\?session=${sessionId}`));
       await expect(page.getByTestId('reminder-session-filter')).toContainText('Vendor follow-up');
-      await expect(page.getByRole('button', { name: 'Show all sessions' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Clear session filter' })).toBeVisible();
 
       expect(pageErrors).toEqual([]);
     } finally {

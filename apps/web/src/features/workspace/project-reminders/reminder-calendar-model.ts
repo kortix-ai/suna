@@ -50,25 +50,27 @@ export const daysBetween = (from: Date, to: Date) =>
   Math.round((startOfDay(to).getTime() - startOfDay(from).getTime()) / 86_400_000);
 
 /**
- * Days rendered either side of the origin: 12 weeks (Month) or 28 days (Week).
+ * Days rendered either side of the origin: 12 weeks (Month), 28 days (Week)
+ * or 14 days (Day).
  * Every rendered day costs mount time, so the window is a few screens each way
  * and moves with the scroll instead of covering a year.
  */
-const WINDOW: Record<RemindersRange, number> = { month: 12 * 7, week: 28 };
+const WINDOW: Record<RemindersRange, number> = { month: 12 * 7, week: 28, day: 14 };
 /** Once the scroll settles this close to an edge, in days, the window re-centres. */
-const EDGE: Record<RemindersRange, number> = { month: 5 * 7, week: 12 };
+const EDGE: Record<RemindersRange, number> = { month: 5 * 7, week: 12, day: 6 };
 
-/** The row (Month: a week, from its Monday) or column (Week: a day) at the top-left for `date`. */
+/** The row (Month: a week, from its Monday) or column (Week, Day: a day) at the top-left for `date`. */
 export const topOf = (date: Date, range: RemindersRange) =>
   range === 'month' ? startOfWeek(date) : startOfDay(date);
 
 /**
  * The scrollable window around `origin`: Monday-first weeks for Month
- * (25 rows), consecutive days for Week (63 columns, so the last 7 fit).
+ * (25 rows), consecutive days for Week (63 columns, so the last 7 fit) and
+ * Day (29 columns, one in view).
  */
 export function windowDays(origin: Date, range: RemindersRange): Date[] {
   const start = addDays(topOf(origin, range), -WINDOW[range]);
-  const length = range === 'month' ? 2 * WINDOW.month + 7 : 2 * WINDOW.week + 7;
+  const length = 2 * WINDOW[range] + (range === 'day' ? 1 : 7);
   return Array.from({ length }, (_, i) => addDays(start, i));
 }
 
@@ -80,6 +82,57 @@ export const nearEdge = (top: Date, origin: Date, range: RemindersRange) =>
 export function focusMonth(date: Date): Date {
   const thursday = addDays(startOfWeek(date), 3);
   return new Date(thursday.getFullYear(), thursday.getMonth(), 1);
+}
+
+/**
+ * The day the previous (-1) or next (+1) arrow goes to from `top`: a day
+ * (Day), 7 days (Week), or the next month's first week (Month). That week
+ * holds the 4th, so its Thursday, and with it the title, is in that month.
+ */
+export function stepDate(top: Date, range: RemindersRange, direction: 1 | -1): Date {
+  if (range === 'day') return addDays(top, direction);
+  if (range === 'week') return addDays(top, 7 * direction);
+  const month = focusMonth(top);
+  return new Date(month.getFullYear(), month.getMonth() + direction, 4);
+}
+
+/** The days on screen for a top day: one (Day), seven from it (Week), or its whole month (Month). */
+export function visibleSpan(top: Date, range: RemindersRange): { from: Date; to: Date } {
+  if (range === 'month') {
+    const month = focusMonth(top);
+    return { from: month, to: new Date(month.getFullYear(), month.getMonth() + 1, 1) };
+  }
+  const from = startOfDay(top);
+  return { from, to: addDays(from, range === 'day' ? 1 : 7) };
+}
+
+/**
+ * The model day with fires closest to `span`, for a span with none. Ties go
+ * to the later day: the next fire is the likelier thing to look for. Null
+ * when the model has no fire at all.
+ */
+export function nearestFireDay(
+  days: readonly CalendarDay[],
+  span: { from: Date; to: Date },
+): Date | null {
+  let best: Date | null = null;
+  let bestDistance = Infinity;
+  for (const { date, total } of days) {
+    if (total === 0) continue;
+    const before = daysBetween(date, span.from);
+    const distance = before > 0 ? before : Math.max(0, daysBetween(span.to, date) + 1);
+    if (distance < bestDistance || (distance === bestDistance && best !== null && date > best)) {
+      best = date;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
+/** A day's earliest fire, chips and frequent groups alike; null on a day with none. */
+export function firstFireAt(day: CalendarDay): number | null {
+  const times = [...day.chips.map((fire) => fire.at), ...day.groups.map((group) => group.fire.at)];
+  return times.length > 0 ? Math.min(...times) : null;
 }
 
 const formatters = new Map<string, Intl.DateTimeFormat>();
@@ -96,8 +149,19 @@ export function dateFormat(locale: string, options: Intl.DateTimeFormatOptions) 
   return format;
 }
 
-/** "October 2026" (Month: the top week's month) or "8 – 14 October 2026" (Week: 7 days from the anchor). */
+/**
+ * "October 2026" (Month: the top week's month), "8 – 14 October 2026" (Week:
+ * 7 days from the anchor) or "Wednesday, 14 October 2026" (Day).
+ */
 export function rangeLabel(anchor: Date, range: RemindersRange, locale: string): string {
+  if (range === 'day') {
+    return dateFormat(locale, {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    }).format(anchor);
+  }
   if (range === 'month') {
     return dateFormat(locale, { month: 'long', year: 'numeric' }).format(focusMonth(anchor));
   }

@@ -2,6 +2,7 @@
 
 import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import Hint from '@/components/ui/hint';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import Loading from '@/components/ui/loading';
@@ -12,7 +13,7 @@ import { cn } from '@/lib/utils';
 import type { ProjectReminder } from '@kortix/sdk';
 import { AlarmIcon, PauseIcon, PlayIcon, TrashIcon } from '@phosphor-icons/react';
 import { useRouter } from 'next/navigation';
-import { memo } from 'react';
+import { memo, useState, type ReactNode } from 'react';
 import { formatFireTime, reminderTitle, scheduleLabel } from './reminder-format';
 
 /** Status tile per the tinted-icon pattern: yellow = pending, green = done, red = stopped by an error. */
@@ -24,8 +25,8 @@ export function tone(reminder: ProjectReminder) {
   return { tile: 'bg-muted', icon: 'text-muted-foreground' };
 }
 
-/** Which of the row's own actions is in flight, if any. */
-export type RowPending = 'toggle' | 'remove' | null;
+/** Which of the row's own actions is in flight, if any; `bulk` is a selection batch it is part of. */
+export type RowPending = 'toggle' | 'remove' | 'bulk' | null;
 
 /**
  * While a mutation runs, actions are locked with `aria-disabled`, not
@@ -34,6 +35,25 @@ export type RowPending = 'toggle' | 'remove' | null;
  */
 const LOCKED = 'aria-disabled:cursor-default aria-disabled:opacity-50';
 const ACTIONS = 'flex items-center justify-end gap-1';
+
+/**
+ * A row's action tooltip, mounted once the pointer has entered the row. A
+ * `Hint` is a Radix tooltip root; two per row across ~190 rows were ~40% of
+ * the List's mount (measured: switching to List took 515–598 ms with them,
+ * 281–431 ms without, dev build). The button keeps its `aria-label` either
+ * way. Not armed on focus: wrapping a focused button would remount it.
+ */
+function RowHint({
+  armed,
+  label,
+  children,
+}: {
+  armed: boolean;
+  label: string;
+  children: ReactNode;
+}) {
+  return armed ? <Hint label={label}>{children}</Hint> : children;
+}
 
 /**
  * One reminder as a table row, the Triggers table's shape: a leading status
@@ -51,6 +71,8 @@ export const ReminderRow = memo(function ReminderRow({
   now,
   pending,
   disabled,
+  selected,
+  onSelect,
   onToggle,
   onRemove,
 }: {
@@ -59,6 +81,9 @@ export const ReminderRow = memo(function ReminderRow({
   now: number;
   pending: RowPending;
   disabled: boolean;
+  selected: boolean;
+  /** The row's checkbox: `range` is a shift-press, selecting from the last pressed row. */
+  onSelect: (reminder: ProjectReminder, range: boolean) => void;
   onToggle: (reminder: ProjectReminder) => void;
   onRemove: (reminder: ProjectReminder) => void;
 }) {
@@ -80,16 +105,26 @@ export const ReminderRow = memo(function ReminderRow({
           ? t('firedAt', { time: formatFireTime(reminder.last_fired_at, locale, now) })
           : null;
   const toggleLabel = reminder.state === 'active' ? t('pause') : t('resume');
+  const [armed, setArmed] = useState(false);
 
   // The row opens the reminder's session. The title is the real link, so the
   // row is reachable by keyboard; the actions stop the row's click.
   return (
     <TableRow
       data-reminder-id={reminder.id}
+      data-state={selected ? 'selected' : undefined}
       aria-busy={pending ? true : undefined}
       className={cn('cursor-pointer', pending && 'opacity-60')}
       onClick={() => router.push(href)}
+      onPointerEnter={armed ? undefined : () => setArmed(true)}
     >
+      <TableCell className="w-0 pr-0 align-middle" onClick={(event) => event.stopPropagation()}>
+        <Checkbox
+          checked={selected}
+          aria-label={t('selectReminder', { title: reminderTitle(reminder) })}
+          onClick={(event) => onSelect(reminder, event.shiftKey)}
+        />
+      </TableCell>
       <TableCell className="max-w-[20rem] align-middle">
         <div className="flex min-w-0 items-center gap-3">
           <span
@@ -143,7 +178,7 @@ export const ReminderRow = memo(function ReminderRow({
       <TableCell className="align-middle" onClick={(e) => e.stopPropagation()}>
         <div className={ACTIONS}>
           {reminder.state !== 'done' ? (
-            <Hint label={toggleLabel}>
+            <RowHint armed={armed} label={toggleLabel}>
               <Button
                 variant="ghost"
                 size="icon"
@@ -160,9 +195,9 @@ export const ReminderRow = memo(function ReminderRow({
                   <PlayIcon className="size-4 shrink-0" />
                 )}
               </Button>
-            </Hint>
+            </RowHint>
           ) : null}
-          <Hint label={t('remove')}>
+          <RowHint armed={armed} label={t('remove')}>
             <Button
               variant="ghost"
               size="icon"
@@ -177,7 +212,7 @@ export const ReminderRow = memo(function ReminderRow({
                 <TrashIcon className="size-4 shrink-0" />
               )}
             </Button>
-          </Hint>
+          </RowHint>
         </div>
       </TableCell>
     </TableRow>
@@ -188,6 +223,9 @@ export const ReminderRow = memo(function ReminderRow({
 export function ReminderRowSkeleton() {
   return (
     <TableRow className="hover:bg-transparent">
+      <TableCell className="w-0 pr-0">
+        <Skeleton className="size-4.5 rounded-sm py-0" />
+      </TableCell>
       <TableCell>
         <div className="flex items-center gap-3">
           <Skeleton className="size-8 shrink-0 py-0" />

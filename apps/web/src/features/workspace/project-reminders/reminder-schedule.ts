@@ -22,7 +22,8 @@ export let expandSteps = 0;
  * confirmed)` until it returns true (full). There is no fire-history API, so
  * past fires are inferred: an interval reminder fires at next_fire_at ± k *
  * every_seconds, and last_fired_at is a known past fire. Cron reminders show
- * only next_fire_at: the client has no cron parser.
+ * only next_fire_at: the client has no cron parser. A paused one-shot shows
+ * at its scheduled `at`.
  */
 function walkFires(
   reminder: ProjectReminder,
@@ -61,6 +62,17 @@ function walkFires(
     }
   } else if (nextShown && visit(next)) {
     return;
+  }
+  // A paused one-shot has no next fire but keeps its scheduled time: it stays
+  // on the calendar there, so a filter or a jump to it finds it.
+  const scheduled = reminder.at ? Date.parse(reminder.at) : NaN;
+  if (
+    reminder.state === 'paused' &&
+    step <= 0 &&
+    Number.isFinite(scheduled) &&
+    scheduled !== last
+  ) {
+    if (visit(scheduled)) return;
   }
   if (Number.isFinite(last) && !(nextShown && step <= 0 && last === next)) visit(last, true);
 }

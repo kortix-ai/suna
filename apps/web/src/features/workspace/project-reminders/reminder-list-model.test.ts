@@ -1,7 +1,7 @@
 import type { ProjectReminder } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
-import { rowsForTab } from './reminder-list-model';
-import { remindersQuery } from './use-reminders-url-state';
+import { rowsForTab, selectionState, toggleSelection } from './reminder-list-model';
+import { createRemindersUrlStore, remindersQuery } from './use-reminders-url-state';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -72,14 +72,69 @@ describe('rowsForTab', () => {
   });
 });
 
+describe('selection', () => {
+  const ids = ['a', 'b', 'c', 'd', 'e'];
+  const sorted = (set: Set<string>) => [...set].sort();
+
+  test('a press toggles one row', () => {
+    const one = toggleSelection(new Set(), ids, 'b', null);
+    expect(sorted(one)).toEqual(['b']);
+    expect(sorted(toggleSelection(one, ids, 'b', 'b'))).toEqual([]);
+  });
+
+  test('a shift-press sets the range from the anchor to the pressed row, either direction', () => {
+    expect(sorted(toggleSelection(new Set(['b']), ids, 'd', 'b'))).toEqual(['b', 'c', 'd']);
+    expect(sorted(toggleSelection(new Set(['d']), ids, 'a', 'd'))).toEqual(['a', 'b', 'c', 'd']);
+    // Shift-pressing a selected row clears the range instead.
+    expect(sorted(toggleSelection(new Set(ids), ids, 'd', 'b'))).toEqual(['a', 'e']);
+  });
+
+  test('an anchor that left the list falls back to one row', () => {
+    expect(sorted(toggleSelection(new Set(), ids, 'c', 'gone'))).toEqual(['c']);
+  });
+
+  test('header state counts only the rows on screen', () => {
+    expect(selectionState(new Set(), ids)).toBe('none');
+    expect(selectionState(new Set(['a', 'gone']), ids)).toBe('some');
+    expect(selectionState(new Set([...ids, 'gone']), ids)).toBe('all');
+    expect(selectionState(new Set(), [])).toBe('none');
+  });
+});
+
 describe('remindersQuery', () => {
   test('sets, replaces and drops params; defaults leave the URL', () => {
-    expect(remindersQuery('', { view: 'calendar' })).toBe('view=calendar');
-    expect(remindersQuery('view=calendar&session=s1', { view: 'list' })).toBe('session=s1');
+    // Calendar is the default view: only List is written.
+    expect(remindersQuery('', { view: 'list' })).toBe('view=list');
+    expect(remindersQuery('view=list&session=s1', { view: 'calendar' })).toBe('session=s1');
     expect(remindersQuery('session=s1', { session: null })).toBe('');
     expect(remindersQuery('session=s1', { range: 'month', date: undefined })).toBe(
       'session=s1&range=month',
     );
     expect(remindersQuery('range=month', { range: 'week' })).toBe('');
+  });
+});
+
+describe('createRemindersUrlStore', () => {
+  test('set changes the query at once; a late echo of an earlier write never undoes a newer one', () => {
+    const replaced: string[] = [];
+    (globalThis as { window?: unknown }).window = {
+      location: { pathname: '/r', search: '' },
+      history: {
+        state: { __NA: true },
+        replaceState: (_: unknown, __: string, url: string) => replaced.push(url),
+      },
+    };
+    const store = createRemindersUrlStore('');
+    store.set({ view: 'list' });
+    store.set({ session: 's9' });
+    expect(store.query()).toBe('view=list&session=s9');
+    expect(replaced).toEqual(['/r?view=list', '/r?view=list&session=s9']);
+    // Next reports the first write back after the second: ignored.
+    store.sync('view=list');
+    expect(store.query()).toBe('view=list&session=s9');
+    // A link to this page with params the store never wrote: taken.
+    store.sync('range=month&session=s1');
+    expect(store.query()).toBe('range=month&session=s1');
+    delete (globalThis as { window?: unknown }).window;
   });
 });

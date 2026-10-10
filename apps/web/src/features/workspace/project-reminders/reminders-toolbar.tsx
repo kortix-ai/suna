@@ -36,7 +36,13 @@ export function reminderSessions(reminders: readonly ProjectReminder[]) {
 }
 
 /** The toolbar row under the page header: `leading` on the left, the shared controls right. */
-export function RemindersToolbar({ leading, children }: { leading?: ReactNode; children: ReactNode }) {
+export function RemindersToolbar({
+  leading,
+  children,
+}: {
+  leading?: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b px-4 py-2">
       <div className="flex min-w-0 items-center gap-2">{leading}</div>
@@ -139,7 +145,7 @@ export function ReminderViewSwitch({
   const t = useTranslations('reminders');
   return (
     <Tabs value={value} onValueChange={(next) => onChange(next as RemindersView)}>
-      <TabsList aria-label={t('viewLabel')}>
+      <TabsList animate="none" aria-label={t('viewLabel')}>
         <TabsTrigger value="list">{t('viewList')}</TabsTrigger>
         <TabsTrigger value="calendar">{t('viewCalendar')}</TabsTrigger>
       </TabsList>

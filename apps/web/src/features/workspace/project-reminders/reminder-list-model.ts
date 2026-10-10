@@ -29,3 +29,33 @@ export function rowsForTab(
   if (tab === 'done') return rows.sort(byTime((r) => r.last_fired_at, -1));
   return rows.sort(byTime((r) => r.created_at, -1));
 }
+
+/**
+ * The selection after a checkbox press on `id`. A plain press toggles one
+ * row. A shift-press sets every row from `anchor` (the last pressed row) to
+ * `id` to the pressed row's new state, the way file lists do. Pure.
+ */
+export function toggleSelection(
+  selected: ReadonlySet<string>,
+  ids: readonly string[],
+  id: string,
+  anchor: string | null,
+): Set<string> {
+  const next = new Set(selected);
+  const on = !selected.has(id);
+  const from = anchor === null ? -1 : ids.indexOf(anchor);
+  const to = ids.indexOf(id);
+  const range =
+    from === -1 || to === -1 ? [id] : ids.slice(Math.min(from, to), Math.max(from, to) + 1);
+  for (const each of range) {
+    if (on) next.add(each);
+    else next.delete(each);
+  }
+  return next;
+}
+
+/** The header checkbox: none, some or all of the rows on screen are selected. */
+export function selectionState(selected: ReadonlySet<string>, ids: readonly string[]) {
+  const count = ids.filter((id) => selected.has(id)).length;
+  return count === 0 ? 'none' : count === ids.length ? 'all' : 'some';
+}

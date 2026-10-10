@@ -25,6 +25,8 @@ type Jump = { date: Date; smooth: boolean };
 const URL_SETTLE_MS = 400;
 /** The title and Month's muted days follow the top once it has held still this long. */
 export const TITLE_SETTLE_MS = 150;
+/** How long a jump's target cell or column stays ringed before it fades. */
+const HIGHLIGHT_MS = 1200;
 /** The window may re-centre once the scroll has been still this long. */
 const GRID_SETTLE_MS = 150;
 
@@ -42,9 +44,10 @@ const GRID_SETTLE_MS = 150;
  */
 export function createCalendarStore(initial: Date, write: (patch: RemindersUrlPatch) => void) {
   let top = initial;
-  /** The day opened from Month, as local midnight ms: Week highlights its column. */
-  let selected: number | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  /** The fire a jump landed on (ms): its day's cell or column rings briefly. */
+  let highlighted: number | null = null;
+  let highlightTimer: ReturnType<typeof setTimeout> | undefined;
   const tops = new Set<() => void>();
   const jumps = new Set<(jump: Jump) => void>();
 
@@ -59,34 +62,41 @@ export function createCalendarStore(initial: Date, write: (patch: RemindersUrlPa
     );
   };
 
-  const select = (date: Date | null) => {
-    const next = date ? date.getTime() : null;
-    if (next === selected) return;
-    selected = next;
+  const setHighlight = (day: number | null) => {
+    if (day === highlighted) return;
+    highlighted = day;
     tops.forEach((listener) => listener());
   };
 
   return {
     top: () => top,
-    selected: () => selected,
-    /** Highlight a day in Week; null clears it. */
-    select,
+    highlighted: () => highlighted,
     subscribe(listener: () => void) {
       tops.add(listener);
       return () => void tops.delete(listener);
     },
     setTop,
-    /** Scroll the grid to `date`; only Today glides. A jump clears the highlight. */
-    jump(date: Date, smooth = false) {
-      select(null);
+    /**
+     * Scroll the grid to `date`; only Today glides. `highlight` is a fire's
+     * time: its day's cell (Month) or column (Week, Day) rings for a moment,
+     * and Week and Day scroll to its hour.
+     */
+    jump(date: Date, smooth = false, highlight: Date | null = null) {
       setTop(date);
       jumps.forEach((listener) => listener({ date, smooth }));
+      clearTimeout(highlightTimer);
+      if (!highlight) return setHighlight(null);
+      setHighlight(highlight.getTime());
+      highlightTimer = setTimeout(() => setHighlight(null), HIGHLIGHT_MS);
     },
     onJump(listener: (jump: Jump) => void) {
       jumps.add(listener);
       return () => void jumps.delete(listener);
     },
-    dispose: () => clearTimeout(timer),
+    dispose: () => {
+      clearTimeout(timer);
+      clearTimeout(highlightTimer);
+    },
   };
 }
 
@@ -100,10 +110,10 @@ export function useCalendarStore(): CalendarStore {
   return store;
 }
 
-/** The day opened from Month (local midnight ms), or null. */
-export function useCalendarSelected(): number | null {
+/** The fire a jump landed on (ms), while its day rings; else null. */
+export function useCalendarHighlight(): number | null {
   const store = useCalendarStore();
-  return useSyncExternalStore(store.subscribe, store.selected, store.selected);
+  return useSyncExternalStore(store.subscribe, store.highlighted, store.highlighted);
 }
 
 /** A value derived from the top day, re-rendering only when it changes. */

@@ -2,26 +2,36 @@
 
 import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
 import { Button } from '@/components/ui/button';
+import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
+import {
+  SplitSheet,
+  SplitSheetContent,
+  SplitSheetMain,
+  SplitSheetTitle,
+  SplitSheetTrigger,
+} from '@/components/ui/split-sheet';
 import { STATUS_BG, STATUS_DOT, type StatusTone } from '@/components/ui/status';
 import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
+import { hasOpenFloatingLayer } from '@/lib/z-stack';
 import type { ProjectReminder } from '@kortix/sdk';
 import { chalkColors } from '@kortix/shared';
-import { ChatCircleIcon, ClockIcon, XIcon } from '@phosphor-icons/react';
+import { ChatCircleIcon, ClockIcon, SidebarSimpleIcon, XIcon } from '@phosphor-icons/react';
 import {
   createContext,
   useCallback,
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
 import { clockTime, dateFormat, relativeFire } from './reminder-calendar-model';
 import { reminderTitle } from './reminder-format';
-import type { useReminderActions } from './reminder-list';
+import { useReminderActions, type RemindersQuery } from './reminder-list';
 import type { ReminderFire } from './reminder-schedule';
 
 /** What the fire card needs from the page: the project, the clock, the locale. */
@@ -48,13 +58,103 @@ const OpenFireContext = createContext<OpenFire>(() => {});
 /** What a chip calls on click: opens its fire's card, or closes it when already open. */
 export const useOpenFire = () => useContext(OpenFireContext);
 
+type FireDockValue = {
+  /** The fire shown in the side panel, or null while it is closed. */
+  docked: ReminderFire | null;
+  /** Is a fire docked now, read without a render: `useOpenFire` must stay one stable function. */
+  isDocked: () => boolean;
+  dock: (fire: ReminderFire | null) => void;
+};
+
+const FireDockContext = createContext<FireDockValue | null>(null);
+
+function useFireDock(): FireDockValue {
+  const value = useContext(FireDockContext);
+  if (!value) throw new Error('useFireDock needs a FireDock');
+  return value;
+}
+
+/**
+ * The Reminders page as a `SplitSheet`: the page is the main column, and a
+ * fire card docked from the calendar is a full-height panel beside it. The
+ * page narrows to make room; header, toolbar and grid stay usable.
+ *
+ * While docked, a chip shows its fire in the panel instead of a popover. The
+ * panel button or Escape closes it. When `reminders` changes, the panel takes
+ * the fresh reminder, and closes once the reminder is removed.
+ */
+export function FireDock({
+  ctx,
+  reminders,
+  query,
+  children,
+}: {
+  ctx: CalendarContext;
+  reminders: readonly ProjectReminder[];
+  query: RemindersQuery;
+  children: ReactNode;
+}) {
+  const actions = useReminderActions(query);
+  const [docked, setDocked] = useState<ReminderFire | null>(null);
+  const isDocked = useRef(false);
+  const dock = useCallback((fire: ReminderFire | null) => {
+    isDocked.current = fire !== null;
+    setDocked(fire);
+  }, []);
+  const readDocked = useCallback(() => isDocked.current, []);
+
+  useEffect(() => {
+    setDocked((current) => {
+      if (!current) return current;
+      const fresh = reminders.find((r) => r.id === current.reminder.id);
+      isDocked.current = !!fresh;
+      if (!fresh) return null;
+      return fresh === current.reminder ? current : { ...current, reminder: fresh };
+    });
+  }, [reminders]);
+
+  const value = useMemo(() => ({ docked, isDocked: readDocked, dock }), [docked, readDocked, dock]);
+
+  return (
+    <FireDockContext.Provider value={value}>
+      <SplitSheet
+        open={docked !== null}
+        onOpenChange={(next) => (next ? undefined : dock(null))}
+        size="sm"
+        className="h-svh"
+      >
+        <SplitSheetMain
+          className="flex flex-col overflow-hidden"
+          // Escape closes the panel from the page too: picking chips while
+          // docked leaves focus on the chip, outside the panel's own handler.
+          onKeyDown={(event) => {
+            if (event.key !== 'Escape' || !isDocked.current || hasOpenFloatingLayer()) return;
+            event.preventDefault();
+            dock(null);
+          }}
+        >
+          {children}
+        </SplitSheetMain>
+        <SplitSheetContent data-testid="reminder-fire-panel">
+          {docked ? (
+            <CalendarActions.Provider value={actions}>
+              <FireCard fire={docked} ctx={ctx} variant="sheet" onClose={() => dock(null)} />
+            </CalendarActions.Provider>
+          ) : null}
+        </SplitSheetContent>
+      </SplitSheet>
+      {actions.dialog}
+    </FireDockContext.Provider>
+  );
+}
+
 /**
  * The one fire card of a calendar, anchored to the chip that opened it.
  *
  * One popover for the grid, not one per chip: a Month window holds thousands
  * of lines, and a Radix popover root on each made the range switch and every
  * window move mount thousands of them. Chips are plain buttons that call
- * `useOpenFire`.
+ * `useOpenFire`. The card's panel button moves it into the page's `FireDock`.
  *
  * `reminders` is the list the grid renders. When it changes, the card takes
  * the fresh reminder, and closes once its chip has left the grid (a paused
@@ -69,10 +169,14 @@ export function FirePopoverHost({
   reminders: readonly ProjectReminder[];
   children: ReactNode;
 }) {
+  const { isDocked, dock } = useFireDock();
   const [shown, setShown] = useState<{ fire: ReminderFire; chip: HTMLElement } | null>(null);
   const open = useCallback<OpenFire>(
-    (fire, chip) => setShown((current) => (current?.chip === chip ? null : { fire, chip })),
-    [],
+    (fire, chip) => {
+      if (isDocked()) return dock(fire);
+      setShown((current) => (current?.chip === chip ? null : { fire, chip }));
+    },
+    [isDocked, dock],
   );
   const close = useCallback(() => setShown(null), []);
   const anchor = useMemo(() => ({ current: shown?.chip ?? null }), [shown]);
@@ -82,8 +186,7 @@ export function FirePopoverHost({
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setShown((current) => {
-      if (!current) return current;
-      if (!current.chip.isConnected) return null;
+      if (!current || !current.chip.isConnected) return null;
       const fresh = reminders.find((r) => r.id === current.fire.reminder.id);
       if (!fresh) return null;
       return fresh === current.fire.reminder
@@ -109,19 +212,32 @@ export function FirePopoverHost({
                 event.preventDefault();
               }
             }}
-            // Back to the chip, without scrolling the grid to it.
+            // Back to the chip, without scrolling the grid to it. Not when
+            // the card moved to the panel: the panel takes focus.
             onCloseAutoFocus={(event) => {
               event.preventDefault();
-              shown.chip.focus({ preventScroll: true });
+              if (!isDocked()) shown.chip.focus({ preventScroll: true });
             }}
           >
-            <FireCard fire={shown.fire} ctx={ctx} onClose={close} />
+            <FireCard
+              fire={shown.fire}
+              ctx={ctx}
+              variant="popover"
+              onClose={close}
+              onDock={() => {
+                dock(shown.fire);
+                close();
+              }}
+            />
           </PopoverContent>
         ) : null}
       </Popover>
     </OpenFireContext.Provider>
   );
 }
+
+/** Phosphor's sidebar draws its panel on the left; mirrored, it is the right-hand panel this opens. */
+const PANEL_ICON = 'size-3.5 shrink-0 -scale-x-100';
 
 /** Every row: a fixed icon column at the card's left edge, text centred against it. */
 const ROW = 'flex items-center gap-2.5 text-xs';
@@ -163,15 +279,25 @@ function fireStatus(fire: ReminderFire): { tone: StatusTone; key: StatusKey } {
 
 type StatusKey = 'pausedLabel' | 'calendarFailed' | 'calendarFiredSr' | 'calendarUpcomingSr';
 
-/** The event card: status pill and close, title, time and session rows, text actions. */
+/**
+ * The event card: status pill and controls, title, time and session rows,
+ * text actions. In the popover the controls are "open in side panel" and
+ * close; in the side panel, one button closes the panel, and the title is the
+ * panel's heading and is never clamped.
+ */
 function FireCard({
   fire,
   ctx,
+  variant,
   onClose,
+  onDock,
 }: {
   fire: ReminderFire;
   ctx: CalendarContext;
+  variant: 'popover' | 'sheet';
   onClose: () => void;
+  /** Popover only: move this card into the side panel. */
+  onDock?: () => void;
 }) {
   const t = useTranslations('reminders');
   const common = useTranslations('common');
@@ -197,20 +323,47 @@ function FireCard({
           <span className={cn('size-1.5 rounded-full', STATUS_DOT[status.tone])} aria-hidden />
           {t(status.key)}
         </span>
-        <Button variant="ghost" size="icon-sm" aria-label={common('close')} onClick={onClose}>
-          <XIcon className="size-3.5 shrink-0" />
-        </Button>
+        {variant === 'popover' ? (
+          <div className="flex items-center">
+            <Hint label={t('calendarOpenPanel')} side="bottom">
+              {/* A SplitSheet trigger: it opens the panel and moves focus into it. */}
+              <SplitSheetTrigger asChild onClick={onDock}>
+                <Button variant="ghost" size="icon-sm" aria-label={t('calendarOpenPanel')}>
+                  <SidebarSimpleIcon className={PANEL_ICON} />
+                </Button>
+              </SplitSheetTrigger>
+            </Hint>
+            <Button variant="ghost" size="icon-sm" aria-label={common('close')} onClick={onClose}>
+              <XIcon className="size-3.5 shrink-0" />
+            </Button>
+          </div>
+        ) : (
+          <Hint label={t('calendarClosePanel')} side="bottom">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={t('calendarClosePanel')}
+              onClick={onClose}
+            >
+              <SidebarSimpleIcon weight="fill" className={PANEL_ICON} />
+            </Button>
+          </Hint>
+        )}
       </div>
       <div className="flex items-start gap-2.5 px-3 pt-2.5 pb-3">
         <span className={cn(ICON_COLUMN, 'h-5 items-center')} aria-hidden>
           <span className="size-3 rounded-xs" style={{ background: colors.border }} />
         </span>
-        <p
-          className="text-foreground line-clamp-2 min-w-0 text-sm font-medium"
-          title={reminder.prompt}
-        >
-          {reminderTitle(reminder)}
-        </p>
+        {variant === 'sheet' ? (
+          <SplitSheetTitle className="min-w-0">{reminderTitle(reminder)}</SplitSheetTitle>
+        ) : (
+          <p
+            className="text-foreground line-clamp-2 min-w-0 text-sm font-medium"
+            title={reminder.prompt}
+          >
+            {reminderTitle(reminder)}
+          </p>
+        )}
       </div>
       <div className="flex flex-col gap-1.5 px-3 pb-3">
         <InfoRow icon={<ClockIcon className={ICON} />}>

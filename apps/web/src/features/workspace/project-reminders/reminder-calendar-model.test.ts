@@ -9,11 +9,15 @@ import {
   layoutChips,
   monthEntries,
   nearEdge,
+  nearestFireDay,
   parseDateParam,
   rangeLabel,
   relativeFire,
   startOfWeek,
+  stepDate,
+  visibleSpan,
   windowDays,
+  type CalendarDay,
 } from './reminder-calendar-model';
 import type { ReminderFire } from './reminder-schedule';
 
@@ -76,6 +80,17 @@ describe('anchor dates', () => {
     expect(days.filter((_, i) => i % 7 === 0).every((d) => d.getDay() === 1)).toBe(true);
   });
 
+  test('Day window: 14 days either side of the anchor, one column each', () => {
+    const days = windowDays(local(2026, 10, 7, 15), 'day');
+    expect(days).toHaveLength(29);
+    expect(dateParam(days[0]!)).toBe('2026-09-23');
+    expect(dateParam(days[14]!)).toBe('2026-10-07');
+    expect(dateParam(days[28]!)).toBe('2026-10-21');
+    // Re-centres once the day in view is more than 8 days from the anchor.
+    expect(nearEdge(local(2026, 10, 15), local(2026, 10, 7), 'day')).toBe(false);
+    expect(nearEdge(local(2026, 10, 16), local(2026, 10, 7), 'day')).toBe(true);
+  });
+
   test('daysBetween counts calendar days, across a DST change too', () => {
     expect(daysBetween(local(2026, 10, 7, 23), local(2026, 10, 8, 1))).toBe(1);
     expect(daysBetween(local(2026, 3, 20), local(2026, 4, 10))).toBe(21);
@@ -90,6 +105,21 @@ describe('anchor dates', () => {
     // 7 weeks on is inside; 8 weeks on is within 5 of the 12-week edge.
     expect(nearEdge(local(2026, 11, 23), origin, 'month')).toBe(false);
     expect(nearEdge(local(2026, 11, 30), origin, 'month')).toBe(true);
+  });
+
+  test('stepDate: a day, a week, or the first week of the next month', () => {
+    const wed = local(2026, 10, 14);
+    expect(dateParam(stepDate(wed, 'day', 1))).toBe('2026-10-15');
+    expect(dateParam(stepDate(wed, 'day', -1))).toBe('2026-10-13');
+    expect(dateParam(stepDate(wed, 'week', 1))).toBe('2026-10-21');
+    expect(dateParam(stepDate(wed, 'week', -1))).toBe('2026-10-07');
+    // Month: from a week of October to a week whose title is November / September.
+    expect(focusMonth(stepDate(startOfWeek(wed), 'month', 1)).getMonth()).toBe(10);
+    expect(focusMonth(stepDate(startOfWeek(wed), 'month', -1)).getMonth()).toBe(8);
+    // Mon 28 Sep belongs to October (its Thursday is 1 Oct): next is November.
+    expect(focusMonth(stepDate(local(2026, 9, 28), 'month', 1)).getMonth()).toBe(10);
+    // Across a year.
+    expect(dateParam(stepDate(local(2026, 12, 14), 'month', 1))).toBe('2027-01-04');
   });
 
   test('a week belongs to the month of its Thursday', () => {
@@ -108,6 +138,8 @@ describe('labels', () => {
     expect(rangeLabel(local(2026, 10, 7), 'month', 'de')).toBe('Oktober 2026');
     // Month: the top week's month, not the Monday's.
     expect(rangeLabel(local(2026, 9, 28), 'month', 'en-GB')).toBe('October 2026');
+    // Day: the one day in view, in full.
+    expect(rangeLabel(local(2026, 10, 14), 'day', 'en-GB')).toBe('Wednesday, 14 October 2026');
   });
 
   test('clock time is 24-hour; relative time scales minute → hour → day', () => {
@@ -243,6 +275,37 @@ describe('calendarModel', () => {
       false,
       false,
     ]);
+  });
+});
+
+describe('visible span and the nearest day with fires', () => {
+  test("a day, seven days from the top, or the top week's month", () => {
+    const top = local(2026, 10, 14, 15);
+    expect(visibleSpan(top, 'day')).toEqual({ from: local(2026, 10, 14), to: local(2026, 10, 15) });
+    expect(visibleSpan(top, 'week')).toEqual({
+      from: local(2026, 10, 14),
+      to: local(2026, 10, 21),
+    });
+    // Mon 28 Sep belongs to October (its Thursday is 1 Oct).
+    expect(visibleSpan(local(2026, 9, 28), 'month')).toEqual({
+      from: local(2026, 10, 1),
+      to: local(2026, 11, 1),
+    });
+  });
+
+  test('the closest day with fires, before or after; a tie goes later', () => {
+    const day = (d: number, total: number): CalendarDay => ({
+      date: local(2026, 10, d),
+      chips: [],
+      groups: [],
+      total,
+    });
+    // Visible: 12–18 October. The 9th is 3 days before it, the 23rd 5 days after.
+    const span = { from: local(2026, 10, 12), to: local(2026, 10, 19) };
+    expect(nearestFireDay([day(9, 1), day(23, 1)], span)).toEqual(local(2026, 10, 9));
+    // The 8th and the 22nd are both 4 days out: the later one wins.
+    expect(nearestFireDay([day(8, 1), day(22, 1)], span)).toEqual(local(2026, 10, 22));
+    expect(nearestFireDay([day(1, 0), day(30, 0)], span)).toBeNull();
   });
 });
 

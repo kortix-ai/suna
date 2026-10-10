@@ -1,25 +1,40 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import { FLOATING_PANEL_SURFACE } from '@/components/ui/menu-recipe';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import { useDebounce } from '@/hooks/use-debounce';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
+import { cn } from '@/lib/utils';
 import type { ProjectReminder } from '@kortix/sdk';
 import { memo, useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import {
   calendarModel,
+  dateFormat,
+  dateParam,
+  firstFireAt,
   isSameDay,
   nearEdge,
+  nearestFireDay,
+  parseDateParam,
   startOfDay,
   startOfWeek,
+  visibleSpan,
   windowDays,
   type CalendarModel,
 } from './reminder-calendar-model';
 import { CalendarMonth } from './reminder-calendar-month';
 import { CalendarWeek } from './reminder-calendar-week';
 import { CalendarActions, FirePopoverHost, type CalendarContext } from './reminder-fire-popover';
-import { soonestFire } from './reminder-format';
+import { nearestFire } from './reminder-format';
 import { useReminderActions, type RemindersQuery } from './reminder-list';
-import { useCalendarStore, type GridTop, type ScrollRequest } from './use-calendar-scroll';
+import {
+  TITLE_SETTLE_MS,
+  useCalendarStore,
+  useCalendarTop,
+  type GridTop,
+  type ScrollRequest,
+} from './use-calendar-scroll';
 import { useRemindersUrlState, type RemindersRange } from './use-reminders-url-state';
 
 /**
@@ -30,8 +45,8 @@ const lastModel = new WeakMap<readonly ProjectReminder[], CalendarModel>();
 
 /**
  * The Calendar view (`?view=calendar`): the scheduled and inferred-past fires
- * of the scoped reminders, as a sideways-scrolling Week time grid or a
- * vertically scrolling Month of week rows. The toolbar cluster is
+ * of the scoped reminders, as a sideways-scrolling Day or Week time grid or
+ * a vertically scrolling Month of week rows. The toolbar cluster is
  * `ReminderCalendarNav`; gate-off, zero reminders and the load error are
  * handled by the page shell, the same as the List.
  */
@@ -55,12 +70,11 @@ export function ReminderCalendarView({
   const actions = useReminderActions(query);
   const store = useCalendarStore();
   const { set } = url;
-  // Month's day number: that day's week, Monday first, in the Week range.
-  const openWeek = useCallback(
+  // Month's day number: that day in the Day range.
+  const openDay = useCallback(
     (date: Date) => {
-      store.select(startOfDay(date));
-      store.setTop(startOfWeek(date));
-      set({ range: 'week' });
+      store.setTop(startOfDay(date));
+      set({ range: 'day' });
     },
     [store, set],
   );
@@ -77,7 +91,7 @@ export function ReminderCalendarView({
     <CalendarActions.Provider value={actions}>
       <FirePopoverHost ctx={card} reminders={reminders}>
         <div className="flex min-h-0 flex-1 flex-col" aria-busy={query.isLoading || undefined}>
-          {/* Keyed: Week and Month each keep their own window. */}
+          {/* Keyed: each range keeps its own window. */}
           <CalendarRange
             key={range}
             range={range}
@@ -85,7 +99,7 @@ export function ReminderCalendarView({
             reminders={reminders}
             minute={minute}
             loading={query.isLoading}
-            onOpenWeek={openWeek}
+            onOpenDay={openDay}
           />
           {hasCron ? (
             <p className="text-muted-foreground px-4 py-2 text-xs">{t('calendarCronNote')}</p>
@@ -111,14 +125,14 @@ const CalendarRange = memo(function CalendarRange({
   reminders,
   minute,
   loading,
-  onOpenWeek,
+  onOpenDay,
 }: {
   range: RemindersRange;
   locale: string;
   reminders: ProjectReminder[];
   minute: number;
   loading: boolean;
-  onOpenWeek: (date: Date) => void;
+  onOpenDay: (date: Date) => void;
 }) {
   const store = useCalendarStore();
   const today = startOfDay(minute).getTime();
@@ -160,13 +174,114 @@ const CalendarRange = memo(function CalendarRange({
     return <CalendarEmpty range={range} reminders={reminders} days={days} today={today} />;
   }
   const grid = { model, locale, today, loading, request, onTop: store.setTop, onSettle };
-  return range === 'week' ? (
-    <CalendarWeek {...grid} now={minute} />
-  ) : (
-    <CalendarMonth {...grid} onOpenWeek={onOpenWeek} />
+  return (
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      {range === 'month' ? (
+        <CalendarMonth {...grid} onOpenDay={onOpenDay} />
+      ) : (
+        <CalendarWeek {...grid} now={minute} daysInView={range === 'day' ? 1 : 7} />
+      )}
+      {loading ? null : (
+        <RangeHint range={range} model={model} reminders={reminders} today={today} />
+      )}
+    </div>
   );
 });
 
+const EMPTY_TITLE = {
+  day: 'calendarEmptyDay',
+  week: 'calendarEmptyWeek',
+  month: 'calendarEmptyMonth',
+} as const;
+
+/**
+ * The button to a fire outside the range on screen, in this range's unit:
+ * the day, its Monday-first week, or its month. The day lands ringed so the
+ * eye finds it.
+ */
+function GoToFire({ range, at }: { range: RemindersRange; at: number }) {
+  const target = startOfDay(at);
+  const t = useTranslations('reminders');
+  const locale = useLocale();
+  const store = useCalendarStore();
+  const label =
+    range === 'day'
+      ? t('calendarGoToDay', {
+          date: dateFormat(locale, { weekday: 'long', day: 'numeric', month: 'long' }).format(
+            target,
+          ),
+        })
+      : range === 'week'
+        ? t('calendarGoToWeek', {
+            date: dateFormat(locale, { day: 'numeric', month: 'long' }).format(startOfWeek(target)),
+          })
+        : t('calendarGoToMonth', {
+            month: dateFormat(locale, { month: 'long', year: 'numeric' }).format(target),
+          });
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      data-testid="reminder-calendar-go-to"
+      onClick={() =>
+        store.jump(range === 'week' ? startOfWeek(target) : target, false, new Date(at))
+      }
+    >
+      {label}
+    </Button>
+  );
+}
+
+/**
+ * Over the grid, when the day, week or month on screen has no fire but the
+ * reminders fire some other time: says so, with the button to the nearest
+ * day that has one. It follows the settled scroll, so flicking through empty
+ * weeks does not flash it.
+ */
+function RangeHint({
+  range,
+  model,
+  reminders,
+  today,
+}: {
+  range: RemindersRange;
+  model: CalendarModel;
+  reminders: ProjectReminder[];
+  today: number;
+}) {
+  const t = useTranslations('reminders');
+  const live = useCalendarTop((top) => dateParam(top));
+  const { debouncedValue: settled } = useDebounce(live, TITLE_SETTLE_MS);
+  const target = useMemo(() => {
+    const span = visibleSpan(parseDateParam(settled, today), range);
+    const inView = model.days.some(
+      (day) => day.total > 0 && day.date >= span.from && day.date < span.to,
+    );
+    if (inView) return null;
+    const near = nearestFireDay(model.days, span);
+    const day = near && model.days.find((each) => each.date.getTime() === near.getTime());
+    return day ? firstFireAt(day) : nearestFire(reminders);
+  }, [settled, today, range, model.days, reminders]);
+  if (target === null) return null;
+  return (
+    <div
+      className={cn(
+        FLOATING_PANEL_SURFACE,
+        'absolute top-1/2 left-1/2 z-30 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-3 px-5 py-4',
+      )}
+      data-testid="reminder-range-hint"
+    >
+      <p className="text-foreground text-sm font-medium">{t(EMPTY_TITLE[range])}</p>
+      <GoToFire range={range} at={target} />
+    </div>
+  );
+}
+
+/**
+ * Nothing fires anywhere in the window. When the scoped reminders fire some
+ * other time (a filtered session, a past one-off), one button goes there.
+ * With no time at all, it offers today.
+ */
 function CalendarEmpty({
   range,
   reminders,
@@ -180,7 +295,7 @@ function CalendarEmpty({
 }) {
   const t = useTranslations('reminders');
   const store = useCalendarStore();
-  const soonest = soonestFire(reminders);
+  const nearest = nearestFire(reminders);
   const showsToday = days.some((day) => isSameDay(day, new Date(today)));
   return (
     <div
@@ -189,12 +304,10 @@ function CalendarEmpty({
     >
       <EmptyState
         size="sm"
-        title={range === 'week' ? t('calendarEmptyWeek') : t('calendarEmptyMonth')}
+        title={t(EMPTY_TITLE[range])}
         action={
-          soonest !== null ? (
-            <Button variant="outline" size="sm" onClick={() => store.jump(startOfDay(soonest))}>
-              {t('calendarJumpToNext')}
-            </Button>
+          nearest !== null ? (
+            <GoToFire range={range} at={nearest} />
           ) : !showsToday ? (
             <Button variant="outline" size="sm" onClick={() => store.jump(new Date(today))}>
               {t('calendarBackToToday')}

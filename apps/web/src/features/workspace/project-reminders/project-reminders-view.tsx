@@ -15,15 +15,17 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { FeatureGateScreen } from '@/features/workspace/feature-gate-screen';
 import { ProjectPageHeader } from '@/features/workspace/project-layout/project-page-header';
-import { useTranslations } from '@/i18n/use-translations';
+import { useLocale, useTranslations } from '@/i18n/use-translations';
 import type { SessionReminderState } from '@kortix/sdk';
 import { useFeatureFlag, useProjectReminders } from '@kortix/sdk/react';
 import { AlarmIcon, ArrowUpRightIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { useDeferredValue, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { parseDateParam } from './reminder-calendar-model';
-import { ReminderCalendarNav } from './reminder-calendar-nav';
+import { ReminderCalendarControls, ReminderCalendarTitle } from './reminder-calendar-nav';
 import { ReminderCalendarView } from './reminder-calendar-view';
+import { FireDock } from './reminder-fire-popover';
 import { ReminderList } from './reminder-list';
 import { rowsForTab } from './reminder-list-model';
 import {
@@ -35,24 +37,20 @@ import {
 } from './reminders-toolbar';
 import { CalendarStoreContext, createCalendarStore } from './use-calendar-scroll';
 import { useNow, useRefetchAfterFire } from './use-refetch-after-fire';
-import { useRemindersUrlState } from './use-reminders-url-state';
+import {
+  createRemindersUrlStore,
+  RemindersUrlContext,
+  useRemindersUrlState,
+} from './use-reminders-url-state';
 
 const DOCS_HREF = '/docs/connect/reminders';
 
-function RemindersHeader({ projectId }: { projectId: string }) {
+/** The page header; `actions` (the List | Calendar switch) sit on the right. */
+function RemindersHeader({ projectId, actions }: { projectId: string; actions?: ReactNode }) {
   const t = useTranslations('reminders');
   return (
     <ProjectPageHeader title={t('title')} href={`/projects/${projectId}/reminders`}>
-      <Link
-        href={DOCS_HREF}
-        target="_blank"
-        rel="noopener noreferrer"
-        prefetch={false}
-        className="text-muted-foreground hover:text-foreground flex w-fit flex-none items-center gap-1 px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors"
-      >
-        {t('docs')}
-        <ArrowUpRightIcon className="size-3 shrink-0" aria-hidden />
-      </Link>
+      {actions}
     </ProjectPageHeader>
   );
 }
@@ -83,12 +81,33 @@ function RemindersEmpty() {
 }
 
 export function ProjectRemindersView({ projectId }: { projectId: string }) {
+  const params = useSearchParams();
+  const query = params.toString();
+  // Read from the URL once; the store writes it back. A Next navigation to
+  // this page with other params (a link) still reaches it through `sync`.
+  const [url] = useState(() => createRemindersUrlStore(query));
+  useEffect(() => url.sync(query), [url, query]);
+  return (
+    <RemindersUrlContext.Provider value={url}>
+      <RemindersPage projectId={projectId} />
+    </RemindersUrlContext.Provider>
+  );
+}
+
+function RemindersPage({ projectId }: { projectId: string }) {
   const t = useTranslations('reminders');
   const url = useRemindersUrlState();
+  // The List | Calendar switch flips at once; the other view mounts as a
+  // background render, so its mount never holds the click.
+  const view = useDeferredValue(url.view);
   const gate = useFeatureFlag(projectId, 'reminders');
   const reminders = useProjectReminders(gate.enabled ? projectId : null);
   useRefetchAfterFire(reminders.data?.reminders, reminders.refetch);
   const now = useNow();
+  const locale = useLocale();
+  // The docked fire card's context; stable for a minute like the calendar's.
+  const minute = Math.floor(now / 60_000) * 60_000;
+  const card = useMemo(() => ({ projectId, now: minute, locale }), [projectId, minute, locale]);
   const [tab, setTab] = useState<SessionReminderState>('active');
   // The calendar position: read from `?date=` once, written back as the grid settles.
   const [calendar] = useState(() => createCalendarStore(parseDateParam(url.date, now), url.set));
@@ -107,6 +126,8 @@ export function ProjectRemindersView({ projectId }: { projectId: string }) {
   const loaded = !reminders.isLoading && !!reminders.data;
 
   let body: ReactNode;
+  // The view switch only means something where the toolbar shows.
+  let showsToolbar = false;
   if (gate.isLoading) {
     body = <Skeleton className="m-4 h-14 rounded-md" />;
   } else if (!gate.enabled) {
@@ -114,14 +135,15 @@ export function ProjectRemindersView({ projectId }: { projectId: string }) {
   } else if (loaded && all.length === 0 && !url.session) {
     body = <RemindersEmpty />;
   } else {
+    showsToolbar = true;
     body = (
       <>
         <RemindersToolbar
           leading={
-            url.view === 'list' ? (
+            view === 'list' ? (
               <ReminderStateTabs value={tab} onChange={setTab} />
             ) : (
-              <ReminderCalendarNav now={now} />
+              <ReminderCalendarTitle />
             )
           }
         >
@@ -130,7 +152,7 @@ export function ProjectRemindersView({ projectId }: { projectId: string }) {
             value={url.session}
             onChange={(session) => url.set({ session })}
           />
-          <ReminderViewSwitch value={url.view} onChange={(view) => url.set({ view })} />
+          {view === 'calendar' ? <ReminderCalendarControls now={now} /> : null}
         </RemindersToolbar>
         {reminders.isError && !reminders.data ? (
           <div className="flex min-h-0 flex-1 items-center justify-center">
@@ -144,7 +166,7 @@ export function ProjectRemindersView({ projectId }: { projectId: string }) {
               }
             />
           </div>
-        ) : url.view === 'calendar' ? (
+        ) : view === 'calendar' ? (
           <ReminderCalendarView
             projectId={projectId}
             query={reminders}
@@ -153,6 +175,8 @@ export function ProjectRemindersView({ projectId }: { projectId: string }) {
           />
         ) : (
           <ReminderList
+            // A new tab or filter starts with nothing selected.
+            key={`${tab}:${url.session ?? ''}`}
             projectId={projectId}
             query={reminders}
             rows={rows}
@@ -182,10 +206,17 @@ export function ProjectRemindersView({ projectId }: { projectId: string }) {
 
   return (
     <CalendarStoreContext.Provider value={calendar}>
-      <div className="flex h-svh flex-col overflow-hidden">
-        <RemindersHeader projectId={projectId} />
+      <FireDock ctx={card} reminders={all} query={reminders}>
+        <RemindersHeader
+          projectId={projectId}
+          actions={
+            showsToolbar ? (
+              <ReminderViewSwitch value={url.view} onChange={(view) => url.set({ view })} />
+            ) : null
+          }
+        />
         {body}
-      </div>
+      </FireDock>
     </CalendarStoreContext.Provider>
   );
 }

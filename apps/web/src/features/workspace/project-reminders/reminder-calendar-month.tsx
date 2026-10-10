@@ -11,14 +11,17 @@ import {
   focusMonth,
   isSameDay,
   monthEntries,
+  startOfDay,
   startOfWeek,
   weekdayIndex,
   type CalendarDay,
   type CalendarModel,
 } from './reminder-calendar-model';
+import { LANDED_RING } from './reminder-calendar-week';
 import { FireRow } from './reminder-fire-chip';
 import {
   TITLE_SETTLE_MS,
+  useCalendarHighlight,
   useCalendarTop,
   useGridScroll,
   type GridTop,
@@ -46,7 +49,7 @@ export const CalendarMonth = memo(function CalendarMonth({
   request,
   onTop,
   onSettle,
-  onOpenWeek,
+  onOpenDay,
 }: {
   model: CalendarModel;
   locale: string;
@@ -56,8 +59,8 @@ export const CalendarMonth = memo(function CalendarMonth({
   request: ScrollRequest;
   onTop: (monday: Date) => void;
   onSettle: (top: GridTop) => void;
-  /** A day number was pressed: show its week in the Week range. */
-  onOpenWeek: (date: Date) => void;
+  /** A day number was pressed: show that day in the Day range. */
+  onOpenDay: (date: Date) => void;
 }) {
   const t = useTranslations('reminders');
   const scroller = useRef<HTMLDivElement>(null);
@@ -73,6 +76,9 @@ export const CalendarMonth = memo(function CalendarMonth({
     [model.days],
   );
   const todayDate = new Date(today);
+  // The fire a jump landed on: its day's cell rings briefly.
+  const landed = useCalendarHighlight();
+  const highlight = landed === null ? null : startOfDay(landed).getTime();
 
   const { onScroll, onPointerDown } = useGridScroll({
     scroller,
@@ -108,7 +114,8 @@ export const CalendarMonth = memo(function CalendarMonth({
           <span
             key={date.getTime()}
             className={cn(
-              'text-muted-foreground border-l px-2 py-1.5 text-right text-xs',
+              // Dividers between columns only: the page edge is the first one's left.
+              'text-muted-foreground border-l px-2 py-1.5 text-right text-xs first:border-l-0',
               isWeekend(date) && 'bg-muted/40',
             )}
           >
@@ -135,8 +142,9 @@ export const CalendarMonth = memo(function CalendarMonth({
             locale={locale}
             focus={days.some((day) => monthKey(day.date) === focus) ? focus : null}
             today={days.some((day) => isSameDay(day.date, todayDate)) ? today : null}
+            highlight={days.some((day) => day.date.getTime() === highlight) ? highlight : null}
             loading={loading && index % 2 === 0}
-            onOpenWeek={onOpenWeek}
+            onOpenDay={onOpenDay}
           />
         ))}
       </div>
@@ -151,8 +159,10 @@ type WeekRowProps = {
   focus: number | null;
   /** Today's midnight, when today is in this week. */
   today: number | null;
+  /** The day a jump landed on, when it is in this week. */
+  highlight: number | null;
   loading: boolean;
-  onOpenWeek: (date: Date) => void;
+  onOpenDay: (date: Date) => void;
 };
 
 /**
@@ -161,7 +171,7 @@ type WeekRowProps = {
  * the rows that hold the old or new month, and a clock tick only today's.
  */
 const WeekRow = memo(
-  function WeekRow({ days, locale, focus, today, loading, onOpenWeek }: WeekRowProps) {
+  function WeekRow({ days, locale, focus, today, highlight, loading, onOpenDay }: WeekRowProps) {
     return (
       <div className="grid min-h-24 snap-start grid-cols-7 border-b">
         {days.map((day) => (
@@ -171,8 +181,9 @@ const WeekRow = memo(
             locale={locale}
             outside={focus === null || monthKey(day.date) !== focus}
             isToday={today === day.date.getTime()}
+            highlighted={highlight === day.date.getTime()}
             loading={loading && day.date.getDay() === 3}
-            onOpenWeek={onOpenWeek}
+            onOpenDay={onOpenDay}
           />
         ))}
       </div>
@@ -182,8 +193,9 @@ const WeekRow = memo(
     a.locale === b.locale &&
     a.focus === b.focus &&
     a.today === b.today &&
+    a.highlight === b.highlight &&
     a.loading === b.loading &&
-    a.onOpenWeek === b.onOpenWeek &&
+    a.onOpenDay === b.onOpenDay &&
     a.days.every((day, i) => day === b.days[i]),
 );
 
@@ -192,21 +204,30 @@ function DayCell({
   locale,
   outside,
   isToday,
+  highlighted,
   loading,
-  onOpenWeek,
+  onOpenDay,
 }: {
   day: CalendarDay;
   locale: string;
   outside: boolean;
   isToday: boolean;
+  highlighted: boolean;
   loading: boolean;
-  onOpenWeek: (date: Date) => void;
+  onOpenDay: (date: Date) => void;
 }) {
   const t = useTranslations('reminders');
   const { date } = day;
   const name = dateFormat(locale, { weekday: 'long', day: 'numeric', month: 'long' }).format(date);
   return (
-    <div className={cn('min-w-0 border-l', isWeekend(date) && 'bg-muted/40')}>
+    <div
+      className={cn(
+        // Dividers between days only: Monday sits on the page edge, which has its own line.
+        'relative min-w-0 border-l first:border-l-0',
+        isWeekend(date) && 'bg-muted/40',
+      )}
+    >
+      <span aria-hidden className={cn(LANDED_RING, highlighted ? 'opacity-100' : 'opacity-0')} />
       {/* Days outside the month on screen recede as a whole: number and fires. */}
       <div
         className={cn(
@@ -216,8 +237,8 @@ function DayCell({
       >
         <button
           type="button"
-          onClick={() => onOpenWeek(date)}
-          aria-label={t('calendarShowWeek', { date: name })}
+          onClick={() => onOpenDay(date)}
+          aria-label={t('calendarShowDay', { date: name })}
           aria-current={isToday ? 'date' : undefined}
           className={cn(
             'group/date focus-visible:ring-ring/50 relative flex h-6 min-w-6 shrink-0 items-center justify-center self-end rounded-sm px-1.5 text-xs tabular-nums outline-none focus-visible:ring-2',

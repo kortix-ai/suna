@@ -151,6 +151,29 @@ describe('expandFires', () => {
   });
 });
 
+describe('paused reminders', () => {
+  test('a paused one-shot shows at its scheduled time; a paused interval shows only its last fire', () => {
+    const once = reminder({
+      id: 'once',
+      state: 'paused',
+      at: iso(NOW - 3 * HOUR),
+      next_fire_at: null,
+    });
+    const every = reminder({
+      id: 'every',
+      state: 'paused',
+      every_seconds: 3600,
+      next_fire_at: null,
+      last_fired_at: iso(NOW - 2 * HOUR),
+    });
+    const fires = expandFires([once, every], NOW - 24 * HOUR, NOW + 24 * HOUR, NOW);
+    expect(fires.map((f) => [f.reminder.id, f.at, f.confirmed])).toEqual([
+      ['once', NOW - 3 * HOUR, false],
+      ['every', NOW - 2 * HOUR, true],
+    ]);
+  });
+});
+
 describe('fireStats', () => {
   // A seeded generator, so a failure reproduces.
   let seed = 7;

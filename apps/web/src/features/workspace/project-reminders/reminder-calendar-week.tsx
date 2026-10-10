@@ -12,6 +12,7 @@ import {
   isSameDay,
   layoutChips,
   minutesOfDay,
+  startOfDay,
   weekdayIndex,
   type CalendarDay,
   type CalendarModel,
@@ -19,8 +20,7 @@ import {
 import { FireCard, FirePill } from './reminder-fire-chip';
 import { reminderTitle } from './reminder-format';
 import {
-  useCalendarSelected,
-  useCalendarStore,
+  useCalendarHighlight,
   useGridScroll,
   type GridTop,
   type ScrollRequest,
@@ -31,11 +31,14 @@ const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
 const CHIP_MINUTES = 30;
 const TALL_MINUTES = 60;
 const SCROLL_TO_HOUR = 8;
-/** How long the ring on a day opened from Month holds before it fades. */
-const SELECTED_HOLD_MS = 600;
 /** The gutter is `w-14`; columns split the rest of the scroller's width by 7. */
 const GUTTER = 'calc(var(--spacing) * 14)';
-const COLUMN: CSSProperties = { width: `calc((100cqw - ${GUTTER}) / 7)` };
+/**
+ * A day column splits the scroller's width, less the gutter, by the days in
+ * view: 7 (Week) or 1 (Day). The count is a variable on the scroller, so this
+ * style stays one constant and the memoized columns never re-render for it.
+ */
+const COLUMN: CSSProperties = { width: `calc((100cqw - ${GUTTER}) / var(--days-in-view))` };
 /** Skeleton chips while loading: [weekday, hour]. */
 const SKELETON_CHIPS = [
   [0, 9],
@@ -45,16 +48,21 @@ const SKELETON_CHIPS = [
   [4, 9],
 ] as const;
 
+/** The ring on a day a jump landed on: the focus ring's colour, inset so it never clips. */
+export const LANDED_RING =
+  'ring-ring/60 pointer-events-none absolute inset-0 z-20 ring-2 ring-inset transition-opacity duration-(--duration-slow)';
+
 const pct = (minutes: number) => `${(minutes / DAY_MINUTES) * 100}%`;
 const isWeekend = (date: Date) => weekdayIndex(date) >= 5;
 
 /**
- * The Week range: day columns that scroll sideways one day per snap (7 in
- * view), a sticky time gutter, the "All week" lane for frequent reminders,
+ * The Week and Day ranges: day columns that scroll sideways one day per snap
+ * (7 or 1 in view), a sticky time gutter, the "All week" lane for frequent reminders,
  * and a 24-hour grid that opens scrolled to 08:00. The first visible day
  * is reported through `onTop`.
  */
 export const CalendarWeek = memo(function CalendarWeek({
+  daysInView,
   model,
   locale,
   today,
@@ -64,6 +72,8 @@ export const CalendarWeek = memo(function CalendarWeek({
   onTop,
   onSettle,
 }: {
+  /** 7 (Week) or 1 (Day). */
+  daysInView: 7 | 1;
   model: CalendarModel;
   locale: string;
   /** Local midnight of today. */
@@ -79,15 +89,16 @@ export const CalendarWeek = memo(function CalendarWeek({
   const scroller = useRef<HTMLDivElement>(null);
   const grid = useRef<HTMLDivElement>(null);
   const todayDate = new Date(today);
-  // The day opened from a Month date: its column flashes a focus ring once.
-  const selected = useCalendarSelected();
-  const store = useCalendarStore();
+  // The fire a jump landed on: its day's column rings briefly, and the grid
+  // scrolls its hour into view, a third of the way down.
+  const highlight = useCalendarHighlight();
+  const highlightDay = highlight === null ? null : startOfDay(highlight).getTime();
   useEffect(() => {
-    if (selected === null) return;
-    const timer = setTimeout(() => store.select(null), SELECTED_HOLD_MS);
-    return () => clearTimeout(timer);
-  }, [selected, store]);
-
+    const element = scroller.current;
+    if (highlight === null || !element || !grid.current) return;
+    const y = (grid.current.offsetHeight * minutesOfDay(highlight)) / DAY_MINUTES;
+    element.scrollTo({ top: Math.max(0, y - element.clientHeight / 3) });
+  }, [highlight]);
   // Open on the working day; the sticky header sits above the grid.
   useLayoutEffect(() => {
     if (scroller.current && grid.current) {
@@ -153,18 +164,25 @@ export const CalendarWeek = memo(function CalendarWeek({
     <div
       ref={scroller}
       role="region"
-      aria-label={t('calendarWeek')}
+      aria-label={daysInView === 1 ? t('calendarDay') : t('calendarWeek')}
       tabIndex={0}
       onScroll={onScroll}
       onPointerDown={onPointerDown}
       // `overflow-anchor: none`: the window re-centres with its own exact
       // offset; the browser's scroll anchoring would add a second shift.
-      style={{ containerType: 'inline-size', scrollPaddingLeft: GUTTER, overflowAnchor: 'none' }}
+      style={
+        {
+          containerType: 'inline-size',
+          scrollPaddingLeft: GUTTER,
+          overflowAnchor: 'none',
+          '--days-in-view': daysInView,
+        } as CSSProperties
+      }
       className="focus-visible:ring-ring/50 relative min-h-0 flex-1 snap-x snap-mandatory overflow-auto overscroll-none outline-none focus-visible:ring-2"
       data-testid="reminder-calendar-week"
     >
       <div className="flex w-max flex-col">
-        <div className="bg-background sticky top-0 z-20 border-b">
+        <div className="bg-background sticky top-0 z-30 border-b">
           <div className="flex">
             <span className="bg-background sticky left-0 z-10 w-14 shrink-0" />
             {model.days.map(({ date }) => (
@@ -179,7 +197,7 @@ export const CalendarWeek = memo(function CalendarWeek({
           {model.frequent.length > 0 ? (
             <div className="flex border-t">
               <span className="bg-background text-muted-foreground sticky left-0 z-10 w-14 shrink-0 py-1.5 pr-2 text-right text-xs">
-                {t('calendarAllWeek')}
+                {daysInView === 1 ? t('calendarAllDay') : t('calendarAllWeek')}
               </span>
               <div
                 className="sticky left-14 flex min-w-0 flex-wrap gap-1 border-l p-1.5"
@@ -211,7 +229,7 @@ export const CalendarWeek = memo(function CalendarWeek({
               locale={locale}
               loading={loading}
               now={isSameDay(day.date, todayDate) ? now : null}
-              selected={selected === day.date.getTime()}
+              highlighted={highlightDay === day.date.getTime()}
             />
           ))}
         </div>
@@ -278,7 +296,7 @@ const DayColumn = memo(function DayColumn({
   locale,
   loading,
   now,
-  selected,
+  highlighted,
 }: {
   index: number;
   day: CalendarDay;
@@ -286,8 +304,8 @@ const DayColumn = memo(function DayColumn({
   loading: boolean;
   /** The clock, on today's column only: it draws the now line. */
   now: number | null;
-  /** The day just opened from Month: its column flashes a focus ring. */
-  selected: boolean;
+  /** A jump landed on this day: a focus ring, held briefly, then faded. */
+  highlighted: boolean;
 }) {
   const weekday = weekdayIndex(day.date);
   return (
@@ -299,15 +317,8 @@ const DayColumn = memo(function DayColumn({
         isWeekend(day.date) && 'bg-muted/40',
       )}
     >
-      {/* The day opened from Month: a focus ring on the column, held briefly,
-          then faded. Always mounted so the fade-out can run. */}
-      <span
-        aria-hidden
-        className={cn(
-          'ring-ring/50 pointer-events-none absolute inset-0 z-20 ring-2 transition-opacity duration-(--duration-slow) ring-inset',
-          selected ? 'opacity-100' : 'opacity-0',
-        )}
-      />
+      {/* Always mounted, so the ring fades out instead of vanishing. */}
+      <span aria-hidden className={cn(LANDED_RING, highlighted ? 'opacity-100' : 'opacity-0')} />
       {loading
         ? SKELETON_CHIPS.filter(([skeletonDay]) => skeletonDay === weekday).map(([, hour]) => (
             <Skeleton
