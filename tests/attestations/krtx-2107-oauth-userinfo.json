@@ -1,0 +1,17 @@
+{
+  "source_hash": "71e6d2a8f132a2e04d96f0a62c8f6c570654a6e19734821cecfe96141e76452b",
+  "diff_files": [
+    "apps/api/src/__tests__/unit-oauth-access-token-auth.test.ts",
+    "apps/api/src/__tests__/unit-oauth-provider.test.ts",
+    "apps/api/src/oauth/index.ts"
+  ],
+  "diff_hash": "894d2fde48d8472a5909c0c7408dd52e9431d09285b4ac9555c7ca2fb2d9dcc1",
+  "head": "1fa19e7f3e7058cd21380cbc6fd0e472bf0cee98",
+  "passed": false,
+  "lanes": {
+    "core": "pass",
+    "packages": "fail",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-10T20:28:20.563Z"
+}
