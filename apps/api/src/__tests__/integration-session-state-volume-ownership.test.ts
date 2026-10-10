@@ -10,7 +10,12 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { accounts, platinumVolumeDeletions, projectSessions, projects } from '@kortix/db';
 import { eq, inArray } from 'drizzle-orm';
 import { db } from '../shared/db';
-import { scheduleSessionStateVolumeDelete, sessionStateVolumeName } from '../platform/services/ephemeral-sandbox';
+import {
+  queueProjectSessionStateVolumes,
+  scheduleSessionStateVolumeDelete,
+  sessionStateVolumeName,
+} from '../platform/services/ephemeral-sandbox';
+import { writeSessionBoot } from '../platform/services/boot-mode-store';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
@@ -91,5 +96,40 @@ describe('session state volume deletion follows the session id, never the metada
     expect(await queued([VICTIM, sessionStateVolumeName(own), sessionStateVolumeName(forged)])).toEqual([
       sessionStateVolumeName(own),
     ]);
+  });
+
+  // Regression: a volume forgotten by a boot fallback, and the volumes of a
+  // deleted project's sessions, were never queued (no session delete or
+  // cascade names them), so each held one of the workspace's volumes forever.
+  test('a volume a boot fallback drops, and a deleted project’s volumes, are queued', async () => {
+    const dropped = await session({});
+    created.push(sessionStateVolumeName(dropped));
+    await db
+      .update(projectSessions)
+      .set({ metadata: { ephemeral_state_volume: sessionStateVolumeName(dropped) } })
+      .where(eq(projectSessions.sessionId, dropped));
+    const at = new Date().toISOString();
+    await writeSessionBoot(
+      dropped,
+      { requested: 'volume', source: 'default', mode: 'artifacts', failures: { volume: 1 }, fallbacks: [], updatedAt: at },
+      { dropStateVolume: true },
+    );
+    const [row] = await db.select({ metadata: projectSessions.metadata }).from(projectSessions).where(eq(projectSessions.sessionId, dropped));
+    expect((row!.metadata as Record<string, unknown>).ephemeral_state_volume).toBeUndefined();
+    expect((row!.metadata as Record<string, unknown>).bootMode).toBeDefined();
+
+    const live = await session({});
+    created.push(sessionStateVolumeName(live));
+    await db
+      .update(projectSessions)
+      .set({ metadata: { ephemeral_state_volume: sessionStateVolumeName(live) } })
+      .where(eq(projectSessions.sessionId, live));
+    const forged = await session({ ephemeral_state_volume: VICTIM });
+    created.push(sessionStateVolumeName(forged));
+    await queueProjectSessionStateVolumes(PROJECT);
+    await queueProjectSessionStateVolumes(PROJECT);
+
+    const names = [VICTIM, sessionStateVolumeName(dropped), sessionStateVolumeName(live), sessionStateVolumeName(forged)];
+    expect(await queued(names)).toEqual([sessionStateVolumeName(dropped), sessionStateVolumeName(live)].sort());
   });
 });

@@ -83,7 +83,11 @@ export async function readSessionBoot(
 /**
  * Persist the session's boot record. `dropStateVolume` forgets a session
  * volume that never held a booted box's state, so later boots do not insist
- * on it.
+ * on it, and queues that volume for deletion in the same statement: once
+ * forgotten, neither the session delete nor the cascade trigger would ever
+ * name it again, and it would hold one of the workspace's volumes forever.
+ * The delay lets the failed box that mounted it go first; a volume still
+ * mounted is refused by storage and retried.
  */
 export async function writeSessionBoot(
   sessionId: string,
@@ -91,10 +95,33 @@ export async function writeSessionBoot(
   opts: { dropStateVolume?: boolean } = {},
 ): Promise<void> {
   const trimmed: SessionBootRecord = { ...record, fallbacks: record.fallbacks.slice(-10) };
-  const merged = sql`coalesce(${projectSessions.metadata}, '{}'::jsonb) || ${JSON.stringify({ [SESSION_BOOT_KEY]: trimmed })}::jsonb`;
+  const patch = JSON.stringify({ [SESSION_BOOT_KEY]: trimmed });
+  if (opts.dropStateVolume) {
+    const { sessionStateVolumeName } = await import('./ephemeral-sandbox');
+    // Every sub-statement reads the row as it was before the UPDATE, so
+    // `prev` sees the volume being forgotten. Only the session's own volume.
+    await db.execute(sql`
+      WITH prev AS (
+        SELECT metadata->>'ephemeral_state_volume' AS volume
+          FROM kortix.project_sessions
+         WHERE session_id = ${sessionId}
+           FOR UPDATE
+      ), upd AS (
+        UPDATE kortix.project_sessions
+           SET metadata = (coalesce(metadata, '{}'::jsonb) || ${patch}::jsonb) - 'ephemeral_state_volume'
+         WHERE session_id = ${sessionId}
+      )
+      INSERT INTO kortix.platinum_volume_deletions (volume_name, reason, not_before)
+      SELECT volume, 'session_volume_dropped', now() + interval '20 seconds'
+        FROM prev
+       WHERE volume = ${sessionStateVolumeName(sessionId)}
+      ON CONFLICT (volume_name) DO NOTHING
+    `);
+    return;
+  }
   await db
     .update(projectSessions)
-    .set({ metadata: opts.dropStateVolume ? sql`(${merged}) - 'ephemeral_state_volume'` : merged })
+    .set({ metadata: sql`coalesce(${projectSessions.metadata}, '{}'::jsonb) || ${patch}::jsonb` })
     .where(eq(projectSessions.sessionId, sessionId));
 }
 

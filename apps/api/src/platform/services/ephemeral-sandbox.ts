@@ -21,7 +21,7 @@
 
 import { config } from '../../config';
 import { logger } from '../../lib/logger';
-import { projectSessions, sessionSandboxes } from '@kortix/db';
+import { platinumVolumeDeletions, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { resolveProjectBootMode } from './boot-mode-store';
 import { endComputeSession } from '../../billing/services/compute-metering';
@@ -92,6 +92,10 @@ async function sessionStateVolumeOf(sessionId: string): Promise<string | null> {
   return ownSessionStateVolume(sessionId, row?.metadata);
 }
 
+async function withdrawVolumeDeletion(volume: string): Promise<void> {
+  await db.delete(platinumVolumeDeletions).where(eq(platinumVolumeDeletions.volumeName, volume));
+}
+
 async function recordSessionStateVolume(sessionId: string, volume: string): Promise<void> {
   await db
     .update(projectSessions)
@@ -118,6 +122,9 @@ export async function resolveSessionStateMount(input: {
   const existing = await sessionStateVolumeOf(input.sessionId);
   if (!existing && !(input.allowNew ?? (await ephemeralSandboxesEnabled(input.projectId, input.provider)))) return null;
   const t0 = Date.now();
+  // A volume an earlier boot fallback dropped is queued for deletion; one this
+  // session takes up again must not be deleted under it.
+  if (!existing) await withdrawVolumeDeletion(sessionStateVolumeName(input.sessionId));
   const volume = await ensureSessionStateVolume(input.sessionId);
   if (!existing) await recordSessionStateVolume(input.sessionId, volume);
   // A previous box's final commit must land first, or this box mounts a stale head.
@@ -603,6 +610,25 @@ export function scheduleSessionStateVolumeDelete(sessionId: string): Promise<voi
     const { queueVolumeDeletion } = await import('../../workers/drive-worker');
     await queueVolumeDeletion(volume, 'session_deleted', 20_000);
   })().catch((err) => logger.warn(`[ephemeral] queueing the state volume of ${sessionId} for deletion failed:`, { error: err instanceof Error ? err.message : String(err) }));
+}
+
+/**
+ * A deleted project's sessions stay as rows, so no session delete or cascade
+ * trigger ever queues their state volumes: queue every one a session of the
+ * project recorded (only its own `kss-<session id>`). Idempotent; a volume a
+ * live box still mounts is refused by storage and retried until the box goes.
+ */
+export async function queueProjectSessionStateVolumes(projectId: string): Promise<number> {
+  const rows = (await db.execute(sql`
+    INSERT INTO kortix.platinum_volume_deletions (volume_name, reason, not_before)
+    SELECT 'kss-' || session_id::text, 'project_deleted', now() + interval '20 seconds'
+      FROM kortix.project_sessions
+     WHERE project_id = ${projectId}
+       AND metadata->>'ephemeral_state_volume' = 'kss-' || session_id::text
+    ON CONFLICT (volume_name) DO NOTHING
+    RETURNING volume_name
+  `)) as unknown;
+  return ((rows as { rows?: unknown[] })?.rows ?? (rows as unknown[]) ?? []).length;
 }
 
 /**

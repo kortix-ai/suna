@@ -274,6 +274,10 @@ export function registerProjectSettingsRoutes(): void {
       .catch((error) => logger.warn('[projects] could not park the convex Apps', { projectId, error: String(error) }));
     // An archived project fires nothing: release its app-event provider instances.
     await releaseProjectEventSubscriptions(projectId);
+    // Its sessions' state volumes go with it (durable queue, retried while a box still mounts one).
+    await import('../../platform/services/ephemeral-sandbox')
+      .then(({ queueProjectSessionStateVolumes }) => queueProjectSessionStateVolumes(projectId))
+      .catch((error) => logger.warn('[projects] could not queue the session state volumes', { projectId, error: String(error) }));
     return c.json({ ok: true, archived: true, repo_deleted: repoDeleted });
   },
   );
