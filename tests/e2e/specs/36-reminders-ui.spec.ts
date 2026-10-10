@@ -59,7 +59,8 @@ test.describe('36 — Reminders UI', () => {
       });
       await installBrowserSessionDirect(page, session, '/favicon.png', authOptions);
       await selectAccountForUi(page, accountId);
-      await page.goto(`/projects/${projectId}/reminders`, { waitUntil: 'domcontentloaded' });
+      // The page opens on Calendar; the List is `?view=list`.
+      await page.goto(`/projects/${projectId}/reminders?view=list`, { waitUntil: 'domcontentloaded' });
       await dismissOnboarding(page);
       await expect(page.getByRole('heading', { name: 'Reminders', exact: true })).toBeVisible();
       await expect(page.getByText('Turn on Reminders to let agents and people schedule check-ins')).toBeVisible();
@@ -72,33 +73,33 @@ test.describe('36 — Reminders UI', () => {
 
       await page.reload({ waitUntil: 'domcontentloaded' });
       const list = page.getByTestId('reminder-list');
-      await expect(list.locator('li')).toHaveCount(2);
+      await expect(list.locator('tr[data-reminder-id]')).toHaveCount(2);
       await expect(list).toContainText('Did the vendor reply?');
       await expect(list).toContainText('Every 1h');
       await expect(list).toContainText('Vendor follow-up');
-      const nav = page.getByRole('link', { name: 'Reminders', exact: true });
+      const nav = page.getByRole('link', { name: /^Reminders\b/ });
       await expect(nav).toBeVisible();
 
       // Pause the recurring one: the PATCH carries enabled:false and the row leaves the Active tab.
       const paused = page.waitForResponse(
         (r) => r.url().endsWith(`${base}/${first.id}`) && r.request().method() === 'PATCH',
       );
-      await page.locator(`li[data-reminder-id="${first.id}"]`).getByRole('button', { name: 'Pause' }).click();
+      await page.locator(`tr[data-reminder-id="${first.id}"]`).getByRole('button', { name: 'Pause' }).click();
       const pausedResponse = await paused;
       expect(pausedResponse.status()).toBe(200);
       expect(pausedResponse.request().postDataJSON()).toEqual({ enabled: false });
-      await expect(list.locator('li')).toHaveCount(1);
+      await expect(list.locator('tr[data-reminder-id]')).toHaveCount(1);
       await page.getByRole('tab', { name: /Paused/ }).click();
-      await expect(page.locator(`li[data-reminder-id="${first.id}"]`)).toBeVisible();
+      await expect(page.locator(`tr[data-reminder-id="${first.id}"]`)).toBeVisible();
 
       // Remove it through the confirm dialog: one DELETE, and it is gone.
       const removed = page.waitForResponse(
         (r) => r.url().endsWith(`${base}/${first.id}`) && r.request().method() === 'DELETE',
       );
-      await page.locator(`li[data-reminder-id="${first.id}"]`).getByRole('button', { name: 'Remove' }).click();
+      await page.locator(`tr[data-reminder-id="${first.id}"]`).getByRole('button', { name: 'Remove' }).click();
       await page.getByRole('alertdialog').getByRole('button', { name: 'Remove' }).click();
       expect((await removed).status()).toBe(200);
-      await expect(page.locator(`li[data-reminder-id="${first.id}"]`)).toHaveCount(0);
+      await expect(page.locator(`tr[data-reminder-id="${first.id}"]`)).toHaveCount(0);
 
       // The session: a saved reminder turn renders as a Reminder card, and the header chip counts the active one.
       await seedSessionTranscript(env, {
@@ -129,14 +130,17 @@ test.describe('36 — Reminders UI', () => {
       await expect(card).toContainText('Check whether the vendor replied.');
       await expect(card).not.toContainText('[REMINDER');
 
-      const chip = page.getByTestId('session-reminders-chip');
+      // The live chat's header. A dismissed boot overlay can stay mounted under
+      // it (inert, aria-hidden) with its own header and chip.
+      const chip = page.getByTestId('session-chat').getByTestId('session-reminders-chip');
       await expect(chip).toBeVisible();
       await expect(chip).toHaveAccessibleName('1 active reminder');
       await chip.click();
       await expect(page.getByText('Post the launch checklist')).toBeVisible();
       await page.getByRole('link', { name: 'Manage reminders' }).click();
       await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/reminders\\?session=${sessionId}`));
-      await expect(page.getByRole('button', { name: 'Show all sessions' })).toContainText('Vendor follow-up');
+      await expect(page.getByTestId('reminder-session-filter')).toContainText('Vendor follow-up');
+      await expect(page.getByRole('button', { name: 'Clear session filter' })).toBeVisible();
 
       expect(pageErrors).toEqual([]);
     } finally {

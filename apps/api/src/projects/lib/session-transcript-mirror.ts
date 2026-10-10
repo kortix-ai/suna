@@ -645,13 +645,15 @@ export function childSessionsToCapture(input: {
  * Does this session's mirror still hold a row in the old stripped format? The
  * same question as `mirrorPartsAreStripped`, asked of the database: the wake
  * backfill reads the box again for such a history, because a mirror that
- * proved its head is otherwise left alone for good.
+ * proved its head is otherwise left alone for good. Scoped to `root`: a kept
+ * old root's rows cannot be read again from the current box.
  */
-export async function mirrorHoldsStrippedRows(sessionId: string): Promise<boolean> {
+export async function mirrorHoldsStrippedRows(sessionId: string, root: string): Promise<boolean> {
   const result = await db.execute(sql`
     SELECT EXISTS (
       SELECT 1 FROM kortix.session_transcript_messages
        WHERE session_id = ${sessionId}
+         AND opencode_session_id = ${root}
          AND parts @? '$[*] ? (@.type == "tool" && (@.state.status == "completed" || @.state.status == "error") && !(exists (@.state.input)))'
     ) AS stripped
   `);

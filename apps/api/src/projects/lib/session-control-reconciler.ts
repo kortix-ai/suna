@@ -545,7 +545,9 @@ async function driveWakeLadder(sessionId: string, reconciler: Reconciler): Promi
     });
     if (step === 'retry-start') {
       const { startSession } = await import('../session-lifecycle/start-session');
-      await startSession({ source: 'ui', ...authorized, projectId, sessionId });
+      // A retry of a quiet wake, never consent to undo a Stop that landed
+      // since this step was judged due.
+      await startSession({ source: 'ui', ...authorized, projectId, sessionId, keepStopped: true });
     } else {
       const { restartSession } = await import('../session-lifecycle/actions');
       await restartSession({ loaded: authorized.loaded, session: authorized.visible.row, projectId, sessionId });

@@ -43,7 +43,7 @@ import {
   easyConnectInstallTarget,
   type InstallTarget,
 } from '@/features/workspace/capabilities/connectors/install/install';
-import { InstallMenu } from '@/features/workspace/capabilities/connectors/install/install-menu';
+import { InstallButton } from '@/features/workspace/capabilities/connectors/install/install-menu';
 import {
   installableVariants,
   surfaceInstallName,
@@ -101,9 +101,6 @@ export function AppPage({ projectId, appSegment }: { projectId: string; appSegme
   const canWrite =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE, { accountId }).allowed ===
     true;
-  const canShare =
-    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE, { accountId })
-      .allowed === true;
 
   const connectorsQuery = useQuery({
     queryKey: qk.project.connectors(projectId),
@@ -305,16 +302,13 @@ export function AppPage({ projectId, appSegment }: { projectId: string; appSegme
     name: string,
   ) =>
     canWrite ? (
-      <InstallMenu
+      <InstallButton
         label={t('install')}
         aria-label={t('installNamed', { name })}
         variant={variant}
-        canShare={canShare}
-        onlyYou={tSharing('onlyYou')}
-        everyone={everyoneLabel}
-        onInstall={(audience) => {
+        onInstall={() => {
           setPendingControl(key);
-          install(target, audience, { connectors, app });
+          install(target, { connectors, app });
         }}
         pending={installing && pendingControl === key}
         disabled={installing}

@@ -6,11 +6,15 @@
  */
 import type { SessionStartResult } from '@kortix/api-contract';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { type SandboxProviderName, config } from '../../config';
 import { type SandboxStatus, getProvider } from '../../platform/providers';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { db } from '../../shared/db';
+import { logger } from '../../lib/logger';
+import { exponentialBackoffMs } from '../../shared/backoff';
+import { endComputeSession } from '../../billing/services/compute-metering';
+import { classifySandboxProvisioningFailure } from '../../platform/services/sandbox-provisioning-error';
 import { withProjectGitAuth } from '../lib/git';
 import { type ProjectRow } from '../lib/serializers';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
@@ -37,6 +41,7 @@ import type {
   OpenSessionRow,
 } from './session-open-context';
 import {
+  parseTimestampMs,
   sandboxMetadata,
   sessionRuntimeUrlPath,
   sessionStartFailureFromSandbox,
@@ -349,6 +354,147 @@ export async function replaceRefusedRuntimeOnOpen(
   };
 }
 
+/** Automatic re-attempts of a transient provision failure before `/start` gives up. */
+export const TRANSIENT_PROVISION_MAX_RETRIES = 6;
+const TRANSIENT_PROVISION_RETRY_BASE_MS = 5_000;
+const TRANSIENT_PROVISION_RETRY_CAP_MS = 60_000;
+
+/** A provision that failed with nothing to preserve, and that a later attempt may clear. */
+export function transientProvisionFailure(row: typeof sessionSandboxes.$inferSelect): boolean {
+  if (row.status !== 'error' || row.externalId) return false;
+  const metadata = sandboxMetadata(row);
+  if (typeof metadata.failureTransient === 'boolean') return metadata.failureTransient;
+  // Rows failed before the flag was written: classify the stored provider text.
+  const raw = metadata.lastProvisioningError ?? metadata.provisioningError;
+  return typeof raw === 'string' && classifySandboxProvisioningFailure(raw).transient;
+}
+
+/** Atomic: of concurrent polls exactly one deletes the failed row and re-provisions. */
+async function claimFailedProvisionRow(row: typeof sessionSandboxes.$inferSelect): Promise<boolean> {
+  const deleted = await db
+    .delete(sessionSandboxes)
+    .where(
+      and(
+        eq(sessionSandboxes.sandboxId, row.sandboxId),
+        isNull(sessionSandboxes.externalId),
+        eq(sessionSandboxes.status, 'error'),
+        eq(sessionSandboxes.updatedAt, row.updatedAt),
+      ),
+    )
+    .returning({ sandboxId: sessionSandboxes.sandboxId });
+  if (deleted.length === 0) return false;
+  await endComputeSession(row.sandboxId).catch((err) =>
+    logger.warn('[session-open] closing compute for a failed provision failed', {
+      sandboxId: row.sandboxId,
+      error: err instanceof Error ? err.message : String(err),
+    }),
+  );
+  return true;
+}
+
+/**
+ * A provision (a new session, or an ephemeral wake) that failed for a reason a
+ * later attempt can clear — the provider at capacity, rate limited, a transient
+ * 5xx — is re-attempted by `/start` itself, with backoff, instead of replaying
+ * the failure until someone presses Restart. Nothing is lost: the failed row
+ * never had a box, and an ephemeral session's state stays on its volume, which
+ * the fresh box mounts.
+ *
+ * Three answers, each with a `retriable` its message agrees with: waiting
+ * (`starting`, retriable, "retrying automatically"), re-provisioning
+ * (`provisioning`, retriable), or out of retries (`failed`, not retriable,
+ * "Restart"). `null` for a failure that is not transient.
+ */
+export async function retryTransientProvisionFailure(
+  args: Pick<OpenSessionArgs, 'loaded' | 'visible' | 'projectId' | 'sessionId'>,
+  row: typeof sessionSandboxes.$inferSelect,
+  now: Date = new Date(),
+  deps: {
+    claim?: (row: typeof sessionSandboxes.$inferSelect) => Promise<boolean>;
+    allocate?: typeof allocateRuntimeOnOpen;
+    canAllocate?: () => boolean;
+  } = {},
+): Promise<SessionStartResult | null> {
+  if (!transientProvisionFailure(row)) return null;
+  const { loaded, visible, projectId, sessionId } = args;
+  const claim = deps.claim ?? claimFailedProvisionRow;
+  const allocate = deps.allocate ?? allocateRuntimeOnOpen;
+  const canAllocate =
+    deps.canAllocate ??
+    (() =>
+      (config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(visible.row.sandboxProvider) &&
+      !sandboxCallbackUnreachableReason());
+  const metadata = sandboxMetadata(row);
+  const failure = sessionStartFailureFromSandbox(row);
+  const category = failure?.category ?? 'sandbox-provider';
+  const retries = Number(metadata.transientRetryCount ?? 0) || 0;
+  const failedAtMs = parseTimestampMs(metadata.initFailedAt) ?? row.updatedAt.getTime();
+  const evidence = {
+    check: typeof metadata.lastProvisioningError === 'string' ? metadata.lastProvisioningError.slice(0, 200) : category,
+    observed_at: new Date(failedAtMs).toISOString(),
+    error: typeof metadata.lastInitError === 'string' ? metadata.lastInitError.slice(0, 200) : null,
+    attempts: retries + 1,
+  };
+
+  if (retries >= TRANSIENT_PROVISION_MAX_RETRIES || !canAllocate()) {
+    return {
+      stage: 'failed',
+      agent_name: visible.row.agentName ?? 'default',
+      retriable: false,
+      sandbox: serializeSandboxRow(row),
+      opencode_session_id: null,
+      reason: 'provider_transient_retries_exhausted',
+      failure: {
+        category,
+        message: `The sandbox provider could not start this session after ${retries + 1} attempts. Restart the session to try again.`,
+        retryable: true,
+        evidence: { ...evidence, next_retry_at: null },
+      },
+    };
+  }
+
+  const retryAtMs =
+    failedAtMs +
+    exponentialBackoffMs({
+      attempt: retries + 1,
+      baseMs: TRANSIENT_PROVISION_RETRY_BASE_MS,
+      capMs: TRANSIENT_PROVISION_RETRY_CAP_MS,
+    });
+  if (now.getTime() < retryAtMs) {
+    return {
+      stage: 'starting',
+      agent_name: visible.row.agentName ?? 'default',
+      retriable: true,
+      sandbox: serializeSandboxRow(row),
+      opencode_session_id: null,
+      reason: 'provider_transient_retry_wait',
+      failure: {
+        category,
+        message: `${(failure?.message ?? 'The sandbox provider could not start this session.').replace(/\s*Try again(?: in a minute)?\.$/, '')} Retrying automatically.`,
+        retryable: true,
+        evidence: { ...evidence, next_retry_at: new Date(retryAtMs).toISOString() },
+      },
+    };
+  }
+
+  if (await claim(row)) {
+    // Each box is a new provider create: the attempt moves with it.
+    const prevAttempt = Number(metadata.platinumCreateAttempt);
+    await allocate(loaded, visible.row, projectId, sessionId, {
+      transientRetryCount: retries + 1,
+      platinumCreateAttempt: (Number.isFinite(prevAttempt) && prevAttempt > 0 ? prevAttempt : 1) + 1,
+    });
+  }
+  return {
+    stage: 'provisioning',
+    agent_name: visible.row.agentName ?? 'default',
+    retriable: true,
+    sandbox: null,
+    opencode_session_id: null,
+    reason: 'provider_transient_retry',
+  };
+}
+
 /**
  * The not-usable-row phase of `runOpenSession`: report the session's terminal
  * state, preserve an established runtime, or provision a fresh box. Body is
@@ -369,6 +515,10 @@ export async function openUnusableRow(
       row.status === 'active' ||
       (row.status === 'stopped' && row.externalId && stoppedProviderStatus === 'removed'));
   if (!usable) {
+    if (visible.row.status === 'failed' && row) {
+      const retried = await retryTransientProvisionFailure(args, row);
+      if (retried) return retried;
+    }
     if (['failed', 'stopped', 'completed'].includes(visible.row.status)) {
       return {
         stage: visible.row.status === 'failed' ? 'failed' : 'stopped',

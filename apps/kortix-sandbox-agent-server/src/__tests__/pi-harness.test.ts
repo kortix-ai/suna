@@ -2003,6 +2003,16 @@ describe('pi AGENTS.md', () => {
     expect(notLoaded(warn)).toHaveLength(1)
   })
 
+  test('an AGENTS.md FIFO adds no section, warns once, and does not block the boot', async () => {
+    const warn = spyOn(logger, 'warn')
+    const r = await boot({
+      script: [{ text: 'ok' }],
+      prepare: (workspace) => expect(spawnSync('mkfifo', [join(workspace, 'AGENTS.md')]).status).toBe(0),
+    })
+    expect(await nextSystem(r)).not.toContain('<project_instructions')
+    expect(notLoaded(warn)).toHaveLength(1)
+  })
+
   // root reads a mode-000 file, so the read error cannot happen there.
   test.skipIf(process.getuid?.() === 0)('an AGENTS.md that cannot be read adds no section, warns once, and the runtime still starts', async () => {
     const warn = spyOn(logger, 'warn')

@@ -1482,6 +1482,15 @@ async function provisionCreatedSession(params: {
     const extraEnvVars = envPromise.then((env) => {
       return mergeSessionSandboxEnv(env, input.extraEnvVars);
     });
+    // KRTX-2064: extraEnvVars is the end of the env-build chain and the only
+    // link that can sit unconsumed — if anything throws between here and
+    // provisionSessionSandbox attaching its own catch, a later env-build
+    // failure (fail-closed secret grant on a git auth error) would surface as
+    // an unhandled rejection, which on Bun is process-fatal. The real error is
+    // still owned by the provisioner's catch and the catch below; this only
+    // detaches the no-consumer case (same pattern as the guard inside
+    // provisionSessionSandbox).
+    extraEnvVars.catch(() => undefined);
 
     const provisionPromise = provisionSessionSandbox({
       sandboxId: sessionId,

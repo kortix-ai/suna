@@ -20,8 +20,7 @@ import {
   DENSE_GRID_CONTAINER_CLASSNAME,
 } from '@/features/workspace/capabilities/shared/catalog/catalog-grid-tokens';
 import { cn } from '@/lib/utils';
-import type { InstallAudience } from '../install/install';
-import { InstallMenu } from '../install/install-menu';
+import { InstallButton } from '../install/install-menu';
 import { catalogEntryKindLabel, isCatalogEntryConnected, type CatalogEntry } from './catalog-entry';
 import { catalogFootSummary } from './catalog-foot';
 import type { CatalogState } from './use-catalog';
@@ -33,12 +32,9 @@ export interface CatalogInstall {
    *  tell an app the project already has from a new one. */
   ready: boolean;
   canWrite: boolean;
-  canShare: boolean;
-  onlyYou: string;
-  everyone: string;
   /** The app slug being installed, or `null`. */
   pendingKey: string | null;
-  onInstall: (entry: CatalogEntry, audience: InstallAudience) => void;
+  onInstall: (entry: CatalogEntry) => void;
 }
 
 /** The Install control is offered only where the caller may add the app, and
@@ -75,16 +71,13 @@ function CatalogAffordance({
   }
   if (!canInstallEntry(entry, install)) return null;
   return (
-    <InstallMenu
+    <InstallButton
       label={t('install')}
       variant="outline"
       className="gap-1 rounded-full"
       // A page holds dozens of these; the name says which app each installs.
       aria-label={t('installNamed', { name: entry.name })}
-      canShare={install.canShare}
-      onlyYou={install.onlyYou}
-      everyone={install.everyone}
-      onInstall={(audience) => install.onInstall(entry, audience)}
+      onInstall={() => install.onInstall(entry)}
       pending={install.pendingKey === entry.slug}
       // `pendingKey` holds one install. A second one started beside it would
       // clear the first one's pending state when it settles.

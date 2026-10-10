@@ -28,6 +28,9 @@ export interface ConnectorAccountsProps {
   showAccountInfo?: boolean;
   /** Sign an unsigned account in (the row's Connect). */
   onConnect?: (connection: Connection) => void;
+  /** Bumped to open "Add account" (a header button, or right after Install). */
+  addRequest?: number;
+  onAddRequestHandled?: () => void;
 }
 
 /**
@@ -67,6 +70,8 @@ export function ConnectorAccounts({
   onSetCredential,
   showAccountInfo = false,
   onConnect,
+  addRequest,
+  onAddRequestHandled,
 }: ConnectorAccountsProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const isManagedProvider = isManagedConnectorProvider(connector.provider);
@@ -97,6 +102,8 @@ export function ConnectorAccounts({
         onStartSession={onStartSession}
         onSetCredential={onSetCredential}
         onConnect={onConnect}
+        addRequest={addRequest}
+        onAddRequestHandled={onAddRequestHandled}
         addVariant="default"
         titleAddon={
           showAccountInfo ? (

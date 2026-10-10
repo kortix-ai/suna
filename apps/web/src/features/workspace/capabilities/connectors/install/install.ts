@@ -1,8 +1,6 @@
 import type {
   AdminConnector,
-  ConnectorConnectResult,
   ConnectorDraftInput,
-  ConnectorFinalizeResult,
   ConnectorSyncResult,
 } from '@kortix/sdk';
 
@@ -19,9 +17,6 @@ import {
 } from '@/features/workspace/customize/sections/connector-connection-form';
 
 import type { InstallableVariant } from './pick-surface';
-
-/** Who the installed account is for: the caller alone, or everyone in the project. */
-export type InstallAudience = 'private' | 'project';
 
 /** One surface of one app, as Install needs it. */
 export interface InstallTarget {
@@ -129,159 +124,44 @@ export interface InstallDeps {
     projectId: string,
     draft: ConnectorDraftInput,
   ): Promise<{ sync?: ConnectorSyncResult }>;
-  /** Labels of the accounts a connector already has. */
-  listAccountLabels(projectId: string, connectorSlug: string): Promise<string[]>;
-  reconcileMine(
-    projectId: string,
-    input: { connector_alias: string; label: string },
-  ): Promise<{ connection_id: string }>;
-  reconcileProject(
-    projectId: string,
-    input: { connector_alias: string; owner_type: 'project'; label: string },
-  ): Promise<{ connection_id: string }>;
-  connectConnection(projectId: string, connectionId: string): Promise<ConnectorConnectResult>;
-  finalizeConnection(projectId: string, connectionId: string): Promise<ConnectorFinalizeResult>;
-  /** The project-owned managed connect, with its shared-default fallback. */
-  projectSteps(
-    projectId: string,
-    slug: string,
-    label: string,
-  ): {
-    start: () => Promise<ConnectorConnectResult>;
-    finalize: () => Promise<ConnectorFinalizeResult>;
-  };
-  /** Opens the provider window SYNCHRONOUSLY, then runs `start` and polls `finalize`. */
-  runLinkFlow(
-    start: () => Promise<ConnectorConnectResult>,
-    finalize: () => Promise<ConnectorFinalizeResult>,
-  ): Promise<{ connected: true }>;
   /** Slug suffix source; injectable so tests are deterministic. */
   random?: () => string;
 }
 
 export type InstallResult =
-  | { status: 'connected'; slug: string }
-  | { status: 'needs_credential'; slug: string; connectionId: string }
-  /** An MCP server that signs in with OAuth: start that sign-in now. */
-  | { status: 'sign_in'; slug: string; connectionId: string }
+  | { status: 'installed'; slug: string }
   | { status: 'sync_failed'; name: string; error: string };
 
-class InstallSyncError extends Error {
-  constructor(
-    readonly connectorName: string,
-    readonly syncError: string,
-  ) {
-    super(syncError);
-  }
-}
-
+/**
+ * Install = add the connector PROFILE to the project, nothing more.
+ *
+ * A profile is always the project's: the app, its config and its rules (a
+ * `kortix.yaml` entry). Who may use it is a property of each ACCOUNT, chosen
+ * when one is added (`useAddAccount`), never here. When the project already
+ * has a profile for this app and surface, Install reuses it.
+ */
 export async function runInstall(
   deps: InstallDeps,
   input: {
     projectId: string;
     target: InstallTarget;
-    audience: InstallAudience;
-    connectors: readonly (Pick<AdminConnector, 'slug' | 'provider' | 'name' | 'authSecret'> &
-      Partial<Pick<AdminConnector, 'status'>>)[];
+    connectors: readonly Pick<AdminConnector, 'slug' | 'provider' | 'name'>[];
   },
 ): Promise<InstallResult> {
-  const { projectId, target, audience, connectors } = input;
-  const existing =
-    connectors.find((connector) =>
-      connectorInstalledFrom(connector, target.appName, target.provider),
-    ) ?? null;
-
+  const { projectId, target, connectors } = input;
+  const existing = connectors.find((connector) =>
+    connectorInstalledFrom(connector, target.appName, target.provider),
+  );
+  if (existing) return { status: 'installed', slug: existing.slug };
+  const slugs = connectors.map((connector) => connector.slug);
+  const slug = proposeConnectorConnectionSlug(target.appName, slugs, deps.random);
+  const name = proposeConnectorConnectionName(target.appName, slugs);
+  const result = await deps.createConnector(projectId, target.buildDraft({ slug, name }));
+  const syncError = connectorSyncErrorForSlug(result, slug);
   // An MCP server that signs in with OAuth answers its first tools/list with
-  // 401 or 403. That is the sign-in still to do, not a broken install.
-  let signInPending = false;
-
-  /** The connector to add the account to, created when the project has none. */
-  const ensureConnector = async (): Promise<{ slug: string; label: string }> => {
-    if (existing) {
-      const labels = await deps.listAccountLabels(projectId, existing.slug);
-      return { slug: existing.slug, label: proposeAccountLabel(target.appName, labels) };
-    }
-    const slugs = connectors.map((connector) => connector.slug);
-    const slug = proposeConnectorConnectionSlug(target.appName, slugs, deps.random);
-    const name = proposeConnectorConnectionName(target.appName, slugs);
-    // "Only you" creates the connector as member-authorized: sync then adds no
-    // shared "Everyone in project" account, which would sit there unsigned.
-    const draft = target.buildDraft({ slug, name });
-    const result = await deps.createConnector(
-      projectId,
-      audience === 'private' ? { ...draft, authorization_strategy: 'user' } : draft,
-    );
-    const syncError = connectorSyncErrorForSlug(result, slug);
-    if (syncError && target.provider === 'mcp' && isAuthChallenge(syncError)) {
-      signInPending = true;
-    } else if (syncError) {
-      throw new InstallSyncError(name, syncError);
-    }
-    return { slug, label: proposeAccountLabel(target.appName, []) };
-  };
-
-  try {
-    if (target.managed) {
-      let slug = '';
-      let finalize: (() => Promise<ConnectorFinalizeResult>) | null = null;
-      // No `await` before this call: `runLinkFlow` opens the provider window
-      // inside the click, and a window opened after an await is blocked.
-      await deps.runLinkFlow(
-        async () => {
-          const connector = await ensureConnector();
-          slug = connector.slug;
-          if (audience === 'project') {
-            const steps = deps.projectSteps(projectId, connector.slug, connector.label);
-            finalize = steps.finalize;
-            return steps.start();
-          }
-          const connection = await deps.reconcileMine(projectId, {
-            connector_alias: connector.slug,
-            label: connector.label,
-          });
-          finalize = () => deps.finalizeConnection(projectId, connection.connection_id);
-          return deps.connectConnection(projectId, connection.connection_id);
-        },
-        () => {
-          if (!finalize) throw new Error('The account was not created.');
-          return finalize();
-        },
-      );
-      return { status: 'connected', slug };
-    }
-
-    const connector = await ensureConnector();
-    const connection =
-      audience === 'private'
-        ? await deps.reconcileMine(projectId, {
-            connector_alias: connector.slug,
-            label: connector.label,
-          })
-        : await deps.reconcileProject(projectId, {
-            connector_alias: connector.slug,
-            owner_type: 'project',
-            label: connector.label,
-          });
-    const needsCredential = existing
-      ? Boolean(existing.authSecret) ||
-        existing.status === 'error' ||
-        existing.status === 'needs_auth'
-      : target.needsCredential || signInPending;
-    if (!needsCredential) return { status: 'connected', slug: connector.slug };
-    // An MCP account signs in through the server's own OAuth when it has one;
-    // the caller falls back to credential entry when it does not.
-    if (target.provider === 'mcp') {
-      return { status: 'sign_in', slug: connector.slug, connectionId: connection.connection_id };
-    }
-    return {
-      status: 'needs_credential',
-      slug: connector.slug,
-      connectionId: connection.connection_id,
-    };
-  } catch (error) {
-    if (error instanceof InstallSyncError) {
-      return { status: 'sync_failed', name: error.connectorName, error: error.syncError };
-    }
-    throw error;
+  // 401 or 403: that is the sign-in still to do, not a broken install.
+  if (syncError && !(target.provider === 'mcp' && isAuthChallenge(syncError))) {
+    return { status: 'sync_failed', name, error: syncError };
   }
+  return { status: 'installed', slug };
 }

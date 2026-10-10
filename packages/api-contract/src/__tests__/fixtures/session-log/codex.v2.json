@@ -1,0 +1,2512 @@
+{
+  "schema": "kortix.session/2",
+  "v": 1,
+  "session_id": "01a1216d-8106-7123-9957-cfa59fab00a3",
+  "title": "Create hello.txt containing hi",
+  "created_at": "2026-10-09T16:09:47.015Z",
+  "harness": {
+    "current": "codex",
+    "history": [
+      {
+        "harness": "codex",
+        "version": "0.162.0",
+        "from_seq": 1,
+        "at": "2026-10-09T16:09:47.015Z"
+      }
+    ]
+  },
+  "selection": {
+    "agent": null,
+    "model": {
+      "provider": "mock",
+      "model": "mock-model-2",
+      "api": "openai-responses"
+    }
+  },
+  "todos": [],
+  "pending": {
+    "questions": [],
+    "permissions": []
+  },
+  "threads": [
+    {
+      "schema": "kortix.session/2",
+      "v": 1,
+      "thread_id": "01a1216d-8106-7123-9957-cfa59fab00a3",
+      "parent_thread_id": null,
+      "spawned_by": null,
+      "agent": null,
+      "nickname": null,
+      "title": "Create hello.txt containing hi",
+      "created_at": "2026-10-09T16:09:47.015Z",
+      "messages": [
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "cdx_w0_msg_01a1216d-8113-7e92-adf6-969ef369b5bc",
+          "thread_id": "01a1216d-8106-7123-9957-cfa59fab00a3",
+          "seq": 1,
+          "role": "system",
+          "kind": "context",
+          "status": "complete",
+          "in_context": true,
+          "model": null,
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "created_at": "2026-10-09T16:09:47.027Z",
+          "completed_at": "2026-10-09T16:09:47.027Z",
+          "producer": {
+            "harness": "codex",
+            "harness_version": "0.162.0",
+            "adapter_version": "codex-adapter/0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "text": "<skills_instructions>\n## Skills\nA skill is a set of local instructions to follow that is stored in a `SKILL.md` file. Below is the list of skills that can be used. Each entry includes a name, description, and a short path that can be expanded into an absolute path using the skill roots table.\n### Skill roots\n- `r0` = `/work/proto/harness/codex/homes/live/skills/.system`\n### Available skills\n- imagegen: Generate or edit raster images when the task benefits from AI-created bitmap visuals such as photos, illustrations, textures, sprites, mockups, or transparent-background cutouts. Use when Codex should create a brand-new image, transform an existing image, or derive visual variants from references, and the output should be a bitmap asset rather than repo-native code or vector. Do not use when the task is better handled by editing existing SVG/vector/code-native assets, extending an established icon or logo system, or building the visual directly in HTML/CSS/canvas. (file: r0/imagegen/SKILL.md)\n- openai-docs: Use for Codex models/pricing, scheduled tasks, skills, settings, setup, troubleshooting, customization, automations, and self-knowledge\u2014including 'you,' 'your,' 'this app,' or 'this coding agent' when they refer to Codex\u2014and for OpenAI APIs/products and ChatGPT Work. Also use for model choice/migration, prompting, SDKs, Responses, Realtime, agents, evals, and Chat/Work/Codex comparisons. Do not use for generic app/software tasks that merely mention Codex. (file: r0/openai-docs/SKILL.md)\n- skill-creator: Create or update a Codex skill with appropriately scoped instructions and any needed supporting resources. (file: r0/skill-creator/SKILL.md)\n- skill-installer: Install Codex skills into $CODEX_HOME/skills from a curated list or a GitHub repo path. Use when a user asks to list installable skills, install a curated skill, or install a skill from another repo (including private repos). (file: r0/skill-installer/SKILL.md)\n</skills_instructions>"
+            },
+            {
+              "type": "text",
+              "text": "<permissions instructions>\nFilesystem sandboxing defines which files can be read or written. `sandbox_mode` is `danger-full-access`: No filesystem sandboxing - all commands are permitted. Network access is enabled.\nApproval policy is currently never. Do not provide the `sandbox_permissions` for any reason, commands will be rejected.\n</permissions instructions>"
+            }
+          ],
+          "ext": {
+            "codex": {
+              "version": "0.162.0",
+              "native_id": "msg_01a1216d-8113-7e92-adf6-969ef369b5bc",
+              "data": {
+                "item": {
+                  "type": "message",
+                  "id": "msg_01a1216d-8113-7e92-adf6-969ef369b5bc",
+                  "role": "developer",
+                  "content": [
+                    {
+                      "type": "input_text",
+                      "text": "<skills_instructions>\n## Skills\nA skill is a set of local instructions to follow that is stored in a `SKILL.md` file. Below is the list of skills that can be used. Each entry includes a name, description, and a short path that can be expanded into an absolute path using the skill roots table.\n### Skill roots\n- `r0` = `/work/proto/harness/codex/homes/live/skills/.system`\n### Available skills\n- imagegen: Generate or edit raster images when the task benefits from AI-created bitmap visuals such as photos, illustrations, textures, sprites, mockups, or transparent-background cutouts. Use when Codex should create a brand-new image, transform an existing image, or derive visual variants from references, and the output should be a bitmap asset rather than repo-native code or vector. Do not use when the task is better handled by editing existing SVG/vector/code-native assets, extending an established icon or logo system, or building the visual directly in HTML/CSS/canvas. (file: r0/imagegen/SKILL.md)\n- openai-docs: Use for Codex models/pricing, scheduled tasks, skills, settings, setup, troubleshooting, customization, automations, and self-knowledge\u2014including 'you,' 'your,' 'this app,' or 'this coding agent' when they refer to Codex\u2014and for OpenAI APIs/products and ChatGPT Work. Also use for model choice/migration, prompting, SDKs, Responses, Realtime, agents, evals, and Chat/Work/Codex comparisons. Do not use for generic app/software tasks that merely mention Codex. (file: r0/openai-docs/SKILL.md)\n- skill-creator: Create or update a Codex skill with appropriately scoped instructions and any needed supporting resources. (file: r0/skill-creator/SKILL.md)\n- skill-installer: Install Codex skills into $CODEX_HOME/skills from a curated list or a GitHub repo path. Use when a user asks to list installable skills, install a curated skill, or install a skill from another repo (including private repos). (file: r0/skill-installer/SKILL.md)\n</skills_instructions>"
+                    },
+                    {
+                      "type": "input_text",
+                      "text": "<permissions instructions>\nFilesystem sandboxing defines which files can be read or written. `sandbox_mode` is `danger-full-access`: No filesystem sandboxing - all commands are permitted. Network access is enabled.\nApproval policy is currently never. Do not provide the `sandbox_permissions` for any reason, commands will be rejected.\n</permissions instructions>"
+                    }
+                  ],
+                  "internal_chat_message_metadata_passthrough": {
+                    "turn_id": "01a1216d-810d-7870-8540-59e677059012",
+                    "create_time": 1791562187.027677,
+                    "content_item_kinds": [
+                      "host_skills.instructions",
+                      "permissions.instructions"
+                    ]
+                  }
+                },
+                "metadata": {
+                  "client_authored": false,
+                  "mcp_attribution": {
+                    "status": "none"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_01a1216d-8113-7e92-adf6-96a24272bcec",
+          "thread_id": "01a1216d-8106-7123-9957-cfa59fab00a3",
+          "seq": 2,
+          "role": "user",
+          "kind": "context",
+          "status": "complete",
+          "in_context": true,
+          "model": null,
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "created_at": "2026-10-09T16:09:47.027Z",
+          "completed_at": "2026-10-09T16:09:47.027Z",
+          "producer": {
+            "harness": "codex",
+            "harness_version": "0.162.0",
+            "adapter_version": "codex-adapter/0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "text": "<environment_context>\n  <cwd>/work/proto/harness/codex/work/live</cwd>\n  <shell>zsh</shell>\n  <current_date>2026-10-09</current_date>\n  <timezone>UTC</timezone>\n  <filesystem><workspace_roots><root>/work/proto/harness/codex/work/live</root></workspace_roots><permission_profile type=\"disabled\"><file_system type=\"unrestricted\" /></permission_profile></filesystem>\n</environment_context>"
+            }
+          ],
+          "origin": "prompt",
+          "ext": {
+            "codex": {
+              "version": "0.162.0",
+              "native_id": "msg_01a1216d-8113-7e92-adf6-96a24272bcec",
+              "data": {
+                "item_id": "msg_01a1216d-8113-7e92-adf6-96a24272bcec",
+                "passthrough": {
+                  "turn_id": "01a1216d-810d-7870-8540-59e677059012",
+                  "create_time": 1791562187.02768,
+                  "content_item_kinds": [
+                    "environments.environment_context"
+                  ]
+                },
+                "item": {
+                  "type": "message",
+                  "id": "msg_01a1216d-8113-7e92-adf6-96a24272bcec",
+                  "role": "user",
+                  "content": [
+                    {
+                      "type": "input_text",
+                      "text": "<environment_context>\n  <cwd>/work/proto/harness/codex/work/live</cwd>\n  <shell>zsh</shell>\n  <current_date>2026-10-09</current_date>\n  <timezone>UTC</timezone>\n  <filesystem><workspace_roots><root>/work/proto/harness/codex/work/live</root></workspace_roots><permission_profile type=\"disabled\"><file_system type=\"unrestricted\" /></permission_profile></filesystem>\n</environment_context>"
+                    }
+                  ],
+                  "internal_chat_message_metadata_passthrough": {
+                    "turn_id": "01a1216d-810d-7870-8540-59e677059012",
+                    "create_time": 1791562187.02768,
+                    "content_item_kinds": [
+                      "environments.environment_context"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_01a1216d-8115-7c72-b679-2f96c7937a1e",
+          "thread_id": "01a1216d-8106-7123-9957-cfa59fab00a3",
+          "seq": 3,
+          "role": "user",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model",
+            "api": "openai-responses"
+          },
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "created_at": "2026-10-09T16:09:47.029Z",
+          "completed_at": "2026-10-09T16:09:47.029Z",
+          "producer": {
+            "harness": "codex",
+            "harness_version": "0.162.0",
+            "adapter_version": "codex-adapter/0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Create hello.txt containing hi"
+            }
+          ],
+          "origin": "prompt",
+          "ext": {
+            "codex": {
+              "version": "0.162.0",
+              "native_id": "msg_01a1216d-8115-7c72-b679-2f96c7937a1e",
+              "data": {
+                "item_id": "msg_01a1216d-8115-7c72-b679-2f96c7937a1e",
+                "passthrough": {
+                  "turn_id": "01a1216d-810d-7870-8540-59e677059012",
+                  "create_time": 1791562187.029475,
+                  "content_item_kinds": [
+                    "user.text"
+                  ]
+                },
+                "metadata": {
+                  "retained_source": {
+                    "id": {
+                      "message_id": "msg_01a1216d-8115-7c72-b679-2f96c7937a1e",
+                      "turn_id": "01a1216d-810d-7870-8540-59e677059012",
+                      "role": "user"
+                    },
+                    "revision": "retained_01a1216d-8115-7c72-b679-2fb9b77bb816",
+                    "complete": true
+                  },
+                  "client_authored": false,
+                  "user_input_order": 0,
+                  "mcp_attribution": {
+                    "status": "none"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_mv15vaqk1",
+          "thread_id": "01a1216d-8106-7123-9957-cfa59fab00a3",
+          "seq": 4,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model",
+            "api": "openai-responses"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "tool_calls",
+          "error": null,
+          "created_at": "2026-10-09T16:09:47.037Z",
+          "completed_at": "2026-10-09T16:09:47.037Z",
+          "producer": {
+            "harness": "codex",
+            "harness_version": "0.162.0",
+            "adapter_version": "codex-adapter/0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "text": "I'll create the file.",
+              "ext": {
+                "codex": {
+                  "version": "0.162.0",
+                  "data": {
+                    "id": "msg_mv15vaqk1"
+                  }
+                }
+              }
+            },
+            {
+              "type": "tool_call",
+              "call_id": "call_mv15vaqk3",
+              "name": "exec_command",
+              "kind": "shell",
+              "input": {
+                "cmd": "echo hi > hello.txt"
+              },
+              "status": "complete",
+              "started_at": "2026-10-09T16:09:47.037Z",
+              "ext": {
+                "codex": {
+                  "version": "0.162.0",
+                  "data": {
+                    "id": "fc_mv15vaqk2",
+                    "type": "function_call",
+                    "output_item": {
+                      "id": "fco_01a1216d-814b-7252-88c0-019192fd9042",
+                      "type": "function_call_output"
+                    }
+                  }
+                }
+              },
+              "result": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Chunk ID: edafe9\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 0\nOutput:\n"
+                  }
+                ],
+                "is_error": false,
+                "exit_code": 0
+              },
+              "ended_at": "2026-10-09T16:09:47.083Z"
+            }
+          ],
+          "reply_to": "msg_01a1216d-8115-7c72-b679-2f96c7937a1e",
+          "ext": {
+            "codex": {
+              "version": "0.162.0",
+              "native_id": "msg_mv15vaqk1",
+              "data": {
+                "metadata": {
+                  "retained_source": {
+                    "id": {
+                      "message_id": "msg_mv15vaqk1",
+                      "turn_id": "01a1216d-810d-7870-8540-59e677059012",
+                      "role": "assistant"
+                    },
+                    "revision": "retained_01a1216d-811d-7060-9430-b4612d50dd08",
+                    "complete": true
+                  },
+                  "client_authored": false,
+                  "user_input_order": 1
+                },
+                "response_id": "resp_mv15vaqk0",
+                "turn_id": "01a1216d-810d-7870-8540-59e677059012"
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "rs_mv15vary5",
+          "thread_id": "01a1216d-8106-7123-9957-cfa59fab00a3",
+          "seq": 5,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model",
+            "api": "openai-responses"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "stop",
+          "error": null,
+          "created_at": "2026-10-09T16:09:47.087Z",
+          "completed_at": "2026-10-09T16:09:47.088Z",
+          "producer": {
+            "harness": "codex",
+            "harness_version": "0.162.0",
+            "adapter_version": "codex-adapter/0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "reasoning",
+              "text": "The file exists now.",
+              "summary": [
+                "The file exists now."
+              ],
+              "ext": {
+                "codex": {
+                  "version": "0.162.0",
+                  "data": {
+                    "item": {
+                      "type": "reasoning",
+                      "id": "rs_mv15vary5",
+                      "summary": [
+                        {
+                          "type": "summary_text",
+                          "text": "The file exists now."
+                        }
+                      ],
+                      "content": null,
+                      "encrypted_content": null,
+                      "internal_chat_message_metadata_passthrough": {
+                        "turn_id": "01a1216d-810d-7870-8540-59e677059012"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "text",
+              "text": "Done.",
+              "ext": {
+                "codex": {
+                  "version": "0.162.0",
+                  "data": {
+                    "id": "msg_mv15vary6"
+                  }
+                }
+              }
+            }
+          ],
+          "reply_to": "msg_01a1216d-8115-7c72-b679-2f96c7937a1e",
+          "ext": {
+            "codex": {
+              "version": "0.162.0",
+              "native_id": "rs_mv15vary5",
+              "data": {
+                "response_id": "resp_mv15vary4",
+                "turn_id": "01a1216d-810d-7870-8540-59e677059012"
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_01a1216d-81b9-76a3-abb4-b9d8e5f6d568",
+          "thread_id": "01a1216d-8106-7123-9957-cfa59fab00a3",
+          "seq": 6,
+          "role": "user",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model",
+            "api": "openai-responses"
+          },
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "created_at": "2026-10-09T16:09:47.193Z",
+          "completed_at": "2026-10-09T16:09:47.193Z",
+          "producer": {
+            "harness": "codex",
+            "harness_version": "0.162.0",
+            "adapter_version": "codex-adapter/0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "attachment",
+              "ref": "blob:c414cd0e204de974f73753c7e28d7638e7b3691bb8b1a2bab6b25bb7fed7ce77",
+              "mime": "image/png",
+              "bytes": 70,
+              "sha256": "c414cd0e204de974f73753c7e28d7638e7b3691bb8b1a2bab6b25bb7fed7ce77",
+              "name": "dot.png",
+              "ext": {
+                "codex": {
+                  "version": "0.162.0",
+                  "data": {
+                    "wrapper": {
+                      "label": "[Image #1]",
+                      "path": "/work/proto/harness/codex/work/live/dot.png"
+                    },
+                    "detail": "high"
+                  }
+                }
+              }
+            },
+            {
+              "type": "text",
+              "text": "Read hello.txt and look at this image"
+            }
+          ],
+          "origin": "prompt",
+          "ext": {
+            "codex": {
+              "version": "0.162.0",
+              "native_id": "msg_01a1216d-81b9-76a3-abb4-b9d8e5f6d568",
+              "data": {
+                "item_id": "msg_01a1216d-81b9-76a3-abb4-b9d8e5f6d568",
+                "passthrough": {
+                  "turn_id": "01a1216d-81b4-7550-85bd-aa47daf9b9b9",
+                  "create_time": 1791562187.193779,
+                  "content_item_kinds": [
+                    "user.text",
+                    "user.image",
+                    "user.text",
+                    "user.text"
+                  ]
+                },
+                "metadata": {
+                  "retained_source": {
+                    "id": {
+                      "message_id": "msg_01a1216d-81b9-76a3-abb4-b9d8e5f6d568",
+                      "turn_id": "01a1216d-81b4-7550-85bd-aa47daf9b9b9",
+                      "role": "user"
+                    },
+                    "revision": "retained_01a1216d-81b9-76a3-abb4-b9fc4f1d70af",
+                    "complete": false
+                  },
+                  "client_authored": false,
+                  "user_input_order": 4,
+                  "mcp_attribution": {
+                    "status": "none"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "fc_mv15vav28",
+          "thread_id": "01a1216d-8106-7123-9957-cfa59fab00a3",
+          "seq": 7,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model",
+            "api": "openai-responses"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "tool_calls",
+          "error": null,
+          "created_at": "2026-10-09T16:09:47.198Z",
+          "completed_at": "2026-10-09T16:09:47.198Z",
+          "producer": {
+            "harness": "codex",
+            "harness_version": "0.162.0",
+            "adapter_version": "codex-adapter/0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "tool_call",
+              "call_id": "call_mv15vav29",
+              "name": "exec_command",
+              "kind": "shell",
+              "input": {
+                "cmd": "cat hello.txt"
+              },
+              "status": "complete",
+              "started_at": "2026-10-09T16:09:47.198Z",
+              "ext": {
+                "codex": {
+                  "version": "0.162.0",
+                  "data": {
+                    "id": "fc_mv15vav28",
+                    "type": "function_call",
+                    "output_item": {
+                      "id": "fco_01a1216d-821a-7f10-8758-1dc703116721",
+                      "type": "function_call_output"
+                    }
+                  }
+                }
+              },
+              "result": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Chunk ID: 07b1e8\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 1\nOutput:\nhi\n"
+                  }
+                ],
+                "is_error": false,
+                "exit_code": 0
+              },
+              "ended_at": "2026-10-09T16:09:47.290Z"
+            }
+          ],
+          "reply_to": "msg_01a1216d-81b9-76a3-abb4-b9d8e5f6d568",
+          "ext": {
+            "codex": {
+              "version": "0.162.0",
+              "native_id": "fc_mv15vav28",
+              "data": {
+                "metadata": {
+                  "client_authored": false,
+                  "user_input_order": 5
+                },
+                "response_id": "resp_mv15vav27",
+                "turn_id": "01a1216d-81b4-7550-85bd-aa47daf9b9b9"
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "fc_mv15vaxpb",
+          "thread_id": "01a1216d-8106-7123-9957-cfa59fab00a3",
+          "seq": 8,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model",
+            "api": "openai-responses"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "tool_calls",
+          "error": null,
+          "created_at": "2026-10-09T16:09:47.293Z",
+          "completed_at": "2026-10-09T16:09:47.293Z",
+          "producer": {
+            "harness": "codex",
+            "harness_version": "0.162.0",
+            "adapter_version": "codex-adapter/0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "tool_call",
+              "call_id": "call_mv15vaxpc",
+              "name": "view_image",
+              "kind": "read",
+              "input": {
+                "path": "dot.png"
+              },
+              "status": "complete",
+              "started_at": "2026-10-09T16:09:47.293Z",
+              "ext": {
+                "codex": {
+                  "version": "0.162.0",
+                  "data": {
+                    "id": "fc_mv15vaxpb",
+                    "type": "function_call",
+                    "output_item": {
+                      "id": "fco_01a1216d-8221-7910-88fd-8d4843b71871",
+                      "type": "function_call_output"
+                    }
+                  }
+                }
+              },
+              "result": {
+                "content": [
+                  {
+                    "type": "attachment",
+                    "ref": "blob:c414cd0e204de974f73753c7e28d7638e7b3691bb8b1a2bab6b25bb7fed7ce77",
+                    "mime": "image/png",
+                    "sha256": "c414cd0e204de974f73753c7e28d7638e7b3691bb8b1a2bab6b25bb7fed7ce77"
+                  }
+                ],
+                "is_error": false
+              },
+              "ended_at": "2026-10-09T16:09:47.297Z"
+            }
+          ],
+          "reply_to": "msg_01a1216d-81b9-76a3-abb4-b9d8e5f6d568",
+          "ext": {
+            "codex": {
+              "version": "0.162.0",
+              "native_id": "fc_mv15vaxpb",
+              "data": {
+                "metadata": {
+                  "client_authored": false,
+                  "user_input_order": 6
+                },
+                "response_id": "resp_mv15vaxpa",
+                "turn_id": "01a1216d-81b4-7550-85bd-aa47daf9b9b9"
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_mv15vaxve",
+          "thread_id": "01a1216d-8106-7123-9957-cfa59fab00a3",
+          "seq": 9,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model",
+            "api": "openai-responses"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "stop",
+          "error": null,
+          "created_at": "2026-10-09T16:09:47.300Z",
+          "completed_at": "2026-10-09T16:09:47.300Z",
+          "producer": {
+            "harness": "codex",
+            "harness_version": "0.162.0",
+            "adapter_version": "codex-adapter/0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "text": "It says hi. The image is a single pixel.",
+              "ext": {
+                "codex": {
+                  "version": "0.162.0",
+                  "data": {
+                    "id": "msg_mv15vaxve"
+                  }
+                }
+              }
+            }
+          ],
+          "reply_to": "msg_01a1216d-81b9-76a3-abb4-b9d8e5f6d568",
+          "ext": {
+            "codex": {
+              "version": "0.162.0",
+              "native_id": "msg_mv15vaxve",
+              "data": {
+                "metadata": {
+                  "retained_source": {
+                    "id": {
+                      "message_id": "msg_mv15vaxve",
+                      "turn_id": "01a1216d-81b4-7550-85bd-aa47daf9b9b9",
+                      "role": "assistant"
+                    },
+                    "revision": "retained_01a1216d-8224-7501-aa10-52a384d6da03",
+                    "complete": true
+                  },
+                  "client_authored": false,
+                  "user_input_order": 7
+                },
+                "response_id": "resp_mv15vaxvd",
+                "turn_id": "01a1216d-81b4-7550-85bd-aa47daf9b9b9"
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_01a1216d-8280-79d3-b224-54ebf7e67214",
+          "thread_id": "01a1216d-8106-7123-9957-cfa59fab00a3",
+          "seq": 10,
+          "role": "user",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model",
+            "api": "openai-responses"
+          },
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "created_at": "2026-10-09T16:09:47.392Z",
+          "completed_at": "2026-10-09T16:09:47.392Z",
+          "producer": {
+            "harness": "codex",
+            "harness_version": "0.162.0",
+            "adapter_version": "codex-adapter/0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Run the command `false` and report the result."
+            }
+          ],
+          "origin": "prompt",
+          "ext": {
+            "codex": {
+              "version": "0.162.0",
+              "native_id": "msg_01a1216d-8280-79d3-b224-54ebf7e67214",
+              "data": {
+                "item_id": "msg_01a1216d-8280-79d3-b224-54ebf7e67214",
+                "passthrough": {
+                  "turn_id": "01a1216d-827c-7062-8ea2-eda34e4124b5",
+                  "create_time": 1791562187.392015,
+                  "content_item_kinds": [
+                    "user.text"
+                  ]
+                },
+                "metadata": {
+                  "retained_source": {
+                    "id": {
+                      "message_id": "msg_01a1216d-8280-79d3-b224-54ebf7e67214",
+                      "turn_id": "01a1216d-827c-7062-8ea2-eda34e4124b5",
+                      "role": "user"
+                    },
+                    "revision": "retained_01a1216d-8280-79d3-b224-55003f6ef913",
+                    "complete": true
+                  },
+                  "client_authored": false,
+                  "user_input_order": 8,
+                  "mcp_attribution": {
+                    "status": "none"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "fc_mv15vb0jg",
+          "thread_id": "01a1216d-8106-7123-9957-cfa59fab00a3",
+          "seq": 11,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model",
+            "api": "openai-responses"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "tool_calls",
+          "error": null,
+          "created_at": "2026-10-09T16:09:47.396Z",
+          "completed_at": "2026-10-09T16:09:47.396Z",
+          "producer": {
+            "harness": "codex",
+            "harness_version": "0.162.0",
+            "adapter_version": "codex-adapter/0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "tool_call",
+              "call_id": "call_mv15vb0jh",
+              "name": "exec_command",
+              "kind": "shell",
+              "input": {
+                "cmd": "false"
+              },
+              "status": "error",
+              "started_at": "2026-10-09T16:09:47.396Z",
+              "ext": {
+                "codex": {
+                  "version": "0.162.0",
+                  "data": {
+                    "id": "fc_mv15vb0jg",
+                    "type": "function_call",
+                    "output_item": {
+                      "id": "fco_01a1216d-82a4-76c3-abb3-93f0b3f5152f",
+                      "type": "function_call_output"
+                    }
+                  }
+                }
+              },
+              "result": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Chunk ID: 739904\nWall time: 0.0000 seconds\nProcess exited with code 1\nOriginal token count: 0\nOutput:\n"
+                  }
+                ],
+                "is_error": true,
+                "exit_code": 1,
+                "error": {
+                  "code": "exit_code",
+                  "message": "Process exited with code 1"
+                }
+              },
+              "ended_at": "2026-10-09T16:09:47.428Z"
+            }
+          ],
+          "reply_to": "msg_01a1216d-8280-79d3-b224-54ebf7e67214",
+          "ext": {
+            "codex": {
+              "version": "0.162.0",
+              "native_id": "fc_mv15vb0jg",
+              "data": {
+                "metadata": {
+                  "client_authored": false,
+                  "user_input_order": 9
+                },
+                "response_id": "resp_mv15vb0jf",
+                "turn_id": "01a1216d-827c-7062-8ea2-eda34e4124b5"
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_mv15vb1jj",
+          "thread_id": "01a1216d-8106-7123-9957-cfa59fab00a3",
+          "seq": 12,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model",
+            "api": "openai-responses"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "stop",
+          "error": null,
+          "created_at": "2026-10-09T16:09:47.432Z",
+          "completed_at": "2026-10-09T16:09:47.432Z",
+          "producer": {
+            "harness": "codex",
+            "harness_version": "0.162.0",
+            "adapter_version": "codex-adapter/0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "text": "The command failed with exit code 1.",
+              "ext": {
+                "codex": {
+                  "version": "0.162.0",
+                  "data": {
+                    "id": "msg_mv15vb1jj"
+                  }
+                }
+              }
+            }
+          ],
+          "reply_to": "msg_01a1216d-8280-79d3-b224-54ebf7e67214",
+          "ext": {
+            "codex": {
+              "version": "0.162.0",
+              "native_id": "msg_mv15vb1jj",
+              "data": {
+                "metadata": {
+                  "retained_source": {
+                    "id": {
+                      "message_id": "msg_mv15vb1jj",
+                      "turn_id": "01a1216d-827c-7062-8ea2-eda34e4124b5",
+                      "role": "assistant"
+                    },
+                    "revision": "retained_01a1216d-82a8-79d3-b3e8-610a0ce6273c",
+                    "complete": true
+                  },
+                  "client_authored": false,
+                  "user_input_order": 10
+                },
+                "response_id": "resp_mv15vb1ji",
+                "turn_id": "01a1216d-827c-7062-8ea2-eda34e4124b5"
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "cdx_compaction_w1",
+          "thread_id": "01a1216d-8106-7123-9957-cfa59fab00a3",
+          "seq": 13,
+          "role": "user",
+          "kind": "compaction",
+          "status": "complete",
+          "in_context": true,
+          "model": null,
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": null,
+          "error": null,
+          "created_at": "2026-10-09T16:10:56.049Z",
+          "completed_at": "2026-10-09T16:10:56.049Z",
+          "producer": {
+            "harness": "codex",
+            "harness_version": "0.162.0",
+            "adapter_version": "codex-adapter/0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "compaction",
+              "summary": "SUMMARY-G: the user created hello.txt containing hi and checked an image.",
+              "first_kept_message_id": null,
+              "layout": [
+                {
+                  "message_id": "msg_01a1216d-8115-7c72-b679-2f96c7937a1e",
+                  "text_only": true
+                },
+                {
+                  "message_id": "msg_01a1216d-81b9-76a3-abb4-b9d8e5f6d568",
+                  "text_only": true
+                },
+                {
+                  "message_id": "msg_01a1216d-8280-79d3-b224-54ebf7e67214",
+                  "text_only": true
+                },
+                {
+                  "summary": true
+                }
+              ],
+              "trigger": "unknown"
+            }
+          ],
+          "origin": "automation",
+          "ext": {
+            "codex": {
+              "version": "0.162.0",
+              "native_id": "compacted:1",
+              "data": {
+                "native_compaction": true,
+                "compacted": {
+                  "message": "Another language model started to solve this problem and produced a summary of its thinking process. You also have access to the state of the tools that were used by that language model. Use this to build on the work that has already been done and avoid duplicating work. Here is the summary produced by the other language model, use the information in this summary to assist with your own analysis:\nSUMMARY-G: the user created hello.txt containing hi and checked an image.",
+                  "replacement_history": [
+                    {
+                      "type": "message",
+                      "id": "msg_01a1216d-8115-7c72-b679-2f96c7937a1e",
+                      "role": "user",
+                      "content": [
+                        {
+                          "type": "input_text",
+                          "text": "Create hello.txt containing hi"
+                        }
+                      ],
+                      "internal_chat_message_metadata_passthrough": {
+                        "turn_id": "01a1216d-810d-7870-8540-59e677059012",
+                        "create_time": 1791562187.029475,
+                        "content_item_kinds": [
+                          "user.text"
+                        ]
+                      }
+                    },
+                    {
+                      "type": "message",
+                      "id": "msg_01a1216d-81b9-76a3-abb4-b9d8e5f6d568",
+                      "role": "user",
+                      "content": [
+                        {
+                          "type": "input_text",
+                          "text": "Read hello.txt and look at this image"
+                        }
+                      ],
+                      "internal_chat_message_metadata_passthrough": {
+                        "turn_id": "01a1216d-81b4-7550-85bd-aa47daf9b9b9",
+                        "create_time": 1791562187.193779,
+                        "content_item_kinds": [
+                          "user.text"
+                        ]
+                      }
+                    },
+                    {
+                      "type": "message",
+                      "id": "msg_01a1216e-8eb0-7a93-86b2-4ee6d4a7be3f",
+                      "role": "developer",
+                      "content": [
+                        {
+                          "type": "input_text",
+                          "text": "<skills_instructions>\n## Skills\nA skill is a set of local instructions to follow that is stored in a `SKILL.md` file. Below is the list of skills that can be used. Each entry includes a name, description, and a short path that can be expanded into an absolute path using the skill roots table.\n### Skill roots\n- `r0` = `/work/proto/harness/codex/homes/live/skills/.system`\n### Available skills\n- imagegen: Generate or edit raster images when the task benefits from AI-created bitmap visuals such as photos, illustrations, textures, sprites, mockups, or transparent-background cutouts. Use when Codex should create a brand-new image, transform an existing image, or derive visual variants from references, and the output should be a bitmap asset rather than repo-native code or vector. Do not use when the task is better handled by editing existing SVG/vector/code-native assets, extending an established icon or logo system, or building the visual directly in HTML/CSS/canvas. (file: r0/imagegen/SKILL.md)\n- openai-docs: Use for Codex models/pricing, scheduled tasks, skills, settings, setup, troubleshooting, customization, automations, and self-knowledge\u2014including 'you,' 'your,' 'this app,' or 'this coding agent' when they refer to Codex\u2014and for OpenAI APIs/products and ChatGPT Work. Also use for model choice/migration, prompting, SDKs, Responses, Realtime, agents, evals, and Chat/Work/Codex comparisons. Do not use for generic app/software tasks that merely mention Codex. (file: r0/openai-docs/SKILL.md)\n- skill-creator: Create or update a Codex skill with appropriately scoped instructions and any needed supporting resources. (file: r0/skill-creator/SKILL.md)\n- skill-installer: Install Codex skills into $CODEX_HOME/skills from a curated list or a GitHub repo path. Use when a user asks to list installable skills, install a curated skill, or install a skill from another repo (including private repos). (file: r0/skill-installer/SKILL.md)\n</skills_instructions>"
+                        },
+                        {
+                          "type": "input_text",
+                          "text": "<permissions instructions>\nFilesystem sandboxing defines which files can be read or written. `sandbox_mode` is `danger-full-access`: No filesystem sandboxing - all commands are permitted. Network access is enabled.\nApproval policy is currently never. Do not provide the `sandbox_permissions` for any reason, commands will be rejected.\n</permissions instructions>"
+                        }
+                      ],
+                      "internal_chat_message_metadata_passthrough": {
+                        "turn_id": "01a1216e-8ea8-7871-8372-fe31b4f70e08",
+                        "content_item_kinds": [
+                          "host_skills.instructions",
+                          "permissions.instructions"
+                        ]
+                      }
+                    },
+                    {
+                      "type": "message",
+                      "id": "msg_01a1216e-8eb0-7a93-86b2-4ef3c043b77b",
+                      "role": "user",
+                      "content": [
+                        {
+                          "type": "input_text",
+                          "text": "<environment_context>\n  <cwd>/work/proto/harness/codex/work/live</cwd>\n  <shell>zsh</shell>\n  <current_date>2026-10-09</current_date>\n  <timezone>UTC</timezone>\n  <filesystem><workspace_roots><root>/work/proto/harness/codex/work/live</root></workspace_roots><permission_profile type=\"disabled\"><file_system type=\"unrestricted\" /></permission_profile></filesystem>\n</environment_context>"
+                        }
+                      ],
+                      "internal_chat_message_metadata_passthrough": {
+                        "turn_id": "01a1216e-8ea8-7871-8372-fe31b4f70e08",
+                        "content_item_kinds": [
+                          "environments.environment_context"
+                        ]
+                      }
+                    },
+                    {
+                      "type": "message",
+                      "id": "msg_01a1216d-8280-79d3-b224-54ebf7e67214",
+                      "role": "user",
+                      "content": [
+                        {
+                          "type": "input_text",
+                          "text": "Run the command `false` and report the result."
+                        }
+                      ],
+                      "internal_chat_message_metadata_passthrough": {
+                        "turn_id": "01a1216d-827c-7062-8ea2-eda34e4124b5",
+                        "create_time": 1791562187.392015,
+                        "content_item_kinds": [
+                          "user.text"
+                        ]
+                      }
+                    },
+                    {
+                      "type": "message",
+                      "id": "msg_01a1216e-8eb0-7a93-86b2-4f068682b0eb",
+                      "role": "user",
+                      "content": [
+                        {
+                          "type": "input_text",
+                          "text": "Another language model started to solve this problem and produced a summary of its thinking process. You also have access to the state of the tools that were used by that language model. Use this to build on the work that has already been done and avoid duplicating work. Here is the summary produced by the other language model, use the information in this summary to assist with your own analysis:\nSUMMARY-G: the user created hello.txt containing hi and checked an image."
+                        }
+                      ],
+                      "internal_chat_message_metadata_passthrough": {
+                        "turn_id": "01a1216e-8ea8-7871-8372-fe31b4f70e08",
+                        "content_item_kinds": [
+                          "compaction.summary"
+                        ]
+                      }
+                    }
+                  ],
+                  "replacement_history_metadata": [
+                    {
+                      "retained_source": {
+                        "id": {
+                          "message_id": "msg_01a1216d-8115-7c72-b679-2f96c7937a1e",
+                          "turn_id": "01a1216d-810d-7870-8540-59e677059012",
+                          "role": "user"
+                        },
+                        "revision": "retained_01a1216d-8115-7c72-b679-2fb9b77bb816",
+                        "complete": true
+                      },
+                      "client_authored": false,
+                      "user_input_order": 0,
+                      "mcp_attribution": {
+                        "status": "none"
+                      }
+                    },
+                    {
+                      "retained_source": {
+                        "id": {
+                          "message_id": "msg_01a1216d-81b9-76a3-abb4-b9d8e5f6d568",
+                          "turn_id": "01a1216d-81b4-7550-85bd-aa47daf9b9b9",
+                          "role": "user"
+                        },
+                        "revision": "retained_01a1216d-81b9-76a3-abb4-b9fc4f1d70af",
+                        "complete": false
+                      },
+                      "client_authored": false,
+                      "user_input_order": 4,
+                      "mcp_attribution": {
+                        "status": "none"
+                      }
+                    },
+                    {
+                      "client_authored": false
+                    },
+                    {
+                      "client_authored": false
+                    },
+                    {
+                      "retained_source": {
+                        "id": {
+                          "message_id": "msg_01a1216d-8280-79d3-b224-54ebf7e67214",
+                          "turn_id": "01a1216d-827c-7062-8ea2-eda34e4124b5",
+                          "role": "user"
+                        },
+                        "revision": "retained_01a1216d-8280-79d3-b224-55003f6ef913",
+                        "complete": true
+                      },
+                      "client_authored": false,
+                      "user_input_order": 8,
+                      "mcp_attribution": {
+                        "status": "none"
+                      }
+                    },
+                    {
+                      "client_authored": false,
+                      "mcp_attribution": {
+                        "status": "none"
+                      }
+                    }
+                  ],
+                  "retained_context": {
+                    "verified_answers": [],
+                    "incomplete": false,
+                    "user_messages": [
+                      {
+                        "revision": "retained_01a1216d-8115-7c72-b679-2fb9b77bb816",
+                        "order": 0,
+                        "turn_id": "01a1216d-810d-7870-8540-59e677059012",
+                        "message_id": "msg_01a1216d-8115-7c72-b679-2f96c7937a1e",
+                        "text": "Create hello.txt containing hi",
+                        "complete": true
+                      },
+                      {
+                        "revision": "retained_01a1216d-81b9-76a3-abb4-b9fc4f1d70af",
+                        "order": 4,
+                        "turn_id": "01a1216d-81b4-7550-85bd-aa47daf9b9b9",
+                        "message_id": "msg_01a1216d-81b9-76a3-abb4-b9d8e5f6d568",
+                        "text": "<image name=[Image #1] path=\"/work/proto/harness/codex/work/live/dot.png\">\n</image>\nRead hello.txt and look at this image",
+                        "complete": false
+                      },
+                      {
+                        "revision": "retained_01a1216d-8280-79d3-b224-55003f6ef913",
+                        "order": 8,
+                        "turn_id": "01a1216d-827c-7062-8ea2-eda34e4124b5",
+                        "message_id": "msg_01a1216d-8280-79d3-b224-54ebf7e67214",
+                        "text": "Run the command `false` and report the result.",
+                        "complete": true
+                      }
+                    ],
+                    "user_messages_incomplete": false,
+                    "assistant_messages": [
+                      {
+                        "revision": "retained_01a1216d-811d-7060-9430-b4612d50dd08",
+                        "order": 1,
+                        "turn_id": "01a1216d-810d-7870-8540-59e677059012",
+                        "message_id": "msg_mv15vaqk1",
+                        "text": "I'll create the file.",
+                        "complete": true
+                      },
+                      {
+                        "revision": "retained_01a1216d-8150-79f2-888f-159679cb29e5",
+                        "order": 3,
+                        "turn_id": "01a1216d-810d-7870-8540-59e677059012",
+                        "message_id": "msg_mv15vary6",
+                        "text": "Done.",
+                        "complete": true
+                      },
+                      {
+                        "revision": "retained_01a1216d-8224-7501-aa10-52a384d6da03",
+                        "order": 7,
+                        "turn_id": "01a1216d-81b4-7550-85bd-aa47daf9b9b9",
+                        "message_id": "msg_mv15vaxve",
+                        "text": "It says hi. The image is a single pixel.",
+                        "complete": true
+                      },
+                      {
+                        "revision": "retained_01a1216d-82a8-79d3-b3e8-610a0ce6273c",
+                        "order": 10,
+                        "turn_id": "01a1216d-827c-7062-8ea2-eda34e4124b5",
+                        "message_id": "msg_mv15vb1jj",
+                        "text": "The command failed with exit code 1.",
+                        "complete": true
+                      }
+                    ],
+                    "assistant_messages_incomplete": false,
+                    "next_order": 12
+                  },
+                  "window_number": 1,
+                  "first_window_id": "01a1216d-8107-7012-a395-0526228f0886",
+                  "previous_window_id": "01a1216d-8107-7012-a395-0526228f0886",
+                  "window_id": "01a1216e-8eb0-7a93-86b2-4eb38a05436c",
+                  "compaction_response_id": "resp_mv15wrzim",
+                  "latest_token_usage_record": {
+                    "thread_id": "01a1216d-8106-7123-9957-cfa59fab00a3",
+                    "turn_id": "01a1216e-8ea8-7871-8372-fe31b4f70e08",
+                    "session_id": "01a1216d-8106-7123-9957-cfa59fab00a3",
+                    "root_turn_id": "01a1216e-8ea8-7871-8372-fe31b4f70e08",
+                    "response_id": "resp_mv15wrzim",
+                    "usage": {
+                      "input_tokens": 100,
+                      "cached_input_tokens": 0,
+                      "cache_write_input_tokens": 0,
+                      "output_tokens": 10,
+                      "reasoning_output_tokens": 0,
+                      "total_tokens": 110
+                    },
+                    "turn_token_usage": {
+                      "input_tokens": 100,
+                      "cached_input_tokens": 0,
+                      "cache_write_input_tokens": 0,
+                      "output_tokens": 10,
+                      "reasoning_output_tokens": 0,
+                      "total_tokens": 110
+                    },
+                    "thread_token_usage": {
+                      "input_tokens": 800,
+                      "cached_input_tokens": 0,
+                      "cache_write_input_tokens": 0,
+                      "output_tokens": 80,
+                      "reasoning_output_tokens": 0,
+                      "total_tokens": 880
+                    }
+                  },
+                  "resume_metadata": {
+                    "multi_agent_version": "v1",
+                    "last_started_turn_id": "01a1216e-8ea8-7871-8372-fe31b4f70e08",
+                    "turn_attribution": {
+                      "turn_id": "01a1216e-8ea8-7871-8372-fe31b4f70e08",
+                      "turn_trigger": "exec",
+                      "parent_turn_id": null,
+                      "initiating_agent_path": null,
+                      "root_turn_id": "01a1216e-8ea8-7871-8372-fe31b4f70e08"
+                    },
+                    "previous_turn_settings": {
+                      "model": "mock-model",
+                      "comp_hash": null,
+                      "realtime_active": false
+                    }
+                  }
+                },
+                "compaction_output": {
+                  "text": "SUMMARY-G: the user created hello.txt containing hi and checked an image.",
+                  "ids": [
+                    "w0:msg_mv15wrzin"
+                  ],
+                  "usage": {
+                    "input": 100,
+                    "output": 10,
+                    "cache_read": 0,
+                    "cache_write": 0,
+                    "reasoning": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_01a1216e-8eb4-70e0-830d-ddf5b43acbe3",
+          "thread_id": "01a1216d-8106-7123-9957-cfa59fab00a3",
+          "seq": 14,
+          "role": "user",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model",
+            "api": "openai-responses"
+          },
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "created_at": "2026-10-09T16:10:56.052Z",
+          "completed_at": "2026-10-09T16:10:56.052Z",
+          "producer": {
+            "harness": "codex",
+            "harness_version": "0.162.0",
+            "adapter_version": "codex-adapter/0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Continue after the summary and say Ready."
+            }
+          ],
+          "origin": "prompt",
+          "ext": {
+            "codex": {
+              "version": "0.162.0",
+              "native_id": "msg_01a1216e-8eb4-70e0-830d-ddf5b43acbe3",
+              "data": {
+                "item_id": "msg_01a1216e-8eb4-70e0-830d-ddf5b43acbe3",
+                "passthrough": {
+                  "turn_id": "01a1216e-8ea8-7871-8372-fe31b4f70e08",
+                  "create_time": 1791562256.052109,
+                  "content_item_kinds": [
+                    "user.text"
+                  ]
+                },
+                "metadata": {
+                  "retained_source": {
+                    "id": {
+                      "message_id": "msg_01a1216e-8eb4-70e0-830d-ddf5b43acbe3",
+                      "turn_id": "01a1216e-8ea8-7871-8372-fe31b4f70e08",
+                      "role": "user"
+                    },
+                    "revision": "retained_01a1216e-8eb4-70e0-830d-de160fa37bbf",
+                    "complete": true
+                  },
+                  "client_authored": false,
+                  "user_input_order": 11,
+                  "mcp_attribution": {
+                    "status": "none"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_mv15wrzqp",
+          "thread_id": "01a1216d-8106-7123-9957-cfa59fab00a3",
+          "seq": 15,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model",
+            "api": "openai-responses"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "stop",
+          "error": null,
+          "created_at": "2026-10-09T16:10:56.055Z",
+          "completed_at": "2026-10-09T16:10:56.055Z",
+          "producer": {
+            "harness": "codex",
+            "harness_version": "0.162.0",
+            "adapter_version": "codex-adapter/0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Ready.",
+              "ext": {
+                "codex": {
+                  "version": "0.162.0",
+                  "data": {
+                    "id": "msg_mv15wrzqp"
+                  }
+                }
+              }
+            }
+          ],
+          "reply_to": "msg_01a1216e-8eb4-70e0-830d-ddf5b43acbe3",
+          "ext": {
+            "codex": {
+              "version": "0.162.0",
+              "native_id": "msg_mv15wrzqp",
+              "data": {
+                "metadata": {
+                  "retained_source": {
+                    "id": {
+                      "message_id": "msg_mv15wrzqp",
+                      "turn_id": "01a1216e-8ea8-7871-8372-fe31b4f70e08",
+                      "role": "assistant"
+                    },
+                    "revision": "retained_01a1216e-8eb7-7d40-a389-3ae5bf4d1820",
+                    "complete": true
+                  },
+                  "client_authored": false,
+                  "user_input_order": 12
+                },
+                "response_id": "resp_mv15wrzqo",
+                "turn_id": "01a1216e-8ea8-7871-8372-fe31b4f70e08"
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "cdx_w0_msg_01a12171-296d-7f52-8a4a-7013d84e6a2c",
+          "thread_id": "01a1216d-8106-7123-9957-cfa59fab00a3",
+          "seq": 16,
+          "role": "system",
+          "kind": "context",
+          "status": "complete",
+          "in_context": true,
+          "model": null,
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "created_at": "2026-10-09T16:13:46.733Z",
+          "completed_at": "2026-10-09T16:13:46.733Z",
+          "producer": {
+            "harness": "codex",
+            "harness_version": "0.162.0",
+            "adapter_version": "codex-adapter/0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "text": "<model_switch>\nThe user was previously using a different model. Please continue the conversation according to the following instructions:\n\nYou are a coding agent running in the Codex CLI, a terminal-based coding assistant. Codex CLI is an open source project led by OpenAI. You are expected to be precise, safe, and helpful.\n\nYour capabilities:\n\n- Receive user prompts and other context provided by the harness, such as files in the workspace.\n- Communicate with the user by streaming thinking & responses, and by making & updating plans.\n- Emit function calls to run terminal commands and apply patches. Depending on how this specific run is configured, you can request that these function calls be escalated to the user for approval before running. More on this in the \"Sandbox and approvals\" section.\n\nWithin this context, Codex refers to the open-source agentic coding interface (not the old Codex language model built by OpenAI).\n\n# How you work\n\n## Personality\n\nYour default personality and tone is concise, direct, and friendly. You communicate efficiently, always keeping the user clearly informed about ongoing actions without unnecessary detail. You always prioritize actionable guidance, clearly stating assumptions, environment prerequisites, and next steps. Unless explicitly asked, you avoid excessively verbose explanations about your work.\n\n# AGENTS.md spec\n- Repos often contain AGENTS.md files. These files can appear anywhere within the repository.\n- These files are a way for humans to give you (the agent) instructions or tips for working within the container.\n- Some examples might be: coding conventions, info about how code is organized, or instructions for how to run or test code.\n- Instructions in AGENTS.md files:\n    - The scope of an AGENTS.md file is the entire directory tree rooted at the folder that contains it.\n    - For every file you touch in the final patch, you must obey instructions in any AGENTS.md file whose scope includes that file.\n    - Instructions about code style, structure, naming, etc. apply only to code within the AGENTS.md file's scope, unless the file states otherwise.\n    - More-deeply-nested AGENTS.md files take precedence in the case of conflicting instructions.\n    - Direct system/developer/user instructions (as part of a prompt) take precedence over AGENTS.md instructions.\n- The contents of the AGENTS.md file at the root of the repo and any directories from the CWD up to the root are included with the developer message and don't need to be re-read. When working in a subdirectory of CWD, or a directory outside the CWD, check for any AGENTS.md files that may be applicable.\n\n## Responsiveness\n\n### Preamble messages\n\nBefore making tool calls, send a brief preamble to the user explaining what you\u2019re about to do. When sending preamble messages, follow these principles and examples:\n\n- **Logically group related actions**: if you\u2019re about to run several related commands, describe them together in one preamble rather than sending a separate note for each.\n- **Keep it concise**: be no more than 1-2 sentences, focused on immediate, tangible next steps. (8\u201312 words for quick updates).\n- **Build on prior context**: if this is not your first tool call, use the preamble message to connect the dots with what\u2019s been done so far and create a sense of momentum and clarity for the user to understand your next actions.\n- **Keep your tone light, friendly and curious**: add small touches of personality in preambles feel collaborative and engaging.\n- **Exception**: Avoid adding a preamble for every trivial read (e.g., `cat` a single file) unless it\u2019s part of a larger grouped action.\n\n**Examples:**\n\n- \u201cI\u2019ve explored the repo; now checking the API route definitions.\u201d\n- \u201cNext, I\u2019ll patch the config and update the related tests.\u201d\n- \u201cI\u2019m about to scaffold the CLI commands and helper functions.\u201d\n- \u201cOk cool, so I\u2019ve wrapped my head around the repo. Now digging into the API routes.\u201d\n- \u201cConfig\u2019s looking tidy. Next up is patching helpers to keep things in sync.\u201d\n- \u201cFinished poking at the DB gateway. I will now chase down error handling.\u201d\n- \u201cAlright, build pipeline order is interesting. Checking how it reports failures.\u201d\n- \u201cSpotted a clever caching util; now hunting where it gets used.\u201d\n\n## Task execution\n\nYou are a coding agent. Please keep going until the query is completely resolved, before ending your turn and yielding back to the user. Only terminate your turn when you are sure that the problem is solved. Autonomously resolve the query to the best of your ability, using the tools available to you, before coming back to the user. Do NOT guess or make up an answer.\n\nYou MUST adhere to the following criteria when solving queries:\n\n- Working on the repo(s) in the current environment is allowed, even if they are proprietary.\n- Analyzing code for vulnerabilities is allowed.\n- Showing user code and tool call details is allowed.\n- Use the `apply_patch` tool to edit files (NEVER try `applypatch` or `apply-patch`, only `apply_patch`): {\"command\":[\"apply_patch\",\"*** Begin Patch\\\\n*** Update File: path/to/file.py\\\\n@@ def example():\\\\n- pass\\\\n+ return 123\\\\n*** End Patch\"]}\n\nIf completing the user's task requires writing or modifying files, your code and final answer should follow these coding guidelines, though user instructions (i.e. AGENTS.md) may override these guidelines:\n\n- Fix the problem at the root cause rather than applying surface-level patches, when possible.\n- Avoid unneeded complexity in your solution.\n- Do not attempt to fix unrelated bugs or broken tests. It is not your responsibility to fix them. (You may mention them to the user in your final message though.)\n- Update documentation as necessary.\n- Keep changes consistent with the style of the existing codebase. Changes should be minimal and focused on the task.\n- Use `git log` and `git blame` to search the history of the codebase if additional context is required.\n- NEVER add copyright or license headers unless specifically requested.\n- Do not waste tokens by re-reading files after calling `apply_patch` on them. The tool call will fail if it didn't work. The same goes for making folders, deleting folders, etc.\n- Do not `git commit` your changes or create new git branches unless explicitly requested.\n- Do not add inline comments within code unless explicitly requested.\n- Do not use one-letter variable names unless explicitly requested.\n- NEVER output inline citations like \"\u3010F:README.md\u2020L5-L14\u3011\" in your outputs. The CLI is not able to render these so they will just be broken in the UI. Instead, if you output valid filepaths, users will be able to click on them to open the files in their editor.\n\n## Validating your work\n\nIf the codebase has tests or the ability to build or run, consider using them to verify that your work is complete. \n\nWhen testing, your philosophy should be to start as specific as possible to the code you changed so that you can catch issues efficiently, then make your way to broader tests as you build confidence. If there's no test for the code you changed, and if the adjacent patterns in the codebases show that there's a logical place for you to add a test, you may do so. However, do not add tests to codebases with no tests.\n\nSimilarly, once you're confident in correctness, you can suggest or use formatting commands to ensure that your code is well formatted. If there are issues you can iterate up to 3 times to get formatting right, but if you still can't manage it's better to save the user time and present them a correct solution where you call out the formatting in your final message. If the codebase does not have a formatter configured, do not add one.\n\nFor all of testing, running, building, and formatting, do not attempt to fix unrelated bugs. It is not your responsibility to fix them. (You may mention them to the user in your final message though.)\n\nBe mindful of whether to run validation commands proactively. In the absence of behavioral guidance:\n\n- When running in the non-interactive approval mode **never**, proactively run tests, lint and do whatever you need to ensure you've completed the task.\n- When working in interactive approval modes like **untrusted**, or **on-request**, hold off on running tests or lint commands until the user is ready for you to finalize your output, because these commands take time to run and slow down iteration. Instead suggest what you want to do next, and let the user confirm first.\n- When working on test-related tasks, such as adding tests, fixing tests, or reproducing a bug to verify behavior, you may proactively run tests regardless of approval mode. Use your judgement to decide whether this is a test-related task.\n\n## Ambition vs. precision\n\nFor tasks that have no prior context (i.e. the user is starting something brand new), you should feel free to be ambitious and demonstrate creativity with your implementation.\n\nIf you're operating in an existing codebase, you should make sure you do exactly what the user asks with surgical precision. Treat the surrounding codebase with respect, and don't overstep (i.e. changing filenames or variables unnecessarily). You should balance being sufficiently ambitious and proactive when completing tasks of this nature.\n\nYou should use judicious initiative to decide on the right level of detail and complexity to deliver based on the user's needs. This means showing good judgment that you're capable of doing the right extras without gold-plating. This might be demonstrated by high-value, creative touches when scope of the task is vague; while being surgical and targeted when scope is tightly specified.\n\n## Sharing progress updates\n\nFor especially longer tasks that you work on (i.e. requiring many tool calls, or a plan with multiple steps), you should provide progress updates back to the user at reasonable intervals. These updates should be structured as a concise sentence or two (no more than 8-10 words long) recapping progress so far in plain language: this update demonstrates your understanding of what needs to be done, progress so far (i.e. files explores, subtasks complete), and where you're going next.\n\nBefore doing large chunks of work that may incur latency as experienced by the user (i.e. writing a new file), you should send a concise message to the user with an update indicating what you're about to do to ensure they know what you're spending time on. Don't start editing or writing large files before informing the user what you are doing and why.\n\nThe messages you send before tool calls should describe what is immediately about to be done next in very concise language. If there was previous work done, this preamble message should also include a note about the work done so far to bring the user along.\n\n## Presenting your work and final message\n\nYour final message should read naturally, like an update from a concise teammate. For casual conversation, brainstorming tasks, or quick questions from the user, respond in a friendly, conversational tone. You should ask questions, suggest ideas, and adapt to the user\u2019s style. If you've finished a large amount of work, when describing what you've done to the user, you should follow the final answer formatting guidelines to communicate substantive changes. You don't need to add structured formatting for one-word answers, greetings, or purely conversational exchanges.\n\nYou can skip heavy formatting for single, simple actions or confirmations. In these cases, respond in plain sentences with any relevant next step or quick option. Reserve multi-section structured responses for results that need grouping or explanation.\n\nThe user is working on the same computer as you, and has access to your work. As such there's no need to show the full contents of large files you have already written unless the user explicitly asks for them. Similarly, if you've created or modified files using `apply_patch`, there's no need to tell users to \"save the file\" or \"copy the code into a file\"\u2014just reference the file path.\n\nIf there's something that you think you could help with as a logical next step, concisely ask the user if they want you to do so. Good examples of this are running tests, committing changes, or building out the next logical component. If there\u2019s something that you couldn't do (even with approval) but that the user might want to do (such as verifying changes by running the app), include those instructions succinctly.\n\nBrevity is very important as a default. You should be very concise (i.e. no more than 10 lines), but can relax this requirement for tasks where additional detail and comprehensiveness is important for the user's understanding.\n\n### Final answer structure and style guidelines\n\nYou are producing plain text that will later be styled by the CLI. Follow these rules exactly. Formatting should make results easy to scan, but not feel mechanical. Use judgment to decide how much structure adds value.\n\n**Section Headers**\n\n- Use only when they improve clarity \u2014 they are not mandatory for every answer.\n- Choose descriptive names that fit the content\n- Keep headers short (1\u20133 words) and in `**Title Case**`. Always start headers with `**` and end with `**`\n- Leave no blank line before the first bullet under a header.\n- Section headers should only be used where they genuinely improve scanability; avoid fragmenting the answer.\n\n**Bullets**\n\n- Use `-` followed by a space for every bullet.\n- Merge related points when possible; avoid a bullet for every trivial detail.\n- Keep bullets to one line unless breaking for clarity is unavoidable.\n- Group into short lists (4\u20136 bullets) ordered by importance.\n- Use consistent keyword phrasing and formatting across sections.\n\n**Monospace**\n\n- Wrap all commands, file paths, env vars, and code identifiers in backticks (`` `...` ``).\n- Apply to inline examples and to bullet keywords if the keyword itself is a literal file/command.\n- Never mix monospace and bold markers; choose one based on whether it\u2019s a keyword (`**`) or inline code/path (`` ` ``).\n\n**File References**\nWhen referencing files in your response, make sure to include the relevant start line and always follow the below rules:\n  * Use inline code to make file paths clickable.\n  * Each reference should have a stand alone path. Even if it's the same file.\n  * Accepted: absolute, workspace\u2011relative, a/ or b/ diff prefixes, or bare filename/suffix.\n  * Line/column (1\u2011based, optional): :line[:column] or #Lline[Ccolumn] (column defaults to 1).\n  * Do not use URIs like file://, vscode://, or https://.\n  * Do not provide range of lines\n  * Examples: src/app.ts, src/app.ts:42, b/server/index.js#L10, C:\\repo\\project\\main.rs:12:5\n\n**Structure**\n\n- Place related bullets together; don\u2019t mix unrelated concepts in the same section.\n- Order sections from general \u2192 specific \u2192 supporting info.\n- For subsections (e.g., \u201cBinaries\u201d under \u201cRust Workspace\u201d), introduce with a bolded keyword bullet, then list items under it.\n- Match structure to complexity:\n  - Multi-part or detailed results \u2192 use clear headers and grouped bullets.\n  - Simple results \u2192 minimal headers, possibly just a short list or paragraph.\n\n**Tone**\n\n- Keep the voice collaborative and natural, like a coding partner handing off work.\n- Be concise and factual \u2014 no filler or conversational commentary and avoid unnecessary repetition\n- Use present tense and active voice (e.g., \u201cRuns tests\u201d not \u201cThis will run tests\u201d).\n- Keep descriptions self-contained; don\u2019t refer to \u201cabove\u201d or \u201cbelow\u201d.\n- Use parallel structure in lists for consistency.\n\n**Don\u2019t**\n\n- Don\u2019t use literal words \u201cbold\u201d or \u201cmonospace\u201d in the content.\n- Don\u2019t nest bullets or create deep hierarchies.\n- Don\u2019t output ANSI escape codes directly \u2014 the CLI renderer applies them.\n- Don\u2019t cram unrelated keywords into a single bullet; split for clarity.\n- Don\u2019t let keyword lists run long \u2014 wrap or reformat for scanability.\n\nGenerally, ensure your final answers adapt their shape and depth to the request. For example, answers to code explanations should have a precise, structured explanation with code references that answer the question directly. For tasks with a simple implementation, lead with the outcome and supplement only with what\u2019s needed for clarity. Larger changes can be presented as a logical walkthrough of your approach, grouping related steps, explaining rationale where it adds value, and highlighting next actions to accelerate the user. Your answers should provide the right level of detail while being easily scannable.\n\nFor casual greetings, acknowledgements, or other one-off conversational messages that are not delivering substantive information or structured results, respond naturally without section headers or bullet formatting.\n\n# Tool Guidelines\n\n## Shell commands\n\nWhen using the shell, you must adhere to the following guidelines:\n\n- When searching for text or files, prefer using `rg` or `rg --files` respectively because `rg` is much faster than alternatives like `grep`. (If the `rg` command is not found, then use alternatives.)\n- Do not use python scripts to attempt to output larger chunks of a file.\n\n\n</model_switch>"
+            }
+          ],
+          "ext": {
+            "codex": {
+              "version": "0.162.0",
+              "native_id": "msg_01a12171-296d-7f52-8a4a-7013d84e6a2c",
+              "data": {
+                "item": {
+                  "type": "message",
+                  "id": "msg_01a12171-296d-7f52-8a4a-7013d84e6a2c",
+                  "role": "developer",
+                  "content": [
+                    {
+                      "type": "input_text",
+                      "text": "<model_switch>\nThe user was previously using a different model. Please continue the conversation according to the following instructions:\n\nYou are a coding agent running in the Codex CLI, a terminal-based coding assistant. Codex CLI is an open source project led by OpenAI. You are expected to be precise, safe, and helpful.\n\nYour capabilities:\n\n- Receive user prompts and other context provided by the harness, such as files in the workspace.\n- Communicate with the user by streaming thinking & responses, and by making & updating plans.\n- Emit function calls to run terminal commands and apply patches. Depending on how this specific run is configured, you can request that these function calls be escalated to the user for approval before running. More on this in the \"Sandbox and approvals\" section.\n\nWithin this context, Codex refers to the open-source agentic coding interface (not the old Codex language model built by OpenAI).\n\n# How you work\n\n## Personality\n\nYour default personality and tone is concise, direct, and friendly. You communicate efficiently, always keeping the user clearly informed about ongoing actions without unnecessary detail. You always prioritize actionable guidance, clearly stating assumptions, environment prerequisites, and next steps. Unless explicitly asked, you avoid excessively verbose explanations about your work.\n\n# AGENTS.md spec\n- Repos often contain AGENTS.md files. These files can appear anywhere within the repository.\n- These files are a way for humans to give you (the agent) instructions or tips for working within the container.\n- Some examples might be: coding conventions, info about how code is organized, or instructions for how to run or test code.\n- Instructions in AGENTS.md files:\n    - The scope of an AGENTS.md file is the entire directory tree rooted at the folder that contains it.\n    - For every file you touch in the final patch, you must obey instructions in any AGENTS.md file whose scope includes that file.\n    - Instructions about code style, structure, naming, etc. apply only to code within the AGENTS.md file's scope, unless the file states otherwise.\n    - More-deeply-nested AGENTS.md files take precedence in the case of conflicting instructions.\n    - Direct system/developer/user instructions (as part of a prompt) take precedence over AGENTS.md instructions.\n- The contents of the AGENTS.md file at the root of the repo and any directories from the CWD up to the root are included with the developer message and don't need to be re-read. When working in a subdirectory of CWD, or a directory outside the CWD, check for any AGENTS.md files that may be applicable.\n\n## Responsiveness\n\n### Preamble messages\n\nBefore making tool calls, send a brief preamble to the user explaining what you\u2019re about to do. When sending preamble messages, follow these principles and examples:\n\n- **Logically group related actions**: if you\u2019re about to run several related commands, describe them together in one preamble rather than sending a separate note for each.\n- **Keep it concise**: be no more than 1-2 sentences, focused on immediate, tangible next steps. (8\u201312 words for quick updates).\n- **Build on prior context**: if this is not your first tool call, use the preamble message to connect the dots with what\u2019s been done so far and create a sense of momentum and clarity for the user to understand your next actions.\n- **Keep your tone light, friendly and curious**: add small touches of personality in preambles feel collaborative and engaging.\n- **Exception**: Avoid adding a preamble for every trivial read (e.g., `cat` a single file) unless it\u2019s part of a larger grouped action.\n\n**Examples:**\n\n- \u201cI\u2019ve explored the repo; now checking the API route definitions.\u201d\n- \u201cNext, I\u2019ll patch the config and update the related tests.\u201d\n- \u201cI\u2019m about to scaffold the CLI commands and helper functions.\u201d\n- \u201cOk cool, so I\u2019ve wrapped my head around the repo. Now digging into the API routes.\u201d\n- \u201cConfig\u2019s looking tidy. Next up is patching helpers to keep things in sync.\u201d\n- \u201cFinished poking at the DB gateway. I will now chase down error handling.\u201d\n- \u201cAlright, build pipeline order is interesting. Checking how it reports failures.\u201d\n- \u201cSpotted a clever caching util; now hunting where it gets used.\u201d\n\n## Task execution\n\nYou are a coding agent. Please keep going until the query is completely resolved, before ending your turn and yielding back to the user. Only terminate your turn when you are sure that the problem is solved. Autonomously resolve the query to the best of your ability, using the tools available to you, before coming back to the user. Do NOT guess or make up an answer.\n\nYou MUST adhere to the following criteria when solving queries:\n\n- Working on the repo(s) in the current environment is allowed, even if they are proprietary.\n- Analyzing code for vulnerabilities is allowed.\n- Showing user code and tool call details is allowed.\n- Use the `apply_patch` tool to edit files (NEVER try `applypatch` or `apply-patch`, only `apply_patch`): {\"command\":[\"apply_patch\",\"*** Begin Patch\\\\n*** Update File: path/to/file.py\\\\n@@ def example():\\\\n- pass\\\\n+ return 123\\\\n*** End Patch\"]}\n\nIf completing the user's task requires writing or modifying files, your code and final answer should follow these coding guidelines, though user instructions (i.e. AGENTS.md) may override these guidelines:\n\n- Fix the problem at the root cause rather than applying surface-level patches, when possible.\n- Avoid unneeded complexity in your solution.\n- Do not attempt to fix unrelated bugs or broken tests. It is not your responsibility to fix them. (You may mention them to the user in your final message though.)\n- Update documentation as necessary.\n- Keep changes consistent with the style of the existing codebase. Changes should be minimal and focused on the task.\n- Use `git log` and `git blame` to search the history of the codebase if additional context is required.\n- NEVER add copyright or license headers unless specifically requested.\n- Do not waste tokens by re-reading files after calling `apply_patch` on them. The tool call will fail if it didn't work. The same goes for making folders, deleting folders, etc.\n- Do not `git commit` your changes or create new git branches unless explicitly requested.\n- Do not add inline comments within code unless explicitly requested.\n- Do not use one-letter variable names unless explicitly requested.\n- NEVER output inline citations like \"\u3010F:README.md\u2020L5-L14\u3011\" in your outputs. The CLI is not able to render these so they will just be broken in the UI. Instead, if you output valid filepaths, users will be able to click on them to open the files in their editor.\n\n## Validating your work\n\nIf the codebase has tests or the ability to build or run, consider using them to verify that your work is complete. \n\nWhen testing, your philosophy should be to start as specific as possible to the code you changed so that you can catch issues efficiently, then make your way to broader tests as you build confidence. If there's no test for the code you changed, and if the adjacent patterns in the codebases show that there's a logical place for you to add a test, you may do so. However, do not add tests to codebases with no tests.\n\nSimilarly, once you're confident in correctness, you can suggest or use formatting commands to ensure that your code is well formatted. If there are issues you can iterate up to 3 times to get formatting right, but if you still can't manage it's better to save the user time and present them a correct solution where you call out the formatting in your final message. If the codebase does not have a formatter configured, do not add one.\n\nFor all of testing, running, building, and formatting, do not attempt to fix unrelated bugs. It is not your responsibility to fix them. (You may mention them to the user in your final message though.)\n\nBe mindful of whether to run validation commands proactively. In the absence of behavioral guidance:\n\n- When running in the non-interactive approval mode **never**, proactively run tests, lint and do whatever you need to ensure you've completed the task.\n- When working in interactive approval modes like **untrusted**, or **on-request**, hold off on running tests or lint commands until the user is ready for you to finalize your output, because these commands take time to run and slow down iteration. Instead suggest what you want to do next, and let the user confirm first.\n- When working on test-related tasks, such as adding tests, fixing tests, or reproducing a bug to verify behavior, you may proactively run tests regardless of approval mode. Use your judgement to decide whether this is a test-related task.\n\n## Ambition vs. precision\n\nFor tasks that have no prior context (i.e. the user is starting something brand new), you should feel free to be ambitious and demonstrate creativity with your implementation.\n\nIf you're operating in an existing codebase, you should make sure you do exactly what the user asks with surgical precision. Treat the surrounding codebase with respect, and don't overstep (i.e. changing filenames or variables unnecessarily). You should balance being sufficiently ambitious and proactive when completing tasks of this nature.\n\nYou should use judicious initiative to decide on the right level of detail and complexity to deliver based on the user's needs. This means showing good judgment that you're capable of doing the right extras without gold-plating. This might be demonstrated by high-value, creative touches when scope of the task is vague; while being surgical and targeted when scope is tightly specified.\n\n## Sharing progress updates\n\nFor especially longer tasks that you work on (i.e. requiring many tool calls, or a plan with multiple steps), you should provide progress updates back to the user at reasonable intervals. These updates should be structured as a concise sentence or two (no more than 8-10 words long) recapping progress so far in plain language: this update demonstrates your understanding of what needs to be done, progress so far (i.e. files explores, subtasks complete), and where you're going next.\n\nBefore doing large chunks of work that may incur latency as experienced by the user (i.e. writing a new file), you should send a concise message to the user with an update indicating what you're about to do to ensure they know what you're spending time on. Don't start editing or writing large files before informing the user what you are doing and why.\n\nThe messages you send before tool calls should describe what is immediately about to be done next in very concise language. If there was previous work done, this preamble message should also include a note about the work done so far to bring the user along.\n\n## Presenting your work and final message\n\nYour final message should read naturally, like an update from a concise teammate. For casual conversation, brainstorming tasks, or quick questions from the user, respond in a friendly, conversational tone. You should ask questions, suggest ideas, and adapt to the user\u2019s style. If you've finished a large amount of work, when describing what you've done to the user, you should follow the final answer formatting guidelines to communicate substantive changes. You don't need to add structured formatting for one-word answers, greetings, or purely conversational exchanges.\n\nYou can skip heavy formatting for single, simple actions or confirmations. In these cases, respond in plain sentences with any relevant next step or quick option. Reserve multi-section structured responses for results that need grouping or explanation.\n\nThe user is working on the same computer as you, and has access to your work. As such there's no need to show the full contents of large files you have already written unless the user explicitly asks for them. Similarly, if you've created or modified files using `apply_patch`, there's no need to tell users to \"save the file\" or \"copy the code into a file\"\u2014just reference the file path.\n\nIf there's something that you think you could help with as a logical next step, concisely ask the user if they want you to do so. Good examples of this are running tests, committing changes, or building out the next logical component. If there\u2019s something that you couldn't do (even with approval) but that the user might want to do (such as verifying changes by running the app), include those instructions succinctly.\n\nBrevity is very important as a default. You should be very concise (i.e. no more than 10 lines), but can relax this requirement for tasks where additional detail and comprehensiveness is important for the user's understanding.\n\n### Final answer structure and style guidelines\n\nYou are producing plain text that will later be styled by the CLI. Follow these rules exactly. Formatting should make results easy to scan, but not feel mechanical. Use judgment to decide how much structure adds value.\n\n**Section Headers**\n\n- Use only when they improve clarity \u2014 they are not mandatory for every answer.\n- Choose descriptive names that fit the content\n- Keep headers short (1\u20133 words) and in `**Title Case**`. Always start headers with `**` and end with `**`\n- Leave no blank line before the first bullet under a header.\n- Section headers should only be used where they genuinely improve scanability; avoid fragmenting the answer.\n\n**Bullets**\n\n- Use `-` followed by a space for every bullet.\n- Merge related points when possible; avoid a bullet for every trivial detail.\n- Keep bullets to one line unless breaking for clarity is unavoidable.\n- Group into short lists (4\u20136 bullets) ordered by importance.\n- Use consistent keyword phrasing and formatting across sections.\n\n**Monospace**\n\n- Wrap all commands, file paths, env vars, and code identifiers in backticks (`` `...` ``).\n- Apply to inline examples and to bullet keywords if the keyword itself is a literal file/command.\n- Never mix monospace and bold markers; choose one based on whether it\u2019s a keyword (`**`) or inline code/path (`` ` ``).\n\n**File References**\nWhen referencing files in your response, make sure to include the relevant start line and always follow the below rules:\n  * Use inline code to make file paths clickable.\n  * Each reference should have a stand alone path. Even if it's the same file.\n  * Accepted: absolute, workspace\u2011relative, a/ or b/ diff prefixes, or bare filename/suffix.\n  * Line/column (1\u2011based, optional): :line[:column] or #Lline[Ccolumn] (column defaults to 1).\n  * Do not use URIs like file://, vscode://, or https://.\n  * Do not provide range of lines\n  * Examples: src/app.ts, src/app.ts:42, b/server/index.js#L10, C:\\repo\\project\\main.rs:12:5\n\n**Structure**\n\n- Place related bullets together; don\u2019t mix unrelated concepts in the same section.\n- Order sections from general \u2192 specific \u2192 supporting info.\n- For subsections (e.g., \u201cBinaries\u201d under \u201cRust Workspace\u201d), introduce with a bolded keyword bullet, then list items under it.\n- Match structure to complexity:\n  - Multi-part or detailed results \u2192 use clear headers and grouped bullets.\n  - Simple results \u2192 minimal headers, possibly just a short list or paragraph.\n\n**Tone**\n\n- Keep the voice collaborative and natural, like a coding partner handing off work.\n- Be concise and factual \u2014 no filler or conversational commentary and avoid unnecessary repetition\n- Use present tense and active voice (e.g., \u201cRuns tests\u201d not \u201cThis will run tests\u201d).\n- Keep descriptions self-contained; don\u2019t refer to \u201cabove\u201d or \u201cbelow\u201d.\n- Use parallel structure in lists for consistency.\n\n**Don\u2019t**\n\n- Don\u2019t use literal words \u201cbold\u201d or \u201cmonospace\u201d in the content.\n- Don\u2019t nest bullets or create deep hierarchies.\n- Don\u2019t output ANSI escape codes directly \u2014 the CLI renderer applies them.\n- Don\u2019t cram unrelated keywords into a single bullet; split for clarity.\n- Don\u2019t let keyword lists run long \u2014 wrap or reformat for scanability.\n\nGenerally, ensure your final answers adapt their shape and depth to the request. For example, answers to code explanations should have a precise, structured explanation with code references that answer the question directly. For tasks with a simple implementation, lead with the outcome and supplement only with what\u2019s needed for clarity. Larger changes can be presented as a logical walkthrough of your approach, grouping related steps, explaining rationale where it adds value, and highlighting next actions to accelerate the user. Your answers should provide the right level of detail while being easily scannable.\n\nFor casual greetings, acknowledgements, or other one-off conversational messages that are not delivering substantive information or structured results, respond naturally without section headers or bullet formatting.\n\n# Tool Guidelines\n\n## Shell commands\n\nWhen using the shell, you must adhere to the following guidelines:\n\n- When searching for text or files, prefer using `rg` or `rg --files` respectively because `rg` is much faster than alternatives like `grep`. (If the `rg` command is not found, then use alternatives.)\n- Do not use python scripts to attempt to output larger chunks of a file.\n\n\n</model_switch>"
+                    }
+                  ],
+                  "internal_chat_message_metadata_passthrough": {
+                    "turn_id": "01a12171-2969-77d2-876d-b6a248b380f2",
+                    "create_time": 1791562426.733204,
+                    "content_item_kinds": [
+                      "model_switch.instructions"
+                    ]
+                  }
+                },
+                "metadata": {
+                  "client_authored": false,
+                  "mcp_attribution": {
+                    "status": "none"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_01a12171-296f-7861-9d27-b810f43bbc87",
+          "thread_id": "01a1216d-8106-7123-9957-cfa59fab00a3",
+          "seq": 17,
+          "role": "user",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2",
+            "api": "openai-responses"
+          },
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "created_at": "2026-10-09T16:13:46.735Z",
+          "completed_at": "2026-10-09T16:13:46.735Z",
+          "producer": {
+            "harness": "codex",
+            "harness_version": "0.162.0",
+            "adapter_version": "codex-adapter/0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Spawn a helper to list the files"
+            }
+          ],
+          "origin": "prompt",
+          "ext": {
+            "codex": {
+              "version": "0.162.0",
+              "native_id": "msg_01a12171-296f-7861-9d27-b810f43bbc87",
+              "data": {
+                "item_id": "msg_01a12171-296f-7861-9d27-b810f43bbc87",
+                "passthrough": {
+                  "turn_id": "01a12171-2969-77d2-876d-b6a248b380f2",
+                  "create_time": 1791562426.735006,
+                  "content_item_kinds": [
+                    "user.text"
+                  ]
+                },
+                "metadata": {
+                  "retained_source": {
+                    "id": {
+                      "message_id": "msg_01a12171-296f-7861-9d27-b810f43bbc87",
+                      "turn_id": "01a12171-2969-77d2-876d-b6a248b380f2",
+                      "role": "user"
+                    },
+                    "revision": "retained_01a12171-296f-7861-9d27-b83603a84ebf",
+                    "complete": true
+                  },
+                  "client_authored": false,
+                  "user_input_order": 13,
+                  "mcp_attribution": {
+                    "status": "none"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "fc_mv160fp111",
+          "thread_id": "01a1216d-8106-7123-9957-cfa59fab00a3",
+          "seq": 18,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2",
+            "api": "openai-responses"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "tool_calls",
+          "error": null,
+          "created_at": "2026-10-09T16:13:46.741Z",
+          "completed_at": "2026-10-09T16:13:46.741Z",
+          "producer": {
+            "harness": "codex",
+            "harness_version": "0.162.0",
+            "adapter_version": "codex-adapter/0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "tool_call",
+              "call_id": "call_mv160fp112",
+              "name": "spawn_agent",
+              "kind": "task",
+              "input": {
+                "message": "List the files in the workspace"
+              },
+              "status": "complete",
+              "started_at": "2026-10-09T16:13:46.741Z",
+              "ext": {
+                "codex": {
+                  "version": "0.162.0",
+                  "data": {
+                    "id": "fc_mv160fp111",
+                    "type": "function_call",
+                    "namespace": "multi_agent_v1",
+                    "output_item": {
+                      "id": "fco_01a12171-2993-7c41-9cec-6a4f7f62b7b2",
+                      "type": "function_call_output"
+                    }
+                  }
+                }
+              },
+              "result": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "{\"agent_id\":\"01a12171-2977-74e0-b37c-a083e2f80b37\",\"nickname\":\"Aristotle\"}"
+                  }
+                ],
+                "is_error": false
+              },
+              "ended_at": "2026-10-09T16:13:46.771Z"
+            },
+            {
+              "type": "subtask",
+              "thread_id": "01a12171-2977-74e0-b37c-a083e2f80b37",
+              "agent": "Aristotle",
+              "description": "List the files in the workspace",
+              "call_id": "call_mv160fp112",
+              "call_ids": [
+                "call_mv160fp112",
+                "call_mv160fpy15"
+              ]
+            }
+          ],
+          "reply_to": "msg_01a12171-296f-7861-9d27-b810f43bbc87",
+          "ext": {
+            "codex": {
+              "version": "0.162.0",
+              "native_id": "fc_mv160fp111",
+              "data": {
+                "metadata": {
+                  "client_authored": false,
+                  "user_input_order": 14
+                },
+                "response_id": "resp_mv160fp110",
+                "turn_id": "01a12171-2969-77d2-876d-b6a248b380f2"
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "fc_mv160fpy14",
+          "thread_id": "01a1216d-8106-7123-9957-cfa59fab00a3",
+          "seq": 19,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2",
+            "api": "openai-responses"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "tool_calls",
+          "error": null,
+          "created_at": "2026-10-09T16:13:46.775Z",
+          "completed_at": "2026-10-09T16:13:46.775Z",
+          "producer": {
+            "harness": "codex",
+            "harness_version": "0.162.0",
+            "adapter_version": "codex-adapter/0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "tool_call",
+              "call_id": "call_mv160fpy15",
+              "name": "wait_agent",
+              "kind": "task",
+              "input": {
+                "targets": [
+                  "01a12171-2977-74e0-b37c-a083e2f80b37"
+                ],
+                "timeout_ms": 30000
+              },
+              "status": "complete",
+              "started_at": "2026-10-09T16:13:46.775Z",
+              "ext": {
+                "codex": {
+                  "version": "0.162.0",
+                  "data": {
+                    "id": "fc_mv160fpy14",
+                    "type": "function_call",
+                    "namespace": "multi_agent_v1",
+                    "output_item": {
+                      "id": "fco_01a12171-2a04-71a0-9924-8fd34e2f3a48",
+                      "type": "function_call_output"
+                    }
+                  }
+                }
+              },
+              "result": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "{\"status\":{\"01a12171-2977-74e0-b37c-a083e2f80b37\":{\"completed\":\"Found hello.txt\"}},\"timed_out\":false}"
+                  }
+                ],
+                "is_error": false
+              },
+              "ended_at": "2026-10-09T16:13:46.884Z"
+            }
+          ],
+          "reply_to": "msg_01a12171-296f-7861-9d27-b810f43bbc87",
+          "ext": {
+            "codex": {
+              "version": "0.162.0",
+              "native_id": "fc_mv160fpy14",
+              "data": {
+                "metadata": {
+                  "client_authored": false,
+                  "user_input_order": 15
+                },
+                "response_id": "resp_mv160fpy13",
+                "turn_id": "01a12171-2969-77d2-876d-b6a248b380f2"
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_01a12171-2a05-7f92-99a8-5fc096624d58",
+          "thread_id": "01a1216d-8106-7123-9957-cfa59fab00a3",
+          "seq": 20,
+          "role": "user",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2",
+            "api": "openai-responses"
+          },
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "created_at": "2026-10-09T16:13:46.885Z",
+          "completed_at": "2026-10-09T16:13:46.885Z",
+          "producer": {
+            "harness": "codex",
+            "harness_version": "0.162.0",
+            "adapter_version": "codex-adapter/0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "text": "<subagent_notification>\n{\"agent_path\":\"01a12171-2977-74e0-b37c-a083e2f80b37\",\"status\":{\"completed\":\"Found hello.txt\"}}\n</subagent_notification>"
+            }
+          ],
+          "origin": "notification",
+          "ext": {
+            "codex": {
+              "version": "0.162.0",
+              "native_id": "msg_01a12171-2a05-7f92-99a8-5fc096624d58",
+              "data": {
+                "item_id": "msg_01a12171-2a05-7f92-99a8-5fc096624d58",
+                "passthrough": {
+                  "turn_id": "01a12171-2969-77d2-876d-b6a248b380f2",
+                  "create_time": 1791562426.885032,
+                  "content_item_kinds": [
+                    "multi_agent.subagent_notification"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_mv160ft31c",
+          "thread_id": "01a1216d-8106-7123-9957-cfa59fab00a3",
+          "seq": 21,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2",
+            "api": "openai-responses"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "stop",
+          "error": null,
+          "created_at": "2026-10-09T16:13:46.887Z",
+          "completed_at": "2026-10-09T16:13:46.887Z",
+          "producer": {
+            "harness": "codex",
+            "harness_version": "0.162.0",
+            "adapter_version": "codex-adapter/0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "text": "The helper found hello.txt.",
+              "ext": {
+                "codex": {
+                  "version": "0.162.0",
+                  "data": {
+                    "id": "msg_mv160ft31c"
+                  }
+                }
+              }
+            }
+          ],
+          "reply_to": "msg_01a12171-296f-7861-9d27-b810f43bbc87",
+          "ext": {
+            "codex": {
+              "version": "0.162.0",
+              "native_id": "msg_mv160ft31c",
+              "data": {
+                "metadata": {
+                  "retained_source": {
+                    "id": {
+                      "message_id": "msg_mv160ft31c",
+                      "turn_id": "01a12171-2969-77d2-876d-b6a248b380f2",
+                      "role": "assistant"
+                    },
+                    "revision": "retained_01a12171-2a07-7110-86e9-a1707c939e4d",
+                    "complete": true
+                  },
+                  "client_authored": false,
+                  "user_input_order": 16
+                },
+                "response_id": "resp_mv160ft31b",
+                "turn_id": "01a12171-2969-77d2-876d-b6a248b380f2"
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_01a12171-8023-7481-b4b7-4ec3ccb3cb36",
+          "thread_id": "01a1216d-8106-7123-9957-cfa59fab00a3",
+          "seq": 22,
+          "role": "user",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2",
+            "api": "openai-responses"
+          },
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "created_at": "2026-10-09T16:14:08.931Z",
+          "completed_at": "2026-10-09T16:14:08.931Z",
+          "producer": {
+            "harness": "codex",
+            "harness_version": "0.162.0",
+            "adapter_version": "codex-adapter/0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "text": "What is in hello.txt? Answer in one word."
+            }
+          ],
+          "origin": "prompt",
+          "ext": {
+            "codex": {
+              "version": "0.162.0",
+              "native_id": "msg_01a12171-8023-7481-b4b7-4ec3ccb3cb36",
+              "data": {
+                "item_id": "msg_01a12171-8023-7481-b4b7-4ec3ccb3cb36",
+                "passthrough": {
+                  "turn_id": "01a12171-801f-7442-8580-2d1bd7b01a1b",
+                  "create_time": 1791562448.931816,
+                  "content_item_kinds": [
+                    "user.text"
+                  ]
+                },
+                "metadata": {
+                  "retained_source": {
+                    "id": {
+                      "message_id": "msg_01a12171-8023-7481-b4b7-4ec3ccb3cb36",
+                      "turn_id": "01a12171-801f-7442-8580-2d1bd7b01a1b",
+                      "role": "user"
+                    },
+                    "revision": "retained_01a12171-8023-7481-b4b7-4ee3af2f54ec",
+                    "complete": true
+                  },
+                  "client_authored": false,
+                  "user_input_order": 17,
+                  "mcp_attribution": {
+                    "status": "none"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_mv160wtk1e",
+          "thread_id": "01a1216d-8106-7123-9957-cfa59fab00a3",
+          "seq": 23,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2",
+            "api": "openai-responses"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "stop",
+          "error": null,
+          "created_at": "2026-10-09T16:14:08.937Z",
+          "completed_at": "2026-10-09T16:14:08.937Z",
+          "producer": {
+            "harness": "codex",
+            "harness_version": "0.162.0",
+            "adapter_version": "codex-adapter/0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "text": "hi",
+              "ext": {
+                "codex": {
+                  "version": "0.162.0",
+                  "data": {
+                    "id": "msg_mv160wtk1e"
+                  }
+                }
+              }
+            }
+          ],
+          "reply_to": "msg_01a12171-8023-7481-b4b7-4ec3ccb3cb36",
+          "ext": {
+            "codex": {
+              "version": "0.162.0",
+              "native_id": "msg_mv160wtk1e",
+              "data": {
+                "metadata": {
+                  "retained_source": {
+                    "id": {
+                      "message_id": "msg_mv160wtk1e",
+                      "turn_id": "01a12171-801f-7442-8580-2d1bd7b01a1b",
+                      "role": "assistant"
+                    },
+                    "revision": "retained_01a12171-8029-7840-9886-e3420061433c",
+                    "complete": true
+                  },
+                  "client_authored": false,
+                  "user_input_order": 18
+                },
+                "response_id": "resp_mv160wtk1d",
+                "turn_id": "01a12171-801f-7442-8580-2d1bd7b01a1b"
+              }
+            }
+          }
+        }
+      ],
+      "ext": {
+        "codex": {
+          "version": "0.162.0",
+          "native_id": "01a1216d-8106-7123-9957-cfa59fab00a3",
+          "data": {
+            "session_meta": {
+              "session_id": "01a1216d-8106-7123-9957-cfa59fab00a3",
+              "id": "01a1216d-8106-7123-9957-cfa59fab00a3",
+              "timestamp": "2026-10-09T16:09:47.015Z",
+              "cwd": "/work/proto/harness/codex/work/live",
+              "runtime_workspace_roots": [
+                "/work/proto/harness/codex/work/live"
+              ],
+              "originator": "codex_exec",
+              "cli_version": "0.162.0",
+              "source": "exec",
+              "thread_source": "user",
+              "model_provider": "mock",
+              "base_instructions": {
+                "text": "You are a coding agent running in the Codex CLI, a terminal-based coding assistant. Codex CLI is an open source project led by OpenAI. You are expected to be precise, safe, and helpful.\n\nYour capabilities:\n\n- Receive user prompts and other context provided by the harness, such as files in the workspace.\n- Communicate with the user by streaming thinking & responses, and by making & updating plans.\n- Emit function calls to run terminal commands and apply patches. Depending on how this specific run is configured, you can request that these function calls be escalated to the user for approval before running. More on this in the \"Sandbox and approvals\" section.\n\nWithin this context, Codex refers to the open-source agentic coding interface (not the old Codex language model built by OpenAI).\n\n# How you work\n\n## Personality\n\nYour default personality and tone is concise, direct, and friendly. You communicate efficiently, always keeping the user clearly informed about ongoing actions without unnecessary detail. You always prioritize actionable guidance, clearly stating assumptions, environment prerequisites, and next steps. Unless explicitly asked, you avoid excessively verbose explanations about your work.\n\n# AGENTS.md spec\n- Repos often contain AGENTS.md files. These files can appear anywhere within the repository.\n- These files are a way for humans to give you (the agent) instructions or tips for working within the container.\n- Some examples might be: coding conventions, info about how code is organized, or instructions for how to run or test code.\n- Instructions in AGENTS.md files:\n    - The scope of an AGENTS.md file is the entire directory tree rooted at the folder that contains it.\n    - For every file you touch in the final patch, you must obey instructions in any AGENTS.md file whose scope includes that file.\n    - Instructions about code style, structure, naming, etc. apply only to code within the AGENTS.md file's scope, unless the file states otherwise.\n    - More-deeply-nested AGENTS.md files take precedence in the case of conflicting instructions.\n    - Direct system/developer/user instructions (as part of a prompt) take precedence over AGENTS.md instructions.\n- The contents of the AGENTS.md file at the root of the repo and any directories from the CWD up to the root are included with the developer message and don't need to be re-read. When working in a subdirectory of CWD, or a directory outside the CWD, check for any AGENTS.md files that may be applicable.\n\n## Responsiveness\n\n### Preamble messages\n\nBefore making tool calls, send a brief preamble to the user explaining what you\u2019re about to do. When sending preamble messages, follow these principles and examples:\n\n- **Logically group related actions**: if you\u2019re about to run several related commands, describe them together in one preamble rather than sending a separate note for each.\n- **Keep it concise**: be no more than 1-2 sentences, focused on immediate, tangible next steps. (8\u201312 words for quick updates).\n- **Build on prior context**: if this is not your first tool call, use the preamble message to connect the dots with what\u2019s been done so far and create a sense of momentum and clarity for the user to understand your next actions.\n- **Keep your tone light, friendly and curious**: add small touches of personality in preambles feel collaborative and engaging.\n- **Exception**: Avoid adding a preamble for every trivial read (e.g., `cat` a single file) unless it\u2019s part of a larger grouped action.\n\n**Examples:**\n\n- \u201cI\u2019ve explored the repo; now checking the API route definitions.\u201d\n- \u201cNext, I\u2019ll patch the config and update the related tests.\u201d\n- \u201cI\u2019m about to scaffold the CLI commands and helper functions.\u201d\n- \u201cOk cool, so I\u2019ve wrapped my head around the repo. Now digging into the API routes.\u201d\n- \u201cConfig\u2019s looking tidy. Next up is patching helpers to keep things in sync.\u201d\n- \u201cFinished poking at the DB gateway. I will now chase down error handling.\u201d\n- \u201cAlright, build pipeline order is interesting. Checking how it reports failures.\u201d\n- \u201cSpotted a clever caching util; now hunting where it gets used.\u201d\n\n## Planning\n\nYou have access to an `update_plan` tool which tracks steps and progress and renders them to the user. Using the tool helps demonstrate that you've understood the task and convey how you're approaching it. Plans can help to make complex, ambiguous, or multi-phase work clearer and more collaborative for the user. A good plan should break the task into meaningful, logically ordered steps that are easy to verify as you go.\n\nNote that plans are not for padding out simple work with filler steps or stating the obvious. The content of your plan should not involve doing anything that you aren't capable of doing (i.e. don't try to test things that you can't test). Do not use plans for simple or single-step queries that you can just do or answer immediately.\n\nDo not repeat the full contents of the plan after an `update_plan` call \u2014 the harness already displays it. Instead, summarize the change made and highlight any important context or next step.\n\nBefore running a command, consider whether or not you have completed the previous step, and make sure to mark it as completed before moving on to the next step. It may be the case that you complete all steps in your plan after a single pass of implementation. If this is the case, you can simply mark all the planned steps as completed. Sometimes, you may need to change plans in the middle of a task: call `update_plan` with the updated plan and make sure to provide an `explanation` of the rationale when doing so.\n\nUse a plan when:\n\n- The task is non-trivial and will require multiple actions over a long time horizon.\n- There are logical phases or dependencies where sequencing matters.\n- The work has ambiguity that benefits from outlining high-level goals.\n- You want intermediate checkpoints for feedback and validation.\n- When the user asked you to do more than one thing in a single prompt\n- The user has asked you to use the plan tool (aka \"TODOs\")\n- You generate additional steps while working, and plan to do them before yielding to the user\n\n### Examples\n\n**High-quality plans**\n\nExample 1:\n\n1. Add CLI entry with file args\n2. Parse Markdown via CommonMark library\n3. Apply semantic HTML template\n4. Handle code blocks, images, links\n5. Add error handling for invalid files\n\nExample 2:\n\n1. Define CSS variables for colors\n2. Add toggle with localStorage state\n3. Refactor components to use variables\n4. Verify all views for readability\n5. Add smooth theme-change transition\n\nExample 3:\n\n1. Set up Node.js + WebSocket server\n2. Add join/leave broadcast events\n3. Implement messaging with timestamps\n4. Add usernames + mention highlighting\n5. Persist messages in lightweight DB\n6. Add typing indicators + unread count\n\n**Low-quality plans**\n\nExample 1:\n\n1. Create CLI tool\n2. Add Markdown parser\n3. Convert to HTML\n\nExample 2:\n\n1. Add dark mode toggle\n2. Save preference\n3. Make styles look good\n\nExample 3:\n\n1. Create single-file HTML game\n2. Run quick sanity check\n3. Summarize usage instructions\n\nIf you need to write a plan, only write high quality plans, not low quality ones.\n\n## Task execution\n\nYou are a coding agent. Please keep going until the query is completely resolved, before ending your turn and yielding back to the user. Only terminate your turn when you are sure that the problem is solved. Autonomously resolve the query to the best of your ability, using the tools available to you, before coming back to the user. Do NOT guess or make up an answer.\n\nYou MUST adhere to the following criteria when solving queries:\n\n- Working on the repo(s) in the current environment is allowed, even if they are proprietary.\n- Analyzing code for vulnerabilities is allowed.\n- Showing user code and tool call details is allowed.\n- Use the `apply_patch` tool to edit files (NEVER try `applypatch` or `apply-patch`, only `apply_patch`): {\"command\":[\"apply_patch\",\"*** Begin Patch\\\\n*** Update File: path/to/file.py\\\\n@@ def example():\\\\n- pass\\\\n+ return 123\\\\n*** End Patch\"]}\n\nIf completing the user's task requires writing or modifying files, your code and final answer should follow these coding guidelines, though user instructions (i.e. AGENTS.md) may override these guidelines:\n\n- Fix the problem at the root cause rather than applying surface-level patches, when possible.\n- Avoid unneeded complexity in your solution.\n- Do not attempt to fix unrelated bugs or broken tests. It is not your responsibility to fix them. (You may mention them to the user in your final message though.)\n- Update documentation as necessary.\n- Keep changes consistent with the style of the existing codebase. Changes should be minimal and focused on the task.\n- Use `git log` and `git blame` to search the history of the codebase if additional context is required.\n- NEVER add copyright or license headers unless specifically requested.\n- Do not waste tokens by re-reading files after calling `apply_patch` on them. The tool call will fail if it didn't work. The same goes for making folders, deleting folders, etc.\n- Do not `git commit` your changes or create new git branches unless explicitly requested.\n- Do not add inline comments within code unless explicitly requested.\n- Do not use one-letter variable names unless explicitly requested.\n- NEVER output inline citations like \"\u3010F:README.md\u2020L5-L14\u3011\" in your outputs. The CLI is not able to render these so they will just be broken in the UI. Instead, if you output valid filepaths, users will be able to click on them to open the files in their editor.\n\n## Validating your work\n\nIf the codebase has tests or the ability to build or run, consider using them to verify that your work is complete. \n\nWhen testing, your philosophy should be to start as specific as possible to the code you changed so that you can catch issues efficiently, then make your way to broader tests as you build confidence. If there's no test for the code you changed, and if the adjacent patterns in the codebases show that there's a logical place for you to add a test, you may do so. However, do not add tests to codebases with no tests.\n\nSimilarly, once you're confident in correctness, you can suggest or use formatting commands to ensure that your code is well formatted. If there are issues you can iterate up to 3 times to get formatting right, but if you still can't manage it's better to save the user time and present them a correct solution where you call out the formatting in your final message. If the codebase does not have a formatter configured, do not add one.\n\nFor all of testing, running, building, and formatting, do not attempt to fix unrelated bugs. It is not your responsibility to fix them. (You may mention them to the user in your final message though.)\n\nBe mindful of whether to run validation commands proactively. In the absence of behavioral guidance:\n\n- When running in the non-interactive approval mode **never**, proactively run tests, lint and do whatever you need to ensure you've completed the task.\n- When working in interactive approval modes like **untrusted**, or **on-request**, hold off on running tests or lint commands until the user is ready for you to finalize your output, because these commands take time to run and slow down iteration. Instead suggest what you want to do next, and let the user confirm first.\n- When working on test-related tasks, such as adding tests, fixing tests, or reproducing a bug to verify behavior, you may proactively run tests regardless of approval mode. Use your judgement to decide whether this is a test-related task.\n\n## Ambition vs. precision\n\nFor tasks that have no prior context (i.e. the user is starting something brand new), you should feel free to be ambitious and demonstrate creativity with your implementation.\n\nIf you're operating in an existing codebase, you should make sure you do exactly what the user asks with surgical precision. Treat the surrounding codebase with respect, and don't overstep (i.e. changing filenames or variables unnecessarily). You should balance being sufficiently ambitious and proactive when completing tasks of this nature.\n\nYou should use judicious initiative to decide on the right level of detail and complexity to deliver based on the user's needs. This means showing good judgment that you're capable of doing the right extras without gold-plating. This might be demonstrated by high-value, creative touches when scope of the task is vague; while being surgical and targeted when scope is tightly specified.\n\n## Sharing progress updates\n\nFor especially longer tasks that you work on (i.e. requiring many tool calls, or a plan with multiple steps), you should provide progress updates back to the user at reasonable intervals. These updates should be structured as a concise sentence or two (no more than 8-10 words long) recapping progress so far in plain language: this update demonstrates your understanding of what needs to be done, progress so far (i.e. files explores, subtasks complete), and where you're going next.\n\nBefore doing large chunks of work that may incur latency as experienced by the user (i.e. writing a new file), you should send a concise message to the user with an update indicating what you're about to do to ensure they know what you're spending time on. Don't start editing or writing large files before informing the user what you are doing and why.\n\nThe messages you send before tool calls should describe what is immediately about to be done next in very concise language. If there was previous work done, this preamble message should also include a note about the work done so far to bring the user along.\n\n## Presenting your work and final message\n\nYour final message should read naturally, like an update from a concise teammate. For casual conversation, brainstorming tasks, or quick questions from the user, respond in a friendly, conversational tone. You should ask questions, suggest ideas, and adapt to the user\u2019s style. If you've finished a large amount of work, when describing what you've done to the user, you should follow the final answer formatting guidelines to communicate substantive changes. You don't need to add structured formatting for one-word answers, greetings, or purely conversational exchanges.\n\nYou can skip heavy formatting for single, simple actions or confirmations. In these cases, respond in plain sentences with any relevant next step or quick option. Reserve multi-section structured responses for results that need grouping or explanation.\n\nThe user is working on the same computer as you, and has access to your work. As such there's no need to show the full contents of large files you have already written unless the user explicitly asks for them. Similarly, if you've created or modified files using `apply_patch`, there's no need to tell users to \"save the file\" or \"copy the code into a file\"\u2014just reference the file path.\n\nIf there's something that you think you could help with as a logical next step, concisely ask the user if they want you to do so. Good examples of this are running tests, committing changes, or building out the next logical component. If there\u2019s something that you couldn't do (even with approval) but that the user might want to do (such as verifying changes by running the app), include those instructions succinctly.\n\nBrevity is very important as a default. You should be very concise (i.e. no more than 10 lines), but can relax this requirement for tasks where additional detail and comprehensiveness is important for the user's understanding.\n\n### Final answer structure and style guidelines\n\nYou are producing plain text that will later be styled by the CLI. Follow these rules exactly. Formatting should make results easy to scan, but not feel mechanical. Use judgment to decide how much structure adds value.\n\n**Section Headers**\n\n- Use only when they improve clarity \u2014 they are not mandatory for every answer.\n- Choose descriptive names that fit the content\n- Keep headers short (1\u20133 words) and in `**Title Case**`. Always start headers with `**` and end with `**`\n- Leave no blank line before the first bullet under a header.\n- Section headers should only be used where they genuinely improve scanability; avoid fragmenting the answer.\n\n**Bullets**\n\n- Use `-` followed by a space for every bullet.\n- Merge related points when possible; avoid a bullet for every trivial detail.\n- Keep bullets to one line unless breaking for clarity is unavoidable.\n- Group into short lists (4\u20136 bullets) ordered by importance.\n- Use consistent keyword phrasing and formatting across sections.\n\n**Monospace**\n\n- Wrap all commands, file paths, env vars, and code identifiers in backticks (`` `...` ``).\n- Apply to inline examples and to bullet keywords if the keyword itself is a literal file/command.\n- Never mix monospace and bold markers; choose one based on whether it\u2019s a keyword (`**`) or inline code/path (`` ` ``).\n\n**File References**\nWhen referencing files in your response, make sure to include the relevant start line and always follow the below rules:\n  * Use inline code to make file paths clickable.\n  * Each reference should have a stand alone path. Even if it's the same file.\n  * Accepted: absolute, workspace\u2011relative, a/ or b/ diff prefixes, or bare filename/suffix.\n  * Line/column (1\u2011based, optional): :line[:column] or #Lline[Ccolumn] (column defaults to 1).\n  * Do not use URIs like file://, vscode://, or https://.\n  * Do not provide range of lines\n  * Examples: src/app.ts, src/app.ts:42, b/server/index.js#L10, C:\\repo\\project\\main.rs:12:5\n\n**Structure**\n\n- Place related bullets together; don\u2019t mix unrelated concepts in the same section.\n- Order sections from general \u2192 specific \u2192 supporting info.\n- For subsections (e.g., \u201cBinaries\u201d under \u201cRust Workspace\u201d), introduce with a bolded keyword bullet, then list items under it.\n- Match structure to complexity:\n  - Multi-part or detailed results \u2192 use clear headers and grouped bullets.\n  - Simple results \u2192 minimal headers, possibly just a short list or paragraph.\n\n**Tone**\n\n- Keep the voice collaborative and natural, like a coding partner handing off work.\n- Be concise and factual \u2014 no filler or conversational commentary and avoid unnecessary repetition\n- Use present tense and active voice (e.g., \u201cRuns tests\u201d not \u201cThis will run tests\u201d).\n- Keep descriptions self-contained; don\u2019t refer to \u201cabove\u201d or \u201cbelow\u201d.\n- Use parallel structure in lists for consistency.\n\n**Don\u2019t**\n\n- Don\u2019t use literal words \u201cbold\u201d or \u201cmonospace\u201d in the content.\n- Don\u2019t nest bullets or create deep hierarchies.\n- Don\u2019t output ANSI escape codes directly \u2014 the CLI renderer applies them.\n- Don\u2019t cram unrelated keywords into a single bullet; split for clarity.\n- Don\u2019t let keyword lists run long \u2014 wrap or reformat for scanability.\n\nGenerally, ensure your final answers adapt their shape and depth to the request. For example, answers to code explanations should have a precise, structured explanation with code references that answer the question directly. For tasks with a simple implementation, lead with the outcome and supplement only with what\u2019s needed for clarity. Larger changes can be presented as a logical walkthrough of your approach, grouping related steps, explaining rationale where it adds value, and highlighting next actions to accelerate the user. Your answers should provide the right level of detail while being easily scannable.\n\nFor casual greetings, acknowledgements, or other one-off conversational messages that are not delivering substantive information or structured results, respond naturally without section headers or bullet formatting.\n\n# Tool Guidelines\n\n## Shell commands\n\nWhen using the shell, you must adhere to the following guidelines:\n\n- When searching for text or files, prefer using `rg` or `rg --files` respectively because `rg` is much faster than alternatives like `grep`. (If the `rg` command is not found, then use alternatives.)\n- Do not use python scripts to attempt to output larger chunks of a file.\n\n## `update_plan`\n\nA tool named `update_plan` is available to you. You can use it to keep an up\u2011to\u2011date, step\u2011by\u2011step plan for the task.\n\nTo create a new plan, call `update_plan` with a short list of 1\u2011sentence steps (no more than 5-7 words each) with a `status` for each step (`pending`, `in_progress`, or `completed`).\n\nWhen steps have been completed, use `update_plan` to mark each finished step as `completed` and the next step you are working on as `in_progress`. There should always be exactly one `in_progress` step until everything is done. You can mark multiple items as complete in a single `update_plan` call.\n\nIf all steps are complete, ensure you call `update_plan` to mark all steps as `completed`.\n",
+                "provenance": {
+                  "type": "model",
+                  "model": "mock-model"
+                }
+              },
+              "memory_mode": "disabled",
+              "history_mode": "paginated",
+              "context_window": {
+                "window_id": "01a1216d-8107-7012-a395-0526228f0886"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "schema": "kortix.session/2",
+      "v": 1,
+      "thread_id": "01a12171-2977-74e0-b37c-a083e2f80b37",
+      "parent_thread_id": "01a1216d-8106-7123-9957-cfa59fab00a3",
+      "spawned_by": {
+        "message_id": "fc_mv160fp111",
+        "call_id": "call_mv160fp112"
+      },
+      "agent": null,
+      "nickname": "Aristotle",
+      "title": "List the files in the workspace",
+      "created_at": "2026-10-09T16:13:46.743Z",
+      "messages": [
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "cdx_w0_msg_01a12171-2993-7c41-9cec-6a52a20f188b",
+          "thread_id": "01a12171-2977-74e0-b37c-a083e2f80b37",
+          "seq": 1,
+          "role": "system",
+          "kind": "context",
+          "status": "complete",
+          "in_context": true,
+          "model": null,
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "created_at": "2026-10-09T16:13:46.771Z",
+          "completed_at": "2026-10-09T16:13:46.771Z",
+          "producer": {
+            "harness": "codex",
+            "harness_version": "0.162.0",
+            "adapter_version": "codex-adapter/0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "text": "<skills_instructions>\n## Skills\nA skill is a set of local instructions to follow that is stored in a `SKILL.md` file. Below is the list of skills that can be used. Each entry includes a name, description, and a short path that can be expanded into an absolute path using the skill roots table.\n### Skill roots\n- `r0` = `/work/proto/harness/codex/homes/live/skills/.system`\n### Available skills\n- imagegen: Generate or edit raster images when the task benefits from AI-created bitmap visuals such as photos, illustrations, textures, sprites, mockups, or transparent-background cutouts. Use when Codex should create a brand-new image, transform an existing image, or derive visual variants from references, and the output should be a bitmap asset rather than repo-native code or vector. Do not use when the task is better handled by editing existing SVG/vector/code-native assets, extending an established icon or logo system, or building the visual directly in HTML/CSS/canvas. (file: r0/imagegen/SKILL.md)\n- openai-docs: Use for Codex models/pricing, scheduled tasks, skills, settings, setup, troubleshooting, customization, automations, and self-knowledge\u2014including 'you,' 'your,' 'this app,' or 'this coding agent' when they refer to Codex\u2014and for OpenAI APIs/products and ChatGPT Work. Also use for model choice/migration, prompting, SDKs, Responses, Realtime, agents, evals, and Chat/Work/Codex comparisons. Do not use for generic app/software tasks that merely mention Codex. (file: r0/openai-docs/SKILL.md)\n- skill-creator: Create or update a Codex skill with appropriately scoped instructions and any needed supporting resources. (file: r0/skill-creator/SKILL.md)\n- skill-installer: Install Codex skills into $CODEX_HOME/skills from a curated list or a GitHub repo path. Use when a user asks to list installable skills, install a curated skill, or install a skill from another repo (including private repos). (file: r0/skill-installer/SKILL.md)\n</skills_instructions>"
+            },
+            {
+              "type": "text",
+              "text": "<permissions instructions>\nFilesystem sandboxing defines which files can be read or written. `sandbox_mode` is `danger-full-access`: No filesystem sandboxing - all commands are permitted. Network access is enabled.\nApproval policy is currently never. Do not provide the `sandbox_permissions` for any reason, commands will be rejected.\n</permissions instructions>"
+            }
+          ],
+          "ext": {
+            "codex": {
+              "version": "0.162.0",
+              "native_id": "msg_01a12171-2993-7c41-9cec-6a52a20f188b",
+              "data": {
+                "item": {
+                  "type": "message",
+                  "id": "msg_01a12171-2993-7c41-9cec-6a52a20f188b",
+                  "role": "developer",
+                  "content": [
+                    {
+                      "type": "input_text",
+                      "text": "<skills_instructions>\n## Skills\nA skill is a set of local instructions to follow that is stored in a `SKILL.md` file. Below is the list of skills that can be used. Each entry includes a name, description, and a short path that can be expanded into an absolute path using the skill roots table.\n### Skill roots\n- `r0` = `/work/proto/harness/codex/homes/live/skills/.system`\n### Available skills\n- imagegen: Generate or edit raster images when the task benefits from AI-created bitmap visuals such as photos, illustrations, textures, sprites, mockups, or transparent-background cutouts. Use when Codex should create a brand-new image, transform an existing image, or derive visual variants from references, and the output should be a bitmap asset rather than repo-native code or vector. Do not use when the task is better handled by editing existing SVG/vector/code-native assets, extending an established icon or logo system, or building the visual directly in HTML/CSS/canvas. (file: r0/imagegen/SKILL.md)\n- openai-docs: Use for Codex models/pricing, scheduled tasks, skills, settings, setup, troubleshooting, customization, automations, and self-knowledge\u2014including 'you,' 'your,' 'this app,' or 'this coding agent' when they refer to Codex\u2014and for OpenAI APIs/products and ChatGPT Work. Also use for model choice/migration, prompting, SDKs, Responses, Realtime, agents, evals, and Chat/Work/Codex comparisons. Do not use for generic app/software tasks that merely mention Codex. (file: r0/openai-docs/SKILL.md)\n- skill-creator: Create or update a Codex skill with appropriately scoped instructions and any needed supporting resources. (file: r0/skill-creator/SKILL.md)\n- skill-installer: Install Codex skills into $CODEX_HOME/skills from a curated list or a GitHub repo path. Use when a user asks to list installable skills, install a curated skill, or install a skill from another repo (including private repos). (file: r0/skill-installer/SKILL.md)\n</skills_instructions>"
+                    },
+                    {
+                      "type": "input_text",
+                      "text": "<permissions instructions>\nFilesystem sandboxing defines which files can be read or written. `sandbox_mode` is `danger-full-access`: No filesystem sandboxing - all commands are permitted. Network access is enabled.\nApproval policy is currently never. Do not provide the `sandbox_permissions` for any reason, commands will be rejected.\n</permissions instructions>"
+                    }
+                  ],
+                  "internal_chat_message_metadata_passthrough": {
+                    "turn_id": "01a12171-2991-7241-876b-d66df311f0c8",
+                    "create_time": 1791562426.771785,
+                    "content_item_kinds": [
+                      "host_skills.instructions",
+                      "permissions.instructions"
+                    ]
+                  }
+                },
+                "metadata": {
+                  "client_authored": false,
+                  "mcp_attribution": {
+                    "status": "none"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_01a12171-2993-7c41-9cec-6a6064bb0e27",
+          "thread_id": "01a12171-2977-74e0-b37c-a083e2f80b37",
+          "seq": 2,
+          "role": "user",
+          "kind": "context",
+          "status": "complete",
+          "in_context": true,
+          "model": null,
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "created_at": "2026-10-09T16:13:46.771Z",
+          "completed_at": "2026-10-09T16:13:46.771Z",
+          "producer": {
+            "harness": "codex",
+            "harness_version": "0.162.0",
+            "adapter_version": "codex-adapter/0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "text": "<environment_context>\n  <cwd>/work/proto/harness/codex/work/live</cwd>\n  <shell>zsh</shell>\n  <current_date>2026-10-09</current_date>\n  <timezone>UTC</timezone>\n  <filesystem><workspace_roots><root>/work/proto/harness/codex/work/live</root></workspace_roots><permission_profile type=\"disabled\"><file_system type=\"unrestricted\" /></permission_profile></filesystem>\n</environment_context>"
+            }
+          ],
+          "origin": "prompt",
+          "ext": {
+            "codex": {
+              "version": "0.162.0",
+              "native_id": "msg_01a12171-2993-7c41-9cec-6a6064bb0e27",
+              "data": {
+                "item_id": "msg_01a12171-2993-7c41-9cec-6a6064bb0e27",
+                "passthrough": {
+                  "turn_id": "01a12171-2991-7241-876b-d66df311f0c8",
+                  "create_time": 1791562426.771785,
+                  "content_item_kinds": [
+                    "environments.environment_context"
+                  ]
+                },
+                "item": {
+                  "type": "message",
+                  "id": "msg_01a12171-2993-7c41-9cec-6a6064bb0e27",
+                  "role": "user",
+                  "content": [
+                    {
+                      "type": "input_text",
+                      "text": "<environment_context>\n  <cwd>/work/proto/harness/codex/work/live</cwd>\n  <shell>zsh</shell>\n  <current_date>2026-10-09</current_date>\n  <timezone>UTC</timezone>\n  <filesystem><workspace_roots><root>/work/proto/harness/codex/work/live</root></workspace_roots><permission_profile type=\"disabled\"><file_system type=\"unrestricted\" /></permission_profile></filesystem>\n</environment_context>"
+                    }
+                  ],
+                  "internal_chat_message_metadata_passthrough": {
+                    "turn_id": "01a12171-2991-7241-876b-d66df311f0c8",
+                    "create_time": 1791562426.771785,
+                    "content_item_kinds": [
+                      "environments.environment_context"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_01a12171-2995-71b1-9502-a13ae9a30229",
+          "thread_id": "01a12171-2977-74e0-b37c-a083e2f80b37",
+          "seq": 3,
+          "role": "user",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2",
+            "api": "openai-responses"
+          },
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "created_at": "2026-10-09T16:13:46.773Z",
+          "completed_at": "2026-10-09T16:13:46.773Z",
+          "producer": {
+            "harness": "codex",
+            "harness_version": "0.162.0",
+            "adapter_version": "codex-adapter/0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "text": "List the files in the workspace"
+            }
+          ],
+          "origin": "subagent",
+          "ext": {
+            "codex": {
+              "version": "0.162.0",
+              "native_id": "msg_01a12171-2995-71b1-9502-a13ae9a30229",
+              "data": {
+                "item_id": "msg_01a12171-2995-71b1-9502-a13ae9a30229",
+                "passthrough": {
+                  "turn_id": "01a12171-2991-7241-876b-d66df311f0c8",
+                  "create_time": 1791562426.773555,
+                  "content_item_kinds": [
+                    "user.text"
+                  ]
+                },
+                "metadata": {
+                  "retained_source": {
+                    "id": {
+                      "message_id": "msg_01a12171-2995-71b1-9502-a13ae9a30229",
+                      "turn_id": "01a12171-2991-7241-876b-d66df311f0c8",
+                      "role": "user"
+                    },
+                    "revision": "retained_01a12171-2995-71b1-9502-a15b0650841d",
+                    "complete": true
+                  },
+                  "client_authored": false,
+                  "user_input_order": 0,
+                  "mcp_attribution": {
+                    "status": "none"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "fc_mv160fq017",
+          "thread_id": "01a12171-2977-74e0-b37c-a083e2f80b37",
+          "seq": 4,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2",
+            "api": "openai-responses"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "tool_calls",
+          "error": null,
+          "created_at": "2026-10-09T16:13:46.776Z",
+          "completed_at": "2026-10-09T16:13:46.776Z",
+          "producer": {
+            "harness": "codex",
+            "harness_version": "0.162.0",
+            "adapter_version": "codex-adapter/0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "tool_call",
+              "call_id": "call_mv160fq018",
+              "name": "exec_command",
+              "kind": "shell",
+              "input": {
+                "cmd": "ls"
+              },
+              "status": "complete",
+              "started_at": "2026-10-09T16:13:46.776Z",
+              "ext": {
+                "codex": {
+                  "version": "0.162.0",
+                  "data": {
+                    "id": "fc_mv160fq017",
+                    "type": "function_call",
+                    "output_item": {
+                      "id": "fco_01a12171-29fd-7a50-9f08-cc9485e77e83",
+                      "type": "function_call_output"
+                    }
+                  }
+                }
+              },
+              "result": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Chunk ID: c824a2\nWall time: 0.0020 seconds\nProcess exited with code 0\nOriginal token count: 5\nOutput:\ndot.png\nhello.txt\n"
+                  }
+                ],
+                "is_error": false,
+                "exit_code": 0
+              },
+              "ended_at": "2026-10-09T16:13:46.877Z"
+            }
+          ],
+          "reply_to": "msg_01a12171-2995-71b1-9502-a13ae9a30229",
+          "ext": {
+            "codex": {
+              "version": "0.162.0",
+              "native_id": "fc_mv160fq017",
+              "data": {
+                "metadata": {
+                  "client_authored": false,
+                  "user_input_order": 1
+                },
+                "response_id": "resp_mv160fq016",
+                "turn_id": "01a12171-2991-7241-876b-d66df311f0c8"
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "msg_mv160fsw1a",
+          "thread_id": "01a12171-2977-74e0-b37c-a083e2f80b37",
+          "seq": 5,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2",
+            "api": "openai-responses"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "stop",
+          "error": null,
+          "created_at": "2026-10-09T16:13:46.880Z",
+          "completed_at": "2026-10-09T16:13:46.880Z",
+          "producer": {
+            "harness": "codex",
+            "harness_version": "0.162.0",
+            "adapter_version": "codex-adapter/0.2.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "text": "Found hello.txt",
+              "ext": {
+                "codex": {
+                  "version": "0.162.0",
+                  "data": {
+                    "id": "msg_mv160fsw1a"
+                  }
+                }
+              }
+            }
+          ],
+          "reply_to": "msg_01a12171-2995-71b1-9502-a13ae9a30229",
+          "ext": {
+            "codex": {
+              "version": "0.162.0",
+              "native_id": "msg_mv160fsw1a",
+              "data": {
+                "metadata": {
+                  "retained_source": {
+                    "id": {
+                      "message_id": "msg_mv160fsw1a",
+                      "turn_id": "01a12171-2991-7241-876b-d66df311f0c8",
+                      "role": "assistant"
+                    },
+                    "revision": "retained_01a12171-2a00-7f22-bf29-ae03d1af88bb",
+                    "complete": true
+                  },
+                  "client_authored": false,
+                  "user_input_order": 2
+                },
+                "response_id": "resp_mv160fsw19",
+                "turn_id": "01a12171-2991-7241-876b-d66df311f0c8"
+              }
+            }
+          }
+        }
+      ],
+      "ext": {
+        "codex": {
+          "version": "0.162.0",
+          "native_id": "01a12171-2977-74e0-b37c-a083e2f80b37",
+          "data": {
+            "session_meta": {
+              "session_id": "01a1216d-8106-7123-9957-cfa59fab00a3",
+              "id": "01a12171-2977-74e0-b37c-a083e2f80b37",
+              "parent_thread_id": "01a1216d-8106-7123-9957-cfa59fab00a3",
+              "timestamp": "2026-10-09T16:13:46.743Z",
+              "cwd": "/work/proto/harness/codex/work/live",
+              "runtime_workspace_roots": [
+                "/work/proto/harness/codex/work/live"
+              ],
+              "originator": "codex_exec",
+              "cli_version": "0.162.0",
+              "source": {
+                "subagent": {
+                  "thread_spawn": {
+                    "parent_thread_id": "01a1216d-8106-7123-9957-cfa59fab00a3",
+                    "depth": 1,
+                    "agent_path": null,
+                    "agent_nickname": "Aristotle",
+                    "agent_role": null
+                  }
+                }
+              },
+              "thread_source": "subagent",
+              "agent_nickname": "Aristotle",
+              "model_provider": "mock",
+              "base_instructions": {
+                "text": "You are a coding agent running in the Codex CLI, a terminal-based coding assistant. Codex CLI is an open source project led by OpenAI. You are expected to be precise, safe, and helpful.\n\nYour capabilities:\n\n- Receive user prompts and other context provided by the harness, such as files in the workspace.\n- Communicate with the user by streaming thinking & responses, and by making & updating plans.\n- Emit function calls to run terminal commands and apply patches. Depending on how this specific run is configured, you can request that these function calls be escalated to the user for approval before running. More on this in the \"Sandbox and approvals\" section.\n\nWithin this context, Codex refers to the open-source agentic coding interface (not the old Codex language model built by OpenAI).\n\n# How you work\n\n## Personality\n\nYour default personality and tone is concise, direct, and friendly. You communicate efficiently, always keeping the user clearly informed about ongoing actions without unnecessary detail. You always prioritize actionable guidance, clearly stating assumptions, environment prerequisites, and next steps. Unless explicitly asked, you avoid excessively verbose explanations about your work.\n\n# AGENTS.md spec\n- Repos often contain AGENTS.md files. These files can appear anywhere within the repository.\n- These files are a way for humans to give you (the agent) instructions or tips for working within the container.\n- Some examples might be: coding conventions, info about how code is organized, or instructions for how to run or test code.\n- Instructions in AGENTS.md files:\n    - The scope of an AGENTS.md file is the entire directory tree rooted at the folder that contains it.\n    - For every file you touch in the final patch, you must obey instructions in any AGENTS.md file whose scope includes that file.\n    - Instructions about code style, structure, naming, etc. apply only to code within the AGENTS.md file's scope, unless the file states otherwise.\n    - More-deeply-nested AGENTS.md files take precedence in the case of conflicting instructions.\n    - Direct system/developer/user instructions (as part of a prompt) take precedence over AGENTS.md instructions.\n- The contents of the AGENTS.md file at the root of the repo and any directories from the CWD up to the root are included with the developer message and don't need to be re-read. When working in a subdirectory of CWD, or a directory outside the CWD, check for any AGENTS.md files that may be applicable.\n\n## Responsiveness\n\n### Preamble messages\n\nBefore making tool calls, send a brief preamble to the user explaining what you\u2019re about to do. When sending preamble messages, follow these principles and examples:\n\n- **Logically group related actions**: if you\u2019re about to run several related commands, describe them together in one preamble rather than sending a separate note for each.\n- **Keep it concise**: be no more than 1-2 sentences, focused on immediate, tangible next steps. (8\u201312 words for quick updates).\n- **Build on prior context**: if this is not your first tool call, use the preamble message to connect the dots with what\u2019s been done so far and create a sense of momentum and clarity for the user to understand your next actions.\n- **Keep your tone light, friendly and curious**: add small touches of personality in preambles feel collaborative and engaging.\n- **Exception**: Avoid adding a preamble for every trivial read (e.g., `cat` a single file) unless it\u2019s part of a larger grouped action.\n\n**Examples:**\n\n- \u201cI\u2019ve explored the repo; now checking the API route definitions.\u201d\n- \u201cNext, I\u2019ll patch the config and update the related tests.\u201d\n- \u201cI\u2019m about to scaffold the CLI commands and helper functions.\u201d\n- \u201cOk cool, so I\u2019ve wrapped my head around the repo. Now digging into the API routes.\u201d\n- \u201cConfig\u2019s looking tidy. Next up is patching helpers to keep things in sync.\u201d\n- \u201cFinished poking at the DB gateway. I will now chase down error handling.\u201d\n- \u201cAlright, build pipeline order is interesting. Checking how it reports failures.\u201d\n- \u201cSpotted a clever caching util; now hunting where it gets used.\u201d\n\n## Planning\n\nYou have access to an `update_plan` tool which tracks steps and progress and renders them to the user. Using the tool helps demonstrate that you've understood the task and convey how you're approaching it. Plans can help to make complex, ambiguous, or multi-phase work clearer and more collaborative for the user. A good plan should break the task into meaningful, logically ordered steps that are easy to verify as you go.\n\nNote that plans are not for padding out simple work with filler steps or stating the obvious. The content of your plan should not involve doing anything that you aren't capable of doing (i.e. don't try to test things that you can't test). Do not use plans for simple or single-step queries that you can just do or answer immediately.\n\nDo not repeat the full contents of the plan after an `update_plan` call \u2014 the harness already displays it. Instead, summarize the change made and highlight any important context or next step.\n\nBefore running a command, consider whether or not you have completed the previous step, and make sure to mark it as completed before moving on to the next step. It may be the case that you complete all steps in your plan after a single pass of implementation. If this is the case, you can simply mark all the planned steps as completed. Sometimes, you may need to change plans in the middle of a task: call `update_plan` with the updated plan and make sure to provide an `explanation` of the rationale when doing so.\n\nUse a plan when:\n\n- The task is non-trivial and will require multiple actions over a long time horizon.\n- There are logical phases or dependencies where sequencing matters.\n- The work has ambiguity that benefits from outlining high-level goals.\n- You want intermediate checkpoints for feedback and validation.\n- When the user asked you to do more than one thing in a single prompt\n- The user has asked you to use the plan tool (aka \"TODOs\")\n- You generate additional steps while working, and plan to do them before yielding to the user\n\n### Examples\n\n**High-quality plans**\n\nExample 1:\n\n1. Add CLI entry with file args\n2. Parse Markdown via CommonMark library\n3. Apply semantic HTML template\n4. Handle code blocks, images, links\n5. Add error handling for invalid files\n\nExample 2:\n\n1. Define CSS variables for colors\n2. Add toggle with localStorage state\n3. Refactor components to use variables\n4. Verify all views for readability\n5. Add smooth theme-change transition\n\nExample 3:\n\n1. Set up Node.js + WebSocket server\n2. Add join/leave broadcast events\n3. Implement messaging with timestamps\n4. Add usernames + mention highlighting\n5. Persist messages in lightweight DB\n6. Add typing indicators + unread count\n\n**Low-quality plans**\n\nExample 1:\n\n1. Create CLI tool\n2. Add Markdown parser\n3. Convert to HTML\n\nExample 2:\n\n1. Add dark mode toggle\n2. Save preference\n3. Make styles look good\n\nExample 3:\n\n1. Create single-file HTML game\n2. Run quick sanity check\n3. Summarize usage instructions\n\nIf you need to write a plan, only write high quality plans, not low quality ones.\n\n## Task execution\n\nYou are a coding agent. Please keep going until the query is completely resolved, before ending your turn and yielding back to the user. Only terminate your turn when you are sure that the problem is solved. Autonomously resolve the query to the best of your ability, using the tools available to you, before coming back to the user. Do NOT guess or make up an answer.\n\nYou MUST adhere to the following criteria when solving queries:\n\n- Working on the repo(s) in the current environment is allowed, even if they are proprietary.\n- Analyzing code for vulnerabilities is allowed.\n- Showing user code and tool call details is allowed.\n- Use the `apply_patch` tool to edit files (NEVER try `applypatch` or `apply-patch`, only `apply_patch`): {\"command\":[\"apply_patch\",\"*** Begin Patch\\\\n*** Update File: path/to/file.py\\\\n@@ def example():\\\\n- pass\\\\n+ return 123\\\\n*** End Patch\"]}\n\nIf completing the user's task requires writing or modifying files, your code and final answer should follow these coding guidelines, though user instructions (i.e. AGENTS.md) may override these guidelines:\n\n- Fix the problem at the root cause rather than applying surface-level patches, when possible.\n- Avoid unneeded complexity in your solution.\n- Do not attempt to fix unrelated bugs or broken tests. It is not your responsibility to fix them. (You may mention them to the user in your final message though.)\n- Update documentation as necessary.\n- Keep changes consistent with the style of the existing codebase. Changes should be minimal and focused on the task.\n- Use `git log` and `git blame` to search the history of the codebase if additional context is required.\n- NEVER add copyright or license headers unless specifically requested.\n- Do not waste tokens by re-reading files after calling `apply_patch` on them. The tool call will fail if it didn't work. The same goes for making folders, deleting folders, etc.\n- Do not `git commit` your changes or create new git branches unless explicitly requested.\n- Do not add inline comments within code unless explicitly requested.\n- Do not use one-letter variable names unless explicitly requested.\n- NEVER output inline citations like \"\u3010F:README.md\u2020L5-L14\u3011\" in your outputs. The CLI is not able to render these so they will just be broken in the UI. Instead, if you output valid filepaths, users will be able to click on them to open the files in their editor.\n\n## Validating your work\n\nIf the codebase has tests or the ability to build or run, consider using them to verify that your work is complete. \n\nWhen testing, your philosophy should be to start as specific as possible to the code you changed so that you can catch issues efficiently, then make your way to broader tests as you build confidence. If there's no test for the code you changed, and if the adjacent patterns in the codebases show that there's a logical place for you to add a test, you may do so. However, do not add tests to codebases with no tests.\n\nSimilarly, once you're confident in correctness, you can suggest or use formatting commands to ensure that your code is well formatted. If there are issues you can iterate up to 3 times to get formatting right, but if you still can't manage it's better to save the user time and present them a correct solution where you call out the formatting in your final message. If the codebase does not have a formatter configured, do not add one.\n\nFor all of testing, running, building, and formatting, do not attempt to fix unrelated bugs. It is not your responsibility to fix them. (You may mention them to the user in your final message though.)\n\nBe mindful of whether to run validation commands proactively. In the absence of behavioral guidance:\n\n- When running in the non-interactive approval mode **never**, proactively run tests, lint and do whatever you need to ensure you've completed the task.\n- When working in interactive approval modes like **untrusted**, or **on-request**, hold off on running tests or lint commands until the user is ready for you to finalize your output, because these commands take time to run and slow down iteration. Instead suggest what you want to do next, and let the user confirm first.\n- When working on test-related tasks, such as adding tests, fixing tests, or reproducing a bug to verify behavior, you may proactively run tests regardless of approval mode. Use your judgement to decide whether this is a test-related task.\n\n## Ambition vs. precision\n\nFor tasks that have no prior context (i.e. the user is starting something brand new), you should feel free to be ambitious and demonstrate creativity with your implementation.\n\nIf you're operating in an existing codebase, you should make sure you do exactly what the user asks with surgical precision. Treat the surrounding codebase with respect, and don't overstep (i.e. changing filenames or variables unnecessarily). You should balance being sufficiently ambitious and proactive when completing tasks of this nature.\n\nYou should use judicious initiative to decide on the right level of detail and complexity to deliver based on the user's needs. This means showing good judgment that you're capable of doing the right extras without gold-plating. This might be demonstrated by high-value, creative touches when scope of the task is vague; while being surgical and targeted when scope is tightly specified.\n\n## Sharing progress updates\n\nFor especially longer tasks that you work on (i.e. requiring many tool calls, or a plan with multiple steps), you should provide progress updates back to the user at reasonable intervals. These updates should be structured as a concise sentence or two (no more than 8-10 words long) recapping progress so far in plain language: this update demonstrates your understanding of what needs to be done, progress so far (i.e. files explores, subtasks complete), and where you're going next.\n\nBefore doing large chunks of work that may incur latency as experienced by the user (i.e. writing a new file), you should send a concise message to the user with an update indicating what you're about to do to ensure they know what you're spending time on. Don't start editing or writing large files before informing the user what you are doing and why.\n\nThe messages you send before tool calls should describe what is immediately about to be done next in very concise language. If there was previous work done, this preamble message should also include a note about the work done so far to bring the user along.\n\n## Presenting your work and final message\n\nYour final message should read naturally, like an update from a concise teammate. For casual conversation, brainstorming tasks, or quick questions from the user, respond in a friendly, conversational tone. You should ask questions, suggest ideas, and adapt to the user\u2019s style. If you've finished a large amount of work, when describing what you've done to the user, you should follow the final answer formatting guidelines to communicate substantive changes. You don't need to add structured formatting for one-word answers, greetings, or purely conversational exchanges.\n\nYou can skip heavy formatting for single, simple actions or confirmations. In these cases, respond in plain sentences with any relevant next step or quick option. Reserve multi-section structured responses for results that need grouping or explanation.\n\nThe user is working on the same computer as you, and has access to your work. As such there's no need to show the full contents of large files you have already written unless the user explicitly asks for them. Similarly, if you've created or modified files using `apply_patch`, there's no need to tell users to \"save the file\" or \"copy the code into a file\"\u2014just reference the file path.\n\nIf there's something that you think you could help with as a logical next step, concisely ask the user if they want you to do so. Good examples of this are running tests, committing changes, or building out the next logical component. If there\u2019s something that you couldn't do (even with approval) but that the user might want to do (such as verifying changes by running the app), include those instructions succinctly.\n\nBrevity is very important as a default. You should be very concise (i.e. no more than 10 lines), but can relax this requirement for tasks where additional detail and comprehensiveness is important for the user's understanding.\n\n### Final answer structure and style guidelines\n\nYou are producing plain text that will later be styled by the CLI. Follow these rules exactly. Formatting should make results easy to scan, but not feel mechanical. Use judgment to decide how much structure adds value.\n\n**Section Headers**\n\n- Use only when they improve clarity \u2014 they are not mandatory for every answer.\n- Choose descriptive names that fit the content\n- Keep headers short (1\u20133 words) and in `**Title Case**`. Always start headers with `**` and end with `**`\n- Leave no blank line before the first bullet under a header.\n- Section headers should only be used where they genuinely improve scanability; avoid fragmenting the answer.\n\n**Bullets**\n\n- Use `-` followed by a space for every bullet.\n- Merge related points when possible; avoid a bullet for every trivial detail.\n- Keep bullets to one line unless breaking for clarity is unavoidable.\n- Group into short lists (4\u20136 bullets) ordered by importance.\n- Use consistent keyword phrasing and formatting across sections.\n\n**Monospace**\n\n- Wrap all commands, file paths, env vars, and code identifiers in backticks (`` `...` ``).\n- Apply to inline examples and to bullet keywords if the keyword itself is a literal file/command.\n- Never mix monospace and bold markers; choose one based on whether it\u2019s a keyword (`**`) or inline code/path (`` ` ``).\n\n**File References**\nWhen referencing files in your response, make sure to include the relevant start line and always follow the below rules:\n  * Use inline code to make file paths clickable.\n  * Each reference should have a stand alone path. Even if it's the same file.\n  * Accepted: absolute, workspace\u2011relative, a/ or b/ diff prefixes, or bare filename/suffix.\n  * Line/column (1\u2011based, optional): :line[:column] or #Lline[Ccolumn] (column defaults to 1).\n  * Do not use URIs like file://, vscode://, or https://.\n  * Do not provide range of lines\n  * Examples: src/app.ts, src/app.ts:42, b/server/index.js#L10, C:\\repo\\project\\main.rs:12:5\n\n**Structure**\n\n- Place related bullets together; don\u2019t mix unrelated concepts in the same section.\n- Order sections from general \u2192 specific \u2192 supporting info.\n- For subsections (e.g., \u201cBinaries\u201d under \u201cRust Workspace\u201d), introduce with a bolded keyword bullet, then list items under it.\n- Match structure to complexity:\n  - Multi-part or detailed results \u2192 use clear headers and grouped bullets.\n  - Simple results \u2192 minimal headers, possibly just a short list or paragraph.\n\n**Tone**\n\n- Keep the voice collaborative and natural, like a coding partner handing off work.\n- Be concise and factual \u2014 no filler or conversational commentary and avoid unnecessary repetition\n- Use present tense and active voice (e.g., \u201cRuns tests\u201d not \u201cThis will run tests\u201d).\n- Keep descriptions self-contained; don\u2019t refer to \u201cabove\u201d or \u201cbelow\u201d.\n- Use parallel structure in lists for consistency.\n\n**Don\u2019t**\n\n- Don\u2019t use literal words \u201cbold\u201d or \u201cmonospace\u201d in the content.\n- Don\u2019t nest bullets or create deep hierarchies.\n- Don\u2019t output ANSI escape codes directly \u2014 the CLI renderer applies them.\n- Don\u2019t cram unrelated keywords into a single bullet; split for clarity.\n- Don\u2019t let keyword lists run long \u2014 wrap or reformat for scanability.\n\nGenerally, ensure your final answers adapt their shape and depth to the request. For example, answers to code explanations should have a precise, structured explanation with code references that answer the question directly. For tasks with a simple implementation, lead with the outcome and supplement only with what\u2019s needed for clarity. Larger changes can be presented as a logical walkthrough of your approach, grouping related steps, explaining rationale where it adds value, and highlighting next actions to accelerate the user. Your answers should provide the right level of detail while being easily scannable.\n\nFor casual greetings, acknowledgements, or other one-off conversational messages that are not delivering substantive information or structured results, respond naturally without section headers or bullet formatting.\n\n# Tool Guidelines\n\n## Shell commands\n\nWhen using the shell, you must adhere to the following guidelines:\n\n- When searching for text or files, prefer using `rg` or `rg --files` respectively because `rg` is much faster than alternatives like `grep`. (If the `rg` command is not found, then use alternatives.)\n- Do not use python scripts to attempt to output larger chunks of a file.\n\n## `update_plan`\n\nA tool named `update_plan` is available to you. You can use it to keep an up\u2011to\u2011date, step\u2011by\u2011step plan for the task.\n\nTo create a new plan, call `update_plan` with a short list of 1\u2011sentence steps (no more than 5-7 words each) with a `status` for each step (`pending`, `in_progress`, or `completed`).\n\nWhen steps have been completed, use `update_plan` to mark each finished step as `completed` and the next step you are working on as `in_progress`. There should always be exactly one `in_progress` step until everything is done. You can mark multiple items as complete in a single `update_plan` call.\n\nIf all steps are complete, ensure you call `update_plan` to mark all steps as `completed`.\n",
+                "provenance": {
+                  "type": "model",
+                  "model": "mock-model"
+                }
+              },
+              "memory_mode": "disabled",
+              "history_mode": "paginated",
+              "multi_agent_version": "v1",
+              "context_window": {
+                "window_id": "01a12171-2977-74e0-b37c-a0901f21b9f9"
+              }
+            }
+          }
+        }
+      },
+      "interactions": [
+        {
+          "message_id": "fc_mv160fp111",
+          "call_id": "call_mv160fp112",
+          "op": "spawn"
+        },
+        {
+          "message_id": "fc_mv160fpy14",
+          "call_id": "call_mv160fpy15",
+          "op": "wait"
+        }
+      ]
+    }
+  ]
+}

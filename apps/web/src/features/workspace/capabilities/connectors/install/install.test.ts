@@ -11,54 +11,16 @@ import {
 } from './install';
 
 function fakeDeps(over: Partial<InstallDeps> = {}) {
-  const calls: string[] = [];
   const drafts: ConnectorDraftInput[] = [];
   const deps: InstallDeps = {
     random: () => 'abc123',
     createConnector: async (_projectId, draft) => {
-      calls.push('createConnector');
       drafts.push(draft);
       return {};
     },
-    listAccountLabels: async () => {
-      calls.push('listAccountLabels');
-      return [];
-    },
-    reconcileMine: async (_projectId, input) => {
-      calls.push(`reconcileMine:${input.connector_alias}:${input.label}`);
-      return { connection_id: 'mine-1' };
-    },
-    reconcileProject: async (_projectId, input) => {
-      calls.push(`reconcileProject:${input.connector_alias}:${input.label}`);
-      return { connection_id: 'project-1' };
-    },
-    connectConnection: async (_projectId, connectionId) => {
-      calls.push(`connectConnection:${connectionId}`);
-      return { connected: false };
-    },
-    finalizeConnection: async (_projectId, connectionId) => {
-      calls.push(`finalizeConnection:${connectionId}`);
-      return { connected: true };
-    },
-    projectSteps: (_projectId, slug, label) => ({
-      start: async () => {
-        calls.push(`projectSteps.start:${slug}:${label}`);
-        return { connected: false };
-      },
-      finalize: async () => {
-        calls.push('projectSteps.finalize');
-        return { connected: true };
-      },
-    }),
-    runLinkFlow: async (start, finalize) => {
-      calls.push('runLinkFlow');
-      await start();
-      await finalize();
-      return { connected: true };
-    },
     ...over,
-  } as InstallDeps;
-  return { deps, calls, drafts };
+  };
+  return { deps, drafts };
 }
 
 const managed = easyConnectInstallTarget({ slug: 'resend', name: 'Resend', provider: 'composio' });
@@ -185,232 +147,70 @@ describe('proposeAccountLabel', () => {
 });
 
 describe('runInstall', () => {
-  test('opens the provider window before it creates the connector', async () => {
-    const { deps, calls, drafts } = fakeDeps();
-    const pending = runInstall(deps, {
-      projectId: 'p1',
-      target: managed,
-      audience: 'private',
-      connectors: [],
-    });
-    // Synchronous: nothing may run, let alone be awaited, before the window opens.
-    expect(calls).toEqual(['runLinkFlow', 'createConnector']);
-    const result = await pending;
-    expect(calls[0]).toBe('runLinkFlow');
-    expect(calls[1]).toBe('createConnector');
-    expect(calls[2]).toBe('reconcileMine:resend-abc123:Resend');
-    expect(calls[3]).toBe('connectConnection:mine-1');
-    expect(calls[4]).toBe('finalizeConnection:mine-1');
-    expect(calls).toHaveLength(5);
-    expect(drafts[0]).toEqual({
-      slug: 'resend-abc123',
-      name: 'Resend',
-      provider: 'composio',
-      app: 'resend',
-      authorization_strategy: 'user',
-      account: 'default',
-      create_only: true,
-    });
-    expect(result).toEqual({ status: 'connected', slug: 'resend-abc123' });
-  });
-
-  test('the label lookup for an installed app runs inside the click, after the window opens', async () => {
-    const { deps, calls } = fakeDeps();
-    const pending = runInstall(deps, {
-      projectId: 'p1',
-      target: managed,
-      audience: 'project',
-      connectors: [
-        { slug: 'resend-zzz999', provider: 'composio', name: 'Resend', authSecret: null },
-      ],
-    });
-    expect(calls).toEqual(['runLinkFlow', 'listAccountLabels']);
-    await pending;
-  });
-
-  test('an installed app gets another account, never a second connector', async () => {
-    const { deps, calls } = fakeDeps({
-      listAccountLabels: async () => ['Resend'],
-    });
-    const result = await runInstall(deps, {
-      projectId: 'p1',
-      target: managed,
-      audience: 'project',
-      connectors: [
-        { slug: 'resend-zzz999', provider: 'composio', name: 'Resend', authSecret: null },
-      ],
-    });
-    expect(calls).not.toContain('createConnector');
-    expect(calls).toContain('projectSteps.start:resend-zzz999:Resend 2');
-    expect(result).toEqual({ status: 'connected', slug: 'resend-zzz999' });
-  });
-
-  test('a renamed connector is left alone: Install creates a second one', async () => {
-    const { deps, calls, drafts } = fakeDeps();
-    const result = await runInstall(deps, {
-      projectId: 'p1',
-      target: managed,
-      audience: 'private',
-      connectors: [
-        { slug: 'resend-zzz999', provider: 'composio', name: 'My mailer', authSecret: null },
-      ],
-    });
-    expect(calls).not.toContain('listAccountLabels');
-    expect(calls).toContain('createConnector');
-    expect(drafts[0]?.name).toBe('Resend 2');
-    expect(result).toEqual({ status: 'connected', slug: 'resend-abc123' });
-  });
-
-  test('an MCP connector with auth goes to sign-in, which falls back to credential entry', async () => {
-    const { deps, calls } = fakeDeps();
-    const result = await runInstall(deps, {
-      projectId: 'p1',
-      target: mcp(true),
-      audience: 'project',
-      connectors: [],
-    });
-    expect(calls).not.toContain('runLinkFlow');
-    expect(calls).toEqual(['createConnector', 'reconcileProject:resend-abc123:Resend']);
-    expect(result).toEqual({
-      status: 'sign_in',
-      slug: 'resend-abc123',
-      connectionId: 'project-1',
-    });
-  });
-
-  test('a direct connector with no auth is connected at once', async () => {
-    const { deps } = fakeDeps();
-    expect(
-      await runInstall(deps, {
-        projectId: 'p1',
-        target: mcp(false),
-        audience: 'private',
-        connectors: [],
-      }),
-    ).toEqual({ status: 'connected', slug: 'resend-abc123' });
-  });
-
-  test('an existing MCP connector with a credential goes to sign-in for the new account', async () => {
-    const { deps } = fakeDeps();
-    const result = await runInstall(deps, {
-      projectId: 'p1',
-      target: mcp(false),
-      audience: 'private',
-      connectors: [
-        { slug: 'resend-zzz999', provider: 'mcp', name: 'Resend', authSecret: 'RESEND_TOKEN' },
-      ],
-    });
-    expect(result).toEqual({
-      status: 'sign_in',
-      slug: 'resend-zzz999',
-      connectionId: 'mine-1',
-    });
-  });
-
-  test('a sync failure stops before any account is created', async () => {
-    const { deps, calls } = fakeDeps({
-      createConnector: async () => ({
-        sync: { errors: [{ slug: 'resend-abc123', error: 'manifest rejected' }] },
-      }),
-    } as unknown as Partial<InstallDeps>);
-    const result = await runInstall(deps, {
-      projectId: 'p1',
-      target: mcp(true),
-      audience: 'private',
-      connectors: [],
-    });
-    expect(result).toEqual({ status: 'sync_failed', name: 'Resend', error: 'manifest rejected' });
-    expect(calls.some((call) => call.startsWith('reconcile'))).toBe(false);
-  });
-
-  test('an MCP server that answers 401 goes on to sign-in, not to a failure', async () => {
-    const { deps, calls } = fakeDeps({
-      createConnector: async () => ({
-        sync: {
-          errors: [{ slug: 'resend-abc123', error: 'MCP tools/list failed: HTTP 401' }],
-        },
-      }),
-    } as unknown as Partial<InstallDeps>);
-    const result = await runInstall(deps, {
-      projectId: 'p1',
-      target: mcp(false),
-      audience: 'private',
-      connectors: [],
-    });
-    expect(result).toEqual({
-      status: 'sign_in',
-      slug: 'resend-abc123',
-      connectionId: 'mine-1',
-    });
-    expect(calls.some((call) => call.startsWith('reconcile'))).toBe(true);
-  });
-
-  test('installing again over an MCP connector that cannot sign in goes to sign-in', async () => {
-    const { deps } = fakeDeps();
-    const result = await runInstall(deps, {
-      projectId: 'p1',
-      target: mcp(false),
-      audience: 'private',
-      connectors: [
-        {
-          slug: 'resend-zzz999',
-          provider: 'mcp',
-          name: 'Resend',
-          authSecret: null,
-          status: 'error',
-        },
-      ],
-    });
-    expect(result).toEqual({
-      status: 'sign_in',
-      slug: 'resend-zzz999',
-      connectionId: 'mine-1',
-    });
-  });
-
-  test('an "Only you" install creates no "Everyone in project" account', async () => {
-    for (const target of [mcp(false), managed]) {
+  test('adds the connector profile with no audience on it', async () => {
+    for (const target of [mcp(false), mcp(true), managed]) {
       const { deps, drafts } = fakeDeps();
-      await runInstall(deps, { projectId: 'p1', target, audience: 'private', connectors: [] });
-      expect(drafts[0]?.authorization_strategy).toBe('user');
+      const result = await runInstall(deps, { projectId: 'p1', target, connectors: [] });
+      expect(result).toEqual({ status: 'installed', slug: 'resend-abc123' });
+      expect(drafts).toHaveLength(1);
+      // Who may use an account is chosen per account, never on the profile.
+      expect(drafts[0]?.authorization_strategy).toBeUndefined();
     }
   });
 
-  test('an "Everyone" install keeps the shared project account', async () => {
+  test('an app the project already has reuses its profile, never a second one', async () => {
+    const { deps, drafts } = fakeDeps();
+    const result = await runInstall(deps, {
+      projectId: 'p1',
+      target: mcp(false),
+      connectors: [{ slug: 'resend-zzz999', provider: 'mcp', name: 'Resend' }],
+    });
+    expect(result).toEqual({ status: 'installed', slug: 'resend-zzz999' });
+    expect(drafts).toHaveLength(0);
+  });
+
+  test('a renamed connector is left alone: Install adds a second profile', async () => {
     const { deps, drafts } = fakeDeps();
     await runInstall(deps, {
       projectId: 'p1',
       target: mcp(false),
-      audience: 'project',
-      connectors: [],
+      connectors: [{ slug: 'resend-zzz999', provider: 'mcp', name: 'Billing mail' }],
     });
-    expect(drafts[0]?.authorization_strategy).toBeUndefined();
+    expect(drafts).toHaveLength(1);
   });
 
-  test('a sync failure on a managed install also reports, and the window flow ends', async () => {
-    const { deps, calls } = fakeDeps({
+  test('an MCP server that answers 401 is installed: the sign-in comes with the account', async () => {
+    const { deps } = fakeDeps({
+      createConnector: async () => ({
+        sync: { errors: [{ slug: 'resend-abc123', error: 'MCP tools/list failed: HTTP 401' }] },
+      }),
+    } as Partial<InstallDeps>);
+    expect(await runInstall(deps, { projectId: 'p1', target: mcp(false), connectors: [] })).toEqual(
+      { status: 'installed', slug: 'resend-abc123' },
+    );
+  });
+
+  test('any other sync failure is reported', async () => {
+    const { deps } = fakeDeps({
       createConnector: async () => ({
         sync: { errors: [{ slug: 'resend-abc123', error: 'manifest rejected' }] },
       }),
-    } as unknown as Partial<InstallDeps>);
-    const result = await runInstall(deps, {
-      projectId: 'p1',
-      target: managed,
-      audience: 'private',
-      connectors: [],
+    } as Partial<InstallDeps>);
+    expect(await runInstall(deps, { projectId: 'p1', target: mcp(true), connectors: [] })).toEqual({
+      status: 'sync_failed',
+      name: 'Resend',
+      error: 'manifest rejected',
     });
-    expect(result).toEqual({ status: 'sync_failed', name: 'Resend', error: 'manifest rejected' });
-    expect(calls).toEqual(['runLinkFlow']);
   });
 
-  test('any other failure rejects, so the caller can show it', async () => {
+  test('a failure creating the profile rejects, so the caller can show it', async () => {
     const { deps } = fakeDeps({
-      reconcileMine: async () => {
+      createConnector: async () => {
         throw new Error('forbidden');
       },
     });
     await expect(
-      runInstall(deps, { projectId: 'p1', target: mcp(true), audience: 'private', connectors: [] }),
+      runInstall(deps, { projectId: 'p1', target: managed, connectors: [] }),
     ).rejects.toThrow('forbidden');
   });
 });

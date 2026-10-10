@@ -79,7 +79,6 @@ import {
   type ConnectorScope,
 } from './connector-filter';
 import { appHref, appRefFromEntry, connectorHref, legacyDetailRedirect } from './connector-routes';
-import type { InstallAudience } from './install/install';
 import { useInstall } from './install/use-install';
 
 /**
@@ -319,37 +318,17 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const connectors = useMemo(() => connectorsQuery.data?.connectors ?? [], [connectorsQuery.data]);
   const connectedKeys = useMemo(() => connectedCatalogKeys(connectors), [connectors]);
 
-  const canShare =
-    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE, { accountId })
-      .allowed === true;
   const { installEntry, pendingKey } = useInstall(projectId);
-  const projectName = projectQuery.data?.project?.name ?? '';
-  const everyoneLabel = projectName
-    ? tSharing('everyone', { project: projectName })
-    : tSharing('visibilityEveryone');
   const catalogInstall = useMemo(
     () => ({
       // `connectors` is `[]` until the list loads, and an install run against
       // that creates a second connector for an app the project already has.
       ready: connectorsQuery.isSuccess,
       canWrite,
-      canShare,
-      onlyYou: tSharing('onlyYou'),
-      everyone: everyoneLabel,
       pendingKey,
-      onInstall: (entry: CatalogEntry, audience: InstallAudience) =>
-        installEntry(entry, audience, connectors),
+      onInstall: (entry: CatalogEntry) => installEntry(entry, connectors),
     }),
-    [
-      canShare,
-      canWrite,
-      connectors,
-      connectorsQuery.isSuccess,
-      everyoneLabel,
-      installEntry,
-      pendingKey,
-      tSharing,
-    ],
+    [canWrite, connectors, connectorsQuery.isSuccess, installEntry, pendingKey],
   );
 
   // What the card actually shows, handed to the search so typing a word the

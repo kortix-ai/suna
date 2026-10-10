@@ -25,11 +25,9 @@ import {
   appRefFromLocation,
   connectorsHref,
 } from '@/features/workspace/capabilities/connectors/connector-routes';
-import { InstallMenu } from '@/features/workspace/capabilities/connectors/install/install-menu';
 import { connectorConnectionQueryKeys } from '@/features/workspace/customize/sections/connector-connection-form';
 import { startDiscoveredSignIn } from '@/features/workspace/customize/sections/connector-oauth2-start';
 import { SetCredentialModal } from '@/features/workspace/customize/sections/connectors-view';
-import { useAddAccount } from '@/hooks/connectors/use-add-account';
 import { useOauth2Return } from '@/hooks/connectors/use-oauth2-return';
 import { useTranslations } from '@/i18n/use-translations';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
@@ -303,13 +301,23 @@ function ConnectorPageBody({
     sheetWasOpen.current = sheetOpen;
   }, [sheetOpen]);
 
-  const addAccount = useAddAccount({
-    projectId,
-    connector,
-    displayName,
-    onAdded: refreshAccounts,
-    onCredential: setCredentialTarget,
-  });
+  // Opens the account list's "Add account" dialog: name and who may use it.
+  const [addRequest, setAddRequest] = useState(0);
+  const requestAdd = () => {
+    setTab('accounts');
+    setAddRequest((n) => n + 1);
+  };
+  // Right after Install (`?add=1`): ask for the first account once, then
+  // leave the URL. Adjusted during render, not in an effect.
+  const addParam = search?.get('add') === '1';
+  const [addHandled, setAddHandled] = useState(false);
+  if (addParam && !addHandled && canWrite && !isChannel) {
+    setAddHandled(true);
+    setAddRequest((n) => n + 1);
+  }
+  useEffect(() => {
+    if (addParam && addHandled) replaceParams((params) => params.delete('add'));
+  }, [addParam, addHandled, replaceParams]);
   const projectDetailQuery = useQuery({
     queryKey: qk.project.detail(projectId),
     queryFn: () => getProjectDetail(projectId),
@@ -422,18 +430,10 @@ function ConnectorPageBody({
       {tI18nComplete.raw('text1a2303ede074')}
     </Button>
   ) : (
-    <InstallMenu
-      label={tSharing('addAccount')}
-      variant="default"
-      canShare={canManageConnections}
-      onlyYou={tSharing('onlyYou')}
-      everyone={everyoneLabel}
-      onInstall={(audience) => {
-        setTab('accounts');
-        addAccount.add(audience);
-      }}
-      pending={addAccount.pending || connectPending}
-    />
+    <Button size="sm" className="gap-1.5" onClick={requestAdd} disabled={connectPending}>
+      <PlusIcon className="size-4 shrink-0" />
+      {tSharing('addAccount')}
+    </Button>
   );
 
   return (
@@ -615,6 +615,8 @@ function ConnectorPageBody({
                   onStartSession={startPrivateSession}
                   onSetCredential={setCredentialTarget}
                   onConnect={needsSignIn ? connectAccount : undefined}
+                  addRequest={addRequest}
+                  onAddRequestHandled={() => setAddRequest(0)}
                   showAccountInfo
                 />
               )}

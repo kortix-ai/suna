@@ -11,6 +11,13 @@ export interface SandboxProvisioningFailure {
   userMessage: string;
   isCapacity: boolean;
   isGitAuth: boolean;
+  /**
+   * The same input may succeed on a later attempt: the provider was at
+   * capacity, rate limited, or answered a transient 5xx. A transient failure
+   * keeps the session's volume and is re-attempted by the next `/start`; every
+   * other category is a configuration state that fails identically each time.
+   */
+  transient: boolean;
 }
 
 export const SANDBOX_PROVIDER_CAPACITY_MESSAGE =
@@ -56,7 +63,14 @@ const SNAPSHOT_TOO_LARGE_PATTERN =
 const STORAGE_FULL_PATTERN = /total disk limit exceeded|disk quota exceeded|storage quota exceeded/i;
 
 const CAPACITY_PATTERN =
-  /no available runner|no runners available|no capacity|out of capacity|capacity exceeded|failed to place sandbox|rate ?limit|too many requests|maximum number of concurrent (?:e2b )?sandboxes|max(?:imum)? number of running sandboxes(?: on node)? reached|too many sandboxes starting on this node/i;
+  /resource pool exhausted|too many starts in flight|no available runner|no runners available|no capacity|out of capacity|capacity exceeded|failed to place sandbox|rate ?limit|too many requests|maximum number of concurrent (?:e2b )?sandboxes|max(?:imum)? number of running sandboxes(?: on node)? reached|too many sandboxes starting on this node/i;
+
+/**
+ * A provider answer that says "not now" rather than "never": 429, or a 5xx a
+ * later attempt can clear. Matches the status as each provider SDK prints it
+ * (`-> 503 {...}`, `status code 502`, `HTTP 504`).
+ */
+const TRANSIENT_HTTP_PATTERN = /(?:->|\bstatus(?: code)?:?|\bHTTP(?:\/[\d.]+)?)\s*(?:429|500|502|503|504)\b/i;
 
 const GIT_AUTH_PATTERN =
   /could not read Username|terminal prompts disabled|Authentication failed|fatal: could not read|Invalid username or password|remote: Repository not found|HTTP 401|HTTP 403|access denied|Permission denied \(publickey\)/i;
@@ -94,6 +108,7 @@ export function classifySandboxProvisioningFailure(error: unknown): SandboxProvi
       userMessage: rawMessage.slice('[drives] '.length),
       isCapacity: false,
       isGitAuth: false,
+      transient: false,
     };
   }
   const isStorageFull = STORAGE_FULL_PATTERN.test(rawMessage);
@@ -106,6 +121,7 @@ export function classifySandboxProvisioningFailure(error: unknown): SandboxProvi
       userMessage: INVALID_SECRET_BOUNDARY_POLICY_MESSAGE,
       isCapacity: false,
       isGitAuth: false,
+      transient: false,
     };
   }
 
@@ -118,6 +134,7 @@ export function classifySandboxProvisioningFailure(error: unknown): SandboxProvi
       userMessage: SNAPSHOT_TOO_LARGE_MESSAGE,
       isCapacity: false,
       isGitAuth: false,
+      transient: false,
     };
   }
 
@@ -127,6 +144,7 @@ export function classifySandboxProvisioningFailure(error: unknown): SandboxProvi
       userMessage: isStorageFull ? SANDBOX_PROVIDER_STORAGE_FULL_MESSAGE : SANDBOX_PROVIDER_CAPACITY_MESSAGE,
       isCapacity: true,
       isGitAuth: false,
+      transient: true,
     };
   }
 
@@ -137,6 +155,7 @@ export function classifySandboxProvisioningFailure(error: unknown): SandboxProvi
         "Couldn't access the project's Git repository. Check the project's Git credentials and try again.",
       isCapacity: false,
       isGitAuth: true,
+      transient: false,
     };
   }
 
@@ -145,5 +164,6 @@ export function classifySandboxProvisioningFailure(error: unknown): SandboxProvi
     userMessage: SANDBOX_PROVIDER_FAILURE_MESSAGE,
     isCapacity: false,
     isGitAuth: false,
+    transient: TRANSIENT_HTTP_PATTERN.test(rawMessage),
   };
 }

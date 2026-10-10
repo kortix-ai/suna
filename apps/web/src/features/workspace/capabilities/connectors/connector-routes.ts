@@ -69,12 +69,15 @@ export function connectorHref(
     tab?: string;
     /** The install hand-off: open credential entry for this account once. */
     connect?: { connectionId: string };
+    /** Open "Add account" once, right after Install added the profile. */
+    addAccount?: boolean;
   } = {},
 ): string {
   const segment = options.app ? options.app.slug : CONNECTED_APP_SEGMENT;
   const params = options.app ? appParams(options.app) : new URLSearchParams();
   if (options.tab) params.set('tab', options.tab);
   if (options.connect) params.set('connect', options.connect.connectionId);
+  if (options.addAccount) params.set('add', '1');
   return withQuery(
     `${base(projectId)}/${encodeURIComponent(segment)}/${encodeURIComponent(connectorSlug)}`,
     params,
