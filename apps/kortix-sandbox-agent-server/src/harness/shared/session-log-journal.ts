@@ -8,8 +8,9 @@
  * - It posts the dirty set in order, in batches of at most 1 MB gzipped. One
  *   message larger than that goes alone.
  * - `relayTurnEnd` and the daemon shutdown call `flush`, which waits at most
- *   3 s for the acknowledgement. A batch not acknowledged by then keeps
- *   retrying in the background; the v1 capture still saves the turn.
+ *   3 s for the acknowledgement, and returns at the first failed post. A batch
+ *   not acknowledged by then keeps retrying in the background; the v1 capture
+ *   still saves the turn.
  * - Network errors, 401, 429 and 5xx (503: the operator switch is off) back
  *   off exponentially and keep the dirty set. 404 (an API without the route)
  *   and 409 (a newer generation owns the session: this box is a zombie) turn
@@ -66,6 +67,8 @@ export class SessionLogJournal {
   private collecting: Promise<void> | null = null
   private recollect = false
   private wakeBackoff: (() => void) | null = null
+  /** Flushes waiting for the drain to finish or to start backing off. */
+  private waiters: Array<() => void> = []
 
   constructor(
     private readonly port: SessionLogPort,
@@ -85,14 +88,20 @@ export class SessionLogJournal {
   }
 
   /**
-   * Collect the adapter's changes and send them. Resolves within `timeoutMs`:
-   * true when everything collected is acknowledged, false otherwise (sending
-   * continues in the background).
+   * Collect the adapter's changes and send them. Resolves within `timeoutMs`,
+   * or as soon as the journal backs off (a 503 must not hold every turn end
+   * for 3 s): true when everything collected is acknowledged, false otherwise
+   * (sending continues in the background).
    */
   async flush(timeoutMs = JOURNAL_ACK_TIMEOUT_MS): Promise<boolean> {
     if (this.off || this.stopped) return false
     const work = this.collect()
-      .then(() => this.drain())
+      .then(() => {
+        if (this.wakeBackoff) return
+        const settled = new Promise<void>((resolve) => this.waiters.push(resolve))
+        void this.drain()
+        return settled
+      })
       .catch((err) => logger.warn('[session-log] journal flush failed', { err: String(err) }))
     let timer: ReturnType<typeof setTimeout> | undefined
     const timedOut = new Promise<void>((resolve) => {
@@ -161,6 +170,7 @@ export class SessionLogJournal {
       while (!this.off && !this.stopped && !this.clean) {
         for (const batch of this.pack()) {
           if (!(await this.send(batch))) {
+            this.release()
             await this.sleep()
             break
           }
@@ -168,8 +178,13 @@ export class SessionLogJournal {
       }
     })().finally(() => {
       this.draining = null
+      this.release()
     })
     return this.draining
+  }
+
+  private release(): void {
+    for (const resolve of this.waiters.splice(0)) resolve()
   }
 
   /** The dirty set, in order, as gzipped bodies of at most `maxBatchBytes`. Threads and the session patch ride in the first. */

@@ -332,8 +332,14 @@ describe('session-log journal', () => {
     fake.put('m1', 1, 'one')
     const journal = new SessionLogJournal(fake.port, { generation: 1, retryMs: 100 })
 
-    expect(await journal.flush(5_000)).toBe(true)
+    // The operator switch is off: the flush returns at the first 503, it does not wait 3 s.
+    const started = performance.now()
+    expect(await journal.flush()).toBe(false)
+    expect(performance.now() - started).toBeLessThan(1_000)
+    // A flush while backing off collects and returns at once.
+    expect(await journal.flush()).toBe(false)
 
+    await until(() => journal.clean, 5_000)
     expect(api.received).toHaveLength(3)
     expect(putIds(api.received)).toEqual(['m1@1', 'm1@1', 'm1@1'])
     const [a, b, c] = api.received.map((r) => r.at)
@@ -353,12 +359,14 @@ describe('session-log journal', () => {
     fake.put('m1', 1, 'one')
     const journal = new SessionLogJournal(fake.port, { generation: 1, retryMs: 200 })
 
-    const flushed = journal.flush(5_000)
-    await Bun.sleep(50)
+    expect(await journal.flush()).toBe(false)
     const api = fakeApi((body, n) => (n === 1 ? new Response('boom', { status: 500 }) : ack(body)), port)
 
-    expect(await flushed).toBe(true)
+    await until(() => journal.clean, 5_000)
     expect(putIds(api.received)).toEqual(['m1@1', 'm1@1'])
+    const [a, b] = api.received.map((r) => r.at)
+    // The 500 is the second failure: 400 ms, jittered by +/-25%.
+    expect(b! - a!).toBeGreaterThanOrEqual(290)
   })
 
   test('another 4xx drops the batch instead of retrying it forever; later changes still go', async () => {

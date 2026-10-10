@@ -81,7 +81,8 @@ equals its cursor's (schema rule C13), so an unchanged or restored message is
 never sent again. It posts the rest in order, in gzipped batches of at most
 1 MB, each message with its `rev`, and keeps them dirty until apps/api
 acknowledges `(message_id, rev)`. `relayTurnEnd` and the daemon shutdown flush
-it first and wait at most 3 s; a batch not acknowledged by then keeps retrying.
+it first and wait at most 3 s, or until the first failed post; a batch not
+acknowledged by then keeps retrying in the background.
 Network errors, 401, 429 and 5xx (503: the operator switch is off) back off
 like the audit relay. 404 (an older API) and 409 (a newer generation owns the
 session) turn it off for the boot. Another 4xx drops the batch.
