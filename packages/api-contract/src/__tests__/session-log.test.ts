@@ -5,14 +5,28 @@ import type { z } from 'zod';
 import {
   SESSION_LOG_MINOR,
   SESSION_LOG_SCHEMA,
+  AttachmentBlockSchema,
+  CompactionBlockSchema,
+  HarnessBlockSchema,
+  ReasoningBlockSchema,
   SessionLogMessageSchema,
   SessionLogSchema,
+  StepBlockSchema,
+  SubtaskBlockSchema,
+  TextBlockSchema,
   SessionLogThreadSchema,
   ToolCallBlockSchema,
   upcast,
+  type AttachmentBlock,
+  type CompactionBlock,
+  type HarnessBlock,
+  type ReasoningBlock,
   type SessionLog,
   type SessionLogMessage,
   type SessionLogThread,
+  type StepBlock,
+  type SubtaskBlock,
+  type TextBlock,
   type ToolCallBlock,
 } from '../session-log';
 
@@ -30,8 +44,15 @@ const _sameKeys: [
   SameKeys<z.output<typeof SessionLogSchema>, SessionLog>,
   SameKeys<z.output<typeof SessionLogThreadSchema>, SessionLogThread>,
   SameKeys<z.output<typeof SessionLogMessageSchema>, SessionLogMessage>,
+  SameKeys<z.output<typeof TextBlockSchema>, TextBlock>,
+  SameKeys<z.output<typeof ReasoningBlockSchema>, ReasoningBlock>,
+  SameKeys<z.output<typeof AttachmentBlockSchema>, AttachmentBlock>,
   SameKeys<z.output<typeof ToolCallBlockSchema>, ToolCallBlock>,
-] = [true, true, true, true];
+  SameKeys<z.output<typeof CompactionBlockSchema>, CompactionBlock>,
+  SameKeys<z.output<typeof SubtaskBlockSchema>, SubtaskBlock>,
+  SameKeys<z.output<typeof StepBlockSchema>, StepBlock>,
+  SameKeys<z.output<typeof HarnessBlockSchema>, HarnessBlock>,
+] = [true, true, true, true, true, true, true, true, true, true, true];
 void _typesFitSchemas;
 void _sameKeys;
 
@@ -88,47 +109,70 @@ describe('session-log accepts the harness exports and golden sessions', () => {
   });
 });
 
+const firstIssue = (result: { success: boolean; error?: z.ZodError }) => {
+  expect(result.success).toBe(false);
+  return result.error!.issues[0];
+};
+
 describe('session-log rejects', () => {
   test('a session with no v', () => {
     const record: Record<string, unknown> = clone(load('golden21.v2.json'));
     delete record.v;
+    expect(firstIssue(SessionLogSchema.safeParse(record)).path).toEqual(['v']);
     expect(() => upcast(record)).toThrow();
   });
 
   test('a thread or message with no v', () => {
     const noThreadV = clone(load('golden21.v2.json'));
     delete (noThreadV.threads[0] as Record<string, unknown>).v;
-    expect(SessionLogSchema.safeParse(noThreadV).success).toBe(false);
+    expect(firstIssue(SessionLogSchema.safeParse(noThreadV)).path).toEqual(['threads', 0, 'v']);
 
     const noMessageV = clone(load('golden21.v2.json'));
     delete (noMessageV.threads[0].messages[0] as Record<string, unknown>).v;
-    expect(SessionLogSchema.safeParse(noMessageV).success).toBe(false);
+    expect(firstIssue(SessionLogSchema.safeParse(noMessageV)).path).toEqual(['threads', 0, 'messages', 0, 'v']);
   });
 
   test('another schema id', () => {
-    expect(() => upcast({ ...load('golden21.v2.json'), schema: 'kortix.session/3' })).toThrow();
+    const issue = firstIssue(SessionLogSchema.safeParse({ ...load('golden21.v2.json'), schema: 'kortix.session/3' }));
+    expect(issue.path).toEqual(['schema']);
+    expect(issue.code).toBe('invalid_literal');
   });
 
   test('an unknown block type', () => {
     const record = clone(load('golden21.v2.json'));
-    record.threads[0].messages[0].blocks.push({ type: 'hologram' } as never);
+    const blocks = record.threads[0].messages[0].blocks;
+    blocks.push({ type: 'hologram' } as never);
+    const issue = firstIssue(SessionLogSchema.safeParse(record));
+    expect(issue.path).toEqual(['threads', 0, 'messages', 0, 'blocks', blocks.length - 1, 'type']);
+    expect(issue.code).toBe('invalid_union_discriminator');
     expect(() => upcast(record)).toThrow();
   });
 });
 
 describe('session-log closure rule', () => {
   const closed = { content: [{ type: 'text' as const, text: '[interrupted]' }], is_error: true, synthetic: true };
+  const open = (patch: Partial<SessionLogMessage>, blocks = [call({})]) => ({ ...assistant(blocks), ...patch });
 
-  test('a message at rest with a tool call and no result is rejected', () => {
+  test('an in-context message at rest with a tool call and no result is rejected', () => {
     for (const status of ['complete', 'error', 'aborted', 'interrupted'] as const) {
-      expect(SessionLogMessageSchema.safeParse(assistant([call({})], status)).success).toBe(false);
+      const issue = firstIssue(SessionLogMessageSchema.safeParse(assistant([call({})], status)));
+      expect(issue.path).toEqual(['blocks', 0]);
+      expect(issue.code).toBe('custom');
     }
   });
 
-  test('a message at rest with a pending or running tool call is rejected, even with a result', () => {
+  test('an in-context message at rest with a pending or running tool call is rejected, even with a result', () => {
     const result = { content: [], is_error: false };
-    expect(SessionLogMessageSchema.safeParse(assistant([call({ status: 'pending', result })])).success).toBe(false);
-    expect(SessionLogMessageSchema.safeParse(assistant([call({ status: 'running', result })])).success).toBe(false);
+    for (const status of ['pending', 'running'] as const) {
+      expect(firstIssue(SessionLogMessageSchema.safeParse(assistant([call({ status, result })]))).path).toEqual(['blocks', 0]);
+    }
+  });
+
+  test('an out-of-context message may keep an open tool call (a hidden aborted reply)', () => {
+    const hidden = { in_context: false, hidden_reason: 'aborted' as const, status: 'aborted' as const };
+    const openCall = [call({ status: 'error' })];
+    expect(SessionLogMessageSchema.safeParse(open(hidden, openCall)).success).toBe(true);
+    expect(SessionLogMessageSchema.safeParse(open({ ...hidden, in_context: true }, openCall)).success).toBe(false);
   });
 
   test('an interrupted call closed with is_error and synthetic is accepted', () => {

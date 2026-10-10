@@ -1,7 +1,8 @@
 /**
  * zod validators for `kortix.session/2` minor 1. Each schema mirrors a type in
  * `types.ts`; the comments there are the rules. Objects are not strict: a later
- * minor adds optional fields and an older reader must still accept the record.
+ * minor adds optional fields and an older reader must still accept the record. Enums and the
+ * block union are closed (see the compatibility rule in `types.ts`).
  */
 import { z } from 'zod';
 import { SESSION_LOG_SCHEMA } from './types';
@@ -49,6 +50,7 @@ export const ReasoningBlockSchema = z.object({
   text: str,
   summary: z.array(str).optional(),
   redacted: z.boolean().optional(),
+
   ext,
 });
 export const AttachmentBlockSchema = z.object({
@@ -173,16 +175,17 @@ export const SessionLogMessageSchema = z
     ext,
   })
   .superRefine((message, ctx) => {
-    // Closure rule (ToolCallBlock, C2): a message at rest holds no open tool call.
+    // Closure rule (ToolCallBlock, C2): a thread at rest holds no in-context tool call that is open.
     // An exporter closes an interrupted call with `{ is_error: true, synthetic: true }`.
-    if (message.status === 'streaming') return;
+    // An out-of-context message (a hidden aborted reply) may keep its open call.
+    if (message.status === 'streaming' || !message.in_context) return;
     message.blocks.forEach((block, i) => {
       if (block.type !== 'tool_call') return;
       if (block.status === 'pending' || block.status === 'running' || !block.result) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['blocks', i],
-          message: `tool call ${block.call_id} is open (status ${block.status}, ${block.result ? 'has' : 'no'} result) in a message that is not streaming`,
+          message: `tool call ${block.call_id} is open (status ${block.status}, ${block.result ? 'has' : 'no'} result) in an in-context message that is not streaming`,
         });
       }
     });

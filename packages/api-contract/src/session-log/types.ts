@@ -1,14 +1,15 @@
 /**
- * Ported from the tested prototype (schema/session-v2.1.ts; 65 of 65 restores across 7 sources
- * and 5 target harnesses). Only the record names differ (decision D1): Session, Thread,
- * Message and Block are SessionLog, SessionLogThread, SessionLogMessage and SessionLogBlock.
+ * Ported from the tested session-log prototype (an external repository, not part of this one;
+ * 65 of 65 restores across 7 sources and 5 target harnesses). Only the record names differ
+ * (decision D1): Session, Thread, Message and Block are SessionLog, SessionLogThread,
+ * SessionLogMessage and SessionLogBlock.
  * This file has no imports, so it can be copied as is.
  *
  * kortix.session/2 — minor 1 (DRAFT 2.1). Additive over 2.0; a 2.0 reader still
  * reads every 2.1 record (new fields are optional; new layout entries carry text).
  *
  * Changes from 2.0, each found by a harness test (pi, OpenCode v1, OpenCode v2,
- * Claude Code, Codex — see the report):
+ * Claude Code, Codex):
  *  C1  CompactionBlock: `layout` (explicit post-cut order), nullable/opaque summary, optional trigger
  *  C2  ToolCallBlock: input_format, result.model_content / error / exit_code / synthetic; closure rule
  *  C3  ReasoningBlock: replay rule (never replay across provider/model)
@@ -26,6 +27,10 @@
  * Unchanged rules from 2.0: model-visible vs display split, explicit context
  * operations, order by seq, mutability only while streaming, harness-unique data
  * only in ext[harness] or a harness block with fallback_text, and versioning.
+ *
+ * Compatibility rule: a released minor adds optional fields only. A new enum value or a
+ * new block type is a new minor, and an older reader rejects it: the validators close
+ * every enum and the block union.
  */
 
 export const SESSION_LOG_SCHEMA = 'kortix.session/2' as const
