@@ -1,24 +1,20 @@
 {
-  "source_hash": "4524e4f3c84dd528e844c6c2cb0a63e89bda493a52e14a4bb9f8142c87b5c928",
+  "source_hash": "ebe57891f69025b7581e19ec001d87d3744a4d6e17025b029d3192065f7787d1",
   "diff_files": [
-    "apps/api/src/__tests__/integration-gateway-keys.test.ts",
     "apps/api/src/__tests__/integration-lifecycle-command-settle-wake.test.ts",
     "apps/api/src/__tests__/unit-slack-message-labels.test.ts",
-    "apps/api/src/apps/kinds/convex/hosts.integration.test.ts",
-    "apps/api/src/apps/kinds/convex/provision.integration.test.ts",
-    "apps/api/src/apps/kinds/convex/routes.integration.test.ts",
     "apps/cli/src/__tests__/agents-parity.test.ts",
     "apps/cli/src/commands/agents.ts",
     "apps/kortix-sandbox-agent-server/src/__tests__/workspace-provider.test.ts",
     "apps/web/src/lib/seo/content-timestamps.json"
   ],
-  "diff_hash": "a327b02c1c083b18a6299934900f3a9f27cb3610a26a85144dd4d3a72a54c608",
-  "head": "efa5537c1487d0918c20aad0587cc24865fd4c6d",
+  "diff_hash": "57fd34027bc8e847e12b67f57b1d9bc7d137eb7bf733d5650abef330795f5e20",
+  "head": "d0da984aabe99e38725bddea5bb767f9bbe58cdc",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-10T01:58:59.687Z"
+  "at": "2026-10-10T03:57:11.909Z"
 }
