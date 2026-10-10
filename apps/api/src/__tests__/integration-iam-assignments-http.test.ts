@@ -473,17 +473,15 @@ describe.if(hasDatabase)('GET /v1/accounts/:accountId/iam/roles', () => {
       roles: Array<{ role_id: string; key: string; is_system: boolean; resource_type: string }>;
     };
     const system = roles.filter((r) => r.is_system);
-    // All NINE seeded rows, the object-grant markers included (agent-user and
-    // the three Files folder roles): they are system roles, and the edit
-    // guards have to recognise them.
+    // All SIX seeded rows, the object-grant marker included — it is a system
+    // role, and the edit guards have to recognise it. The three Files folder
+    // roles are seeded too but never listed: they are only the level of a
+    // folder grant, set from the Files access dialog.
     expect(system.map((r) => `${r.resource_type}:${r.key}`).sort()).toEqual([
       'account:admin',
       'account:member',
       'account:owner',
       'project:agent-user',
-      'project:folder-manager',
-      'project:folder-reader',
-      'project:folder-writer',
       'project:manager',
       'project:member',
     ]);

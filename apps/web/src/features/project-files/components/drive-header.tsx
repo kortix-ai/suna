@@ -158,8 +158,9 @@ export function DriveHeader({
   // in its own strip below it, shown only inside a subfolder.
   if (offsetForSidebarToggle && params?.id) {
     // With Volumes on, the git repository is "Repo" and "Files" is the shared
-    // folders; off, the repository is "Files", as before volumes.
-    const title = tSidebar(repoNavLabel(volumes.enabled));
+    // folders; off, the repository keeps the title it had before volumes.
+    const title =
+      repoNavLabel(volumes.enabled) === 'repo' ? tSidebar('repo') : tI18nComplete.raw('textabc7e9892806');
     return (
       <>
         <ProjectPageHeader title={title} href={`/projects/${params.id}/files`}>

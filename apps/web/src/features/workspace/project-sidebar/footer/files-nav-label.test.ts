@@ -22,5 +22,11 @@ describe('sidebar Files label', () => {
     // The shared folders are the Files tab under Customize, only with Volumes on.
     const tabs = read('../../capabilities/shared/capability-tabs.tsx');
     expect(tabs).toContain("useFeatureFlag(projectId, 'drives')");
+
+    // Off, the repo page keeps its pre-volumes title, and `/drive` is not found.
+    const header = read('../../../project-files/components/drive-header.tsx');
+    expect(header).toContain("tI18nComplete.raw('textabc7e9892806')");
+    const drivePage = read('../../../../app/[locale]/(app)/projects/[id]/drive/page.tsx');
+    expect(drivePage).toContain('if (!volumes.isLoading && !volumes.enabled) notFound();');
   });
 });

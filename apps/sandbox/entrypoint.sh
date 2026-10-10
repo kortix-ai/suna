@@ -214,7 +214,11 @@ if __name__ == "__main__":
     main()
 KORTIX_DRIVE_OWNER_PY
 }
-start_drive_owner || true
+# Only a session with drives (the API sets KORTIX_DRIVES=1): every other box
+# boots exactly as it did before drives, with no helper process.
+if [ "${KORTIX_DRIVES:-}" = "1" ]; then
+  start_drive_owner || true
+fi
 
 # Kortix Drive off Platinum (KORTIX_DRIVE_SYNC=1): no volume mounts here; the
 # daemon copies the session's drives into /drives and keeps them in sync, as
