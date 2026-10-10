@@ -1,7 +1,7 @@
 import { afterEach, expect, mock, test } from 'bun:test';
 import React from 'react';
 import { type ReactTestRenderer, act, create } from 'react-test-renderer';
-import { useSyncStore } from '../browser/stores/sync-store';
+import { hasOnlyCacheSourcedMessages, useSyncStore } from '../browser/stores/sync-store';
 import { configureKortix } from '../core/http/config';
 import type { SessionTranscriptSyncEnvelope } from '../core/rest/projects-client/sessions';
 import { resetSessionOpenBundles } from '../core/session/open-bundle';
@@ -144,12 +144,35 @@ test('an empty answer is not sticky: the envelope that follows it still paints',
   expect(hook.value().messages).toHaveLength(1);
 });
 
-test('a read that already landed with no messages is absent: there is no copy to wait for', async () => {
+test('an empty runtime read that landed first does not block the saved copy: it paints, still provisional', async () => {
   touched.push('ses_copy_empty');
-  // An authoritative (runtime) read of an empty thread.
+  // An empty runtime read is lost box state, not an empty conversation.
   useSyncStore.getState().hydrate('ses_copy_empty', []);
   const hook = await mount('ses_copy_empty', { ...offline, mirror: envelope('ses_copy_empty') });
-  expect(hook.value().mirrorState).toBe('absent');
+  expect(hook.value().mirrorState).toBe('painted');
+  expect(hook.value().messages.map((m) => m.info.id)).toEqual(['msg_ses_copy_empty']);
+  expect(hasOnlyCacheSourcedMessages('ses_copy_empty')).toBe(true);
+});
+
+test('a saved copy that arrives after an empty runtime read still paints', async () => {
+  const hook = await mount('ses_copy_late_empty', { ...offline, mirror: null });
+  useSyncStore.getState().hydrate('ses_copy_late_empty', []);
+  await hook.update('ses_copy_late_empty', { ...offline, mirror: envelope('ses_copy_late_empty') });
+  expect(hook.value().mirrorState).toBe('painted');
+  expect(hook.value().messages.map((m) => m.info.id)).toEqual(['msg_ses_copy_late_empty']);
+});
+
+test('a runtime read with messages keeps a later saved copy out', async () => {
+  touched.push('ses_copy_live');
+  useSyncStore.getState().hydrate('ses_copy_live', [
+    {
+      info: { id: 'msg_live', sessionID: 'ses_copy_live', role: 'user', time: { created: 5 } } as never,
+      parts: [],
+    },
+  ]);
+  const hook = await mount('ses_copy_live', { ...offline, mirror: envelope('ses_copy_live') });
+  expect(hook.value().messages.map((m) => m.info.id)).toEqual(['msg_live']);
+  expect(hasOnlyCacheSourcedMessages('ses_copy_live')).toBe(false);
 });
 
 test("a new source waits for its own answer, not the last source's", async () => {

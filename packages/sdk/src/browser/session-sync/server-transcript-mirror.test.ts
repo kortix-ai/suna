@@ -337,9 +337,15 @@ describe("loadSessionTranscriptMirror and the open bundle", () => {
 	});
 });
 
-test('an authoritative empty live read cannot be overwritten by late saved history', () => {
+test('an empty live read is not authoritative: late saved history still paints', () => {
+  // An empty runtime read for the saved root is evidence of lost box state,
+  // not of an empty conversation, whichever read lands first.
   expect(shouldHydrateFromMirror({
     envelope: envelope(), runtimeSessionId: ROOT, hasMessages: false, hasLoadedTranscript: true,
+  })).toBe(true);
+  // A live read WITH messages stays authoritative.
+  expect(shouldHydrateFromMirror({
+    envelope: envelope(), runtimeSessionId: ROOT, hasMessages: true, hasLoadedTranscript: true,
   })).toBe(false);
 });
 
