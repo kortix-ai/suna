@@ -130,7 +130,9 @@ test.describe('36 — Reminders UI', () => {
       await expect(card).toContainText('Check whether the vendor replied.');
       await expect(card).not.toContainText('[REMINDER');
 
-      const chip = page.getByTestId('session-reminders-chip');
+      // The live chat's header. A dismissed boot overlay can stay mounted under
+      // it (inert, aria-hidden) with its own header and chip.
+      const chip = page.getByTestId('session-chat').getByTestId('session-reminders-chip');
       await expect(chip).toBeVisible();
       await expect(chip).toHaveAccessibleName('1 active reminder');
       await chip.click();
