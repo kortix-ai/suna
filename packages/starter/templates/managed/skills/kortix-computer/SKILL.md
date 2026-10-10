@@ -35,10 +35,12 @@ Tools on the `computer` connector:
   first call shows them a prompt; say so before you make it.
 - **filesystem** — `fs.read` / `fs.write` / `fs.list` / `fs.stat` / `fs.delete`
 - **shell** — `shell.exec` (stdout / stderr / exitCode)
-- **desktop** — `desktop.cua.click` / `type_text` / `press_key` / `hotkey` /
-  `scroll` / `launch_app` / `list_apps` / `list_windows` / `get_screen_size` /
-  `get_accessibility_tree`, plus `desktop.cua.call` (any computer-use tool by
-  name)
+- **desktop** — `desktop.cua.list_windows` / `get_window_state` (one
+  window's screenshot plus its elements) / `get_desktop_state` (the whole
+  screen) / `click` / `double_click` / `right_click` / `type_text` /
+  `press_key` / `hotkey` / `scroll` / `drag` / `set_value` / `launch_app` /
+  `list_apps` / `get_screen_size` / `health_report`, plus `desktop.cua.call`
+  for any other driver tool (`desktop.cua.list_tools` lists them)
 
 **This is for a connected, external computer — not this sandbox.**
 </overview>
@@ -70,11 +72,29 @@ kortix connectors call computer status '{}' --account "Studio Mac"
 ```sh
 kortix connectors call computer fs.read '{"path":"/Users/me/notes.md"}' --account "Studio Mac"
 kortix connectors call computer shell.exec '{"command":"git","args":["status"],"cwd":"/Users/me/proj"}' --account "Studio Mac"
-kortix connectors call computer desktop.cua.type_text '{"text":"hello"}' --account "Studio Mac"
-kortix connectors call computer desktop.cua.call '{"tool":"double_click","args":{"x":220,"y":140}}' --account "Studio Mac"
 ```
 
 `kortix connectors show computer.<action>` prints a tool's input schema.
+
+**4. Drive an app: find it, look at it, act on an element, look again.**
+Desktop tools act on one app (`pid`) and window (`window_id`), in the
+background, without taking over the screen.
+
+```sh
+kortix connectors call computer desktop.cua.list_windows '{"on_screen_only":true}' --account "Studio Mac"
+# → pick the window: its pid and window_id
+kortix connectors call computer desktop.cua.get_window_state '{"pid":4242,"window_id":17}' --account "Studio Mac"
+# → screenshot + elements, each with an element_token
+kortix connectors call computer desktop.cua.click '{"pid":4242,"element_token":"<token>"}' --account "Studio Mac"
+kortix connectors call computer desktop.cua.type_text '{"pid":4242,"text":"hello"}' --account "Studio Mac"
+kortix connectors call computer desktop.cua.hotkey '{"pid":4242,"keys":["cmd","s"]}' --account "Studio Mac"
+```
+
+Prefer `element_token` over pixel `x`/`y`. A key, chord, or text without a
+`pid` goes to the frontmost app only with `"scope":"desktop"`. Check the
+result with `get_window_state` again: a keystroke is never verified by the
+driver itself. When desktop calls fail for no clear reason, call
+`desktop.cua.health_report` and report its failing checks.
 </usage>
 
 <errors>
@@ -100,6 +120,14 @@ Treat these as real outcomes; do not retry blind:
 - `computer_capability_not_approved` — the human approved this computer
   without that capability (filesystem, shell, or desktop). They must connect
   the computer again and select it.
+- `computer_desktop_permission_missing` — macOS has not given Kortix
+  Accessibility or Screen Recording on that computer, so it cannot see or
+  use apps. Tell the human: **"Open the Kortix app → Your computer → Allow
+  all."** Retry once after they confirm; Kortix applies a new grant within
+  30 seconds.
+- `Not allowed on this computer: …` — the call is outside the computer's
+  approved scope (for example a path outside `allowed_paths`). Change the
+  call; do not ask for re-pairing.
 - `connector_not_connected` — no computer is reachable from this session.
   None is connected, or every connected computer is private to someone else
   (an unattended run reaches only computers shared with the project). With

@@ -61,6 +61,17 @@ export function parseAccessState(
   return Number.isNaN(at.getTime()) ? null : { mode, grantedUntil: at.toISOString() };
 }
 
+/**
+ * Agents up to 0.1.2 still narrow a desktop grant by its legacy `features`
+ * list, and refuse every driver tool missing from their own map. Desktop is
+ * one grant, so the agent receives it without that list.
+ */
+function wireScope(capability: string, scope: unknown): unknown {
+  if (capability !== 'desktop' || !scope || typeof scope !== 'object') return scope;
+  const { features: _legacy, ...rest } = scope as Record<string, unknown>;
+  return rest;
+}
+
 async function syncActiveTunnelPermissions(
   tunnelId: string,
   capabilities: readonly string[],
@@ -81,7 +92,7 @@ async function syncActiveTunnelPermissions(
       .map((permission) => ({
         permissionId: permission.permissionId,
         capability: permission.capability,
-        scope: permission.scope,
+        scope: wireScope(permission.capability, permission.scope),
         expiresAt: permission.expiresAt?.toISOString() ?? undefined,
       })),
   });

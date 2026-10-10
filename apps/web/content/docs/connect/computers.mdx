@@ -181,6 +181,7 @@ A call fails with a named reason instead of guessing:
 | `computer_offline` | The computer is paired but not connected right now. | Wake the computer, or resume access in the desktop app. |
 | `computer_unpaired` | The account points at a machine that was disconnected. | Connect the computer again. |
 | `computer_capability_not_approved` | The computer was approved without this capability. | Connect the computer again and select the capability. |
+| `computer_desktop_permission_missing` | macOS has not given Kortix Accessibility or Screen Recording on that computer. | Open the Kortix app → **Your computer** → **Allow all**. Kortix applies the grant within 30 seconds. |
 | `computer_access_pending` | The owner has not answered the prompt on the computer yet. | Answer the prompt on the computer, then ask the agent to continue. |
 | `computer_access_denied` | The owner chose **Deny**. | Allow access from the menu-bar icon or **Your computer**. |
 | `computer_access_off` | The owner set access to **Off**. | Change **Access** on the computer. |

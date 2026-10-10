@@ -34,6 +34,7 @@ import {
   describeService,
   renderServiceAction,
 } from './service-control';
+import { watchForRestart } from './self-restart';
 import { readAgentState, writeAgentState } from './state-file';
 import { blankLine, c, clearScreen, field, glyph, stripAnsi } from './terminal';
 import { agentTunnelVersion } from './version';
@@ -90,7 +91,17 @@ function startAgent(config: TunnelConfig, options: { service?: boolean } = {}): 
     process.stdout.write = process.stderr.write.bind(process.stderr) as typeof process.stdout.write;
     options = { ...options, service: true };
   }
-  const registry = createEnabledCapabilityRegistry(config);
+  let agent: TunnelAgent | null = null;
+  const restart = options.service
+    ? watchForRestart((reason) => {
+        process.stdout.write(`[agent-tunnel] restarting: ${reason}\n`);
+        agent?.disconnect();
+        process.exit(0);
+      })
+    : null;
+  const registry = createEnabledCapabilityRegistry(config, undefined, {
+    onPermissionMissing: restart?.permissionMissing,
+  });
   if (config.enabledCapabilities?.includes('desktop') && !registry.has('desktop')) {
     console.error(
       '[agent-tunnel] Computer Use is approved but unavailable: install the trusted cua-driver locally, then restart Agent Tunnel.',
@@ -111,7 +122,7 @@ function startAgent(config: TunnelConfig, options: { service?: boolean } = {}): 
 
   // A service never stops on its own (R2): a refused credential waits in
   // `rejected` and re-reads config.json, so pairing again heals it.
-  const agent = new TunnelAgent(
+  agent = new TunnelAgent(
     config,
     registry,
     // The agent passes the credential it uses NOW: a re-pair picked up by a
@@ -126,7 +137,7 @@ function startAgent(config: TunnelConfig, options: { service?: boolean } = {}): 
 
   const shutdown = () => {
     if (!options.service) console.log(`\n${c.dim}  Shutting down…${c.reset}`);
-    agent.disconnect();
+    agent?.disconnect();
     process.exit(0);
   };
   process.on('SIGTERM', shutdown);
