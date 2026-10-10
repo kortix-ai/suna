@@ -151,7 +151,8 @@ function execFile(
       clearTimeout(timer);
       if (code !== 0) {
         const detail = stderr.trim() || stdout.trim();
-        reject(new Error(`${cmd} failed (${code})${detail ? `: ${detail}` : ''}`));
+        // The driver's name, not its install path: agents read this message.
+        reject(new Error(`${basename(cmd)} failed (${code})${detail ? `: ${detail}` : ''}`));
       } else {
         resolve({ stdout, stderr });
       }
