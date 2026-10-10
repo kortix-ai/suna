@@ -1,5 +1,5 @@
 {
-  "source_hash": "b9f7e16603482c92b0d41752545ec67ee6f4720bc19d27eb13a3b7646e16198e",
+  "source_hash": "c9b7d2995645d1829422dc002f02fec5d3b1b413ae5657a7af2f8bf951b4005e",
   "diff_files": [
     "apps/api/src/__tests__/integration-monthly-compute-accrual.test.ts",
     "apps/api/src/apps/budget.ts",
@@ -87,13 +87,13 @@
     "tests/src/flows/apps-convex.flow.ts",
     "tests/src/flows/apps.flow.ts"
   ],
-  "diff_hash": "20c4227e13bd109446178e8f301c00c75f8341934bad7ad3a58fec99d1704a21",
-  "head": "8f0dc2a6e4ae360ec8de47dfca3d571d5215774f",
+  "diff_hash": "a2da81e181c29e00d9fdbcb9aef8ae02499b6c230e6eab5701d7f1a6d8af6a4d",
+  "head": "2d91df052e82a6a765523c3d38acc65d97a64395",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-10T12:39:34.632Z"
+  "at": "2026-10-10T16:06:42.931Z"
 }
