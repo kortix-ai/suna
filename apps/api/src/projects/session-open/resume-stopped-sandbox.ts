@@ -30,6 +30,8 @@ import {
   runtimeWakeRestoreProgressPatch,
   stampedRuntimeFailureState,
 } from '../session-lifecycle/runtime-wake-fence';
+import { STOP_CLAIM_KEY } from '../session-lifecycle/stop-claim';
+import { sandboxStopClaimLeaseMs } from '../sandbox-deadline-policy';
 import type { OpenSessionRow } from './session-open-context';
 
 /**
@@ -411,6 +413,45 @@ export function keepStoppedRefusesWake(
   if (!keepStopped) return false;
   const reason = (row?.metadata as Record<string, unknown> | null | undefined)?.stopReason;
   return typeof reason === 'string' && DELIBERATE_STOP_REASONS.has(reason);
+}
+
+/**
+ * A user Stop that landed after the caller formed its intent to wake.
+ *
+ * A `/start` long-poll that was waiting when the user pressed Stop, and a
+ * prompt an automation queued before it, are not consent to undo that Stop.
+ * Both used to wake the box: the poll's next tick claimed the retired
+ * ephemeral row ~1 s after the stop, and a parked prompt resumed (and
+ * un-archived) the box minutes later. Only an open formed after the Stop (an
+ * explicit `/start`, a new message) wakes it.
+ */
+export function userStopFollowsIntent(
+  wakeIntentAt: Date | undefined,
+  row: { status: string; metadata: unknown } | undefined,
+): boolean {
+  if (!wakeIntentAt || row?.status !== 'stopped') return false;
+  const meta = (row.metadata ?? {}) as Record<string, unknown>;
+  if (meta.stopReason !== 'manual' || typeof meta.stoppedAt !== 'string') return false;
+  const stoppedAtMs = Date.parse(meta.stoppedAt);
+  return Number.isFinite(stoppedAtMs) && stoppedAtMs >= wakeIntentAt.getTime();
+}
+
+/**
+ * The live stop claim on an `active` row (`session-lifecycle/stop-claim.ts`),
+ * or null. While it stands the box is being powered off (or, ephemeral,
+ * deleted): no open may report it ready.
+ */
+export function liveStopClaimAtMs(
+  row: { status: string; metadata: unknown } | undefined,
+  nowMs: number,
+): number | null {
+  if (row?.status !== 'active') return null;
+  const claim = ((row.metadata ?? {}) as Record<string, unknown>)[STOP_CLAIM_KEY] as
+    | { claimedAtMs?: unknown }
+    | undefined;
+  const claimedAtMs = Number(claim?.claimedAtMs);
+  if (!Number.isFinite(claimedAtMs)) return null;
+  return claimedAtMs > nowMs - sandboxStopClaimLeaseMs() ? claimedAtMs : null;
 }
 
 export function isMissingRuntimeError(error: unknown): boolean {

@@ -49,6 +49,10 @@ async function readSessionRuntimePair(
 }
 
 export async function startSession(command: StartSessionCommand) {
+  // The instant this open was asked for. Every long-poll tick below carries it:
+  // a user Stop that lands while the request waits wins over the request
+  // (`userStopFollowsIntent`), instead of the next tick waking the box again.
+  const wakeIntentAt = new Date();
   // ONE joined read feeds the token heal, the first open, and — fresh every
   // tick — the long-poll re-resolve. `healSupersededSessionToken` used to
   // probe the sandbox row for its config and `openSession` re-read the same
@@ -66,6 +70,7 @@ export async function startSession(command: StartSessionCommand) {
     projectId: command.projectId,
     sessionId: command.sessionId,
     keepStopped: command.keepStopped,
+    wakeIntentAt,
     preloadedSandboxRow: preloaded.sandbox,
   });
   // Optional long-poll: re-resolve (re-reading the live session row each tick,
@@ -73,19 +78,27 @@ export async function startSession(command: StartSessionCommand) {
   // client learns `ready` immediately instead of on its ~800ms poll tick.
   // waitMs<=0 or an already-terminal first result → returns `first` unchanged,
   // so the immediate-ready path and every non-long-poll caller are untouched.
+  //
+  // A tick that saw a Stop in progress (`runtime_stopping`) makes the rest of
+  // the wait a keep-alive poll: this request arrived while the user was
+  // stopping the box, so it may report the stop, never undo it once it lands.
+  let sawStopInProgress = first.reason === 'runtime_stopping';
   const start = await awaitTerminalStage(
     first,
     async () => {
       const fresh = await readSessionRuntimePair(command.sessionId);
       if (!fresh.session) return null;
-      return openSession({
+      const next = await openSession({
         loaded: command.loaded,
         visible: { row: fresh.session },
         projectId: command.projectId,
         sessionId: command.sessionId,
-        keepStopped: command.keepStopped,
+        keepStopped: command.keepStopped || sawStopInProgress,
+        wakeIntentAt,
         preloadedSandboxRow: fresh.sandbox,
       });
+      if (next.reason === 'runtime_stopping') sawStopInProgress = true;
+      return next;
     },
     { waitMs: command.waitMs ?? 0, signal: command.signal },
   );
