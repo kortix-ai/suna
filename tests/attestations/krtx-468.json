@@ -1,0 +1,17 @@
+{
+  "source_hash": "3b50774096434ae660eb88babbcc302ee626cae31f26f04433aa8bd5511b31d3",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-session-list-poll-memo.test.ts",
+    "apps/api/src/projects/lib/session-list-poll-memo.ts",
+    "apps/api/src/projects/routes/project-sessions.ts"
+  ],
+  "diff_hash": "0735226292b538673429efe5750db1225e5f0829582f2f96ec37ceb5633b0396",
+  "head": "3f33296220b2278fd0af6ef12555ff54731e0cc5",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-10T20:38:36.196Z"
+}
