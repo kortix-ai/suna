@@ -72,6 +72,40 @@ const BOOT_HEADING = 'Starting your session';
 /** The API's path prefix (`/v1`), so a held route never matches the page's own URL. */
 const API_PATH = new URL(process.env.E2E_API_URL!).pathname.replace(/\/+$/, '');
 
+/**
+ * The saved copy this device keeps for one session, or null. The web host keeps
+ * saved copies in IndexedDB (`kortix-session-cache`, store `saved-copies`, see
+ * the SDK's `idb-sync-cache.ts`), keyed `kortix.saved-copy:<user>:<project>/<session>`.
+ * The read opens the database at its current version and closes it, so it never
+ * blocks the page's own upgrade.
+ */
+function readSavedCopy(page: Page, key: string): Promise<string | null> {
+  return page.evaluate(
+    (key) =>
+      new Promise<string | null>((resolve) => {
+        const open = indexedDB.open('kortix-session-cache');
+        open.onerror = () => resolve(null);
+        open.onsuccess = () => {
+          const db = open.result;
+          if (!db.objectStoreNames.contains('saved-copies')) {
+            db.close();
+            return resolve(null);
+          }
+          const read = db.transaction('saved-copies', 'readonly').objectStore('saved-copies').get(key);
+          read.onsuccess = () => {
+            db.close();
+            resolve(typeof read.result === 'string' ? read.result : null);
+          };
+          read.onerror = () => {
+            db.close();
+            resolve(null);
+          };
+        };
+      }),
+    key,
+  );
+}
+
 /** First moment each surface is PAINTED after the reload: hit-testable at its center. */
 async function installFirstShown(page: Page, sessionId: string) {
   await page.addInitScript(
@@ -231,16 +265,13 @@ test('34 — a reload with every read held shows the project, its session list a
     await expect
       .poll(
         () =>
-          page.evaluate(
-            ({ userId, projectId, session }) => {
-              const keys = Object.keys(localStorage);
-              return {
-                savedCopy: keys.includes(`kortix.saved-copy:${userId}:${projectId}/${session}`),
-                queryCache: keys.includes(`kortix.query-cache:${userId}`),
-              };
-            },
-            { userId: user.id, projectId: project.id, session: sessionId },
-          ),
+          Promise.all([
+            readSavedCopy(page, `kortix.saved-copy:${user.id}:${project.id}/${sessionId}`),
+            page.evaluate(
+              (userId) => Object.keys(localStorage).includes(`kortix.query-cache:${userId}`),
+              user.id,
+            ),
+          ]).then(([copy, queryCache]) => ({ savedCopy: copy !== null, queryCache })),
         { timeout: 30_000, message: 'the device keeps the saved copy and the query cache' },
       )
       .toEqual({ savedCopy: true, queryCache: true });
@@ -674,9 +705,8 @@ test("34 — a reload shows the server's newer saved copy, not only the one this
     await expect
       .poll(
         () =>
-          page.evaluate(
-            (key) => localStorage.getItem(key)?.includes('This reply is stored in the database.') === true,
-            `kortix.saved-copy:${user.id}:${project.id}/${sessionId}`,
+          readSavedCopy(page, `kortix.saved-copy:${user.id}:${project.id}/${sessionId}`).then(
+            (copy) => copy?.includes('This reply is stored in the database.') === true,
           ),
         { timeout: 30_000, message: 'the device keeps the saved copy' },
       )
@@ -737,9 +767,8 @@ test("34 — a reload shows the server's newer saved copy, not only the one this
     await expect
       .poll(
         () =>
-          page.evaluate(
-            ({ key, reply }) => localStorage.getItem(key)?.includes(reply) === true,
-            { key: `kortix.saved-copy:${user.id}:${project.id}/${sessionId}`, reply: newerReply },
+          readSavedCopy(page, `kortix.saved-copy:${user.id}:${project.id}/${sessionId}`).then(
+            (copy) => copy?.includes(newerReply) === true,
           ),
         { timeout: 15_000, message: 'the device keeps the newer copy' },
       )

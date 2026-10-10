@@ -9,7 +9,7 @@ export {
   TunnelErrorCode,
   TunnelMethods,
   capabilityForMethod,
-  desktopFeatureForMethod,
+  normalizeDesktopCall,
   isTunnelCapability,
   operationForMethod,
   validateTunnelPermissionScope,

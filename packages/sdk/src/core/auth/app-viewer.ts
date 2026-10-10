@@ -29,6 +29,8 @@
  * — use `createKortixAuth` from `@kortix/sdk/server` instead.
  */
 
+import { stripTrailingSlashes } from '../../platform/strings';
+
 /** What the gate answers at `/_kortix/viewer`. */
 export interface KortixAppViewerSession {
   app_id: string;
@@ -250,7 +252,7 @@ export function kortixBinding(slug: string, options: KortixBindingOptions = {}):
   const origin = options.origin ?? (globalThis as { location?: { origin?: string } }).location?.origin;
   if (!origin) throw new Error('kortixBinding needs the App origin: pass { origin } outside a browser.');
   return {
-    url: `${origin.replace(/\/+$/, '')}/_kortix/apps/${encodeURIComponent(slug)}`,
+    url: `${stripTrailingSlashes(origin)}/_kortix/apps/${encodeURIComponent(slug)}`,
     token: kortixToken({ audience: slug, fetch: options.fetch }),
   };
 }

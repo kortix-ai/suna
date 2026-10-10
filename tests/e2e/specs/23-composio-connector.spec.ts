@@ -54,7 +54,8 @@ test.describe("23 — Composio managed connector", () => {
 
   test.beforeAll(async () => {
     test.skip(!databaseUrl, "KE2E_DATABASE_URL is required");
-    const runId = Date.now().toString(36);
+    // Each Playwright worker runs this; two can start in the same millisecond.
+    const runId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     const email = `e2e-composio-${runId}@kortix.test`;
     user = await createAuthUser(email, authOptions);
     session = await signIn(email, authOptions);
@@ -664,7 +665,7 @@ test.describe("23 — Composio managed connector", () => {
     expect(pageErrors, `client errors: ${pageErrors.join(" | ")}`).toEqual([]);
   });
 
-  test("adds accounts from one Add account menu that asks only who can use each", async ({ page }) => {
+  test("adds accounts from one Add account dialog that asks the name and who can use each", async ({ page }) => {
     // One button, one dialog: the name plus who may use the new account. The
     // visibility lands on the card. A connector with `auth: none` needs no
     // credential, so each account is ready as soon as it is created.
@@ -688,6 +689,18 @@ test.describe("23 — Composio managed connector", () => {
       201,
     );
 
+    // Creating the connector creates its project account, named after it.
+    const existing = (
+      await api<{ connections: Array<{ label: string; owner_type: string; connector_alias: string }> }>(
+        session.access_token,
+        "GET",
+        `/projects/${project.id}/connections`,
+      )
+    ).connections.filter((c) => c.connector_alias === slug);
+    expect(existing.map((c) => c.label)).toEqual([slug]);
+    const mineLabel = `${slug} 2`;
+    const sharedLabel = `${slug} 3`;
+
     const pageErrors: string[] = [];
     page.on("pageerror", (error) => pageErrors.push(error.message));
     const url = `/projects/${project.id}/customize/connectors?scope=connected&c=${slug}`;
@@ -700,18 +713,23 @@ test.describe("23 — Composio managed connector", () => {
     await expect(page.getByRole("button", { name: "Add my own" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Connect shared account" })).toHaveCount(0);
 
-    // ── Only you: the caller's own account, named from the connector ─────
+    // ── Only you: the caller's own account, given the next free name ──────
+    // Since #9497 the button opens a form: the proposed name and an audience,
+    // "Only you" by default. A no-auth connector needs nothing after Continue.
+    const addDialog = page.getByRole("dialog", { name: /^Add a .+ account$/ });
     const mineRequest = page.waitForRequest(
       (request) =>
         request.url().endsWith(`/projects/${project.id}/connections/me`) && request.method() === "POST",
     );
     await addButton.click();
-    await expect(page.getByRole("dialog")).toHaveCount(0);
-    await page.getByRole("menuitem", { name: /^Only you/ }).click();
+    await expect(addDialog.getByLabel("Name")).toHaveValue(mineLabel);
+    await expect(addDialog.getByRole("radio", { name: /^Only you/ })).toBeChecked();
+    await addDialog.getByRole("button", { name: "Continue", exact: true }).click();
     expect((await mineRequest).postDataJSON()).toEqual(
-      expect.objectContaining({ connector_alias: slug, label: slug }),
+      expect.objectContaining({ connector_alias: slug, label: mineLabel }),
     );
-    const mineRow = page.getByRole("listitem").filter({ has: page.getByText(slug, { exact: true }) });
+    await expect(addDialog).toHaveCount(0);
+    const mineRow = page.getByRole("listitem").filter({ has: page.getByText(mineLabel, { exact: true }) });
     await expect(mineRow.getByTestId("account-visibility")).toHaveText("Only you");
 
     // ── Everyone: a second account gets the next free name ───────────────
@@ -720,25 +738,27 @@ test.describe("23 — Composio managed connector", () => {
         request.url().endsWith(`/projects/${project.id}/connections`) && request.method() === "POST",
     );
     await addButton.click();
-    await page.getByRole("menuitem", { name: /^Everyone in / }).click();
+    await expect(addDialog.getByLabel("Name")).toHaveValue(sharedLabel);
+    await addDialog.getByRole("radio", { name: /^Everyone in / }).click();
+    await addDialog.getByRole("button", { name: "Continue", exact: true }).click();
     expect((await sharedRequest).postDataJSON()).toEqual(
-      expect.objectContaining({ connector_alias: slug, owner_type: "project", label: `${slug} 2` }),
+      expect.objectContaining({ connector_alias: slug, owner_type: "project", label: sharedLabel }),
     );
-    const sharedRow = page.getByRole("listitem").filter({ has: page.getByText(`${slug} 2`, { exact: true }) });
+    const sharedRow = page.getByRole("listitem").filter({ has: page.getByText(sharedLabel, { exact: true }) });
     await expect(sharedRow.getByTestId("account-visibility")).toHaveText("Everyone in project");
 
-    // ── Read back: the API holds both accounts with the chosen owner ─────
+    // ── Read back: the API holds the project account and both new ones ───
     const after = await api<{
       connections: Array<{ label: string; owner_type: string; connector_alias: string }>;
     }>(session.access_token, "GET", `/projects/${project.id}/connections`);
     const mine = after.connections.filter((c) => c.connector_alias === slug);
     expect(mine.map((c) => `${c.label}:${c.owner_type}`).sort()).toEqual(
-      [`${slug}:member`, `${slug} 2:project`].sort(),
+      [`${slug}:${existing[0]!.owner_type}`, `${mineLabel}:member`, `${sharedLabel}:project`].sort(),
     );
 
     // ── Your own private account, shared later: it becomes a shared account ──
-    await mineRow.getByRole("button", { name: `Share ${slug}`, exact: true }).click();
-    const shareMine = page.getByRole("dialog", { name: `Share ${slug}`, exact: true });
+    await mineRow.getByRole("button", { name: `Share ${mineLabel}`, exact: true }).click();
+    const shareMine = page.getByRole("dialog", { name: `Share ${mineLabel}`, exact: true });
     await expect(shareMine).toBeVisible();
     await expect(shareMine).toContainText("It becomes a shared account");
     await expect(shareMine.getByTestId("share-audience")).toContainText("Your account");
@@ -764,7 +784,7 @@ test.describe("23 — Composio managed connector", () => {
           shared_with?: Array<{ principal_type: string; principal_id: string }>;
         }>;
       }>(session.access_token, "GET", `/projects/${project.id}/connections`)
-    ).connections.find((c) => c.label === slug);
+    ).connections.find((c) => c.label === mineLabel);
     expect(sharedMine?.owner_type).toBe("project");
     expect(sharedMine?.shared_with?.map((s) => s.principal_id).sort()).toEqual(
       [user.id, group.group_id].sort(),

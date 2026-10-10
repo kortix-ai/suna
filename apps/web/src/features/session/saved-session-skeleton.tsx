@@ -30,6 +30,16 @@ import { useMemo } from 'react';
  * loading boundary and the page draw identical rows. One pulse travels down
  * them, ending on the composer.
  */
+/**
+ * The placeholders appear only once the wait is long enough to see. A reopened
+ * session's saved copy on this device paints a task after the first frame
+ * (IndexedDB answers asynchronously); without the delay that frame showed the
+ * skeleton rows, and they dissolved over the conversation (journey 34). A cold
+ * open waits 0.3-2.3 s for the server's copy, so its rows come 200 ms later.
+ */
+const APPEAR_AFTER_A_MOMENT =
+  'animate-in fade-in fill-mode-both duration-normal delay-[var(--duration-moderate)]';
+
 export function SavedSessionSkeleton({
   projectId,
   sessionId,
@@ -61,14 +71,14 @@ export function SavedSessionSkeleton({
               aria-busy="true"
               aria-label={t('loadingConversation')}
               data-testid="saved-session-skeleton"
-              className={SESSION_TRANSCRIPT_CLASS}
+              className={cn(SESSION_TRANSCRIPT_CLASS, APPEAR_AFTER_A_MOMENT)}
             >
               <SavedSessionSkeletonRows shape={shape} />
             </div>
           </div>
           {/* The card's outline, on the rails of the docked composer: its height
               and the gap the agent row keeps below it. */}
-          <div aria-hidden className={cn(COMPOSER_SHELL_CLASS, 'pb-8')}>
+          <div aria-hidden className={cn(COMPOSER_SHELL_CLASS, 'pb-8', APPEAR_AFTER_A_MOMENT)}>
             <SkeletonBar
               phase={shape.composerPhase}
               phases={shape.phases}

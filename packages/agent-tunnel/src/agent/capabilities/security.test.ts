@@ -72,7 +72,7 @@ describe('local capability permission enforcement', () => {
       () => '/trusted/cua-driver',
     );
     expect(registry.getCapabilityNames()).toEqual(['desktop']);
-    expect(registry.getHandler('desktop.cua.get_screen_size')).not.toBeNull();
+    expect(registry.getHandler('desktop.cua.call')).not.toBeNull();
   });
   test('a permission scope cannot widen the local filesystem ceiling', async () => {
     const handler = createFilesystemCapability(config()).methods.get('fs.read')!;
@@ -154,19 +154,59 @@ describe('local capability permission enforcement', () => {
     ).rejects.toThrow('not in the allowed commands list');
   });
 
-  test('desktop feature scopes deny before invoking cua-driver', async () => {
-    const handler = createDesktopCapability().methods.get('desktop.cua.click')!;
-    await expect(
-      handler({
-        x: 10,
-        y: 10,
-        __permission: {
-          permissionId: 'permission-1',
-          capability: 'desktop',
-          scope: { features: ['screenshot'] },
-        },
-      }),
-    ).rejects.toThrow('desktop feature "mouse" is not allowed');
+  test('a desktop grant allows every driver tool, and a legacy feature scope no longer narrows it', async () => {
+    const binary = join(root, 'fake-call-driver');
+    const log = join(root, 'call-args.jsonl');
+    await writeFile(binary, [
+      '#!/usr/bin/env node',
+      `require('node:fs').appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2, 4)) + '\\n');`,
+      `process.stdout.write('{"ok":true}');`,
+    ].join('\n'));
+    await chmod(binary, 0o700);
+    const previousBinary = process.env.CUA_DRIVER_BIN;
+    process.env.CUA_DRIVER_BIN = binary;
+    try {
+      const call = createDesktopCapability().methods.get('desktop.cua.call')!;
+      const __permission = { permissionId: 'p', capability: 'desktop', scope: { features: ['screenshot'] } };
+      // health_report was never in Kortix's tool list; the driver owns that list.
+      expect(await call({ tool: 'health_report', args: {}, __permission })).toEqual({ ok: true });
+      await expect(call({ tool: 'install_ffmpeg', __permission })).rejects.toThrow('local-only');
+      await expect(call({ tool: 'click', __permission: { ...__permission, capability: 'shell' } }))
+        .rejects.toThrow('desktop permission required');
+      const calls = (await readFile(log, 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
+      expect(calls.at(-1)).toEqual(['call', 'health_report']);
+    } finally {
+      if (previousBinary === undefined) delete process.env.CUA_DRIVER_BIN;
+      else process.env.CUA_DRIVER_BIN = previousBinary;
+    }
+  });
+
+  test('a failed call reports missing macOS grants as computer_desktop_permission_missing (-32013)', async () => {
+    const binary = join(root, 'fake-untrusted-driver');
+    await writeFile(binary, [
+      '#!/usr/bin/env node',
+      'const [command, tool] = process.argv.slice(2);',
+      `if (command === 'call' && tool === 'check_permissions') process.stdout.write('{"accessibility":false,"screen_recording":false}');`,
+      `else if (command === 'call') { process.stderr.write('AX is not trusted'); process.exitCode = 1; }`,
+      `else process.stdout.write('running');`,
+    ].join('\n'));
+    await chmod(binary, 0o700);
+    const previousBinary = process.env.CUA_DRIVER_BIN;
+    process.env.CUA_DRIVER_BIN = binary;
+    let restarts = 0;
+    try {
+      const call = createDesktopCapability({ onPermissionMissing: () => restarts++ }).methods.get('desktop.cua.call')!;
+      const error = await call({ tool: 'click', args: { pid: 1 }, __permission: { permissionId: 'p', capability: 'desktop', scope: {} } })
+        .catch((err: unknown) => err as Error & { code?: number });
+      expect((error as Error).message).toBe(
+        'computer_desktop_permission_missing: macOS has not given CuaDriver Accessibility and Screen Recording on this computer.',
+      );
+      expect((error as { code?: number }).code).toBe(-32013);
+      expect(restarts).toBe(1);
+    } finally {
+      if (previousBinary === undefined) delete process.env.CUA_DRIVER_BIN;
+      else process.env.CUA_DRIVER_BIN = previousBinary;
+    }
   });
 
   test('desktop discovery dispatches to driver metadata commands and preserves unsupported output', async () => {
@@ -195,8 +235,6 @@ describe('local capability permission enforcement', () => {
         scope: { features: ['computer_use'] },
       };
       await expect(list({})).rejects.toThrow('desktop permission required');
-      await expect(list({ __permission: { ...__permission, scope: { features: ['screenshot'] } } }))
-        .rejects.toThrow('not allowed');
       expect(await list({ __permission })).toEqual({ tools: 'double_click' });
       expect(await describeTool({ tool: 'double_click', __permission }))
         .toEqual({ description: 'Double click coordinates' });
