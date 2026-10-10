@@ -103,6 +103,19 @@ describe('blocks inside lists and blockquotes', () => {
     expect(genuiToMarkdown('> ```openui\n> root = Stack([b])\n> b = Badge("x")\nAfter.')).toBe('> [x]\nAfter.');
   });
 
+  test('a fence opened on the list-marker line converts; the marker stays on the first line', () => {
+    expect(genuiToMarkdown('Steps:\n\n- ```openui\n  root = Stack([b])\n  b = Badge("x")\n  ```\n- next')).toBe(
+      'Steps:\n\n- [x]\n- next',
+    );
+    const tabs = '```openui\nroot = Stack([t])\nt = Tabs([x, y])\nx = Tab("One", [b1])\ny = Tab("Two", [b2])\nb1 = Badge("first")\nb2 = Badge("second")\n```';
+    const listed = tabs.split('\n').map((line, i) => (i === 0 ? `12. ${line}` : `    ${line}`)).join('\n');
+    expect(genuiToMarkdown(listed)).toBe('12. #### One\n\n    [first]\n\n    #### Two\n\n    [second]');
+  });
+
+  test('blockquote body lines may space the marker differently from the opener', () => {
+    expect(genuiToMarkdown('> ```openui\n>root = Stack([b])\n>  b = Badge("x")\n>```')).toBe('> [x]');
+  });
+
   test('an example inside another fence is left alone', () => {
     const text = `\`\`\`\`md\n${prefixed(BLOCK, '> ')}\n\`\`\`\`\n\n- Item\n\n    \`\`\`text\n    > \`\`\`openui\n    \`\`\``;
     expect(genuiToMarkdown(text)).toBe(text);

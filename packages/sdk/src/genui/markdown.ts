@@ -48,6 +48,11 @@ export function genuiBlockToMarkdown(
   return genuiResultToMarkdown(createGenuiParser(version).update(code, options.streaming ?? false));
 }
 
+/** A fence that opens on a list-marker line: `- ```openui`, `1. ```openui`. Linear: the parts cannot overlap. */
+const LIST_FENCE = /^([ \t>]*)([-*+]|\d{1,9}[.)])([ \t]+)(?=`{3}|~{3})/;
+const LEAD = /^[ \t>]*/;
+const quoteDepth = (prefix: string) => prefix.split('>').length - 1;
+
 /**
  * Convert generative-UI fences inside blockquotes and list items: a `>` in the prefix, or 4+ columns
  * of indentation. `splitGenui` sees top-level fences only, but the renderers' CommonMark parsers
@@ -57,14 +62,25 @@ export function genuiBlockToMarkdown(
 function convertNestedBlocks(text: string, streaming: boolean): string {
   const lines = text.split('\n');
   const out: string[] = [];
-  let fence: { prefix: string; marker: string; nested: boolean; version: number | null; body: string[] | null } | null = null;
+  let fence: {
+    prefix: string;
+    /** Prefix of the first output line when the fence opened on a list-marker line. */
+    first: string;
+    marker: string;
+    nested: boolean;
+    version: number | null;
+    body: string[] | null;
+  } | null = null;
   let changed = false;
 
   const finish = (unclosed: boolean) => {
     if (fence?.body) {
       changed = true;
       const markdown = genuiBlockToMarkdown(fence.body.join('\n'), fence.version!, { streaming: streaming && unclosed });
-      for (const line of markdown ? markdown.split('\n') : []) out.push(line ? fence.prefix + line : fence.prefix.trimEnd());
+      const { prefix, first } = fence;
+      if (markdown) {
+        markdown.split('\n').forEach((line, index) => out.push(index === 0 ? first + line : line ? prefix + line : prefix.trimEnd()));
+      }
     }
     fence = null;
   };
@@ -72,23 +88,30 @@ function convertNestedBlocks(text: string, streaming: boolean): string {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;
     if (!fence) {
-      const open = fenceOpener(line);
+      // A fence on a list-marker line: the body is indented to the item's content column.
+      const item = LIST_FENCE.exec(line);
+      const open = fenceOpener(item ? line.slice(item[0].length) : line);
       if (open) {
-        const nested = !isTopLevel(open.prefix);
-        fence = { ...open, nested, body: nested && open.version !== null ? [] : null };
+        const prefix = item ? item[1]! + ' '.repeat(item[2]!.length + item[3]!.length) : open.prefix;
+        const nested = item !== null || !isTopLevel(open.prefix);
+        fence = { ...open, prefix, first: item ? item[0] : prefix, nested, body: nested && open.version !== null ? [] : null };
         if (fence.body) continue;
       }
       out.push(line);
       continue;
     }
     // A nested fence ends with its container: a line without the prefix that is not blank.
+    // Blockquote markers may be spaced differently on each line (`> x`, `>x`).
+    const lead = LEAD.exec(line)![0];
     const inside = !fence.nested
       ? line
       : line.startsWith(fence.prefix)
         ? line.slice(fence.prefix.length)
-        : line.trim() === '' || line.trimEnd() === fence.prefix.trimEnd()
-          ? ''
-          : null;
+        : fence.prefix.includes('>') && quoteDepth(lead) === quoteDepth(fence.prefix)
+          ? line.slice(lead.length)
+          : line.trim() === '' || line.trimEnd() === fence.prefix.trimEnd()
+            ? ''
+            : null;
     if (inside === null) {
       finish(false);
       i--; // this line belongs to whatever follows the container
