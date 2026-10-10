@@ -103,7 +103,8 @@ export const APP_VM_LIMITS = { cpu: { min: 1, max: 32 }, memory_gb: { min: 1, ma
 export const DEFAULT_APP_VM = { cpu: 1, memory_gb: 2, disk_gb: 10 } as const;
 export const DEFAULT_SNAPSHOT_RETENTION_DAYS = 5;
 export const MAX_SNAPSHOT_RETENTION_DAYS = 60;
-export const MAX_VOLUME_GB = 500;
+/** Platinum caps a volume at 100 GiB (its largest size class). */
+export const MAX_VOLUME_GB = 100;
 
 const GROUP_NAME = /^[a-z][a-z0-9_-]{0,31}$/;
 const SERVICE_NAME = /^[a-z][a-z0-9-]{0,30}$/;

@@ -40,7 +40,7 @@ CREATE TABLE "kortix"."app_volumes" (
 	"deleted_at" timestamp with time zone,
 	"metadata" jsonb DEFAULT '{}'::jsonb NOT NULL,
 	CONSTRAINT "app_volumes_status_check" CHECK ("kortix"."app_volumes"."status" IN ('creating', 'ready', 'destroying', 'destroyed', 'error')),
-	CONSTRAINT "app_volumes_size_check" CHECK ("kortix"."app_volumes"."size_gb" BETWEEN 1 AND 500),
+	CONSTRAINT "app_volumes_size_check" CHECK ("kortix"."app_volumes"."size_gb" BETWEEN 1 AND 100),
 	CONSTRAINT "app_volumes_retention_check" CHECK ("kortix"."app_volumes"."snapshot_retention_days" BETWEEN 1 AND 60)
 );
 --> statement-breakpoint

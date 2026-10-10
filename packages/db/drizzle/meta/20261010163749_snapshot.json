@@ -4202,7 +4202,7 @@
         },
         "app_volumes_size_check": {
           "name": "app_volumes_size_check",
-          "value": "\"kortix\".\"app_volumes\".\"size_gb\" BETWEEN 1 AND 500"
+          "value": "\"kortix\".\"app_volumes\".\"size_gb\" BETWEEN 1 AND 100"
         },
         "app_volumes_retention_check": {
           "name": "app_volumes_retention_check",

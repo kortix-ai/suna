@@ -4575,7 +4575,7 @@ export const appVolumes = kortixSchema.table(
   },
   (table) => [
     check('app_volumes_status_check', sql`${table.status} IN ('creating', 'ready', 'destroying', 'destroyed', 'error')`),
-    check('app_volumes_size_check', sql`${table.sizeGb} BETWEEN 1 AND 500`),
+    check('app_volumes_size_check', sql`${table.sizeGb} BETWEEN 1 AND 100`),
     check('app_volumes_retention_check', sql`${table.snapshotRetentionDays} BETWEEN 1 AND 60`),
     index('app_volumes_app_idx').on(table.appId, table.name),
     uniqueIndex('app_volumes_external_unique').on(table.provider, table.externalId),
