@@ -1,5 +1,5 @@
 import type { ProjectReminder } from '@kortix/sdk';
-import { expandFires, isFrequent, type ReminderFire } from './reminder-schedule';
+import { expandFires, fireStats, isFrequent, type ReminderFire } from './reminder-schedule';
 import type { RemindersRange } from './use-reminders-url-state';
 
 /**
@@ -20,7 +20,9 @@ export const startOfDay = (at: number | Date) => {
 };
 
 export const isSameDay = (a: Date, b: Date) =>
-  a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  a.getFullYear() === b.getFullYear() &&
+  a.getMonth() === b.getMonth() &&
+  a.getDate() === b.getDate();
 
 /** Monday 0 … Sunday 6. */
 export const weekdayIndex = (date: Date) => (date.getDay() + 6) % 7;
@@ -43,44 +45,71 @@ export function parseDateParam(value: string | null, now: number): Date {
   return startOfDay(now);
 }
 
+/** Days between two local dates (DST-safe: rounds the hour a clock change adds). */
+export const daysBetween = (from: Date, to: Date) =>
+  Math.round((startOfDay(to).getTime() - startOfDay(from).getTime()) / 86_400_000);
+
 /**
- * The days on screen: a Monday-first week, or a month as whole Monday-first
- * weeks (5 or 6 rows; 4 only for a February that starts on a Monday).
+ * Days rendered either side of the origin: 12 weeks (Month) or 28 days (Week).
+ * Every rendered day costs mount time, so the window is a few screens each way
+ * and moves with the scroll instead of covering a year.
  */
-export function rangeDays(anchor: Date, range: RemindersRange): Date[] {
-  if (range === 'week') {
-    const monday = startOfWeek(anchor);
-    return Array.from({ length: 7 }, (_, i) => addDays(monday, i));
-  }
-  const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
-  const last = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0);
-  const start = startOfWeek(first);
-  const weeks = Math.ceil((weekdayIndex(first) + last.getDate()) / 7);
-  return Array.from({ length: weeks * 7 }, (_, i) => addDays(start, i));
+const WINDOW: Record<RemindersRange, number> = { month: 12 * 7, week: 28 };
+/** Once the scroll settles this close to an edge, in days, the window re-centres. */
+const EDGE: Record<RemindersRange, number> = { month: 5 * 7, week: 12 };
+
+/** The row (Month: a week, from its Monday) or column (Week: a day) at the top-left for `date`. */
+export const topOf = (date: Date, range: RemindersRange) =>
+  range === 'month' ? startOfWeek(date) : startOfDay(date);
+
+/**
+ * The scrollable window around `origin`: Monday-first weeks for Month
+ * (25 rows), consecutive days for Week (63 columns, so the last 7 fit).
+ */
+export function windowDays(origin: Date, range: RemindersRange): Date[] {
+  const start = addDays(topOf(origin, range), -WINDOW[range]);
+  const length = range === 'month' ? 2 * WINDOW.month + 7 : 2 * WINDOW.week + 7;
+  return Array.from({ length }, (_, i) => addDays(start, i));
 }
 
-/** The anchor one week or one month on (`step` 1) or back (-1). A month lands on its 1st. */
-export function shiftAnchor(anchor: Date, range: RemindersRange, step: 1 | -1): Date {
-  return range === 'week'
-    ? addDays(anchor, step * 7)
-    : new Date(anchor.getFullYear(), anchor.getMonth() + step, 1);
+/** True when `top` is near or past the edge of the window around `origin`: re-centre on it. */
+export const nearEdge = (top: Date, origin: Date, range: RemindersRange) =>
+  Math.abs(daysBetween(topOf(origin, range), topOf(top, range))) > WINDOW[range] - EDGE[range];
+
+/** The month a Monday-first week belongs to: the month of its Thursday (ISO 8601). */
+export function focusMonth(date: Date): Date {
+  const thursday = addDays(startOfWeek(date), 3);
+  return new Date(thursday.getFullYear(), thursday.getMonth(), 1);
 }
 
-/** "5 – 11 October 2026" (week, locale order) or "October 2026" (month). */
+const formatters = new Map<string, Intl.DateTimeFormat>();
+
+/**
+ * A cached `Intl.DateTimeFormat`. `toLocaleDateString` builds a new formatter
+ * on every call, about 50 times the cost of reusing one, and a calendar
+ * formats hundreds of labels per render.
+ */
+export function dateFormat(locale: string, options: Intl.DateTimeFormatOptions) {
+  const key = `${locale}|${JSON.stringify(options)}`;
+  let format = formatters.get(key);
+  if (!format) formatters.set(key, (format = new Intl.DateTimeFormat(locale, options)));
+  return format;
+}
+
+/** "October 2026" (Month: the top week's month) or "8 – 14 October 2026" (Week: 7 days from the anchor). */
 export function rangeLabel(anchor: Date, range: RemindersRange, locale: string): string {
   if (range === 'month') {
-    return new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric' }).format(anchor);
+    return dateFormat(locale, { month: 'long', year: 'numeric' }).format(focusMonth(anchor));
   }
-  const monday = startOfWeek(anchor);
-  return new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long', year: 'numeric' }).formatRange(
-    monday,
-    addDays(monday, 6),
+  return dateFormat(locale, { day: 'numeric', month: 'long', year: 'numeric' }).formatRange(
+    anchor,
+    addDays(anchor, 6),
   );
 }
 
 /** "14:00": the calendar is a 24-hour grid, so its times are 24-hour in every locale. */
 export const clockTime = (at: number | Date, locale: string) =>
-  new Date(at).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  dateFormat(locale, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(at);
 
 /** "in 30 min", "in 3 hr", "in 2 days", "5 min ago". */
 export function relativeFire(at: number, now: number, locale: string): string {
@@ -96,14 +125,25 @@ export const minutesOfDay = (at: number) => {
   return date.getHours() * 60 + date.getMinutes();
 };
 
-export type ChipLayout = { fire: ReminderFire; top: number; lane: number; lanes: number };
+export type ChipLayout = {
+  fire: ReminderFire;
+  top: number;
+  lane: number;
+  lanes: number;
+  span: number;
+};
 
 /**
  * Side-by-side lanes for chips that would overlap in one day column. A chip
  * covers `span` minutes from its fire; chips that overlap, directly or through
- * a chain, share a cluster and split its width evenly.
+ * a chain, share a cluster and split its width evenly. A chip alone in its
+ * lane with `tall` free minutes below it is drawn `tall` (two lines).
  */
-export function layoutChips(fires: readonly ReminderFire[], span: number): ChipLayout[] {
+export function layoutChips(
+  fires: readonly ReminderFire[],
+  span: number,
+  tall = span,
+): ChipLayout[] {
   const out: ChipLayout[] = [];
   let cluster: ChipLayout[] = [];
   let laneEnds: number[] = [];
@@ -118,21 +158,27 @@ export function layoutChips(fires: readonly ReminderFire[], span: number): ChipL
     let lane = laneEnds.findIndex((end) => end <= top);
     if (lane === -1) lane = laneEnds.push(0) - 1;
     laneEnds[lane] = top + span;
-    const chip = { fire, top, lane, lanes: 1 };
+    const chip = { fire, top, lane, lanes: 1, span };
     cluster.push(chip);
     out.push(chip);
   }
   close();
+  out.forEach((chip, i) => {
+    const next = out[i + 1];
+    const room = !next || next.top - chip.top >= tall;
+    if (chip.lanes === 1 && room && chip.top + tall <= DAY_MINUTES) chip.span = tall;
+  });
   return out;
 }
 
-export type DayGroup = { reminder: ProjectReminder; first: number; count: number };
+/** A frequent reminder's day: its first upcoming (else first) fire, and how many. */
+export type DayGroup = { reminder: ProjectReminder; fire: ReminderFire; count: number };
 
 export type CalendarDay = {
   date: Date;
   /** One chip per fire: every fire of a reminder that is not frequent. */
   chips: ReminderFire[];
-  /** All of the day's fires, one entry per reminder, by first fire. */
+  /** Frequent reminders with a fire this day, one entry each: counted, never chipped. */
   groups: DayGroup[];
   /** Every fire this day, frequent reminders included. */
   total: number;
@@ -143,38 +189,74 @@ export type CalendarModel = {
   /** Frequent reminders with a fire on screen, and their first upcoming (else first) fire. */
   frequent: { reminder: ProjectReminder; fire: ReminderFire }[];
   total: number;
+  /** The clock the days were built with. */
+  now: number;
 };
+
+function buildDay(
+  date: Date,
+  rare: readonly ProjectReminder[],
+  often: readonly ProjectReminder[],
+  now: number,
+): CalendarDay {
+  const from = date.getTime();
+  const to = addDays(date, 1).getTime();
+  const chips = expandFires(rare, from, to, now);
+  const groups: DayGroup[] = [];
+  let total = chips.length;
+  for (const reminder of often) {
+    const { count, fire } = fireStats(reminder, from, to, now);
+    if (!fire) continue;
+    groups.push({ reminder, fire, count });
+    total += count;
+  }
+  return { date, chips, groups, total };
+}
 
 /**
  * Fires per day for the days on screen. Expanded one day at a time:
  * `expandFires` caps each reminder at 2000 fires per call, and a 5-minute
- * reminder makes 288 a day. Frequent reminders are counted, never chipped.
+ * reminder makes 288 a day. Frequent reminders are counted, never expanded.
+ *
+ * `previous` is the last model for the same reminders. A day that was wholly
+ * past at its clock, or is wholly future at this one, cannot have changed, so
+ * its object is reused: the memoized rows and columns skip the clock tick.
  */
 export function calendarModel(
   reminders: readonly ProjectReminder[],
   days: readonly Date[],
   now: number,
+  previous?: CalendarModel,
 ): CalendarModel {
+  const rare = reminders.filter((reminder) => !isFrequent(reminder));
+  const often = reminders.filter(isFrequent);
+  const reusable = new Map<number, CalendarDay>();
+  if (previous && previous.now <= now) {
+    for (const day of previous.days) {
+      const end = addDays(day.date, 1).getTime();
+      if (end <= previous.now || day.date.getTime() > now) reusable.set(day.date.getTime(), day);
+    }
+  }
   const frequent = new Map<string, { reminder: ProjectReminder; fire: ReminderFire }>();
   let total = 0;
-  const out = days.map((date): CalendarDay => {
-    const fires = expandFires(reminders, date.getTime(), addDays(date, 1).getTime(), now);
-    const groups = new Map<string, DayGroup>();
-    const chips: ReminderFire[] = [];
-    for (const fire of fires) {
-      const { reminder } = fire;
-      const group = groups.get(reminder.id) ?? { reminder, first: fire.at, count: 0 };
-      group.count++;
-      groups.set(reminder.id, group);
-      if (!isFrequent(reminder)) {
-        chips.push(fire);
-        continue;
-      }
+  const out = days.map((date) => {
+    const day = reusable.get(date.getTime()) ?? buildDay(date, rare, often, now);
+    for (const { reminder, fire } of day.groups) {
       const seen = frequent.get(reminder.id);
       if (!seen || (seen.fire.past && !fire.past)) frequent.set(reminder.id, { reminder, fire });
     }
-    total += fires.length;
-    return { date, chips, groups: [...groups.values()], total: fires.length };
+    total += day.total;
+    return day;
   });
-  return { days: out, frequent: [...frequent.values()], total };
+  return { days: out, frequent: [...frequent.values()], total, now };
+}
+
+/** A Month cell line: one fire, or a frequent reminder's day as one line with its count. */
+export type MonthEntry = { fire: ReminderFire; count: number | null };
+
+/** A day's Month lines by time: every fire of a non-frequent reminder, one line per frequent one. */
+export function monthEntries(day: CalendarDay): MonthEntry[] {
+  const out: MonthEntry[] = day.chips.map((fire) => ({ fire, count: null }));
+  for (const group of day.groups) out.push({ fire: group.fire, count: group.count });
+  return out.sort((a, b) => a.fire.at - b.fire.at);
 }

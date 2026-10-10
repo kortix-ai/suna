@@ -1,6 +1,6 @@
-import { describe, expect, test } from 'bun:test';
 import type { ProjectReminder } from '@kortix/sdk';
-import { expandFires, expandSteps, firesPerDay, isFrequent } from './reminder-schedule';
+import { describe, expect, test } from 'bun:test';
+import { expandFires, expandSteps, fireStats, firesPerDay, isFrequent } from './reminder-schedule';
 
 const HOUR = 3_600_000;
 const NOW = Date.parse('2026-09-29T10:00:00.000Z');
@@ -148,6 +148,49 @@ describe('expandFires', () => {
     // Bounded work: walking from now back to the window is ~130k steps.
     // From the window's end it is the 60 fires plus a boundary step or two.
     expect(expandSteps).toBeLessThanOrEqual(62);
+  });
+});
+
+describe('fireStats', () => {
+  // A seeded generator, so a failure reproduces.
+  let seed = 7;
+  const rand = (n: number) => {
+    // mulberry32
+    seed = (seed + 0x6d2b79f5) | 0;
+    let x = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    x = (x + Math.imul(x ^ (x >>> 7), 61 | x)) ^ x;
+    return ((x ^ (x >>> 14)) >>> 0) % n;
+  };
+
+  test('matches expandFires: same count, first upcoming else first fire', () => {
+    const DAY = 24 * HOUR;
+    let checked = 0;
+    for (let run = 0; run < 400; run++) {
+      const every = [null, 0, 300, 1800, 3600, 6 * 3600, 86_400][rand(7)]!;
+      const next = NOW + (rand(96) - 24) * 15 * 60_000;
+      const r = reminder({
+        state: (['active', 'active', 'paused', 'done'] as const)[rand(4)],
+        every_seconds: every,
+        next_fire_at: rand(8) === 0 ? null : iso(next),
+        // Sometimes on the grid, sometimes seconds after it, sometimes missing.
+        last_fired_at:
+          rand(3) === 0
+            ? null
+            : iso(next - (every || 3600) * 1000 * (1 + rand(3)) + [0, 7_000][rand(2)]!),
+        created_at: iso(NOW - (1 + rand(5)) * DAY),
+      });
+      const from = NOW + (rand(5) - 3) * DAY;
+      const to = from + DAY;
+      const fires = expandFires([r], from, to, NOW);
+      const stats = fireStats(r, from, to, NOW);
+      const upcoming = fires.find((f) => !f.past);
+      expect(new Set(fires.map((f) => f.at)).size).toBe(fires.length);
+      expect(stats.count).toBe(fires.length);
+      expect(stats.fire).toEqual(upcoming ?? fires[0] ?? null);
+      checked += fires.length;
+    }
+    // Not vacuous: thousands of fires compared, across every branch.
+    expect(checked).toBeGreaterThan(2000);
   });
 });
 

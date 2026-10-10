@@ -6,10 +6,12 @@ import Hint from '@/components/ui/hint';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
+import { TableCell, TableRow } from '@/components/ui/table';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import type { ProjectReminder } from '@kortix/sdk';
 import { AlarmIcon, PauseIcon, PlayIcon, TrashIcon } from '@phosphor-icons/react';
+import { useRouter } from 'next/navigation';
 import { memo } from 'react';
 import { formatFireTime, reminderTitle, scheduleLabel } from './reminder-format';
 
@@ -31,11 +33,14 @@ export type RowPending = 'toggle' | 'remove' | null;
  * must keep it while its spinner shows.
  */
 const LOCKED = 'aria-disabled:cursor-default aria-disabled:opacity-50';
-const ROW = 'relative flex items-center gap-3 px-4 py-2.5';
-const TIME_COLUMN = 'w-44 shrink-0 truncate whitespace-nowrap text-right text-xs tabular-nums';
-const ACTIONS_COLUMN = 'relative z-10 flex w-16 shrink-0 items-center justify-end gap-1';
+const ACTIONS = 'flex items-center justify-end gap-1';
 
 /**
+ * One reminder as a table row, the Triggers table's shape: a leading status
+ * tile and the title, then Schedule, Session and When cells that drop out as
+ * the viewport narrows. The phone layout keeps schedule and session under the
+ * title.
+ *
  * Memoized: a long list re-renders only the rows whose reminder, pending
  * state or clock reading changed. The handlers take the reminder, so the list
  * passes the same two callbacks to every row.
@@ -59,8 +64,11 @@ export const ReminderRow = memo(function ReminderRow({
 }) {
   const t = useTranslations('reminders');
   const locale = useLocale();
+  const router = useRouter();
   const colors = tone(reminder);
   const schedule = scheduleLabel(reminder, t);
+  const session = reminder.session_name ?? t('untitledSession');
+  const href = `/projects/${projectId}/sessions/${reminder.session_id}`;
   const when =
     reminder.state === 'active'
       ? reminder.next_fire_at
@@ -73,46 +81,56 @@ export const ReminderRow = memo(function ReminderRow({
           : null;
   const toggleLabel = reminder.state === 'active' ? t('pause') : t('resume');
 
-  // The whole row opens the reminder's session: the title link stretches over
-  // the row (`after:inset-0`), and the actions sit above it (`relative z-10`)
-  // so they keep their own click.
+  // The row opens the reminder's session. The title is the real link, so the
+  // row is reachable by keyboard; the actions stop the row's click.
   return (
-    <li
+    <TableRow
       data-reminder-id={reminder.id}
       aria-busy={pending ? true : undefined}
-      className={cn(
-        ROW,
-        'hover:bg-muted/50 has-[a:focus-visible]:ring-ring/50 transition-colors has-[a:focus-visible]:ring-2',
-        pending && 'opacity-60',
-      )}
+      className={cn('cursor-pointer', pending && 'opacity-60')}
+      onClick={() => router.push(href)}
     >
-      <span
-        className={cn('flex size-9 shrink-0 items-center justify-center rounded-md', colors.tile)}
-      >
-        <AlarmIcon weight="fill" className={cn('size-5', colors.icon)} />
-      </span>
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <HoverPrefetchLink
-          href={`/projects/${projectId}/sessions/${reminder.session_id}`}
-          className="text-foreground truncate text-sm font-medium outline-none after:absolute after:inset-0"
-          title={reminder.prompt}
-        >
-          {reminderTitle(reminder)}
-        </HoverPrefetchLink>
-        <InlineMeta>
-          <span className="shrink-0">{schedule}</span>
-          <span className="truncate">{reminder.session_name ?? t('untitledSession')}</span>
-        </InlineMeta>
-        {reminder.last_error ? (
-          <p className="text-kortix-red line-clamp-2 text-xs" title={reminder.last_error}>
-            {reminder.last_error}
-          </p>
-        ) : null}
-      </div>
-      <span
+      <TableCell className="max-w-[20rem] align-middle">
+        <div className="flex min-w-0 items-center gap-3">
+          <span
+            className={cn(
+              'flex size-8 shrink-0 items-center justify-center rounded-md',
+              colors.tile,
+            )}
+          >
+            <AlarmIcon weight="fill" className={cn('size-4', colors.icon)} />
+          </span>
+          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <HoverPrefetchLink
+              href={href}
+              onClick={(e) => e.stopPropagation()}
+              className="text-foreground truncate text-sm font-medium outline-none focus-visible:underline"
+              title={reminder.prompt}
+            >
+              {reminderTitle(reminder)}
+            </HoverPrefetchLink>
+            <InlineMeta className="sm:hidden">
+              <span className="shrink-0">{schedule}</span>
+              <span className="truncate">{session}</span>
+            </InlineMeta>
+            {reminder.last_error ? (
+              <p className="text-kortix-red line-clamp-2 text-xs" title={reminder.last_error}>
+                {reminder.last_error}
+              </p>
+            ) : null}
+          </div>
+        </div>
+      </TableCell>
+      <TableCell className="text-muted-foreground hidden align-middle text-sm whitespace-nowrap sm:table-cell">
+        {schedule}
+      </TableCell>
+      <TableCell className="text-muted-foreground hidden max-w-[14rem] truncate align-middle text-sm lg:table-cell">
+        {session}
+      </TableCell>
+      <TableCell
         title={when ?? undefined}
         className={cn(
-          TIME_COLUMN,
+          'hidden align-middle text-sm whitespace-nowrap tabular-nums md:table-cell',
           reminder.last_error
             ? 'text-kortix-red'
             : reminder.state === 'active'
@@ -121,62 +139,71 @@ export const ReminderRow = memo(function ReminderRow({
         )}
       >
         {when}
-      </span>
-      <div className={ACTIONS_COLUMN}>
-        {reminder.state !== 'done' ? (
-          <Hint label={toggleLabel}>
+      </TableCell>
+      <TableCell className="align-middle" onClick={(e) => e.stopPropagation()}>
+        <div className={ACTIONS}>
+          {reminder.state !== 'done' ? (
+            <Hint label={toggleLabel}>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={toggleLabel}
+                aria-disabled={disabled || undefined}
+                className={pending ? undefined : LOCKED}
+                onClick={disabled ? undefined : () => onToggle(reminder)}
+              >
+                {pending === 'toggle' ? (
+                  <Loading className="size-4" />
+                ) : reminder.state === 'active' ? (
+                  <PauseIcon className="size-4 shrink-0" />
+                ) : (
+                  <PlayIcon className="size-4 shrink-0" />
+                )}
+              </Button>
+            </Hint>
+          ) : null}
+          <Hint label={t('remove')}>
             <Button
               variant="ghost"
               size="icon"
-              aria-label={toggleLabel}
+              aria-label={t('remove')}
               aria-disabled={disabled || undefined}
               className={pending ? undefined : LOCKED}
-              onClick={disabled ? undefined : () => onToggle(reminder)}
+              onClick={disabled ? undefined : () => onRemove(reminder)}
             >
-              {pending === 'toggle' ? (
+              {pending === 'remove' ? (
                 <Loading className="size-4" />
-              ) : reminder.state === 'active' ? (
-                <PauseIcon className="size-4 shrink-0" />
               ) : (
-                <PlayIcon className="size-4 shrink-0" />
+                <TrashIcon className="size-4 shrink-0" />
               )}
             </Button>
           </Hint>
-        ) : null}
-        <Hint label={t('remove')}>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={t('remove')}
-            aria-disabled={disabled || undefined}
-            className={pending ? undefined : LOCKED}
-            onClick={disabled ? undefined : () => onRemove(reminder)}
-          >
-            {pending === 'remove' ? (
-              <Loading className="size-4" />
-            ) : (
-              <TrashIcon className="size-4 shrink-0" />
-            )}
-          </Button>
-        </Hint>
-      </div>
-    </li>
+        </div>
+      </TableCell>
+    </TableRow>
   );
 });
 
-/** A loading row with the same geometry as `ReminderRow`. */
+/** A loading row with the same cells as `ReminderRow`. */
 export function ReminderRowSkeleton() {
   return (
-    <li className={ROW}>
-      <Skeleton className="size-9 shrink-0 py-0" />
-      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-        <Skeleton className="h-3.5 w-1/2 py-0" />
-        <Skeleton className="h-3 w-1/3 py-0" />
-      </div>
-      <span className={TIME_COLUMN}>
-        <Skeleton className="ml-auto h-3 w-16 py-0" />
-      </span>
-      <span className={ACTIONS_COLUMN} />
-    </li>
+    <TableRow className="hover:bg-transparent">
+      <TableCell>
+        <div className="flex items-center gap-3">
+          <Skeleton className="size-8 shrink-0 py-0" />
+          <Skeleton className="h-3.5 w-40 py-0" />
+        </div>
+      </TableCell>
+      <TableCell className="hidden sm:table-cell">
+        <Skeleton className="h-3 w-16 py-0" />
+      </TableCell>
+      <TableCell className="hidden lg:table-cell">
+        <Skeleton className="h-3 w-24 py-0" />
+      </TableCell>
+      <TableCell className="hidden md:table-cell">
+        <Skeleton className="h-3 w-20 py-0" />
+      </TableCell>
+      <TableCell />
+    </TableRow>
   );
 }

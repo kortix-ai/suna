@@ -1,6 +1,7 @@
 'use client';
 
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Table, TableBody, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { useTranslations } from '@/i18n/use-translations';
 import type { ProjectReminder, SessionReminderState } from '@kortix/sdk';
@@ -91,7 +92,7 @@ export function useReminderActions(query: RemindersQuery) {
   return { setEnabled, toggle, setRemoving, busy, pendingAction, dialog };
 }
 
-/** The left column: one tab's rows, its loading and empty states, and the filter footer. */
+/** The List view: one tab's reminders as a table in a centred column, with its loading and empty states and the filter footer. */
 export function ReminderList({
   projectId,
   query,
@@ -111,32 +112,45 @@ export function ReminderList({
   const actions = useReminderActions(query);
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-7 flex-col overflow-y-auto">
-      {query.isLoading ? (
-        <ul className="divide-y" aria-hidden>
-          {[0, 1, 2, 3].map((key) => (
-            <ReminderRowSkeleton key={key} />
-          ))}
-        </ul>
-      ) : rows.length === 0 ? (
-        <p className="text-muted-foreground px-4 py-10 text-center text-sm">{t(EMPTY_TAB[tab])}</p>
-      ) : (
-        <ul className="divide-y" data-testid="reminder-list">
-          {rows.map((reminder) => (
-            <ReminderRow
-              key={reminder.id}
-              reminder={reminder}
-              projectId={projectId}
-              now={now}
-              pending={actions.pendingAction(reminder)}
-              disabled={actions.busy}
-              onToggle={actions.toggle}
-              onRemove={actions.setRemoving}
-            />
-          ))}
-        </ul>
-      )}
-      {footer}
+    <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-4 py-6">
+        {!query.isLoading && rows.length === 0 ? (
+          <p className="text-muted-foreground px-4 py-10 text-center text-sm">
+            {t(EMPTY_TAB[tab])}
+          </p>
+        ) : (
+          <Table data-testid="reminder-list">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead>{t('columnReminder')}</TableHead>
+                <TableHead className="hidden sm:table-cell">{t('columnSchedule')}</TableHead>
+                <TableHead className="hidden lg:table-cell">{t('columnSession')}</TableHead>
+                <TableHead className="hidden md:table-cell">{t('columnWhen')}</TableHead>
+                <TableHead className="w-20">
+                  <span className="sr-only">{t('columnActions')}</span>
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody aria-busy={query.isLoading || undefined}>
+              {query.isLoading
+                ? [0, 1, 2, 3].map((key) => <ReminderRowSkeleton key={key} />)
+                : rows.map((reminder) => (
+                    <ReminderRow
+                      key={reminder.id}
+                      reminder={reminder}
+                      projectId={projectId}
+                      now={now}
+                      pending={actions.pendingAction(reminder)}
+                      disabled={actions.busy}
+                      onToggle={actions.toggle}
+                      onRemove={actions.setRemoving}
+                    />
+                  ))}
+            </TableBody>
+          </Table>
+        )}
+        {footer}
+      </div>
       {actions.dialog}
     </div>
   );

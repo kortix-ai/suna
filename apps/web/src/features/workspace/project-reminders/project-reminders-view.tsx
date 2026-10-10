@@ -6,8 +6,7 @@
  * `routes/session-reminders.ts`); this page is the place to see what will
  * fire next and to pause or remove one, since each fire is a model turn.
  *
- * The shell: header, toolbar, then the List (rows + schedule rail) or the
- * Calendar. View, range and session filter live in the URL.
+ * The shell: header, toolbar, then the List (a table) or the Calendar. View, range and session filter live in the URL.
  */
 
 import { Button } from '@/components/ui/button';
@@ -21,7 +20,8 @@ import type { SessionReminderState } from '@kortix/sdk';
 import { useFeatureFlag, useProjectReminders } from '@kortix/sdk/react';
 import { AlarmIcon, ArrowUpRightIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { parseDateParam } from './reminder-calendar-model';
 import { ReminderCalendarNav } from './reminder-calendar-nav';
 import { ReminderCalendarView } from './reminder-calendar-view';
 import { ReminderList } from './reminder-list';
@@ -33,7 +33,7 @@ import {
   RemindersToolbar,
   ReminderViewSwitch,
 } from './reminders-toolbar';
-import { ScheduleRail, ScheduleRailSkeleton } from './schedule-rail';
+import { CalendarStoreContext, createCalendarStore } from './use-calendar-scroll';
 import { useNow, useRefetchAfterFire } from './use-refetch-after-fire';
 import { useRemindersUrlState } from './use-reminders-url-state';
 
@@ -90,6 +90,9 @@ export function ProjectRemindersView({ projectId }: { projectId: string }) {
   useRefetchAfterFire(reminders.data?.reminders, reminders.refetch);
   const now = useNow();
   const [tab, setTab] = useState<SessionReminderState>('active');
+  // The calendar position: read from `?date=` once, written back as the grid settles.
+  const [calendar] = useState(() => createCalendarStore(parseDateParam(url.date, now), url.set));
+  useEffect(() => calendar.dispose, [calendar]);
 
   const list = reminders.data?.reminders;
   const all = useMemo(() => list ?? [], [list]);
@@ -149,45 +152,40 @@ export function ProjectRemindersView({ projectId }: { projectId: string }) {
             now={now}
           />
         ) : (
-          <div className="flex min-h-0 flex-1">
-            <ReminderList
-              projectId={projectId}
-              query={reminders}
-              rows={rows}
-              tab={tab}
-              now={now}
-              footer={
-                url.session && loaded ? (
-                  <p className="text-muted-foreground flex items-center justify-center gap-1 border-t px-4 py-3 text-xs">
-                    {t('filterFooter', { count: scoped.length, total: all.length })}
-                    <span aria-hidden>·</span>
-                    <Button
-                      variant="link"
-                      size="sm"
-                      className="h-auto p-0 text-xs"
-                      onClick={() => url.set({ session: null })}
-                    >
-                      {t('clearFilter')}
-                    </Button>
-                  </p>
-                ) : null
-              }
-            />
-            {reminders.isLoading ? (
-              <ScheduleRailSkeleton />
-            ) : (
-              <ScheduleRail reminders={scoped} now={now} />
-            )}
-          </div>
+          <ReminderList
+            projectId={projectId}
+            query={reminders}
+            rows={rows}
+            tab={tab}
+            now={now}
+            footer={
+              url.session && loaded ? (
+                <p className="text-muted-foreground flex items-center justify-center gap-1 text-xs">
+                  {t('filterFooter', { count: scoped.length, total: all.length })}
+                  <span aria-hidden>·</span>
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="h-auto p-0 text-xs"
+                    onClick={() => url.set({ session: null })}
+                  >
+                    {t('clearFilter')}
+                  </Button>
+                </p>
+              ) : null
+            }
+          />
         )}
       </>
     );
   }
 
   return (
-    <div className="flex h-svh flex-col overflow-hidden">
-      <RemindersHeader projectId={projectId} />
-      {body}
-    </div>
+    <CalendarStoreContext.Provider value={calendar}>
+      <div className="flex h-svh flex-col overflow-hidden">
+        <RemindersHeader projectId={projectId} />
+        {body}
+      </div>
+    </CalendarStoreContext.Provider>
   );
 }

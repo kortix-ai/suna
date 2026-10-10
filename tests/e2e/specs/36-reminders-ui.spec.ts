@@ -72,7 +72,7 @@ test.describe('36 — Reminders UI', () => {
 
       await page.reload({ waitUntil: 'domcontentloaded' });
       const list = page.getByTestId('reminder-list');
-      await expect(list.locator('li')).toHaveCount(2);
+      await expect(list.locator('tr[data-reminder-id]')).toHaveCount(2);
       await expect(list).toContainText('Did the vendor reply?');
       await expect(list).toContainText('Every 1h');
       await expect(list).toContainText('Vendor follow-up');
@@ -83,22 +83,22 @@ test.describe('36 — Reminders UI', () => {
       const paused = page.waitForResponse(
         (r) => r.url().endsWith(`${base}/${first.id}`) && r.request().method() === 'PATCH',
       );
-      await page.locator(`li[data-reminder-id="${first.id}"]`).getByRole('button', { name: 'Pause' }).click();
+      await page.locator(`tr[data-reminder-id="${first.id}"]`).getByRole('button', { name: 'Pause' }).click();
       const pausedResponse = await paused;
       expect(pausedResponse.status()).toBe(200);
       expect(pausedResponse.request().postDataJSON()).toEqual({ enabled: false });
-      await expect(list.locator('li')).toHaveCount(1);
+      await expect(list.locator('tr[data-reminder-id]')).toHaveCount(1);
       await page.getByRole('tab', { name: /Paused/ }).click();
-      await expect(page.locator(`li[data-reminder-id="${first.id}"]`)).toBeVisible();
+      await expect(page.locator(`tr[data-reminder-id="${first.id}"]`)).toBeVisible();
 
       // Remove it through the confirm dialog: one DELETE, and it is gone.
       const removed = page.waitForResponse(
         (r) => r.url().endsWith(`${base}/${first.id}`) && r.request().method() === 'DELETE',
       );
-      await page.locator(`li[data-reminder-id="${first.id}"]`).getByRole('button', { name: 'Remove' }).click();
+      await page.locator(`tr[data-reminder-id="${first.id}"]`).getByRole('button', { name: 'Remove' }).click();
       await page.getByRole('alertdialog').getByRole('button', { name: 'Remove' }).click();
       expect((await removed).status()).toBe(200);
-      await expect(page.locator(`li[data-reminder-id="${first.id}"]`)).toHaveCount(0);
+      await expect(page.locator(`tr[data-reminder-id="${first.id}"]`)).toHaveCount(0);
 
       // The session: a saved reminder turn renders as a Reminder card, and the header chip counts the active one.
       await seedSessionTranscript(env, {

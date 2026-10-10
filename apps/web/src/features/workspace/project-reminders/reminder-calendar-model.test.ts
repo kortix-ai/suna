@@ -1,16 +1,19 @@
-import { describe, expect, test } from 'bun:test';
 import type { ProjectReminder } from '@kortix/sdk';
+import { describe, expect, test } from 'bun:test';
 import {
   calendarModel,
   clockTime,
   dateParam,
+  daysBetween,
+  focusMonth,
   layoutChips,
+  monthEntries,
+  nearEdge,
   parseDateParam,
-  rangeDays,
   rangeLabel,
   relativeFire,
-  shiftAnchor,
   startOfWeek,
+  windowDays,
 } from './reminder-calendar-model';
 import type { ReminderFire } from './reminder-schedule';
 
@@ -57,45 +60,54 @@ describe('anchor dates', () => {
     expect(dateParam(startOfWeek(local(2026, 10, 5)))).toBe('2026-10-05');
   });
 
-  test('week range is Mon..Sun around the anchor', () => {
-    const days = rangeDays(local(2026, 10, 7), 'week').map(dateParam);
-    expect(days).toEqual([
-      '2026-10-05',
-      '2026-10-06',
-      '2026-10-07',
-      '2026-10-08',
-      '2026-10-09',
-      '2026-10-10',
-      '2026-10-11',
-    ]);
+  test('Week window: 28 days either side of the anchor, then 7 more', () => {
+    const days = windowDays(local(2026, 10, 7, 15), 'week');
+    expect(days).toHaveLength(63);
+    expect(dateParam(days[0]!)).toBe('2026-09-09');
+    expect(dateParam(days[28]!)).toBe('2026-10-07');
+    expect(dateParam(days[62]!)).toBe('2026-11-10');
   });
 
-  test('month range is whole Monday-first weeks: 5 or 6 rows', () => {
-    // October 2026 starts on a Thursday: 3 + 31 = 34 cells → 5 weeks.
-    const october = rangeDays(local(2026, 10, 20), 'month');
-    expect(october).toHaveLength(35);
-    expect(dateParam(october[0]!)).toBe('2026-09-28');
-    expect(dateParam(october[34]!)).toBe('2026-11-01');
-    // August 2026 starts on a Saturday: 5 + 31 = 36 cells → 6 weeks.
-    const august = rangeDays(local(2026, 8, 1), 'month');
-    expect(august).toHaveLength(42);
-    expect(dateParam(august[0]!)).toBe('2026-07-27');
-    expect(dateParam(august[41]!)).toBe('2026-09-06');
+  test('Month window: 12 Monday-first weeks either side of the anchor week', () => {
+    const days = windowDays(local(2026, 10, 7), 'month');
+    expect(days).toHaveLength(25 * 7);
+    expect(dateParam(days[0]!)).toBe('2026-07-13');
+    expect(dateParam(days[12 * 7]!)).toBe('2026-10-05');
+    expect(days.filter((_, i) => i % 7 === 0).every((d) => d.getDay() === 1)).toBe(true);
   });
 
-  test('prev/next move a week, or a month to its 1st (no 31st overflow)', () => {
-    expect(dateParam(shiftAnchor(local(2026, 10, 7), 'week', 1))).toBe('2026-10-14');
-    expect(dateParam(shiftAnchor(local(2026, 10, 7), 'week', -1))).toBe('2026-09-30');
-    expect(dateParam(shiftAnchor(local(2026, 1, 31), 'month', 1))).toBe('2026-02-01');
-    expect(dateParam(shiftAnchor(local(2026, 1, 31), 'month', -1))).toBe('2025-12-01');
+  test('daysBetween counts calendar days, across a DST change too', () => {
+    expect(daysBetween(local(2026, 10, 7, 23), local(2026, 10, 8, 1))).toBe(1);
+    expect(daysBetween(local(2026, 3, 20), local(2026, 4, 10))).toBe(21);
+    expect(daysBetween(local(2026, 11, 10), local(2026, 10, 20))).toBe(-21);
+  });
+
+  test('nearEdge: re-centre within 12 days (Week) or 5 weeks (Month) of the window edge', () => {
+    const origin = local(2026, 10, 7);
+    expect(nearEdge(local(2026, 10, 23), origin, 'week')).toBe(false);
+    expect(nearEdge(local(2026, 10, 24), origin, 'week')).toBe(true);
+    expect(nearEdge(local(2026, 9, 20), origin, 'week')).toBe(true);
+    // 7 weeks on is inside; 8 weeks on is within 5 of the 12-week edge.
+    expect(nearEdge(local(2026, 11, 23), origin, 'month')).toBe(false);
+    expect(nearEdge(local(2026, 11, 30), origin, 'month')).toBe(true);
+  });
+
+  test('a week belongs to the month of its Thursday', () => {
+    // Mon 28 Sep – Sun 4 Oct 2026: Thursday 1 Oct.
+    expect(dateParam(focusMonth(local(2026, 9, 28)))).toBe('2026-10-01');
+    // Mon 27 Jul – Sun 2 Aug 2026: Thursday 30 Jul.
+    expect(dateParam(focusMonth(local(2026, 8, 2)))).toBe('2026-07-01');
   });
 });
 
 describe('labels', () => {
   test('range label via Intl in the locale', () => {
-    expect(rangeLabel(local(2026, 10, 7), 'week', 'en-GB')).toBe('5 – 11 October 2026');
+    // Week: 7 days from the first visible day, which need not be a Monday.
+    expect(rangeLabel(local(2026, 10, 7), 'week', 'en-GB')).toBe('7 – 13 October 2026');
     expect(rangeLabel(local(2026, 10, 7), 'month', 'en-GB')).toBe('October 2026');
     expect(rangeLabel(local(2026, 10, 7), 'month', 'de')).toBe('Oktober 2026');
+    // Month: the top week's month, not the Monday's.
+    expect(rangeLabel(local(2026, 9, 28), 'month', 'en-GB')).toBe('October 2026');
   });
 
   test('clock time is 24-hour; relative time scales minute → hour → day', () => {
@@ -133,10 +145,15 @@ describe('layoutChips', () => {
       [660, 0, 1],
     ]);
   });
+
+  test('a lone chip with free room below is drawn tall; a crowded one stays short', () => {
+    const chips = layoutChips([fire(9, 0), fire(9, 45), fire(14, 0), fire(23, 30)], 30, 60);
+    expect(chips.map((c) => c.span)).toEqual([30, 60, 60, 30]);
+  });
 });
 
 describe('calendarModel', () => {
-  const week = rangeDays(local(2026, 10, 7), 'week');
+  const week = Array.from({ length: 7 }, (_, i) => local(2026, 10, 5 + i));
 
   test('a one-shot reminder is one chip on its day', () => {
     const at = local(2026, 10, 8, 9);
@@ -160,7 +177,11 @@ describe('calendarModel', () => {
     expect(model.days.every((d) => d.chips.length === 0)).toBe(true);
     // Mon/Tue full past days, then every later day full: 288 a day.
     expect(model.days.map((d) => d.total)).toEqual([288, 288, 288, 288, 288, 288, 288]);
-    expect(model.days[2]!.groups).toEqual([{ reminder: r, first: local(2026, 10, 7).getTime(), count: 288 }]);
+    // A day's group keeps its first upcoming fire: 13:35 today, not 00:00.
+    expect(model.days[2]!.groups.map((g) => [g.fire.at, g.count])).toEqual([
+      [local(2026, 10, 7, 13, 35).getTime(), 288],
+    ]);
+    expect(model.days[1]!.groups[0]!.fire.at).toBe(local(2026, 10, 6).getTime());
     expect(model.frequent).toHaveLength(1);
     // The lane's fire is the first upcoming one, not Monday 00:00.
     expect(model.frequent[0]!.fire.at).toBe(local(2026, 10, 7, 13, 35).getTime());
@@ -172,7 +193,7 @@ describe('calendarModel', () => {
       next_fire_at: local(2026, 10, 7, 13, 35).toISOString(),
       created_at: local(2026, 9, 1).toISOString(),
     });
-    const month = rangeDays(local(2026, 10, 7), 'month');
+    const month = Array.from({ length: 35 }, (_, i) => local(2026, 9, 28 + i));
     const model = calendarModel([r], month, NOW);
     // 288 a day, more or less on a DST-change day in the runner's TZ.
     const expected = month.reduce((sum, day) => {
@@ -181,6 +202,27 @@ describe('calendarModel', () => {
     }, 0);
     expect(model.total).toBe(expected);
     expect(model.total).toBeGreaterThan(2000);
+  });
+
+  test('a clock tick rebuilds only the days the clock can change', () => {
+    const daily = reminder({
+      every_seconds: 86_400,
+      next_fire_at: local(2026, 10, 8, 9).toISOString(),
+    });
+    const first = calendarModel([daily], week, NOW);
+    const later = calendarModel([daily], week, NOW + MIN, first);
+    // Mon and Tue were past, Thu-Sun are future: reused. Today is rebuilt.
+    expect(later.days.map((d, i) => d === first.days[i])).toEqual([
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+    ]);
+    // And the reused days hold exactly what a full rebuild would.
+    expect(later).toEqual(calendarModel([daily], week, NOW + MIN));
   });
 
   test('a daily reminder chips every day; past fires are marked past', () => {
@@ -192,6 +234,38 @@ describe('calendarModel', () => {
     });
     const model = calendarModel([r], week, NOW);
     expect(model.days.map((d) => d.chips.length)).toEqual([1, 1, 1, 1, 1, 1, 1]);
-    expect(model.days.map((d) => d.chips[0]!.past)).toEqual([true, true, true, false, false, false, false]);
+    expect(model.days.map((d) => d.chips[0]!.past)).toEqual([
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+    ]);
+  });
+});
+
+describe('monthEntries', () => {
+  test('fires and one line per frequent reminder, by time', () => {
+    const often = reminder({
+      id: 'often',
+      every_seconds: 1800,
+      next_fire_at: local(2026, 10, 8).toISOString(),
+      created_at: local(2026, 9, 1).toISOString(),
+    });
+    const daily = reminder({
+      id: 'daily',
+      every_seconds: 86_400,
+      next_fire_at: local(2026, 10, 8, 9).toISOString(),
+    });
+    const once = reminder({ id: 'once', next_fire_at: local(2026, 10, 8, 7).toISOString() });
+    const model = calendarModel([often, daily, once], [local(2026, 10, 8)], NOW);
+    const lines = monthEntries(model.days[0]!).map((e) => [e.fire.reminder.id, e.count]);
+    expect(lines).toEqual([
+      ['often', 48],
+      ['once', null],
+      ['daily', null],
+    ]);
   });
 });
