@@ -519,6 +519,7 @@ export async function runGitBuffer(
   authHost = 'github.com',
   timeoutMs: number = GIT_DEFAULT_TIMEOUT_MS,
   authHeaders?: Record<string, string>,
+  maxBufferBytes: number = 10 * 1024 * 1024,
 ): Promise<{ stdout: Buffer; stderr: string }> {
   const authEnv = auth ? gitAuthEnv(authToken, authHost, authHeaders) : {};
   try {
@@ -526,7 +527,7 @@ export async function runGitBuffer(
       cwd,
       encoding: 'buffer',
       env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...authEnv, ...(extraEnv || {}) },
-      maxBuffer: 10 * 1024 * 1024,
+      maxBuffer: maxBufferBytes,
       timeout: timeoutMs,
     }));
     const raw = result.stdout;
