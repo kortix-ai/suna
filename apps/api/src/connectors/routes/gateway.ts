@@ -102,7 +102,7 @@ const CONNECTOR_DENIAL_REASONS: ReadonlySet<string> = new Set<ConnectorDenialRea
 ]);
 
 const COMPUTER_REFUSALS = ['computer_access_pending', 'computer_access_denied', 'computer_access_off', 'computer_capability_not_approved'];
-const COMPUTER_STATES = ['computer_offline', 'computer_unpaired'];
+const COMPUTER_STATES = ['computer_offline', 'computer_unpaired', 'computer_desktop_permission_missing'];
 
 /**
  * HTTP status for a gateway `error`. Computer states the owner controls are

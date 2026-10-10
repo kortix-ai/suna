@@ -19,6 +19,7 @@ import { tunnelConnections } from '@kortix/db';
 import {
   validateFilesystemParams,
   capabilityForMethod,
+  normalizeDesktopCall,
   operationForMethod,
   TunnelErrorCode,
   TunnelRelayError,
@@ -139,7 +140,19 @@ export async function executeTunnelRpc(input: {
 
   const operation = operationForMethod(method);
   const permCheck = await checkPermission(tunnelId, capability, operation, params);
-  if (!permCheck.allowed) return notApproved;
+  if (!permCheck.allowed) {
+    // The capability IS approved; this call is outside its scope (a path, a
+    // command). Re-pairing would not change that, so say what is wrong.
+    return {
+      ok: false,
+      kind: 'error',
+      code: TunnelErrorCode.PERMISSION_DENIED,
+      httpStatus: 403,
+      message: `Not allowed on this computer: ${permCheck.reason ?? `${method} is outside the approved ${capability} scope`}.`,
+    };
+  }
+  // Every driver tool travels as `desktop.cua.call`, which every installed agent serves.
+  const wire = normalizeDesktopCall(method, params);
 
   const startTime = Date.now();
   const auditLogId = await startAuditLog({
@@ -158,9 +171,9 @@ export async function executeTunnelRpc(input: {
     result = await relayRpcToConnectedAgent({
       tunnelId,
       accountId: input.tunnelOwnerAccountId ?? accountId,
-      method,
+      method: wire.method,
       params: {
-        ...params,
+        ...wire.params,
         permissionId: permCheck.permissionId,
       },
       // In `ask` mode the machine holds a call up to ACCESS_HOLD_MS for its
@@ -239,6 +252,7 @@ export type ComputerCallOutcome =
         | 'computer_owner_left'
         | 'computer_offline'
         | 'computer_capability_not_approved'
+        | 'computer_desktop_permission_missing'
         | ComputerAccessErrorKind
         | 'error';
       message: string;
@@ -386,6 +400,14 @@ export async function executeComputerCall(input: {
   }
   if (outcome.kind === 'error' && outcome.code === TunnelErrorCode.NOT_CONNECTED) {
     return { ok: false, kind: 'computer_offline', message: outcome.message };
+  }
+  if (outcome.kind === 'error' && outcome.code === TunnelErrorCode.DESKTOP_PERMISSION_MISSING) {
+    const detail = outcome.message.replace(/^computer_desktop_permission_missing:\s*/, '');
+    return {
+      ok: false,
+      kind: 'computer_desktop_permission_missing',
+      message: `${detail} Ask the user to open the Kortix app on ${machine.name} and choose Your computer → Allow all. If they just allowed it, retry once in 30 seconds: Kortix restarts its connection to apply it.`,
+    };
   }
   const access = outcome.kind === 'error' ? computerAccessErrorKind(outcome.code, outcome.message) : null;
   if (access) return { ok: false, kind: access, message: computerAccessMessage(access, machine.name) };
