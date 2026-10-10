@@ -394,12 +394,12 @@ describe('slack CLI', () => {
         args: c.expectedArgs,
       });
     }
-    // 10 cases, and `runSlack` spawns a real `bun` process for each one. That
-    // is ~1.7s on a developer laptop and comfortably past bun's default 5000ms
-    // on a CI runner executing 584 test files with --isolate: the timeout kills
-    // the child mid-flight and the failure surfaces as `exitCode 143` (SIGTERM)
-    // rather than as anything wrong with the CLI. Budget for the spawns.
-  }, 30_000);
+    // 15 cases, and `runSlack` spawns a real `bun` process for each one. That
+    // is ~3s on a developer laptop and 29.2s on a GitHub-hosted 4-vCPU runner
+    // (Tests run 38028768393), so a 30s budget timed it out on 2 of 2 runs of
+    // the staging promotion #9512. A timeout kills the child mid-flight and
+    // surfaces as a hang, not as anything wrong with the CLI. Budget 3x.
+  }, 90_000);
 
   test('covers non-Connector commands: help, typing, turn stream, file upload/download, manifest', async () => {
     expect(String(await runSlack(['help']))).toContain('slack — Slack Web API adapter');

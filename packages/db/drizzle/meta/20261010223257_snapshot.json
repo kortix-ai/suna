@@ -1,5 +1,5 @@
 {
-  "id": "fcdd14ca-71e7-41b0-818a-4c2cf1137f2a",
+  "id": "5f4c1b9b-72d1-4a38-aee8-520c7a8ed62d",
   "prevId": "14a9a44e-a608-44e6-a76b-daa82eec7571",
   "version": "7",
   "dialect": "postgresql",
@@ -21456,12 +21456,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "rewind_message_id": {
-          "name": "rewind_message_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {

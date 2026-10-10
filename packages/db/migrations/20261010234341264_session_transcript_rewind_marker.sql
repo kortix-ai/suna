@@ -21,6 +21,4 @@ set statement_timeout = '30s';
 --   [ ] Any ALTER TYPE ... ADD VALUE needs:
 -- enum-value-checked: <how you verified every env, including any faked baseline, has this value>
 
--- project_secret_tombstones is not here: 20261010041538875 created it without
--- a snapshot, so the generator proposed it again from the stale snapshot.
 ALTER TABLE "kortix"."session_transcript_mirrors" ADD COLUMN "rewind_message_id" text;
