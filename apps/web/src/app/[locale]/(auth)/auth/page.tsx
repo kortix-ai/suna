@@ -37,6 +37,7 @@ import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
 import {
   armPkceResumeGuard,
   consumePkceResumeGuard,
+  seedBrowserPkceVerifier,
   seedPkceVerifierForResume,
   stashBrowserPkceVerifier,
 } from '@/lib/auth/pkce-resume';
@@ -336,11 +337,16 @@ function AuthCardForm({
         setSentEmail((result as any).email || target);
         setResendIn(RESEND_COOLDOWN_SECONDS);
         setStep('link');
-        // Snapshot the PKCE verifier the server action just handed this browser
-        // as a cookie. If the cookie does not survive the mailbox detour, the
-        // callback bounces the code back here and the resume effect completes
-        // the exchange from this snapshot instead of leaving the visitor on a
-        // false "expired" screen.
+        // The action's Set-Cookie does not always reach this browser (on the
+        // prod edge deployment a successful send left the cookie jar empty —
+        // KRTX-2095), so seed the cookie from the value the action returned;
+        // the same pattern signInWithPassword uses for the session tokens.
+        // Then snapshot it: if the cookie does not survive the mailbox detour,
+        // the callback bounces the code back here and the resume effect
+        // completes the exchange from this snapshot instead of leaving the
+        // visitor on a false "expired" screen.
+        const codeVerifier = (result as { codeVerifier?: string | null }).codeVerifier;
+        if (codeVerifier) seedBrowserPkceVerifier(codeVerifier);
         stashBrowserPkceVerifier();
       } else if (result && 'message' in result) {
         failWith((result as any).message as string);
