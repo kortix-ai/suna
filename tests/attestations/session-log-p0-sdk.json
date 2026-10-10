@@ -1,22 +1,29 @@
 {
-  "source_hash": "6d003a95e5708108010d450087a4c94b609c510116e509835f6bf60fcd8c751c",
+  "source_hash": "faadd871ba0e2c4c9e64e25a65eac484f1c1031c8e2d4deeab0e5f378986ffe3",
   "diff_files": [
     ".agents/skills/learnings/MEMORY.md",
     ".agents/skills/learnings/entries/2026-10-10T214526Z-keep-saved-transcript-rows-on-an-empty-runtime-read-only-a-n.md",
+    ".agents/skills/learnings/entries/2026-10-10T214735Z-guard-the-opencode-boot-root-s-claimed-pin-fallback-with-a-t.md",
+    "apps/kortix-sandbox-agent-server/src/__tests__/initial-session-claimed-pin.test.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/open-code/boot.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/open-code/initial-session.ts",
     "apps/web/content/docs/sdk/react.mdx",
     "apps/web/src/lib/seo/content-timestamps.json",
     "packages/sdk/README.md",
     "packages/sdk/src/browser/session-sync/server-transcript-mirror.test.ts",
+    "packages/sdk/src/browser/session-sync/server-transcript-mirror.ts",
     "packages/sdk/src/browser/stores/sync-store.test.ts",
-    "packages/sdk/src/browser/stores/sync-store.ts"
+    "packages/sdk/src/browser/stores/sync-store.ts",
+    "packages/sdk/src/react/use-session-sync-saved-copy.test.ts",
+    "packages/sdk/src/react/use-session-sync.ts"
   ],
-  "diff_hash": "1de529e77aa3cb79654ba27be9633b21ab9972486555a41595321794b68ae556",
-  "head": "325da70bad46e66272af7b1151b929baf8dc5ec1",
+  "diff_hash": "09553cbbd2f259f3b0a7ac390db7f97894157f00381e472a1d07340bb3a37a55",
+  "head": "5fd91060ea79614f6fa783f8105a90293309bca0",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-10T22:42:14.381Z"
+  "at": "2026-10-10T23:04:14.265Z"
 }
