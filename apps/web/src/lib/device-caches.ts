@@ -6,6 +6,7 @@ import {
   createSavedCopyStore,
   isPersistableQueryKey,
   setSavedCopyStore,
+  type KeyValueStorage,
   type PersistedQueryCache,
   type SavedCopyStore,
 } from '@kortix/sdk';
@@ -37,6 +38,60 @@ import { indexedDBKeyValueStorage } from '@kortix/sdk/internal/idb-sync-cache'; 
  * frame against an empty cache, and `resetClientState()` clears them on
  * sign-out and on a user switch.
  */
+
+// IndexedDB's first open on a page load took ~430 ms in Chromium (journey 34,
+// 2026-10-10). Opened while the app boots, it is open by sign-in, where the
+// session this page load opens on is read (`withFirstReadFromMemory`).
+if (typeof window !== 'undefined') void indexedDBKeyValueStorage()?.getItem('kortix.saved-copy:open');
+
+/**
+ * `base`, except that one prefetched key answers its first read from memory.
+ *
+ * A reload opens on the session its URL names, and IndexedDB answers only
+ * asynchronously, so that session painted skeleton rows before its saved copy
+ * (journey 34). Read at sign-in, the copy is in memory before the session view
+ * mounts, and the SDK paints it in the first task after that frame. Answered
+ * once: a later read asks IndexedDB, which another tab may have changed. A
+ * write or a removal of the key drops the copy in memory.
+ */
+function withFirstReadFromMemory(base: KeyValueStorage) {
+  let key: string | null = null;
+  let value: string | null | undefined;
+  const drop = (k: string) => {
+    if (k === key) key = null;
+  };
+  return {
+    getItem(k: string) {
+      if (k !== key) return base.getItem(k);
+      key = null;
+      return value === undefined ? base.getItem(k) : value;
+    },
+    setItem(k: string, v: string) {
+      drop(k);
+      return base.setItem(k, v);
+    },
+    removeItem(k: string) {
+      drop(k);
+      return base.removeItem(k);
+    },
+    prefetch(k: string) {
+      key = k;
+      value = undefined;
+      void Promise.resolve(base.getItem(k)).then(
+        (read) => {
+          if (key === k) value = read;
+        },
+        () => undefined,
+      );
+    },
+  };
+}
+
+/** The `projectId` and `sessionId` of a session URL (any locale prefix), or null. */
+function sessionInUrl(): { projectId: string; sessionId: string } | null {
+  const match = /\/projects\/([^/]+)\/sessions\/([^/?#]+)/.exec(window.location?.pathname ?? '');
+  return match ? { projectId: match[1], sessionId: match[2] } : null;
+}
 
 /** The project gate's key (`project-access-boundary.tsx`): a reload opens the project it last admitted. */
 const GATE_QUERY_KEY = 'project-access-boundary';
@@ -97,7 +152,12 @@ export function adoptDeviceCaches(userId: string): void {
     // No IndexedDB (a blocked or partitioned context): sessions open from the
     // server's copy, as before the device kept one.
     const indexed = indexedDBKeyValueStorage();
-    const copies = indexed ? createSavedCopyStore({ storage: indexed, userId }) : null;
+    const copyStorage = indexed ? withFirstReadFromMemory(indexed) : null;
+    const copies = copyStorage ? createSavedCopyStore({ storage: copyStorage, userId }) : null;
+    const opensOn = sessionInUrl();
+    if (copyStorage && copies && opensOn) {
+      copyStorage.prefetch(copies.keyFor(opensOn.projectId, opensOn.sessionId));
+    }
     setSavedCopyStore(copies);
     adopted = {
       userId,
