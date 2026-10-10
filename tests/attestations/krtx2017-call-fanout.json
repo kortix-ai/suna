@@ -1,0 +1,27 @@
+{
+  "source_hash": "4e4a67e445adbf37b74d0d43c47e4de083bd12497959aeebdab9a6498c843a14",
+  "diff_files": [
+    "apps/api/src/__tests__/helpers/local-git-upstream.ts",
+    "apps/api/src/__tests__/integration-call-connector-fanout.test.ts",
+    "apps/api/src/apps/kinds/convex/hosts.integration.test.ts",
+    "apps/api/src/apps/kinds/convex/provision.integration.test.ts",
+    "apps/api/src/apps/kinds/convex/routes.integration.test.ts",
+    "apps/api/src/connectors/db-deps-gateway.ts",
+    "apps/api/src/connectors/db-deps-principal.ts",
+    "apps/api/src/connectors/gateway.ts",
+    "apps/api/src/connectors/http-principal.ts",
+    "apps/api/src/connectors/share.ts",
+    "apps/api/src/projects/lib/session-token-grant-provenance.test.ts",
+    "apps/api/src/projects/lib/session-token-grant-reconcile.test.ts",
+    "apps/api/src/projects/lib/session-token-grant.ts"
+  ],
+  "diff_hash": "a22a5c4ef99a0692eda36434a5a1fce276a5342a32cc9a1ec84844a0421c0c9d",
+  "head": "801b7ef4274474a35e4496b048fccb369d1e4d5b",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-10T00:16:14.274Z"
+}
