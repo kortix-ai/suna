@@ -37,6 +37,7 @@ export const KORTIXD_SHARED_SOURCES = [
   'packages/sdk/src/core/session/wire-message-id.ts',
   // The generative-UI prompt (`@kortix/sdk/genui`) and every file it imports.
   'packages/sdk/src/genui/catalog.ts',
+  'packages/sdk/src/genui/expansion.ts',
   'packages/sdk/src/genui/fence.ts',
   'packages/sdk/src/genui/index.ts',
   'packages/sdk/src/genui/markdown.ts',
