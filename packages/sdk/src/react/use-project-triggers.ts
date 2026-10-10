@@ -5,8 +5,12 @@ import {
   createProjectTrigger,
   deleteProjectTrigger,
   fireProjectTrigger,
+  listProjectTriggerEventApps,
+  listProjectTriggerEventTypes,
   listProjectTriggers,
   updateProjectTrigger,
+  type ProjectTriggerEventApps,
+  type ProjectTriggerEventTypes,
   type ProjectTriggerListing,
 } from '../core/rest/projects-client';
 import { contract } from './query-contracts';
@@ -63,4 +67,42 @@ export function useProjectTriggers(projectId: string | null | undefined) {
   });
 
   return { ...query, create, update, remove, fire };
+}
+
+/** A connector slug, or an app with no connector. Slugs hold no `:`, so the two never share a key. */
+export type ProjectTriggerEventTarget = string | { app: string; source?: string };
+
+const targetKey = (target: ProjectTriggerEventTarget | null | undefined) =>
+  typeof target === 'object' && target ? `app:${target.source ?? 'composio'}:${target.app}` : (target ?? '');
+
+export const projectTriggerEventTypesKey = (
+  projectId: string | null | undefined,
+  target: ProjectTriggerEventTarget | null | undefined,
+) => qk.project.triggerEventTypes(projectId ?? '', targetKey(target));
+
+/** App events a connector, or an app with no connector (`{ app, source? }`), can trigger on. Idle until one is chosen. */
+export function useProjectTriggerEventTypes(
+  projectId: string | null | undefined,
+  target: ProjectTriggerEventTarget | null | undefined,
+) {
+  const chosen = typeof target === 'object' && target ? target.app : target;
+  return useQuery<ProjectTriggerEventTypes>({
+    queryKey: projectTriggerEventTypesKey(projectId, target),
+    queryFn: () => listProjectTriggerEventTypes(projectId as string, typeof target === 'object' ? (target as { app: string; source?: string }) : { connector: target as string }),
+    enabled: !!projectId && !!chosen,
+    ...contract('config'),
+  });
+}
+
+export const projectTriggerEventAppsKey = (projectId: string | null | undefined) =>
+  qk.project.triggerEventApps(projectId ?? '');
+
+/** Apps that can trigger events, with this project's connector and connection state. */
+export function useProjectTriggerEventApps(projectId: string | null | undefined) {
+  return useQuery<ProjectTriggerEventApps>({
+    queryKey: projectTriggerEventAppsKey(projectId),
+    queryFn: () => listProjectTriggerEventApps(projectId as string),
+    enabled: !!projectId,
+    ...contract('config'),
+  });
 }

@@ -79,11 +79,11 @@ outside `[A-Za-z0-9._-]` become `-`; a detached HEAD writes
 plus the legacy `tests/test-attestation.json`; commit `tests/attestations/`.
 One file per branch keeps PRs from conflicting on it; deleting a merged PR's
 file is conflict-free because no branch edits it again. Format:
-`{source_hash, diff_files, diff_hash, head, passed, lanes: {<lane>: pass|fail|skipped-no-db|skipped-sandbox-image}, at}`.
-`diff_files` is the files the PR itself changed (`git diff origin/main...HEAD`,
+`{source_hash, diff_files, diff_hash, head, passed, lanes: {<lane>: pass|fail|skipped-no-db}, at}`.
+`diff_files` is the files the PR itself changed (`git diff origin/dev...HEAD`,
 minus every attestation file) and `diff_hash` their sha256; both are recomputed from
 the verified rev, so committing the attestation does not change them. Verify
-stays green after a merge of `origin/main` that touches other files, and goes
+stays green after a merge of `origin/dev` that touches other files, and goes
 stale only when a file the PR changed is edited after the run. `source_hash`
 (the sha256 of every file the commit would contain except attestation files) is
 the full-tree fallback used on a direct main push, where there is no diverging
@@ -99,10 +99,10 @@ reads the file the rev's PR diff adds or edits under `tests/attestations/` (with
 several, the `--branch` match, else the newest `at`), else `<branch>.json` at the
 rev (`--branch`, else the checked-out branch), else the legacy file. It
 recomputes the diff: exit `0` green, `1` missing/stale/red. `core` and `packages` must be `pass`,
-every other lane must be `pass`. Two skips exist, neither a pass: `db-suites`
-`skipped-no-db` (no Docker) and `packages` `skipped-sandbox-image` (a Kortix
-sandbox image breaks those tests identically at `origin/main`; the scheduled
-clean-runner `Tests` run is the backstop). `--strict` exits `3` for either skip. No in-sandbox
+every other lane must be `pass`. One skip exists, not a pass: `db-suites`
+`skipped-no-db` (no Docker). The `packages` lane has no skip — it runs on a
+laptop, a CI runner and a Kortix factory sandbox alike. `--strict` exits `3` for
+the skip. No in-sandbox
 Postgres: the DB lanes depend on Docker in three places, so a Docker-less box
 records the skip and the merge gate holds DB PRs.
 The `.githooks/pre-push` hook enforces this on every branch push except
@@ -136,7 +136,7 @@ for a change runs in the developer's own box before the merge. CI runs on a
 schedule on `main` (`Tests` daily, `CI` and `CodeQL` weekly; a push to `main` runs none of
 them) and on release pull requests into `staging`
 and `prod`. In the rare case you want CI before a `main` merge, add a label: `test`
-runs the six lanes once (~9 min), `preview` deploys once (~7 min) with no tests. A push
+runs the lanes once (~20 min), `preview` deploys once (~7 min) with no tests. A push
 re-runs neither. Never add them by default. `tests/unit/sandbox-workflow.test.ts`
 fails when a workflow other than the label-gated `tests.yml` and
 `deploy-preview.yml` triggers on a pull request into `main`: put a new check on
@@ -168,19 +168,19 @@ The only required check in the repository is `tests-release.yml`'s
 `full suite + quality gates`, on a pull request into `prod`, and it tests
 DEPLOYED staging.
 
-## Run CI lanes natively on Blacksmith
+## Run CI lanes natively on GitHub-hosted runners
 
-Keep the test commands unchanged. `.github/workflows/tests.yml` runs six lanes
-in parallel, each on one Blacksmith runner (`CI_RUNNER_L`, 8 vCPU / 32 GB).
-Core and package lanes run `pnpm test` and `pnpm test -- --packages-only`. Four
-browser lanes run shards `1/4` through `4/4` via
+Keep the test commands unchanged. `.github/workflows/tests.yml` runs ten lanes
+in parallel, each on one free GitHub-hosted runner (`CI_RUNNER_L`, default
+`ubuntu-24.04`: 4 vCPU / 16 GB on this public repo).
+Core and package lanes run `pnpm test` and `pnpm test -- --packages-only`. Eight
+browser lanes run shards `1/8` through `8/8`, one Playwright worker each, via
 `pnpm test -- --browser-only --browser-shard=CURRENT/TOTAL` at the exact
 requested SHA.
 
 - Check out the requested SHA with `fetch-depth: 1`: the pushed `main` commit,
   or a release pull request's head.
-- Run `pnpm install --frozen-lockfile`; Blacksmith serves the pnpm store from
-  its cache transparently.
+- Run `pnpm install --frozen-lockfile`.
 - Browser lanes: `pnpm --dir tests exec playwright install --with-deps chromium`
   (cached under `PLAYWRIGHT_BROWSERS_PATH`) and
   `pnpm exec supabase start --ignore-health-check` before the root command, and

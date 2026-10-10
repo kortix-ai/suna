@@ -105,6 +105,23 @@ function loadHighlighter(): Promise<HighlighterCore | null> {
   return highlighterPromise;
 }
 
+/**
+ * Create the highlighter in idle time, ahead of the first code block.
+ *
+ * Creating it evaluates and compiles every PRELOAD_LANGS grammar in one go: a
+ * ~125 ms main-thread task (measured on /debug/stream, `tsx` the largest).
+ * Left to the first highlight, that task lands in the middle of a streaming
+ * reply — 400 ms after its first code fence closes — and freezes the paced
+ * text for a visible beat. A surface that streams replies calls this when it
+ * opens, while nothing is animating yet. Idempotent.
+ */
+export function warmHighlighter() {
+  if (highlighterPromise || typeof window === 'undefined') return;
+  const run = () => void loadHighlighter();
+  if ('requestIdleCallback' in window) window.requestIdleCallback(run, { timeout: 3000 });
+  else setTimeout(run, 1500);
+}
+
 function ensureLangLoaded(h: HighlighterCore, lang: string): Promise<void> {
   if (PLAIN_LANGS.has(lang) || loadedLangs.has(lang)) return Promise.resolve();
   const existing = langLoadPromises.get(lang);

@@ -56,16 +56,25 @@
  *
  *   • `resolveFeatureFlag` / `resolveFeatureFlags` — UNCHANGED. The platform
  *     default still applies and an explicit project override still wins.
- *   • `buildFeatureFlagCatalog` — OMITS the entry, so Settings → Feature flags
- *     does not list it and no UI presents it as a toggle.
- *   • `isFeatureFlagKey` — UNCHANGED, so `PATCH /projects/:id/features` keeps
- *     accepting the key. That is the support escape hatch, and it is the whole
- *     reason this is not `available: () => false` (which would force the flag
- *     OFF for every project — the opposite of what a hidden default means).
+ *   • `buildFeatureFlagCatalog` — OMITS the entry while it is off, so
+ *     Settings → Feature flags never offers it. While it is ON the catalog
+ *     lists it with `operator_only: true`, so people and agents
+ *     (`kortix projects features`) see it, read-only.
+ *   • Writes — `PATCH /projects/:id/features` accepts the key only from a
+ *     platform operator (403 `feature_operator_only` otherwise). The operator
+ *     route is `PUT /v1/admin/api/projects/:id/features`. That is the support
+ *     lever, and it is the whole reason this is not `available: () => false`
+ *     (which would force the flag OFF for every project — the opposite of
+ *     what a hidden default means).
  *
  * A hidden flag is a DATED state, not a parking spot: hide it in the release
  * that makes it the default, delete it in the next one. The comment on the
  * entry names the release and the spec section that ends it.
+ *
+ * The same state also serves an INTERNAL-ONLY surface (`apps`):
+ * not offered in Settings, enabled per project by a Kortix operator on
+ * request. Its 403 says "contact Kortix" instead of naming a toggle the caller
+ * cannot see (gate.ts).
  */
 import { config } from '../config';
 import { platinumUsRegion } from '../shared/platinum-region';
@@ -104,11 +113,10 @@ export interface FeatureFlagDef {
   /** Mandatory for 'ui-only': why the server does not enforce. */
   enforcementNote?: string;
   /**
-   * Omit this flag from the serialized catalog ({@link buildFeatureFlagCatalog})
-   * so no UI lists it as a toggle. Resolution and `PATCH /projects/:id/features`
-   * are untouched — see "Hidden flags" in this file's header. Set it only on a
-   * flag whose value is now the product behavior, and delete the flag in the
-   * next release.
+   * Not offered as a toggle: the catalog ({@link buildFeatureFlagCatalog})
+   * lists it only while it is on, marked `operator_only`, and only a platform
+   * operator can write it. Resolution is untouched — see "Hidden flags" in
+   * this file's header.
    */
   catalogHidden?: true;
 }
@@ -195,11 +203,14 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'apps',
     name: 'Apps',
     description:
-      'Deploy static sites, JavaScript bundles, Dockerfiles, and OCI images to stable serverless URLs. Apps answer to the same machine limits, account entitlement, and per-account quotas sessions do.',
+      'Deploy static sites, JavaScript bundles, Dockerfiles, and OCI images to stable serverless URLs, and run backends (kind `convex`: a database, server functions, realtime queries, file storage, scheduling and search in an always-on machine, where Platinum is configured). Apps answer to the same machine limits, account entitlement, and per-account quotas sessions do.',
     stability: 'stable',
     available: () => true,
     platformDefault: () => false,
     enforcement: 'routes',
+    // Internal-only (2026-10-06): not offered in Settings.
+    // Projects already on keep it; Kortix enables others on request.
+    catalogHidden: true,
   },
   {
     key: 'monitors',
@@ -296,31 +307,6 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'selectSessionHarness). A running session keeps its harness until it is restarted or resumed.',
   },
   {
-    key: 'config_releases',
-    name: 'Config Releases',
-    description:
-      "Sessions run the base branch's current config. Kortix loads the project's latest agent config from a read-only copy instead of the session's workspace checkout, so a merged agent, skill, or tool reaches every running session, on OpenCode and on pi. Off ⇒ the session reads its config from its workspace checkout, as it did before config releases.",
-    stability: 'experimental',
-    available: () => true,
-    // OFF by default until this is proven on real projects (Marko, 2026-09-24:
-    // "its off for now, as its untested"). The behaviour it gates is the
-    // intended one; the default is a rollout decision, not a design opinion.
-    // Turn it on per project in Settings, watch it, then widen. Flip this to
-    // `true` when the rollout is done.
-    platformDefault: () => false,
-    enforcement: 'routes',
-    enforcementNote:
-      'Mixed, and both halves are enforced. ROUTES: the descriptor route ' +
-      '(POST /projects/:id/sessions/:id/config-release) and the archive route ' +
-      '(GET /projects/:id/config-archives/:tree) answer 403 `feature_disabled` ' +
-      'when off — config-releases/routes.ts. BEHAVIORAL: convergeSessionConfig ' +
-      'returns `disabled` without reaching the box (session-config-convergence.ts), ' +
-      'reloadSessionConfig takes the pre-release legacy path (session-reload.ts), ' +
-      'and GET /config omits the `release` block (routes/session-config.ts). Off ⇒ ' +
-      'no release is built, no archive is stored, and no kortix.config_releases ' +
-      'row is written.',
-  },
-  {
     key: 'us_region',
     name: 'US Region',
     description:
@@ -335,6 +321,48 @@ const FLAGS: readonly FeatureFlagDef[] = [
     // resolveSessionSandboxRegion) and sent as `region` on the Platinum
     // create. Off ⇒ no region is sent and Platinum places in its home region.
     enforcement: 'behavioral',
+  },
+  {
+    key: 'event_triggers',
+    name: 'App event triggers',
+    description:
+      'Start an agent when something happens in a connected app — a new email, a pull request, a calendar event.',
+    stability: 'beta',
+    // Always offered: on a deployment with no event source configured, the
+    // triggers themselves say so (status `error` naming COMPOSIO_API_KEY).
+    available: () => true,
+    // Per-project opt-in on every environment.
+    platformDefault: () => false,
+    enforcement: 'routes',
+    enforcementNote:
+      'ROUTES: GET /triggers/event-types, GET /triggers/event-apps, and POST|PATCH /triggers ' +
+      'with `type: event` answer 403 `feature_disabled` when off (projects/routes/triggers.ts). ' +
+      'BEHAVIORAL: a `type: event` trigger in kortix.yaml is not subscribed and reads status ' +
+      '`error` (trigger-events/subscriptions.ts); turning the flag off releases every event ' +
+      'subscription of the project and turning it on reconciles them (feature-flags/toggle-effects.ts); ' +
+      'deliverEvents never fires for a project with the flag off (trigger-events/deliver.ts).',
+  },
+  {
+    key: 'notification_center',
+    name: 'Notification Center',
+    description:
+      "Tell the people a session concerns (its prompter, its creator and its followers) through a bell inbox, browser push and email, and alert on failing triggers and reminders. Off, as before: only the session creator's phone gets a session push, and an account owner's phone gets one when a trigger starts failing.",
+    stability: 'beta',
+    available: () => true,
+    // KRTX-1742 ships dark: a project opts in from Settings → Feature flags.
+    platformDefault: () => false,
+    enforcement: 'routes',
+    enforcementNote:
+      'Mixed, and both halves are enforced. ROUTES: GET/PUT ' +
+      '/projects/:id/sessions/:id/watch answer 403 `feature_disabled` ' +
+      '(routes/session-watch.ts). BEHAVIORAL: notifySessionEvent and the ' +
+      'question relay take the pre-KRTX-1742 creator-only Expo path ' +
+      '(notifications/session-push-legacy.ts), recordTriggerRunEnd pushes the ' +
+      'account owner as before, and share notices, trigger and reminder alerts, ' +
+      'prompt auto-follow, trigger follow, presence mark-read and stream-end ' +
+      'lease expiry do not run. The inbox list, unread count and digest drop ' +
+      'rows of a project with the flag off (notifications/inbox-read.ts). The ' +
+      'per-person /v1/notifications/* routes carry no project and stay ungated.',
   },
 ];
 
@@ -399,24 +427,36 @@ export interface FeatureFlagView {
   enabled: boolean;
   /** True when this project set an explicit choice (vs inheriting the default). */
   overridden: boolean;
+  /** A `catalogHidden` flag: listed only while on, writable only by a platform operator. */
+  operator_only: boolean;
 }
 
 /**
  * Build the per-project catalog the clients render. Self-contained so the UI
  * never hard-codes the flag list — add to FLAGS and it appears.
  *
- * `catalogHidden` entries are omitted: they still resolve and are still
- * writable through `PATCH /projects/:id/features`, they are simply not offered
- * as a toggle (see "Hidden flags" in this file's header).
+ * A `catalogHidden` entry appears only while it is on for this project, with
+ * `operator_only: true`, so the clients show it read-only (see "Hidden
+ * flags" in this file's header).
  */
 export function buildFeatureFlagCatalog(metadata: unknown): FeatureFlagView[] {
-  return FLAGS.filter((f) => !f.catalogHidden).map((f) => ({
-    key: f.key,
-    name: f.name,
-    description: f.description,
-    stability: f.stability,
-    available: f.available(),
-    enabled: resolveFeatureFlag(metadata, f.key),
-    overridden: explicitOverride(metadata, f.key) !== undefined,
-  }));
+  return FLAGS.flatMap((f) => {
+    const enabled = resolveFeatureFlag(metadata, f.key);
+    if (f.catalogHidden && !enabled) return [];
+    return [{
+      key: f.key,
+      name: f.name,
+      description: f.description,
+      stability: f.stability,
+      available: f.available(),
+      enabled,
+      overridden: explicitOverride(metadata, f.key) !== undefined,
+      operator_only: f.catalogHidden === true,
+    }];
+  });
+}
+
+/** True when only a platform operator may write this flag. */
+export function isOperatorOnlyFeatureFlag(key: FeatureFlagKey): boolean {
+  return FLAG_BY_KEY[key]?.catalogHidden === true;
 }

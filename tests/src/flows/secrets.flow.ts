@@ -5,6 +5,34 @@ import { flow } from "../core/flow";
 import { createDatabaseSession } from '../fixtures/database-project';
 import { subscribe } from '../fixtures/billing';
 import { enableEnterpriseDemo } from '../fixtures/enterprise-demo';
+import { log } from '../core/log';
+import type { FlowContext } from '../core/types';
+
+/**
+ * Run a flow that inserts `active` sandbox rows for its session-bound tokens,
+ * then delete them. Release tests run against the staging DB, and no reaper
+ * reads a row without an `external_id` (box-queries.ts), so a leaked row stays
+ * `active` forever and keeps its session out of the stuck-session sweep.
+ */
+function deletingSandboxRows(body: (ctx: FlowContext, track: (accountId: string) => void) => Promise<void>) {
+  return async (ctx: FlowContext) => {
+    const accounts: string[] = [];
+    try {
+      await body(ctx, (accountId) => accounts.push(accountId));
+    } finally {
+      if (accounts.length > 0) {
+        const { Client: PgClient } = await import('pg');
+        const databaseUrl = ctx.env.databaseUrl!;
+        const db = new PgClient({ connectionString: databaseUrl,
+          ssl: /localhost|127\.0\.0\.1/.test(databaseUrl) ? false : { rejectUnauthorized: false } });
+        await db.connect()
+          .then(() => db.query('DELETE FROM kortix.session_sandboxes WHERE account_id = ANY($1::uuid[]) AND external_id IS NULL', [accounts]))
+          .catch((error) => log.warn(`teardown sandbox rows of ${accounts.join(',')} failed: ${(error as Error)?.message ?? error}`))
+          .finally(() => db.end().catch(() => {}));
+      }
+    }
+  };
+}
 
 flow(
   "SEC-POOL-1",
@@ -14,6 +42,7 @@ flow(
       "POST /v1/accounts/:accountId/secret-resources",
       "GET /v1/accounts/:accountId/secret-resources",
       "PUT /v1/accounts/:accountId/secret-resources/:secretId/value",
+      "POST /v1/accounts/:accountId/secret-resources/:secretId/retry",
       "DELETE /v1/accounts/:accountId/secret-resources/:secretId",
     ],
   },
@@ -47,6 +76,12 @@ flow(
         { value: "rotated-test-value" }, { params: { ...params, secretId: ids[0]! } });
       response.status(200).body().has("$.secret_id", ids[0]!);
       if ("value" in response.json<any>()) throw new Error("secret value leaked in rotation response");
+    });
+    await ctx.step("retry ends a key's cooldown for its manager; a nonmember is denied", async () => {
+      const response = await ctx.client.as(ctx.P.OWNER).post(`${path}/:secretId/retry`, {}, { params: { ...params, secretId: ids[1]! } });
+      response.status(200).body().has("$.secret_id", ids[1]!).has("$.cooldown_until", null);
+      if ("value" in response.json<any>()) throw new Error("secret value leaked in retry response");
+      (await ctx.client.as(ctx.P.NONMEMBER).post(`${path}/:secretId/retry`, {}, { params: { ...params, secretId: ids[1]! } })).status([403, 404]);
     });
     await ctx.step("delete primary; backup remains", async () => {
       (await ctx.client.as(ctx.P.OWNER).del(`${path}/:secretId`, { params: { ...params, secretId: ids[0]! } })).status(200);
@@ -357,6 +392,7 @@ flow('SEC-POOL-4', {
     'PUT /v1/accounts/:accountId/secret-resources/:secretId/access',
     'POST /v1/projects/:projectId/sessions',
     'DELETE /v1/accounts/:accountId/secret-resources/:secretId',
+    'PUT /v1/accounts/:accountId/secret-resources/:secretId/grants/:userId',
   ],
 }, async (ctx) => {
   const team = await ctx.fixtures.team();
@@ -422,6 +458,20 @@ flow('SEC-POOL-4', {
     if (!(granted.json<any>().secrets as any[]).some((secret) => secret.secret_id === secretId && secret.can_use)) throw new Error('member grant did not restore access');
     (await owner.put(accessPath, { mode: 'project', user_ids: [] }, { params: accessParams })).status(200)
       .body().has('$.access_mode', 'project');
+  });
+  await ctx.step('the grants route shares a project key only with the same checks as the access route', async () => {
+    const peer = await team.addMember('member');
+    await team.grantProjectRole(project.id, peer.userId!, 'user');
+    const outsider = await team.addMember('member');
+    const own = await ctx.client.as(member).post(path, { ...input, label: 'Member key', access_mode: 'members', user_ids: [member.userId] }, { params });
+    own.status(201);
+    const ownId = own.json<any>().secret_id as string;
+    const grant = (userId: string, as = ctx.client.as(member)) =>
+      as.put(`${path}/:secretId/grants/:userId`, {}, { params: { ...params, secretId: ownId, userId } });
+    (await grant(peer.userId!)).status(403);
+    (await grant(peer.userId!, owner)).status(200);
+    (await grant(outsider.userId!, owner)).status(400);
+    (await owner.del(`${path}/:secretId`, { params: { ...params, secretId: ownId } })).status(200);
   });
   await ctx.step('delete removes the scoped key', async () => {
     (await owner.del(`${path}/:secretId`, { params: { ...params, secretId } })).status(200);
@@ -552,10 +602,11 @@ flow('SEC-POOL-6', {
     'POST /v1/llm/chat/completions',
     'DELETE /v1/accounts/:accountId/secret-resources/:secretId',
   ],
-}, async (ctx) => {
+}, deletingSandboxRows(async (ctx, track) => {
   const { Client: PgClient } = await import('pg');
   const { randomUUID } = await import('node:crypto');
   const team = await ctx.fixtures.team();
+  track(team.id);
   const project = await team.project({ seed: true, allowAllSecrets: true });
   const member = await team.addMember('member');
   await team.grantProjectRole(project.id, member.userId!, 'user');
@@ -659,7 +710,7 @@ flow('SEC-POOL-6', {
       (await asMember.del('/v1/accounts/:accountId/secret-resources/:secretId', { params: { accountId: team.id, secretId } })).status(200);
     }
   });
-});
+}));
 
 flow('SEC-POOL-3', {
   domain: 'secrets', requires: ['database'],
@@ -670,9 +721,10 @@ flow('SEC-POOL-3', {
     'PUT /v1/projects/:projectId/sessions/:sessionId/provider-secret-pools/:providerId',
     'POST /v1/llm/chat/completions',
   ],
-}, async (ctx) => {
+}, deletingSandboxRows(async (ctx, track) => {
   const { Client: PgClient } = await import('pg');
   const team = await ctx.fixtures.team();
+  track(team.id);
   const project = await team.project({ seed: true, allowAllSecrets: true });
   const owner = ctx.client.as(ctx.P.OWNER);
   const first = await createDatabaseSession(ctx.env, { projectId: project.id, accountId: team.id, userId: ctx.P.OWNER.userId! });
@@ -714,14 +766,15 @@ flow('SEC-POOL-3', {
     });
     result.status(400).body().has('$.error.code', 'provider_not_connected');
   });
-});
+}));
 
 flow('SEC-9', {
   domain: 'secrets', requires: ['database'],
   routes: ['POST /v1/accounts/tokens', 'POST /v1/projects/:projectId/secrets', 'GET /v1/projects/:projectId/secrets'],
-}, async (ctx) => {
+}, deletingSandboxRows(async (ctx, track) => {
   const { Client: PgClient } = await import('pg');
   const team = await ctx.fixtures.team();
+  track(team.id);
   const project = await team.project({ seed: true, allowAllSecrets: true });
   const owner = ctx.client.as(ctx.P.OWNER);
   // A plain project manager launches the session: the run's OWNER is a platform
@@ -768,6 +821,27 @@ flow('SEC-9', {
     }
   });
 
+  await ctx.step('a session narrowed to zero runtime secrets still lists what its agent stores, with the agent grant as agent_scope', async () => {
+    const databaseUrl = ctx.env.databaseUrl!;
+    const database = new PgClient({ connectionString: databaseUrl, ssl: /localhost|127\.0\.0\.1/.test(databaseUrl) ? false : { rejectUnauthorized: false } });
+    await database.connect();
+    try {
+      await database.query(`UPDATE kortix.project_sessions SET secrets_allowlist = '[]'::jsonb WHERE session_id = $1`, [sessionId]);
+    } finally {
+      await database.end();
+    }
+    (await agent.post('/v1/projects/:projectId/secrets', { name: 'AGENT_NARROWED_KEY', value: 'agent-narrowed-value' }, { params }))
+      .status(200)
+      .body()
+      .has('$.identifier', 'AGENT_NARROWED_KEY')
+      .has('$.configured', true);
+    const listed = await agent.get('/v1/projects/:projectId/secrets', { params });
+    listed.status(200).body().has('$.agent_scope', { agent: 'kortix', secrets: 'all' });
+    const item = listed.json<{ items: Array<Record<string, unknown>> }>().items.find((i) => i.identifier === 'AGENT_NARROWED_KEY');
+    if (!item || item.configured !== true) throw new Error(`the agent cannot see its own write: ${JSON.stringify(item)}`);
+    (await owner.get('/v1/projects/:projectId/secrets', { params })).status(200).body().has('$.agent_scope', null);
+  });
+
   await ctx.step('an agent session stores a connector-scoped value that stays server-side', async () => {
     (await agent.post('/v1/projects/:projectId/secrets',
       { name: 'AGENT_CONNECTOR_TOKEN', value: 'agent-connector-value', strategy: 'broker', consumer: 'connector' }, { params }))
@@ -795,7 +869,7 @@ flow('SEC-9', {
     (await reader.post('/v1/projects/:projectId/secrets', { name: 'AGENT_READER_KEY', value: 'x' }, { params })).status(403);
     if (await stored('AGENT_READER_KEY')) throw new Error('an agent without secret write stored a row');
   });
-});
+}));
 
 flow(
   "SEC-1",
@@ -837,7 +911,7 @@ flow(
 
 flow(
   "SEC-3",
-  { domain: "secrets", routes: ["DELETE /v1/projects/:projectId/secrets/:name"] },
+  { domain: "secrets", routes: ["DELETE /v1/projects/:projectId/secrets/:name", "POST /v1/projects/:projectId/secrets", "GET /v1/projects/:projectId/secrets"] },
   async (ctx) => {
     const p = await ctx.fixtures.project();
     await ctx.step("create then delete a secret", async () => {
@@ -855,6 +929,39 @@ flow(
         .as(ctx.P.OWNER)
         .del("/v1/projects/:projectId/secrets/:name", { params: { projectId: p.id, name: "KORTIX_TOKEN" } });
       r.status(403);
+    });
+
+    await ctx.step("a stored value is never echoed: upsert, list and stored row carry no plaintext; delete answers ok and removes it", async () => {
+      const owner = ctx.client.as(ctx.P.OWNER);
+      const params = { projectId: p.id };
+      const plaintext = `ke2e-plain-${crypto.randomUUID()}`;
+      const written = await owner.post("/v1/projects/:projectId/secrets", { name: "KE2E_NEVER_ECHOED", value: plaintext }, { params });
+      written.status(200).body().has("$.name", "KE2E_NEVER_ECHOED");
+      const body = written.json<Record<string, unknown>>();
+      for (const key of ["value", "value_enc"]) if (key in body) throw new Error(`upsert response carries ${key}`);
+      if (written.text().includes(plaintext)) throw new Error("upsert response echoed the value");
+      const listed = await owner.get("/v1/projects/:projectId/secrets", { params });
+      listed.status(200).body().has("$.agent_scope", null);
+      const list = listed.json<{ items: Array<Record<string, unknown>>; required: unknown; optional: unknown }>();
+      if (!Array.isArray(list.required) || !Array.isArray(list.optional)) throw new Error("required/optional are not arrays");
+      const item = list.items.find((i) => i.name === "KE2E_NEVER_ECHOED");
+      if (!item || "value" in item || "value_enc" in item || listed.text().includes(plaintext)) throw new Error(`list leaked or missed: ${JSON.stringify(item)}`);
+      if (ctx.env.databaseUrl) {
+        const { Client } = await import("pg");
+        const db = new Client({ connectionString: ctx.env.databaseUrl, ssl: /localhost|127\.0\.0\.1/.test(ctx.env.databaseUrl) ? false : { rejectUnauthorized: false } });
+        await db.connect();
+        try {
+          const row = (
+            await db.query<{ value_enc: string }>("SELECT value_enc FROM kortix.project_secrets WHERE project_id = $1::uuid AND identifier = 'KE2E_NEVER_ECHOED'", [p.id])
+          ).rows[0];
+          if (!row || row.value_enc.includes(plaintext)) throw new Error("the stored row is missing or holds plaintext");
+        } finally {
+          await db.end();
+        }
+      }
+      (await owner.del("/v1/projects/:projectId/secrets/:name", { params: { ...params, name: "KE2E_NEVER_ECHOED" } })).status(200).body().has("$.ok", true);
+      const after = (await owner.get("/v1/projects/:projectId/secrets", { params })).json<{ items: Array<{ name?: string }> }>();
+      if (after.items.some((i) => i.name === "KE2E_NEVER_ECHOED")) throw new Error("the deleted secret is still listed");
     });
   },
 );
@@ -1308,6 +1415,7 @@ flow(
       "POST /v1/projects/:projectId/secret-requests",
       "GET /v1/setup-links/secret/:token",
       "POST /v1/setup-links/secret/:token",
+      "DELETE /v1/accounts/:accountId/members/:userId",
     ],
   },
   async (ctx) => {
@@ -1424,8 +1532,60 @@ flow(
         );
       r.status(404);
     });
+
+    await ctx.step("public: replaying the used link → 409, the value is not overwritten", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post("/v1/setup-links/secret/:token", { values: { SEC7_TEST_KEY: "replayed" } }, { params: { token } });
+      r.status(409);
+    });
+
+    await ctx.step("public: a link minted by a since-removed member → 410", async () => {
+      const team = await ctx.fixtures.team();
+      const tp = await team.project();
+      const minter = await team.addMember("admin");
+      const minted = await ctx.client
+        .as(minter)
+        .post("/v1/projects/:projectId/secret-requests", { names: ["SEC7_GONE_KEY"] }, { params: { projectId: tp.id } });
+      minted.status(200);
+      const gone = minted.json<{ url: string }>().url.split("/").pop() ?? "";
+      (await ctx.client.as(ctx.P.OWNER).del("/v1/accounts/:accountId/members/:userId", {
+        params: { accountId: team.id, userId: minter.userId! },
+      })).status(200);
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post("/v1/setup-links/secret/:token", { values: { SEC7_GONE_KEY: "x" } }, { params: { token: gone } });
+      r.status(410);
+    });
   },
 );
+
+/**
+ * Assert a connector call that the secret's audience admits. On the local
+ * target it reaches the runner-local upstream with `expected`. A deployed API
+ * cannot reach this runner's 127.0.0.1: its egress guard refuses the private
+ * host only after the audience check admitted the call, so that refusal is the
+ * deployed proof of admission. A denied call returns `credential_not_shared`
+ * before egress, on every target.
+ */
+function expectAdmitted(
+  target: string,
+  r: { status(code: number): unknown; json<T>(): T },
+  seen: readonly string[],
+  expected: string,
+  what: string,
+): void {
+  if (target === 'local') {
+    r.status(200);
+    if (seen.at(-1) !== expected) throw new Error(`${what}: upstream saw ${seen.at(-1)}`);
+    return;
+  }
+  r.status(500);
+  const reason = r.json<{ reason?: string }>().reason ?? '';
+  if (!reason.startsWith('connector_egress_blocked')) {
+    throw new Error(`${what}: expected the egress refusal that follows admission, got ${reason}`);
+  }
+}
 
 // ── SEC-AUD-1 — who can use a secret value ────────────────────────────────
 // A secret value shared with specific people reaches only them: directly, or
@@ -1444,10 +1604,11 @@ flow('SEC-AUD-1', {
     'POST /v1/connectors/call',
     'POST /v1/accounts/tokens',
   ],
-}, async (ctx) => {
+}, deletingSandboxRows(async (ctx, track) => {
   const { createServer } = await import('node:http');
   const { Client: PgClient } = await import('pg');
   const team = await ctx.fixtures.team();
+  track(team.id);
   const project = await team.project({ seed: true, allowAllSecrets: true, allowAllConnectors: true });
   // The value's person, and a manager outside its audience: same role, so
   // only the audience separates what the two can use.
@@ -1539,8 +1700,7 @@ flow('SEC-AUD-1', {
     });
 
     await ctx.step('the holder calls the connector → the upstream receives the holder value', async () => {
-      (await call(holder)).status(200);
-      if (seen.at(-1) !== 'Bearer payroll-holder-value') throw new Error(`upstream saw ${seen.at(-1)}`);
+      expectAdmitted(ctx.env.target, await call(holder), seen, 'Bearer payroll-holder-value', 'holder call');
     });
 
     await ctx.step('a manager outside the audience calls it → denied credential_not_shared, and nothing reaches the upstream', async () => {
@@ -1551,8 +1711,7 @@ flow('SEC-AUD-1', {
     });
 
     await ctx.step("the holder's PRIVATE session uses it; their shared session and a trigger run do not", async () => {
-      (await agentCall(await sessionToken({ visibility: 'private' }))).status(200);
-      if (seen.at(-1) !== 'Bearer payroll-holder-value') throw new Error(`private session sent ${seen.at(-1)}`);
+      expectAdmitted(ctx.env.target, await agentCall(await sessionToken({ visibility: 'private' })), seen, 'Bearer payroll-holder-value', 'private session');
       const before = seen.length;
       (await agentCall(await sessionToken({ visibility: 'project' })))
         .body().has('$.reason', 'credential_not_shared');
@@ -1569,8 +1728,7 @@ flow('SEC-AUD-1', {
 
     await ctx.step('the holder widens it to everyone ([]) → the other manager call now succeeds', async () => {
       (await share([])).status(200);
-      (await call(outsider)).status(200);
-      if (seen.at(-1) !== 'Bearer payroll-holder-value') throw new Error(`outsider call sent ${seen.at(-1)}`);
+      expectAdmitted(ctx.env.target, await call(outsider), seen, 'Bearer payroll-holder-value', 'outsider call after widening');
       const row = await listed(outsider);
       if (!row || row.usable !== true || row.shared_with.length !== 0) throw new Error(`widened view is wrong: ${JSON.stringify(row)}`);
     });
@@ -1582,7 +1740,7 @@ flow('SEC-AUD-1', {
     upstream.close();
     await db.end();
   }
-});
+}));
 
 /** A session of `userId` plus a session-bound token whose row names
  *  `serviceAccountId` — the credential an agent's sandbox runs with. */
@@ -1629,10 +1787,11 @@ flow('SEC-AUD-2', {
     'PUT /v1/projects/:projectId/sessions/:sessionId/sharing',
     'POST /v1/projects/:projectId/sessions/:sessionId/public-shares',
   ],
-}, async (ctx) => {
+}, deletingSandboxRows(async (ctx, track) => {
   const { createServer } = await import('node:http');
   const { Client: PgClient } = await import('pg');
   const team = await ctx.fixtures.team();
+  track(team.id);
   const project = await team.project({ seed: true, allowAllSecrets: true, allowAllConnectors: true });
   const holder = await team.addMember('member');
   await team.grantProjectRole(project.id, holder.userId!, 'manager');
@@ -1709,8 +1868,13 @@ flow('SEC-AUD-2', {
         team, projectId: project.id, as: asHolder, userId: holder.userId!, serviceAccountId: agentSa,
         visibility: 'project', metadata: { trigger_kind: 'cron', trigger_slug: 'nightly' },
       });
-      (await trigger.client.post('/v1/connectors/call', { connector: slug, action: 'list', args: {} })).status(200);
-      if (seen.at(-1) !== 'Bearer nightly-agent-value') throw new Error(`upstream saw ${seen.at(-1)}`);
+      expectAdmitted(
+        ctx.env.target,
+        await trigger.client.post('/v1/connectors/call', { connector: slug, action: 'list', args: {} }),
+        seen,
+        'Bearer nightly-agent-value',
+        'agent trigger run',
+      );
       const before = seen.length;
       const other = await agentSessionToken(ctx, db, {
         team, projectId: project.id, as: asHolder, userId: holder.userId!, serviceAccountId: otherSa, visibility: 'project',
@@ -1741,7 +1905,7 @@ flow('SEC-AUD-2', {
     upstream.close();
     await db.end();
   }
-});
+}));
 
 // ── SEC-AUD-3 — a secret link keeps the value to the person who asked ────
 flow('SEC-AUD-3', {

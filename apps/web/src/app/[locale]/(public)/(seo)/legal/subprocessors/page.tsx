@@ -17,7 +17,7 @@ import {
  * customer personal data (DPA section 7.3): update LAST_UPDATED and email the
  * change to subscribers first.
  */
-const LAST_UPDATED = 'September 29, 2026';
+const LAST_UPDATED = 'October 9, 2026';
 
 export const metadata: Metadata = {
   title: 'Subprocessors',
@@ -50,8 +50,13 @@ const CORE: Row[] = [
   },
   {
     name: 'Scaleway SAS',
-    purpose: 'Servers and storage for agent sandboxes',
+    purpose: 'Servers and storage for agent sandboxes (Kortix Platinum, EU)',
     location: 'France, Netherlands, Poland',
+  },
+  {
+    name: 'Hivelocity, Inc.',
+    purpose: 'Servers for agent sandboxes (Kortix Platinum, US)',
+    location: 'United States',
   },
   {
     name: 'PlanetScale, Inc.',
@@ -71,6 +76,11 @@ const CORE: Row[] = [
   {
     name: 'CoreWeave, Inc.; Fireworks AI, Inc.; Decart',
     purpose: 'Inference for Kortix-managed AI models, reached through OpenRouter',
+    location: 'United States',
+  },
+  {
+    name: 'OpenCode Zen; Morph',
+    purpose: 'Inference for Kortix-managed AI models, reached directly',
     location: 'United States',
   },
   {
@@ -104,6 +114,11 @@ const CORE: Row[] = [
     location: 'United States',
   },
   {
+    name: 'Plain',
+    purpose: 'Customer support tickets and replies',
+    location: 'United Kingdom',
+  },
+  {
     name: 'Stripe, Inc.',
     purpose: 'Payment processing and billing',
     location: 'United States, European Union',
@@ -114,6 +129,17 @@ const OPTIONAL: Row[] = [
   {
     name: 'Composio',
     purpose: 'Managed connectors to third-party apps, when you connect one',
+    location: 'United States',
+  },
+  {
+    name: 'Pipedream, Inc.',
+    purpose: 'Managed sign-in and actions for third-party apps, when you connect one',
+    location: 'United States',
+  },
+  {
+    name: 'Expo (650 Industries, Inc.)',
+    purpose:
+      'Push notifications to the Kortix mobile app, when you enable them (title, short message, and a link; no files)',
     location: 'United States',
   },
   {
@@ -182,7 +208,7 @@ export default function SubprocessorsPage() {
             Kortix AI Corp engages the third parties below to process customer personal data when we
             provide the managed cloud Services. Each is bound by written data protection terms no
             less protective than our Data Processing Addendum. We host the Services mainly in the
-            United Kingdom and the European Union.
+            United Kingdom and the European Union; agent sandboxes also run in the United States.
           </p>
           <p className={PROSE}>
             We give at least 30 days&apos; notice before a new subprocessor processes customer

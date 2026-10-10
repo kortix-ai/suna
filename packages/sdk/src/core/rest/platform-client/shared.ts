@@ -43,12 +43,6 @@ export function platformApiBase(backendUrl: string): string {
   return base.endsWith('/v1') ? base : `${base}/v1`;
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function isDbSandboxId(sandboxId: string | null | undefined): sandboxId is string {
-  return !!sandboxId && UUID_RE.test(sandboxId);
-}
-
 export function normalizeSandboxId(value: unknown): string | undefined {
   if (typeof value === 'string') {
     const trimmed = value.trim();

@@ -255,6 +255,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     isFetchingNextPage,
     isFetchNextPageError,
     fetchNextPage,
+    isScanning,
   } = useProjectSessions(projectId, {
     // Sessions the viewer started, top level only. Spawned sessions load under
     // their parent; runs started by others or by automation have their own
@@ -395,6 +396,8 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     totalCount: sessions.length + otherCount,
     visibleCount: visibleSessions.length + visibleOtherCount,
     serverFiltered: labels !== undefined,
+    scanning: isScanning || sharedQuery.isScanning || automatedQuery.isScanning,
+    hasMore: hasNextPage || sharedQuery.hasNextPage || automatedQuery.hasNextPage,
   });
 
   // One session row, its opencode sub-sessions, and (top-level rows only) the
@@ -592,7 +595,8 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     // `hiddenSections` — it has no way to know every section got hidden. Catch
     // that case here instead of letting `FadedScrollArea` render nothing with
     // no explanation.
-    if (grouped.sections.length === 0 && visibleOtherCount === 0) {
+    // `more`: no row yet, but a list has a next page. Its Load more renders below.
+    if (viewState !== 'more' && grouped.sections.length === 0 && visibleOtherCount === 0) {
       return (
         <div className="text-muted-foreground/60 px-2 pt-1 pb-2 text-xs">
           {t('allSectionsHidden')}
@@ -804,6 +808,7 @@ function SessionListSection({
     email: 'email',
     schedule: 'scheduled',
     webhook: 'webhook',
+    event: 'event',
     manual: 'manual',
     all: 'all',
   } as const;
@@ -976,7 +981,9 @@ function StarterSection({
   renderNode: (session: ProjectSession) => ReactNode;
 }) {
   const t = useTranslations('sidebar');
-  if (query.sessions.length === 0) return null;
+  // A section with no row yet but a next page stays, with its Load more: the
+  // rows the viewer can see may sit past the first pages (KRTX-1727).
+  if (query.sessions.length === 0 && !query.hasNextPage) return null;
   return (
     <Disclosure
       open={open}

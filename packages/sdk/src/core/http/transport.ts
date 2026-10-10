@@ -33,7 +33,7 @@ import {
   withTokenRetry,
 } from '../../platform/auth-core';
 import { abortable, createAbortError } from './abort';
-import { AuthError } from './api/errors';
+import { ApiError, AuthError } from './api/errors';
 import { platformConfig } from './config';
 import { impersonationHeaders } from './impersonation';
 
@@ -131,7 +131,7 @@ export async function platformRequestHeaders(
   if (!token) throw new AuthError();
   return {
     headers: new Headers(withPlatformHeaders(url, callerHeaders(url, { headers: base }), token)),
-    rejected: () => platformConfig().getToken.invalidate?.(token),
+    rejected: () => invalidateHostToken(token),
   };
 }
 
@@ -157,11 +157,54 @@ function dispatch(
   }
   const url = String(input);
   const headers = withPlatformHeaders(url, callerHeaders(input, init), token);
-  return fetchImpl(url, { ...init, headers, ...(signal ? { signal } : {}) });
+  // A path-only URL is this page's own origin: a Kortix App calling the API
+  // through its gate (`/_kortix/api/v1`), which knows the viewer by the App's
+  // session cookie. Cross-origin calls keep the caller's `credentials`.
+  const sameOrigin = url.startsWith('/') && !url.startsWith('//');
+  return fetchImpl(url, {
+    ...init,
+    headers,
+    ...(sameOrigin ? { credentials: 'same-origin' as const } : {}),
+    ...(signal ? { signal } : {}),
+  });
 }
 
-async function currentToken(options?: { attempts: number; baseDelayMs: number }): Promise<string | null> {
-  return withTokenRetry(() => platformConfig().getToken(), options);
+// The last token the host handed out. `invalidateHostToken()` names it to the
+// host when a caller has no rejected token in hand (SSE auth recovery).
+let lastIssuedToken: string | null = null;
+
+/** The host's current token, remembered as the last one issued. */
+export async function hostToken(options?: { attempts: number; baseDelayMs: number }): Promise<string | null> {
+  const token = await withTokenRetry(() => platformConfig().getToken(), options);
+  if (token) lastIssuedToken = token;
+  return token;
+}
+
+const currentToken = hostToken;
+
+/**
+ * Tell the host a token was rejected, so its next `getToken()` returns a fresh
+ * one. Default: the last token the host issued. A host without `invalidate`
+ * has nothing to clear: the call does nothing.
+ */
+export function invalidateHostToken(rejectedToken: string | null = lastIssuedToken): void {
+  if (rejectedToken) platformConfig().getToken.invalidate?.(rejectedToken);
+}
+
+// One refresh per rejected token: N parallel 401s on the same token invalidate
+// once and share one `getToken()` answer, so a host that rotates a refresh
+// token per call is not raced by its own requests.
+const refreshes = new Map<string, Promise<string | null>>();
+
+function refreshedToken(rejectedToken: string): Promise<string | null> {
+  const pending = refreshes.get(rejectedToken);
+  if (pending) return pending;
+  const refresh = (async () => {
+    invalidateHostToken(rejectedToken);
+    return currentToken({ attempts: 2, baseDelayMs: 200 });
+  })().finally(() => refreshes.delete(rejectedToken));
+  refreshes.set(rejectedToken, refresh);
+  return refresh;
 }
 
 /** Send one request to the Kortix backend. See the module comment for the contract. */
@@ -188,8 +231,27 @@ export async function send(
   const response = await dispatch(fetchImpl, input, init, token, signal);
   if (response.status !== 401 || !canRetry) return response;
 
-  platformConfig().getToken.invalidate?.(token);
-  const fresh = await currentToken({ attempts: 2, baseDelayMs: 200 });
+  const fresh = await refreshedToken(token);
   if (!fresh || fresh === token) return response;
   return dispatch(fetchImpl, retryInput, init, fresh, signal);
+}
+
+/**
+ * `send()` for a call whose caller wants the `Response` only on success (a
+ * download, a plain GET). A non-2xx answer throws an `ApiError` with `status`
+ * and `response`; its message is the body text, else `fallbackMessage`.
+ */
+export async function sendChecked(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  options: SendOptions,
+  fallbackMessage: string,
+): Promise<Response> {
+  const response = await send(input, init, options);
+  if (response.ok) return response;
+  const text = await response.text().catch(() => '');
+  throw new ApiError(text || `${fallbackMessage} (HTTP ${response.status})`, {
+    status: response.status,
+    response,
+  });
 }

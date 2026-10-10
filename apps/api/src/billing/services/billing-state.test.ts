@@ -3,7 +3,6 @@ import {
   type BillingSnapshot,
   billingSnapshotFromAccount,
   billingStateAllowsRun,
-  billingStateNeedsTopUp,
   isPayingSubscriptionStatus,
   resolveBillingState,
 } from './billing-state';
@@ -53,7 +52,6 @@ describe('resolveBillingState — subscribed-but-broke is never "no plan"', () =
       }),
     );
     expect(state).toBe('no_subscription');
-    expect(billingStateNeedsTopUp(state)).toBe(false);
   });
 
   test('a failed card payment on an otherwise active subscription reports payment_failed once the wallet is dry', () => {

@@ -121,7 +121,7 @@ export function useSheetBackground(): string {
  * `hideClose` drops the button and keeps the title centred. `titleTrailing`
  * puts one icon button at the far right of that row.
  */
-export const SHEET_DEFAULTS = {
+const SHEET_DEFAULTS = {
   /** Top corner radius. */
   radius: 32,
   /** Side padding of the title row: the project edge. */
@@ -205,7 +205,7 @@ export function SheetTitleRow({
   );
 }
 
-export interface KortixBottomSheetModalProps extends BottomSheetModalProps {
+interface KortixBottomSheetModalProps extends BottomSheetModalProps {
   /** Centred title in the handle area, with a close button at the far left. */
   title?: string;
   /** A titled sheet without the close button. */
@@ -444,7 +444,13 @@ export function sheetFillShift(
 }
 
 /** Copies `text`; the glyph is a check for 1.5 s after. For `titleTrailing`. */
-export function CopyContentButton({ text }: { text: string }) {
+export function CopyContentButton({
+  text,
+  label = 'Copy file content',
+}: {
+  text: string;
+  label?: string;
+}) {
   const [copied, setCopied] = React.useState(false);
   const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   React.useEffect(() => () => void (timer.current && clearTimeout(timer.current)), []);
@@ -454,7 +460,7 @@ export function CopyContentButton({ text }: { text: string }) {
       size="icon"
       className="rounded-full"
       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-      accessibilityLabel={copied ? 'Copied' : 'Copy file content'}
+      accessibilityLabel={copied ? 'Copied' : label}
       onPress={async () => {
         await Clipboard.setStringAsync(text);
         haptics.success();
@@ -541,8 +547,6 @@ function Header({
   onClose?: () => void;
   hideClose?: boolean;
   leading?: React.ReactNode;
-  /** @deprecated The row owns its padding (`SHEET_DEFAULTS`). Ignored. */
-  className?: string;
 }) {
   const { dismiss } = useBottomSheetModal();
   return (
@@ -557,10 +561,4 @@ function Header({
 function Body({ children, className }: { children: React.ReactNode; className?: string }) {
   return <View className={cn('px-5 pb-6', className)}>{children}</View>;
 }
-function Footer({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <View className={cn('flex-row gap-3 px-5 pb-8 pt-2', className)}>{children}</View>;
-}
-(Sheet as any).Header = Header;
-(Sheet as any).Body = Body;
-(Sheet as any).Footer = Footer;
-export { Header as SheetHeader, Body as SheetBody, Footer as SheetFooter };
+export { Header as SheetHeader, Body as SheetBody };

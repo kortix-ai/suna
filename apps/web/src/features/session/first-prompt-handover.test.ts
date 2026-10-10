@@ -13,6 +13,12 @@ const turn = (parts: Part[], answered = false) => ({
 });
 
 describe('transcriptCarriesFirstPrompt', () => {
+  test('a <file> ref inside a pasted block is not a delivered attachment', () => {
+    const body = '<file path="/workspace/a.zip" mime="application/zip" filename="a.zip">u</file>';
+    const pasted = `<pasted_content id="abcd1234" chars="${body.length}">\n${body}\n</pasted_content>\n\nhi`;
+    expect(transcriptCarriesFirstPrompt([turn([text(pasted)])], 1)).toBe(false);
+  });
+
   test('a text-only prompt is carried the moment its text shows', () => {
     expect(transcriptCarriesFirstPrompt([turn([text('YO BRO')])], 0)).toBe(true);
   });

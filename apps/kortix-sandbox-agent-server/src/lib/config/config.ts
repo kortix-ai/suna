@@ -19,7 +19,7 @@ const BoolFlag = z.preprocess((v) => {
 }, z.boolean())
 
 /**
- * S3 config provider rollout mode (src/services/config-provider). `git` never attempts
+ * S3 workspace acquisition mode (src/services/workspace-provider). `git` never attempts
  * S3 and is the rollback mode; `prefer-s3` tries a prepared archive and falls
  * back to the Git path on acquisition failure; `require-s3` fails closed.
  */
@@ -136,7 +136,7 @@ export type Config = {
   gitDeltaParentCommitBase64?: string
   /** Delta exceeds the env cap: fetch it with one GET from the API (KORTIX_GIT_DELTA_BUNDLE_REMOTE=1). */
   gitDeltaBundleRemote?: boolean
-  /** S3 config provider mode; absent/`git` = never attempt S3. Optional so hand-built test configs stay valid. */
+  /** S3 workspace acquisition mode; absent/`git` = never attempt S3. Optional so hand-built test configs stay valid. */
   projectSnapshotMode?: ProjectSnapshotMode
   /** Prepared-archive identity `<sha>:<sha256>:<bytes>`, when the API pinned one. */
   projectSnapshotPin?: string

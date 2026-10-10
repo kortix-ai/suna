@@ -368,10 +368,7 @@ describe('Channels view — Email and Teams are entity rows', () => {
     expect(channelsSource).toContain('Add to Teams');
   });
 
-  test('keeps Email behind its per-project flag; Teams is on for every project', () => {
-    expect(channelsSource).toContain("useFeatureFlag(projectId, 'agentmail_email')");
-    expect(channelsSource).toContain("EMAIL_CONNECTOR_SLUG = 'kortix_email'");
-    expect(channelsSource).toMatch(/emailChannelEnabled \? \(\s*<EmailChannelRow/);
+  test('Teams is on for every project and the shared feature flag query replaces the summary query', () => {
     // The `teams` flag graduated: no gate before the Teams row or panel.
     expect(channelsSource).not.toContain("useFeatureFlag(projectId, 'teams')");
     expect(channelsSource).toMatch(/\n\s*<TeamsChannelRow\s+projectId=\{projectId\}\s+canWrite=\{canWrite\}/);

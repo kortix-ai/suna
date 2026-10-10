@@ -5,6 +5,7 @@ import { runtimeModelCatalog } from './llm-gateway/models/runtime-catalog';
 import { warmPipedreamCatalog } from './connectors/pipedream';
 import { runtimeAssetsManifest, warmRuntimeChunkIndex } from './runtime-assets';
 import { shutdownAuditEvents } from './shared/audit';
+import { drainRequests } from './shared/drain';
 import {
   runsSingletonWorkers,
   startLeaderElection,
@@ -15,6 +16,7 @@ import { warnIfPreviewOriginsMissing } from './sandbox-proxy/preview-hosts';
 import { maintenanceSetting } from './platform/services/maintenance-setting';
 // Every background loop: its timer, start/stop and runWorkerTick call live in workers/.
 import { startAccessControlCache, stopAccessControlCache } from './workers/access-control-cache-worker';
+import { startAccountDeletionSchedule, stopAccountDeletionSchedule } from './workers/account-deletion-worker';
 import { startActiveTurnRenewal, stopActiveTurnRenewal } from './workers/active-turn-renewal-worker';
 import { startAppDeploymentWorker, stopAppDeploymentWorker } from './workers/app-deployment-worker';
 import { startAppIdleReaper, stopAppIdleReaper } from './workers/app-idle-reaper-worker';
@@ -27,13 +29,13 @@ import {
 import { startAuditWebhookWorker, stopAuditWebhookWorker } from './workers/audit-webhook-worker';
 import { startBillingRotation, stopBillingRotation } from './workers/billing-rotation-worker';
 import { startEventLoopLagSampler, stopEventLoopLagSampler } from './workers/event-loop-lag-worker';
+import { startNotificationWorker, stopNotificationWorker } from './workers/notification-worker';
 import { startProjectMaintenance, stopProjectMaintenance } from './workers/project-maintenance-worker';
 import { startProjectSnapshotWorker, stopProjectSnapshotWorker } from './workers/project-snapshot-worker';
 import { startProviderTransitionWorker, stopProviderTransitionWorker } from './workers/provider-transition-worker';
 import { startSessionLifecycleWorker, stopSessionLifecycleWorker } from './workers/session-lifecycle-worker';
 import { handBackClaims } from './projects/surface';
 import { startSlackTurnGc, stopSlackTurnGc } from './workers/slack-turn-gc-worker';
-import { startSunaMigrationWorker, stopSunaMigrationWorker } from './workers/suna-migration-worker';
 import { startTeamsBotTokenRefresh, stopTeamsBotTokenRefresh } from './workers/teams-bot-token-refresh-worker';
 import { startTeamsTurnGc, stopTeamsTurnGc } from './workers/teams-turn-gc-worker';
 import { startTmpReaper, stopTmpReaper } from './workers/tmp-reaper-worker';
@@ -72,6 +74,10 @@ process.on('unhandledRejection', (reason: unknown) => {
   }
 });
 
+const UNCAUGHT_LIMIT = 20;
+const UNCAUGHT_WINDOW_MS = 5 * 60_000;
+const uncaughtAt: number[] = [];
+
 process.on('uncaughtException', (err: Error) => {
   try {
     if (isLoggingTransportError(`${err?.message ?? ''}\n${err?.stack ?? ''}`)) {
@@ -85,6 +91,17 @@ process.on('uncaughtException', (err: Error) => {
       stack: err?.stack,
     });
     captureException(err, { handler: 'uncaughtException' });
+    // A task that keeps throwing outside any handler may hold a half-started
+    // singleton. Past the limit, drain and exit so ECS starts a clean task.
+    const now = Date.now();
+    uncaughtAt.push(now);
+    while (uncaughtAt.length > 0 && now - uncaughtAt[0]! > UNCAUGHT_WINDOW_MS) uncaughtAt.shift();
+    if (uncaughtAt.length >= UNCAUGHT_LIMIT) {
+      appLogger.error('Too many uncaught exceptions — shutting down for replacement', {
+        count: uncaughtAt.length,
+      });
+      void shutdown('uncaught-exception-storm');
+    }
   } catch {
     // never let the crash guard itself crash the process
   }
@@ -92,10 +109,9 @@ process.on('uncaughtException', (err: Error) => {
 
 // Schema readiness gate — blocks DB-dependent requests until push completes.
 let schemaReady = false;
-// Drain flag — set on SIGTERM/SIGINT so the load balancer health check
-// stops routing traffic before the process exits. The ECS deregistration
-// delay (30s) gives the ALB time to notice the 503s and drain in-flight
-// requests.
+// Drain flag — set on SIGTERM/SIGINT so the health check answers 503 and the
+// load balancer stops routing new traffic. `shared/drain.ts` then waits for
+// in-flight requests (see `runShutdown`).
 let draining = false;
 
 // The split's one state change: schemaReady/draining now live here, next to
@@ -190,7 +206,6 @@ async function startSingletonWorkers() {
   // the first session anywhere lands on a cache hit. Idempotent + best-effort;
   // the session-boot graceful path is the lazy fallback if this is skipped.
   kickStartupPreBuild();
-  startSunaMigrationWorker();
   // Resume durable sandbox-provider migrations (prepare→verify→activate) that
   // were mid-flight when the API last stopped — a crash at building/ready/
   // activating converges instead of stranding. Safe across replicas (lease CAS).
@@ -220,6 +235,12 @@ async function startSingletonWorkers() {
   // Close Slack/Teams live cards whose run ended without a reply.
   startSlackTurnGc();
   startTeamsTurnGc();
+  // Execute scheduled account deletions past their 14-day grace. The only
+  // processor of the managed table — its SQL never reached `kortix` before
+  // (KRTX-1260). First tick runs immediately to drain the inherited backlog.
+  startAccountDeletionSchedule();
+  // Notification inbox: the unread-row email digest and the 90-day retention sweep.
+  startNotificationWorker();
 }
 async function stopSingletonWorkers() {
   if (!singletonWorkersRunning) return;
@@ -227,7 +248,6 @@ async function stopSingletonWorkers() {
   stopActiveTurnRenewal();
   stopProjectTriggerScheduler();
   stopProjectMaintenance();
-  stopSunaMigrationWorker();
   stopProviderTransitionWorker();
   stopAppDeploymentWorker();
   stopAppIdleReaper();
@@ -243,6 +263,8 @@ async function stopSingletonWorkers() {
   stopBillingRotation();
   stopSlackTurnGc();
   stopTeamsTurnGc();
+  await stopAccountDeletionSchedule();
+  stopNotificationWorker();
 }
 
 // Boot the per-node services, then begin leader election. The leader runs the
@@ -294,36 +316,78 @@ export async function bootServices() {
   void warmRuntimeChunkIndex();
 }
 
-// Graceful shutdown
-export async function shutdown(signal: string) {
-  // Set draining flag FIRST so the ALB health check starts returning 503
-  // and the load balancer stops routing new requests to this instance.
-  // The deregistration_delay (30s) gives in-flight requests time to complete.
+// Graceful shutdown. ECS sends SIGTERM, then SIGKILL after `stop_timeout` (120 s,
+// infra/terraform/modules/ecs-api/variables.tf). The budgets below add up to
+// less: 5 s propagation + 85 s request drain + 15 s worker stop and flush.
+const DRAIN_PROPAGATION_MS = 5_000;
+const DRAIN_BUDGET_MS = 85_000;
+const WORKER_STOP_BUDGET_MS = 15_000;
+const HARD_EXIT_MS = 112_000;
+
+/** Resolve with `work`'s result, or undefined after `ms`. Never rejects. */
+async function within<T>(work: Promise<T>, ms: number, label: string): Promise<T | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<undefined>((resolve) => {
+    timer = setTimeout(() => {
+      appLogger.warn('Shutdown step timed out', { step: label, ms });
+      resolve(undefined);
+    }, ms);
+  });
+  try {
+    return await Promise.race([work.catch(() => undefined), timedOut]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+let shutdownPromise: Promise<void> | null = null;
+
+/** Idempotent: a second signal waits for the first shutdown. */
+export function shutdown(signal: string): Promise<void> {
+  shutdownPromise ??= runShutdown(signal);
+  return shutdownPromise;
+}
+
+async function runShutdown(signal: string): Promise<void> {
+  // The health check answers 503 from here on. Nothing below may keep the
+  // process past ECS's SIGKILL, so a hard timer ends it first.
   draining = true;
   appLogger.info(`Shutting down gracefully`, { signal });
-  // Releases the lease (so a peer takes over immediately instead of waiting out
-  // the TTL) and stops the singleton workers via onRelease — but only if this
-  // node was the leader. Then stop the per-node services.
-  await stopLeaderElection();
+  setTimeout(() => process.exit(1), HARD_EXIT_MS).unref();
+  // Stop claiming lifecycle rows now. The leader's slow singleton stops used to
+  // run first, so this replica kept claiming prompts while it waited to die.
+  stopSessionLifecycleWorker();
+  const handBack = handBackClaims()
+    .then((count) => count > 0 && appLogger.info('Handed back lifecycle claims', { count }))
+    .catch((error) => appLogger.warn('Lifecycle claim hand-back failed', { error }));
+  // Releases the lease (a peer takes over at once) and stops the singleton
+  // workers via onRelease, if this node was the leader. Runs beside the request
+  // drain, bounded: a stuck worker stop must not eat the drain or the flush.
+  const leaderStop = within(stopLeaderElection(), WORKER_STOP_BUDGET_MS, 'stopLeaderElection');
+  const drained = await drainRequests({ propagationMs: DRAIN_PROPAGATION_MS, budgetMs: DRAIN_BUDGET_MS });
+  if (drained.remaining > 0) {
+    appLogger.warn('Request drain budget ended with work in flight', { remaining: drained.remaining });
+  }
+  await leaderStop;
   stopModelPricing();
   runtimeModelCatalog.stop();
   stopTunnelService();
   stopAccessControlCache();
   stopTmpReaper();
-  stopSessionLifecycleWorker();
-  // Rows this process still holds go back to the queue now, not after the
-  // 10-min lock and grace; the session's next prompt waits behind them.
-  await handBackClaims()
-    .then((count) => count > 0 && appLogger.info('Handed back lifecycle claims', { count }))
-    .catch((error) => appLogger.warn('Lifecycle claim hand-back failed', { error }));
+  await handBack;
+  // A build claim this task holds would block peers until its lease lapses.
+  await within(import('./snapshots/build-claim').then((m) => m.releaseAllSnapshotBuilds()), 5_000, 'snapshot claims');
   stopTeamsBotTokenRefresh();
   stopEventLoopLagSampler();
   await import('./shared/pg-broadcast')
     .then((m) => m.stopConfigBaseMoveBroadcast())
     .catch(() => {});
-  // Flush observability data before exit. The audit queue is drained here
-  // because audit rows are buffered off the request path — without this, the
-  // last ~250 ms of events would be lost on every SIGTERM (i.e. every rollout).
-  await Promise.allSettled([shutdownAuditEvents(), appLogger.flush(), flushSentry()]);
+  // Flush observability data last, after the drain: audit rows are buffered off
+  // the request path, and requests that finished during the drain wrote some.
+  await within(
+    Promise.allSettled([shutdownAuditEvents(), appLogger.flush(), flushSentry()]),
+    WORKER_STOP_BUDGET_MS,
+    'flush',
+  );
   process.exit(0);
 }

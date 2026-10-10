@@ -346,6 +346,11 @@ describe('managed OpenCode Zen route', () => {
     expect(candidates[1].failover).toBe(true);
   });
 
+  test('a model with no price adds no Zen candidate: a credit-billed route never settles at $0', () => {
+    const unpriced = { ...glm, pricing: undefined, pricingRef: 'zen-test/no-such-model' } as typeof glm;
+    expect(managedCandidates(unpriced).map((candidate) => candidate.provider)).toEqual(['openrouter']);
+  });
+
   test('an unlisted model or a missing key adds no Zen candidate', () => {
     const deepseek = MANAGED_MODELS.find((model) => model.id === 'deepseek-v4.1-flash')!;
     expect(managedCandidates(deepseek).map((candidate) => candidate.provider)).toEqual(['openrouter']);

@@ -150,6 +150,15 @@ Branding follows the account, not the browser: inside a project, members see the
 
 If you belong to more than one account, switch between them from the account switcher. Each account keeps its own projects, members, and settings.
 
+## Signed-in devices
+
+**Settings → Security → Devices** lists every place you are signed in: browsers, the desktop app, and the mobile app.
+
+- **Sign out** on one device ends that sign-in at once. It cannot refresh, its token stops working on account routes, and a phone or a browser stops getting push notifications.
+- **Sign out other devices** ends every other sign-in. None of them can refresh, and their phones and browsers stop getting push notifications at once.
+
+A phone or a browser that signs in again gets push notifications again. A browser gets them only from projects with [notifications](/docs/work/notifications#turn-notifications-on) on.
+
 ## Tokens
 
 Kortix signs you in with a personal access token (`kortix_pat_...`). It acts as the user who created it and holds exactly that user's assignments. A service account (`kortix_sa_...`) is a separate principal, not a person's credential, and holds no project access until an assignment gives it some.

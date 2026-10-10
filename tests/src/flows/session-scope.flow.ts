@@ -73,6 +73,7 @@ async function seedBoundSession(
   db: Db,
   project: { id: string; accountId?: string },
   label: string,
+  branchName = 'main',
 ): Promise<{ sessionId: string; tokenId: string; token: string }> {
   const ownerUserId = ctx.P.OWNER.userId!;
   const accountId = project.accountId ?? ctx.P.OWNER.accountId!;
@@ -83,8 +84,8 @@ async function seedBoundSession(
   await db.query(
     `INSERT INTO kortix.project_sessions
        (session_id, account_id, project_id, branch_name, agent_name, status, created_by, visibility)
-     VALUES ($1, $2, $3, 'main', 'kortix', 'running', $4, 'private')`,
-    [sessionId, accountId, project.id, ownerUserId],
+     VALUES ($1, $2, $3, $5, 'kortix', 'running', $4, 'private')`,
+    [sessionId, accountId, project.id, ownerUserId, branchName],
   );
   await db.query(
     `INSERT INTO kortix.session_sandboxes (sandbox_id, session_id, account_id, project_id, status)
@@ -250,6 +251,7 @@ flow(
       'POST /v1/projects/:projectId/sessions',
       'PATCH /v1/projects/:projectId/sessions/:sessionId',
       'GET /v1/projects/:projectId/sessions/:sessionId',
+      'GET /v1/projects/:projectId/sessions',
     ],
   },
   async (ctx) => {
@@ -278,6 +280,7 @@ flow(
       'workspace_mode',
       'repository_access',
       'sandbox_slug',
+      'warmSandboxLocation',
     ]) {
       await ctx.step(`PATCH metadata.${key} → 400 (server-managed)`, async () => {
         (
@@ -324,6 +327,7 @@ flow(
       ['source', 'trigger:scheduler'],
       ['trigger_kind', 'git'],
       ['trigger_slug', 'forged-trigger'],
+      ['warmSandboxLocation', 'us-east'],
     ] as const) {
       await ctx.step(`POST /sessions with metadata.${key} → 400 (server-managed)`, async () => {
         (
@@ -367,6 +371,137 @@ flow(
         if (key in metadata) throw new Error(`metadata.${key} must not be stored, got ${JSON.stringify(metadata[key])}`);
       }
     });
+
+    for (const [label, body] of [
+      ['the unknown field arbitrary_env', { initial_prompt: 'noop', arbitrary_env: 'nope' }],
+      ['the unknown field end_user_ref', { base_ref: 'main', end_user_ref: 'legacy-reference' }],
+      ['the unknown field origin_ref', { base_ref: 'main', origin_ref: 'legacy-reference' }],
+      ['an unknown provider', { provider: 'justavps' }],
+    ] as const) {
+      await ctx.step(`POST /sessions with ${label} → 400 at the HTTP boundary`, async () => {
+        (await owner.post('/v1/projects/:projectId/sessions', body, { params: { projectId: project.id } })).status(400);
+      });
+    }
+
+    await ctx.step('no refused create wrote a session: the list holds only the fixture session', async () => {
+      const r = await owner.get('/v1/projects/:projectId/sessions', { params: { projectId: project.id } });
+      r.status(200);
+      deepStrictEqual(r.json<Array<{ session_id: string }>>().map((row) => row.session_id), [session.id]);
+    });
+  },
+);
+
+flow(
+  'SCOPE-8',
+  {
+    domain: 'sessions',
+    requires: ['database'],
+    routes: ['PATCH /v1/projects/:projectId/features', 'POST /v1/projects/:projectId/sessions'],
+  },
+  async (ctx) => {
+    const db = await openDb(ctx);
+    const project = await ctx.fixtures.project({ seed: true });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { projectId: project.id };
+    let meta: Awaited<ReturnType<typeof seedBoundSession>> | null = null;
+    let worker: Awaited<ReturnType<typeof seedBoundSession>> | null = null;
+    const sessionCount = async () =>
+      (await db.query<{ n: number }>('SELECT count(*)::int AS n FROM kortix.project_sessions WHERE project_id = $1::uuid', [project.id])).rows[0]?.n ?? 0;
+    try {
+      await ctx.step('the project opts into meta_agent; a meta coordinator and a worker each hold a session-bound credential', async () => {
+        (await owner.patch('/v1/projects/:projectId/features', { feature: 'meta_agent', enabled: true }, { params })).status(200);
+        meta = await seedBoundSession(ctx, db, project, 'SCOPE-8 meta');
+        await db.query(`UPDATE kortix.project_sessions SET agent_name = 'meta' WHERE session_id = $1`, [meta.sessionId]);
+        worker = await seedBoundSession(ctx, db, project, 'SCOPE-8 worker', 'scope-8-worker');
+      });
+
+      await ctx.step('the meta coordinator asking for another meta coordinator → 400 META_AGENT_RECURSION, no session row', async () => {
+        const before = await sessionCount();
+        (await ctx.client.withBearer(meta!.token, 'SESSION_TOKEN').post('/v1/projects/:projectId/sessions', { agent_name: 'meta' }, { params }))
+          .status(400)
+          .body()
+          .has('$.code', 'META_AGENT_RECURSION');
+        const after = await sessionCount();
+        if (after !== before) throw new Error(`a refused meta spawn wrote ${after - before} session row(s)`);
+      });
+
+      await ctx.step('a non-meta session asking for the meta coordinator passes the recursion check', async () => {
+        const r = await ctx.client.withBearer(worker!.token, 'SESSION_TOKEN').post('/v1/projects/:projectId/sessions', { agent_name: 'meta' }, { params });
+        // Local: every create check passed and the loopback callback check answers.
+        if (ctx.env.target === 'local') {
+          r.status(503).body().has('$.code', 'KORTIX_URL_UNREACHABLE');
+        } else {
+          r.status(201).body().has('$.agent_name', 'meta');
+          ctx.track('session', r.json<{ session_id: string }>().session_id, { projectId: project.id });
+        }
+      });
+    } finally {
+      await dropBoundSession(db, meta);
+      await dropBoundSession(db, worker);
+      await db.end();
+    }
+  },
+);
+
+flow(
+  'SCOPE-9',
+  {
+    domain: 'sessions',
+    requires: ['database'],
+    routes: [
+      'GET /v1/projects/:projectId',
+      'GET /v1/projects/:projectId/change-requests/:crId/diff',
+      'GET /v1/projects/:projectId/change-requests/:crId/merge-preview',
+    ],
+  },
+  async (ctx) => {
+    const db = await openDb(ctx);
+    const project = await ctx.fixtures.project();
+    const crId = randomUUID();
+    const DENIED = 'session workspace does not allow repository access';
+    let restricted: Awaited<ReturnType<typeof seedBoundSession>> | null = null;
+    let unrestricted: Awaited<ReturnType<typeof seedBoundSession>> | null = null;
+    try {
+      await ctx.step('seed a runtime-workspace session (repository_access false) and a branch-workspace session, each with a bound credential', async () => {
+        restricted = await seedBoundSession(ctx, db, project, 'SCOPE-9 runtime');
+        await db.query(
+          `UPDATE kortix.project_sessions SET metadata = '{"repository_access":false,"workspace_mode":"runtime"}'::jsonb WHERE session_id = $1`,
+          [restricted.sessionId],
+        );
+        unrestricted = await seedBoundSession(ctx, db, project, 'SCOPE-9 branch', 'scope-9-branch');
+      });
+
+      await ctx.step('the runtime-workspace credential reads the project → 403 naming the workspace', async () => {
+        (await ctx.client.withBearer(restricted!.token, 'SESSION_TOKEN').get('/v1/projects/:projectId', { params: { projectId: project.id } }))
+          .status(403)
+          .body()
+          .has('$.message', DENIED);
+      });
+
+      for (const suffix of ['diff', 'merge-preview'] as const) {
+        await ctx.step(`the runtime-workspace credential reads a change request ${suffix} → 403 before the change request lookup`, async () => {
+          (await ctx.client.withBearer(restricted!.token, 'SESSION_TOKEN').get(`/v1/projects/:projectId/change-requests/:crId/${suffix}`, { params: { projectId: project.id, crId } }))
+            .status(403)
+            .body()
+            .has('$.message', DENIED);
+        });
+        await ctx.step(`the branch-workspace credential reaches the change request lookup for ${suffix} → 404`, async () => {
+          (await ctx.client.withBearer(unrestricted!.token, 'SESSION_TOKEN').get(`/v1/projects/:projectId/change-requests/:crId/${suffix}`, { params: { projectId: project.id, crId } }))
+            .status(404)
+            .body()
+            .has('$.error', 'Change request not found');
+        });
+      }
+
+      await ctx.step('the removed clone-credential route answers 404 to a session credential', async () => {
+        (await ctx.client.withBearer(unrestricted!.token, 'SESSION_TOKEN').get('/v1/projects/:projectId/git/clone-credential', { params: { projectId: project.id } }))
+          .status(404);
+      });
+    } finally {
+      await dropBoundSession(db, restricted);
+      await dropBoundSession(db, unrestricted);
+      await db.end();
+    }
   },
 );
 
@@ -416,6 +551,8 @@ flow(
     routes: [
       'POST /v1/projects/:projectId/cli-token',
       'DELETE /v1/projects/:projectId/cli-token/:tokenId',
+      'POST /v1/projects/:projectId/gateway/keys',
+      'DELETE /v1/projects/:projectId/gateway/keys/:keyId',
     ],
   },
   async (ctx) => {
@@ -458,6 +595,22 @@ flow(
               params: { projectId: project.id, tokenId: humanTokenId },
             })
         ).status(403);
+      });
+
+      await ctx.step('the session-bound credential cannot mint or revoke a gateway key; the owner can → 403 / 200', async () => {
+        const session = ctx.client.withBearer(bound!.token, 'SESSION_TOKEN');
+        (await session.post('/v1/projects/:projectId/gateway/keys', { name: 'from-session' }, { params: { projectId: project.id } }))
+          .status(403)
+          .body()
+          .has('$.error', 'Agent-session tokens cannot manage gateway keys');
+        const made = await owner.post('/v1/projects/:projectId/gateway/keys', { name: 'scope-5' }, { params: { projectId: project.id } });
+        made.status(200).body().exists('$.secret_key');
+        const keyId = made.json<{ key_id: string }>().key_id;
+        (await session.del('/v1/projects/:projectId/gateway/keys/:keyId', { params: { projectId: project.id, keyId } })).status(403);
+        (await owner.del('/v1/projects/:projectId/gateway/keys/:keyId', { params: { projectId: project.id, keyId } }))
+          .status(200)
+          .body()
+          .has('$.ok', true);
       });
 
       await ctx.step('an account that requires PAT expiry refuses a project CLI token without one → 400', async () => {

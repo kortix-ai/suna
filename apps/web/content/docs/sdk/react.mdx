@@ -81,6 +81,9 @@ the run stays blocked. Use `answerQuestion`, `rejectQuestion`, or
 | `enabled` | `true` | Set `false` to delay the hook, for example until a billing check passes. |
 | `chatEngine` | `true` | Set `false` if your app mounts its own chat surface for this session, to avoid syncing messages twice. |
 | `initialRuntimeSessionId` | `null` | A runtime session pin your server already holds for this session. The transcript renders from it while `/start` runs; the `/start` answer stays authoritative. `initialOpenCodeSessionId` is its deprecated name. |
+| `browserPresence` | `false` | Hold this tab's presence lease while a signed-in person uses the page (input in the last 10 minutes). The lease keeps the session's computer awake. |
+| `presenceAlerts` | `false` | This tab shows its own notifications. Sent on the presence lease: the server skips the phone and Web Push only while an alerting tab is in use. A change is sent at once. Pass `true` only when the project's `notification_center` flag is on; the server ignores it otherwise. Needs `browserPresence`. |
+| `presencePageExit` | `false` | End the presence lease when the page closes or enters the back/forward cache, so a turn that ends right after the tab closes still notifies. On, `pagehide` reports absent, and every absent report is sent with `keepalive`, so it outlives the page. Off: no `pagehide` report and no `keepalive`. A closing tab still turns hidden and reports absent, but the browser can cancel that request as the page unloads; the lease then lives to its 90 s expiry. Pass the project's `notification_center` flag. A change applies at once, with no new presence report. Needs `browserPresence`. |
 | `repositoryMode` | — | Telemetry only. A session created before a repository replacement starts and runs the project's current config without it. Only its `/workspace` clone still comes from the old repository, so a push from it needs a rebase first. |
 
 Sending is optimistic. `send` shows your message right away, then stream
@@ -108,9 +111,22 @@ need a running session. Each mirrors a method on the
 | `useAccountSecretResources(accountId)` | Account provider-secret metadata and use grants. Values are never returned. |
 | `useSessionProviderSecretPools(projectId, sessionId)` | Configured pools, including empty selections; `setPool` updates one provider and refreshes the session cache. |
 | `useProjectTriggers(projectId)` | Triggers: list, create, update, remove, fire. |
+| `useProjectTriggerEventTypes(projectId, connector)` | The app events a connector can trigger on. Idle until `connector` is set. |
 | `useChangeRequests(projectId, status?)` | Change requests: list, open, merge, close, request changes. |
 | `useRuntimeSupports(capability)` | Whether the open session's runtime serves a feature (`session.rewind`, `session.compact`, …), from the `/kortix/health` answers the runtime-reconnect poller reads. `true` until the first answer. See [What the runtime supports](/docs/sdk/sessions#what-the-runtime-supports). |
+| `useNotificationInbox({ userId, limit?, enabled? })` | The caller's newest inbox page (`limit` default 20), `unreadCount`, and `markRead(ids)`, `markAllRead()`, `markSessionRead(sessionId)`. Polls every 60 s while the page is visible and refetches on focus. A write changes the cache at once, restores it on failure, then refetches every inbox entry. No request without `userId`. |
+| `useNotificationPreferences({ userId, enabled? })` | The caller's push and email choice per kind, `email_available`, and `update(patch)` (optimistic). |
+| `useSessionWatch({ userId, projectId, sessionId, enabled? })` | `{ watching }` for one session, and `setWatching(watching)` (optimistic) to mute or watch it. |
 | `resetRuntimeQueries(queryClient)` | Not a hook. Drops every cached runtime query (sessions, messages, agents, commands, diffs). Call it after the session's runtime is replaced by a restart or a config reload, so the next read comes from the new runtime. |
+
+The three notification hooks key their cache by `userId` (`qk.notifications`),
+so a user switch in the same tab never shows the previous user's inbox. Pass
+the signed-in user's id.
+
+Notifications are behind the per-project `notification_center`
+[feature flag](/docs/feature-flags), off by default. Gate each hook with
+`enabled: useFeatureFlag(projectId, 'notification_center').enabled`, so a
+project with the flag off sends no notification request.
 
 ## Connector setup links
 
@@ -125,6 +141,16 @@ injects its adapters.
 | `createConnectorLinkInfoCache(fetchInfo, { storage })` | The cache factory itself (framework-free, storage injected) for a host that wants its own instance. |
 | `resolveConnectorStart({ start, finalize })` | The `/start` outcome rule: hosted url → popup, already connected → finalize once, otherwise the error message. |
 | `nextConnectorPollDelay(attempt, elapsedMs)` | The bounded poll schedule (3 s first, 5 s after, stops at 5 minutes). |
+
+## Connector data
+
+`useConnectorQuery(projectId, slug, action, args, { account, enabled, staleTime })`
+reads one connector action's output as a cached query. `error` is a
+`ConnectorCallError`: render a connect button from `error.connectUrl`, or an
+account picker from `error.availableAccounts`. Use it only for an action that
+reads; every fetch runs the action and writes an audit event. The output stays
+fresh for 30 s, focus never refetches, and only an upstream `429` or `503` is
+retried. See [Connectors from code](/docs/sdk/connectors#react).
 
 ## Start the open read early
 
@@ -270,8 +296,18 @@ It runs before every `composer` entry and ends the active response after the
 current tool call completes.
 Pass `placement: 'composer'` to keep it in the editable list above the input.
 It waits for the active response to finish. Each placement keeps submission order.
-The web composer uses Enter for transcript placement and Command+Enter
-(Control+Enter on Windows/Linux) for composer placement. Shift+Enter inserts a newline.
+Pass `delivery: 'steer' | 'queue' | 'interrupt'` to say how the prompt reaches a
+running turn. `steer` hands it to the turn at its next step; the turn does not
+stop. `queue` waits for the turn to end. `interrupt` ends the turn after the
+running tool. With only `delivery`, the SDK sends the placement it implies:
+`interrupt` is `transcript`, the others are `composer`. A steer row that cannot
+steer reads `delivery: 'queue'` with `steer_fallback` set to `unsupported`,
+`not_prompter` or `turn_ended`. `interrupt(promptId)` ("Stop and send") turns a
+waiting row into a transcript entry; a row already on the wire answers `409`.
+
+The web composer sends Enter as `steer` while a turn runs, and as a transcript
+send while the session is idle. Command+Enter (Control+Enter on Windows/Linux)
+is composer placement. Shift+Enter inserts a newline.
 
 List rows include `full_text` for complete previews after reload. `text` remains
 the bounded preview for older clients. Attachment bytes are excluded from list
@@ -290,8 +326,8 @@ after admission succeeds. A confirmed active turn clears the pending presentatio
 even if the previous inbox snapshot still lists that prompt. Runtime activity
 preserves the active turn's message ID during this handoff.
 
-The web composer names Enter **Quick Queue** and Command/Ctrl+Enter **Queue List**.
-Quick Queue entries run first. A waiting Quick Queue entry is a tinted bubble after
+The web composer names Command/Ctrl+Enter **Queue List** and a row's "Stop and
+send" **Quick Queue**. Quick Queue entries run first. A waiting Quick Queue entry is a tinted bubble after
 delivered turns, with no status text. Queue List entries remain editable until delivery starts.
 The server recovers missed completion events from exact runtime evidence, including
 after reload, without treating an unreachable runtime as a completed turn.
@@ -299,6 +335,12 @@ after reload, without treating an unreachable runtime as a completed turn.
 Each distinct Enter displays its pending prompt immediately, even while an earlier
 acceptance request is unresolved. Only a delivery failure adds text: its cause,
 Retry, and Remove. The server inbox continues to own execution order.
+
+The hook reads queue changes from the session's control stream
+(`GET .../sessions/:id/events?channels=control`), one connection per session
+however many components mount it. Every write of an inbox row arrives as a
+`kortix.control.queue` frame. The `GET .../prompts` poll runs only while that
+stream is not connected.
 
 ### Why a turn ended
 

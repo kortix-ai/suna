@@ -11,6 +11,7 @@
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
+import * as realWatchers from '../../notifications/watchers';
 import * as realAccess from '../lib/access';
 import * as realLifecycle from '../session-lifecycle';
 import * as realHoldSettle from '../session-lifecycle/inbox-hold-settle';
@@ -35,6 +36,8 @@ type CommandRow = {
   lastError: string | null;
   createdAt: Date;
   availableAt: Date;
+  /** The member the prompt runs as. Only they edit, send or retry it. */
+  actorUserId?: string | null;
 };
 
 let commandTable: CommandRow[] = [];
@@ -59,6 +62,8 @@ function row(overrides: Partial<CommandRow> = {}): CommandRow {
     lastError: null,
     createdAt: new Date('2026-08-18T00:00:00.000Z'),
     availableAt: new Date('2026-08-18T00:00:00.000Z'),
+    // The caller of every route below sent it.
+    actorUserId: USER_ID,
     ...overrides,
   };
 }
@@ -192,11 +197,10 @@ function predicateOf(predicate: unknown): (r: CommandRow) => boolean {
     if (ids.length > 0) {
       const wanted = new Set(ids);
       if (!wanted.has(r.commandId) && !wanted.has(r.sessionId ?? '')) return false;
-      if (wanted.has(r.commandId) === false && wanted.has(r.sessionId ?? '') === false) return false;
-      // Both a session scope and a command scope may be present; every bound id
-      // must match one of the row's own ids.
+      // A session scope, a command scope and an author may be present; every
+      // bound id must match one of the row's own ids.
       for (const id of wanted) {
-        if (id !== r.commandId && id !== r.sessionId) return false;
+        if (id !== r.commandId && id !== r.sessionId && id !== r.actorUserId) return false;
       }
     }
     if (wantsHeld && r.result?.held !== true) return false;
@@ -256,7 +260,11 @@ mock.module('../../billing/services/billing-gate', () => ({
 /** What the inbox read answers a new send. Null: the real read, over the mocked rows. */
 let sendState: { held: boolean; pending: boolean } | null = null;
 let edits: Array<{ sessionId: string; promptId: string; text: string }> = [];
-let editOutcome: 'edited' | 'delivering' | 'missing' = 'edited';
+let editOutcome: 'edited' | 'delivering' | 'missing' | 'not_author' = 'edited';
+let interrupts: string[] = [];
+let interruptOutcome: 'edited' | 'delivering' | 'missing' | 'not_author' = 'edited';
+/** Who the route said is writing, per edit or interrupt call. */
+let writers: unknown[] = [];
 
 mock.module('../session-lifecycle', () => ({
   ...realLifecycle,
@@ -278,12 +286,26 @@ mock.module('../session-lifecycle', () => ({
     commandTable.push(created);
     return { row: created, deduped: false };
   },
-  editInboxPrompt: async (sessionId: string, promptId: string, text: string) => {
+  editInboxPrompt: async (sessionId: string, promptId: string, text: string, actor: unknown) => {
     edits.push({ sessionId, promptId, text });
+    writers.push(actor);
     if (editOutcome !== 'edited') return { outcome: editOutcome };
     return {
       outcome: 'edited',
       row: row({ payload: { text, clientMessageId: 'q_1', wireMessageId: WIRE_ID } }),
+    };
+  },
+  interruptInboxPrompt: async (_sessionId: string, promptId: string, actor: unknown) => {
+    interrupts.push(promptId);
+    writers.push(actor);
+    if (interruptOutcome !== 'edited') return { outcome: interruptOutcome };
+    return {
+      outcome: 'edited',
+      row: row({
+        idempotencyKey: `prompt:${SESSION_ID}:q_1`,
+        payload: { text: 'say hi', clientMessageId: 'q_1', wireMessageId: WIRE_ID, delivery: 'interrupt', placement: 'transcript' },
+        result: { promoted: true },
+      }),
     };
   },
   drainSessionLifecycleQueue: async (input: Record<string, unknown>) => {
@@ -292,7 +314,7 @@ mock.module('../session-lifecycle', () => ({
   },
 }));
 
-let loadedProject: { row: { accountId: string; projectId: string }; userId: string } | null = null;
+let loadedProject: { row: { accountId: string; projectId: string; metadata?: unknown }; userId: string } | null = null;
 let visibleSession: Record<string, unknown> | null = null;
 let loadProjectCalls: Array<{ projectId: string; action: string }> = [];
 let capabilityCalls: string[] = [];
@@ -363,14 +385,28 @@ mock.module('../session-lifecycle/inbox-hold-settle', () => ({
   },
 }));
 
+// KRTX-1742: who starts following a session by prompting it.
+let autoWatches: Array<{ projectId: string; sessionId: string; userId: string }> = [];
+mock.module('../../notifications/watchers', () => ({
+  ...realWatchers,
+  autoWatchSession: async (projectId: string, sessionId: string, userId: string) => {
+    autoWatches.push({ projectId, sessionId, userId });
+  },
+}));
+
 const { projectsApp } = await import('../lib/app');
 (await import('./session-prompts')).registerSessionPromptsRoutes();
 
+/** The credential the test request carries. */
+let callerAuthType = 'pat';
+let callerSessionId: string | undefined;
+
 function app() {
-  const application = new Hono<{ Variables: { userId: string; authType: string } }>();
+  const application = new Hono<{ Variables: { userId: string; authType: string; sessionId: string } }>();
   application.use('*', async (c, next) => {
     c.set('userId', USER_ID);
-    c.set('authType', 'pat');
+    c.set('authType', callerAuthType);
+    if (callerSessionId) c.set('sessionId', callerSessionId);
     await next();
   });
   application.route('/v1/projects', projectsApp);
@@ -402,6 +438,8 @@ beforeEach(() => {
   drains = [];
   edits = [];
   editOutcome = 'edited';
+  interrupts = [];
+  interruptOutcome = 'edited';
   enqueueResult = null;
   billingOk = true;
   dbReadDelayMs = 0;
@@ -413,6 +451,9 @@ beforeEach(() => {
   stopLog.length = 0;
   loadedProject = { row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID }, userId: USER_ID };
   visibleSession = { row: { sessionId: SESSION_ID, metadata: {} } };
+  autoWatches = [];
+  callerAuthType = 'pat';
+  callerSessionId = undefined;
 });
 
 describe('POST .../prompts', () => {
@@ -440,6 +481,19 @@ describe('POST .../prompts', () => {
       deduped: false,
       observed_at: expect.any(String),
     });
+  });
+
+  test('delivery sets the stored placement; placement alone keeps its meaning (R10)', async () => {
+    await post({ ...validBody, delivery: 'steer' });
+    await post({ ...validBody, client_message_id: 'q_2', delivery: 'interrupt', placement: 'composer' });
+    await post({ ...validBody, client_message_id: 'q_3', placement: 'transcript' });
+    expect(enqueued.map((e) => [e.delivery, e.placement])).toEqual([
+      ['steer', 'composer'],
+      ['interrupt', 'transcript'],
+      [undefined, 'transcript'],
+    ]);
+    expect((await post({ ...validBody, client_message_id: 'q_4', delivery: 'now' })).status).toBe(400);
+    expect(enqueued).toHaveLength(3);
   });
 
   test('carries the client-minted wire id, the parts and the overrides into the payload', async () => {
@@ -577,6 +631,17 @@ describe('POST .../prompts', () => {
     expect(agentAccessCalls).toEqual([{ requested: 'other-agent', sessionAgent: 'kortix' }]);
   });
 
+  test('a prompt with no message_id gets a server-minted id, placed on delivery (R5.2)', async () => {
+    const { message_id: _omitted, ...withoutId } = validBody as Record<string, unknown>;
+    const res = await post(withoutId);
+    expect(res.status).toBe(202);
+    expect(enqueued[0].wireMessageId).toMatch(/^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/);
+    // The server owns the order: the drain re-mints it above the transcript.
+    expect(enqueued[0].remintOnDelivery).toBe(true);
+    const body = (await res.json()) as { message_id: string };
+    expect(body.message_id).toBe(enqueued[0].wireMessageId as string);
+  });
+
   test('rejects a message id OpenCode cannot order', async () => {
     // A badly-shaped id sorts below the transcript and OpenCode reads the
     // prompt as already answered — the turn silently never runs.
@@ -617,6 +682,69 @@ describe('POST .../prompts', () => {
     expect((await post(validBody, 'not-a-uuid')).status).toBe(400);
     expect(loadProjectCalls).toEqual([]);
   });
+
+  describe('a person who prompts a session follows it (KRTX-1742)', () => {
+    const OTHER_CREATOR = '77777777-7777-4777-8777-777777777777';
+    const asCredential = (authType: string, kind: string, sessionId?: string) => {
+      callerAuthType = authType;
+      callerSessionId = sessionId;
+      loadedProject = { ...loadedProject!, actor: { credential: { kind } } } as never;
+    };
+    beforeEach(() => {
+      loadedProject = {
+        row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID, metadata: { experimental: { notification_center: true } } },
+        userId: USER_ID,
+      };
+      visibleSession = { row: { sessionId: SESSION_ID, metadata: {}, createdBy: OTHER_CREATOR } };
+    });
+
+    test('with the notification_center flag off, the prompt is accepted and nobody follows', async () => {
+      for (const metadata of [{}, { experimental: { notification_center: false } }]) {
+        loadedProject = { row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID, metadata }, userId: USER_ID };
+        asCredential('supabase', 'jwt');
+        expect((await post({ ...validBody, client_message_id: `off_${enqueued.length}` })).status).toBe(202);
+      }
+      expect(enqueued).toHaveLength(2);
+      expect(autoWatches).toEqual([]);
+    });
+
+    test('a browser sign-in and a personal CLI token start following the session', async () => {
+      asCredential('supabase', 'jwt');
+      expect((await post(validBody)).status).toBe(202);
+      asCredential('pat', 'pat');
+      expect((await post({ ...validBody, client_message_id: 'q_2' })).status).toBe(202);
+      expect(autoWatches).toEqual([
+        { projectId: PROJECT_ID, sessionId: SESSION_ID, userId: USER_ID },
+        { projectId: PROJECT_ID, sessionId: SESSION_ID, userId: USER_ID },
+      ]);
+    });
+
+    test('the creator needs no row: they follow their own session already', async () => {
+      asCredential('supabase', 'jwt');
+      visibleSession = { row: { sessionId: SESSION_ID, metadata: {}, createdBy: USER_ID } };
+      expect((await post(validBody)).status).toBe(202);
+      expect(autoWatches).toEqual([]);
+    });
+
+    test('an agent session token, a session-bound PAT and an API key never follow', async () => {
+      asCredential('pat', 'agent_session', SESSION_ID);
+      expect((await post(validBody)).status).toBe(202);
+      asCredential('pat', 'pat', SESSION_ID);
+      expect((await post({ ...validBody, client_message_id: 'q_2' })).status).toBe(202);
+      asCredential('apiKey', 'sandbox');
+      expect((await post({ ...validBody, client_message_id: 'q_3' })).status).toBe(202);
+      expect(autoWatches).toEqual([]);
+    });
+
+    test('a refused prompt follows nothing', async () => {
+      asCredential('supabase', 'jwt');
+      billingOk = false;
+      expect((await post(validBody)).status).toBe(402);
+      visibleSession = null;
+      expect((await post(validBody)).status).toBe(404);
+      expect(autoWatches).toEqual([]);
+    });
+  });
 });
 
 describe('GET .../prompts', () => {
@@ -655,6 +783,9 @@ describe('GET .../prompts', () => {
         text: 'say hi',
         full_text: 'say hi',
         placement: 'composer',
+        // A row from before steering: `queue`, as its placement implies.
+        delivery: 'queue',
+        steer_fallback: null,
         attempts: 0,
         runtime_retries: 0,
         last_error: null,
@@ -662,6 +793,8 @@ describe('GET .../prompts', () => {
         // client never has to distinguish "no attachments" from "old server".
         attachments: [],
         no_reply: false,
+        // The member it runs as.
+        author_user_id: USER_ID,
         created_at: '2026-08-18T00:00:00.000Z',
         available_at: '2026-08-18T00:00:00.000Z',
       },
@@ -800,6 +933,7 @@ describe('DELETE .../prompts/:promptId', () => {
     expect(await response.json()).toEqual({
       removed: {
         placement: 'composer',
+        delivery: 'queue',
         prompt_id: PROMPT_ID,
         removed_message_ids: [WIRE_ID],
         client_message_id: 'q_1',
@@ -891,6 +1025,29 @@ describe('PATCH .../prompts/:promptId', () => {
 
   test('refuses a prompt id that is not a row id', async () => {
     expect((await edit({ text: 'x' }, 'not-a-uuid')).status).toBe(400);
+  });
+
+  test('"Stop and send": delivery interrupt converts the row and kicks the drain (R10)', async () => {
+    const response = await edit({ delivery: 'interrupt' });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ delivery: 'interrupt', placement: 'transcript' });
+    expect(interrupts).toEqual([PROMPT_ID]);
+    expect(edits).toHaveLength(0);
+    expect(drains).toEqual([{ idempotencyKey: `prompt:${SESSION_ID}:q_1` }]);
+  });
+
+  test('text and delivery together: the edit, then the conversion', async () => {
+    expect((await edit({ text: 'say hello', delivery: 'interrupt' })).status).toBe(200);
+    expect(edits).toHaveLength(1);
+    expect(interrupts).toEqual([PROMPT_ID]);
+  });
+
+  test('a row on its way cannot be converted; another delivery value is refused', async () => {
+    interruptOutcome = 'delivering';
+    expect((await edit({ delivery: 'interrupt' })).status).toBe(409);
+    expect(drains).toHaveLength(0);
+    expect((await edit({ delivery: 'steer' })).status).toBe(400);
+    expect(interrupts).toEqual([PROMPT_ID]);
   });
 });
 
@@ -1092,5 +1249,54 @@ describe('POST .../prompts authorship', () => {
     expect(enqueued.at(-1)!.authorSessionId).toBeNull();
     await send(SESSION_ID);
     expect(enqueued.at(-1)!.authorSessionId).toBeNull();
+  });
+});
+
+// A queued prompt runs as its author: the drain binds the session credential
+// to them. Another member who could rewrite or send it would run their own
+// text under the author's identity.
+describe("another member's queued prompt", () => {
+  const OTHER_MEMBER = '22222222-2222-4222-8222-222222222222';
+  const call = (method: string, suffix = '', body?: unknown) =>
+    app().request(`${base()}/${PROMPT_ID}${suffix}`, {
+      method,
+      ...(body === undefined
+        ? {}
+        : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+    });
+  const notAuthor = async (response: Response) => {
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: 'not_prompt_author' });
+  };
+
+  test('send now and remove → 403 not_prompt_author; the row is unchanged', async () => {
+    commandTable = [row({ actorUserId: OTHER_MEMBER })];
+    const before = structuredClone(commandTable[0]);
+    await notAuthor(await call('POST', '/retry'));
+    await notAuthor(await call('DELETE'));
+    expect(commandTable).toEqual([before]);
+    expect(drains).toEqual([]);
+  });
+
+  test('edit and Stop and send name the caller as the writer and answer the refusal with 403', async () => {
+    writers = [];
+    editOutcome = 'not_author';
+    interruptOutcome = 'not_author';
+    try {
+      await notAuthor(await call('PATCH', '', { text: 'rewritten' }));
+      await notAuthor(await call('PATCH', '', { delivery: 'interrupt' }));
+    } finally {
+      editOutcome = 'edited';
+      interruptOutcome = 'edited';
+    }
+    expect(writers).toEqual([{ userId: USER_ID }, { userId: USER_ID }]);
+  });
+
+  test('someone who manages the session removes it, and does not send it', async () => {
+    commandTable = [row({ actorUserId: OTHER_MEMBER })];
+    visibleSession = { ...visibleSession, canManageLifecycle: true };
+    await notAuthor(await call('POST', '/retry'));
+    expect((await call('DELETE')).status).toBe(200);
+    expect(commandTable).toEqual([]);
   });
 });

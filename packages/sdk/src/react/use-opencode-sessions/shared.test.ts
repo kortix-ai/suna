@@ -1,20 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
-  activeServerKey,
   asRuntimeList,
-  cachedRuntimeList,
   canQueryRuntimeSession,
-  CACHE_SCOPE_GLOBAL,
   clearProjectProviderCache,
-  getLSCache,
-  LS_AGENTS,
-  LS_COMMANDS,
-  LS_PROVIDERS,
-  LS_SESSIONS,
-  setLSCache,
   unwrap,
 } from './shared';
-import { setCurrentRuntime } from '../../core/session/current-runtime';
+import { pruneAllRegisteredCaches } from '../../platform/storage/managed-storage';
 
 // ============================================================================
 // unwrap — the SDK-response { data, error } → value-or-throw helper shared by
@@ -108,10 +99,14 @@ describe('canQueryRuntimeSession', () => {
 });
 
 // ============================================================================
-// getLSCache / setLSCache / clearProjectProviderCache — the localStorage-backed
-// per-family caches, scoped by the active sandbox id (or an explicit scope).
-// `window`/`localStorage` don't exist in bun's default test environment, so
-// both are stubbed with one minimal in-memory `Storage` implementation.
+// No runtime list is kept in localStorage.
+//
+// Sessions, agents, commands and providers each had a `kortix_cache_*:<scope>`
+// family in localStorage, painted as `placeholderData`. They were a fifth copy
+// of session state on the device, written on every list fetch. The web keeps
+// two device caches now (`apps/web/src/lib/device-caches.ts`); the old keys
+// are swept at boot there. `window`/`localStorage` don't exist in bun's
+// default test environment, so both are stubbed.
 // ============================================================================
 
 class MemoryStorage implements Storage {
@@ -148,68 +143,29 @@ function stubBrowserStorage(): void {
   (globalThis as GlobalWithDom).localStorage = storage;
 }
 
-describe('getLSCache / setLSCache (localStorage stubbed)', () => {
-  beforeEach(() => {
-    stubBrowserStorage();
-    setCurrentRuntime(null);
-  });
-
+describe('runtime list caches (localStorage stubbed)', () => {
+  beforeEach(() => stubBrowserStorage());
   afterEach(() => {
     delete (globalThis as GlobalWithDom).window;
     delete (globalThis as GlobalWithDom).localStorage;
-    setCurrentRuntime(null);
   });
 
-  test('round-trips a value under the active-sandbox scope by default', () => {
-    setCurrentRuntime('https://sbx.test', 'sandbox-1');
-    setLSCache(LS_SESSIONS, [{ id: 'ses_1' }]);
-    expect(getLSCache<Array<{ id: string }>>(LS_SESSIONS)).toEqual([{ id: 'ses_1' }]);
+  test('loading the hooks registers no localStorage cache family', () => {
+    for (let n = 0; n < 6; n += 1) {
+      localStorage.setItem(`kortix_cache_sessions:sbx_${n}`, JSON.stringify({ v: [], t: n }));
+    }
+    pruneAllRegisteredCaches();
+    expect(localStorage.length).toBe(6);
   });
 
-  test('falls back to the "none" scope when there is no active sandbox', () => {
-    expect(activeServerKey()).toBe('none');
-    setLSCache(LS_SESSIONS, [{ id: 'ses_none' }]);
-    expect(getLSCache<Array<{ id: string }>>(LS_SESSIONS)).toEqual([{ id: 'ses_none' }]);
-  });
-
-  test('an explicit scope overrides the active-sandbox default', () => {
-    setCurrentRuntime('https://sbx.test', 'sandbox-1');
-    setLSCache(LS_PROVIDERS, { all: [] }, CACHE_SCOPE_GLOBAL);
-    // Not visible under the (different) active-sandbox scope...
-    expect(getLSCache(LS_PROVIDERS)).toBeUndefined();
-    // ...but is visible when read back with the same explicit scope.
-    expect(getLSCache<{ all: unknown[] }>(LS_PROVIDERS, CACHE_SCOPE_GLOBAL)).toEqual({ all: [] });
-  });
-
-  test('different families never collide even under the same scope', () => {
-    setLSCache(LS_SESSIONS, ['sessions-value']);
-    setLSCache(LS_AGENTS, ['agents-value']);
-    expect(getLSCache<string[]>(LS_SESSIONS)).toEqual(['sessions-value']);
-    expect(getLSCache<string[]>(LS_AGENTS)).toEqual(['agents-value']);
-  });
-
-  test('an unknown family is a safe no-op miss', () => {
-    expect(getLSCache('kortix_cache_unknown_family')).toBeUndefined();
-  });
-
-  test('clearProjectProviderCache removes both the native and gateway scoped entries', () => {
-    setLSCache(LS_PROVIDERS, { all: ['native'] }, 'proj:p1:native');
-    setLSCache(LS_PROVIDERS, { all: ['gateway'] }, 'proj:p1:gateway');
-    clearProjectProviderCache('p1');
-    expect(getLSCache(LS_PROVIDERS, 'proj:p1:native')).toBeUndefined();
-    expect(getLSCache(LS_PROVIDERS, 'proj:p1:gateway')).toBeUndefined();
-  });
-
-  test('without window/localStorage stubbed, get/set are safe no-ops', () => {
-    delete (globalThis as GlobalWithDom).window;
-    delete (globalThis as GlobalWithDom).localStorage;
-    expect(() => setLSCache(LS_SESSIONS, ['x'])).not.toThrow();
-    expect(getLSCache(LS_SESSIONS)).toBeUndefined();
+  test('clearProjectProviderCache stays callable and writes nothing', () => {
+    expect(() => clearProjectProviderCache('p1')).not.toThrow();
+    expect(localStorage.length).toBe(0);
   });
 });
 
 // ============================================================================
-// asRuntimeList / cachedRuntimeList — the shape guard for runtime LIST
+// asRuntimeList — the shape guard for runtime LIST
 // endpoints.
 //
 // Incident (dev, 2026-08-23): `TypeError: t is not iterable` crashed the whole
@@ -237,32 +193,5 @@ describe('asRuntimeList', () => {
   test('coerces undefined/null to an empty list', () => {
     expect(asRuntimeList(undefined)).toEqual([]);
     expect(asRuntimeList(null)).toEqual([]);
-  });
-});
-
-describe('cachedRuntimeList (localStorage stubbed)', () => {
-  beforeEach(() => {
-    stubBrowserStorage();
-    setCurrentRuntime(null);
-  });
-
-  afterEach(() => {
-    delete (globalThis as GlobalWithDom).window;
-    delete (globalThis as GlobalWithDom).localStorage;
-    setCurrentRuntime(null);
-  });
-
-  test('returns the cached array', () => {
-    setLSCache(LS_COMMANDS, [{ name: 'build' }]);
-    expect(cachedRuntimeList<{ name: string }>(LS_COMMANDS)).toEqual([{ name: 'build' }]);
-  });
-
-  test('a cached non-array reads as a MISS, not as placeholder data', () => {
-    setLSCache(LS_COMMANDS, { commands: [{ name: 'build' }] });
-    expect(cachedRuntimeList(LS_COMMANDS)).toBeUndefined();
-  });
-
-  test('an empty cache is a miss', () => {
-    expect(cachedRuntimeList(LS_COMMANDS)).toBeUndefined();
   });
 });

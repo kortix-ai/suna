@@ -5,20 +5,25 @@ import { loadProjectTriggers } from '../triggers';
 import { invalidateProjectMirror } from '../git';
 import { projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
-import { createHash } from 'node:crypto';
 import { createRoute, z } from '@hono/zod-openapi';
 import { errors, json } from '../../openapi';
 import { TriggerFireResultSchema, projectWebhooksApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import { requestAuditContext } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
+import { releaseWebhookDeliveryKey, webhookDeliveryKey } from '../lib/webhook-delivery';
+import { markGitTriggerAttemptFailed } from '../lib/trigger-fire';
+import { raiseTriggerAlert } from '../lib/trigger-alerts';
 import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggerFilterMatches, triggersPausedForProject, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
 import {
   validateWebhookSecretConfiguration,
   webhookSecretConfigurationError,
 } from '../lib/webhook-secret-policy';
 import { consumeProjectWebhookManifestRefreshBudget, createProjectWebhookRateLimitMiddleware } from '../../middleware/rate-limit';
+import { logger } from '../../lib/logger';
 import { bindIntegrationPrincipal } from '../../shared/audit-scope';
+
+const WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS = 300;
 
 export function registerTriggerWebhooksRoutes(): void {
   projectWebhooksApp.use('/projects/:projectId/:slug', createProjectWebhookRateLimitMiddleware());
@@ -29,13 +34,15 @@ export function registerTriggerWebhooksRoutes(): void {
     tags: ['triggers'],
     summary: 'Fire a webhook trigger',
     description:
-      'Authenticated by the trigger secret, not a bearer token: send `X-Kortix-Signature` / `X-Hub-Signature-256` (HMAC of the raw body), `X-Kortix-Token`, or `Authorization: Bearer <secret>`. The JSON body is the payload the prompt template renders.',
+      'Authenticated by the trigger secret, not a bearer token: send `X-Kortix-Signature` / `X-Hub-Signature-256` (HMAC of the raw body), `X-Kortix-Token`, or `Authorization: Bearer <secret>`. Add `X-Kortix-Timestamp` (epoch seconds, within 5 minutes) to sign `<timestamp>.<body>` and stop replay. Every pre-authentication miss answers 401. The JSON body is the payload the prompt template renders.',
     // No body schema: the handler HMACs the raw bytes, so nothing may parse them first.
     request: { params: z.object({ projectId: z.string(), slug: z.string() }) },
     responses: {
       200: json(z.object({ status: z.literal('skipped'), reason: z.string() }), 'Accepted, not fired'),
       202: json(TriggerFireResultSchema, 'Queued or fired'),
-      ...errors(400, 401, 404, 409, 500),
+      // 402: the account has no usable model (no plan-covered managed model, no
+      // connected provider key) — the fire gates instead of minting a doomed session.
+      ...errors(400, 401, 402, 500),
     },
   }), async (c) => {
     const projectId = c.req.param('projectId');
@@ -63,7 +70,14 @@ export function registerTriggerWebhooksRoutes(): void {
         eq(projects.status, 'active'),
       ))
       .limit(1);
-    if (!project) return c.json({ error: 'Not found' }, 404);
+    // Every pre-authentication miss answers the same 401 as a bad signature, so a
+    // caller holding any credential header cannot tell which projects, slugs or
+    // secret configurations exist. The reason is logged for the owner.
+    const reject = (reason: string, extra?: Record<string, unknown>) => {
+      logger.warn('[trigger-webhook] rejected before authentication', { projectId, slug, reason, ...extra });
+      return c.json({ error: 'Invalid webhook signature' }, 401);
+    };
+    if (!project) return reject('project_not_found');
 
     // Trigger CRUD can commit on another API replica. Refresh this replica's
     // mirror before authentication, but bound the unauthenticated Git work by
@@ -73,13 +87,11 @@ export function registerTriggerWebhooksRoutes(): void {
     }
     const { specs } = await loadProjectTriggers(await withProjectGitAuth(project));
     const spec = specs.find((s) => s.slug === slug);
-    if (!spec || spec.type !== 'webhook' || !spec.enabled) {
-      return c.json({ error: 'Not found' }, 404);
-    }
+    if (!spec || spec.type !== 'webhook' || !spec.enabled) return reject('trigger_not_found');
 
     const rawBody = await c.req.text();
     if (!spec.secretEnv) {
-      return c.json(webhookSecretConfigurationError('missing'), 409);
+      return reject('webhook_secret_missing');
     }
     const secret = await getProjectSecretValueForConsumer({
       projectId: project.projectId,
@@ -92,7 +104,7 @@ export function registerTriggerWebhooksRoutes(): void {
         projectId: project.projectId,
         secretEnv: spec.secretEnv,
       });
-      return c.json(configurationError ?? webhookSecretConfigurationError('unavailable'), 409);
+      return reject((configurationError ?? webhookSecretConfigurationError('unavailable')).code);
     }
 
     // Primary auth: HMAC-SHA256 signature over the raw body (GitHub-compatible).
@@ -103,8 +115,17 @@ export function registerTriggerWebhooksRoutes(): void {
     // shared bearer token; signed senders are unaffected.
     const signatureHeader =
       c.req.header('x-kortix-signature') || c.req.header('x-hub-signature-256') || null;
+    // Optional replay guard: a sender that adds `X-Kortix-Timestamp` (epoch
+    // seconds) signs `<timestamp>.<body>`; a stale or future timestamp is refused.
+    const timestampHeader = c.req.header('x-kortix-timestamp');
+    if (signatureHeader && timestampHeader) {
+      const seconds = Number(timestampHeader);
+      if (!Number.isFinite(seconds) || Math.abs(Date.now() / 1000 - seconds) > WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS) {
+        return c.json({ error: 'Invalid webhook signature' }, 401);
+      }
+    }
     const authed = signatureHeader
-      ? verifyWebhookSignature(rawBody, secret, signatureHeader)
+      ? verifyWebhookSignature(timestampHeader ? `${timestampHeader}.${rawBody}` : rawBody, secret, signatureHeader)
       : verifyWebhookToken(
           extractWebhookToken(c.req.header('x-kortix-token'), c.req.header('authorization')),
           secret,
@@ -125,22 +146,17 @@ export function registerTriggerWebhooksRoutes(): void {
       fired_at: new Date().toISOString(),
     };
     const renderedPrompt = renderPromptTemplate(spec.promptTemplate, payload);
-    const deliveryId =
-      c.req.header('x-kortix-delivery-id') ??
-      c.req.header('x-github-delivery') ??
-      c.req.header('x-request-id') ??
-      null;
-    const staticAuthFingerprint =
-      c.req.header('x-kortix-token') ??
-      c.req.header('authorization') ??
-      '';
-    const idempotencyKey = deliveryId
-      ? `trigger:webhook:${project.projectId}:${spec.slug}:${deliveryId}`
-      : `trigger:webhook:${project.projectId}:${spec.slug}:${createHash('sha256')
-        .update(rawBody)
-        .update(signatureHeader ?? '')
-        .update(staticAuthFingerprint)
-        .digest('hex')}`;
+    // One delivery runs once: keyed on the event when the sender names one,
+    // else on the body inside a replay window (projects/lib/webhook-delivery.ts).
+    const delivery = webhookDeliveryKey({
+      projectId: project.projectId,
+      slug: spec.slug,
+      header: (name) => c.req.header(name),
+      rawBody,
+      signatureHeader,
+      staticAuthFingerprint: c.req.header('x-kortix-token') ?? c.req.header('authorization') ?? '',
+    });
+    const idempotencyKey = delivery.key;
 
     // Server-side per-project kill-switch: a paused project ignores inbound
     // webhooks (acknowledged, not fired) so a repo deployed to two control planes
@@ -157,6 +173,10 @@ export function registerTriggerWebhooksRoutes(): void {
       return c.json({ status: 'skipped' as const, reason: 'delivery did not match the trigger filter' }, 200);
     }
 
+    // A key whose earlier run dead-lettered, lost its session, or (body-hash
+    // keys) aged out of the replay window answers for nothing: free it so
+    // this delivery runs instead of replaying that outcome.
+    await releaseWebhookDeliveryKey(idempotencyKey, { byEvent: delivery.byEvent });
     const result = await fireGitTrigger({
       spec,
       project,
@@ -167,10 +187,13 @@ export function registerTriggerWebhooksRoutes(): void {
       request: requestAuditContext(c),
     });
 
+    // A duplicate ran nothing: it answers `deduped` and leaves last_fired_at alone.
+    // A queued prompt or create has not run yet: its delivery ends an alert
+    // streak, not this handoff (KRTX-1742).
     if (result.status === 'queued') {
-      await markGitTriggerFired(project.projectId, spec.slug, new Date());
+      if (!result.deduped) await markGitTriggerFired(project.projectId, spec.slug, new Date(), 'fired', { endsAlert: false });
       return c.json({
-        status: 'queued' as const,
+        status: result.deduped ? ('deduped' as const) : ('queued' as const),
         command_id: result.commandId ?? null,
         session_id: result.sessionId ?? null,
         reason: result.reason ?? null,
@@ -178,11 +201,25 @@ export function registerTriggerWebhooksRoutes(): void {
       }, 202);
     }
     if (result.status === 'failed') {
-      return c.json({ error: result.error ?? 'Failed to fire trigger' }, 500);
+      const error = result.error ?? 'Failed to fire trigger';
+      // Recorded like a failed cron fire, so the trigger says it failed (KRTX-1743).
+      await markGitTriggerAttemptFailed(project.projectId, spec.slug, new Date(), error).catch(() => {});
+      // Kortix cannot know whether the sender retries on our 500, so the first
+      // failure of a streak alerts the watchers (KRTX-1742). A create that went
+      // back to the queue alerts from the drain only if it dead-letters.
+      if (!result.requeued) {
+        await raiseTriggerAlert({ projectId: project.projectId, accountId: project.accountId, slug: spec.slug, source: 'fire', error });
+      }
+      // The model gate is account state, not a server fault: answer the billing
+      // gate's convention (402 + a machine-readable code) so the sender can act.
+      if (result.errorCode === 'no_usable_model') {
+        return c.json({ error, code: 'no_usable_model' }, 402);
+      }
+      return c.json({ error }, 500);
     }
     // Stamp runtime last_fired_at so the UI's "last fired N ago" matches the
     // cron-fire path even when the webhook is the actual source.
-    await markGitTriggerFired(project.projectId, spec.slug, new Date());
+    if (!result.deduped) await markGitTriggerFired(project.projectId, spec.slug, new Date());
     return c.json({
       status: result.deduped ? ('deduped' as const) : ('fired' as const),
       command_id: result.commandId ?? null,

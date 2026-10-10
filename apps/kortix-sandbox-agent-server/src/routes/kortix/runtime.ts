@@ -3,7 +3,7 @@ import { Hono, type Context } from 'hono'
 import { RUNTIME_NOT_READY_CODE } from '@kortix/api-contract/runtime-relay'
 import type { Config } from '@/lib/config/config'
 import { logger } from '@/lib/log/logger'
-import { KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '@/lib/kortix-api/kortix-user-context'
+import { KORTIX_SERVICE_CALL_HEADER, KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '@/lib/kortix-api/kortix-user-context'
 import type { KortixEvent } from '@/services/event-bus/kortix-event-bus'
 import { etagMatches, notModified, timedJson } from './kortix-http'
 import type { HarnessQueryService } from '@/harness/contract/queries'
@@ -15,6 +15,13 @@ export const DEFAULT_MESSAGE_PAGE = 20
 export const MAX_MESSAGE_PAGE = 200
 /** Heartbeat cadence on `/events`. Three of these fit in a 60 s client budget. */
 const EVENT_HEARTBEAT_MS = 15_000
+/**
+ * Frames one `/events` consumer may leave unread. The ring holds 20,000; a
+ * consumer further behind than this is dropped, and reconnects with its cursor
+ * (replay, or a typed resync), instead of buffering every event for the life of
+ * the connection.
+ */
+const EVENT_STREAM_MAX_QUEUED_FRAMES = 1_000
 export const KORTIX_USER_CONTEXT_QUERY_PARAM = '__kortix_user_context'
 
 function bearerToken(header: string | undefined): string | null {
@@ -130,6 +137,25 @@ export function createRuntimeRouter(
       return answer(c, () => turns.prompt(c.req.param('sessionId'), input))
     })
 
+    // The `/prompt` body; the running turn reads it at its next step boundary.
+    app.post('/sessions/:sessionId/steer', async (c) => {
+      const auth = authorize(cfg, c)
+      if (!auth.ok) return auth.response
+      // Only apps/api may steer: its admission is where the turn's prompter
+      // is checked (D9.3). The user-facing proxy authenticates every relayed
+      // request with this same bearer but strips the service-call mark, so the
+      // mark proves a direct platform call and the bearer proves the caller.
+      if (bearerToken(c.req.header('Authorization')) !== cfg.sandboxToken || c.req.header(KORTIX_SERVICE_CALL_HEADER) !== '1') {
+        logger.warn('[kortix-runtime] rejected steer from a non-service caller')
+        return c.json({ error: 'steer requires the sandbox service credential', code: 'STEER_SERVICE_ONLY' }, 403)
+      }
+      const raw = await c.req.json().catch(() => undefined)
+      const input = parseRuntimePromptBody(raw)
+      if (typeof input === 'string') return c.json({ error: input }, 400)
+      if (!input.messageId) return c.json({ error: 'message_id is required' }, 400)
+      return answer(c, () => turns.steer(c.req.param('sessionId'), input))
+    })
+
     app.post('/sessions/:sessionId/abort', async (c) => {
       const auth = authorize(cfg, c)
       if (!auth.ok) return auth.response
@@ -146,6 +172,13 @@ export function createRuntimeRouter(
       const auth = authorize(cfg, c)
       if (!auth.ok) return auth.response
       return answer(c, () => turns.removeMessage(c.req.param('sessionId'), c.req.param('messageId')))
+    })
+
+    // Take back a user message no model call has read (RUNTIME_RETRACT_CAPABILITY).
+    app.post('/messages/:sessionId/:messageId/retract', async (c) => {
+      const auth = authorize(cfg, c)
+      if (!auth.ok) return auth.response
+      return answer(c, () => turns.retractMessage(c.req.param('sessionId'), c.req.param('messageId')))
     })
 
     app.get('/agents', async (c) => {
@@ -226,12 +259,31 @@ export function createRuntimeRouter(
         let lastSent = -1
         const pending: KortixEvent[] = []
 
+        // The same teardown `cancel()` runs: stop the heartbeat, leave the bus.
+        const teardown = () => {
+          closed = true
+          if (heartbeat) clearInterval(heartbeat)
+          heartbeat = null
+          unsubscribe?.()
+          unsubscribe = null
+        }
         const write = (payload: string) => {
           if (closed) return
           try {
             controller.enqueue(encoder.encode(payload))
           } catch {
-            closed = true
+            teardown()
+            return
+          }
+          // desiredSize = highWaterMark (1) - queued frames, so this is "more
+          // than the cap queued": the consumer is not draining.
+          if (controller.desiredSize !== null && controller.desiredSize < -EVENT_STREAM_MAX_QUEUED_FRAMES) {
+            teardown()
+            try {
+              controller.close()
+            } catch {
+              // already closed
+            }
           }
         }
         const send = (event: KortixEvent) => {

@@ -2,14 +2,16 @@ import { writeFileSync, readFileSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { logger } from '@/lib/log/logger'
 import { writeAgentEnvFile } from '../shared/agent-env-file'
-import { configureGlobalGitIdentity, configureGitCredentialHelper, configureRepoCredentialHelper, materializeRepo, materializeProjectSeed, materializeScaffoldSeed, scheduleHistoryBackfill } from '@/lib/git/git'
+import { configureGlobalGitIdentity, configureGitCredentialHelper, configureRepoCredentialHelper } from '@/lib/git/git'
+import { materializeProjectSeed, materializeScaffoldSeed, scheduleHistoryBackfill } from '@/services/workspace-provider/git'
+import { provideWorkspace } from '@/services/workspace-provider/workspace-provider'
 import { loadOpenCodeConfig as loadConfig, type OpenCodeConfig as Config } from './config'
 import { bakedCatalogPath, waitForOpencodeReady, refreshGatewayCatalogFile } from './lifecycle'
 import { bootOpenCodeConfig } from './boot-config-path'
 import { OPENCODE_HOME } from './paths'
 import { createProjectEnvStore } from '@/services/sandbox-env/project-env'
 import { startEgressShim } from '@/services/egress-shim'
-import { startLlmProxy, setLlmProxyToken, llmProxyReady, llmProxyBaseUrl, startConnectorProxy, setConnectorProxyToken, connectorProxyReady, connectorProxyBaseUrl } from '@/services/llm-proxy/llm-proxy'
+import { startLlmProxy, setLlmProxyToken, llmProxyReady, llmProxyBaseUrl } from '@/services/llm-proxy/llm-proxy'
 import { createOpenCodeHarnessService } from './service'
 import { finalizeOrphanedTurn, markSeedBakedSession } from './initial-session'
 import { createInitialOpenCodeSession } from './initial-prompt'
@@ -124,15 +126,6 @@ export async function runWarmSeedMode(
       process.env.KORTIX_LLM_PROXY_URL = llmUrl
       bootMark('seed-llm-proxy-started')
       logger.info('[seed] llm hot-swap proxy up; seed bakes proxied gateway provider', { llmUrl })
-    }
-    const exPort = Number(process.env.KORTIX_CONNECTORS_PROXY_PORT) || 4320
-    const exUrl = startConnectorProxy(exPort)
-    if (exUrl) {
-      // Seen by buildOpencodeConfigContent only when KORTIX_CONNECTORS_MCP_ENABLED=1.
-      // The proxy is harmless when unused; the CLI remains the primary path.
-      process.env.KORTIX_CONNECTORS_PROXY_URL = exUrl
-      bootMark('seed-connector-proxy-started')
-      logger.info('[seed] connector hot-swap proxy up for optional connector MCP compatibility', { exUrl })
     }
     // Catalog prefetch (best-effort): the seed is tokenless and can't hit the
     // gateway /models, so fetch the FULL org catalog from an apps/api endpoint
@@ -276,11 +269,12 @@ export async function runWarmSeedMode(
       try { await configureGitCredentialHelper(cfg2, OPENCODE_HOME) } catch {}
       if (cfg2.autoClone) {
         // Clear any seed-clone failure so this retries cleanly. When the seed
-        // pre-cloned the project, materializeRepo hits the baked-checkout fast
-        // path: set remote + local `git checkout -B <session>` from the cloned
-        // base, no network re-clone. Otherwise it clones now.
+        // pre-cloned the project, the warm adoption hits the baked-checkout
+        // fast path: set remote + local `git checkout -B <session>` from the
+        // cloned base, no network re-clone. Otherwise it clones now. Git only:
+        // a seed fork has never taken the S3 transport.
         bootState.repoMaterializationError = null
-        await materializeRepo(cfg2).catch((err) => {
+        await provideWorkspace({ ...cfg2, projectSnapshotMode: 'git' }).catch((err) => {
           bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
           logger.error('[seed] repo materialization failed', err)
         })
@@ -334,20 +328,10 @@ export async function runWarmSeedMode(
       ) {
         // LLM gateway: required for the session to function.
         setLlmProxyToken(process.env.KORTIX_TOKEN, process.env.KORTIX_LLM_BASE_URL)
-        // Optional Connector MCP compatibility: if the seed enabled that face,
-        // the running MCP points at this proxy. The CLI path does not need this;
-        // it reads the live session env through BASH_ENV on every command.
-        if (process.env.KORTIX_CONNECTORS_PROXY_URL && connectorProxyBaseUrl() != null) {
-          setConnectorProxyToken(process.env.KORTIX_TOKEN, process.env.KORTIX_API_URL)
-        }
         if (llmProxyReady()) {
           hotSwapped = true
           bootMark('adopt-opencode-hotswapped')
-          // Observability only: this confirms the optional connector proxy has a
-          // live token. It does not assert that OpenCode registered MCP tools.
-          if (connectorProxyReady()) bootMark('adopt-connector-proxy-ready')
-          logger.info('[seed] fork adoption hot-swap: per-session tokens injected via proxies, opencode not restarted', {
-            connectorReady: connectorProxyReady(),
+          logger.info('[seed] fork adoption hot-swap: per-session token injected via the LLM proxy, opencode not restarted', {
             gatewayCatalogChanged,
           })
         }
@@ -389,8 +373,8 @@ export async function runWarmSeedMode(
 
 
 // Adopt a forked session inside a warm-seed clone. The repo is already baked —
-// materializeRepo() takes its local-only branch (remote set-url + `checkout -B
-// <session>`), so adoption is ~100ms.
+// the warm adoption (provideWorkspace, Git only) takes its local-only branch
+// (remote set-url + `checkout -B <session>`), so adoption is ~100ms.
 // Trigger: KORTIX_SESSION_ID appearing in /etc/pt-env (the seed's own env
 // never contains it — platinum-seed.ts strips it from captureEnv).
 export function armSeedAdoption(
@@ -417,7 +401,7 @@ export function armSeedAdoption(
       try { await configureGlobalGitIdentity(cfg2, OPENCODE_HOME) } catch {}
       try { await configureGitCredentialHelper(cfg2, OPENCODE_HOME) } catch {}
       if (cfg2.autoClone) {
-        await materializeRepo(cfg2).catch((err) => {
+        await provideWorkspace({ ...cfg2, projectSnapshotMode: 'git' }).catch((err) => {
           bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
           logger.error('[seed] repo adoption failed', err)
         })

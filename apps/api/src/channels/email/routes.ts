@@ -7,6 +7,7 @@ import { dispatchAgentMailEvent, resolveProjectForAgentMailInbox } from './sessi
 import { verifyAgentMailSignature } from './verify';
 import type { AgentMailMessageReceivedEvent } from './types';
 import { bindIntegrationPrincipal } from '../../shared/audit-scope';
+import { runWebhookWork } from '../webhook-work';
 
 export function registerEmailWebhookRoutes(): void {
   emailWebhookApp.openapi(
@@ -76,9 +77,10 @@ export function registerEmailWebhookRoutes(): void {
       }
       bindIntegrationPrincipal('agentmail');
 
-      void dispatchAgentMailEvent(event).catch((err) => {
-        console.error('[email-webhook] handler failed', err);
-      });
+      // A failure inside the ack window answers 500 so AgentMail retries; the
+      // dedup claims are released first (`webhook-work.ts`).
+      const outcome = await runWebhookWork('email-webhook', () => dispatchAgentMailEvent(event));
+      if (outcome === 'failed') return c.json({ error: 'processing failed' }, 500);
       return c.json({ ok: true });
     },
   );

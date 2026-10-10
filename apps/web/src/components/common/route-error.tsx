@@ -2,9 +2,10 @@
 
 import { Button } from '@/components/ui/button';
 import { isRuntimeNotReadyNoiseMessage } from '@/lib/browser-error-noise';
+import { reloadForChunkLoadError } from '@/lib/chunk-load-recovery';
 import * as Sentry from '@sentry/nextjs';
 import { useTranslations } from '@/i18n/use-translations';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { ErrorDetails } from './error-details';
 
 /**
@@ -24,6 +25,14 @@ export function RouteErrorFallback({
   description?: string;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  // A stale-deploy chunk-load failure self-heals with exactly one reload; while
+  // it lands this fallback renders nothing instead of flashing the crash card.
+  const [reloading, setReloading] = useState(false);
+
+  useEffect(() => {
+    if (reloadForChunkLoadError(error)) setReloading(true);
+  }, [error]);
+
   useEffect(() => {
     // Transient "session runtime not ready" is an expected, self-healing info
     // state — never page Better Stack for it. Mirrors `app/error.tsx` +
@@ -32,6 +41,8 @@ export function RouteErrorFallback({
     if (isRuntimeNotReadyNoiseMessage(error?.message)) return;
     Sentry.captureException(error);
   }, [error]);
+
+  if (reloading) return null;
 
   return (
     <div className="flex h-full min-h-[60vh] w-full flex-1 flex-col items-center justify-center gap-4 p-6 text-center">

@@ -10,6 +10,7 @@ import {
   keepPreviousData,
   useInfiniteQuery,
   useMutation,
+  useQueries,
   useQuery,
   useQueryClient,
   type QueryClient,
@@ -68,7 +69,8 @@ import {
   getSessionParticipants,
   getSessionMessageAuthors,
   listProjectBranches,
-  listProjectFiles,
+  listProjectDirectory,
+  searchProjectFiles,
   listProjectPolicies,
   listProjectSecrets,
   listProjectSessions,
@@ -168,8 +170,10 @@ export const projectKeys = {
     crId: string | null | undefined
   ) => ['change-request-merge-preview', projectId, crId] as const,
   branches: (projectId: string | null | undefined) => ['project-branches', projectId] as const,
-  projectFiles: (projectId: string | null | undefined, ref: string) =>
-    ['project-files', projectId, ref] as const,
+  projectDirectory: (projectId: string | null | undefined, ref: string, path: string) =>
+    ['project-directory', projectId, ref, path] as const,
+  projectFileSearch: (projectId: string | null | undefined, ref: string, query: string) =>
+    ['project-file-search', projectId, ref, query] as const,
   projectFileContent: (
     projectId: string | null | undefined,
     path: string | null | undefined,
@@ -263,6 +267,24 @@ export function useProjects(accountId: string | null) {
     enabled: !!accountId,
     staleTime: 20_000,
   });
+}
+
+/**
+ * True when one of the signed-in user's projects has `notification_center`
+ * on (KRTX-1742): Settings → Notifications then shows the user's record.
+ * Reads every account's project list (the switcher's queries and keys).
+ * False while a list loads or fails.
+ */
+export function useHasNotificationCenterProject(): boolean {
+  const accounts = useAccounts();
+  const lists = useQueries({
+    queries: (accounts.data ?? []).map((account) => ({
+      queryKey: projectKeys.projects(account.account_id),
+      queryFn: () => listProjectsForAccount(account.account_id),
+      staleTime: 20_000,
+    })),
+  });
+  return lists.some((list) => list.data?.some((project) => project.experimental?.notification_center === true));
 }
 
 export function useProject(projectId: string | null) {
@@ -1109,18 +1131,36 @@ export function useVersionDiff(
 
 // ── Project files (web parity) ────────────────────────────────────────────────
 
-/** Flat, recursive file list for a ref — the browser derives the tree from it. */
-export function useProjectFiles(projectId: string | null, ref: string) {
+const retryUnlessDenied = (count: number, err: any) => {
+  const m = String(err?.message ?? '');
+  if (/40[34]/.test(m) || /not found|forbidden/i.test(m)) return false;
+  return count < 3;
+};
+
+/**
+ * One folder level at a ref (`path` '' is the root). The recursive list stops
+ * at 1,000 files, and a tree built from it lost every folder after file 1,000
+ * (KRTX-1723).
+ */
+export function useProjectDirectory(projectId: string | null, ref: string, path: string) {
   return useQuery({
-    queryKey: projectKeys.projectFiles(projectId, ref),
-    queryFn: () => listProjectFiles(projectId!, { ref }),
+    queryKey: projectKeys.projectDirectory(projectId, ref, path),
+    queryFn: () => listProjectDirectory(projectId!, { ref, path: path || undefined }),
     enabled: !!projectId && !!ref,
     staleTime: 20_000,
-    retry: (count, err: any) => {
-      const m = String(err?.message ?? '');
-      if (/40[34]/.test(m) || /not found|forbidden/i.test(m)) return false;
-      return count < 3;
-    },
+    retry: retryUnlessDenied,
+  });
+}
+
+/** Filename search over the whole repository at a ref, on the server. */
+export function useProjectFileSearch(projectId: string | null, ref: string, query: string) {
+  const q = query.trim();
+  return useQuery({
+    queryKey: projectKeys.projectFileSearch(projectId, ref, q),
+    queryFn: async () => (await searchProjectFiles(projectId!, q, { ref, limit: 200 })).results,
+    enabled: !!projectId && !!ref && !!q,
+    staleTime: 30_000,
+    retry: retryUnlessDenied,
   });
 }
 

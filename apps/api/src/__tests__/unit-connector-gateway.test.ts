@@ -105,7 +105,14 @@ describe('handleCall — happy path', () => {
   test('resolves shared credential, attaches auth, returns ok, audits', async () => {
     const { deps, records, fetchCalls, credentialCalls } = makeDeps();
     const res = await handleCall(deps, baseInput);
-    expect(res).toEqual({ status: 'ok', data: { id: 'ch_1' }, risk: 'write' });
+    expect(res).toEqual({
+      status: 'ok',
+      data: { id: 'ch_1' },
+      risk: 'write',
+      binding: 'openapi',
+      output: { id: 'ch_1' },
+      upstreamStatus: 200,
+    });
     expect(fetchCalls[0]!.headers.Authorization).toBe('Bearer sk_live_123');
     expect(credentialCalls[0]).toEqual({ connectorId: 'conn-stripe', userId: null }); // shared
     expect(records.at(-1)).toMatchObject({ status: 'ok', risk: 'write', actingUserId: ALICE });
@@ -187,11 +194,28 @@ describe('handleCall — denials', () => {
 });
 
 describe('handleCall — upstream + errors', () => {
+  test('a credential resolution failure (OAuth2 token refresh) is an error with its message, audited, never sent upstream', async () => {
+    // Native OAuth2 client credentials (16d230808a) mint a token per call; a
+    // failed mint must answer a structured error the agent can read.
+    const { deps, records, fetchCalls } = makeDeps();
+    deps.resolveCredential = async () => {
+      throw new Error('OAuth2 token request failed (503): temporarily_unavailable');
+    };
+    expect(await handleCall(deps, baseInput)).toEqual({
+      status: 'error',
+      reason: 'OAuth2 token request failed (503): temporarily_unavailable',
+    });
+    expect(records.at(-1)).toMatchObject({ status: 'error' });
+    expect(fetchCalls).toHaveLength(0);
+  });
+
   test('non-2xx upstream → error with the body excerpt (agent sees the real cause)', async () => {
     const { deps } = makeDeps({ fetchStatus: 402, fetchBody: '{"error":"declined"}' });
     expect(await handleCall(deps, baseInput)).toEqual({
       status: 'error',
       reason: 'upstream_402: {"error":"declined"}',
+      binding: 'openapi',
+      upstreamStatus: 402,
     });
   });
 
@@ -200,7 +224,7 @@ describe('handleCall — upstream + errors', () => {
     deps.fetchImpl = async () => {
       throw new Error('network down');
     };
-    expect(await handleCall(deps, baseInput)).toEqual({ status: 'error', reason: 'network down' });
+    expect(await handleCall(deps, baseInput)).toEqual({ status: 'error', reason: 'network down', binding: 'openapi' });
     expect(records.at(-1)).toMatchObject({ status: 'error' });
   });
 });
@@ -241,7 +265,14 @@ describe('handleCall — pipedream path', () => {
       actionPath: 'send_email',
       args: { to: 'a@b.com' },
     });
-    expect(res).toEqual({ status: 'ok', data: { sent: true }, risk: 'write' });
+    expect(res).toEqual({
+      status: 'ok',
+      data: { sent: true },
+      risk: 'write',
+      binding: 'pipedream',
+      output: { sent: true },
+      upstreamStatus: 200,
+    });
     expect(fetchCalls).toHaveLength(0);
     expect(credentialCalls[0]).toEqual({ connectorId: 'conn-gmail', userId: null }); // shared
     expect(captured).toMatchObject({
@@ -300,7 +331,14 @@ describe('handleCall — pipedream path', () => {
       actionPath: 'request',
       args: { method: 'POST', url: 'https://gmail.googleapis.com/x', body: { a: 1 } },
     });
-    expect(res).toEqual({ status: 'ok', data: { id: 1 }, risk: 'write' });
+    expect(res).toEqual({
+      status: 'ok',
+      data: { id: 1 },
+      risk: 'write',
+      binding: 'pipedream_proxy',
+      output: { id: 1 },
+      upstreamStatus: 201,
+    });
     expect(fetchCalls).toHaveLength(0); // proxy path, not the HTTP builder
     expect(captured).toMatchObject({ app: 'gmail', accountId: 'apn_abc123' });
     expect(captured.args).toMatchObject({ method: 'POST', url: 'https://gmail.googleapis.com/x' });

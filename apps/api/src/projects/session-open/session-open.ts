@@ -28,7 +28,7 @@ import {
 } from './session-open-readiness';
 import { openNotRunningBox, openRemovedBox, syncRecoveredRunningRow } from './session-open-recovery';
 import { enforceAdmission, enforceRuntimeGuarantee } from './session-open-guarantee';
-import { resumeHibernatedOnOpen } from './resume-stopped-sandbox';
+import { keepStoppedRefusesWake, resumeHibernatedOnOpen } from './resume-stopped-sandbox';
 import {
   serializeSandboxRow,
   sessionRuntimeUrlPath,
@@ -104,17 +104,27 @@ async function runOpenSession(
   const accountId = visible.row.accountId;
   let stoppedProviderStatus: SandboxStatus | null = null;
 
-  let [row] = await db
-    .select()
-    .from(sessionSandboxes)
-    .where(
-      and(
-        eq(sessionSandboxes.sessionId, sessionId),
-        eq(sessionSandboxes.projectId, projectId),
-        eq(sessionSandboxes.accountId, accountId),
-      ),
-    )
-    .limit(1);
+  // A caller that already read the sandbox row in the same tick (the `/start`
+  // prologue and every long-poll tick read session + sandbox joined, once)
+  // hands it over here; re-reading it is one more statement on the request's
+  // Server-Timing for zero new information. A pre-read that found NO row keeps
+  // the original select — that is the no-sandbox-yet provisioning path, where
+  // the row may appear between the caller's read and the open.
+  const preloadedRow = args.preloadedSandboxRow ?? undefined;
+  let [row] =
+    preloadedRow !== undefined
+      ? [preloadedRow]
+      : await db
+          .select()
+          .from(sessionSandboxes)
+          .where(
+            and(
+              eq(sessionSandboxes.sessionId, sessionId),
+              eq(sessionSandboxes.projectId, projectId),
+              eq(sessionSandboxes.accountId, accountId),
+            ),
+          )
+          .limit(1);
 
   // Gate browser polling before any provider call. A live wake coalesces behind
   // its durable claim. A failed wake returns one terminal cooldown payload.
@@ -128,6 +138,17 @@ async function runOpenSession(
   if (existingWake) {
     log.did(existingWake.reason === 'runtime_wake_cooldown' ? 'cooling_down' : 'awaited_wake');
     return existingWake;
+  }
+
+  if (row?.status === 'stopped' && row.externalId && keepStoppedRefusesWake(args.keepStopped, row)) {
+    return {
+      stage: 'stopped',
+      agent_name: visible.row.agentName ?? 'default',
+      retriable: false,
+      sandbox: null,
+      opencode_session_id: null,
+      failure: null,
+    };
   }
 
   ({ row, stoppedProviderStatus } = await resumeHibernatedOnOpen(log, row));

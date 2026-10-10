@@ -83,7 +83,3 @@ const memo = ttlMemo({
 export function loadAgentRosterAtCommit(project: GitBackedProject, commit: string): Promise<DeclaredAgentRoster> {
   return memo(project, commit);
 }
-
-export function __clearAgentRosterCacheForTests(): void {
-  memo.clear();
-}
