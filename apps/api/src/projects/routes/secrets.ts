@@ -665,6 +665,16 @@ export function registerSecretsRoutes(): void {
           eq(projectSecrets.identifier, identifier),
           isNull(projectSecrets.ownerUserId),
         ));
+      // The unset may also be the agent cancelling a request nobody has filled
+      // yet: the row does not exist, but the outstanding link for this name
+      // does, and a submit on it would create the secret the agent just asked
+      // to remove. Tombstone the name so that link dies too (KRTX-2056). A
+      // submission that was already in flight keeps its value — it read no
+      // tombstone and holds the project row's lock first — but every later
+      // use of the link is refused.
+      await db.transaction(async (tx) => {
+        await recordProjectSecretTombstone(projectId, identifier, tx);
+      });
     }
 
     void propagateProjectSecretsToActiveSandboxes(projectId, {

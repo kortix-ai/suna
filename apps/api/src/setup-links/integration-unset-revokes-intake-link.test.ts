@@ -58,6 +58,7 @@ registerSecretsRoutes();
 const ACCOUNT_ID = crypto.randomUUID();
 const PROJECT_ID = crypto.randomUUID();
 const KEY = 'UNSET_REVOKE_KEY';
+const CANCELLED_KEY = 'UNSET_CANCELLED_KEY';
 const sql = postgres(process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? '', { max: 1 });
 let oldToken: string;
 let freshToken: string;
@@ -127,6 +128,27 @@ test('unset kills the outstanding link: the page and the submit reject, nothing 
   expect(body.error).toContain(dead);
   expect(body.error).toContain(KEY);
   // The acceptance core: the old link must NOT re-create the secret.
+  expect(await sharedRowCount()).toBe(0);
+});
+
+test('unset of a name nobody has filled yet kills its outstanding link too', async () => {
+  // The agent cancels a request before the human submits: no row ever
+  // existed, but the outstanding link would create the secret on submit.
+  const token = mintSetupLink(PROJECT_ID, { kind: 'secret', fields: [{ name: CANCELLED_KEY }], scope: 'runtime', uid: null, sid: null }).token;
+  expect((await setupLinksPublicApp.request(`/secret/${token}`)).status).toBe(200);
+
+  const deleted = await unsetApp().request(`/v1/projects/${PROJECT_ID}/secrets/${CANCELLED_KEY}`, { method: 'DELETE' });
+  expect(deleted.status).toBe(200);
+  expect(await sharedRowCount()).toBe(0);
+
+  const page = await setupLinksPublicApp.request(`/secret/${token}`);
+  expect(page.status).toBe(409);
+  const resubmit = await setupLinksPublicApp.request(`/secret/${token}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ values: { [CANCELLED_KEY]: 'cancelled-value' } }),
+  });
+  expect(resubmit.status).toBe(409);
   expect(await sharedRowCount()).toBe(0);
 });
 

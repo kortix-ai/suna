@@ -1,4 +1,5 @@
 import { connectors, projectSecrets, projectSecretTombstones, projects } from '@kortix/db';
+import type { Database } from '@kortix/db';
 import { and, desc, eq, gt, inArray, isNull, lt, or } from 'drizzle-orm';
 import { projectLlmGatewayEnabledById } from '../llm-gateway/enablement';
 import { isGatewayManagedEnv } from '../llm-gateway/sandbox-credentials';
@@ -93,9 +94,10 @@ export async function writeSharedProjectSecret(input: {
 const TOMBSTONE_RETENTION_MINUTES = 31 * 24 * 60;
 
 /** The transaction handle of the write this tombstone is part of (the unset
- *  route's audited transaction). Structurally the db transaction type, so
- *  either a drizzle or the audit pool transaction fits. */
-type SecretWriteTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+ *  route's audited transaction), or the pool itself when the tombstone is the
+ *  only write (the unset of a name whose row does not exist). Both expose the
+ *  same three query builders the helper uses. */
+type SecretWriteTx = Pick<Database, 'select' | 'insert' | 'delete'>;
 
 /**
  * Record that a shared secret row was deleted, in the same transaction as the
