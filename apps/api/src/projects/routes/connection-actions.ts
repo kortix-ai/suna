@@ -29,8 +29,10 @@ import { actorOf } from '../../iam/actor';
 import { requireUserCredential } from '../../tunnel/routes/auth';
 import { assignRole } from '../../iam/assignments';
 import {
-  startComposioConnect, finalizeComposioConnect,
-  startPipedreamConnect, finalizePipedreamConnect,
+  startComposioConnect,
+  finalizeComposioConnect,
+  startPipedreamConnect,
+  finalizePipedreamConnect,
 } from '../lib/connection-hosted-connect';
 
 const ShareConnectionInput = z
@@ -92,7 +94,10 @@ async function renameConnectionHandler(c: any) {
       .where(eq(connectorConnections.connectionId, connectionId));
   } catch (error) {
     if (isUniqueViolation(error)) {
-      return c.json({ error: `Another account of this connector is already named "${label}"` }, 409);
+      return c.json(
+        { error: `Another account of this connector is already named "${label}"` },
+        409,
+      );
     }
     throw error;
   }
@@ -128,7 +133,10 @@ export function registerConnectionActionsRoutes(): void {
       const parsed = ShareConnectionInput.safeParse(await readJsonObject(c));
       if (!parsed.success) {
         return c.json(
-          { error: 'principals must be a list of { principal_type: user | group | project, principal_id }' },
+          {
+            error:
+              'principals must be a list of { principal_type: user | group | project, principal_id }',
+          },
           400,
         );
       }
@@ -138,7 +146,10 @@ export function registerConnectionActionsRoutes(): void {
       const { loaded, connection } = mutable;
       if (connection.ownerType === 'project') {
         return c.json(
-          { error: 'This account is already shared. Change who can use it with its Share dialog or the grants API.' },
+          {
+            error:
+              'This account is already shared. Change who can use it with its Share dialog or the grants API.',
+          },
           409,
         );
       }
@@ -152,9 +163,15 @@ export function registerConnectionActionsRoutes(): void {
       if (connection.providerType === 'computer') {
         requireUserCredential(c);
         const [machine] = await db
-          .select({ accountId: tunnelConnections.accountId, ownerUserId: tunnelConnections.ownerUserId })
+          .select({
+            accountId: tunnelConnections.accountId,
+            ownerUserId: tunnelConnections.ownerUserId,
+          })
           .from(connectorConnections)
-          .innerJoin(tunnelConnections, eq(tunnelConnections.tunnelId, connectorConnections.tunnelId))
+          .innerJoin(
+            tunnelConnections,
+            eq(tunnelConnections.tunnelId, connectorConnections.tunnelId),
+          )
           .where(eq(connectorConnections.connectionId, connectionId))
           .limit(1);
         if (
@@ -177,13 +194,10 @@ export function registerConnectionActionsRoutes(): void {
           403,
         );
       }
-      const label = connection.label;
-      const clashes = (other: { label: string }) =>
-        c.json(
-          { error: `A shared account of this connector is already named "${other.label}". Rename one first.` },
-          409,
-        );
-      const [clash] = await db
+      // Shared accounts of one connector need distinct names. Sharing never
+      // asks for a rename: a taken name gets the next free one ("Miro 2"),
+      // the way Add account names a second account.
+      const sharedLabels = await db
         .select({ label: connectorConnections.label })
         .from(connectorConnections)
         .where(
@@ -191,11 +205,17 @@ export function registerConnectionActionsRoutes(): void {
             eq(connectorConnections.connectorId, connection.connectorId),
             eq(connectorConnections.ownerType, 'project'),
             isNull(connectorConnections.ownerId),
-            sql`lower(btrim(${connectorConnections.label})) = ${label.trim().toLowerCase()}`,
           ),
-        )
-        .limit(1);
-      if (clash) return clashes({ label });
+        );
+      const label = freeAccountLabel(
+        connection.label,
+        sharedLabels.map((row) => row.label),
+      );
+      const clashes = () =>
+        c.json(
+          { error: 'Another shared account took that name at the same moment. Try again.' },
+          409,
+        );
 
       // Grants first, on the still-private row, which ignores them. Each goes
       // through assignRole: principal checks, audit, cache invalidation.
@@ -216,7 +236,7 @@ export function registerConnectionActionsRoutes(): void {
       try {
         updated = await db
           .update(connectorConnections)
-          .set({ ownerType: 'project', ownerId: null, isDefault: false })
+          .set({ ownerType: 'project', ownerId: null, isDefault: false, label })
           .where(
             and(
               eq(connectorConnections.connectionId, connectionId),
@@ -226,14 +246,20 @@ export function registerConnectionActionsRoutes(): void {
           )
           .returning({ connectionId: connectorConnections.connectionId });
       } catch (error) {
-        if (isUniqueViolation(error)) return clashes({ label });
+        if (isUniqueViolation(error)) return clashes();
         throw error;
       }
       if (updated.length === 0) {
         return c.json({ error: 'The account changed while it was being shared. Try again.' }, 409);
       }
       return c.json(
-        serializeConnection({ ...connection, ownerType: 'project', ownerId: null, isDefault: false }),
+        serializeConnection({
+          ...connection,
+          label,
+          ownerType: 'project',
+          ownerId: null,
+          isDefault: false,
+        }),
         200,
       );
     },
@@ -331,7 +357,10 @@ export function registerConnectionActionsRoutes(): void {
               });
             }
           } catch (error) {
-            return c.json({ error: (error as Error).message || 'credential validation failed' }, 400);
+            return c.json(
+              { error: (error as Error).message || 'credential validation failed' },
+              400,
+            );
           }
           // INVARIANT (2026-09-16, account_required rule): `connection.isDefault`
           // is the raw (possibly unpinned) row flag; the project-wide catalog
@@ -480,7 +509,15 @@ export function registerConnectionActionsRoutes(): void {
         if (connection.providerType === 'composio') {
           if (!composioConfigured()) return c.json({ error: 'composio not configured' }, 501);
           if (operation === 'connect') {
-            return c.json(await startComposioConnect(projectId, connectionId, connection, app, await readJsonObject(c)));
+            return c.json(
+              await startComposioConnect(
+                projectId,
+                connectionId,
+                connection,
+                app,
+                await readJsonObject(c),
+              ),
+            );
           }
           return c.json(await finalizeComposioConnect(projectId, connectionId, connection, app));
         }
@@ -491,10 +528,38 @@ export function registerConnectionActionsRoutes(): void {
           return c.json({ error: 'not a pipedream connector' }, 404);
         }
         if (operation === 'connect') {
-          return c.json(await startPipedreamConnect(projectId, connectionId, connection, app, await readJsonObject(c)));
+          return c.json(
+            await startPipedreamConnect(
+              projectId,
+              connectionId,
+              connection,
+              app,
+              await readJsonObject(c),
+            ),
+          );
         }
-        return c.json(await finalizePipedreamConnect(projectId, connectionId, connection, app, loaded.userId));
+        return c.json(
+          await finalizePipedreamConnect(projectId, connectionId, connection, app, loaded.userId),
+        );
       },
     );
+  }
+}
+
+/** Longest account label the column holds (`connector_connections.label`). */
+const MAX_LABEL = 255;
+
+/**
+ * `name`, or `name 2`, `name 3`… : the first one no label in `taken` uses,
+ * trimmed so the suffix still fits the label column.
+ */
+export function freeAccountLabel(name: string, taken: readonly string[]): string {
+  const used = new Set(taken.map((label) => label.trim().toLowerCase()));
+  const base = name.trim().slice(0, MAX_LABEL);
+  if (!used.has(base.toLowerCase())) return base;
+  for (let n = 2; ; n += 1) {
+    const suffix = ` ${n}`;
+    const candidate = `${base.slice(0, MAX_LABEL - suffix.length).trimEnd()}${suffix}`;
+    if (!used.has(candidate.toLowerCase())) return candidate;
   }
 }

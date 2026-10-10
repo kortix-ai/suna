@@ -280,9 +280,10 @@ kortix apps restore db <snapshot-id> --yes     # roll back; later changes are lo
   time the machine runs. The default size costs about $59 for a 30-day month
   at list price. It is always on: `always_on: false` answers
   `400 app_always_on_required`.
-- The monthly budget alerts at 80 % and 100 % (`instance.budget_alert`, once
-  per month each) and never stops the machine: a stopped database breaks
-  every client. Tell the user when an alert shows.
+- A `convex` App has no budget and no budget alert: `monthly_budget_usd` is
+  `null` and `instance.budget_alert` is always `null`. A budget answers
+  `400 app_budget_not_applicable`. The machine never stops for cost: a stopped
+  database breaks every client. To lower the cost, shrink the machine.
 - Up to 3 `convex` Apps per project and 10 per account.
 - `instance.url` and `instance.site_url` are Kortix hosts. They never change
   while the App lives. Kortix proxies them, WebSocket included; the machine

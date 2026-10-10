@@ -26,7 +26,7 @@ permissions:
 jobs:
   drift:
     name: Schema drift (${{ matrix.env }})
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     strategy:
       fail-fast: false
       matrix:
@@ -117,7 +117,7 @@ jobs:
   # so this is the only prod schema check; it catches drift introduced out-of-band BETWEEN deploys.
   prod-presence:
     name: Prod has every object the migrations define
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     services:
       postgres:
         image: postgres:16-alpine

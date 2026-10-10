@@ -52,6 +52,7 @@ export function mockIamAssignments(hooks: AssignmentMockHooks = {}): void {
   let seq = 0;
   mock.module('../../iam/assignments', () => ({
     SYSTEM_ACTOR,
+    FOLDER_ROLE_KEYS: new Set(['folder-reader', 'folder-writer', 'folder-manager']),
     assignRole: async (_writer: unknown, accountId: string, input: any) => {
       hooks.onGrant?.({ accountId, ...input });
       seq += 1;

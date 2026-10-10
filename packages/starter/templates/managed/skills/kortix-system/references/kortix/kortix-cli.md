@@ -132,9 +132,10 @@ If none resolve, the command errors with a pointer to `projects link`.
 Apps have stable URLs and immutable deployment versions. Every App has a
 `kind`, fixed at create, and lists its `capabilities`. A `web` App is static
 (files that Kortix serves: no machine, nothing to start or stop) or a server
-(`dockerfile`, `oci_image`, `bundle`: one machine, always on or on demand, stops
-at its monthly budget; an authorized request wakes it). A `convex` App is a
-self-hosted Convex backend in one always-on machine. A subcommand for a
+(`dockerfile`, `oci_image`, `bundle`: one machine, always on or on demand; an
+on-demand App stops at its monthly budget and an authorized request wakes it;
+an always-on App has a fixed monthly cost and no budget). A `convex` App is a
+self-hosted Convex backend in one always-on machine, also with no budget. A subcommand for a
 capability the App lacks exits `1` with
 `App <slug> (kind <kind>) does not support <capability>.`
 
@@ -146,16 +147,16 @@ When it is off, every `kortix apps` command answers `feature_disabled`
 
 | Command | Effect |
 | --- | --- |
-| `kortix apps ls [--json]` | List the project's Apps with their kind, state (`static` for a static App), and stable URL. |
+| `kortix apps ls [--json]` | List the Apps you may open (a project manager sees all) with their kind, state (`static` for a static App), and stable URL. |
 | `kortix apps create <slug> [--name …]` | Create an App identity without deploying source. Flags: `--kind web\|convex`, `--uses <slugs>`, `--cpu`, `--memory`, `--disk`, `--idle-timeout`, `--always-on\|--on-demand`, `--budget`, `--no-wait`. A `convex` App waits until its machine runs. |
 | `kortix apps deploy [path]` | Upload and deploy a directory or `.tar.gz`. Auto-detects static, bundle, or Dockerfile source; pass `--type`. Waits until ready by default. |
-| `kortix apps deploy … --always-on\|--on-demand --budget <usd>` | Server Apps: set the run mode and the monthly compute budget (default: the 24/7 estimate of the machine, rounded up, when always on; 5 USD on demand). Prints the cost. Warns on stderr (`app_budget_below_always_on`) when an always-on App's budget is below its 24/7 estimate. |
+| `kortix apps deploy … --always-on\|--on-demand --budget <usd>` | Server Apps: set the run mode. `--budget` sets the monthly compute budget of an on-demand App (default 5 USD). On an always-on or `convex` App, `--budget` is refused with `400 app_budget_not_applicable`. Prints the cost. |
 | `kortix apps deploy --manifest-app <name>` | Use one v2 `kortix.yaml` `apps.<name>` block. A sole App block is selected automatically for bare `deploy`; with several, bare `deploy` deploys every App, each after the Apps it uses. |
 | `kortix apps deploy <dir> --app <slug> [-- <args>]` | A `convex` App: run `convex deploy` with its credentials, then record the deployment with the git commit. |
 | `kortix apps deploy --image <ref> --command <argv> --port <n>` | Deploy a public OCI image. `--command` accepts a JSON string array or shell-like string. |
 | `kortix apps set <id-or-slug>` | Change an App: `--name`, `--cpu`, `--memory-gb`, `--disk-gb`, `--idle-timeout`, `--always-on\|--on-demand`, `--budget`, `--uses <slugs>`. Run mode and budget apply within 5 minutes; a web machine change applies to the next deployment; a `convex` App resizes now. |
 | `kortix apps link\|unlink <id-or-slug> --uses <slugs>` | Add or remove Apps this App uses (bindings and sign-in tokens). |
-| `kortix apps show <id-or-slug> [--json]` | Show an App (`kind`, `capabilities`, `uses`, `used_by`, `instance`, `hosting_type`, `always_on`, `monthly_budget_usd`, `estimated_monthly_usd`) and its deployment history. |
+| `kortix apps show <id-or-slug> [--json]` | Show an App (`kind`, `capabilities`, `uses`, `used_by`, `instance`, `hosting_type`, `always_on`, `monthly_budget_usd`, `estimated_monthly_usd`) and its deployment history. A cost line shows `about $N/month` for an always-on or `convex` App and `budget $N/month` for an on-demand App. |
 | `kortix apps logs <id-or-slug> [deployment-id]` | Read supervisor, Caddy, and user-process logs; a static App prints its deployment events. Supports `--after` and `--limit`. An App with the `logs` capability prints its process log (`--lines 1-1000`). |
 | `kortix apps start <id-or-slug>` | Server Apps: permit traffic and start the active deployment now. A static App answers `409 static_app_no_runtime`. |
 | `kortix apps stop <id-or-slug>` | Server Apps: suspend compute now. The next authorized request wakes it. A static App answers `409 static_app_no_runtime`. |

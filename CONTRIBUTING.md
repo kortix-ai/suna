@@ -51,7 +51,7 @@ The skill covers each step with its commands and completion check.
 
 | Label | Effect |
 | --- | --- |
-| `test` | Runs the six `Tests` lanes once, on the head SHA when the label is added. A push does not re-run it. |
+| `test` | Runs the `Tests` lanes once, on the head SHA when the label is added. A push does not re-run it. |
 | `preview` | Deploys a self-host environment for the branch on Platinum (~7 min), once, and runs no tests. A push does not redeploy. Removing the label or deleting the branch tears it down. Closing the PR does not. |
 | `i18n-reorder` | Allows an intentional key reorder in the translation catalogs on a release PR. |
 
@@ -213,7 +213,7 @@ ordinary development stack before either command.
 
 | Event | Runs |
 | --- | --- |
-| Pull request into `main` | nothing, unless a person adds `test` (six lanes, once) or `preview` (~7 min deploy, once) |
-| Push to `main` (the merge) | `Deploy Dev`, the six `Tests` lanes, `ci.yml`, `CodeQL`, secret scans, path-gated migration / i18n / compliance checks. None blocks: a red `Tests` run comments the failing lanes on the commit. |
-| Pull request into `staging` | the six `Tests` lanes, `ci.yml`, `CodeQL`, security, compliance, and migration checks |
+| Pull request into `main` | nothing, unless a person adds `test` (the `Tests` lanes, once) or `preview` (~7 min deploy, once) |
+| Push to `main` (the merge) | `Deploy Dev`, the `Tests` lanes, `ci.yml`, `CodeQL`, secret scans, path-gated migration / i18n / compliance checks. None blocks: a red `Tests` run comments the failing lanes on the commit. |
+| Pull request into `staging` | the `Tests` lanes, `ci.yml`, `CodeQL`, security, compliance, and migration checks |
 | Pull request into `prod` | the same checks + `tests-release.yml` against deployed staging. Its `full suite + quality gates` check is the only required check. |

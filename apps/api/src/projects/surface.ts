@@ -74,3 +74,6 @@ export const reconcileEventSubscriptionsFromCatalog: typeof import('./trigger-ev
   async (...args) => (await eventSubscriptions()).reconcileEventSubscriptionsFromCatalog(...args);
 export const releaseProjectEventSubscriptions: typeof import('./trigger-events/subscriptions').releaseProjectEventSubscriptions =
   async (...args) => (await eventSubscriptions()).releaseProjectEventSubscriptions(...args);
+
+// Drive sync's last push before a synced box loses a writable folder (consumed by drives/service.ts).
+export { flushDriveSyncBeforeStop } from './reaping/stop-box';

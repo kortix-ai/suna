@@ -10,9 +10,11 @@
  * on a connector they just connected successfully.
  *
  * The eligibility rule mirrors `rematerializeCatalogAfterCredentialUpdate`:
- * `connector_actions` is ONE project-wide catalog, so only a project-owned
- * default connection may publish it. A member's personal connection can expose
- * tenant-specific tools and must never write them for everyone else.
+ * `connector_actions` is ONE project-wide catalog. A project default account
+ * publishes it. A member account re-syncs, and `resolveMcpCatalogCredential`
+ * uses its token only when no project account has one (2026-10-09: an app
+ * signed in only "for you" must still load its tools). A non-default project
+ * account never publishes.
  */
 export interface OAuthCompletionRematerializeInput {
   projectId: string;
@@ -31,7 +33,9 @@ export function oauthCompletionRematerializeInput(input: OAuthCompletionRemateri
   isDefault: boolean;
   connectorId: string;
 } | null {
-  if (input.providerType !== 'mcp' || input.ownerType !== 'project' || !input.isDefault) {
+  // A non-default project account never publishes. A member account re-syncs;
+  // the catalog resolver uses its token only when no project account has one.
+  if (input.providerType !== 'mcp' || (input.ownerType === 'project' && !input.isDefault)) {
     return null;
   }
   return {

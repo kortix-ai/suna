@@ -65,6 +65,11 @@ const REVIEWER_MANIFEST = [
   '',
 ].join('\n');
 let sandboxProvisionCalls = 0;
+// KRTX-2064 seams: make the env build reject and make the provisioner die
+// synchronously before it attaches its own env catch, to reproduce the
+// unhandled-rejection crash shape.
+let envBuildError: Error | null = null;
+let provisionSyncThrow: Error | null = null;
 let providerStartCalls = 0;
 let providerStopCalls = 0;
 let deadDaemonRepairs = 0;
@@ -142,6 +147,8 @@ function resetState() {
   branchCreateCalls = 0;
   manifestYaml = null;
   sandboxProvisionCalls = 0;
+  envBuildError = null;
+  provisionSyncThrow = null;
   providerStartCalls = 0;
   providerStopCalls = 0;
   deadDaemonRepairs = 0;
@@ -474,14 +481,32 @@ mock.module('../projects/github', () => ({
 // (legacy-runtime-bootstrap-wiring.ts) now reaches on every `/start`,
 // surfacing as an unrelated 500 attributed to no test.
 const realSessionSandbox = await import('../platform/services/session-sandbox');
+// KRTX-2064: the env build is stubbed at its module boundary so a test can
+// make it reject deterministically (a real git/secret-grant failure needs a
+// git round trip the mock DB cannot express). Everything else stays real.
+// Capture the FUNCTION VALUE, not the namespace: bun's mock.module mutates
+// the namespace of an already-imported module, so a namespace-property call
+// from inside the mock factory would recurse into the mock forever.
+const realSessionSandboxEnvBuild = await import('../projects/lib/session-sandbox-env-build');
+const realBuildSessionSandboxEnvVars = realSessionSandboxEnvBuild.buildSessionSandboxEnvVars;
+mock.module('../projects/lib/session-sandbox-env-build', () => ({
+  ...realSessionSandboxEnvBuild,
+  buildSessionSandboxEnvVars: (input: any) =>
+    envBuildError ? Promise.reject(envBuildError) : realBuildSessionSandboxEnvVars(input),
+}));
 mock.module('../platform/services/session-sandbox', () => ({
   ...realSessionSandbox,
-  provisionSessionSandbox: async (input: any) => {
-    // The env arrives as a promise: provisioning awaits it where it builds the
-    // provider input, as the real function does. Recorded once it is in hand.
-    const extraEnvVars = await input.extraEnvVars;
-    lastProvisionInput = { ...input, extraEnvVars };
-    sandboxProvisionCalls += 1;
+  provisionSessionSandbox: (input: any) => {
+    // Sync throw = the real provisioner died before attaching its own env
+    // guard (KRTX-2064): exactly the window the create-path catch must own.
+    if (provisionSyncThrow) throw provisionSyncThrow;
+    return (async () => {
+      // The env arrives as a promise: provisioning awaits it where it builds the
+      // provider input, as the real function does. Recorded once it is in hand.
+      const extraEnvVars = await input.extraEnvVars;
+      lastProvisionInput = { ...input, extraEnvVars };
+      sandboxProvisionCalls += 1;
+    })();
   },
 }));
 
@@ -746,8 +771,29 @@ mock.module('../shared/db', () => ({
     execute: async (query: unknown) =>
       authUsersRows(query, () => ({ email: 'contract@example.test' })) ?? [],
     select: (fields?: Record<string, unknown>) => ({
-      from: (table: unknown) => ({
-        where: (predicate?: unknown) => ({
+      from: (table: unknown) => {
+        // The `/start` prologue and every long-poll tick read session + sandbox
+        // in ONE joined statement (KRTX-2018). Answer that shape when the select
+        // asks for it (`sandbox: sessionSandboxes` in the field map); every
+        // other caller keeps the plain per-table branches below.
+        const pairRows = () =>
+          table === projectSessions && fields?.sandbox === sessionSandboxes
+            ? sessionRow
+              ? [{ ...sessionRow, sandbox: sessionSandboxRows.slice(0, 1)[0] ?? null }]
+              : []
+            : [];
+        return {
+          leftJoin: (_joined: unknown) => ({
+            where: (_predicate?: unknown) => ({
+              then: (
+                resolve: (value: unknown[]) => unknown,
+                reject?: (reason: unknown) => unknown,
+              ) => Promise.resolve(pairRows()).then(resolve, reject),
+              limit: async () => pairRows(),
+            }),
+            limit: async () => pairRows(),
+          }),
+          where: (predicate?: unknown) => ({
           then: (resolve: (value: unknown[]) => unknown, reject?: (reason: unknown) => unknown) => {
             Promise.resolve(table === projectSecrets ? secretRows : []).then(resolve, reject);
           },
@@ -795,7 +841,8 @@ mock.module('../shared/db', () => ({
           if (table === projectSecrets) return secretRows;
           return [];
         },
-      }),
+        };
+      },
     }),
     insert: (table: unknown) => ({
       values: (values: any) => ({
@@ -1242,6 +1289,87 @@ describe('project session runtime guards', () => {
         KORTIX_PROJECT_AUTO_CLONE: '0',
       },
     });
+  });
+  // KRTX-2064: the create path builds the sandbox env while it kicks off
+  // provisioning. If provisioning dies before it attaches its own env catch
+  // (and nothing else consumes the chain), a later env-build failure — e.g. the
+  // fail-closed secret grant on a git auth error, the 2026-10-09 prod crash —
+  // surfaces as an unhandled rejection, which on Bun is process-fatal. The
+  // create path must own the unconsumed case at chain creation.
+  test('an env build that rejects while provisioning dies before its env catch stays handled (KRTX-2064)', async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+    envBuildError = new Error(
+      "fatal: Authentication failed for 'https://github.com/example/example.git/'",
+    );
+    provisionSyncThrow = new Error('provisioner died before attaching its env guard');
+    try {
+      const app = createApp();
+      const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+      });
+      // The create still answers; the failure is in the detached provision work.
+      expect(response.status).toBe(201);
+      // Drain: the env build rejects with no consumer.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+      envBuildError = null;
+      provisionSyncThrow = null;
+    }
+  });
+  // KRTX-2064, allocator path: open/restart attach runtime through
+  // allocateSessionRuntime, which builds the same env chain and passes it
+  // into the same provisioner. The same guard the create path carries must
+  // exist here, or a rejected env build with no consumer kills the process.
+  test('an env build that rejects while the allocator provisioner dies before its env catch stays handled (KRTX-2064)', async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+    const envFailure = new Error(
+      "fatal: Authentication failed for 'https://github.com/example/example.git/'",
+    );
+    provisionSyncThrow = new Error('provisioner died before attaching its env guard');
+    try {
+      const { allocateSessionRuntime } = await import('../projects/lib/session-runtime-allocator');
+      allocateSessionRuntime({
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        userId: USER_ID,
+        project: {
+          repoUrl: `https://github.com/${TEST_GITHUB_OWNER}/contract-project.git`,
+          defaultBranch: 'main',
+          manifestPath: 'kortix.yaml',
+          metadata: projectRow.metadata,
+        },
+        providerName: 'daytona',
+        baseRef: 'main',
+        agentName: 'kortix',
+        allowProjectImage: false,
+        sessionMetadata: {},
+        buildEnvVars: () => Promise.reject(envFailure),
+        resolveGitProject: async () => ({
+          projectId: PROJECT_ID,
+          repoUrl: `https://github.com/${TEST_GITHUB_OWNER}/contract-project.git`,
+          defaultBranch: 'main',
+          manifestPath: 'kortix.yaml',
+          gitAuthToken: null,
+        }),
+      });
+      // The allocator catch marks the session failed; the env rejection must
+      // never surface as an unhandled rejection.
+      await flushUntil(() => sessionRow?.status === 'failed');
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+      provisionSyncThrow = null;
+    }
   });
   test('a meta session with an omitted agent spawns the project default, not another meta', async () => {
     enableMetaAgent();

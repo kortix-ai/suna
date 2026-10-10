@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getAdminProviderDistribution, listAdminSandboxes, getAdminProviderAnalytics, getAdminProviderFallback, setAdminProviderDistribution, migrateAdminSandboxProvider, setAdminProviderFallback } from '../core/rest/projects-client/admin-providers';
+import { getAdminProviderDistribution, listAdminSandboxes, getAdminProviderAnalytics, getAdminProviderFallback, setAdminProviderDistribution, migrateAdminSandboxProvider, setAdminProviderFallback, getAdminBootModes, setAdminBootModes, type AdminBootModePolicy } from '../core/rest/projects-client/admin-providers';
 export function useAdminProviderDistribution() {
   return useQuery({ queryKey: ['admin', 'provider-distribution'], queryFn: () => getAdminProviderDistribution() });
 }
@@ -33,5 +33,15 @@ export function useSetAdminProviderFallback(options: AdminProviderMutationOption
   return useMutation({ mutationFn: (enabled: boolean) => setAdminProviderFallback(enabled), onError: options.onError, onSuccess: () => {
     options.onSuccess?.();
     void qc.invalidateQueries({ queryKey: ['admin', 'provider-fallback'] });
+  } });
+}
+export function useAdminBootModes() {
+  return useQuery({ queryKey: ['admin', 'boot-modes'], queryFn: () => getAdminBootModes(), refetchInterval: 30_000 });
+}
+export function useSetAdminBootModes(options: AdminProviderMutationOptions = {}) {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: (policy: AdminBootModePolicy) => setAdminBootModes(policy), onError: options.onError, onSuccess: (data) => {
+    options.onSuccess?.();
+    qc.setQueryData(['admin', 'boot-modes'], data);
   } });
 }

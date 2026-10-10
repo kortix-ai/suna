@@ -23,7 +23,8 @@
 import { appDeployments, appRuntimes, apps } from '@kortix/db';
 import { and, count, eq, inArray, isNull } from 'drizzle-orm';
 import { config } from '../config';
-import { assertAppBudgetAvailable, maxAppMonthlyBudgetUsd } from './budget';
+import { appBudgetNotApplicable, appHasBudget, appMonthlyEstimateUsd, assertAppBudgetAvailable, maxAppMonthlyBudgetUsd } from './budget';
+import type { ProviderName } from '../platform/providers';
 import { checkBillingAdmission } from '../billing/services/billing-gate';
 import { getTier } from '../billing/services/tiers';
 import { resolveAccountTier } from '../shared/account-limits';
@@ -106,6 +107,25 @@ export function assertAppBudgetWithinLimits(budgetUsd: number | undefined): void
   }
 }
 
+/**
+ * 400 `app_budget_not_applicable` when a request sets `monthly_budget_usd` on
+ * an App that has no budget: an always-on or `convex` App (fixed cost) or a
+ * static one (no machine). See `appHasBudget`.
+ */
+export function assertAppBudgetApplies(
+  budgetUsd: number | undefined,
+  app: { cpuCores: number; memoryGb: number; diskGb: number; kind: string; alwaysOn: boolean },
+  hostingType: string | null,
+  provider?: ProviderName,
+): void {
+  if (budgetUsd === undefined) return;
+  const reason = appBudgetNotApplicable(app, hostingType, provider);
+  if (!reason) return;
+  throw new AppLimitError('app_budget_not_applicable', reason, 400, {
+    estimated_monthly_usd: hostingType === 'static' ? 0 : appMonthlyEstimateUsd(app, provider),
+  });
+}
+
 /* ─── 2. Account entitlement ─────────────────────────────────────────────── */
 
 export class AppAccountUnfundedError extends Error {
@@ -181,17 +201,19 @@ export async function assertAppQuotaAvailable(accountId: string): Promise<void> 
 /**
  * Everything an App must satisfy before it consumes provider compute, in the
  * order a support engineer wants to read them: can the account pay at all, does
- * it have a free slot, and has this App exhausted its own monthly budget.
+ * it have a free slot, and has this on-demand App exhausted its own monthly
+ * budget.
  * Deploy and wake both run it — otherwise an unfunded account keeps burning
  * compute through an App after session create has already started refusing.
  */
 export async function assertAppComputeAllowed(
-  app: { appId: string; accountId: string; monthlyBudgetUsd: string | number },
+  app: { appId: string; accountId: string; kind: string; alwaysOn: boolean; monthlyBudgetUsd: string | number },
   options: { excludeRuntimeId?: string } = {},
 ): Promise<void> {
   await assertAppAccountFunded(app.accountId);
   await assertAppConcurrencyAvailable(app.accountId, options.excludeRuntimeId);
-  await assertAppBudgetAvailable(app.appId, Number(app.monthlyBudgetUsd));
+  // Only an on-demand App has a budget; an always-on one costs its size.
+  if (appHasBudget(app)) await assertAppBudgetAvailable(app.appId, Number(app.monthlyBudgetUsd));
 }
 
 /* ─── 4. Concurrency ─────────────────────────────────────────────────────── */

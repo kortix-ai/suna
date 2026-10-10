@@ -77,6 +77,7 @@
  * cannot see (gate.ts).
  */
 import { config } from '../config';
+import { volumesEnabledFor } from '../platform/services/boot-mode-setting';
 import { platinumUsRegion } from '../shared/platinum-region';
 import type { FeatureFlagKey, FeatureFlagStability } from '@kortix/api-contract';
 
@@ -119,6 +120,12 @@ export interface FeatureFlagDef {
    * this file's header.
    */
   catalogHidden?: true;
+  /**
+   * The flag is not a project choice: it follows the organization's Volumes
+   * switch (Admin → Volumes, platform/services/boot-mode.ts). A project
+   * override is ignored, and the flag is never offered as a toggle.
+   */
+  derivedFrom?: 'volumes';
 }
 
 /**
@@ -364,6 +371,49 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'rows of a project with the flag off (notifications/inbox-read.ts). The ' +
       'per-person /v1/notifications/* routes carry no project and stay ungated.',
   },
+  {
+    key: 'drives',
+    name: 'Files',
+    description:
+      'The project\'s shared folders, in sync with sessions: everyone has their own private folder (their session desktop), and any folder can be shared with people, teams and agents. New sessions see the folders they may use under /drives.',
+    stability: 'experimental',
+    // Every drive is a Platinum volume; without Platinum there is nothing to
+    // store files in.
+    available: () => Boolean(config.PLATINUM_API_KEY),
+    // Follows the organization's Volumes switch; not a project toggle.
+    platformDefault: () => false,
+    derivedFrom: 'volumes',
+    catalogHidden: true,
+    enforcement: 'routes',
+    enforcementNote:
+      'Mixed, and both halves are enforced. ROUTES: GET /v1/drives?projectId= answers ' +
+      '403 `feature_disabled` when off, and so does every route addressed by drive id ' +
+      '(drives/routes.ts). BEHAVIORAL: session provisioning mounts no folder when off ' +
+      '(drives/service.ts sessionVolumeMounts). The files stay on the volume, so turning ' +
+      'Volumes back on shows them again.',
+  },
+  {
+    key: 'ephemeral_sandboxes',
+    name: 'Ephemeral sandboxes',
+    description:
+      'A stopped session keeps its files and conversation on a volume and gives up its computer. Waking it starts a new computer from the newest image. Running processes do not survive a stop.',
+    stability: 'experimental',
+    // The session state lives on a Platinum volume. Follows the organization's
+    // Volumes switch (the boot mode decides which sessions are ephemeral).
+    available: () => Boolean(config.PLATINUM_API_KEY),
+    platformDefault: () => false,
+    derivedFrom: 'volumes',
+    catalogHidden: true,
+    enforcement: 'behavioral',
+    enforcementNote:
+      'BEHAVIORAL only. Session provisioning mounts the session volume and sets ' +
+      'KORTIX_PERSIST_ROOT (platform/services/session-sandbox.ts); the idle reaper and ' +
+      'the Stop route commit the volume and delete the box instead of stopping it ' +
+      '(projects/reaping/stop-box.ts, projects/session-lifecycle/stop.ts); /start ' +
+      'provisions a fresh box for a retired row (projects/routes/shared.ts). A box ' +
+      'booted with the flag stays ephemeral if the flag is turned off, because its ' +
+      'state already lives on the volume.',
+  },
 ];
 
 const FLAG_BY_KEY: Record<FeatureFlagKey, FeatureFlagDef> = Object.fromEntries(
@@ -402,16 +452,27 @@ function explicitOverride(metadata: unknown, key: FeatureFlagKey): boolean | und
  * operator default, AND-gated by platform availability. An unavailable flag
  * is never enabled regardless of what a project chose.
  */
-export function resolveFeatureFlag(metadata: unknown, key: FeatureFlagKey): boolean {
+export function resolveFeatureFlag(
+  metadata: unknown,
+  key: FeatureFlagKey,
+  /** The project's organization: required for flags derived from Volumes (absent ⇒ off). */
+  accountId?: string | null,
+): boolean {
   const def = FLAG_BY_KEY[key];
   if (!def || !def.available()) return false;
+  if (def.derivedFrom === 'volumes') return volumesEnabledFor(accountId);
   return explicitOverride(metadata, key) ?? def.platformDefault();
 }
 
+/** Is this flag derived from an organization switch (and so not a project choice)? */
+export function isDerivedFeatureFlag(key: FeatureFlagKey): boolean {
+  return Boolean(FLAG_BY_KEY[key]?.derivedFrom);
+}
+
 /** Effective enablement for every flag, keyed by flag id. */
-export function resolveFeatureFlags(metadata: unknown): Record<FeatureFlagKey, boolean> {
+export function resolveFeatureFlags(metadata: unknown, accountId?: string | null): Record<FeatureFlagKey, boolean> {
   return Object.fromEntries(
-    FLAGS.map((f) => [f.key, resolveFeatureFlag(metadata, f.key)]),
+    FLAGS.map((f) => [f.key, resolveFeatureFlag(metadata, f.key, accountId)]),
   ) as Record<FeatureFlagKey, boolean>;
 }
 
@@ -439,9 +500,11 @@ export interface FeatureFlagView {
  * `operator_only: true`, so the clients show it read-only (see "Hidden
  * flags" in this file's header).
  */
-export function buildFeatureFlagCatalog(metadata: unknown): FeatureFlagView[] {
+export function buildFeatureFlagCatalog(metadata: unknown, accountId?: string | null): FeatureFlagView[] {
   return FLAGS.flatMap((f) => {
-    const enabled = resolveFeatureFlag(metadata, f.key);
+    // A flag that follows the organization's Volumes switch has no project row.
+    if (f.derivedFrom) return [];
+    const enabled = resolveFeatureFlag(metadata, f.key, accountId);
     if (f.catalogHidden && !enabled) return [];
     return [{
       key: f.key,

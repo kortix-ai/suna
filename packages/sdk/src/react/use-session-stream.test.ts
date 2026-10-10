@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { QueryClient } from '@tanstack/react-query';
+import { onSessionStopped } from '../core/http/session-stopped';
 import { sessionStartKey } from '../core/rest/projects-client';
 import { qk } from './query-keys';
 import { applySessionControlFrame, patchCachedSessionTitle } from './use-session-stream';
@@ -39,6 +40,21 @@ describe('applySessionControlFrame', () => {
     expect(client.getQueryState(sessionStartKey(P, S))?.isInvalidated).toBe(false);
     applySessionControlFrame(client, P, S, frame('kortix.control.runtime', { ...runtime, sandbox_status: 'active', waking: false }, 2), memory);
     expect(client.getQueryState(sessionStartKey(P, S))?.isInvalidated).toBe(true);
+  });
+
+  test('a user Stop made elsewhere counts as this tab\'s own Stop; a park or a wake does not', () => {
+    const client = new QueryClient();
+    const stopped: string[] = [];
+    const off = onSessionStopped((id) => stopped.push(id));
+    const memory: { runtimeKey?: string } = {};
+    const live = { sandbox_status: 'active', external_id: 'box', waking: false, stop_reason: null };
+    applySessionControlFrame(client, P, S, frame('kortix.control.runtime', live), memory);
+    applySessionControlFrame(client, P, S, frame('kortix.control.runtime', { ...live, sandbox_status: 'stopped', stop_reason: 'idle_grace' }, 2), memory);
+    expect(stopped).toEqual([]);
+    applySessionControlFrame(client, P, S, frame('kortix.control.runtime', live, 3), memory);
+    applySessionControlFrame(client, P, S, frame('kortix.control.runtime', { ...live, sandbox_status: 'stopped', external_id: null, stop_reason: 'manual' }, 4), memory);
+    expect(stopped).toEqual([S]);
+    off();
   });
 
   test('an audit frame stores the watermark a host re-reads its audit list on', () => {

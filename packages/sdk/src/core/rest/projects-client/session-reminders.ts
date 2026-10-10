@@ -92,6 +92,66 @@ export async function deleteSessionReminder(projectId: string, sessionId: string
   );
 }
 
+/** One reminder, addressed by the session it belongs to. */
+export interface SessionReminderRef {
+  sessionId: string;
+  reminderId: string;
+}
+
+/** What a batch did: the reminders it changed, and each one it could not, with why. */
+export interface SessionReminderBatchResult {
+  done: SessionReminderRef[];
+  failed: { reminder: SessionReminderRef; error: unknown }[];
+}
+
+/**
+ * Requests a batch keeps in flight. A batch of 100 must not open 100
+ * connections against one API, nor take 100 round trips in a row.
+ */
+const BATCH_CONCURRENCY = 4;
+
+/** Runs `run` for every reminder, `BATCH_CONCURRENCY` at a time; one failure never stops the rest. */
+async function runBatch(
+  reminders: readonly SessionReminderRef[],
+  run: (reminder: SessionReminderRef) => Promise<unknown>,
+): Promise<SessionReminderBatchResult> {
+  const outcomes: ({ ok: true } | { ok: false; error: unknown })[] = new Array(reminders.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < reminders.length) {
+      const index = next++;
+      try {
+        await run(reminders[index]!);
+        outcomes[index] = { ok: true };
+      } catch (error) {
+        outcomes[index] = { ok: false, error };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(BATCH_CONCURRENCY, reminders.length) }, worker));
+  const result: SessionReminderBatchResult = { done: [], failed: [] };
+  reminders.forEach((reminder, index) => {
+    const outcome = outcomes[index]!;
+    if (outcome.ok) result.done.push(reminder);
+    else result.failed.push({ reminder, error: outcome.error });
+  });
+  return result;
+}
+
+/** Pause or resume many reminders, across sessions. Reports each reminder; never throws for one. */
+export function updateSessionReminders(
+  projectId: string,
+  reminders: readonly SessionReminderRef[],
+  input: UpdateSessionReminderInput,
+) {
+  return runBatch(reminders, (r) => updateSessionReminder(projectId, r.sessionId, r.reminderId, input));
+}
+
+/** Remove many reminders, across sessions. Reports each reminder; never throws for one. */
+export function deleteSessionReminders(projectId: string, reminders: readonly SessionReminderRef[]) {
+  return runBatch(reminders, (r) => deleteSessionReminder(projectId, r.sessionId, r.reminderId));
+}
+
 /** A reminder as the project list returns it: plus its session's display name. */
 export interface ProjectReminder extends SessionReminder {
   session_name: string | null;

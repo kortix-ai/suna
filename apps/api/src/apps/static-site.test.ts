@@ -152,7 +152,9 @@ describe('compression bounds', () => {
     expect(siteCaches.encoded.bytes).toBeGreaterThan(0);
     expect(siteCaches.encoded.bytes).toBeLessThanOrEqual(budget);
     resetStaticSiteCaches();
-  });
+    // It gzips ~72 MiB of random bytes by design. On a shared 4 vCPU CI runner
+    // that passed 30 s (run 37954345462); the budget, not the speed, is under test.
+  }, 120_000);
 });
 
 describe('ByteLru', () => {
