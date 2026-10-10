@@ -291,7 +291,7 @@ export const AUDIT_TITLE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Listed SCIM users': 'textbe57d6da40be',
   'Listed SSO group mappings': 'textfa7dcb702d43',
   'Listed a drive folder from a session': 'text52faea499e28',
-  'Listed a session's synced drives': 'text806194e831e2',
+  'Listed a session\'s synced drives': 'text806194e831e2',
   'Listed account members': 'textc4f9b0735dc8',
   'Listed account members as admin': 'textab4b11397d69',
   'Listed account projects as admin': 'text86189295d532',
