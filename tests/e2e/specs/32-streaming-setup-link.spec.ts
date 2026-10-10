@@ -36,7 +36,10 @@ const markdownIn = (replay: Locator) => replay.locator('.kortix-markdown');
 async function layoutOf(root: Locator): Promise<string> {
   return root.evaluate((el) => {
     const origin = el.getBoundingClientRect();
+    // `.kx-stream-word` wraps each word for its fade-in while the message
+    // streams (#9420) and is gone once it settles; it moves nothing.
     return [...el.querySelectorAll('*')]
+      .filter((node) => !node.closest('.kx-stream-word'))
       .map((node) => {
         const r = node.getBoundingClientRect();
         return [node.tagName, r.left - origin.left, r.top - origin.top, r.width, r.height]
