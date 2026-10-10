@@ -436,7 +436,10 @@ export async function retryTransientProvisionFailure(
     attempts: retries + 1,
   };
 
-  if (retries >= TRANSIENT_PROVISION_MAX_RETRIES || !canAllocate()) {
+  // This API cannot allocate on the row's provider (not allowed here, or no
+  // reachable callback), so it cannot retry: the stored failure is the answer.
+  if (!canAllocate()) return null;
+  if (retries >= TRANSIENT_PROVISION_MAX_RETRIES) {
     return {
       stage: 'failed',
       agent_name: visible.row.agentName ?? 'default',
