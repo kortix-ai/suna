@@ -169,6 +169,7 @@ import {
   newAccountLabelTaken,
   newAccountReady,
 } from './view/connector-connections';
+import { randomUUID } from '@/lib/utils/random-uuid';
 
 const BUILT_IN_CHANNEL_APP_SLUGS = new Set(['slack', 'slack_v2']);
 
@@ -2291,7 +2292,7 @@ function AddEmailConnectionCard({
     mutationFn: async () => {
       const slug = buildEmailConnectorConnectionSlug(
         username || name,
-        globalThis.crypto.randomUUID(),
+        randomUUID(),
       );
       const result = await createConnector(
         projectId,
