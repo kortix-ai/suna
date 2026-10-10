@@ -63,7 +63,7 @@ export function registerSessionDrivesRoutes(): void {
       method: 'get',
       path: '/{projectId}/sessions/{sessionId}/drives',
       tags: ['sessions'],
-      summary: 'GET /:projectId/sessions/:sessionId/drives',
+      summary: 'List the folders a session mounts',
       description: 'The folders of the project’s Files the session’s sandbox mounts now, where, and with which access.',
       ...auth,
       request: { params: Params },
