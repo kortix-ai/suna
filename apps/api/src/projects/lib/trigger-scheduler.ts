@@ -212,6 +212,10 @@ async function recordTriggerExecutionResult(
     const terminal = result.errorCode === 'insufficient_credits'
       || result.errorCode === 'subscription_required'
       || result.errorCode === 'no_account'
+      // The model gate fails identically on every retry until the account
+      // gains a usable model; retrying only delays the terminal state the
+      // same way a billing rejection does.
+      || result.errorCode === 'no_usable_model'
       // The fire already paused the reminder; a retry cannot bring the session back.
       || result.errorCode === 'reminder_session_gone';
     const state = await markTriggerExecutionFailed({ row, failedAt: completedAt, error, terminal });

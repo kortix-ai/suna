@@ -114,6 +114,10 @@ export async function resolveTokenPrincipal(
       ? reconcileStoredSessionAgentGrant({
           projectId: result.projectId,
           sessionId: sessionIdentity.sessionId,
+          // The row `validateAccountToken` just read carries the session's
+          // stored grant (already normalized) — a re-mint rewrites every
+          // ACTIVE token of the session, so there is no second read to do.
+          storedGrant: result.agentGrant ?? null,
         })
       : Promise.resolve(result.agentGrant ?? null),
     sessionChannelConnectorSlugs(result.projectId, sessionIdentity.sessionId),

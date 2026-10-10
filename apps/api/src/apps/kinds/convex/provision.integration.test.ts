@@ -149,7 +149,7 @@ describe('sign-in issuer', () => {
       fetch: (req) => {
         const [, , , id, sub] = new URL(req.url).pathname.split('/');
         if (sub !== 'expose') return Response.json({ id, state: 'running' });
-        const origin = id!.endsWith('-ok') ? ok.url.origin : down.url.origin;
+        const origin = id!.endsWith('-ok') ? `http://127.0.0.1:${ok.port}` : `http://127.0.0.1:${down.port}`;
         return Response.json({ port: 3210, public: false, url: `${origin}/?t=synthetic-edge-token` });
       },
     });

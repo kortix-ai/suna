@@ -1,0 +1,43 @@
+{
+  "source_hash": "3218ed0622f438bdb5468ff359ec0dc35c16ad50866687a1f377ceaa50fa858b",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-gateway-keys.test.ts",
+    "apps/api/src/app.ts",
+    "apps/api/src/apps/kinds/convex/hosts.integration.test.ts",
+    "apps/api/src/apps/kinds/convex/provision.integration.test.ts",
+    "apps/api/src/apps/kinds/convex/routes.integration.test.ts",
+    "apps/api/src/config.ts",
+    "apps/api/src/feedback/index.test.ts",
+    "apps/api/src/feedback/index.ts",
+    "apps/api/src/feedback/rate-limit.test.ts",
+    "apps/api/src/feedback/store.integration.test.ts",
+    "apps/api/src/mcp/cli.ts",
+    "apps/api/src/middleware/rate-limit.ts",
+    "apps/cli/src/command-table.ts",
+    "apps/cli/src/commands/feedback.test.ts",
+    "apps/cli/src/commands/feedback.ts",
+    "apps/cli/src/index.ts",
+    "apps/web/content/docs/audit-actions.mdx",
+    "apps/web/content/docs/cli.mdx",
+    "apps/web/src/components/iam/audit-http-routes.generated.ts",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "packages/db/drizzle/meta/20261009194110_snapshot.json",
+    "packages/db/drizzle/meta/_journal.json",
+    "packages/db/migrations/20261009194110000_feedback.sql",
+    "packages/db/src/index.ts",
+    "packages/db/src/schema/kortix.ts",
+    "packages/shared/src/audit-route-labels.ts",
+    "tests/spec/end-to-end.md",
+    "tests/spec/routes.generated.json",
+    "tests/src/flows/feedback.flow.ts"
+  ],
+  "diff_hash": "5219680dced8f50a67d77fd9af51f160fefd8053fd0e7e3cc890c3b035256156",
+  "head": "1204030938882ae896f10d4a860912186b4497b1",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-10T00:12:08.943Z"
+}
