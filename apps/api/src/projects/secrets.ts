@@ -1,5 +1,5 @@
-import { connectors, projectSecrets } from '@kortix/db';
-import { and, desc, eq, isNull, or } from 'drizzle-orm';
+import { connectors, projectSecrets, projectSecretTombstones, projects } from '@kortix/db';
+import { and, desc, eq, gt, inArray, isNull, lt, or } from 'drizzle-orm';
 import { projectLlmGatewayEnabledById } from '../llm-gateway/enablement';
 import { isGatewayManagedEnv } from '../llm-gateway/sandbox-credentials';
 import {
@@ -84,6 +84,73 @@ export async function writeSharedProjectSecret(input: {
     })
     .returning({ secretId: projectSecrets.secretId });
   return row!.secretId;
+}
+
+/** A deletion older than the longest setup-link TTL (MAX_TTL_MINUTES in
+ *  setup-links/token.ts) plus a day of clock slack can never invalidate a
+ *  link that still exists — its every possible link has expired — so unset
+ *  prunes such tombstones instead of letting the table grow forever. */
+const TOMBSTONE_RETENTION_MINUTES = 31 * 24 * 60;
+
+/** The transaction handle of the write this tombstone is part of (the unset
+ *  route's audited transaction). Structurally the db transaction type, so
+ *  either a drizzle or the audit pool transaction fits. */
+type SecretWriteTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * Record that a shared secret row was deleted, in the same transaction as the
+ * delete. Setup-link tokens are stateless — they carry only their mint time —
+ * so this tombstone is the only way the public intake submit can tell a
+ * "request a missing secret" link from one whose target the owner removed
+ * after minting, and stop the latter from resurrecting the secret.
+ *
+ * Takes the project row's lock FIRST, in the same order the intake submit does
+ * (project row → secret rows): an in-flight submission either commits before
+ * this delete runs (and the delete removes its row) or this tombstone lands
+ * before the submission reads it (and the submission is rejected). Without the
+ * shared lock, a submission that read no tombstone could still re-insert the
+ * row after the delete — the exact resurrection this exists to prevent.
+ */
+export async function recordProjectSecretTombstone(
+  projectId: string,
+  name: string,
+  tx: SecretWriteTx,
+): Promise<void> {
+  await tx.select({ status: projects.status }).from(projects)
+    .where(eq(projects.projectId, projectId)).limit(1).for('update');
+  await tx.insert(projectSecretTombstones)
+    .values({ projectId, name, deletedAt: new Date() })
+    .onConflictDoUpdate({
+      target: [projectSecretTombstones.projectId, projectSecretTombstones.name],
+      set: { deletedAt: new Date() },
+    });
+  await tx.delete(projectSecretTombstones)
+    .where(lt(projectSecretTombstones.deletedAt, new Date(Date.now() - TOMBSTONE_RETENTION_MINUTES * 60_000)));
+}
+
+/**
+ * The requested secret NAMES whose shared row was deleted after `mintedAt`
+ * (the token's `iat`, epoch ms; 0 when the token predates the field — an
+ * unknown mint time is treated as the oldest possible, so a deletion kills
+ * every link that cannot prove it was minted later). An empty result means the
+ * link may proceed; any hit means the link must be refused.
+ */
+export async function projectSecretsDeletedSince(
+  projectId: string,
+  names: string[],
+  mintedAt: number,
+): Promise<string[]> {
+  if (names.length === 0) return [];
+  const rows = await db
+    .select({ name: projectSecretTombstones.name })
+    .from(projectSecretTombstones)
+    .where(and(
+      eq(projectSecretTombstones.projectId, projectId),
+      inArray(projectSecretTombstones.name, names),
+      gt(projectSecretTombstones.deletedAt, new Date(mintedAt)),
+    ))
+    .limit(names.length);
+  return rows.map((row) => row.name);
 }
 
 /** Lock a legacy runtime secret to the server-side connector boundary. */

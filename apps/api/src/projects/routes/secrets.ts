@@ -23,6 +23,7 @@ import {
   encryptProjectSecret,
   identifierKeyConflicts,
   isValidIdentifier,
+  recordProjectSecretTombstone,
 } from '../secrets';
 import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
 import { isGatewayManagedEnv } from '../../llm-gateway/sandbox-credentials';
@@ -633,6 +634,12 @@ export function registerSecretsRoutes(): void {
               eq(projectSecrets.identifier, identifier),
               isNull(projectSecrets.ownerUserId),
             ));
+          // Any intake link minted before this moment must not resurrect the
+          // secret it asked for (KRTX-2056): the tombstone is what the public
+          // intake submit checks against the token's mint time. Same
+          // transaction as the delete, so a link can never observe the secret
+          // gone and still submit.
+          await recordProjectSecretTombstone(projectId, existing.name, tx);
         },
         () => ({
           accountId: loaded.row.accountId,
