@@ -130,6 +130,35 @@ export async function setDatabaseEnterpriseDemo(
   }
 }
 
+/**
+ * Set one feature-flag override on a project row, as the operator route
+ * (`PUT /v1/admin/api/projects/:id/features`) does. For browser journeys that
+ * need the internal-only flag `apps`: a project owner cannot
+ * write those through `PATCH /projects/:id/features`.
+ */
+export async function setDatabaseProjectFeature(
+  env: Env,
+  projectId: string,
+  feature: string,
+  enabled: boolean,
+  open: OpenProjectDb = openProjectDb,
+): Promise<void> {
+  const databaseUrl = assertDatabaseFixtureAllowed(env, "set a feature flag for");
+  const client = await open(databaseUrl);
+  try {
+    await client.query(
+      `UPDATE kortix.projects
+       SET metadata = coalesce(metadata, '{}'::jsonb)
+         || jsonb_build_object('experimental', coalesce(metadata->'experimental', '{}'::jsonb) || jsonb_build_object($2::text, $3::boolean)),
+         updated_at = now()
+       WHERE project_id = $1::uuid`,
+      [projectId, feature, enabled],
+    );
+  } finally {
+    await client.end();
+  }
+}
+
 /** Record a failed run on a trigger, as the API does when a trigger session's turn ends with an error. */
 /**
  * The session's first prompt, claimed and on its way (`running`, locked for

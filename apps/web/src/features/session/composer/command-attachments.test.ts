@@ -1,11 +1,21 @@
+import { describe, expect, test } from 'bun:test';
 import { getSchema } from '@tiptap/core';
 import Document from '@tiptap/extension-document';
 import Paragraph from '@tiptap/extension-paragraph';
 import Text from '@tiptap/extension-text';
 import { Node as PMNode } from '@tiptap/pm/model';
-import { describe, expect, test } from 'bun:test';
+import { createTranslator } from 'next-intl';
 
 import { testUiTranslator } from '@/i18n/test-translator';
+import de from '../../../../translations/de.json';
+import en from '../../../../translations/en.json';
+import es from '../../../../translations/es.json';
+import fr from '../../../../translations/fr.json';
+import it from '../../../../translations/it.json';
+import ja from '../../../../translations/ja.json';
+import pt from '../../../../translations/pt.json';
+import sr from '../../../../translations/sr.json';
+import zh from '../../../../translations/zh.json';
 import {
   COMMAND_CHIP_ATTRIBUTE,
   COMMAND_CHIP_LABEL_ATTRIBUTE,
@@ -74,6 +84,62 @@ describe('planCommandAttachments', () => {
     expect(
       planCommandAttachments({ isCommand: true, attachmentCount: -1 }, testUiTranslator).kind,
     ).toBe('dispatch');
+  });
+});
+
+describe('planCommandAttachments — the refuse copy is translated', () => {
+  const enSingularDescription =
+    '1 file stays attached. Remove it to run the command, or remove the command to send the file as a message.';
+  const enPluralDescription =
+    '3 files stay attached. Remove them to run the command, or remove the command to send them as a message.';
+
+  test('a German session reads the refusal in German, not the hardcoded English', () => {
+    // The message already comes from the catalog; the description beside it
+    // must too. This pins the exact defect the i18n review caught: a de
+    // session saw the English description under a German headline.
+    const t = createTranslator({
+      locale: 'de',
+      messages: de,
+      namespace: 'hardcodedUi.i18nComplete',
+      onError: (error) => {
+        throw new Error(`de: ${error.message}`);
+      },
+    });
+    const singular = planCommandAttachments({ isCommand: true, attachmentCount: 1 }, t);
+    if (singular.kind !== 'refuse') throw new Error('expected a refusal');
+    expect(singular.message).toBe(de.hardcodedUi.i18nComplete.text01ec8eaf8ffa);
+    expect(singular.description).not.toBe(enSingularDescription);
+    const plural = planCommandAttachments({ isCommand: true, attachmentCount: 3 }, t);
+    if (plural.kind !== 'refuse') throw new Error('expected a refusal');
+    expect(plural.description).not.toBe(enPluralDescription);
+  });
+
+  test('every locale reads both refusal descriptions from its catalog', () => {
+    const locales = { de, en, es, fr, it, ja, pt, sr, zh };
+    for (const [locale, messages] of Object.entries(locales)) {
+      const t = createTranslator({
+        locale,
+        messages: messages as typeof en,
+        namespace: 'hardcodedUi.i18nComplete',
+        onError: (error) => {
+          throw new Error(`${locale}: ${error.message}`);
+        },
+      });
+      const singular = planCommandAttachments({ isCommand: true, attachmentCount: 1 }, t);
+      if (singular.kind !== 'refuse') throw new Error('expected a refusal');
+      expect(singular.description).toContain('1');
+      const plural = planCommandAttachments({ isCommand: true, attachmentCount: 3 }, t);
+      if (plural.kind !== 'refuse') throw new Error('expected a refusal');
+      expect(plural.description).toContain('3');
+      if (locale === 'en') {
+        // Byte-identity: the English copy must not drift when it gains keys.
+        expect(singular.description).toBe(enSingularDescription);
+        expect(plural.description).toBe(enPluralDescription);
+      } else {
+        expect(singular.description).not.toBe(enSingularDescription);
+        expect(plural.description).not.toBe(enPluralDescription);
+      }
+    }
   });
 });
 

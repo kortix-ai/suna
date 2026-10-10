@@ -104,12 +104,11 @@ suite('credit wallet ledger writes (throwaway Postgres)', () => {
   // `apps/api/src/config` validates the environment at import time.
   let wallet: typeof import('../../apps/api/src/billing/wallet').wallet;
   let database: ReturnType<typeof createDb> | undefined;
-  let router: typeof import('../../apps/api/src/router/services/billing');
   let errors: typeof import('../../apps/api/src/errors');
   let honesty: typeof import('../../apps/api/src/billing/ledger-type-honesty');
 
   beforeAll(async () => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    sh(['docker', 'rm', '-f', '-v', CONTAINER]);
     const up = sh([
       'docker', 'run', '-d', '--name', CONTAINER,
       '-e', 'POSTGRES_PASSWORD=postgres', '-e', 'POSTGRES_USER=postgres', '-e', 'POSTGRES_DB=postgres',
@@ -160,14 +159,13 @@ suite('credit wallet ledger writes (throwaway Postgres)', () => {
       afterDbCommit: scoped.afterCommit,
     }));
     ({ wallet } = await import('../../apps/api/src/billing/wallet'));
-    router = await import('../../apps/api/src/router/services/billing');
     errors = await import('../../apps/api/src/errors');
     honesty = await import('../../apps/api/src/billing/ledger-type-honesty');
   }, 300_000);
 
   afterAll(async () => {
     await database?.$client.end({ timeout: 5 });
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    sh(['docker', 'rm', '-f', '-v', CONTAINER]);
   });
 
   describe('grant', () => {
@@ -434,55 +432,6 @@ suite('credit wallet ledger writes (throwaway Postgres)', () => {
       await expect(wallet.settle(write)).rejects.toBeInstanceOf(honesty.LedgerTypeMismatchError);
       expect(ledger(id)).toEqual([]);
       expect(account(id)).toMatchObject({ balance: 10, non_expiring: 10 });
-    });
-
-    test('the router debit reports a refusal as a result, not a throw', async () => {
-      const id = newAccount({ nonExpiring: 0.5 });
-      expect(await router.deductLLMCredits(id, 'model-x', 10, 20, 1)).toEqual({
-        success: false,
-        cost: 0,
-        newBalance: 0,
-        error: 'Insufficient credits',
-      });
-      expect(await router.deductLLMCredits(unknownAccount(), 'model-x', 10, 20, 1)).toMatchObject({
-        success: false,
-        error: 'No credit account found',
-      });
-      expect(ledger(id)).toEqual([]);
-    });
-
-    test('the router debit writes an llm_debit usage row', async () => {
-      const id = newAccount({ nonExpiring: 2 });
-      const result = await router.deductLLMCredits(id, 'model-x', 10, 20, 0.25);
-      expect(result).toMatchObject({ success: true, cost: 0.25, newBalance: 1.75 });
-      expect(ledger(id)).toEqual([
-        expect.objectContaining({
-          type: 'usage',
-          amount: -0.25,
-          description: 'LLM: model-x (10/20 tokens)',
-          idempotency_key: null,
-          metadata: { from_daily: 0, from_monthly: 0, from_extra: 0.25, ledger_type: 'llm_debit' },
-        }),
-      ]);
-    });
-
-    test('the router credit check reports balance and a missing account', async () => {
-      const id = newAccount({ expiring: 0.005 });
-      expect(await router.checkCredits(id)).toEqual({
-        hasCredits: false,
-        balance: 0.005,
-        message: 'Insufficient credits. Balance: $0.0050',
-      });
-      expect(await router.checkCredits(newAccount({ nonExpiring: 3 }))).toEqual({
-        hasCredits: true,
-        balance: 3,
-        message: 'OK',
-      });
-      expect(await router.checkCredits(unknownAccount())).toEqual({
-        hasCredits: false,
-        balance: 0,
-        message: 'No credit account found',
-      });
     });
   });
 

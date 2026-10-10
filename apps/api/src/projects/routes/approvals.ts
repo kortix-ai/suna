@@ -9,7 +9,7 @@ import { db } from '../../shared/db';
 import { inferAuditSource } from '../../shared/audit';
 import { createRoute, z } from '@hono/zod-openapi';
 import { connectorCalls, projectSessions, sessionPendingQuestions } from '@kortix/db';
-import { and, desc, eq, inArray, isNull, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 import {
   mayResolveApproval,
   maySeeSessionApprovals,

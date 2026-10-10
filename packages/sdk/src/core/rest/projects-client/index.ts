@@ -11,6 +11,7 @@ export * from './access';
 export * from './secrets';
 export * from './account-secret-resources';
 export * from './connectors';
+export * from './connector-run';
 export * from './policies';
 export * from './sandbox';
 export * from './files';
@@ -47,6 +48,8 @@ export * from './setup-links';
 export * from './marketplace-catalog';
 export * from './templates';
 export * from './apps';
+export * from './drives';
+export * from './notifications';
 
 // Cross-cutting types that originally lived in this module. Re-exported
 // explicitly (not the internal `unwrap` helper) to keep the surface identical.

@@ -7,7 +7,7 @@ import { markTriggerRuntimeDelivered } from '../trigger-execution-store';
 import { continueSession } from './continue-session';
 import { PromptDeliveryRefused } from './prompt-delivery-refusal';
 import { assertInboxDeliveryActive, InboxDeliveryPaused, returnClaimToQueue } from './inbox-delivery-hold';
-import { SteerNotTaken, postPrompt, removeStrandedOpencodeMessage } from './runtime-client';
+import { SteerNotTaken, postPrompt, retractStrandedMessage } from './runtime-client';
 import { awakeDeliveryTarget } from './deliver';
 import { recordSteerFallback } from './command-transitions';
 import { MAX_LIVE_PLACEMENT_REPAIRS, hasLaterForwardedSibling, recordRepairedForward, remintForRepair, verifyLivePlacement } from './inbox-placement';
@@ -67,7 +67,7 @@ async function repairPlacement(row: SessionLifecycleCommandRow, wireMessageId: s
     });
     return null;
   }
-  const removed = await removeStrandedOpencodeMessage(row, wireMessageId);
+  const removed = await retractStrandedMessage(row, wireMessageId);
   if (!removed) {
     logger.info('[session-lifecycle] stranded prompt detected mid-turn — turn-end reconciliation will re-place it', {
       session_id: row.sessionId, command_id: row.commandId, wire_message_id: wireMessageId, stranded_by: proof.strandedBy,
@@ -137,6 +137,7 @@ export async function deliverQueuedContinue(row: SessionLifecycleCommandRow, pay
         ...(noReply ? { noReply } : {}),
         ...(payload.bindTurnIdentity ? { bindTurnIdentity: true } : {}),
         ...(payload.opencodeEnv ? { opencodeEnv: payload.opencodeEnv } : {}),
+        ...(payload.clientMessageId ? {} : { queuedAt: row.createdAt }),
       }, attempt > 0 ? `${row.commandId}:r${attempt}` : row.commandId, tl,
       payload.clientMessageId ? () => assertInboxDeliveryActive(row) : undefined);
       tl.mark('delivered');

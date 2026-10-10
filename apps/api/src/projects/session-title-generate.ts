@@ -1,6 +1,7 @@
 import { and, eq, or, sql } from 'drizzle-orm';
 
 import { projectSessions } from '@kortix/db';
+import { splitPastedContent } from '@kortix/shared';
 import { config } from '../config';
 import { logger as appLogger } from '../lib/logger';
 import {
@@ -154,13 +155,22 @@ function promptInfoFromRestBody(parsed: unknown): PromptInfo {
   return { text, model: wireModelFrom(envelope.model) };
 }
 
+/** A prompt's `<pasted_content>` blocks are data, not words: title from what
+ *  the user typed, and only from the pasted text when nothing was typed. */
+export function titlePromptText(raw: string): string {
+  const { text, pastes } = splitPastedContent(raw);
+  return text || pastes.map((p) => p.text).join('\n');
+}
+
 /** The text a create-time title is derived from: an explicit clean
  *  `title_source` when the caller renders an envelope around the real message
  *  (Slack/Teams/Telegram/email), else the prompt itself. */
 export function titleSourceForCreate(body: Record<string, unknown>): string | null {
   const pick = (value: unknown): string | null =>
     typeof value === 'string' && value.trim() ? value.trim() : null;
-  return pick(body.title_source) ?? pick(body.initial_prompt) ?? pick(body.initialPrompt);
+  const source =
+    pick(body.title_source) ?? pick(body.initial_prompt) ?? pick(body.initialPrompt);
+  return source && titlePromptText(source);
 }
 
 function contentToString(content: unknown): string | null {
@@ -480,7 +490,7 @@ export async function generateSessionTitleFromFirstPrompt(
     // The create-time `title_source` wins over whatever text this hook was
     // handed: a channel session's baked prompt is a rendered envelope, and only
     // create sees the user's actual message.
-    const promptText = storedTitleSource(row) ?? suppliedText;
+    const promptText = titlePromptText(storedTitleSource(row) ?? suppliedText);
 
     // Two paths on the project's `llm_gateway` flag. Gateway OFF ⇒ this hook
     // runs NO gateway pipeline at all — no key mint, no resolution, no usage

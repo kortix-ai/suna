@@ -45,7 +45,7 @@ const suite = dockerOk ? describe : describe.skip;
 
 suite('kortix_yolo.profiles unused index (throwaway Postgres)', () => {
   beforeAll(async () => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    sh(['docker', 'rm', '-f', '-v', CONTAINER]);
     const up = sh([
       'docker',
       'run',
@@ -79,7 +79,7 @@ suite('kortix_yolo.profiles unused index (throwaway Postgres)', () => {
   }, 120_000);
 
   afterAll(() => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    sh(['docker', 'rm', '-f', '-v', CONTAINER]);
   });
 
   test('applies green where the gateway schema does not exist (fresh database)', async () => {

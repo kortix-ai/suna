@@ -129,6 +129,19 @@ export function platinumOriginForRegion(region: string): string {
   return regionOrigins.get(region) ?? new URL(platinumBase()).origin;
 }
 
+/**
+ * The control plane of one region, for a call that must reach that region
+ * itself (a `regions=local` listing): learned from a box there, else
+ * Platinum's regional name `https://<region>.<PLATINUM_API_URL host>`
+ * (us-east.api.platinum.dev). Null when the key may not go there.
+ */
+export function platinumRegionControlPlane(region: string): string | null {
+  const learned = regionOrigins.get(region);
+  if (learned) return learned;
+  if (!/^[a-z]{2,8}-[a-z]{2,12}$/.test(region)) return null;
+  return acceptedPlatinumOrigin(`https://${region}.${new URL(platinumBase()).hostname}`);
+}
+
 function createRegionOf(path: string, method: string, body: unknown): string | null {
   if (method !== 'POST' || !SANDBOX_COLLECTION_PATH.test(path) || typeof body !== 'string') return null;
   try {
@@ -217,7 +230,7 @@ const DEFAULT_CALL_TIMEOUT_MS = configuredTimeoutMs(
   1_000,
 );
 
-async function platinumFetch(path: string, init: RequestInit = {}): Promise<Response> {
+export async function platinumFetch(path: string, init: RequestInit = {}, origin?: string): Promise<Response> {
   if (!config.PLATINUM_API_KEY) throw new Error('Missing PLATINUM_API_KEY');
   // Track whether WE picked the timeout budget so the error message below
   // reports the real one instead of always claiming the default — a caller
@@ -253,6 +266,8 @@ async function platinumFetch(path: string, init: RequestInit = {}): Promise<Resp
       ? regionOrigins.get(createRegion)
       : undefined;
   try {
+    // An explicit control plane (platinumRegionControlPlane) gets the call as is.
+    if (origin) return await send(origin);
     if (!regional) return await send(platinumBase());
     try {
       return await send(regional);
@@ -353,8 +368,9 @@ export type PlatinumJsonResponse<T> = {
 export async function platinumJsonResponse<T>(
   path: string,
   init: RequestInit = {},
+  origin?: string,
 ): Promise<PlatinumJsonResponse<T>> {
-  const res = await platinumFetch(path, init);
+  const res = await platinumFetch(path, init, origin);
   const text = await res.text();
   const method = (init.method ?? 'GET').toUpperCase();
   if (!res.ok) {
@@ -384,7 +400,10 @@ export async function platinumJsonResponse<T>(
   return { status: res.status, body };
 }
 
-/** GET/POST JSON. Throws `PlatinumHttpError` on non-2xx. */
-export async function platinumJson<T>(path: string, init: RequestInit = {}): Promise<T> {
-  return (await platinumJsonResponse<T>(path, init)).body;
+/**
+ * GET/POST JSON. Throws `PlatinumHttpError` on non-2xx. `origin` (from
+ * `platinumRegionControlPlane`) sends the call to that control plane only.
+ */
+export async function platinumJson<T>(path: string, init: RequestInit = {}, origin?: string): Promise<T> {
+  return (await platinumJsonResponse<T>(path, init, origin)).body;
 }

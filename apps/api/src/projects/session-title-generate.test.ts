@@ -147,6 +147,57 @@ describe('titleSourceForCreate', () => {
   });
 });
 
+describe('paste markup in title sources', () => {
+  const paste = '<pasted_content id="ab12cd34" chars="11">\nhello world\n</pasted_content>';
+
+  it('titleSourceForCreate keeps only the typed question when paste blocks come first', () => {
+    expect(titleSourceForCreate({ initial_prompt: `${paste}\n\nWhy is the build red?` })).toBe(
+      'Why is the build red?',
+    );
+  });
+
+  it('titleSourceForCreate falls back to the pasted body for a pastes-only prompt', () => {
+    expect(titleSourceForCreate({ initial_prompt: paste })?.startsWith('hello world')).toBe(true);
+  });
+
+  it('titleSourceForCreate shows a typed (neutralized) tag as the user typed it', () => {
+    // Not a tile: splitPastedContent restores typed tags for display (restorePastedTags).
+    const typed = '&lt;pasted_content id="x" chars="1"> what is this tag?';
+    expect(titleSourceForCreate({ initial_prompt: typed })).toBe('<pasted_content id="x" chars="1"> what is this tag?');
+  });
+
+  it('the model sees the typed question, not the markup', async () => {
+    const seen: string[] = [];
+    const persisted: string[] = [];
+    await generateSessionTitleFromFirstPrompt(
+      {
+        sessionId: 's',
+        projectId: 'p',
+        accountId: 'a',
+        userId: 'u',
+        firstPromptText: `${paste}\n\nWhy is the build red?`,
+        modelHint: 'codex/gpt-5.6-sol',
+      },
+      {
+        loadRow: async () => row({}),
+        generate: async (_m, _a, promptText) => {
+          seen.push(promptText);
+          return 'Red Build';
+        },
+        mintKey: async () => ({ secret: 'sk', keyId: 'k' }),
+        revokeKey: async () => {},
+        persist: async (_r, title) => {
+          persisted.push(title);
+        },
+        fallbackModel: async () => null,
+        resolveLlmGatewayEnabled: async () => true,
+      },
+    );
+    expect(seen).toEqual(['Why is the build red?']);
+    expect(persisted).toEqual(['Red Build']);
+  });
+});
+
 describe('generateSessionTitleFromFirstPrompt', () => {
   function harness(over: Partial<GenerateSessionTitleOptions> & { row?: ProjectSessionRow } = {}) {
     const persisted: string[] = [];

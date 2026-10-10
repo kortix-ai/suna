@@ -38,7 +38,6 @@ export { handBackClaims } from './session-lifecycle/claim-handover';
 export {
   drainTriggerExecutionQueue,
   runProjectTriggerSweep,
-  resolveGitTriggerActor,
   startProjectTriggerScheduler,
   stopProjectTriggerScheduler,
   schedulerSweepIsStale,
@@ -48,5 +47,37 @@ export {
 
 // Kortix Capture's one project touchpoint: an admin publishes a workflow as a
 // skill into a project they may write (capture/intelligence-routes.ts, capture/skills.ts).
-export { loadProjectForUser } from './lib/access';
 export { commitRepoFile } from './lib/trigger-manifest';
+
+// Project access, the route app and the secret envelope (consumed by ../apps/kinds/convex).
+export { assertProjectCapability, loadProjectForUser } from './lib/access';
+export { projectsApp } from './lib/app';
+export { decryptProjectSecret, encryptProjectSecret } from './secrets/envelope';
+export { currentInstanceId } from './instance-scope';
+
+// What account erasure deletes outside the database (consumed by
+// ../billing/services/account-deletion): each project's session files and its
+// Kortix-managed repo.
+export { sessionAttachmentStore } from './lib/session-attachments';
+export { deleteManagedProjectRepo } from './lib/project-deletion';
+export { isAlreadyNotRunning } from './reaping/policy';
+
+// Nested `projects.metadata` writes (consumed by ../feature-flags/write).
+export { metadataClearSubtreeKey, metadataMergeSubtree } from './lib/metadata-merge';
+
+// Whether any app-event adapter is configured (consumed by ../feature-flags/registry).
+
+// App-event subscriptions (consumed by connector sync/connect and account
+// deletion). Loaded on first call: their import chain reaches back into
+// connectors/, which imports this file, and an eager re-export closes that cycle
+// with a half-initialized module.
+const eventSubscriptions = () => import('./trigger-events/subscriptions');
+export const reconcileEventSubscriptions: typeof import('./trigger-events/subscriptions').reconcileEventSubscriptions =
+  async (...args) => (await eventSubscriptions()).reconcileEventSubscriptions(...args);
+export const reconcileEventSubscriptionsFromCatalog: typeof import('./trigger-events/subscriptions').reconcileEventSubscriptionsFromCatalog =
+  async (...args) => (await eventSubscriptions()).reconcileEventSubscriptionsFromCatalog(...args);
+export const releaseProjectEventSubscriptions: typeof import('./trigger-events/subscriptions').releaseProjectEventSubscriptions =
+  async (...args) => (await eventSubscriptions()).releaseProjectEventSubscriptions(...args);
+
+// Drive sync's last push before a synced box loses a writable folder (consumed by drives/service.ts).
+export { flushDriveSyncBeforeStop } from './reaping/stop-box';

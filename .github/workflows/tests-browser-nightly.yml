@@ -46,7 +46,7 @@ env:
 jobs:
   quarantine:
     name: quarantined browser journeys
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     permissions:
       contents: read
       id-token: write # OIDC -> AWS Secrets Manager (.github/actions/aws-env)
@@ -78,7 +78,7 @@ jobs:
             KE2E_STRIPE_SECRET_KEY=kortix-staging-env:STRIPE_SECRET_KEY
             KE2E_STRIPE_WEBHOOK_SECRET=kortix-staging-env:STRIPE_WEBHOOK_SECRET
             E2E_AGENTMAIL_API_KEY
-            WEB_PROTECTION_PASSWORD=kortix-staging-web-env:WEB_PROTECTION_PASSWORD
+            WEB_PROTECTION_PASSWORD=kortix-staging-euw2-web-env:WEB_PROTECTION_PASSWORD
             VERCEL_AUTOMATION_BYPASS_SECRET
             KE2E_CI_PASSTHROUGH_SECRET=kortix-ci-env:CF_WORKER_CI_PASSTHROUGH_SECRET
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0

@@ -189,6 +189,10 @@ export interface Detail {
   key: string;
   title: string;
   icon?: ReactNode;
+  /** Muted text after the title, such as a count. */
+  meta?: ReactNode;
+  /** Header buttons, placed just before Close. */
+  actions?: ReactNode;
   body: ReactNode;
   /**
    * Suppress the layer's own header. Some bodies bring their own toolbar (the
@@ -564,8 +568,12 @@ export function DetailLayer({
                       <span className="flex min-w-0 items-center gap-2.5">
                         {detail?.icon}
                         <span className="truncate">{detail?.title}</span>
+                        {detail?.meta && <span className="shrink-0 font-normal">{detail.meta}</span>}
                       </span>
-                      <CloseButton onClose={onBack} />
+                      <span className="flex shrink-0 items-center gap-1">
+                        {detail?.actions}
+                        <CloseButton onClose={onBack} />
+                      </span>
                     </DrawerTitle>
                   </DrawerHeader>
                 )}
@@ -680,8 +688,12 @@ export function DetailLayer({
                       <span className="text-foreground truncate text-sm font-semibold">
                         {detail.title}
                       </span>
+                      {detail.meta && <span className="shrink-0">{detail.meta}</span>}
                     </span>
-                    <CloseButton onClose={onBack} />
+                    <span className="flex shrink-0 items-center gap-1">
+                      {detail.actions}
+                      <CloseButton onClose={onBack} />
+                    </span>
                   </div>
                 )}
                 <div

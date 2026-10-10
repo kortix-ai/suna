@@ -53,6 +53,8 @@ export const AUDIT_EVENT_LABELS: Readonly<Record<string, string>> = {
   'project.sandbox_provider.transition_failed': 'Failed sandbox provider switch',
   'app.deployment.activated': 'Activated Kortix App deployment',
   'app.deployment.failed': 'Failed Kortix App deployment',
+  'app.credentials.read': 'Read Kortix App admin credentials',
+  'app.budget.alert': 'Kortix App reached a budget share',
   'git.branch.deleted': 'Deleted stale Git branch',
   'session.created': 'Recorded session creation',
   'session.status.changed': 'Changed session status',

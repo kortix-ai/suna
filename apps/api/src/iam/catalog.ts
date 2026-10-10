@@ -13,7 +13,7 @@
  * change only when a migration runs, so a 60s window costs one query per minute
  * per replica and removes them from the request path entirely.
  */
-import { and, eq, isNotNull, isNull } from 'drizzle-orm';
+import { eq, isNull } from 'drizzle-orm';
 import { iamRoleActions, iamRoles, objectPolicies, permissions } from '@kortix/db';
 import { db } from '../shared/db';
 import { ttlMemo } from '../shared/ttl-memo';
@@ -26,7 +26,7 @@ const CATALOG_TTL_MS = (() => {
 })();
 
 export type ScopeType = 'account' | 'project';
-export type ObjectType = 'agent' | 'skill' | 'secret' | 'app' | 'trigger' | 'connection';
+export type ObjectType = 'agent' | 'skill' | 'secret' | 'app' | 'trigger' | 'connection' | 'folder';
 
 export interface PermissionEntry {
   action: string;
@@ -128,11 +128,6 @@ export function scopeForUncatalogedAction(action: string): ScopeType {
   return 'project';
 }
 
-export async function scopeForAction(action: string): Promise<ScopeType> {
-  const catalog = await loadPermissionCatalog();
-  return catalog.byAction.get(action)?.scopeType ?? scopeForUncatalogedAction(action);
-}
-
 // ─── System roles ───────────────────────────────────────────────────────────
 
 interface SystemRoles {
@@ -187,46 +182,6 @@ const loadSystemRolesMemo = ttlMemo({
 
 export async function loadSystemRoles(): Promise<SystemRoles> {
   return loadSystemRolesMemo();
-}
-
-/**
- * Actions a CUSTOM role grants. Memoized per role id; a role's action set
- * changes only through `PUT /iam/roles/:id/permissions`, which busts it.
- */
-const loadCustomRoleActionsMemo = ttlMemo({
-  ttlMs: CATALOG_TTL_MS,
-  keyFn: (roleId: string) => roleId,
-  loader: async (roleId: string): Promise<ReadonlySet<string>> => {
-    const rows = await db
-      .select({ action: iamRoleActions.action })
-      .from(iamRoleActions)
-      .where(eq(iamRoleActions.roleId, roleId));
-    return new Set(rows.map((r) => r.action));
-  },
-});
-
-export function invalidateRoleActions(roleId: string): void {
-  loadCustomRoleActionsMemo.invalidate(roleId);
-}
-
-export async function loadCustomRoleActions(roleId: string): Promise<ReadonlySet<string>> {
-  return loadCustomRoleActionsMemo(roleId);
-}
-
-/** Every non-system role in an account, for the roles API and for `assignRole`. */
-export async function loadAccountRoles(accountId: string): Promise<
-  Array<{ roleId: string; key: string; name: string; scopeType: ScopeType }>
-> {
-  const rows = await db
-    .select({
-      roleId: iamRoles.roleId,
-      key: iamRoles.key,
-      name: iamRoles.name,
-      scopeType: iamRoles.scopeType,
-    })
-    .from(iamRoles)
-    .where(and(eq(iamRoles.accountId, accountId), isNotNull(iamRoles.accountId)));
-  return rows.map((r) => ({ ...r, scopeType: r.scopeType as ScopeType }));
 }
 
 // ─── Object policies ────────────────────────────────────────────────────────

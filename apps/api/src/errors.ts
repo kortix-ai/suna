@@ -1,5 +1,3 @@
-import { HTTPException } from 'hono/http-exception';
-
 // ─── Billing Errors ─────────────────────────────────────────────────────────
 
 export class BillingError extends Error {
@@ -46,11 +44,5 @@ export class WebhookError extends BillingError {
   constructor(message: string) {
     super(message, 400);
     this.name = 'WebhookError';
-  }
-}
-
-export class ValidationError extends HTTPException {
-  constructor(message: string) {
-    super(400, { message });
   }
 }

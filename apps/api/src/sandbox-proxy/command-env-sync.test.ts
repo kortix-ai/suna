@@ -69,7 +69,6 @@ type Recorder = {
   deps: PrePromptEnvSyncDeps;
   envSync: Array<{ requestedAgent?: string | null; sessionId: string; providerName: string }>;
   remint: Array<{ sessionAgent: string; requestedAgent: string | null }>;
-  snapshot: Array<{ sessionId: string; projectId: string; accountId: string; userId?: string }>;
   titles: string[];
 };
 
@@ -78,7 +77,6 @@ function recorder(opts: { envSyncError?: () => Error } = {}): Recorder {
   const rec: Recorder = {
     envSync: [],
     remint: [],
-    snapshot: [],
     titles: [],
     deps: {} as PrePromptEnvSyncDeps,
   };
@@ -96,14 +94,6 @@ function recorder(opts: { envSyncError?: () => Error } = {}): Recorder {
       return { action: 'skip' };
     }) as PrePromptEnvSyncDeps['remintGrant'],
     bindTurnIdentity: (async () => false) as PrePromptEnvSyncDeps['bindTurnIdentity'],
-    scheduleSnapshot: ((input) => {
-      rec.snapshot.push({
-        sessionId: input.sessionId,
-        projectId: input.projectId,
-        accountId: input.accountId,
-        userId: input.userId,
-      });
-    }) as PrePromptEnvSyncDeps['scheduleSnapshot'],
     generateTitle: (async (input) => {
       rec.titles.push(input.firstPromptText);
     }) as PrePromptEnvSyncDeps['generateTitle'],
@@ -211,18 +201,6 @@ describe('runPrePromptEnvSync — a /command body', () => {
     const rec = recorder();
     await runSync(rec, COMMAND_BODY);
     expect(rec.remint).toEqual([{ sessionAgent: 'default', requestedAgent: 'writer' }]);
-  });
-
-  // REGRESSION (staging release gate, SESS-10): the schedule used to omit
-  // `userId`. The daemon 401s every non-`/kortix/*` path without the user
-  // context that only a userId mints, so the refresh degraded to `unreachable`
-  // and never wrote a snapshot.
-  test('schedules the opencode snapshot refresh as the caller', async () => {
-    const rec = recorder();
-    await runSync(rec, COMMAND_BODY);
-    expect(rec.snapshot).toEqual([
-      { sessionId: 'sess-1', projectId: 'proj-1', accountId: 'acct-1', userId: 'u1' },
-    ]);
   });
 
   test('generates NO session title from a command body', async () => {

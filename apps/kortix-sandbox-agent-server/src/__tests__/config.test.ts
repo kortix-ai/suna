@@ -66,6 +66,7 @@ describe('resolveSandboxOnBoot', () => {
   test.each([
     ['kortix.yaml', 'sandbox:\n  on_boot: "pnpm dev"\n', 'pnpm dev'],
     ['kortix.yaml', 'sandbox:\n  on_boot: pnpm dev\n', 'pnpm dev'],
+    ['kortix.yaml', 'sandbox:\n  on_boot: |\n    mkdir -p /mnt/data\n    printf ready > /mnt/data/status\n', 'mkdir -p /mnt/data\nprintf ready > /mnt/data/status'],
     ['kortix.toml', '[sandbox]\non_boot = "pnpm dev"\n', 'pnpm dev'],
     ['kortix.yaml', 'sandbox:\n  cpu: 4\n', null],
   ])('%s %j → %j', async (file, body, expected) => {

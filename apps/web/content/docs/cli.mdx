@@ -15,6 +15,7 @@ The installer downloads a prebuilt binary for macOS and Linux. Windows is not su
 
 | Command | Effect |
 | --- | --- |
+| `kortix feedback "<message>" [--kind bug\|idea\|friction] [--source cli\|agent\|web] [--context <json>] [--host <name>] [--json]` | File product feedback for the team. Inside a Kortix session it files as `agent` and tags the session and project ids automatically. Prints the stored receipt id. |
 | `kortix update` | Re-run the install script and pull the latest binary. |
 | `kortix uninstall [-y\|--yes] [--keep-auth] [--keep-home]` | Remove the binary, the `/usr/local/bin` shim, and the stored token. `--keep-auth` keeps the token. `--keep-home` keeps `~/.kortix`. |
 | `kortix version` | Print the CLI version. |
@@ -358,6 +359,37 @@ An existing GitHub `origin` links through the Kortix GitHub App. Any other exist
 | `-n, --dry-run` | Print what would happen; change nothing. |
 | `--project <id>` / `--host <name>` | Target a non-default project or host. |
 
+### Apps
+
+Deploys and operates the project's Kortix Apps: each App has one stable URL and immutable deployments. A static App is files that Kortix serves, with no machine. A server App (Dockerfile or OCI image) runs in its own machine, always on or on demand. Only an on-demand App has a monthly budget; an always-on or `convex` App has a fixed monthly cost. Needs the `apps` project feature. Full guide: [Apps](/docs/feature-flags/apps).
+
+| Command | Effect |
+| --- | --- |
+| `kortix apps ls [--json]` | List the Apps you may open (a project manager sees all) with state (`static` for a static App) and URL. |
+| `kortix apps deploy <dir> --type static [--spa]` | Publish a built directory as a static App. Build first (`npm run build`), then deploy the output directory. |
+| `kortix apps deploy . --type dockerfile --command <argv> --port <n> [--always-on\|--on-demand] [--budget <usd>]` | Build and run a server App. A new App is always on and has no budget: it costs its machine 24/7 (about 73 USD a month by default). `--budget` applies to on-demand Apps only (default 5 USD); on an always-on App it is refused with `app_budget_not_applicable`. The command prints the cost, for example `Runs 24/7 on 1 vCPU / 2 GB: about $73/month`. |
+| `kortix apps deploy --image <ref> --command <argv> --port <n>` | Run a public OCI image as a server App. |
+| `kortix apps deploy --manifest-app <name>` | Deploy one `apps.<name>` block of a v2 `kortix.yaml`. |
+| `kortix apps set <app> [--always-on\|--on-demand] [--budget <usd>] [--cpu N] [--memory-gb N] [--disk-gb N] [--idle-timeout <s>] [--uses <slugs>]` | Change an App. Run mode and budget apply within 5 minutes; a web machine change applies to the next deployment; a `convex` App resizes now and the command waits. |
+| `kortix apps create <slug> --kind convex [--cpu N] [--memory GB] [--disk GB]` | Create a `convex` App (a self-hosted Convex backend) and wait until its machine runs. `--uses <slugs>` sets the Apps it uses. |
+| `kortix apps deploy <dir> --app <slug> [-- <convex deploy args>]` | For a `convex` App: run `convex deploy` with its credentials (the directory's own `node_modules/.bin/convex`, else `npx convex@<instance.client_version>`), then record the deployment with the git commit. With no path and several `kortix.yaml` blocks, deploy every App, each after the Apps it uses. |
+| `kortix apps link\|unlink <app> --uses <slugs>` | Add or remove Apps this App uses: it may bind to them (`/_kortix/apps/<slug>`) and mint their sign-in tokens. `set --uses` replaces the list. |
+| `kortix apps connect <app> [--json]` | Print how to reach the App from code: from an App that uses it, from outside, and from the CLI. No secret. |
+| `kortix apps token <app> [--json]` | Print a 15-minute sign-in token for the App, naming you. In an agent session it names the agent. |
+| `kortix apps credentials <app> [--format shell\|dotenv\|json]` | Capability `admin_credentials`: the client CLI credentials, for `eval "$(kortix apps credentials db)"`. Audited. |
+| `kortix apps rotate-credentials <app> --yes` | Replace the admin key; every key read before stops working. |
+| `kortix apps dashboard <app> [--open]` | Capability `dashboard`: the Kortix page that opens the App's dashboard. |
+| `kortix apps snapshots\|snapshot <app>` · `delete-snapshot <app> <id> --yes` · `restore <app> <id> --yes` | Capabilities `snapshots` and `restore`: list, take, delete, roll back. |
+| `kortix apps show <app> [--json]` | The App (`kind`, `capabilities`, `uses`, `used_by`, `instance`, `hosting_type`, `always_on`, `monthly_budget_usd`, `estimated_monthly_usd`) and its deployments. A cost line reads `about $N/month` for an always-on or `convex` App and `budget $N/month` for an on-demand App. |
+| `kortix apps logs <app> [deployment] [--after N] [--limit N] [--lines N]` | A server App's runtime logs. A static App prints its deployment events. An App with the `logs` capability prints its process log (`--lines 1-1000`). |
+| `kortix apps start\|stop <app>` | Start or suspend a server App. A static App answers `409 static_app_no_runtime`. |
+| `kortix apps rollback <app> <deployment>` | Move traffic to a ready deployment. |
+| `kortix apps access <app> [--mode <mode>] [--viewer off\|identity\|api]` | Read or change who can open the App and what it learns about its viewer. |
+| `kortix apps access-link <app> [--json]` | A five-minute signed browser URL. Treat it as a secret. |
+| `kortix apps delete <app> [--deployment <id\|vN>] --yes` | Delete the App, or one deployment that is not live. An App with `snapshots` needs `--confirm <slug>` instead: Kortix keeps a `final` snapshot and the stopped machine 7 days. |
+
+An always-on App of the default machine costs about 73 USD a month, and a `convex` App about 59 USD. Neither has a budget: `--budget` on one answers `400 app_budget_not_applicable` and the message names the monthly cost. To cap the cost, use `--on-demand` or a smaller machine.
+
 ### Sessions
 
 Each session runs in one sandbox on its own branch.
@@ -560,6 +592,25 @@ instantly, with no `kortix.yaml` commit; `default` and `config` commit to
 `kortix.yaml` on the project's default branch. `scope` needs
 `project.agent.write`, and so do `default` and `config`.
 
+### Tools
+
+The tools this project's sessions get, read from the local `kortix.yaml` and its
+[imports](/docs/project/manifest#imports). Run from the project root. See
+[Tools](/docs/project/tools).
+
+| Command | Effect |
+| --- | --- |
+| `kortix tools ls [--json]` | List each tool the sessions get: name, kind (`kortix`, `kortix (overridden)`, `project`) and source (`kortix:<name>` or the module path). Also lists the Kortix tools the project removed. `--json` prints `{ manifest, tools_key, tools, removed }`. |
+| `kortix tools eject <name> [--force]` | Copy the Kortix tool `<name>` to `tools/<name>.ts` and set `tools.<name>: tools/<name>.ts` in `kortix.yaml`, in the file that declares it. The changed line ends with `# ejected from kortix:<name>`; every other comment stays. With no `tools:` key, it also lists the other four Kortix tools, so the eject removes nothing. Refuses when `tools/<name>.ts` exists or the tool already points at another module, unless `--force`. Refuses a name that is not a Kortix tool. |
+
+With no `tools:` key, every session gets all five Kortix tools (`web_search`,
+`image_search`, `scrape_webpage`, `memory`, `show`). With a `tools:` key,
+sessions get only the Kortix tools it lists. To remove a Kortix tool, delete its
+line under `tools:`, then run `kortix validate`. To limit the tools of one agent,
+use `agents.<name>.tools`. Exit codes: `0` done, `1` refused (a file exists, a
+manifest or import that does not parse), `2` no manifest, an unknown option, or a
+name that is not a Kortix tool.
+
 ### Models
 
 Which models the project offers, and which one it starts with. Same surface as
@@ -631,6 +682,7 @@ Connectors an agent calls as tools. `add`, `rm`, and `policy set` edit the local
 | `kortix connectors credential <slug> [value]` | Set a connector's credential. |
 | `kortix connectors connect <slug>` | Start a one-click connect flow. |
 | `kortix connectors link <slug> [--expires <min>]` | Mint a shareable connect link for a human. |
+| `kortix connectors types [--connector <a,b>] [--out <file>]` | Write TypeScript types for every callable action: a `declare module '@kortix/sdk'` file that types `connectors.callAction(slug, action, args)` args and `output`. Managed Composio and Pipedream connectors publish no output schema, so their result is `unknown`. Without `--out` it prints to stdout. |
 | `kortix connectors accounts <slug> [--default <label\|id>] [--json]` | List the accounts your calls may run as, with the identity each is connected as. `--default` pins one. |
 | `kortix connectors connections ls [--all] [--json]` | List connections with label, `CONNECTED AS`, owner, `WHO CAN USE` (`owner only`, `everyone`, or the grant labels, with `(not you)` when you list it only to manage it), status, and default. |
 | `kortix connectors connections rename <id> <label…>` | Rename a connection. Only the label changes; no re-authorization. |
@@ -726,8 +778,7 @@ The in-sandbox agent's interface to every connector. Every call is checked, reso
 | `kortix connectors upload <file> --connector <slug>` | Stage one file. Prints `ref`, `{"$kortix_attachment":"<id>"}`, to place in call args. |
 | `kortix connectors add <slug> --provider pipedream --app <app>` | Add a connector immediately, then connect it. |
 | `kortix connectors rm <slug>` | Remove a connector from the project. |
-| `kortix connectors connect <slug>` | Mint a connect link for a human. |
-| `kortix connectors mcp` | Run the optional stdio MCP compatibility server. |
+| `kortix connectors connect <slug> [--owner me\|project] [--label <name>]` | Mint a connect link for a human. `--label` suggests a name for a new account, for example a second Gmail. |
 
 ### Files
 
@@ -735,7 +786,7 @@ Read-only view of the project's git repo. Operates on the default branch unless 
 
 | Command | Effect |
 | --- | --- |
-| `kortix files ls [<path>]` | List files under a path. |
+| `kortix files ls [<path>]` | List files under a path, recursively. The list stops at 1,000 files and says so; narrow it with a path or use `files search`. |
 | `kortix files cat <path>` | Print a file's contents. |
 | `kortix files search <query> [--content]` | Search filenames, or file contents with `--content`. |
 | `kortix files history <path>` | Commit history for one file. |
@@ -755,7 +806,7 @@ cannot be filtered mid-stream — so archive a narrower `--path` in that case.
 
 ### Triggers
 
-A trigger starts a session from a schedule, a webhook, or a monitor (experimental). `add`, `rm`, `enable`, `disable` edit the local manifest — run `kortix ship` to apply. `pause`/`resume` flip a separate, server-side switch. See [Triggers](/docs/connect/triggers).
+A trigger starts a session from a schedule, a webhook, an app event, or a monitor (experimental). `add`, `rm`, `enable`, `disable` edit the local manifest — run `kortix ship` to apply. `pause`/`resume` flip a separate, server-side switch. See [Triggers](/docs/connect/triggers).
 
 | Command | Effect |
 | --- | --- |
@@ -764,11 +815,12 @@ A trigger starts a session from a schedule, a webhook, or a monitor (experimenta
 | `kortix triggers set <slug> [options]` | Change a live trigger. Only the flags you pass are written. Always applies now — there is no local form. Alias: `update`. |
 | `kortix triggers rm <slug> [--apply]` | Remove a trigger from `kortix.yaml`, or from the cloud project now with `--apply`. |
 | `kortix triggers info <slug> [--json]` | Show one trigger. |
+| `kortix triggers events --connector <slug> [--json]` | List the events a connector offers, with each event's settings. |
 | `kortix triggers fire <slug>` | Fire a trigger manually and wait for the run outcome: a failed run exits non-zero with its error, and the fired run's fresh session is cleaned up (a run queued into an existing session is left in place). `--wait <dur>` bounds the wait (default `90s`; `0` returns as soon as the fire is accepted). |
 | `kortix triggers enable <slug> [--apply]` / `disable <slug> [--apply]` | Turn one trigger on or off. |
 | `kortix triggers pause` / `resume` | Deactivate or reactivate every trigger on the project, server-side. |
 
-`add` options: `--type <cron\|webhook\|monitor>` (default `cron`), `--prompt <text>` (required), `--agent <name>`, `--cron <expr>` (6-field, e.g. `"0 0 9 * * 1-5"`), `--run-at <iso>` (run once at this instant instead of on a cron), `--timezone <tz>` (default UTC), `--secret-env <NAME>`, `--name <label>`, `--disabled`.
+`add` options: `--type <cron\|webhook\|event\|monitor>` (default `cron`), `--prompt <text>` (required), `--agent <name>`, `--cron <expr>` (6-field, e.g. `"0 0 9 * * 1-5"`), `--run-at <iso>` (run once at this instant instead of on a cron), `--timezone <tz>` (default UTC), `--secret-env <NAME>`, `--name <label>`, `--disabled`.
 
 Live-only options — valid on `add --apply`, and on every `set`: `--model <provider/model>`, `--session-mode <fresh\|keyed\|pinned\|reuse>`, `--session-key <tmpl>` (bucket one session per key, e.g. `"{{ body.data.chat_jid }}"`; implies `keyed`), `--session-id <id>` (the session a `pinned` trigger loops; must be this project's session), `--session-access <private\|project\|members>` (default `private`), `--member <uuid>` and `--group <uuid>` (repeatable; each implies `members`), and `--filter <path=value>` (repeatable; every one must match, e.g. `--filter body.type=push`).
 
@@ -787,6 +839,8 @@ A reminder re-prompts one session later, once or on repeat. It is stored in the 
 | `kortix reminders rm <id>` | Delete a reminder. Aliases: `stop`, `delete`. |
 
 Schedule options: `--in <duration>` or `--at <iso>` (first fire; alone, fire once), `--every <duration>` (repeat, min `5m`), `--cron "<expr>"` with `--timezone <tz>`. Other options: `--name <label>`, `--session <id>` (a unique prefix works), `--project <id>`, `--host <name>`, `--json`.
+
+Event options (`--type event`): `--connector <slug>` and `--event <TYPE>` (both required), `--config key=value` (repeatable, string values), and `--config-json '{...}'` (typed values). `set` accepts the same flags. An event trigger rejects `--cron`, `--run-at`, `--timezone`, `--secret-env`, and the monitor options. The prompt reads `{{ event.data.<field> }}`; see [App event triggers](/docs/connect/triggers#app-event-triggers).
 
 Monitor options (`--type monitor`): `--run <cmd>` (repo-relative command to supervise; required), `--mode <poll\|stream>` (required; `poll` re-runs on `--interval`, `stream` keeps the command alive), `--interval <dur>` (`mode=poll` only, minimum 30s, e.g. `60s`, `5m`), and `--expect-event-within <dur>` (silence watchdog; no event inside the window fires a lifecycle event instead, minimum 5m, e.g. `24h`). A monitor is a repo command the platform runs 24/7, and each stdout line fires the trigger. It is experimental: the platform runs monitors only where the `monitors` feature flag is on.
 
@@ -946,12 +1000,12 @@ See [Manifest reference](/docs/project/manifest).
 
 #### Repository size
 
-A session builds its [agent config](/docs/work/runtime) from every file Git tracks at the base commit. A build over 32 MiB compressed or 128 MiB uncompressed fails, and the session runs the platform default config. `kortix validate` counts the files Git stores, plus the untracked files `kortix ship` commits next, and prints a warning when one file is 10 MiB or more or the total is over 32 MiB. A Git LFS file counts as its pointer, because the release holds only the pointer. The warning names the largest files. It never fails the command.
+A session builds its [agent config](/docs/work/runtime#where-a-box-gets-the-release) from every file Git tracks at the base commit. A new session takes those files from its own checkout, whatever the size. A running session picks up a base-branch change through the project snapshot, which Kortix cloud builds up to 512 MiB compressed; above that, the session keeps the config it runs until a new session starts. Every session also downloads every file. `kortix validate` counts the files Git stores, plus the untracked files `kortix ship` commits next, and prints a warning when one file is 10 MiB or more or the total is over 512 MiB. A Git LFS file counts as its pointer, because the release holds only the pointer. The warning names the largest files. It never fails the command.
 
 To clear it:
 - Move big static assets (video, images, datasets, model weights) to object storage such as S3, R2, or GCS, or a CDN, and download them at runtime.
 - Add build output (`dist/`, `out/`) to `.gitignore`.
-- For a path that must stay in Git but that no agent reads, add `<path> export-ignore` to `.gitattributes`. The release leaves it out, and so does the check.
+- For a path that must stay in Git but that no agent reads, add `<path> export-ignore` to `.gitattributes`. The release leaves it out, and so does the check; a directory rule covers everything under it. The agent config dir and `kortix.yaml` always ship whole.
 
 ### Self-host
 
@@ -961,7 +1015,7 @@ To clear it:
 | --- | --- |
 | `kortix self-host init` | Create or refresh the self-host config. Does not start the stack. |
 | `kortix self-host configure` | Interactive wizard for connections and update policy. |
-| `kortix self-host doctor` | Validate Docker tooling and the rendered config. |
+| `kortix self-host doctor` | Validate Docker tooling and the rendered config. On an instance the internet can reach, it fails while anyone can sign up without confirming an email (`open-sign-up`). |
 | `kortix self-host plan` | Validate the rendered Compose config; change nothing. |
 | `kortix self-host start` | Create config if needed, then start the stack. Aliases: `up`, `deploy`. |
 | `kortix self-host update [--tag <v>\|--channel stable\|latest]` | Pull images for the configured channel or tag and recreate the stack. Alias: `upgrade`/`reconcile`. |

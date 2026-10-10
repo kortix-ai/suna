@@ -614,7 +614,7 @@ describe('kortix CLI black-box behavior', () => {
   test('Apps commands are discoverable and deploy an OCI image through the SDK', async () => {
     const unscopedHelp = await runCli(['--help']);
     expect(unscopedHelp.stdout).toContain('apps <subcommand>');
-    expect(unscopedHelp.stdout).toContain('Experimental: deploy serverless Apps');
+    expect(unscopedHelp.stdout).toContain('Experimental: deploy Apps (web sites and servers, Convex backends)');
 
     const apiBase = startAppsServer();
     const configFile = writeConfig(apiBase, true);
@@ -773,7 +773,7 @@ describe('kortix CLI black-box behavior', () => {
     const landing = await runCli(['--help'], tmp, env);
     expect(landing.code).toBe(0);
     expect(landing.stdout).toContain('apps <subcommand>');
-    expect(landing.stdout).toContain('Experimental: deploy serverless Apps');
+    expect(landing.stdout).toContain('Experimental: deploy Apps (web sites and servers, Convex backends)');
 
     const help = await runCli(['apps', '--help', '--project', 'proj_e2e'], tmp, env);
     expect(help.code).toBe(0);
@@ -908,10 +908,8 @@ describe('kortix CLI black-box behavior', () => {
     // `agent-browser` IS scaffolded now — driving a browser is a floor capability.
     expect(existsSync(join(root, 'skills', 'agent-browser', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, 'harnesses', 'opencode', 'plugins', 'pty.ts'))).toBe(true);
-    expect(existsSync(join(root, 'harnesses', 'opencode', 'tools', 'memory.ts'))).toBe(true);
-    expect(existsSync(join(root, 'harnesses', 'opencode', 'tools', 'web_search.ts'))).toBe(true);
-    expect(existsSync(join(root, 'harnesses', 'opencode', 'tools', 'scrape_webpage.ts'))).toBe(true);
-    expect(existsSync(join(root, 'harnesses', 'opencode', 'tools', 'image_search.ts'))).toBe(true);
+    // The Kortix tools are hosted by the runtime on every harness: no copies in the project.
+    expect(existsSync(join(root, 'harnesses', 'opencode', 'tools'))).toBe(false);
     // The full kit is the default now, so domain skills like pdf ARE present.
     expect(existsSync(join(root, 'skills', 'pdf', 'SKILL.md'))).toBe(true);
   });
@@ -951,11 +949,10 @@ describe('kortix CLI black-box behavior', () => {
     expect(init.code).toBe(0);
     const root = join(tmp, 'full-e2e');
     expect(existsSync(join(root, 'kortix.yaml'))).toBe(true);
-    expect(existsSync(join(root, 'harnesses', 'opencode', 'tools', 'show.ts'))).toBe(true);
     expect(existsSync(join(root, 'skills', 'kortix-cli', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, 'skills', 'agent-browser', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(root, 'harnesses', 'opencode', 'plugins', 'pty.ts'))).toBe(true);
-    expect(existsSync(join(root, 'harnesses', 'opencode', 'tools', 'web_search.ts'))).toBe(true);
+    expect(existsSync(join(root, 'harnesses', 'opencode', 'tools'))).toBe(false);
 
     const listBeforeLink = await runCli(['projects', 'ls', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
     expect(listBeforeLink.code).toBe(0);

@@ -114,21 +114,51 @@ export function createSessionAttachmentStore(
         sessionId,
         attachmentId: "00000000-0000-0000-0000-000000000000",
       });
-      const prefix = `${projectId}/${sessionId}`;
+      await removePrefix(`${projectId}/${sessionId}`);
+    },
+    /**
+     * Every session's files under one project. Storage lists one level, and
+     * each session is one folder under the project, so this lists the project
+     * and empties each folder it names.
+     */
+    async removeProject(projectId: string) {
+      let previous = '';
       for (;;) {
-        const listed = await storage.from(BUCKET).list(prefix, { limit: 100 });
+        const listed = await storage.from(BUCKET).list(projectId, { limit: 100 });
         if (listed.error) {
           if (missing(listed.error)) return;
           throw listed.error;
         }
         if (!listed.data?.length) return;
-        const removed = await storage
-          .from(BUCKET)
-          .remove(listed.data.map((file) => `${prefix}/${file.name}`));
-        if (removed.error) throw removed.error;
+        const names = listed.data.map((entry) => entry.name).join('\n');
+        // A folder that did not empty would list again forever.
+        if (names === previous) throw new Error(`Could not delete the session files of project ${projectId}`);
+        previous = names;
+        for (const entry of listed.data) await removePrefix(`${projectId}/${entry.name}`);
       }
     },
   };
+
+  /** Delete every object one level under `prefix`, a page at a time. */
+  async function removePrefix(prefix: string) {
+    let previous = '';
+    for (;;) {
+      const listed = await storage.from(BUCKET).list(prefix, { limit: 100 });
+      if (listed.error) {
+        if (missing(listed.error)) return;
+        throw listed.error;
+      }
+      if (!listed.data?.length) return;
+      const names = listed.data.map((file) => file.name).join('\n');
+      // A page that lists again after its remove would loop forever.
+      if (names === previous) throw new Error(`Could not delete the files under ${prefix}`);
+      previous = names;
+      const removed = await storage
+        .from(BUCKET)
+        .remove(listed.data.map((file) => `${prefix}/${file.name}`));
+      if (removed.error) throw removed.error;
+    }
+  }
 }
 
 let store: ReturnType<typeof createSessionAttachmentStore> | undefined;

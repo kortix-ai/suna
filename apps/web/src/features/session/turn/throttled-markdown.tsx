@@ -43,6 +43,32 @@ function closeUnterminatedCodeFence(text: string): string {
   return `${text}\n\n\`\`\``;
 }
 
+/**
+ * A table is plain text until its separator row (`|---|`) arrives: a header
+ * row on its own renders as a paragraph of pipes, then jumps into a table.
+ * While streaming, a trailing header row (and a half-written separator) is
+ * held back until the separator is complete, so the table appears as a table.
+ */
+export function holdBackTableHeader(text: string): string {
+  if (!text.includes('|')) return text;
+  const lines = text.split('\n');
+  let end = lines.length;
+  if (lines[end - 1]?.trim() === '') end--;
+  const isRow = (line: string | undefined) => line?.trimStart().startsWith('|') ?? false;
+  const last = lines[end - 1];
+  if (!isRow(last)) return text;
+  // `| a | b |` with no table line above it: a header still waiting for its separator.
+  if (!isRow(lines[end - 2])) return lines.slice(0, end - 1).join('\n');
+  // A separator still being written under a header that starts the table.
+  const cells = (line: string) => line.trim().replace(/^\||\|$/g, '').split('|').length;
+  const header = lines[end - 2];
+  const separatorDone = last.trim().endsWith('|') && cells(last) >= cells(header);
+  if (/^\s*\|[\s|:-]*$/.test(last) && !isRow(lines[end - 3]) && !separatorDone) {
+    return lines.slice(0, end - 2).join('\n');
+  }
+  return text;
+}
+
 function ThrottledMarkdownImpl({
   content,
   isStreaming,
@@ -50,25 +76,27 @@ function ThrottledMarkdownImpl({
   content: string;
   isStreaming: boolean;
 }) {
-  // During streaming, only close unterminated code fences (safe — just
-  // appends closing backticks). Do NOT trim table rows — that strips
-  // real content mid-stream and causes garbled text until completion.
-  // The reference (opencode PacedMarkdown) does zero content modification.
-  // Both branches walk the whole text line by line. Memoised so a re-render
-  // that changed nothing about the text does not re-scan it.
+  // `useStreamingCadence` reveals the text at the speed it arrives instead of
+  // one network chunk at a time. When the turn ends it drains the last of the
+  // backlog and lets the last word fade in, and only then reports
+  // `streaming: false`. The switch to the settled render therefore changes
+  // nothing visible, and the settled render equals a non-streamed render.
   //
-  // While streaming, the text reaches the parser at most once per
-  // `STREAM_RENDER_INTERVAL_MS` (leading + trailing), not once per ~16 ms
-  // delta batch: `UnifiedMarkdown` is memoised on its content, so every
-  // delta inside the interval skips the parse entirely. The stream ending
-  // flushes the final text at once.
-  const pacedContent = useStreamingCadence(content, isStreaming);
+  // During streaming, only close unterminated code fences (safe — just
+  // appends closing backticks) and hold back a table header until its
+  // separator lands. Do NOT trim table rows — that strips real content
+  // mid-stream and causes garbled text until completion.
+  const { text: pacedContent, streaming } = useStreamingCadence(content, isStreaming);
   const displayContent = useMemo(
     () =>
-      isStreaming ? closeUnterminatedCodeFence(pacedContent) : trimIncompleteTableRow(pacedContent),
-    [pacedContent, isStreaming],
+      streaming
+        ? closeUnterminatedCodeFence(holdBackTableHeader(pacedContent))
+        : trimIncompleteTableRow(pacedContent),
+    [pacedContent, streaming],
   );
-  return <UnifiedMarkdown content={displayContent} trust="agent" isStreaming={isStreaming} />;
+  // Nothing revealed yet: render nothing rather than the empty-content notice.
+  if (streaming && !displayContent) return null;
+  return <UnifiedMarkdown content={displayContent} trust="agent" isStreaming={streaming} />;
 }
 
 /**

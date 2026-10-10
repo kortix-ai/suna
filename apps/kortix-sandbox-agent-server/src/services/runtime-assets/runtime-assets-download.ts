@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/p
 import { dirname, join } from 'node:path'
 import { logger } from '@/lib/log/logger'
 import { fetchArtifactByChunks } from './runtime-asset-chunks'
+import { bootArtifactBytes } from './boot-artifacts'
 import { resolveRunningAgentPath } from './runtime-assets'
 import { isSafeOverlayPath } from './runtime-assets-state'
 import { noteControlPlaneResponse } from '@/lib/kortix-api/session-token-health'
@@ -84,6 +85,9 @@ export async function fetchArtifact(
   url: string,
   localSources: string[],
 ): Promise<ArtifactFetch> {
+  // The release's own file on the boot artifacts volume, when it is this one.
+  const local = await bootArtifactBytes(component, expectedSha)
+  if (local) return { bytes: local }
   const chunked = await fetchArtifactByChunks({
     fetchImpl,
     base,

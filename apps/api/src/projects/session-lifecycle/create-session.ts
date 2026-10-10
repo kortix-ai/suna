@@ -180,7 +180,7 @@ async function runInlineCreate(
     // immediately, and the row is queued for backoff / dead-lettered per the
     // normal 5-attempt budget rather than left dangling on a lease.
     const message = err instanceof Error ? err.message : String(err);
-    await markCommandFailed(row, message, {
+    const outcome = await markCommandFailed(row, message, {
       retryable: true,
       attempts: row.attempts + 1,
     });
@@ -188,6 +188,8 @@ async function runInlineCreate(
       status: 'failed',
       commandId: row.commandId,
       retryable: true,
+      // A lost lease means another owner holds the row.
+      requeued: outcome !== 'dead_lettered',
       error: { status: 503, body: { error: message } },
     };
   }
@@ -199,7 +201,7 @@ async function runInlineCreate(
       commandId: row.commandId,
     });
     if (!postCreate.ok) {
-      await markCommandFailed(row, postCreate.error, {
+      const outcome = await markCommandFailed(row, postCreate.error, {
         retryable: true,
         attempts: row.attempts + 1,
         sessionId: result.sessionId,
@@ -216,6 +218,7 @@ async function runInlineCreate(
         sessionId: result.sessionId,
         row: result.row,
         retryable: true,
+        requeued: outcome !== 'dead_lettered',
         error: { status: 500, body: { error: postCreate.error } },
       };
     }
@@ -332,6 +335,15 @@ export async function executeQueuedCreate(
 async function executeCreateSession(
   command: CreateSessionCommand,
 ): Promise<SessionLifecycleResult> {
+  // A deleted workspace starts no session (KRTX-1714). Every create path meets
+  // here, and the chat channels load the project by id with no status filter.
+  if (command.project.status === 'archived') {
+    return {
+      status: 'failed',
+      retryable: false,
+      error: { status: 404, body: { error: 'This workspace was deleted', code: 'project_archived' } },
+    };
+  }
   const metadata = {
     source: command.source,
     ...(command.metadata ?? {}),

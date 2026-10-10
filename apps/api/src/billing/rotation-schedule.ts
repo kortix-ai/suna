@@ -16,5 +16,3 @@ export async function runFreeTierCreditRotation(): Promise<void> {
   const { processFreeTierCreditRotation } = await import('./services/free-tier-rotation');
   await processFreeTierCreditRotation();
 }
-
-export { startBillingRotation, stopBillingRotation } from '../workers/billing-rotation-worker';

@@ -129,36 +129,58 @@ If none resolve, the command errors with a pointer to `projects link`.
 
 ### Apps — serverless application deployments
 
-Apps have stable URLs and immutable deployment versions. Each deployment runs
-in one provider-neutral sandbox. Public traffic wakes an idle sandbox. Manual
-stop blocks wake.
+Apps have stable URLs and immutable deployment versions. Every App has a
+`kind`, fixed at create, and lists its `capabilities`. A `web` App is static
+(files that Kortix serves: no machine, nothing to start or stop) or a server
+(`dockerfile`, `oci_image`, `bundle`: one machine, always on or on demand; an
+on-demand App stops at its monthly budget and an authorized request wakes it;
+an always-on App has a fixed monthly cost and no budget). A `convex` App is a
+self-hosted Convex backend in one always-on machine, also with no budget. A subcommand for a
+capability the App lacks exits `1` with
+`App <slug> (kind <kind>) does not support <capability>.`
 
-The selected project must enable **Apps** under Project Settings →
-Experimental. The top-level CLI help and every `kortix apps` command stay dark
-when no selected project has the feature enabled.
+Apps is internal-only: Kortix enables it per project on request, and only
+Kortix can change it. When it is on, `kortix projects features` lists
+`apps on kortix` and `kortix projects info --json` has `experimental.apps: true`.
+When it is off, every `kortix apps` command answers `feature_disabled`
+("Contact Kortix to enable it.").
 
 | Command | Effect |
 | --- | --- |
-| `kortix apps ls [--json]` | List the project's Apps, state, and stable URL. |
-| `kortix apps create <slug> [--name …]` | Create an App identity without deploying source. Resource flags: `--cpu`, `--memory`, `--disk`, `--idle-timeout`, `--budget`. |
-| `kortix apps deploy [path]` | Upload and deploy a directory or `.tar.gz`. Auto-detects static, bundle, or Dockerfile source. Waits for readiness by default. |
-| `kortix apps deploy --manifest-app <name>` | Use one v2 `kortix.yaml` `apps.<name>` block. A sole App block is selected automatically for bare `deploy`. |
+| `kortix apps ls [--json]` | List the Apps you may open (a project manager sees all) with their kind, state (`static` for a static App), and stable URL. |
+| `kortix apps create <slug> [--name …]` | Create an App identity without deploying source. Flags: `--kind web\|convex`, `--uses <slugs>`, `--cpu`, `--memory`, `--disk`, `--idle-timeout`, `--always-on\|--on-demand`, `--budget`, `--no-wait`. A `convex` App waits until its machine runs. |
+| `kortix apps deploy [path]` | Upload and deploy a directory or `.tar.gz`. Auto-detects static, bundle, or Dockerfile source; pass `--type`. Waits until ready by default. |
+| `kortix apps deploy … --always-on\|--on-demand --budget <usd>` | Server Apps: set the run mode. `--budget` sets the monthly compute budget of an on-demand App (default 5 USD). On an always-on or `convex` App, `--budget` is refused with `400 app_budget_not_applicable`. Prints the cost. |
+| `kortix apps deploy --manifest-app <name>` | Use one v2 `kortix.yaml` `apps.<name>` block. A sole App block is selected automatically for bare `deploy`; with several, bare `deploy` deploys every App, each after the Apps it uses. |
+| `kortix apps deploy <dir> --app <slug> [-- <args>]` | A `convex` App: run `convex deploy` with its credentials, then record the deployment with the git commit. |
 | `kortix apps deploy --image <ref> --command <argv> --port <n>` | Deploy a public OCI image. `--command` accepts a JSON string array or shell-like string. |
-| `kortix apps show <id-or-slug> [--json]` | Show an App and immutable deployment history. |
-| `kortix apps logs <id-or-slug> [deployment-id]` | Read supervisor, Caddy, and user-process logs. Supports `--after` and `--limit`. |
-| `kortix apps start <id-or-slug>` | Permit traffic and start the active deployment now. |
-| `kortix apps stop <id-or-slug>` | Stop the active runtime and block cold wake. |
-| `kortix apps rollback <id-or-slug> <deployment-id>` | Start a ready target, move traffic atomically, then stop the previous runtime. |
-| `kortix apps delete <id-or-slug> --yes` | Delete the App and every runtime. |
+| `kortix apps set <id-or-slug>` | Change an App: `--name`, `--cpu`, `--memory-gb`, `--disk-gb`, `--idle-timeout`, `--always-on\|--on-demand`, `--budget`, `--uses <slugs>`. Run mode and budget apply within 5 minutes; a web machine change applies to the next deployment; a `convex` App resizes now. |
+| `kortix apps link\|unlink <id-or-slug> --uses <slugs>` | Add or remove Apps this App uses (bindings and sign-in tokens). |
+| `kortix apps show <id-or-slug> [--json]` | Show an App (`kind`, `capabilities`, `uses`, `used_by`, `instance`, `hosting_type`, `always_on`, `monthly_budget_usd`, `estimated_monthly_usd`) and its deployment history. A cost line shows `about $N/month` for an always-on or `convex` App and `budget $N/month` for an on-demand App. |
+| `kortix apps logs <id-or-slug> [deployment-id]` | Read supervisor, Caddy, and user-process logs; a static App prints its deployment events. Supports `--after` and `--limit`. An App with the `logs` capability prints its process log (`--lines 1-1000`). |
+| `kortix apps start <id-or-slug>` | Server Apps: permit traffic and start the active deployment now. A static App answers `409 static_app_no_runtime`. |
+| `kortix apps stop <id-or-slug>` | Server Apps: suspend compute now. The next authorized request wakes it. A static App answers `409 static_app_no_runtime`. |
+| `kortix apps rollback <id-or-slug> <deployment-id>` | Move traffic to a ready deployment. A server App starts the target first, then stops the previous runtime. |
+| `kortix apps access <id-or-slug>` | Read or change access: `--mode private\|project\|restricted\|public\|password`, `--members`, `--groups`, `--password`, `--viewer off\|identity\|api`. |
+| `kortix apps access-link <id-or-slug> [--json]` | Create a five-minute authenticated browser URL. Treat it as a secret. |
+| `kortix apps connect <id-or-slug> [--json]` | Print how to reach the App from code. No secret. |
+| `kortix apps token <id-or-slug> [--json]` | A 15-minute sign-in token for the App; in a session it names the agent. |
+| `kortix apps credentials <id-or-slug> [--format shell\|dotenv\|json]` · `rotate-credentials <id-or-slug> --yes` | Capability `admin_credentials`: read (audited) or replace the admin key. |
+| `kortix apps dashboard <id-or-slug> [--open]` | Capability `dashboard`: the Kortix page that opens the App's dashboard. |
+| `kortix apps snapshots\|snapshot <id-or-slug>` · `delete-snapshot <id-or-slug> <id> --yes` · `restore <id-or-slug> <id> --yes` | Capabilities `snapshots` and `restore`. |
+| `kortix apps delete <id-or-slug> --yes` | Delete the App, every runtime, and every deployment image. An App with `snapshots` needs `--confirm <slug>`: Kortix keeps a `final` snapshot and the stopped machine 7 days. |
+| `kortix apps delete <id-or-slug> --deployment <id\|vN> --yes` | Delete one deployment. The live deployment answers `409 deployment_live`. |
 
 Deploy options include `--type static|bundle|dockerfile`, `--root`, `--spa`,
 `--output-dir`, `--install-command`, `--build-command`, `--dockerfile`,
-`--command`, `--port`, `--readiness-path`, and `--provider`. Omit `--provider`
-for platform policy. Use `--no-wait` only when another process will poll the
-deployment.
+`--command`, `--port`, `--readiness-path`, `--access`, `--members`, `--groups`,
+`--password`, `--always-on`, `--on-demand`, `--budget`, and `--provider`. Omit
+`--provider` for platform policy. Prefer a local build deployed with
+`--type static` over `--type bundle`. Use `--no-wait` only when another process
+will poll the deployment.
 
-Directory uploads read `.gitignore`, `.dockerignore`, and `.kortixignore`.
-They always exclude `.git`, `.kortix`, `.env*`, and `node_modules`.
+Directory uploads read `.gitignore`, `.dockerignore`, and `.kortixignore` from
+the uploaded directory only. They always exclude `.git`, `.kortix`, `.env*`, and `node_modules`.
 `--include-node-modules` only overrides the `node_modules` default.
 
 See the `apps.md` reference for the complete manifest, runtime, secret, and
@@ -191,9 +213,8 @@ has no sandbox presence at all.
 
 > **Have the value? Set it. Lack it? Request it.** When the human already gave
 > you the value, store it now: `printf '%s' "$V" | kortix secrets set NAME=-`
-> (or the `set_secret` tool) — no link. When you lack it, run
-> `kortix secrets request APOLLO_API_KEY` (or the `request_secret` tool on the
-> `kortix-connectors` MCP), surface the returned URL, end your turn, and when they
+> — no link. When you lack it, run
+> `kortix secrets request APOLLO_API_KEY`, surface the returned URL, end your turn, and when they
 > say "done" confirm with `kortix secrets ls`. See the
 > **credentials-and-setup-links** reference.
 
@@ -203,9 +224,8 @@ A connector defines actions against an external system. **A connector is not
 an account** — one connector (e.g. Gmail) can hold several accounts, each
 SHARED with the whole project or PRIVATE to one member. Calls run
 **server-side** through the connector gateway, so no third-party credential
-enters the sandbox. The same gateway is available through the
-`kortix-connectors` **MCP**, this **CLI**, and the `@kortix/sdk` **TypeScript
-package**. JSON output.
+enters the sandbox. The same gateway is available through this **CLI** and the
+`@kortix/sdk` **TypeScript package**. JSON output.
 
 | Command | Effect |
 | --- | --- |
@@ -218,19 +238,16 @@ package**. JSON output.
 | `kortix connectors call <connector> <action> '<json>' --reason "<text>"` | Describe the effect for the human approver when a policy holds the call. Pass it on every write whose args are only ids (`send_draft`, deletes, merges). The approver sees it labelled as your description, next to the arguments. |
 | `kortix connectors call <connector> <action> @args.json --attach <file>` | Attach a file from `/workspace/{output,artifacts,reports,deliverables}`. The gateway writes it into the action's attachments array as the provider's item (e.g. Microsoft Graph `body.message.attachments`). `@file` / `-` read large args. |
 | `kortix connectors call <connector> <action> '<json>' --out <file>` | Write the full JSON result to `<file>` (parent dirs created). Stdout gets only `saved_to`, `bytes`, and `shape` (keys, array lengths, `pageInfo`). Use it for results too large to read; query the file with `jq` or `bun`. |
+| `kortix connectors types [--connector <a,b>] --out <file>` | Write TypeScript types for the callable actions (`declare module '@kortix/sdk'`). Use it before writing SDK code: `connectors.callAction(slug, action, args)` then type-checks args and `output`. Composio/Pipedream results stay `unknown`. |
 | `kortix connectors upload <file> --connector <slug>` | Stage one file; prints `ref` (`{"$kortix_attachment":"<id>"}`) to place in args — an attachments[] element or a base64 field such as `contentBytes`. |
 | `kortix connectors add <slug> --provider composio --app <toolkit> --apply` | Add a managed SaaS connector now, commit it to `kortix.yaml` on main, and sync it. |
 | `kortix connectors rm <slug> --apply` | Remove a connector from `kortix.yaml` on main and sync it. |
-| `kortix connectors connect <slug> [--owner me\|project]` | Mint the provider's raw authorization URL for the connector's default account (`me`, the default, is yours; `project` is the shared one). It cannot name a new account: add one with the MCP `connect` tool and its `label`. |
-| `kortix connectors mcp` | Run the `kortix-connectors` stdio MCP server. |
+| `kortix connectors connect <slug> [--owner me\|project]` | Mint the provider's raw authorization URL for the connector's default account (`me`, the default, is yours; `project` is the shared one). |
+| `kortix connectors connect <slug> --label "<name>" [--owner me\|project]` | Add a NEW account (a second Gmail): mint a Kortix link where the human confirms the name and who can use it. |
 
 > Use Composio for every new managed SaaS connector. Pipedream is retained only
 > for rollback compatibility with existing declarations. Do not select it unless
 > the human explicitly approves the `--allow-legacy-pipedream` fallback.
-
-> Inside a session, the `kortix-connectors` MCP tools can expose the same
-> list/discover/show/accounts/call loop. Use the CLI when those tools are
-> absent.
 
 > **Choosing the account:** one account → just call. Several, and the human
 > named one → `--account <label>`. Several, and it is unclear which → ASK,
@@ -326,11 +343,25 @@ the same state.
 
 | Command | Effect |
 | --- | --- |
-| `kortix triggers ls` | List triggers + runtime state (`last_fired_at`). |
+| `kortix triggers ls [--type cron\|webhook\|event\|monitor] [--connector <slug>] [--json]` | List triggers + runtime state (`last_fired_at`). `--type` keeps one kind; `--type event` groups the rows by app. `--connector` keeps the app events on one connector. The filters combine, and `--json` respects them. |
 | `kortix triggers info <slug>` | Show one trigger in full. |
 | `kortix triggers fire <slug>` | Manually fire a trigger now. |
 | `kortix triggers enable <slug>` | Set `enabled = true`. |
 | `kortix triggers disable <slug>` | Set `enabled = false`. |
+| `kortix triggers events --apps [--json]` (all `triggers events` forms and `triggers add|set --type event` need the project flag `event_triggers`: off prints `App event triggers are off for this project. Turn them on: kortix projects features enable event_triggers`, exit 1) | List apps that can trigger events: event count and state (`connected`, `needs account`). Under each app, every connector (profile) with its shared accounts: label, `as <connected_as>`, `default`, `not connected`. Apps with no connector print as one `No connector yet` line. |
+| `kortix triggers events --app <app> [--source <adapter>] [--event <TYPE>] [--json]` | List an app's events, or one event's fields, with no connector: browse before you add a connector. `--source` defaults to `composio`. |
+| `kortix triggers events --connector <slug> [--json]` | List the events a connector offers: `TYPE`, `NAME`, `DELIVERY`. |
+| `kortix triggers events --connector <slug> --event <TYPE> [--json]` | One event in full: config fields (type, required, default, allowed values, description) and the `{{ event.data.* }}` prompt variables. |
+| `kortix triggers add <slug> --type event --connector <slug> --event <TYPE> --config <k>=<v> [--account <label>] --prompt "…" [--apply]` | Add an event trigger. `--connector` is the profile. `--account` names one shared account of it; omit it for the connector's default shared account. Without `--apply` it writes a `triggers:` block to the local `kortix.yaml` (`kortix ship` applies it). With `--apply` it creates the trigger now and prints its status and the next step. Online, the config is checked against the event catalog; every missing or invalid field is listed with its description. |
+| `kortix triggers set <slug> [--event <TYPE>] [--connector <slug>] [--account <label> | --default-account] [--config <k>=<v>] [--config-json '<json>']` | Change a live event trigger. `--account` picks a shared account; `--default-account` clears it (the two are exclusive). Changing `--connector` clears the account. `--config` merges into the current config. `--config-json` replaces it. Do not pass both. |
+
+`--config k=v` is converted to the field's type (number, boolean, comma
+list) using the catalog. `--config-json` passes typed values as-is. An event
+trigger takes none of `--cron`, `--run-at`, `--timezone`, `--secret-env`,
+`--run`, `--mode`, `--interval`, `--expect-event-within`. `triggers ls` shows
+a status word per event trigger (`live`, `pending`, `needs connection`,
+`error`). `triggers info <slug>` shows the status, the error, the last event,
+and a `Next` block with the exact command to run.
 
 ### Reminders
 
@@ -477,12 +508,13 @@ title. Sorted newest first.
 
 | Command | What it does |
 | --- | --- |
-| `kortix validate` | Checks `kortix.yaml` against the schema, lints sandbox Dockerfiles and agent wiring, and warns when the files in Git are large (a file of 10 MiB or more, or more than 32 MiB in total). Exit `0` with warnings, `1` on an error. `--json` prints the report. |
+| `kortix validate` | Checks `kortix.yaml` against the schema, lints sandbox Dockerfiles and agent wiring, and warns when the files in Git are large (a file of 10 MiB or more, or more than 512 MiB in total). Exit `0` with warnings, `1` on an error. `--json` prints the report. |
 | `kortix ship` | Runs the `kortix validate` checks, commits, and pushes the current branch to the project repo (laptop flow). An error stops the ship; a warning never does. `--no-verify` skips the checks. |
 
-A session builds its agent config from the whole repository. Above 32 MiB
-compressed that build fails and the session runs the platform default
-config, so the size warning names the largest files. Move them to object
+A session builds its agent config from the whole repository, and every
+session downloads every file. Above 512 MiB compressed a running session
+stops picking up agent config changes from the base branch until a new
+session starts, so the size warning names the largest files. Move them to object
 storage (S3, R2, GCS), or mark paths no agent reads `export-ignore` in
 `.gitattributes`.
 

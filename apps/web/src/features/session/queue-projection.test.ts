@@ -2,6 +2,7 @@ import type { QueuedDraft } from '@/stores/queued-draft-store';
 import type { SessionPrompt } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import type { AttachedFile } from './composer/types';
+import { serializePromptWithPastes } from '@kortix/shared';
 import { cleanPromptText, composerSendDelivery, projectQueueRows } from './queue-projection';
 
 function prompt(overrides: Partial<SessionPrompt> = {}): SessionPrompt {
@@ -355,5 +356,34 @@ describe('cleanPromptText', () => {
       '<session_ref id="ses_1" title="Intro" />\n\n<file_ref path="notes.md" name="notes.md" />\n\n<agent_ref name="coder" />';
     expect(cleanPromptText(text)).toEqual({ text: 'look at @notes', fileCount: 0 });
   });
-});
 
+  test('a paste block is not the visible words; a paste-only prompt reads "Pasted text"', () => {
+    const block = serializePromptWithPastes('', [{ id: 'abcd1234', text: 'pasted body' }]);
+    expect(cleanPromptText(`${block}\n\nsummarize`)).toEqual({ text: 'summarize', fileCount: 0, pasteCount: 1 });
+    const [row] = projectQueueRows({ prompts: [prompt({ text: block })] }).rows;
+    expect(row.text).toBe('Pasted text');
+    // No visible words: nothing for the composer to edit in place.
+    expect(row.editText).toBeNull();
+    const [typed] = projectQueueRows({
+      prompts: [prompt({ text: `${block}\n\nsummarize` })],
+    }).rows;
+    expect(typed.text).toBe('summarize');
+  });
+
+  test('a queued prompt with a typed <pasted_content> tag stays editable, and shows the tag as typed', () => {
+    const typed = 'see <pasted_content id="abcd1234" chars="3">abc</pasted_content> now';
+    const [row] = projectQueueRows({ prompts: [prompt({ text: serializePromptWithPastes(typed, []) })] }).rows;
+    expect(row.text).toBe(typed);
+    expect(row.editText).toBe(typed);
+    expect(row.takeBackEligible).toBe(true);
+  });
+
+  test('a draft row still uploading shows the typed words, not the paste XML', () => {
+    const block = serializePromptWithPastes('summarize', [{ id: 'abcd1234', text: 'pasted body' }]);
+    const { rows } = projectQueueRows({
+      prompts: [],
+      drafts: [draft('q_9', { text: block, posted: false, placement: 'composer' })],
+    });
+    expect(rows[0].text).toBe('summarize');
+  });
+});

@@ -41,7 +41,7 @@ session (a restart or resume re-reads the selection).
 | `open-code/background.ts`, `open-code/resource-diagnostics.ts`, `open-code/quick-queue-interrupt.ts` | Native offload, turn guard, tool-boundary queue interrupt and diagnostic projection |
 | Other `open-code/` modules | Native database, projections, pins, attachments, audit and recovery |
 | `pi/service.ts` | Composition; loads pi lazily so an OpenCode boot never pays for it |
-| `pi/runtime.ts` | The in-process pi `Agent`: model, tools, skills, turns, transcript, durability |
+| `pi/runtime.ts` | The in-process pi `Agent`: model, tools, skills, the root `AGENTS.md`, turns, transcript, durability |
 | `pi/boot.ts` | Session boot: the same host steps as OpenCode, then `pi-ready` |
 | `pi/surface.ts` | The raw OpenCode-compatible routes, answered in-process |
 | `pi/turn-events.ts`, `pi/transcript.ts` | pi events → Kortix session events (`@kortix/api-contract/transcript`); the transcript store |
@@ -107,11 +107,10 @@ when no turn runs (nothing is stored, the caller sends a prompt);
   replies after it name it as `parentID`. OpenCode: the first assistant
   `message.updated` whose `parentID` is the steered id. Both relay `steer_read`
   once per id (`shared/turn-relay.ts`).
-- **Withdraw.** `DELETE /kortix/runtime/messages/:sid/:mid` on an unread
-  steered message removes it (pi: 200, from kortixd's queue in front of
-  `agent.steer()`; pi can only clear its queue, so the rest are steered again in
-  order). A read one answers `409 { error: 'message is already running' }`.
-  OpenCode keeps its own DELETE semantics.
+- **Withdraw.** The retract (below) on an unread steered message removes it
+  (pi: from kortixd's queue in front of `agent.steer()`; pi can only clear its
+  queue, so the rest are steered again in order). A read one answers
+  `409 { code: 'message_read' }`.
 - **Leftovers (pi).** A turn that ends on its own with unread steered messages
   starts the next turn with them, in the same queue slot: the first is its
   prompt, the rest are read before its first model call. A stopped turn (Stop,
@@ -121,6 +120,27 @@ when no turn runs (nothing is stored, the caller sends a prompt);
   it does not run extension `input` handlers, `/skill:` or prompt-template
   expansion (a prompt does). Unread steered messages live in memory: a daemon
   restart loses them.
+
+## Retract
+
+`POST /kortix/runtime/messages/:sid/:mid/retract` takes back a user message no
+model call has read (`runtime.retract.v1` in `/kortix/health` `capabilities`),
+behind the same auth, readiness gate and `X-Kortix-Turn-Verb` header. apps/api
+uses it to cancel a forwarded prompt, to hold forwarded prompts after a Stop,
+and to re-place a stranded prompt. Answers: `200 { retracted: true }`; `404`
+when the session holds no such message; `409 { code: 'message_read' }` when a
+model call read it (its turn runs or ran), and it stays.
+
+- **pi** decides from its own state: an unread steered message, a prompt
+  admitted behind the running work that has not started, and a `no_reply`
+  message no turn has read (pi omits its session entry from the model context)
+  are retracted. A retracted id may be sent again. The `DELETE` verb and the
+  compatibility `DELETE /session/:id/message/:mid` answer the same way, so an
+  older API gets the fix too.
+- **OpenCode** cannot tell a read message from an unread one, so apps/api
+  proves "unread" from the transcript first (`reachedPlacement`). The adapter
+  deletes the message whole when idle; when the loop runs and refuses that, it
+  deletes every part, and OpenCode's loop skips a user message with no parts.
 
 ## The pi harness
 
@@ -134,14 +154,8 @@ pi (`@earendil-works/pi-agent-core` and `pi-coding-agent`, 1.0.3) is bundled
 into the daemon binary and runs INSIDE the daemon process. There is no child
 process, no port, no RPC and no second sandbox: pi-coding-agent's built-in
 `bash`/`read`/`write`/`edit` run on `/workspace` in this process, Kortix adds
-`glob`/`grep` (ripgrep) and `question`, and the five Kortix tools a project template gives an OpenCode
-session, compiled into the daemon under the same names, arguments and output
-JSON: `web_search` (Tavily), `image_search` (Serper), `scrape_webpage`
-(Firecrawl), `memory` and `show` (`pi/kortix-web-tools.ts`,
-`pi/kortix-memory-tool.ts`, `pi/kortix-show-tool.ts`). The three web tools call
-the API's billed router proxy (`/v1/router/{tavily,serper,firecrawl}`) with the
-sandbox token; a box with no control plane calls the upstream with the
-project's own key. A project needs no `harnesses/pi/` file for any of them.
+`glob`/`grep` (ripgrep) and `question`, and the hosted tools (see "Hosted
+tools" below). A project needs no `harnesses/pi/` file for any of them.
 Every model request goes to the Kortix LLM gateway through the
 daemon's localhost LLM proxy, under the same `kortix` provider id OpenCode uses.
 
@@ -161,29 +175,40 @@ Config it reads (all set by apps/api for every session, harness-neutral values):
 + `KORTIX_TOKEN`, the image-baked catalog at `/opt/kortix/llm-catalog.json`.
 pi-only: `KORTIX_PI_STATE_DIR`.
 
+`KORTIX_AGENT_NAME` (else the config's `default_agent`) is the session's
+agent. A prompt that picks a primary agent of the compiled config runs its
+turn on that agent: its prompt, permission policy, tool switches, sampling and
+variant, and its `model` when the prompt names none. A prompt that picks none
+runs on the session's agent, as on OpenCode. A pick of a subagent, a disabled
+agent or an unknown name is logged and runs on the session's agent. pi
+packages and extensions stay the ones the session booted with.
+
 ### Config releases
 
-With the project's `config_releases` flag on, pi runs the base branch's
-current config release, exactly as OpenCode does (`pi/config-release.ts`,
-contract in `services/config-release/`). A release is a checkout of the base
-branch under `/opt/kortix/config/<release_id>`, with the repository's own
-layout, verified against its Git blob IDs and sealed read-only. pi reads from
-it what it reads from `/workspace`: the compiled governance
-(`KORTIX_COMPILED_AGENT_CONFIG`, the agents), `skills/` (and the legacy
-`.kortix/opencode/skills`), and its own config dir (`pi.config_dir`, else
-`harnesses/pi`, else `.kortix/pi`: skills, extensions, prompts,
-`settings.json`), resolved inside the release by `resolvePiProjectConfigDir`.
+pi runs the base branch's current config release, exactly as OpenCode does
+(`pi/config-release.ts`, contract in `services/config-provider/`). A release is
+a checkout of the base branch under `/opt/kortix/config/<release_id>`, with
+the repository's own layout, verified against its Git blob IDs and sealed
+read-only. pi reads from it what it reads from `/workspace`: the compiled
+governance (`KORTIX_COMPILED_AGENT_CONFIG`, the agents), `skills/` (and the
+legacy `.kortix/opencode/skills`), the root `AGENTS.md` (else `CLAUDE.md`),
+and its own config dir (`pi.config_dir`, else `harnesses/pi`, else
+`.kortix/pi`: skills, extensions, prompts, `settings.json`), resolved inside
+the release by `resolvePiProjectConfigDir`.
 OpenCode's files (`harnesses/opencode`) are not pi's, so a commit that breaks
 only those files is a working config on pi.
 
 - **Boot.** `runPi` starts the choice beside the repository checkout, and
   `lifecycle.start()` waits for it: the desired release, then the last release
   this box proved (`current.json`), then the image default (managed skills and
-  the provisioned governance). `/workspace` is read only while the flag is off.
+  the provisioned governance). `/workspace` is read only when the box has no
+  Kortix API, or an API from before config releases graduated answers `403
+  feature_disabled`.
 - **Convergence** (`POST /kortix/config/converge`, the 60 s runtime-truth tick,
   one pass after ready). pi applies a release in place: the governance goes
-  into the runtime's env, the skill directories move into the release, and
-  `PiRuntime.reconfigure()` re-reads both. A release that changes anything
+  into the runtime's env, the skill directories and the `AGENTS.md` root
+  (`PiConfigReleases.projectRoot()`) move into the release, and
+  `PiRuntime.reconfigure()` re-reads them. A release that changes anything
   in pi's config dir other than its skills (extensions, prompts, settings, which only
   a start reads) restarts the runtime in place instead: the same root, the
   transcript restored. Nothing else restarts, and the answer carries
@@ -210,7 +235,7 @@ one harness's tool. Each adapter maps its tools onto them: pi's `write` is
 `web_search`/`image_search` and `scrape_webpage` follow `websearch` and
 `webfetch` (`pi/interactions.ts` `toolCapability`); pi asks for them like any
 other tool. A rule under the tool's own name wins over its capability. OpenCode's `pty_*` tools follow `bash`, and the
-template's `web_search`/`image_search` and `scrape_webpage` follow `websearch`
+hosted `web_search`/`image_search` and `scrape_webpage` follow `websearch`
 and `webfetch` (`open-code/lifecycle.ts` `capabilityToolRules`). The OpenCode
 tools cannot ask, so they run only when the capability is `allow`. A rule is an
 action, or a glob-pattern -> action map matched against the `bash` command
@@ -305,16 +330,56 @@ tools, warm-seed capture, `ctx.ui` prompts from extensions. `/kortix/health` rep
 and keeps `opencode: <state>` as the compatibility field the control plane
 already reads for readiness.
 
-## Config provider is a host service, not harness logic
+## Hosted tools
 
-`src/services/config-provider/` (the `git` / `prefer-s3` / `require-s3` project
-acquisition coordinator, #7221) stays outside `src/harness/`. It
-depends only on `src/lib/` (`config`, `git`, `logger`) and knows nothing about
-any harness. Both `open-code/boot.ts` and `pi/boot.ts` call
-`materializeProject(cfg, { bootMark, onSummary })` at the point where the cold
-boot acquires the workspace. `contract/boot-state.ts` carries the outcome:
-`configProvider` (reported in `/kortix/health` as `config_provider`) and
-`deferredHistoryBackfill`.
+A tool that is not a harness's own (`bash`, `read`, …) is written once, as a
+harness-neutral module, and the daemon runs it for whichever harness the box
+runs (`../services/tools/`):
+
+| Module | What |
+| --- | --- |
+| `services/tools/tool.ts` | The contract: a default export `{ description, parameters (JSON Schema), execute(args, context) }`, with `context` = `{ sessionId, agent, directory, env, signal }`. |
+| `services/tools/kortix/<name>.ts` | The Kortix tools, one self-contained module each: `web_search` (Tavily), `image_search` (Serper), `scrape_webpage` (Firecrawl), `memory`, `show`. Each follows the project tool contract and imports only `node:*`, so `kortix tools eject <name>` copies the file into a project unchanged (the CLI embeds the same bytes, `apps/cli/src/kortix-tools.generated.json`). The web tools read `KORTIX_API_URL` and `KORTIX_TOKEN` from `context.env` and call the API's billed router proxy (`/v1/router/{tavily,serper,firecrawl}`); a box with no control plane calls the upstream with the project's own key. |
+| `services/tools/host.ts` | `loadTools(root, compiled)`: the Kortix tools `CompiledAgentSet.kortix_tools` lists (all five when it is absent: no kortix.yaml `tools` key, or a config compiled before the key existed), then the project's (`project_tools`), imported from `root` (the working tree or the config release). A project tool replaces a Kortix tool of its name; a module that does not load is logged and skipped. `runTool` bounds the output (over 50 KB or 2000 lines: the whole text to a temp file, the head to the model). `sessionEnv` is `context.env`: the process env with the live agent env file over it. |
+| `routes/kortix/tools.ts` | `POST /kortix/tools/:name` for an out-of-process harness: the box's tool-bridge key (`toolBridgeKey`, kept in the runtime state dir) or the control credential; `403` when the agent's tool access refuses the tool. |
+
+- **pi** loads them at `start()` and registers each as an `AgentTool`
+  (`pi/tools.ts` `createWorkspaceTools`); subagents get them too. A release
+  that changes a project tool's declaration or a file in its module's folder
+  restarts the runtime in place (`pi/config-release.ts` `startOnlyFiles`).
+- **OpenCode** gets a plugin the daemon writes on every config compose
+  (`open-code/tool-bridge.ts`, `~/.config/kortix-tools.js` and its tool list
+  `kortix-tools.json`). Each tool is a stub that posts to the route above. Its
+  `args` are the JSON Schema properties (OpenCode's non-Zod plugin path) and
+  its `tool.definition` hook restores the exact schema, so optional arguments
+  stay optional. A name the served config dir defines in its own `tools/`
+  (the copies the template wrote before) keeps the project file.
+
+**Tool access.** `CompiledAgent.tools` (kortix.yaml `agents.<name>.tools`) maps
+a tool name to visible, with `*` for every tool not named; `toolAllowed`
+(`@kortix/api-contract/runtime-relay`) reads it. pi filters the active tools
+and denies a call to a hidden one, for the root and for a subagent (both
+agents' maps must allow it). OpenCode reads the map as permission rules
+(`open-code/tool-access.ts`): a removed tool is a `deny` after every other
+rule, an allowlist is `*: deny` first, then the rules of the allowed tools at
+the action they had; the compiled `tools` key is dropped, because OpenCode's
+own reading turns `true` into `allow` and lets the agent's `permission`
+re-open a removed tool.
+
+## The workspace and config providers are host services, not harness logic
+
+`src/services/workspace-provider/` (the `git` / `prefer-s3` / `require-s3`
+project acquisition, #7221) and `src/services/config-provider/` (the config
+release a boot needs) stay outside `src/harness/`. Each depends only on
+`src/lib/` and knows nothing about any harness or about the other: both read
+the S3 project snapshot through `src/lib/project-snapshot/`. The harness
+composes them. Both `open-code/boot.ts` and `pi/boot.ts` call
+`provideWorkspace(cfg, { bootMark, onSummary })` at the point where the cold
+boot acquires the workspace, then hand the checkout to the config release
+boot. The warm-seed adoption and monitor mode call the same function in `git`
+mode. `contract/boot-state.ts` carries the outcome: `workspaceProvider`
+(reported in `/kortix/health` as `config_provider`, its pre-rename wire name)
+and `deferredHistoryBackfill` (`backfillAfterHydration` for an S3 start).
 
 ## OpenCode instance guard
 

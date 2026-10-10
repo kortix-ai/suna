@@ -21,7 +21,11 @@ import {
   projectSessionConnection,
 } from '@kortix/sdk';
 import { useProjectSession, useSessionMessageAuthors, useSessionModelUsage, useSessionParticipants } from '@kortix/sdk/react';
-import { ArrowBendUpLeftIcon, CaretDownIcon, StackIcon as Layers } from '@phosphor-icons/react';
+import {
+  ArrowBendUpLeftIcon,
+  CaretDownIcon,
+  StackIcon as Layers,
+} from '@phosphor-icons/react';
 import { m } from 'motion/react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -54,6 +58,7 @@ import { chatPlanAnchorId } from './turn/plan-anchor';
 import { stabilizeTurns } from './turn/stable-turns';
 import { ThrottledMarkdown } from './turn/throttled-markdown';
 import { TurnViewport } from './turn/turn-viewport';
+import { PastedTextBody, PastedTextCopy, PastedTextMeta } from './pasted-text';
 import { UserMessage } from './turn/user-message';
 import {
   fallbackBusyRowAfterTurnId,
@@ -61,10 +66,12 @@ import {
   resolveWorkingTurn,
   shouldSuppressWorkingTurnBusy,
   turnIsConfirmedActive,
+  turnRendersQueued,
   workingTurnDrawsBusyRow,
 } from './turn/working-turn';
 
 import { ChangeRequestDetailDialog } from '@/features/project-files/components/change-request-detail-dialog';
+import { warmHighlighter } from '@/components/markdown/code/shiki-highlighter';
 import { ProjectFilesProvider } from '@/features/project-files/context';
 import { useOptionalSessionPanel } from '@/features/session/action-panel/session-panel-provider';
 import {
@@ -178,7 +185,11 @@ import {
   groupMessagesIntoTurns,
 } from '@/ui';
 import { isAbortError, turnEndNotice } from '@kortix/sdk';
-import { failureShownByTurn, persistedFailureText } from '@/features/session/persisted-turn-failure';
+import {
+  failureShownByTurn,
+  failureSupersededByTurn,
+  persistedFailureText,
+} from '@/features/session/persisted-turn-failure';
 import {
   type AbortSettlement,
   type KortixSendError,
@@ -1025,22 +1036,6 @@ export function SessionChat({
     [messages, working.serverOpenTurnToken],
   );
 
-  const hasPendingUserReply = useMemo(() => {
-    if (!messages || messages.length === 0) return false;
-    let lastUserIdx = -1;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].info.role === 'user') {
-        lastUserIdx = i;
-        break;
-      }
-    }
-    if (lastUserIdx === -1) return false;
-    for (let i = lastUserIdx + 1; i < messages.length; i++) {
-      if (messages[i].info.role === 'assistant') return false;
-    }
-    return true;
-  }, [messages]);
-
   // The working projection, plus compaction — which `projectWorking`
   // deliberately knows nothing about, because a compaction is not a turn and
   // `GET .../turn` reports none for it.
@@ -1110,103 +1105,6 @@ export function SessionChat({
     [modelUsage, local.model.list],
   );
   const servedModelOfTurn = useMemo(() => turnServedModelResolver(local.model.list), [local.model.list]);
-
-  // Render-driven only: the session is working, or the transcript shows a user
-  // message nothing has answered yet. The transcript-inference terms are gone —
-  // "is a turn running" has one authority now.
-  const expectAssistantResponse = isServerBusy || hasPendingUserReply;
-
-  const shouldRecoveryPoll = expectAssistantResponse;
-
-  const streamCacheKey = `opencode_stream_cache:${sessionId}`;
-  const streamCacheRestoredRef = useRef<string | null>(null);
-
-  // Restore cached streaming prefix after refresh when SSE resumes from the
-  // current point but backend hydrate has not yet returned the in-progress text.
-  // Runs at most once per cache key to prevent re-triggering when the store
-  // update causes `messages` to change (which would re-fire this effect).
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (!shouldRecoveryPoll) return;
-    if (!messages || messages.length === 0) return;
-
-    let cached: {
-      messageID: string;
-      parentID?: string;
-      partID: string;
-      text: string;
-      updatedAt: number;
-    } | null = null;
-    try {
-      const raw = sessionStorage.getItem(streamCacheKey);
-      cached = raw ? JSON.parse(raw) : null;
-    } catch {
-      cached = null;
-    }
-    if (!cached || !cached.messageID || !cached.partID || !cached.text) return;
-    // Ignore stale cache entries.
-    if (Date.now() - (cached.updatedAt || 0) > 30 * 60 * 1000) return;
-    // Prevent re-running after a successful restore for this exact cache entry.
-    const cacheFingerprint = `${cached.messageID}:${cached.partID}:${cached.text.length}`;
-    if (streamCacheRestoredRef.current === cacheFingerprint) return;
-
-    const store = useSessionStateStore.getState();
-    const currentMsgs = store.getMessages(sessionId);
-    let latestUserId: string | undefined;
-    for (let i = currentMsgs.length - 1; i >= 0; i--) {
-      if (currentMsgs[i].info.role === 'user') {
-        latestUserId = currentMsgs[i].info.id;
-        break;
-      }
-    }
-    if (hasPendingUserReply) {
-      // For a fresh pending turn we must have an exact parent match.
-      // If cached parentID is missing or mismatched, the cache likely
-      // belongs to an older turn and would prepend stale mid-stream text.
-      if (!cached.parentID || !latestUserId || cached.parentID !== latestUserId) {
-        return;
-      }
-    }
-    const hasMsg = currentMsgs.some((m) => m.info.id === cached!.messageID);
-    const hasAnyUser = currentMsgs.some((m) => m.info.role === 'user');
-
-    if (!hasMsg) {
-      // Only create a synthetic assistant message if we can safely attach
-      // it to an existing user turn.
-      if (!hasAnyUser) return;
-      const parentID = cached.parentID ?? latestUserId;
-      if (hasPendingUserReply && !parentID) return;
-      if (parentID) {
-        const parentExists = currentMsgs.some((m) => m.info.id === parentID);
-        if (!parentExists) return;
-      }
-      store.upsertMessage(sessionId, {
-        id: cached.messageID,
-        sessionID: sessionId,
-        role: 'assistant',
-        parentID,
-      } as any);
-    }
-
-    const currentParts = store.parts[cached.messageID] ?? [];
-    const existing = currentParts.find((p) => p.id === cached!.partID) as any;
-    const existingText = typeof existing?.text === 'string' ? existing.text : '';
-    if (cached.text.length <= existingText.length) {
-      // Already restored or surpassed — mark as done.
-      streamCacheRestoredRef.current = cacheFingerprint;
-      return;
-    }
-
-    streamCacheRestoredRef.current = cacheFingerprint;
-    store.upsertPart(cached.messageID, {
-      ...(existing ?? {}),
-      id: cached.partID,
-      messageID: cached.messageID,
-      sessionID: sessionId,
-      type: 'text',
-      text: cached.text,
-    } as any);
-  }, [messages, sessionId, shouldRecoveryPoll, streamCacheKey, hasPendingUserReply]);
 
   // WHICH INBOX ROWS ARE ALREADY ON SCREEN — the queued list above the composer
   // (`projectQueueRows`, `QueuedPromptList`) lists only the rest.
@@ -1522,6 +1420,10 @@ export function SessionChat({
   useEffect(() => {
     prevMsgLenRef.current = messages?.length || 0;
   }, [messages?.length]);
+
+  // Compile the code highlighter while the session sits idle, so its one-time
+  // ~125 ms setup never freezes a streaming reply (see `warmHighlighter`).
+  useEffect(() => warmHighlighter(), []);
 
   // ---- Auto-scroll: see use-auto-scroll.ts (room + end + follow) ----
   const messageCount = messages?.length ?? 0;
@@ -2368,8 +2270,8 @@ export function SessionChat({
   }, [sessionId, clearSendReceipt]);
 
   // ============================================================================
-  // Billing: DISABLED — billing is handled server-side by the router
-  // (POST /v1/router/chat/completions deducts credits per LLM call).
+  // Billing: DISABLED — billing is handled server-side by the LLM gateway
+  // (it deducts credits per LLM call).
   // This frontend useEffect was causing double-billing once opencode.jsonc
   // got cost config and step-finish.cost became non-zero.
   // ============================================================================
@@ -3564,6 +3466,20 @@ export function SessionChat({
     },
     [tHardcodedUi],
   );
+  // A sent paste opens the same way, keyed by its id.
+  const handleOpenPastedContent = useCallback(
+    (id: string, text: string) => {
+      panelRef.current?.openDetail({
+        key: `pasted:${id}`,
+        title: tHardcodedUi.raw('i18nComplete.text39cfc32bd12c'),
+        meta: <PastedTextMeta text={text} />,
+        actions: <PastedTextCopy text={text} />,
+        padded: true,
+        body: <PastedTextBody text={text} />,
+      });
+    },
+    [tHardcodedUi],
+  );
 
   // Stable identities for every handler a memoized `SessionTurn` receives.
   // Several of these close over the live transcript (`handleEditSend` →
@@ -3572,6 +3488,7 @@ export function SessionChat({
   const stableRetryQueued = useStableCallback(handleRetryQueuedMessage);
   const stableRemoveQueued = useStableCallback(handleRemoveQueuedMessage);
   const stableOpenCompactionSummary = useStableCallback(handleOpenCompactionSummary);
+  const stableOpenPastedContent = useStableCallback(handleOpenPastedContent);
   const stablePermissionReply = useStableCallback(handlePermissionReply);
   const stableRewind = useStableCallback(handleRewind);
   const stableEditCancel = useStableCallback(handleEditCancel);
@@ -4353,11 +4270,16 @@ export function SessionChat({
                               }
                               suppressBusyIndicator={suppressWorkingTurnBusy}
                               awaitingUser={awaitingUserInput}
-                              pending={
-                                !confirmedActive &&
-                                (Boolean(pendingPrompt) ||
-                                  pendingTurnIds.has(turn.userMessage.info.id))
-                              }
+                              // An idle send stays in the inbox until delivery,
+                              // but nothing runs ahead of it: queued only while
+                              // it waits behind a turn (`turnRendersQueued`).
+                              pending={turnRendersQueued({
+                                turnId: turn.userMessage.info.id,
+                                resolution: workingTurn,
+                                sessionWorking: lastTurnWorking,
+                                confirmedActive,
+                                inboxPrompt: pendingPrompt,
+                              })}
                               pendingPrompt={pendingPrompt}
                               onRetryQueued={stableRetryQueued}
                               onRemoveQueued={stableRemoveQueued}
@@ -4369,6 +4291,7 @@ export function SessionChat({
                               onOpenCompactionSummary={
                                 panel ? stableOpenCompactionSummary : undefined
                               }
+                              onOpenPastedContent={panel ? stableOpenPastedContent : undefined}
                               providers={providers}
                               commandMessages={commandMessagesRef.current}
                               commands={commands}
@@ -4425,6 +4348,7 @@ export function SessionChat({
                     ].filter((failure) =>
                       !isAbortError(failure.error) &&
                       !failureShownByTurn(failure, turns) &&
+                      !failureSupersededByTurn(failure, turns) &&
                       (!failure.error?.message || failure.error.message !== commandError?.message),
                     ).map((failure) => {
                       const messageId = failure.message_id ?? 'persisted-turn-failure';
@@ -4595,6 +4519,7 @@ export function SessionChat({
                 noAccessibleAgents={noAccessibleAgents}
                 commands={chatCommands}
                 slashFiles={chatSlashFiles}
+                onOpenPastedContent={panel ? stableOpenPastedContent : undefined}
                 onCommand={handleCommand}
                 models={local.model.list}
                 selectedModel={local.model.currentKey ?? null}

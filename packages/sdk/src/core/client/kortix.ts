@@ -9,7 +9,7 @@ import type { RuntimeClient } from '../runtime/client';
 import { bindProjectAccessResources } from './project-access-resources';
 import { bindProjectAccessSecurity } from './project-access-security';
 import { projectConnections } from './project-connections';
-import { connectorDataPlane } from './project-connectors';
+import { connectorDataPlane, connectorHandle } from './project-connectors';
 import { bindProjectCore } from './project-core';
 import { bindProjectOperations } from './project-operations';
 import { bindProjectPlatformResources } from './project-platform-resources';
@@ -90,6 +90,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       ...bindProjectOperations(projectId, connections),
       ...bindProjectPlatformResources(projectId),
       ...bindProjectPlatformSecurity(projectId),
+      /** One connector of this project: `run`, `call`, `describe`, `accounts`, `paginate`. */
+      connector: <S extends string>(slug: S) => connectorHandle(projectId, slug),
       session: (sessionId: string) =>
         session(projectId, sessionId, config, resolvePreviewOptsForSandbox),
     };
@@ -108,6 +110,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     projects,
     /** Connector calls scoped by an agent/session token when no project id is available. */
     connectors: connectorDataPlane(),
+    /** One connector in the token's scope (a project-scoped token or a session token). */
+    connector: <S extends string>(slug: S) => connectorHandle(undefined, slug),
     project,
     session: (projectId: string, sessionId: string) =>
       session(projectId, sessionId, config, resolvePreviewOptsForSandbox),
@@ -125,6 +129,22 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     marketplace,
     /** Kortix Capture: `account(id)` (the tenant), the device sign-in approval, and `me` (the agent tool's reads). */
     capture: captureClient,
+    /**
+     * The caller's notifications (`/v1/notifications/*`): push device tokens
+     * for a native app, the inbox, per-kind push and email preferences, and
+     * Web Push for this browser. Muting one session is `session(pid, sid).setWatch`.
+     */
+    notifications: {
+      registerDeviceToken: P.registerDeviceToken,
+      unregisterDeviceToken: P.unregisterDeviceToken,
+      list: P.listNotifications,
+      markRead: P.markNotificationsRead,
+      preferences: P.getNotificationPreferences,
+      updatePreferences: P.updateNotificationPreferences,
+      webPushPublicKey: P.getWebPushPublicKey,
+      registerWebPushSubscription: P.registerWebPushSubscription,
+      unregisterWebPushSubscription: P.unregisterWebPushSubscription,
+    },
     /** The pasted-API-key UX check — `GET /accounts/me`, never throws. */
     validateToken: P.validateToken,
     /** Escape hatch: the typed opencode client for the active sandbox. */

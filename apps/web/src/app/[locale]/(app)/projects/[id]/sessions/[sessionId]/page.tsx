@@ -14,6 +14,8 @@ import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { ErrorState } from '@/features/layout/section/error-state';
+import { useNotificationCenter } from '@/features/notifications/use-notification-center';
+import { useOpenSessionRead } from '@/features/notifications/use-open-session-read';
 import { useAuth } from '@/features/providers/auth-provider';
 import { InstantSessionShell } from '@/features/session/instant-session-shell';
 import { resolvePinnedRootSessionId } from '@/features/session/pinned-root-session';
@@ -100,6 +102,7 @@ import {
   useSessionSwitchStore,
 } from '@/stores/session-switch-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
+import { useWebNotificationStore } from '@/stores/web-notification-store';
 import {
   clearSessionFresh,
   formatRuntimeError,
@@ -121,6 +124,7 @@ import {
   useProjectSession,
   useSession,
   useSessionPrompts,
+  useSessionStreamConnected,
   useWakeEscalation,
 } from '@kortix/sdk/react';
 
@@ -237,8 +241,18 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // replayStartStash:false — the web has its own pending-prompt hand-off (below).
   // The default chat engine stays enabled. This hook owns message sync and the
   // question and permission recovery pollers for the root session.
+  // With the project's `notification_center` flag on (KRTX-1742), a tab that
+  // shows its own OS notification tells the server so, and the server then
+  // holds back the phone push and Web Push for this session; closing the page
+  // ends the presence lease at once. With the flag off, presence is as before.
+  const notificationCenter = useNotificationCenter(projectId);
+  const browserNotificationsOn = useWebNotificationStore((s) => s.preferences.enabled);
+  const notificationPermission = useWebNotificationStore((s) => s.permission);
   const session = useSession(projectId, sessionId, {
     browserPresence: !!user,
+    presenceAlerts:
+      notificationCenter && browserNotificationsOn && notificationPermission === 'granted',
+    presencePageExit: notificationCenter,
     enabled: canPollSessionStart({ hasUser: !!user, billingBlocked }),
     replayStartStash: false,
     initialRuntimeSessionId,
@@ -247,6 +261,9 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     // re-renders the transcript only, not this whole page.
     subscribeMessages: false,
   });
+  // The presence write marks this session's notifications read on the server;
+  // this clears them from the bell at once. Flag off: there is no bell.
+  useOpenSessionRead(notificationCenter ? user?.id : null, sessionId);
   // `/start` no longer refuses a session created before a repository
   // replacement, so there is no error to detect and no mode to flip into: the
   // session starts, gets the project's current config release, and converges
@@ -406,6 +423,10 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     // own ref, so a rebuilt closure here cannot re-run its decision effect and
     // fire one rung twice.
     onRestart: handleRestart,
+    // While the session stream is up the server runs this ladder (R5.2) and
+    // the hook only reports it.
+    projectId,
+    sessionId,
   });
   // THE progress-aware budget. Every consumer below reads time-since-CHANGE,
   // never time-since-wake-started — the fixed clock this replaces expired
@@ -418,9 +439,13 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // than one second could then never elapse, silently ending the resume loop
   // after its first immediate attempt.
   const wakeShowingProgress = wakeSilentMs < AUTO_RESUME_WINDOW_MS;
+  // With the session stream up, every change of the box row re-reads `/start`
+  // (R5.3), so only the first, waking attempt is needed here.
+  const sessionStreamConnected = useSessionStreamConnected(projectId, sessionId);
   useEffect(() => {
     if (!sandboxResumable) return;
     if (!wakeShowingProgress) return;
+    if (sessionStreamConnected && resumeAttempts > 0) return;
     // First attempt fires immediately (match the refresh); back off after that,
     // and keep re-asking for as long as the wake is still showing progress.
     const t = setTimeout(
@@ -431,7 +456,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       resumeAttempts === 0 ? 0 : Math.min(1500 * 2 ** Math.min(resumeAttempts - 1, 3), 8000),
     );
     return () => clearTimeout(t);
-  }, [sandboxResumable, resumeAttempts, wakeShowingProgress, projectId, sessionId, queryClient]);
+  }, [sandboxResumable, resumeAttempts, wakeShowingProgress, sessionStreamConnected, projectId, sessionId, queryClient]);
   // While a resumable box is still SHOWING PROGRESS it is "waking", not "dead"
   // — render the boot loader, never the dead-end card.
   const autoResuming = isAutoResuming(sandbox, { elapsedMs: wakeSilentMs });

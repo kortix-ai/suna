@@ -19,7 +19,13 @@ import type {
   RuntimeProjectInfo,
   ServerHealth,
 } from '@/features/file-browser/types';
-import { fetchProjectArchive, fetchProjectFileRaw, listProjectFiles, readProjectFile } from '@kortix/sdk';
+import {
+  fetchProjectArchive,
+  fetchProjectFileRaw,
+  listProjectDirectory,
+  readProjectFile,
+  searchProjectFiles,
+} from '@kortix/sdk';
 import { getLanguageFromExt } from '@/features/file-viewer';
 
 const READ_ONLY = 'Read-only — project files come from Git';
@@ -64,9 +70,9 @@ export { toRepoRelative };
  * List immediate children (files + directories) of `dirPath` for the given
  * project at the given ref.
  *
- * The backend returns a FLAT recursive list (`git ls-tree -r`), so we filter
- * down to entries whose parent equals `dirPath`, plus synthesised directory
- * entries for unique intermediate path segments below `dirPath`.
+ * One folder level per request (`depth=1`). The recursive list stops at 1,000
+ * files, so a tree built from it lost every folder that sorted after file
+ * 1,000 (KRTX-1723).
  */
 export async function listFiles(
   projectId: string,
@@ -74,48 +80,39 @@ export async function listFiles(
   dirPath: string,
 ): Promise<FileNode[]> {
   const relativeDir = toRepoRelative(dirPath);
-  const apiDir = relativeDir || undefined;
-
-  const entries = await listProjectFiles(projectId, {
+  const { entries } = await listProjectDirectory(projectId, {
     ref,
-    path: apiDir,
+    path: relativeDir || undefined,
   });
 
-  // recursive list → dir-immediate children filter
-  const prefix = relativeDir ? `${relativeDir}/` : '';
-  const fileNodes = new Map<string, FileNode>();
-  const dirNodes = new Map<string, FileNode>();
+  const toNode = (entry: (typeof entries)[number]): FileNode => ({
+    name: basename(entry.path),
+    path: toWorkspacePath(entry.path),
+    absolute: toWorkspacePath(entry.path),
+    type: entry.type,
+    ignored: false,
+  });
+  return [
+    ...entries.filter((entry) => entry.type === 'directory').map(toNode),
+    ...entries.filter((entry) => entry.type === 'file').map(toNode),
+  ];
+}
 
-  for (const entry of entries) {
-    if (relativeDir && !entry.path.startsWith(prefix)) continue;
-    const rest = relativeDir ? entry.path.slice(prefix.length) : entry.path;
-    if (!rest) continue;
-
-    const firstSep = rest.indexOf('/');
-    if (firstSep === -1) {
-      fileNodes.set(entry.path, {
-        name: basename(entry.path),
-        path: toWorkspacePath(entry.path),
-        absolute: toWorkspacePath(entry.path),
-        type: 'file',
-        ignored: false,
-      });
-    } else {
-      const dirSegment = rest.slice(0, firstSep);
-      const dirRelPath = relativeDir ? `${relativeDir}/${dirSegment}` : dirSegment;
-      if (!dirNodes.has(dirRelPath)) {
-        dirNodes.set(dirRelPath, {
-          name: dirSegment,
-          path: toWorkspacePath(dirRelPath),
-          absolute: toWorkspacePath(dirRelPath),
-          type: 'directory',
-          ignored: false,
-        });
-      }
-    }
-  }
-
-  return [...dirNodes.values(), ...fileNodes.values()];
+/**
+ * Search the project's files by name on the server, which reads the whole
+ * repository (not a capped list). Returns "/workspace/..." paths, the form
+ * the tree uses.
+ */
+export async function searchFiles(
+  projectId: string,
+  ref: string,
+  query: string,
+  options?: { limit?: number },
+): Promise<string[]> {
+  const q = query.trim();
+  if (!q) return [];
+  const { results } = await searchProjectFiles(projectId, q, { ref, limit: options?.limit });
+  return results.map((match) => toWorkspacePath(match.path));
 }
 
 // ---------------------------------------------------------------------------

@@ -637,6 +637,8 @@ export async function ensureLocalStack(
           // Only this exact host is exempt from the connector egress check;
           // every other private address stays refused.
           KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS: "127.0.0.1",
+          // CONN-CALL-1 waits out the connector upstream deadline (60 s by default).
+          KORTIX_CONNECTOR_CALL_TIMEOUT_MS: "15000",
           PORT: String(apiPort),
           KORTIX_APPS_LOCAL: "true",
           KORTIX_APPS_LOCAL_PORT: String(apiPort),
@@ -692,10 +694,12 @@ export async function ensureLocalStack(
           KORTIX_WORKERS_ENABLED: "false",
           // The App deploy route kicks its worker directly, so the general
           // switch above does not cover it. Every provider here points at an
-          // unreachable address, so a running worker only races a doomed build:
-          // on Linux it fails in milliseconds, on macOS the upload hangs. Off,
-          // a local deployment stays `queued` and APP-7 is deterministic.
-          KORTIX_APPS_WORKER_ENABLED: "false",
+          // unreachable address, so driving a sandbox build only races a doomed
+          // build: on Linux it fails in milliseconds, on macOS the upload hangs.
+          // `static` drives only static deployments, which need no provider:
+          // APP-8 deploys and serves for real, and a sandbox deployment stays
+          // `queued`, so APP-7 is deterministic.
+          KORTIX_APPS_WORKER_ENABLED: "static",
           KORTIX_BILLING_INTERNAL_ENABLED: "true",
           ALLOWED_SANDBOX_PROVIDERS: "platinum,daytona",
           PLATINUM_API_KEY: "local-test-provider-disabled",

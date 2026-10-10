@@ -1,4 +1,3 @@
-import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { LOCAL_AUTH_EMAIL_HOOK_SECRET, localWebUrl } from './local-profile';
@@ -525,16 +524,6 @@ const DOCKER_LANES = new Set(['api-cli-flows', 'db-suites']);
 /** Modes whose green result is a full or per-lane claim that `pnpm test` attests. */
 const ATTESTED_MODES = new Set(['core', 'full', 'flows', 'sdk', 'db', 'browser', 'packages']);
 
-/** The Kortix agent-box marker: the platform bakes its model catalog and the
- *  rest of the box state (/opt/kortix/{scaffold.git,managed-skills},
- *  /etc/pt-env) into every sandbox image, and nothing writes them elsewhere.
- *  The agent-server suites read that state, so the `packages` lane cannot
- *  attest a PR here; the scheduled Tests run on a clean CI runner is the
- *  backstop. */
-export function onKortixSandboxImage(catalog = '/opt/kortix/llm-catalog.json'): boolean {
-  return existsSync(catalog);
-}
-
 function dockerAvailable(): boolean {
   try {
     return Bun.spawnSync(['docker', 'info'], { stdout: 'ignore', stderr: 'ignore' }).exitCode === 0;
@@ -553,10 +542,6 @@ export async function runLocalTests(root: string, args: string[]): Promise<numbe
       // No Docker (a factory sandbox): the DB lanes cannot run.
       for (const lane of plan.lanes)
         if (DOCKER_LANES.has(lane.name)) skipped.set(lane.name, 'skipped-no-db');
-    }
-    if (onKortixSandboxImage()) {
-      for (const lane of plan.lanes)
-        if (lane.name === 'package-quality') skipped.set(lane.name, 'skipped-sandbox-image');
     }
     if (skipped.size > 0) {
       plan.lanes = plan.lanes.filter((l) => !skipped.has(l.name));

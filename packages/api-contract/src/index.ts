@@ -61,8 +61,11 @@ export const FeatureFlagMapSchema = z.object({
   secrets_egress: z.boolean(),
   pooled_provider_secrets: z.boolean(),
   pi_harness: z.boolean(),
-  config_releases: z.boolean(),
   us_region: z.boolean(),
+  event_triggers: z.boolean(),
+  notification_center: z.boolean(),
+  drives: z.boolean(),
+  ephemeral_sandboxes: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 
@@ -84,6 +87,8 @@ export const FeatureFlagViewSchema = z.object({
   available: z.boolean(),
   enabled: z.boolean(),
   overridden: z.boolean(),
+  /** Internal-only flag, listed only while on. Only a platform operator can change it. */
+  operator_only: z.boolean().optional(),
 });
 export type FeatureFlagView = z.infer<typeof FeatureFlagViewSchema>;
 
@@ -526,6 +531,9 @@ export const ConnectionSchema = z.object({
    * a session. Absent on older servers: treat as `true`.
    */
   usable: z.boolean().optional(),
+  /** Signed in: the account holds a credential or a connected provider
+   *  account. `false` offers Connect. Absent on older servers. */
+  authorized: z.boolean().optional(),
   /**
    * Computer accounts only: the paired machine this account reaches. `null`
    * when the machine was unpaired. Absent on every other connector.
@@ -969,6 +977,13 @@ export const SessionCreateInputSchema = z
       )
       .optional(),
     provider: SandboxProviderSchema.optional(),
+    /**
+     * Run the session on a persistent machine: its whole root disk persists
+     * across stops (installed packages, config, files). Platinum only. A stop
+     * keeps the disk and ends running processes; the machine stays on the
+     * image it was created from until it is reset.
+     */
+    persistent_machine: z.boolean().optional(),
     branch_already_created: z.boolean().optional(),
     metadata: SessionMetadataInputSchema.optional(),
     runtime_context: SessionRuntimeContextSchema.optional(),
@@ -1216,6 +1231,9 @@ export const SessionStartFailureSchema = z
       // ceiling (Daytona caps at 10 GB). Permanent until the image is slimmed,
       // so never retryable.
       'snapshot-too-large',
+      // Kortix Drive: the session's drives did not mount (storage down, or a
+      // project with drives and no Platinum), so the session did not start.
+      'drives-unavailable',
       'sandbox-provider',
     ]),
     message: z.string(),
@@ -1381,7 +1399,7 @@ export const TriggerSchema = z.object({
   slug: z.string(),
   path: z.string(),
   name: z.string(),
-  type: z.enum(['cron', 'webhook', 'monitor']),
+  type: z.enum(['cron', 'webhook', 'monitor', 'event']),
   agent: z.string(),
   /** Wire-form model (`provider/model`) or null for "Default". */
   model: z.string().nullable(),
@@ -1398,6 +1416,30 @@ export const TriggerSchema = z.object({
   interval_seconds: z.number().nullable(),
   /** For type=monitor only — the silence watchdog, in whole seconds. */
   expect_event_within_seconds: z.number().nullable(),
+  /**
+   * For type=event only. `pending` = declared but no subscription row yet.
+   * Null for every other type.
+   */
+  event: z
+    .object({
+      connector: z.string(),
+      /** Declared `account` label; null = the connector's default shared account. */
+      account: z.string().nullable(),
+      /** Identity (or label) of the shared account actually feeding the trigger; null when none. */
+      connected_as: z.string().nullable(),
+      type: z.string(),
+      config: z.record(z.string(), z.unknown()),
+      /** Event source adapter: the declared `source`, else the connector's provider (e.g. `composio`). Null when unresolved. */
+      source: z.string().nullable().optional(),
+      /** @deprecated Same value as `source`. */
+      provider: z.string().nullable(),
+      /** Provider app slug (e.g. `github`). Null when unresolved. */
+      app: z.string().nullable(),
+      status: z.enum(['active', 'needs_connection', 'error', 'pending']),
+      error: z.string().nullable(),
+      last_event_at: z.string().nullable(),
+    })
+    .nullable(),
   prompt_template: z.string(),
   session_mode: z.enum(['fresh', 'reuse', 'pinned', 'keyed']),
   /** For session_mode === 'pinned' only: the exact session id looped. Null otherwise. */
@@ -1415,6 +1457,8 @@ export const TriggerSchema = z.object({
   last_status: z.string().nullable(),
   last_error: z.string().nullable(),
   last_attempt_at: z.string().nullable(),
+  /** When an enabled cron trigger runs next: the slot the scheduler claims, jitter included. Null for a webhook trigger. */
+  next_fire_at: z.string().nullable().optional(),
   webhook_url: z.string().nullable(),
 });
 export type Trigger = z.infer<typeof TriggerSchema>;
@@ -1557,12 +1601,31 @@ export const SessionTurnFailureSchema = z.object({
 });
 export type SessionTurnFailure = z.infer<typeof SessionTurnFailureSchema>;
 
+/**
+ * Is the session working, decided ONCE by the server (R5.2). Clients show this
+ * instead of combining their own signals. `working` while a live turn runs that
+ * the runtime has not reported ended, or while a prompt is on its way to the
+ * runtime (`pending_delivery`). Ordered by the control frame's `cseq`.
+ */
+export const SessionWorkingSchema = z.object({
+  state: z.enum(['working', 'idle']),
+  /** When this state began (ISO), or null when the server does not know. */
+  since: z.string().nullable(),
+  /** The newest live turn, or null. */
+  turn_token: z.string().nullable(),
+  /** No live turn yet, but a prompt is queued for or being handed to the runtime. */
+  pending_delivery: z.boolean(),
+});
+export type SessionWorking = z.infer<typeof SessionWorkingSchema>;
+
 /** `GET .../turn`. `turns` empty means idle; it is a list because a session
  *  can hold more than one open turn. */
 export const SessionTurnStatusSchema = z.object({
   turns: z.array(SessionTurnSchema),
   last_ended: SessionTurnEndedSchema.optional(),
   recent_failures: z.array(SessionTurnFailureSchema).optional(),
+  /** Present on the session stream's `kortix.control.turn` frame. */
+  working: SessionWorkingSchema.optional(),
 });
 export type SessionTurnStatus = z.infer<typeof SessionTurnStatusSchema>;
 

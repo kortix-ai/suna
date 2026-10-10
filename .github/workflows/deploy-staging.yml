@@ -44,7 +44,7 @@ jobs:
   preflight:
     name: Resolve staging ref
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     outputs:
       sha: ${{ steps.ref.outputs.sha }}
       sha8: ${{ steps.ref.outputs.sha8 }}
@@ -138,7 +138,7 @@ jobs:
   sync-secret:
     name: Sync staging secret bundle
     needs: preflight
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     env:
       ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
     steps:
@@ -286,7 +286,7 @@ jobs:
   migrate-db:
     name: Apply DB migrations to staging
     needs: [preflight, sync-secret]
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -311,7 +311,6 @@ jobs:
       - name: Read credentials from AWS Secrets Manager
         uses: ./.aws-env/.github/actions/aws-env
         with:
-          aws-region: eu-west-2
           keys: |
             DATABASE_URL=kortix-staging-env:DATABASE_URL
       - name: Apply pending migrations (node-pg-migrate; halts on failure)
@@ -340,7 +339,7 @@ jobs:
         && needs.sync-secret.result == 'success'
         && needs.migrate-db.result == 'success'
         && (needs.terraform-staging.result == 'success' || needs.terraform-staging.result == 'skipped') }}
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     permissions:
       id-token: write # OIDC → ECS deploy role
       contents: read
@@ -392,7 +391,7 @@ jobs:
 
   wire-cloudflare:
     name: Wire Cloudflare staging DNS and Worker
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     # Non-blocking: deploy-web-vercel, verify, and promote-staging-channel
     # `needs:` this job, and a Cloudflare auth failure (403 since 2026-08-18)
     # silently skipped every staging web deploy for a week — the suite then
@@ -537,7 +536,7 @@ jobs:
         && needs.preflight.result == 'success'
         && needs.deploy-ecs.result == 'success'
         && (needs.terraform-staging-web.result == 'success' || needs.terraform-staging-web.result == 'skipped') }}
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     permissions:
       id-token: write
       contents: read
@@ -591,7 +590,7 @@ jobs:
   publish-web-ecs-dns:
     name: Publish staging FE-ECS DNS
     needs: [deploy-web-ecs]
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     permissions:
       id-token: write
       contents: read
@@ -630,7 +629,7 @@ jobs:
     name: Deploy staging web to Vercel
     # deploy-ecs gates the staging rollout: a failed ECS roll can't pass silently.
     needs: [preflight, wire-cloudflare, deploy-ecs]
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -642,28 +641,13 @@ jobs:
           path: .aws-env
           sparse-checkout: .github/actions
           persist-credentials: false
-      # Two reads: the Vercel credentials live in the shared CI blob
-      # `kortix-ci-env` in us-west-2 (the action's default, as in deploy-prod);
-      # staging's own values live in `kortix-staging-env` in eu-west-2 since #9254.
-      - name: Read Vercel credentials from AWS Secrets Manager
+      - name: Read Vercel credentials and staging Supabase values from AWS Secrets Manager
         uses: ./.aws-env/.github/actions/aws-env
         with:
           keys: |
             VERCEL_TOKEN
             VERCEL_PROJECT_ID
             VERCEL_TEAM_ID
-      - name: Check out the aws-env action
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.workflow_sha }}
-          path: .aws-env
-          sparse-checkout: .github/actions
-          persist-credentials: false
-      - name: Read staging Supabase values from AWS Secrets Manager
-        uses: ./.aws-env/.github/actions/aws-env
-        with:
-          aws-region: eu-west-2
-          keys: |
             NEXT_PUBLIC_SUPABASE_URL=kortix-staging-env:SUPABASE_URL
             NEXT_PUBLIC_SUPABASE_ANON_KEY=kortix-staging-env:SUPABASE_ANON_KEY
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -734,7 +718,7 @@ jobs:
   verify:
     name: Verify live staging on ECS and Vercel
     needs: [preflight, wire-cloudflare, deploy-web-vercel, publish-web-ecs-dns]
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     steps:
       # staging.kortix.com sits behind Vercel deployment protection (SSO);
       # VERCEL_BYPASS lets the web verification reach the app, not the Vercel
@@ -749,21 +733,8 @@ jobs:
       - name: Read credentials from AWS Secrets Manager
         uses: ./.aws-env/.github/actions/aws-env
         with:
-          # kortix-ci-env lives in us-west-2 (the action default).
           keys: |
             VERCEL_BYPASS=kortix-ci-env:VERCEL_AUTOMATION_BYPASS_SECRET
-      - name: Check out the aws-env action
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.workflow_sha }}
-          path: .aws-env
-          sparse-checkout: .github/actions
-          persist-credentials: false
-      - name: Read the staging web password from AWS Secrets Manager
-        uses: ./.aws-env/.github/actions/aws-env
-        with:
-          aws-region: eu-west-2
-          keys: |
             WEB_PROTECTION_PASSWORD=kortix-staging-euw2-web-env:WEB_PROTECTION_PASSWORD
       - name: Verify API and both web deployment paths
         env:
@@ -857,7 +828,7 @@ jobs:
   promote-staging-channel:
     name: Move :staging → staging-${{ needs.preflight.outputs.sha8 }}
     needs: [preflight, verify]
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     steps:
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Check out the aws-env action

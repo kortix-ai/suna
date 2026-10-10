@@ -13,6 +13,7 @@ import { json, errors, auth } from '../../openapi';
 import { db } from '../../shared/db';
 import { accountCustomRoles, roleActionRows, systemRoleDescriptionRows } from '../../iam/role-read';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
+import { FOLDER_ROLE_KEYS } from '../../iam/assignments';
 import { countRoleBindings } from '../../iam/read-models';
 import { actorOf } from '../../iam/actor';
 import { invalidateIamCacheForRole } from '../../iam/cache-invalidation';
@@ -67,6 +68,9 @@ const SYSTEM_ROLE_ORDER = [
   'account:admin',
   'account:member',
   'project:agent-user',
+  'project:folder-reader',
+  'project:folder-writer',
+  'project:folder-manager',
 ];
 
 /**
@@ -225,7 +229,6 @@ export function registerIamCustomRolesRoutes(): void {
       responses: { 200: json(z.object({ actions: z.array(Any) }), 'Action catalog'), ...errors(401, 403) },
     }),
     async (c: any) => {
-      const userId = c.get('userId') as string;
       const accountId = c.req.param('accountId');
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_READ);
       return c.json({ actions: ACTION_CATALOG_WIRE });
@@ -245,7 +248,6 @@ export function registerIamCustomRolesRoutes(): void {
       responses: { 200: json(z.object({ roles: z.array(Any) }), 'Roles'), ...errors(401, 403) },
     }),
     async (c: any) => {
-      const userId = c.get('userId') as string;
       const accountId = c.req.param('accountId');
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_READ);
       // Both halves from `kortix.iam_roles`: the seeded system rows (account_id
@@ -255,8 +257,11 @@ export function registerIamCustomRolesRoutes(): void {
         listSystemRolesWithDescription(),
         accountCustomRoles(accountId),
       ]);
+      // The folder roles exist only as the level of a Files folder grant (the
+      // Files access dialog sets them); they are not roles a person picks here.
+      const listed = system.filter((r) => !(r.scopeType === 'project' && FOLDER_ROLE_KEYS.has(r.key)));
       return c.json({
-        roles: [...system.map(serializeSystemRole), ...custom.map(serializeCustomRole)],
+        roles: [...listed.map(serializeSystemRole), ...custom.map(serializeCustomRole)],
       });
     },
   );
@@ -330,7 +335,6 @@ export function registerIamCustomRolesRoutes(): void {
       responses: { 200: json(Any, 'Updated role'), ...errors(400, 401, 403, 404) },
     }),
     async (c: any) => {
-      const userId = c.get('userId') as string;
       const accountId = c.req.param('accountId');
       const roleId = c.req.param('roleId');
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_UPDATE);
@@ -369,7 +373,6 @@ export function registerIamCustomRolesRoutes(): void {
       responses: { 200: json(z.object({ deleted: z.boolean() }), 'Deleted'), ...errors(400, 401, 403, 404) },
     }),
     async (c: any) => {
-      const userId = c.get('userId') as string;
       const accountId = c.req.param('accountId');
       const roleId = c.req.param('roleId');
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_DELETE);
@@ -405,7 +408,6 @@ export function registerIamCustomRolesRoutes(): void {
       responses: { 200: json(z.object({ role_id: z.string(), key: z.string(), actions: z.array(z.string()) }), 'Actions'), ...errors(401, 403, 404) },
     }),
     async (c: any) => {
-      const userId = c.get('userId') as string;
       const accountId = c.req.param('accountId');
       const roleId = c.req.param('roleId');
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_READ);
@@ -441,7 +443,6 @@ export function registerIamCustomRolesRoutes(): void {
       responses: { 200: json(z.object({ role_id: z.string(), actions: z.array(z.string()) }), 'Updated'), ...errors(400, 401, 403, 404) },
     }),
     async (c: any) => {
-      const userId = c.get('userId') as string;
       const accountId = c.req.param('accountId');
       const roleId = c.req.param('roleId');
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_UPDATE);
@@ -487,7 +488,6 @@ export function registerIamCustomRolesRoutes(): void {
       responses: { 200: json(z.object({ role_id: z.string(), policy_count: z.number() }), 'Usage'), ...errors(401, 403) },
     }),
     async (c: any) => {
-      const userId = c.get('userId') as string;
       const accountId = c.req.param('accountId');
       const roleId = c.req.param('roleId');
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ROLE_READ);
@@ -511,7 +511,6 @@ export function registerIamCustomRolesRoutes(): void {
       responses: { 200: json(z.object({ agents: z.array(Any) }), 'Agent identities'), ...errors(401, 403) },
     }),
     async (c: any) => {
-      const userId = c.get('userId') as string;
       const accountId = c.req.param('accountId');
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.POLICY_READ);
 
