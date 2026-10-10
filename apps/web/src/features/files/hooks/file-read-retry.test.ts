@@ -7,6 +7,7 @@ import {
   isUploadedWorkspacePath,
   sandboxWakingRefetchInterval,
   shouldRetryFileRead,
+  isFileReadWaking,
   SANDBOX_PARKED_REFETCH_INTERVAL_MS,
   SANDBOX_WAKING_REFETCH_INTERVAL_MS,
 } from './file-read-retry';
@@ -138,5 +139,60 @@ describe('sandboxWakingRefetchInterval', () => {
   test('no error means nothing to poll for', () => {
     expect(sandboxWakingRefetchInterval(null, false)).toBe(false);
     expect(sandboxWakingRefetchInterval(undefined, true)).toBe(false);
+  });
+});
+
+/**
+ * A resume is the one downtime the box comes back from on its own: the session
+ * page auto-retries /start, the composer queues sends, and the boot loader
+ * counts the wake. A file surface that instead declared "workspace has ended"
+ * on the first non-503 failure made a healthy resume read as data loss
+ * (KRTX-1634). While the runtime is not alive, a read is pending — the same
+ * poll that rides out a readiness 503 must ride out every error the down box
+ * produces — and the viewer renders waking, never a verdict.
+ */
+describe('file reads during a resume (runtime not alive)', () => {
+  const notReady = new Error('sandbox not ready (status: stopped)');
+  // What a down box actually answers with: the proxy's 502/504, a socket
+  // reset, an aborted fetch — none of which carry a readiness phrase.
+  const connectionDrop = new Error('Failed to fetch');
+  const badGateway = Object.assign(new Error('HTTP 502: Bad Gateway'), { status: 502 });
+
+  test('a not-alive box keeps the boot cadence even when the error is not a readiness 503', () => {
+    expect(sandboxWakingRefetchInterval(connectionDrop, false, false)).toBe(
+      SANDBOX_WAKING_REFETCH_INTERVAL_MS,
+    );
+    expect(sandboxWakingRefetchInterval(badGateway, false, false)).toBe(
+      SANDBOX_WAKING_REFETCH_INTERVAL_MS,
+    );
+    expect(sandboxWakingRefetchInterval(null, false, false)).toBe(
+      SANDBOX_WAKING_REFETCH_INTERVAL_MS,
+    );
+  });
+
+  test('a not-alive PARKED box still takes the slow lane', () => {
+    expect(sandboxWakingRefetchInterval(connectionDrop, true, false)).toBe(
+      SANDBOX_PARKED_REFETCH_INTERVAL_MS,
+    );
+  });
+
+  test('a live box is unchanged: a real failure stops the poll', () => {
+    expect(sandboxWakingRefetchInterval(connectionDrop, false, true)).toBe(false);
+    expect(sandboxWakingRefetchInterval(notReady, true, true)).toBe(
+      SANDBOX_PARKED_REFETCH_INTERVAL_MS,
+    );
+  });
+
+  test('not alive is waking — a pending state, never a verdict', () => {
+    expect(isFileReadWaking(connectionDrop, false)).toBe(true);
+    expect(isFileReadWaking(badGateway, false)).toBe(true);
+    expect(isFileReadWaking(null, false)).toBe(true);
+    expect(isFileReadWaking(notReady, true)).toBe(true);
+  });
+
+  test('alive with a non-readiness error is a real failure, not waking', () => {
+    expect(isFileReadWaking(connectionDrop, true)).toBe(false);
+    expect(isFileReadWaking(new Error('ENOENT: no such file'), true)).toBe(false);
+    expect(isFileReadWaking(null, true)).toBe(false);
   });
 });

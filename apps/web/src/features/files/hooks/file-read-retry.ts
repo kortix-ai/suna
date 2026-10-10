@@ -1,4 +1,5 @@
 import { isSandboxNotReadyError } from '@kortix/sdk';
+import { useRuntimeConnectionStore } from '@kortix/sdk/react';
 
 export const UPLOADED_FILE_READ_RETRY_DELAY_MS = 2_000;
 export const UPLOADED_FILE_READ_RETRY_WINDOW_MS = 60_000;
@@ -97,13 +98,62 @@ export const SANDBOX_WAKING_REFETCH_INTERVAL_MS = 3_000;
 export const SANDBOX_PARKED_REFETCH_INTERVAL_MS = 30_000;
 
 /**
- * How often to re-read a file that failed with a sandbox-readiness 503.
+ * Single liveness read of the runtime connection store: the control-plane
+ * socket is connected AND the runtime probe answered healthy. Anything else —
+ * connecting, disconnected, or connected but not yet probed — reads as "not
+ * alive", which for a file surface means the read is PENDING (the session is
+ * resuming/starting the box), not failed.
+ *
+ * Module-level so `useSyncExternalStore` sees one stable `getSnapshot` across
+ * renders (zustand v5 React 19: a snapshot created per render throws "The
+ * result of getSnapshot should be cached"). The SSR path shares it because
+ * zustand v5's own hook pins `getServerSnapshot` to `getInitialState()`, and
+ * a server-render dispatcher in the same process can never observe an earlier
+ * `setState` — reading through `getState()` for both snapshots keeps render
+ * tests honest. No behavior change in the browser or real SSR.
+ *
+ * Callers: `file-preview.tsx` and the file-read hooks below, which all need
+ * the same answer; each previously held its own copy of this rule.
+ */
+export function runtimeAliveSnapshot(): boolean {
+  const state = useRuntimeConnectionStore.getState();
+  return state.status === 'connected' && state.healthy === true;
+}
+
+/**
+ * Whether a file read is still waiting on the runtime, given the error it
+ * failed with and whether the runtime is alive right now.
+ *
+ * The rule that decides pending-vs-failed for file surfaces. The old
+ * classification only knew the readiness 503 ("sandbox not ready"), so the
+ * first failure a RESUMING box produced — a proxy 502/504, a socket reset, an
+ * aborted fetch — was rendered as a verdict: "This session's workspace has
+ * ended, so its files can't be opened anymore." (KRTX-1634). A box that is
+ * down is coming back (the session page auto-retries /start); a read against
+ * it is pending, whichever shape its failure takes. Only a LIVE box's
+ * non-readiness error is a real failure.
+ */
+export function isFileReadWaking(error: unknown, sandboxAlive: boolean): boolean {
+  return !sandboxAlive || isSandboxNotReadyError(error);
+}
+
+/**
+ * How often to re-read a file that is waiting on the runtime.
  *
  * The 3s comment above describes a BOOTING box, and for that box it is right:
  * the file appears on its own in seconds. A parked box takes the slow lane.
+ * A box that is not alive at all (mid-resume) keeps the same two lanes — the
+ * session's auto-retry brings it back, and the poll must survive every error
+ * shape the down box produces, not only the readiness 503.
  */
-export function sandboxWakingRefetchInterval(error: unknown, parked: boolean): number | false {
-  if (!isSandboxNotReadyError(error)) return false;
+export function sandboxWakingRefetchInterval(
+  error: unknown,
+  parked: boolean,
+  sandboxAlive = true,
+): number | false {
+  // A live box that failed with anything but a readiness 503 has genuinely
+  // failed — stop polling and let the viewer say so.
+  if (sandboxAlive && !isSandboxNotReadyError(error)) return false;
   return parked ? SANDBOX_PARKED_REFETCH_INTERVAL_MS : SANDBOX_WAKING_REFETCH_INTERVAL_MS;
 }
 

@@ -28,13 +28,13 @@ import {
 } from '@/features/file-viewer';
 import { workspaceFileSource } from '@/features/files/file-source';
 import { useFileContent } from '@/features/files/hooks';
+import { isFileReadWaking, runtimeAliveSnapshot } from '@/features/files/hooks/file-read-retry';
 import { useFileRefresh } from '@/features/files/hooks/use-file-refresh';
 import { useContentRevision } from '@/features/file-viewer/use-content-revision';
 import { getFileIcon } from '@/features/project-files';
 import { useIsMobile } from '@/hooks/utils';
 import { track } from '@/lib/track';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import { isSandboxNotReadyError } from '@kortix/sdk';
 import { useRuntimeConnectionStore } from '@kortix/sdk/react';
 import { FileXIcon as FileWarning, PresentationIcon as Presentation } from '@phosphor-icons/react';
 import { useCallback, useEffect, useSyncExternalStore } from 'react';
@@ -51,21 +51,8 @@ import {
   fileShareInput,
 } from './viewer-actions';
 
-// zustand v5's own hook feeds React's `useSyncExternalStore` a
-// `getServerSnapshot` pinned to `getInitialState()` — correct for real SSR
-// (sandbox health can only ever be learned from a client-side poll, so it is
-// genuinely "connecting" at request time), but it means a real server-render
-// dispatcher can never observe a `setState` call that happened earlier in the
-// same process, as this component's render tests need to. Reading through
-// `getState()` for both snapshots sidesteps that — same live value, same
-// reactivity via `subscribe`, no behavior change in the browser or real SSR.
-/** The toolbar's Refresh control, as both toolbars take it. */
+// The toolbar's Refresh control, as both toolbars take it.
 type ViewerRefresh = { onRefresh: () => void; refreshing: boolean };
-
-const getSandboxAliveSnapshot = () => {
-  const s = useRuntimeConnectionStore.getState();
-  return s.status === 'connected' && s.healthy === true;
-};
 
 /**
  * The toolbar for every state that isn't text. Same shape and same actions as
@@ -328,8 +315,8 @@ export function FilePreview({
 
   const sandboxAlive = useSyncExternalStore(
     useRuntimeConnectionStore.subscribe,
-    getSandboxAliveSnapshot,
-    getSandboxAliveSnapshot,
+    runtimeAliveSnapshot,
+    runtimeAliveSnapshot,
   );
 
   // The rich renderers fetch their own bytes (and stream the big ones), so
@@ -346,10 +333,14 @@ export function FilePreview({
   const refresh: ViewerRefresh = { onRefresh, refreshing };
   const fetchRevision = useContentRevision(dataUpdatedAt || undefined);
 
-  // A readiness 503 means the sandbox is parked or booting — a pending state,
-  // never a failure. `useFileContent` keeps polling while this is true, so the
-  // content replaces the waking notice on its own.
-  const sandboxWaking = isError && isSandboxNotReadyError(error);
+  // A read that is still waiting on the runtime is a pending state, never a
+  // failure: a readiness 503 (parked/booting) and a dead box mid-resume both
+  // resolve on their own — the session's auto-retry brings the box back and
+  // `useFileContent` keeps polling until the content replaces this notice.
+  // The old rule knew only the readiness 503 and let any other error a down
+  // box produces render "This session's workspace has ended" — a healthy
+  // resume reading as data loss (KRTX-1634).
+  const sandboxWaking = isFileReadWaking(error, sandboxAlive);
 
   // A file that cannot be opened has no shape, and `openDetail` no longer
   // clears the ratio on the way in for anything that CAN measure (see
@@ -450,11 +441,7 @@ export function FilePreview({
           ) : (
             <>
               <FileWarning className="size-5" />
-              <span>
-                {!sandboxAlive
-                  ? tI18nComplete.raw('text2a0be92cc91f')
-                  : tI18nComplete.raw('textd59d8e8ed646')}
-              </span>
+              <span>{tI18nComplete.raw('textd59d8e8ed646')}</span>
             </>
           )}
         </Centered>

@@ -50,6 +50,18 @@ interface Step {
 type BootStepVariant = 'stepper' | 'compact';
 type StartFailure = SessionStartResult['failure'];
 
+/**
+ * The longest wait the server can honestly owe. `RUNTIME_START_RETRY_BACKOFF_MS`
+ * in apps/api (120s, 300s, 600s) caps the wake-cooldown retry clock at 10
+ * minutes, so a `next_retry_at` further out than that is not a schedule — it
+ * is a broken or future-skewed stamp (the resume path had one wrong-unit
+ * incident already; see the ISO guard in `resume-stopped-sandbox.ts`).
+ * Rendering such a stamp verbatim told a user to wait ~99 years for a restore
+ * that was healthy (KRTX-1634). Past this bound the note names the retry and
+ * stays silent about when.
+ */
+const MAX_TRUSTED_WAKE_WAIT_S = 11 * 60;
+
 /** Keep a provider failure visible while `/start` waits for its retry clock. */
 export function sessionWakeStatusNote(input: {
   reason?: string | null;
@@ -66,6 +78,9 @@ export function sessionWakeStatusNote(input: {
   }
   const seconds = Math.max(0, Math.ceil((retryAt - input.now) / 1_000));
   if (seconds === 0) return `Computer did not start. Retrying automatically now (attempt ${nextAttempt}).`;
+  if (seconds > MAX_TRUSTED_WAKE_WAIT_S) {
+    return `Computer did not start. Retrying automatically (attempt ${nextAttempt}).`;
+  }
   const minutes = Math.floor(seconds / 60);
   const remainder = seconds % 60;
   const duration = minutes > 0 ? `${minutes}m ${remainder}s` : `${remainder}s`;

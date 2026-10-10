@@ -1,12 +1,12 @@
 'use client';
 
 import type { FileContent } from '@/features/file-browser/types';
-import { isSandboxNotReadyError } from '@kortix/sdk';
-import { fileContentKeys, useRuntimeStore } from '@kortix/sdk/react';
+import { useSyncExternalStore } from 'react';
+import { fileContentKeys, useRuntimeConnectionStore, useRuntimeStore } from '@kortix/sdk/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { readRuntimeFileWithRetry } from '../api/runtime-file-read';
 import { readFile } from '../api/runtime-files';
-import { sandboxWakingRefetchInterval } from './file-read-retry';
+import { runtimeAliveSnapshot, sandboxWakingRefetchInterval } from './file-read-retry';
 import { useServerHealth } from './use-server-health';
 import { isSystemDirectoryPath } from './system-dir';
 
@@ -27,6 +27,12 @@ export function useFileContent(
   const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
   // Asleep, not booting — the re-read below takes the slow lane.
   const { parked } = useServerHealth();
+  // Mid-resume the box answers nothing — the read is pending, not failed.
+  const sandboxAlive = useSyncExternalStore(
+    useRuntimeConnectionStore.subscribe,
+    runtimeAliveSnapshot,
+    runtimeAliveSnapshot,
+  );
 
   return useQuery<FileContent>({
     queryKey: filePath ? fileContentKeys.file(serverUrl, filePath) : [],
@@ -38,8 +44,9 @@ export function useFileContent(
     refetchOnWindowFocus: false,
     retry: false,
     // A readiness 503 is a pending state, not a failure. A booting box earns the
-    // fast cadence; a parked one is watched slowly. See the helper.
-    refetchInterval: (query) => sandboxWakingRefetchInterval(query.state.error, parked),
+    // fast cadence; a parked one is watched slowly; a box that is down entirely
+    // (mid-resume) is watched too — its auto-retry brings it back. See the helper.
+    refetchInterval: (query) => sandboxWakingRefetchInterval(query.state.error, parked, sandboxAlive),
   });
 }
 

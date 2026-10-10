@@ -1,13 +1,13 @@
 'use client';
 
 import { fetchSessionAttachment, isSessionAttachmentRef } from '@kortix/sdk';
-import { binaryBlobKeys, useRuntimeStore } from '@kortix/sdk/react';
+import { binaryBlobKeys, useRuntimeConnectionStore, useRuntimeStore } from '@kortix/sdk/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { readRuntimeFileWithRetry } from '../api/runtime-file-read';
 import { readFileAsBlob } from '../api/runtime-files';
 import { keepBlobIfUnchanged } from './blob-identity';
-import { sandboxWakingRefetchInterval } from './file-read-retry';
+import { runtimeAliveSnapshot, sandboxWakingRefetchInterval } from './file-read-retry';
 import { useServerHealth } from './use-server-health';
 
 // ── Query keys ─────────────────────────────────────────────────────────────
@@ -48,6 +48,12 @@ export function useBinaryBlob(filePath: string | null): {
   const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
   // Asleep, not booting — the re-read below takes the slow lane.
   const { parked } = useServerHealth();
+  // Mid-resume the box answers nothing — the read is pending, not failed.
+  const sandboxAlive = useSyncExternalStore(
+    useRuntimeConnectionStore.subscribe,
+    runtimeAliveSnapshot,
+    runtimeAliveSnapshot,
+  );
   const stored = isSessionAttachmentRef(filePath);
   const queryClient = useQueryClient();
 
@@ -87,10 +93,11 @@ export function useBinaryBlob(filePath: string | null): {
     refetchOnWindowFocus: false,
     retry: false,
     // A readiness 503 is a pending state, not a failure. A booting box earns the
-    // fast cadence; a parked one is watched slowly. See the helper. A stored
-    // copy has no box to wait for.
+    // fast cadence; a parked one is watched slowly; a box that is down entirely
+    // (mid-resume) is watched too. See the helper. A stored copy has no box to
+    // wait for.
     refetchInterval: (query) =>
-      stored ? false : sandboxWakingRefetchInterval(query.state.error, parked),
+      stored ? false : sandboxWakingRefetchInterval(query.state.error, parked, sandboxAlive),
   });
 
   const cachedBlob = query.data ?? null;
