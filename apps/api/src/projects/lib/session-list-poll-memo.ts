@@ -25,9 +25,10 @@
  * computation, so errors are never cached.
  */
 
+import { bumpBounded } from '../../shared/ttl-memo';
+
 const TTL_MS = 2_000;
 const MAX_ENTRIES = 128;
-
 interface PollEntry {
   etag: string;
   /** The page's continuation token, replayed on the memoized 304. */
@@ -46,10 +47,7 @@ const entries = new Map<string, PollEntry>();
  * the client already holds. Null means "compute normally" — no entry, an
  * expired one, or an ETag that differs from the client's copy.
  */
-export function peekSessionListPollEtag(
-  key: string,
-  ifNoneMatch: string,
-): PollEntry | null {
+export function peekSessionListPollEtag(key: string, ifNoneMatch: string): PollEntry | null {
   const entry = entries.get(key);
   if (!entry) return null;
   if (Date.now() - entry.storedAt >= TTL_MS) {
@@ -64,11 +62,5 @@ export function storeSessionListPollEtag(
   key: string,
   entry: { etag: string; nextCursor: string | null },
 ): void {
-  // Bounded memory: evict oldest-inserted keys past the cap (Map preserves
-  // insertion order, so the first keys are the oldest).
-  if (entries.size >= MAX_ENTRIES) {
-    const oldest = entries.keys().next().value;
-    if (oldest !== undefined) entries.delete(oldest);
-  }
-  entries.set(key, { ...entry, storedAt: Date.now() });
+  bumpBounded(entries, key, { ...entry, storedAt: Date.now() }, MAX_ENTRIES);
 }

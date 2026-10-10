@@ -21,9 +21,9 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
-import { db } from '../shared/db';
 import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
+import { db } from '../shared/db';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
@@ -41,6 +41,13 @@ function dbOpCount(res: Response): number {
   // The db stage is omitted entirely when it ran zero operations.
   if (!m) return 0;
   return Number(m[1]);
+}
+
+/** The response's ETag, failing the test loudly if it is missing. */
+function requireEtag(res: Response): string {
+  const etag = res.headers.get('etag');
+  if (!etag) throw new Error('the session list response carried no ETag');
+  return etag;
 }
 
 const listUrl = (query = '') =>
@@ -95,13 +102,12 @@ describe('session list poll memo', () => {
   test('an If-None-Match repeat within the window is a 304 that runs no DB ops', async () => {
     const first = await app.request(listUrl(), { headers: authHeader() });
     expect(first.status).toBe(200);
-    const etag = first.headers.get('etag');
-    expect(etag).toBeTruthy();
+    const etag = requireEtag(first);
     const firstOps = dbOpCount(first);
     expect(firstOps).toBeGreaterThan(0);
 
     const repeat = await app.request(listUrl(), {
-      headers: { ...authHeader(), 'If-None-Match': etag! },
+      headers: { ...authHeader(), 'If-None-Match': etag },
     });
     expect(repeat.status).toBe(304);
     // THE CONTRACT: the memoized 304 runs no inventory. The db stage here is
@@ -115,20 +121,19 @@ describe('session list poll memo', () => {
 
   test('a different query key is never answered from another key entry', async () => {
     const first = await app.request(listUrl(), { headers: authHeader() });
-    const etag = first.headers.get('etag')!;
-    expect(etag).toBeTruthy();
+    const etag = requireEtag(first);
 
     const other = await app.request(listUrl('q=nomatch'), {
-      headers: { ...authHeader(), 'If-None-Match': etag! },
+      headers: { ...authHeader(), 'If-None-Match': etag },
     });
     // A different key computes its own answer (and does not 304 on the other
     // key's etag).
     expect(other.status).toBe(200);
     expect(dbOpCount(other)).toBeGreaterThan(0);
-    const otherEtag = other.headers.get('etag')!;
+    const otherEtag = requireEtag(other);
 
     const repeat = await app.request(listUrl('q=nomatch'), {
-      headers: { ...authHeader(), 'If-None-Match': otherEtag! },
+      headers: { ...authHeader(), 'If-None-Match': otherEtag },
     });
     expect(repeat.status).toBe(304);
     expect(dbOpCount(repeat)).toBeLessThanOrEqual(2);
@@ -137,10 +142,10 @@ describe('session list poll memo', () => {
   test('after the window expires the next poll computes again', async () => {
     const first = await app.request(listUrl('q=expired'), { headers: authHeader() });
     expect(first.status).toBe(200);
-    const etag = first.headers.get('etag')!;
+    const etag = requireEtag(first);
 
     const within = await app.request(listUrl('q=expired'), {
-      headers: { ...authHeader(), 'If-None-Match': etag! },
+      headers: { ...authHeader(), 'If-None-Match': etag },
     });
     expect(within.status).toBe(304);
     expect(dbOpCount(within)).toBeLessThanOrEqual(2);
@@ -148,11 +153,13 @@ describe('session list poll memo', () => {
     await new Promise((resolve) => setTimeout(resolve, 2_300));
 
     const expired = await app.request(listUrl('q=expired'), {
-      headers: { ...authHeader(), 'If-None-Match': etag! },
+      headers: { ...authHeader(), 'If-None-Match': etag },
     });
     expect(expired.status).toBe(304);
-    // The window has passed: the inventory ran again (db n > 0), the etag
-    // still matches, so the answer is still a 304 — but a computed one.
-    expect(dbOpCount(expired)).toBeGreaterThan(0);
+    // The window has passed: the inventory ran again — strictly more DB ops
+    // than the memo'd 304 just paid (which covers only the credential's fixed
+    // auth cost, 2 for a PAT, 0 for a browser JWT). A never-expiring TTL
+    // regression fails here: both requests would cost the same.
+    expect(dbOpCount(expired)).toBeGreaterThan(dbOpCount(within));
   });
 });
