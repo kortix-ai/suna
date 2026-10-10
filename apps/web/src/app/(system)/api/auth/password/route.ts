@@ -26,7 +26,9 @@ export async function POST(req: NextRequest) {
     const formData = await req.formData();
     const intent = req.nextUrl.searchParams.get('intent') === 'signin' ? 'signin' : 'signup';
     const action = intent === 'signin' ? signInWithPassword : signUpWithPassword;
-    const result = await settleWithin(action(null, formData), AUTH_ROUTE_TIMEOUT_MS, () => ({
+    // `Promise.resolve` flattens the union-of-actions call (Promise<A> | Promise<B>)
+    // into one Promise<A | B> so settleWithin's inference sees the whole union.
+    const result = await settleWithin(Promise.resolve(action(null, formData)), AUTH_ROUTE_TIMEOUT_MS, () => ({
       message: AUTH_TIMEOUT_MESSAGE,
     }));
     return NextResponse.json(result);

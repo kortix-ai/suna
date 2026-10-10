@@ -17,6 +17,8 @@
  *     shows a retryable error.
  */
 
+import { AuthApiError } from '@supabase/supabase-js';
+
 /** Bound on every GoTrue await inside the auth actions. */
 export const AUTH_UPSTREAM_TIMEOUT_MS = 20_000;
 /** Bound on the action call inside each /api/auth/* route handler. */
@@ -30,6 +32,14 @@ export const AUTH_TIMEOUT_MESSAGE = 'This is taking longer than expected. Please
 export const AUTH_NETWORK_MESSAGE = 'The request could not be sent. Please try again.';
 /** Shown when the server action threw unexpectedly. */
 export const AUTH_UNEXPECTED_MESSAGE = 'Something went wrong. Please try again.';
+
+/**
+ * The error a bounded GoTrue await resolves with when the deadline fires: a
+ * real AuthApiError so every downstream check (code, message, status) sees
+ * the shape it expects. Shared instance — the error carries no per-request
+ * state and is never mutated.
+ */
+export const AUTH_TIMEOUT_AUTH_ERROR = new AuthApiError(AUTH_TIMEOUT_MESSAGE, 503, 'timeout');
 
 /**
  * Same-origin enforcement for the /api/auth/* route handlers. Server actions
@@ -61,15 +71,17 @@ export type AuthSubmitOutcome =
 /**
  * Resolve with `fallback` when `p` does not settle within `ms`. The loser's
  * late rejection is swallowed so a timeout can never surface later as an
- * unhandled rejection.
+ * unhandled rejection. `F` is the deadline's failure shape — usually narrower
+ * than the awaited result (a `{ message }` or `{ error }` the caller already
+ * handles), so the resolved type is the union.
  */
-export async function settleWithin<T>(
-  p: Promise<T>,
+export async function settleWithin<P, F = P>(
+  p: Promise<P>,
   ms: number,
-  fallback: () => T,
-): Promise<T> {
+  fallback: () => F,
+): Promise<P | F> {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const deadline = new Promise<T>((resolve) => {
+  const deadline = new Promise<P | F>((resolve) => {
     timer = setTimeout(() => resolve(fallback()), ms);
   });
   try {

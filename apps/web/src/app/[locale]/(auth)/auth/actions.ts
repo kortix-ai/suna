@@ -1,6 +1,10 @@
 'use server';
 
-import { AUTH_TIMEOUT_MESSAGE, AUTH_UPSTREAM_TIMEOUT_MS, settleWithin } from '@/lib/auth/submit-auth';
+import {
+  AUTH_TIMEOUT_AUTH_ERROR,
+  AUTH_UPSTREAM_TIMEOUT_MS,
+  settleWithin,
+} from '@/lib/auth/submit-auth';
 import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
 import {
   resolveNewAccountReturnUrl,
@@ -226,7 +230,7 @@ export async function sendEmailCode(prevState: any, formData: FormData) {
       },
     }),
     AUTH_UPSTREAM_TIMEOUT_MS,
-    () => ({ error: { code: 'timeout', message: AUTH_TIMEOUT_MESSAGE } }),
+    () => ({ data: { user: null, session: null }, error: AUTH_TIMEOUT_AUTH_ERROR }),
   );
 
   if (error) {
@@ -356,7 +360,7 @@ export async function signInWithPassword(prevState: any, formData: FormData) {
       password,
     }),
     AUTH_UPSTREAM_TIMEOUT_MS,
-    () => ({ error: { code: 'timeout', message: AUTH_TIMEOUT_MESSAGE } }),
+    () => ({ data: { user: null, session: null }, error: AUTH_TIMEOUT_AUTH_ERROR }),
   );
 
   if (error) {
@@ -471,7 +475,7 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
       options: { emailRedirectTo },
     }),
     AUTH_UPSTREAM_TIMEOUT_MS,
-    () => ({ error: { code: 'timeout', message: AUTH_TIMEOUT_MESSAGE } }),
+    () => ({ data: { user: null, session: null }, error: AUTH_TIMEOUT_AUTH_ERROR }),
   );
 
   const alreadyExists =
@@ -490,7 +494,7 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
       password,
     }),
     AUTH_UPSTREAM_TIMEOUT_MS,
-    () => ({ error: { code: 'timeout', message: AUTH_TIMEOUT_MESSAGE } }),
+    () => ({ data: { user: null, session: null }, error: AUTH_TIMEOUT_AUTH_ERROR }),
   );
 
   if (signInError) {
