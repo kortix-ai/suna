@@ -79,6 +79,8 @@ let parseGenui: typeof import('@kortix/sdk/genui').parseGenui;
 
 beforeAll(async () => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  // Bun loads apps/mobile/.env: a local style URL must not add an Open map row to the env-default render.
+  delete process.env.EXPO_PUBLIC_GENUI_MAP_STYLE_URL;
   ({ GenuiMessageBlock } = await import('./genui-message-block'));
   ({ GenuiMap } = await import('./components/map'));
   ({ parseGenui } = await import('@kortix/sdk/genui'));
@@ -120,15 +122,14 @@ a = Marker(48.85, 2.35, "Louvre", "Museum")
 b = Marker(48.86, 2.36, "Opera")`;
 
 describe('mobile genui Map', () => {
-  test('each place is a list row that opens OpenStreetMap outside the app; the source line follows', () => {
+  test('each place is a list row, its description the second line, that opens OpenStreetMap outside the app; the source line follows', () => {
     const root = render(TWO_PLACES);
     expect(all(root, 'fallback')).toHaveLength(0);
-    expect(rows(root).map((r) => [r.props.label, r.props.icon, r.props.external, r.props.dense])).toEqual([
-      ['Louvre', 'map-pin', true, true],
-      ['Opera', 'map-pin', true, true],
+    // design.md §8 result row: a marker's description is the row's second line, as on web and in markdown.
+    expect(rows(root).map((r) => [r.props.label, r.props.description, r.props.icon, r.props.external, r.props.dense])).toEqual([
+      ['Louvre', 'Museum', 'map-pin', true, true],
+      ['Opera', undefined, 'map-pin', true, true],
     ]);
-    // Descriptions belong to the full-screen popups, never under a row.
-    expect(rows(root).every((r) => r.props.description === undefined)).toBe(true);
     press(rows(root)[1]!);
     expect(opened).toEqual(['https://www.openstreetmap.org/?mlat=48.86&mlon=2.36#map=15/48.86/2.36']);
     expect(texts(root)).toContain('Source: places tool');

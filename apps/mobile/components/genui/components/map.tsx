@@ -15,8 +15,9 @@ const osmLink = ({ lat, lng }: { lat: number; lng: number }) =>
   `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=15/${lat}/${lng}`;
 
 /**
- * design.md §8: no embedded viewer in the transcript. Each place is the app's own list row and opens
- * OpenStreetMap; the interactive map opens full screen, and only when a tile style is configured.
+ * design.md §8: no embedded viewer in the transcript. Each place is the app's own list row (label, then
+ * the marker's description as the second line) and opens OpenStreetMap; the interactive map opens full
+ * screen, and only when a tile style is configured.
  */
 export function GenuiMap({
   props,
@@ -56,6 +57,7 @@ export function GenuiMap({
             key={m.id}
             icon={MapPinIcon}
             label={m.label}
+            description={m.description}
             onPress={() => openGenuiLink(osmLink(m))}
             external
             dense

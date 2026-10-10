@@ -8,17 +8,19 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useWindowDimensions, View } from 'react-native';
 import { WebView } from 'react-native-webview';
+import type { ShouldStartLoadRequest, WebViewOpenWindowEvent } from 'react-native-webview/lib/WebViewTypes';
 import { useColorScheme } from 'nativewind';
 
 import { KortixLoader } from '@/components/kortix/kortix-loader';
-import { allowInlineDocumentLoad } from '@/components/markdown/mermaid/mermaid-html';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { XIcon } from '@/lib/icons';
+import { decidePreviewNavigation } from '@/lib/utils/html-embed';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 
+import { openGenuiLink } from '../components/open-link';
 import { mapDocument, type MapDocumentInput } from './map-html';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -27,6 +29,19 @@ const SCRIPT = require('@/assets/maplibre/maplibre-gl.webjs');
 const CSS = require('@/assets/maplibre/maplibre-gl-css.webjs');
 // Every URL reaches the guard, which allows only the inline document (see MermaidRendererHost).
 const ORIGIN_WHITELIST = ['*'];
+
+/**
+ * Only the inline document loads. A top-frame web link (the attribution's) opens in the browser;
+ * every other navigation is blocked. Tile and style fetches are requests, not navigations.
+ */
+function guardNavigation(request: ShouldStartLoadRequest): boolean {
+  const action = decidePreviewNavigation(request.url, { isTopFrame: request.isTopFrame });
+  if (action === 'open-external') openGenuiLink(request.url);
+  return action === 'allow';
+}
+
+/** A `target="_blank"` link (MapLibre's attribution links) asks for a new window: open it in the browser. */
+const openWindow = (event: WebViewOpenWindowEvent) => openGenuiLink(event.nativeEvent.targetUrl);
 
 async function readText(moduleId: number): Promise<string> {
   const asset = await Asset.fromModule(moduleId).downloadAsync();
@@ -95,7 +110,8 @@ export function MapSheet({ title, data, onClose }: { title: string; data: MapShe
           <WebView
             source={{ html, baseUrl: '' }}
             originWhitelist={ORIGIN_WHITELIST}
-            onShouldStartLoadWithRequest={allowInlineDocumentLoad}
+            onShouldStartLoadWithRequest={guardNavigation}
+            onOpenWindow={openWindow}
             javaScriptEnabled
             cacheEnabled={false}
             incognito

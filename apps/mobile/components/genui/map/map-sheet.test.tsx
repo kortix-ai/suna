@@ -10,6 +10,7 @@ type HostProps = React.PropsWithChildren<Record<string, unknown>>;
 const host = (name: string) => ({ children, ...props }: HostProps) => React.createElement(name, props, children);
 
 const files = { fail: false, reads: [] as string[] };
+const opened: string[] = [];
 
 mock.module('react-native', () => ({
   View: host('view'),
@@ -46,14 +47,13 @@ mock.module('@/components/ui/icon', () => ({ Icon: host('icon') }));
 mock.module('@/components/ui/text', () => ({ Text: host('text') }));
 mock.module('@/components/kortix/kortix-loader', () => ({ KortixLoader: host('loader') }));
 mock.module('@/lib/icons', () => ({ XIcon: 'x' }));
+mock.module('@/components/markdown/markdown-text', () => ({ openExternalLink: (href: string) => opened.push(href) }));
 
 let MapSheet: typeof import('./map-sheet').MapSheet;
-let allowInlineDocumentLoad: typeof import('@/components/markdown/mermaid/mermaid-html').allowInlineDocumentLoad;
 
 beforeAll(async () => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   ({ MapSheet } = await import('./map-sheet'));
-  ({ allowInlineDocumentLoad } = await import('@/components/markdown/mermaid/mermaid-html'));
 });
 
 let tree: ReactTestRenderer | undefined;
@@ -62,6 +62,7 @@ afterEach(() => {
   tree = undefined;
   files.fail = false;
   files.reads.length = 0;
+  opened.length = 0;
 });
 
 const DATA = {
@@ -109,9 +110,25 @@ describe('MapSheet', () => {
     // Dark theme: the dialog's popover surface behind the tiles, the ink at 70% for the route.
     expect(html).toContain('background:hsla(0, 0%, 7.8%, 1)');
     expect(html).toContain('"routeColor":"hsla(0, 0%, 100%, 0.7)"');
-    expect(webview!.props.onShouldStartLoadWithRequest).toBe(allowInlineDocumentLoad);
+    const load = webview!.props.onShouldStartLoadWithRequest as (request: { url: string; isTopFrame?: boolean }) => boolean;
+    expect(load({ url: 'about:blank' })).toBe(true);
+    expect(load({ url: 'javascript:alert(1)' })).toBe(false);
+    expect(opened).toEqual([]);
     expect(webview!.props.originWhitelist).toEqual(['*']);
     expect([webview!.props.incognito, webview!.props.cacheEnabled, webview!.props.javaScriptEnabled]).toEqual([true, false, true]);
+  });
+
+  test('an attribution link opens in the browser, whether it targets the page or a new window; nothing else leaves the app', async () => {
+    const root = await open();
+    const [webview] = all(root, 'webview');
+    const load = webview!.props.onShouldStartLoadWithRequest as (request: { url: string; isTopFrame?: boolean }) => boolean;
+    const openWindow = webview!.props.onOpenWindow as (event: { nativeEvent: { targetUrl: string } }) => void;
+    expect(load({ url: 'https://www.openstreetmap.org/copyright', isTopFrame: true })).toBe(false);
+    openWindow({ nativeEvent: { targetUrl: 'https://maplibre.org/' } });
+    // An iframe load and a non-web scheme open nothing.
+    expect(load({ url: 'https://tracker.example.com/', isTopFrame: false })).toBe(false);
+    openWindow({ nativeEvent: { targetUrl: 'intent://evil' } });
+    expect(opened).toEqual(['https://www.openstreetmap.org/copyright', 'https://maplibre.org/']);
   });
 
   test('the asset is read once per app run, and dismissing the dialog closes the sheet', async () => {
