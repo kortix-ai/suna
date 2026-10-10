@@ -214,10 +214,12 @@ refs). An explicit project choice always wins.
   trigger starts failing. The session watch routes answer `feature_disabled`.
   See [Notifications](/docs/work/notifications#turn-notifications-on).
 - **`genui`** — let the agent answer with cards, comparisons, charts, maps,
-  and tabs instead of long text. On: every new, restarted, or resumed session
-  of this project teaches the agent the Kortix generative UI catalog. Off: the
-  agent writes markdown only; blocks already in a transcript still render. A
-  running session keeps its prompt until it is restarted or resumed.
+  and tabs instead of long text. On: every new session of this project teaches
+  the agent the Kortix generative UI catalog. Off: the agent writes markdown
+  only; blocks already in a transcript still render. A running or restarted
+  session keeps its prompt until you start a new session. A session the web
+  app prepared before the change, and you open after it, also keeps the old
+  prompt.
 
 ### Graduated flags
 
