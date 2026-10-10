@@ -117,6 +117,24 @@ variable "max_capacity" {
   default     = 4
 }
 
+variable "deployment_maximum_percent" {
+  description = <<-EOT
+    How far a rolling deployment may exceed the desired task count, in percent
+    of desired_count. 200 (the default everywhere) runs up to one extra task
+    per running task at the peak; 100 runs at most one replacement task at a
+    time.
+
+    Every task holds long-lived PostgreSQL connections (request, audit,
+    leader-election and LISTEN/NOTIFY pools), so this setting is part of the
+    rolling-deployment DB budget in apps/api/src/shared/database-capacity.ts.
+    Set 100 only where the database's usable-connection budget needs it (prod
+    pins it on the API service); the cross-check test
+    database-capacity.test.ts enforces prod's value.
+  EOT
+  type        = number
+  default     = 200
+}
+
 variable "cpu_target" {
   description = "Target average CPU %% for scaling."
   type        = number

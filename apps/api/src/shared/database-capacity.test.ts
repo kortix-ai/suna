@@ -60,8 +60,10 @@ describe('production database connection capacity', () => {
   });
 
   test('keeps a maximum rolling deployment below the usable PostgreSQL limit', () => {
+    // Prod sets deployment_maximum_percent = 100 (one extra task, see the
+    // Terraform cross-check below), so the envelope overlaps one task, not two.
     expect(PROD_API_MAX_TASKS).toBe(10);
-    expect(ROLLING_TASK_OVERLAP).toBe(2);
+    expect(ROLLING_TASK_OVERLAP).toBe(1);
     expect(PROD_DB_USABLE_CONNECTIONS).toBe(237);
     expect(PROD_DB_NON_API_RESERVE).toBe(32);
     // Recomputed from the pins above, not trusted: the exported ceiling must
@@ -72,7 +74,7 @@ describe('production database connection capacity', () => {
     expect(PROD_DB_ROLLING_CONNECTION_CEILING).toBe(
       PROD_API_MAX_TASKS * ROLLING_TASK_OVERLAP * perTaskPools,
     );
-    expect(PROD_DB_ROLLING_CONNECTION_CEILING).toBe(200);
+    expect(PROD_DB_ROLLING_CONNECTION_CEILING).toBe(100);
     expect(PROD_DB_ROLLING_CONNECTION_CEILING).toBeLessThanOrEqual(
       PROD_DB_USABLE_CONNECTIONS - PROD_DB_NON_API_RESERVE,
     );
@@ -83,12 +85,28 @@ describe('production database connection capacity', () => {
       new URL('../../../../infra/terraform/environments/prod/main.tf', import.meta.url),
       'utf8',
     );
+    const shadowTerraform = readFileSync(
+      new URL('../../../../infra/terraform/environments/prod-us-east-2-shadow/main.tf', import.meta.url),
+      'utf8',
+    );
     const ecsModule = readFileSync(
       new URL('../../../../infra/terraform/modules/ecs-api/main.tf', import.meta.url),
       'utf8',
     );
+    const ecsModuleVariables = readFileSync(
+      new URL('../../../../infra/terraform/modules/ecs-api/variables.tf', import.meta.url),
+      'utf8',
+    );
 
     expect(productionTerraform).toMatch(/module "api"[\s\S]*?max_capacity\s*=\s*10/);
-    expect(ecsModule).toMatch(/deployment_maximum_percent\s*=\s*200/);
+
+    // The module keeps the old 200% as its default (dev and staging are
+    // unchanged); prod pins 100% on BOTH prod API stacks: one extra task at
+    // the rolling peak instead of ten. The us-east-2 shadow serves the same
+    // database budget, so its fleet must honor the same pin.
+    expect(ecsModuleVariables).toMatch(/variable "deployment_maximum_percent"[\s\S]*?default\s*=\s*200/);
+    expect(ecsModule).toMatch(/deployment_maximum_percent\s*=\s*var\.deployment_maximum_percent/);
+    expect(productionTerraform).toMatch(/module "api"[\s\S]*?deployment_maximum_percent\s*=\s*100/);
+    expect(shadowTerraform).toMatch(/module "api"[\s\S]*?deployment_maximum_percent\s*=\s*100/);
   });
 });

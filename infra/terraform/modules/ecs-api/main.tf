@@ -632,7 +632,7 @@ resource "aws_ecs_service" "this" {
   }
 
   deployment_minimum_healthy_percent = 100
-  deployment_maximum_percent         = 200
+  deployment_maximum_percent         = var.deployment_maximum_percent
 
   # The AWS provider refuses to update `capacity_provider_strategy` unless
   # `force_new_deployment` is set ("force_new_deployment should be true when
