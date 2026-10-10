@@ -6,6 +6,7 @@ import {
   SESSION_LOG_MINOR,
   SESSION_LOG_SCHEMA,
   AdapterCapabilitiesSchema,
+  CapabilityFeaturesSchema,
   AttachmentBlockSchema,
   CompactionBlockSchema,
   HarnessBlockSchema,
@@ -18,7 +19,9 @@ import {
   SessionLogThreadSchema,
   ToolCallBlockSchema,
   upcast,
+  KNOWN_TOOL_KINDS,
   type AdapterCapabilities,
+  type CapabilityFeatures,
   type AttachmentBlock,
   type CompactionBlock,
   type HarnessBlock,
@@ -55,7 +58,9 @@ const _sameKeys: [
   SameKeys<z.output<typeof SubtaskBlockSchema>, SubtaskBlock>,
   SameKeys<z.output<typeof StepBlockSchema>, StepBlock>,
   SameKeys<z.output<typeof HarnessBlockSchema>, HarnessBlock>,
-] = [true, true, true, true, true, true, true, true, true, true, true];
+  SameKeys<z.output<typeof AdapterCapabilitiesSchema>, AdapterCapabilities>,
+  SameKeys<z.output<typeof CapabilityFeaturesSchema>, CapabilityFeatures>,
+] = [true, true, true, true, true, true, true, true, true, true, true, true, true];
 void _typesFitSchemas;
 void _capsFitSchema;
 void _sameKeys;
@@ -289,6 +294,31 @@ describe('F6 producer kortix-v1-import', () => {
   });
 });
 
+describe('pass-through strings are non-empty', () => {
+  const empty = (msg: SessionLogMessage) => accepts(msg);
+  test('Producer.harness, ModelRef.api, HarnessBlock kind and harness, and both error codes reject ""', () => {
+    const base = assistant([text('a')]);
+    expect(empty({ ...base, producer: { ...base.producer, harness: '' } })).toBe(false);
+    expect(empty({ ...base, model: { provider: 'p', model: 'm', api: '' } })).toBe(false);
+    expect(empty({ ...base, error: { code: '', message: 'm' } })).toBe(false);
+    const harness = { type: 'harness' as const, id: 'h', harness: 'codex', kind: 'k', data: null, model_visible: false };
+    expect(empty(assistant([harness]))).toBe(true);
+    expect(empty(assistant([{ ...harness, kind: '' }]))).toBe(false);
+    expect(empty(assistant([{ ...harness, harness: '' }]))).toBe(false);
+    const result = { content: [], is_error: true, error: { code: '', message: 'm' } };
+    expect(empty(assistant([call({ status: 'error', result })]))).toBe(false);
+  });
+});
+
+describe('byte counts', () => {
+  test('attachment bytes must be a non-negative integer', () => {
+    const att = (bytes: number) => assistant([{ type: 'attachment', id: 'a', ref: 'o', mime: 'image/png', bytes }]);
+    expect(accepts(att(0))).toBe(true);
+    expect(accepts(att(-1))).toBe(false);
+    expect(accepts(att(1.5))).toBe(false);
+  });
+});
+
 describe('F7 layout text entry', () => {
   test('the { text } entry carries the OpenCode v2 recent-context; { context } is not a layout entry', () => {
     const layout = (entry: unknown) => assistant([{ type: 'compaction', id: 'c', summary: 's', first_kept_message_id: null, layout: [{ summary: true }, entry] } as never]);
@@ -353,6 +383,11 @@ describe('F11 interrupted error code', () => {
 });
 
 describe('F12 tool kind passthrough', () => {
+  test('KNOWN_TOOL_KINDS lists the 16 known kinds', () => {
+    expect(KNOWN_TOOL_KINDS.length).toBe(16);
+    expect(KNOWN_TOOL_KINDS).toContain('shell');
+    expect(KNOWN_TOOL_KINDS).toContain('other');
+  });
   test('known and harness-defined kinds are accepted; an empty or non-string kind is rejected', () => {
     for (const kind of ['shell', 'other', 'screenshot', 'x-vendor.fetch']) {
       expect(accepts(assistant([call({ kind, result: { content: [], is_error: false } })]))).toBe(true);

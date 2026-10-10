@@ -26,7 +26,7 @@ function shape(s: z.ZodTypeAny, pad: string, root = false): string {
     case z.ZodFirstPartyTypeKind.ZodEffects: return `${shape(d.schema, pad)} + refine`;
     case z.ZodFirstPartyTypeKind.ZodObject: {
       const fields = Object.entries((s as z.AnyZodObject).shape as Record<string, z.ZodTypeAny>).map(([k, v]) => `${inner}${k}: ${shape(v, inner)}`);
-      return fields.length ? `{\n${fields.join('\n')}\n${pad}}` : '{}';
+      return `${d.unknownKeys === 'strip' ? '' : `${d.unknownKeys} `}{${fields.length ? `\n${fields.join('\n')}\n${pad}` : ''}}`;
     }
     case z.ZodFirstPartyTypeKind.ZodEnum: return `enum(${d.values.join(' | ')})`;
     case z.ZodFirstPartyTypeKind.ZodLiteral: return `literal(${JSON.stringify(d.value)})`;
@@ -35,8 +35,8 @@ function shape(s: z.ZodTypeAny, pad: string, root = false): string {
       return `union(\n${[...(d.options as Iterable<z.ZodTypeAny>)].map((o) => `${inner}| ${shape(o, inner)}`).join('\n')}\n${pad})`;
     case z.ZodFirstPartyTypeKind.ZodArray: return `array(${shape(d.type, pad)})`;
     case z.ZodFirstPartyTypeKind.ZodRecord: return `record(${shape(d.valueType, pad)})`;
-    case z.ZodFirstPartyTypeKind.ZodString: return d.checks.some((c: { kind: string }) => c.kind === 'min') ? 'string(non-empty)' : 'string';
-    case z.ZodFirstPartyTypeKind.ZodNumber: return `number${d.checks.map((c: { kind: string }) => `(${c.kind})`).join('')}`;
+    case z.ZodFirstPartyTypeKind.ZodString: return `string${d.checks.map((c: { kind: string; value?: unknown }) => `(${c.kind}${c.value ?? ''})`).join('')}`;
+    case z.ZodFirstPartyTypeKind.ZodNumber: return `number${d.checks.map((c: { kind: string; value?: unknown }) => `(${c.kind}${c.value ?? ''})`).join('')}`;
     default: return d.typeName.replace('Zod', '').toLowerCase();
   }
 }

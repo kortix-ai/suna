@@ -45,7 +45,7 @@
  * only in ext[harness] or a harness block with fallback_text, and versioning.
  *
  * Compatibility rule: a released minor adds optional fields only. The CLOSED sets are every
- * enum (status, role, kind, finish, hidden_reason, origin, restore_grade, todo status,
+ * enum (status, role, message kind, finish, hidden_reason, origin, restore_grade, todo status,
  * compaction trigger, input_format, ...) and the block union `type`: a new value or block
  * type is a new minor, and an older reader rejects it. The PASS-THROUGH strings accept any
  * non-empty value, and a reader must tolerate one it does not know: tool `kind` (an unknown
@@ -138,7 +138,7 @@ export type SessionLogMessage = SchemaRef & {
   model: ModelRef | null                                // optional/derived on user messages
   usage: Usage | null
   finish: 'stop' | 'tool_calls' | 'length' | 'error' | 'aborted' | null
-  error: { code: string; message: string } | null      // F11: an open tool call closed by the closure rule has result.error.code 'interrupted'
+  error: { code: string; message: string } | null
   created_at: string
   completed_at: string | null
   producer: Producer
@@ -194,9 +194,11 @@ export type AttachmentBlock = BlockBase & {
 }
 
 /** Kinds every reader renders. */
-export type KnownToolKind =
-  | 'shell' | 'read' | 'write' | 'edit' | 'patch' | 'list' | 'glob' | 'grep'
-  | 'web_fetch' | 'web_search' | 'todo' | 'task' | 'question' | 'plan' | 'mcp' | 'other'
+export const KNOWN_TOOL_KINDS = [
+  'shell', 'read', 'write', 'edit', 'patch', 'list', 'glob', 'grep',
+  'web_fetch', 'web_search', 'todo', 'task', 'question', 'plan', 'mcp', 'other',
+] as const
+export type KnownToolKind = (typeof KNOWN_TOOL_KINDS)[number]
 /** F12: a harness may define its own kind. A reader renders a kind it does not know as 'other'. */
 export type ToolKind = KnownToolKind | (string & {})
 
