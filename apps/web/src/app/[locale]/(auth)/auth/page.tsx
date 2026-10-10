@@ -59,7 +59,6 @@ import {
   fetchSamlEnabled,
 } from '@/lib/supabase/client';
 
-
 const GoogleSignIn = lazy(() => import('@/features/auth/google-signin'));
 
 type Step = 'entry' | 'sso' | 'credentials' | 'link';
