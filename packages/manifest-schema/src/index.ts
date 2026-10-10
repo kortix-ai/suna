@@ -20,6 +20,8 @@ import { TomlError } from 'smol-toml';
 import { type ManifestFormat, parseManifestText } from './format';
 import { parseConnectorHeaders } from './connector-headers';
 import { normalizeImportPath } from './imports';
+import { appReleaseConfigIssues, resolveAppReleaseConfig } from '@kortix/shared/app-config';
+import { appReleaseInputFromBlock } from './app-config';
 import {
   CHANNEL_PLATFORMS,
   CONNECTOR_AUTH_TYPES,
@@ -60,6 +62,7 @@ import {
   validateToolsV2,
   validateTriggerAgentRefsV2,
   warnUnknownAgentTools,
+  type AppBlockV2,
 } from './index.v2';
 
 /**
@@ -116,6 +119,7 @@ export {
 } from './format';
 
 export { slugifySlug } from './slug';
+export { appReleaseInputFromBlock } from './app-config';
 
 export {
   type ImportableKey,
@@ -956,6 +960,7 @@ const APP_KEYS = new Set([
   'path', 'type', 'image', 'dockerfile', 'command', 'port', 'root', 'output_dir',
   'install_command', 'build_command', 'spa', 'readiness_path', 'idle_timeout_seconds',
   'always_on', 'uses', 'resources', 'env', 'secrets',
+  'processes', 'http_service', 'services', 'mounts', 'vm', 'deploy', 'labels',
 ]);
 /** An App slug as the Apps API accepts it (`uses` entries name live Apps). */
 const APP_SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
@@ -991,6 +996,44 @@ function validateAppStringMap(
   }
 }
 
+const APP_LABEL_RE = /^[a-z0-9][a-z0-9-]{0,30}$/;
+
+/**
+ * The Fly-model fields of an App block: shapes first, then every rule the
+ * deploy engine relies on (`appReleaseConfigIssues`), so `kortix validate`
+ * refuses what the API would refuse. A static App runs no machine: skipped.
+ */
+function validateAppReleaseConfig(block: AppBlockV2, where: string, issues: ManifestIssue[]): void {
+  if (block.labels !== undefined && (
+    !Array.isArray(block.labels) || block.labels.length > 10
+    || block.labels.some((label: unknown) => typeof label !== 'string' || !APP_LABEL_RE.test(label))
+  )) {
+    issues.push({ path: `${where}.labels`, message: 'must be at most 10 labels of lowercase letters, digits and "-".', severity: 'error' });
+  }
+  if (block.type === 'static') return;
+  const shapes: Array<[string, unknown, (value: unknown) => boolean, string]> = [
+    ['processes', block.processes, (v) => isTable(v) && Object.values(v).every((c) => typeof c === 'string'), 'must map a group name to a command string.'],
+    ['http_service', block.http_service, isTable, 'must be an object.'],
+    ['services', block.services, (v) => Array.isArray(v) && v.every(isTable), 'must be a list of objects.'],
+    ['mounts', block.mounts, (v) => Array.isArray(v) && v.every(isTable), 'must be a list of objects.'],
+    ['vm', block.vm, (v) => isTable(v) || (Array.isArray(v) && v.every(isTable)), 'must be an object or a list of objects.'],
+    ['deploy', block.deploy, isTable, 'must be an object.'],
+  ];
+  let shapeError = false;
+  for (const [key, value, ok, message] of shapes) {
+    if (value !== undefined && !ok(value)) {
+      issues.push({ path: `${where}.${key}`, message, severity: 'error' });
+      shapeError = true;
+    }
+  }
+  if (shapeError) return;
+  const input = appReleaseInputFromBlock(block);
+  if (!input) return;
+  for (const issue of appReleaseConfigIssues(resolveAppReleaseConfig(input))) {
+    issues.push({ path: `${where}.${issue.path}`, message: issue.message, severity: 'error' });
+  }
+}
+
 function validateAppsV2(node: unknown, path: string, issues: ManifestIssue[]): void {
   if (node === undefined) return;
   if (!isTable(node)) {
@@ -1021,6 +1064,7 @@ function validateAppsV2(node: unknown, path: string, issues: ManifestIssue[]): v
         issues.push({ path: `${where}.${key}`, message: 'is not a supported App field.', severity: 'error' });
       }
     }
+    validateAppReleaseConfig(value as AppBlockV2, where, issues);
     if (value.uses !== undefined) {
       if (!Array.isArray(value.uses)) {
         issues.push({ path: `${where}.uses`, message: 'must be a list of App slugs.', severity: 'error' });
@@ -1062,8 +1106,12 @@ function validateAppsV2(node: unknown, path: string, issues: ManifestIssue[]): v
         issues.push({ path: `${where}.command`, message: `is required for ${type} Apps.`, severity: 'error' });
       }
     }
-    if ((type === 'dockerfile' || type === 'oci_image') && value.port === undefined) {
-      issues.push({ path: `${where}.port`, message: `is required for ${type} Apps.`, severity: 'error' });
+    // The port of the primary service: `port`, or `http_service.internal_port`. A
+    // worker-only App (`processes`, no service) serves no port.
+    if ((type === 'dockerfile' || type === 'oci_image') && value.port === undefined
+        && !(isTable(value.http_service) && value.http_service.internal_port !== undefined)
+        && !isTable(value.processes)) {
+      issues.push({ path: `${where}.port`, message: `is required for ${type} Apps (or set http_service.internal_port).`, severity: 'error' });
     }
     if (type === 'oci_image' && (typeof value.image !== 'string' || !value.image.trim())) {
       issues.push({ path: `${where}.image`, message: 'is required for oci_image Apps.', severity: 'error' });

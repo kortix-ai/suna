@@ -90,6 +90,42 @@ import {
 // biome-ignore lint: recursive JSON Schema shape, `unknown` would fight every builder below
 export type JsonSchemaFragment = Record<string, any>;
 
+
+const APP_CHECK_SCHEMA = {
+  type: 'object',
+  properties: {
+    type: { type: 'string', enum: ['http', 'tcp'] },
+    port: { type: 'integer', minimum: 1, maximum: 65535 },
+    path: { type: 'string', pattern: '^/' },
+    interval_s: { type: 'integer', minimum: 1, maximum: 3600 },
+    timeout_s: { type: 'integer', minimum: 1, maximum: 600 },
+    grace_period_s: { type: 'integer', minimum: 0, maximum: 3600 },
+  },
+  additionalProperties: false,
+} as const;
+
+const APP_SERVICE_PROPERTIES = {
+  internal_port: { type: 'integer', minimum: 1, maximum: 65535, not: { enum: [7331, 8080] } },
+  protocol: { type: 'string', enum: ['http', 'tcp'] },
+  access: { type: 'string', enum: ['public', 'app', 'admins'] },
+  auto_stop_machines: { type: 'string', enum: ['off', 'stop', 'suspend'] },
+  auto_start_machines: { type: 'boolean' },
+  min_machines_running: { type: 'integer', minimum: 0, maximum: 100 },
+  processes: { type: 'array', items: { type: 'string' } },
+  checks: { type: 'array', items: APP_CHECK_SCHEMA },
+} as const;
+
+const APP_VM_SCHEMA = {
+  type: 'object',
+  properties: {
+    cpu: { type: 'integer', minimum: 1, maximum: 32 },
+    memory_gb: { type: 'integer', minimum: 1, maximum: 128 },
+    disk_gb: { type: 'integer', minimum: 1, maximum: 500 },
+    processes: { type: 'array', items: { type: 'string' } },
+  },
+  additionalProperties: false,
+} as const;
+
 export const KORTIX_SCHEMA_BASE_URL = 'https://kortix.com/schema';
 const DRAFT = 'https://json-schema.org/draft/2020-12/schema';
 
@@ -811,12 +847,49 @@ function appBlockV2Schema(): JsonSchemaFragment {
       },
       env: appStringMapSchema(),
       secrets: appStringMapSchema(),
+      // The Fly model (≈ fly.toml). `kortix validate` checks the rules; the schema checks shapes.
+      processes: { type: 'object', additionalProperties: { type: 'string' } },
+      http_service: { type: 'object', properties: APP_SERVICE_PROPERTIES, additionalProperties: false },
+      services: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { name: { type: 'string', pattern: '^[a-z][a-z0-9-]{0,30}$' }, ...APP_SERVICE_PROPERTIES },
+          required: ['name', 'internal_port'],
+          additionalProperties: false,
+        },
+      },
+      mounts: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            source: { type: 'string', pattern: '^[a-z0-9_]{1,30}$' },
+            destination: { type: 'string', pattern: '^/.+[^/]$' },
+            initial_size_gb: { type: 'integer', minimum: 1, maximum: 100 },
+            snapshot_retention_days: { type: 'integer', minimum: 1, maximum: 60 },
+            processes: { type: 'array', items: { type: 'string' } },
+          },
+          required: ['source', 'destination'],
+          additionalProperties: false,
+        },
+      },
+      vm: { anyOf: [APP_VM_SCHEMA, { type: 'array', items: APP_VM_SCHEMA }] },
+      deploy: {
+        type: 'object',
+        properties: {
+          strategy: { type: 'string', enum: ['rolling', 'immediate', 'bluegreen', 'canary'] },
+          release_command: { type: 'string' },
+        },
+        additionalProperties: false,
+      },
+      labels: { type: 'array', maxItems: 10, items: { type: 'string', pattern: '^[a-z0-9][a-z0-9-]{0,30}$' } },
     },
     additionalProperties: false,
     allOf: [
       {
         if: { properties: { type: { enum: ['dockerfile', 'oci_image'] } }, required: ['type'] },
-        then: { required: ['command', 'port'] },
+        then: { required: ['command'] },
       },
       {
         if: { properties: { type: { const: 'oci_image' } }, required: ['type'] },

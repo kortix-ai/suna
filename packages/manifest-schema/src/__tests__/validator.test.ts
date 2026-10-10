@@ -909,3 +909,46 @@ describe('validateManifest — [[triggers]] type = "event"', () => {
     expect(p).toEqual(expect.arrayContaining(['triggers[0].connector', 'triggers[0].event']));
   });
 });
+
+describe('apps: the Fly model (processes, services, mounts, vm, deploy, labels)', () => {
+  const issues = (yaml: string) =>
+    validateManifest(`kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\napps:\n${yaml}`, 'yaml')
+      .issues.filter((issue) => issue.severity === 'error').map((issue) => `${issue.path}: ${issue.message}`);
+
+  test('a backend block validates: image, a data volume, two public services, always on, labels', () => {
+    expect(issues(`  db:
+    type: oci_image
+    image: ghcr.io/example/backend:1
+    command: ["/start.sh"]
+    labels: [backend]
+    vm: { cpu: 1, memory_gb: 1 }
+    mounts:
+      - { source: data, destination: /data, initial_size_gb: 10 }
+    http_service: { internal_port: 3210, access: public, auto_stop_machines: "off", min_machines_running: 1 }
+    services:
+      - { name: site, internal_port: 3211, access: public }
+    deploy: { strategy: rolling }`)).toEqual([]);
+  });
+
+  test('the engine rules surface in kortix validate: bluegreen with a volume, a reserved port, a system mount path, a bad label', () => {
+    expect(issues(`  db:
+    type: oci_image
+    image: x
+    command: ["/x"]
+    labels: [Backend]
+    http_service: { internal_port: 8080 }
+    mounts:
+      - { source: data, destination: /etc/data }
+    deploy: { strategy: bluegreen }`)).toEqual([
+      'apps.db.labels: must be at most 10 labels of lowercase letters, digits and "-".',
+      'apps.db.http_service.internal_port: 8080 is reserved by the App supervisor.',
+      'apps.db.mounts[0].destination: cannot sit under a system directory.',
+      'apps.db.deploy.strategy: bluegreen needs two machines on one volume; an App with mounts deploys rolling or immediate.',
+    ]);
+  });
+
+  test('wrong shapes are named before any rule runs; a static App ignores the machine fields', () => {
+    expect(issues('  db:\n    mounts: { source: data }')).toEqual(['apps.db.mounts: must be a list of objects.']);
+    expect(issues('  site:\n    type: static\n    mounts: [{ source: data, destination: /etc }]')).toEqual([]);
+  });
+});

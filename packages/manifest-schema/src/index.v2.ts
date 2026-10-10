@@ -1,3 +1,4 @@
+import type { AppReleaseConfigInput } from '@kortix/shared/app-config';
 /**
  * `kortix_version` 2 — types + validators.
  *
@@ -270,6 +271,20 @@ export interface AppBlockV2 {
   resources?: AppResourcesV2;
   env?: Record<string, string>;
   secrets?: Record<string, string>;
+  /** Fly model (≈ fly.toml): process groups, group → shell command (`""` = the image's command). */
+  processes?: Record<string, string>;
+  /** The primary service, on the App's own host. */
+  http_service?: AppReleaseConfigInput['http_service'];
+  /** More named services, each on `<host>--<name>`. */
+  services?: AppReleaseConfigInput['services'];
+  /** Persistent volumes: `{ source, destination, initial_size_gb, snapshot_retention_days, processes }`. */
+  mounts?: AppReleaseConfigInput['mounts'];
+  /** Machine size per process group (`[[vm]]`). */
+  vm?: AppReleaseConfigInput['vm'];
+  /** `{ strategy: rolling | immediate | bluegreen | canary, release_command }`. */
+  deploy?: AppReleaseConfigInput['deploy'];
+  /** Free-form labels (e.g. `backend`). */
+  labels?: string[];
 }
 
 /**
