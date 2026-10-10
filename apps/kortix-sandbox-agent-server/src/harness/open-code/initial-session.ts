@@ -1,5 +1,5 @@
 import { relayOrphanedTurnEndToApi } from './turn-relay'
-import { claimInitialTurn, relayRuntimeSession } from '../shared/turn-relay'
+import { claimInitialTurn, claimedRuntimeSessionPin, relayRuntimeSession } from '../shared/turn-relay'
 import { writeFileSync, readFileSync, existsSync, mkdirSync, unlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { logger } from '@/lib/log/logger'
@@ -113,7 +113,12 @@ export async function maybeCreateInitialOpencodeSession(
   const resolved = await resolveExistingRoot(
     baseUrl,
     workspace,
-    priorPin,
+    // A box whose home was rebuilt or converged from a legacy runtime has no
+    // local pin file. The control plane's pin then decides: resume it, or defer
+    // while OpenCode is slow, never adopt or create another root that the relay
+    // below writes over the durable pin (prod 2026-09-23, #8322). The local pin
+    // still wins. Delivery bookkeeping keeps using the local pin only.
+    priorPin ?? claimedRuntimeSessionPin(),
     rootListDeadlineMs,
     onListening,
   )
