@@ -49,16 +49,11 @@ mock.module('expo-apple-authentication', empty);
 mock.module('expo-linking', empty);
 mock.module('expo-auth-session/build/QueryParams', empty);
 mock.module('@/lib/billing/provider', () => ({ shouldUseRevenueCat: () => false }));
-// Every export `useAuth.ts` and `app/_layout.tsx` name-import from this module:
-// a named import that the mock does not supply throws at load (the dev run of
-// this suite failed exactly that way on `clearWebRegistrationHandoff`).
 mock.module('@/lib/auth/callback-state', () => ({
-  createAuthCallbackState: async () => 'test-callback-state',
-  createAuthCallbackRedirect: async () => 'kortix://auth/callback',
   consumeAuthCallbackState: async () => true,
-  grantWebRegistrationHandoff: async () => {},
-  consumeWebRegistrationHandoff: async () => false,
+  createAuthCallbackRedirect: async () => 'kortix://auth/callback',
   clearWebRegistrationHandoff: async () => {},
+  grantWebRegistrationHandoff: async () => {},
 }));
 mock.module('@/lib/auth/mobile-admission', () => ({ admitMobileOAuthSession: async () => true }));
 mock.module('@/lib/auth/session-expiry-monitor', () => ({ sessionExpiry: { disarm: noop } }));
