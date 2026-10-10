@@ -52,7 +52,7 @@ export async function startSession(command: StartSessionCommand) {
   // The instant this open was asked for. Every long-poll tick below carries it:
   // a user Stop that lands while the request waits wins over the request
   // (`userStopFollowsIntent`), instead of the next tick waking the box again.
-  const wakeIntentAt = new Date();
+  const wakeIntentAt = command.wakeIntentAt ?? new Date();
   // ONE joined read feeds the token heal, the first open, and — fresh every
   // tick — the long-poll re-resolve. `healSupersededSessionToken` used to
   // probe the sandbox row for its config and `openSession` re-read the same

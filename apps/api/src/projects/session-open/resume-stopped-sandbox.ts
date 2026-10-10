@@ -431,9 +431,17 @@ export function userStopFollowsIntent(
 ): boolean {
   if (!wakeIntentAt || row?.status !== 'stopped') return false;
   const meta = (row.metadata ?? {}) as Record<string, unknown>;
-  if (meta.stopReason !== 'manual' || typeof meta.stoppedAt !== 'string') return false;
-  const stoppedAtMs = Date.parse(meta.stoppedAt);
-  return Number.isFinite(stoppedAtMs) && stoppedAtMs >= wakeIntentAt.getTime();
+  if (meta.stopReason !== 'manual') return false;
+  // When the stop SETTLED, not when it was asked for: a poll that arrived
+  // while the box was being stopped (or deleted) still predates the stop.
+  // `stoppedAt` is the stop request's own clock; the retire and the manual
+  // stop each stamp the moment their write landed.
+  const stopMs = Math.max(
+    ...[meta.stoppedAt, meta.ephemeralRetiredAt, meta.stopSettledAt].map((value) =>
+      typeof value === 'string' ? Date.parse(value) : Number.NaN,
+    ).filter(Number.isFinite),
+  );
+  return Number.isFinite(stopMs) && stopMs >= wakeIntentAt.getTime();
 }
 
 /**

@@ -66,6 +66,9 @@ export function registerSessionRuntimeRoutes(): void {
       // never be faster than this prologue. Instrumented for the same reason
       // provisioning is: without per-step marks, "start is slow" is unactionable.
       const stl = new ProvisionTimeline(sessionId, 'session-start');
+      // Before the prologue: a user Stop that settles while auth and the gates
+      // below run must still win over this request.
+      const receivedAt = new Date();
       const loaded = await loadProjectForUser(c, projectId, 'session');
       stl.mark('project-loaded');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -161,6 +164,7 @@ export function registerSessionRuntimeRoutes(): void {
         sessionId,
         waitMs,
         keepStopped: c.req.query('keep_stopped') === '1',
+        wakeIntentAt: receivedAt,
         signal: c.req.raw.signal,
       });
       stl.mark(`open-session:${result.start.stage}`);

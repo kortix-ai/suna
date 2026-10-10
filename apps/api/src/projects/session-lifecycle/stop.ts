@@ -243,7 +243,9 @@ export async function stopSession(input: {
         sessionId,
         externalId,
         stopReason: 'manual',
-        metadata: { stoppedBy: userId },
+        // `stoppedAt` is this request's start; a `/start` that arrived while
+        // the provider stop ran still predates the stop (`userStopFollowsIntent`).
+        metadata: { stoppedBy: userId, stopSettledAt: new Date().toISOString() },
         now,
       });
     }

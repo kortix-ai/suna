@@ -188,6 +188,8 @@ export interface StartSessionCommand {
   waitMs?: number;
   /** Keep-alive poll (`?keep_stopped=1`): report a deliberately stopped box, never wake it. */
   keepStopped?: boolean;
+  /** When the request arrived. A user Stop that settles after it wins over it. */
+  wakeIntentAt?: Date;
   /** Aborts the long-poll when the caller disconnects. */
   signal?: AbortSignal;
 }

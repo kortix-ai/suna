@@ -98,7 +98,7 @@ async function session(sandbox: { status: 'provisioning' | 'active' | 'stopped';
 }
 
 /** What `retireEphemeralOnStop` leaves behind after a user Stop. */
-async function landStop(sandboxId: string, stoppedAt: Date, retiredBox = 'stop-wins-old-box') {
+async function landStop(sandboxId: string, stoppedAt: Date, retiredBox = 'stop-wins-old-box', retiredAt = stoppedAt) {
   await db
     .update(sessionSandboxes)
     .set({
@@ -108,6 +108,7 @@ async function landStop(sandboxId: string, stoppedAt: Date, retiredBox = 'stop-w
         stopReason: 'manual',
         stoppedAt: stoppedAt.toISOString(),
         [EPHEMERAL_RETIRED_KEY]: retiredBox,
+        ephemeralRetiredAt: retiredAt.toISOString(),
         platinumCreateAttempt: 1,
       },
     })
@@ -131,9 +132,12 @@ async function rowsOf(sessionId: string) {
 test('a long-poll already waiting when the Stop lands answers stopped and allocates nothing', async () => {
   const { sessionId, sandboxId } = await session({ status: 'provisioning', externalId: null, metadata: {} });
   const creating = creates.length;
+  // The Stop was asked for before this poll arrived and settles while it waits:
+  // what counts is when the box was gone, not when the click happened.
+  const stopAskedAt = new Date(Date.now() - 2_000);
   const polled = start(sessionId, '?wait_ms=4000');
   await Bun.sleep(600);
-  await landStop(sandboxId, new Date());
+  await landStop(sandboxId, stopAskedAt, 'stop-wins-old-box', new Date());
 
   const answer = await polled;
   expect(answer.stage).toBe('stopped');
