@@ -24,6 +24,17 @@ export const VIEWER_WASM_ASSETS = [
     from: '../node_modules/@extend-ai/react-xlsx/dist/duke_sheets_wasm_bg.wasm',
     to: '../public/react-xlsx/duke_sheets_wasm_bg.wasm',
   },
+  // The MapLibre worker for the generative UI map (`components/ui/map.tsx`).
+  // MapLibre 6 is ESM: the worker module imports `./maplibre-gl-shared.mjs`,
+  // so both files sit side by side and load from this origin, not from a CDN.
+  {
+    from: '../node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs',
+    to: '../public/maplibre/maplibre-gl-worker.mjs',
+  },
+  {
+    from: '../node_modules/maplibre-gl/dist/maplibre-gl-shared.mjs',
+    to: '../public/maplibre/maplibre-gl-shared.mjs',
+  },
 ];
 
 function resolve(relativePath) {

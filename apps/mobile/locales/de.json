@@ -1161,6 +1161,7 @@
     "title": "Konto",
     "preferences": "Einstellungen",
     "sounds": "Töne",
+    "richAnswers": "Erweiterte Antworten",
     "workspace": "Arbeitsbereich",
     "accounts": "Konten",
     "help": "Hilfe",
@@ -1197,5 +1198,14 @@
     "showMoreSubsessions_other": "{{count}} weitere anzeigen",
     "showMoreSubsessionsLabel_one": "{{count}} weitere Untersitzung von {{title}} anzeigen",
     "showMoreSubsessionsLabel_other": "{{count}} weitere Untersitzungen von {{title}} anzeigen"
+  },
+  "genui": {
+    "pick": "Empfehlung",
+    "source": "Quelle: {{source}}",
+    "showData": "Daten anzeigen",
+    "hideData": "Daten ausblenden",
+    "openMap": "Karte öffnen",
+    "map": "Karte",
+    "mapUnavailable": "Karte nicht verfügbar"
   }
 }

@@ -1161,6 +1161,7 @@
     "title": "Account",
     "preferences": "Preferenze",
     "sounds": "Suoni",
+    "richAnswers": "Risposte arricchite",
     "workspace": "Area di lavoro",
     "accounts": "Account",
     "help": "Aiuto",
@@ -1197,5 +1198,14 @@
     "showMoreSubsessions_other": "Mostra altre {{count}}",
     "showMoreSubsessionsLabel_one": "Mostra {{count}} altra sotto-sessione di {{title}}",
     "showMoreSubsessionsLabel_other": "Mostra altre {{count}} sotto-sessioni di {{title}}"
+  },
+  "genui": {
+    "pick": "Consigliato",
+    "source": "Fonte: {{source}}",
+    "showData": "Mostra dati",
+    "hideData": "Nascondi dati",
+    "openMap": "Apri mappa",
+    "map": "Mappa",
+    "mapUnavailable": "Mappa non disponibile"
   }
 }

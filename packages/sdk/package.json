@@ -17,18 +17,25 @@
     "zustand": "^5.0.3"
   },
   "peerDependencies": {
+    "@openuidev/lang-core": "0.3.1",
     "@tanstack/react-query": "^5.75.2",
-    "react": ">=18"
+    "react": ">=18",
+    "zod": "^3.25.0 || ^4.0.0"
   },
   "peerDependenciesMeta": {
+    "@openuidev/lang-core": { "optional": true },
     "@tanstack/react-query": { "optional": true },
-    "react": { "optional": true }
+    "react": { "optional": true },
+    "zod": { "optional": true }
   },
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
     "./react": "./src/react/index.ts",
+    "./genui": "./src/genui/index.ts",
+    "./genui/fence": "./src/genui/fence-entry.ts",
+    "./genui/react": "./src/genui/react/index.ts",
     "./server": "./src/node/server.ts",
     "./internal/sync-store": "./src/internal/sync-store.ts",
     "./internal/server-store": "./src/internal/server-store.ts",
@@ -68,6 +75,9 @@
     "exports": {
       ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
       "./react": { "types": "./dist/react/index.d.ts", "import": "./dist/react/index.js" },
+      "./genui": { "types": "./dist/genui/index.d.ts", "import": "./dist/genui/index.js" },
+      "./genui/fence": { "types": "./dist/genui/fence-entry.d.ts", "import": "./dist/genui/fence-entry.js" },
+      "./genui/react": { "types": "./dist/genui/react/index.d.ts", "import": "./dist/genui/react/index.js" },
       "./server": { "types": "./dist/node/server.d.ts", "import": "./dist/node/server.js" },
       "./internal/sync-store": {
         "types": "./dist/internal/sync-store.d.ts",
@@ -183,13 +193,14 @@
   "files": ["dist", "src", "README.md"],
   "scripts": {
     "typecheck": "tsc --noEmit && tsc --noEmit -p examples/tsconfig.json",
-    "test": "find src -name '*.test.ts' -print0 | sort -z | xargs -0 -n1 -P4 bun test --isolate",
+    "test": "find src \\( -name '*.test.ts' -o -name '*.test.tsx' \\) -print0 | sort -z | xargs -0 -n1 -P4 bun test --isolate",
     "build": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json --resolve-full-paths",
     "build:bundles": "pnpm run build && tsup",
     "prepublishOnly": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json --resolve-full-paths && tsup",
     "smoke:install": "node scripts/smoke-install.mjs"
   },
   "devDependencies": {
+    "@openuidev/lang-core": "0.3.1",
     "@tanstack/react-query": "^5.75.2",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.3",
@@ -199,6 +210,7 @@
     "react-test-renderer": "^19.2.0",
     "tsc-alias": "^1.8.17",
     "tsup": "^8.5.1",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "zod": "3.25.76"
   }
 }

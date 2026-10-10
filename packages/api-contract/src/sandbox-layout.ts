@@ -35,4 +35,16 @@ export const KORTIXD_SHARED_SOURCES = [
   'packages/api-contract/src/secret-relay.ts',
   'packages/api-contract/src/transcript.ts',
   'packages/sdk/src/core/session/wire-message-id.ts',
+  // The generative-UI prompt (`@kortix/sdk/genui`) and every file it imports.
+  'packages/sdk/src/genui/catalog.ts',
+  'packages/sdk/src/genui/expansion.ts',
+  'packages/sdk/src/genui/fence.ts',
+  'packages/sdk/src/genui/index.ts',
+  'packages/sdk/src/genui/markdown.ts',
+  'packages/sdk/src/genui/parse.ts',
+  'packages/sdk/src/genui/prompt.ts',
+  'packages/sdk/src/genui/share.ts',
+  'packages/sdk/src/genui/types.ts',
+  'packages/sdk/src/genui/urls.ts',
+  'packages/sdk/src/genui/validate.ts',
 ] as const;

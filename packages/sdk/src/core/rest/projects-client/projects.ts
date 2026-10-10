@@ -62,6 +62,7 @@ export type FeatureFlagKey =
   | 'session_transcript_history'
   | 'pooled_provider_secrets'
   | 'pi_harness'
+  | 'genui'
   /** @deprecated Graduated — every session runs its base branch's config release. Removed in the next major. */
   | 'config_releases'
   /** @deprecated Graduated — every governed agent authorizes as itself; there is no switch. Removed in the next major. */
@@ -105,6 +106,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'secrets_egress',
   'pooled_provider_secrets',
   'pi_harness',
+  'genui',
   'us_region',
   'event_triggers',
   'notification_center',

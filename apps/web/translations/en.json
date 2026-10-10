@@ -493,6 +493,8 @@
       "themeDescription": "Choose how Kortix looks on this device.",
       "conversationDensity": "Conversation density",
       "conversationDensityDescription": "How much detail the agent shows in the conversation while it works.",
+      "richAnswers": "Rich answers",
+      "richAnswersDescription": "Show comparisons, tables, charts, and maps as visuals in answers. When off, the same content appears as text.",
       "wallpaper": "Wallpaper",
       "wallpaperDescription": "The background behind your project.",
       "defaultWallpaper": "Default",
@@ -1012,6 +1014,10 @@
         "pi_harness": {
           "name": "Pi Harness (in-sandbox)",
           "description": "Run sessions on the pi harness inside the session sandbox instead of OpenCode. Off, `runtime: pi` in the manifest still selects pi."
+        },
+        "genui": {
+          "name": "Generative UI",
+          "description": "The agent may answer with cards, comparisons, charts, maps, and tabs instead of long text."
         },
         "reminders": {
           "name": "Reminders",
@@ -20532,5 +20538,17 @@
     "you": "You",
     "manageFolderAccess": "Manage access",
     "viewFolderAccess": "See access"
+  },
+  "genui": {
+    "showData": "Show data",
+    "source": "Source: {source}",
+    "label": "Label",
+    "value": "Value",
+    "map": "Map",
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out",
+    "mapTwoFingers": "Use two fingers to move the map",
+    "pick": "Pick",
+    "convertFailed": "Could not prepare the transcript. Try again."
   }
 }

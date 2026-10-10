@@ -327,6 +327,23 @@ describe('prepareMarkdownSource — a setup link while it streams', () => {
   });
 });
 
+describe('prepareMarkdownSource — currency dollars', () => {
+  const FENCE = '```openui\nroot = Table(["Plan","Price"], [["Basic","$10"]])\n```';
+
+  test('prose currency is escaped so it is not read as inline math', () => {
+    expect(prepareMarkdownSource('Basic costs $10.', false)).toBe('Basic costs \\$10.');
+  });
+
+  test('a generative UI fence keeps its dollars as written, settled and while it streams', () => {
+    expect(prepareMarkdownSource(`Plans:\n\n${FENCE}`, false)).toContain('"$10"');
+    expect(prepareMarkdownSource(`Plans:\n\n${FENCE.slice(0, -4)}`, true)).toContain('"$10"');
+  });
+
+  test('inline code keeps its dollars as written', () => {
+    expect(prepareMarkdownSource('Run `echo $1` now.', false)).toBe('Run `echo $1` now.');
+  });
+});
+
 /**
  * The exact `remend` Streamdown runs over streaming text. It is Streamdown's
  * dependency, not this app's, so it is resolved through Streamdown. A server

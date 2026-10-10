@@ -7,6 +7,7 @@ import {
   sessionModelPin,
   unwrapError,
 } from '@kortix/sdk';
+import { genuiToMarkdown } from '@kortix/sdk/genui';
 import { formatRelative } from '@kortix/shared';
 
 import type { Auth } from '../api/auth.ts';
@@ -99,16 +100,20 @@ export async function loadSessionForChat(
 
 /** Extract a plain-text representation of a message's parts. */
 export function extractMessageText(msg: MessageWithParts): string {
+  // An assistant message with no completion time and no error is still being written:
+  // its unfinished generative-UI block must not print the "cut off" note.
+  const info = msg.info as { role?: string; time?: { completed?: number }; error?: unknown };
+  const streaming = info.role === 'assistant' && info.time?.completed == null && !info.error;
   return msg.parts
-    .map((p) => partToText(p))
+    .map((p) => partToText(p, streaming))
     .filter((s) => s.length > 0)
     .join('\n');
 }
 
-function partToText(part: Part): string {
+function partToText(part: Part, streaming: boolean): string {
   if (part.type === 'text' && typeof (part as { text?: string }).text === 'string') {
     if ((part as { synthetic?: boolean }).synthetic) return '';
-    return (part as { text: string }).text;
+    return genuiToMarkdown((part as { text: string }).text, { streaming });
   }
   if (part.type === 'reasoning' && typeof (part as { text?: string }).text === 'string') {
     return `${C.dim}[reasoning] ${(part as { text: string }).text}${C.reset}`;
@@ -1111,7 +1116,8 @@ export function deriveActivity(
     return { working: true, summary: 'queued — agent picking up…', last_role: 'user', last_at: at };
   }
 
-  // Otherwise the last assistant turn is done — summarize its reply.
+  // Otherwise the last assistant turn is done (or failed) — summarize its reply. A turn still
+  // streaming returned "working…" above, so a cut-off note here is real.
   const completed = lastInfo.time?.completed;
   const text = last.parts
     .filter(
@@ -1120,7 +1126,7 @@ export function deriveActivity(
         !(p as { synthetic?: boolean }).synthetic &&
         typeof (p as { text?: string }).text === 'string',
     )
-    .map((p) => (p as { text: string }).text)
+    .map((p) => genuiToMarkdown((p as { text: string }).text))
     .join(' ')
     .replace(/\s+/g, ' ')
     .trim();

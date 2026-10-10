@@ -53,6 +53,7 @@ RUN bun install --frozen-lockfile
 
 COPY packages/api-contract /repo/packages/api-contract
 COPY packages/sdk/src/core/session/wire-message-id.ts /repo/packages/sdk/src/core/session/wire-message-id.ts
+COPY packages/sdk/src/genui /repo/packages/sdk/src/genui
 COPY apps/kortix-sandbox-agent-server/ ./
 RUN BUN_COMPILE_TARGET=${KORTIX_AGENT_BUN_TARGET} bash scripts/build.sh
 

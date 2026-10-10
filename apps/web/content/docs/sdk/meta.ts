@@ -11,6 +11,7 @@ export default defineMeta({
     'apps',
     'connectors',
     'react',
+    'genui',
     'reference',
   ],
 });

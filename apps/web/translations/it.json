@@ -667,6 +667,8 @@
       "themeDescription": "Scegli l'aspetto di Kortix su questo dispositivo.",
       "conversationDensity": "Densità della conversazione",
       "conversationDensityDescription": "Scegli quanti dettagli mostra l'agente nella conversazione mentre lavora.",
+      "richAnswers": "Risposte arricchite",
+      "richAnswersDescription": "Mostra confronti, tabelle, grafici e mappe come elementi visivi nelle risposte. Se l'opzione è disattivata, lo stesso contenuto appare come testo.",
       "wallpaper": "Sfondo",
       "wallpaperDescription": "Lo sfondo dietro l'progetto.",
       "defaultWallpaper": "Predefinito",
@@ -1186,6 +1188,10 @@
         "pi_harness": {
           "name": "Harness Pi (nella sandbox)",
           "description": "Esegue le sessioni con l'harness Pi all'interno della sandbox della sessione invece di OpenCode. Disattivato, `runtime: pi` nel manifest seleziona comunque Pi."
+        },
+        "genui": {
+          "name": "UI generativa",
+          "description": "L'agente può rispondere con schede, confronti, grafici, mappe e tab invece di testi lunghi."
         },
         "reminders": {
           "name": "Promemoria",
@@ -20532,5 +20538,17 @@
     "you": "Tu",
     "manageFolderAccess": "Gestisci accesso",
     "viewFolderAccess": "Vedi accesso"
+  },
+  "genui": {
+    "showData": "Mostra dati",
+    "source": "Fonte: {source}",
+    "label": "Etichetta",
+    "value": "Valore",
+    "map": "Mappa",
+    "zoomIn": "Aumenta zoom",
+    "zoomOut": "Riduci zoom",
+    "mapTwoFingers": "Usa due dita per spostare la mappa",
+    "pick": "Scelta",
+    "convertFailed": "Impossibile preparare la trascrizione. Riprova."
   }
 }

@@ -150,6 +150,7 @@ project.
 | `warm_sessions` | Warm Sessions | Beta | On | `routes` |
 | `secrets_egress` | Network-Enforced Secrets | Experimental | On | `behavioral` |
 | `pi_harness` | Pi Harness (in-sandbox) | Experimental | Off | `behavioral` |
+| `genui` | Generative UI | Experimental | Off | `behavioral` |
 | `event_triggers` | App event triggers | Beta | Off | `routes` |
 | `notification_center` | Notification Center | Beta | Off | `routes` |
 
@@ -212,6 +213,13 @@ refs). An explicit project choice always wins.
   phone gets a session push, and an account owner's phone gets one when a
   trigger starts failing. The session watch routes answer `feature_disabled`.
   See [Notifications](/docs/work/notifications#turn-notifications-on).
+- **`genui`** — let the agent answer with cards, comparisons, charts, maps,
+  and tabs instead of long text. On: every new session of this project teaches
+  the agent the Kortix generative UI catalog. Off: the agent writes markdown
+  only; blocks already in a transcript still render. A running or restarted
+  session keeps its prompt until you start a new session. A session the web
+  app prepared before the change, and you open after it, also keeps the old
+  prompt.
 
 ### Graduated flags
 

@@ -3273,6 +3273,47 @@
     "writeProjectNameOptimistically",
     "writeStartStash"
   ],
+  "./genui": [
+    "GENUI_CUT_OFF_NOTE",
+    "GENUI_PROMPT_VERSION",
+    "GENUI_SCHEMA_VERSION",
+    "GENUI_UNSUPPORTED_NOTE",
+    "GenuiIssue",
+    "GenuiIssueCode",
+    "GenuiNode",
+    "GenuiParseResult",
+    "GenuiParser",
+    "GenuiSegment",
+    "buildGenuiPrompt",
+    "createGenuiParser",
+    "genuiA11yText",
+    "genuiBlockToMarkdown",
+    "genuiNodeToMarkdown",
+    "genuiToMarkdown",
+    "genuiVersionFromClassName",
+    "genuiVersionOf",
+    "parseGenui",
+    "safeUrl",
+    "separateGenuiClosers",
+    "splitGenui"
+  ],
+  "./genui/fence": [
+    "GenuiSegment",
+    "genuiVersionFromClassName",
+    "genuiVersionOf",
+    "separateGenuiClosers",
+    "splitGenui"
+  ],
+  "./genui/react": [
+    "GenuiBlock",
+    "GenuiBlockEvent",
+    "GenuiBlockProps",
+    "GenuiComponentMap",
+    "GenuiComponentProps",
+    "GenuiOutcome",
+    "defaultGenuiComponents",
+    "useGenuiParse"
+  ],
   "./server": [
     "APP_VIEWER_HEADER",
     "APP_VIEWER_SECRET_ENV",

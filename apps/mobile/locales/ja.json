@@ -1161,6 +1161,7 @@
     "title": "アカウント",
     "preferences": "環境設定",
     "sounds": "サウンド",
+    "richAnswers": "リッチな回答",
     "workspace": "ワークスペース",
     "accounts": "アカウント",
     "help": "ヘルプ",
@@ -1197,5 +1198,14 @@
     "showMoreSubsessions_other": "さらに{{count}}件を表示",
     "showMoreSubsessionsLabel_one": "{{title}} のサブセッションをさらに{{count}}件表示",
     "showMoreSubsessionsLabel_other": "{{title}} のサブセッションをさらに{{count}}件表示"
+  },
+  "genui": {
+    "pick": "おすすめ",
+    "source": "出典: {{source}}",
+    "showData": "データを表示",
+    "hideData": "データを非表示",
+    "openMap": "地図を開く",
+    "map": "地図",
+    "mapUnavailable": "地図を表示できません"
   }
 }

@@ -667,6 +667,8 @@
       "themeDescription": "Wählen Sie das Erscheinungsbild von Kortix auf diesem Gerät.",
       "conversationDensity": "Gesprächsdichte",
       "conversationDensityDescription": "Legt fest, wie viele Details der Agent während seiner Arbeit im Gespräch zeigt.",
+      "richAnswers": "Erweiterte Antworten",
+      "richAnswersDescription": "Zeigt Vergleiche, Tabellen, Diagramme und Karten in Antworten als Grafiken. Wenn deaktiviert, zeigen Antworten denselben Inhalt als Text.",
       "wallpaper": "Hintergrund",
       "wallpaperDescription": "Der Hintergrund Ihres Projekts.",
       "defaultWallpaper": "Standard",
@@ -1186,6 +1188,10 @@
         "pi_harness": {
           "name": "Pi-Harness (in der Sandbox)",
           "description": "Sitzungen mit dem Pi-Harness in der Sitzungs-Sandbox statt mit OpenCode ausführen. Bei Aus wählt `runtime: pi` im Manifest weiterhin Pi."
+        },
+        "genui": {
+          "name": "Generative UI",
+          "description": "Der Agent kann statt langer Texte mit Karten, Vergleichen, Diagrammen, Landkarten und Tabs antworten."
         },
         "reminders": {
           "name": "Erinnerungen",
@@ -20532,5 +20538,17 @@
     "you": "Du",
     "manageFolderAccess": "Zugriff verwalten",
     "viewFolderAccess": "Zugriff ansehen"
+  },
+  "genui": {
+    "showData": "Daten anzeigen",
+    "source": "Quelle: {source}",
+    "label": "Bezeichnung",
+    "value": "Wert",
+    "map": "Karte",
+    "zoomIn": "Vergrößern",
+    "zoomOut": "Verkleinern",
+    "mapTwoFingers": "Verwende zwei Finger, um die Karte zu bewegen",
+    "pick": "Empfehlung",
+    "convertFailed": "Das Transkript konnte nicht vorbereitet werden. Versuche es erneut."
   }
 }

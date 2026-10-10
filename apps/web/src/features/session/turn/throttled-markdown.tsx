@@ -4,6 +4,7 @@
 
 import { memo, useMemo } from 'react';
 
+import { openGenuiFence } from '@/components/markdown/code/genui-fence';
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 
 import { useStreamingCadence } from './streaming-cadence';
@@ -30,8 +31,26 @@ function trimIncompleteTableRow(text: string): string {
   return lines.join('\n');
 }
 
-function closeUnterminatedCodeFence(text: string): string {
+/**
+ * A fence opener still being written (`` ```openu ``) would render as an empty code card labelled
+ * with half a language for a tick or two. While streaming, hold back a last line that opens a
+ * fence until its newline arrives. A line that closes a fence is never held.
+ */
+export function holdBackFenceOpener(text: string): string {
+  const start = text.lastIndexOf('\n') + 1;
+  if (!text.slice(start).trimStart().startsWith('```')) return text;
+  const fencesBefore = text.slice(0, start).split('\n').filter((line) => line.trimStart().startsWith('```')).length;
+  return fencesBefore % 2 === 0 ? text.slice(0, start) : text;
+}
+
+/**
+ * Closes an unterminated code fence so the rest of the stream renders as markdown. An open
+ * generative UI fence stays open: `UnifiedMarkdown` reads it as the block still streaming and
+ * closes it itself.
+ */
+export function closeUnterminatedCodeFence(text: string): string {
   if (!text) return text;
+  if (openGenuiFence(text)) return text;
   const lines = text.split('\n');
   let fenceCount = 0;
   for (const line of lines) {
@@ -90,13 +109,14 @@ function ThrottledMarkdownImpl({
   const displayContent = useMemo(
     () =>
       streaming
-        ? closeUnterminatedCodeFence(holdBackTableHeader(pacedContent))
+        ? closeUnterminatedCodeFence(holdBackFenceOpener(holdBackTableHeader(pacedContent)))
         : trimIncompleteTableRow(pacedContent),
     [pacedContent, streaming],
   );
   // Nothing revealed yet: render nothing rather than the empty-content notice.
   if (streaming && !displayContent) return null;
-  return <UnifiedMarkdown content={displayContent} trust="agent" isStreaming={streaming} />;
+  // Session transcript assistant text: the one renderer (with SandboxUrlDetector) that opts in to generative UI.
+  return <UnifiedMarkdown content={displayContent} trust="agent" isStreaming={streaming} genui />;
 }
 
 /**

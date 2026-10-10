@@ -92,6 +92,22 @@ describe('buildOpencodeConfigContent — injected managed skills', () => {
     )
     expect(JSON.parse(content!).instructions).toEqual(['/workspace/AGENTS.md', file])
   })
+
+  test('appends the genui instruction only when its file exists', async () => {
+    const file = join(mkdtempSync(join(tmpdir(), 'genui-')), 'genui.md')
+    writeFileSync(file, 'genui')
+    const withFile = JSON.parse((await buildOpencodeConfigContent(ENV, { genuiInstructionPath: file }))!)
+    expect(withFile.instructions).toContain(file)
+    const absent = join(tmpdir(), 'genui-absent', 'genui.md')
+    const missing = JSON.parse((await buildOpencodeConfigContent(ENV, { genuiInstructionPath: absent }))!)
+    expect(missing.instructions ?? []).not.toContain(absent)
+  })
+
+  test('flag off: the composed config is byte-identical to one built without the option (R-FLAG-1)', async () => {
+    const baseline = await buildOpencodeConfigContent(ENV, {})
+    expect(await buildOpencodeConfigContent(ENV, { genuiInstructionPath: null })).toBe(baseline)
+    expect(await buildOpencodeConfigContent(ENV, { genuiInstructionPath: undefined })).toBe(baseline)
+  })
 })
 
 describe('buildOpencodeConfigContent — base composition', () => {

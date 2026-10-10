@@ -396,3 +396,31 @@ describe('MarkdownCode — highlighting while a message streams', () => {
     expect(markup).toContain(CARD);
   });
 });
+
+describe('generative UI fences', () => {
+  const block = 'root = Stack([b])\nb = Badge("ok")';
+  for (const className of ['language-openui', 'language-openui-lang']) {
+    test(`${className} in transcript text never renders the code card or its source`, () => {
+      const html = render({ children: block, className, isStreaming: false, genui: true });
+      expect(html).not.toContain('root = Stack');
+      expect(html).not.toContain('<pre');
+    });
+  }
+
+  test('partial block after the stream ends renders no source', () => {
+    const html = render({ children: 'root = Stack([b])\nb = Bad', className: 'language-openui', isStreaming: false, genui: true });
+    expect(html).not.toContain('root = Stack');
+  });
+
+  test('outside transcript text (a file, a tool output) the fence is an ordinary code card', () => {
+    const html = render({ children: block, className: 'language-openui', isStreaming: false });
+    expect(html).toContain('<pre');
+  });
+
+  test('other fences keep the code card', () => {
+    const html = render({ children: 'const a = 1', className: 'language-ts', isStreaming: false });
+    // Shiki splits the source into token spans, so assert the card chrome.
+    expect(labelOf(html)).toBe('typescript');
+    expect(html).toContain('<pre');
+  });
+});

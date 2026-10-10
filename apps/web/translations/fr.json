@@ -667,6 +667,8 @@
       "themeDescription": "Choisissez l'apparence de Kortix sur cet appareil.",
       "conversationDensity": "Densité de la conversation",
       "conversationDensityDescription": "Choisissez le niveau de détail affiché par l'agent dans la conversation pendant son travail.",
+      "richAnswers": "Réponses enrichies",
+      "richAnswersDescription": "Affiche les comparaisons, tableaux, graphiques et cartes sous forme visuelle dans les réponses. Si l'option est désactivée, le même contenu apparaît en texte.",
       "wallpaper": "Fond d'écran",
       "wallpaperDescription": "L'arrière-plan de votre projet.",
       "defaultWallpaper": "Par défaut",
@@ -1186,6 +1188,10 @@
         "pi_harness": {
           "name": "Harness Pi (dans le bac à sable)",
           "description": "Exécute les sessions avec le harness Pi dans le bac à sable de la session au lieu d'OpenCode. Désactivé, `runtime: pi` dans le manifeste sélectionne toujours Pi."
+        },
+        "genui": {
+          "name": "UI générative",
+          "description": "L'agent peut répondre avec des cartes, des comparatifs, des graphiques, des cartes géographiques et des onglets plutôt qu'avec de longs textes."
         },
         "reminders": {
           "name": "Rappels",
@@ -20532,5 +20538,17 @@
     "you": "Vous",
     "manageFolderAccess": "Gérer l’accès",
     "viewFolderAccess": "Voir l’accès"
+  },
+  "genui": {
+    "showData": "Afficher les données",
+    "source": "Source : {source}",
+    "label": "Libellé",
+    "value": "Valeur",
+    "map": "Carte",
+    "zoomIn": "Augmenter le zoom",
+    "zoomOut": "Réduire le zoom",
+    "mapTwoFingers": "Utilisez deux doigts pour déplacer la carte",
+    "pick": "Choix",
+    "convertFailed": "Impossible de préparer la transcription. Réessayez."
   }
 }

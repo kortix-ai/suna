@@ -42,10 +42,16 @@
       // pi mints message ids with the platform codec. The file imports nothing;
       // the Dockerfiles copy it to the matching relative path.
       "@kortix/sdk/wire-message-id": ["../../packages/sdk/src/core/session/wire-message-id.ts"],
+      // The generative-UI catalog prompt (KORTIX_GENUI). The genui sources import
+      // zod/v4 and @openuidev/lang-core; this standalone build installs both
+      // only here, so they map to this package's node_modules.
+      "@kortix/sdk/genui": ["../../packages/sdk/src/genui/index.ts"],
+      "@openuidev/lang-core": ["./node_modules/@openuidev/lang-core"],
       // The mapped contract imports zod (runtime-relay.ts), and this standalone
       // build installs zod only here. `scripts/build.sh` passes this tsconfig to
       // `bun build` so the bundler resolves it the same way.
-      "zod": ["./node_modules/zod"]
+      "zod": ["./node_modules/zod"],
+      "zod/*": ["./node_modules/zod/*"]
     }
   },
   "include": ["src/**/*.ts"]

@@ -28,6 +28,7 @@ export {
   continueSession,
   drainSessionLifecycleQueue,
   resolveProjectAutomationActor,
+  retireWarmProjectSessions,
 } from './session-lifecycle';
 
 // The shutdown hand-back of lifecycle claims (consumed by bootstrap.ts).

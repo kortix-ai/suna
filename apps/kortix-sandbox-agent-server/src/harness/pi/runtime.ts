@@ -27,6 +27,7 @@ import type { HarnessState } from '../contract/lifecycle-contract'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import { logger } from '@/lib/log/logger'
 import { SECRET_CAPABILITIES_INSTRUCTION_PATH } from '@/services/sandbox-env/secret-capabilities'
+import { genuiPromptSection } from '@/services/sandbox-env/genui-instruction'
 import { loadTools } from '@/services/tools/host'
 import type { PiConfig, ProjectInstructions } from './config'
 import { readProjectInstructions, resolvePiProjectConfigDir, resolvePiSkillDirectories } from './config'
@@ -1493,6 +1494,8 @@ export class PiRuntime {
     if (skills.length > 0) parts.push(this.coding!.formatSkillsForPrompt(skills))
     const capabilities = this.readInstruction(SECRET_CAPABILITIES_INSTRUCTION_PATH)
     if (capabilities) parts.push(capabilities)
+    const genui = genuiPromptSection(this.env, Boolean(child))
+    if (genui) parts.push(genui)
     const releaseNotice = this.releases?.notice()
     if (releaseNotice) parts.push(releaseNotice)
     parts.push(

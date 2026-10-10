@@ -133,6 +133,19 @@ test('root export graph pulls no react/next/zustand/react-query code', () => {
   }
 });
 
+/** Optional peers of `./genui` only. A host that never imports `./genui` never installs them. */
+const OPTIONAL_PEER = /^(?:@openuidev\/|zod(?:\/|$))/;
+
+test('root `.` and `./react` graphs never reach the genui optional peers (zod, @openuidev/*)', () => {
+  for (const entry of ['index.ts', 'react/index.ts']) {
+    const { externals } = collectGraph(join(SRC_ROOT, entry));
+    const leaks = [...externals]
+      .filter(([spec]) => OPTIONAL_PEER.test(spec))
+      .map(([spec, importers]) => `${entry}: "${spec}" imported by ${importers.join(', ')}`);
+    expect(leaks).toEqual([]);
+  }
+});
+
 test("root export graph has no 'use client' directives", () => {
   const { files } = collectRootGraph();
   for (const file of files) {
@@ -173,6 +186,8 @@ interface Subpath {
 
 const SUBPATH_TIERS: Subpath[] = [
   { name: './server', file: 'node/server.ts', tier: 'node-allowed' },
+  { name: './genui', file: 'genui/index.ts', tier: 'isomorphic-core' },
+  { name: './genui/fence', file: 'genui/fence-entry.ts', tier: 'isomorphic-core' },
 
   // The ./internal/* stores — apps/web's zustand machinery, outside semver.
   { name: './internal/sync-store', file: 'internal/sync-store.ts', tier: 'browser-only' },
@@ -211,11 +226,13 @@ const SUBPATH_TIERS: Subpath[] = [
   { name: './turns', file: 'deprecated/turns.ts', tier: 'isomorphic-core' },
 ];
 
-test('SUBPATH_TIERS matches package.json exports (minus "." and "./react")', () => {
+test('SUBPATH_TIERS matches package.json exports (minus ".", "./react", "./genui/react")', () => {
   const pkg = JSON.parse(readFileSync(join(SRC_ROOT, '..', 'package.json'), 'utf8')) as {
     exports: Record<string, string>;
   };
-  const exportedSubpaths = Object.keys(pkg.exports).filter((k) => k !== '.' && k !== './react');
+  const exportedSubpaths = Object.keys(pkg.exports).filter(
+    (k) => k !== '.' && k !== './react' && k !== './genui/react',
+  );
   expect(new Set(SUBPATH_TIERS.map((s) => s.name))).toEqual(new Set(exportedSubpaths));
 
   // And every entry file must match what package.json actually points at.

@@ -667,6 +667,8 @@
       "themeDescription": "Escolha a aparência do Kortix neste dispositivo.",
       "conversationDensity": "Densidade da conversa",
       "conversationDensityDescription": "Escolha quantos detalhes o agente mostra na conversa enquanto trabalha.",
+      "richAnswers": "Respostas enriquecidas",
+      "richAnswersDescription": "Mostra comparações, tabelas, gráficos e mapas como elementos visuais nas respostas. Quando desativado, as respostas mostram o mesmo conteúdo como texto.",
       "wallpaper": "Papel de parede",
       "wallpaperDescription": "O fundo da sua área de trabalho.",
       "defaultWallpaper": "Padrão",
@@ -1186,6 +1188,10 @@
         "pi_harness": {
           "name": "Harness Pi (na sandbox)",
           "description": "Executa as sessões com o harness Pi dentro da sandbox da sessão em vez do OpenCode. Desativado, `runtime: pi` no manifesto continua a selecionar o Pi."
+        },
+        "genui": {
+          "name": "UI generativa",
+          "description": "O agente pode responder com cartões, comparações, gráficos, mapas e abas em vez de textos longos."
         },
         "reminders": {
           "name": "Lembretes",
@@ -20532,5 +20538,17 @@
     "you": "Você",
     "manageFolderAccess": "Gerenciar acesso",
     "viewFolderAccess": "Ver acesso"
+  },
+  "genui": {
+    "showData": "Mostrar dados",
+    "source": "Fonte: {source}",
+    "label": "Rótulo",
+    "value": "Valor",
+    "map": "Mapa",
+    "zoomIn": "Aumentar zoom",
+    "zoomOut": "Diminuir zoom",
+    "mapTwoFingers": "Use dois dedos para mover o mapa",
+    "pick": "Escolha",
+    "convertFailed": "Não foi possível preparar a transcrição. Tente novamente."
   }
 }

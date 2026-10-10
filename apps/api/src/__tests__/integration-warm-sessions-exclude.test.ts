@@ -24,6 +24,7 @@ import { config } from '../config';
 import { findWarmProjectSession, warmSessionPlacement } from '../projects/routes/warm-sessions';
 import { db } from '../shared/db';
 import { WARM_SESSION_LOCATION_KEY } from '../projects/lib/warm-sessions';
+import { runFeatureFlagToggleEffects } from '../feature-flags/toggle-effects';
 
 const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
@@ -344,5 +345,46 @@ describe('warm sessions — compute placement', () => {
     expect((await lookup(off, true))?.sessionId).toBe(sessionId);
     expect(await lookup(off)).toBeNull();
     expect(await warmSessionPlacement(sessionId, off)).toBe('pending');
+  });
+});
+
+// KORTIX_GENUI is boot-only env (projects/lib/genui-env.ts). A warm box
+// provisioned before a `genui` flag change carries the old value, so the
+// change retires every unclaimed warm session of the project.
+describe('genui flag change — retires warm sessions', () => {
+  async function sessionRow(sessionId: string) {
+    const [row] = await db.select().from(projectSessions).where(eq(projectSessions.sessionId, sessionId));
+    const [box] = await db.select().from(sessionSandboxes).where(eq(sessionSandboxes.sessionId, sessionId));
+    return { metadata: (row?.metadata ?? {}) as Record<string, unknown>, status: row?.status, boxStatus: box?.status };
+  }
+
+  test('every unclaimed warm session of the project (all users) is deleted; a claimed one is kept', async () => {
+    const mine = await seedWarmSession();
+    const theirs = await seedWarmSession({ createdBy: OTHER_USER });
+    const claimed = await seedWarmSession({ warm: false });
+
+    await runFeatureFlagToggleEffects({
+      key: 'genui',
+      projectId: PROJECT,
+      accountId: ACCOUNT,
+      metadata: { experimental: { genui: true } },
+    });
+
+    for (const sessionId of [mine, theirs]) {
+      const row = await sessionRow(sessionId);
+      expect(typeof row.metadata.deletedAt).toBe('string');
+      // The marker stays, so the tombstone stays out of every session list.
+      expect(row.metadata.warm).toBe(true);
+      expect(row.status).toBe('stopped');
+      expect(row.boxStatus).toBe('archived');
+    }
+    const kept = await sessionRow(claimed);
+    expect(kept.metadata.deletedAt).toBeUndefined();
+    expect(kept.status).toBe('running');
+    expect(kept.boxStatus).toBe('active');
+
+    expect(
+      await findWarmProjectSession({ accountId: ACCOUNT, projectId: PROJECT, userId: USER, projectMetadata: {} }),
+    ).toBeNull();
   });
 });

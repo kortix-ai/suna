@@ -1,11 +1,12 @@
 'use client';
 
 /**
- * The Appearance tab — theme, conversation density, wallpaper.
+ * The Appearance tab — theme, conversation density, rich answers, wallpaper.
  *
  * Split out of Preferences on 2026-09-02 (Jay: "appearance will be in a
- * separate type"). These three are the only settings that change what the
- * app LOOKS like; everything that changes what it does — language, shortcuts,
+ * separate type"). These are the only settings that change what the app
+ * LOOKS like (rich answers changes how an answer is drawn, not what it
+ * says); everything that changes what it does — language, shortcuts,
  * sounds, notifications — stays on Preferences and Sessions.
  *
  * Theme values come from `THEME_OPTIONS` in `features/layout/user-menu.tsx`
@@ -27,7 +28,9 @@ import { useEffect } from 'react';
 
 import { Separator } from '@/components/ui/separator';
 import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
+import { Switch } from '@/components/ui/switch';
 import { WallpaperCard } from '@/features/accounts/settings/appearance-tab';
+import { useGenuiEnabled } from '@/features/genui/use-genui-enabled';
 import { THEME_OPTIONS } from '@/features/layout/user-menu';
 import { cn } from '@/lib/utils';
 import { DEFAULT_WALLPAPER_ID, WALLPAPERS, type Wallpaper } from '@/lib/wallpapers';
@@ -54,6 +57,8 @@ export interface AppearanceTabCopy {
   themeDescription: string;
   conversationDensity: string;
   conversationDensityDescription: string;
+  richAnswers: string;
+  richAnswersDescription: string;
   wallpaper: string;
   wallpaperDescription: string;
   defaultWallpaper: string;
@@ -68,6 +73,9 @@ export const DEFAULT_APPEARANCE_TAB_COPY: AppearanceTabCopy = {
   conversationDensity: 'Conversation density',
   conversationDensityDescription:
     'How much detail the agent shows in the conversation while it works.',
+  richAnswers: 'Rich answers',
+  richAnswersDescription:
+    'Show comparisons, tables, charts, and maps as visuals in answers. When off, the same content appears as text.',
   wallpaper: 'Wallpaper',
   wallpaperDescription: 'The background behind your workspace.',
   defaultWallpaper: 'Default',
@@ -180,6 +188,8 @@ export interface AppearanceTabViewProps {
   onWallpaperSelect?: (id: Wallpaper['id']) => void;
   conversationDensity?: ConversationDensity;
   onConversationDensityChange?: (density: ConversationDensity) => void;
+  genuiEnabled?: boolean;
+  onGenuiEnabledChange?: (enabled: boolean) => void;
   copy?: AppearanceTabCopy;
 }
 
@@ -193,6 +203,8 @@ export function AppearanceTabView({
   onWallpaperSelect = () => {},
   conversationDensity = 'normal',
   onConversationDensityChange = () => {},
+  genuiEnabled = true,
+  onGenuiEnabledChange = () => {},
   copy = DEFAULT_APPEARANCE_TAB_COPY,
 }: AppearanceTabViewProps) {
   return (
@@ -246,6 +258,22 @@ export function AppearanceTabView({
 
       <Separator />
 
+      {/* Rich answers — a switch stays beside its label at every width, so
+          this row does not stack on mobile like the pickers above. */}
+      <section className="flex items-start justify-between gap-4 md:gap-10">
+        <SettingsSubsectionHeader
+          title={copy.richAnswers}
+          description={copy.richAnswersDescription}
+        />
+        <Switch
+          checked={genuiEnabled}
+          onCheckedChange={onGenuiEnabledChange}
+          aria-label={copy.richAnswers}
+        />
+      </section>
+
+      <Separator />
+
       {/* Wallpaper */}
       <section className="space-y-3">
         <SettingsSubsectionHeader title={copy.wallpaper} description={copy.wallpaperDescription} />
@@ -282,6 +310,8 @@ export function AppearanceTab() {
     (s) => s.preferences.conversationDensity ?? 'normal',
   );
   const setConversationDensity = useUserPreferencesStore((s) => s.setConversationDensity);
+  const genuiEnabled = useGenuiEnabled();
+  const setGenuiEnabled = useUserPreferencesStore((s) => s.setGenuiEnabled);
 
   // Users may have a wallpaper persisted that no longer exists — reset it.
   useEffect(() => {
@@ -297,6 +327,8 @@ export function AppearanceTab() {
         themeDescription: t('themeDescription'),
         conversationDensity: t('conversationDensity'),
         conversationDensityDescription: t('conversationDensityDescription'),
+        richAnswers: t('richAnswers'),
+        richAnswersDescription: t('richAnswersDescription'),
         wallpaper: t('wallpaper'),
         wallpaperDescription: t('wallpaperDescription'),
         defaultWallpaper: t('defaultWallpaper'),
@@ -328,6 +360,8 @@ export function AppearanceTab() {
       onWallpaperSelect={setWallpaperId}
       conversationDensity={conversationDensity}
       onConversationDensityChange={setConversationDensity}
+      genuiEnabled={genuiEnabled}
+      onGenuiEnabledChange={setGenuiEnabled}
     />
   );
 }

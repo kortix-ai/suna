@@ -1161,6 +1161,7 @@
     "title": "Conta",
     "preferences": "Preferências",
     "sounds": "Sons",
+    "richAnswers": "Respostas enriquecidas",
     "workspace": "Espaço de trabalho",
     "accounts": "Contas",
     "help": "Ajuda",
@@ -1197,5 +1198,14 @@
     "showMoreSubsessions_other": "Mostrar mais {{count}}",
     "showMoreSubsessionsLabel_one": "Mostrar mais {{count}} subsessão de {{title}}",
     "showMoreSubsessionsLabel_other": "Mostrar mais {{count}} subsessões de {{title}}"
+  },
+  "genui": {
+    "pick": "Recomendado",
+    "source": "Fonte: {{source}}",
+    "showData": "Mostrar dados",
+    "hideData": "Ocultar dados",
+    "openMap": "Abrir mapa",
+    "map": "Mapa",
+    "mapUnavailable": "Mapa indisponível"
   }
 }

@@ -1,0 +1,65 @@
+---
+title: Generative UI
+description: Render the agent's cards, comparisons, charts, maps, and tabs in your own app.
+---
+
+The agent answers in markdown. When a project turns on **Generative UI**, the agent may add
+` ```openui ` blocks for structured content: a ranked recommendation, a comparison, a chart from
+tool data, places on a map. Prose stays the default; the agent uses a block only when the content
+has structure.
+
+## Install
+
+Generative UI uses two optional peer dependencies. Install them before you import any
+`@kortix/sdk/genui` entry; without them the import fails:
+
+```bash
+npm i zod @openuidev/lang-core@0.3.1
+```
+
+`@openuidev/lang-core` sends one pseudonymous PostHog event at install time. Set
+`OPENUI_TELEMETRY_DISABLED=1` or `DO_NOT_TRACK=1` to turn it off. Runtime telemetry is off unless
+you opt in.
+
+| Import | Holds | Loads the peers |
+|---|---|---|
+| `@kortix/sdk/genui/fence` | `genuiVersionFromClassName`, `genuiVersionOf`, `splitGenui`: fence detection | No |
+| `@kortix/sdk/genui` | `parseGenui`, `genuiToMarkdown`, `genuiBlockToMarkdown`, the catalog | Yes |
+| `@kortix/sdk/genui/react` | `GenuiBlock`, `defaultGenuiComponents` | Yes |
+
+The root `@kortix/sdk` and `@kortix/sdk/react` entries never load the peers. Check a fence with
+`@kortix/sdk/genui/fence` in your main bundle, and load the renderer lazily once a block exists.
+
+## Render blocks
+
+`@kortix/sdk/genui/react` exports `GenuiBlock`, a headless renderer. You pass a component for each
+block name, or `defaultGenuiComponents` for unbranded HTML defaults.
+
+| Prop | Meaning |
+|---|---|
+| `code` | The fence body so far |
+| `version` | `genuiVersionFromClassName(className)` or `genuiVersionOf(tag)` |
+| `streaming` | This block's fence is still open while the message streams. Pass `false` once the fence closes, so a finished block settles while the reply goes on |
+| `components` | Block name → your component (`GenuiComponentProps`) |
+| `renderMarkdown` | Your markdown renderer, used for fallbacks. Pass a stable function (module constant or `useCallback`): a new function re-renders the block's markdown parts and node views |
+| `renderPending` | A node the model has not finished, while the block streams. Default: nothing. Return a fixed-height box for heavy nodes (a chart, a table) so the layout does not jump when the node settles |
+| `enabled` | `false` renders the block as markdown (a viewer setting) |
+| `onSettled` | One event per block: outcome, component names, timing. Never content |
+
+## Plain text hosts
+
+`genuiToMarkdown(text)` replaces every block with deterministic markdown. Charts become tables with a
+`Source:` line; maps become place lists; tabs and accordions expand.
+Blocks inside blockquotes and list items convert too. For a reply that is still streaming, pass
+`genuiToMarkdown(text, { streaming: true })`: the unfinished last block shows no "cut off" note.
+
+## Blocks
+
+Stack, Card, Stat, StatRow, Table, Compare, RankedList, BarChart, LineChart, PieChart, Map, Tabs,
+Accordion, Badge, Callout, Image, Link. Limits (counts, lengths) are enforced by the SDK; a block that
+breaks a limit is dropped and its siblings still render.
+
+## Safety
+
+Blocks hold data, never code. Every link and image URL must be absolute `http` or `https`. Generated
+UI cannot run tools or change state.

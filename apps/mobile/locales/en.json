@@ -1161,6 +1161,7 @@
     "title": "Settings",
     "preferences": "Preferences",
     "sounds": "Sounds",
+    "richAnswers": "Rich answers",
     "workspace": "Workspace",
     "accounts": "Accounts",
     "help": "Help",
@@ -1199,5 +1200,14 @@
     "showMoreSubsessions_other": "Show {{count}} more",
     "showMoreSubsessionsLabel_one": "Show {{count}} more sub-session of {{title}}",
     "showMoreSubsessionsLabel_other": "Show {{count}} more sub-sessions of {{title}}"
+  },
+  "genui": {
+    "pick": "Pick",
+    "source": "Source: {{source}}",
+    "showData": "Show data",
+    "hideData": "Hide data",
+    "openMap": "Open map",
+    "map": "Map",
+    "mapUnavailable": "Map unavailable"
   }
 }

@@ -3,6 +3,8 @@
  * them without the API's environment: path guard, route search, transcript shaping.
  */
 
+import { genuiToMarkdown } from '@kortix/sdk/genui';
+
 /** Paths a tool may not reach: the OAuth server and the MCP endpoint itself. */
 export function blockedPath(path: string): boolean {
   const p = path.toLowerCase();
@@ -80,7 +82,15 @@ export function shapeTranscript(
   t: { source?: unknown; reason?: unknown; messages?: WireMessage[]; message_count?: unknown; complete?: unknown },
   budget = TRANSCRIPT_BUDGET_CHARS,
 ): string {
-  const messages = (t.messages ?? []).map((m) => ({ ...m, error: trimError(m.error) }));
+  // MCP clients render no UI: assistant generative-UI blocks become markdown. A turn still
+  // running (no `completed`, no error) shows no cut-off note for its unfinished block.
+  const messages = (t.messages ?? []).map((m) => ({
+    ...m,
+    ...(m.role === 'assistant' && typeof m.text === 'string'
+      ? { text: genuiToMarkdown(m.text, { streaming: !m.completed && !m.error }) }
+      : {}),
+    error: trimError(m.error),
+  }));
   const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant');
   const build = (from: number) =>
     JSON.stringify({

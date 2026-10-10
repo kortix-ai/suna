@@ -44,6 +44,11 @@ export interface UserPreferences {
    * `?? 'normal'` (same rule as `panelMode`).
    */
   conversationDensity: ConversationDensity;
+  /**
+   * Render generative UI blocks as UI (true) or as their markdown fallback (false).
+   * Legacy persisted preferences predate this key: read sites use `?? true`.
+   */
+  genuiEnabled?: boolean;
 }
 
 // ============================================================================
@@ -82,6 +87,9 @@ interface UserPreferencesState {
   /** Set the conversation density */
   setConversationDensity: (density: ConversationDensity) => void;
 
+  /** Render generative UI blocks as UI (true) or as markdown (false) */
+  setGenuiEnabled: (enabled: boolean) => void;
+
   /** Get the label for the current tab switch modifier (e.g. "Cmd" or "Ctrl") */
   getModifierLabel: () => string;
 }
@@ -92,6 +100,7 @@ const DEFAULT_PREFERENCES: UserPreferences = {
   wallpaperId: DEFAULT_WALLPAPER_ID,
   panelMode: 'easy',
   conversationDensity: 'normal',
+  genuiEnabled: true,
 };
 
 export const useUserPreferencesStore = create<UserPreferencesState>()(
@@ -119,6 +128,8 @@ export const useUserPreferencesStore = create<UserPreferencesState>()(
       },
 
       setConversationDensity: (density) => get().patchPreferences({ conversationDensity: density }),
+
+      setGenuiEnabled: (enabled) => get().patchPreferences({ genuiEnabled: enabled }),
 
       getModifierLabel: () => {
         const mod = get().preferences.keyboard.tabSwitchModifier;

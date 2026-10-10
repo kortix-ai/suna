@@ -667,6 +667,8 @@
       "themeDescription": "このデバイスでの Kortix の外観を選択します。",
       "conversationDensity": "会話の表示密度",
       "conversationDensityDescription": "エージェントの作業中に会話へ表示する詳細の量を選択します。",
+      "richAnswers": "リッチな回答",
+      "richAnswersDescription": "回答内の比較、表、グラフ、地図をビジュアルで表示します。オフにすると、同じ内容をテキストで表示します。",
       "wallpaper": "壁紙",
       "wallpaperDescription": "プロジェクトの背景です。",
       "defaultWallpaper": "デフォルト",
@@ -1186,6 +1188,10 @@
         "pi_harness": {
           "name": "Pi ハーネス（サンドボックス内）",
           "description": "セッションを OpenCode の代わりにセッションのサンドボックス内の Pi ハーネスで実行します。オフでも、マニフェストの `runtime: pi` は引き続き Pi を選択します。"
+        },
+        "genui": {
+          "name": "生成UI",
+          "description": "エージェントは、長い文章の代わりにカード、比較表、グラフ、地図、タブで回答できます。"
         },
         "reminders": {
           "name": "リマインダー",
@@ -20532,5 +20538,17 @@
     "you": "あなた",
     "manageFolderAccess": "アクセスを管理",
     "viewFolderAccess": "アクセスを表示"
+  },
+  "genui": {
+    "showData": "データを表示",
+    "source": "出典: {source}",
+    "label": "ラベル",
+    "value": "値",
+    "map": "地図",
+    "zoomIn": "拡大",
+    "zoomOut": "縮小",
+    "mapTwoFingers": "2本の指で地図を動かします",
+    "pick": "おすすめ",
+    "convertFailed": "トランスクリプトを準備できませんでした。もう一度お試しください。"
   }
 }
