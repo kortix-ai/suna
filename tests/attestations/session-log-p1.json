@@ -1,6 +1,7 @@
 {
-  "source_hash": "824c4b48987c6d1e3fdfda055d3a2036f5570eece82b13d1d3fe5e2a9fbb96be",
+  "source_hash": "895f7da71afa5357c0e1587e227178d56556ba754a127f354cfbcd259d4bfc9b",
   "diff_files": [
+    ".gitattributes",
     "packages/api-contract/package.json",
     "packages/api-contract/src/__tests__/fixtures/session-log/claude-code.v2.json",
     "packages/api-contract/src/__tests__/fixtures/session-log/codex.v2.json",
@@ -14,13 +15,13 @@
     "packages/api-contract/src/session-log/schema.ts",
     "packages/api-contract/src/session-log/types.ts"
   ],
-  "diff_hash": "31f2ac8350eb5b136739f40f2bfcc1ee5ce1e73ade4a681e6b800c9ea1b96cba",
-  "head": "3afbf67259db050186ab9d61098a999613deb708",
+  "diff_hash": "ba66a4cc6332e8f75678553e4d11a042dcaf0f66458963b5aac6b7e52b291773",
+  "head": "29ef73497e9ff401e96d02e1524776b51df09ccd",
   "passed": true,
   "lanes": {
     "packages": "pass",
     "core": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-10T22:05:05.564Z"
+  "at": "2026-10-10T22:36:02.706Z"
 }
