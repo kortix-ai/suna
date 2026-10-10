@@ -148,6 +148,13 @@ export interface ContinueSessionCommand {
    *  them from this turn on (`bindSessionTurnIdentity`). Set by the prompt
    *  route for a non-agent caller; absent keeps the token's identity. */
   bindTurnIdentity?: boolean;
+  /**
+   * When an automation prompt (no `clientMessageId`) was queued. A user Stop
+   * after it wins: the delivery does not wake the box, and the prompt waits
+   * parked until the user opens the session again. Inbox prompts are held by
+   * the Stop itself (`holdInboxPrompts`) and released by the next send.
+   */
+  queuedAt?: Date;
 }
 
 /** JSON metadata used to gate the one-time repair of pre-materialization prompts. */

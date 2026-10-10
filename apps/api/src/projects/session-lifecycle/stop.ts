@@ -8,6 +8,7 @@ import { isAlreadyNotRunning, isLifecycleTransitionInProgress } from '../reaping
 import { applyStoppedState } from '../reaping/sandbox-state-sync';
 import { claimManualSandboxStop, releaseSandboxStopClaim } from '../reaping/box-queries';
 import { abortLiveTurnBeforeStop, flushDriveSyncBeforeStop, retireEphemeralOnStop } from '../reaping/stop-box';
+import { holdInboxPrompts } from './inbox-rows';
 import { RUNTIME_WAKE_LATE_START_GUARD_MS, runtimeWakeInProgress } from './runtime-wake-fence';
 
 /**
@@ -124,6 +125,15 @@ export async function stopSession(input: {
     // Another stop (the idle reaper's, or a second click) owns the row.
     return { status: 200, body: { ok: true, session_id: sessionId, status: 'stopping' } };
   }
+  // Hold the session's queued prompts before the abort, exactly as the turn's
+  // own Stop does. Otherwise the abort's turn end promotes the next queued
+  // prompt, and a prompt parked on an unreachable runtime re-arms on its
+  // backoff: either one wakes the box the user just stopped (on the rig, a
+  // parked prompt resumed and un-archived a stopped box 8 min later). The next
+  // message the user sends releases the hold (`enqueueReleasingHold`).
+  await holdInboxPrompts(sessionId, true).catch((err) =>
+    console.warn(`[stop] holding queued prompts failed for session ${sessionId}:`, err),
+  );
   // Close the live turn before powering the box off, but only when the box is
   // actually running one: `cancellingWake` means the row is already stopped
   // (a wake was mid-flight), so there is no live opencode process to abort.
