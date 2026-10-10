@@ -19488,7 +19488,22 @@
       "text991f9b694b39": "文件 文件夹 云盘 共享 公司 我的文件夹 访问 分享",
       "textdad6d4c4e992": "在此 App 处理的每个请求中要求已登录成员",
       "text959f67f7ce9c": "使用令牌通过 HTTP 调用 App",
-      "text022ba4cb6981": "脚本、服务和你自己的服务器。将成员令牌作为 Bearer 发送到 App 的 HTTP API。"
+      "text022ba4cb6981": "脚本、服务和你自己的服务器。将成员令牌作为 Bearer 发送到 App 的 HTTP API。",
+      "text73de4f815f7c": "已列出 Kortix App 的机器",
+      "text224945942c48": "已启动 Kortix App 的机器",
+      "texta51b1814a4e6": "已停止 Kortix App 的机器",
+      "textb393443b6937": "已重启 Kortix App 的机器",
+      "textf0b961e5fc2b": "已删除 Kortix App 的机器",
+      "textb3dd1bd89a30": "已调整 Kortix App 的规模",
+      "textb724399064e0": "已在 Kortix App 的机器中运行命令",
+      "textcece78b79c0e": "已列出 Kortix App 的卷",
+      "textab217edc5012": "已创建 Kortix App 的卷",
+      "textd42cf198f12a": "已扩展 Kortix App 的卷",
+      "text396f05ee430d": "已删除 Kortix App 的卷",
+      "text8e3e32695e1f": "已列出 Kortix App 卷的快照",
+      "textb8390ff12da4": "已创建 Kortix App 卷的快照",
+      "text540e6c49c66d": "已恢复 Kortix App 的卷",
+      "text1940157bf9a8": "已复刻 Kortix App 的卷"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

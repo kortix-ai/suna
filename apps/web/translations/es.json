@@ -19488,7 +19488,22 @@
       "text991f9b694b39": "archivos carpetas drive compartido empresa mi carpeta acceso compartir",
       "textdad6d4c4e992": "Exige un miembro con sesión iniciada en cada solicitud que atienda esta App",
       "text959f67f7ce9c": "Llama a la App por HTTP con el token",
-      "text022ba4cb6981": "Scripts, servicios y tus propios servidores. Envía un token de miembro como bearer a la API HTTP de la App."
+      "text022ba4cb6981": "Scripts, servicios y tus propios servidores. Envía un token de miembro como bearer a la API HTTP de la App.",
+      "text73de4f815f7c": "Se listaron las máquinas de la Kortix App",
+      "text224945942c48": "Se inició una máquina de la Kortix App",
+      "texta51b1814a4e6": "Se detuvo una máquina de la Kortix App",
+      "textb393443b6937": "Se reinició una máquina de la Kortix App",
+      "textf0b961e5fc2b": "Se eliminó una máquina de la Kortix App",
+      "textb3dd1bd89a30": "Se escaló la Kortix App",
+      "textb724399064e0": "Se ejecutó un comando en una máquina de la Kortix App",
+      "textcece78b79c0e": "Se listaron los volúmenes de la Kortix App",
+      "textab217edc5012": "Se creó un volumen de la Kortix App",
+      "textd42cf198f12a": "Se amplió un volumen de la Kortix App",
+      "text396f05ee430d": "Se eliminó un volumen de la Kortix App",
+      "text8e3e32695e1f": "Se listaron las instantáneas de un volumen de la Kortix App",
+      "textb8390ff12da4": "Se tomó una instantánea de un volumen de la Kortix App",
+      "text540e6c49c66d": "Se restauró un volumen de la Kortix App",
+      "text1940157bf9a8": "Se bifurcó un volumen de la Kortix App"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

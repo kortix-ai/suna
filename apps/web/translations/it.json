@@ -19488,7 +19488,22 @@
       "text991f9b694b39": "file cartelle drive condiviso azienda mia cartella accesso condividi",
       "textdad6d4c4e992": "Richiedi un membro autenticato in ogni richiesta servita da questa App",
       "text959f67f7ce9c": "Chiama l'App via HTTP con il token",
-      "text022ba4cb6981": "Script, servizi e i tuoi server. Invia un token membro come bearer all'API HTTP dell'App."
+      "text022ba4cb6981": "Script, servizi e i tuoi server. Invia un token membro come bearer all'API HTTP dell'App.",
+      "text73de4f815f7c": "Macchine della Kortix App elencate",
+      "text224945942c48": "Macchina della Kortix App avviata",
+      "texta51b1814a4e6": "Macchina della Kortix App arrestata",
+      "textb393443b6937": "Macchina della Kortix App riavviata",
+      "textf0b961e5fc2b": "Macchina della Kortix App eliminata",
+      "textb3dd1bd89a30": "Kortix App ridimensionata",
+      "textb724399064e0": "Comando eseguito in una macchina della Kortix App",
+      "textcece78b79c0e": "Volumi della Kortix App elencati",
+      "textab217edc5012": "Volume della Kortix App creato",
+      "textd42cf198f12a": "Volume della Kortix App ampliato",
+      "text396f05ee430d": "Volume della Kortix App eliminato",
+      "text8e3e32695e1f": "Snapshot di un volume della Kortix App elencati",
+      "textb8390ff12da4": "Snapshot di un volume della Kortix App creato",
+      "text540e6c49c66d": "Volume della Kortix App ripristinato",
+      "text1940157bf9a8": "Volume della Kortix App duplicato"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

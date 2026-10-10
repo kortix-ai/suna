@@ -19488,7 +19488,22 @@
       "text991f9b694b39": "ファイル フォルダー ドライブ 共有 会社 マイフォルダー アクセス 共有する",
       "textdad6d4c4e992": "このアプリが処理するすべてのリクエストでサインイン済みメンバーを必須にする",
       "text959f67f7ce9c": "トークンを使って HTTP でアプリを呼び出す",
-      "text022ba4cb6981": "スクリプト、サービス、自社サーバー。メンバートークンを Bearer としてアプリの HTTP API に送信します。"
+      "text022ba4cb6981": "スクリプト、サービス、自社サーバー。メンバートークンを Bearer としてアプリの HTTP API に送信します。",
+      "text73de4f815f7c": "Kortix App のマシンを一覧表示しました",
+      "text224945942c48": "Kortix App のマシンを起動しました",
+      "texta51b1814a4e6": "Kortix App のマシンを停止しました",
+      "textb393443b6937": "Kortix App のマシンを再起動しました",
+      "textf0b961e5fc2b": "Kortix App のマシンを削除しました",
+      "textb3dd1bd89a30": "Kortix App をスケールしました",
+      "textb724399064e0": "Kortix App のマシンでコマンドを実行しました",
+      "textcece78b79c0e": "Kortix App のボリュームを一覧表示しました",
+      "textab217edc5012": "Kortix App のボリュームを作成しました",
+      "textd42cf198f12a": "Kortix App のボリュームを拡張しました",
+      "text396f05ee430d": "Kortix App のボリュームを削除しました",
+      "text8e3e32695e1f": "Kortix App のボリュームのスナップショットを一覧表示しました",
+      "textb8390ff12da4": "Kortix App のボリュームのスナップショットを作成しました",
+      "text540e6c49c66d": "Kortix App のボリュームを復元しました",
+      "text1940157bf9a8": "Kortix App のボリュームをフォークしました"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",

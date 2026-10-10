@@ -19488,7 +19488,22 @@
       "text991f9b694b39": "датотеке фасцикле диск дељено компанија моја фасцикла приступ дели",
       "textdad6d4c4e992": "Захтевајте пријављеног члана у сваком захтеву који ова апликација опслужује",
       "text959f67f7ce9c": "Позовите апликацију преко HTTP-а помоћу токена",
-      "text022ba4cb6981": "Скрипте, сервиси и ваши сервери. Пошаљите токен члана као bearer HTTP API-ју апликације."
+      "text022ba4cb6981": "Скрипте, сервиси и ваши сервери. Пошаљите токен члана као bearer HTTP API-ју апликације.",
+      "text73de4f815f7c": "Navedene mašine Kortix App-a",
+      "text224945942c48": "Pokrenuta mašina Kortix App-a",
+      "texta51b1814a4e6": "Zaustavljena mašina Kortix App-a",
+      "textb393443b6937": "Ponovo pokrenuta mašina Kortix App-a",
+      "textf0b961e5fc2b": "Uklonjena mašina Kortix App-a",
+      "textb3dd1bd89a30": "Skaliran Kortix App",
+      "textb724399064e0": "Pokrenuta komanda na mašini Kortix App-a",
+      "textcece78b79c0e": "Navedeni volumeni Kortix App-a",
+      "textab217edc5012": "Kreiran volumen Kortix App-a",
+      "textd42cf198f12a": "Proširen volumen Kortix App-a",
+      "text396f05ee430d": "Uklonjen volumen Kortix App-a",
+      "text8e3e32695e1f": "Navedeni snimci volumena Kortix App-a",
+      "textb8390ff12da4": "Napravljen snimak volumena Kortix App-a",
+      "text540e6c49c66d": "Vraćen volumen Kortix App-a",
+      "text1940157bf9a8": "Kopiran volumen Kortix App-a"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",

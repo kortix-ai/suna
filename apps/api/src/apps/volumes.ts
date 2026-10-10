@@ -203,6 +203,62 @@ export async function detachVolume(
   await releaseVolume(runtime.volumeId, runtime.runtimeId);
 }
 
+/** Pre-create a volume (Fly `volumes create`): a later machine of its group with a mount of this name takes it. */
+export async function createAppVolume(input: {
+  appId: string;
+  accountId: string;
+  name: string;
+  sizeGb: number;
+  group?: string;
+  retentionDays?: number;
+}): Promise<AppVolumeRow> {
+  if (!VOLUME_NAME.test(input.name)) {
+    throw new AppVolumeError(400, 'volume_name_invalid', 'A volume name is 1-30 lowercase letters, digits or "_".');
+  }
+  if (!Number.isInteger(input.sizeGb) || input.sizeGb < 1 || input.sizeGb > MAX_VOLUME_GB) {
+    throw new AppVolumeError(400, 'volume_size_invalid', `size_gb must be 1 to ${MAX_VOLUME_GB}.`);
+  }
+  return createVolume({
+    appId: input.appId,
+    accountId: input.accountId,
+    name: input.name,
+    group: input.group ?? 'app',
+    machineId: null,
+    sizeGb: input.sizeGb,
+    retentionDays: input.retentionDays ?? 5,
+  });
+}
+
+/** Grow a volume's allotment (never shrink, Fly verbatim) or change its snapshot retention. */
+export async function updateAppVolume(
+  appId: string,
+  volumeId: string,
+  input: { sizeGb?: number; retentionDays?: number },
+): Promise<AppVolumeRow> {
+  const volume = await appVolume(appId, volumeId);
+  if (input.sizeGb !== undefined) {
+    if (!Number.isInteger(input.sizeGb) || input.sizeGb > MAX_VOLUME_GB) {
+      throw new AppVolumeError(400, 'volume_size_invalid', `size_gb must be at most ${MAX_VOLUME_GB}.`);
+    }
+    if (input.sizeGb < volume.sizeGb) {
+      throw new AppVolumeError(400, 'volume_shrink_refused', `A volume only grows: it is ${volume.sizeGb} GB.`);
+    }
+  }
+  if (input.retentionDays !== undefined && (!Number.isInteger(input.retentionDays) || input.retentionDays < 1 || input.retentionDays > 60)) {
+    throw new AppVolumeError(400, 'volume_retention_invalid', 'snapshot_retention_days must be 1 to 60.');
+  }
+  const [row] = await db.update(appVolumes).set({
+    ...(input.sizeGb !== undefined ? { sizeGb: input.sizeGb } : {}),
+    ...(input.retentionDays !== undefined ? { snapshotRetentionDays: input.retentionDays } : {}),
+    updatedAt: new Date(),
+  }).where(eq(appVolumes.volumeId, volume.volumeId)).returning();
+  return row!;
+}
+
+export async function getAppVolume(appId: string, volumeId: string): Promise<AppVolumeRow> {
+  return appVolume(appId, volumeId);
+}
+
 async function appVolume(appId: string, volumeId: string): Promise<AppVolumeRow> {
   const [row] = await db.select().from(appVolumes)
     .where(and(live(appId), eq(appVolumes.volumeId, volumeId)))

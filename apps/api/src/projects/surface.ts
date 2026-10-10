@@ -49,6 +49,7 @@ export {
 export { assertProjectCapability, loadProjectForUser } from './lib/access';
 export { projectsApp } from './lib/app';
 export { decryptProjectSecret, encryptProjectSecret } from './secrets/envelope';
+export { listResolvedProjectSecrets } from './secrets';
 export { currentInstanceId } from './instance-scope';
 
 // What account erasure deletes outside the database (consumed by

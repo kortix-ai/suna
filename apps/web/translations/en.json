@@ -19499,7 +19499,22 @@
       "text991f9b694b39": "files folders drive shared company my folder access share",
       "textdad6d4c4e992": "Require a signed-in member in every request this App serves",
       "text959f67f7ce9c": "Call the App over HTTP with the token",
-      "text022ba4cb6981": "Scripts, services and your own servers. Send a member token as a bearer to the App's HTTP API."
+      "text022ba4cb6981": "Scripts, services and your own servers. Send a member token as a bearer to the App's HTTP API.",
+      "text73de4f815f7c": "Listed Kortix App machines",
+      "text224945942c48": "Started Kortix App machine",
+      "texta51b1814a4e6": "Stopped Kortix App machine",
+      "textb393443b6937": "Restarted Kortix App machine",
+      "textf0b961e5fc2b": "Destroyed Kortix App machine",
+      "textb3dd1bd89a30": "Scaled Kortix App",
+      "textb724399064e0": "Ran a command in a Kortix App machine",
+      "textcece78b79c0e": "Listed Kortix App volumes",
+      "textab217edc5012": "Created Kortix App volume",
+      "textd42cf198f12a": "Extended Kortix App volume",
+      "text396f05ee430d": "Destroyed Kortix App volume",
+      "text8e3e32695e1f": "Listed Kortix App volume snapshots",
+      "textb8390ff12da4": "Took Kortix App volume snapshot",
+      "text540e6c49c66d": "Restored Kortix App volume",
+      "text1940157bf9a8": "Forked Kortix App volume"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

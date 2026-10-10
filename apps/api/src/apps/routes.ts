@@ -27,7 +27,7 @@ import { AppHostingProvider } from './hosting';
 import { deploymentEventsAsLogs } from './logs';
 import { releaseDeploymentImage, releaseDeploymentImages, teardownAppRuntimes } from './images';
 import { ReleaseConfigSchema, resolveDeployConfig } from './release-config';
-import { appVolumesSupported } from './volumes';
+import { appVolumesSupported, destroyAppVolumes } from './volumes';
 import { ensureAppRuntimeRunning, loadPublicApp } from './public-proxy';
 import { type AppSourceSpec } from './spec';
 import { appPublicUrl } from './hostnames';
@@ -55,6 +55,7 @@ import { authorizedProject, capabilityRefusal, visibleApp } from './route-access
 import { AppObject, appJson, appsJson } from './serialize';
 import { UnknownLinkedAppError, resolveAppLinks, writeAppLinks } from './links';
 import { registerAppCapabilityRoutes } from './capability-routes';
+import { registerAppFleetRoutes } from './fleet-routes';
 
 /** The machine bounds an App shares with a session sandbox. Stated here so the
  *  published OpenAPI schema carries the real ceiling instead of a number the
@@ -256,6 +257,7 @@ async function linkOrRefuse(c: Context<AppEnv>, app: typeof apps.$inferSelect, u
 
 export function registerAppsRoutes(): void {
   registerAppCapabilityRoutes();
+  registerAppFleetRoutes();
   projectsApp.openapi(
     createRoute({
       method: 'get', path: '/{projectId}/apps', tags: ['apps'], summary: 'List Apps', ...auth,
@@ -584,6 +586,7 @@ export function registerAppsRoutes(): void {
           memory_gb: MemorySchema.optional(), disk_gb: DiskSchema.optional(),
           idle_timeout_seconds: z.number().int().min(120).max(86400).optional(), always_on: z.boolean().optional(),
           uses: UsesSchema.optional(),
+          labels: z.array(z.string().regex(/^[a-z0-9][a-z0-9-]{0,30}$/)).max(10).optional(),
         }) } } },
       },
       responses: { 200: json(AppObject, 'App'), ...errors(400, 402, 403, 404, 409, 502, 503) },
@@ -626,6 +629,7 @@ export function registerAppsRoutes(): void {
           ...(body.disk_gb !== undefined ? { diskGb: body.disk_gb } : {}),
           ...(body.idle_timeout_seconds !== undefined ? { idleTimeoutSeconds: body.idle_timeout_seconds } : {}),
           ...(body.always_on !== undefined ? { alwaysOn: body.always_on } : {}),
+          ...(body.labels !== undefined ? { labels: [...new Set(body.labels as string[])] } : {}),
           updatedAt: new Date(),
         }).where(and(eq(apps.appId, appId), eq(apps.projectId, projectId), isNull(apps.deletedAt))).returning();
       });
@@ -682,6 +686,8 @@ export function registerAppsRoutes(): void {
       // then counts it gone (`removeAppRuntime`), so a dead provider never blocks
       // the delete. Its compute meter closes either way.
       await teardownAppRuntimes(runtimes);
+      // Volumes leave with the App: a final snapshot each, purged after 7 days.
+      await destroyAppVolumes(appId);
       // Each deployment build left one provider image. Platinum counts them
       // against a per-org template cap, so the App is not gone until they are.
       // A build still running may register its image after this request, so it

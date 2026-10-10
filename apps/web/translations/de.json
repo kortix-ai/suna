@@ -19488,7 +19488,22 @@
       "text991f9b694b39": "Dateien Ordner Laufwerk geteilt Firma mein Ordner Zugriff teilen",
       "textdad6d4c4e992": "Bei jeder Anfrage an diese App ein angemeldetes Mitglied verlangen",
       "text959f67f7ce9c": "Die App per HTTP mit dem Token aufrufen",
-      "text022ba4cb6981": "Skripte, Dienste und eigene Server. Senden Sie ein Mitgliedstoken als Bearer an die HTTP-API der App."
+      "text022ba4cb6981": "Skripte, Dienste und eigene Server. Senden Sie ein Mitgliedstoken als Bearer an die HTTP-API der App.",
+      "text73de4f815f7c": "Maschinen der Kortix App aufgelistet",
+      "text224945942c48": "Maschine der Kortix App gestartet",
+      "texta51b1814a4e6": "Maschine der Kortix App gestoppt",
+      "textb393443b6937": "Maschine der Kortix App neu gestartet",
+      "textf0b961e5fc2b": "Maschine der Kortix App gelöscht",
+      "textb3dd1bd89a30": "Kortix App skaliert",
+      "textb724399064e0": "Befehl in einer Maschine der Kortix App ausgeführt",
+      "textcece78b79c0e": "Volumes der Kortix App aufgelistet",
+      "textab217edc5012": "Volume der Kortix App erstellt",
+      "textd42cf198f12a": "Volume der Kortix App vergrößert",
+      "text396f05ee430d": "Volume der Kortix App gelöscht",
+      "text8e3e32695e1f": "Snapshots eines Volumes der Kortix App aufgelistet",
+      "textb8390ff12da4": "Snapshot eines Volumes der Kortix App erstellt",
+      "text540e6c49c66d": "Volume der Kortix App wiederhergestellt",
+      "text1940157bf9a8": "Volume der Kortix App geforkt"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

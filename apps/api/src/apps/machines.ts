@@ -29,7 +29,7 @@ import { and, asc, desc, eq, inArray, isNull, ne, notInArray, sql } from 'drizzl
 import { pauseComputeSession, startComputeSession } from '../billing/services/compute-metering';
 import { type SandboxProviderName } from '../config';
 import { logger } from '../lib/logger';
-import { listResolvedProjectSecrets } from '../projects/secrets';
+import { listResolvedProjectSecrets } from '../projects/surface';
 import { db } from '../shared/db';
 import { resolveAppRuntimeEnvironment } from './environment';
 import { AppHostingProvider, type AppMachineSpec } from './hosting';

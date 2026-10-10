@@ -19488,7 +19488,22 @@
       "text991f9b694b39": "fichiers dossiers drive partagé entreprise mon dossier accès partager",
       "textdad6d4c4e992": "Exigez un membre connecté dans chaque requête que cette App traite",
       "text959f67f7ce9c": "Appelez l'App en HTTP avec le jeton",
-      "text022ba4cb6981": "Scripts, services et vos propres serveurs. Envoyez un jeton de membre en bearer à l'API HTTP de l'App."
+      "text022ba4cb6981": "Scripts, services et vos propres serveurs. Envoyez un jeton de membre en bearer à l'API HTTP de l'App.",
+      "text73de4f815f7c": "Machines de la Kortix App listées",
+      "text224945942c48": "Machine de la Kortix App démarrée",
+      "texta51b1814a4e6": "Machine de la Kortix App arrêtée",
+      "textb393443b6937": "Machine de la Kortix App redémarrée",
+      "textf0b961e5fc2b": "Machine de la Kortix App supprimée",
+      "textb3dd1bd89a30": "Kortix App mise à l’échelle",
+      "textb724399064e0": "Commande exécutée dans une machine de la Kortix App",
+      "textcece78b79c0e": "Volumes de la Kortix App listés",
+      "textab217edc5012": "Volume de la Kortix App créé",
+      "textd42cf198f12a": "Volume de la Kortix App agrandi",
+      "text396f05ee430d": "Volume de la Kortix App supprimé",
+      "text8e3e32695e1f": "Instantanés d’un volume de la Kortix App listés",
+      "textb8390ff12da4": "Instantané d’un volume de la Kortix App pris",
+      "text540e6c49c66d": "Volume de la Kortix App restauré",
+      "text1940157bf9a8": "Volume de la Kortix App dupliqué"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

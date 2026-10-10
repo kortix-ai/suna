@@ -1,7 +1,8 @@
 /**
  * The bindings mount: on an App's host, `/_kortix/apps/<slug>/*` reaches the
- * public http service of an App it uses (`app_links`), HTTP and WebSocket, with
- * the prefix stripped. Code in the App needs one origin and no CORS:
+ * `http` service of an App it uses (`app_links`) and `/_kortix/apps/<slug>--<service>/*`
+ * another of its services, HTTP and WebSocket, with the prefix stripped. A
+ * service with `access: admins` is never bound (403 `app_binding_forbidden`). Code in the App needs one origin and no CORS:
  *
  *   const { url, token } = await kortixBinding('db');
  *   // url = location.origin + '/_kortix/apps/db'; token from /_kortix/token?audience=db
@@ -42,17 +43,24 @@ export function parseBindingPath(pathname: string): { name: string; path: string
 type BindingApp = { appId: string; projectId: string };
 
 type PublicState = NonNullable<Awaited<ReturnType<typeof loadPublicAppState>>>;
-type BoundApp = { app: PublicState['app']; deployment: NonNullable<PublicState['deployment']>; runtime: NonNullable<PublicState['runtime']> };
+type BoundApp = { app: PublicState['app']; deployment: NonNullable<PublicState['deployment']>; runtime: NonNullable<PublicState['runtime']>; servicePort?: number };
 
 const refusal = (status: number, code: string, error: string) =>
   Response.json({ error, code }, { status, headers: { 'cache-control': 'no-store' } });
 
 /** The used App with a live runtime, or the refusal to answer. */
-async function boundApp(app: BindingApp, name: string): Promise<BoundApp | Response> {
+async function boundApp(app: BindingApp, binding: string): Promise<BoundApp | Response> {
+  const [name, service = 'http'] = binding.split('--', 2) as [string, string?];
   const linked = await linkedApp(app.appId, app.projectId, name);
   if (!linked) return appNotLinkedResponse(name);
-  const state = await loadPublicAppState(linked.routeKey);
+  const state = await loadPublicAppState(linked.routeKey, service);
   if (!state) return refusal(404, 'app_not_found', `The App "${name}" does not exist.`);
+  if (service !== 'http' && !state.service) {
+    return refusal(404, 'app_service_not_found', `The App "${name}" has no service "${service}".`);
+  }
+  if (state.service?.access === 'admins') {
+    return refusal(403, 'app_binding_forbidden', `The service "${service}" of "${name}" is for project admins only.`);
+  }
   if (state.deployment?.hostingType === 'static') {
     return refusal(409, 'app_binding_unsupported', `The App "${name}" is static: it runs no server to bind.`);
   }
@@ -64,7 +72,10 @@ async function boundApp(app: BindingApp, name: string): Promise<BoundApp | Respo
   ) {
     return refusal(503, 'app_binding_unavailable', `The App "${name}" has no running release.`);
   }
-  return { app: state.app, deployment: state.deployment, runtime: state.runtime };
+  return {
+    app: state.app, deployment: state.deployment, runtime: state.runtime,
+    ...(service !== 'http' && state.service ? { servicePort: state.service.internal_port } : {}),
+  };
 }
 
 /** HTTP on the bindings mount. The caller ran the App gate. */
@@ -75,7 +86,7 @@ export async function appBindingResponse(request: Request, url: URL, publicHost:
   if (bound instanceof Response) return bound;
   const upstreamUrl = new URL(`${parsed.path}${url.search}`, url.origin);
   const coldStart = appRuntimeNeedsWake(bound.runtime, new Date(), bound.app.alwaysOn);
-  return proxyRunningApp(request, upstreamUrl, publicHost, null, bound, new AppHostingProvider(), coldStart);
+  return proxyRunningApp(request, upstreamUrl, publicHost, null, bound, new AppHostingProvider(), coldStart, bound.servicePort);
 }
 
 /** A WebSocket upgrade on the bindings mount: the upstream to pipe to. The caller ran the App gate. */
@@ -96,7 +107,7 @@ export async function appBindingWsUpgrade(
     const hosting = new AppHostingProvider();
     const runtime = await ensureAppRuntimeRunning(bound, hosting);
     await stampActivity(runtime.runtimeId, bound.app.idleTimeoutSeconds);
-    const ingress = await hosting.ingress(runtime.provider as SandboxProviderName, runtime.externalId, 'websocket');
+    const ingress = await hosting.ingress(runtime.provider as SandboxProviderName, runtime.externalId, 'websocket', bound.servicePort);
     return {
       ok: true,
       data: {

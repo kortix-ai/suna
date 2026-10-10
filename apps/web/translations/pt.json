@@ -19488,7 +19488,22 @@
       "text991f9b694b39": "arquivos pastas drive compartilhado empresa minha pasta acesso compartilhar",
       "textdad6d4c4e992": "Exija um membro conectado em toda solicitação que este App atende",
       "text959f67f7ce9c": "Chame o App por HTTP com o token",
-      "text022ba4cb6981": "Scripts, serviços e seus próprios servidores. Envie um token de membro como bearer para a API HTTP do App."
+      "text022ba4cb6981": "Scripts, serviços e seus próprios servidores. Envie um token de membro como bearer para a API HTTP do App.",
+      "text73de4f815f7c": "Máquinas do Kortix App listadas",
+      "text224945942c48": "Máquina do Kortix App iniciada",
+      "texta51b1814a4e6": "Máquina do Kortix App parada",
+      "textb393443b6937": "Máquina do Kortix App reiniciada",
+      "textf0b961e5fc2b": "Máquina do Kortix App excluída",
+      "textb3dd1bd89a30": "Kortix App escalado",
+      "textb724399064e0": "Comando executado em uma máquina do Kortix App",
+      "textcece78b79c0e": "Volumes do Kortix App listados",
+      "textab217edc5012": "Volume do Kortix App criado",
+      "textd42cf198f12a": "Volume do Kortix App ampliado",
+      "text396f05ee430d": "Volume do Kortix App excluído",
+      "text8e3e32695e1f": "Snapshots de um volume do Kortix App listados",
+      "textb8390ff12da4": "Snapshot de um volume do Kortix App criado",
+      "text540e6c49c66d": "Volume do Kortix App restaurado",
+      "text1940157bf9a8": "Volume do Kortix App bifurcado"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
