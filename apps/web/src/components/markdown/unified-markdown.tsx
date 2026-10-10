@@ -4,7 +4,7 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { ClickablePath, wrapChildrenWithPaths } from '@/components/common/clickable-path';
 import { MarkdownCode } from '@/components/markdown/code';
-import { closeOpenGenuiFence, openGenuiFence } from '@/components/markdown/code/genui-fence';
+import { closeOpenGenuiFence, openGenuiFence, separateGenuiClosers } from '@/components/markdown/code/genui-fence';
 import { parseFileLinkHref, remarkWorkspaceFileLinks } from '@/components/markdown/file-links';
 import { InsideLinkContext } from '@/components/markdown/code/inside-link-context';
 import {
@@ -484,7 +484,10 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
     // markdown, lands inside the block, and its last line tells the block which of the two it is.
     // A nested fence (`code === null`) in history may be one its container already closed: closing
     // it again would render an extra empty code block, so it is closed only while streaming.
-    const genuiOpen = useMemo(() => (genui ? openGenuiFence(safeContent) : null), [genui, safeContent]);
+    // A closer the model glued to the last statement (`…")````) moves to its own line first, or
+    // CommonMark would not close the fence and the prose after it would land inside the block.
+    const source = useMemo(() => (genui ? separateGenuiClosers(safeContent) : safeContent), [genui, safeContent]);
+    const genuiOpen = useMemo(() => (genui ? openGenuiFence(source) : null), [genui, source]);
     const renderContext = useMemo(
       () => ({ isStreaming, proxy, policy, trust, variant, genui }),
       [isStreaming, proxy, policy, trust, variant, genui],
@@ -497,13 +500,13 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
     // that to once per distinct value. It sits ABOVE the empty-content early
     // return so the hook order stays fixed.
     const finalContent = useMemo(() => {
-      if (!safeContent) return '';
+      if (!source) return '';
       const closed =
         genuiOpen && (genuiOpen.code !== null || isStreaming)
-          ? closeOpenGenuiFence(safeContent, genuiOpen, isStreaming ? 'streaming' : 'cut-off')
-          : safeContent;
+          ? closeOpenGenuiFence(source, genuiOpen, isStreaming ? 'streaming' : 'cut-off')
+          : source;
       return prepareMarkdownSource(closed, isStreaming);
-    }, [safeContent, genuiOpen, isStreaming]);
+    }, [source, genuiOpen, isStreaming]);
 
     if (!safeContent) {
       return (

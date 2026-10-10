@@ -3294,12 +3294,14 @@
     "genuiVersionOf",
     "parseGenui",
     "safeUrl",
+    "separateGenuiClosers",
     "splitGenui"
   ],
   "./genui/fence": [
     "GenuiSegment",
     "genuiVersionFromClassName",
     "genuiVersionOf",
+    "separateGenuiClosers",
     "splitGenui"
   ],
   "./genui/react": [

@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { GENUI_MAX_NODES, GENUI_MAX_SOURCE_CHARS } from './catalog';
 import { genuiBlockToMarkdown } from './markdown';
 import { createGenuiParser, parseGenui } from './parse';
-import { HOTEL } from './test-fixtures';
+import { BROKEN_TABS, HOTEL } from './test-fixtures';
 
 describe('parse + validate', () => {
   test('a valid block renders the whole tree with stable ids', () => {
@@ -39,7 +39,8 @@ describe('parse + validate', () => {
     expect(long.root).toBeNull();
     expect(long.issues.map((i) => `${i.code}:${i.component}`)).toEqual(['schema:Callout', 'schema:Stack', 'no-root:undefined']);
     const many = parseGenui('root = Stack([r, ok])\nr = StatRow([a, a, a, a, a])\na = Stat("x", "1")\nok = Badge("kept")');
-    expect((many.root?.props.children as { type: string }[]).map((c) => c.type)).toEqual(['Badge']);
+    // The StatRow (max 4) fails; its 5 valid Stats are blocks, so they take its place in the Stack.
+    expect((many.root?.props.children as { type: string }[]).map((c) => c.type)).toEqual(['Stat', 'Stat', 'Stat', 'Stat', 'Stat', 'Badge']);
   });
 
   test('Map takes zoom before route: Map(markers, source, zoom?, route?)', () => {
@@ -118,7 +119,8 @@ describe('parse + validate', () => {
     const types = (result: ReturnType<typeof parser.update>) =>
       (result.root?.props.children as { type: string }[]).map((c) => c.type);
     expect(types(parser.update(partial, true))).toEqual(['StatRow', 'Badge']);
-    expect(types(parser.update(partial, false))).toEqual(['Badge']);
+    // The final parse fails the StatRow (min 2); its one valid Stat takes its place.
+    expect(types(parser.update(partial, false))).toEqual(['Stat', 'Badge']);
   });
 
   test('parse cost: a 4 KB block streamed in 64-byte ticks stays under 2 ms per tick', () => {
@@ -154,6 +156,88 @@ describe('parse + validate', () => {
     expect(count(result.root)).toBeLessThanOrEqual(GENUI_MAX_NODES);
     expect(result.issues.filter((issue) => issue.code === 'too-many-nodes')).toHaveLength(1);
     expect(elapsed).toBeLessThan(50);
+  });
+});
+
+type Tree = { id: string; type: string; props: Record<string, unknown> };
+const kids = (node: Tree | null | undefined, slot = 'children') => (node?.props[slot] ?? []) as Tree[];
+
+describe('salvage: a node that fails its schema gives up its valid subtrees', () => {
+  test('failures that cascade to the root keep the valid Tables, in source order', () => {
+    const { root, issues } = parseGenui(BROKEN_TABS);
+    expect(root?.id).toBe('root');
+    expect(kids(root).map((c) => `${c.id}:${c.type}`)).toEqual(['a:Table', 'b:Table', 'c:Table']);
+    expect(issues.map((i) => `${i.code}:${i.statementId}`)).toEqual(['schema:note', 'schema:t1', 'schema:t2', 'schema:tabs']);
+    const markdown = genuiBlockToMarkdown(BROKEN_TABS);
+    for (const value of ['| 1 |', '| 2 |', '| 3 |']) expect(markdown).toContain(value);
+  });
+
+  test('a root that fails becomes a Stack of its valid subtrees', () => {
+    const names = Array.from({ length: 13 }, (_, i) => `b${i}`);
+    const block = [`root = Stack([${names.join(', ')}])`, ...names.map((name) => `${name} = Badge("${name}")`)].join('\n');
+    const { root, issues } = parseGenui(block);
+    expect(root?.type).toBe('Stack');
+    expect(kids(root).map((c) => c.id)).toEqual(names);
+    expect(issues.map((i) => `${i.code}:${i.statementId}`)).toEqual(['schema:root']);
+  });
+
+  test('a root with no valid subtree stays null', () => {
+    const { root, issues } = parseGenui(`root = Stack([n])\nn = Callout("info", "${'x'.repeat(401)}")`);
+    expect(root).toBeNull();
+    expect(issues.map((i) => i.code)).toEqual(['schema', 'schema', 'no-root']);
+  });
+
+  test('a failed node inside a valid parent: what the parent cannot hold rises to an ancestor that can', () => {
+    const block = `root = Stack([tabs, end])
+tabs = Tabs([t1, t2, t3])
+t1 = Tab("One", [a])
+t2 = Tab("${'L'.repeat(31)}", [b])
+t3 = Tab("Three", [c])
+a = Badge("a")
+b = Table(["k"], [["2"]])
+c = Badge("c")
+end = Badge("end")`;
+    const { root, issues } = parseGenui(block);
+    expect(kids(root).map((c) => `${c.id}:${c.type}`)).toEqual(['tabs:Tabs', 'b:Table', 'end:Badge']);
+    expect(kids(kids(root)[0], 'tabs').map((t) => t.id)).toEqual(['t1', 't3']);
+    expect(issues.map((i) => `${i.code}:${i.statementId}`)).toEqual(['schema:t2']);
+  });
+
+  test('a valid child the parent slot does not accept gives up its own children', () => {
+    const tabs = Array.from({ length: 6 }, (_, i) => `t${i}`);
+    const block = [
+      'root = Stack([tabs])',
+      `tabs = Tabs([${tabs.join(', ')}])`,
+      ...tabs.map((t, i) => `${t} = Tab("Tab ${i}", [b${i}])\nb${i} = Badge("${i}")`),
+    ].join('\n');
+    const { root, issues } = parseGenui(block);
+    expect(kids(root).map((c) => c.id)).toEqual(['b0', 'b1', 'b2', 'b3', 'b4', 'b5']);
+    expect(issues.map((i) => `${i.code}:${i.statementId}`)).toEqual(['schema:tabs']);
+  });
+
+  test('salvaged subtrees keep their limits: an unsafe URL is still removed', () => {
+    const block = `root = Stack([tabs])
+tabs = Tabs([t1, t2])
+t1 = Tab("${'L'.repeat(31)}", [card])
+t2 = Tab("Two", [x])
+card = Card("Title", "Body", null, "javascript:x")
+x = Badge("x")`;
+    const { root, issues } = parseGenui(block);
+    expect(kids(root).map((c) => `${c.id}:${c.type}`)).toEqual(['card:Card', 'x:Badge']);
+    expect(kids(root)[0]!.props.image).toBeUndefined();
+    expect(issues.map((i) => `${i.code}:${i.statementId}`)).toEqual(['url:card', 'schema:t1', 'schema:tabs']);
+  });
+
+  test('streaming: a salvaged subtree keeps its object identity across ticks', () => {
+    const parser = createGenuiParser();
+    const upTo = BROKEN_TABS.indexOf('c = Table');
+    const first = parser.update(BROKEN_TABS.slice(0, upTo), true);
+    const next = parser.update(BROKEN_TABS.slice(0, upTo + 4), true);
+    const tableA = (result: typeof first) => kids(result.root).find((c) => c.id === 'a');
+    expect(tableA(first)).toBeDefined();
+    expect(tableA(next)).toBe(tableA(first)!);
+    const done = parser.update(BROKEN_TABS, false);
+    expect(kids(done.root).map((c) => c.id)).toEqual(['a', 'b', 'c']);
   });
 });
 

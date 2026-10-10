@@ -121,6 +121,13 @@ describe('openui fences in chat markdown', () => {
     expect(codeBlocks(root)).toHaveLength(0);
   });
 
+  test('a closer glued to the last statement closes the block, and the prose after it renders', () => {
+    const root = render('```openui\nroot = Stack([a])\na = Badge("Hi")```\n\nAfter.');
+    expect(blocks(root).map((block) => block.props.code)).toEqual(['root = Stack([a])\na = Badge("Hi")']);
+    const markdown = root.findAll((n) => n.type === ('markdown' as never));
+    expect(markdown.map((n) => n.props.children)).toEqual(['After.']);
+  });
+
   test('`openui-lang` and `openui-v2` route on the raw tag, even where the language name is normalized', () => {
     expect(blocks(render('```openui-lang\nroot = Stack([])\n```'))[0]?.props.version).toBe(1);
     expect(blocks(render('```openui-v2 extra words\nroot = Stack([])\n```'))[0]?.props.version).toBe(2);

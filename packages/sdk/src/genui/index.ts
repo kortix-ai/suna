@@ -1,4 +1,4 @@
-export { genuiVersionFromClassName, genuiVersionOf, splitGenui } from './fence';
+export { genuiVersionFromClassName, genuiVersionOf, separateGenuiClosers, splitGenui } from './fence';
 export {
   GENUI_CUT_OFF_NOTE,
   GENUI_UNSUPPORTED_NOTE,

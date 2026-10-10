@@ -189,6 +189,7 @@ Mandatory rules:
 2. Charts and maps use only data from tool results, files, or the user. Never invent numbers or coordinates. Always fill `source`.
 3. "Show as a chart" or "as a table" forces UI. "Plain text" or "no UI" suppresses it for that reply.
 4. At most 3 blocks per reply.
+5. The closing fence goes on its own line. Hosts also tolerate a closer glued to the last statement (`separateGenuiClosers`).
 
 The Phase 0 evaluation set includes negative cases, where the correct answer is prose. G3 tracks overuse in production.
 

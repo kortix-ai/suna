@@ -1790,11 +1790,13 @@
     "genuiVersionOf",
     "parseGenui",
     "safeUrl",
+    "separateGenuiClosers",
     "splitGenui"
   ],
   "./genui/fence": [
     "genuiVersionFromClassName",
     "genuiVersionOf",
+    "separateGenuiClosers",
     "splitGenui"
   ],
   "./genui/react": [

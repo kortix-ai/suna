@@ -23,6 +23,9 @@ describe('prompt', () => {
     expect(prompt).toContain('Stat delta is at most 24 characters');
     expect(prompt).toContain('Table takes exactly columns, rows, caption?');
   });
+  test('puts the closing fence on its own line', () => {
+    expect(prompt).toContain('Put the closing ``` on its own line, never right after the last statement.');
+  });
   test('size and version', () => {
     expect(prompt.length).toBeLessThan(16000);
     expect(GENUI_PROMPT_VERSION).toMatch(/^[0-9a-f]{8}$/);

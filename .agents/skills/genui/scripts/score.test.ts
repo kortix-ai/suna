@@ -23,6 +23,9 @@ describe('scoreReply', () => {
     expect(scoreReply(PROSE, GOOD).overuse).toBe(true);
     expect(scoreReply(UI, 'Just text.').underuse).toBe(true);
   });
+  test('a closer glued to the last statement still closes the block, as the hosts render it', () => {
+    expect(scoreReply(UI, 'Here.\n\n```openui\nroot = Stack([b])\nb = Badge("ok")```\n\nMore prose.')).toMatchObject({ blocks: 1, validBlocks: 1, issues: [] });
+  });
   test('a chart without data is a forbidden component', () => {
     expect(scoreReply(NO_DATA, CHART).forbidden).toEqual(['BarChart']);
   });

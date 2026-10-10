@@ -13,8 +13,9 @@ Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, con
 // Host-level contract of generative UI in markdown: who opts in, when a block streams, when telemetry fires.
 
 const BLOCK = 'root = Stack([a, b])\na = Stat("Revenue", "12k")\nb = Callout("info", "Book by Friday")';
-// `r` names a StatRow with one Stat: only the relaxed streaming schema accepts it, the settled parse drops it.
-const RELAXED = 'root = Stack([r, ok])\nr = StatRow([a, b])\na = Stat("Revenue", "12k")\nok = Badge("kept")';
+// `r` names a Compare with one item: only the relaxed streaming schema accepts it. The settled parse
+// drops it, and its CompareItem is not a block, so nothing of it rises into the Stack.
+const RELAXED = 'root = Stack([r, ok])\nr = Compare([a, b])\na = CompareItem("Revenue", ["12k"])\nok = Badge("kept")';
 const fenced = (code: string) => `Here it is:\n\n\`\`\`openui\n${code}\n\`\`\``;
 
 let mounted: ReactTestRenderer | null = null;
@@ -79,6 +80,18 @@ describe('a block streams only while its own fence is open', () => {
     const renderer = await mount(<UnifiedMarkdown trust="agent" genui isStreaming content={`${fenced(RELAXED)}\n\nNow checking the`} />);
     expect(textOf(renderer)).not.toContain('Revenue');
     expect(textOf(renderer)).toContain('kept');
+  });
+});
+
+describe('a closer glued to the last statement', () => {
+  test('closes the block: it settles, and the prose after it renders', async () => {
+    const content = `Here it is:\n\n\`\`\`openui\n${BLOCK}\`\`\`\n\nAfter the block.`;
+    const renderer = await mount(<UnifiedMarkdown trust="agent" genui content={content} />);
+    const text = textOf(renderer);
+    expect(text).toContain('Book by Friday');
+    expect(text).toContain('After the block.');
+    expect(text).not.toContain('cut off');
+    expect(text).not.toContain('```');
   });
 });
 

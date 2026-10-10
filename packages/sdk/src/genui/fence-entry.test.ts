@@ -46,5 +46,5 @@ test('./genui/fence never reaches @openuidev/* or zod', () => {
 
 test('./genui/fence exports only the fence functions', async () => {
   const mod = (await import('./fence-entry')) as Record<string, unknown>;
-  expect(Object.keys(mod).sort()).toEqual(['genuiVersionFromClassName', 'genuiVersionOf', 'splitGenui']);
+  expect(Object.keys(mod).sort()).toEqual(['genuiVersionFromClassName', 'genuiVersionOf', 'separateGenuiClosers', 'splitGenui']);
 });

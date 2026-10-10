@@ -41,3 +41,14 @@ Phase 0 (provisional, local stand-in models): GO (2026-10-09, prompt 00a9030e). 
    OpenStreetMap links. Never mapcn's CARTO default (commercial license). Web
    loads MapLibre only with a style set, and serves its worker from `/maplibre/`
    (copied out of node_modules by `apps/web/scripts/viewer-wasm.mjs`).
+8. A node that fails its schema never takes valid content with it. `sanitizeTree`
+   (`packages/sdk/src/genui/validate.ts`) puts its valid subtrees in its place, in
+   source order. A subtree the parent slot cannot hold rises to the nearest ancestor
+   that can (any block fits a Stack); a non-block gives up its own children. A root
+   that fails becomes a Stack of its subtrees. Only a block with no valid subtree
+   has `root: null`.
+9. Every host runs `separateGenuiClosers` (`@kortix/sdk/genui/fence`) on reply text
+   before it looks for fences: it moves a closer the model glued to the last
+   statement (`…")````) onto its own line. `genuiToMarkdown` runs it itself. The
+   web (`unified-markdown.tsx`), mobile (`selectable-markdown.tsx`) and
+   `scripts/score.ts` call it directly.

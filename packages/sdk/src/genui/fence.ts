@@ -46,6 +46,92 @@ export function closesFence(line: string, marker: string): boolean {
   return close !== null && close[1]![0] === marker[0] && close[1]!.length >= marker.length;
 }
 
+/** A fence that opens on a list-marker line: `- ```openui`, `1. ```openui`. Linear: the parts cannot overlap. */
+const LIST_FENCE = /^([ \t>]*)([-*+]|\d{1,9}[.)])([ \t]+)(?=`{3}|~{3})/;
+const LEAD = /^[ \t>]*/;
+const quoteDepth = (prefix: string) => prefix.split('>').length - 1;
+
+/** A fence opened at any container depth. Internal: shared by `separateGenuiClosers` and markdown.ts. */
+export interface ContainerFence {
+  /** The container prefix of each body line. A list-marker opener's marker becomes spaces. */
+  prefix: string;
+  /** Prefix of the opener line: the list marker itself when the fence opened on a list-marker line. */
+  first: string;
+  marker: string;
+  /** Inside a blockquote or a list item: the fence ends with its container. */
+  nested: boolean;
+  version: number | null;
+}
+
+/** The fence `line` opens, in any container, or null. */
+export function containerFenceOpener(line: string): ContainerFence | null {
+  const item = LIST_FENCE.exec(line);
+  const open = fenceOpener(item ? line.slice(item[0].length) : line);
+  if (!open) return null;
+  const prefix = item ? item[1]! + ' '.repeat(item[2]!.length + item[3]!.length) : open.prefix;
+  return { marker: open.marker, version: open.version, prefix, first: item ? item[0] : prefix, nested: item !== null || !isTopLevel(open.prefix) };
+}
+
+/**
+ * `line` without its container prefix while it is inside `fence`, or null when the container ended
+ * (a line without the prefix that is not blank). Blockquote markers may be spaced differently on each
+ * line (`> x`, `>x`). The result is always a suffix of `line`.
+ */
+export function fenceBodyLine(line: string, fence: ContainerFence): string | null {
+  if (!fence.nested) return line;
+  if (line.startsWith(fence.prefix)) return line.slice(fence.prefix.length);
+  const lead = LEAD.exec(line)![0];
+  if (fence.prefix.includes('>') && quoteDepth(lead) === quoteDepth(fence.prefix)) return line.slice(lead.length);
+  return line.trim() === '' || line.trimEnd() === fence.prefix.trimEnd() ? '' : null;
+}
+
+/** Where a closer run glued after `)`, `]`, or `"` starts in `body`, or -1. Linear: two backward scans. */
+function gluedCloserAt(body: string, marker: string): number {
+  let end = body.length;
+  while (end > 0 && (body[end - 1] === ' ' || body[end - 1] === '\t')) end--;
+  let start = end;
+  while (start > 0 && body[start - 1] === marker[0]) start--;
+  const before = body[start - 1];
+  return end - start >= marker.length && (before === ')' || before === ']' || before === '"') ? start : -1;
+}
+
+/**
+ * Move a generative-UI fence closer that a model glued to the last statement (`…")````) onto its own
+ * line, with the fence's container prefix. CommonMark does not close a fence there, so the block would
+ * run to the end of the reply. Only lines inside an open generative-UI fence change. Run it on a reply
+ * before any markdown parser or `splitGenui` reads it. Returns the same string when nothing changes.
+ */
+export function separateGenuiClosers(text: string): string {
+  if (!/openui/i.test(text)) return text;
+  const lines = text.split('\n');
+  let fence: ContainerFence | null = null;
+  let changed = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (!fence) {
+      fence = containerFenceOpener(line);
+      continue;
+    }
+    const body = fenceBodyLine(line, fence);
+    if (body === null) {
+      fence = null;
+      i--; // this line belongs to whatever follows the container
+      continue;
+    }
+    if (closesFence(body, fence.marker)) {
+      fence = null;
+      continue;
+    }
+    const at = fence.version === null ? -1 : gluedCloserAt(body, fence.marker);
+    if (at < 0) continue;
+    const cut = line.length - body.length + at;
+    lines[i] = `${line.slice(0, cut)}\n${fence.prefix}${line.slice(cut).trimEnd()}`;
+    changed = true;
+    fence = null;
+  }
+  return changed ? lines.join('\n') : text;
+}
+
 /**
  * Split a reply into markdown and generative-UI segments, in order. Only top-level fences count:
  * a fence inside a blockquote or a list item stays markdown here (`genuiToMarkdown` converts it).

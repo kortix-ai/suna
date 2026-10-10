@@ -1,9 +1,9 @@
 // The one apps/web import of `@kortix/sdk/genui/fence`: fence detection only, it never loads
 // `@openuidev/*` or `zod`. Listed in CANONICAL_SDK_ENTRIES (`scripts/sdk-boundary.mjs`).
 // eslint-disable-next-line no-restricted-imports -- light fence helpers for the main markdown chunk
-import { genuiVersionFromClassName, genuiVersionOf, splitGenui } from '@kortix/sdk/genui/fence';
+import { genuiVersionFromClassName, genuiVersionOf, separateGenuiClosers, splitGenui } from '@kortix/sdk/genui/fence';
 
-export { genuiVersionFromClassName };
+export { genuiVersionFromClassName, separateGenuiClosers };
 
 /** The generative UI fence still open at the end of a reply (`openGenuiFence`). */
 export interface OpenGenuiFence {

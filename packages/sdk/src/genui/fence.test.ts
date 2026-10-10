@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { genuiVersionFromClassName, genuiVersionOf, splitGenui } from './fence';
+import { genuiVersionFromClassName, genuiVersionOf, separateGenuiClosers, splitGenui } from './fence';
 
 describe('fence', () => {
   test('version tags', () => {
@@ -58,5 +58,51 @@ describe('fence', () => {
       { kind: 'genui', code: 'root = Stack([])', version: 1, closed: true },
     ]);
   });
-});
 
+  describe('separateGenuiClosers', () => {
+    test('a closer glued after `)`, `]`, or `"` moves to its own line', () => {
+      expect(separateGenuiClosers('```openui\nroot = Stack([b])\nb = Badge("x")```\nAfter')).toBe(
+        '```openui\nroot = Stack([b])\nb = Badge("x")\n```\nAfter',
+      );
+      expect(separateGenuiClosers('~~~~openui\nt = Table(["k"], [["1"]])~~~~  ')).toBe('~~~~openui\nt = Table(["k"], [["1"]])\n~~~~');
+      expect(separateGenuiClosers('```openui\nx = "a"```')).toBe('```openui\nx = "a"\n```');
+      const glued = 'Hi\n```openui\nroot = Stack([b])\nb = Badge("x")```\nAfter';
+      expect(splitGenui(separateGenuiClosers(glued))).toEqual([
+        { kind: 'markdown', text: 'Hi' },
+        { kind: 'genui', code: 'root = Stack([b])\nb = Badge("x")', version: 1, closed: true },
+        { kind: 'markdown', text: 'After' },
+      ]);
+    });
+
+    test('a string literal that ends with backticks mid-line is not split', () => {
+      const text = '```openui\nc = Callout("info", "run ```", "Tip")\nd = Callout("info", "```")x\n```';
+      expect(separateGenuiClosers(text)).toBe(text);
+    });
+
+    test('a shorter run or the other marker is not a closer', () => {
+      const text = '````openui\nb = Badge("x")```\nc = Badge("y")~~~~\n````';
+      expect(separateGenuiClosers(text)).toBe(text);
+    });
+
+    test('the closer keeps the container prefix: list indent and blockquote', () => {
+      expect(separateGenuiClosers('- a\n\n  ```openui\n  b = Badge("x")```\n')).toBe('- a\n\n  ```openui\n  b = Badge("x")\n  ```\n');
+      expect(separateGenuiClosers('1. ```openui\n   b = Badge("x")```')).toBe('1. ```openui\n   b = Badge("x")\n   ```');
+      expect(separateGenuiClosers('> ```openui\n> b = Badge("x")```')).toBe('> ```openui\n> b = Badge("x")\n> ```');
+    });
+
+    test('nothing outside an openui fence changes', () => {
+      const text = 'f(x)```\n```ts\nconst a = f("x")```\n```\n````md\n```openui\nb = Badge("x")```\n````\nafter("x")```';
+      expect(separateGenuiClosers(text)).toBe(text);
+      const done = '```openui\nb = Badge("x")\n```\nlater("y")```';
+      expect(separateGenuiClosers(done)).toBe(done);
+    });
+
+    test('text without a glued closer is the same string; long lines stay linear', () => {
+      const text = '```openui\nroot = Stack([b])\n```';
+      expect(separateGenuiClosers(text)).toBe(text);
+      const started = performance.now();
+      separateGenuiClosers(`\`\`\`openui\n${')`'.repeat(40_000)}\n${'`'.repeat(40_000)}x`);
+      expect(performance.now() - started).toBeLessThan(200);
+    });
+  });
+});

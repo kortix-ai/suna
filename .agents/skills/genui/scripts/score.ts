@@ -1,4 +1,4 @@
-import { parseGenui, splitGenui } from '../../../../packages/sdk/src/genui/index';
+import { parseGenui, separateGenuiClosers, splitGenui } from '../../../../packages/sdk/src/genui/index';
 
 export interface EvalCase {
   id: string;
@@ -53,7 +53,7 @@ export function scoreReply(testCase: EvalCase, reply: string): CaseScore {
       error: 'empty reply',
     };
   }
-  const blocks = splitGenui(reply).filter((segment) => segment.kind === 'genui');
+  const blocks = splitGenui(separateGenuiClosers(reply)).filter((segment) => segment.kind === 'genui');
   const components = new Set<string>();
   const issues: string[] = [];
   let validBlocks = 0;

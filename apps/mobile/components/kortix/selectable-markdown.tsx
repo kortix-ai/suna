@@ -57,7 +57,7 @@ import { MOTION } from '@/lib/utils/theme';
 import { FONT_FAMILY } from '@/lib/utils/fonts';
 import { Text } from '@/components/ui/text';
 import { isMathFenceLanguage, isMermaidCode, prepareMarkdownForMath } from '@kortix/shared';
-import { genuiVersionOf } from '@kortix/sdk/genui/fence';
+import { genuiVersionOf, separateGenuiClosers } from '@kortix/sdk/genui/fence';
 import { CodeBlock, fenceCode, fenceLanguage } from '@/components/markdown/code-block';
 import { InlineCode } from '@/components/markdown/inline-code';
 import { BlockMath, InlineMath } from '@/components/markdown/math';
@@ -679,8 +679,9 @@ export const SelectableMarkdownText: React.FC<SelectableMarkdownTextProps> = mem
     // A generative-UI fallback sits inside its message: the message's double tap covers it.
     const isOutermost = useContext(GenuiRoutingContext);
 
-    // Trailing whitespace would add empty space below the last block.
-    const text = typeof children === 'string' ? children.trimEnd() : String(children || '').trimEnd();
+    // Trailing whitespace would add empty space below the last block. A closer the model glued to the
+    // last statement of a generative-UI block moves to its own line, so the block ends where it should.
+    const text = separateGenuiClosers(typeof children === 'string' ? children.trimEnd() : String(children || '').trimEnd());
 
     return (
       <MarkdownImagesContext.Provider value={remoteImages}>

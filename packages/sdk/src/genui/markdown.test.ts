@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { genuiToMarkdown } from './markdown';
-import { HOTEL } from './test-fixtures';
+import { BROKEN_TABS, HOTEL } from './test-fixtures';
 
 describe('markdown fallback', () => {
   test('replaces blocks, keeps prose, never leaks source', () => {
@@ -39,6 +39,12 @@ describe('markdown fallback', () => {
     );
     expect(md).toContain('#### One\n\n[first]');
     expect(md).toContain('#### Two\n\n[second]');
+  });
+
+  test('a block whose nodes fail up to the root keeps its valid statements (copy, export)', () => {
+    const md = genuiToMarkdown(`Intro.\n\n\`\`\`openui\n${BROKEN_TABS}\n\`\`\`\n\nAfter.`);
+    const table = (value: string) => `| k |\n| --- |\n| ${value} |`;
+    expect(md).toBe(['Intro.', table('1'), table('2'), table('3'), 'After.'].join('\n\n'));
   });
 
   test('a broken block yields no raw source', () => {
@@ -119,6 +125,20 @@ describe('blocks inside lists and blockquotes', () => {
   test('an example inside another fence is left alone', () => {
     const text = `\`\`\`\`md\n${prefixed(BLOCK, '> ')}\n\`\`\`\`\n\n- Item\n\n    \`\`\`text\n    > \`\`\`openui\n    \`\`\``;
     expect(genuiToMarkdown(text)).toBe(text);
+  });
+});
+
+describe('a closer glued to the last statement', () => {
+  test('the block parses and the prose after it is kept', () => {
+    expect(genuiToMarkdown('Hi\n\n```openui\nroot = Stack([b])\nb = Badge("x")```\n\nAfter.')).toBe('Hi\n\n[x]\n\nAfter.');
+  });
+
+  test('in a list item and in a blockquote', () => {
+    expect(genuiToMarkdown('- item\n  - sub\n\n    ```openui\n    root = Stack([b])\n    b = Badge("x")```\n\nAfter.')).toBe(
+      '- item\n  - sub\n\n    [x]\n\nAfter.',
+    );
+    expect(genuiToMarkdown('1. ```openui\n   root = Stack([b])\n   b = Badge("x")```\n\nAfter.')).toBe('1. [x]\n\nAfter.');
+    expect(genuiToMarkdown('> ```openui\n> root = Stack([b])\n> b = Badge("x")```  \n\nAfter.')).toBe('> [x]\n\nAfter.');
   });
 });
 

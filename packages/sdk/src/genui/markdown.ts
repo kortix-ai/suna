@@ -1,5 +1,5 @@
 import { GENUI_SPECS } from './catalog';
-import { closesFence, fenceOpener, isTopLevel, splitGenui } from './fence';
+import { closesFence, containerFenceOpener, type ContainerFence, fenceBodyLine, separateGenuiClosers, splitGenui } from './fence';
 import { createGenuiParser } from './parse';
 import { GENUI_SCHEMA_VERSION, type GenuiNode, type GenuiParseResult } from './types';
 
@@ -48,11 +48,6 @@ export function genuiBlockToMarkdown(
   return genuiResultToMarkdown(createGenuiParser(version).update(code, options.streaming ?? false));
 }
 
-/** A fence that opens on a list-marker line: `- ```openui`, `1. ```openui`. Linear: the parts cannot overlap. */
-const LIST_FENCE = /^([ \t>]*)([-*+]|\d{1,9}[.)])([ \t]+)(?=`{3}|~{3})/;
-const LEAD = /^[ \t>]*/;
-const quoteDepth = (prefix: string) => prefix.split('>').length - 1;
-
 /**
  * Convert generative-UI fences inside blockquotes and list items: a `>` in the prefix, or 4+ columns
  * of indentation. `splitGenui` sees top-level fences only, but the renderers' CommonMark parsers
@@ -62,15 +57,7 @@ const quoteDepth = (prefix: string) => prefix.split('>').length - 1;
 function convertNestedBlocks(text: string, streaming: boolean): string {
   const lines = text.split('\n');
   const out: string[] = [];
-  let fence: {
-    prefix: string;
-    /** Prefix of the first output line when the fence opened on a list-marker line. */
-    first: string;
-    marker: string;
-    nested: boolean;
-    version: number | null;
-    body: string[] | null;
-  } | null = null;
+  let fence: (ContainerFence & { body: string[] | null }) | null = null;
   let changed = false;
 
   const finish = (unclosed: boolean) => {
@@ -88,30 +75,16 @@ function convertNestedBlocks(text: string, streaming: boolean): string {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;
     if (!fence) {
-      // A fence on a list-marker line: the body is indented to the item's content column.
-      const item = LIST_FENCE.exec(line);
-      const open = fenceOpener(item ? line.slice(item[0].length) : line);
+      const open = containerFenceOpener(line);
       if (open) {
-        const prefix = item ? item[1]! + ' '.repeat(item[2]!.length + item[3]!.length) : open.prefix;
-        const nested = item !== null || !isTopLevel(open.prefix);
-        fence = { ...open, prefix, first: item ? item[0] : prefix, nested, body: nested && open.version !== null ? [] : null };
+        fence = { ...open, body: open.nested && open.version !== null ? [] : null };
         if (fence.body) continue;
       }
       out.push(line);
       continue;
     }
-    // A nested fence ends with its container: a line without the prefix that is not blank.
-    // Blockquote markers may be spaced differently on each line (`> x`, `>x`).
-    const lead = LEAD.exec(line)![0];
-    const inside = !fence.nested
-      ? line
-      : line.startsWith(fence.prefix)
-        ? line.slice(fence.prefix.length)
-        : fence.prefix.includes('>') && quoteDepth(lead) === quoteDepth(fence.prefix)
-          ? line.slice(lead.length)
-          : line.trim() === '' || line.trimEnd() === fence.prefix.trimEnd()
-            ? ''
-            : null;
+    // A nested fence ends with its container.
+    const inside = fenceBodyLine(line, fence);
     if (inside === null) {
       finish(false);
       i--; // this line belongs to whatever follows the container
@@ -146,7 +119,7 @@ function trimNewlines(text: string): string {
 export function genuiToMarkdown(text: string, options: { streaming?: boolean } = {}): string {
   if (!/openui/i.test(text)) return text;
   const streaming = options.streaming ?? false;
-  const flat = convertNestedBlocks(text, streaming);
+  const flat = convertNestedBlocks(separateGenuiClosers(text), streaming);
   const segments = splitGenui(flat);
   if (!segments.some((segment) => segment.kind === 'genui')) return flat;
   return segments
