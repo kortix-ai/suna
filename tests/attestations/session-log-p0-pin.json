@@ -1,0 +1,19 @@
+{
+  "source_hash": "3e177c7fd5a2a02aaca7754bd260b35aee3987a6dd924a93baff2ebd6fec79d5",
+  "diff_files": [
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-10T214735Z-guard-the-opencode-boot-root-s-claimed-pin-fallback-with-a-t.md",
+    "apps/kortix-sandbox-agent-server/src/__tests__/initial-session-claimed-pin.test.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/open-code/boot.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/open-code/initial-session.ts"
+  ],
+  "diff_hash": "b9a10db23477483d61fa2080f22f092dc9bd7b883a5942a9dd5256185f556810",
+  "head": "b31eeb80ae620baae75e62738a79d0cef990ac6f",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-10T22:42:20.792Z"
+}
