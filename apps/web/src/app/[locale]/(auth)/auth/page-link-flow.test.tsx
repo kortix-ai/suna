@@ -32,10 +32,14 @@ mock.module('@/lib/supabase/client', () => ({
 }));
 let emailFailure: string | null = null;
 mock.module('./actions', () => ({
-  sendEmailCode: async () => emailFailure ? { message: emailFailure } : { success: true },
   resolveAuthMode: async () => ({ mode: 'unknown' }),
-  signInWithPassword: async () => ({}),
-  signUpWithPassword: async () => ({}),
+}));
+mock.module('@/lib/auth/submit-auth', () => ({
+  AUTH_SUBMIT_TIMEOUT_MS: 30_000,
+  submitAuthForm: async () =>
+    emailFailure
+      ? { ok: false, reason: 'server' as const, message: emailFailure }
+      : { ok: true, result: { success: true, email: 'synthetic@example.test' } },
 }));
 mock.module('@/lib/env-config', () => ({
   getEnv: () => ({ AUTH_METHODS: 'magic,password', AUTH_PROVIDERS: '' }),

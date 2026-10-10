@@ -2367,6 +2367,8 @@
       },
       "errors": {
         "unexpected": "发生意外错误",
+        "submitTimedOut": "耗时超出预期，请重试。",
+        "networkFailed": "请求未能发送，请重试。",
         "signupsClosed": "当前已关闭注册。请联系管理员或申请访问权限。",
         "ssoRequired": "您的组织要求使用单点登录。请改用 SSO 继续。",
         "incorrectPassword": "密码错误。请重试，或通过“忘记密码？”重置密码。",

@@ -2367,6 +2367,8 @@
       },
       "errors": {
         "unexpected": "Ein unerwarteter Fehler ist aufgetreten",
+        "submitTimedOut": "Das dauert länger als erwartet. Bitte versuche es erneut.",
+        "networkFailed": "Die Anfrage konnte nicht gesendet werden. Bitte versuche es erneut.",
         "signupsClosed": "Die Registrierung ist derzeit geschlossen. Wende dich an deine Administration oder beantrage Zugriff.",
         "ssoRequired": "Deine Organisation verlangt Single Sign-on. Fahre stattdessen mit SSO fort.",
         "incorrectPassword": "Falsches Passwort. Versuche es erneut oder setze es über „Passwort vergessen?“ zurück.",
