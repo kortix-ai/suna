@@ -19,9 +19,8 @@ describe('sidebar Files label', () => {
     expect(repoNav).toContain('repoNavLabel(volumes.enabled)');
     expect(repoNav).toContain('href={`/projects/${projectId}/files`}');
 
-    // The drive entry is labelled Files and only exists with Volumes on.
-    const driveNav = read('./project-drive-nav.tsx');
-    expect(driveNav).toContain("t('files')");
-    expect(driveNav).toContain('if (!projectId || !drivesGate.enabled) return null;');
+    // The shared folders are the Files tab under Customize, only with Volumes on.
+    const tabs = read('../../capabilities/shared/capability-tabs.tsx');
+    expect(tabs).toContain("useFeatureFlag(projectId, 'drives')");
   });
 });

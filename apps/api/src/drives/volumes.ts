@@ -260,20 +260,43 @@ export async function sandboxMountLimit(): Promise<number> {
   return value;
 }
 
-/** The volume mounts a sandbox has now, by mount path, or null when Platinum cannot say. */
-export async function sandboxMountPaths(externalId: string): Promise<string[] | null> {
+/** One volume mount Platinum holds for a sandbox. */
+export interface SandboxVolumeMount {
+  mountPath: string;
+  /** The volume's name (what a drive attaches by), or its id when Platinum gave no name. */
+  volume: string;
+  readOnly: boolean;
+  /** The folder of the volume mounted, `/` for all of it. */
+  subdir: string;
+}
+
+/** The volume mounts a sandbox has now, or null when Platinum cannot say. */
+export async function sandboxVolumeMounts(externalId: string): Promise<SandboxVolumeMount[] | null> {
   try {
-    const body = await callJson<{ volume_mounts?: Array<{ mount_path?: string; path?: string }> | Record<string, unknown> }>(
+    const body = await callJson<{ volume_mounts?: Array<Record<string, unknown>> | Record<string, unknown> }>(
       `/v1/sandboxes/${encodeURIComponent(externalId)}`,
       { signal: AbortSignal.timeout(10_000) },
     );
     const mounts = body.volume_mounts;
     if (!mounts) return [];
-    if (Array.isArray(mounts)) return mounts.map((m) => String(m.mount_path ?? m.path ?? ''));
-    return Object.keys(mounts);
+    if (!Array.isArray(mounts)) {
+      return Object.keys(mounts).map((mountPath) => ({ mountPath, volume: '', readOnly: false, subdir: '/' }));
+    }
+    return mounts.map((m) => ({
+      mountPath: String(m.mount_path ?? m.path ?? ''),
+      volume: String(m.volume_name ?? m.volume_id ?? ''),
+      readOnly: m.read_only === true,
+      subdir: typeof m.subdir === 'string' && m.subdir ? m.subdir : '/',
+    }));
   } catch {
     return null;
   }
+}
+
+/** The volume mounts a sandbox has now, by mount path, or null when Platinum cannot say. */
+export async function sandboxMountPaths(externalId: string): Promise<string[] | null> {
+  const mounts = await sandboxVolumeMounts(externalId);
+  return mounts && mounts.map((m) => m.mountPath);
 }
 
 const sandboxMount = (externalId: string, mountPath: string) =>
@@ -338,6 +361,16 @@ export async function detachSandboxVolume(externalId: string, mountPath: string)
 }
 
 const shellQuote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
+
+/**
+ * Unmount a folder path inside the guest when the guest still has something
+ * mounted there that Platinum no longer tracks (a VM resumed from memory keeps
+ * the mounts its kernel had, after Platinum ended them at the stop).
+ */
+export async function unmountInGuest(externalId: string, mountPath: string): Promise<void> {
+  const q = shellQuote(mountPath);
+  await execInSandbox(externalId, `if mountpoint -q ${q}; then umount ${q} 2>/dev/null || umount -l ${q}; fi`);
+}
 
 /**
  * Run a short script as root in a running sandbox (the sandbox exec runs as

@@ -18,7 +18,7 @@ import { repoNavLabel } from './files-nav-label';
 
 /**
  * Top-level repo browser entry: Repo when the organization has Volumes on (the
- * shared folders are then Files, `project-drive-nav.tsx`), Files otherwise. Hidden when the caller lacks `project.file.read`: that
+ * shared folders are then Files, a tab under Customize), Files otherwise. Hidden when the caller lacks `project.file.read`: that
  * leaf is editor-tier (IAM v1 moved the sensitive file/secret reads off the
  * floor `member` role), so showing it to a plain member would just land them on
  * a page whose every read 403s. Optimistic while the probe loads — the entry

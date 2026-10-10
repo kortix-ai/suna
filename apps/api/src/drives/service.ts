@@ -19,12 +19,13 @@ import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
 import { SYSTEM_ACTOR, assignRole, revokeAssignment } from '../iam/assignments';
 import { resolvePrincipal } from '../iam/authorize';
 import { config } from '../config';
-import { db } from '../shared/db';
+import { db, withDbTransaction } from '../shared/db';
 import { driveVolumeName, skippedDrivesMessage } from './access';
 import {
   COMPANY_DIR,
   COMPANY_MEMORY_DIR,
   DESKTOP_MOUNT_PATH,
+  DRIVES_ROOT,
   type FolderAccess,
   type FolderGrant,
   type FolderLevel,
@@ -51,6 +52,8 @@ import {
   openDriveVolume,
   sandboxMountLimit,
   sandboxMountPaths,
+  sandboxVolumeMounts,
+  unmountInGuest,
   writeVolumeFile,
   type VolumeInfo,
 } from './volumes';
@@ -359,19 +362,30 @@ export function personalFolderFor(grants: readonly FolderGrant[], userId: string
   return own?.path ?? null;
 }
 
-/** The person's folder, `/Users/<name>`, made the first time they need it. */
+/**
+ * The person's folder, `/Users/<name>`, made the first time they need it.
+ *
+ * Picking a free name and granting it is one step per drive: a transaction
+ * holding the drive's advisory lock re-reads the grants before choosing, so two
+ * first visits whose handles match (alex@a, alex@b) cannot both pick /Users/alex.
+ */
 export async function ensurePersonalFolder(drive: DriveRow, userId: string, grants?: FolderGrant[]): Promise<string> {
-  const known = grants ?? (await listFolderGrants(drive));
-  const existing = personalFolderFor(known, userId);
+  const existing = personalFolderFor(grants ?? (await listFolderGrants(drive)), userId);
   if (existing) return existing;
   const email = (await userEmails([userId])).get(userId) ?? null;
   const base = personalFolderName(email, userId);
-  const taken = new Set(known.filter((g) => g.path.startsWith(`${USERS_DIR}/`)).map((g) => g.path.split('/')[2]?.toLowerCase()));
-  let name = base;
-  for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${base}-${n}`;
-  const path = `${USERS_DIR}/${name}`;
-  await setFolderGrant({ drive, path, principal: { type: 'user', id: userId }, level: 'manage', grantedBy: null, source: 'system' });
-  return path;
+  return withDbTransaction(async () => {
+    await db.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`drive-personal-folder:${drive.driveId}`}, 0))`);
+    const known = await listFolderGrants(drive);
+    const raced = personalFolderFor(known, userId);
+    if (raced) return raced;
+    const taken = new Set(known.filter((g) => g.path.startsWith(`${USERS_DIR}/`)).map((g) => g.path.split('/')[2]?.toLowerCase()));
+    let name = base;
+    for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${base}-${n}`;
+    const path = `${USERS_DIR}/${name}`;
+    await setFolderGrant({ drive, path, principal: { type: 'user', id: userId }, level: 'manage', grantedBy: null, source: 'system' });
+    return path;
+  });
 }
 
 /** The agent's service account, when it has one (a grant to an agent made it). */
@@ -808,6 +822,38 @@ async function driveSlotsFor(box: { externalId: string | null; metadata: unknown
   return Number.isFinite(recorded) && recorded >= 0 ? Math.min(recorded, limit) : limit;
 }
 
+const subdirOf = (subdir: string | undefined) => (subdir ?? '/').replace(/\/+$/, '') || '/';
+
+/**
+ * Attach one folder at its path, resolving whatever already sits there rather
+ * than leaving it: the same folder Platinum already mounts there is adopted; a
+ * different Platinum mount is detached; a mount only the guest still has (a VM
+ * resumed from memory keeps the mounts its kernel had after Platinum ended
+ * them at the stop) is unmounted in the guest. Then the attach runs again.
+ */
+async function attachDriveMount(externalId: string, m: RecordedDriveMount, volume: string): Promise<void> {
+  const input = { volume, readOnly: m.readOnly, subdir: m.subdir };
+  try {
+    await attachSandboxVolume(externalId, m.mountPath, input);
+    return;
+  } catch (err) {
+    if (!(err instanceof DriveStorageError) || err.code !== 'path_exists') throw err;
+  }
+  const mounts = await sandboxVolumeMounts(externalId);
+  if (!mounts) throw new DriveStorageError(503, 'Drive storage is unavailable, try again shortly', 'drive_storage_unavailable');
+  const held = mounts.find((x) => x.mountPath === m.mountPath);
+  if (held && held.volume === volume && held.readOnly === m.readOnly && subdirOf(held.subdir) === subdirOf(m.subdir)) return;
+  if (held) {
+    logger.warn(`[drives] ${externalId}: replacing the mount at ${m.mountPath} (${held.volume}:${held.subdir})`);
+    await detachSandboxVolume(externalId, m.mountPath);
+  } else {
+    if (!m.mountPath.startsWith(`${DRIVES_ROOT}/`)) throw new Error(`${m.mountPath} is in use in the sandbox`);
+    logger.warn(`[drives] ${externalId}: unmounting a stale guest mount at ${m.mountPath}`);
+    await unmountInGuest(externalId, m.mountPath);
+  }
+  await attachSandboxVolume(externalId, m.mountPath, input);
+}
+
 /**
  * Bring the running sandbox's folder mounts in line with what the session may
  * use now: detach what it lost (or what changed access), attach what it gained.
@@ -842,7 +888,7 @@ async function applyDriveToRunningSandbox(input: {
   if (fresh.length) {
     const volume = await openVolumeFor(plan.drive, AbortSignal.timeout(OPEN_TIMEOUT_MS));
     for (const m of placeNew(plan.drive, fresh, [...others, ...kept])) {
-      await attachSandboxVolume(box.externalId, m.mountPath, { volume, readOnly: m.readOnly, subdir: m.subdir });
+      await attachDriveMount(box.externalId, m, volume);
       kept = [...kept, m];
       await writeRecordedMounts(box.sandboxId, [...others, ...kept]);
     }
@@ -883,7 +929,16 @@ export async function reconcileSessionDrives(sessionId: string): Promise<void> {
     if (box) await clearMountRevocation(box.sandboxId);
     await refreshDriveNotes(sessionId);
   } catch (err) {
-    logger.warn(`[drives] reconciling the files of session ${sessionId} failed:`, { error: err instanceof Error ? err.message : String(err) });
+    const error = err instanceof Error ? err.message : String(err);
+    logger.error(`[drives] reconciling the files of session ${sessionId} failed; retried by the drive worker:`, { error });
+    // Recorded like a revocation that has not landed: the drive worker brings
+    // the mounts in line again (with backoff) until it does.
+    const box = await sessionSandboxRow(sessionId).catch(() => null);
+    if (box) {
+      await recordMountRevocation(box.sandboxId, `reconcile: ${error}`).catch((e) =>
+        logger.error(`[drives] recording the failed reconcile of ${box.sandboxId} failed:`, { error: e instanceof Error ? e.message : String(e) }),
+      );
+    }
   }
 }
 

@@ -10,6 +10,8 @@
  *     session no longer may use, whatever its sandbox recorded.
  *   - A block upload commits only while every path its plan writes is still
  *     writable; a commit cannot name a path the plan did not write.
+ *   - A resumed sandbox whose guest still holds a mount Platinum no longer
+ *     tracks gets its folders anyway: the stale mount is cleared, not kept.
  *
  * Storage and the provider are faked at the volumes module (the only module
  * that talks to them); routes, authorization, grants and the DB are real.
@@ -32,6 +34,8 @@ import { insertIntoView } from './helpers/compat-views';
 
 let detachFails = false;
 const calls: string[] = [];
+/** Paths the guest still has mounted though Platinum tracks no mount there. */
+const staleGuest = new Set<string>();
 
 mock.module('../drives/volumes', () => ({
   ...realVolumes,
@@ -40,8 +44,14 @@ mock.module('../drives/volumes', () => ({
   getDriveVolume: async (name: string) => ({ name, id: 'vol', head_commit_id: 'c0' }),
   sandboxMountLimit: async () => 8,
   sandboxMountPaths: async () => [],
+  sandboxVolumeMounts: async () => [],
   attachSandboxVolume: async (_box: string, mountPath: string) => {
+    if (staleGuest.has(mountPath)) throw new realVolumes.DriveStorageError(409, 'Another drive is already mounted at that path', 'path_exists');
     calls.push(`attach ${mountPath}`);
+  },
+  unmountInGuest: async (_box: string, mountPath: string) => {
+    calls.push(`unmount ${mountPath}`);
+    staleGuest.delete(mountPath);
   },
   detachSandboxVolume: async (_box: string, mountPath: string) => {
     calls.push(`detach ${mountPath}`);
@@ -65,7 +75,7 @@ mock.module('../drives/volumes', () => ({
 
 const { app } = await import('../index');
 const { createAccountToken } = await import('../repositories/account-tokens');
-const { ensureProjectDrive, setFolderGrant, listFolderGrants } = await import('../drives/service');
+const { ensureProjectDrive, setFolderGrant, listFolderGrants, reconcileSessionDrives } = await import('../drives/service');
 const { retryPendingRevocations } = await import('../workers/drive-worker');
 const { clearAuthorizeCaches } = await import('../iam/authorize');
 const { __setBootModePolicyForTests } = await import('../platform/services/boot-mode-setting');
@@ -77,6 +87,7 @@ const RESEARCHER = crypto.randomUUID();
 const NATIVE = crypto.randomUUID(); // a running box with native mounts
 const SYNCED = crypto.randomUUID(); // a box off the volume provider, synced over the API
 const FENCED = crypto.randomUUID(); // a synced box whose revocation is still pending
+const RESUMED = crypto.randomUUID(); // a box resumed from memory with its old mounts still in the guest
 
 let ownerToken = '';
 const sessionTokens: Record<string, string> = {};
@@ -175,6 +186,7 @@ beforeAll(async () => {
   await box(NATIVE, { provider: 'platinum', externalId: 'box-native', mounts: [mount('/Research'), mount('/Company')] });
   await box(SYNCED, { provider: 'daytona', externalId: 'box-synced', mounts: [mount('/Research'), mount('/Company')] });
   await box(FENCED, { provider: 'daytona', externalId: 'box-fenced', mounts: [mount('/Research'), mount('/Company')] });
+  await box(RESUMED, { provider: 'platinum', externalId: 'box-resumed', mounts: [] });
 });
 
 afterAll(async () => {
@@ -276,5 +288,23 @@ describe('who may change folder access', () => {
       expect([404, 405]).toContain(res.status);
     }
     expect((await listFolderGrants(await ensureProjectDrive(ACCOUNT, PROJECT))).some((g) => g.path === '/Research' && g.level === 'manage')).toBe(false);
+  });
+});
+
+describe('a resumed sandbox whose guest kept mounts Platinum ended', () => {
+  test('reconcile clears the stale mounts and attaches the folders, and records them', async () => {
+    staleGuest.clear();
+    staleGuest.add('/drives/me');
+    staleGuest.add('/drives/company');
+    calls.length = 0;
+    await reconcileSessionDrives(RESUMED);
+    const attached = calls.filter((c) => c.startsWith('attach ')).map((c) => c.slice('attach '.length));
+    expect(attached.length).toBeGreaterThan(0);
+    expect(attached.some((p) => p === '/drives/me' || p === '/drives/company')).toBe(true);
+    for (const p of attached) {
+      if (p === '/drives/me' || p === '/drives/company') expect(calls.indexOf(`unmount ${p}`)).toBeLessThan(calls.indexOf(`attach ${p}`));
+    }
+    expect((await recordedMounts(RESUMED)).length).toBe(attached.length);
+    expect(await pending(RESUMED)).toBe(false);
   });
 });
