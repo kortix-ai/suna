@@ -191,20 +191,33 @@ async function agentsLs(ctx: ProjectCtx, json: boolean): Promise<number> {
     `/projects/${ctx.projectId}/model-defaults`,
   );
   // The agents live on the same /detail the web Agents page reads, so the two
-  // cannot disagree about what a project declares.
-  const detail = await ctx.client.get<ProjectDetail>(`/projects/${ctx.projectId}/detail`);
-  const agents = detail.config?.agents ?? [];
+  // cannot disagree about what a project declares. When /detail is unavailable
+  // the command fails open to its pre-detail output: the model-defaults chain
+  // and the pins, with no claim about which agents exist.
+  let agents: DetailAgent[] | null = null;
+  let defaultAgent: string | null = null;
+  try {
+    const detail = await ctx.client.get<ProjectDetail>(`/projects/${ctx.projectId}/detail`);
+    agents = detail.config?.agents ?? [];
+    defaultAgent = detail.config?.default_agent ?? null;
+  } catch {
+    // fail open
+  }
   const pins = d.agentDefaults ?? {};
 
   if (json) {
-    emitJson({
-      ...d,
-      agents: agents.map((agent) => ({
-        name: agent.name,
-        path: agent.path,
-        model: agentModel(agent, pins[agent.name]),
-      })),
-    });
+    emitJson(
+      agents === null
+        ? d
+        : {
+            ...d,
+            agents: agents.map((agent) => ({
+              name: agent.name,
+              path: agent.path,
+              model: agentModel(agent, pins[agent.name]),
+            })),
+          },
+    );
     return 0;
   }
 
@@ -213,13 +226,31 @@ async function agentsLs(ctx: ProjectCtx, json: boolean): Promise<number> {
   process.stdout.write(
     `  ${C.dim}Default (project → account → platform): ${C.reset}${C.bold}${fallback}${C.reset}\n\n`,
   );
+  if (agents === null) {
+    const entries = Object.entries(pins).sort((a, b) => a[0].localeCompare(b[0]));
+    if (entries.length === 0) {
+      process.stdout.write(
+        `  ${C.dim}No per-agent model pins — every agent follows the default.${C.reset}\n` +
+          `  ${C.dim}Pin one: ${C.reset}${C.cyan}kortix agents model <agent> <model-id>${C.reset}\n\n`,
+      );
+      return 0;
+    }
+    const width = Math.max(...entries.map(([name]) => name.length), 5);
+    for (const [name, model] of entries) {
+      process.stdout.write(`  ${pad(name, width)}   ${C.cyan}${model}${C.reset}\n`);
+    }
+    process.stdout.write(
+      `\n  ${C.dim}${entries.length} pinned · the rest follow the default${C.reset}\n\n`,
+    );
+    return 0;
+  }
   if (agents.length === 0) {
     process.stdout.write(`  ${C.dim}No agents declared in this project.${C.reset}\n\n`);
   } else {
     process.stdout.write(`  ${C.dim}Agents (${agents.length})${C.reset}\n`);
     const width = Math.max(...agents.map((agent) => agent.name.length));
     for (const agent of agents) {
-      process.stdout.write(renderAgent(agent, pins, detail.config?.default_agent ?? null, width));
+      process.stdout.write(renderAgent(agent, pins, defaultAgent, width));
     }
     process.stdout.write('\n');
   }

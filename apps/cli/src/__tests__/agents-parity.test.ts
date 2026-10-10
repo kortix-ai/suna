@@ -81,7 +81,10 @@ const THREE_AGENTS: FakeAgent[] = [
   },
 ];
 
-function startServer(agents: FakeAgent[] = DEFAULT_AGENTS): string {
+function startServer(
+  agents: FakeAgent[] = DEFAULT_AGENTS,
+  opts: { detailStatus?: number } = {},
+): string {
   let defaultAgent = 'default';
   const agentModelPins: Record<string, string> = {};
   server = Bun.serve({
@@ -93,6 +96,9 @@ function startServer(agents: FakeAgent[] = DEFAULT_AGENTS): string {
       const p = url.pathname.replace(`/v1/projects/${PROJECT}`, '');
 
       if (p === '/detail' && req.method === 'GET') {
+        if (opts.detailStatus) {
+          return Response.json({ error: 'detail unavailable' }, { status: opts.detailStatus });
+        }
         return Response.json({
           project_id: PROJECT,
           config: {
@@ -554,5 +560,42 @@ describe('kortix agents — default, scope, config', () => {
     expect(r.code).toBe(0);
     expect(r.stdout).toContain('No agents declared in this project.');
     expect(r.stdout).not.toContain('Agents (');
+  });
+
+  describe('when /detail is unavailable (fail open to the pre-detail output)', () => {
+    test('ls keeps exit 0 and prints the model-defaults chain and the pins, no agent block', async () => {
+      const config = writeConfig(startServer(THREE_AGENTS, { detailStatus: 500 }));
+      const pin = await runCli(
+        ['agents', 'model', 'reviewer', 'glm-5.3-flash', '--project', PROJECT],
+        config,
+      );
+      expect(pin.code).toBe(0);
+      const r = await runCli(['agents', 'ls', '--project', PROJECT], config);
+      expect(r.code).toBe(0);
+      expect(r.stdout).toContain('Default (project → account → platform)');
+      expect(r.stdout).toContain('reviewer');
+      expect(r.stdout).toContain('glm-5.3-flash');
+      expect(r.stdout).toContain('1 pinned · the rest follow the default');
+      expect(r.stdout).not.toContain('Agents (');
+      expect(r.stdout).not.toContain('Pins without an agent');
+    });
+
+    test('ls --json omits the agents key instead of reporting an empty project', async () => {
+      const config = writeConfig(startServer(THREE_AGENTS, { detailStatus: 500 }));
+      const r = await runCli(['agents', 'ls', '--project', PROJECT, '--json'], config);
+      expect(r.code).toBe(0);
+      const parsed = JSON.parse(r.stdout) as { agents?: unknown; platformDefault: string };
+      expect(parsed.platformDefault).toBe('glm-5.3-flash');
+      expect('agents' in parsed).toBe(false);
+    });
+
+    test('ls with no pins prints the pre-detail pins hint, not the empty-agent state', async () => {
+      const config = writeConfig(startServer(THREE_AGENTS, { detailStatus: 500 }));
+      const r = await runCli(['agents', 'ls', '--project', PROJECT], config);
+      expect(r.code).toBe(0);
+      expect(r.stdout).toContain('No per-agent model pins — every agent follows the default.');
+      expect(r.stdout).not.toContain('No agents declared in this project.');
+      expect(r.stdout).not.toContain('Agents (');
+    });
   });
 });
