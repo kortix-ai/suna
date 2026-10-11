@@ -1197,5 +1197,11 @@
     "showMoreSubsessions_other": "{{count}} weitere anzeigen",
     "showMoreSubsessionsLabel_one": "{{count}} weitere Untersitzung von {{title}} anzeigen",
     "showMoreSubsessionsLabel_other": "{{count}} weitere Untersitzungen von {{title}} anzeigen"
+  },
+  "updateRequired": {
+    "title": "Update erforderlich",
+    "body": "Diese Version von Kortix wird nicht mehr unterstützt. Aktualisiere die App, um fortzufahren.",
+    "bodyNoStore": "Diese Version von Kortix wird nicht mehr unterstützt. Aktualisiere die App im App Store oder bei Google Play, um fortzufahren.",
+    "button": "Aktualisieren"
   }
 }
