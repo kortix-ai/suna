@@ -19533,7 +19533,8 @@
       "textac6d9b76a141": "Monté",
       "text8d54763edcd8": "Non monté",
       "textffeb0c99532f": "Instantanés conservés {value0} jours",
-      "text6f52b07880a0": "Prendre un instantané"
+      "text6f52b07880a0": "Prendre un instantané",
+      "text91dc861375bc": "Politique de version mobile consultée"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

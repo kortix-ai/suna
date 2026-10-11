@@ -1,8 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { STATUS_TEXT } from '@/components/ui/status';
-import type { MessageWithParts } from '@kortix/sdk/react';
-import type { FlatModel } from '../model-flatten';
+import type { FlatModel, MessageWithParts } from '@kortix/sdk/react';
 import {
   CONTEXT_DANGER_RATIO,
   CONTEXT_WARNING_RATIO,

@@ -19533,7 +19533,8 @@
       "textac6d9b76a141": "已挂载",
       "text8d54763edcd8": "未挂载",
       "textffeb0c99532f": "快照保留 {value0} 天",
-      "text6f52b07880a0": "立即创建快照"
+      "text6f52b07880a0": "立即创建快照",
+      "text91dc861375bc": "已查看移动端发布策略"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

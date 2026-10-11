@@ -1207,5 +1207,11 @@
     "openMap": "Ouvrir la carte",
     "map": "Carte",
     "mapUnavailable": "Carte indisponible"
+  },
+  "updateRequired": {
+    "title": "Mise à jour requise",
+    "body": "Cette version de Kortix n'est plus prise en charge. Mettez à jour l'application pour continuer.",
+    "bodyNoStore": "Cette version de Kortix n'est plus prise en charge. Mettez à jour l'application depuis l'App Store ou Google Play pour continuer.",
+    "button": "Mettre à jour"
   }
 }

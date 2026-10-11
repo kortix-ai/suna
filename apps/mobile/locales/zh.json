@@ -1207,5 +1207,11 @@
     "openMap": "打开地图",
     "map": "地图",
     "mapUnavailable": "地图不可用"
+  },
+  "updateRequired": {
+    "title": "需要更新",
+    "body": "此版本的 Kortix 已不再受支持。请更新应用以继续使用。",
+    "bodyNoStore": "此版本的 Kortix 已不再受支持。请从 App Store 或 Google Play 更新应用以继续使用。",
+    "button": "更新"
   }
 }

@@ -570,6 +570,7 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | `kortix.github` | account-scoped GitHub App installs and repo linking: `getInstallation` · `listInstallations` · `listLinkableInstallations` (each entry carries `linked_to_other_accounts`, a count and never a tenant name) · `listRepositories` · `listRepositoryBranches` · `linkInstallation` · `saveInstallation` · `deleteInstallation` · `linkRepository` (`source: 'managed'` imports a repository the instance backend holds — self-host operator only, and mutually exclusive with `installation_id`) · `replaceProjectRepository` (changes an existing project's repository with an expected old URL; accepts a repository-scoped PAT or a temporary GitHub user proof for a repository-scoped App grant; can atomically copy selected shared runtime secrets from another project in the same account) |
 | `kortix.gitBackend` | the instance git backend ("Kortix managed", one per deployment, never an account connection): `get()` → `{configured, kind: 'app'|'pat'|null, owner}` (any authenticated user) · `repositories({search?, limit?})` (self-host operator only; 403 otherwise) |
 | `kortix.notifications` | the caller's notifications, across accounts: `list({ limit?, before? })` (inbox page + `unread_count`) · `markRead({ ids } \| { all: true } \| { sessionId })` · `preferences` · `updatePreferences({ kinds })` (push and email per kind) · `webPushPublicKey` · `registerWebPushSubscription` · `unregisterWebPushSubscription` · `registerDeviceToken` · `unregisterDeviceToken` (native Expo push). Muting one session is `session(pid, sid).setWatch(false)`. Hooks: `useNotificationInbox`, `useNotificationPreferences`, `useSessionWatch`. Inbox rows, Web Push, email, and session watch are served only for projects with the `notification_center` flag on, off by default; with it off, the session creator's phone still gets the push |
+| `kortix.mobileClientPolicy()` | the operator's mobile release policy, `GET /v1/clients/mobile`, **no token needed** (read before login): resolves `{ minimum_version, store_url_ios, store_url_android }`, each a string or `null`; a non-200 answer throws `ApiError`. A mobile host compares its app version to `minimum_version` with `compareSemver(a, b)` (`-1 \| 0 \| 1`, or `null` when either side does not parse; ignores a leading `v` and `-pre`/`+build` suffixes) and fails open on `null`. Also exported standalone as `getMobileClientPolicy` and the `MobileClientPolicy` type. The operator sets `MOBILE_MIN_VERSION`, `MOBILE_STORE_URL_IOS`, `MOBILE_STORE_URL_ANDROID` on the API |
 | `kortix.validateToken()` | pasted-API-key validation helper — `GET /accounts/me`, never throws, resolves `{valid, identity?, error?}` |
 | `kortix.connectors` | Connector data plane for an agent-minted session token: `catalog` · `tools` · `search` · `describe` · `call` (`{ account }`) · `accounts` · `uploadAttachment` |
 | `kortix.project(id)` | id-bound handle: `.apps` (stable App URLs, access, artifacts, deployments, logs, rollback, start/stop, machines (`machines.list/start/stop/restart/destroy`, `scale`, `exec`), volumes (`volumes.list/create/update/destroy/snapshots/snapshot/restore/fork`), and `token`) · `.secrets` · `.access` · `.connectors` (data plane + configuration + Connections) · `.policies` · `.triggers` (cron / webhook / monitor / event; `.eventTypes({ connector })` lists a connector's app events) · `.files` · `.git` · `.changeRequests` (incl. `requestChanges`) · `.sessions` · `.tokens` (project-scoped CLI PATs — the `KORTIX_TOKEN` shape) · `.marketplace` / `.registry` (install/update/remove catalog items) · `.setupLinks.{requestSecret,requestConnector}` (agent-minted secret-entry / connector links) · `.validateManifest` · `.gitToken` · `.setDefaultAgent(name)` · `.session(sid)` (+ more namespaces: `.review`, `.approvals`, `.gateway` (incl. `.routing` and `.playground`), `.channels`, `.modelDefaults`, `.sandbox`) |
@@ -679,6 +680,20 @@ events it replaced.
 
 `@kortix/sdk/react`'s `useRuntimeEventStream` uses the exact same primitive
 under the hood — it just also writes into the React Query cache.
+
+## Session log types
+
+The root entry exports the types of the Kortix session log, `kortix.session/2`
+minor 1: `SessionLog`, `SessionLogThread`, `SessionLogMessage` and
+`SessionLogBlock`, the block variants `TextBlock`, `ReasoningBlock`,
+`AttachmentBlock`, `ToolCallBlock`, `CompactionBlock`, `SubtaskBlock`,
+`StepBlock` and `HarnessBlock`, the grade types (`RestoreGrade`, `GradeCounts`),
+and the constants `SESSION_LOG_SCHEMA`, `SESSION_LOG_MINOR` and
+`KNOWN_TOOL_KINDS`. They are types and constants only: this package has no
+`zod` dependency. The validators (`SessionLogSchema` and the rest) stay in the
+private `@kortix/api-contract` package. The types are a copy of the api-contract
+session-log types, and a test fails when the two differ. See the
+[reference](https://kortix.com/docs/sdk/reference#session-log-types).
 
 ## Kortix as a Backend (server-side)
 

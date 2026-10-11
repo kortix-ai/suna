@@ -9,7 +9,7 @@
  * lifecycle.
  */
 import { flow } from '../core/flow';
-import type { FlowContext } from '../core/types';
+import type { FlowContext, Principal } from '../core/types';
 import { asPlatformAdmin } from '../fixtures/enterprise-demo';
 
 type Policy = { volumes?: { enabled?: boolean; orgs?: Record<string, boolean> } } & Record<string, unknown>;
@@ -36,13 +36,14 @@ async function waitForFilesStatus(
   ctx: FlowContext,
   list: { query: { projectId: string } },
   status: 200 | 403,
+  as: Principal = ctx.P.OWNER,
 ): Promise<void> {
   const deadline = Date.now() + 45_000;
   let streak = 0;
   let last = 0;
   while (streak < 12) {
     if (Date.now() > deadline) throw new Error(`Files did not answer ${status} 12 times in a row within 45 s (last ${last})`);
-    last = (await ctx.client.as(ctx.P.OWNER).get('/v1/drives', list)).statusCode;
+    last = (await ctx.client.as(as).get('/v1/drives', list)).statusCode;
     streak = last === status ? streak + 1 : 0;
     if (streak < 12) await new Promise((resolve) => setTimeout(resolve, last === status ? 250 : 1_000));
   }
@@ -133,6 +134,9 @@ flow(
       });
 
       await ctx.step('the member opens the same Files with a folder of their own; they do not manage it', async () => {
+        // The member joined moments ago; each API process caches membership
+        // for up to 15 s, so wait until every process lets them in.
+        await waitForFilesStatus(ctx, listFiles, 200, member);
         const drive = (await asMember.get('/v1/drives', listFiles)).status(200).json<{ drives: any[] }>().drives[0];
         if (drive?.driveId !== driveId || drive.access === 'manage' || !drive.personalFolder || drive.personalFolder === ownerFolder) {
           throw new Error(`member saw ${JSON.stringify(drive)}`);

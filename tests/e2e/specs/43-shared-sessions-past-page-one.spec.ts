@@ -27,7 +27,7 @@ const api = createApiJsonClient(apiBase);
 const SHARED_TITLE = 'Older shared plan';
 const PRIVATE_SESSIONS = 600;
 
-test('43 — the Shared section lists a session that sits past page one', async ({ page }) => {
+test('43 — the Shared section lists a session that sits past page one', { tag: '@local-only' }, async ({ page }) => {
   test.skip(isDeployedTarget(), 'local stack only: writes sessions straight into the database');
   test.setTimeout(180_000);
   const env = loadEnv();

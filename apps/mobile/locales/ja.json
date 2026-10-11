@@ -1207,5 +1207,11 @@
     "openMap": "地図を開く",
     "map": "地図",
     "mapUnavailable": "地図を表示できません"
+  },
+  "updateRequired": {
+    "title": "アップデートが必要です",
+    "body": "このバージョンのKortixはサポートが終了しました。続けるにはアプリを更新してください。",
+    "bodyNoStore": "このバージョンのKortixはサポートが終了しました。続けるにはApp StoreまたはGoogle Playからアプリを更新してください。",
+    "button": "アップデート"
   }
 }

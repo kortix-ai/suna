@@ -1207,5 +1207,11 @@
     "openMap": "Apri mappa",
     "map": "Mappa",
     "mapUnavailable": "Mappa non disponibile"
+  },
+  "updateRequired": {
+    "title": "Aggiornamento necessario",
+    "body": "Questa versione di Kortix non è più supportata. Aggiorna l'app per continuare.",
+    "bodyNoStore": "Questa versione di Kortix non è più supportata. Aggiorna l'app dall'App Store o da Google Play per continuare.",
+    "button": "Aggiorna"
   }
 }
