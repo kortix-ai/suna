@@ -35,7 +35,6 @@ interface AppResponse {
   slug: string;
   url: string;
   desired_state: string;
-  kind: string;
   capabilities: string[];
 }
 
@@ -485,75 +484,54 @@ test.describe('18 — Kortix Apps UI', () => {
       }
       await appModal.getByRole('button', { name: 'Close', exact: true }).click();
 
-      // An App of kind convex on the same page: a kind badge, a machine tile
-      // instead of a screenshot, the framed dashboard instead of a preview,
-      // capability items in the menu, and a delete that needs the slug typed.
-      expect(seeded.kind).toBe('web');
-      const convexApp = {
+      // A second App on the same page, linked to the first: no kind badge, a
+      // preview tile like any App, a Used-by link, the Connect item for an App
+      // with member tokens, none of the retired backup or admin-key items, and
+      // a plain delete confirmation (no slug to type).
+      expect(seeded).not.toHaveProperty('kind');
+      const dbApp = {
         ...liveApp,
         app_id: '00000000-0000-4000-8000-00000000c0c0',
         slug: `db-${runId}`,
         name: 'Seed DB',
-        kind: 'convex',
-        capabilities: ['deployments', 'snapshots', 'restore', 'admin_credentials', 'dashboard', 'logs', 'member_tokens'],
-        hosting_type: 'convex',
+        capabilities: ['deployments', 'rollback', 'preview', 'sleep', 'member_tokens'],
+        hosting_type: 'sandbox',
         active_deployment_id: null,
         url: 'https://synthetic-db.example.test',
         used_by: [seeded.slug],
-        instance: {
-          status: 'running', url: 'https://synthetic-db.example.test', site_url: 'https://synthetic-site.example.test',
-          dashboard_url: new URL('/synthetic-app-dashboard', page.url()).href, error: null, operation: null,
-          last_operation_error: null, health: null, auth_env: null, client_version: '1.0.0', budget_alert: null, purge_after: null,
-        },
       };
-      const convexApi = `${appApi}/${convexApp.app_id}`;
-      const accessSessions: string[] = [];
-      page.on('request', (request) => {
-        if (request.url().includes(`${convexApp.app_id}/access-session`)) accessSessions.push(request.url());
-      });
+      const dbApi = `${appApi}/${dbApp.app_id}`;
       await page.unroute(appApi);
       await page.route(appApi, (route) => route.request().method() === 'GET'
-        ? route.fulfill({ json: { apps: [{ ...liveApp, active_deployment_id: activeDeployment, uses: [convexApp.slug] }, convexApp] } }) : route.continue());
-      await page.route(`${convexApi}/deployments`, (route) => route.fulfill({ json: { deployments: [] } }));
-      await page.route(convexApp.instance.dashboard_url, (route) => route.fulfill({ contentType: 'text/html', body: '<p>dashboard</p>' }));
+        ? route.fulfill({ json: { apps: [{ ...liveApp, active_deployment_id: activeDeployment, uses: [dbApp.slug] }, dbApp] } }) : route.continue());
+      await page.route(`${dbApi}/deployments`, (route) => route.fulfill({ json: { deployments: [] } }));
       await page.reload({ waitUntil: 'domcontentloaded' });
-      const convexCard = page.getByRole('button', { name: 'Open Seed DB' });
-      await expect(convexCard.getByTestId('app-kind')).toHaveText('Backend');
-      await expect(convexCard.getByTestId('app-instance-tile')).toContainText('Running');
-      await expect(convexCard.getByTestId('app-instance-tile')).toContainText('No deploy yet');
-      await expect(convexCard.getByTestId('app-live-preview')).toHaveCount(0);
-      await convexCard.click();
-      const convexModal = page.getByRole('dialog', { name: 'Seed DB App' });
-      await expect(convexModal.getByTestId('app-dashboard')).toBeVisible();
-      await expect(convexModal.getByTestId('app-live-preview')).toHaveCount(0);
-      await expect(convexModal.getByRole('link', { name: 'Open in a new tab' })).toHaveCount(0);
-      await expect(convexModal.getByRole('button', { name: 'Put this App to sleep' })).toHaveCount(0);
+      const dbCard = page.getByRole('button', { name: 'Open Seed DB' });
+      await expect(dbCard.getByTestId('app-kind')).toHaveCount(0);
+      await expect(dbCard.getByTestId('app-instance-tile')).toHaveCount(0);
+      await dbCard.click();
+      const dbModal = page.getByRole('dialog', { name: 'Seed DB App' });
       // Used by: the slug opens the App that uses it.
-      await expect(convexModal.getByRole('button', { name: seeded.slug, exact: true })).toBeVisible();
-      await convexModal.getByRole('button', { name: 'More actions' }).click();
-      for (const item of ['Connect…', 'Backups…', 'Rotate admin key', 'Resize…']) {
-        await expect(page.getByRole('menuitem', { name: new RegExp(`^${escapeRe(item)}`) })).toBeVisible();
+      await expect(dbModal.getByRole('button', { name: seeded.slug, exact: true })).toBeVisible();
+      await dbModal.getByRole('button', { name: 'More actions' }).click();
+      await expect(page.getByRole('menuitem', { name: /^Connect…/ })).toBeVisible();
+      for (const retired of ['Backups…', 'Rotate admin key', 'Resize…']) {
+        await expect(page.getByRole('menuitem', { name: new RegExp(`^${escapeRe(retired)}`) })).toHaveCount(0);
       }
-      await expect(page.getByRole('menuitemcheckbox', { name: /Always on/ })).toHaveCount(0);
       await page.getByRole('menuitem', { name: 'Delete App', exact: true }).click();
-      const confirmDelete = deleteModal.getByRole('button', { name: 'Delete', exact: true });
-      await expect(confirmDelete).toBeDisabled();
-      await deleteModal.getByRole('textbox', { name: 'Slug' }).fill(convexApp.slug);
-      await expect(confirmDelete).toBeEnabled();
+      await expect(deleteModal.getByRole('textbox', { name: 'Slug' })).toHaveCount(0);
       let deleteUrl = '';
-      const convexDelete = (url: URL) => url.pathname.endsWith(`/apps/${convexApp.app_id}`);
-      await page.route(convexDelete, (route) => {
+      const dbDelete = (url: URL) => url.pathname.endsWith(`/apps/${dbApp.app_id}`);
+      await page.route(dbDelete, (route) => {
         if (route.request().method() !== 'DELETE') return route.continue();
         deleteUrl = route.request().url();
-        return route.fulfill({ json: { ok: true, images: { released: 0, pending: 0 }, retained_until: '2099-01-01T00:00:00Z', final_snapshot_id: 'final-1' } });
+        return route.fulfill({ json: { ok: true, images: { released: 0, pending: 0 } } });
       });
-      await confirmDelete.click();
+      await deleteModal.getByRole('button', { name: 'Delete', exact: true }).click();
       await expect(page.getByText('Seed DB deleted', { exact: true })).toBeVisible();
-      expect(new URL(deleteUrl).searchParams.get('confirm')).toBe(convexApp.slug);
-      expect(accessSessions).toEqual([]);
-      await page.unroute(convexDelete);
-      await page.unroute(`${convexApi}/deployments`);
-      await page.unroute(convexApp.instance.dashboard_url);
+      expect(new URL(deleteUrl).search).toBe('');
+      await page.unroute(dbDelete);
+      await page.unroute(`${dbApi}/deployments`);
       await page.unroute(appApi);
       await page.route(appApi, (route) => route.request().method() === 'GET'
         ? route.fulfill({ json: { apps: [{ ...liveApp, active_deployment_id: activeDeployment }] } }) : route.continue());

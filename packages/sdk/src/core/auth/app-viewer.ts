@@ -238,14 +238,15 @@ export interface KortixBinding {
 
 /**
  * An App this App uses (`uses`), on this App's own origin: no cross-origin
- * request, no CORS. A used App whose kind has no endpoint answers
+ * request, no CORS. A used static App answers
  * `409 app_binding_unsupported`; an App this App does not use answers
  * `403 app_not_linked`.
  *
  * ```ts
- * const db = kortixBinding('db');
- * const client = new ConvexReactClient(db.url);
- * client.setAuth(db.token);
+ * const api = kortixBinding('api');
+ * const res = await fetch(`${api.url}/orders`, {
+ *   headers: { authorization: `Bearer ${await api.token()}` },
+ * });
  * ```
  */
 export function kortixBinding(slug: string, options: KortixBindingOptions = {}): KortixBinding {

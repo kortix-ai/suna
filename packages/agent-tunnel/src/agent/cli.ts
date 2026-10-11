@@ -4,7 +4,17 @@ import { hostname } from 'os';
 import { join } from 'path';
 
 import { PAIR_AGAIN_COMMAND, TunnelAgent } from './agent';
-import { accessFilePath, accessRequestPath, desktopAppPath, readAccess, writeAccess } from './access';
+import {
+  accessFilePath,
+  accessRequestPath,
+  accessView,
+  applyAccess,
+  desktopAppPath,
+  readAccess,
+  writeAccess,
+  type AccessChange,
+  type AccessView,
+} from './access';
 import { printStartupBanner } from './banner';
 import { createEnabledCapabilityRegistry } from './capabilities/enabled-registry';
 import { loadConfig, type TunnelConfig } from './config';
@@ -44,16 +54,22 @@ const BACKGROUND_FLAGS = ['daemon', 'service', 'background', 'always-online'] as
 const FOREGROUND_FLAGS = ['foreground', 'no-daemon', 'no-service', 'no-background'] as const;
 const DEFAULT_LOG_LINES = 60;
 
+/** `_` holds the words after the command (`access always` → `_: 'always'`). */
 type Flags = Record<string, string>;
 
 function parseArgs(argv: string[]): { command: string; flags: Flags } {
   const flags: Flags = {};
+  const words: string[] = [];
   for (let i = 3; i < argv.length; i++) {
     const arg = argv[i];
-    if (!arg.startsWith('--')) continue;
+    if (!arg.startsWith('--')) {
+      words.push(arg);
+      continue;
+    }
     const next = argv[i + 1];
     flags[arg.slice(2)] = next && !next.startsWith('--') ? argv[++i] : 'true';
   }
+  if (words.length > 0) flags._ = words.join(' ');
   return { command: argv[2] || 'help', flags };
 }
 
@@ -431,7 +447,7 @@ function commandStatus(flags: Flags): void {
       serviceLabel: getServicePaths().label,
       service,
       state: readAgentState(),
-      access: readAccess(),
+      access: accessView(),
       lastActivity: lastServiceActivity(),
     }, null, 2));
     return;
@@ -589,6 +605,69 @@ function commandServiceAction(action: ServiceAction, flags: Flags): void {
   renderServiceAction(action, SERVICE_ACTIONS[action].run());
 }
 
+/** "Ask each time · allowed until 14:05", for a person at a terminal. */
+function describeAccess(view: AccessView): string {
+  const clock = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (view.mode === 'always') return `${c.white}Always allowed${c.reset}`;
+  if (view.mode === 'off') return `${c.white}Off${c.reset} ${c.dim}(every agent call is refused)${c.reset}`;
+  const now = view.grantedUntil
+    ? `allowed until ${clock(view.grantedUntil)}`
+    : view.deniedUntil
+      ? `denied until ${clock(view.deniedUntil)}`
+      : 'asks before the next call';
+  return `${c.white}Ask each time${c.reset} ${c.dim}· ${now}${c.reset}`;
+}
+
+function printAccess(view: AccessView, flags: Flags): void {
+  if (isTruthyFlag(flags.json)) {
+    console.log(JSON.stringify(view, null, 2));
+    return;
+  }
+  const npx = 'npx @kortix/agent-tunnel@latest';
+  blankLine();
+  field('access', describeAccess(view));
+  field('keep awake', view.keepAwakeSupported ? (view.keepAwake ? `${c.white}on${c.reset}` : `${c.white}off${c.reset}`) : `${c.dim}not available on this system${c.reset}`);
+  if (view.pendingRequest) {
+    field('waiting', `${c.white}${view.pendingRequest.change ? 'a change asked for through Kortix' : `an agent call (${view.pendingRequest.capability})`}${c.reset}`);
+    field('', `${c.dim}${npx} access --allow-for 60   or   --deny${c.reset}`);
+  }
+  blankLine();
+  console.log(`  ${c.dim}Change it:${c.reset} ${c.white}${npx} access ask|always|off${c.reset}${c.dim}, --allow-for <minutes>, --revoke, --deny${c.reset}`);
+  blankLine();
+}
+
+/**
+ * `access [ask|always|off] [--allow-for <minutes>] [--revoke] [--deny]`: when
+ * Kortix may use this computer. The person at this machine is its owner, so
+ * this widens access too; the desktop app runs this command after its own
+ * confirmation. No change prints the current state.
+ */
+function commandAccess(flags: Flags): void {
+  const change: AccessChange = {};
+  if (flags._) change.mode = flags._ as AccessChange['mode'];
+  if (flags['allow-for'] !== undefined) {
+    change.grantMinutes = Number(flags['allow-for']);
+    if (!(change.grantMinutes > 0)) fail('--allow-for takes minutes, at most 1440. Example: agent-tunnel access --allow-for 60');
+  }
+  if (isTruthyFlag(flags.revoke)) change.revoke = true;
+  if (isTruthyFlag(flags.deny)) change.deny = true;
+  if (Object.keys(change).length === 0) return printAccess(accessView(), flags);
+  if (change.mode !== undefined && !['ask', 'always', 'off'].includes(change.mode)) {
+    fail('Access is one of: ask, always, off. Example: agent-tunnel access ask');
+  }
+  // A grant applies in "Ask each time"; from another mode it means "ask, allowed for now".
+  if (change.grantMinutes !== undefined && change.mode === undefined && readAccess().mode !== 'ask') change.mode = 'ask';
+  printAccess(applyAccess(change), flags);
+}
+
+/** `keep-awake [on|off]`: hold off system sleep while the agent runs (macOS, Linux). */
+function commandKeepAwake(flags: Flags): void {
+  if (flags._ === undefined) return printAccess(accessView(), flags);
+  if (flags._ !== 'on' && flags._ !== 'off') fail('Keep awake is on or off. Example: agent-tunnel keep-awake on');
+  if (!accessView().keepAwakeSupported) fail('Keep awake is not available on this system yet.');
+  printAccess(applyAccess({ keepAwake: flags._ === 'on' }), flags);
+}
+
 // ── dispatch ─────────────────────────────────────────────────────────────────
 
 interface Command {
@@ -604,6 +683,11 @@ const COMMANDS: Record<string, Command> = {
     run: commandConnect,
   },
   status: { summary: 'Show pairing, capabilities, and service state (--json)', run: commandStatus },
+  access: {
+    summary: 'When Kortix may use this computer: ask, always, off (--allow-for <min>, --revoke, --deny, --json)',
+    run: commandAccess,
+  },
+  'keep-awake': { summary: 'Keep this computer awake while connected: on, off (--json)', run: commandKeepAwake },
   logs: { summary: 'Show recent service logs (--lines <n>, --all, --clear)', run: commandLogs },
   start: {
     summary: 'Start the background service (resumes a paused one)',
@@ -643,7 +727,7 @@ const OPTIONS: ReadonlyArray<readonly [string, string]> = [
   ['--reauth', 'With connect: discard the saved credential and pair again'],
   ['--daemon / --foreground', 'With connect: skip the prompt and choose the mode'],
   ['--project-id <uuid>', 'With connect: offer "Also share with <project>" on the approval page; the computer is yours in every project either way'],
-  ['--json', 'With connect: NDJSON events, no prompts. With status and logout: machine-readable output'],
+  ['--json', 'With connect: NDJSON events, no prompts. With status, access, keep-awake, and logout: machine-readable output'],
   ['--keep-service', 'With logout: keep the background service installed'],
 ];
 
@@ -681,7 +765,7 @@ const { command, flags } = parseArgs(process.argv);
 jsonMode = command === 'connect' && isTruthyFlag(flags.json);
 
 if (Object.prototype.hasOwnProperty.call(flags, 'keep-awake')) {
-  console.error(`  ${glyph.bad} --keep-awake is not supported. Configure sleep behavior in the operating system.`);
+  console.error(`  ${glyph.bad} --keep-awake is not a flag. Run: agent-tunnel keep-awake on`);
   process.exit(2);
 }
 
@@ -692,7 +776,8 @@ const resolved =
 if (!resolved) {
   showHelp();
 } else {
-  void Promise.resolve(resolved.run(flags)).catch((error: unknown) => {
+  // `.then`: a command that throws synchronously reports like one that rejects.
+  void Promise.resolve().then(() => resolved.run(flags)).catch((error: unknown) => {
     fail(error instanceof Error ? error.message : String(error));
   });
 }
