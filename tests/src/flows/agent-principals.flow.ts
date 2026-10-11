@@ -23,6 +23,7 @@ import { setFeatureAsOperator } from '../fixtures/feature-flags';
 import { flow } from '../core/flow';
 import type { FlowContext, Principal, TeamFixture } from '../core/types';
 import { CliSandbox } from '../fixtures/cli';
+import { stagingAppsEdgeQuarantine } from '../fixtures/apps-edge';
 import {
   AgentPrincipalsWorld,
   type AgentSession,
@@ -874,12 +875,7 @@ flow(
   {
     domain: 'agent-principals',
     requires: ['database', 'appHost'],
-    ...(process.env.KE2E_TARGET === 'staging'
-      ? {
-          quarantine:
-            'staging Apps edge: *.apps.kortix.com staging hosts return Cloudflare 530 (apps-router STAGING_API_ORIGIN=staging-api.kortix.com resolves to a dead tunnel), so the gate cannot set KE2E_CAP_APP_HOST — quarantined 2026-10-09 until the apps-router staging origin is fixed',
-        }
-      : {}),
+    ...stagingAppsEdgeQuarantine(),
     timeoutMs: 180_000,
     routes: [
       'POST /v1/projects/:projectId/apps',

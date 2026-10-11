@@ -85,6 +85,8 @@ flow(
           .has("$.error", "Unknown feature flag 'session_transcript_history'");
         // What an older server wrote when a project turned the flag off.
         const db = new Client({ connectionString: ctx.env.databaseUrl! });
+        // A dropped connection must fail the next query, not crash the runner.
+        db.on("error", () => {});
         await db.connect();
         try {
           await db.query(
@@ -116,6 +118,8 @@ flow(
       async () => {
         const child = "ses_subagentwindow";
         const db = new Client({ connectionString: ctx.env.databaseUrl! });
+        // A dropped connection must fail the next query, not crash the runner.
+        db.on("error", () => {});
         await db.connect();
         try {
           const info = {
@@ -175,6 +179,8 @@ flow(
       "a replaced root makes the old transcript unavailable without waking a sandbox",
       async () => {
         const db = new Client({ connectionString: ctx.env.databaseUrl! });
+        // A dropped connection must fail the next query, not crash the runner.
+        db.on("error", () => {});
         await db.connect();
         try {
           await db.query(
@@ -324,6 +330,8 @@ flow(
         });
         ctx.track("session", unsaved, { projectId: project.id });
         const db = new Client({ connectionString: ctx.env.databaseUrl! });
+        // A dropped connection must fail the next query, not crash the runner.
+        db.on("error", () => {});
         await db.connect();
         try {
           await db.query(
@@ -422,6 +430,8 @@ flow(
         // What an older server wrote when a project turned saved history off.
         // Saved history has no off switch now, so the upload still succeeds.
         const db = new Client({ connectionString: ctx.env.databaseUrl! });
+        // A dropped connection must fail the next query, not crash the runner.
+        db.on("error", () => {});
         await db.connect();
         try {
           await db.query(
@@ -502,6 +512,8 @@ flow(
         // whose user message references the uploaded file, stop the session,
         // and read it back through `kortix sessions attachments`.
         const db = new Client({ connectionString: ctx.env.databaseUrl! });
+        // A dropped connection must fail the next query, not crash the runner.
+        db.on("error", () => {});
         await db.connect();
         try {
           const root = `ses_${sessionId.replaceAll("-", "")}`;
@@ -624,6 +636,8 @@ flow(
         ).status(200);
         (await owner.get(download, { params })).status(404);
         const db = new Client({ connectionString: ctx.env.databaseUrl! });
+        // A dropped connection must fail the next query, not crash the runner.
+        db.on("error", () => {});
         await db.connect();
         try {
           const result = await db.query(

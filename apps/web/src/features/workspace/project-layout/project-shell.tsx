@@ -79,7 +79,7 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
   const searchParams = useSearchParams();
   const { user, isLoading: authLoading, bootstrapError } = useAuth();
 
-  const { data: projectDetail, error: projectDetailError } = useQuery({
+  const { data: projectDetail, error: projectDetailError, isStale: projectDetailStale } = useQuery({
     queryKey: qk.project.detail(projectId),
     queryFn: () => getProjectDetail(projectId),
     enabled: !!projectId,
@@ -114,12 +114,15 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
 
   // Remember the project so the next `/` hit and the next sign-in land straight
   // back here instead of going through the id-free landing door. Gated on a
-  // successful detail fetch: recording a project the user cannot actually read
-  // would send them into a 404 bounce loop on their next visit.
+  // detail read the server confirmed: recording a project the user cannot
+  // actually read would send them into a 404 bounce loop on their next visit.
+  // A copy restored from this device's cache is stale until it refetches, and
+  // it outlives a deleted project: remembering it would let the self-heal below
+  // leave the "This project is gone." screen for another project.
   useEffect(() => {
-    if (!projectDetail) return;
+    if (!projectDetail || projectDetailError || projectDetailStale) return;
     writeLastProjectId(user?.id, projectId);
-  }, [projectDetail, projectId, user?.id]);
+  }, [projectDetail, projectDetailError, projectDetailStale, projectId, user?.id]);
 
   // Self-heal a stale remembered project. The cookie outlives the project it
   // names (deleted project, signed into a different account on the same
