@@ -224,7 +224,8 @@ function sorted(set: Iterable<string>): string[] {
 describe('the area table covers the catalog', () => {
   test('the seeded catalog is the shape the matrix expects (drift alarm)', () => {
     expect(PROJECT_LEAVES.length).toBe(49);
-    expect(ACCOUNT_LEAVES.length).toBe(29);
+    // 31 since Kortix Capture's `capture.read_all` and `capture.manage` (20261011160005334).
+    expect(ACCOUNT_LEAVES.length).toBe(31);
     // The retired spellings must not come back: `project.cr.*` collapsed into
     // `project.gitops.*` (the same capability named twice), and `trigger.*` was
     // cataloged, validated, in no role and asserted by no route.

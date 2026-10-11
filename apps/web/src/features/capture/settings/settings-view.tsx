@@ -1,13 +1,7 @@
 'use client';
 
-import type { CapturePolicy, CapturePolicyRecord, CaptureRole } from '@kortix/sdk';
-import {
-  useCaptureMembers,
-  useCapturePolicy,
-  useSetCaptureEnabled,
-  useSetCaptureMemberRole,
-  useSetCapturePolicy,
-} from '@kortix/sdk/react';
+import type { CapturePolicy, CapturePolicyRecord } from '@kortix/sdk';
+import { useCapturePolicy, useSetCaptureEnabled, useSetCapturePolicy } from '@kortix/sdk/react';
 import { notFound } from 'next/navigation';
 import { useId, useState, type FormEvent } from 'react';
 
@@ -237,8 +231,6 @@ function PolicyForm({ accountId, record }: { accountId: string; record: CaptureP
   );
 }
 
-const ROLES: readonly CaptureRole[] = ['admin', 'viewer', 'member'];
-
 /** The account switch: Kortix Capture on or off for the whole organization. */
 function SwitchSection({ accountId }: { accountId: string }) {
   const t = useTranslations('capture.settings');
@@ -274,109 +266,30 @@ function SwitchSection({ accountId }: { accountId: string }) {
   );
 }
 
-/** Capture roles: admins see everyone and change Settings; viewers see everyone; members see their own. */
-function RolesSection({ accountId }: { accountId: string }) {
+/** Who reads whose recordings: Kortix IAM, not a Capture setting. */
+function AccessSection() {
   const t = useTranslations('capture.settings');
-  const members = useCaptureMembers(accountId);
-  const people = useCaptureDirectory(accountId, true);
-  const setRole = useSetCaptureMemberRole(accountId);
-  const [pending, setPending] = useState<string | null>(null);
-  const change = (userId: string, role: CaptureRole | null) => {
-    setPending(userId);
-    setRole.mutate(
-      { userId, role },
-      {
-        onSuccess: () => successToast(t('roleSaved')),
-        onError: () => errorToast(t('roleFailed')),
-        onSettled: () => setPending(null),
-      },
-    );
-  };
   return (
-    <section className="space-y-4">
-      <div className="space-y-1">
-        <Label>{t('rolesTitle')}</Label>
-        <p className="text-muted-foreground text-xs text-pretty">{t('rolesHint')}</p>
-      </div>
-      {members.isLoading ? (
-        <div className="space-y-2">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-14 rounded-md" />
-          ))}
-        </div>
-      ) : members.isError ? (
-        <ErrorState
-          size="sm"
-          title={t('rolesFailed')}
-          action={
-            <Button variant="outline" size="sm" onClick={() => members.refetch()}>
-              {t('tryAgain')}
-            </Button>
-          }
-        />
-      ) : (
-        <AccessList>
-          {(members.data?.members ?? []).map((member) => {
-            const person = people.personOf(member.user_id);
-            const label = person.email ?? member.user_id;
-            return (
-              <AccessRow
-                key={member.user_id}
-                leading={<UserAvatar email={person.email ?? ''} size="md" />}
-                title={person.isYou ? t('youLabel', { email: label }) : label}
-                metaParts={[
-                  t(`accountRole.${member.account_role}`),
-                  member.overridden ? t('roleSet') : t('roleDefault'),
-                ]}
-                pending={pending === member.user_id}
-                actions={
-                  <Select
-                    value={member.role}
-                    onValueChange={(value) =>
-                      change(member.user_id, value === 'default' ? null : (value as CaptureRole))
-                    }
-                  >
-                    <SelectTrigger
-                      size="sm"
-                      className="w-32"
-                      aria-label={t('roleFor', { name: label })}
-                    >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent align="end">
-                      {ROLES.map((role) => (
-                        <SelectItem key={role} value={role}>
-                          {t(`role.${role}`)}
-                        </SelectItem>
-                      ))}
-                      {member.overridden ? (
-                        <SelectItem value="default">{t('roleReset')}</SelectItem>
-                      ) : null}
-                    </SelectContent>
-                  </Select>
-                }
-              />
-            );
-          })}
-        </AccessList>
-      )}
+    <section className="space-y-2">
+      <Label>{t('accessTitle')}</Label>
+      <p className="text-muted-foreground text-sm text-pretty">{t('accessBody')}</p>
     </section>
   );
 }
 
 /**
- * Settings (`/capture/[accountId]/settings`), Capture admins only: the account
- * switch, members and their Capture roles, and the policy every device reads.
+ * Settings (`/capture/[accountId]/settings`), `capture.manage` only: the
+ * account switch, who sees what, and the policy every device reads.
  */
 export function CaptureSettingsView({ accountId }: { accountId: string }) {
   const t = useTranslations('capture.settings');
   const area = useCaptureArea(accountId);
-  if (!area.isAdmin) notFound();
+  if (!area.canManage) notFound();
   return (
     <CapturePage title={t('title')} description={t('description', { name: area.accountName })}>
       <div className="w-full max-w-2xl space-y-8">
         <SwitchSection accountId={accountId} />
-        <RolesSection accountId={accountId} />
+        <AccessSection />
         <PolicySection accountId={accountId} />
       </div>
     </CapturePage>

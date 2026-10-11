@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 789,
+  "count": 811,
   "routes": [
     {
       "method": "GET",
@@ -261,6 +261,58 @@
     {
       "method": "POST",
       "path": "/v1/accounts/:accountId/branding/assets/:kind"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/accounts/:accountId/capture"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/chunks/:chunkId/media"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/days"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/devices"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/:accountId/capture/devices/:deviceId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/devices/:deviceId/assets/:name"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/frames/:frameId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/policy"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/accounts/:accountId/capture/policy"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/search"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/timeline"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/timeline/items"
     },
     {
       "method": "GET",
@@ -997,6 +1049,42 @@
     {
       "method": "POST",
       "path": "/v1/billing/webhooks/stripe"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/capture/credentials"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/capture/device/authorize"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/capture/device/grants/:user_code"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/capture/device/grants/:user_code/approve"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/capture/device/grants/:user_code/deny"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/capture/device/token"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/capture/me/frames/:frameId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/capture/me/search"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/capture/me/timeline"
     },
     {
       "method": "POST",

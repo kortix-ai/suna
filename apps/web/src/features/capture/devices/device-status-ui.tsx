@@ -1,8 +1,8 @@
 'use client';
 
 import type { CaptureDevice } from '@kortix/sdk';
-import { useRevokeCaptureDevice, useSyncCaptureDevice } from '@kortix/sdk/react';
-import { ArrowsClockwiseIcon, DotsThreeIcon, ProhibitIcon } from '@phosphor-icons/react';
+import { useRevokeCaptureDevice } from '@kortix/sdk/react';
+import { DotsThreeIcon, ProhibitIcon } from '@phosphor-icons/react';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -81,7 +81,7 @@ export function useStatusText() {
     [t(`status.${view.key}`), note(view)].filter(Boolean).join(' · ');
 }
 
-/** Sync now and Revoke for one device (Revoke asks first). Admins only: the API refuses others. */
+/** Revoke one device (asks first): your own, or any with `capture.manage`; the API refuses others. */
 export function DeviceActionsMenu({
   accountId,
   device,
@@ -94,7 +94,6 @@ export function DeviceActionsMenu({
   onRevoked?: () => void;
 }) {
   const t = useTranslations('capture.devices');
-  const sync = useSyncCaptureDevice(accountId);
   const revoke = useRevokeCaptureDevice(accountId);
   const [confirm, setConfirm] = useState(false);
   return (
@@ -106,17 +105,6 @@ export function DeviceActionsMenu({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-48">
-          <DropdownMenuItem
-            onSelect={() =>
-              sync.mutate(device.device_id, {
-                onSuccess: (result) => successToast(t('synced', { count: result.enqueued })),
-                onError: () => errorToast(t('syncFailed')),
-              })
-            }
-          >
-            <ArrowsClockwiseIcon className="size-3.5 shrink-0" />
-            {t('syncNow')}
-          </DropdownMenuItem>
           <DropdownMenuItem variant="destructive" onSelect={() => setConfirm(true)}>
             <ProhibitIcon className="size-3.5 shrink-0" />
             {t('revoke')}

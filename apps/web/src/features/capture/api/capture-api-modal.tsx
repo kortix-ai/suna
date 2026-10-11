@@ -28,16 +28,15 @@ const ENDPOINTS = [
   { id: 'account', routes: ['GET /'] },
   { id: 'search', routes: ['GET /search?q='] },
   { id: 'timeline', routes: ['GET /timeline', 'GET /timeline/items'] },
+  { id: 'days', routes: ['GET /days'] },
   { id: 'frames', routes: ['GET /frames/{frame_id}', 'GET /chunks/{chunk_id}/media'] },
-  { id: 'episodes', routes: ['GET /episodes', 'GET /episodes/{episode_id}'] },
-  { id: 'workflows', routes: ['GET /workflows', 'GET /workflows/{workflow_id}'] },
-  { id: 'exports', routes: ['POST /exports', 'GET /exports/{export_id}'] },
+  { id: 'devices', routes: ['GET /devices'] },
 ] as const;
 
 /**
  * "Kortix Capture API": Capture's data over its own REST API, for scripts,
  * agents or anything else. Base URL, a Kortix API key, the data endpoints, one
- * example, and who sees what. Opened from Overview and Devices.
+ * example, and who sees what. Opened from Devices.
  */
 export function CaptureApiModal({
   open,

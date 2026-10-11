@@ -1030,6 +1030,13 @@
       "when": 1791717353388,
       "tag": "20261011111553_session_log_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 147,
+      "version": "7",
+      "when": 1791734405318,
+      "tag": "20261011160005_capture",
+      "breakpoints": true
     }
   ]
 }

@@ -55,8 +55,9 @@ const filterOf = (key: DeviceStatusKey): Exclude<Filter, 'all'> =>
   key === 'recording' || key === 'paused' || key === 'permission' ? key : 'offline';
 
 /**
- * Devices: every computer that records into the organization. Admins and
- * viewers switch between all devices and their own; members see their own.
+ * Devices: every computer that records into the organization. With
+ * `capture.read_all` you switch between all devices and your own; everyone
+ * else sees their own.
  * A row opens that device's timeline.
  */
 export function DevicesView({ accountId }: { accountId: string }) {
@@ -192,7 +193,7 @@ export function DevicesView({ accountId }: { accountId: string }) {
             accountId={accountId}
             rows={rows}
             showPerson={scope === 'account'}
-            canManage={area.isAdmin}
+            canManage={area.canManage}
             thisDeviceId={thisDeviceId}
           />
           {rows.length === 0 ? (
@@ -325,7 +326,7 @@ function DeviceTable({
               </TableCell>
               <TableCell className="pr-4 text-right">
                 <span className="relative z-10 inline-flex items-center gap-1">
-                  {canManage ? (
+                  {canManage || device.user_id === people.viewerId ? (
                     <DeviceActionsMenu accountId={accountId} device={device} name={name} />
                   ) : null}
                 </span>

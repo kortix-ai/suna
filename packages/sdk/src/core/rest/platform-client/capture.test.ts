@@ -6,32 +6,24 @@ import {
   getCaptureWorkspace,
   getMyCaptureFrame,
   getMyCaptureTimeline,
-  listCaptureMembers,
   searchMyCapture,
   setCaptureEnabled,
-  setCaptureMemberRole,
   denyCaptureDeviceGrant,
   getCaptureAssetUrl,
   getCaptureChunkMedia,
   getCaptureDays,
   getCaptureDeviceGrant,
   getCaptureFrame,
-  getCapturePeople,
   getCapturePolicy,
-  getCaptureRange,
   getCaptureTimeline,
   getCaptureTimelineItems,
   listCaptureDevices,
-  listCaptureRanges,
-  processCaptureRange,
   revokeCaptureDevice,
-  syncCaptureDevice,
-  saveCaptureRange,
   searchCapture,
-  setCaptureDevicePolicy,
   setCapturePolicy,
   type CapturePolicy,
 } from './capture';
+import * as Capture from './capture';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
 let nextBody: unknown = {};
@@ -58,7 +50,7 @@ const POLICY: CapturePolicy = {
   notice: 'Recording is on for the support team.',
 };
 
-test('devices: list mine, a member, or the account; revoke; set and clear a device override', async () => {
+test('devices: list mine, a member, or the account; revoke', async () => {
   nextBody = { devices: [{ device_id: 'd1', live: { state: 'recording' } }] };
   const mine = await listCaptureDevices('a1');
   expect(last()).toMatchObject({ method: 'GET', url: `${P}/devices` });
@@ -69,14 +61,22 @@ test('devices: list mine, a member, or the account; revoke; set and clear a devi
   expect(last().url).toBe(`${P}/devices?scope=account`);
   await revokeCaptureDevice('a1', 'd1');
   expect(last()).toMatchObject({ method: 'DELETE', url: `${P}/devices/d1` });
-  nextBody = { device_id: 'd1', enqueued: 3, forgotten: 1 };
-  const synced = await syncCaptureDevice('a1', 'd1');
-  expect([synced.enqueued, synced.forgotten]).toEqual([3, 1]);
-  expect(last()).toMatchObject({ method: 'POST', url: `${P}/devices/d1/sync` });
-  await setCaptureDevicePolicy('a1', 'd1', POLICY);
-  expect(last()).toMatchObject({ method: 'PUT', url: `${P}/devices/d1/policy`, body: { policy: POLICY } });
-  await setCaptureDevicePolicy('a1', 'd1', null);
-  expect(last().body).toEqual({ policy: null });
+});
+
+test('raw capture only: no ranges, people, Capture roles, device sync or per-device policy', () => {
+  for (const name of [
+    'listCaptureRanges',
+    'saveCaptureRange',
+    'getCaptureRange',
+    'processCaptureRange',
+    'getCapturePeople',
+    'listCaptureMembers',
+    'setCaptureMemberRole',
+    'syncCaptureDevice',
+    'setCaptureDevicePolicy',
+  ]) {
+    expect(name in Capture).toBe(false);
+  }
 });
 
 test('policy: read and write the account policy', async () => {
@@ -139,38 +139,14 @@ test('media: a frame with its video URL, an item’s media, an asset URL', async
   expect(last().url).toBe(`${P}/devices/d1/assets/sha256-${'a'.repeat(64)}.png`);
 });
 
-test('ranges: list, save, read with outputs, process again', async () => {
-  nextBody = { ranges: [] };
-  await listCaptureRanges('a1', { day: '2026-10-03' });
-  expect(last().url).toBe(`${P}/ranges?day=2026-10-03`);
-  nextBody = { range_id: 'r1', status: 'closed' };
-  await saveCaptureRange('a1', { start_at: '2026-10-03T09:00:00.000Z', end_at: '2026-10-03T09:30:00.000Z', title: 'Budget review' });
-  expect(last()).toMatchObject({ method: 'POST', url: `${P}/ranges`, body: { title: 'Budget review' } });
-  nextBody = { range_id: 'r1', outputs: [{ kind: 'segmentation', status: 'done' }] };
-  expect((await getCaptureRange('a1', 'r1')).outputs[0]?.kind).toBe('segmentation');
-  await processCaptureRange('a1', 'r1');
-  expect(last()).toMatchObject({ method: 'POST', url: `${P}/ranges/r1/process` });
-});
-
-test('people: the managers’ per-member summary', async () => {
-  nextBody = { from: 'a', to: 'b', people: [{ user_id: 'u1', active_seconds: 60, apps: [{ app: 'Mail', seconds: 60 }], ranges: 1, devices: 1 }] };
-  expect((await getCapturePeople('a1', { day: '2026-10-03' })).people[0]?.active_seconds).toBe(60);
-  expect(last().url).toBe(`${P}/people?day=2026-10-03`);
-});
-
-test('workspace: read it, turn Capture on, list and set Capture roles', async () => {
-  nextBody = { account_id: 'a1', enabled: false, role: 'admin', can_manage: true, updated_at: null };
-  expect((await getCaptureWorkspace('a1')).can_manage).toBe(true);
+test('workspace: read it with what IAM lets you do, turn Capture on', async () => {
+  nextBody = { account_id: 'a1', enabled: false, can_read_all: true, can_manage: true, updated_at: null };
+  const workspace = await getCaptureWorkspace('a1');
+  expect([workspace.can_read_all, workspace.can_manage]).toEqual([true, true]);
+  expect('role' in workspace).toBe(false);
   expect(last()).toMatchObject({ method: 'GET', url: P });
   await setCaptureEnabled('a1', true);
   expect(last()).toMatchObject({ method: 'PATCH', url: P, body: { enabled: true } });
-  nextBody = { members: [{ user_id: 'u1', account_role: 'owner', role: 'admin', overridden: false }] };
-  expect((await listCaptureMembers('a1')).members[0]?.role).toBe('admin');
-  expect(last()).toMatchObject({ method: 'GET', url: `${P}/members` });
-  await setCaptureMemberRole('a1', 'u2', 'viewer');
-  expect(last()).toMatchObject({ method: 'PUT', url: `${P}/members/u2`, body: { role: 'viewer' } });
-  await setCaptureMemberRole('a1', 'u2', null);
-  expect(last().body).toEqual({ role: null });
 });
 
 test('device sign-in approval: read with the accounts it can sign into, approve into an account, deny', async () => {
@@ -191,7 +167,7 @@ test('the agent tool reads the person it acts for under /capture/me, account fro
   nextBody = { hits: [] };
   await searchMyCapture({ q: 'invoice', kinds: ['audio'] });
   expect(last()).toMatchObject({ method: 'GET', url: 'http://test.local/capture/me/search?q=invoice&kinds=audio' });
-  nextBody = { runs: [], chunks: [], ranges: [] };
+  nextBody = { runs: [], chunks: [] };
   await getMyCaptureTimeline({ day: '2026-10-03' });
   expect(last().url).toBe('http://test.local/capture/me/timeline?day=2026-10-03');
   nextBody = { frame: { frame_id: 'f1' }, video: null };
@@ -211,14 +187,11 @@ test('the facade binds Capture to an account; sign-in approval and the agent rea
   expect(last().url).toBe(`${P}/timeline?day=2026-10-03`);
   await capture.timeline.days({ tz: 'UTC' });
   expect(last().url).toBe(`${P}/days?tz=UTC`);
-  await capture.devices.sync('d1');
-  expect(last().url).toBe(`${P}/devices/d1/sync`);
-  await capture.ranges.process('r1');
-  expect(last().url).toBe(`${P}/ranges/r1/process`);
   await capture.workspace.setEnabled(true);
   expect(last()).toMatchObject({ method: 'PATCH', url: P });
-  await capture.members.set('u2', 'member');
-  expect(last().url).toBe(`${P}/members/u2`);
+  // Raw capture only: the account handle has nothing else.
+  expect(Object.keys(capture).sort()).toEqual(['devices', 'frame', 'media', 'policy', 'search', 'timeline', 'workspace']);
+  expect(Object.keys(capture.devices).sort()).toEqual(['assetUrl', 'list', 'revoke']);
   await kortix.capture.approveDevice('ABCD-1234', 'a1');
   expect(last().url).toBe('http://test.local/capture/device/grants/ABCD-1234/approve');
   await kortix.capture.me.search({ q: 'x' });

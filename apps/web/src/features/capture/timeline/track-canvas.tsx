@@ -28,31 +28,20 @@ export interface TrackLayers {
 }
 
 // Canvas geometry in px (a drawing surface, not CSS spacing). Lanes top to
-// bottom: the time axis, episodes, apps (the engine window's run line with
-// its app tiles), actions, audio. `LANES` gives the labels' vertical centers.
+// bottom: the time axis, apps (the engine window's run line with its app
+// tiles), actions, audio. `LANES` gives the labels' vertical centers.
 const AXIS_H = 18;
-const EPISODE_Y = 24;
-const EPISODE_H = 24;
-const TRACK_Y = 58.5;
+const TRACK_Y = 34.5;
 const TRACK_H = 7;
-const ACTIONS_Y = 82;
-const AUDIO_Y = 104;
+const ACTIONS_Y = 58;
+const AUDIO_Y = 80;
 const LANE_H = 8;
-export const TRACK_HEIGHT = 122;
+export const TRACK_HEIGHT = 98;
 export const LANES = {
-  episodes: EPISODE_Y + EPISODE_H / 2,
   apps: TRACK_Y + TRACK_H / 2,
   actions: ACTIONS_Y + LANE_H / 2,
   audio: AUDIO_Y + LANE_H / 2,
 } as const;
-
-/** A task on the timeline: one goal, a start and an end, a label (L1 of the pipeline). */
-export interface TrackEpisode {
-  id: string;
-  s: number;
-  e: number;
-  label: string;
-}
 
 /** Axis tick steps in ms; the first that leaves at least 72 px between labels wins. */
 const TICKS = [
@@ -108,16 +97,12 @@ export function TrackCanvas({
   runs,
   audio,
   actions,
-  episodes,
   layers,
   pad,
   onWidth,
-  onEpisode,
 }: {
   scrubber: Scrubber;
   runs: readonly TrackRun[];
-  episodes: readonly TrackEpisode[];
-  onEpisode: (episode: TrackEpisode) => void;
   audio: readonly { s: number; e: number }[];
   actions: readonly { s: number; e: number }[];
   layers: TrackLayers;
@@ -176,30 +161,6 @@ export function TrackCanvas({
       g.fillRect(x - 0.5, 0, 1, H);
       g.fillStyle = weak;
       g.fillText(clockTime(at, locale), x + 4, 4);
-    }
-    // Episodes: a labelled band per task; the one under the playhead is inverted.
-    g.font = `500 12px ${font}`;
-    g.textBaseline = 'middle';
-    for (const ep of episodes) {
-      const x0 = xOf(ep.s);
-      const x1 = xOf(ep.e);
-      if (x1 < 0 || x0 > W) continue;
-      const x = Math.max(-4, x0);
-      const w = Math.min(W + 4, x1) - x - 3;
-      if (w < 2) continue;
-      const on = T >= ep.s && T <= ep.e;
-      g.fillStyle = on ? ink : line;
-      roundRect(g, x, EPISODE_Y, w, EPISODE_H, 6);
-      g.fill();
-      if (w > 28) {
-        g.save();
-        g.beginPath();
-        g.rect(x + 8, EPISODE_Y, w - 16, EPISODE_H);
-        g.clip();
-        g.fillStyle = on ? cssVar('--background') : ink;
-        g.fillText(ep.label, Math.max(x, 0) + 8, EPISODE_Y + EPISODE_H / 2 + 0.5);
-        g.restore();
-      }
     }
     // Idle base line: time before, between and after runs.
     g.globalAlpha = 0.3;
@@ -330,7 +291,7 @@ export function TrackCanvas({
       gapKey.current = key;
       setGap(next);
     }
-  }, [scrubber, pad, layers, audio, actions, runs, episodes, locale]);
+  }, [scrubber, pad, layers, audio, actions, runs, locale]);
 
   const schedule = useCallback(() => {
     if (raf.current) return;
@@ -403,21 +364,14 @@ export function TrackCanvas({
       return;
     }
     const x = event.clientX - box.left;
-    const y = event.clientY - box.top;
     const at = timeAtX(x);
     const r = runAt(at);
-    const ep =
-      y >= EPISODE_Y && y <= EPISODE_Y + EPISODE_H
-        ? episodes.find((candidate) => at >= candidate.s && at <= candidate.e)
-        : undefined;
     const sound = audio.some((a) => at >= a.s && at < a.e);
     hoverX.current = x;
     schedule();
     setTip({
       x: Math.min(Math.max(x, 80), size.current.w - 80),
-      text: ep
-        ? `${ep.label} · ${clockTime(ep.s, locale)}–${clockTime(ep.e, locale)}`
-        : `${r ? (r.app ?? t('unknownApp')) : t('track.noCapture')}${sound ? ` · ${t('track.audio')}` : ''} · ${clockTime(at, locale)}`,
+      text: `${r ? (r.app ?? t('unknownApp')) : t('track.noCapture')}${sound ? ` · ${t('track.audio')}` : ''} · ${clockTime(at, locale)}`,
     });
   };
   const onPointerLeave = () => {
@@ -431,14 +385,7 @@ export function TrackCanvas({
     if (!d) return;
     if (!d.moved) {
       const box = event.currentTarget.getBoundingClientRect();
-      const at = timeAtX(event.clientX - box.left);
-      const y = event.clientY - box.top;
-      const ep =
-        y >= EPISODE_Y && y <= EPISODE_Y + EPISODE_H
-          ? episodes.find((candidate) => at >= candidate.s && at <= candidate.e)
-          : undefined;
-      if (ep) onEpisode(ep);
-      else scrubber.panTo(at);
+      scrubber.panTo(timeAtX(event.clientX - box.left));
       return;
     }
     d.samples.push({ t: performance.now(), x: event.clientX });

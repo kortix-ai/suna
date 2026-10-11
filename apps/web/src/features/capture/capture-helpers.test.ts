@@ -62,7 +62,6 @@ describe('device status', () => {
       arch: 'arm64',
       app_version: '0.3.0',
       live: { state, status, reported_at: '2026-10-03T10:00:00.000Z' },
-      policy_override: null,
       last_credentials_at: null,
       revoked_at: null,
       created_at: '2026-10-01T10:00:00.000Z',

@@ -9,7 +9,6 @@
  *   4. parse frames / actions / transcript lines, skipping layers the policy turned off
  *   5. insert the chunk row and its lines in one transaction; a second ingest of
  *      the same key finds the chunk row and does nothing
- *   6. extend the device's detected activity range
  */
 import { createHash } from 'node:crypto';
 import {
@@ -18,13 +17,11 @@ import {
   timelineAudio,
   timelineChunks,
   timelineFrames,
-  timelineRanges,
 } from '@kortix/db';
-import { and, eq, gte, lte, sql } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { logger } from '../lib/logger';
 import {
-  PolicySchema,
   checkManifest,
   isEncrypted,
   jsonLines,
@@ -42,8 +39,6 @@ export type IngestOutcome =
   | { status: 'indexed'; chunkId: string; kind: Manifest['kind']; items: number }
   | { status: 'duplicate' | 'ignored' | 'skipped'; reason: string };
 
-/** Detected ranges split where a device was silent this long. */
-export const RANGE_GAP_MS = 15 * 60_000;
 const INSERT_BATCH = 500;
 
 const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
@@ -99,9 +94,7 @@ export async function ingestManifest(key: string): Promise<IngestOutcome> {
 
   // Server-side enforcement of the layers: a device never widens the policy, and
   // neither does the index.
-  const policy = device.policyOverride
-    ? PolicySchema.parse(device.policyOverride)
-    : (await readWorkspace(device.accountId)).policy;
+  const { policy } = await readWorkspace(device.accountId);
   const layer = { chunk: 'screen', actions: 'actions', audio: 'audio' } as const;
   if (!policy.layers[layer[manifest.kind]]) return { status: 'skipped', reason: `${layer[manifest.kind]} layer is off by policy` };
 
@@ -165,55 +158,6 @@ export async function ingestManifest(key: string): Promise<IngestOutcome> {
     return chunk.chunkId;
   });
   if (!chunkId) return { status: 'duplicate', reason: 'indexed concurrently' };
-  await extendDetectedRange(device, new Date(manifest.start_ms), new Date(manifest.end_ms));
   logger.info('[capture] indexed', { kind: manifest.kind, items, deviceId: device.deviceId });
   return { status: 'indexed', chunkId, kind: manifest.kind, items };
-}
-
-/**
- * Grow the device's detected range that this activity touches (within the gap),
- * merging ranges it bridges; else start a new one. A range that grows after it
- * was closed or processed reopens, so its outputs are recomputed.
- */
-export async function extendDetectedRange(
-  device: { accountId: string; userId: string; deviceId: string },
-  startAt: Date,
-  endAt: Date,
-): Promise<void> {
-  await db.transaction(async (tx) => {
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`capture-range:${device.deviceId}`}, 0))`);
-    const touching = await tx
-      .select()
-      .from(timelineRanges)
-      .where(
-        and(
-          eq(timelineRanges.deviceId, device.deviceId),
-          eq(timelineRanges.source, 'detected'),
-          lte(timelineRanges.startAt, new Date(endAt.getTime() + RANGE_GAP_MS)),
-          gte(timelineRanges.endAt, new Date(startAt.getTime() - RANGE_GAP_MS)),
-        ),
-      )
-      .orderBy(timelineRanges.startAt);
-    if (touching.length === 0) {
-      await tx.insert(timelineRanges).values({
-        accountId: device.accountId,
-        userId: device.userId,
-        deviceId: device.deviceId,
-        source: 'detected',
-        startAt,
-        endAt,
-      });
-      return;
-    }
-    const [keep, ...merged] = touching;
-    const start = new Date(Math.min(startAt.getTime(), ...touching.map((r) => r.startAt.getTime())));
-    const end = new Date(Math.max(endAt.getTime(), ...touching.map((r) => r.endAt.getTime())));
-    const grew = merged.length > 0 || start < keep!.startAt || end > keep!.endAt;
-    if (!grew) return;
-    for (const range of merged) await tx.delete(timelineRanges).where(eq(timelineRanges.rangeId, range.rangeId));
-    await tx
-      .update(timelineRanges)
-      .set({ startAt: start, endAt: end, status: 'open', updatedAt: sql`now()` })
-      .where(eq(timelineRanges.rangeId, keep!.rangeId));
-  });
 }

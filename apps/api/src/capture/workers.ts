@@ -1,8 +1,7 @@
 /**
  * Kortix Capture background work.
  *
- * Every replica: the job handlers (`capture.ingest`, `capture.process`,
- * `capture.episodes`, `capture.mine`, `capture.export`) run in the shared job
+ * Every replica: the `capture.ingest` job handler runs in the shared job
  * worker (shared/job-queue.ts).
  *
  * Leader only (workers/capture-worker.ts runs these ticks):
@@ -13,109 +12,30 @@
  *     complete item and retracting every item a `delete` line names (the person
  *     forgot it, or the device's retention removed it). Works on any S3 store,
  *     events or not; enqueue is idempotent, so the two readers never double-index;
- *   - maintenance: closes detected ranges after RANGE_GAP_MS of silence and
- *     queues their episodes (L1/L2), queues each account's nightly mining (L3), keeps monthly partitions 3 months ahead, applies
- *     remote retention, prunes expired sign-ins and finished jobs.
+ *   - maintenance: keeps monthly partitions 3 months ahead, applies remote
+ *     retention, prunes expired sign-ins and finished jobs.
  */
 import { DeleteMessageCommand, ReceiveMessageCommand, SQSClient } from '@aws-sdk/client-sqs';
-import { captureDeviceGrants, captureDevices, captureEpisodes, captureWorkspaces, rangeOutputs, timelineChunks, timelineRanges } from '@kortix/db';
-import { and, eq, gt, gte, inArray, isNull, lt, lte, ne, or, sql } from 'drizzle-orm';
+import { captureDeviceGrants, captureDevices, captureWorkspaces, timelineChunks } from '@kortix/db';
+import { and, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import { config } from '../config';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { enqueueJob, enqueueJobs, pruneFinishedJobs, registerJobHandler } from '../shared/job-queue';
 import { accountPrefix, deviceFields, foldIndex, jsonLines, PolicySchema, statusReportedAt, utcDay } from './format';
-import { expireExports } from './exports';
-import { RANGE_GAP_MS, ingestManifest } from './ingest';
+import { ingestManifest } from './ingest';
 import { readWorkspace } from './workspace';
-import { processRange } from './processing';
-import { CaptureBudgetExceeded } from './budget';
-import { EPISODES_QUEUE, traceRange } from './episodes';
-import { MINE_QUEUE, mineAccount, refreshWorkflows } from './mining';
 import { captureRegion, captureStore, captureStoreConfigured, getCaptureObjectIfChanged } from './store';
 
 export const INGEST_QUEUE = 'capture.ingest';
-export const PROCESS_QUEUE = 'capture.process';
 
 registerJobHandler(INGEST_QUEUE, async (job) => {
   const outcome = await ingestManifest(String(job.payload.key ?? job.jobKey));
   if (outcome.status === 'ignored') logger.warn('[capture] manifest ignored', { key: job.jobKey, reason: outcome.reason });
 });
-// A range pipeline makes many model calls; give it a long claim.
-registerJobHandler(PROCESS_QUEUE, async (job) => processRange(String(job.payload.rangeId)), 30 * 60_000);
-
-// Episodes: one model call per chunk of a range; 8 at once per replica. 6 attempts
-// (10 s … 160 s backoff): the managed model answers 429 "at capacity" in bursts.
-registerJobHandler(
-  EPISODES_QUEUE,
-  async (job) => {
-    const rangeId = String(job.payload.rangeId);
-    try {
-      await traceRange(rangeId);
-    } catch (error) {
-      if (!(error instanceof CaptureBudgetExceeded)) throw error;
-      await enqueueJob(EPISODES_QUEUE, `${job.jobKey}:next-day`, job.payload, { runAt: nextUtcDay() });
-      return;
-    }
-    await enqueueMining(String(job.payload.accountId));
-  },
-  15 * 60_000,
-  8,
-);
-registerJobHandler(
-  MINE_QUEUE,
-  async (job) => {
-    try {
-      await mineAccount(String(job.payload.accountId), undefined, Date.now(), { rename: job.payload.rename === true });
-    } catch (error) {
-      if (!(error instanceof CaptureBudgetExceeded)) throw error;
-      await enqueueJob(MINE_QUEUE, `${job.jobKey}:next-day`, job.payload, { runAt: nextUtcDay() });
-    }
-  },
-  15 * 60_000,
-  1,
-);
-
-const nextUtcDay = () => new Date(Math.floor(Date.now() / 86_400_000 + 1) * 86_400_000 + 60_000);
-
-/** Queue tracing of one closed detected range. A new end time is a new run. */
-export function enqueueEpisodes(range: { rangeId: string; accountId: string; endAt: Date }, suffix = ''): Promise<boolean> {
-  return enqueueJob(EPISODES_QUEUE, `${range.rangeId}:${range.endAt.getTime()}${suffix}`, { rangeId: range.rangeId, accountId: range.accountId }, { maxAttempts: 6 });
-}
-
-/** Queue mining of an account, debounced: one run per 10-minute slot, at its end. */
-export function enqueueMining(accountId: string, slotMs = 10 * 60_000): Promise<boolean> {
-  const slot = Math.floor(Date.now() / slotMs) + 1;
-  return enqueueJob(MINE_QUEUE, `${accountId}:${slot}`, { accountId }, { runAt: new Date(slot * slotMs), maxAttempts: 6 });
-}
-
-/**
- * Run the pipelines now (an admin's "run" button): every closed or failed detected range of the
- * account is queued for episodes, then mining; or mining alone. Idempotent per call.
- */
-export async function runIntelligence(accountId: string, opts: { miningOnly?: boolean } = {}): Promise<{ episodes_queued: number; mining_queued: boolean }> {
-  const stamp = Date.now();
-  let episodes = 0;
-  if (!opts.miningOnly) {
-    const ranges = await db
-      .select({ rangeId: timelineRanges.rangeId, accountId: timelineRanges.accountId, endAt: timelineRanges.endAt })
-      .from(timelineRanges)
-      .where(and(eq(timelineRanges.accountId, accountId), eq(timelineRanges.source, 'detected'), inArray(timelineRanges.status, ['closed', 'failed'])));
-    for (const range of ranges) if (await enqueueEpisodes(range, `:run-${stamp}`)) episodes++;
-  }
-  // With episodes queued, each finished range queues mining itself; else mine now.
-  // A "run now" also names every unreviewed workflow again from its standard path.
-  const mining = episodes ? false : await enqueueJob(MINE_QUEUE, `${accountId}:run-${stamp}`, { accountId, rename: true }, { maxAttempts: 6 });
-  return { episodes_queued: episodes, mining_queued: mining || episodes > 0 };
-}
 
 export function enqueueManifest(key: string): Promise<boolean> {
   return enqueueJob(INGEST_QUEUE, key, { key });
-}
-
-/** Queue one processing run of a range. A new end time is a new run. */
-export function enqueueRangeProcessing(range: { rangeId: string; endAt: Date }, suffix = ''): Promise<boolean> {
-  return enqueueJob(PROCESS_QUEUE, `${range.rangeId}:${range.endAt.getTime()}${suffix}`, { rangeId: range.rangeId }, { maxAttempts: 3 });
 }
 
 // ─── Index reader ────────────────────────────────────────────────────────────
@@ -206,48 +126,18 @@ export async function pollDevice(device: typeof captureDevices.$inferSelect): Pr
 }
 
 /**
- * Retract the items a device deleted: their rows go, and so do the derived
- * outputs of every range of the device that overlaps them (a summary must not
- * outlive what it summarises). The range itself stays, `closed`, so a later
- * process run rebuilds it from what remains. The device already removed the
- * objects. Idempotent: a key with no row is a no-op.
+ * Retract the items a device deleted: their chunk, frame, action and audio
+ * rows go. The device already removed the objects. Idempotent: a key with no
+ * row is a no-op.
  */
 export async function forgetManifests(deviceId: string, keys: string[]): Promise<number> {
   if (keys.length === 0) return 0;
   const chunks = await db
-    .select({ chunkId: timelineChunks.chunkId, accountId: timelineChunks.accountId, startAt: timelineChunks.startAt, endAt: timelineChunks.endAt })
+    .select({ chunkId: timelineChunks.chunkId, startAt: timelineChunks.startAt, endAt: timelineChunks.endAt })
     .from(timelineChunks)
     .where(and(eq(timelineChunks.deviceId, deviceId), inArray(timelineChunks.manifestKey, keys)));
   if (chunks.length === 0) return 0;
-  const from = new Date(Math.min(...chunks.map((c) => c.startAt.getTime())));
-  const to = new Date(Math.max(...chunks.map((c) => Math.max(c.startAt.getTime(), c.endAt.getTime()))));
-  let forgotten: Array<{ rangeId: string; accountId: string; endAt: Date }> = [];
-  let touched: string[] = [];
-  let episodesGone = 0;
-  await db.transaction(async (tx) => {
-    await removeChunkRows(tx, chunks);
-    const ranges = await tx
-      .update(timelineRanges)
-      .set({ status: 'closed', updatedAt: sql`now()` })
-      .where(and(eq(timelineRanges.deviceId, deviceId), lte(timelineRanges.startAt, to), gte(timelineRanges.endAt, from), ne(timelineRanges.status, 'open')))
-      .returning({ rangeId: timelineRanges.rangeId, accountId: timelineRanges.accountId, endAt: timelineRanges.endAt, source: timelineRanges.source });
-    if (ranges.length) await tx.delete(rangeOutputs).where(inArray(rangeOutputs.rangeId, ranges.map((r) => r.rangeId)));
-    // What was derived from the forgotten item goes with it: the device's detected episodes over its
-    // span (their labels and steps quote it). A saved episode is the person's own title and stays.
-    const gone = await tx
-      .delete(captureEpisodes)
-      .where(and(eq(captureEpisodes.deviceId, deviceId), eq(captureEpisodes.source, 'detected'), lte(captureEpisodes.startAt, to), gte(captureEpisodes.endAt, from)))
-      .returning({ workflowId: captureEpisodes.workflowId });
-    touched = [...new Set(gone.map((e) => e.workflowId).filter((id): id is string => !!id))];
-    episodesGone = gone.length;
-    forgotten = ranges.filter((r) => r.source === 'detected');
-  });
-  // Then what was built on those episodes: the workflows rebuild from the runs they still hold
-  // (no model call), and every finished export of the account expires.
-  await refreshWorkflows(touched);
-  if (episodesGone) await expireExports(chunks[0]!.accountId);
-  // The ranges trace again without the item (and mining follows).
-  for (const range of forgotten) await enqueueEpisodes(range, `:forget-${Date.now()}`);
+  await db.transaction((tx) => removeChunkRows(tx, chunks));
   logger.info('[capture] forgot items', { deviceId, items: chunks.length });
   return chunks.length;
 }
@@ -309,23 +199,6 @@ export async function receiveEvents(): Promise<void> {
 
 // ─── Maintenance ─────────────────────────────────────────────────────────────
 
-/** Close detected ranges silent for RANGE_GAP_MS and queue their episodes. */
-export async function closeQuietRanges(): Promise<number> {
-  const closed = await db
-    .update(timelineRanges)
-    .set({ status: 'closed', updatedAt: sql`now()` })
-    .where(
-      and(
-        eq(timelineRanges.status, 'open'),
-        eq(timelineRanges.source, 'detected'),
-        lt(timelineRanges.endAt, new Date(Date.now() - RANGE_GAP_MS)),
-      ),
-    )
-    .returning({ rangeId: timelineRanges.rangeId, accountId: timelineRanges.accountId, endAt: timelineRanges.endAt });
-  for (const range of closed) await enqueueEpisodes(range);
-  return closed.length;
-}
-
 /** Delete indexed items (rows and objects) older than each account's `remote_days`. Bounded per tick. */
 export async function applyRetention(limitPerAccount = 200): Promise<number> {
   if (!captureStoreConfigured()) return 0;
@@ -351,10 +224,7 @@ export async function applyRetention(limitPerAccount = 200): Promise<number> {
     ]);
     // Objects first: a row without its object is harmless; an object without a row is invisible forever.
     await captureStore.remove(keys);
-    await db.transaction(async (tx) => {
-      await removeChunkRows(tx, old);
-      await tx.delete(timelineRanges).where(and(eq(timelineRanges.accountId, accountId), lt(timelineRanges.endAt, cutoff)));
-    });
+    await db.transaction((tx) => removeChunkRows(tx, old));
     removed += old.length;
   }
   return removed;
@@ -365,14 +235,8 @@ export async function captureMaintenance(): Promise<void> {
   const today = utcDay(Date.now());
   if (lastPartitionDay !== today) {
     await db.execute(sql`SELECT kortix.capture_timeline_ensure_partitions((now() AT TIME ZONE 'UTC')::date, 3)`);
-    // Nightly mining of every account with episodes in the last day.
-    const active = await db.execute<{ account_id: string }>(
-      sql`SELECT DISTINCT account_id FROM kortix.capture_episodes WHERE updated_at > now() - interval '1 day'`,
-    );
-    for (const row of active) await enqueueJob(MINE_QUEUE, `${row.account_id}:nightly:${today}`, { accountId: row.account_id }, { maxAttempts: 3 });
     lastPartitionDay = today;
   }
-  await closeQuietRanges();
   await applyRetention();
   await db.delete(captureDeviceGrants).where(lt(captureDeviceGrants.expiresAt, sql`now() - interval '1 day'`));
   await pruneFinishedJobs(7);

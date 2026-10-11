@@ -1,17 +1,16 @@
 /**
  * Kortix Capture timeline reads and writes behind account-routes.ts: devices,
- * the timeline, items, search, media, ranges, the people summary. Every query
+ * the timeline, items, search, media. Every query
  * is bound to (account, person); the route decides who may ask.
  */
-import { captureDevices, captureEpisodes, projectSessions, rangeOutputs, timelineChunks, timelineRanges } from '@kortix/db';
-import { and, asc, desc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
+import { captureDevices, projectSessions, timelineChunks } from '@kortix/db';
+import { and, asc, desc, eq, gte, lte, sql } from 'drizzle-orm';
 import type * as C from '@kortix/api-contract';
 import { db } from '../shared/db';
-import { PolicySchema, accountPrefix, isEncrypted, liveState, objectKey, type Manifest } from './format';
+import { accountPrefix, isEncrypted, liveState, objectKey, type Manifest } from './format';
 import { captureStore, captureStoreConfigured } from './store';
 
 export type Device = typeof captureDevices.$inferSelect;
-export type Range = typeof timelineRanges.$inferSelect;
 export type Chunk = typeof timelineChunks.$inferSelect;
 export interface Span {
   from: Date;
@@ -59,7 +58,6 @@ export function deviceView(device: Device, now = Date.now()) {
     arch: device.arch,
     app_version: device.appVersion,
     live: { state: liveState(device.status, now), status: device.status, reported_at: device.statusReportedAt?.toISOString() ?? null },
-    policy_override: device.policyOverride ? PolicySchema.parse(device.policyOverride) : null,
     last_credentials_at: device.lastCredentialsAt?.toISOString() ?? null,
     revoked_at: device.revokedAt?.toISOString() ?? null,
     created_at: device.createdAt.toISOString(),
@@ -279,117 +277,4 @@ export async function nearestScreenshot(accountId: string, userId: string, devic
 export async function assetUrl(accountId: string, deviceId: string, name: string) {
   const signed = await captureStore.presignDownload(`${accountPrefix(accountId)}/${deviceId}/assets/${name}`, MEDIA_TTL_SECONDS);
   return { url: signed.url, expires_at: signed.expiresAt.toISOString() };
-}
-
-// ─── Ranges ──────────────────────────────────────────────────────────────────
-
-export function rangeView(range: Range) {
-  return {
-    range_id: range.rangeId,
-    user_id: range.userId,
-    device_id: range.deviceId,
-    source: range.source,
-    title: range.title,
-    start_at: range.startAt.toISOString(),
-    end_at: range.endAt.toISOString(),
-    status: range.status,
-    created_by: range.createdBy,
-    created_at: range.createdAt.toISOString(),
-  };
-}
-
-export async function rangesFor(accountId: string, userId: string, span: Span) {
-  const rows = await db
-    .select()
-    .from(timelineRanges)
-    .where(and(eq(timelineRanges.accountId, accountId), eq(timelineRanges.userId, userId), gte(timelineRanges.endAt, span.from), lte(timelineRanges.startAt, span.to)))
-    .orderBy(asc(timelineRanges.startAt))
-    .limit(1000);
-  return rows.map(rangeView);
-}
-
-export async function saveRange(input: {
-  accountId: string;
-  userId: string;
-  deviceId: string | null;
-  title: string | null;
-  startAt: Date;
-  endAt: Date;
-}): Promise<Range> {
-  return db.transaction(async (tx) => {
-    const [range] = await tx
-      .insert(timelineRanges)
-      .values({ ...input, source: 'saved', status: 'closed', createdBy: input.userId })
-      .returning();
-    // A saved range is also a pinned episode: the person said "this is one task".
-    await tx.insert(captureEpisodes).values({
-      accountId: input.accountId,
-      userId: input.userId,
-      deviceId: input.deviceId,
-      source: 'saved',
-      startAt: input.startAt,
-      endAt: input.endAt,
-      label: input.title,
-      status: 'closed',
-    });
-    return range!;
-  });
-}
-
-export async function rangeInAccount(accountId: string, rangeId: string): Promise<Range | null> {
-  const [range] = await db
-    .select()
-    .from(timelineRanges)
-    .where(and(eq(timelineRanges.rangeId, rangeId), eq(timelineRanges.accountId, accountId)))
-    .limit(1);
-  return range ?? null;
-}
-
-export async function rangeOutputsOf(rangeId: string) {
-  const outputs = await db.select().from(rangeOutputs).where(eq(rangeOutputs.rangeId, rangeId)).orderBy(asc(rangeOutputs.createdAt));
-  return outputs.map((o) => ({ kind: o.kind, status: o.status, model: o.model, output: o.output, usage: o.usage, error: o.error, updated_at: o.updatedAt.toISOString() }));
-}
-
-export async function closeRangeForReprocess(rangeId: string): Promise<void> {
-  await db.update(timelineRanges).set({ status: 'closed', updatedAt: sql`now()` }).where(eq(timelineRanges.rangeId, rangeId));
-}
-
-// ─── People ──────────────────────────────────────────────────────────────────
-
-/** Per member: a frame's time runs until the next frame of its device, capped at 60 s (a pause is not work). */
-export async function peopleSummary(accountId: string, span: Span) {
-  const perApp = Array.from(
-    await db.execute<{ user_id: string; app: string | null; seconds: number }>(sql`
-      SELECT user_id, app, round(sum(LEAST(EXTRACT(EPOCH FROM (next_ts - ts)), 60)))::int AS seconds
-        FROM (SELECT user_id, app, ts, inactive, lead(ts) OVER (PARTITION BY device_id ORDER BY ts) AS next_ts
-                FROM kortix.timeline_frames
-               WHERE account_id = ${accountId}::uuid AND ts >= ${at(span.from)} AND ts < ${at(span.to)}) f
-       WHERE NOT inactive AND next_ts IS NOT NULL
-       GROUP BY user_id, app`),
-  );
-  const ranges = Array.from(
-    await db.execute<{ user_id: string; ranges: number }>(sql`
-      SELECT user_id, count(*)::int AS ranges FROM kortix.timeline_ranges
-       WHERE account_id = ${accountId}::uuid AND end_at >= ${at(span.from)} AND start_at < ${at(span.to)}
-       GROUP BY user_id`),
-  );
-  const devices = await db
-    .select({ userId: captureDevices.userId, count: sql<number>`count(*)::int` })
-    .from(captureDevices)
-    .where(and(eq(captureDevices.accountId, accountId), isNull(captureDevices.revokedAt)))
-    .groupBy(captureDevices.userId);
-  const people = new Map<string, { user_id: string; active_seconds: number; apps: Array<{ app: string | null; seconds: number }>; ranges: number; devices: number }>();
-  const person = (userId: string) => {
-    if (!people.has(userId)) people.set(userId, { user_id: userId, active_seconds: 0, apps: [], ranges: 0, devices: 0 });
-    return people.get(userId)!;
-  };
-  for (const row of perApp) {
-    const p = person(row.user_id);
-    p.active_seconds += Number(row.seconds);
-    p.apps.push({ app: row.app, seconds: Number(row.seconds) });
-  }
-  for (const row of ranges) person(row.user_id).ranges = Number(row.ranges);
-  for (const row of devices) person(row.userId).devices = Number(row.count);
-  for (const p of people.values()) p.apps.sort((a, b) => b.seconds - a.seconds);
-  return [...people.values()].sort((a, b) => b.active_seconds - a.active_seconds);
 }

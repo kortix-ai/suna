@@ -10,24 +10,17 @@ import {
   useCaptureDeviceGrant,
   useCaptureDevices,
   useCaptureFrame,
-  useCaptureMembers,
-  useCapturePeople,
   useCapturePolicy,
-  useCaptureRange,
-  useCaptureRanges,
   useCaptureSearch,
   useCaptureTimeline,
   useCaptureTimelineItems,
   useCaptureWorkspace,
   useDenyCaptureDevice,
-  useProcessCaptureRange,
   useRevokeCaptureDevice,
-  useSaveCaptureRange,
   useSetCaptureEnabled,
-  useSetCaptureMemberRole,
   useSetCapturePolicy,
-  useSyncCaptureDevice,
 } from './use-capture';
+import * as hooks from './use-capture';
 
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -142,9 +135,6 @@ test('a null account, query or id sends nothing', async () => {
     useCaptureTimelineItems(undefined, { day: '2026-10-03' });
     useCaptureSearch('a1', null);
     useCaptureFrame('a1', null);
-    useCaptureRange('a1', null);
-    useCaptureRanges('a1', null);
-    useCapturePeople('a1', null);
     useCaptureDevices(null);
     useCapturePolicy(null);
     return null;
@@ -153,80 +143,55 @@ test('a null account, query or id sends nothing', async () => {
   expect(h.calls).toEqual([]);
 });
 
-test('saving a range refreshes the ranges and the timeline; reprocessing refreshes the range', async () => {
-  const h = harness();
-  h.bodies['GET /ranges'] = { ranges: [] };
-  h.bodies['POST /ranges'] = { range_id: 'r1', status: 'closed' };
-  h.bodies['GET /ranges/r1'] = { range_id: 'r1', status: 'processed', outputs: [] };
-  let save: ReturnType<typeof useSaveCaptureRange>;
-  let reprocess: ReturnType<typeof useProcessCaptureRange>;
-  function Probe() {
-    useCaptureRanges('a1', { day: '2026-10-03' });
-    useCaptureTimeline('a1', { day: '2026-10-03' });
-    useCaptureRange('a1', 'r1');
-    save = useSaveCaptureRange('a1');
-    reprocess = useProcessCaptureRange('a1');
-    return null;
+test('raw capture only: no range, people, Capture-role or device-sync hooks', () => {
+  for (const name of [
+    'useCaptureRanges',
+    'useCaptureRange',
+    'useSaveCaptureRange',
+    'useProcessCaptureRange',
+    'useCapturePeople',
+    'useCaptureMembers',
+    'useSetCaptureMemberRole',
+    'useSyncCaptureDevice',
+  ]) {
+    expect(name in hooks).toBe(false);
   }
-  await h.mount(Probe);
-  const count = (prefix: string) => h.calls.filter((c) => c.startsWith(prefix)).length;
-  const before = { ranges: count('GET http://test.local/accounts/a1/capture/ranges?'), timeline: count('GET http://test.local/accounts/a1/capture/timeline?'), range: count('GET http://test.local/accounts/a1/capture/ranges/r1') };
-  await act(async () => {
-    await save!.mutateAsync({ start_at: '2026-10-03T09:00:00.000Z', end_at: '2026-10-03T09:30:00.000Z', title: 'Budget' });
-  });
-  await h.settle();
-  expect(h.calls).toContain('POST http://test.local/accounts/a1/capture/ranges');
-  expect(count('GET http://test.local/accounts/a1/capture/ranges?')).toBe(before.ranges + 1);
-  expect(count('GET http://test.local/accounts/a1/capture/timeline?')).toBe(before.timeline + 1);
-  await act(async () => { await reprocess!.mutateAsync('r1'); });
-  await h.settle();
-  expect(h.calls).toContain('POST http://test.local/accounts/a1/capture/ranges/r1/process');
-  expect(count('GET http://test.local/accounts/a1/capture/ranges/r1')).toBeGreaterThan(before.range);
 });
 
-test('devices: the account list for admins; revoke and sync refresh it', async () => {
+test('devices: the account list (capture.read_all); a revoke refreshes it', async () => {
   const h = harness();
   h.bodies['GET /devices'] = { devices: [{ device_id: 'd1', live: { state: 'recording' } }] };
-  h.bodies['POST /devices/d1/sync'] = { device_id: 'd1', enqueued: 2 };
   let devices: ReturnType<typeof useCaptureDevices>;
   let revoke: ReturnType<typeof useRevokeCaptureDevice>;
-  let sync: ReturnType<typeof useSyncCaptureDevice>;
   function Probe() {
     devices = useCaptureDevices('a1', { scope: 'account' });
     revoke = useRevokeCaptureDevice('a1');
-    sync = useSyncCaptureDevice('a1');
     return null;
   }
   await h.mount(Probe);
   expect(devices!.data?.devices[0]?.live.state).toBe('recording');
   const lists = () => h.calls.filter((c) => c === 'GET http://test.local/accounts/a1/capture/devices?scope=account').length;
   const before = lists();
-  await act(async () => { expect((await sync!.mutateAsync('d1')).enqueued).toBe(2); });
-  await h.settle();
   await act(async () => { await revoke!.mutateAsync('d1'); });
   await h.settle();
   expect(h.calls).toContain('DELETE http://test.local/accounts/a1/capture/devices/d1');
-  expect(lists()).toBe(before + 2);
+  expect(lists()).toBe(before + 1);
 });
 
-test('policy: read, then a write replaces the cached record without a refetch; people for managers', async () => {
+test('policy: read, then a write replaces the cached record without a refetch', async () => {
   const h = harness();
   const policy = { layers: { screen: true, actions: true, audio: false }, privacy: { redact_pii: true }, retention: { local_hours: 24, remote_days: 30 }, recording: { paused: false, paused_until_ms: null }, notice: 'On' };
   h.bodies['GET /policy'] = { policy, updated_at: null, updated_by: null };
   h.bodies['PUT /policy'] = { policy: { ...policy, notice: 'Changed' }, updated_at: 'now', updated_by: 'u1' };
-  h.bodies['GET /people'] = { people: [{ user_id: 'u1', active_seconds: 60 }] };
   let read: ReturnType<typeof useCapturePolicy>;
   let write: ReturnType<typeof useSetCapturePolicy>;
-  let people: ReturnType<typeof useCapturePeople>;
   function Probe() {
     read = useCapturePolicy('a1');
     write = useSetCapturePolicy('a1');
-    people = useCapturePeople('a1', { from: '2026-09-27T00:00:00.000Z', to: '2026-10-04T00:00:00.000Z' });
     return null;
   }
   await h.mount(Probe);
   expect(read!.data?.policy.notice).toBe('On');
-  expect(people!.data?.people[0]?.active_seconds).toBe(60);
   await act(async () => { await write!.mutateAsync({ ...policy, notice: 'Changed' }); });
   await h.settle();
   expect(read!.data?.policy.notice).toBe('Changed');
@@ -247,44 +212,33 @@ test('chunk media: one signed URL read per chunk, for a member too; a null chunk
   expect(h.calls).toEqual(['GET http://test.local/accounts/a1/capture/chunks/c1/media?user_id=u2']);
 });
 
-test('workspace: turning Capture on writes the switch and refreshes the account; a role change refreshes the members', async () => {
+test('workspace: turning Capture on writes the switch and refreshes the account', async () => {
   const h = harness();
-  h.bodies['GET '] = { account_id: 'a1', enabled: false, role: 'admin', can_manage: true, updated_at: null };
-  h.bodies['PATCH '] = { account_id: 'a1', enabled: true, role: 'admin', can_manage: true, updated_at: 'now' };
-  h.bodies['GET /members'] = { members: [{ user_id: 'u2', account_role: 'member', role: 'member', overridden: false }] };
+  h.bodies['GET '] = { account_id: 'a1', enabled: false, can_read_all: true, can_manage: true, updated_at: null };
+  h.bodies['PATCH '] = { account_id: 'a1', enabled: true, can_read_all: true, can_manage: true, updated_at: 'now' };
   let workspace: ReturnType<typeof useCaptureWorkspace>;
   let setEnabled: ReturnType<typeof useSetCaptureEnabled>;
-  let members: ReturnType<typeof useCaptureMembers>;
-  let setRole: ReturnType<typeof useSetCaptureMemberRole>;
   function Probe() {
     workspace = useCaptureWorkspace('a1');
     setEnabled = useSetCaptureEnabled('a1');
-    members = useCaptureMembers('a1');
-    setRole = useSetCaptureMemberRole('a1');
     return null;
   }
   await h.mount(Probe);
   expect(workspace!.data?.enabled).toBe(false);
-  expect(members!.data?.members[0]?.role).toBe('member');
+  expect(workspace!.data?.can_read_all).toBe(true);
   // The server now answers the new state, as after a real write.
   h.bodies['GET '] = h.bodies['PATCH '];
   await act(async () => { await setEnabled!.mutateAsync(true); });
   await h.settle();
   expect(h.calls).toContain('PATCH http://test.local/accounts/a1/capture');
   expect(workspace!.data?.enabled).toBe(true);
-  const lists = () => h.calls.filter((c) => c === 'GET http://test.local/accounts/a1/capture/members').length;
-  const before = lists();
-  await act(async () => { await setRole!.mutateAsync({ userId: 'u2', role: 'viewer' }); });
-  await h.settle();
-  expect(h.calls).toContain('PUT http://test.local/accounts/a1/capture/members/u2');
-  expect(lists()).toBeGreaterThan(before);
 });
 
-test('a null account reads no workspace and no members', async () => {
+test('a null account reads no workspace', async () => {
   const h = harness();
   function Probe() {
     useCaptureWorkspace(null);
-    useCaptureMembers(undefined);
+    useCaptureWorkspace(undefined);
     return null;
   }
   await h.mount(Probe);

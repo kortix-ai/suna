@@ -1,10 +1,7 @@
-import { OverviewView } from '@/features/capture/overview/overview-view';
+import { redirect } from 'next/navigation';
 
-import { captureMetadata } from './capture-metadata';
-
-export const generateMetadata = () => captureMetadata('overview');
-
+/** Devices is Capture's home: `/capture/[accountId]` opens it. */
 export default async function Page({ params }: { params: Promise<{ accountId: string }> }) {
   const p = await params;
-  return <OverviewView accountId={p.accountId} />;
+  redirect(`/capture/${p.accountId}/devices`);
 }

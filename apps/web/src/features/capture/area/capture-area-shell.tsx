@@ -2,7 +2,7 @@
 
 import { ApiError } from '@kortix/sdk';
 import { useSetCaptureEnabled } from '@kortix/sdk/react';
-import { CalendarBlankIcon, CaretDownIcon, CheckIcon, GearSixIcon } from '@phosphor-icons/react';
+import { CaretDownIcon, CheckIcon, GearSixIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { notFound, usePathname, useRouter } from 'next/navigation';
 import { useEffect, type ReactNode } from 'react';
@@ -14,8 +14,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
@@ -31,20 +29,16 @@ import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 
 import {
-  CAPTURE_RANGES,
   CAPTURE_SECTIONS,
   captureHref,
   rememberCaptureAccount,
   sectionOf,
   useCaptureArea,
-  useCaptureRange,
-  type CaptureRangeDays,
 } from './use-capture-area';
 
 /**
- * The frame of Kortix Capture: its own top bar (wordmark, Overview /
- * Workflows / Devices, the date range, the organization switcher), no
- * project sidebar. Gated on the account's Capture workspace: a non-member
+ * The frame of Kortix Capture: its own top bar (wordmark, Devices, the
+ * organization switcher, Settings), no project sidebar. Gated on the account's Capture workspace: a non-member
  * gets the 404 the API gives; Capture switched off shows how to switch it on.
  */
 export function CaptureAreaShell({
@@ -151,7 +145,7 @@ function CaptureTopBar({ accountId }: { accountId: string }) {
           </Link>
         </Hint>
         <Link
-          href={captureHref(accountId, area.readsEveryone ? 'overview' : 'devices')}
+          href={captureHref(accountId, 'devices')}
           className="text-foreground text-sm font-semibold whitespace-nowrap"
         >
           {t('wordmark')}
@@ -159,33 +153,29 @@ function CaptureTopBar({ accountId }: { accountId: string }) {
       </div>
       {area.enabled ? (
         <nav aria-label={t('wordmark')} className="flex flex-wrap items-center gap-0.5">
-          {CAPTURE_SECTIONS.filter((item) => area.readsEveryone || item === 'devices').map(
-            (item) => {
-              const active =
-                section === item || (item === 'devices' && section === 'this-computer');
-              return (
-                <Link
-                  key={item}
-                  href={captureHref(accountId, item)}
-                  aria-current={active ? 'page' : undefined}
-                  className={cn(
-                    'flex h-8 items-center rounded-md px-3 text-sm font-medium transition-colors',
-                    active
-                      ? 'bg-active text-foreground'
-                      : 'text-muted-foreground hover:bg-hover hover:text-foreground',
-                  )}
-                >
-                  {t(`nav.${item}`)}
-                </Link>
-              );
-            },
-          )}
+          {CAPTURE_SECTIONS.map((item) => {
+            const active = section === item || (item === 'devices' && section === 'this-computer');
+            return (
+              <Link
+                key={item}
+                href={captureHref(accountId, item)}
+                aria-current={active ? 'page' : undefined}
+                className={cn(
+                  'flex h-8 items-center rounded-md px-3 text-sm font-medium transition-colors',
+                  active
+                    ? 'bg-active text-foreground'
+                    : 'text-muted-foreground hover:bg-hover hover:text-foreground',
+                )}
+              >
+                {t(`nav.${item}`)}
+              </Link>
+            );
+          })}
         </nav>
       ) : null}
       <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
-        {area.enabled && (section === 'overview' || section === 'workflows') ? <RangeMenu /> : null}
         <AccountSwitcher accountId={accountId} />
-        {area.isAdmin ? (
+        {area.canManage ? (
           <Hint label={t('nav.settings')}>
             <Button
               asChild
@@ -210,36 +200,6 @@ function CaptureTopBar({ accountId }: { accountId: string }) {
         ) : null}
       </div>
     </header>
-  );
-}
-
-function RangeMenu() {
-  const t = useTranslations('capture.area');
-  const range = useCaptureRange();
-  const label = (days: CaptureRangeDays) =>
-    days === 1 ? t('range.today') : t('range.lastDays', { days });
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-1.5" aria-label={t('range.label')}>
-          <CalendarBlankIcon className="size-3.5 shrink-0" />
-          {label(range.days)}
-          <CaretDownIcon className="text-muted-foreground size-3 shrink-0" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-44">
-        <DropdownMenuRadioGroup
-          value={String(range.days)}
-          onValueChange={(value) => range.setDays(Number(value) as CaptureRangeDays)}
-        >
-          {CAPTURE_RANGES.map((days) => (
-            <DropdownMenuRadioItem key={days} value={String(days)}>
-              {label(days)}
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }
 

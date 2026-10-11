@@ -121,7 +121,8 @@ export function scopeForUncatalogedAction(action: string): ScopeType {
     action.startsWith('group.') ||
     action.startsWith('role.') ||
     action.startsWith('policy.') ||
-    action.startsWith('token.')
+    action.startsWith('token.') ||
+    action.startsWith('capture.')
   ) {
     return 'account';
   }

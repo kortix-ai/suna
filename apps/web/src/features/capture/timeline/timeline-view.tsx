@@ -10,7 +10,6 @@ import {
   useCaptureChunkMedia,
   useCaptureDays,
   useCaptureDevices,
-  useCaptureEpisodes,
   useCaptureTimeline,
   useCaptureTimelineItems,
 } from '@kortix/sdk/react';
@@ -66,7 +65,6 @@ import {
   TrackCanvas,
   appBandCss,
   appInkCss,
-  type TrackEpisode,
   type TrackLayers,
 } from './track-canvas';
 import {
@@ -100,7 +98,7 @@ const MOD_KEY = () =>
 
 /**
  * A device's timeline (`/capture/[accountId]/devices/[deviceId]`): the frame
- * at the playhead, the controls, the track (episodes, apps, actions, audio)
+ * at the playhead, the controls, the track (apps, actions, audio)
  * under a fixed playhead, and what happens at the playhead on the right. The
  * track's interaction is a port of the Kortix Capture engine's local window:
  * drag with inertia, wheel, click a moment, Cmd/Ctrl+Left/Right between runs.
@@ -253,33 +251,6 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
         .map((c) => ({ s: Date.parse(c.start_at), e: Date.parse(c.end_at) }));
     return { audio: of('audio'), actions: of('actions') };
   }, [timeline, deviceId]);
-  // Episodes (L1): one task each, the lane above the apps.
-  const episodeList = useLatest(
-    useCaptureEpisodes(range[1] > range[0] ? accountId : null, {
-      deviceId,
-      userId,
-      from: new Date(range[0]).toISOString(),
-      to: new Date(range[1]).toISOString(),
-      limit: 500,
-    }).data,
-  );
-  const episodeRows = useMemo(
-    () => (episodeList?.episodes ?? []).filter((ep) => ep.device_id === deviceId),
-    [episodeList, deviceId],
-  );
-  const episodes = useMemo<TrackEpisode[]>(
-    () =>
-      episodeRows.map((ep) => ({
-        id: ep.episode_id,
-        s: Date.parse(ep.start_at),
-        e: Date.parse(ep.end_at),
-        label: ep.label ?? ep.goal ?? ep.apps.join(', '),
-      })),
-    [episodeRows],
-  );
-  const episodeUnder = episodeRows.find(
-    (ep) => Date.parse(ep.start_at) <= view.T && view.T <= Date.parse(ep.end_at),
-  );
 
   // ── Frames, actions and transcript around the playhead ────────────────────
   const anchor = Math.floor(view.T / ITEMS_ALIGN) * ITEMS_ALIGN;
@@ -389,16 +360,6 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
     },
     [runs, pad, scrubber, interact],
   );
-  /** Previous / next episode start, else the previous / next app run. */
-  const episodeJump = (dir: -1 | 1) => {
-    const T = scrubber.get().T;
-    const target =
-      dir < 0
-        ? [...episodes].reverse().find((ep) => ep.s < T - 1000)
-        : episodes.find((ep) => ep.s > T + 1000);
-    if (target) jumpTo(target.s);
-    else runJump(dir);
-  };
   const step = useCallback(
     (dir: -1 | 1) => {
       interact();
@@ -648,7 +609,7 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
                 {t('live')}
               </Button>
             </Hint>
-            {area.isAdmin ? (
+            {area.canManage || device.user_id === people.viewerId ? (
               <DeviceActionsMenu
                 accountId={accountId}
                 device={device}
@@ -714,23 +675,13 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
 
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-1.5">
-              <Hint
-                label={
-                  episodes.length
-                    ? t('previousEpisode')
-                    : t('previousRun', { shortcut: `${MOD_KEY()}←` })
-                }
-              >
+              <Hint label={t('previousRun', { shortcut: `${MOD_KEY()}←` })}>
                 <Button
                   variant="outline"
                   size="icon-sm"
-                  aria-label={
-                    episodes.length
-                      ? t('previousEpisode')
-                      : t('previousRun', { shortcut: `${MOD_KEY()}←` })
-                  }
+                  aria-label={t('previousRun', { shortcut: `${MOD_KEY()}←` })}
                   disabled={!bounds}
-                  onClick={() => episodeJump(-1)}
+                  onClick={() => runJump(-1)}
                 >
                   <SkipBackIcon className="size-3.5 shrink-0" />
                 </Button>
@@ -752,19 +703,13 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
                   )}
                 </Button>
               </Hint>
-              <Hint
-                label={
-                  episodes.length ? t('nextEpisode') : t('nextRun', { shortcut: `${MOD_KEY()}→` })
-                }
-              >
+              <Hint label={t('nextRun', { shortcut: `${MOD_KEY()}→` })}>
                 <Button
                   variant="outline"
                   size="icon-sm"
-                  aria-label={
-                    episodes.length ? t('nextEpisode') : t('nextRun', { shortcut: `${MOD_KEY()}→` })
-                  }
+                  aria-label={t('nextRun', { shortcut: `${MOD_KEY()}→` })}
                   disabled={!bounds}
-                  onClick={() => episodeJump(1)}
+                  onClick={() => runJump(1)}
                 >
                   <SkipForwardIcon className="size-3.5 shrink-0" />
                 </Button>
@@ -818,7 +763,7 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
             style={{ height: TRACK_HEIGHT }}
           >
             <div aria-hidden className="bg-popover relative w-20 shrink-0 border-r">
-              {(['episodes', 'apps', 'actions', 'audio'] as const).map((lane) =>
+              {(['apps', 'actions', 'audio'] as const).map((lane) =>
                 (lane === 'actions' && !layers.actions) ||
                 (lane === 'audio' && !layers.audio) ? null : (
                   <span
@@ -851,11 +796,9 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
                 runs={runs}
                 audio={lanes.audio}
                 actions={lanes.actions}
-                episodes={episodes}
                 layers={layers}
                 pad={pad}
                 onWidth={setTrackW}
-                onEpisode={(ep) => jumpTo(ep.s)}
               />
             </div>
           </div>
@@ -886,8 +829,6 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
           }
           audio={layers.audio ? (items?.audio ?? []).filter((x) => x.device_id === deviceId) : []}
           onJump={jumpTo}
-          accountId={accountId}
-          episode={episodeUnder ?? null}
         />
       </div>
     </main>

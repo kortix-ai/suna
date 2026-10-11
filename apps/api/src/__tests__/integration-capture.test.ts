@@ -1,12 +1,9 @@
 /**
- * Integration test (real local PostgreSQL): Kortix Capture ingestion, detected
- * ranges, the range pipelines and retention. The object store is an in-memory
- * map behind the capture store module, holding the engine's vendored fixture
- * bucket (tests/fixtures/capture-format-v2, pinned) re-rooted under a Kortix
- * prefix by the same fixture the CAP flows upload (tests/src/fixtures/capture.ts).
- * The pipelines run with a scripted model caller: the orchestration, the
- * stored outputs and the deterministic segmentation rules are what is proved
- * here; real gateway calls are proved by hand (PR body).
+ * Integration test (real local PostgreSQL): Kortix Capture ingestion, forget
+ * and retention. The object store is an in-memory map behind the capture store
+ * module, holding the engine's vendored fixture bucket
+ * (tests/fixtures/capture-format-v2, pinned) re-rooted under a Kortix prefix by
+ * the same fixture the CAP flows upload (tests/src/fixtures/capture.ts).
  */
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
 import { createHash } from 'node:crypto';
@@ -39,12 +36,11 @@ mock.module('../capture/store', () => ({
     objects.has(key) ? { status: 'ok', body: objects.get(key)!, etag: createHash('md5').update(objects.get(key)!).digest('hex') } : { status: 'missing' },
 }));
 
-const { accounts, captureDevices, captureWorkspaces, rangeOutputs, timelineChunks, timelineRanges } = await import('@kortix/db');
+const { accounts, captureDevices, captureWorkspaces, timelineChunks } = await import('@kortix/db');
 const { and, eq, sql } = await import('drizzle-orm');
 const { db } = await import('../shared/db');
-const { ingestManifest, extendDetectedRange } = await import('../capture/ingest');
-const { processRange, applyIdleWindows, computeIdleWindows, normalizeSegments } = await import('../capture/processing');
-const { applyRetention, closeQuietRanges, pollDevice } = await import('../capture/workers');
+const { ingestManifest } = await import('../capture/ingest');
+const { applyRetention, pollDevice } = await import('../capture/workers');
 const { writeAccountPolicy } = await import('../capture/policy');
 const { frameOf, frameVideoOffsetMs, recordedDays } = await import('../capture/reads');
 const { DEFAULT_POLICY, accountPrefix } = await import('../capture/format');
@@ -55,8 +51,6 @@ const MEMBER = crypto.randomUUID();
 const PREFIX = accountPrefix(ACCOUNT);
 let deviceId = '';
 const MACHINE = 'b'.repeat(64);
-/** A real 2×2 PNG. */
-const REAL_PNG = '89504e470d0a1a0a0000000d4948445200000002000000020802000000fdd49a730000001049444154789c63f8cfc000440c100a001fee03fd8b5f14d40000000049454e44ae426082';
 
 async function count(table: string, where = sql`TRUE`): Promise<number> {
   const [row] = Array.from(
@@ -149,23 +143,6 @@ describe('ingestion', () => {
     await db.execute(sql`UPDATE kortix.timeline_frames SET frame_index = 2 WHERE frame_id = ${frameId}::uuid`);
   });
 
-  test('the fixture minute is one detected range; activity within 15 minutes grows it, a later session starts another, a bridge merges them', async () => {
-    const [only] = await db.select().from(timelineRanges).where(eq(timelineRanges.deviceId, deviceId));
-    expect(only).toMatchObject({ source: 'detected', status: 'open' });
-    expect(only!.startAt.getTime()).toBe(day.startMs);
-    expect(only!.endAt.getTime()).toBe(day.endMs);
-    const device = { accountId: ACCOUNT, userId: MEMBER, deviceId };
-    const later = new Date(day.endMs + 40 * 60_000);
-    await extendDetectedRange(device, later, new Date(later.getTime() + 60_000));
-    let ranges = await db.select().from(timelineRanges).where(eq(timelineRanges.deviceId, deviceId)).orderBy(timelineRanges.startAt);
-    expect(ranges.length).toBe(2);
-    await extendDetectedRange(device, new Date(day.endMs + 10 * 60_000), new Date(later.getTime() - 10 * 60_000));
-    ranges = await db.select().from(timelineRanges).where(eq(timelineRanges.deviceId, deviceId));
-    expect(ranges.length).toBe(1);
-    expect(ranges[0]!.startAt.getTime()).toBe(day.startMs);
-    expect(ranges[0]!.endAt.getTime()).toBe(later.getTime() + 60_000);
-  });
-
   test('a changed object, a foreign object key, an unknown device and a newer schema are refused', async () => {
     const base = `${PREFIX}/${deviceId}/2026/01/01/1000-99`;
     const good = new TextEncoder().encode('video');
@@ -201,216 +178,17 @@ describe('ingestion', () => {
   });
 });
 
-describe('ranges and processing', () => {
-  test('segmentation rules: gaps fill with idle, input gaps of 2 minutes or more override the model', () => {
-    const segments = normalizeSegments(
-      [
-        { tStart: '0:00', tEnd: '5:00', category: 'coding', title: 'Editing', annotation: 'a', screenshotRefs: [] },
-        { tStart: '8:00', tEnd: '10:00', category: 'video', title: 'Watching', annotation: 'b', screenshotRefs: [] },
-      ],
-      600,
-    );
-    expect(segments.map((s) => [s.startSec, s.endSec, s.category])).toEqual([
-      [0, 300, 'work'],
-      [300, 480, 'idle'],
-      [480, 600, 'entertainment'],
-    ]);
-    const idle = computeIdleWindows([10, 20, 200, 590], 600);
-    expect(idle).toEqual([[20, 200], [200, 590]]);
-    const applied = applyIdleWindows(segments, [[100, 250]], 600);
-    // The idle window splits the work block; the model's own idle block stays separate.
-    expect(applied.map((s) => [s.startSec, s.endSec, s.category])).toEqual([
-      [0, 100, 'work'],
-      [100, 250, 'idle'],
-      [250, 300, 'work'],
-      [300, 480, 'idle'],
-      [480, 600, 'entertainment'],
-    ]);
-  });
-
-  test('a quiet range closes and its three pipelines store their outputs and usage', async () => {
-    await db.update(timelineRanges).set({ endAt: sql`now() - interval '1 hour'` }).where(eq(timelineRanges.deviceId, deviceId));
-    expect(await closeQuietRanges()).toBeGreaterThanOrEqual(1);
-    const [range] = await db.select().from(timelineRanges).where(eq(timelineRanges.deviceId, deviceId));
-    expect(range!.status).toBe('closed');
-
-    // The vendored screenshots are placeholder bytes. Make one a real PNG: only real images reach the model.
-    const shotKeys = [...objects.keys()].filter((k) => k.startsWith(`${PREFIX}/${deviceId}/assets/`) && /\.(jpg|png)$/.test(k) && !k.endsWith('e8bd4e6799e83e494755239d46175b2f1c78b1fea3a94e3a56da068049d22ee1.png'));
-    expect(shotKeys.length).toBeGreaterThanOrEqual(2);
-    objects.set(shotKeys[0]!, new Uint8Array(Buffer.from(REAL_PNG, 'hex')));
-    const prompts: string[] = [];
-    const imagesSeen: Array<Array<{ dataUrl: string }>> = [];
-    const caller = {
-      model: 'scripted-model',
-      async call(schema: { parse: (v: unknown) => unknown }, prompt: string, images: Array<{ dataUrl: string }>, usage: Record<string, number>) {
-        prompts.push(prompt);
-        imagesSeen.push(images);
-        usage.requests += 1;
-        usage.prompt_tokens += 100;
-        usage.completion_tokens += 10;
-        usage.cost_usd += 0.0001;
-        if (prompt.includes('TIME-SEGMENTATION')) {
-          return schema.parse({ segments: [{ tStart: '0:00', tEnd: '20:00', category: 'work', title: 'Budget work', annotation: 'Edited the sheet' }] });
-        }
-        if (prompt.includes('ONE short window')) return schema.parse({ narrative: 'Edited Q3 budget.xlsx.', keyPoints: ['Revenue 42,000'], entities: ['Q3 budget.xlsx'] });
-        if (prompt.includes('per-segment transcript')) return schema.parse({ title: 'Q3 budget work', summary: 'Edited the budget.' });
-        if (prompt.includes('deep annotation engine')) {
-          return schema.parse({
-            title: 'Budget session', summary: 's', apps: ['Sheets'], entities: [], segments: [{ tStart: '0:00', heading: 'Edit', description: 'Edited the budget sheet for the quarter close.', screenshotRefs: [], confidence: '0.9' }],
-            keyMoments: [], sourceOfTruth: { narrative: 'n', keyInsights: [], timelineRef: '' }, dataQuality: { coverage: 'high', gaps: [], confidence: 0.8 },
-          });
-        }
-        if (prompt.includes('CRITIQUE')) return schema.parse({ corrections: [], enrichedSegments: [], enrichedNarrative: 'Better narrative.', qualityScore: 0.7, missingDetails: [] });
-        return schema.parse({ files: [{ name: 'Q3 budget.xlsx', operation: 'edit', context: 'quarter close', screenshotRefs: ['1'] }] });
-      },
-    };
-    await processRange(range!.rangeId, caller as never);
-    const outputs = await db.select().from(rangeOutputs).where(eq(rangeOutputs.rangeId, range!.rangeId));
-    expect(outputs.map((o) => [o.kind, o.status]).sort()).toEqual([['annotation', 'done'], ['segmentation', 'done'], ['transcript', 'done']]);
-    const annotation = outputs.find((o) => o.kind === 'annotation')!.output as any;
-    expect(annotation.sourceOfTruth.narrative).toBe('Better narrative.');
-    expect(annotation.extraction.files[0].screenshotRefs).toEqual([1]);
-    expect(outputs.every((o) => (o.usage as any).requests >= 1 && (o.usage as any).cost_usd > 0)).toBe(true);
-    const [done] = await db.select().from(timelineRanges).where(eq(timelineRanges.rangeId, range!.rangeId));
-    expect(done!.status).toBe('processed');
-    expect(done!.title).toBe('Q3 budget work');
-    // The timeline the model saw names what was on screen, what was typed, and what was heard.
-    const seg = prompts.find((p) => p.includes('TIME-SEGMENTATION'))!;
-    expect(seg).toContain('Screen: Editor — Guide — Editor — https://docs.example.org/guide | text: "quarterly roadmap frame 0 sidebar"');
-    expect(seg).toContain('Type "quarterly plan"');
-    expect(seg).toContain('Heard: "we ship the roadmap on friday"');
-    // The action screenshots are the images the model sees: the real PNG only; a placeholder is skipped.
-    expect(seg).toMatch(/\[shot:1\]/);
-    expect(seg).not.toMatch(/\[shot:2\]/);
-    const sent = imagesSeen.find((list) => list.length > 0)!;
-    expect(sent.map((image) => image.dataUrl.slice(0, 22))).toEqual(['data:image/png;base64,']);
-  });
-});
-
-describe('intelligence: episodes (L1/L2) and mining (L3)', () => {
-  const scripted = (answer: (prompt: string) => unknown, prompts: string[] = []) => ({
-    model: 'scripted-model',
-    async call(schema: { parse: (v: unknown) => unknown }, prompt: string, _images: unknown[], usage: Record<string, number>) {
-      prompts.push(prompt);
-      usage.requests += 1;
-      usage.cost_usd += 0.0002;
-      return schema.parse(answer(prompt));
-    },
-  });
-
-  test('a closed range becomes episodes: literal-free labels, value-only variables, strictly ordered step times; spend recorded; the range reads processed', async () => {
-    const { traceRange } = await import('../capture/episodes');
-    const { captureEpisodes, captureEpisodeSteps, captureAiUsage } = await import('@kortix/db');
-    const [range] = await db.select().from(timelineRanges).where(and(eq(timelineRanges.deviceId, deviceId), eq(timelineRanges.source, 'detected')));
-    const prompts: string[] = [];
-    const caller = scripted(
-      () => ({
-        episodes: [
-          {
-            first: 1, last: 99, label: 'Plan roadmap SO-123456', goal: 'Draft the roadmap for ticket #41234.', outcome: 'Roadmap saved.', outcome_status: 'succeeded', procedural: true,
-            steps: [
-              { moment: 1, verb: 'Open', app: 'Editor', object: 'roadmap guide', variables: ['roadmap_guide'] },
-              { moment: 1, verb: 'Type', app: 'Editor', object: 'plan for order SO-123456', variables: ['Order ID'] },
-              { moment: 1, verb: 'Reply', app: 'Editor', object: 'summary', variables: [] },
-            ],
-          },
-        ],
-      }),
-      prompts,
-    );
-    const result = await traceRange(range!.rangeId, caller as never);
-    expect(result.episodes).toBe(1);
-    expect(prompts[0]).toContain('m1 ');
-    const [episode] = await db.select().from(captureEpisodes).where(eq(captureEpisodes.deviceId, deviceId));
-    expect([episode!.label, episode!.goal, episode!.status, episode!.stepsCount, episode!.signature]).toEqual(['Plan roadmap', 'Draft the roadmap for ticket.', 'traced', 3, 'open@editor fill@editor send@editor']);
-    const steps = await db.select().from(captureEpisodeSteps).where(eq(captureEpisodeSteps.episodeId, episode!.episodeId)).orderBy(captureEpisodeSteps.index);
-    expect(steps.map((s) => [s.verb, s.object, s.variables])).toEqual([['Open', 'roadmap guide', []], ['Fill', 'plan for order', ['order_id']], ['Send', 'summary', []]]);
-    const times = steps.map((s) => s.ts.getTime());
-    expect(new Set(times).size).toBe(3);
-    expect([...times].sort((a, b) => a - b)).toEqual(times);
-    const [usage] = await db.select().from(captureAiUsage).where(eq(captureAiUsage.accountId, ACCOUNT));
-    expect(Number(usage!.costUsd)).toBeGreaterThan(0);
-    const [after] = await db.select().from(timelineRanges).where(eq(timelineRanges.rangeId, range!.rangeId));
-    expect(after!.status).toBe('processed');
-    // A re-run replaces the range's detected episodes instead of adding to them.
-    await traceRange(range!.rangeId, caller as never);
-    expect((await db.select().from(captureEpisodes).where(eq(captureEpisodes.deviceId, deviceId))).length).toBe(1);
-  });
-
-  test('mining: clusters need 3 finished runs; an abandoned run joins the workflow it started; names are unique; identities and reviews survive a re-mine; runIntelligence queues ranges', async () => {
-    const { mineAccount } = await import('../capture/mining');
-    const { runIntelligence } = await import('../capture/workers');
-    const { captureEpisodes, captureEpisodeSteps, captureWorkflows } = await import('@kortix/db');
-    const now = Date.now();
-    const OTHER = crypto.randomUUID();
-    const add = async (i: number, userId: string, label: string, path: Array<[string, string, string]>, outcomeStatus = 'succeeded') => {
-      const start = new Date(now - (i + 1) * 3_600_000);
-      const [e] = await db
-        .insert(captureEpisodes)
-        .values({ accountId: ACCOUNT, userId, deviceId, startAt: start, endAt: new Date(start.getTime() + 300_000), label, status: 'traced', outcomeStatus, stepsCount: path.length, signature: path.map(([v, a]) => `${v.toLowerCase()}@${a.toLowerCase()}`).join(' ') })
-        .returning();
-      await db.insert(captureEpisodeSteps).values(path.map(([verb, app, object], index) => ({ episodeId: e!.episodeId, accountId: ACCOUNT, index, ts: new Date(start.getTime() + index * 1000), verb, app, object, variables: [] })));
-      return e!.episodeId;
-    };
-    const refund: Array<[string, string, string]> = [['Open', 'Helpdesk', 'damaged ticket'], ['Search', 'ERP', 'order by number'], ['Create', 'ERP', 'refund'], ['Send', 'Mail', 'refund confirmation']];
-    const invoice: Array<[string, string, string]> = [['Download', 'Mail', 'invoice attachment'], ['Match', 'ERP', 'invoice to purchase order'], ['Approve', 'Billing', 'invoice payment']];
-    for (let i = 0; i < 4; i++) await add(i, i % 2 ? MEMBER : OTHER, 'Refund a damaged order', refund);
-    for (let i = 4; i < 7; i++) await add(i, MEMBER, 'Approve a supplier invoice', invoice);
-    const abandoned = await add(8, MEMBER, 'Refund a damaged order', refund.slice(0, 2), 'abandoned');
-    const lonely = await add(9, MEMBER, 'Book travel', [['Open', 'Browser', 'travel site'], ['Create', 'Browser', 'booking']]);
-    const caller = scripted((prompt) => (prompt.includes('Each pair shows') ? { same: [] } : { name: 'Process a request', goal: 'Handle it.', outcome: 'Done.', variants: [] }));
-    const first = await mineAccount(ACCOUNT, caller as never, now);
-    expect(first.workflows).toBe(2);
-    const rows = await db.select().from(captureWorkflows).where(eq(captureWorkflows.accountId, ACCOUNT)).orderBy(captureWorkflows.runsTotal);
-    expect(rows.map((w) => [w.name, w.runsTotal, w.peopleCount])).toEqual([['Process a request (2)', 3, 1], ['Process a request', 5, 2]]);
-    const [joined] = await db.select().from(captureEpisodes).where(eq(captureEpisodes.episodeId, abandoned));
-    expect(joined!.workflowId).toBe(rows[1]!.workflowId);
-    const [alone] = await db.select().from(captureEpisodes).where(eq(captureEpisodes.episodeId, lonely));
-    expect(alone!.workflowId).toBeNull();
-    // A person reviews one; a re-mine keeps both identities and the reviewed name.
-    await db.update(captureWorkflows).set({ name: 'Refund a damaged order', status: 'reviewed' }).where(eq(captureWorkflows.workflowId, rows[1]!.workflowId));
-    await mineAccount(ACCOUNT, caller as never, now);
-    const again = await db.select().from(captureWorkflows).where(eq(captureWorkflows.accountId, ACCOUNT)).orderBy(captureWorkflows.runsTotal);
-    expect(again.map((w) => [w.workflowId, w.name, w.status])).toEqual([[rows[0]!.workflowId, 'Process a request (2)', 'detected'], [rows[1]!.workflowId, 'Refund a damaged order', 'reviewed']]);
-    // The admin "run" queues every closed detected range, then mining.
-    await db.update(timelineRanges).set({ status: 'closed' }).where(and(eq(timelineRanges.deviceId, deviceId), eq(timelineRanges.source, 'detected')));
-    const run = await runIntelligence(ACCOUNT);
-    expect(run.episodes_queued).toBeGreaterThanOrEqual(1);
-    expect(run.mining_queued).toBe(true);
-    expect((await runIntelligence(ACCOUNT, { miningOnly: true })).episodes_queued).toBe(0);
-    await db.update(timelineRanges).set({ status: 'processed' }).where(and(eq(timelineRanges.deviceId, deviceId), eq(timelineRanges.source, 'detected')));
-  });
-
-  test('a Parquet export is one table, one column per field, that reads back row for row', async () => {
-    const { exportParquet } = await import('../capture/exports');
-    const { captureWorkflows } = await import('@kortix/db');
-    const hyparquet = await import(Bun.resolveSync('hyparquet', Bun.resolveSync('hyparquet-writer', import.meta.dir)));
-    const built = await exportParquet(ACCOUNT, { include: ['workflows'] });
-    expect(new TextDecoder().decode(built.body.slice(0, 4))).toBe('PAR1');
-    const rows = (await hyparquet.parquetReadObjects({ file: built.body.buffer.slice(built.body.byteOffset, built.body.byteOffset + built.body.byteLength) })) as Array<Record<string, unknown>>;
-    const workflows = await db.select().from(captureWorkflows).where(eq(captureWorkflows.accountId, ACCOUNT));
-    expect(built.table).toBe('workflows');
-    expect(rows.map((r) => r.name).sort()).toEqual(workflows.map((w) => w.name).sort());
-    expect(typeof rows[0]!.runs_total).toBe('number');
-    expect(Array.isArray(rows[0]!.steps)).toBe(true);
-    const episodes = await exportParquet(ACCOUNT, {});
-    expect(episodes.table).toBe('episodes');
-    expect(episodes.rows).toBeGreaterThan(0);
-  });
-
-});
-
 describe('forget', () => {
-  test('a delete line retracts the item, its rows, the outputs and detected episodes of overlapping ranges (queued to trace again); a re-poll is a no-op', async () => {
-    const { captureEpisodes } = await import('@kortix/db');
-    const { jobQueue } = await import('@kortix/db');
+  test('a delete line retracts the item and its rows, and search no longer finds them; a re-poll is a no-op', async () => {
+    const { searchTimeline } = await import('../capture/reads');
     const key = [...objects.keys()].find((k) => k.startsWith(`${PREFIX}/${deviceId}/`) && /\/\d+-1\.manifest\.json$/.test(k))!;
     const [chunk] = await db.select().from(timelineChunks).where(eq(timelineChunks.manifestKey, key));
     const chunkFrames = await count('timeline_frames', sql`chunk_id = ${chunk!.chunkId}::uuid`);
     expect(chunkFrames).toBeGreaterThan(0);
     const framesBefore = await count('timeline_frames');
-    const [processed] = await db.select().from(timelineRanges).where(eq(timelineRanges.deviceId, deviceId));
-    expect(processed!.status).toBe('processed');
+    const [frame] = Array.from(await db.execute<{ app: string }>(sql`SELECT app FROM kortix.timeline_frames WHERE chunk_id = ${chunk!.chunkId}::uuid AND app IS NOT NULL LIMIT 1`));
+    const find = () => searchTimeline(ACCOUNT, MEMBER, { q: frame!.app, from: new Date(0), to: new Date(Date.now() + 86_400_000), kinds: new Set(['screen']), limit: 100 });
+    expect((await find()).some((hit) => hit.chunk_id === chunk!.chunkId)).toBe(true);
     // What the engine does on `storage forget`: remove the item's objects, then append a delete line.
     const base = key.slice(PREFIX.length + 1, -'.manifest.json'.length);
     for (const k of [...objects.keys()]) if (k.startsWith(`${PREFIX}/${base}.`)) objects.delete(k);
@@ -422,104 +200,10 @@ describe('forget', () => {
     expect(await pollDevice(device!)).toEqual({ enqueued: 0, forgotten: 1 });
     expect(await db.select().from(timelineChunks).where(eq(timelineChunks.manifestKey, key))).toEqual([]);
     expect(await count('timeline_frames')).toBe(framesBefore - chunkFrames);
-    const [range] = await db.select().from(timelineRanges).where(eq(timelineRanges.rangeId, processed!.rangeId));
-    expect(range!.status).toBe('closed');
-    expect(await db.select().from(rangeOutputs).where(eq(rangeOutputs.rangeId, range!.rangeId))).toEqual([]);
-    const left = await db.select().from(captureEpisodes).where(and(eq(captureEpisodes.deviceId, deviceId), eq(captureEpisodes.source, 'detected'), sql`${captureEpisodes.startAt} <= ${range!.endAt.toISOString()}::timestamptz`));
-    expect(left.filter((e) => e.endAt >= range!.startAt && e.label === 'Plan roadmap')).toEqual([]);
-    const queued = await db.select().from(jobQueue).where(and(eq(jobQueue.queue, 'capture.episodes'), sql`${jobQueue.jobKey} LIKE ${`${range!.rangeId}:%:forget-%`}`));
-    expect(queued.length).toBe(1);
+    expect((await find()).some((hit) => hit.chunk_id === chunk!.chunkId)).toBe(false);
 
     const [again] = await db.select().from(captureDevices).where(eq(captureDevices.deviceId, deviceId));
     expect(await pollDevice(again!)).toEqual({ enqueued: 0, forgotten: 0 });
-  });
-});
-
-describe('forget reaches every derived artifact', () => {
-  test('a forgotten item\'s unique marker appears nowhere afterwards: episodes, steps, workflows, exports (old and new), search', async () => {
-    const { traceRange } = await import('../capture/episodes');
-    const { mineAccount } = await import('../capture/mining');
-    const { exportJsonl } = await import('../capture/exports');
-    const { captureEpisodes, captureEpisodeSteps, captureExports, captureWorkflows } = await import('@kortix/db');
-    const MARK = 'Zebraquartz';
-    const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
-    const enc = (t: string) => new TextEncoder().encode(t);
-    // One small item on an old day whose screen shows the marker, written as the engine writes it.
-    const start = Date.UTC(2026, 8, 1, 10);
-    const base = `${deviceId}/2026/09/01/${start}-900`;
-    const lines = [0, 1, 2].map((i) => JSON.stringify({ app: { bundle_id: 'com.example.billing', name: 'Billing' }, frame_index: i, ts_ms: start + i * 10_000, title: `${MARK} invoice — Billing`, ocr: { foreground: `${MARK} invoice review`, background: '', lines: [] }, windows: [] }));
-    const frames = Bun.zstdCompressSync(enc(`${lines.join('\n')}\n`));
-    const video = enc('video-bytes');
-    const info = (key: string, body: Uint8Array) => ({ key, size: body.byteLength, sha256: sha(body), plain_size: body.byteLength, plain_sha256: sha(body) });
-    const manifest = { app_version: '0.1.0', created_at_ms: start + 40_000, device_id: deviceId, encryption: null, end_ms: start + 30_000, frame_count: 3, height: 360, kind: 'chunk', objects: { frames: info(`${base}.frames.jsonl.zst`, frames), video: info(`${base}.mp4`, video) }, privacy: { mode: 'off', redact_pii: false }, schema: 2, start_ms: start, video_id: 900, video_name: `${start}.mp4`, width: 640 };
-    const manifestKey = `${PREFIX}/${base}.manifest.json`;
-    objects.set(`${PREFIX}/${base}.frames.jsonl.zst`, frames);
-    objects.set(`${PREFIX}/${base}.mp4`, video);
-    objects.set(manifestKey, enc(JSON.stringify(manifest)));
-    const indexKey = `${PREFIX}/${deviceId}/index/2026-09-01.jsonl`;
-    objects.set(indexKey, enc(`${JSON.stringify({ op: 'put', kind: 'chunk', base, start_ms: start, end_ms: start + 30_000, manifest: true, at_ms: start + 41_000, frames: 3, video_id: 900 })}\n`));
-    expect((await ingestManifest(manifestKey)).status).toBe('indexed');
-    const [range] = await db.select().from(timelineRanges).where(and(eq(timelineRanges.deviceId, deviceId), sql`${timelineRanges.startAt} = ${new Date(start).toISOString()}::timestamptz`));
-    await db.update(timelineRanges).set({ status: 'closed' }).where(eq(timelineRanges.rangeId, range!.rangeId));
-
-    // The model echoes the marker everywhere it can: label, goal, step objects, workflow name.
-    const echo = (prompt: string) => (prompt.includes(MARK) ? MARK : 'plain');
-    const caller = {
-      model: 'scripted-model',
-      async call(schema: { parse: (v: unknown) => unknown }, prompt: string, _images: unknown[], usage: Record<string, number>) {
-        usage.requests += 1;
-        if (prompt.includes('Each pair shows')) return schema.parse({ same: [] });
-        if (prompt.includes('Name the procedure')) return schema.parse({ name: `Review ${echo(prompt)} invoices`, goal: `Check ${echo(prompt)} invoices.`, outcome: 'Approved.', variants: [] });
-        return schema.parse({ episodes: [{ first: 1, last: 9, label: `Review ${MARK} invoice`, goal: `Review the ${MARK} invoice.`, outcome: 'Approved.', outcome_status: 'succeeded', procedural: true, steps: [
-          { moment: 1, verb: 'Open', app: 'Billing', object: `${MARK} invoice`, variables: ['invoice_id'] },
-          { moment: 1, verb: 'Read', app: 'Billing', object: 'invoice lines', variables: [] },
-          { moment: 1, verb: 'Approve', app: 'Billing', object: 'invoice payment', variables: [] },
-        ] }] });
-      },
-    };
-    await traceRange(range!.rangeId, caller as never);
-    // Three more runs of the same procedure on other days, with no marker: the workflow outlives the forget.
-    for (let i = 0; i < 3; i++) {
-      const at = new Date(Date.UTC(2026, 8, 2 + i, 10));
-      const [e] = await db.insert(captureEpisodes).values({ accountId: ACCOUNT, userId: MEMBER, deviceId, startAt: at, endAt: new Date(at.getTime() + 300_000), label: 'Approve an invoice', goal: 'Approve a supplier invoice.', status: 'traced', outcomeStatus: 'succeeded', stepsCount: 3, signature: 'open@billing read@billing approve@billing' }).returning();
-      await db.insert(captureEpisodeSteps).values([['Open', 'invoice'], ['Read', 'invoice lines'], ['Approve', 'invoice payment']].map(([verb, object], index) => ({ episodeId: e!.episodeId, accountId: ACCOUNT, index, ts: new Date(at.getTime() + index * 1000), verb: verb!, app: 'Billing', object: object!, variables: [] })));
-    }
-    const workflowsBefore = (await db.select().from(captureWorkflows).where(eq(captureWorkflows.accountId, ACCOUNT))).map((w) => w.workflowId);
-    await mineAccount(ACCOUNT, caller as never, Date.UTC(2026, 8, 10));
-    const hits = async () => {
-      const q = (table: string) => sql`SELECT count(*)::int AS n FROM ${sql.identifier('kortix')}.${sql.identifier(table)} t WHERE account_id = ${ACCOUNT}::uuid AND row_to_json(t)::text ILIKE ${`%${MARK}%`}`;
-      const n = async (table: string) => Array.from(await db.execute<{ n: number }>(q(table)))[0]!.n;
-      return { episodes: await n('capture_episodes'), steps: await n('capture_episode_steps'), workflows: await n('capture_workflows') };
-    };
-    const before = await hits();
-    expect(before.episodes).toBeGreaterThan(0);
-    expect(before.steps).toBeGreaterThan(0);
-    expect(before.workflows).toBeGreaterThan(0);
-    // An export taken before the forget holds the marker.
-    const old = await exportJsonl(ACCOUNT, {});
-    expect(old.body).toContain(MARK);
-    const oldKey = `${PREFIX}/exports/forget-test.jsonl`;
-    objects.set(oldKey, enc(old.body));
-    const [exp] = await db.insert(captureExports).values({ accountId: ACCOUNT, requestedBy: MEMBER, format: 'jsonl', status: 'done', objectKey: oldKey, rows: old.rows }).returning();
-
-    // The engine forgets the item: objects deleted, a delete line appended; the reader retracts it.
-    for (const k of [...objects.keys()]) if (k.startsWith(`${PREFIX}/${base}.`)) objects.delete(k);
-    objects.set(indexKey, enc(`${new TextDecoder().decode(objects.get(indexKey)!)}${JSON.stringify({ op: 'delete', kind: 'chunk', base, reason: 'forget', at_ms: Date.now() })}\n`));
-    const [device] = await db.select().from(captureDevices).where(eq(captureDevices.deviceId, deviceId));
-    expect((await pollDevice(device!)).forgotten).toBe(1);
-
-    expect(await hits()).toEqual({ episodes: 0, steps: 0, workflows: 0 });
-    // The workflow rebuilt from its 3 remaining runs: same identity, their label, their steps.
-    const after = await db.select().from(captureWorkflows).where(eq(captureWorkflows.accountId, ACCOUNT));
-    const kept = after.find((w) => !workflowsBefore.includes(w.workflowId))!;
-    expect([kept.name, kept.runsTotal, (kept.steps as Array<{ object: string }>).map((s) => s.object)]).toEqual(['Approve an invoice', 3, ['invoice', 'invoice lines', 'invoice payment']]);
-    const [expired] = await db.select().from(captureExports).where(eq(captureExports.exportId, exp!.exportId));
-    expect([expired!.status, expired!.objectKey, objects.has(oldKey)]).toEqual(['failed', null, false]);
-    expect((await exportJsonl(ACCOUNT, {})).body).not.toContain(MARK);
-    // An account-wide search of the forgotten window (the data API) finds nothing of it either.
-    const { searchTimeline } = await import('../capture/reads');
-    const found = await searchTimeline(ACCOUNT, null, { q: MARK, from: new Date('2026-08-01T00:00:00Z'), to: new Date('2026-10-01T00:00:00Z'), kinds: new Set(['screen', 'actions', 'audio']), limit: 20 });
-    expect(found).toEqual([]);
   });
 });
 

@@ -50,20 +50,6 @@ const optInt = (def: number) =>
       return Number.isNaN(n) ? def : n;
     });
 
-/** Optional decimal with a default (money, unlike optInt's counts). A
- *  non-numeric or negative value falls back to the default rather than
- *  becoming a cap of NaN, which compares false against everything and would
- *  disable the limit it was set to enforce. */
-const optNum = (def: number) =>
-  z
-    .string()
-    .optional()
-    .default(String(def))
-    .transform((v) => {
-      const n = Number.parseFloat(v);
-      return Number.isFinite(n) && n >= 0 ? n : def;
-    });
-
 /** Optional boolean. optBoolFalse accepts the common truthy spellings
  * (case-insensitive) so a "1" / "yes" / "on" from a k8s env or secret bundle
  * isn't silently dropped. optBoolTrue keeps its original 'anything but false'
@@ -660,7 +646,7 @@ const envSchema = z.object({
 
   // ── Kortix Capture (optional) ───────────────────────────────────────────
   // Devices write the Kortix Capture format to this bucket under
-  // `orgs/<account_id>/projects/<project_id>/<device_id>/`. The API reads it
+  // `orgs/<account_id>/<device_id>/`. The API reads it
   // (ingestion), writes `policy.json`, and signs short-lived media URLs.
   //   dev/staging/prod: the Terraform bucket, credentials from the ECS task role.
   //   local/self-host: an S3-compatible store (MinIO, Supabase Storage).
@@ -687,10 +673,6 @@ const envSchema = z.object({
   KORTIX_CAPTURE_SQS_QUEUE_URL: optStr,
   /** How often the index reader polls each active device's `index/<day>.jsonl` and `status.json`. */
   KORTIX_CAPTURE_INDEX_POLL_SECONDS: optInt(60),
-  /** Managed vision model the range pipelines call through the LLM gateway. */
-  KORTIX_CAPTURE_MODEL: optStrDefault('glm-5.3-flash'),
-  /** Model spend cap of the Capture pipelines and Ask, per account per UTC day (USD). 0 = no cap. */
-  KORTIX_CAPTURE_DAILY_COST_CAP_USD: optNum(5),
 
   // ── Platinum — Sandbox provisioning (conditional: required if platinum provider enabled) ──
   // Platinum is our own Cloud Hypervisor microVM API. PLATINUM_API_KEY is a
@@ -1421,8 +1403,6 @@ export const config = {
   KORTIX_CAPTURE_CREDENTIAL_TTL_SECONDS: env.KORTIX_CAPTURE_CREDENTIAL_TTL_SECONDS,
   KORTIX_CAPTURE_SQS_QUEUE_URL: env.KORTIX_CAPTURE_SQS_QUEUE_URL,
   KORTIX_CAPTURE_INDEX_POLL_SECONDS: env.KORTIX_CAPTURE_INDEX_POLL_SECONDS,
-  KORTIX_CAPTURE_MODEL: env.KORTIX_CAPTURE_MODEL,
-  KORTIX_CAPTURE_DAILY_COST_CAP_USD: env.KORTIX_CAPTURE_DAILY_COST_CAP_USD,
   KORTIX_CONFIG_ARCHIVE_S3_BUCKET: env.KORTIX_CONFIG_ARCHIVE_S3_BUCKET,
   KORTIX_CONFIG_ARCHIVE_S3_REGION: env.KORTIX_CONFIG_ARCHIVE_S3_REGION,
   KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT: env.KORTIX_CONFIG_ARCHIVE_S3_ENDPOINT,

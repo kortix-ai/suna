@@ -7,11 +7,10 @@
 // account-scoped and answers 403 `capture_disabled` while Capture is off for
 // the account (`setCaptureEnabled`).
 //
-// Roles: `admin` (every member's devices and timeline, the policy, the
-// members, the switch), `viewer` (every member's data, no writes), `member`
-// (only their own). The default comes from the account role (owner/admin →
-// admin, member → member); `setCaptureMemberRole` overrides it. A read of
-// another member, or of the whole account, is audited.
+// Access is Kortix IAM. Every member reads their own devices and timeline.
+// `capture.read_all` reads every member's (each read audited); `capture.manage`
+// turns Capture on or off, sets the policy and revokes any device. Owner and
+// admin hold both by default; `getCaptureWorkspace` says what you hold.
 //
 // The agent tool reads the person its session acts for through
 // `searchMyCapture`, `getMyCaptureTimeline` and `getMyCaptureFrame` — the
@@ -68,7 +67,6 @@ export interface CaptureDevice {
     status: Record<string, unknown> | null;
     reported_at: string | null;
   };
-  policy_override: CapturePolicy | null;
   last_credentials_at: string | null;
   revoked_at: string | null;
   created_at: string;
@@ -79,7 +77,7 @@ export interface CaptureWindowQuery {
   day?: string;
   from?: string;
   to?: string;
-  /** Another member (Capture admins and viewers, audited). Default: the caller. */
+  /** Another member (IAM `capture.read_all`, audited). Default: the caller. */
   userId?: string;
   deviceId?: string;
 }
@@ -106,27 +104,12 @@ export interface CaptureChunk {
   encrypted: boolean;
 }
 
-export interface CaptureRange {
-  range_id: string;
-  user_id: string;
-  device_id: string | null;
-  /** `detected` = an activity session split by idle gaps; `saved` = a span a person saved. */
-  source: 'detected' | 'saved';
-  title: string | null;
-  start_at: string;
-  end_at: string;
-  status: 'open' | 'closed' | 'processing' | 'processed' | 'failed';
-  created_by: string | null;
-  created_at: string;
-}
-
 export interface CaptureTimeline {
   user_id: string;
   from: string;
   to: string;
   runs: CaptureActivityRun[];
   chunks: CaptureChunk[];
-  ranges: CaptureRange[];
 }
 
 export interface CaptureFrame {
@@ -183,7 +166,7 @@ export interface CaptureTimelineItems {
 /** Who and which device, grouped by the day in `tz` (an IANA zone; default UTC). */
 export interface CaptureDaysQuery {
   tz?: string;
-  /** Another member (Capture admins and viewers, audited). Default: the caller. */
+  /** Another member (IAM `capture.read_all`, audited). Default: the caller. */
   userId?: string;
   deviceId?: string;
 }
@@ -216,7 +199,7 @@ export interface CaptureSearchQuery extends Omit<CaptureWindowQuery, 'day'> {
   app?: string;
   /** 1–100, default 20. */
   limit?: number;
-  /** `account`: every member (Capture admins and viewers; audited as `capture.account_view`). */
+  /** `account`: every member (`capture.read_all`; audited as `capture.account_view`). */
   scope?: 'mine' | 'account';
 }
 
@@ -268,44 +251,6 @@ export interface CaptureChunkMedia {
   audio: CaptureMediaUrl | null;
 }
 
-export interface SaveCaptureRangeInput {
-  start_at: string;
-  /** At most 24 hours after `start_at`. */
-  end_at: string;
-  title?: string;
-  /** Limit the range to one of your devices. Default: all of them. */
-  device_id?: string;
-}
-
-export interface CaptureRangeOutput {
-  kind: 'segmentation' | 'transcript' | 'annotation';
-  status: 'running' | 'done' | 'failed';
-  model: string | null;
-  output: Record<string, unknown> | null;
-  /** `{ requests, prompt_tokens, completion_tokens, cost_usd }`. */
-  usage: Record<string, unknown> | null;
-  error: string | null;
-  updated_at: string;
-}
-
-export interface CaptureRangeDetail extends CaptureRange {
-  outputs: CaptureRangeOutput[];
-}
-
-export interface CapturePersonSummary {
-  user_id: string;
-  active_seconds: number;
-  apps: Array<{ app: string | null; seconds: number }>;
-  ranges: number;
-  devices: number;
-}
-
-export interface CapturePeopleSummary {
-  from: string;
-  to: string;
-  people: CapturePersonSummary[];
-}
-
 export interface CaptureDeviceGrant {
   user_code: string;
   status: 'pending' | 'approved' | 'denied' | 'consumed' | 'expired';
@@ -327,25 +272,15 @@ export interface CaptureDeviceGrantDetail extends CaptureDeviceGrant {
   accounts: { account_id: string; name: string }[];
 }
 
-export type CaptureRole = 'admin' | 'viewer' | 'member';
-
 /** The account's Capture workspace as the caller sees it. */
 export interface CaptureWorkspace {
   account_id: string;
   enabled: boolean;
-  /** Your Capture role in the account. */
-  role: CaptureRole;
-  /** True when you may turn Capture on or off (account owners and admins). */
+  /** IAM `capture.read_all`: you read every member's devices and timeline (each read audited). */
+  can_read_all: boolean;
+  /** IAM `capture.manage`: you turn Capture on or off, set the policy and revoke any device. */
   can_manage: boolean;
   updated_at: string | null;
-}
-
-export interface CaptureMember {
-  user_id: string;
-  account_role: 'owner' | 'admin' | 'member';
-  role: CaptureRole;
-  /** True when the role is set for the person, not taken from the account role. */
-  overridden: boolean;
 }
 
 const base = (accountId: string) => `/accounts/${accountId}/capture`;
@@ -382,7 +317,7 @@ const windowParams = (query: CaptureWindowQuery = {}) => ({
 
 // ── Devices ───────────────────────────────────────────────────────────────────
 
-/** Your devices with live status; a member's (`userId`) or the account's (`scope: 'account'`) for admins and viewers. */
+/** Your devices with live status; a member's (`userId`) or the account's (`scope: 'account'`) with `capture.read_all`. */
 export async function listCaptureDevices(accountId: string, opts: { userId?: string; scope?: 'mine' | 'account' } = {}) {
   return unwrap(
     await backendApi.get<{ devices: CaptureDevice[] }>(
@@ -391,28 +326,9 @@ export async function listCaptureDevices(accountId: string, opts: { userId?: str
   );
 }
 
-/** Revoke a device: its token stops working at once. Your own device, or any device for Capture admins. */
+/** Revoke a device: its token stops working at once. Your own device, or any device with `capture.manage`. */
 export async function revokeCaptureDevice(accountId: string, deviceId: string) {
   return unwrap(await backendApi.delete<CaptureDevice>(`${base(accountId)}/devices/${deviceId}`));
-}
-
-/**
- * Read a device's status, description and index now, and queue every new item
- * for indexing (a "Sync now"). Without it the readers pick items up within a
- * minute. `forgotten` counts the items the device deleted (the person forgot a
- * time range, or the device's retention removed it), which Kortix retracted
- * with the outputs of every range that overlapped them. Your own device, or
- * any device for Capture admins and viewers.
- */
-export async function syncCaptureDevice(accountId: string, deviceId: string) {
-  return unwrap(
-    await backendApi.post<{ device_id: string; enqueued: number; forgotten: number }>(`${base(accountId)}/devices/${deviceId}/sync`, {}),
-  );
-}
-
-/** Set (or clear with null) one device's policy override. Capture admins only. */
-export async function setCaptureDevicePolicy(accountId: string, deviceId: string, policy: CapturePolicy | null) {
-  return unwrap(await backendApi.put<CaptureDevice>(`${base(accountId)}/devices/${deviceId}/policy`, { policy }));
 }
 
 // ── Policy ────────────────────────────────────────────────────────────────────
@@ -421,7 +337,7 @@ export async function getCapturePolicy(accountId: string) {
   return unwrap(await backendApi.get<CapturePolicyRecord>(`${base(accountId)}/policy`));
 }
 
-/** Replace the account policy and publish it to devices. Capture admins only. */
+/** Replace the account policy and publish it to devices (`capture.manage`). */
 export async function setCapturePolicy(accountId: string, policy: CapturePolicy) {
   return unwrap(await backendApi.put<CapturePolicyRecord>(`${base(accountId)}/policy`, { policy }));
 }
@@ -483,42 +399,6 @@ export async function getCaptureAssetUrl(accountId: string, deviceId: string, na
   );
 }
 
-// ── Ranges ────────────────────────────────────────────────────────────────────
-
-export async function listCaptureRanges(accountId: string, query: CaptureWindowQuery = {}) {
-  return unwrap(
-    await backendApi.get<{ ranges: CaptureRange[] }>(`${base(accountId)}/ranges${captureQuery(windowParams(query))}`),
-  );
-}
-
-/** Save a span of your own timeline as a range; its pipelines start at once. */
-export async function saveCaptureRange(accountId: string, input: SaveCaptureRangeInput) {
-  return unwrap(await backendApi.post<CaptureRange>(`${base(accountId)}/ranges`, input));
-}
-
-/** One range with its outputs: segmentation (work vs idle), transcript, annotation. */
-export async function getCaptureRange(accountId: string, rangeId: string) {
-  return unwrap(await backendApi.get<CaptureRangeDetail>(`${base(accountId)}/ranges/${rangeId}`));
-}
-
-/** Run a range's pipelines again. */
-export async function processCaptureRange(accountId: string, rangeId: string) {
-  return unwrap(
-    await backendApi.post<{ range_id: string; queued: boolean }>(`${base(accountId)}/ranges/${rangeId}/process`, {}),
-  );
-}
-
-// ── People (admins, viewers) ────────────────────────────────────────────────────
-
-/** Per member: active time, time per app, ranges and devices. Capture admins and viewers; audited. */
-export async function getCapturePeople(accountId: string, query: Omit<CaptureWindowQuery, 'userId' | 'deviceId'> = {}) {
-  return unwrap(
-    await backendApi.get<CapturePeopleSummary>(
-      `${base(accountId)}/people${captureQuery({ day: query.day, from: query.from, to: query.to })}`,
-    ),
-  );
-}
-
 // ── Device sign-in approval ───────────────────────────────────────────────────
 
 /** The device asking to sign in with this user code (the approval page). */
@@ -546,26 +426,16 @@ export async function denyCaptureDeviceGrant(userCode: string) {
   );
 }
 
-// ── Workspace (the account switch, roles) ────────────────────────────────────
+// ── Workspace (the account switch) ───────────────────────────────────────────
 
-/** The account's Capture workspace: on or off, your role, and whether you may turn it on. */
+/** The account's Capture workspace: on or off, and what IAM lets you do (`can_read_all`, `can_manage`). */
 export async function getCaptureWorkspace(accountId: string) {
   return unwrap(await backendApi.get<CaptureWorkspace>(base(accountId)));
 }
 
-/** Turn Capture on or off for the account (account owners and admins). */
+/** Turn Capture on or off for the account (`capture.manage`). */
 export async function setCaptureEnabled(accountId: string, enabled: boolean) {
   return unwrap(await backendApi.patch<CaptureWorkspace>(base(accountId), { enabled }));
-}
-
-/** Every account member with their Capture role (Capture admins). */
-export async function listCaptureMembers(accountId: string) {
-  return unwrap(await backendApi.get<{ members: CaptureMember[] }>(`${base(accountId)}/members`));
-}
-
-/** Set a member's Capture role, or clear it (null) back to the account-role default (Capture admins). */
-export async function setCaptureMemberRole(accountId: string, userId: string, role: CaptureRole | null) {
-  return unwrap(await backendApi.put<CaptureMember>(`${base(accountId)}/members/${userId}`, { role }));
 }
 
 // ── The agent tool (account from the token) ──────────────────────────────────

@@ -1,4 +1,4 @@
--- Migration: capture_timeline
+-- Migration: capture
 --
 -- SAFETY HEADER (house rules -- see packages/db/MIGRATIONS.md#zero-downtime-rules).
 -- Tune these down further for large/hot tables; raise statement_timeout only
@@ -21,11 +21,15 @@ set statement_timeout = '30s';
 --   [ ] Any ALTER TYPE ... ADD VALUE needs:
 -- enum-value-checked: <how you verified every env, including any faked baseline, has this value>
 
--- WHAT: Kortix Capture tables and a durable job queue. Capture's tenant is the
--- Kortix account: no table here has a project column. Every table is NEW and
--- empty, so no statement here locks or rewrites an existing table; the FKs
--- reference kortix.accounts (SHARE ROW EXCLUSIVE on it for milliseconds, no
--- scan because the new tables are empty).
+-- WHAT: Kortix Capture v1, raw capture only: the account switch and policy,
+-- device sign-in (RFC 8628 grants), signed-in devices, and the timeline the
+-- API indexes from each device's uploads (chunks, frames, actions, audio),
+-- plus a durable job queue. Capture's tenant is the Kortix account: no table
+-- here has a project column. Every table is NEW and empty, so no statement
+-- locks or rewrites an existing table; the FKs reference kortix.accounts
+-- (SHARE ROW EXCLUSIVE on it for milliseconds, no scan: the new tables are empty).
+-- Who reads whose recordings is IAM, not a Capture table: see the next
+-- migration (*_capture_permissions).
 --
 -- HAND EDITS to the generated SQL (keep them when regenerating):
 --   * timeline_frames, timeline_actions and timeline_audio are RANGE-partitioned
@@ -40,6 +44,7 @@ set statement_timeout = '30s';
 --     table must contain the partition key. No foreign key references them.
 --   * Supabase Storage bucket `kortix-capture` for local dev, preview and
 --     self-host (no-op where storage is absent). AWS uses a Terraform bucket.
+--   * Client roles revoked and RLS on with no policy: only the API reads these.
 --
 -- ROLL BACK: no down migration (repo policy). A forward migration drops the
 -- new tables and the function; nothing else references them.
@@ -76,7 +81,6 @@ CREATE TABLE "kortix"."capture_devices" (
 	"status" jsonb,
 	"status_reported_at" timestamp with time zone,
 	"last_credentials_at" timestamp with time zone,
-	"policy_override" jsonb,
 	"index_day" text,
 	"index_etag" text,
 	"index_lines" integer DEFAULT 0 NOT NULL,
@@ -84,17 +88,6 @@ CREATE TABLE "kortix"."capture_devices" (
 	"revoked_by" uuid,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE "kortix"."capture_members" (
-	"account_id" uuid NOT NULL,
-	"user_id" uuid NOT NULL,
-	"role" text NOT NULL,
-	"granted_by" uuid,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "capture_members_pkey" PRIMARY KEY("account_id","user_id"),
-	CONSTRAINT "capture_members_role" CHECK ("kortix"."capture_members"."role" in ('admin', 'member', 'viewer'))
 );
 --> statement-breakpoint
 CREATE TABLE "kortix"."capture_workspaces" (
@@ -120,21 +113,6 @@ CREATE TABLE "kortix"."job_queue" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "job_queue_status" CHECK ("kortix"."job_queue"."status" in ('queued', 'done', 'dead'))
-);
---> statement-breakpoint
-CREATE TABLE "kortix"."range_outputs" (
-	"output_id" uuid PRIMARY KEY DEFAULT kortix.uuid_v7() NOT NULL,
-	"range_id" uuid NOT NULL,
-	"kind" text NOT NULL,
-	"status" text NOT NULL,
-	"model" text,
-	"output" jsonb,
-	"usage" jsonb,
-	"error" text,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "range_outputs_kind" CHECK ("kortix"."range_outputs"."kind" in ('segmentation', 'transcript', 'annotation')),
-	CONSTRAINT "range_outputs_status" CHECK ("kortix"."range_outputs"."status" in ('running', 'done', 'failed'))
 );
 --> statement-breakpoint
 CREATE TABLE "kortix"."timeline_actions" (
@@ -200,32 +178,11 @@ CREATE TABLE "kortix"."timeline_frames" (
 	CONSTRAINT "timeline_frames_pkey" PRIMARY KEY("frame_id","ts")
 ) PARTITION BY RANGE ("ts");
 --> statement-breakpoint
-CREATE TABLE "kortix"."timeline_ranges" (
-	"range_id" uuid PRIMARY KEY DEFAULT kortix.uuid_v7() NOT NULL,
-	"account_id" uuid NOT NULL,
-	"user_id" uuid NOT NULL,
-	"device_id" uuid,
-	"source" text NOT NULL,
-	"title" text,
-	"start_at" timestamp with time zone NOT NULL,
-	"end_at" timestamp with time zone NOT NULL,
-	"status" text DEFAULT 'open' NOT NULL,
-	"created_by" uuid,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "timeline_ranges_source" CHECK ("kortix"."timeline_ranges"."source" in ('detected', 'saved')),
-	CONSTRAINT "timeline_ranges_status" CHECK ("kortix"."timeline_ranges"."status" in ('open', 'closed', 'processing', 'processed', 'failed'))
-);
---> statement-breakpoint
 ALTER TABLE "kortix"."capture_device_grants" ADD CONSTRAINT "capture_device_grants_account_id_accounts_account_id_fk" FOREIGN KEY ("account_id") REFERENCES "kortix"."accounts"("account_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "kortix"."capture_devices" ADD CONSTRAINT "capture_devices_account_id_accounts_account_id_fk" FOREIGN KEY ("account_id") REFERENCES "kortix"."accounts"("account_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "kortix"."capture_members" ADD CONSTRAINT "capture_members_account_id_accounts_account_id_fk" FOREIGN KEY ("account_id") REFERENCES "kortix"."accounts"("account_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "kortix"."capture_workspaces" ADD CONSTRAINT "capture_workspaces_account_id_accounts_account_id_fk" FOREIGN KEY ("account_id") REFERENCES "kortix"."accounts"("account_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "kortix"."range_outputs" ADD CONSTRAINT "range_outputs_range_id_timeline_ranges_range_id_fk" FOREIGN KEY ("range_id") REFERENCES "kortix"."timeline_ranges"("range_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "kortix"."timeline_chunks" ADD CONSTRAINT "timeline_chunks_account_id_accounts_account_id_fk" FOREIGN KEY ("account_id") REFERENCES "kortix"."accounts"("account_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "kortix"."timeline_chunks" ADD CONSTRAINT "timeline_chunks_device_id_capture_devices_device_id_fk" FOREIGN KEY ("device_id") REFERENCES "kortix"."capture_devices"("device_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "kortix"."timeline_ranges" ADD CONSTRAINT "timeline_ranges_account_id_accounts_account_id_fk" FOREIGN KEY ("account_id") REFERENCES "kortix"."accounts"("account_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "kortix"."timeline_ranges" ADD CONSTRAINT "timeline_ranges_device_id_capture_devices_device_id_fk" FOREIGN KEY ("device_id") REFERENCES "kortix"."capture_devices"("device_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "idx_capture_device_grants_user_code" ON "kortix"."capture_device_grants" USING btree ("user_code");--> statement-breakpoint
 CREATE UNIQUE INDEX "idx_capture_device_grants_device_code" ON "kortix"."capture_device_grants" USING btree ("device_code_hash");--> statement-breakpoint
 CREATE INDEX "idx_capture_device_grants_expires" ON "kortix"."capture_device_grants" USING btree ("expires_at");--> statement-breakpoint
@@ -235,7 +192,6 @@ CREATE INDEX "idx_capture_devices_account_user" ON "kortix"."capture_devices" US
 CREATE UNIQUE INDEX "idx_job_queue_key" ON "kortix"."job_queue" USING btree ("queue","job_key");--> statement-breakpoint
 CREATE INDEX "idx_job_queue_due" ON "kortix"."job_queue" USING btree ("queue","run_at") WHERE "kortix"."job_queue"."status" = 'queued';--> statement-breakpoint
 CREATE INDEX "idx_job_queue_finished" ON "kortix"."job_queue" USING btree ("updated_at") WHERE "kortix"."job_queue"."status" <> 'queued';--> statement-breakpoint
-CREATE UNIQUE INDEX "idx_range_outputs_range_kind" ON "kortix"."range_outputs" USING btree ("range_id","kind");--> statement-breakpoint
 CREATE INDEX "idx_timeline_actions_account_user_ts" ON "kortix"."timeline_actions" USING btree ("account_id","user_id","ts");--> statement-breakpoint
 CREATE INDEX "idx_timeline_actions_chunk" ON "kortix"."timeline_actions" USING btree ("chunk_id");--> statement-breakpoint
 CREATE INDEX "idx_timeline_actions_search" ON "kortix"."timeline_actions" USING gin (to_tsvector('simple'::regconfig, coalesce("kind", '') || ' ' || coalesce("app", '') || ' ' || coalesce("window_title", '') || ' ' || coalesce("description", '')));--> statement-breakpoint
@@ -248,8 +204,6 @@ CREATE INDEX "idx_timeline_chunks_device_start" ON "kortix"."timeline_chunks" US
 CREATE INDEX "idx_timeline_frames_account_user_ts" ON "kortix"."timeline_frames" USING btree ("account_id","user_id","ts");--> statement-breakpoint
 CREATE INDEX "idx_timeline_frames_chunk" ON "kortix"."timeline_frames" USING btree ("chunk_id");--> statement-breakpoint
 CREATE INDEX "idx_timeline_frames_search" ON "kortix"."timeline_frames" USING gin (to_tsvector('simple'::regconfig, coalesce("app", '') || ' ' || coalesce("title", '') || ' ' || coalesce("url", '') || ' ' || coalesce("ocr_text", '')));--> statement-breakpoint
-CREATE INDEX "idx_timeline_ranges_account_user_start" ON "kortix"."timeline_ranges" USING btree ("account_id","user_id","start_at");--> statement-breakpoint
-CREATE INDEX "idx_timeline_ranges_open" ON "kortix"."timeline_ranges" USING btree ("end_at") WHERE "kortix"."timeline_ranges"."status" = 'open';--> statement-breakpoint
 CREATE TABLE "kortix"."timeline_frames_default" PARTITION OF "kortix"."timeline_frames" DEFAULT;--> statement-breakpoint
 CREATE TABLE "kortix"."timeline_actions_default" PARTITION OF "kortix"."timeline_actions" DEFAULT;--> statement-breakpoint
 CREATE TABLE "kortix"."timeline_audio_default" PARTITION OF "kortix"."timeline_audio" DEFAULT;--> statement-breakpoint
@@ -313,17 +267,12 @@ END $$;
 -- Only the API (postgres / service_role) reads or writes these tables. Revoke
 -- the client roles and turn RLS on with no policy, so a later blanket grant
 -- still exposes nothing through PostgREST.
-REVOKE ALL ON TABLE "kortix"."job_queue", "kortix"."capture_device_grants", "kortix"."capture_devices",
-  "kortix"."capture_workspaces", "kortix"."capture_members", "kortix"."timeline_chunks", "kortix"."timeline_frames", "kortix"."timeline_actions",
-  "kortix"."timeline_audio", "kortix"."timeline_ranges", "kortix"."range_outputs" FROM anon, authenticated;--> statement-breakpoint
+REVOKE ALL ON TABLE "kortix"."job_queue", "kortix"."capture_device_grants", "kortix"."capture_devices", "kortix"."capture_workspaces", "kortix"."timeline_chunks", "kortix"."timeline_frames", "kortix"."timeline_actions", "kortix"."timeline_audio" FROM anon, authenticated;--> statement-breakpoint
 ALTER TABLE "kortix"."job_queue" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "kortix"."capture_device_grants" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "kortix"."capture_devices" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "kortix"."capture_workspaces" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
-ALTER TABLE "kortix"."capture_members" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "kortix"."timeline_chunks" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "kortix"."timeline_frames" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 ALTER TABLE "kortix"."timeline_actions" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
-ALTER TABLE "kortix"."timeline_audio" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
-ALTER TABLE "kortix"."timeline_ranges" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
-ALTER TABLE "kortix"."range_outputs" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "kortix"."timeline_audio" ENABLE ROW LEVEL SECURITY;

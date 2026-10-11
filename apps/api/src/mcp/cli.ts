@@ -37,7 +37,7 @@ export const DENY_COMMANDS: Record<string, Denial> = {
   token: { reason: 'it prints the raw access token', use: '`whoami --json` names the user' },
   capture: {
     reason: 'Kortix Capture is not on the hosted MCP server; its data is its own API',
-    use: 'the Capture API with a Kortix API key: GET /v1/accounts/<account_id>/capture/… (search, timeline/items, frames, episodes, workflows, exports)',
+    use: 'the Capture API with a Kortix API key: GET /v1/accounts/<account_id>/capture/… (timeline, timeline/items, search, frames, media)',
   },
   tools: { reason: "it reads and edits a local kortix.yaml, and this server has no project checkout", use: 'run_command in a session sandbox, where the project lives: `kortix tools ls` there' },
 };

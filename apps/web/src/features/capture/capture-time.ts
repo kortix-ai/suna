@@ -25,22 +25,10 @@ export function dayWindow(day: string): { from: string; to: string } {
   };
 }
 
-/** `[from, to)` of the last `days` local days, today included. */
-export function lastDaysWindow(days: number, now = new Date()): { from: string; to: string } {
-  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (days - 1));
-  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-  return { from: start.toISOString(), to: end.toISOString() };
-}
-
 /** Whole hours and minutes of a duration in seconds (rounded to the minute). */
 export function durationParts(seconds: number): { hours: number; minutes: number } {
   const total = Math.max(0, Math.round(seconds / 60));
   return { hours: Math.floor(total / 60), minutes: total % 60 };
-}
-
-/** Clamp `at` into `[from, to]`. */
-export function clampTime(at: number, from: number, to: number): number {
-  return Math.min(Math.max(at, from), to);
 }
 
 /**

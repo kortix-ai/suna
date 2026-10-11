@@ -42,7 +42,7 @@ import {
 } from './devices';
 import { accountPrefix } from './format';
 import { CAPTURE_DISABLED, registerCaptureAgentRoutes } from './account-routes';
-import { captureAccountsFor, captureEnabled, captureRole, isAccountMember } from './workspace';
+import { captureAccountsFor, captureEnabled, isAccountMember } from './workspace';
 import { ensurePolicyObject } from './policy';
 
 /** RFC 8628 / RFC 6749 §5.2 error body. */
@@ -375,7 +375,7 @@ function registerDeviceGrantRoutes(app: OpenAPIHono<AppEnv>) {
         }
         accountId = choices[0]!.account_id;
       }
-      if (!(await captureRole(accountId, userId))) return c.json({ error: 'Not found' }, 404);
+      if (!(await isAccountMember(accountId, userId))) return c.json({ error: 'Not found' }, 404);
       if (!(await captureEnabled(accountId))) return c.json(CAPTURE_DISABLED, 403);
       const grant = await grantByUserCode(c.req.valid('param').user_code);
       if (!grant) return c.json({ error: 'Unknown code' }, 404);

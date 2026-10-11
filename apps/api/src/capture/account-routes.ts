@@ -3,17 +3,17 @@
  * Kortix account (organization) is Capture's tenant; there is no project in
  * Capture's model.
  *
- * Roles (workspace.ts): `admin` reads every member's devices and timeline and
- * writes the policy, the members and the switch; `viewer` reads everyone and
- * writes nothing; `member` reads only their own. A read of another member's
- * data writes `capture.member_view`; an account-wide read (devices
- * `scope=account`, people) writes `capture.account_view`.
+ * Access is Kortix IAM. Every account member reads their own devices and
+ * timeline. `capture.read_all` reads every member's (a read of another member
+ * writes `capture.member_view`, an account-wide read `capture.account_view`);
+ * `capture.manage` writes the switch and the policy and revokes any device.
+ * Owner and admin hold both by default.
  *
  * Agents: the agent tool reads through `/v1/capture/me/{timeline,search,frames}`
  * (registerCaptureAgentRoutes), bound to the token's own account and to the
  * person its private session acts for (`capture.agent_read`). A credential that
  * acts for no person (trigger, service account, shared session) gets 403
- * `capture_no_human`.
+ * `capture_no_human`. An agent never reads another person and never writes.
  *
  * Every route except the workspace switch answers 403 `capture_disabled` while
  * Capture is off for the account. The queries live in reads.ts.
@@ -22,7 +22,9 @@ import { createRoute, type OpenAPIHono, z } from '@hono/zod-openapi';
 import * as C from '@kortix/api-contract';
 import type { Context } from 'hono';
 import { accountsRouter } from '../accounts/core/app';
-import { accountRoleFor } from '../iam/read-models';
+import { ACCOUNT_ACTIONS } from '../iam/actions';
+import { authorize } from '../iam/authorize';
+import { actorOf } from '../middleware/actor';
 import { auth, errors, json } from '../openapi';
 import { callerKortixSessionId } from '../middleware/caller-session';
 import { getRequestOnBehalfOf } from '../middleware/on-behalf-of';
@@ -30,26 +32,19 @@ import { supabaseAuth } from '../middleware/auth';
 import { recordAuditEvent } from '../shared/audit';
 import type { AppEnv } from '../types';
 import { PolicySchema } from './format';
-import { readAccountPolicy, writeAccountPolicy, writeDevicePolicy } from './policy';
+import { readAccountPolicy, writeAccountPolicy } from './policy';
 import {
   assetUrl,
   nearestScreenshot,
   chunkOf,
-  closeRangeForReprocess,
   deviceInAccount,
   deviceView,
   frameOf,
   frameVideoOffsetMs,
   listDevices,
   mediaUrl,
-  peopleSummary,
-  rangeInAccount,
-  rangeOutputsOf,
-  rangeView,
-  rangesFor,
   recordedDays,
   revokeDevice,
-  saveRange,
   searchTimeline,
   sessionVisibility,
   timelineChunksIn,
@@ -58,17 +53,7 @@ import {
   type SearchKind,
 } from './reads';
 import { captureStoreConfigured } from './store';
-import { enqueueRangeProcessing, pollDevice } from './workers';
-import {
-  CAPTURE_ROLES,
-  captureRole,
-  listCaptureMembers,
-  readWorkspace,
-  readsEveryone,
-  setCaptureEnabled,
-  setCaptureMemberRole,
-  type CaptureRole,
-} from './workspace';
+import { isAccountMember, readWorkspace, setCaptureEnabled } from './workspace';
 
 export type Ctx = Context<AppEnv>;
 
@@ -76,11 +61,12 @@ export interface Access {
   accountId: string;
   /** The human the caller is (or acts for). */
   viewer: string;
-  /** Whose data this request reads; null = the whole account (admins, viewers). */
+  /** Whose data this request reads; null = the whole account (`capture.read_all`). */
   subject: string | null;
-  role: CaptureRole;
-  /** True for a role that reads other members (admin, viewer); never for an agent. */
+  /** `capture.read_all`: reads other members. Never true for an agent. */
   readsAll: boolean;
+  /** `capture.manage`: the switch, the policy, revoking any device. Never true for an agent. */
+  manages: boolean;
   sessionId: string | null;
 }
 
@@ -120,6 +106,17 @@ async function viewerOf(c: Ctx, accountId: string): Promise<{ viewer: string | n
   return { viewer: null, sessionId: null };
 }
 
+/** What IAM lets this human (not an agent) do with other people's capture. */
+async function capturePowers(c: Ctx, accountId: string, sessionId: string | null) {
+  if (sessionId) return { readsAll: false, manages: false };
+  const actor = await actorOf(c, accountId);
+  const [readAll, manage] = await Promise.all([
+    authorize(actor, ACCOUNT_ACTIONS.CAPTURE_READ_ALL),
+    authorize(actor, ACCOUNT_ACTIONS.CAPTURE_MANAGE),
+  ]);
+  return { readsAll: readAll.allowed, manages: manage.allowed };
+}
+
 export async function captureAccessFor(
   c: Ctx,
   accountId: string,
@@ -129,19 +126,25 @@ export async function captureAccessFor(
   if (who === 'wrong_account') return c.json({ error: 'Not found' }, 404);
   const { viewer, sessionId } = who;
   if (!viewer) return refuse(c, 403, 'capture_no_human', 'This credential does not act for a person, so it has no capture timeline');
-  const role = await captureRole(accountId, viewer);
-  if (!role) return c.json({ error: 'Not found' }, 404);
+  if (!(await isAccountMember(accountId, viewer))) return c.json({ error: 'Not found' }, 404);
   if (!(await readWorkspace(accountId)).enabled) return c.json(CAPTURE_DISABLED, 403);
-  const readsAll = !sessionId && readsEveryone(role);
   const subject = opts.accountWide ? null : (opts.userId ?? viewer);
-  const access: Access = { accountId, viewer, subject, role, readsAll, sessionId };
+  const powers = subject === viewer ? { readsAll: false, manages: false } : await capturePowers(c, accountId, sessionId);
+  const access: Access = { accountId, viewer, subject, ...powers, sessionId };
   if (subject !== viewer) {
-    if (!readsAll) return refuse(c, 403, 'capture_forbidden', 'Only a Capture admin or viewer can read another member’s capture data');
+    if (!access.readsAll) return refuse(c, 403, 'capture_forbidden', 'Reading another member’s capture needs the capture.read_all permission');
     await auditRead(c, access, subject ? 'capture.member_view' : 'capture.account_view', subject);
   } else if (sessionId) {
     await auditRead(c, access, 'capture.agent_read', viewer);
   }
   return access;
+}
+
+/** Access plus the caller's IAM powers, for a route that names a device or writes (assets, revoke, policy). */
+async function captureAccessWithPowers(c: Ctx): Promise<Access | Response> {
+  const access = await captureAccess(c);
+  if (isResponse(access)) return access;
+  return { ...access, ...(await capturePowers(c, access.accountId, access.sessionId)) };
 }
 
 /** Access for an account route: the account is the `:accountId` path segment. */
@@ -171,13 +174,12 @@ export const BAD_WINDOW = 'Give day=YYYY-MM-DD, or from/to ISO instants at most 
 
 /**
  * A device of this account the caller may act on. Someone else's device is
- * "not found" to a member; `write` (revoke) also needs the admin role for
- * another person's device.
+ * "not found" without `capture.read_all`; revoking it needs `capture.manage`.
  */
 async function loadDevice(access: Access, deviceId: string, opts: { write?: boolean } = {}) {
   const device = await deviceInAccount(access.accountId, deviceId);
   if (!device) return null;
-  if (device.userId !== access.viewer && (!access.readsAll || (opts.write && access.role !== 'admin'))) return null;
+  if (device.userId !== access.viewer && !(opts.write ? access.manages : access.readsAll)) return null;
   return device;
 }
 
@@ -193,7 +195,7 @@ const subjectQuery = z.object({
 });
 const searchQuery = subjectQuery.extend({
   q: z.string().min(1),
-  scope: z.enum(['mine', 'account']).optional().describe('account: every member (Capture admins and viewers; audited as capture.account_view)'),
+  scope: z.enum(['mine', 'account']).optional().describe('account: every member (capture.read_all; audited as capture.account_view)'),
   kinds: z.string().optional().describe('Comma list of screen, actions, audio (default all)'),
   app: z.string().optional(),
   limit: z.string().optional(),
@@ -205,12 +207,11 @@ async function timelineResponse(c: Ctx, access: Access, deviceId?: string) {
     const span = window(c);
     if (!span) return refuse(c, 400, 'capture_bad_window', BAD_WINDOW);
     const subject = access.subject!;
-    const [runs, chunks, ranges] = await Promise.all([
+    const [runs, chunks] = await Promise.all([
       timelineRuns(access.accountId, subject, span, deviceId),
       timelineChunksIn(access.accountId, subject, span, deviceId),
-      rangesFor(access.accountId, subject, span),
     ]);
-    return c.json({ user_id: subject, from: span.from.toISOString(), to: span.to.toISOString(), runs, chunks, ranges }, 200);
+    return c.json({ user_id: subject, from: span.from.toISOString(), to: span.to.toISOString(), runs, chunks }, 200);
 }
 
 interface SearchQuery {
@@ -249,7 +250,19 @@ async function frameResponse(c: Ctx, access: Access, frameId: string) {
     return c.json({ frame: found.frame, video: video && { ...video, offset_ms: offset }, screenshot }, 200);
 }
 
-// ─── Workspace: the account switch, your role, the members ──────────────────
+// ─── Workspace: the account switch and what you may do ──────────────────────
+
+/** The workspace as a person sees it. */
+async function workspaceView(c: Ctx, accountId: string, sessionId: string | null) {
+  const [workspace, powers] = await Promise.all([readWorkspace(accountId), capturePowers(c, accountId, sessionId)]);
+  return {
+    account_id: accountId,
+    enabled: workspace.enabled,
+    can_read_all: powers.readsAll,
+    can_manage: powers.manages,
+    updated_at: workspace.updatedAt?.toISOString() ?? null,
+  };
+}
 
 function registerCaptureWorkspaceRoutes() {
 accountsRouter.openapi(
@@ -257,7 +270,7 @@ accountsRouter.openapi(
     method: 'get',
     path: '/{accountId}/capture',
     tags,
-    summary: 'The account’s Capture workspace: on or off, your Capture role, and whether you may turn it on',
+    summary: 'The account’s Capture workspace: on or off, and whether you may read everyone (capture.read_all) and manage it (capture.manage)',
     ...auth,
     request: { params },
     responses: { 200: json(C.CaptureWorkspaceSchema, 'The workspace'), ...errors(400, 403, 404) },
@@ -266,20 +279,8 @@ accountsRouter.openapi(
     const { accountId } = c.req.valid('param');
     const who = await viewerOf(c, accountId);
     if (who === 'wrong_account' || !who.viewer) return c.json({ error: 'Not found' }, 404);
-    const role = await captureRole(accountId, who.viewer);
-    if (!role) return c.json({ error: 'Not found' }, 404);
-    const accountRole = await accountRoleFor(accountId, who.viewer);
-    const workspace = await readWorkspace(accountId);
-    return c.json(
-      {
-        account_id: accountId,
-        enabled: workspace.enabled,
-        role,
-        can_manage: !who.sessionId && (accountRole === 'owner' || accountRole === 'admin'),
-        updated_at: workspace.updatedAt?.toISOString() ?? null,
-      },
-      200,
-    );
+    if (!(await isAccountMember(accountId, who.viewer))) return c.json({ error: 'Not found' }, 404);
+    return c.json(await workspaceView(c, accountId, who.sessionId), 200);
   },
 );
 
@@ -288,7 +289,7 @@ accountsRouter.openapi(
     method: 'patch',
     path: '/{accountId}/capture',
     tags,
-    summary: 'Turn Capture on or off for the account (account owners and admins)',
+    summary: 'Turn Capture on or off for the account (capture.manage)',
     ...auth,
     request: { params, body: { content: { 'application/json': { schema: z.object({ enabled: z.boolean() }) } } } },
     responses: { 200: json(C.CaptureWorkspaceSchema, 'The workspace'), ...errors(400, 403, 404) },
@@ -298,13 +299,12 @@ accountsRouter.openapi(
     const who = await viewerOf(c, accountId);
     if (who === 'wrong_account' || !who.viewer) return c.json({ error: 'Not found' }, 404);
     if (who.sessionId) return refuse(c, 403, 'capture_forbidden', 'An agent cannot turn Capture on or off');
-    const accountRole = await accountRoleFor(accountId, who.viewer);
-    if (!accountRole) return c.json({ error: 'Not found' }, 404);
-    if (accountRole !== 'owner' && accountRole !== 'admin') {
-      return refuse(c, 403, 'capture_forbidden', 'Only an account owner or admin can turn Capture on or off');
+    if (!(await isAccountMember(accountId, who.viewer))) return c.json({ error: 'Not found' }, 404);
+    if (!(await capturePowers(c, accountId, null)).manages) {
+      return refuse(c, 403, 'capture_forbidden', 'Turning Capture on or off needs the capture.manage permission');
     }
     const { enabled } = c.req.valid('json');
-    const workspace = await setCaptureEnabled(accountId, enabled, who.viewer);
+    await setCaptureEnabled(accountId, enabled, who.viewer);
     await recordAuditEvent({
       accountId,
       actorUserId: who.viewer,
@@ -315,74 +315,7 @@ accountsRouter.openapi(
       outcome: 'success',
       metadata: { path: c.req.path },
     });
-    return c.json(
-      {
-        account_id: accountId,
-        enabled: workspace.enabled,
-        role: (await captureRole(accountId, who.viewer))!,
-        can_manage: true,
-        updated_at: workspace.updatedAt?.toISOString() ?? null,
-      },
-      200,
-    );
-  },
-);
-
-accountsRouter.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{accountId}/capture/members',
-    tags,
-    summary: 'Every account member with their Capture role (Capture admins)',
-    ...auth,
-    request: { params },
-    responses: ok('The members'),
-  }),
-  async (c) => {
-    const access = await captureAccess(c, { accountWide: true });
-    if (isResponse(access)) return access as never;
-    if (access.role !== 'admin') return refuse(c, 403, 'capture_forbidden', 'Only a Capture admin can list the Capture roles');
-    return c.json({ members: await listCaptureMembers(access.accountId) }, 200);
-  },
-);
-
-accountsRouter.openapi(
-  createRoute({
-    method: 'put',
-    path: '/{accountId}/capture/members/{userId}',
-    tags,
-    summary: 'Set a member’s Capture role (admin, viewer, member), or clear it (null) back to the account-role default (Capture admins)',
-    ...auth,
-    request: {
-      params: params.extend({ userId: z.string().uuid() }),
-      body: { content: { 'application/json': { schema: z.object({ role: z.enum(['admin', 'viewer', 'member']).nullable() }) } } },
-    },
-    responses: ok('The member'),
-  }),
-  async (c) => {
-    const access = await captureAccess(c, { accountWide: true });
-    if (isResponse(access)) return access as never;
-    if (access.role !== 'admin') return refuse(c, 403, 'capture_forbidden', 'Only a Capture admin can change a Capture role');
-    const { userId } = c.req.valid('param');
-    if (!(await accountRoleFor(access.accountId, userId))) return c.json({ error: 'Not found' }, 404);
-    const { role } = c.req.valid('json');
-    if (role !== null && !CAPTURE_ROLES.includes(role)) return refuse(c, 400, 'capture_bad_role', 'role is admin, viewer, member or null');
-    if (userId === access.viewer && role !== null && role !== 'admin') {
-      return refuse(c, 400, 'capture_bad_role', 'You cannot take your own admin role; ask another Capture admin');
-    }
-    await setCaptureMemberRole(access.accountId, userId, role, access.viewer);
-    await recordAuditEvent({
-      accountId: access.accountId,
-      actorUserId: access.viewer,
-      actorType: 'human',
-      action: 'capture.member_role',
-      resourceType: 'capture_member',
-      resourceId: userId,
-      outcome: 'success',
-      metadata: { path: c.req.path, role },
-    });
-    const member = (await listCaptureMembers(access.accountId)).find((m) => m.user_id === userId)!;
-    return c.json(member, 200);
+    return c.json(await workspaceView(c, accountId, null), 200);
   },
 );
 }
@@ -394,7 +327,7 @@ accountsRouter.openapi(
     method: 'get',
     path: '/{accountId}/capture/devices',
     tags,
-    summary: 'Capture devices with live status: yours, a member’s (admins, viewers), or the account’s (admins, viewers, scope=account)',
+    summary: 'Capture devices with live status: yours, a member’s, or the account’s (`scope=account`); another person’s need capture.read_all',
     ...auth,
     request: { params, query: z.object({ user_id: z.string().uuid().optional(), scope: z.enum(['mine', 'account']).optional() }) },
     responses: ok('The devices'),
@@ -418,33 +351,12 @@ accountsRouter.openapi(
     responses: ok('The revoked device'),
   }),
   async (c) => {
-    const access = await captureAccess(c);
+    const access = await captureAccessWithPowers(c);
     if (isResponse(access)) return access as never;
     if (access.sessionId) return refuse(c, 403, 'capture_forbidden', 'An agent cannot revoke a capture device');
     const device = await loadDevice(access, c.req.valid('param').deviceId, { write: true });
     if (!device) return c.json({ error: 'Not found' }, 404);
     return c.json(deviceView(await revokeDevice(device.deviceId, access.viewer)), 200);
-  },
-);
-
-accountsRouter.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{accountId}/capture/devices/{deviceId}/sync',
-    tags,
-    summary: 'Read a device’s status, description and index now, queue every new item for indexing, and retract every item the device deleted',
-    ...auth,
-    request: { params: params.extend({ deviceId: z.string().uuid() }) },
-    responses: { ...ok('The number of items queued and the number retracted'), ...errors(503) },
-  }),
-  async (c) => {
-    const access = await captureAccess(c);
-    if (isResponse(access)) return access as never;
-    if (!captureStoreConfigured()) return refuse(c, 503, 'capture_store_unavailable', 'No capture store is configured');
-    const device = await loadDevice(access, c.req.valid('param').deviceId);
-    if (!device || device.revokedAt) return c.json({ error: 'Not found' }, 404);
-    const { enqueued, forgotten } = await pollDevice(device);
-    return c.json({ device_id: device.deviceId, enqueued, forgotten }, 200);
   },
 );
 
@@ -461,7 +373,7 @@ accountsRouter.openapi(
   async (c) => {
     const { deviceId, name } = c.req.valid('param');
     if (!/^(sha256-)?[0-9a-f]{64}\.[a-z0-9]{1,8}$/.test(name)) return refuse(c, 400, 'capture_bad_asset', 'Asset names are sha256-<hex>.<ext>');
-    const access = await captureAccess(c);
+    const access = await captureAccessWithPowers(c);
     if (isResponse(access)) return access as never;
     const device = await loadDevice(access, deviceId);
     if (!device) return c.json({ error: 'Not found' }, 404);
@@ -496,47 +408,19 @@ accountsRouter.openapi(
     method: 'put',
     path: '/{accountId}/capture/policy',
     tags,
-    summary: 'Set the account capture policy (Capture admins); publishes orgs/<account_id>/policy.json',
+    summary: 'Set the account capture policy (capture.manage); publishes orgs/<account_id>/policy.json',
     ...auth,
     request: { params, body: { content: { 'application/json': { schema: z.object({ policy: z.record(z.string(), z.any()) }) } } } },
     responses: { ...ok('The stored policy'), ...errors(503) },
   }),
   async (c) => {
-    const access = await captureAccess(c);
+    const access = await captureAccessWithPowers(c);
     if (isResponse(access)) return access as never;
-    if (access.role !== 'admin') return refuse(c, 403, 'capture_forbidden', 'Only a Capture admin can change the capture policy');
+    if (!access.manages) return refuse(c, 403, 'capture_forbidden', 'Changing the capture policy needs the capture.manage permission');
     if (!captureStoreConfigured()) return refuse(c, 503, 'capture_store_unavailable', 'No capture store is configured');
     const parsed = PolicySchema.safeParse(c.req.valid('json').policy);
     if (!parsed.success) return refuse(c, 400, 'capture_policy_invalid', parsed.error.issues[0]?.message ?? 'Invalid policy');
     return c.json(await writeAccountPolicy(access.accountId, parsed.data, access.viewer), 200);
-  },
-);
-
-accountsRouter.openapi(
-  createRoute({
-    method: 'put',
-    path: '/{accountId}/capture/devices/{deviceId}/policy',
-    tags,
-    summary: 'Set or clear (null) one device’s policy override (Capture admins); publishes orgs/<account_id>/<device_id>/policy.json',
-    ...auth,
-    request: {
-      params: params.extend({ deviceId: z.string().uuid() }),
-      body: { content: { 'application/json': { schema: z.object({ policy: z.record(z.string(), z.any()).nullable() }) } } },
-    },
-    responses: { ...ok('The device'), ...errors(503) },
-  }),
-  async (c) => {
-    const access = await captureAccess(c);
-    if (isResponse(access)) return access as never;
-    if (access.role !== 'admin') return refuse(c, 403, 'capture_forbidden', 'Only a Capture admin can change a device policy');
-    if (!captureStoreConfigured()) return refuse(c, 503, 'capture_store_unavailable', 'No capture store is configured');
-    const device = await loadDevice(access, c.req.valid('param').deviceId);
-    if (!device) return c.json({ error: 'Not found' }, 404);
-    const raw = c.req.valid('json').policy;
-    const parsed = raw === null ? null : PolicySchema.safeParse(raw);
-    if (parsed && !parsed.success) return refuse(c, 400, 'capture_policy_invalid', parsed.error.issues[0]?.message ?? 'Invalid policy');
-    await writeDevicePolicy(access.accountId, device.deviceId, parsed ? parsed.data : null);
-    return c.json(deviceView((await deviceInAccount(access.accountId, device.deviceId))!), 200);
   },
 );
 }
@@ -548,7 +432,7 @@ accountsRouter.openapi(
     method: 'get',
     path: '/{accountId}/capture/timeline',
     tags,
-    summary: 'One person’s timeline for a day or window: activity runs (app + window), indexed items, and ranges',
+    summary: 'One person’s timeline for a day or window: activity runs (app + window) and indexed items',
     ...auth,
     request: { params, query: subjectQuery },
     responses: ok('The timeline'),
@@ -619,7 +503,7 @@ accountsRouter.openapi(
     method: 'get',
     path: '/{accountId}/capture/search',
     tags,
-    summary: 'Full-text search of one person’s timeline, or the account’s (`scope=account`, admins and viewers): screen (app, window, URL, on-screen text; one hit per chunk and window), actions and audio',
+    summary: 'Full-text search of one person’s timeline, or the account’s (`scope=account`, capture.read_all): screen (app, window, URL, on-screen text; one hit per chunk and window), actions and audio',
     ...auth,
     request: {
       params,
@@ -675,147 +559,6 @@ accountsRouter.openapi(
 );
 }
 
-// ─── Ranges ──────────────────────────────────────────────────────────────────
-function registerCaptureRangesRoutes() {
-/** A range of this account the caller may read. Another member's is audited for admins and viewers, "not found" otherwise. */
-async function loadRange(c: Ctx, access: Access, rangeId: string) {
-  const range = await rangeInAccount(access.accountId, rangeId);
-  if (!range) return null;
-  if (range.userId !== access.viewer) {
-    if (!access.readsAll) return null;
-    await auditRead(c, access, 'capture.member_view', range.userId);
-  }
-  return range;
-}
-
-accountsRouter.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{accountId}/capture/ranges',
-    tags,
-    summary: 'One person’s ranges (detected activity sessions and saved spans) in a window',
-    ...auth,
-    request: { params, query: subjectQuery },
-    responses: ok('The ranges'),
-  }),
-  async (c) => {
-    const access = await captureAccess(c, { userId: c.req.valid('query').user_id });
-    if (isResponse(access)) return access as never;
-    const span = window(c);
-    if (!span) return refuse(c, 400, 'capture_bad_window', BAD_WINDOW);
-    return c.json({ ranges: await rangesFor(access.accountId, access.subject!, span) }, 200);
-  },
-);
-
-accountsRouter.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{accountId}/capture/ranges',
-    tags,
-    summary: 'Save a span of your own timeline as a range and process it',
-    ...auth,
-    request: {
-      params,
-      body: {
-        content: {
-          'application/json': {
-            schema: z.object({ start_at: z.string(), end_at: z.string(), title: z.string().max(200).optional(), device_id: z.string().uuid().optional() }),
-          },
-        },
-      },
-    },
-    responses: { 201: json(z.any(), 'The saved range'), ...errors(400, 403, 404) },
-  }),
-  async (c) => {
-    const access = await captureAccess(c);
-    if (isResponse(access)) return access as never;
-    const body = c.req.valid('json');
-    const startAt = new Date(body.start_at);
-    const endAt = new Date(body.end_at);
-    if (Number.isNaN(startAt.getTime()) || Number.isNaN(endAt.getTime()) || endAt <= startAt || endAt.getTime() - startAt.getTime() > 24 * 3_600_000) {
-      return refuse(c, 400, 'capture_bad_window', 'start_at < end_at, at most 24 hours apart');
-    }
-    if (body.device_id) {
-      const device = await loadDevice(access, body.device_id);
-      if (!device || device.userId !== access.viewer) return c.json({ error: 'Not found' }, 404);
-    }
-    const range = await saveRange({
-      accountId: access.accountId,
-      userId: access.viewer,
-      deviceId: body.device_id ?? null,
-      title: body.title?.trim() || null,
-      startAt,
-      endAt,
-    });
-    await enqueueRangeProcessing(range);
-    return c.json(rangeView(range), 201);
-  },
-);
-
-accountsRouter.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{accountId}/capture/ranges/{rangeId}',
-    tags,
-    summary: 'One range with its processing outputs (segmentation, transcript, annotation)',
-    ...auth,
-    request: { params: params.extend({ rangeId: z.string().uuid() }) },
-    responses: ok('The range'),
-  }),
-  async (c) => {
-    const access = await captureAccess(c);
-    if (isResponse(access)) return access as never;
-    const range = await loadRange(c, access, c.req.valid('param').rangeId);
-    if (!range) return c.json({ error: 'Not found' }, 404);
-    return c.json({ ...rangeView(range), outputs: await rangeOutputsOf(range.rangeId) }, 200);
-  },
-);
-
-accountsRouter.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{accountId}/capture/ranges/{rangeId}/process',
-    tags,
-    summary: 'Run the range pipelines again',
-    ...auth,
-    request: { params: params.extend({ rangeId: z.string().uuid() }) },
-    responses: { 202: json(z.any(), 'Queued'), ...errors(403, 404) },
-  }),
-  async (c) => {
-    const access = await captureAccess(c);
-    if (isResponse(access)) return access as never;
-    if (access.sessionId) return refuse(c, 403, 'capture_forbidden', 'An agent cannot start range processing');
-    const range = await loadRange(c, access, c.req.valid('param').rangeId);
-    if (!range) return c.json({ error: 'Not found' }, 404);
-    await closeRangeForReprocess(range.rangeId);
-    const queued = await enqueueRangeProcessing(range, `:rerun-${Date.now()}`);
-    return c.json({ range_id: range.rangeId, queued }, 202);
-  },
-);
-}
-
-// ─── People (managers) ───────────────────────────────────────────────────────
-function registerCapturePeopleRoutes() {
-accountsRouter.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{accountId}/capture/people',
-    tags,
-    summary: 'Per member: active time, time per app, ranges and devices in a window (Capture admins and viewers)',
-    ...auth,
-    request: { params, query: z.object({ day: z.string().optional(), from: z.string().optional(), to: z.string().optional() }) },
-    responses: ok('The summary'),
-  }),
-  async (c) => {
-    const access = await captureAccess(c, { accountWide: true });
-    if (isResponse(access)) return access as never;
-    const span = window(c);
-    if (!span) return refuse(c, 400, 'capture_bad_window', BAD_WINDOW);
-    return c.json({ from: span.from.toISOString(), to: span.to.toISOString(), people: await peopleSummary(access.accountId, span) }, 200);
-  },
-);
-}
-
 /** Every account-scoped Capture route, in dispatch order. */
 export function registerCaptureRoutes() {
   registerCaptureWorkspaceRoutes();
@@ -823,10 +566,7 @@ export function registerCaptureRoutes() {
   registerCapturePolicyRoutes();
   registerCaptureTimelineRoutes();
   registerCaptureMediaRoutes();
-  registerCaptureRangesRoutes();
-  registerCapturePeopleRoutes();
 }
-
 
 // ─── The agent tool: /v1/capture/me/* (account from the token) ──────────────
 

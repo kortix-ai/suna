@@ -1,33 +1,20 @@
 /**
  * The Capture tenant: one workspace per Kortix account. Capture has no project
  * in its model. A workspace row carries the account-level switch (`enabled`)
- * and the policy; `capture_members` overrides a person's Capture role.
+ * and the policy.
  *
- * Roles. Default from the account role: owner/admin → `admin`, member →
- * `member`. A `capture_members` row overrides it.
- *   admin   every member's devices and timeline (each read audited), the
- *           policy, the members, the switch.
- *   viewer  every member's devices and timeline (each read audited), no writes.
- *   member  their own devices and timeline only.
+ * Access is Kortix IAM, not a Capture table. Every account member records and
+ * reads their own capture. Two account leaves reach other people:
+ * `capture.read_all` (every member's devices and timeline, each read audited)
+ * and `capture.manage` (the switch, the policy, revoking any device). Owner
+ * and admin hold both by default; a custom role can grant either.
  */
-import { accounts, captureMembers, captureWorkspaces } from '@kortix/db';
+import { accounts, captureWorkspaces } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { accountMemberRow } from '../iam/membership-read';
-import { accountRoleFor, accountRoleMap, accountRolesForUser, type AccountRoleKey } from '../iam/read-models';
+import { accountRolesForUser } from '../iam/read-models';
 import { db } from '../shared/db';
 import { DEFAULT_POLICY, PolicySchema, type CapturePolicy } from './format';
-
-export type CaptureRole = 'admin' | 'viewer' | 'member';
-export const CAPTURE_ROLES: readonly CaptureRole[] = ['admin', 'viewer', 'member'];
-
-export function defaultCaptureRole(accountRole: AccountRoleKey): CaptureRole {
-  return accountRole === 'owner' || accountRole === 'admin' ? 'admin' : 'member';
-}
-
-/** True for a role that may read other members' data. */
-export function readsEveryone(role: CaptureRole): boolean {
-  return role === 'admin' || role === 'viewer';
-}
 
 export interface Workspace {
   accountId: string;
@@ -65,63 +52,6 @@ export async function setCaptureEnabled(accountId: string, enabled: boolean, use
     .values({ accountId, enabled, updatedBy: userId })
     .onConflictDoUpdate({ target: captureWorkspaces.accountId, set: { enabled, updatedBy: userId, updatedAt: sql`now()` } });
   return readWorkspace(accountId);
-}
-
-/** A person's Capture role in an account, or null when they are not a member of it. */
-export async function captureRole(accountId: string, userId: string): Promise<CaptureRole | null> {
-  const accountRole = await accountRoleFor(accountId, userId);
-  if (!accountRole) return null;
-  const [override] = await db
-    .select({ role: captureMembers.role })
-    .from(captureMembers)
-    .where(and(eq(captureMembers.accountId, accountId), eq(captureMembers.userId, userId)))
-    .limit(1);
-  return (override?.role as CaptureRole | undefined) ?? defaultCaptureRole(accountRole);
-}
-
-export interface CaptureMember {
-  user_id: string;
-  account_role: AccountRoleKey;
-  role: CaptureRole;
-  /** True when the role comes from a `capture_members` row, not the account role. */
-  overridden: boolean;
-}
-
-/** Every account member with their effective Capture role. */
-export async function listCaptureMembers(accountId: string): Promise<CaptureMember[]> {
-  const roles = await accountRoleMap(accountId);
-  const overrides = new Map(
-    (await db.select().from(captureMembers).where(eq(captureMembers.accountId, accountId))).map((row) => [
-      row.userId,
-      row.role as CaptureRole,
-    ]),
-  );
-  return [...roles].map(([userId, accountRole]) => ({
-    user_id: userId,
-    account_role: accountRole,
-    role: overrides.get(userId) ?? defaultCaptureRole(accountRole),
-    overridden: overrides.has(userId),
-  }));
-}
-
-/** Set a person's Capture role, or clear the override (null) back to the account-role default. */
-export async function setCaptureMemberRole(
-  accountId: string,
-  userId: string,
-  role: CaptureRole | null,
-  grantedBy: string,
-): Promise<void> {
-  if (role === null) {
-    await db.delete(captureMembers).where(and(eq(captureMembers.accountId, accountId), eq(captureMembers.userId, userId)));
-    return;
-  }
-  await db
-    .insert(captureMembers)
-    .values({ accountId, userId, role, grantedBy })
-    .onConflictDoUpdate({
-      target: [captureMembers.accountId, captureMembers.userId],
-      set: { role, grantedBy, updatedAt: sql`now()` },
-    });
 }
 
 /** The accounts a person belongs to where Capture is on (device sign-in picks one). */
