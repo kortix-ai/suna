@@ -1,5 +1,5 @@
 {
-  "source_hash": "c66623b7ef774a674e998d176ecc2b3cb29afc6c4fe9b4b0428a8eb11a129f3b",
+  "source_hash": "fb04907d3dca69aa25d31d900f48461f79c2a40290ab41afc9a3b801f9c0e7b8",
   "diff_files": [
     "apps/api/src/__tests__/helpers/convex-apps.ts",
     "apps/api/src/__tests__/integration-monthly-compute-accrual.test.ts",
@@ -145,12 +145,11 @@
     "apps/web/translations/zh.json",
     "infra/cloudflare/workers/apps-router/worker.mjs",
     "infra/cloudflare/workers/apps-router/worker.test.mjs",
-    "packages/db/drizzle/meta/20261010163749_snapshot.json",
-    "packages/db/drizzle/meta/20261010172540_snapshot.json",
+    "packages/db/drizzle/meta/20261011010448_snapshot.json",
     "packages/db/drizzle/meta/_journal.json",
-    "packages/db/migrations/20261010163749237_apps_fly_model.sql",
-    "packages/db/migrations/20261010172557555_app_runtimes_one_live_per_machine.concurrent.ts",
-    "packages/db/migrations/20261010172602895_drop_app_runtimes_one_live_per_deployment.concurrent.ts",
+    "packages/db/migrations/20261011010443000_apps_fly_model.sql",
+    "packages/db/migrations/20261011010444000_app_runtimes_one_live_per_machine.concurrent.ts",
+    "packages/db/migrations/20261011010445000_drop_app_runtimes_one_live_per_deployment.concurrent.ts",
     "packages/db/src/index.ts",
     "packages/db/src/schema/kortix.test.ts",
     "packages/db/src/schema/kortix.ts",
@@ -209,13 +208,13 @@
     "tests/src/flows/apps-tokens.flow.ts",
     "tests/src/flows/apps.flow.ts"
   ],
-  "diff_hash": "c53cde6924ee72be8ca67e0baf8432ef117cac29edee7268260eb63cfde86a3a",
-  "head": "c94e72000e4beef2ee5ec6d53a0cb04532137e0e",
+  "diff_hash": "90a3caf83243eaa3c206792af0faf2eb79e8e2349a6f245c730b33625289903b",
+  "head": "0924d629703e5638330b84ba3793ad61d3205a55",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-11T00:55:47.465Z"
+  "at": "2026-10-11T01:16:54.690Z"
 }
