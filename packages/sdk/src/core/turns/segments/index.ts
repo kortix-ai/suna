@@ -19,3 +19,4 @@ export * from './show-group';
 export * from './step-label';
 export * from './working-turn';
 export * from './turn-busy-visibility';
+export * from './work-split';
