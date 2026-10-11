@@ -7,9 +7,9 @@
  * the preview proxy (`recordSessionActivity`), seconds after the client
  * already consumed the session. Before this fix, a replenish racing that gap
  * found the just-taken session and handed it straight back as
- * `reused: true`. `takeWarmSession` (apps/web) then stored it back into
- * `ready[projectId]`, so the next "New Session" click reused the previous
- * conversation.
+ * `reused: true`. The take (`apps/web` `use-warm-project-session.ts`) then
+ * stored it back into `ready[projectId]`, so the next "New Session" click
+ * reused the previous conversation.
  *
  * Real local Postgres, no `mock.module` (process-wide in this app and a
  * hazard for sibling suites) — same shape as

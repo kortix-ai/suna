@@ -120,7 +120,6 @@ describe('appStatus / durationText', () => {
     access_revision: 1,
     machine: { cpu: 2, memory_gb: 4, disk_gb: 10 },
     idle_timeout_seconds: 600,
-    monthly_budget_usd: 5,
     last_request_at: null,
     created_at: '2026-09-01T00:00:00Z',
     updated_at: '2026-09-01T00:00:00Z',

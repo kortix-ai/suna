@@ -139,6 +139,8 @@ async function verifyAgentTunnelCli(): Promise<void> {
     'install-service',
     'service-status',
     'uninstall-service',
+    'access',
+    'keep-awake',
     '--daemon',
     '--foreground',
   ]) {

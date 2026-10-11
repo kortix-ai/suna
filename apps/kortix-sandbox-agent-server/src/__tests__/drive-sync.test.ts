@@ -187,6 +187,18 @@ describe('drive sync', () => {
     expect(fake.paths(DRIVE)).toContain('/copy.bin')
   })
 
+  test('a download cut short resumes from the bytes it has and lands the whole file', async () => {
+    const body = `${'a'.repeat(3000)}${'b'.repeat(3000)}`
+    mount()
+    fake.write(DRIVE, '/big.txt', body)
+    fake.cutNextRead = 2000
+    const dest = join(dir, 'big.txt')
+    await api().drive(DRIVE).download('/big.txt', dest)
+    expect(readFileSync(dest, 'utf8')).toBe(body)
+    expect(fake.calls.filter((c) => c.startsWith('GET /files/content'))).toHaveLength(2)
+    expect(existsSync(`${dest}.part`)).toBe(false)
+  })
+
   test('conflict copies are named like Drive’s, after the original even for a copy of a copy', () => {
     const at = new Date(Date.UTC(2026, 9, 3, 14, 5))
     expect(conflictCopyName('notes.md', at)).toBe('notes (conflict 2026-10-03 1405).md')

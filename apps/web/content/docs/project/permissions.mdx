@@ -137,18 +137,20 @@ The App's **Access** dialog lists the agents with access, read from
 
 ## Apps that hold data
 
-A [`convex` App](/docs/feature-flags/apps#kind-convex-a-convex-backend) holds
-the project's data and an admin key. One permission guards the powers that
-reach past the App's functions:
+A server App with a [volume](/docs/feature-flags/apps#volumes) holds data that
+outlives every release. One permission guards the powers that reach past the
+App's own code:
 
 | Permission | Allows |
 |---|---|
-| `project.app.admin` | Reveal and rotate an App's admin credentials (and open its dashboard), restore a snapshot, and delete an App that holds data. Implies `project.app.write` |
+| `project.app.admin` | Run a command in an App machine (`exec`), restore a volume to a snapshot, and destroy a volume. Implies `project.app.write` |
 
 Every role that holds `project.app.write` holds `project.app.admin`: in the
-built-in roles, that is Manager. `project.app.read` lists Apps, reads their
-snapshots and mints a sign-in token. `project.app.write` creates, resizes and
-snapshots them and reads the process log.
+built-in roles, that is Manager. `project.app.read` lists Apps, their
+machines, volumes, and snapshots, and mints a sign-in token.
+`project.app.write` creates, changes, labels, and deletes Apps.
+`project.app.deploy` deploys, rolls back, starts and stops Apps, acts on
+machines, scales, and creates, extends, snapshots, and forks volumes.
 
 ## Changing agents and triggers
 

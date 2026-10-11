@@ -74,9 +74,14 @@ export function revealCut(text: string, from: number, budget: number, final: boo
   for (;;) {
     while (cut < len && !isSpace(text[cut])) cut++;
     if (cut === len && !final) {
+      // A link destination still arriving (`[label](https://…`) renders as its
+      // label or its setup card, never as half a word: reveal it as it arrives.
+      let wordStart = cut;
+      while (wordStart > from && !isSpace(text[wordStart - 1])) wordStart--;
+      if (text.lastIndexOf('](', len) >= wordStart) return len;
       // The trailing word may be incomplete: back off to the space before it,
       // and past any syntax-only word that would then end the text.
-      while (cut > from && !isSpace(text[cut - 1])) cut--;
+      cut = wordStart;
       for (;;) {
         let end = cut;
         while (end > from && isSpace(text[end - 1])) end--;
@@ -114,7 +119,7 @@ const defaultClock: PacerClock = {
  * `show(text, streaming)` receives every render; `streaming: false` is the
  * one final call once the text is complete and its last word has faded in.
  *
- * - `initial` shows at once.
+ * - `initial` shows at once, as streaming when `initialStreaming`.
  * - `push(text, true)` sets a new target. Text that does not extend the shown
  *   text (an edit, a revert) shows at once.
  * - `push(text, false)` ends the stream. The rest drains at the faster end
@@ -125,12 +130,15 @@ export function createStreamPacer(
   show: (text: string, streaming: boolean) => void,
   initial: string,
   clock: PacerClock = defaultClock,
+  initialStreaming = false,
 ) {
   let target = initial;
   let shown = initial;
   let active = false;
   let streamed = false;
-  let settled = true;
+  // A message that mounts mid-stream is already in its streaming render, so
+  // the end of the stream must settle it even when no new text arrives.
+  let settled = !initialStreaming;
   let rate = 0;
   let budget = 0;
   let lastFrameAt = 0;
@@ -260,6 +268,8 @@ export function useStreamingCadence(
     pacerRef.current = createStreamPacer(
       (text, streaming) => setState({ text, streaming }),
       state.text,
+      undefined,
+      state.streaming,
     );
   }
 

@@ -5,7 +5,58 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Removed
+- Apps have no monthly budget. `App.monthly_budget_usd`,
+  `CreateAppInput.monthly_budget_usd` and `UpdateAppInput.monthly_budget_usd`
+  are gone: account credits pay for App compute, and the billing `402` is the
+  only cost gate. A server that still sends the field is ignored; a client
+  that still sends it gets `200` and the server ignores it. Read
+  `App.estimated_monthly_usd` for the machine's 24/7 monthly cost.
+- The unreleased `convex` App kind is gone before any release carried it
+  (0.13.53, the last published version, has none of these names): `AppKind`,
+  `App.kind`, `App.instance` and the `AppInstance*` types, `AppSnapshot*`,
+  `AppCredentials`, `DeleteAppOptions`, `DeleteAppResult`, `GetAppLogOptions`,
+  `WaitForAppOptions`, `getAppCredentials`, `rotateAppCredentials`,
+  `listAppSnapshots`, `createAppSnapshot`, `deleteAppSnapshot`,
+  `restoreAppSnapshot`, `getAppLog`, `waitForApp`, `useAppSnapshots`,
+  `appSnapshotsKey`, and the `'convex'` source kind. A Convex backend is now an
+  ordinary server App with a volume (the `convex` template of
+  `kortix apps launch`). No published name is removed.
+
 ### Added
+- Apps on the Fly.io model (releases, machines, volumes).
+  `CreateAppBuildInput.config` (`AppReleaseConfigInput`) carries a release's
+  config: `processes`, `http_service`, `services`, `mounts`, `vm`, `deploy`
+  (`strategy`, `release_command`). An invalid config answers
+  `400 app_config_invalid` with `issues`. `UpdateAppInput.labels` replaces an
+  App's labels. `App` gains `capabilities` (`AppCapability`), `labels`,
+  `scale`, `services` (`AppServiceSummary[]`, each with its URL), `machines`
+  (`total`, `running`, `stopped`), `volumes` (`count`, `size_gb`), `config`
+  (the live release's `AppReleaseConfig`), `uses`, `used_by`, `auth`
+  (`AppAuth`), `always_on`, `hosting_type`, `estimated_monthly_usd` (each
+  group's `vm` × its scale, 24/7), `retained_deployments`, and `warnings`.
+  Machines: `listAppMachines`, `startAppMachine`, `stopAppMachine`,
+  `restartAppMachine`, `destroyAppMachine`, `scaleApp` (0-20 machines per
+  process group), `execInApp` (project admins). Volumes: `listAppVolumes`,
+  `createAppVolume`, `updateAppVolume` (grow, retention), `destroyAppVolume`
+  (`confirmName`), `listAppVolumeSnapshots`, `createAppVolumeSnapshot`,
+  `restoreAppVolume`, `forkAppVolume`. Sign-in: `createAppToken` (capability
+  `member_tokens`). Facade: `project(pid).apps.{machines.{list, start, stop,
+  restart, destroy}, scale, exec, volumes.{list, create, update, destroy,
+  snapshots, snapshot, restore, fork}, token}`. Types: `AppMachine`,
+  `AppMachineState`, `AppVolume`, `AppVolumeSnapshot`, `AppExecInput`,
+  `AppExecResult`, `CreateAppVolumeInput`, `AppReleaseConfig`,
+  `AppReleaseConfigInput`, `AppServiceConfig`, `AppServiceAccess`,
+  `AppAutoStop`, `AppCheck`, `AppMountConfig`, `AppVmConfig`,
+  `AppDeployStrategy`, `AppServiceSummary`, `AppCapability`, `AppAuth`,
+  `AppToken`, `CreateAppBuildInput`.
+- `@kortix/sdk/react`: `useAppMachines(projectId, appId)` (5 s poll; `start`,
+  `stop`, `restart`, `destroy`, `scale`), `useAppVolumes(projectId, appId)`
+  (`snapshot`, `restore`, `fork`, `extend`, `destroy`),
+  `useAppVolumeSnapshots(projectId, appId, volumeId)`, `useAppDeployment`,
+  and the keys `appMachinesKey`, `appVolumesKey`, plus
+  `qk.project.appMachines`, `qk.project.appVolumes`,
+  `qk.project.appVolumeSnapshots`.
 - `FeatureFlagKey` gains `notification_center` (also in `FEATURE_FLAG_KEYS`
   and `KortixProject.experimental`). Off by default. It gates the KRTX-1742
   notification entries below per project. Turn it on with
@@ -207,6 +258,19 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   copies. Not covered by semver.
 
 ### Changed
+- Apps run on the Fly.io model. `rollbackApp` creates a NEW release from the
+  target's artifact and config and answers `202` with the App plus the queued
+  release in `deployment`; it no longer moves traffic to the old release in
+  place. It resolves with the new `AppRollback` type (`App & { deployment }`),
+  a subtype of the `App` it returned before. `AppDeployment` gains `config`,
+  `strategy` and `release_command_status`.
+- `getAppAuthEnv(projectId, appId)` (facade `apps.authEnv(appId)`) and `AppAuthEnv`:
+  `KORTIX_AUTH_ISSUER`, `KORTIX_AUTH_AUDIENCE` and the project key set inline as a
+  `data:` URL, for a backend that verifies App sign-in tokens without a network call.
+- `App.estimated_monthly_usd` is deprecated: Kortix shows no prices. The field
+  stays on the wire; hosts must not display it. `DockerfileAppSource.port` and `OciImageAppSource.port` are optional:
+  omit them for a worker-only release (a `config` with `processes` and no
+  service).
 - Every turn start goes through the session's durable prompt inbox
   (`POST .../prompts`), as the web composer and the CLI already did.
   `session(pid, sid).send(text)` resolves with the `CreateSessionPromptResult`

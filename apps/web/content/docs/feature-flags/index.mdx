@@ -11,7 +11,7 @@ Flags are per project. Turning a flag on in one project changes nothing in
 another project, and nothing for other accounts.
 
 <CardGroup>
-  <Card icon="app-window" title="Apps" href="/docs/feature-flags/apps">Deploy static sites, bundles, Dockerfiles, OCI images, and Convex backends to stable URLs.</Card>
+  <Card icon="app-window" title="Apps" href="/docs/feature-flags/apps">Deploy static sites, servers, workers, and backends with persistent volumes to stable URLs.</Card>
 </CardGroup>
 
 ## Turn a flag on
@@ -174,9 +174,10 @@ refs). An explicit project choice always wins.
 - **`meta_agent`** — add a platform-owned coordinator agent that spawns and
   manages specialized sessions.
 - **`apps`** — deploy static sites, bundles, Dockerfiles, and OCI images to
-  stable serverless URLs, and run up to 3 Convex backends (kind `convex`: a
-  database, server functions, realtime queries, file storage, and schedules)
-  where Platinum is configured. See [Apps](/docs/feature-flags/apps).
+  stable URLs on the Fly.io model: immutable releases, machines per process
+  group, and persistent volumes (Platinum). A Convex backend is the `convex`
+  template (`kortix apps launch --template convex`). See
+  [Apps](/docs/feature-flags/apps).
 - **`monitors`** — run 24/7 watchers from your repo that fire trigger events
   into sessions. See [Triggers](/docs/connect/triggers).
 - **`event_triggers`** — start an agent when something happens in a connected

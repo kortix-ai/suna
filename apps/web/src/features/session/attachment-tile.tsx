@@ -93,10 +93,10 @@ export function middleTruncateFilename(name: string, max = 22): string {
 export const PASTE_PREVIEW_CHARS = 400;
 
 /**
- * A paste is a page, not a file (Jay, 2026-10-08, Paper P4): the tile's height,
- * one step wider (`w-32`) for the text, with a folded top-right corner.
+ * A paste is a page, not a file (Jay, 2026-10-08, Paper P4): the file tile's
+ * size (`w-28`, Jay 2026-10-10), with a folded top-right corner.
  */
-const PASTE_SURFACE = `${TILE_SURFACE.replace('size-28', 'h-28 w-32')} rounded-tr-xl group/paste`;
+const PASTE_SURFACE = `${TILE_SURFACE} rounded-tr-xl group/paste`;
 
 export interface AttachmentTileProps {
   filename: string;
