@@ -1,18 +1,32 @@
 {
-  "source_hash": "43d16070e69f3fd9e07ae6cc3ed2a1e31c3dde6060b28a148127c0e9cfccb0d6",
+  "source_hash": "06a7f7160d14215422fb9b65a6efa6c92bddc6aac343f58e854b2749bfdd1a3c",
   "diff_files": [
-    "apps/api/src/__tests__/setup-docker-probe.test.ts",
-    "apps/web/src/app/[locale]/(auth)/auth/signup-submit-timeout.test.tsx",
-    "tests/e2e/specs/36-reminders-ui.spec.ts"
+    "apps/api/src/__tests__/unit-trigger-fire-paths.test.ts",
+    "apps/api/src/projects/lib/trigger-fire.ts",
+    "apps/api/src/projects/routes/trigger-webhooks.ts",
+    "apps/api/src/projects/routes/triggers.ts",
+    "tests/spec/end-to-end.md",
+    "tests/src/fixtures/apps-edge.ts",
+    "tests/src/flows/agent-principals.flow.ts",
+    "tests/src/flows/apps-tokens.flow.ts",
+    "tests/src/flows/apps.flow.ts",
+    "tests/src/flows/connectors.flow.ts",
+    "tests/src/flows/drives.flow.ts",
+    "tests/src/flows/feedback.flow.ts",
+    "tests/src/flows/files.flow.ts",
+    "tests/src/flows/notifications.flow.ts",
+    "tests/src/flows/run-session-backlog.flow.ts",
+    "tests/src/flows/session-attachments.flow.ts",
+    "tests/src/flows/sessions.flow.ts",
+    "tests/src/flows/sso-identity.flow.ts"
   ],
-  "diff_hash": "f2595843c2f6b181ee1e772550f8467a4b704d673b41eb87f6ea7ef93149deba",
-  "head": "9754a1978a6f0a1d0c937325dbcf705fabe72940",
+  "diff_hash": "b2d320040ceec1efe3f74ad3bcaa36e7b599e298e686c17f5497a8c5e26d47a1",
+  "head": "1865858cba8828e002f51fbc205ea47c8945c574",
   "passed": true,
   "lanes": {
-    "browser": "pass",
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-11T06:56:41.632Z"
+  "at": "2026-10-11T08:30:45.824Z"
 }
