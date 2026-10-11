@@ -1,0 +1,29 @@
+{
+  "source_hash": "410da7081b8aad94dad7f378ac6272715414ea7d40de4d8da0f3d2d63b59a9c5",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-session-log-ingest.test.ts",
+    "apps/api/src/config.ts",
+    "apps/api/src/projects/index.ts",
+    "apps/api/src/projects/routes/session-log.ts",
+    "apps/api/src/projects/session-log-ingest.ts",
+    "apps/api/src/shared/postgres-errors.ts",
+    "apps/web/src/components/iam/audit-http-routes.generated.ts",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "packages/api-contract/src/__tests__/session-log-shape.snapshot.txt",
+    "packages/api-contract/src/__tests__/session-log-wire.test.ts",
+    "packages/api-contract/src/session-log/wire.ts",
+    "packages/shared/src/audit-route-labels.ts",
+    "tests/spec/end-to-end.md",
+    "tests/spec/routes.generated.json",
+    "tests/src/flows/session-log.flow.ts"
+  ],
+  "diff_hash": "dff206f8586d684ec8dbb21f7a2f9e1308d645957f9103a198f694c4a7dd82ee",
+  "head": "f559eb79582dfaf557f5ada7fb62e65f14f6708b",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-11T15:49:10.160Z"
+}
