@@ -502,6 +502,12 @@ export class PlatinumProvider implements SandboxProvider {
     if (dedup) {
       createBody.name = dedup.name;
     }
+    if (opts.resourceSpec) {
+      // An App machine is sized at create, so a resize never rebuilds its image.
+      createBody.cpu = opts.resourceSpec.cpuCores;
+      createBody.ram_mb = Math.round(opts.resourceSpec.memoryGb * 1024);
+      createBody.disk_gb = opts.resourceSpec.diskGb;
+    }
     if (opts.volumes && Object.keys(opts.volumes).length > 0) {
       createBody.volumes = opts.volumes;
     }
@@ -559,6 +565,9 @@ export class PlatinumProvider implements SandboxProvider {
         // Mounts a session cannot run without (its drives, its state): fail
         // loudly, never boot without them.
         const reason = (platinumHttp(err).body ?? '').slice(0, 300);
+        if (workloadType === 'app') {
+          throw new Error(`[apps] The machine's volume could not be mounted (storage refused: ${reason}). The machine did not start without it.`);
+        }
         throw new Error(
           `[drives] This session’s drives could not be mounted (storage refused: ${reason}). The session did not start without them.`,
         );

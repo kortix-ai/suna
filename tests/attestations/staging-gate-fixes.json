@@ -1,0 +1,17 @@
+{
+  "source_hash": "14e2c3e29bce04b5c13c19c1fd1b8bc013bd4451b54d2cd35ba3bfa89a31d627",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-stop-wins-over-wake.test.ts",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "packages/sdk/src/react/connector-setup.test.ts"
+  ],
+  "diff_hash": "c286e7b3efb260358a8acce2ead84537e80368ec0a9cef2acc06f8992f0461c9",
+  "head": "c798e4cdab503a38954bda41c80194f55568540e",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-11T01:28:19.198Z"
+}
