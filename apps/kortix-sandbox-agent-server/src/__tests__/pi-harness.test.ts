@@ -3148,6 +3148,8 @@ describe('pi session-log export (P2.5)', () => {
     const { log, hashes } = piSessionLog(rt.sessionLogSnapshot()!)
     expect(() => upcastSessionLog(log)).not.toThrow()
     const [thread, child] = log.threads
+    // The seq rule (session-log.ts): strictly increasing per thread.
+    for (const t of log.threads) for (let i = 1; i < t.messages.length; i++) expect(t.messages[i]!.seq).toBeGreaterThan(t.messages[i - 1]!.seq)
     const transcript = new Map(rt.transcript.all().map((m) => [m.info.id as string, m]))
     // Every root message carries its Kortix id; every block id is a part of that v1 message.
     // pi's system prompt entry has no Kortix message: a position id.

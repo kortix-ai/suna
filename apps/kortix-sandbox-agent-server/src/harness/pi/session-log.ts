@@ -32,6 +32,16 @@
  *   the root `task` call whose result names it.
  * - `native_hash` digests the pi entries (or child messages) a record is built
  *   from, its v1 message, its seq and whether it streams.
+ *
+ * The seq rule. `seq` is monotonic per thread and never reused: the API keeps
+ * a tombstoned row with its seq and rejects a second row on the same
+ * (session, thread, seq). A root message's seq is its entry's position in
+ * pi's append-only entry list (`getEntries()`, 1-based), not its position
+ * among the messages of the active branch: a branch switch or a hidden
+ * message never moves a seq, and a later entry always gets a higher one. A
+ * child has no entries and pi's retry drops a failed message and appends its
+ * replacement at the same index, so the runtime issues each child message a
+ * seq once (`seqs`) and never issues it again. Seqs have gaps.
  */
 import { createHash } from 'node:crypto'
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
@@ -63,6 +73,8 @@ export interface PiChildSnapshot {
   agentMessages: AgentMessage[]
   /** The Kortix message id of each agent message, by index; null when unknown. */
   messageIds: Array<string | null>
+  /** The seq of each agent message, by index: issued once, never reused (see the seq rule). */
+  seqs: number[]
   transcript: KortixMessage[]
   /** A prompt runs in the child now. */
   busy: boolean
@@ -74,8 +86,10 @@ export interface PiSessionSnapshot {
   rootId: string
   title: string
   header: SessionHeader | null
-  /** The active branch, oldest first (`SessionManager.getBranch()`). */
+  /** Every entry, in append order (`SessionManager.getEntries()`). */
   entries: SessionEntry[]
+  /** The active branch ends here (`SessionManager.getLeafId()`). */
+  leafId: string | null
   /** pi entry id → Kortix message id. */
   entryMessageIds: Record<string, string>
   transcript: KortixMessage[]
@@ -180,6 +194,7 @@ function deriveThread(input: {
   transcript: KortixMessage[]
   busy: boolean
   child: boolean
+  seqOf: (entry: J) => number
 }): Derived[] {
   const { threadId, entries } = input
   const v1 = new Map(input.transcript.map((m) => [m.info.id as string, m]))
@@ -312,7 +327,7 @@ function deriveThread(input: {
     }
     out.push({ message: m, native: [...nativeParts, open] })
   }
-  out.forEach((d, i) => (d.message.seq = i + 1))
+  for (const d of out) d.message.seq = input.seqOf(d.native[0] as J)
   return out
 }
 
@@ -375,14 +390,16 @@ export function piSessionLog(s: PiSessionSnapshot): { log: SessionLog; hashes: M
       hashes.set(message.message_id, sha256(JSON.stringify([message.seq, native])))
       return message
     })
-  const rootMessages = finish(deriveThread({ threadId: s.rootId, entries: s.entries as J[], ids: (e) => s.entryMessageIds[e.id], transcript: s.transcript, busy: s.busy, child: false }))
+  const all = s.entries as J[]
+  const position = new Map(all.map((e, i) => [e.id as string, i + 1]))
+  const rootMessages = finish(deriveThread({ threadId: s.rootId, entries: activeBranch(all, s.leafId), ids: (e) => s.entryMessageIds[e.id], transcript: s.transcript, busy: s.busy, child: false, seqOf: (e) => position.get(e.id)! }))
   const root: SessionLogThread = {
     ...V, thread_id: s.rootId, parent_thread_id: null, spawned_by: null, agent: s.agent, title: s.title, created_at: created, messages: rootMessages,
     ...(s.header ? { ext: { pi: { version: PI_VERSION, native_id: s.header.id, data: { cwd: s.header.cwd, header_version: s.header.version ?? null } } } } : {}),
   }
   const children = s.children.map((child): SessionLogThread => {
-    const entries = child.agentMessages.map((m, i) => ({ type: 'message', id: `${child.id}:${i}`, index: i, message: m }))
-    const messages = finish(deriveThread({ threadId: child.id, entries, ids: (e) => child.messageIds[e.index] ?? undefined, transcript: child.transcript, busy: child.busy, child: true }))
+    const entries = child.agentMessages.map((m, i) => ({ type: 'message', id: `${child.id}:s${child.seqs[i]}`, index: i, message: m }))
+    const messages = finish(deriveThread({ threadId: child.id, entries, ids: (e) => child.messageIds[e.index] ?? undefined, transcript: child.transcript, busy: child.busy, child: true, seqOf: (e) => child.seqs[e.index]! }))
     return { ...V, thread_id: child.id, parent_thread_id: s.rootId, spawned_by: spawnedBy(rootMessages, child.id), agent: child.agentName, title: child.title, created_at: iso(child.createdAt), messages }
   })
   const log: SessionLog = {
@@ -393,6 +410,14 @@ export function piSessionLog(s: PiSessionSnapshot): { log: SessionLog; hashes: M
     threads: [root, ...children],
   }
   return { log, hashes }
+}
+
+/** The entries from the root to `leafId`, oldest first (`SessionManager.getBranch()`). */
+function activeBranch(entries: J[], leafId: string | null): J[] {
+  const byId = new Map(entries.map((e) => [e.id as string, e]))
+  const path: J[] = []
+  for (let e = leafId ? byId.get(leafId) : undefined; e; e = e.parentId ? byId.get(e.parentId) : undefined) path.push(e)
+  return path.reverse()
 }
 
 /** The root `task` call whose result names the child (`details.sessionId`, else `task_id: <id>` in its text). */

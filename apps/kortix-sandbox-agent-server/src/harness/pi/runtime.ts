@@ -182,6 +182,8 @@ interface ChildSession {
   transcript: TranscriptStore
   /** The child's pi conversation, kept so `task_id` resumes it. */
   agentMessages: AgentMessage[]
+  /** The session-log seq the next message of this child gets (session-log.ts, the seq rule). */
+  nextSeq: number
   /** Set while a prompt runs in the child. */
   agent: Agent | null
 }
@@ -195,6 +197,8 @@ interface ChildDump {
   agentMessages: AgentMessage[]
   /** The Kortix message id of each agent message (session log). Absent in dumps written before P2.5. */
   messageIds?: Array<string | null>
+  /** The session-log seq of each agent message. Absent in dumps written before P2.5. */
+  seqs?: number[]
   transcript: KortixMessage[]
 }
 
@@ -329,6 +333,8 @@ export class PiRuntime {
    * `entryIds` (and a child's `messageIds`) when persisted.
    */
   private readonly nativeIds = new WeakMap<object, string>()
+  /** The session-log seq of each child message object (`childSeqs`). */
+  private readonly nativeSeqs = new WeakMap<object, number>()
   /** pi entry id → Kortix message id: what `nativeIds` resolved, the restored map and compaction entries. */
   private readonly entryIds = new Map<string, string>()
   /** The running turn's prompt reached pi: a later user message of the turn is steered or injected. */
@@ -1197,6 +1203,7 @@ export class PiRuntime {
         status: 'idle',
         transcript: new TranscriptStore(),
         agentMessages: [],
+        nextSeq: 1,
         agent: null,
       }
       this.children.set(child.id, child)
@@ -1245,7 +1252,10 @@ export class PiRuntime {
       if (own === 'deny' || session === 'deny' || !allowed(tool)) return 'deny'
       return own ?? session
     }, false, this.childExtensionGate())
+    const owner = child
     agent.subscribe((event) => {
+      // In state order: pi puts the system prompt message in state without a message event.
+      if (event.type === 'message_end') this.childSeqs(owner, agent.state.messages)
       if (event.type === 'message_end' && !this.nativeIds.has(event.message)) {
         if (event.message.role === 'assistant') this.nativeIds.set(event.message, adapter.messageId)
         else if (event.message.role === 'user') this.nativeIds.set(event.message, messageId)
@@ -1712,6 +1722,15 @@ export class PiRuntime {
     return Object.fromEntries(this.entryIds)
   }
 
+  /** The seq of each of the child's messages; a message seen for the first time gets the next one, for good. */
+  private childSeqs(child: ChildSession, messages: AgentMessage[] = child.agent ? child.agent.state.messages : child.agentMessages): number[] {
+    return messages.map((m) => {
+      let seq = this.nativeSeqs.get(m)
+      if (seq === undefined) this.nativeSeqs.set(m, (seq = child.nextSeq++))
+      return seq
+    })
+  }
+
   /** What the session-log adapter (session-log.ts) reads; null while the runtime is down. */
   sessionLogSnapshot(): PiSessionSnapshot | null {
     const manager = this.pi?.session.sessionManager
@@ -1721,7 +1740,8 @@ export class PiRuntime {
       rootId: this.rootId,
       title: this.title,
       header: manager.getHeader(),
-      entries: manager.getBranch(),
+      entries: manager.getEntries(),
+      leafId: manager.getLeafId(),
       entryMessageIds: this.entryMessageIds(),
       transcript: this.transcript.all(),
       children: [...this.children.values()].map((child) => {
@@ -1733,6 +1753,7 @@ export class PiRuntime {
           createdAt: child.createdAt,
           agentMessages,
           messageIds: agentMessages.map((m) => this.nativeIds.get(m) ?? null),
+          seqs: this.childSeqs(child),
           transcript: child.transcript.all(),
           busy: child.agent !== null,
         }
@@ -1772,6 +1793,7 @@ export class PiRuntime {
           updatedAt: child.updatedAt,
           agentMessages: child.agent ? child.agent.state.messages : child.agentMessages,
           messageIds: (child.agent ? child.agent.state.messages : child.agentMessages).map((m) => this.nativeIds.get(m) ?? null),
+          seqs: this.childSeqs(child),
           transcript: child.transcript.all(),
         })),
       }
@@ -1812,9 +1834,14 @@ export class PiRuntime {
         const transcript = new TranscriptStore()
         transcript.load(saved.transcript)
         for (const message of saved.transcript) this.clock.observe(message.info.id as string)
-        const { transcript: _saved, messageIds, ...rest } = saved
-        saved.agentMessages.forEach((m, i) => messageIds?.[i] && this.nativeIds.set(m, messageIds[i]!))
-        this.children.set(saved.id, { ...rest, transcript, status: 'idle', agent: null })
+        const { transcript: _saved, messageIds, seqs, ...rest } = saved
+        saved.agentMessages.forEach((m, i) => {
+          if (messageIds?.[i]) this.nativeIds.set(m, messageIds[i]!)
+          // A dump written before P2.5 has no seqs: its messages number from 1, in order.
+          this.nativeSeqs.set(m, seqs?.[i] ?? i + 1)
+        })
+        const nextSeq = Math.max(0, ...saved.agentMessages.map((m) => this.nativeSeqs.get(m)!)) + 1
+        this.children.set(saved.id, { ...rest, transcript, status: 'idle', agent: null, nextSeq })
       }
       this.title = dump.title
       return dump

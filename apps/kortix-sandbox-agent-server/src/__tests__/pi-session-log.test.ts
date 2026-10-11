@@ -35,7 +35,13 @@ const at = (n: number) => new Date(ts(n)).toISOString()
 const usage = { input: 10, output: 5, cacheRead: 0, cacheWrite: 0, totalTokens: 15, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }
 
 let n = 0
-const entry = (fields: Record<string, unknown>) => ({ id: `e${String(++n).padStart(7, '0')}`, parentId: null, timestamp: at(n), ...fields })
+let leaf: string | null = null
+/** A pi entry appended at the leaf, as `SessionManager` appends it. */
+const entry = (fields: Record<string, unknown>) => {
+  const e = { id: `e${String(++n).padStart(7, '0')}`, parentId: leaf, timestamp: at(n), ...fields }
+  leaf = e.id
+  return e
+}
 const user = (content: unknown) => entry({ type: 'message', message: { role: 'user', content, timestamp: ts(n + 1) } })
 const assistant = (content: unknown[], extra: Record<string, unknown> = {}) =>
   entry({ type: 'message', message: { role: 'assistant', content, api: 'openai-completions', provider: 'kortix', model: 'answer-model', usage, stopReason: 'stop', timestamp: ts(n + 1), ...extra } })
@@ -50,6 +56,7 @@ const v1 = (id: string, role: 'user' | 'assistant', parts: Array<Record<string, 
 
 function fixture(): PiSessionSnapshot {
   n = 0
+  leaf = null
   const e = {
     prompt: user([{ type: 'text', text: 'Describe the image.' }, { type: 'image', data: PNG, mimeType: 'image/png' }]),
     reply: assistant([
@@ -88,6 +95,7 @@ function fixture(): PiSessionSnapshot {
     title: 'Describe the image.',
     header: { type: 'session', version: 3, id: 'hdr-0001', timestamp: at(0), cwd: '/workspace' },
     entries: entries as never,
+    leafId: leaf,
     entryMessageIds: ids,
     transcript: [
       v1('msg_a', 'user', [{ type: 'text', text: 'Describe the image.' }, { type: 'file', mime: 'image/png', url: `data:image/png;base64,${PNG}`, filename: 'shot.png' }, { type: 'file', mime: 'application/pdf', url: PDF, filename: 'notes.pdf' }]),
@@ -99,7 +107,7 @@ function fixture(): PiSessionSnapshot {
       v1('msg_k', 'assistant', [{ type: 'tool', tool: 'task', callID: 'msg_k-p0', state: { status: 'completed', input: {}, output: '', time: { start: 1, end: 2 } } }]),
     ] as never,
     children: [{
-      id: CHILD, title: 'Write the note', agentName: 'general', createdAt: ts(50), agentMessages: childMessages as never, messageIds: ['msg_c1', 'msg_c2', null, 'msg_c3'],
+      id: CHILD, title: 'Write the note', agentName: 'general', createdAt: ts(50), agentMessages: childMessages as never, messageIds: ['msg_c1', 'msg_c2', null, 'msg_c3'], seqs: [1, 2, 3, 4],
       transcript: [v1('msg_c2', 'assistant', [{ type: 'tool', tool: 'write', callID: 'msg_c2-p0', state: { status: 'completed', input: {}, output: 'Wrote sub.txt', time: { start: 1, end: 2 } } }])] as never,
       busy: false,
     }],
@@ -146,6 +154,7 @@ describe('pi session-log export', () => {
     })
     const s = fixture()
     s.entries = s.entries.slice(0, 6) as never // the turn is still in the sleep call
+    s.leafId = (s.entries.at(-1) as unknown as { id: string }).id
     s.busy = true
     const live = byId(root(s), 'msg_e')
     expect(live.status).toBe('streaming')
@@ -182,7 +191,7 @@ describe('pi session-log export', () => {
   test('a sub-agent child is a thread spawned by the task call', () => {
     const child = piSessionLog(fixture()).log.threads[1]!
     expect(child).toMatchObject({ thread_id: CHILD, parent_thread_id: ROOT, spawned_by: { message_id: 'msg_k', call_id: 'call_task' }, agent: 'general' })
-    expect(child.messages.map((m) => [m.message_id, m.role, m.seq])).toEqual([['msg_c1', 'user', 1], ['msg_c2', 'assistant', 2], ['msg_c3', 'assistant', 3]])
+    expect(child.messages.map((m) => [m.message_id, m.role, m.seq])).toEqual([['msg_c1', 'user', 1], ['msg_c2', 'assistant', 2], ['msg_c3', 'assistant', 4]])
     expect(child.messages[0]!.origin).toBe('subagent')
     expect(child.messages[1]!.blocks[0]).toMatchObject({ id: 'msg_c2-p0', call_id: 'call_child', status: 'complete' })
   })
@@ -211,13 +220,51 @@ describe('pi session-log export', () => {
     expect(idle.session).toBeUndefined()
 
     s = fixture()
-    s.entries = [...s.entries, { type: 'message', id: 'e9999999', parentId: null, timestamp: at(99), message: { role: 'user', content: 'Next.', timestamp: ts(99) } }] as never
+    s.entries = [...s.entries, { type: 'message', id: 'e9999999', parentId: s.leafId, timestamp: at(99), message: { role: 'user', content: 'Next.', timestamp: ts(99) } }] as never
+    s.leafId = 'e9999999'
     ;((s.entries[2] as unknown as { message: { content: Array<{ text: string }> } }).message.content[0]!).text = 'edited'
     s.children[0]!.agentMessages = s.children[0]!.agentMessages.slice(0, 3)
     s.children[0]!.messageIds = s.children[0]!.messageIds.slice(0, 3)
+    s.children[0]!.seqs = s.children[0]!.seqs.slice(0, 3)
     const next = await port.changes(cursors)
     expect(next.messages.map((m) => m.message.message_id)).toEqual(['msg_b', 'pi:e9999999'])
     expect(next.tombstones).toEqual(['msg_c3'])
+  })
+})
+
+describe('the seq rule: monotonic per thread, never reused', () => {
+  test('root seqs follow pi entry order: a message after a rewind gets a higher seq than the messages it left', () => {
+    const s = fixture()
+    const before = root(s)
+    expect(before.map((m) => m.seq)).toEqual([1, 2, 4, 5, 6, 7, 8, 9, 11, 12, 13, 15])
+    // Rewind to the first reply, then a new prompt on that branch.
+    const reply = (s.entries[1] as unknown as { id: string }).id
+    s.entries = [...s.entries, { type: 'message', id: 'e8888888', parentId: reply, timestamp: at(98), message: { role: 'user', content: 'Instead.', timestamp: ts(98) } }] as never
+    s.entryMessageIds.e8888888 = 'msg_rewound'
+    s.leafId = 'e8888888'
+    const after = root(s)
+    expect(after.map((m) => m.message_id)).toEqual(['msg_a', 'msg_b', 'msg_rewound'])
+    expect(after.slice(0, 2).map((m) => m.seq)).toEqual([1, 2])
+    expect(after[2]!.seq).toBeGreaterThan(Math.max(...before.map((m) => m.seq)))
+  })
+
+  test('a child message that replaces a dropped one gets a new seq above it', async () => {
+    let s = fixture()
+    const port = createPiSessionLogPort(() => s)
+    const first = await port.changes([])
+    const cursor = (thread: string): ExportCursor => {
+      const mine = first.messages.filter((m) => m.message.thread_id === thread)
+      return { thread_id: thread, last_seq: Math.max(...mine.map((m) => m.message.seq)), native_hashes: Object.fromEntries(mine.map((m) => [m.message.message_id, m.native_hash])) }
+    }
+    // pi's retry drops the child's last (failed) reply and appends a new one at the same index.
+    s = fixture()
+    const child = s.children[0]!
+    child.agentMessages = [...child.agentMessages.slice(0, 3), { ...(child.agentMessages[3] as object), content: [{ type: 'text', text: 'second try' }] }] as never
+    child.messageIds = [...child.messageIds.slice(0, 3), 'msg_c4']
+    child.seqs = [1, 2, 3, 5]
+    const next = await port.changes([cursor(ROOT), cursor(CHILD)])
+    expect(next.tombstones).toEqual(['msg_c3'])
+    expect(next.messages.map((m) => [m.message.message_id, m.message.seq])).toEqual([['msg_c4', 5]])
   })
 })
 
