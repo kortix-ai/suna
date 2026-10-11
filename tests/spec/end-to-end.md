@@ -1204,6 +1204,10 @@ return the stable public URL and active deployment pointer; every App carries
 1 vCPU / 2 GiB / 10 GiB). Apps have no budget: no App response carries
 `monthly_budget_usd`, and a create or patch that still sends one (an older
 client) succeeds and ignores it; a patch switches `always_on` both ways;
+a new App reads `display: {}`, a patch of `display` (`listed`, `preview`
+`live | none`, `parent` slug) replaces it whole and reads back, `{}` restores
+the defaults, and an unknown key, a preview other than `live`/`none` or a
+malformed parent is `400`;
 `warnings: []` on every create and patch. A new App has `labels: []`,
 `services: []` and the capabilities `deployments`, `rollback`, `preview`,
 `member_tokens`, and no `kind` or `instance`. Patch updates mutable policy; delete is soft and removes the App
@@ -1323,7 +1327,7 @@ immutable`; a page navigation to an unknown path → the SPA shell; a missing
 asset → **404**; `If-None-Match` with the ETag → **304**. A redeploy of one
 changed file logs `(1 new, 2 unchanged)` and serves the new page at once.
 `POST /projects/:projectId/apps/:appId/rollback` to v1 → **202** with a NEW
-release v3 from v1's artifact (the Fly model); it is `ready` within 60 s with
+release v3 from v1's artifact; it is `ready` within 60 s with
 `hosting_type: "static"` and v1's page is served (no runtime starts). `GET /projects/:projectId/apps` lists the App
 with `hosting_type: "static"`, `estimated_monthly_usd: 0` and
 `retained_deployments: 5`. `POST …/start` and `POST …/stop` → **409**
@@ -1633,7 +1637,7 @@ App of another project. The bindings mount answers `403 app_not_linked` for B
 and `503 app_binding_unavailable` for C, which A uses but which has no
 running release.
 
-`APP-11` Machines, scale, exec and volumes (the Fly model) on an App with no
+`APP-11` Machines, scale, exec and volumes on an App with no
 server release. `GET …/machines` and `GET …/volumes` → **200** with empty
 lists. `PUT …/scale` and `POST …/exec` → **409** `app_no_machines`;
 `kortix apps scale count <app> 2` exits 1 with "deploy a server release first".

@@ -43,13 +43,19 @@ export const STRIP_FORWARD_HEADERS = new Set([
 ]);
 
 // Remove the `frame-ancestors` directive from a CSP value, preserving the rest.
+// A value can hold several comma-separated policies (two CSP headers, or one a
+// sandbox edge added), and the browser enforces each, so every one is cleaned.
 // Returns null if nothing meaningful remains (so the header can be dropped).
 export function stripFrameAncestors(csp: string): string | null {
-  const kept = csp
-    .split(';')
-    .map((d) => d.trim())
-    .filter((d) => d && !/^frame-ancestors(\s|$)/i.test(d));
-  return kept.length ? kept.join('; ') : null;
+  const policies = csp
+    .split(',')
+    .map((policy) => policy
+      .split(';')
+      .map((d) => d.trim())
+      .filter((d) => d && !/^frame-ancestors(\s|$)/i.test(d))
+      .join('; '))
+    .filter(Boolean);
+  return policies.length ? policies.join(', ') : null;
 }
 
 // Build the response headers we send back to the browser: clone the upstream
