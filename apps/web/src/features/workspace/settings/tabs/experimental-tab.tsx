@@ -66,6 +66,7 @@ import {
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { errorToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
@@ -108,6 +109,8 @@ export interface ExperimentalCopy {
   emptyTitle: string;
   emptyDescription: string;
   permission: string;
+  /** Tooltip on a flag that needs Volumes while Volumes is off. */
+  requiresVolumes: string;
 }
 
 export const DEFAULT_EXPERIMENTAL_COPY: ExperimentalCopy = {
@@ -124,6 +127,7 @@ export const DEFAULT_EXPERIMENTAL_COPY: ExperimentalCopy = {
   emptyTitle: 'No experimental features',
   emptyDescription: 'This deployment exposes no per-project feature flags.',
   permission: "You need the project's settings permission to change a feature flag.",
+  requiresVolumes: 'Turn on Volumes first',
 };
 
 function originLabel(feature: FeatureFlagView, copy: ExperimentalCopy): string {
@@ -194,6 +198,7 @@ function ExperimentalFeatureRow({
   feature,
   pending,
   canManage,
+  blockedReason,
   onToggle,
   copy,
 }: {
@@ -201,6 +206,9 @@ function ExperimentalFeatureRow({
   pending: boolean;
   /** Already resolved for this row (an `operator_only` row needs a platform operator). */
   canManage: boolean;
+  /** Set when the flag depends on one that is off: the switch is dead and
+   *  this text shows on hover. */
+  blockedReason?: string;
   onToggle: (key: string, next: boolean) => void;
   copy: ExperimentalCopy;
 }) {
@@ -229,12 +237,25 @@ function ExperimentalFeatureRow({
       </div>
       <div className="flex shrink-0 items-center gap-2">
         {pending ? <Loading className="text-muted-foreground size-3.5" /> : null}
-        <Switch
-          aria-labelledby={nameId}
-          checked={feature.enabled}
-          disabled={!canManage || pending}
-          onCheckedChange={(v) => onToggle(feature.key, v)}
-        />
+        {blockedReason ? (
+          // A disabled switch takes no pointer events, so the tooltip hangs
+          // off a wrapper.
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span tabIndex={0} aria-label={blockedReason} className="inline-flex cursor-not-allowed">
+                <Switch aria-labelledby={nameId} checked={false} disabled onCheckedChange={() => {}} />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>{blockedReason}</TooltipContent>
+          </Tooltip>
+        ) : (
+          <Switch
+            aria-labelledby={nameId}
+            checked={feature.enabled}
+            disabled={!canManage || pending}
+            onCheckedChange={(v) => onToggle(feature.key, v)}
+          />
+        )}
       </div>
     </div>
   );
@@ -257,6 +278,9 @@ export interface ExperimentalTabViewProps {
    *  (the route's own rule, project-settings.ts patchFeatureFlagHandler). */
   canManageOperatorOnly?: boolean;
   onToggle?: (key: string, next: boolean) => void;
+  /** The `volumes` flag is on, read from the unfiltered list so a search that
+   *  hides the Volumes row cannot wake the Stateless sessions switch. */
+  volumesEnabled?: boolean;
   /**
    * Search text, CONTROLLED — the container owns it and hands down an already
    * filtered `features`.
@@ -295,6 +319,7 @@ export function ExperimentalTabView({
   canManage = true,
   canManageOperatorOnly = false,
   onToggle = () => {},
+  volumesEnabled = false,
   showPermissionNotice = false,
   query = '',
   onQueryChange = () => {},
@@ -305,6 +330,8 @@ export function ExperimentalTabView({
   // field does not vanish under the cursor the moment it matches nothing.
   const showSearch = features.length > 0 || searching;
   const pendingKeySet = new Set(pendingKeys);
+  // Stateless sessions run on Volumes; with Volumes off the switch is dead.
+  const volumesOff = !volumesEnabled;
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-8">
@@ -370,6 +397,9 @@ export function ExperimentalTabView({
                   feature={feature}
                   pending={pendingKeySet.has(feature.key)}
                   canManage={canManage && (feature.operator_only !== true || canManageOperatorOnly)}
+                  blockedReason={
+                    feature.key === 'stateless_sessions' && volumesOff ? copy.requiresVolumes : undefined
+                  }
                   onToggle={onToggle}
                   copy={copy}
                 />
@@ -494,6 +524,7 @@ export function ExperimentalTab({ projectId }: { projectId: string }) {
       canManage={canEdit}
       canManageOperatorOnly={isOperator}
       onToggle={handleToggle}
+      volumesEnabled={withPending.some((f) => f.key === 'volumes' && f.enabled)}
       showPermissionNotice={!canEdit && !writeCap.isLoading}
       query={query}
       onQueryChange={setQuery}
@@ -515,6 +546,7 @@ export function ExperimentalTab({ projectId }: { projectId: string }) {
         emptyTitle: t('emptyTitle'),
         emptyDescription: t('emptyDescription'),
         permission: t('permission'),
+        requiresVolumes: t('requiresVolumes'),
       }}
     />
   );

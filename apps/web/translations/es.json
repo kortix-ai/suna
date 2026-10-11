@@ -1206,11 +1206,11 @@
         },
         "volumes": {
           "name": "Volúmenes",
-          "description": "Activa los volúmenes para toda la organización: carpetas de Archivos compartidas que se sincronizan con las sesiones, y sesiones cuyos archivos y conversación viven en un volumen. El modo de arranque lo define un administrador de la plataforma."
+          "description": "Archivos compartidos y sesiones en volúmenes para toda la organización."
         },
         "stateless_sessions": {
           "name": "Sesiones sin estado",
-          "description": "Requiere Volumes. Las sesiones conservan solo sus archivos y su conversación, en un volumen: una sesión detenida libera su ordenador y se reanuda en uno nuevo con la imagen y la configuración más recientes. Los programas instalados y los procesos en ejecución no sobreviven a una detención."
+          "description": "Un equipo nuevo en cada reactivación. Solo se conservan archivos y chat."
         },
         "drives": {
           "name": "Drive",
@@ -1224,7 +1224,8 @@
           "name": "Registro de sesión v2",
           "description": "Lee una sesión mediante el registro de sesión v2 en lugar de la transcripción v1. Kortix lo activa por proyecto."
         }
-      }
+      },
+      "requiresVolumes": "Activa Volúmenes primero"
     },
     "upgrades": {
       "available": "Actualizaciones disponibles",

@@ -1206,11 +1206,11 @@
         },
         "volumes": {
           "name": "Volumes",
-          "description": "Ativa os volumes para toda a organização: pastas de Arquivos compartilhadas sincronizadas com as sessões e sessões cujos arquivos e conversa ficam em um volume. O modo de inicialização é definido por um administrador da plataforma."
+          "description": "Arquivos compartilhados e sessões em volumes para toda a organização."
         },
         "stateless_sessions": {
           "name": "Sessões sem estado",
-          "description": "Requer Volumes. As sessões mantêm apenas os seus ficheiros e a conversa, num volume: uma sessão parada liberta o seu computador e retoma num novo com a imagem e a configuração mais recentes. Os programas instalados e os processos em execução não sobrevivem a uma paragem."
+          "description": "Um computador novo a cada retomada. Só arquivos e chat são mantidos."
         },
         "drives": {
           "name": "Drive",
@@ -1224,7 +1224,8 @@
           "name": "Registo de sessão v2",
           "description": "Lê uma sessão através do registo de sessão v2 em vez da transcrição v1. A Kortix ativa-o por projeto."
         }
-      }
+      },
+      "requiresVolumes": "Ative Volumes primeiro"
     },
     "upgrades": {
       "available": "Atualizações disponíveis",

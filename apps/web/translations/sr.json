@@ -1206,11 +1206,11 @@
         },
         "volumes": {
           "name": "Volumeni",
-          "description": "Uključuje volumene za celu organizaciju: deljene fascikle Fajlova usklađene sa sesijama i sesije čiji fajlovi i razgovor žive na volumenu. Režim pokretanja podešava administrator platforme."
+          "description": "Deljeni fajlovi i sesije na volumenima za celu organizaciju."
         },
         "stateless_sessions": {
           "name": "Sesije bez stanja",
-          "description": "Zahteva Volumes. Sesije čuvaju samo svoje fajlove i razgovor, na volumenu: zaustavljena sesija oslobađa svoj računar i nastavlja na novom sa najnovijom slikom i konfiguracijom. Instalirani programi i pokrenuti procesi ne preživljavaju zaustavljanje."
+          "description": "Svaki put nov računar. Čuvaju se samo fajlovi i razgovor."
         },
         "drives": {
           "name": "Drive",
@@ -1224,7 +1224,8 @@
           "name": "Log sesije v2",
           "description": "Čita sesiju preko loga sesije v2 umesto transkripta v1. Kortix ga uključuje po projektu."
         }
-      }
+      },
+      "requiresVolumes": "Prvo uključite volumene"
     },
     "upgrades": {
       "available": "Доступне надоградње",

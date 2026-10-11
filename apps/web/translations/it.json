@@ -1206,11 +1206,11 @@
         },
         "volumes": {
           "name": "Volumi",
-          "description": "Attiva i volumi per tutta l'organizzazione: cartelle File condivise sincronizzate con le sessioni e sessioni i cui file e conversazioni risiedono su un volume. La modalità di avvio è impostata da un amministratore della piattaforma."
+          "description": "File condivisi e sessioni su volumi per tutta l'organizzazione."
         },
         "stateless_sessions": {
           "name": "Sessioni senza stato",
-          "description": "Richiede Volumes. Le sessioni conservano solo i file e la conversazione, su un volume: una sessione arrestata rilascia il suo computer e riprende su uno nuovo con l’immagine e la configurazione più recenti. I programmi installati e i processi in esecuzione non sopravvivono a un arresto."
+          "description": "Un computer nuovo a ogni risveglio. Restano solo file e chat."
         },
         "drives": {
           "name": "Drive",
@@ -1224,7 +1224,8 @@
           "name": "Log di sessione v2",
           "description": "Legge una sessione tramite il log di sessione v2 invece della trascrizione v1. Kortix lo attiva per progetto."
         }
-      }
+      },
+      "requiresVolumes": "Attiva prima i volumi"
     },
     "upgrades": {
       "available": "Aggiornamenti disponibili",

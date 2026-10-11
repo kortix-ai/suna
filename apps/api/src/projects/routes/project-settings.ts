@@ -151,6 +151,12 @@ const patchFeatureFlagHandler = async (c: any) => {
     if (!featureFlagDef(feature).available()) {
       return c.json({ error: `${featureFlagDef(feature).name} is not available on this deployment` }, 400);
     }
+    if (feature === 'stateless_sessions' && enabled === true) {
+      const { volumesEnabledFor } = await import('../../platform/services/boot-mode-setting');
+      if (!volumesEnabledFor(loaded.row.accountId)) {
+        return c.json({ error: 'Turn on Volumes first' }, 400);
+      }
+    }
     await writeOrganizationFeatureFlag(loaded.row.accountId, feature, enabled);
     return c.json(serializeProject(loaded.row, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }));
   }

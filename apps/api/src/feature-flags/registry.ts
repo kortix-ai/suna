@@ -396,7 +396,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'volumes',
     name: 'Volumes',
     description:
-      'Turn on Volumes for the whole organization: shared Files folders that stay in sync with sessions, and sessions whose files and conversation live on a volume. Boot mode is set by a platform admin.',
+      'Shared Files and volume-backed sessions for the whole organization.',
     stability: 'experimental',
     // Every volume is a Platinum volume.
     available: () => Boolean(config.PLATINUM_API_KEY),
@@ -416,7 +416,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'stateless_sessions',
     name: 'Stateless sessions',
     description:
-      'Needs Volumes. Sessions keep only their files and conversation, on a volume: a stopped session gives up its computer and wakes on a fresh one with the newest image and config. Installed programs and running processes do not survive a stop.',
+      'Fresh computer on every wake. Only files and chat are kept.',
     stability: 'experimental',
     available: () => Boolean(config.PLATINUM_API_KEY),
     // The value IS the organization's boot mode being `volume` (the

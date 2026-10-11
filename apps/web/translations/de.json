@@ -1206,11 +1206,11 @@
         },
         "volumes": {
           "name": "Volumes",
-          "description": "Schaltet Volumes für die ganze Organisation ein: gemeinsame Dateiordner, die mit Sitzungen synchron bleiben, und Sitzungen, deren Dateien und Unterhaltung auf einem Volume liegen. Den Boot-Modus legt ein Plattform-Admin fest."
+          "description": "Geteilte Dateien und Sitzungen auf Volumes für die ganze Organisation."
         },
         "stateless_sessions": {
           "name": "Zustandslose Sitzungen",
-          "description": "Erfordert Volumes. Sitzungen behalten nur ihre Dateien und den Verlauf auf einem Volume: Eine gestoppte Sitzung gibt ihren Computer ab und startet beim Aufwachen auf einem neuen mit dem neuesten Image und der neuesten Konfiguration. Installierte Programme und laufende Prozesse überstehen einen Stopp nicht."
+          "description": "Bei jedem Aufwecken ein frischer Computer. Nur Dateien und Chat bleiben."
         },
         "drives": {
           "name": "Drive",
@@ -1224,7 +1224,8 @@
           "name": "Session-Log v2",
           "description": "Liest eine Session über das Session-Log v2 statt über das Transkript v1. Kortix aktiviert es pro Projekt."
         }
-      }
+      },
+      "requiresVolumes": "Zuerst Volumes aktivieren"
     },
     "upgrades": {
       "available": "Verfügbare Upgrades",
