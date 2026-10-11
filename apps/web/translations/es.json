@@ -2367,6 +2367,8 @@
       },
       "errors": {
         "unexpected": "Ocurrió un error inesperado",
+        "submitTimedOut": "Esto está tardando más de lo esperado. Inténtalo de nuevo.",
+        "networkFailed": "No se pudo enviar la solicitud. Inténtalo de nuevo.",
         "signupsClosed": "Los registros están cerrados. Contacta con tu administrador o solicita acceso.",
         "ssoRequired": "Tu organización requiere inicio de sesión único. Continúa con SSO.",
         "incorrectPassword": "Contraseña incorrecta. Inténtalo de nuevo o restablécela mediante «¿Olvidaste tu contraseña?».",
