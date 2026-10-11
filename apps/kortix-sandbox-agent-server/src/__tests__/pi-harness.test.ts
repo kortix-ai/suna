@@ -3192,6 +3192,20 @@ describe('pi session-log export (P2.5)', () => {
   })
 })
 
+/**
+ * The `log.*` frames of a v2 stream capture, after checking the whole stream: dense seqs, valid
+ * `log.*` payloads, the run's `session.status` frames, and no `message.*` frame (P4.3b).
+ */
+function v2Frames(raw: string) {
+  const all = raw.split('\n\n').filter((f) => /^id: /m.test(f)).map((f) => JSON.parse(f.slice(f.indexOf('data: ') + 6)) as { seq: number; type: string; payload: any })
+  expect(all.map((f) => f.seq)).toEqual(all.map((_, i) => i + 1))
+  expect(all.filter((f) => f.type.startsWith('message.'))).toEqual([])
+  expect(all.filter((f) => f.type === 'session.status').map((f) => f.payload.status.type)).toContain('busy')
+  const frames = all.filter((f) => f.type.startsWith('log.')) as Array<{ seq: number; type: keyof typeof SESSION_LOG_EVENTS; payload: any }>
+  for (const f of frames) expect(SESSION_LOG_EVENTS[f.type].safeParse(f.payload).success, f.type).toBe(true)
+  return frames
+}
+
 describe('pi session log on the v2 stream (P4.3)', () => {
   const KEYS = ['KORTIX_PROJECT_ID', 'KORTIX_SESSION_ID', 'KORTIX_TOKEN', 'KORTIX_API_URL', 'KORTIX_SESSION_LOG_DUMP_DIR'] as const
   let saved: Record<string, string | undefined> = {}
@@ -3223,9 +3237,7 @@ describe('pi session log on the v2 stream (P4.3)', () => {
       expect(await flushSessionLogJournal()).toBe(true)
     }
     const raw = await readSse(stream, (t) => t.includes('Second answer here.') && t.split('event: log.message').length > 4)
-    const frames = raw.split('\n\n').filter((f) => f.startsWith('event: log.')).map((f) => JSON.parse(f.slice(f.indexOf('data: ') + 6)) as { seq: number; type: keyof typeof SESSION_LOG_EVENTS; payload: any })
-    for (const f of frames) expect(SESSION_LOG_EVENTS[f.type].safeParse(f.payload).success, f.type).toBe(true)
-    expect(frames.map((f) => f.seq)).toEqual(frames.map((_, i) => i + 1))
+    const frames = v2Frames(raw)
     // The journal start: the session and its root thread, before any turn streams.
     expect(frames.slice(0, 2).map((f) => f.type)).toEqual(['log.state', 'log.thread'])
     expect(frames[1]!.payload.thread_id).toBe(root)
@@ -3262,9 +3274,7 @@ describe('pi session log on the v2 stream (P4.3)', () => {
     await waitFor(() => rt.idle())
     expect(await flushSessionLogJournal()).toBe(true)
     const raw = await readSse(stream, (t) => t.includes('Ran it for you.'))
-    const frames = raw.split('\n\n').filter((f) => f.startsWith('event: log.')).map((f) => JSON.parse(f.slice(f.indexOf('data: ') + 6)) as { seq: number; type: keyof typeof SESSION_LOG_EVENTS; payload: any })
-    for (const f of frames) expect(SESSION_LOG_EVENTS[f.type].safeParse(f.payload).success, f.type).toBe(true)
-    expect(frames.map((f) => f.seq)).toEqual(frames.map((_, i) => i + 1))
+    const frames = v2Frames(raw)
 
     const batches = readdirSync(dump).map((f) => JSON.parse(readFileSync(join(dump, f), 'utf8')) as { puts: Array<{ rev: number; message: SessionLogMessage }> })
     const finals = new Map(batches.flatMap((b) => b.puts).map((p) => [p.message.message_id, p]))

@@ -127,11 +127,29 @@ Known limits of the OpenCode export:
 
 `GET /kortix/runtime/events?schema=v2` streams the session log as `log.*`
 frames (capability `session.log.v2`; payload schemas in
-`@kortix/api-contract/session-log` `events.ts`, `SESSION_LOG_EVENTS`). The
-frames ride `sessionLogEventBus()`, a second bus with its own seq and epoch, so
-the v1 stream keeps dense seqs. Without `schema`, or with `schema=v1`, the
-stream is the v1 stream, byte for byte (an empty `schema=` too); another
-value is a 400.
+`@kortix/api-contract/session-log` `events.ts`, `SESSION_LOG_EVENTS`) in place
+of the v1 transcript frames, and every other v1 frame unchanged. The frames
+ride `sessionLogEventBus()`, a second bus with its own seq and epoch, so the
+v1 stream keeps dense seqs and the v2 stream resumes with its own `since` and
+`epoch`. Without `schema`, or with `schema=v1`, the stream is the v1 stream,
+byte for byte (an empty `schema=` too); another value is a 400.
+
+Frame classification (`V1_TRANSCRIPT_EVENTS` in
+`services/event-bus/kortix-event-bus.ts`, the set P4.4 adds to
+`@kortix/api-contract/session-log`; `kortix-event-bus.test.ts` fails when a
+`KortixSessionEvent` type is unclassified):
+- replaced by `log.*` (never on v2): `message.updated`, `message.removed`,
+  `message.part.updated`, `message.part.removed`, `message.part.delta`;
+- kept (copied onto v2): `session.status`, `session.idle`, `session.error`,
+  `permission.asked`, `permission.replied`, `question.asked`,
+  `question.replied`, `question.rejected`, `todo.updated`, and every frame
+  beyond `KortixSessionEvent` (`session.created`, `session.updated`,
+  `session.diff`, `session.compacted`, pty, lsp, `kortix.*` daemon frames).
+
+The copy is a `tap` on the v1 bus (`kortixEventBus()` installs it): a
+daemon-internal listener that runs before the subscribers and is not counted
+in `subscriberCount`. The journal's v1 listener is a tap too. The
+`sse-subscriber` swap blocker counts the subscribers of both buses.
 
 | Frame | Payload | Emitted |
 | --- | --- | --- |
@@ -139,6 +157,7 @@ value is a 400.
 | `log.thread` | the thread upsert (no messages) | for each thread a collection finds new or changed |
 | `log.message` | a put `{ rev, message }`, or a tombstone `{ message_id, rev }` (the journal's tombstone; no `message`; the schema has no `deleted_at`) | for each revision a collection puts in the dirty set; and a live put while a turn runs (below) |
 | `log.block.delta` | `{ thread_id, message_id, block_id, delta }` | for each v1 `message.part.delta` text frame while the journal runs |
+| any kept v1 type | the v1 payload, unchanged | for each such frame on the v1 bus |
 
 The journal publishes the first three in `collectOnce`, from the same records
 it posts (same ids, seqs and revs), in that order. It collects when it starts
@@ -191,9 +210,10 @@ Limits:
 - A tool's result and a block's changes after it first appears (a reasoning
   block's end, a call's output) reach the v2 stream with the next live put of
   that message or at the turn end, not on their own.
-- A journal the API turned off (404, 409) publishes nothing more, deltas
-  included: a 404 API has no relay for the stream, and a 409 box is a zombie.
-  A box with no control plane starts no journal, so its v2 stream stays empty.
+- A journal the API turned off (404, 409) publishes no `log.*` frame more,
+  deltas included: a 404 API has no relay for the stream, and a 409 box is a
+  zombie. A box with no control plane starts no journal: its v2 stream
+  carries the kept v1 frames only.
 - A `kortix.resync` on the v2 stream carries an empty `recover`: the client
   reads the saved session log again (P4.5).
 

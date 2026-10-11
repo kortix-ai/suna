@@ -136,7 +136,7 @@ export class SessionLogJournal {
   /** The live turn's messages by id, in the order the v1 bus first named them. */
   private readonly live = new Map<string, LiveRow>()
   /** The v1 bus until `stop`: text deltas republished as `log.block.delta`, and the live turn's puts. */
-  private readonly offDeltas = kortixEventBus().subscribe((event) => {
+  private readonly offDeltas = kortixEventBus().tap((event) => {
     if (this.off) return
     const p = event.payload as Record<string, any> | null
     if (event.type === 'message.updated') return this.liveMessage(p?.info)
@@ -147,7 +147,7 @@ export class SessionLogJournal {
     const part = this.live.get(message_id)?.parts.get(block_id)
     if (part && typeof part.text === 'string') part.text += p.delta
     sessionLogEventBus().publish('log.block.delta', { thread_id, message_id, block_id, delta: p.delta } satisfies SessionLogBlockDeltaEvent, thread_id)
-  }).unsubscribe
+  })
 
   constructor(
     private readonly port: SessionLogPort,
