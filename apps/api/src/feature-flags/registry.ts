@@ -416,7 +416,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'stateless_sessions',
     name: 'Stateless sessions',
     description:
-      'Fresh computer on every wake. Only files and chat are kept.',
+      'Fresh computer on every wake; only files and chat are kept. Needs Volumes on.',
     stability: 'experimental',
     available: () => Boolean(config.PLATINUM_API_KEY),
     // The value IS the organization's boot mode being `volume` (the

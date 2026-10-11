@@ -1210,7 +1210,7 @@
         },
         "stateless_sessions": {
           "name": "Sesiones sin estado",
-          "description": "Un equipo nuevo en cada reactivación. Solo se conservan archivos y chat."
+          "description": "Un equipo nuevo en cada reactivación; solo se conservan archivos y chat. Requiere Volúmenes activados."
         },
         "drives": {
           "name": "Drive",
@@ -1224,8 +1224,7 @@
           "name": "Registro de sesión v2",
           "description": "Lee una sesión mediante el registro de sesión v2 en lugar de la transcripción v1. Kortix lo activa por proyecto."
         }
-      },
-      "requiresVolumes": "Activa Volúmenes primero"
+      }
     },
     "upgrades": {
       "available": "Actualizaciones disponibles",

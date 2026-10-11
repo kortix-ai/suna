@@ -1210,7 +1210,7 @@
         },
         "stateless_sessions": {
           "name": "Zustandslose Sitzungen",
-          "description": "Bei jedem Aufwecken ein frischer Computer. Nur Dateien und Chat bleiben."
+          "description": "Bei jedem Aufwecken ein frischer Computer; nur Dateien und Chat bleiben. Erfordert aktivierte Volumes."
         },
         "drives": {
           "name": "Drive",
@@ -1224,8 +1224,7 @@
           "name": "Session-Log v2",
           "description": "Liest eine Session über das Session-Log v2 statt über das Transkript v1. Kortix aktiviert es pro Projekt."
         }
-      },
-      "requiresVolumes": "Zuerst Volumes aktivieren"
+      }
     },
     "upgrades": {
       "available": "Verfügbare Upgrades",

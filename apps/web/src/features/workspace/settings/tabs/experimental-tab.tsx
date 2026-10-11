@@ -66,7 +66,6 @@ import {
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { errorToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
@@ -109,8 +108,6 @@ export interface ExperimentalCopy {
   emptyTitle: string;
   emptyDescription: string;
   permission: string;
-  /** Tooltip on a flag that needs Volumes while Volumes is off. */
-  requiresVolumes: string;
 }
 
 export const DEFAULT_EXPERIMENTAL_COPY: ExperimentalCopy = {
@@ -127,7 +124,6 @@ export const DEFAULT_EXPERIMENTAL_COPY: ExperimentalCopy = {
   emptyTitle: 'No experimental features',
   emptyDescription: 'This deployment exposes no per-project feature flags.',
   permission: "You need the project's settings permission to change a feature flag.",
-  requiresVolumes: 'Turn on Volumes first',
 };
 
 function originLabel(feature: FeatureFlagView, copy: ExperimentalCopy): string {
@@ -198,7 +194,7 @@ function ExperimentalFeatureRow({
   feature,
   pending,
   canManage,
-  blockedReason,
+  blocked = false,
   onToggle,
   copy,
 }: {
@@ -206,9 +202,9 @@ function ExperimentalFeatureRow({
   pending: boolean;
   /** Already resolved for this row (an `operator_only` row needs a platform operator). */
   canManage: boolean;
-  /** Set when the flag depends on one that is off: the switch is dead and
-   *  this text shows on hover. */
-  blockedReason?: string;
+  /** The flag depends on one that is off (Stateless sessions needs Volumes):
+   *  the switch is dead, and the row's description says why. */
+  blocked?: boolean;
   onToggle: (key: string, next: boolean) => void;
   copy: ExperimentalCopy;
 }) {
@@ -237,25 +233,12 @@ function ExperimentalFeatureRow({
       </div>
       <div className="flex shrink-0 items-center gap-2">
         {pending ? <Loading className="text-muted-foreground size-3.5" /> : null}
-        {blockedReason ? (
-          // A disabled switch takes no pointer events, so the tooltip hangs
-          // off a wrapper.
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span tabIndex={0} aria-label={blockedReason} className="inline-flex cursor-not-allowed">
-                <Switch aria-labelledby={nameId} checked={false} disabled onCheckedChange={() => {}} />
-              </span>
-            </TooltipTrigger>
-            <TooltipContent>{blockedReason}</TooltipContent>
-          </Tooltip>
-        ) : (
-          <Switch
-            aria-labelledby={nameId}
-            checked={feature.enabled}
-            disabled={!canManage || pending}
-            onCheckedChange={(v) => onToggle(feature.key, v)}
-          />
-        )}
+        <Switch
+          aria-labelledby={nameId}
+          checked={blocked ? false : feature.enabled}
+          disabled={blocked || !canManage || pending}
+          onCheckedChange={(v) => onToggle(feature.key, v)}
+        />
       </div>
     </div>
   );
@@ -397,9 +380,7 @@ export function ExperimentalTabView({
                   feature={feature}
                   pending={pendingKeySet.has(feature.key)}
                   canManage={canManage && (feature.operator_only !== true || canManageOperatorOnly)}
-                  blockedReason={
-                    feature.key === 'stateless_sessions' && volumesOff ? copy.requiresVolumes : undefined
-                  }
+                  blocked={feature.key === 'stateless_sessions' && volumesOff}
                   onToggle={onToggle}
                   copy={copy}
                 />
@@ -546,7 +527,6 @@ export function ExperimentalTab({ projectId }: { projectId: string }) {
         emptyTitle: t('emptyTitle'),
         emptyDescription: t('emptyDescription'),
         permission: t('permission'),
-        requiresVolumes: t('requiresVolumes'),
       }}
     />
   );

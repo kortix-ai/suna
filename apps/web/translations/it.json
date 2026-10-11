@@ -1210,7 +1210,7 @@
         },
         "stateless_sessions": {
           "name": "Sessioni senza stato",
-          "description": "Un computer nuovo a ogni risveglio. Restano solo file e chat."
+          "description": "Un computer nuovo a ogni risveglio; restano solo file e chat. Richiede i volumi attivi."
         },
         "drives": {
           "name": "Drive",
@@ -1224,8 +1224,7 @@
           "name": "Log di sessione v2",
           "description": "Legge una sessione tramite il log di sessione v2 invece della trascrizione v1. Kortix lo attiva per progetto."
         }
-      },
-      "requiresVolumes": "Attiva prima i volumi"
+      }
     },
     "upgrades": {
       "available": "Aggiornamenti disponibili",

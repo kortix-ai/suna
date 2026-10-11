@@ -1210,7 +1210,7 @@
         },
         "stateless_sessions": {
           "name": "Sesije bez stanja",
-          "description": "Svaki put nov računar. Čuvaju se samo fajlovi i razgovor."
+          "description": "Svaki put nov računar; čuvaju se samo fajlovi i razgovor. Potrebno je uključiti volumene."
         },
         "drives": {
           "name": "Drive",
@@ -1224,8 +1224,7 @@
           "name": "Log sesije v2",
           "description": "Čita sesiju preko loga sesije v2 umesto transkripta v1. Kortix ga uključuje po projektu."
         }
-      },
-      "requiresVolumes": "Prvo uključite volumene"
+      }
     },
     "upgrades": {
       "available": "Доступне надоградње",

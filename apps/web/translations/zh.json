@@ -1210,7 +1210,7 @@
         },
         "stateless_sessions": {
           "name": "无状态会话",
-          "description": "每次唤醒都是全新的计算机，只保留文件和聊天。"
+          "description": "每次唤醒都是全新的计算机，只保留文件和聊天。需要先开启卷。"
         },
         "drives": {
           "name": "云盘",
@@ -1224,8 +1224,7 @@
           "name": "会话日志 v2",
           "description": "通过 v2 会话日志而不是 v1 转录读取会话。由 Kortix 按项目启用。"
         }
-      },
-      "requiresVolumes": "请先开启卷"
+      }
     },
     "upgrades": {
       "available": "可用升级",
