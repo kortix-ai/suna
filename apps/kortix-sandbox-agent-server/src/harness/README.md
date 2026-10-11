@@ -84,7 +84,10 @@ stops. The adapter reads `PiRuntime.sessionLogSnapshot()`: the root's
 messages, and the v1 transcript. pi entries carry pi's own ids, so the runtime
 records the Kortix message id of each pi message (and of each compaction
 entry: its marker) and persists the map and the header in its dump; block ids
-are the v1 part ids. `restore` returns no cursors until P6 writes the native
+are the v1 part ids. `seq` is monotonic per thread and never reused (the API
+keeps a tombstoned row's seq): a root message's seq is its entry's position in
+pi's append-only entry list, and the runtime issues each child message a seq
+once and persists it. `restore` returns no cursors until P6 writes the native
 store. The mapping decisions are in the header of `pi/session-log.ts`.
 
 Debug: `KORTIX_SESSION_LOG_DUMP_DIR=<dir>` (off by default) makes the journal
