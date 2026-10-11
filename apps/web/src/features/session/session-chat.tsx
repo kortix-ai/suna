@@ -4551,6 +4551,7 @@ export function SessionChat({
                 lockForApproval={runtimePermissionLocksComposer(pendingPermissions.length, isBusy)}
                 onCustomAnswer={handleCustomAnswer}
                 questionButtonLabel={renderedQuestion ? questionAction.label : null}
+                questionActive={!!renderedQuestion}
                 questionCanAct={questionAction.canAct}
                 onQuestionAction={handleQuestionAction}
                 aboveSlot={chatAboveSlot}

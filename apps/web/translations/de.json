@@ -1210,6 +1210,10 @@
         "ephemeral_sandboxes": {
           "name": "Kurzlebige Sandboxes",
           "description": "Eine gestoppte Session behält ihre Dateien und ihr Gespräch auf einem Volume und gibt ihren Rechner ab. Beim Aufwecken startet ein neuer Rechner mit dem neuesten Image. Laufende Prozesse überstehen einen Stopp nicht."
+        },
+        "session_log": {
+          "name": "Session-Log v2",
+          "description": "Liest eine Session über das Session-Log v2 statt über das Transkript v1. Kortix aktiviert es pro Projekt."
         }
       }
     },

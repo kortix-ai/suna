@@ -1,0 +1,22 @@
+{
+  "source_hash": "a8cb58b0aeadfdee39236ccdc21a932b108f92e4dd51fe9a042b088c6f76cae3",
+  "diff_files": [
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-11T114142Z-compare-a-live-database-only-with-what-its-own-migration-led.md",
+    ".github/workflows/db-drift.yml",
+    "packages/db/MIGRATIONS.md",
+    "packages/db/scripts/prune-unapplied-migrations.ts",
+    "packages/db/scripts/schema-signature.integration.test.ts",
+    "packages/db/scripts/schema-signature.sql",
+    "packages/db/scripts/verify-live-schema.test.ts"
+  ],
+  "diff_hash": "65099b21b4e0ac5a28cfeba826f22342990f23e685183c74133ddde06ac204d6",
+  "head": "e600249c024a9b96b860f848966d9eae17036883",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-11T19:04:41.875Z"
+}
