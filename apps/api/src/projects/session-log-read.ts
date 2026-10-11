@@ -150,16 +150,23 @@ export async function readLogTranscriptWindow(input: {
   before?: string | null;
   opencodeSessionId?: string | null;
 }): Promise<MirrorSnapshot | null> {
+  // One round trip for the flag, the session record and the threads: the mirror read's state query costs one too.
   const [log] = await db
-    .select({ record: sessionLogs.record, updatedAt: sessionLogs.updatedAt, metadata: projects.metadata, accountId: projects.accountId })
+    .select({
+      record: sessionLogs.record,
+      updatedAt: sessionLogs.updatedAt,
+      metadata: projects.metadata,
+      accountId: projects.accountId,
+      threads: sql<ThreadRow[] | null>`(SELECT json_agg(json_build_object('threadId', ${sessionLogThreads.threadId}, 'parentThreadId', ${sessionLogThreads.parentThreadId}, 'record', ${sessionLogThreads.record}) ORDER BY ${sessionLogThreads.createdAt}, ${sessionLogThreads.threadId}) FROM ${sessionLogThreads} WHERE ${sessionLogThreads.sessionId} = ${sessionLogs.sessionId})`,
+    })
     .from(sessionLogs)
     .innerJoin(projects, eq(projects.projectId, sessionLogs.projectId))
     .where(eq(sessionLogs.sessionId, input.sessionId))
     .limit(1);
   if (!log || !resolveFeatureFlag(log.metadata, 'session_log', log.accountId)) return null;
+  const threads = log.threads ?? [];
 
   return db.transaction(async (tx) => {
-    const threads = await readThreads(tx, input.sessionId);
     const root = rootOf(threads);
     const stated = v1Ext(log.record)?.data;
     const rootId = stated && 'root_id' in stated ? ((stated.root_id as string | null) ?? null) : root ? nativeOf(root) : null;
