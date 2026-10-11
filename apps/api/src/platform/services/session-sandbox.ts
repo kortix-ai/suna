@@ -37,7 +37,7 @@ import {
 import {
   readActiveRouting,
   type ActiveRouting,
-} from '../../projects/provider-transition/provider-transition-store';
+} from '../../projects/provider-transition/provider-transition-routing';
 import {
   buildSandboxInitAttemptMetadata,
   buildSandboxInitFailureMetadata,

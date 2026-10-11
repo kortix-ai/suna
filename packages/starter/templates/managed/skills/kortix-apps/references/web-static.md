@@ -9,27 +9,27 @@ UI, including one that uses a Convex backend App for its data.
 | Source | Deploy |
 | --- | --- |
 | HTML, CSS, JavaScript | `--type static` |
-| Prebuilt Vite or React `dist/` | deploy `dist/ --type static --spa` |
-| Vite or React source | build it here (`npm run build`), then deploy `dist/ --type static --spa` |
-| Next.js static export | set `output: 'export'`, build, then deploy `out/ --type static --spa` |
+| Prebuilt Vite or React `dist/` | deploy `apps/<slug>/dist --type static --spa` |
+| Vite or React source | build it here (`npm run build` in `apps/<slug>`), then deploy `apps/<slug>/dist --type static --spa` |
+| Next.js static export | set `output: 'export'`, build, then deploy `apps/<slug>/out --type static --spa` |
 
 Before building, inspect `package.json` and the lockfile. Run the declared
 `build` script with the repository's package manager. Do not assume `pnpm`
 when the project uses npm, Yarn, or Bun.
 
 ```bash
-npm run build
-kortix apps deploy ./dist --slug storefront --name Storefront --type static --spa
+npm --prefix apps/storefront run build
+kortix apps deploy apps/storefront/dist --slug storefront --name Storefront --type static --spa
 ```
 
 ## Build here, deploy the output
 
 Build here, then deploy the output directory itself as the path
-(`kortix apps deploy ./dist`):
+(`kortix apps deploy apps/storefront/dist`):
 
 - The CLI reads `.gitignore`, `.dockerignore`, and `.kortixignore` only from
   the directory it uploads. A repository `.gitignore` that lists `dist/` does
-  not hide `./dist` when `./dist` is the path.
+  not hide `apps/storefront/dist` when that directory is the path.
 - The CLI never uploads `.env*` files. A build-time value (`VITE_*` or
   `NEXT_PUBLIC_*` in `.env.production`) reaches the App only through a build
   you ran here, before the deploy. An App that uses a Convex backend App needs no

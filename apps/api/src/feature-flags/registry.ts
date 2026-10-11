@@ -427,9 +427,11 @@ const FLAGS: readonly FeatureFlagDef[] = [
     catalogHidden: true,
     enforcement: 'behavioral',
     enforcementNote:
-      'BEHAVIORAL only. Nothing reads the flag yet: the v2 session-log read ' +
-      'path (P4.2) and the SDK v2 negotiation (P4.5, v2 only when health lists ' +
-      '`session.log.v2` and the flag is on) will resolve it per project.',
+      'BEHAVIORAL only. On, the API serves the stored v1 transcript reads ' +
+      '(transcript shape=sync and the compact fallback, the open bundle, the ' +
+      'public share, MCP read_session) from the session log, and the open ' +
+      'bundle carries a `log` leg (P4.2). The SDK v2 negotiation (P4.5, v2 only ' +
+      'when health lists `session.log.v2` and the flag is on) will read it too.',
   },
 ];
 

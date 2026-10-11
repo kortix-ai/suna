@@ -22,9 +22,9 @@ import {
   boundMirrorWindow,
   MIRROR_WINDOW_MAX_CHARS,
   type MirrorSnapshot,
-  readSessionTranscriptMirror,
   UnknownTranscriptCursorError,
 } from './session-transcript-mirror';
+import { readStoredTranscriptWindow } from '../session-log-read';
 
 const WORKSPACE_DIRECTORY = '/workspace';
 
@@ -292,7 +292,9 @@ export function mirrorIsComplete(mirror: MirrorSnapshot): boolean {
 }
 
 /** A mirror read must never be able to fail a transcript request: the mirror is
- *  an enrichment, and its absence is already an expressible answer. */
+ *  an enrichment, and its absence is already an expressible answer. With the
+ *  project flag `session_log` on, the session log answers in the mirror's shape
+ *  (`readStoredTranscriptWindow`). */
 async function readMirrorSafely(
   sessionId: string,
   limit: number,
@@ -300,7 +302,7 @@ async function readMirrorSafely(
   opencodeSessionId?: string | null,
 ): Promise<MirrorSnapshot | null> {
   try {
-    return await readSessionTranscriptMirror({ sessionId, limit, before, opencodeSessionId });
+    return await readStoredTranscriptWindow({ sessionId, limit, before, opencodeSessionId });
   } catch (err) {
     // A cursor the caller supplied is the caller's error, not a mirror
     // failure, and swallowing it here would answer "nothing was captured" for
