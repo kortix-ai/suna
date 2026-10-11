@@ -1,5 +1,5 @@
 {
-  "source_hash": "4c1d9ebaab85f658a7a1bd4d88617495ee3466500d7f31737596979ea2b3b4f4",
+  "source_hash": "3894eb61f88f7f4f1abe8eeaf5bf47b6805a4e5e74071f6248683078244752cb",
   "diff_files": [
     "apps/kortix-sandbox-agent-server/src/__tests__/pi-harness.test.ts",
     "apps/kortix-sandbox-agent-server/src/__tests__/pi-session-log.test.ts",
@@ -10,13 +10,13 @@
     "apps/kortix-sandbox-agent-server/src/harness/pi/session-log.ts",
     "apps/kortix-sandbox-agent-server/src/harness/shared/session-log-journal.ts"
   ],
-  "diff_hash": "dd5c4a6f366c5aeb0fb715199fbf733b4bf4aad30ba30eb280833a095b6d9c05",
-  "head": "1744de1f9abf340ee1a09fc21c865aca3d608d0f",
+  "diff_hash": "0a3793ead7e42485a778400864dd8c780db91a45f7178f9e52b58e78b4acc220",
+  "head": "c4284ee2f02bea7040a5bca77ed9eaac230fee08",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-11T12:32:23.922Z"
+  "at": "2026-10-11T14:18:21.296Z"
 }
