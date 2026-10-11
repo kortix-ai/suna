@@ -11,7 +11,13 @@
  * - 404: the API predates the route. The daemon stops journaling for this boot.
  *
  * Manifest: `GET /v1/projects/:p/sessions/:s/log/manifest`, sandbox token, answers
- * `SessionLogManifest` for the boot reconcile.
+ * `SessionLogManifest` for the boot reconcile. P6 adds each message's last `rev` to it.
+ *
+ * `rev` is monotonic per message across daemon boots, not a per-boot counter: the daemon
+ * issues `max(Date.now() * 1000, last + 1)`, a safe integer that needs a `bigint` column. The
+ * API applies the highest `rev` it has seen for a message (a lower or equal one changes
+ * nothing) and acknowledges every `(message_id, rev)` pair of the batch it has seen, applied
+ * or not. A tombstone is a revision too: a put with a lower `rev` does not revive the message.
  */
 import { z } from 'zod';
 import { SessionLogMessageSchema, SessionLogSchema, SessionLogThreadSchema } from './schema';

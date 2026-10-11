@@ -38,6 +38,7 @@ export interface SessionLogChanges {
   messages: ExportedMessage[]
   /** Ids of messages the native store no longer holds. */
   tombstones: string[]
+  /** May include unchanged threads: the journal skips one equal to the last it collected. */
   threads: SessionLogThreadUpsert[]
   /** Session fields that changed (title, selection, todos, pending, harness). */
   session?: SessionLogSessionPatch

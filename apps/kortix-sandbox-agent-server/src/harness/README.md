@@ -78,14 +78,27 @@ yet: P2.5 (pi) and P2.6 (OpenCode) do, and call `startSessionLogJournal`.
 
 The journal (`shared/session-log-journal.ts`) drops a message whose native hash
 equals its cursor's (schema rule C13), so an unchanged or restored message is
-never sent again. It posts the rest in order, in gzipped batches of at most
-1 MB, each message with its `rev`, and keeps them dirty until apps/api
-acknowledges `(message_id, rev)`. `relayTurnEnd` and the daemon shutdown flush
-it first and wait at most 3 s, or until the first failed post; a batch not
-acknowledged by then keeps retrying in the background.
-Network errors, 401, 429 and 5xx (503: the operator switch is off) back off
-like the audit relay. 404 (an older API) and 409 (a newer generation owns the
-session) turn it off for the boot. Another 4xx drops the batch.
+never sent again, and a thread equal to the last one it collected. It posts the
+rest in order, in gzipped batches of at most 1 MB, each message with a `rev`
+that is monotonic across boots (`max(Date.now() * 1000, last + 1)`), and keeps
+them dirty until apps/api acknowledges `(message_id, rev)`.
+
+Both harnesses flush it before a turn's end is relayed: pi and the OpenCode
+orphan path through `relayTurnEnd`, OpenCode's normal turn end through
+`relayTurnEndToApi`. The memory-guard turn end does not flush. The daemon
+shutdown (SIGTERM, SIGINT, the agent swap) flushes it before `harness.stop()`.
+Each flush waits at most 3 s, or until the first failed post; a batch not
+acknowledged by then keeps retrying in the background. A provider stop is not
+known to deliver SIGTERM to kortixd, so for a provider stop the turn-end flush
+and the P6 boot reconcile carry the log.
+
+Network errors, 401, 408, 429 and 5xx (503: the operator switch is off) back
+off like the audit relay; a dead session token (the KRTX-446 breaker) sends
+nothing. 404 (an older API) and 409 (a newer generation owns the session) turn
+it off for the boot and stop the drain at once. Another 4xx drops the batch. A
+200 that does not acknowledge a batch is retried 3 times, then its pairs are
+dropped: the native store still holds them. A second `startSessionLogJournal`
+stops the first journal.
 
 ## Health and capabilities (E19, E1)
 

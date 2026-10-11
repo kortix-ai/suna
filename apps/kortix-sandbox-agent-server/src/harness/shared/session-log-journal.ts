@@ -3,19 +3,28 @@
  * `POST /projects/:p/sessions/:s/log/journal` (wire: `@kortix/api-contract/session-log`).
  *
  * - It pulls changes from the adapter's `SessionLogPort`, drops unchanged
- *   messages by native hash (C13), and keeps the rest in a dirty set until the
- *   API acknowledges their `(message_id, rev)`.
+ *   messages by native hash (C13) and unchanged threads by their JSON, and
+ *   keeps the rest in a dirty set until the API acknowledges their
+ *   `(message_id, rev)`.
+ * - `rev` is monotonic across boots: `max(Date.now() * 1000, last + 1)`. A
+ *   restarted daemon (no restore, same generation) never reuses a rev, so the
+ *   API, which keeps the highest rev per message, never keeps stale content.
  * - It posts the dirty set in order, in batches of at most 1 MB gzipped. One
  *   message larger than that goes alone.
- * - `relayTurnEnd` and the daemon shutdown call `flush`, which waits at most
- *   3 s for the acknowledgement, and returns at the first failed post. A batch
- *   not acknowledged by then keeps retrying in the background; the v1 capture
- *   still saves the turn.
- * - Network errors, 401, 429 and 5xx (503: the operator switch is off) back
- *   off exponentially and keep the dirty set. 404 (an API without the route)
- *   and 409 (a newer generation owns the session: this box is a zombie) turn
- *   the journal off for this boot. Any other 4xx drops the batch: it can never
- *   succeed, and retrying it would block every later message.
+ * - Both harnesses' turn-end relays (`relayTurnEnd`, OpenCode's
+ *   `relayTurnEndToApi`) and the daemon shutdown call `flush`, which waits at
+ *   most 3 s for the acknowledgement, and returns at the first failed post. A
+ *   batch not acknowledged by then keeps retrying in the background; the
+ *   native store still holds the messages.
+ * - Network errors, 401, 408, 429 and 5xx (503: the operator switch is off)
+ *   back off exponentially and keep the dirty set. A dead session token (the
+ *   KRTX-446 breaker) sends nothing. 404 (an API without the route) and 409 (a
+ *   newer generation owns the session: this box is a zombie) turn the journal
+ *   off for this boot. Any other 4xx drops the batch: it can never succeed,
+ *   and retrying it would block every later message. A 200 that does not
+ *   acknowledge a batch is retried 3 times, then its pairs are dropped. A
+ *   dropped message stays in the native store, and the P6 boot reconcile
+ *   sends it again.
  *
  * Same credential and relay context as every other daemon callback
  * (`sandboxRelayContext`); same backoff as the audit relay (`computeRetryDelay`).
@@ -31,12 +40,22 @@ import {
 } from '@kortix/api-contract/session-log'
 import { logger } from '@/lib/log/logger'
 import { sandboxRelayContext } from '@/lib/kortix-api/relay-context'
-import { noteControlPlaneResponse } from '@/lib/kortix-api/session-token-health'
+import { noteControlPlaneResponse, sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
 import type { SessionLogPort } from '../contract/session-log'
 import { computeRetryDelay, MAX_RETRY_MS_DEFAULT } from './audit-relay'
 
 export const JOURNAL_MAX_BATCH_BYTES = 1024 * 1024
 export const JOURNAL_ACK_TIMEOUT_MS = 3_000
+/** Posts of one batch that a 200 does not acknowledge, before its pairs are dropped. */
+export const JOURNAL_UNACKED_RETRIES = 3
+
+// The last rev this process issued. A rev follows the clock (1000 per ms), so
+// a later boot's revs exceed every rev an earlier boot issued.
+let lastRev = 0
+function nextRev(): number {
+  lastRev = Math.max(Date.now() * 1000, lastRev + 1)
+  return lastRev
+}
 
 export interface SessionLogJournalOptions {
   /** The session generation this box writes under. */
@@ -55,7 +74,8 @@ type Batch = { entries: Entry[]; threads: SessionLogThreadUpsert[]; session: Ses
 
 export class SessionLogJournal {
   private readonly cursors = new Map<string, ExportCursor>()
-  private readonly revs = new Map<string, number>()
+  /** Each thread's JSON as last collected: an equal thread is not sent again. */
+  private readonly threadJson = new Map<string, string>()
   private readonly tombstoned = new Set<string>()
   private readonly dirty = new Map<string, Entry>()
   private readonly threads = new Map<string, SessionLogThreadUpsert>()
@@ -63,6 +83,9 @@ export class SessionLogJournal {
   private off: string | null = null
   private stopped = false
   private failures = 0
+  /** Consecutive 200s that did not acknowledge the head batch. */
+  private unacked = 0
+  private inflight: AbortController | null = null
   private draining: Promise<void> | null = null
   private collecting: Promise<void> | null = null
   private recollect = false
@@ -118,6 +141,7 @@ export class SessionLogJournal {
     if (timeoutMs > 0) await this.flush(timeoutMs)
     this.stopped = true
     this.wakeBackoff?.()
+    this.inflight?.abort()
     if (!this.clean && !this.off) logger.warn('[session-log] journal stopped with unacknowledged changes', { pending: this.dirty.size })
   }
 
@@ -147,22 +171,21 @@ export class SessionLogJournal {
       cursor.native_hashes[id] = native_hash
       cursor.last_seq = Math.max(cursor.last_seq, message.seq)
       this.tombstoned.delete(id)
-      this.dirty.set(id, { id, rev: this.nextRev(id), message })
+      this.dirty.set(id, { id, rev: nextRev(), message })
     }
     for (const id of changes.tombstones) {
       if (this.tombstoned.has(id)) continue
       this.tombstoned.add(id)
       for (const cursor of this.cursors.values()) delete cursor.native_hashes[id]
-      this.dirty.set(id, { id, rev: this.nextRev(id) })
+      this.dirty.set(id, { id, rev: nextRev() })
     }
-    for (const thread of changes.threads) this.threads.set(thread.thread_id, thread)
+    for (const thread of changes.threads) {
+      const json = JSON.stringify(thread)
+      if (this.threadJson.get(thread.thread_id) === json) continue
+      this.threadJson.set(thread.thread_id, json)
+      this.threads.set(thread.thread_id, thread)
+    }
     if (changes.session) this.session = { ...this.session, ...changes.session }
-  }
-
-  private nextRev(id: string): number {
-    const rev = (this.revs.get(id) ?? 0) + 1
-    this.revs.set(id, rev)
-    return rev
   }
 
   private drain(): Promise<void> {
@@ -174,6 +197,7 @@ export class SessionLogJournal {
             await this.sleep()
             break
           }
+          if (this.off || this.stopped) break
         }
       }
     })().finally(() => {
@@ -216,7 +240,10 @@ export class SessionLogJournal {
       this.off = 'no control plane'
       return true
     }
+    // A credential the API refused, repeatedly, cannot land a batch (KRTX-446).
+    if (sessionTokenPresumedDead()) return false
     let response: Response
+    this.inflight = new AbortController()
     try {
       response = await fetch(
         `${ctx.apiRoot}/projects/${encodeURIComponent(ctx.projectId)}/sessions/${encodeURIComponent(ctx.sessionId)}/log/journal`,
@@ -224,23 +251,35 @@ export class SessionLogJournal {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Content-Encoding': 'gzip', Authorization: `Bearer ${ctx.token}` },
           body: batch.body,
-          signal: AbortSignal.timeout(15_000),
+          signal: AbortSignal.any([this.inflight.signal, AbortSignal.timeout(15_000)]),
         },
       )
     } catch (err) {
-      logger.warn('[session-log] journal post failed', { err: (err as Error).message })
+      if (!this.stopped) logger.warn('[session-log] journal post failed', { err: (err as Error).message })
       return false
+    } finally {
+      this.inflight = null
     }
     const text = await response.text().catch(() => '')
     if (response.ok) {
       const acked = SessionLogJournalResponseSchema.safeParse(parseJson(text)).data?.acked ?? []
       for (const { message_id, rev } of acked) if (this.dirty.get(message_id)?.rev === rev) this.dirty.delete(message_id)
-      this.settle(batch)
-      if (batch.entries.some((e) => this.dirty.get(e.id) === e)) {
-        logger.warn('[session-log] journal answered 200 without acknowledging the batch', { entries: batch.entries.length, acked: acked.length })
+      const unacked = batch.entries.filter((e) => this.dirty.get(e.id) === e)
+      if (unacked.length === 0) {
+        this.settle(batch)
+        this.failures = 0
+        this.unacked = 0
+        return true
+      }
+      // Threads and the session patch stay dirty: nothing confirmed them.
+      this.unacked += 1
+      if (this.unacked < JOURNAL_UNACKED_RETRIES) {
+        logger.warn('[session-log] journal answered 200 without acknowledging the batch', { unacked: unacked.length, acked: acked.length })
         return false
       }
-      this.failures = 0
+      logger.warn('[session-log] journal never acknowledged these pairs; dropping them', { pairs: unacked.map((e) => `${e.id}@${e.rev}`).slice(0, 20) })
+      for (const e of unacked) this.dirty.delete(e.id)
+      this.unacked = 0
       return true
     }
     noteControlPlaneResponse(response.status, text)
@@ -250,7 +289,7 @@ export class SessionLogJournal {
       logger.warn('[session-log] journal off for this boot', { status: response.status, generation: this.options.generation, current })
       return true
     }
-    if (response.status === 401 || response.status === 429 || response.status >= 500) {
+    if (response.status === 401 || response.status === 408 || response.status === 429 || response.status >= 500) {
       logger.warn('[session-log] journal post non-ok; backing off', { status: response.status, body: text.slice(0, 200) })
       return false
     }
@@ -302,6 +341,8 @@ let active: SessionLogJournal | null = null
 /** Start this boot's journal. An adapter calls it once its native store is ready (after a restore, with its cursors). */
 export function startSessionLogJournal(port: SessionLogPort, options: SessionLogJournalOptions): SessionLogJournal | null {
   if (!sandboxRelayContext()) return null
+  // One journal per boot: a second start replaces the first, which sends nothing more.
+  void active?.stop(0)
   active = new SessionLogJournal(port, options)
   return active
 }

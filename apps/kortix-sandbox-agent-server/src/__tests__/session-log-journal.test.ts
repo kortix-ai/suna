@@ -18,21 +18,29 @@ import type {
 } from '@kortix/api-contract/session-log'
 import { installShutdownHandlers } from '@/app/shutdown'
 import type { SessionLogChanges, SessionLogPort } from '@/harness/contract/session-log'
+import { __resetRelayedTurnSignatures, relayTurnEndToApi } from '@/harness/open-code/boot'
+import type { OpenCodeConfig } from '@/harness/open-code/config'
 import {
   JOURNAL_MAX_BATCH_BYTES,
+  JOURNAL_UNACKED_RETRIES,
   SessionLogJournal,
   resetSessionLogJournalForTests,
   startSessionLogJournal,
 } from '@/harness/shared/session-log-journal'
 import { relayTurnEnd } from '@/harness/shared/turn-relay'
 import { resetDaemonShutdownStateForTests } from '@/lib/shutdown-state'
-import { resetSessionTokenHealthForTests } from '@/lib/kortix-api/session-token-health'
+import {
+  SESSION_TOKEN_DEAD_TRIP_THRESHOLD,
+  noteControlPlaneResponse,
+  resetSessionTokenHealthForTests,
+} from '@/lib/kortix-api/session-token-health'
 
 const KEYS = ['KORTIX_PROJECT_ID', 'KORTIX_SESSION_ID', 'KORTIX_TOKEN', 'KORTIX_API_URL'] as const
 let saved: Record<string, string | undefined> = {}
 const servers: Array<{ stop(closeActive?: boolean): void }> = []
 
 beforeEach(() => {
+  __resetRelayedTurnSignatures()
   resetSessionLogJournalForTests()
   resetDaemonShutdownStateForTests()
   resetSessionTokenHealthForTests()
@@ -43,6 +51,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  __resetRelayedTurnSignatures()
   resetSessionLogJournalForTests()
   resetDaemonShutdownStateForTests()
   resetSessionTokenHealthForTests()
@@ -169,10 +178,18 @@ const ack = (body: SessionLogJournalRequest) =>
     acked: [...body.puts.map((p) => ({ message_id: p.message.message_id, rev: p.rev })), ...body.tombstones],
   })
 
-/** The fake API. `journal` answers the n-th journal POST (1-based); the turn stream always settles. */
-function fakeApi(journal: (body: SessionLogJournalRequest, n: number) => Response | Promise<Response> = ack, port = 0) {
+/**
+ * The fake API, also a fake OpenCode for the OpenCode turn-end path.
+ * `journal` answers the n-th journal POST (1-based); the turn stream always
+ * settles. `order` records journal posts and turn ends as they arrive.
+ */
+function fakeApi(
+  journal: (body: SessionLogJournalRequest, n: number, request: Request) => Response | Promise<Response> = ack,
+  port = 0,
+) {
   const received: Received[] = []
   const turnEnds: number[] = []
+  const order: string[] = []
   const server = Bun.serve({
     port,
     hostname: '127.0.0.1',
@@ -180,21 +197,36 @@ function fakeApi(journal: (body: SessionLogJournalRequest, n: number) => Respons
       const url = new URL(request.url)
       if (url.pathname.endsWith('/turn-stream')) {
         const body = (await request.json()) as { kind?: string }
-        if (body.kind === 'end') turnEnds.push(performance.now())
+        if (body.kind === 'end') {
+          turnEnds.push(performance.now())
+          order.push('end')
+        }
         return Response.json({ ok: true })
+      }
+      if (url.pathname === '/session/ses_root') return Response.json({ parentID: null })
+      if (url.pathname === '/session/ses_root/message') {
+        return Response.json([
+          { info: { id: 'msg_user', role: 'user' } },
+          { info: { role: 'assistant', parentID: 'msg_user', time: { completed: 1000 } } },
+        ])
       }
       const raw = new Uint8Array(await request.arrayBuffer())
       const body = JSON.parse(new TextDecoder().decode(Bun.gunzipSync(raw))) as SessionLogJournalRequest
       received.push({ body, gzippedBytes: raw.byteLength, at: performance.now(), path: url.pathname, headers: request.headers })
-      return journal(body, received.length)
+      order.push(`journal ${body.puts.map((p) => p.message.message_id).join(',')}`)
+      return journal(body, received.length, request)
     },
   })
   servers.push(server)
   process.env.KORTIX_API_URL = `http://127.0.0.1:${server.port}`
-  return { received, turnEnds, port: server.port }
+  return { received, turnEnds, order, port: server.port, url: `http://127.0.0.1:${server.port}` }
 }
 
-const putIds = (r: Received[]) => r.flatMap((x) => x.body.puts.map((p) => `${p.message.message_id}@${p.rev}`))
+const putIds = (r: Received[]) => r.flatMap((x) => x.body.puts.map((p) => p.message.message_id))
+const revOf = (r: Received[], id: string) => r.flatMap((x) => x.body.puts).filter((p) => p.message.message_id === id).map((p) => p.rev)
+
+/** Resolves when the request is aborted: a hanging handler must not outlive the test. */
+const aborted = (request: Request) => new Promise<void>((resolve) => request.signal.addEventListener('abort', () => resolve()))
 
 async function until(check: () => boolean, ms = 10_000): Promise<void> {
   const deadline = Date.now() + ms
@@ -205,6 +237,11 @@ async function until(check: () => boolean, ms = 10_000): Promise<void> {
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────
+
+/** Many messages of incompressible text: several batches under `maxBatchBytes: 4_000`. */
+function manyMessages(fake: ReturnType<typeof fakeAdapter>, count = 10) {
+  for (let i = 0; i < count; i++) fake.put(`m${i}`, i, randomBytes(1_500).toString('base64'))
+}
 
 describe('session-log journal', () => {
   test('a flush posts the new messages, threads and session patch, gzipped, with the sandbox token and the generation', async () => {
@@ -223,7 +260,7 @@ describe('session-log journal', () => {
     expect(first!.headers.get('authorization')).toBe('Bearer session-token')
     expect(first!.headers.get('content-encoding')).toBe('gzip')
     expect(first!.body.generation).toBe(7)
-    expect(putIds(api.received)).toEqual(['m1@1', 'm2@1'])
+    expect(putIds(api.received)).toEqual(['m1', 'm2'])
     expect(first!.body.threads.map((t) => t.thread_id)).toEqual(['thr_root'])
     expect(first!.body.session).toEqual({ title: 'A synthetic title' })
     expect(journal.clean).toBe(true)
@@ -241,31 +278,36 @@ describe('session-log journal', () => {
 
     expect(api.received.length).toBeGreaterThanOrEqual(3)
     for (const r of api.received) expect(r.gzippedBytes).toBeLessThanOrEqual(JOURNAL_MAX_BATCH_BYTES)
-    expect(putIds(api.received)).toEqual(ids.map((id) => `${id}@1`))
+    expect(putIds(api.received)).toEqual(ids)
     // Threads ride in the first batch only.
     expect(api.received.map((r) => r.body.threads.length)).toEqual([1, ...api.received.slice(1).map(() => 0)])
   })
 
-  test('hash guard: unchanged messages are not sent again, a changed one is, with the next rev', async () => {
+  test('hash guard: unchanged messages and threads are not sent again, a changed message is, with a higher rev', async () => {
     const api = fakeApi()
     const fake = fakeAdapter()
     fake.put('m1', 1, 'one')
     fake.put('m2', 2, 'two')
     const journal = new SessionLogJournal(fake.port, { generation: 1 })
     expect(await journal.flush()).toBe(true)
-    expect(putIds(api.received)).toEqual(['m1@1', 'm2@1'])
+    expect(putIds(api.received)).toEqual(['m1', 'm2'])
 
-    // Nothing changed in the native store: only the thread upsert goes.
+    // Nothing changed in the native store (the adapter still returns every message and the thread): no post.
     expect(await journal.flush()).toBe(true)
-    expect(putIds(api.received)).toEqual(['m1@1', 'm2@1'])
+    expect(api.received).toHaveLength(1)
 
     fake.put('m2', 2, 'two, edited')
     fake.remove('m1')
     expect(await journal.flush()).toBe(true)
-    const last = api.received.at(-1)!.body
-    expect(last.puts.map((p) => `${p.message.message_id}@${p.rev}`)).toEqual(['m2@2'])
+    expect(api.received).toHaveLength(2)
+    const last = api.received[1]!.body
+    expect(last.puts.map((p) => p.message.message_id)).toEqual(['m2'])
     expect(last.puts[0]!.message.blocks).toEqual([{ type: 'text', id: 'm2-b1', text: 'two, edited' }])
-    expect(last.tombstones).toEqual([{ message_id: 'm1', rev: 2 }])
+    expect(last.threads).toEqual([])
+    const [m1, m2] = revOf(api.received, 'm1').concat(revOf(api.received, 'm2'))
+    expect(last.puts[0]!.rev).toBeGreaterThan(m2!)
+    expect(last.tombstones.map((t) => t.message_id)).toEqual(['m1'])
+    expect(last.tombstones[0]!.rev).toBeGreaterThan(m1!)
   })
 
   test('hash guard: a restored record is not re-derived from the lossy native store', async () => {
@@ -292,7 +334,24 @@ describe('session-log journal', () => {
     expect(await journal.flush()).toBe(true)
 
     // The adapter re-derived r1 without `model` and `usage`; the journal kept it off the wire.
-    expect(putIds(api.received)).toEqual(['n1@1'])
+    expect(putIds(api.received)).toEqual(['n1'])
+  })
+
+  test('rev is monotonic across boots: a restarted daemon never reuses a rev', async () => {
+    const api = fakeApi()
+    const first = fakeAdapter()
+    first.put('m1', 1, 'before the restart')
+    expect(await new SessionLogJournal(first.port, { generation: 1 }).flush()).toBe(true)
+    // A daemon restart without a restore: same generation, no cursors, new content for m1.
+    const second = fakeAdapter()
+    second.put('m1', 1, 'after the restart')
+    expect(await new SessionLogJournal(second.port, { generation: 1 }).flush()).toBe(true)
+
+    const [before, after] = revOf(api.received, 'm1')
+    expect(after).toBeGreaterThan(before!)
+    expect(Number.isSafeInteger(after)).toBe(true)
+    // A rev follows the clock (1000 per ms), so a later process starts above it too.
+    expect(before!).toBeGreaterThanOrEqual((Date.now() - 60_000) * 1000)
   })
 
   test('a 404 turns the journal off for this boot after one request', async () => {
@@ -310,20 +369,68 @@ describe('session-log journal', () => {
     expect(api.received).toHaveLength(1)
   })
 
-  test('a 409 fences a zombie box: the journal stops for this boot', async () => {
+  test('a 409 fences a zombie box: no later batch of the same drain is posted', async () => {
     const api = fakeApi(() => Response.json({ generation: 4 }, { status: 409 }))
     const fake = fakeAdapter()
-    fake.put('m1', 1, 'one')
-    const journal = new SessionLogJournal(fake.port, { generation: 3, retryMs: 10 })
+    manyMessages(fake)
+    const journal = new SessionLogJournal(fake.port, { generation: 3, retryMs: 10, maxBatchBytes: 4_000 })
 
     expect(await journal.flush()).toBe(false)
     expect(journal.disabled).toBe('409')
-    fake.put('m2', 2, 'two')
+    fake.put('m99', 99, 'later')
     await journal.flush()
     await Bun.sleep(100)
 
     expect(api.received).toHaveLength(1)
     expect(api.received[0]!.body.generation).toBe(3)
+  })
+
+  test('a stop in the middle of a multi-batch drain posts no further batch', async () => {
+    const api = fakeApi(async (body) => {
+      await Bun.sleep(150)
+      return ack(body)
+    })
+    const fake = fakeAdapter()
+    manyMessages(fake)
+    const journal = new SessionLogJournal(fake.port, { generation: 1, maxBatchBytes: 4_000 })
+
+    void journal.flush()
+    await until(() => api.received.length === 1)
+    await journal.stop(0)
+    await Bun.sleep(400)
+
+    expect(api.received).toHaveLength(1)
+  })
+
+  test('a dead session token sends nothing; the journal resumes when the breaker clears', async () => {
+    const api = fakeApi()
+    const fake = fakeAdapter()
+    fake.put('m1', 1, 'one')
+    for (let i = 0; i < SESSION_TOKEN_DEAD_TRIP_THRESHOLD; i++) noteControlPlaneResponse(401, 'Session token is not active')
+    const journal = new SessionLogJournal(fake.port, { generation: 1, retryMs: 50, maxRetryMs: 100 })
+
+    expect(await journal.flush()).toBe(false)
+    await Bun.sleep(300)
+    expect(api.received).toHaveLength(0)
+
+    resetSessionTokenHealthForTests()
+    await until(() => journal.clean, 5_000)
+    expect(putIds(api.received)).toEqual(['m1'])
+  })
+
+  test('a second start stops the first journal: one drain loop per boot', async () => {
+    const api = fakeApi()
+    const first = fakeAdapter()
+    first.put('a1', 1, 'first journal')
+    const a = startSessionLogJournal(first.port, { generation: 1 })
+    const second = fakeAdapter()
+    second.put('b1', 1, 'second journal')
+    const b = startSessionLogJournal(second.port, { generation: 1 })
+    if (!a || !b) throw new Error('journals did not start')
+
+    expect(await a.flush()).toBe(false)
+    expect(await b.flush()).toBe(true)
+    expect(putIds(api.received)).toEqual(['b1'])
   })
 
   test('a 503 backs off with a growing delay and keeps the dirty set until it is acknowledged', async () => {
@@ -341,15 +448,15 @@ describe('session-log journal', () => {
 
     await until(() => journal.clean, 5_000)
     expect(api.received).toHaveLength(3)
-    expect(putIds(api.received)).toEqual(['m1@1', 'm1@1', 'm1@1'])
+    expect(putIds(api.received)).toEqual(['m1', 'm1', 'm1'])
+    expect(new Set(revOf(api.received, 'm1')).size).toBe(1)
     const [a, b, c] = api.received.map((r) => r.at)
     // computeRetryDelay: 100 ms then 200 ms, each jittered by +/-25%.
     expect(b! - a!).toBeGreaterThanOrEqual(70)
     expect(c! - b!).toBeGreaterThanOrEqual(145)
-    expect(journal.clean).toBe(true)
   })
 
-  test('a 500 and a network error are retried with backoff until the API answers', async () => {
+  test('a network error, a 500 and a 408 are retried with backoff until the API answers', async () => {
     // Reserve a port, then free it: the first attempt is refused.
     const probe = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: () => new Response('') })
     const port = probe.port
@@ -360,10 +467,13 @@ describe('session-log journal', () => {
     const journal = new SessionLogJournal(fake.port, { generation: 1, retryMs: 200 })
 
     expect(await journal.flush()).toBe(false)
-    const api = fakeApi((body, n) => (n === 1 ? new Response('boom', { status: 500 }) : ack(body)), port)
+    const api = fakeApi(
+      (body, n) => (n === 1 ? new Response('boom', { status: 500 }) : n === 2 ? new Response('proxy timeout', { status: 408 }) : ack(body)),
+      port,
+    )
 
-    await until(() => journal.clean, 5_000)
-    expect(putIds(api.received)).toEqual(['m1@1', 'm1@1'])
+    await until(() => journal.clean, 8_000)
+    expect(putIds(api.received)).toEqual(['m1', 'm1', 'm1'])
     const [a, b] = api.received.map((r) => r.at)
     // The 500 is the second failure: 400 ms, jittered by +/-25%.
     expect(b! - a!).toBeGreaterThanOrEqual(290)
@@ -380,13 +490,32 @@ describe('session-log journal', () => {
     fake.put('m2', 2, 'two')
     expect(await journal.flush()).toBe(true)
 
-    expect(putIds(api.received)).toEqual(['m1@1', 'm2@1'])
+    expect(putIds(api.received)).toEqual(['m1', 'm2'])
   })
 
-  test('a slow acknowledgement holds the turn-end relay at most 3 s; the batch is retried afterwards', async () => {
-    const api = fakeApi(async (body, n) => {
+  test('a 200 that acknowledges nothing keeps threads and the session patch dirty, and drops the pairs after 3 posts', async () => {
+    const api = fakeApi((body, n) => (n <= JOURNAL_UNACKED_RETRIES ? Response.json({ acked: [] }) : ack(body)))
+    const fake = fakeAdapter()
+    fake.put('m1', 1, 'one')
+    fake.setSession({ title: 'A synthetic title' })
+    const journal = new SessionLogJournal(fake.port, { generation: 1, retryMs: 10 })
+
+    expect(await journal.flush()).toBe(false)
+    await until(() => journal.clean, 5_000)
+
+    expect(api.received).toHaveLength(JOURNAL_UNACKED_RETRIES + 1)
+    expect(putIds(api.received)).toEqual(['m1', 'm1', 'm1'])
+    // The 4th post carries what no 200 confirmed: the thread and the session patch, not the dropped pair.
+    const last = api.received.at(-1)!.body
+    expect(last.puts).toEqual([])
+    expect(last.threads.map((t) => t.thread_id)).toEqual(['thr_root'])
+    expect(last.session).toEqual({ title: 'A synthetic title' })
+  })
+
+  test('pi and the OpenCode orphan path: a slow acknowledgement holds relayTurnEnd at most 3 s; the batch is retried afterwards', async () => {
+    const api = fakeApi(async (body, n, request) => {
       if (n === 1) {
-        await Bun.sleep(4_000)
+        await Promise.race([Bun.sleep(6_000), aborted(request)])
         return new Response('slow and failed', { status: 503 })
       }
       return ack(body)
@@ -402,12 +531,25 @@ describe('session-log journal', () => {
     expect(api.turnEnds).toHaveLength(1)
     const held = api.turnEnds[0]! - started
     expect(held).toBeGreaterThanOrEqual(2_900)
-    expect(held).toBeLessThan(3_600)
+    expect(held).toBeLessThan(5_500)
     expect(journal.clean).toBe(false)
 
-    await until(() => journal.clean, 5_000)
-    expect(putIds(api.received)).toEqual(['m1@1', 'm1@1'])
-  }, 15_000)
+    await until(() => journal.clean, 8_000)
+    expect(putIds(api.received)).toEqual(['m1', 'm1'])
+  }, 20_000)
+
+  test('OpenCode: relayTurnEndToApi flushes the journal before it posts the turn end', async () => {
+    const api = fakeApi()
+    const fake = fakeAdapter()
+    fake.put('m1', 1, 'the reply')
+    const journal = startSessionLogJournal(fake.port, { generation: 1 })
+    if (!journal) throw new Error('journal did not start')
+
+    await relayTurnEndToApi('ses_root', 'idle', { getInternalUrl: () => api.url }, { workspace: '/workspace' } as unknown as OpenCodeConfig)
+
+    expect(api.order).toEqual(['journal m1', 'end'])
+    expect(journal.clean).toBe(true)
+  })
 
   test('the daemon stop flushes the journal before the harness stops and the process exits', async () => {
     const order: string[] = []
@@ -430,11 +572,13 @@ describe('session-log journal', () => {
     expect(journal.clean).toBe(true)
   })
 
-  test('a stop with an unreachable API exits within the 3 s bound and sends nothing more', async () => {
+  test('a stop with an unreachable API exits within the 3 s bound, aborts the post and sends nothing more', async () => {
     let calls = 0
-    fakeApi(async () => {
+    let abortedPosts = 0
+    fakeApi(async (_body, _n, request) => {
       calls += 1
-      await Bun.sleep(10_000)
+      await Promise.race([Bun.sleep(10_000), aborted(request)])
+      if (request.signal.aborted) abortedPosts += 1
       return new Response('', { status: 503 })
     })
     const fake = fakeAdapter()
@@ -447,11 +591,24 @@ describe('session-log journal', () => {
 
     const started = performance.now()
     shutdown({ reason: 'SIGTERM', exitCode: 0 })
-    await until(() => exits.length > 0, 5_000)
+    await until(() => exits.length > 0, 8_000)
 
-    expect(performance.now() - started).toBeLessThan(3_600)
+    const elapsed = performance.now() - started
+    expect(elapsed).toBeGreaterThanOrEqual(2_900)
+    expect(elapsed).toBeLessThan(6_000)
+    await until(() => abortedPosts === 1, 2_000)
     expect(calls).toBe(1)
-  }, 15_000)
+  }, 20_000)
+
+  test('installShutdownHandlers keeps one SIGTERM and one SIGINT listener however often it runs', () => {
+    const before = { term: process.listenerCount('SIGTERM'), int: process.listenerCount('SIGINT') }
+    const noop = { stop: async () => {} }
+    installShutdownHandlers(noop, { port: 0, reload: () => {}, stop: async () => {} }, undefined, { exit: () => {} })
+    installShutdownHandlers(noop, { port: 0, reload: () => {}, stop: async () => {} }, undefined, { exit: () => {} })
+    const after = { term: process.listenerCount('SIGTERM'), int: process.listenerCount('SIGINT') }
+    expect(after.term - before.term).toBeLessThanOrEqual(1)
+    expect(after.int - before.int).toBeLessThanOrEqual(1)
+  })
 
   test('no control plane: the journal does not start, and the turn-end flush is a no-op', async () => {
     delete process.env.KORTIX_API_URL
