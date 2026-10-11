@@ -115,13 +115,18 @@ describe('journal', () => {
     expect(turn?.at).toBeInstanceOf(Date);
   });
 
-  test('a replay of the same batch is idempotent: same acknowledgement, same rows', async () => {
+  test('a replay of the same batch is idempotent: same acknowledgement, same rows, same durable time', async () => {
     const before = await stored('msg_u1');
+    const durable = async () => (await db.select({ at: sessionTurns.logDurableAt }).from(sessionTurns).where(eq(sessionTurns.sessionId, SESSION)))[0]?.at;
+    const firstDurable = await durable();
+    // A daemon that restarts re-sends every message; the turn was durable at the first acknowledgement.
+    await Bun.sleep(20);
     const res = await journal(first);
     expect(res.status).toBe(200);
     expect((await res.json()).acked).toHaveLength(2);
     expect(await stored('msg_u1')).toEqual(before);
     expect(await messageCount()).toBe(2);
+    expect(await durable()).toEqual(firstDurable!);
   });
 
   test('the highest rev wins; a lower rev is acknowledged and changes nothing', async () => {

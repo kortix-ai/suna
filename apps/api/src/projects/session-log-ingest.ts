@@ -13,9 +13,10 @@
  *   or not, after commit. A higher put revives a tombstoned message.
  * - `seq` is unique per thread (`session_log_messages_thread_seq_key`). A put
  *   that collides rolls the whole batch back and answers 422 with its pair.
- * - Durable turns. An acknowledged assistant message that is not streaming sets
- *   `session_turns.log_durable_at` on its turn: the turn whose `message_id` (the
- *   client-minted user message id) is the assistant message's `reply_to`.
+ * - Durable turns. The first acknowledged assistant message of a turn that is not
+ *   streaming sets `session_turns.log_durable_at`: the turn whose `message_id` (the
+ *   client-minted user message id) is the assistant message's `reply_to`. A later
+ *   acknowledgement (a restarted daemon re-sends everything) keeps the first time.
  *
  * Records are stored as the daemon sent them, not as zod parsed them: the parse
  * drops fields this API does not know, and the record would lose them (the same
@@ -251,7 +252,8 @@ async function markDurableTurns(tx: Tx, sessionId: string, puts: readonly Sessio
   if (userMessageIds.length === 0) return;
   await tx
     .update(sessionTurns)
-    .set({ logDurableAt: sql`now()` })
+    // The first acknowledgement: a daemon that restarts re-sends every message, and a replay is not new durability.
+    .set({ logDurableAt: sql`coalesce(${sessionTurns.logDurableAt}, now())` })
     .where(and(eq(sessionTurns.sessionId, sessionId), inArray(sessionTurns.messageId, userMessageIds)));
 }
 
