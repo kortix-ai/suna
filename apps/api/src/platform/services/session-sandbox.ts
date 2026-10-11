@@ -15,6 +15,7 @@
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { isMetaAgentName, META_SANDBOX_SLUG } from '@kortix/shared';
+import type { SessionDriveMounts } from '../../drives/service';
 import { db } from '../../shared/db';
 import {
   patchedSandboxMetadata,
@@ -55,6 +56,15 @@ import {
   type SandboxImageSpec,
 } from '../../snapshots/builder';
 import { config } from '../../config';
+import {
+  attemptsLeft,
+  bootFailureReason,
+  modeAfterFailures,
+  sessionBootDecision,
+  type BootMode,
+  type SessionBootRecord,
+} from './boot-mode';
+import * as bootModeStore from './boot-mode-store';
 import { providerFallbackSetting } from './runtime-settings';
 import { selectProvider } from './provider-balancer';
 import { ProvisionTimeline } from './provision-timeline';
@@ -324,6 +334,18 @@ export function restorePlatinumCreateAttempt(metadata: Record<string, unknown> |
   return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
+/** Platinum itself did not answer (as opposed to refusing a request). */
+const PLATINUM_UNREACHABLE =
+  /Unable to connect|ECONNREFUSED|ECONNRESET|ConnectionRefused|socket connection was closed|fetch failed|provider state is unknown|The operation timed out/i;
+
+type SessionStateMount = {
+  volume: string;
+  mountPath: string;
+  env: Record<string, string>;
+  waitedMs: number;
+  generation: number;
+};
+
 type ProvisionSessionSandboxOpts = Parameters<typeof provisionSessionSandbox>[0];
 type SessionSandboxRow = typeof sessionSandboxes.$inferSelect;
 type SessionSandboxProvider = ReturnType<typeof getProvider>;
@@ -359,6 +381,32 @@ interface SessionProvisionState {
   lastProvisionAttempt: number;
   lastProvisionMaxAttempts: number;
   platinumCreateAttempt: number;
+  // Ephemeral sandboxes: set once a box booted an image that cannot keep the
+  // session's state on its volume (the last ready image served while a newer
+  // build bakes). The retry then waits for the current image instead.
+  requireCurrentImage: boolean;
+  // Ephemeral sandboxes: set once a session volume whose head would not mount
+  // was rolled back to the commit before it (see the bind check).
+  sessionStateRolledBack: boolean;
+  // Drives mount on Platinum only: resolved on the first Platinum attempt and
+  // reused by every later one, so a retry keeps the same create body. The
+  // provider drops them itself when Platinum refuses the create over them.
+  driveMounts: SessionDriveMounts | undefined;
+  driveMountsResolved: boolean;
+  bootArtifacts: import('./boot-artifacts').BootArtifactsMount | null;
+  bootArtifactsResolved: boolean;
+  sessionState: SessionStateMount | null;
+  sessionStateResolved: boolean;
+  // Session boot mode (boot-mode.ts): image alone, image + boot artifacts, or
+  // an ephemeral box with its state on a volume. Resolved per provider, and
+  // stepped down after repeated failures in one mode.
+  bootMode: BootMode;
+  bootRecord: SessionBootRecord | null;
+  bootStandardFallback: boolean;
+  bootModeProvider: string | null;
+  bootVolumeLocked: boolean;
+  // Set once this attempt reached the mode's own steps: earlier failures are not the mode's fault.
+  bootModeStageReached: boolean;
 }
 
 /** What the detached provisioning loop reads but never changes. */
@@ -372,6 +420,19 @@ interface SessionProvisionContext {
   providerWasExplicitlySelected: boolean;
   resolveGitProject: () => Promise<GitBackedProject>;
   resolveImage: (gitProject: GitBackedProject, targetProvider: string) => Promise<EnsureSandboxImageResult>;
+  /** The template slug this session boots. */
+  slug: string;
+  // Kortix Drive: a project with drives boots its sessions on Platinum only,
+  // and never without their drives (see drives/service.ts sessionVolumeMounts).
+  drivesRequirePlatinum: boolean;
+  // Persistent machine: the box boots from its own Platinum root volume
+  // (persistent-machine.ts). Platinum only, never handed to another provider.
+  persistentMachine: boolean;
+  // Drive sync (operator switch): a session off Platinum gets its drives
+  // copied in and synced by the box's daemon instead of failing to boot.
+  drivesSyncAllowed: boolean;
+  /** The boot-mode store, or null for a session that never picks a mode (the meta agent). */
+  bootStore: typeof bootModeStore | null;
 }
 
 /** Insert the `provisioning` row, or claim an authorized recovery placeholder. */
@@ -524,6 +585,20 @@ export async function provisionSessionSandbox(opts: {
     lastProvisionAttempt: SANDBOX_INIT_MAX_ATTEMPTS,
     lastProvisionMaxAttempts: SANDBOX_INIT_MAX_ATTEMPTS,
     platinumCreateAttempt: 0,
+    requireCurrentImage: false,
+    sessionStateRolledBack: false,
+    driveMounts: undefined,
+    driveMountsResolved: false,
+    bootArtifacts: null,
+    bootArtifactsResolved: false,
+    sessionState: null,
+    sessionStateResolved: false,
+    bootMode: 'standard',
+    bootRecord: null,
+    bootStandardFallback: true,
+    bootModeProvider: null,
+    bootVolumeLocked: false,
+    bootModeStageReached: false,
   };
   const tl = new ProvisionTimeline(sandboxId, 'provision');
 
@@ -534,6 +609,16 @@ export async function provisionSessionSandbox(opts: {
     if (!opts.resolveGitProject) return opts.gitProject;
     return opts.resolveGitProject();
   };
+  const drivesRequirePlatinum =
+    slug !== META_SANDBOX_SLUG &&
+    (await import('../../drives/service')
+      .then((m) => m.sessionDrivesEnabled(projectId))
+      .catch(() => false));
+  const persistentMachine =
+    slug !== META_SANDBOX_SLUG &&
+    (await import('./persistent-machine').then((m) => m.isPersistentMachineSession(sandboxId)));
+  const drivesSyncAllowed =
+    drivesRequirePlatinum && (await import('../../drives/sync').then((m) => m.driveSyncEnabled()).catch(() => false));
   const resolveImage = (
     gitProject: GitBackedProject,
     targetProvider: string,
@@ -543,7 +628,7 @@ export async function provisionSessionSandbox(opts: {
       : ensureSandboxImage(gitProject, {
           slug,
           accountId,
-          source: 'session-start',
+          source: state.requireCurrentImage ? 'background' : 'session-start',
           provider: targetProvider,
           allowProjectImage: opts.allowProjectImage,
         });
@@ -577,7 +662,7 @@ export async function provisionSessionSandbox(opts: {
   // (~100ms each on a warm DB), now ~one round-trip total.
   const sandboxName = `session-${sandboxId.slice(0, 8)}`;
   const llmGatewayEnabled = projectLlmGatewayEnabled(opts.projectMetadata);
-  const [sandboxRows, sessionToken] = await Promise.all([
+  const [rowResult, tokenResult] = await Promise.allSettled([
     createOrClaimSessionSandboxRow(opts, state),
     // Resolve the per-agent grant and mint the sole sandbox credential. Token
     // minting is fail-closed: a sandbox without its session identity cannot
@@ -591,6 +676,27 @@ export async function provisionSessionSandbox(opts: {
       gitProject: opts.gitProject,
     }),
   ]);
+  if (rowResult.status === 'rejected') throw rowResult.reason;
+  if (tokenResult.status === 'rejected') {
+    // The row exists and no box ever will. Close it as a failed provision so
+    // /start reports a retriable failure now, instead of a row that sits in
+    // `provisioning` until the stuck-session reaper finds it.
+    const [inserted] = rowResult.value;
+    if (inserted) {
+      const message =
+        tokenResult.reason instanceof Error ? tokenResult.reason.message : String(tokenResult.reason);
+      await transitionSandbox('failProvisioning', inserted.sandboxId, {
+        metadata: sandboxInitMetadataPatch(inserted.metadata as Record<string, unknown> | null, {
+          initStatus: 'failed',
+          errorMessage: 'This session could not get its credential. Try again.',
+          lastProvisioningError: message.slice(0, 500),
+        }),
+      }).catch(() => null);
+    }
+    throw tokenResult.reason;
+  }
+  const sandboxRows = rowResult.value;
+  const sessionToken = tokenResult.value;
   const [sandbox] = sandboxRows;
   if (!sandbox) throw new RuntimeIdentityConflictError(sandboxId);
   // A WARM-POOL box is the one box the control plane can never observe again
@@ -673,6 +779,11 @@ export async function provisionSessionSandbox(opts: {
       providerWasExplicitlySelected,
       resolveGitProject,
       resolveImage,
+      slug,
+      drivesRequirePlatinum,
+      persistentMachine,
+      drivesSyncAllowed,
+      bootStore: slug !== META_SANDBOX_SLUG ? bootModeStore : null,
     },
     state,
   );
@@ -717,6 +828,402 @@ async function resolveAttemptImage(
     `branch ${branch}, ${image.built ? 'fresh build' : 'cache hit'})`,
   );
   return image;
+}
+
+/** Resolve this session's boot mode on `forProvider` and record it on the session's boot record. */
+async function resolveBootModeFor(
+  ctx: SessionProvisionContext,
+  state: SessionProvisionState,
+  forProvider: string,
+): Promise<void> {
+  const { opts, sandbox, tl, bootStore } = ctx;
+  state.bootModeProvider = forProvider;
+  state.bootMode = 'standard';
+  state.bootRecord = null;
+  // Off the volume provider there is nothing to choose: the image boots.
+  if (!bootStore || forProvider !== 'platinum') return;
+  try {
+    let decision = await bootStore.resolveProjectBootMode({
+      accountId: opts.accountId,
+      projectId: opts.projectId,
+      provider: forProvider,
+      projectMetadata: opts.projectMetadata,
+    });
+    if (decision.source === 'provider') return;
+    const { record, stateVolume } = await bootStore.readSessionBoot(sandbox.sandboxId);
+    // State already on a volume (a box booted with it, or a session from before
+    // boot modes): it never steps off the volume.
+    state.bootVolumeLocked = Boolean(stateVolume) && (record ? record.volumeBooted === true : true);
+    // Volumes turned off after this session's state moved onto a volume: it keeps that volume.
+    decision = sessionBootDecision(decision, state.bootVolumeLocked);
+    const failures = record?.failures ?? {};
+    state.bootStandardFallback = decision.standardFallback;
+    state.bootMode = ctx.persistentMachine
+      ? decision.mode
+      : modeAfterFailures(
+          decision.mode,
+          failures,
+          bootStore.bootModePolicy().policy,
+          decision.standardFallback,
+          state.bootVolumeLocked,
+        );
+    state.bootRecord = {
+      requested: decision.mode,
+      source: decision.source,
+      mode: state.bootMode,
+      failures,
+      fallbacks: record?.fallbacks ?? [],
+      ...(record?.volumeBooted ? { volumeBooted: true } : {}),
+      ...(record?.bootedAt ? { bootedAt: record.bootedAt } : {}),
+      updatedAt: new Date().toISOString(),
+    };
+    await bootStore.writeSessionBoot(sandbox.sandboxId, state.bootRecord);
+    tl.note(`boot-mode:${state.bootMode}:${decision.source}`);
+  } catch (err) {
+    logger.warn(`[session-sandbox] ${sandbox.sandboxId}: boot mode not resolved, booting standard:`, { detail: err instanceof Error ? err.message : String(err) });
+    state.bootMode = 'standard';
+    state.bootRecord = null;
+  }
+}
+
+/**
+ * The volumes this attempt's box mounts, by provider and boot mode: the
+ * session's state volume or a persistent machine's root disk, the release's
+ * boot artifacts, and the session's drives (mounted on Platinum, synced
+ * elsewhere).
+ */
+async function prepareAttemptVolumes(ctx: SessionProvisionContext, state: SessionProvisionState): Promise<void> {
+  const { opts, sandbox, providerCreateInput, tl, slug, drivesRequirePlatinum, persistentMachine, drivesSyncAllowed, bootStore } =
+    ctx;
+  const { accountId, projectId, userId } = opts;
+  const { providerName } = state;
+  if (persistentMachine && providerName !== 'platinum') {
+    throw new Error(
+      '[persistent-machine] This session runs on a persistent machine, which needs Platinum. Platinum is not available for this session right now, so it did not start.',
+    );
+  }
+  // Drive sync: on any other provider the session's drives are copied
+  // into the box and kept in sync by its daemon over the Kortix API, so
+  // the session still boots with every drive it is entitled to.
+  // A failover onto Platinum mounts natively: the sync switch must not follow it.
+  if (state.bootModeProvider !== providerName) await resolveBootModeFor(ctx, state, providerName);
+  state.bootModeStageReached = false;
+  if (providerCreateInput.envVars?.KORTIX_DRIVE_SYNC) {
+    const { KORTIX_DRIVE_SYNC: _sync, ...rest } = providerCreateInput.envVars;
+    providerCreateInput.envVars = rest;
+  }
+  // The entrypoint starts its drive-owner helper only for a session with
+  // drives; a box without them boots as it did before drives.
+  if (drivesRequirePlatinum && providerCreateInput.envVars?.KORTIX_DRIVES !== '1') {
+    providerCreateInput.envVars = { ...(providerCreateInput.envVars ?? {}), KORTIX_DRIVES: '1' };
+  }
+  const planDrives = (reservedSlots?: number) =>
+    import('../../drives/service').then(({ sessionVolumeMounts }) =>
+      sessionVolumeMounts({
+        accountId,
+        projectId,
+        sessionId: sandbox.sandboxId,
+        bootingUserId: userId,
+        agentName: opts.agentName ?? 'default',
+        ...(reservedSlots === undefined ? {} : { reservedSlots }),
+      }),
+    );
+  if (drivesRequirePlatinum && providerName !== 'platinum' && drivesSyncAllowed) {
+    if (!state.driveMountsResolved) {
+      state.driveMounts = await planDrives();
+      state.driveMountsResolved = true;
+    }
+    if (state.driveMounts?.mounts.length) {
+      const { DRIVE_SYNC_ENV } = await import('../../drives/sync');
+      providerCreateInput.envVars = { ...(providerCreateInput.envVars ?? {}), [DRIVE_SYNC_ENV]: '1' };
+    }
+  }
+  if (drivesRequirePlatinum && providerName !== 'platinum' && !drivesSyncAllowed) {
+    const { DriveMountError } = await import('../../drives/service');
+    throw new DriveMountError(
+      'This project’s sessions mount drives, and drives run on Platinum only. Platinum is not available for this session right now, so it did not start. Try again in a minute.',
+      [],
+    );
+  }
+  if (providerName !== 'platinum' || slug === META_SANDBOX_SLUG) {
+    providerCreateInput.volumes = undefined;
+    return;
+  }
+  // Ephemeral sandboxes: the session's own state volume. Resolved once,
+  // before the drives, whose mount slots it shares; a failure to open it fails
+  // this attempt (retried by the loop) rather than booting a box that would
+  // lose the session. A persistent machine keeps everything on its root disk,
+  // except what a reset carried onto its session volume (its chat): it never
+  // gets a new one here, and mounts the one a reset made.
+  state.bootModeStageReached = true;
+  if (!state.sessionStateResolved) {
+    state.sessionState = await import('./ephemeral-sandbox').then((m) =>
+      m.resolveSessionStateMount({
+        projectId,
+        sessionId: sandbox.sandboxId,
+        provider: providerName,
+        allowNew: persistentMachine ? false : bootStore ? state.bootMode === 'volume' : undefined,
+      }),
+    );
+    state.sessionStateResolved = true;
+  }
+  if (persistentMachine && !providerCreateInput.rootVolume) {
+    providerCreateInput.rootVolume = true;
+    // Each box of the session is a new create (a reset deletes the last
+    // one), and Platinum's create dedup keys on (sandbox id, template,
+    // attempt): same floor scheme as an ephemeral box.
+    const generation = await import('./ephemeral-sandbox').then((m) => m.nextBoxGeneration(sandbox.sandboxId));
+    raiseCreateAttemptFloor(ctx, state, generation);
+    tl.mark('root-volume');
+  }
+  // Boot artifacts take the first mount slot: drives get what is left.
+  if (!state.bootArtifactsResolved) {
+    state.bootArtifacts =
+      bootStore && state.bootMode === 'standard'
+        ? null
+        : await import('./boot-artifacts').then((m) =>
+            bootStore
+              ? m.bootArtifactsMount(bootStore.bootModePolicy().policy.artifacts ?? config.KORTIX_BOOT_ARTIFACTS)
+              : m.bootArtifactsMount(),
+          );
+    state.bootArtifactsResolved = true;
+  }
+  if (!state.driveMountsResolved) {
+    // The session volume, a persistent machine's root disk and boot artifacts each take a slot.
+    state.driveMounts = await planDrives(
+      (state.sessionState ? 1 : 0) + (persistentMachine ? 1 : 0) + (state.bootArtifacts ? 1 : 0),
+    );
+    state.driveMountsResolved = true;
+  }
+  providerCreateInput.volumes = state.driveMounts?.volumes;
+  const { bootArtifacts, sessionState } = state;
+  if (bootArtifacts) {
+    providerCreateInput.volumes = {
+      ...(providerCreateInput.volumes ?? {}),
+      [bootArtifacts.mountPath]: { volume: bootArtifacts.volume, read_only: true, ref: bootArtifacts.ref },
+    };
+  }
+  if (sessionState) {
+    providerCreateInput.volumes = {
+      ...(providerCreateInput.volumes ?? {}),
+      [sessionState.mountPath]: { volume: sessionState.volume },
+    };
+    providerCreateInput.volumesRequired = true;
+    providerCreateInput.envVars = { ...(providerCreateInput.envVars ?? {}), ...sessionState.env };
+    raiseCreateAttemptFloor(ctx, state, sessionState.generation);
+    tl.mark(`session-state:${sessionState.waitedMs}ms`);
+  }
+}
+
+/**
+ * Every box of an ephemeral session or persistent machine shares the sandbox
+ * id, and Platinum's create dedup keys on (sandbox id, template, attempt): a
+ * new box needs attempts no earlier box used. 100 per box leaves room for the
+ * in-run bumps (image heal, failover, pin fallback).
+ */
+function raiseCreateAttemptFloor(ctx: SessionProvisionContext, state: SessionProvisionState, generation: number): void {
+  const generationFloor = (generation - 1) * 100 + 1;
+  if (generationFloor > state.platinumCreateAttempt) {
+    state.platinumCreateAttempt = generationFloor;
+    ctx.providerCreateInput.createAttempt = state.platinumCreateAttempt;
+  }
+}
+
+/** Remove this attempt's box and start a fresh create. */
+async function discardAttemptBox(ctx: SessionProvisionContext, state: SessionProvisionState, externalId: string): Promise<void> {
+  await state.provider.remove(externalId).catch(() => {});
+  state.bgExternalId = null;
+  state.sessionStateResolved = false;
+  state.platinumCreateAttempt += 1;
+  ctx.providerCreateInput.createAttempt = state.platinumCreateAttempt;
+}
+
+/**
+ * An ephemeral box must have its session volume bound before it is used.
+ * Returns 'retry' when the box was discarded for a fresh one: an image too
+ * old to keep state on the volume, or a volume head that would not mount
+ * (rolled back once to the commit before it).
+ */
+async function verifyAttemptSessionState(
+  ctx: SessionProvisionContext,
+  state: SessionProvisionState,
+  externalId: string,
+  snapshotName: string,
+): Promise<'ok' | 'retry'> {
+  const { sandbox, tl } = ctx;
+  const sessionState = state.sessionState;
+  if (!sessionState) return 'ok';
+  const ephemeral = await import('./ephemeral-sandbox');
+  try {
+    const boundMs = await ephemeral.verifySessionStateBound(externalId);
+    tl.mark(`session-state-bound:${boundMs}ms`);
+    return 'ok';
+  } catch (verifyErr) {
+    if (verifyErr instanceof ephemeral.SessionStateUnsupportedImageError && !state.requireCurrentImage) {
+      logger.warn(`[session-sandbox] ${sandbox.sandboxId}: ${snapshotName} cannot keep session state on its volume; ` +
+          'removing the box and booting the current image instead');
+      state.requireCurrentImage = true;
+      await discardAttemptBox(ctx, state, externalId);
+      tl.mark('session-state-image-too-old');
+      return 'retry';
+    }
+    // The volume's last commit does not mount (a commit torn by a host
+    // failure): roll the session back to the commit before it, once,
+    // instead of leaving the session unable to wake at all.
+    if (!state.sessionStateRolledBack) {
+      const rolledBack = await ephemeral
+        .rollBackUnmountableSessionState(externalId, sessionState.volume)
+        .catch((rollbackErr) => {
+          logger.warn(`[session-sandbox] ${sandbox.sandboxId}: session state rollback failed:`, { error: rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr) });
+          return null;
+        });
+      if (rolledBack) {
+        logger.warn(`[session-sandbox] ${sandbox.sandboxId}: session volume ${sessionState.volume} head did not mount (${rolledBack.error}); ` +
+            `rolled back to ${rolledBack.to} and booting a fresh box`);
+        state.sessionStateRolledBack = true;
+        await discardAttemptBox(ctx, state, externalId);
+        tl.mark('session-state-rolled-back');
+        return 'retry';
+      }
+    }
+    throw verifyErr;
+  }
+}
+
+/** What the box mounted (drives, session volume, root disk), for its row; and its boot mode. */
+interface AttemptBoxMetadata {
+  mountedDrives: NonNullable<SessionDriveMounts>['mounts'];
+  box: Record<string, unknown>;
+  bootMode: Record<string, unknown>;
+}
+
+async function recordAttemptBoot(ctx: SessionProvisionContext, state: SessionProvisionState): Promise<AttemptBoxMetadata> {
+  const { sandbox, providerCreateInput, persistentMachine, drivesSyncAllowed, bootStore } = ctx;
+  const { providerName, driveMounts, sessionState } = state;
+  // What this sandbox really mounted: the session's drive chip reads it back.
+  const mountedDrives =
+    driveMounts && (providerCreateInput.volumes || (providerName !== 'platinum' && drivesSyncAllowed))
+      ? driveMounts.mounts
+      : [];
+  // And the drives that did not fit, which the chip and the agent's notes name.
+  const driveAdmission =
+    mountedDrives.length && driveMounts
+      ? { driveMountsSkipped: driveMounts.skipped, driveMountSlots: driveMounts.slots }
+      : { driveMountsSkipped: [] };
+  // A synced box: its daemon copies the drives in and keeps them in sync.
+  const driveSyncMeta = providerName !== 'platinum' && mountedDrives.length ? { driveSync: true } : {};
+  // The mode this box booted in, on the box row and on the session.
+  const bootRecordNow = state.bootRecord;
+  const bootModeMeta = bootRecordNow
+    ? {
+        bootMode: {
+          mode: state.bootMode,
+          requested: bootRecordNow.requested,
+          source: bootRecordNow.source,
+          ...(state.bootMode !== bootRecordNow.requested && bootRecordNow.fallbacks.length ? { fellBack: true } : {}),
+        },
+      }
+    : {};
+  if (bootStore && bootRecordNow) {
+    const at = new Date().toISOString();
+    state.bootRecord = {
+      ...bootRecordNow,
+      mode: state.bootMode,
+      bootedAt: at,
+      updatedAt: at,
+      ...(sessionState || bootRecordNow.volumeBooted ? { volumeBooted: true } : {}),
+    };
+    await bootStore.writeSessionBoot(sandbox.sandboxId, state.bootRecord).catch((err) =>
+      logger.warn(`[session-sandbox] ${sandbox.sandboxId}: boot record not written:`, { error: err instanceof Error ? err.message : String(err) }),
+    );
+  }
+  return {
+    mountedDrives,
+    box: {
+      driveMounts: mountedDrives,
+      ...driveAdmission,
+      ...driveSyncMeta,
+      ...(sessionState ? { sessionStateVolume: sessionState.volume } : {}),
+      ...(persistentMachine ? { rootVolume: true } : {}),
+    },
+    bootMode: bootModeMeta,
+  };
+}
+
+/**
+ * Boot mode fallback: a box that fails in `volume` or `artifacts` is tried
+ * again in that mode until its attempts are spent, then one step down
+ * (volume → artifacts → standard), on the same provider. Capacity, git and
+ * policy failures are not the mode's fault. Returns true when the loop must run again.
+ */
+async function fallBackBootMode(
+  ctx: SessionProvisionContext,
+  state: SessionProvisionState,
+  bgErr: unknown,
+  bgMessage: string,
+): Promise<boolean> {
+  const { sandbox, providerCreateInput, tl, bootStore, persistentMachine } = ctx;
+  const bootRecordNow = state.bootRecord;
+  const bootMode = state.bootMode;
+  if (
+    !bootStore ||
+    !bootRecordNow ||
+    !state.bootModeStageReached ||
+    bootMode === 'standard' ||
+    persistentMachine ||
+    ['provider-capacity', 'git-auth', 'invalid-secret-boundary-policy', 'snapshot-too-large'].includes(
+      classifySandboxProvisioningFailure(bgErr).category,
+    )
+  ) {
+    return false;
+  }
+  const policy = bootStore.bootModePolicy().policy;
+  const failures = { ...bootRecordNow.failures, [bootMode]: (bootRecordNow.failures[bootMode] ?? 0) + 1 };
+  const next = modeAfterFailures(bootMode, failures, policy, state.bootStandardFallback, state.bootVolumeLocked);
+  const at = new Date().toISOString();
+  const stepped = next !== bootMode;
+  const dropStateVolume = stepped && bootMode === 'volume' && !state.bootVolumeLocked;
+  state.bootRecord = {
+    ...bootRecordNow,
+    mode: next,
+    failures,
+    fallbacks: stepped
+      ? [...bootRecordNow.fallbacks, { from: bootMode, to: next, reason: bootFailureReason(bgMessage), detail: bgMessage.slice(0, 200), at }]
+      : bootRecordNow.fallbacks,
+    updatedAt: at,
+  };
+  await bootStore
+    .writeSessionBoot(sandbox.sandboxId, state.bootRecord, { dropStateVolume })
+    .catch((err) => logger.warn(`[session-sandbox] ${sandbox.sandboxId}: boot record not written:`, { error: err instanceof Error ? err.message : String(err) }));
+  if (!stepped && !attemptsLeft(bootMode, failures, policy)) return false;
+  logger.warn(`[session-sandbox] ${sandbox.sandboxId}: ${bootMode} boot failed (${failures[bootMode]}x)` +
+      (stepped ? `, falling back to ${next}` : ', trying again') +
+      `: ${bgMessage.slice(0, 160)}`);
+  if (state.bgExternalId) {
+    await state.provider.remove(state.bgExternalId).catch(() => {});
+    state.bgExternalId = null;
+  }
+  if (stepped) {
+    tl.mark(`boot-mode-fallback:${bootMode}->${next}`);
+    if (dropStateVolume && providerCreateInput.envVars) {
+      for (const key of Object.keys(state.sessionState?.env ?? { KORTIX_PERSIST_ROOT: '' })) {
+        delete providerCreateInput.envVars[key];
+      }
+      state.sessionState = null;
+      providerCreateInput.volumesRequired = undefined;
+    }
+    state.bootMode = next;
+    state.sessionStateResolved = false;
+    state.bootArtifactsResolved = false;
+    state.driveMountsResolved = false;
+  } else {
+    tl.mark(`boot-mode-retry:${bootMode}`);
+  }
+  state.platinumCreateAttempt += 1;
+  providerCreateInput.createAttempt = state.platinumCreateAttempt;
+  // The create's last failure may have marked the row failed already.
+  await transitionSandbox('reprovision', sandbox.sandboxId).catch(() => null);
+  return true;
 }
 
 /**
@@ -834,6 +1341,7 @@ async function settleSandboxStoppedDuringCreate(
   result: ProvisionResult,
   attempts: number,
   timeline: ProvisionTimelineSummary,
+  boot: AttemptBoxMetadata,
 ): Promise<boolean> {
   const { opts, sandbox, tl } = ctx;
   const { accountId } = opts;
@@ -895,6 +1403,7 @@ async function settleSandboxStoppedDuringCreate(
             ...result.metadata,
             provisionTimeline: timeline,
             providerExternalId: result.externalId,
+            ...boot.box,
           },
           attempts,
           state.lastProvisionMaxAttempts,
@@ -926,12 +1435,13 @@ async function activateProvisionedSandbox(
     timeline: ProvisionTimelineSummary;
     firstStage: ProvisioningStage;
     branch: string;
+    boot: AttemptBoxMetadata;
   },
 ): Promise<void> {
   const { opts, sandbox, sessionToken, tl, llmGatewayEnabled } = ctx;
   const { accountId, userId } = opts;
   const { providerName, provider } = state;
-  const { result, attempts, timeline, firstStage, branch } = created;
+  const { result, attempts, timeline, firstStage, branch, boot } = created;
   // Pre-active hook (legacy migration chat restore). Runs while the row is
   // still 'provisioning' so the frontend hasn't started ensure-opencode yet.
   //
@@ -973,6 +1483,8 @@ async function activateProvisionedSandbox(
         provisioningStage: firstStage?.id,
         provisionTimeline: timeline,
         providerExternalId: result.externalId,
+        ...boot.box,
+        ...boot.bootMode,
         runtimeArtifact: {
           artifactType: providerName === 'daytona' ? 'daytona_snapshot' : `${providerName}_template`,
           providerArtifactRef: state.imageInfo!.snapshotName,
@@ -1060,6 +1572,10 @@ async function activateProvisionedSandbox(
     totalMs: okTl.totalMs, marks: okTl.marks, attempts,
     sessionId: sandbox.sandboxId, accountId,
   });
+  // The agent's map of its drives (/drives/README.md). Detached, best effort.
+  if (boot.mountedDrives.length) {
+    void import('../../drives/service').then(({ refreshDriveNotes }) => refreshDriveNotes(sandbox.sandboxId));
+  }
 
   // Billing v2 — open a compute metering row. No-op for legacy accounts.
   // Billed at the size of the image that booted (computeMeteringSpec).
@@ -1100,6 +1616,7 @@ async function runProvisionAttempt(
   tl.note('network-boundary');
 
   const image = await resolveAttemptImage(ctx, state, branch);
+  await prepareAttemptVolumes(ctx, state);
 
   const firstStage = state.provider.provisioning.stages[0];
   const created = await createAttemptSandbox(ctx, state, image, firstStage);
@@ -1107,10 +1624,12 @@ async function runProvisionAttempt(
   const { result, attempts } = created;
   state.bgExternalId = result.externalId;
   tl.mark(`provider-create:${attempts}x`);
+  if ((await verifyAttemptSessionState(ctx, state, result.externalId, image.snapshotName)) === 'retry') return 'retry';
+  const boot = await recordAttemptBoot(ctx, state);
   const timeline = tl.summary();
 
-  if (await settleSandboxStoppedDuringCreate(ctx, state, result, attempts, timeline)) return 'done';
-  await activateProvisionedSandbox(ctx, state, { result, attempts, timeline, firstStage, branch });
+  if (await settleSandboxStoppedDuringCreate(ctx, state, result, attempts, timeline, boot)) return 'done';
+  await activateProvisionedSandbox(ctx, state, { result, attempts, timeline, firstStage, branch, boot });
   return 'done';
 }
 
@@ -1167,7 +1686,8 @@ async function failOverToNextProvider(
   state: SessionProvisionState,
   bgMessage: string,
 ): Promise<boolean> {
-  const { opts, sandbox, providerCreateInput, tl, providerWasExplicitlySelected } = ctx;
+  const { opts, sandbox, providerCreateInput, tl, providerWasExplicitlySelected, drivesRequirePlatinum, drivesSyncAllowed, persistentMachine } =
+    ctx;
   const { accountId } = opts;
   const { providerName, provider } = state;
   // ── Provider failover (one-shot, on init) ────────────────────────────
@@ -1177,8 +1697,10 @@ async function failOverToNextProvider(
   // only — a running box is never migrated here. The new provider re-resolves
   // its own image (the snapshot is provider-specific), so we clear all image
   // state and re-enter the loop.
+  // Drives run on Platinum only: no hand-off to another provider. (With drive
+  // sync on, any provider can carry the drives; a persistent machine cannot move.)
   const next = nextFailoverProvider({
-    providerLocked: providerWasExplicitlySelected,
+    providerLocked: providerWasExplicitlySelected || (drivesRequirePlatinum && !drivesSyncAllowed) || persistentMachine,
     fallbackAttempted: state.fallbackAttempted,
     fallbackEnabled: providerFallbackSetting().enabled,
     current: providerName,
@@ -1256,12 +1778,26 @@ async function failSessionSandboxProvisioning(
   const { providerName, provider, bgExternalId } = state;
   // Keep provider SDK text in diagnostic metadata. Show one stable contract
   // for E2B, Daytona, Platinum, and future providers.
-  const failure = classifySandboxProvisioningFailure(bgErr);
+  // A project with drives runs on Platinum only: when Platinum cannot be
+  // reached at all, say that, instead of a generic provider failure.
+  const platinumUnreachable =
+    ctx.drivesRequirePlatinum && !ctx.drivesSyncAllowed && PLATINUM_UNREACHABLE.test(bgMessage);
+  const failure = classifySandboxProvisioningFailure(
+    platinumUnreachable
+      ? new Error(
+          '[drives] Platinum, which runs this project’s sessions and their drives, is not reachable right now. ' +
+            'The session did not start. Try again in a minute.',
+        )
+      : bgErr,
+  );
   const { isCapacity, isGitAuth, userMessage } = failure;
   const failureCategory = failure.category;
+  // Transient: the next `/start` re-attempts with backoff (session-open
+  // `retryTransientProvisionFailure`); the session's volume is untouched.
+  const failureTransient = failure.transient || platinumUnreachable;
   if (isCapacity) {
     console.warn(
-      `[session-sandbox] provider at capacity for ${sandbox.sandboxId} — stopping automatic provisioning:`,
+      `[session-sandbox] provider at capacity for ${sandbox.sandboxId} — the next /start retries with backoff:`,
       bgMessage.slice(0, 200),
     );
   } else if (isGitAuth) {
@@ -1295,6 +1831,7 @@ async function failSessionSandboxProvisioning(
         errorMessage: userMessage,
         lastProvisioningError: bgMessage.slice(0, 500),
         ...(failureCategory ? { failureCategory } : {}),
+        failureTransient,
       }),
     });
     await transitionSession('fail', sandbox.sandboxId, { error: userMessage }).catch((sessionErr) =>
@@ -1360,6 +1897,7 @@ async function runSessionSandboxProvisioning(
 
       const bgMessage = bgErr instanceof Error ? bgErr.message : String(bgErr);
 
+      if (await fallBackBootMode(ctx, state, bgErr, bgMessage)) continue provisioning;
       if (await failOverToNextProvider(ctx, state, bgMessage)) continue provisioning;
 
       await failSessionSandboxProvisioning(ctx, state, bgErr, bgMessage);

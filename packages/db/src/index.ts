@@ -48,6 +48,7 @@ export {
   projectMembers,
   projectAccessRequests,
   projectSecrets,
+  projectSecretTombstones,
   accountSecretResources,
   accountSecretGrants,
   sessionProviderSecretPools,
@@ -122,6 +123,12 @@ export {
   creditPurchases,
   // Mobile push notification device tokens
   pushDeviceTokens,
+  // Drives (shared folders backed by Platinum volumes)
+  drives,
+  driveGrants,
+  platinumVolumeDeletions,
+  driveMountRevocations,
+  driveConflicts,
   // Notification inbox, preferences, watchers, Web Push (KRTX-1742)
   notifications,
   notificationPreferences,
@@ -141,6 +148,7 @@ export {
   appDeployments,
   appImages,
   appRuntimes,
+  appVolumes,
   appSiteFiles,
   appSiteBlobs,
   appDeploymentEvents,

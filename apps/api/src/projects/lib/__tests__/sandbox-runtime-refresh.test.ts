@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  refreshResumedSandboxRuntimeAssets,
   refreshSandboxRuntimeAssets,
   type SandboxRuntimeRefreshDeps,
 } from '../sandbox-runtime-refresh';
@@ -47,6 +48,33 @@ describe('refreshSandboxRuntimeAssets', () => {
     const headers = d.calls[0].init?.headers as Record<string, string>;
     expect(headers.Authorization).toBe('Bearer svc-key-1');
     expect(headers['X-Ingress']).toBe('1');
+  });
+
+  test('a resume requests on_boot through a direct service call', async () => {
+    const d = deps();
+    const outcome = await refreshResumedSandboxRuntimeAssets('sess-1', d.deps);
+
+    expect(outcome).toBe('refreshed');
+    expect(d.calls[0].url).toBe(
+      'http://localhost:8008/v1/p/sbx-1/8000/kortix/refresh?restart=0&repo=0&on_boot=1',
+    );
+    const headers = d.calls[0].init?.headers as Record<string, string>;
+    expect(headers['X-Kortix-Service-Call']).toBe('1');
+  });
+
+  test('a concurrent refresh retries until the resume on_boot request runs', async () => {
+    let attempt = 0;
+    const d = deps({
+      fetch: async (input, init) => {
+        d.calls.push({ url: String(input), init });
+        attempt += 1;
+        return new Response(null, { status: attempt === 1 ? 409 : 200 });
+      },
+    });
+
+    expect(await refreshResumedSandboxRuntimeAssets('sess-1', d.deps)).toBe('refreshed');
+    expect(attempt).toBe(2);
+    expect(d.sleeps).toEqual([5_000]);
   });
 
   test('never sends base=1 or config_dir=1 — those are destructive/other jobs', async () => {

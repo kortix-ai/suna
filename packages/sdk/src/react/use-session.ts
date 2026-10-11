@@ -54,6 +54,7 @@ import {
 } from '../core/rest/projects-client';
 import { RuntimeNotReadyError, getClient } from '../core/runtime/client';
 import { setCurrentRuntime } from '../core/session/current-runtime';
+import { onRuntimeGone } from '../core/session/runtime-gone';
 import { openSessionBundle } from '../core/session/open-bundle';
 import { messagesBeforeRewind } from '../core/session/rewind';
 import { extractGatewayErrorDetails, unwrapError } from '../core/turns/errors';
@@ -451,6 +452,9 @@ export function computeStartSettled(input: {
  * to `stopped` on the very next look.
  */
 export const SESSION_START_FRESH_MS = 30_000;
+
+/** At most one `/start` re-read per this window when the proxy reports the box gone. */
+const RUNTIME_GONE_REFETCH_MIN_MS = 3_000;
 
 /**
  * OUTCOME-AWARE `staleTime` for the `/start` query (TanStack's function
@@ -1155,6 +1159,16 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   const startEnabled = enabled && !!projectId && !!sessionId;
   // Read by `/start`'s refetch interval, which runs outside render.
   const streamConnectedRef = useRef(false);
+  // The session a Stop in THIS tab stopped. Until something else brings the
+  // box back (a restart, a new message), every `/start` this hook sends is a
+  // keep-alive poll: it reports the stop, it never undoes it. Without this, a
+  // session stopped before it was ever `ready` went on polling as an open, and
+  // the first poll after the stop woke it again.
+  const stoppedByUserRef = useRef<string | null>(null);
+  // When this tab opened the session (its first `/start`, or an explicit
+  // retry). Every open-mode poll carries its age, so a Stop made anywhere
+  // after the open wins over the polls, however late they reach the API.
+  const openedAtRef = useRef<{ sessionId: string; at: number } | null>(null);
   const start = useQuery({
     queryKey: sessionStartKey(projectId, sessionId),
     // Once live, only a lifecycle fact leaves live (hold-live-start.ts).
@@ -1162,20 +1176,29 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       const previous = queryClient.getQueryData<SessionStartResult | null>(
         sessionStartKey(projectId, sessionId),
       );
-      const mode = liveStartPollMode(previous, typeof document !== 'undefined' && document.hidden);
+      if (openedAtRef.current?.sessionId !== sessionId) openedAtRef.current = { sessionId, at: Date.now() };
+      const heldByStop = stoppedByUserRef.current === sessionId;
+      const mode = heldByStop
+        ? 'keep-stopped'
+        : liveStartPollMode(previous, typeof document !== 'undefined' && document.hidden);
       // A background tab that shows the session ready does not poll: the poll
       // only keeps a box alive for nobody. The next visible fetch revalidates.
       if (mode === 'skip' && previous) return previous;
-      return holdLiveStart(
-        previous,
-        await startProjectSession(projectId, sessionId, {
-          waitMs,
-          repositoryMode,
-          // The keep-alive poll must report a user Stop or an idle park, never
-          // undo it. An open (no ready answer cached yet) wakes the box as before.
-          keepStopped: mode === 'keep-stopped',
-        }),
-      );
+      const next = await startProjectSession(projectId, sessionId, {
+        waitMs,
+        repositoryMode,
+        // The keep-alive poll must report a user Stop or an idle park, never
+        // undo it. An open (no ready answer cached yet) wakes the box as before.
+        keepStopped: mode === 'keep-stopped',
+        intentAgeMs: Date.now() - openedAtRef.current.at,
+      });
+      // Anything but `stopped` means the box is coming back by an explicit
+      // action elsewhere (a restart, a sent message): this tab follows it.
+      if (heldByStop && next && next.stage !== 'stopped' && stoppedByUserRef.current === sessionId) {
+        stoppedByUserRef.current = null;
+        openedAtRef.current = { sessionId, at: Date.now() };
+      }
+      return holdLiveStart(previous, next);
     },
     enabled: startEnabled,
     retry: (failureCount, error) => shouldRetrySessionStart(failureCount, error, sessionId),
@@ -1198,6 +1221,7 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     if (!startEnabled) return;
     return onSessionStopped((stoppedId) => {
       if (stoppedId !== sessionId) return;
+      stoppedByUserRef.current = sessionId;
       void queryClient.invalidateQueries({ queryKey: sessionStartKey(projectId, sessionId) });
     });
   }, [startEnabled, projectId, sessionId, queryClient]);
@@ -1317,14 +1341,20 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   });
 
   // 2. Point the SDK's runtime at this session's sandbox once ready. Track WHICH
-  // sandbox we switched to (not a bare bool) so navigating between sessions (this
+  // box we switched to (not a bare bool) so navigating between sessions (this
   // hook instance is reused) re-gates instead of binding the new session to the
   // previous sandbox. One active session at a time is the supported model, so the
   // whole chat path (SSE, sync, send) rides this single global switch — there is no
   // separate per-session client to keep in sync.
-  const [switchedSandboxId, setSwitchedSandboxId] = useState<string | null>(null);
+  //
+  // Keyed on the box (`external_id`), not on `sandbox_id`: an ephemeral session
+  // keeps its `sandbox_id` (= the session id) across a stop that deletes its box
+  // and a wake that boots a new one. Keyed on `sandbox_id`, the switch never
+  // re-ran for the new box, and every read stayed on the deleted one until a
+  // reload ("Lost contact with this session's computer").
+  const [switchedBoxId, setSwitchedBoxId] = useState<string | null>(null);
   useEffect(() => {
-    if (!startReady || !sandbox?.external_id || switchedSandboxId === sandbox.sandbox_id) return;
+    if (!startReady || !sandbox?.external_id || switchedBoxId === sandbox.external_id) return;
     // Point the app's runtime at THIS session's box — no global "switch", just set
     // the current runtime url. Every read (getClient, the SSE stream, files/
     // terminal/git) resolves through it. `stage==='ready'` is server-proven, so the
@@ -1334,12 +1364,12 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       sandbox.external_id,
       sandbox.sandbox_id,
     );
-    setSwitchedSandboxId(sandbox.sandbox_id);
-  }, [startReady, sandbox, switchedSandboxId]);
+    setSwitchedBoxId(sandbox.external_id);
+  }, [startReady, sandbox, switchedBoxId]);
   // Clear the current runtime when this session view unmounts.
   useEffect(() => () => setCurrentRuntime(null), []);
 
-  const switched = startReady && !!sandbox && switchedSandboxId === sandbox.sandbox_id;
+  const switched = startReady && !!sandbox?.external_id && switchedBoxId === sandbox.external_id;
 
   // 3. Keep the connection store healthy from server-truth while switched, with NO
   // poller. If the box later dies mid-session the SSE's own disconnect/heartbeat
@@ -1355,7 +1385,26 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
       getSandboxUrlForExternalId(sandbox.external_id),
       startData?.capabilities,
     );
-  }, [switched]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [switched, switchedBoxId]);
+
+  // 3b. The proxy says the box behind our runtime URL is gone (deleted by an
+  // ephemeral stop; another tab or the send path may already have woken the
+  // session on a new box). The URL can never answer again, so ask `/start`
+  // now instead of waiting out its once-a-minute recheck.
+  const refetchStart = start.refetch;
+  useEffect(() => {
+    if (!startEnabled || !switchedBoxId) return;
+    const switchedUrl = getSandboxUrlForExternalId(switchedBoxId);
+    let lastAt = 0;
+    return onRuntimeGone((runtimeUrl) => {
+      if (runtimeUrl !== switchedUrl) return;
+      const now = Date.now();
+      if (now - lastAt < RUNTIME_GONE_REFETCH_MIN_MS) return;
+      lastAt = now;
+      void refetchStart();
+    });
+  }, [startEnabled, switchedBoxId, refetchStart]);
 
   // 4. Open the live SSE stream. This was a provider component (RuntimeEvent
   // StreamProvider); calling the underlying hook here means the host mounts
@@ -1996,6 +2045,9 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     removePermission,
     /** Force a re-poll of /start (e.g. a Retry button on the boot screen). */
     retry: () => {
+      // An explicit retry is an open, whatever this tab stopped before.
+      stoppedByUserRef.current = null;
+      openedAtRef.current = { sessionId, at: Date.now() };
       void start.refetch();
     },
   };

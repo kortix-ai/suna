@@ -58,28 +58,33 @@ Each account's `owner_type` decides who may run a call as it:
 Multiple connectors can reference the same provider app. Use separate
 connectors when one app needs different policies.
 
-### Add an account
+### Install a connector
 
-Open the connector in **Customize → Connectors**. The **Accounts** tab lists
-every account you can use or manage in one list. Each card shows who can use
-the account: **Only you**, **Everyone in project**, or the groups and people it
-is shared with.
+1. Open **Customize → Connectors**.
+2. Find the app on the **All** tab.
+3. Click **Install** on its card and choose who the account is for:
+   - **Only you** — only you can use it, in your private sessions.
+   - **Everyone in the project** — every project member's sessions can use it.
+4. Sign in to the app when its window opens. An app that uses an API key asks for the key instead.
 
-Select **Add account**, name the account, and choose **Who can use it**:
+Kortix opens the connector's page when the install finishes.
 
-- **Only you** — a private account. Any member can add one.
-- **Everyone in the project** — a shared account.
-- **Specific people or groups** — a shared account, narrowed to the people,
-  groups, and agents you pick.
+A member who cannot manage the project's connections sees one **Install** button. It installs a private account.
 
-The two shared choices need `project.connector.connections.manage`. For
-**Specific people or groups**, Kortix writes the grants before you authorize
-the account, so the account never holds a credential while it is open to the
-whole project. An account name must be new: a name that an account of the same
-owner already uses is refused.
+When the catalog lists an MCP server for an app, **Install** uses it. To use another surface, such as the REST API, open the app's page and pick it under **Ways to connect**.
+
+### Manage a connector
+
+Each connector has its own page with three tabs. **Tools** and **Settings** show only to someone who can change the project's connectors.
+
+- **Accounts** — the logins this connector can run as. **Add account** asks only who the account is for. To limit a shared account to specific people or groups, use **Share** on its row.
+- **Tools** — which tools the agent may call, and which need approval.
+- **Settings** — the connection details, and **Remove connector**.
+
+Installing an app that is already in the project adds an account to the existing connector. It does not create a second connector.
 
 When an agent needs an account, it posts a **Connect** card in the chat. The
-card opens the same dialog, with the name the agent suggests already filled in
+card opens a dialog, with the name the agent suggests already filled in
 and the audience it asked for preselected. Kortix creates a new account, never
 re-authorizes an existing one, and tells the agent the new account's name so it
 can run calls as that account.

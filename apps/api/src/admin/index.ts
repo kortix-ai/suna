@@ -1452,6 +1452,97 @@ adminApp.openapi(
   },
 );
 
+// ── Volumes + session boot modes (one policy row; platform/services/boot-mode.ts) ─
+async function bootModesView(): Promise<Record<string, unknown>> {
+  const { config } = await import('../config');
+  const { db } = await import('../shared/db');
+  const { accounts } = await import('@kortix/db');
+  const { inArray } = await import('drizzle-orm');
+  const { isPlatinumConfigured } = await import('../shared/platinum');
+  const { driveSyncEnabled } = await import('../drives/sync');
+  const { properAccountName } = await import('../accounts/core/app');
+  const store = await import('../platform/services/boot-mode-store');
+  const { stored, policy } = await store.refreshBootModePolicy();
+  // Organizations named by either a Volumes on/off or a boot mode rule.
+  const ids = [...new Set([...Object.keys(policy.volumes.orgs), ...Object.keys(policy.orgs)])];
+  const names = new Map<string, string>();
+  if (ids.length) {
+    const rows = await db
+      .select({ accountId: accounts.accountId, name: accounts.name })
+      .from(accounts)
+      .where(inArray(accounts.accountId, ids));
+    for (const r of rows) names.set(r.accountId, properAccountName(r.name) ?? r.name);
+  }
+  const stats = await store.bootModeStats(24).catch((e) => ({ error: adminErrorMessage(e) }));
+  return {
+    stored,
+    policy,
+    orgs: ids.map((id) => ({
+      accountId: id,
+      name: names.get(id) ?? null,
+      volumes: policy.volumes.orgs[id] ?? null,
+      rule: policy.orgs[id] ?? null,
+    })),
+    env: {
+      bootArtifacts: config.KORTIX_BOOT_ARTIFACTS || null,
+      volumeOff: store.envVolumeOff(),
+      driveSync: driveSyncEnabled(),
+    },
+    providers: {
+      allowed: config.ALLOWED_SANDBOX_PROVIDERS,
+      default: config.getDefaultProvider(),
+      volumeProvider: 'platinum',
+      volumeProviderConfigured: isPlatinumConfigured(),
+    },
+    stats,
+  };
+}
+
+adminApp.openapi(
+  createRoute({
+    method: 'get', path: '/api/boot-modes', tags: ['admin'],
+    summary: 'Get the Volumes switch, the session boot mode policy and 24h counts', ...auth,
+    responses: { 200: json(z.record(z.string(), z.any()), 'policy'), ...errors(401, 403) },
+  }),
+  async (c) => c.json(await bootModesView()),
+);
+
+adminApp.openapi(
+  createRoute({
+    method: 'put', path: '/api/boot-modes', tags: ['admin'],
+    summary: 'Set the Volumes switch and the session boot mode policy', ...auth,
+    request: { body: { content: { 'application/json': { schema: z.record(z.string(), z.any()) } } } },
+    responses: { 200: json(z.record(z.string(), z.any()), 'policy'), ...errors(400, 401, 403) },
+  }),
+  async (c) => {
+    const body = await readJsonObject(c);
+    const { config } = await import('../config');
+    const { parseBootModePolicy } = await import('../platform/services/boot-mode');
+    const { parseBootArtifacts } = await import('../platform/services/boot-artifacts');
+    const store = await import('../platform/services/boot-mode-store');
+    const policy = parseBootModePolicy(body, Boolean((config.KORTIX_BOOT_ARTIFACTS ?? '').trim()));
+    if (policy.artifacts && !parseBootArtifacts(policy.artifacts)) {
+      return c.json({ error: 'artifacts must look like <volume>@<tag>' }, 400);
+    }
+    const ids = [...new Set([...Object.keys(policy.orgs), ...Object.keys(policy.volumes.orgs)])];
+    if (ids.length) {
+      const { db } = await import('../shared/db');
+      const { accounts } = await import('@kortix/db');
+      const { inArray } = await import('drizzle-orm');
+      const known = new Set(
+        (await db.select({ id: accounts.accountId }).from(accounts).where(inArray(accounts.accountId, ids))).map((r) => r.id),
+      );
+      for (const id of ids) {
+        if (known.has(id)) continue;
+        delete policy.orgs[id];
+        delete policy.volumes.orgs[id];
+      }
+    }
+    await store.saveBootModePolicy(policy);
+    return c.json(await bootModesView());
+  },
+);
+
 // ── Sandboxes: list all with provider + a per-provider count ─────────────────
 adminApp.openapi(
   createRoute({

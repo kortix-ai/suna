@@ -350,7 +350,9 @@ export type ComputerCallOutcome =
       /** `computer_unpaired` | `computer_owner_left` (its owner left the account) |
        *  `computer_offline` | `computer_capability_not_approved`,
        *  an access refusal on the machine (`computer_access_pending` |
-       *  `computer_access_denied` | `computer_access_off`), or `error` for a
+       *  `computer_access_denied` | `computer_access_off`),
+       *  `computer_desktop_permission_missing` (macOS has not given Kortix
+       *  Accessibility or Screen Recording), or `error` for a
        *  failure on the machine or in the relay. */
       kind:
         | 'computer_unpaired'
@@ -360,6 +362,7 @@ export type ComputerCallOutcome =
         | 'computer_access_pending'
         | 'computer_access_denied'
         | 'computer_access_off'
+        | 'computer_desktop_permission_missing'
         | 'error';
       message: string;
     };
@@ -1213,15 +1216,15 @@ async function runConnectorAction(
       const misfire = result.ok && channelWrite ? channelWrite.misfire(result.data) : null;
       if (misfire) {
         const undone = misfire.undo
-          ? await executeCall({
+          ? await withDeadline(executeCall({
               binding: { kind: 'http', method: 'POST', path: misfire.undo.path },
               baseUrl: connector.baseUrl,
               auth: connector.auth,
               headers: connector.headers,
               secret: executionSecret,
               args: misfire.undo.args,
-              fetchImpl: deps.fetchImpl,
-            })
+              fetchImpl: (url, init) => deps.fetchImpl(url, { ...init, signal }),
+            }))
               .then((undo) => mapChannelEnvelope(undo).ok)
               .catch(() => false)
           : false;

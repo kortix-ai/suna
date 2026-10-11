@@ -22,7 +22,6 @@ const app = (over: Partial<App>): App =>
     active_deployment_id: null,
     machine: { cpu: 1, memory_gb: 1, disk_gb: 4 },
     idle_timeout_seconds: 900,
-    monthly_budget_usd: 5,
     last_request_at: null,
     created_at: '2026-09-22T00:00:00.000Z',
     updated_at: '2026-09-22T00:00:00.000Z',

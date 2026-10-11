@@ -29,6 +29,8 @@
  * — use `createKortixAuth` from `@kortix/sdk/server` instead.
  */
 
+import { stripTrailingSlashes } from '../../platform/strings';
+
 /** What the gate answers at `/_kortix/viewer`. */
 export interface KortixAppViewerSession {
   app_id: string;
@@ -236,21 +238,22 @@ export interface KortixBinding {
 
 /**
  * An App this App uses (`uses`), on this App's own origin: no cross-origin
- * request, no CORS. A used App whose kind has no endpoint answers
+ * request, no CORS. A used static App answers
  * `409 app_binding_unsupported`; an App this App does not use answers
  * `403 app_not_linked`.
  *
  * ```ts
- * const db = kortixBinding('db');
- * const client = new ConvexReactClient(db.url);
- * client.setAuth(db.token);
+ * const api = kortixBinding('api');
+ * const res = await fetch(`${api.url}/orders`, {
+ *   headers: { authorization: `Bearer ${await api.token()}` },
+ * });
  * ```
  */
 export function kortixBinding(slug: string, options: KortixBindingOptions = {}): KortixBinding {
   const origin = options.origin ?? (globalThis as { location?: { origin?: string } }).location?.origin;
   if (!origin) throw new Error('kortixBinding needs the App origin: pass { origin } outside a browser.');
   return {
-    url: `${origin.replace(/\/+$/, '')}/_kortix/apps/${encodeURIComponent(slug)}`,
+    url: `${stripTrailingSlashes(origin)}/_kortix/apps/${encodeURIComponent(slug)}`,
     token: kortixToken({ audience: slug, fetch: options.fetch }),
   };
 }

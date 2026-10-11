@@ -509,6 +509,14 @@ Repo files are read-only over the project API; live edits happen in the sandbox 
 `FILE-12` `GET /projects/:id/files/raw?path=&ref=` → the file's exact bytes (`git cat-file blob`), the byte-accurate read behind binary previews and downloads. **Absent `path` param → 400**; missing path → 404; a text file's bytes decode to exactly what `files/content` returns as text; ANON → 401.
 `FILE-13` **Files lists every folder** — `GET /projects/:id/files?depth=1[&path=<dir>]` returns `{ entries: [{path, type: file|directory}], truncated }` for one folder level, complete past 1,000 entries (a 1,200-file `a/` lists whole, and `z/` after it is reachable); the recursive list (no `depth`) stays capped at 1,000 and sends `X-Kortix-Truncated: 1` when cut (KRTX-1723).
 
+
+## 10b. Files (`/v1/drives`, `combinedAuth` + `rejectSandboxTokens`; session-bound PATs → 403)
+
+A project's Files is one drive (kind `project`) backed by one storage volume. Folder access is the project's object grants (`role_assignments`, object type `folder`): `read`, `write` or `manage` on a folder and everything below it, for a person, a team, an agent or everyone in the project. Everyone has a private folder under `/Users` (project admins included get **404** on another person's folder until it is shared); project admins manage every other folder. A path the caller cannot see is **404**; one they see but may not change is **403**.
+
+`DRIVE-1` Files follows the organization's Volumes switch (the derived `drives` flag; `PATCH /projects/:id/features` refuses it with 400; a platform admin sets it with `PUT /admin/api/boot-modes`, the account owner gets 403). `GET /drives?projectId=` → 200 `{drives:[the project drive with the caller's access, personalFolder and sharedWithMe]}` (created once), 403 `feature_disabled` while the flag is off; ANON → 401; NONMEMBER → 403/404. Files (`GET /drives/:id/files?path=`, `GET|PUT …/files/content?path=` (≤ 64 MiB raw body; `If-Match` refuses a stale save with 409 `file_changed`), `POST …/files/mkdir {path}`, `POST …/files/move {from,to}`, `DELETE …/files?path=&recursive=`), `GET /drives/:id/versions`, `POST /drives/:id/restore {versionId}`: a `..` path → 400, unknown version → 404; a target without drive storage answers 503 `drive_storage_unavailable` on every write. Sharing: `GET /drives/:id/access?path=` (grants on the folder and inherited ones), `PUT /drives/:id/access {path, principalType: user|group|agent|project, principalId?, level}` → 200 `{grantId, pendingSessions?}`, `DELETE /drives/:id/access/:grantId` → 204, or 202 `{pendingSessions}` while a running session's detach has not landed (retried by the drive worker; the sync routes refuse the folder to that session meanwhile), `GET /drives/:id/principals`. A folder on the way to a shared one opens for traversal and lists only the way. Conflicts: `GET /drives/:id/conflicts` → open "(conflict …)" copies; `POST /drives/:id/conflicts/:cid/dismiss` → 204, unknown → 404.
+`DRIVE-2` `GET /projects/:id/sessions/:sid/drives` → 200 `{drives:[{driveId,name,kind,mountPath,readOnly,subdir}], personal, skipped, skippedMessage}`: the folders the session's current sandbox mounted, each at a distinct `/drives/` path, the person's own folder at `/drives/me` only in a private session they started; non-uuid session → 400, unknown → 404, NONMEMBER → 403, ANON → 401. What a session mounts follows grants only: there is no route to attach a folder to a session or change its access.
+
 ---
 
 ## 11. Change Requests (mandatory path to land branch work on main)
@@ -674,6 +682,7 @@ DB `project_secrets` (AES-256-GCM, key bound to `projectId`, unique `(project_id
 `SEC-1` `GET /projects/:id/secrets` → `manage` → names only + manifest required/optional keys + virtual git-auth row.
 `SEC-2` `POST /projects/:id/secrets {name,value}` → `manage` → upsert (encrypt); name upper-cased; invalid name format → 400; `KORTIX_*` reserved → 400. M_EDITOR/M_VIEWER → 403.
 `SEC-3` `DELETE /projects/:id/secrets/:name` → `manage`; invalid name → 400; system secret (git-auth) → 403. No plaintext appears in the upsert response, the list, or the stored row; a human reads `agent_scope:null`; delete answers `{ok:true}`.
+`SEC-3A` Unset revokes the secret's outstanding intake links (KRTX-2056) → a setup-link token minted before the delete is dead: `GET /setup-links/secret/:token` (the page shows it instead of the form) and `POST {values}` both answer `409 This link is no longer valid: <NAME> was removed from the project after the link was issued. Ask the agent for a fresh link.`, and the submit re-creates nothing. The same holds when the secret was never filled (the agent unsets a request it minted but nobody has submitted): the unset tombstones the NAME even though no row existed. A link minted AFTER the unset still works — "request a secret that does not exist yet" is the feature. Deletion records a tombstone keyed by secret NAME in the delete's transaction (pruned once older than the longest link TTL); a token that predates `iat` and names a deleted secret is refused (unknown mint time reads as the oldest possible).
 `SEC-4` injection — `buildSessionSandboxEnvVars` decrypts only `runtime` + `sandbox` secrets authorized by the immutable agent grant and current session allowlist. Denied and reserved platform credentials do not enter the project-secret environment; an egress-enforced secret enters it as a HANDLE, never as its value.
 `SEC-6` `POST /projects/:id/secrets {identifier,name,value}` → two identifiers may share one env-var `name` (e.g. `GMAPS-primary`/`GMAPS-backup` both `GOOGLE_MAPS_API_KEY`); re-submitting an existing `identifier` with a different `name` → 409.
 `SEC-POOL-1` Account secret resource create/list/rotate/delete → two Anthropic keys have separate stable IDs; read responses omit values; a nonmember cannot list; deleting one key preserves the other.
@@ -774,7 +783,7 @@ project`, needs `project.connector.connections.manage`). Runtime selection is
 the generic connection resolver (`--account`, session bindings, reachability):
 an unattended run reaches only project-shared computers.
 
-`TUN-1` pairing + machines: `POST /tunnel/device-auth` with `project_id`, `GET …/:code/status`, `POST …/:code/approve` → the approver's private computer account in the project (`GET /projects/:id/connections` lists it with `tunnel_id` and `machine`). `GET /tunnel/connections` lists the caller's machines; `POST /tunnel/connections` → 404 (pairing is device auth only). `GET/PATCH /:tid` (rename; empty name → 400), `POST /:tid/rotate-token`, unknown → 404, ANON → 401. `DELETE /:tid` unpairs: the account becomes `revoked` with `tunnel_id: null`.
+`TUN-1` pairing + machines: `POST /tunnel/device-auth` with `project_id`, `GET …/:code/status`, `POST …/:code/approve` → the approver's private computer account in the project (`GET /projects/:id/connections` lists it with `tunnel_id` and `machine`). `GET /tunnel/connections` lists the caller's machines; `POST /tunnel/connections` → 404 (pairing is device auth only). `GET/PATCH /:tid` (rename; empty name → 400), `POST /:tid/rotate-token`, unknown → 404, ANON → 401. `POST /:tid/access` relays the owner's access change to the machine: a bad change → 400, an offline machine → 409 `computer_offline` naming `npx @kortix/agent-tunnel@latest access`; `access` is `null` until the agent reports. `DELETE /:tid` unpairs: the account becomes `revoked` with `tunnel_id: null`.
 `TUN-2` `POST /projects/:id/computers {tunnel_id, share}` adds an already-paired machine: idempotent for the owner (200, same account), another member → 404, malformed id → 400, a member sharing a pairing with the project → 403, the owner sharing with the project → 201 and every member lists that account. A machine of another account → 409.
 `TUN-3` per-machine permission, permission-request, and audit routes are removed (404).
 `TUN-4` rpc `POST /tunnel/rpc/:tid`: missing method → 400; a capability not approved at pairing → 403 `computer_capability_not_approved`; an approved capability with no live agent → 503 with `x-kortix-upstream-status: 502` and code `-32004` (not connected); unknown → 404.
@@ -1190,17 +1199,15 @@ project read then lists `apps` with `enabled: true, operator_only: true`. A
 project writer creates a unique lower-case slug and machine policy; list/get
 return the stable public URL and active deployment pointer; every App carries
 `estimated_monthly_usd` (its machine 24/7 at list compute rates, `73.48` for
-1 vCPU / 2 GiB / 10 GiB). Cost shape decides the budget: only an on-demand
-server App (`always_on: false`) has `monthly_budget_usd` (default `5`, the
-value sent otherwise, unmoved by a machine patch); an always-on App reports
-`monthly_budget_usd: null`, and a create or patch that sends a budget for it →
-`400 {code:'app_budget_not_applicable'}` with the 24/7 cost in the message;
-a patch to `always_on: false` sets the sent budget or `5`, a patch back to
-`always_on: true` clears it to `null`; `warnings: []` on every create and
-patch; patch updates mutable policy; delete is soft and removes the App
+1 vCPU / 2 GiB / 10 GiB). Apps have no budget: no App response carries
+`monthly_budget_usd`, and a create or patch that still sends one (an older
+client) succeeds and ignores it; a patch switches `always_on` both ways;
+`warnings: []` on every create and patch. A new App has `labels: []`,
+`services: []` and the capabilities `deployments`, `rollback`, `preview`,
+`member_tokens`, and no `kind` or `instance`. Patch updates mutable policy; delete is soft and removes the App
 from subsequent reads.
-A new App lists no backends (`backends: []`); patch sets the list by name,
-deduplicated, and get reads it back; an invalid backend name → 400.
+A new App uses no App (`uses: []`); patch sets the list by slug, an unknown
+slug → `400 app_not_found`, a malformed one → 400.
 Invalid slugs → 400; `NONMEMBER` → 403.
 
 `APP-2` Artifact and deployment boundaries —
@@ -1313,15 +1320,16 @@ hostname behind the access gate. `GET /` → **200** HTML with
 immutable`; a page navigation to an unknown path → the SPA shell; a missing
 asset → **404**; `If-None-Match` with the ETag → **304**. A redeploy of one
 changed file logs `(1 new, 2 unchanged)` and serves the new page at once.
-`POST /projects/:projectId/apps/:appId/rollback` to v1 → **200** and v1 is
-served (no runtime starts). `GET /projects/:projectId/apps` lists the App
+`POST /projects/:projectId/apps/:appId/rollback` to v1 → **202** with a NEW
+release v3 from v1's artifact (the Fly model); it is `ready` within 60 s with
+`hosting_type: "static"` and v1's page is served (no runtime starts). `GET /projects/:projectId/apps` lists the App
 with `hosting_type: "static"`, `estimated_monthly_usd: 0` and
 `retained_deployments: 5`. `POST …/start` and `POST …/stop` → **409**
 `static_app_no_runtime`; `kortix apps stop` exits 1 with that explanation,
 `kortix apps ls` prints `static` in the STATE column, and the App keeps
-serving. After 8 deploys the deployment list holds exactly
-v3–v8 `ready` (the active one and the 5 newest others,
-`KORTIX_APPS_RETAINED_DEPLOYMENTS`); v1 and v2 are retired. The local profile
+serving. After 6 more deploys (v4–v9) the deployment list holds exactly
+v4–v9 `ready` (the active one and the 5 newest others,
+`KORTIX_APPS_RETAINED_DEPLOYMENTS`); v1–v3 are retired. The local profile
 runs the worker with `KORTIX_APPS_WORKER_ENABLED=static`, so static
 deployments complete while sandbox deployments stay `queued` for APP-7.
 `apps/api/src/apps/static-site.integration.test.ts` proves deduplication,
@@ -1576,20 +1584,16 @@ Product feedback filed by agents and people through one route and one CLI comman
 
 ---
 
-## 34. Apps of kind `convex` and capability routes
+## 34. App capabilities, links and sign-in tokens
 
-An App has one `kind`, fixed at create: `web` (default) or `convex`, a
-self-hosted Convex backend in its own always-on Platinum machine (1 vCPU, 1 GB,
-10 GB by default). A project owns up to 3 `convex` Apps, an account up to 10.
-The `apps` flag gates every kind; a `convex` create needs a deployment with
-Platinum. Every App response carries `kind`, `capabilities`, `uses`/`used_by`
-(App links by slug), `auth` (`issuer`, `audience` = the App id, `jwks_uri`) and
-`instance` (the machine state of a `convex` App, null for `web`). Capability routes under `/projects/:projectId/apps/:appId`:
-`GET/POST snapshots`, `DELETE snapshots/:snapshotId` (`snapshots`),
-`POST restore` (`restore`), `GET credentials` and `POST rotate-credentials`
-(`admin_credentials`), `POST token` (`member_tokens`, every kind), `GET logs`
-(`logs`). An App without the capability answers `409
-{code:'app_capability_unsupported', capability, kind}`.
+Every App response carries `capabilities`, `uses`/`used_by` (App links by
+slug) and `auth` (`issuer`, `audience` = the App id, `jwks_uri`). Clients
+branch on `capabilities`. A web App lists `deployments`, `rollback`,
+`preview`, `member_tokens`, plus `sleep` (a server) or `static`. The route
+`POST /projects/:projectId/apps/:appId/token` needs `member_tokens`; an App
+without it answers `409 {code:'app_capability_unsupported', capability}`. The
+capability routes of the retired `convex` kind (`snapshots`, `restore`,
+`credentials`, `rotate-credentials`, `logs`) do not exist and answer 404.
 
 Sign-in tokens have one issuer per project: `<API origin>/v1/projects/:projectId`,
 with the public routes `GET /projects/:projectId/.well-known/openid-configuration`
@@ -1599,63 +1603,21 @@ the first token; an empty key set before it). A token lives 15 minutes and its
 mints one naming the viewer for the App itself (the default) or an App it
 `uses`; any other App answers `403 app_not_linked`. The bindings mount
 `/_kortix/apps/<slug>/*` on an App host proxies HTTP and WebSocket to a used
-App's endpoint (a `convex` App: its client API) with the prefix stripped; an App
-it does not use answers `403 app_not_linked`, a used App of a kind with no
-endpoint `409 app_binding_unsupported`.
+App's public http service with the prefix stripped; an App it does not use
+answers `403 app_not_linked`, a used static App `409 app_binding_unsupported`,
+a used App with no running release `503 app_binding_unavailable`.
 
-`APP-9` Kind and capability surface. Flag off: a `convex` create and every
-capability route answer `403 {code:'feature_disabled', feature:'apps'}`. Flag
-on: an unknown `kind` or an invalid slug answers 400 before any machine is
-requested; `always_on: false` for a `convex` App answers 400 (or 409 where
-Platinum is not configured). A `convex` create answers `201` with
-`instance.status: "provisioning"` and the seven `convex` capabilities where
-Platinum is configured, else `409 app_kind_unavailable`. A `web` App lists
-`deployments`, `rollback`, `preview`, `member_tokens` and answers 409
-`app_capability_unsupported` on the 7 `convex`-only capability routes. The real
-CLI process: `kortix apps link <web> --uses <other>` sets `uses` (the other App
-reads it in `used_by`), `kortix apps show --json` prints `kind` and
-`capabilities`, `kortix apps snapshots <web>` exits 1 with `(kind web) does not
-support snapshots` before any capability route, `kortix apps token <web>` prints
-a three-part JWT, and `kortix apps unlink` empties `uses`. An unknown App
-answers 404. A `NONMEMBER` gets 403/404 and an `ANON` caller 401. The DB suites
-`apps/api/src/apps/kinds/convex/*.integration.test.ts` assert the rest against a
-fake Platinum and a fake Convex: the caps under concurrency (`409
-app_kind_limit`), `Cache-Control: no-store` on credentials and token,
-`instance.client_version`, the project issuer discovery and key set (verified
-against a minted token, for a `convex` and a `web` App), the maintenance issuer
-move (all three `KORTIX_AUTH_*` written, a failed write retried, a moved App
-left alone), `uses` links both ways and
-`400 app_not_found` for an unknown slug, a `convex` deployment recorded `ready`
-with no artifact (`source_kind: "convex"`, `201`), and `409
-app_capability_unsupported` for start, stop and rollback of a `convex` App. The
-maintenance sweep: an interrupted provision resumes on its Idempotency-Key and
-reaches `running`, one interrupted 3 times turns `error`, an interrupted resize
-is recovered with `last_operation_error`, the health probe records
-`instance.health` and starts a stopped machine, restores a tombstoned one from
-backup, and turns a missing one `error` after 3 probes; admin-key rotation
-seals the key Convex accepts and answers `409 app_busy` during another
-operation; a backup or snapshot restore of a rotated App rotates again; an agent
-session's token names the agent's service account (`kind: "agent"`), never its
-launcher; the App gate's `/_kortix/token` mints for the App itself or an App it
-`uses` (by slug or id), `403 app_not_linked` otherwise (also across projects),
-and re-checks a `public` App's cookie viewer (`401` once access is gone); the
-bindings mount forwards a request to the used `convex` App's client API with the
-prefix stripped and the Kortix cookies removed; the logs route strips color codes and
-rejects `lines` outside 1–1000. Snapshots: `manual` carries no expiry and the
-11th answers `409 snapshot_limit`; snapshot, restore, snapshot delete and App
-delete answer `409 app_busy` during a resize (delete stays allowed in
-`recovering`); a restore answers only after Platinum reports `running` again;
-a resize takes a `resize` snapshot kept 24 h, and an older snapshot answers
-`409 snapshot_predates_resize`; the daily `automatic` snapshot is kept 7 days.
-Delete: without `confirm=<slug>` → `400 confirmation_required`; with it, a
-`final` snapshot is taken, the machine is stopped and kept 7 days
-(`retained_until`), the hosts answer 410, the sweep and the orphan reaper leave
-the machine alone, and the purge after retention deletes machine, snapshots and
-row. No budget: a `convex` App reports `monthly_budget_usd: null` and
-`instance.budget_alert: null`, a budget on create or patch →
-`400 app_budget_not_applicable`, and the sweep never stops the machine for its
-spend. Not asserted locally: a provisioned machine and the
-`app.credentials.read` audit row; they are verified on a deployed environment.
+`APP-9` Capability surface and links. Flag off: the token route answers `403
+{code:'feature_disabled', feature:'apps'}`. Flag on: an invalid slug answers
+400. A create answers `201` with `capabilities` `deployments`, `rollback`,
+`preview`, `member_tokens` and no `kind`, `instance` or `monthly_budget_usd`
+(a `kind` in the body is ignored). The six retired capability routes answer
+404. The real CLI process: `kortix apps link <app> --uses <other>` sets `uses`
+(the other App reads it in `used_by`), `kortix apps show --json` prints
+`capabilities` and no `kind`, `kortix apps snapshots <app>` exits nonzero with
+`unknown Apps subcommand "snapshots"`, `kortix apps token <app>` prints a
+three-part JWT, and `kortix apps unlink` empties `uses`. An unknown App
+answers 404. A `NONMEMBER` gets 403/404 and an `ANON` caller 401.
 
 `APP-10` Sign-in tokens and the bindings mount, black-box on a local App host.
 An `ANON` caller reads the project issuer: `openid-configuration` names
@@ -1666,7 +1628,29 @@ set); a `NONMEMBER` gets 403/404. Signed in to App A through its access link,
 `/_kortix/token` answers 200 for A itself and for App C that A uses, and `403
 app_not_linked` for App B of the same project that A does not use and for an
 App of another project. The bindings mount answers `403 app_not_linked` for B
-and `409 app_binding_unsupported` for C, a `web` App.
+and `503 app_binding_unavailable` for C, which A uses but which has no
+running release.
+
+`APP-11` Machines, scale, exec and volumes (the Fly model) on an App with no
+server release. `GET …/machines` and `GET …/volumes` → **200** with empty
+lists. `PUT …/scale` and `POST …/exec` → **409** `app_no_machines`;
+`kortix apps scale count <app> 2` exits 1 with "deploy a server release first".
+`start`, `stop`, `restart` and `DELETE` of an unknown machine → **404**
+`machine_not_found`. `POST …/volumes` refuses a bad name (**400**
+`volume_name_invalid`) and a size of 0 or 101 GB (**400**
+`volume_size_invalid`). Every volume route on an unknown volume → **404**
+`volume_not_found`. A volume row seeded in PostgreSQL (the local profile has
+no Platinum) lists with `size_gb: 10`, `attached: false`, `process_group: app`
+and `snapshot_retention_days: 5`, adds `volumes` and `snapshots` to the App's
+`capabilities`, and `kortix apps volumes <app>` prints it. `PATCH` refuses a
+shrink (**400** `volume_shrink_refused`), 101 GB and a retention of 61 days,
+and accepts 20 GB with 7 days (read back). `DELETE` without the matching
+`?confirm=<name>` → **400** `confirmation_required`; `restore` and `fork` with
+an unknown snapshot → **400** `snapshot_invalid`. A project member without
+deploy or admin gets **403** on every write; a `NONMEMBER` gets 403/404 and
+an `ANON` caller 401. `apps/api/src/apps/machines.integration.test.ts` proves
+rollouts, strategies, the release command, scale and the single-writer volume
+handover on PostgreSQL with a fake provider.
 
 ---
 

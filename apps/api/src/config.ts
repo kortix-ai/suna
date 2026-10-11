@@ -213,7 +213,6 @@ const envSchema = z.object({
   // Ready deployments an App keeps besides its active one (rollback targets).
   // Older ones are retired: runtime, image, files and archive are freed.
   KORTIX_APPS_RETAINED_DEPLOYMENTS: optInt(5),
-  KORTIX_APPS_MAX_MONTHLY_BUDGET_USD: optInt(100_000),
   // New server Apps run 24/7 unless the request says otherwise. Existing Apps
   // keep their own setting. Static Apps have no runtime and ignore it.
   KORTIX_APPS_DEFAULT_ALWAYS_ON: optBoolTrue,
@@ -529,11 +528,26 @@ const envSchema = z.object({
   // template row still references. On by default; boot auto-heal covers the rare
   // cross-env race where another env's row pointed at the reaped (identical) name.
   KORTIX_SNAPSHOT_REAP_PREDECESSOR: optBoolTrue,
+  // Files: `off` boots every session without its folders (operator kill
+  // switch); unset or anything else mounts them. `on` for KORTIX_DRIVES_SYNC
+  // lets a project with Files boot sessions on a provider without volume
+  // mounts, with the folders synced in by the box's daemon.
+  KORTIX_DRIVES_SESSION_MOUNT: optStr,
+  KORTIX_DRIVES_SYNC: optStr,
+  // `off` keeps every new session box on stop/resume (an operator override
+  // under the Volumes switch).
+  KORTIX_EPHEMERAL_SANDBOXES: optStr,
   // The fresh-session Git fast path: KORTIX_SESSION_FRESH, the base-tip +
   // scaffold-delta hint (inline or remote bundle), and the OpenCode config-dir
   // hint that lets the daemon spawn OpenCode before the checkout. Default ON;
   // `false` restores the pre-2026-08-27 create-time contract. The daemon side
   // is additive and falls back to the clone path without these hints.
+  // Boot artifacts: `<volume>@<tag>`, a Platinum volume holding one release's
+  // prebuilt runtime (daemon, CLI, OpenCode, managed skills), published by
+  // scripts/boot-artifacts/publish.ts. Every Platinum session mounts that tag
+  // read-only at /opt/kortix-artifacts and boots from it instead of
+  // downloading. Unset = off.
+  KORTIX_BOOT_ARTIFACTS: optStr,
   // ── Project snapshot archives (S3 config provider) ─────────────────────
   // A fresh session materializes its project from a prebuilt `.tar.gz` in S3
   // instead of a Git clone. `git` (default) never attempts S3 and is the
@@ -632,6 +646,12 @@ const envSchema = z.object({
   // Per-webhook HMAC-SHA-256 secret from Platinum's `POST /v1/webhooks` (shown
   // once at registration). Optional — same backstop story as Daytona's.
   PLATINUM_WEBHOOK_SECRET: optStr,
+  // Local development switch. `local` points the provider at a Platinum
+  // control plane on this machine (PLATINUM_API_URL_LOCAL / _KEY_LOCAL);
+  // unset or `prod` keeps PLATINUM_API_URL / PLATINUM_API_KEY above.
+  PLATINUM_TARGET: z.enum(['local', 'prod']).optional().default('prod'),
+  PLATINUM_API_URL_LOCAL: optStr,
+  PLATINUM_API_KEY_LOCAL: optStr,
 
   // ── E2B — sandbox provisioning (conditional: required if enabled) ────────
   // E2B_DOMAIN is the base E2B domain without a protocol. The default uses
@@ -1169,7 +1189,6 @@ export const config = {
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,
   KORTIX_APPS_STATIC_HOSTING: env.KORTIX_APPS_STATIC_HOSTING,
   KORTIX_APPS_RETAINED_DEPLOYMENTS: Math.max(1, env.KORTIX_APPS_RETAINED_DEPLOYMENTS),
-  KORTIX_APPS_MAX_MONTHLY_BUDGET_USD: Math.max(1, env.KORTIX_APPS_MAX_MONTHLY_BUDGET_USD),
   KORTIX_APPS_DEFAULT_ALWAYS_ON: env.KORTIX_APPS_DEFAULT_ALWAYS_ON,
   KORTIX_APPS_WORKER_ENABLED: env.KORTIX_APPS_WORKER_ENABLED,
   KORTIX_WORKERS_ENABLED: env.KORTIX_WORKERS_ENABLED,
@@ -1306,6 +1325,10 @@ export const config = {
   DAYTONA_TARGET: env.DAYTONA_TARGET,
   DAYTONA_WEBHOOK_SECRET: env.DAYTONA_WEBHOOK_SECRET,
   KORTIX_SNAPSHOT_REAP_PREDECESSOR: env.KORTIX_SNAPSHOT_REAP_PREDECESSOR,
+  KORTIX_BOOT_ARTIFACTS: env.KORTIX_BOOT_ARTIFACTS,
+  KORTIX_DRIVES_SESSION_MOUNT: env.KORTIX_DRIVES_SESSION_MOUNT,
+  KORTIX_DRIVES_SYNC: env.KORTIX_DRIVES_SYNC,
+  KORTIX_EPHEMERAL_SANDBOXES: env.KORTIX_EPHEMERAL_SANDBOXES,
   KORTIX_PROJECT_SNAPSHOT_MODE: env.KORTIX_PROJECT_SNAPSHOT_MODE,
   KORTIX_PROJECT_SNAPSHOT_S3_BUCKET: env.KORTIX_PROJECT_SNAPSHOT_S3_BUCKET,
   KORTIX_PROJECT_SNAPSHOT_S3_REGION: env.KORTIX_PROJECT_SNAPSHOT_S3_REGION,
@@ -1342,8 +1365,8 @@ export const config = {
   KORTIX_SANDBOX_AUTODELETE_MINUTES: env.KORTIX_SANDBOX_AUTODELETE_MINUTES,
   KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES,
 
-  PLATINUM_API_KEY: env.PLATINUM_API_KEY,
-  PLATINUM_API_URL: env.PLATINUM_API_URL,
+  PLATINUM_API_KEY: env.PLATINUM_TARGET === 'local' ? env.PLATINUM_API_KEY_LOCAL : env.PLATINUM_API_KEY,
+  PLATINUM_API_URL: env.PLATINUM_TARGET === 'local' ? env.PLATINUM_API_URL_LOCAL : env.PLATINUM_API_URL,
   PLATINUM_TEMPLATE: env.PLATINUM_TEMPLATE,
   PLATINUM_WEBHOOK_SECRET: env.PLATINUM_WEBHOOK_SECRET,
   E2B_API_KEY: env.E2B_API_KEY,

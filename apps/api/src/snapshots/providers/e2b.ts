@@ -32,6 +32,9 @@ interface E2BTemplateView {
  * fall back to its own `e2b.app` default and build the template somewhere the
  * sandbox can never be created. See platform/providers/e2b-domain.
  */
+/** Per-request bound for a template build, whose requests include the context uploads. */
+const TEMPLATE_UPLOAD_TIMEOUT_MS = 10 * 60_000;
+
 function connectionOpts() {
   return {
     apiKey: config.E2B_API_KEY,
@@ -107,6 +110,9 @@ class E2BAdapter implements SandboxProviderAdapter {
       try {
         await Template.build(template, input.snapshotName, {
           ...connectionOpts(),
+          // The SDK bounds each context upload by this too, and the runtime
+          // binaries are ~100 MB each: 30 s cut them off on any slower uplink.
+          requestTimeoutMs: TEMPLATE_UPLOAD_TIMEOUT_MS,
           cpuCount: input.spec.cpu ?? DEFAULT_CPU,
           memoryMB: (input.spec.memoryGb ?? DEFAULT_MEMORY_GB) * 1024,
           // E2B's remote cache can report COPY layers as restored while omitting

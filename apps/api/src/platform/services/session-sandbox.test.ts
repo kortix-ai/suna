@@ -391,6 +391,7 @@ mock.module('../../shared/session-failure-notifier', () => ({
 }));
 
 const { provisionSessionSandbox } = await import('./session-sandbox');
+const { SecretGrantResolutionError } = await import('../../projects/lib/secret-grant');
 
 function waitFor(setResolver: (resolve: () => void) => void, timeoutMs = 2000): Promise<void> {
   return new Promise<void>((resolve, reject) => {
@@ -951,6 +952,35 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     expect(removedIds).toEqual([]);
     expect(computeSessionsOpened).toEqual([]);
     expect(recordedEvents).toEqual([]);
+  });
+
+  // KRTX-2064: the provisioner takes the env promise in and only awaits it
+  // after the row insert, the token mint and the provider select. Any throw
+  // in between (the authoritative row conflict here) used to leave the env
+  // rejection with no consumer — an unhandled rejection, which on Bun is
+  // process-fatal (the 2026-10-09 API crash: fail-closed secret grant on a
+  // git auth error while the session boot raced a row conflict). The guard
+  // attaches a no-op catch at promise creation; the real error is still
+  // owned by the awaiting catch below and fails the session there.
+  test('an env build that rejects after the row-conflict throw stays handled, not unhandled', async () => {
+    identityConflict = true;
+    const envFailure = new SecretGrantResolutionError(
+      'kortix',
+      new Error("fatal: Authentication failed for 'https://github.com/example/example.git/'"),
+    );
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      await expect(
+        provisionSessionSandbox({ ...baseOpts(), extraEnvVars: Promise.reject(envFailure) }),
+      ).rejects.toMatchObject({ name: 'RuntimeIdentityConflictError' });
+      // Drain microtasks and timers so Bun's unhandled-rejection bookkeeping runs.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
   });
 
   test('provider-loss placeholder is reclaimed without inserting a second logical row', async () => {

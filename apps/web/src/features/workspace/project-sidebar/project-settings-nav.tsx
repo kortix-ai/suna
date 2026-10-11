@@ -11,7 +11,9 @@ import {
   capabilityTabHref,
   type CapabilityTab,
 } from '@/features/workspace/capabilities/shared/capability-tab-routes';
+import { useProjectDrive } from '@/hooks/drives/use-drives';
 import { useIsMobile } from '@/hooks/utils';
+import { useFeatureFlag } from '@kortix/sdk/react';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectPageCans } from '@/lib/use-project-can';
 
@@ -71,6 +73,10 @@ export const TAB_PREFERENCE: readonly { key: CapabilityTab['key']; action: strin
   // same leaf the Connectors row above already probes, so folding it in
   // removed a duplicate probe rather than a gate.
   { key: 'secrets', action: PROJECT_ACTIONS.PROJECT_SECRET_READ },
+  // Files is the project's shared folders. Anyone who can read the project
+  // may open it; what each person sees in it follows folder access, decided
+  // by the drives API per folder.
+  { key: 'files', action: PROJECT_ACTIONS.PROJECT_READ },
   // Settings (`/projects/<id>/config`) holds the project configuration that
   // did not earn its own top-level tab: project.settings.write.
   { key: 'config', action: PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE },
@@ -135,6 +141,12 @@ export function ProjectCustomizeNavItem() {
   const { setOpenMobile } = useSidebar();
   const caps = useProjectPageCans(projectId);
   const tab = useCapabilityTab(projectId);
+  // Files lives under Customize, so its open conflict copies (in folders the
+  // caller can see) badge this row: the sidebar keeps no Files row of its own.
+  const tDrives = useTranslations('drives');
+  const drivesGate = useFeatureFlag(projectId, 'drives');
+  const drive = useProjectDrive(projectId, drivesGate.enabled);
+  const conflicts = drivesGate.enabled ? (drive.data?.openConflicts ?? 0) : 0;
   // Active on the legacy index (`/customize`, for the instant before it
   // redirects) AND on any capability tab — the row stays lit while browsing
   // Connectors or one agent's page, not just on the landing tab.
@@ -180,6 +192,14 @@ export function ProjectCustomizeNavItem() {
             </svg>
           </span>
           {t('customize')}
+          {conflicts > 0 ? (
+            <span
+              className="text-kortix-orange ml-auto text-xs font-medium tabular-nums"
+              aria-label={tDrives('conflictCount', { count: conflicts })}
+            >
+              {conflicts}
+            </span>
+          ) : null}
         </HoverPrefetchLink>
       </SidebarMenuButton>
     </SidebarMenuItem>

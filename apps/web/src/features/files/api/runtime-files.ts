@@ -5,7 +5,19 @@
  * (one owner, shared by every host). This module only adds the browser-only
  * download helpers (DOM + JSZip), which consume the SDK's data ops.
  */
-import { authorizePreviewUrl, isInternalLocalhostUrl, listFiles, readBlob } from '@kortix/sdk';
+import {
+  readSessionDriveBlob,
+  readSessionDriveContent,
+  sessionDriveFileFor,
+} from '@/features/drives/session-drive-files';
+import {
+  authorizePreviewUrl,
+  type FileContent,
+  isInternalLocalhostUrl,
+  listFiles,
+  readBlob as readSandboxBlob,
+  readFile as readSandboxFile,
+} from '@kortix/sdk';
 import { getActiveStaticFilePreviewUrl } from '@kortix/sdk/react';
 import { readRuntimeFileWithRetry } from './runtime-file-read';
 
@@ -24,8 +36,6 @@ export {
   isUnderSandboxRoot,
   listFiles,
   mkdir as mkdirFile,
-  readFile,
-  readBlob as readFileAsBlob,
   renameFile,
   SANDBOX_FS_ROOTS,
   toDaemonPath,
@@ -34,6 +44,23 @@ export {
   uploadFile,
 } from '@kortix/sdk';
 export type { UploadResult } from '@kortix/sdk';
+
+// A file under one of the open session's drive mounts (`/drives/me/…`) is read
+// through the drive API: the box daemon serves only the workspace. See
+// `features/drives/session-drive-files`. An explicit `baseUrl` names one
+// session's runtime, so it reads from that box as asked.
+
+/** Read a file's content (text, or base64 for binaries). */
+export async function readFile(filePath: string, baseUrl?: string): Promise<FileContent> {
+  const drive = baseUrl ? null : await sessionDriveFileFor(filePath);
+  return drive ? readSessionDriveContent(drive) : readSandboxFile(filePath, baseUrl);
+}
+
+/** Read a file as a Blob. */
+export async function readFileAsBlob(filePath: string, baseUrl?: string): Promise<Blob> {
+  const drive = baseUrl ? null : await sessionDriveFileFor(filePath);
+  return drive ? readSessionDriveBlob(drive) : readSandboxBlob(filePath, baseUrl);
+}
 
 // ── browser-only helpers (DOM/JSZip) — not data-layer, stay in the host UI ──
 
@@ -117,7 +144,7 @@ export async function openFileInNewTab(filePath: string): Promise<void> {
 
 /** Download a single file to the user's machine. */
 export async function downloadFile(filePath: string, fileName?: string): Promise<void> {
-  const blob = await readRuntimeFileWithRetry(filePath, () => readBlob(filePath));
+  const blob = await readRuntimeFileWithRetry(filePath, () => readFileAsBlob(filePath));
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -174,7 +201,7 @@ export async function downloadFilesAsZip(
   const names = uniqueZipNames(files.map((f) => f.name));
   await Promise.all(
     files.map(async (f, i) =>
-      zip.file(names[i], await readRuntimeFileWithRetry(f.path, () => readBlob(f.path))),
+      zip.file(names[i], await readRuntimeFileWithRetry(f.path, () => readFileAsBlob(f.path))),
     ),
   );
   const blob = await zip.generateAsync({ type: 'blob' });
@@ -207,7 +234,7 @@ export async function downloadDirectory(
         const relativePath = filePath.startsWith(dirPath + '/')
           ? filePath.slice(dirPath.length + 1)
           : filePath.split('/').pop() || filePath;
-        zip.file(relativePath, await readRuntimeFileWithRetry(filePath, () => readBlob(filePath)));
+        zip.file(relativePath, await readRuntimeFileWithRetry(filePath, () => readFileAsBlob(filePath)));
         done++;
         onProgress?.(done / allFiles.length);
       }),

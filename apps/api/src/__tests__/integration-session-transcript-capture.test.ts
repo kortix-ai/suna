@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { PgClient } from './helpers/pg-client';
 import { captureSessionTranscriptMirror } from '../projects/lib/session-transcript-capture';
-import { readSessionTranscriptMirror } from '../projects/lib/session-transcript-mirror';
+import { mirrorHoldsStrippedRows, readSessionTranscriptMirror } from '../projects/lib/session-transcript-mirror';
 import {
   localTestDatabaseUrl,
   removeSeeded,
@@ -500,6 +500,143 @@ test('a transcript string Postgres jsonb cannot represent is made storable, not 
       [sessionId],
     );
     expect(mirror.rows[0].head_complete).toBe(true);
+  } finally {
+    if (project) await removeSeeded([project]);
+    await db.end();
+  }
+}, 20_000);
+
+test("a new runtime root keeps every row of the old root and saves its own next to them", async () => {
+  // A box that lost its state pins a new root. That is the moment the saved
+  // copy is the only copy of the old conversation, so a capture must never
+  // delete it (Session Log Plan P0.1).
+  const db = new PgClient({ connectionString: localTestDatabaseUrl() });
+  await db.connect();
+  let project: SeededProject | undefined;
+  try {
+    project = await seedProject('transcript-capture-root-change-test');
+    const sessionId = await seedSession(project, randomUUID());
+    const oldRoot = 'ses_rootold';
+    const newRoot = 'ses_rootnew';
+    const pin = (root: string) =>
+      db.query('UPDATE kortix.project_sessions SET opencode_session_id = $2 WHERE session_id = $1', [
+        sessionId,
+        root,
+      ]);
+    const message = (session: string, id: string, created: number, text: string) => ({
+      info: {
+        id,
+        sessionID: session,
+        role: id.endsWith('u') ? 'user' : 'assistant',
+        time: id.endsWith('u') ? { created } : { created, completed: created + 1 },
+      },
+      parts: [{ id: `prt_${id}`, type: 'text', text }],
+    });
+    const oldRows = [
+      message(oldRoot, 'msg_001u', 1_000, 'First question'),
+      message(oldRoot, 'msg_002a', 2_000, 'First answer'),
+      message(oldRoot, 'msg_003u', 3_000, 'Second question'),
+      message(oldRoot, 'msg_004a', 4_000, 'Second answer'),
+    ];
+    const newRows = [
+      message(newRoot, 'msg_101u', 10_000, 'Question on the new box'),
+      message(newRoot, 'msg_102a', 11_000, 'Answer on the new box'),
+    ];
+    const capture = (root: string, payload: unknown[]) =>
+      captureSessionTranscriptMirror(sessionId, {
+        readMessages: async () => ({ opencodeSessionId: root, payload, headComplete: true, complete: true }),
+      });
+    const stored = async () =>
+      (
+        await db.query(
+          `SELECT message_id, opencode_session_id, parts->0->>'text' AS text
+             FROM kortix.session_transcript_messages
+            WHERE session_id = $1
+            ORDER BY message_created_at, message_id`,
+          [sessionId],
+        )
+      ).rows;
+    const oldStored = oldRows.map((row) => ({
+      message_id: row.info.id,
+      opencode_session_id: oldRoot,
+      text: row.parts[0].text,
+    }));
+    const newStored = newRows.map((row) => ({
+      message_id: row.info.id,
+      opencode_session_id: newRoot,
+      text: row.parts[0].text,
+    }));
+
+    await pin(oldRoot);
+    expect(await capture(oldRoot, oldRows)).toEqual({ captured: 4, head_complete: true });
+    expect(await stored()).toEqual(oldStored);
+
+    // The box comes back with a different root and a complete read of it.
+    await pin(newRoot);
+    expect(await capture(newRoot, newRows)).toEqual({ captured: 2, head_complete: true });
+    // Every old row survives unchanged; both roots sit in creation order.
+    expect(await stored()).toEqual([...oldStored, ...newStored]);
+    const mirror = await db.query(
+      'SELECT opencode_session_id, head_complete FROM kortix.session_transcript_mirrors WHERE session_id = $1',
+      [sessionId],
+    );
+    expect(mirror.rows[0]).toEqual({ opencode_session_id: newRoot, head_complete: true });
+
+    // A window holds one root: the new root's runtime read can only settle
+    // its own ids (the SDK's saved-copy root guard). The old root stays
+    // readable as its own window.
+    const conversation = await readSessionTranscriptMirror({ sessionId, limit: 40 });
+    expect(conversation?.messages.map((m) => m.info.id)).toEqual(['msg_101u', 'msg_102a']);
+    expect(conversation?.root_opencode_session_id).toBe(newRoot);
+    const previous = await readSessionTranscriptMirror({ sessionId, limit: 40, opencodeSessionId: oldRoot });
+    expect(previous?.messages.map((m) => m.info.id)).toEqual(['msg_001u', 'msg_002a', 'msg_003u', 'msg_004a']);
+    expect(previous?.total).toBe(4);
+
+    // A later turn on the new root still keeps the old root's rows.
+    const nextRows = [...newRows, message(newRoot, 'msg_103u', 12_000, 'Follow-up')];
+    expect(await capture(newRoot, nextRows)).toEqual({ captured: 3, head_complete: true });
+    expect((await stored()).filter((row) => row.opencode_session_id === oldRoot)).toEqual(oldStored);
+
+    // A tool part on the new root can name the old root, which makes the old
+    // root look like a sub-agent. The new box does not know it, so a read of
+    // it can come back complete and EMPTY. That is no proof the rows are gone.
+    const subagent = 'ses_rootchild';
+    const withChildren = (children: Array<{ opencodeSessionId: string; payload: unknown[] }>) =>
+      captureSessionTranscriptMirror(sessionId, {
+        readMessages: async () => ({
+          opencodeSessionId: newRoot,
+          payload: nextRows,
+          headComplete: true,
+          complete: true,
+          children: children.map((child) => ({ ...child, complete: true })),
+        }),
+      });
+    const childRows = [
+      message(subagent, 'msg_201u', 10_500, 'Sub-agent task'),
+      message(subagent, 'msg_202a', 10_600, 'Sub-agent result'),
+    ];
+    await withChildren([
+      { opencodeSessionId: oldRoot, payload: [] },
+      { opencodeSessionId: subagent, payload: childRows },
+    ]);
+    expect((await stored()).filter((row) => row.opencode_session_id === oldRoot)).toEqual(oldStored);
+    const ofSubagent = async () =>
+      (await stored()).filter((row) => row.opencode_session_id === subagent).map((row) => row.message_id);
+    expect(await ofSubagent()).toEqual(['msg_201u', 'msg_202a']);
+    // A non-empty complete read of a sub-agent still replaces its rows.
+    await withChildren([{ opencodeSessionId: subagent, payload: childRows.slice(0, 1) }]);
+    expect(await ofSubagent()).toEqual(['msg_201u']);
+
+    // Legacy stripped rows under the old root do not mark the current root
+    // as stripped, so the wake backfill does not re-read the box for them.
+    await db.query(
+      `UPDATE kortix.session_transcript_messages
+          SET parts = '[{"id":"prt_stripped","type":"tool","tool":"bash","state":{"status":"completed","output":"done"}}]'::jsonb
+        WHERE session_id = $1 AND message_id = 'msg_002a'`,
+      [sessionId],
+    );
+    expect(await mirrorHoldsStrippedRows(sessionId, oldRoot)).toBe(true);
+    expect(await mirrorHoldsStrippedRows(sessionId, newRoot)).toBe(false);
   } finally {
     if (project) await removeSeeded([project]);
     await db.end();

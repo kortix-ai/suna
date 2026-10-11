@@ -67,6 +67,8 @@ import { registerSessionScopeRoutes } from './routes/session-scope';
 import { registerSessionConfigRoutes } from './routes/session-config';
 import { registerConfigReleaseRoutes } from '../config-releases/routes';
 import { registerPublicSharesRoutes } from './routes/public-shares';
+import { registerSessionDrivesRoutes } from './routes/session-drives';
+import { registerSessionDriveSyncRoutes } from './routes/session-drive-sync';
 import { registerSessionRuntimeRoutes } from './routes/session-runtime';
 import { registerSessionPresenceRoutes } from './routes/session-presence';
 import { registerSessionWatchRoutes } from './routes/session-watch';
@@ -148,6 +150,8 @@ export function registerAllProjectRoutes(): void {
   registerSessionConfigRoutes();
   registerConfigReleaseRoutes();
   registerPublicSharesRoutes();
+  registerSessionDrivesRoutes();
+  registerSessionDriveSyncRoutes();
   registerSessionRuntimeRoutes();
   registerSessionPresenceRoutes();
   registerSessionWatchRoutes();

@@ -63,7 +63,6 @@ import { CATALOG_MOVING_EVENT_TYPES, runtimeStateStore } from './runtime-state-p
 import { createRuntimeAuditRelay } from '../shared/audit-relay'
 import {
   claimInitialTurn,
-  claimedRuntimeSessionPin,
   initialTurnClaim,
   relayPermission,
   relayRuntimeSession,

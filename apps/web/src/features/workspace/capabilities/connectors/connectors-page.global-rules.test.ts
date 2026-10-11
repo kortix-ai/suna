@@ -90,10 +90,10 @@ describe('connectors page Global rules', () => {
     expect(header).toContain("setPanel('custom')");
   });
 
-  test('it opens in a Sheet and renders PoliciesPanel, with the copy intact', () => {
+  test('it opens in a SplitSheet and renders PoliciesPanel, with the copy intact', () => {
     const body = code(source);
-    expect(body).toContain('<Sheet open={rulesOpen} onOpenChange={setRulesOpen}>');
-    expect(body).toContain('<SheetTitle');
+    expect(body).toContain('<SplitSheet open={rulesOpen} onOpenChange={setRulesOpen}');
+    expect(body).toContain('<SplitSheetTitle');
     expect(body).toContain("raw('text014d10bd3c64')");
     expect(body).toContain('<PoliciesPanel projectId={projectId} />');
   });

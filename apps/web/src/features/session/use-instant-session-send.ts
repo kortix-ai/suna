@@ -34,6 +34,7 @@ import {
   writeStartStash,
   type UseSessionPromptsResult,
 } from '@kortix/sdk/react';
+import { randomUUID } from '@/lib/utils/random-uuid';
 
 /** One candidate first prompt: the text, the files this tab holds, the stable
  *  attachment identities a bubble draws and the failed-upload status. */
@@ -424,7 +425,7 @@ function planSend({
   const first = !submitted && !firstSendInFlight.current;
   // Read before this send joins the session's delivery chain.
   const detached = !!attachments && deliversDetached(sessionId, attachments);
-  const clientMessageId = crypto.randomUUID();
+  const clientMessageId = randomUUID();
   const messageId = mintSessionWireMessageId(sessionId, clientMessageId);
   const placement = options.placement ?? 'transcript';
   const overrides = {

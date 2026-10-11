@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import type { SlackEvent } from '../channels/slack/types';
 
 /**
  * A Slack event names nobody: it carries `U0…` and `C0…` ids. The prompt the
@@ -15,6 +16,9 @@ let bindingLabel: Label = { name: 'general', type: 'channel', unavailable: false
 const people: Record<string, string | null> = {};
 let userLookups: string[] = [];
 let userDelayMs = 0;
+/** When set, the stubbed Slack lookup stays pending until the test releases it —
+ *  a deterministic "Slack is silent" the wall clock cannot race. */
+let userGate: Promise<void> | null = null;
 
 mock.module('../channels/install-store', () => ({
   loadSlackTokenForProject: async () => token,
@@ -27,17 +31,37 @@ mock.module('../channels/slack/binding-label', () => ({
 mock.module('../channels/slack-api', () => ({
   getSlackUserDisplayName: async (_token: string, userId: string) => {
     userLookups.push(userId);
-    if (userDelayMs) await new Promise((r) => setTimeout(r, userDelayMs));
+    if (userGate) await userGate;
+    else if (userDelayMs) await new Promise((r) => setTimeout(r, userDelayMs));
     return people[userId] ?? null;
   },
 }));
 
-const { slackMessageLabels, slackUserNames, resetSlackUserNamesForTest, setSlackLabelBudgetForTest } = await import(
-  '../channels/slack/labels'
-);
+const {
+  slackMessageLabels,
+  slackUserNames,
+  resetSlackUserNamesForTest,
+  setSlackLabelBudgetForTest,
+} = await import('../channels/slack/labels');
 
-const event = (over: Record<string, unknown> = {}) =>
-  ({ type: 'app_mention', channel: 'C0TEST1', user: 'U0TEST1', text: '<@U0BOT> check the release', ts: '1.1', ...over }) as any;
+/** A Slack answer the test holds until it releases it — deterministic silence,
+ *  with no wall clock to race. */
+function silentSlack(): { gate: Promise<void>; release: () => void } {
+  let resolve: (() => void) | undefined;
+  const gate = new Promise<void>((r) => {
+    resolve = r;
+  });
+  return { gate, release: () => resolve?.() };
+}
+
+const event = (over: Partial<SlackEvent> = {}): SlackEvent => ({
+  type: 'app_mention',
+  channel: 'C0TEST1',
+  user: 'U0TEST1',
+  text: '<@U0BOT> check the release',
+  ts: '1.1',
+  ...over,
+});
 
 beforeEach(() => {
   token = 'xoxb-test';
@@ -47,6 +71,7 @@ beforeEach(() => {
   people.U0BOT = 'Kortix';
   userLookups = [];
   userDelayMs = 0;
+  userGate = null;
   resetSlackUserNamesForTest();
   setSlackLabelBudgetForTest(null);
 });
@@ -57,24 +82,36 @@ afterAll(() => {
 
 describe('slackMessageLabels', () => {
   test('names the channel, the sender, and each person mentioned, keeping their ids', async () => {
-    expect(await slackMessageLabels({ projectId: 'p1', teamId: 'T0TEST', event: event() })).toEqual({
-      channel: '#general',
-      user: 'Sam Rivera',
-      text: '<@U0BOT|Kortix> check the release',
-    });
+    expect(await slackMessageLabels({ projectId: 'p1', teamId: 'T0TEST', event: event() })).toEqual(
+      {
+        channel: '#general',
+        user: 'Sam Rivera',
+        text: '<@U0BOT|Kortix> check the release',
+      },
+    );
   });
 
   test('a private channel is still #name; a DM and a group DM say what they are', async () => {
     bindingLabel = { name: 'launch-plan', type: 'private_channel', unavailable: false };
-    expect((await slackMessageLabels({ projectId: 'p1', teamId: 'T0TEST', event: event() })).channel).toBe('#launch-plan');
+    expect(
+      (await slackMessageLabels({ projectId: 'p1', teamId: 'T0TEST', event: event() })).channel,
+    ).toBe('#launch-plan');
 
     bindingLabel = { name: 'Sam Rivera', type: 'im', unavailable: false };
-    expect((await slackMessageLabels({ projectId: 'p1', teamId: 'T0TEST', event: event({ channel: 'D0TEST1' }) })).channel).toBe(
-      'Direct message',
-    );
+    expect(
+      (
+        await slackMessageLabels({
+          projectId: 'p1',
+          teamId: 'T0TEST',
+          event: event({ channel: 'D0TEST1' }),
+        })
+      ).channel,
+    ).toBe('Direct message');
 
     bindingLabel = { name: 'sam, alex', type: 'mpim', unavailable: false };
-    expect((await slackMessageLabels({ projectId: 'p1', teamId: 'T0TEST', event: event() })).channel).toBe('Group DM: sam, alex');
+    expect(
+      (await slackMessageLabels({ projectId: 'p1', teamId: 'T0TEST', event: event() })).channel,
+    ).toBe('Group DM: sam, alex');
   });
 
   test('asks Slack once per person, then answers from cache', async () => {
@@ -96,27 +133,35 @@ describe('slackMessageLabels', () => {
   });
 
   test('a mention already carrying a label is left as written', async () => {
-    const labels = await slackMessageLabels({ projectId: 'p1', teamId: 'T0TEST', event: event({ text: 'hi <@U0BOT|bot>' }) });
+    const labels = await slackMessageLabels({
+      projectId: 'p1',
+      teamId: 'T0TEST',
+      event: event({ text: 'hi <@U0BOT|bot>' }),
+    });
     expect(labels.text).toBe('hi <@U0BOT|bot>');
   });
 
   test('no bot token: every label is unknown and the text is unchanged', async () => {
     token = null;
-    expect(await slackMessageLabels({ projectId: 'p1', teamId: 'T0TEST', event: event() })).toEqual({
-      channel: null,
-      user: null,
-      text: '<@U0BOT> check the release',
-    });
+    expect(await slackMessageLabels({ projectId: 'p1', teamId: 'T0TEST', event: event() })).toEqual(
+      {
+        channel: null,
+        user: null,
+        text: '<@U0BOT> check the release',
+      },
+    );
   });
 
   test('a slow Slack answer never holds the turn past the budget', async () => {
     setSlackLabelBudgetForTest(20);
-    userDelayMs = 200;
-    const started = Date.now();
+    const { gate, release } = silentSlack();
+    userGate = gate;
 
+    // The budget must fire while Slack is still silent: the labels resolve
+    // before the (manually released) Slack answer lands.
     const labels = await slackMessageLabels({ projectId: 'p1', teamId: 'T0TEST', event: event() });
+    release();
 
-    expect(Date.now() - started).toBeLessThan(150);
     expect(labels).toEqual({ channel: null, user: null, text: '<@U0BOT> check the release' });
   });
 });
@@ -151,10 +196,12 @@ describe('slackUserNames', () => {
 
   test('a slow Slack answer gives no names within the budget', async () => {
     setSlackLabelBudgetForTest(20);
-    userDelayMs = 200;
-    const started = Date.now();
+    const { gate, release } = silentSlack();
+    userGate = gate;
 
+    // Same deterministic silence: the names resolve empty before the
+    // (manually released) Slack answer lands.
     expect((await slackUserNames('xoxb-test', 'T0TEST', ['U0TEST1'])).size).toBe(0);
-    expect(Date.now() - started).toBeLessThan(150);
+    release();
   });
 });

@@ -16,6 +16,9 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { cn } from '@/lib/utils';
 import { floatingZ, useDialogDepth } from '@/lib/z-stack';
 
+import { ClientErrorBoundary } from '@/components/common/error-boundary';
+import { errorToast } from '@/components/ui/toast';
+
 import { UnifiedMarkdown } from '@/components/markdown';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -34,6 +37,7 @@ import type {
 } from '@/lib/marketplace-client';
 import { marketplaceItemHref, marketplaceSourceHref } from '@/lib/marketplace-slug';
 import { AddToProjectModal } from './add-to-project-modal';
+import { DialogCrashRecovery, useDialogCrashGuard } from './add-to-project-dialog-guard';
 import { MarketplaceAvatar } from './marketplace-avatar';
 import { displayCompanyLabel } from './marketplace-company-filter';
 import { MarketplaceExploreCard } from './marketplace-explore-card';
@@ -254,6 +258,19 @@ function ItemActions({
   const { user, isLoading: authLoading } = useAuth();
 
   const [addOpen, setAddOpen] = useState(false);
+  // The item page is the one signed-in surface where third-party scripts load
+  // (GTM tags, see `lib/analytics/gtm.ts`), and an external DOM mutation
+  // racing the dialog's first mount crashes React's reconciler with the
+  // canonical DOM-mutation DOMException — one transient throw used to replace
+  // the whole page with the root error boundary (KRTX-1950). The guard keeps
+  // the blast radius on the dialog: one automatic remount rides out the race,
+  // a second crash closes the dialog instead of the page.
+  const guard = useDialogCrashGuard({ onOpenChange: setAddOpen });
+  const { onRetry: retryAddDialog, onGiveUp: giveUpDialog } = guard;
+  const giveUpAddDialog = useCallback(() => {
+    errorToast(tI18nComplete.raw('textf913d83d88a5'));
+    giveUpDialog();
+  }, [giveUpDialog, tI18nComplete]);
 
   const inProject = surface.variant === 'project';
 
@@ -276,17 +293,29 @@ function ItemActions({
           variant="default"
           className={cn('gap-1.5', !compact && 'flex-1')}
           disabled={authLoading}
-          onClick={() => setAddOpen(true)}
+          onClick={() => guard.handleOpenChange(true)}
         >
           {tI18nComplete.raw('text38d076d39951')}
         </Button>
       </div>
-      <AddToProjectModal
-        item={data}
-        open={addOpen}
-        onOpenChange={setAddOpen}
-        fixedProjectId={inProject ? surface.projectId : undefined}
-      />
+      <ClientErrorBoundary
+        key={guard.mount}
+        fallback={({ error }) => (
+          <DialogCrashRecovery
+            error={error}
+            retried={guard.retried}
+            onRetry={retryAddDialog}
+            onGiveUp={giveUpAddDialog}
+          />
+        )}
+      >
+        <AddToProjectModal
+          item={data}
+          open={addOpen}
+          onOpenChange={guard.handleOpenChange}
+          fixedProjectId={inProject ? surface.projectId : undefined}
+        />
+      </ClientErrorBoundary>
     </>
   );
 }

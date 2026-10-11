@@ -186,6 +186,8 @@ async function deprovisionMember(accountId: string, userId: string): Promise<str
   // returns void, so it cannot fail the SCIM response, and awaiting makes the
   // seat release deterministic rather than racing the reply.
   await onMemberRemoved(accountId, userId);
+  // Their personal drives in this account pass to an owner.
+  await import('../drives/service').then(({ releaseMemberDrives }) => releaseMemberDrives(accountId, userId));
 
   return revokeAllAccountTokensForUser(userId, accountId).then(
     () => null,

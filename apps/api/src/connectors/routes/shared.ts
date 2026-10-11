@@ -72,6 +72,7 @@ export const AdminConnectorSchema = CatalogConnectorSchema.extend({
   secretIdentifier: z.string().nullable(),
   credentialSource: z.enum(['none', 'stored', 'project_secret', 'platform']),
   secretSet: z.boolean(),
+  lastError: z.string().nullable(),
 }).openapi('ConnectorAdminConnector');
 export const AdminConnectorsResponseSchema = z
   .object({ connectors: z.array(AdminConnectorSchema) })

@@ -41,7 +41,8 @@ export interface SessionStartFailure {
     | 'sandbox-provider'
     | 'unsupported-secret-delivery'
     | 'invalid-secret-boundary-policy'
-    | 'snapshot-too-large';
+    | 'snapshot-too-large'
+    | 'drives-unavailable';
   message: string;
   /** A user action can retry. Automatic polling must still stop. */
   retryable: boolean;
@@ -235,6 +236,12 @@ type SessionStartOptions = number | {
      * instead of waking it. Leave it off for an explicit open or resume.
      */
     keepStopped?: boolean;
+    /**
+     * How long ago (ms, the caller's own clock) the user opened this session.
+     * A Stop that lands after that open wins over every poll the open makes:
+     * the API reports the session stopped instead of waking it again.
+     */
+    intentAgeMs?: number;
   };
 
 function postSessionStart(projectId: string, sessionId: string, options?: SessionStartOptions) {
@@ -244,6 +251,9 @@ function postSessionStart(projectId: string, sessionId: string, options?: Sessio
   if (waitMs && waitMs > 0) search.set("wait_ms", String(Math.floor(waitMs)));
   if (repositoryMode) search.set("repository_mode", repositoryMode);
   if (typeof options === "object" && options?.keepStopped) search.set("keep_stopped", "1");
+  if (typeof options === "object" && options?.intentAgeMs && options.intentAgeMs > 0) {
+    search.set("intent_age_ms", String(Math.floor(options.intentAgeMs)));
+  }
   const qs = search.size > 0 ? `?${search.toString()}` : "";
   return backendApi.post<SessionStartResult>(
     `/projects/${projectId}/sessions/${sessionId}/start${qs}`,

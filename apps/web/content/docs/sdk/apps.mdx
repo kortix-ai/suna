@@ -3,15 +3,14 @@ title: Apps
 description: Create, deploy, and control Kortix Apps from the SDK and from React.
 ---
 
-Apps are project-scoped deployments with one stable URL each. Every App has a
-`kind`, fixed at create: `web` (a site or a server) or `convex` (a
-self-hosted Convex backend). Branch on `app.capabilities`, never on the kind.
-This page covers the SDK surface: the `apps` facade on a project handle, the
-artifact, deployment and capability calls, sign-in tokens, the exported
-types, and the React hooks.
+Apps are project-scoped deployments with one stable URL each, on the Fly.io
+model: immutable releases, machines per process group, and persistent
+volumes. Branch on `app.capabilities`. This page covers the SDK surface: the
+`apps` facade on a project handle, the artifact, release, machine, and volume
+calls, sign-in tokens, the exported types, and the React hooks.
 
-For what an App is, the source kinds, the CLI, the stable URL, and cold-wake
-behavior, read [Apps](/docs/feature-flags/apps).
+For the model, the release config, the source kinds, the CLI, the stable URL,
+and cold-wake behavior, read [Apps](/docs/feature-flags/apps).
 
 ```ts
 const apps = kortix.project(projectId).apps;
@@ -30,12 +29,11 @@ on it. See [Feature flags](/docs/feature-flags).
 | `apps.list()` | `GET /projects/:pid/apps` | Lists the Apps the caller may open (a project manager sees all) |
 | `apps.create(input)` | `POST …/apps` | Creates an App and assigns its stable URL |
 | `apps.get(appId)` | `GET …/apps/:id` | Reads one App |
-| `apps.update(appId, input)` | `PATCH …/apps/:id` | Renames it or changes machine, idle timeout, run mode (`always_on`), or budget. Run mode and budget apply within 5 minutes; a machine change applies to the next deployment |
-| `apps.remove(appId, { confirm? })` | `DELETE …/apps/:id` | Deletes the App, its runtimes, and every deployment image; returns `images: {released, pending}`. An App with `snapshots` needs `confirm` (its slug) and answers `retained_until` and `final_snapshot_id` |
-| `apps.waitUntilReady(appId, options?)` | polls `GET …/apps/:id` | Resolves when the App's `instance` runs with no operation in flight; at once for an App without an instance. Default timeout 15 minutes |
+| `apps.update(appId, input)` | `PATCH …/apps/:id` | Renames it or changes machine, idle timeout, run mode (`always_on`), `uses`, or `labels`. Run mode applies within 5 minutes; a machine change applies to the next release |
+| `apps.remove(appId)` | `DELETE …/apps/:id` | Deletes the App, its machines, and every release image; returns `images: {released, pending}`. Its volumes keep a `final` snapshot for 7 days |
 | `apps.start(appId)` | `POST …/apps/:id/start` | Sets `desired_state` to `running` and warms the runtime. A static App answers `409 static_app_no_runtime` |
 | `apps.stop(appId)` | `POST …/apps/:id/stop` | Suspends compute now; the next request resumes it. A static App answers `409 static_app_no_runtime`: it has no runtime and serves while it has an active deployment |
-| `apps.rollback(appId, deploymentId)` | `POST …/apps/:id/rollback` | Moves traffic to a ready deployment |
+| `apps.rollback(appId, deploymentId)` | `POST …/apps/:id/rollback` | Creates a NEW release from a ready release's artifact and config and rolls it out like a deploy (`202`). Volumes keep their data |
 
 Artifacts are the immutable input to a deployment:
 
@@ -45,29 +43,46 @@ Artifacts are the immutable input to a deployment:
 | `apps.artifacts.uploadArchive(bytes, options?)` | — | Registers, uploads, hashes, and finalizes one `.tar.gz` in a single call |
 | `apps.artifacts.finalize(artifactId, input)` | `POST …/apps/artifacts/:id/finalize` | Confirms `sha256` and `size_bytes` for a manual upload |
 
-Deployments are immutable and numbered:
+Releases (deployments) are immutable and numbered:
 
 | Method | Wraps | What it does |
 |---|---|---|
-| `apps.deployments.create(appId, input)` | `POST …/apps/:id/deployments` | Starts a deployment from an artifact and a source |
+| `apps.deployments.create(appId, input)` | `POST …/apps/:id/deployments` | Starts a release from an artifact, a source, and an optional release `config` |
 | `apps.deployments.list(appId)` | `GET …/apps/:id/deployments` | Lists the deployment history |
 | `apps.deployments.get(appId, deploymentId)` | `GET …/deployments/:did` | Reads one deployment plus its events |
 | `apps.deployments.logs(appId, deploymentId, options?)` | `GET …/deployments/:did/logs` | Reads runtime logs with a cursor |
 | `apps.deployments.remove(appId, deploymentId)` | `DELETE …/deployments/:did` | Deletes one deployment and its image; `409` for the live deployment or an in-progress build. Returns `image: 'released' \| 'pending' \| 'none'` |
 
-Capability calls answer `409 app_capability_unsupported` when the App lacks
-the capability:
+Machines, scale, and exec (a server App; an App with no machines answers
+`409 app_no_machines`):
 
-| Method | Wraps | Capability | What it does |
-|---|---|---|---|
-| `apps.snapshots.list(appId)` | `GET …/apps/:id/snapshots` | `snapshots` | The automatic backup, the snapshot schedule and the snapshots, newest first |
-| `apps.snapshots.create(appId)` | `POST …/apps/:id/snapshots` | `snapshots` | A manual snapshot, kept until deleted |
-| `apps.snapshots.delete(appId, snapshotId)` | `DELETE …/snapshots/:sid` | `snapshots` | Deletes one snapshot of any kind |
-| `apps.snapshots.restore(appId, snapshotId)` | `POST …/apps/:id/restore` | `restore` | Rolls the App back to a snapshot; resolves with the App once it runs it |
-| `apps.credentials(appId)` | `GET …/apps/:id/credentials` | `admin_credentials` | `url`, `site_url`, `admin_key`, `env`. Audited |
-| `apps.rotateCredentials(appId)` | `POST …/apps/:id/rotate-credentials` | `admin_credentials` | Replaces the admin key; resolves with the App |
-| `apps.token(appId)` | `POST …/apps/:id/token` | `member_tokens` | A 15-minute sign-in token for the App, naming the caller |
-| `apps.log(appId, { lines? })` | `GET …/apps/:id/logs` | `logs` | The last `lines` (1 to 1000, default 200) of the process log, as one string |
+| Method | Wraps | What it does |
+|---|---|---|
+| `apps.machines.list(appId)` | `GET …/apps/:id/machines` | Every machine: `machine_id`, `process_group`, `state`, `release`, `vm`, `volume` |
+| `apps.machines.start/stop/restart(appId, machineId)` | `POST …/machines/:mid/{start,stop,restart}` | Acts on one machine; resolves with the machine list |
+| `apps.machines.destroy(appId, machineId)` | `DELETE …/machines/:mid` | Destroys one machine. Its volume stays; its group runs one machine fewer |
+| `apps.scale(appId, count)` | `PUT …/apps/:id/scale` | Machines per process group (`{ worker: 3 }`, 0–20), applied in the background (`202`). Resolves with `scale` and `machines` |
+| `apps.exec(appId, { command, machine_id?, timeout_s? })` | `POST …/apps/:id/exec` | Runs one command in a running machine (`project.app.admin`; audited). `timeout_s` 1–300, default 60. Resolves with `exit_code`, `stdout`, `stderr` (1 MiB each), `truncated` |
+
+Volumes (persistent disks on Platinum):
+
+| Method | Wraps | What it does |
+|---|---|---|
+| `apps.volumes.list(appId)` | `GET …/apps/:id/volumes` | Every volume: `name`, `process_group`, `machine_id`, `size_gb`, `status`, `attached`, `snapshot_retention_days` |
+| `apps.volumes.create(appId, { name, size_gb, process_group?, snapshot_retention_days? })` | `POST …/volumes` | Pre-creates a volume; a later machine of its group with a mount of that name takes it |
+| `apps.volumes.update(appId, volumeId, { size_gb?, snapshot_retention_days? })` | `PATCH …/volumes/:vid` | Grows a volume (never shrinks; at most 100 GB) or changes its retention (1–60 days) |
+| `apps.volumes.destroy(appId, volumeId, confirmName)` | `DELETE …/volumes/:vid?confirm=<name>` | `project.app.admin`. Refused with `409 volume_attached` while a machine mounts it. Keeps a `final` snapshot 7 days |
+| `apps.volumes.snapshots(appId, volumeId)` | `GET …/volumes/:vid/snapshots` | `daily`, `manual`, and `final` snapshots |
+| `apps.volumes.snapshot(appId, volumeId)` | `POST …/volumes/:vid/snapshots` | A `manual` snapshot now |
+| `apps.volumes.restore(appId, volumeId, snapshotId)` | `POST …/volumes/:vid/restore` | `project.app.admin`. The machine stops, the volume returns to the snapshot, the machine starts on it (`202`) |
+| `apps.volumes.fork(appId, volumeId, { name, snapshot_id? })` | `POST …/volumes/:vid/fork` | A new, unattached volume in the same App, from a snapshot or the current contents |
+
+Sign-in tokens (capability `member_tokens`; `409 app_capability_unsupported`
+when the App lacks it):
+
+| Method | Wraps | What it does |
+|---|---|---|
+| `apps.token(appId)` | `POST …/apps/:id/token` | A 15-minute sign-in token for the App, naming the caller |
 
 Access is the App's own authorization policy:
 
@@ -99,35 +114,28 @@ const deployment = await apps.deployments.create(app.app_id, {
 console.log(app.url, deployment.status); // https://…apps.kortix.com  queued
 ```
 
-`create` accepts the machine and budget fields too: `cpu`, `memory_gb`,
-`disk_gb`, `idle_timeout_seconds`, `always_on`, and `monthly_budget_usd`. Omit
-them for the defaults. Only an on-demand server App has a monthly budget:
-default 5 USD, and the App stops at the cap. An always-on server App and every
-`convex` App have no budget: their cost is fixed (`estimated_monthly_usd`), and
-`monthly_budget_usd` is `null`. `always_on: true` runs a server App 24/7
+`create` accepts the machine fields too: `cpu`, `memory_gb`,
+`disk_gb`, `idle_timeout_seconds`, and `always_on`. Omit them for the defaults.
+Apps have no monthly budget: account credits pay for compute. An always-on
+server App bills 24/7; an on-demand one only while awake.
+`always_on: true` runs a server App 24/7
 (websockets, background loops); `false` stops it after `idle_timeout_seconds`
 and wakes it on the next request. A static App has no runtime: `always_on` is
-`false`, `monthly_budget_usd` is `null`, and `estimated_monthly_usd` is `0`.
+`false`.
 
-Sending `monthly_budget_usd` for an always-on or `convex` App, on `create` or
-`update`, answers `400` with `code: 'app_budget_not_applicable'`. The message
-names the monthly cost. `update` to on demand sets the budget you send or 5;
-`update` to always on clears it.
+The API ignores `monthly_budget_usd` if an older client sends it (`200`, no
+error). No App response carries it.
 
-`kind` is `web` (the default) or `convex`. `uses` lists the Apps, by slug,
+`uses` lists the Apps, by slug,
 this App may get sign-in tokens for and reach through its bindings mount; the
 default is none, and `update(appId, { uses })` replaces the list (see
 [Apps an App uses](/docs/feature-flags/apps#apps-an-app-uses-sign-in-tokens-and-bindings)).
 
-`estimated_monthly_usd` is what the App's machine costs running 24/7 for a
-month at list compute rates: about 73.48 for 1 vCPU / 2 GB / 10 GB, and about
-59.29 for the `convex` default of 1 vCPU / 1 GB / 10 GB. `create` and `update`
-return `warnings`, which is now always `[]`: the `app_budget_below_always_on`
-warning is gone.
+`create` and `update` return `warnings`, which is always `[]`.
 
 ```ts
 const app = await kortix.project(projectId).apps.create({ slug: 'worker', name: 'Worker', always_on: true });
-console.log(app.always_on, app.monthly_budget_usd, app.estimated_monthly_usd); // true null 73.48
+console.log(app.always_on, app.hosting_type); // true null (until the first deploy)
 ```
 
 Wait for the deployment by polling its status:
@@ -175,8 +183,24 @@ await apps.deployments.create(app.app_id, {
 upload URL.
 
 `CreateAppDeploymentInput` also accepts `environment` (non-secret runtime
-values), `secrets` (runtime key to project secret name), and `provider`
-(`'daytona' | 'platinum' | 'e2b'`). Omit `provider` to use the server policy.
+values), `secrets` (runtime key to project secret name), `provider`
+(`'daytona' | 'platinum' | 'e2b'`), and `config` (`AppReleaseConfigInput`, the
+release config). Omit `provider` to use the server policy. An invalid `config`
+answers `400 app_config_invalid` with `issues: [{ path, message }]`; a mount
+on a provider without volumes answers `400 app_volumes_unsupported`.
+
+```ts
+await apps.deployments.create(app.app_id, {
+  artifact_id: registered.artifact.artifact_id,
+  source: { kind: 'oci_image', image, command: ['node', 'server.js'] },
+  config: {
+    processes: { app: '', worker: 'node worker.js' },
+    http_service: { internal_port: 3000, access: 'app', processes: ['app'] },
+    mounts: [{ source: 'data', destination: '/data', initial_size_gb: 10, processes: ['app'] }],
+    deploy: { release_command: 'node migrate.js' },
+  },
+});
+```
 
 ## Read runtime logs
 
@@ -198,100 +222,45 @@ Each entry carries `cursor`, `time`, `source` (`app`, `appd`, `caddy`), and
 response headers. It never contains request headers, because those carry the
 gate's credentials (the viewer token and identity, the provider ingress token).
 
-## A `convex` App
-
-A `convex` App is a self-hosted Convex backend in its own always-on machine
-([Kind `convex`](/docs/feature-flags/apps#kind-convex-a-convex-backend)). Its
-code deploys with the Convex CLI against the App's admin credentials; Kortix
-records each deploy.
+## Machines, scale, and volumes
 
 ```ts
 const apps = kortix.project(projectId).apps;
 
-const db = await apps.create({ slug: 'db', name: 'Database', kind: 'convex' });
-await apps.waitUntilReady(db.app_id);           // instance.status 'running', no operation in flight
+const machines = await apps.machines.list(app.app_id);
+await apps.scale(app.app_id, { worker: 3 });                     // 202: applied in the background
 
-const { env } = await apps.credentials(db.app_id);
-// env.CONVEX_SELF_HOSTED_URL, env.CONVEX_SELF_HOSTED_ADMIN_KEY: run `npx convex deploy` with them
+const { exit_code, stdout } = await apps.exec(app.app_id, { command: ['ls', '/data'] });
 
-await apps.deployments.create(db.app_id, { source: { kind: 'convex', revision: gitSha } }); // 201, ready
+const [data] = await apps.volumes.list(app.app_id);
+const snapshot = await apps.volumes.snapshot(app.app_id, data.volume_id);
+await apps.volumes.restore(app.app_id, data.volume_id, snapshot.snapshot_id);   // project.app.admin
+const copy = await apps.volumes.fork(app.app_id, data.volume_id, { name: 'data_copy' });
+```
+
+A machine keeps its `machine_id` across releases; each release replaces its
+box (`instance_id`). One machine mounts a volume at a time. A restore is a
+new version of the volume: the replaced contents stay in its history. A
+snapshot of a mounted volume can miss its last ~1 s of writes.
+
+## A Convex backend
+
+A Convex backend is an ordinary server App with a volume, made from the
+`convex` template (`kortix apps launch --template convex --name db`; see
+[Template `convex`](/docs/feature-flags/apps#template-convex-a-convex-backend)).
+The SDK has no Convex-specific call. Read the admin key from the machine with
+`exec`, and give a UI App access to the backend with `uses`:
+
+```ts
+const db = (await apps.list()).find((a) => a.slug === 'db')!;
+const { stdout } = await apps.exec(db.app_id, { command: ['sh', '-c', 'cd /convex && ./generate_admin_key.sh'] });
+// The admin key controls all code and data: never log it or ship it to a browser.
+
 await apps.update(site.app_id, { uses: ['db'] }); // the site may mint db tokens and bind to it
 ```
 
-`create` answers at once with `instance.status: 'provisioning'`. Boot takes a
-few seconds, and up to 10 minutes on a region's first image build. Call
-`waitUntilReady` before you read credentials: `credentials` answers
-`409 app_not_running` until the App runs. Pin the Convex CLI to
-`instance.client_version`: a newer CLI can need server APIs this deployment
-lacks. From a terminal, `kortix apps deploy <dir> --app db` does all of this.
-The admin key grants full access to the App. Do not log it or ship it to a
-browser.
-
-### Resize, snapshot, restore
-
-```ts
-await apps.update(db.app_id, { cpu: 2, memory_gb: 4 });
-const resized = await apps.waitUntilReady(db.app_id);    // restarts on the new size
-
-const snapshot = await apps.snapshots.create(db.app_id);
-const { automatic, snapshots, snapshot_schedule } = await apps.snapshots.list(db.app_id);
-
-// Every change after the snapshot is lost.
-await apps.snapshots.restore(db.app_id, snapshot.snapshot_id);
-
-// Free a manual slot.
-await apps.snapshots.delete(db.app_id, snapshots.at(-1)!.snapshot_id);
-```
-
-Limits: `cpu` 1 to 16, `memory_gb` 1 to 32, `disk_gb` 10 to 100. A disk grows
-but never shrinks. While a resize runs, `instance.operation` is `'resizing'`.
-When it fails, `operation` clears and `instance.last_operation_error` holds
-the reason.
-
-| `kind` | Who takes it | Kept |
-|---|---|---|
-| `manual` | A member or agent, with `snapshots.create` | Until deleted. An App holds 10; the 11th answers `409 snapshot_limit` |
-| `automatic` | Kortix, once a day | 7 days |
-| `resize` | Kortix, before a resize | 24 hours, or until the next resize replaces it |
-| `final` | Kortix, when the App is deleted | 7 days |
-
-`expires_at` is `null` for a `manual` snapshot. Snapshot calls answer
-`409 app_busy` while another operation runs. `restore` answers
-`409 snapshot_predates_resize` for a snapshot taken before an applied resize,
-and `502 restore_unhealthy` when the restored machine does not answer.
-
-### Rotate credentials, read the log, check health
-
-```ts
-await apps.rotateCredentials(db.app_id);               // old keys now get 401
-const { admin_key } = await apps.credentials(db.app_id);
-
-const log = await apps.log(db.app_id, { lines: 500 });
-
-const { instance } = await apps.get(db.app_id);
-if (instance?.health && !instance.health.ok) console.warn(instance.health.machine_state, instance.health.error);
-```
-
-Rotation keeps documents, files, functions and environment variables. After a
-restore of an App whose key was ever rotated, Kortix rotates it again: read
-the key again. `instance.health` is the last probe (every 5 minutes).
-
-`instance.dashboard_url` is Convex's dashboard on a Kortix host. Frame it in
-an `<iframe>`. The dashboard posts `{ type: 'dashboard-credentials-request' }`
-to its parent. Check `event.origin` against the dashboard URL's origin, then
-answer with `{ type: 'dashboard-credentials', adminKey, deploymentUrl,
-deploymentName }`, read with `apps.credentials(appId)`. Post only to that
-origin.
-
-### Delete
-
-```ts
-const { retained_until, final_snapshot_id } = await apps.remove(db.app_id, { confirm: 'db' });
-```
-
-An App with `snapshots` holds data. Without `confirm` (its slug) the delete
-answers `400 confirmation_required`. Kortix takes a `final` snapshot, keeps
-the stopped machine until `retained_until` (7 days), and then deletes it.
+`db.services` holds the backend's URLs: `http` (the Convex client URL) and
+`site` (HTTP actions).
 
 ## Your App already knows who is looking
 
@@ -397,7 +366,7 @@ front of it — use [Sign in with Kortix](/docs/sdk/sign-in) there instead.
 
 Kortix vouches for the same person in three places: the browser asks the gate
 (`/_kortix/viewer`), the App's server reads the signed header, and an App that
-verifies sign-in tokens (a `convex` App, or your own server) receives a
+verifies sign-in tokens (a Convex backend, or your own server) receives a
 Kortix-signed token. `readKortixMember` turns each of those shapes into one
 `KortixMember`, and `requireKortixMember` decides who may proceed. No
 framework and no dependency: the same code runs in a browser, Node, Bun, a
@@ -504,17 +473,20 @@ Every type below is exported from `@kortix/sdk`.
 
 | Type | What it holds |
 |---|---|
-| `App` | Identity, `kind`, `capabilities`, `uses`, `used_by`, `auth`, `instance`, `url`, `access_mode`, `access_revision`, `desired_state`, `active_deployment_id`, `hosting_type` (of the active deployment: `static`, `sandbox`, `convex`, or `null` before the first deploy), `machine`, `idle_timeout_seconds`, `always_on`, `monthly_budget_usd` (`null` unless the App is an on-demand server App), `estimated_monthly_usd` (`0` for a static App), `retained_deployments`, `warnings` (create and update only; always `[]`), `last_request_at`, `viewer_can_access` |
-| `AppKind` · `AppCapability` | `'web' \| 'convex'` · `'deployments' \| 'rollback' \| 'preview' \| 'sleep' \| 'static' \| 'snapshots' \| 'restore' \| 'admin_credentials' \| 'dashboard' \| 'logs' \| 'member_tokens'` |
+| `App` | Identity, `capabilities`, `labels`, `scale`, `services` (`AppServiceSummary[]`), `machines` (`total`, `running`, `stopped`), `volumes` (`count`, `size_gb`), `config` (the live release's `AppReleaseConfig`, or `null`), `uses`, `used_by`, `auth`, `url`, `access_mode`, `access_revision`, `desired_state`, `active_deployment_id`, `hosting_type` (of the active release: `static`, `sandbox`, or `null` before the first deploy), `machine` (the serving group's size in the live release), `idle_timeout_seconds`, `always_on`, `retained_deployments`, `warnings` (create and update only; always `[]`), `last_request_at`, `viewer_can_access` |
+| `AppCapability` | `'deployments' \| 'rollback' \| 'preview' \| 'sleep' \| 'static' \| 'member_tokens' \| 'machines' \| 'scale' \| 'exec' \| 'volumes' \| 'snapshots'` |
+| `AppReleaseConfig` · `AppReleaseConfigInput` | The resolved release config (`processes`, `services`, `mounts`, `vm`, `deploy`) · the authored form (`processes`, `http_service`, `services`, `mounts`, `vm`, `deploy`, and the shorthands `port`, `command`, `readiness_path`, `always_on`, `resources`) |
+| `AppServiceConfig` · `AppServiceAccess` · `AppAutoStop` · `AppCheck` | `name`, `internal_port`, `protocol`, `access`, `auto_stop_machines`, `auto_start_machines`, `min_machines_running`, `processes`, `checks` · `'public' \| 'app' \| 'admins'` · `'off' \| 'stop' \| 'suspend'` · `type`, `port`, `path`, `interval_s`, `timeout_s`, `grace_period_s` |
+| `AppMountConfig` · `AppVmConfig` · `AppDeployStrategy` | `source`, `destination`, `initial_size_gb`, `snapshot_retention_days`, `processes` · `cpu`, `memory_gb`, `disk_gb`, `processes` · `'rolling' \| 'immediate' \| 'bluegreen' \| 'canary'` |
+| `AppServiceSummary` | `name`, `protocol`, `access`, `internal_port`, `processes`, `url` (`null` when the host label would be too long) |
+| `AppMachine` · `AppMachineState` | `machine_id`, `instance_id`, `process_group`, `state`, `release` (`deployment_id`, `version`), `vm`, `volume`, `created_at`, `started_at`, `stopped_at` · `'started' \| 'starting' \| 'stopped' \| 'stopping' \| 'provisioning'` |
+| `AppVolume` · `AppVolumeSnapshot` · `CreateAppVolumeInput` | `volume_id`, `name`, `process_group`, `machine_id`, `size_gb`, `status`, `attached`, `snapshot_retention_days`, `created_at` · `snapshot_id`, `kind` (`daily`, `manual`, `final`), `commit_id`, `created_at` · `name`, `size_gb`, `process_group`, `snapshot_retention_days` |
+| `AppExecInput` · `AppExecResult` | `command`, `machine_id`, `timeout_s` · `machine_id`, `exit_code`, `stdout`, `stderr`, `truncated` |
 | `AppAuth` | `issuer`, `audience` (the App id), `jwks_uri`: the public values that verify the App's sign-in tokens |
-| `AppInstance` | The machine of a `convex` App (`null` on a `web` App): `status` (`AppInstanceStatus`), `url`, `site_url`, `dashboard_url`, `error`, `operation` (`AppInstanceOperation`), `last_operation_error`, `health` (`AppInstanceHealth`), `auth_env`, `client_version`, `budget_alert` (always `null`: deprecated, the budget alerts are removed), `purge_after` |
-| `AppInstanceStatus` · `AppInstanceOperation` | `'provisioning' \| 'running' \| 'error' \| 'deleted'` · `'resizing' \| 'rotating_key' \| 'recovering' \| 'snapshotting' \| 'restoring'` |
-| `AppInstanceHealth` | `ok`, `checked_at`, `machine_state`, `failures`, `error`, `disk_used_pct`, `repair` |
-| `AppSnapshots` · `AppSnapshot` · `AppSnapshotKind` | `automatic`, `snapshots`, `snapshot_limit`, `snapshot_schedule` · `snapshot_id`, `created_at`, `size_bytes`, `kind`, `expires_at` · `'manual' \| 'automatic' \| 'resize' \| 'final'` |
-| `AppCredentials` · `AppToken` | `url`, `site_url`, `admin_key`, `env` · `token`, `expires_at` |
-| `DeleteAppOptions` · `DeleteAppResult` · `GetAppLogOptions` · `WaitForAppOptions` | `confirm` · `ok`, `images`, `retained_until`, `final_snapshot_id` · `lines` · `timeoutMs`, `intervalMs` |
+| `AppToken` | `token`, `expires_at` |
 | `KortixTokenOptions` · `KortixTokenFetcher` · `KortixBinding` · `VerifyKortixTokenOptions` | The sign-in token helpers above |
-| `AppDeployment` | `version`, `status`, `source_kind`, `hosting_type` (`static`: served from storage, no runtime; `sandbox`: its own machine), `hosting_provider`, `runtime_spec`, `build_spec`, `error_code`, `attempt_count`, `created_by`, `actor_type`, `source_session_id` |
+| `AppDeployment` | `version`, `status`, `source_kind`, `hosting_type` (`static`: served from storage, no runtime; `sandbox`: machines), `hosting_provider`, `runtime_spec`, `build_spec`, `error_code`, `attempt_count`, `created_by`, `actor_type`, `source_session_id`, `config` (the release's resolved config), `strategy`, `release_command_status` (`running`, `succeeded`, `failed` or `null`) |
+| `AppRollback` | What `apps.rollback` resolves with: the `App` plus the queued release in `deployment` |
 | `AppDeploymentDetail` | One `deployment` plus its `events`: lifecycle events and the build log (`build_log` lines, and one `log_truncated` event when the build printed more than 5,000 lines) |
 | `AppAccessConfig` | `mode`, `revision`, `member_ids`, `group_ids`, `password_configured` |
 | `AppAccessMode` | `'private' \| 'project' \| 'restricted' \| 'public' \| 'password'` |
@@ -535,12 +507,14 @@ not a role. `restricted` names users and groups — the same principal types the
 role model uses. See
 [Accounts & access](/docs/accounts#per-feature-access-settings).
 
-`DockerfileAppSource` and `OciImageAppSource` require `command` and `port`.
-`StaticAppSource` and `BundleAppSource` do not.
+`DockerfileAppSource` and `OciImageAppSource` require `command`. `port` is the
+primary service's port: omit it only for a worker-only release (a `config`
+with `processes` and no service). `StaticAppSource` and `BundleAppSource` take
+neither.
 
 ## React hooks
 
-`@kortix/sdk/react` exports five hooks for Apps.
+`@kortix/sdk/react` exports seven hooks for Apps.
 
 ### useProjectApps(projectId)
 
@@ -567,9 +541,8 @@ function AppList({ projectId }: { projectId: string }) {
 }
 ```
 
-It returns the query fields plus `create`, `update`, `start`, `stop`,
-`remove`, and `rotateCredentials`. The list refetches every 2 seconds while
-an App's `instance` provisions or runs an operation.
+It returns the query fields plus `create`, `update`, `start`, `stop`, and
+`remove`.
 
 ### useAppDeployments(projectId, appId)
 
@@ -630,18 +603,36 @@ A grid of Apps that leaves both options at `true` fires one policy read and one
 session mint per App, and each is a `403` for a member who may not open that
 App.
 
-### useAppSnapshots(projectId, appId, enabled?)
+### useAppMachines(projectId, appId)
 
-The automatic backup state and the snapshots of one App (capability
-`snapshots`), plus `create`, `delete` (`snapshotId`) and `restore`
-(`snapshotId`) mutations. Each refreshes the query; `restore` also refreshes
-the App inventory. `appSnapshotsKey(projectId, appId)` is the query key.
+An App's machines, polled every 5 s, plus `start`, `stop`, `restart`,
+`destroy` (each takes a `machineId`) and `scale` (takes
+`{ [group]: count }`). Each mutation refreshes the machines and the App
+inventory. `appMachinesKey(projectId, appId)` is the query key.
 
 ```tsx
-const backups = useAppSnapshots(projectId, app.app_id, app.capabilities.includes('snapshots'));
-await backups.create.mutateAsync();
-await backups.restore.mutateAsync(snapshotId);
+const machines = useAppMachines(projectId, app.app_id);
+await machines.scale.mutateAsync({ worker: 2 });
+await machines.restart.mutateAsync(machineId);
 ```
+
+### useAppVolumes(projectId, appId)
+
+An App's volumes, plus `snapshot` (`volumeId`), `restore`
+(`{ volumeId, snapshotId }`), `fork` (`{ volumeId, name, snapshotId? }`),
+`extend` (`{ volumeId, sizeGb }`), and `destroy` (`{ volumeId, name }`). Each
+mutation refreshes the volumes. `appVolumesKey(projectId, appId)` is the query
+key.
+
+```tsx
+const volumes = useAppVolumes(projectId, app.app_id);
+await volumes.snapshot.mutateAsync(volumeId);
+await volumes.restore.mutateAsync({ volumeId, snapshotId });
+```
+
+### useAppVolumeSnapshots(projectId, appId, volumeId)
+
+One volume's snapshots. Pass `null` as `volumeId` to keep it idle.
 
 ## Errors
 
@@ -660,21 +651,17 @@ try {
 Other answers you should handle:
 
 - `409` for a duplicate slug, `402` with `app_quota_exceeded` when the account
-  is at its App limit, and `400` with `app_machine_out_of_range` or
-  `app_budget_out_of_range` for a spec outside its bounds, and `400
-  app_budget_not_applicable` for a budget on an always-on or `convex` App.
-- `409 app_capability_unsupported` (`capability`, `kind`) for a call the App's
-  kind does not offer.
-- A `convex` create: `409 app_kind_unavailable` where Platinum is not
-  configured, `409 app_kind_limit` (3 per project, 10 per account), `400
-  app_always_on_required` for `always_on: false`, `400 app_not_found` for an
-  unknown slug in `uses`.
-- `400 confirmation_required` for a delete of an App with `snapshots` without
-  `confirm`.
-- A `convex` App's capability calls: `409 app_not_running`,
-  `app_machine_missing` or `app_busy`; `503 app_provider_busy` (no capacity,
-  retry in minutes), `app_provider_timeout` or `app_provider_unavailable`;
-  `502 app_provider_error`. The `error` text is a short reason. It never
-  carries provider internals.
+  is at its App limit, and `400` with `app_machine_out_of_range` for a spec outside its bounds.
+- `400 app_not_found` (`slugs`) for an unknown slug in `uses`.
+- `409 app_capability_unsupported` (`capability`) for a call the App does not
+  offer.
+- A deploy: `400 app_config_invalid` (`issues`), `400 app_volumes_unsupported`.
+  A rollback: `409 release_not_ready`.
+- Machines and exec: `409 app_no_machines`, `404 machine_not_found`,
+  `409 machine_not_running`, `400 process_group_unknown`,
+  `400 scale_out_of_range`, `400 command_required`.
+- Volumes: `400 volume_name_invalid`, `volume_size_invalid`,
+  `volume_shrink_refused`, `volume_retention_invalid`, `snapshot_invalid`,
+  `confirmation_required`; `404 volume_not_found`; `409 volume_attached`.
 
-`credentials()` and `token()` answer with `Cache-Control: no-store`.
+`token()` answers with `Cache-Control: no-store`.
