@@ -90,7 +90,20 @@ export function useShowPageSidebarOpener(): boolean {
  * "Pin", not "Open", while the panel is showing as a hover flyout — the click
  * docks what is already on screen, and calling that "Open" reads as a no-op.
  */
-export function sidebarOpenerLabel(sidebar: { state: string; peek?: boolean }): string {
-  if (sidebar.state === 'expanded') return 'Collapse sidebar';
-  return sidebar.peek ? 'Pin sidebar' : 'Open sidebar';
+export function sidebarPanelVisible(sidebar: {
+  state: string;
+  isMobile?: boolean;
+  openMobile?: boolean;
+  peek?: boolean;
+}): boolean {
+  return sidebar.isMobile
+    ? !!sidebar.openMobile
+    : sidebar.state === 'expanded' || !!sidebar.peek;
+}
+
+export function sidebarOpenerLabel(sidebar: Parameters<typeof sidebarPanelVisible>[0]): string {
+  if (!sidebarPanelVisible(sidebar)) return 'Open sidebar';
+  return !sidebar.isMobile && sidebar.state === 'collapsed' && sidebar.peek
+    ? 'Pin sidebar'
+    : 'Collapse sidebar';
 }

@@ -84,7 +84,7 @@ One connector as a handle: `run` returns the output itself and throws
 `upstreamStatus`, `retryAfterSeconds`) or `ConnectorApprovalPendingError`;
 `paginate` follows a cursor and throws `ConnectorPageLimitError` (with
 `nextArgs`) past `maxPages`; `useConnectorQuery` (`@kortix/sdk/react`) caches a
-read. Guide: `/docs/sdk/connectors`; runnable: `examples/13-connectors-as-code.ts`.
+read. Guide: `/docs/connect/connectors#call-connectors-from-code`; runnable: `examples/13-connectors-as-code.ts`.
 
 ```ts
 const linear = kortix.project(projectId).connector('linear');
@@ -154,7 +154,7 @@ The browser path needs the App's viewer scope set to `api`
 `403 insufficient_scope`. A service account answers `403` until a person
 grants it a project role (`kortix access grant --service-account <id> --role
 member --project <id>`). Never put a provider API key in an App or a Convex
-deployment when a connector exists. Guide: `/docs/sdk/connectors`.
+deployment when a connector exists. Guide: `/docs/connect/connectors#call-connectors-from-code`.
 
 ### Upload prompt attachments before Send
 
@@ -1032,7 +1032,7 @@ const client = createKortix(auth.clientConfig());  // talks to Kortix through /p
 ```
 
 `@kortix/sdk/react` adds `useKortixViewer()` and `<SignInWithKortix />`.
-Full guide: `/docs/sdk/sign-in`. Example: `examples/11-sign-in-with-kortix.ts`.
+Full guide: `/docs/sdk/auth#sign-in-with-kortix`. Example: `examples/11-sign-in-with-kortix.ts`.
 
 ### A Kortix-hosted App is already signed in
 
@@ -1050,7 +1050,7 @@ the API refused (after an access-policy change) and replays the call once.
 In the browser, `backendUrl` is `/_kortix/api/v1`: the gate on the App's own
 origin forwards to the Kortix API as the viewer (`viewer_token_scope: 'api'`).
 A direct call to `https://api.kortix.com/v1` from an App origin fails CORS.
-Guide: `/docs/sdk/apps`.
+Guide: `/docs/apps#build-on-apps-from-typescript`.
 
 ### One member on every runtime: sign-in tokens, groups, roles
 
@@ -1077,7 +1077,7 @@ header, sign-in token) into one `KortixMember`: `userId`, `email`, `name`,
 `forbidden`). In React, read the member with a `members:me` query (`readKortixMember(await ctx.auth.getUserIdentity())` in `convex/members.ts`, then `useQuery(api.members.me)`: `undefined` loading, `null` signed out). Never call `useConvexAuth()`: it throws under a plain `ConvexProvider`. Kortix injects `KORTIX_AUTH_ISSUER`, `KORTIX_AUTH_AUDIENCE` (the App's own id) and `KORTIX_AUTH_JWKS` into every server App, so do not set `KORTIX_AUTH_*` in its `env`. `verifyKortixToken` takes the key set inline or as an https URL
 (`auth.jwks_uri`), and refuses every token when no audience is set (option or
 `KORTIX_AUTH_AUDIENCE`): one project key signs every App's tokens, so `aud` is
-the only thing that keeps another App's token out. `audience: false` opts out. WebCrypto only; no dependency. Guide: `/docs/sdk/apps`.
+the only thing that keeps another App's token out. `audience: false` opts out. WebCrypto only; no dependency. Guide: `/docs/apps#build-on-apps-from-typescript`.
 
 ### Headless sign-in (your users, straight through the API)
 

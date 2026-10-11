@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { openKortixPtyWebSocket } from '../api/pty-socket.ts';
+import { Glob } from 'bun';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { openKortixWebSocket } from '../api/kortix-socket.ts';
 
 let server: ReturnType<typeof Bun.serve> | undefined;
 
@@ -27,7 +30,7 @@ describe('Kortix PTY WebSocket', () => {
       },
     });
 
-    const websocket = openKortixPtyWebSocket(
+    const websocket = openKortixWebSocket(
       `ws://127.0.0.1:${server.port}/kortix/pty/test/connect`,
     );
     await new Promise<void>((resolve, reject) => {
@@ -39,4 +42,16 @@ describe('Kortix PTY WebSocket', () => {
 
     expect(userAgent).toStartWith('kortix-cli/');
   });
+});
+
+test('every CLI WebSocket opens through openKortixWebSocket', () => {
+  const src = join(import.meta.dir, '..');
+  const raw: string[] = [];
+  for (const file of new Glob('**/*.ts').scanSync(src)) {
+    if (file.includes('__tests__') || file.endsWith('.test.ts')) continue;
+    readFileSync(join(src, file), 'utf8').split('\n').forEach((line, i) => {
+      if (/\bnew WebSocket\(/.test(line) && !/^\s*(\/\/|\*)/.test(line)) raw.push(`${file}:${i + 1}`);
+    });
+  }
+  expect(raw).toEqual([]);
 });

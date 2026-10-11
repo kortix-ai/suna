@@ -59,7 +59,7 @@ function AppsHeader({
         </div>
       ) : null}
       <Link
-        href="/docs/feature-flags/apps"
+        href="/docs/apps"
         target="_blank"
         rel="noopener noreferrer"
         prefetch={false}
