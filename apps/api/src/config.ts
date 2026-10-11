@@ -285,6 +285,10 @@ const envSchema = z.object({
   // Generative UI kill switch. On by default; false => no session is taught the genui catalog,
   // whatever the project flag says. Blocks already in transcripts still render.
   GENUI_ENABLED: optBoolTrue,
+  // Operator switch for the session-log journal ingest (`POST …/sessions/:s/log/journal`).
+  // On by default. Off answers 503: each daemon keeps its unacknowledged changes and
+  // retries with backoff, so turning it back on loses nothing the boxes still hold.
+  SESSION_LOG_INGEST_ENABLED: optBoolTrue,
   // Serve the public OpenAPI spec (/v1/openapi.json) + Scalar docs UI (/v1/docs).
   // On by default — the base API surface is meant to be discoverable. Internal
   // routers (/v1/admin, /v1/ops) are ALWAYS stripped from the spec regardless
@@ -1218,6 +1222,7 @@ export const config = {
   KORTIX_RELAY_UPSTREAM_IDLE_TIMEOUT_MS: env.KORTIX_RELAY_UPSTREAM_IDLE_TIMEOUT_MS,
   SESSION_TITLE_GENERATION_ENABLED: env.SESSION_TITLE_GENERATION_ENABLED,
   GENUI_ENABLED: env.GENUI_ENABLED,
+  SESSION_LOG_INGEST_ENABLED: env.SESSION_LOG_INGEST_ENABLED,
   OPENAPI_PUBLIC_DOCS: env.OPENAPI_PUBLIC_DOCS,
   MOBILE_MIN_VERSION: env.MOBILE_MIN_VERSION.trim(),
   MOBILE_STORE_URL_IOS: env.MOBILE_STORE_URL_IOS,

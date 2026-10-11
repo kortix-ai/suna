@@ -1,0 +1,15 @@
+{
+  "source_hash": "a4b7f0b005e19506760ae3ac6df6a03dc561be3b3094b849d3abb009e35ff3a5",
+  "diff_files": [
+    ".github/workflows/tests-browser-nightly.yml"
+  ],
+  "diff_hash": "9a700c24c1d5919cf468dd98fe21b0b5de195d287f88d4958b72118dcc1d51c5",
+  "head": "b7165e5eab1790acfce2ee6e87294cc5342460c7",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-11T16:39:05.400Z"
+}
