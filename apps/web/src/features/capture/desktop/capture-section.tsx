@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
+import { StatusDot, type StatusTone } from '@/components/ui/status';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
@@ -37,13 +38,7 @@ import {
 import { clockTime } from '../capture-time';
 import { CaptureExclusions } from './capture-exclusions';
 import { CapturePermissions } from './capture-permissions';
-import {
-  CaptureRow,
-  CaptureRowSection,
-  GrantState,
-  StatusDot,
-  type StatusTone,
-} from './capture-rows';
+import { CaptureRow, CaptureRowSection, GrantState } from './capture-rows';
 import { activeLayers, capturePhase, type CapturePhase } from './capture-state';
 import {
   captureRoutes,
@@ -59,11 +54,11 @@ const LAYER_ICONS: Record<DesktopCaptureLayer, Icon> = {
 };
 
 const TONES: Partial<Record<CapturePhase, StatusTone>> = {
-  recording: 'good',
-  needsPermission: 'attention',
-  signInRequired: 'attention',
-  paused: 'attention',
-  error: 'bad',
+  recording: 'success',
+  needsPermission: 'warning',
+  signInRequired: 'warning',
+  paused: 'warning',
+  error: 'destructive',
 };
 
 /**
@@ -127,7 +122,7 @@ export function ThisComputerPage({ accountId }: { accountId: string }) {
         </>
       ) : null}
       <span className="flex shrink-0 items-center gap-1.5">
-        <StatusDot tone={TONES[phase] ?? 'idle'} />
+        <StatusDot tone={TONES[phase] ?? 'neutral'} />
         <span className="text-foreground">{word}</span>
       </span>
     </>

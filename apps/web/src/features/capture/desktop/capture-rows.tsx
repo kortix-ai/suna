@@ -81,17 +81,3 @@ export function GrantState({ allowed, label }: { allowed: boolean; label: string
     </span>
   );
 }
-
-/** The status dot of the header. */
-export type StatusTone = 'good' | 'attention' | 'bad' | 'idle';
-const TONE: Record<StatusTone, string> = {
-  good: 'bg-kortix-green',
-  attention: 'bg-kortix-orange',
-  bad: 'bg-kortix-red',
-  idle: 'bg-muted-foreground',
-};
-export function StatusDot({ tone }: { tone: StatusTone }) {
-  return (
-    <span aria-hidden className={cn('inline-block size-2 shrink-0 rounded-full', TONE[tone])} />
-  );
-}

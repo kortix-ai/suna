@@ -17,6 +17,7 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 
+import { StatusDot as DsStatusDot } from '@/components/ui/status';
 import { relativeTime } from '@/lib/relative-time';
 
 import { clockTime } from '../capture-time';
@@ -31,17 +32,10 @@ export function StatusDot({
   className?: string;
 }) {
   return (
-    <span
-      aria-hidden
+    <DsStatusDot
+      tone={view?.tone === 'green' ? 'success' : view?.tone === 'orange' ? 'warning' : 'neutral'}
       className={cn(
-        'size-2 shrink-0 rounded-full',
-        view?.tone === 'green'
-          ? 'bg-kortix-green'
-          : view?.tone === 'orange'
-            ? 'bg-kortix-orange'
-            : view?.key === 'offline'
-              ? 'border-muted-foreground border'
-              : 'bg-muted-foreground',
+        view?.key === 'offline' && 'border-muted-foreground border bg-transparent',
         className,
       )}
     />
