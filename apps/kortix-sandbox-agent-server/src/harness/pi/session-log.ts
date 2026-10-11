@@ -44,6 +44,17 @@
  * child has no entries and pi's retry drops a failed message and appends its
  * replacement at the same index, so the runtime issues each child message a
  * seq once (`seqs`) and never issues it again. Seqs have gaps.
+ *
+ * The live seq (P4.3b). pi appends a message's entry at its `message_end`, so
+ * the reply it streams has no entry yet. pi's own listener appends every
+ * earlier entry before the runtime sees the next event, and pi defers a custom
+ * message while it streams: the reply's entry is the next one,
+ * `getEntries().length + 1` (a child: its `nextSeq`). An extension that
+ * appends a non-message entry (a custom entry, a label, a session name)
+ * while the reply streams moves the reply one entry later: its turn-end
+ * record then carries a higher seq than its streaming puts, and replaces
+ * them (higher rev). A user message has no seq until pi appends its entry,
+ * when its turn starts.
  */
 import { createHash } from 'node:crypto'
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
@@ -77,6 +88,10 @@ export interface PiChildSnapshot {
   messageIds: Array<string | null>
   /** The seq of each agent message, by index: issued once, never reused (see the seq rule). */
   seqs: number[]
+  /** The seq the child's next message gets. */
+  nextSeq: number
+  /** The reply the child streams now: its Kortix id and pi timestamp. */
+  reply: { id: string; timestamp: number } | null
   transcript: KortixMessage[]
   /** A prompt runs in the child now. */
   busy: boolean
@@ -98,6 +113,8 @@ export interface PiSessionSnapshot {
   children: PiChildSnapshot[]
   /** A root turn runs now. */
   busy: boolean
+  /** The assistant message the root turn streams now: its Kortix id and pi timestamp. */
+  reply: { id: string; timestamp: number } | null
   agent: string | null
   model: { provider: string; model: string } | null
 }
@@ -434,6 +451,23 @@ function spawnedBy(messages: SessionLogMessage[], childId: string): SessionLogTh
   return null
 }
 
+/** A live message's seq (see the header) and pi timestamp; null for a message pi has not appended that is not the reply it streams. */
+export function piLive(s: PiSessionSnapshot, threadId: string, messageId: string): { seq: number; created_at: string } | null {
+  // As deriveThread times each record.
+  const at = (m: J | undefined) => iso(m?.timestamp)
+  if (threadId === s.rootId) {
+    const i = s.entries.findIndex((e) => s.entryMessageIds[e.id] === messageId)
+    const e = s.entries[i] as J | undefined
+    if (e) return { seq: i + 1, created_at: e.type === 'compaction' ? isoOf(e.timestamp) : at(e.type === 'message' ? e.message : e) }
+    return messageId === s.reply?.id ? { seq: s.entries.length + 1, created_at: at(s.reply) } : null
+  }
+  const child = s.children.find((c) => c.id === threadId)
+  if (!child) return null
+  const i = child.messageIds.indexOf(messageId)
+  if (i >= 0) return { seq: child.seqs[i]!, created_at: at(child.agentMessages[i]) }
+  return messageId === child.reply?.id ? { seq: child.nextSeq, created_at: at(child.reply) } : null
+}
+
 /** The session-log port over a live pi runtime. `read` returns null while the runtime is down. */
 export function createPiSessionLogPort(read: () => PiSessionSnapshot | null): SessionLogPort {
   let lastSession: string | null = null
@@ -460,6 +494,10 @@ export function createPiSessionLogPort(read: () => PiSessionSnapshot | null): Se
     async fingerprint(): Promise<string> {
       const s = read()
       return sha256(JSON.stringify(s ? [s.header, s.entries, s.children.map((c) => c.agentMessages)] : null))
+    },
+    live(threadId: string, messageId: string) {
+      const s = read()
+      return s ? piLive(s, threadId, messageId) : null
     },
   }
 }
