@@ -117,6 +117,7 @@ const sha = (text: string) => new Bun.CryptoHasher('sha256').update(text).digest
 function fakeAdapter() {
   const native = new Map<string, { seq: number; text: string }>()
   const removed: string[] = []
+  const liveSeqs = new Map<string, number>()
   let session: SessionLogChanges['session']
   const derive = (id: string, row: { seq: number; text: string }): SessionLogMessage => ({
     ...message(id, row.seq, row.text),
@@ -152,9 +153,12 @@ function fakeAdapter() {
     async fingerprint() {
       return sha(JSON.stringify([...native]))
     },
+    live: (_thread: string, id: string) => (liveSeqs.has(id) ? { seq: liveSeqs.get(id)! } : null),
   }
   return {
     port,
+    /** The seq `live` names for a message of the live turn. */
+    liveSeq: (id: string, seq: number) => liveSeqs.set(id, seq),
     put: (id: string, seq: number, text: string) => native.set(id, { seq, text }),
     remove: (id: string) => {
       native.delete(id)
@@ -386,11 +390,80 @@ describe('session-log journal', () => {
     fake.put('m2', 2, 'two')
     fake.remove('m1')
     expect(await journal.flush()).toBe(false)
+    fake.liveSeq('m3', 3)
+    kortixEventBus().publish('message.updated', { sessionID: 'thread-1', info: { id: 'm3', sessionID: 'thread-1', role: 'assistant', time: { created: 1 } } }, 'thread-1')
+    kortixEventBus().publish('message.part.updated', { sessionID: 'thread-1', part: { id: 'm3-p0', messageID: 'm3', sessionID: 'thread-1', type: 'text', text: '' } }, 'thread-1')
     kortixEventBus().publish('message.part.delta', { sessionID: 'thread-1', messageID: 'm2', partID: 'm2-p0', field: 'text', delta: 'x' }, 'thread-1')
     await Bun.sleep(50)
     expect(exports).toBe(before)
     expect(frames).toEqual([])
     expect(api.received).toHaveLength(posts)
+  })
+
+  test('live turn (P4.3b): puts on the v2 bus only, each before its deltas; a message waits for its seq; the API receives the turn end\'s record alone', async () => {
+    resetKortixEventBusForTests()
+    const api = fakeApi()
+    const fake = fakeAdapter()
+    fake.put('m1', 1, 'earlier')
+    const journal = new SessionLogJournal(fake.port, { generation: 1 })
+    expect(await journal.flush()).toBe(true)
+    const frames: Array<{ type: string; payload: any }> = []
+    sessionLogEventBus().subscribe((e) => void frames.push(e), {})
+    const v1: string[] = []
+    kortixEventBus().subscribe((e) => void v1.push(JSON.stringify(e)), {})
+    const bus = kortixEventBus()
+    const T = 'thr_root'
+    const user = { id: 'u2', sessionID: T, role: 'user', time: { created: 2_000 } }
+    const reply = { id: 'm3', sessionID: T, role: 'assistant', parentID: 'u2', time: { created: 3_000 }, modelID: 'fake-1', providerID: 'fake' }
+    // The harness has not stored the prompt: no seq, no put yet.
+    bus.publish('message.updated', { sessionID: T, info: user }, T)
+    bus.publish('message.part.updated', { sessionID: T, part: { id: 'u2-p0', messageID: 'u2', sessionID: T, type: 'text', text: 'question' } }, T)
+    expect(frames).toEqual([])
+    // A message the journal already collected gets no live put.
+    bus.publish('message.part.updated', { sessionID: T, part: { id: 'm1-x', messageID: 'm1', sessionID: T, type: 'text', text: '' } }, T)
+    expect(frames).toEqual([])
+    fake.liveSeq('u2', 2)
+    fake.liveSeq('m3', 3)
+    bus.publish('message.updated', { sessionID: T, info: reply }, T)
+    const text = { id: 'm3-p0', messageID: 'm3', sessionID: T, type: 'text', text: '' }
+    bus.publish('message.part.updated', { sessionID: T, part: text }, T)
+    bus.publish('message.part.delta', { sessionID: T, messageID: 'm3', partID: 'm3-p0', field: 'text', delta: 'Ans' }, T)
+    bus.publish('message.part.delta', { sessionID: T, messageID: 'm3', partID: 'm3-p0', field: 'text', delta: 'wer' }, T)
+    bus.publish('message.part.updated', { sessionID: T, part: { id: 'm3-p1', messageID: 'm3', sessionID: T, type: 'tool', callID: 'c1', tool: 'bash', state: { status: 'running', input: { command: 'ls' }, time: { start: 3_100 } } } }, T)
+    expect(frames.map((f) => [f.type, f.payload.message?.message_id ?? f.payload.delta])).toEqual([
+      ['log.message', 'u2'], // the waiting prompt first, in the order the v1 bus named them
+      ['log.message', 'm3'],
+      ['log.message', 'm3'],
+      ['log.block.delta', 'Ans'],
+      ['log.block.delta', 'wer'],
+      ['log.message', 'm3'],
+    ])
+    expect(frames[0]!.payload.message).toMatchObject({ seq: 2, role: 'user', status: 'complete', blocks: [{ id: 'u2-p0', text: 'question' }] })
+    expect(frames[1]!.payload.message).toMatchObject({ seq: 3, thread_id: T, role: 'assistant', status: 'streaming', reply_to: 'u2', completed_at: null, finish: null, blocks: [], created_at: new Date(3_000).toISOString() })
+    expect(frames[2]!.payload.message.blocks).toEqual([{ type: 'text', id: 'm3-p0', text: '' }])
+    expect(frames[5]!.payload.message.blocks).toMatchObject([{ id: 'm3-p0', text: 'Answer' }, { type: 'tool_call', id: 'm3-p1', status: 'running' }])
+    expect(frames[5]!.payload.message.blocks[1].result).toBeUndefined()
+    const revs = frames.filter((f) => f.type === 'log.message').map((f) => f.payload.rev)
+    expect(revs).toEqual([...revs].sort((a, b) => a - b))
+    // The v1 frames are untouched: the deltas extended the journal's copy, never the published part.
+    expect(text.text).toBe('')
+    expect(v1.every((line) => !line.includes('Answer'))).toBe(true)
+    // Nothing live reached the API. The turn end's collection sends the stored records at higher revs.
+    expect(api.received).toHaveLength(1)
+    const live = [...frames]
+    fake.put('u2', 2, 'question')
+    fake.put('m3', 3, 'Answer')
+    expect(await journal.flush()).toBe(true)
+    expect(putIds(api.received.slice(1))).toEqual(['u2', 'm3'])
+    for (const id of ['u2', 'm3']) {
+      const liveRevs = live.filter((f) => f.payload.message?.message_id === id).map((f) => f.payload.rev)
+      expect(revOf(api.received, id)[0]).toBeGreaterThan(Math.max(...liveRevs))
+    }
+    // A collected message gets no later live put.
+    const seen = frames.length
+    bus.publish('message.part.updated', { sessionID: T, part: { id: 'm3-p2', messageID: 'm3', sessionID: T, type: 'text', text: 'late' } }, T)
+    expect(frames).toHaveLength(seen)
+    await journal.stop(0)
   })
 
   test('a 409 fences a zombie box: no later batch of the same drain is posted', async () => {

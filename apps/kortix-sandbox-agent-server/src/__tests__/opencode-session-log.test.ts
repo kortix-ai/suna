@@ -349,6 +349,90 @@ describe('OpenCode session-log journal wiring', () => {
     expect(frames.at(-1)!.payload).not.toMatchObject({ delta: 'late' })
   })
 
+  test('a live turn (P4.3b): the user put, a streaming put before the first delta, a put for each new block, then the final put at a higher rev', async () => {
+    resetKortixEventBusForTests()
+    const frames: KortixEvent[] = []
+    sessionLogEventBus().subscribe((event) => void frames.push(event), {})
+    const dbPath = join(dir, 'opencode.db')
+    writeStore(dbPath, before)
+    const port = createOpenCodeSessionLogPort({ db: new OpencodeDb(dbPath), dbPath, sessionId: SESSION, rootId: () => ROOT, statePath: join(dir, 's.json') })
+    startSessionLogJournal(port, { generation: 0 })
+    expect(await flushSessionLogJournal()).toBe(true)
+    const startFrames = frames.length
+
+    // The new turn of the fixture, with a bash call added before its answer, as OpenCode stores it at rest.
+    const fresh = after.messages.filter((m) => !before.messages.some((b) => b.id === m.id))
+    const [userRow, replyRow] = fresh
+    const tool = { id: 'prt_12b622097500LiveTurnToolCall', message_id: replyRow!.id, session_id: ROOT, time_created: 0, time_updated: 0, data: JSON.stringify({ type: 'tool', callID: 'call_live', tool: 'bash', state: { status: 'completed', input: { command: 'echo hi' }, output: 'hi', title: 'echo hi', metadata: {}, time: { start: 1791729213580, end: 1791729213590 } } }) }
+    const atRest: StoreSnapshot = { ...after, parts: [...after.parts, tool].sort((a, b) => a.id.localeCompare(b.id)) }
+    const info = (row: (typeof fresh)[number]): Record<string, any> => ({ ...(JSON.parse(row.data) as Record<string, any>), id: row.id, sessionID: row.session_id })
+    const partOf = (id: string): Record<string, any> => {
+      const row = atRest.parts.find((p) => p.id === id)!
+      return { ...(JSON.parse(row.data) as Record<string, any>), id, messageID: row.message_id, sessionID: row.session_id }
+    }
+    const [stepStart, text, stepFinish] = after.parts.filter((p) => p.message_id === replyRow!.id).map((p) => partOf(p.id))
+    const bus = kortixEventBus()
+    const emit = (type: string, payload: Record<string, unknown>) => bus.publish(type, payload, ROOT)
+    // The frames OpenCode publishes for that turn, in its order.
+    emit('message.updated', { sessionID: ROOT, info: info(userRow!) })
+    emit('message.part.updated', { sessionID: ROOT, part: partOf(after.parts.find((p) => p.message_id === userRow!.id)!.id) })
+    const open = info(replyRow!)
+    emit('message.updated', { sessionID: ROOT, info: { ...open, time: { created: open.time.created }, finish: undefined } })
+    emit('message.part.updated', { sessionID: ROOT, part: stepStart })
+    const call = partOf(tool.id)
+    emit('message.part.updated', { sessionID: ROOT, part: { ...call, state: { status: 'pending', input: {}, raw: '' } } })
+    emit('message.part.updated', { sessionID: ROOT, part: { ...call, state: { status: 'running', input: call.state.input, time: { start: call.state.time.start } } } })
+    emit('message.part.updated', { sessionID: ROOT, part: call })
+    const empty = { ...text!, text: '' }
+    emit('message.part.updated', { sessionID: ROOT, part: empty })
+    for (const delta of ['After the ', 'revert.']) emit('message.part.delta', { sessionID: ROOT, messageID: replyRow!.id, partID: text!.id, field: 'text', delta })
+    emit('message.part.updated', { sessionID: ROOT, part: text })
+    emit('message.part.updated', { sessionID: ROOT, part: stepFinish })
+    emit('message.updated', { sessionID: ROOT, info: open })
+    // The live puts read nothing from the store, and never change a v1 frame: the delta did not extend the published part.
+    expect(empty.text).toBe('')
+    writeStore(dbPath, atRest)
+    expect(await flushSessionLogJournal()).toBe(true)
+
+    const turn = frames.slice(startFrames) as Array<{ seq: number; type: string; payload: any }>
+    for (const f of turn) expect(SESSION_LOG_EVENTS[f.type as keyof typeof SESSION_LOG_EVENTS].safeParse(f.payload).success, f.type).toBe(true)
+    const finals = new Map(dumped()[1]!.puts.map((p) => [p.message.message_id, p]))
+    const putsOf = (id: string) => turn.filter((f) => f.type === 'log.message' && f.payload.message?.message_id === id)
+    for (const row of fresh) {
+      const own = putsOf(row.id)
+      const final = finals.get(row.id)!
+      // The API receives one record: the turn end's, the last put on the stream.
+      expect(own.at(-1)!.payload).toEqual(final)
+      const live = own.slice(0, -1)
+      expect(live.length).toBeGreaterThan(0)
+      // Seq stability: every live put carries the seq, thread and created_at of the turn end's record, at a lower rev.
+      for (const f of live) {
+        expect(f.payload.message).toMatchObject({ seq: final.message.seq, thread_id: ROOT, created_at: final.message.created_at })
+        expect(f.payload.rev).toBeLessThan(final.rev)
+      }
+    }
+    const replyPuts = putsOf(replyRow!.id)
+    expect(putsOf(userRow!.id)[0]!.payload.message.status).toBe('complete')
+    expect(putsOf(userRow!.id)[0]!.seq).toBeLessThan(replyPuts[0]!.seq)
+    expect(replyPuts[0]!.payload.message).toMatchObject({ role: 'assistant', status: 'streaming', reply_to: userRow!.id, completed_at: null, blocks: [] })
+    expect(replyPuts.at(-1)!.payload.message.status).toBe('complete')
+    // The call: a put carries its block, pending as OpenCode announced it, with no closure result.
+    const callPut = replyPuts.find((f) => f.payload.message.blocks.some((b: { id: string }) => b.id === tool.id))!
+    expect(callPut.payload.message.status).toBe('streaming')
+    expect(callPut.payload.message.blocks.find((b: { id: string }) => b.id === tool.id)).toMatchObject({ type: 'tool_call', status: 'pending' })
+    expect(callPut.payload.message.blocks.find((b: { id: string }) => b.id === tool.id).result).toBeUndefined()
+    // The text block is on the stream, empty, before its first delta; the deltas follow it.
+    const deltas = turn.filter((f) => f.type === 'log.block.delta')
+    expect(deltas.map((d) => d.payload.delta)).toEqual(['After the ', 'revert.'])
+    const holder = replyPuts.find((f) => f.payload.message.blocks.some((b: { id: string }) => b.id === text!.id))!
+    expect(holder.payload.message.blocks.find((b: { id: string }) => b.id === text!.id).text).toBe('')
+    expect(holder.seq).toBeLessThan(deltas[0]!.seq)
+    // The step-finish put, after the deltas, holds the text they streamed.
+    const afterDeltas = replyPuts.find((f) => f.seq > deltas[1]!.seq && f !== replyPuts.at(-1))!
+    expect(afterDeltas.payload.message.blocks.find((b: { id: string }) => b.id === text!.id).text).toBe('After the revert.')
+    for (const p of dumped().flatMap((b) => b.puts)) expect(p.message.status).not.toBe('streaming')
+  })
+
   test('without a control plane the boot start journals nothing', () => {
     delete process.env.KORTIX_SESSION_ID
     startOpenCodeSessionLog()
