@@ -7,8 +7,8 @@
  * one; `types.test.ts` fails when the two copies differ below this header. The
  * copy has no imports, so it needs no edit.
  *
- * This package has no `zod` dependency and gets none: only the types and the
- * constants are vendored. The validators (`SessionLogSchema` and the rest of
+ * This module needs no `zod` (the package lists it only as an optional peer, for
+ * `./genui`): only the types and the constants are vendored. The validators (`SessionLogSchema` and the rest of
  * `schema.ts`) stay in `@kortix/api-contract/session-log`. The source's change
  * log (C1 to C13, F1 to F13) is in the header of the api-contract file.
  *
