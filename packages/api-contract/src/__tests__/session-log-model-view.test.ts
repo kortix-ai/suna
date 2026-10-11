@@ -133,7 +133,10 @@ const thread = (thread_id: string, messages: SessionLogMessage[], patch: Partial
   messages: messages.map((m) => ({ ...m, thread_id })),
   ...patch,
 });
-const logOf = (...threads: SessionLogThread[]): SessionLog => {
+const logOf = (...threads: SessionLogThread[]): SessionLog => build(true, threads);
+/** A record the validator rejects (a record bug), for the tests that pin what the view does with one. */
+const invalidLogOf = (...threads: SessionLogThread[]): SessionLog => build(false, threads);
+const build = (valid: boolean, threads: SessionLogThread[]): SessionLog => {
   const record: SessionLog = {
     v: 0,
     schema: 'kortix.session/2',
@@ -147,7 +150,7 @@ const logOf = (...threads: SessionLogThread[]): SessionLog => {
     pending: { questions: [], permissions: [] },
     threads,
   };
-  expect(SessionLogSchema.safeParse(record).success).toBe(true);
+  expect(SessionLogSchema.safeParse(record).success).toBe(valid);
   return record;
 };
 const rootView = (log: SessionLog, target: ViewTarget = A) => threadView(log, 'root', target);
@@ -238,6 +241,16 @@ describe('compaction', () => {
     ]);
   });
 
+  test('a message that a layout entry names is shown even when it is out of context (C1: exactly the listed entries)', () => {
+    const log = logOf(
+      thread('root', [
+        user('m1', 1, 'hidden by the log', { in_context: false }),
+        compactionMsg('m2', 2, { layout: [{ message_id: 'm1' }, { summary: true }] }),
+      ]),
+    );
+    expect(textsOf(rootView(log))).toEqual(['u:hidden by the log', 'S:SUM']);
+  });
+
   test('the last in-context compaction wins; an earlier or out-of-context marker is ignored', () => {
     const log = logOf(
       thread('root', [
@@ -289,6 +302,11 @@ describe('what a message contributes', () => {
       { role: 'tool', call_id: 'c1', content: 'pruned', is_error: false },
       { role: 'tool', call_id: 'c2', content: 'line1\nline2', is_error: true },
     ]);
+  });
+
+  test('an in-context call without a result gives the assistant call and no tool item (the at-rest closure rule makes this a record bug)', () => {
+    const log = invalidLogOf(thread('root', [msg('m1', 1, 'assistant', [toolCall({ call_id: 'c9', status: 'pending' })])]));
+    expect(rootView(log)).toEqual([{ role: 'assistant', text: [], calls: [{ id: 'c9', name: 'read', input: { path: 'a' } }] }]);
   });
 
   test('an attachment gives its content id: sha256, else the hash in a blob: ref; a tool-result attachment rides on the tool item', () => {
@@ -496,6 +514,13 @@ describe('request normalizers', () => {
   test('normalizeRequest picks the normalizer by api and rejects an unknown api', () => {
     expect(normalizeRequest('openai-chat', { messages: [{ role: 'user', content: 'x' }] })).toEqual([{ role: 'user', text: ['x'], images: [] }]);
     expect(() => normalizeRequest('gemini', {})).toThrow('no request normalizer');
+  });
+
+  test('known blind spot: in segment summary mode, extra text in the segment that holds the summary is not compared; substring mode compares it', () => {
+    const expected: ModelView = [{ role: 'summary', text: 'SUM' }, { role: 'user', text: ['next'], images: [] }];
+    const injected: ModelView = [{ role: 'user', text: ['SUM and some injected model-visible text'], images: [] }, { role: 'user', text: ['next'], images: [] }];
+    expect(compareViews(expected, injected, { summary: 'SUM' }).pass).toBe(true);
+    expect(compareViews(expected, injected, { summary: 'SUM', summarySplit: 'substring' }).pass).toBe(false);
   });
 
   test('is_error counts only where the actual dialect carries it; call ids compare as ordinals', () => {

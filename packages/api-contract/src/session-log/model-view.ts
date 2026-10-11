@@ -85,7 +85,8 @@ export function threadView(log: SessionLog, threadId: string, target: ViewTarget
   const out: ModelView = [];
   let rest = msgs;
   if (compIdx >= 0) {
-    const block = msgs[compIdx].blocks.find((b): b is CompactionBlock => b.type === 'compaction');
+    // compIdx >= 0 indexes msgs; `?.` only satisfies noUncheckedIndexedAccess.
+    const block = msgs[compIdx]?.blocks.find((b): b is CompactionBlock => b.type === 'compaction');
     if (block?.layout) {
       for (const entry of block.layout) {
         if ('summary' in entry) {
@@ -194,7 +195,7 @@ export function normalizeOpenAIChat(body: Body): ModelView {
       const text = textOf(m.content);
       const prev = out[out.length - 1];
       const imageOnly = text.every((x) => !x.trim()) && attachmentShas(m.content).length > 0;
-      if (prev?.role === 'tool' && ((text.length === 1 && TOOL_MEDIA_FOLLOWUP.test(text[0].trim())) || imageOnly)) {
+      if (prev?.role === 'tool' && ((text.length === 1 && TOOL_MEDIA_FOLLOWUP.test((text[0] ?? '').trim())) || imageOnly)) {
         prev.images = [...(prev.images ?? []), ...attachmentShas(m.content)];
         continue;
       }
@@ -289,7 +290,10 @@ export type ViewCompareOptions = {
   /** Drop user items that are empty after `ignore` (harness boilerplate turns). */
   dropEmpty?: boolean;
   /** `segment` (default): the segment holding the summary is replaced by it. `substring`: only the summary
-   *  text is removed and the rest stays as text after it (a harness that sends summary and kept text in one string). */
+   *  text is removed and the rest stays as text after it (a harness that sends summary and kept text in one string).
+   *  Known blind spot of `segment`: any other text in the segment that holds the summary is dropped, so extra
+   *  model-visible text beside a summary passes undetected (pi, OpenCode v1, Claude Code, Codex). Only `substring`
+   *  (OpenCode v2) compares that remainder. A test pins this; changing it is a deliberate decision (P6.5). */
   summarySplit?: 'segment' | 'substring';
 };
 
@@ -344,7 +348,8 @@ export function canonicalizeView(view: ModelView, opts: ViewCompareOptions = {})
         else out.push({ role: 'user', t: tb, att: [] });
       }
       pushSummary();
-      const remainder = opts.summarySplit === 'substring' ? clean(segs[i].replace(summary, '')) : '';
+      // `i` comes from findIndex over `segs`, so `segs[i]` exists; `?? ''` only satisfies noUncheckedIndexedAccess.
+      const remainder = opts.summarySplit === 'substring' ? clean((segs[i] ?? '').replace(summary, '')) : '';
       segs = [...(remainder ? [remainder] : []), ...segs.slice(i + 1).filter((s) => !s.includes(summary))];
     }
     const t = squash(segs.join(''));
