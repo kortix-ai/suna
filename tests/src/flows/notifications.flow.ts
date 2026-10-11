@@ -1148,14 +1148,23 @@ flow(
       const name = `Nightly digest ${randomUUID().slice(0, 8)}`;
 
       await ctx.step('a project manager creates a cron trigger in a second flag-off project → 201; no trigger_watchers row', async () => {
-        (await ctx.client
-          .as(a)
-          .post(
-            '/v1/projects/:projectId/triggers',
-            { name, slug, type: 'cron', cron: '0 0 9 * * *', timezone: 'UTC', prompt_template: 'Summarize the day.' },
-            { params: { projectId: triggers.id } },
-          ))
-          .status(201);
+        // Each API process caches a caller's role for up to 15 s, so a process
+        // that has not seen the new manager grant answers 403. A refused create
+        // writes nothing: retry until a process that sees the grant takes it.
+        const create = () =>
+          ctx.client
+            .as(a)
+            .post(
+              '/v1/projects/:projectId/triggers',
+              { name, slug, type: 'cron', cron: '0 0 9 * * *', timezone: 'UTC', prompt_template: 'Summarize the day.' },
+              { params: { projectId: triggers.id } },
+            );
+        let created = await create();
+        for (const deadline = Date.now() + 30_000; created.statusCode === 403 && Date.now() < deadline; ) {
+          await sleep(1_000);
+          created = await create();
+        }
+        created.status(201);
         const r = await db.query('SELECT count(*)::int AS n FROM kortix.trigger_watchers WHERE project_id = $1', [triggers.id]);
         expectCount(r.rows[0].n as number, 0, 'trigger_watchers rows');
       });

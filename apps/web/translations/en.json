@@ -19538,7 +19538,8 @@
       "textac6d9b76a141": "Attached",
       "text8d54763edcd8": "Not attached",
       "textffeb0c99532f": "Snapshots kept {value0} days",
-      "text6f52b07880a0": "Snapshot now"
+      "text6f52b07880a0": "Snapshot now",
+      "text91dc861375bc": "Viewed mobile release policy"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
