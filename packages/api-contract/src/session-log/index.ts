@@ -1,7 +1,8 @@
 /**
  * The Kortix session log, `kortix.session/2` minor 1: the harness-neutral record
  * of a session (threads, messages, blocks) that every harness adapter exports to
- * and restores from. Types come from `types.ts`, validators from `schema.ts`.
+ * and restores from. Types come from `types.ts`, validators from `schema.ts`, and
+ * `fromV1`/`toV1` (the exact conversion from and to the v1 mirror) from `v1.ts`.
  * Import it as `@kortix/api-contract/session-log`.
  */
 import { SessionLogSchema } from './schema';
@@ -9,6 +10,7 @@ import type { SessionLog } from './types';
 
 export * from './types';
 export * from './schema';
+export * from './v1';
 
 /**
  * Every reader calls this on a record it loads. Minor 1 is the only minor, so it
