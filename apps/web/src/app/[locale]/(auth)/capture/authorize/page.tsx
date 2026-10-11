@@ -1,6 +1,10 @@
 'use client';
 
-import { useApproveCaptureDevice, useCaptureDeviceGrant, useDenyCaptureDevice } from '@kortix/sdk/react';
+import {
+  useApproveCaptureDevice,
+  useCaptureDeviceGrant,
+  useDenyCaptureDevice,
+} from '@kortix/sdk/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 
@@ -11,6 +15,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { AuthFrame } from '@/features/auth/auth-card-shell';
 import { AuthPendingScreen, AuthStatusScreen } from '@/features/auth/auth-consent';
 import { ErrorStrip, FieldLabel, Rise, StepHeader } from '@/features/auth/auth-primitives';
+import { deviceOs } from '@/features/capture/area/use-capture-area';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useTranslations } from '@/i18n/use-translations';
 
@@ -49,7 +54,9 @@ function CaptureAuthorize() {
   const accounts = grant.data?.accounts ?? [];
   const [picked, setPicked] = useState<string | null>(null);
   const accountId = picked ?? (accounts.length === 1 ? accounts[0]!.account_id : null);
-  const approvedAccount = accounts.find((account) => account.account_id === (grant.data?.account_id ?? accountId));
+  const approvedAccount = accounts.find(
+    (account) => account.account_id === (grant.data?.account_id ?? accountId),
+  );
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -70,7 +77,10 @@ function CaptureAuthorize() {
             className="space-y-3"
             onSubmit={(event) => {
               event.preventDefault();
-              if (typedCode.trim()) router.replace(`/capture/authorize?user_code=${encodeURIComponent(typedCode.trim().toUpperCase())}`);
+              if (typedCode.trim())
+                router.replace(
+                  `/capture/authorize?user_code=${encodeURIComponent(typedCode.trim().toUpperCase())}`,
+                );
             }}
           >
             <FieldLabel htmlFor="capture-user-code">{t('codeLabel')}</FieldLabel>
@@ -107,7 +117,11 @@ function CaptureAuthorize() {
     return (
       <AuthStatusScreen
         title={t('approvedTitle')}
-        description={approvedAccount ? t('approvedDescription', { account: approvedAccount.name }) : t('approvedDescriptionNoAccount')}
+        description={
+          approvedAccount
+            ? t('approvedDescription', { account: approvedAccount.name })
+            : t('approvedDescriptionNoAccount')
+        }
       />
     );
   }
@@ -118,7 +132,7 @@ function CaptureAuthorize() {
   const busy = approve.isPending || deny.isPending;
   const minutes = Math.floor(remaining / 60);
   const seconds = remaining % 60;
-  const device = [info.device.name, [info.device.os, info.device.os_version].filter(Boolean).join(' ')].filter(Boolean).join(' · ');
+  const device = [info.device.name, deviceOs(info.device)].filter(Boolean).join(' · ');
 
   return (
     <AuthFrame>
@@ -139,7 +153,11 @@ function CaptureAuthorize() {
 
           <div className="space-y-1">
             {device ? <p className="text-foreground text-sm">{device}</p> : null}
-            {user.email ? <p className="text-muted-foreground text-xs">{t('approvingAs', { email: user.email })}</p> : null}
+            {user.email ? (
+              <p className="text-muted-foreground text-xs">
+                {t('approvingAs', { email: user.email })}
+              </p>
+            ) : null}
           </div>
 
           <div className="space-y-3">
@@ -149,7 +167,12 @@ function CaptureAuthorize() {
             ) : (
               <RadioGroup value={accountId ?? ''} onValueChange={setPicked}>
                 {accounts.map((account) => (
-                  <RadioGroupItem key={account.account_id} value={account.account_id} variant="outline" label={account.name} />
+                  <RadioGroupItem
+                    key={account.account_id}
+                    value={account.account_id}
+                    variant="outline"
+                    label={account.name}
+                  />
                 ))}
               </RadioGroup>
             )}
@@ -163,7 +186,12 @@ function CaptureAuthorize() {
             <Button
               size="lg"
               className="w-full"
-              onClick={() => accountId && void approve.mutateAsync({ userCode: info.user_code, accountId }).catch(() => undefined)}
+              onClick={() =>
+                accountId &&
+                void approve
+                  .mutateAsync({ userCode: info.user_code, accountId })
+                  .catch(() => undefined)
+              }
               disabled={busy || !accountId}
             >
               {approve.isPending ? <Loading className="size-4 shrink-0" /> : null}
