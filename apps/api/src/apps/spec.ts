@@ -20,7 +20,7 @@ export type AppSourceSpec =
       kind: 'dockerfile';
       dockerfile?: string;
       command: string[];
-      port: number;
+      port?: number;
       readinessPath?: string;
       restartLimit?: number;
     }
@@ -28,7 +28,7 @@ export type AppSourceSpec =
       kind: 'oci_image';
       image: string;
       command?: string[];
-      port: number;
+      port?: number;
       readinessPath?: string;
       restartLimit?: number;
     };
@@ -209,7 +209,8 @@ export async function normalizeAppBuild(
         runtimeSpec: {
           command: command(source.command),
           workdir: finalDockerfileWorkdir(loaded.contents),
-          target_port: targetPort(source.port),
+          // No port: a worker-only release; the supervisor runs the process and serves nothing.
+          target_port: source.port === undefined ? 0 : targetPort(source.port),
           readiness_path: readinessPath(source.readinessPath),
           restart_limit: restartLimit(source.restartLimit),
         },
@@ -229,7 +230,8 @@ export async function normalizeAppBuild(
         dockerfile: `FROM ${source.image}`,
         runtimeSpec: {
           command: appCommand,
-          target_port: targetPort(source.port),
+          // No port: a worker-only release; the supervisor runs the process and serves nothing.
+          target_port: source.port === undefined ? 0 : targetPort(source.port),
           readiness_path: readinessPath(source.readinessPath),
           restart_limit: restartLimit(source.restartLimit),
         },

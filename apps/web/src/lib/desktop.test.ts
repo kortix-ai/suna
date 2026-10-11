@@ -2,12 +2,11 @@ import { afterEach, describe, expect, test } from 'bun:test';
 
 import {
   DESKTOP_BASE_ZOOM,
-  desktopComputerAccessGet,
-  desktopComputerAccessSet,
   desktopComputerConnect,
   desktopComputerDisconnect,
   desktopComputerOpenLogs,
   desktopComputerPause,
+  desktopComputerRequestGrants,
   desktopComputerStatus,
   desktopPlatform,
   desktopShellPlatform,
@@ -253,30 +252,18 @@ describe('desktop computer commands', () => {
     await expect(desktopComputerPause()).rejects.toThrow('launchctl: Operation not permitted');
   });
 
-  test('access get/set and disconnect pass through the desktop answers (X4, X5)', async () => {
+  test('grants and disconnect pass through the desktop answers; access has no local command (X4)', async () => {
     const calls: Array<[string, unknown]> = [];
-    const access = {
-      mode: 'ask',
-      grantedUntil: null,
-      deniedUntil: null,
-      keepAwake: false,
-      keepAwakeSupported: true,
-      pendingRequest: null,
-    };
     Object.defineProperty(globalThis, 'window', {
       value: {
         __TAURI__: {
           core: {
             invoke: async (cmd: string, args?: unknown) => {
               calls.push([cmd, args]);
-              if (cmd === 'computer_access_set') {
-                if ((args as { mode?: string }).mode === 'sometimes') throw new Error("Error invoking remote method 'kortix:invoke': Error: mode must be one of ask, always, off");
-                return { ...access, ...(args as object) };
-              }
               if (cmd === 'computer_disconnect') {
                 return { ok: true, serverUnpaired: false, status: { available: true, paired: false } };
               }
-              return access;
+              return { accessibility: true, screenRecording: true, missing: [] };
             },
           },
         },
@@ -284,18 +271,15 @@ describe('desktop computer commands', () => {
       configurable: true,
       writable: true,
     });
-    expect(await desktopComputerAccessGet()).toEqual(access);
-    expect(await desktopComputerAccessSet({ mode: 'always', keepAwake: true })).toMatchObject({ mode: 'always', keepAwake: true });
-    await expect(desktopComputerAccessSet({ mode: 'sometimes' as 'ask' })).rejects.toThrow(
-      'mode must be one of ask, always, off',
-    );
+    expect(await desktopComputerRequestGrants({ restartAgent: true })).toMatchObject({ missing: [] });
     expect(await desktopComputerDisconnect()).toMatchObject({ ok: true, serverUnpaired: false });
-    expect(calls.map(([cmd]) => cmd)).toEqual([
-      'computer_access_get',
-      'computer_access_set',
-      'computer_access_set',
-      'computer_disconnect',
+    expect(calls).toEqual([
+      ['computer_grants_request', { restartAgent: true }],
+      ['computer_disconnect', undefined],
     ]);
+    const bridge = await import('@/lib/desktop');
+    expect('desktopComputerAccessSet' in bridge).toBe(false);
+    expect('desktopComputerAccessGet' in bridge).toBe(false);
   });
 
   test('return null when an older shell rejects the command', async () => {

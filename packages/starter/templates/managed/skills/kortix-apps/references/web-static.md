@@ -2,7 +2,7 @@
 
 A static App is files. Kortix stores them and serves them itself: no machine,
 no cold start, no compute bill, instant rollback. It is the default for every
-UI, including one that uses a `convex` App for its data.
+UI, including one that uses a Convex backend App for its data.
 
 ## Select the source
 
@@ -32,7 +32,7 @@ Build here, then deploy the output directory itself as the path
   not hide `./dist` when `./dist` is the path.
 - The CLI never uploads `.env*` files. A build-time value (`VITE_*` or
   `NEXT_PUBLIC_*` in `.env.production`) reaches the App only through a build
-  you ran here, before the deploy. An App that uses a `convex` App needs no
+  you ran here, before the deploy. An App that uses a Convex backend App needs no
   build-time URL: `kortixBinding` reads its own origin (bindings.md).
 - Keep `dist/` and `out/` in the repository's `.gitignore`. Committed build
   output bloats the repository every session clones (`kortix validate`

@@ -91,6 +91,25 @@ describe('AppHostingProvider', () => {
     });
   });
 
+  test('a Platinum App template has minimal defaults; the machine size goes to create', async () => {
+    const { hosting, builds, creates } = dependencies();
+    await hosting.buildImage({
+      provider: 'platinum', snapshotName: 'kortix-appimg-1', slug: 'hello', dockerfile: 'FROM nginx:alpine',
+      runtimeSpec: {}, machine: { cpuCores: 4, memoryGb: 8, diskGb: 40 },
+    });
+    expect(builds[0]![0].spec).toEqual({ cpu: 1, memoryGb: 1, diskGb: 1 });
+    await hosting.createRuntime({
+      provider: 'platinum', runtimeId: 'runtime-1', accountId: 'account-1', userId: 'user-1', name: 'app-hello-v1',
+      snapshotName: 'kortix-appimg-1', machine: { cpuCores: 4, memoryGb: 8, diskGb: 40 },
+      volumes: { '/data': { volume: 'kapp-dev-1' } },
+    });
+    expect(creates[0]).toMatchObject({
+      resourceSpec: { cpuCores: 4, memoryGb: 8, diskGb: 40 },
+      volumes: { '/data': { volume: 'kapp-dev-1' } },
+      volumesRequired: true,
+    });
+  });
+
   test('creates an App workload with only the derived appd token', async () => {
     const { hosting, creates, appRuntimeStarts } = dependencies();
     const result = await hosting.createRuntime({

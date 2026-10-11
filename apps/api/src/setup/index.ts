@@ -12,7 +12,7 @@ import { makeOpenApiApp, json, errors, auth } from '../openapi';
 import type { AppEnv } from '../types';
 import { existsSync } from 'fs';
 import { resolve } from 'path';
-import { spawnSync } from 'child_process';
+import { execFile } from 'child_process';
 import { config } from '../config';
 import { getProvider } from '../platform/providers';
 import { supabaseAuth } from '../middleware/auth';
@@ -291,11 +291,9 @@ setupApp.openapi(
   const root = getProjectRoot();
   const envExists = existsSync(resolve(root, '.env'));
 
-  let dockerRunning = false;
-  try {
-    const result = spawnSync('docker', ['info'], { stdio: 'pipe', timeout: 10000 });
-    dockerRunning = result.status === 0;
-  } catch {}
+  const dockerRunning = await new Promise<boolean>((resolve) => {
+    execFile('docker', ['info'], { timeout: 10_000 }, (err) => resolve(!err));
+  });
 
   return c.json({
     billingEnabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
