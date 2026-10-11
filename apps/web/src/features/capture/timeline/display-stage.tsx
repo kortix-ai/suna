@@ -71,7 +71,7 @@ export function AllDisplaysStage({
             aria-label={t('display.show', { name: label })}
             onClick={() => onPick(rect.id)}
             className={cn(
-              'focus-visible:ring-ring absolute overflow-hidden rounded-sm border bg-black outline-none focus-visible:ring-2',
+              'focus-visible:ring-ring bg-pane absolute overflow-hidden rounded-sm border outline-none focus-visible:ring-2',
               rect.id === activeId ? 'border-foreground ring-foreground ring-1' : 'border-border',
             )}
             style={{
