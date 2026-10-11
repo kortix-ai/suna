@@ -1009,6 +1009,13 @@
       "when": 1791671577807,
       "tag": "20261010223257_project_secret_tombstones_snapshot",
       "breakpoints": true
+    },
+    {
+      "idx": 144,
+      "version": "7",
+      "when": 1791681513257,
+      "tag": "20261011011833_session_log_tables",
+      "breakpoints": true
     }
   ]
 }
