@@ -21,6 +21,16 @@ export function displayLabel(
   return display.main ? `${name} · ${t('display.main')}` : name;
 }
 
+/** A row label that fits: "Built-in Retina Display" → "Built-in Retina"; unnamed → "Display 2". */
+export function shortDisplayName(
+  display: CaptureDisplay,
+  displays: readonly CaptureDisplay[],
+  t: TimelineT,
+) {
+  const short = display.name?.replace(/\s+display$/i, '').trim();
+  return short || t('display.unnamed', { n: displays.indexOf(display) + 1 });
+}
+
 /** The layout box: 16:10, like the stage. Tiles are placed in percent of it. */
 const BOX_W = 1600;
 const BOX_H = 1000;
@@ -141,8 +151,8 @@ export function DisplayStrip({
   width: number;
   shownId: number | null;
   label: (display: CaptureDisplay) => string;
-  /** The row label: "Display 1", … (the full name is its tooltip). */
-  short: (index: number) => string;
+  /** The row label, short enough for the column (the full name is its tooltip). */
+  short: (display: CaptureDisplay) => string;
   title: string;
 }) {
   const left = T - (width / 2) * spp;
@@ -158,14 +168,17 @@ export function DisplayStrip({
       aria-label={title}
       className="bg-background flex overflow-hidden rounded-md border select-none"
     >
-      <div className="bg-popover w-20 shrink-0 border-r py-1.5">
-        {displays.map((display, i) => (
+      <div className="bg-popover w-24 shrink-0 border-r py-1.5">
+        {displays.map((display) => (
           <p
             key={display.id}
             title={label(display)}
-            className="text-muted-foreground h-4 truncate px-2 text-xs leading-4"
+            className={cn(
+              'h-4 truncate px-2 text-xs leading-4',
+              display.id === shownId ? 'text-foreground' : 'text-muted-foreground',
+            )}
           >
-            {short(i)}
+            {short(display)}
           </p>
         ))}
       </div>

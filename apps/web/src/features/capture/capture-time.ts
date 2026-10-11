@@ -114,10 +114,10 @@ export function relativeTime(at: number, locale: string, now = Date.now()): stri
   return format.format(Math.round(seconds / 86_400), 'day');
 }
 
-/** `14:32` in the given locale. */
+/** `14:32`, `2:32 PM` in the given locale: the hour without a leading zero. */
 export function clockTime(at: string | number, locale: string, withSeconds = false): string {
   return new Date(at).toLocaleTimeString(locale, {
-    hour: '2-digit',
+    hour: 'numeric',
     minute: '2-digit',
     ...(withSeconds ? { second: '2-digit' } : {}),
   });

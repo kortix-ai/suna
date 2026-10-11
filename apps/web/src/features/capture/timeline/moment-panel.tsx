@@ -5,7 +5,7 @@ import type { CaptureAction, CaptureAudioLine } from '@kortix/sdk';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 
-import { clockTime, indexAtOrBefore } from '../capture-time';
+import { clockTime, indexAtOrBefore, shortDate } from '../capture-time';
 
 /** Steps shown around the playhead: this many before the current one and after it. */
 const AROUND = 4;
@@ -50,21 +50,11 @@ export function MomentPanel({
     >
       <div className="space-y-1.5 border-b px-4 py-4">
         <p className="text-muted-foreground text-xs">{t('moment.eyebrow')}</p>
-        <h2
-          id="capture-moment-title"
-          className="text-foreground text-base font-medium text-balance"
-        >
+        <h2 id="capture-moment-title" className="text-foreground text-sm font-medium text-balance">
           {app ?? t('moment.nothing')}
         </h2>
-        <p className="text-muted-foreground font-mono text-xs tabular-nums">
-          {new Date(at).toLocaleString(locale, {
-            weekday: 'short',
-            day: 'numeric',
-            month: 'short',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-          })}
+        <p className="text-muted-foreground text-xs tabular-nums">
+          {shortDate(at, locale)} · {clockTime(at, locale, true)}
         </p>
       </div>
       {title || url ? (
@@ -102,7 +92,7 @@ export function MomentPanel({
                       on && 'bg-active',
                     )}
                   >
-                    <span className="text-muted-foreground font-mono text-xs tabular-nums">
+                    <span className="text-muted-foreground text-xs tabular-nums">
                       {clockTime(action.ts, locale, true)}
                     </span>
                     <span className="min-w-0 text-sm">
@@ -130,7 +120,7 @@ export function MomentPanel({
               onClick={() => onJump(Date.parse(line.ts))}
               className="hover:bg-hover -mx-2 block w-full rounded-sm px-2 py-1 text-left text-sm transition-colors"
             >
-              <span className="text-muted-foreground mr-2 font-mono text-xs tabular-nums">
+              <span className="text-muted-foreground mr-2 text-xs tabular-nums">
                 {clockTime(line.ts, locale, true)}
               </span>
               {line.text}

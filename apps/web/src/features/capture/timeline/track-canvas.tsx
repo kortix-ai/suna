@@ -159,8 +159,11 @@ export function TrackCanvas({
       const x = Math.round(xOf(at)) + 0.5;
       g.fillStyle = line;
       g.fillRect(x - 0.5, 0, 1, H);
+      // A tick near either edge keeps its line but not its label, which would show clipped.
+      const label = clockTime(at, locale);
+      if (x < 0 || x + 4 + g.measureText(label).width > W) continue;
       g.fillStyle = weak;
-      g.fillText(clockTime(at, locale), x + 4, 4);
+      g.fillText(label, x + 4, 4);
     }
     // Idle base line: time before, between and after runs.
     g.globalAlpha = 0.3;

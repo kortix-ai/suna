@@ -25,7 +25,6 @@ import {
   SkipBackIcon,
   SkipForwardIcon,
 } from '@phosphor-icons/react';
-import { useTheme } from 'next-themes';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -53,9 +52,14 @@ import {
   useCaptureArea,
   useCaptureDirectory,
 } from '../area/use-capture-area';
-import { indexAtOrBefore, localTimeZone } from '../capture-time';
+import { clockTime, indexAtOrBefore, localTimeZone, shortDate } from '../capture-time';
 import { deviceStatus } from '../devices/device-status';
-import { DeviceActionsMenu, StatusDot, useStatusText } from '../devices/device-status-ui';
+import {
+  DeviceActionsMenu,
+  StatusDot,
+  StatusLabel,
+  useStatusText,
+} from '../devices/device-status-ui';
 import {
   activeDisplayAt,
   coveredAt,
@@ -64,7 +68,7 @@ import {
   type FocusSpan,
   type ScreenItem,
 } from './display-model';
-import { AllDisplaysStage, DisplayStrip, displayLabel } from './display-stage';
+import { AllDisplaysStage, DisplayStrip, displayLabel, shortDisplayName } from './display-stage';
 import { FrameStage } from './frame-stage';
 import { JumpPopover } from './jump-popover';
 import { MomentPanel } from './moment-panel';
@@ -74,7 +78,6 @@ import {
   LANES,
   TRACK_HEIGHT,
   TrackCanvas,
-  appBandCss,
   appInkCss,
   type TrackLayers,
 } from './track-canvas';
@@ -170,7 +173,6 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
   const statusText = useStatusText();
   const tz = useMemo(() => localTimeZone(), []);
   const router = useRouter();
-  const { resolvedTheme } = useTheme();
   const pathname = usePathname();
   const search = useSearchParams();
   // `at` is the area's moment parameter; `t` (a moment link from the Capture API) works too.
@@ -630,16 +632,8 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
     for (const r of runs) if (r.app && !seen.has(r.app)) seen.set(r.app, r);
     return [...seen.keys()].slice(0, 8);
   }, [runs]);
-  const time = new Date(view.T).toLocaleTimeString(locale, {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
-  const date = new Date(view.T).toLocaleDateString(locale, {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-  });
+  const time = clockTime(view.T, locale, true);
+  const date = shortDate(view.T, locale);
 
   return (
     <main className="flex flex-col">
@@ -658,21 +652,23 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
           <span className="text-foreground truncate">{name}</span>
         </nav>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex min-w-0 flex-wrap items-center gap-3">
-            <UserAvatar email={person.email ?? ''} size="md" />
-            <h1 className="text-foreground min-w-0 truncate text-xl font-medium">
-              {person.isYou ? tDevices('you') : (person.email ?? tDevices('member'))}
-              <span className="text-muted-foreground"> · </span>
-              {name}
-            </h1>
-            <span className="text-muted-foreground text-xs">{deviceOs(device)}</span>
-            <span
-              className="text-foreground flex items-center gap-1.5 rounded-sm border px-2 py-0.5 text-xs"
+          <div className="flex min-w-0 flex-col gap-1">
+            <h1 className="text-foreground min-w-0 truncate text-xl font-medium">{name}</h1>
+            <div
+              className="text-muted-foreground flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs"
               aria-live="polite"
             >
-              <StatusDot view={status} />
-              {statusText(status)}
-            </span>
+              <span className="flex min-w-0 items-center gap-1.5">
+                <UserAvatar email={person.email ?? ''} size="xs" />
+                <span className="text-foreground truncate">
+                  {person.isYou ? tDevices('you') : (person.email ?? tDevices('member'))}
+                </span>
+              </span>
+              <span aria-hidden>·</span>
+              <span>{deviceOs(device)}</span>
+              <span aria-hidden>·</span>
+              <StatusLabel view={status} />
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-1">
@@ -744,13 +740,15 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
             </div>
             <Hint label={t('liveHint')}>
               <Button
-                variant="outline"
+                variant={live ? 'secondary' : 'outline'}
                 size="sm"
                 className="gap-1.5"
+                aria-pressed={live}
                 disabled={!bounds}
                 onClick={goLive}
               >
-                <span aria-hidden className="bg-kortix-green size-2 rounded-full" />
+                {/* Green only while the device records: the dot repeats the device status. */}
+                <StatusDot view={status} />
                 {t('live')}
               </Button>
             </Hint>
@@ -810,7 +808,7 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
                 ) : null}
                 {bounds && !stageDimmed ? (
                   <div className="absolute bottom-3 left-3 z-10 flex flex-wrap gap-2">
-                    <span className="bg-foreground text-background rounded-sm px-2 py-0.5 font-mono text-xs tabular-nums">
+                    <span className="bg-foreground text-background rounded-sm px-2 py-0.5 text-xs tabular-nums">
                       {time}
                     </span>
                     {metaApp ? (
@@ -890,9 +888,7 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
                   <SkipForwardIcon className="size-3.5 shrink-0" />
                 </Button>
               </Hint>
-              <span className="text-foreground ml-2 font-mono text-sm font-medium tabular-nums">
-                {time}
-              </span>
+              <span className="text-foreground ml-2 text-sm font-medium tabular-nums">{time}</span>
               <span className="text-muted-foreground text-xs">{date}</span>
             </div>
             <div className="flex items-center gap-2">
@@ -938,7 +934,7 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
             className="bg-background relative flex overflow-hidden rounded-md border select-none"
             style={{ height: TRACK_HEIGHT }}
           >
-            <div aria-hidden className="bg-popover relative w-20 shrink-0 border-r">
+            <div aria-hidden className="bg-popover relative w-24 shrink-0 border-r">
               {(['apps', 'actions', 'audio'] as const).map((lane) =>
                 (lane === 'actions' && !layers.actions) ||
                 (lane === 'audio' && !layers.audio) ? null : (
@@ -989,18 +985,21 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
               width={trackW}
               shownId={shownDisplay}
               label={(d) => displayLabel(d, displays, t)}
-              short={(i) => t('display.unnamed', { n: i + 1 })}
+              short={(d) => shortDisplayName(d, displays, t)}
               title={t('display.strip')}
             />
           ) : null}
           <div className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
             {legend.map((app) => (
               <span key={app} className="flex items-center gap-1.5">
+                {/* The track's own tile: the letter tells apart two apps that share a hue. */}
                 <span
                   aria-hidden
-                  className="ring-border flex size-3.5 items-center justify-center rounded-sm ring-1"
-                  style={{ background: appBandCss(app, resolvedTheme === 'dark') }}
-                />
+                  className="ring-border flex size-4 items-center justify-center rounded-sm text-xs font-semibold ring-1"
+                  style={{ background: APP_TILE, color: appInkCss(app) }}
+                >
+                  {app.charAt(0).toUpperCase()}
+                </span>
                 {app}
               </span>
             ))}

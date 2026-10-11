@@ -33,6 +33,7 @@ import {
   type DesktopCaptureLayer,
 } from '@/lib/desktop';
 
+import { clockTime } from '../capture-time';
 import { CaptureExclusions } from './capture-exclusions';
 import { CapturePermissions } from './capture-permissions';
 import {
@@ -107,12 +108,7 @@ export function ThisComputerPage({ accountId }: { accountId: string }) {
   }
 
   const pausedUntil =
-    view?.pausedUntilMs && view.pausedUntilMs > now
-      ? new Date(view.pausedUntilMs).toLocaleTimeString(locale, {
-          hour: '2-digit',
-          minute: '2-digit',
-        })
-      : null;
+    view?.pausedUntilMs && view.pausedUntilMs > now ? clockTime(view.pausedUntilMs, locale) : null;
   const word =
     phase !== 'paused'
       ? t(`status.${phase}`)
@@ -163,24 +159,16 @@ export function ThisComputerPage({ accountId }: { accountId: string }) {
   const recording = activeLayers(view);
   const here = view.signedIn && view.accountId === accountId;
 
+  // Secondary first, the one primary next, the overflow last.
   const headerActions = (
     <>
-      {view.signedIn || view.signInRequired ? (
-        <MoreMenu
-          canStop={on}
-          onStop={() =>
-            actions.set.mutate({ on: false }, { onSuccess: () => successToast(t('toast.stopped')) })
-          }
-          onSignOut={() => setConfirmSignOut(true)}
-        />
-      ) : null}
       {phase === 'turningOn' ? (
-        <Button variant="outline-ghost" onClick={() => void desktopCaptureSignInCancel()}>
+        <Button size="sm" variant="outline-ghost" onClick={() => void desktopCaptureSignInCancel()}>
           {t('actions.cancel')}
         </Button>
       ) : null}
       {here && view.deviceId ? (
-        <Button variant="outline" asChild>
+        <Button size="sm" variant="outline" asChild>
           <Link href={captureRoutes.device(accountId, view.deviceId)}>
             {t('actions.openTimeline')}
           </Link>
@@ -198,6 +186,15 @@ export function ThisComputerPage({ accountId }: { accountId: string }) {
           actions.resume.mutate(undefined, { onSuccess: () => successToast(t('toast.resumed')) })
         }
       />
+      {view.signedIn || view.signInRequired ? (
+        <MoreMenu
+          canStop={on}
+          onStop={() =>
+            actions.set.mutate({ on: false }, { onSuccess: () => successToast(t('toast.stopped')) })
+          }
+          onSignOut={() => setConfirmSignOut(true)}
+        />
+      ) : null}
     </>
   );
 
@@ -373,24 +370,36 @@ function PrimaryAction({
   onResume: () => void;
 }) {
   const t = useTranslations('capture.dialog');
-  const pending = busy ? <Loading className="size-4 shrink-0" /> : null;
+  const pending = busy ? <Loading className="size-3.5 shrink-0" /> : null;
   switch (phase) {
     case 'off':
-      return <Button onClick={onStart}>{t('actions.start')}</Button>;
+      return (
+        <Button size="sm" onClick={onStart}>
+          {t('actions.start')}
+        </Button>
+      );
     case 'turningOn':
       return (
-        <Button disabled>
-          <Loading className="size-4 shrink-0" />
+        <Button size="sm" disabled>
+          <Loading className="size-3.5 shrink-0" />
           {t('actions.starting')}
         </Button>
       );
     case 'signInRequired':
-      return <Button onClick={onStart}>{t('actions.signInAgain')}</Button>;
+      return (
+        <Button size="sm" onClick={onStart}>
+          {t('actions.signInAgain')}
+        </Button>
+      );
     case 'error':
-      return <Button onClick={onStart}>{t('actions.tryAgain')}</Button>;
+      return (
+        <Button size="sm" onClick={onStart}>
+          {t('actions.tryAgain')}
+        </Button>
+      );
     case 'paused':
       return pausedByOrg ? null : (
-        <Button disabled={busy} onClick={onResume}>
+        <Button size="sm" disabled={busy} onClick={onResume}>
           {pending}
           {t('actions.resume')}
         </Button>
@@ -398,7 +407,7 @@ function PrimaryAction({
     case 'recording':
     case 'starting':
       return (
-        <Button variant="secondary" disabled={busy} onClick={onPause}>
+        <Button size="sm" variant="secondary" disabled={busy} onClick={onPause}>
           {pending}
           {t('actions.pause')}
         </Button>
@@ -421,11 +430,11 @@ function MoreMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label={t('actions.more')}>
-          <DotsThreeIcon className="size-4" />
+        <Button variant="ghost" size="icon-sm" aria-label={t('actions.more')}>
+          <DotsThreeIcon className="size-4 shrink-0" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-52">
+      <DropdownMenuContent align="end" className="w-52">
         <DropdownMenuItem
           onSelect={() =>
             void desktopCaptureOpenLogs().catch((error: Error) => errorToast(error.message))
