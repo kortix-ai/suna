@@ -1,11 +1,12 @@
 {
-  "source_hash": "7539b11db5ebcd9cddad3135d18b858711c6dd507c1c9741a4639115a71fea98",
+  "source_hash": "04924050a47d2a004f964ea99d93a72fc6d64b10527ba661a81a1ae4d5132249",
   "diff_files": [
     "apps/kortix-sandbox-agent-server/src/__tests__/session-log-journal.test.ts",
     "apps/kortix-sandbox-agent-server/src/__tests__/shared-sources.test.ts",
     "apps/kortix-sandbox-agent-server/src/app/shutdown.ts",
     "apps/kortix-sandbox-agent-server/src/harness/README.md",
     "apps/kortix-sandbox-agent-server/src/harness/contract/session-log.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/open-code/turn-relay.ts",
     "apps/kortix-sandbox-agent-server/src/harness/shared/session-log-journal.ts",
     "apps/kortix-sandbox-agent-server/src/harness/shared/turn-relay.ts",
     "packages/api-contract/src/__tests__/session-log-shape.snapshot.txt",
@@ -14,13 +15,13 @@
     "packages/api-contract/src/session-log/index.ts",
     "packages/api-contract/src/session-log/wire.ts"
   ],
-  "diff_hash": "9cce68bc175b896ea818d76dc5c646a627f412a3d89295ab6e1c6ad78a1fa2ed",
-  "head": "8ae262cdc8a66cfcb9c3a414f7ce7aefc82415a3",
+  "diff_hash": "9f06fff1233a0c56125621f9ceb7ab7ecb2c5a9abdbb51d54fde4be1e41f7809",
+  "head": "364fec3571282d9d9dbda58b4b58df6b853f3a9e",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-11T01:08:14.674Z"
+  "at": "2026-10-11T01:51:10.654Z"
 }
