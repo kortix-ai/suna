@@ -1,0 +1,23 @@
+{
+  "source_hash": "b9e265a1afae555d02e67360c54b31f18e6cd9895cd234206d99c7d9fc0c2b60",
+  "diff_files": [
+    ".agents/skills/learnings/MEMORY.md",
+    ".agents/skills/learnings/entries/2026-10-11T001230Z-pair-a-lowered-ecs-maximum-percent-with-a-minimum-healthy-pe.md",
+    "apps/api/src/shared/database-capacity.test.ts",
+    "apps/api/src/shared/database-capacity.ts",
+    "infra/terraform/environments/prod-us-east-2-shadow/main.tf",
+    "infra/terraform/environments/prod/main.tf",
+    "infra/terraform/modules/ecs-api/main.tf",
+    "infra/terraform/modules/ecs-api/variables.tf",
+    "packages/db/src/connection-defaults.ts"
+  ],
+  "diff_hash": "80f77e5225c8000b889287882280b4186dfd85a6afa601feb2d2eb4363fcfaac",
+  "head": "29f6f0d73b35785404b8a3f829e5ed6ba1eac4df",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-11T00:41:48.822Z"
+}

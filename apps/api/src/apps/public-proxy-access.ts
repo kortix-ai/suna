@@ -4,7 +4,7 @@ import { validateAccountToken, validateAccountTokenById } from '../repositories/
 import { validateServiceAccountToken } from '../repositories/service-accounts';
 import { isAccountToken, isServiceAccountToken } from '../shared/crypto';
 import { annotateAuditEvent, bindAuditPrincipal } from '../shared/audit-scope';
-import { appAccessibleToAgentSession, appAccessibleToUser, appAccessCookie, appAccessCookieName, appAccessSecret, cookieValue, createAppAccessToken, isAppAgentAssertion, verifyAppAccessToken, verifyAppAgentAssertion, type AppAccessMode, type AppAgentSessionPrincipal } from './access';
+import { isAppAdmin, appAccessibleToAgentSession, appAccessibleToUser, appAccessCookie, appAccessCookieName, appAccessSecret, cookieValue, createAppAccessToken, isAppAgentAssertion, verifyAppAccessToken, verifyAppAgentAssertion, type AppAccessMode, type AppAgentSessionPrincipal } from './access';
 import { escapeHtml } from '../shared/html';
 import { appBrowserNavigation, appFrameAncestors, PROXY_PAGE_SYMBOL, PROXY_PAGE_TOKENS } from './public-proxy-status';
 import { appViewerSecret, encodeAppViewerContext, mintAppViewerToken, normalizeViewerTokenScope, resolveAppViewerIdentity } from './viewer';
@@ -428,7 +428,7 @@ export function appNotLinkedResponse(name: string): Response {
  * do with. A used App also answers 403 `app_not_linked` when the viewer may
  * not open it themselves (its own access policy, as for this App), so a link
  * never lends a viewer an App they could not reach directly. The App's client
- * sends it (a Convex client: `client.setAuth`), and the audience App verifies
+ * sends it (`kortixToken` in the App's client code), and the audience App verifies
  * it with its `auth` values. Same viewer rules as `/_kortix/viewer`.
  */
 export async function appTokenResponse(
@@ -643,6 +643,29 @@ async function passwordAccessResponse(
     app,
     true,
     safeAppReturnTo(String(form?.get('return_to') ?? '/')),
+  );
+}
+
+/**
+ * The gate of one App service. `public`: no gate (the service enforces its
+ * own sign-in, like a backend whose functions call requireKortixMember).
+ * `app`: the App's access policy. `admins`: the App's policy, then an App
+ * admin (`project.app.admin`) only.
+ */
+export async function authorizeServiceRequest(
+  request: Request,
+  url: URL,
+  app: AppAccessRow,
+  access: 'public' | 'app' | 'admins',
+): Promise<Response | null> {
+  if (access === 'public') return null;
+  const refused = await authorizeAppRequest(request, url, app);
+  if (refused || access !== 'admins') return refused;
+  const userId = resolveAppViewerUserId(request, url, app);
+  if (userId && await isAppAdmin(app, userId)) return null;
+  return Response.json(
+    { error: 'Only project admins may open this service.', code: 'app_service_admins_only' },
+    { status: 403, headers: { 'cache-control': 'no-store' } },
   );
 }
 

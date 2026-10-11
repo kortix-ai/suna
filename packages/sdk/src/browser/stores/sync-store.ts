@@ -1908,6 +1908,11 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// there and are dropped. Older ones are history the bounded tail did
 			// not reach — kept, still provisional.
 			//
+			// An EMPTY runtime read covers nothing and settles nothing. For a root
+			// the saved copy names, it is evidence the box lost its state, not that
+			// the conversation is empty: dropping on it blanked the conversation.
+			// The rows stay, still provisional, until a non-empty read settles them.
+			//
 			// The bound is derived by VALUE, not by position: `incoming` is now the
 			// server's own page order, which is not an id order, so `incoming[0].id`
 			// is no longer the smallest id in the page. (That this comparison is an
@@ -1915,13 +1920,6 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// deliberately left as-is here.)
 			let droppedPhantoms: Set<string> | null = null;
 			const provisional = fromCache ? undefined : cacheSourcedIds.get(sessionID);
-			if (provisional && incoming.length === 0) {
-				for (const id of [...provisional]) {
-					if (isOptimistic(sessionID, id)) continue;
-					untrackId(cacheSourcedIds, sessionID, id);
-					(droppedPhantoms ??= new Set()).add(id);
-				}
-			}
 			if (provisional && provisional.size > 0 && incoming.length > 0) {
 				let oldestIncoming = incoming[0].id;
 				for (const m of incoming) if (m.id < oldestIncoming) oldestIncoming = m.id;

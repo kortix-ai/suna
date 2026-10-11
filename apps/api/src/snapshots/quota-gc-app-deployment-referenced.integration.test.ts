@@ -61,7 +61,6 @@ withDb('loadReferencedSnapshotNames — App deployment protection', () => {
       routeKey: ROUTE_KEY,
       desiredState: 'running',
       idleTimeoutSeconds: 300,
-      monthlyBudgetUsd: '5.00',
     });
     await db.insert(appArtifacts).values({
       artifactId: ARTIFACT_ID,
