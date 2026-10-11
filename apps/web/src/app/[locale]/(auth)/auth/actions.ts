@@ -1,5 +1,10 @@
 'use server';
 
+import {
+  AUTH_TIMEOUT_AUTH_ERROR,
+  AUTH_UPSTREAM_TIMEOUT_MS,
+  settleWithin,
+} from '@/lib/auth/submit-auth';
 import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
 import {
   resolveNewAccountReturnUrl,
@@ -212,18 +217,22 @@ export async function sendEmailCode(prevState: any, formData: FormData) {
     mobileState,
   });
 
-  const { error } = await supabase.auth.signInWithOtp({
-    email: normalizedEmail,
-    options: {
-      emailRedirectTo,
-      shouldCreateUser: true,
-      data: referralCode
-        ? {
-            referral_code: referralCode.trim().toUpperCase(),
-          }
-        : undefined,
-    },
-  });
+  const { error } = await settleWithin(
+    supabase.auth.signInWithOtp({
+      email: normalizedEmail,
+      options: {
+        emailRedirectTo,
+        shouldCreateUser: true,
+        data: referralCode
+          ? {
+              referral_code: referralCode.trim().toUpperCase(),
+            }
+          : undefined,
+      },
+    }),
+    AUTH_UPSTREAM_TIMEOUT_MS,
+    () => ({ data: { user: null, session: null }, error: AUTH_TIMEOUT_AUTH_ERROR }),
+  );
 
   if (error) {
     return authFailure(error, 'Could not send the link', tI18nComplete);
@@ -360,10 +369,14 @@ export async function signInWithPassword(prevState: any, formData: FormData) {
 
   const supabase = await createClient();
 
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email: email.trim().toLowerCase(),
-    password,
-  });
+  const { data, error } = await settleWithin(
+    supabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password,
+    }),
+    AUTH_UPSTREAM_TIMEOUT_MS,
+    () => ({ data: { user: null, session: null }, error: AUTH_TIMEOUT_AUTH_ERROR }),
+  );
 
   if (error) {
     // Thread GoTrue's error code through so the flow — which already resolved
@@ -470,11 +483,15 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
     mobileState,
   });
 
-  const { error: signUpError } = await supabase.auth.signUp({
-    email,
-    password,
-    options: { emailRedirectTo },
-  });
+  const { error: signUpError } = await settleWithin(
+    supabase.auth.signUp({
+      email,
+      password,
+      options: { emailRedirectTo },
+    }),
+    AUTH_UPSTREAM_TIMEOUT_MS,
+    () => ({ data: { user: null, session: null }, error: AUTH_TIMEOUT_AUTH_ERROR }),
+  );
 
   const alreadyExists =
     signUpError &&
@@ -486,10 +503,14 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
     return authFailure(signUpError, 'Could not create account', tI18nComplete);
   }
 
-  const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
+  const { data: signInData, error: signInError } = await settleWithin(
+    supabase.auth.signInWithPassword({
+      email,
+      password,
+    }),
+    AUTH_UPSTREAM_TIMEOUT_MS,
+    () => ({ data: { user: null, session: null }, error: AUTH_TIMEOUT_AUTH_ERROR }),
+  );
 
   if (signInError) {
     if (authRateLimitCopy(signInError, tI18nComplete)) {
