@@ -1,0 +1,294 @@
+AdapterCapabilitiesSchema = {
+  harness: string
+  harness_versions: string
+  schema_minors: array(number(int))
+  dialects: array(string)
+  native: CapabilityFeaturesSchema
+  rendered: CapabilityFeaturesSchema
+}
+
+AttachmentBlockSchema = {
+  type: literal("attachment")
+  id: string(min1)
+  ref: string
+  mime: string
+  name: string | absent
+  label: string | absent
+  source_path: string | absent
+  bytes: number(int)(min0)
+  sha256: string | absent
+  ext: ExtSchema | absent
+}
+
+CapabilityFeaturesSchema = {
+  tool_error_channel: boolean
+  attachments: {
+    user: array(string)
+    tool_result: boolean
+  }
+  compaction: array(enum(summary_first_tail | layout | text_tail | opaque))
+  subagents: enum(none | sync | async)
+  todos: boolean
+  reasoning_replay: enum(none | same_model | lowers_to_text)
+  freeform_tool_input: boolean
+}
+
+CompactionBlockSchema = {
+  type: literal("compaction")
+  id: string(min1)
+  summary: string | null
+  opaque: boolean | absent
+  first_kept_message_id: string | null
+  layout: array(CompactionLayoutEntrySchema) | absent
+  tokens_before: number | absent
+  trigger: enum(auto | manual | overflow | unknown) | absent
+  ext: ExtSchema | absent
+}
+
+CompactionLayoutEntrySchema = union(
+  | {
+    summary: literal(true)
+  }
+  | {
+    message_id: string
+    text_only: boolean | absent
+  }
+  | {
+    text: string
+  }
+)
+
+ExtSchema = record({
+  version: string
+  native_id: string | absent
+  data: unknown
+})
+
+HarnessBlockSchema = {
+  type: literal("harness")
+  id: string(min1)
+  harness: string(min1)
+  kind: string(min1)
+  data: unknown
+  model_visible: boolean
+  fallback_text: string | absent
+}
+
+ModelRefSchema = {
+  provider: string
+  model: string
+  api: string(min1) | absent
+  variant: string | absent
+  reasoning_effort: string | absent
+}
+
+PendingSchema = {
+  id: string
+  thread_id: string
+  call_id: string | absent
+  payload: unknown
+  asked_at: string
+}
+
+ProducerSchema = {
+  harness: string(min1)
+  harness_version: string
+  adapter_version: string
+}
+
+ReasoningBlockSchema = {
+  type: literal("reasoning")
+  id: string(min1)
+  text: string
+  summary: array(string) | absent
+  redacted: boolean | absent
+  ext: ExtSchema | absent
+}
+
+SessionLogBlockSchema = union(
+  | TextBlockSchema
+  | ReasoningBlockSchema
+  | AttachmentBlockSchema
+  | ToolCallBlockSchema
+  | CompactionBlockSchema
+  | SubtaskBlockSchema
+  | StepBlockSchema
+  | HarnessBlockSchema
+)
+
+SessionLogMessageSchema = {
+  schema: literal("kortix.session/2")
+  v: number(int)(min0)
+  message_id: string
+  thread_id: string
+  seq: number(int)
+  role: enum(user | assistant | system)
+  kind: enum(turn | compaction | context)
+  status: enum(streaming | complete | error | aborted | interrupted)
+  in_context: boolean
+  hidden_reason: enum(failed_attempt | aborted | retracted | reverted | superseded) | absent
+  origin: enum(prompt | steer | command | automation | subagent | notification) | absent
+  agent: string | null | absent
+  native_agent_id: string | absent
+  reply_to: string | null | absent
+  parent_message_id: string | null | absent
+  model: ModelRefSchema | null
+  usage: UsageSchema | null
+  finish: enum(stop | tool_calls | length | error | aborted) | null
+  error: {
+    code: string(min1)
+    message: string
+  } | null
+  created_at: string
+  completed_at: string | null
+  producer: ProducerSchema
+  blocks: array(SessionLogBlockSchema)
+  context_ref: string | absent
+  ext: ExtSchema | absent
+} + refine
+
+SessionLogSchema = {
+  schema: literal("kortix.session/2")
+  v: number(int)(min0)
+  session_id: string
+  title: string | null
+  created_at: string
+  restore_grade: enum(native | converted | partial)
+  grade_counts: {
+    tool_input: number(int)(min0)
+    cut_point: number(int)(min0)
+    attachment: number(int)(min0)
+  } | absent
+  harness: {
+    current: string
+    history: array({
+      harness: string
+      version: string
+      from_seq: number
+      at: string
+    })
+  }
+  selection: {
+    agent: string | null
+    model: ModelRefSchema | null
+  }
+  todos: array(TodoSchema)
+  pending: {
+    questions: array(PendingSchema)
+    permissions: array(PendingSchema)
+  }
+  threads: array(SessionLogThreadSchema)
+  ext: ExtSchema | absent
+}
+
+SessionLogThreadSchema = {
+  schema: literal("kortix.session/2")
+  v: number(int)(min0)
+  thread_id: string
+  parent_thread_id: string | null
+  spawned_by: {
+    message_id: string
+    call_id: string
+  } | null
+  interactions: array(ThreadInteractionSchema) | absent
+  agent: string | null
+  native_agent_id: string | absent
+  nickname: string | null | absent
+  title: string | null
+  created_at: string
+  messages: array(SessionLogMessageSchema)
+  ext: ExtSchema | absent
+}
+
+StepBlockSchema = {
+  type: literal("step")
+  id: string(min1)
+  phase: enum(start | finish)
+  ext: ExtSchema | absent
+}
+
+SubtaskBlockSchema = {
+  type: literal("subtask")
+  id: string(min1)
+  thread_id: string
+  agent: string
+  description: string
+  call_id: string | absent
+  call_ids: array(string) | absent
+}
+
+TextBlockSchema = {
+  type: literal("text")
+  id: string(min1)
+  text: string
+  model_text: string | absent
+  synthetic: boolean | absent
+  ref: string | absent
+  bytes: number(int)(min0) | absent
+  ext: ExtSchema | absent
+}
+
+ThreadInteractionSchema = {
+  message_id: string
+  call_id: string
+  op: enum(spawn | send | wait | close | resume | result)
+}
+
+TodoSchema = {
+  id: string | absent
+  content: string
+  status: enum(pending | in_progress | completed | cancelled)
+  priority: enum(high | medium | low) | absent
+}
+
+ToolCallBlockSchema = {
+  type: literal("tool_call")
+  id: string(min1)
+  call_id: string
+  name: string
+  kind: ToolKindSchema
+  input: unknown
+  input_format: enum(json | text) | absent
+  status: enum(pending | running | complete | error)
+  result: {
+    content: array(ToolResultContentSchema)
+    model_content: array(ToolResultContentSchema) | absent
+    is_error: boolean
+    error: {
+      code: string(min1) | absent
+      message: string
+    } | absent
+    exit_code: number | absent
+    synthetic: boolean | absent
+    cleared_at: string | absent
+    details: unknown
+  } | absent
+  title: string | absent
+  started_at: string | absent
+  ended_at: string | absent
+  ext: ExtSchema | absent
+}
+
+ToolKindSchema = string(min1)
+
+ToolResultContentSchema = union(
+  | {
+    type: literal("text")
+    text: string
+  }
+  | {
+    type: literal("attachment")
+    ref: string
+    mime: string
+    sha256: string | absent
+  }
+)
+
+UsageSchema = {
+  input: number
+  output: number
+  cache_read: number
+  cache_write: number
+  reasoning: number | absent
+  cost: number | absent
+}
