@@ -1,6 +1,6 @@
 {
-  "id": "c3a68b96-fbb0-4e98-8658-3349ec974bb3",
-  "prevId": "d1fadfc7-9d44-4f03-9433-5ad947569f8f",
+  "id": "5f4c1b9b-72d1-4a38-aee8-520c7a8ed62d",
+  "prevId": "14a9a44e-a608-44e6-a76b-daa82eec7571",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3190,24 +3190,6 @@
           "notNull": true,
           "default": "'{}'::jsonb"
         },
-        "config": {
-          "name": "config",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "strategy": {
-          "name": "strategy",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "release_command_status": {
-          "name": "release_command_status",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": false
-        },
         "runtime_version": {
           "name": "runtime_version",
           "type": "text",
@@ -3675,25 +3657,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "machine_id": {
-          "name": "machine_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "process_group": {
-          "name": "process_group",
-          "type": "varchar(32)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'app'"
-        },
-        "volume_id": {
-          "name": "volume_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "idle_deadline_at": {
           "name": "idle_deadline_at",
           "type": "timestamp with time zone",
@@ -3801,19 +3764,13 @@
           "method": "btree",
           "with": {}
         },
-        "app_runtimes_one_live_per_machine": {
-          "name": "app_runtimes_one_live_per_machine",
+        "app_runtimes_one_live_per_deployment": {
+          "name": "app_runtimes_one_live_per_deployment",
           "columns": [
             {
               "expression": "deployment_id",
               "isExpression": false,
               "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "coalesce(\"machine_id\", \"runtime_id\")",
-              "asc": true,
-              "isExpression": true,
               "nulls": "last"
             }
           ],
@@ -4007,216 +3964,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "kortix.app_volumes": {
-      "name": "app_volumes",
-      "schema": "kortix",
-      "columns": {
-        "volume_id": {
-          "name": "volume_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "app_id": {
-          "name": "app_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "varchar(30)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "process_group": {
-          "name": "process_group",
-          "type": "varchar(32)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'app'"
-        },
-        "machine_id": {
-          "name": "machine_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "size_gb": {
-          "name": "size_gb",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "provider": {
-          "name": "provider",
-          "type": "varchar(32)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'platinum'"
-        },
-        "external_id": {
-          "name": "external_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'creating'"
-        },
-        "attached_runtime_id": {
-          "name": "attached_runtime_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "snapshot_retention_days": {
-          "name": "snapshot_retention_days",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 5
-        },
-        "error": {
-          "name": "error",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "deleted_at": {
-          "name": "deleted_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "metadata": {
-          "name": "metadata",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
-        }
-      },
-      "indexes": {
-        "app_volumes_app_idx": {
-          "name": "app_volumes_app_idx",
-          "columns": [
-            {
-              "expression": "app_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "app_volumes_external_unique": {
-          "name": "app_volumes_external_unique",
-          "columns": [
-            {
-              "expression": "provider",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "external_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "app_volumes_machine_live_unique": {
-          "name": "app_volumes_machine_live_unique",
-          "columns": [
-            {
-              "expression": "machine_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"kortix\".\"app_volumes\".\"deleted_at\" IS NULL AND \"kortix\".\"app_volumes\".\"machine_id\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "app_volumes_app_id_apps_app_id_fk": {
-          "name": "app_volumes_app_id_apps_app_id_fk",
-          "tableFrom": "app_volumes",
-          "tableTo": "apps",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "app_id"
-          ],
-          "columnsTo": [
-            "app_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "app_volumes_status_check": {
-          "name": "app_volumes_status_check",
-          "value": "\"kortix\".\"app_volumes\".\"status\" IN ('creating', 'ready', 'destroying', 'destroyed', 'error')"
-        },
-        "app_volumes_size_check": {
-          "name": "app_volumes_size_check",
-          "value": "\"kortix\".\"app_volumes\".\"size_gb\" BETWEEN 1 AND 100"
-        },
-        "app_volumes_retention_check": {
-          "name": "app_volumes_retention_check",
-          "value": "\"kortix\".\"app_volumes\".\"snapshot_retention_days\" BETWEEN 1 AND 60"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "kortix.apps": {
       "name": "apps",
       "schema": "kortix",
@@ -4353,20 +4100,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": true
-        },
-        "labels": {
-          "name": "labels",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::text[]"
-        },
-        "scale": {
-          "name": "scale",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
         },
         "last_request_at": {
           "name": "last_request_at",

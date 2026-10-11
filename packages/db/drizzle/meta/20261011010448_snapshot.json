@@ -1,6 +1,6 @@
 {
-  "id": "d1fadfc7-9d44-4f03-9433-5ad947569f8f",
-  "prevId": "14a9a44e-a608-44e6-a76b-daa82eec7571",
+  "id": "fcc03b6f-88c5-4fe2-ad99-6b63959426cb",
+  "prevId": "5f4c1b9b-72d1-4a38-aee8-520c7a8ed62d",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3801,13 +3801,19 @@
           "method": "btree",
           "with": {}
         },
-        "app_runtimes_one_live_per_deployment": {
-          "name": "app_runtimes_one_live_per_deployment",
+        "app_runtimes_one_live_per_machine": {
+          "name": "app_runtimes_one_live_per_machine",
           "columns": [
             {
               "expression": "deployment_id",
               "isExpression": false,
               "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "coalesce(\"machine_id\", \"runtime_id\")",
+              "asc": true,
+              "isExpression": true,
               "nulls": "last"
             }
           ],

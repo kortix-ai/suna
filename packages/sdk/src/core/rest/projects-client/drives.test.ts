@@ -76,6 +76,20 @@ test('downloadDriveFile returns the bytes with the caller token and throws ApiEr
   expect((err as ApiError).status).toBe(404);
 });
 
+test('getDriveFileUrl trims the backend URL in linear time (CodeQL js/polynomial-redos)', () => {
+  // `/\/+$/` backtracks quadratically on a slash run that does not end the
+  // string: seconds at 100k slashes, well under 1 ms linear.
+  const backendUrl = `http://test.local${'/'.repeat(100_000)}x`;
+  configureKortix({ backendUrl, getToken: async () => 'tok' });
+  try {
+    const started = performance.now();
+    expect(getDriveFileUrl(D, '/r.pdf')).toBe(`${backendUrl}/drives/${D}/files/content?path=%2Fr.pdf`);
+    expect(performance.now() - started).toBeLessThan(500);
+  } finally {
+    configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  }
+});
+
 test('getDriveFileUrl builds the content URL, with download when asked', () => {
   expect(getDriveFileUrl(D, '/r.pdf')).toBe(`http://test.local/drives/${D}/files/content?path=%2Fr.pdf`);
   expect(getDriveFileUrl(D, '/r.pdf', { download: true })).toBe(

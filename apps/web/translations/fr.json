@@ -2367,6 +2367,8 @@
       },
       "errors": {
         "unexpected": "Une erreur inattendue s’est produite",
+        "submitTimedOut": "Cela prend plus de temps que prévu. Veuillez réessayer.",
+        "networkFailed": "La requête n'a pas pu être envoyée. Veuillez réessayer.",
         "signupsClosed": "Les inscriptions sont actuellement fermées. Contactez votre administrateur ou demandez un accès.",
         "ssoRequired": "Votre organisation exige l’authentification unique. Continuez plutôt avec le SSO.",
         "incorrectPassword": "Mot de passe incorrect. Réessayez ou réinitialisez-le via « Mot de passe oublié ? ».",
