@@ -1,0 +1,17 @@
+{
+  "source_hash": "035d6995946233bd79c9c04da358be0c611f5edff8f242f96132575cd2552046",
+  "diff_files": [
+    "apps/web/src/features/workspace/project-layout/sidebar-opener.ts",
+    "apps/web/src/features/workspace/project-layout/sidebar-toggle-a11y.test.tsx",
+    "apps/web/src/features/workspace/project-layout/sidebar-toggle.tsx"
+  ],
+  "diff_hash": "5daf7a78dc98b0c6cd07bd1962811cae82f77114c125d777eae5024757b7356b",
+  "head": "3460150196c1a9a3f350417ede7b894c26607a0c",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-11T15:13:44.949Z"
+}
