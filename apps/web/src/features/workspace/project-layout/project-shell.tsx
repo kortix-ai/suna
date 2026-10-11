@@ -1,5 +1,6 @@
 'use client';
 
+import { AppPreviewPoolLoader } from '@/features/apps/app-preview-pool-loader';
 import { useTranslations } from '@/i18n/use-translations';
 import { useQuery } from '@tanstack/react-query';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
@@ -263,6 +264,10 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
         </div>
 
         <SettingsPanel projectId={projectId} />
+
+        {/* App previews load here in the background and stay loaded while
+            the project is open, so the Apps page shows them at once. */}
+        <AppPreviewPoolLoader projectId={projectId} />
 
         <Suspense fallback={null}>
           <PresentationViewerWrapper />

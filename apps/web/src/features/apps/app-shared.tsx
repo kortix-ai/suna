@@ -123,14 +123,25 @@ export function appStatus(
  * The Apps the grid shows as cards (`display`): not `listed: false`, and not a
  * tab of a parent that exists. A tab whose parent is gone stays reachable as a card.
  */
-export function gridApps(apps: App[]): App[] {
+export function gridApps(apps: App[], canAdmin = true): App[] {
   const slugs = new Set(apps.map((app) => app.slug));
-  return apps.filter((app) => app.display?.listed !== false && !(app.display?.parent && slugs.has(app.display.parent)));
+  return apps.filter((app) =>
+    app.display?.listed !== false
+    && !(app.display?.parent && slugs.has(app.display.parent))
+    && (canAdmin || !appAdminsOnly(app)));
 }
 
 /** The Apps `app`'s detail shows as tabs (their `display.parent` is its slug). */
-export function childApps(apps: App[], app: App): App[] {
-  return apps.filter((row) => row.display?.parent === app.slug);
+export function childApps(apps: App[], app: App, canAdmin = true): App[] {
+  return apps.filter((row) => row.display?.parent === app.slug && (canAdmin || !appAdminsOnly(row)));
+}
+
+/**
+ * Its primary service is `access: admins` (a backend's admin dashboard): only
+ * project admins can open it, so nobody else is shown a card or tab for it.
+ */
+export function appAdminsOnly(app: App): boolean {
+  return app.services?.find((service) => service.name === 'http')?.access === 'admins';
 }
 
 /** A tab's label: the App's name without its parent's slug ("crm-data-dashboard" → "Dashboard"). */

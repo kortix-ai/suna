@@ -34,3 +34,15 @@ test('display: the grid drops an unlisted App and a tab whose parent exists; a t
   expect(appTabLabel(dashboard, backend)).toBe('Dashboard');
   expect(appTabLabel(app({ name: 'Admin console' }), backend)).toBe('Admin console');
 });
+
+test('an admins-only App (its primary service is access: admins) is no card and no tab for a viewer who is not an admin', () => {
+  const backend = app({ app_id: 'b', slug: 'db', display: { preview: 'none' } });
+  const service = { name: 'http', protocol: 'http' as const, access: 'admins' as const, internal_port: 6791, processes: ['app'], url: null };
+  const dashboard = app({ app_id: 'd', slug: 'db-dashboard', display: { parent: 'db' }, services: [service] });
+  const console_ = app({ app_id: 'c', slug: 'ops-console', services: [service] });
+  const all = [backend, dashboard, console_];
+  expect(gridApps(all).map((row) => row.slug)).toEqual(['db', 'ops-console']);
+  expect(gridApps(all, false).map((row) => row.slug)).toEqual(['db']);
+  expect(childApps(all, backend).map((row) => row.slug)).toEqual(['db-dashboard']);
+  expect(childApps(all, backend, false)).toEqual([]);
+});
