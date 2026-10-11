@@ -1,5 +1,5 @@
 /**
- * The machines, scale, exec and volumes of an App (the Fly.io model). An App
+ * The machines, scale, exec and volumes of an App. An App
  * runs one or more machines per process group; a machine may mount a volume
  * that outlives every release. See `docs/sdk/apps` for the model.
  */

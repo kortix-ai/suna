@@ -847,7 +847,7 @@ function appBlockV2Schema(): JsonSchemaFragment {
       },
       env: appStringMapSchema(),
       secrets: appStringMapSchema(),
-      // The Fly model (≈ fly.toml). `kortix validate` checks the rules; the schema checks shapes.
+      // The release config. `kortix validate` checks the rules; the schema checks shapes.
       processes: { type: 'object', additionalProperties: { type: 'string' } },
       http_service: { type: 'object', properties: APP_SERVICE_PROPERTIES, additionalProperties: false },
       services: {
@@ -884,6 +884,15 @@ function appBlockV2Schema(): JsonSchemaFragment {
         additionalProperties: false,
       },
       labels: { type: 'array', maxItems: 10, items: { type: 'string', pattern: '^[a-z0-9][a-z0-9-]{0,30}$' } },
+      display: {
+        type: 'object',
+        properties: {
+          listed: { type: 'boolean' },
+          preview: { type: 'string', enum: ['live', 'none'] },
+          parent: { type: 'string', pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$' },
+        },
+        additionalProperties: false,
+      },
     },
     additionalProperties: false,
     allOf: [

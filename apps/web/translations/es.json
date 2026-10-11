@@ -1210,6 +1210,10 @@
         "ephemeral_sandboxes": {
           "name": "Sandboxes efímeros",
           "description": "Una sesión detenida conserva sus archivos y su conversación en un volumen y libera su equipo. Al reactivarla se inicia un equipo nuevo con la imagen más reciente. Los procesos en ejecución no sobreviven a una detención."
+        },
+        "session_log": {
+          "name": "Registro de sesión v2",
+          "description": "Lee una sesión mediante el registro de sesión v2 en lugar de la transcripción v1. Kortix lo activa por proyecto."
         }
       }
     },
@@ -19527,7 +19531,8 @@
       "textac6d9b76a141": "Montado",
       "text8d54763edcd8": "Sin montar",
       "textffeb0c99532f": "Instantáneas guardadas {value0} días",
-      "text6f52b07880a0": "Tomar instantánea ahora"
+      "text6f52b07880a0": "Tomar instantánea ahora",
+      "text91dc861375bc": "Política de versiones móviles consultada"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

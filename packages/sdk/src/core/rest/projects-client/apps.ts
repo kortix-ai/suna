@@ -35,7 +35,7 @@ export type AppCapability =
   | 'volumes'
   | 'snapshots';
 
-/* ─── The release config (the Fly.io model; kortix.yaml `apps.<name>` ≈ fly.toml) ─── */
+/* ─── The release config (kortix.yaml `apps.<name>`) ─── */
 
 export type AppDeployStrategy = 'rolling' | 'immediate' | 'bluegreen' | 'canary';
 export type AppAutoStop = 'off' | 'stop' | 'suspend';
@@ -208,6 +208,8 @@ export interface App {
   auth?: AppAuth;
   /** Free-form labels (e.g. `backend`): they group and filter, nothing more. Optional for wire compatibility. */
   labels?: string[];
+  /** Where Kortix shows the App. Optional for wire compatibility; absent means the defaults. */
+  display?: AppDisplay;
   /** Machines per process group; a group not listed runs one. Optional for wire compatibility. */
   scale?: Record<string, number>;
   /** The active release's services and their URLs. Optional for wire compatibility. */
@@ -220,6 +222,19 @@ export interface App {
   config?: AppReleaseConfig | null;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * Where Kortix shows an App (`kortix.yaml` `apps.<name>.display`). Presentation
+ * only: how the App runs and who may open it do not change.
+ */
+export interface AppDisplay {
+  /** A card in the Apps grid. Default true; an App with a `parent` has none. */
+  listed?: boolean;
+  /** The card thumbnail: `live` frames the App, `none` shows an icon. Default `live`. */
+  preview?: 'live' | 'none';
+  /** The App, by slug, whose detail shows this one as a tab (a backend's admin dashboard). */
+  parent?: string;
 }
 
 export interface CreateAppInput {
@@ -246,6 +261,8 @@ export interface UpdateAppInput {
   uses?: string[];
   /** Replaces the App's labels (each `^[a-z0-9][a-z0-9-]{0,30}$`, at most 10). */
   labels?: string[];
+  /** Replaces where Kortix shows the App. `{}` restores the defaults. */
+  display?: AppDisplay;
 }
 
 /**
@@ -360,7 +377,7 @@ export interface CreateAppBuildInput {
   /** Runtime environment key -> project secret identifier. */
   secrets?: Record<string, string>;
   /**
-   * The release config (Fly.io model). Omitted: one `app` process group on the
+   * The release config. Omitted: one `app` process group on the
    * source port, sized like the App. Invalid: `400 app_config_invalid` with
    * `issues: [{path, message}]`.
    */
@@ -392,7 +409,7 @@ export interface AppDeployment {
   source_session_id: string | null;
   /** Immutable caller class recorded when the deployment was created. */
   actor_type: 'human' | 'agent' | 'service_account' | 'system';
-  /** The release's resolved config (Fly model); `null` for a release made before releases carried one. */
+  /** The release's resolved config; `null` for a release made before releases carried one. */
   config: AppReleaseConfig | null;
   /** How this release rolls out; `null` before the worker resolves it. */
   strategy: AppDeployStrategy | null;

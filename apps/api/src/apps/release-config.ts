@@ -1,8 +1,8 @@
 /**
- * The release config a deploy stores (`app_deployments.config`): the Fly.io
- * model resolved by `@kortix/shared/app-config`. The deploy engine reads only
- * the resolved form; a release from before the model gets one derived from its
- * runtime spec and the App row.
+ * The release config a deploy stores (`app_deployments.config`), resolved by
+ * `@kortix/shared/app-config`. The deploy engine reads only the resolved form;
+ * a release from before release configs gets one derived from its runtime spec
+ * and the App row.
  */
 import { z } from '@hono/zod-openapi';
 import {
@@ -40,7 +40,7 @@ const VmInput = z.object({
   processes: z.array(z.string().max(32)).max(20).optional(),
 }).strict();
 
-/** `kortix.yaml` `apps.<name>` on the wire (≈ fly.toml). Every field is optional. */
+/** `kortix.yaml` `apps.<name>` on the wire. Every field is optional. */
 export const ReleaseConfigSchema = z.object({
   processes: z.record(z.string().max(32), z.string().max(4096)).optional(),
   http_service: z.object(serviceFields).strict().optional(),

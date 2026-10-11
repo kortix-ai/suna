@@ -1210,6 +1210,10 @@
         "ephemeral_sandboxes": {
           "name": "Sandboxes efémeras",
           "description": "Uma sessão parada mantém os ficheiros e a conversa num volume e liberta o seu computador. Ao reativá-la arranca um computador novo com a imagem mais recente. Os processos em execução não sobrevivem a uma paragem."
+        },
+        "session_log": {
+          "name": "Registo de sessão v2",
+          "description": "Lê uma sessão através do registo de sessão v2 em vez da transcrição v1. A Kortix ativa-o por projeto."
         }
       }
     },
@@ -19527,7 +19531,8 @@
       "textac6d9b76a141": "Montado",
       "text8d54763edcd8": "Não montado",
       "textffeb0c99532f": "Snapshots mantidos por {value0} dias",
-      "text6f52b07880a0": "Criar snapshot agora"
+      "text6f52b07880a0": "Criar snapshot agora",
+      "text91dc861375bc": "Política de versão móvel visualizada"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

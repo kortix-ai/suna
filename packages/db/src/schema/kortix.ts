@@ -2334,6 +2334,9 @@ export const sessionTurns = kortixSchema.table(
     startedAt: timestamp('started_at', { withTimezone: true }).defaultNow().notNull(),
     acceptedAt: timestamp('accepted_at', { withTimezone: true }),
     endedAt: timestamp('ended_at', { withTimezone: true }),
+    // When the journal ingest acknowledged this turn's messages as durable in
+    // `session_log_messages`. Null until then, and on every turn before P2.
+    logDurableAt: timestamp('log_durable_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -2488,6 +2491,141 @@ export const sessionTranscriptMessages = kortixSchema.table(
       table.messageCreatedAt,
       table.messageId,
     ),
+  ],
+);
+
+/**
+ * The session log: every session stored as `kortix.session/2` records (the
+ * frozen types in `packages/api-contract/src/session-log/types.ts`). A Session
+ * holds Threads, a Thread holds Messages ordered by `seq`, a Message holds
+ * Blocks. One table per level; each row keeps its record whole in `record`, and
+ * the columns beside it are only what a writer or reader filters on.
+ *
+ * Every table is read per session, so every index leads with `session_id`
+ * (the policy is written out in the creating migration). Each table cascades
+ * from `project_sessions`: a deleted session deletes its log. Only the service
+ * role reads them (REVOKE + RLS with no policy, like the transcript mirror).
+ */
+export const sessionLogs = kortixSchema.table(
+  'session_logs',
+  {
+    sessionId: text('session_id').primaryKey(),
+    projectId: uuid('project_id').notNull(),
+    accountId: uuid('account_id').notNull(),
+    // Schema minor of `record` (`kortix.session/2` minor `v`).
+    v: integer('v').notNull(),
+    harnessCurrent: text('harness_current').notNull(),
+    // Bumped when the session is rewritten whole (conversion, re-sequencing);
+    // a journal batch carries the generation it was cut from.
+    generation: integer('generation').default(0).notNull(),
+    restoreGrade: text('restore_grade').notNull(),
+    gradeCounts: jsonb('grade_counts').$type<Record<string, number>>(),
+    // The Session record without `threads`.
+    record: jsonb('record').$type<Record<string, unknown>>().notNull(),
+    // Row time. The session's own `created_at` lives in `record`.
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.sessionId],
+      foreignColumns: [projectSessions.sessionId],
+      name: 'session_logs_session_fk',
+    }).onDelete('cascade'),
+  ],
+);
+
+export const sessionLogThreads = kortixSchema.table(
+  'session_log_threads',
+  {
+    sessionId: text('session_id').notNull(),
+    threadId: text('thread_id').notNull(),
+    parentThreadId: text('parent_thread_id'),
+    v: integer('v').notNull(),
+    // The Thread record without `messages`.
+    record: jsonb('record').$type<Record<string, unknown>>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.sessionId, table.threadId], name: 'session_log_threads_pkey' }),
+    foreignKey({
+      columns: [table.sessionId],
+      foreignColumns: [projectSessions.sessionId],
+      name: 'session_log_threads_session_fk',
+    }).onDelete('cascade'),
+  ],
+);
+
+/**
+ * One Message. `message_id` is the runtime's own id, so `session_turns.message_id`,
+ * the inbox `forwarded_message_id` and `audit_events.message_id` join it by
+ * value (no FK). No FK to `session_log_threads` either: a journal batch may
+ * carry a message before its thread upsert.
+ */
+export const sessionLogMessages = kortixSchema.table(
+  'session_log_messages',
+  {
+    sessionId: text('session_id').notNull(),
+    messageId: text('message_id').notNull(),
+    threadId: text('thread_id').notNull(),
+    seq: integer('seq').notNull(),
+    role: text('role').notNull(),
+    kind: text('kind').notNull(),
+    inContext: boolean('in_context').notNull(),
+    // The message's own `created_at`, not the row's.
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    v: integer('v').notNull(),
+    producer: jsonb('producer').$type<Record<string, unknown>>().notNull(),
+    // The session generation and the per-message revision this row was written
+    // at; a write older than the stored (generation, rev) loses, and a
+    // tombstone is a revision too. `rev` is bigint: the daemon journal issues
+    // boot-unique revisions as max(Date.now() * 1000, last + 1), ~1.8e15, past
+    // int4. Below 2^53, so `mode: 'number'` is exact.
+    generation: integer('generation').notNull(),
+    rev: bigint('rev', { mode: 'number' }).notNull(),
+    // Change detection only. Never indexed: a random-key index on a table that
+    // grows with history is the 2026-10-01 audit_events failure.
+    contentHash: text('content_hash').notNull(),
+    // Tombstone: the message was retracted; the row stays so a late put loses.
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    // The whole Message record.
+    record: jsonb('record').$type<Record<string, unknown>>().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.sessionId, table.messageId], name: 'session_log_messages_pkey' }),
+    // Pages one thread by seq (P4.2 `?thread=&before_seq=&limit=`). Not
+    // deferrable (drizzle cannot declare it): a re-sequencing write deletes and
+    // re-inserts the thread's rows in one transaction.
+    unique('session_log_messages_thread_seq_key').on(table.sessionId, table.threadId, table.seq),
+    foreignKey({
+      columns: [table.sessionId],
+      foreignColumns: [projectSessions.sessionId],
+      name: 'session_log_messages_session_fk',
+    }).onDelete('cascade'),
+  ],
+);
+
+/** An attachment's bytes live in object storage at `object_key`; this row is the index. */
+export const sessionLogBlobs = kortixSchema.table(
+  'session_log_blobs',
+  {
+    sessionId: text('session_id').notNull(),
+    sha256: text('sha256').notNull(),
+    objectKey: text('object_key').notNull(),
+    bytes: bigint('bytes', { mode: 'number' }).notNull(),
+    mime: text('mime').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.sessionId, table.sha256], name: 'session_log_blobs_pkey' }),
+    foreignKey({
+      columns: [table.sessionId],
+      foreignColumns: [projectSessions.sessionId],
+      name: 'session_log_blobs_session_fk',
+    }).onDelete('cascade'),
   ],
 );
 
@@ -4234,8 +4372,10 @@ export const apps = kortixSchema.table(
     monthlyBudgetExplicit: boolean('monthly_budget_explicit').default(true).notNull(),
     /** Free-form labels (e.g. `backend`). They group and filter Apps; nothing derives behavior from them. */
     labels: text('labels').array().default(sql`'{}'::text[]`).notNull(),
-    /** Machines per process group (`fly scale count`). An absent group runs one machine. */
+    /** Machines per process group (`kortix apps scale count`). An absent group runs one machine. */
     scale: jsonb('scale').default({}).notNull(),
+    /** Where Kortix shows the App (`AppDisplay`: listed, preview, parent). Presentation only. */
+    display: jsonb('display').default({}).notNull(),
     lastRequestAt: timestamp('last_request_at', { withTimezone: true }),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -4543,7 +4683,7 @@ export const appSiteBlobs = kortixSchema.table(
 
 /** Provider sandbox executing one deployment. */
 /**
- * A persistent volume of an App (Fly volumes, on Platinum volumes). It outlives
+ * A persistent volume of an App (on Platinum volumes). It outlives
  * every machine: a release swap detaches it from the old instance and attaches
  * it to the new one. At most one instance mounts it read-write at a time
  * (`attached_runtime_id` is that lock).
@@ -4559,7 +4699,7 @@ export const appVolumes = kortixSchema.table(
     /** The mount `source`: one per machine, so several volumes of a scaled group share it. */
     name: varchar('name', { length: 30 }).notNull(),
     processGroup: varchar('process_group', { length: 32 }).default('app').notNull(),
-    /** The machine this volume belongs to (Fly pins a volume to one machine). */
+    /** The machine this volume belongs to (a volume is pinned to one machine). */
     machineId: uuid('machine_id'),
     sizeGb: integer('size_gb').notNull(),
     provider: varchar('provider', { length: 32 }).default('platinum').notNull(),
@@ -4601,7 +4741,7 @@ export const appRuntimes = kortixSchema.table(
     ingressPort: integer('ingress_port').default(8080).notNull(),
     controlTokenHash: text('control_token_hash').notNull(),
     /**
-     * The Fly machine id: stable across instances. Each release swap is a new row
+     * The machine id: stable across instances. Each release swap is a new row
      * (a new instance, its own box) with the same machine id. Null on a row from
      * before machines: the runtime id stands in.
      */

@@ -66,15 +66,100 @@ route, the body, the credential, the retries and the dead-token breaker.
 A callback added here reaches every harness. The API accepts the pre-W3
 spellings (`opencode_session_id`, kind `opencode_session`) from older daemons.
 
-## Session log (P2.4)
+## Session log (P2.4, P2.5, P2.6, P4.3)
 
 An adapter implements `SessionLogPort` (`contract/session-log.ts`):
 `changes(cursors)` returns the messages, tombstones, thread upserts and session
 patch since one `ExportCursor` per thread; `restore(log)` writes a session log
 into the native store before the harness starts and returns the cursors of what
 it wrote; `fingerprint()` digests the native store for the boot reconcile;
-`capabilities` is the adapter's `AdapterCapabilities`. No adapter implements it
-yet: P2.5 (pi) and P2.6 (OpenCode) do, and call `startSessionLogJournal`.
+`capabilities` is the adapter's `AdapterCapabilities`. pi implements it
+(`pi/session-log.ts`, P2.5), and OpenCode (`open-code/session-log.ts`, P2.6).
+Both rebuild the whole log on each read and diff it against the cursors with
+`logChanges` (`shared/session-log-journal.ts`).
+
+The pi boot starts the journal once the runtime is ready and a session is
+bound, before the first turn, with generation 0: nothing mints a session
+generation before P6's restore. `lifecycle.stop()` stops it before the runtime
+stops. The adapter reads `PiRuntime.sessionLogSnapshot()`: the root's
+`SessionManager` branch and session header, each sub-agent child's agent
+messages, and the v1 transcript. pi entries carry pi's own ids, so the runtime
+records the Kortix message id of each pi message (and of each compaction
+entry: its marker) and persists the map and the header in its dump; block ids
+are the v1 part ids. `seq` is monotonic per thread and never reused (the API
+keeps a tombstoned row's seq): a root message's seq is its entry's position in
+pi's append-only entry list, and the runtime issues each child message a seq
+once and persists it. `restore` returns no cursors until P6 writes the native
+store. The mapping decisions are in the header of `pi/session-log.ts`. A v1
+file part pi never received is a harness block (`kind: 'undelivered_file'`,
+`model_visible: false`), never an attachment: the model never saw it, so a
+restore must not present it.
+
+The OpenCode export reads `opencode.db` through `OpencodeDb.storeSnapshot()`
+(every session, message, part and todo row, one WAL snapshot), assembles the
+v1 rows as OpenCode's HTTP serves them, drops attachment bytes as the API's
+mirror does, and converts them with `fromV1`: one mapping with the API's
+capture (P2.7) and backfill (P3.1). Its records equal `fromV1` of the mirror
+rows except in the fields only the daemon knows: `seq`, `producer`
+(`opencode`), attachment `ref`/`bytes`/`sha256`, and the session's title,
+`created_at`, todos, `restore_grade: 'native'` and harness history (the list
+is in the header of `open-code/session-log.ts`). `seq` is issued once per
+message in OpenCode's message order and persisted in
+`$KORTIX_RUNTIME_STATE_DIR/opencode-session-log.json`, so a restart keeps
+every seq and a revert never hands a deleted message's seq to the next one;
+the deleted messages reach the journal as tombstones. `startSessionRuntime`
+starts the journal (generation 0) before the event loop and the first prompt;
+the service's host `lifecycle.stop()` stops it before OpenCode stops, and a
+restart (`this.stop()` inside the native lifecycle) leaves it running.
+
+Known limits of the pi export:
+- A dump written before P2.5 has no header; pi makes a fresh one on load, so `created_at` is the restart time for a session that spans the upgrade.
+- The journal does not start on a box with `repoMaterializationError` (the boot returns before it): turns run through the proxy on such a box are not journaled.
+
+Known limits of the OpenCode export:
+- OpenCode 1.18.23's compaction part has no `tail_start_id` on a live box, so the compaction block's `first_kept_message_id` is `null` (what OpenCode stored; a restore into another harness counts it as a missing cut point).
+- A daemon restart sends every message again in its first batch: nothing gives the journal its cursors before P6.
+- A lost or corrupt `opencode-session-log.json` issues seqs again from 1 (a corrupt one logs a warning) until P6 seeds seqs from the API's cursors.
+
+### The v2 stream (P4.3)
+
+`GET /kortix/runtime/events?schema=v2` streams the session log as `log.*`
+frames (capability `session.log.v2`; payload schemas in
+`@kortix/api-contract/session-log` `events.ts`, `SESSION_LOG_EVENTS`). The
+frames ride `sessionLogEventBus()`, a second bus with its own seq and epoch, so
+the v1 stream keeps dense seqs. Without `schema`, or with `schema=v1`, the
+stream is the v1 stream, byte for byte (an empty `schema=` too); another
+value is a 400.
+
+| Frame | Payload | Emitted |
+| --- | --- | --- |
+| `log.state` | `{ generation, session }`: the session patch the batch carries | when a collection finds the session fields changed |
+| `log.thread` | the thread upsert (no messages) | for each thread a collection finds new or changed |
+| `log.message` | a put `{ rev, message }`, or a tombstone `{ message_id, rev }` (the journal's tombstone; no `message`; the schema has no `deleted_at`) | for each revision a collection puts in the dirty set |
+| `log.block.delta` | `{ thread_id, message_id, block_id, delta }` | for each v1 `message.part.delta` text frame while the journal runs |
+
+The journal publishes the first three in `collectOnce`, from the same records
+it posts (same ids, seqs and revs), in that order. It collects when it starts
+(the store is at rest: the stream gets the session and its threads before the
+first turn streams), at each turn end and at the daemon stop. The delta frames
+come from the v1 bus: both harnesses stream text with the v1 session, message
+and part ids, which are the thread, message and block ids of the records.
+
+Limits:
+- A tool call and its result reach the v2 stream at the turn end, not while
+  the turn runs: the OpenCode export reads its store at rest only.
+- A journal the API turned off (404, 409) publishes nothing more, deltas
+  included: a 404 API has no relay for the stream, and a 409 box is a zombie.
+  A box with no control plane starts no journal, so its v2 stream stays empty.
+- A `kortix.resync` on the v2 stream carries an empty `recover`: the client
+  reads the saved session log again (P4.5).
+
+Debug: `KORTIX_SESSION_LOG_DUMP_DIR=<dir>` (off by default) makes the journal
+write each batch body as JSON to `<dir>` and acknowledge it at once, instead of
+posting it. Use it to read what a box exports before the ingest route exists
+(read the files back through `/file/content`). Nothing reaches apps/api while
+it is set. Never point it under `/workspace`: the batches hold full prompts and
+tool output, which would land in the project tree.
 
 The journal (`shared/session-log-journal.ts`) drops a message whose native hash
 equals its cursor's (schema rule C13), so an unchanged or restored message is
@@ -109,10 +194,10 @@ stops the first journal.
 extensions are in `details`), `runtimeReady` computed once from both, and
 `capabilities`: the host's `file.import`/`file.append`, the control's
 `config.release.v1` (both harnesses), and the session features the runtime serves
-(`HarnessDiagnosticsService.capabilities()`, read on each health call: all eleven
-on OpenCode 1.18.15 and later, the ten without `session.steer` on an older or
+(`HarnessDiagnosticsService.capabilities()`, read on each health call: all twelve
+on OpenCode 1.18.15 and later, the eleven without `session.steer` on an older or
 unknown OpenCode version; `session.subagents`, `session.compact`,
-`session.commands` and `session.steer` on pi). The pre-W3 flat fields (`opencode`, `opencode_pid`,
+`session.commands`, `session.steer` and `session.log.v2` on pi). The pre-W3 flat fields (`opencode`, `opencode_pid`,
 `opencode_port`, `opencode_session_id`, …) are composed from the block in
 `routes/kortix/legacy-names.ts` for an older API.
 

@@ -1210,6 +1210,10 @@
         "ephemeral_sandboxes": {
           "name": "Sandbox effimere",
           "description": "Una sessione arrestata conserva file e conversazione su un volume e rilascia la sua macchina. Riattivarla avvia una nuova macchina con l’immagine più recente. I processi in esecuzione non sopravvivono a un arresto."
+        },
+        "session_log": {
+          "name": "Log di sessione v2",
+          "description": "Legge una sessione tramite il log di sessione v2 invece della trascrizione v1. Kortix lo attiva per progetto."
         }
       }
     },
@@ -19527,7 +19531,8 @@
       "textac6d9b76a141": "Montato",
       "text8d54763edcd8": "Non montato",
       "textffeb0c99532f": "Snapshot conservati {value0} giorni",
-      "text6f52b07880a0": "Crea snapshot ora"
+      "text6f52b07880a0": "Crea snapshot ora",
+      "text91dc861375bc": "Criteri di versione mobile visualizzati"
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

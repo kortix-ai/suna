@@ -1,7 +1,7 @@
 /**
- * The configuration of one App release, on the Fly.io model: process groups,
+ * The configuration of one App release: process groups,
  * services (named ports), mounts (volumes), VM sizes, checks and the deploy
- * strategy. `kortix.yaml` `apps.<name>` is the authored form (≈ fly.toml); the
+ * strategy. `kortix.yaml` `apps.<name>` is the authored form; the
  * CLI resolves it with `resolveAppReleaseConfig`, the API validates it again
  * with `appReleaseConfigIssues` and stores the result on the release, and the
  * deploy engine reads only the resolved form.
@@ -42,7 +42,7 @@ export interface AppService {
 }
 
 export interface AppMount {
-  /** Volume name. Each machine of the group gets its own volume of this name (Fly). */
+  /** Volume name. Each machine of the group gets its own volume of this name. */
   source: string;
   destination: string;
   initial_size_gb: number;
@@ -108,7 +108,7 @@ export const MAX_VOLUME_GB = 100;
 
 const GROUP_NAME = /^[a-z][a-z0-9_-]{0,31}$/;
 const SERVICE_NAME = /^[a-z][a-z0-9-]{0,30}$/;
-/** Fly volume names: letters, digits and underscores. */
+/** Volume names: letters, digits and underscores. */
 const VOLUME_NAME = /^[a-z0-9_]{1,30}$/;
 const SYSTEM_DIRS = ['/bin', '/boot', '/dev', '/etc', '/lib', '/lib64', '/proc', '/root', '/run', '/sbin', '/sys', '/usr', '/var', '/kortix'];
 
@@ -125,11 +125,11 @@ function check(input: Partial<AppCheck> | undefined, fallbackPath?: string): App
 }
 
 /**
- * The resolved release config. Shorthands map onto the Fly fields:
+ * The resolved release config. Shorthands map onto the full fields:
  * `port` → `http_service.internal_port`, `command` → `processes.app`,
  * `readiness_path` → an http check, `always_on` → `auto_stop_machines: off` and
  * `min_machines_running: 1` (`false`: `stop` and 0), `resources` → the default VM.
- * An explicit Fly field wins over its shorthand.
+ * An explicit full field wins over its shorthand.
  */
 export function resolveAppReleaseConfig(input: AppReleaseConfigInput = {}): AppReleaseConfig {
   const processes = input.processes && Object.keys(input.processes).length > 0
@@ -195,7 +195,7 @@ export function resolveAppReleaseConfig(input: AppReleaseConfigInput = {}): AppR
     mounts,
     vm,
     deploy: {
-      // Fly refuses bluegreen and canary with volumes; without them a full swap keeps the App up.
+      // Bluegreen and canary need two machines on one volume, so a volume refuses them; without them a full swap keeps the App up.
       strategy: input.deploy?.strategy ?? (mounts.length > 0 ? 'rolling' : 'bluegreen'),
       release_command: input.deploy?.release_command?.trim() ? input.deploy.release_command.trim() : null,
     },
@@ -266,7 +266,7 @@ export function appReleaseConfigIssues(config: AppReleaseConfig): AppConfigIssue
     }
     knownGroups(`${path}.processes`, mount.processes);
     for (const group of mount.processes) {
-      // Fly: a machine mounts at most one volume.
+      // A machine mounts at most one volume.
       if (mountedGroups.has(group)) issues.push({ path: `${path}.processes`, message: `process group "${group}" already mounts a volume; a machine mounts one.` });
       mountedGroups.add(group);
     }
@@ -305,4 +305,37 @@ export function appMountFor(config: AppReleaseConfig, group: string): AppMount |
 /** The services a machine of this group serves. */
 export function appServicesFor(config: AppReleaseConfig, group: string): AppService[] {
   return config.services.filter((service) => service.processes.includes(group));
+}
+
+/**
+ * Where Kortix shows an App (`kortix.yaml` `apps.<name>.display`). Presentation
+ * only: nothing about how the App runs or who may open it changes.
+ */
+export interface AppDisplay {
+  /** A card in the Apps grid. Default true; an App with a `parent` has none. */
+  listed?: boolean;
+  /** The card thumbnail: `live` frames the App, `none` shows an icon. Default `live`. */
+  preview?: 'live' | 'none';
+  /** The App, by slug, whose detail shows this one as a tab (a backend's admin dashboard). */
+  parent?: string;
+}
+
+const DISPLAY_KEYS = new Set(['listed', 'preview', 'parent']);
+const APP_SLUG = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+
+/** What is wrong with an authored `display` block of the App `slug`. Paths are relative to the block. */
+export function appDisplayIssues(display: unknown, slug: string): AppConfigIssue[] {
+  if (typeof display !== 'object' || display === null || Array.isArray(display)) return [{ path: '', message: 'must be an object.' }];
+  const issues: AppConfigIssue[] = [];
+  const value = display as Record<string, unknown>;
+  for (const key of Object.keys(value)) {
+    if (!DISPLAY_KEYS.has(key)) issues.push({ path: key, message: 'is not a display field (listed, preview, parent).' });
+  }
+  if (value.listed !== undefined && typeof value.listed !== 'boolean') issues.push({ path: 'listed', message: 'must be true or false.' });
+  if (value.preview !== undefined && value.preview !== 'live' && value.preview !== 'none') issues.push({ path: 'preview', message: 'must be live or none.' });
+  if (value.parent !== undefined) {
+    if (typeof value.parent !== 'string' || !APP_SLUG.test(value.parent)) issues.push({ path: 'parent', message: 'must be an App slug.' });
+    else if (value.parent === slug) issues.push({ path: 'parent', message: 'an App cannot be its own parent.' });
+  }
+  return issues;
 }

@@ -28,6 +28,7 @@ import {
   startSessionLogJournal,
 } from '@/harness/shared/session-log-journal'
 import { relayTurnEnd } from '@/harness/shared/turn-relay'
+import { kortixEventBus, resetKortixEventBusForTests, sessionLogEventBus } from '@/services/event-bus/kortix-event-bus'
 import { resetDaemonShutdownStateForTests } from '@/lib/shutdown-state'
 import {
   SESSION_TOKEN_DEAD_TRIP_THRESHOLD,
@@ -367,6 +368,29 @@ describe('session-log journal', () => {
     await Bun.sleep(100)
 
     expect(api.received).toHaveLength(1)
+  })
+
+  test('after a 404 a turn end does no work: no export, no log.* frame, no HTTP call, no delta', async () => {
+    resetKortixEventBusForTests()
+    const api = fakeApi(() => new Response('not found', { status: 404 }))
+    const fake = fakeAdapter()
+    fake.put('m1', 1, 'one')
+    let exports = 0
+    const changes = fake.port.changes.bind(fake.port)
+    const journal = new SessionLogJournal({ ...fake.port, changes: (cursors) => (exports++, changes(cursors)) }, { generation: 1, retryMs: 10 })
+    expect(await journal.flush()).toBe(false)
+    expect(journal.disabled).toBe('404')
+    const frames: string[] = []
+    sessionLogEventBus().subscribe((e) => void frames.push(e.type), {})
+    const [before, posts] = [exports, api.received.length]
+    fake.put('m2', 2, 'two')
+    fake.remove('m1')
+    expect(await journal.flush()).toBe(false)
+    kortixEventBus().publish('message.part.delta', { sessionID: 'thread-1', messageID: 'm2', partID: 'm2-p0', field: 'text', delta: 'x' }, 'thread-1')
+    await Bun.sleep(50)
+    expect(exports).toBe(before)
+    expect(frames).toEqual([])
+    expect(api.received).toHaveLength(posts)
   })
 
   test('a 409 fences a zombie box: no later batch of the same drain is posted', async () => {

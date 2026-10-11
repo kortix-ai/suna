@@ -1210,6 +1210,10 @@
         "ephemeral_sandboxes": {
           "name": "Kurzlebige Sandboxes",
           "description": "Eine gestoppte Session behält ihre Dateien und ihr Gespräch auf einem Volume und gibt ihren Rechner ab. Beim Aufwecken startet ein neuer Rechner mit dem neuesten Image. Laufende Prozesse überstehen einen Stopp nicht."
+        },
+        "session_log": {
+          "name": "Session-Log v2",
+          "description": "Liest eine Session über das Session-Log v2 statt über das Transkript v1. Kortix aktiviert es pro Projekt."
         }
       }
     },
@@ -19527,7 +19531,8 @@
       "textac6d9b76a141": "Eingebunden",
       "text8d54763edcd8": "Nicht eingebunden",
       "textffeb0c99532f": "Snapshots {value0} Tage aufbewahrt",
-      "text6f52b07880a0": "Jetzt Snapshot erstellen"
+      "text6f52b07880a0": "Jetzt Snapshot erstellen",
+      "text91dc861375bc": "Mobile Release-Richtlinie angezeigt"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

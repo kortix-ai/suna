@@ -121,6 +121,7 @@ export async function context(options: ContextOptions): Promise<{
   auth: NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>['auth'];
   project: KortixProject;
   apps: AppsHandle;
+  secrets: ReturnType<ReturnType<typeof kortixFromAuth>['project']>['secrets'];
 } | null> {
   const resolved = await resolveProjectContext(options);
   if (!resolved) return null;
@@ -142,6 +143,7 @@ export async function context(options: ContextOptions): Promise<{
     auth: resolved.auth,
     project,
     apps: kortix.project(resolved.projectId).apps,
+    secrets: kortix.project(resolved.projectId).secrets,
   };
 }
 

@@ -1023,6 +1023,20 @@
       "when": 1791682826356,
       "tag": "20261011014026_session_transcript_rewind_marker",
       "breakpoints": true
+    },
+    {
+      "idx": 146,
+      "version": "7",
+      "when": 1791717353388,
+      "tag": "20261011111553_session_log_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 147,
+      "version": "7",
+      "when": 1791733721574,
+      "tag": "20261011154841_app_display_snapshot",
+      "breakpoints": true
     }
   ]
 }

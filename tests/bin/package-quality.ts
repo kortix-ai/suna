@@ -233,9 +233,13 @@ await runAll([
   // pass with type errors. tsc is single-threaded (~105 s API, ~18 s CLI of
   // CPU), so it rides inside this wave next to the two test chains instead of
   // adding a wave. apps/web is not here: its `tsc` has a documented baseline of
-  // known `@types/bun` errors and needs a baseline filter first.
+  // known `@types/bun` errors and needs a baseline filter first. kortixd's
+  // image build runs its `tsc` (noUncheckedIndexedAccess) over the workspace
+  // packages it imports, so an api-contract change that only kortixd's flags
+  // reject failed the dev API image build (#9556) with every lane green.
   run(['pnpm', '--filter', 'kortix-api', 'typecheck']),
   run(['pnpm', '--filter', '@kortix/cli', 'typecheck']),
+  run(['pnpm', '--filter', 'kortixd', 'typecheck']),
   (async () => {
     await runWorkspaceTests(['@kortix/cli'], 1);
     await runWorkspaceTests(['kortixd'], 1);

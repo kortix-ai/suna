@@ -364,9 +364,8 @@ test.describe("23 — Composio managed connector", () => {
       ),
       { timeout: 60_000 },
     );
-    await expect(
-      page.getByRole("heading", { level: 1, name: "Composio Search" }),
-    ).toBeVisible();
+    // The dialog is modal: the page behind it leaves the accessibility tree
+    // until it closes, so its heading is asserted after Continue.
     const addDialog = page.getByRole("dialog", {
       name: "Add a Composio Search account",
     });
@@ -390,6 +389,9 @@ test.describe("23 — Composio managed connector", () => {
       }),
     );
     await expect(addDialog).toHaveCount(0);
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Composio Search" }),
+    ).toBeVisible();
 
     // A no-auth toolkit needs no sign-in: the shared account turns active.
     const readShared = async () =>
@@ -807,6 +809,40 @@ test.describe("23 — Composio managed connector", () => {
     );
 
     expect(pageErrors, `client errors: ${pageErrors.join(" | ")}`).toEqual([]);
+  });
+
+  test("the Add account dialog that Install opens proposes a free name even before the account list loads", async ({ page }) => {
+    // Install creates the connector and its project account (named after the
+    // connector), then opens this dialog with ?add=1 before the account list
+    // has loaded. The proposal must not be the name that account already has.
+    const slug = `e2e-install-${Date.now().toString(36)}`;
+    await api(
+      session.access_token,
+      "POST",
+      `/connectors/projects/${project.id}/connectors`,
+      { slug, provider: "http", baseUrl: "https://crm.example.com", auth: { type: "none" } },
+      200,
+    );
+    const url = `/projects/${project.id}/customize/connectors/connected/${slug}?add=1`;
+    await installBrowserSessionDirect(page, session, url, authOptions);
+    await selectAccountForUi(page, accountId);
+    // Hold the account list, as it is still in flight right after Install.
+    await page.route(new RegExp(`/projects/${project.id}/connections(\\?.*)?$`), async (route) => {
+      if (route.request().method() === "GET") await new Promise((resolve) => setTimeout(resolve, 2_000));
+      await route.continue();
+    });
+    await page.goto(url, { waitUntil: "domcontentloaded" });
+    await dismissOnboarding(page);
+    const addDialog = page.getByRole("dialog", { name: /^Add a .+ account$/ });
+    await expect(addDialog).toBeVisible({ timeout: 60_000 });
+    await expect(addDialog.getByLabel("Name")).toHaveValue(`${slug} 2`, { timeout: 15_000 });
+    await expect(addDialog.getByText(/already exists/)).toHaveCount(0);
+    await expect(addDialog.getByRole("button", { name: "Continue", exact: true })).toBeEnabled();
+
+    // A name the user typed is theirs: a later list update never replaces it.
+    await addDialog.getByLabel("Name").fill("Sales CRM");
+    await page.waitForTimeout(500);
+    await expect(addDialog.getByLabel("Name")).toHaveValue("Sales CRM");
   });
 
   test("the chat Connect card adds a NEW named account for the audience picked in its dialog", async ({

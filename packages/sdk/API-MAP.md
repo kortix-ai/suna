@@ -50,6 +50,9 @@ Injection seam, not an endpoint. `configureKortix({ getToken })` → token on ev
 setup screen that needs to render "invalid token" inline instead of
 try/catching every call.
 
+### 1c. Mobile release policy  ✅
+`kortix.mobileClientPolicy()` → `GET /v1/clients/mobile`. Public (no token): a mobile build reads it before login. Resolves `{minimum_version, store_url_ios, store_url_android}` (strings or `null`). `compareSemver(a, b)` compares versions.
+
 ### 2. Projects  ✅
 | op | Kortix REST | SDK |
 |---|---|---|
