@@ -95,10 +95,11 @@ harnesses:
 # ─── Apps ─────────────────────────────────────────────────────────
 # Local, repeatable deployment defaults. `kortix apps deploy` remains the
 # explicit deployment action; merging this file does not auto-deploy.
-# Each block is the App's fly.toml: a deploy creates an immutable release of
+# Each block is the App's release config: a deploy creates an immutable release of
 # its artifact and this config (processes, http_service, services, mounts, vm,
 # deploy). `kortix apps launch --template convex --name db` writes a block like
-# `db` below (a self-hosted Convex backend) plus an admins-only `db-dashboard`.
+# `db` below (a self-hosted Convex backend) plus `db-dashboard` (admins only,
+# shown as the Dashboard tab of `db`, signed in by the DB_ADMIN_KEY secret).
 # `kortix apps deploy` with no arguments deploys every block, used Apps first.
 # A static App (files, no machine) ignores run mode, resources, env
 # and secrets. A server App runs always on (default, billed 24/7) or on demand
@@ -110,6 +111,7 @@ apps:
     image: ghcr.io/get-convex/convex-backend@sha256:<digest>   # pinned by the template
     command: ["sh", "-c", "cd /convex && CONVEX_CLOUD_ORIGIN=$KORTIX_APP_URL CONVEX_SITE_ORIGIN=$KORTIX_SERVICE_URL_SITE exec ./run_backend.sh"]
     labels: [backend]          # tags only; no behavior depends on them
+    display: { preview: none } # an icon card; listed | preview (live | none) | parent
     always_on: true
     vm: { cpu: 1, memory_gb: 1, disk_gb: 10 }
     mounts:                    # a volume: outlives every release and machine
@@ -120,6 +122,16 @@ apps:
       checks: [{ type: http, path: /version }]
     services:                  # more ports, each on <App host>--<name>
       - { name: site, internal_port: 3211, access: public }
+  db-dashboard:
+    type: oci_image
+    image: ghcr.io/get-convex/convex-dashboard@sha256:<digest>
+    command: ["sh", "-c", "cd /app/dashboard-self-hosted && NEXT_PUBLIC_DEPLOYMENT_URL=$KORTIX_APP_URL/_kortix/apps/db PORT=6791 HOSTNAME=0.0.0.0 exec node ./server.js"]
+    display: { parent: db }    # the Dashboard tab of db, not a card of its own
+    uses: [db]
+    always_on: false
+    http_service: { internal_port: 6791, access: admins }
+    secrets:                   # env name → project secret identifier
+      NEXT_PUBLIC_ADMIN_KEY: DB_ADMIN_KEY   # stored by `launch`; the dashboard opens signed in
   storefront:
     path: web/dist             # build first; deploy the output directory
     type: static

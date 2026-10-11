@@ -82,7 +82,7 @@ async function runCli(args: string[], configFile?: string) {
 
 const last = (method: string) => calls.filter((c) => c.method === method).at(-1);
 
-describe('kortix apps machines | scale | exec | volumes | labels (Fly model)', () => {
+describe('kortix apps machines | scale | exec | volumes | labels', () => {
   beforeEach(() => {
     tmp = mkdtempSync(join(tmpdir(), 'kortix-apps-fleet-'));
     process.env = { ...ORIGINAL_ENV };

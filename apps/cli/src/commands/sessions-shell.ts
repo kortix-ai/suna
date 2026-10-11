@@ -7,7 +7,7 @@ import {
   type KortixPty,
 } from '@kortix/sdk';
 
-import { openKortixPtyWebSocket } from '../api/pty-socket.ts';
+import { openKortixWebSocket } from '../api/kortix-socket.ts';
 import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
 import { emitJson, surfaceApiError, takeFlagBool, takeFlagValue, fail } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
@@ -235,7 +235,7 @@ async function runPtySession(
   const wsUrl = await withKortixScope(resolved.auth, async () =>
     getKortixPtyWebSocketUrl(pty.id, runtimeUrl),
   );
-  const ws = openKortixPtyWebSocket(wsUrl);
+  const ws = openKortixWebSocket(wsUrl);
   ws.binaryType = 'arraybuffer';
 
   let resizeTimer: ReturnType<typeof setTimeout> | null = null;

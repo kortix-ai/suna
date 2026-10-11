@@ -18,7 +18,7 @@ import type { OpenCodeConfig as Config } from '@/harness/open-code/config'
 import type { Opencode } from '@/harness/open-code/lifecycle'
 import { OpencodeDb } from '@/harness/open-code/opencode-db'
 import { RuntimeStateStore } from '@/harness/open-code/runtime-state-projection'
-import { kortixEventBus, resetKortixEventBusForTests } from '@/services/event-bus/kortix-event-bus'
+import { kortixEventBus, resetKortixEventBusForTests, sessionLogEventBus } from '@/services/event-bus/kortix-event-bus'
 import { createRuntimeRouter } from '@/routes/kortix/runtime'
 import { createOpenCodeQueryService } from '@/harness/open-code/queries'
 
@@ -648,6 +648,44 @@ describe('GET /events (SSE)', () => {
     expect(frames.length).toBeLessThan(5_000)
     // The ring still holds everything the reader missed.
     expect(bus.subscribe(() => {}, { since: 0, epoch: bus.epoch }).replay).toHaveLength(10_000)
+  })
+
+  test('schema negotiation: the default, empty and schema=v1 streams are the v1 bus byte for byte; schema=v2 is the log bus', async () => {
+    const { app } = makeRouter()
+    const bus = kortixEventBus()
+    const logBus = sessionLogEventBus()
+    publishOpenCodeEvent(bus, { type: 'message.part.delta', properties: { sessionID: SESSION, messageID: 'msg_a', partID: 'prt_a', field: 'text', delta: 'Hel' } })
+    logBus.publish('log.block.delta', { thread_id: SESSION, message_id: 'msg_a', block_id: 'prt_a', delta: 'Hel' }, SESSION)
+    publishOpenCodeEvent(bus, { type: 'session.idle', properties: { sessionID: SESSION } })
+    logBus.publish('log.thread', { thread_id: SESSION }, SESSION)
+    bus.publishDaemon('kortix.turn', { verdict: 'idle' }, SESSION)
+    // The frame format before schema negotiation existed: `event`, `id`, `data` of each v1 envelope.
+    const v1Frames = bus.subscribe(() => {}, { since: 0, epoch: bus.epoch }).replay.map((e) => `event: ${e.type}\nid: ${e.seq}\ndata: ${JSON.stringify(e)}`)
+    expect(v1Frames).toHaveLength(3)
+    const read = async (query: string, want: number) => {
+      const res = await app.request(`http://d/events?${query}since=0`, { headers: auth })
+      expect(res.status).toBe(200)
+      return { epoch: res.headers.get('x-kortix-epoch'), frames: await readFrames(res, want) }
+    }
+    for (const query of ['', 'schema=&', 'schema=v1&']) {
+      const { epoch, frames } = await read(query, 4)
+      expect(epoch).toBe(bus.epoch)
+      expect(dataOf(frames[0]!)).toMatchObject({ type: 'kortix.hello', epoch: bus.epoch, head_seq: 3, first_seq: 1 })
+      expect(frames.slice(1)).toEqual(v1Frames)
+      expect(frames.join('\n')).not.toContain('log.')
+    }
+    const { epoch, frames } = await read('schema=v2&', 3)
+    expect(epoch).toBe(logBus.epoch)
+    expect(logBus.epoch).not.toBe(bus.epoch)
+    expect(dataOf(frames[0]!)).toMatchObject({ type: 'kortix.hello', epoch: logBus.epoch, head_seq: 2 })
+    expect(frames.slice(1).map(dataOf).map((e) => [e.seq, e.type])).toEqual([[1, 'log.block.delta'], [2, 'log.thread']])
+  })
+
+  test('an unknown schema is a 400 that names the supported ones', async () => {
+    const { app } = makeRouter()
+    const res = await app.request('http://d/events?schema=v3', { headers: auth })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ error: 'unknown schema', schema: 'v3', supported: ['v1', 'v2'] })
   })
 
   test('cancelling the stream unsubscribes', async () => {

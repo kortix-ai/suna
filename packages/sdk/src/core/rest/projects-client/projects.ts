@@ -71,6 +71,7 @@ export type FeatureFlagKey =
   | 'notification_center'
   | 'drives'
   | 'ephemeral_sandboxes'
+  | 'session_log'
   /** @deprecated Withdrawn — agents messaging people left the product. The API no longer lists, resolves, or accepts it. Removed in the next major. */
   | 'human_messaging';
 
@@ -110,6 +111,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'notification_center',
   'drives',
   'ephemeral_sandboxes',
+  'session_log',
 ] as const;
 
 /**

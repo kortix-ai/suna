@@ -20,7 +20,7 @@ import { TomlError } from 'smol-toml';
 import { type ManifestFormat, parseManifestText } from './format';
 import { parseConnectorHeaders } from './connector-headers';
 import { normalizeImportPath } from './imports';
-import { appReleaseConfigIssues, resolveAppReleaseConfig } from '@kortix/shared/app-config';
+import { appDisplayIssues, appReleaseConfigIssues, resolveAppReleaseConfig } from '@kortix/shared/app-config';
 import { appReleaseInputFromBlock } from './app-config';
 import {
   CHANNEL_PLATFORMS,
@@ -960,7 +960,7 @@ const APP_KEYS = new Set([
   'path', 'type', 'image', 'dockerfile', 'command', 'port', 'root', 'output_dir',
   'install_command', 'build_command', 'spa', 'readiness_path', 'idle_timeout_seconds',
   'always_on', 'uses', 'resources', 'env', 'secrets',
-  'processes', 'http_service', 'services', 'mounts', 'vm', 'deploy', 'labels',
+  'processes', 'http_service', 'services', 'mounts', 'vm', 'deploy', 'labels', 'display',
 ]);
 /** An App slug as the Apps API accepts it (`uses` entries name live Apps). */
 const APP_SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
@@ -999,7 +999,7 @@ function validateAppStringMap(
 const APP_LABEL_RE = /^[a-z0-9][a-z0-9-]{0,30}$/;
 
 /**
- * The Fly-model fields of an App block: shapes first, then every rule the
+ * The release-config fields of an App block: shapes first, then every rule the
  * deploy engine relies on (`appReleaseConfigIssues`), so `kortix validate`
  * refuses what the API would refuse. A static App runs no machine: skipped.
  */
@@ -1065,6 +1065,16 @@ function validateAppsV2(node: unknown, path: string, issues: ManifestIssue[]): v
       }
     }
     validateAppReleaseConfig(value as AppBlockV2, where, issues);
+    if (value.display !== undefined) {
+      const displayIssues = appDisplayIssues(value.display, slug);
+      for (const issue of displayIssues) {
+        issues.push({ path: issue.path ? `${where}.display.${issue.path}` : `${where}.display`, message: issue.message, severity: 'error' });
+      }
+      const parent = isTable(value.display) ? value.display.parent : undefined;
+      if (!displayIssues.some((issue) => issue.path === 'parent') && typeof parent === 'string' && !(parent in node)) {
+        issues.push({ path: `${where}.display.parent`, message: 'names no App in this file.', severity: 'error' });
+      }
+    }
     if (value.uses !== undefined) {
       if (!Array.isArray(value.uses)) {
         issues.push({ path: `${where}.uses`, message: 'must be a list of App slugs.', severity: 'error' });

@@ -1,5 +1,5 @@
 /**
- * The machines of an App, as the HTTP surface sees them (Fly `machines`,
+ * The machines of an App, as the HTTP surface sees them (`machines`,
  * `scale`, `exec`): list, start, stop, restart and destroy one machine, set the
  * machine count per process group, run one command in a machine, and restore a
  * volume (stop its machine, restore, bring the machine back on it). Plain
@@ -62,7 +62,7 @@ async function liveInstances(appId: string): Promise<Array<{ instance: InstanceR
     .orderBy(asc(appRuntimes.processGroup), desc(appRuntimes.createdAt));
 }
 
-/** Fly machine states, from instance statuses. */
+/** Machine states, from instance statuses. */
 function machineState(status: string): string {
   switch (status) {
     case 'running': return 'started';
@@ -120,7 +120,7 @@ export async function restartMachine(app: AppRow, machineId: string, hosting = n
   await ensureAppRuntimeRunning({ app, deployment: release, runtime: instance }, hosting);
 }
 
-/** Destroy a machine: its box goes, its volume stays, and its group runs one machine fewer (Fly). */
+/** Destroy a machine: its box goes, its volume stays, and its group runs one machine fewer. */
 export async function destroyMachine(app: AppRow, machineId: string, hosting = new AppHostingProvider()): Promise<void> {
   const { instance, release } = await machineInstance(app, machineId);
   const mount = appMountFor(releaseConfigOf(release, app), instance.processGroup);

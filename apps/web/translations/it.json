@@ -1210,6 +1210,10 @@
         "ephemeral_sandboxes": {
           "name": "Sandbox effimere",
           "description": "Una sessione arrestata conserva file e conversazione su un volume e rilascia la sua macchina. Riattivarla avvia una nuova macchina con l’immagine più recente. I processi in esecuzione non sopravvivono a un arresto."
+        },
+        "session_log": {
+          "name": "Log di sessione v2",
+          "description": "Legge una sessione tramite il log di sessione v2 invece della trascrizione v1. Kortix lo attiva per progetto."
         }
       }
     },
