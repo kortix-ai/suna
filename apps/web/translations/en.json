@@ -1034,6 +1034,10 @@
           "name": "Volumes",
           "description": "Turn on Volumes for the whole organization: shared Files folders that stay in sync with sessions, and sessions whose files and conversation live on a volume. Boot mode is set by a platform admin."
         },
+        "stateless_sessions": {
+          "name": "Stateless sessions",
+          "description": "Needs Volumes. Sessions keep only their files and conversation, on a volume: a stopped session gives up its computer and wakes on a fresh one with the newest image and config. Installed programs and running processes do not survive a stop."
+        },
         "drives": {
           "name": "Drive",
           "description": "Shared folders that stay in sync with sessions: your own drive, one per agent, and company drives an admin attaches to the project. New sessions see them under /drives."

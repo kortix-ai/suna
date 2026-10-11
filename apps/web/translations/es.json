@@ -1208,6 +1208,10 @@
           "name": "Volúmenes",
           "description": "Activa los volúmenes para toda la organización: carpetas de Archivos compartidas que se sincronizan con las sesiones, y sesiones cuyos archivos y conversación viven en un volumen. El modo de arranque lo define un administrador de la plataforma."
         },
+        "stateless_sessions": {
+          "name": "Sesiones sin estado",
+          "description": "Requiere Volumes. Las sesiones conservan solo sus archivos y su conversación, en un volumen: una sesión detenida libera su ordenador y se reanuda en uno nuevo con la imagen y la configuración más recientes. Los programas instalados y los procesos en ejecución no sobreviven a una detención."
+        },
         "drives": {
           "name": "Drive",
           "description": "Carpetas compartidas que se mantienen sincronizadas con las sesiones: tu propio drive, uno por agente y los drives de empresa que un administrador asigna al proyecto. Las sesiones nuevas los ven en /drives."

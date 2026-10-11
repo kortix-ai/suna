@@ -1208,6 +1208,10 @@
           "name": "Volumi",
           "description": "Attiva i volumi per tutta l'organizzazione: cartelle File condivise sincronizzate con le sessioni e sessioni i cui file e conversazioni risiedono su un volume. La modalità di avvio è impostata da un amministratore della piattaforma."
         },
+        "stateless_sessions": {
+          "name": "Sessioni senza stato",
+          "description": "Richiede Volumes. Le sessioni conservano solo i file e la conversazione, su un volume: una sessione arrestata rilascia il suo computer e riprende su uno nuovo con l’immagine e la configurazione più recenti. I programmi installati e i processi in esecuzione non sopravvivono a un arresto."
+        },
         "drives": {
           "name": "Drive",
           "description": "Cartelle condivise sincronizzate con le sessioni: il tuo drive, uno per agente e i drive aziendali che un amministratore collega al progetto. Le nuove sessioni li vedono in /drives."

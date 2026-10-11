@@ -1208,6 +1208,10 @@
           "name": "Volumes",
           "description": "Active les volumes pour toute l'organisation : des dossiers Fichiers partagés synchronisés avec les sessions, et des sessions dont les fichiers et la conversation résident sur un volume. Le mode de démarrage est défini par un administrateur de la plateforme."
         },
+        "stateless_sessions": {
+          "name": "Sessions sans état",
+          "description": "Nécessite Volumes. Les sessions ne conservent que leurs fichiers et leur conversation, sur un volume : une session arrêtée libère son ordinateur et reprend sur un nouveau avec l’image et la configuration les plus récentes. Les programmes installés et les processus en cours ne survivent pas à un arrêt."
+        },
         "drives": {
           "name": "Drive",
           "description": "Des dossiers partagés synchronisés avec les sessions : votre propre drive, un par agent, et les drives d’entreprise qu’un administrateur associe au projet. Les nouvelles sessions les voient sous /drives."

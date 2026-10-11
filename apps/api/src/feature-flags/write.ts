@@ -57,7 +57,8 @@ export async function writeOrganizationFeatureFlag(
   feature: FeatureFlagKey,
   enabled: boolean | null,
 ): Promise<void> {
-  if (feature !== 'volumes') throw new Error(`'${feature}' is not an organization flag`);
-  const { setVolumesForOrg } = await import('../platform/services/boot-mode-setting');
-  await setVolumesForOrg(accountId, enabled);
+  const store = await import('../platform/services/boot-mode-setting');
+  if (feature === 'volumes') return store.setVolumesForOrg(accountId, enabled);
+  if (feature === 'stateless_sessions') return store.setStatelessForOrg(accountId, enabled);
+  throw new Error(`'${feature}' is not an organization flag`);
 }

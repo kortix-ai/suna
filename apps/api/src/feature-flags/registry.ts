@@ -86,7 +86,12 @@
  * cannot see (gate.ts).
  */
 import { config } from '../config';
-import { volumesEnabledFor, volumesOrgEntry } from '../platform/services/boot-mode-setting';
+import {
+  bootModeOrgEntry,
+  statelessEnabledFor,
+  volumesEnabledFor,
+  volumesOrgEntry,
+} from '../platform/services/boot-mode-setting';
 import { platinumUsRegion } from '../shared/platinum-region';
 import type { FeatureFlagKey, FeatureFlagStability } from '@kortix/api-contract';
 
@@ -408,6 +413,23 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'policy row Admin → Volumes edits (feature-flags/write.ts writeOrganizationFeatureFlag).',
   },
   {
+    key: 'stateless_sessions',
+    name: 'Stateless sessions',
+    description:
+      'Needs Volumes. Sessions keep only their files and conversation, on a volume: a stopped session gives up its computer and wakes on a fresh one with the newest image and config. Installed programs and running processes do not survive a stop.',
+    stability: 'experimental',
+    available: () => Boolean(config.PLATINUM_API_KEY),
+    // The value IS the organization's boot mode being `volume` (the
+    // `session_boot_modes` policy row, Admin → Volumes), with Volumes on.
+    platformDefault: () => false,
+    scope: 'organization',
+    enforcement: 'behavioral',
+    enforcementNote:
+      'BEHAVIORAL only: on sets the organization boot mode to `volume`, off to `standard` ' +
+      '(platform/services/boot-mode.ts resolveBootMode). Writes go to the same policy row ' +
+      'Admin → Volumes edits (feature-flags/write.ts writeOrganizationFeatureFlag).',
+  },
+  {
     key: 'drives',
     name: 'Files',
     description:
@@ -514,7 +536,9 @@ export function resolveFeatureFlag(
   const def = FLAG_BY_KEY[key];
   if (!def || !def.available()) return false;
   if (def.derivedFrom) return resolveFeatureFlag(metadata, def.derivedFrom, accountId);
-  if (def.scope === 'organization') return volumesEnabledFor(accountId);
+  if (def.scope === 'organization') {
+    return key === 'stateless_sessions' ? statelessEnabledFor(accountId) : volumesEnabledFor(accountId);
+  }
   return explicitOverride(metadata, key) ?? def.platformDefault();
 }
 
@@ -577,7 +601,7 @@ export function buildFeatureFlagCatalog(metadata: unknown, accountId?: string | 
       enabled,
       overridden:
         f.scope === 'organization'
-          ? volumesOrgEntry(accountId) !== undefined
+          ? (f.key === 'stateless_sessions' ? bootModeOrgEntry(accountId) : volumesOrgEntry(accountId)) !== undefined
           : explicitOverride(metadata, f.key) !== undefined,
       operator_only: isOperatorOnlyFeatureFlag(f.key),
       scope: f.scope ?? 'project',

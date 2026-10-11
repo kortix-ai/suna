@@ -43,6 +43,7 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   const eventTriggers = useFeatureFlag(projectId, 'event_triggers');
   const notificationCenter = useFeatureFlag(projectId, 'notification_center');
   const volumes = useFeatureFlag(projectId, 'volumes');
+  const statelessSessions = useFeatureFlag(projectId, 'stateless_sessions');
   const drives = useFeatureFlag(projectId, 'drives');
   const ephemeralSandboxes = useFeatureFlag(projectId, 'ephemeral_sandboxes');
   const sessionLog = useFeatureFlag(projectId, 'session_log');
@@ -65,6 +66,7 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
       event_triggers: eventTriggers.enabled,
       notification_center: notificationCenter.enabled,
       volumes: volumes.enabled,
+      stateless_sessions: statelessSessions.enabled,
       drives: drives.enabled,
       ephemeral_sandboxes: ephemeralSandboxes.enabled,
       session_log: sessionLog.enabled,

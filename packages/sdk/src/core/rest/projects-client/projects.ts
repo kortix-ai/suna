@@ -70,6 +70,7 @@ export type FeatureFlagKey =
   | 'event_triggers'
   | 'notification_center'
   | 'volumes'
+  | 'stateless_sessions'
   | 'drives'
   | 'ephemeral_sandboxes'
   | 'session_log'
@@ -111,6 +112,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'event_triggers',
   'notification_center',
   'volumes',
+  'stateless_sessions',
   'drives',
   'ephemeral_sandboxes',
   'session_log',
