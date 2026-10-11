@@ -221,11 +221,17 @@ test('closing the drawer clears a pending navigation so no row stays marked', as
     lib.click(close!);
   });
   expect(drawer()).toBeNull();
-  // A later reopen shows no stale pending mark.
+  // A later reopen on the same component instance shows no stale pending
+  // mark: only the effect that clears `pendingHref` on close makes this
+  // hold (a fresh mount would trivially pass with fresh state).
+  const openAgain = container!.querySelector(
+    '[aria-label="componentsHomeNavbar.line322JsxAttrAriaLabelOpenMenu"]',
+  );
   await act(async () => {
-    root!.unmount();
+    lib.click(openAgain!);
   });
-  const reopened = await openDrawer();
+  const reopened = container!.querySelector('.bg-background.fixed.inset-0');
+  expect(reopened).not.toBeNull();
   expect(reopened!.innerHTML).not.toContain('animate-spinner');
 });
 
