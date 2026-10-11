@@ -28,7 +28,7 @@ import {
   startSessionLogJournal,
 } from '@/harness/shared/session-log-journal'
 import { relayTurnEnd } from '@/harness/shared/turn-relay'
-import { resetKortixEventBusForTests, sessionLogEventBus } from '@/services/event-bus/kortix-event-bus'
+import { kortixEventBus, resetKortixEventBusForTests, sessionLogEventBus } from '@/services/event-bus/kortix-event-bus'
 import { resetDaemonShutdownStateForTests } from '@/lib/shutdown-state'
 import {
   SESSION_TOKEN_DEAD_TRIP_THRESHOLD,
@@ -370,25 +370,27 @@ describe('session-log journal', () => {
     expect(api.received).toHaveLength(1)
   })
 
-  test('off for the API, the journal still publishes each turn on the v2 stream and keeps nothing to send', async () => {
+  test('after a 404 a turn end does no work: no export, no log.* frame, no HTTP call, no delta', async () => {
     resetKortixEventBusForTests()
     const api = fakeApi(() => new Response('not found', { status: 404 }))
     const fake = fakeAdapter()
     fake.put('m1', 1, 'one')
-    const journal = new SessionLogJournal(fake.port, { generation: 1, retryMs: 10 })
+    let exports = 0
+    const changes = fake.port.changes.bind(fake.port)
+    const journal = new SessionLogJournal({ ...fake.port, changes: (cursors) => (exports++, changes(cursors)) }, { generation: 1, retryMs: 10 })
     expect(await journal.flush()).toBe(false)
     expect(journal.disabled).toBe('404')
-    const frames: Array<{ type: string; payload: any }> = []
-    sessionLogEventBus().subscribe((e) => void frames.push(e), {})
+    const frames: string[] = []
+    sessionLogEventBus().subscribe((e) => void frames.push(e.type), {})
+    const [before, posts] = [exports, api.received.length]
     fake.put('m2', 2, 'two')
     fake.remove('m1')
     expect(await journal.flush()).toBe(false)
-    expect(frames.map((f) => [f.type, f.payload.message?.message_id ?? f.payload.message_id])).toEqual([['log.message', 'm2'], ['log.message', 'm1']])
-    expect(frames[1]!.payload.deleted).toBe(true)
-    // Only the batch before the 404 holds anything: the off journal adds nothing to send.
-    expect(api.received).toHaveLength(1)
-    const dirty = (journal as unknown as { dirty: Map<string, unknown> }).dirty
-    expect([...dirty.keys()]).toEqual(['m1'])
+    kortixEventBus().publish('message.part.delta', { sessionID: 'thread-1', messageID: 'm2', partID: 'm2-p0', field: 'text', delta: 'x' }, 'thread-1')
+    await Bun.sleep(50)
+    expect(exports).toBe(before)
+    expect(frames).toEqual([])
+    expect(api.received).toHaveLength(posts)
   })
 
   test('a 409 fences a zombie box: no later batch of the same drain is posted', async () => {

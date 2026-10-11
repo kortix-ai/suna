@@ -341,7 +341,8 @@ describe('OpenCode session-log journal wiring', () => {
     expect(await flushSessionLogJournal()).toBe(true)
     const second = dumped()[1]!
     const revert = frames.slice(seen).map((f) => f.payload as Record<string, unknown>)
-    expect(revert.filter((p) => p.deleted)).toEqual(second.tombstones.map((t) => ({ ...t, deleted: true })))
+    // A tombstone is the journal's own `{ message_id, rev }`: no `message`.
+    expect(revert.filter((p) => !('message' in p))).toEqual(second.tombstones)
     expect(revert.filter((p) => 'message' in p)).toEqual(second.puts)
     await journal.stop(0)
     bus.publish('message.part.delta', { sessionID: ROOT, messageID: part.message_id, partID: part.id, field: 'text', delta: 'late' }, ROOT)

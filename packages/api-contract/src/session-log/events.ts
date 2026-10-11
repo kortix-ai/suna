@@ -13,7 +13,7 @@
  * | --- | --- | --- |
  * | `log.state` | `SessionLogStateEventSchema` | the session fields changed (journal start, turn end) |
  * | `log.thread` | `SessionLogThreadUpsertSchema` | a thread is new or changed |
- * | `log.message` | `SessionLogMessageEventSchema` | the journal collected a new revision of a message, or its tombstone |
+ * | `log.message` | `SessionLogMessageEventSchema` | the journal collected a new revision of a message (`{ rev, message }`), or its tombstone (`{ message_id, rev }`, the journal's own form) |
  * | `log.block.delta` | `SessionLogBlockDeltaEventSchema` | the harness streamed text into a text or reasoning block |
  *
  * In one collection the order is `log.state`, then `log.thread`, then `log.message`.
@@ -29,11 +29,8 @@ export const SessionLogStateEventSchema = z.object({
   session: SessionLogSessionPatchSchema,
 });
 
-/** A whole message at `rev` (a put), or its tombstone: the message is deleted at `rev`. */
-export const SessionLogMessageEventSchema = z.union([
-  SessionLogPutSchema,
-  SessionLogTombstoneSchema.extend({ deleted: z.literal(true) }),
-]);
+/** A whole message at `rev` (a put, with `message`), or its tombstone `{ message_id, rev }`: the message is deleted at `rev`. */
+export const SessionLogMessageEventSchema = z.union([SessionLogPutSchema, SessionLogTombstoneSchema]);
 
 /**
  * Text appended to a text or reasoning block: `block_id` is that block's `id` in the record

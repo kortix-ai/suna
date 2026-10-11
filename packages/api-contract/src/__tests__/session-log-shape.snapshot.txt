@@ -165,11 +165,7 @@ SessionLogManifestSchema = {
 
 SessionLogMessageEventSchema = union(
   | SessionLogPutSchema
-  | {
-    message_id: string(min1)
-    rev: number(int)(min0)
-    deleted: literal(true)
-  }
+  | SessionLogTombstoneSchema
 )
 
 SessionLogMessageSchema = {

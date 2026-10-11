@@ -128,13 +128,14 @@ frames (capability `session.log.v2`; payload schemas in
 `@kortix/api-contract/session-log` `events.ts`, `SESSION_LOG_EVENTS`). The
 frames ride `sessionLogEventBus()`, a second bus with its own seq and epoch, so
 the v1 stream keeps dense seqs. Without `schema`, or with `schema=v1`, the
-stream is the v1 stream, byte for byte; another value is a 400.
+stream is the v1 stream, byte for byte (an empty `schema=` too); another
+value is a 400.
 
 | Frame | Payload | Emitted |
 | --- | --- | --- |
 | `log.state` | `{ generation, session }`: the session patch the batch carries | when a collection finds the session fields changed |
 | `log.thread` | the thread upsert (no messages) | for each thread a collection finds new or changed |
-| `log.message` | a put `{ rev, message }`, or a tombstone `{ message_id, rev, deleted: true }` (the schema has no `deleted_at`) | for each revision a collection puts in the dirty set |
+| `log.message` | a put `{ rev, message }`, or a tombstone `{ message_id, rev }` (the journal's tombstone; no `message`; the schema has no `deleted_at`) | for each revision a collection puts in the dirty set |
 | `log.block.delta` | `{ thread_id, message_id, block_id, delta }` | for each v1 `message.part.delta` text frame while the journal runs |
 
 The journal publishes the first three in `collectOnce`, from the same records
@@ -147,9 +148,9 @@ and part ids, which are the thread, message and block ids of the records.
 Limits:
 - A tool call and its result reach the v2 stream at the turn end, not while
   the turn runs: the OpenCode export reads its store at rest only.
-- A journal that is off for the API (404, 409) still collects at each turn end
-  and publishes the frames; it keeps nothing to send. A box with no control
-  plane starts no journal, so its v2 stream stays empty.
+- A journal the API turned off (404, 409) publishes nothing more, deltas
+  included: a 404 API has no relay for the stream, and a 409 box is a zombie.
+  A box with no control plane starts no journal, so its v2 stream stays empty.
 - A `kortix.resync` on the v2 stream carries an empty `recover`: the client
   reads the saved session log again (P4.5).
 

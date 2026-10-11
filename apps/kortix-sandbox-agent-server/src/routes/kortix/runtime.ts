@@ -241,11 +241,11 @@ export function createRuntimeRouter(
   })
 
   // `schema=v2` (capability `session.log.v2`): the session log's `log.*`
-  // frames, on their own sequence and epoch. Absent or `v1`: the v1 stream.
+  // frames, on their own sequence and epoch. Absent, empty or `v1`: the v1 stream.
   app.get('/events', (c) => {
     const auth = authorize(cfg, c)
     if (!auth.ok) return auth.response
-    const schema = c.req.query('schema') ?? 'v1'
+    const schema = c.req.query('schema') || 'v1'
     if (schema !== 'v1' && schema !== 'v2') return c.json({ error: 'unknown schema', schema, supported: ['v1', 'v2'] }, 400)
     const bus = schema === 'v2' ? sessionLogEventBus() : queries.events
     const sinceRaw = c.req.query('since')

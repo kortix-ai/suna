@@ -650,7 +650,7 @@ describe('GET /events (SSE)', () => {
     expect(bus.subscribe(() => {}, { since: 0, epoch: bus.epoch }).replay).toHaveLength(10_000)
   })
 
-  test('schema negotiation: the default and schema=v1 streams are the v1 bus byte for byte; schema=v2 is the log bus', async () => {
+  test('schema negotiation: the default, empty and schema=v1 streams are the v1 bus byte for byte; schema=v2 is the log bus', async () => {
     const { app } = makeRouter()
     const bus = kortixEventBus()
     const logBus = sessionLogEventBus()
@@ -667,7 +667,7 @@ describe('GET /events (SSE)', () => {
       expect(res.status).toBe(200)
       return { epoch: res.headers.get('x-kortix-epoch'), frames: await readFrames(res, want) }
     }
-    for (const query of ['', 'schema=v1&']) {
+    for (const query of ['', 'schema=&', 'schema=v1&']) {
       const { epoch, frames } = await read(query, 4)
       expect(epoch).toBe(bus.epoch)
       expect(dataOf(frames[0]!)).toMatchObject({ type: 'kortix.hello', epoch: bus.epoch, head_seq: 3, first_seq: 1 })
