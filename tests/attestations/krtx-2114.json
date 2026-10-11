@@ -1,22 +1,23 @@
 {
-  "source_hash": "b49890d52014867607c7fb26353c17fe3c377d5b75b8870fc749094d0cc29a1e",
+  "source_hash": "b306587a186a8f5b39e86b38babbb1677ca316fa6d6a2df97e0f837dad0901be",
   "diff_files": [
     ".agents/skills/contributing/SKILL.md",
     ".agents/skills/learnings/MEMORY.md",
     ".agents/skills/learnings/entries/2026-10-10T232803Z-run-the-trunk-suite-where-its-consumer-polls-it-removing-a-c.md",
     ".agents/skills/testing/SKILL.md",
+    ".github/workflows/mobile-ota.yml",
     ".github/workflows/tests.yml",
     "AGENTS.md",
     "apps/mobile/BUILD_GUIDE.md",
     "tests/unit/sandbox-workflow.test.ts"
   ],
-  "diff_hash": "8b9857efbb326394ed9b2dbc5cedf394da3571de1b7febeebfddea0dd467844f",
-  "head": "2adb5fafac8b944b054bf5287905bc301168c504",
+  "diff_hash": "dea82491f693c8413c94d980be281d9e8dadb7030ff7d229b74b131dad0e420d",
+  "head": "49844f7e0516eddd154e653a36710a2396f78abf",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-11T00:29:53.745Z"
+  "at": "2026-10-11T02:39:30.259Z"
 }
