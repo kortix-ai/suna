@@ -159,10 +159,6 @@ function syntheticConversation(root: string, child: string, turns: number) {
   return rows;
 }
 
-/** JSON with every object's keys sorted: the log path builds objects in its own key order. */
-const canonical = (v: unknown): string =>
-  JSON.stringify(v, (_k, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((k) => [k, x[k]])) : x));
-
 const TRANSCRIPT = "/v1/projects/:projectId/sessions/:sessionId/transcript";
 const BUNDLE = "/v1/projects/:projectId/sessions/:sessionId/open-bundle";
 const LOG = "/v1/projects/:projectId/sessions/:sessionId/log";
@@ -237,11 +233,12 @@ flow(
         if (off.log !== undefined) throw new Error("the open bundle carries a log leg with the flag off");
       });
 
-      await ctx.step("an operator enables session_log; the same reads answer equal bodies from the log, apart from captured_at", async () => {
+      await ctx.step("an operator enables session_log; the same reads answer byte-equal bodies from the log, apart from captured_at", async () => {
         await setFeatureAsOperator(ctx, project.id, "session_log", true);
         const on = await v1Reads();
         for (let i = 0; i < off!.bodies.length; i++) {
-          if (canonical(on.bodies[i]) !== canonical(off!.bodies[i])) throw new Error(`v1 read ${i} differs with the flag on:\n${canonical(on.bodies[i])}\n---\n${canonical(off!.bodies[i])}`);
+          const [a, b] = [JSON.stringify(on.bodies[i]), JSON.stringify(off!.bodies[i])];
+          if (a !== b) throw new Error(`v1 read ${i} differs with the flag on:\n${a}\n---\n${b}`);
         }
         const leg = on.log as { known: boolean; page: { thread_id: string; messages: unknown[]; has_more: boolean } };
         if (!leg?.known || leg.page.thread_id !== root || leg.page.messages.length === 0) throw new Error(`log leg: ${JSON.stringify(leg)?.slice(0, 300)}`);

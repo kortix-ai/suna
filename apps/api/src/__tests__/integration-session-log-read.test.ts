@@ -6,7 +6,7 @@
  * writes the v1 mirror rows, and the journal ingest writes `fromV1` of those
  * same rows under producer `opencode`, as the daemon's adapter journals them.
  * Every v1 read (`transcript?shape=sync` paged to the end, the child read,
- * `shape=compact`, the open bundle, the public share) must answer the same body
+ * `shape=compact`, the open bundle, the public share) must answer the same bytes
  * with the project flag `session_log` off (the mirror) and on (the log). The one
  * field that differs is `captured_at`.
  */
@@ -122,7 +122,7 @@ afterAll(async () => {
 });
 
 describe('the v1 reads answer the same body from the mirror (flag off) and from the log (flag on)', () => {
-  test('sync pages, the child, compact, the open bundle and the public share are equal apart from captured_at', async () => {
+  test('sync pages, the child, compact, the open bundle and the public share are byte-equal apart from captured_at', async () => {
     const stored = await storeBothWays(session, 70);
     // 70 turns: the compaction summary folds into its marker, so the log holds one message fewer than the mirror's rows.
     expect(stored.rows).toBe(stored.messages + 1);
@@ -140,16 +140,16 @@ describe('the v1 reads answer the same body from the mirror (flag off) and from 
 
     expect(off.pages.length).toBe(4); // 140+ rows in windows of 40
     expect((off.pages[0] as { total: number }).total).toBe(stored.rows - 2); // the root read leaves out the child's 2 rows
-    expect(on.pages).toEqual(off.pages);
-    expect(on.child).toEqual(off.child);
+    expect(JSON.stringify(on.pages)).toBe(JSON.stringify(off.pages));
+    expect(JSON.stringify(on.child)).toBe(JSON.stringify(off.child));
     expect((on.child as { message_count: number }).message_count).toBe(2);
-    expect(on.compact).toEqual(off.compact);
-    expect(on.bundle).toEqual(off.bundle);
-    expect(on.share).toEqual(off.share);
+    expect(JSON.stringify(on.compact)).toBe(JSON.stringify(off.compact));
+    expect(JSON.stringify(on.bundle)).toBe(JSON.stringify(off.bundle));
+    expect(JSON.stringify(on.share)).toBe(JSON.stringify(off.share));
     expect((on.share as { message_count: number }).message_count).toBeGreaterThan(0);
 
     // The field that differs: the log's last write, not the capture time.
-    const [log] = await db.select({ updatedAt: sessionLogs.updatedAt }).from(sessionLogs).where(eq(sessionLogs.sessionId, session));
+    const [log] = await db.select({ updatedAt: sql<Date>`greatest(${sessionLogs.updatedAt}, (select max(m.updated_at) from kortix.session_log_messages m where m.session_id = ${session}))` }).from(sessionLogs).where(eq(sessionLogs.sessionId, session));
     const [mirror] = await db.select({ capturedAt: sessionTranscriptMirrors.capturedAt }).from(sessionTranscriptMirrors).where(eq(sessionTranscriptMirrors.sessionId, session));
     expect(new Set(on.captured)).toEqual(new Set([new Date(log!.updatedAt).toISOString()]));
     expect(new Set(off.captured)).toEqual(new Set([new Date(mirror!.capturedAt).toISOString()]));

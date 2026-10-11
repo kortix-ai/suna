@@ -12,7 +12,8 @@
  * natively, without the v1 residuals, so `toV1` of them is not the mirror).
  *
  * The v1 window over the log equals the mirror's window, with three named differences:
- * - `captured_at` is the log's last write (`session_logs.updated_at`), not the capture time.
+ * - `captured_at` is the log's last write (the read thread's newest message write, or the session
+ *   record's), not the capture time.
  * - `head_complete` is true: the journal holds the whole session.
  * - an attachment the API's capture uploaded keeps the `kortix-attachment://` url the mirror row
  *   has only when the journal sent it; the daemon never sees that url.
@@ -142,6 +143,17 @@ const idOf = (r: V1Row) => String((r.info as { id?: unknown })?.id ?? '');
 const keyCompare = (a: { at: number; id: string }, b: { at: number; id: string }) =>
   a.at - b.at || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 const keyOf = (r: V1Row) => ({ at: created(r), id: idOf(r) });
+/** Object keys in Postgres jsonb order (shorter first, then bytewise), so a log window serializes byte-equal to the mirror's. */
+const jsonbOrder = (v: unknown): unknown =>
+  Array.isArray(v)
+    ? v.map(jsonbOrder)
+    : v && typeof v === 'object'
+      ? Object.fromEntries(
+          Object.keys(v)
+            .sort((a, b) => a.length - b.length || (a < b ? -1 : a > b ? 1 : 0))
+            .map((k) => [k, jsonbOrder((v as J)[k])]),
+        )
+      : v;
 
 /** The window over the log, or null when the log cannot answer (see the module header). */
 export async function readLogTranscriptWindow(input: {
@@ -194,6 +206,7 @@ export async function readLogTranscriptWindow(input: {
         total: sql<number>`(count(*) + count(*) FILTER (WHERE CASE WHEN ${sessionLogMessages.kind} = 'compaction'
           THEN coalesce(jsonb_typeof(jsonb_path_query_first(${sessionLogMessages.record}, '$.blocks[*] ? (@.type == "compaction")') -> 'summary') <> 'null', false)
           ELSE false END))::int`,
+        writtenMs: sql<number | null>`(extract(epoch from max(${sessionLogMessages.updatedAt})) * 1000)::float8`,
       })
       .from(sessionLogMessages)
       .where(scope);
@@ -225,13 +238,13 @@ export async function readLogTranscriptWindow(input: {
     return {
       opencode_session_id: target,
       root_opencode_session_id: rootId,
-      captured_at: new Date(log.updatedAt).toISOString(),
+      captured_at: new Date(Math.max(new Date(log.updatedAt).getTime(), Math.floor(totals?.writtenMs ?? 0))).toISOString(),
       total,
       head_complete: true,
       next_cursor: rows.length > input.limit ? idOf(kept.at(-1)!) : null,
       messages: kept.reverse().map((r) => ({
-        info: r.info as unknown as J,
-        parts: restoreStrippedToolParts((Array.isArray(r.parts) ? r.parts : []) as unknown as J[]),
+        info: jsonbOrder(r.info) as J,
+        parts: restoreStrippedToolParts(jsonbOrder(Array.isArray(r.parts) ? r.parts : []) as J[]),
       })),
     };
   }, READ_ONLY);

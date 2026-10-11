@@ -215,7 +215,10 @@ refs). An explicit project choice always wins.
   trigger starts failing. The session watch routes answer `feature_disabled`.
   See [Notifications](/docs/work/notifications#turn-notifications-on).
 - **`session_log`** — read a session through the v2 session log instead of the
-  v1 transcript. The flag is internal-only, like `apps`: Settings does not list
+  v1 transcript. On, the saved conversation that a stopped session, the open
+  bundle, a public share and MCP `read_session` show is read from the session
+  log, in the same shape as before. The open bundle also returns the first
+  page of the log. The flag is internal-only, like `apps`: Settings does not list
   it, and a Kortix operator sets it per project with
   `PUT /v1/admin/api/projects/:id/features`. The flag becomes the default in
   the release that ships v2 to everyone, and the key is deleted in the next
