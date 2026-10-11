@@ -230,6 +230,7 @@
     "createTask",
     "createTicket",
     "createTunnelEventStream",
+    "createWarmSessionPool",
     "currentSavedCopyStore",
     "declineAccountInvite",
     "declineInvite",
