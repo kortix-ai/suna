@@ -12,6 +12,8 @@ import { type App } from '@kortix/sdk';
 
 import { useEffect, useLayoutEffect, useState } from 'react';
 
+import { claimFrame, ensureFrame, frameKey, restyleFrame, useFrameStatus, type FramePlacement } from './app-preview-pool';
+
 
 /**
  * How long a frame may take before we admit out loud that it is loading.
@@ -233,9 +235,8 @@ export function AppPreview({
   className?: string;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const [loaded, setLoaded] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const slow = useSlowPreview(!loaded && !failed);
+  const status = useFrameStatus(frameKey(app));
+  const slow = useSlowPreview(status !== 'loaded' && status !== 'failed');
   // Cards only. In the modal the frame IS the App at the size you are using it,
   // so a fixed desktop viewport there would scale the thing you came to click.
   const [attachViewport, viewportScale] = useDesktopViewportScale(!interactive);
@@ -282,54 +283,72 @@ export function AppPreview({
 
   return (
     <div className={frame} ref={attachViewport}>
-      <iframe
-        key={app.active_deployment_id}
-        src={url}
+      <PooledFrame
+        app={app}
+        url={url}
         title={tI18nComplete('text04132f84d7c3', { value0: app.name })}
-        style={
-          interactive
-            ? undefined
-            : {
-                width: PREVIEW_VIEWPORT_WIDTH,
-                height: PREVIEW_VIEWPORT_HEIGHT,
-                // Hidden, not unmounted, until the tile has been measured: an
-                // unmounted frame would restart the document load on every
-                // resize, and a visible unscaled one would flash the App's
-                // top-left 1080px corner. It still loads while hidden.
-                ...(viewportScale === null
-                  ? { visibility: 'hidden' as const }
-                  : { transform: `scale(${viewportScale})` }),
-              }
-        }
-        // The card thumbnail is one of many below the fold, so defer it. In the
-        // modal the frame IS the content and it is already on screen — `lazy`
-        // there makes the browser wait for layout before it even starts the
-        // fetch, which is pure added latency on the one open that must feel
-        // instant.
-        loading={interactive ? 'eager' : 'lazy'}
-        allow={CLIPBOARD_IFRAME_ALLOW}
-        sandbox={framePolicy('app', url).sandbox}
-        className={cn(
-          'bg-background absolute border-0',
-          interactive
-            ? 'inset-0 size-full'
-            : // Anchored top-left because that is the scale's origin: the frame
-              // shrinks toward the corner it starts in, so the miniature lands
-              // flush in the tile instead of drifting toward the middle.
-              'pointer-events-none top-0 left-0 origin-top-left',
-        )}
-        {...(interactive ? {} : { tabIndex: -1, 'aria-hidden': true })}
-        data-testid="app-live-preview"
-        onLoad={() => {
-          setLoaded(true);
-          setFailed(false);
-        }}
-        onError={() => {
-          setLoaded(false);
-          setFailed(true);
-        }}
+        interactive={interactive}
+        viewportScale={viewportScale}
       />
-      <AppPreviewOverlay loaded={loaded} failed={failed} slow={slow} />
+      <AppPreviewOverlay loaded={status === 'loaded'} failed={status === 'failed'} slow={slow} />
     </div>
   );
+}
+
+/**
+ * The slot a pooled frame moves into (`app-preview-pool.ts`): the App stays
+ * loaded across cards, the big view and page switches. React renders the slot
+ * empty; the frame is placed in it imperatively, and a layout-effect cleanup
+ * hands it back before React removes the slot from the page.
+ */
+function PooledFrame({
+  app,
+  url,
+  title,
+  interactive,
+  viewportScale,
+}: {
+  app: App;
+  url: string;
+  title: string;
+  interactive: boolean;
+  viewportScale: number | null;
+}) {
+  const [slot, setSlot] = useState<HTMLDivElement | null>(null);
+  const key = frameKey(app);
+  const placement = framePlacement(interactive, viewportScale);
+
+  useLayoutEffect(() => {
+    if (!slot) return;
+    ensureFrame(key, url, { title, sandbox: framePolicy('app', url).sandbox, allow: CLIPBOARD_IFRAME_ALLOW });
+    return claimFrame(key, slot, framePlacement(interactive, null));
+    // The URL is read once: a refetched session must not reload a live App.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, slot, interactive]);
+
+  useLayoutEffect(() => {
+    if (slot) restyleFrame(key, slot, placement);
+  }, [key, slot, placement]);
+
+  return <div ref={setSlot} className="absolute inset-0" />;
+}
+
+/**
+ * Where the frame sits in its slot. A card renders the App at a desktop
+ * viewport and scales it down, hidden until the tile is measured; the big
+ * view fills its box and takes input.
+ */
+export function framePlacement(interactive: boolean, viewportScale: number | null): FramePlacement {
+  if (interactive) {
+    return { className: 'bg-background absolute inset-0 size-full border-0', style: {}, interactive: true };
+  }
+  return {
+    className: 'bg-background pointer-events-none absolute top-0 left-0 origin-top-left border-0',
+    style: {
+      width: `${PREVIEW_VIEWPORT_WIDTH}px`,
+      height: `${PREVIEW_VIEWPORT_HEIGHT}px`,
+      ...(viewportScale === null ? { visibility: 'hidden' } : { transform: `scale(${viewportScale})` }),
+    },
+    interactive: false,
+  };
 }

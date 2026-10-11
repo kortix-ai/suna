@@ -51,12 +51,22 @@ Default to static for every UI. Server logic for a UI (queries, writes,
 webhooks, integrations, schedules) lives in the backend App, not in a second
 server.
 
+## Where the code lives
+
+Default: one folder per App, `apps/<slug>/`, named after its `kortix.yaml` key:
+`apps/storefront/` (a static UI, built to `apps/storefront/dist`), `apps/api/`
+(a server App with its `Dockerfile`), `apps/db/` (a Convex backend's
+`package.json` and `convex/`). Templates, `launch` and every example here use
+it. It is a default, not a rule: `path` is free-form, so group the code by team
+or topic when that fits the project better (`apps/sales/crm`,
+`apps/ops/fieldops-db`).
+
 ## Deploy
 
 ```bash
 kortix apps launch --template convex --name db           # a ready-made backend App, deployed
-kortix apps deploy ./dist --slug storefront --name Storefront --type static --spa
-kortix apps deploy . --slug api --type dockerfile --on-demand \
+kortix apps deploy apps/storefront/dist --slug storefront --name Storefront --type static --spa
+kortix apps deploy apps/api --slug api --type dockerfile --on-demand \
   --command '["node","server.js"]' --port 3000 --readiness-path /health
 ```
 
@@ -72,7 +82,7 @@ block whose `path` it is. The keys:
 ```yaml
 apps:
   api:
-    path: services/api
+    path: apps/api
     type: dockerfile
     command: ["node", "server.js"]
     labels: [backend]
@@ -195,6 +205,8 @@ apps/db/                       # Convex functions for App "db" (references/conve
   convex/lib/auth.ts           # requireMember()
   convex/<domain>.ts           # queries + mutations per domain
   convex/seed.ts               # internal seed, demo data only
+  dashboard/Dockerfile         # App "db-dashboard": Convex's dashboard (written by launch)
+  dashboard/start.js           # signs the dashboard in with DB_ADMIN_KEY
 apps/crm/                      # static App "crm"
   package.json                 # vite, react, convex, @kortix/sdk
   src/convex.ts                # kortixBinding("db") + ConvexReactClient
@@ -211,9 +223,9 @@ Every session downloads the whole repository, so keep it small. Create
 1. **Model the domain.** Tables, fields, relations, and the 5–10 actions
    people take. Write it down in `memory/<app>.md` first.
 2. **Backend App.** `kortix apps launch --template convex --name db`, then
-   connect, discover and push as references/convex.md shows (`launch` stores
-   the admin key as the project secret `DB_ADMIN_KEY`; the dashboard is the
-   Dashboard tab of `db`).
+   connect, discover and push as references/convex.md shows (`launch` writes
+   the admin key to the project secret `DB_ADMIN_KEY` and the dashboard's
+   files to `apps/db/dashboard/`; the dashboard is the Dashboard tab of `db`).
 3. **Schema + sign-in.** `convex/schema.ts` with an index for every filter,
    `convex/auth.config.ts` and `convex/lib/auth.ts` from references/sign-in.md.
    Store `me.userId` as owner/author ids. Use Kortix roles

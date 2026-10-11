@@ -22,6 +22,12 @@
  *
  * A tombstone of a message the API never stored is acknowledged and stores nothing.
  *
+ * Read (P4.2): `GET /v1/projects/:p/sessions/:s/log?thread=<thread_id>&before_seq=<n>&limit=<n>`,
+ * the caller's session read permission (the transcript route's), never the sandbox credential.
+ * It reads Postgres only, never the box, and is served whether or not the `session_log` flag is
+ * on. 200 `SessionLogPage`: one page of one thread. 404 when the session has no stored log, or when
+ * `thread` is not one of its threads.
+ *
  * `rev` is monotonic per message across daemon boots, not a per-boot counter: the daemon
  * issues `max(Date.now() * 1000, last + 1)`, a safe integer that needs a `bigint` column. The
  * API applies the highest `rev` it has seen for a message (a lower or equal one changes
@@ -67,6 +73,25 @@ export const SessionLogManifestSchema = z.object({
   messages: z.array(z.object({ message_id: messageId, content_hash: z.string().min(1), rev, deleted: z.boolean() })),
 });
 
+/**
+ * One page of the stored log.
+ * - `session`: the session record without `threads`, as the journal's session patches built it
+ *   (a field the daemon has not sent yet is absent). `generation`: the session's generation.
+ * - `threads`: every thread of the session, without `messages`.
+ * - `thread_id`: the paged thread, `thread` or else the root thread (null: no thread stored).
+ * - `messages`: that thread's newest `limit` messages (default 40, at most 500) with
+ *   `seq < before_seq`, ascending by `seq`. A tombstoned message is left out; its seq is a gap.
+ * - `has_more`: an older message exists. Read it with `before_seq` = the first message's `seq`.
+ */
+export const SessionLogPageSchema = z.object({
+  session: SessionLogSessionPatchSchema,
+  generation: z.number().int().nonnegative(),
+  threads: z.array(SessionLogThreadUpsertSchema),
+  thread_id: z.string().nullable(),
+  messages: z.array(SessionLogMessageSchema),
+  has_more: z.boolean(),
+});
+
 export type SessionLogPut = z.infer<typeof SessionLogPutSchema>;
 export type SessionLogTombstone = z.infer<typeof SessionLogTombstoneSchema>;
 export type SessionLogThreadUpsert = z.infer<typeof SessionLogThreadUpsertSchema>;
@@ -77,3 +102,4 @@ export type SessionLogJournalResponse = z.infer<typeof SessionLogJournalResponse
 export type SessionLogJournalConflict = z.infer<typeof SessionLogJournalConflictSchema>;
 export type SessionLogJournalSeqConflict = z.infer<typeof SessionLogJournalSeqConflictSchema>;
 export type SessionLogManifest = z.infer<typeof SessionLogManifestSchema>;
+export type SessionLogPage = z.infer<typeof SessionLogPageSchema>;

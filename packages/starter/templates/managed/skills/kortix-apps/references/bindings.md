@@ -27,9 +27,11 @@ In `kortix.yaml`, `uses` in the App's block replaces its list on every
 
 ```yaml
 apps:
-  db:                    # the Convex template (convex.md): image, volume, services
+  db:                    # the Convex template (convex.md), abridged: launch writes the full block
     type: oci_image
     image: ghcr.io/get-convex/convex-backend@sha256:…
+    command: ["sh", "-c", "cd /convex && exec ./run_backend.sh"]
+    http_service: { internal_port: 3210, access: public }
   crm:
     path: apps/crm/dist
     type: static
