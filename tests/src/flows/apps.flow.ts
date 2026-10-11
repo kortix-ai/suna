@@ -1,12 +1,15 @@
 /**
  * Kortix Apps — project-owned serverless App CRUD, artifact registration, and
  * deployment lifecycle boundaries, the App viewer token, and deleting an App
- * or one deployment together with its provider images. Maps to spec section 28
- * (APP-1..7).
+ * or one deployment together with its provider images, and the machine, scale,
+ * exec and volume routes of the Fly model. Maps to spec section 28 (APP-1..8,
+ * APP-11; APP-9 and APP-10 live in apps-tokens.flow.ts).
  */
 import { flow } from "../core/flow";
 import { CliSandbox } from "../fixtures/cli";
 import { setFeatureAsOperator } from "../fixtures/feature-flags";
+import { withDb } from "../fixtures/chat";
+import { waitFor } from "../core/poll";
 
 const UNKNOWN_ID = "00000000-0000-4000-a000-000000000000";
 
@@ -82,7 +85,7 @@ flow(
       response.status(400);
     });
 
-    await ctx.step("create returns stable App policy and URL; an always-on App has no budget and refuses one", async () => {
+    await ctx.step("create returns stable App policy and URL, its 24/7 cost and no budget; a budget sent by an old client is ignored", async () => {
       const slug = ctx.fixtures
         .name("app")
         .toLowerCase()
@@ -110,24 +113,27 @@ flow(
         .has("$.desired_state", "running")
         .has("$.always_on", true)
         .has("$.estimated_monthly_usd", 73.48)
-        .has("$.monthly_budget_usd", null)
         .has("$.warnings", [])
-        // Kind web by default; clients branch on capabilities. Uses no App until it lists one.
-        .has("$.kind", "web")
+        // One primitive: clients branch on capabilities. No labels, services or uses until set.
         .has("$.capabilities", ["deployments", "rollback", "preview", "member_tokens"])
-        .has("$.instance", null)
+        .has("$.labels", [])
+        .has("$.services", [])
         .has("$.uses", []);
       appId = response.json<any>().app_id;
+      for (const retired of ["kind", "instance"]) {
+        if (retired in response.json<any>()) throw new Error(`an App carries retired field ${retired}: ${response.text()}`);
+      }
+      if ("monthly_budget_usd" in response.json<any>()) throw new Error(`an App carries a budget: ${response.text()}`);
 
-      const refused = await owner.post(
+      // Apps have no budget: an on-demand App sent with one by an old client is created without one.
+      const legacy = await owner.post(
         "/v1/projects/:projectId/apps",
-        { slug: `${slug.slice(0, 55)}-budget`, name: "ke2e App", always_on: true, monthly_budget_usd: 5 },
+        { slug: `${slug.slice(0, 55)}-budget`, name: "ke2e App", always_on: false, monthly_budget_usd: 5 },
         { params: projectParams },
       );
-      refused.status(400).body().has("$.code", "app_budget_not_applicable").has("$.estimated_monthly_usd", 73.48);
-      if (!String(refused.json<any>().error).includes("about $73.48 a month")) {
-        throw new Error(`the refusal does not name the 24/7 cost: ${refused.text()}`);
-      }
+      legacy.status(201).body().has("$.always_on", false);
+      if ("monthly_budget_usd" in legacy.json<any>()) throw new Error(`an App carries a budget: ${legacy.text()}`);
+      (await owner.del("/v1/projects/:projectId/apps/:appId", { params: { ...projectParams, appId: legacy.json<any>().app_id } })).status(200);
     });
 
     await ctx.step("get and patch read back the same App", async () => {
@@ -149,26 +155,14 @@ flow(
         .has("$.idle_timeout_seconds", 420)
         .has("$.warnings", []);
 
-      // An always-on App costs its size: a budget is refused and nothing changes.
-      const refused = await owner.patch(
-        "/v1/projects/:projectId/apps/:appId",
-        { monthly_budget_usd: 100 },
-        { params },
-      );
-      refused.status(400).body().has("$.code", "app_budget_not_applicable");
-      // On demand: the default budget, then the one sent; back to always on clears it.
-      (await owner.patch("/v1/projects/:projectId/apps/:appId", { always_on: false }, { params }))
-        .status(200).body().has("$.always_on", false).has("$.monthly_budget_usd", 5).has("$.warnings", []);
-      (await owner.patch("/v1/projects/:projectId/apps/:appId", { monthly_budget_usd: 20 }, { params }))
-        .status(200).body().has("$.monthly_budget_usd", 20);
-      (await owner.patch("/v1/projects/:projectId/apps/:appId", { always_on: true }, { params }))
-        .status(200).body().has("$.always_on", true).has("$.monthly_budget_usd", null);
+      // The run mode switches both ways; a budget an old client sends is ignored, never refused.
       (await owner.patch("/v1/projects/:projectId/apps/:appId", { always_on: false, monthly_budget_usd: 12 }, { params }))
-        .status(200).body().has("$.monthly_budget_usd", 12);
-      (await owner.patch("/v1/projects/:projectId/apps/:appId", { always_on: true, monthly_budget_usd: 12 }, { params }))
-        .status(400).body().has("$.code", "app_budget_not_applicable");
-      (await owner.get("/v1/projects/:projectId/apps/:appId", { params }))
-        .status(200).body().has("$.always_on", false).has("$.monthly_budget_usd", 12);
+        .status(200).body().has("$.always_on", false).has("$.warnings", []);
+      (await owner.patch("/v1/projects/:projectId/apps/:appId", { always_on: true }, { params }))
+        .status(200).body().has("$.always_on", true);
+      const reread = await owner.get("/v1/projects/:projectId/apps/:appId", { params });
+      reread.status(200).body().has("$.always_on", true).has("$.estimated_monthly_usd", 73.48);
+      if ("monthly_budget_usd" in reread.json<any>()) throw new Error(`an App carries a budget: ${reread.text()}`);
 
       // `uses` names live Apps of the project by slug: an unknown one → 400 app_not_found, a malformed one → 400.
       const unknown = await owner.patch(
@@ -182,34 +176,6 @@ flow(
         .status(200)
         .body()
         .has("$.uses", []);
-    });
-
-    await ctx.step("an on-demand App gets $5 or the budget sent, and a machine change never moves it", async () => {
-      let counter = 0;
-      const slugFor = (label: string) =>
-        `${ctx.fixtures.name(label).toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 50)}-${++counter}`;
-      const create = async (body: Record<string, unknown>) => {
-        const response = await owner.post(
-          "/v1/projects/:projectId/apps",
-          { slug: slugFor("bd"), name: "ke2e budget", ...body },
-          { params: projectParams },
-        );
-        response.status(201);
-        return response.json<any>() as { app_id: string; monthly_budget_usd: number | null };
-      };
-      const patch = (id: string, body: Record<string, unknown>) =>
-        owner.patch("/v1/projects/:projectId/apps/:appId", body, { params: { ...projectParams, appId: id } });
-
-      const defaulted = await create({ always_on: false });
-      if (defaulted.monthly_budget_usd !== 5) throw new Error(`on-demand default budget is ${defaulted.monthly_budget_usd}, want 5`);
-      (await patch(defaulted.app_id, { cpu: 2 })).status(200).body().has("$.monthly_budget_usd", 5);
-
-      const explicit = await create({ always_on: false, monthly_budget_usd: 200 });
-      if (explicit.monthly_budget_usd !== 200) throw new Error(`explicit budget is ${explicit.monthly_budget_usd}, want 200`);
-      (await patch(explicit.app_id, { memory_gb: 1 })).status(200).body().has("$.monthly_budget_usd", 200);
-      for (const id of [defaulted.app_id, explicit.app_id]) {
-        (await owner.del("/v1/projects/:projectId/apps/:appId", { params: { ...projectParams, appId: id } })).status(200);
-      }
     });
 
     await ctx.step(
@@ -1300,10 +1266,18 @@ flow(
         if (!home.text.includes("<title>v2</title>")) throw new Error(`v2 is not served: ${home.text.slice(0, 120)}`);
       });
 
-      await ctx.step("rollback to v1 is a pointer flip: no runtime to start", async () => {
+      await ctx.step("rollback to v1 is a NEW release (v3) from v1's artifact: 202, ready in seconds with no runtime, v1's files served", async () => {
         const rolled = await owner.post("/v1/projects/:projectId/apps/:appId/rollback",
           { deployment_id: versions[0] }, { params: { ...projectParams, appId } });
-        rolled.status(200).body().has("$.active_deployment_id", versions[0]);
+        rolled.status(202).body().has("$.deployment.version", 3);
+        const releaseId = rolled.json<any>().deployment.deployment_id as string;
+        versions.push(releaseId);
+        const ready = await waitFor(
+          async () => (await owner.get("/v1/projects/:projectId/apps/:appId/deployments/:deploymentId",
+            { params: { ...projectParams, appId, deploymentId: releaseId } })).json<any>().deployment,
+          { until: (release) => release.status === "ready" || release.status === "failed", timeoutMs: 60_000, intervalMs: 500, description: "the rollback release" },
+        );
+        if (ready.status !== "ready" || ready.hosting_type !== "static") throw new Error(`rollback release: ${ready.status}/${ready.hosting_type}`);
         const home = await page("/");
         if (!home.text.includes("<title>v1</title>")) throw new Error(`v1 is not served after rollback`);
       });
@@ -1324,14 +1298,14 @@ flow(
           throw new Error(`kortix apps stop: exit ${stop.exitCode}, stderr ${stop.stderr}`);
         }
         const ls = await cli.run(["apps", "ls", "--project", project.id]);
-        if (ls.exitCode !== 0 || !new RegExp(`${slug}\\s+web\\s+static\\s`).test(ls.stdout)) {
+        if (ls.exitCode !== 0 || !new RegExp(`${slug}\\s+static\\s`).test(ls.stdout)) {
           throw new Error(`kortix apps ls does not print static: exit ${ls.exitCode}, stdout ${ls.stdout}, stderr ${ls.stderr}`);
         }
         const home = await page("/");
         if (home.status !== 200 || !home.text.includes("<title>v1</title>")) throw new Error(`not served after stop: ${home.status}`);
       });
 
-      await ctx.step("retention: after 8 deploys the App keeps its active deployment and the 5 newest others", async () => {
+      await ctx.step("retention: after 6 more deploys (v4-v9) the App keeps its active release and the 5 newest others", async () => {
         for (let i = 3; i <= 8; i += 1) await deploy(`v${i}`, `console.log(${i})`);
         const list = await owner.get("/v1/projects/:projectId/apps/:appId/deployments",
           { params: { ...projectParams, appId } });
@@ -1340,8 +1314,8 @@ flow(
         const ready = rows.filter((row) => row.status === "ready").map((row) => row.version).sort((a, b) => a - b);
         // Retired deployments are `deleted`, which the list leaves out.
         const listed = rows.map((row) => row.version);
-        if (JSON.stringify(ready) !== JSON.stringify([3, 4, 5, 6, 7, 8]) || listed.includes(1) || listed.includes(2)) {
-          throw new Error(`expected exactly 3-8 ready and 1-2 retired, got ready ${ready}, listed ${listed}`);
+        if (JSON.stringify(ready) !== JSON.stringify([4, 5, 6, 7, 8, 9]) || [1, 2, 3].some((version) => listed.includes(version))) {
+          throw new Error(`expected exactly 4-9 ready and 1-3 retired, got ready ${ready}, listed ${listed}`);
         }
         const home = await page("/");
         if (!home.text.includes("<title>v8</title>")) throw new Error("the newest deployment is not served");
@@ -1353,6 +1327,197 @@ flow(
       });
     } finally {
       if (appId) await owner.del("/v1/projects/:projectId/apps/:appId", { params: { ...projectParams, appId } }).catch(() => {});
+      cli.dispose();
+    }
+  },
+);
+
+flow(
+  "APP-11",
+  {
+    domain: "apps",
+    routes: [
+      "PUT /v1/admin/api/projects/:id/features",
+      "POST /v1/projects/:projectId/apps",
+      "DELETE /v1/projects/:projectId/apps/:appId",
+      "GET /v1/projects/:projectId/apps/:appId/machines",
+      "POST /v1/projects/:projectId/apps/:appId/machines/:machineId/start",
+      "POST /v1/projects/:projectId/apps/:appId/machines/:machineId/stop",
+      "POST /v1/projects/:projectId/apps/:appId/machines/:machineId/restart",
+      "DELETE /v1/projects/:projectId/apps/:appId/machines/:machineId",
+      "PUT /v1/projects/:projectId/apps/:appId/scale",
+      "POST /v1/projects/:projectId/apps/:appId/exec",
+      "GET /v1/projects/:projectId/apps/:appId/volumes",
+      "POST /v1/projects/:projectId/apps/:appId/volumes",
+      "PATCH /v1/projects/:projectId/apps/:appId/volumes/:volumeId",
+      "DELETE /v1/projects/:projectId/apps/:appId/volumes/:volumeId",
+      "GET /v1/projects/:projectId/apps/:appId/volumes/:volumeId/snapshots",
+      "POST /v1/projects/:projectId/apps/:appId/volumes/:volumeId/snapshots",
+      "POST /v1/projects/:projectId/apps/:appId/volumes/:volumeId/restore",
+      "POST /v1/projects/:projectId/apps/:appId/volumes/:volumeId/fork",
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const project = await team.project();
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const memberPrincipal = await team.addMember("member");
+    await team.grantProjectRole(project.id, memberPrincipal.userId!, "member");
+    const member = ctx.client.as(memberPrincipal);
+    const slug = ctx.fixtures.name("fleet").toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 63);
+    const cli = new CliSandbox("app9");
+    let appId = "";
+    let volumeId = "";
+    const app = () => ({ projectId: project.id, appId });
+    const vol = (id = volumeId) => ({ projectId: project.id, appId, volumeId: id });
+    const machine = { projectId: project.id, appId: "", machineId: UNKNOWN_ID };
+
+    try {
+      await ctx.step("enable Apps, create an App with no release, sign the CLI in", async () => {
+        await setFeatureAsOperator(ctx, project.id, "apps", true);
+        const created = await owner.post("/v1/projects/:projectId/apps", { slug, name: "ke2e fleet App" }, { params: { projectId: project.id } });
+        created.status(201);
+        appId = created.json<any>().app_id;
+        machine.appId = appId;
+        const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name("cli-app9") });
+        const login = await cli.login(pat, { noProject: true, account: project.accountId });
+        if (login.exitCode !== 0) throw new Error(`kortix login: ${login.stderr}`);
+      });
+
+      await ctx.step("an App with no release lists no machines and no volumes", async () => {
+        (await owner.get("/v1/projects/:projectId/apps/:appId/machines", { params: app() })).status(200).body().has("$.machines", []);
+        (await owner.get("/v1/projects/:projectId/apps/:appId/volumes", { params: app() })).status(200).body().has("$.volumes", []);
+      });
+
+      await ctx.step("scale and exec need a server release: 409 app_no_machines; kortix apps scale exits 1 with that reason", async () => {
+        (await owner.put("/v1/projects/:projectId/apps/:appId/scale", { count: { app: 2 } }, { params: app() }))
+          .status(409).body().has("$.code", "app_no_machines");
+        (await owner.post("/v1/projects/:projectId/apps/:appId/exec", { command: ["true"] }, { params: app() }))
+          .status(409).body().has("$.code", "app_no_machines");
+        const scale = await cli.run(["apps", "scale", "count", slug, "2", "--project", project.id]);
+        if (scale.exitCode !== 1 || !scale.stderr.includes("deploy a server release first")) {
+          throw new Error(`kortix apps scale: exit ${scale.exitCode}, stderr ${scale.stderr}`);
+        }
+      });
+
+      await ctx.step("start, stop, restart and destroy of an unknown machine → 404 machine_not_found", async () => {
+        for (const action of ["start", "stop", "restart"] as const) {
+          (await owner.post(`/v1/projects/:projectId/apps/:appId/machines/:machineId/${action}`, {}, { params: machine }))
+            .status(404).body().has("$.code", "machine_not_found");
+        }
+        (await owner.del("/v1/projects/:projectId/apps/:appId/machines/:machineId", { params: machine }))
+          .status(404).body().has("$.code", "machine_not_found");
+      });
+
+      await ctx.step("volume create refuses a bad name (400 volume_name_invalid) and a size outside 1-100 GB (400 volume_size_invalid)", async () => {
+        (await owner.post("/v1/projects/:projectId/apps/:appId/volumes", { name: "Bad-Name", size_gb: 10 }, { params: app() }))
+          .status(400).body().has("$.code", "volume_name_invalid");
+        for (const size of [0, 101]) {
+          (await owner.post("/v1/projects/:projectId/apps/:appId/volumes", { name: "data", size_gb: size }, { params: app() }))
+            .status(400).body().has("$.code", "volume_size_invalid");
+        }
+      });
+
+      await ctx.step("every volume route on an unknown volume → 404 volume_not_found", async () => {
+        const unknown = vol(UNKNOWN_ID);
+        (await owner.patch("/v1/projects/:projectId/apps/:appId/volumes/:volumeId", { size_gb: 20 }, { params: unknown }))
+          .status(404).body().has("$.code", "volume_not_found");
+        (await owner.get("/v1/projects/:projectId/apps/:appId/volumes/:volumeId/snapshots", { params: unknown }))
+          .status(404).body().has("$.code", "volume_not_found");
+        (await owner.post("/v1/projects/:projectId/apps/:appId/volumes/:volumeId/snapshots", {}, { params: unknown }))
+          .status(404).body().has("$.code", "volume_not_found");
+        (await owner.post("/v1/projects/:projectId/apps/:appId/volumes/:volumeId/restore", { snapshot_id: "manual-20261010" }, { params: unknown }))
+          .status(404).body().has("$.code", "volume_not_found");
+        (await owner.post("/v1/projects/:projectId/apps/:appId/volumes/:volumeId/fork", { name: "copy" }, { params: unknown }))
+          .status(404).body().has("$.code", "volume_not_found");
+        (await owner.del("/v1/projects/:projectId/apps/:appId/volumes/:volumeId", { params: unknown, query: { confirm: "data" } }))
+          .status(404).body().has("$.code", "volume_not_found");
+      });
+
+      await ctx.step("a volume (seeded: the local profile has no Platinum) lists with its size, retention and attachment, adds the volumes capability; the CLI prints it", async () => {
+        volumeId = await withDb(ctx, async (db) => {
+          const accountId = (await db.query("SELECT account_id FROM kortix.apps WHERE app_id = $1", [appId])).rows[0].account_id as string;
+          const inserted = await db.query(
+            `INSERT INTO kortix.app_volumes (app_id, account_id, name, size_gb, external_id, status)
+             VALUES ($1, $2, 'data', 10, $3, 'ready') RETURNING volume_id`,
+            [appId, accountId, `ke2e-${ctx.fixtures.name("vol")}`],
+          );
+          return inserted.rows[0].volume_id as string;
+        });
+        const list = await owner.get("/v1/projects/:projectId/apps/:appId/volumes", { params: app() });
+        list.status(200);
+        const row = (list.json<any>().volumes as Array<Record<string, unknown>>)[0];
+        if (row?.volume_id !== volumeId || row.name !== "data" || row.size_gb !== 10 || row.attached !== false || row.snapshot_retention_days !== 5 || row.process_group !== "app") {
+          throw new Error(`volume row: ${JSON.stringify(row)}`);
+        }
+        const shown = await owner.get("/v1/projects/:projectId/apps/:appId", { params: app() });
+        shown.status(200);
+        const capabilities = shown.json<any>().capabilities as string[];
+        if (!capabilities.includes("volumes") || !capabilities.includes("snapshots") || capabilities.includes("machines")) {
+          throw new Error(`capabilities with a volume and no server release: ${JSON.stringify(capabilities)}`);
+        }
+        const ls = await cli.run(["apps", "volumes", slug, "--project", project.id]);
+        if (ls.exitCode !== 0 || !/data\s+app\s+10 GB/.test(ls.stdout)) throw new Error(`kortix apps volumes: exit ${ls.exitCode}, stdout ${ls.stdout}, stderr ${ls.stderr}`);
+      });
+
+      await ctx.step("extend only grows: shrink → 400 volume_shrink_refused, 101 GB → 400 volume_size_invalid, retention 61 → 400; 20 GB with retention 7 → 200 and reads back", async () => {
+        (await owner.patch("/v1/projects/:projectId/apps/:appId/volumes/:volumeId", { size_gb: 5 }, { params: vol() }))
+          .status(400).body().has("$.code", "volume_shrink_refused");
+        (await owner.patch("/v1/projects/:projectId/apps/:appId/volumes/:volumeId", { size_gb: 101 }, { params: vol() }))
+          .status(400).body().has("$.code", "volume_size_invalid");
+        (await owner.patch("/v1/projects/:projectId/apps/:appId/volumes/:volumeId", { snapshot_retention_days: 61 }, { params: vol() }))
+          .status(400).body().has("$.code", "volume_retention_invalid");
+        (await owner.patch("/v1/projects/:projectId/apps/:appId/volumes/:volumeId", { size_gb: 20, snapshot_retention_days: 7 }, { params: vol() }))
+          .status(200).body().has("$.size_gb", 20).has("$.snapshot_retention_days", 7);
+        const read = await owner.get("/v1/projects/:projectId/apps/:appId/volumes", { params: app() });
+        read.status(200).body().has("$.volumes[0].size_gb", 20).has("$.volumes[0].snapshot_retention_days", 7);
+      });
+
+      await ctx.step("destroy needs ?confirm=<name> (400 confirmation_required); restore and fork refuse an unknown snapshot (400 snapshot_invalid); fork refuses a bad name", async () => {
+        (await owner.del("/v1/projects/:projectId/apps/:appId/volumes/:volumeId", { params: vol() }))
+          .status(400).body().has("$.code", "confirmation_required");
+        (await owner.del("/v1/projects/:projectId/apps/:appId/volumes/:volumeId", { params: vol(), query: { confirm: "other" } }))
+          .status(400).body().has("$.code", "confirmation_required");
+        (await owner.post("/v1/projects/:projectId/apps/:appId/volumes/:volumeId/restore", { snapshot_id: "yesterday" }, { params: vol() }))
+          .status(400).body().has("$.code", "snapshot_invalid");
+        (await owner.post("/v1/projects/:projectId/apps/:appId/volumes/:volumeId/fork", { name: "copy", snapshot_id: "yesterday" }, { params: vol() }))
+          .status(400).body().has("$.code", "snapshot_invalid");
+        (await owner.post("/v1/projects/:projectId/apps/:appId/volumes/:volumeId/fork", { name: "Bad-Copy" }, { params: vol() }))
+          .status(400).body().has("$.code", "volume_name_invalid");
+      });
+
+      await ctx.step("a project member (no deploy, no admin) is refused every write: 403 on scale, exec, machine start, volume create, extend, snapshot, restore, fork, destroy and App delete", async () => {
+        const refusals = [
+          await member.put("/v1/projects/:projectId/apps/:appId/scale", { count: { app: 1 } }, { params: app() }),
+          await member.post("/v1/projects/:projectId/apps/:appId/exec", { command: ["true"] }, { params: app() }),
+          await member.post("/v1/projects/:projectId/apps/:appId/machines/:machineId/start", {}, { params: machine }),
+          await member.post("/v1/projects/:projectId/apps/:appId/volumes", { name: "more", size_gb: 10 }, { params: app() }),
+          await member.patch("/v1/projects/:projectId/apps/:appId/volumes/:volumeId", { size_gb: 30 }, { params: vol() }),
+          await member.post("/v1/projects/:projectId/apps/:appId/volumes/:volumeId/snapshots", {}, { params: vol() }),
+          await member.post("/v1/projects/:projectId/apps/:appId/volumes/:volumeId/restore", { snapshot_id: "manual-20261010" }, { params: vol() }),
+          await member.post("/v1/projects/:projectId/apps/:appId/volumes/:volumeId/fork", { name: "copy" }, { params: vol() }),
+          await member.del("/v1/projects/:projectId/apps/:appId/volumes/:volumeId", { params: vol(), query: { confirm: "data" } }),
+          await member.del("/v1/projects/:projectId/apps/:appId", { params: app() }),
+        ];
+        refusals.forEach((response) => response.status(403));
+        (await owner.get("/v1/projects/:projectId/apps/:appId/volumes", { params: app() })).status(200).body().has("$.volumes[0].size_gb", 20);
+      });
+
+      await ctx.step("NONMEMBER learns nothing (403/404); ANON → 401", async () => {
+        (await ctx.client.as(ctx.P.NONMEMBER).get("/v1/projects/:projectId/apps/:appId/machines", { params: app() })).status([403, 404]);
+        (await ctx.client.as(ctx.P.NONMEMBER).get("/v1/projects/:projectId/apps/:appId/volumes", { params: app() })).status([403, 404]);
+        (await ctx.client.as(ctx.P.ANON).get("/v1/projects/:projectId/apps/:appId/volumes", { params: app() })).status(401);
+      });
+
+      await ctx.step("delete the App", async () => {
+        await withDb(ctx, (db) => db.query("DELETE FROM kortix.app_volumes WHERE volume_id = $1", [volumeId]));
+        volumeId = "";
+        (await owner.del("/v1/projects/:projectId/apps/:appId", { params: app() })).status(200);
+        appId = "";
+      });
+    } finally {
+      if (volumeId) await withDb(ctx, (db) => db.query("DELETE FROM kortix.app_volumes WHERE volume_id = $1", [volumeId])).catch(() => {});
+      if (appId) await owner.del("/v1/projects/:projectId/apps/:appId", { params: app() }).catch(() => {});
       cli.dispose();
     }
   },

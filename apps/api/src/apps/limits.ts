@@ -3,11 +3,8 @@
  * provider compute.
  *
  * An App runtime is a sandbox. It burns the same CPU, memory and disk a session
- * burns, on the same providers, against the same wallet. Until this module the
- * only control was the per-App monthly budget: `POST /projects/:id/apps`
- * accepted 64 CPU / 512 GB RAM / 2 TB disk with no clamp, no account
- * entitlement was consulted on deploy or wake, and nothing bounded how many
- * Apps an account could create or run at once.
+ * burns, on the same providers, against the same wallet, and the account's
+ * credits pay for it: there is no per-App budget.
  *
  * The four controls here mirror what sessions already enforce:
  *   1. machine spec  — the same SANDBOX_SPEC_LIMITS ceiling a session snapshot
@@ -23,8 +20,6 @@
 import { appDeployments, appRuntimes, apps } from '@kortix/db';
 import { and, count, eq, inArray, isNull } from 'drizzle-orm';
 import { config } from '../config';
-import { appBudgetNotApplicable, appHasBudget, appMonthlyEstimateUsd, assertAppBudgetAvailable, maxAppMonthlyBudgetUsd } from './budget';
-import type { ProviderName } from '../platform/providers';
 import { checkBillingAdmission } from '../billing/services/billing-gate';
 import { getTier } from '../billing/services/tiers';
 import { resolveAccountTier } from '../shared/account-limits';
@@ -33,8 +28,6 @@ import { SANDBOX_SPEC_LIMITS } from '../snapshots/dockerfile-layer';
 
 /** An App machine may not exceed what a session sandbox may. */
 export const APP_MACHINE_LIMITS = SANDBOX_SPEC_LIMITS;
-
-export { MAX_APP_MONTHLY_BUDGET_USD } from './budget';
 
 /** App runtime statuses that hold provider compute. */
 const LIVE_APP_RUNTIME_STATUSES = ['provisioning', 'starting', 'running'] as const;
@@ -94,38 +87,6 @@ export function assertAppMachineWithinLimits(machine: AppMachineRequest): void {
   }
 }
 
-export function assertAppBudgetWithinLimits(budgetUsd: number | undefined): void {
-  if (budgetUsd === undefined) return;
-  const max = maxAppMonthlyBudgetUsd();
-  if (budgetUsd < 0 || budgetUsd > max) {
-    throw new AppLimitError(
-      'app_budget_out_of_range',
-      `monthly_budget_usd must be between 0 and ${max}`,
-      400,
-      { max, requested: budgetUsd },
-    );
-  }
-}
-
-/**
- * 400 `app_budget_not_applicable` when a request sets `monthly_budget_usd` on
- * an App that has no budget: an always-on or `convex` App (fixed cost) or a
- * static one (no machine). See `appHasBudget`.
- */
-export function assertAppBudgetApplies(
-  budgetUsd: number | undefined,
-  app: { cpuCores: number; memoryGb: number; diskGb: number; kind: string; alwaysOn: boolean },
-  hostingType: string | null,
-  provider?: ProviderName,
-): void {
-  if (budgetUsd === undefined) return;
-  const reason = appBudgetNotApplicable(app, hostingType, provider);
-  if (!reason) return;
-  throw new AppLimitError('app_budget_not_applicable', reason, 400, {
-    estimated_monthly_usd: hostingType === 'static' ? 0 : appMonthlyEstimateUsd(app, provider),
-  });
-}
-
 /* ─── 2. Account entitlement ─────────────────────────────────────────────── */
 
 export class AppAccountUnfundedError extends Error {
@@ -141,9 +102,7 @@ export class AppAccountUnfundedError extends Error {
 }
 
 /**
- * The account entitlement half of the wake gate the Apps spec describes
- * ("Wake checks the account entitlement and the App monthly budget"). Same
- * check session create runs, so an account that cannot start a session cannot
+ * The account entitlement half of the wake gate. Same check session create runs, so an account that cannot start a session cannot
  * silently keep burning compute through an App instead.
  */
 export async function assertAppAccountFunded(accountId: string): Promise<void> {
@@ -200,20 +159,17 @@ export async function assertAppQuotaAvailable(accountId: string): Promise<void> 
 
 /**
  * Everything an App must satisfy before it consumes provider compute, in the
- * order a support engineer wants to read them: can the account pay at all, does
- * it have a free slot, and has this on-demand App exhausted its own monthly
- * budget.
+ * order a support engineer wants to read them: can the account pay at all, and
+ * does it have a free slot.
  * Deploy and wake both run it — otherwise an unfunded account keeps burning
  * compute through an App after session create has already started refusing.
  */
 export async function assertAppComputeAllowed(
-  app: { appId: string; accountId: string; kind: string; alwaysOn: boolean; monthlyBudgetUsd: string | number },
+  app: { accountId: string },
   options: { excludeRuntimeId?: string } = {},
 ): Promise<void> {
   await assertAppAccountFunded(app.accountId);
   await assertAppConcurrencyAvailable(app.accountId, options.excludeRuntimeId);
-  // Only an on-demand App has a budget; an always-on one costs its size.
-  if (appHasBudget(app)) await assertAppBudgetAvailable(app.appId, Number(app.monthlyBudgetUsd));
 }
 
 /* ─── 4. Concurrency ─────────────────────────────────────────────────────── */

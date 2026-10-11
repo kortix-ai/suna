@@ -85,10 +85,20 @@ mock.module('@/lib/supabase/client', () => ({
 }));
 let actionResult: Record<string, unknown> = { success: true };
 mock.module('./actions', () => ({
-  sendEmailCode: async () => actionResult,
   resolveAuthMode: async () => ({ mode: 'unknown' }),
   signInWithPassword: async () => ({}),
   signUpWithPassword: async () => ({}),
+}));
+// The submit travels through the bounded route transport (KRTX-2072), and the
+// route forwards the action's returned value as the 200 body — so the mock
+// stands in for the whole server side: the Set-Cookie it fails to deliver is
+// exactly the situation under test, and the page must seed from result.
+mock.module('@/lib/auth/submit-auth', () => ({
+  AUTH_SUBMIT_TIMEOUT_MS: 30_000,
+  AUTH_TIMEOUT_MESSAGE: 'This is taking longer than expected. Please try again.',
+  AUTH_NETWORK_MESSAGE: 'The request could not be sent. Please try again.',
+  AUTH_UNEXPECTED_MESSAGE: 'Something went wrong. Please try again.',
+  submitAuthForm: async () => ({ ok: true, result: actionResult }),
 }));
 mock.module('@/lib/env-config', () => ({
   getEnv: () => ({ AUTH_METHODS: 'magic,password', AUTH_PROVIDERS: '' }),

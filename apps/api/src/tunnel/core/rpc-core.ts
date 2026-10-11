@@ -287,7 +287,7 @@ function computerAccessMessage(kind: ComputerAccessErrorKind, machine: string): 
     case 'computer_access_denied':
       return `The owner of ${machine} denied access. It stays denied for 10 minutes. Ask the user before retrying.`;
     case 'computer_access_off':
-      return `Access to ${machine} is turned off on that computer. Ask the user to allow access from the Kortix menu on that computer.`;
+      return `Access to ${machine} is turned off on that computer. Ask the user to change Access in Your computer in Kortix, from the Kortix menu bar, or with \`npx @kortix/agent-tunnel@latest access ask\` on that computer.`;
   }
 }
 

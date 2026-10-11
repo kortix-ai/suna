@@ -1,6 +1,7 @@
 import { connectorConnections, projectTriggerEventSubscriptions as subs } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
+import { createHolderSlots } from '../../shared/holder-slots';
 
 export type EventSubscriptionRow = typeof subs.$inferSelect;
 export type EventSubscriptionStatus = 'active' | 'needs_connection' | 'error';
@@ -101,6 +102,19 @@ export async function touchLastEvent(projectId: string, slug: string): Promise<v
 }
 
 /**
+ * One lock transaction per process. The connector sweep reconciles 6 projects
+ * at once, and each body queries the pool its lock transaction pins; uncapped,
+ * 4 holders deadlocked a staging API task whose pool is 4. With billing's
+ * `ACCOUNT_LOCK_MAX_HOLDERS` (2), 3 holders stay below that pool.
+ */
+export const EVENT_LOCK_MAX_HOLDERS = 1;
+const EVENT_LOCK_ACQUIRE_TIMEOUT_MS = 30_000;
+const eventLockSlots = createHolderSlots(
+  EVENT_LOCK_MAX_HOLDERS,
+  (timeoutMs) => new Error(`trigger-events lock: no holder slot free within ${timeoutMs}ms`),
+);
+
+/**
  * Runs `fn` while holding a per-project transaction-scoped advisory lock.
  * Returns false (and skips `fn`) when another replica holds it; the next
  * reconcile converges. Transaction-scoped, not session-scoped: the prod
@@ -110,12 +124,17 @@ export async function withProjectEventLock(
   projectId: string,
   fn: () => Promise<void>,
 ): Promise<boolean> {
-  return db.transaction(async (tx) => {
-    const res = await tx.execute(
-      sql`select pg_try_advisory_xact_lock(hashtextextended(${`trigger-events:${projectId}`}, 0)) as ok`,
-    );
-    const ok = (res as unknown as Array<{ ok: boolean }>)[0]?.ok === true;
-    if (ok) await fn();
-    return ok;
-  });
+  await eventLockSlots.acquire(EVENT_LOCK_ACQUIRE_TIMEOUT_MS);
+  try {
+    return await db.transaction(async (tx) => {
+      const res = await tx.execute(
+        sql`select pg_try_advisory_xact_lock(hashtextextended(${`trigger-events:${projectId}`}, 0)) as ok`,
+      );
+      const ok = (res as unknown as Array<{ ok: boolean }>)[0]?.ok === true;
+      if (ok) await fn();
+      return ok;
+    });
+  } finally {
+    eventLockSlots.release();
+  }
 }

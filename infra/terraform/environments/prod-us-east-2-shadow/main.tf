@@ -115,15 +115,22 @@ module "api" {
 
   alb_ingress_cidrs = var.alb_ingress_cidrs
 
-  task_cpu           = 1024
-  task_memory        = 4096
-  desired_count      = 2
-  min_capacity       = 2
-  max_capacity       = 10
-  use_fargate_spot   = false
-  container_insights = true
-  cpu_target         = 55
-  memory_target      = 65
+  task_cpu      = 1024
+  task_memory   = 4096
+  desired_count = 2
+  min_capacity  = 2
+  max_capacity  = 10
+  # Same prod-DB budget rule as environments/prod: one replacement at a time
+  # during the rolling deploy (apps/api/src/shared/database-capacity.ts), and
+  # the deployable pairing: minimum_healthy 50 with maximum 100 (AWS rounds
+  # minimum UP / maximum DOWN; min=100 would deadlock the deploy at
+  # desired_count = 2).
+  deployment_minimum_healthy_percent = 50
+  deployment_maximum_percent         = 100
+  use_fargate_spot                   = false
+  container_insights                 = true
+  cpu_target                         = 55
+  memory_target                      = 65
 
   requests_per_target_target = 600
   tags = merge(local.tags, {
