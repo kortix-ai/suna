@@ -1,5 +1,5 @@
 {
-  "source_hash": "57ebc3e6353e145fac7767e944536092d647b6c0604cd03db8eb723b52d5990a",
+  "source_hash": "9f33f8a6d572fa91dec1115f5c37abf2330d27e3c6a86568d48abd6c4956aef4",
   "diff_files": [
     ".agents/skills/learnings/MEMORY.md",
     ".agents/skills/learnings/entries/2026-10-11T115135Z-open-every-bun-websocket-to-a-kortix-host-with-an-explicit-u.md",
@@ -15,13 +15,13 @@
     "packages/agent-tunnel/src/agent/service-lifecycle.test.ts",
     "packages/shared/src/sandbox-runtime-artifact.ts"
   ],
-  "diff_hash": "bbd26d85d5a607f10998e66690da59d843aae1fca7d8b5f7dae569ee8c6f4d66",
-  "head": "64f7ba62fe9c3da887da93f61485181779ec6a44",
+  "diff_hash": "0c1ececffdc3e2bd13b799efa098152b1b6f1d72063d08d95148f667bbf681f3",
+  "head": "cad304c878e2305ada40a316782d51e4dd0d5512",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-11T16:06:30.245Z"
+  "at": "2026-10-11T18:47:15.498Z"
 }
