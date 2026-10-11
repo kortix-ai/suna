@@ -1,21 +1,16 @@
 {
-  "source_hash": "72252c5d257ca2461faa17ad52b971a570813395eef17cd874b7f7808f91a7c8",
+  "source_hash": "2754fb13438f1cb8a2932c6d4c5d826e49340c8c2243496ec4c181cf853ccd8a",
   "diff_files": [
-    ".agents/skills/learnings/MEMORY.md",
-    ".agents/skills/learnings/entries/2026-10-11T044025Z-cap-the-holders-of-any-lock-transaction-whose-body-queries-t.md",
-    "apps/api/src/billing/services/webhook-concurrency.ts",
-    "apps/api/src/projects/trigger-events/store.integration.test.ts",
-    "apps/api/src/projects/trigger-events/store.ts",
-    "apps/api/src/shared/holder-slots.ts",
-    "apps/web/src/lib/seo/content-timestamps.json"
+    "apps/cli/src/commands/apps.ts",
+    "apps/web/src/stores/session-hover-store.test.ts"
   ],
-  "diff_hash": "baf4eeeba8db1bee2874658cbd9ea8f8ec86bb2c062322e2c9bccd0ed36fd8cb",
-  "head": "cb8db269e589b67c6b8526508a6d14b596dd9ed0",
+  "diff_hash": "0164f75e5ec98a78a6d5dec3905b8f36c616b7830972032967cc52df74012acb",
+  "head": "f1be0444c962daeaaf7250c37bfda66fa20f2268",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-11T05:01:02.490Z"
+  "at": "2026-10-11T05:56:54.339Z"
 }
