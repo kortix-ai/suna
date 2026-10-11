@@ -29,7 +29,7 @@ import { AppPreview } from './app-preview';
 import { AppAccessModal } from './app-access';
 import { AppConnectDialog } from './app-connect';
 import { AppMachinesPanel, AppServices, AppVolumesPanel } from './app-fleet';
-import { localizedAppCopy, appCan, appCommand, appCostLabel, appHost, appStatus, deployNotice, DeployCommand } from './app-shared';
+import { localizedAppCopy, appCan, appCommand, appHost, appStatus, deployNotice, DeployCommand } from './app-shared';
 
 /**
  * The App, full screen, with its controls above it.
@@ -273,13 +273,8 @@ export function AppDetailModal({
                       >
                         <span className="flex flex-col">
                           {tI18nComplete.raw('text044ba8a9ae43')}
-                          <span className="text-muted-foreground text-xs">{tI18nComplete.raw('textb2fceee88a51')}</span>
+                          <span className="text-muted-foreground text-xs">{tI18nComplete.raw('text853696d5a64d')}</span>
                         </span>
-                        {isServer && app.estimated_monthly_usd ? (
-                          <span className="text-muted-foreground ml-auto pl-3 text-xs tabular-nums">
-                            {tI18nComplete('texte15cb9ffae7f', { value0: Math.round(app.estimated_monthly_usd) })}
-                          </span>
-                        ) : null}
                       </DropdownMenuCheckboxItem>
                     ) : null}
                     <DropdownMenuItem onClick={() => setVersionsOpen((value) => !value)}>
@@ -361,7 +356,6 @@ export function AppDetailModal({
                         ? tI18nComplete.raw('text044ba8a9ae43')
                         : tI18nComplete.raw('text7be15cd189a3')
                       : null,
-                    appCostLabel(app, tI18nComplete),
                     appCan(app, 'rollback') && app.retained_deployments !== undefined
                       ? tI18nComplete('text04957fa46a70', { value0: app.retained_deployments })
                       : null,

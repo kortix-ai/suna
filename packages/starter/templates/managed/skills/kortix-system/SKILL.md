@@ -374,9 +374,9 @@ type. `labels` (for example `backend`) only group and filter Apps.
   React, or exported Next.js App here and deploy its output directory.
 - A **server App** (`--type dockerfile`, or `--image`) runs machines. It runs
   **always on** (the default, 24/7) or **on demand** (`--on-demand`: stops
-  when idle, wakes on the next request). An always-on App costs its machines
-  24/7, about 73 USD a month on the default machine (`estimated_monthly_usd`).
-  Apps have no monthly budget: account credits pay. `--budget` is retired.
+  when idle, wakes on the next request). An always-on App bills its machines
+  24/7; an on-demand App bills only while awake. Apps have no monthly budget:
+  account credits pay. `--budget` is retired.
 - A **backend** (database, server functions, realtime, file storage) is a
   server App with a volume. `kortix apps launch --template convex --name db`
   writes and deploys a self-hosted Convex backend (`db`, data on a volume) and

@@ -19318,11 +19318,9 @@
       "text6f417aa88601": "已按来源列出 LLM 网关支出",
       "textc96cd610ba08": "在速率限制后重试了共享提供商密钥",
       "text044ba8a9ae43": "始终运行",
-      "textb2fceee88a51": "全天候运行。仅在达到每月预算时停止。",
       "text163de9edcec1": "隐藏日志",
       "text04957fa46a70": "保留 {value0} 个早期版本",
       "text80c652c4eeec": "暂无事件。",
-      "texte15cb9ffae7f": "约 ${value0} / 月",
       "textaef7de28d529": "服务器",
       "text34b66838fe48": "显示日志",
       "text903b49a91e18": "静态站点",
@@ -19525,7 +19523,8 @@
       "text1a6f7cae06cc": "版本",
       "textc061da196eae": "机器",
       "text53a480e304c0": "卷",
-      "text0ac04e12ff20": "已在 App 的机器中运行命令"
+      "text0ac04e12ff20": "已在 App 的机器中运行命令",
+      "text853696d5a64d": "全天候运行。不会因空闲而停止。"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

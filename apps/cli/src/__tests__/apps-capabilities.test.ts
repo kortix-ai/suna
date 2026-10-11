@@ -285,7 +285,8 @@ describe('kortix apps — capabilities and links', () => {
     const show = await runCli(['apps', 'show', 'db', ...P], config);
     expect(show.code).toBe(0);
     expect(show.stdout).toMatch(/capabilities\s+deployments, rollback, preview, member_tokens, sleep/);
-    expect(show.stdout).toMatch(/cost\s+about \$59\/month \(1 vCPU · 1 GB, 24\/7\)/);
+    expect(show.stdout).toMatch(/runs\s+24\/7/);
+    expect(show.stdout).not.toMatch(/\$|USD|month|cost/);
     expect(show.stdout).not.toMatch(/budget|kind/);
     expect(show.stdout).toMatch(/used by\s+site/);
     const site = await runCli(['apps', 'show', 'site', ...P], config);

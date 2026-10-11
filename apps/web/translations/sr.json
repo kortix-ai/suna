@@ -19318,11 +19318,9 @@
       "text6f417aa88601": "Потрошња LLM гејтвеја по извору излистана",
       "textc96cd610ba08": "Ponovo pokušan deljeni ključ provajdera nakon ograničenja korišćenja",
       "text044ba8a9ae43": "Uvek uključena",
-      "textb2fceee88a51": "Radi 24/7. Zaustavlja se samo kad dostigne mesečni budžet.",
       "text163de9edcec1": "Sakrij log",
       "text04957fa46a70": "Čuva {value0} ranijih verzija",
       "text80c652c4eeec": "Još nema događaja.",
-      "texte15cb9ffae7f": "Oko ${value0} mesečno",
       "textaef7de28d529": "Server",
       "text34b66838fe48": "Prikaži log",
       "text903b49a91e18": "Statički sajt",
@@ -19525,7 +19523,8 @@
       "text1a6f7cae06cc": "Verzije",
       "textc061da196eae": "Mašine",
       "text53a480e304c0": "Volumeni",
-      "text0ac04e12ff20": "Pokrenuta komanda na mašini App-a"
+      "text0ac04e12ff20": "Pokrenuta komanda na mašini App-a",
+      "text853696d5a64d": "Radi 24/7. Nikad se ne zaustavlja zbog neaktivnosti."
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",

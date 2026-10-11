@@ -189,12 +189,12 @@ the live data goes back to the snapshot.
 - A Convex env var is readable by anyone with the admin key. Set secrets from
   stdin so they stay out of the shell history.
 
-## Size and cost
+## Size
 
-- The backend is one always-on machine: about $59 a month at 1 vCPU / 1 GB.
-  Change `vm` in its `kortix.yaml` block and deploy to resize (a new release;
-  the volume keeps the data).
-- The dashboard is on demand: it costs only while someone has it open.
+- The backend is one always-on machine of 1 vCPU / 1 GB. Change `vm` in its
+  `kortix.yaml` block and deploy to resize (a new release; the volume keeps the
+  data).
+- The dashboard is on demand: it runs only while someone has it open.
 - Apps have no monthly budget: account credits pay.
 
 ## Delete

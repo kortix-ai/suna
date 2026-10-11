@@ -477,17 +477,10 @@ export async function provisionDeployApp(
   return apps.create({ slug, name: flags.name ?? slug, ...flagSettings });
 }
 
-/**
- * What an always-on App costs: "Runs 24/7 on 1 vCPU / 2 GB: about $73/month".
- * Null for an on-demand or static App, or when the server predates the estimate.
- */
-export function runCostLine(app: App): string | null {
-  const estimate = app.estimated_monthly_usd;
-  if (app.always_on === false || !estimate || app.hosting_type === 'static') return null;
-  return (
-    `Runs 24/7 on ${app.machine.cpu} vCPU / ${app.machine.memory_gb} GB: ` +
-    `about $${Math.round(estimate)}/month`
-  );
+/** How an always-on App runs: "Runs 24/7 on 1 vCPU / 2 GB". Null for an on-demand or static App. */
+export function runModeLine(app: App): string | null {
+  if (app.always_on === false || app.hosting_type === 'static') return null;
+  return `Runs 24/7 on ${app.machine.cpu} vCPU / ${app.machine.memory_gb} GB`;
 }
 
 /**

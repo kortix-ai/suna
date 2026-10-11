@@ -200,13 +200,15 @@ describe('kortix apps set', () => {
     }
   });
 
-  test('show prints no budget: an on-demand App has no fixed cost, an always-on App shows its 24/7 cost', async () => {
+  test('show prints no budget and no price: an on-demand App runs on demand, an always-on App runs 24/7', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(['apps', 'show', 'storefront', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(r.stdout).not.toMatch(/budget|cost/);
+    expect(r.stdout).not.toMatch(/budget|cost|\$/);
+    expect(r.stdout).toMatch(/runs\s+on demand/);
     const on = await runCli(['apps', 'set', 'storefront', '--project', PROJECT, '--always-on'], config);
-    expect(on.stdout).toMatch(/cost\s+about \$73\/month \(1 vCPU · 2 GB, 24\/7\)/);
+    expect(on.stdout).toMatch(/runs\s+24\/7/);
+    expect(on.stdout).not.toMatch(/\$|USD|month/);
   });
 
   test('set --uses sends the list (deduplicated, trimmed) and prints it; `--uses=` clears it', async () => {

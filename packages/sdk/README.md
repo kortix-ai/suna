@@ -424,7 +424,7 @@ Access modes are `private`, `project`, `restricted`, `public`, and `password`. A
 
 Branch on `app.capabilities` (`machines`, `scale`, `exec`, `volumes`, `snapshots`, `static`, …). A call for a capability the App lacks answers `409 app_capability_unsupported`. A backend (database, Convex) is an ordinary server App with a volume; there is no backend type.
 
-`apps.list()` returns only the Apps the caller may open under each App's access policy (a project manager sees all), so `viewer_can_access` is `true` on every listed App. A `get` of an App the caller cannot open answers `404`. Apps have no budget: account credits pay for App compute. `estimated_monthly_usd` is the live release's machines running 24/7 for a month (each group's `vm` × its scale): the fixed cost of an always-on App, the most an on-demand one can cost.
+`apps.list()` returns only the Apps the caller may open under each App's access policy (a project manager sees all), so `viewer_can_access` is `true` on every listed App. A `get` of an App the caller cannot open answers `404`. Apps have no budget: account credits pay for App compute. An always-on App bills its machines 24/7; an on-demand App only while awake.
 
 ```ts
 await apps.deployments.create(api.app_id, {

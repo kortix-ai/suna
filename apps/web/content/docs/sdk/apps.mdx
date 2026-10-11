@@ -117,11 +117,11 @@ console.log(app.url, deployment.status); // https://…apps.kortix.com  queued
 `create` accepts the machine fields too: `cpu`, `memory_gb`,
 `disk_gb`, `idle_timeout_seconds`, and `always_on`. Omit them for the defaults.
 Apps have no monthly budget: account credits pay for compute. An always-on
-server App has a fixed cost (`estimated_monthly_usd`).
+server App bills 24/7; an on-demand one only while awake.
 `always_on: true` runs a server App 24/7
 (websockets, background loops); `false` stops it after `idle_timeout_seconds`
 and wakes it on the next request. A static App has no runtime: `always_on` is
-`false` and `estimated_monthly_usd` is `0`.
+`false`.
 
 The API ignores `monthly_budget_usd` if an older client sends it (`200`, no
 error). No App response carries it.
@@ -131,15 +131,11 @@ this App may get sign-in tokens for and reach through its bindings mount; the
 default is none, and `update(appId, { uses })` replaces the list (see
 [Apps an App uses](/docs/feature-flags/apps#apps-an-app-uses-sign-in-tokens-and-bindings)).
 
-`estimated_monthly_usd` is what the live release's machines cost running 24/7
-for a month at list compute rates (each group's `vm` × its scale): about 73.48
-for one 1 vCPU / 2 GB / 10 GB machine, and about 59.29 for one 1 vCPU / 1 GB /
-10 GB machine. `create` and `update`
-return `warnings`, which is always `[]`.
+`create` and `update` return `warnings`, which is always `[]`.
 
 ```ts
 const app = await kortix.project(projectId).apps.create({ slug: 'worker', name: 'Worker', always_on: true });
-console.log(app.always_on, app.estimated_monthly_usd); // true 73.48
+console.log(app.always_on, app.hosting_type); // true null (until the first deploy)
 ```
 
 Wait for the deployment by polling its status:
@@ -477,7 +473,7 @@ Every type below is exported from `@kortix/sdk`.
 
 | Type | What it holds |
 |---|---|
-| `App` | Identity, `capabilities`, `labels`, `scale`, `services` (`AppServiceSummary[]`), `machines` (`total`, `running`, `stopped`), `volumes` (`count`, `size_gb`), `config` (the live release's `AppReleaseConfig`, or `null`), `uses`, `used_by`, `auth`, `url`, `access_mode`, `access_revision`, `desired_state`, `active_deployment_id`, `hosting_type` (of the active release: `static`, `sandbox`, or `null` before the first deploy), `machine` (the serving group's size in the live release), `idle_timeout_seconds`, `always_on`, `estimated_monthly_usd` (`0` for a static App), `retained_deployments`, `warnings` (create and update only; always `[]`), `last_request_at`, `viewer_can_access` |
+| `App` | Identity, `capabilities`, `labels`, `scale`, `services` (`AppServiceSummary[]`), `machines` (`total`, `running`, `stopped`), `volumes` (`count`, `size_gb`), `config` (the live release's `AppReleaseConfig`, or `null`), `uses`, `used_by`, `auth`, `url`, `access_mode`, `access_revision`, `desired_state`, `active_deployment_id`, `hosting_type` (of the active release: `static`, `sandbox`, or `null` before the first deploy), `machine` (the serving group's size in the live release), `idle_timeout_seconds`, `always_on`, `retained_deployments`, `warnings` (create and update only; always `[]`), `last_request_at`, `viewer_can_access` |
 | `AppCapability` | `'deployments' \| 'rollback' \| 'preview' \| 'sleep' \| 'static' \| 'member_tokens' \| 'machines' \| 'scale' \| 'exec' \| 'volumes' \| 'snapshots'` |
 | `AppReleaseConfig` · `AppReleaseConfigInput` | The resolved release config (`processes`, `services`, `mounts`, `vm`, `deploy`) · the authored form (`processes`, `http_service`, `services`, `mounts`, `vm`, `deploy`, and the shorthands `port`, `command`, `readiness_path`, `always_on`, `resources`) |
 | `AppServiceConfig` · `AppServiceAccess` · `AppAutoStop` · `AppCheck` | `name`, `internal_port`, `protocol`, `access`, `auto_stop_machines`, `auto_start_machines`, `min_machines_running`, `processes`, `checks` · `'public' \| 'app' \| 'admins'` · `'off' \| 'stop' \| 'suspend'` · `type`, `port`, `path`, `interval_s`, `timeout_s`, `grace_period_s` |

@@ -19318,11 +19318,9 @@
       "text6f417aa88601": "Spesa del gateway LLM per origine elencata",
       "textc96cd610ba08": "Chiave del provider condivisa riprovata dopo il limite di utilizzo",
       "text044ba8a9ae43": "Sempre attiva",
-      "textb2fceee88a51": "Funziona 24/7. Si ferma solo al raggiungimento del budget mensile.",
       "text163de9edcec1": "Nascondi log",
       "text04957fa46a70": "Conserva {value0} versioni precedenti",
       "text80c652c4eeec": "Ancora nessun evento.",
-      "texte15cb9ffae7f": "Circa ${value0} al mese",
       "textaef7de28d529": "Server",
       "text34b66838fe48": "Mostra log",
       "text903b49a91e18": "Sito statico",
@@ -19525,7 +19523,8 @@
       "text1a6f7cae06cc": "Release",
       "textc061da196eae": "Macchine",
       "text53a480e304c0": "Volumi",
-      "text0ac04e12ff20": "Comando eseguito in una macchina dell'App"
+      "text0ac04e12ff20": "Comando eseguito in una macchina dell'App",
+      "text853696d5a64d": "Attiva 24/7. Mai fermata per inattività."
     },
     "publicShareConfirm": {
       "title": "Creare un link pubblico?",

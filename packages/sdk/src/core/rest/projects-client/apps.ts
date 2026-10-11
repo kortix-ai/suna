@@ -159,17 +159,15 @@ export interface App {
   idle_timeout_seconds: number;
   /**
    * `true`: the App runs 24/7 (cron jobs, workers, websockets keep working)
-   * at a fixed monthly cost, `estimated_monthly_usd`. `false`: it stops after
+   * and bills 24/7. `false`: it stops after
    * `idle_timeout_seconds` without requests and wakes on the next one. `false`
    * for a static App, which has no runtime. Optional for wire compatibility
    * with a server that predates it.
    */
   always_on?: boolean;
   /**
-   * What the App's machine costs running 24/7 for one month at list compute
-   * rates (USD): the monthly cost of an always-on App, the most an
-   * on-demand one can cost. `0` for a static App, which runs no machine.
-   * Optional for wire compatibility with a server that predates it.
+   * @deprecated Kortix shows no prices: never display this value. It stays on
+   * the wire for compatibility and will be removed in a future major version.
    */
   estimated_monthly_usd?: number;
   /**

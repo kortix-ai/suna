@@ -133,15 +133,6 @@ export function appSizeLabel(app: App, t: UiTranslator): string {
 }
 
 /**
- * "About $59 a month": the fixed cost of an always-on server App. `null` for a static App (no machine) and an on-demand one (it costs
- * only while awake, billed as usage).
- */
-export function appCostLabel(app: App, t: UiTranslator): string | null {
-  if (app.hosting_type === 'static' || app.always_on === false || !app.estimated_monthly_usd) return null;
-  return t('texte15cb9ffae7f', { value0: Math.round(app.estimated_monthly_usd) });
-}
-
-/**
  * Who can open an App, in the words the picker shows.
  *
  * Module scope, above every consumer. It used to be declared BELOW

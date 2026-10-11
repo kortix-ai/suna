@@ -101,8 +101,8 @@ harnesses:
 # `db` below (a self-hosted Convex backend) plus an admins-only `db-dashboard`.
 # `kortix apps deploy` with no arguments deploys every block, used Apps first.
 # A static App (files, no machine) ignores run mode, resources, env
-# and secrets. A server App runs always on (default) or on demand; always on
-# costs about 73 USD/month on the default machine. Apps have no budget:
+# and secrets. A server App runs always on (default, billed 24/7) or on demand
+# (billed while awake). Apps have no budget:
 # `monthly_budget_usd` is retired and `kind` is retired (the validator warns).
 apps:
   db:

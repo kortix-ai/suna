@@ -162,7 +162,7 @@ The full subcommand list:
 | `kortix apps deploy [path]` | Deploy a directory, a `.tar.gz`, or `--image` as a new release. `--always-on` and `--on-demand` set the run mode. With no path and several `apps` blocks, it deploys every block in link order: each after the Apps it uses, then by name. |
 | `kortix apps set <id\|slug>` | Change an existing App: `--name`, `--cpu`, `--memory-gb`, `--disk-gb`, `--idle-timeout`, `--always-on`, `--on-demand`, `--uses <slugs>` (replaces; `--uses=` clears). |
 | `kortix apps link <id\|slug> --uses <slugs>` | Add Apps this App uses. `kortix apps unlink` removes them. |
-| `kortix apps show <id\|slug>` | Show the App: capabilities, links, the cost line (`about $N/month` for an always-on server App only), and its releases; marks the live one. `--json`. |
+| `kortix apps show <id\|slug>` | Show the App: capabilities, links, how it runs (`runs 24/7` or `runs on demand`), and its releases; marks the live one. `--json`. |
 | `kortix apps releases <id\|slug>` | List releases (`vN`, status, strategy); marks the live one. |
 | `kortix apps rollback <id\|slug> <id\|vN>` | A new release from that release's artifact and config, rolled out like a deploy. Volumes keep their data. Waits unless `--no-wait`. |
 | `kortix apps machines [ls] <id\|slug>` | List machines: id, process group, state, release, size, volume. |
@@ -375,21 +375,15 @@ Apps have no monthly budget. Account credits pay for App compute. The account
 billing gate is the only cost gate: it answers `402` (for example
 `app_account_unfunded`), and an unfunded account's running Apps stop.
 
-| App | Cost |
+| App | What bills |
 |---|---|
 | On-demand server App | Compute time while its machines are awake |
-| Always-on server App | Fixed: every machine's size × 24/7 = `estimated_monthly_usd` |
-| Static App | None: there is no machine. `estimated_monthly_usd` is `0`. |
+| Always-on server App | Every machine, 24/7, with or without traffic: each process group's `vm` × its scale |
+| Static App | Nothing: there is no machine |
 
-`estimated_monthly_usd` is the cost of the live release's machines at list
-rates, running 24/7 for a month: each process group's `vm` × its scale. An
-always-on App of the default machine (1 vCPU, 2 GiB, 10 GiB disk) costs about
-73.48 USD a month. One machine of 1 vCPU, 1 GiB, 10 GiB (the `convex`
-template's backend) costs about 59.29 USD. The web app shows the fixed monthly
-cost for an always-on server App only (for example
-`About $59 a month · 1 vCPU · 1 GB`). `kortix apps show` prints a
-`cost about $N/month (… 24/7)` line for the same Apps. Kortix does not bill
-volume storage today.
+`kortix apps show` prints `runs 24/7` or `runs on demand`, and a deploy of an
+always-on App prints `Runs 24/7 on 1 vCPU / 2 GB`. Kortix does not bill volume
+storage today.
 
 `--budget` is retired. `kortix apps deploy`, `create` and `set` accept it only
 to print `--budget is ignored: Apps have no budget.` They send nothing. The API
@@ -584,7 +578,7 @@ the blocks and deploys nothing.
 |---|---|
 | Storage | Convex's SQLite files on the `data` volume |
 | Machines | One. Scaling the group above 1 gives each machine its own, empty volume: two independent databases behind one URL. |
-| Cost | Fixed: about 59 USD a month (one always-on 1 vCPU / 1 GB machine). The dashboard costs only while it is open. |
+| Run mode | One always-on 1 vCPU / 1 GB machine. The dashboard runs on demand: only while it is open. |
 | Resize | Change `vm` in the block and deploy: a new release; the volume keeps the data. |
 | Convex CLI | `convex@1.46.0`, the version that matches the pinned backend. A newer CLI can need server APIs the backend lacks. |
 
@@ -1130,9 +1124,7 @@ holders. The old
 The App's **Earlier versions** drawer states how it runs (static site, or a
 server that is always on or on demand) and how many
 earlier versions it keeps. Each version unfolds to its events and build log; a
-failed deploy's **Update failed** badge opens that log. An always-on server
-App shows its fixed monthly cost. An on-demand or static App shows no
-cost.
+failed deploy's **Update failed** badge opens that log.
 
 Kortix opens `*.apps.kortix.com` and `*.apps.localhost` on their direct origin
 rather than through a session's web forward proxy. That preserves the host-only

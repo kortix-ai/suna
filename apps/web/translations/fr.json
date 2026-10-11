@@ -19318,11 +19318,9 @@
       "text6f417aa88601": "Dépenses de la passerelle LLM par source répertoriées",
       "textc96cd610ba08": "Clé fournisseur mutualisée réessayée après la limite d’utilisation",
       "text044ba8a9ae43": "Toujours active",
-      "textb2fceee88a51": "Fonctionne 24 h/24, 7 j/7. Ne s’arrête qu’à son budget mensuel.",
       "text163de9edcec1": "Masquer le journal",
       "text04957fa46a70": "Conserve {value0} versions précédentes",
       "text80c652c4eeec": "Aucun événement pour l'instant.",
-      "texte15cb9ffae7f": "Environ ${value0} par mois",
       "textaef7de28d529": "Serveur",
       "text34b66838fe48": "Afficher le journal",
       "text903b49a91e18": "Site statique",
@@ -19525,7 +19523,8 @@
       "text1a6f7cae06cc": "Versions",
       "textc061da196eae": "Machines",
       "text53a480e304c0": "Volumes",
-      "text0ac04e12ff20": "Commande exécutée dans une machine de l'App"
+      "text0ac04e12ff20": "Commande exécutée dans une machine de l'App",
+      "text853696d5a64d": "Fonctionne 24 h/24, 7 j/7. Jamais arrêtée pour inactivité."
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

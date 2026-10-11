@@ -19329,11 +19329,9 @@
       "text6f417aa88601": "Listed LLM gateway spend by source",
       "textc96cd610ba08": "Retried pooled provider key after rate limit",
       "text044ba8a9ae43": "Always on",
-      "textb2fceee88a51": "Runs 24/7. Stops only at its monthly budget.",
       "text163de9edcec1": "Hide log",
       "text04957fa46a70": "Keeps {value0} earlier versions",
       "text80c652c4eeec": "No events yet.",
-      "texte15cb9ffae7f": "About ${value0} a month",
       "textaef7de28d529": "Server",
       "text34b66838fe48": "Show log",
       "text903b49a91e18": "Static site",
@@ -19536,7 +19534,8 @@
       "text1a6f7cae06cc": "Releases",
       "textc061da196eae": "Machines",
       "text53a480e304c0": "Volumes",
-      "text0ac04e12ff20": "Ran a command in an App machine"
+      "text0ac04e12ff20": "Ran a command in an App machine",
+      "text853696d5a64d": "Runs 24/7. Never stopped for being idle."
     },
     "publicShareConfirm": {
       "title": "Create a public link?",

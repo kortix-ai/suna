@@ -266,7 +266,9 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `strategy` and `release_command_status`.
 - `getAppAuthEnv(projectId, appId)` (facade `apps.authEnv(appId)`) and `AppAuthEnv`:
   `KORTIX_AUTH_ISSUER`, `KORTIX_AUTH_AUDIENCE` and the project key set inline as a
-  `data:` URL, for a backend that verifies App sign-in tokens without a network call. `DockerfileAppSource.port` and `OciImageAppSource.port` are optional:
+  `data:` URL, for a backend that verifies App sign-in tokens without a network call.
+- `App.estimated_monthly_usd` is deprecated: Kortix shows no prices. The field
+  stays on the wire; hosts must not display it. `DockerfileAppSource.port` and `OciImageAppSource.port` are optional:
   omit them for a worker-only release (a `config` with `processes` and no
   service).
 - Every turn start goes through the session's durable prompt inbox

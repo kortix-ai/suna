@@ -361,7 +361,7 @@ An existing GitHub `origin` links through the Kortix GitHub App. Any other exist
 
 ### Apps
 
-Deploys and operates the project's Kortix Apps on the Fly.io model: immutable releases, replaceable machines, persistent volumes. Each App owns one stable URL. A static App is files that Kortix serves, with no machine. A server App (Dockerfile, bundle, or OCI image) runs machines per process group, always on or on demand; a machine can mount a volume that outlives every release. Configure it in `kortix.yaml` `apps.<name>` (the App's `fly.toml`). Apps have no budget: account credits pay for compute. An always-on server App has a fixed monthly cost. Needs the `apps` project feature. Full guide: [Apps](/docs/feature-flags/apps).
+Deploys and operates the project's Kortix Apps on the Fly.io model: immutable releases, replaceable machines, persistent volumes. Each App owns one stable URL. A static App is files that Kortix serves, with no machine. A server App (Dockerfile, bundle, or OCI image) runs machines per process group, always on or on demand; a machine can mount a volume that outlives every release. Configure it in `kortix.yaml` `apps.<name>` (the App's `fly.toml`). Apps have no budget: account credits pay for compute. An always-on server App bills 24/7. Needs the `apps` project feature. Full guide: [Apps](/docs/feature-flags/apps).
 
 | Command | Effect |
 | --- | --- |
@@ -369,12 +369,12 @@ Deploys and operates the project's Kortix Apps on the Fly.io model: immutable re
 | `kortix apps create <slug> [--name] [--cpu N] [--memory GB] [--disk GB] [--idle-timeout <s>] [--always-on\|--on-demand] [--uses <slugs>]` | Create an App without deploying it. |
 | `kortix apps launch --template <name> [--name <slug>] [--no-deploy]` | Add a ready-made App to `kortix.yaml` and deploy it. Template `convex`: a self-hosted Convex backend (data on a volume, the client and HTTP-action services) and an admins-only dashboard. |
 | `kortix apps deploy <dir> --type static [--spa]` | Publish a built directory as a static App. Build first (`npm run build`), then deploy the output directory. |
-| `kortix apps deploy . --type dockerfile --command <argv> --port <n> [--always-on\|--on-demand]` | Build and run a server App. A new App is always on: it costs its machines 24/7 (about 73 USD a month for one default machine). The command prints the cost, for example `Runs 24/7 on 1 vCPU / 2 GB: about $73/month`. |
+| `kortix apps deploy . --type dockerfile --command <argv> --port <n> [--always-on\|--on-demand]` | Build and run a server App. A new App is always on: its machines bill 24/7. The command prints the cost, for example `Runs 24/7 on 1 vCPU / 2 GB: about $73/month`. |
 | `kortix apps deploy --image <ref> --command <argv> --port <n>` | Run a public OCI image as a server App. |
 | `kortix apps deploy --manifest-app <name>` | Deploy one `apps.<name>` block of a v2 `kortix.yaml`, with its release config (`processes`, `http_service`, `services`, `mounts`, `vm`, `deploy`, `labels`). With no path and several blocks, deploy every App, each after the Apps it uses. |
 | `kortix apps set <app> [--always-on\|--on-demand] [--cpu N] [--memory-gb N] [--disk-gb N] [--idle-timeout <s>] [--uses <slugs>]` | Change an App. Run mode applies within 5 minutes; a machine change applies to the next release. |
 | `kortix apps link\|unlink <app> --uses <slugs>` | Add or remove Apps this App uses: it may bind to them (`/_kortix/apps/<slug>`) and mint their sign-in tokens. `set --uses` replaces the list. |
-| `kortix apps show <app> [--json]` | The App (`capabilities`, `labels`, `scale`, `services`, `uses`, `used_by`, `hosting_type`, `always_on`, `estimated_monthly_usd`) and its releases. A `cost about $N/month (… 24/7)` line shows for an always-on server App only. |
+| `kortix apps show <app> [--json]` | The App (`capabilities`, `labels`, `scale`, `services`, `uses`, `used_by`, `hosting_type`, `always_on`) and its releases, with a `runs 24/7` or `runs on demand` line for a server App. |
 | `kortix apps releases <app>` | List releases (`vN`, status, strategy); mark the live one. |
 | `kortix apps rollback <app> <id\|vN> [--no-wait]` | A NEW release from that release's artifact and config, rolled out like a deploy. Volumes keep their data. |
 | `kortix apps machines [ls] <app>` · `machines start\|stop\|restart\|destroy <app> <machine>` | List machines (id, process group, state, release, size, volume) or act on one. Destroying a machine keeps its volume. |
@@ -393,7 +393,7 @@ Deploys and operates the project's Kortix Apps on the Fly.io model: immutable re
 | `kortix apps access-link <app> [--json]` | A five-minute signed browser URL. Treat it as a secret. |
 | `kortix apps delete <app> [--deployment <id\|vN>] --yes` | Delete the App, or one release that is not live. Deleting the App keeps a `final` snapshot of each volume 7 days. |
 
-An always-on App of the default machine costs about 73 USD a month; the `convex` template's backend (1 vCPU / 1 GB) about 59 USD. Apps have no budget: `--budget` is retired and prints `--budget is ignored: Apps have no budget.` To lower the cost, use `--on-demand`, scale down, or a smaller machine.
+An always-on App bills its machines 24/7; an on-demand App bills only while awake. Apps have no budget: `--budget` is retired and prints `--budget is ignored: Apps have no budget.` To use less compute, use `--on-demand`, scale down, or a smaller machine.
 
 ### Sessions
 

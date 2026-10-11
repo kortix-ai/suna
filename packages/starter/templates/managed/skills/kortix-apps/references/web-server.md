@@ -46,15 +46,14 @@ A server App runs in one of two modes. Choose the mode on the first deploy:
   of an App that uses a Convex backend App belong in the backend App.
 
 Apps have no monthly budget. Both modes stop when the account can no longer
-pay (event `app_stopped_unfunded`). The run mode decides the cost:
+pay (event `app_stopped_unfunded`). The run mode decides what bills:
 
 - **On demand:** billed only while the App is awake.
-- **Always on:** the cost is fixed: the machine 24/7, `estimated_monthly_usd`
-  (about 73.48 USD for the default machine).
+- **Always on:** the machine bills 24/7, with or without traffic.
 
-The CLI prints a line such as `Runs 24/7 on 1 vCPU / 2 GB: about $73/month`;
-tell the user that cost. To spend less, use `--on-demand` or a smaller machine
-(`--memory-gb 1` is about 59 USD a month).
+The CLI prints a line such as `Runs 24/7 on 1 vCPU / 2 GB`; tell the user the
+run mode, never a price. To use less compute, use `--on-demand` or a smaller
+machine (`--memory-gb 1`).
 
 ```bash
 kortix apps deploy . --slug api --type dockerfile --on-demand \

@@ -19318,11 +19318,9 @@
       "text6f417aa88601": "Gastos do gateway LLM por origem listados",
       "textc96cd610ba08": "Chave de provedor compartilhada tentada novamente após o limite de uso",
       "text044ba8a9ae43": "Sempre ativa",
-      "textb2fceee88a51": "Funciona 24/7. Só para ao atingir o orçamento mensal.",
       "text163de9edcec1": "Ocultar log",
       "text04957fa46a70": "Mantém {value0} versões anteriores",
       "text80c652c4eeec": "Ainda não há eventos.",
-      "texte15cb9ffae7f": "Cerca de ${value0} por mês",
       "textaef7de28d529": "Servidor",
       "text34b66838fe48": "Mostrar log",
       "text903b49a91e18": "Site estático",
@@ -19525,7 +19523,8 @@
       "text1a6f7cae06cc": "Versões",
       "textc061da196eae": "Máquinas",
       "text53a480e304c0": "Volumes",
-      "text0ac04e12ff20": "Comando executado em uma máquina do App"
+      "text0ac04e12ff20": "Comando executado em uma máquina do App",
+      "text853696d5a64d": "Funciona 24/7. Nunca é parado por inatividade."
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

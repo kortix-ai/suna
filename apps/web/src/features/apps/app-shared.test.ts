@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import type { App } from '@kortix/sdk';
 import type { UiTranslator } from '@/i18n/translator';
-import { appCostLabel, appStatus } from './app-shared';
+import { appStatus } from './app-shared';
 
 const t = { raw: (key: string) => key } as unknown as UiTranslator;
 const app = (overrides: Partial<App>): App => ({
@@ -21,10 +21,3 @@ test('a stopped server App is not live; an undeployed App is not deployed', () =
   expect(appStatus(app({ active_deployment_id: null, hosting_type: null }), t)).toMatchObject({ deployed: false, live: false });
 });
 
-test('no App has a budget; an always-on App shows its fixed cost, on-demand and static Apps none', () => {
-  const tc = ((key: string, values: Record<string, unknown>) => `${key}:${values.value0}`) as unknown as UiTranslator;
-  const onDemand = app({ always_on: false, hosting_type: 'sandbox', estimated_monthly_usd: 73.48 });
-  const alwaysOn = app({ always_on: true, hosting_type: 'sandbox', estimated_monthly_usd: 59.29 });
-  const site = app({ always_on: false, hosting_type: 'static', estimated_monthly_usd: 0 });
-  expect([onDemand, alwaysOn, site].map((a) => appCostLabel(a, tc))).toEqual([null, 'texte15cb9ffae7f:59', null]);
-});

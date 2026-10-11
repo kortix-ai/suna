@@ -462,14 +462,15 @@ describe('kortix apps deploy (characterization)', () => {
     expect(serverRun.stderr).not.toContain('runs 24/7');
   });
 
-  test('a server deploy prints the 24/7 cost line; a static deploy and an on-demand App do not', async () => {
+  test('a server deploy prints the 24/7 run line and no price; a static deploy and an on-demand App do not', async () => {
     appFields = { always_on: true, estimated_monthly_usd: 73.48 };
     writeFileSync(join(tmp, 'bundle.tar.gz'), new Uint8Array([0x1f, 0x8b, 8, 0]));
     mkdirSync(join(tmp, 'site'), { recursive: true });
     writeFileSync(join(tmp, 'site', 'package.json'), '{"name":"site"}\n');
     const config = writeConfig(startServer());
     const server = await runCli(['apps', 'deploy', 'site', '--project', PROJECT], config);
-    expect(server.stdout).toContain('Runs 24/7 on 1 vCPU / 2 GB: about $73/month');
+    expect(server.stdout).toContain('Runs 24/7 on 1 vCPU / 2 GB');
+    expect(server.stdout).not.toMatch(/\$|USD|month/);
     expect(server.stdout).not.toContain('budget');
     const staticRun = await runCli(['apps', 'deploy', 'bundle.tar.gz', '--project', PROJECT], config);
     expect(staticRun.stdout).not.toContain('Runs 24/7');

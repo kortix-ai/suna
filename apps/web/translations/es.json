@@ -19318,11 +19318,9 @@
       "text6f417aa88601": "Gasto de la pasarela de LLM por origen consultado",
       "textc96cd610ba08": "Clave de proveedor compartida reintentada tras el límite de uso",
       "text044ba8a9ae43": "Siempre activa",
-      "textb2fceee88a51": "Funciona 24/7. Solo se detiene al alcanzar su presupuesto mensual.",
       "text163de9edcec1": "Ocultar registro",
       "text04957fa46a70": "Conserva {value0} versiones anteriores",
       "text80c652c4eeec": "Aún no hay eventos.",
-      "texte15cb9ffae7f": "Unos ${value0} al mes",
       "textaef7de28d529": "Servidor",
       "text34b66838fe48": "Mostrar registro",
       "text903b49a91e18": "Sitio estático",
@@ -19525,7 +19523,8 @@
       "text1a6f7cae06cc": "Versiones",
       "textc061da196eae": "Máquinas",
       "text53a480e304c0": "Volúmenes",
-      "text0ac04e12ff20": "Se ejecutó un comando en una máquina de la App"
+      "text0ac04e12ff20": "Se ejecutó un comando en una máquina de la App",
+      "text853696d5a64d": "Funciona 24/7. Nunca se detiene por inactividad."
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",

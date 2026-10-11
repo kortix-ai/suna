@@ -105,15 +105,12 @@ account billing gate (`402`, for example `app_account_unfunded`) is the only
 cost gate.
 
 - On-demand server App: billed only while it is awake.
-- Always-on server App: the cost is fixed: every machine 24/7,
-  `estimated_monthly_usd` (about 73.48 USD for 1 vCPU / 2 GB / 10 GB; about
-  59.29 USD for 1 vCPU / 1 GB / 10 GB, the `convex` template's backend). The
-  estimate is the live release's `vm` times its scale. The CLI prints
-  `Runs 24/7 on 1 vCPU / 2 GB: about $73/month`. Tell the user this cost.
-- Static App: no machine. `always_on` is `false`, `estimated_monthly_usd` is
-  `0`.
+- Always-on server App: every machine bills 24/7, with or without traffic.
+  The CLI prints `Runs 24/7 on 1 vCPU / 2 GB`. Tell the user the run mode;
+  never quote a price.
+- Static App: no machine, no compute. `always_on` is `false`.
 - `--budget` is retired. The CLI prints `--budget is ignored: Apps have no
-  budget.` and sends nothing. To lower the cost, use `--on-demand` or a
+  budget.` and sends nothing. To use less compute, use `--on-demand` or a
   smaller machine.
 
 A run-mode change through `kortix apps set` takes effect within 5

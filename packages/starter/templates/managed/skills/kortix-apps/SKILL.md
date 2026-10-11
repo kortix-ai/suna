@@ -277,12 +277,12 @@ Report nothing as done until each check passed. Paste the evidence.
 - A static App costs nothing.
 - Apps have no monthly budget. Account credits pay for compute; the account
   billing gate (`402`, for example `app_account_unfunded`) is the only gate.
-- An on-demand machine bills only while awake. An always-on machine costs its
-  size 24/7: `estimated_monthly_usd` sums every machine (about $73 a month for
-  1 vCPU / 2 GB; the Convex template's backend about $59).
+- An on-demand machine bills only while awake. An always-on machine bills 24/7,
+  with or without traffic.
 - `--budget` and `monthly_budget_usd` are retired and ignored.
 
-Tell the user the cost of each App before you hand over.
+Tell the user how each App runs (24/7 or on demand) before you hand over. Never
+quote a price.
 
 ## Delete
 

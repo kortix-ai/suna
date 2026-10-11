@@ -29,7 +29,7 @@ import {
   mergeManifestDefaults,
   positiveInteger,
   dropRetiredBudgetFlag,
-  runCostLine,
+  runModeLine,
   provisionDeployApp,
   resolveApp,
   scoped,
@@ -356,12 +356,11 @@ async function createCommand(
   return 0;
 }
 
-/** The fixed monthly cost of an always-on App; none for on-demand (usage) or static Apps. */
-function costRows(app: App): string {
-  const estimate = app.estimated_monthly_usd;
-  if (!estimate || app.always_on === false) return '';
-  const value = `about $${Math.round(estimate)}/month (${app.machine.cpu} vCPU · ${app.machine.memory_gb} GB, 24/7)`;
-  return `  ${C.dim}${pad('cost', 14)}${C.reset}${value}\n`;
+/** How a server App runs: 24/7, or on demand. None for a static App (no machine). */
+function runModeRows(app: App): string {
+  if (app.hosting_type === 'static') return '';
+  const value = app.always_on === false ? `on demand (stops after ${app.idle_timeout_seconds}s idle)` : '24/7';
+  return `  ${C.dim}${pad('runs', 14)}${C.reset}${value}\n`;
 }
 
 /** The facts `show`, `create` and `set` print about an App. */
@@ -374,13 +373,13 @@ function appLines(app: App): string {
     row('uses', app.uses?.length ? app.uses.join(', ') : 'none') +
     row('used by', app.used_by?.length ? app.used_by.join(', ') : null) +
     row('machine', `${app.machine.cpu} vCPU · ${app.machine.memory_gb} GB · ${app.machine.disk_gb} GB disk`) +
-    costRows(app)
+    runModeRows(app)
   );
 }
 
-/** The run-cost line for a server App, indented under the result; empty when none applies. */
+/** The run-mode line for a server App, indented under the result; empty when none applies. */
 function costBlock(app: App): string {
-  const line = runCostLine(app);
+  const line = runModeLine(app);
   return line ? `  ${C.dim}${line}${C.reset}\n` : '';
 }
 
@@ -445,7 +444,7 @@ async function setCommand(rest: string[], options: ContextOptions, json: boolean
     process.stdout.write(
       `  ${C.dim}${pad('idle timeout', 14)}${C.reset}${app.idle_timeout_seconds}s\n`,
     );
-    process.stdout.write(costRows(app));
+    process.stdout.write(runModeRows(app));
     process.stdout.write(`  ${C.dim}${pad('uses', 14)}${C.reset}${app.uses?.length ? app.uses.join(', ') : 'none'}\n\n`);
   }
   return 0;

@@ -133,8 +133,8 @@ Apps have stable URLs. Every deploy creates an immutable release (`vN`): the
 artifact plus its resolved config. A static App is files that Kortix serves:
 no machine, nothing to start or stop. A server App (`dockerfile`, `oci_image`,
 `bundle`) runs machines per process group, always on or on demand; a machine
-may mount a volume that outlives every release. An always-on App has a fixed
-monthly cost. Apps have no budget. Every App lists its `capabilities`; a
+may mount a volume that outlives every release. An always-on App bills 24/7,
+an on-demand App only while awake. Apps have no budget. Every App lists its `capabilities`; a
 subcommand for a capability the App lacks exits `1` with
 `App <slug> does not support <capability>.`
 
@@ -150,12 +150,12 @@ When it is off, every `kortix apps` command answers `feature_disabled`
 | `kortix apps create <slug> [--name …]` | Create an App identity without deploying source. Flags: `--uses <slugs>`, `--cpu`, `--memory`, `--disk`, `--idle-timeout`, `--always-on\|--on-demand`. |
 | `kortix apps launch --template <name> [--name <slug>] [--no-deploy]` | Write a ready-made App's blocks into `kortix.yaml` and deploy them. Template `convex`: a self-hosted Convex backend (data on a volume) and an admins-only dashboard. Prints the next steps. |
 | `kortix apps deploy [path]` | Upload and deploy a directory or `.tar.gz` as a new release. Auto-detects static, bundle, or Dockerfile source; pass `--type`. Waits until the release is live by default. |
-| `kortix apps deploy … --always-on\|--on-demand` | Server Apps: set the run mode. Prints the cost. |
+| `kortix apps deploy … --always-on\|--on-demand` | Server Apps: set the run mode. Prints `Runs 24/7 on <size>` for an always-on App. |
 | `kortix apps deploy --manifest-app <name>` | Use one v2 `kortix.yaml` `apps.<name>` block, config included (`processes`, `http_service`, `services`, `mounts`, `vm`, `deploy`, `labels`). A sole block is selected for bare `deploy`; with several, bare `deploy` deploys every App, each after the Apps it uses. |
 | `kortix apps deploy --image <ref> --command <argv> --port <n>` | Deploy a public OCI image. `--command` accepts a JSON string array or shell-like string. Omit `--port` for a worker-only App. |
 | `kortix apps set <id-or-slug>` | Change an App: `--name`, `--cpu`, `--memory-gb`, `--disk-gb`, `--idle-timeout`, `--always-on\|--on-demand`, `--uses <slugs>`. Run mode applies within 5 minutes; a machine size change applies to the next release. |
 | `kortix apps link\|unlink <id-or-slug> --uses <slugs>` | Add or remove Apps this App uses (bindings and sign-in tokens). |
-| `kortix apps show <id-or-slug> [--json]` | Show an App (`capabilities`, `labels`, `scale`, `services`, `uses`, `used_by`, `hosting_type`, `always_on`, `estimated_monthly_usd`) and its releases. |
+| `kortix apps show <id-or-slug> [--json]` | Show an App (`capabilities`, `labels`, `scale`, `services`, `uses`, `used_by`, `hosting_type`, `always_on`) and its releases. |
 | `kortix apps releases <id-or-slug>` | List releases (`vN`, status, strategy, release command); mark the live one. |
 | `kortix apps rollback <id-or-slug> <id\|vN>` | A NEW release from that release's artifact and config, rolled out like a deploy. Volumes keep their data. |
 | `kortix apps machines [ls] <id-or-slug>` · `machines start\|stop\|restart\|destroy <id-or-slug> <machine>` | List machines (id, process group, state, release, size, volume) or act on one. Destroying a machine keeps its volume; its group runs one machine fewer. |
