@@ -1,11 +1,22 @@
 {
   "source_hash": "0cfc6c473c5cbac3172100066e0715f826435454e5ee5d56bbade351065d405f",
-  "diff_files": [],
-  "diff_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-  "head": "f5fd4c193da188c9bcc02c0f4f1aa130a4f17437",
+  "diff_files": [
+    "tests/e2e/specs/23-composio-connector.spec.ts",
+    "tests/e2e/specs/25-failed-session-no-redirect-loop.spec.ts",
+    "tests/src/flows/drives.flow.ts",
+    "tests/src/flows/notifications.flow.ts",
+    "tests/src/flows/run-session-backlog.flow.ts",
+    "tests/src/flows/secrets.flow.ts",
+    "tests/src/flows/session-attachments.flow.ts"
+  ],
+  "diff_hash": "f204654851ea5fe2f5e48d348daee376652c0e3891bd105a1a29b8936ad3fdd9",
+  "head": "c66bdb50b7a380debbde73f5f9319f35bc93b1bc",
   "passed": true,
   "lanes": {
-    "browser": "pass"
+    "browser": "pass",
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
   },
-  "at": "2026-10-11T11:43:37.350Z"
+  "at": "2026-10-11T11:54:28.467Z"
 }
