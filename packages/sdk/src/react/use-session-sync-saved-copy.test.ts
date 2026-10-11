@@ -162,6 +162,41 @@ test('a saved copy that arrives after an empty runtime read still paints', async
   expect(hook.value().messages.map((m) => m.info.id)).toEqual(['msg_ses_copy_late_empty']);
 });
 
+test('between an empty runtime read and the saved-copy paint the hook says loading, not absent', async () => {
+  // The host shows its boot loader on `absent`. An empty runtime read is not
+  // the thread, so it must not flip the answer while the saved copy is on its way.
+  let answer!: (response: Response) => void;
+  globalThis.fetch = mock(async () => new Promise<Response>((resolve) => {
+    answer = resolve;
+  })) as unknown as typeof fetch;
+  const hook = await mount('ses_copy_between', offline);
+  expect(hook.value().mirrorState).toBe('loading');
+  await act(async () => {
+    useSyncStore.getState().hydrate('ses_copy_between', []);
+  });
+  await settle();
+  expect(hook.value().mirrorState).toBe('loading');
+  await act(async () => {
+    answer(Response.json(envelope('ses_copy_between')));
+  });
+  await settle();
+  expect(hook.value().mirrorState).toBe('painted');
+  expect(hook.value().messages.map((m) => m.info.id)).toEqual(['msg_ses_copy_between']);
+});
+
+test('a genuinely empty new session (empty runtime read, no saved copy) ends absent', async () => {
+  globalThis.fetch = mock(async () =>
+    Response.json(
+      envelope('ses_copy_new', { available: false, source: 'none', message_count: 0, messages: [] }),
+    ),
+  ) as unknown as typeof fetch;
+  touched.push('ses_copy_new');
+  useSyncStore.getState().hydrate('ses_copy_new', []);
+  const hook = await mount('ses_copy_new', offline);
+  expect(hook.value().mirrorState).toBe('absent');
+  expect(hook.value().messages).toHaveLength(0);
+});
+
 test('a runtime read with messages keeps a later saved copy out', async () => {
   touched.push('ses_copy_live');
   useSyncStore.getState().hydrate('ses_copy_live', [
