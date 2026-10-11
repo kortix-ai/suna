@@ -37,7 +37,7 @@ export interface VendoredDevice {
   objects: CaptureObject[];
   manifestKeys: string[];
   /** What indexing the whole device yields. */
-  expected: { chunks: number; frames: number; actions: number; audioLines: number; ranges: number };
+  expected: { chunks: number; frames: number; actions: number; audioLines: number };
   /** The fixture's UTC day and its span. */
   day: string;
   startMs: number;
@@ -105,7 +105,7 @@ export function vendoredDevice(input: { prefix: string; deviceId: string; machin
       { key: `${folder}/status.json`, body: text(JSON.stringify(statusDoc)), contentType: "application/json" },
     ],
     manifestKeys: manifests.map((m) => m.key),
-    expected: { chunks: manifests.length, frames, actions, audioLines, ranges: 1 },
+    expected: { chunks: manifests.length, frames, actions, audioLines },
     day: new Date(startMs).toISOString().slice(0, 10),
     startMs,
     endMs,

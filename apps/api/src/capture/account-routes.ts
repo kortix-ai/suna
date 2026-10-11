@@ -53,6 +53,7 @@ import {
   type SearchKind,
 } from './reads';
 import { captureStoreConfigured } from './store';
+import { pollDevice } from './workers';
 import { isAccountMember, readWorkspace, setCaptureEnabled } from './workspace';
 
 export type Ctx = Context<AppEnv>;
@@ -357,6 +358,27 @@ accountsRouter.openapi(
     const device = await loadDevice(access, c.req.valid('param').deviceId, { write: true });
     if (!device) return c.json({ error: 'Not found' }, 404);
     return c.json(deviceView(await revokeDevice(device.deviceId, access.viewer)), 200);
+  },
+);
+
+accountsRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{accountId}/capture/devices/{deviceId}/sync',
+    tags,
+    summary: 'Read a device’s status, description and index now, queue every new item for indexing, and retract every item the device deleted',
+    ...auth,
+    request: { params: params.extend({ deviceId: z.string().uuid() }) },
+    responses: { ...ok('The number of items queued and the number retracted'), ...errors(503) },
+  }),
+  async (c) => {
+    const access = await captureAccessWithPowers(c);
+    if (isResponse(access)) return access as never;
+    if (!captureStoreConfigured()) return refuse(c, 503, 'capture_store_unavailable', 'No capture store is configured');
+    const device = await loadDevice(access, c.req.valid('param').deviceId);
+    if (!device || device.revokedAt) return c.json({ error: 'Not found' }, 404);
+    const { enqueued, forgotten } = await pollDevice(device);
+    return c.json({ device_id: device.deviceId, enqueued, forgotten }, 200);
   },
 );
 
