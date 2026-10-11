@@ -20722,7 +20722,6 @@
       "revokeDescription": "{name} 会立即停止向此组织录制。要再次录制，请在该电脑上从“此电脑”登录。",
       "revoked": "电脑已撤销",
       "revokeFailed": "无法撤销这台电脑",
-      "recordThisComputer": "记录这台电脑",
       "title": "设备",
       "descriptionAll": "{name} 的每位成员及其录制的电脑。成员只能看到自己的。",
       "descriptionMine": "你的电脑。你和此组织的所有者及管理员可以看到它们录制的内容。",
@@ -20750,8 +20749,6 @@
       "getDesktop": "获取 Kortix 桌面应用",
       "listLabel": "设备列表",
       "noMatch": "没有处于此状态的设备。",
-      "showing": "显示 {shown} / {total}",
-      "layersNote": "录制层由组织策略设定。删除线表示该设备上已关闭。",
       "col": {
         "device": "设备",
         "person": "成员",
@@ -20766,7 +20763,6 @@
         "actions": "操作",
         "audio": "音频"
       },
-      "layerOff": "{layer}已关闭",
       "never": "从未",
       "pausedUntil": "至 {time}",
       "apiLink": "Kortix Capture API"

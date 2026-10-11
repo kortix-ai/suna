@@ -20722,7 +20722,6 @@
       "revokeDescription": "{name} cesse aussitôt d’enregistrer dans cette organisation. Pour enregistrer à nouveau, connectez-vous depuis Cet ordinateur sur cet ordinateur.",
       "revoked": "Ordinateur révoqué",
       "revokeFailed": "Impossible de révoquer l’ordinateur",
-      "recordThisComputer": "Enregistrer cet ordinateur",
       "title": "Appareils",
       "descriptionAll": "Chaque membre de {name} et les ordinateurs qu’il enregistre. Les membres ne voient que les leurs.",
       "descriptionMine": "Vos ordinateurs. Vous voyez ce qu’ils enregistrent, tout comme les propriétaires et admins de cette organisation.",
@@ -20750,8 +20749,6 @@
       "getDesktop": "Obtenir l’app de bureau Kortix",
       "listLabel": "Liste des appareils",
       "noMatch": "Aucun appareil n’a ce statut.",
-      "showing": "{shown} affichés sur {total}",
-      "layersNote": "La politique de l’organisation définit les couches. Barré signifie désactivé sur cet appareil.",
       "col": {
         "device": "Appareil",
         "person": "Personne",
@@ -20766,7 +20763,6 @@
         "actions": "Actions",
         "audio": "Audio"
       },
-      "layerOff": "{layer} désactivé",
       "never": "Jamais",
       "pausedUntil": "jusqu’à {time}",
       "apiLink": "API Kortix Capture"

@@ -20722,7 +20722,6 @@
       "revokeDescription": "{name} nimmt sofort nicht mehr in diese Organisation auf. Um wieder aufzunehmen, melde dich auf diesem Computer unter Dieser Computer an.",
       "revoked": "Computer widerrufen",
       "revokeFailed": "Computer konnte nicht widerrufen werden",
-      "recordThisComputer": "Diesen Computer aufnehmen",
       "title": "Geräte",
       "descriptionAll": "Alle Mitglieder von {name} und die Computer, die sie aufzeichnen. Mitglieder sehen nur ihre eigenen.",
       "descriptionMine": "Deine Computer. Du siehst, was sie aufzeichnen, ebenso die Owner und Admins dieser Organisation.",
@@ -20750,8 +20749,6 @@
       "getDesktop": "Kortix Desktop-App herunterladen",
       "listLabel": "Geräteliste",
       "noMatch": "Kein Gerät hat diesen Status.",
-      "showing": "{shown} von {total} angezeigt",
-      "layersNote": "Die Richtlinie der Organisation legt die Ebenen fest. Durchgestrichen heißt auf diesem Gerät aus.",
       "col": {
         "device": "Gerät",
         "person": "Person",
@@ -20766,7 +20763,6 @@
         "actions": "Aktionen",
         "audio": "Audio"
       },
-      "layerOff": "{layer} aus",
       "never": "Nie",
       "pausedUntil": "bis {time}",
       "apiLink": "Kortix Capture API"

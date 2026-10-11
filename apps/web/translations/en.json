@@ -20722,7 +20722,6 @@
       "revokeDescription": "{name} stops recording into this organization at once. To record again, sign in from This computer on that computer.",
       "revoked": "Computer revoked",
       "revokeFailed": "Could not revoke the computer",
-      "recordThisComputer": "Record this computer",
       "title": "Devices",
       "descriptionAll": "Every member of {name} and the computers they record. Members see only their own.",
       "descriptionMine": "Your computers. You see what they record, and so do the owners and admins of this organization.",
@@ -20750,8 +20749,6 @@
       "getDesktop": "Get the Kortix desktop app",
       "listLabel": "Device list",
       "noMatch": "No device has this status.",
-      "showing": "Showing {shown} of {total}",
-      "layersNote": "The organization policy sets the layers. Struck through means off on that device.",
       "col": {
         "device": "Device",
         "person": "Person",
@@ -20766,7 +20763,6 @@
         "actions": "Actions",
         "audio": "Audio"
       },
-      "layerOff": "{layer} off",
       "never": "Never",
       "pausedUntil": "until {time}",
       "apiLink": "Kortix Capture API"

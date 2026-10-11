@@ -20722,7 +20722,6 @@
       "revokeDescription": "{name} smette subito di registrare in questa organizzazione. Per registrare di nuovo, accedi da Questo computer su quel computer.",
       "revoked": "Computer revocato",
       "revokeFailed": "Impossibile revocare il computer",
-      "recordThisComputer": "Registra questo computer",
       "title": "Dispositivi",
       "descriptionAll": "Ogni membro di {name} e i computer che registra. I membri vedono solo i propri.",
       "descriptionMine": "I tuoi computer. Tu vedi cosa registrano, e così i proprietari e gli admin di questa organizzazione.",
@@ -20750,8 +20749,6 @@
       "getDesktop": "Scarica l’app desktop di Kortix",
       "listLabel": "Elenco dei dispositivi",
       "noMatch": "Nessun dispositivo ha questo stato.",
-      "showing": "Mostrati {shown} di {total}",
-      "layersNote": "La policy dell’organizzazione imposta i livelli. Barrato significa disattivato su quel dispositivo.",
       "col": {
         "device": "Dispositivo",
         "person": "Persona",
@@ -20766,7 +20763,6 @@
         "actions": "Azioni",
         "audio": "Audio"
       },
-      "layerOff": "{layer} disattivato",
       "never": "Mai",
       "pausedUntil": "fino alle {time}",
       "apiLink": "API di Kortix Capture"

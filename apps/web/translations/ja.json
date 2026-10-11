@@ -20722,7 +20722,6 @@
       "revokeDescription": "{name} はこの組織への録画をすぐに停止します。再び録画するには、そのコンピュータの「このコンピュータ」からサインインしてください。",
       "revoked": "コンピューターを取り消しました",
       "revokeFailed": "コンピューターを取り消せませんでした",
-      "recordThisComputer": "このコンピューターを記録",
       "title": "デバイス",
       "descriptionAll": "{name} のすべてのメンバーと、記録しているコンピューター。メンバーには自分のものだけが表示されます。",
       "descriptionMine": "あなたのコンピューター。記録内容はあなたと、この組織のオーナーと管理者が閲覧できます。",
@@ -20750,8 +20749,6 @@
       "getDesktop": "Kortix デスクトップアプリを入手",
       "listLabel": "デバイス一覧",
       "noMatch": "このステータスのデバイスはありません。",
-      "showing": "{total} 件中 {shown} 件を表示",
-      "layersNote": "レイヤーは組織のポリシーで決まります。取り消し線はそのデバイスでオフを示します。",
       "col": {
         "device": "デバイス",
         "person": "ユーザー",
@@ -20766,7 +20763,6 @@
         "actions": "アクション",
         "audio": "音声"
       },
-      "layerOff": "{layer} オフ",
       "never": "なし",
       "pausedUntil": "{time} まで",
       "apiLink": "Kortix Capture API"

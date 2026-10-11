@@ -20722,7 +20722,6 @@
       "revokeDescription": "{name} одмах престаје да снима у ову организацију. Да бисте поново снимали, пријавите се из одељка Овај рачунар на том рачунару.",
       "revoked": "Рачунар опозван",
       "revokeFailed": "Није могуће опозвати рачунар",
-      "recordThisComputer": "Снимај овај рачунар",
       "title": "Уређаји",
       "descriptionAll": "Svaki član organizacije {name} i računari koje snima. Članovi vide samo svoje.",
       "descriptionMine": "Tvoji računari. Ti vidiš šta snimaju, kao i vlasnici i administratori ove organizacije.",
@@ -20750,8 +20749,6 @@
       "getDesktop": "Преузми Kortix desktop апликацију",
       "listLabel": "Листа уређаја",
       "noMatch": "Ниједан уређај нема овај статус.",
-      "showing": "Приказано {shown} од {total}",
-      "layersNote": "Политика организације одређује слојеве. Прецртано значи искључено на том уређају.",
       "col": {
         "device": "Уређај",
         "person": "Особа",
@@ -20766,7 +20763,6 @@
         "actions": "Радње",
         "audio": "Звук"
       },
-      "layerOff": "{layer} искључено",
       "never": "Никада",
       "pausedUntil": "до {time}",
       "apiLink": "Kortix Capture API"

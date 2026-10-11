@@ -20722,7 +20722,6 @@
       "revokeDescription": "{name} deja de grabar en esta organización de inmediato. Para volver a grabar, inicia sesión desde Este equipo en ese equipo.",
       "revoked": "Ordenador revocado",
       "revokeFailed": "No se pudo revocar el ordenador",
-      "recordThisComputer": "Grabar este ordenador",
       "title": "Dispositivos",
       "descriptionAll": "Cada miembro de {name} y los ordenadores que graba. Los miembros solo ven los suyos.",
       "descriptionMine": "Tus ordenadores. Tú ves lo que graban, y también los propietarios y administradores de esta organización.",
@@ -20750,8 +20749,6 @@
       "getDesktop": "Obtener la app de escritorio de Kortix",
       "listLabel": "Lista de dispositivos",
       "noMatch": "Ningún dispositivo tiene este estado.",
-      "showing": "Mostrando {shown} de {total}",
-      "layersNote": "La política de la organización define las capas. Tachado significa desactivado en ese dispositivo.",
       "col": {
         "device": "Dispositivo",
         "person": "Persona",
@@ -20766,7 +20763,6 @@
         "actions": "Acciones",
         "audio": "Audio"
       },
-      "layerOff": "{layer} desactivado",
       "never": "Nunca",
       "pausedUntil": "hasta {time}",
       "apiLink": "API de Kortix Capture"
