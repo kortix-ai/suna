@@ -127,10 +127,10 @@ export async function captureAccessFor(
   opts: { userId?: string | null; accountWide?: boolean } = {},
 ): Promise<Access | Response> {
   const who = await viewerOf(c, accountId);
-  if (who === 'wrong_account') return c.json({ error: 'Not found' }, 404);
+  if (who === 'wrong_account') return c.json({ error: 'Not found', code: 'capture_not_found' }, 404);
   const { viewer, sessionId } = who;
   if (!viewer) return refuse(c, 403, 'capture_no_human', 'This credential does not act for a person, so it has no capture timeline');
-  if (!(await isAccountMember(accountId, viewer))) return c.json({ error: 'Not found' }, 404);
+  if (!(await isAccountMember(accountId, viewer))) return c.json({ error: 'Not found', code: 'capture_not_found' }, 404);
   if (!(await readWorkspace(accountId)).enabled) return c.json(CAPTURE_DISABLED, 403);
   const subject = opts.accountWide ? null : (opts.userId ?? viewer);
   const powers = subject === viewer ? { readsAll: false, manages: false } : await capturePowers(c, accountId, sessionId);
@@ -260,7 +260,7 @@ async function searchResponse(c: Ctx, access: Access, query: SearchQuery) {
 
 async function frameResponse(c: Ctx, access: Access, frameId: string) {
     const found = await frameOf(access.accountId, access.subject!, frameId);
-    if (!found) return c.json({ error: 'Not found' }, 404);
+    if (!found) return c.json({ error: 'Not found', code: 'capture_not_found' }, 404);
     const video = found.chunk ? await mediaUrl(found.chunk, 'video') : null;
     const offset = await frameVideoOffsetMs(found.frame);
     // A still of the moment: the action screenshot nearest the frame on its device (within 30 s).
@@ -298,8 +298,8 @@ accountsRouter.openapi(
   async (c) => {
     const { accountId } = c.req.valid('param');
     const who = await viewerOf(c, accountId);
-    if (who === 'wrong_account' || !who.viewer) return c.json({ error: 'Not found' }, 404);
-    if (!(await isAccountMember(accountId, who.viewer))) return c.json({ error: 'Not found' }, 404);
+    if (who === 'wrong_account' || !who.viewer) return c.json({ error: 'Not found', code: 'capture_not_found' }, 404);
+    if (!(await isAccountMember(accountId, who.viewer))) return c.json({ error: 'Not found', code: 'capture_not_found' }, 404);
     return c.json(await workspaceView(c, accountId, who.sessionId), 200);
   },
 );
@@ -317,9 +317,9 @@ accountsRouter.openapi(
   async (c) => {
     const { accountId } = c.req.valid('param');
     const who = await viewerOf(c, accountId);
-    if (who === 'wrong_account' || !who.viewer) return c.json({ error: 'Not found' }, 404);
+    if (who === 'wrong_account' || !who.viewer) return c.json({ error: 'Not found', code: 'capture_not_found' }, 404);
     if (who.sessionId) return refuse(c, 403, 'capture_forbidden', 'An agent cannot turn Capture on or off');
-    if (!(await isAccountMember(accountId, who.viewer))) return c.json({ error: 'Not found' }, 404);
+    if (!(await isAccountMember(accountId, who.viewer))) return c.json({ error: 'Not found', code: 'capture_not_found' }, 404);
     if (!(await capturePowers(c, accountId, null)).manages) {
       return refuse(c, 403, 'capture_forbidden', 'Turning Capture on or off needs the capture.manage permission');
     }
@@ -375,7 +375,7 @@ accountsRouter.openapi(
     if (isResponse(access)) return access as never;
     if (access.sessionId) return refuse(c, 403, 'capture_forbidden', 'An agent cannot revoke a capture device');
     const device = await loadDevice(access, c.req.valid('param').deviceId, { write: true });
-    if (!device) return c.json({ error: 'Not found' }, 404);
+    if (!device) return c.json({ error: 'Not found', code: 'capture_not_found' }, 404);
     return c.json(deviceView(await revokeDevice(device.deviceId, access.viewer)), 200);
   },
 );
@@ -395,7 +395,7 @@ accountsRouter.openapi(
     if (isResponse(access)) return access as never;
     if (!captureStoreConfigured()) return refuse(c, 503, 'capture_store_unavailable', 'No capture store is configured');
     const device = await loadDevice(access, c.req.valid('param').deviceId);
-    if (!device || device.revokedAt) return c.json({ error: 'Not found' }, 404);
+    if (!device || device.revokedAt) return c.json({ error: 'Not found', code: 'capture_not_found' }, 404);
     const { enqueued, forgotten } = await pollDevice(device);
     return c.json({ device_id: device.deviceId, enqueued, forgotten }, 200);
   },
@@ -417,7 +417,7 @@ accountsRouter.openapi(
     const access = await captureAccessWithPowers(c);
     if (isResponse(access)) return access as never;
     const device = await loadDevice(access, deviceId);
-    if (!device) return c.json({ error: 'Not found' }, 404);
+    if (!device) return c.json({ error: 'Not found', code: 'capture_not_found' }, 404);
     if (device.userId !== access.viewer) await auditRead(c, access, 'capture.member_view', device.userId);
     if (!captureStoreConfigured()) return refuse(c, 503, 'capture_store_unavailable', 'No capture store is configured');
     return c.json(await assetUrl(access.accountId, device.deviceId, name), 200);
@@ -511,7 +511,7 @@ accountsRouter.openapi(
     try {
       new Intl.DateTimeFormat('en', { timeZone: tz });
     } catch {
-      return refuse(c, 400, 'capture_bad_window', 'tz must be an IANA time zone, for example Europe/Berlin');
+      return refuse(c, 400, 'capture_bad_query', 'tz must be an IANA time zone, for example Europe/Berlin');
     }
     const days = await recordedDays(access.accountId, access.subject!, { tz, deviceId: query.device_id });
     return c.json({ user_id: access.subject, tz, days }, 200);
@@ -597,7 +597,7 @@ accountsRouter.openapi(
     const access = await captureAccess(c, { userId: c.req.valid('query').user_id });
     if (isResponse(access)) return access as never;
     const chunk = await chunkOf(access.accountId, access.subject!, c.req.valid('param').chunkId);
-    if (!chunk) return c.json({ error: 'Not found' }, 404);
+    if (!chunk) return c.json({ error: 'Not found', code: 'capture_not_found' }, 404);
     return c.json({ chunk_id: chunk.chunkId, kind: chunk.kind, video: await mediaUrl(chunk, 'video'), audio: await mediaUrl(chunk, 'audio') }, 200);
   },
 );

@@ -323,9 +323,9 @@ function registerDeviceGrantRoutes(app: OpenAPIHono<AppEnv>) {
     async (c) => {
       const blocked = limited(c, 'captureGrantRead', c.get('userId') as string);
       if (blocked) return blocked as never;
-      if (!humanCaller(c)) return c.json({ error: 'Only a person can approve a capture device' }, 403);
+      if (!humanCaller(c)) return c.json({ error: 'Only a person can approve a capture device', code: 'capture_not_a_person' }, 403);
       const grant = await grantByUserCode(c.req.valid('param').user_code);
-      if (!grant) return c.json({ error: 'Unknown code' }, 404);
+      if (!grant) return c.json({ error: 'Unknown code', code: 'capture_grant_unknown' }, 404);
       return c.json({ ...grantView(grant), accounts: await captureAccountsFor(c.get('userId') as string) }, 200);
     },
   );
@@ -360,7 +360,7 @@ function registerDeviceGrantRoutes(app: OpenAPIHono<AppEnv>) {
       const userId = c.get('userId') as string;
       const blocked = limited(c, 'captureGrantDecide', userId);
       if (blocked) return blocked as never;
-      if (!humanCaller(c)) return c.json({ error: 'Only a person can approve a capture device' }, 403);
+      if (!humanCaller(c)) return c.json({ error: 'Only a person can approve a capture device', code: 'capture_not_a_person' }, 403);
       let accountId = c.req.valid('json').account_id;
       if (!accountId) {
         const choices = await captureAccountsFor(userId);
@@ -375,10 +375,10 @@ function registerDeviceGrantRoutes(app: OpenAPIHono<AppEnv>) {
         }
         accountId = choices[0]!.account_id;
       }
-      if (!(await isAccountMember(accountId, userId))) return c.json({ error: 'Not found' }, 404);
+      if (!(await isAccountMember(accountId, userId))) return c.json({ error: 'Not found', code: 'capture_not_found' }, 404);
       if (!(await captureEnabled(accountId))) return c.json(CAPTURE_DISABLED, 403);
       const grant = await grantByUserCode(c.req.valid('param').user_code);
-      if (!grant) return c.json({ error: 'Unknown code' }, 404);
+      if (!grant) return c.json({ error: 'Unknown code', code: 'capture_grant_unknown' }, 404);
       if (grant.status !== 'pending' || grant.expiresAt.getTime() < Date.now()) {
         return c.json({ error: `This sign-in is ${grantView(grant).status}`, code: 'capture_grant_not_pending' }, 409);
       }
@@ -403,9 +403,9 @@ function registerDeviceGrantRoutes(app: OpenAPIHono<AppEnv>) {
     async (c) => {
       const blocked = limited(c, 'captureGrantDecide', c.get('userId') as string);
       if (blocked) return blocked as never;
-      if (!humanCaller(c)) return c.json({ error: 'Only a person can deny a capture device' }, 403);
+      if (!humanCaller(c)) return c.json({ error: 'Only a person can deny a capture device', code: 'capture_not_a_person' }, 403);
       const grant = await grantByUserCode(c.req.valid('param').user_code);
-      if (!grant) return c.json({ error: 'Unknown code' }, 404);
+      if (!grant) return c.json({ error: 'Unknown code', code: 'capture_grant_unknown' }, 404);
       const denied = await denyDeviceGrant(grant);
       if (!denied) return c.json({ error: 'This sign-in was decided already', code: 'capture_grant_not_pending' }, 409);
       return c.json(grantView(denied), 200);
