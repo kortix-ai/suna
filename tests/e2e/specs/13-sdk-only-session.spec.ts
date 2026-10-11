@@ -341,7 +341,12 @@ test.describe.serial('13 — SDK-only web session', { tag: '@quarantine' }, () =
       waitUntil: 'domcontentloaded',
     });
     await explicitStart;
-    await expect(page.getByTestId('session-chat')).toBeVisible({ timeout: 120_000 });
+    // A session with no message yet paints the instant shell, not `session-chat`
+    // (`shouldMountSessionChat` holds the chat until the first send). The shell's
+    // composer is the typing surface either way.
+    await expect(page.getByRole('textbox', { name: 'Message input' })).toBeVisible({
+      timeout: 120_000,
+    });
     await expect
       .poll(() => readSessionStatuses(sessionId), { timeout: 120_000 })
       .toEqual({ projectSession: 'running', sandbox: 'active' });
@@ -390,7 +395,6 @@ test.describe.serial('13 — SDK-only web session', { tag: '@quarantine' }, () =
 
     await expect(page).toHaveURL(`/projects/${projectId}/sessions/${sessionId}`);
     await expect(page.getByTestId('session-layout')).toBeVisible({ timeout: 120_000 });
-    await expect(page.getByTestId('session-chat')).toBeVisible({ timeout: 120_000 });
     // This asserted `Agent picker` and `Model picker`. Neither string exists
     // anywhere in apps/web, so both locators matched nothing on every
     // environment — dead assertions, hidden because the `beforeAll` above used
@@ -440,6 +444,13 @@ test.describe.serial('13 — SDK-only web session', { tag: '@quarantine' }, () =
   test('falls back from a warm-session agent mismatch without reporting a global error', async ({
     page,
   }) => {
+    // Stale on two counts. The composer's agent trigger is named `Select agent`
+    // (or a disabled button), never `Agent picker`: that name exists nowhere in
+    // apps/web. And the mismatch needs a SECOND primary agent to pick; the
+    // seeded starter shows the composer one agent (`Kortix`) and
+    // `harness-reflector` is a cron-triggered agent. Re-enable once the journey
+    // seeds a second primary agent and selects it through `Select agent`.
+    test.fixme(true, 'needs a seeded second primary agent; `Agent picker` does not exist');
     const mismatchConsoleErrors: string[] = [];
     page.on('console', (message) => {
       const text = message.text();
