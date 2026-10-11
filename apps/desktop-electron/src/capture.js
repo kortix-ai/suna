@@ -390,7 +390,6 @@ function captureStatusFrom({ available, error, desktop, status, sync, permission
     signInRequired,
     accountId: accountFromPrefix(kortix.prefix),
     deviceId: kortix.device_id || null,
-    memberEmail: kortix.member_email || null,
     state,
     reason: status?.inactive_reason || null,
     layers: {
@@ -407,12 +406,6 @@ function captureStatusFrom({ available, error, desktop, status, sync, permission
       : null,
     pausedUntilMs: status?.paused_until_ms ?? null,
     permissions: permissions ? permissionView(permissions) : null,
-    sync: {
-      state: sync?.state?.state || 'off',
-      pending: sync?.state?.pending ?? 0,
-      lastUploadMs: sync?.state?.last_upload_ms ?? null,
-      error: sync?.state?.last_error || null,
-    },
     ...(recorder.lastExit?.error ? { error: recorder.lastExit.error } : {}),
   };
 }
@@ -550,8 +543,6 @@ function excludeArgs({ kind, id, on, frontmost = false } = {}) {
 /** System Settings panes for the engine's permissions (macOS). */
 const PERMISSION_PANES = {
   screen: 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture',
-  accessibility: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility',
-  microphone: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone',
   inputMonitoring: 'x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent',
 };
 

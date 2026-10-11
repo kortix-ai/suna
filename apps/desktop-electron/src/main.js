@@ -610,8 +610,7 @@ function captureBundled() {
   return fs.existsSync(capture.enginePaths(dir).capture);
 }
 
-/** App menu "Capture…" and Capture's tray: the page opens Capture's "This computer". */
-/** Opens Capture's "This computer"; `exclusions` opens its Exclusions tab (the tray's settings item). */
+/** Opens Capture's "This computer" (app menu, tray); `exclusions` opens its Exclusions tab. */
 function openCapture(section) {
   const command = section === 'exclusions' ? 'capture-open-exclusions' : 'capture-open';
   const opened = needsMainWindow(mainWindow);

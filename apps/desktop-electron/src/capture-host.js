@@ -7,7 +7,7 @@
 // capture-tray.js. Capture is its own product: no computer-agent module here.
 
 const { app, desktopCapturer, dialog, net, shell, systemPreferences } = require('electron');
-const { spawn, spawnSync } = require('node:child_process');
+const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const capture = require('./capture');
@@ -163,14 +163,8 @@ function setupCapture(deps) {
         // Removed or disabled outside the app, and not running: it waits for a person.
         serviceStopped: !heartbeat && !pending && (after.installed !== true || after.enabled === false),
       }),
-      version: engineState.version,
-      service: {
-        installed: after.installed === true,
-        enabled: after.enabled !== false,
-        running: Boolean(heartbeat),
-        upToDate: after.upToDate !== false,
-        ...(after.error ? { error: after.error } : {}),
-      },
+      // A failed service install stays visible on the page.
+      ...(after.error ? { error: after.error } : {}),
     };
   }
 
@@ -235,13 +229,9 @@ function setupCapture(deps) {
   async function set(args) {
     const { library } = await context();
     const desktop = capture.readDesktop(library);
+    // The account policy decides the layers; a person only turns recording on or off.
     if (typeof args.on === 'boolean') desktop.on = args.on;
     capture.writeDesktop(library, desktop);
-    for (const [key, setting] of [['screen', 'recording_enabled'], ['audio', 'audio.enabled']]) {
-      if (typeof args[key] !== 'boolean') continue;
-      const result = await engine(['settings', setting, String(args[key])]);
-      if (result.code !== 0) throw new Error(capture.lastError(result.stderr, `Could not change ${key}.`));
-    }
     return refresh({ explicit: true });
   }
 
@@ -289,13 +279,6 @@ function setupCapture(deps) {
       await systemPreferences.askForMediaAccess('microphone').catch(() => false);
     }
     return refresh();
-  }
-
-  async function openTimeline() {
-    const { env } = await context();
-    // Its own window, outside this app; it closes on its own.
-    spawn(paths.capture, ['ui'], { env, detached: true, stdio: 'ignore' }).unref();
-    return null;
   }
 
   /* ─── Exclusions ─────────────────────────────────────────────────────── */
@@ -362,21 +345,13 @@ function setupCapture(deps) {
       case 'capture_set':
         return set(args);
       case 'capture_pause':
-        return verb(['pause', '--for', `${Math.max(1, Math.min(24 * 60, Number(args.minutes) || 60))}m`], 'pause Capture');
+        return verb(['pause', '--for', '60m'], 'pause Capture');
       case 'capture_resume':
         return verb(['resume'], 'resume Capture');
       case 'capture_sign_out':
         return signOut();
-      case 'capture_open_timeline':
-        return openTimeline();
       case 'capture_grants_request':
         return requestGrants(args);
-      case 'capture_open_permission': {
-        const pane = capture.PERMISSION_PANES[args.permission];
-        if (process.platform !== 'darwin' || !pane) throw new Error(`No settings pane for ${args.permission}`);
-        await shell.openExternal(pane);
-        return null;
-      }
       case 'capture_exclusions':
         return exclusions();
       case 'capture_exclude':
@@ -394,9 +369,8 @@ function setupCapture(deps) {
   }
 
   const trayActions = {
-    pause: () => void invoke('capture_pause', { minutes: 60 }).catch((e) => console.warn(`[kortix] capture pause: ${e}`)),
+    pause: () => void invoke('capture_pause').catch((e) => console.warn(`[kortix] capture pause: ${e}`)),
     resume: () => void invoke('capture_resume').catch((e) => console.warn(`[kortix] capture resume: ${e}`)),
-    timeline: () => void openTimeline().catch((e) => console.warn(`[kortix] capture timeline: ${e}`)),
     open: () => deps.openCapture(),
     settings: () => deps.openCapture('exclusions'),
     exclude: (front) =>
@@ -418,7 +392,6 @@ function setupCapture(deps) {
     start,
     invoke,
     /** This build ships the engine (the app menu shows Capture only then). */
-    bundled: () => fs.existsSync(paths.capture),
     /** Capture's tray items (capture-tray.js); empty until Capture is set up here. */
     trayItems: (front = null) => capture.captureTrayItems(view, trayActions, front),
     /** The app in front, read when the menu bar item opens. */

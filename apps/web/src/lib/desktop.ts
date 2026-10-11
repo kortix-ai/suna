@@ -418,7 +418,6 @@ export interface DesktopCaptureStatus {
   /** False when this build has no engine or it cannot run here; `error` says why. */
   available: boolean;
   error?: string;
-  version?: string;
   /** The person's switch: record while Kortix runs. */
   on?: boolean;
   signedIn?: boolean;
@@ -438,7 +437,6 @@ export interface DesktopCaptureStatus {
   permissions?:
     | (Record<'screen' | 'accessibility' | 'microphone', boolean> & { inputMonitoring?: boolean })
     | null;
-  sync?: { state: string; pending: number; lastUploadMs: number | null; error: string | null };
 }
 
 export interface DesktopCaptureSignIn {
@@ -465,16 +463,14 @@ export const desktopCaptureSignInFinish = () =>
   desktopAction<DesktopCaptureSignInResult>('capture_sign_in_finish');
 export const desktopCaptureSignInCancel = () => desktopAction<null>('capture_sign_in_cancel');
 /** Rejects with the desktop app's message. */
-export const desktopCaptureSet = (
-  input: { on?: boolean } & Partial<Record<DesktopCaptureLayer, boolean>>,
-) => desktopAction<DesktopCaptureStatus>('capture_set', input);
-export const desktopCapturePause = (minutes = 60) =>
-  desktopAction<DesktopCaptureStatus>('capture_pause', { minutes });
+export const desktopCaptureSet = (input: { on: boolean }) =>
+  desktopAction<DesktopCaptureStatus>('capture_set', input);
+/** Pauses this computer's recording for one hour. */
+export const desktopCapturePause = () => desktopAction<DesktopCaptureStatus>('capture_pause');
 export const desktopCaptureResume = () => desktopAction<DesktopCaptureStatus>('capture_resume');
 /** "Allow all": asks macOS for Screen Recording, Accessibility, and the Microphone when `audio`, for Kortix. */
 export const desktopCaptureRequestGrants = (input: { audio: boolean; actions: boolean }) =>
   desktopAction<DesktopCaptureStatus>('capture_grants_request', input);
-export const desktopCaptureOpenTimeline = () => desktopAction<null>('capture_open_timeline');
 export const desktopCaptureOpenLogs = () => desktopAction<null>('capture_open_logs');
 /** Removes the Capture service and forgets the device token on this computer. */
 export const desktopCaptureSignOut = () => desktopAction<DesktopCaptureStatus>('capture_sign_out');

@@ -231,7 +231,6 @@ describe('status and tray', () => {
       layers: { screen: true, actions: true, audio: false },
       policy: { layers: { screen: true, actions: true, audio: false }, notice: 'Recorded for the support team', paused: false },
       permissions: { screen: true, accessibility: false, microphone: true },
-      sync: { state: 'ok', pending: 2, lastUploadMs: 5, error: null },
     });
     expect(capture.captureLabel(view)).toBe('Recording · Screen, Actions');
     const noActions = { ...sync, policy: { ...sync.policy, policy: { ...sync.policy.policy, layers: { actions: false } } } };

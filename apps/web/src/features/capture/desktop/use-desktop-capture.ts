@@ -124,7 +124,7 @@ export function useDesktopCaptureActions(
     },
   });
   const set = useMutation({ ...options, mutationFn: desktopCaptureSet });
-  const pause = useMutation({ ...options, mutationFn: () => desktopCapturePause(60) });
+  const pause = useMutation({ ...options, mutationFn: desktopCapturePause });
   const resume = useMutation({ ...options, mutationFn: desktopCaptureResume });
   const grants = useMutation({ ...options, mutationFn: desktopCaptureRequestGrants });
   const signOut = useMutation({
