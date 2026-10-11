@@ -1,5 +1,5 @@
 {
-  "source_hash": "06a7f7160d14215422fb9b65a6efa6c92bddc6aac343f58e854b2749bfdd1a3c",
+  "source_hash": "33f2ed8f2f920dbf4672908014273f0315f05b67b661b449a2c752b5bb24e572",
   "diff_files": [
     "apps/api/src/__tests__/unit-trigger-fire-paths.test.ts",
     "apps/api/src/projects/lib/trigger-fire.ts",
@@ -21,12 +21,10 @@
     "tests/src/flows/sso-identity.flow.ts"
   ],
   "diff_hash": "b2d320040ceec1efe3f74ad3bcaa36e7b599e298e686c17f5497a8c5e26d47a1",
-  "head": "1865858cba8828e002f51fbc205ea47c8945c574",
+  "head": "c68e95f76f84097b003547a0da98a46bc4f9effa",
   "passed": true,
   "lanes": {
-    "core": "pass",
-    "packages": "pass",
-    "db-suites": "pass"
+    "browser": "pass"
   },
-  "at": "2026-10-11T08:30:45.824Z"
+  "at": "2026-10-11T08:46:43.107Z"
 }
