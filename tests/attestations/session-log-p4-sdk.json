@@ -1,0 +1,38 @@
+{
+  "source_hash": "474ca30638860913e17786d17522c7075de441992995c0ff2d082beba0668ed8",
+  "diff_files": [
+    "apps/web/content/docs/sdk/react.mdx",
+    "apps/web/content/docs/sdk/reference.mdx",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "packages/sdk/README.md",
+    "packages/sdk/src/browser/stores/sync-store-session-log.test.ts",
+    "packages/sdk/src/browser/stores/sync-store.ts",
+    "packages/sdk/src/core/session-log/guard.test.ts",
+    "packages/sdk/src/core/session-log/guard.ts",
+    "packages/sdk/src/core/session-log/session-log.fixture.json",
+    "packages/sdk/src/core/session-log/source.test.ts",
+    "packages/sdk/src/core/session-log/source.ts",
+    "packages/sdk/src/core/session-log/store.test.ts",
+    "packages/sdk/src/core/session-log/store.ts",
+    "packages/sdk/src/core/session-log/v1-view.test.ts",
+    "packages/sdk/src/core/session-log/v1-view.ts",
+    "packages/sdk/src/core/session-log/v1.test.ts",
+    "packages/sdk/src/core/session-log/v1.ts",
+    "packages/sdk/src/public-surface.snapshot.json",
+    "packages/sdk/src/public-type-surface.snapshot.json",
+    "packages/sdk/src/react/opencode.ts",
+    "packages/sdk/src/react/session-transcript-subscription.ts",
+    "packages/sdk/src/react/use-session-log.test.ts",
+    "packages/sdk/src/react/use-session-log.ts",
+    "packages/sdk/src/react/use-session.ts"
+  ],
+  "diff_hash": "4bf60a3ff5333446595f12e0a257e975a28fbef2aae081f17d424a68c14a6fc0",
+  "head": "b8207d41e07ca57b0df1be9d01f5f028ccde6abf",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-11T19:48:38.630Z"
+}
