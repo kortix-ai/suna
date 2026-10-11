@@ -1,5 +1,5 @@
 {
-  "source_hash": "6eec3f18ec5465e1861e290be92dad421e23bfa0e2e9e361188d8cae7de2c98f",
+  "source_hash": "1895207888e3e47b883064e900a05248cd2a54bc90f9ee440e9480b26837711b",
   "diff_files": [
     "apps/web/content/docs/sdk/react.mdx",
     "apps/web/content/docs/sdk/reference.mdx",
@@ -35,13 +35,13 @@
     "packages/sdk/src/react/use-session-log.ts",
     "packages/sdk/src/react/use-session.ts"
   ],
-  "diff_hash": "ec599c17b105807f58364797687540366b9b836c61233a25ad28aefe899a4c37",
-  "head": "3b3a72ed9b7bed7dcdf824f003e629595b00a246",
+  "diff_hash": "ae777eab5f4973be27deecb9f4b50a8a1d083e071c07c0e19e9f57dd8b4a92a2",
+  "head": "dfdf9b6ece17057638bf5273841d123f88d8d9cd",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-11T20:48:34.424Z"
+  "at": "2026-10-11T21:55:00.498Z"
 }
