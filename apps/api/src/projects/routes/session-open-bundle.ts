@@ -48,6 +48,7 @@ import { auth, errors, json } from '../../openapi';
 import { createRoute, z, type RouteHandler } from '@hono/zod-openapi';
 
 import { accountHasEntitlement, accountMayUseManagedModels } from '../../billing/services/entitlements';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
 import { resolveEffectiveModel } from '../../llm-gateway/resolution/default-model';
@@ -71,6 +72,7 @@ import { readSessionTurnState } from '../lib/session-turn-read';
 import { readRuntimeLeg } from '../lib/session-runtime-projection';
 import { scheduleRuntimeProjectionRefresh } from '../lib/session-runtime-projection-refresh';
 import { listInboxPrompts } from '../session-lifecycle/inbox-rows';
+import { readSessionLogPage } from '../session-log-read';
 
 /** Same ceiling `GET .../audit` uses for the pending-approvals poll. */
 const AUDIT_ACTIONS_LIMIT = 100;
@@ -150,6 +152,7 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
     if (sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
 
     const gatewayEnabled = projectLlmGatewayEnabled(loaded.row.metadata);
+    const logEnabled = resolveFeatureFlag(loaded.row.metadata, 'session_log', loaded.row.accountId);
     const userId = c.get('userId') as string;
 
     // Captured BEFORE the fan-out: every leg is a snapshot no fresher than the
@@ -162,7 +165,7 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
     // it arrives together, and one leg failing must degrade that leg, not the
     // paint. Nothing here touches the sandbox, so nothing here can be held up
     // by a box that is asleep.
-    const [turn, queue, transcript, models, runtime, audit] = await Promise.allSettled([
+    const [turn, queue, transcript, models, runtime, audit, log] = await Promise.allSettled([
       readSessionTurnState(sessionId),
       listInboxPrompts(sessionId, PROMPT_LIST_LIMIT),
       transcriptLimit.value === 0
@@ -225,6 +228,12 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
           limit: AUDIT_ACTIONS_LIMIT,
         });
       })(),
+      // = `GET .../log`, the first page of the root thread, only with the
+      // `session_log` flag on. Same window as the transcript leg; `?transcript=0`
+      // reads the pointer only (session, generation, threads, no messages).
+      logEnabled
+        ? readSessionLogPage({ sessionId, threadId: null, beforeSeq: null, limit: transcriptLimit.value })
+        : Promise.resolve(undefined),
     ]);
 
     const prompts =
@@ -332,6 +341,15 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
         audit.status === 'fulfilled'
           ? { known: true as const, ...audit.value }
           : failed(audit.reason),
+
+      // = `GET .../log` (P4.2). Absent with the `session_log` flag off.
+      // `page: null`: the session has no stored log yet.
+      ...(logEnabled && {
+        log:
+          log.status === 'fulfilled'
+            ? { known: true as const, page: log.value ?? null }
+            : failed(log.reason),
+      }),
     });
   };
 
