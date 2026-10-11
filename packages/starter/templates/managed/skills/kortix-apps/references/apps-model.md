@@ -129,12 +129,12 @@ App runs and who may open it do not change.
 display:
   listed: true          # a card in the Apps grid (default true)
   preview: none         # live (default): the card frames the App; none: an icon card
-  parent: db            # a tab in db's App detail, not a card of its own
+  parent: backend       # a tab in backend's App detail, not a card of its own
 ```
 
 - `parent` names another App of the same `kortix.yaml`. A tab whose parent
   does not exist stays a card. The tab label is the App's name without the
-  `<parent>-` prefix (`db-dashboard` → Dashboard).
+  `<parent>-` prefix (`backend-dashboard` → Dashboard).
 - An App with `preview: none` opens on its first tab.
 - `kortix apps deploy` writes the block's `display` to the App (absent = the
   defaults). `kortix apps show` prints it on the `shown` row.

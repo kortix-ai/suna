@@ -14,9 +14,9 @@ A new App uses none.
 ## Set the links
 
 ```sh
-kortix apps link crm --uses db          # crm may reach db
-kortix apps show crm --json             # app.uses: ["db"]; db shows app.used_by: ["crm"]
-kortix apps unlink crm --uses db        # remove the link
+kortix apps link crm --uses backend     # crm may reach backend
+kortix apps show crm --json             # app.uses: ["backend"]; backend shows app.used_by: ["crm"]
+kortix apps unlink crm --uses backend   # remove the link
 ```
 
 `--uses <slugs>` on `kortix apps create` sets the list at create, and on
@@ -27,7 +27,7 @@ In `kortix.yaml`, `uses` in the App's block replaces its list on every
 
 ```yaml
 apps:
-  db:                    # the Convex template (convex.md), abridged: launch writes the full block
+  backend:               # the Convex template (convex.md), abridged: launch writes the full block
     type: oci_image
     image: ghcr.io/get-convex/convex-backend@sha256:…
     command: ["sh", "-c", "cd /convex && exec ./run_backend.sh"]
@@ -36,7 +36,7 @@ apps:
     path: apps/crm/dist
     type: static
     spa: true
-    uses: [db]
+    uses: [backend]
 ```
 
 `kortix apps deploy` with no arguments deploys every block, used Apps first.
@@ -48,11 +48,11 @@ A slug that names no App of the project answers `400 app_not_found`.
 import { ConvexReactClient } from "convex/react";
 import { kortixBinding } from "@kortix/sdk";
 
-const db = kortixBinding("db");
-// db.url   = location.origin + "/_kortix/apps/db"
-// db.token = a fetcher for a 15-minute token whose audience is db
-export const convex = new ConvexReactClient(db.url);
-convex.setAuth(db.token);
+const backend = kortixBinding("backend");
+// backend.url   = location.origin + "/_kortix/apps/backend"
+// backend.token = a fetcher for a 15-minute token whose audience is backend
+export const convex = new ConvexReactClient(backend.url);
+convex.setAuth(backend.token);
 ```
 
 To read the signed-in member in React, use a `members:me` query

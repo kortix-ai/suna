@@ -97,19 +97,20 @@ harnesses:
 # explicit deployment action; merging this file does not auto-deploy.
 # Each block is the App's release config: a deploy creates an immutable release of
 # its artifact and this config (processes, http_service, services, mounts, vm,
-# deploy). `kortix apps launch --template convex --name db` writes a block like
-# `db` below (a self-hosted Convex backend) plus `db-dashboard` (admins only,
-# shown as the Dashboard tab of `db`, signed in by the DB_ADMIN_KEY secret).
+# deploy). `kortix apps launch --template convex` writes the `backend` block
+# below (a self-hosted Convex backend: data, functions, realtime, files) plus
+# `backend-dashboard` (admins only, the Dashboard tab of `backend`, signed in by
+# the BACKEND_ADMIN_KEY secret).
 # `kortix apps deploy` with no arguments deploys every block, used Apps first.
 # Code lives in one folder per App, apps/<name>/ by default (`path` is free-form:
-# group by team or topic when that fits better). db's functions live in
-# apps/db/convex (`npx convex deploy`); its image needs no `path`.
+# group by team or topic when that fits better). The backend's functions live in
+# apps/backend/convex (`npx convex deploy`); its image needs no `path`.
 # A static App (files, no machine) ignores run mode, resources, env
 # and secrets. A server App runs always on (default, billed 24/7) or on demand
 # (billed while awake). Apps have no budget:
 # `monthly_budget_usd` is retired and `kind` is retired (the validator warns).
 apps:
-  db:
+  backend:
     type: oci_image
     image: ghcr.io/get-convex/convex-backend@sha256:<digest>   # pinned by the template
     command: ["sh", "-c", "cd /convex && CONVEX_CLOUD_ORIGIN=$KORTIX_APP_URL CONVEX_SITE_ORIGIN=$KORTIX_SERVICE_URL_SITE exec ./run_backend.sh"]
@@ -125,21 +126,21 @@ apps:
       checks: [{ type: http, path: /version }]
     services:                  # more ports, each on <App host>--<name>
       - { name: site, internal_port: 3211, access: public }
-  db-dashboard:                # Convex's dashboard is a second image, so a second App
-    path: apps/db/dashboard    # Dockerfile + start.js, written by `launch`
+  backend-dashboard:           # Convex's dashboard is a second image, so a second App
+    path: apps/backend/dashboard # Dockerfile + start.js, written by `launch`
     type: dockerfile
     command: [node, /kortix/start.js]
-    display: { parent: db }    # the Dashboard tab of db, not a card of its own
-    uses: [db]
+    display: { parent: backend } # the Dashboard tab of backend, not a card of its own
+    uses: [backend]
     always_on: false           # sleeps when idle
     http_service: { internal_port: 6791, access: admins }
     secrets:                   # env name → project secret identifier
-      NEXT_PUBLIC_ADMIN_KEY: DB_ADMIN_KEY   # written by `launch`; the dashboard opens signed in
+      NEXT_PUBLIC_ADMIN_KEY: BACKEND_ADMIN_KEY # written by `launch`; the dashboard opens signed in
   storefront:
     path: apps/storefront/dist # build first (in apps/storefront); deploy the output directory
     type: static
     spa: true
-    uses: [db]                 # may bind to db and mint its sign-in tokens
+    uses: [backend]            # may bind to backend and mint its sign-in tokens
   api:
     path: apps/api
     type: dockerfile
