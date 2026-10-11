@@ -18,7 +18,7 @@
  * (a machine whose old instance was replaced restarts on its own volume).
  */
 import { randomUUID } from 'node:crypto';
-import { appDeploymentEvents, appDeployments, appRuntimes, appVolumes, apps } from '@kortix/db';
+import { appDeploymentEvents, appDeployments, appLinks, appRuntimes, appVolumes, apps } from '@kortix/db';
 import {
   appMountFor,
   appServicesFor,
@@ -76,6 +76,25 @@ export function appUrlEnv(app: AppRow, config: AppReleaseConfig): Record<string,
   return env;
 }
 
+/**
+ * `KORTIX_USES_URL_<SLUG>` (`-` → `_`) for every live App this App uses: a
+ * server calls a backend there with a member token. The browser binding
+ * (`/_kortix/apps/<slug>`) needs the viewer's App cookie, which a server has
+ * not. Links change with a deploy, which makes new machines.
+ */
+export async function usesUrlEnv(appId: string): Promise<Record<string, string>> {
+  const used = await db.select({ slug: apps.slug, routeKey: apps.routeKey })
+    .from(appLinks)
+    .innerJoin(apps, eq(apps.appId, appLinks.usesAppId))
+    .where(and(eq(appLinks.appId, appId), isNull(apps.deletedAt)));
+  const env: Record<string, string> = {};
+  for (const row of used) {
+    const url = appServiceUrl(row, 'http');
+    if (url) env[`KORTIX_USES_URL_${row.slug.toUpperCase().replace(/-/g, '_')}`] = url;
+  }
+  return env;
+}
+
 /** Everything a machine of this release runs with: its env, its secrets and the App's identity. */
 export async function releaseEnvironment(app: AppRow, deployment: DeploymentRow): Promise<ReleaseEnvironment> {
   const buildSpec = deployment.buildSpec as { environment?: Record<string, string>; secrets?: Record<string, string> };
@@ -94,6 +113,7 @@ export async function releaseEnvironment(app: AppRow, deployment: DeploymentRow)
       ...appRuntimeIdentityEnv(app),
       ...(await (await import('./tokens')).appAuthEnv(app)),
       ...appUrlEnv(app, releaseConfigOf(deployment, app)),
+      ...(await usesUrlEnv(app.appId)),
     },
     secretIdentifiers: resolved.secretIdentifiers,
     environmentKeys: Object.keys(resolved.env).sort(),
