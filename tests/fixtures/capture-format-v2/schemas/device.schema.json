@@ -105,6 +105,50 @@
     "updated_at_ms": {
       "type": "integer",
       "minimum": 0
+    },
+    "displays": {
+      "type": "array",
+      "description": "The displays connected now.",
+      "items": {
+        "type": "object",
+        "description": "One physical display. Points, in the global desktop space (top-left origin).",
+        "required": [
+          "id",
+          "x",
+          "y",
+          "w",
+          "h"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          },
+          "w": {
+            "type": "number"
+          },
+          "h": {
+            "type": "number"
+          },
+          "scale": {
+            "type": "number"
+          },
+          "main": {
+            "type": "boolean"
+          }
+        }
+      }
     }
   }
 }

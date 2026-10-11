@@ -92,6 +92,46 @@
     },
     "video_name": {
       "type": "string"
+    },
+    "display": {
+      "type": "object",
+      "description": "The display this item recorded. A multi-display device writes one item per display. Absent on older devices.",
+      "required": [
+        "id",
+        "x",
+        "y",
+        "w",
+        "h"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "w": {
+          "type": "number"
+        },
+        "h": {
+          "type": "number"
+        },
+        "scale": {
+          "type": "number"
+        },
+        "main": {
+          "type": "boolean"
+        }
+      }
     }
   },
   "$defs": {

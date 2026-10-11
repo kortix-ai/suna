@@ -28,7 +28,7 @@ import { flow } from '../core/flow';
 import { waitFor } from '../core/poll';
 import type { FlowContext, Principal } from '../core/types';
 import { AgentPrincipalsWorld, openDb } from '../fixtures/agent-principals';
-import { captureSchemaErrors, deleteCaptureObjects, localCaptureStore, readCaptureObject, syntheticMachineKey, uploadCaptureObjects, vendoredDevice, type CaptureSchemaName } from '../fixtures/capture';
+import { captureSchemaErrors, deleteCaptureObjects, FIXTURE_DISPLAYS, localCaptureStore, readCaptureObject, syntheticMachineKey, uploadCaptureObjects, vendoredDevice, type CaptureSchemaName } from '../fixtures/capture';
 import { createHash } from 'node:crypto';
 import { CliSandbox } from '../fixtures/cli';
 
@@ -531,6 +531,73 @@ flow(
       (await as('member').get(path(R.search), { params, query: { q: 'quarterly' } })).status(403).body().has('$.code', 'capture_disabled');
       (await as('owner').get(path(R.search), { params, query: { q: 'quarterly', scope: 'account' } })).status(403).body().has('$.code', 'capture_disabled');
       (await owner.patch(path(R.setEnabled), { enabled: true }, { params })).status(200);
+    });
+  },
+);
+
+flow(
+  'CAP-6',
+  {
+    domain: 'capture',
+    requires: ['database'],
+    timeoutMs: 180_000,
+    routes: [R.devices, R.sync, R.timeline, R.items, R.search, R.frame],
+  },
+  async (ctx) => {
+    const { team, member } = await captureAccount(ctx);
+    await enableCapture(ctx, team.id);
+    const machineKey = syntheticMachineKey(ctx.fixtures.name('cap6'));
+    const device = await signInDevice(ctx, member, team.id, machineKey);
+    const store = await localCaptureStore();
+    // A dual-monitor device: every screen item once per display, display 1 focused.
+    const day = vendoredDevice({ prefix: device.prefix, deviceId: device.device_id, machineKeySha256: machineKey, displays: 2 });
+    await uploadCaptureObjects(store, day.objects);
+    const asMember = ctx.client.as(member);
+    const params = { accountId: team.id };
+    await awaitIndexed(ctx, asMember, team.id, device.device_id, day.day, (t) => (t.chunks?.length ?? 0) >= day.expected.chunks, 'both displays to index');
+    const [main, external] = FIXTURE_DISPLAYS;
+    const perDisplay = day.expected.frames / 2;
+
+    await ctx.step('the timeline lists both displays (main first, with their layout), a screen item per display, and focus spans on display 1; runs follow the focused display', async () => {
+      const t = (await asMember.get(path(R.timeline), { params, query: { day: day.day } })).status(200).json<any>();
+      if (JSON.stringify(t.displays.map((d: any) => [d.id, d.name, d.main, d.x])) !== JSON.stringify([[main.id, main.name, true, 0], [external.id, external.name, false, external.x]])) {
+        throw new Error(`displays ${JSON.stringify(t.displays)}`);
+      }
+      const screens = t.chunks.filter((c: any) => c.kind === 'chunk');
+      if (screens.filter((c: any) => c.display_id === 1).length !== 2 || screens.filter((c: any) => c.display_id === 2).length !== 2) throw new Error(`screen items ${JSON.stringify(screens.map((c: any) => c.display_id))}`);
+      if (!t.focus.length || t.focus.some((f: any) => f.display_id !== 1)) throw new Error(`focus ${JSON.stringify(t.focus)}`);
+      const runFrames = t.runs.reduce((n: number, r: any) => n + r.frames, 0);
+      if (runFrames !== perDisplay) throw new Error(`runs count ${runFrames} frames, the focused display has ${perDisplay}`);
+    });
+
+    await ctx.step('display_id=2 narrows the screen items and runs to the external display and keeps the action and audio items', async () => {
+      const t = (await asMember.get(path(R.timeline), { params, query: { day: day.day, display_id: '2' } })).status(200).json<any>();
+      const screens = t.chunks.filter((c: any) => c.kind === 'chunk');
+      if (screens.length !== 2 || screens.some((c: any) => c.display_id !== 2)) throw new Error(`screen items ${JSON.stringify(screens)}`);
+      if (!t.chunks.some((c: any) => c.kind === 'actions')) throw new Error('action items dropped');
+      if (t.runs.reduce((n: number, r: any) => n + r.frames, 0) !== perDisplay) throw new Error('display 2 runs');
+      if (t.displays.length !== 2) throw new Error('the displays list must not narrow');
+    });
+
+    await ctx.step('items: the default is the focused display, display_id=2 the external one (focused false), display_id=all both; display_id=x → 400', async () => {
+      const items = async (display_id?: string) =>
+        (await asMember.get(path(R.items), { params, query: { day: day.day, ...(display_id ? { display_id } : {}) } })).status(200).json<any>().frames as any[];
+      const focused = await items();
+      if (focused.length !== perDisplay || focused.some((f) => f.display_id !== 1 || f.focused !== true)) throw new Error(`default ${JSON.stringify(focused.map((f) => [f.display_id, f.focused]))}`);
+      const second = await items('2');
+      if (second.length !== perDisplay || second.some((f) => f.display_id !== 2 || f.focused !== false)) throw new Error('display 2 frames');
+      if ((await items('all')).length !== day.expected.frames) throw new Error('all displays');
+      (await asMember.get(path(R.items), { params, query: { day: day.day, display_id: 'x' } })).status(400);
+    });
+
+    await ctx.step('the device lists its displays from device.json; a frame of display 2 opens with that display; a screen search hit names its display', async () => {
+      const devices = (await asMember.get(path(R.devices), { params })).status(200).json<any>().devices;
+      const listed = devices.find((d: any) => d.device_id === device.device_id);
+      if (listed?.displays?.length !== 2) throw new Error(`device displays ${JSON.stringify(listed?.displays)}`);
+      const frame = (await asMember.get(path(R.items), { params, query: { day: day.day, display_id: '2' } })).json<any>().frames[0];
+      (await asMember.get(path(R.frame), { params: { ...params, frameId: frame.frame_id } })).status(200).body().has('$.display.id', 2).has('$.display.name', external.name);
+      const hits = (await asMember.get(path(R.search), { params, query: { q: 'quarterly', kinds: 'screen', limit: 50 } })).status(200).json<any>().hits;
+      if (!hits.some((h: any) => h.display_id === 2 && h.display_name === external.name)) throw new Error(`hits ${JSON.stringify(hits.map((h: any) => [h.display_id, h.display_name]))}`);
     });
   },
 );

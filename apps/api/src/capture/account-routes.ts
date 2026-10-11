@@ -31,7 +31,7 @@ import { getRequestOnBehalfOf } from '../middleware/on-behalf-of';
 import { supabaseAuth } from '../middleware/auth';
 import { recordAuditEvent } from '../shared/audit';
 import type { AppEnv } from '../types';
-import { PolicySchema } from './format';
+import { parseDisplay, PolicySchema } from './format';
 import { readAccountPolicy, writeAccountPolicy } from './policy';
 import {
   assetUrl,
@@ -49,6 +49,8 @@ import {
   sessionVisibility,
   timelineChunksIn,
   timelineItems,
+  displaysOf,
+  timelineFocus,
   timelineRuns,
   type SearchKind,
 } from './reads';
@@ -190,6 +192,11 @@ const tags = ['capture'];
 const subjectQuery = z.object({
   user_id: z.string().uuid().optional(),
   device_id: z.string().uuid().optional(),
+  display_id: z
+    .string()
+    .regex(/^(\d+|all)$/)
+    .optional()
+    .describe('One display; default: the display that held the focused window. `all` (items only): every display'),
   day: z.string().optional(),
   from: z.string().optional(),
   to: z.string().optional(),
@@ -204,15 +211,25 @@ const searchQuery = subjectQuery.extend({
 
 // ─── Shared read handlers (the account routes and the agent's /v1/capture/me) ─
 
-async function timelineResponse(c: Ctx, access: Access, deviceId?: string) {
+/** `display_id` as a display id; `all` and absent are undefined. */
+const displayParam = (value: string | undefined) => (value && value !== 'all' ? Number(value) : undefined);
+
+async function timelineResponse(c: Ctx, access: Access, query: { device_id?: string; display_id?: string }) {
     const span = window(c);
     if (!span) return refuse(c, 400, 'capture_bad_window', BAD_WINDOW);
     const subject = access.subject!;
-    const [runs, chunks] = await Promise.all([
-      timelineRuns(access.accountId, subject, span, deviceId),
-      timelineChunksIn(access.accountId, subject, span, deviceId),
+    const displayId = displayParam(query.display_id);
+    const [runs, chunks, allChunks, focus] = await Promise.all([
+      timelineRuns(access.accountId, subject, span, query.device_id, displayId),
+      timelineChunksIn(access.accountId, subject, span, query.device_id, displayId),
+      // The displays of the window, whatever display was asked for.
+      displayId === undefined ? null : timelineChunksIn(access.accountId, subject, span, query.device_id),
+      timelineFocus(access.accountId, subject, span, query.device_id),
     ]);
-    return c.json({ user_id: subject, from: span.from.toISOString(), to: span.to.toISOString(), runs, chunks }, 200);
+    return c.json(
+      { user_id: subject, from: span.from.toISOString(), to: span.to.toISOString(), displays: displaysOf(allChunks ?? chunks), focus, runs, chunks },
+      200,
+    );
 }
 
 interface SearchQuery {
@@ -248,7 +265,8 @@ async function frameResponse(c: Ctx, access: Access, frameId: string) {
     // A still of the moment: the action screenshot nearest the frame on its device (within 30 s).
     const shot = await nearestScreenshot(access.accountId, access.subject!, String(found.frame.device_id), new Date(String(found.frame.ts)));
     const screenshot = shot ? { ...shot, ...(await assetUrl(access.accountId, String(found.frame.device_id), shot.name)) } : null;
-    return c.json({ frame: found.frame, video: video && { ...video, offset_ms: offset }, screenshot }, 200);
+    const display = found.chunk ? parseDisplay(found.chunk.display) : null;
+    return c.json({ frame: found.frame, display, video: video && { ...video, offset_ms: offset }, screenshot }, 200);
 }
 
 // ─── Workspace: the account switch and what you may do ──────────────────────
@@ -463,7 +481,7 @@ accountsRouter.openapi(
     const query = c.req.valid('query');
     const access = await captureAccess(c, { userId: query.user_id });
     if (isResponse(access)) return access as never;
-    return timelineResponse(c, access, query.device_id);
+    return timelineResponse(c, access, query);
   },
 );
 
@@ -515,7 +533,10 @@ accountsRouter.openapi(
     if (isResponse(access)) return access as never;
     const span = window(c);
     if (!span) return refuse(c, 400, 'capture_bad_window', BAD_WINDOW);
-    const items = await timelineItems(access.accountId, access.subject!, span, query.device_id);
+    const items = await timelineItems(access.accountId, access.subject!, span, query.device_id, {
+      displayId: displayParam(query.display_id),
+      allDisplays: query.display_id === 'all',
+    });
     return c.json({ user_id: access.subject, from: span.from.toISOString(), to: span.to.toISOString(), ...items }, 200);
   },
 );
@@ -618,7 +639,7 @@ export function registerCaptureAgentRoutes(app: OpenAPIHono<AppEnv>) {
     async (c) => {
       const access = await meAccess(c);
       if (isResponse(access)) return access as never;
-      return timelineResponse(c, access, c.req.valid('query').device_id);
+      return timelineResponse(c, access, c.req.valid('query'));
     },
   );
   app.openapi(

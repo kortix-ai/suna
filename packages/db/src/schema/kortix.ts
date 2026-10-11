@@ -7238,6 +7238,10 @@ export const timelineChunks = kortixSchema.table(
     itemCount: integer('item_count').default(0).notNull(),
     encrypted: boolean('encrypted').default(false).notNull(),
     manifest: jsonb('manifest').$type<Record<string, unknown>>().notNull(),
+    /** The display a screen item recorded (one item per display); null before multi-display devices. */
+    displayId: bigint('display_id', { mode: 'number' }),
+    /** That display: `{id, name, x, y, w, h, scale, main}` from the manifest. */
+    display: jsonb('display').$type<Record<string, unknown>>(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
@@ -7277,6 +7281,10 @@ export const timelineFrames = kortixSchema.table(
     ocrText: text('ocr_text'),
     ocrBoxes: jsonb('ocr_boxes').$type<unknown[]>(),
     inactive: boolean('inactive').default(false).notNull(),
+    /** The display the frame shows; null before multi-display devices. */
+    displayId: bigint('display_id', { mode: 'number' }),
+    /** The display holding the focused window at that moment (the app track reads these). */
+    focused: boolean('focused').default(true).notNull(),
   },
   (table) => [
     primaryKey({ name: 'timeline_frames_pkey', columns: [table.frameId, table.ts] }),

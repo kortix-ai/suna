@@ -4,10 +4,10 @@
  * is bound to (account, person); the route decides who may ask.
  */
 import { captureDevices, projectSessions, timelineChunks } from '@kortix/db';
-import { and, asc, desc, eq, gte, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import type * as C from '@kortix/api-contract';
 import { db } from '../shared/db';
-import { accountPrefix, isEncrypted, liveState, objectKey, type Manifest } from './format';
+import { accountPrefix, isEncrypted, liveState, objectKey, parseDisplay, type CaptureDisplay, type Manifest } from './format';
 import { captureStore, captureStoreConfigured } from './store';
 
 export type Device = typeof captureDevices.$inferSelect;
@@ -20,6 +20,12 @@ export interface Span {
 /** A timestamptz parameter. A bare Date in raw SQL is sent as its local `toString()`. */
 const at = (d: Date) => sql`${d.toISOString()}::timestamptz`;
 const onDevice = (deviceId: string | undefined) => (deviceId ? sql` AND device_id = ${deviceId}::uuid` : sql``);
+/**
+ * Frames of one display, or (no display asked) the frames of the display that
+ * held the focused window: one frame per moment, the one the person looked at.
+ */
+const onDisplay = (displayId: number | undefined) =>
+  displayId === undefined ? sql` AND focused` : sql` AND display_id = ${displayId}`;
 
 /** Raw SQL rows carry Postgres timestamp text; the API answers ISO 8601 like every other route. */
 export function isoRows<T extends Record<string, unknown>>(rows: Iterable<T>): T[] {
@@ -28,6 +34,8 @@ export function isoRows<T extends Record<string, unknown>>(rows: Iterable<T>): T
     for (const key of ['ts', 'end_at', 'start_at']) {
       if (out[key] != null) out[key] = new Date(out[key] as string).toISOString();
     }
+    // Postgres bigint arrives as text; a display id is a small integer.
+    if (out.display_id != null) out.display_id = Number(out.display_id);
     return out as T;
   });
 }
@@ -57,11 +65,18 @@ export function deviceView(device: Device, now = Date.now()) {
     os_version: device.osVersion,
     arch: device.arch,
     app_version: device.appVersion,
+    /** The displays the device reported in device.json, in its layout. */
+    displays: deviceDisplays(device),
     live: { state: liveState(device.status, now), status: device.status, reported_at: device.statusReportedAt?.toISOString() ?? null },
     last_credentials_at: device.lastCredentialsAt?.toISOString() ?? null,
     revoked_at: device.revokedAt?.toISOString() ?? null,
     created_at: device.createdAt.toISOString(),
   };
+}
+
+export function deviceDisplays(device: Device): CaptureDisplay[] {
+  const listed = (device.deviceInfo as { displays?: unknown } | null)?.displays;
+  return Array.isArray(listed) ? listed.map(parseDisplay).filter((d) => d !== null) : [];
 }
 
 export async function listDevices(accountId: string, userId: string | null): Promise<Device[]> {
@@ -92,8 +107,11 @@ export async function revokeDevice(deviceId: string, by: string): Promise<Device
 
 // ─── Timeline ────────────────────────────────────────────────────────────────
 
-/** Consecutive frames of one device with the same app and window title, no gap over 2 minutes. */
-export async function timelineRuns(accountId: string, userId: string, span: Span, deviceId?: string) {
+/**
+ * Consecutive frames of one device with the same app and window title, no gap
+ * over 2 minutes: of one display, or of the focused display at each moment.
+ */
+export async function timelineRuns(accountId: string, userId: string, span: Span, deviceId?: string, displayId?: number) {
   return isoRows(
     await db.execute<Record<string, unknown>>(sql`
       SELECT device_id, app, title, (array_agg(url ORDER BY ts))[1] AS url,
@@ -106,7 +124,7 @@ export async function timelineRuns(accountId: string, userId: string, span: Span
                                   THEN 0 ELSE 1 END AS brk
                         FROM kortix.timeline_frames
                        WHERE account_id = ${accountId}::uuid AND user_id = ${userId}::uuid
-                         AND ts >= ${at(span.from)} AND ts < ${at(span.to)} AND NOT inactive ${onDevice(deviceId)}
+                         AND ts >= ${at(span.from)} AND ts < ${at(span.to)} AND NOT inactive ${onDevice(deviceId)} ${onDisplay(displayId)}
                       WINDOW w AS (PARTITION BY device_id ORDER BY ts)) marked) grouped
        GROUP BY device_id, grp, app, title
        ORDER BY min(ts)
@@ -114,7 +132,31 @@ export async function timelineRuns(accountId: string, userId: string, span: Span
   );
 }
 
-export async function timelineChunksIn(accountId: string, userId: string, span: Span, deviceId?: string) {
+/**
+ * Which display held the focused window, over time: consecutive focused frames
+ * of one device on the same display, no gap over 2 minutes. The client resolves
+ * the active display at any moment from these spans. Empty for one-display devices.
+ */
+export async function timelineFocus(accountId: string, userId: string, span: Span, deviceId?: string) {
+  return isoRows(
+    await db.execute<Record<string, unknown>>(sql`
+      SELECT device_id, display_id, min(ts) AS start_at, max(ts) AS end_at
+        FROM (SELECT *, sum(brk) OVER (PARTITION BY device_id ORDER BY ts) AS grp
+                FROM (SELECT device_id, ts, display_id,
+                             CASE WHEN display_id IS NOT DISTINCT FROM lag(display_id) OVER w
+                                   AND ts - lag(ts) OVER w < interval '2 minutes'
+                                  THEN 0 ELSE 1 END AS brk
+                        FROM kortix.timeline_frames
+                       WHERE account_id = ${accountId}::uuid AND user_id = ${userId}::uuid AND focused AND display_id IS NOT NULL
+                         AND ts >= ${at(span.from)} AND ts < ${at(span.to)} ${onDevice(deviceId)}
+                      WINDOW w AS (PARTITION BY device_id ORDER BY ts)) marked) grouped
+       GROUP BY device_id, grp, display_id
+       ORDER BY min(ts)
+       LIMIT 5000`),
+  );
+}
+
+export async function timelineChunksIn(accountId: string, userId: string, span: Span, deviceId?: string, displayId?: number) {
   return db
     .select({
       chunk_id: timelineChunks.chunkId,
@@ -124,6 +166,8 @@ export async function timelineChunksIn(accountId: string, userId: string, span: 
       end_at: timelineChunks.endAt,
       item_count: timelineChunks.itemCount,
       encrypted: timelineChunks.encrypted,
+      display_id: timelineChunks.displayId,
+      display: timelineChunks.display,
     })
     .from(timelineChunks)
     .where(
@@ -133,6 +177,10 @@ export async function timelineChunksIn(accountId: string, userId: string, span: 
         gte(timelineChunks.endAt, span.from),
         lte(timelineChunks.startAt, span.to),
         ...(deviceId ? [eq(timelineChunks.deviceId, deviceId)] : []),
+        // Audio and action items belong to no display; a display filter keeps them.
+        ...(displayId !== undefined
+          ? [sql`(${timelineChunks.kind} <> 'chunk' OR ${timelineChunks.displayId} = ${displayId})`]
+          : []),
       ),
     )
     .orderBy(asc(timelineChunks.startAt))
@@ -157,10 +205,31 @@ export async function recordedDays(accountId: string, userId: string, opts: { tz
   return isoRows(rows).map((row) => ({ ...row, screen_seconds: Number(row.screen_seconds) }));
 }
 
-export async function timelineItems(accountId: string, userId: string, span: Span, deviceId?: string) {
+/** The displays of the screen items in a window, one per display id, with their latest layout. */
+export function displaysOf(chunks: Array<{ kind: string; display_id: number | null; display: unknown }>): CaptureDisplay[] {
+  const byId = new Map<number, CaptureDisplay>();
+  for (const chunk of chunks) {
+    const display = chunk.kind === 'chunk' ? parseDisplay(chunk.display) : null;
+    if (display) byId.set(display.id, display);
+  }
+  return [...byId.values()].sort((a, b) => Number(b.main) - Number(a.main) || a.x - b.x || a.y - b.y);
+}
+
+/**
+ * Frames, actions and audio in a window. Frames: every display's (`displayId`
+ * absent and `allDisplays`), one display's, or by default the focused display's.
+ */
+export async function timelineItems(
+  accountId: string,
+  userId: string,
+  span: Span,
+  deviceId?: string,
+  opts: { displayId?: number; allDisplays?: boolean } = {},
+) {
   const where = sql`account_id = ${accountId}::uuid AND user_id = ${userId}::uuid AND ts >= ${at(span.from)} AND ts < ${at(span.to)} ${onDevice(deviceId)}`;
+  const frameWhere = opts.allDisplays && opts.displayId === undefined ? where : sql`${where} ${onDisplay(opts.displayId)}`;
   const [frames, actions, audio] = await Promise.all([
-    db.execute<Record<string, unknown>>(sql`SELECT frame_id, ts, device_id, chunk_id, frame_index, app, bundle_id, title, url, domain, ocr_text, inactive FROM kortix.timeline_frames WHERE ${where} ORDER BY ts LIMIT 500`),
+    db.execute<Record<string, unknown>>(sql`SELECT frame_id, ts, device_id, chunk_id, frame_index, app, bundle_id, title, url, domain, ocr_text, inactive, display_id, focused FROM kortix.timeline_frames WHERE ${frameWhere} ORDER BY ts LIMIT ${opts.allDisplays && opts.displayId === undefined ? 2000 : 500}`),
     db.execute<Record<string, unknown>>(sql`SELECT action_id, ts, device_id, chunk_id, kind, app, window_title, description, target, screenshot FROM kortix.timeline_actions WHERE ${where} ORDER BY ts LIMIT 500`),
     db.execute<Record<string, unknown>>(sql`SELECT line_id, ts, end_at, device_id, chunk_id, text FROM kortix.timeline_audio WHERE ${where} ORDER BY ts LIMIT 500`),
   ]);
@@ -198,18 +267,37 @@ export async function searchTimeline(
   const query = sql`websearch_to_tsquery('simple', ${opts.q})`;
   const parts = [
     opts.kinds.has('screen') &&
-      sql`(SELECT * FROM (SELECT DISTINCT ON (chunk_id, title) 'screen' AS kind, frame_id AS id, ts, user_id, device_id, chunk_id, app, title, url, ocr_text AS text FROM kortix.timeline_frames WHERE ${scope} AND ${FRAME_DOC} @@ ${query} ORDER BY chunk_id, title, ts DESC) per_window ORDER BY ts DESC LIMIT ${opts.limit})`,
+      sql`(SELECT * FROM (SELECT DISTINCT ON (chunk_id, title) 'screen' AS kind, frame_id AS id, ts, user_id, device_id, chunk_id, app, title, url, display_id, ocr_text AS text FROM kortix.timeline_frames WHERE ${scope} AND ${FRAME_DOC} @@ ${query} ORDER BY chunk_id, title, ts DESC) per_window ORDER BY ts DESC LIMIT ${opts.limit})`,
     opts.kinds.has('actions') &&
-      sql`(SELECT 'actions' AS kind, action_id AS id, ts, user_id, device_id, chunk_id, app, window_title AS title, NULL AS url, description AS text FROM kortix.timeline_actions WHERE ${scope} AND ${ACTION_DOC} @@ ${query} ORDER BY ts DESC LIMIT ${opts.limit})`,
+      sql`(SELECT 'actions' AS kind, action_id AS id, ts, user_id, device_id, chunk_id, app, window_title AS title, NULL AS url, NULL::bigint AS display_id, description AS text FROM kortix.timeline_actions WHERE ${scope} AND ${ACTION_DOC} @@ ${query} ORDER BY ts DESC LIMIT ${opts.limit})`,
     opts.kinds.has('audio') &&
-      sql`(SELECT 'audio' AS kind, line_id AS id, ts, user_id, device_id, chunk_id, NULL AS app, NULL AS title, NULL AS url, text FROM kortix.timeline_audio WHERE ${scope} AND ${AUDIO_DOC} @@ ${query} ORDER BY ts DESC LIMIT ${opts.limit})`,
+      sql`(SELECT 'audio' AS kind, line_id AS id, ts, user_id, device_id, chunk_id, NULL AS app, NULL AS title, NULL AS url, NULL::bigint AS display_id, text FROM kortix.timeline_audio WHERE ${scope} AND ${AUDIO_DOC} @@ ${query} ORDER BY ts DESC LIMIT ${opts.limit})`,
   ].filter(Boolean) as ReturnType<typeof sql>[];
   if (parts.length === 0) return [];
   const rows = isoRows(
     await db.execute<Record<string, unknown>>(sql`SELECT * FROM (${sql.join(parts, sql` UNION ALL `)}) hits ORDER BY ts DESC LIMIT ${opts.limit}`),
   );
-  // Each UNION arm selects the hit's columns in this order (kind, id, ts, user_id, device_id, chunk_id, app, title, url).
-  return rows.map(({ text, ...row }) => ({ ...(row as Omit<C.CaptureSearchHit, 'snippet'>), snippet: snippet(text as string | null, opts.q) }));
+  // Each UNION arm selects the hit's columns in this order (kind, id, ts, user_id, device_id, chunk_id, app, title, url, display_id).
+  const names = await displayNames(rows.filter((row) => row.display_id != null).map((row) => String(row.chunk_id)));
+  return rows.map(({ text, ...row }) => ({
+    ...(row as Omit<C.CaptureSearchHit, 'snippet' | 'display_id' | 'display_name'>),
+    display_id: row.display_id == null ? null : Number(row.display_id),
+    display_name: names.get(String(row.chunk_id)) ?? null,
+    snippet: snippet(text as string | null, opts.q),
+  }));
+}
+
+/** The display name of each screen item, by chunk id. */
+async function displayNames(chunkIds: string[]): Promise<Map<string, string>> {
+  if (chunkIds.length === 0) return new Map();
+  const rows = await db
+    .select({ chunkId: timelineChunks.chunkId, display: timelineChunks.display })
+    .from(timelineChunks)
+    .where(inArray(timelineChunks.chunkId, [...new Set(chunkIds)]));
+  return new Map(rows.flatMap((row) => {
+    const name = parseDisplay(row.display)?.name;
+    return name ? [[row.chunkId, name] as const] : [];
+  }));
 }
 
 // ─── Media ───────────────────────────────────────────────────────────────────

@@ -1044,6 +1044,13 @@
       "when": 1791734405318,
       "tag": "20261011160005_capture",
       "breakpoints": true
+    },
+    {
+      "idx": 149,
+      "version": "7",
+      "when": 1791755037441,
+      "tag": "20261011214357_capture_displays",
+      "breakpoints": true
     }
   ]
 }

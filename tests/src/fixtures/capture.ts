@@ -56,7 +56,31 @@ function walk(dir: string): string[] {
 const contentType = (key: string) =>
   key.endsWith(".mp4") ? "video/mp4" : key.endsWith(".m4a") ? "audio/mp4" : key.endsWith(".zst") ? "application/zstd" : key.endsWith(".png") ? "image/png" : key.endsWith(".jpg") ? "image/jpeg" : "application/json";
 
-export function vendoredDevice(input: { prefix: string; deviceId: string; machineKeySha256?: string }): VendoredDevice {
+/** The two displays of a dual-monitor fixture device: the built-in main display and an external one to its right. */
+export const FIXTURE_DISPLAYS = [
+  { id: 1, name: "Built-in Display", x: 0, y: 0, w: 1512, h: 982, scale: 2, main: true },
+  { id: 2, name: "External Display", x: 1512, y: 0, w: 2560, h: 1440, scale: 1, main: false },
+] as const;
+
+const sha256Hex = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
+
+/** Rewrite every line of a frames.jsonl.zst with one display (and its focus). */
+function framesOnDisplay(body: Uint8Array, display: (typeof FIXTURE_DISPLAYS)[number], focused: boolean): Uint8Array {
+  const lines = new TextDecoder().decode(Bun.zstdDecompressSync(body)).split("\n").filter((line) => line.trim());
+  const out = lines.map((line) => {
+    const frame = JSON.parse(line);
+    return JSON.stringify({ ...frame, display: { ...(frame.display ?? {}), id: display.id, name: display.name, main: display.main, focused, x: display.x, y: display.y, w: display.w, h: display.h } });
+  });
+  return Bun.zstdCompressSync(text(out.join("\n") + "\n"));
+}
+
+/**
+ * `displays: 2` makes the device a dual-monitor one, as the engine writes it:
+ * every screen item is recorded once per display (one item per display, its
+ * manifest naming the display; display 1 holds the focused window), and
+ * device.json lists both displays. Action and audio items are unchanged.
+ */
+export function vendoredDevice(input: { prefix: string; deviceId: string; machineKeySha256?: string; displays?: 1 | 2 }): VendoredDevice {
   const root = join(CONTRACT_DIR, "bucket", FIXTURE_PREFIX, FIXTURE_DEVICE);
   const folder = `${input.prefix}/${input.deviceId}`;
   const rekey = (key: string) => key.replace(`${FIXTURE_DEVICE}/`, `${input.deviceId}/`);
@@ -70,6 +94,7 @@ export function vendoredDevice(input: { prefix: string; deviceId: string; machin
   let audioLines = 0;
   let device: Record<string, unknown> = {};
   let status: Record<string, unknown> = {};
+  const parsed: Array<{ key: string; rel: string; manifest: any }> = [];
   for (const path of walk(root)) {
     const rel = relative(root, path);
     const key = `${folder}/${rel}`;
@@ -81,20 +106,50 @@ export function vendoredDevice(input: { prefix: string; deviceId: string; machin
       const manifest = JSON.parse(readFileSync(path, "utf8"));
       manifest.device_id = input.deviceId;
       for (const object of Object.values(manifest.objects) as Array<{ key: string }>) object.key = rekey(object.key);
-      manifests.push({ key, body: text(JSON.stringify(manifest)), contentType: "application/json" });
-      startMs = Math.min(startMs, manifest.start_ms);
-      endMs = Math.max(endMs, manifest.end_ms);
-      if (manifest.kind === "chunk") frames += manifest.frame_count;
-      if (manifest.kind === "actions") actions += manifest.event_count;
-      if (manifest.kind === "audio") audioLines += (manifest.transcript ?? []).length;
-      const day = new Date(manifest.start_ms).toISOString().slice(0, 10);
-      const base = `${input.deviceId}/${rel.replace(/\.manifest\.json$/, "")}`;
-      index.set(day, [...(index.get(day) ?? []), JSON.stringify({ op: "put", kind: manifest.kind, base, start_ms: manifest.start_ms, end_ms: manifest.end_ms, manifest: true, at_ms: manifest.created_at_ms })]);
+      parsed.push({ key, rel, manifest });
     } else data.push({ key, body, contentType: contentType(key) });
+  }
+  if (input.displays === 2) {
+    // One screen item per display: display 1 keeps the item (focused), display 2 gets a copy under its own base.
+    const byKey = new Map(data.map((object) => [object.key, object]));
+    const objectOf = (manifest: { objects: Record<string, { key: string }> }, role: string) => byKey.get(`${input.prefix}/${manifest.objects[role]!.key}`);
+    for (const item of [...parsed]) {
+      if (item.manifest.kind !== "chunk") continue;
+      const [main, external] = FIXTURE_DISPLAYS;
+      const second = JSON.parse(JSON.stringify(item.manifest));
+      for (const [manifest, display, focused] of [[item.manifest, main, true], [second, external, false]] as const) {
+        manifest.display = display;
+        const frames = objectOf(item.manifest, "frames");
+        if (!frames) throw new Error(`no frames object for ${item.key}`);
+        const body = framesOnDisplay(frames.body, display, focused);
+        const suffix = display.id === 1 ? "" : `-display${display.id}`;
+        for (const role of Object.keys(manifest.objects)) {
+          const source = objectOf(item.manifest, role)!;
+          const newKey = source.key.replace(/(\.[a-z0-9]+(?:\.zst)?)$/, `${suffix}$1`);
+          const newBody = role === "frames" ? body : source.body;
+          if (newKey !== source.key) data.push({ key: newKey, body: newBody, contentType: source.contentType });
+          else source.body = newBody;
+          const digest = { size: newBody.byteLength, sha256: sha256Hex(newBody), plain_size: newBody.byteLength, plain_sha256: sha256Hex(newBody) };
+          manifest.objects[role] = { ...manifest.objects[role], ...digest, key: manifest.objects[role].key.replace(/(\.[a-z0-9]+(?:\.zst)?)$/, `${suffix}$1`) };
+        }
+      }
+      parsed.push({ key: item.key.replace(/\.manifest\.json$/, "-display2.manifest.json"), rel: item.rel.replace(/\.manifest\.json$/, "-display2.manifest.json"), manifest: second });
+    }
+  }
+  for (const { key, rel, manifest } of parsed) {
+    manifests.push({ key, body: text(JSON.stringify(manifest)), contentType: "application/json" });
+    startMs = Math.min(startMs, manifest.start_ms);
+    endMs = Math.max(endMs, manifest.end_ms);
+    if (manifest.kind === "chunk") frames += manifest.frame_count;
+    if (manifest.kind === "actions") actions += manifest.event_count;
+    if (manifest.kind === "audio") audioLines += (manifest.transcript ?? []).length;
+    const day = new Date(manifest.start_ms).toISOString().slice(0, 10);
+    const base = `${input.deviceId}/${rel.replace(/\.manifest\.json$/, "")}`;
+    index.set(day, [...(index.get(day) ?? []), JSON.stringify({ op: "put", kind: manifest.kind, base, start_ms: manifest.start_ms, end_ms: manifest.end_ms, manifest: true, at_ms: manifest.created_at_ms })]);
   }
   const now = Date.now();
   const indexObjects = [...index].map(([day, lines]) => ({ key: `${folder}/index/${day}.jsonl`, body: text(lines.join("\n") + "\n"), contentType: "application/x-ndjson" }));
-  const deviceDoc = { ...device, device_id: input.deviceId, ...(input.machineKeySha256 ? { machine_key_sha256: input.machineKeySha256 } : {}), updated_at_ms: now };
+  const deviceDoc = { ...device, device_id: input.deviceId, ...(input.machineKeySha256 ? { machine_key_sha256: input.machineKeySha256 } : {}), ...(input.displays === 2 ? { displays: FIXTURE_DISPLAYS } : {}), updated_at_ms: now };
   const statusDoc = { ...status, reportedAtMs: now };
   return {
     objects: [

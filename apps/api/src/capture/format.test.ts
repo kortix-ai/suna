@@ -12,6 +12,7 @@ import {
   PolicySchema,
   accountPrefix,
   checkManifest,
+  chunkDisplay,
   jsonLines,
   liveState,
   foldIndex,
@@ -80,6 +81,22 @@ describe('the vendored fixture bucket', () => {
     });
     expect(row.ts.getTime()).toBe(1790845200000);
     expect(parseFrameLine({ title: 'no time' })).toBeNull();
+  });
+
+  test('multi-display: a chunk names its display, a frame its display and focus; older lines read as one display', () => {
+    const chunk = json('1790845200000-1.manifest.json');
+    const display = { id: 2, name: 'Studio Display', x: 1728, y: 0, w: 2560, h: 1440, scale: 2, main: false };
+    const checked = checkManifest({ ...chunk, display }, FIXTURE_DEVICE);
+    expect(checked.ok && chunkDisplay(checked.manifest)).toEqual(display);
+    conforms('manifest-chunk', { ...chunk, display });
+    expect(chunkDisplay(chunk)).toBeNull();
+    expect(chunkDisplay({ ...chunk, display: { name: 'no id' } })).toBeNull();
+
+    const line = lines('1790845200000-1.frames.jsonl.zst')[0]!;
+    const onSecond = { ...line, display: { ...(line.display as object), id: 2, name: 'Studio Display', main: false, focused: false } };
+    conforms('frames-line', onSecond);
+    expect(parseFrameLine(onSecond)).toMatchObject({ displayId: 2, focused: false });
+    expect(parseFrameLine(line)).toMatchObject({ displayId: null, focused: true });
   });
 
   test('action lines keep clicks, typing, hotkeys and the screenshot events that carry an asset', () => {

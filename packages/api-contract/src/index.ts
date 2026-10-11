@@ -2105,6 +2105,9 @@ export const CaptureSearchHitSchema = z.object({
   app: z.string().nullable(),
   title: z.string().nullable(),
   url: z.string().nullable(),
+  /** The display a screen hit shows; null for actions, audio and one-display devices. */
+  display_id: z.number().nullable(),
+  display_name: z.string().nullable(),
   snippet: z.string(),
 });
 export type CaptureSearchHit = z.infer<typeof CaptureSearchHitSchema>;

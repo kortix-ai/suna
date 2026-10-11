@@ -30,6 +30,7 @@ import {
   parseCaptureKey,
   parseFrameLine,
   accountPrefix,
+  chunkDisplay,
   type Manifest,
 } from './format';
 import { captureEnabled, readWorkspace } from './workspace';
@@ -121,6 +122,8 @@ export async function ingestManifest(key: string): Promise<IngestOutcome> {
       ? (manifest.transcript ?? []).filter((line) => line.text.trim())
       : [];
   const items = frames.length + actions.length + audio.length;
+  // A multi-display device writes one screen item per display.
+  const display = manifest.kind === 'chunk' ? chunkDisplay(manifest) : null;
 
   const chunkId = await db.transaction(async (tx) => {
     const [chunk] = await tx
@@ -134,12 +137,17 @@ export async function ingestManifest(key: string): Promise<IngestOutcome> {
         itemCount: items,
         encrypted,
         manifest: manifest as Record<string, unknown>,
+        displayId: display?.id ?? null,
+        display: display as Record<string, unknown> | null,
       })
       .onConflictDoNothing({ target: timelineChunks.manifestKey })
       .returning({ chunkId: timelineChunks.chunkId });
     if (!chunk) return null;
     await insertBatched(frames, (batch) =>
-      tx.insert(timelineFrames).values(batch.map((f) => ({ ...f, ...owner, chunkId: chunk.chunkId }))),
+      tx.insert(timelineFrames).values(
+        // The item's display is the frames' display when a line does not name one.
+        batch.map((f) => ({ ...f, displayId: f.displayId ?? display?.id ?? null, ...owner, chunkId: chunk.chunkId })),
+      ),
     );
     await insertBatched(actions, (batch) =>
       tx.insert(timelineActions).values(batch.map((a) => ({ ...a, ...owner, chunkId: chunk.chunkId }))),

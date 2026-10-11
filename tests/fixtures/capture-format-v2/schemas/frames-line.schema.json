@@ -135,6 +135,25 @@
             "number",
             "null"
           ]
+        },
+        "id": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "main": {
+          "type": "boolean"
+        },
+        "focused": {
+          "type": "boolean",
+          "description": "This display held the focused window when the frame was taken."
         }
       }
     },

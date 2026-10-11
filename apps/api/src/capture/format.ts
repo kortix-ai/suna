@@ -54,11 +54,46 @@ export const ManifestSchema = z
     encryption: z.unknown().optional(),
     objects: z.record(z.string(), ObjectInfoSchema),
     transcript: z.array(TranscriptLineSchema).optional(),
+    /** The display of a screen item (one item per display). Read with `chunkDisplay`. */
+    display: z.unknown().optional(),
   })
   .passthrough();
 export type Manifest = z.infer<typeof ManifestSchema>;
 
 export type ManifestCheck = { ok: true; manifest: Manifest } | { ok: false; reason: string };
+
+export interface CaptureDisplay {
+  id: number;
+  name: string | null;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  scale: number | null;
+  main: boolean;
+}
+
+/** A display object of the format (manifest `display`, device.json `displays[]`), or null without an integer id. */
+export function parseDisplay(value: unknown): CaptureDisplay | null {
+  const d = value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+  if (!d || !Number.isInteger(d.id)) return null;
+  const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  return {
+    id: d.id as number,
+    name: typeof d.name === 'string' && d.name.trim() ? d.name : null,
+    x: n(d.x),
+    y: n(d.y),
+    w: n(d.w),
+    h: n(d.h),
+    scale: typeof d.scale === 'number' ? d.scale : null,
+    main: d.main === true,
+  };
+}
+
+/** The display a screen item recorded; null from a device that records one display. */
+export function chunkDisplay(manifest: { display?: unknown }): CaptureDisplay | null {
+  return parseDisplay(manifest.display);
+}
 
 /** Validate a manifest against its key and the device it was written for. */
 export function checkManifest(raw: unknown, deviceId: string): ManifestCheck {
@@ -130,6 +165,10 @@ const str = (value: unknown): string | null =>
 
 export interface FrameRow {
   ts: Date;
+  /** The display the frame shows; null from a device that records one display. */
+  displayId: number | null;
+  /** The display held the focused window; a one-display frame always did. */
+  focused: boolean;
   frameIndex: number | null;
   app: string | null;
   bundleId: string | null;
@@ -151,8 +190,11 @@ export function parseFrameLine(line: Record<string, unknown>): FrameRow | null {
   const app = record(line.app);
   const ocr = record(line.ocr);
   const lines = Array.isArray(ocr?.lines) ? ocr.lines.map(record).filter((l) => l !== null) : null;
+  const display = record(line.display);
   return {
     ts: new Date(tsMs),
+    displayId: Number.isInteger(display?.id) ? (display!.id as number) : null,
+    focused: display?.focused !== false,
     frameIndex: Number.isInteger(line.frame_index) ? (line.frame_index as number) : null,
     app: str(app?.name),
     bundleId: str(app?.bundle_id),

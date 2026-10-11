@@ -178,6 +178,42 @@ describe('ingestion', () => {
   });
 });
 
+describe('multiple displays', () => {
+  test('a dual-monitor device indexes one screen item per display; reads narrow by display, follow the focused display by default, and list the displays and focus spans', async () => {
+    const { timelineChunksIn, timelineFocus, timelineItems, timelineRuns, displaysOf, deviceDisplays, searchTimeline } = await import('../capture/reads');
+    // Its own account, so the retention test below counts only its own items.
+    const ACCOUNT = crypto.randomUUID();
+    await db.insert(accounts).values({ accountId: ACCOUNT, name: 'capture-test-dual' });
+    await db.insert(captureWorkspaces).values({ accountId: ACCOUNT, enabled: true });
+    const [dual] = await db.insert(captureDevices).values({ accountId: ACCOUNT, userId: MEMBER, machineKeySha256: 'c'.repeat(64) }).returning();
+    const day = vendoredDevice({ prefix: accountPrefix(ACCOUNT), deviceId: dual!.deviceId, machineKeySha256: 'c'.repeat(64), displays: 2 });
+    for (const object of day.objects) objects.set(object.key, object.body);
+    await pollDevice(dual!);
+    for (const key of day.manifestKeys) await ingestManifest(key);
+    const [polled] = await db.select().from(captureDevices).where(eq(captureDevices.deviceId, dual!.deviceId));
+    expect(deviceDisplays(polled!).map((d) => [d.id, d.main])).toEqual([[1, true], [2, false]]);
+
+    const span = { from: new Date(day.startMs - 1000), to: new Date(day.endMs + 1000) };
+    const chunks = await timelineChunksIn(ACCOUNT, MEMBER, span, dual!.deviceId);
+    expect(chunks.filter((c) => c.kind === 'chunk').map((c) => c.display_id).sort()).toEqual([1, 1, 2, 2]);
+    expect(displaysOf(chunks).map((d) => d.name)).toEqual(['Built-in Display', 'External Display']);
+    const perDisplay = day.expected.frames / 2;
+    const frames = (runs: Array<{ frames: unknown }>) => runs.reduce((n, r) => n + Number(r.frames), 0);
+    expect(frames(await timelineRuns(ACCOUNT, MEMBER, span, dual!.deviceId))).toBe(perDisplay);
+    expect(frames(await timelineRuns(ACCOUNT, MEMBER, span, dual!.deviceId, 2))).toBe(perDisplay);
+    expect((await timelineFocus(ACCOUNT, MEMBER, span, dual!.deviceId)).map((f) => f.display_id)).toEqual([1]);
+
+    const items = async (opts: { displayId?: number; allDisplays?: boolean }) => (await timelineItems(ACCOUNT, MEMBER, span, dual!.deviceId, opts)).frames;
+    expect((await items({})).map((f) => [f.display_id, f.focused])).toEqual(Array(perDisplay).fill([1, true]));
+    expect((await items({ displayId: 2 })).every((f) => f.display_id === 2 && f.focused === false)).toBe(true);
+    expect((await items({ allDisplays: true })).length).toBe(day.expected.frames);
+
+    const hits = await searchTimeline(ACCOUNT, MEMBER, { q: 'quarterly', from: span.from, to: span.to, kinds: new Set(['screen']), deviceId: dual!.deviceId, limit: 50 });
+    expect(new Set(hits.map((h) => `${h.display_id}:${h.display_name}`))).toEqual(new Set(['1:Built-in Display', '2:External Display']));
+    await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT));
+  });
+});
+
 describe('forget', () => {
   test('a delete line retracts the item and its rows, and search no longer finds them; a re-poll is a no-op', async () => {
     const { searchTimeline } = await import('../capture/reads');
