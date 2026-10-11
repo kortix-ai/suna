@@ -9,7 +9,7 @@ import type {
   ProjectSecret,
 } from '../api/types.ts';
 import { openInBrowser } from '../browser.ts';
-import { splitHelp } from '../command-argv.ts';
+import { rejectUnknownArgs, splitHelp } from '../command-argv.ts';
 import {
   emitJson,
   fail,
@@ -140,7 +140,8 @@ export async function runProviders(argv: string[]): Promise<number> {
   const sub = argv[0];
   const rest = argv.slice(1);
   // login/oauth own dedicated help text; every other subcommand shares HELP.
-  const helpCode = splitHelp(argv, sub === 'login' || sub === 'oauth' ? LOGIN_HELP : HELP);
+  const usage = sub === 'login' || sub === 'oauth' ? LOGIN_HELP : HELP;
+  const helpCode = splitHelp(argv, usage);
   if (helpCode !== null) return helpCode;
   let projectFlag: string | undefined;
   let hostFlag: string | undefined;
@@ -158,6 +159,15 @@ export async function runProviders(argv: string[]): Promise<number> {
   } catch (err) {
     return fail((err as Error).message);
   }
+  // Every known flag is now consumed (splitHelp removed -h/--help above).
+  // `ls` takes no positional, so anything left is unknown; the other
+  // subcommands take positionals, so only a flag-shaped leftover is. The
+  // shared grammar prints `unknown option "<first>"` + the usage, exit 2
+  // (command-argv.ts) — the flag a customer guesses (`--available`) can no
+  // longer masquerade as a no-op success.
+  const leftovers = sub === 'ls' || sub === 'list' ? rest : rest.filter((arg) => arg.startsWith('-'));
+  const unknown = rejectUnknownArgs(leftovers, usage);
+  if (unknown !== null) return unknown;
   const ctxOpts: CtxOpts = { projectArg: projectFlag, hostArg: hostFlag };
 
   switch (sub) {
