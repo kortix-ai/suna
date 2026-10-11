@@ -1,11 +1,9 @@
 import { pluginFilesInDir, toolNamesInDir } from './config-directory-inventory'
-import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   activateBootConfig,
   bootConfigRoot,
   configDirFiles,
-  materializeRelease,
   pruneBootConfigs,
   quarantineRelease,
   readBootConfigPointer,
@@ -13,24 +11,23 @@ import {
   readReleaseManifest,
   releaseDir,
   verifyRelease,
-  writeReleaseManifest,
   type ReleaseManifest,
-} from '@/services/config-release/boot-config'
+} from '@/services/config-provider/boot-config'
 import {
   configReleaseApiFrom,
-  downloadConfigArchive,
   fetchConfigReleaseDescriptor,
   isFeatureDisabledError,
   type ConfigReleaseApi,
-} from '@/services/config-release/api-client'
-import type { ConfigReleaseDescriptor } from '@/services/config-release/descriptor'
-import { clearConfigReleaseNotice } from '@/services/config-release/notice'
+} from '@/services/config-provider/api-client'
+import type { ConfigReleaseDescriptor } from '@/services/config-provider/descriptor'
+import { clearConfigReleaseNotice } from '@/services/config-provider/notice'
+import { checkoutMayHold, obtainRelease } from '@/services/config-provider/obtain'
 import { logger } from '@/lib/log/logger'
 import { repairOpencodeConfigDir } from './apple-double'
 import { serveConfigDir } from './boot-link'
 import { releaseConfigDir } from './project-layout'
 import { resolveOpencodeConfigDir, type OpenCodeConfig } from './config'
-import { deliverGovernance, effectiveReleaseId, manifestFromDescriptor } from '@/services/config-release/release'
+import { deliverGovernance, effectiveReleaseId, manifestFromDescriptor } from '@/services/config-provider/release'
 import { noteRunningConfig, prepareConfigDir, preparePlatformConfigDir, prepareRelease, setRunningConfig } from './config-release'
 import type { ConfigSource } from '@/types/config-release'
 import { VERIFY_READY_TIMEOUT_MS, type Opencode } from './lifecycle'
@@ -45,12 +42,13 @@ import { pluginFilesFrom, provenCheck, toolNamesFromFiles, type ProvenCheckInput
  *      the directory gate CLOSED. OpenCode's process boot (~3–7 s) does not
  *      read the config dir; only its per-directory Instance does, and the first
  *      thing that builds one is the proof in step 5.
- *   1. Ask the API for the desired release. THIS request is the `config_releases`
- *      flag evaluation for this boot, and its answer is assigned HERE — never
+ *   1. Ask the API for the desired release. THIS request decides whether this
+ *      boot runs a release, and its answer is assigned HERE — never
  *      inside a `.then()` that a wait can outrun (the 2026-09-24 defect: losing
  *      a 3,000 ms race by 282 ms booted `/workspace` and reported
  *      `proven:true, fallback_reason:null`).
- *   2. Flag off, or no API at all: one marked early return to the pre-release
+ *   2. `403 feature_disabled` (an API from before config releases graduated),
+ *      or no API at all: one marked early return to the pre-release
  *      behaviour. That branch is the ONLY place `/workspace` is read to decide
  *      config (C4, C8).
  *   3+4. The candidate list, best first: the desired release (materialized here,
@@ -72,7 +70,7 @@ import { pluginFilesFrom, provenCheck, toolNamesFromFiles, type ProvenCheckInput
 
 /** What the API answered on THIS boot. Assigned once, on the straight line. */
 interface DescriptorAnswer {
-  /** The `config_releases` flag, as the API answered it on this boot. */
+  /** Whether the API serves releases to this box, as it answered on this boot. */
   releasesEnabled: boolean
   descriptor: ConfigReleaseDescriptor | null
   /** Why there is no descriptor. Null when one arrived, or when none was owed. */
@@ -125,7 +123,7 @@ export interface BootConfigPathResult {
   proven: boolean
   fallbackReason: string | null
   failedReleaseId: string | null
-  /** The `config_releases` flag as the API answered it on this boot. */
+  /** Whether the API serves releases to this box, as it answered on this boot. */
   releasesEnabled: boolean
 }
 
@@ -203,34 +201,34 @@ async function bootCandidates(
   const candidates: Candidate[] = []
   const desiredId = answer.descriptor ? effectiveReleaseId(answer.descriptor) : null
 
-  if (answer.descriptor && desiredId !== null && answer.descriptor.archive !== null && api) {
+  if (answer.descriptor && desiredId !== null && answer.descriptor.files !== null) {
     const manifest = manifestFromDescriptor(answer.descriptor, desiredId)
     const dir = releaseDir(root, desiredId)
-    const verifyInput = { dir, files: manifest.files, configDir: manifest.config_dir, managedSkillsDir: input.managedSkillsDir }
     const quarantined = (await readQuarantine(root))[desiredId]
     if (quarantined) {
       reasons.push(`release ${desiredId.slice(0, 12)} is quarantined on this box: ${quarantined.reason}`)
     } else {
       try {
-        const intact = existsSync(dir) && (await verifyRelease(verifyInput))
-        if (intact) {
-          await writeReleaseManifest(root, manifest)
-        } else {
-          const archive = await downloadConfigArchive(api, manifest.archive_url, {
-            expectedBytes: manifest.archive_bytes,
-          })
-          await materializeRelease({
-            root,
-            manifest,
-            archive,
-            managedSkillsDir: input.managedSkillsDir,
-            prepare: (staged) =>
-              input.prepare
-                ? input.prepare(manifest.config_dir ? join(staged, manifest.config_dir) : staged, true)
-                : prepareRelease(staged, manifest.config_dir, input.managedSkillsDir),
-          })
-        }
-        input.mark?.('config-release-extracted')
+        // The checkout is the release when the box checked out its commit:
+        // wait for it only then. A box with no base pin (KORTIX_BASE_SHA unset)
+        // waits only for a release with no archive, which nothing else may
+        // hold yet; HEAD decides (obtain.ts). Any other boot builds the
+        // release meanwhile.
+        const checkout =
+          checkoutMayHold(cfg.baseSha, answer.descriptor) && (await input.workspace) === null ? cfg.projectTarget : null
+        const obtained = await obtainRelease({
+          root,
+          manifest,
+          snapshot: answer.descriptor.snapshot,
+          api,
+          workspace: checkout,
+          managedSkillsDir: input.managedSkillsDir,
+          prepare: (staged) =>
+            input.prepare
+              ? input.prepare(manifest.config_dir ? join(staged, manifest.config_dir) : staged, true)
+              : prepareRelease(staged, manifest.config_dir, input.managedSkillsDir),
+        })
+        input.mark?.(`config-release-${obtained.transport}`)
         candidates.push({
           dir: releaseConfigDir(dir, manifest.config_dir) ?? cfg.defaultOpencodeConfigDir,
           root: dir,
@@ -241,15 +239,15 @@ async function bootCandidates(
           manifest,
         })
       } catch (err) {
-        // Valve B again, one level down: the descriptor arrived but the archive
-        // did not. Nothing is wrong with the release itself, so it is NOT
-        // quarantined; the next trigger retries it.
+        // Valve B again, one level down: the descriptor arrived but no source
+        // delivered the files. Nothing is wrong with the release itself, so it
+        // is NOT quarantined; the next trigger retries it.
         reasons.push(
           `release ${desiredId.slice(0, 12)} could not be built: ${err instanceof Error ? err.message : String(err)}`,
         )
       }
     }
-  } else if (answer.descriptor && desiredId !== null && answer.descriptor.archive === null) {
+  } else if (answer.descriptor && desiredId !== null && answer.descriptor.files === null) {
     // Governance only: no repository access, or no config dir on the base
     // branch. The image default runs with the release's compiled governance.
     candidates.push({
@@ -365,8 +363,8 @@ export async function bootOpenCodeConfig(input: BootConfigPathInput): Promise<Bo
   if (answer.descriptor) input.mark?.('config-release-fetched')
 
   // ── Step 2 ─────────────────────────────────────────────────────────────────
-  // LEGACY BRANCH — `config_releases` is off for this project, or this box has
-  // no API to ask. Exactly the pre-release behaviour: OpenCode reads the
+  // LEGACY BRANCH — an API from before config releases graduated has them off
+  // for this project, or this box has no API to ask. Exactly the pre-release behaviour: OpenCode reads the
   // session's own checkout, and this is the only line in the boot path that
   // reads `/workspace` to decide anything (C8).
   if (!answer.releasesEnabled) {

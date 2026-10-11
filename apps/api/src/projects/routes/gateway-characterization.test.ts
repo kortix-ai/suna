@@ -14,7 +14,7 @@ import * as realAccess from '../lib/access';
  *      from shared/llm-spend.ts, deprecated aliases).
  *   3. one spend total — `GET /gateway/overview` aggregates and maps
  *      `total_cost` / `kortix_cost` / `provider_cost`.
- *   4. route registration — all 19 `/gateway/*` routes stay registered on
+ *   4. route registration — all 20 `/gateway/*` routes stay registered on
  *      `projectsApp` after importing `./gateway` (the side-effect entry).
  *
  * The handlers are `projectsApp.openapi(...)` registrations with no per-route
@@ -246,6 +246,7 @@ describe('route registration (characterization)', () => {
     ['get', '/:projectId/gateway/overview'],
     ['get', '/:projectId/gateway/series'],
     ['get', '/:projectId/gateway/sessions'],
+    ['get', '/:projectId/gateway/sources'],
     ['get', '/:projectId/gateway/breakdown'],
     ['get', '/:projectId/gateway/budgets'],
     ['put', '/:projectId/gateway/budgets'],
@@ -262,7 +263,7 @@ describe('route registration (characterization)', () => {
     ['post', '/:projectId/gateway/routing-policy/preview'],
   ];
 
-  test('importing ./gateway registers all 19 gateway routes on projectsApp', () => {
+  test('importing ./gateway registers all 20 gateway routes on projectsApp', () => {
     const registered = new Set(
       (projectsApp.routes as Array<{ method: string; path: string }>)
         .filter((r) => r.path.includes('/gateway/'))
@@ -271,7 +272,7 @@ describe('route registration (characterization)', () => {
     for (const [method, path] of GATEWAY_ROUTES) {
       expect(registered.has(`${method} ${path}`)).toBe(true);
     }
-    // Nothing extra: exactly the 19 pinned registrations, no ghost route.
+    // Nothing extra: exactly the 20 pinned registrations, no ghost route.
     expect(registered.size).toBe(GATEWAY_ROUTES.length);
   });
 });

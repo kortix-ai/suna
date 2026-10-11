@@ -1,5 +1,4 @@
 import { describe, test, expect, beforeEach, mock } from 'bun:test';
-import type { GrantInput } from '../../billing/wallet';
 import {
   createMockCreditAccount,
   createMockStripeSubscription,
@@ -738,6 +737,54 @@ describe('RevenueCat', () => {
     expect(walletGrants.length).toBe(1);
     expect(walletGrants[0].amount).toBe(25);
     expect(walletGrants[0].expiring).toBe(false);
+  });
+
+  test('prod ignores a SANDBOX NON_RENEWING_PURCHASE: no $99.99 grant', async () => {
+    const { config } = await import('../../config');
+    const previous = config.INTERNAL_KORTIX_ENV;
+    (config as any).INTERNAL_KORTIX_ENV = 'prod';
+    try {
+      const result = await processRevenueCatWebhook(
+        createMockRevenueCatEvent('NON_RENEWING_PURCHASE', { price: 99.99, environment: 'SANDBOX' }),
+      );
+      expect(result).toMatchObject({ skipped: true });
+      expect(walletGrants.length).toBe(0);
+      // The same event on a PRODUCTION receipt still grants.
+      await processRevenueCatWebhook(
+        createMockRevenueCatEvent('NON_RENEWING_PURCHASE', { id: 'rc_prod_1', price: 25, environment: 'PRODUCTION' }),
+      );
+      expect(walletGrants.map((g) => g.amount)).toEqual([25]);
+    } finally {
+      (config as any).INTERNAL_KORTIX_ENV = previous;
+    }
+  });
+
+  test('a TRIAL INITIAL_PURCHASE activates the tier but grants no credit', async () => {
+    await processRevenueCatWebhook(
+      createMockRevenueCatEvent('INITIAL_PURCHASE', { product_id: 'kortix_pro_monthly', period_type: 'TRIAL' }),
+    );
+    expect(upsertCreditAccountCalls.length + updateCreditAccountCalls.length).toBeGreaterThan(0);
+    expect(walletGrants.length).toBe(0);
+  });
+
+  test('a store refund of a $25 top-up takes -$25 back, keyed on the transaction', async () => {
+    await processRevenueCatWebhook(
+      createMockRevenueCatEvent('CANCELLATION', {
+        product_id: 'credits_25_unmapped',
+        price: -25,
+        cancel_reason: 'CUSTOMER_SUPPORT',
+        transaction_id: 'tx_1',
+      }),
+    );
+    expect(walletGrants.length).toBe(1);
+    expect(walletGrants[0]).toMatchObject({ amount: -25, key: { event: 'revenuecat-refund:tx_1' } });
+  });
+
+  test('a user cancellation (not a refund) takes no credit back', async () => {
+    await processRevenueCatWebhook(
+      createMockRevenueCatEvent('CANCELLATION', { cancel_reason: 'UNSUBSCRIBE' }),
+    );
+    expect(walletGrants.length).toBe(0);
   });
 
   test('BILLING_ISSUE: sets past_due', async () => {

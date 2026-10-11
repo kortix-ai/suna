@@ -21,7 +21,7 @@ pnpm worktree create --name migration-fix --db --yes
 
 | Command | What it does |
 |---|---|
-| `pnpm worktree create --name <n> [--branch b] [--from main] [--db] [--no-start] [--yes]` | From a fresh clone: install missing deps, create the worktree, allocate a port block, `pnpm install`, build runtime artifacts, then boot the stack against the shared primary Supabase DB. Add `--db` to render/start/migrate a separate Supabase project. Idempotent — re-run to resume. |
+| `pnpm worktree create --name <n> [--branch b] [--from dev] [--db] [--no-start] [--yes]` | From a fresh clone: install missing deps, create the worktree, allocate a port block, `pnpm install`, build runtime artifacts, then boot the stack against the shared primary Supabase DB. Add `--db` to render/start/migrate a separate Supabase project. Idempotent — re-run to resume. |
 | `pnpm worktree new <n>` | Alias of `create` (positional name). |
 | `pnpm worktree start <n> [--billing] [--stripe]` | Boot an existing worktree's app stack on its ports. Add `--billing` for local billing routes without webhooks. Add `--stripe` for live test-mode webhook forwarding. Shared mode uses primary Supabase; isolated mode starts/migrates its own Supabase. Streams logs; `Ctrl+C` stops the dev servers. |
 | `pnpm worktree stop <n>` | Stop the dev servers — the whole process tree, verified dead before the registry records it. Isolated mode also stops that worktree's Supabase containers. **Data is preserved.** |

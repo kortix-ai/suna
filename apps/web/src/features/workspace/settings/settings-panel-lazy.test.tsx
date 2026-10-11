@@ -23,6 +23,14 @@ describe('SettingsPanel mount point', () => {
     expect(source).toContain("import('./settings-panel-body')");
   });
 
+  test('the panel body loader carries the stale-chunk recovery (KRTX-1616)', () => {
+    // A pin, like the test above: the recovery lives inside the loader, so a
+    // refactor that drops the wrapper silently reopens the stale-deploy error
+    // page. Behavior is covered in lib/chunk-reload.test.ts.
+    const source = readFileSync(join(import.meta.dir, 'settings-panel.tsx'), 'utf8');
+    expect(source).toContain("withStaleChunkRecovery(() => import('./settings-panel-body')");
+  });
+
   test('renders nothing while Settings has never been opened', () => {
     useSettingsPanelStore.setState({ open: false });
     expect(renderToStaticMarkup(<SettingsPanel projectId="p" />)).toBe('');

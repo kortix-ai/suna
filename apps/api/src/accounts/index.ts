@@ -7,12 +7,14 @@
 import { accountsRouter } from './core/app';
 import { supabaseAuth } from '../middleware/auth';
 import { accountSessionGate } from '../iam/session-gate';
+import { accountSsoGate } from '../middleware/sso-gate';
 import { iamRouter, registerIamRoutes } from './iam';
 import { auditRouter } from './audit';
 import { registerTokenRoutes } from './core/tokens';
 import { registerDeviceRoutes } from './core/devices';
 import { registerAccountRoutes } from './core/accounts';
 import { registerMemberRoutes } from './core/members';
+import { registerTopUpRequestRoutes } from './core/top-up-requests';
 import { registerBrandingRoutes } from './branding';
 import { registerSecretResourceRoutes } from './secret-resources';
 import { resolveAccountId } from '../shared/resolve-account';
@@ -31,6 +33,7 @@ accountsRouter.use('/*', async (c, next) => {
   }
   return accountSessionGate()(c, next);
 });
+accountsRouter.use('/*', accountSsoGate());
 
 // Mount IAM routes (groups/policies/roles/super-admin/effective). Sub-router
 // declares its own paths under /:accountId/iam/*, so mounting at '/' here is
@@ -51,6 +54,8 @@ registerDeviceRoutes();
 registerTokenRoutes();
 registerAccountRoutes();
 registerMemberRoutes();
+// A member out of credits asks the owners: /:accountId/top-up-requests.
+registerTopUpRequestRoutes();
 // Organization branding (Enterprise): /:accountId/branding + /assets/:kind.
 registerBrandingRoutes();
 registerSecretResourceRoutes();

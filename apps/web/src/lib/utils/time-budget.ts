@@ -1,16 +1,13 @@
 /**
  * A wall clock for an `await` that has no ceiling of its own.
  *
- * This exists because of one concrete, reachable hang. `openDB()` in
- * `packages/sdk/src/browser/cache/idb-sync-cache.ts` registers
- * `onupgradeneeded`, `onsuccess` and `onerror` but NO `onblocked`, and the file
- * has no `onversionchange` handler either (`grep -c` returns 0 for both). An
- * `indexedDB.open` that needs a version upgrade while another tab still holds a
- * connection at the older version fires `blocked` and then NEITHER `success`
- * NOR `error` — the promise never settles. `DB_VERSION` has been bumped twice
- * in this repo, so a tab left open on the pre-bump bundle is all it takes. The
- * promise is memoized in `dbPromise`, so every later caller in that document
- * parks behind it too.
+ * This exists because of one concrete hang. `openDB()` in
+ * `packages/sdk/src/browser/cache/idb-sync-cache.ts` had no `onblocked`
+ * handler before database version 4. An `indexedDB.open` that needs a version
+ * upgrade while another tab still holds a connection at the older version
+ * fires `blocked` and then NEITHER `success` NOR `error`, so the memoized open
+ * never settled and every later caller parked behind it. Version 4 rejects on
+ * `blocked`; the clock stays, because nothing else bounds an IndexedDB call.
  *
  * `try`/`catch` cannot rescue a promise that never settles. Only a clock can.
  *

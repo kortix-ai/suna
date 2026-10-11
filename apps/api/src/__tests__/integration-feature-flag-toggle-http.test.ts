@@ -1,6 +1,6 @@
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { eq, sql } from 'drizzle-orm';
-import { accountMembers, accounts, projectMembers, projects } from '@kortix/db';
+import { accountMembers, accounts, platformUserRoles, projectMembers, projects } from '@kortix/db';
 import { db } from '../shared/db';
 import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
@@ -18,9 +18,12 @@ const ACCOUNT = crypto.randomUUID();
 const PROJECT = crypto.randomUUID();
 const ARCHIVED = crypto.randomUUID();
 const MANAGER = crypto.randomUUID();
+/** A project member who is also a platform operator (kortix.platform_user_roles). */
+const OPERATOR = crypto.randomUUID();
 
 const minted: string[] = [];
 let secret = '';
+let operatorSecret = '';
 
 beforeAll(async () => {
   await db.execute(sql`alter table kortix.account_tokens add column if not exists agent_grant jsonb`);
@@ -46,9 +49,13 @@ beforeAll(async () => {
       metadata: { experimental: { apps: true } },
     },
   ]);
-  await insertIntoView(db, accountMembers, { userId: MANAGER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false });
+  await insertIntoView(db, accountMembers, [
+    { userId: MANAGER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
+    { userId: OPERATOR, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
+  ]);
   await insertIntoView(db, projectMembers, [
     { accountId: ACCOUNT, projectId: PROJECT, userId: MANAGER, projectRole: 'manager' },
+    { accountId: ACCOUNT, projectId: PROJECT, userId: OPERATOR, projectRole: 'manager' },
     { accountId: ACCOUNT, projectId: ARCHIVED, userId: MANAGER, projectRole: 'manager' },
   ]);
 
@@ -62,20 +69,30 @@ beforeAll(async () => {
   });
   minted.push(token.tokenId);
   secret = token.secretKey;
+
+  await db.insert(platformUserRoles).values({ accountId: OPERATOR, role: 'admin' });
+  const operatorToken = await createAccountToken({
+    accountId: ACCOUNT,
+    userId: OPERATOR,
+    name: 'feature-flag-toggle-operator',
+  });
+  minted.push(operatorToken.tokenId);
+  operatorSecret = operatorToken.secretKey;
 });
 
 afterAll(async () => {
   for (const tokenId of minted) {
     await db.execute(sql`delete from kortix.account_tokens where token_id = ${tokenId}`);
   }
+  await db.delete(platformUserRoles).where(eq(platformUserRoles.accountId, OPERATOR));
   await db.delete(projects).where(eq(projects.accountId, ACCOUNT));
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT));
 });
 
-function patch(path: string, body: string | undefined) {
+function patch(path: string, body: string | undefined, bearer = secret) {
   return app.request(path, {
     method: 'PATCH',
-    headers: { Authorization: `Bearer ${secret}`, 'content-type': 'application/json' },
+    headers: { Authorization: `Bearer ${bearer}`, 'content-type': 'application/json' },
     ...(body !== undefined ? { body } : {}),
   });
 }
@@ -91,36 +108,36 @@ async function storedOverrides(projectId: string): Promise<Record<string, unknow
 
 describe('PATCH /v1/projects/:projectId/features', () => {
   test('sets, then clears, a per-project override', async () => {
-    const on = await patch(`/v1/projects/${PROJECT}/features`, JSON.stringify({ feature: 'apps', enabled: true }));
+    const on = await patch(`/v1/projects/${PROJECT}/features`, JSON.stringify({ feature: 'reminders', enabled: true }));
     expect(on.status).toBe(200);
-    expect((await on.json()).experimental.apps).toBe(true);
-    expect(await storedOverrides(PROJECT)).toEqual({ apps: true });
+    expect((await on.json()).experimental.reminders).toBe(true);
+    expect(await storedOverrides(PROJECT)).toEqual({ reminders: true });
 
-    const off = await patch(`/v1/projects/${PROJECT}/features`, JSON.stringify({ feature: 'apps', enabled: false }));
+    const off = await patch(`/v1/projects/${PROJECT}/features`, JSON.stringify({ feature: 'reminders', enabled: false }));
     expect(off.status).toBe(200);
-    expect((await off.json()).experimental.apps).toBe(false);
-    expect(await storedOverrides(PROJECT)).toEqual({ apps: false });
+    expect((await off.json()).experimental.reminders).toBe(false);
+    expect(await storedOverrides(PROJECT)).toEqual({ reminders: false });
 
-    const cleared = await patch(`/v1/projects/${PROJECT}/features`, JSON.stringify({ feature: 'apps', enabled: null }));
+    const cleared = await patch(`/v1/projects/${PROJECT}/features`, JSON.stringify({ feature: 'reminders', enabled: null }));
     expect(cleared.status).toBe(200);
-    // apps' platform default is off, so clearing the override lands back on false.
-    expect((await cleared.json()).experimental.apps).toBe(false);
+    // reminders' platform default is off, so clearing the override lands back on false.
+    expect((await cleared.json()).experimental.reminders).toBe(false);
     expect(await storedOverrides(PROJECT)).toBeUndefined();
   });
 
   test('the /experimental alias behaves identically', async () => {
     const viaAlias = await patch(
       `/v1/projects/${PROJECT}/experimental`,
-      JSON.stringify({ feature: 'apps', enabled: true }),
+      JSON.stringify({ feature: 'reminders', enabled: true }),
     );
     expect(viaAlias.status).toBe(200);
     const aliasBody = await viaAlias.json();
-    expect(aliasBody.experimental.apps).toBe(true);
-    expect(await storedOverrides(PROJECT)).toEqual({ apps: true });
+    expect(aliasBody.experimental.reminders).toBe(true);
+    expect(await storedOverrides(PROJECT)).toEqual({ reminders: true });
 
     const viaCanonical = await patch(
       `/v1/projects/${PROJECT}/features`,
-      JSON.stringify({ feature: 'apps', enabled: true }),
+      JSON.stringify({ feature: 'reminders', enabled: true }),
     );
     expect(viaCanonical.status).toBe(200);
     const canonicalBody = await viaCanonical.json();
@@ -129,7 +146,7 @@ describe('PATCH /v1/projects/:projectId/features', () => {
 
     await patch(
       `/v1/projects/${PROJECT}/features`,
-      JSON.stringify({ feature: 'apps', enabled: null }),
+      JSON.stringify({ feature: 'reminders', enabled: null }),
     );
   });
 
@@ -141,7 +158,7 @@ describe('PATCH /v1/projects/:projectId/features', () => {
   });
 
   test('a non-boolean, non-null `enabled` is a 400', async () => {
-    const res = await patch(`/v1/projects/${PROJECT}/features`, JSON.stringify({ feature: 'apps', enabled: 'yes' }));
+    const res = await patch(`/v1/projects/${PROJECT}/features`, JSON.stringify({ feature: 'reminders', enabled: 'yes' }));
     expect(res.status).toBe(400);
     expect((await res.json()).error).toBe('enabled must be a boolean or null');
     expect(await storedOverrides(PROJECT)).toBeUndefined();
@@ -182,5 +199,70 @@ describe('PATCH /v1/projects/:projectId/features', () => {
       expect((await res.json()).error).toBe('Not found');
       expect(await storedOverrides(ARCHIVED)).toEqual({ apps: true });
     }
+  });
+});
+
+// `apps` is internal-only (catalogHidden): it starts billable
+// machines, so only a platform operator writes it (D10).
+describe('operator-only flags', () => {
+  test('a project manager gets 403 feature_operator_only for enable, disable and clear; nothing is stored', async () => {
+    for (const enabled of [true, false, null]) {
+      const res = await patch(`/v1/projects/${PROJECT}/features`, JSON.stringify({ feature: 'apps', enabled }));
+      expect(res.status).toBe(403);
+      const body = await res.json();
+      expect(body.code).toBe('feature_operator_only');
+      expect(body.feature).toBe('apps');
+      expect(body.error).toContain('Contact Kortix');
+    }
+    expect(await storedOverrides(PROJECT)).toBeUndefined();
+  });
+
+  test('a platform operator who is a project member may write it; the catalog then lists it read-only', async () => {
+    const on = await patch(`/v1/projects/${PROJECT}/features`, JSON.stringify({ feature: 'apps', enabled: true }), operatorSecret);
+    expect(on.status).toBe(200);
+    const body = await on.json();
+    expect(body.experimental.apps).toBe(true);
+    expect(body.experimental_features.find((f: { key: string }) => f.key === 'apps')).toMatchObject({
+      enabled: true,
+      operator_only: true,
+    });
+    const cleared = await patch(`/v1/projects/${PROJECT}/features`, JSON.stringify({ feature: 'apps', enabled: null }), operatorSecret);
+    expect(cleared.status).toBe(200);
+    const after = await cleared.json();
+    expect(after.experimental_features.map((f: { key: string }) => f.key)).not.toContain('apps');
+    expect(await storedOverrides(PROJECT)).toBeUndefined();
+  });
+});
+
+describe('PUT /v1/admin/api/projects/:id/features', () => {
+  function put(projectId: string, body: unknown, bearer: string) {
+    return app.request(`/v1/admin/api/projects/${projectId}/features`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${bearer}`, 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  }
+
+  test('a non-operator gets 403 and nothing is stored', async () => {
+    const res = await put(PROJECT, { feature: 'apps', enabled: true }, secret);
+    expect(res.status).toBe(403);
+    expect(await storedOverrides(PROJECT)).toBeUndefined();
+  });
+
+  test('an operator sets and clears a hidden flag; unknown flag 400; unknown or archived project 404', async () => {
+    const on = await put(PROJECT, { feature: 'apps', enabled: true }, operatorSecret);
+    expect(on.status).toBe(200);
+    expect(await on.json()).toMatchObject({ project_id: PROJECT, feature: 'apps', override: true });
+    expect(await storedOverrides(PROJECT)).toEqual({ apps: true });
+
+    const cleared = await put(PROJECT, { feature: 'apps', enabled: null }, operatorSecret);
+    expect(cleared.status).toBe(200);
+    expect(await cleared.json()).toMatchObject({ override: null, enabled: false });
+    expect(await storedOverrides(PROJECT)).toBeUndefined();
+
+    expect((await put(PROJECT, { feature: 'nope', enabled: true }, operatorSecret)).status).toBe(400);
+    expect((await put(crypto.randomUUID(), { feature: 'apps', enabled: true }, operatorSecret)).status).toBe(404);
+    expect((await put(ARCHIVED, { feature: 'apps', enabled: false }, operatorSecret)).status).toBe(404);
+    expect(await storedOverrides(ARCHIVED)).toEqual({ apps: true });
   });
 });

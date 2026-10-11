@@ -24,8 +24,11 @@ afterAll(async () => {
   await db.delete(accounts).where(eq(accounts.accountId, accountId));
   await sql.end();
 });
+// A link is single use per key, so every submission mints its own link.
 async function submit(value: string) {
-  return setupLinksPublicApp.request(`/secret/${token}`, {
+  const fresh = mintSetupLink(projectId, { kind: 'secret', fields: [{ name: 'TEST_KEY' }], scope: 'runtime', uid: null, sid: null }).token;
+  await Bun.sleep(5);
+  return setupLinksPublicApp.request(`/secret/${fresh}`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ values: { TEST_KEY: value } }),
   });

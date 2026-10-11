@@ -116,8 +116,7 @@ export function __resetBackgroundEnvRefreshForTests(): void {
  *     which is on the daemon's `RESPAWN_REQUIRED_ENV_NAMES` list.
  *   - the LLM-gateway mode and base URL.
  *   - `args.opencodeEnv` — an explicit runtime-env push a caller asked this
- *     same call to carry (e.g. a channel follow-up's `KORTIX_CONNECTORS_MCP_ENABLED`,
- *     see `continueSession`/continue-session.ts). Omitting it would silently drop that
+ *     same call to carry (see `continueSession`/continue-session.ts). Omitting it would silently drop that
  *     caller's request to apply its own change.
  *
  * Keys of `opencodeEnv` are sorted so caller-side object literal order never

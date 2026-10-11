@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readlink, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as tar from 'tar';
@@ -111,5 +111,51 @@ describe('App artifacts', () => {
     expect(await readFile(join(output, 'public', 'index.html'), 'utf8')).toBe(
       '<h1>Kortix App</h1>',
     );
+  });
+
+  // Each link passes the lexical check (`validateArchiveEntry`). Extracted in
+  // this order, `e` resolves through `d/l` (created after it) to the parent of
+  // the extraction root, and each further pair climbs one directory more.
+  const ESCAPE_CHAIN: Array<[string, string | null]> = [
+    ['d', null], ['d2', null], ['d3', null],
+    ['e3', 'd3/l3/..'], ['d3/l3', '../e2'],
+    ['e2', 'd2/l2/..'], ['d2/l2', '../e'],
+    ['e', 'd/l/..'], ['d/l', '..'],
+  ];
+
+  async function chainArchive(entries: Array<[string, string | null]>): Promise<{ archive: string; output: string }> {
+    const fixture = await mkdtemp(join(tmpdir(), 'kortix-artifact-chain-'));
+    cleanup.push(fixture);
+    const source = join(fixture, 'source');
+    await mkdir(source);
+    for (const [path, target] of entries) {
+      if (target === null) await mkdir(join(source, path), { recursive: true });
+      else await symlink(target, join(source, path));
+    }
+    const archive = join(fixture, 'source.tar.gz');
+    // noDirRecurse keeps exactly this entry order in the archive.
+    await tar.c({ cwd: source, file: archive, gzip: true, noDirRecurse: true }, entries.map(([path]) => path));
+    return { archive, output: join(fixture, 'output') };
+  }
+
+  test('a symlink chain that resolves outside the root is refused after extraction, and the tree is removed', async () => {
+    for (const [path, target] of ESCAPE_CHAIN) {
+      if (target) expect(() => validateArchiveEntry({ path, type: 'SymbolicLink', linkpath: target })).not.toThrow();
+    }
+    const { archive, output } = await chainArchive(ESCAPE_CHAIN);
+    await expect(extractAppArchive(archive, output)).rejects.toThrow(/escapes the build context/);
+    await expect(stat(output)).rejects.toThrow();
+  });
+
+  test('a dangling link through an escaping link is refused', async () => {
+    const { archive, output } = await chainArchive([['d', null], ['x', 'e/not-there'], ['e', 'd/l/..'], ['d/l', '..']]);
+    await expect(extractAppArchive(archive, output)).rejects.toThrow(/escapes the build context/);
+  });
+
+  test('links that stay inside the root extract unchanged', async () => {
+    const { archive, output } = await chainArchive([['public', null], ['current', 'public'], ['missing', 'public/later.html']]);
+    await extractAppArchive(archive, output);
+    expect(await readlink(join(output, 'current'))).toBe('public');
+    expect(await readlink(join(output, 'missing'))).toBe('public/later.html');
   });
 });

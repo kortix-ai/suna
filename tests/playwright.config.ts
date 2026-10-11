@@ -28,9 +28,10 @@ export function resolveBrowserWorkers(value: string | undefined): number {
   if (Number.isFinite(configuredWorkers) && configuredWorkers > 0) return configuredWorkers;
   // Two workers everywhere. CI ran one per shard while lanes lived in a
   // 6 vCPU / 12 GiB Daytona guest (removed 2026-08-26), to keep cold Next.js
-  // route compilation under its memory limit. The shards now run on 8 vCPU /
-  // 32 GB Blacksmith runners, and one worker spent ~85% of the slowest shard's
-  // wall clock (browser-3: 17 tests, 7.0 min of 9.8, 2026-09-28).
+  // route compilation under its memory limit. On 8 vCPU / 32 GB runners one
+  // worker spent ~85% of the slowest shard's wall clock (browser-3: 17 tests,
+  // 7.0 min of 9.8, 2026-09-28). The shards now run on 4 vCPU / 16 GB
+  // GitHub-hosted runners.
   return 2;
 }
 
@@ -148,6 +149,8 @@ export default defineConfig({
     timeout: deployedTarget ? 45_000 : 30_000,
   },
   fullyParallel: true,
+  // A committed `test.only` would silently drop every other journey from the run.
+  forbidOnly: true,
   retries: deployedTarget ? deployedRetries : process.env.CI ? 2 : 0,
   workers,
   reporter: [

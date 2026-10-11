@@ -3,7 +3,7 @@ import { chatEventDedup, chatThreads, projectSessions, projects } from '@kortix/
 import { db } from '../../shared/db';
 import { config } from '../../config';
 import {
-  continueSession as continueLifecycleSession,
+  deliverThroughQueue,
   createSession as createLifecycleSession,
   resolveProjectAutomationActor as resolveLifecycleAutomationActor,
 } from '../../projects/session-lifecycle';
@@ -41,7 +41,7 @@ import {
   startTurn,
 } from './turn';
 import { sessionWebUrl } from '../slack/util';
-import { modelReadsImages, promptModelOverride } from '../vision-model';
+import { modelReadsImages, NO_VISION_NOTE, promptModelOverride } from '../vision-model';
 import {
   type ChannelModelScope,
   planChannelFollowUp,
@@ -58,7 +58,7 @@ import { describeTeamsConversation, isPersonalChat, stripTeamsMentions, teamsMes
 import { ensureTeamsThreadParticipant, normalizeConversationPolicy, rememberTeamsThreadOwner } from './participants';
 
 const defaultTeamsSessionLifecycle = {
-  continueSession: continueLifecycleSession,
+  deliverFollowUp: deliverThroughQueue,
   createSession: createLifecycleSession,
   resolveProjectAutomationActor: resolveLifecycleAutomationActor,
   holdsLiveTurn: sessionHoldsLiveTurn,
@@ -148,9 +148,12 @@ export async function deliverTeamsFollowUpToSession(input: {
   userId?: string | null;
   /** This turn only — see channels/vision-model.ts. */
   model?: string | null;
+  /** One Teams activity: a redelivered webhook dedupes on it. */
+  idempotencyKey: string;
 }) {
-  return teamsSessionLifecycle.continueSession({
+  return teamsSessionLifecycle.deliverFollowUp({
     source: 'teams',
+    idempotencyKey: input.idempotencyKey,
     sessionId: input.sessionId,
     text: input.text,
     userId: input.userId,
@@ -403,27 +406,19 @@ async function deliverFollowUp(input: {
     hasImage && !turnModel && !modelReadsImages(projectId, currentModel || undefined);
   const outcome = await deliverTeamsFollowUpToSession({
     sessionId,
+    idempotencyKey: `teams:${tenantId}:${conversationId}:${activity.id ?? crypto.randomUUID()}`,
     text: renderFollowUpPrompt(activity, imagesUnavailable),
     userId,
     model: turnModel,
   });
 
-  if (outcome === 'delivered') {
+  // `queued`: durable; the queue delivers it once the box is up.
+  if (outcome === 'delivered' || outcome === 'queued') {
     await touchChatThread(conversationThread(tenantId, conversationId));
     return 'done';
   }
 
-  if (outcome === 'pending' || outcome === 'not-landed') {
-    if (handle) {
-      await deleteTurn(sessionId);
-      await finalizeTurn(handle, {
-        error: "Still waking this conversation's session back up — send that again in a moment.",
-      });
-    }
-    return 'done';
-  }
-
-  if (outcome === 'failed' || outcome === 'unreachable') {
+  if (outcome === 'failed') {
     if (handle) {
       await deleteTurn(sessionId);
       if (await claimConversationErrorNotice(tenantId, conversationId)) {
@@ -830,15 +825,6 @@ const TURN_INSTRUCTIONS = [
   '- Use `teams send` for a question only when it is genuinely open-ended prose with nothing to pick from. A numbered list of choices in a message is the wrong shape — the user cannot tap it.',
   '- Deliver the final answer with `teams send` (text, or an Adaptive Card via --card-file). One `teams send` per turn — it finalizes the live message.',
   '- Put a link the user should open (connect an app, open a PR, review a draft) alone on its own line as `[Short action](url)` — Teams renders it as a button.',
-].join('\n');
-
-const NO_VISION_NOTE = [
-  '',
-  'IMPORTANT: no image-capable model is available in this project, so you',
-  'cannot see the attached image even after downloading it. Do not call `read`',
-  'on it and do not look for OCR tools. Tell the user plainly that you cannot',
-  'view images here, ask them to paste the text or describe it, and mention',
-  'that a project admin can enable an image-capable model.',
 ].join('\n');
 
 function renderAttachments(activity: TeamsActivity): string[] {

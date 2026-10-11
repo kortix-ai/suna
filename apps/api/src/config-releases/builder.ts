@@ -1,10 +1,12 @@
 /**
  * Config release builder.
  *
- * A config release is one config archive plus one compiled governance. The
- * archive is keyed by the config tree ID, so every commit and every variant
- * with identical config files shares one archive. The builder reads only the
- * API's bare mirror. It never calls into a sandbox.
+ * A config release is one tree (its file list with blob IDs) plus one compiled
+ * governance. The API-built archive of the tree is keyed by the tree ID, so
+ * every commit and every variant with identical files shares one archive; a
+ * tree over `MAX_CONFIG_ARCHIVE_BYTES` has none, and a v3 box builds it from
+ * its checkout or the project snapshot (`snapshot.ts`). The builder reads only
+ * the API's bare mirror. It never calls into a sandbox.
  *
  * The git plumbing behind `build` — tree resolution, release-tree composition,
  * archive bytes — lives in `release-tree.ts`; this module owns the release
@@ -47,9 +49,20 @@ export {
   resolveReleaseTreeSource,
   selectedOpenCodePlugins,
 } from './release-tree';
-export type { ConfigReleaseFile, ConfigReleaseVariant } from './release-tree';
+export type { ConfigReleaseVariant } from './release-tree';
 
-const CONFIG_RELEASE_FORMAT = 'config-release-v2';
+/**
+ * The descriptor formats. `v2` is what a daemon that sends no `accept` gets:
+ * a tree release always carries the API-built archive, so a tree over
+ * `MAX_CONFIG_ARCHIVE_BYTES` gets no release at all. `v3` (the daemon sends
+ * `{"accept":["config-release-v3"]}`) keeps the release for such a tree:
+ * `archive` is null, and the box builds the release from its own `/workspace`
+ * checkout or from the project snapshot (`snapshot`). The release ID is the
+ * same in both formats for every tree under the cap.
+ */
+export const CONFIG_RELEASE_FORMAT_V2 = 'config-release-v2';
+export const CONFIG_RELEASE_FORMAT_V3 = 'config-release-v3';
+export type ConfigReleaseFormat = typeof CONFIG_RELEASE_FORMAT_V2 | typeof CONFIG_RELEASE_FORMAT_V3;
 
 /**
  * Always `follow-base`: a session runs the base branch's CURRENT config
@@ -68,7 +81,7 @@ type ConfigMode = 'follow-base';
  * commit and variant) nor of `release_id`.
  *
  * LANE D / daemon: render `reason` verbatim into the session notice
- * (`config-release/notice.ts`, composed into OpenCode `instructions` at
+ * (`config-provider/notice.ts` in kortixd, composed into OpenCode `instructions` at
  * `lifecycle.ts:399-407`). It is written as a finished sentence for the agent
  * and the user; the daemon adds no wording of its own.
  */
@@ -83,14 +96,29 @@ export interface ConfigReleaseAgentRepoint {
   reason: string;
 }
 
+/**
+ * The project snapshot boot object of `source_commit` (`git-proxy/project-snapshot*`):
+ * the commit's working tree plus a blobless `.git`, as `tar.gz`. A v3 box
+ * downloads it with no credential, keeps the files `files` lists, and verifies
+ * each against its blob ID. Not cached: the URL expires.
+ */
+export interface ConfigReleaseSnapshot {
+  url: string;
+  sha256: string;
+  bytes: number;
+  entries: number;
+  expires_at: string;
+}
+
 export interface ConfigReleaseDescriptor {
-  format: typeof CONFIG_RELEASE_FORMAT;
+  format: ConfigReleaseFormat;
   /** `sha256((config_tree_id ?? "") + ":" + (compiled_governance_etag ?? ""))`, hex. Null when there is no release. */
   release_id: string | null;
   mode: ConfigMode;
   source_commit: string;
   config_dir: string | null;
   config_tree_id: string | null;
+  /** The API-built archive. v3: null for a tree over `MAX_CONFIG_ARCHIVE_BYTES`. */
   archive: { url: string; bytes: number } | null;
   files: ConfigReleaseFile[] | null;
   compiled_governance: string | null;
@@ -99,6 +127,8 @@ export interface ConfigReleaseDescriptor {
   reason: string | null;
   /** Set only when the manifest dropped the session's agent. */
   agent_repoint: ConfigReleaseAgentRepoint | null;
+  /** v3 only, attached per request by the descriptor route. */
+  snapshot?: ConfigReleaseSnapshot | null;
 }
 
 /**
@@ -106,7 +136,10 @@ export interface ConfigReleaseDescriptor {
  * `(project, commit, variant)`, which is why the per-session `agent_repoint`
  * is not part of it.
  */
-export type ConfigRelease = Omit<ConfigReleaseDescriptor, 'mode' | 'agent_repoint'>;
+export type ConfigRelease = Omit<ConfigReleaseDescriptor, 'format' | 'mode' | 'agent_repoint' | 'snapshot'> & {
+  /** Why a tree release has no archive (over the cap). A v2 descriptor turns it into "no release". */
+  archive_reason?: string;
+};
 
 class ConfigReleaseCommitNotFoundError extends Error {
   constructor(readonly commit: string) {
@@ -201,17 +234,6 @@ export async function storeConfigArchive(
   return outcome;
 }
 
-/**
- * Releases over the archive limit. Unlike every other release without an ID,
- * the answer is a fact of the commit, so it is cached: a box asks once a
- * minute, and each miss tars and gzips the whole tree again (~1.5 s for 36 MB).
- */
-const tooLargeReleases = new WeakSet<ConfigRelease>();
-function tooLarge(release: ConfigRelease): ConfigRelease {
-  tooLargeReleases.add(release);
-  return release;
-}
-
 /** The `none` variant's compiled governance: a valid, empty OpenCode config. */
 const EMPTY_GOVERNANCE = '{}';
 
@@ -242,7 +264,6 @@ async function build(
     }
   }
   const base: ConfigRelease = {
-    format: CONFIG_RELEASE_FORMAT,
     release_id: null,
     source_commit: commit,
     config_dir: null,
@@ -305,12 +326,23 @@ async function build(
     }
   } catch (error) {
     if (error instanceof ConfigArchiveTooLargeError) {
-      return tooLarge({
+      // The release exists; only the API-built archive does not. A v3 box
+      // builds it from its checkout or the project snapshot. The answer is a
+      // fact of the commit, so it is cached like any release: each miss tars
+      // and gzips the whole tree again (~1.5 s for 36 MB).
+      const read = composed ? await readComposedRelease(mirror, source, { archive: false }) : null;
+      treeId = read?.treeId ?? treeId;
+      return {
         ...withGovernance,
+        release_id: configReleaseId(treeId, etag),
         config_dir: configDir,
-        config_tree_id: composed ? null : treeId,
-        reason: `the repository at ${commit.slice(0, 12)} exceeds the ${archiveLimit ?? MAX_CONFIG_ARCHIVE_BYTES}-byte config archive limit`,
-      });
+        config_tree_id: treeId,
+        files: read?.files ?? (await listConfigFiles(mirror, treeId)),
+        archive_reason:
+          `the repository at ${commit.slice(0, 12)} exceeds the ${archiveLimit ?? MAX_CONFIG_ARCHIVE_BYTES}-byte config archive limit. ` +
+          'Move large static files out of Git into object storage (S3, R2, GCS), or mark paths no agent reads ' +
+          '`export-ignore` in .gitattributes. `kortix validate` lists the largest files.',
+      };
     }
     throw error;
   }
@@ -354,8 +386,8 @@ export async function buildConfigRelease(
   const next = build(project, commit, variant, store, options.archiveLimit)
     .then((release) => {
       // A release with a reason can be transient (a compile read that failed).
-      // Only complete releases, and the deterministic over-limit answer, are cached.
-      if (release.release_id || tooLargeReleases.has(release)) {
+      // Only complete releases are cached; an over-limit tree is one.
+      if (release.release_id) {
         bumpBounded(releases, cacheKey, { release, at: Date.now() }, MAX_CACHED_RELEASES);
       }
       return release;
@@ -376,18 +408,29 @@ const COMPILED_GOVERNANCE_FAILED = 'compiled governance failed';
  * disclose files that mode withholds. It keeps the compiled governance, and
  * its release ID covers the governance alone so a governance change still
  * converges.
+ *
+ * A v2 descriptor of a tree over the archive cap is "no release" with the
+ * reason: a v2 daemon reads `archive: null` as governance only and would run
+ * the image default as if it were the release.
  */
 export function toDescriptor(
   release: ConfigRelease,
-  options: { repositoryAccess: boolean; agentRepoint?: ConfigReleaseAgentRepoint | null } = {
+  options: {
+    repositoryAccess: boolean;
+    agentRepoint?: ConfigReleaseAgentRepoint | null;
+    format?: ConfigReleaseFormat;
+  } = {
     repositoryAccess: true,
   },
 ): ConfigReleaseDescriptor {
   const mode: ConfigMode = 'follow-base';
+  const format = options.format ?? CONFIG_RELEASE_FORMAT_V3;
   const agent_repoint = options.agentRepoint ?? null;
+  const { archive_reason, ...wire } = release;
   if (!options.repositoryAccess) {
     return {
-      ...release,
+      ...wire,
+      format,
       mode,
       agent_repoint,
       // Governance-only release ID: a governance change still converges.
@@ -401,7 +444,10 @@ export function toDescriptor(
       reason: release.reason?.startsWith(COMPILED_GOVERNANCE_FAILED) ? release.reason : REPOSITORY_ACCESS_WITHHELD,
     };
   }
-  return { ...release, mode, agent_repoint };
+  if (archive_reason && format === CONFIG_RELEASE_FORMAT_V2) {
+    return { ...wire, format, mode, agent_repoint, release_id: null, files: null, reason: archive_reason };
+  }
+  return { ...wire, format, mode, agent_repoint };
 }
 
 export function __clearConfigReleaseCachesForTests(): void {

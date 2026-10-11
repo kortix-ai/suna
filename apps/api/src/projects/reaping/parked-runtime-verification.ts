@@ -144,6 +144,52 @@ export async function decideRemovedParkedOutcome(input: {
   return 'preserve-lost';
 }
 
+/**
+ * Run the removed-parked decision for one row against its REAL provider: claim
+ * the recovery lease, ask the in-place recovery gate, persist an accepted
+ * recovery. Shared by the parked sweep and the wake-maintenance reconcile, so
+ * one `removed` observation carries the same weight on every background path.
+ * Runs the already-lost skip first: a condemned identity is not recoverable
+ * here (the sweep's `decideParkedRuntime` skips it before this helper), so the
+ * callers' loss handling stands for it. Returns the row the decision ended on:
+ * a claimed recovery transitions the row, so the caller that preserves a loss
+ * must write the row the claim returned, not its own older snapshot.
+ */
+export async function recoverRemovedParkedRuntime(
+  row: typeof sessionSandboxes.$inferSelect,
+  externalId: string,
+  now: Date,
+): Promise<{
+  outcome: ParkedRemovalOutcome;
+  row: typeof sessionSandboxes.$inferSelect;
+}> {
+  const metadata = (row.metadata ?? {}) as Record<string, unknown>;
+  // An identity already preserved as lost is not recoverable here — the same
+  // skip `decideParkedRuntime` runs for the sweep. Re-running the gate on a
+  // condemned row would resurrect a runtime the platform reported lost, and a
+  // rescue that later fails re-reports the loss as a new occurrence.
+  if (metadata.runtimeIdentityState === 'unavailable') {
+    return { outcome: 'preserve-lost', row };
+  }
+  const provider = getProvider(row.provider as SandboxProviderName);
+  let claim: Awaited<ReturnType<typeof claimInPlaceRuntimeRecovery>> = null;
+  let current = row;
+  const outcome = await decideRemovedParkedOutcome({
+    externalId,
+    recoverInPlace: provider.recoverInPlace?.bind(provider),
+    claim: async () => {
+      claim = await claimInPlaceRuntimeRecovery(row, now);
+      if (claim) current = claim.row;
+      return claim !== null;
+    },
+    markRecovered: async (recovery) => {
+      if (!claim) return false;
+      return (await markInPlaceRuntimeRecoveryAccepted(claim, recovery, now)) !== null;
+    },
+  });
+  return { outcome, row: current };
+}
+
 /** Clear the loss flags from a row whose runtime is provably back. */
 function healMetadataPatch(): Record<string, unknown> {
   return { runtimeRestoredAt: new Date().toISOString() };
@@ -199,27 +245,9 @@ export async function verifyParkedRuntimes(now = new Date()): Promise<{
         // A `removed` status is ambiguous: recoverable (failed-start / backup)
         // or gone. Ask the same in-place recovery gate the `/start` open path
         // uses before the sweep writes a permanent loss.
-        const provider = getProvider(row.provider as SandboxProviderName);
-        let claim: Awaited<ReturnType<typeof claimInPlaceRuntimeRecovery>> = null;
-        let lossRow = row;
-
-        const outcome = await decideRemovedParkedOutcome({
-          externalId,
-          recoverInPlace: provider.recoverInPlace?.bind(provider),
-          claim: async () => {
-            claim = await claimInPlaceRuntimeRecovery(row, now);
-            if (claim) lossRow = claim.row;
-            return claim !== null;
-          },
-          markRecovered: async (recovery) => {
-            if (!claim) return false;
-            const recovered = await markInPlaceRuntimeRecoveryAccepted(claim, recovery, now);
-            if (recovered) healed += 1;
-            return recovered !== null;
-          },
-        });
-
-        if (outcome === 'recovered' || outcome === 'recovery-in-flight') continue;
+        const { outcome, row: lossRow } = await recoverRemovedParkedRuntime(row, externalId, now);
+        if (outcome === 'recovered') healed += 1;
+        if (outcome !== 'preserve-lost') continue;
 
         // Provider answered `unavailable` (or cannot be asked): a real removal.
         // Same classification the reaper and the wake fence write for the

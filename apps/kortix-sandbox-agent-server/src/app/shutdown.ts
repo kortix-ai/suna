@@ -1,4 +1,6 @@
 import { shredAgentEnvFile } from '@/harness/shared/agent-env-file'
+import { stopSessionLogJournal } from '@/harness/shared/session-log-journal'
+import { flushDriveSyncOnShutdown } from '@/services/drive-sync/drive-sync'
 import { stopEgressShim } from '@/services/egress-shim'
 import { logger } from '@/lib/log/logger'
 import { beginDaemonShutdown } from '@/lib/shutdown-state'
@@ -6,6 +8,8 @@ import type { HarnessLifecycleService } from '@/harness/harness'
 import type { ProxyServer } from './server'
 import type { DaemonShutdown } from '@/harness/contract/server'
 import type { StaticWebServer } from '@/services/static-web/static-web'
+
+let installedSignalHandlers: { term: () => void; int: () => void } | null = null
 
 export function installShutdownHandlers(
   harness: Pick<HarnessLifecycleService, 'stop'>,
@@ -25,6 +29,10 @@ export function installShutdownHandlers(
     stopEgressShim()
 
     void (async () => {
+      // Drive changes not yet on the drive, and session-log changes not yet
+      // acknowledged (at most 3 s), go up before anything stops: the journal
+      // reads the harness's native store, so it runs before harness.stop().
+      await Promise.all([flushDriveSyncOnShutdown().catch(() => {}), stopSessionLogJournal().catch(() => {})])
       try {
         await proxy.stop()
       } catch (err) {
@@ -47,8 +55,14 @@ export function installShutdownHandlers(
     })()
   }
 
-  process.on('SIGTERM', () => stop('SIGTERM', 0, 'SIGTERM'))
-  process.on('SIGINT', () => stop('SIGINT', 0, 'SIGINT'))
+  // One pair of listeners per process: a second install replaces the first.
+  if (installedSignalHandlers) {
+    process.off('SIGTERM', installedSignalHandlers.term)
+    process.off('SIGINT', installedSignalHandlers.int)
+  }
+  installedSignalHandlers = { term: () => stop('SIGTERM', 0, 'SIGTERM'), int: () => stop('SIGINT', 0, 'SIGINT') }
+  process.on('SIGTERM', installedSignalHandlers.term)
+  process.on('SIGINT', installedSignalHandlers.int)
 
   return ({ reason, exitCode = 0, signal = 'SIGTERM' }) => stop(reason, exitCode, signal)
 }

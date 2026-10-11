@@ -33,7 +33,8 @@ export interface TurnEventsOptions {
   /** The user message this assistant run answers. Read once at message start. */
   parentMessageId: () => string | null
   model: () => { providerID: string; modelID: string }
-  agent: string
+  /** The agent the running turn runs on. Read once per assistant message. */
+  agent: () => string
   workspace: string
   now?: () => number
   /** Out-of-band frame sink for parts reserved outside `translate` (see `toolRef`). */
@@ -333,7 +334,7 @@ export class PiTurnEvents {
       time: { created: this.currentCreatedAt },
       modelID: model.modelID,
       providerID: model.providerID,
-      ...assistantInfoFields(assistant.usage, { agent: this.opts.agent, workspace: this.opts.workspace }),
+      ...assistantInfoFields(assistant.usage, { agent: this.opts.agent(), workspace: this.opts.workspace }),
     }
   }
 

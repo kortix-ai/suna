@@ -9,7 +9,7 @@ import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
-import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
+import { framePolicy } from '@/features/file-viewer/preview-policy';
 import { cn } from '@/lib/utils';
 import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 import {
@@ -207,7 +207,7 @@ function InlineIframePreview({ proxyUrl, port }: { proxyUrl: string; port: numbe
             src={authenticatedUrl}
             title={tHardcodedUi('i18nComplete.text8d0218f233bb', { value0: port })}
             className="h-full w-full border-0 bg-white"
-            sandbox={INTERACTIVE_PREVIEW_IFRAME_SANDBOX}
+            sandbox={framePolicy('app', authenticatedUrl).sandbox}
             onLoad={handleLoad}
             onError={handleError}
           />

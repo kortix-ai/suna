@@ -796,6 +796,42 @@ describe('SessionSyncController', () => {
     expect(requests).toHaveLength(1);
   });
 
+  test('a reliable stream (R5.3) stops the liveness and verification reads; the turn-end read stays', async () => {
+    const clock = createScheduler();
+    const requests: Array<{ limit: number; before?: string }> = [];
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async (request) => {
+        requests.push(request);
+        return page([]);
+      },
+      hydrate: () => {},
+      markLoaded: () => {},
+      scheduler: clock.scheduler,
+      livenessIntervalMs: 10_000,
+      verifyIntervalMs: 30_000,
+    });
+    controller.setStreamReliable(true);
+    controller.setBusy(true, true);
+    for (let tick = 0; tick < 12; tick++) {
+      clock.advance(10_000);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    // Two minutes busy and quiet: the box's ring replays anything a reconnect
+    // missed, so no read polls the tail.
+    expect(requests).toHaveLength(0);
+    // A turn end is one event-driven read, not a poll.
+    controller.setBusy(false);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(requests).toHaveLength(1);
+    // The stream drops: the repair poll comes back.
+    controller.setStreamReliable(false);
+    controller.setBusy(true, true);
+    clock.advance(30_000);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(requests.length).toBeGreaterThan(1);
+  });
+
   test('the snapshot holds transcript state only — never a busy opinion', async () => {
     const controller = new SessionSyncController({
       sessionId: 'session-1',

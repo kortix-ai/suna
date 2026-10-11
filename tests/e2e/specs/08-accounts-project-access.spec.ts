@@ -864,7 +864,12 @@ test.describe("08 — Accounts, invites, and project access", { tag: "@quarantin
       expect((await acceptAccountInviteResponse).status()).toBe(200);
     }
     await settleIamPropagation();
-    await expect(page).toHaveURL(/\/projects\/start$/);
+    // An account invite (no project) lands on the door for the joined account,
+    // then on its selector: never on a project remembered from another account
+    // (KRTX-1731).
+    await expect(page).toHaveURL(
+      new RegExp(`/projects(/start\\?account=${account.account_id})?$`),
+    );
     // The membership this user just accepted is the same cross-task IAM state
     // (see IAM_PROPAGATION_MS). A task that has not seen it answers
     // `GET /accounts/:id` with 403, and the hub then sits on its loading

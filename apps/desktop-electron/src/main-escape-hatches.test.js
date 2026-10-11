@@ -52,4 +52,11 @@ describe('desktop escape hatches', () => {
     expect(main).toContain('rendererGoneNeedsRecovery(');
     expect(main).toContain("require('./renderer-recovery')");
   });
+
+  test('a server redirect is gated like a navigation, and a page cannot repoint the shell unasked', () => {
+    expect(main).toMatch(/webContents\.on\('will-redirect', \(event, url, _isInPlace, isMainFrame\) => \{\s*if \(isMainFrame\) gateTopNavigation\(event, url\);/);
+    const setUrl = main.slice(main.indexOf("case 'set_frontend_url'"), main.indexOf('default:', main.indexOf("case 'set_frontend_url'")));
+    expect(setUrl).toContain('dialog.showMessageBox');
+    expect(setUrl.indexOf('dialog.showMessageBox')).toBeLessThan(setUrl.indexOf('switchInstance('));
+  });
 });

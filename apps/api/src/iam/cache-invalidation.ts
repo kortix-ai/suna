@@ -21,18 +21,14 @@
 import { eq } from 'drizzle-orm';
 import { accountGroupMembers, accountMemberships, roleAssignments } from '@kortix/db';
 import * as database from '../shared/db';
+import {
+  type PrincipalScopedMemo,
+  principalScopedMemos,
+  registerPrincipalScopedMemo,
+} from '../shared/principal-scoped-memos';
 const { db } = database;
 
-interface PrincipalScopedMemo {
-  invalidateByPrefix: (prefix: string) => void;
-}
-
-const principalScopedMemos: PrincipalScopedMemo[] = [];
-
-/** A memo keyed `${userId}|…` registers so it can be busted per principal. */
-export function registerPrincipalScopedMemo(memo: PrincipalScopedMemo): void {
-  principalScopedMemos.push(memo);
-}
+export { registerPrincipalScopedMemo };
 
 // ── Project-scoped memos (keyed `${projectId}|…`) ──────────────────────────
 // The object-grant memo (`loadObjectGrants` in iam/authorize.ts) is keyed by

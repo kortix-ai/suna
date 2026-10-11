@@ -41,7 +41,7 @@ concurrency:
 
 jobs:
   deploy:
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 10
     # The `pi-js` environment stays as the deploy gate. The credentials live
     # in the AWS Secrets Manager blob kortix-ci-env (.github/actions/aws-env).
@@ -53,10 +53,10 @@ jobs:
       TARGET_ORIGIN: ${{ inputs.target_origin }}
       OPEN_ACCESS: ${{ inputs.open_access && 'true' || 'false' }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # PI_JS_ACCESS_TOKEN is optional: open_access=true deploys without it.
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -69,7 +69,7 @@ jobs:
             CLOUDFLARE_API_TOKEN=kortix-ci-env:CLOUDFLARE_APPS_EDGE_API_TOKEN
             PT_PREVIEW_TOKEN=kortix-ci-env:PI_JS_PREVIEW_TOKEN
             ACCESS_TOKEN=kortix-ci-env:PI_JS_ACCESS_TOKEN?
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
       - name: The target must be a Platinum DEV cell origin and must answer /health; the name must have an access policy

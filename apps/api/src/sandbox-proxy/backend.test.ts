@@ -66,7 +66,7 @@ mock.module('../platform/providers', () => ({
   }),
 }));
 
-const { invalidatePreviewLink, resolveSandboxIngress } = await import('./backend');
+const { invalidatePreviewLink, resolveExternalIdFromHostLabel, resolveSandboxIngress } = await import('./backend');
 
 const BASE_RECORD = {
   sandboxId: 'sbx-1',
@@ -236,5 +236,14 @@ describe('resolveSandboxIngress single-flight', () => {
       'http://sandbox.local/2',
     );
     expect(resolveCalls.length).toBe(2);
+  });
+});
+
+describe('resolveExternalIdFromHostLabel', () => {
+  // `db` is `{}` in this file: a label that reached the query would throw.
+  test('a label that cannot be a DNS label never reaches the database', async () => {
+    for (const label of ['x'.repeat(64), 'sbx_01abc', 'a b', '', "a'; drop table x;--"]) {
+      expect(await resolveExternalIdFromHostLabel(label)).toBeNull();
+    }
   });
 });

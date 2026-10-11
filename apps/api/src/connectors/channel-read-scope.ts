@@ -36,6 +36,7 @@
 import { and, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm';
 import { chatChannelBindings, chatInstalls, chatThreads } from '@kortix/db';
 import { db } from '../shared/db';
+import { isRecord } from '@kortix/shared/guards';
 
 export const CONVERSATION_NOT_IN_PROJECT = 'conversation_not_in_project';
 
@@ -255,10 +256,24 @@ async function scopeAnswer(scope: Scope, kind: ChannelReadScope, input: ChannelR
     // A file shared nowhere belongs to no conversation.
     const owners = ids.length ? [...(await channelOwners(scope, ids)).values()] : ['none' as const];
     if (owners.some((owner) => readable(scope, owner))) return { data };
+    // A file posted in a thread this project owns is readable in any channel,
+    // as `get_thread` is: the thread's owner wins over its channel's.
+    const roots = sharedThreads(file);
+    if (roots.length && [...(await threadOwners(scope, roots)).values()].includes('mine')) return { data };
     const subject = `Slack file ${typeof file.id === 'string' ? file.id : ''}`.trim();
     return deny(refusalMessage(scope, owners.includes('other') ? 'other' : 'none', subject));
   }
   return { data };
+}
+
+/** The Slack threads a file is shared in: each share's `thread_ts`, else its own `ts`. */
+function sharedThreads(file: Record<string, unknown>): string[] {
+  const shares = isRecord(file.shares) ? file.shares : {};
+  return [shares.public, shares.private]
+    .flatMap((byChannel) => (isRecord(byChannel) ? Object.values(byChannel) : []))
+    .flatMap((list) => (Array.isArray(list) ? list : []))
+    .map((share) => (isRecord(share) ? (share.thread_ts ?? share.ts) : null))
+    .filter((ts): ts is string => typeof ts === 'string' && SLACK_TS.test(ts));
 }
 
 /* ─── ids ───────────────────────────────────────────────────────────────────── */
@@ -392,10 +407,6 @@ function refusalMessage(scope: Scope, owner: Owner, subject: string): string {
   return scope.platform === 'slack'
     ? `${subject} is not connected to this project, and this Slack workspace is connected to more than one Kortix project. Connect it first: run \`/kortix switch\` in that conversation and pick this project.`
     : `This project has no conversation in ${subject}, and this Microsoft 365 tenant is connected to more than one Kortix project. Mention the bot in that channel and pick this project first.`;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value != null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function listOf(data: unknown, key: string): unknown[] | null {

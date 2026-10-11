@@ -32,7 +32,6 @@ const ROSTER: DeclaredAgentRoster = {
 };
 
 const RELEASE: ConfigRelease = {
-  format: 'config-release-v2',
   release_id: 'release',
   source_commit: TIP,
   config_dir: null,

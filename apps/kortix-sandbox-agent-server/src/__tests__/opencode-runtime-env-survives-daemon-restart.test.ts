@@ -33,6 +33,7 @@ import {
 } from '@/harness/open-code/control'
 import { resetConfigReleaseStateForTests } from '@/harness/open-code/config-release'
 import { createOpenCodeQuickQueueInterrupt } from '@/harness/open-code/background'
+import { writeOpencodeRuntimeEnvSnapshot } from '@/harness/open-code/runtime-state'
 
 const TEST_TOKEN = 'restart-amnesia-test-kortix-token'
 const TEST_ENV_DIR = mkdtempSync(join(tmpdir(), 'kortix-env-amnesia-'))
@@ -221,6 +222,28 @@ describe('opencode runtime env survives a daemon restart (no false change)', () 
     restoreOpencodeRuntimeEnvSnapshotIfUnset()
 
     expect(process.env.KORTIX_COMPILED_AGENT_CONFIG).toBeUndefined()
+  })
+
+  // Prod 2026-10-01..07: a restored KORTIX_LLM_PROXY_URL made boot.ts skip
+  // starting the proxy it names, so OpenCode sent every model request to a
+  // closed 127.0.0.1:4319 ("Cannot connect to API") until the VM was replaced.
+  test('the LLM proxy URL is never restored — it names a listener the old process owned', async () => {
+    // boot.ts set this when it started the proxy; any later push persists the env.
+    process.env.KORTIX_LLM_PROXY_URL = 'http://127.0.0.1:4319'
+    const first = fakeOpencode()
+    await pushSecretCapabilities(buildTestApp(first.opencode), CATALOG)
+
+    // The restart: the old process and its listener are gone.
+    delete process.env.KORTIX_LLM_PROXY_URL
+    delete process.env.KORTIX_SECRET_CAPABILITIES
+    restoreOpencodeRuntimeEnvSnapshotIfUnset()
+    expect(process.env.KORTIX_SECRET_CAPABILITIES as string | undefined).toBe(CATALOG)
+    expect(process.env.KORTIX_LLM_PROXY_URL).toBeUndefined()
+
+    // A box whose snapshot was written before this fix heals on its next boot.
+    writeOpencodeRuntimeEnvSnapshot({ KORTIX_LLM_PROXY_URL: 'http://127.0.0.1:4319' })
+    restoreOpencodeRuntimeEnvSnapshotIfUnset()
+    expect(process.env.KORTIX_LLM_PROXY_URL).toBeUndefined()
   })
 
   test('restoring twice is idempotent and harmless with nothing persisted', () => {

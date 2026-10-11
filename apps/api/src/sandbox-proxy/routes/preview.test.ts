@@ -201,6 +201,12 @@ describe('isProxiedBaseReset', () => {
 // this proxy strips; that strip is proven at the route in
 // __tests__/e2e-preview-proxy.test.ts.
 describe('the forward strip list', () => {
+  test('credential and hop-by-hop headers never reach a user app', () => {
+    for (const name of ['x-kortix-token', 'proxy-authorization', 'transfer-encoding', 'connection', 'upgrade', 'te', 'trailer', 'keep-alive']) {
+      expect(STRIP_FORWARD_HEADERS.has(name)).toBe(true);
+    }
+  });
+
   test('the strip list is matched case-insensitively, as headers are', () => {
     // Headers arrive in whatever case the client sent; the forward loop
     // lowercases before testing membership, so the entry must be lowercase.
@@ -298,6 +304,24 @@ describe('clientResponseHeaders', () => {
     const csp = "default-src 'self'; script-src 'wasm-unsafe-eval'";
     const headers = clientResponseHeaders(new Headers({ 'content-security-policy': csp }), '');
     expect(headers.get('content-security-policy')).toBe(csp);
+  });
+
+  test('the upstream cannot forge the proxy attribution headers', () => {
+    // X-Kortix-Proxy-Hop / X-Kortix-Upstream-Status are the PROXY's voice about
+    // which hop failed. The request-log suppression keys on them
+    // (request-log-level.ts), so an upstream passthrough that carried its own
+    // copy could name a designed-answer hop and silence a real failure. The
+    // proxy re-sets both where it means to (retry.ts's not-ready passthrough,
+    // portUnreachableResponse); a plain passthrough leaves them absent.
+    const forged = clientResponseHeaders(
+      new Headers({
+        'x-kortix-proxy-hop': 'control_plane',
+        'x-kortix-upstream-status': '200',
+      }),
+      '',
+    );
+    expect(forged.has('x-kortix-proxy-hop')).toBe(false);
+    expect(forged.has('x-kortix-upstream-status')).toBe(false);
   });
 
   test('the CORS grant follows the same allowlist as every preview response', () => {

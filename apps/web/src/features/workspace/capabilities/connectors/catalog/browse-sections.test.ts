@@ -11,10 +11,9 @@
  * section's true size. These tests pin the mapping from those responses to
  * what the grid renders.
  */
-import { expect, test } from 'bun:test';
 import type { DiscoverConnector } from '@kortix/sdk';
+import { expect, test } from 'bun:test';
 
-import type { CatalogEntry } from './catalog-entry';
 import {
   browseSections,
   connectToolkitApp,
@@ -22,6 +21,7 @@ import {
   sectionsPageFromDiscover,
   sectionsPageFromPipedream,
 } from './browse-sections';
+import type { CatalogEntry } from './catalog-entry';
 import { POPULAR_SECTION } from './connector-categories';
 
 const toolkit = (slug: string, categories: string[] = ['server-monitoring']) => ({
@@ -74,6 +74,7 @@ test('a Composio toolkit becomes the same card the paged catalogue renders', () 
     hasTriggers: false,
     featuredWeight: 0,
     provider: 'composio',
+    directId: null,
   });
   expect(
     connectToolkitApp({ ...toolkit('hubspot'), description: undefined, categories: undefined }),
@@ -169,7 +170,9 @@ test('Pipedream keeps its own section labels and matches its spelling of develop
   const [section] = browseSections(page, { native, cardCount: 6, title });
   expect(section).toMatchObject({ label: 'title:Developer Tools', total: 300 });
   expect(section.items.map((item) => item.key)).toEqual(['computer:computers']);
-  expect(page.categories).toEqual([{ key: 'Developer Tools', label: 'Developer Tools', count: 300 }]);
+  expect(page.categories).toEqual([
+    { key: 'Developer Tools', label: 'Developer Tools', count: 300 },
+  ]);
 });
 
 test('no section is invented for the native card when the catalogue has none for it', () => {
@@ -209,7 +212,10 @@ test('a Discover section states its size across the whole catalogue, Popular fir
     { key: 'finance', label: 'title:finance', total: 116 },
     { key: 'developer-tools', label: 'title:developer-tools', total: 187 },
   ]);
-  expect(sections[0].items.map((item) => item.key)).toEqual(['discover:mcp/notion', 'discover:mcp/github']);
+  expect(sections[0].items.map((item) => item.key)).toEqual([
+    'discover:mcp/notion',
+    'discover:mcp/github',
+  ]);
   expect(sections[1].items[0]).toMatchObject({ source: 'discover', slug: 'stripe' });
   // The native card joins Discover's developer tools too, without the count.
   expect(sections[2].items.map((item) => item.key)).toEqual([

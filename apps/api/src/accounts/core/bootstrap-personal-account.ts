@@ -3,6 +3,7 @@ import { accountMemberships, accounts } from '@kortix/db';
 import { initializeFreeTierAccount } from '../../billing/services/free-tier';
 import { config } from '../../config';
 import { syncSignupContactToMailtrap } from '../mailtrap-contacts';
+import { sendSignupWebhook } from '../signup-webhook';
 import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
 import { anyAccountMembershipOf } from '../../iam/membership-read';
 import { db } from '../../shared/db';
@@ -39,10 +40,8 @@ export async function bootstrapPersonalAccount(
 ): Promise<{ accountId: string; created: boolean }> {
   // Never `"<email>'s Account"` (KRTX-638): a suggested name the user confirms
   // or changes on their first project (`/new`).
-  const name = defaultAccountName(
-    email,
-    fullName === undefined ? await lookupProfileName(userId) : fullName,
-  );
+  const profile = fullName === undefined ? await lookupProfileName(userId) : fullName;
+  const name = defaultAccountName(email, profile);
 
   const created = await db
     .insert(accounts)
@@ -83,6 +82,8 @@ export async function bootstrapPersonalAccount(
     void syncSignupContactToMailtrap(email).catch((err) =>
       console.warn(`[accounts] Mailtrap contact sync failed for ${userId}:`, err),
     );
+    // Same contract for the sales factory's signup webhook (inert when unset).
+    if (email) void sendSignupWebhook({ userId, email, name: profile });
 
     return { accountId: userId, created: true };
   }

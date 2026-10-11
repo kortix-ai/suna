@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import type { TeamsActivity } from '../channels/teams/types';
+import type { ChannelOwnership } from '../connectors/channel-read-scope';
 
 let apiCalls: Array<{ fn: string; args: unknown[] }> = [];
 /** When set, Teams refuses any activity carrying an inline data: image — as it
@@ -106,6 +107,7 @@ let fetchCalls: Array<{ url: string; method: string; headers?: Record<string, st
 let graphStatus = 200;
 let channelOwnershipOk = true;
 let nextFetchOk = true;
+let downloadBytes = 8;
 const realFetch = globalThis.fetch;
 beforeEach(() => {
   apiCalls = [];
@@ -118,6 +120,7 @@ beforeEach(() => {
   dbResults = [];
   fetchCalls = [];
   nextFetchOk = true;
+  downloadBytes = 8;
   graphStatus = 200;
   channelOwnershipOk = true;
   provenTenants = ['tenant-1'];
@@ -125,7 +128,7 @@ beforeEach(() => {
     fetchCalls.push({ url: String(url), method: init?.method ?? 'GET', headers: init?.headers });
     const u = String(url);
     if (u.startsWith('https://graph.microsoft.com/')) {
-      if (u.includes('/channels/') && (init?.method ?? 'GET') === 'GET') {
+      if (u.includes('/channels/') && !u.includes('/hostedContents/') && (init?.method ?? 'GET') === 'GET') {
         return { ok: channelOwnershipOk, status: channelOwnershipOk ? 200 : 404, json: async () => ({ id: 'ch' }), text: async () => '' };
       }
       if (graphStatus !== 200) {
@@ -138,12 +141,10 @@ beforeEach(() => {
         return { ok: true, status: 201, json: async () => ({ link: { webUrl: 'https://kortixssotest.sharepoint.com/:b:/s/x/link' } }), text: async () => '' };
       }
     }
-    return {
-      ok: nextFetchOk,
+    return new Response(new Uint8Array(downloadBytes), {
       status: nextFetchOk ? 200 : 502,
-      arrayBuffer: async () => new ArrayBuffer(8),
-      headers: { get: () => 'application/pdf' },
-    };
+      headers: { 'content-type': 'application/pdf' },
+    });
   }) as unknown as typeof fetch;
 });
 afterEach(() => {
@@ -161,6 +162,49 @@ describe('downloadTeamsFile', () => {
     const r = await downloadTeamsFile('proj-1', 'https://contoso.sharepoint.com/f/report.pdf');
     expect(r.ok).toBe(true);
     expect(fetchCalls).toHaveLength(1);
+  });
+
+  test('a redirect to a non-Microsoft host is refused and never fetched; the bearer stays on its own host', async () => {
+    const real = globalThis.fetch;
+    const seen: Array<{ url: string; auth?: string; redirect?: string }> = [];
+    globalThis.fetch = (async (url: string, init: { headers?: Record<string, string>; redirect?: string }) => {
+      seen.push({ url: String(url), auth: init?.headers?.Authorization, redirect: init?.redirect });
+      return { ok: false, status: 302, headers: { get: () => 'https://evil.example.com/steal' } };
+    }) as unknown as typeof fetch;
+    try {
+      const r = await downloadTeamsFile(
+        'proj-1',
+        'https://smba.trafficmanager.net/emea/36009a52/v3/attachments/0-abc/views/original',
+      );
+      expect(r.ok).toBe(false);
+      expect(seen).toHaveLength(1);
+      expect(seen[0].redirect).toBe('manual');
+    } finally {
+      globalThis.fetch = real;
+    }
+  });
+
+  test('a redirect to another allowed host is followed without the bearer', async () => {
+    const real = globalThis.fetch;
+    const seen: Array<{ url: string; auth?: string }> = [];
+    globalThis.fetch = (async (url: string, init: { headers?: Record<string, string> }) => {
+      seen.push({ url: String(url), auth: init?.headers?.Authorization });
+      return seen.length === 1
+        ? { ok: false, status: 302, headers: { get: () => 'https://contoso.sharepoint.com/f/x.png' } }
+        : { ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(4), headers: { get: () => 'image/png' } };
+    }) as unknown as typeof fetch;
+    try {
+      const r = await downloadTeamsFile(
+        'proj-1',
+        'https://smba.trafficmanager.net/emea/36009a52/v3/attachments/0-abc/views/original',
+      );
+      expect(r.ok).toBe(true);
+      expect(seen[0].auth).toBe('Bearer bot-tok');
+      expect(seen[1].url).toBe('https://contoso.sharepoint.com/f/x.png');
+      expect(seen[1].auth).toBeUndefined();
+    } finally {
+      globalThis.fetch = real;
+    }
   });
 
   test('a Bot Framework attachment URL (pasted image) is fetched with the bot connector token', async () => {
@@ -538,6 +582,24 @@ describe('initiateTeamsUpload — an image is shown inline first, in every scope
  * accepted. And the bot connector token goes only to the Teams connector's own
  * Traffic Manager profile — any Azure customer can name another one.
  */
+/**
+ * Who owns which Teams conversation, for the download gate. `shared`: another
+ * project is connected to the same tenant, so an unowned conversation is not
+ * readable either.
+ */
+function ownedBy(
+  owners: { channels?: Record<string, string>; threads?: Record<string, string> },
+  shared = false,
+): ChannelOwnership {
+  return {
+    installs: async () => ({ workspaceIds: ['tenant-1'], shared }),
+    channelProjects: async (_p, _w, ids) =>
+      new Map(ids.filter((id) => owners.channels?.[id]).map((id) => [id, new Set([owners.channels![id]])])),
+    threadOwners: async (_p, _w, ids) =>
+      new Map(ids.filter((id) => owners.threads?.[id]).map((id) => [id, owners.threads![id]])),
+  };
+}
+
 describe('download proxy — Graph paths and attachment hosts', () => {
   const HOSTED_CHAT =
     'https://graph.microsoft.com/v1.0/chats/19:abc@thread.v2/messages/1712345678901/hostedContents/aWQ9eF8wLXd1cy1kMTAt/$value';
@@ -547,9 +609,7 @@ describe('download proxy — Graph paths and attachment hosts', () => {
   test('a message hosted-content URL is fetched with the Graph token', async () => {
     for (const url of [HOSTED_CHAT, HOSTED_CHANNEL]) {
       fetchCalls = [];
-      await downloadTeamsFile('proj-1', url).catch(() => null);
-      // The fetch mock answers `/channels/` GETs as the ownership probe, so
-      // assert on the outgoing request, not the parsed body.
+      await downloadTeamsFile('proj-1', url, ownedBy({})).catch(() => null);
       expect(fetchCalls).toHaveLength(1);
       expect(fetchCalls[0].url).toBe(url);
       expect(fetchCalls[0].headers?.Authorization).toBe('Bearer graph-tok');
@@ -575,7 +635,7 @@ describe('download proxy — Graph paths and attachment hosts', () => {
 
   test('a hosted-content URL with no proven tenant is 404, with no token minted', async () => {
     provenTenants = [];
-    const r = await downloadTeamsFile('proj-1', HOSTED_CHAT);
+    const r = await downloadTeamsFile('proj-1', HOSTED_CHAT, ownedBy({}));
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.status).toBe(404);
     expect(fetchCalls).toHaveLength(0);
@@ -589,3 +649,50 @@ describe('download proxy — Graph paths and attachment hosts', () => {
   });
 });
 
+
+// The Graph token is minted for the tenant, and one tenant can be connected to
+// several Kortix projects. A hosted-content URL names its conversation, so the
+// download is confined like a read of that conversation.
+describe('download proxy — confined to this project\'s conversations', () => {
+  const CHANNEL = '19:chan@thread.tacv2';
+  const IN_THREAD =
+    'https://graph.microsoft.com/v1.0/teams/group-1/channels/19:chan@thread.tacv2/messages/171/replies/172/hostedContents/aWQ9/$value';
+  const IN_GROUP_CHAT =
+    'https://graph.microsoft.com/v1.0/chats/19:group@thread.v2/messages/1712345678901/hostedContents/aWQ9/$value';
+
+  test('an image in a thread another project owns is refused 403 and never fetched', async () => {
+    const r = await downloadTeamsFile(
+      'proj-1',
+      IN_THREAD,
+      ownedBy({ threads: { [`${CHANNEL};messageid=171`]: 'proj-2' } }, true),
+    );
+    expect(r).toMatchObject({ ok: false, status: 403 });
+    if (!r.ok) expect(r.error).toContain('belongs to another Kortix project');
+    expect(fetchCalls).toHaveLength(0);
+  });
+
+  test('an image in this project\'s thread is fetched, even in a shared tenant', async () => {
+    const r = await downloadTeamsFile(
+      'proj-1',
+      IN_THREAD,
+      ownedBy({ threads: { [`${CHANNEL};messageid=171`]: 'proj-1' } }, true),
+    );
+    expect(r.ok).toBe(true);
+    expect(fetchCalls.map((c) => c.url)).toEqual([IN_THREAD]);
+  });
+
+  test('an image in a group chat is confined by the chat\'s binding', async () => {
+    const mine = await downloadTeamsFile('proj-1', IN_GROUP_CHAT, ownedBy({ channels: { '19:group@thread.v2': 'proj-1' } }, true));
+    expect(mine.ok).toBe(true);
+    fetchCalls = [];
+    const theirs = await downloadTeamsFile('proj-1', IN_GROUP_CHAT, ownedBy({ channels: { '19:group@thread.v2': 'proj-2' } }, true));
+    expect(theirs).toMatchObject({ ok: false, status: 403 });
+    expect(fetchCalls).toHaveLength(0);
+  });
+
+  test('a file past the download limit is refused 413', async () => {
+    downloadBytes = 50 * 1024 * 1024 + 1;
+    const r = await downloadTeamsFile('proj-1', 'https://contoso.sharepoint.com/f/report.pdf');
+    expect(r).toMatchObject({ ok: false, status: 413 });
+  });
+});

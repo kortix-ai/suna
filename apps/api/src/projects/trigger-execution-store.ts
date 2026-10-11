@@ -5,8 +5,10 @@ import { featureFlagDef } from '../feature-flags/registry';
 import { nextTriggerScheduleSlot } from './trigger-schedule';
 import type { GitTriggerSpec } from './triggers';
 import { exponentialBackoffMs } from '../shared/backoff';
+import { logger } from '../lib/logger';
 import { mapWithConcurrency } from '../shared/map-with-concurrency';
 import { cronSlotFields } from './lib/trigger-payload';
+import { clearTriggerAlert, raiseTriggerAlert } from './lib/trigger-alerts';
 
 export type TriggerExecutionRow = typeof projectTriggerExecutions.$inferSelect;
 
@@ -178,13 +180,14 @@ export async function claimTriggerExecutions(input: {
   const leaseMs = input.leaseMs ?? 2 * 60_000;
   // A worker may die during its final attempt. Once that lease expires, make
   // the abandonment explicit instead of leaving a permanent `running` row.
-  await db
+  const abandonedError = 'execution lease expired after the maximum number of attempts';
+  const abandoned = await db
     .update(projectTriggerExecutions)
     .set({
       status: 'dead_lettered',
       lockedBy: null,
       lockedUntil: null,
-      lastError: 'execution lease expired after the maximum number of attempts',
+      lastError: abandonedError,
       completedAt: input.now,
       updatedAt: input.now,
     })
@@ -205,7 +208,10 @@ export async function claimTriggerExecutions(input: {
           ),
         ),
       ),
-    );
+    )
+    .returning({ projectId: projectTriggerExecutions.projectId, slug: projectTriggerExecutions.slug });
+  // A dead letter is a terminal failure: its watchers hear about it (KRTX-1742).
+  await Promise.all(abandoned.map((row) => raiseTriggerAlert({ ...row, source: 'fire', error: abandonedError })));
 
   const candidates = await db
     .select()
@@ -232,33 +238,40 @@ export async function claimTriggerExecutions(input: {
     .limit(input.limit);
 
   const claimed = await mapWithConcurrency(candidates, 8, async (candidate) => {
-    const [row] = await db
-      .update(projectTriggerExecutions)
-      .set({
-        status: 'running',
-        attempts: candidate.attempts + 1,
-        lockedBy: input.workerId,
-        lockedUntil: new Date(input.now.getTime() + leaseMs),
-        updatedAt: input.now,
-      })
-      .where(
-        and(
-          eq(projectTriggerExecutions.executionId, candidate.executionId),
-          eq(projectTriggerExecutions.attempts, candidate.attempts),
-          or(
-            eq(projectTriggerExecutions.status, 'queued'),
-            and(
-              eq(projectTriggerExecutions.status, 'running'),
-              or(
-                isNull(projectTriggerExecutions.lockedUntil),
-                lte(projectTriggerExecutions.lockedUntil, input.now),
+    // A row whose UPDATE fails stays queued and is claimed on the next pass. One bad
+    // row must not discard the rows this batch already moved to `running`.
+    try {
+      const [row] = await db
+        .update(projectTriggerExecutions)
+        .set({
+          status: 'running',
+          attempts: candidate.attempts + 1,
+          lockedBy: input.workerId,
+          lockedUntil: new Date(input.now.getTime() + leaseMs),
+          updatedAt: input.now,
+        })
+        .where(
+          and(
+            eq(projectTriggerExecutions.executionId, candidate.executionId),
+            eq(projectTriggerExecutions.attempts, candidate.attempts),
+            or(
+              eq(projectTriggerExecutions.status, 'queued'),
+              and(
+                eq(projectTriggerExecutions.status, 'running'),
+                or(
+                  isNull(projectTriggerExecutions.lockedUntil),
+                  lte(projectTriggerExecutions.lockedUntil, input.now),
+                ),
               ),
             ),
           ),
-        ),
-      )
-      .returning();
-    return row ?? null;
+        )
+        .returning();
+      return row ?? null;
+    } catch (error) {
+      logger.error('[trigger-executions] claim failed', { executionId: candidate.executionId, error: error instanceof Error ? error.message : String(error) });
+      return null;
+    }
   });
   return claimed.filter((row): row is TriggerExecutionRow => row !== null);
 }
@@ -385,6 +398,8 @@ export async function markTriggerRuntimeDelivered(input: {
         updatedAt: input.when,
       },
     });
+  // The prompt reached its session: a fire failure streak is over (KRTX-1742).
+  await clearTriggerAlert({ projectId: input.projectId, slug: input.slug, source: 'fire' });
 }
 
 /**

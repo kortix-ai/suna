@@ -4,8 +4,11 @@ export const KORTIX_WEB_ORIGIN = 'https://kortix.com';
 export const KORTIX_API_ORIGIN = 'https://api.kortix.com/v1';
 export const KORTIX_OAUTH_ISSUER = 'https://jbriwassebxdwoieikga.supabase.co/auth/v1';
 export const DISCOVERY_CACHE_CONTROL = 'public, max-age=3600, s-maxage=3600';
-export const MCP_PROTOCOL_VERSION = '2025-03-26';
+/** Must match SUPPORTED_PROTOCOL_VERSIONS in apps/api/src/mcp/index.ts. */
+export const MCP_PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26'] as const;
 export const MCP_SERVER_VERSION = '1.0.0';
+/** The one Kortix MCP server: the API's hosted endpoint (apps/api/src/mcp). */
+export const KORTIX_MCP_URL = `${KORTIX_API_ORIGIN}/mcp`;
 
 export const API_CATALOG = {
   linkset: [
@@ -126,7 +129,7 @@ Kortix does not accept anonymous agent registration, ID-JAG assertions, or autom
 
 export const KORTIX_PUBLIC_CONTENT_SKILL = `---
 name: kortix-public-content
-description: Discover and read Kortix public documentation through standards-based HTTP and MCP endpoints.
+description: Discover and read Kortix public documentation through standards-based HTTP endpoints, and find the Kortix MCP server.
 ---
 
 # Kortix Public Content
@@ -146,8 +149,9 @@ The response uses \`Content-Type: text/markdown; charset=utf-8\`.
 
 ## Use MCP
 
-Connect to ${KORTIX_WEB_ORIGIN}/mcp with the Streamable HTTP transport.
-Call \`list_public_content\` before \`get_public_markdown\`.
+The Kortix MCP server is ${KORTIX_MCP_URL} (Streamable HTTP).
+It acts as a signed-in person: sign in with OAuth, or send a personal access token.
+Setup for each client: ${KORTIX_WEB_ORIGIN}/docs/connect/mcp.
 
 ## Authenticate
 
@@ -174,17 +178,17 @@ export function agentSkillsIndex() {
 /** Compatibility card for the discovery scanner's pre-SEP-2127 field names. */
 export const MCP_WELL_KNOWN_SERVER_CARD = {
   serverInfo: {
-    name: 'kortix-public-content',
+    name: 'kortix',
     version: MCP_SERVER_VERSION,
   },
   transport: {
     type: 'streamable-http',
-    endpoint: `${KORTIX_WEB_ORIGIN}/mcp`,
+    endpoint: KORTIX_MCP_URL,
   },
-  endpoint: `${KORTIX_WEB_ORIGIN}/mcp`,
+  endpoint: KORTIX_MCP_URL,
   capabilities: {
     tools: true,
-    resources: true,
+    resources: false,
     prompts: false,
   },
 } as const;
@@ -192,10 +196,10 @@ export const MCP_WELL_KNOWN_SERVER_CARD = {
 /** Current SEP-2127 server-card shape. */
 export const MCP_SERVER_CARD = {
   $schema: 'https://static.modelcontextprotocol.io/schemas/v1/server-card.schema.json',
-  name: 'com.kortix/public-content',
+  name: 'com.kortix/kortix',
   version: MCP_SERVER_VERSION,
-  title: 'Kortix Public Content',
-  description: 'Search and read Kortix public documentation and API metadata.',
+  title: 'Kortix',
+  description: 'Run Kortix as yourself: projects, sessions, sandbox files, connectors, and the full kortix CLI.',
   websiteUrl: KORTIX_WEB_ORIGIN,
   repository: {
     url: 'https://github.com/kortix-ai/suna',
@@ -204,8 +208,8 @@ export const MCP_SERVER_CARD = {
   remotes: [
     {
       type: 'streamable-http',
-      url: `${KORTIX_WEB_ORIGIN}/mcp`,
-      supportedProtocolVersions: [MCP_PROTOCOL_VERSION],
+      url: KORTIX_MCP_URL,
+      supportedProtocolVersions: MCP_PROTOCOL_VERSIONS,
     },
   ],
 } as const;
@@ -214,7 +218,7 @@ export const AI_CATALOG = {
   specVersion: '1.0',
   entries: [
     {
-      identifier: 'urn:air:kortix.com:mcp:public-content',
+      identifier: 'urn:air:kortix.com:mcp:kortix',
       type: 'application/mcp-server-card+json',
       url: `${KORTIX_WEB_ORIGIN}/mcp/server-card`,
     },

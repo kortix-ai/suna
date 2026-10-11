@@ -71,9 +71,17 @@ export function toLayoutRect(
     const snap = (v: number) => Math.round(v * dpr) / dpr;
     const left = snap(tab.left);
     const top = snap(tab.top);
+    // The offset is from the container's UNSNAPPED origin. The pill is an
+    // absolute child moved by a transform, so it paints at the container's
+    // fractional position plus `x`; only the track's own background is
+    // snapped. Subtracting the snapped origin left the container's fraction in
+    // the pill — a whole-pill shift of up to half a device pixel. On a track at
+    // x = 29.25 (2x) the first tab's chip sat 1.75px from the track's left edge
+    // and the last tab's 2.25px from its right: the 1px ring swallowed the
+    // track on one side only.
     return {
-      x: left - snap(container.left) + scroll.left,
-      y: top - snap(container.top) + scroll.top,
+      x: left - container.left + scroll.left,
+      y: top - container.top + scroll.top,
       width: snap(tab.left + tab.width) - left,
       height: snap(tab.top + tab.height) - top,
     };

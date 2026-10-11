@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import pg from 'pg';
+import { PgClient } from '../../__tests__/helpers/pg-client';
 import { db } from '../db';
 import { type ArchiveStore, exportWeek, runArchivePass } from './archive';
 import { decodeRows, retainUntil, weekEnd, weekStartOf } from './format';
@@ -33,7 +33,7 @@ function fakeStore() {
   return store;
 }
 
-let client: pg.Client | null = null;
+let client: PgClient | null = null;
 const q = (text: string, values?: unknown[]) => client!.query(text, values);
 
 async function seed(accountId: string | null, action: string, at: string, n = 1) {
@@ -53,7 +53,7 @@ describe.skipIf(!databaseUrl)('audit archive — export, verify, remove (real Po
   });
 
   beforeAll(async () => {
-    client = new pg.Client({ connectionString: databaseUrl });
+    client = new PgClient({ connectionString: databaseUrl });
     await client.connect();
     // Weeks far enough back to be archivable exist as partitions (the migration keeps 85 days).
     await q(`SELECT kortix.audit_events_ensure_partitions('kortix.audit_events', current_date - 200, 8)`);

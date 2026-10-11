@@ -586,14 +586,29 @@ export type CreateOrchestrationClient = {
   invalidateProjects: () => void;
   writeLastProjectId: (userId: string | null | undefined, projectId: string) => void;
   /**
+   * The projects the target account already had, as this session last cached
+   * them — `qk.projects.list(accountId)`, the entry the door and the project
+   * selector warm before the user ever reaches `/new`. `undefined` is a cold
+   * cache: no read happened this session, which counts as "possibly the
+   * account's first project". Read BEFORE `primeProjectCache`, which
+   * prepends the new project and would otherwise make the list never empty.
+   */
+  projectsCachedForAccount: (accountId: string) => KortixProject[] | undefined;
+  /**
    * Stamp the created project onboarded — the same `PATCH /projects/:id/onboarding`
    * the wizard's own exits run. A create that lands the user directly on the
    * project page (see `enterProject`) is an implicit skip: the wizard must not
-   * mount full-screen over the workspace they just asked for, and the project
-   * shell's copy has no skip control, so an unstamped project would trap them
-   * there. This is why the stamp lives in the flow and not on the server's
-   * provision route: it reuses an existing endpoint instead of growing the
-   * create contract.
+   * mount full-screen over the workspace they just asked for. This is why the
+   * stamp lives in the flow and not on the server's provision route: it reuses
+   * an existing endpoint instead of growing the create contract.
+   *
+   * Only a LATER project is stamped. A fresh account's first project stays
+   * unstamped, so the shell's wizard opens on the landing and walks the new
+   * user through work, apps and models — the post-signup onboarding the
+   * signup journey expects (KRTX-2092). That mount is not the trap the
+   * implicit skip exists to prevent: the shell's wizard now carries the Skip
+   * control, and its exit opens the first chat in place. An experienced user
+   * creating project two never sees the wizard again (KRTX-1419).
    */
   completeOnboarding: (projectId: string) => Promise<unknown>;
   /**
@@ -677,15 +692,23 @@ async function runSourceAttempt(
  *
  * ```
  * mint/reuse key -> provision (with retry) ->
- *   [on success only] clear key -> prime cache -> invalidate -> write cookie
- *   -> stamp onboarded -> hand off to /projects/:id
+ *   [on success only] clear key -> read the account's prior projects ->
+ *   prime cache -> invalidate -> write cookie
+ *   -> [later projects only] stamp onboarded -> hand off to /projects/:id
  * ```
  *
- * **No onboarding wizard in the create flow.** The redirect used to go to
- * `/new?onboarding=<id>`, which mounted the full-screen three-step wizard over
- * the page; the app never landed on the project by itself (KRTX-1419). The
- * stamp (below) is what keeps the project shell's own copy of that wizard from
- * mounting over the landing page instead.
+ * **No onboarding wizard in the create flow — for accounts that already have
+ * a project.** The redirect used to go to `/new?onboarding=<id>`, which
+ * mounted the full-screen three-step wizard over the page; the app never
+ * landed on the project by itself (KRTX-1419). The stamp is what keeps the
+ * shell's copy of that wizard from mounting over the landing page instead.
+ *
+ * **A fresh account's first project is the exception (KRTX-2092).** Its
+ * create skips the stamp so the shell's wizard opens on the landing and the
+ * new user gets the work / apps / models steps the signup journey expects;
+ * the wizard's own Skip control closes it in place and opens the first chat.
+ * An unstamped project is only a trap when the wizard has no exit — the
+ * shell passes `onSkip`, so it has one.
  *
  * The stamp is best-effort and precedes the handoff: a failed PATCH must not
  * keep the user off the project that already exists (the same policy as the
@@ -733,14 +756,19 @@ export async function runCreate(
       client,
     );
     if (usesIdempotencyKey) client.clearAttemptKey(fingerprint);
+    // Read BEFORE priming: `primeProjectCache` prepends the new project, so a
+    // read after it can never see the account's pre-create state.
+    const hadProjects = (client.projectsCachedForAccount(project.account_id)?.length ?? 0) > 0;
     client.primeProjectCache(project.account_id, project);
     client.invalidateProjects();
     client.writeLastProjectId(userId, project.project_id);
-    // Best-effort: a failed stamp must not keep the user off the project that
-    // already exists. The accepted failure mode is the wizard running the next
-    // time they open the workspace — the same one `completeThenNotify` accepts
-    // for the wizard's own exits.
-    await client.completeOnboarding(project.project_id).catch(() => {});
+    if (hadProjects) {
+      // Best-effort: a failed stamp must not keep the user off the project
+      // that already exists. The accepted failure mode is the wizard running
+      // the next time they open the workspace — the same one
+      // `completeThenNotify` accepts for the wizard's own exits.
+      await client.completeOnboarding(project.project_id).catch(() => {});
+    }
     client.enterProject(project.project_id);
     return { ok: true, project };
   } catch (error) {
@@ -861,10 +889,20 @@ export function useCreateWorkspace(): {
         // create just added to. `scope()` is the shared prefix over every form.
         invalidateProjects: () =>
           void queryClient.invalidateQueries({ queryKey: qk.projects.scope() }),
+        // The pre-create cached list — the SAME entry `primeProjectCache`
+        // writes and the door/selector read, so on the signup journey (door →
+        // selector → /new) it is always warm. `runCreate` reads it before the
+        // prime to decide whether the created project is the account's FIRST:
+        // an unstamped first project is what makes the shell's onboarding
+        // wizard open for a new user (KRTX-2092).
+        projectsCachedForAccount: (accountId) =>
+          queryClient.getQueryData<KortixProject[]>(qk.projects.list(accountId)),
         writeLastProjectId,
-        // The same PATCH the wizard's own exits run — the create landing
-        // directly on the project page is an implicit skip, and the shell's
-        // copy of the wizard has no skip control to fall back on.
+        // The same PATCH the wizard's own exits run — for a LATER project the
+        // create landing directly on the project page is an implicit skip.
+        // A fresh account's FIRST project is left unstamped instead (the
+        // decision reads `projectsCachedForAccount`), so its onboarding wizard
+        // opens on the landing (KRTX-2092).
         completeOnboarding: (projectId) => setProjectOnboardingComplete(projectId, true),
         enterProject: (projectId) => router.replace(`/projects/${encodeURIComponent(projectId)}`),
         now: Date.now,

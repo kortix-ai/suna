@@ -3,7 +3,9 @@ import { usageEvents } from '@kortix/db';
 import { type SQL, and, desc, eq, gte, lte, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { PROJECT_ACTIONS } from '../../iam/actions';
+import { ACCOUNT_ACTIONS, PROJECT_ACTIONS } from '../../iam/actions';
+import { assertAuthorized } from '../../iam/authorize';
+import { actorOf } from '../../middleware/actor';
 import { combinedAuth } from '../../middleware/auth';
 import { rejectSandboxTokens } from '../../middleware/reject-sandbox-tokens';
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
@@ -63,24 +65,40 @@ async function resolveSessionCostAccountId(
     );
     return tokenAccountId;
   }
-  if (tokenAccountId) return tokenAccountId;
-
-  if (c.req.query('account_id') || !projectId) {
-    return resolveScopedAccountId(c, 'query');
+  if (projectId) {
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) {
+      throw new HTTPException(404, { message: 'Project not found' });
+    }
+    const explicitAccountId = tokenAccountId ?? c.req.query('account_id');
+    if (explicitAccountId && explicitAccountId !== loaded.row.accountId) {
+      throw new HTTPException(404, { message: 'Project not found' });
+    }
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ,
+    );
+    return loaded.row.accountId;
   }
+  return resolveAccountWideUsageAccountId(c);
+}
 
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) {
-    throw new HTTPException(404, { message: 'Project not found' });
+/**
+ * Account-wide usage, cost and request-log reads. Every credential class
+ * (JWT, PAT, OAuth, service account) needs `billing.read`: an account-bound
+ * token or `?account_id=` alone is not authority. Project-scoped reads use the
+ * project leaves instead (resolveSessionCostAccountId).
+ */
+export async function resolveAccountWideUsageAccountId(c: Context<AppEnv>): Promise<string> {
+  if (c.get('tokenProjectId')) {
+    throw new HTTPException(403, { message: 'Project-scoped tokens cannot read account-wide usage' });
   }
-  await assertProjectCapability(
-    c,
-    loaded.userId,
-    loaded.row.accountId,
-    projectId,
-    PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ,
-  );
-  return loaded.row.accountId;
+  const accountId = c.get('accountId') ?? (await resolveScopedAccountId(c, 'query'));
+  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.BILLING_READ);
+  return accountId;
 }
 
 const UsageTotalsSchema = z
@@ -363,7 +381,7 @@ usageApp.openapi(
       throw err;
     }
 
-    const accountId = c.get('accountId') ?? (await resolveScopedAccountId(c, 'query'));
+    const accountId = await resolveAccountWideUsageAccountId(c);
 
     const conds: SQL[] = [eq(usageEvents.accountId, accountId)];
     if (parsed.start) conds.push(gte(usageEvents.createdAt, parsed.start));
@@ -644,7 +662,7 @@ usageApp.openapi(
       projectId = c.get('tokenProjectId') || undefined;
       accountId = projectId
         ? await resolveSessionCostAccountId(c, c.req.query('project_id'))
-        : c.get('accountId') ?? (await resolveScopedAccountId(c, 'query'));
+        : await resolveAccountWideUsageAccountId(c);
       window = parseCostWindow({ from: c.req.query('from'), to: c.req.query('to') });
       sort = parseCostSort(c.req.query('sort'), PROJECT_COST_SORTS, 'total_desc');
       ({ limit, offset } = parseCostPagination({

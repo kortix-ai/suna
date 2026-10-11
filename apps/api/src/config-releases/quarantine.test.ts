@@ -42,7 +42,6 @@ function releaseAt(commit: string): ConfigRelease {
   const tree = n.repeat(40).replace(/^./, 'a');
   const etag = n.repeat(16);
   return {
-    format: 'config-release-v2',
     release_id: configReleaseId(tree, etag),
     source_commit: commit,
     config_dir: '.kortix/opencode',
@@ -61,12 +60,17 @@ let tip = C1;
 const builds: string[] = [];
 /** Commits whose release the builder cannot build, with the builder's reason. */
 const unbuildable = new Map<string, string>();
+/** Commits whose tree is over the archive cap: a release with no archive. */
+const overCap = new Set<string>();
 const deps = (): DesiredReleaseDeps => ({
   ledger,
   build: async (_project, commit) => {
     builds.push(commit);
     const reason = unbuildable.get(commit);
     if (reason) return { ...releaseAt(commit), release_id: null, config_tree_id: null, archive: null, files: null, reason };
+    if (overCap.has(commit)) {
+      return { ...releaseAt(commit), archive: null, archive_reason: 'the repository exceeds the 33554432-byte config archive limit' };
+    }
     return releaseAt(commit);
   },
   resolveBase: async () => tip,
@@ -74,9 +78,9 @@ const deps = (): DesiredReleaseDeps => ({
   invalidate: () => {},
 });
 
-const desired = (recordAssignment = true) =>
+const desired = (recordAssignment = true, format?: 'config-release-v2' | 'config-release-v3') =>
   resolveDesiredRelease(
-    { project, baseRef: 'main', sessionAgent: null, repositoryAccess: true, recordAssignment },
+    { project, baseRef: 'main', sessionAgent: null, repositoryAccess: true, recordAssignment, format },
     deps(),
   );
 
@@ -104,6 +108,7 @@ beforeEach(() => {
   tip = C1;
   builds.length = 0;
   unbuildable.clear();
+  overCap.clear();
   __clearQuarantineMemoForTests();
 });
 
@@ -154,14 +159,36 @@ describe('project quarantine', () => {
     await desired();
     await report(S1, { running: idAt(C1) });
     tip = C2;
-    unbuildable.set(C2, 'config dir harnesses/opencode exceeds the 33554432-byte archive limit');
+    unbuildable.set(C2, 'OpenCode plugin not found in harnesses/opencode/plugins: x.ts');
     const result = await desired();
     expect(result.descriptor.release_id).toBe(idAt(C1));
     expect(result.descriptor.source_commit).toBe(C1);
     expect(result.baseSha).toBe(C2);
     expect(result.fallbackReason).toContain(C2.slice(0, 12));
-    expect(result.fallbackReason).toContain('exceeds the 33554432-byte archive limit');
+    expect(result.fallbackReason).toContain('OpenCode plugin not found');
     expect(result.fallbackReason).toContain(C1.slice(0, 12));
+  });
+
+  // A tree over the archive cap is a release a v3 box builds itself, from its
+  // checkout or the project snapshot. A v2 box can only download the archive,
+  // so for it the tip is unbuildable, exactly as before v3.
+  test('a tip over the archive cap: v3 assigns it, v2 falls back to the last proven release', async () => {
+    await desired();
+    await report(S1, { running: idAt(C1) });
+    tip = C2;
+    overCap.add(C2);
+
+    const v3 = await desired(true, 'config-release-v3');
+    expect(v3.descriptor).toMatchObject({ format: 'config-release-v3', release_id: idAt(C2), source_commit: C2, archive: null });
+    expect(v3.descriptor.files).toEqual([]);
+    expect(v3.fallbackReason).toBeNull();
+    // The default is v3: GET /config and the turn gate compare against the same ID.
+    expect((await desired(false)).descriptor.release_id).toBe(idAt(C2));
+
+    const v2 = await desired(true, 'config-release-v2');
+    expect(v2.descriptor).toMatchObject({ format: 'config-release-v2', release_id: idAt(C1), source_commit: C1 });
+    expect(v2.fallbackReason).toContain('exceeds the 33554432-byte config archive limit');
+    expect(v2.fallbackReason).toContain(C1.slice(0, 12));
   });
 
   test('an unbuildable tip with no proven release stays unassigned and says why', async () => {

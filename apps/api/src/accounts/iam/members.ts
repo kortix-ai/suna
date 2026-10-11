@@ -102,7 +102,6 @@ export function registerIamMembersRoutes(): void {
       },
     }),
     async (c: any) => {
-    const callerId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     const targetUserId = c.req.param('userId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_SUPER_ADMIN_GRANT);

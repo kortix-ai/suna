@@ -6,7 +6,6 @@ process.env.KORTIX_APPS_ALLOW_LOCAL_EDGE = 'true';
 
 const {
   appPublicUnavailableResponse,
-  appPublicBudgetResponse,
   appPublicResponseHeaders,
   appPublicStatusResponse,
   appColdStartUpstreamResponse,
@@ -316,6 +315,14 @@ describe('Apps public edge', () => {
     expect(appRuntimeNeedsWake({ status: 'stopped', idleDeadlineAt: null }, now)).toBe(true);
   });
 
+  test('an always-on runtime past its idle deadline is proxied directly; a stopped one still wakes', () => {
+    const now = new Date('2026-08-07T10:30:00.000Z');
+    const pastDeadline = new Date('2026-08-07T10:00:00.000Z');
+    expect(appRuntimeNeedsWake({ status: 'running', idleDeadlineAt: pastDeadline }, now, true)).toBe(false);
+    expect(appRuntimeNeedsWake({ status: 'running', idleDeadlineAt: pastDeadline }, now, false)).toBe(true);
+    expect(appRuntimeNeedsWake({ status: 'stopped', idleDeadlineAt: null }, now, true)).toBe(true);
+  });
+
   test('direct-edge mode refuses a caller-supplied App host header', () => {
     // x-kortix-app-host is an EDGE-SIGNED field. In direct-edge mode (a
     // self-host with no Apps Worker, which `kortix self-host configure` now
@@ -341,6 +348,7 @@ describe('Apps public edge', () => {
       expect(resolveAppRequest(direct, new URL(direct.url))).toEqual({
         routeKey: 'bbbbbbbbbbbbbbbb',
         local: false,
+        service: 'http',
         publicHost: spoofed,
       });
     } finally {
@@ -352,16 +360,17 @@ describe('Apps public edge', () => {
     expect(resolveAppRequest(request, url)).toEqual({
       routeKey: 'bbbbbbbbbbbbbbbb',
       local: false,
+      service: 'http',
       publicHost: spoofed,
     });
   });
 
   test('resolves local and environment-scoped production hostnames', () => {
     expect(resolveAppHost('aaaaaaaaaaaaaaaa.apps.localhost')).toEqual({
-      routeKey: 'aaaaaaaaaaaaaaaa', local: true,
+      routeKey: 'aaaaaaaaaaaaaaaa', local: true, service: 'http',
     });
     expect(resolveAppHost('dev-hello-world-aaaaaaaaaaaaaaaa.apps.kortix.com')).toEqual({
-      routeKey: 'aaaaaaaaaaaaaaaa', local: false,
+      routeKey: 'aaaaaaaaaaaaaaaa', local: false, service: 'http',
     });
     expect(resolveAppHost('prod-hello-aaaaaaaaaaaaaaaa.apps.kortix.com')).toBeNull();
     expect(resolveAppHost('anything.example.com')).toBeNull();
@@ -403,6 +412,7 @@ describe('Apps public edge', () => {
     expect(resolved).toEqual({
       routeKey: 'aaaaaaaaaaaaaaaa',
       local: false,
+      service: 'http',
       publicHost,
     });
     expect(verifyAppEdgeRequest(
@@ -436,32 +446,6 @@ describe('Apps public edge', () => {
       error: 'App deployment is starting',
       code: 'app_starting',
       status: 'starting',
-    });
-  });
-
-  test('renders a stable budget state without exposing account billing details', async () => {
-    const browser = appPublicBudgetResponse(
-      new Request('https://dev-store-aaaaaaaaaaaaaaaa.apps.kortix.com/', {
-        headers: { accept: 'text/html' },
-      }),
-      { name: 'Storefront' },
-    );
-    expect(browser.status).toBe(402);
-    expect(browser.headers.get('retry-after')).toBeNull();
-    const html = await browser.text();
-    expect(html).toContain('App paused');
-    expect(html).toContain('monthly compute limit');
-    expect(html).not.toContain('http-equiv="refresh"');
-
-    const machine = appPublicBudgetResponse(
-      new Request('https://dev-store-aaaaaaaaaaaaaaaa.apps.kortix.com/'),
-      { name: 'Storefront' },
-    );
-    expect(machine.status).toBe(402);
-    expect(await machine.json()).toEqual({
-      error: 'App compute budget reached',
-      code: 'app_budget_exceeded',
-      status: 'budget',
     });
   });
 
@@ -533,6 +517,17 @@ describe('Apps public edge', () => {
     expect(result.get('content-security-policy-report-only')).toBe("img-src 'self'");
   });
 
+  test('an App cannot mark its own response shareable at the edge, and the API origin never caches it', () => {
+    const result = appPublicResponseHeaders(new Headers({
+      'cache-control': 'public, max-age=31536000, immutable',
+      'x-kortix-edge-cacheable': 'public',
+    }));
+
+    expect(result.get('x-kortix-edge-cacheable')).toBeNull();
+    expect(result.get('cloudflare-cdn-cache-control')).toBe('no-store');
+    expect(result.get('cache-control')).toBe('public, max-age=31536000, immutable');
+  });
+
   test('allows a self-host frontend origin to frame its own App previews', () => {
     const original = config.FRONTEND_URL;
     try {
@@ -596,7 +591,6 @@ describe('Apps public edge', () => {
       ['checking', 'Checking readiness', 202, true],
       ['ready', 'Activating your App', 202, true],
       ['starting', 'Starting Storefront', 202, true],
-      ['budget', 'App paused', 402, false],
       ['failed', 'Deployment failed', 503, false],
       ['cancelled', 'Deployment cancelled', 503, false],
     ] as const;

@@ -22,6 +22,7 @@ import { logger } from '@/lib/log/logger'
 import { sandboxRelayContext, sessionChannel } from '@/lib/kortix-api/relay-context'
 import { noteControlPlaneResponse, sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
 import type { InitialTurnClaim } from '@/types/control-plane'
+import { flushSessionLogJournal } from './session-log-journal'
 
 export type TurnStreamFrame = Omit<TurnStreamRelayBody, 'session_id' | 'kind'> & { kind: DaemonTurnStreamKind }
 
@@ -202,6 +203,29 @@ export async function relayTurnBegin(runtimeSessionId: string, messageId: string
   }
 }
 
+/**
+ * The running turn read a steered message at a step boundary (`steer_read`).
+ * apps/api closes that message's inbox row as delivered. 3 attempts; a
+ * non-ok answer other than 5xx is definitive. Skipped while the session
+ * credential is presumed dead (KRTX-446).
+ */
+export async function relaySteerRead(runtimeSessionId: string, messageId: string): Promise<void> {
+  if (!sandboxRelayContext() || sessionTokenPresumedDead()) return
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const response = await postTurnStream({ kind: 'steer_read', runtime_session_id: runtimeSessionId, turn_message_id: messageId })
+      if (!response || response.ok) return
+      const text = await response.text().catch(() => '')
+      noteControlPlaneResponse(response.status, text)
+      logger.warn('[turn-relay] steer-read relay non-ok', { status: response.status, attempt, body: text.slice(0, 200) })
+      if (response.status < 500) return
+    } catch (err) {
+      logger.warn('[turn-relay] steer-read relay fetch failed', { err: (err as Error).message, attempt })
+    }
+    if (attempt < 3) await Bun.sleep(1_000 * attempt)
+  }
+}
+
 /** A turn's end, as the adapter observed it. */
 export interface TurnEndFrame {
   runtimeSessionId: string
@@ -263,7 +287,8 @@ function turnEndBody(frame: TurnEndFrame): TurnStreamFrame {
 
 /**
  * The ONLY signal that finalizes a turn server-side: channel output and the
- * idle deadline. 4 attempts with a linear backoff. An answer apps/api did not
+ * idle deadline. The session-log journal is flushed first (at most 3 s).
+ * 4 attempts with a linear backoff. An answer apps/api did not
  * settle (`turn_completion.outcome` other than closed, already closed or no
  * active turn) retries too, after `reread` re-observes the turn; a settled
  * answer or a non-ok status is definitive. Resolves true only when settled.
@@ -276,6 +301,9 @@ export async function relayTurnEnd(
   // A credential the API refused, repeatedly and without contradiction, cannot
   // finalize a turn: all four attempts carry the same dead token (KRTX-446).
   if (sessionTokenPresumedDead()) return false
+  // The turn's messages go to the session log first, so apps/api can mark the
+  // turn durable when it closes it. Bounded at 3 s; the journal keeps retrying.
+  await flushSessionLogJournal()
   let current = frame
   for (let attempt = 1; attempt <= 4; attempt++) {
     try {
@@ -404,7 +432,8 @@ export async function relayQuestion(request: Pick<RuntimeQuestionRequest, 'id' |
   // Name the channel the agent is in: a Teams agent has no `slack send`.
   const sentinel =
     `(Posted to the ${channel} conversation. In ${channel}, questions are async — the user ` +
-    'replies as a normal message, which reaches you as a NEW turn with full context. Do NOT ' +
+    'replies in the thread, which reaches you as a NEW turn with full context. In a channel, ' +
+    'the reply reaches you only when it @mentions you; a DM reply needs no mention. Do NOT ' +
     'wait for an answer here; finish this turn now.)'
   return request.questions.map(() => [sentinel])
 }

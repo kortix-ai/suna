@@ -5,15 +5,12 @@
  */
 import { describe, expect, test } from 'bun:test';
 import {
-  connectorSpecToTomlEntry,
   extractConnectors,
   manifestHashForConnector,
-  type ConnectorSpec,
 } from '../projects/connectors';
 import {
   KNOWN_SCHEMA_VERSION,
   parseManifestString,
-  serializeManifest,
 } from '../projects/triggers';
 
 const MIN_PROJECT = `project:
@@ -80,11 +77,6 @@ connectors:
       auth: { type: 'none' },
       authAuto: false,
     });
-    expect(connectorSpecToTomlEntry(specs[0]!)).toMatchObject({
-      provider: 'composio',
-      app: 'github',
-      account: 'work',
-    });
   });
 
   test('openapi by URL with bearer auth', () => {
@@ -121,7 +113,7 @@ connectors:
     });
   });
 
-  test('explicit none is distinct from omitted auto-detect and survives round-trip', () => {
+  test('explicit none is distinct from omitted auto-detect', () => {
     const { specs } = parseAndExtract(`
 connectors:
   - slug: auto
@@ -135,8 +127,6 @@ connectors:
 `);
     expect(specs[0]?.authAuto).toBe(true);
     expect(specs[1]?.authAuto).toBe(false);
-    expect(connectorSpecToTomlEntry(specs[0]!)).not.toHaveProperty('auth');
-    expect(connectorSpecToTomlEntry(specs[1]!)).toMatchObject({ auth: { type: 'none' } });
   });
 
   test('postman by public repository URL', () => {
@@ -149,10 +139,6 @@ connectors:
     expect(errors).toEqual([]);
     expect(specs[0]).toMatchObject({
       slug: 'hubspot',
-      provider: 'postman',
-      spec: 'https://github.com/HubSpot/HubSpot-public-api-spec-collection',
-    });
-    expect(connectorSpecToTomlEntry(specs[0]!)).toMatchObject({
       provider: 'postman',
       spec: 'https://github.com/HubSpot/HubSpot-public-api-spec-collection',
     });
@@ -243,7 +229,7 @@ connectors:
 });
 
 describe('connectors: — agent_scope is retired (connector-side agent gate removed)', () => {
-  test('a legacy agent_scope key is ignored — parses fine, never round-trips back', () => {
+  test('a legacy agent_scope key is ignored', () => {
     const { specs, errors } = parseAndExtract(`
 connectors:
   - slug: github
@@ -255,8 +241,6 @@ connectors:
 `);
     expect(errors).toEqual([]);
     expect(specs[0]).not.toHaveProperty('agentScope');
-    // Never re-emitted — the only remaining agent gate is `agents:.connectors`.
-    expect(connectorSpecToTomlEntry(specs[0]!)).not.toHaveProperty('agent_scope');
   });
 });
 
@@ -345,12 +329,6 @@ connectors:
       name: 'Personal Gmail',
       app: 'gmail',
       authorizationStrategy: 'user',
-    });
-    expect(connectorSpecToTomlEntry(specs[0]!)).toMatchObject({
-      slug: 'gmail-personal',
-      name: 'Personal Gmail',
-      app: 'gmail',
-      authorization_strategy: 'user',
     });
   });
 
@@ -667,85 +645,6 @@ connectors:
   });
 });
 
-describe('connectors: — round-trip', () => {
-  function roundTrip(spec: ConnectorSpec): ConnectorSpec {
-    const manifest = parseManifestString(manifestWith(''), 'yaml', 'kortix.yaml');
-    manifest.raw.connectors = [connectorSpecToTomlEntry(spec)];
-    const yamlText = serializeManifest(manifest);
-    const { specs, errors } = extractConnectors(parseManifestString(yamlText, 'yaml', 'kortix.yaml'));
-    expect(errors).toEqual([]);
-    expect(specs).toHaveLength(1);
-    return specs[0]!;
-  }
-
-  test('openapi + bearer + policies survives a serialize→parse round-trip', () => {
-    const original = parseAndExtract(`
-connectors:
-  - slug: stripe
-    name: Stripe API
-    provider: openapi
-    spec: https://example.com/spec.json
-    auth:
-      type: bearer
-      secret: STRIPE_API_KEY
-    policies:
-      - match: "*.delete*"
-        action: block
-`).specs[0]!;
-    expect(roundTrip(original)).toEqual(original);
-  });
-
-  test('pipedream survives round-trip', () => {
-    const original = parseAndExtract(`
-connectors:
-  - slug: gmail-work
-    provider: pipedream
-    app: gmail
-    account: work
-`).specs[0]!;
-    expect(roundTrip(original)).toEqual(original);
-  });
-
-  test('http + static headers survives round-trip', () => {
-    const original = parseAndExtract(`
-connectors:
-  - slug: acme
-    provider: http
-    base_url: https://api.acme.com
-    auth:
-      type: custom
-      name: X-API-Key
-    headers:
-      Accept: application/json
-      X-Tenant-Id: acme
-      user-agent: kortix/1.0
-`).specs[0]!;
-    expect(original.headers).toEqual({
-      Accept: 'application/json',
-      'X-Tenant-Id': 'acme',
-      'user-agent': 'kortix/1.0',
-    });
-    expect(roundTrip(original)).toEqual(original);
-  });
-
-  test('mcp + custom auth survives round-trip', () => {
-    const original = parseAndExtract(`
-connectors:
-  - slug: notion
-    provider: mcp
-    url: https://mcp.notion.com/mcp
-    transport: sse
-    auth:
-      type: custom
-      in: query
-      name: X-Key
-      prefix: Bearer
-      secret: NOTION_MCP_TOKEN
-`).specs[0]!;
-    expect(roundTrip(original)).toEqual(original);
-  });
-});
-
 describe('connectors: — static `headers:`', () => {
   test('parsed into an ordered map, verbatim names, trimmed values', () => {
     const { specs, errors } = parseAndExtract(`
@@ -775,7 +674,6 @@ connectors:
     base_url: https://api.acme.com
 `).specs[0]!;
     expect(spec.headers).toEqual({});
-    expect(connectorSpecToTomlEntry(spec).headers).toBeUndefined();
   });
 
   test('an invalid header name fails the whole entry', () => {

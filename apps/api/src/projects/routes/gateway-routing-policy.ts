@@ -4,7 +4,7 @@ import {
   GatewayResolutionError,
   type AuthedPrincipal,
 } from '@kortix/llm-gateway';
-import { type GenerationConfig, clampGenerationConfig } from '@kortix/llm-catalog';
+import { clampGenerationConfig } from '@kortix/llm-catalog';
 import { resolveCandidates } from '../../llm-gateway/resolution/resolve-candidates';
 import { catalogModelForWireModel } from '../../llm-gateway/models/catalog-models';
 import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';

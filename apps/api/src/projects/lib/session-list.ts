@@ -41,7 +41,7 @@ import { db } from '../../shared/db';
 import { hasAccountSessionOversight } from '../../iam/session-oversight';
 
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import { and, desc, eq, inArray, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, getTableColumns, inArray, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import type { SessionStartedByFilter } from './session-initiator';
 import { resolveSessionOwnerIdentities, viewerManagerStanding } from './access';
@@ -415,6 +415,12 @@ export async function loadProjectSessionInventory(input: {
     return Number.isNaN(parsed.getTime()) ? row.updatedAt : parsed;
   };
 
+  // `updated_at` at microsecond precision for the cursor of the default order. The
+  // activity order already sorts on a millisecond-truncated key.
+  const SORT_AT_ISO = sql<string>`to_char(${projectSessions.updatedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
+  const rowSortIso = (row: ProjectSessionRow): string | undefined =>
+    input.orderByActivity ? undefined : (row as { sortAtIso?: string }).sortAtIso;
+
   const limit = Math.min(
     Math.max(Math.trunc(input.limit ?? SESSION_PAGE_DEFAULT_LIMIT), 1),
     SESSION_PAGE_MAX_LIMIT,
@@ -431,7 +437,7 @@ export async function loadProjectSessionInventory(input: {
   // `async`: calling it starts the read. Awaiting it later only collects it.
   const readChunk = async (after: typeof cursor) =>
     db
-      .select()
+      .select({ ...getTableColumns(projectSessions), sortAtIso: SORT_AT_ISO })
       .from(projectSessions)
       .where(
         and(
@@ -443,9 +449,9 @@ export async function loadProjectSessionInventory(input: {
           // opted-in imports use their historical conversation activity.
           after
             ? or(
-                lt(sortAt, after.updatedAt.toISOString()),
+                lt(sortAt, after.updatedAtIso ?? after.updatedAt.toISOString()),
                 and(
-                  eq(sortAt, after.updatedAt.toISOString()),
+                  eq(sortAt, after.updatedAtIso ?? after.updatedAt.toISOString()),
                   lt(projectSessions.sessionId, after.sessionId),
                 ),
               )
@@ -552,7 +558,7 @@ export async function loadProjectSessionInventory(input: {
       if (items.length >= limit) break;
       items.push(item);
       scannedRows.push(item.row);
-      nextCursor = cursorForRow({ updatedAt: rowSortAt(item.row), sessionId: item.row.sessionId }, cursorScope);
+      nextCursor = cursorForRow({ updatedAt: rowSortAt(item.row), updatedAtIso: rowSortIso(item.row), sessionId: item.row.sessionId }, cursorScope);
     }
 
     // Did the page fill before we reached the end of this chunk? Then the rows
@@ -563,8 +569,8 @@ export async function loadProjectSessionInventory(input: {
     // would drop its tail permanently.
     if (items.length < limit) {
       const lastChunkRow = chunk[chunk.length - 1]!;
-      nextCursor = cursorForRow({ updatedAt: rowSortAt(lastChunkRow), sessionId: lastChunkRow.sessionId }, cursorScope);
-      cursor = { updatedAt: rowSortAt(lastChunkRow), sessionId: lastChunkRow.sessionId };
+      nextCursor = cursorForRow({ updatedAt: rowSortAt(lastChunkRow), updatedAtIso: rowSortIso(lastChunkRow), sessionId: lastChunkRow.sessionId }, cursorScope);
+      cursor = { updatedAt: rowSortAt(lastChunkRow), updatedAtIso: rowSortIso(lastChunkRow), sessionId: lastChunkRow.sessionId };
       if (chunk.length < chunkSize) {
         exhausted = true;
         break;

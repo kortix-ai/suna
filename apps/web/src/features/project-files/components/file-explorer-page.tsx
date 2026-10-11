@@ -23,6 +23,7 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { downloadFile } from '../api/runtime-files';
 import { useProjectContext } from '../context';
+import { useFileExplorerSource } from '../explorer-source';
 import { buildGitStatusMap, useFileEventInvalidation, useFileList, useGitStatus } from '../hooks';
 import { useChangeRequests } from '../hooks/use-change-requests';
 import { useDirectoryDownload } from '../hooks/use-directory-download';
@@ -40,6 +41,7 @@ import { DriveHeader } from './drive-header';
 import { DriveListView } from './drive-list-view';
 import { FileHistoryPopoverContent } from './file-history-popover';
 import { FilePreviewModal } from './file-preview-modal';
+import { FileSearch } from './file-search';
 import { type FilesRightPanel, requestedFilesRightPanel } from './file-route-state';
 
 const ELEVATED_DIRS = new Set(['.kortix', '.opencode']);
@@ -65,6 +67,10 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
   const copyToClipboard = useFilesStore((s) => s.copyToClipboard);
   const cutToClipboard = useFilesStore((s) => s.cutToClipboard);
   const clearClipboard = useFilesStore((s) => s.clearClipboard);
+  // Filename search over the whole repository (KRTX-1723): ⌘P or the `⋯` menu.
+  const searchEnabled = useFileExplorerSource().capabilities.search;
+  const isSearchOpen = useFilesStore((s) => s.isSearchOpen);
+  const toggleSearch = useFilesStore((s) => s.toggleSearch);
 
   const projectCtx = useProjectContext();
   const projectId = projectCtx?.projectId ?? '';
@@ -354,10 +360,14 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
         e.preventDefault();
         handlePaste();
       }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'p' && searchEnabled) {
+        e.preventDefault();
+        toggleSearch();
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [clipboard, handlePaste]);
+  }, [clipboard, handlePaste, searchEnabled, toggleSearch]);
 
   const [historyPopoverPath, setHistoryPopoverPath] = useState<string | null>(null);
 
@@ -420,6 +430,7 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
           downloadDir(dirPath, dirName);
         }}
         isDownloading={isDirDownloading(isRootPath ? '/workspace' : currentPath)}
+        showSearch={searchEnabled}
       />
 
       <div className="relative min-h-0 flex-1">
@@ -557,6 +568,7 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
       <ChangeRequestDetailDialog crId={createdCrId} onClose={() => setCreatedCrId(null)} />
 
       <FilePreviewModal />
+      {searchEnabled && isSearchOpen && <FileSearch />}
 
       {historyPopoverPath && (
         <div className="bg-popover border-border animate-in slide-in-from-bottom-4 fade-in-0 fixed right-4 bottom-4 z-50 overflow-hidden rounded-md border shadow-2xl duration-200">

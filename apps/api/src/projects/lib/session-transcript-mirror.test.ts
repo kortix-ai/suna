@@ -394,6 +394,92 @@ describe('mirrorRowsFromOpencodePayload', () => {
     ]);
     expect(row.parts).toEqual([{ id: 'p', type: 'file', filename: 'a.png', mime: 'image/png' }]);
   });
+
+  /*
+    Postgres jsonb rejects a string it cannot represent: `'{"a":"x\u0000y"}'::jsonb`
+    fails with `unsupported Unicode escape sequence — \u0000 cannot be converted
+    to text.` (SQLSTATE 22P05). The mirror write is deterministic on its
+    content, so one such message failed the whole capture transaction and the
+    same doomed write retried at every turn end — 568 warn lines in one hour on
+    prod (KRTX-1701). The projection is therefore the guard: every string it
+    emits must survive a jsonb write.
+  */
+  const carriesUnrepresentable = (value: unknown, key?: string): boolean => {
+    const unrepresentable = (text: string) => /\0|[\uD800-\uDFFF]/u.test(text);
+    if (key !== undefined && unrepresentable(key)) return true;
+    if (typeof value === 'string') return unrepresentable(value);
+    if (Array.isArray(value)) return value.some((item) => carriesUnrepresentable(item));
+    if (value && typeof value === 'object') {
+      return Object.entries(value).some(([k, v]) => carriesUnrepresentable(v, k));
+    }
+    return false;
+  };
+
+  test('a tool output carrying a NUL is made storable, and the rest is kept', () => {
+    const [row] = mirrorRowsFromOpencodePayload([
+      msg({ id: 'msg_1', role: 'assistant' }, [
+        {
+          id: 'p',
+          type: 'tool',
+          state: { status: 'done', input: { command: 'cat bin' }, output: 'GIF89a\0\u0001D\0;' },
+        },
+      ]),
+    ]);
+    expect(carriesUnrepresentable(row.parts)).toBe(false);
+    const output = (row.parts[0] as { state: { output: string } }).state.output;
+    expect(output).toBe('GIF89a\uFFFD\u0001D\uFFFD;');
+  });
+
+  test('a NUL inside info is made storable, and well-formed info is untouched', () => {
+    const [row] = mirrorRowsFromOpencodePayload([
+      msg({
+        id: 'msg_1',
+        role: 'assistant',
+        time: { created: 1000, completed: 2000 },
+        error: { name: 'MessageAbortedError', data: { message: 'cut\0off' } },
+      }),
+    ]);
+    expect(carriesUnrepresentable(row.info)).toBe(false);
+    expect(row.info).toMatchObject({
+      id: 'msg_1',
+      time: { created: 1000, completed: 2000 },
+      error: { data: { message: 'cut\uFFFDoff' } },
+    });
+  });
+
+  test('well-formed content survives untouched — every emoji, every BMP char', () => {
+    // The pair test is unicode-aware, so an astral character's surrogate
+    // halves must never read as a lone surrogate and get rewritten.
+    const text = 'emoji \u{1F600} CJK \u6F22\u5B57 accent \u00e9';
+    const [row] = mirrorRowsFromOpencodePayload([
+      msg({ id: 'msg_1', role: 'user', title: text }, [
+        { id: 'p', type: 'text', text },
+      ]),
+    ]);
+    expect(row.info.title).toBe(text);
+    expect(row.parts).toEqual([{ id: 'p', type: 'text', text }]);
+  });
+
+  test('a lone surrogate becomes U+FFFD — the other string jsonb cannot store', () => {
+    // jsonb insists a surrogate pair designate a character correctly, so a
+    // lone `\ud83d` fails the INSERT just as deterministically.
+    const [row] = mirrorRowsFromOpencodePayload([
+      msg({ id: 'msg_1', role: 'user' }, [
+        { id: 'p', type: 'text', text: 'half of an emoji: \ud83d' },
+      ]),
+    ]);
+    expect(carriesUnrepresentable(row.parts)).toBe(false);
+    expect((row.parts[0] as { text: string }).text).toBe('half of an emoji: \uFFFD');
+  });
+
+  test('a NUL in an object key is made storable too', () => {
+    const [row] = mirrorRowsFromOpencodePayload([
+      msg({ id: 'msg_1', role: 'user' }, [
+        { id: 'p', type: 'tool', state: { status: 'done', input: { 'a\0b': 'v' }, output: 'ok' } },
+      ]),
+    ]);
+    expect(carriesUnrepresentable(row.parts)).toBe(false);
+  });
 });
 
 describe('headCompleteAfterCapture', () => {

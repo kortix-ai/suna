@@ -246,20 +246,6 @@ export function legacyReadWorkspaceFromLoadedAgents(agentName: string, loaded: L
 }
 
 /**
- * Resolve the connectors that the selected agent requires at session start.
- * Each connector controls which connection owner is valid.
- */
-export function requiredConnectorsForAgent(agentName: string, loaded: LoadedAgents): string[] {
-  if (loaded.specs.length === 0 && loaded.errors.length === 0) return [];
-  const spec =
-    loaded.specs.find((s) => s.name === agentName && s.enabled) ??
-    (agentName === DEFAULT_AGENT_SENTINEL && loaded.defaultAgent
-      ? loaded.specs.find((s) => s.name === loaded.defaultAgent && s.enabled)
-      : undefined);
-  return spec?.connectorsRequired ?? [];
-}
-
-/**
  * Is this project subject to MANDATORY DECLARED AGENTS enforcement?
  *
  * There is no per-project flag store yet, so subjectness is:

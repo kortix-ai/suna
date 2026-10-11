@@ -93,23 +93,22 @@ flow(
         }
       });
 
-      await ctx.step('kortix projects rm archives the project through the real DELETE route', async () => {
+      await ctx.step('kortix projects rm deletes the project through the real DELETE route and reports the BYO repo note', async () => {
         const result = await sandbox.run(['projects', 'rm', project.id, '--yes']);
         requireExit(result, 0, 'kortix projects rm');
-        if (!/Archived/.test(result.stdout)) throw new Error(`projects rm output: ${result.stdout}`);
-      });
-
-      await ctx.step('kortix projects rm --purge reports Purged, not Archived, and the project is gone', async () => {
-        const purged = await ctx.fixtures.project();
-        const result = await sandbox.run(['projects', 'rm', purged.id, '--purge', '--yes']);
-        requireExit(result, 0, 'kortix projects rm --purge');
-        if (!/Purged/.test(result.stdout) || /Archived/.test(result.stdout)) {
-          throw new Error(`projects rm --purge output: ${result.stdout}`);
+        if (!/Deleted/.test(result.stdout)) throw new Error(`projects rm output: ${result.stdout}`);
+        if (/Archived/.test(result.stdout)) throw new Error(`projects rm output: ${result.stdout}`);
+        // A local-profile project is user-connected (a bare repository), so the
+        // API answers `repo_deleted: false` and the CLI explains it. Deleting
+        // a Kortix-managed repo end to end needs the managed git backend,
+        // which the local profile excludes.
+        if (!/no managed repo to delete \(bring-your-own repos are left untouched\)/.test(result.stdout)) {
+          throw new Error(`projects rm output: ${result.stdout}`);
         }
-        // Purge is the irreversible path: the detail route answers 404 after it.
+        // The delete is still terminal: the detail route answers 404 after it.
         (await ctx.client
           .as(ctx.P.OWNER)
-          .get('/v1/projects/:projectId', { params: { projectId: purged.id } })).status(404);
+          .get('/v1/projects/:projectId', { params: { projectId: project.id } })).status(404);
       });
     } finally {
       sandbox.dispose();

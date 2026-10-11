@@ -117,6 +117,44 @@ variable "max_capacity" {
   default     = 4
 }
 
+variable "deployment_minimum_healthy_percent" {
+  description = <<-EOT
+    Lowest fraction of desired_count that must stay IN_SERVICE during a
+    deployment, in percent. AWS rounds this UP to whole tasks while
+    deployment_maximum_percent rounds DOWN, so with maximum_percent = 100 a
+    minimum of 100 is un-deployable: the service cannot stop a task (it must
+    stay healthy) nor start one (it may not exceed the maximum), and every
+    release hangs until the deploy script times out. When the maximum is 100,
+    keep this below 100 by enough that ceil(desired × min/100) < desired at
+    the smallest autoscaled count: 50 clears desired_count = 2 (shadow).
+  EOT
+  type        = number
+  default     = 100
+
+  validation {
+    condition     = var.deployment_minimum_healthy_percent >= 0 && var.deployment_minimum_healthy_percent <= 100
+    error_message = "deployment_minimum_healthy_percent must be between 0 and 100."
+  }
+}
+
+variable "deployment_maximum_percent" {
+  description = <<-EOT
+    How far a rolling deployment may exceed the desired task count, in percent
+    of desired_count. 200 (the default everywhere) runs up to one extra task
+    per running task at the peak; 100 runs at most one replacement task at a
+    time.
+
+    Every task holds long-lived PostgreSQL connections (request, audit,
+    leader-election and LISTEN/NOTIFY pools), so this setting is part of the
+    rolling-deployment DB budget in apps/api/src/shared/database-capacity.ts.
+    Set 100 only where the database's usable-connection budget needs it (prod
+    pins it on the API service); the cross-check test
+    database-capacity.test.ts enforces prod's value.
+  EOT
+  type        = number
+  default     = 200
+}
+
 variable "cpu_target" {
   description = "Target average CPU %% for scaling."
   type        = number
@@ -166,7 +204,8 @@ variable "fargate_base_on_demand" {
     on-demand). 0 keeps the historic Spot-only strategy, so setting nothing
     changes nothing. Use >= 1 on any Spot environment whose total unavailability
     is a real cost: with base 0 a single Spot reclaim drops the service to zero
-    tasks, and deployment_minimum_healthy_percent = 100 blocks the replacement
+    tasks, and deployment_minimum_healthy_percent = 100 (the module default)
+    blocks the replacement
     until Spot capacity returns.
   EOT
   type        = number

@@ -102,6 +102,26 @@ function publicShare(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/** One row of the session audit projection, in the wire shape `GET .../audit`
+ *  returns (`@kortix/api-contract` `SessionAuditAction`). */
+function auditRow(overrides: Record<string, unknown> = {}) {
+  return {
+    execution_id: EXECUTION,
+    action: 'slack.send_message',
+    connector: 'slack',
+    connector_id: 'conn-1',
+    status: 'pending_approval',
+    risk: 'write',
+    acted_by_email: 'dev@example.test',
+    result_summary: { args_preview: { channel: '#general' } },
+    at: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+/** The rows the fake `GET .../audit` route serves; tests vary the projection. */
+let auditActions: Record<string, unknown>[] = [];
+
 function queuedPrompt() {
   return {
     prompt_id: PROMPT_ROW,
@@ -241,7 +261,19 @@ function startServer(): string {
         });
       }
       if (method === 'GET' && path === `${session}/prompts`) {
-        return Response.json({ prompts: [queuedPrompt()] });
+        return Response.json({
+          prompts: [
+            queuedPrompt(),
+            {
+              ...queuedPrompt(),
+              prompt_id: 'prompt-steer-fallback',
+              delivery: 'queue',
+              steer_fallback: 'not_prompter',
+              reason: 'turn_active',
+              text: 'also check the logs',
+            },
+          ],
+        });
       }
       if (method === 'POST' && path === `${session}/prompts`) {
         return Response.json(
@@ -275,34 +307,12 @@ function startServer(): string {
       }
       if (method === 'GET' && path === `${session}/audit`) {
         // Real wire shape: `action` is connectorCalls.action_path, stored WITH
-        // the slug prefix (`<slug>.<action>`, see recordExecution in gateway.ts).
+        // the slug prefix (`<slug>.<action>`, see recordExecution in gateway.ts);
+        // the API mints `approval_url` on unresolved pending rows only.
         return Response.json({
           session_id: SESSION,
-          count: 2,
-          actions: [
-            {
-              execution_id: EXECUTION,
-              action: 'slack.send_message',
-              connector: 'slack',
-              connector_id: 'conn-1',
-              status: 'pending_approval',
-              risk: 'write',
-              acted_by_email: 'dev@example.test',
-              result_summary: { args_preview: { channel: '#general' } },
-              at: '2026-01-01T00:00:00.000Z',
-            },
-            {
-              execution_id: 'other',
-              action: 'slack.read',
-              connector: 'slack',
-              connector_id: 'conn-1',
-              status: 'ok',
-              risk: 'read',
-              acted_by_email: null,
-              result_summary: null,
-              at: '2026-01-01T00:00:00.000Z',
-            },
-          ],
+          count: auditActions.length,
+          actions: auditActions,
         });
       }
       if (method === 'POST' && path === `${project}/approvals/${EXECUTION}`) {
@@ -451,6 +461,17 @@ beforeEach(() => {
   tmp = mkdtempSync(join(tmpdir(), 'kortix-sessions-parity-'));
   process.env = { ...ORIGINAL_ENV };
   seen = [];
+  auditActions = [
+    auditRow({ approval_url: 'https://kortix.example.test/approve/ksl_pending' }),
+    auditRow({
+      execution_id: 'other',
+      action: 'slack.read',
+      status: 'ok',
+      risk: 'read',
+      acted_by_email: null,
+      result_summary: null,
+    }),
+  ];
   config = writeConfig(startServer());
 });
 
@@ -728,6 +749,51 @@ describe('kortix sessions chat --queue', () => {
   });
 });
 
+describe('kortix sessions chat --steer', () => {
+  test('posts to the durable inbox with delivery steer and says where it went', async () => {
+    const r = await runCli(['sessions', 'chat', SESSION, '-p', 'also check the logs', '--steer', ...P], config);
+    expect(r.code).toBe(0);
+    const post = calls('POST', `/v1/projects/${PROJECT}/sessions/${SESSION}/prompts`)[0];
+    expect(post?.body).toMatchObject({
+      delivery: 'steer',
+      placement: 'composer',
+      parts: [{ type: 'text', text: 'also check the logs' }],
+    });
+    expect(r.stdout).toContain('to steer the running turn');
+    expect(r.stdout).toContain('reads it at its next step');
+  });
+
+  test('--steer never touches the runtime (no /start, no daemon call)', async () => {
+    await runCli(['sessions', 'chat', SESSION, '-p', 'x', '--steer', ...P], config);
+    expect(calls('POST', `/v1/projects/${PROJECT}/sessions/${SESSION}/start`)).toEqual([]);
+    expect(seen.filter((s) => s.path.startsWith(`/v1/p/${EXTERNAL}`))).toEqual([]);
+  });
+
+  test('--steer --json prints the stored row', async () => {
+    const r = await runCli(['sessions', 'chat', SESSION, '-p', 'x', '--steer', '--json', ...P], config);
+    expect(r.code).toBe(0);
+    expect(JSON.parse(r.stdout).prompt_id).toBe(PROMPT_ROW);
+  });
+
+  test('--steer without --prompt, or with --queue, exits 2', async () => {
+    const alone = await runCli(['sessions', 'chat', SESSION, '--steer', ...P], config);
+    expect(alone.code).toBe(2);
+    expect(alone.stderr).toContain('--steer needs --prompt');
+    const both = await runCli(['sessions', 'chat', SESSION, '-p', 'x', '--steer', '--queue', ...P], config);
+    expect(both.code).toBe(2);
+    expect(both.stderr).toContain('Pass --steer or --queue, not both.');
+  });
+
+  test('queue ls shows the delivery mode and why a steer prompt waits', async () => {
+    const r = await runCli(['sessions', 'queue', SESSION, 'ls', ...P], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('DELIVERY');
+    expect(r.stdout).toContain("Not steered (not_prompter): another member's turn is running.");
+    const json = await runCli(['sessions', 'queue', SESSION, 'ls', '--json', ...P], config);
+    expect(JSON.parse(json.stdout)[1]).toMatchObject({ delivery: 'queue', steer_fallback: 'not_prompter' });
+  });
+});
+
 describe('kortix sessions model', () => {
   test('PUTs the model and reports the live application', async () => {
     const r = await runCli(['sessions', 'model', SESSION, 'kortix/glm-5.3-flash', ...P], config);
@@ -812,6 +878,35 @@ describe('kortix sessions approvals', () => {
     expect(r.stdout).toContain('slack.send_message');
     expect(r.stdout).toContain('#general');
     expect(r.stdout).not.toContain('other');
+  });
+
+  test('ls prints the /approve decision link and both CLI hints per pending row', async () => {
+    const r = await runCli(['sessions', 'approvals', SESSION, 'ls', ...P], config);
+    expect(r.code).toBe(0);
+    // The decision surface a PAT holder can actually use: the CLI approve
+    // command is refused for every automated principal (APPROVAL_REQUIRES_HUMAN).
+    expect(r.stdout).toContain('https://kortix.example.test/approve/ksl_pending');
+    expect(r.stdout).toContain(`approve: kortix sessions approvals ${SESSION} approve ${EXECUTION}`);
+    expect(r.stdout).toContain(`deny: kortix sessions approvals ${SESSION} deny ${EXECUTION}`);
+  });
+
+  test('ls --json carries the API approval_url verbatim', async () => {
+    const r = await runCli(['sessions', 'approvals', SESSION, 'ls', '--json', ...P], config);
+    expect(r.code).toBe(0);
+    const rows: Array<{ execution_id: string; approval_url?: string }> = JSON.parse(r.stdout);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].approval_url).toBe('https://kortix.example.test/approve/ksl_pending');
+  });
+
+  test('a pending row without approval_url (older API) still lists, hints intact', async () => {
+    auditActions = [auditRow({ approval_url: null })];
+    const r = await runCli(['sessions', 'approvals', SESSION, 'ls', ...P], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain(EXECUTION);
+    expect(r.stdout).toContain('slack.send_message');
+    expect(r.stdout).toContain(`approve: kortix sessions approvals ${SESSION} approve ${EXECUTION}`);
+    expect(r.stdout).toContain(`deny: kortix sessions approvals ${SESSION} deny ${EXECUTION}`);
+    expect(r.stdout).not.toContain('/approve/');
   });
 
   test('approve POSTs the decision to the project approvals route', async () => {

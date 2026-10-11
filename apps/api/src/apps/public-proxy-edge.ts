@@ -29,9 +29,13 @@ function appDirectEdgeMode(): boolean {
  * API proxy them into it, past the App's own access policy. There, only the
  * real Host header decides which App (if any) a request is for.
  */
-export function resolveAppRequest(request: Request, url: URL): ResolvedAppRequest | null {
+export function edgePublicHost(request: Request, url: URL): string {
   const claimedHost = appDirectEdgeMode() ? null : request.headers.get(EDGE_HOST_HEADER);
-  const publicHost = (claimedHost || url.hostname).toLowerCase().replace(/\.$/, '');
+  return (claimedHost || url.hostname).toLowerCase().replace(/\.$/, '');
+}
+
+export function resolveAppRequest(request: Request, url: URL): ResolvedAppRequest | null {
+  const publicHost = edgePublicHost(request, url);
   const matched = resolveAppHost(publicHost);
   return matched ? { ...matched, publicHost } : null;
 }

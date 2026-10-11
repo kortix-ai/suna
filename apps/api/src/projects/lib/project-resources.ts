@@ -81,10 +81,6 @@ export function loadConfigWithFilesCached(
   return configWithFilesMemo(row);
 }
 
-export function __clearConfigWithFilesCacheForTests(): void {
-  configWithFilesMemo.clear();
-}
-
 export interface ProjectResourceItem {
   /** Stable grant key — agent name / skill slug. */
   id: string;

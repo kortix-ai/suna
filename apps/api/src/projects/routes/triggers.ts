@@ -1,8 +1,12 @@
 /** Project triggers: list, create, update, activate, delete, and manual fire. */
 import { createRoute, z } from '@hono/zod-openapi';
+import type { Context } from 'hono';
 import { projectTriggerRuntime, projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { mutateManifestWithRetry } from '../../connectors/manifest-mutation';
+import { featureDisabledBody, requireFeatureFlag } from '../../feature-flags/gate';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { loadProjectAgents } from '../agents';
 import { assertMayRunAgent } from '../lib/agent-access';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json, lenientBody } from '../../openapi';
@@ -11,6 +15,7 @@ import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { OkSchema, TriggerFireResultSchema, TriggerListSchema, projectsApp } from '../lib/app';
 import { guardSession } from '../lib/http-session-access';
 import { withProjectGitAuth } from '../lib/git';
+import { resolveSessionAgentName } from '../lib/session-create';
 import { metadataMerge } from '../lib/metadata-merge';
 import { requestAuditContext } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
@@ -25,8 +30,21 @@ import {
   specToBody,
   upsertTriggerInManifest,
 } from '../lib/triggers';
+// From the leaf, not the barrel: suites that stub '../lib/triggers' by listing
+// its exports would otherwise lose this name.
+import { markGitTriggerAttemptFailed } from '../lib/trigger-fire';
+import { raiseTriggerAlert } from '../lib/trigger-alerts';
+import { deleteTriggerWatchers, triggerWatcherOf, upsertTriggerWatcher } from '../lib/trigger-watchers';
+import { getRequestOnBehalfOf } from '../../middleware/on-behalf-of';
+import { notificationsEnabled } from '../../notifications/enabled';
+import { logger } from '../../lib/logger';
+import type { AppEnv } from '../../types';
 import { validateWebhookSecretConfiguration } from '../lib/webhook-secret-policy';
 import { reconcileProjectTriggerRuntime } from '../trigger-runtime-catalog';
+import { connectorInfo, eventPayload } from '../trigger-events/deliver';
+import { unknownSourceMessage } from '../trigger-events/registry';
+import { listAppEventTypes, listConnectorEventTypes, listEventApps, validateEventTrigger } from '../trigger-events/catalog';
+import { reconcileEventSubscriptions } from '../trigger-events/subscriptions';
 import {
   PRIVATE_TRIGGER_SESSION_ACCESS,
   parseTriggerSessionAccess,
@@ -38,6 +56,39 @@ import {
   extractTriggers,
   findProjectTriggerBySlug,
 } from '../triggers';
+
+/**
+ * The person who created or edited a trigger follows its alerts (KRTX-1742).
+ * Never an API key or a service account: they name no person. Only with the
+ * project's `notification_center` flag on.
+ */
+async function followTrigger(
+  c: Context<AppEnv>,
+  project: { accountId: string; metadata: unknown },
+  projectId: string,
+  slug: string,
+): Promise<void> {
+  if (!notificationsEnabled(project.metadata)) return;
+  const userId = triggerWatcherOf({
+    authType: c.get('authType'),
+    userId: c.get('userId'),
+    sessionId: c.get('sessionId'),
+    onBehalfOfUserId: getRequestOnBehalfOf(c),
+  });
+  if (!userId) return;
+  // Best-effort: the manifest is already committed, so a failed write must not fail the route.
+  await upsertTriggerWatcher({ accountId: project.accountId, projectId, slug, userId }).catch((err) =>
+    logger.warn('[trigger-watchers] follow failed', { projectId, slug, error: err instanceof Error ? err.message : String(err) }));
+}
+
+/** Body keys that change which event a trigger subscribes to. */
+const EVENT_BODY_KEYS = ['connector', 'event_account', 'event_source', 'event', 'event_config'];
+
+/** Merge-body keys owned by one trigger type, dropped when a PATCH changes the type. */
+const TYPE_SPECIFIC_BODY_KEYS = [
+  'cron', 'run_at', 'timezone', 'secret_env', 'run', 'mode', 'interval',
+  'expect_event_within', 'connector', 'event_account', 'event_source', 'event', 'event_config',
+] as const;
 
 // Body keys that change the trigger's *repo manifest* (committed to git). A PATCH
 // whose body touches none of these has nothing to commit, so we skip git entirely
@@ -64,6 +115,11 @@ const TRIGGER_MANIFEST_KEYS = [
   'session_key',
   'sessionKey',
   'filter',
+  'connector',
+  'event_account',
+  'event_source',
+  'event',
+  'event_config',
 ] as const;
 
 export function registerTriggersRoutes(): void {
@@ -107,6 +163,164 @@ export function registerTriggersRoutes(): void {
     },
   );
 
+  // GET /v1/projects/:projectId/triggers/event-apps
+  //
+  // ⚠️ Keep registered BEFORE the `…/triggers/{slug}` routes (see `activation` below).
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/triggers/event-apps',
+      tags: ['triggers'],
+      summary: 'List the apps that can trigger an event',
+      description: 'Apps with at least one event type, with the project connector for each and whether a project-shared account is connected.',
+      ...auth,
+      request: { params: z.object({ projectId: z.string() }) },
+      responses: {
+        200: json(
+          z.object({
+            apps: z.array(z.object({
+              source: z.string().openapi({ description: 'Event source adapter id, such as composio. The trigger `event_source` value.' }),
+              provider: z.string().openapi({ deprecated: true, description: 'Deprecated alias of `source`.' }),
+              app: z.string(),
+              name: z.string(),
+              logo: z.string().nullable(),
+              event_count: z.number(),
+              new_connector_slug: z.string(),
+              connector: z.string().nullable().openapi({ description: 'Slug of the project connector for this app, or null.' }),
+              connected: z.boolean().openapi({ description: 'The project has an active shared account for this app.' }),
+              connectors: z.array(z.object({
+                slug: z.string(),
+                name: z.string(),
+                accounts: z.array(z.object({
+                  label: z.string().openapi({ description: 'Account label, unique per connector. The trigger `account` value.' }),
+                  connected_as: z.string().nullable().openapi({ description: 'Identity the account was authorized as.' }),
+                  is_default: z.boolean().openapi({ description: 'Used when a trigger names no account.' }),
+                  connected: z.boolean().openapi({ description: 'Authorization finished.' }),
+                })),
+              })).openapi({ description: 'Every connector (profile) of this app with its shared accounts: project-owned, active, open to the whole project.' }),
+            })),
+          }),
+          'Event-capable apps',
+        ),
+        ...errors(403, 404),
+      },
+    }),
+    async (c) => {
+      const projectId = c.req.param('projectId');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
+      );
+      const disabled = requireFeatureFlag(c, loaded.row.metadata, 'event_triggers');
+      if (disabled) return disabled;
+      const apps = await listEventApps(projectId, loaded.row.accountId);
+      return c.json({
+        apps: apps.map((a) => ({
+          source: a.provider,
+          provider: a.provider,
+          app: a.app,
+          name: a.name,
+          logo: a.logo,
+          event_count: a.eventCount,
+          new_connector_slug: a.newConnectorSlug,
+          connector: a.connector,
+          connected: a.connected,
+          connectors: a.connectors.map((k) => ({
+            slug: k.slug,
+            name: k.name,
+            accounts: k.accounts.map((x) => ({ label: x.label, connected_as: x.connectedAs, is_default: x.isDefault, connected: x.connected })),
+          })),
+        })),
+      }, 200);
+    },
+  );
+
+  // GET /v1/projects/:projectId/triggers/event-types?connector=<slug>  |  ?app=<app>[&source=<adapter>]
+  //
+  // ⚠️ Keep registered BEFORE the `…/triggers/{slug}` routes (see `activation` below).
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/triggers/event-types',
+      tags: ['triggers'],
+      summary: 'List the app events a connector or an app can trigger on',
+      description: 'Send `connector` (a project connector slug) or `app` (an app of an event source, no connector needed) with an optional `source`, not both.',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        query: z.object({
+          connector: z.string().min(1).optional().openapi({ description: 'Connector slug. Exclusive with `app`.' }),
+          app: z.string().min(1).optional().openapi({ description: 'App slug of an event source, such as `github`. Exclusive with `connector`.' }),
+          source: z.string().min(1).optional().openapi({ description: 'Event source adapter id for `app`. Default `composio`.' }),
+        }),
+      },
+      responses: {
+        200: json(
+          z.object({
+            source: z.string().openapi({ description: 'Event source adapter id, such as composio.' }),
+            provider: z.string().openapi({ deprecated: true, description: 'Deprecated alias of `source`.' }),
+            app: z.string(),
+            event_types: z.array(z.object({
+              type: z.string(),
+              name: z.string(),
+              description: z.string(),
+              app: z.string(),
+              delivery: z.enum(['poll', 'push']).nullable(),
+              config_schema: z.record(z.string(), z.any()),
+              payload_schema: z.record(z.string(), z.any()).nullable(),
+            })),
+          }),
+          'Event types of the connector app',
+        ),
+        ...errors(400, 403, 404, 409, 502),
+      },
+    }),
+    async (c) => {
+      const projectId = c.req.param('projectId');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
+      );
+      const disabled = requireFeatureFlag(c, loaded.row.metadata, 'event_triggers');
+      if (disabled) return disabled;
+      const slug = c.req.query('connector')?.trim();
+      const app = c.req.query('app')?.trim();
+      if (!slug === !app) return c.json({ error: 'Send exactly one of connector or app' }, 400);
+      const source = c.req.query('source')?.trim() || 'composio';
+      const unknownSource = app ? unknownSourceMessage(source) : null;
+      if (unknownSource) return c.json({ error: unknownSource }, 400);
+      const catalog = app ? await listAppEventTypes(source, app) : await listConnectorEventTypes(projectId, slug as string);
+      if (catalog.kind === 'connector_not_found') return c.json({ error: `Connector "${slug}" not found` }, 404);
+      if (catalog.kind === 'app_not_found') return c.json({ error: 'app_not_found' }, 404);
+      if (catalog.kind === 'unavailable') return c.json({ error: 'event_source_unavailable' }, 409);
+      if (catalog.kind === 'provider_error') return c.json({ error: `Could not list events: ${catalog.message}` }, 502);
+      return c.json({
+        source: catalog.provider,
+        provider: catalog.provider,
+        app: catalog.app,
+        event_types: catalog.items.map((t) => ({
+          type: t.type,
+          name: t.name,
+          description: t.description,
+          app: t.app,
+          delivery: t.delivery,
+          config_schema: t.configSchema,
+          payload_schema: t.payloadSchema,
+        })),
+      }, 200);
+    },
+  );
+
   projectsApp.openapi(
     createRoute({
       method: 'post',
@@ -120,7 +334,7 @@ export function registerTriggersRoutes(): void {
         params: z.object({ projectId: z.string() }),
         body: { content: { 'application/json': { schema: lenientBody({
             name: z.string().openapi({ description: 'Trigger name. The slug derives from it.' }),
-            type: z.enum(['cron', 'webhook', 'monitor']).openapi({ description: 'cron runs on a schedule, webhook runs on an HTTP call, monitor supervises a command.' }),
+            type: z.enum(['cron', 'webhook', 'monitor', 'event']).openapi({ description: 'cron runs on a schedule, webhook runs on an HTTP call, monitor supervises a command, event runs when an app event happens on a connector.' }),
             prompt_template: z.string().openapi({ description: 'Prompt the agent receives on each fire. Webhook payload templates like {{ body.x }} are allowed.' }),
             slug: z.string().optional().openapi({ description: 'Explicit slug (a-z, 0-9, _, -). Defaults to a slug of name.' }),
             agent: z.string().optional().openapi({ description: 'Agent to run. Default "default".' }),
@@ -130,6 +344,11 @@ export function registerTriggersRoutes(): void {
             run_at: z.string().optional().openapi({ description: 'ISO-8601 instant for a one-off cron trigger.' }),
             timezone: z.string().optional().openapi({ description: 'IANA timezone for cron. Default UTC.' }),
             secret_env: z.string().optional().openapi({ description: 'Project secret holding the webhook signing secret. Required for a webhook trigger.' }),
+            connector: z.string().optional().openapi({ description: 'Connector slug the event happens on. Required for an event trigger.' }),
+            event_account: z.string().nullish().openapi({ description: 'Label of one shared account of the connector. Omit or null for the connector default. Event triggers only.' }),
+            event_source: z.string().nullish().openapi({ description: 'Event source adapter id, such as composio. Omit for the connector provider. Event triggers only.' }),
+            event: z.string().optional().openapi({ description: 'The adapter event type id, such as GITHUB_PULL_REQUEST_EVENT. Required for an event trigger.' }),
+            event_config: z.record(z.string(), z.any()).optional().openapi({ description: 'Provider event config. Event triggers only.' }),
             run: z.string().optional().openapi({ description: 'Repo-relative command a monitor supervises. Required for a monitor.' }),
             mode: z.enum(['poll', 'stream']).optional().openapi({ description: 'Monitor mode. Required for a monitor.' }),
             interval: z.string().optional().openapi({ description: 'Poll period such as 5m. Monitors with mode poll only.' }),
@@ -143,7 +362,7 @@ export function registerTriggersRoutes(): void {
       },
       responses: {
         201: json(TriggerListSchema, 'Every trigger after the create'),
-        ...errors(400, 404, 409, 502),
+        ...errors(400, 403, 404, 409, 502),
       },
     }),
     async (c) => {
@@ -162,8 +381,16 @@ export function registerTriggersRoutes(): void {
         PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE,
       );
 
+      if (body.type === 'event') {
+        const disabled = requireFeatureFlag(c, loaded.row.metadata, 'event_triggers');
+        if (disabled) return disabled;
+      }
       const draft = parseTriggerDraft(body, { existingSlug: null });
       if ('error' in draft) return c.json({ error: draft.error }, 400);
+      if (draft.event) {
+        const problem = await validateEventTrigger(projectId, draft.event);
+        if (problem) return c.json({ error: problem }, 400);
+      }
       if (draft.type === 'webhook' && draft.secretEnv) {
         const configurationError = await validateWebhookSecretConfiguration({
           projectId,
@@ -217,7 +444,9 @@ export function registerTriggersRoutes(): void {
         return c.json({ error: result.error }, result.status as 400 | 409 | 502);
       }
       if (!committedManifest) throw new Error('trigger create completed without a manifest');
-      await reconcileProjectTriggerRuntime(projectId, extractTriggers(committedManifest).specs);
+      const createdSpecs = extractTriggers(committedManifest).specs;
+      await reconcileProjectTriggerRuntime(projectId, createdSpecs);
+      await reconcileEventSubscriptions(projectId, loaded.row.accountId, createdSpecs);
       await setTriggerSessionAccess({
         projectId,
         accountId: loaded.row.accountId,
@@ -225,6 +454,7 @@ export function registerTriggersRoutes(): void {
         access: parsedAccess.access,
         pinnedSessionId: draft.pinnedSessionId,
       });
+      await followTrigger(c, loaded.row, projectId, draft.slug);
 
       return c.json(await loadTriggersForResponse(projectId, loaded.row), 201);
     },
@@ -318,6 +548,11 @@ export function registerTriggersRoutes(): void {
             run_at: z.string().optional().openapi({ description: 'ISO-8601 instant for a one-off trigger.' }),
             timezone: z.string().optional().openapi({ description: 'IANA timezone.' }),
             secret_env: z.string().optional().openapi({ description: 'Webhook signing secret name.' }),
+            connector: z.string().optional().openapi({ description: 'Connector slug of an event trigger.' }),
+            event_account: z.string().nullish().openapi({ description: 'Label of one shared account of the connector; null clears it to the connector default.' }),
+            event_source: z.string().nullish().openapi({ description: 'Event source adapter id of an event trigger; null clears it to the connector provider.' }),
+            event: z.string().optional().openapi({ description: 'The adapter event type id of an event trigger.' }),
+            event_config: z.record(z.string(), z.any()).optional().openapi({ description: 'Provider event config of an event trigger.' }),
             session_mode: z.enum(['fresh', 'reuse', 'pinned', 'keyed']).optional().openapi({ description: 'Session reuse mode.' }),
             session_id: z.string().optional().openapi({ description: 'Session to pin.' }),
             session_key: z.string().optional().openapi({ description: 'Session key template.' }),
@@ -327,7 +562,7 @@ export function registerTriggersRoutes(): void {
       },
       responses: {
         200: json(TriggerListSchema, 'Every trigger after the update'),
-        ...errors(400, 404, 409, 502),
+        ...errors(400, 403, 404, 409, 502),
       },
     }),
     async (c) => {
@@ -380,8 +615,23 @@ export function registerTriggersRoutes(): void {
           const patchesKey = 'session_key' in body || 'sessionKey' in body;
           const patchesMode = 'session_mode' in body || 'sessionMode' in body;
           if (patchesKey && !patchesMode) delete base.session_mode;
+          // A type change starts from the shared fields only: the old type's wiring
+          // (cron, secret, monitor command, event source) would fail the new type.
+          if (typeof body.type === 'string' && body.type !== current.type) {
+            for (const key of TYPE_SPECIFIC_BODY_KEYS) delete base[key];
+          }
+          // An account label belongs to one connector: naming another connector drops it.
+          if ('connector' in body && !('event_account' in body)) delete base.event_account;
+          if ('connector' in body && !('event_source' in body)) delete base.event_source;
           const draft = parseTriggerDraft({ ...base, ...body, slug: slug }, { existingSlug: slug });
           if ('error' in draft) return { ok: false, error: draft.error, status: 400 };
+          if (draft.type === 'event' && !resolveFeatureFlag(loaded.row.metadata, 'event_triggers')) {
+            return { ok: false, error: featureDisabledBody('event_triggers').error, status: 403, code: 'feature_disabled' };
+          }
+          if (draft.event && (body.type === 'event' || EVENT_BODY_KEYS.some((k) => k in body))) {
+            const problem = await validateEventTrigger(projectId, draft.event);
+            if (problem) return { ok: false, error: problem, status: 400 };
+          }
           if (draft.type === 'webhook' && draft.secretEnv) {
             const configurationError = await validateWebhookSecretConfiguration({
               projectId,
@@ -413,6 +663,7 @@ export function registerTriggersRoutes(): void {
         },
       );
       if (!result.ok) {
+        if (result.code === 'feature_disabled') return c.json(featureDisabledBody('event_triggers'), 403);
         return c.json(
           {
             error: result.error,
@@ -424,7 +675,9 @@ export function registerTriggersRoutes(): void {
       }
       if (touchesManifest) {
         if (!committedManifest) throw new Error('trigger update completed without a manifest');
-        await reconcileProjectTriggerRuntime(projectId, extractTriggers(committedManifest).specs);
+        const updatedSpecs = extractTriggers(committedManifest).specs;
+        await reconcileProjectTriggerRuntime(projectId, updatedSpecs);
+        await reconcileEventSubscriptions(projectId, loaded.row.accountId, updatedSpecs);
       }
       if (parsedAccess?.ok) {
         await setTriggerSessionAccess({
@@ -435,6 +688,7 @@ export function registerTriggersRoutes(): void {
           pinnedSessionId: effectivePinnedSessionId,
         });
       }
+      await followTrigger(c, loaded.row, projectId, slug);
 
       return c.json(await loadTriggersForResponse(projectId, loaded.row));
     },
@@ -474,6 +728,7 @@ export function registerTriggersRoutes(): void {
         return c.json({ error: 'Invalid slug' }, 400);
       }
 
+      let remainingManifest: ParsedManifest | undefined;
       const result = await mutateManifestWithRetry(
         loaded.row,
         `trigger ${slug} was being deleted`,
@@ -483,6 +738,7 @@ export function registerTriggersRoutes(): void {
           }
           const next = removeTriggerFromManifest(manifest, slug);
           manifest.raw = next.raw;
+          remainingManifest = manifest;
           return { ok: true, commitMessage: `chore: delete trigger ${slug}` };
         },
       );
@@ -497,6 +753,11 @@ export function registerTriggersRoutes(): void {
         .where(
           and(eq(projectTriggerRuntime.projectId, projectId), eq(projectTriggerRuntime.slug, slug)),
         );
+      await deleteTriggerWatchers({ projectId, slug }).catch((err) =>
+        logger.warn('[trigger-watchers] cleanup failed', { projectId, slug, error: err instanceof Error ? err.message : String(err) }));
+      if (remainingManifest) {
+        await reconcileEventSubscriptions(projectId, loaded.row.accountId, extractTriggers(remainingManifest).specs);
+      }
 
       return c.json({ ok: true as const });
     },
@@ -519,7 +780,9 @@ export function registerTriggersRoutes(): void {
       },
       responses: {
         202: json(TriggerFireResultSchema, 'Queued or fired'),
-        ...errors(404, 500),
+        // 402: the account has no usable model — the fire gates instead of
+        // minting a session that would fail on its first turn.
+        ...errors(402, 403, 404, 500),
       },
     }),
     async (c) => {
@@ -540,15 +803,30 @@ export function registerTriggersRoutes(): void {
         PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE,
       );
 
-      const spec = await findProjectTriggerBySlug(await withProjectGitAuth(loaded.row), slug);
+      const gitProject = await withProjectGitAuth(loaded.row);
+      const spec = await findProjectTriggerBySlug(gitProject, slug);
       if (!spec) return c.json({ error: 'Not found' }, 404);
+      if (spec.type === 'event') {
+        const disabled = requireFeatureFlag(c, loaded.row.metadata, 'event_triggers');
+        if (disabled) return disabled;
+      }
       // Agents as principals (spec 2026-09-22 §2.2, closes V2): the fired run
       // acts as the trigger's agent, so the FIRER must be allowed to run that
-      // agent. `default` selects the project's default agent; ask about that one.
+      // agent. `default` is resolved exactly as session creation resolves it
+      // (KRTX-1720): the manifest's default first; the metadata mirror, which
+      // can lag a git push, only for a v1 manifest that declares none.
+      // Asking about the mirror instead refused a member allowed to run the
+      // real default, and admitted one allowed to run only the stale name.
       const mirroredDefault = (loaded.row.metadata as Record<string, unknown> | null)?.default_agent;
       const firedAgent =
-        spec.agent === 'default' && typeof mirroredDefault === 'string' && mirroredDefault.trim()
-          ? mirroredDefault.trim()
+        spec.agent === 'default'
+          ? resolveSessionAgentName({
+              requestedAgent: null,
+              manifestDefaultAgent:
+                (await loadProjectAgents(gitProject, { forceRefresh: 'tip-proof' })).defaultAgent?.trim() || null,
+              mirroredDefaultAgent:
+                typeof mirroredDefault === 'string' && mirroredDefault.trim() ? mirroredDefault.trim() : null,
+            })
           : spec.agent;
       await assertMayRunAgent(
         c,
@@ -559,9 +837,23 @@ export function registerTriggersRoutes(): void {
       );
 
       const now = new Date();
+      // An event trigger fires with an empty event, so the user can test the prompt.
+      const eventConnector = spec.event ? await connectorInfo(projectId, spec.event.connector) : null;
+      const eventRoot = spec.event && eventConnector
+        ? eventPayload({
+            spec,
+            ...eventConnector,
+            eventId: `manual-${crypto.randomUUID()}`,
+            type: spec.event.type,
+            occurredAt: now.toISOString(),
+            data: {},
+            firedAt: now,
+          })
+        : {};
       const payload = {
         trigger: { slug: spec.slug, type: spec.type, kind: 'git' },
         fired_at: now.toISOString(),
+        ...eventRoot,
         source: 'manual',
         actor: loaded.userId,
         message: { text: '', source: 'manual_test' },
@@ -578,7 +870,8 @@ export function registerTriggersRoutes(): void {
       });
 
       if (result.status === 'queued') {
-        await markGitTriggerFired(projectId, slug, now);
+        // Not run yet: its delivery ends an alert streak, not this handoff (KRTX-1742).
+        await markGitTriggerFired(projectId, slug, now, 'fired', { endsAlert: false });
         return c.json(
           {
             status: 'queued' as const,
@@ -591,7 +884,21 @@ export function registerTriggersRoutes(): void {
         );
       }
       if (result.status === 'failed') {
-        return c.json({ error: result.error ?? 'Failed to fire trigger' }, 500);
+        const error = result.error ?? 'Failed to fire trigger';
+        // Recorded like a failed cron fire, so the trigger says it failed (KRTX-1743).
+        await markGitTriggerAttemptFailed(projectId, slug, now, error).catch(() => {});
+        // The first failure of a streak alerts the watchers, not only the firer
+        // (KRTX-1742). A create that went back to the queue alerts from the
+        // drain only if it dead-letters.
+        if (!result.requeued) {
+          await raiseTriggerAlert({ projectId, accountId: loaded.row.accountId, slug, source: 'fire', error });
+        }
+        // The model gate is account state, not a server fault: answer the
+        // billing gate's convention (402 + a machine-readable code).
+        if (result.errorCode === 'no_usable_model') {
+          return c.json({ error, code: 'no_usable_model' }, 402);
+        }
+        return c.json({ error }, 500);
       }
       await markGitTriggerFired(projectId, slug, now);
       return c.json(

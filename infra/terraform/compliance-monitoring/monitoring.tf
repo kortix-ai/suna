@@ -175,6 +175,15 @@ resource "aws_cloudwatch_metric_alarm" "usw2_unhealthy_hosts" {
   treat_missing_data  = "notBreaching"
   alarm_actions       = [data.aws_sns_topic.usw2_alerts.arn]
   tags                = local.alarm_tags
+
+  # The alb_alarm_reconciler Lambda (functions/alb_alarm_reconciler.py) owns the
+  # dimensions of this alarm: it writes {TargetGroup, LoadBalancer}, because
+  # UnHealthyHostCount has no LoadBalancer-only series. Terraform manages the
+  # alarm but must not reset the dimensions to the LoadBalancer-only set, which
+  # reads no data and so never fires (treat_missing_data = notBreaching).
+  lifecycle {
+    ignore_changes = [dimensions]
+  }
 }
 
 resource "aws_cloudwatch_metric_alarm" "euw2_target_response_time" {
@@ -232,6 +241,15 @@ resource "aws_cloudwatch_metric_alarm" "euw2_unhealthy_hosts" {
   treat_missing_data  = "notBreaching"
   alarm_actions       = [data.aws_sns_topic.euw2_alerts.arn]
   tags                = local.alarm_tags
+
+  # The alb_alarm_reconciler Lambda (functions/alb_alarm_reconciler.py) owns the
+  # dimensions of this alarm: it writes {TargetGroup, LoadBalancer}, because
+  # UnHealthyHostCount has no LoadBalancer-only series. Terraform manages the
+  # alarm but must not reset the dimensions to the LoadBalancer-only set, which
+  # reads no data and so never fires (treat_missing_data = notBreaching).
+  lifecycle {
+    ignore_changes = [dimensions]
+  }
 }
 
 resource "aws_cloudwatch_metric_alarm" "usw2_instance_cpu" {

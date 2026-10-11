@@ -122,8 +122,19 @@ export function reserveMessageRehydrate(sessionID: string): boolean {
   const last = messageRehydrateLastAt.get(sessionID) ?? 0;
   if (now - last < MESSAGE_REHYDRATE_COOLDOWN_MS) return false;
   messageRehydrateInFlight.add(sessionID);
+  // An entry past its cooldown suppresses nothing: drop it (see 04#11).
+  if (messageRehydrateLastAt.size >= 200) {
+    for (const [key, at] of messageRehydrateLastAt) {
+      if (now - at >= MESSAGE_REHYDRATE_COOLDOWN_MS) messageRehydrateLastAt.delete(key);
+    }
+  }
   messageRehydrateLastAt.set(sessionID, now);
   return true;
+}
+
+/** Tests only. Not exported from the package. */
+export function messageRehydrateEntryCount(): number {
+  return messageRehydrateLastAt.size;
 }
 
 export function releaseMessageRehydrate(sessionID: string): void {

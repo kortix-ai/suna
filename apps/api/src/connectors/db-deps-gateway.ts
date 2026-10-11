@@ -62,6 +62,18 @@ import {
 const APPROVAL_CARRYOVER_WINDOW_MS = 15 * 60 * 1000;
 
 /**
+ * The call path reads connector/project policies and the project's default
+ * mode on EVERY /call — through these loaders directly. A TTL memo here
+ * (measured: warm calls saved ~5 statements) was reverted: the flow suite
+ * pins that a policy row seeded or edited between two calls is enforced by
+ * the very next call (CONN-32), and no TTL can honor that without an
+ * invalidation hook the raw-SQL seeds and the admin routes don't share.
+ * The bounded per-call statement count this issue promises comes from the
+ * stored-grant hint, the single git-project read and the single manifest
+ * load — not from caching policy rows.
+ */
+
+/**
  * Claim a recent approval for one exact request digest. The guarded UPDATE on
  * the not-yet-consumed marker is atomic, so two racing calls cannot both claim
  * it. Newest approval first; one claim per approval.
@@ -187,7 +199,6 @@ function toGatewayConnector(
   } | null,
 ): GatewayConnector {
   const { auth, hasAuth: configuredHasAuth } = authOf(row);
-  const config = (row.config ?? {}) as Record<string, unknown>;
   const hasAuth = row.providerType === 'composio'
     ? !composioConnectionIsNoAuth(connection?.metadata)
     : configuredHasAuth;
@@ -333,23 +344,18 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
       }
       return 'connector_not_connected';
     },
-    loadAction: async (connectorId, relPath) => {
-      const [[stored], [owner]] = await Promise.all([
-        db
-          .select()
-          .from(connectorActions)
-          .where(
-            and(eq(connectorActions.connectorId, connectorId), eq(connectorActions.path, relPath)),
-          )
-          .limit(1),
-        db
-          .select({ providerType: connectors.providerType })
-          .from(connectors)
-          .where(eq(connectors.connectorId, connectorId))
-          .limit(1),
-      ]);
+    loadAction: async (connectorId, relPath, providerType) => {
+      // The call path already holds the connector row (it loaded it to
+      // authorize the call) and passes its provider.
+      const [stored] = await db
+        .select()
+        .from(connectorActions)
+        .where(
+          and(eq(connectorActions.connectorId, connectorId), eq(connectorActions.path, relPath)),
+        )
+        .limit(1);
       const a =
-        owner?.providerType === 'computer'
+        providerType === 'computer'
           ? withComputerCatalog(connectorId, 'computer', []).find((row) => row.path === relPath)
           : stored;
       if (!a) return null;

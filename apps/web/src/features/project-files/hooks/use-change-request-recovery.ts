@@ -14,6 +14,7 @@ import {
   type ChangeRequestRecoveryBlocker,
   type ChangeRequestRecoveryTarget,
 } from '../change-request-recovery';
+import { randomUUID } from '@/lib/utils/random-uuid';
 
 export function useChangeRequestRecovery() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -31,7 +32,7 @@ export function useChangeRequestRecovery() {
       if (!projectId || startingCrId) return;
 
       setStartingCrId(target.crId);
-      const sessionId = crypto.randomUUID();
+      const sessionId = randomUUID();
       const href = `/projects/${projectId}/sessions/${sessionId}`;
       markSessionFresh(sessionId);
       router.prefetch(href);

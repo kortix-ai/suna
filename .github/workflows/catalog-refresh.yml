@@ -25,7 +25,7 @@ concurrency:
 jobs:
   refresh:
     name: Regenerate + merge
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
@@ -94,11 +94,11 @@ jobs:
           $(cat catalog-summary.txt)
 
           The API refetches both live every hour; these seeds only cover a boot with no internet. Only generated JSON changes."
-          PR="$(gh pr list --base main --head "$BR" --state open --json number --jq '.[0].number // empty')"
+          PR="$(gh pr list --base dev --head "$BR" --state open --json number --jq '.[0].number // empty')"
           if [ -n "$PR" ]; then
             gh pr edit "$PR" --body "$BODY"
           else
-            gh pr create --base main --head "$BR" --title "chore(catalog): refresh model seeds" --body "$BODY"
-            PR="$(gh pr list --base main --head "$BR" --state open --json number --jq '.[0].number')"
+            gh pr create --base dev --head "$BR" --title "chore(catalog): refresh model seeds" --body "$BODY"
+            PR="$(gh pr list --base dev --head "$BR" --state open --json number --jq '.[0].number')"
           fi
           gh pr merge "$PR" --squash --delete-branch

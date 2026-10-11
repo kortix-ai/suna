@@ -78,7 +78,7 @@ terraform plan            # iterate until the diff is empty
 terraform apply           # no-op once diff is clean; then delete imports.tf
 ```
 
-`terraform-apply-global.yml` applies this stack on every push to `main` that
+`terraform-apply-global.yml` applies this stack on every push to `dev` that
 touches it.
 
 ## Human access

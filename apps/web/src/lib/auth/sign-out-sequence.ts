@@ -170,18 +170,19 @@ export function __resetSignOutLatchForTests(): void {
  *     which is exactly the case that already worked.
  *  3. **Leaving ALWAYS happens, on a WALL CLOCK.** Every step is bounded, not
  *     just guarded. A `try`/`catch` cannot rescue a promise that never settles,
- *     and one of these steps can genuinely hang forever: `resetClientState()`
- *     awaits `clearSessionIDBCache()`, whose `openDB()` has no `onblocked`
- *     handler, so a version upgrade blocked by a stale tab never resolves.
+ *     and one of these steps could hang forever: `resetClientState()` awaits
+ *     `clearSessionIDBCache()`, whose `openDB()` had no `onblocked` handler
+ *     before database version 4, so a version upgrade blocked by a stale tab
+ *     never resolved.
  *     Unbounded, the user could not sign out at all and saw no error.
  *
  *     Bounding is safe for a reason specific to this sequence: everything
  *     identity-critical in `resetClientState()` is SYNCHRONOUS and complete
  *     before its one awaited call — the React Query cache, the persisted
  *     account selection and the per-user localStorage are already gone. Only
- *     the IndexedDB purge can be outrun, and those entries are keyed
- *     `user:<id>` (`buildSessionCacheKey`), so the next account cannot read
- *     them.
+ *     the IndexedDB purge can be outrun, and each saved copy there names its
+ *     user (`saved-copy-store.ts` refuses another user's copy), so the next
+ *     account cannot read them.
  *  4. **Nothing is stranded, and a SECOND press still leaves.** `/new`'s button
  *     neither awaited nor navigated, so it signed the user out and left them on
  *     the create form. The re-entry branch below is the other half of that: it

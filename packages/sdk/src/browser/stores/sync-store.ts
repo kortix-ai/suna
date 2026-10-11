@@ -21,7 +21,6 @@ import { ascendingId } from "./sync-store/ascending-id";
 import { Binary } from "./sync-store/binary";
 import { DELTA_EVENT_TAIL_LIMIT } from "./sync-store/delta-event-window";
 import { reconcileHydratedParts } from "./sync-store/reconcile-parts";
-import { writeStreamCache } from "./sync-store/stream-cache";
 import type {
 	FileDiff,
 	MessageError,
@@ -1156,7 +1155,7 @@ function dropSessionData(state: SyncData, sessionIDs: readonly string[]): SyncDa
  * The second needs the child's `kortixSessionScope` plumbed through from the
  * host: entries written for an opened session are keyed
  * `…:kortix-session:<scope>`, so a scopeless read looks up a different key and
- * misses (idb-sync-cache-key.ts:6-9).
+ * misses.
  */
 function pruneDetachedSessions(messages: Record<string, Message[]>): string[] {
 	const evicted: string[] = [];
@@ -1909,6 +1908,11 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// there and are dropped. Older ones are history the bounded tail did
 			// not reach — kept, still provisional.
 			//
+			// An EMPTY runtime read covers nothing and settles nothing. For a root
+			// the saved copy names, it is evidence the box lost its state, not that
+			// the conversation is empty: dropping on it blanked the conversation.
+			// The rows stay, still provisional, until a non-empty read settles them.
+			//
 			// The bound is derived by VALUE, not by position: `incoming` is now the
 			// server's own page order, which is not an id order, so `incoming[0].id`
 			// is no longer the smallest id in the page. (That this comparison is an
@@ -1916,13 +1920,6 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// deliberately left as-is here.)
 			let droppedPhantoms: Set<string> | null = null;
 			const provisional = fromCache ? undefined : cacheSourcedIds.get(sessionID);
-			if (provisional && incoming.length === 0) {
-				for (const id of [...provisional]) {
-					if (isOptimistic(sessionID, id)) continue;
-					untrackId(cacheSourcedIds, sessionID, id);
-					(droppedPhantoms ??= new Set()).add(id);
-				}
-			}
 			if (provisional && provisional.size > 0 && incoming.length > 0) {
 				let oldestIncoming = incoming[0].id;
 				for (const m of incoming) if (m.id < oldestIncoming) oldestIncoming = m.id;
@@ -2581,19 +2578,6 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				// and the deltaActiveParts guard in upsertPart must not silently
 				// no-op just because that field is missing.
 				store.upsertPart(part.messageID, part, resolvedSessionID);
-				if (isTextLikePart(part)) {
-					if (!resolvedSessionID) return;
-					const msgInfo = get().messages[resolvedSessionID]?.find(
-						(m) => m.id === part.messageID,
-					);
-					writeStreamCache(
-						resolvedSessionID,
-						part.messageID,
-						part.id,
-						part.text,
-						msgInfo?.role === "assistant" ? msgInfo.parentID : undefined,
-					);
-				}
 				return;
 			}
 			case "message.part.removed": {
@@ -2671,23 +2655,6 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 						delta: (e.properties as { delta: string }).delta,
 					})),
 				);
-				if (props.field === "text") {
-					const updated = get().parts[props.messageID]?.find(
-						(p) => p.id === props.partID,
-					);
-					if (updated && isTextLikePart(updated) && updated.text.length > 0) {
-						const msgInfo = get().messages[props.sessionID]?.find(
-							(m) => m.id === props.messageID,
-						);
-						writeStreamCache(
-							props.sessionID,
-							props.messageID,
-							props.partID,
-							updated.text,
-							msgInfo?.role === "assistant" ? msgInfo.parentID : undefined,
-						);
-					}
-				}
 				return;
 			}
 			case "session.status": {

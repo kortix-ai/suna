@@ -1,5 +1,5 @@
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs';
-import { platform } from 'os';
+import { homedir, platform } from 'os';
 import { join } from 'path';
 
 import {
@@ -128,6 +128,25 @@ export function runnerPartsFor(
   return { command: runtime.execPath, args: [vendor(script, paths), 'run', '--service'], env };
 }
 
+/**
+ * The Kortix desktop app's own agent runtime, when the app is installed on
+ * this Mac. A CLI install runs on it, so the connection is the same agent
+ * build with the same bundled driver, and macOS grants Accessibility and
+ * Screen Recording to Kortix once for both, never to node or a terminal.
+ */
+export function installedAppRunner(
+  apps: readonly string[] = ['/Applications/Kortix.app', join(homedir(), 'Applications', 'Kortix.app')],
+  os: string = process.platform,
+): { execPath: string; script: string } | null {
+  if (os !== 'darwin') return null;
+  for (const app of apps) {
+    const execPath = join(app, 'Contents', 'MacOS', 'Kortix');
+    const script = join(app, 'Contents', 'Resources', 'agent-tunnel', 'agent-cli.js');
+    if (existsSync(execPath) && existsSync(script)) return { execPath, script };
+  }
+  return null;
+}
+
 /** Where vendorRunner WOULD put the bundle, without copying anything. */
 const plannedRunner = (script: string, paths: ServicePaths) =>
   isEphemeralRunnerPath(script) ? paths.vendoredRunner : script;
@@ -135,6 +154,8 @@ const plannedRunner = (script: string, paths: ServicePaths) =>
 function currentRunnerParts(
   vendor: (script: string, paths: ServicePaths) => string = vendorRunner,
 ): RunnerParts {
+  const app = process.versions.electron ? null : installedAppRunner();
+  if (app) return runnerPartsFor(app.script, { execPath: app.execPath, electron: 'installed-app' }, getServicePaths(), vendor);
   const script = process.argv[1];
   if (script && existsSync(script)) return runnerPartsFor(script, undefined, getServicePaths(), vendor);
   throw new Error(

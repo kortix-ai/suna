@@ -53,5 +53,3 @@ export async function runProjectSnapshotWorkerOnce(
   }
   return results;
 }
-
-export { startProjectSnapshotWorker, stopProjectSnapshotWorker } from '../workers/project-snapshot-worker';

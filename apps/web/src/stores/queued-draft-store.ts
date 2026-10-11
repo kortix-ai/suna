@@ -18,10 +18,13 @@
  */
 
 import type { AttachedFile } from '@/features/session/composer/types';
+import type { SessionPromptDelivery } from '@kortix/sdk';
 import { create } from 'zustand';
 
 export interface QueuedDraft {
   placement?: 'transcript' | 'composer';
+  /** `steer`: the running turn reads it at its next step. */
+  delivery?: SessionPromptDelivery;
   /** The inbox idempotency key — the id that joins this draft to its row. */
   clientMessageId: string;
   /** The text as typed, before reply context, uploads, or mention blocks. */

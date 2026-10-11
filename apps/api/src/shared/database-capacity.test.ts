@@ -10,16 +10,24 @@ import {
   PROD_DB_ROLLING_CONNECTION_CEILING,
   PROD_DB_USABLE_CONNECTIONS,
   ROLLING_TASK_OVERLAP,
-  SCHEMA_CHECK_POOL_MAX,
 } from './database-capacity';
 
 describe('production database connection capacity', () => {
   test('pins every API-owned connection pool in the rollout budget', () => {
-    expect(DEFAULT_DB_POOL_MAX).toBe(5);
+    expect(DEFAULT_DB_POOL_MAX).toBe(6);
     expect(DEFAULT_AUDIT_POOL_MAX).toBe(2);
     expect(LEADER_ELECTION_POOL_MAX).toBe(1);
     expect(PG_BROADCAST_POOL_MAX).toBe(1);
-    expect(SCHEMA_CHECK_POOL_MAX).toBe(1);
+  });
+
+  test('keeps the boot schema probe on the shared request pool', () => {
+    // The deployed-env drift probe used to open its own transient postgres
+    // client at boot, which the rolling-deployment ceiling had to count at
+    // one extra connection per starting task (KRTX-2020). It must query
+    // through the request pool instead — zero marginal connections.
+    const ensureSchema = readFileSync(new URL('../ensure-schema.ts', import.meta.url), 'utf8');
+    expect(ensureSchema).not.toMatch(/postgres\(/);
+    expect(ensureSchema).toContain("import { db } from './shared/db'");
   });
 
   test('keeps high-volume audit writers on the bounded audit pool', () => {
@@ -52,11 +60,22 @@ describe('production database connection capacity', () => {
   });
 
   test('keeps a maximum rolling deployment below the usable PostgreSQL limit', () => {
+    // Prod rolls one replacement at a time (max=100%: the fleet never exceeds
+    // desired_count, see the Terraform cross-check below), so the envelope
+    // counts zero extra tasks — the peak stays PROD_API_MAX_TASKS.
     expect(PROD_API_MAX_TASKS).toBe(10);
-    expect(ROLLING_TASK_OVERLAP).toBe(2);
+    expect(ROLLING_TASK_OVERLAP).toBe(1);
     expect(PROD_DB_USABLE_CONNECTIONS).toBe(237);
     expect(PROD_DB_NON_API_RESERVE).toBe(32);
-    expect(PROD_DB_ROLLING_CONNECTION_CEILING).toBe(190);
+    // Recomputed from the pins above, not trusted: the exported ceiling must
+    // equal tasks × overlap × per-task long-lived pools. The boot schema probe
+    // is no longer a term — it rides the request pool.
+    const perTaskPools =
+      DEFAULT_DB_POOL_MAX + DEFAULT_AUDIT_POOL_MAX + LEADER_ELECTION_POOL_MAX + PG_BROADCAST_POOL_MAX;
+    expect(PROD_DB_ROLLING_CONNECTION_CEILING).toBe(
+      PROD_API_MAX_TASKS * ROLLING_TASK_OVERLAP * perTaskPools,
+    );
+    expect(PROD_DB_ROLLING_CONNECTION_CEILING).toBe(100);
     expect(PROD_DB_ROLLING_CONNECTION_CEILING).toBeLessThanOrEqual(
       PROD_DB_USABLE_CONNECTIONS - PROD_DB_NON_API_RESERVE,
     );
@@ -67,12 +86,40 @@ describe('production database connection capacity', () => {
       new URL('../../../../infra/terraform/environments/prod/main.tf', import.meta.url),
       'utf8',
     );
+    const shadowTerraform = readFileSync(
+      new URL('../../../../infra/terraform/environments/prod-us-east-2-shadow/main.tf', import.meta.url),
+      'utf8',
+    );
     const ecsModule = readFileSync(
       new URL('../../../../infra/terraform/modules/ecs-api/main.tf', import.meta.url),
       'utf8',
     );
+    const ecsModuleVariables = readFileSync(
+      new URL('../../../../infra/terraform/modules/ecs-api/variables.tf', import.meta.url),
+      'utf8',
+    );
 
     expect(productionTerraform).toMatch(/module "api"[\s\S]*?max_capacity\s*=\s*10/);
-    expect(ecsModule).toMatch(/deployment_maximum_percent\s*=\s*200/);
+
+    // The module keeps its old behavior as defaults (min_healthy 100, max 200
+    // — dev and staging are unchanged); prod pins the DEPLOYABLE one-at-a-time
+    // pairing on BOTH prod API stacks: min_healthy 50 with max 100. AWS rounds
+    // minimumHealthyPercent UP and maximumPercent DOWN, so min=100 + max=100
+    // means ECS can neither stop nor start a task (prod desired=3, shadow
+    // desired=2 — every release would hang); min=50 keeps ceil(desired×0.5)
+    // healthy while at most desired tasks exist, at every autoscaled count.
+    expect(ecsModuleVariables).toMatch(/variable "deployment_minimum_healthy_percent"[\s\S]*?default\s*=\s*100/);
+    expect(ecsModuleVariables).toMatch(/variable "deployment_maximum_percent"[\s\S]*?default\s*=\s*200/);
+    // Anchored to assignment lines (two-space indent, end of line) so the
+    // explanatory comments above cannot satisfy them, and matched-once per
+    // file so no other module (gateway, web) picks the pins up.
+    expect(ecsModule).toMatch(/^  deployment_minimum_healthy_percent\s*=\s*var\.deployment_minimum_healthy_percent$/m);
+    expect(ecsModule).toMatch(/^  deployment_maximum_percent\s*=\s*var\.deployment_maximum_percent$/m);
+    for (const t of [productionTerraform, shadowTerraform]) {
+      expect(t.match(/^  deployment_minimum_healthy_percent\s*=\s*50$/gm)).toHaveLength(1);
+      expect(t.match(/^  deployment_maximum_percent\s*=\s*100$/gm)).toHaveLength(1);
+      expect(t).toMatch(/module "api"[\s\S]*?^  deployment_minimum_healthy_percent\s*=\s*50$/m);
+      expect(t).toMatch(/module "api"[\s\S]*?^  deployment_maximum_percent\s*=\s*100$/m);
+    }
   });
 });
