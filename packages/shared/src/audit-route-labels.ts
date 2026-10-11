@@ -782,6 +782,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'DELETE /v1/tunnel/connections/:tunnelId': { action: 'tunnel.connection.delete', title: 'Deleted computer tunnel' },
   'GET /v1/tunnel/connections/:tunnelId': { action: 'tunnel.connection.read', title: 'Viewed computer tunnel' },
   'PATCH /v1/tunnel/connections/:tunnelId': { action: 'tunnel.connection.update', title: 'Updated computer tunnel' },
+  'POST /v1/tunnel/connections/:tunnelId/access': { action: 'tunnel.connection.access.update', title: 'Changed computer access' },
   'POST /v1/tunnel/connections/:tunnelId/rotate-token': { action: 'tunnel.connection.token.rotate', title: 'Rotated computer tunnel setup token' },
   'POST /v1/tunnel/device-auth': { action: 'tunnel.device_auth.create', title: 'Requested computer tunnel device authorization' },
   'POST /v1/tunnel/device-auth/:code/approve': { action: 'tunnel.device_auth.approve', title: 'Approved computer tunnel device authorization' },

@@ -3,13 +3,21 @@ import { hostname, platform, arch, release } from 'os';
 import { buildTunnelWsUrl, trustedCredential, type TunnelConfig } from './config';
 import {
   ACCESS_HOLD_MS,
+  accessCommand,
+  accessView,
+  accessWidens,
+  applyAccess,
   clearAccessRequest,
   decideAccess,
   keepAwakeCommand,
+  nextAccess,
+  parseAccessChange,
   readAccess,
   readAccessRequest,
   wakeDesktopApp,
   writeAccessRequest,
+  type AccessChange,
+  type AccessView,
 } from './access';
 import { agentTunnelHome } from './service-paths';
 import { machineDisplayName, machineId } from './device-auth';
@@ -100,6 +108,8 @@ export interface TunnelAgentOptions {
 /** The relay pings every 30 s; 75 s of silence means the socket is dead (R1). */
 const LIVENESS_TIMEOUT_MS = 75_000;
 const WATCHDOG_INTERVAL_MS = 5_000;
+/** The macOS permission check runs every 12 watchdog ticks (60 s). */
+const DESKTOP_PROBE_EVERY_TICKS = 12;
 /** A tick that arrives this much later than scheduled means the machine slept. */
 const CLOCK_JUMP_MS = 30_000;
 const REJECTED_RETRY_MS = 5 * 60_000;
@@ -173,6 +183,9 @@ export class TunnelAgent {
   private standbyAttempts = 0;
   private lastRejectedLogAt = 0;
   private sentAccessKey: string | null = null;
+  private desktopPermissions: { accessibility: boolean; screenRecording: boolean } | null = null;
+  private probingDesktop = false;
+  private watchdogTicks = 0;
   private keepAwake: ChildProcess | null = null;
   private keepAwakeFailed = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -282,6 +295,8 @@ export class TunnelAgent {
         capabilities: this.registry.getCapabilityNames(),
         agentVersion: AGENT_VERSION,
         reportsAccess: true,
+        // Serves `tunnel.access.set`: Kortix may change access through this agent.
+        controlsAccess: true,
       });
     });
 
@@ -395,6 +410,7 @@ export class TunnelAgent {
       this.standbyAttempts = 0;
       this.setStatus('online');
       this.reportAccess();
+      void this.probeDesktopPermissions();
       if (this.stableConnectionTimer) clearTimeout(this.stableConnectionTimer);
       this.stableConnectionTimer = setTimeout(() => {
         this.reconnectAttempts = 0;
@@ -453,6 +469,14 @@ export class TunnelAgent {
     // ── Token rotation notification ─────────────────────────────────
     if ('method' in msg && msg.method === 'tunnel.token.rotated') {
       log(`${c.yellow}!${c.reset}`, `Token rotated — reconnecting with new token`);
+      return;
+    }
+
+    // ── The owner's access change, relayed by Kortix ────────────────
+    // Before the permission guard and the access gate: it must work while
+    // access is off, and it is the owner's own action, not an agent call.
+    if ('id' in msg && msg.id && msg.method === 'tunnel.access.set') {
+      await this.handleAccessChange(msg as JsonRpcRequest);
       return;
     }
 
@@ -625,10 +649,12 @@ export class TunnelAgent {
       // Concurrent calls share one pending request: one prompt, one app launch.
       const pending = readAccessRequest(this.home);
       if (pending && Date.now() - Date.parse(pending.requestedAt) < hold) {
-        requestId = pending.id;
+        // A relayed change waiting for the owner stays: if it is allowed, this call runs too.
+        requestId = pending.change ? null : pending.id;
       } else {
         requestId = writeAccessRequest({ capability: capabilityForMethod(method) ?? method, method }, this.home).id;
         wakeDesktopApp(this.home);
+        this.reportAccess();
       }
     } catch {
       // Without a request file nobody can answer; the hold simply runs out.
@@ -645,16 +671,104 @@ export class TunnelAgent {
     return ACCESS_ERRORS.pending;
   }
 
-  /** X2: optional signed notification; relays that do not know it ignore it. */
+  /**
+   * `tunnel.access.set`: Kortix relays the owner's change. A narrowing applies
+   * at once. A widening (`always`, a longer grant) needs the owner on this
+   * machine: it becomes a request the desktop app shows as a native prompt,
+   * and the call waits for the answer. Without the app, the owner runs the
+   * command in a terminal.
+   */
+  private async handleAccessChange(request: JsonRpcRequest): Promise<void> {
+    let change: AccessChange;
+    try {
+      change = parseAccessChange(request.params);
+    } catch (err) {
+      this.sendSignedError(request.id, TunnelErrorCode.LOCAL_ERROR, err instanceof Error ? err.message : String(err));
+      return;
+    }
+    try {
+      const view = await this.changeAccess(change);
+      this.reportAccess();
+      this.sendSignedResult(request.id, view);
+    } catch (err) {
+      this.reportAccess();
+      this.sendSignedError(request.id, TunnelErrorCode.ACCESS_UNCONFIRMED, err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  private async changeAccess(change: AccessChange): Promise<AccessView> {
+    const current = readAccess(this.home);
+    const target = nextAccess(current, change, this.now());
+    if (!accessWidens(current, target, this.now())) return applyAccess(change, this.home, this.now());
+
+    const unconfirmed = (why: string) => new Error(`computer_access_unconfirmed: ${why}`);
+    const asked = writeAccessRequest({ capability: 'access', method: 'tunnel.access.set', change }, this.home);
+    this.reportAccess();
+    if (wakeDesktopApp(this.home) === 'no-app') {
+      clearAccessRequest(asked.id, this.home);
+      throw unconfirmed(`Only the owner can allow more access, on the computer itself. Run \`${accessCommand(change)}\` there.`);
+    }
+    const hold = this.options.accessHoldMs ?? ACCESS_HOLD_MS;
+    const deadline = Date.now() + hold;
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, Math.min(100, hold / 4)));
+      // Reached: the owner allowed it (the app ran the command).
+      if (!accessWidens(readAccess(this.home), target, this.now())) {
+        clearAccessRequest(asked.id, this.home);
+        return accessView(this.home, platform(), this.now());
+      }
+      if (readAccessRequest(this.home)?.id !== asked.id) throw unconfirmed('The owner declined on the computer.');
+    }
+    clearAccessRequest(asked.id, this.home);
+    throw unconfirmed(`Nobody confirmed on the computer within ${Math.round(hold / 1000)} seconds.`);
+  }
+
+  /**
+   * X2: the machine's own state, signed, whenever it changes: access, keep
+   * awake, the request waiting for the owner, and the macOS permissions as
+   * this process holds them. Kortix shows exactly this; relays that do not
+   * know a field ignore it.
+   */
   private reportAccess(): void {
-    const access = readAccess(this.home);
-    const { mode } = access;
-    // A lapsed grant is no grant: the watchdog reports again when it expires.
-    const grantedUntil = access.grantedUntil && Date.parse(access.grantedUntil) > this.now() ? access.grantedUntil : null;
-    const key = `${mode}|${grantedUntil}`;
-    if (key === this.sentAccessKey || this.status !== 'online') return;
+    if (this.status !== 'online') return;
+    const view = accessView(this.home, platform(), this.now());
+    const params = {
+      mode: view.mode,
+      grantedUntil: view.grantedUntil,
+      deniedUntil: view.deniedUntil,
+      keepAwake: view.keepAwake,
+      keepAwakeSupported: view.keepAwakeSupported,
+      pendingRequest: view.pendingRequest
+        ? { capability: view.pendingRequest.capability, requestedAt: view.pendingRequest.requestedAt, ...(view.pendingRequest.change ? { change: view.pendingRequest.change } : {}) }
+        : null,
+      desktopPermissions: this.desktopPermissions,
+    };
+    const key = JSON.stringify(params);
+    if (key === this.sentAccessKey) return;
     this.sentAccessKey = key;
-    this.sendSigned({ jsonrpc: '2.0', method: 'tunnel.access.state', params: { mode, grantedUntil } });
+    this.sendSigned({ jsonrpc: '2.0', method: 'tunnel.access.state', params });
+  }
+
+  /**
+   * Asks the desktop driver whether macOS lets THIS process see and drive the
+   * screen. The answer for another process (the app window) can differ.
+   */
+  private async probeDesktopPermissions(): Promise<void> {
+    const call = this.registry.getHandler('desktop.cua.call');
+    if (!call || this.probingDesktop) return;
+    this.probingDesktop = true;
+    try {
+      const report = (await call({ tool: 'check_permissions', args: {}, __permission: { capability: 'desktop' } })) as Record<string, unknown> | null;
+      this.desktopPermissions = {
+        accessibility: report?.accessibility === true,
+        screenRecording: report?.screen_recording === true,
+      };
+    } catch {
+      // A failed probe says nothing about the grants; keep the last answer.
+    } finally {
+      this.probingDesktop = false;
+    }
+    this.reportAccess();
   }
 
   /** R6: hold a sleep blocker while access.json asks for it. */
@@ -713,6 +827,8 @@ export class TunnelAgent {
         this.syncKeepAwake(access.keepAwake);
         this.reportAccess();
       } catch {}
+      // Grants change in System Settings while the agent runs: re-check every minute.
+      if (++this.watchdogTicks % DESKTOP_PROBE_EVERY_TICKS === 0 && this.status === 'online') void this.probeDesktopPermissions();
     }, interval);
     this.watchdog.unref?.();
   }

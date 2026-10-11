@@ -6,6 +6,7 @@
  * PATCH  /connections/:tunnelId            — rename a machine
  * DELETE /connections/:tunnelId            — unpair: delete the machine, revoke its computer accounts
  * POST   /connections/:tunnelId/rotate-token — rotate the setup token
+ * POST   /connections/:tunnelId/access — change access on the machine (it confirms a widening itself)
  *
  * Pairing is device auth only (`device-auth.ts`). Capabilities are fixed at
  * pairing; re-pair to change them.
@@ -34,6 +35,7 @@ import { readJsonObject } from '../../shared/http-body';
 import { uniqueComputerLabel } from '../../connectors/computers';
 import { bearerToken } from '../../shared/bearer-token';
 import { unpairMachine } from '../registrations';
+import { changeComputerAccess, computerAccessView, parseAccessChange } from '../access-control';
 
 /** Permissive connection row shape, as persisted + serialized. */
 const ConnectionSchema = z.record(z.string(), z.any());
@@ -69,6 +71,7 @@ function serializeConnection(conn: Omit<typeof tunnelConnections.$inferSelect, '
     capabilities: effectiveMachineCapabilities(conn),
     status: isLive ? 'online' : 'offline',
     isLive,
+    access: computerAccessView(conn.machineInfo),
   };
 }
 
@@ -255,6 +258,51 @@ export function createConnectionsRouter() {
       tunnelRelay.disconnectAgent(tunnelId, 4003, 'setup token rotated');
 
       return c.json({ tunnelId, setupToken: newToken });
+    },
+  );
+
+  router.openapi(
+    createRoute({
+      method: 'post',
+      path: '/{tunnelId}/access',
+      tags: ['tunnel'],
+      summary: 'Change when Kortix may use a paired machine',
+      description:
+        'Relays the owner\'s change to the machine, which applies it. A narrowing (Ask each time, Off, revoke, deny, keep awake) applies at once. A widening (Always, a longer grant) waits up to 20 s for the owner to confirm in the Kortix app on that machine, and fails with `computer_access_unconfirmed` otherwise. User credentials only.',
+      security: [{ bearerAuth: [] }],
+      request: {
+        params: z.object({ tunnelId: z.string() }),
+        body: {
+          content: {
+            'application/json': {
+              schema: z.object({
+                mode: z.enum(['ask', 'always', 'off']).optional(),
+                grantMinutes: z.number().positive().max(1440).optional(),
+                revoke: z.boolean().optional(),
+                deny: z.boolean().optional(),
+                keepAwake: z.boolean().optional(),
+              }),
+            },
+          },
+        },
+      },
+      responses: {
+        200: json(ConnectionSchema, 'The machine\'s access after the change'),
+        ...errors(400, 401, 403, 404, 409, 502, 504),
+      },
+    }),
+    async (c) => {
+      const { ownerClause } = await getTunnelOwnerContext(c);
+      const change = parseAccessChange(await readJsonObject(c));
+      if (!change) {
+        return c.json(
+          { error: 'Give at least one of mode (ask, always, off), grantMinutes (1–1440), revoke, deny, keepAwake, and nothing else.' },
+          400,
+        );
+      }
+      const result = await changeComputerAccess(c.req.param('tunnelId'), ownerClause, change);
+      if (!result.ok) return c.json({ error: result.message, kind: result.kind }, result.status);
+      return c.json(result.access);
     },
   );
 
