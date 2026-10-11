@@ -10,11 +10,12 @@ Build fullstack web applications using an opinionated pre-wired template: Expres
 
 ## Getting Started
 
-Copy the template to your project directory, then install dependencies:
+Copy the template into its own App folder (`apps/<name>/` by default; one
+folder per App), then install dependencies:
 
 ```bash
-cp -r skills/webapp/template/ <project-name>/
-cd <project-name>
+cp -r skills/webapp/template/ apps/<name>/
+cd apps/<name>
 npm install
 ```
 
@@ -201,7 +202,7 @@ Read `skills/website-building/shared/12-playwright-interactive.md` for testing a
 Build the frontend and deploy the static output:
 
 ```bash
-cd <project-name>
+cd apps/<name>
 npm run build
 ```
 
@@ -221,11 +222,11 @@ Keep API paths and environment assumptions explicit so local verification works 
 system skill (`kortix system-skills get kortix-apps`), only after the user asks
 to publish.
 
-- Static-only app: `npm run build`, then
-  `kortix apps deploy dist/public --type static --spa`. No machine, no
+- Static-only app: `npm run build` in `apps/<name>`, then
+  `kortix apps deploy apps/<name>/dist/public --type static --spa`. No machine, no
   compute cost.
 - App with the Express backend: a server App. Add a Dockerfile that builds
-  the app, then deploy with `--type dockerfile --on-demand
+  the app, then deploy `apps/<name>` with `--type dockerfile --on-demand
   --command '["node","dist/index.cjs"]' --port 5000`. In-memory storage is lost whenever the App stops (an on-demand
   App stops after 5 idle minutes) and on every new deployment. Say so before
   you publish.
