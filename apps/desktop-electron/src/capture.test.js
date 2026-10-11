@@ -209,7 +209,7 @@ describe('status and tray', () => {
     policy: { source: `orgs/${UUID}/policy.json`, fetched_at_ms: 1, policy: { layers: { audio: false }, notice: 'Recorded for the support team', recording: { paused: false } } },
     state: { state: 'ok', pending: 2, last_upload_ms: 5, last_error: null },
   };
-  const status = { effective_state: 'recording', recorder_running: true, inactive_reason: null, recording_enabled: true, audio_enabled: false };
+  const status = { state: 'recording', recorder_running: true, inactive_reason: null, recording_enabled: true, audio_enabled: false };
   const running = { recorder: { running: true, crashLoop: false }, actions: { running: true } };
 
   test('a recording device: state, project from the prefix, layers, policy, sync, permissions', () => {
@@ -245,10 +245,20 @@ describe('status and tray', () => {
     expect(at({ desktop: { on: false, actions: true } })).toBe('off');
     expect(at({ children: { recorder: { running: false, crashLoop: true } } })).toBe('crashed');
     expect(at({ children: { recorder: { running: false, crashLoop: false } } })).toBe('starting');
-    expect(at({ status: { ...status, recorder_running: false, effective_state: 'not_running' } })).toBe('starting');
+    expect(at({ status: { ...status, recorder_running: false, state: 'not_recording' } })).toBe('starting');
     // On, but the service was stopped outside the app (launchctl disable, unit removed): it says so and waits for a person.
     expect(at({ children: { recorder: { running: false } }, serviceStopped: true })).toBe('stopped');
     expect(at({ desktop: { on: false, actions: true }, serviceStopped: true })).toBe('off');
+  });
+
+  test('the state is the engine\'s four words; a locked screen or an excluded app reads as such, not as a pause', () => {
+    const view = (over) => capture.captureStatusFrom({ available: true, desktop: { on: true }, status: { ...status, ...over }, sync, children: running });
+    expect(view({ state: 'permission_missing' }).state).toBe('permission_missing');
+    expect(view({ state: 'paused', inactive_reason: 'locked' })).toMatchObject({ state: 'paused', reason: 'locked' });
+    expect(capture.captureLabel(view({ state: 'paused', inactive_reason: 'locked' }))).toBe('Screen locked');
+    expect(capture.captureLabel(view({ state: 'paused', inactive_reason: 'excluded_app' }))).toBe('Excluded app in front');
+    expect(capture.captureLabel(view({ state: 'paused', inactive_reason: 'paused' }))).toBe('Paused');
+    expect(capture.captureLabel(view({ state: 'not_recording' }))).toBe('Not recording');
   });
 
   test('Input Monitoring reaches the page only from an engine that reports it', () => {

@@ -20701,6 +20701,8 @@
       "status": {
         "recording": "Enregistre",
         "paused": "En pause",
+        "locked": "Écran verrouillé",
+        "excluded": "App exclue au premier plan",
         "permission": "Autorisation requise",
         "notRecording": "N'enregistre pas",
         "offline": "Hors ligne",
@@ -20839,6 +20841,8 @@
         "paused": "En pause",
         "pausedUntil": "En pause jusqu’à {time}",
         "pausedByOrg": "En pause par votre organisation",
+        "locked": "Écran verrouillé",
+        "excluded": "App exclue au premier plan",
         "starting": "Démarrage",
         "recording": "Enregistrement",
         "unavailable": "Indisponible",

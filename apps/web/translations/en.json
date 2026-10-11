@@ -20701,6 +20701,8 @@
       "status": {
         "recording": "Recording",
         "paused": "Paused",
+        "locked": "Screen locked",
+        "excluded": "Excluded app in front",
         "permission": "Needs permission",
         "notRecording": "Not recording",
         "offline": "Offline",
@@ -20839,6 +20841,8 @@
         "paused": "Paused",
         "pausedUntil": "Paused until {time}",
         "pausedByOrg": "Paused by your organization",
+        "locked": "Screen locked",
+        "excluded": "Excluded app in front",
         "starting": "Starting",
         "recording": "Recording",
         "unavailable": "Not available",

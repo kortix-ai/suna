@@ -16,8 +16,17 @@ export type CapturePhase =
   | 'error' // the last action failed, or the recorder keeps crashing
   | 'needsPermission' // on, but macOS has not granted what the layers need
   | 'paused' // on, paused by the person or by the account policy
+  | 'locked' // on; the screen is locked, recording resumes on unlock
+  | 'excluded' // on; an excluded app, website or private window is in front
   | 'starting' // on, the recorder has not reported yet
   | 'recording';
+
+const EXCLUDED_REASONS = new Set([
+  'excluded_app',
+  'excluded_domain',
+  'private_browsing',
+  'unknown_bundle',
+]);
 
 export type CaptureGrant = 'screen' | 'accessibility' | 'inputMonitoring' | 'microphone';
 
@@ -71,13 +80,13 @@ export function capturePhase(
   // `stopped`: the service was stopped outside the app; Record starts it again.
   if (!view.signedIn || !here || !view.on || view.state === 'stopped') return 'off';
   if (view.state === 'crashed') return 'error';
+  // A lock or an excluded app in front stops recording without anyone pausing it (the engine's reason).
+  const stopped = view.state === 'paused' || view.state === 'not_recording';
+  if (stopped && view.reason === 'locked') return 'locked';
+  if (stopped && EXCLUDED_REASONS.has(view.reason ?? '')) return 'excluded';
   if (view.state === 'paused' || view.policy?.paused || (view.pausedUntilMs ?? 0) > now)
     return 'paused';
-  if (
-    view.state === 'permission_missing' ||
-    view.state === 'permission_needed' ||
-    missingGrants(view).length > 0
-  )
+  if (view.state === 'permission_missing' || missingGrants(view).length > 0)
     return 'needsPermission';
   if (view.state === 'recording') return 'recording';
   return 'starting';

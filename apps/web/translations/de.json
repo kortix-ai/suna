@@ -20701,6 +20701,8 @@
       "status": {
         "recording": "Nimmt auf",
         "paused": "Pausiert",
+        "locked": "Bildschirm gesperrt",
+        "excluded": "Ausgeschlossene App im Vordergrund",
         "permission": "Berechtigung nötig",
         "notRecording": "Nimmt nicht auf",
         "offline": "Offline",
@@ -20839,6 +20841,8 @@
         "paused": "Pausiert",
         "pausedUntil": "Pausiert bis {time}",
         "pausedByOrg": "Von deiner Organisation pausiert",
+        "locked": "Bildschirm gesperrt",
+        "excluded": "Ausgeschlossene App im Vordergrund",
         "starting": "Startet",
         "recording": "Nimmt auf",
         "unavailable": "Nicht verfügbar",

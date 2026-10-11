@@ -50,7 +50,11 @@ const FILTERS: readonly Filter[] = ['all', 'recording', 'paused', 'permission', 
 
 /** Which filter a status falls under; `notRecording` and `unknown` count as offline. */
 const filterOf = (key: DeviceStatusKey): Exclude<Filter, 'all'> =>
-  key === 'recording' || key === 'paused' || key === 'permission' ? key : 'offline';
+  key === 'locked' || key === 'excluded'
+    ? 'paused'
+    : key === 'recording' || key === 'paused' || key === 'permission'
+      ? key
+      : 'offline';
 
 /**
  * Devices: every computer that records into the organization. With

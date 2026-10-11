@@ -379,9 +379,10 @@ function captureStatusFrom({ available, error, desktop, status, sync, permission
   else if (!desktop.on) state = 'off';
   else if (serviceStopped) state = 'stopped';
   else if (recorder.crashLoop) state = 'crashed';
-  // Running but no heartbeat yet: the engine still reports `not_running`.
+  // Running but no heartbeat yet.
   else if (!recorder.running || !status?.recorder_running) state = 'starting';
-  else state = status.effective_state || 'starting';
+  // The engine's status.json words: recording, paused, permission_missing, not_recording.
+  else state = status.state || 'starting';
   return {
     available: true,
     on: desktop.on,
@@ -420,7 +421,6 @@ const STATE_WORDS = {
   recording: 'Recording',
   paused: 'Paused',
   permission_missing: 'Needs permission',
-  permission_needed: 'Needs permission',
   not_recording: 'Not recording',
   starting: 'Starting…',
   crashed: 'Stopped after repeated crashes',
@@ -430,9 +430,19 @@ const STATE_WORDS = {
   signedOut: 'Not set up',
 };
 
+/** Reasons that stop recording without anyone pausing it (the engine's `inactive_reason`). */
+const REASON_WORDS = {
+  locked: 'Screen locked',
+  excluded_app: 'Excluded app in front',
+  excluded_domain: 'Excluded app in front',
+  private_browsing: 'Excluded app in front',
+  unknown_bundle: 'Excluded app in front',
+};
+
 /** Capture's state for the tray: `Recording · Screen, Actions`. */
 function captureLabel(view) {
-  const word = STATE_WORDS[view.state] || 'Not recording';
+  const stopped = view.state === 'paused' || view.state === 'not_recording';
+  const word = (stopped && REASON_WORDS[view.reason]) || STATE_WORDS[view.state] || 'Not recording';
   if (view.state !== 'recording') return word;
   const layers = ['screen', 'actions', 'audio']
     .filter((key) => view.layers[key] && view.policy?.layers?.[key] !== false)

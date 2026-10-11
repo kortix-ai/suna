@@ -151,6 +151,8 @@ export function ThisComputerPage({ accountId }: { accountId: string }) {
   const on =
     phase === 'needsPermission' ||
     phase === 'paused' ||
+    phase === 'locked' ||
+    phase === 'excluded' ||
     phase === 'starting' ||
     phase === 'recording';
   const recording = activeLayers(view);
@@ -403,6 +405,8 @@ function PrimaryAction({
       );
     case 'recording':
     case 'starting':
+    case 'locked':
+    case 'excluded':
       return (
         <Button size="sm" variant="secondary" disabled={busy} onClick={onPause}>
           {pending}

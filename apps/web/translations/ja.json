@@ -20701,6 +20701,8 @@
       "status": {
         "recording": "記録中",
         "paused": "一時停止中",
+        "locked": "画面がロック中",
+        "excluded": "除外アプリが前面",
         "permission": "権限が必要",
         "notRecording": "記録していません",
         "offline": "オフライン",
@@ -20839,6 +20841,8 @@
         "paused": "一時停止中",
         "pausedUntil": "{time} まで一時停止",
         "pausedByOrg": "組織が一時停止中",
+        "locked": "画面がロック中",
+        "excluded": "除外アプリが前面",
         "starting": "起動中",
         "recording": "記録中",
         "unavailable": "利用できません",

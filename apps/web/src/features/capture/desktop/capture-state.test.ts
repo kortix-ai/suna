@@ -45,7 +45,10 @@ describe('capturePhase', () => {
         permissions: { screen: false, accessibility: true, microphone: false },
       }),
     ).toBe('needsPermission');
-    expect(phase({ ...recording, state: 'permission_needed' })).toBe('needsPermission');
+    expect(phase({ ...recording, state: 'permission_missing' })).toBe('needsPermission');
+    expect(phase({ ...recording, state: 'paused', reason: 'locked' })).toBe('locked');
+    expect(phase({ ...recording, state: 'paused', reason: 'excluded_app' })).toBe('excluded');
+    expect(phase({ ...recording, state: 'not_recording', reason: 'locked' })).toBe('locked');
     expect(phase({ ...recording, state: 'not_recording' })).toBe('starting');
     expect(phase(recording)).toBe('recording');
   });

@@ -20701,6 +20701,8 @@
       "status": {
         "recording": "录制中",
         "paused": "已暂停",
+        "locked": "屏幕已锁定",
+        "excluded": "已排除的应用在前台",
         "permission": "需要权限",
         "notRecording": "未录制",
         "offline": "离线",
@@ -20839,6 +20841,8 @@
         "paused": "已暂停",
         "pausedUntil": "暂停至 {time}",
         "pausedByOrg": "你的组织已暂停",
+        "locked": "屏幕已锁定",
+        "excluded": "已排除的应用在前台",
         "starting": "正在启动",
         "recording": "正在记录",
         "unavailable": "不可用",

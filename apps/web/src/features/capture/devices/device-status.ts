@@ -8,7 +8,18 @@ import type { CaptureDevice, CaptureLayer } from '@kortix/sdk';
 
 export type DeviceTone = 'green' | 'orange' | 'none';
 export type DeviceStatusKey =
-  'recording' | 'paused' | 'permission' | 'notRecording' | 'offline' | 'unknown';
+  | 'recording'
+  | 'paused'
+  | 'locked'
+  | 'excluded'
+  | 'permission'
+  | 'notRecording'
+  | 'offline'
+  | 'unknown';
+
+/** status.json `reason`s that stop recording without anyone pausing it (the engine's words). */
+const LOCKED = new Set(['locked']);
+const EXCLUDED = new Set(['excluded_app', 'excluded_domain', 'private_browsing', 'unknown_bundle']);
 export type DeviceLayer = CaptureLayer;
 
 export interface DeviceStatusView {
@@ -38,18 +49,24 @@ export function deviceStatus(device: CaptureDevice): DeviceStatusView {
   const sync = record(status.sync);
   const audio = record(status.audio);
   const state = device.live.state;
+  const reason = typeof status.reason === 'string' ? status.reason : '';
+  const stopped = state === 'paused' || state === 'not_recording';
   const key: DeviceStatusKey =
     state === 'recording'
       ? 'recording'
-      : state === 'paused'
-        ? 'paused'
-        : state === 'permission_missing'
-          ? 'permission'
-          : state === 'not_recording'
-            ? 'notRecording'
-            : state === 'offline'
-              ? 'offline'
-              : 'unknown';
+      : stopped && LOCKED.has(reason)
+        ? 'locked'
+        : stopped && EXCLUDED.has(reason)
+          ? 'excluded'
+          : state === 'paused'
+            ? 'paused'
+            : state === 'permission_missing'
+              ? 'permission'
+              : state === 'not_recording'
+                ? 'notRecording'
+                : state === 'offline'
+                  ? 'offline'
+                  : 'unknown';
   const layers: DeviceLayer[] = ['screen'];
   if (status.actionsRecording === true) layers.push('actions');
   if (audio.enabled === true) layers.push('audio');

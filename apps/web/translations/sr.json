@@ -20701,6 +20701,8 @@
       "status": {
         "recording": "Снима",
         "paused": "Паузиран",
+        "locked": "Ekran je zaključan",
+        "excluded": "Izuzeta aplikacija je u prvom planu",
         "permission": "Потребна дозвола",
         "notRecording": "Не снима",
         "offline": "Ван мреже",
@@ -20839,6 +20841,8 @@
         "paused": "Паузирано",
         "pausedUntil": "Паузирано до {time}",
         "pausedByOrg": "Паузирала твоја организација",
+        "locked": "Ekran je zaključan",
+        "excluded": "Izuzeta aplikacija je u prvom planu",
         "starting": "Покреће се",
         "recording": "Снима",
         "unavailable": "Није доступно",

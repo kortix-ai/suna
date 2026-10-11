@@ -20701,6 +20701,8 @@
       "status": {
         "recording": "Grabando",
         "paused": "En pausa",
+        "locked": "Pantalla bloqueada",
+        "excluded": "App excluida en primer plano",
         "permission": "Necesita permiso",
         "notRecording": "No graba",
         "offline": "Sin conexión",
@@ -20839,6 +20841,8 @@
         "paused": "En pausa",
         "pausedUntil": "En pausa hasta las {time}",
         "pausedByOrg": "Pausado por tu organización",
+        "locked": "Pantalla bloqueada",
+        "excluded": "App excluida en primer plano",
         "starting": "Iniciando",
         "recording": "Grabando",
         "unavailable": "No disponible",
