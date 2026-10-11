@@ -309,7 +309,7 @@ flow(
       if (days.days[0].end_at !== new Date(day.endMs).toISOString()) throw new Error(`last moment ${days.days[0].end_at}`);
       if (!(days.days.reduce((n: number, d: any) => n + d.screen_seconds, 0) > 0)) throw new Error(`screen seconds ${JSON.stringify(days.days)}`);
       (await asMember.get(path(R.days), { params, query: { device_id: device.device_id } })).status(200).body().has('$.tz', 'UTC');
-      (await asMember.get(path(R.days), { params, query: { tz: 'Mars/Olympus' } })).status(400).body().has('$.code', 'capture_bad_window');
+      (await asMember.get(path(R.days), { params, query: { tz: 'Mars/Olympus' } })).status(400).body().has('$.code', 'capture_bad_query');
       (await asMember.get(path(R.days), { params, query: { user_id: ctx.P.OWNER.userId! } })).status(403).body().has('$.code', 'capture_forbidden');
     });
 
