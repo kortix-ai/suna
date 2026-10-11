@@ -223,3 +223,52 @@ describe('a malformed nested fence that its container already closed', () => {
     });
   }
 });
+
+describe('a reply with prose, a block, prose and a sources line', () => {
+  // The shape of the reported reply (a price comparison). Its stored text is well formed; the
+  // leak came from a stale delta the sync store appended after a hydrate (sync-store.test.ts,
+  // "a delta that lands after its message completed"). This pins the render half.
+  const reply = [
+    'Short answer: the Pro tier rose by **$100**.',
+    '',
+    '```openui',
+    'root = Stack([prices, chart])',
+    'prices = Table(["Tier", "Before", "After"], [["Pro 256GB", "$1,099", "$1,199"], ["Pro 512GB", "$1,299", "$1,399"]])',
+    'chart = BarChart(["Pro 256GB", "Pro 512GB"], [before, after], "Launch prices", "USD")',
+    'before = Series("Before", [1099, 1299])',
+    'after = Series("After", [1199, 1399])',
+    '```',
+    '',
+    'Feature-wise, the new line adds a faster chip.',
+    '',
+    'Sources: [Vendor newsroom](https://example.com/news), [Review site](https://example.org/review).',
+    '',
+  ].join('\n');
+  const leaks = (text: string) => ['root =', '= Series(', '= BarChart(', '= Table('].filter((source) => text.includes(source));
+  const count = (text: string, part: string) => text.split(part).length - 1;
+
+  test('history renders the block once, the prose after it once, and no source', async () => {
+    const renderer = await mount(<UnifiedMarkdown trust="agent" genui content={reply} />);
+    const text = textOf(renderer);
+    expect(renderer.root.findAll((node) => node.props['data-genui-block'] !== undefined && typeof node.type === 'string')).toHaveLength(1);
+    expect(leaks(text)).toEqual([]);
+    expect(count(text, 'Feature-wise')).toBe(1);
+    expect(count(text, 'Sources:')).toBe(1);
+  });
+
+  test('streamed tick by tick and then settled, no tick shows the source', { timeout: 30_000 }, async () => {
+    const renderer = await mount(<UnifiedMarkdown trust="agent" genui isStreaming content={reply.slice(0, 40)} />);
+    const tick = () => act(async () => new Promise((resolve) => setTimeout(resolve, 5)));
+    for (let cut = 80; cut < reply.length; cut += 37) {
+      await act(async () => renderer.update(<UnifiedMarkdown trust="agent" genui isStreaming content={reply.slice(0, cut)} />));
+      await tick();
+      expect(leaks(textOf(renderer))).toEqual([]);
+    }
+    await act(async () => renderer.update(<UnifiedMarkdown trust="agent" genui content={reply} />));
+    for (let i = 0; i < 5; i++) await tick();
+    const text = textOf(renderer);
+    expect(leaks(text)).toEqual([]);
+    expect(count(text, 'Feature-wise')).toBe(1);
+    expect(count(text, 'Sources:')).toBe(1);
+  });
+});

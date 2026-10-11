@@ -1196,6 +1196,14 @@ function appendPartDeltas(
 		if (!list) return s;
 		const result = Binary.search(list, partID, (p) => p.id);
 		if (!result.found) return s;
+		// A completed message's text is final. A delta that lands after it was
+		// read before a hydrate wrote the whole text: appending it duplicates a
+		// piece of the reply after its last paragraph.
+		// The streaming message is the last one, so the scan runs backward.
+		const messages = s.messages[sessionID] ?? [];
+		let message: Message | undefined;
+		for (let i = messages.length - 1; i >= 0 && !message; i--) if (messages[i]!.id === messageID) message = messages[i];
+		if ((message as { time?: { completed?: number } } | undefined)?.time?.completed) return s;
 		let delta = "";
 		for (const piece of pieces) {
 			// Duplicate-delivery no-op — see `deltaEventTails` above. Only acts

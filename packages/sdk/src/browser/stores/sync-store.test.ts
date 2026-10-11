@@ -1290,6 +1290,41 @@ describe("useSyncStore — applyPartDelta idempotency (part-delta duplicate deli
 // event (`core/stream/event-stream.ts`), which lists the wire events it
 // replaced in `coalesced`. The store applies the run in one update and keeps
 // the per-wire-event idempotency above.
+describe("useSyncStore — a delta that lands after its message completed", () => {
+	// The live run: the turn ends, the control plane's verdict triggers a tail
+	// read, and the hydrate writes the server's whole text while deltas the
+	// stream read earlier still wait in its queue. Appended, they put a piece of
+	// the reply (a generative UI block's source) after its last paragraph, and
+	// the longer local text then outlives every later read until a reload.
+	test("a hydrate of the completed message wins over deltas still in flight", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [{ info: userMessage("msg_u1"), parts: [] }]);
+		store.upsertMessage("ses_1", assistantMessage("msg_a1"));
+		store.upsertPart("msg_a1", textPart("prt_1", "msg_a1", ""));
+		store.applyPartDelta("ses_1", "msg_a1", "prt_1", "text", "Hello ", "evt_1");
+
+		const completed = { ...assistantMessage("msg_a1"), time: { created: 1, completed: 2 } };
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_u1"), parts: [] },
+			{ info: completed, parts: [textPart("prt_1", "msg_a1", "Hello world")] },
+		]);
+		store.applyPartDelta("ses_1", "msg_a1", "prt_1", "text", "world", "evt_2");
+
+		expect((useSyncStore.getState().parts.msg_a1[0] as TextPart).text).toBe("Hello world");
+	});
+
+	test("deltas of a message still open keep appending", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [{ info: userMessage("msg_u1"), parts: [] }]);
+		store.upsertMessage("ses_1", assistantMessage("msg_a1"));
+		store.upsertPart("msg_a1", textPart("prt_1", "msg_a1", ""));
+		store.applyPartDelta("ses_1", "msg_a1", "prt_1", "text", "Hello ", "evt_1");
+		store.applyPartDelta("ses_1", "msg_a1", "prt_1", "text", "world", "evt_2");
+
+		expect((useSyncStore.getState().parts.msg_a1[0] as TextPart).text).toBe("Hello world");
+	});
+});
+
 describe("useSyncStore — coalesced message.part.delta", () => {
 	function wireDelta(id: string, delta: string) {
 		return {
