@@ -40,6 +40,10 @@ let projectSessionReads = 0;
 let projectSessionGate: Promise<void> | null = null;
 let projectSessionFailure: Error | null = null;
 let shareSubjectReads = 0;
+// The account session-oversight read, behind `canAccessSandboxSession`'s
+// second await. Holding it parks a denied check between its context write and
+// its store, which is exactly the window the concurrency test below needs.
+let oversightGate: Promise<void> | null = null;
 
 // `canAccessSandboxSession` awaits two of its reads without a `.limit()`.
 async function unlimitedRows(table: unknown): Promise<unknown[]> {
@@ -76,8 +80,11 @@ mock.module('./db', () => ({
               if (projectSessionFailure) throw projectSessionFailure;
               return projectSessionRow ? [projectSessionRow] : [];
             }
-            // The account session-oversight policy: off.
-            if (table === accounts) return [];
+            // The account session-oversight policy: off (gated, see above).
+            if (table === accounts) {
+              await oversightGate;
+              return [];
+            }
             throw new Error('preview-ownership.test.ts: unexpected table in db.select().from()');
           },
         }),
@@ -105,6 +112,7 @@ const {
   canAccessPreviewSandbox,
   canAccessSandboxSession,
   clearPreviewOwnershipCache,
+  takeSessionAccessRefusal,
 } = await import('./preview-ownership');
 
 /** A promise and the function that settles it. */
@@ -118,6 +126,15 @@ function gate(): { held: Promise<void>; release: () => void } {
 
 /** Let every already-runnable continuation run; a held gate stays held. */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+/** A private session row owned by `ownerId`: every other caller key is denied. */
+const privateSessionOf = (ownerId: string) => ({
+  visibility: 'private',
+  createdBy: ownerId,
+  origin: 'user',
+  metadata: {},
+  initiatorType: 'member',
+});
 
 beforeEach(() => {
   sandboxRefRow = {
@@ -139,6 +156,7 @@ beforeEach(() => {
   projectSessionGate = null;
   projectSessionFailure = null;
   shareSubjectReads = 0;
+  oversightGate = null;
   clearPreviewOwnershipCache();
 });
 
@@ -331,13 +349,6 @@ describe('canAccessSandboxSession — one read per caller key', () => {
       callerSessionId,
       boundCredentialSessionId: null,
     });
-  const privateSessionOf = (ownerId: string) => ({
-    visibility: 'private',
-    createdBy: ownerId,
-    origin: 'user',
-    metadata: {},
-    initiatorType: 'member',
-  });
 
   test('concurrent checks of one caller on one session read the session once', async () => {
     projectSessionRow = privateSessionOf('user-owner');
@@ -389,5 +400,65 @@ describe('canAccessSandboxSession — one read per caller key', () => {
     projectSessionFailure = null;
     expect(await access('sess-flight-3', 'user-owner')).toBe(true);
     expect(projectSessionReads).toBe(2);
+  });
+});
+
+// Two denied checks for one session run concurrently whenever two callers hit
+// the daemon port together: different caller session ids, so different
+// in-flight entries. Each key must store its OWN refusal context — the
+// module-global this file used to feed let the second caller's write win, and
+// the first key stored the second caller's context (wrong visibility, grants
+// and caller binding at the 403 site in sandbox-proxy/forward/access.ts).
+describe('concurrent refusals — each key stores its own context', () => {
+  test('two concurrent denials of one session never swap refusal contexts', async () => {
+    projectSessionRow = privateSessionOf('user-owner');
+    const rowGate = gate();
+    const oversight = gate();
+    projectSessionGate = rowGate.held;
+    oversightGate = oversight.held;
+
+    const denied = (callerSessionId: string) =>
+      canAccessSandboxSession({
+        sessionId: 'sess-race-1',
+        projectId: 'proj-1',
+        accountId: 'acct-1',
+        userId: 'user-race-stranger', // not the owner: both verdicts deny
+        callerSessionId,
+        boundCredentialSessionId: null,
+      });
+    const first = denied('caller-a');
+    const second = denied('caller-b');
+
+    await settle(); // both parked on the session row read
+    rowGate.release(); // both read the row, write their context, park on oversight
+    await settle();
+    expect(projectSessionReads).toBe(2); // distinct keys: no in-flight sharing
+
+    oversightGate = null;
+    oversight.release();
+    expect(await first).toBe(false);
+    expect(await second).toBe(false);
+
+    const refusalOf = (callerSessionId: string) =>
+      takeSessionAccessRefusal({
+        sessionId: 'sess-race-1',
+        userId: 'user-race-stranger',
+        callerSessionId,
+        boundCredentialSessionId: null,
+      });
+    expect(refusalOf('caller-a')).toEqual({
+      sessionId: 'sess-race-1',
+      projectId: 'proj-1',
+      visibility: 'private',
+      origin: 'user',
+      sessionOwnedByCaller: false,
+      isTriggerSession: false,
+      canManageProject: false,
+      managerReason: 'not_trigger_session',
+      sessionGrants: 0,
+      callerSessionId: 'caller-a',
+      boundCredentialSessionId: null,
+    });
+    expect(refusalOf('caller-b')?.callerSessionId).toBe('caller-b');
   });
 });
