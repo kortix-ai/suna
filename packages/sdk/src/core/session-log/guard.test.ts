@@ -124,10 +124,24 @@ describe('isSessionLogPage', () => {
       session,
       generation: 2,
       threads: threads.map(({ messages: _m, ...head }) => head),
+      thread_id: threads[0]!.thread_id,
       messages: threads[0]!.messages,
       has_more: false,
     };
   };
+  test('accepts a page whose session record is partial (the journal has not sent every field), and an empty page', () => {
+    const a = page();
+    a.session = { title: 'only a title' } as never;
+    expect(isSessionLogPage(a)).toBe(true);
+    expect(isSessionLogPage({ ...page(), thread_id: null, messages: [] })).toBe(true);
+  });
+  test('rejects a page whose message belongs to another thread, or a non-string thread_id', () => {
+    const a = page();
+    a.messages[0] = { ...a.messages[0]!, thread_id: 'ses_other' };
+    expect(isSessionLogPage(a)).toBe(false);
+    expect(isSessionLogPage({ ...page(), thread_id: 5 })).toBe(false);
+    expect(isSessionLogPage({ ...page(), thread_id: null })).toBe(false);
+  });
   test('accepts a well-formed page', () => {
     expect(isSessionLogPage(page())).toBe(true);
   });

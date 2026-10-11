@@ -27,7 +27,7 @@ function stateOf(log: SessionLog): SessionLogState {
   const { threads, ...session } = structuredClone(log);
   const heads = threads.map(({ messages: _m, ...head }) => head);
   return threads.reduce(
-    (state, thread) => applySessionLogPage(state, { session, generation: 1, threads: heads, messages: thread.messages, has_more: false }),
+    (state, thread) => applySessionLogPage(state, { session, generation: 1, threads: heads, thread_id: thread.thread_id, messages: thread.messages, has_more: false }),
     EMPTY_SESSION_LOG_STATE,
   );
 }

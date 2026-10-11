@@ -19,7 +19,7 @@ const rootMessages = () => structuredClone(log.threads[0]!.messages);
 
 function page(messages: SessionLogMessage[] = rootMessages(), generation = 1): SessionLogPage {
   const { threads, ...session } = structuredClone(log);
-  return { session, generation, threads: threads.map(({ messages: _m, ...head }) => head), messages, has_more: false };
+  return { session, generation, threads: threads.map(({ messages: _m, ...head }) => head), thread_id: threads[0]!.thread_id, messages, has_more: false };
 }
 const ev = (type: string, properties: unknown) => ({ type, properties });
 const loaded = (): SessionLogState => applySessionLogPage(EMPTY_SESSION_LOG_STATE, page());
@@ -60,6 +60,23 @@ describe('applySessionLogPage', () => {
     expect((state.messages[ROOT]![0]!.blocks[0] as TextBlock).text).toBe('edited live');
     expect(ids(state)).not.toContain(second!.message_id);
     expect(ids(state)).toHaveLength(log.threads[0]!.messages.length - 1);
+  });
+
+  test('a newer page settles its window: a held message without a rev that it lacks was deleted, and leaves', () => {
+    const all = rootMessages();
+    let state = applySessionLogPage(EMPTY_SESSION_LOG_STATE, page(all));
+    const gone = all[3]!;
+    const live = { ...all[0]!, status: 'error' as const };
+    state = applySessionLogEvent(state, ev('log.message', { rev: 9, message: live }));
+    // The whole thread (has_more: false): every rev-less message the page lacks is gone.
+    state = applySessionLogPage(state, page(all.filter((m) => m !== gone)));
+    expect(ids(state)).not.toContain(gone.message_id);
+    expect(state.messages[ROOT]![0]!.status).toBe('error');
+    // A window (has_more: true) settles only from its first seq on.
+    const older = all[1]!;
+    const window = { ...page(all.slice(4)), has_more: true };
+    state = applySessionLogPage(state, window);
+    expect(ids(state)).toContain(older.message_id);
   });
 
   test('ignores a message that fails validation', () => {

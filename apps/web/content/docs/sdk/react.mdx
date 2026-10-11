@@ -269,13 +269,14 @@ function Thread({ projectId, sessionId }: { projectId: string; sessionId: string
 }
 ```
 
-A session reads the log only when all three are true. Otherwise it reads v1, and both hooks return `null`.
+A session reads the log only when all of these are true. Otherwise it reads v1, and both hooks return `null`.
 
 1. The runtime's `/kortix/health` lists `session.log.v2`. An absent list does not count.
 2. The project flag `session_log` is `true`.
-3. The API serves the log to this SDK. The API does not serve it yet, so today every session reads v1.
+3. The API has a stored log for the session (`GET /v1/projects/:projectId/sessions/:sessionId/log` answers a page).
+4. The session's thread was converted from v1 (OpenCode). A pi session reads v1.
 
-An SDK older than its API, or an API older than its SDK, reads v1. `useSessionMessages`, `useSession().messages` and `classifyTurn` return the same rows either way. In a thread converted from v1 (OpenCode), a session-log message converts with `toV1`, the conversion the API uses for v1 readers, and replaces the v1 row with the same id. A pi thread keeps the v1 rows, as the API's v1 reads do. A deleted message stays out. A row the log does not hold yet, such as the streaming turn or an optimistic send, keeps its place. A row keeps its identity while its message is unchanged.
+An SDK older than its API, or an API older than its SDK, reads v1. On v2, `useSession` paints the device's saved copy of the log first, then the API's page, and asks the session stream for `schema=v2`: the stream then carries `log.*` frames in place of the `message.*` transcript frames, and every other frame as before. A message reaches the log when the runtime journals it, at the end of a turn, so a turn in progress shows when it ends. `useSessionMessages`, `useSession().messages` and `classifyTurn` return the same rows either way. In a thread converted from v1 (OpenCode), a session-log message converts with `toV1`, the conversion the API uses for v1 readers, and replaces the v1 row with the same id. A pi thread keeps the v1 rows, as the API's v1 reads do. A deleted message stays out. A row the log does not hold yet, such as the streaming turn or an optimistic send, keeps its place. A row keeps its identity while its message is unchanged.
 
 ## Hooks
 

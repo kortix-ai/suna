@@ -22,13 +22,15 @@ mock.module('../core/rest/projects-client', () => ({
 const { useSyncStore } = await import('../browser/stores/sync-store');
 const { setRuntimeCapabilities } = await import('../browser/stores/sandbox-connection-store');
 const { useSessionLog, useSessionLogSync, useSessionLogThread } = await import('./use-session-log');
+const { createSavedCopyStore, setSavedCopyStore } = await import('../core/session-sync/saved-copy-store');
+const { savedSessionLogCopies } = await import('../core/session-log/saved-log');
 
 const log: SessionLog = JSON.parse(readFileSync(join(import.meta.dir, '../../../api-contract/src/__tests__/fixtures/session-log/golden21.v2.json'), 'utf8'));
 const PROJECT = 'proj_log';
 const SESSION = 'kses_log';
 const page = () => {
   const { threads, ...session } = structuredClone(log);
-  return { session, generation: 1, threads: threads.map(({ messages: _m, ...head }) => head), messages: threads[0]!.messages, has_more: false };
+  return { session, generation: 1, threads: threads.map(({ messages: _m, ...head }) => head), thread_id: threads[0]!.thread_id, messages: threads[0]!.messages, has_more: false };
 };
 const flush = () => act(async () => { for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0)); });
 
@@ -73,36 +75,107 @@ describe('useSessionLog / useSessionLogThread', () => {
   });
 });
 
-describe('useSessionLogSync: negotiation and the first page', () => {
-  test('v2: loads the root thread page into the store, and drops it when the session unmounts', async () => {
-    const calls: unknown[][] = [];
-    const loader = async (...args: unknown[]) => {
-      calls.push(args.slice(0, 3));
-      return page();
-    };
-    let dialect = '';
+describe('useSessionLogSync: negotiation, the first page and the stream', () => {
+  type Joined = { options: Record<string, any>; closed: boolean };
+  let joined: Joined[] = [];
+  const joinStream = (options: Record<string, any>) => {
+    const entry: Joined = { options, closed: false };
+    joined.push(entry);
+    return { close: () => { entry.closed = true; } };
+  };
+  beforeEach(() => {
+    joined = [];
+    setSavedCopyStore(null);
+  });
+  const v1Page = () => {
+    const p = page();
+    for (const t of p.threads) t.ext = { opencode: { version: 'kortix.transcript.v1', native_id: t.thread_id } };
+    return p;
+  };
+  function mount(options: { enabled?: boolean; loader?: ((...a: unknown[]) => Promise<unknown>) | null }) {
+    const state = { dialect: '' };
     render(() => {
-      dialect = useSessionLogSync(PROJECT, SESSION, { enabled: true, loader });
+      state.dialect = useSessionLogSync(PROJECT, SESSION, { enabled: options.enabled ?? true, loader: options.loader as never, joinStream: joinStream as never });
       return null;
     });
+    return state;
+  }
+
+  test('v2 on a fromV1 thread: the page goes in the store, the stream switches to schema v2, and unmount drops both', async () => {
+    const calls: unknown[][] = [];
+    const state = mount({ loader: async (...args) => { calls.push(args.slice(0, 3)); return v1Page(); } });
     await flush();
-    expect(dialect).toBe('v2');
+    expect(state.dialect).toBe('v2');
     expect(calls).toEqual([[PROJECT, SESSION, { limit: 40 }]]);
     expect(useSyncStore.getState().sessionLogs[SESSION]!.session.session_id).toBe(log.session_id);
+    expect(joined.map((j) => [j.options.projectId, j.options.sessionId, j.options.schema])).toEqual([[PROJECT, SESSION, 'v2']]);
     act(() => renderer?.unmount());
     renderer = null;
     expect(useSyncStore.getState().sessionLogs[SESSION]).toBeUndefined();
+    expect(joined[0]!.closed).toBe(true);
+  });
+
+  test('a stream reconnect re-reads the first page (frames in the gap are not replayed)', async () => {
+    let calls = 0;
+    mount({ loader: async () => { calls++; return v1Page(); } });
+    await flush();
+    act(() => joined[0]!.options.onConnectionChange(true));
+    await flush();
+    expect(calls).toBe(1);
+    act(() => joined[0]!.options.onConnectionChange(false));
+    act(() => joined[0]!.options.onConnectionChange(true));
+    await flush();
+    expect(calls).toBe(2);
+  });
+
+  test('a thread without the kortix.transcript.v1 ext (pi): v1, no session log, no schema v2', async () => {
+    const state = mount({ loader: async () => page() });
+    await flush();
+    expect(state.dialect).toBe('v1');
+    expect(useSyncStore.getState().sessionLogs).toEqual({});
+    expect(joined).toEqual([]);
+  });
+
+  test('a 404 (no stored log) or an invalid page: v1, no session log, no schema v2', async () => {
+    const bad = v1Page();
+    (bad.messages[0] as Record<string, unknown>).seq = 'x';
+    for (const loader of [async () => { throw new Error('404'); }, async () => bad]) {
+      const state = mount({ loader });
+      await flush();
+      expect(state.dialect).toBe('v1');
+      expect(useSyncStore.getState().sessionLogs).toEqual({});
+      expect(joined).toEqual([]);
+      act(() => renderer?.unmount());
+      renderer = null;
+    }
+  });
+
+  test('the device copy paints first, the API page replaces it and is saved, and the v1 copy is dropped', async () => {
+    const data = new Map<string, string>();
+    const store = createSavedCopyStore({ storage: { getItem: (k) => data.get(k) ?? null, setItem: (k, v) => void data.set(k, v), removeItem: (k) => void data.delete(k) }, userId: 'u1' });
+    setSavedCopyStore(store);
+    const saved = v1Page();
+    saved.messages = saved.messages.slice(0, 3);
+    await savedSessionLogCopies(store)!.write(PROJECT, SESSION, saved);
+    let release: (value: unknown) => void = () => {};
+    mount({ loader: () => new Promise((resolve) => { release = resolve; }) });
+    await flush();
+    expect(useSyncStore.getState().sessionLogs[SESSION]!.messages[log.threads[0]!.thread_id]).toHaveLength(3);
+    await act(async () => release(v1Page()));
+    await flush();
+    expect(useSyncStore.getState().sessionLogs[SESSION]!.messages[log.threads[0]!.thread_id]).toHaveLength(log.threads[0]!.messages.length);
+    expect((await savedSessionLogCopies(store)!.read(PROJECT, SESSION))!.messages).toHaveLength(log.threads[0]!.messages.length);
   });
 
   test('v2 stays latched while a reconnect clears the capability list: no drop, no refetch', async () => {
     let calls = 0;
     const loader = async () => {
       calls++;
-      return page();
+      return v1Page();
     };
     const dialects: string[] = [];
     render(() => {
-      dialects.push(useSessionLogSync(PROJECT, SESSION, { enabled: true, loader }));
+      dialects.push(useSessionLogSync(PROJECT, SESSION, { enabled: true, loader, joinStream: joinStream as never }));
       return null;
     });
     await flush();
@@ -114,7 +187,7 @@ describe('useSessionLogSync: negotiation and the first page', () => {
     expect(dialects.at(-1)).toBe('v2');
     expect(dialects.slice(dialects.indexOf('v2'))).not.toContain('v1');
     expect(calls).toBe(1);
-    expect(useSyncStore.getState().sessionLogs[SESSION]).toBeDefined();
+    expect(joined).toHaveLength(1);
   });
 
   for (const [name, setup] of [
@@ -126,50 +199,28 @@ describe('useSessionLogSync: negotiation and the first page', () => {
     test(`v1 when ${name}: no page request, no session log`, async () => {
       setup();
       const calls: unknown[] = [];
-      let dialect = '';
-      render(() => {
-        dialect = useSessionLogSync(PROJECT, SESSION, { enabled: true, loader: async (...a: unknown[]) => { calls.push(a); return page(); } });
-        return null;
-      });
+      const state = mount({ loader: async (...a: unknown[]) => { calls.push(a); return v1Page(); } });
       await flush();
-      expect(dialect).toBe('v1');
+      expect(state.dialect).toBe('v1');
       expect(calls).toEqual([]);
       expect(useSyncStore.getState().sessionLogs).toEqual({});
+      expect(joined).toEqual([]);
     });
   }
 
-  test('v1 without a page loader (the API route is not served yet), and the flag is not even read', async () => {
-    let dialect = '';
-    render(() => {
-      dialect = useSessionLogSync(PROJECT, SESSION, { enabled: true });
-      return null;
-    });
+  test('v1 without a page loader, and the flag is not even read', async () => {
+    const state = mount({ loader: null });
     await flush();
-    expect(dialect).toBe('v1');
+    expect(state.dialect).toBe('v1');
     expect(detailCalls).toEqual([]);
   });
 
   test('disabled: v1 and no request', async () => {
     const calls: unknown[] = [];
-    let dialect = '';
-    render(() => {
-      dialect = useSessionLogSync(PROJECT, SESSION, { enabled: false, loader: async (...a: unknown[]) => { calls.push(a); return page(); } });
-      return null;
-    });
+    const state = mount({ enabled: false, loader: async (...a: unknown[]) => { calls.push(a); return v1Page(); } });
     await flush();
-    expect(dialect).toBe('v1');
+    expect(state.dialect).toBe('v1');
     expect(calls).toEqual([]);
     expect(detailCalls).toEqual([]);
-  });
-
-  test('an invalid page leaves the session on the v1 rows', async () => {
-    const bad = page();
-    (bad.messages[0] as Record<string, unknown>).seq = 'x';
-    render(() => {
-      useSessionLogSync(PROJECT, SESSION, { enabled: true, loader: async () => bad });
-      return null;
-    });
-    await flush();
-    expect(useSyncStore.getState().sessionLogs).toEqual({});
   });
 });

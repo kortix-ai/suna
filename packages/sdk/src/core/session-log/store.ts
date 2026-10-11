@@ -19,7 +19,9 @@
  *  - `log.thread`: the thread head replaces the one held.
  *  - `log.state`: an older `generation` (a zombie box) is ignored; the session fields merge.
  *  - A page carries no revs: a page message never replaces a message the stream delivered,
- *    and never revives a tombstoned one.
+ *    and never revives a tombstoned one. Within its window (from its first `seq`, or the
+ *    whole thread without `has_more`) a page drops a held message it lacks unless the stream
+ *    revised it: that message was deleted, or came from an older saved copy.
  *  - A streaming put (`status: 'streaming'`) is an ordinary put: the deltas that follow
  *    append to its blocks, and the final put (a higher `rev`) replaces it.
  *
@@ -131,6 +133,17 @@ export function applySessionLogEvent(state: SessionLogState, event: SessionLogEv
 
 export function applySessionLogPage(state: SessionLogState, page: SessionLogPage): SessionLogState {
   let messages = state.messages;
+  // The page is the thread's truth from its first seq on (all of it without `has_more`): a held
+  // message there that it lacks and that the stream never revised was deleted, or came from an
+  // older copy (the device's saved copy). It leaves.
+  const thread = page.thread_id;
+  const held = thread === null ? undefined : messages[thread];
+  if (thread !== null && held) {
+    const from = page.has_more ? (page.messages[0]?.seq ?? Infinity) : -Infinity;
+    const kept = new Set(page.messages.map((m) => m.message_id));
+    const settled = held.filter((m) => m.seq < from || kept.has(m.message_id) || state.revs[m.message_id] !== undefined);
+    if (settled.length !== held.length) messages = { ...messages, [thread]: settled };
+  }
   for (const message of page.messages) {
     if (!isSessionLogMessage(message) || state.revs[message.message_id] !== undefined) continue;
     messages = put(messages, message);

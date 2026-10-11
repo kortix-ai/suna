@@ -10,23 +10,28 @@
  *  - this SDK has a page loader. An SDK published before the API route keeps v1.
  * Otherwise the session reads v1, exactly as before the session log existed.
  *
- * THE PAGE LOADER is `null` until `GET /v1/projects/:p/sessions/:s/log?thread=&before_seq=&limit=`
- * (P4.2) is served. `SessionLogPage` mirrors the shape that route answers. It is internal and
- * not exported: the api-contract owns the schema, and this file takes a byte-equal copy of
- * it, held by a drift test, when the route lands.
+ * THE PAGE LOADER reads `GET /v1/projects/:p/sessions/:s/log?thread=&before_seq=&limit=`
+ * (`@kortix/api-contract/session-log` `SessionLogPageSchema`). `SessionLogPage` is that
+ * schema's type, written out because this package has no zod; `contract-drift.test.ts` holds
+ * the two equal at typecheck. Internal: not exported from the package. A 404 (the session
+ * has no stored log, or no such thread) reads as no page, and the session stays on v1.
  */
+import { backendApi } from '../http/api-client';
 import { isSessionLogPage } from './guard';
 import type { SessionLogSessionRecord, SessionLogThreadHead } from './store';
 import type { SessionLogMessage } from './types';
 
 /** One page of one thread: the session record, every thread head, and the thread's messages by `seq`. */
 export interface SessionLogPage {
-  session: SessionLogSessionRecord;
+  /** The session record without `threads`; a field the daemon has not journaled yet is absent. */
+  session: Partial<SessionLogSessionRecord>;
   generation: number;
   threads: SessionLogThreadHead[];
-  /** One thread's messages, ascending `seq`; tombstones excluded. */
+  /** The paged thread: the one asked for, else the root thread; null when no thread is stored. */
+  thread_id: string | null;
+  /** That thread's newest messages before `before_seq`, ascending `seq`; tombstones excluded. */
   messages: SessionLogMessage[];
-  /** Older messages of the thread exist (page with `before_seq`). */
+  /** Older messages exist: ask again with `before_seq` = the first message's `seq`. */
   has_more: boolean;
 }
 
@@ -45,8 +50,20 @@ export type LoadSessionLogPage = (
   signal?: AbortSignal,
 ) => Promise<unknown>;
 
-/** `null` until the API serves the route (P4.2): negotiation then resolves to v1. */
-export const loadSessionLogPage: LoadSessionLogPage | null = null;
+/** The route's answer as is; `fetchFirstSessionLogPage` validates it. Throws on a non-2xx. */
+export const loadSessionLogPage: LoadSessionLogPage | null = async (projectId, sessionId, query, signal) => {
+  const search = new URLSearchParams();
+  if (query.thread !== undefined) search.set('thread', query.thread);
+  if (query.before_seq !== undefined) search.set('before_seq', String(query.before_seq));
+  if (query.limit !== undefined) search.set('limit', String(query.limit));
+  const qs = search.toString();
+  const response = await backendApi.get<unknown>(
+    `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/log${qs ? `?${qs}` : ''}`,
+    { showErrors: false, signal },
+  );
+  if (!response.success) throw response.error ?? new Error('Session log request failed');
+  return response.data;
+};
 
 /** The first window, the same size as the v1 mirror's (`MIRROR_HYDRATE_LIMIT`). */
 export const SESSION_LOG_FIRST_PAGE_LIMIT = 40;

@@ -16,7 +16,7 @@ const SESSION = 'kses_log_1';
 
 function page(): SessionLogPage {
   const { threads, ...session } = structuredClone(log);
-  return { session, generation: 1, threads: threads.map(({ messages: _m, ...head }) => head), messages: threads[0]!.messages, has_more: false };
+  return { session, generation: 1, threads: threads.map(({ messages: _m, ...head }) => head), thread_id: threads[0]!.thread_id, messages: threads[0]!.messages, has_more: false };
 }
 const ev = (type: string, properties: unknown, id?: string) => ({ type, properties, ...(id && { id }) }) as unknown as RuntimeEvent;
 const store = () => useSyncStore.getState();
@@ -65,6 +65,13 @@ describe('sync store: the session log', () => {
     store().applySessionLogEvent(SESSION, frame);
     expect(textOf(m.message_id, b.id)).toBe(`${b.text}!`);
     expect(store().sessionActivityAt[ROOT]).toBeGreaterThan(0);
+  });
+
+  test('a page whose session record has no session_id gets the Kortix session id it was read for', () => {
+    const p = page();
+    delete (p.session as Record<string, unknown>).session_id;
+    store().applySessionLogPage(SESSION, p);
+    expect(store().sessionLogs[SESSION]!.session.session_id).toBe(SESSION);
   });
 
   test('applySessionLogEvent names the session explicitly, before any page', () => {

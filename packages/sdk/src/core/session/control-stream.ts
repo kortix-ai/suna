@@ -75,6 +75,14 @@ export interface SessionControlStreamOptions {
   /** Join the runtime channel too. Upgrades the shared connection. */
   runtime?: boolean;
   /**
+   * `'v2'`: the session negotiated the session log. While any subscriber asks for it, a
+   * connection with the runtime channel adds `schema=v2`: the runtime channel then carries
+   * `log.*` frames in place of the `message.*` transcript frames, and every other runtime
+   * frame as before. The v2 log has its own sequence, so a switch either way reconnects at
+   * once without the runtime cursor. An API that predates the parameter ignores it.
+   */
+  schema?: 'v2';
+  /**
    * This browser tab's presence id (`PUT .../presence`). The server renews the
    * tab's lease while the stream is open, so the tab sends no presence
    * heartbeat of its own.
@@ -123,6 +131,9 @@ interface SharedStream {
   runtimeRefs: number;
   /** The connection's channels, so a runtime subscriber can upgrade it. */
   connectedWithRuntime: boolean;
+  /** Subscribers asking for `schema=v2`, and whether the connection carries it. */
+  logRefs: number;
+  connectedWithLog: boolean;
   tabId: string | null;
   /**
    * The server owns session state (R5): it sent `kortix.control.session`. An
@@ -153,6 +164,8 @@ export function openSessionStream(options: SessionControlStreamOptions): Session
       lastHealth: null,
       runtimeRefs: 0,
       connectedWithRuntime: false,
+      logRefs: 0,
+      connectedWithLog: false,
       tabId: null,
       authoritative: false,
       reconnectNow: false,
@@ -172,6 +185,8 @@ export function openSessionStream(options: SessionControlStreamOptions): Session
     target.runtimeRefs += 1;
     if (!target.connectedWithRuntime) reconnect = true;
   }
+  if (options.schema === 'v2') target.logRefs += 1;
+  if (target.runtimeRefs > 0 && target.logRefs > 0 && !target.connectedWithLog) reconnect = true;
   if (options.tabId && target.tabId !== options.tabId) {
     target.tabId = options.tabId;
     reconnect = true;
@@ -199,7 +214,15 @@ export function openSessionStream(options: SessionControlStreamOptions): Session
       closed = true;
       target.subscribers.delete(options);
       if (options.runtime) target.runtimeRefs -= 1;
-      if (target.subscribers.size > 0) return;
+      if (options.schema === 'v2') target.logRefs -= 1;
+      if (target.subscribers.size > 0) {
+        // The last v2 subscriber left: back to the v1 transcript frames.
+        if (target.connectedWithLog && (target.logRefs === 0 || target.runtimeRefs === 0) && target.attempt) {
+          target.reconnectNow = true;
+          target.attempt.abort();
+        }
+        return;
+      }
       target.abort.abort();
       if (streams.get(key) === target) streams.delete(key);
       if (target.connected) {
@@ -277,11 +300,18 @@ async function run(options: SessionControlStreamOptions, shared: SharedStream): 
     // Read at connect time: a runtime subscriber that joins later upgrades.
     const withRuntime = shared.runtimeRefs > 0;
     shared.connectedWithRuntime = withRuntime;
+    const withLog = withRuntime && shared.logRefs > 0;
+    if (withLog !== shared.connectedWithLog) {
+      seq = null;
+      epoch = null;
+    }
+    shared.connectedWithLog = withLog;
     try {
       const url = new URL(
         `${platformConfig().backendUrl.replace(/\/$/, '')}/projects/${encodeURIComponent(options.projectId)}/sessions/${encodeURIComponent(options.sessionId)}/events`,
       );
       if (!withRuntime) url.searchParams.set('channels', 'control');
+      if (withLog) url.searchParams.set('schema', 'v2');
       if (shared.tabId) url.searchParams.set('tab_id', shared.tabId);
       if (withRuntime && seq !== null && epoch) {
         url.searchParams.set('since', String(seq));

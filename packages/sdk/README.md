@@ -700,7 +700,7 @@ session-log types, and a test fails when the two differ. See the
 `useSessionLogThread(session, threadId?)`: the log of a session `useSession`
 owns, or `null` while the session reads v1. A session reads the log only when
 the runtime lists `session.log.v2`, the project flag `session_log` is on, and
-the API serves the log; until the API does, every session reads v1. The v1
+the API holds a log for an OpenCode session; every other session reads v1. The v1
 hooks (`useSessionMessages`, `useSession().messages`) return the same rows
 either way. See the
 [reference](https://kortix.com/docs/sdk/react#read-the-session-log).

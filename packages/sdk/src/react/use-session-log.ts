@@ -1,16 +1,21 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-store';
 import { useSyncStore } from '../browser/stores/sync-store';
+import { KORTIX_TRANSCRIPT_SCHEMA } from '../core/runtime/transcript-types';
+import { openSessionStream, type SessionControlStreamOptions } from '../core/session/control-stream';
+import { savedSessionLogCopies } from '../core/session-log/saved-log';
 import {
   fetchFirstSessionLogPage,
   loadSessionLogPage,
   negotiateSessionLog,
   type LoadSessionLogPage,
   type SessionLogDialect,
+  type SessionLogPage,
 } from '../core/session-log/source';
+import { currentSavedCopyStore } from '../core/session-sync/saved-copy-store';
 import { selectSessionLog, selectSessionLogThread } from '../core/session-log/store';
 import type { SessionLog, SessionLogThread } from '../core/session-log/types';
 import { useFeatureFlag } from './use-feature-flag';
@@ -48,19 +53,37 @@ export function useSessionLogThread(
   });
 }
 
+/** The `fromV1` mark on the page's thread: only such a thread reads through `toV1` (`v1-view.ts`). */
+function pageThreadIsV1(page: SessionLogPage): boolean {
+  const head = page.threads.find((t) => t.thread_id === page.thread_id);
+  return Object.values(head?.ext ?? {}).some((e) => e.version === KORTIX_TRANSCRIPT_SCHEMA);
+}
+
 /**
  * Internal (`useSession` mounts it). Negotiates the session's dialect
- * (`negotiateSessionLog`) and, on v2, puts the newest page of the root thread
- * in the store; leaving v2 (or unmounting) drops it, so the v1 hooks read the
- * v1 store again. The flag is read only when this SDK has a page loader, so a
- * build without one sends no extra request.
+ * (`negotiateSessionLog`). On v2:
+ *  1. the device's saved v2 copy paints first;
+ *  2. the newest page of the root thread replaces it and is saved (the v1 copy goes);
+ *  3. when that thread is a `fromV1` thread, the session stream switches to `schema=v2`
+ *     (`log.*` frames in place of the `message.*` ones) and the page is read again after each
+ *     reconnect, since a new v2 connection replays nothing.
+ * A 404, an invalid page, or a thread `fromV1` did not build (pi writes native records, which
+ * render lossy through `toV1`) leaves the session on v1: no session log, no `schema=v2`.
+ * Leaving v2 (or unmounting) drops the log, so the v1 hooks read the v1 store again. The flag
+ * is read only when this SDK has a page loader.
  */
 export function useSessionLogSync(
   projectId: string,
   sessionId: string,
-  options: { enabled: boolean; loader?: LoadSessionLogPage | null },
+  options: {
+    enabled: boolean;
+    loader?: LoadSessionLogPage | null;
+    /** Test seam: joins the session stream. */
+    joinStream?: (options: SessionControlStreamOptions) => { close: () => void };
+  },
 ): SessionLogDialect {
   const loader = options.loader === undefined ? loadSessionLogPage : options.loader;
+  const joinStream = options.joinStream ?? openSessionStream;
   const active = options.enabled && !!loader && !!projectId && !!sessionId;
   const live = useSandboxConnectionStore((state) => state.runtimeCapabilities);
   // The runtime's answer is latched for the mounted session: a reconnect clears the list
@@ -73,19 +96,57 @@ export function useSessionLogSync(
   if (live?.includes('session.log.v2')) served.current = key;
   const capabilities = served.current === key ? ['session.log.v2'] : live;
   const flag = useFeatureFlag(active ? projectId : null, 'session_log').enabled;
-  const dialect = active ? negotiateSessionLog({ capabilities, flag, loader }) : 'v1';
+  const negotiated = active ? negotiateSessionLog({ capabilities, flag, loader }) : 'v1';
+  // The page answered that this session cannot read v2 (404, invalid, not a `fromV1` thread).
+  const [refusedKey, setRefusedKey] = useState<string | null>(null);
+  const dialect: SessionLogDialect = negotiated === 'v2' && refusedKey !== key ? 'v2' : 'v1';
 
   useEffect(() => {
-    if (dialect !== 'v2' || !loader) return;
+    if (negotiated !== 'v2' || !loader) return;
     const controller = new AbortController();
-    void fetchFirstSessionLogPage(loader, projectId, sessionId, controller.signal).then((page) => {
-      if (page && !controller.signal.aborted) useSyncStore.getState().applySessionLogPage(sessionId, page);
-    });
-    return () => {
-      controller.abort();
-      useSyncStore.getState().dropSessionLog(sessionId);
+    const store = useSyncStore.getState;
+    const copies = savedSessionLogCopies(currentSavedCopyStore());
+    let stream: { close: () => void } | null = null;
+    let stopped = false;
+    const refuse = () => {
+      store().dropSessionLog(sessionId);
+      setRefusedKey(`${projectId}/${sessionId}`);
     };
-  }, [dialect, loader, projectId, sessionId]);
+    const load = async (): Promise<SessionLogPage | null> => {
+      const page = await fetchFirstSessionLogPage(loader, projectId, sessionId, controller.signal);
+      if (stopped) return null;
+      if (page) {
+        store().applySessionLogPage(sessionId, page);
+        void copies?.write(projectId, sessionId, page);
+      }
+      return page;
+    };
+    void (async () => {
+      const saved = await Promise.resolve(copies?.read(projectId, sessionId) ?? null).catch(() => null);
+      if (stopped) return;
+      if (saved && pageThreadIsV1(saved) && !store().sessionLogs[sessionId]) store().applySessionLogPage(sessionId, saved);
+      const page = await load();
+      if (stopped) return;
+      if (!page || !pageThreadIsV1(page)) return refuse();
+      let connected = true;
+      stream = joinStream({
+        projectId,
+        sessionId,
+        schema: 'v2',
+        onConnectionChange: (up) => {
+          // The first report is the connection already up: the page above is current.
+          if (up && !connected) void load();
+          connected = up;
+        },
+      });
+    })();
+    return () => {
+      stopped = true;
+      controller.abort();
+      stream?.close();
+      store().dropSessionLog(sessionId);
+    };
+  }, [negotiated, loader, joinStream, projectId, sessionId]);
 
   return dialect;
 }

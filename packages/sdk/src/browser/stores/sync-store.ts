@@ -2356,7 +2356,8 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 	applySessionLogPage: (sessionId, page) =>
 		set((s) => {
 			const current = s.sessionLogs[sessionId] ?? EMPTY_SESSION_LOG_STATE;
-			const next = applySessionLogPage(current, page);
+			// A page's session record is a patch; the id it was read for is its `session_id`.
+			const next = applySessionLogPage(current, { ...page, session: { session_id: sessionId, ...page.session } });
 			return next === current ? s : { sessionLogs: { ...s.sessionLogs, [sessionId]: next } };
 		}),
 

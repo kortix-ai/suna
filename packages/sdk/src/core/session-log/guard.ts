@@ -112,17 +112,34 @@ export function isSessionLogThreadHead(v: unknown): v is SessionLogThreadHead {
   );
 }
 
+/** The session record as a page carries it: a patch, so each field is checked only when present. */
+function isSessionPatch(v: unknown): boolean {
+  return (
+    isObj(v) &&
+    isOptional(v.schema, (x) => x === SESSION_LOG_SCHEMA) &&
+    isOptional(v.v, isCount) &&
+    isOptStr(v.session_id) &&
+    isOptional(v.title, isStrOrNull) &&
+    isOptStr(v.created_at) &&
+    isOptional(v.restore_grade, oneOf('native', 'converted', 'partial')) &&
+    isOptional(v.todos, Array.isArray) &&
+    isOptional(v.pending, (p) => isObj(p) && Array.isArray(p.questions) && Array.isArray(p.permissions)) &&
+    isOptional(v.selection, (x) => isObj(x) && isOptional(x.agent, isStrOrNull) && isModel(x.model ?? null)) &&
+    isOptional(v.harness, (x) => isObj(x) && isStr(x.current) && Array.isArray(x.history)) &&
+    isExt(v.ext)
+  );
+}
+
 export function isSessionLogPage(v: unknown): v is SessionLogPage {
   return (
     isObj(v) &&
     isCount(v.generation) &&
     typeof v.has_more === 'boolean' &&
-    isObj(v.session) &&
-    isSchemaRef(v.session) &&
-    isId(v.session.session_id) &&
+    isSessionPatch(v.session) &&
     Array.isArray(v.threads) &&
     v.threads.every(isSessionLogThreadHead) &&
+    (v.thread_id === null || isId(v.thread_id)) &&
     Array.isArray(v.messages) &&
-    v.messages.every(isSessionLogMessage)
+    v.messages.every((m) => isSessionLogMessage(m) && m.thread_id === v.thread_id)
   );
 }
