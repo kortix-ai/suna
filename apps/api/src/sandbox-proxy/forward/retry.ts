@@ -17,6 +17,7 @@ import {
   portUnreachableResponse,
   sanitizeRedirectLocation,
 } from '../preview-response';
+import { PROXY_HOP_HEADER, PROXY_UPSTREAM_STATUS_HEADER } from '../proxy-hop';
 import {
   PROXY_RETRY_BUDGET_MS,
   PROXY_RETRY_DELAYS_MS,
@@ -300,6 +301,22 @@ async function handleUpstreamFailureStatus(
       if (promptDedupeKey) releasePromptDelivery(promptDedupeKey);
       await turn.abandon();
       const notReadyHeaders = clientResponseHeaders(upstream.headers, origin);
+      // Attribute the designed answer (proxy-hop.ts). The hop is the PORT's
+      // hop, not a hardcoded `daemon`: a user app on an ordinary port that
+      // mimics the daemon's not-ready shape (the match is header/body text)
+      // must not borrow the daemon's identity — as `upstream_port` its GET
+      // 503 stays logged (request-log-level.ts suppresses only `daemon`) and
+      // the probe counts it, while the real boot-window answer on the
+      // session-data ports (8000/4096/4097 — /lsp/diagnostics, /permission,
+      // /vcs/diff, …) is suppressed instead of paging a route 5xx rise.
+      notReadyHeaders.set(PROXY_HOP_HEADER, portFailureHop(upstreamPort));
+      notReadyHeaders.set(PROXY_UPSTREAM_STATUS_HEADER, String(upstream.status));
+      if (notReadyHeaders.get('Access-Control-Allow-Origin')) {
+        notReadyHeaders.set(
+          'Access-Control-Expose-Headers',
+          `${PROXY_HOP_HEADER}, ${PROXY_UPSTREAM_STATUS_HEADER}`,
+        );
+      }
       return new Response(bodyText, {
         status: upstream.status,
         statusText: upstream.statusText,

@@ -52,6 +52,21 @@ test('a STOPPED session is still told its connector landed', async () => {
   expect(enqueued[0].idempotencyKey).toBe('connector-connected:session-1:gmail');
 });
 
+test('the notice is an inbox prompt the queue lists and a running turn reads at its next step', async () => {
+  await notifyConnectorSession('session-1', 'project-1', 'user-1', 'gmail', 'gmail');
+  // `inboxScope` lists only rows with a clientMessageId; an automation row was
+  // invisible in the queue and waited out the whole turn.
+  expect(enqueued[0]).toMatchObject({
+    clientMessageId: 'connector-connected:gmail',
+    placement: 'composer',
+    delivery: 'steer',
+    remintOnDelivery: true,
+    actorUserId: 'user-1',
+  });
+  // Steer admission requires a wire id (`admitInboxPrompt`).
+  expect(enqueued[0].wireMessageId).toMatch(/^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/);
+});
+
 test('a running session is told too', async () => {
   sessionRow = { status: 'running', accountId: 'acct-1', metadata: {} };
   await notifyConnectorSession('session-1', 'project-1', 'user-1', 'gmail', 'gmail');
@@ -71,6 +86,7 @@ test('a named account is told by name, once per account, so a second account is 
   expect(enqueued[0].text).toBe(connectorConnectedPrompt('gmail', 'gmail', account));
   expect(enqueued[0].text).toContain('--account "Dad\'s Gmail"');
   expect(enqueued[0].idempotencyKey).toBe('connector-connected:session-1:gmail:conn-2');
+  expect(enqueued[0].clientMessageId).toBe('connector-connected:gmail:conn-2');
 });
 
 test('the account name is one shell word however it is spelled', () => {

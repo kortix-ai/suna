@@ -20,7 +20,13 @@ import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { getProjectDetail } from '@kortix/sdk';
 import {
-  contract, qk, type ProviderListResponse, useFeatureFlag, useModelAccess, useModelStore,
+  contract,
+  type FlatModel,
+  qk,
+  type ProviderListResponse,
+  useFeatureFlag,
+  useModelAccess,
+  useModelStore,
 } from '@kortix/sdk/react';
 import {
   CheckIcon as Check,
@@ -47,7 +53,6 @@ import {
 } from './model-grouping';
 import { modelInDefaultView } from './model-picker-default-view';
 import { isSubscriptionModel, pickerModelName, shouldShowFreeTag } from './model-tags';
-import type { FlatModel } from './session-chat-input';
 import { useModelConnectionGate } from './use-model-connection-gate';
 
 // Re-export for consumers

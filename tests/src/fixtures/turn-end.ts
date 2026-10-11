@@ -22,6 +22,8 @@ export async function openFlowDb(env: Env): Promise<PgClient> {
   if (!url) throw new Error('KE2E_DATABASE_URL is required to seed a turn');
   const local = url.includes('localhost') || url.includes('127.0.0.1');
   const db = new PgClient({ connectionString: url, ssl: local ? false : { rejectUnauthorized: false } });
+  // A dropped connection must fail the next query, not crash the runner.
+  db.on('error', () => {});
   await db.connect();
   return db;
 }

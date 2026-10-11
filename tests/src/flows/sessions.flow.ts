@@ -2531,7 +2531,12 @@ flow(
       return sessionId;
     };
     const sandboxRows = async (sessionId: string) =>
-      (await db.query<{ status: string; external_id: string | null }>('SELECT status::text AS status, external_id FROM kortix.session_sandboxes WHERE session_id = $1', [sessionId])).rows;
+      (
+        await db.query<{ status: string; external_id: string | null; age_seconds: number }>(
+          'SELECT status::text AS status, external_id, extract(epoch from now() - created_at)::float8 AS age_seconds FROM kortix.session_sandboxes WHERE session_id = $1',
+          [sessionId],
+        )
+      ).rows;
     try {
       await ctx.step('a malformed session id → 400 and an unknown one → 404, before any sandbox work', async () => {
         (await start('not-a-uuid')).status(400).body().has('$.error', 'Invalid session id');
@@ -2561,10 +2566,14 @@ flow(
         ['stale_provisioning_pending', { initStatus: 'pending', initAttempts: 0, initMaxAttempts: 3 }, 11],
         ['stale_provisioning_lost', { initStatus: 'provisioning', initAttempts: 1, initMaxAttempts: 3, initUpdatedAt: new Date(Date.now() - 6 * 60_000).toISOString() }, 6],
       ] as const) {
-        await ctx.step(`an abandoned provisioning row is retired: ${reason}, no sandbox, row gone`, async () => {
+        await ctx.step(`an abandoned provisioning row is retired: ${reason}, no sandbox, the old row gone`, async () => {
           const sessionId = await seed('provisioning', { provider: 'daytona', status: 'provisioning', metadata, ageMinutes });
           (await start(sessionId)).status(200).body().has('$.stage', 'provisioning').has('$.retriable', true).has('$.sandbox', null).has('$.reason', reason);
-          if ((await sandboxRows(sessionId)).length !== 0) throw new Error('the abandoned row was not retired');
+          // A deployed target's sandboxes can reach the API, so /start begins a
+          // replacement row at once; the local stack cannot, so it starts none.
+          // Either way the backdated abandoned row must be gone.
+          const rows = await sandboxRows(sessionId);
+          if (rows.some((row) => row.age_seconds > 60)) throw new Error(`the abandoned row was not retired: ${JSON.stringify(rows)}`);
         });
       }
 
@@ -2592,6 +2601,7 @@ flow(
           category: 'provider-capacity',
           message: 'The sandbox provider could not start this session after 1 attempts. Restart the session to try again.',
           retryable: true,
+          reason: 'provider_transient_retries_exhausted',
         },
         {
           label: 'a protected-delivery failure is actionable and not retryable',
@@ -2605,15 +2615,19 @@ flow(
         await ctx.step(c.label, async () => {
           const sessionId = await seed('failed', { provider: c.provider, status: 'error', metadata: c.metadata });
           for (let attempt = 0; attempt < 2; attempt += 1) {
-            (await start(sessionId))
-              .status(200)
-              .body()
+            const answer = (await start(sessionId)).status(200).body();
+            answer
               .has('$.stage', 'failed')
               .has('$.retriable', false)
               .has('$.sandbox.status', 'error')
               .has('$.failure.category', c.category)
               .has('$.failure.message', c.message)
               .has('$.failure.retryable', c.retryable);
+            // The transient case runs the #9489 retry path. Its exhausted answer is
+            // the deterministic one here: the local profile's allowed providers
+            // (platinum, daytona) exclude this case's provider, so /start can never
+            // allocate and always reports the spent-retries verdict, retry after retry.
+            if ('reason' in c) answer.has('$.reason', c.reason);
           }
           const rows = await sandboxRows(sessionId);
           if (rows.length !== 1 || rows[0]!.status !== 'error' || rows[0]!.external_id !== null) throw new Error(`a terminal failure changed the row: ${JSON.stringify(rows)}`);

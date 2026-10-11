@@ -337,11 +337,26 @@ export async function persistAppAccessPolicy(
     : input.mode === 'password' ? current.accessPasswordHash : null;
 
   return db.transaction(async (tx) => {
+    // The revision signs every viewer out: bump it only when who may view changes.
+    // A redeploy repeats an unchanged policy, and that must keep viewers signed in.
+    const grants = current.accessMode === 'restricted' && input.mode === 'restricted'
+      ? await tx.select({ principalType: appAccessGrants.principalType, principalId: appAccessGrants.principalId })
+        .from(appAccessGrants).where(eq(appAccessGrants.appId, current.appId))
+      : [];
+    const grantKey = (list: Array<{ principalType: string; principalId: string }>) =>
+      list.map((grant) => `${grant.principalType}:${grant.principalId}`).sort().join(',');
+    const changed = current.accessMode !== input.mode
+      || Boolean(input.password)
+      || (input.viewerTokenScope !== undefined && input.viewerTokenScope !== current.viewerTokenScope)
+      || (input.mode === 'restricted' && grantKey(grants) !== grantKey([
+        ...memberIds.map((principalId) => ({ principalType: 'member', principalId })),
+        ...groupIds.map((principalId) => ({ principalType: 'group', principalId })),
+      ]));
     const [updated] = await tx.update(apps).set({
       accessMode: input.mode,
       accessPasswordHash: passwordHash,
       ...(input.viewerTokenScope ? { viewerTokenScope: input.viewerTokenScope } : {}),
-      accessRevision: sql`${apps.accessRevision} + 1`,
+      ...(changed ? { accessRevision: sql`${apps.accessRevision} + 1` } : {}),
       updatedAt: new Date(),
     }).where(and(
       eq(apps.appId, current.appId),
@@ -506,6 +521,16 @@ interface TeamScopedApp {
   projectId: string;
   accessMode: string;
   createdBy: string | null;
+}
+
+/** Is this user an App admin of the project (`project.app.admin`: the `admins` service access, like exec)? */
+export async function isAppAdmin(app: { accountId: string; projectId: string }, userId: string): Promise<boolean> {
+  const verdict = await authorize(
+    await actorForToken(userId, app.accountId, undefined),
+    PROJECT_ACTIONS.PROJECT_APP_ADMIN,
+    { type: 'project', id: app.projectId },
+  );
+  return verdict.allowed;
 }
 
 async function projectManager(

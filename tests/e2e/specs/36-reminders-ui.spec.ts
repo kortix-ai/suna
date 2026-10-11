@@ -130,14 +130,20 @@ test.describe('36 — Reminders UI', () => {
       await expect(card).toContainText('Check whether the vendor replied.');
       await expect(card).not.toContainText('[REMINDER');
 
-      const chip = page.getByTestId('session-reminders-chip');
+      // The live chat's header. A dismissed boot overlay can stay mounted under
+      // it (inert, aria-hidden) with its own header and chip.
+      const chip = page.getByTestId('session-chat').getByTestId('session-reminders-chip');
       await expect(chip).toBeVisible();
       await expect(chip).toHaveAccessibleName('1 active reminder');
       await chip.click();
       await expect(page.getByText('Post the launch checklist')).toBeVisible();
       await page.getByRole('link', { name: 'Manage reminders' }).click();
       await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/reminders\\?session=${sessionId}`));
-      await expect(page.getByTestId('reminder-session-filter')).toContainText('Vendor follow-up');
+      // SessionRouteCache keeps the session tree in a hidden <Activity>, and its
+      // route outlet renders this page too (display: none). Assert the visible one.
+      await expect(page.getByTestId('reminder-session-filter').filter({ visible: true })).toContainText(
+        'Vendor follow-up',
+      );
       await expect(page.getByRole('button', { name: 'Clear session filter' })).toBeVisible();
 
       expect(pageErrors).toEqual([]);

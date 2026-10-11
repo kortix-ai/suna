@@ -87,7 +87,6 @@ mock.module('@/features/session/session-chat-input', () => ({
     selectors.agentSelectors.push(props);
     return createElement('div', { 'data-testid': 'agent-selector-stub' });
   },
-  flattenModels: () => [],
   agentDisplayLabel: (_agents: unknown, slug: string | null) => slug ?? 'Agent',
 }));
 mock.module('@/features/workspace/shared/sharing-picker', () => ({

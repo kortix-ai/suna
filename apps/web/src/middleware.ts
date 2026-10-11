@@ -313,7 +313,29 @@ export async function middleware(request: NextRequest) {
     return finalizeEnvironmentAccess(NextResponse.next({ request: { headers: requestHeaders } }));
   }
 
+  // The locale a request carries when no identity check ran: the profile
+  // locale read (unverified) from the session cookie, else English. The cookie
+  // read only picks the language of content that is identical for every
+  // visitor; it never grants anything.
+  const cookieLocale = (): Locale =>
+    unverifiedSessionLocale(request.cookies.getAll(), KORTIX_SUPABASE_AUTH_COOKIE) ??
+    defaultLocale;
+
   // Skip middleware for static files, API routes, and telemetry endpoints.
+  // The auth route handlers (KRTX-2072) invoke the same server actions the
+  // /auth page used to call directly: a server action posted to /auth picked
+  // up X-NEXT-INTL-LOCALE from the page rewrite, but a Route Handler has no
+  // page rewrite, so without this forwarding the actions would translate their
+  // rate-limit and confirmation copy in the default locale for every visitor
+  // whose session cookie carries another language. Keep the skip itself (no
+  // auth gate, no rewrite onto a locale) and forward the cookie locale only.
+  if (pathname.startsWith('/api/auth/')) {
+    const locale = cookieLocale();
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.set('x-locale', locale);
+    requestHeaders.set(NEXT_INTL_LOCALE_HEADER, locale);
+    return finalizeEnvironmentAccess(NextResponse.next({ request: { headers: requestHeaders } }));
+  }
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/favicon') ||
@@ -476,17 +498,8 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // Every unprefixed page URL is rewritten onto app/[locale]. The locale is the
-  // verified profile locale when this request resolves an identity, else the
-  // profile locale read (unverified) from the session cookie, else English.
-  // The cookie read only picks the language of a page that is identical for
-  // every visitor; it never grants anything. A path that still carries a
-  // locale-looking first segment here (/de/projects) is not a localized route:
-  // it rewrites under the locale (/en/de/projects) and renders not-found, as
-  // it always did.
-  const cookieLocale = (): Locale =>
-    unverifiedSessionLocale(request.cookies.getAll(), KORTIX_SUPABASE_AUTH_COOKIE) ??
-    defaultLocale;
+  // Every unprefixed page URL is rewritten onto app/[locale] (see the
+  // cookieLocale definition above for where the locale comes from).
   const rewriteToLocale = (locale: Locale, base?: NextResponse) => {
     const requestHeaders = new Headers(request.headers);
     requestHeaders.set('x-locale', locale);

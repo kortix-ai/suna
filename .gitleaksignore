@@ -98,3 +98,14 @@ d9db615d7f26fc4a1aef21b8f0085e3ad37f0258:.gitleaksignore:generic-api-key:62
 # with `payload.signature`; this entry clears the commit that still holds it,
 # which every promotion range to staging scans. Reviewed 2026-10-01.
 127d878b9bdb6e8888efd485a992dfe3a5a8e175:apps/web/src/middleware-locale-routing.test.ts:generic-api-key:89
+#
+# Promotion of dev 983f341f88 to staging (#9471) scanned four false positives.
+# None is a credential. Reviewed 2026-10-09.
+# - Podfile.lock: a CocoaPods podspec checksum (SHA-1) for ExpoAppleAuthentication.
+# - web-push.test.ts: the public RFC 8291 section 5 example `auth` secret.
+# - apps/images.test.ts: the synthetic runtime image keys `appd-0123456789abcdef`
+#   and `appd-fedcba9876543210`.
+94d2c8d558c66a8f49209a2007d84e02279bd1d8:apps/mobile/ios/Podfile.lock:generic-api-key:3142
+8028e0c922ce4527fd89fa507fa7fb580db6962c:apps/api/src/notifications/web-push.test.ts:generic-api-key:22
+2a950668c6cbe0d259080919f951675d6e6d7f24:apps/api/src/apps/images.test.ts:generic-api-key:262
+2a950668c6cbe0d259080919f951675d6e6d7f24:apps/api/src/apps/images.test.ts:generic-api-key:286

@@ -190,7 +190,6 @@ function startAppsServer(appsEnabled = true, serverGate = false) {
     active_deployment_id: null,
     machine: { cpu: 1, memory_gb: 2, disk_gb: 10 },
     idle_timeout_seconds: 300,
-    monthly_budget_usd: 5,
     last_request_at: null,
     created_at: '2026-08-07T00:00:00.000Z',
     updated_at: '2026-08-07T00:00:00.000Z',
@@ -614,7 +613,7 @@ describe('kortix CLI black-box behavior', () => {
   test('Apps commands are discoverable and deploy an OCI image through the SDK', async () => {
     const unscopedHelp = await runCli(['--help']);
     expect(unscopedHelp.stdout).toContain('apps <subcommand>');
-    expect(unscopedHelp.stdout).toContain('Experimental: deploy Apps (web sites and servers, Convex backends)');
+    expect(unscopedHelp.stdout).toContain('Experimental: deploy Apps (sites and servers)');
 
     const apiBase = startAppsServer();
     const configFile = writeConfig(apiBase, true);
@@ -773,7 +772,7 @@ describe('kortix CLI black-box behavior', () => {
     const landing = await runCli(['--help'], tmp, env);
     expect(landing.code).toBe(0);
     expect(landing.stdout).toContain('apps <subcommand>');
-    expect(landing.stdout).toContain('Experimental: deploy Apps (web sites and servers, Convex backends)');
+    expect(landing.stdout).toContain('Experimental: deploy Apps (sites and servers)');
 
     const help = await runCli(['apps', '--help', '--project', 'proj_e2e'], tmp, env);
     expect(help.code).toBe(0);

@@ -274,8 +274,9 @@ export function useThisComputerState({ poll = false }: { poll?: boolean } = {}) 
   const desktop = useDesktopComputer({ poll });
   const status = desktop.data;
   const localTunnelId = status?.paired ? status.tunnelId : undefined;
+  // 5 s while open: access answered in the prompt on the machine shows here.
   const machines = useTunnelConnections({
-    refetchInterval: poll && localTunnelId ? 10_000 : false,
+    refetchInterval: poll && localTunnelId ? 5_000 : false,
   });
   const machine = machines.data?.find((candidate) => candidate.tunnelId === localTunnelId);
   const stale = Boolean(localTunnelId && machines.isSuccess && !machine);
@@ -288,6 +289,8 @@ export function useThisComputerState({ poll = false }: { poll?: boolean } = {}) 
     /** False where the deployment has computers disabled (`/tunnel/connections` answers 503). */
     computersEnabled: machines.isSuccess,
     stale,
+    /** When `machine` was read: "now" for time-relative display, without an impure render. */
+    readAt: machines.dataUpdatedAt,
     /** The desktop app can pair this machine in one click. */
     oneClick: Boolean(status?.available && !tunnelId),
     state: tunnelId ? computerState(status, machine?.isLive) : null,
