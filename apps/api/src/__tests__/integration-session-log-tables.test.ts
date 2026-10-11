@@ -22,6 +22,9 @@ const rows = async (query: ReturnType<typeof sql>) => (await db.execute(query)) 
 const record = (seq: number, id: string) =>
   JSON.stringify({ schema: 'kortix.session/2', v: 1, message_id: id, thread_id: 'main', seq, blocks: [] });
 
+// A daemon journal revision: max(Date.now() * 1000, last + 1), past int4.
+const REV = 1_791_681_474_704_000;
+
 const insertMessage = (id: string, seq: number) =>
   db.execute(sql`
     INSERT INTO kortix.session_log_messages
@@ -29,7 +32,7 @@ const insertMessage = (id: string, seq: number) =>
        producer, generation, rev, content_hash, record)
     VALUES (${SESSION}, ${id}, 'main', ${seq}, 'user', 'turn', true, now(), 1,
             ${JSON.stringify({ harness: 'opencode', harness_version: '1.0.0', adapter_version: '1' })}::jsonb,
-            0, 0, ${`sha256-${id}`}, ${record(seq, id)}::jsonb)`);
+            0, ${REV + seq}, ${`sha256-${id}`}, ${record(seq, id)}::jsonb)`);
 
 const count = async (table: (typeof TABLES)[number]) => {
   const [row] = await rows(sql`SELECT count(*)::int AS n FROM ${sql.raw(`kortix.${table}`)} WHERE session_id = ${SESSION}`);
@@ -69,11 +72,11 @@ test('a session stores one log row, a thread, two messages and a blob', async ()
   const [log] = await rows(sql`SELECT generation, grade_counts FROM kortix.session_logs WHERE session_id = ${SESSION}`);
   expect(log).toEqual({ generation: 0, grade_counts: null });
   const page = await rows(sql`
-    SELECT message_id, seq, deleted_at FROM kortix.session_log_messages
+    SELECT message_id, seq, rev::text AS rev, deleted_at FROM kortix.session_log_messages
      WHERE session_id = ${SESSION} AND thread_id = 'main' ORDER BY seq DESC`);
   expect(page).toEqual([
-    { message_id: 'msg_b', seq: 2, deleted_at: null },
-    { message_id: 'msg_a', seq: 1, deleted_at: null },
+    { message_id: 'msg_b', seq: 2, rev: String(REV + 2), deleted_at: null },
+    { message_id: 'msg_a', seq: 1, rev: String(REV + 1), deleted_at: null },
   ]);
   // bigint: a blob over 2^31 bytes round-trips.
   const [blob] = await rows(sql`SELECT bytes::text AS bytes FROM kortix.session_log_blobs WHERE session_id = ${SESSION}`);

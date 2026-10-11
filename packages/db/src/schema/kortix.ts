@@ -2571,9 +2571,12 @@ export const sessionLogMessages = kortixSchema.table(
     v: integer('v').notNull(),
     producer: jsonb('producer').$type<Record<string, unknown>>().notNull(),
     // The session generation and the per-message revision this row was written
-    // at; a write older than the stored (generation, rev) loses.
+    // at; a write older than the stored (generation, rev) loses, and a
+    // tombstone is a revision too. `rev` is bigint: the daemon journal issues
+    // boot-unique revisions as max(Date.now() * 1000, last + 1), ~1.8e15, past
+    // int4. Below 2^53, so `mode: 'number'` is exact.
     generation: integer('generation').notNull(),
-    rev: integer('rev').notNull(),
+    rev: bigint('rev', { mode: 'number' }).notNull(),
     // Change detection only. Never indexed: a random-key index on a table that
     // grows with history is the 2026-10-01 audit_events failure.
     contentHash: text('content_hash').notNull(),

@@ -43,6 +43,11 @@ set statement_timeout = '30s';
 -- that re-sequences a thread must DELETE the thread's rows and re-INSERT them
 -- in ONE transaction.
 --
+-- session_log_messages.rev is BIGINT, generation is INT. The daemon journal
+-- (P2.4) issues boot-unique revisions as max(Date.now() * 1000, last + 1),
+-- about 1.8e15, which overflows int4. The ingest applies the highest rev per
+-- message; a tombstone (deleted_at) is a revision too.
+--
 -- NO FK between session_log_messages and session_log_threads: a journal batch
 -- may carry a message put before its thread upsert (P2.2 writes threads first
 -- anyway). Message ids are the runtime ids, so session_turns.message_id, the
@@ -97,7 +102,7 @@ CREATE TABLE "kortix"."session_log_messages" (
 	"v" integer NOT NULL,
 	"producer" jsonb NOT NULL,
 	"generation" integer NOT NULL,
-	"rev" integer NOT NULL,
+	"rev" bigint NOT NULL,
 	"content_hash" text NOT NULL,
 	"deleted_at" timestamp with time zone,
 	"record" jsonb NOT NULL,

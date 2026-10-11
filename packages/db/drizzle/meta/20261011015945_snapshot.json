@@ -1,5 +1,5 @@
 {
-  "id": "de7dbae1-df01-4145-a293-f1d4771671aa",
+  "id": "0ca73ab5-ec1e-4b15-bb2b-304814dcddd9",
   "prevId": "fcc03b6f-88c5-4fe2-ad99-6b63959426cb",
   "version": "7",
   "dialect": "postgresql",
@@ -20896,7 +20896,7 @@
         },
         "rev": {
           "name": "rev",
-          "type": "integer",
+          "type": "bigint",
           "primaryKey": false,
           "notNull": true
         },
