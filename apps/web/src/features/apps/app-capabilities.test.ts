@@ -50,7 +50,7 @@ test('the detail modal takes its body and its capability items from app.capabili
   expect(view).toContain('session: canAccess && preview');
   // Uses / used-by links in the header.
   expect(detail).toContain('slugs={app.uses}');
-  expect(detail).toContain('slugs={app.used_by}');
+  expect(detail).toContain('slugs={app.used_by?.filter(');
 });
 
 test('no App kind, instance tile, snapshot, credential or dashboard control remains in the Apps UI', () => {

@@ -6,7 +6,7 @@ import {
   PIN_META_KEY,
   TRANSITION_META_KEY,
   readActiveRouting,
-} from './provider-transition-store';
+} from './provider-transition-routing';
 
 function databaseReturning(
   row: {
