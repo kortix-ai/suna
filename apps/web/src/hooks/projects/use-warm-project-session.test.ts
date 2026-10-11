@@ -160,7 +160,7 @@ describe('createWarmSession', () => {
     // The tab already took warm-2. The server ignores exclusions, so a create
     // asked to exclude warm-1 still gets warm-2 back.
     await createWarmSession(P, client({ create: async () => warm({ sessionId: 'warm-2' }) }));
-    takeWarmSessionEntry(P, { replenish: false })?.sessionId ?? null;
+    takeWarmSessionEntry(P, { replenish: false });
     const calls: Array<string | undefined> = [];
     const create = mock(async (_projectId: string, excludeSessionId?: string) => {
       calls.push(excludeSessionId);
@@ -278,7 +278,7 @@ describe('takeWarmSessionEntry', () => {
 
   test('the store refuses to file an already-taken id as ready', async () => {
     await createWarmSession(P, client({ create: async () => warm({ sessionId: 'warm-1' }) }));
-    takeWarmSessionEntry(P, { replenish: false })?.sessionId ?? null;
+    takeWarmSessionEntry(P, { replenish: false });
     expect(useWarmSessionStore.getState().takenSessionIds['warm-1']).toBe(true);
 
     const accepted = useWarmSessionStore.getState().settleCreate(P, warm({ sessionId: 'warm-1' }));
@@ -417,7 +417,7 @@ describe('cross-tab taken registry', () => {
 
   test('the in-tab echo retry also carries the refused id as excludeSessionId', async () => {
     await createWarmSession(P, client({ create: async () => warm({ sessionId: 'warm-1' }) }));
-    takeWarmSessionEntry(P, { replenish: false, registry: registryOf() })?.sessionId ?? null;
+    takeWarmSessionEntry(P, { replenish: false, registry: registryOf() });
 
     const calls: Array<string | undefined> = [];
     const create = mock(async (_projectId: string, excludeSessionId?: string) => {
