@@ -20,6 +20,13 @@
  *  - `log.state`: an older `generation` (a zombie box) is ignored; the session fields merge.
  *  - A page carries no revs: a page message never replaces a message the stream delivered,
  *    and never revives a tombstoned one.
+ *  - A streaming put (`status: 'streaming'`) is an ordinary put: the deltas that follow
+ *    append to its blocks, and the final put (a higher `rev`) replaces it.
+ *
+ * `rev` only. The API orders revisions by `(generation, rev)`; a frame carries no
+ * generation, and `rev` (`max(now µs, last + 1)`) already rises across boots.
+ * `revs` keeps one number per message id the session ever had, tombstones included: it
+ * grows with the session's own history and goes with `dropSessionLog`.
  * Every record is validated (`guard.ts`) before it is stored; an invalid one is dropped.
  */
 import { isSessionLogMessage, isSessionLogThreadHead } from './guard';
@@ -37,10 +44,11 @@ export interface SessionLogState {
   revs: Record<string, number>;
 }
 
-/** The `log.*` frame as the store receives it: the runtime event shape. */
+/** The `log.*` frame as the store receives it: the runtime event shape, with the wire's own event id. */
 export interface SessionLogEventInput {
   type: string;
   properties: unknown;
+  id?: string;
 }
 
 export const EMPTY_SESSION_LOG_STATE: SessionLogState = Object.freeze({
@@ -129,36 +137,16 @@ export function applySessionLogPage(state: SessionLogState, page: SessionLogPage
   }
   const threads = { ...state.threads };
   for (const head of page.threads) if (isSessionLogThreadHead(head)) threads[head.thread_id] = head;
-  const newer = page.generation >= state.generation;
+  // A page is a snapshot: only a newer generation overrides the session fields the stream
+  // delivered; at the same or an older one, it fills only the fields the state lacks.
+  const newer = page.generation > state.generation;
   return {
     ...state,
-    generation: newer ? page.generation : state.generation,
+    generation: Math.max(page.generation, state.generation),
     session: newer ? { ...state.session, ...page.session } : { ...page.session, ...state.session },
     threads,
     messages,
   };
-}
-
-/**
- * Does `state` own this frame? True when it holds the frame's thread (or, for a new
- * thread, its parent), the tombstoned message, or the session the `log.state` names.
- * `sync-store` routes a `log.*` frame to the one session that owns it.
- */
-export function ownsSessionLogEvent(state: SessionLogState, event: SessionLogEventInput): boolean {
-  const p = event.properties;
-  if (!isObj(p)) return false;
-  const holds = (thread: unknown) => typeof thread === 'string' && (thread in state.threads || thread in state.messages);
-  switch (event.type) {
-    case 'log.state':
-      return isObj(p.session) && p.session.session_id !== undefined && p.session.session_id === state.session.session_id;
-    case 'log.thread':
-      return holds(p.thread_id) || holds(p.parent_thread_id);
-    case 'log.message':
-      if (isObj(p.message)) return holds(p.message.thread_id);
-      return typeof p.message_id === 'string' && (p.message_id in state.revs || threadOfMessage(state, p.message_id) !== undefined);
-    default:
-      return holds(p.thread_id);
-  }
 }
 
 const logs = new WeakMap<SessionLogState, SessionLog | null>();

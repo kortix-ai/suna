@@ -11,8 +11,16 @@ const CONTRACT_FIXTURES = join(import.meta.dir, '../../../../api-contract/src/__
 const fixtures: Array<[string, SessionLog]> = readdirSync(CONTRACT_FIXTURES)
   .filter((name) => name.endsWith('.v2.json'))
   .map((name) => [name, JSON.parse(readFileSync(join(CONTRACT_FIXTURES, name), 'utf8'))]);
-const golden: SessionLog = JSON.parse(readFileSync(join(import.meta.dir, 'session-log.fixture.json'), 'utf8'));
+const golden: SessionLog = JSON.parse(readFileSync(join(CONTRACT_FIXTURES, 'golden21.v2.json'), 'utf8'));
 const ROOT = golden.threads[0]!.thread_id;
+
+/** `log` as `fromV1` marks a converted record: every thread carries the `kortix.transcript.v1` ext. */
+function asV1Threads(log: SessionLog): SessionLog {
+  const out = structuredClone(log);
+  for (const t of out.threads) t.ext = { ...t.ext, opencode: { version: 'kortix.transcript.v1', native_id: t.thread_id } };
+  return out;
+}
+const v1Golden = asV1Threads(golden);
 
 /** The store after reading every thread of `log` (one page per thread). */
 function stateOf(log: SessionLog): SessionLogState {
@@ -28,8 +36,14 @@ const ev = (type: string, properties: unknown) => ({ type, properties });
 const NONE: V1MessageRow[] = [];
 
 describe('sessionLogRowsFor: the v1 rows of a v2 thread', () => {
-  for (const [name, log] of fixtures) {
-    test(`${name}: each thread reads as toV1 of that thread`, () => {
+  for (const [name, native] of fixtures) {
+    test(`${name}: a thread without the kortix.transcript.v1 ext keeps the v1 store rows (as the API's v1 reads do)`, () => {
+      const logs = { kses_1: stateOf(native) };
+      const v1Rows: V1MessageRow[] = [];
+      for (const thread of native.threads) expect(sessionLogRowsFor(logs, thread.thread_id, v1Rows)).toBe(v1Rows);
+    });
+    test(`${name}: a thread fromV1 marked reads as toV1 of that thread`, () => {
+      const log = asV1Threads(native);
       const logs = { kses_1: stateOf(log) };
       for (const thread of log.threads) {
         const expected = rowsOfV1(toV1({ ...log, threads: [thread] }));
@@ -78,12 +92,12 @@ describe('sessionLogRowsFor: merged with the v1 store rows', () => {
   test('no v2 thread for the runtime session: the v1 rows, as the same array', () => {
     const v1Rows = [row('msg_x', 1, 'x')];
     expect(sessionLogRowsFor({}, ROOT, v1Rows)).toBe(v1Rows);
-    expect(sessionLogRowsFor({ kses_1: stateOf(golden) }, 'ses_unknown', v1Rows)).toBe(v1Rows);
+    expect(sessionLogRowsFor({ kses_1: stateOf(v1Golden) }, 'ses_unknown', v1Rows)).toBe(v1Rows);
   });
 
   test('v2 wins for its ids; a v1-only row (the live turn, an optimistic send) keeps its place by time; a tombstoned id stays out', () => {
-    let state = stateOf(golden);
-    const v2 = golden.threads[0]!.messages;
+    let state = stateOf(v1Golden);
+    const v2 = v1Golden.threads[0]!.messages;
     const deleted = v2[1]!.message_id;
     state = applySessionLogEvent(state, ev('log.message', { message_id: deleted, rev: Number.MAX_SAFE_INTEGER }));
     const last = Date.parse(v2.at(-1)!.created_at);
@@ -102,11 +116,11 @@ describe('sessionLogRowsFor: merged with the v1 store rows', () => {
   });
 
   test('rows keep their identity while their message is unchanged', () => {
-    const state = stateOf(golden);
+    const state = stateOf(v1Golden);
     const v1Rows: V1MessageRow[] = [];
     const first = sessionLogRowsFor({ kses_1: state }, ROOT, v1Rows);
     expect(sessionLogRowsFor({ kses_1: state }, ROOT, v1Rows)).toBe(first);
-    const target = golden.threads[0]!.messages.find((m) => m.blocks.some((b) => b.type === 'text'))!;
+    const target = v1Golden.threads[0]!.messages.find((m) => m.blocks.some((b) => b.type === 'text'))!;
     const block = target.blocks.find((b) => b.type === 'text')!;
     const next = applySessionLogEvent(state, ev('log.block.delta', { thread_id: ROOT, message_id: target.message_id, block_id: block.id, delta: '…' }));
     const second = sessionLogRowsFor({ kses_1: next }, ROOT, v1Rows);
@@ -115,5 +129,15 @@ describe('sessionLogRowsFor: merged with the v1 store rows', () => {
       if (r.info.id === target.message_id) expect(r).not.toBe(first[i]);
       else expect(r).toBe(first[i]!);
     });
+  });
+
+  test('a log.thread upsert (a new head object, the same runtime id) keeps every row', () => {
+    const state = stateOf(v1Golden);
+    const first = sessionLogRowsFor({ kses_1: state }, ROOT, NONE);
+    const { messages: _m, ...head } = v1Golden.threads[0]!;
+    const renamed = applySessionLogEvent(state, ev('log.thread', { ...head, title: 'Renamed' }));
+    const second = sessionLogRowsFor({ kses_1: renamed }, ROOT, NONE);
+    expect(second).toHaveLength(first.length);
+    second.forEach((r, i) => expect(r).toBe(first[i]!));
   });
 });

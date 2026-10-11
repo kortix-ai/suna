@@ -10,7 +10,7 @@ const CONTRACT_FIXTURES = join(import.meta.dir, '../../../../api-contract/src/__
 const fixtures: SessionLog[] = readdirSync(CONTRACT_FIXTURES)
   .filter((name) => name.endsWith('.v2.json'))
   .map((name) => JSON.parse(readFileSync(join(CONTRACT_FIXTURES, name), 'utf8')));
-const log: SessionLog = JSON.parse(readFileSync(join(import.meta.dir, 'session-log.fixture.json'), 'utf8'));
+const log: SessionLog = JSON.parse(readFileSync(join(CONTRACT_FIXTURES, 'golden21.v2.json'), 'utf8'));
 const message = (): SessionLogMessage => structuredClone(log.threads[0]!.messages[0]!);
 
 describe('isSessionLogMessage', () => {
@@ -58,6 +58,44 @@ describe('isSessionLogMessage', () => {
       expect(isSessionLogMessage(input)).toBe(false);
     });
   }
+
+  // The review's probe set: fields `toV1` and the store read, and the message-level rules (F3, F13, C2).
+  const all = () => fixtures.flatMap((f) => f.threads.flatMap((t) => t.messages));
+  const withBlock = (type: string) => structuredClone(all().find((m) => m.blocks.some((b) => b.type === type))!) as unknown as Record<string, any>;
+  const blockOf = (m: Record<string, any>, type: string) => m.blocks.find((b: { type: string }) => b.type === type);
+  const probes: Array<[string, () => unknown]> = [
+    ['model: {}', () => ({ ...message(), model: {} })],
+    ['usage: {}', () => ({ ...message(), usage: {} })],
+    ['a producer without its versions', () => ({ ...message(), producer: { harness: 'pi' } })],
+    ['an unknown hidden_reason', () => ({ ...message(), hidden_reason: 'gone' })],
+    ['an unknown origin', () => ({ ...message(), origin: 'robot' })],
+    ['agent: 5', () => ({ ...message(), agent: 5 })],
+    ['reply_to: 5', () => ({ ...message(), reply_to: 5 })],
+    ['context_ref: 5', () => ({ ...message(), context_ref: 5 })],
+    ["ext: 'x'", () => ({ ...message(), ext: 'x' })],
+    ['a tool result content of [1]', () => { const m = withBlock('tool_call'); blockOf(m, 'tool_call').result = { content: [1], is_error: false }; return m; }],
+    ["a text block with bytes: 'x'", () => { const m = message() as unknown as Record<string, any>; m.blocks[0].bytes = 'x'; return m; }],
+    ['F3: a text ref without bytes', () => { const m = message() as unknown as Record<string, any>; m.blocks[0].ref = 'blob:1'; return m; }],
+    ['F13: an attachment with ref and no bytes', () => { const m = withBlock('attachment'); const a = blockOf(m, 'attachment'); a.ref = 'blob:1'; delete a.bytes; return m; }],
+    ['C2: an open tool call in an in-context message at rest', () => { const m = withBlock('tool_call'); m.status = 'complete'; m.in_context = true; const b = blockOf(m, 'tool_call'); b.status = 'running'; delete b.result; return m; }],
+  ];
+  for (const [name, build] of probes) {
+    test(`rejects ${name}, as the zod schema does`, () => {
+      const input = build();
+      expect(SessionLogMessageSchema.safeParse(input).success).toBe(false);
+      expect(isSessionLogMessage(input)).toBe(false);
+    });
+  }
+
+  test('accepts a streaming message with an open tool call (C2 applies at rest only)', () => {
+    const m = withBlock('tool_call');
+    m.status = 'streaming';
+    const b = blockOf(m, 'tool_call');
+    b.status = 'running';
+    delete b.result;
+    expect(SessionLogMessageSchema.safeParse(m).success).toBe(true);
+    expect(isSessionLogMessage(m)).toBe(true);
+  });
 
   test('rejects a tool call with an unknown status and an attachment without a mime', () => {
     const tool = structuredClone(fixtures.flatMap((f) => f.threads.flatMap((t) => t.messages)).find((m) => m.blocks.some((b) => b.type === 'tool_call'))!);

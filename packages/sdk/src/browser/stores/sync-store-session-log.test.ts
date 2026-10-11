@@ -8,8 +8,10 @@ import { toV1 } from '../../core/session-log/v1';
 import { selectSessionRows } from '../../react/session-transcript-subscription';
 import { useSyncStore } from './sync-store';
 
-const log: SessionLog = JSON.parse(readFileSync(join(import.meta.dir, '../../core/session-log/session-log.fixture.json'), 'utf8'));
+const log: SessionLog = JSON.parse(readFileSync(join(import.meta.dir, '../../../../api-contract/src/__tests__/fixtures/session-log/golden21.v2.json'), 'utf8'));
 const ROOT = log.threads[0]!.thread_id;
+// As `fromV1` marks a converted thread; the v1 hooks read only such a thread through `toV1`.
+for (const t of log.threads) t.ext = { opencode: { version: 'kortix.transcript.v1', native_id: t.thread_id } };
 const SESSION = 'kses_log_1';
 
 function page(): SessionLogPage {
@@ -34,35 +36,33 @@ describe('sync store: the session log', () => {
     expect(store().sessionLogs.other).toBeUndefined();
   });
 
-  test('applyEvent routes a log.* frame to the session that holds its thread, and drops one nobody holds', () => {
+  test('applyEvent leaves log.* frames alone: the stream that knows its session applies them', () => {
     store().applySessionLogPage(SESSION, page());
-    const { m, b } = textTarget();
-    store().applyEvent(ev('log.block.delta', { thread_id: ROOT, message_id: m.message_id, block_id: b.id, delta: ' +1' }));
-    expect(textOf(m.message_id, b.id)).toBe(`${b.text} +1`);
     const before = store().sessionLogs;
-    store().applyEvent(ev('log.block.delta', { thread_id: 'ses_nobody', message_id: m.message_id, block_id: b.id, delta: 'x' }));
-    store().applyEvent(ev('log.state', { generation: 9, session: { title: 'no session id' } }));
+    const { m, b } = textTarget();
+    store().applyEvent(ev('log.block.delta', { thread_id: ROOT, message_id: m.message_id, block_id: b.id, delta: 'x' }));
+    store().applyEvent(ev('log.message', { message_id: m.message_id, rev: 99 }));
     expect(store().sessionLogs).toBe(before);
   });
 
-  test('log.message, log.thread and log.state reach the store through applyEvent', () => {
+  test('applySessionLogEvent applies log.message, log.thread, and a log.state patch without a session id', () => {
     store().applySessionLogPage(SESSION, page());
     const first = log.threads[0]!.messages[0]!;
-    store().applyEvent(ev('log.message', { message_id: first.message_id, rev: 5 }));
+    store().applySessionLogEvent(SESSION, ev('log.message', { message_id: first.message_id, rev: 5 }) as never);
     expect(store().sessionLogs[SESSION]!.messages[ROOT]!.some((x) => x.message_id === first.message_id)).toBe(false);
     const { messages: _m, ...head } = log.threads[0]!;
-    store().applyEvent(ev('log.thread', { ...head, title: 'Renamed thread' }));
+    store().applySessionLogEvent(SESSION, ev('log.thread', { ...head, title: 'Renamed thread' }) as never);
     expect(store().sessionLogs[SESSION]!.threads[ROOT]!.title).toBe('Renamed thread');
-    store().applyEvent(ev('log.state', { generation: 2, session: { session_id: log.session_id, title: 'Renamed session' } }));
+    store().applySessionLogEvent(SESSION, ev('log.state', { generation: 2, session: { title: 'Renamed session' } }) as never);
     expect(store().sessionLogs[SESSION]!.session.title).toBe('Renamed session');
   });
 
   test('a redelivered log.block.delta (same event id) appends once, and it counts as runtime activity', () => {
     store().applySessionLogPage(SESSION, page());
     const { m, b } = textTarget();
-    const frame = ev('log.block.delta', { thread_id: ROOT, message_id: m.message_id, block_id: b.id, delta: '!' }, 'evt_1');
-    store().applyEvent(frame);
-    store().applyEvent(frame);
+    const frame = ev('log.block.delta', { thread_id: ROOT, message_id: m.message_id, block_id: b.id, delta: '!' }, 'evt_1') as never;
+    store().applySessionLogEvent(SESSION, frame);
+    store().applySessionLogEvent(SESSION, frame);
     expect(textOf(m.message_id, b.id)).toBe(`${b.text}!`);
     expect(store().sessionActivityAt[ROOT]).toBeGreaterThan(0);
   });
@@ -94,13 +94,21 @@ describe('selectSessionRows: the v1 hooks read the session log through toV1', ()
     expect(selectSessionRows(store(), ROOT)).toBe(rows);
   });
 
+  test('a thread without the kortix.transcript.v1 ext (pi): the v1 store rows', () => {
+    const native = page();
+    for (const t of native.threads) delete t.ext;
+    store().applySessionLogPage(SESSION, native);
+    const rows = selectSessionRows(store(), ROOT);
+    expect(rows).toEqual([]);
+  });
+
   test('with a session log holding the thread: toV1 of it, the same array until something changes', () => {
     store().applySessionLogPage(SESSION, page());
     const rows = selectSessionRows(store(), ROOT);
     expect(rows).toEqual(v1());
     expect(selectSessionRows(store(), ROOT)).toBe(rows);
     const { m, b } = textTarget();
-    store().applyEvent(ev('log.block.delta', { thread_id: ROOT, message_id: m.message_id, block_id: b.id, delta: '?' }));
+    store().applySessionLogEvent(SESSION, ev('log.block.delta', { thread_id: ROOT, message_id: m.message_id, block_id: b.id, delta: '?' }) as never);
     const after = selectSessionRows(store(), ROOT);
     expect(after).not.toBe(rows);
     const part = after.find((r) => r.info.id === m.message_id)!.parts.find((p) => p.id === b.id) as { text: string };

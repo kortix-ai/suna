@@ -275,7 +275,7 @@ A session reads the log only when all three are true. Otherwise it reads v1, and
 2. The project flag `session_log` is `true`.
 3. The API serves the log to this SDK. The API does not serve it yet, so today every session reads v1.
 
-An SDK older than its API, or an API older than its SDK, reads v1. `useSessionMessages`, `useSession().messages` and `classifyTurn` return the same rows either way. A session-log message converts with `toV1`, the conversion the API uses for v1 readers. It replaces the v1 row with the same id. A deleted message stays out. A row the log does not hold yet, such as the streaming turn or an optimistic send, keeps its place. A row keeps its identity while its message is unchanged.
+An SDK older than its API, or an API older than its SDK, reads v1. `useSessionMessages`, `useSession().messages` and `classifyTurn` return the same rows either way. In a thread converted from v1 (OpenCode), a session-log message converts with `toV1`, the conversion the API uses for v1 readers, and replaces the v1 row with the same id. A pi thread keeps the v1 rows, as the API's v1 reads do. A deleted message stays out. A row the log does not hold yet, such as the streaming turn or an optimistic send, keeps its place. A row keeps its identity while its message is unchanged.
 
 ## Hooks
 

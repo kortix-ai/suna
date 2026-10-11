@@ -21,7 +21,6 @@ import {
 	EMPTY_SESSION_LOG_STATE,
 	applySessionLogEvent,
 	applySessionLogPage,
-	ownsSessionLogEvent,
 	type SessionLogEventInput,
 	type SessionLogState,
 } from "../../core/session-log/store";
@@ -285,17 +284,15 @@ interface SyncState {
 
 	// ---- Actions ----
 	/**
-	 * Also takes the session log's `log.state`, `log.thread`, `log.message` and
-	 * `log.block.delta` frames. A frame goes to the one session log that holds
-	 * its thread (or, for `log.state`, names its session); a frame no session
-	 * log owns is dropped. A source that knows the session calls
-	 * `applySessionLogEvent` instead.
+	 * The v1 frames. A session log's `log.*` frames do not come through here:
+	 * they name no Kortix session, so the stream that carries them (it knows its
+	 * session) calls `applySessionLogEvent`.
 	 */
 	applyEvent: (event: RuntimeEvent) => void;
 	/** Merge one page of the session log (`GET …/log`) into session `sessionId`'s log. */
 	applySessionLogPage: (sessionId: string, page: SessionLogPage) => void;
 	/** Apply one `log.*` frame to session `sessionId`'s log, creating it when absent. */
-	applySessionLogEvent: (sessionId: string, event: SessionLogEventInput & { id?: string }) => void;
+	applySessionLogEvent: (sessionId: string, event: SessionLogEventInput) => void;
 	/** Forget session `sessionId`'s log: its v1 hooks read the v1 store again. */
 	dropSessionLog: (sessionId: string) => void;
 	upsertMessage: (sessionID: string, message: Message) => void;
@@ -1239,7 +1236,7 @@ function takeDeltaEventId(sessionID: string, tailKey: string, id: string): boole
  * delta path's duplicate-delivery check (keyed by thread, the runtime session
  * id) and counts as runtime activity, as `message.part.delta` does.
  */
-function applySessionLogFrame(sessionId: string, event: SessionLogEventInput & { id?: string }): void {
+function applySessionLogFrame(sessionId: string, event: SessionLogEventInput): void {
 	const state = useSyncStore.getState();
 	const current = state.sessionLogs[sessionId] ?? EMPTY_SESSION_LOG_STATE;
 	const next = applySessionLogEvent(current, event);
@@ -2394,12 +2391,6 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 
 	applyEvent: (event) => {
 		const store = get();
-		if ((event.type as string).startsWith("log.")) {
-			const frame = event as unknown as SessionLogEventInput & { id?: string };
-			const owner = Object.keys(store.sessionLogs).find((id) => ownsSessionLogEvent(store.sessionLogs[id], frame));
-			if (owner !== undefined) applySessionLogFrame(owner, frame);
-			return;
-		}
 		switch (event.type) {
 			case "message.updated": {
 				{

@@ -23,7 +23,7 @@ const { useSyncStore } = await import('../browser/stores/sync-store');
 const { setRuntimeCapabilities } = await import('../browser/stores/sandbox-connection-store');
 const { useSessionLog, useSessionLogSync, useSessionLogThread } = await import('./use-session-log');
 
-const log: SessionLog = JSON.parse(readFileSync(join(import.meta.dir, '../core/session-log/session-log.fixture.json'), 'utf8'));
+const log: SessionLog = JSON.parse(readFileSync(join(import.meta.dir, '../../../api-contract/src/__tests__/fixtures/session-log/golden21.v2.json'), 'utf8'));
 const PROJECT = 'proj_log';
 const SESSION = 'kses_log';
 const page = () => {
@@ -92,6 +92,29 @@ describe('useSessionLogSync: negotiation and the first page', () => {
     act(() => renderer?.unmount());
     renderer = null;
     expect(useSyncStore.getState().sessionLogs[SESSION]).toBeUndefined();
+  });
+
+  test('v2 stays latched while a reconnect clears the capability list: no drop, no refetch', async () => {
+    let calls = 0;
+    const loader = async () => {
+      calls++;
+      return page();
+    };
+    const dialects: string[] = [];
+    render(() => {
+      dialects.push(useSessionLogSync(PROJECT, SESSION, { enabled: true, loader }));
+      return null;
+    });
+    await flush();
+    expect(useSyncStore.getState().sessionLogs[SESSION]).toBeDefined();
+    act(() => setRuntimeCapabilities(null));
+    await flush();
+    act(() => setRuntimeCapabilities(['session.log.v2']));
+    await flush();
+    expect(dialects.at(-1)).toBe('v2');
+    expect(dialects.slice(dialects.indexOf('v2'))).not.toContain('v1');
+    expect(calls).toBe(1);
+    expect(useSyncStore.getState().sessionLogs[SESSION]).toBeDefined();
   });
 
   for (const [name, setup] of [

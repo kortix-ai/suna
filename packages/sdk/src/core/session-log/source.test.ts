@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { fetchFirstSessionLogPage, loadSessionLogPage, negotiateSessionLog, SESSION_LOG_FIRST_PAGE_LIMIT } from './source';
 import type { SessionLog } from './types';
 
-const log: SessionLog = JSON.parse(readFileSync(join(import.meta.dir, 'session-log.fixture.json'), 'utf8'));
+const log: SessionLog = JSON.parse(readFileSync(join(import.meta.dir, '../../../../api-contract/src/__tests__/fixtures/session-log/golden21.v2.json'), 'utf8'));
 const loader = async () => ({});
 
 describe('negotiateSessionLog', () => {

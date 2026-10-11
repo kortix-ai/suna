@@ -6,14 +6,13 @@ import {
   EMPTY_SESSION_LOG_STATE,
   applySessionLogEvent,
   applySessionLogPage,
-  ownsSessionLogEvent,
   selectSessionLog,
   selectSessionLogThread,
   type SessionLogState,
 } from './store';
 import type { SessionLog, SessionLogMessage, TextBlock } from './types';
 
-const log: SessionLog = JSON.parse(readFileSync(join(import.meta.dir, 'session-log.fixture.json'), 'utf8'));
+const log: SessionLog = JSON.parse(readFileSync(join(import.meta.dir, '../../../../api-contract/src/__tests__/fixtures/session-log/golden21.v2.json'), 'utf8'));
 const ROOT = log.threads[0]!.thread_id;
 const CHILD = log.threads[1]!.thread_id;
 const rootMessages = () => structuredClone(log.threads[0]!.messages);
@@ -41,6 +40,15 @@ describe('applySessionLogPage', () => {
   test('a page of an older generation leaves a newer generation in place', () => {
     const state = applySessionLogPage(loaded(), page(rootMessages(), 0));
     expect(state.generation).toBe(1);
+  });
+
+  test('a page of the same generation keeps the session fields the stream delivered', () => {
+    let state = applySessionLogEvent(EMPTY_SESSION_LOG_STATE, ev('log.state', { generation: 3, session: { title: 'live title' } }));
+    state = applySessionLogPage(state, page(rootMessages(), 3));
+    expect(state.session.title).toBe('live title');
+    expect(state.session.session_id).toBe(log.session_id);
+    state = applySessionLogPage(state, page(rootMessages(), 4));
+    expect(state.session.title).toBe(log.title);
   });
 
   test('a page does not replace a message the stream delivered with a rev, nor revive a tombstone', () => {
@@ -147,24 +155,34 @@ describe('applySessionLogEvent', () => {
     expect(applySessionLogEvent(state, ev('log.block.delta', { thread_id: ROOT, message_id: target.message_id, block_id: block.id }))).toBe(state);
   });
 
+  test('a streaming put takes the following deltas; the higher-rev final put replaces it', () => {
+    const [user, reply] = rootMessages();
+    const streaming: SessionLogMessage = {
+      ...reply!, status: 'streaming', completed_at: null, finish: null,
+      blocks: [{ type: 'text', id: 'b0', text: '' } as TextBlock],
+    };
+    let state = applySessionLogEvent(EMPTY_SESSION_LOG_STATE, ev('log.message', { rev: 1, message: user }));
+    state = applySessionLogEvent(state, ev('log.message', { rev: 2, message: streaming }));
+    for (const delta of ['Hel', 'lo']) {
+      state = applySessionLogEvent(state, ev('log.block.delta', { thread_id: ROOT, message_id: reply!.message_id, block_id: 'b0', delta }));
+    }
+    const live = state.messages[ROOT]!.find((m) => m.message_id === reply!.message_id)!;
+    expect(live.status).toBe('streaming');
+    expect((live.blocks[0] as TextBlock).text).toBe('Hello');
+    state = applySessionLogEvent(state, ev('log.message', { rev: 3, message: reply }));
+    expect(state.messages[ROOT]!.find((m) => m.message_id === reply!.message_id)).toEqual(reply!);
+    // A late delta for a block the final record no longer has changes nothing.
+    expect(applySessionLogEvent(state, ev('log.block.delta', { thread_id: ROOT, message_id: reply!.message_id, block_id: 'b_gone', delta: 'x' }))).toBe(state);
+  });
+
+  test('a delta for a message the store does not hold builds no placeholder', () => {
+    const state = applySessionLogEvent(EMPTY_SESSION_LOG_STATE, ev('log.block.delta', { thread_id: ROOT, message_id: 'msg_x', block_id: 'b0', delta: 'x' }));
+    expect(state).toBe(EMPTY_SESSION_LOG_STATE);
+  });
+
   test('another event type changes nothing', () => {
     const state = loaded();
     expect(applySessionLogEvent(state, ev('message.updated', { info: {} }))).toBe(state);
-  });
-});
-
-describe('ownsSessionLogEvent', () => {
-  test('names the state that holds the event thread or message', () => {
-    const state = loaded();
-    const [a] = rootMessages();
-    expect(ownsSessionLogEvent(state, ev('log.block.delta', { thread_id: ROOT, message_id: 'm', block_id: 'b', delta: '' }))).toBe(true);
-    expect(ownsSessionLogEvent(state, ev('log.message', { rev: 1, message: a }))).toBe(true);
-    expect(ownsSessionLogEvent(state, ev('log.message', { message_id: a!.message_id, rev: 1 }))).toBe(true);
-    expect(ownsSessionLogEvent(state, ev('log.thread', { thread_id: 'ses_new', parent_thread_id: ROOT }))).toBe(true);
-    expect(ownsSessionLogEvent(state, ev('log.state', { generation: 1, session: { session_id: log.session_id } }))).toBe(true);
-    expect(ownsSessionLogEvent(state, ev('log.block.delta', { thread_id: 'ses_other', message_id: 'm', block_id: 'b', delta: '' }))).toBe(false);
-    expect(ownsSessionLogEvent(state, ev('log.state', { generation: 1, session: { title: 'no id' } }))).toBe(false);
-    expect(ownsSessionLogEvent(state, ev('log.thread', { thread_id: 'ses_new', parent_thread_id: null }))).toBe(false);
   });
 });
 

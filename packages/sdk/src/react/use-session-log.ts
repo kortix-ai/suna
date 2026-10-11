@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-store';
 import { useSyncStore } from '../browser/stores/sync-store';
@@ -62,7 +62,16 @@ export function useSessionLogSync(
 ): SessionLogDialect {
   const loader = options.loader === undefined ? loadSessionLogPage : options.loader;
   const active = options.enabled && !!loader && !!projectId && !!sessionId;
-  const capabilities = useSandboxConnectionStore((state) => state.runtimeCapabilities);
+  const live = useSandboxConnectionStore((state) => state.runtimeCapabilities);
+  // The runtime's answer is latched for the mounted session: a reconnect clears the list
+  // (`use-runtime-reconnect.ts`), and re-negotiating v1 there would drop the log, flip the
+  // rows to v1 and refetch the page. The flag is not latched: turning it off returns to v1.
+  // ponytail: the list is host-global (the last health any session answered), as in
+  // `useRuntimeSupports`; key it per session when two sessions with different runtimes mount.
+  const served = useRef<string | null>(null);
+  const key = `${projectId}/${sessionId}`;
+  if (live?.includes('session.log.v2')) served.current = key;
+  const capabilities = served.current === key ? ['session.log.v2'] : live;
   const flag = useFeatureFlag(active ? projectId : null, 'session_log').enabled;
   const dialect = active ? negotiateSessionLog({ capabilities, flag, loader }) : 'v1';
 

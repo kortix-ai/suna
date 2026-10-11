@@ -203,6 +203,7 @@ export function useRuntimeEventStream(
       fetchLspDiagnosticsDebounced,
       reconcileSessionTail: reconcileSessionTailFromRegistry,
       projectId,
+      sessionId: options.projectId && options.sessionId ? options.sessionId : null,
     });
 
     const hydrate = (options?: { refetchSessions?: boolean; rehydrateMessages?: boolean }) =>
