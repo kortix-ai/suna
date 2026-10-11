@@ -4372,8 +4372,10 @@ export const apps = kortixSchema.table(
     monthlyBudgetExplicit: boolean('monthly_budget_explicit').default(true).notNull(),
     /** Free-form labels (e.g. `backend`). They group and filter Apps; nothing derives behavior from them. */
     labels: text('labels').array().default(sql`'{}'::text[]`).notNull(),
-    /** Machines per process group (`fly scale count`). An absent group runs one machine. */
+    /** Machines per process group (`kortix apps scale count`). An absent group runs one machine. */
     scale: jsonb('scale').default({}).notNull(),
+    /** Where Kortix shows the App (`AppDisplay`: listed, preview, parent). Presentation only. */
+    display: jsonb('display').default({}).notNull(),
     lastRequestAt: timestamp('last_request_at', { withTimezone: true }),
     createdBy: uuid('created_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -4681,7 +4683,7 @@ export const appSiteBlobs = kortixSchema.table(
 
 /** Provider sandbox executing one deployment. */
 /**
- * A persistent volume of an App (Fly volumes, on Platinum volumes). It outlives
+ * A persistent volume of an App (on Platinum volumes). It outlives
  * every machine: a release swap detaches it from the old instance and attaches
  * it to the new one. At most one instance mounts it read-write at a time
  * (`attached_runtime_id` is that lock).
@@ -4697,7 +4699,7 @@ export const appVolumes = kortixSchema.table(
     /** The mount `source`: one per machine, so several volumes of a scaled group share it. */
     name: varchar('name', { length: 30 }).notNull(),
     processGroup: varchar('process_group', { length: 32 }).default('app').notNull(),
-    /** The machine this volume belongs to (Fly pins a volume to one machine). */
+    /** The machine this volume belongs to (a volume is pinned to one machine). */
     machineId: uuid('machine_id'),
     sizeGb: integer('size_gb').notNull(),
     provider: varchar('provider', { length: 32 }).default('platinum').notNull(),
@@ -4739,7 +4741,7 @@ export const appRuntimes = kortixSchema.table(
     ingressPort: integer('ingress_port').default(8080).notNull(),
     controlTokenHash: text('control_token_hash').notNull(),
     /**
-     * The Fly machine id: stable across instances. Each release swap is a new row
+     * The machine id: stable across instances. Each release swap is a new row
      * (a new instance, its own box) with the same machine id. Null on a row from
      * before machines: the runtime id stands in.
      */

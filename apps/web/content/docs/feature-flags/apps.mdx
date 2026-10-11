@@ -1,10 +1,9 @@
 ---
 title: Apps
-description: Deploy static sites, servers, workers, and backends with persistent volumes to stable Kortix URLs, on the Fly.io model.
+description: Deploy static sites, servers, workers, and backends with persistent volumes to stable Kortix URLs.
 ---
 
-A Kortix App is a provider-neutral deployment owned by one project. Kortix runs
-it on the Fly.io model. An App owns one stable URL and an access policy. Each
+A Kortix App is a provider-neutral deployment owned by one project. An App owns one stable URL and an access policy. Each
 deploy creates an immutable, numbered release: the artifact plus its resolved
 config. A failed release never replaces live traffic. A server App runs
 machines per process group, and a machine can mount a volume that outlives
@@ -158,7 +157,7 @@ The full subcommand list:
 |---|---|
 | `kortix apps list` | List the Apps you may open: slug, state, URL. `--json` adds labels, scale, services, and capabilities. |
 | `kortix apps create <slug>` | Create an App without deploying it. `--name`, `--cpu`, `--memory`, `--disk`, `--idle-timeout`, `--always-on` or `--on-demand`, `--uses <slugs>`. |
-| `kortix apps launch --template <name>` | Add a ready-made App to `kortix.yaml` and deploy it (Fly `launch`). `--name <slug>` (default: the template name), `--no-deploy` writes `kortix.yaml` only. Template: `convex`. |
+| `kortix apps launch --template <name>` | Add a ready-made App to `kortix.yaml` and deploy it. `--name <slug>` (default: the template name), `--no-deploy` writes `kortix.yaml` only. Template: `convex`. |
 | `kortix apps deploy [path]` | Deploy a directory, a `.tar.gz`, or `--image` as a new release. `--always-on` and `--on-demand` set the run mode. With no path and several `apps` blocks, it deploys every block in link order: each after the Apps it uses, then by name. |
 | `kortix apps set <id\|slug>` | Change an existing App: `--name`, `--cpu`, `--memory-gb`, `--disk-gb`, `--idle-timeout`, `--always-on`, `--on-demand`, `--uses <slugs>` (replaces; `--uses=` clears). |
 | `kortix apps link <id\|slug> --uses <slugs>` | Add Apps this App uses. `kortix apps unlink` removes them. |
@@ -202,7 +201,7 @@ redeploy.
 
 ### Deployment defaults from `kortix.yaml`
 
-An `apps.<name>` block is the App's `fly.toml`: deploy defaults plus the
+An `apps.<name>` block holds the App's deploy defaults plus the
 release config. The server stays the App control plane: the block never
 carries access, passwords, or member ids.
 
@@ -218,6 +217,7 @@ apps:
     type: dockerfile
     command: ["node", "server.js"]
     labels: [backend]
+    display: { preview: none }       # an icon card instead of a live thumbnail
     always_on: true
     processes:
       app: ""                        # "" runs the image's own command
@@ -249,6 +249,7 @@ apps:
 | `always_on`, `idle_timeout_seconds`, `resources` | Run mode and the App's default machine size. |
 | `env`, `secrets` | Runtime values, and runtime keys mapped to project secret **identifiers**. |
 | `uses`, `labels` | Apps this App uses; free-form tags. |
+| `display` | Where Kortix shows the App; presentation only. `listed` (default `true`: a card in the Apps grid), `preview` (`live`, the default, frames the App on its card; `none` shows an icon), `parent` (another App of the file: this App is a tab in its detail, not a card). |
 | `processes` | Process group → shell command. |
 | `http_service` | The primary service: `internal_port`, `access`, `auto_stop_machines` (`off`, `stop`, `suspend`), `auto_start_machines`, `min_machines_running`, `processes`, `checks`. |
 | `services` | More HTTP services: `{ name, internal_port, access, processes, checks }`. |
@@ -260,8 +261,27 @@ Select a block with `kortix apps deploy --manifest-app docs`. An explicit flag
 always wins over the block. A static block needs only `path`, `type`, and
 `spa`: the run mode, machine, `env`, `secrets`, and the release config apply
 to server Apps. A block with `uses` replaces the App's list of used Apps on
-every deploy, and a block with `labels` replaces its labels. `kortix apps
-deploy` with no arguments deploys every block, used Apps first.
+every deploy, and a block with `labels` replaces its labels. Every deploy
+writes the block's `display` (absent = the defaults); `kortix apps show`
+prints it on the `shown` row. `kortix apps deploy` with no arguments deploys
+every block, used Apps first.
+
+### Display: cards and tabs
+
+`display` decides where an App appears in the Apps tab. It never changes how
+the App runs or who may open it.
+
+- `listed: false` takes the App out of the grid.
+- `preview: none` shows an icon on the App's card instead of a live thumbnail.
+  Use it for an App whose root page is not for people (an API, a backend).
+- `parent: <slug>` makes the App a tab in that App's detail, with no card of
+  its own. The tab label is the App's name without the `<parent>-` prefix
+  (`db-dashboard` → Dashboard). An App with `preview: none` opens on its first
+  tab. A tab whose parent does not exist stays a card.
+
+`PATCH /v1/projects/:projectId/apps/:appId` with `display` replaces it whole;
+`{}` restores the defaults. An unknown key, a `preview` other than `live` or
+`none`, or a malformed `parent` answers `400`.
 
 `kortix validate` refuses the same release config the API refuses
 (`400 app_config_invalid` with `issues: [{ path, message }]`). `kind` and
@@ -557,19 +577,22 @@ reachable only from inside its own machine (`kortix apps exec`).
 The `convex` template is a full backend for one project: a database, server
 functions, realtime queries, file storage, schedules, and search, powered by
 self-hosted Convex, with Kortix sign-in. It is an ordinary server App: a
-pinned image, a volume, two services, and a dashboard App next to it. Every
-command in this section works for any App.
+pinned image, a volume, two services, and a dashboard App shown as a tab of
+it. Every command in this section works for any App.
 
 ```bash
 kortix apps launch --template convex --name db
 ```
 
-`launch` writes two blocks into `kortix.yaml` and deploys them:
+`launch` writes two blocks into `kortix.yaml`, deploys `db`, stores its
+admin key as the project secret `DB_ADMIN_KEY` (the slug in capitals, `-` →
+`_`; read from `./generate_admin_key.sh` on the machine, never printed, kept
+when it already has a value), then deploys `db-dashboard`:
 
 | App | What it is |
 |---|---|
-| `db` | The backend: the self-hosted Convex image, pinned by digest. `http` service on port 3210 (`access: public`, a `/version` check): the Convex client URL, the sync WebSocket, and the admin API. `site` service on port 3211 (`access: public`): HTTP actions, on `<db host>--site`. A `data` volume at `/convex/data`. Always on, 1 vCPU / 1 GB / 10 GB, label `backend`. |
-| `db-dashboard` | Convex's dashboard, `access: admins`, on demand. It `uses: [db]` and reaches the backend through its own origin (`/_kortix/apps/db`). |
+| `db` | The backend: the self-hosted Convex image, pinned by digest. `http` service on port 3210 (`access: public`, a `/version` check): the Convex client URL, the sync WebSocket, and the admin API. `site` service on port 3211 (`access: public`): HTTP actions, on `<db host>--site`. A `data` volume at `/convex/data`. Always on, 1 vCPU / 1 GB / 10 GB, label `backend`, `display: { preview: none }`. |
+| `db-dashboard` | Convex's dashboard, `access: admins`, on demand. It `uses: [db]` and reaches the backend through its own origin (`/_kortix/apps/db`). `display: { parent: db }`: the Dashboard tab of `db`. `secrets: { NEXT_PUBLIC_ADMIN_KEY: DB_ADMIN_KEY }`: it opens signed in. |
 
 Both backend services are `public` on purpose: Convex enforces sign-in in its
 functions. The dashboard is for project admins (`project.app.admin`) only. `--no-deploy` writes
@@ -586,16 +609,13 @@ the blocks and deploys nothing.
 ### Connect and deploy Convex code
 
 The Convex code lives in the project repo, for example `apps/db/` with a
-`package.json` and a `convex/` directory. The admin key comes from the machine
-itself:
+`package.json` and a `convex/` directory. `launch` stored the admin key as the
+project secret `DB_ADMIN_KEY`; a session has it in its environment:
 
 ```bash
-kortix apps exec db -- sh -c "cd /convex && ./generate_admin_key.sh"   # project.app.admin
-kortix secrets set CONVEX_SELF_HOSTED_ADMIN_KEY=<key>                  # keep it as a project secret
-
 cd apps/db
 npm install convex@1.46.0 @kortix/sdk
-export CONVEX_SELF_HOSTED_URL=<the db App URL> CONVEX_SELF_HOSTED_ADMIN_KEY=<key>
+export CONVEX_SELF_HOSTED_URL=<the db App URL> CONVEX_SELF_HOSTED_ADMIN_KEY="$DB_ADMIN_KEY"
 kortix apps auth-env db | while IFS='=' read -r k v; do printf '%s' "$v" | npx convex env set "$k"; done
 npx convex deploy
 ```
@@ -615,8 +635,20 @@ today: export the data (`npx convex export --include-file-storage`), launch a
 new backend App, import it there, then delete the old App.
 :::
 
-The dashboard: `kortix apps access-link db-dashboard` prints a five-minute
-browser link (project admins). Log in with the admin key.
+The dashboard: Apps → `db` → Dashboard (project admins). It reads the admin
+key on every request, so it opens signed in. `kortix apps access-link
+db-dashboard` prints a five-minute browser link to the same page.
+
+An App launched before the Dashboard tab shows its dashboard as its own card
+and asks for the key. To bring it up to date, add `display: { preview: none }`
+to the backend block and `display: { parent: db }` plus
+`secrets: { NEXT_PUBLIC_ADMIN_KEY: DB_ADMIN_KEY }` to the dashboard block, then:
+
+```bash
+kortix apps exec db -- sh -c "cd /convex && ./generate_admin_key.sh" | tail -n 1 | kortix secrets set DB_ADMIN_KEY=-
+kortix apps deploy --manifest-app db
+kortix apps deploy --manifest-app db-dashboard
+```
 
 ### Sign-in: functions know the member
 
@@ -768,7 +800,7 @@ const member = await verifyKortixToken(bearer, {
 including internal ones. Use it for tooling, never in an App or a browser.
 
 ```bash
-export CONVEX_SELF_HOSTED_URL="$CONVEX_URL" CONVEX_SELF_HOSTED_ADMIN_KEY=<key>
+export CONVEX_SELF_HOSTED_URL="$CONVEX_URL" CONVEX_SELF_HOSTED_ADMIN_KEY="$DB_ADMIN_KEY"
 npx convex run tasks:list '{}'
 npx convex data tasks --limit 20
 npx convex export --path backup.zip --include-file-storage
@@ -786,7 +818,7 @@ documents these features for Convex Cloud only, or on a paid Convex plan:
 | Convex Cloud feature | On the `convex` template |
 |---|---|
 | `npx convex dev`, deploy keys, preview deployments | `npx convex deploy` with the admin key. No preview deployments: `kortix apps volumes fork` makes a point-in-time copy of the data. |
-| dashboard.convex.dev, `npx convex dashboard` | The `<name>-dashboard` App (`kortix apps access-link`) |
+| dashboard.convex.dev, `npx convex dashboard` | The `<name>-dashboard` App: the Dashboard tab of the backend, signed in |
 | `npx convex insights` (Convex Cloud only) | `npx convex logs` and `kortix apps logs` |
 | AI Gateway for models called from actions (unavailable when self-hosting) | Call the model provider from an action with your own key in an environment variable |
 | Custom domains (Convex Pro) | Not available: the URLs are fixed for the App's life |

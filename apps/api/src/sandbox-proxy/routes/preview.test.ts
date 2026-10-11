@@ -264,6 +264,12 @@ describe('stripFrameAncestors', () => {
     expect(stripFrameAncestors('  FRAME-ANCESTORS * ; img-src data:')).toBe('img-src data:');
   });
 
+  test('cleans every policy of a comma-separated list and drops the ones left empty', () => {
+    expect(stripFrameAncestors(", frame-ancestors https://sandbox.example.test; img-src 'self'")).toBe("img-src 'self'");
+    expect(stripFrameAncestors("frame-ancestors 'self', frame-ancestors *")).toBeNull();
+    expect(stripFrameAncestors("script-src 'self'; frame-ancestors 'none', img-src data:")).toBe("script-src 'self', img-src data:");
+  });
+
   test('a lookalike directive is not eaten', () => {
     expect(stripFrameAncestors('frame-ancestors-src *')).toBe('frame-ancestors-src *');
   });

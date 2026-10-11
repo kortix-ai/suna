@@ -361,7 +361,7 @@ An existing GitHub `origin` links through the Kortix GitHub App. Any other exist
 
 ### Apps
 
-Deploys and operates the project's Kortix Apps on the Fly.io model: immutable releases, replaceable machines, persistent volumes. Each App owns one stable URL. A static App is files that Kortix serves, with no machine. A server App (Dockerfile, bundle, or OCI image) runs machines per process group, always on or on demand; a machine can mount a volume that outlives every release. Configure it in `kortix.yaml` `apps.<name>` (the App's `fly.toml`). Apps have no budget: account credits pay for compute. An always-on server App bills 24/7. Needs the `apps` project feature. Full guide: [Apps](/docs/feature-flags/apps).
+Deploys and operates the project's Kortix Apps: immutable releases, replaceable machines, persistent volumes. Each App owns one stable URL. A static App is files that Kortix serves, with no machine. A server App (Dockerfile, bundle, or OCI image) runs machines per process group, always on or on demand; a machine can mount a volume that outlives every release. Configure it in `kortix.yaml` `apps.<name>`. Apps have no budget: account credits pay for compute. An always-on server App bills 24/7. Needs the `apps` project feature. Full guide: [Apps](/docs/feature-flags/apps).
 
 | Command | Effect |
 | --- | --- |

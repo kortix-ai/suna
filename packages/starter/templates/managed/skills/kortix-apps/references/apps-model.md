@@ -1,4 +1,4 @@
-# The App model (Fly.io): releases, machines, volumes
+# The App model: releases, machines, volumes
 
 ## Releases
 
@@ -120,15 +120,37 @@ A release that never gets healthy is abandoned: its machines go, traffic stays
 on (or returns to) the previous release, and a replaced machine comes back on
 its own volume.
 
+## Display
+
+`display` says where Kortix shows the App. It is presentation only: how the
+App runs and who may open it do not change.
+
+```yaml
+display:
+  listed: true          # a card in the Apps grid (default true)
+  preview: none         # live (default): the card frames the App; none: an icon card
+  parent: db            # a tab in db's App detail, not a card of its own
+```
+
+- `parent` names another App of the same `kortix.yaml`. A tab whose parent
+  does not exist stays a card. The tab label is the App's name without the
+  `<parent>-` prefix (`db-dashboard` → Dashboard).
+- An App with `preview: none` opens on its first tab.
+- `kortix apps deploy` writes the block's `display` to the App (absent = the
+  defaults). `kortix apps show` prints it on the `shown` row.
+
 ## Templates
 
 `kortix apps launch --template <name> [--name <slug>]` writes a ready-made
 App's blocks into `kortix.yaml` and deploys them. Templates are data: pinned
-images and config, nothing the platform runs specially.
+images and config, nothing the platform runs specially. A template can also
+create project secrets: right after the named App deploys, `launch` runs a
+command on its machine and stores the last line it prints. A secret that
+already holds a value is kept. The value is never printed.
 
 | Template | What it is | Reference |
 | --- | --- | --- |
-| `convex` | A self-hosted Convex backend + an admins-only dashboard | convex.md |
+| `convex` | A self-hosted Convex backend + its dashboard (a tab of the backend, admins only, signed in) | convex.md |
 
 Not yet: TCP services (a Postgres or Redis client protocol; `protocol: tcp` is
 refused) and private networking between Apps. Until then a database that speaks raw TCP can only be

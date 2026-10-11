@@ -138,10 +138,21 @@ SessionLogJournalResponseSchema = {
   acked: array(SessionLogAckSchema)
 }
 
+SessionLogJournalSeqConflictSchema = {
+  error: literal("seq_conflict")
+  message_id: string(min1)
+  rev: number(int)(min0)
+  thread_id: string(min1)
+  seq: number(int)
+}
+
 SessionLogManifestSchema = {
+  generation: number(int)(min0)
   messages: array({
     message_id: string(min1)
     content_hash: string(min1)
+    rev: number(int)(min0)
+    deleted: boolean
   })
 }
 

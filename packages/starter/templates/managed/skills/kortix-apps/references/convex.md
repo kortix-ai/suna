@@ -2,7 +2,7 @@
 
 A Convex backend is a plain Kortix App made from the `convex` template: the
 self-hosted Convex backend image (pinned by digest), its data on a volume, two
-services, and an admins-only dashboard App next to it. Nothing about it is
+services, and an admins-only dashboard App shown as a tab of it. Nothing about it is
 special to Kortix: every command here works for any App.
 
 It gives the project a transactional database, TypeScript server functions,
@@ -14,15 +14,37 @@ realtime queries, file storage, schedules and search, with Kortix sign-in.
 kortix apps launch --template convex --name db
 ```
 
-It writes two blocks into `kortix.yaml` and deploys them:
+It writes two blocks into `kortix.yaml`, then:
+
+1. deploys `db`;
+2. runs `./generate_admin_key.sh` on the `db` machine and stores the key as
+   the project secret `DB_ADMIN_KEY` (the slug in capitals, `-` → `_`). A
+   secret that already holds a value is kept. The key is never printed;
+3. deploys `db-dashboard`.
 
 | App | What it is |
 | --- | --- |
-| `db` | The backend. `http` service (port 3210, `access: public`, a `/version` check): the Convex client URL and sync WebSocket. `site` service (port 3211, `access: public`): HTTP actions, on `<db host>--site`. A `data` volume at `/convex/data`. Always on, 1 vCPU / 1 GB. |
-| `db-dashboard` | Convex's dashboard, `access: admins`. It `uses: [db]` and reaches it through its own origin (`/_kortix/apps/db`). |
+| `db` | The backend. `http` service (port 3210, `access: public`, a `/version` check): the Convex client URL and sync WebSocket. `site` service (port 3211, `access: public`): HTTP actions, on `<db host>--site`. A `data` volume at `/convex/data`. Always on, 1 vCPU / 1 GB. `display: { preview: none }`: an icon card. |
+| `db-dashboard` | Convex's dashboard, `access: admins`. It `uses: [db]` and reaches it through its own origin (`/_kortix/apps/db`). `display: { parent: db }`: the Dashboard tab of `db`, no card of its own. `secrets: { NEXT_PUBLIC_ADMIN_KEY: DB_ADMIN_KEY }`: it opens signed in. |
 
 Both services are `public` on purpose: Convex enforces sign-in in its
 functions (`requireMember`, sign-in.md). The dashboard is project admins only.
+
+To open the dashboard: Apps → `db` → Dashboard. It reads the key on every
+request, so a project admin lands in it signed in.
+
+### An App launched before the Dashboard tab
+
+Its dashboard asks for the admin key and shows as its own card. Bring it up
+to date:
+
+1. Add `display: { preview: none }` to the backend block, and
+   `display: { parent: db }` plus `secrets: { NEXT_PUBLIC_ADMIN_KEY: DB_ADMIN_KEY }`
+   to the dashboard block.
+2. Store the key without printing it:
+   `kortix apps exec db -- sh -c "cd /convex && ./generate_admin_key.sh" | tail -n 1 | kortix secrets set DB_ADMIN_KEY=-`
+3. Deploy both Apps: `kortix apps deploy --manifest-app db`, then
+   `kortix apps deploy --manifest-app db-dashboard`.
 
 ## The split
 
@@ -59,19 +81,13 @@ Read `convex/_generated/ai/guidelines.md` before your first change. Keep
 `convex` at the version the template pins (1.46.0): a newer CLI can need
 server APIs this backend lacks.
 
-**2. Connect.** The admin key comes from the machine itself (project admins):
-
-```sh
-kortix apps exec db -- sh -c "cd /convex && ./generate_admin_key.sh"
-```
-
-It prints `Admin key:` and the key. Keep it as a project secret
-(`kortix secrets set CONVEX_SELF_HOSTED_ADMIN_KEY=<key>`) and load it into the
+**2. Connect.** `launch` stored the admin key as the project secret
+`DB_ADMIN_KEY`, and a session has it in its environment. Load it into the
 shell only:
 
 ```sh
 export CONVEX_SELF_HOSTED_URL=$(kortix apps show db --json | python3 -c 'import sys,json;print(json.load(sys.stdin)["app"]["url"])')
-export CONVEX_SELF_HOSTED_ADMIN_KEY=<the key>
+export CONVEX_SELF_HOSTED_ADMIN_KEY="$DB_ADMIN_KEY"
 kortix apps auth-env db | while IFS='=' read -r k v; do printf '%s' "$v" | npx convex env set "$k"; done
 npx convex codegen --init                   # once: convex/tsconfig.json and convex/_generated
 ```
@@ -121,7 +137,8 @@ curl -s "$CONVEX_SELF_HOSTED_URL/api/query" -H "Authorization: Bearer $TOKEN" -H
 
 A UI that uses the backend is verified in the browser (SKILL.md, Verify).
 
-**6. Hand over.** The dashboard (project admins), logged in with the admin key:
+**6. Hand over.** The dashboard (project admins, signed in): Apps → `db` →
+Dashboard, or a direct link:
 
 ```sh
 kortix apps access-link db-dashboard --json    # access_session.url, valid 5 minutes
@@ -143,7 +160,7 @@ disagree on deploying, credentials or auth, this skill wins:
 | Convex Cloud feature | Here |
 | --- | --- |
 | `npx convex dev`, deploy keys, preview deployments | `npx convex deploy` with the admin key; no preview deployments (a volume fork is a point-in-time copy inside the same App) |
-| dashboard.convex.dev | the `db-dashboard` App |
+| dashboard.convex.dev | the `db-dashboard` App: the Dashboard tab of `db` |
 | Convex AI gateway | call the model provider from an action with your own key |
 | Log streams, exception reporting | `npx convex logs`, `kortix apps logs db` |
 | Scheduled cloud backups | daily volume snapshots (below) |
