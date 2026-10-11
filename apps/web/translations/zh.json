@@ -1133,7 +1133,7 @@
         "overridden": "已为此项目覆盖",
         "defaultOn": "默认开启",
         "defaultOff": "默认关闭",
-        "organization": "整个组织"
+        "organization": "整个组织，由 Kortix 管理"
       },
       "search": "搜索功能",
       "loadFailed": "无法加载项目",
@@ -1220,8 +1220,7 @@
           "name": "会话日志 v2",
           "description": "通过 v2 会话日志而不是 v1 转录读取会话。由 Kortix 按项目启用。"
         }
-      },
-      "organizationPermission": "你需要组织的设置权限才能更改组织级标志。"
+      }
     },
     "upgrades": {
       "available": "可用升级",

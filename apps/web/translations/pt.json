@@ -1133,7 +1133,7 @@
         "overridden": "Substituído para este projeto",
         "defaultOn": "Ativado por padrão",
         "defaultOff": "Desativado por padrão",
-        "organization": "Para toda a organização"
+        "organization": "Toda a organização, gerenciado pela Kortix"
       },
       "search": "Pesquisar recursos",
       "loadFailed": "Não foi possível carregar o projeto",
@@ -1220,8 +1220,7 @@
           "name": "Registo de sessão v2",
           "description": "Lê uma sessão através do registo de sessão v2 em vez da transcrição v1. A Kortix ativa-o por projeto."
         }
-      },
-      "organizationPermission": "Você precisa da permissão de configurações da organização para alterar um flag da organização."
+      }
     },
     "upgrades": {
       "available": "Atualizações disponíveis",

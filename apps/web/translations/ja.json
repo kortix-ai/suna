@@ -1133,7 +1133,7 @@
         "overridden": "このプロジェクトで上書き",
         "defaultOn": "デフォルトでオン",
         "defaultOff": "デフォルトでオフ",
-        "organization": "組織全体"
+        "organization": "組織全体（Kortix が管理）"
       },
       "search": "機能を検索",
       "loadFailed": "プロジェクトを読み込めませんでした",
@@ -1220,8 +1220,7 @@
           "name": "セッションログ v2",
           "description": "セッションを v1 のトランスクリプトではなく v2 のセッションログ経由で読み取ります。Kortix がプロジェクトごとに有効にします。"
         }
-      },
-      "organizationPermission": "組織フラグを変更するには、組織の設定権限が必要です。"
+      }
     },
     "upgrades": {
       "available": "利用可能なアップグレード",

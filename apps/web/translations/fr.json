@@ -1133,7 +1133,7 @@
         "overridden": "Remplacé pour ce projet",
         "defaultOn": "Activé par défaut",
         "defaultOff": "Désactivé par défaut",
-        "organization": "Pour toute l'organisation"
+        "organization": "Toute l'organisation, géré par Kortix"
       },
       "search": "Rechercher des fonctionnalités",
       "loadFailed": "Impossible de charger le projet",
@@ -1220,8 +1220,7 @@
           "name": "Journal de session v2",
           "description": "Lit une session via le journal de session v2 au lieu de la transcription v1. Kortix l’active par projet."
         }
-      },
-      "organizationPermission": "Il vous faut l'autorisation de paramètres de l'organisation pour modifier un flag d'organisation."
+      }
     },
     "upgrades": {
       "available": "Mises à niveau disponibles",

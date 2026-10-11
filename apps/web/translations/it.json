@@ -1133,7 +1133,7 @@
         "overridden": "Sostituito per questo progetto",
         "defaultOn": "Attivo per impostazione predefinita",
         "defaultOff": "Disattivo per impostazione predefinita",
-        "organization": "Per tutta l'organizzazione"
+        "organization": "Tutta l'organizzazione, gestito da Kortix"
       },
       "search": "Cerca funzionalità",
       "loadFailed": "Impossibile caricare il progetto",
@@ -1220,8 +1220,7 @@
           "name": "Log di sessione v2",
           "description": "Legge una sessione tramite il log di sessione v2 invece della trascrizione v1. Kortix lo attiva per progetto."
         }
-      },
-      "organizationPermission": "Ti serve il permesso sulle impostazioni dell'organizzazione per modificare un flag dell'organizzazione."
+      }
     },
     "upgrades": {
       "available": "Aggiornamenti disponibili",

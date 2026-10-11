@@ -1133,7 +1133,7 @@
         "overridden": "Für dieses Projekt überschrieben",
         "defaultOn": "Standardmäßig an",
         "defaultOff": "Standardmäßig aus",
-        "organization": "Für die ganze Organisation"
+        "organization": "Ganze Organisation, von Kortix verwaltet"
       },
       "search": "Funktionen suchen",
       "loadFailed": "Projekt konnte nicht geladen werden",
@@ -1220,8 +1220,7 @@
           "name": "Session-Log v2",
           "description": "Liest eine Session über das Session-Log v2 statt über das Transkript v1. Kortix aktiviert es pro Projekt."
         }
-      },
-      "organizationPermission": "Du brauchst die Einstellungsberechtigung der Organisation, um ein Organisations-Flag zu ändern."
+      }
     },
     "upgrades": {
       "available": "Verfügbare Upgrades",

@@ -71,8 +71,9 @@
  *
  * `volumes` is one value for the whole organization: it IS the organization's
  * Volumes switch (the `session_boot_modes` policy row, Admin → Volumes), not a
- * project override. Every project's Settings lists it; `PATCH .../features`
- * writes the organization entry and needs `account.write`. Flags with
+ * project override. Every project's Settings lists it, `operator_only`:
+ * `PATCH .../features` from a platform operator writes the organization
+ * entry; anyone else gets 403 `feature_operator_only`. Flags with
  * `derivedFrom: 'volumes'` (drives, ephemeral_sandboxes) follow it.
  *
  * A hidden flag is a DATED state, not a parking spot: hide it in the release
@@ -136,9 +137,9 @@ export interface FeatureFlagDef {
   derivedFrom?: 'volumes';
   /**
    * `organization`: one value for every project of the organization, stored
-   * outside the project (see {@link resolveFeatureFlag}). Offered in every
-   * project's Settings → Feature flags; only an organization admin
-   * (`account.write`) may change it. Absent ⇒ a per-project flag.
+   * outside the project (see {@link resolveFeatureFlag}). Listed in every
+   * project's Settings → Feature flags as `operator_only`: only a platform
+   * operator may change it. Absent ⇒ a per-project flag.
    */
   scope?: 'organization';
 }
@@ -578,7 +579,7 @@ export function buildFeatureFlagCatalog(metadata: unknown, accountId?: string | 
         f.scope === 'organization'
           ? volumesOrgEntry(accountId) !== undefined
           : explicitOverride(metadata, f.key) !== undefined,
-      operator_only: f.catalogHidden === true,
+      operator_only: isOperatorOnlyFeatureFlag(f.key),
       scope: f.scope ?? 'project',
     }];
   });
@@ -586,5 +587,7 @@ export function buildFeatureFlagCatalog(metadata: unknown, accountId?: string | 
 
 /** True when only a platform operator may write this flag. */
 export function isOperatorOnlyFeatureFlag(key: FeatureFlagKey): boolean {
-  return FLAG_BY_KEY[key]?.catalogHidden === true;
+  // An organization flag (`volumes`) is experimental and changes every project
+  // of the organization: Kortix decides it, like an internal-only flag.
+  return FLAG_BY_KEY[key]?.catalogHidden === true || FLAG_BY_KEY[key]?.scope === 'organization';
 }

@@ -959,7 +959,7 @@
         "overridden": "Overridden for this project",
         "defaultOn": "Default on",
         "defaultOff": "Default off",
-        "organization": "For the whole organization"
+        "organization": "Whole organization, managed by Kortix"
       },
       "search": "Search features",
       "loadFailed": "Failed to load project",
@@ -1046,8 +1046,7 @@
           "name": "Session log v2",
           "description": "Reads a session through the v2 session log instead of the v1 transcript. Kortix enables it per project."
         }
-      },
-      "organizationPermission": "You need the organization's settings permission to change an organization flag."
+      }
     },
     "upgrades": {
       "available": "Available upgrades",

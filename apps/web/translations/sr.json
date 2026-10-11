@@ -1133,7 +1133,7 @@
         "overridden": "Промењено за овај пројекат",
         "defaultOn": "Подразумевано укључено",
         "defaultOff": "Подразумевано искључено",
-        "organization": "Za celu organizaciju"
+        "organization": "Cela organizacija, upravlja Kortix"
       },
       "search": "Претражи функције",
       "loadFailed": "Није могуће учитати пројекат",
@@ -1220,8 +1220,7 @@
           "name": "Log sesije v2",
           "description": "Čita sesiju preko loga sesije v2 umesto transkripta v1. Kortix ga uključuje po projektu."
         }
-      },
-      "organizationPermission": "Potrebna ti je dozvola za podešavanja organizacije da bi promenio flag organizacije."
+      }
     },
     "upgrades": {
       "available": "Доступне надоградње",
