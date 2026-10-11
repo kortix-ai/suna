@@ -27,9 +27,9 @@ In `kortix.yaml`, `uses` in the App's block replaces its list on every
 
 ```yaml
 apps:
-  db:
-    path: apps/db
-    kind: convex
+  db:                    # the Convex template (convex.md): image, volume, services
+    type: oci_image
+    image: ghcr.io/get-convex/convex-backend@sha256:…
   crm:
     path: apps/crm/dist
     type: static
@@ -64,17 +64,23 @@ call itself (`requireMember`, sign-in.md): its own URL is public.
 | Answer on `/_kortix/apps/<slug>/…` | Cause | Fix |
 | --- | --- | --- |
 | `403 app_not_linked` | The App does not use `<slug>` | `kortix apps link <app> --uses <slug>` |
-| `409 app_binding_unsupported` | The used App has no endpoint to bind | Only a `convex` App has one (its Convex client API). Call a web App on its own URL. |
+| `409 app_binding_unsupported` | The used App is static: it runs no server | Fetch a static App's files on its own URL. |
+| `403 app_binding_forbidden` | The service is `access: admins` | An admins-only service is never bound. |
+| `404 app_service_not_found` | `<slug>--<service>` names no service | Check `kortix apps show <slug> --json` → `services`. |
+| `503 app_binding_unavailable` | The used App has no running release | Deploy it, or start it. |
 | `401 app_auth_required` | The viewer did not pass the App's access gate | Open the App through Kortix or an access link. |
 
 ## What stays on the used App's own host
 
-The binding is for App code in the browser. These keep the `convex` App's own
-`instance.url` and `instance.site_url`:
+The binding is for App code in the browser. `/_kortix/apps/<slug>/*` reaches
+the used App's `http` service and `/_kortix/apps/<slug>--<service>/*` another of
+its services; a service with `access: admins` is never bound
+(`403 app_binding_forbidden`). These keep the used App's own URLs
+(`app.services[].url`):
 
-- The Convex CLI (`npx convex …`, after `eval "$(kortix apps credentials <slug>)"`).
+- The Convex CLI (`npx convex …` with `CONVEX_SELF_HOSTED_URL` = the App URL).
 - File storage URLs that Convex makes (`ctx.storage.getUrl`): they name the
   App's own host.
-- HTTP actions (`convex/http.ts`): they answer on `instance.site_url`.
+- HTTP actions (`convex/http.ts`): they answer on the `site` service's URL.
 - Scripts, servers and other clients outside an App (sign-in.md, "Who gets a
   token").

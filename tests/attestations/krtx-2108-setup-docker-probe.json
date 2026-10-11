@@ -1,0 +1,17 @@
+{
+  "source_hash": "fc5b8d25958f709e2be2f74c990a024a0c9caf0299bd2ff123411a27670f37d6",
+  "diff_files": [
+    "apps/api/src/__tests__/e2e-setup.test.ts",
+    "apps/api/src/__tests__/setup-docker-probe.test.ts",
+    "apps/api/src/setup/index.ts"
+  ],
+  "diff_hash": "36f97e23478d45ab05465e365afe511b10307db5d07025c0f881346504b65bf3",
+  "head": "3dabf506aa0fe006fab5b1568ce9bf76f3495a7b",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-11T00:17:45.785Z"
+}

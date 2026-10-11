@@ -51,7 +51,8 @@ function app(overrides: Record<string, unknown> = {}) {
     active_deployment_id: null,
     machine: { cpu: 1, memory_gb: 2, disk_gb: 10 },
     idle_timeout_seconds: 300,
-    monthly_budget_usd: 5,
+    always_on: false,
+    estimated_monthly_usd: 73.48,
     last_request_at: null,
     created_at: '2026-01-01T00:00:00.000Z',
     updated_at: '2026-01-01T00:00:00.000Z',
@@ -91,9 +92,6 @@ function startServer(): string {
         if (typeof patch.idle_timeout_seconds === 'number' && patch.idle_timeout_seconds < 120) {
           return Response.json({ error: 'idle_timeout_seconds must be >= 120' }, { status: 400 });
         }
-        if (patch.always_on === true && patch.monthly_budget_usd !== undefined) {
-          return Response.json({ code: 'app_budget_not_applicable', error: 'An always-on App has no monthly budget: it runs 24/7 at a fixed cost (about $73.48 a month). Run it on demand (always_on: false) to cap its cost with a budget.' }, { status: 400 });
-        }
         return Response.json(
           app({
             name: (patch.name as string) ?? 'Storefront',
@@ -103,7 +101,7 @@ function startServer(): string {
               disk_gb: (patch.disk_gb as number) ?? 10,
             },
             idle_timeout_seconds: (patch.idle_timeout_seconds as number) ?? 300,
-            monthly_budget_usd: (patch.monthly_budget_usd as number) ?? 5,
+            always_on: (patch.always_on as boolean) ?? false,
             uses: (patch.uses as string[]) ?? [],
           }),
         );
@@ -202,11 +200,15 @@ describe('kortix apps set', () => {
     }
   });
 
-  test('show prints the budget of an on-demand App', async () => {
+  test('show prints no budget and no price: an on-demand App runs on demand, an always-on App runs 24/7', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(['apps', 'show', 'storefront', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(r.stdout).toMatch(/budget\s+\$5\/month/);
+    expect(r.stdout).not.toMatch(/budget|cost|\$/);
+    expect(r.stdout).toMatch(/runs\s+on demand/);
+    const on = await runCli(['apps', 'set', 'storefront', '--project', PROJECT, '--always-on'], config);
+    expect(on.stdout).toMatch(/runs\s+24\/7/);
+    expect(on.stdout).not.toMatch(/\$|USD|month/);
   });
 
   test('set --uses sends the list (deduplicated, trimmed) and prints it; `--uses=` clears it', async () => {
@@ -266,8 +268,6 @@ describe('kortix apps set', () => {
         '20',
         '--idle-timeout',
         '600',
-        '--budget',
-        '12.5',
       ],
       config,
     );
@@ -278,18 +278,17 @@ describe('kortix apps set', () => {
       memory_gb: 4,
       disk_gb: 20,
       idle_timeout_seconds: 600,
-      monthly_budget_usd: 12.5,
     });
   });
 
   test('set --json emits the updated App', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(
-      ['apps', 'set', 'storefront', '--project', PROJECT, '--budget', '9', '--json'],
+      ['apps', 'set', 'storefront', '--project', PROJECT, '--name', 'Shop', '--json'],
       config,
     );
     expect(r.code).toBe(0);
-    expect(JSON.parse(r.stdout).monthly_budget_usd).toBe(9);
+    expect(JSON.parse(r.stdout).name).toBe('Shop');
   });
 
   test('set --always-on / --on-demand send always_on; both at once is refused before any request', async () => {
@@ -305,11 +304,15 @@ describe('kortix apps set', () => {
     expect(both.stderr).toContain('not both');
   });
 
-  test('set --budget on an always-on App prints the server\'s refusal verbatim', async () => {
+  test('the retired --budget flag is ignored with a notice and never sent; alone it leaves nothing to set', async () => {
     const config = writeConfig(startServer());
-    const r = await runCli(['apps', 'set', 'storefront', '--project', PROJECT, '--always-on', '--budget', '100'], config);
-    expect(r.code).not.toBe(0);
-    expect(r.stderr).toContain('An always-on App has no monthly budget: it runs 24/7 at a fixed cost (about $73.48 a month). Run it on demand (always_on: false) to cap its cost with a budget.');
+    const r = await runCli(['apps', 'set', '--budget', '100', 'storefront', '--project', PROJECT, '--always-on'], config);
+    expect(r.code).toBe(0);
+    expect(r.stderr).toContain('--budget is ignored: Apps have no budget');
+    expect(patchCall()?.body).toEqual({ always_on: true });
+    const alone = await runCli(['apps', 'set', 'storefront', '--project', PROJECT, '--budget', '100'], config);
+    expect(alone.code).toBe(2);
+    expect(alone.stderr).toContain('needs at least one of');
   });
 
   test('set with no field flags exits 2 and sends nothing', async () => {

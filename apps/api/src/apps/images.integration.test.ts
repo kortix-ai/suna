@@ -117,7 +117,6 @@ withDb('App image reclaim — database reads', () => {
         routeKey: 'cccccccccccccc01',
         desiredState: 'running',
         idleTimeoutSeconds: 300,
-        monthlyBudgetUsd: '5.00',
       },
       {
         appId: DELETED_APP_ID,
@@ -128,7 +127,6 @@ withDb('App image reclaim — database reads', () => {
         routeKey: 'cccccccccccccc02',
         desiredState: 'stopped',
         idleTimeoutSeconds: 300,
-        monthlyBudgetUsd: '5.00',
         deletedAt: new Date(),
       },
     ]);
@@ -241,7 +239,6 @@ withDb('Shared App images — claim, reference count, release', () => {
       routeKey,
       desiredState: 'running',
       idleTimeoutSeconds: 300,
-      monthlyBudgetUsd: '5.00',
       deletedAt,
     });
     await db.insert(apps).values([

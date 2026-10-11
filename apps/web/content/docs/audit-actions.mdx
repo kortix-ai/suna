@@ -13,7 +13,7 @@ Every row in the [audit log](/docs/accounts#audit-log) carries an `action`: `dom
 - A route with two actions (`secret.strategy.update` or `secret.strategy.changed`) records the second when its handler records that event, for example only for a real change. That event, with its before and after state, is then the request's row.
 - Rows written before 2026-09-24 carry `METHOD /template` as their action. The web app and the CLI show them with the same titles.
 
-This page lists 729 route actions and 66 other events.
+This page lists 763 route actions and 66 other events.
 
 ## `account.`
 
@@ -71,6 +71,8 @@ This page lists 729 route actions and 66 other events.
 | `admin.sandbox_provider.distribution.update` | Updated sandbox provider distribution | `PUT /v1/admin/api/provider-distribution` |
 | `admin.sandbox_provider.fallback.read` | Viewed sandbox provider fallback | `GET /v1/admin/api/provider-fallback` |
 | `admin.sandbox_provider.fallback.update` | Updated sandbox provider fallback | `PUT /v1/admin/api/provider-fallback` |
+| `admin.session_boot_modes.read` | Viewed session boot modes | `GET /v1/admin/api/boot-modes` |
+| `admin.session_boot_modes.update` | Updated session boot modes | `PUT /v1/admin/api/boot-modes` |
 
 ## `agent.`
 
@@ -91,31 +93,36 @@ This page lists 729 route actions and 66 other events.
 | `app.artifact.create` | Registered Kortix App artifact | `POST /v1/projects/:projectId/apps/artifacts` |
 | `app.artifact.finalize` | Finalized Kortix App artifact upload | `POST /v1/projects/:projectId/apps/artifacts/:artifactId/finalize` |
 | `app.create` | Created Kortix App | `POST /v1/projects/:projectId/apps` |
-| `app.credentials.rotate` | Rotated Kortix App admin credentials | `POST /v1/projects/:projectId/apps/:appId/rotate-credentials` |
-| `app.credentials.view` or `app.credentials.read` | Read Kortix App admin credentials | `GET /v1/projects/:projectId/apps/:appId/credentials` |
-| `app.dashboard.access` | Opened Kortix App dashboard | before the API router |
 | `app.delete` | Deleted Kortix App | `DELETE /v1/projects/:projectId/apps/:appId` |
 | `app.deployment.create` | Deployed Kortix App | `POST /v1/projects/:projectId/apps/:appId/deployments` |
 | `app.deployment.delete` | Deleted Kortix App deployment | `DELETE /v1/projects/:projectId/apps/:appId/deployments/:deploymentId` |
 | `app.deployment.list` | Listed Kortix App deployments | `GET /v1/projects/:projectId/apps/:appId/deployments` |
 | `app.deployment.log.list` | Viewed Kortix App deployment logs | `GET /v1/projects/:projectId/apps/:appId/deployments/:deploymentId/logs` |
 | `app.deployment.read` | Viewed Kortix App deployment | `GET /v1/projects/:projectId/apps/:appId/deployments/:deploymentId` |
-| `app.endpoint.access` | Called Kortix App API | before the API router |
-| `app.endpoint.websocket.connect` | Opened Kortix App API WebSocket | before the API router |
+| `app.exec` | Ran a command in an App machine | `POST /v1/projects/:projectId/apps/:appId/exec` |
 | `app.list` | Listed Kortix Apps | `GET /v1/projects/:projectId/apps` |
-| `app.log.read` | Read Kortix App process log | `GET /v1/projects/:projectId/apps/:appId/logs` |
+| `app.machine.destroy` | Destroyed Kortix App machine | `DELETE /v1/projects/:projectId/apps/:appId/machines/:machineId` |
+| `app.machine.list` | Listed Kortix App machines | `GET /v1/projects/:projectId/apps/:appId/machines` |
+| `app.machine.restart` | Restarted Kortix App machine | `POST /v1/projects/:projectId/apps/:appId/machines/:machineId/restart` |
+| `app.machine.start` | Started Kortix App machine | `POST /v1/projects/:projectId/apps/:appId/machines/:machineId/start` |
+| `app.machine.stop` | Stopped Kortix App machine | `POST /v1/projects/:projectId/apps/:appId/machines/:machineId/stop` |
 | `app.origin.access` | Opened deployed Kortix App | before the API router |
 | `app.origin.websocket.connect` | Opened Kortix App WebSocket | before the API router |
 | `app.read` | Viewed Kortix App | `GET /v1/projects/:projectId/apps/:appId` |
 | `app.rollback` | Rolled back Kortix App | `POST /v1/projects/:projectId/apps/:appId/rollback` |
-| `app.snapshot.create` | Took Kortix App snapshot | `POST /v1/projects/:projectId/apps/:appId/snapshots` |
-| `app.snapshot.delete` | Deleted Kortix App snapshot | `DELETE /v1/projects/:projectId/apps/:appId/snapshots/:snapshotId` |
-| `app.snapshot.list` | Listed Kortix App snapshots | `GET /v1/projects/:projectId/apps/:appId/snapshots` |
-| `app.snapshot.restore` | Restored Kortix App snapshot | `POST /v1/projects/:projectId/apps/:appId/restore` |
+| `app.scale` | Scaled Kortix App | `PUT /v1/projects/:projectId/apps/:appId/scale` |
 | `app.start` | Started Kortix App | `POST /v1/projects/:projectId/apps/:appId/start` |
 | `app.stop` | Stopped Kortix App | `POST /v1/projects/:projectId/apps/:appId/stop` |
 | `app.token.mint` | Minted Kortix App sign-in token | `POST /v1/projects/:projectId/apps/:appId/token` |
 | `app.update` | Updated Kortix App | `PATCH /v1/projects/:projectId/apps/:appId` |
+| `app.volume.create` | Created Kortix App volume | `POST /v1/projects/:projectId/apps/:appId/volumes` |
+| `app.volume.destroy` | Destroyed Kortix App volume | `DELETE /v1/projects/:projectId/apps/:appId/volumes/:volumeId` |
+| `app.volume.fork` | Forked Kortix App volume | `POST /v1/projects/:projectId/apps/:appId/volumes/:volumeId/fork` |
+| `app.volume.list` | Listed Kortix App volumes | `GET /v1/projects/:projectId/apps/:appId/volumes` |
+| `app.volume.restore` | Restored Kortix App volume | `POST /v1/projects/:projectId/apps/:appId/volumes/:volumeId/restore` |
+| `app.volume.snapshot.create` | Took Kortix App volume snapshot | `POST /v1/projects/:projectId/apps/:appId/volumes/:volumeId/snapshots` |
+| `app.volume.snapshot.list` | Listed Kortix App volume snapshots | `GET /v1/projects/:projectId/apps/:appId/volumes/:volumeId/snapshots` |
+| `app.volume.update` | Extended Kortix App volume | `PATCH /v1/projects/:projectId/apps/:appId/volumes/:volumeId` |
 
 ## `approval.`
 
@@ -324,6 +331,26 @@ This page lists 729 route actions and 66 other events.
 | `connector.setup_link.read` | Opened connector setup link | `GET /v1/setup-links/connectors/:token` |
 | `connector.setup_link.start` | Started connector setup-link authorization | `POST /v1/setup-links/connectors/:token/start` |
 | `connector.sync` | Synchronized connectors | `POST /v1/connectors/projects/:projectId/connectors/sync` |
+
+## `drive.`
+
+| Action | Title | Route |
+| --- | --- | --- |
+| `drive.access.list` | Viewed who has access to a folder | `GET /v1/drives/:driveId/access` |
+| `drive.access.principals` | Listed folder sharing candidates | `GET /v1/drives/:driveId/principals` |
+| `drive.access.revoke` | Stopped sharing a folder | `DELETE /v1/drives/:driveId/access/:grantId` |
+| `drive.access.share` | Shared a folder | `PUT /v1/drives/:driveId/access` |
+| `drive.conflict.dismiss` | Dismissed a drive conflict notice | `POST /v1/drives/:driveId/conflicts/:conflictId/dismiss` |
+| `drive.conflict.list` | Viewed drive conflict copies | `GET /v1/drives/:driveId/conflicts` |
+| `drive.file.delete` | Deleted a drive file or folder | `DELETE /v1/drives/:driveId/files` |
+| `drive.file.list` | Browsed a drive folder | `GET /v1/drives/:driveId/files` |
+| `drive.file.move` | Moved a drive file or folder | `POST /v1/drives/:driveId/files/move` |
+| `drive.file.read` | Downloaded a drive file | `GET /v1/drives/:driveId/files/content` |
+| `drive.file.write` | Uploaded a drive file | `PUT /v1/drives/:driveId/files/content` |
+| `drive.folder.create` | Created a drive folder | `POST /v1/drives/:driveId/files/mkdir` |
+| `drive.list` | Listed drives | `GET /v1/drives` |
+| `drive.version.list` | Viewed drive versions | `GET /v1/drives/:driveId/versions` |
+| `drive.version.restore` | Restored a drive version | `POST /v1/drives/:driveId/restore` |
 
 ## `feedback.`
 
@@ -782,6 +809,18 @@ This page lists 729 route actions and 66 other events.
 | `session.config_release.resolve` | Resolved session config release | `POST /v1/projects/:projectId/sessions/:sessionId/config-release` |
 | `session.create` | Created session | `POST /v1/projects/:projectId/sessions` |
 | `session.delete` | Deleted session | `DELETE /v1/projects/:projectId/sessions/:sessionId` |
+| `session.drive.list` | Listed session drives | `GET /v1/projects/:projectId/sessions/:sessionId/drives` |
+| `session.drive_sync.delete` | Deleted a drive file from a session | `DELETE /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files` |
+| `session.drive_sync.head` | Checked a synced drive for changes | `GET /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/head` |
+| `session.drive_sync.list` | Listed a drive folder from a session | `GET /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files` |
+| `session.drive_sync.mounts` | Listed a session's synced drives | `GET /v1/projects/:projectId/sessions/:sessionId/drive-sync/mounts` |
+| `session.drive_sync.move` | Moved a drive file from a session | `POST /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files/move` |
+| `session.drive_sync.read` | Downloaded a drive file to a session | `GET /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files/content` |
+| `session.drive_sync.stat` | Checked a drive file from a session | `GET /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files/stat` |
+| `session.drive_sync.upload_block` | Uploaded a drive file block | `PUT /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files/upload/:uploadId/blocks/:sha` |
+| `session.drive_sync.upload_commit` | Committed a drive upload from a session | `POST /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files/upload/:uploadId/commit` |
+| `session.drive_sync.upload_plan` | Planned a drive upload from a session | `POST /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files/upload` |
+| `session.drive_sync.write` | Uploaded a drive file from a session | `PUT /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files/content` |
 | `session.event.stream` | Streamed session events | `GET /v1/projects/:projectId/sessions/:sessionId/events` |
 | `session.git.push` | Committed and pushed session changes | `POST /v1/projects/:projectId/sessions/:sessionId/commit-push` |
 | `session.list` | Listed project sessions | `GET /v1/projects/:projectId/sessions` |
