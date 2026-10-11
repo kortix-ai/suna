@@ -23,8 +23,8 @@ is green. Sessions whose daemon build already has a template keep starting, whic
 cause. The cause is in `metadata.provisioningError` of the failed `kortix.session_sandboxes`
 rows.
 
-**Incident:** 2026-10-11, dev. From 19:54Z to about 23:30Z every new session on dev failed,
-on both harnesses, in several projects (last good start 19:46Z). `platinum POST
+**Incident:** 2026-10-11, dev. From 19:54Z to about 21:30Z every new session on dev failed,
+on both harnesses, in several projects (last good start 19:46Z, last failed start seen 20:47Z). `platinum POST
 /v1/templates/from-build` returned `429 org_template_quota_exceeded` (`used` 1324, `quota`
 1000); `failureCategory: sandbox-provider`, `initAttempts: 3`. Dev and staging share one
 Platinum org (same `PLATINUM_API_KEY` in `apps/api/.env`, `.env.dev`, `.env.staging`; prod
@@ -33,9 +33,9 @@ and `cursor` tried, so the API could not list the inventory. The dev table
 `kortix.project_snapshot_builds` held 1320 rows (901 ready, 409 failed, 10 building). Ready
 rows older than 30 days: `kortix-ppwarm-*` 538 of 538, `kortix-default-*` 146 of 206,
 `kortix-tpl-*` 126 of 157. Seven daemon-affecting PRs merged that day, so many predecessors
-sat inside the 6 h window. The quota cleared between 20:48Z and 23:30Z by an unknown actor
+sat inside the 6 h window. The quota cleared between 20:48Z and about 21:30Z by an unknown actor
 (an operator deleting templates, a provider recount or quota change, or the prune catching
-up); the incident session deleted nothing. Starts worked again by 23:44Z.
+up); the incident session deleted nothing. Starts worked again from about 21:30Z; a probe at 21:44Z confirmed it.
 
 **Enforcement:** none yet. To build: a periodic template reaper in `apps/api/src/workers/`
 with bounded retention per namespace (N newest ready plus pinned) that also removes failed
