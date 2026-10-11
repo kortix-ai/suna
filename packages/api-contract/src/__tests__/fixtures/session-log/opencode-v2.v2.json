@@ -4,6 +4,7 @@
   "session_id": "ses_ede7a7748ffeXTyzbpKmHVNslA",
   "title": "New session - 2026-10-09T16:36:01.850Z",
   "created_at": "2026-10-09T16:36:01.850Z",
+  "restore_grade": "native",
   "harness": {
     "current": "opencode-v2",
     "history": [
@@ -80,6 +81,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "Create hello.txt containing hi"
             }
           ],
@@ -125,6 +127,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "I'll create the file.",
               "ext": {
                 "opencode-v2": {
@@ -137,6 +140,7 @@
             },
             {
               "type": "tool_call",
+              "id": "b1",
               "call_id": "call_mv16t1w72i",
               "name": "bash",
               "kind": "shell",
@@ -229,6 +233,7 @@
           "blocks": [
             {
               "type": "reasoning",
+              "id": "b0",
               "text": "The file exists now.",
               "ext": {
                 "opencode-v2": {
@@ -245,6 +250,7 @@
             },
             {
               "type": "text",
+              "id": "b1",
               "text": "Done.",
               "ext": {
                 "opencode-v2": {
@@ -294,10 +300,12 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "Read hello.txt and look at this image"
             },
             {
               "type": "attachment",
+              "id": "b1",
               "ref": "blob:c414cd0e204de974f73753c7e28d7638e7b3691bb8b1a2bab6b25bb7fed7ce77",
               "mime": "image/png",
               "name": "dot.png",
@@ -347,6 +355,7 @@
           "blocks": [
             {
               "type": "tool_call",
+              "id": "b0",
               "call_id": "call_mv16t24k2l",
               "name": "read",
               "kind": "read",
@@ -441,6 +450,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "It says hi. The image is a single pixel.",
               "ext": {
                 "opencode-v2": {
@@ -490,6 +500,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "Run the command `false` and report the result."
             }
           ],
@@ -535,6 +546,7 @@
           "blocks": [
             {
               "type": "tool_call",
+              "id": "b0",
               "call_id": "call_mv16t2d32o",
               "name": "bash",
               "kind": "shell",
@@ -627,6 +639,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "The command failed with exit code 1.",
               "ext": {
                 "opencode-v2": {
@@ -676,6 +689,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "Read missing.txt"
             }
           ],
@@ -721,6 +735,7 @@
           "blocks": [
             {
               "type": "tool_call",
+              "id": "b0",
               "call_id": "call_mv16t2lq2r",
               "name": "read",
               "kind": "read",
@@ -820,6 +835,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "missing.txt does not exist.",
               "ext": {
                 "opencode-v2": {
@@ -869,6 +885,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "Track the work as todos"
             }
           ],
@@ -914,6 +931,7 @@
           "blocks": [
             {
               "type": "tool_call",
+              "id": "b0",
               "call_id": "call_mv16t2ud2u",
               "name": "todowrite",
               "kind": "todo",
@@ -1032,6 +1050,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "Todos recorded.",
               "ext": {
                 "opencode-v2": {
@@ -1081,6 +1100,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "Show big.txt"
             }
           ],
@@ -1126,6 +1146,7 @@
           "blocks": [
             {
               "type": "tool_call",
+              "id": "b0",
               "call_id": "call_mv16t3302x",
               "name": "bash",
               "kind": "shell",
@@ -1208,6 +1229,7 @@
           "blocks": [
             {
               "type": "compaction",
+              "id": "b0",
               "summary": "SUMMARY-L: created hello.txt (hi); read it with an image; `false` exited 1; missing.txt is absent; todos recorded; big.txt printed.",
               "first_kept_message_id": null,
               "layout": [
@@ -1271,6 +1293,7 @@
           "blocks": [
             {
               "type": "reasoning",
+              "id": "b0",
               "text": "Big file seen.",
               "ext": {
                 "opencode-v2": {
@@ -1287,6 +1310,7 @@
             },
             {
               "type": "text",
+              "id": "b1",
               "text": "big.txt is large.",
               "ext": {
                 "opencode-v2": {
@@ -1336,6 +1360,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "List the files"
             }
           ],
@@ -1381,6 +1406,7 @@
           "blocks": [
             {
               "type": "tool_call",
+              "id": "b0",
               "call_id": "call_mv16t3bm31",
               "name": "bash",
               "kind": "shell",
@@ -1473,6 +1499,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "Found big.txt and hello.txt.",
               "ext": {
                 "opencode-v2": {
@@ -1522,6 +1549,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "Spawn a helper to list the files"
             }
           ],
@@ -1567,6 +1595,7 @@
           "blocks": [
             {
               "type": "tool_call",
+              "id": "b0",
               "call_id": "call_mv16t3kd34",
               "name": "task",
               "kind": "task",
@@ -1668,6 +1697,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "The task tool is not available here.",
               "ext": {
                 "opencode-v2": {
@@ -1717,6 +1747,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "What is in hello.txt? Answer in one word."
             }
           ],
@@ -1762,6 +1793,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "hi",
               "ext": {
                 "opencode-v2": {

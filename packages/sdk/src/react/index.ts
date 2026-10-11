@@ -155,12 +155,15 @@ export {
   useProjectApps,
   useAppDeployments,
   useAppDeployment,
+  useAppMachines,
+  useAppVolumes,
+  useAppVolumeSnapshots,
+  appMachinesKey,
+  appVolumesKey,
   useAppAccess,
-  useAppSnapshots,
   projectAppsKey,
   appDeploymentsKey,
   appDeploymentKey,
-  appSnapshotsKey,
 } from './use-project-apps';
 
 // The expected "no compaction model configured" configuration state thrown by

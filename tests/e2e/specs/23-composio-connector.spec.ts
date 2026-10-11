@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 
 import { loadEnv } from "../../src/core/env";
@@ -55,7 +56,7 @@ test.describe("23 — Composio managed connector", () => {
   test.beforeAll(async () => {
     test.skip(!databaseUrl, "KE2E_DATABASE_URL is required");
     // Each Playwright worker runs this; two can start in the same millisecond.
-    const runId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const runId = `${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
     const email = `e2e-composio-${runId}@kortix.test`;
     user = await createAuthUser(email, authOptions);
     session = await signIn(email, authOptions);

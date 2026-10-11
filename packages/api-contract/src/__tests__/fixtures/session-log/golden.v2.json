@@ -4,6 +4,7 @@
   "session_id": "ses_golden0000000000000001",
   "title": "Golden session",
   "created_at": "2026-10-01T10:00:00Z",
+  "restore_grade": "native",
   "harness": {
     "current": "fixture",
     "history": [
@@ -77,6 +78,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "Create hello.txt containing hi"
             }
           ]
@@ -113,10 +115,12 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "I'll create the file."
             },
             {
               "type": "tool_call",
+              "id": "b1",
               "call_id": "call_g01",
               "name": "bash",
               "kind": "shell",
@@ -168,10 +172,12 @@
           "blocks": [
             {
               "type": "reasoning",
+              "id": "b0",
               "text": "The file exists now."
             },
             {
               "type": "text",
+              "id": "b1",
               "text": "Done."
             }
           ]
@@ -203,10 +209,12 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "Read hello.txt and look at this image"
             },
             {
               "type": "attachment",
+              "id": "b1",
               "ref": "blob:c414cd0e204de974f73753c7e28d7638e7b3691bb8b1a2bab6b25bb7fed7ce77",
               "mime": "image/png",
               "name": "dot.png",
@@ -247,6 +255,7 @@
           "blocks": [
             {
               "type": "tool_call",
+              "id": "b0",
               "call_id": "call_g02",
               "name": "read",
               "kind": "read",
@@ -298,6 +307,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "It says hi. The image is a single pixel."
             }
           ]
@@ -329,6 +339,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "/check",
               "model_text": "Run the command `false` and report the result."
             }
@@ -370,6 +381,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "Partial answer that failed"
             }
           ],
@@ -407,6 +419,7 @@
           "blocks": [
             {
               "type": "tool_call",
+              "id": "b0",
               "call_id": "call_g03",
               "name": "bash",
               "kind": "shell",
@@ -458,6 +471,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "The command failed with exit code 1."
             }
           ]
@@ -486,6 +500,7 @@
           "blocks": [
             {
               "type": "compaction",
+              "id": "b0",
               "summary": "SUMMARY-G: the user created hello.txt containing hi and checked an image.",
               "first_kept_message_id": "msg_g04",
               "tokens_before": 4200,
@@ -520,6 +535,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "Spawn a helper to list the files"
             }
           ]
@@ -556,6 +572,7 @@
           "blocks": [
             {
               "type": "tool_call",
+              "id": "b0",
               "call_id": "call_g04",
               "name": "task",
               "kind": "task",
@@ -577,6 +594,7 @@
             },
             {
               "type": "subtask",
+              "id": "b1",
               "thread_id": "ses_golden0000000000000002",
               "agent": "general",
               "description": "list files",
@@ -616,10 +634,12 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "The helper found hello.txt."
             },
             {
               "type": "harness",
+              "id": "b1",
               "harness": "fixture",
               "kind": "note",
               "data": {
@@ -671,6 +691,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "List the files in the workspace"
             }
           ],
@@ -708,6 +729,7 @@
           "blocks": [
             {
               "type": "tool_call",
+              "id": "b0",
               "call_id": "call_c01",
               "name": "bash",
               "kind": "shell",
@@ -759,6 +781,7 @@
           "blocks": [
             {
               "type": "text",
+              "id": "b0",
               "text": "Found hello.txt"
             }
           ]

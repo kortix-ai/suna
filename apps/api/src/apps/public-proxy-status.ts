@@ -73,7 +73,6 @@ type PublicAppStatus =
   | PublicDeploymentStatus
   | 'waiting'
   | 'starting'
-  | 'budget'
   | 'unfunded'
   | 'capacity';
 
@@ -131,13 +130,6 @@ const PUBLIC_STATUS_COPY: Record<PublicAppStatus, {
     message: 'Kortix is resuming the serverless runtime. This page will continue automatically.',
     code: 'app_starting',
     progress: true,
-  },
-  budget: {
-    title: 'App paused',
-    message: 'This App reached its monthly compute limit. The owner can increase the limit in Kortix Apps.',
-    code: 'app_budget_exceeded',
-    progress: false,
-    httpStatus: 402,
   },
   unfunded: {
     title: 'App paused',
@@ -213,8 +205,6 @@ export function appPublicStatusResponse(
     return Response.json({
       error: status === 'waiting'
         ? 'App is waiting for its first deployment'
-        : status === 'budget'
-          ? 'App compute budget reached'
         : `App deployment is ${status === 'checking' ? 'checking readiness' : status}`,
       code: copy.code,
       status,
@@ -298,11 +288,4 @@ export function appProviderStoppedResponse(
       .test(body);
   }
   return false;
-}
-
-export function appPublicBudgetResponse(
-  request: Request,
-  app: { name: string },
-): Response {
-  return appPublicStatusResponse(request, app, { status: 'budget' });
 }

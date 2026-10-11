@@ -267,11 +267,6 @@ export function registerProjectSettingsRoutes(): void {
       .returning();
 
     if (!row) return c.json({ error: 'Not found' }, 404);
-    // Stop the machines of the project's `convex` Apps now (data kept, no
-    // auto-resume). The maintenance tick parks any this misses.
-    void import('../../apps/kinds/convex/lifecycle')
-      .then(({ parkAndUnparkBackends }) => parkAndUnparkBackends(projectId))
-      .catch((error) => logger.warn('[projects] could not park the convex Apps', { projectId, error: String(error) }));
     // An archived project fires nothing: release its app-event provider instances.
     await releaseProjectEventSubscriptions(projectId);
     // Its sessions' state volumes go with it (durable queue, retried while a box still mounts one).

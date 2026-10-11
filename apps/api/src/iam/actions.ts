@@ -145,13 +145,12 @@ export const PROJECT_ACTIONS = {
   // project.gitops.read, so a custom role could not grant or revoke Apps on its
   // own. These are the real leaves. `read` = list and inspect the Apps the
   // caller may see, connect, mint a member token. `write` = create, rename,
-  // resize, delete a web App, set the access policy, take snapshots, read the
+  // resize, delete an App, set the access policy, read the
   // process log. `deploy` = ship a version, roll back, start, or stop — the
   // action that changes what the public hostname serves, so it stays separable
   // from write exactly as project.gitops.merge is separable from
-  // project.gitops.push. `admin` = reveal or rotate an App's admin credentials,
-  // restore a snapshot, delete an App that holds data (`convex`): the admin key
-  // grants full control of the App's data and code.
+  // project.gitops.push. `admin` = the App-administration leaf; no route
+  // requires it today.
   PROJECT_APP_READ: 'project.app.read',
   PROJECT_APP_WRITE: 'project.app.write',
   PROJECT_APP_DEPLOY: 'project.app.deploy',

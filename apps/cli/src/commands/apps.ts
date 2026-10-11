@@ -1,6 +1,9 @@
-import { existsSync } from 'node:fs';
-import { basename, resolve } from 'node:path';
-import type { App, AppDeployment, AppKind, CreateAppInput, UpdateAppInput } from '@kortix/sdk';
+import { appReleaseInputFromBlock } from '@kortix/manifest-schema';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { APP_TEMPLATES, appTemplate } from '@kortix/shared/app-templates';
+import { parseDocument } from 'yaml';
+import { resolve } from 'node:path';
+import type { App, AppDeployment, CreateAppInput, UpdateAppInput } from '@kortix/sdk';
 
 import { splitHelp } from '../command-argv.ts';
 import {
@@ -12,24 +15,8 @@ import {
 } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 import { accessCommand, accessLinkCommand } from './apps-access.ts';
-import {
-  connectCommand,
-  credentialsCommand,
-  dashboardCommand,
-  deleteSnapshotCommand,
-  deployOrder,
-  deployWithClientCli,
-  formatTime,
-  isConvexProject,
-  linkCommand,
-  processLogCommand,
-  restoreCommand,
-  rotateCredentialsCommand,
-  snapshotCommand,
-  snapshotsCommand,
-  tokenCommand,
-  usesList,
-} from './apps-capabilities.ts';
+import { authEnvCommand, execCommand, labelsCommand, machinesCommand, releasesCommand, scaleCommand, volumesCommand } from './apps-fleet.ts';
+import { connectCommand, deployOrder, linkCommand, tokenCommand, usesList } from './apps-capabilities.ts';
 import {
   type ContextOptions,
   commandArg,
@@ -37,11 +24,12 @@ import {
   csv,
   deployFlags,
   loadManifestAppDefaults,
+  matchingManifestApp,
   loadManifestApps,
   mergeManifestDefaults,
   positiveInteger,
-  positiveNumber,
-  runCostLine,
+  dropRetiredBudgetFlag,
+  runModeLine,
   provisionDeployApp,
   resolveApp,
   scoped,
@@ -54,51 +42,48 @@ import {
 
 const HELP = help`Usage: kortix apps <subcommand> [options]
 
-Deploy and operate Kortix Apps. Each App owns one stable URL and one kind,
-fixed at create: web (a site or a server built from its deployments) or convex
-(a self-hosted Convex backend in its own always-on machine). What an App
-supports is its capabilities (kortix apps show). <app> is an App id or slug.
+Deploy and operate Kortix Apps on the Fly.io model: immutable releases,
+replaceable machines, persistent volumes. Each App owns one stable URL: a site
+or a server. A server App runs machines per process group; a machine may mount
+a volume that outlives every release (a database, uploads, any backend). Configure it in kortix.yaml apps.<name> (≈ fly.toml): processes,
+http_service, services, mounts, vm, deploy (strategy, release_command), labels.
+What an App supports is its capabilities (kortix apps show). <app> is an App id
+or slug.
 
 Subcommands:
-  list | ls                         List Apps with their kind. --json.
+  list | ls                         List Apps. --json.
   create <slug>                     Create an App without deploying it.
-    --kind web|convex               Default: web. A convex App boots its machine
-                                    (seconds; minutes on a region's first image
-                                    build) and the command waits for it.
     --name <name>                   Defaults to the slug.
     --cpu <cores>                   Default: 1.
-    --memory <gb>                   Default: 2 (convex: 1).
-    --disk <gb>                     Default: 10. A convex disk never shrinks.
+    --memory <gb>                   Default: 2.
+    --disk <gb>                     Default: 10.
     --idle-timeout <seconds>        Default: 300. Only for --on-demand.
     --always-on | --on-demand       Run 24/7, or stop when idle and wake on the
                                     next request. A static App has no runtime
-                                    and ignores both. A convex App always runs.
-    --budget <usd>                  Monthly compute budget of an on-demand App
-                                    (default 5). It stops at the budget.
-                                    Always-on and convex Apps have none: they
-                                    cost their size.
+                                    and ignores both.
     --uses <slugs>                  Apps this App uses (it may bind to them and
                                     mint their sign-in tokens), comma-separated.
-    --no-wait                       Return before a convex App runs.
-  deploy [path] [-- <client args>]  Deploy a directory or .tar.gz archive. The
-                                    target App's kind decides how: a convex App
-                                    runs convex deploy with its credentials (the
-                                    project's own node_modules/.bin/convex, else
-                                    npx convex@<the App's version>), then records
-                                    the deployment with the git commit. Args
-                                    after -- go to convex deploy. A directory with
-                                    convex/ or convex.json and no App of its name
-                                    is refused: create it with --kind convex.
-                                    With no path and a kortix.yaml of several
-                                    apps, deploys every App in link order: each
-                                    after the Apps it uses, convex first.
+  launch --template <name>          Add a ready-made App to kortix.yaml and deploy it
+                                    (Fly launch). Templates: convex (a self-hosted
+                                    Convex backend: data on a volume, the client and
+                                    HTTP-action services, an admins-only dashboard).
+    --name <slug>                   Default: the template name.
+    --no-deploy                     Write kortix.yaml only.
+  deploy [path]                     Deploy a directory or .tar.gz archive. With no
+                                    path and a kortix.yaml of several apps,
+                                    deploys every App in link order: each after
+                                    the Apps it uses, then by name.
     --manifest-app <name>           Use one apps.<name> block from kortix.yaml.
+                                    Default: the block named by --app, or the
+                                    block whose path is the deployed path.
     --app <id|slug>                 Existing App. Omit to create one.
     --slug <slug> --name <name>     New App identity.
     --type static|bundle|dockerfile Source type. Auto-detected for directories.
     --image <oci-reference>         Deploy a public OCI image instead of a path.
     --command <json|string>         Process argv. JSON array is unambiguous.
-    --port <port>                   Required for Dockerfile and OCI deployments.
+    --port <port>                   The primary service port (or http_service.
+                                    internal_port in kortix.yaml). Omit for a
+                                    worker-only App (processes, no service).
     --dockerfile <path>             Default: Dockerfile.
     --root <path>                   Static root inside the archive.
     --output-dir <path>             Bundle output. Default: dist.
@@ -113,79 +98,76 @@ Subcommands:
     --groups <ids>                  Comma-separated group ids for restricted access.
     --always-on | --on-demand       Server Apps: run 24/7 (default), or stop when
                                     idle. Static Apps run no server.
-    --budget <usd>                  Monthly compute budget of an on-demand App
-                                    (default 5). It stops at the budget.
-                                    Always-on and convex Apps have none: they
-                                    cost their size.
     --no-wait                       Return after the deployment is queued.
     --wait-seconds <seconds>        Default: 1200.
   set <id|slug>                     Change an existing App. Only the flags you
                                     pass are sent. Needs project write access.
-                                    A web machine change applies to the next
-                                    deployment; a convex App resizes now (seconds
-                                    of downtime) and the command waits. A run-mode
-                                    or budget change applies within 5 minutes.
+                                    A machine change applies to the next
+                                    deployment. A run-mode change applies within
+                                    5 minutes.
     --name <name>
     --cpu <cores>
     --memory-gb <gb>                Alias: --memory.
     --disk-gb <gb>                  Alias: --disk.
     --idle-timeout <seconds>        120-86400.
     --always-on | --on-demand       Run 24/7, or stop when idle.
-    --budget <usd>                  Monthly compute budget of an on-demand App
-                                    (default 5). Always-on and convex Apps have none.
     --uses <slugs>                  Replace the Apps this App uses. Comma-
                                     separated; --uses= clears the list.
-    --no-wait                       Return before a resize ends.
   link <id|slug> --uses <slugs>     Add Apps this App uses. Code in the App then
                                     reaches them with kortixBinding('<slug>') and
                                     mints their tokens with kortixToken().
   unlink <id|slug> --uses <slugs>   Remove Apps this App uses.
-  show <id|slug>                    Show an App: kind, capabilities, links,
-                                    instance and deployments. --json.
-  logs <id|slug> [deployment-id]    Read runtime logs. --after N --limit N. An App
-                                    with the logs capability prints its process
-                                    log instead: --lines 1-1000 (default 200).
+  show <id|slug>                    Show an App: capabilities, links and
+                                    deployments. --json.
+  logs <id|slug> [deployment-id]    Read runtime logs. --after N --limit N.
   start <id|slug>                   Permit requests and start the App.
   stop <id|slug>                    Suspend now. The next authorized request wakes it.
-  rollback <id|slug> <id|vN>        Move traffic to a ready deployment.
+  rollback <id|slug> <id|vN>        Roll back: a NEW release from that release's artifact
+                                    and config, rolled out like a deploy. Volumes keep their
+                                    data. Waits unless --no-wait.
+  releases <id|slug>                List releases (vN, status, strategy); marks the live one.
+  machines [ls] <id|slug>           List machines: id, process group, state, release, size, volume.
+  machines start|stop|restart <id|slug> <machine>
+  machines destroy <id|slug> <machine>
+                                    Destroy one machine. Its volume stays; its group runs
+                                    one machine fewer.
+  scale count <id|slug> <n>         Machines for a process group (0-20). --process <group>
+                                    (default app). A group with a mount gets one new, empty
+                                    volume per new machine.
+  scale show <id|slug>              Machines per process group.
+  exec <id|slug> -- <command…>      Run one command in a running machine and print its
+                                    output (admins). --machine <id>, --timeout <s> (≤ 300).
+  volumes [ls] <id|slug>            Volumes: name, group, size, attached, retention.
+  volumes create <id|slug> <name> --size <gb> [--process <group>]
+  volumes extend <id|slug> <volume> --size <gb>
+                                    Grow a volume (it never shrinks).
+  volumes snapshots <id|slug> <volume>
+                                    Daily snapshots (kept snapshot_retention_days), manual
+                                    ones and the final one of a destroyed volume.
+  volumes snapshot <id|slug> <volume>
+  volumes restore <id|slug> <volume> <snapshot>
+                                    Restore (admins): its machine stops and comes back on it.
+  volumes fork <id|slug> <volume> <name> [--snapshot <id>]
+                                    A new, unattached copy (instant).
+  volumes destroy <id|slug> <volume> --yes
+                                    Admins. A final snapshot is kept 7 days.
+  labels <id|slug> [a,b]            Show or replace labels (e.g. backend). --clear.
+  auth-env <id|slug>                What verifies the App's sign-in tokens offline, as
+                                    dotenv lines: KORTIX_AUTH_ISSUER, _AUDIENCE, _JWKS
+                                    (inline). Public values. --json.
   access <id|slug>                  Read or update access. --mode, --password, --members, --groups.
     --viewer off|identity|api       What the App is told about its viewer. api = a token
                                     that acts as them on the Kortix API (their role caps it).
   access-link <id|slug>             Create a short-lived authenticated browser URL.
-  connect <id|slug>                 Print how to reach the App from code: from an
-                                    App that uses it, from outside (sign-in token,
-                                    HTTP, your own server) and from the CLI. The
-                                    same snippets as Connect in Kortix web. No
-                                    secret. --json.
+  connect <id|slug>                 Print how to reach the App from code: its URL,
+                                    the Apps it uses, and from an App that uses
+                                    it or from outside (sign-in token, HTTP, your
+                                    own server). The same snippets as Connect in
+                                    Kortix web. No secret. --json.
   token <id|slug>                   Print a 15-minute Kortix sign-in token for the
                                     App, naming you. --json adds expires_at.
-  dashboard <id|slug>               Capability dashboard: print the Kortix page
-                                    that opens the App's dashboard, signed in.
-    --open                          Also open it in the browser.
-  credentials <id|slug>             Capability admin_credentials: print the
-                                    client CLI credentials. Every read is audited.
-    --format shell|dotenv|json      shell (default): export lines for
-                                    eval "$(kortix apps credentials db)".
-  rotate-credentials <id|slug>      Replace the admin key. Every key read before
-                                    stops working; the App restarts (about 1 s).
-    --yes                           Skip the confirmation.
-  snapshots <id|slug>               Capability snapshots: the automatic backup,
-                                    the schedule and the snapshots, newest first,
-                                    with kind and expiry. --json. Kinds: manual
-                                    (kept until deleted, at most 10), automatic
-                                    (daily, kept 7 days), resize (kept 24 hours),
-                                    final (taken at delete, kept 7 days).
-  snapshot <id|slug>                Take a manual snapshot now. --json.
-  delete-snapshot <id|slug> <snapshot-id>
-                                    Delete one snapshot. --yes skips the question.
-  restore <id|slug> <snapshot-id>   Capability restore: roll the App back to a
-                                    snapshot. Every change after it is lost.
-                                    --yes skips the question.
   delete <id|slug>                  Delete the App, its runtimes, and every deployment
                                     image it built. --yes.
-    --confirm <slug>                Required for an App with snapshots (it holds
-                                    data): its slug, typed. Kortix keeps a final
-                                    snapshot and the stopped machine 7 days.
     --deployment <id|vN>            Delete only this deployment and its image. The live
                                     deployment cannot be deleted: roll back first.
 
@@ -220,10 +202,8 @@ export function resolveDeploymentTarget(
  * active deployment, whatever `desired_state` says, so it reads `static`.
  */
 export function appStateLabel(
-  app: Pick<App, 'desired_state' | 'hosting_type' | 'active_deployment_id'> & Pick<Partial<App>, 'instance'>,
+  app: Pick<App, 'desired_state' | 'hosting_type' | 'active_deployment_id'>,
 ): string {
-  // An App with its own machine reads its machine: provisioning, running, an operation, error.
-  if (app.instance) return app.instance.operation ?? app.instance.status;
   if (!app.active_deployment_id) return 'undeployed';
   if (app.hosting_type === 'static') return 'static';
   return app.desired_state;
@@ -235,10 +215,10 @@ function renderApps(apps: App[]): number {
     return 0;
   }
   const slugWidth = Math.max(4, ...apps.map((app) => app.slug.length));
-  process.stdout.write(`\n  ${C.bold}${pad('SLUG', slugWidth)}  KIND    STATE        URL${C.reset}\n`);
+  process.stdout.write(`\n  ${C.bold}${pad('SLUG', slugWidth)}  STATE        URL${C.reset}\n`);
   for (const app of apps) {
     process.stdout.write(
-      `  ${pad(app.slug, slugWidth)}  ${pad(app.kind ?? 'web', 6)}  ${pad(appStateLabel(app), 12)} ${app.url ?? '-'}\n`,
+      `  ${pad(app.slug, slugWidth)}  ${pad(appStateLabel(app), 12)} ${app.url ?? '-'}\n`,
     );
   }
   process.stdout.write('\n');
@@ -257,14 +237,13 @@ function takeCommon(rest: string[]) {
 }
 
 export async function runApps(argv: string[]): Promise<number> {
-  // Everything after `--` belongs to the client CLI a deploy runs; flags there must not be taken.
-  const separator = argv.indexOf('--');
-  const own = separator === -1 ? argv : argv.slice(0, separator);
-  const extra = separator === -1 ? [] : argv.slice(separator + 1);
-  const helpCode = splitHelp(own, HELP);
+  const helpCode = splitHelp(argv, HELP);
   if (helpCode !== null) return helpCode;
-  const subcommand = own[0];
-  const rest = own.slice(1);
+  const subcommand = argv[0];
+  // Everything after `--` is the command `exec` runs, never a kortix flag.
+  const dashdash = argv.indexOf('--');
+  const rest = dashdash === -1 ? argv.slice(1) : argv.slice(1, dashdash);
+  const passthrough = dashdash === -1 ? [] : argv.slice(dashdash + 1);
   try {
     const common = takeCommon(rest);
     switch (subcommand) {
@@ -277,27 +256,15 @@ export async function runApps(argv: string[]): Promise<number> {
       case 'set':
       case 'update':
         return await setCommand(rest, common.options, common.json);
+      case 'launch':
+        return await launchCommand(rest, common.options, common.json);
       case 'deploy':
-        return await deployCommand(rest, extra, common.options, common.json);
+        return await deployCommand(rest, common.options, common.json);
       case 'link':
       case 'unlink':
         return await linkCommand(subcommand, rest, common.options, common.json);
-      case 'snapshots':
-        return await snapshotsCommand(rest, common.options, common.json);
-      case 'snapshot':
-        return await snapshotCommand(rest, common.options, common.json);
-      case 'delete-snapshot':
-        return await deleteSnapshotCommand(rest, common.options, common.json);
-      case 'restore':
-        return await restoreCommand(rest, common.options, common.json);
-      case 'credentials':
-        return await credentialsCommand(rest, common.options);
-      case 'rotate-credentials':
-        return await rotateCredentialsCommand(rest, common.options, common.json);
       case 'token':
         return await tokenCommand(rest, common.options, common.json);
-      case 'dashboard':
-        return await dashboardCommand(rest, common.options, common.json);
       case 'connect':
         return await connectCommand(rest, common.options, common.json);
       case 'show':
@@ -310,6 +277,22 @@ export async function runApps(argv: string[]): Promise<number> {
         return await stateCommand(subcommand, rest, common.options, common.json);
       case 'rollback':
         return await rollbackCommand(rest, common.options, common.json);
+      case 'releases':
+        return await releasesCommand(rest, common.options, common.json);
+      case 'machines':
+      case 'machine':
+        return await machinesCommand(rest, common.options, common.json);
+      case 'scale':
+        return await scaleCommand(rest, common.options, common.json);
+      case 'exec':
+        return await execCommand(rest, passthrough, common.options, common.json);
+      case 'volumes':
+      case 'volume':
+        return await volumesCommand(rest, common.options, common.json);
+      case 'auth-env':
+        return await authEnvCommand(rest, common.options, common.json);
+      case 'labels':
+        return await labelsCommand(rest, common.options, common.json);
       case 'access':
         return await accessCommand(rest, common.options, common.json);
       case 'access-link':
@@ -342,9 +325,7 @@ async function createCommand(
   options: ContextOptions,
   json: boolean,
 ): Promise<number> {
-  const kind = takeFlagValue(rest, ['--kind']);
-  if (kind !== undefined && kind !== 'web' && kind !== 'convex') return fail('--kind must be web or convex');
-  const wait = !takeFlagBool(rest, ['--no-wait']);
+  dropRetiredBudgetFlag(rest);
   const uses = usesList(takeFlagValue(rest, ['--uses']));
   const name = takeFlagValue(rest, ['--name']);
   const slugInput = rest.find((value) => !value.startsWith('-'));
@@ -354,7 +335,6 @@ async function createCommand(
   const input: CreateAppInput = {
     slug,
     name: name ?? slugInput,
-    ...(kind ? { kind: kind as AppKind } : {}),
     cpu: positiveInteger(takeFlagValue(rest, ['--cpu']), '--cpu'),
     memory_gb: positiveInteger(takeFlagValue(rest, ['--memory']), '--memory'),
     disk_gb: positiveInteger(takeFlagValue(rest, ['--disk']), '--disk'),
@@ -362,63 +342,44 @@ async function createCommand(
       takeFlagValue(rest, ['--idle-timeout']),
       '--idle-timeout',
     ),
-    monthly_budget_usd: positiveNumber(takeFlagValue(rest, ['--budget']), '--budget'),
     ...(uses ? { uses } : {}),
     ...runMode(rest),
   };
-  // Omitted flags stay off the wire: the server picks each kind's defaults.
+  // Omitted flags stay off the wire: the server picks the defaults.
   for (const key of Object.keys(input) as Array<keyof CreateAppInput>) if (input[key] === undefined) delete input[key];
   const ctx = await context(options);
   if (!ctx) return 1;
-  const app = await scoped(ctx, async () => {
-    const created = await ctx.apps.create(input);
-    if (!wait || !created.instance) return created;
-    if (!json) process.stderr.write(`${C.dim}Starting ${created.slug}. This takes seconds, or minutes on a region's first image build.${C.reset}\n`);
-    return ctx.apps.waitUntilReady(created.app_id);
-  });
+  const app = await scoped(ctx, () => ctx.apps.create(input));
   printWarnings(app);
   if (json) emitJson(app);
   else process.stdout.write(`\n  ${status.ok(`created ${app.slug}`)}\n${appLines(app)}\n`);
   return 0;
 }
 
-/** Fixed monthly cost (always-on, convex) or budget (on demand); a static App has neither. */
-function costRows(app: App): string {
-  const row = (label: string, value: string) => `  ${C.dim}${pad(label, 14)}${C.reset}${value}\n`;
-  if (typeof app.monthly_budget_usd === 'number') return row('budget', `$${app.monthly_budget_usd}/month`);
-  const estimate = app.estimated_monthly_usd;
-  return estimate
-    ? row('cost', `about $${Math.round(estimate)}/month (${app.machine.cpu} vCPU · ${app.machine.memory_gb} GB, 24/7)`)
-    : '';
+/** How a server App runs: 24/7, or on demand. None for a static App (no machine). */
+function runModeRows(app: App): string {
+  if (app.hosting_type === 'static') return '';
+  const value = app.always_on === false ? `on demand (stops after ${app.idle_timeout_seconds}s idle)` : '24/7';
+  return `  ${C.dim}${pad('runs', 14)}${C.reset}${value}\n`;
 }
 
 /** The facts `show`, `create` and `set` print about an App. */
 function appLines(app: App): string {
   const row = (label: string, value: string | null | undefined) =>
     value ? `  ${C.dim}${pad(label, 14)}${C.reset}${value}\n` : '';
-  const instance = app.instance;
   return (
     row('url', app.url) +
-    row('kind', app.kind ?? 'web') +
     row('capabilities', app.capabilities?.join(', ')) +
     row('uses', app.uses?.length ? app.uses.join(', ') : 'none') +
     row('used by', app.used_by?.length ? app.used_by.join(', ') : null) +
     row('machine', `${app.machine.cpu} vCPU · ${app.machine.memory_gb} GB · ${app.machine.disk_gb} GB disk`) +
-    costRows(app) +
-    (instance
-      ? row('site url', instance.site_url) +
-        row('health', instance.health ? (instance.health.ok ? 'ok' : `unhealthy: ${instance.health.error ?? instance.health.machine_state ?? 'unknown'}`) : null) +
-        row('operation', instance.operation) +
-        row('last error', instance.last_operation_error) +
-        row('error', instance.error) +
-        row('purge after', instance.purge_after ? formatTime(instance.purge_after) : null)
-      : '')
+    runModeRows(app)
   );
 }
 
-/** The run-cost line for a server App, indented under the result; empty when none applies. */
+/** The run-mode line for a server App, indented under the result; empty when none applies. */
 function costBlock(app: App): string {
-  const line = runCostLine(app);
+  const line = runModeLine(app);
   return line ? `  ${C.dim}${line}${C.reset}\n` : '';
 }
 
@@ -446,14 +407,13 @@ async function setCommand(rest: string[], options: ContextOptions, json: boolean
   // Flags are consumed BEFORE the positional is picked, so a flag VALUE
   // (`--cpu 2`) is never mistaken for the App id when the id is missing.
   const input: UpdateAppInput = {};
+  dropRetiredBudgetFlag(rest);
   const name = takeFlagValue(rest, ['--name']);
   const cpu = positiveInteger(takeFlagValue(rest, ['--cpu']), '--cpu');
   const memory = positiveInteger(takeFlagValue(rest, ['--memory-gb', '--memory']), '--memory-gb');
   const disk = positiveInteger(takeFlagValue(rest, ['--disk-gb', '--disk']), '--disk-gb');
   const idle = positiveInteger(takeFlagValue(rest, ['--idle-timeout']), '--idle-timeout');
-  const budget = positiveNumber(takeFlagValue(rest, ['--budget']), '--budget');
   const uses = usesList(takeFlagValue(rest, ['--uses']));
-  const wait = !takeFlagBool(rest, ['--no-wait']);
   Object.assign(input, runMode(rest));
   const target = rest.find((value) => !value.startsWith('-'));
   if (!target) return fail('set needs an App id or slug');
@@ -462,22 +422,17 @@ async function setCommand(rest: string[], options: ContextOptions, json: boolean
   if (memory !== undefined) input.memory_gb = memory;
   if (disk !== undefined) input.disk_gb = disk;
   if (idle !== undefined) input.idle_timeout_seconds = idle;
-  if (budget !== undefined) input.monthly_budget_usd = budget;
   if (uses !== undefined) input.uses = uses;
   if (Object.keys(input).length === 0) {
     return fail(
-      'set needs at least one of --name, --cpu, --memory-gb, --disk-gb, --idle-timeout, --always-on, --on-demand, --budget, --uses',
+      'set needs at least one of --name, --cpu, --memory-gb, --disk-gb, --idle-timeout, --always-on, --on-demand, --uses',
     );
   }
   const ctx = await context(options);
   if (!ctx) return 1;
   const app = await scoped(ctx, async () => {
     const found = await resolveApp(ctx.apps, target);
-    const updated = await ctx.apps.update(found.app_id, input);
-    // A convex App resizes in the background; wait for the new size unless told not to.
-    if (!wait || !updated.instance?.operation) return updated;
-    if (!json) process.stderr.write(`${C.dim}Resizing ${updated.slug}. It restarts on the new size.${C.reset}\n`);
-    return ctx.apps.waitUntilReady(updated.app_id);
+    return ctx.apps.update(found.app_id, input);
   });
   printWarnings(app);
   if (json) emitJson(app);
@@ -489,15 +444,51 @@ async function setCommand(rest: string[], options: ContextOptions, json: boolean
     process.stdout.write(
       `  ${C.dim}${pad('idle timeout', 14)}${C.reset}${app.idle_timeout_seconds}s\n`,
     );
-    process.stdout.write(costRows(app));
+    process.stdout.write(runModeRows(app));
     process.stdout.write(`  ${C.dim}${pad('uses', 14)}${C.reset}${app.uses?.length ? app.uses.join(', ') : 'none'}\n\n`);
+  }
+  return 0;
+}
+
+/**
+ * `kortix apps launch --template <name> [--name <slug>] [--no-deploy]` (Fly
+ * `launch`): write a template's `apps` blocks into ./kortix.yaml (comments
+ * kept; a slug already there is refused), deploy them in order, and print the
+ * commands that finish the setup.
+ */
+async function launchCommand(rest: string[], options: ContextOptions, json: boolean): Promise<number> {
+  const templateName = takeFlagValue(rest, ['--template']);
+  const slugFlag = takeFlagValue(rest, ['--name', '--slug']);
+  const noDeploy = takeFlagBool(rest, ['--no-deploy']);
+  const provider = takeFlagValue(rest, ['--provider']);
+  if (!templateName) return fail(`launch needs --template (${Object.keys(APP_TEMPLATES).join(', ')})`);
+  const template = appTemplate(templateName);
+  if (!template) return fail(`no template "${templateName}"; there is ${Object.keys(APP_TEMPLATES).join(', ')}`);
+  const slug = slugFrom(slugFlag ?? template.name);
+  const path = resolve(process.cwd(), 'kortix.yaml');
+  const doc = existsSync(path) ? parseDocument(readFileSync(path, 'utf8')) : parseDocument('kortix_version: 2\n');
+  if (!doc.has('apps')) doc.set('apps', doc.createNode({}));
+  const blocks = template.blocks(slug);
+  const taken = Object.keys(blocks).filter((name) => doc.hasIn(['apps', name]));
+  if (taken.length > 0) return fail(`kortix.yaml already has apps.${taken.join(', apps.')}; pick another --name`);
+  for (const [name, block] of Object.entries(blocks)) doc.setIn(['apps', name], doc.createNode(block));
+  writeFileSync(path, String(doc));
+  if (!json) process.stdout.write(`\n  ${status.ok(`added ${Object.keys(blocks).map((name) => `apps.${name}`).join(', ')} to kortix.yaml`)}\n`);
+  if (!noDeploy) {
+    for (const name of template.deployOrder(slug)) {
+      const code = await deployCommand(['--manifest-app', name, ...(provider ? ['--provider', provider] : [])], options, json);
+      if (code !== 0) return code;
+    }
+  }
+  if (json) emitJson({ template: template.name, apps: Object.keys(blocks), next_steps: template.nextSteps(slug) });
+  else {
+    process.stdout.write(`\n  Next:\n${template.nextSteps(slug).map((line) => `    ${line}\n`).join('')}\n`);
   }
   return 0;
 }
 
 async function deployCommand(
   rest: string[],
-  extra: string[],
   options: ContextOptions,
   json: boolean,
 ): Promise<number> {
@@ -517,7 +508,7 @@ async function deployCommand(
     const results: unknown[] = [];
     for (const name of order) {
       if (!json) process.stderr.write(`${C.dim}Deploying apps.${name}${C.reset}\n`);
-      const code = await deployOne(ctx, { ...flags, manifestApp: name }, undefined, extra, json, results);
+      const code = await deployOne(ctx, { ...flags, manifestApp: name }, undefined, json, results);
       if (code !== 0) return code;
     }
     if (json) emitJson({ deployed: results });
@@ -526,27 +517,24 @@ async function deployCommand(
   const ctx = await context(options);
   if (!ctx) return 1;
   const results: unknown[] = [];
-  const code = await deployOne(ctx, flags, pathArgument, extra, json, results);
+  const code = await deployOne(ctx, flags, pathArgument, json, results);
   if (code === 0 && json) emitJson(results[0]);
   return code;
 }
 
 type Ctx = NonNullable<Awaited<ReturnType<typeof context>>>;
 
-/**
- * Deploy one App. Its kind decides how: an App with `admin_credentials`
- * (convex) runs its client CLI on the source directory; any other builds an
- * uploaded artifact. Pushes `{ app, deployment }` to `results`.
- */
+/** Deploy one App: build an uploaded artifact. Pushes `{ app, deployment }` to `results`. */
 async function deployOne(
   ctx: Ctx,
   parsed: ReturnType<typeof deployFlags>,
   pathArgument: string | undefined,
-  extra: string[],
   json: boolean,
   results: unknown[],
 ): Promise<number> {
-  const manifestDefaults = loadManifestAppDefaults(process.cwd(), parsed.manifestApp, !pathArgument && !parsed.image);
+  // `--manifest-app`, else the block named by `--app` or declaring this path, else the only block.
+  const manifestName = parsed.manifestApp ?? matchingManifestApp(process.cwd(), { app: parsed.app, path: pathArgument });
+  const manifestDefaults = loadManifestAppDefaults(process.cwd(), manifestName, !pathArgument && !parsed.image);
   const manifestBlock = manifestDefaults?.block;
   const flags = mergeManifestDefaults(parsed, manifestBlock);
   if (flags.image && pathArgument) throw new Error('Use a source path or --image, not both');
@@ -559,19 +547,6 @@ async function deployOne(
     throw new Error(`Source path does not exist: ${sourcePath}`);
 
   return scoped(ctx, async () => {
-    // A Convex project with no manifest block and no --app must name an existing
-    // App: a typo must never start a new always-on machine.
-    if (!flags.app && !manifestDefaults && !flags.type && sourcePath && isConvexProject(sourcePath)) {
-      const slug = slugFrom(flags.slug ?? basename(sourcePath));
-      const existing = (await ctx.apps.list()).find((row) => row.slug === slug);
-      if (!existing) {
-        throw new Error(
-          `${sourcePath} is a Convex project and no App is named ${slug}. Create it: kortix apps create ${slug} --kind convex. ` +
-            'Or deploy it as a web App with --type.',
-        );
-      }
-      if (existing.capabilities?.includes('admin_credentials')) flags.app = existing.app_id;
-    }
     let app = await provisionDeployApp(ctx.apps, flags, manifestDefaults, sourcePath);
 
     if (flags.accessMode) {
@@ -584,16 +559,10 @@ async function deployOne(
       app = await ctx.apps.get(app.app_id);
     }
 
-    if (app.capabilities?.includes('admin_credentials')) {
-      if (!sourcePath) throw new Error(`App ${app.slug} deploys a directory, not an image`);
-      const deployed = await deployWithClientCli(ctx, app, sourcePath, extra);
-      if (deployed.code !== 0) return deployed.code;
-      results.push({ app: deployed.app, deployment: deployed.deployment });
-      if (!json) {
-        process.stdout.write(`\n  ${status.ok(`deployed ${deployed.app.slug} · v${deployed.deployment!.version}`)}\n  ${deployed.app.url}\n\n`);
-      }
-      return 0;
+    if (manifestBlock?.labels && JSON.stringify(manifestBlock.labels) !== JSON.stringify(app.labels ?? [])) {
+      app = await ctx.apps.update(app.app_id, { labels: manifestBlock.labels });
     }
+    const releaseConfig = appReleaseInputFromBlock(manifestBlock);
 
     let cleanup: (() => Promise<void>) | undefined;
     try {
@@ -605,6 +574,8 @@ async function deployOne(
         ...(flags.provider ? { provider: flags.provider } : {}),
         ...(manifestBlock?.env ? { environment: manifestBlock.env } : {}),
         ...(manifestBlock?.secrets ? { secrets: manifestBlock.secrets } : {}),
+        // The release config (Fly model): processes, services, mounts, vm, deploy.
+        ...(releaseConfig ? { config: releaseConfig } : {}),
       });
       if (flags.wait)
         deployment = await waitForDeployment(ctx.apps, app.app_id, deployment, flags.waitSeconds);
@@ -638,9 +609,7 @@ async function showCommand(
   if (json) emitJson(result);
   else {
     const app = result.app;
-    const hosting = app.instance
-      ? `${app.kind} · ${app.instance.operation ?? app.instance.status} · always on`
-      : app.hosting_type === 'static'
+    const hosting = app.hosting_type === 'static'
         ? 'static · served from storage, no runtime'
         : app.hosting_type === 'sandbox'
           ? `server · ${app.always_on ? 'always on' : 'on demand'} · ${app.desired_state}`
@@ -667,16 +636,11 @@ async function logsCommand(
 ): Promise<number> {
   const after = positiveInteger(takeFlagValue(rest, ['--after']), '--after') ?? 0;
   const limit = positiveInteger(takeFlagValue(rest, ['--limit']), '--limit') ?? 200;
-  const lines = takeFlagValue(rest, ['--lines', '-n']);
   const positional = rest.filter((value) => !value.startsWith('-'));
   if (!positional[0]) return fail('logs needs an App id or slug');
   const ctx = await context(options);
   if (!ctx) return 1;
   const target = await scoped(ctx, () => resolveApp(ctx.apps, positional[0]!));
-  // An App with a process log of its own prints it; every other App reads its deployment's runtime log.
-  if (target.capabilities?.includes('logs')) {
-    return processLogCommand(ctx, target, lines === undefined ? [] : ['--lines', lines], json);
-  }
   const logs = await scoped(ctx, async () => {
     const app = target;
     const deploymentId =
@@ -718,18 +682,28 @@ async function rollbackCommand(
   options: ContextOptions,
   json: boolean,
 ): Promise<number> {
+  const wait = !takeFlagBool(rest, ['--no-wait']);
   const positional = rest.filter((value) => !value.startsWith('-'));
-  if (!positional[0] || !positional[1]) return fail('rollback needs an App and deployment id');
+  if (!positional[0] || !positional[1]) return fail('rollback needs an App and a release (vN or its id)');
   const ctx = await context(options);
   if (!ctx) return 1;
-  const app = await scoped(ctx, async () => {
+  const result = await scoped(ctx, async () => {
     const found = await resolveApp(ctx.apps, positional[0]!);
-    const deployment = resolveDeploymentTarget(await ctx.apps.deployments.list(found.app_id), positional[1]!);
-    return ctx.apps.rollback(found.app_id, deployment.deployment_id);
+    const target = resolveDeploymentTarget(await ctx.apps.deployments.list(found.app_id), positional[1]!);
+    // A NEW release from the target's artifact and config (Fly verbatim). A server
+    // from before this answered the App alone, with traffic already moved.
+    const app = (await ctx.apps.rollback(found.app_id, target.deployment_id)) as App & { deployment?: AppDeployment };
+    const release = app.deployment && wait
+      ? await waitForDeployment(ctx.apps, found.app_id, app.deployment, 1200)
+      : app.deployment;
+    return { app, target, release };
   });
-  if (json) emitJson(app);
-  else
-    process.stdout.write(`\n  ${status.ok(`traffic moved to ${positional[1]}`)}\n  ${app.url}\n\n`);
+  if (json) emitJson(result);
+  else if (result.release) {
+    process.stdout.write(
+      `\n  ${status.ok(`v${result.release.version} ${result.release.status}: a rollback to v${result.target.version}`)}\n  ${result.app.url}\n\n`,
+    );
+  } else process.stdout.write(`\n  ${status.ok(`traffic moved to v${result.target.version}`)}\n  ${result.app.url}\n\n`);
   return 0;
 }
 
@@ -749,8 +723,7 @@ async function deleteCommand(
   options: ContextOptions,
   json: boolean,
 ): Promise<number> {
-  const typed = takeFlagValue(rest, ['--confirm']);
-  const yes = takeFlagBool(rest, ['--yes', '-y']) || typed !== undefined;
+  const yes = takeFlagBool(rest, ['--yes', '-y']);
   const deploymentTarget = takeFlagValue(rest, ['--deployment']);
   const target = rest.find((value) => !value.startsWith('-'));
   if (!target) return fail('delete needs an App id or slug');
@@ -758,7 +731,7 @@ async function deleteCommand(
     return fail(
       deploymentTarget
         ? 'deleting a deployment is destructive; pass --yes'
-        : 'delete is destructive; pass --yes (an App that holds data needs --confirm <slug> instead)',
+        : 'delete is destructive; pass --yes',
     );
   const ctx = await context(options);
   if (!ctx) return 1;
@@ -785,28 +758,17 @@ async function deleteCommand(
   }
 
   const app = await scoped(ctx, () => resolveApp(ctx.apps, target));
-  // An App with snapshots holds data: the delete needs its slug, typed.
-  if (app.capabilities?.includes('snapshots') && typed !== app.slug) {
-    return fail(`${app.slug} holds data. Type its slug to delete it: --confirm ${app.slug}`);
-  }
-  const deleted = await scoped(ctx, () =>
-    ctx.apps.remove(app.app_id, typed === undefined ? undefined : { confirm: typed }),
-  );
+  const deleted = await scoped(ctx, () => ctx.apps.remove(app.app_id));
   const result = {
     ok: true,
     app_id: app.app_id,
     slug: app.slug,
     images: deleted.images ?? { released: 0, pending: 0 },
-    ...(deleted.retained_until ? { retained_until: deleted.retained_until, final_snapshot_id: deleted.final_snapshot_id ?? null } : {}),
   };
   if (json) emitJson(result);
   else {
     process.stdout.write(`\n  ${status.ok(`deleted ${result.slug}`)}\n`);
     process.stdout.write(imageLines(result.images.released, result.images.pending));
-    if (deleted.retained_until) {
-      const kept = deleted.final_snapshot_id ? `final snapshot ${deleted.final_snapshot_id}` : 'the stopped machine';
-      process.stdout.write(`  ${C.dim}${kept} kept until ${formatTime(deleted.retained_until)}${C.reset}\n`);
-    }
     process.stdout.write('\n');
   }
   return 0;

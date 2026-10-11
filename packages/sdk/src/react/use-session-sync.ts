@@ -256,12 +256,14 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     if (!canQueryRuntimeSession(sessionId) || !kortixSessionScope) return;
     // Already have the thread (a warm remount, or the runtime beat us): the
     // live read outranks a snapshot and must never be overwritten by one.
+    // An EMPTY runtime read is not the thread: it is lost box state, so the
+    // saved copy still paints over it.
     // An earlier SAVED copy is not a live read. The host's copy arrives in a
     // later run (`mirror` goes from null to the envelope) and reconciles
     // into it; returning here kept a reload on the device's older copy until
     // the computer woke.
     const overSavedCopy = hasOnlyCacheSourcedMessages(sessionId);
-    if (sessionId in useSyncStore.getState().messages && !overSavedCopy) return;
+    if ((useSyncStore.getState().messages[sessionId]?.length ?? 0) > 0 && !overSavedCopy) return;
     const abort = new AbortController();
     const scope = parseKortixSessionScope(kortixSessionScope);
     // A sub-agent keeps nothing on the device: the scope's slot is the
@@ -278,7 +280,6 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
           envelope,
           runtimeSessionId: sessionId,
           hasMessages: replaceable ? false : (state.messages[sessionId]?.length ?? 0) > 0,
-          hasLoadedTranscript: replaceable ? false : sessionId in state.messages,
         })
       ) {
         return false;
@@ -476,14 +477,16 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   // poll's switch are the same rule instead of two.
   const isBusy = sessionSyncBusy({ working, streamBusy });
   const isLoading = !useSyncStore((state) => readableSessionId in state.messages);
-  // What the saved-copy paint came to. `painted` and "a read already landed"
-  // are read off the store; only a refused or empty answer needs its own slot.
+  // What the saved-copy paint came to. `painted` is read off the store; only
+  // a refused or empty answer needs its own slot. A landed runtime read with
+  // no messages is NOT an answer: it is lost box state, and the saved copy may
+  // still paint over it (the paint effect's gate), so it stays `loading`.
   const mirrorState: 'idle' | 'loading' | 'painted' | 'absent' =
     !canQueryRuntimeSession(sessionId) || !kortixSessionScope
       ? 'idle'
       : messages.length > 0
         ? 'painted'
-        : !isLoading || mirrorAbsentFor === mirrorKey
+        : mirrorAbsentFor === mirrorKey
           ? 'absent'
           : 'loading';
 
