@@ -1,6 +1,7 @@
 /** Project settings: onboarding, deletion, feature flags, and the sandbox provider override. */
 import { releaseProjectEventSubscriptions } from '../trigger-events/subscriptions';
-import { PROJECT_ACTIONS } from '../../iam';
+import { ACCOUNT_ACTIONS, PROJECT_ACTIONS, assertAuthorized } from '../../iam';
+import { actorOf } from '../../iam/actor';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
@@ -19,9 +20,15 @@ import { serializeProject } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
 import { isPlainObject } from '../../shared/json';
 import { metadataMerge, metadataMergeSubtree } from '../lib/metadata-merge';
-import { featureFlagDef, isDerivedFeatureFlag, isFeatureFlagKey, isOperatorOnlyFeatureFlag } from '../../feature-flags/registry';
+import {
+  featureFlagDef,
+  isDerivedFeatureFlag,
+  isFeatureFlagKey,
+  isOperatorOnlyFeatureFlag,
+  isOrganizationFeatureFlag,
+} from '../../feature-flags/registry';
 import { FEATURE_OPERATOR_ONLY_CODE } from '../../feature-flags/gate';
-import { writeProjectFeatureFlag } from '../../feature-flags/write';
+import { writeOrganizationFeatureFlag, writeProjectFeatureFlag } from '../../feature-flags/write';
 import { isPlatformAdmin } from '../../shared/platform-roles';
 import { deleteManagedProjectRepo } from '../lib/project-deletion';
 import {
@@ -122,6 +129,20 @@ const patchFeatureFlagHandler = async (c: any) => {
   // Archived projects are read-only: reject BEFORE the write. The old order
   // (update, then 404 on archived) committed the metadata mutation anyway.
   if (loaded.row.status === 'archived') return c.json({ error: 'Not found' }, 404);
+  // An organization flag (`volumes`) is one value for every project of the
+  // organization: changing it is an organization setting, so it needs
+  // `account.write` (an organization admin) and never a session's own token.
+  if (isOrganizationFeatureFlag(feature)) {
+    if (!featureFlagDef(feature).available()) {
+      return c.json({ error: `${featureFlagDef(feature).name} is not available on this deployment` }, 400);
+    }
+    if (isProjectSessionPrincipal(c)) {
+      return c.json({ error: `${featureFlagDef(feature).name} is an organization setting` }, 403);
+    }
+    await assertAuthorized(await actorOf(c, loaded.row.accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+    await writeOrganizationFeatureFlag(loaded.row.accountId, feature, enabled);
+    return c.json(serializeProject(loaded.row, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }));
+  }
   // An internal-only flag (`apps`) starts billable machines, so
   // Kortix decides it: only a platform operator writes it, never a project
   // admin and never an agent session. An operator acting in a customer

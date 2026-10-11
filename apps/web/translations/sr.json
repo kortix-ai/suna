@@ -1132,7 +1132,8 @@
       "origin": {
         "overridden": "Промењено за овај пројекат",
         "defaultOn": "Подразумевано укључено",
-        "defaultOff": "Подразумевано искључено"
+        "defaultOff": "Подразумевано искључено",
+        "organization": "Za celu organizaciju"
       },
       "search": "Претражи функције",
       "loadFailed": "Није могуће учитати пројекат",
@@ -1203,6 +1204,10 @@
           "name": "Okidači događaja aplikacije",
           "description": "Pokrenite agenta kada se nešto desi u povezanoj aplikaciji: nova e-pošta, pull request, događaj u kalendaru."
         },
+        "volumes": {
+          "name": "Volumeni",
+          "description": "Uključuje volumene za celu organizaciju: deljene fascikle Fajlova usklađene sa sesijama i sesije čiji fajlovi i razgovor žive na volumenu. Režim pokretanja podešava administrator platforme."
+        },
         "drives": {
           "name": "Drive",
           "description": "Deljeni folderi koji ostaju usklađeni sa sesijama: tvoj drive, po jedan za svakog agenta i drive-ovi kompanije koje administrator dodeli projektu. Nove sesije ih vide pod /drives."
@@ -1215,7 +1220,8 @@
           "name": "Log sesije v2",
           "description": "Čita sesiju preko loga sesije v2 umesto transkripta v1. Kortix ga uključuje po projektu."
         }
-      }
+      },
+      "organizationPermission": "Potrebna ti je dozvola za podešavanja organizacije da bi promenio flag organizacije."
     },
     "upgrades": {
       "available": "Доступне надоградње",

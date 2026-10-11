@@ -1132,7 +1132,8 @@
       "origin": {
         "overridden": "Substituído para este projeto",
         "defaultOn": "Ativado por padrão",
-        "defaultOff": "Desativado por padrão"
+        "defaultOff": "Desativado por padrão",
+        "organization": "Para toda a organização"
       },
       "search": "Pesquisar recursos",
       "loadFailed": "Não foi possível carregar o projeto",
@@ -1203,6 +1204,10 @@
           "name": "Gatilhos de eventos do app",
           "description": "Inicie um agente quando algo acontece em um app conectado: um novo e-mail, um pull request, um evento do calendário."
         },
+        "volumes": {
+          "name": "Volumes",
+          "description": "Ativa os volumes para toda a organização: pastas de Arquivos compartilhadas sincronizadas com as sessões e sessões cujos arquivos e conversa ficam em um volume. O modo de inicialização é definido por um administrador da plataforma."
+        },
         "drives": {
           "name": "Drive",
           "description": "Pastas compartilhadas que ficam sincronizadas com as sessões: o seu próprio drive, um por agente e os drives da empresa que um administrador vincula ao projeto. Novas sessões os veem em /drives."
@@ -1215,7 +1220,8 @@
           "name": "Registo de sessão v2",
           "description": "Lê uma sessão através do registo de sessão v2 em vez da transcrição v1. A Kortix ativa-o por projeto."
         }
-      }
+      },
+      "organizationPermission": "Você precisa da permissão de configurações da organização para alterar um flag da organização."
     },
     "upgrades": {
       "available": "Atualizações disponíveis",

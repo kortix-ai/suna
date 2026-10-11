@@ -1132,7 +1132,8 @@
       "origin": {
         "overridden": "Modificado para este proyecto",
         "defaultOn": "Activado de forma predeterminada",
-        "defaultOff": "Desactivado de forma predeterminada"
+        "defaultOff": "Desactivado de forma predeterminada",
+        "organization": "Para toda la organización"
       },
       "search": "Buscar funciones",
       "loadFailed": "No se pudo cargar el proyecto",
@@ -1203,6 +1204,10 @@
           "name": "Disparadores de eventos de app",
           "description": "Inicia un agente cuando ocurre algo en una app conectada: un correo nuevo, un pull request, un evento del calendario."
         },
+        "volumes": {
+          "name": "Volúmenes",
+          "description": "Activa los volúmenes para toda la organización: carpetas de Archivos compartidas que se sincronizan con las sesiones, y sesiones cuyos archivos y conversación viven en un volumen. El modo de arranque lo define un administrador de la plataforma."
+        },
         "drives": {
           "name": "Drive",
           "description": "Carpetas compartidas que se mantienen sincronizadas con las sesiones: tu propio drive, uno por agente y los drives de empresa que un administrador asigna al proyecto. Las sesiones nuevas los ven en /drives."
@@ -1215,7 +1220,8 @@
           "name": "Registro de sesión v2",
           "description": "Lee una sesión mediante el registro de sesión v2 en lugar de la transcripción v1. Kortix lo activa por proyecto."
         }
-      }
+      },
+      "organizationPermission": "Necesitas el permiso de ajustes de la organización para cambiar un flag de organización."
     },
     "upgrades": {
       "available": "Actualizaciones disponibles",

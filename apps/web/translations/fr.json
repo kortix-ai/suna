@@ -1132,7 +1132,8 @@
       "origin": {
         "overridden": "Remplacé pour ce projet",
         "defaultOn": "Activé par défaut",
-        "defaultOff": "Désactivé par défaut"
+        "defaultOff": "Désactivé par défaut",
+        "organization": "Pour toute l'organisation"
       },
       "search": "Rechercher des fonctionnalités",
       "loadFailed": "Impossible de charger le projet",
@@ -1203,6 +1204,10 @@
           "name": "Déclencheurs d'événements d'app",
           "description": "Démarrez un agent quand quelque chose se passe dans une app connectée : un nouvel e-mail, une pull request, un événement de calendrier."
         },
+        "volumes": {
+          "name": "Volumes",
+          "description": "Active les volumes pour toute l'organisation : des dossiers Fichiers partagés synchronisés avec les sessions, et des sessions dont les fichiers et la conversation résident sur un volume. Le mode de démarrage est défini par un administrateur de la plateforme."
+        },
         "drives": {
           "name": "Drive",
           "description": "Des dossiers partagés synchronisés avec les sessions : votre propre drive, un par agent, et les drives d’entreprise qu’un administrateur associe au projet. Les nouvelles sessions les voient sous /drives."
@@ -1215,7 +1220,8 @@
           "name": "Journal de session v2",
           "description": "Lit une session via le journal de session v2 au lieu de la transcription v1. Kortix l’active par projet."
         }
-      }
+      },
+      "organizationPermission": "Il vous faut l'autorisation de paramètres de l'organisation pour modifier un flag d'organisation."
     },
     "upgrades": {
       "available": "Mises à niveau disponibles",

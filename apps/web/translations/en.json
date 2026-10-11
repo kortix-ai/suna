@@ -958,7 +958,8 @@
       "origin": {
         "overridden": "Overridden for this project",
         "defaultOn": "Default on",
-        "defaultOff": "Default off"
+        "defaultOff": "Default off",
+        "organization": "For the whole organization"
       },
       "search": "Search features",
       "loadFailed": "Failed to load project",
@@ -1029,6 +1030,10 @@
           "name": "App event triggers",
           "description": "Start an agent when something happens in a connected app: a new email, a pull request, a calendar event."
         },
+        "volumes": {
+          "name": "Volumes",
+          "description": "Turn on Volumes for the whole organization: shared Files folders that stay in sync with sessions, and sessions whose files and conversation live on a volume. Boot mode is set by a platform admin."
+        },
         "drives": {
           "name": "Drive",
           "description": "Shared folders that stay in sync with sessions: your own drive, one per agent, and company drives an admin attaches to the project. New sessions see them under /drives."
@@ -1041,7 +1046,8 @@
           "name": "Session log v2",
           "description": "Reads a session through the v2 session log instead of the v1 transcript. Kortix enables it per project."
         }
-      }
+      },
+      "organizationPermission": "You need the organization's settings permission to change an organization flag."
     },
     "upgrades": {
       "available": "Available upgrades",

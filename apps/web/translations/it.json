@@ -1132,7 +1132,8 @@
       "origin": {
         "overridden": "Sostituito per questo progetto",
         "defaultOn": "Attivo per impostazione predefinita",
-        "defaultOff": "Disattivo per impostazione predefinita"
+        "defaultOff": "Disattivo per impostazione predefinita",
+        "organization": "Per tutta l'organizzazione"
       },
       "search": "Cerca funzionalità",
       "loadFailed": "Impossibile caricare il progetto",
@@ -1203,6 +1204,10 @@
           "name": "Trigger di eventi dell'app",
           "description": "Avvia un agente quando succede qualcosa in un'app collegata: una nuova email, una pull request, un evento del calendario."
         },
+        "volumes": {
+          "name": "Volumi",
+          "description": "Attiva i volumi per tutta l'organizzazione: cartelle File condivise sincronizzate con le sessioni e sessioni i cui file e conversazioni risiedono su un volume. La modalità di avvio è impostata da un amministratore della piattaforma."
+        },
         "drives": {
           "name": "Drive",
           "description": "Cartelle condivise sincronizzate con le sessioni: il tuo drive, uno per agente e i drive aziendali che un amministratore collega al progetto. Le nuove sessioni li vedono in /drives."
@@ -1215,7 +1220,8 @@
           "name": "Log di sessione v2",
           "description": "Legge una sessione tramite il log di sessione v2 invece della trascrizione v1. Kortix lo attiva per progetto."
         }
-      }
+      },
+      "organizationPermission": "Ti serve il permesso sulle impostazioni dell'organizzazione per modificare un flag dell'organizzazione."
     },
     "upgrades": {
       "available": "Aggiornamenti disponibili",

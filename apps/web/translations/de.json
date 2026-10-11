@@ -1132,7 +1132,8 @@
       "origin": {
         "overridden": "Für dieses Projekt überschrieben",
         "defaultOn": "Standardmäßig an",
-        "defaultOff": "Standardmäßig aus"
+        "defaultOff": "Standardmäßig aus",
+        "organization": "Für die ganze Organisation"
       },
       "search": "Funktionen suchen",
       "loadFailed": "Projekt konnte nicht geladen werden",
@@ -1203,6 +1204,10 @@
           "name": "App-Ereignis-Trigger",
           "description": "Starte einen Agenten, wenn in einer verbundenen App etwas passiert: eine neue E-Mail, ein Pull Request, ein Kalendertermin."
         },
+        "volumes": {
+          "name": "Volumes",
+          "description": "Schaltet Volumes für die ganze Organisation ein: gemeinsame Dateiordner, die mit Sitzungen synchron bleiben, und Sitzungen, deren Dateien und Unterhaltung auf einem Volume liegen. Den Boot-Modus legt ein Plattform-Admin fest."
+        },
         "drives": {
           "name": "Drive",
           "description": "Geteilte Ordner, die mit Sitzungen synchron bleiben: dein eigenes Drive, eines pro Agent und Firmen-Drives, die ein Admin dem Projekt zuweist. Neue Sitzungen sehen sie unter /drives."
@@ -1215,7 +1220,8 @@
           "name": "Session-Log v2",
           "description": "Liest eine Session über das Session-Log v2 statt über das Transkript v1. Kortix aktiviert es pro Projekt."
         }
-      }
+      },
+      "organizationPermission": "Du brauchst die Einstellungsberechtigung der Organisation, um ein Organisations-Flag zu ändern."
     },
     "upgrades": {
       "available": "Verfügbare Upgrades",
