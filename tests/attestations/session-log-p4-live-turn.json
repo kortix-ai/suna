@@ -1,0 +1,30 @@
+{
+  "source_hash": "03ee0de9394dfb9209f8a950d7fea7e8dbe94ca4510b2588ae2d58fdcb150834",
+  "diff_files": [
+    "apps/kortix-sandbox-agent-server/src/__tests__/kortix-event-bus.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/opencode-runtime-routes.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/opencode-session-log.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/pi-harness.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/pi-session-log.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/session-log-journal.test.ts",
+    "apps/kortix-sandbox-agent-server/src/app/server.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/README.md",
+    "apps/kortix-sandbox-agent-server/src/harness/contract/session-log.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/open-code/session-log.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/pi/runtime.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/pi/session-log.ts",
+    "apps/kortix-sandbox-agent-server/src/harness/shared/session-log-journal.ts",
+    "apps/kortix-sandbox-agent-server/src/services/event-bus/kortix-event-bus.ts",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "packages/api-contract/src/session-log/events.ts"
+  ],
+  "diff_hash": "f5a96259de49dc7aeb51a1a278d3ab19c7d18757f56b960399f5d1c4c81ecb9a",
+  "head": "e6bd5c896cac556a7447be5e26affb336957b97e",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-11T21:42:31.803Z"
+}
