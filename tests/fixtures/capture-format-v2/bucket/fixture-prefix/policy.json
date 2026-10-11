@@ -6,6 +6,16 @@
   },
   "notice": "Your organization records this computer's screen and actions for support.",
   "privacy": {
+    "exclude_private_browsing": true,
+    "excluded_bundle_ids": [
+      "com.example.vault"
+    ],
+    "excluded_domains": [
+      "bank.example"
+    ],
+    "exclusion_groups": [
+      "password_managers"
+    ],
     "redact_pii": false
   },
   "recording": {

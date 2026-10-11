@@ -7,7 +7,7 @@
  * `vendoredDevice` re-roots that bucket under a Kortix prefix and device id, as
  * a Kortix-issued device writes it: object keys and the manifests' `device_id`
  * and object keys change; every data object is byte-identical, so each size and
- * SHA-256 in the manifests still holds. The fixture has no index files; the
+ * SHA-256 in the manifests still holds. The fixture's own index files are skipped; the
  * index lines are built from the manifests (index-line.schema.json), and
  * `status.json` is restamped so the device reads as live.
  *
@@ -102,6 +102,7 @@ export function vendoredDevice(input: { prefix: string; deviceId: string; machin
     if (rel === "device.json") device = JSON.parse(readFileSync(path, "utf8"));
     else if (rel === "status.json") status = JSON.parse(readFileSync(path, "utf8"));
     else if (rel === "policy.json") continue; // operator-written, never by a device
+    else if (rel.startsWith("index/")) continue; // rebuilt below from the re-keyed manifests
     else if (rel.endsWith(".manifest.json")) {
       const manifest = JSON.parse(readFileSync(path, "utf8"));
       manifest.device_id = input.deviceId;

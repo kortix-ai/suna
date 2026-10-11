@@ -1,0 +1,92 @@
+{
+  "description": "The one domain rule of Kortix Capture. `patterns`: what a person, an admin or a list writes, and the pattern every matcher receives (null: refused). `matches`: a page URL (an address bar may omit the scheme) against one normalized pattern. Rust (memory::exclusions), the macOS engine (via _domain_match) and the Kortix API/SDK run these same vectors.",
+  "patterns": [
+    {
+      "input": "bank.example",
+      "pattern": "bank.example"
+    },
+    {
+      "input": "https://www.Bank.example/login?x=1",
+      "pattern": "bank.example"
+    },
+    {
+      "input": "bank.example.",
+      "pattern": "bank.example"
+    },
+    {
+      "input": "Example.com:8080",
+      "pattern": "example.com"
+    },
+    {
+      "input": "user@host.example",
+      "pattern": "host.example"
+    },
+    {
+      "input": "pass.proton.me",
+      "pattern": "pass.proton.me"
+    },
+    {
+      "input": "  WWW.Example.org  ",
+      "pattern": "example.org"
+    },
+    {
+      "input": "notadomain",
+      "pattern": null
+    },
+    {
+      "input": "proton pass",
+      "pattern": null
+    },
+    {
+      "input": "",
+      "pattern": null
+    }
+  ],
+  "matches": [
+    {
+      "url": "https://login.bank.example/s",
+      "pattern": "bank.example",
+      "match": true
+    },
+    {
+      "url": "https://bank.example",
+      "pattern": "bank.example",
+      "match": true
+    },
+    {
+      "url": "mail.google.com/mail",
+      "pattern": "google.com",
+      "match": true
+    },
+    {
+      "url": "https://notbank.example/",
+      "pattern": "bank.example",
+      "match": false
+    },
+    {
+      "url": "https://www.bank.example.:443/x",
+      "pattern": "bank.example",
+      "match": true
+    },
+    {
+      "url": "https://user@www.bank.example/",
+      "pattern": "bank.example",
+      "match": true
+    },
+    {
+      "url": "https://pass.proton.me/u/0",
+      "pattern": "pass.proton.me",
+      "match": true
+    },
+    {
+      "url": "https://mail.proton.me/u/0",
+      "pattern": "pass.proton.me",
+      "match": false
+    },
+    {
+      "url": "file:///Users/x/bank.example.html",
+      "pattern": "bank.example",
+      "match": false
+    }
+  ]
+}

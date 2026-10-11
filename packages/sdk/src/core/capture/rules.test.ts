@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import {
   CAPTURE_EXCLUSION_GROUPS,
@@ -45,4 +47,15 @@ describe('Capture rules shared by the API, the web and the CLI', () => {
   test.each(['', '   ', '--frontmost', '-x', 'two words', 'a\u0000b', 'x'.repeat(256)])('not an app id: %p', (input) => {
     expect(normalizeCaptureAppId(input)).toBeNull();
   });
+
+  // The engine owns the domain rule; its vectors are vendored into suna (tests/fixtures/capture-format-v2).
+  const vectors = JSON.parse(
+    readFileSync(join(import.meta.dir, '../../../../../tests/fixtures/capture-format-v2/domains.json'), 'utf8'),
+  ) as { patterns: Array<{ input: string; pattern: string | null }> };
+  test.each(vectors.patterns.map((v) => [v.input, v.pattern] as const))(
+    'the engine vector %p normalizes to %p',
+    (input, pattern) => {
+      expect(normalizeCaptureDomain(input)).toBe(pattern);
+    },
+  );
 });

@@ -3,6 +3,7 @@
   "arch": "aarch64",
   "computer_name": "Fixture Computer",
   "device_id": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+  "displays": [],
   "encryption": null,
   "first_chunk_ms": 1790845200000,
   "hostname": "fixture-host.local",

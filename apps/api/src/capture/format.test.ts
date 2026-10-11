@@ -52,7 +52,6 @@ describe('the vendored fixture bucket', () => {
     conforms('device', JSON.parse(readFileSync(join(device, 'device.json'), 'utf8')));
     conforms('status', JSON.parse(readFileSync(join(device, 'status.json'), 'utf8')));
     conforms('policy', JSON.parse(readFileSync(join(CONTRACT, 'bucket/fixture-prefix/policy.json'), 'utf8')));
-    conforms('policy', JSON.parse(readFileSync(join(device, 'policy.json'), 'utf8')));
   });
 
   test('each manifest checks out for its device; another schema or device is refused', () => {
@@ -197,6 +196,14 @@ describe('policy and status', () => {
     expect(ok.privacy.excluded_bundle_ids).toEqual(['proton pass.exe']);
     expect(PolicySchema.safeParse({ privacy: { excluded_bundle_ids: ['--frontmost'] } }).success).toBe(false);
     expect(PolicySchema.safeParse({ retention: { local_hours: 24 * 365 + 1, remote_days: 1 } }).success).toBe(false);
+  });
+
+  test('the policy stores every engine domain vector as the engine does (fixtures domains.json)', () => {
+    const vectors = JSON.parse(readFileSync(join(CONTRACT, 'domains.json'), 'utf8')) as { patterns: Array<{ input: string; pattern: string | null }> };
+    for (const { input, pattern } of vectors.patterns) {
+      const parsed = PolicySchema.safeParse({ privacy: { excluded_domains: [input] } });
+      expect(parsed.success ? parsed.data.privacy.excluded_domains[0] : null).toBe(pattern);
+    }
   });
 
   test('a device is offline when its status is older than 120 s', () => {

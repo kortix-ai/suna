@@ -5,6 +5,7 @@
     "enabled": false,
     "state": null
   },
+  "displays": [],
   "lastFrameMs": 1790845262000,
   "missingPermissions": [],
   "pausedUntilMs": null,
