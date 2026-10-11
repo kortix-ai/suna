@@ -32,6 +32,7 @@ import { projects, sessionLogMessages, sessionLogs, sessionLogThreads } from '@k
 import { and, asc, desc, eq, isNull, lt, lte, sql, type SQL } from 'drizzle-orm';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { db } from '../shared/db';
+import { qualifiedColumn } from '../shared/sql-qualified-column';
 import {
   readSessionTranscriptMirror,
   restoreStrippedToolParts,
@@ -169,7 +170,7 @@ export async function readLogTranscriptWindow(input: {
       updatedAt: sessionLogs.updatedAt,
       metadata: projects.metadata,
       accountId: projects.accountId,
-      threads: sql<ThreadRow[] | null>`(SELECT json_agg(json_build_object('threadId', ${sessionLogThreads.threadId}, 'parentThreadId', ${sessionLogThreads.parentThreadId}, 'record', ${sessionLogThreads.record}) ORDER BY ${sessionLogThreads.createdAt}, ${sessionLogThreads.threadId}) FROM ${sessionLogThreads} WHERE ${sessionLogThreads.sessionId} = ${sessionLogs.sessionId})`,
+      threads: sql<ThreadRow[] | null>`(SELECT json_agg(json_build_object('threadId', ${sessionLogThreads.threadId}, 'parentThreadId', ${sessionLogThreads.parentThreadId}, 'record', ${sessionLogThreads.record}) ORDER BY ${sessionLogThreads.createdAt}, ${sessionLogThreads.threadId}) FROM ${sessionLogThreads} WHERE ${sessionLogThreads.sessionId} = ${qualifiedColumn(sessionLogs.sessionId)})`,
     })
     .from(sessionLogs)
     .innerJoin(projects, eq(projects.projectId, sessionLogs.projectId))

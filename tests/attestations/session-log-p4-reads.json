@@ -1,0 +1,38 @@
+{
+  "source_hash": "20457e71ebaada404a6c4a4f677c59b63b72e36e7b3df6ed950a8aa116001c60",
+  "diff_files": [
+    "apps/api/src/__tests__/helpers/synthetic-opencode-session.ts",
+    "apps/api/src/__tests__/integration-session-log-read.test.ts",
+    "apps/api/src/feature-flags/registry.ts",
+    "apps/api/src/projects/lib/session-transcript.ts",
+    "apps/api/src/projects/routes/session-log.ts",
+    "apps/api/src/projects/routes/session-open-bundle.ts",
+    "apps/api/src/projects/session-log-read.ts",
+    "apps/api/src/projects/surface.ts",
+    "apps/api/src/public-session-shares/index.ts",
+    "apps/api/src/shared/public-session-share-view.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/opencode-session-log.test.ts",
+    "apps/web/content/docs/audit-actions.mdx",
+    "apps/web/content/docs/feature-flags/index.mdx",
+    "apps/web/src/components/iam/audit-http-routes.generated.ts",
+    "apps/web/src/lib/seo/content-timestamps.json",
+    "packages/api-contract/src/__tests__/session-log-shape.snapshot.txt",
+    "packages/api-contract/src/__tests__/session-log-v1.test.ts",
+    "packages/api-contract/src/index.ts",
+    "packages/api-contract/src/session-log/v1.ts",
+    "packages/api-contract/src/session-log/wire.ts",
+    "packages/shared/src/audit-route-labels.ts",
+    "tests/spec/end-to-end.md",
+    "tests/spec/routes.generated.json",
+    "tests/src/flows/session-log.flow.ts"
+  ],
+  "diff_hash": "b939a25365e7747a4b7cd3e3e3eb802892fba2f4f97b90e697062b4998e2c028",
+  "head": "cfbdadb9b413bcde696bb494a906e5ebdfaed08c",
+  "passed": false,
+  "lanes": {
+    "core": "pass",
+    "packages": "fail",
+    "db-suites": "fail"
+  },
+  "at": "2026-10-11T19:38:12.522Z"
+}
