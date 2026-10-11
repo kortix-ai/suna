@@ -681,6 +681,20 @@ events it replaced.
 `@kortix/sdk/react`'s `useRuntimeEventStream` uses the exact same primitive
 under the hood — it just also writes into the React Query cache.
 
+## Session log types
+
+The root entry exports the types of the Kortix session log, `kortix.session/2`
+minor 1: `SessionLog`, `SessionLogThread`, `SessionLogMessage` and
+`SessionLogBlock`, the block variants `TextBlock`, `ReasoningBlock`,
+`AttachmentBlock`, `ToolCallBlock`, `CompactionBlock`, `SubtaskBlock`,
+`StepBlock` and `HarnessBlock`, the grade types (`RestoreGrade`, `GradeCounts`),
+and the constants `SESSION_LOG_SCHEMA`, `SESSION_LOG_MINOR` and
+`KNOWN_TOOL_KINDS`. They are types and constants only: this package has no
+`zod` dependency. The validators (`SessionLogSchema` and the rest) stay in the
+private `@kortix/api-contract` package. The types are a copy of the api-contract
+session-log types, and a test fails when the two differ. See the
+[reference](https://kortix.com/docs/sdk/reference#session-log-types).
+
 ## Kortix as a Backend (server-side)
 
 `createKortix()` stores its config — crucially, the bearer-token getter — in a
