@@ -1020,8 +1020,15 @@
     {
       "idx": 145,
       "version": "7",
-      "when": 1791683985509,
-      "tag": "20261011015945_session_log_tables",
+      "when": 1791682826356,
+      "tag": "20261011014026_session_transcript_rewind_marker",
+      "breakpoints": true
+    },
+    {
+      "idx": 146,
+      "version": "7",
+      "when": 1791717353388,
+      "tag": "20261011111553_session_log_tables",
       "breakpoints": true
     }
   ]
