@@ -513,7 +513,7 @@ The grouping and status functions accept the structural types `PartLike`, `Messa
 
 ## Session log types
 
-The root exports the types of the Kortix session log, the harness-neutral record of a session, schema `kortix.session/2`. Kortix stores every session as a session log. No client method returns one: the SDK exports the types and three constants only, with no validators.
+The root exports the types of the Kortix session log, the harness-neutral record of a session, schema `kortix.session/2`. Kortix stores every session as a session log. The SDK exports the types and three constants, with no validators. In React, `useSessionLog` and `useSessionLogThread` return a session's log once the session reads it: see [Read the session log](/docs/sdk/react#read-the-session-log).
 
 | Name | What it is |
 | --- | --- |
