@@ -20772,8 +20772,16 @@
       "apiLink": "Kortix Capture API"
     },
     "settings": {
-      "title": "Подешавања",
-      "description": "{name}: да ли је Kortix Capture укључен, ко шта види и шта уређаји снимају.",
+      "title": "Podešavanja organizacije",
+      "description": "{name}: šta svaki uređaj ove organizacije snima, izuzima i čuva.",
+      "tabs": {
+        "label": "Odeljci podešavanja organizacije",
+        "general": "Opšte",
+        "recording": "Snimanje",
+        "exclusions": "Izuzeci",
+        "retention": "Čuvanje",
+        "notice": "Obaveštenje"
+      },
       "layersTitle": "Слојеви",
       "layer": {
         "screen": "Екран",
@@ -20789,16 +20797,6 @@
       "pause": "Паузирај снимање",
       "pauseHint": "Сваки уређај ове организације зауставља све слојеве док ово не искључите.",
       "exclusions": {
-        "title": "Izuzeci",
-        "hint": "Svaki uređaj ove organizacije preskače ovo, pored onoga što svaki član izuzme na svom računaru. Članovi ovo ne mogu da isključe.",
-        "add": "Dodaj",
-        "remove": "Ukloni {item}",
-        "privateBrowsing": "Privatno pregledanje",
-        "privateBrowsingHint": "Privatne i anonimne kartice i prozori u svakom podržanom pregledaču.",
-        "apps": "Aplikacije",
-        "appsHint": "macOS bundle ID-jevi ili nazivi programa za Windows i Linux.",
-        "websites": "Veb-sajtovi",
-        "websitesHint": "Sajt i njegovi poddomeni. Nalepi link ili upiši domen.",
         "group": {
           "password_managers": "Menadžeri lozinki",
           "password_managersHint": "1Password, Bitwarden, Keychain Access, Passwords i slični.",
@@ -20808,7 +20806,6 @@
           "bankingHint": "Bankarske i finansijske aplikacije i oko 950 sajtova banaka i fintech kompanija."
         }
       },
-      "retentionTitle": "Чување",
       "localHours": "На уређају (sati)",
       "localHoursHint": "Колико дуго уређај чува медије после отпремања. 0 их чува без ограничења.",
       "remoteDays": "У Kortixу (dani)",
@@ -20819,7 +20816,8 @@
       "lastChanged": "Последња измена {time}",
       "defaultPolicy": "Примењује се подразумевана политика.",
       "discard": "Одбаци измене",
-      "save": "Сачувај политику",
+      "unsaved": "Nesačuvane izmene",
+      "save": "Sačuvaj izmene",
       "saved": "Capture политика је сачувана",
       "saveFailed": "Capture политика није могла да се сачува",
       "loadFailed": "Capture политика није могла да се учита.",
@@ -20827,7 +20825,6 @@
       "switchTitle": "Kortix Capture",
       "switchLabel": "Kortix Capture за {name}",
       "switchHint": "Искључено зауставља сваки уређај ове организације и затвара област за чланове.",
-      "switchOwnersOnly": "Особе са дозволом capture.manage ово укључују или искључују. Власници и админи је имају.",
       "switchedOn": "Kortix Capture је укључен",
       "switchedOff": "Kortix Capture је искључен",
       "switchFailed": "Промена Kortix Capture није успела",
@@ -20878,12 +20875,15 @@
       },
       "exclusions": {
         "intro": "Kortix Capture nikada ne snima izuzete aplikacije i veb-sajtove na ovom računaru: bez snimka ekrana, teksta i radnji.",
+        "orgIntro": "Obavezno za svaki uređaj u organizaciji {org}: nijedan uređaj ovo ne snima, a članovi to ne mogu da isključe. Svaki član dodaje svoje izuzetke na svom računaru, u Kortix desktop aplikaciji.",
         "kindLabel": "Aplikacije ili veb-sajtovi",
         "apps": "Aplikacije",
         "websites": "Veb-sajtovi",
         "searchApps": "Pretraži aplikacije",
+        "searchOrAddApp": "Pretraži ili dodaj aplikaciju po bundle ID-ju ili nazivu programa",
         "searchWebsites": "Pretraži ili dodaj veb-sajt",
         "addDomain": "Izuzmi {domain}",
+        "addApp": "Izuzmi {app}",
         "categories": "Kategorije",
         "excluded": "Izuzeto",
         "recent": "Nedavno snimljeno",
@@ -20972,7 +20972,7 @@
       "organizations": "Организације",
       "nav": {
         "devices": "Уређаји",
-        "settings": "Подешавања",
+        "settings": "Podešavanja organizacije",
         "timeline": "Временска линија",
         "thisComputer": "Овај рачунар"
       },

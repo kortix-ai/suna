@@ -20772,8 +20772,16 @@
       "apiLink": "API Kortix Capture"
     },
     "settings": {
-      "title": "Paramètres",
-      "description": "{name} : si Kortix Capture est activé, qui voit quoi et ce que les appareils enregistrent.",
+      "title": "Paramètres de l’organisation",
+      "description": "{name} : ce que chaque appareil de cette organisation enregistre, exclut et conserve.",
+      "tabs": {
+        "label": "Sections des paramètres de l’organisation",
+        "general": "Général",
+        "recording": "Enregistrement",
+        "exclusions": "Exclusions",
+        "retention": "Conservation",
+        "notice": "Avis"
+      },
       "layersTitle": "Couches",
       "layer": {
         "screen": "Écran",
@@ -20789,16 +20797,6 @@
       "pause": "Mettre l'enregistrement en pause",
       "pauseHint": "Tous les appareils de cette organisation arrêtent toutes les couches jusqu’à ce que vous le désactiviez.",
       "exclusions": {
-        "title": "Exclusions",
-        "hint": "Chaque appareil de cette organisation les ignore, en plus de ce que chaque membre exclut sur son ordinateur. Les membres ne peuvent pas les désactiver.",
-        "add": "Ajouter",
-        "remove": "Retirer {item}",
-        "privateBrowsing": "Navigation privée",
-        "privateBrowsingHint": "Onglets et fenêtres privés ou incognito, dans tous les navigateurs pris en charge.",
-        "apps": "Apps",
-        "appsHint": "Identifiants de bundle macOS ou noms de programme Windows et Linux.",
-        "websites": "Sites web",
-        "websitesHint": "Un site et ses sous-domaines. Collez un lien ou saisissez un domaine.",
         "group": {
           "password_managers": "Gestionnaires de mots de passe",
           "password_managersHint": "1Password, Bitwarden, Trousseau d’accès, Mots de passe et similaires.",
@@ -20808,7 +20806,6 @@
           "bankingHint": "Apps bancaires et financières et environ 950 sites de banques et fintech."
         }
       },
-      "retentionTitle": "Conservation",
       "localHours": "Sur l'appareil (heures)",
       "localHoursHint": "Durée pendant laquelle un appareil garde les médias après leur envoi. 0 les garde sans limite.",
       "remoteDays": "Dans Kortix (jours)",
@@ -20819,7 +20816,8 @@
       "lastChanged": "Dernière modification {time}",
       "defaultPolicy": "La politique par défaut s'applique.",
       "discard": "Annuler les modifications",
-      "save": "Enregistrer la politique",
+      "unsaved": "Modifications non enregistrées",
+      "save": "Enregistrer",
       "saved": "Politique Capture enregistrée",
       "saveFailed": "Impossible d'enregistrer la politique Capture",
       "loadFailed": "Impossible de charger la politique Capture.",
@@ -20827,7 +20825,6 @@
       "switchTitle": "Kortix Capture",
       "switchLabel": "Kortix Capture pour {name}",
       "switchHint": "Désactivé arrête tous les appareils de cette organisation et ferme l’espace aux membres.",
-      "switchOwnersOnly": "Les personnes disposant de l’autorisation capture.manage l’activent ou le désactivent. Les propriétaires et les admins l’ont.",
       "switchedOn": "Kortix Capture est activé",
       "switchedOff": "Kortix Capture est désactivé",
       "switchFailed": "Impossible de modifier Kortix Capture",
@@ -20878,12 +20875,15 @@
       },
       "exclusions": {
         "intro": "Kortix Capture n’enregistre jamais les apps et sites exclus sur cet ordinateur : aucune capture, aucun texte, aucune action.",
+        "orgIntro": "Obligatoire pour chaque appareil de {org} : aucun appareil ne les enregistre et les membres ne peuvent pas les désactiver. Chaque membre ajoute ses propres exclusions sur son ordinateur, dans l’app de bureau Kortix.",
         "kindLabel": "Apps ou sites web",
         "apps": "Apps",
         "websites": "Sites web",
         "searchApps": "Rechercher des apps",
+        "searchOrAddApp": "Rechercher ou ajouter une app par identifiant de bundle ou nom de programme",
         "searchWebsites": "Rechercher ou ajouter un site web",
         "addDomain": "Exclure {domain}",
+        "addApp": "Exclure {app}",
         "categories": "Catégories",
         "excluded": "Exclus",
         "recent": "Enregistrés récemment",
@@ -20972,7 +20972,7 @@
       "organizations": "Organisations",
       "nav": {
         "devices": "Appareils",
-        "settings": "Réglages",
+        "settings": "Paramètres de l’organisation",
         "timeline": "Chronologie",
         "thisComputer": "Cet ordinateur"
       },

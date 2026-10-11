@@ -20772,8 +20772,16 @@
       "apiLink": "Kortix Capture API"
     },
     "settings": {
-      "title": "设置",
-      "description": "{name}：Kortix Capture 是否开启、谁能看到什么，以及设备录制什么。",
+      "title": "组织设置",
+      "description": "{name}：此组织的每台设备录制、排除和保留的内容。",
+      "tabs": {
+        "label": "组织设置的各个部分",
+        "general": "常规",
+        "recording": "录制",
+        "exclusions": "排除",
+        "retention": "保留",
+        "notice": "通知"
+      },
       "layersTitle": "图层",
       "layer": {
         "screen": "屏幕",
@@ -20789,16 +20797,6 @@
       "pause": "暂停录制",
       "pauseHint": "在你关闭此项之前，此组织的每台设备都会停止所有录制层。",
       "exclusions": {
-        "title": "排除",
-        "hint": "除了每位成员在自己电脑上排除的内容外，此组织的每台设备都会跳过这些内容。成员无法关闭它们。",
-        "add": "添加",
-        "remove": "移除 {item}",
-        "privateBrowsing": "隐私浏览",
-        "privateBrowsingHint": "所有支持的浏览器中的隐私/无痕标签页和窗口。",
-        "apps": "应用",
-        "appsHint": "macOS 的 Bundle ID，或 Windows 和 Linux 的程序名。",
-        "websites": "网站",
-        "websitesHint": "一个网站及其子域名。粘贴链接或输入域名。",
         "group": {
           "password_managers": "密码管理器",
           "password_managersHint": "1Password、Bitwarden、钥匙串访问、密码等。",
@@ -20808,7 +20806,6 @@
           "bankingHint": "银行与金融应用，以及约 950 个银行和金融科技网站。"
         }
       },
-      "retentionTitle": "保留",
       "localHours": "在设备上（小时）",
       "localHoursHint": "设备在上传后保留媒体的时长。0 表示不限期保留。",
       "remoteDays": "在 Kortix 中（天）",
@@ -20819,7 +20816,8 @@
       "lastChanged": "最后修改于 {time}",
       "defaultPolicy": "当前使用默认策略。",
       "discard": "放弃更改",
-      "save": "保存策略",
+      "unsaved": "有未保存的更改",
+      "save": "保存更改",
       "saved": "Capture 策略已保存",
       "saveFailed": "无法保存 Capture 策略",
       "loadFailed": "无法加载 Capture 策略。",
@@ -20827,7 +20825,6 @@
       "switchTitle": "Kortix Capture",
       "switchLabel": "{name} 的 Kortix Capture",
       "switchHint": "关闭会停止此组织的每台设备，并对成员关闭该区域。",
-      "switchOwnersOnly": "拥有 capture.manage 权限的人可以开启或关闭此功能。所有者和管理员拥有该权限。",
       "switchedOn": "Kortix Capture 已开启",
       "switchedOff": "Kortix Capture 已关闭",
       "switchFailed": "无法更改 Kortix Capture",
@@ -20878,12 +20875,15 @@
       },
       "exclusions": {
         "intro": "Kortix Capture 在这台电脑上从不录制已排除的应用和网站：不截图、不记录文字、不记录操作。",
+        "orgIntro": "对 {org} 的每台设备强制生效：任何设备都不会录制这些内容，成员也无法关闭。每位成员可在自己电脑上的 Kortix 桌面应用中添加自己的排除项。",
         "kindLabel": "应用或网站",
         "apps": "应用",
         "websites": "网站",
         "searchApps": "搜索应用",
+        "searchOrAddApp": "搜索应用，或按 Bundle ID 或程序名添加",
         "searchWebsites": "搜索或添加网站",
         "addDomain": "排除 {domain}",
+        "addApp": "排除 {app}",
         "categories": "类别",
         "excluded": "已排除",
         "recent": "最近录制",
@@ -20972,7 +20972,7 @@
       "organizations": "组织",
       "nav": {
         "devices": "设备",
-        "settings": "设置",
+        "settings": "组织设置",
         "timeline": "时间线",
         "thisComputer": "此电脑"
       },

@@ -20772,8 +20772,16 @@
       "apiLink": "API de Kortix Capture"
     },
     "settings": {
-      "title": "Configuración",
-      "description": "{name}: si Kortix Capture está activado, quién ve qué y qué graban los dispositivos.",
+      "title": "Ajustes de la organización",
+      "description": "{name}: qué graba, excluye y conserva cada dispositivo de esta organización.",
+      "tabs": {
+        "label": "Secciones de los ajustes de la organización",
+        "general": "General",
+        "recording": "Grabación",
+        "exclusions": "Exclusiones",
+        "retention": "Retención",
+        "notice": "Aviso"
+      },
       "layersTitle": "Capas",
       "layer": {
         "screen": "Pantalla",
@@ -20789,16 +20797,6 @@
       "pause": "Pausar la grabación",
       "pauseHint": "Todos los dispositivos de esta organización detienen todas las capas hasta que lo desactives.",
       "exclusions": {
-        "title": "Exclusiones",
-        "hint": "Todos los dispositivos de esta organización omiten esto, además de lo que cada miembro excluye en su ordenador. Los miembros no pueden desactivarlo.",
-        "add": "Añadir",
-        "remove": "Quitar {item}",
-        "privateBrowsing": "Navegación privada",
-        "privateBrowsingHint": "Pestañas y ventanas privadas o de incógnito, en todos los navegadores compatibles.",
-        "apps": "Apps",
-        "appsHint": "IDs de paquete de macOS o nombres de programa de Windows y Linux.",
-        "websites": "Sitios web",
-        "websitesHint": "Un sitio y sus subdominios. Pega un enlace o escribe un dominio.",
         "group": {
           "password_managers": "Gestores de contraseñas",
           "password_managersHint": "1Password, Bitwarden, Acceso a Llaveros, Contraseñas y similares.",
@@ -20808,7 +20806,6 @@
           "bankingHint": "Apps de banca y finanzas y unos 950 sitios de bancos y fintech."
         }
       },
-      "retentionTitle": "Retención",
       "localHours": "En el dispositivo (horas)",
       "localHoursHint": "Cuánto tiempo conserva un dispositivo el contenido tras subirlo. 0 lo conserva sin límite.",
       "remoteDays": "En Kortix (días)",
@@ -20819,7 +20816,8 @@
       "lastChanged": "Último cambio {time}",
       "defaultPolicy": "Se aplica la política predeterminada.",
       "discard": "Descartar cambios",
-      "save": "Guardar política",
+      "unsaved": "Cambios sin guardar",
+      "save": "Guardar cambios",
       "saved": "Política de Capture guardada",
       "saveFailed": "No se pudo guardar la política de Capture",
       "loadFailed": "No se pudo cargar la política de Capture.",
@@ -20827,7 +20825,6 @@
       "switchTitle": "Kortix Capture",
       "switchLabel": "Kortix Capture para {name}",
       "switchHint": "Desactivado detiene todos los dispositivos de esta organización y cierra el área para los miembros.",
-      "switchOwnersOnly": "Las personas con el permiso capture.manage lo activan o desactivan. Los propietarios y administradores lo tienen.",
       "switchedOn": "Kortix Capture está activado",
       "switchedOff": "Kortix Capture está desactivado",
       "switchFailed": "No se pudo cambiar Kortix Capture",
@@ -20878,12 +20875,15 @@
       },
       "exclusions": {
         "intro": "Kortix Capture nunca graba las apps y los sitios web excluidos en este ordenador: ni capturas, ni texto, ni acciones.",
+        "orgIntro": "Obligatorio para todos los dispositivos de {org}: ningún dispositivo graba esto y los miembros no pueden desactivarlo. Cada miembro añade sus propias exclusiones en su ordenador, en la app de escritorio de Kortix.",
         "kindLabel": "Apps o sitios web",
         "apps": "Apps",
         "websites": "Sitios web",
         "searchApps": "Buscar apps",
+        "searchOrAddApp": "Busca o añade una app por ID de paquete o nombre de programa",
         "searchWebsites": "Buscar o añadir un sitio web",
         "addDomain": "Excluir {domain}",
+        "addApp": "Excluir {app}",
         "categories": "Categorías",
         "excluded": "Excluidos",
         "recent": "Grabados recientemente",
@@ -20972,7 +20972,7 @@
       "organizations": "Organizaciones",
       "nav": {
         "devices": "Dispositivos",
-        "settings": "Ajustes",
+        "settings": "Ajustes de la organización",
         "timeline": "Línea de tiempo",
         "thisComputer": "Este equipo"
       },

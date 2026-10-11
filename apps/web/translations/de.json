@@ -20772,8 +20772,16 @@
       "apiLink": "Kortix Capture API"
     },
     "settings": {
-      "title": "Einstellungen",
-      "description": "{name}: ob Kortix Capture an ist, wer was sieht und was Geräte aufnehmen.",
+      "title": "Organisationseinstellungen",
+      "description": "{name}: was jedes Gerät dieser Organisation aufzeichnet, ausschließt und aufbewahrt.",
+      "tabs": {
+        "label": "Bereiche der Organisationseinstellungen",
+        "general": "Allgemein",
+        "recording": "Aufzeichnung",
+        "exclusions": "Ausschlüsse",
+        "retention": "Aufbewahrung",
+        "notice": "Hinweis"
+      },
       "layersTitle": "Ebenen",
       "layer": {
         "screen": "Bildschirm",
@@ -20789,16 +20797,6 @@
       "pause": "Aufnahme pausieren",
       "pauseHint": "Jedes Gerät dieser Organisation stoppt jede Ebene, bis du dies ausschaltest.",
       "exclusions": {
-        "title": "Ausschlüsse",
-        "hint": "Jedes Gerät dieser Organisation überspringt diese, zusätzlich zu dem, was jedes Mitglied auf seinem Computer ausschließt. Mitglieder können sie nicht ausschalten.",
-        "add": "Hinzufügen",
-        "remove": "{item} entfernen",
-        "privateBrowsing": "Privates Surfen",
-        "privateBrowsingHint": "Private und Inkognito-Tabs und -Fenster in jedem unterstützten Browser.",
-        "apps": "Apps",
-        "appsHint": "macOS-Bundle-IDs oder Windows- und Linux-Programmnamen.",
-        "websites": "Websites",
-        "websitesHint": "Eine Website und ihre Subdomains. Füge einen Link ein oder gib eine Domain ein.",
         "group": {
           "password_managers": "Passwort-Manager",
           "password_managersHint": "1Password, Bitwarden, Schlüsselbundverwaltung, Passwörter und ähnliche.",
@@ -20808,7 +20806,6 @@
           "bankingHint": "Bank- und Finanz-Apps und rund 950 Bank- und Fintech-Websites."
         }
       },
-      "retentionTitle": "Aufbewahrung",
       "localHours": "Auf dem Gerät (Stunden)",
       "localHoursHint": "Wie lange ein Gerät Medien nach dem Upload behält. 0 bewahrt sie ohne Limit auf.",
       "remoteDays": "In Kortix (Tage)",
@@ -20819,7 +20816,8 @@
       "lastChanged": "Zuletzt geändert {time}",
       "defaultPolicy": "Es gilt die Standardrichtlinie.",
       "discard": "Änderungen verwerfen",
-      "save": "Richtlinie speichern",
+      "unsaved": "Ungespeicherte Änderungen",
+      "save": "Änderungen speichern",
       "saved": "Capture-Richtlinie gespeichert",
       "saveFailed": "Die Capture-Richtlinie konnte nicht gespeichert werden",
       "loadFailed": "Die Capture-Richtlinie konnte nicht geladen werden.",
@@ -20827,7 +20825,6 @@
       "switchTitle": "Kortix Capture",
       "switchLabel": "Kortix Capture für {name}",
       "switchHint": "Aus stoppt jedes Gerät dieser Organisation und schließt den Bereich für Mitglieder.",
-      "switchOwnersOnly": "Personen mit der Berechtigung capture.manage schalten das ein oder aus. Inhaber und Admins haben sie.",
       "switchedOn": "Kortix Capture ist an",
       "switchedOff": "Kortix Capture ist aus",
       "switchFailed": "Kortix Capture konnte nicht geändert werden",
@@ -20878,12 +20875,15 @@
       },
       "exclusions": {
         "intro": "Kortix Capture zeichnet ausgeschlossene Apps und Websites auf diesem Computer nie auf: kein Screenshot, kein Text, keine Aktionen.",
+        "orgIntro": "Verbindlich für jedes Gerät in {org}: Kein Gerät zeichnet diese auf, und Mitglieder können sie nicht ausschalten. Jedes Mitglied legt eigene Ausschlüsse auf seinem Computer fest, in der Kortix-Desktop-App.",
         "kindLabel": "Apps oder Websites",
         "apps": "Apps",
         "websites": "Websites",
         "searchApps": "Apps suchen",
+        "searchOrAddApp": "App suchen oder per Bundle-ID oder Programmname hinzufügen",
         "searchWebsites": "Website suchen oder hinzufügen",
         "addDomain": "{domain} ausschließen",
+        "addApp": "{app} ausschließen",
         "categories": "Kategorien",
         "excluded": "Ausgeschlossen",
         "recent": "Zuletzt aufgezeichnet",
@@ -20972,7 +20972,7 @@
       "organizations": "Organisationen",
       "nav": {
         "devices": "Geräte",
-        "settings": "Einstellungen",
+        "settings": "Organisationseinstellungen",
         "timeline": "Zeitleiste",
         "thisComputer": "Dieser Computer"
       },

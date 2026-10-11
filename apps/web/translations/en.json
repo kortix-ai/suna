@@ -20772,8 +20772,16 @@
       "apiLink": "Kortix Capture API"
     },
     "settings": {
-      "title": "Settings",
-      "description": "{name}: whether Kortix Capture is on, who sees what, and what devices record.",
+      "title": "Organization settings",
+      "description": "{name}: what every device in this organization records, excludes and keeps.",
+      "tabs": {
+        "label": "Organization settings sections",
+        "general": "General",
+        "recording": "Recording",
+        "exclusions": "Exclusions",
+        "retention": "Retention",
+        "notice": "Notice"
+      },
       "layersTitle": "Layers",
       "layer": {
         "screen": "Screen",
@@ -20789,16 +20797,6 @@
       "pause": "Pause recording",
       "pauseHint": "Every device of this organization stops every layer until you turn this off.",
       "exclusions": {
-        "title": "Exclusions",
-        "hint": "Every device of this organization skips these, on top of what each member excludes on their own computer. Members cannot turn these off.",
-        "add": "Add",
-        "remove": "Remove {item}",
-        "privateBrowsing": "Private browsing",
-        "privateBrowsingHint": "Private and incognito tabs and windows, in every supported browser.",
-        "apps": "Apps",
-        "appsHint": "macOS bundle IDs or Windows and Linux program names.",
-        "websites": "Websites",
-        "websitesHint": "A site and its subdomains. Paste a link or type a domain.",
         "group": {
           "password_managers": "Password managers",
           "password_managersHint": "1Password, Bitwarden, Keychain Access, Passwords and similar.",
@@ -20808,7 +20806,6 @@
           "bankingHint": "Bank and finance apps and about 950 bank and fintech websites."
         }
       },
-      "retentionTitle": "Retention",
       "localHours": "On the device (hours)",
       "localHoursHint": "How long a device keeps media after its upload. 0 keeps it without a limit.",
       "remoteDays": "In Kortix (days)",
@@ -20819,7 +20816,8 @@
       "lastChanged": "Last changed {time}",
       "defaultPolicy": "The default policy applies.",
       "discard": "Discard changes",
-      "save": "Save policy",
+      "unsaved": "Unsaved changes",
+      "save": "Save changes",
       "saved": "Capture policy saved",
       "saveFailed": "Could not save the capture policy",
       "loadFailed": "Could not load the capture policy.",
@@ -20827,7 +20825,6 @@
       "switchTitle": "Kortix Capture",
       "switchLabel": "Kortix Capture for {name}",
       "switchHint": "Off stops every device of this organization and closes the area for members.",
-      "switchOwnersOnly": "People with the capture.manage permission turn this on or off. Owners and admins have it.",
       "switchedOn": "Kortix Capture is on",
       "switchedOff": "Kortix Capture is off",
       "switchFailed": "Could not change Kortix Capture",
@@ -20878,12 +20875,15 @@
       },
       "exclusions": {
         "intro": "Kortix Capture never records excluded apps and websites on this computer: no screenshot, no text, no actions.",
+        "orgIntro": "Mandatory for every device in {org}: no device records these, and members cannot turn them off. Each member adds their own exclusions on their computer, in the Kortix desktop app.",
         "kindLabel": "Apps or websites",
         "apps": "Apps",
         "websites": "Websites",
         "searchApps": "Search apps",
+        "searchOrAddApp": "Search or add an app by bundle ID or program name",
         "searchWebsites": "Search or add a website",
         "addDomain": "Exclude {domain}",
+        "addApp": "Exclude {app}",
         "categories": "Categories",
         "excluded": "Excluded",
         "recent": "Recently recorded",
@@ -20972,7 +20972,7 @@
       "organizations": "Organizations",
       "nav": {
         "devices": "Devices",
-        "settings": "Settings",
+        "settings": "Organization settings",
         "timeline": "Timeline",
         "thisComputer": "This computer"
       },

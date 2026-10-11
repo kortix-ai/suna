@@ -2,7 +2,17 @@ import { describe, expect, test } from 'bun:test';
 
 import type { DesktopCaptureExclusions } from '@/lib/desktop';
 
-import { applyExclusion, exclusionLists, normalizeDomain } from './capture-exclusions-model';
+import type { CapturePolicy } from '@kortix/sdk';
+
+import {
+  applyExclusion,
+  applyToPrivacy,
+  exclusionLists,
+  fromEngine,
+  fromPolicy,
+  normalizeAppId,
+  normalizeDomain,
+} from './exclusions-model';
 
 const DATA: DesktopCaptureExclusions = {
   groups: [
@@ -52,9 +62,19 @@ const DATA: DesktopCaptureExclusions = {
   frontmost: null,
 };
 
-describe('exclusionLists', () => {
+const LABEL = (id: string) => ({ name: `name:${id}`, description: `hint:${id}` });
+
+const PRIVACY: CapturePolicy['privacy'] = {
+  redact_pii: false,
+  excluded_bundle_ids: ['com.example.hr'],
+  excluded_domains: ['payroll.example'],
+  exclusion_groups: ['password_managers'],
+  exclude_private_browsing: true,
+};
+
+describe('exclusionLists (device mode, from the engine)', () => {
   test('apps: categories with apps, the excluded apps, and recently recorded apps that are not excluded', () => {
-    const lists = exclusionLists(DATA, 'apps', '');
+    const lists = exclusionLists(fromEngine(DATA), 'apps', '');
     expect(lists.categories.map((g) => g.id)).toEqual([
       'password_managers',
       'messaging',
@@ -65,20 +85,76 @@ describe('exclusionLists', () => {
   });
 
   test('websites: only categories with domains; recently recorded sites that are not excluded', () => {
-    const lists = exclusionLists(DATA, 'websites', '');
+    const lists = exclusionLists(fromEngine(DATA), 'websites', '');
     expect(lists.categories.map((g) => g.id)).toEqual(['password_managers', 'banking']);
     expect(lists.excluded.map((row) => row.id)).toEqual(['payroll.example']);
     expect(lists.recent.map((row) => row.id)).toEqual(['docs.example']);
   });
 
   test('the search narrows every list, case-insensitive, by name or id', () => {
-    const lists = exclusionLists(DATA, 'apps', 'MAIL');
+    const lists = exclusionLists(fromEngine(DATA), 'apps', 'MAIL');
     expect(lists.categories).toEqual([]);
     expect(lists.excluded).toEqual([]);
     expect(lists.recent.map((row) => row.id)).toEqual(['com.example.mail']);
-    expect(exclusionLists(DATA, 'apps', 'com.example.hr').excluded.map((row) => row.id)).toEqual([
-      'com.example.hr',
+    expect(
+      exclusionLists(fromEngine(DATA), 'apps', 'com.example.hr').excluded.map((row) => row.id),
+    ).toEqual(['com.example.hr']);
+  });
+
+  test('what the organization set is locked', () => {
+    const view = fromEngine(DATA);
+    expect(
+      exclusionLists(view, 'apps', '').excluded.find((row) => row.id === 'com.example.hr')?.locked,
+    ).toBe(true);
+    expect(view.groups.find((group) => group.id === 'banking')?.locked).toBe(true);
+    expect(view.privateBrowsing).toEqual({ excluded: true, locked: false });
+  });
+});
+
+describe('org mode, from the policy', () => {
+  test('every category, the mandatory lists, nothing locked and nothing recent', () => {
+    const view = fromPolicy(PRIVACY, LABEL);
+    expect(view.groups.map((group) => [group.id, group.enabled, group.locked])).toEqual([
+      ['password_managers', true, false],
+      ['messaging', false, false],
+      ['banking', false, false],
     ]);
+    expect(view.groups[0]?.name).toBe('name:password_managers');
+    const apps = exclusionLists(view, 'apps', '');
+    expect(apps.categories).toHaveLength(3);
+    expect(apps.excluded).toEqual([
+      { id: 'com.example.hr', name: 'com.example.hr', locked: false },
+    ]);
+    expect(apps.recent).toEqual([]);
+    expect(exclusionLists(view, 'websites', '').excluded.map((row) => row.id)).toEqual([
+      'payroll.example',
+    ]);
+    expect(view.privateBrowsing).toEqual({ excluded: true, locked: false });
+  });
+
+  test('applyToPrivacy adds and removes each kind without duplicates or mutation', () => {
+    const added = applyToPrivacy(PRIVACY, { kind: 'app', id: 'com.example.vault', on: true });
+    expect(added.excluded_bundle_ids).toEqual(['com.example.hr', 'com.example.vault']);
+    expect(
+      applyToPrivacy(added, { kind: 'app', id: 'com.example.vault', on: true }).excluded_bundle_ids,
+    ).toHaveLength(2);
+    expect(
+      applyToPrivacy(PRIVACY, { kind: 'app', id: 'com.example.hr', on: false }).excluded_bundle_ids,
+    ).toEqual([]);
+    expect(
+      applyToPrivacy(PRIVACY, { kind: 'domain', id: 'bank.example', on: true }).excluded_domains,
+    ).toEqual(['payroll.example', 'bank.example']);
+    expect(
+      applyToPrivacy(PRIVACY, { kind: 'group', id: 'banking', on: true }).exclusion_groups,
+    ).toEqual(['password_managers', 'banking']);
+    expect(
+      applyToPrivacy(PRIVACY, { kind: 'group', id: 'password_managers', on: false })
+        .exclusion_groups,
+    ).toEqual([]);
+    expect(
+      applyToPrivacy(PRIVACY, { kind: 'private-browsing', on: false }).exclude_private_browsing,
+    ).toBe(false);
+    expect(PRIVACY.excluded_bundle_ids).toEqual(['com.example.hr']);
   });
 });
 
@@ -123,4 +199,12 @@ test('normalizeDomain: what a person types or pastes becomes a domain, or null',
   expect(normalizeDomain('localhost')).toBeNull();
   expect(normalizeDomain('two words')).toBeNull();
   expect(normalizeDomain('')).toBeNull();
+});
+
+test('normalizeAppId: a bundle id or program name, or null', () => {
+  expect(normalizeAppId(' com.apple.keychainaccess ')).toBe('com.apple.keychainaccess');
+  expect(normalizeAppId('1password.exe')).toBe('1password.exe');
+  expect(normalizeAppId('two words')).toBeNull();
+  expect(normalizeAppId('')).toBeNull();
+  expect(normalizeAppId('a/b')).toBeNull();
 });

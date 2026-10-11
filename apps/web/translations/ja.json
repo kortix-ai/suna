@@ -20772,8 +20772,16 @@
       "apiLink": "Kortix Capture API"
     },
     "settings": {
-      "title": "設定",
-      "description": "{name}: Kortix Capture のオン/オフ、誰が何を見られるか、デバイスが録画する内容。",
+      "title": "組織の設定",
+      "description": "{name}: この組織の各デバイスが記録・除外・保持する内容。",
+      "tabs": {
+        "label": "組織の設定のセクション",
+        "general": "一般",
+        "recording": "記録",
+        "exclusions": "除外",
+        "retention": "保持",
+        "notice": "お知らせ"
+      },
       "layersTitle": "レイヤー",
       "layer": {
         "screen": "画面",
@@ -20789,16 +20797,6 @@
       "pause": "記録を一時停止",
       "pauseHint": "これをオフにするまで、この組織のすべてのデバイスがすべてのレイヤーを停止します。",
       "exclusions": {
-        "title": "除外",
-        "hint": "この組織のすべてのデバイスは、各メンバーが自分のコンピューターで除外するものに加えて、これらを記録しません。メンバーはオフにできません。",
-        "add": "追加",
-        "remove": "{item} を削除",
-        "privateBrowsing": "プライベートブラウズ",
-        "privateBrowsingHint": "対応するすべてのブラウザのプライベート/シークレットのタブとウインドウ。",
-        "apps": "アプリ",
-        "appsHint": "macOS のバンドル ID、または Windows と Linux のプログラム名。",
-        "websites": "ウェブサイト",
-        "websitesHint": "サイトとそのサブドメイン。リンクを貼り付けるかドメインを入力します。",
         "group": {
           "password_managers": "パスワードマネージャー",
           "password_managersHint": "1Password、Bitwarden、キーチェーンアクセス、パスワードなど。",
@@ -20808,7 +20806,6 @@
           "bankingHint": "銀行・金融アプリと約 950 の銀行・フィンテックのサイト。"
         }
       },
-      "retentionTitle": "保持",
       "localHours": "デバイス上（時間）",
       "localHoursHint": "アップロード後にデバイスがメディアを保持する時間です。0 は無期限に保持します。",
       "remoteDays": "Kortix 上（日）",
@@ -20819,7 +20816,8 @@
       "lastChanged": "最終変更 {time}",
       "defaultPolicy": "既定のポリシーが適用されます。",
       "discard": "変更を破棄",
-      "save": "ポリシーを保存",
+      "unsaved": "未保存の変更",
+      "save": "変更を保存",
       "saved": "Capture ポリシーを保存しました",
       "saveFailed": "Capture ポリシーを保存できませんでした",
       "loadFailed": "Capture ポリシーを読み込めませんでした。",
@@ -20827,7 +20825,6 @@
       "switchTitle": "Kortix Capture",
       "switchLabel": "{name} の Kortix Capture",
       "switchHint": "オフにすると、この組織のすべてのデバイスが停止し、メンバー向けの画面が閉じます。",
-      "switchOwnersOnly": "capture.manage 権限を持つユーザーがオンとオフを切り替えます。オーナーと管理者はこの権限を持っています。",
       "switchedOn": "Kortix Capture をオンにしました",
       "switchedOff": "Kortix Capture をオフにしました",
       "switchFailed": "Kortix Capture を変更できませんでした",
@@ -20878,12 +20875,15 @@
       },
       "exclusions": {
         "intro": "除外したアプリと Web サイトは、このコンピューターで Kortix Capture が記録することはありません。スクリーンショット、テキスト、操作のいずれも記録されません。",
+        "orgIntro": "{org} のすべてのデバイスで必須です。どのデバイスもこれらを記録せず、メンバーはオフにできません。各メンバーは自分のコンピューターの Kortix デスクトップアプリで独自の除外を追加します。",
         "kindLabel": "アプリまたは Web サイト",
         "apps": "アプリ",
         "websites": "Web サイト",
         "searchApps": "アプリを検索",
+        "searchOrAddApp": "アプリを検索、またはバンドル ID かプログラム名で追加",
         "searchWebsites": "Web サイトを検索または追加",
         "addDomain": "{domain} を除外",
+        "addApp": "{app} を除外",
         "categories": "カテゴリ",
         "excluded": "除外済み",
         "recent": "最近記録したもの",
@@ -20972,7 +20972,7 @@
       "organizations": "組織",
       "nav": {
         "devices": "デバイス",
-        "settings": "設定",
+        "settings": "組織の設定",
         "timeline": "タイムライン",
         "thisComputer": "このコンピュータ"
       },

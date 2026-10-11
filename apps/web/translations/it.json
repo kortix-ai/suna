@@ -20772,8 +20772,16 @@
       "apiLink": "API di Kortix Capture"
     },
     "settings": {
-      "title": "Impostazioni",
-      "description": "{name}: se Kortix Capture è attivo, chi vede cosa e cosa registrano i dispositivi.",
+      "title": "Impostazioni dell’organizzazione",
+      "description": "{name}: cosa registra, esclude e conserva ogni dispositivo di questa organizzazione.",
+      "tabs": {
+        "label": "Sezioni delle impostazioni dell’organizzazione",
+        "general": "Generali",
+        "recording": "Registrazione",
+        "exclusions": "Esclusioni",
+        "retention": "Conservazione",
+        "notice": "Avviso"
+      },
       "layersTitle": "Livelli",
       "layer": {
         "screen": "Schermo",
@@ -20789,16 +20797,6 @@
       "pause": "Metti in pausa la registrazione",
       "pauseHint": "Ogni dispositivo di questa organizzazione ferma ogni livello finché non lo disattivi.",
       "exclusions": {
-        "title": "Esclusioni",
-        "hint": "Ogni dispositivo di questa organizzazione li salta, oltre a ciò che ogni membro esclude sul proprio computer. I membri non possono disattivarli.",
-        "add": "Aggiungi",
-        "remove": "Rimuovi {item}",
-        "privateBrowsing": "Navigazione privata",
-        "privateBrowsingHint": "Schede e finestre private o in incognito, in tutti i browser supportati.",
-        "apps": "App",
-        "appsHint": "Bundle ID di macOS o nomi dei programmi Windows e Linux.",
-        "websites": "Siti web",
-        "websitesHint": "Un sito e i suoi sottodomini. Incolla un link o digita un dominio.",
         "group": {
           "password_managers": "Gestori di password",
           "password_managersHint": "1Password, Bitwarden, Accesso Portachiavi, Password e simili.",
@@ -20808,7 +20806,6 @@
           "bankingHint": "App bancarie e finanziarie e circa 950 siti di banche e fintech."
         }
       },
-      "retentionTitle": "Conservazione",
       "localHours": "Sul dispositivo (ore)",
       "localHoursHint": "Per quanto tempo un dispositivo conserva i contenuti dopo il caricamento. 0 li conserva senza limite.",
       "remoteDays": "In Kortix (giorni)",
@@ -20819,7 +20816,8 @@
       "lastChanged": "Ultima modifica {time}",
       "defaultPolicy": "Si applica la policy predefinita.",
       "discard": "Annulla modifiche",
-      "save": "Salva policy",
+      "unsaved": "Modifiche non salvate",
+      "save": "Salva modifiche",
       "saved": "Policy Capture salvata",
       "saveFailed": "Impossibile salvare la policy Capture",
       "loadFailed": "Impossibile caricare la policy Capture.",
@@ -20827,7 +20825,6 @@
       "switchTitle": "Kortix Capture",
       "switchLabel": "Kortix Capture per {name}",
       "switchHint": "Disattivato ferma ogni dispositivo di questa organizzazione e chiude l’area ai membri.",
-      "switchOwnersOnly": "Chi ha il permesso capture.manage lo attiva o disattiva. Proprietari e amministratori lo hanno.",
       "switchedOn": "Kortix Capture è attivo",
       "switchedOff": "Kortix Capture è disattivato",
       "switchFailed": "Impossibile modificare Kortix Capture",
@@ -20878,12 +20875,15 @@
       },
       "exclusions": {
         "intro": "Kortix Capture non registra mai le app e i siti esclusi su questo computer: nessuno screenshot, nessun testo, nessuna azione.",
+        "orgIntro": "Obbligatorie per ogni dispositivo di {org}: nessun dispositivo le registra e i membri non possono disattivarle. Ogni membro aggiunge le proprie esclusioni sul proprio computer, nell’app desktop di Kortix.",
         "kindLabel": "App o siti web",
         "apps": "App",
         "websites": "Siti web",
         "searchApps": "Cerca app",
+        "searchOrAddApp": "Cerca o aggiungi un’app per bundle ID o nome del programma",
         "searchWebsites": "Cerca o aggiungi un sito web",
         "addDomain": "Escludi {domain}",
+        "addApp": "Escludi {app}",
         "categories": "Categorie",
         "excluded": "Esclusi",
         "recent": "Registrati di recente",
@@ -20972,7 +20972,7 @@
       "organizations": "Organizzazioni",
       "nav": {
         "devices": "Dispositivi",
-        "settings": "Impostazioni",
+        "settings": "Impostazioni dell’organizzazione",
         "timeline": "Timeline",
         "thisComputer": "Questo computer"
       },
