@@ -85,9 +85,9 @@ export async function requireMember(
 // src/convex.ts (App) — fallback until @kortix/sdk exports kortixBinding
 import { ConvexReactClient } from "convex/react";
 
-export const convex = new ConvexReactClient(`${location.origin}/_kortix/apps/db`);
+export const convex = new ConvexReactClient(`${location.origin}/_kortix/apps/backend`);
 convex.setAuth(async () => {
-  const res = await fetch("/_kortix/token?audience=db", { credentials: "same-origin" });
+  const res = await fetch("/_kortix/token?audience=backend", { credentials: "same-origin" });
   return res.ok ? ((await res.json()) as { token: string }).token : null;
 });
 ```
@@ -100,7 +100,7 @@ set, inline as a `data:` URL: Convex fetches nothing). Set them once per
 backend App:
 
 ```sh
-kortix apps auth-env db | while IFS='=' read -r k v; do printf '%s' "$v" | npx convex env set "$k"; done
+kortix apps auth-env backend | while IFS='=' read -r k v; do printf '%s' "$v" | npx convex env set "$k"; done
 ```
 
 ```ts
@@ -207,12 +207,12 @@ App:
 import { ConvexReactClient } from "convex/react";
 import { kortixBinding } from "@kortix/sdk";
 
-const db = kortixBinding("db");                 // the backend App's slug
-export const convex = new ConvexReactClient(db.url);
-convex.setAuth(db.token);
+const backend = kortixBinding("backend");       // the backend App's slug
+export const convex = new ConvexReactClient(backend.url);
+convex.setAuth(backend.token);
 ```
 
-For any other client, `kortixToken({ audience: "db" })` returns the same
+For any other client, `kortixToken({ audience: "backend" })` returns the same
 fetcher. It caches the token and fetches a new one before it expires. It
 yields `null` (anonymous) for every non-200 answer: to see why, call
 `/_kortix/token` yourself (Troubleshoot sign-in, below).
@@ -390,11 +390,11 @@ passes `requireCustomer`. Test both directions before you ship.
 ## Test it
 
 ```sh
-cd apps/db                          # CONVEX_SELF_HOSTED_URL and _ADMIN_KEY loaded (convex.md, step 2)
+cd apps/backend                     # CONVEX_SELF_HOSTED_URL and _ADMIN_KEY loaded (convex.md, step 2)
 ISS=$(npx convex env get KORTIX_AUTH_ISSUER)
 npx convex run tasks:list '{}'      # admin, no identity → your function must reject
 npx convex run --identity "{\"subject\":\"u1\",\"issuer\":\"$ISS\",\"email\":\"a@example.com\",\"name\":\"A\",\"groups\":[\"Finance\"]}" tasks:create '{"title":"x"}'
-kortix apps token db                # a real token; in a session it names the agent (no groups, no role)
+kortix apps token backend           # a real token; in a session it names the agent (no groups, no role)
 ```
 
 `--identity` without `"issuer"` uses `https://convex.test`, which

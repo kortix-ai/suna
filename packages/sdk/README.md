@@ -1055,8 +1055,8 @@ Guide: `/docs/apps#build-on-apps-from-typescript`.
 ### One member on every runtime: sign-in tokens, groups, roles
 
 ```ts
-const db = kortixBinding('db');                                                  // an App this App uses, same origin
-convex = new ConvexReactClient(db.url); convex.setAuth(db.token);                // its client, signed in as the viewer
+const backend = kortixBinding('backend');                                        // an App this App uses, same origin
+convex = new ConvexReactClient(backend.url); convex.setAuth(backend.token);      // its client, signed in as the viewer
 const token = await kortixToken()();                                             // a token for this App itself
 const me = requireKortixMember(await ctx.auth.getUserIdentity(), { groups: ['Finance'] });  // a server function
 const caller = await verifyKortixToken(bearer);                                  // a server App (Kortix injects KORTIX_AUTH_*)

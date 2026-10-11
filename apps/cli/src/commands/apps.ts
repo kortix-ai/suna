@@ -68,7 +68,7 @@ Subcommands:
                                     Templates: convex (a self-hosted
                                     Convex backend: data on a volume, the client and
                                     HTTP-action services, an admins-only dashboard).
-    --name <slug>                   Default: the template name.
+    --name <slug>                   Default: the template's default (convex: backend).
     --no-deploy                     Write kortix.yaml only.
   deploy [path]                     Deploy a directory or .tar.gz archive. With no
                                     path and a kortix.yaml of several apps,
@@ -486,7 +486,7 @@ async function launchCommand(rest: string[], options: ContextOptions, json: bool
   if (!templateName) return fail(`launch needs --template (${Object.keys(APP_TEMPLATES).join(', ')})`);
   const template = appTemplate(templateName);
   if (!template) return fail(`no template "${templateName}"; there is ${Object.keys(APP_TEMPLATES).join(', ')}`);
-  const slug = slugFrom(slugFlag ?? template.name);
+  const slug = slugFrom(slugFlag ?? template.defaultName);
   const path = resolve(process.cwd(), 'kortix.yaml');
   const text = readManifestOrNew(path);
   const doc = parseDocument(text);
