@@ -49,10 +49,11 @@ export {
 // skill into a project they may write (capture/intelligence-routes.ts, capture/skills.ts).
 export { commitRepoFile } from './lib/trigger-manifest';
 
-// Project access, the route app and the secret envelope (consumed by ../apps/kinds/convex).
+// Project access, the route app and the secret envelope.
 export { assertProjectCapability, loadProjectForUser } from './lib/access';
 export { projectsApp } from './lib/app';
 export { decryptProjectSecret, encryptProjectSecret } from './secrets/envelope';
+export { listResolvedProjectSecrets } from './secrets';
 export { currentInstanceId } from './instance-scope';
 
 // What account erasure deletes outside the database (consumed by
@@ -81,3 +82,6 @@ export const releaseProjectEventSubscriptions: typeof import('./trigger-events/s
 
 // Drive sync's last push before a synced box loses a writable folder (consumed by drives/service.ts).
 export { flushDriveSyncBeforeStop } from './reaping/stop-box';
+
+// The transcript mirror's rewind marker (consumed by ../sandbox-proxy).
+export { setTranscriptRewindMarker } from './lib/session-transcript-mirror';

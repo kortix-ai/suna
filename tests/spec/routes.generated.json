@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 822,
+  "count": 789,
   "routes": [
     {
       "method": "GET",
@@ -261,142 +261,6 @@
     {
       "method": "POST",
       "path": "/v1/accounts/:accountId/branding/assets/:kind"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture"
-    },
-    {
-      "method": "PATCH",
-      "path": "/v1/accounts/:accountId/capture"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/chunks/:chunkId/media"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/days"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/devices"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/accounts/:accountId/capture/devices/:deviceId"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/devices/:deviceId/assets/:name"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/accounts/:accountId/capture/devices/:deviceId/policy"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/accounts/:accountId/capture/devices/:deviceId/sync"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/episodes"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/episodes/:episodeId"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/exports"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/accounts/:accountId/capture/exports"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/exports/:exportId"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/frames/:frameId"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/accounts/:accountId/capture/intelligence/run"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/members"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/accounts/:accountId/capture/members/:userId"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/overview"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/people"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/policy"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/accounts/:accountId/capture/policy"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/ranges"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/accounts/:accountId/capture/ranges"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/ranges/:rangeId"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/accounts/:accountId/capture/ranges/:rangeId/process"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/search"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/timeline"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/timeline/items"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/workflows"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/accounts/:accountId/capture/workflows/:workflowId"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/accounts/:accountId/capture/workflows/:workflowId/review"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/accounts/:accountId/capture/workflows/:workflowId/skill"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/accounts/:accountId/capture/workflows/:workflowId/skill-draft"
     },
     {
       "method": "GET",
@@ -1136,42 +1000,6 @@
     },
     {
       "method": "POST",
-      "path": "/v1/capture/credentials"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/capture/device/authorize"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/capture/device/grants/:user_code"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/capture/device/grants/:user_code/approve"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/capture/device/grants/:user_code/deny"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/capture/device/token"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/capture/me/frames/:frameId"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/capture/me/search"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/capture/me/timeline"
-    },
-    {
-      "method": "POST",
       "path": "/v1/channels/slack/identity/bind"
     },
     {
@@ -1193,6 +1021,10 @@
     {
       "method": "POST",
       "path": "/v1/channels/teams/identity/preview"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/clients/mobile"
     },
     {
       "method": "POST",
@@ -1840,10 +1672,6 @@
     },
     {
       "method": "GET",
-      "path": "/v1/projects/:projectId/apps/:appId/credentials"
-    },
-    {
-      "method": "GET",
       "path": "/v1/projects/:projectId/apps/:appId/deployments"
     },
     {
@@ -1863,32 +1691,36 @@
       "path": "/v1/projects/:projectId/apps/:appId/deployments/:deploymentId/logs"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/exec"
+    },
+    {
       "method": "GET",
-      "path": "/v1/projects/:projectId/apps/:appId/logs"
+      "path": "/v1/projects/:projectId/apps/:appId/machines"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/apps/:appId/machines/:machineId"
     },
     {
       "method": "POST",
-      "path": "/v1/projects/:projectId/apps/:appId/restore"
+      "path": "/v1/projects/:projectId/apps/:appId/machines/:machineId/restart"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/machines/:machineId/start"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/machines/:machineId/stop"
     },
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/apps/:appId/rollback"
     },
     {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/apps/:appId/rotate-credentials"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/apps/:appId/snapshots"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/apps/:appId/snapshots"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/projects/:projectId/apps/:appId/snapshots/:snapshotId"
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/apps/:appId/scale"
     },
     {
       "method": "POST",
@@ -1901,6 +1733,38 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/apps/:appId/token"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/apps/:appId/volumes"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/volumes"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/apps/:appId/volumes/:volumeId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/apps/:appId/volumes/:volumeId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/volumes/:volumeId/fork"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/volumes/:volumeId/restore"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/apps/:appId/volumes/:volumeId/snapshots"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:appId/volumes/:volumeId/snapshots"
     },
     {
       "method": "POST",
@@ -3161,6 +3025,10 @@
     {
       "method": "PATCH",
       "path": "/v1/tunnel/connections/:tunnelId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/tunnel/connections/:tunnelId/access"
     },
     {
       "method": "POST",

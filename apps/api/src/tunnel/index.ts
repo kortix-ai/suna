@@ -45,7 +45,8 @@ import { type AuditEventInput, recordAuditEvent } from '../shared/audit';
 
 const tunnelApp = makeOpenApiApp<AppEnv>();
 
-export { effectiveRegisteredCapabilities, parseAccessState } from './relay-persistence';
+export { effectiveRegisteredCapabilities } from './relay-persistence';
+export { parseAccessState } from './access-control';
 
 tunnelApp.use(
   '*',
@@ -179,6 +180,7 @@ const wsHandlers = createWsHandlers(tunnelRelay, {
         approvedCapabilities: tunnel.capabilities || [],
         agentVersion,
         reportsAccess: auth.reportsAccess === true,
+        controlsAccess: auth.controlsAccess === true,
         machineInfo: tunnel.machineInfo ?? {},
         credentialFingerprint,
       },

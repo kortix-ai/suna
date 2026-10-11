@@ -328,10 +328,10 @@ describe('Platinum snapshot build sizing', () => {
         );
       }
     },
-    // The packages lane runs this beside the CLI and daemon suites; its
-    // KORTIX_TEST_TIMEOUT_MS=30000 is the budget that survives that. Unset
-    // (a plain dev run) keeps the 15s this file was tuned to.
-    Number(process.env.KORTIX_TEST_TIMEOUT_MS) || 15_000,
+    // Five real builds beside the CLI and daemon suites took 29.5 s on a
+    // 4-vCPU GitHub runner (#9544) and passed the lane's 30 s
+    // KORTIX_TEST_TIMEOUT_MS by half a second; #9549 timed out. Own budget.
+    120_000,
   );
 });
 

@@ -321,27 +321,6 @@ export interface DesktopComputerDisconnectResult {
   error?: string;
 }
 
-/** Access control enforced on this machine (the owner answers a native prompt). */
-export interface DesktopComputerAccess {
-  mode: 'ask' | 'always' | 'off';
-  grantedUntil: string | null;
-  deniedUntil: string | null;
-  keepAwake: boolean;
-  keepAwakeSupported: boolean;
-  pendingRequest: { id: string; capability: string; requestedAt: string } | null;
-}
-
-export interface DesktopComputerAccessInput {
-  mode?: DesktopComputerAccess['mode'];
-  /** Allow for this many minutes (max 24 h). */
-  grantMinutes?: number;
-  /** End the current grant now. */
-  revoke?: boolean;
-  /** Answer a pending request with "Deny": refused for 10 minutes. */
-  deny?: boolean;
-  keepAwake?: boolean;
-}
-
 async function desktopCommand<T>(cmd: string, args?: Record<string, unknown>): Promise<T | null> {
   try {
     return ((await tauriInvoke<T>(cmd, args)) ?? null) as T | null;
@@ -411,13 +390,15 @@ export interface DesktopComputerGrants {
   missing?: ('files' | 'accessibility' | 'screenRecording')[];
 }
 export const desktopComputerGrants = () => desktopCommand<DesktopComputerGrants>('computer_grants');
-/** Setup's "Allow all": asks macOS for every missing grant, one prompt at a time. */
-export const desktopComputerRequestGrants = () =>
-  desktopAction<DesktopComputerGrants>('computer_grants_request');
-export const desktopComputerAccessGet = () => desktopCommand<DesktopComputerAccess>('computer_access_get');
-/** Rejects with the desktop app's message on invalid input. */
-export const desktopComputerAccessSet = (input: DesktopComputerAccessInput) =>
-  desktopAction<DesktopComputerAccess>('computer_access_set', { ...input });
+/**
+ * Setup's "Allow all": asks macOS for every missing grant, one prompt at a
+ * time. `restartAgent`: the agent reports a grant missing that macOS shows
+ * as given to the app, so its process predates the grant; restart it.
+ * Access (Ask, Always, Off, keep awake) is not here: the web app changes it
+ * through Kortix (`useSetComputerAccess`), which the machine applies.
+ */
+export const desktopComputerRequestGrants = (input: { restartAgent?: boolean } = {}) =>
+  desktopAction<DesktopComputerGrants>('computer_grants_request', input);
 
 /* ─── Kortix Capture (desktop app) ────────────────────────────────────────
    The desktop app bundles the Capture engine and runs it as its own child,

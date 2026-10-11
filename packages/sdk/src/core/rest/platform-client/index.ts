@@ -24,3 +24,4 @@ export * from './connector-setup';
 export * from './github-app';
 export * from './capture';
 export * from './capture-intelligence';
+export * from './client-policy';

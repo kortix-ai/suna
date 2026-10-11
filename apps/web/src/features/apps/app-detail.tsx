@@ -6,12 +6,12 @@ import { ButtonGroup } from '@/components/ui/button-group';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
-import { Input } from '@/components/ui/input';
 
 import Loading from '@/components/ui/loading';
 import { Modal, ModalContent } from '@/components/ui/modal';
+import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
 
-import { errorToast, successToast } from '@/components/ui/toast';
+import { successToast } from '@/components/ui/toast';
 
 
 import { useTranslations } from '@/i18n/use-translations';
@@ -21,17 +21,15 @@ import { relativeTime } from '@/lib/relative-time';
 import { cn } from '@/lib/utils';
 import { type App, type AppDeployment } from '@kortix/sdk';
 import { useAppAccess, useAppDeployment, useAppDeployments, useProjectApps } from '@kortix/sdk/react';
-import { ArrowSquareOutIcon, ArrowsOutSimpleIcon, CaretDownIcon, CaretRightIcon, ClockCounterClockwiseIcon, CurrencyDollarIcon, DotsThreeIcon, KeyIcon, LockKeyIcon, PauseIcon, PlayIcon, PlugsConnectedIcon, ArchiveIcon, TrashIcon, XIcon } from '@phosphor-icons/react';
+import { ArrowSquareOutIcon, CaretDownIcon, CaretRightIcon, ClockCounterClockwiseIcon, DotsThreeIcon, LockKeyIcon, PauseIcon, PlayIcon, PlugsConnectedIcon, TrashIcon, XIcon } from '@phosphor-icons/react';
 
 import { useState } from 'react';
 
 import { AppPreview } from './app-preview';
 import { AppAccessModal } from './app-access';
-import { AppBudgetModal } from './app-budget';
 import { AppConnectDialog } from './app-connect';
-import { AppDashboard } from './app-dashboard';
-import { AppSnapshotsDialog, ResizeAppDialog, instanceOperationError } from './app-instance-dialogs';
-import { localizedAppCopy, appCan, appCommand, appCostLabel, appHasBudget, appHost, appKindLabel, appSizeLabel, appStatus, deployNotice, DeployCommand } from './app-shared';
+import { AppMachinesPanel, AppServices, AppVolumesPanel } from './app-fleet';
+import { localizedAppCopy, appCan, appCommand, appHost, appStatus, deployNotice, DeployCommand } from './app-shared';
 
 /**
  * The App, full screen, with its controls above it.
@@ -40,17 +38,16 @@ import { localizedAppCopy, appCan, appCommand, appCostLabel, appHasBudget, appHo
  * lost every control the moment you arrived. The App now runs in place and the
  * actions that used to crowd the card sit in one bar over the top of it.
  *
- * Every kind shares this modal. The body and the capability items of the menu
- * follow `app.capabilities`: `preview` frames the App itself, `dashboard`
- * frames its admin dashboard, and Connect, Backups and Rotate admin key show
- * only for the Apps that offer them.
+ * The body and the capability items of the menu follow `app.capabilities`:
+ * `preview` frames the App itself, and Connect shows for the Apps that offer
+ * `member_tokens`.
  */
 export function AppDetailModal({
   projectId,
   app,
   canWrite,
   canDeploy,
-  canAdmin,
+  canAdmin = false,
   onOpenLinked,
   open,
   onOpenChange,
@@ -59,8 +56,8 @@ export function AppDetailModal({
   app: App;
   canWrite: boolean;
   canDeploy: boolean;
-  /** `project.app.admin`: credentials, restore, rotation, and the delete of an App that holds data. */
-  canAdmin: boolean;
+  /** project.app.admin: restore a volume. */
+  canAdmin?: boolean;
   /** Open another App of the project by slug: the uses / used-by links in the header. */
   onOpenLinked: (slug: string) => void;
   open: boolean;
@@ -74,19 +71,13 @@ export function AppDetailModal({
   const canAccess = app.viewer_can_access !== false;
   const access = useAppAccess(projectId, app.app_id, { policy: canWrite, session: canAccess && preview });
   const [versionsOpen, setVersionsOpen] = useState(false);
+  /** The bottom panel's tab: releases, or (by capability) machines and volumes. */
+  const [panelTab, setPanelTab] = useState<'releases' | 'machines' | 'volumes'>('releases');
   // The deployment whose events and build log are unfolded in the version drawer.
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [overlay, setOverlay] = useState<
-    'access' | 'delete' | 'budget' | 'resize' | 'snapshots' | 'connect' | 'rotate' | null
+    'access' | 'delete' | 'connect' | null
   >(null);
-  // An App with snapshots holds data: its delete needs project.app.admin and
-  // the slug typed back (the API answers 400 `confirmation_required` without it).
-  const holdsData = appCan(app, 'snapshots');
-  const [typedSlug, setTypedSlug] = useState('');
-  const kind = appKindLabel(app, tI18nComplete);
-  const instance = app.instance ?? null;
-  // Size, snapshot and rotation need a running machine with no other operation in flight.
-  const instanceIdle = instance?.status === 'running' && !instance.operation;
   const latest = deployments.data?.[0];
   const status = appStatus(app, tI18nComplete);
   const notice = deployNotice(latest, tI18nComplete);
@@ -96,8 +87,8 @@ export function AppDetailModal({
   const isStatic =
     app.hosting_type === 'static' ||
     deployments.data?.find((row) => row.deployment_id === app.active_deployment_id)?.hosting_type === 'static';
-  // A web App with a runtime. An App with its own machine (`instance`) is always on and has no runtime to sleep.
-  const isServer = status.deployed && !isStatic && !app.instance;
+  // An App with a runtime.
+  const isServer = status.deployed && !isStatic;
   const canSleep = appCan(app, 'sleep');
   const busy = apps.start.isPending || apps.stop.isPending || apps.remove.isPending;
   const liveUrl = access.session.data?.url ?? app.url;
@@ -154,11 +145,6 @@ export function AppDetailModal({
             <div className="flex min-w-0 flex-1 items-center gap-2">
               <span aria-hidden className={cn('size-1.5 shrink-0 rounded-full', status.dot)} />
               <h2 className="text-foreground truncate text-sm font-medium">{app.name}</h2>
-              {kind ? (
-                <Badge variant="outline" className="shrink-0">
-                  {kind}
-                </Badge>
-              ) : null}
               {/* One announcement, either way. The dot is `aria-hidden`, so the
                   running case needs a screen-reader-only label — but rendering
                   it unconditionally alongside the visible one made every
@@ -188,6 +174,11 @@ export function AppDetailModal({
                   that use it. Each slug opens that App. */}
               <AppLinks label={tI18nComplete.raw('text9e6151acb057')} slugs={app.uses} onOpen={onOpenLinked} />
               <AppLinks label={tI18nComplete.raw('text681bf81aba87')} slugs={app.used_by} onOpen={onOpenLinked} />
+              {/* Its other services (each on its own host) and its labels. */}
+              <AppServices app={app} />
+              {(app.labels ?? []).map((label) => (
+                <Badge key={label} variant="secondary" size="xs" className="hidden shrink-0 md:inline-flex">{label}</Badge>
+              ))}
             </div>
 
             {/* Two registers, and the gap is what separates them: the App's own
@@ -272,24 +263,6 @@ export function AppDetailModal({
                         </span>
                       </DropdownMenuItem>
                     ) : null}
-                    {canWrite && instance ? (
-                      <DropdownMenuItem disabled={!instanceIdle} onClick={() => setOverlay('resize')}>
-                        <ArrowsOutSimpleIcon className="size-3.5 shrink-0" />
-                        {tI18nComplete.raw('text5ad9ba3657f2')}
-                        <span className="text-muted-foreground ml-auto pl-3 text-xs tabular-nums">
-                          {[appCostLabel(app, tI18nComplete), appSizeLabel(app, tI18nComplete)].filter(Boolean).join(' · ')}
-                        </span>
-                      </DropdownMenuItem>
-                    ) : null}
-                    {canWrite && appHasBudget(app) ? (
-                      <DropdownMenuItem onClick={() => setOverlay('budget')}>
-                        <CurrencyDollarIcon className="size-3.5 shrink-0" />
-                        {tI18nComplete.raw('textc247593b2c0f')}
-                        <span className="text-muted-foreground ml-auto pl-3 text-xs tabular-nums">
-                          ${app.monthly_budget_usd}
-                        </span>
-                      </DropdownMenuItem>
-                    ) : null}
                     {canWrite && canSleep ? (
                       <DropdownMenuCheckboxItem
                         checked={app.always_on === true}
@@ -300,13 +273,8 @@ export function AppDetailModal({
                       >
                         <span className="flex flex-col">
                           {tI18nComplete.raw('text044ba8a9ae43')}
-                          <span className="text-muted-foreground text-xs">{tI18nComplete.raw('textb2fceee88a51')}</span>
+                          <span className="text-muted-foreground text-xs">{tI18nComplete.raw('text853696d5a64d')}</span>
                         </span>
-                        {isServer && app.estimated_monthly_usd ? (
-                          <span className="text-muted-foreground ml-auto pl-3 text-xs tabular-nums">
-                            {tI18nComplete('texte15cb9ffae7f', { value0: Math.round(app.estimated_monthly_usd) })}
-                          </span>
-                        ) : null}
                       </DropdownMenuCheckboxItem>
                     ) : null}
                     <DropdownMenuItem onClick={() => setVersionsOpen((value) => !value)}>
@@ -316,31 +284,13 @@ export function AppDetailModal({
                         : tI18nComplete.raw('text401dc1a55cb9')}
                     </DropdownMenuItem>
                     {/* Capability items: only the Apps that offer them list them. */}
-                    {appCan(app, 'admin_credentials') ? (
-                      <DropdownMenuItem
-                        disabled={instance?.status !== 'running'}
-                        onClick={() => setOverlay('connect')}
-                      >
+                    {appCan(app, 'member_tokens') ? (
+                      <DropdownMenuItem onClick={() => setOverlay('connect')}>
                         <PlugsConnectedIcon className="size-3.5 shrink-0" />
                         {tI18nComplete.raw('textc0e20f6d5a3a')}
                       </DropdownMenuItem>
                     ) : null}
-                    {holdsData ? (
-                      <DropdownMenuItem
-                        disabled={instance?.status !== 'running'}
-                        onClick={() => setOverlay('snapshots')}
-                      >
-                        <ArchiveIcon className="size-3.5 shrink-0" />
-                        {tI18nComplete.raw('textf0e800ed571e')}
-                      </DropdownMenuItem>
-                    ) : null}
-                    {canAdmin && appCan(app, 'admin_credentials') ? (
-                      <DropdownMenuItem disabled={!instanceIdle} onClick={() => setOverlay('rotate')}>
-                        <KeyIcon className="size-3.5 shrink-0" />
-                        {tI18nComplete.raw('text0aeabb927ead')}
-                      </DropdownMenuItem>
-                    ) : null}
-                    {(holdsData ? canAdmin : canWrite) ? (
+                    {canWrite ? (
                       <>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem variant="destructive" onClick={() => setOverlay('delete')}>
@@ -376,8 +326,6 @@ export function AppDetailModal({
                 interactive
                 className="absolute inset-0 size-full"
               />
-            ) : appCan(app, 'dashboard') ? (
-              <AppDashboard projectId={projectId} app={app} canAdmin={canAdmin} />
             ) : null}
           </div>
 
@@ -407,11 +355,7 @@ export function AppDetailModal({
                       ? app.always_on
                         ? tI18nComplete.raw('text044ba8a9ae43')
                         : tI18nComplete.raw('text7be15cd189a3')
-                      : instance
-                        ? tI18nComplete.raw('text044ba8a9ae43')
-                        : null,
-                    appHasBudget(app) ? tI18nComplete('text89ea53a8d7ac', { value0: app.monthly_budget_usd }) : appCostLabel(app, tI18nComplete),
-                    instance ? appSizeLabel(app, tI18nComplete) : null,
+                      : null,
                     appCan(app, 'rollback') && app.retained_deployments !== undefined
                       ? tI18nComplete('text04957fa46a70', { value0: app.retained_deployments })
                       : null,
@@ -420,41 +364,58 @@ export function AppDetailModal({
                     .join(' · ')}
                 </span>
               </div>
-              {deployments.isLoading ? (
-                <Loading className="text-muted-foreground" />
-              ) : deployments.data?.length ? (
-                <div className="space-y-1">
-                  {deployments.data.map((deployment) => (
-                    <DeploymentRow
-                      key={deployment.deployment_id}
-                      projectId={projectId}
-                      deployment={deployment}
-                      expanded={expandedId === deployment.deployment_id}
-                      onToggle={() =>
-                        setExpandedId((current) =>
-                          current === deployment.deployment_id ? null : deployment.deployment_id,
-                        )
-                      }
-                      active={deployment.deployment_id === app.active_deployment_id}
-                      canDeploy={canDeploy && appCan(app, 'rollback')}
-                      rollbackPending={deployments.rollback.isPending}
-                      onRollback={async () => {
-                        try {
-                          await deployments.rollback.mutateAsync(deployment.deployment_id);
-                          successToast(
-                            tI18nComplete('text94c0f4d10610', { value0: deployment.version }),
-                          );
-                        } catch {
-                          // Failure is already toasted by the query client's global mutations.onError.
-                        }
-                      }}
-                    />
-                  ))}
-                </div>
+              {appCan(app, 'machines') || appCan(app, 'volumes') ? (
+                <Tabs value={panelTab} onValueChange={(value) => setPanelTab(value as typeof panelTab)} className="mb-2">
+                  <TabsListCompact>
+                    <TabsTriggerCompact value="releases">{tI18nComplete.raw('text1a6f7cae06cc')}</TabsTriggerCompact>
+                    {appCan(app, 'machines') ? <TabsTriggerCompact value="machines">{tI18nComplete.raw('textc061da196eae')}</TabsTriggerCompact> : null}
+                    {appCan(app, 'volumes') ? <TabsTriggerCompact value="volumes">{tI18nComplete.raw('text53a480e304c0')}</TabsTriggerCompact> : null}
+                  </TabsListCompact>
+                </Tabs>
+              ) : null}
+              {panelTab === 'machines' && appCan(app, 'machines') ? (
+                <AppMachinesPanel projectId={projectId} app={app} canDeploy={canDeploy} />
+              ) : panelTab === 'volumes' && appCan(app, 'volumes') ? (
+                <AppVolumesPanel projectId={projectId} app={app} canDeploy={canDeploy} canAdmin={canAdmin} />
               ) : (
-                <p className="text-muted-foreground text-xs">
-                  {tI18nComplete.raw('textf1fc77ca3b24')}
-                </p>
+                <>
+                {deployments.isLoading ? (
+                  <Loading className="text-muted-foreground" />
+                ) : deployments.data?.length ? (
+                  <div className="space-y-1">
+                    {deployments.data.map((deployment) => (
+                      <DeploymentRow
+                        key={deployment.deployment_id}
+                        projectId={projectId}
+                        deployment={deployment}
+                        expanded={expandedId === deployment.deployment_id}
+                        onToggle={() =>
+                          setExpandedId((current) =>
+                            current === deployment.deployment_id ? null : deployment.deployment_id,
+                          )
+                        }
+                        active={deployment.deployment_id === app.active_deployment_id}
+                        canDeploy={canDeploy && appCan(app, 'rollback')}
+                        rollbackPending={deployments.rollback.isPending}
+                        onRollback={async () => {
+                          try {
+                            await deployments.rollback.mutateAsync(deployment.deployment_id);
+                            successToast(
+                              tI18nComplete('text94c0f4d10610', { value0: deployment.version }),
+                            );
+                          } catch {
+                            // Failure is already toasted by the query client's global mutations.onError.
+                          }
+                        }}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground text-xs">
+                    {tI18nComplete.raw('textf1fc77ca3b24')}
+                  </p>
+                )}
+                </>
               )}
             </div>
           ) : null}
@@ -463,35 +424,15 @@ export function AppDetailModal({
 
       <ConfirmDialog
         open={overlay === 'delete'}
-        onOpenChange={(next) => {
-          setOverlay(next ? 'delete' : null);
-          setTypedSlug('');
-        }}
+        onOpenChange={(next) => setOverlay(next ? 'delete' : null)}
         title={tI18nComplete.raw('textd1b0a6e3985a')}
-        description={
-          holdsData ? (
-            <div className="space-y-3">
-              <p>{tI18nComplete('textd115556499fb', { value0: app.name, value1: app.slug })}</p>
-              <Input
-                value={typedSlug}
-                onChange={(event) => setTypedSlug(event.target.value)}
-                placeholder={app.slug}
-                aria-label={tI18nComplete.raw('textd15387ecc6c5')}
-                autoComplete="off"
-                spellCheck={false}
-              />
-            </div>
-          ) : (
-            tI18nComplete('textb7ddab3f7df8', { value0: app.name })
-          )
-        }
+        description={tI18nComplete('textb7ddab3f7df8', { value0: app.name })}
         confirmLabel={tI18nComplete.raw('texte2d0a54968ea')}
         confirmVariant="destructive"
-        confirmDisabled={holdsData && typedSlug !== app.slug}
         isPending={apps.remove.isPending}
         onConfirm={async () => {
           try {
-            await apps.remove.mutateAsync(holdsData ? { appId: app.app_id, confirm: typedSlug } : app.app_id);
+            await apps.remove.mutateAsync(app.app_id);
             setOverlay(null);
             // The App this modal is about no longer exists — close it, or the
             // frame keeps rendering a deleted App behind a dead action bar.
@@ -502,49 +443,10 @@ export function AppDetailModal({
           }
         }}
       />
-      <ConfirmDialog
-        open={overlay === 'rotate'}
-        onOpenChange={(next) => !apps.rotateCredentials.isPending && setOverlay(next ? 'rotate' : null)}
-        title={tI18nComplete.raw('text8c62d9c111ea')}
-        description={tI18nComplete.raw('text90ea74fd007b')}
-        confirmLabel={tI18nComplete.raw('text0aeabb927ead')}
-        isPending={apps.rotateCredentials.isPending}
-        onConfirm={async () => {
-          try {
-            await apps.rotateCredentials.mutateAsync(app.app_id);
-            successToast(tI18nComplete.raw('text3f2bcc63b01e'));
-          } catch (error) {
-            errorToast(instanceOperationError(error, tI18nComplete.raw('text6dab22ece77e'), tI18nComplete));
-          }
-          setOverlay(null);
-        }}
-      />
-      {overlay === 'resize' ? (
-        <ResizeAppDialog projectId={projectId} app={app} onOpenChange={(next) => setOverlay(next ? 'resize' : null)} />
-      ) : null}
-      {overlay === 'snapshots' ? (
-        <AppSnapshotsDialog
-          projectId={projectId}
-          app={app}
-          canWrite={canWrite}
-          canRestore={canAdmin && appCan(app, 'restore')}
-          onOpenChange={(next) => setOverlay(next ? 'snapshots' : null)}
-        />
-      ) : null}
       {overlay === 'connect' ? (
         <AppConnectDialog
-          projectId={projectId}
           app={app}
-          canAdmin={canAdmin}
           onOpenChange={(next) => setOverlay(next ? 'connect' : null)}
-        />
-      ) : null}
-      {overlay === 'budget' ? (
-        <AppBudgetModal
-          projectId={projectId}
-          app={app}
-          open
-          onOpenChange={(next) => setOverlay(next ? 'budget' : null)}
         />
       ) : null}
       {overlay === 'access' ? (

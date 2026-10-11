@@ -160,7 +160,11 @@ test('an open during a Stop never answers ready, and its wait ends stopped once 
 
   const polled = start(sessionId, '?wait_ms=4000');
   await Bun.sleep(600);
-  await landStop(sandboxId, claimedAt, 'sbx_stop_wins_live');
+  // The stop settles NOW, after the poll formed (as in the test above). With
+  // the settle stamped at claimedAt, a poll that only looks after the write
+  // lands (a loaded CI runner) correctly reads an open formed after the stop
+  // and wakes the box.
+  await landStop(sandboxId, claimedAt, 'sbx_stop_wins_live', new Date());
   expect((await polled).stage).toBe('stopped');
   const rows = await rowsOf(sessionId);
   expect(rows.map((r) => [r.sandboxId, r.status])).toEqual([[sandboxId, 'stopped']]);

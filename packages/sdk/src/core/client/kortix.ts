@@ -38,6 +38,7 @@ import { getClient } from '../runtime/client';
 
 import { type KortixPlatformConfig, configureKortix } from '../http/config';
 import * as P from '../rest/projects-client';
+import { getMobileClientPolicy } from '../rest/platform-client/client-policy';
 
 function runtime(): RuntimeClient {
   return getClient();
@@ -145,6 +146,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       registerWebPushSubscription: P.registerWebPushSubscription,
       unregisterWebPushSubscription: P.unregisterWebPushSubscription,
     },
+    /** The operator's mobile release policy (`GET /v1/clients/mobile`). Public: needs no token. */
+    mobileClientPolicy: getMobileClientPolicy,
     /** The pasted-API-key UX check — `GET /accounts/me`, never throws. */
     validateToken: P.validateToken,
     /** Escape hatch: the typed opencode client for the active sandbox. */

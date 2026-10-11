@@ -30,6 +30,7 @@ kortix.billing; // credits, subscription, tier, transactions
 kortix.sandboxShares; // public share links for a sandbox port
 kortix.connectStatus; // easy-connect (Pipedream) status
 kortix.marketplace; // public marketplace catalog
+kortix.mobileClientPolicy; // mobile minimum-version policy (public, no token)
 kortix.validateToken; // pasted-API-key check
 kortix.config; // platform config in effect
 kortix.runtime(); // OpenCode REST compatibility client
@@ -333,16 +334,17 @@ project access.
 | --- | --- |
 | `requestSecret(input)` · `requestConnector(input)` | link to collect a secret · connect an app |
 
-#### `p.apps` — Apps of every kind
+#### `p.apps` — Apps (releases, machines, volumes)
 
 Behind the `apps` project feature. Guide: [SDK → Apps](/docs/sdk/apps).
 
 | method | what |
 | --- | --- |
-| `list()` · `get(appId)` · `create(input)` · `update(appId, input)` · `remove(appId, { confirm? })` | inventory and lifecycle; `create` takes `kind` (`web`, `convex`) and `uses` |
+| `list()` · `get(appId)` · `create(input)` · `update(appId, input)` · `remove(appId)` | inventory and lifecycle; `create` takes `uses`, `update` also takes `labels` |
 | `deployments.*` · `artifacts.*` · `access.*` · `rollback` · `start` · `stop` | deployments, artifacts, the access policy, traffic and runtime |
-| `waitUntilReady(appId)` | poll until a `convex` App's instance runs with no operation in flight |
-| `snapshots.list/create/delete/restore` · `credentials` · `rotateCredentials` · `token` · `log` | capability calls; `409 app_capability_unsupported` when the App lacks the capability |
+| `machines.list/start/stop/restart/destroy` · `scale(appId, count)` · `exec(appId, input)` | machines per process group; `exec` needs `project.app.admin` |
+| `volumes.list/create/update/destroy/snapshots/snapshot/restore/fork` | persistent volumes, daily snapshots, restore, fork |
+| `token(appId)` | a 15-minute sign-in token; `409 app_capability_unsupported` without `member_tokens` |
 
 #### `p.secrets` — project secrets
 
@@ -835,6 +837,7 @@ import { files, getSessionHealth, getClient, authenticatedFetch, backendApi } fr
 | API client | `backendApi`, the low-level typed HTTP client |
 | Turns | Message-to-turn grouping, cost, and status math — see [Turns](#turns) |
 | Transcripts | `formatTranscript`, a client-side Markdown export |
+| Session log types | The `kortix.session/2` record types and constants — see [Session log types](#session-log-types) |
 | Composer lists | The session composer's agent and model lists: which to offer, which runs |
 
 #### Files
@@ -1403,6 +1406,41 @@ Your own message and part shapes flow through unchanged as long as they match
 the required fields. `classifyPart` and `classifyTurn` are the exception.
 They type against the Kortix `Part` union (`kortix.transcript.v1`), so their
 exhaustiveness check catches a new part type at build time.
+
+## Session log types
+
+The root entry exports the types of the Kortix session log, schema
+`kortix.session/2` minor 1: the harness-neutral record of a session. They are
+types and three constants only (`SESSION_LOG_SCHEMA`, `SESSION_LOG_MINOR`,
+`KNOWN_TOOL_KINDS`). `@kortix/sdk` has no `zod` dependency, so the
+validators (`SessionLogSchema` and the rest) stay in the private
+`@kortix/api-contract`. A test holds the SDK copy byte-equal to
+`packages/api-contract/src/session-log/types.ts`.
+
+```ts
+import { SESSION_LOG_SCHEMA, type SessionLog, type SessionLogBlock } from '@kortix/sdk';
+
+function toolCalls(log: SessionLog): SessionLogBlock[] {
+  return log.threads.flatMap((t) => t.messages.flatMap((m) => m.blocks)).filter((b) => b.type === 'tool_call');
+}
+```
+
+| Name | What it is |
+| --- | --- |
+| `SessionLog` | The record: threads, todos, pending questions and permissions, harness history, `restore_grade` |
+| `SessionLogThread` | One thread: the main thread or a sub-agent, with its `messages` |
+| `SessionLogMessage` | One message: `seq`, `role`, `kind`, `status`, `model`, `usage`, `blocks` |
+| `SessionLogBlock` | The union of the block variants below, keyed by `type` |
+| `TextBlock`, `ReasoningBlock`, `AttachmentBlock`, `ToolCallBlock`, `CompactionBlock`, `SubtaskBlock`, `StepBlock`, `HarnessBlock` | The block variants. `type` is `text`, `reasoning`, `attachment`, `tool_call`, `compaction`, `subtask`, `step`, `harness` |
+| `ToolResultContent`, `CompactionLayoutEntry`, `ThreadInteraction`, `ModelRef` | Parts of the records above |
+| `SessionLogTodo`, `SessionLogToolKind`, `KnownToolKind`, `KNOWN_TOOL_KINDS` | The todo item, the tool kind (any string; a reader renders an unknown kind as `other`), and the kinds every reader renders. `SessionLogTodo` and `SessionLogToolKind` carry the prefix because `Todo` and `ToolKind` name other types in this package |
+| `RestoreGrade`, `GradeCounts` | How faithfully the record restores: `native`, `converted` or `partial`, and what is missing |
+| `SESSION_LOG_SCHEMA`, `SESSION_LOG_MINOR` | `'kortix.session/2'` and `1` |
+
+`Role`, `Usage`, `Pending`, `Ext`, `Producer`, `SchemaRef` and `BlockBase` are not
+exported: read them from the record, for example `SessionLogMessage['usage']`.
+`AdapterCapabilities`, `CapabilityFeatures` and `ExportCursor` are not exported
+either: they are daemon-side adapter state with no client consumer.
 
 ## Distribution
 

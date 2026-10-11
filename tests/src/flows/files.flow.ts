@@ -63,7 +63,8 @@ flow(
         .status(404).body().has("$.error", "File not found");
     });
     await ctx.step("absolute and traversal paths → 404 File not found", async () => {
-      for (const path of ["/workspace/AGENTS.md", "../etc/passwd"]) {
+      // No `../`: an edge WAF answers that itself (403) before the API sees it.
+      for (const path of ["/workspace/AGENTS.md", "..", "ke2e/.."]) {
         (await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/files/content", { params: { projectId: p.id }, query: { path } }))
           .status(404).body().has("$.error", "File not found");
       }

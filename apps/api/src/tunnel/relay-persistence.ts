@@ -9,6 +9,7 @@ import { fingerprintTunnelCredentialHash } from '../shared/crypto';
 import { db } from '../shared/db';
 import { clearTunnelRelayOwnerIfCurrent, markTunnelRelayOwner } from './core/cluster-forwarder';
 import { tunnelRelay } from './core/relay';
+import { parseAccessState } from './access-control';
 import { retireSupersededRegistrations } from './registrations';
 
 export function effectiveRegisteredCapabilities(
@@ -43,22 +44,6 @@ function mergeMachineInfo(patch: Record<string, unknown>, drop: string[] = []) {
     sql`coalesce(${tunnelConnections.machineInfo}, '{}'::jsonb)`,
   );
   return sql`${base} || ${JSON.stringify(patch)}::jsonb`;
-}
-
-/**
- * v2 X2: the agent's access mode (`tunnel.access.state`, signed), stored at
- * `machine_info.access`. Null for anything malformed; old agents never send it.
- */
-export function parseAccessState(
-  params: unknown,
-): { mode: 'ask' | 'always' | 'off'; grantedUntil: string | null } | null {
-  if (!params || typeof params !== 'object') return null;
-  const { mode, grantedUntil } = params as Record<string, unknown>;
-  if (mode !== 'ask' && mode !== 'always' && mode !== 'off') return null;
-  if (grantedUntil === null || grantedUntil === undefined) return { mode, grantedUntil: null };
-  if (typeof grantedUntil !== 'string' || grantedUntil.length > 64) return null;
-  const at = new Date(grantedUntil);
-  return Number.isNaN(at.getTime()) ? null : { mode, grantedUntil: at.toISOString() };
 }
 
 /**
@@ -123,6 +108,8 @@ export function registerTunnelRelayPersistence(): void {
             ...(typeof metadata?.agentVersion === 'string'
               ? { agentVersion: metadata.agentVersion }
               : {}),
+            // Serves `tunnel.access.set` (POST /connections/:id/access).
+            controlsAccess: metadata?.controlsAccess === true,
           },
           metadata?.reportsAccess === true ? [] : ['access'],
         ) as unknown as Record<string, unknown>,

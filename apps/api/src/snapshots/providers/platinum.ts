@@ -314,7 +314,11 @@ export class PlatinumAdapter implements SandboxProviderAdapter {
           // MAX_BUILD_SIZE_MB is Platinum's own from-build hard cap (>20 GiB-disk
           // without it 400s "size_mb too_big"). See isPlatinumSizeCapBuildFailure for
           // what happens when a ceiling this small can't fit the image.
-          size_mb: Math.min(platinumBuildSizeMb(), diskGb * MB_PER_GB, PLATINUM_MAX_BUILD_SIZE_MB),
+          // An App template carries minimal defaults: each machine passes its own
+          // cpu/ram/disk at create, so its build ceiling is not tied to a disk.
+          size_mb: input.runtimeProfile === 'app'
+            ? Math.min(platinumBuildSizeMb(), PLATINUM_MAX_BUILD_SIZE_MB)
+            : Math.min(platinumBuildSizeMb(), diskGb * MB_PER_GB, PLATINUM_MAX_BUILD_SIZE_MB),
           default_cpu: input.spec.cpu ?? DEFAULT_CPU,
           default_ram_mb: (input.spec.memoryGb ?? DEFAULT_MEMORY_GB) * 1024,
           default_disk_gb: diskGb,

@@ -28,7 +28,7 @@ const api = createApiJsonClient(apiBase);
  *
  * Local only: the files are pushed straight into the project's bare repository.
  */
-test.describe('42 — Files lists the whole repository', () => {
+test.describe('42 — Files lists the whole repository', { tag: '@local-only' }, () => {
   test('the root lists a folder past 1,000 files, and search finds a file in it', async ({ page }) => {
     test.skip(!databaseUrl || isDeployedTarget(), 'local stack only: pushes into a local bare repository');
     test.setTimeout(120_000);

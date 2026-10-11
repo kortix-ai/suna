@@ -56,6 +56,7 @@ import { tunnelApp } from './tunnel';
 import { installHttpMiddleware } from './http-middleware';
 import { installHttpErrors } from './http-errors';
 import { registerSystemRoutes } from './routes/system';
+import { registerClientRoutes } from './routes/clients';
 import { registerPlatformEndpoints } from './routes/platform-endpoints';
 import { registerRetiredRoutes } from './routes/retired';
 import { dispatchInProcess } from './inbound-dispatch';
@@ -70,6 +71,7 @@ export { app };
 installHttpMiddleware(app);
 
 registerSystemRoutes(app);
+registerClientRoutes(app);
 
 // Retired routes answer 410 before any mount below can match them.
 registerRetiredRoutes(app);
