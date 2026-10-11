@@ -1,7 +1,6 @@
 {
   "source_hash": "d49c884a0a7576feb1a02effd4cf05f5562be6ecf5ed06aee546ad9837a44527",
   "diff_files": [
-    "apps/api/src/__tests__/integration-sandbox-ownership.test.ts",
     "apps/api/src/__tests__/integration-warm-sessions-exclude.test.ts",
     "apps/mobile/lib/session/warm-session.ts",
     "apps/web/src/hooks/projects/use-warm-project-session.test.ts",
@@ -14,13 +13,13 @@
     "packages/sdk/src/public-surface.snapshot.json",
     "packages/sdk/src/public-type-surface.snapshot.json"
   ],
-  "diff_hash": "0b760b41b42f45e7161778c0666744c70001e1de3baec67602a1e04656754487",
-  "head": "5d01e63570e3a01ec803a6b604dc886c2f7398dd",
+  "diff_hash": "0762a9024d03160918976700bb2b84b49c4c61f204fbe8a67acd46aec5ae574f",
+  "head": "b1b03b5dc17001c392366b8d4e53308059013a24",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-11T05:57:26.641Z"
+  "at": "2026-10-11T05:59:19.977Z"
 }
