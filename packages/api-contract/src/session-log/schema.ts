@@ -2,20 +2,25 @@
  * zod validators for `kortix.session/2` minor 1. Each schema mirrors a type in
  * `types.ts`; the comments there are the rules. Objects are not strict: a later
  * minor adds optional fields and an older reader must still accept the record. Enums and the
- * block union are closed (see the compatibility rule in `types.ts`).
+ * block union are closed, and tool `kind` passes any non-empty string (see the compatibility
+ * rule in `types.ts`). `__tests__/session-log-shape.snapshot.txt` pins the shape of every
+ * schema exported here.
  */
 import { z } from 'zod';
 import { SESSION_LOG_SCHEMA } from './types';
 
 const str = z.string();
 const nullableStr = str.nullable();
+const count = z.number().int().nonnegative();
+const nonEmpty = str.min(1); // pass-through strings and lookup keys: any non-empty value
+const id = str.min(1); // F1: block id, unique within its message (checked on the message)
 
 export const ExtSchema = z.record(z.object({ version: str, native_id: str.optional(), data: z.unknown() }));
-export const ProducerSchema = z.object({ harness: str, harness_version: str, adapter_version: str });
+export const ProducerSchema = z.object({ harness: nonEmpty, harness_version: str, adapter_version: str });
 export const ModelRefSchema = z.object({
   provider: str,
   model: str,
-  api: str.optional(), // 'anthropic-messages' | 'openai-chat' | 'openai-responses' | any other dialect
+  api: nonEmpty.optional(), // 'anthropic-messages' | 'openai-chat' | 'openai-responses' | any other dialect
   variant: str.optional(),
   reasoning_effort: str.optional(),
 });
@@ -44,9 +49,19 @@ export const ThreadInteractionSchema = z.object({
 
 const ext = ExtSchema.optional();
 
-export const TextBlockSchema = z.object({ type: z.literal('text'), text: str, model_text: str.optional(), synthetic: z.boolean().optional(), ext });
+export const TextBlockSchema = z.object({
+  type: z.literal('text'),
+  id,
+  text: str,
+  model_text: str.optional(),
+  synthetic: z.boolean().optional(),
+  ref: str.optional(), // F3
+  bytes: count.optional(), // F3
+  ext,
+});
 export const ReasoningBlockSchema = z.object({
   type: z.literal('reasoning'),
+  id,
   text: str,
   summary: z.array(str).optional(),
   redacted: z.boolean().optional(),
@@ -55,26 +70,26 @@ export const ReasoningBlockSchema = z.object({
 });
 export const AttachmentBlockSchema = z.object({
   type: z.literal('attachment'),
+  id,
   ref: str,
   mime: str,
   name: str.optional(),
   label: str.optional(),
   source_path: str.optional(),
-  bytes: z.number(),
-  sha256: str,
+  bytes: count,
+  sha256: str.optional(), // F5
   ext,
 });
 
-export const ToolKindSchema = z.enum([
-  'shell', 'read', 'write', 'edit', 'patch', 'list', 'glob', 'grep',
-  'web_fetch', 'web_search', 'todo', 'task', 'question', 'plan', 'mcp', 'other',
-]);
+/** F12: the known kinds are in `KnownToolKind`; a harness may define its own, so any non-empty string passes. */
+export const ToolKindSchema = str.min(1);
 export const ToolResultContentSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('text'), text: str }),
   z.object({ type: z.literal('attachment'), ref: str, mime: str, sha256: str.optional() }),
 ]);
 export const ToolCallBlockSchema = z.object({
   type: z.literal('tool_call'),
+  id,
   call_id: str,
   name: str,
   kind: ToolKindSchema,
@@ -86,7 +101,7 @@ export const ToolCallBlockSchema = z.object({
       content: z.array(ToolResultContentSchema),
       model_content: z.array(ToolResultContentSchema).optional(),
       is_error: z.boolean(),
-      error: z.object({ code: str.optional(), message: str }).optional(),
+      error: z.object({ code: nonEmpty.optional(), message: str }).optional(),
       exit_code: z.number().optional(),
       synthetic: z.boolean().optional(),
       cleared_at: str.optional(),
@@ -106,6 +121,7 @@ export const CompactionLayoutEntrySchema = z.union([
 ]);
 export const CompactionBlockSchema = z.object({
   type: z.literal('compaction'),
+  id,
   summary: nullableStr,
   opaque: z.boolean().optional(),
   first_kept_message_id: nullableStr,
@@ -116,17 +132,19 @@ export const CompactionBlockSchema = z.object({
 });
 export const SubtaskBlockSchema = z.object({
   type: z.literal('subtask'),
+  id,
   thread_id: str,
   agent: str,
   description: str,
   call_id: str.optional(),
   call_ids: z.array(str).optional(),
 });
-export const StepBlockSchema = z.object({ type: z.literal('step'), phase: z.enum(['start', 'finish']), ext });
+export const StepBlockSchema = z.object({ type: z.literal('step'), id, phase: z.enum(['start', 'finish']), ext });
 export const HarnessBlockSchema = z.object({
   type: z.literal('harness'),
-  harness: str,
-  kind: str,
+  id,
+  harness: nonEmpty,
+  kind: nonEmpty,
   data: z.unknown(),
   model_visible: z.boolean(),
   fallback_text: str.optional(),
@@ -161,12 +179,13 @@ export const SessionLogMessageSchema = z
     hidden_reason: z.enum(['failed_attempt', 'aborted', 'retracted', 'reverted', 'superseded']).optional(),
     origin: z.enum(['prompt', 'steer', 'command', 'automation', 'subagent', 'notification']).optional(),
     agent: nullableStr.optional(),
+    native_agent_id: str.optional(), // F8
     reply_to: nullableStr.optional(),
     parent_message_id: nullableStr.optional(),
     model: ModelRefSchema.nullable(),
     usage: UsageSchema.nullable(),
     finish: z.enum(['stop', 'tool_calls', 'length', 'error', 'aborted']).nullable(),
-    error: z.object({ code: str, message: str }).nullable(),
+    error: z.object({ code: nonEmpty, message: str }).nullable(),
     created_at: str,
     completed_at: nullableStr,
     producer: ProducerSchema,
@@ -175,6 +194,12 @@ export const SessionLogMessageSchema = z
     ext,
   })
   .superRefine((message, ctx) => {
+    // F1: a block id is unique within its message.
+    const seen = new Set<string>();
+    message.blocks.forEach((block, i) => {
+      if (seen.has(block.id)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['blocks', i, 'id'], message: `block id ${block.id} repeats in message ${message.message_id}` });
+      seen.add(block.id);
+    });
     // Closure rule (ToolCallBlock, C2): a thread at rest holds no in-context tool call that is open.
     // An exporter closes an interrupted call with `{ is_error: true, synthetic: true }`.
     // An out-of-context message (a hidden aborted reply) may keep its open call.
@@ -198,6 +223,7 @@ export const SessionLogThreadSchema = z.object({
   spawned_by: z.object({ message_id: str, call_id: str }).nullable(),
   interactions: z.array(ThreadInteractionSchema).optional(),
   agent: nullableStr,
+  native_agent_id: str.optional(), // F8
   nickname: nullableStr.optional(),
   title: nullableStr,
   created_at: str,
@@ -210,6 +236,8 @@ export const SessionLogSchema = z.object({
   session_id: str,
   title: nullableStr,
   created_at: str,
+  restore_grade: z.enum(['native', 'converted', 'partial']), // F4
+  grade_counts: z.object({ tool_input: count, cut_point: count, attachment: count }).optional(), // F4
   harness: z.object({
     current: str,
     history: z.array(z.object({ harness: str, version: str, from_seq: z.number(), at: str })),
@@ -219,4 +247,24 @@ export const SessionLogSchema = z.object({
   pending: z.object({ questions: z.array(PendingSchema), permissions: z.array(PendingSchema) }),
   threads: z.array(SessionLogThreadSchema),
   ext,
+});
+
+// ─── Adapter capabilities (C12, F9) ──────────────────────────────────────────
+
+export const CapabilityFeaturesSchema = z.object({
+  tool_error_channel: z.boolean(),
+  attachments: z.object({ user: z.array(str), tool_result: z.boolean() }),
+  compaction: z.array(z.enum(['summary_first_tail', 'layout', 'text_tail', 'opaque'])),
+  subagents: z.enum(['none', 'sync', 'async']),
+  todos: z.boolean(),
+  reasoning_replay: z.enum(['none', 'same_model', 'lowers_to_text']),
+  freeform_tool_input: z.boolean(),
+});
+export const AdapterCapabilitiesSchema = z.object({
+  harness: str,
+  harness_versions: str,
+  schema_minors: z.array(z.number().int()),
+  dialects: z.array(str),
+  native: CapabilityFeaturesSchema,
+  rendered: CapabilityFeaturesSchema,
 });

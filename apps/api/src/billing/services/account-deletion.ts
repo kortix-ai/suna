@@ -47,7 +47,6 @@ import { BillingError } from '../../errors';
 import { isUniqueViolation } from '../../shared/postgres-errors';
 import { tryGetProvider } from '../../platform/providers';
 import { KORTIX_REMOVAL_INTENT_KEY } from '../../projects/runtime-identity';
-import { deleteAccountBackends } from '../../apps/kinds/convex/lifecycle';
 import { deleteUserNotificationData } from '../../notifications/cleanup';
 import {
   isAlreadyNotRunning,
@@ -139,8 +138,7 @@ export async function cancelAccountDeletion(accountId: string) {
  * The one deletion routine. The immediate path and the scheduled worker both
  * run it, in this order, so neither can leave a login or data behind:
  *
- *   1. `performDeletion`: sandboxes, `convex` App machines (and their
- *      snapshots), the stores outside the database (`deleteAccountExternalStores`:
+ *   1. `performDeletion`: sandboxes, the stores outside the database (`deleteAccountExternalStores`:
  *      parked boxes, session files, Kortix-managed repos), Stripe cancel,
  *      wallet forfeit.
  *   2. `deleteAccountData`: the account's rows. Data goes before the auth
@@ -576,9 +574,6 @@ async function reclaimAccountSandboxes(accountIds: string[]): Promise<SandboxRec
 
 async function performDeletion(accountId: string, userId?: string) {
   const reclaimed = await reclaimAccountSandboxes(await reclaimableAccountIds(accountId, userId));
-  // Machines and snapshots go before the rows that name them cascade away.
-  // Throws on a failure, so the deletion retries instead of orphaning one.
-  await deleteAccountBackends(accountId);
   // Parked boxes, session files and managed repos, before the money steps: a
   // store that fails leaves the subscription and the credits as they were.
   await deleteAccountExternalStores(accountId, new Set(reclaimed.removedExternalIds));

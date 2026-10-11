@@ -8,8 +8,8 @@ import { recordAuditEvent } from '../shared/audit';
 import { reconcileStaleBuilds } from '../snapshots/builder';
 import { reconcileSnapshotQuota } from '../snapshots/quota-gc';
 import { EMPTY_APP_IMAGE_RECLAIM_RESULT, reclaimAppDeploymentImages } from '../apps/images';
-import { maintainAppKinds } from '../apps/kinds';
 import { sweepAppRetention } from '../apps/retention';
+import { sweepAppVolumes } from '../apps/volumes';
 import { reclaimAppSiteBlobs } from '../apps/static-site';
 import { type GitBackedProject, deleteRemoteSessionBranch } from './git';
 import { purgeExpiredMonitorEvents, reconcileMonitorBoxes } from './lib/monitor-box';
@@ -433,9 +433,16 @@ function runMaintenanceSweeps() {
         logger.warn('[project-maintenance] App site blob reclaim failed:', err instanceof Error ? err.message : err);
         return { reclaimed: 0, errors: 1 };
       });
+      // Volumes: daily snapshots, retention, and the purge of destroyed ones.
+      const volumes = await sweepAppVolumes().catch((err) => {
+        logger.warn('[project-maintenance] App volume sweep failed:', err instanceof Error ? err.message : err);
+        return { purged: 0, snapshotted: 0, untagged: 0, errors: 1 };
+      });
       return {
         ...images,
-        errors: images.errors + ('errors' in retention ? retention.errors : 0) + ('errors' in blobs ? blobs.errors : 0),
+        errors: images.errors + ('errors' in retention ? retention.errors : 0) + ('errors' in blobs ? blobs.errors : 0) + volumes.errors,
+        volumesSnapshotted: volumes.snapshotted,
+        volumesPurged: volumes.purged,
         deploymentsRetired: retention.retired,
         artifactsReclaimed: retention.artifacts,
         siteBlobsReclaimed: blobs.reclaimed,
@@ -515,12 +522,6 @@ function runMaintenanceSweeps() {
       );
       return { examined: 0, activated: 0, parked: 0, lost: 0, archived: 0, errors: 1 };
     }),
-    // Each App kind's own lifecycle pass (apps/kinds). `convex`: resume
-    // provisions and operations whose API process died, park an archived
-    // project's machines, probe and meter every running one, repair a stopped
-    // or lost machine, take the daily snapshots and delete expired ones, alert
-    // on the budget, purge deleted Apps after retention, delete orphans.
-    () => maintainAppKinds(),
   ]);
 }
 
@@ -549,9 +550,7 @@ function logMaintenanceCycle(
     monitorEventsPurged,
     archivedRemovals,
     stuckProvisioning,
-    appKinds,
   ] = sweeps;
-  const convex = appKinds.convex;
   const hadAction = Boolean(
     idle.stopped ||
       idle.reconciled ||
@@ -598,9 +597,7 @@ function logMaintenanceCycle(
       archivedRemovals.removed ||
       archivedRemovals.failed ||
       stuckProvisioning.examined ||
-      stuckProvisioning.errors ||
-      // `probed` counts every running machine each tick; it is not an action.
-      Object.entries(convex).some(([key, value]) => key !== 'probed' && value > 0),
+      stuckProvisioning.errors,
   );
   if (hadAction) {
     console.log('[project-maintenance] completed', {
@@ -622,7 +619,6 @@ function logMaintenanceCycle(
       monitorEventsPurged,
       archivedRemovals,
       stuckProvisioning,
-      appKinds,
     });
   }
   // Unconditional heartbeat — proof-of-life independent of whether any
@@ -673,9 +669,6 @@ function logMaintenanceCycle(
     `monitor_observed=${monitorBoxes.observed}`,
     `monitor_created=${monitorBoxes.created}`,
     `monitor_stopped=${monitorBoxes.stopped}`,
-    // A `convex` App counted unhealthy tick after tick is down for its users.
-    `convex_apps_probed=${convex.probed ?? 0}`,
-    `convex_apps_unhealthy=${convex.unhealthy ?? 0}`,
     // The sweeps run SWEEP_CONCURRENCY at a time. A cycle that takes longer
     // than the interval makes the next tick skip, which halves every sweep's
     // rate: alert on this value approaching the interval.

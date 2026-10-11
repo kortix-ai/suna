@@ -50,6 +50,8 @@ export const TunnelErrorCode = {
   ACCESS_OFF: -32012,
   /** macOS has not given the agent Accessibility or Screen Recording. */
   DESKTOP_PERMISSION_MISSING: -32013,
+  /** A wider access asked for through Kortix that nobody confirmed on the machine. */
+  ACCESS_UNCONFIRMED: -32014,
 } as const;
 
 export type TunnelErrorCodeValue = (typeof TunnelErrorCode)[keyof typeof TunnelErrorCode];
@@ -75,6 +77,8 @@ export const TunnelMethods = {
   'tunnel.permission.revoked': null,
   'tunnel.permissions.sync': null,
   'tunnel.token.rotated': null,
+  /** The owner's access change, relayed by Kortix (owner-only route). Never a capability. */
+  'tunnel.access.set': null,
 } as const;
 
 export type TunnelMethod = keyof typeof TunnelMethods;
@@ -161,6 +165,8 @@ export interface TunnelAuthMessage {
    * that enforces nothing connects with the same credential.
    */
   reportsAccess?: boolean;
+  /** True from agents that serve `tunnel.access.set` (the owner's change, relayed). */
+  controlsAccess?: boolean;
 }
 
 /** Result returned by onAuthenticate hook on success. */

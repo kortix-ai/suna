@@ -267,9 +267,14 @@ test('reopening the popup resets the poll deadline instead of inheriting an expi
     // Reopen: a fresh 5-minute window starts, so polls resume.
     jest.useFakeTimers();
     await setup.connect();
+    // Step the clock as the first window does: the reopened poll's first timer
+    // is scheduled only after /start settles, a few microtasks in. One 6s jump
+    // can run before that timer exists and fire nothing (60 vs 60, flaky).
     await act(async () => {
-      jest.advanceTimersByTime(6_000);
-      for (let hop = 0; hop < 30; hop++) await Promise.resolve();
+      for (let second = 0; second < 6; second++) {
+        jest.advanceTimersByTime(1_000);
+        for (let hop = 0; hop < 10; hop++) await Promise.resolve();
+      }
       jest.useRealTimers();
     });
     const pollsAfter = calls.filter((c) => c.endsWith('/finalize')).length;

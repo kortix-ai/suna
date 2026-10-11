@@ -24,6 +24,10 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { InfoBanner } from '@/components/ui/info-banner';
@@ -47,13 +51,14 @@ import { SolidCheckIcon } from '@/features/icon/icons/solid-check-icon';
 import { useAuth } from '@/features/providers/auth-provider';
 import {
   useDeleteTunnelConnection,
+  useSetComputerAccess,
   useTunnelConnections,
+  type ComputerAccess,
+  type ComputerAccessChange,
   type TunnelConnection,
 } from '@/hooks/tunnel/use-tunnel';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import {
-  desktopComputerAccessGet,
-  desktopComputerAccessSet,
   desktopComputerDisconnect,
   desktopComputerGrants,
   desktopComputerOpenLogs,
@@ -78,10 +83,8 @@ import {
   type ComputerState,
 } from './computer-connect';
 
-const DESKTOP_ACCESS_KEY = ['desktop-computer-access'] as const;
 const DESKTOP_GRANTS_KEY = ['desktop-computer-grants'] as const;
 
-type ComputerAccess = NonNullable<Awaited<ReturnType<typeof desktopComputerAccessGet>>>;
 type AccessMode = ComputerAccess['mode'];
 const ACCESS_MODES: readonly AccessMode[] = ['ask', 'always', 'off'];
 const REQUEST_CAPABILITIES = ['filesystem', 'shell', 'desktop'];
@@ -139,12 +142,14 @@ function LocalComputerContent({ projectId, onClose }: { projectId: string; onClo
   const t = useTranslations('computers');
   const locale = useLocale();
   const queryClient = useQueryClient();
-  const { desktop, status, tunnelId, machine, state, stale } = useThisComputerState({ poll: true });
+  const { desktop, status, tunnelId, machine, state, stale, readAt } = useThisComputerState({
+    poll: true,
+  });
   const { connectorAlias, connections } = useProjectComputerAccounts(projectId);
   const connect = useConnectDesktopComputer(projectId);
   const deleteMachine = useDeleteTunnelConnection();
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
-  const access = useComputerAccess();
+  const access = useComputerAccess(machine, readAt);
   const grants = useComputerGrants();
   const { user } = useAuth();
 
@@ -267,21 +272,26 @@ function LocalComputerContent({ projectId, onClose }: { projectId: string; onClo
         }
       />
       <ModalBody className="min-h-0 space-y-6 overflow-y-auto">
-        <ComputerSetup />
-        {access.current?.mode === 'ask' && access.current.pendingRequest ? (
+        <ComputerSetup machine={machine} />
+        {access.current?.pendingRequest && !access.current.pendingRequest.change ? (
           <AccessRequestBanner
             capability={access.current.pendingRequest.capability}
             update={access.update}
           />
         ) : null}
         {access.current ? (
-          <AccessSection access={access.current} now={access.now} update={access.update} />
+          <AccessSection
+            access={access.current}
+            now={access.now}
+            update={access.update}
+            unavailable={access.unavailable}
+          />
         ) : null}
         <section className="space-y-2">
           <Label>{t('capabilitiesTitle')}</Label>
           <ComputerCapabilities
             granted={machine?.capabilities ?? []}
-            needsSetup={capabilitiesNeedingSetup(grants.data?.missing)}
+            needsSetup={capabilitiesNeedingSetup(setupMissing(grants.data?.missing, machine))}
           />
           <p className="text-muted-foreground text-xs text-pretty">{t('capabilitiesHint')}</p>
         </section>
@@ -300,8 +310,8 @@ function LocalComputerContent({ projectId, onClose }: { projectId: string; onClo
               description={t('access.keepAwakeDescription')}
             >
               <Switch
-                checked={access.current.keepAwake}
-                disabled={access.update.isPending}
+                checked={access.current.keepAwake === true}
+                disabled={access.update.isPending || access.unavailable !== null}
                 onCheckedChange={(keepAwake) => access.update.mutate({ keepAwake })}
                 aria-label={t('access.keepAwake')}
               />
@@ -372,6 +382,26 @@ const SETUP_STEPS: readonly { key: SetupStep; icon: Icon }[] = [
   { key: 'screenRecording', icon: MonitorIcon },
 ];
 
+/**
+ * What setup still needs. Files come from the desktop app (only it knows).
+ * Accessibility and Screen Recording come from the agent's own report when
+ * it has one: that is the process agents use, and it can lack a grant macOS
+ * shows as given to the app.
+ */
+export function setupMissing(
+  missing: readonly SetupStep[] | undefined,
+  machine: Pick<TunnelConnection, 'capabilities' | 'access'> | undefined,
+): SetupStep[] {
+  const fromApp = [...(missing ?? [])];
+  const agent = machine?.access?.desktopPermissions;
+  if (!agent || !machine?.capabilities.includes('desktop')) return fromApp;
+  return [
+    ...fromApp.filter((step) => step === 'files'),
+    ...(agent.accessibility ? [] : (['accessibility'] as const)),
+    ...(agent.screenRecording ? [] : (['screenRecording'] as const)),
+  ];
+}
+
 /** The capabilities whose macOS grant is still missing, for the capability list. */
 export function capabilitiesNeedingSetup(missing: readonly SetupStep[] | undefined): string[] {
   const pending: string[] = [];
@@ -401,18 +431,20 @@ function useComputerGrants() {
  * turns green as macOS answers; the desktop app restarts the agent once
  * Screen & keyboard is ready.
  */
-function ComputerSetup() {
+function ComputerSetup({ machine }: { machine: TunnelConnection | undefined }) {
   const t = useTranslations('computers');
   const grants = useComputerGrants();
   const [asked, setAsked] = useState(false);
+  const missing = setupMissing(grants.data?.missing, machine);
+  // macOS gives the app a grant the agent process lacks: the agent predates it.
+  const agentBehind = missing.some((step) => step !== 'files' && !grants.data?.missing?.includes(step));
   const request = useMutation({
     retry: false,
-    mutationFn: desktopComputerRequestGrants,
+    mutationFn: () => desktopComputerRequestGrants({ restartAgent: agentBehind }),
     onMutate: () => setAsked(true),
     onError: (error: Error) => errorToast(error.message || t('actionFailed')),
     onSettled: () => void grants.refetch(),
   });
-  const missing = grants.data?.missing ?? [];
   // The steps shown: every one that was missing while this dialog was open, so
   // a step that turns green stays in view. Adjusted during render.
   const [steps, setSteps] = useState<readonly SetupStep[]>([]);
@@ -471,34 +503,48 @@ function ComputerSetup() {
   );
 }
 
-/** The access state the agent on this machine enforces, and its one writer. */
-function useComputerAccess() {
+/**
+ * The access the machine enforces, as its agent reports it to Kortix, and the
+ * one writer: Kortix relays the change and the machine applies it. A wider
+ * access waits for the owner to confirm in the prompt on the machine.
+ */
+function useComputerAccess(machine: TunnelConnection | undefined, readAt: number) {
   const t = useTranslations('computers');
-  const queryClient = useQueryClient();
-  const access = useQuery({
-    queryKey: DESKTOP_ACCESS_KEY,
-    queryFn: async () => (await desktopComputerAccessGet()) ?? null,
-    // The approval prompt is answered outside this dialog.
-    refetchInterval: 5_000,
-  });
-  const update = useMutation({
-    retry: false,
-    mutationFn: async (input: Parameters<typeof desktopComputerAccessSet>[0]) => {
-      const next = await desktopComputerAccessSet(input);
-      if (!next) throw new Error(t('desktopUnavailable'));
-      return next;
+  const setAccess = useSetComputerAccess();
+  const [widening, setWidening] = useState(false);
+  const tunnelId = machine?.tunnelId;
+  const current = machine?.access ?? null;
+  const update = {
+    isPending: setAccess.isPending,
+    /** A wider access waits for the owner's answer on the machine. */
+    awaitingOwner: setAccess.isPending && widening,
+    mutate: (change: ComputerAccessChange) => {
+      if (!tunnelId) return;
+      setWidening(change.mode === 'always' || change.grantMinutes !== undefined);
+      setAccess.mutate(
+        { tunnelId, ...change },
+        { onError: (error: Error) => errorToast(error.message || t('actionFailed')) },
+      );
     },
-    onSuccess: (next) => queryClient.setQueryData(DESKTOP_ACCESS_KEY, next),
-    onError: (error: Error) => errorToast(error.message || t('actionFailed')),
-  });
-  // `null` on a desktop build without the access commands. `now` is the last
-  // read (every 5 s), so render stays pure.
-  return { current: access.data ?? null, now: access.dataUpdatedAt, update };
+  };
+  // Why the controls are read-only now, or null when they work.
+  const unavailable = !current
+    ? null
+    : !machine?.isLive
+      ? t('access.offlineHint')
+      : !current.controllable
+        ? t('access.updateHint')
+        : null;
+  // `now` is the last read (every 5 s), so render stays pure.
+  return { current, now: readAt, update, unavailable };
 }
 
 type AccessUpdate = ReturnType<typeof useComputerAccess>['update'];
 
-/** A pending request (A3): the native prompt's choices, answerable here too. */
+/**
+ * A pending request (A3). Allowing it happens in the prompt on the machine,
+ * where the owner sits; denying it is safe from anywhere.
+ */
 function AccessRequestBanner({ capability, update }: { capability: string; update: AccessUpdate }) {
   const t = useTranslations('computers');
   return (
@@ -511,32 +557,14 @@ function AccessRequestBanner({ capability, update }: { capability: string; updat
     >
       <div className="space-y-2.5">
         <p>{t('access.requestHint')}</p>
-        {/* Below the text, not beside it: the title needs the full width. */}
-        <div className="flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            disabled={update.isPending}
-            onClick={() => update.mutate({ grantMinutes: 60 })}
-          >
-            {t('access.allowHour')}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={update.isPending}
-            onClick={() => update.mutate({ grantMinutes: 24 * 60 })}
-          >
-            {t('access.allowDay')}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={update.isPending}
-            onClick={() => update.mutate({ deny: true })}
-          >
-            {t('access.deny')}
-          </Button>
-        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={update.isPending}
+          onClick={() => update.mutate({ deny: true })}
+        >
+          {t('access.deny')}
+        </Button>
       </div>
     </InfoBanner>
   );
@@ -547,10 +575,13 @@ function AccessSection({
   access,
   now,
   update,
+  unavailable,
 }: {
   access: ComputerAccess;
   now: number;
   update: AccessUpdate;
+  /** Why the controls are read-only, or null. */
+  unavailable: string | null;
 }) {
   const t = useTranslations('computers');
   const grant = activeGrant(access, now);
@@ -574,7 +605,11 @@ function AccessSection({
         >
           <TabsListCompact aria-label={t('access.title')}>
             {ACCESS_MODES.map((mode) => (
-              <TabsTriggerCompact key={mode} value={mode} disabled={update.isPending}>
+              <TabsTriggerCompact
+                key={mode}
+                value={mode}
+                disabled={update.isPending || unavailable !== null}
+              >
                 {t(`access.${mode}`)}
               </TabsTriggerCompact>
             ))}
@@ -590,7 +625,7 @@ function AccessSection({
             <Button
               size="xs"
               variant="ghost"
-              disabled={update.isPending}
+              disabled={update.isPending || unavailable !== null}
               onClick={() => update.mutate({ revoke: true })}
             >
               {t('access.revokeNow')}
@@ -598,10 +633,13 @@ function AccessSection({
           </>
         ) : denied ? (
           t('access.deniedUntil', { time: clock(denied) })
+        ) : update.awaitingOwner ? (
+          t('access.confirmOnComputer')
         ) : (
           t(`access.${access.mode}Status`)
         )}
       </p>
+      {unavailable ? <p className="text-muted-foreground text-xs text-pretty">{unavailable}</p> : null}
     </section>
   );
 }
@@ -802,6 +840,9 @@ function ComputerListRow({
 }) {
   const t = useTranslations('computers');
   const locale = useLocale();
+  const setAccess = useSetComputerAccess();
+  const access = machine.access;
+  const canChange = Boolean(machine.isLive && access?.controllable) && !setAccess.isPending;
   const state: ComputerState = machine.isLive ? 'online' : 'offline';
   const lastSeen =
     !machine.isLive && machine.lastHeartbeatAt ? relativeTime(machine.lastHeartbeatAt, locale) : '';
@@ -828,6 +869,11 @@ function ComputerListRow({
           {platform ? <span>· {platform}</span> : null}
         </p>
         {granted ? <p className="text-muted-foreground truncate text-xs">{granted}</p> : null}
+        {access ? (
+          <p className="text-muted-foreground truncate text-xs">
+            {t('access.title')}: {t(`access.${access.mode}`)}
+          </p>
+        ) : null}
       </div>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -841,6 +887,27 @@ function ComputerListRow({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
+          {access ? (
+            <>
+              <DropdownMenuLabel>{t('access.title')}</DropdownMenuLabel>
+              <DropdownMenuRadioGroup
+                value={access.mode}
+                onValueChange={(mode) =>
+                  setAccess.mutate(
+                    { tunnelId: machine.tunnelId, mode: mode as AccessMode },
+                    { onError: (error: Error) => errorToast(error.message || t('actionFailed')) },
+                  )
+                }
+              >
+                {ACCESS_MODES.map((mode) => (
+                  <DropdownMenuRadioItem key={mode} value={mode} disabled={!canChange}>
+                    {t(`access.${mode}`)}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+              <DropdownMenuSeparator />
+            </>
+          ) : null}
           <DropdownMenuItem variant="destructive" onSelect={onDisconnect}>
             {t('disconnectEllipsis')}
           </DropdownMenuItem>
