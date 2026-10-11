@@ -8,14 +8,14 @@ import { BROKEN_TABS, CHILD_ONLY, GENUI_SAMPLES, genuiCatalog, PLAYGROUND_SOURCE
 const parse = (source: string) => createGenuiParser().update(source, false);
 
 describe('/debug/genui samples', () => {
-  test.each(GENUI_SAMPLES.filter((s) => !s.invalid).map((s) => [s.title ?? s.component, s.source]))(
-    '%s parses with zero issues and a root',
-    (_name, source) => {
-      const result = parse(source);
+  // A loop, not test.each: @types/bun does not type test.each (a known web tsc gap).
+  for (const sample of GENUI_SAMPLES.filter((s) => !s.invalid)) {
+    test(`${sample.title ?? sample.component} parses with zero issues and a root`, () => {
+      const result = parse(sample.source);
       expect(result.issues).toEqual([]);
       expect(result.root).not.toBeNull();
-    },
-  );
+    });
+  }
 
   test('the playground source parses with zero issues and a root', () => {
     const result = parse(PLAYGROUND_SOURCE);
