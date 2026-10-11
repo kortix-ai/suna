@@ -125,7 +125,7 @@ c = RankedItem("Option C", "Lowest price, a longer reason that wraps onto a seco
   {
     component: 'RankedList',
     title: 'RankedList, 10 items',
-    note: 'KRTX-2122: rank "10" wraps in the rank column.',
+    note: 'Ranks 1 to 10 stay on one line, right-aligned on the last digit.',
     source: [
       'root = Stack([list])',
       `list = RankedList([${tenItems.join(', ')}])`,

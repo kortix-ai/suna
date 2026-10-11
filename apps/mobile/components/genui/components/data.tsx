@@ -157,7 +157,8 @@ export function GenuiRankedList({ props }: GenuiComponentProps) {
         const href = item.props.href;
         const row = (
           <View className="flex-row gap-3 px-4 py-3">
-            <Text variant="muted" className="w-5 tabular-nums">
+            {/* Two tabular digits fit (RankedList holds up to 10); one line, right-aligned so 9 and 10 share a last digit. */}
+            <Text variant="muted" numberOfLines={1} className="min-w-6 text-right tabular-nums">
               {index + 1}
             </Text>
             <View className="flex-1 gap-0.5">

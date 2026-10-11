@@ -245,6 +245,21 @@ b = RankedItem("Option B", "Quietest")`);
     expect(opened).toEqual(['https://example.com/a']);
   });
 
+  test('a 10-item ranked list keeps every rank on one line, right-aligned, wide enough for two digits', () => {
+    const ids = Array.from({ length: 10 }, (_, i) => `r${i + 1}`);
+    const root = render(
+      [`root = Stack([list])`, `list = RankedList([${ids.join(', ')}])`, ...ids.map((id, i) => `${id} = RankedItem("Option ${i + 1}", "Reason")`)].join('\n'),
+    );
+    const ranks = all(root, 'text').filter((n) => /^\d+$/.test(texts(n).join('')));
+    expect(ranks.map((n) => texts(n).join(''))).toEqual(ids.map((_, i) => String(i + 1)));
+    for (const rank of ranks) {
+      expect(rank.props.numberOfLines).toBe(1);
+      expect(className(rank)).toContain('text-right');
+      expect(className(rank)).toContain('min-w-6');
+      expect(className(rank)).not.toContain('w-5');
+    }
+  });
+
   test('links and linked cards open through the markdown link opener', () => {
     const root = render(`root = Stack([card, link])
 card = Card("Option A", null, null, null, "https://example.com/card")

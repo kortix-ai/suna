@@ -89,6 +89,20 @@ y = CompareItem("Y", ["short"])`);
     expect(cell('1')).not.toContain('whitespace-normal');
   });
 
+  test('a 10-item ranked list keeps rank 10 on one line, right-aligned in a two-digit column', () => {
+    const ids = Array.from({ length: 10 }, (_, i) => `r${i + 1}`);
+    const html = render(
+      [`root = Stack([list])`, `list = RankedList([${ids.join(', ')}])`, ...ids.map((id, i) => `${id} = RankedItem("Option ${i + 1}", "Reason")`)].join('\n'),
+    );
+    const rank = (n: number) => html.match(new RegExp(`<span class="([^"]*)">${n}</span>`))?.[1] ?? '';
+    for (const n of [1, 9, 10]) {
+      expect(rank(n)).toContain('whitespace-nowrap');
+      expect(rank(n)).toContain('text-right');
+      expect(rank(n)).toContain('min-w-6');
+      expect(rank(n).split(' ')).not.toContain('w-4');
+    }
+  });
+
   test('tab labels truncate with the full label on hover, in a row that scrolls', () => {
     const label = 'Quarterly revenue split';
     const html = render(`root = Stack([tabs])

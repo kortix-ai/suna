@@ -141,7 +141,8 @@ export function GenuiRankedList({ props }: GenuiComponentProps) {
     <ol className="flex flex-col gap-2">
       {kids(props.items).map((item, index) => (
         <li key={item.id} className="border-border bg-background flex gap-3 rounded-md border px-4 py-3">
-          <span className="text-muted-foreground w-4 shrink-0 text-sm tabular-nums">{index + 1}</span>
+          {/* Sized for two tabular digits (RankedList holds up to 10), right-aligned so 9 and 10 share a last digit. */}
+          <span className="text-muted-foreground min-w-6 shrink-0 text-right text-sm whitespace-nowrap tabular-nums">{index + 1}</span>
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <div className="flex items-baseline justify-between gap-3">
               <span className="text-foreground min-w-0 text-sm font-medium text-balance">
