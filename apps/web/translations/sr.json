@@ -19495,7 +19495,6 @@
       "textb393443b6937": "Ponovo pokrenuta mašina Kortix App-a",
       "textf0b961e5fc2b": "Uklonjena mašina Kortix App-a",
       "textb3dd1bd89a30": "Skaliran Kortix App",
-      "textb724399064e0": "Pokrenuta komanda na mašini Kortix App-a",
       "textcece78b79c0e": "Navedeni volumeni Kortix App-a",
       "textab217edc5012": "Kreiran volumen Kortix App-a",
       "textd42cf198f12a": "Proširen volumen Kortix App-a",
@@ -19525,7 +19524,8 @@
       "textbfc580646bea": "Isti pristup kao aplikacija",
       "text1a6f7cae06cc": "Verzije",
       "textc061da196eae": "Mašine",
-      "text53a480e304c0": "Volumeni"
+      "text53a480e304c0": "Volumeni",
+      "text0ac04e12ff20": "Pokrenuta komanda na mašini App-a"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",

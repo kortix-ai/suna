@@ -456,7 +456,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'POST /v1/projects/:projectId/apps/:appId/machines/:machineId/restart': { action: 'app.machine.restart', title: 'Restarted Kortix App machine' },
   'DELETE /v1/projects/:projectId/apps/:appId/machines/:machineId': { action: 'app.machine.destroy', title: 'Destroyed Kortix App machine' },
   'PUT /v1/projects/:projectId/apps/:appId/scale': { action: 'app.scale', title: 'Scaled Kortix App' },
-  'POST /v1/projects/:projectId/apps/:appId/exec': { action: 'app.exec', title: 'Ran a command in a Kortix App machine' },
+  'POST /v1/projects/:projectId/apps/:appId/exec': { action: 'app.exec', title: 'Ran a command in an App machine' },
   'GET /v1/projects/:projectId/apps/:appId/volumes': { action: 'app.volume.list', title: 'Listed Kortix App volumes' },
   'POST /v1/projects/:projectId/apps/:appId/volumes': { action: 'app.volume.create', title: 'Created Kortix App volume' },
   'PATCH /v1/projects/:projectId/apps/:appId/volumes/:volumeId': { action: 'app.volume.update', title: 'Extended Kortix App volume' },

@@ -19495,7 +19495,6 @@
       "textb393443b6937": "Kortix App のマシンを再起動しました",
       "textf0b961e5fc2b": "Kortix App のマシンを削除しました",
       "textb3dd1bd89a30": "Kortix App をスケールしました",
-      "textb724399064e0": "Kortix App のマシンでコマンドを実行しました",
       "textcece78b79c0e": "Kortix App のボリュームを一覧表示しました",
       "textab217edc5012": "Kortix App のボリュームを作成しました",
       "textd42cf198f12a": "Kortix App のボリュームを拡張しました",
@@ -19525,7 +19524,8 @@
       "textbfc580646bea": "App と同じアクセス",
       "text1a6f7cae06cc": "リリース",
       "textc061da196eae": "マシン",
-      "text53a480e304c0": "ボリューム"
+      "text53a480e304c0": "ボリューム",
+      "text0ac04e12ff20": "App のマシンでコマンドを実行しました"
     },
     "publicShareConfirm": {
       "title": "公開リンクを作成しますか？",

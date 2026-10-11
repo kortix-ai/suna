@@ -19495,7 +19495,6 @@
       "textb393443b6937": "Máquina do Kortix App reiniciada",
       "textf0b961e5fc2b": "Máquina do Kortix App excluída",
       "textb3dd1bd89a30": "Kortix App escalado",
-      "textb724399064e0": "Comando executado em uma máquina do Kortix App",
       "textcece78b79c0e": "Volumes do Kortix App listados",
       "textab217edc5012": "Volume do Kortix App criado",
       "textd42cf198f12a": "Volume do Kortix App ampliado",
@@ -19525,7 +19524,8 @@
       "textbfc580646bea": "Mesmo acesso que o App",
       "text1a6f7cae06cc": "Versões",
       "textc061da196eae": "Máquinas",
-      "text53a480e304c0": "Volumes"
+      "text53a480e304c0": "Volumes",
+      "text0ac04e12ff20": "Comando executado em uma máquina do App"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

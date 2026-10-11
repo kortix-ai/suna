@@ -19495,7 +19495,6 @@
       "textb393443b6937": "已重启 Kortix App 的机器",
       "textf0b961e5fc2b": "已删除 Kortix App 的机器",
       "textb3dd1bd89a30": "已调整 Kortix App 的规模",
-      "textb724399064e0": "已在 Kortix App 的机器中运行命令",
       "textcece78b79c0e": "已列出 Kortix App 的卷",
       "textab217edc5012": "已创建 Kortix App 的卷",
       "textd42cf198f12a": "已扩展 Kortix App 的卷",
@@ -19525,7 +19524,8 @@
       "textbfc580646bea": "与 App 相同的访问权限",
       "text1a6f7cae06cc": "版本",
       "textc061da196eae": "机器",
-      "text53a480e304c0": "卷"
+      "text53a480e304c0": "卷",
+      "text0ac04e12ff20": "已在 App 的机器中运行命令"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",

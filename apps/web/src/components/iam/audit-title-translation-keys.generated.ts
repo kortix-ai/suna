@@ -407,7 +407,7 @@ export const AUDIT_TITLE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Queued a session prompt': 'text5af558b0356d',
   'Queued session continuation': 'texte3e41ae9f209',
   'Queued session creation': 'textd4b9b4f729f6',
-  'Ran a command in a Kortix App machine': 'textb724399064e0',
+  'Ran a command in an App machine': 'text0ac04e12ff20',
   'Ran computer operation': 'texta31f402d0382',
   'Ran connector call': 'text4571b6091ba2',
   'Ran free-tier credit rotation': 'text1862d48f5fb6',

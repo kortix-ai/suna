@@ -19506,7 +19506,6 @@
       "textb393443b6937": "Restarted Kortix App machine",
       "textf0b961e5fc2b": "Destroyed Kortix App machine",
       "textb3dd1bd89a30": "Scaled Kortix App",
-      "textb724399064e0": "Ran a command in a Kortix App machine",
       "textcece78b79c0e": "Listed Kortix App volumes",
       "textab217edc5012": "Created Kortix App volume",
       "textd42cf198f12a": "Extended Kortix App volume",
@@ -19536,7 +19535,8 @@
       "textbfc580646bea": "Same access as the App",
       "text1a6f7cae06cc": "Releases",
       "textc061da196eae": "Machines",
-      "text53a480e304c0": "Volumes"
+      "text53a480e304c0": "Volumes",
+      "text0ac04e12ff20": "Ran a command in an App machine"
     },
     "publicShareConfirm": {
       "title": "Create a public link?",
