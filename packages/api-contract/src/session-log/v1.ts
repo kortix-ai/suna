@@ -432,6 +432,7 @@ function toMessage(row: V1Row, sum: V1Row | undefined, threadId: string, seq: nu
   const summary = sum ? (Array.isArray(sum.parts) ? sum.parts : []).flatMap((p) => (isObj(p) && p.type === 'text' && typeof p.text === 'string' ? [p.text] : [])).join('') : null;
   const lost: GradeCounts = { tool_input: 0, cut_point: 0, attachment: 0 };
   const ids = blockIds(parts);
+  // blockIds returns one id per part.
   const blocks = parts.map((p, i) => blockOf(p, ids[i]!, marker, summary, c, lost));
   // An aborted reply stays in context only with something the model sees: an empty one would replay as an empty turn.
   const visible = blocks.some((b) => b.type === 'text' || b.type === 'attachment' || b.type === 'tool_call' || (b.type === 'harness' && b.model_visible));
