@@ -10,6 +10,7 @@
 import { createPublicKey, verify } from "node:crypto";
 import { flow } from "../core/flow";
 import { CliSandbox } from "../fixtures/cli";
+import { stagingAppsEdgeQuarantine } from "../fixtures/apps-edge";
 import { setFeatureAsOperator } from "../fixtures/feature-flags";
 
 const UNKNOWN_ID = "00000000-0000-4000-a000-000000000000";
@@ -174,6 +175,7 @@ flow(
   {
     domain: "apps",
     requires: ["appHost"],
+    ...stagingAppsEdgeQuarantine(),
     timeoutMs: 180_000,
     routes: [
       "PUT /v1/admin/api/projects/:id/features",
