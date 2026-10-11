@@ -33,7 +33,8 @@
  * then `log.message` for each put (`{ rev, message }`) and each tombstone
  * (`{ message_id, rev, deleted: true }`), with the revs the API receives. The
  * journal collects when it starts (the native store is at rest), at each turn
- * end and at the daemon stop. While it runs, every `message.part.delta` text
+ * end and at the daemon stop, also once it is off for the API (404, 409): it
+ * then publishes and keeps nothing to send. While it runs, every `message.part.delta` text
  * frame on the v1 bus is published as `log.block.delta`: both harnesses use the
  * v1 session id, message id and part id as the thread, message and block id.
  *
@@ -151,10 +152,11 @@ export class SessionLogJournal {
    * (sending continues in the background).
    */
   async flush(timeoutMs = JOURNAL_ACK_TIMEOUT_MS): Promise<boolean> {
-    if (this.off || this.stopped) return false
+    if (this.stopped) return false
+    // Off for the API (404, 409), the collection still feeds the v2 stream.
     const work = this.collect()
       .then(() => {
-        if (this.wakeBackoff) return
+        if (this.off || this.wakeBackoff) return
         const settled = new Promise<void>((resolve) => this.waiters.push(resolve))
         void this.drain()
         return settled
@@ -210,7 +212,7 @@ export class SessionLogJournal {
       cursor.last_seq = Math.max(cursor.last_seq, message.seq)
       this.tombstoned.delete(id)
       const entry = { id, rev: nextRev(), message }
-      this.dirty.set(id, entry)
+      if (!this.off) this.dirty.set(id, entry)
       messages.push({ rev: entry.rev, message })
     }
     for (const id of changes.tombstones) {
@@ -218,18 +220,18 @@ export class SessionLogJournal {
       this.tombstoned.add(id)
       for (const cursor of this.cursors.values()) delete cursor.native_hashes[id]
       const entry = { id, rev: nextRev() }
-      this.dirty.set(id, entry)
+      if (!this.off) this.dirty.set(id, entry)
       messages.push({ message_id: id, rev: entry.rev, deleted: true })
     }
     for (const thread of changes.threads) {
       const json = JSON.stringify(thread)
       if (this.threadJson.get(thread.thread_id) === json) continue
       this.threadJson.set(thread.thread_id, json)
-      this.threads.set(thread.thread_id, thread)
+      if (!this.off) this.threads.set(thread.thread_id, thread)
       threads.push(thread)
     }
     if (changes.session) {
-      this.session = { ...this.session, ...changes.session }
+      if (!this.off) this.session = { ...this.session, ...changes.session }
       publish('log.state', { generation: this.options.generation, session: changes.session } satisfies SessionLogStateEvent)
     }
     for (const thread of threads) publish('log.thread', thread, thread.thread_id)

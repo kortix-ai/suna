@@ -147,9 +147,9 @@ and part ids, which are the thread, message and block ids of the records.
 Limits:
 - A tool call and its result reach the v2 stream at the turn end, not while
   the turn runs: the OpenCode export reads its store at rest only.
-- A journal that is off (404, 409) or not started (no control plane) sends no
-  `log.state`, `log.thread` or `log.message`; a journal that is off still
-  sends deltas.
+- A journal that is off for the API (404, 409) still collects at each turn end
+  and publishes the frames; it keeps nothing to send. A box with no control
+  plane starts no journal, so its v2 stream stays empty.
 - A `kortix.resync` on the v2 stream carries an empty `recover`: the client
   reads the saved session log again (P4.5).
 

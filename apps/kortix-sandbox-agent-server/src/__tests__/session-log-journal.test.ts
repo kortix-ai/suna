@@ -28,6 +28,7 @@ import {
   startSessionLogJournal,
 } from '@/harness/shared/session-log-journal'
 import { relayTurnEnd } from '@/harness/shared/turn-relay'
+import { resetKortixEventBusForTests, sessionLogEventBus } from '@/services/event-bus/kortix-event-bus'
 import { resetDaemonShutdownStateForTests } from '@/lib/shutdown-state'
 import {
   SESSION_TOKEN_DEAD_TRIP_THRESHOLD,
@@ -367,6 +368,27 @@ describe('session-log journal', () => {
     await Bun.sleep(100)
 
     expect(api.received).toHaveLength(1)
+  })
+
+  test('off for the API, the journal still publishes each turn on the v2 stream and keeps nothing to send', async () => {
+    resetKortixEventBusForTests()
+    const api = fakeApi(() => new Response('not found', { status: 404 }))
+    const fake = fakeAdapter()
+    fake.put('m1', 1, 'one')
+    const journal = new SessionLogJournal(fake.port, { generation: 1, retryMs: 10 })
+    expect(await journal.flush()).toBe(false)
+    expect(journal.disabled).toBe('404')
+    const frames: Array<{ type: string; payload: any }> = []
+    sessionLogEventBus().subscribe((e) => void frames.push(e), {})
+    fake.put('m2', 2, 'two')
+    fake.remove('m1')
+    expect(await journal.flush()).toBe(false)
+    expect(frames.map((f) => [f.type, f.payload.message?.message_id ?? f.payload.message_id])).toEqual([['log.message', 'm2'], ['log.message', 'm1']])
+    expect(frames[1]!.payload.deleted).toBe(true)
+    // Only the batch before the 404 holds anything: the off journal adds nothing to send.
+    expect(api.received).toHaveLength(1)
+    const dirty = (journal as unknown as { dirty: Map<string, unknown> }).dirty
+    expect([...dirty.keys()]).toEqual(['m1'])
   })
 
   test('a 409 fences a zombie box: no later batch of the same drain is posted', async () => {
