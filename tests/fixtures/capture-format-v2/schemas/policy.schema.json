@@ -31,6 +31,27 @@
       "properties": {
         "redact_pii": {
           "type": "boolean"
+        },
+        "excluded_bundle_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "excluded_domains": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "exclusion_groups": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "exclude_private_browsing": {
+          "type": "boolean"
         }
       }
     },

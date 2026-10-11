@@ -6,7 +6,7 @@
 // renders the CLI's JSON. Rules live in capture.js; Capture's tray is
 // capture-tray.js. Capture is its own product: no computer-agent module here.
 
-const { app, desktopCapturer, net, shell, systemPreferences } = require('electron');
+const { app, desktopCapturer, dialog, net, shell, systemPreferences } = require('electron');
 const { spawn, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -20,7 +20,7 @@ const FRESH_MS = 2_000;
  * @param {{
  *   appUrl: () => string,
  *   onChange: () => void,
- *   openCapture: () => void,
+ *   openCapture: (section?: 'exclusions') => void,
  * }} deps
  */
 function setupCapture(deps) {
@@ -298,6 +298,56 @@ function setupCapture(deps) {
     return null;
   }
 
+  /* ─── Exclusions ─────────────────────────────────────────────────────── */
+
+  /** The engine's exclusions: categories, excluded apps and sites, private browsing, recently recorded, the front app. */
+  const exclusions = () => engineJson(['exclusions']);
+
+  /** One exclusion on or off; answers the fresh exclusions. Org-enforced items refuse with the engine's message. */
+  async function exclude(args) {
+    const result = await engine(capture.excludeArgs(args));
+    if (result.code !== 0) throw new Error(capture.lastError(result.stderr, 'Could not change the exclusion.'));
+    return exclusions();
+  }
+
+  const selfBundleId = process.platform === 'darwin' ? capture.bundleIdOf(process.execPath) : null;
+
+  /** The app in front when the menu bar item opens (macOS); null elsewhere or on failure. */
+  function frontmost() {
+    if (process.platform !== 'darwin') return null;
+    const front = spawnSync('lsappinfo', ['front'], { encoding: 'utf8', timeout: 1_000 }).stdout?.trim();
+    if (!front) return null;
+    const info = spawnSync('lsappinfo', ['info', '-only', 'bundleid', '-only', 'name', front], { encoding: 'utf8', timeout: 1_000 });
+    return capture.frontmostFrom(info.stdout ?? '', selfBundleId);
+  }
+
+  /** @type {Map<string, string | null>} One icon per bundle id, kept for the app's lifetime. */
+  const icons = new Map();
+
+  /** An installed app's icon as a PNG data URL, found by bundle id (macOS); null when it is not installed here. */
+  async function appIcon({ bundle_id: bundleId } = {}) {
+    if (process.platform !== 'darwin' || typeof bundleId !== 'string' || !/^[A-Za-z0-9][\w.-]{0,199}$/.test(bundleId)) return null;
+    if (icons.has(bundleId)) return icons.get(bundleId);
+    const found = spawnSync('mdfind', [`kMDItemCFBundleIdentifier == "${bundleId}"`], { encoding: 'utf8', timeout: 3_000 });
+    const appPath = (found.stdout ?? '').split('\n').find((line) => line.endsWith('.app'));
+    const icon = appPath ? (await app.getFileIcon(appPath, { size: 'normal' }).catch(() => null))?.toDataURL() ?? null : null;
+    icons.set(bundleId, icon);
+    return icon;
+  }
+
+  /** The tray's "Stop recording…": a native confirm, then the same switch as More ▸ Stop recording. */
+  async function confirmStop() {
+    const { response } = await dialog.showMessageBox({
+      type: 'question',
+      buttons: ['Stop recording', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      message: 'Stop recording this computer?',
+      detail: 'Kortix Capture stops now and does not start again at login. Start it again from This computer.',
+    });
+    if (response === 0) await set({ on: false });
+  }
+
   async function invoke(cmd, args = {}) {
     switch (cmd) {
       case 'capture_status':
@@ -327,6 +377,12 @@ function setupCapture(deps) {
         await shell.openExternal(pane);
         return null;
       }
+      case 'capture_exclusions':
+        return exclusions();
+      case 'capture_exclude':
+        return exclude(args);
+      case 'capture_app_icon':
+        return appIcon(args);
       case 'capture_open_logs': {
         const error = await shell.openPath(path.join((await context()).library, 'logs'));
         if (error) throw new Error(`Could not open the logs: ${error}`);
@@ -342,6 +398,12 @@ function setupCapture(deps) {
     resume: () => void invoke('capture_resume').catch((e) => console.warn(`[kortix] capture resume: ${e}`)),
     timeline: () => void openTimeline().catch((e) => console.warn(`[kortix] capture timeline: ${e}`)),
     open: () => deps.openCapture(),
+    settings: () => deps.openCapture('exclusions'),
+    exclude: (front) =>
+      void exclude({ kind: 'app', id: front.bundleId, on: true })
+        .then(() => refresh())
+        .catch((e) => console.warn(`[kortix] capture exclude: ${e}`)),
+    stop: () => void confirmStop().catch((e) => console.warn(`[kortix] capture stop: ${e}`)),
     logs: () => void invoke('capture_open_logs').catch((e) => console.warn(`[kortix] capture logs: ${e}`)),
   };
 
@@ -358,7 +420,9 @@ function setupCapture(deps) {
     /** This build ships the engine (the app menu shows Capture only then). */
     bundled: () => fs.existsSync(paths.capture),
     /** Capture's tray items (capture-tray.js); empty until Capture is set up here. */
-    trayItems: () => capture.captureTrayItems(view, trayActions),
+    trayItems: (front = null) => capture.captureTrayItems(view, trayActions, front),
+    /** The app in front, read when the menu bar item opens. */
+    frontmost,
     /** Whether the service keeps recording after the app quits. */
     keepsRunning: () => capture.captureKeepsRunning(view),
   };

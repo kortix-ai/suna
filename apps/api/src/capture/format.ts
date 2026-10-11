@@ -246,11 +246,40 @@ export function jsonLines(body: string): Record<string, unknown>[] {
 
 // ─── policy.json ─────────────────────────────────────────────────────────────
 
+/** The device's built-in exclusion categories (the engine's `exclusion_groups()`). */
+export const EXCLUSION_GROUPS = ['password_managers', 'messaging', 'banking'] as const;
+
+const unique = <T>(items: T[]): T[] => [...new Set(items)];
+
+/** `https://www.Example.com/path` → `example.com`; refuses anything that is not a host name. */
+export const DomainSchema = z
+  .string()
+  .trim()
+  .transform((value) =>
+    value
+      .toLowerCase()
+      .replace(/^[a-z][a-z0-9+.-]*:\/\//, '')
+      .replace(/[/?#].*$/, '')
+      .replace(/^www\./, ''),
+  )
+  .pipe(z.string().regex(/^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/, 'not a domain'));
+
 export const PolicySchema = z.object({
   layers: z
     .object({ screen: z.boolean(), actions: z.boolean(), audio: z.boolean() })
     .default({ screen: true, actions: true, audio: false }),
-  privacy: z.object({ redact_pii: z.boolean() }).passthrough().default({ redact_pii: false }),
+  privacy: z
+    .object({
+      redact_pii: z.boolean().default(false),
+      // The organization's exclusions. A device adds them to the member's own and the member
+      // cannot remove them: nothing in an excluded app or on an excluded site is recorded.
+      excluded_bundle_ids: z.array(z.string().trim().min(1).max(255)).max(500).default([]).transform(unique),
+      excluded_domains: z.array(DomainSchema).max(2000).default([]).transform(unique),
+      exclusion_groups: z.array(z.enum(EXCLUSION_GROUPS)).default(['password_managers']).transform(unique),
+      exclude_private_browsing: z.boolean().default(true),
+    })
+    .passthrough()
+    .default({}),
   retention: z
     .object({
       local_hours: z.number().int().min(0).max(24 * 365),

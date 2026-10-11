@@ -1,7 +1,8 @@
 'use client';
 
-import type { CapturePolicy, CapturePolicyRecord } from '@kortix/sdk';
+import type { CaptureExclusionGroup, CapturePolicy, CapturePolicyRecord } from '@kortix/sdk';
 import { useCapturePolicy, useSetCaptureEnabled, useSetCapturePolicy } from '@kortix/sdk/react';
+import { XIcon } from '@phosphor-icons/react';
 import { notFound } from 'next/navigation';
 import { useId, useState, type FormEvent } from 'react';
 
@@ -10,24 +11,15 @@ import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { UserAvatar } from '@/components/ui/user-avatar';
 import { ErrorState } from '@/features/layout/section/error-state';
-import { AccessList, AccessRow } from '@/features/workspace/shared/access/access-row';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 
 import { CapturePage } from '../area/capture-area-shell';
-import { useCaptureArea, useCaptureDirectory } from '../area/use-capture-area';
+import { useCaptureArea } from '../area/use-capture-area';
 import { relativeTime } from '../capture-time';
 
 function SwitchRow({
@@ -51,6 +43,93 @@ function SwitchRow({
         <p className="text-muted-foreground mt-0.5 text-xs text-pretty">{description}</p>
       </div>
       <Switch aria-labelledby={id} checked={checked} onCheckedChange={onChange} />
+    </div>
+  );
+}
+
+const EXCLUSION_GROUPS: readonly CaptureExclusionGroup[] = [
+  'password_managers',
+  'messaging',
+  'banking',
+];
+
+/** `https://www.Example.com/path` → `example.com`; the API checks the result. */
+const hostOf = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/^[a-z][a-z0-9+.-]*:\/\//, '')
+    .replace(/[/?#].*$/, '')
+    .replace(/^www\./, '');
+
+/** A list the admin adds to and removes from: excluded apps or websites. */
+function ListEditor({
+  title,
+  description,
+  placeholder,
+  items,
+  normalize = (value: string) => value.trim(),
+  onChange,
+}: {
+  title: string;
+  description: string;
+  placeholder: string;
+  items: string[];
+  normalize?: (value: string) => string;
+  onChange: (items: string[]) => void;
+}) {
+  const t = useTranslations('capture.settings.exclusions');
+  const id = useId();
+  const [value, setValue] = useState('');
+  const add = () => {
+    const next = normalize(value);
+    if (next && !items.includes(next)) onChange([...items, next]);
+    setValue('');
+  };
+  return (
+    <div className="space-y-3 px-4 py-3">
+      <div>
+        <label htmlFor={id} className="text-foreground text-sm font-medium">
+          {title}
+        </label>
+        <p className="text-muted-foreground mt-0.5 text-xs text-pretty">{description}</p>
+      </div>
+      <div className="flex gap-2">
+        <Input
+          id={id}
+          value={value}
+          placeholder={placeholder}
+          onChange={(event) => setValue(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter') return;
+            event.preventDefault();
+            add();
+          }}
+        />
+        <Button type="button" variant="outline" size="sm" disabled={!value.trim()} onClick={add}>
+          {t('add')}
+        </Button>
+      </div>
+      {items.length ? (
+        <ul className="flex flex-wrap gap-1.5">
+          {items.map((item) => (
+            <li
+              key={item}
+              className="bg-muted text-foreground flex items-center gap-1 rounded-sm py-0.5 pr-1 pl-2 text-xs"
+            >
+              {item}
+              <button
+                type="button"
+                aria-label={t('remove', { item })}
+                className="text-muted-foreground hover:text-foreground rounded-sm"
+                onClick={() => onChange(items.filter((other) => other !== item))}
+              >
+                <XIcon className="size-3" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   );
 }
@@ -147,6 +226,51 @@ function PolicyForm({ accountId, record }: { accountId: string; record: CaptureP
             description={t('pauseHint')}
             checked={draft.recording.paused}
             onChange={(paused) => patch('recording', { paused, paused_until_ms: null })}
+          />
+        </div>
+      </section>
+
+      <section className="space-y-4">
+        <div className="space-y-1">
+          <Label>{t('exclusions.title')}</Label>
+          <p className="text-muted-foreground text-xs text-pretty">{t('exclusions.hint')}</p>
+        </div>
+        <div className="bg-popover divide-border divide-y rounded-md border">
+          {EXCLUSION_GROUPS.map((group) => (
+            <SwitchRow
+              key={group}
+              title={t(`exclusions.group.${group}`)}
+              description={t(`exclusions.group.${group}Hint`)}
+              checked={draft.privacy.exclusion_groups.includes(group)}
+              onChange={(on) =>
+                patch('privacy', {
+                  exclusion_groups: on
+                    ? [...draft.privacy.exclusion_groups, group]
+                    : draft.privacy.exclusion_groups.filter((other) => other !== group),
+                })
+              }
+            />
+          ))}
+          <SwitchRow
+            title={t('exclusions.privateBrowsing')}
+            description={t('exclusions.privateBrowsingHint')}
+            checked={draft.privacy.exclude_private_browsing}
+            onChange={(exclude_private_browsing) => patch('privacy', { exclude_private_browsing })}
+          />
+          <ListEditor
+            title={t('exclusions.apps')}
+            description={t('exclusions.appsHint')}
+            placeholder="com.apple.keychainaccess"
+            items={draft.privacy.excluded_bundle_ids}
+            onChange={(excluded_bundle_ids) => patch('privacy', { excluded_bundle_ids })}
+          />
+          <ListEditor
+            title={t('exclusions.websites')}
+            description={t('exclusions.websitesHint')}
+            placeholder="bank.example.com"
+            items={draft.privacy.excluded_domains}
+            normalize={hostOf}
+            onChange={(excluded_domains) => patch('privacy', { excluded_domains })}
           />
         </div>
       </section>

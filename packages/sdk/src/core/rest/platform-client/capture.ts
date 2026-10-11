@@ -33,11 +33,24 @@ export type CaptureLiveState =
   | 'unknown'
   | (string & {});
 
+/** A built-in exclusion category of the Kortix Capture device. */
+export type CaptureExclusionGroup = 'password_managers' | 'messaging' | 'banking';
+
 /** The operator's capture policy, as devices read it from `policy.json`. */
 export interface CapturePolicy {
   /** A layer set to false is off on every device, whatever the person chose locally. */
   layers: { screen: boolean; actions: boolean; audio: boolean };
-  privacy: { redact_pii: boolean };
+  privacy: {
+    redact_pii: boolean;
+    /** Apps (macOS bundle ids, Windows/Linux executables) no device of the account records. */
+    excluded_bundle_ids: string[];
+    /** Websites no device records; host names, `www.` and paths stripped. */
+    excluded_domains: string[];
+    /** Built-in categories every device excludes: `password_managers`, `messaging`, `banking`. */
+    exclusion_groups: CaptureExclusionGroup[];
+    /** Private browser tabs and windows are never recorded. */
+    exclude_private_browsing: boolean;
+  };
   /** `remote_days` 0 keeps indexed data until it is deleted. */
   retention: { local_hours: number; remote_days: number };
   recording: { paused: boolean; paused_until_ms: number | null };

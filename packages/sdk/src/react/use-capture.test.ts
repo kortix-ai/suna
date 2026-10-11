@@ -180,7 +180,7 @@ test('devices: the account list (capture.read_all); a revoke refreshes it', asyn
 
 test('policy: read, then a write replaces the cached record without a refetch', async () => {
   const h = harness();
-  const policy = { layers: { screen: true, actions: true, audio: false }, privacy: { redact_pii: true }, retention: { local_hours: 24, remote_days: 30 }, recording: { paused: false, paused_until_ms: null }, notice: 'On' };
+  const policy = { layers: { screen: true, actions: true, audio: false }, privacy: { redact_pii: true, excluded_bundle_ids: [], excluded_domains: [], exclusion_groups: ['password_managers' as const], exclude_private_browsing: true }, retention: { local_hours: 24, remote_days: 30 }, recording: { paused: false, paused_until_ms: null }, notice: 'On' };
   h.bodies['GET /policy'] = { policy, updated_at: null, updated_by: null };
   h.bodies['PUT /policy'] = { policy: { ...policy, notice: 'Changed' }, updated_at: 'now', updated_by: 'u1' };
   let read: ReturnType<typeof useCapturePolicy>;

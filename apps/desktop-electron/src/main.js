@@ -611,11 +611,13 @@ function captureBundled() {
 }
 
 /** App menu "Capture…" and Capture's tray: the page opens Capture's "This computer". */
-function openCapture() {
+/** Opens Capture's "This computer"; `exclusions` opens its Exclusions tab (the tray's settings item). */
+function openCapture(section) {
+  const command = section === 'exclusions' ? 'capture-open-exclusions' : 'capture-open';
   const opened = needsMainWindow(mainWindow);
   openMainWindow();
-  if (opened) mainWindow?.webContents.once('did-finish-load', () => sendDesktopCommand('capture-open'));
-  else sendDesktopCommand('capture-open');
+  if (opened) mainWindow?.webContents.once('did-finish-load', () => sendDesktopCommand(command));
+  else sendDesktopCommand(command);
 }
 
 /**
@@ -1293,7 +1295,8 @@ if (!gotLock) {
     });
     // Capture: its own controller and its own menu bar item, apart from the computer's.
     const captureTray = setupCaptureTray({
-      items: () => captureShell?.trayItems() ?? [],
+      items: (front) => captureShell?.trayItems(front) ?? [],
+      frontmost: () => captureShell?.frontmost() ?? null,
       keepsRunning: () => captureShell?.keepsRunning() ?? false,
       open: openCapture,
     });

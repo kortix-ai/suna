@@ -7,7 +7,8 @@ const { Menu, Tray, app, nativeImage } = require('electron');
 
 /**
  * @param {{
- *   items: () => object[],
+ *   items: (frontmost?: { bundleId: string, name: string } | null) => object[],
+ *   frontmost: () => { bundleId: string, name: string } | null,
  *   keepsRunning: () => boolean,
  *   open: () => void,
  * }} deps
@@ -26,6 +27,17 @@ function setupCaptureTray(deps) {
     return nativeImage.createFromPath(path.join(dir, process.platform === 'win32' ? 'capture.ico' : 'capture.png'));
   }
 
+  const menu = (items) =>
+    Menu.buildFromTemplate([
+      ...items,
+      { type: 'separator' },
+      {
+        id: 'capture-quit',
+        label: deps.keepsRunning() ? 'Quit Kortix (Kortix Capture keeps recording)' : 'Quit Kortix',
+        click: () => app.quit(),
+      },
+    ]);
+
   function render() {
     const items = deps.items();
     if (items.length === 0) {
@@ -35,22 +47,20 @@ function setupCaptureTray(deps) {
     }
     if (!tray) {
       tray = new Tray(icon());
-      // Windows and Linux: a left click opens Capture; the menu is on right click.
-      if (process.platform !== 'darwin') tray.on('click', deps.open);
+      if (process.platform === 'darwin') {
+        // Built when it opens: "Exclude “<app>”" names the app the person is in
+        // right now. A menu bar click does not bring Kortix forward.
+        const popUp = () => tray?.popUpContextMenu(menu(deps.items(deps.frontmost())));
+        tray.on('click', popUp);
+        tray.on('right-click', popUp);
+      } else {
+        // Windows and Linux: a left click opens Capture; the menu is on right click.
+        tray.on('click', deps.open);
+      }
     }
     const status = items.find((item) => item.id === 'capture-status')?.label;
     tray.setToolTip(status ? `Kortix Capture — ${status}` : 'Kortix Capture');
-    tray.setContextMenu(
-      Menu.buildFromTemplate([
-        ...items,
-        { type: 'separator' },
-        {
-          id: 'capture-quit',
-          label: deps.keepsRunning() ? 'Quit Kortix (Kortix Capture keeps recording)' : 'Quit Kortix',
-          click: () => app.quit(),
-        },
-      ]),
-    );
+    if (process.platform !== 'darwin') tray.setContextMenu(menu(items));
   }
 
   return {

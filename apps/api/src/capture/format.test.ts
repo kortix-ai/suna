@@ -149,6 +149,29 @@ describe('policy and status', () => {
     expect(PolicySchema.safeParse({ retention: { local_hours: 0, remote_days: -1 } }).success).toBe(false);
   });
 
+  test('the policy carries the organization exclusions: defaults, normalization, known groups', () => {
+    expect(DEFAULT_POLICY.privacy).toEqual({
+      redact_pii: false,
+      excluded_bundle_ids: [],
+      excluded_domains: [],
+      exclusion_groups: ['password_managers'],
+      exclude_private_browsing: true,
+    });
+    const set = PolicySchema.parse({
+      privacy: {
+        excluded_bundle_ids: [' com.apple.keychainaccess ', 'com.apple.keychainaccess'],
+        excluded_domains: ['https://www.Example.com/path', 'bank.example.org'],
+        exclusion_groups: ['banking', 'messaging'],
+      },
+    });
+    expect(set.privacy.excluded_bundle_ids).toEqual(['com.apple.keychainaccess']);
+    expect(set.privacy.excluded_domains).toEqual(['example.com', 'bank.example.org']);
+    expect(set.privacy.exclude_private_browsing).toBe(true);
+    conforms('policy', JSON.parse(policyDocument(set, 1)));
+    expect(PolicySchema.safeParse({ privacy: { exclusion_groups: ['unknown'] } }).success).toBe(false);
+    expect(PolicySchema.safeParse({ privacy: { excluded_domains: ['not a domain'] } }).success).toBe(false);
+  });
+
   test('a device is offline when its status is older than 120 s', () => {
     expect(liveState({ recording: 'recording', reportedAtMs: 1_000 }, 100_000)).toBe('recording');
     expect(liveState({ recording: 'recording', reportedAtMs: 1_000 }, 121_001)).toBe('offline');

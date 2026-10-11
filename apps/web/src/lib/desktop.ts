@@ -346,9 +346,14 @@ async function desktopAction<T>(cmd: string, args?: Record<string, unknown>): Pr
 
 /** Pause/resume answer `{ ok, error?, status }` (X5). */
 async function desktopServiceVerb(cmd: string): Promise<DesktopComputerStatus | null> {
-  const result = await desktopAction<{ ok: boolean; error?: string; status: DesktopComputerStatus }>(cmd);
+  const result = await desktopAction<{
+    ok: boolean;
+    error?: string;
+    status: DesktopComputerStatus;
+  }>(cmd);
   if (!result) return null;
-  if (!result.ok) throw new Error(result.error || 'The desktop app could not change computer access.');
+  if (!result.ok)
+    throw new Error(result.error || 'The desktop app could not change computer access.');
   return result.status;
 }
 
@@ -428,7 +433,9 @@ export interface DesktopCaptureStatus {
   policy?: { layers: Record<DesktopCaptureLayer, boolean>; notice: string; paused: boolean } | null;
   pausedUntilMs?: number | null;
   /** macOS grants Kortix holds for Capture; null elsewhere. `inputMonitoring` only from engines that report it. */
-  permissions?: (Record<'screen' | 'accessibility' | 'microphone', boolean> & { inputMonitoring?: boolean }) | null;
+  permissions?:
+    | (Record<'screen' | 'accessibility' | 'microphone', boolean> & { inputMonitoring?: boolean })
+    | null;
   sync?: { state: string; pending: number; lastUploadMs: number | null; error: string | null };
 }
 
@@ -447,14 +454,18 @@ export interface DesktopCaptureSignInResult {
 
 export const desktopCaptureStatus = () => desktopCommand<DesktopCaptureStatus>('capture_status');
 /** Starts the engine's device sign-in; resolves with the code to approve. */
-export const desktopCaptureSignInStart = () => desktopAction<DesktopCaptureSignIn>('capture_sign_in_start');
+export const desktopCaptureSignInStart = () =>
+  desktopAction<DesktopCaptureSignIn>('capture_sign_in_start');
 /** Resolves once the engine holds its device token (or the sign-in failed). */
-export const desktopCaptureSignInFinish = () => desktopAction<DesktopCaptureSignInResult>('capture_sign_in_finish');
+export const desktopCaptureSignInFinish = () =>
+  desktopAction<DesktopCaptureSignInResult>('capture_sign_in_finish');
 export const desktopCaptureSignInCancel = () => desktopAction<null>('capture_sign_in_cancel');
 /** Rejects with the desktop app's message. */
-export const desktopCaptureSet = (input: { on?: boolean } & Partial<Record<DesktopCaptureLayer, boolean>>) =>
-  desktopAction<DesktopCaptureStatus>('capture_set', input);
-export const desktopCapturePause = (minutes = 60) => desktopAction<DesktopCaptureStatus>('capture_pause', { minutes });
+export const desktopCaptureSet = (
+  input: { on?: boolean } & Partial<Record<DesktopCaptureLayer, boolean>>,
+) => desktopAction<DesktopCaptureStatus>('capture_set', input);
+export const desktopCapturePause = (minutes = 60) =>
+  desktopAction<DesktopCaptureStatus>('capture_pause', { minutes });
 export const desktopCaptureResume = () => desktopAction<DesktopCaptureStatus>('capture_resume');
 /** "Allow all": asks macOS for Screen Recording, Accessibility, and the Microphone when `audio`, for Kortix. */
 export const desktopCaptureRequestGrants = (input: { audio: boolean; actions: boolean }) =>
@@ -464,8 +475,46 @@ export const desktopCaptureOpenLogs = () => desktopAction<null>('capture_open_lo
 /** Removes the Capture service and forgets the device token on this computer. */
 export const desktopCaptureSignOut = () => desktopAction<DesktopCaptureStatus>('capture_sign_out');
 
+/** What Capture leaves out on this computer, from the engine (`kortix-capture exclusions --json`). */
+export interface DesktopCaptureExclusions {
+  /** Built-in categories: password managers, messaging, banking. `by_org`: the organization turned it on; it cannot be turned off here. */
+  groups: Array<{
+    id: string;
+    name: string;
+    description: string;
+    apps: number;
+    domains: number;
+    enabled: boolean;
+    by_org: boolean;
+  }>;
+  excluded_apps: Array<{ bundle_id: string; name: string; by_org: boolean }>;
+  excluded_domains: Array<{ domain: string; by_org: boolean }>;
+  /** Private and incognito windows in every supported browser. */
+  private_browsing: { excluded: boolean; by_org: boolean };
+  recent_apps: Array<{ bundle_id: string; name: string; last_seen_ms: number; excluded: boolean }>;
+  recent_domains: Array<{ domain: string; last_seen_ms: number; excluded: boolean }>;
+  frontmost: { bundle_id: string; name: string } | null;
+}
+
+export type DesktopCaptureExclusion =
+  | { kind: 'app'; id: string; on: boolean }
+  | { kind: 'domain'; id: string; on: boolean }
+  | { kind: 'group'; id: string; on: boolean }
+  | { kind: 'private-browsing'; on: boolean };
+
+export const desktopCaptureExclusions = () =>
+  desktopAction<DesktopCaptureExclusions>('capture_exclusions');
+/** One exclusion on or off; answers the fresh exclusions. Rejects with the engine's message (an org-enforced item). */
+export const desktopCaptureExclude = (input: DesktopCaptureExclusion) =>
+  desktopAction<DesktopCaptureExclusions>('capture_exclude', input);
+/** An installed app's icon (PNG data URL) by bundle id; null when it is not installed here. */
+export const desktopCaptureAppIcon = (bundleId: string) =>
+  desktopCommand<string>('capture_app_icon', { bundle_id: bundleId });
+
 /** The desktop app's menu ("Capture…") and Capture's tray ask the page to open Capture's "This computer". */
 export const DESKTOP_CAPTURE_OPEN_COMMAND = 'capture-open';
+/** Capture's tray "Kortix Capture settings…": "This computer" on its Exclusions tab. */
+export const DESKTOP_CAPTURE_EXCLUSIONS_COMMAND = 'capture-open-exclusions';
 
 /**
  * Inline script run in <head> before hydration. Sets `data-desktop` and

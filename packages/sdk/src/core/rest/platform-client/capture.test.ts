@@ -44,7 +44,13 @@ const P = 'http://test.local/accounts/a1/capture';
 
 const POLICY: CapturePolicy = {
   layers: { screen: true, actions: true, audio: false },
-  privacy: { redact_pii: true },
+  privacy: {
+    redact_pii: true,
+    excluded_bundle_ids: ['com.apple.keychainaccess'],
+    excluded_domains: ['bank.example.com'],
+    exclusion_groups: ['password_managers', 'banking'],
+    exclude_private_browsing: true,
+  },
   retention: { local_hours: 24, remote_days: 30 },
   recording: { paused: false, paused_until_ms: null },
   notice: 'Recording is on for the support team.',
@@ -85,6 +91,7 @@ test('policy: read and write the account policy', async () => {
   expect(last()).toMatchObject({ method: 'GET', url: `${P}/policy` });
   await setCapturePolicy('a1', POLICY);
   expect(last()).toMatchObject({ method: 'PUT', url: `${P}/policy`, body: { policy: POLICY } });
+  expect((last().body as { policy: CapturePolicy }).policy.privacy.exclusion_groups).toEqual(['password_managers', 'banking']);
 });
 
 test('timeline: a day, a window, and its items; the query names the subject and device', async () => {

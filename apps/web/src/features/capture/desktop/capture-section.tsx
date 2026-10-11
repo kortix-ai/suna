@@ -10,6 +10,7 @@ import {
   type Icon,
 } from '@phosphor-icons/react';
 import Link from 'next/link';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useState, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -23,6 +24,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import {
@@ -31,6 +33,7 @@ import {
   type DesktopCaptureLayer,
 } from '@/lib/desktop';
 
+import { CaptureExclusions } from './capture-exclusions';
 import { CapturePermissions } from './capture-permissions';
 import {
   CaptureRow,
@@ -79,6 +82,12 @@ export function ThisComputerPage({ accountId }: { accountId: string }) {
   const actions = useDesktopCaptureActions(accountId, {
     onWaitingOnPage: () => setWaitingOnPage(true),
   });
+  // `?tab=exclusions`: the menu bar item's "Kortix Capture settings…" opens it.
+  const router = useRouter();
+  const pathname = usePathname();
+  const tab = useSearchParams().get('tab') === 'exclusions' ? 'exclusions' : 'recording';
+  const setTab = (next: string) =>
+    router.replace(next === 'exclusions' ? `${pathname}?tab=exclusions` : pathname);
   // The last status read (every 2 s) is "now", so render stays pure.
   const now = status.dataUpdatedAt;
   const phase = capturePhase(view, {
@@ -194,80 +203,92 @@ export function ThisComputerPage({ accountId }: { accountId: string }) {
 
   return (
     <Page header={<Header title={t('title')} status={statusLine} actions={headerActions} />}>
-      {phase === 'signInRequired' ? (
-        <InfoBanner tone="warning" icon={WarningIcon} title={t('signInRequired.title')}>
-          {t('signInRequired.hint')}
-        </InfoBanner>
-      ) : null}
-      {phase === 'error' ? (
-        <InfoBanner tone="destructive" icon={WarningIcon} title={t('error.title')}>
-          {actions.turnOn.error?.message || view.error || t('error.fallback')}
-        </InfoBanner>
-      ) : null}
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabsList type="underline" aria-label={t('tabs.label')}>
+          <TabsTrigger value="recording">{t('tabs.recording')}</TabsTrigger>
+          <TabsTrigger value="exclusions">{t('tabs.exclusions')}</TabsTrigger>
+        </TabsList>
+        <TabsContent value="recording" className="space-y-6 pt-4">
+          {phase === 'signInRequired' ? (
+            <InfoBanner tone="warning" icon={WarningIcon} title={t('signInRequired.title')}>
+              {t('signInRequired.hint')}
+            </InfoBanner>
+          ) : null}
+          {phase === 'error' ? (
+            <InfoBanner tone="destructive" icon={WarningIcon} title={t('error.title')}>
+              {actions.turnOn.error?.message || view.error || t('error.fallback')}
+            </InfoBanner>
+          ) : null}
 
-      {/* One line that says what happens now, and the one next step. */}
-      {phase === 'turningOn' ? (
-        <p className="flex items-center gap-2 text-sm" role="status">
-          <Loading className="size-4 shrink-0" />
-          {waitingOnPage
-            ? t('turningOn.waitingOnPage')
-            : t('turningOn.progress', { org: org.name })}
-        </p>
-      ) : phase === 'paused' && view.policy?.paused ? (
-        <p className="text-muted-foreground text-sm text-pretty">
-          {t('pausedByOrgHint', { org: org.name })}
-        </p>
-      ) : on && recording.length === 0 ? (
-        <p className="text-muted-foreground text-sm text-pretty">{t('noLayers')}</p>
-      ) : !on ? (
-        <p className="text-muted-foreground text-sm text-pretty">
-          {phase === 'off' && view.signedIn && view.accountId !== accountId
-            ? t('otherOrg', { org: org.name })
-            : t('intro', { org: org.name })}
-        </p>
-      ) : null}
+          {/* One line that says what happens now, and the one next step. */}
+          {phase === 'turningOn' ? (
+            <p className="flex items-center gap-2 text-sm" role="status">
+              <Loading className="size-4 shrink-0" />
+              {waitingOnPage
+                ? t('turningOn.waitingOnPage')
+                : t('turningOn.progress', { org: org.name })}
+            </p>
+          ) : phase === 'paused' && view.policy?.paused ? (
+            <p className="text-muted-foreground text-sm text-pretty">
+              {t('pausedByOrgHint', { org: org.name })}
+            </p>
+          ) : on && recording.length === 0 ? (
+            <p className="text-muted-foreground text-sm text-pretty">{t('noLayers')}</p>
+          ) : !on ? (
+            <p className="text-muted-foreground text-sm text-pretty">
+              {phase === 'off' && view.signedIn && view.accountId !== accountId
+                ? t('otherOrg', { org: org.name })
+                : t('intro', { org: org.name })}
+            </p>
+          ) : null}
 
-      {/* Stays once shown, so each row turns "Allowed" in place as macOS answers. */}
-      {on ? (
-        <CapturePermissions
-          view={view}
-          requesting={actions.grants.isPending}
-          onAllow={() =>
-            actions.grants.mutate({
-              audio: Boolean(view.layers?.audio),
-              actions: Boolean(view.layers?.actions),
-            })
-          }
-        />
-      ) : null}
-
-      <CaptureRowSection title={t('layersTitle')} hint={t('layersHint', { org: org.name })}>
-        {CAPTURE_LAYERS.map((layer) => {
-          const recorded = view.policy?.layers[layer] !== false && Boolean(view.layers?.[layer]);
-          return (
-            <CaptureRow
-              key={layer}
-              icon={LAYER_ICONS[layer]}
-              title={t(`layers.${layer}`)}
-              description={t(`layers.${layer}Description`)}
-              muted={!recorded}
-              trailing={
-                <GrantState
-                  allowed={recorded}
-                  label={recorded ? t('layerOn') : t('layerOffByPolicy')}
-                />
+          {/* Stays once shown, so each row turns "Allowed" in place as macOS answers. */}
+          {on ? (
+            <CapturePermissions
+              view={view}
+              requesting={actions.grants.isPending}
+              onAllow={() =>
+                actions.grants.mutate({
+                  audio: Boolean(view.layers?.audio),
+                  actions: Boolean(view.layers?.actions),
+                })
               }
             />
-          );
-        })}
-      </CaptureRowSection>
+          ) : null}
 
-      {view.policy?.notice && (on || phase === 'signInRequired') ? (
-        <section className="space-y-1">
-          <p className="text-muted-foreground text-xs">{t('notice', { org: org.name })}</p>
-          <p className="text-sm text-pretty">{view.policy.notice}</p>
-        </section>
-      ) : null}
+          <CaptureRowSection title={t('layersTitle')} hint={t('layersHint', { org: org.name })}>
+            {CAPTURE_LAYERS.map((layer) => {
+              const recorded =
+                view.policy?.layers[layer] !== false && Boolean(view.layers?.[layer]);
+              return (
+                <CaptureRow
+                  key={layer}
+                  icon={LAYER_ICONS[layer]}
+                  title={t(`layers.${layer}`)}
+                  description={t(`layers.${layer}Description`)}
+                  muted={!recorded}
+                  trailing={
+                    <GrantState
+                      allowed={recorded}
+                      label={recorded ? t('layerOn') : t('layerOffByPolicy')}
+                    />
+                  }
+                />
+              );
+            })}
+          </CaptureRowSection>
+
+          {view.policy?.notice && (on || phase === 'signInRequired') ? (
+            <section className="space-y-1">
+              <p className="text-muted-foreground text-xs">{t('notice', { org: org.name })}</p>
+              <p className="text-sm text-pretty">{view.policy.notice}</p>
+            </section>
+          ) : null}
+        </TabsContent>
+        <TabsContent value="exclusions" className="pt-4">
+          <CaptureExclusions org={org.name} />
+        </TabsContent>
+      </Tabs>
 
       <ConfirmDialog
         open={confirmSignOut}

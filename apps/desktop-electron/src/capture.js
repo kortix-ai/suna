@@ -452,9 +452,10 @@ function captureKeepsRunning(view) {
 /**
  * Capture's own tray menu (capture-tray.js); empty while this build has no
  * engine or Capture is not set up on this computer. Its own menu bar item,
- * apart from the computer agent's.
+ * apart from the computer agent's. `frontmost` is the app the person was in
+ * when they opened the menu (`frontmostFrom`), or null.
  */
-function captureTrayItems(view, actions) {
+function captureTrayItems(view, actions, frontmost = null) {
   if (!view?.available || (!view.signedIn && !view.signInRequired)) return [];
   const paused = view.state === 'paused' || Boolean(view.pausedUntilMs && view.pausedUntilMs > Date.now());
   const on = Boolean(view.on && view.signedIn) && view.state !== 'stopped';
@@ -466,12 +467,78 @@ function captureTrayItems(view, actions) {
       ? [
           paused
             ? { id: 'capture-resume', label: 'Resume recording', click: actions.resume }
-            : { id: 'capture-pause', label: 'Pause for 1 hour', click: actions.pause },
+            : { id: 'capture-pause', label: 'Pause recording for 1 hour', click: actions.pause },
+          ...(frontmost
+            ? [{ id: 'capture-exclude-front', label: `Exclude “${frontmost.name}”`, click: () => actions.exclude(frontmost) }]
+            : []),
+          { type: 'separator' },
         ]
       : []),
-    { id: 'capture-open', label: view.signInRequired ? 'Sign in again…' : 'Open Kortix Capture…', click: actions.open },
+    ...(view.signedIn ? [{ id: 'capture-settings', label: 'Kortix Capture settings…', click: actions.settings }] : []),
+    ...(view.signedIn || !view.signInRequired
+      ? [{ id: 'capture-open', label: 'Open Kortix Capture…', click: actions.open }]
+      : [{ id: 'capture-open', label: 'Sign in again…', click: actions.open }]),
     { id: 'capture-logs', label: 'Show logs', click: actions.logs },
+    ...(on ? [{ type: 'separator' }, { id: 'capture-stop', label: 'Stop recording…', click: actions.stop }] : []),
   ];
+}
+
+/* ─── Exclusions ─────────────────────────────────────────────────────── */
+
+/**
+ * The app in front, from `lsappinfo info -only bundleid -only name <front>`
+ * (macOS). A menu bar click does not activate Kortix, so this is the person's
+ * app. Kortix itself (`selfBundleId`) is none: excluding it would hide nothing.
+ */
+function frontmostFrom(output, selfBundleId) {
+  const field = (key) => new RegExp(`"${key}"="([^"]*)"`).exec(String(output))?.[1];
+  const bundleId = field('CFBundleIdentifier');
+  if (!bundleId || bundleId === selfBundleId) return null;
+  // Some apps prefix their display name with a bidi mark (U+200E/F, U+202A–E, U+2066–9).
+  const name = (field('LSDisplayName') ?? '').replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '').trim();
+  return { bundleId, name: name || bundleId };
+}
+
+/** A domain from what a person types or pastes; null when it is not one. */
+function normalizeDomain(input) {
+  let host = String(input ?? '').trim().toLowerCase();
+  if (!host) return null;
+  try {
+    host = new URL(host.includes('://') ? host : `https://${host}`).hostname;
+  } catch {
+    return null;
+  }
+  host = host.replace(/^www\./, '').replace(/\.$/, '');
+  return /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(host) ? host : null;
+}
+
+const APP_ID = /^[A-Za-z0-9][\w.-]{0,199}$/;
+const GROUP_ID = /^[a-z][a-z0-9_]{0,63}$/;
+
+/** `capture_exclude` → the engine's `exclude` / `include` arguments. Throws on anything malformed. */
+function excludeArgs({ kind, id, on, frontmost = false } = {}) {
+  const verb = on ? 'exclude' : 'include';
+  switch (kind) {
+    case 'app':
+      if (frontmost) {
+        if (!on) throw new Error('Only the front app can be excluded, not included.');
+        return [verb, 'app', '--frontmost'];
+      }
+      if (typeof id !== 'string' || !APP_ID.test(id)) throw new Error('Not an app id.');
+      return [verb, 'app', id];
+    case 'domain': {
+      const domain = normalizeDomain(id);
+      if (!domain) throw new Error('Not a website address.');
+      return [verb, 'domain', domain];
+    }
+    case 'group':
+      if (typeof id !== 'string' || !GROUP_ID.test(id)) throw new Error('Not a category.');
+      return [verb, 'group', id];
+    case 'private-browsing':
+      return [verb, 'private-browsing'];
+    default:
+      throw new Error(`Unknown exclusion kind: ${kind}`);
+  }
 }
 
 /** System Settings panes for the engine's permissions (macOS). */
@@ -495,6 +562,9 @@ module.exports = {
   captureStatusFrom,
   captureKeepsRunning,
   captureTrayItems,
+  excludeArgs,
+  frontmostFrom,
+  normalizeDomain,
   childrenFromHeartbeat,
   policyOf,
   engineConfigYaml,

@@ -262,23 +262,59 @@ describe('status and tray', () => {
     expect(capture.captureStatusFrom({ available: false, error: 'no engine' })).toEqual({ available: false, error: 'no engine' });
   });
 
-  test('Capture\'s own tray: nothing until set up; status, notice, pause, Open Capture, logs', () => {
-    const actions = { pause() {}, resume() {}, open() {}, logs() {} };
+  test('Capture\'s own tray: nothing until set up; status, notice, pause, exclude the front app, settings, open, logs, stop', () => {
+    const actions = { pause() {}, resume() {}, open() {}, logs() {}, settings() {}, stop() {}, exclude() {} };
     expect(capture.captureTrayItems({ available: true, signedIn: false, signInRequired: false }, actions)).toEqual([]);
     expect(capture.captureTrayItems({ available: false }, actions)).toEqual([]);
     const view = capture.captureStatusFrom({ available: true, desktop: { on: true, actions: true }, status, sync, children: running });
-    const labels = (v) => capture.captureTrayItems(v, actions).filter((i) => i.type !== 'separator').map((i) => i.label);
-    expect(labels(view)).toEqual(['Recording · Screen, Actions', 'Notice: Recorded for the support team', 'Pause for 1 hour', 'Open Kortix Capture…', 'Show logs']);
-    expect(capture.captureTrayItems(view, actions).find((i) => i.id === 'capture-open').click).toBe(actions.open);
+    const frontmost = { bundleId: 'com.example.notes', name: 'Notes' };
+    const labels = (v, front = null) =>
+      capture.captureTrayItems(v, actions, front).map((i) => (i.type === 'separator' ? '—' : i.label));
+    expect(labels(view, frontmost)).toEqual([
+      'Recording · Screen, Actions',
+      'Notice: Recorded for the support team',
+      '—',
+      'Pause recording for 1 hour',
+      'Exclude “Notes”',
+      '—',
+      'Kortix Capture settings…',
+      'Open Kortix Capture…',
+      'Show logs',
+      '—',
+      'Stop recording…',
+    ]);
+    const items = capture.captureTrayItems(view, actions, frontmost);
+    expect(items.find((i) => i.id === 'capture-open').click).toBe(actions.open);
+    expect(items.find((i) => i.id === 'capture-settings').click).toBe(actions.settings);
+    expect(items.find((i) => i.id === 'capture-stop').click).toBe(actions.stop);
+    // The exclude item carries the app it names, so a later focus change cannot retarget it.
+    items.find((i) => i.id === 'capture-exclude-front').click();
+    // No front app (or Kortix itself): no exclude item.
+    expect(labels(view)).not.toContain('Exclude “Notes”');
     expect(capture.captureKeepsRunning(view)).toBe(true);
     expect(labels({ ...view, state: 'paused' })).toContain('Resume recording');
     const refused = { ...view, signedIn: false, signInRequired: true, state: 'signInRequired' };
-    expect(labels(refused)).toEqual(['Signed out', 'Notice: Recorded for the support team', 'Sign in again…', 'Show logs']);
+    expect(labels(refused, frontmost)).toEqual(['Signed out', 'Notice: Recorded for the support team', '—', 'Sign in again…', 'Show logs']);
     expect(capture.captureKeepsRunning(refused)).toBe(false);
-    // Switched off, or stopped outside the app: nothing keeps recording after Quit, no pause.
+    // Switched off, or stopped outside the app: nothing keeps recording after Quit, no pause, no stop.
     expect(capture.captureKeepsRunning({ ...view, on: false, state: 'off' })).toBe(false);
     expect(capture.captureKeepsRunning({ ...view, state: 'stopped' })).toBe(false);
-    expect(labels({ ...view, state: 'stopped' })).toEqual(['Stopped', 'Notice: Recorded for the support team', 'Open Kortix Capture…', 'Show logs']);
+    expect(labels({ ...view, state: 'stopped' }, frontmost)).toEqual([
+      'Stopped',
+      'Notice: Recorded for the support team',
+      '—',
+      'Kortix Capture settings…',
+      'Open Kortix Capture…',
+      'Show logs',
+    ]);
+  });
+
+  test('the tray exclude item passes the app it showed', () => {
+    const calls = [];
+    const actions = { pause() {}, resume() {}, open() {}, logs() {}, settings() {}, stop() {}, exclude: (app) => calls.push(app) };
+    const view = capture.captureStatusFrom({ available: true, desktop: { on: true }, status, sync, children: running });
+    capture.captureTrayItems(view, actions, { bundleId: 'com.example.notes', name: 'Notes' }).find((i) => i.id === 'capture-exclude-front').click();
+    expect(calls).toEqual([{ bundleId: 'com.example.notes', name: 'Notes' }]);
   });
 
   test('backendFromRuntimeConfig: the instance publishes its backend; https, or http on localhost only', () => {
@@ -288,6 +324,45 @@ describe('status and tray', () => {
     expect(capture.backendFromRuntimeConfig(script('http://api.example.test/v1'), 'https://app.example.test').ok).toBe(false);
     expect(capture.backendFromRuntimeConfig(script('https://u:p@api.example.test/v1'), 'https://app.example.test').ok).toBe(false);
     expect(capture.backendFromRuntimeConfig('', 'https://app.example.test').ok).toBe(false);
+  });
+});
+
+describe('exclusions', () => {
+  test('the front app from lsappinfo: bundle id and the display name without bidi marks; Kortix itself is none', () => {
+    const out = '"CFBundleIdentifier"="com.example.notes"\n"LSDisplayName"="\u200eNotes"\n';
+    expect(capture.frontmostFrom(out, 'com.kortix.desktop')).toEqual({ bundleId: 'com.example.notes', name: 'Notes' });
+    expect(capture.frontmostFrom('"CFBundleIdentifier"="com.kortix.desktop"\n"LSDisplayName"="Kortix"', 'com.kortix.desktop')).toBeNull();
+    expect(capture.frontmostFrom('', 'com.kortix.desktop')).toBeNull();
+    // No display name: the bundle id stands in.
+    expect(capture.frontmostFrom('"CFBundleIdentifier"="com.example.x"', null)).toEqual({ bundleId: 'com.example.x', name: 'com.example.x' });
+  });
+
+  test('a domain is normalized from what a person types: scheme, path, port and www. go; anything else is refused', () => {
+    expect(capture.normalizeDomain('https://www.Example.co.uk/login?x=1')).toBe('example.co.uk');
+    expect(capture.normalizeDomain('  mail.example.com:443 ')).toBe('mail.example.com');
+    expect(capture.normalizeDomain('localhost')).toBeNull();
+    expect(capture.normalizeDomain('not a domain')).toBeNull();
+    expect(capture.normalizeDomain('')).toBeNull();
+  });
+
+  test('capture_exclude maps to the engine CLI and refuses malformed ids', () => {
+    expect(capture.excludeArgs({ kind: 'app', id: 'com.example.notes', on: true })).toEqual(['exclude', 'app', 'com.example.notes']);
+    expect(capture.excludeArgs({ kind: 'app', id: 'com.example.notes', on: false })).toEqual(['include', 'app', 'com.example.notes']);
+    expect(capture.excludeArgs({ kind: 'app', frontmost: true, on: true })).toEqual(['exclude', 'app', '--frontmost']);
+    expect(capture.excludeArgs({ kind: 'domain', id: 'https://www.Bank.example/x', on: true })).toEqual(['exclude', 'domain', 'bank.example']);
+    expect(capture.excludeArgs({ kind: 'group', id: 'password_managers', on: false })).toEqual(['include', 'group', 'password_managers']);
+    expect(capture.excludeArgs({ kind: 'private-browsing', on: true })).toEqual(['exclude', 'private-browsing']);
+    for (const bad of [
+      { kind: 'app', id: '--frontmost', on: true },
+      { kind: 'app', id: 'a b; rm -rf', on: true },
+      { kind: 'domain', id: 'nope', on: true },
+      { kind: 'group', id: 'Password Managers', on: true },
+      { kind: 'app', on: true },
+      { kind: 'app', frontmost: true, on: false },
+      { kind: 'shell', id: 'x', on: true },
+    ]) {
+      expect(() => capture.excludeArgs(bad)).toThrow();
+    }
   });
 });
 

@@ -5,16 +5,21 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalFooter,
+  ModalHeader,
+  ModalTitle,
+} from '@/components/ui/modal';
 import { successToast } from '@/components/ui/toast';
 import { useTranslations } from '@/i18n/use-translations';
-import { DESKTOP_CAPTURE_OPEN_COMMAND, isDesktop } from '@/lib/desktop';
+import {
+  DESKTOP_CAPTURE_EXCLUSIONS_COMMAND,
+  DESKTOP_CAPTURE_OPEN_COMMAND,
+  isDesktop,
+} from '@/lib/desktop';
 
 import { CapturePermissions } from './capture-permissions';
 import { missingGrants } from './capture-state';
@@ -26,26 +31,37 @@ import {
   useThisComputerAccountId,
 } from './use-desktop-capture';
 
-/** Goes to "This computer" for the account this computer records for (or the selected one). */
+/**
+ * Goes to "This computer" for the account this computer records for (or the
+ * selected one); `exclusions` opens its Exclusions tab.
+ */
 function useOpenThisComputer() {
   const router = useRouter();
   const accountId = useThisComputerAccountId();
-  return useCallback(() => {
-    if (accountId) router.push(captureRoutes.thisComputer(accountId));
-  }, [router, accountId]);
+  return useCallback(
+    (section?: 'exclusions') => {
+      if (!accountId) return;
+      const href = captureRoutes.thisComputer(accountId);
+      router.push(section ? `${href}?tab=${section}` : href);
+    },
+    [router, accountId],
+  );
 }
 
 /**
  * The desktop app's "Kortix Capture…" (app menu) and "Open Kortix Capture…"
- * (its menu bar item) send `capture-open`; this navigates the window to
- * "This computer". Mounted once for every app route (the (app) layout).
+ * (its menu bar item) send `capture-open`, its "Kortix Capture settings…"
+ * `capture-open-exclusions`; this navigates the window to "This computer".
+ * Mounted once for every app route (the (app) layout).
  */
 export function CaptureDesktopHost() {
   const open = useOpenThisComputer();
   useEffect(() => {
     if (!isDesktop()) return;
     const onCommand = (event: Event) => {
-      if ((event as CustomEvent<string>).detail === DESKTOP_CAPTURE_OPEN_COMMAND) open();
+      const command = (event as CustomEvent<string>).detail;
+      if (command === DESKTOP_CAPTURE_OPEN_COMMAND) open();
+      if (command === DESKTOP_CAPTURE_EXCLUSIONS_COMMAND) open('exclusions');
     };
     window.addEventListener('kortix-desktop-command', onCommand);
     return () => window.removeEventListener('kortix-desktop-command', onCommand);
@@ -78,29 +94,31 @@ function CapturePermissionGate() {
   }
   if (!view) return null;
   return (
-    <Dialog open={open} onOpenChange={(next) => (next ? undefined : setLater(true))}>
-      <DialogContent hideCloseButton className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{t('title')}</DialogTitle>
-          <DialogDescription>{t('body', { org: org.name })}</DialogDescription>
-        </DialogHeader>
-        <CapturePermissions
-          view={view}
-          requesting={actions.grants.isPending}
-          onAllow={() =>
-            actions.grants.mutate({
-              audio: Boolean(view.layers?.audio),
-              actions: Boolean(view.layers?.actions),
-            })
-          }
-        />
-        <DialogFooter>
+    <Modal open={open} onOpenChange={(next) => (next ? undefined : setLater(true))}>
+      <ModalContent showCloseButton={false} closeOnOutsideClick={false} className="sm:max-w-lg">
+        <ModalHeader>
+          <ModalTitle>{t('title')}</ModalTitle>
+          <ModalDescription>{t('body', { org: org.name })}</ModalDescription>
+        </ModalHeader>
+        <ModalBody>
+          <CapturePermissions
+            view={view}
+            requesting={actions.grants.isPending}
+            onAllow={() =>
+              actions.grants.mutate({
+                audio: Boolean(view.layers?.audio),
+                actions: Boolean(view.layers?.actions),
+              })
+            }
+          />
+        </ModalBody>
+        <ModalFooter className="pb-5">
           <Button variant="ghost" size="sm" onClick={() => setLater(true)}>
             {t('later')}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
   );
 }
 
