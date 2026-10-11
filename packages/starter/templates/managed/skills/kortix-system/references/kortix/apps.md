@@ -125,10 +125,12 @@ minutes.
 
 ## First deployment
 
-From a linked project, build the App, then deploy its output directory:
+From a linked project, build the App in its folder (`apps/<slug>/` by default),
+then deploy its output directory:
 
 ```sh
-kortix apps deploy ./dist --slug storefront --name Storefront --type static --spa
+npm --prefix apps/storefront run build
+kortix apps deploy apps/storefront/dist --slug storefront --name Storefront --type static --spa
 ```
 
 The command performs these operations:
@@ -154,11 +156,11 @@ It contains deployment defaults. It does not auto-deploy on merge.
 ```yaml
 apps:
   storefront:
-    path: web/dist
+    path: apps/storefront/dist
     type: static
     spa: true
   api:
-    path: services/api
+    path: apps/api
     type: dockerfile
     command: ["node", "server.js"]
     port: 3000
@@ -182,7 +184,7 @@ App:
 ```yaml
 apps:
   realtime:
-    path: services/realtime
+    path: apps/realtime
     type: dockerfile
     command: ["node", "server.js"]
     port: 3000
@@ -207,7 +209,7 @@ A server App with a worker group, a second service and a volume:
 ```yaml
 apps:
   api:
-    path: services/api
+    path: apps/api
     type: dockerfile
     command: ["node", "server.js"]
     labels: [backend]

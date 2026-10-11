@@ -36,9 +36,9 @@ import {
   type ImageReadiness,
   type PrepIdentity,
 } from './provider-transition-core';
+import { activateWithCas, writeTransitionMarker } from './provider-transition-activate';
 import {
   acquireLease,
-  activateWithCas,
   failTransition,
   getTransition,
   heartbeat,
@@ -48,7 +48,6 @@ import {
   releaseForWaiting,
   reserveSwitchTransition,
   updateTransition,
-  writeTransitionMarker,
   type ProviderTransitionRow,
 } from './provider-transition-store';
 import { emitProviderTransitionEvent } from './provider-transition-metrics';

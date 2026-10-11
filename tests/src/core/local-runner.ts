@@ -111,6 +111,9 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   // minimal target validation and health probe instead.
   const latencyOnly = args.includes('--latency');
   const agenticOnly = args.includes('--agentic-only');
+  // CI's `core` lane passes this: its `packages` lane already runs package
+  // quality, so the core lane would spend ~18 min repeating it.
+  const noPackages = args.includes('--no-packages');
   const browserShardArgs = args.filter((arg) => arg.startsWith('--browser-shard='));
   const apiShardArgs = args.filter((arg) => arg.startsWith('--api-shard='));
   const modes = [
@@ -131,6 +134,9 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
     throw new Error(
       'choose only one of --full, --flows-only, --sdk-only, --db-only, --browser-only, --packages-only, --target-smoke, --target-full, --target-api-full, --target-browser-full, --latency, or --agentic-only',
     );
+  }
+  if (noPackages && modes > 0) {
+    throw new Error('--no-packages applies only to the default core run');
   }
   if (browserShardArgs.length > 1) {
     throw new Error('choose only one --browser-shard value');
@@ -165,6 +171,7 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       arg !== '--target-full' &&
       arg !== '--target-api-full' &&
       arg !== '--target-browser-full' &&
+      arg !== '--no-packages' &&
       !arg.startsWith('--browser-shard=') &&
       !arg.startsWith('--api-shard='),
   );
@@ -365,6 +372,7 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
     ...packageQuality,
     env: { KORTIX_PACKAGE_SKIP_SDK_TESTS: '1' },
   };
+  if (noPackages) return { mode: 'core', lanes, stages: [coreStage, [sdk]] };
   return {
     mode: 'core',
     lanes: [...lanes, corePackageQuality],
