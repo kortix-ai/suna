@@ -17,7 +17,7 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 
-import { relativeTime } from '../capture-time';
+import { clockTime, relativeTime } from '../capture-time';
 import type { DeviceStatusView } from './device-status';
 
 /** The status dot: green records, orange needs a person, a ring is offline, grey is idle. */
@@ -62,15 +62,27 @@ export function useStatusNote() {
     }
     if (view.key === 'offline' && view.reportedAtMs) return relativeTime(view.reportedAtMs, locale);
     if (view.key === 'paused' && view.pausedUntilMs) {
-      return t('pausedUntil', {
-        time: new Date(view.pausedUntilMs).toLocaleTimeString(locale, {
-          hour: '2-digit',
-          minute: '2-digit',
-        }),
-      });
+      return t('pausedUntil', { time: clockTime(view.pausedUntilMs, locale) });
     }
     return '';
   };
+}
+
+/**
+ * The one status line of a device, wherever it shows: the dot, the word in
+ * ink, and the detail (missing permissions, last seen, paused until) muted
+ * after it. The word carries the meaning; the dot repeats it.
+ */
+export function StatusLabel({ view, className }: { view: DeviceStatusView; className?: string }) {
+  const t = useTranslations('capture.devices');
+  const note = useStatusNote()(view);
+  return (
+    <span className={cn('flex min-w-0 items-center gap-2', className)}>
+      <StatusDot view={view} />
+      <span className="text-foreground shrink-0">{t(`status.${view.key}`)}</span>
+      {note ? <span className="text-muted-foreground min-w-0 truncate">· {note}</span> : null}
+    </span>
+  );
 }
 
 /** "Recording", "Needs permission · Accessibility", "Offline · 3 min ago". */

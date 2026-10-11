@@ -29,7 +29,6 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { desktopDownloadUrl, isDesktop } from '@/lib/desktop';
-import { cn } from '@/lib/utils';
 
 import { CaptureApiModal } from '../api/capture-api-modal';
 import { CapturePage } from '../area/capture-area-shell';
@@ -42,13 +41,12 @@ import {
 } from '../area/use-capture-area';
 import { relativeTime } from '../capture-time';
 import { useDesktopCaptureStatus } from '../desktop/use-desktop-capture';
-import { deviceStatus, type DeviceLayer, type DeviceStatusKey } from './device-status';
-import { DeviceActionsMenu, StatusDot, useStatusNote } from './device-status-ui';
+import { deviceStatus, type DeviceStatusKey } from './device-status';
+import { DeviceActionsMenu, StatusLabel } from './device-status-ui';
 
 type Scope = 'account' | 'mine';
 type Filter = 'all' | 'recording' | 'paused' | 'permission' | 'offline';
 const FILTERS: readonly Filter[] = ['all', 'recording', 'paused', 'permission', 'offline'];
-const LAYERS: readonly DeviceLayer[] = ['screen', 'actions', 'audio'];
 
 /** Which filter a status falls under; `notRecording` and `unknown` count as offline. */
 const filterOf = (key: DeviceStatusKey): Exclude<Filter, 'all'> =>
@@ -101,17 +99,21 @@ export function DevicesView({ accountId }: { accountId: string }) {
       }
       actions={
         <>
-          <Button asChild variant="outline" size="sm" className="gap-1.5">
-            <Link href={captureHref(accountId, 'this-computer')}>
-              <LaptopIcon className="size-3.5 shrink-0" />
-              {t('thisComputer')}
-            </Link>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground gap-1.5"
+            onClick={() => setApiOpen(true)}
+          >
+            <CodeIcon className="size-3.5 shrink-0" />
+            {t('apiLink')}
           </Button>
+          {/* One way to add a computer: in the desktop app, record this one; in a browser, get the app. */}
           <Button asChild size="sm" className="gap-1.5">
             {onDesktop ? (
               <Link href={captureHref(accountId, 'this-computer')}>
-                <PlusIcon className="size-3.5 shrink-0" />
-                {t('addDevice')}
+                <LaptopIcon className="size-3.5 shrink-0" />
+                {t('thisComputer')}
               </Link>
             ) : (
               <a href={desktopDownloadUrl()} target="_blank" rel="noreferrer">
@@ -166,7 +168,8 @@ export function DevicesView({ accountId }: { accountId: string }) {
           }
         />
       ) : devices.length === 0 ? (
-        <div className="bg-background rounded-md border px-4 py-12">
+        // The header carries the one action; the empty state is the line.
+        <div className="py-12">
           <EmptyState
             size="sm"
             title={
@@ -175,21 +178,6 @@ export function DevicesView({ accountId }: { accountId: string }) {
                 : t('empty.mineTitle')
             }
             description={t('empty.body')}
-            action={
-              onDesktop ? (
-                <Button asChild variant="outline" size="sm" className="gap-1.5">
-                  <Link href={captureHref(accountId, 'this-computer')}>
-                    {t('recordThisComputer')}
-                  </Link>
-                </Button>
-              ) : (
-                <Button asChild variant="outline" size="sm" className="gap-1.5">
-                  <a href={desktopDownloadUrl()} target="_blank" rel="noreferrer">
-                    {t('getDesktop')}
-                  </a>
-                </Button>
-              )
-            }
           />
         </div>
       ) : (
@@ -205,25 +193,8 @@ export function DevicesView({ accountId }: { accountId: string }) {
           {rows.length === 0 ? (
             <p className="text-muted-foreground px-3 py-6 text-center text-xs">{t('noMatch')}</p>
           ) : null}
-          <div className="text-muted-foreground flex flex-wrap justify-between gap-3 px-1 text-xs">
-            <span className="tabular-nums">
-              {t('showing', { shown: rows.length, total: devices.length })}
-            </span>
-            <span>{t('layersNote')}</span>
-          </div>
         </section>
       )}
-      <div>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="text-muted-foreground gap-1.5"
-          onClick={() => setApiOpen(true)}
-        >
-          <CodeIcon className="size-3.5 shrink-0" />
-          {t('apiLink')}
-        </Button>
-      </div>
       <CaptureApiModal
         open={apiOpen}
         onOpenChange={setApiOpen}
@@ -303,7 +274,7 @@ function DeviceTable({
           return (
             <Fragment key={userId}>
               {byMember ? (
-                <TableRow className="bg-muted/40 hover:bg-muted/40">
+                <TableRow className="bg-card hover:bg-card">
                   <TableCell colSpan={columns} className="pl-4">
                     <span className="flex min-w-0 items-center gap-2">
                       <UserAvatar email={person.email ?? ''} size="xs" />
@@ -347,10 +318,8 @@ function DeviceRow({
 }) {
   const t = useTranslations('capture.devices');
   const locale = useLocale();
-  const statusNote = useStatusNote();
   const view = deviceStatus(device);
   const name = deviceName(device, t('unnamed'));
-  const note = statusNote(view);
   return (
     <TableRow className="group relative">
       <TableCell className="pl-4">
@@ -368,35 +337,14 @@ function DeviceRow({
         </Link>
       </TableCell>
       <TableCell className="text-muted-foreground">{deviceOs(device)}</TableCell>
-      <TableCell>
-        <span className="flex flex-col gap-0.5">
-          <span className="flex items-center gap-2">
-            <StatusDot view={view} />
-            {t(`status.${view.key}`)}
-          </span>
-          {note ? <span className="text-muted-foreground text-xs">{note}</span> : null}
-        </span>
+      <TableCell className="max-w-64">
+        <StatusLabel view={view} />
       </TableCell>
       <TableCell className="text-muted-foreground text-xs tabular-nums">
         {view.lastFrameMs ? relativeTime(view.lastFrameMs, locale) : t('never')}
       </TableCell>
-      <TableCell>
-        <span className="flex gap-2.5 text-xs font-medium">
-          {LAYERS.map((layer) => {
-            const on = view.layers.includes(layer);
-            return (
-              <span
-                key={layer}
-                className={cn(!on && 'text-muted-foreground line-through')}
-                aria-label={
-                  on ? t(`layer.${layer}`) : t('layerOff', { layer: t(`layer.${layer}`) })
-                }
-              >
-                {t(`layer.${layer}`)}
-              </span>
-            );
-          })}
-        </span>
+      <TableCell className="text-muted-foreground text-xs">
+        {view.layers.map((layer) => t(`layer.${layer}`)).join(', ')}
       </TableCell>
       <TableCell className="pr-4 text-right">
         <span className="relative z-10 inline-flex items-center gap-1">
