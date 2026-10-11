@@ -603,7 +603,7 @@ Push and read rules:
   the kinds this phone turned off into the record (`carryOverLegacyKinds`).
   A web change writes the record only, so it does not turn on a session kind
   this phone turned off; the web Settings copy and
-  `content/docs/work/notifications.mdx` say so.
+  `content/docs/work/sessions.mdx` say so.
 
 Kept on mobile (KRTX-38, core only): the Notifications page, the drawer's
 unread count, Mark all as read, one Push switch per kind, and this phone's

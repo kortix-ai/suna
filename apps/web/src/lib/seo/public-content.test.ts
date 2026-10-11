@@ -137,7 +137,7 @@ describe('public SEO/AEO content coverage', () => {
   test('renders MDX source documents as clean agent-readable Markdown', () => {
     const resolved = resolvePublicMarkdown(['docs', 'index.md']);
     expect(resolved?.markdown).toContain(
-      'Create a project, start a session, and merge your first change request',
+      'Install the CLI, run a session, and merge your first change request',
     );
     expect(resolved?.markdown).toContain('- [Quickstart](/docs/quickstart)');
     expectCleanAgentMarkdown(resolved!.markdown, '/markdown/docs/index.md');
@@ -155,12 +155,19 @@ Do not drop this meaningful content.
 <StatGrid>
   <Stat value="3 systems" label="One agent" />
 </StatGrid>
+
+<Tabs>
+<Tab title="Claude Code">
+Run the add command.
+</Tab>
+</Tabs>
 `;
     const markdown = renderPlainMarkdownFromMdx(mdx);
     expect(markdown).toContain('> **Keep this warning**');
     expect(markdown).toContain('> Do not drop this meaningful content.');
     expect(markdown).toContain('> Figure: A truthful diagram');
     expect(markdown).toContain('- **3 systems:** One agent');
+    expect(markdown).toContain('**Claude Code**\nRun the add command.');
     expectCleanAgentMarkdown(markdown, 'fixture');
   });
 

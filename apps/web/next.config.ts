@@ -563,6 +563,108 @@ const nextConfig = (): NextConfig => ({
         destination: '/docs/host',
         permanent: true,
       },
+      // The 2026-10 docs rewrite folded 45 pages into 31. Every removed page
+      // lands on the section that now owns its content.
+      {
+        source: '/docs/ai-operating-system',
+        destination: '/docs',
+        permanent: true,
+      },
+      {
+        source: '/docs/compare',
+        destination: '/docs',
+        permanent: true,
+      },
+      {
+        source: '/docs/project/legacy-toml',
+        destination: '/docs/project/manifest#migrate-from-kortixtoml',
+        permanent: true,
+      },
+      {
+        source: '/docs/project/permissions',
+        destination: '/docs/project/agents#what-an-agent-may-do',
+        permanent: true,
+      },
+      {
+        source: '/docs/work',
+        destination: '/docs/work/sessions',
+        permanent: true,
+      },
+      {
+        source: '/docs/work/notifications',
+        destination: '/docs/work/sessions#notifications',
+        permanent: true,
+      },
+      {
+        source: '/docs/work/change-requests',
+        destination: '/docs/git#change-requests',
+        permanent: true,
+      },
+      {
+        source: '/docs/work/harnesses',
+        destination: '/docs/project/agents#harnesses-opencode-and-pi',
+        permanent: true,
+      },
+      {
+        source: '/docs/connect',
+        destination: '/docs/connect/connectors',
+        permanent: true,
+      },
+      {
+        source: '/docs/connect/slack',
+        destination: '/docs/connect/channels#slack',
+        permanent: true,
+      },
+      {
+        source: '/docs/connect/teams',
+        destination: '/docs/connect/channels#microsoft-teams',
+        permanent: true,
+      },
+      {
+        source: '/docs/connect/reminders',
+        destination: '/docs/connect/triggers#reminders',
+        permanent: true,
+      },
+      {
+        source: '/docs/feature-flags',
+        destination: '/docs/project#feature-flags',
+        permanent: true,
+      },
+      {
+        source: '/docs/feature-flags/apps',
+        destination: '/docs/apps',
+        permanent: true,
+      },
+      {
+        source: '/docs/host/architecture',
+        destination: '/docs/host#what-runs-where',
+        permanent: true,
+      },
+      {
+        source: '/docs/backend',
+        destination: '/docs/sdk/sessions#start-sessions-from-your-server',
+        permanent: true,
+      },
+      {
+        source: '/docs/sdk/example',
+        destination: '/docs/sdk#a-complete-script',
+        permanent: true,
+      },
+      {
+        source: '/docs/sdk/sign-in',
+        destination: '/docs/sdk/auth#sign-in-with-kortix',
+        permanent: true,
+      },
+      {
+        source: '/docs/sdk/apps',
+        destination: '/docs/apps#build-on-apps-from-typescript',
+        permanent: true,
+      },
+      {
+        source: '/docs/sdk/connectors',
+        destination: '/docs/connect/connectors#call-connectors-from-code',
+        permanent: true,
+      },
       // The help centre was a second support surface: it wore the app sidebar
       // and a ⌘K modal to host exactly one article, while /support carried the
       // FAQ, the contact addresses and the account-deletion steps. They merged
