@@ -1,11 +1,12 @@
 {
-  "source_hash": "03ee0de9394dfb9209f8a950d7fea7e8dbe94ca4510b2588ae2d58fdcb150834",
+  "source_hash": "3f7655c81733e5fa605de3fcdaba5123fade42b3a0e551b16c8b8c9ebcf8e556",
   "diff_files": [
     "apps/kortix-sandbox-agent-server/src/__tests__/kortix-event-bus.test.ts",
     "apps/kortix-sandbox-agent-server/src/__tests__/opencode-runtime-routes.test.ts",
     "apps/kortix-sandbox-agent-server/src/__tests__/opencode-session-log.test.ts",
     "apps/kortix-sandbox-agent-server/src/__tests__/pi-harness.test.ts",
     "apps/kortix-sandbox-agent-server/src/__tests__/pi-session-log.test.ts",
+    "apps/kortix-sandbox-agent-server/src/__tests__/proxy-swap-blockers.test.ts",
     "apps/kortix-sandbox-agent-server/src/__tests__/session-log-journal.test.ts",
     "apps/kortix-sandbox-agent-server/src/app/server.ts",
     "apps/kortix-sandbox-agent-server/src/harness/README.md",
@@ -18,13 +19,13 @@
     "apps/web/src/lib/seo/content-timestamps.json",
     "packages/api-contract/src/session-log/events.ts"
   ],
-  "diff_hash": "f5a96259de49dc7aeb51a1a278d3ab19c7d18757f56b960399f5d1c4c81ecb9a",
-  "head": "e6bd5c896cac556a7447be5e26affb336957b97e",
+  "diff_hash": "7c054df3b713d977f1cb723cd0ee546086af0cf2d7e10591727ca091611958d1",
+  "head": "d345ff872e63be368427383e67b52bfee772c407",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-11T21:42:31.803Z"
+  "at": "2026-10-11T22:14:08.060Z"
 }
