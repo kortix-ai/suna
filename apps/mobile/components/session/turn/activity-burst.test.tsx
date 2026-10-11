@@ -17,20 +17,13 @@ mock.module('@/lib/session/disclosure-store', () => ({ disclosureKey: (kind: str
 mock.module('@/components/ui/text', () => ({ Text: Box }));
 mock.module('@/components/kortix/text-shimmer', () => ({ TextShimmer: Shimmer }));
 mock.module('@/lib/icons', () => ({ CaretRightIcon: Box }));
-mock.module('@/components/session/tool/shared/tool-icons', () => ({ ACTIVITY_ICONS: new Proxy({}, { get: () => Box }) }));
-mock.module('@/components/session/tool/shared/styles', () => ({ TURN_SPACE: { gap2: 2, gap3: 3, caret: 14, icon: 16, rowPadY: 2 }, TURN_TYPE: { sm: {}, rowSm: {} }, useTurnPalette: () => ({ muted70: 'gray', muted40: 'gray' }) }));
-mock.module('@/lib/session/activity-sheet-store', () => ({ useActivitySheetStore: Object.assign((select: (state: { sheet: unknown }) => boolean) => select({ sheet: owned ? ({ partIds: [] } as never) : null } as never), { getState: () => ({ show: (...args: unknown[]) => shown.push(args), sync() {} }) }) }));
-mock.module('@/lib/session/activity-sheet', () => ({
-  ownsBurst: () => owned,
-  activitySheetEntries: (view: { steps: { key: string }[] }) =>
-    view.steps.map((step) => ({ kind: 'tool', key: step.key, title: `Step ${step.key}`, icon: 'terminal', running: false, failed: false, openable: true })),
-}));
-const shown: unknown[][] = [];
+mock.module('@/components/session/tool/shared/styles', () => ({ TURN_SPACE: { gap2: 2, caret: 14 }, TURN_TYPE: { sm: {} }, useTurnPalette: () => ({ muted70: 'gray', muted40: 'gray' }) }));
+mock.module('@/lib/session/activity-sheet-store', () => ({ useActivitySheetStore: Object.assign((select: (state: { sheet: unknown }) => boolean) => select({ sheet: owned ? ({ partIds: [] } as never) : null } as never), { getState: () => ({ show() {}, sync() {} }) }) }));
+mock.module('@/lib/session/activity-sheet', () => ({ ownsBurst: () => owned }));
 
 let ActivityBurst: typeof import('./activity-burst').ActivityBurst;
 beforeAll(async () => { ActivityBurst = (await import('./activity-burst')).ActivityBurst; });
 beforeEach(() => {
-  shown.length = 0;
   choices.clear();
   owned = false;
 });
@@ -60,31 +53,6 @@ describe('ActivityBurst thinking', () => {
     expect(JSON.stringify(tree!.toJSON())).not.toContain('A synthetic thought');
     expect(tree!.root.findAllByProps({ accessibilityLabel: 'Thinking' })).toHaveLength(0);
     expect(tree!.root.findByProps({ accessibilityHint: 'Opens the activity' })).toBeTruthy();
-    act(() => tree!.unmount());
-  });
-});
-
-describe('ActivityBurst inside an opened "Worked for" row', () => {
-  const second = { ...call, id: 'call-2', callID: 'c3', tool: 'read', state: { ...(call as { state: object }).state, input: { filePath: '/a.ts' } } } as unknown as Part;
-
-  test('drops its "Completed N steps" line and lists each step; a tap opens that step', async () => {
-    const { WorkFoldContext } = await import('./work-fold-context');
-    let tree: ReturnType<typeof create>;
-    act(() => {
-      tree = create(
-        React.createElement(WorkFoldContext.Provider, { value: true },
-          React.createElement(ActivityBurst, { segment: { kind: 'burst', parts: [call, second] }, turnLive: false })),
-      );
-    });
-    const json = JSON.stringify(tree!.toJSON());
-    expect(json).not.toContain('Completed');
-    expect(tree!.root.findAllByProps({ accessibilityHint: 'Opens the activity' })).toHaveLength(0);
-    // Host nodes only: the mocked Pressable passes its props down to a 'button' host.
-    const rows = tree!.root.findAll((node) => node.type === 'button' && node.props.accessibilityHint === 'Opens the details');
-    expect(rows).toHaveLength(2);
-    act(() => rows[1].props.onPress());
-    expect(shown).toHaveLength(1);
-    expect(shown[0][3]).toBe(rows[1].props.testID);
     act(() => tree!.unmount());
   });
 });

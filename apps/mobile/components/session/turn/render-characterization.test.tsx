@@ -495,28 +495,27 @@ describe('SessionTurn work fold: live stream as today, settled work behind one r
       tree?.update(<SessionTurn turn={turnWith('Found it.', 3_000)} isWorkingTurn={false} isBusy={false} />);
     });
     expect(row()).toHaveLength(1);
-    expect(row()[0].props.accessibilityState).toEqual({ expanded: false });
+    expect(row()[0].props.accessibilityHint).toBe('Opens the activity');
     expect(JSON.stringify(tree?.toJSON() ?? {})).toContain('Worked for 2s');
     expect(bursts()).toHaveLength(0);
     expect(textParts.at(-1)).toMatchObject({ text: 'Found it.' });
     expect(textPartLifecycle).toEqual(['mount:Found it']);
   });
 
-  test('a historical turn paints collapsed; the reader opens it and the choice sticks', async () => {
+  test('a tap opens the activity sheet on the turn\'s work; nothing expands inline', async () => {
+    const { useActivitySheetStore } = await import('@/lib/session/activity-sheet-store');
+    useActivitySheetStore.getState().close();
     await act(async () => {
-      tree = create(<SessionTurn turn={turnWith('Found it.', 3_000)} isWorkingTurn={false} isBusy={false} />);
+      tree = create(<SessionTurn turn={turnWith('Found it.', 3_000)} isWorkingTurn={false} isBusy={false} sessionId="s-1" />);
     });
-    expect(bursts()).toHaveLength(0);
     await act(async () => row()[0].props.onPress());
-    expect(row()[0].props.accessibilityState).toEqual({ expanded: true });
-    expect(bursts()).toHaveLength(1);
-    // A re-render with the same settled turn keeps it open.
-    await act(async () => {
-      tree?.update(<SessionTurn turn={turnWith('Found it.', 3_000)} isWorkingTurn={false} isBusy={false} />);
-    });
-    expect(bursts()).toHaveLength(1);
-    // The final text stays below the row, outside the fold.
+    expect(bursts()).toHaveLength(0);
+    const sheet = useActivitySheetStore.getState().sheet;
+    expect(sheet?.partIds).toEqual(['t-1']);
+    expect(sheet?.context).toMatchObject({ sessionId: 's-1', turnLive: false });
+    // The final text stays below the row.
     const json = JSON.stringify(tree?.toJSON() ?? {});
     expect(json.indexOf('Worked for')).toBeLessThan(json.lastIndexOf('Found it.'));
+    useActivitySheetStore.getState().close();
   });
 });

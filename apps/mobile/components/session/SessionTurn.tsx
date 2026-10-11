@@ -13,8 +13,9 @@
  *      file chips), standalone tools (`ToolPartRenderer`: deliverables,
  *      sub-agents, calls with a pending permission), and the reply text — for
  *      the whole stream, so the first tool call never remounts it (KRTX-1678)
- *      Settled, the work folds behind one "Worked for" row (`WorkAccordion`,
- *      KRTX-2113); the deliverables and the final text stay below it.
+ *      Settled, the work folds behind one "Worked for" row (`WorkRow`,
+ *      KRTX-2113) that opens the activity sheet; the deliverables and the
+ *      final text stay below it.
  *   3. inline content (text + answered questions in natural order), or a
  *      slash-command reply in its card
  *   4. busy slot (`space-y-2`) — `SessionRetryDisplay` + `SessionBusyIndicator`
@@ -78,6 +79,7 @@ import {
   turnBodyLayout,
   turnResponse,
   turnWorkSplit,
+  workParts,
   withoutReasoning,
   type TurnBodyTurn,
 } from '@/lib/session/turn-body';
@@ -98,7 +100,7 @@ import { TextPartBlock } from './turn/text-part';
 import { TurnActions } from './turn/turn-actions';
 import { SessionChangeRequests } from './SessionChangeRequests';
 import { UserMessage, type SessionSourceAuthor, type UserMessageUploadStatus } from './turn/user-message';
-import { WorkAccordion } from './turn/work-accordion';
+import { WorkRow } from './turn/work-row';
 
 /** Web turn root `space-y-2.5`. */
 const TURN_STACK_GAP = webSpace(2.5);
@@ -248,6 +250,11 @@ function SessionTurnImpl({
   // KRTX-2113: settled, the work folds behind one "Worked for" row; `null` while working.
   const workSplit = useMemo(() => turnWorkSplit(segments, working), [segments, working]);
   const durationMs = useMemo(() => (workSplit ? turnDurationMs(turn) : null), [workSplit, turn]);
+  const workPartList = useMemo(() => (workSplit ? workParts(workSplit.work) : []), [workSplit]);
+  const workContext = useMemo(
+    () => ({ sessionId, turnLive: false, onOpenFile: onFileMention, toDisplayPath: displayPath, onPermissionReply }),
+    [sessionId, onFileMention, onPermissionReply],
+  );
 
   // ── Errors, retry, status ──
   const turnError = useMemo(() => turnErrorText(bodyTurn), [bodyTurn]);
@@ -419,18 +426,16 @@ function SessionTurnImpl({
     };
     // Settled with work (KRTX-2113): the row, then the hoisted deliverables,
     // then the final text. They stay keyed siblings in this one list, so the
-    // final text and the cards keep their instances at settle; only the work
-    // remounts, closed, inside the accordion. The inline and command layouts
-    // keep today's render.
+    // final text and the cards keep their instances at settle; the work leaves
+    // the list for the activity sheet the row opens. The inline and command
+    // layouts keep today's render.
     const split = layout.text === 'segments' ? workSplit : null;
     body.push(
       <TurnLiveContext.Provider key="segments" value={working}>
         <View style={{ gap: SEGMENT_STACK_GAP }}>
           {split
             ? [
-                <WorkAccordion key="work" durationMs={durationMs} gap={SEGMENT_STACK_GAP}>
-                  {split.work.map(renderSegment)}
-                </WorkAccordion>,
+                <WorkRow key="work" durationMs={durationMs} parts={workPartList} context={workContext} />,
                 ...split.hoisted.map(renderSegment),
                 ...split.final.map(renderSegment),
               ]

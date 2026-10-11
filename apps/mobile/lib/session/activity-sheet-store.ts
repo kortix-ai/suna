@@ -35,13 +35,11 @@ export interface OpenActivitySheet {
   callIds: string[];
   view: BurstView;
   context: ActivityContextValue;
-  /** Entry key the sheet opens on (its detail) instead of the list. */
-  focusKey?: string;
 }
 
 interface ActivitySheetState {
   sheet: OpenActivitySheet | null;
-  show: (parts: ReadonlyArray<Part>, view: BurstView, context: ActivityContextValue, focusKey?: string) => void;
+  show: (parts: ReadonlyArray<Part>, view: BurstView, context: ActivityContextValue) => void;
   sync: (parts: ReadonlyArray<Part>, view: BurstView, context: ActivityContextValue) => void;
   close: () => void;
 }
@@ -52,14 +50,14 @@ function callIdsOf(parts: ReadonlyArray<Part>): string[] {
 
 export const useActivitySheetStore = create<ActivitySheetState>()((set) => ({
   sheet: null,
-  show: (parts, view, context, focusKey) =>
-    set({ sheet: { partIds: parts.map((part) => part.id), callIds: callIdsOf(parts), view, context, focusKey } }),
+  show: (parts, view, context) =>
+    set({ sheet: { partIds: parts.map((part) => part.id), callIds: callIdsOf(parts), view, context } }),
   sync: (parts, view, context) =>
     set((state) => {
       const { sheet } = state;
       if (!sheet || !ownsBurst(sheet.partIds, parts)) return state;
       const callIds = [...new Set([...sheet.callIds, ...callIdsOf(parts)])];
-      return { sheet: { ...sheet, partIds: parts.map((part) => part.id), callIds, view, context } };
+      return { sheet: { partIds: parts.map((part) => part.id), callIds, view, context } };
     }),
   close: () => set((state) => (state.sheet ? { sheet: null } : state)),
 }));

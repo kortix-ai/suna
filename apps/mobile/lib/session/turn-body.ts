@@ -274,6 +274,15 @@ export function turnWorkSplit(segments: ReadonlyArray<Segment>, working: boolean
   return splitTurnWork(segments.filter(segmentRendersSomething), { working });
 }
 
+/** The calls the "Worked for" row opens in the activity sheet: every burst and standalone part of the work, in order. */
+export function workParts(work: ReadonlyArray<Segment>): Part[] {
+  return work.flatMap((segment) => {
+    if (segment.kind === 'burst') return segment.parts;
+    if (segment.kind === 'standalone') return [segment.part];
+    return [];
+  });
+}
+
 // ─── Layout ──────────────────────────────────────────────────────────────────
 
 export interface TurnBodyLayout {

@@ -26,6 +26,7 @@ import {
   turnHasSteps,
   turnResponse,
   turnWorkSplit,
+  workParts,
   withoutReasoning,
   type TurnBodyTurn,
 } from './turn-body';
@@ -659,5 +660,20 @@ describe('turnBodyLayout (KRTX-1678: one render tree for the whole stream)', () 
 
   test('no assistant message yet → no segments list', () => {
     expect(turnBodyLayout({ ...base, hasAssistantContent: false, working: true, hasSteps: false }).segments).toBe(false);
+  });
+});
+
+describe('workParts (KRTX-2113: the "Worked for" row opens these in the activity sheet)', () => {
+  test('every burst and standalone call of the work, in order; interim text is dropped', () => {
+    const read = tool('read');
+    const task = tool('task');
+    const bash = tool('bash');
+    const work = [
+      { kind: 'burst', parts: [read] },
+      { kind: 'text', part: text('Checking the config') },
+      { kind: 'standalone', part: task },
+      { kind: 'burst', parts: [bash] },
+    ] as never;
+    expect(workParts(work).map((part) => part.id)).toEqual([read.id, task.id, bash.id]);
   });
 });
