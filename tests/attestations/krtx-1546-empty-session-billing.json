@@ -1,5 +1,5 @@
 {
-  "source_hash": "81be3d1783d7a67a03442e16cc1b24cab4b1f356397343e54c35859ecf244840",
+  "source_hash": "35660a7fa3f8efcc992992261fdecc2c59ae9915cfad44cf7d60998b5373f41c",
   "diff_files": [
     "apps/api/src/__tests__/unit-compute-rate-multiplier.test.ts",
     "apps/api/src/billing/repositories/compute-sessions.ts",
@@ -9,16 +9,15 @@
     "apps/api/src/feature-flags/registry.ts",
     "apps/api/src/projects/lib/session-inventory.test.ts",
     "apps/api/src/projects/lib/session-inventory.ts",
-    "apps/api/src/projects/lib/warm-sessions.ts",
-    "apps/web/src/lib/seo/content-timestamps.json"
+    "apps/api/src/projects/lib/warm-sessions.ts"
   ],
-  "diff_hash": "dd774595b58b70d1391001ebdb9f5c80772e4ee32909ae07c5e01244dfdab9b0",
-  "head": "cf5536d81c71b92443b511b1e989051f1323ea64",
+  "diff_hash": "3655274a1af558084066a44cb0f457d29703a8447db57ebba89a6e5d877df952",
+  "head": "5f55b332b7aaed7b0d517568eb3fe8c729881ae7",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-11T23:16:22.927Z"
+  "at": "2026-10-11T23:42:44.834Z"
 }
