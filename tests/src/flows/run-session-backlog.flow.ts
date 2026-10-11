@@ -562,13 +562,16 @@ harnessFlow(
     const content = `ke2e-run7-${crypto.randomUUID()}`;
     const done = `RUN7_DONE_${Date.now()}`;
     await ctx.step('the agent writes the requested file in the workspace', async () => {
+      const before = (await readTurn(ctx, projectId, sessionId)).last_ended?.turn_token;
       await sendPrompt(
         ctx,
         projectId,
         sessionId,
         `Create the file ${path} containing exactly this single line: ${content}. Use the file-writing tool; do not describe the change. Do not commit. Then reply with exactly: ${done}`,
       );
-      await waitForAssistantText(ctx, projectId, sessionId, done);
+      // The file is the proof, not the closing marker: a model sometimes ends
+      // the turn without echoing it (staging, 2026-10-11).
+      await waitForTurn(ctx, projectId, sessionId, endedAfter(before), 'the write turn to end');
       const file = await ctx.client
         .as(ctx.P.OWNER)
         .get(runtimePath(session.sandboxId, `/file/content?path=${encodeURIComponent(path)}`));
