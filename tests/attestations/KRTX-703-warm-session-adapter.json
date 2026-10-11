@@ -1,0 +1,25 @@
+{
+  "source_hash": "09cda1d197bba20dedf3e47a74cf4062113f8f87903f9a2be4b49d9f952049a1",
+  "diff_files": [
+    "apps/api/src/__tests__/integration-sandbox-ownership.test.ts",
+    "apps/api/src/__tests__/integration-warm-sessions-exclude.test.ts",
+    "apps/mobile/lib/session/warm-session.ts",
+    "apps/web/src/hooks/projects/use-warm-project-session.test.ts",
+    "apps/web/src/hooks/projects/use-warm-project-session.ts",
+    "apps/web/src/hooks/projects/warm-session-boundary.test.ts",
+    "packages/sdk/src/core/warm-session-pool.test.ts",
+    "packages/sdk/src/core/warm-session-pool.ts",
+    "packages/sdk/src/index.ts",
+    "packages/sdk/src/public-surface.snapshot.json",
+    "packages/sdk/src/public-type-surface.snapshot.json"
+  ],
+  "diff_hash": "3e294ac64e9e1424fac9d76555949341038369daf90d943a9c8939c69eae8e9a",
+  "head": "bc50a0435cf3b29b9214cc9fa0c695d43bb165c8",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-11T04:57:25.401Z"
+}
