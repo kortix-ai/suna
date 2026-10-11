@@ -135,9 +135,16 @@ deploy.
 
 ## Deploy from the CLI
 
+Each App's code lives in its own folder. The default is `apps/<name>/`, named
+after the App's `kortix.yaml` key: `apps/docs/` for a static site,
+`apps/api/` for a server, `apps/db/` for a Convex backend's functions.
+Templates, `kortix apps launch` and every example here use it. `path` is
+free-form, so a project may group its Apps by team or topic instead
+(`apps/sales/crm`, `apps/ops/fieldops-db`).
+
 ```bash
-npm run build
-kortix apps deploy dist --type static --spa
+npm --prefix apps/docs run build
+kortix apps deploy apps/docs/dist --type static --spa
 ```
 
 `deploy` creates the App on first use, registers an immutable artifact —
@@ -146,8 +153,8 @@ builds it, and blocks until the stable URL is ready. The wait budget is `--wait-
 default `1200`. Use `--no-wait` only when another process owns status tracking.
 
 ```bash
-kortix apps deploy dist --slug docs --type static --spa --access project
-kortix apps deploy . --type dockerfile --on-demand --command '["node","server.js"]' --port 3000
+kortix apps deploy apps/docs/dist --slug docs --type static --spa --access project
+kortix apps deploy apps/api --type dockerfile --on-demand --command '["node","server.js"]' --port 3000
 kortix apps deploy --image ghcr.io/acme/service:2026-08-07 --command '["node","server.js"]' --port 3000
 ```
 
@@ -208,12 +215,12 @@ carries access, passwords, or member ids.
 ```yaml
 apps:
   docs:
-    path: docs/dist
+    path: apps/docs/dist
     type: static
     spa: true
     uses: [api]
   api:
-    path: services/api
+    path: apps/api
     type: dockerfile
     command: ["node", "server.js"]
     labels: [backend]
@@ -580,19 +587,51 @@ self-hosted Convex, with Kortix sign-in. It is an ordinary server App: a
 pinned image, a volume, two services, and a dashboard App shown as a tab of
 it. Every command in this section works for any App.
 
+Why two Apps: the backend and the dashboard are two different images, and a
+Kortix App runs one image. The Apps page shows them as one: the dashboard is
+the backend's Dashboard tab. The backend runs 24/7 with its volume; the
+dashboard sleeps when idle.
+
 ```bash
 kortix apps launch --template convex --name db
 ```
 
-`launch` writes two blocks into `kortix.yaml`, deploys `db`, stores its
-admin key as the project secret `DB_ADMIN_KEY` (the slug in capitals, `-` →
-`_`; read from `./generate_admin_key.sh` on the machine, never printed, kept
-when it already has a value), then deploys `db-dashboard`:
+`launch` writes two blocks into `kortix.yaml` and two files, deploys `db`,
+writes its admin key to the project secret `DB_ADMIN_KEY`, then deploys
+`db-dashboard`. The key is the slug in capitals (`-` → `_`), read from
+`./generate_admin_key.sh` on the machine and never printed. Every launch
+rewrites it: it belongs to the backend just launched, and a value left by an
+earlier App of the same name is stale. Convex derives it from the backend's
+instance secret, so it stays the same while the volume lives.
 
 | App | What it is |
 |---|---|
 | `db` | The backend: the self-hosted Convex image, pinned by digest. `http` service on port 3210 (`access: public`, a `/version` check): the Convex client URL, the sync WebSocket, and the admin API. `site` service on port 3211 (`access: public`): HTTP actions, on `<db host>--site`. A `data` volume at `/convex/data`. Always on, 1 vCPU / 1 GB / 10 GB, label `backend`, `display: { preview: none }`. |
-| `db-dashboard` | Convex's dashboard, `access: admins`, on demand. It `uses: [db]` and reaches the backend through its own origin (`/_kortix/apps/db`). `display: { parent: db }`: the Dashboard tab of `db`. `secrets: { NEXT_PUBLIC_ADMIN_KEY: DB_ADMIN_KEY }`: it opens signed in. |
+| `db-dashboard` | Convex's dashboard, a Dockerfile App in `apps/db/dashboard`, `access: admins`, on demand. It `uses: [db]` and reaches the backend through its own origin (`/_kortix/apps/db`). `display: { parent: db }`: the Dashboard tab of `db`. `secrets: { NEXT_PUBLIC_ADMIN_KEY: DB_ADMIN_KEY }`: it opens signed in. |
+
+The dashboard block holds no script and no shell:
+
+```yaml
+db-dashboard:
+  path: apps/db/dashboard
+  type: dockerfile
+  command: [node, /kortix/start.js]
+  labels: [backend, dashboard]
+  display: { parent: db }
+  uses: [db]
+  always_on: false
+  vm: { cpu: 1, memory_gb: 1 }
+  http_service: { internal_port: 6791, access: admins }
+  secrets: { NEXT_PUBLIC_ADMIN_KEY: DB_ADMIN_KEY }
+```
+
+The files `launch` writes. A file that already exists is yours: `launch`
+keeps it.
+
+| File | What it does |
+|---|---|
+| `apps/db/dashboard/Dockerfile` | `FROM` Convex's dashboard image (pinned by digest), `ENV BACKEND=db`, copies `start.js`. |
+| `apps/db/dashboard/start.js` | Runs Convex's dashboard on port 6792. On the App's port 6791 it serves `/` as a page that frames the dashboard and answers its `dashboard-credentials-request` (Convex's embedding protocol) with the admin key. Every other path goes to the dashboard. If the dashboard exits, the machine exits and Kortix restarts it. |
 
 Both backend services are `public` on purpose: Convex enforces sign-in in its
 functions. The dashboard is for project admins (`project.app.admin`) only. `--no-deploy` writes
@@ -635,18 +674,22 @@ today: export the data (`npx convex export --include-file-storage`), launch a
 new backend App, import it there, then delete the old App.
 :::
 
-The dashboard: Apps → `db` → Dashboard (project admins). It reads the admin
-key on every request, so it opens signed in. `kortix apps access-link
-db-dashboard` prints a five-minute browser link to the same page.
+The dashboard: Apps → `db` → Dashboard (project admins). It opens signed in,
+with no click. `kortix apps access-link db-dashboard` prints a five-minute
+browser link to the same page.
 
-An App launched before the Dashboard tab shows its dashboard as its own card
-and asks for the key. To bring it up to date, add `display: { preview: none }`
-to the backend block and `display: { parent: db }` plus
-`secrets: { NEXT_PUBLIC_ADMIN_KEY: DB_ADMIN_KEY }` to the dashboard block, then:
+An App launched before the dashboard was a Dockerfile App runs the dashboard
+image with shell plumbing in its block, or shows it as its own card that asks
+for the key. To bring it up to date:
+
+1. Get the two files: run `kortix apps launch --template convex --name db --no-deploy`
+   in a scratch directory and copy its `apps/db/dashboard/` into the project.
+2. Replace the `db-dashboard` block with the block above, and add
+   `display: { preview: none }` to the `db` block if it is missing.
+3. Write the key and deploy the dashboard. The backend needs no redeploy.
 
 ```bash
 kortix apps exec db -- sh -c "cd /convex && ./generate_admin_key.sh" | tail -n 1 | kortix secrets set DB_ADMIN_KEY=-
-kortix apps deploy --manifest-app db
 kortix apps deploy --manifest-app db-dashboard
 ```
 
@@ -1136,10 +1179,11 @@ runtime to refresh.
 
 ## The Apps page
 
-Once the flag is on, an **Apps** tab appears at the end of the project's
-Customize bar (`/projects/<id>/customize/apps`). The page is operational, not a creation surface: it lists the
+Once the flag is on, **Apps** appears in the project sidebar
+(`/projects/<id>/apps`). The page is operational, not a creation surface: it lists the
 project's Apps with live state, a signed preview of each running App, and the
-access controls. Deploying is `kortix apps deploy .`.
+access controls. Deploying is `kortix apps deploy` from the project root: every
+`kortix.yaml` block, used Apps first.
 
 An App with no active deployment reads **Not deployed**, never **Running**. A
 static App with an active deployment always reads **Running**. A suspended

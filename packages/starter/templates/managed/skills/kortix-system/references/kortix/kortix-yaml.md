@@ -101,6 +101,9 @@ harnesses:
 # `db` below (a self-hosted Convex backend) plus `db-dashboard` (admins only,
 # shown as the Dashboard tab of `db`, signed in by the DB_ADMIN_KEY secret).
 # `kortix apps deploy` with no arguments deploys every block, used Apps first.
+# Code lives in one folder per App, apps/<name>/ by default (`path` is free-form:
+# group by team or topic when that fits better). db's functions live in
+# apps/db/convex (`npx convex deploy`); its image needs no `path`.
 # A static App (files, no machine) ignores run mode, resources, env
 # and secrets. A server App runs always on (default, billed 24/7) or on demand
 # (billed while awake). Apps have no budget:
@@ -122,23 +125,23 @@ apps:
       checks: [{ type: http, path: /version }]
     services:                  # more ports, each on <App host>--<name>
       - { name: site, internal_port: 3211, access: public }
-  db-dashboard:
-    type: oci_image
-    image: ghcr.io/get-convex/convex-dashboard@sha256:<digest>
-    command: ["sh", "-c", "cd /app/dashboard-self-hosted && NEXT_PUBLIC_DEPLOYMENT_URL=$KORTIX_APP_URL/_kortix/apps/db PORT=6791 HOSTNAME=0.0.0.0 exec node ./server.js"]
+  db-dashboard:                # Convex's dashboard is a second image, so a second App
+    path: apps/db/dashboard    # Dockerfile + start.js, written by `launch`
+    type: dockerfile
+    command: [node, /kortix/start.js]
     display: { parent: db }    # the Dashboard tab of db, not a card of its own
     uses: [db]
-    always_on: false
+    always_on: false           # sleeps when idle
     http_service: { internal_port: 6791, access: admins }
     secrets:                   # env name → project secret identifier
-      NEXT_PUBLIC_ADMIN_KEY: DB_ADMIN_KEY   # stored by `launch`; the dashboard opens signed in
+      NEXT_PUBLIC_ADMIN_KEY: DB_ADMIN_KEY   # written by `launch`; the dashboard opens signed in
   storefront:
-    path: web/dist             # build first; deploy the output directory
+    path: apps/storefront/dist # build first (in apps/storefront); deploy the output directory
     type: static
     spa: true
     uses: [db]                 # may bind to db and mint its sign-in tokens
   api:
-    path: services/api
+    path: apps/api
     type: dockerfile
     command: ["node", "server.js"]
     port: 3000

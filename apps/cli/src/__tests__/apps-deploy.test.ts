@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -354,6 +354,8 @@ describe('kortix apps deploy (characterization)', () => {
     expect(yaml.apps['crm-data']!.display).toEqual({ preview: 'none' });
     expect(yaml.apps['crm-data-dashboard']!.display).toEqual({ parent: 'crm-data' });
     expect(yaml.apps['crm-data-dashboard']!.secrets).toEqual({ NEXT_PUBLIC_ADMIN_KEY: 'CRM_DATA_ADMIN_KEY' });
+    expect(yaml.apps['crm-data-dashboard']!.path).toBe('apps/crm-data/dashboard');
+    expect(r.stdout).toContain('wrote apps/crm-data/dashboard/start.js');
     // Backend first, then the key from its machine, then the dashboard that reads it.
     const order = calls.filter((c) => c.method === 'POST' && /\/(deployments|exec|secrets)$/.test(c.path)).map((c) => c.path.split('/').pop());
     expect(order).toEqual(['deployments', 'exec', 'secrets', 'deployments']);
@@ -362,14 +364,18 @@ describe('kortix apps deploy (characterization)', () => {
     expect(r.stdout).toContain('CRM_DATA_ADMIN_KEY');
   });
 
-  test('launch keeps a secret that already holds a value: no exec, no overwrite', async () => {
+  test('launch rewrites a secret an earlier App of the same name left, and keeps a file the user already has', async () => {
     writeFileSync(join(tmp, 'kortix.yaml'), 'kortix_version: 2\n');
+    mkdirSync(join(tmp, 'apps', 'crm-data', 'dashboard'), { recursive: true });
+    writeFileSync(join(tmp, 'apps', 'crm-data', 'dashboard', 'start.js'), '// mine\n');
     configuredSecrets = ['CRM_DATA_ADMIN_KEY'];
     const config = writeConfig(startServer());
     const r = await runCli(['apps', 'launch', '--template', 'convex', '--name', 'crm-data', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(calls.some((c) => c.path.endsWith('/exec'))).toBe(false);
-    expect(calls.some((c) => c.path.endsWith('/secrets') && c.method === 'POST')).toBe(false);
+    expect(calls.some((c) => c.path.endsWith('/exec'))).toBe(true);
+    expect(calls.find((c) => c.path.endsWith('/secrets') && c.method === 'POST')?.body).toEqual({ name: 'CRM_DATA_ADMIN_KEY', value: 'synthetic-admin-key|0123' });
+    expect(readFileSync(join(tmp, 'apps', 'crm-data', 'dashboard', 'start.js'), 'utf8')).toBe('// mine\n');
+    expect(readFileSync(join(tmp, 'apps', 'crm-data', 'dashboard', 'Dockerfile'), 'utf8')).toContain('ENV BACKEND=crm-data');
   });
 
   test('a directory source is archived and inferred as a bundle from package.json', async () => {
