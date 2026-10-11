@@ -244,19 +244,30 @@ async function settleComputeWindow(
   // is forgiven as it elapses instead of accumulating, so a first turn that
   // lands later can never retro-bill the pre-turn seconds. A terminal settle
   // always proceeds, so an empty session that stops still closes its row.
-  const firstTurnAt = row.sessionId ? await firstSessionTurnStartedAt(row.sessionId) : null;
-  const billableFromMs = firstTurnAt
-    ? Math.max(lastBilled.getTime(), firstTurnAt.getTime())
-    : row.sessionId
-      ? null
-      : lastBilled.getTime();
-  const durationSeconds =
-    billableFromMs === null ? 0 : Math.max(0, (claimedEnd.getTime() - billableFromMs) / 1000);
-  if (durationSeconds <= 0 && !terminalState && claimedEnd.getTime() <= lastBilled.getTime()) {
-    // Nothing more is billable, but advance nothing either: `last_billed_at`
-    // stays put so a box that comes back alive resumes from where it stopped.
+  // A box whose liveness clamp pulled `claimedEnd` behind the cursor has
+  // nothing new to bill: stop here and leave `last_billed_at` where it is,
+  // so a box that comes back alive resumes from where it stopped. Checked
+  // before the first-turn lookup because the answer does not depend on it —
+  // the billable floor below is never earlier than the cursor.
+  if (!terminalState && claimedEnd.getTime() <= lastBilled.getTime()) {
     return 'no_window';
   }
+  const firstTurnAt = row.sessionId ? await firstSessionTurnStartedAt(row.sessionId) : null;
+  let billableFromMs: number | null;
+  if (!row.sessionId) {
+    // Unattributed infrastructure (monitor boxes, App machines): bill from
+    // the cursor, as before.
+    billableFromMs = lastBilled.getTime();
+  } else if (firstTurnAt) {
+    // A session that has accepted at least one turn bills from the later of
+    // the cursor and its first turn.
+    billableFromMs = Math.max(lastBilled.getTime(), firstTurnAt.getTime());
+  } else {
+    // Empty session (no accepted turn): nothing is billable yet.
+    billableFromMs = null;
+  }
+  const durationSeconds =
+    billableFromMs === null ? 0 : Math.max(0, (claimedEnd.getTime() - billableFromMs) / 1000);
 
   const spec: SandboxSpec = {
     cpuCores: row.cpuCores,

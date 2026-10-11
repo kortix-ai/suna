@@ -62,7 +62,8 @@ export async function firstSessionTurnStartedAt(sessionId: string): Promise<Date
     .where(eq(sessionTurns.sessionId, sessionId))
     .orderBy(asc(sessionTurns.startedAt))
     .limit(1);
-  return row?.startedAt ? new Date(row.startedAt) : null;
+  // `started_at` is NOT NULL, so the only falsy case is "no turn rows".
+  return row ? new Date(row.startedAt) : null;
 }
 
 /**
