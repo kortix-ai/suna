@@ -1,21 +1,23 @@
 /**
  * The public names of the session-log types (`kortix.session/2`), vendored in
- * `types.ts`. Types only, no `zod`: validators stay in `@kortix/api-contract`.
+ * `types.ts`. Types and three constants, no `zod`: validators stay in `@kortix/api-contract`.
  *
  * Not exported, because the name is too generic for a package root: `Role`,
  * `Usage`, `Pending`, `Ext`, `Producer`, `SchemaRef`, `BlockBase`. Read them from
  * the record: `SessionLogMessage['usage']`, `SessionLog['pending']['questions'][number]`.
+ *
+ * Not exported, because no client reads them: `AdapterCapabilities`, `CapabilityFeatures`
+ * and `ExportCursor` are daemon-side adapter state (capability manifests, incremental-export
+ * cursors). They stay in `types.ts` for byte-equality. Adding an export later is additive;
+ * removing one is a major.
  */
 export {
   KNOWN_TOOL_KINDS,
   SESSION_LOG_MINOR,
   SESSION_LOG_SCHEMA,
-  type AdapterCapabilities,
   type AttachmentBlock,
-  type CapabilityFeatures,
   type CompactionBlock,
   type CompactionLayoutEntry,
-  type ExportCursor,
   type GradeCounts,
   type HarnessBlock,
   type KnownToolKind,

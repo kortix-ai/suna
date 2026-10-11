@@ -24,5 +24,5 @@ test('the SDK root exports the kortix.session/2 constants', () => {
 
 test('the SDK package does not depend on zod', () => {
   const pkg = JSON.parse(readFileSync(join(import.meta.dir, '../../../package.json'), 'utf8'));
-  expect({ ...pkg.dependencies, ...pkg.peerDependencies }).not.toHaveProperty('zod');
+  expect({ ...pkg.dependencies, ...pkg.peerDependencies, ...pkg.optionalDependencies }).not.toHaveProperty('zod');
 });

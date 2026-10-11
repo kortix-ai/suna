@@ -1342,7 +1342,8 @@ exhaustiveness check catches a new part type at build time.
 
 The root entry exports the types of the Kortix session log, schema
 `kortix.session/2` minor 1: the harness-neutral record of a session. They are
-types and two constants only. `@kortix/sdk` has no `zod` dependency, so the
+types and three constants only (`SESSION_LOG_SCHEMA`, `SESSION_LOG_MINOR`,
+`KNOWN_TOOL_KINDS`). `@kortix/sdk` has no `zod` dependency, so the
 validators (`SessionLogSchema` and the rest) stay in the private
 `@kortix/api-contract`. A test holds the SDK copy byte-equal to
 `packages/api-contract/src/session-log/types.ts`.
@@ -1365,11 +1366,12 @@ function toolCalls(log: SessionLog): SessionLogBlock[] {
 | `ToolResultContent`, `CompactionLayoutEntry`, `ThreadInteraction`, `ModelRef` | Parts of the records above |
 | `SessionLogTodo`, `SessionLogToolKind`, `KnownToolKind`, `KNOWN_TOOL_KINDS` | The todo item, the tool kind (any string; a reader renders an unknown kind as `other`), and the kinds every reader renders. `SessionLogTodo` and `SessionLogToolKind` carry the prefix because `Todo` and `ToolKind` name other types in this package |
 | `RestoreGrade`, `GradeCounts` | How faithfully the record restores: `native`, `converted` or `partial`, and what is missing |
-| `AdapterCapabilities`, `CapabilityFeatures`, `ExportCursor` | What a harness adapter renders natively, and its incremental-export cursor |
 | `SESSION_LOG_SCHEMA`, `SESSION_LOG_MINOR` | `'kortix.session/2'` and `1` |
 
 `Role`, `Usage`, `Pending`, `Ext`, `Producer`, `SchemaRef` and `BlockBase` are not
 exported: read them from the record, for example `SessionLogMessage['usage']`.
+`AdapterCapabilities`, `CapabilityFeatures` and `ExportCursor` are not exported
+either: they are daemon-side adapter state with no client consumer.
 
 ## Distribution
 
