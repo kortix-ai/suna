@@ -1,6 +1,7 @@
 {
-  "source_hash": "668da850fe5d3a11a505e4a7f3009f747c651070eda0b2882378477cf8b85ce0",
+  "source_hash": "b6b2a416e4054bfa6c650e1af0c783ed01fed10847b928ad3411ca7d8eaa4865",
   "diff_files": [
+    "apps/api/src/__tests__/integration-sandbox-ownership.test.ts",
     "apps/api/src/__tests__/integration-warm-sessions-exclude.test.ts",
     "apps/mobile/lib/session/warm-session.ts",
     "apps/web/src/hooks/projects/use-warm-project-session.test.ts",
@@ -12,13 +13,13 @@
     "packages/sdk/src/public-surface.snapshot.json",
     "packages/sdk/src/public-type-surface.snapshot.json"
   ],
-  "diff_hash": "dcf7d8453eb32eb4141fe34946da7fd39976b1412964d786608b60b176a35a8b",
-  "head": "f4353d0ec03dad85db2fec531e260caf9cf5d7ec",
+  "diff_hash": "3e294ac64e9e1424fac9d76555949341038369daf90d943a9c8939c69eae8e9a",
+  "head": "8d560c8ba0a6c5ee9496c05b3f166f88560965d0",
   "passed": false,
   "lanes": {
-    "core": "fail",
-    "packages": "skipped-sandbox-image",
-    "db-suites": "fail"
+    "core": "pass",
+    "packages": "fail",
+    "db-suites": "pass"
   },
-  "at": "2026-10-11T02:13:09.046Z"
+  "at": "2026-10-11T04:13:12.942Z"
 }
