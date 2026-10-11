@@ -16,7 +16,9 @@
  * - `producer`: `opencode` with the store's OpenCode version, not `kortix-v1-import`.
  * - attachments: `ref: blob:<sha256>`, `bytes` and `sha256` of the bytes in the store
  *   (an offloaded attachment's sidecar file). The bytes stay in the store; nothing
- *   uploads them yet (P2.3). The mirror resolves none (F13: no `ref`, no `bytes`).
+ *   uploads them yet (P2.3). `fromV1` without a resolver sets neither (F13), and
+ *   the mirror row of a prompt file can carry the `kortix-attachment://` `url` of
+ *   the copy the API's capture uploaded, which the daemon never sees.
  * - session: `title`, `created_at` and `todos` from the store, `restore_grade: 'native'`
  *   without `grade_counts`, and the harness history. Thread `title` from the store.
  * The mirror also cuts strings over 200,000 characters, drops `data:` strings
@@ -140,7 +142,7 @@ export function openCodeSessionLog(input: {
   const { store } = input
   const sidecar = input.sidecar ?? (() => null)
   const partRows = new Map<string, Array<{ id: string; data: string }>>()
-  for (const p of store.parts) partRows.set(p.message_id, [...(partRows.get(p.message_id) ?? []), p])
+  for (const p of store.parts) (partRows.get(p.message_id) ?? partRows.set(p.message_id, []).get(p.message_id)!).push(p)
   const attachments = new Map<string, Resolved>()
   const rows: V1Row[] = []
   const rowById = new Map<string, MessageRow>()
@@ -150,7 +152,7 @@ export function openCodeSessionLog(input: {
     const info = parse(row.data)
     if (!info) continue // OpencodeDb.messagePage drops it too
     rowById.set(row.id, row)
-    if (info.summary === true && typeof info.parentID === 'string') summaries.set(info.parentID, [...(summaries.get(info.parentID) ?? []), row])
+    if (info.summary === true && typeof info.parentID === 'string') (summaries.get(info.parentID) ?? summaries.set(info.parentID, []).get(info.parentID)!).push(row)
     const parts: J[] = []
     for (const p of partRows.get(row.id) ?? []) {
       const part = parse(p.data)

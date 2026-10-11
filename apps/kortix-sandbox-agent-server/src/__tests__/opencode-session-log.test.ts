@@ -51,7 +51,9 @@ const roleOf = (store: StoreSnapshot, id: string) => (JSON.parse(store.messages.
 /**
  * The fields only the daemon knows (the module header of `session-log.ts`),
  * removed so the rest compares with `fromV1`: seq, producer, an attachment's
- * ref/bytes/sha256, and the session and thread fields the store adds.
+ * ref/bytes/sha256 (and the `kortix-attachment://` url the API's capture adds
+ * on a live box; the fixture's mirror rows have none), and the session and
+ * thread fields the store adds.
  */
 function withoutDaemonFields(log: SessionLog): unknown {
   const copy = structuredClone(log) as SessionLog & Record<string, unknown>
