@@ -43,6 +43,7 @@ import {
   type SandboxSpec,
   claimComputeWindow,
   findStaleActiveSessions,
+  firstSessionTurnStartedAt,
   getLatestComputeSession,
   getOpenComputeSession,
   insertComputeSession,
@@ -230,8 +231,28 @@ async function settleComputeWindow(
   // that historical debit, close at the cursor, and never move time backwards.
   const claimedEnd =
     terminalState && billableEnd.getTime() < lastBilled.getTime() ? lastBilled : billableEnd;
-  const durationSeconds = Math.max(0, (claimedEnd.getTime() - lastBilled.getTime()) / 1000);
-  if (durationSeconds <= 0 && !terminalState) {
+  // THE FIRST TURN — a session's compute bills only from its first accepted
+  // turn. A session box starts the moment the user opens the session page, but
+  // an empty session (no accepted turn — the warm session waiting for a send
+  // that never came) must not debit idle compute against the customer's
+  // credits (KRTX-1546). `session_turns` is the ledger of accepted turns, so
+  // its oldest row is the first billable instant. Rows without a sessionId
+  // (monitor boxes, App machines) are unattributed infrastructure and keep
+  // billing from the cursor as before.
+  //
+  // The cursor still moves to `claimedEnd` when nothing is billable: the idle
+  // is forgiven as it elapses instead of accumulating, so a first turn that
+  // lands later can never retro-bill the pre-turn seconds. A terminal settle
+  // always proceeds, so an empty session that stops still closes its row.
+  const firstTurnAt = row.sessionId ? await firstSessionTurnStartedAt(row.sessionId) : null;
+  const billableFromMs = firstTurnAt
+    ? Math.max(lastBilled.getTime(), firstTurnAt.getTime())
+    : row.sessionId
+      ? null
+      : lastBilled.getTime();
+  const durationSeconds =
+    billableFromMs === null ? 0 : Math.max(0, (claimedEnd.getTime() - billableFromMs) / 1000);
+  if (durationSeconds <= 0 && !terminalState && claimedEnd.getTime() <= lastBilled.getTime()) {
     // Nothing more is billable, but advance nothing either: `last_billed_at`
     // stays put so a box that comes back alive resumes from where it stopped.
     return 'no_window';

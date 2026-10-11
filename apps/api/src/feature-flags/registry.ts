@@ -251,7 +251,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'warm_sessions',
     name: 'Warm Sessions',
     description:
-      'Keep one sandbox booted and waiting while you have a project open, so a new session starts instantly instead of waiting for a cold boot. A warm sandbox is billed compute even when idle, until you use it or it expires. Turn this off to trade instant starts for lower cost.',
+      'Keep one sandbox booted and waiting while you have a project open, so a new session starts instantly instead of waiting for a cold boot. A warm sandbox runs until you use it or it expires, and you are billed compute only from your first message — an unused warm session costs you nothing. Turn this off to stop holding a box open.',
     // The surface is small and server-owned, but the cost tradeoff is real and
     // the presence model is new. `beta` says "we intend this on for everyone,
     // and we expect to tune the grant".

@@ -323,12 +323,14 @@ describe('selectSessionRowsForViewer — warm sessions', () => {
     ])).toEqual(['own']);
   });
 
-  // A warm box bills compute from creation (sandbox-deadline-policy.ts
-  // warmPoolGrantMs) until the reaper or the user stops it. A billed session
-  // the list hides is money its owner cannot see, open or stop, so a warm row
-  // that is still provisioning or running lists in the `visible` scope like
-  // any other session. The marker keeps hiding the row once nothing bills —
-  // stopped, failed, completed.
+  // A warm box runs real compute (sandbox-deadline-policy.ts warmPoolGrantMs)
+  // until the reaper or the user stops it, and becomes billable the moment its
+  // first turn is accepted (compute-metering.ts settles a session's compute
+  // only from its first turn on). A live warm row the list hides is a running
+  // session its owner cannot see or stop, so a warm row that is still
+  // provisioning or running lists in the `visible` scope like any other
+  // session. The marker keeps hiding the row once it is not live — stopped,
+  // failed, completed.
   test('a warm session that is up and billing lists in the visible scope', () => {
     expect(visible([row('billed-warm', { metadata: { warm: true } })])).toEqual(['billed-warm']);
   });

@@ -13,6 +13,7 @@ import {
   projectMonitorBoxes,
   sandboxComputeSessions,
   sessionSandboxes,
+  sessionTurns,
 } from '@kortix/db';
 import { asc, eq, sql } from 'drizzle-orm';
 
@@ -178,6 +179,36 @@ async function backdate(sandboxId: string, startedAt: string, lastBilledAt = sta
     .where(eq(sandboxComputeSessions.sandboxId, sandboxId));
 }
 
+/** The session id the `sandbox()` helper seeded behind this sandbox row. */
+async function sessionOf(sandboxId: string): Promise<string> {
+  const [box] = await db
+    .select({ sessionId: sessionSandboxes.sessionId })
+    .from(sessionSandboxes)
+    .where(eq(sessionSandboxes.sandboxId, sandboxId));
+  return box!.sessionId;
+}
+
+/** One delivered turn in the ledger, so the session reads as used from `startedAt` on. */
+async function seedTurn(sandboxId: string, startedAt: Date): Promise<void> {
+  const [box] = await db
+    .select({
+      sessionId: sessionSandboxes.sessionId,
+      projectId: sessionSandboxes.projectId,
+      accountId: sessionSandboxes.accountId,
+    })
+    .from(sessionSandboxes)
+    .where(eq(sessionSandboxes.sandboxId, sandboxId));
+  await db.insert(sessionTurns).values({
+    turnToken: `tok-${crypto.randomUUID()}`,
+    sessionId: box!.sessionId,
+    sandboxId,
+    projectId: box!.projectId,
+    accountId: box!.accountId,
+    state: 'ended',
+    startedAt,
+  });
+}
+
 let appSeq = 0;
 /** An App with its artifact, one deployment, and one runtime. */
 async function app(
@@ -330,9 +361,12 @@ withDb('compute metering on PostgreSQL', () => {
     test('pause settles one compute_debit that names the session that ran the box', async () => {
       const accountId = await account({ billingModel: 'per_seat' });
       const sandboxId = await sandbox(accountId);
-      const id = await startComputeSession({ sandboxId, accountId, sessionId: 'sess-ledger-ref', spec: SPEC });
+      const sessionId = await sessionOf(sandboxId);
+      const id = await startComputeSession({ sandboxId, accountId, sessionId, spec: SPEC });
       const start = Math.floor(Date.now() / 1000) * 1000 - 10 * MINUTE;
       await backdate(sandboxId, iso(start));
+      // The session is in use: its first turn predates the billed window.
+      await seedTurn(sandboxId, new Date(start - MINUTE));
 
       await pauseComputeSession(sandboxId, new Date(start + 300_000));
 
@@ -341,7 +375,7 @@ withDb('compute metering on PostgreSQL', () => {
         {
           type: 'usage',
           amount: -0.016776,
-          description: 'Sandbox compute · sess-ledger-ref · 2vCPU/4GB/20GB · 300s',
+          description: `Sandbox compute · ${sessionId} · 2vCPU/4GB/20GB · 300s`,
           idempotencyKey: `compute:${id}:${end}`,
           metadata: expect.objectContaining({ ledger_type: 'compute_debit' }),
         },
@@ -508,6 +542,95 @@ withDb('compute metering on PostgreSQL', () => {
         {},
         { appId: 'a', lastAliveAt: at.toISOString() },
       ]);
+    });
+  });
+
+  describe('a session bills only from its first accepted turn (KRTX-1546)', () => {
+    test('a zero-message session settles its open window at zero cost and advances the cursor', async () => {
+      const accountId = await account({ billingModel: 'per_seat' });
+      const sandboxId = await sandbox(accountId);
+      await startComputeSession({ sandboxId, accountId, sessionId: await sessionOf(sandboxId), spec: SPEC });
+      const start = Math.floor(Date.now() / 1000) * 1000 - 8 * MINUTE;
+      await backdate(sandboxId, iso(start));
+      // No turn ever accepted: the ledger holds no row for this session.
+
+      const result = await tickRunningComputeCharges();
+
+      expect(result.settled).toBe(1);
+      expect(await ledgerOf(accountId)).toEqual([]);
+      const [window] = await windowsOf(sandboxId);
+      expect(window!.costUsd).toBe(0);
+      // The cursor moved past its old position: the idle is forgiven as it
+      // elapses, so it can never retro-bill once a turn lands.
+      expect(new Date(window!.lastBilledAt).getTime()).toBeGreaterThan(start);
+      expect(window!.state).toBe('active');
+      expect(window!.endedAt).toBeNull();
+    });
+
+    test('a used session bills only from its first turn, and its next window bills fully', async () => {
+      const accountId = await account({ billingModel: 'per_seat' });
+      const sandboxId = await sandbox(accountId);
+      await startComputeSession({ sandboxId, accountId, sessionId: await sessionOf(sandboxId), spec: SPEC });
+      const start = Math.floor(Date.now() / 1000) * 1000 - 10 * MINUTE;
+      await backdate(sandboxId, iso(start));
+      // The first turn landed five minutes into the still-open window.
+      await seedTurn(sandboxId, new Date(start + 5 * MINUTE));
+
+      // Settle the open window at an explicit end three minutes after the
+      // turn: the five pre-turn minutes are forgiven, the three post-turn
+      // minutes bill.
+      await pauseComputeSession(sandboxId, new Date(start + 8 * MINUTE));
+
+      let ledger = await ledgerOf(accountId);
+      expect(ledger).toHaveLength(1);
+      expect(ledger[0]!.amount).toBe(-0.0100656);
+      expect(ledger[0]!.description).toContain('· 180s');
+
+      // The next window's cursor postdates the first turn, so every second of
+      // it bills.
+      await startComputeSession({ sandboxId, accountId, sessionId: await sessionOf(sandboxId), spec: SPEC });
+      const secondStart = start + 8 * MINUTE;
+      await backdate(sandboxId, iso(secondStart));
+      await pauseComputeSession(sandboxId, new Date(secondStart + MINUTE));
+
+      ledger = await ledgerOf(accountId);
+      expect(ledger).toHaveLength(2);
+      // `ledgerOf` has no ORDER BY — find each settle by its billed seconds.
+      const bySeconds = (seconds: string) =>
+        ledger.find((entry) => (entry.description ?? '').endsWith(`· ${seconds}`));
+      expect(bySeconds('180s')!.amount).toBe(-0.0100656);
+      expect(bySeconds('60s')!.amount).toBe(-0.0033552);
+    });
+
+    test('a zero-message session that stops closes at zero cost', async () => {
+      const accountId = await account({ billingModel: 'per_seat' });
+      const sandboxId = await sandbox(accountId);
+      await startComputeSession({ sandboxId, accountId, sessionId: await sessionOf(sandboxId), spec: SPEC });
+      const start = Math.floor(Date.now() / 1000) * 1000 - 6 * MINUTE;
+      await backdate(sandboxId, iso(start));
+
+      await pauseComputeSession(sandboxId, new Date(start + 2 * MINUTE));
+
+      expect(await ledgerOf(accountId)).toEqual([]);
+      const [window] = await windowsOf(sandboxId);
+      expect(window!.costUsd).toBe(0);
+      expect(window!.state).toBe('stopped');
+    });
+
+    test('a session bills its whole window when the first turn lands at the window start', async () => {
+      const accountId = await account({ billingModel: 'per_seat' });
+      const sandboxId = await sandbox(accountId);
+      await startComputeSession({ sandboxId, accountId, sessionId: await sessionOf(sandboxId), spec: SPEC });
+      const start = Math.floor(Date.now() / 1000) * 1000 - 10 * MINUTE;
+      await backdate(sandboxId, iso(start));
+      await seedTurn(sandboxId, new Date(start));
+
+      await pauseComputeSession(sandboxId, new Date(start + 10 * MINUTE));
+
+      const ledger = await ledgerOf(accountId);
+      expect(ledger).toHaveLength(1);
+      expect(ledger[0]!.amount).toBe(-0.033552);
+      expect(ledger[0]!.description).toContain('· 600s');
     });
   });
 
