@@ -1,20 +1,21 @@
 {
-  "source_hash": "fa560fa665381b3c93005535ecfcb877f7684cc12474f4a368b0444ca41cdca7",
+  "source_hash": "dbf921b75813af64f42eca325c60157aee9f636bab51665e4e313096b15d385f",
   "diff_files": [
     "packages/api-contract/src/__tests__/session-log-shape.snapshot.txt",
     "packages/api-contract/src/__tests__/session-log-v1.test.ts",
+    "packages/api-contract/src/sandbox-layout.ts",
     "packages/api-contract/src/session-log/index.ts",
     "packages/api-contract/src/session-log/schema.ts",
     "packages/api-contract/src/session-log/types.ts",
     "packages/api-contract/src/session-log/v1.ts"
   ],
-  "diff_hash": "b0d134e3e57937099662479b1e613dc02ec955b40b8e5b418c0399c557102731",
-  "head": "80b4a689c999f5129085c6e594cd93387ef1c6b9",
+  "diff_hash": "25cd278af6db98f452e5c7bd788107824d3ec0ec777e726392c75d047ba56f55",
+  "head": "d25ca145580387ca838dca64dcb3dfa60be94c78",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-11T01:59:26.556Z"
+  "at": "2026-10-11T11:52:29.536Z"
 }
