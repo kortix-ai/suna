@@ -1,5 +1,5 @@
 {
-  "source_hash": "ab4f686b74a4f25c0c4ae84c9ce06725621db177dd519bb79c6802941f8587ab",
+  "source_hash": "1bca4a42b28675af67d39a2d90a59ea504489d403d78acf2b741b9329e6f312a",
   "diff_files": [
     "apps/api/src/__tests__/helpers/synthetic-opencode-session.ts",
     "apps/api/src/__tests__/integration-session-log-read.test.ts",
@@ -26,13 +26,13 @@
     "tests/spec/routes.generated.json",
     "tests/src/flows/session-log.flow.ts"
   ],
-  "diff_hash": "66cc703235c693e90a6d9fbeab7cadb4aa2c15b203e0a3c8cc6508d1d620c756",
-  "head": "b429b42053fb2058bb001aae1c3d8a4914737af1",
+  "diff_hash": "f5e0fe67648e27f6331a66de1359f8fc7560536e843bfae4e83e590ee367f7bf",
+  "head": "e0aedeed0fd3ab444a346bc74959cbbd6c361a34",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-11T19:51:17.711Z"
+  "at": "2026-10-11T20:21:39.659Z"
 }
