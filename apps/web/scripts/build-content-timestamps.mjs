@@ -23,12 +23,12 @@
 // commit is rebased or cherry-picked, which would mislead recency-aware
 // retrievers.
 //
-// A squash merge stamps one new committer date on the commit that carries both
-// the content and the manifest the PR regenerated, and the manifest cannot know
-// the date of the commit it ships in. `staleContentTimestamps` therefore excuses
-// an entry whose content and manifest share their last commit. Content changed
-// without the manifest still fails: its last commit is newer than the
-// manifest's.
+// A squash merge stamps a new committer date on the commit that carries the
+// content and the manifest the PR regenerated, and the manifest cannot know the
+// date of the commit it ships in. `staleContentTimestamps` therefore excuses an
+// entry whose content's last commit also touched the manifest: the commit that
+// carried the content also carried a regenerated manifest. Content changed
+// without the manifest still fails.
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
@@ -102,9 +102,9 @@ function gitAvailable() {
   }
 }
 
-function lastCommit(format, pathRelativeToRepo) {
+function lastCommit(format, pathRelativeToRepo, rev = 'HEAD') {
   try {
-    return execFileSync('git', ['log', '-1', `--format=${format}`, '--', pathRelativeToRepo], {
+    return execFileSync('git', ['log', '-1', `--format=${format}`, rev, '--', pathRelativeToRepo], {
       cwd: REPO_ROOT,
       encoding: 'utf8',
     }).trim();
@@ -179,17 +179,17 @@ function collectContentTimestampManifest() {
 }
 
 // Keys of `committed` that differ from a fresh generation, minus the entries
-// the squash commit excuses (see the header). Empty without usable git history.
+// whose content's last commit also touched the manifest (see the header). Empty without usable git history.
 function staleContentTimestamps(committed) {
   if (!gitAvailable()) return [];
-  const manifestCommit = lastCommit('%H', relative(REPO_ROOT, MANIFEST_PATH).replaceAll('\\', '/'));
+  const manifestRel = relative(REPO_ROOT, MANIFEST_PATH).replaceAll('\\', '/');
   const sources = contentSources();
   const stale = [];
   for (const key of new Set([...Object.keys(sources), ...Object.keys(committed)])) {
     const iso = sources[key] ? (lastCommitIso(sources[key]) ?? undefined) : undefined;
     if (iso === committed[key]) continue;
-    const squashed = iso && key in committed && manifestCommit && lastCommit('%H', sources[key]) === manifestCommit;
-    if (!squashed) stale.push(key);
+    const contentCommit = iso && key in committed ? lastCommit('%H', sources[key]) : '';
+    if (!contentCommit || lastCommit('%H', manifestRel, contentCommit) !== contentCommit) stale.push(key);
   }
   return stale.sort();
 }
