@@ -257,6 +257,7 @@ const AUDIT_HTTP_ROUTE_KEYS = [
   "POST|v1|channels|teams|identity|bind",
   "GET|v1|channels|teams|identity|login|:token",
   "POST|v1|channels|teams|identity|preview",
+  "GET|v1|clients|mobile",
   "POST|v1|connectors|attachments",
   "POST|v1|connectors|call",
   "GET|v1|connectors|catalog",

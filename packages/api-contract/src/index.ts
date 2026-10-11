@@ -104,6 +104,22 @@ export const FeatureDisabledErrorSchema = z.object({
 });
 export type FeatureDisabledError = z.infer<typeof FeatureDisabledErrorSchema>;
 
+/**
+ * `GET /v1/clients/mobile` — public (no auth, it is read before login). The
+ * operator's mobile release policy: a build older than `minimum_version`
+ * shows a blocking "update required" screen. Every field is null when the
+ * operator has not set it; a null minimum means no gate.
+ */
+export const MobileClientPolicySchema = z.object({
+  /** Minimum supported app version, `major.minor.patch`. Null: no gate. */
+  minimum_version: z.string().nullable(),
+  /** App Store page the update button opens on iOS. Null: no button. */
+  store_url_ios: z.string().nullable(),
+  /** Play Store page the update button opens on Android. Null: no button. */
+  store_url_android: z.string().nullable(),
+});
+export type MobileClientPolicy = z.infer<typeof MobileClientPolicySchema>;
+
 /** The two assignable project roles. `user`/`viewer` are deprecated aliases of
  *  `member`; `editor` was REMOVED on 2026-08-18 (folded into `manager`). None
  *  of the three is emitted, and only `manager`/`member` are accepted on write. */

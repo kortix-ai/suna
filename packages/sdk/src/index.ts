@@ -514,6 +514,7 @@ export * from './core/attachments/prompt-attachments';
 export * from './core/runtime/client';
 export * from './core/runtime/attachment-part';
 export * from './core/session';
+export * from './core/session-log';
 export * from './core/warm-session-pool';
 export {
   createHttpSessionSyncController,

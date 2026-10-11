@@ -1197,5 +1197,11 @@
     "showMoreSubsessions_other": "再显示 {{count}} 个",
     "showMoreSubsessionsLabel_one": "再显示 {{title}} 的 {{count}} 个子会话",
     "showMoreSubsessionsLabel_other": "再显示 {{title}} 的 {{count}} 个子会话"
+  },
+  "updateRequired": {
+    "title": "需要更新",
+    "body": "此版本的 Kortix 已不再受支持。请更新应用以继续使用。",
+    "bodyNoStore": "此版本的 Kortix 已不再受支持。请从 App Store 或 Google Play 更新应用以继续使用。",
+    "button": "更新"
   }
 }
