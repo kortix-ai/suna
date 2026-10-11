@@ -140,15 +140,19 @@ variable "deployment_minimum_healthy_percent" {
 variable "deployment_maximum_percent" {
   description = <<-EOT
     How far a rolling deployment may exceed the desired task count, in percent
-    of desired_count. 200 (the default everywhere) runs up to one extra task
-    per running task at the peak; 100 runs at most one replacement task at a
-    time.
+    of desired_count. AWS rounds this DOWN to whole tasks while
+    deployment_minimum_healthy_percent rounds UP. 200 (the default)
+    runs up to one extra task per running task at the peak; 100 runs at most
+    one replacement at a time — but Availability Zone Rebalancing (if enabled
+    on the service — prod's API service has it enabled out-of-band) rejects
+    any maximum <= 100 at UpdateService time, so the lowest workable value
+    with rebalancing on is just above 100: prod pins 150.
 
     Every task holds long-lived PostgreSQL connections (request, audit,
     leader-election and LISTEN/NOTIFY pools), so this setting is part of the
     rolling-deployment DB budget in apps/api/src/shared/database-capacity.ts.
-    Set 100 only where the database's usable-connection budget needs it (prod
-    pins it on the API service); the cross-check test
+    Set it below the default only where the database's usable-connection
+    budget needs it (prod pins 150 on the API service); the cross-check test
     database-capacity.test.ts enforces prod's value.
   EOT
   type        = number

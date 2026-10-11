@@ -60,11 +60,13 @@ describe('production database connection capacity', () => {
   });
 
   test('keeps a maximum rolling deployment below the usable PostgreSQL limit', () => {
-    // Prod rolls one replacement at a time (max=100%: the fleet never exceeds
-    // desired_count, see the Terraform cross-check below), so the envelope
-    // counts zero extra tasks — the peak stays PROD_API_MAX_TASKS.
+    // Prod allows 50% deploy headroom (max=150%: at full scale the fleet can
+    // reach floor(desired × 1.5) = 15 tasks; 100% is rejected by AWS because
+    // Availability Zone Rebalancing — enabled out-of-band on the prod API
+    // service — does not support maximumPercent <= 100). The envelope counts
+    // that peak: 10 × 1.5, not the 20 the old 200% overlap implied.
     expect(PROD_API_MAX_TASKS).toBe(10);
-    expect(ROLLING_TASK_OVERLAP).toBe(1);
+    expect(ROLLING_TASK_OVERLAP).toBe(1.5);
     expect(PROD_DB_USABLE_CONNECTIONS).toBe(237);
     expect(PROD_DB_NON_API_RESERVE).toBe(32);
     // Recomputed from the pins above, not trusted: the exported ceiling must
@@ -75,7 +77,7 @@ describe('production database connection capacity', () => {
     expect(PROD_DB_ROLLING_CONNECTION_CEILING).toBe(
       PROD_API_MAX_TASKS * ROLLING_TASK_OVERLAP * perTaskPools,
     );
-    expect(PROD_DB_ROLLING_CONNECTION_CEILING).toBe(100);
+    expect(PROD_DB_ROLLING_CONNECTION_CEILING).toBe(150);
     expect(PROD_DB_ROLLING_CONNECTION_CEILING).toBeLessThanOrEqual(
       PROD_DB_USABLE_CONNECTIONS - PROD_DB_NON_API_RESERVE,
     );
@@ -102,12 +104,14 @@ describe('production database connection capacity', () => {
     expect(productionTerraform).toMatch(/module "api"[\s\S]*?max_capacity\s*=\s*10/);
 
     // The module keeps its old behavior as defaults (min_healthy 100, max 200
-    // — dev and staging are unchanged); prod pins the DEPLOYABLE one-at-a-time
-    // pairing on BOTH prod API stacks: min_healthy 50 with max 100. AWS rounds
-    // minimumHealthyPercent UP and maximumPercent DOWN, so min=100 + max=100
-    // means ECS can neither stop nor start a task (prod desired=3, shadow
-    // desired=2 — every release would hang); min=50 keeps ceil(desired×0.5)
-    // healthy while at most desired tasks exist, at every autoscaled count.
+    // — dev and staging are unchanged); prod pins the DEPLOYABLE pairing on
+    // BOTH prod API stacks: min_healthy 50 with max 150. AWS rounds
+    // minimumHealthyPercent UP and maximumPercent DOWN, so min=100 with any
+    // max is un-deployable (prod desired=3, shadow desired=2 — every release
+    // would hang), and Availability Zone Rebalancing rejects max <= 100 at
+    // UpdateService time (the failed v0.13.54 prod apply, 2026-10-11).
+    // min=50 + max=150 keeps ceil(desired × 0.5) healthy with one spare task
+    // of rolling headroom at every autoscaled count.
     expect(ecsModuleVariables).toMatch(/variable "deployment_minimum_healthy_percent"[\s\S]*?default\s*=\s*100/);
     expect(ecsModuleVariables).toMatch(/variable "deployment_maximum_percent"[\s\S]*?default\s*=\s*200/);
     // Anchored to assignment lines (two-space indent, end of line) so the
@@ -117,9 +121,9 @@ describe('production database connection capacity', () => {
     expect(ecsModule).toMatch(/^  deployment_maximum_percent\s*=\s*var\.deployment_maximum_percent$/m);
     for (const t of [productionTerraform, shadowTerraform]) {
       expect(t.match(/^  deployment_minimum_healthy_percent\s*=\s*50$/gm)).toHaveLength(1);
-      expect(t.match(/^  deployment_maximum_percent\s*=\s*100$/gm)).toHaveLength(1);
+      expect(t.match(/^  deployment_maximum_percent\s*=\s*150$/gm)).toHaveLength(1);
       expect(t).toMatch(/module "api"[\s\S]*?^  deployment_minimum_healthy_percent\s*=\s*50$/m);
-      expect(t).toMatch(/module "api"[\s\S]*?^  deployment_maximum_percent\s*=\s*100$/m);
+      expect(t).toMatch(/module "api"[\s\S]*?^  deployment_maximum_percent\s*=\s*150$/m);
     }
   });
 });
