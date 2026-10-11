@@ -93,6 +93,12 @@ const UsesSchema = z
   .array(z.string().regex(APP_SLUG, 'an App slug: lowercase letters, numbers and single hyphens'))
   .max(20)
   .transform((slugs) => [...new Set(slugs)]);
+/** Where Kortix shows the App (`AppDisplay`). Replaced whole; `{}` restores the defaults. */
+const DisplaySchema = z.object({
+  listed: z.boolean().optional(),
+  preview: z.enum(['live', 'none']).optional(),
+  parent: z.string().regex(APP_SLUG, 'an App slug').optional(),
+}).strict();
 const EnvironmentSchema = z.record(
   z.string().regex(APP_ENV_NAME),
   z.string().max(32_768),
@@ -198,7 +204,7 @@ function serializeDeployment(row: typeof appDeployments.$inferSelect) {
     hosting_provider: row.hostingProvider,
     runtime_spec: row.runtimeSpec,
     build_spec: row.buildSpec,
-    /** The release config (Fly model), its deploy strategy and the release command's outcome. */
+    /** The release config, its deploy strategy and the release command's outcome. */
     config: row.config,
     strategy: row.strategy,
     release_command_status: row.releaseCommandStatus,
@@ -584,7 +590,7 @@ export function registerAppsRoutes(): void {
     createRoute({
       method: 'patch', path: '/{projectId}/apps/{appId}', tags: ['apps'], summary: 'Update an App', ...auth,
       description:
-        '`uses` replaces the Apps (by slug) this App uses; each must be a live App of the project the caller can see (400 `app_not_found` otherwise, the same for a missing App and a hidden one). A refused PATCH changes nothing. ',
+        '`display` replaces where Kortix shows the App (`listed`, `preview`: live | none, `parent`: the App whose detail shows it as a tab); presentation only. `uses` replaces the Apps (by slug) this App uses; each must be a live App of the project the caller can see (400 `app_not_found` otherwise, the same for a missing App and a hidden one). A refused PATCH changes nothing. ',
       request: {
         params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }),
         body: { content: { 'application/json': { schema: z.object({
@@ -593,6 +599,7 @@ export function registerAppsRoutes(): void {
           idle_timeout_seconds: z.number().int().min(120).max(86400).optional(), always_on: z.boolean().optional(),
           uses: UsesSchema.optional(),
           labels: z.array(z.string().regex(/^[a-z0-9][a-z0-9-]{0,30}$/)).max(10).optional(),
+          display: DisplaySchema.optional(),
         }) } } },
       },
       responses: { 200: json(AppObject, 'App'), ...errors(400, 402, 403, 404, 409, 502, 503) },
@@ -636,6 +643,7 @@ export function registerAppsRoutes(): void {
           ...(body.idle_timeout_seconds !== undefined ? { idleTimeoutSeconds: body.idle_timeout_seconds } : {}),
           ...(body.always_on !== undefined ? { alwaysOn: body.always_on } : {}),
           ...(body.labels !== undefined ? { labels: [...new Set(body.labels as string[])] } : {}),
+          ...(body.display !== undefined ? { display: body.display } : {}),
           updatedAt: new Date(),
         }).where(and(eq(apps.appId, appId), eq(apps.projectId, projectId), isNull(apps.deletedAt))).returning();
       });
@@ -723,7 +731,7 @@ export function registerAppsRoutes(): void {
       method: 'post', path: '/{projectId}/apps/{appId}/deployments', tags: ['apps'], summary: 'Deploy an App', ...auth,
       description:
         'Queue a release of an uploaded artifact (`artifact_id` + `source`); answers 202. `config` is the release ' +
-        'config on the Fly.io model (processes, http_service, services, mounts, vm, deploy; the shorthands port, ' +
+        'config (processes, http_service, services, mounts, vm, deploy; the shorthands port, ' +
         'command, readiness_path, always_on and resources map onto it). Without it the release runs one `app` ' +
         'process group on the source port, sized like the App. An invalid config answers 400 `app_config_invalid` ' +
         'with `issues: [{path, message}]`; a mount on a provider without volumes answers 400 `app_volumes_unsupported`.',
@@ -1062,7 +1070,7 @@ export function registerAppsRoutes(): void {
       method: 'post', path: '/{projectId}/apps/{appId}/rollback', tags: ['apps'], summary: 'Roll back an App', ...auth,
       description:
         'Roll back to an earlier release: a NEW release (the next version) from that release\'s artifact and ' +
-        'config, rolled out on its strategy like any deploy (Fly verbatim). Volumes keep their data. Answers 202 ' +
+        'config, rolled out on its strategy like any deploy. Volumes keep their data. Answers 202 ' +
         'with the App and the queued release in `deployment`.',
       request: { params: z.object({ projectId: z.string().uuid(), appId: z.string().uuid() }), body: { content: { 'application/json': { schema: z.object({ deployment_id: z.string().uuid() }) } } } },
       responses: { 202: json(AppObject, 'App'), ...errors(403, 404, 409) },

@@ -1,4 +1,4 @@
-import type { AppReleaseConfigInput } from '@kortix/shared/app-config';
+import type { AppDisplay, AppReleaseConfigInput } from '@kortix/shared/app-config';
 /**
  * `kortix_version` 2 — types + validators.
  *
@@ -271,7 +271,7 @@ export interface AppBlockV2 {
   resources?: AppResourcesV2;
   env?: Record<string, string>;
   secrets?: Record<string, string>;
-  /** Fly model (≈ fly.toml): process groups, group → shell command (`""` = the image's command). */
+  /** Process groups, group → shell command (`""` = the image's command). */
   processes?: Record<string, string>;
   /** The primary service, on the App's own host. */
   http_service?: AppReleaseConfigInput['http_service'];
@@ -285,6 +285,8 @@ export interface AppBlockV2 {
   deploy?: AppReleaseConfigInput['deploy'];
   /** Free-form labels (e.g. `backend`). */
   labels?: string[];
+  /** Where Kortix shows the App: `{ listed, preview: live | none, parent }`. */
+  display?: AppDisplay;
 }
 
 /**

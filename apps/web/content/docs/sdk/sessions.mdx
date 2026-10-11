@@ -391,9 +391,10 @@ runtime. `s.previewUrl()` and `s.proxyUrl()` need a resolved runtime — call
 
 `health.capabilities` lists the session features the runtime serves. Read one
 with `runtimeSupports(capabilities, capability)` and hide the control when it
-returns `false`. An OpenCode session serves all ten; a pi session serves
-`session.subagents` only and answers the others with `501 feature_not_supported`
-(`404` for the config document). [Harnesses](/docs/work/harnesses) has the
+returns `false`. An OpenCode session serves all twelve (`session.steer` only on
+OpenCode 1.18.15 or later); a pi session serves `session.subagents`,
+`session.compact`, `session.commands`, `session.steer` and `session.log.v2`, and
+answers the others with `501 feature_not_supported` (`404` for the config document). [Harnesses](/docs/work/harnesses) has the
 full OpenCode and pi matrix.
 
 | Capability | Feature |
@@ -408,6 +409,8 @@ full OpenCode and pi matrix.
 | `session.shell` | A shell command run as a turn |
 | `session.attach` | Attach the harness's own terminal client |
 | `session.config` | A runtime config document (`/global/config`); agents and models come from the project either way |
+| `session.steer` | A message sent during a turn is read by that turn at its next step |
+| `session.log.v2` | The runtime event stream serves the session log as `log.*` frames (`?schema=v2`) |
 
 ```ts
 import { runtimeSupports } from '@kortix/sdk';
