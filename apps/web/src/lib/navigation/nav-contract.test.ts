@@ -1,8 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { execFile, execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { promisify } from 'node:util';
 
 /**
  * The nav contract: clicking an in-app menu item must never reload the page.
@@ -38,17 +36,17 @@ const NAV_RULES = [
 
 /** Files that could possibly trip either rule. */
 function candidateFiles(): string[] {
-  const out = execFileSync(
-    'grep',
+  const out = Bun.spawnSync(
     [
+      'grep',
       '-rlE',
       'router\\.(push|replace)\\(|window\\.location|location\\.(href|assign|replace)\\s*=',
       'src',
       '--include=*.ts',
       '--include=*.tsx',
     ],
-    { cwd: WEB_ROOT, encoding: 'utf8' },
-  );
+    { cwd: WEB_ROOT },
+  ).stdout.toString();
   return out
     .split('\n')
     .map((l) => l.trim())
@@ -59,30 +57,29 @@ function candidateFiles(): string[] {
 type LintMessage = { ruleId: string | null; line: number; message: string };
 type LintResult = { filePath: string; messages: LintMessage[] };
 
-const execFileAsync = promisify(execFile);
-
 /**
  * ESLint over every candidate takes 16-20 s alone and minutes on a loaded
- * packages lane. A synchronous call blocked the test worker for all of it, so
- * the 120 s timeout could not fire and the lane saw a hung worker. Awaiting
- * the child keeps the worker's event loop free.
+ * packages lane. It runs through `Bun.spawn`, on ESLint's own bin, with a hard
+ * kill: `npx` through `node:child_process` once left an isolated worker
+ * spinning at full CPU for 19 min with no child alive, so neither the child
+ * nor the test timeout ever ended it (staging promotion for v0.13.54).
  */
+const ESLINT_KILL_MS = 100_000;
+
 async function lintNavRules(files: string[]): Promise<string[]> {
   if (files.length === 0) return [];
-  let raw: string;
-  try {
-    raw = (
-      await execFileAsync('npx', ['eslint', '--format', 'json', ...files], {
-        cwd: WEB_ROOT,
-        encoding: 'utf8',
-        maxBuffer: 64 * 1024 * 1024,
-      })
-    ).stdout;
-  } catch (error) {
-    // eslint exits 1 when it reports problems; the JSON is still on stdout.
-    raw = (error as { stdout?: string }).stdout ?? '';
-    if (!raw) throw error;
-  }
+  const proc = Bun.spawn(
+    [resolve(WEB_ROOT, 'node_modules/.bin/eslint'), '--format', 'json', ...files],
+    { cwd: WEB_ROOT, stdout: 'pipe', stderr: 'pipe', timeout: ESLINT_KILL_MS },
+  );
+  const [raw, stderr, code] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  // eslint exits 1 when it reports problems; the JSON is still on stdout.
+  if (proc.signalCode) throw new Error(`eslint killed after ${ESLINT_KILL_MS} ms (${proc.signalCode})`);
+  if (!raw) throw new Error(`eslint exited ${code} with no output: ${stderr}`);
   const results = JSON.parse(raw) as LintResult[];
   return results.flatMap((r) =>
     r.messages
@@ -182,11 +179,12 @@ describe('nav contract — every URL written to history is a real route', () => 
   const LEGACY_UNREACHABLE = ['src/features/workspace/command-palette.tsx'];
 
   test('no live code writes a /sessions/<id> or /terminal/<id> tab href', () => {
-    const hits = execFileSync(
-      'grep',
-      ['-rln', 'href: `/\\(sessions\\|terminal\\)/', 'src', '--include=*.ts', '--include=*.tsx'],
-      { cwd: WEB_ROOT, encoding: 'utf8' },
+    // grep exits 1 on no match; spawnSync does not throw on that.
+    const hits = Bun.spawnSync(
+      ['grep', '-rln', 'href: `/\\(sessions\\|terminal\\)/', 'src', '--include=*.ts', '--include=*.tsx'],
+      { cwd: WEB_ROOT },
     )
+      .stdout.toString()
       .split('\n')
       .map((l) => l.trim())
       .filter(Boolean)
