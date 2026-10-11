@@ -1,23 +1,25 @@
 {
-  "source_hash": "ca44b7575840ad46da224395ade54395e41facd9bf2ac6f3698702ef9b25f49c",
+  "source_hash": "6613062511c066d49bfc9d4e10a581982e4e03cf2b88bd37175f4a1c3db4a221",
   "diff_files": [
     ".agents/skills/contributing/SKILL.md",
     ".agents/skills/learnings/MEMORY.md",
     ".agents/skills/learnings/entries/2026-10-10T232803Z-run-the-trunk-suite-where-its-consumer-polls-it-removing-a-c.md",
+    ".agents/skills/learnings/entries/2026-10-11T084106Z-isolate-each-push-verdict-by-sha-and-select-only-strict-ance.md",
     ".agents/skills/testing/SKILL.md",
     ".github/workflows/mobile-ota.yml",
     ".github/workflows/tests.yml",
     "AGENTS.md",
     "apps/mobile/BUILD_GUIDE.md",
-    "tests/unit/sandbox-workflow.test.ts"
+    "tests/unit/sandbox-workflow.test.ts",
+    "tests/unit/trunk-verdict.test.ts"
   ],
-  "diff_hash": "6e6b1661f9757864c403f6ea410285a4a23e0f4c5361397799cf1105cb1f3c6a",
-  "head": "c10c9526b001acc50574bc066401bd5746fa856f",
+  "diff_hash": "d4c94a52a2477223e06e8cf059f90981cf1922d0a138f6dc2208bf3483e841ac",
+  "head": "4370f31acd39998f96e749be2abe12fb963575c3",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-11T05:41:23.989Z"
+  "at": "2026-10-11T09:26:57.766Z"
 }
