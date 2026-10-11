@@ -292,7 +292,10 @@ const envSchema = z.object({
   // than MOBILE_MIN_VERSION (`major.minor.patch`) shows a blocking "update
   // required" screen. Unset: no gate. The store URLs are the update button's
   // targets; unset: the screen has no button.
-  MOBILE_MIN_VERSION: optStr,
+  // A malformed value would make every device fail open, so it is a boot error.
+  MOBILE_MIN_VERSION: optStr.refine((v) => v.trim() === '' || /^v?\d+(\.\d+){0,2}$/.test(v.trim()), {
+    message: 'Must be major.minor.patch',
+  }),
   MOBILE_STORE_URL_IOS: optUrl(''),
   MOBILE_STORE_URL_ANDROID: optUrl(''),
   // Self-host enterprise license: when the operator has purchased/holds a

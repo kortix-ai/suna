@@ -594,12 +594,12 @@ export default function RootLayout() {
                             <OfflineBanner />
                             <SessionEndedDialog />
                             <PushNotificationsBridge />
-                            {/* Last: covers the navigator when this build is below the API's minimum version. */}
-                            <UpdateRequiredGate />
                           </ThemeProvider>
                         </BottomSheetModalProvider>
                         {/* Above every bottom sheet: dropdowns opened from inside a sheet. */}
                         <PortalHost name={OVERLAY_PORTAL_HOST} />
+                        {/* Last, outside the sheet provider: covers the navigator, every bottom sheet and the overlay portal when this build is below the API's minimum version. */}
+                        <UpdateRequiredGate />
                       </ToastProvider>
                     </AdvancedFeaturesProvider>
                   </BillingProvider>

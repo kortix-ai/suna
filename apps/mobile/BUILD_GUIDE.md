@@ -64,7 +64,7 @@ update, set these on the API (the EAS environment is for the app, not these):
 
 | Variable | Meaning |
 |---|---|
-| `MOBILE_MIN_VERSION` | `major.minor.patch`. A build below it shows a blocking "Update required" screen. Unset: no gate. |
+| `MOBILE_MIN_VERSION` | `major.minor.patch`. A build below it shows a blocking "Update required" screen. Unset: no gate. A malformed value stops the API at boot. |
 | `MOBILE_STORE_URL_IOS` | App Store page the Update button opens on iOS. Unset: no button. |
 | `MOBILE_STORE_URL_ANDROID` | Play Store page the Update button opens on Android. Unset: no button. |
 

@@ -20,6 +20,7 @@ describe('GET /v1/clients/mobile', () => {
     Object.assign(config, { MOBILE_MIN_VERSION: '', MOBILE_STORE_URL_IOS: '', MOBILE_STORE_URL_ANDROID: '' });
     const res = await get();
     expect(res.status).toBe(200);
+    expect(res.headers.get('cache-control')).toBe('public, max-age=60');
     expect(await res.json()).toEqual({ minimum_version: null, store_url_ios: null, store_url_android: null });
   });
 
@@ -36,5 +37,21 @@ describe('GET /v1/clients/mobile', () => {
       store_url_android: 'https://apps.example.test/android',
     });
     expect(MobileClientPolicySchema.safeParse(body).success).toBe(true);
+  });
+});
+
+describe('MOBILE_MIN_VERSION validation', () => {
+  // A malformed minimum would make every device fail open, so config refuses to boot.
+  const boot = (value: string) =>
+    Bun.spawnSync(['bun', '--env-file=scripts/test.env', '-e', "await import('./src/config')"], {
+      cwd: new URL('../..', import.meta.url).pathname,
+      env: { ...process.env, MOBILE_MIN_VERSION: value },
+    });
+
+  it('boots with major.minor.patch and refuses a typo', () => {
+    expect(boot('1.6.0').exitCode).toBe(0);
+    const bad = boot('1,6,0');
+    expect(bad.exitCode).toBe(1);
+    expect(bad.stderr.toString()).toContain('MOBILE_MIN_VERSION');
   });
 });

@@ -13,11 +13,14 @@ export function registerClientRoutes(app: OpenAPIHono) {
       summary: 'Mobile release policy: minimum supported app version and store links (public)',
       responses: { 200: json(MobileClientPolicySchema.openapi('MobileClientPolicy'), 'Mobile release policy') },
     }),
-    (c) =>
-      c.json({
+    (c) => {
+      // The app reads it on every launch; one minute of cache bounds the audit rows.
+      c.header('Cache-Control', 'public, max-age=60');
+      return c.json({
         minimum_version: config.MOBILE_MIN_VERSION || null,
         store_url_ios: config.MOBILE_STORE_URL_IOS || null,
         store_url_android: config.MOBILE_STORE_URL_ANDROID || null,
-      }, 200),
+      }, 200);
+    },
   );
 }

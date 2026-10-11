@@ -55,6 +55,7 @@ let requests: Array<{ url: string; authorization: string | null }>;
 beforeEach(() => {
   requests = [];
   constants.nativeAppVersion = '1.5.0';
+  constants.expoConfig = { version: '1.5.0' };
   platform.OS = 'ios';
   opened.length = 0;
   configureKortix({
@@ -164,6 +165,19 @@ describe('UpdateRequiredGate', () => {
     constants.nativeAppVersion = null;
     constants.expoConfig = null;
     expect((await render()).toJSON()).toBeNull();
+  });
+});
+
+describe('mount position', () => {
+  test('the gate is the last thing in the root layout: after the overlay portal, outside the sheet provider', () => {
+    const layout = require('node:fs').readFileSync(require('node:path').join(__dirname, '../../app/_layout.tsx'), 'utf8') as string;
+    const sheets = layout.indexOf('</BottomSheetModalProvider>');
+    const overlay = layout.indexOf('<PortalHost name={OVERLAY_PORTAL_HOST} />');
+    const gate = layout.indexOf('<UpdateRequiredGate />');
+    expect(sheets).toBeGreaterThan(0);
+    expect(overlay).toBeGreaterThan(sheets);
+    expect(gate).toBeGreaterThan(overlay);
+    expect(layout.indexOf('</ToastProvider>')).toBeGreaterThan(gate);
   });
 });
 
