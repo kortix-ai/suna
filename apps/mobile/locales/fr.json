@@ -1197,5 +1197,11 @@
     "showMoreSubsessions_other": "Afficher {{count}} de plus",
     "showMoreSubsessionsLabel_one": "Afficher {{count}} sous-session de plus de {{title}}",
     "showMoreSubsessionsLabel_other": "Afficher {{count}} sous-sessions de plus de {{title}}"
+  },
+  "updateRequired": {
+    "title": "Mise à jour requise",
+    "body": "Cette version de Kortix n'est plus prise en charge. Mettez à jour l'application pour continuer.",
+    "bodyNoStore": "Cette version de Kortix n'est plus prise en charge. Mettez à jour l'application depuis l'App Store ou Google Play pour continuer.",
+    "button": "Mettre à jour"
   }
 }

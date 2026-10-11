@@ -107,7 +107,7 @@ import { errorToast, infoToast, successToast, warningToast } from '@/components/
 import { MicrosoftTeams } from '@/features/icon/icons/microsoft-teams';
 import { Slack } from '@/features/icon/icons/slack';
 import { ModelSelector } from '@/features/session/model-selector';
-import { AgentSelector, flattenModels } from '@/features/session/session-chat-input';
+import { AgentSelector } from '@/features/session/session-chat-input';
 import {
   ChannelDisconnectButton,
   ChannelRow,
@@ -150,6 +150,8 @@ import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
   type Agent,
+  flattenModels,
+  modelProviderMode,
   useFeatureFlag,
   useRuntimeProviders,
   useVisibleAgents,
@@ -705,7 +707,10 @@ function ChannelSettingsModalContent({
   }, [defaultAgentLabel, tI18nComplete, visibleAgents, binding.agentName]);
 
   const { data: providers } = useRuntimeProviders();
-  const models = useMemo(() => flattenModels(providers), [providers]);
+  const models = useMemo(
+    () => flattenModels(providers, { providerMode: modelProviderMode(providers) }),
+    [providers],
+  );
   // Mode-aware read-back: a native (gateway-off) pin is `provider/model` and
   // must not be forced under the synthetic `kortix` provider, or the selector
   // shows "Project default" beside a channel that has an explicit pin.

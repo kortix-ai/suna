@@ -30,6 +30,8 @@ import { AGENT_ENV_SH } from '@/harness/shared/agent-env-file'
 import { logger } from '@/lib/log/logger'
 import type { PiRuntimeHooks } from '@/harness/pi/runtime'
 import { MessageIdClock } from '@/harness/pi/message-id'
+import { piSessionLog } from '@/harness/pi/session-log'
+import { upcast as upcastSessionLog } from '@kortix/api-contract/session-log'
 import { spawnSync } from 'node:child_process'
 import { registerHarnessAssets, resetHarnessAssetsForTests } from '@/services/runtime-assets/runtime-assets'
 import {
@@ -3100,5 +3102,90 @@ describe('pi per-prompt agent (R7.2)', () => {
       expect({ pick, coder: system.includes('PROMPT-OF-CODER'), other: /PROMPT-OF-(REVIEWER|RETIRED)/.test(system) }).toEqual({ pick, coder: true, other: false })
       expect((await page(r)).messages.find((m) => m.info.id === id)!.info.agent).toBe('coder')
     }
+  })
+})
+
+describe('pi session-log export (P2.5)', () => {
+  // A real 1x1 PNG: pi drops an image it cannot decode ("[Image omitted: …]").
+  const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
+  const TASK = { tool: 'task', args: { description: 'Write the note', prompt: 'write sub.txt', subagent_type: 'general' } }
+  /** The model reads images, so the attachment reaches pi as image content. */
+  const imageCatalog = (workspace: string) => {
+    writeFileSync(join(workspace, 'image-catalog.json'), JSON.stringify({ models: { [MODEL_ID]: { name: 'Test Model', attachment: true, limit: { context: 64_000, output: 4_096 } } } }))
+    compactEverything(workspace)
+  }
+
+  test('a real session exports with Kortix ids and v1 part ids, and its hashes survive a restart', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'pi-harness-'))
+    const r = await boot({
+      workspace,
+      prepare: imageCatalog,
+      env: { KORTIX_LLM_CATALOG_FILE: join(workspace, 'image-catalog.json') },
+      script: [
+        { text: 'an image' },
+        { tool: 'bash', args: { command: 'printf a > a.txt && ls' } }, { text: 'listed' },
+        TASK, { tool: 'bash', args: { command: 'printf sub > sub.txt' } }, { text: 'child wrote sub.txt' }, { text: 'parent done' },
+        ...SUMMARY,
+        { tool: 'bash', args: { command: 'sleep 20' } },
+        { text: 'after the stop' },
+      ],
+    })
+    const rt = r.service.runtime()!
+    const root = rt.rootId
+    const imageId = 'msg_0198e2a4b0f1ABCDEFGHIJKLMN'
+    expect((await prompt(r, root, { messageID: imageId, parts: [{ type: 'text', text: 'what is this' }, { type: 'file', mime: 'image/png', url: PNG, filename: 'shot.png' }] })).status).toBe(204)
+    await waitFor(() => !rt.busy())
+    await promptAndSettle(r, 'list the files')
+    await promptAndSettle(r, 'spawn a helper')
+    expect((await summarize(r, root)).status).toBe(200)
+    await waitFor(() => rt.idle())
+    expect((await prompt(r, root, { parts: [{ type: 'text', text: 'wait' }] })).status).toBe(204)
+    await waitForRunningTool(r, root)
+    expect((await r.user(`/session/${root}/abort`, { method: 'POST' })).status).toBe(200)
+    await waitFor(() => !rt.busy())
+    await promptAndSettle(r, 'after')
+
+    const { log, hashes } = piSessionLog(rt.sessionLogSnapshot()!)
+    expect(() => upcastSessionLog(log)).not.toThrow()
+    const [thread, child] = log.threads
+    // The seq rule (session-log.ts): strictly increasing per thread.
+    for (const t of log.threads) for (let i = 1; i < t.messages.length; i++) expect(t.messages[i]!.seq).toBeGreaterThan(t.messages[i - 1]!.seq)
+    const transcript = new Map(rt.transcript.all().map((m) => [m.info.id as string, m]))
+    // Every root message carries its Kortix id; every block id is a part of that v1 message.
+    // pi's system prompt entry has no Kortix message: a position id.
+    for (const m of thread!.messages.filter((x) => x.kind !== 'context')) {
+      const row = transcript.get(m.message_id)
+      expect(row, m.message_id).toBeDefined()
+      const partIds = new Set(row!.parts.map((p) => p.id))
+      for (const b of m.blocks) expect(partIds.has(b.id), `${m.message_id} ${b.type} ${b.id}`).toBe(true)
+    }
+    expect(thread!.messages.map((m) => `${m.role}:${m.kind}`)).toEqual([
+      'system:context',
+      'user:turn', 'assistant:turn',
+      'user:turn', 'assistant:turn', 'assistant:turn',
+      'user:turn', 'assistant:turn', 'assistant:turn',
+      'user:compaction',
+      'user:turn', 'assistant:turn', 'assistant:turn',
+      'user:turn', 'assistant:turn',
+    ])
+    expect((thread!.messages[0]!.blocks[0] as { text: string }).text).toContain('You are a coding agent')
+    const image = thread!.messages.find((m) => m.message_id === imageId)!
+    expect(image.blocks.map((b) => b.type)).toEqual(['text', 'attachment'])
+    expect(image.blocks[1]).toMatchObject({ mime: 'image/png', name: 'shot.png', ref: expect.stringMatching(/^blob:[0-9a-f]{64}$/) })
+    const compaction = thread!.messages[9]!
+    expect(compaction.blocks[0]).toMatchObject({ type: 'compaction', summary: expect.stringContaining('SUMMARY-ONE'), trigger: 'manual' })
+    // The bash call stopped mid-run: pi records its own error result. The reply cut after it is out of context.
+    expect(thread!.messages[11]!.blocks[0]).toMatchObject({ type: 'tool_call', name: 'bash', status: 'error', result: { content: [{ type: 'text', text: 'Command aborted' }], is_error: true } })
+    expect(thread!.messages[12]).toMatchObject({ role: 'assistant', status: 'aborted', in_context: false, hidden_reason: 'aborted' })
+    expect(child).toMatchObject({ parent_thread_id: root, spawned_by: { message_id: thread!.messages[7]!.message_id, call_id: expect.any(String) } })
+    expect(child!.messages.map((m) => m.role)).toEqual(['system', 'user', 'assistant', 'assistant'])
+    for (const m of child!.messages.slice(1)) expect(m.message_id.startsWith('msg_')).toBe(true)
+
+    // A daemon restart restores the id maps and the header: every native hash is the same.
+    await r.service.lifecycle.stop()
+    rigs.splice(rigs.indexOf(r), 1)
+    const restarted = await boot({ workspace, script: [], env: { KORTIX_LLM_CATALOG_FILE: join(workspace, 'image-catalog.json') } })
+    const again = piSessionLog(restarted.service.runtime()!.sessionLogSnapshot()!)
+    expect(again.hashes).toEqual(hashes)
   })
 })

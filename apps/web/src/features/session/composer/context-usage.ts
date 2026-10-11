@@ -1,6 +1,5 @@
 import type { StatusTone } from '@/components/ui/status';
-import type { MessageWithParts } from '@kortix/sdk/react';
-import type { FlatModel } from '../model-flatten';
+import type { FlatModel, MessageWithParts } from '@kortix/sdk/react';
 
 export interface ContextBreakdown {
   input: number;

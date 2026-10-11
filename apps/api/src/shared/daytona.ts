@@ -48,10 +48,13 @@ function daytonaApiBase(): string {
 
 // Same class of bug as the Daytona SDK's own 24h axios default (see
 // platform/providers/daytona.ts for the full incident writeup): bare
-// `fetch()` has NO default timeout. These two calls are invoked from
-// snapshots/quota-gc.ts's reconcileSnapshotQuota(), which runs inside
-// maintenance.ts's Promise.all every cycle — an unbounded hang here wedges
-// the maintenance loop's `maintenanceRunning` lock exactly the same way.
+// `fetch()` has NO default timeout. Every REST call below runs inside the
+// maintenance loop's blast radius — snapshots/quota-gc.ts's
+// reconcileSnapshotQuota() awaits two of them inside maintenance.ts's
+// Promise.all every cycle, and the disk-quota guard (wired in
+// platform/providers/daytona.ts) runs the other two from the emergency
+// archive sweep — an unbounded hang here wedges that machinery exactly the
+// same way.
 const DAYTONA_REST_CALL_TIMEOUT_MS = configuredTimeoutMs('KORTIX_DAYTONA_CALL_TIMEOUT_MS', 20_000, 1_000);
 
 /**
@@ -160,6 +163,7 @@ export async function listStoppedDaytonaSandboxesOldestFirst(
     if (cursor) url.searchParams.set('cursor', cursor);
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${config.DAYTONA_API_KEY}` },
+      signal: AbortSignal.timeout(DAYTONA_REST_CALL_TIMEOUT_MS),
     });
     if (!res.ok) {
       throw new Error(`Daytona list sandboxes failed: HTTP ${res.status}`);
@@ -193,6 +197,7 @@ export async function archiveDaytonaSandboxById(id: string): Promise<boolean> {
     const res = await fetch(`${daytonaApiBase()}/sandbox/${id}/archive`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${config.DAYTONA_API_KEY}` },
+      signal: AbortSignal.timeout(DAYTONA_REST_CALL_TIMEOUT_MS),
     });
     return res.ok || res.status === 404 || res.status === 409;
   } catch {

@@ -51,6 +51,21 @@ describe('browser lane grep filters', () => {
     expect(grepInvert?.test('17 — OAuth provider initiation')).toBe(true);
   });
 
+  it('a deployed target leaves out @local-only journeys, so the strict lane never sees them skip', () => {
+    // KE2E_TARGET is set only for deployed lanes. A journey that writes into
+    // a local bare repository or straight into the database cannot run there;
+    // a runtime test.skip would fail the strict release lane after the run.
+    const { grepInvert } = resolveGrepFilters({ KE2E_TARGET: 'staging', E2E_EXCLUDE_TAGS: '@quarantine' });
+    expect(grepInvert?.test('42 — Files lists the whole repository @local-only')).toBe(true);
+    expect(grepInvert?.test('17 — OAuth provider initiation @quarantine')).toBe(true);
+    expect(grepInvert?.test('09 - Admin console › admin opens the current overview')).toBe(false);
+  });
+
+  it('the local stack still runs @local-only journeys', () => {
+    const { grepInvert } = resolveGrepFilters({});
+    expect(grepInvert?.test('42 — Files lists the whole repository @local-only')).toBe(false);
+  });
+
   it('ignores empty and whitespace-only entries, keeping only the quarantine default', () => {
     const { grep, grepInvert } = resolveGrepFilters({ E2E_EXCLUDE_TAGS: '  ,, ', E2E_GREP: '' });
     expect(grep).toBeUndefined();
