@@ -127,7 +127,7 @@ If none resolve, the command errors with a pointer to `projects link`.
    home Kortix instance).
 3. The globally-active host.
 
-### Apps — sites, servers and backends (the Fly.io model)
+### Apps — sites, servers and backends
 
 Apps have stable URLs. Every deploy creates an immutable release (`vN`): the
 artifact plus its resolved config. A static App is files that Kortix serves:

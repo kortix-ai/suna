@@ -1210,6 +1210,10 @@
         "ephemeral_sandboxes": {
           "name": "Sandboxes efímeros",
           "description": "Una sesión detenida conserva sus archivos y su conversación en un volumen y libera su equipo. Al reactivarla se inicia un equipo nuevo con la imagen más reciente. Los procesos en ejecución no sobreviven a una detención."
+        },
+        "session_log": {
+          "name": "Registro de sesión v2",
+          "description": "Lee una sesión mediante el registro de sesión v2 en lugar de la transcripción v1. Kortix lo activa por proyecto."
         }
       }
     },

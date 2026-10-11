@@ -1210,6 +1210,10 @@
         "ephemeral_sandboxes": {
           "name": "Sandboxes efémeras",
           "description": "Uma sessão parada mantém os ficheiros e a conversa num volume e liberta o seu computador. Ao reativá-la arranca um computador novo com a imagem mais recente. Os processos em execução não sobrevivem a uma paragem."
+        },
+        "session_log": {
+          "name": "Registo de sessão v2",
+          "description": "Lê uma sessão através do registo de sessão v2 em vez da transcrição v1. A Kortix ativa-o por projeto."
         }
       }
     },

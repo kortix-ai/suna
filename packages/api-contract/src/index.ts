@@ -66,6 +66,7 @@ export const FeatureFlagMapSchema = z.object({
   notification_center: z.boolean(),
   drives: z.boolean(),
   ephemeral_sandboxes: z.boolean(),
+  session_log: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 

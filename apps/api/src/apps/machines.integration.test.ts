@@ -1,5 +1,5 @@
 /**
- * Machines and volumes on the Fly model, against a real PostgreSQL: release
+ * Machines and volumes, against a real PostgreSQL: release
  * strategies (bluegreen, rolling with a volume), the single-writer handover
  * of a volume between a machine's instances, a failed rolling release that
  * returns traffic and the machine's volume to the release before it, and
@@ -143,7 +143,7 @@ async function deploy(config: AppReleaseConfig, version: number) {
 const stateless = resolveAppReleaseConfig({ port: 3000 });
 const stateful = resolveAppReleaseConfig({ port: 3000, mounts: [{ source: 'data', destination: '/data', initial_size_gb: 10 }] });
 
-withDb('machines on the Fly model — real PostgreSQL', () => {
+withDb('machines and volumes — real PostgreSQL', () => {
   beforeEach(async () => {
     calls.length = 0;
     createdBoxes = 0;

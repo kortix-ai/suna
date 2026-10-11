@@ -1210,6 +1210,10 @@
         "ephemeral_sandboxes": {
           "name": "Sandboxes éphémères",
           "description": "Une session arrêtée garde ses fichiers et sa conversation sur un volume et libère sa machine. La réveiller démarre une nouvelle machine avec l’image la plus récente. Les processus en cours ne survivent pas à un arrêt."
+        },
+        "session_log": {
+          "name": "Journal de session v2",
+          "description": "Lit une session via le journal de session v2 au lieu de la transcription v1. Kortix l’active par projet."
         }
       }
     },

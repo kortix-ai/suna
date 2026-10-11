@@ -1,12 +1,12 @@
 /**
  * An App as JSON. Every response carries `capabilities` (the only thing
  * clients branch on), its `services`, `machines`, `volumes`, `labels`, `scale`
- * and active release `config` (the Fly model), `uses` / `used_by` (App links, by slug) and `auth` (the
+ * and active release `config`, `uses` / `used_by` (App links, by slug) and `auth` (the
  * issuer, audience and key set URL that verify the App's Kortix sign-in tokens).
  */
 import { z } from '@hono/zod-openapi';
 import { appDeployments, appRuntimes, appVolumes, apps } from '@kortix/db';
-import type { AppReleaseConfig } from '@kortix/shared/app-config';
+import type { AppDisplay, AppReleaseConfig } from '@kortix/shared/app-config';
 import { and, count, inArray, isNull, notInArray, sql, sum } from 'drizzle-orm';
 import { config } from '../config';
 import { db } from '../shared/db';
@@ -119,6 +119,8 @@ function serializeApp(
     used_by: links.usedBy,
     /** Free-form labels (e.g. `backend`); they group and filter, nothing more. */
     labels: row.labels,
+    /** Where Kortix shows the App: `{ listed?, preview?: live | none, parent? }`. Presentation only. */
+    display: row.display as AppDisplay,
     /** Machines per process group; a group not listed runs one. */
     scale: row.scale as Record<string, number>,
     /** The services of the active release: each with its URL (null when the host label would be too long). */
@@ -132,7 +134,7 @@ function serializeApp(
     })),
     machines: fleet.machines,
     volumes: fleet.volumes,
-    /** The active release's config (Fly model), or null for a static App or before the first deploy. */
+    /** The active release's config, or null for a static App or before the first deploy. */
     config: releaseConfig,
     /** `static`: served from storage, no runtime. `sandbox`: a server App. null: never deployed. */
     hosting_type: hostingType,

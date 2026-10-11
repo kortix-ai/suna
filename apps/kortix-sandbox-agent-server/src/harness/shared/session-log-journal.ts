@@ -26,6 +26,18 @@
  *   dropped message stays in the native store, and the P6 boot reconcile
  *   sends it again.
  *
+ * Live stream (P4.3): each collection publishes what it put in the dirty set
+ * on `sessionLogEventBus()`, the bus of `/kortix/runtime/events?schema=v2`
+ * (payloads: `@kortix/api-contract/session-log` `SESSION_LOG_EVENTS`):
+ * `log.state` for the session patch, `log.thread` for each changed thread,
+ * then `log.message` for each put (`{ rev, message }`) and each tombstone
+ * (`{ message_id, rev }`, as the journal posts it), with the revs the API receives. The
+ * journal collects when it starts (the native store is at rest), at each turn
+ * end and at the daemon stop. A journal the API turned off (404, 409)
+ * collects and publishes nothing more, deltas included. While it runs, every `message.part.delta` text
+ * frame on the v1 bus is published as `log.block.delta`: both harnesses use the
+ * v1 session id, message id and part id as the thread, message and block id.
+ *
  * Debug: `KORTIX_SESSION_LOG_DUMP_DIR` (off by default) turns the API into a
  * directory. Each batch body is written there as JSON and acknowledged at
  * once; nothing is posted.
@@ -37,6 +49,10 @@ import {
   SessionLogJournalConflictSchema,
   SessionLogJournalResponseSchema,
   type ExportCursor,
+  type SessionLog,
+  type SessionLogBlockDeltaEvent,
+  type SessionLogMessageEvent,
+  type SessionLogStateEvent,
   type SessionLogJournalRequest,
   type SessionLogMessage,
   type SessionLogSessionPatch,
@@ -45,9 +61,10 @@ import {
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { logger } from '@/lib/log/logger'
+import { kortixEventBus, sessionLogEventBus } from '@/services/event-bus/kortix-event-bus'
 import { sandboxRelayContext } from '@/lib/kortix-api/relay-context'
 import { noteControlPlaneResponse, sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
-import type { SessionLogPort } from '../contract/session-log'
+import type { ExportedMessage, SessionLogChanges, SessionLogPort } from '../contract/session-log'
 import { computeRetryDelay, MAX_RETRY_MS_DEFAULT } from './audit-relay'
 
 export const JOURNAL_MAX_BATCH_BYTES = 1024 * 1024
@@ -100,6 +117,15 @@ export class SessionLogJournal {
   private waiters: Array<() => void> = []
   private readonly dumpDir = process.env.KORTIX_SESSION_LOG_DUMP_DIR?.trim() || null
   private dumped = 0
+  /** Text deltas on the v1 bus, republished as `log.block.delta` until `stop`. */
+  private readonly offDeltas = kortixEventBus().subscribe((event) => {
+    if (this.off || event.type !== 'message.part.delta') return
+    const p = event.payload as Record<string, unknown> | null
+    if (p?.field !== 'text' || typeof p.delta !== 'string') return
+    const { sessionID: thread_id, messageID: message_id, partID: block_id } = p
+    if (typeof thread_id !== 'string' || typeof message_id !== 'string' || typeof block_id !== 'string') return
+    sessionLogEventBus().publish('log.block.delta', { thread_id, message_id, block_id, delta: p.delta } satisfies SessionLogBlockDeltaEvent, thread_id)
+  }).unsubscribe
 
   constructor(
     private readonly port: SessionLogPort,
@@ -148,12 +174,14 @@ export class SessionLogJournal {
     this.wakeBackoff?.()
     if (timeoutMs > 0) await this.flush(timeoutMs)
     this.stopped = true
+    this.offDeltas()
     this.wakeBackoff?.()
     this.inflight?.abort()
     if (!this.clean && !this.off) logger.warn('[session-log] journal stopped with unacknowledged changes', { pending: this.dirty.size })
   }
 
-  private collect(): Promise<void> {
+  /** Collect the adapter's changes into the dirty set and the v2 stream; nothing is sent. */
+  collect(): Promise<void> {
     if (this.collecting) {
       this.recollect = true
       return this.collecting
@@ -171,6 +199,8 @@ export class SessionLogJournal {
 
   private async collectOnce(): Promise<void> {
     const changes = await this.port.changes([...this.cursors.values()])
+    const messages: SessionLogMessageEvent[] = []
+    const threads: SessionLogThreadUpsert[] = []
     for (const { message, native_hash } of changes.messages) {
       const id = message.message_id
       let cursor = this.cursors.get(message.thread_id)
@@ -179,21 +209,31 @@ export class SessionLogJournal {
       cursor.native_hashes[id] = native_hash
       cursor.last_seq = Math.max(cursor.last_seq, message.seq)
       this.tombstoned.delete(id)
-      this.dirty.set(id, { id, rev: nextRev(), message })
+      const entry = { id, rev: nextRev(), message }
+      this.dirty.set(id, entry)
+      messages.push({ rev: entry.rev, message })
     }
     for (const id of changes.tombstones) {
       if (this.tombstoned.has(id)) continue
       this.tombstoned.add(id)
       for (const cursor of this.cursors.values()) delete cursor.native_hashes[id]
-      this.dirty.set(id, { id, rev: nextRev() })
+      const entry = { id, rev: nextRev() }
+      this.dirty.set(id, entry)
+      messages.push({ message_id: id, rev: entry.rev })
     }
     for (const thread of changes.threads) {
       const json = JSON.stringify(thread)
       if (this.threadJson.get(thread.thread_id) === json) continue
       this.threadJson.set(thread.thread_id, json)
       this.threads.set(thread.thread_id, thread)
+      threads.push(thread)
     }
-    if (changes.session) this.session = { ...this.session, ...changes.session }
+    if (changes.session) {
+      this.session = { ...this.session, ...changes.session }
+      sessionLogEventBus().publish('log.state', { generation: this.options.generation, session: changes.session } satisfies SessionLogStateEvent)
+    }
+    for (const thread of threads) sessionLogEventBus().publish('log.thread', thread, thread.thread_id)
+    for (const event of messages) sessionLogEventBus().publish('log.message', event, 'message' in event ? event.message.thread_id : undefined)
   }
 
   private drain(): Promise<void> {
@@ -349,6 +389,41 @@ export class SessionLogJournal {
   }
 }
 
+/**
+ * `SessionLogPort.changes` for an adapter that rebuilds its whole log on each read (pi,
+ * OpenCode): every message after its thread's cursor or with a new native hash, every id a
+ * cursor holds that the log no longer has (a tombstone), every thread (the journal drops an
+ * unchanged one), and the session fields when their JSON differs from `previousSessionJson`.
+ */
+export function logChanges(
+  log: SessionLog,
+  hashes: ReadonlyMap<string, string>,
+  cursors: readonly ExportCursor[],
+  previousSessionJson: string | null,
+): { changes: SessionLogChanges; sessionJson: string } {
+  const byThread = new Map(cursors.map((c) => [c.thread_id, c]))
+  const messages: ExportedMessage[] = []
+  for (const thread of log.threads) {
+    const cursor = byThread.get(thread.thread_id)
+    for (const message of thread.messages) {
+      const native_hash = hashes.get(message.message_id)!
+      if (!cursor || message.seq > cursor.last_seq || cursor.native_hashes[message.message_id] !== native_hash) messages.push({ message, native_hash })
+    }
+  }
+  const tombstones = cursors.flatMap((c) => Object.keys(c.native_hashes).filter((id) => !hashes.has(id)))
+  const { threads, ...session } = log
+  const sessionJson = JSON.stringify(session)
+  return {
+    changes: {
+      messages,
+      tombstones,
+      threads: threads.map(({ messages: _messages, ...thread }) => thread),
+      ...(sessionJson !== previousSessionJson ? { session } : {}),
+    },
+    sessionJson,
+  }
+}
+
 function parseJson(text: string): unknown {
   try {
     return JSON.parse(text)
@@ -367,6 +442,8 @@ export function startSessionLogJournal(port: SessionLogPort, options: SessionLog
   // One journal per boot: a second start replaces the first, which sends nothing more.
   void active?.stop(0)
   active = new SessionLogJournal(port, options)
+  // The store is at rest now: the v2 stream gets the session and its threads before the first turn streams.
+  void active.collect()
   return active
 }
 

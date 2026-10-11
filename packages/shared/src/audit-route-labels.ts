@@ -653,6 +653,8 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'POST /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files/upload/:uploadId/commit': { action: 'session.drive_sync.upload_commit', title: 'Committed a drive upload from a session' },
   'POST /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files/move': { action: 'session.drive_sync.move', title: 'Moved a drive file from a session' },
   'DELETE /v1/projects/:projectId/sessions/:sessionId/drive-sync/:driveId/files': { action: 'session.drive_sync.delete', title: 'Deleted a drive file from a session' },
+  'POST /v1/projects/:projectId/sessions/:sessionId/log/journal': { action: 'session.log.journal', title: 'Journaled session log records' },
+  'GET /v1/projects/:projectId/sessions/:sessionId/log/manifest': { action: 'session.log.manifest.read', title: 'Read session log manifest' },
   'GET /v1/projects/:projectId/sessions/:sessionId/events': { action: 'session.event.stream', title: 'Streamed session events' },
   'PUT /v1/projects/:projectId/sessions/:sessionId/model': { action: 'session.model.update', title: 'Changed session model' },
   'GET /v1/projects/:projectId/sessions/:sessionId/open-bundle': 'GET /v1/projects/:projectId/sessions/:sessionId/snapshot',

@@ -33,7 +33,7 @@ const passthrough =
   ({ children, ...props }: any) =>
     React.createElement(host, props, children);
 
-mock.module('react-native', () => ({ View: passthrough('rn-view'), Text: passthrough('rn-text') }));
+mock.module('react-native', () => ({ View: passthrough('rn-view'), Text: passthrough('rn-text'), Pressable: passthrough('rn-pressable') }));
 const AnimatedView = passthrough('rn-animated-view');
 mock.module('react-native-reanimated', () => ({
   default: { View: AnimatedView },
@@ -43,6 +43,7 @@ mock.module('react-native-reanimated', () => ({
   useSharedValue: (value: unknown) => ({ value }),
   withTiming: () => ({}),
   withSpring: () => ({}),
+  runOnJS: (fn: unknown) => fn,
 }));
 mock.module('nativewind', () => ({ useColorScheme: () => ({ colorScheme: 'light' }) }));
 mock.module('expo-clipboard', () => ({
@@ -101,7 +102,7 @@ mock.module('@/lib/icons', () => ({
 }));
 mock.module('@/lib/session/user-message', () => ({ webSpace: (n: number) => n * 4 }));
 mock.module('@/lib/utils/theme', () => ({
-  MOTION: { duration: { normal: 150 }, easing: { inOut: [0.4, 0, 0.2, 1] } },
+  MOTION: { duration: { normal: 150, slow: 300 }, easing: { inOut: [0.4, 0, 0.2, 1], default: [0.4, 0, 0.2, 1] } },
   THEME: {
     light: { accent: '#light-accent', mutedForeground: '#light-fg' },
     dark: { accent: '#dark-accent', mutedForeground: '#dark-fg' },
@@ -455,4 +456,66 @@ describe('SessionTurn segments: every burst loops while on screen, trailing is s
       ]);
     });
   }
+});
+
+// KRTX-2113: a settled turn folds its work behind one "Worked for" row.
+describe('SessionTurn work fold: live stream as today, settled work behind one row', () => {
+  const bash = {
+    id: 't-1', type: 'tool', tool: 'bash', callID: 'call-t-1', sessionID: 's-1', messageID: 'a-1',
+    state: { status: 'completed', input: { command: 'ls' }, output: '', time: { start: 2_000, end: 2_500 } },
+  };
+  const reply = (text: string) => ({ id: 'x-final', type: 'text', text, sessionID: 's-1', messageID: 'a-1' });
+  const turnWith = (text: string, completed?: number) =>
+    ({
+      userMessage: {
+        info: { id: 'user-1', role: 'user', sessionID: 's-1', time: { created: 1_000 } },
+        parts: [{ id: 'user-part-1', type: 'text', text: 'Go', sessionID: 's-1', messageID: 'user-1' }],
+      },
+      assistantMessages: [
+        { info: { id: 'a-1', role: 'assistant', sessionID: 's-1', time: { created: 2_000, completed } }, parts: [bash, reply(text)] },
+      ],
+    }) as unknown as import('@/lib/session/types').Turn;
+  const row = () => tree!.root.findAll((node) => node.type === ('rn-pressable' as never));
+  const bursts = () => tree!.root.findAll((node) => node.type === ('rn-burst' as never));
+
+  test('working: no row, the burst and the reply stream as today', async () => {
+    await act(async () => {
+      tree = create(<SessionTurn turn={turnWith('Found it')} isWorkingTurn sessionStatus={{ type: 'busy' } as never} isBusy />);
+    });
+    expect(row()).toHaveLength(0);
+    expect(bursts()).toHaveLength(1);
+    expect(textParts.at(-1)).toMatchObject({ text: 'Found it', isStreaming: true });
+  });
+
+  test('settle: the work collapses behind "Worked for 2s", the reply keeps its instance', async () => {
+    await act(async () => {
+      tree = create(<SessionTurn turn={turnWith('Found it')} isWorkingTurn sessionStatus={{ type: 'busy' } as never} isBusy />);
+    });
+    await act(async () => {
+      tree?.update(<SessionTurn turn={turnWith('Found it.', 3_000)} isWorkingTurn={false} isBusy={false} />);
+    });
+    expect(row()).toHaveLength(1);
+    expect(row()[0].props.accessibilityHint).toBe('Opens the activity');
+    expect(JSON.stringify(tree?.toJSON() ?? {})).toContain('Worked for 2s');
+    expect(bursts()).toHaveLength(0);
+    expect(textParts.at(-1)).toMatchObject({ text: 'Found it.' });
+    expect(textPartLifecycle).toEqual(['mount:Found it']);
+  });
+
+  test('a tap opens the activity sheet on the turn\'s work; nothing expands inline', async () => {
+    const { useActivitySheetStore } = await import('@/lib/session/activity-sheet-store');
+    useActivitySheetStore.getState().close();
+    await act(async () => {
+      tree = create(<SessionTurn turn={turnWith('Found it.', 3_000)} isWorkingTurn={false} isBusy={false} sessionId="s-1" />);
+    });
+    await act(async () => row()[0].props.onPress());
+    expect(bursts()).toHaveLength(0);
+    const sheet = useActivitySheetStore.getState().sheet;
+    expect(sheet?.partIds).toEqual(['t-1']);
+    expect(sheet?.context).toMatchObject({ sessionId: 's-1', turnLive: false });
+    // The final text stays below the row.
+    const json = JSON.stringify(tree?.toJSON() ?? {});
+    expect(json.indexOf('Worked for')).toBeLessThan(json.lastIndexOf('Found it.'));
+    useActivitySheetStore.getState().close();
+  });
 });

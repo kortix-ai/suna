@@ -1210,6 +1210,10 @@
         "ephemeral_sandboxes": {
           "name": "临时沙盒",
           "description": "停止的会话会把文件和对话保存在卷上，并释放其计算机。唤醒时会用最新镜像启动一台新计算机。正在运行的进程不会在停止后保留。"
+        },
+        "session_log": {
+          "name": "会话日志 v2",
+          "description": "通过 v2 会话日志而不是 v1 转录读取会话。由 Kortix 按项目启用。"
         }
       }
     },

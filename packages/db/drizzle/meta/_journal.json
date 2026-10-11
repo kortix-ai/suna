@@ -1034,6 +1034,13 @@
     {
       "idx": 147,
       "version": "7",
+      "when": 1791733721574,
+      "tag": "20261011154841_app_display_snapshot",
+      "breakpoints": true
+    },
+    {
+      "idx": 148,
+      "version": "7",
       "when": 1791734405318,
       "tag": "20261011160005_capture",
       "breakpoints": true

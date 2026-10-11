@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 812,
+  "count": 814,
   "routes": [
     {
       "method": "GET",
@@ -2613,6 +2613,14 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/events"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/log/journal"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/log/manifest"
     },
     {
       "method": "GET",

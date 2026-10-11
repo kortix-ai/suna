@@ -66,7 +66,10 @@ describe('session-log journal wire', () => {
     expect(SessionLogJournalResponseSchema.parse({ acked: [{ message_id: 'm1', rev: 2 }] }).acked).toEqual([{ message_id: 'm1', rev: 2 }]);
     expect(SessionLogJournalResponseSchema.safeParse({ acked: [{ message_id: '', rev: 2 }] }).success).toBe(false);
     expect(SessionLogJournalConflictSchema.parse({ generation: 4 }).generation).toBe(4);
-    expect(SessionLogManifestSchema.parse({ messages: [{ message_id: 'm1', content_hash: 'sha256:ab' }] }).messages).toHaveLength(1);
+    const manifest = { generation: 0, messages: [{ message_id: 'm1', content_hash: 'sha256:ab', rev: 1_791_681_474_704_000, deleted: false }] };
+    expect(SessionLogManifestSchema.parse(manifest).messages).toHaveLength(1);
     expect(SessionLogManifestSchema.safeParse({ messages: [{ message_id: 'm1' }] }).success).toBe(false);
+    // `rev` is a JSON number: a stringified int8 from raw SQL is refused.
+    expect(SessionLogManifestSchema.safeParse({ ...manifest, messages: [{ ...manifest.messages[0], rev: '1791681474704000' }] }).success).toBe(false);
   });
 });

@@ -556,6 +556,10 @@ export function ConnectionsList({
   // profile itself is always the project's.
   const [addOpen, setAddOpen] = useState(false);
   const [draft, setDraft] = useState<NewAccountDraft>(EMPTY_NEW_ACCOUNT);
+  // The proposed name is the next free one. Right after Install the dialog
+  // opens before this account list has loaded, so the proposal follows the
+  // list until the user types a name of their own.
+  const [labelEdited, setLabelEdited] = useState(false);
   const closeAdd = () => setAddOpen(false);
   const addAccount = useAddAccount({
     projectId,
@@ -574,8 +578,11 @@ export function ConnectionsList({
       return;
     }
     setDraft({ ...EMPTY_NEW_ACCOUNT, label: addAccount.proposedLabel() });
+    setLabelEdited(false);
     setAddOpen(true);
   };
+  const proposedLabel = addAccount.proposedLabel();
+  if (addOpen && !labelEdited && draft.label !== proposedLabel) setDraft({ ...draft, label: proposedLabel });
   // Adjusted during render, not in an effect: each new request opens the
   // dialog once, including one made before this list mounted (right after
   // Install). The caller resets it (`onAddRequestHandled`), so a remount on a
@@ -785,7 +792,10 @@ export function ConnectionsList({
               <AddAccountFields
                 projectId={projectId}
                 value={draft}
-                onChange={setDraft}
+                onChange={(next) => {
+                  if (next.label !== draft.label) setLabelEdited(true);
+                  setDraft(next);
+                }}
                 labelTaken={labelTaken}
                 canManageConnections={canManageConnections}
                 accountId={accountId}
