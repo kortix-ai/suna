@@ -33,11 +33,12 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { ModelSelector } from '@/features/session/model-selector';
 import { ReasoningEffortSelector } from '@/features/session/reasoning-effort-selector';
-import { flattenModels } from '@/features/session/session-chat-input';
 import { storedModelRefToKey } from '@/lib/llm-gateway';
 import type { AgentConfigBlock, RuntimeAgentConfig } from '@kortix/sdk';
 import {
+  flattenModels,
   modelKeyToWire,
+  modelProviderMode,
   useFeatureFlag,
   useKortixRouteProjectId,
   useRuntimeProviders,
@@ -164,7 +165,7 @@ export function ModelSection({
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const { data: providers } = useRuntimeProviders();
-  const models = flattenModels(providers);
+  const models = flattenModels(providers, { providerMode: modelProviderMode(providers) });
   // Mode-aware read-back: a native (gateway-off) agent model is
   // `provider/model` — see storedModelRefToKey. This editor renders under
   // /projects/[id], so the route supplies the project.

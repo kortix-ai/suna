@@ -44,6 +44,7 @@ import { NavigationBar } from 'expo-navigation-bar';
 import * as SystemUI from 'expo-system-ui';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
+import { IN_APP_BROWSER_OPTIONS } from '@/lib/utils/link-target';
 import { resolveShareLinkUrl } from '@/lib/share-link';
 import React, { useEffect, useState } from 'react';
 import { useColorScheme } from 'nativewind';
@@ -467,6 +468,7 @@ export default function RootLayout() {
         log.log('🔗 Share link received, opening in the in-app browser');
         isHandlingDeepLink = false;
         WebBrowser.openBrowserAsync(shareUrl, {
+          ...IN_APP_BROWSER_OPTIONS,
           presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
         }).catch((error) => {
           log.warn('⚠️ Failed to open share link:', error);

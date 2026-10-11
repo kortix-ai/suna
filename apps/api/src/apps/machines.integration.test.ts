@@ -7,7 +7,7 @@
  * deploy pointer are real.
  */
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { accounts, appArtifacts, appDeployments, appRuntimes, appVolumes, apps, projects } from '@kortix/db';
+import { accounts, appArtifacts, appDeployments, appLinks, appRuntimes, appVolumes, apps, projects } from '@kortix/db';
 import { resolveAppReleaseConfig, type AppReleaseConfig } from '@kortix/shared/app-config';
 import { and, asc, eq, inArray, notInArray } from 'drizzle-orm';
 
@@ -246,6 +246,20 @@ withDb('machines on the Fly model — real PostgreSQL', () => {
     const kept = await db.select().from(appVolumes).where(eq(appVolumes.appId, APP_ID));
     expect(kept).toHaveLength(3);
     expect(kept.filter((row) => row.attachedRuntimeId)).toHaveLength(1);
+  });
+
+  test('a machine gets KORTIX_USES_URL_<SLUG> for every live App its App uses (a server reaches a backend without the browser binding)', async () => {
+    await seedApp();
+    const BACKEND_ID = '00000000-0000-4000-a000-00000000f106';
+    const GONE_ID = '00000000-0000-4000-a000-00000000f107';
+    await db.insert(apps).values([
+      { appId: BACKEND_ID, accountId: ACCOUNT_ID, projectId: PROJECT_ID, slug: 'crm-data', name: 'crm-data', routeKey: 'f2f2f2f2f2f2f2f2', createdBy: USER_ID },
+      { appId: GONE_ID, accountId: ACCOUNT_ID, projectId: PROJECT_ID, slug: 'old-db', name: 'old-db', routeKey: 'f3f3f3f3f3f3f3f3', createdBy: USER_ID, deletedAt: new Date() },
+    ]);
+    await db.insert(appLinks).values([{ appId: APP_ID, usesAppId: BACKEND_ID }, { appId: APP_ID, usesAppId: GONE_ID }]);
+    const env = (await machines.releaseEnvironment(await appRow(), await release(1, stateless))).env;
+    expect(env.KORTIX_USES_URL_CRM_DATA).toContain('f2f2f2f2f2f2f2f2');
+    expect(env.KORTIX_USES_URL_OLD_DB).toBeUndefined();
   });
 
   test('scaling back up reuses an unattached volume of a gone machine before creating a new one', async () => {

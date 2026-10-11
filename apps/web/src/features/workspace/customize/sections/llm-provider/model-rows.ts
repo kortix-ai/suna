@@ -1,7 +1,6 @@
 import { MODEL_SELECTOR_PROVIDER_IDS } from '@/features/providers/provider-branding';
 import { pickerGroupId, pickerGroupLabel } from '@/features/session/model-grouping';
-import type { FlatModel } from '@/features/session/session-chat-input';
-import { modelKeyToWire } from '@kortix/sdk/react';
+import { type FlatModel, modelKeyToWire } from '@kortix/sdk/react';
 
 /**
  * Row/group shaping for the "Manage models" tab. Pure so it can be tested

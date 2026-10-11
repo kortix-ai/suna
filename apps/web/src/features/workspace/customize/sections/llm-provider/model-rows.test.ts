@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { FlatModel } from '@/features/session/session-chat-input';
+import type { FlatModel } from '@kortix/sdk/react';
 import { buildModelGroups } from './model-rows';
 
 function model(modelID: string, over: Partial<FlatModel> = {}): FlatModel {
