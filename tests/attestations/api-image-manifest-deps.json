@@ -1,0 +1,15 @@
+{
+  "source_hash": "ccb1d9052c0e2e12b1baa447bc910778ad9d4546f363b74f4eb9d03a47b23af4",
+  "diff_files": [
+    "apps/api/Dockerfile"
+  ],
+  "diff_hash": "4d47b7afdccfee7ebdcc2fc27fecff921f8bf342a064a78a21811e7263b230dc",
+  "head": "8d9293ad6e8e901fa101e250a70dfa9a00909388",
+  "passed": true,
+  "lanes": {
+    "core": "pass",
+    "packages": "pass",
+    "db-suites": "pass"
+  },
+  "at": "2026-10-11T03:24:38.309Z"
+}
