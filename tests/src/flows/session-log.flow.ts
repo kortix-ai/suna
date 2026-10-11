@@ -233,12 +233,11 @@ flow(
         if (off.log !== undefined) throw new Error("the open bundle carries a log leg with the flag off");
       });
 
-      await ctx.step("an operator enables session_log; the same reads answer byte-equal bodies from the log, apart from captured_at", async () => {
+      await ctx.step("an operator enables session_log; the same reads answer the same bodies from the log, apart from captured_at", async () => {
         await setFeatureAsOperator(ctx, project.id, "session_log", true);
         const on = await v1Reads();
         for (let i = 0; i < off!.bodies.length; i++) {
-          const [a, b] = [JSON.stringify(on.bodies[i]), JSON.stringify(off!.bodies[i])];
-          if (a !== b) throw new Error(`v1 read ${i} differs with the flag on:\n${a}\n---\n${b}`);
+          if (!Bun.deepEquals(on.bodies[i], off!.bodies[i])) throw new Error(`v1 read ${i} differs with the flag on:\n${JSON.stringify(on.bodies[i])}\n---\n${JSON.stringify(off!.bodies[i])}`);
         }
         const leg = on.log as { known: boolean; page: { thread_id: string; messages: unknown[]; has_more: boolean } };
         if (!leg?.known || leg.page.thread_id !== root || leg.page.messages.length === 0) throw new Error(`log leg: ${JSON.stringify(leg)?.slice(0, 300)}`);
@@ -254,9 +253,10 @@ flow(
         (await owner.get(LOG, { params, query: { thread: child } })).status(200).body().has("$.thread_id", child).has("$.messages.length", 2).has("$.has_more", false);
       });
 
-      await ctx.step("the session sandbox credential cannot read the log → 403; a bad before_seq → 400", async () => {
+      await ctx.step("the session sandbox credential cannot read the log → 403; a bad before_seq → 400; an unknown thread → 404", async () => {
         (await box.get(LOG, { params })).status(403);
         (await owner.get(LOG, { params, query: { before_seq: "x" } })).status(400);
+        (await owner.get(LOG, { params, query: { thread: "ses_not_a_thread" } })).status(404);
       });
     } finally {
       await setFeatureAsOperator(ctx, project.id, "session_log", null).catch(() => {});

@@ -11,14 +11,19 @@
  * thread `fromV1` did not build (no `kortix.transcript.v1` ext: the pi adapter writes its records
  * natively, without the v1 residuals, so `toV1` of them is not the mirror).
  *
- * The v1 window over the log equals the mirror's window, with three named differences:
+ * The v1 window over the log equals the mirror's window (deep equality), with these named differences:
  * - `captured_at` is the log's last write (the read thread's newest message write, or the session
  *   record's), not the capture time.
  * - `head_complete` is true: the journal holds the whole session.
  * - an attachment the API's capture uploaded keeps the `kortix-attachment://` url the mirror row
  *   has only when the journal sent it; the daemon never sees that url.
+ * - object key order: the log path builds its own; key order is not a wire contract.
  * Paging assumes `seq` order is the mirror order (`created`, then id): the OpenCode adapter issues
- * seqs in `fromV1`'s order, which is that order.
+ * seqs in `fromV1`'s order, which is that order. A cursor that names a message anchors on the
+ * `created_at` column, while rows sort on `info.time.created` (`-Infinity` when absent; the column
+ * then holds the ingest time). The two agree for every row with a creation time.
+ *
+ * `readSessionLogPage` answers `'unknown_thread'` for a `thread` the session does not have.
  */
 import {
   toV1,
@@ -75,7 +80,7 @@ export async function readSessionLogPage(input: {
   threadId: string | null;
   beforeSeq: number | null;
   limit: number;
-}): Promise<SessionLogPage | null> {
+}): Promise<SessionLogPage | 'unknown_thread' | null> {
   return db.transaction(async (tx) => {
     const [log] = await tx
       .select({ generation: sessionLogs.generation, record: sessionLogs.record })
@@ -84,6 +89,7 @@ export async function readSessionLogPage(input: {
       .limit(1);
     if (!log) return null;
     const threads = await readThreads(tx, input.sessionId);
+    if (input.threadId !== null && !threads.some((t) => t.threadId === input.threadId)) return 'unknown_thread' as const;
     let threadId = input.threadId ?? rootOf(threads)?.threadId ?? null;
     if (threadId === null) {
       // A journal batch may carry messages before their thread upsert.
@@ -144,17 +150,6 @@ const idOf = (r: V1Row) => String((r.info as { id?: unknown })?.id ?? '');
 const keyCompare = (a: { at: number; id: string }, b: { at: number; id: string }) =>
   a.at - b.at || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 const keyOf = (r: V1Row) => ({ at: created(r), id: idOf(r) });
-/** Object keys in Postgres jsonb order (shorter first, then bytewise), so a log window serializes byte-equal to the mirror's. */
-const jsonbOrder = (v: unknown): unknown =>
-  Array.isArray(v)
-    ? v.map(jsonbOrder)
-    : v && typeof v === 'object'
-      ? Object.fromEntries(
-          Object.keys(v)
-            .sort((a, b) => a.length - b.length || (a < b ? -1 : a > b ? 1 : 0))
-            .map((k) => [k, jsonbOrder((v as J)[k])]),
-        )
-      : v;
 
 /** The window over the log, or null when the log cannot answer (see the module header). */
 export async function readLogTranscriptWindow(input: {
@@ -178,15 +173,16 @@ export async function readLogTranscriptWindow(input: {
     .limit(1);
   if (!log || !resolveFeatureFlag(log.metadata, 'session_log', log.accountId)) return null;
   const threads = log.threads ?? [];
+  const root = rootOf(threads);
+  const stated = v1Ext(log.record)?.data;
+  const rootId = stated && 'root_id' in stated ? ((stated.root_id as string | null) ?? null) : root ? nativeOf(root) : null;
+  const target = input.opencodeSessionId || rootId;
+  // A runtime session that is no thread of its own is an old root, merged into the root thread.
+  const thread = threads.find((t) => nativeOf(t) === target) ?? root;
+  // Decided before BEGIN: a pi session (no v1 ext) costs one query, not a transaction.
+  if (!target || !thread || !v1Ext(thread.record)) return null;
 
   return db.transaction(async (tx) => {
-    const root = rootOf(threads);
-    const stated = v1Ext(log.record)?.data;
-    const rootId = stated && 'root_id' in stated ? ((stated.root_id as string | null) ?? null) : root ? nativeOf(root) : null;
-    const target = input.opencodeSessionId || rootId;
-    // A runtime session that is no thread of its own is an old root, merged into the root thread.
-    const thread = threads.find((t) => nativeOf(t) === target) ?? root;
-    if (!target || !thread || !v1Ext(thread.record)) return null;
 
     // The rows `toV1` gives runtime session `target`. Only a superseded (out-of-context) message
     // carries its own runtime id; every other message has its thread's.
@@ -244,8 +240,8 @@ export async function readLogTranscriptWindow(input: {
       head_complete: true,
       next_cursor: rows.length > input.limit ? idOf(kept.at(-1)!) : null,
       messages: kept.reverse().map((r) => ({
-        info: jsonbOrder(r.info) as J,
-        parts: restoreStrippedToolParts(jsonbOrder(Array.isArray(r.parts) ? r.parts : []) as J[]),
+        info: r.info as unknown as J,
+        parts: restoreStrippedToolParts((Array.isArray(r.parts) ? r.parts : []) as unknown as J[]),
       })),
     };
   }, READ_ONLY);

@@ -347,7 +347,7 @@ const handleSessionSnapshot: RouteHandler<ReturnType<typeof sessionSnapshotRoute
       ...(logEnabled && {
         log:
           log.status === 'fulfilled'
-            ? { known: true as const, page: log.value ?? null }
+            ? { known: true as const, page: typeof log.value === 'object' ? log.value : null }
             : failed(log.reason),
       }),
     });

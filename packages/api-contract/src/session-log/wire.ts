@@ -25,7 +25,8 @@
  * Read (P4.2): `GET /v1/projects/:p/sessions/:s/log?thread=<thread_id>&before_seq=<n>&limit=<n>`,
  * the caller's session read permission (the transcript route's), never the sandbox credential.
  * It reads Postgres only, never the box, and is served whether or not the `session_log` flag is
- * on. 200 `SessionLogPage`: one page of one thread. 404 when the session has no stored log.
+ * on. 200 `SessionLogPage`: one page of one thread. 404 when the session has no stored log, or when
+ * `thread` is not one of its threads.
  *
  * `rev` is monotonic per message across daemon boots, not a per-boot counter: the daemon
  * issues `max(Date.now() * 1000, last + 1)`, a safe integer that needs a `bigint` column. The

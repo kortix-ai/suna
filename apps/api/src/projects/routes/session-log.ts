@@ -152,7 +152,7 @@ export function registerSessionLogRoutes(): void {
         'One page of one thread of the stored session log (`SessionLogPage`), from Postgres only. ' +
         '`thread` defaults to the root thread; `messages` are the newest `limit` (default 40, max 500) ' +
         'with `seq < before_seq`, ascending by seq, tombstoned messages left out. Session read permission; ' +
-        'the session sandbox credential is refused. 404 when the session has no stored log.',
+        'the session sandbox credential is refused. 404 when the session has no stored log or no such thread.',
       ...auth,
       request: {
         params,
@@ -186,6 +186,7 @@ export function registerSessionLogRoutes(): void {
 
       const page = await readSessionLogPage({ sessionId, threadId: query.thread ?? null, beforeSeq, limit: limit.value });
       if (!page) return c.json({ error: 'No session log for this session' }, 404);
+      if (page === 'unknown_thread') return c.json({ error: 'Unknown thread' }, 404);
       return c.json(page, 200);
     },
   );
