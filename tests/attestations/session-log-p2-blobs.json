@@ -17,13 +17,13 @@
     "packages/db/migrations/20261011231931109_session_attachments_bucket.sql",
     "packages/sdk/src/core/session-log/types.ts"
   ],
-  "diff_hash": "c46a48e1a2e93b7fb32bab1df5e758c68f788afdebf04467824fd726068be581",
-  "head": "5e24ac0608243cd7c716a5d2ea5b7acf4f95c817",
+  "diff_hash": "f7cf8f377b7d471662e604314fe0554cbe8dbf655606ceaff9130fbbffb3700e",
+  "head": "f9c917c564f3e5bcc34e15d96a5b7e0d4f12831c",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-11T23:41:36.090Z"
+  "at": "2026-10-11T23:53:03.491Z"
 }
