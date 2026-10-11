@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { run, sh, which } from './exec';
 import { repoRoot } from './git';
@@ -41,8 +41,36 @@ export function checkDeps(opts: { database?: boolean; isolatedDatabase?: boolean
     .map((d) => ({ dep: d, ok: d.check() }));
 }
 
+/** The `supabase` CLI version the root package.json pins, or null. */
+export function pinnedSupabaseVersion(root: string): string | null {
+  try {
+    const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as Record<string, Record<string, string> | undefined>;
+    return pkg.devDependencies?.supabase ?? pkg.dependencies?.supabase ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Pure: the warning for a `supabase` on PATH that is not the repo's pin, or
+ * null. Two CLI versions start different service images against the SAME
+ * local project: a newer storage-api migrates the storage schema forward, and
+ * the pinned one that `pnpm test` runs then fails every upload with 42P10.
+ */
+export function supabaseVersionWarning(installed: string | null, pinned: string | null): string | null {
+  if (!installed || !pinned || installed === pinned) return null;
+  return `supabase CLI ${installed} on PATH, but the repo pins ${pinned} (\`pnpm test\` runs the pin). ` +
+    `Mixing them against one local project breaks storage uploads (42P10). ` +
+    `Put the pin first: export PATH="$PWD/node_modules/.bin:$PATH"`;
+}
+
 export async function ensureDeps(opts: { database?: boolean; isolatedDatabase?: boolean; tunnel?: boolean; install?: boolean } = {}): Promise<boolean> {
   let allOk = true;
+  if (opts.database && which('supabase')) {
+    const installed = sh(['supabase', '--version']).stdout.trim() || null;
+    const warning = supabaseVersionWarning(installed, pinnedSupabaseVersion(repoRootSafe()));
+    if (warning) console.log(`  ! ${warning}`);
+  }
   for (const { dep, ok } of checkDeps(opts)) {
     if (ok) { console.log(`  ✓ ${dep.name}`); continue; }
     const optional = dep.needed === 'tunnel';
