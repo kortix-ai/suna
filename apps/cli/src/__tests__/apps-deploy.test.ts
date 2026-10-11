@@ -364,6 +364,17 @@ describe('kortix apps deploy (characterization)', () => {
     expect(r.stdout).toContain('CRM_DATA_ADMIN_KEY');
   });
 
+  test('launch without --name names the Convex App for what it is: backend, backend-dashboard, BACKEND_ADMIN_KEY', async () => {
+    writeFileSync(join(tmp, 'kortix.yaml'), 'kortix_version: 2\n');
+    const config = writeConfig(startServer());
+    const r = await runCli(['apps', 'launch', '--template', 'convex', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    const yaml = Bun.YAML.parse(await Bun.file(join(tmp, 'kortix.yaml')).text()) as { apps: Record<string, Record<string, unknown>> };
+    expect(Object.keys(yaml.apps)).toEqual(['backend', 'backend-dashboard']);
+    expect(yaml.apps['backend-dashboard']!.secrets).toEqual({ NEXT_PUBLIC_ADMIN_KEY: 'BACKEND_ADMIN_KEY' });
+    expect(yaml.apps['backend-dashboard']!.path).toBe('apps/backend/dashboard');
+  });
+
   test('launch rewrites a secret an earlier App of the same name left, and keeps a file the user already has', async () => {
     writeFileSync(join(tmp, 'kortix.yaml'), 'kortix_version: 2\n');
     mkdirSync(join(tmp, 'apps', 'crm-data', 'dashboard'), { recursive: true });
