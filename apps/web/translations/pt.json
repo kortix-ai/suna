@@ -19527,7 +19527,8 @@
       "textac6d9b76a141": "Montado",
       "text8d54763edcd8": "Não montado",
       "textffeb0c99532f": "Snapshots mantidos por {value0} dias",
-      "text6f52b07880a0": "Criar snapshot agora"
+      "text6f52b07880a0": "Criar snapshot agora",
+      "text91dc861375bc": "Política de versão móvel visualizada"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",
