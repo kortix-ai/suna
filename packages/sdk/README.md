@@ -703,7 +703,7 @@ the runtime lists `session.log.v2`, the project flag `session_log` is on, and
 the API serves the log; until the API does, every session reads v1. The v1
 hooks (`useSessionMessages`, `useSession().messages`) return the same rows
 either way. See the
-[reference](https://kortix.com/docs/sdk/reference#reading-a-sessions-log-react).
+[reference](https://kortix.com/docs/sdk/react#read-the-session-log).
 
 ## Kortix as a Backend (server-side)
 
