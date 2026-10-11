@@ -1,5 +1,5 @@
 {
-  "source_hash": "fd553b5ef9c8b413e3d5360671fdf6361685ec55c2b39a3600a8c8a3e3217880",
+  "source_hash": "2b8e771e02d969800eff32f15daf20caad7e442e524662152fa93eabcb1cb782",
   "diff_files": [
     "apps/api/src/__tests__/integration-session-transcript-capture.test.ts",
     "apps/api/src/projects/lib/session-transcript-capture.ts",
@@ -8,18 +8,18 @@
     "apps/api/src/sandbox-proxy/forward/upstream.ts",
     "apps/api/src/sandbox-proxy/runtime-request.test.ts",
     "apps/api/src/sandbox-proxy/runtime-request.ts",
-    "packages/db/drizzle/meta/20261010223320_snapshot.json",
+    "packages/db/drizzle/meta/20261010234341_snapshot.json",
     "packages/db/drizzle/meta/_journal.json",
-    "packages/db/migrations/20261010223320238_session_transcript_rewind_marker.sql",
+    "packages/db/migrations/20261010234341264_session_transcript_rewind_marker.sql",
     "packages/db/src/schema/kortix.ts"
   ],
-  "diff_hash": "04c728ec8290ecdc9c5de4fcccd59beda790736d7299dd4166c27f6ddea53263",
-  "head": "21021c15fcd1e5d4a4c0dc12daf305e8a8497335",
+  "diff_hash": "11704573960eea8a85b48a0e211907f43924ae99b305f425e21df6ad1587b6c0",
+  "head": "53eb75508e5e8c02792a57c6646f824899d0f44d",
   "passed": true,
   "lanes": {
     "core": "pass",
     "packages": "pass",
     "db-suites": "pass"
   },
-  "at": "2026-10-10T23:42:50.875Z"
+  "at": "2026-10-11T00:04:52.613Z"
 }
