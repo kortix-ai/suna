@@ -22,6 +22,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { AppState, Platform, RefreshControl, View } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
+import { IN_APP_BROWSER_OPTIONS } from '@/lib/utils/link-target';
 import { useQueryClient } from '@tanstack/react-query';
 import { useColorScheme } from 'nativewind';
 import {
@@ -114,6 +115,7 @@ export function BillingPage({ visible, accountId, onChangePlan }: BillingPagePro
     haptics.tap();
     try {
       await WebBrowser.openBrowserAsync(getWebCreditsExplainedUrl(), {
+        ...IN_APP_BROWSER_OPTIONS,
         presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
       });
     } catch (openError) {

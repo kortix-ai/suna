@@ -5,6 +5,8 @@
  * block union are closed, and tool `kind` passes any non-empty string (see the compatibility
  * rule in `types.ts`). `__tests__/session-log-shape.snapshot.txt` pins the shape of every
  * schema exported here.
+ * Not enforced: `restore_grade: 'partial'` without `grade_counts` (a refine would make
+ * `SessionLogSchema` a ZodEffects, which has no `.omit`); `fromV1` always sets the counts.
  */
 import { z } from 'zod';
 import { SESSION_LOG_SCHEMA } from './types';
@@ -71,13 +73,14 @@ export const ReasoningBlockSchema = z.object({
 export const AttachmentBlockSchema = z.object({
   type: z.literal('attachment'),
   id,
-  ref: str,
+  ref: str.optional(), // F13: with `bytes`, or both absent (checked on the message)
   mime: str,
   name: str.optional(),
   label: str.optional(),
   source_path: str.optional(),
-  bytes: count,
+  bytes: count.optional(), // F13
   sha256: str.optional(), // F5
+  url: str.optional(), // F13
   ext,
 });
 
@@ -85,7 +88,7 @@ export const AttachmentBlockSchema = z.object({
 export const ToolKindSchema = str.min(1);
 export const ToolResultContentSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('text'), text: str }),
-  z.object({ type: z.literal('attachment'), ref: str, mime: str, sha256: str.optional() }),
+  z.object({ type: z.literal('attachment'), ref: str.optional(), mime: str, sha256: str.optional(), url: str.optional() }), // F13
 ]);
 export const ToolCallBlockSchema = z.object({
   type: z.literal('tool_call'),
@@ -199,6 +202,14 @@ export const SessionLogMessageSchema = z
     message.blocks.forEach((block, i) => {
       if (seen.has(block.id)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['blocks', i, 'id'], message: `block id ${block.id} repeats in message ${message.message_id}` });
       seen.add(block.id);
+      // F3: a text stored by reference states the full text's size.
+      if (block.type === 'text' && block.ref !== undefined && block.bytes === undefined) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['blocks', i, 'bytes'], message: `text block ${block.id} has ref and no bytes` });
+      }
+      // F13: an attachment has `ref` and `bytes`, or neither (its bytes are missing).
+      if (block.type === 'attachment' && (block.ref === undefined) !== (block.bytes === undefined)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['blocks', i, block.ref === undefined ? 'ref' : 'bytes'], message: `attachment ${block.id} has only one of ref and bytes` });
+      }
     });
     // Closure rule (ToolCallBlock, C2): a thread at rest holds no in-context tool call that is open.
     // An exporter closes an interrupted call with `{ is_error: true, synthetic: true }`.
