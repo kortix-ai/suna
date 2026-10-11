@@ -360,7 +360,7 @@ describe('error typing', () => {
       backendUrl: 'http://backend.test/v1',
       getToken: async () => 'tok1',
       fetch: async () =>
-        new Response(JSON.stringify({ error: 'Budget exceeded', code: 'app_budget_exceeded', balance: 0 }), {
+        new Response(JSON.stringify({ error: 'Account unfunded', code: 'app_account_unfunded', balance: 0 }), {
           status: 402,
           headers: { 'content-type': 'application/json' },
         }),
@@ -369,8 +369,8 @@ describe('error typing', () => {
     expect(error).toBeInstanceOf(BillingError);
     expect(error).toBeInstanceOf(ApiError);
     expect(error?.status).toBe(402);
-    expect(error?.code).toBe('app_budget_exceeded');
-    expect(error?.message).toBe('Budget exceeded');
+    expect(error?.code).toBe('app_account_unfunded');
+    expect(error?.message).toBe('Account unfunded');
   });
 
   test('a non-JSON error body is still a typed ApiError with its status', async () => {

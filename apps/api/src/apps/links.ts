@@ -94,7 +94,7 @@ export async function writeAppLinks(tx: Tx, appId: string, found: Array<{ appId:
 /** The live App of the project that `appId` uses, named by slug or by App id, or null. */
 export async function linkedApp(appId: string, projectId: string, slugOrId: string) {
   const [row] = await db
-    .select({ appId: apps.appId, kind: apps.kind, slug: apps.slug, accountId: apps.accountId, projectId: apps.projectId, accessMode: apps.accessMode, createdBy: apps.createdBy })
+    .select({ appId: apps.appId, routeKey: apps.routeKey, slug: apps.slug, accountId: apps.accountId, projectId: apps.projectId, accessMode: apps.accessMode, createdBy: apps.createdBy })
     .from(appLinks)
     .innerJoin(apps, eq(apps.appId, appLinks.usesAppId))
     .where(

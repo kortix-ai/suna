@@ -22,7 +22,13 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { type FormEvent, Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { EmailLinkStep } from './email-link-step';
-
+import { resolveAuthMode } from './actions';
+import {
+  AUTH_NETWORK_MESSAGE,
+  AUTH_TIMEOUT_MESSAGE,
+  AUTH_UNEXPECTED_MESSAGE,
+  submitAuthForm,
+} from '@/lib/auth/submit-auth';
 import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -58,7 +64,6 @@ import {
   createClient as createBrowserSupabaseClient,
   fetchSamlEnabled,
 } from '@/lib/supabase/client';
-import { resolveAuthMode, sendEmailCode, signInWithPassword, signUpWithPassword } from './actions';
 
 const GoogleSignIn = lazy(() => import('@/features/auth/google-signin'));
 
@@ -189,6 +194,9 @@ function AuthCardForm({
     'continue' | 'link' | 'resend' | 'password' | 'sso' | null
   >(null);
   const pending = pendingAction !== null;
+  // Ref, not state: the double-submit guard must hold even for the click that
+  // races the re-render (state alone still reads stale `pending`).
+  const submitInFlight = useRef(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [sentEmail, setSentEmail] = useState<string | null>(null);
@@ -258,6 +266,25 @@ function AuthCardForm({
     errorToast(msg);
   };
 
+  // The bounded layers answer with submit-auth's English sentinel messages
+  // (a 20 s GoTrue bound inside an action, the route's 25 s fallback, a
+  // 403/500 body) — map each sentinel back to its translated key so the
+  // visitor reads the notice in their language whichever layer fired.
+  const sentinelKeyFor = (message: string): string | null => {
+    if (message === AUTH_TIMEOUT_MESSAGE) return t('errors.submitTimedOut');
+    if (message === AUTH_NETWORK_MESSAGE) return t('errors.networkFailed');
+    if (message === AUTH_UNEXPECTED_MESSAGE) return t('errors.unexpected');
+    return null;
+  };
+
+  // A bounded submit's failure notice: server-provided copy for server
+  // rejections, translated copy for the local failure modes.
+  const noticeFor = (failure: { reason: string; message: string }) => {
+    if (failure.reason === 'timeout') return t('errors.submitTimedOut');
+    if (failure.reason === 'network') return t('errors.networkFailed');
+    return sentinelKeyFor(failure.message) ?? failure.message;
+  };
+
   const goToEntry = () => {
     clearNotices();
     setSentEmail(null);
@@ -323,8 +350,10 @@ function AuthCardForm({
   };
 
   const sendMagic = async (to?: string, source: 'continue' | 'link' | 'resend' = 'link') => {
+    if (submitInFlight.current) return;
     const target = (to ?? email).trim();
     if (!target) return;
+    submitInFlight.current = true;
     clearNotices();
     setPendingAction(source);
 
@@ -334,10 +363,22 @@ function AuthCardForm({
       // the email link signs in existing accounts and registers new ones alike.
       formData.set('acceptedTerms', 'true');
 
-      const result = await sendEmailCode(null, formData);
+      // Bounded, abortable POST (see submit-auth): a hung submit surfaces as a
+      // retryable error instead of a button that never comes back, and a retry
+      // is a fresh fetch rather than a call queued behind the hung one.
+      const outcome = await submitAuthForm('/api/auth/send-code', formData);
+      if (!outcome.ok) {
+        failWith(noticeFor(outcome));
+        return;
+      }
+      const result = outcome.result as {
+        success?: boolean;
+        email?: string;
+        message?: string;
+      };
 
-      if (result && (result as any).success) {
-        setSentEmail((result as any).email || target);
+      if (result.success) {
+        setSentEmail(result.email || target);
         setResendIn(RESEND_COOLDOWN_SECONDS);
         setStep('link');
         // The action's Set-Cookie does not always reach this browser (on the
@@ -351,14 +392,15 @@ function AuthCardForm({
         const codeVerifier = (result as { codeVerifier?: string | null }).codeVerifier;
         if (codeVerifier) seedBrowserPkceVerifier(codeVerifier);
         stashBrowserPkceVerifier();
-      } else if (result && 'message' in result) {
-        failWith((result as any).message as string);
+      } else if ('message' in result) {
+        // A 200 body can still carry a bounded layer's sentinel (the action's
+        // 20 s bound answers through the route as {message}) — translate it.
+        failWith(sentinelKeyFor(result.message as string) ?? (result.message as string));
       }
     } catch (err: any) {
-      if (isUnrecognizedActionError(err) && recoverStaleBundle(target)) return;
-      if (err?.digest?.startsWith('NEXT_REDIRECT')) return;
       failWith(err?.message || t('errors.unexpected'));
     } finally {
+      submitInFlight.current = false;
       setPendingAction(null);
     }
   };
@@ -467,8 +509,13 @@ function AuthCardForm({
 
   const handleEntryContinue = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (submitInFlight.current) return;
+    submitInFlight.current = true;
     const trimmed = email.trim();
-    if (!trimmed) return;
+    if (!trimmed) {
+      submitInFlight.current = false;
+      return;
+    }
     clearNotices();
     setPendingAction('continue');
 
@@ -514,6 +561,9 @@ function AuthCardForm({
         }
       }
       if (magicLinkEnabled) {
+        // sendMagic re-acquires the in-flight guard itself; release here first
+        // or the hand-off would deadlock (this function already holds it).
+        submitInFlight.current = false;
         await sendMagic(trimmed, 'continue');
         return;
       }
@@ -534,6 +584,7 @@ function AuthCardForm({
       if (isUnrecognizedActionError(err) && recoverStaleBundle(trimmed)) return;
       failWith(t('errors.unexpected'));
     } finally {
+      submitInFlight.current = false;
       setPendingAction(null);
     }
   };
@@ -574,6 +625,8 @@ function AuthCardForm({
 
   const handleCredentialsSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (submitInFlight.current) return;
+    submitInFlight.current = true;
     clearNotices();
     setPendingAction('continue');
 
@@ -594,24 +647,30 @@ function AuthCardForm({
     }
 
     try {
-      const result =
-        copy.submitsAs === 'signup'
-          ? await signUpWithPassword(null, formData)
-          : await signInWithPassword(null, formData);
+      // Bounded, abortable POST (see submit-auth): same rationale as the
+      // email-code submit — the visitor must always get an error they can
+      // retry, never a button that never comes back.
+      const intent = copy.submitsAs === 'signup' ? 'signup' : 'signin';
+      const outcome = await submitAuthForm(`/api/auth/password?intent=${intent}`, formData);
+      if (!outcome.ok) {
+        failWith(noticeFor(outcome));
+        return;
+      }
+      const result = outcome.result as Record<string, unknown>;
 
       if (
         result &&
         typeof result === 'object' &&
         'message' in result &&
-        (!('success' in result) || !(result as any).success) &&
-        !(result as any).requiresEmailConfirmation
+        (!('success' in result) || !result.success) &&
+        !result.requiresEmailConfirmation
       ) {
-        const failureCode = (result as any).code ?? null;
+        const failureCode = (result.code as string | null) ?? null;
         const failure = passwordFailureCopy(
           {
             mode: credMode,
             code: failureCode,
-            fallback: result.message as string,
+            fallback: sentinelKeyFor(result.message as string) ?? (result.message as string),
           },
           tI18nComplete,
         );
@@ -631,17 +690,16 @@ function AuthCardForm({
         return;
       }
 
-      if (result && (result as any).requiresEmailConfirmation) {
-        setInfo((result as any).message || t('errors.confirmAccount'));
+      if (result.requiresEmailConfirmation) {
+        setInfo((result.message as string) || t('errors.confirmAccount'));
         return;
       }
 
       await establishSessionAndRedirect(result);
     } catch (err: any) {
-      if (isUnrecognizedActionError(err) && recoverStaleBundle(email.trim())) return;
-      if (err?.digest?.startsWith('NEXT_REDIRECT')) return;
       failWith(err?.message || t('errors.unexpected'));
     } finally {
+      submitInFlight.current = false;
       setPendingAction(null);
     }
   };

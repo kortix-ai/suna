@@ -439,8 +439,13 @@ export const qk = {
     /** Immutable deployment history for one App. */
     appDeployments: (id: string, appId: string) =>
       [...qk.project.apps(id), appId, 'deployments'] as const,
-    /** Snapshots of one App (capability `snapshots`). */
-    appSnapshots: (id: string, appId: string) => [...qk.project.apps(id), appId, 'snapshots'] as const,
+    /** Machines of one App (capability `machines`). */
+    appMachines: (id: string, appId: string) => [...qk.project.apps(id), appId, 'machines'] as const,
+    /** Volumes of one App (capability `volumes`). */
+    appVolumes: (id: string, appId: string) => [...qk.project.apps(id), appId, 'volumes'] as const,
+    /** Snapshots of one volume (capability `snapshots`). */
+    appVolumeSnapshots: (id: string, appId: string, volumeId: string) =>
+      [...qk.project.appVolumes(id, appId), volumeId, 'snapshots'] as const,
     /** One deployment and its events (build log included). */
     appDeployment: (id: string, appId: string, deploymentId: string) =>
       [...qk.project.appDeployments(id, appId), deploymentId] as const,
